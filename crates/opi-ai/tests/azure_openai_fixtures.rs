@@ -9,6 +9,8 @@ use opi_ai::azure_openai::AzureOpenAIProvider;
 use opi_ai::provider::Provider;
 use opi_ai::stream::AssistantStreamEvent;
 use tokio_util::sync::CancellationToken;
+use wiremock::matchers::{body_partial_json, header, method, path, query_param};
+use wiremock::{Mock, MockServer, ResponseTemplate};
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -326,4 +328,117 @@ fn request_body_uses_deployment_name() {
     let request = text_request();
     let body = provider.build_request_body(&request);
     assert_eq!(body["model"], "my-gpt4o");
+}
+
+// ---------------------------------------------------------------------------
+// Production Provider::stream lifecycle through a real HTTP exchange
+// ---------------------------------------------------------------------------
+//
+// The offline `stream_from_sse` tests above exercise the SSE parser/mapper but
+// bypass the production HTTP transport (`Provider::stream` -> `stream_azure_http`),
+// so they cannot prove the Azure deployment URL, `api-key` auth header, request
+// body, or end-to-end draining through the adapter path. These wiremock tests
+// cover that contract using local mock HTTP only.
+
+#[tokio::test]
+async fn stream_drains_text_lifecycle_through_http() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/openai/deployments/my-gpt4o/chat/completions"))
+        .and(query_param("api-version", "2024-06-01"))
+        .and(header("api-key", "test-api-key-12345"))
+        .and(body_partial_json(serde_json::json!({
+            "model": "my-gpt4o",
+            "messages": [
+                {"role": "system", "content": "You are helpful."},
+                {"role": "user", "content": "Hello"}
+            ],
+            "max_tokens": 256
+        })))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string(text_sse_fixture())
+                .insert_header("content-type", "text/event-stream"),
+        )
+        .mount(&server)
+        .await;
+
+    let provider = AzureOpenAIProvider::new(
+        "test-api-key-12345".into(),
+        Some(server.uri()),
+        "my-gpt4o".into(),
+        Some("2024-06-01".into()),
+    )
+    .unwrap();
+
+    let events = collect_events(provider.stream(text_request())).await;
+
+    // Lifecycle: Start -> TextDelta(s) -> Done.
+    assert!(
+        events
+            .iter()
+            .any(|e| matches!(e, AssistantStreamEvent::Start { .. })),
+        "should emit Start through the HTTP adapter path"
+    );
+    let text: String = events
+        .iter()
+        .filter_map(|e| match e {
+            AssistantStreamEvent::TextDelta { delta, .. } => Some(delta.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(text, "Hi there", "should stream the full text content");
+    let done = events
+        .last()
+        .expect("stream should produce a terminal event");
+    match done {
+        AssistantStreamEvent::Done { reason, .. } => {
+            // OpenAI `stop` finish reason must map to the shared StopReason::Stop.
+            assert_eq!(*reason, opi_ai::stream::StopReason::Stop);
+        }
+        other => panic!("expected Done, got {other:?}"),
+    }
+
+    // The matchers above (path + api-version query + api-key header + body
+    // shape) ARE the request assertion; verify() confirms the production
+    // request carried all of them.
+    server.verify().await;
+}
+
+#[tokio::test]
+async fn stream_http_error_maps_to_auth_failed() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/openai/deployments/my-gpt4o/chat/completions"))
+        .respond_with(
+            ResponseTemplate::new(401)
+                .set_body_string(r#"{"error":{"message":"invalid api key"}}"#),
+        )
+        .mount(&server)
+        .await;
+
+    let provider = AzureOpenAIProvider::new(
+        "bad-key".into(),
+        Some(server.uri()),
+        "my-gpt4o".into(),
+        Some("2024-06-01".into()),
+    )
+    .unwrap();
+
+    let stream = provider.stream(text_request());
+    let first = stream
+        .collect::<Vec<_>>()
+        .await
+        .into_iter()
+        .next()
+        .expect("should produce an event");
+    match first {
+        Err(opi_ai::provider::ProviderError::AuthFailed(msg)) => {
+            assert!(
+                msg.contains("authentication failed"),
+                "auth error should mention failure: {msg}"
+            );
+        }
+        other => panic!("expected AuthFailed from HTTP 401, got {other:?}"),
+    }
 }

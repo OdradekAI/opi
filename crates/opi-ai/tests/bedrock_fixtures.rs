@@ -20,6 +20,8 @@ use opi_ai::message::{
 use opi_ai::provider::{Provider, ProviderError, Request};
 use opi_ai::stream::{AssistantStreamEvent, StopReason};
 use tokio_util::sync::CancellationToken;
+use wiremock::matchers::{body_partial_json, method, path};
+use wiremock::{Mock, MockServer, ResponseTemplate};
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -507,4 +509,163 @@ fn tool_result_image_placeholder_preserves_media_type() {
         .unwrap();
 
     assert_eq!(text, "[image: image/jpeg]");
+}
+
+// ---------------------------------------------------------------------------
+// Production Provider::stream lifecycle through a real HTTP exchange
+// ---------------------------------------------------------------------------
+//
+// The offline `stream_from_fixture` tests above exercise the event-stream
+// parser and mapper but bypass the production HTTP transport (`Provider::stream`
+// -> `stream_http`), so they cannot prove the Converse request body, SigV4
+// header set, or end-to-end stream draining through the adapter path. These
+// wiremock tests cover that contract using local mock HTTP only.
+
+fn lifecycle_text_request() -> Request {
+    // Use a `bedrock:`-prefixed model id without a colon-bearing version
+    // suffix so `stream()`'s `split_once(':')` model extraction resolves to
+    // `anthropic.claude-sonnet-4` (family `anthropic`) and the request path
+    // stays free of URL-encoded version colons.
+    Request {
+        model: "bedrock:anthropic.claude-sonnet-4".into(),
+        system: Some("You are helpful.".into()),
+        messages: vec![Message::User(UserMessage {
+            content: vec![InputContent::Text {
+                text: "Hello".into(),
+            }],
+            timestamp_ms: 0,
+        })],
+        tools: vec![],
+        max_tokens: Some(1024),
+        temperature: None,
+        thinking: Default::default(),
+        stop_sequences: vec![],
+        metadata: None,
+        cancel: CancellationToken::new(),
+    }
+}
+
+fn bedrock_text_lifecycle_bytes() -> Vec<u8> {
+    build_bedrock_stream(&[
+        ("messageStart", r#"{"role":"assistant"}"#),
+        (
+            "contentBlockStart",
+            r#"{"start":{"text":{}},"contentBlockIndex":0}"#,
+        ),
+        (
+            "contentBlockDelta",
+            r#"{"delta":{"text":"Hello!"},"contentBlockIndex":0}"#,
+        ),
+        ("contentBlockStop", r#"{"contentBlockIndex":0}"#),
+        ("messageStop", r#"{"stopReason":"end_turn"}"#),
+        (
+            "metadata",
+            r#"{"usage":{"inputTokens":10,"outputTokens":5}}"#,
+        ),
+    ])
+}
+
+#[tokio::test]
+async fn stream_drains_text_lifecycle_through_http() {
+    let body_bytes = bedrock_text_lifecycle_bytes();
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/model/anthropic.claude-sonnet-4/converse-stream"))
+        .and(body_partial_json(serde_json::json!({
+            "messages": [{"role": "user", "content": [{"text": "Hello"}]}],
+            "system": [{"text": "You are helpful."}],
+            "inferenceConfig": {"maxTokens": 1024}
+        })))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_raw(body_bytes, "application/vnd.amazon.eventstream"),
+        )
+        .mount(&server)
+        .await;
+
+    let provider = BedrockProvider::new(
+        test_credentials(),
+        Some(server.uri()),
+        Arc::new(HttpClient::new()),
+    );
+
+    let events = collect_events(provider.stream(lifecycle_text_request())).await;
+
+    // Lifecycle: Start -> TextDelta("Hello!") -> Done.
+    assert!(
+        events
+            .iter()
+            .any(|e| matches!(e, AssistantStreamEvent::Start { .. })),
+        "should emit Start through the HTTP adapter path"
+    );
+    assert!(
+        events.iter().any(|e| matches!(
+            e,
+            AssistantStreamEvent::TextDelta { delta, .. } if delta == "Hello!"
+        )),
+        "should emit TextDelta carrying the streamed text"
+    );
+    let done = events
+        .last()
+        .expect("stream should produce a terminal event");
+    match done {
+        AssistantStreamEvent::Done { reason, message } => {
+            // Bedrock `end_turn` must map to the shared StopReason::Stop.
+            assert_eq!(*reason, StopReason::Stop);
+            assert_eq!(message.usage.input_tokens, 10);
+            assert_eq!(message.usage.output_tokens, 5);
+        }
+        other => panic!("expected Done, got {other:?}"),
+    }
+
+    // The body+path matchers above are the request-shape assertion; verify()
+    // confirms the production request actually carried that Converse body and
+    // the signed SigV4 header set.
+    server.verify().await;
+    let received = server
+        .received_requests()
+        .await
+        .expect("should have recorded the provider request");
+    let recorded = &received[0];
+    assert!(
+        recorded.headers.contains_key("authorization"),
+        "Bedrock request must carry a SigV4 authorization header"
+    );
+    assert!(
+        recorded.headers.contains_key("x-amz-date"),
+        "Bedrock request must carry an x-amz-date header"
+    );
+    assert!(
+        recorded.headers.contains_key("x-amz-content-sha256"),
+        "Bedrock request must carry an x-amz-content-sha256 header"
+    );
+}
+
+#[tokio::test]
+async fn stream_http_error_maps_to_auth_failed() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/model/anthropic.claude-sonnet-4/converse-stream"))
+        .respond_with(ResponseTemplate::new(403).set_body_string("access denied"))
+        .mount(&server)
+        .await;
+
+    let provider = BedrockProvider::new(
+        test_credentials(),
+        Some(server.uri()),
+        Arc::new(HttpClient::new()),
+    );
+
+    let stream = provider.stream(lifecycle_text_request());
+    pin_mut!(stream);
+    let first = stream.next().await.expect("should produce an event");
+    match first {
+        Err(ProviderError::AuthFailed(msg)) => {
+            assert!(
+                msg.contains("access denied") || msg.contains("Bedrock"),
+                "auth error should mention the denial: {msg}"
+            );
+        }
+        other => panic!("expected AuthFailed from HTTP 403, got {other:?}"),
+    }
 }

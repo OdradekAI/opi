@@ -11,6 +11,8 @@ use opi_ai::registry::ProviderRegistry;
 use opi_ai::stream::AssistantStreamEvent;
 use opi_ai::vertex::VertexProvider;
 use tokio_util::sync::CancellationToken;
+use wiremock::matchers::{body_partial_json, header, method, query_param};
+use wiremock::{Mock, MockServer, ResponseTemplate};
 
 fn vertex_provider() -> VertexProvider {
     VertexProvider::new(
@@ -349,4 +351,144 @@ fn tool_call_sse_fixture() -> String {
         }
     });
     format!("data: {data}\n\n")
+}
+
+// ---------------------------------------------------------------------------
+// Production Provider::stream lifecycle through a real HTTP exchange
+// ---------------------------------------------------------------------------
+//
+// The offline `stream_from_sse` tests above exercise the Gemini SSE parser and
+// mapper but bypass the production HTTP transport (`Provider::stream` ->
+// `stream_vertex_http`), so they cannot prove the Vertex AI URL, OAuth bearer
+// auth header, Gemini request body, or end-to-end draining through the adapter
+// path. These wiremock tests cover that contract using local mock HTTP only.
+
+fn lifecycle_text_request() -> Request {
+    Request {
+        model: "vertex:gemini-2.5-flash".into(),
+        system: Some("You are helpful.".into()),
+        messages: vec![Message::User(UserMessage {
+            content: vec![InputContent::Text {
+                text: "Hello".into(),
+            }],
+            timestamp_ms: 0,
+        })],
+        tools: vec![],
+        max_tokens: Some(1024),
+        temperature: None,
+        thinking: ThinkingConfig::default(),
+        stop_sequences: vec![],
+        metadata: None,
+        cancel: CancellationToken::new(),
+    }
+}
+
+#[tokio::test]
+async fn stream_drains_text_lifecycle_through_http() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(query_param("alt", "sse"))
+        .and(header("authorization", "Bearer test-access-token"))
+        .and(body_partial_json(serde_json::json!({
+            "contents": [{"role": "user", "parts": [{"text": "Hello"}]}],
+            "systemInstruction": {"parts": [{"text": "You are helpful."}]},
+            "generationConfig": {"maxOutputTokens": 1024}
+        })))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string(text_sse_fixture())
+                .insert_header("content-type", "text/event-stream"),
+        )
+        .mount(&server)
+        .await;
+
+    let provider = VertexProvider::new(
+        "test-access-token".into(),
+        "my-project".into(),
+        "us-central1".into(),
+        Some(server.uri()),
+    );
+
+    let events = collect_stream(provider.stream(lifecycle_text_request())).await;
+
+    // Lifecycle: Start -> TextDelta -> Done.
+    assert!(
+        events
+            .iter()
+            .any(|e| matches!(e, AssistantStreamEvent::Start { .. })),
+        "should emit Start through the HTTP adapter path"
+    );
+    assert!(
+        events.iter().any(|e| matches!(
+            e,
+            AssistantStreamEvent::TextDelta { delta, .. } if delta == "Hello"
+        )),
+        "should emit TextDelta carrying the streamed text"
+    );
+    let done = events
+        .iter()
+        .find(|e| matches!(e, AssistantStreamEvent::Done { .. }))
+        .expect("stream should produce a terminal Done event");
+    match done {
+        AssistantStreamEvent::Done { reason, message } => {
+            // Gemini `STOP` finish reason must map to the shared StopReason::Stop.
+            assert_eq!(*reason, opi_ai::stream::StopReason::Stop);
+            assert_eq!(message.provider, "vertex");
+        }
+        other => panic!("expected Done, got {other:?}"),
+    }
+
+    // verify() confirms the OAuth bearer header, alt=sse query, and Gemini
+    // body all matched the production request. Independently assert the Vertex
+    // URL path carries project/location/model/resource so the structural path
+    // is pinned regardless of colon encoding in `:streamGenerateContent`.
+    server.verify().await;
+    let received = server
+        .received_requests()
+        .await
+        .expect("should have recorded the provider request");
+    let url = received[0].url.as_str();
+    assert!(url.contains("projects/my-project"), "url: {url}");
+    assert!(url.contains("locations/us-central1"), "url: {url}");
+    assert!(
+        url.contains("publishers/google/models/gemini-2.5-flash"),
+        "url: {url}"
+    );
+    assert!(url.contains("streamGenerateContent"), "url: {url}");
+}
+
+#[tokio::test]
+async fn stream_http_error_maps_to_auth_failed() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(query_param("alt", "sse"))
+        .respond_with(ResponseTemplate::new(401).set_body_string(
+            "data: {\"error\":{\"code\":401,\"message\":\"invalid token\",\"status\":\"UNAUTHENTICATED\"}}\n\n",
+        ))
+        .mount(&server)
+        .await;
+
+    let provider = VertexProvider::new(
+        "bad-token".into(),
+        "my-project".into(),
+        "us-central1".into(),
+        Some(server.uri()),
+    );
+
+    let stream = provider.stream(lifecycle_text_request());
+    let first = stream
+        .collect::<Vec<_>>()
+        .await
+        .into_iter()
+        .next()
+        .expect("should produce an event");
+    match first {
+        Err(opi_ai::provider::ProviderError::AuthFailed(msg)) => {
+            assert!(
+                msg.contains("authentication failed"),
+                "auth error should mention failure: {msg}"
+            );
+        }
+        other => panic!("expected AuthFailed from HTTP 401, got {other:?}"),
+    }
 }

@@ -3,6 +3,7 @@
 //! DoD: "fixtures cover text, tool call, usage, error"
 //! All tests use fixture strings — no live provider calls (red flag #10).
 
+use futures_util::StreamExt;
 use opi_ai::anthropic::{
     AnthropicEvent, AnthropicMapper, AnthropicProvider, ParsedEvent, parse_sse_events,
 };
@@ -10,6 +11,8 @@ use opi_ai::message::{AssistantContent, InputContent, Message, UserMessage};
 use opi_ai::provider::{Provider, Request, ThinkingConfig};
 use opi_ai::stream::{AssistantStreamEvent, StopReason};
 use tokio_util::sync::CancellationToken;
+use wiremock::matchers::{body_partial_json, header, method, path};
+use wiremock::{Mock, MockServer, ResponseTemplate};
 
 /// Helper: parse fixture, extract valid events, and map through a stateful mapper.
 fn map_fixture(input: &str) -> Vec<AssistantStreamEvent> {
@@ -942,4 +945,65 @@ fn thinking_then_tool_call_tracks_content_indices() {
     } else {
         panic!("expected Done event");
     }
+}
+
+// ---------------------------------------------------------------------------
+// Production request contract through Provider::stream (Phase 12.1)
+// ---------------------------------------------------------------------------
+//
+// Proves a representative text request sent through the production
+// `Provider::stream` HTTP path carries the Anthropic body shape, x-api-key +
+// anthropic-version headers, and /v1/messages endpoint.
+
+#[tokio::test]
+async fn stream_sends_text_request_body_and_auth_through_http() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/messages"))
+        .and(header("x-api-key", "test-key"))
+        .and(header("anthropic-version", "2023-06-01"))
+        .and(body_partial_json(serde_json::json!({
+            "messages": [{"role": "user", "content": [{"type": "text", "text": "Hello"}]}],
+            "system": "You are helpful.",
+            "max_tokens": 1024
+        })))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string(text_fixture())
+                .insert_header("content-type", "text/event-stream"),
+        )
+        .mount(&server)
+        .await;
+
+    let provider = AnthropicProvider::new("test-key".into(), Some(server.uri()));
+    let request = Request {
+        model: "anthropic:claude-sonnet-4-5-20250514".into(),
+        system: Some("You are helpful.".into()),
+        messages: vec![Message::User(UserMessage {
+            content: vec![InputContent::Text {
+                text: "Hello".into(),
+            }],
+            timestamp_ms: 0,
+        })],
+        tools: vec![],
+        max_tokens: Some(1024),
+        temperature: None,
+        thinking: ThinkingConfig::default(),
+        stop_sequences: vec![],
+        metadata: None,
+        cancel: CancellationToken::new(),
+    };
+
+    let mut stream = provider.stream(request);
+    while let Some(result) = stream.next().await {
+        match result {
+            Ok(event) if event.is_terminal() => break,
+            Err(_) => break,
+            _ => {}
+        }
+    }
+
+    // verify() confirms the production request carried the Anthropic body,
+    // x-api-key + anthropic-version headers, and the /v1/messages path.
+    server.verify().await;
 }

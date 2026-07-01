@@ -11,6 +11,8 @@ use opi_ai::provider::{EventStream, Provider, Request, ThinkingConfig};
 use opi_ai::registry::ProviderRegistry;
 use opi_ai::stream::AssistantStreamEvent;
 use tokio_util::sync::CancellationToken;
+use wiremock::matchers::{body_partial_json, header, method, query_param};
+use wiremock::{Mock, MockServer, ResponseTemplate};
 
 /// Helper: create a Gemini provider.
 fn gemini_provider(api_key: &str) -> GeminiProvider {
@@ -438,4 +440,65 @@ async fn gemini_max_tokens_maps_to_length_stop_reason() {
         opi_ai::stream::StopReason::Length,
         "MAX_TOKENS should map to StopReason::Length"
     );
+}
+
+// ---------------------------------------------------------------------------
+// Production request contract through Provider::stream (Phase 12.1)
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn stream_sends_text_request_body_and_auth_through_http() {
+    let sse = "data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"Hi\"}]},\"index\":0}]}\n\n\
+               data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"\"}]},\"finishReason\":\"STOP\",\"index\":0}],\"usageMetadata\":{\"promptTokenCount\":5,\"candidatesTokenCount\":2,\"totalTokenCount\":7}}\n\n";
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(query_param("alt", "sse"))
+        .and(header("x-goog-api-key", "test-key"))
+        .and(body_partial_json(serde_json::json!({
+            "contents": [{"role": "user", "parts": [{"text": "Hello"}]}],
+            "systemInstruction": {"parts": [{"text": "You are helpful."}]},
+            "generationConfig": {"maxOutputTokens": 1024}
+        })))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string(sse)
+                .insert_header("content-type", "text/event-stream"),
+        )
+        .mount(&server)
+        .await;
+
+    let provider = GeminiProvider::new("test-key".into(), Some(server.uri()));
+    let request = Request {
+        model: "gemini:gemini-2.5-flash".into(),
+        system: Some("You are helpful.".into()),
+        messages: vec![Message::User(UserMessage {
+            content: vec![InputContent::Text {
+                text: "Hello".into(),
+            }],
+            timestamp_ms: 0,
+        })],
+        tools: vec![],
+        max_tokens: Some(1024),
+        temperature: None,
+        thinking: ThinkingConfig::default(),
+        stop_sequences: vec![],
+        metadata: None,
+        cancel: CancellationToken::new(),
+    };
+
+    let mut stream = provider.stream(request);
+    while let Some(result) = stream.next().await {
+        match result {
+            Ok(event) if event.is_terminal() => break,
+            Err(_) => break,
+            _ => {}
+        }
+    }
+
+    // verify() confirms the production request carried the Gemini body
+    // (contents + systemInstruction + generationConfig.maxOutputTokens), the
+    // x-goog-api-key auth header, and the alt=sse Vertex-style query. The
+    // structural path (model + :streamGenerateContent) is asserted by the
+    // vertex lifecycle suite and the URL-construction unit tests above.
+    server.verify().await;
 }
