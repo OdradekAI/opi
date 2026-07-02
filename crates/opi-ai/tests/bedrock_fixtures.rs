@@ -649,6 +649,140 @@ async fn malformed_tool_args_pass_raw_string_without_panic() {
 }
 
 // ---------------------------------------------------------------------------
+// Phase 12 task 12.5 — Bedrock supports_thinking protocol limitation
+//
+// DoD clause: "Bedrock supports_thinking models have a named positive fixture
+// or named negative assertion documenting the protocol limitation instead of a
+// silent gap." Bedrock's Claude models declare `supports_thinking: true` (see
+// the model list in `bedrock/mod.rs`), but the converse-stream parser has no
+// `ReasoningContent` block/delta variant — `BedrockBlockType` and
+// `BedrockDelta` are `Text` | `ToolUse` only. A `reasoningContent` block is
+// silently routed to an empty `Text` block and emits no `Thinking*` lifecycle
+// events. These tests document that limitation by name so the gap between
+// advertised capability and delivered stream behavior is explicit, not silent.
+
+#[test]
+fn bedrock_models_advertise_supports_thinking() {
+    // Context for the negative assertion below: the Bedrock model list DOES
+    // claim thinking support, even though the stream parser cannot deliver it.
+    let provider = BedrockProvider::new(test_credentials(), None, Arc::new(HttpClient::new()));
+    let thinking: Vec<_> = provider
+        .models()
+        .iter()
+        .filter(|m| m.supports_thinking)
+        .collect();
+    assert!(
+        !thinking.is_empty(),
+        "bedrock should advertise supports_thinking on at least one model"
+    );
+}
+
+#[tokio::test]
+async fn bedrock_reasoning_content_blocks_not_parsed_as_thinking() {
+    // A Bedrock converse-stream reasoning block, shaped per the AWS Converse
+    // Stream schema (contentBlockStart.start.reasoningContent +
+    // contentBlockDelta.delta.reasoningContent.text), followed by a normal
+    // text block so we can prove the parser still runs on ordinary content.
+    let events_data = build_bedrock_stream(&[
+        ("messageStart", r#"{"role":"assistant"}"#),
+        (
+            "contentBlockStart",
+            r#"{"start":{"reasoningContent":{}},"contentBlockIndex":0}"#,
+        ),
+        (
+            "contentBlockDelta",
+            r#"{"delta":{"reasoningContent":{"text":"reasoning step one"}},"contentBlockIndex":0}"#,
+        ),
+        (
+            "contentBlockDelta",
+            r#"{"delta":{"reasoningContent":{"text":"reasoning step two"}},"contentBlockIndex":0}"#,
+        ),
+        ("contentBlockStop", r#"{"contentBlockIndex":0}"#),
+        (
+            "contentBlockStart",
+            r#"{"start":{"text":{}},"contentBlockIndex":1}"#,
+        ),
+        (
+            "contentBlockDelta",
+            r#"{"delta":{"text":"final answer"},"contentBlockIndex":1}"#,
+        ),
+        ("contentBlockStop", r#"{"contentBlockIndex":1}"#),
+        ("messageStop", r#"{"stopReason":"end_turn"}"#),
+        (
+            "metadata",
+            r#"{"usage":{"inputTokens":10,"outputTokens":5}}"#,
+        ),
+    ]);
+
+    let provider = BedrockProvider::new(test_credentials(), None, Arc::new(HttpClient::new()));
+    let request = text_stream_request();
+    let events = collect_events(provider.stream_from_fixture(&events_data, request.cancel)).await;
+
+    // The parser must have run: Start and a terminal Done are present.
+    assert!(
+        events
+            .iter()
+            .any(|e| matches!(e, AssistantStreamEvent::Start { .. })),
+        "parser must emit Start"
+    );
+    let done = events.last().expect("stream must produce a terminal event");
+    assert!(
+        matches!(done, AssistantStreamEvent::Done { .. }),
+        "stream must end with Done"
+    );
+
+    // Negative assertion: NO thinking lifecycle events are emitted for the
+    // reasoningContent block. This is the named protocol-limitation guard.
+    let any_thinking = events.iter().any(|e| {
+        matches!(
+            e,
+            AssistantStreamEvent::ThinkingStart { .. }
+                | AssistantStreamEvent::ThinkingDelta { .. }
+                | AssistantStreamEvent::ThinkingEnd { .. }
+        )
+    });
+    assert!(
+        !any_thinking,
+        "bedrock parser must not emit Thinking* events; reasoningContent is not recognized"
+    );
+
+    // The reasoning text must be silently dropped (not surfaced as text):
+    // `delta.reasoningContent.text` does not match the parser's `delta.text`
+    // arm, so the deltas fall through to empty Text deltas.
+    let rendered: String = events
+        .iter()
+        .filter_map(|e| match e {
+            AssistantStreamEvent::TextDelta { delta, .. } => Some(delta.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        !rendered.contains("reasoning step one") && !rendered.contains("reasoning step two"),
+        "reasoningContent text must not leak into Text deltas: {rendered:?}"
+    );
+
+    // The parser still handles ordinary text blocks correctly, proving the
+    // limitation is reasoning-specific rather than a general parse failure.
+    assert!(
+        rendered.contains("final answer"),
+        "normal text block must still stream: {rendered:?}"
+    );
+
+    // The Done message carries no Thinking content block — the reasoning block
+    // was mis-routed to an empty Text block, not to a Thinking block.
+    if let AssistantStreamEvent::Done { message, .. } = done {
+        assert!(
+            message
+                .content
+                .iter()
+                .all(|c| !matches!(c, opi_ai::message::AssistantContent::Thinking { .. })),
+            "Done message must contain no Thinking content block: {:?}",
+            message.content
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Production Provider::stream lifecycle through a real HTTP exchange
 // ---------------------------------------------------------------------------
 //
