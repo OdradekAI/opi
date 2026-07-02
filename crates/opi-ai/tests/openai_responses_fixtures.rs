@@ -555,6 +555,116 @@ fn responses_custom_base_url() {
 }
 
 // ---------------------------------------------------------------------------
+// Phase 12 task 12.4 — tool-call conversion breadth (scenarios 3/5/6)
+//
+// DoD: multiple tool calls, malformed JSON arguments, and provider tool-call
+// IDs. The Responses mapper uses `call_id` as ToolCall.id (the value
+// function_call_output must echo back) and accumulates the raw argument string
+// without parsing, so malformed JSON is preserved for the agent loop.
+
+#[tokio::test]
+async fn responses_multi_tool_call_produces_two_calls() {
+    let provider = responses_provider("key");
+    let sse = "event: response.created\n\
+               data: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_multi\",\"status\":\"in_progress\",\"model\":\"gpt-4o\",\"output\":[]}}\n\n\
+               event: response.output_item.added\n\
+               data: {\"type\":\"response.output_item.added\",\"output_index\":0,\"item\":{\"type\":\"function_call\",\"id\":\"fc_a\",\"call_id\":\"call_a\",\"name\":\"read_file\",\"arguments\":\"\"}}\n\n\
+               event: response.function_call_arguments.delta\n\
+               data: {\"type\":\"response.function_call_arguments.delta\",\"output_index\":0,\"item_id\":\"fc_a\",\"call_id\":\"call_a\",\"delta\":\"{\\\"path\\\":\\\"a.rs\\\"}\"}\n\n\
+               event: response.output_item.done\n\
+               data: {\"type\":\"response.output_item.done\",\"output_index\":0,\"item\":{\"type\":\"function_call\",\"id\":\"fc_a\",\"call_id\":\"call_a\",\"name\":\"read_file\",\"arguments\":\"{\\\"path\\\":\\\"a.rs\\\"}\"}}\n\n\
+               event: response.output_item.added\n\
+               data: {\"type\":\"response.output_item.added\",\"output_index\":1,\"item\":{\"type\":\"function_call\",\"id\":\"fc_b\",\"call_id\":\"call_b\",\"name\":\"bash\",\"arguments\":\"\"}}\n\n\
+               event: response.function_call_arguments.delta\n\
+               data: {\"type\":\"response.function_call_arguments.delta\",\"output_index\":1,\"item_id\":\"fc_b\",\"call_id\":\"call_b\",\"delta\":\"{\\\"cmd\\\":\\\"ls\\\"}\"}\n\n\
+               event: response.output_item.done\n\
+               data: {\"type\":\"response.output_item.done\",\"output_index\":1,\"item\":{\"type\":\"function_call\",\"id\":\"fc_b\",\"call_id\":\"call_b\",\"name\":\"bash\",\"arguments\":\"{\\\"cmd\\\":\\\"ls\\\"}\"}}\n\n\
+               event: response.completed\n\
+               data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_multi\",\"status\":\"completed\",\"model\":\"gpt-4o\",\"output\":[{\"type\":\"function_call\",\"id\":\"fc_a\",\"call_id\":\"call_a\",\"name\":\"read_file\",\"arguments\":\"{\\\"path\\\":\\\"a.rs\\\"}\"},{\"type\":\"function_call\",\"id\":\"fc_b\",\"call_id\":\"call_b\",\"name\":\"bash\",\"arguments\":\"{\\\"cmd\\\":\\\"ls\\\"}\"}],\"usage\":{\"input_tokens\":30,\"output_tokens\":20}}}\n\n";
+
+    let events = collect_stream(provider.stream_from_sse(sse, CancellationToken::new())).await;
+
+    let starts = events
+        .iter()
+        .filter(|e| matches!(e, AssistantStreamEvent::ToolCallStart { .. }))
+        .count();
+    let ends = events
+        .iter()
+        .filter(|e| matches!(e, AssistantStreamEvent::ToolCallEnd { .. }))
+        .count();
+    assert_eq!(starts, 2, "two ToolCallStart events");
+    assert_eq!(ends, 2, "two ToolCallEnd events");
+
+    let content_len = events
+        .iter()
+        .find_map(|e| match e {
+            AssistantStreamEvent::Done { message, .. } => Some(message.content.len()),
+            _ => None,
+        })
+        .expect("Done event");
+    assert_eq!(content_len, 2, "Done message carries both function calls");
+}
+
+#[tokio::test]
+async fn responses_tool_call_id_is_the_call_id() {
+    // Scenario 6: provider tool-call ID round-trip. The Responses API gives
+    // function_call items both an `id` (fc_1) and a `call_id` (call_1); opi
+    // MUST surface `call_id` as ToolCall.id because that is the value a
+    // subsequent function_call_output must echo back.
+    let provider = responses_provider("key");
+    let sse = "event: response.created\n\
+               data: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_id\",\"status\":\"in_progress\",\"model\":\"gpt-4o\",\"output\":[]}}\n\n\
+               event: response.output_item.added\n\
+               data: {\"type\":\"response.output_item.added\",\"output_index\":0,\"item\":{\"type\":\"function_call\",\"id\":\"fc_1\",\"call_id\":\"call_roundtrip\",\"name\":\"read_file\",\"arguments\":\"{}\"}}\n\n\
+               event: response.output_item.done\n\
+               data: {\"type\":\"response.output_item.done\",\"output_index\":0,\"item\":{\"type\":\"function_call\",\"id\":\"fc_1\",\"call_id\":\"call_roundtrip\",\"name\":\"read_file\",\"arguments\":\"{}\"}}\n\n\
+               event: response.completed\n\
+               data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_id\",\"status\":\"completed\",\"model\":\"gpt-4o\",\"output\":[{\"type\":\"function_call\",\"id\":\"fc_1\",\"call_id\":\"call_roundtrip\",\"name\":\"read_file\",\"arguments\":\"{}\"}],\"usage\":{\"input_tokens\":5,\"output_tokens\":2}}}\n\n";
+
+    let events = collect_stream(provider.stream_from_sse(sse, CancellationToken::new())).await;
+
+    let end_id = events
+        .iter()
+        .find_map(|e| match e {
+            AssistantStreamEvent::ToolCallEnd { tool_call, .. } => Some(tool_call.id.clone()),
+            _ => None,
+        })
+        .expect("ToolCallEnd emitted");
+    assert_eq!(
+        end_id, "call_roundtrip",
+        "ToolCall.id must be the Responses call_id, not the item id"
+    );
+}
+
+#[tokio::test]
+async fn responses_malformed_tool_args_pass_raw_string_without_panic() {
+    let provider = responses_provider("key");
+    let sse = "event: response.created\n\
+               data: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_bad\",\"status\":\"in_progress\",\"model\":\"gpt-4o\",\"output\":[]}}\n\n\
+               event: response.output_item.added\n\
+               data: {\"type\":\"response.output_item.added\",\"output_index\":0,\"item\":{\"type\":\"function_call\",\"id\":\"fc_bad\",\"call_id\":\"call_bad\",\"name\":\"read_file\",\"arguments\":\"\"}}\n\n\
+               event: response.function_call_arguments.delta\n\
+               data: {\"type\":\"response.function_call_arguments.delta\",\"output_index\":0,\"item_id\":\"fc_bad\",\"call_id\":\"call_bad\",\"delta\":\"{not-json\"}\n\n\
+               event: response.output_item.done\n\
+               data: {\"type\":\"response.output_item.done\",\"output_index\":0,\"item\":{\"type\":\"function_call\",\"id\":\"fc_bad\",\"call_id\":\"call_bad\",\"name\":\"read_file\",\"arguments\":\"{not-json\"}}\n\n\
+               event: response.completed\n\
+               data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_bad\",\"status\":\"completed\",\"model\":\"gpt-4o\",\"output\":[{\"type\":\"function_call\",\"id\":\"fc_bad\",\"call_id\":\"call_bad\",\"name\":\"read_file\",\"arguments\":\"{not-json\"}],\"usage\":{\"input_tokens\":5,\"output_tokens\":2}}}\n\n";
+
+    let events = collect_stream(provider.stream_from_sse(sse, CancellationToken::new())).await;
+
+    let end = events
+        .iter()
+        .find_map(|e| match e {
+            AssistantStreamEvent::ToolCallEnd { tool_call, .. } => Some(tool_call.clone()),
+            _ => None,
+        })
+        .expect("ToolCallEnd emitted despite malformed argument JSON");
+    assert_eq!(end.arguments, "{not-json");
+    assert_eq!(end.id, "call_bad");
+    assert_eq!(end.name, "read_file");
+}
+
+// ---------------------------------------------------------------------------
 // Production request contract through Provider::stream (Phase 12.1)
 // ---------------------------------------------------------------------------
 

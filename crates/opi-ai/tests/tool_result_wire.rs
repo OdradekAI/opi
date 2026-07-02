@@ -108,6 +108,10 @@ fn anthropic_asserts(is_error: bool, payload: &str) {
     let block = &last_msg(&body, "messages")["content"][0];
     assert_eq!(block["type"], "tool_result", "anthropic tool_result block");
     assert_eq!(
+        block["tool_use_id"], "tc-1",
+        "anthropic tool_use_id MUST round-trip the ToolResult tool_call_id"
+    );
+    assert_eq!(
         block["content"].as_str(),
         Some(payload),
         "anthropic content is the joined payload (no marker for this provider)"
@@ -129,7 +133,12 @@ fn anthropic_asserts(is_error: bool, payload: &str) {
 fn bedrock_asserts(is_error: bool, payload: &str) {
     let provider = BedrockProvider::new(test_credentials(), None, Arc::new(HttpClient::new()));
     let body = provider.build_converse_body(&request_with_tool_result(is_error, payload));
-    let status = &last_msg(&body, "messages")["content"][0]["toolResult"]["status"];
+    let result = &last_msg(&body, "messages")["content"][0]["toolResult"];
+    assert_eq!(
+        result["toolUseId"], "tc-1",
+        "bedrock toolUseId MUST round-trip the ToolResult tool_call_id"
+    );
+    let status = &result["status"];
     let expected = if is_error { "error" } else { "success" };
     assert_eq!(
         status.as_str(),
@@ -149,6 +158,10 @@ fn openai_chat_asserts(is_error: bool, payload: &str) {
     let body = provider.build_request_body(&request_with_tool_result(is_error, payload));
     let msg = last_msg(&body, "messages");
     assert_eq!(msg["role"], "tool", "openai_chat role");
+    assert_eq!(
+        msg["tool_call_id"], "tc-1",
+        "openai_chat tool_call_id MUST round-trip the ToolResult tool_call_id"
+    );
     let content = msg["content"].as_str().expect("openai_chat content string");
     if is_error {
         assert!(
@@ -174,6 +187,10 @@ fn openai_responses_asserts(is_error: bool, payload: &str) {
     assert_eq!(
         item["type"], "function_call_output",
         "openai_responses item type"
+    );
+    assert_eq!(
+        item["call_id"], "tc-1",
+        "openai_responses call_id MUST round-trip the ToolResult tool_call_id"
     );
     // status is NOT client-settable on input items; its absence is a regression guard.
     assert!(

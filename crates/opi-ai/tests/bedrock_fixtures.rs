@@ -512,6 +512,143 @@ fn tool_result_image_placeholder_preserves_media_type() {
 }
 
 // ---------------------------------------------------------------------------
+// Phase 12 task 12.4 — tool-call conversion breadth (scenarios 3/5/6)
+//
+// DoD: multiple tool calls, malformed JSON arguments, and provider tool-call
+// IDs. The Bedrock mapper accumulates per-block `partial_input` and surfaces
+// `toolUseId` as ToolCall.id without parsing the arguments, so malformed JSON
+// is preserved for the agent loop.
+
+#[tokio::test]
+async fn multi_tool_call_produces_two_calls() {
+    let events_data = build_bedrock_stream(&[
+        ("messageStart", r#"{"role":"assistant"}"#),
+        (
+            "contentBlockStart",
+            r#"{"start":{"toolUse":{"toolUseId":"tool-a","name":"read"}},"contentBlockIndex":0}"#,
+        ),
+        (
+            "contentBlockDelta",
+            r#"{"delta":{"toolUse":{"input":"{\"path\":\"a.rs\"}"}},"contentBlockIndex":0}"#,
+        ),
+        ("contentBlockStop", r#"{"contentBlockIndex":0}"#),
+        (
+            "contentBlockStart",
+            r#"{"start":{"toolUse":{"toolUseId":"tool-b","name":"bash"}},"contentBlockIndex":1}"#,
+        ),
+        (
+            "contentBlockDelta",
+            r#"{"delta":{"toolUse":{"input":"{\"cmd\":\"ls\"}"}},"contentBlockIndex":1}"#,
+        ),
+        ("contentBlockStop", r#"{"contentBlockIndex":1}"#),
+        ("messageStop", r#"{"stopReason":"tool_use"}"#),
+        (
+            "metadata",
+            r#"{"usage":{"inputTokens":40,"outputTokens":20}}"#,
+        ),
+    ]);
+
+    let provider = BedrockProvider::new(test_credentials(), None, Arc::new(HttpClient::new()));
+    let request = text_stream_request();
+    let events = collect_events(provider.stream_from_fixture(&events_data, request.cancel)).await;
+
+    let starts = events
+        .iter()
+        .filter(|e| matches!(e, AssistantStreamEvent::ToolCallStart { .. }))
+        .count();
+    let ends = events
+        .iter()
+        .filter(|e| matches!(e, AssistantStreamEvent::ToolCallEnd { .. }))
+        .count();
+    assert_eq!(starts, 2, "two ToolCallStart events");
+    assert_eq!(ends, 2, "two ToolCallEnd events");
+
+    let content_len = events
+        .iter()
+        .find_map(|e| match e {
+            AssistantStreamEvent::Done { message, .. } => Some(message.content.len()),
+            _ => None,
+        })
+        .expect("Done event");
+    assert_eq!(content_len, 2, "Done message carries both toolUse blocks");
+}
+
+#[tokio::test]
+async fn tool_call_id_round_trips_the_tool_use_id() {
+    // Scenario 6: Bedrock `toolUseId` MUST surface as ToolCall.id (the value a
+    // subsequent toolResult must echo back as toolUseId).
+    let events_data = build_bedrock_stream(&[
+        ("messageStart", r#"{"role":"assistant"}"#),
+        (
+            "contentBlockStart",
+            r#"{"start":{"toolUse":{"toolUseId":"tool-roundtrip","name":"read"}},"contentBlockIndex":0}"#,
+        ),
+        (
+            "contentBlockDelta",
+            r#"{"delta":{"toolUse":{"input":"{\"path\":\"f\"}"}},"contentBlockIndex":0}"#,
+        ),
+        ("contentBlockStop", r#"{"contentBlockIndex":0}"#),
+        ("messageStop", r#"{"stopReason":"tool_use"}"#),
+        (
+            "metadata",
+            r#"{"usage":{"inputTokens":5,"outputTokens":2}}"#,
+        ),
+    ]);
+
+    let provider = BedrockProvider::new(test_credentials(), None, Arc::new(HttpClient::new()));
+    let request = text_stream_request();
+    let events = collect_events(provider.stream_from_fixture(&events_data, request.cancel)).await;
+
+    let end_id = events
+        .iter()
+        .find_map(|e| match e {
+            AssistantStreamEvent::ToolCallEnd { tool_call, .. } => Some(tool_call.id.clone()),
+            _ => None,
+        })
+        .expect("ToolCallEnd emitted");
+    assert_eq!(
+        end_id, "tool-roundtrip",
+        "ToolCall.id must be the Bedrock toolUseId"
+    );
+}
+
+#[tokio::test]
+async fn malformed_tool_args_pass_raw_string_without_panic() {
+    let events_data = build_bedrock_stream(&[
+        ("messageStart", r#"{"role":"assistant"}"#),
+        (
+            "contentBlockStart",
+            r#"{"start":{"toolUse":{"toolUseId":"tool-bad","name":"read"}},"contentBlockIndex":0}"#,
+        ),
+        (
+            "contentBlockDelta",
+            r#"{"delta":{"toolUse":{"input":"{not-json"}},"contentBlockIndex":0}"#,
+        ),
+        ("contentBlockStop", r#"{"contentBlockIndex":0}"#),
+        ("messageStop", r#"{"stopReason":"tool_use"}"#),
+        (
+            "metadata",
+            r#"{"usage":{"inputTokens":5,"outputTokens":2}}"#,
+        ),
+    ]);
+
+    let provider = BedrockProvider::new(test_credentials(), None, Arc::new(HttpClient::new()));
+    let request = text_stream_request();
+    let events = collect_events(provider.stream_from_fixture(&events_data, request.cancel)).await;
+
+    let end = events
+        .iter()
+        .find_map(|e| match e {
+            AssistantStreamEvent::ToolCallEnd { tool_call, .. } => Some(tool_call.clone()),
+            _ => None,
+        })
+        .expect("ToolCallEnd emitted despite malformed argument JSON");
+    assert_eq!(end.arguments, "{not-json");
+    assert_eq!(end.id, "tool-bad");
+    assert_eq!(end.name, "read");
+}
+
+// ---------------------------------------------------------------------------
 // Production Provider::stream lifecycle through a real HTTP exchange
 // ---------------------------------------------------------------------------
 //

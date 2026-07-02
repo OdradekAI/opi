@@ -948,6 +948,175 @@ fn thinking_then_tool_call_tracks_content_indices() {
 }
 
 // ---------------------------------------------------------------------------
+// Phase 12 task 12.4 — tool-call conversion breadth (scenarios 3/4/5)
+//
+// DoD: fixtures cover multiple tool calls, chunked arguments, and malformed
+// JSON arguments. The Anthropic mapper accumulates per-block `partial_json`
+// and emits ToolCallEnd carrying the raw argument string, so malformed JSON
+// passes through unchanged to the agent-loop validation path (task 12.4
+// opi-agent side), never a provider-layer panic.
+
+fn multi_tool_fixture() -> &'static str {
+    r#"event: message_start
+data: {"type":"message_start","message":{"id":"msg_multi","type":"message","role":"assistant","content":[],"model":"claude-sonnet-4-5-20250514","stop_reason":null,"usage":{"input_tokens":40,"output_tokens":0}}}
+
+event: content_block_start
+data: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_a","name":"read_file","input":{}}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"path\":\"a.rs\"}"}}
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":0}
+
+event: content_block_start
+data: {"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"toolu_b","name":"bash","input":{}}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{\"cmd\":\"ls\"}"}}
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":1}
+
+event: message_delta
+data: {"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":90}}
+
+event: message_stop
+data: {"type":"message_stop"}
+
+"#
+}
+
+#[test]
+fn multi_tool_fixture_produces_two_tool_calls() {
+    let stream_events = map_fixture(multi_tool_fixture());
+
+    let starts = stream_events
+        .iter()
+        .filter(|e| matches!(e, AssistantStreamEvent::ToolCallStart { .. }))
+        .count();
+    let ends = stream_events
+        .iter()
+        .filter(|e| matches!(e, AssistantStreamEvent::ToolCallEnd { .. }))
+        .count();
+    assert_eq!(starts, 2, "two ToolCallStart events");
+    assert_eq!(ends, 2, "two ToolCallEnd events");
+
+    if let Some(AssistantStreamEvent::Done { message, reason }) = stream_events.last() {
+        assert_eq!(*reason, StopReason::ToolUse);
+        assert_eq!(
+            message.content.len(),
+            2,
+            "Done message carries both tool calls"
+        );
+    } else {
+        panic!("expected Done event");
+    }
+}
+
+fn chunked_args_fixture() -> &'static str {
+    // One tool_use block receives multiple input_json_delta chunks; the mapper
+    // MUST concatenate them and surface the merged string at ToolCallEnd.
+    r#"event: message_start
+data: {"type":"message_start","message":{"id":"msg_chunk","type":"message","role":"assistant","content":[],"model":"claude-sonnet-4-5-20250514","stop_reason":null,"usage":{"input_tokens":20,"output_tokens":0}}}
+
+event: content_block_start
+data: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_chunk","name":"edit_file","input":{}}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"path\":"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"\"src/lib.rs\","}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"\"old\":\"x\"}"}}
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":0}
+
+event: message_delta
+data: {"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":30}}
+
+event: message_stop
+data: {"type":"message_stop"}
+
+"#
+}
+
+#[test]
+fn chunked_args_fixture_merges_into_one_tool_call() {
+    let stream_events = map_fixture(chunked_args_fixture());
+
+    let deltas = stream_events
+        .iter()
+        .filter(|e| matches!(e, AssistantStreamEvent::ToolCallDelta { .. }))
+        .count();
+    assert_eq!(
+        deltas, 3,
+        "three ToolCallDelta events accumulate into one block"
+    );
+
+    let ends: Vec<_> = stream_events
+        .iter()
+        .filter_map(|e| match e {
+            AssistantStreamEvent::ToolCallEnd { tool_call, .. } => Some(tool_call.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(ends.len(), 1, "one ToolCallEnd");
+    assert_eq!(
+        ends[0].arguments, r#"{"path":"src/lib.rs","old":"x"}"#,
+        "merged argument string at ToolCallEnd"
+    );
+    assert_eq!(ends[0].id, "toolu_chunk");
+}
+
+fn malformed_args_fixture() -> &'static str {
+    // The SSE event is well-formed; only the tool argument VALUE is malformed
+    // JSON. The provider layer must NOT parse arguments, so it hands the raw
+    // string to the agent loop without panic (DoD: malformed arguments reach
+    // runtime validation, not provider crashes).
+    r#"event: message_start
+data: {"type":"message_start","message":{"id":"msg_bad","type":"message","role":"assistant","content":[],"model":"claude-sonnet-4-5-20250514","stop_reason":null,"usage":{"input_tokens":10,"output_tokens":0}}}
+
+event: content_block_start
+data: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_bad","name":"read_file","input":{}}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{not-json"}}
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":0}
+
+event: message_delta
+data: {"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":5}}
+
+event: message_stop
+data: {"type":"message_stop"}
+
+"#
+}
+
+#[test]
+fn malformed_args_fixture_passes_raw_string_without_panic() {
+    // Draining the stream is itself the no-panic assertion.
+    let stream_events = map_fixture(malformed_args_fixture());
+
+    let end = stream_events
+        .iter()
+        .find_map(|e| match e {
+            AssistantStreamEvent::ToolCallEnd { tool_call, .. } => Some(tool_call.clone()),
+            _ => None,
+        })
+        .expect("ToolCallEnd emitted despite malformed argument JSON");
+    // Raw malformed string preserved byte-for-byte for the agent loop.
+    assert_eq!(end.arguments, "{not-json");
+    assert_eq!(end.id, "toolu_bad");
+    assert_eq!(end.name, "read_file");
+}
+
+// ---------------------------------------------------------------------------
 // Production request contract through Provider::stream (Phase 12.1)
 // ---------------------------------------------------------------------------
 //

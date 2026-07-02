@@ -952,6 +952,44 @@ fn multi_tool_fixture_produces_two_tool_calls() {
     }
 }
 
+// --- Phase 12 task 12.4 — malformed tool-call arguments (scenario 5) ---
+//
+// DoD: malformed JSON arguments reach agent/runtime validation, not provider
+// panics. The OpenAI Chat mapper accumulates the raw `arguments` string without
+// parsing, so a malformed value is preserved byte-for-byte and handed to the
+// agent loop. (Scenario 3 multi-tool is already covered by
+// `multi_tool_fixture_produces_two_tool_calls` above.)
+
+fn malformed_tool_args_fixture() -> &'static str {
+    r#"data: {"id":"chatcmpl-bad","object":"chat.completion.chunk","created":1720000000,"model":"gpt-4o","choices":[{"index":0,"delta":{"role":"assistant","content":null},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-bad","object":"chat.completion.chunk","created":1720000000,"model":"gpt-4o","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_bad","type":"function","function":{"name":"read_file","arguments":""}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-bad","object":"chat.completion.chunk","created":1720000000,"model":"gpt-4o","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{not-json"}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-bad","object":"chat.completion.chunk","created":1720000000,"model":"gpt-4o","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":5,"completion_tokens":3,"total_tokens":8}}
+
+data: [DONE]
+
+"#
+}
+
+#[test]
+fn malformed_tool_args_pass_raw_string_without_panic() {
+    let stream_events = map_fixture(malformed_tool_args_fixture());
+
+    let end = stream_events
+        .iter()
+        .find_map(|e| match e {
+            AssistantStreamEvent::ToolCallEnd { tool_call, .. } => Some(tool_call.clone()),
+            _ => None,
+        })
+        .expect("ToolCallEnd emitted despite malformed argument JSON");
+    assert_eq!(end.arguments, "{not-json");
+    assert_eq!(end.id, "call_bad");
+    assert_eq!(end.name, "read_file");
+}
+
 // ---------------------------------------------------------------------------
 // Production request contract through Provider::stream (Phase 12.1)
 // ---------------------------------------------------------------------------

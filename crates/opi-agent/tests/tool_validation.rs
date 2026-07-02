@@ -713,6 +713,93 @@ async fn phase8_malformed_tool_arguments_do_not_execute_permissive_tool() {
     ));
 }
 
+// ---------------------------------------------------------------------------
+// Phase 12 task 12.4 — malformed tool arguments become a structured result.
+//
+// DoD: "Malformed tool arguments reach agent/runtime validation through the
+// opi-agent tool validation path as structured errors or diagnostics, not
+// panics or provider-level crashes." Drives the production agent_loop with a
+// tool call whose arguments are invalid JSON and pins the structured outcome:
+// the run returns Ok (no panic), Tool::execute never runs, a tool-validation
+// diagnostic is emitted, and a persisted error ToolResult carries the
+// validation message. Named to satisfy the acceptance scenario's verification
+// filter `malformed_tool_arguments_result`.
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn malformed_tool_arguments_result_is_structured_error_not_panic() {
+    use opi_agent::diagnostic::code::CODE_TOOL_VALIDATION_FAILED;
+    use opi_agent::diagnostic_sink::RecordingSink;
+
+    let executed = Arc::new(Mutex::new(false));
+    let diagnostic_sink = Arc::new(RecordingSink::new());
+
+    let provider = ScriptedProvider::new(vec![
+        tool_call_response("call-1", "echo", "{not-json"),
+        text_response("done"),
+    ]);
+    let tools: Vec<Box<dyn Tool>> = vec![Box::new(PermissiveProbeTool {
+        executed: executed.clone(),
+    })];
+    let hooks = ProbeHooks {
+        before_called: Arc::new(Mutex::new(false)),
+    };
+
+    let context = AgentLoopContext {
+        provider: Box::new(provider),
+        tools,
+        messages: vec![AgentMessage::Llm(Message::User(
+            opi_ai::message::UserMessage {
+                content: vec![InputContent::Text { text: "hi".into() }],
+                timestamp_ms: 0,
+            },
+        ))],
+        model: "mock".into(),
+        system: None,
+        steering_queue: None,
+        follow_up_queue: None,
+        diagnostic_sink: Some(diagnostic_sink.clone()),
+        trace: None,
+    };
+
+    let messages = opi_agent::agent_loop(
+        context,
+        AgentLoopConfig::default(),
+        &hooks,
+        Box::new(|_| {}),
+        CancellationToken::new(),
+    )
+    .await
+    .expect("malformed arguments are a normal runtime outcome, not a panic");
+
+    assert!(!*executed.lock().unwrap(), "Tool::execute must not run");
+    assert!(
+        diagnostic_sink
+            .snapshot()
+            .iter()
+            .any(|d| d.code == CODE_TOOL_VALIDATION_FAILED),
+        "malformed arguments must emit a tool-validation diagnostic"
+    );
+
+    let error_result = messages
+        .iter()
+        .find_map(|m| match m {
+            AgentMessage::Llm(Message::ToolResult(trm)) if trm.tool_call_id == "call-1" => {
+                Some(trm.clone())
+            }
+            _ => None,
+        })
+        .expect("malformed arguments produce a persisted tool result");
+    assert!(error_result.is_error, "result is a structured error");
+    assert!(
+        error_result.content.iter().any(|c| matches!(
+            c,
+            OutputContent::Text { text } if text.contains("tool arguments were not valid JSON")
+        )),
+        "error result carries the structured validation message"
+    );
+}
+
 #[tokio::test]
 async fn phase8_malformed_tool_arguments_do_not_execute_parallel_permissive_tool() {
     use opi_agent::diagnostic::code::CODE_TOOL_VALIDATION_FAILED;
