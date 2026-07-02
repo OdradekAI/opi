@@ -315,6 +315,41 @@ async fn usage_tracked_from_metadata() {
     }
 }
 
+#[tokio::test]
+async fn cache_write_tokens_tracked_from_metadata() {
+    // Phase 12 task 12.6, DoD clause 6: cacheCreationInputTokens -> cache_write_tokens.
+    let events_data = build_bedrock_stream(&[
+        ("messageStart", r#"{"role":"assistant"}"#),
+        (
+            "contentBlockStart",
+            r#"{"start":{"text":{}},"contentBlockIndex":0}"#,
+        ),
+        ("contentBlockDelta", r#"{"delta":{"text":"hi"}}"#),
+        ("contentBlockStop", r#"{}"#),
+        ("messageStop", r#"{"stopReason":"end_turn"}"#),
+        (
+            "metadata",
+            r#"{"usage":{"inputTokens":100,"outputTokens":50,"cacheReadInputTokens":10,"cacheCreationInputTokens":40}}"#,
+        ),
+    ]);
+
+    let provider = BedrockProvider::new(test_credentials(), None, Arc::new(HttpClient::new()));
+
+    let request = text_stream_request();
+    let stream = provider.stream_from_fixture(&events_data, request.cancel);
+    let events = collect_events(stream).await;
+
+    if let Some(AssistantStreamEvent::Done { message, .. }) = events.last() {
+        assert_eq!(message.usage.cache_read_tokens, 10);
+        assert_eq!(
+            message.usage.cache_write_tokens, 40,
+            "cacheCreationInputTokens must map to cache_write_tokens"
+        );
+    } else {
+        panic!("expected Done event with usage");
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Error mapping
 // ---------------------------------------------------------------------------

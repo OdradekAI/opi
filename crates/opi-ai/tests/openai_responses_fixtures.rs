@@ -438,6 +438,81 @@ async fn responses_usage_in_done_event() {
 }
 
 // ---------------------------------------------------------------------------
+// Response ID propagation (Phase 12 task 12.6, DoD clause 7)
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn responses_response_id_round_trips_into_done_message() {
+    let provider = responses_provider("key");
+    let sse = "event: response.created\n\
+               data: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_1\",\"status\":\"in_progress\",\"model\":\"gpt-4o\",\"output\":[]}}\n\n\
+               event: response.output_item.added\n\
+               data: {\"type\":\"response.output_item.added\",\"output_index\":0,\"item\":{\"type\":\"message\",\"status\":\"in_progress\",\"role\":\"assistant\",\"content\":[]}}\n\n\
+               event: response.content_part.added\n\
+               data: {\"type\":\"response.content_part.added\",\"output_index\":0,\"content_index\":0,\"part\":{\"type\":\"output_text\",\"text\":\"\"}}\n\n\
+               event: response.output_text.delta\n\
+               data: {\"type\":\"response.output_text.delta\",\"output_index\":0,\"content_index\":0,\"delta\":\"test\"}\n\n\
+               event: response.output_text.done\n\
+               data: {\"type\":\"response.output_text.done\",\"output_index\":0,\"content_index\":0,\"text\":\"test\"}\n\n\
+               event: response.output_item.done\n\
+               data: {\"type\":\"response.output_item.done\",\"output_index\":0,\"item\":{\"type\":\"message\",\"status\":\"completed\",\"role\":\"assistant\",\"content\":[{\"type\":\"output_text\",\"text\":\"test\"}]}}\n\n\
+               event: response.completed\n\
+               data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_1\",\"status\":\"completed\",\"model\":\"gpt-4o\",\"output\":[{\"type\":\"message\",\"content\":[{\"type\":\"output_text\",\"text\":\"test\"}]}],\"usage\":{\"input_tokens\":42,\"output_tokens\":13}}}\n\n";
+
+    let events = collect_stream(provider.stream_from_sse(sse, CancellationToken::new())).await;
+
+    let done = events
+        .iter()
+        .find(|e| matches!(e, AssistantStreamEvent::Done { .. }))
+        .expect("stream must produce a Done event");
+    let response_id = match done {
+        AssistantStreamEvent::Done { message, .. } => &message.response_id,
+        _ => unreachable!(),
+    };
+    assert_eq!(
+        response_id,
+        &Some("resp_1".to_string()),
+        "OpenAI Responses response id must round-trip into AssistantMessage::response_id instead of being dropped"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Cache token fields (Phase 12 task 12.6, DoD clause 6)
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn responses_cache_tokens_in_done_event() {
+    let provider = responses_provider("key");
+    let sse = "event: response.created\n\
+               data: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_cache\",\"status\":\"in_progress\",\"model\":\"gpt-4o\",\"output\":[]}}\n\n\
+               event: response.output_item.added\n\
+               data: {\"type\":\"response.output_item.added\",\"output_index\":0,\"item\":{\"type\":\"message\",\"status\":\"in_progress\",\"role\":\"assistant\",\"content\":[]}}\n\n\
+               event: response.content_part.added\n\
+               data: {\"type\":\"response.content_part.added\",\"output_index\":0,\"content_index\":0,\"part\":{\"type\":\"output_text\",\"text\":\"\"}}\n\n\
+               event: response.output_text.delta\n\
+               data: {\"type\":\"response.output_text.delta\",\"output_index\":0,\"content_index\":0,\"delta\":\"cached\"}\n\n\
+               event: response.output_text.done\n\
+               data: {\"type\":\"response.output_text.done\",\"output_index\":0,\"content_index\":0,\"text\":\"cached\"}\n\n\
+               event: response.output_item.done\n\
+               data: {\"type\":\"response.output_item.done\",\"output_index\":0,\"item\":{\"type\":\"message\",\"status\":\"completed\",\"role\":\"assistant\",\"content\":[{\"type\":\"output_text\",\"text\":\"cached\"}]}}\n\n\
+               event: response.completed\n\
+               data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_cache\",\"status\":\"completed\",\"model\":\"gpt-4o\",\"output\":[{\"type\":\"message\",\"content\":[{\"type\":\"output_text\",\"text\":\"cached\"}]}],\"usage\":{\"input_tokens\":100,\"output_tokens\":20,\"input_tokens_details\":{\"cached_tokens\":400}}}}\n\n";
+
+    let events = collect_stream(provider.stream_from_sse(sse, CancellationToken::new())).await;
+
+    let done = events
+        .iter()
+        .find(|e| matches!(e, AssistantStreamEvent::Done { .. }))
+        .expect("expected Done event");
+    if let AssistantStreamEvent::Done { message, .. } = done {
+        assert_eq!(
+            message.usage.cache_read_tokens, 400,
+            "input_tokens_details.cached_tokens must map to cache_read_tokens"
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Model list
 // ---------------------------------------------------------------------------
 

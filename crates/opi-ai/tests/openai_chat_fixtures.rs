@@ -241,6 +241,84 @@ fn tool_call_usage_tracked() {
     }
 }
 
+// --- Response ID propagation (Phase 12 task 12.6, DoD clause 4) ---
+
+#[test]
+fn chat_chunk_id_round_trips_into_response_id() {
+    let stream_events = map_fixture(text_fixture());
+
+    if let AssistantStreamEvent::Done { message, .. } = &stream_events[5] {
+        assert_eq!(
+            message.response_id,
+            Some("chatcmpl-abc123".to_string()),
+            "OpenAI Chat chunk id must round-trip into AssistantMessage::response_id instead of being dropped"
+        );
+    } else {
+        panic!("expected Done event");
+    }
+}
+
+// --- Cache token fields (Phase 12 task 12.6, DoD clause 6) ---
+
+fn cache_tokens_fixture() -> &'static str {
+    r#"data: {"id":"chatcmpl-cache","object":"chat.completion.chunk","created":1720000000,"model":"gpt-4o","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-cache","object":"chat.completion.chunk","created":1720000000,"model":"gpt-4o","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":100,"completion_tokens":20,"total_tokens":120,"prompt_tokens_details":{"cached_tokens":400}}}
+
+data: [DONE]
+
+"#
+}
+
+#[test]
+fn cache_tokens_captured_from_final_chunk() {
+    let stream_events = map_fixture(cache_tokens_fixture());
+
+    let done = stream_events
+        .iter()
+        .find(|e| matches!(e, AssistantStreamEvent::Done { .. }))
+        .expect("expected Done event");
+    if let AssistantStreamEvent::Done { message, .. } = done {
+        assert_eq!(
+            message.usage.cache_read_tokens, 400,
+            "prompt_tokens_details.cached_tokens must map to cache_read_tokens"
+        );
+    }
+}
+
+// --- Missing-usage graceful handling (Phase 12 task 12.6, DoD clause 3) ---
+
+fn missing_usage_fixture() -> &'static str {
+    // Final chunk carries finish_reason but no `usage` field.
+    r#"data: {"id":"chatcmpl-nousage","object":"chat.completion.chunk","created":1720000000,"model":"gpt-4o","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-nousage","object":"chat.completion.chunk","created":1720000000,"model":"gpt-4o","choices":[{"index":0,"delta":{"content":"ok"}}]}
+
+data: {"id":"chatcmpl-nousage","object":"chat.completion.chunk","created":1720000000,"model":"gpt-4o","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
+
+data: [DONE]
+
+"#
+}
+
+#[test]
+fn missing_usage_yields_graceful_zero_tokens() {
+    let stream_events = map_fixture(missing_usage_fixture());
+
+    let done = stream_events
+        .iter()
+        .find(|e| matches!(e, AssistantStreamEvent::Done { .. }))
+        .expect("expected Done event");
+    if let AssistantStreamEvent::Done { message, .. } = done {
+        // No usage chunk in the stream -> zero usage, no panic. This path is shared
+        // by OpenRouter/Mistral/Azure, which inherit the OpenAI Chat mapper.
+        assert_eq!(message.usage.input_tokens, 0);
+        assert_eq!(message.usage.output_tokens, 0);
+        assert_eq!(message.usage.cache_read_tokens, 0);
+        assert_eq!(message.usage.cache_write_tokens, 0);
+    }
+}
+
 // --- Error Fixture ---
 
 fn error_fixture() -> &'static str {

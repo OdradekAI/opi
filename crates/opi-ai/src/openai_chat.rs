@@ -101,7 +101,6 @@ fn parse_frames(input: &str) -> impl Iterator<Item = SseFrame> + '_ {
 
 #[derive(Debug, Deserialize)]
 struct OpenAiRawChunk {
-    #[allow(dead_code)]
     id: Option<String>,
     #[allow(dead_code)]
     object: Option<String>,
@@ -175,6 +174,7 @@ pub enum OpenAiChatEvent {
     RoleDelta {
         role: Option<String>,
         model: Option<String>,
+        id: Option<String>,
     },
     /// Text content delta.
     ContentDelta { content: String },
@@ -281,6 +281,7 @@ impl OpenAiChatEvent {
                 return vec![OpenAiChatEvent::RoleDelta {
                     role: delta.role,
                     model: raw.model,
+                    id: raw.id,
                 }];
             }
 
@@ -329,9 +330,12 @@ impl OpenAiChatMapper {
             return Vec::new();
         }
         match event {
-            OpenAiChatEvent::RoleDelta { model, .. } => {
+            OpenAiChatEvent::RoleDelta { model, id, .. } => {
                 if let Some(m) = model {
                     self.partial.model = m;
+                }
+                if let Some(rid) = id {
+                    self.partial.response_id = Some(rid);
                 }
                 let start = self.partial.clone();
                 vec![AssistantStreamEvent::Start { partial: start }]

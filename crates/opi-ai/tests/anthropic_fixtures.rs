@@ -258,6 +258,92 @@ fn tool_call_usage_tracked() {
     }
 }
 
+// --- Cache token fields (Phase 12 task 12.6, DoD clause 6) ---
+
+fn cache_tokens_fixture() -> &'static str {
+    r#"event: message_start
+data: {"type":"message_start","message":{"id":"msg_cache","type":"message","role":"assistant","content":[],"model":"claude-sonnet-4-5-20250514","stop_reason":null,"usage":{"input_tokens":100,"output_tokens":0,"cache_read_input_tokens":250,"cache_creation_input_tokens":75}}}
+
+event: content_block_start
+data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"cached"}}
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":0}
+
+event: message_delta
+data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":20}}
+
+event: message_stop
+data: {"type":"message_stop"}
+
+"#
+}
+
+#[test]
+fn cache_tokens_captured_from_message_start() {
+    let stream_events = map_fixture(cache_tokens_fixture());
+
+    let done = stream_events
+        .iter()
+        .find(|e| matches!(e, AssistantStreamEvent::Done { .. }))
+        .expect("expected Done event");
+    if let AssistantStreamEvent::Done { message, .. } = done {
+        assert_eq!(
+            message.usage.cache_read_tokens, 250,
+            "cache_read_input_tokens must map to cache_read_tokens"
+        );
+        assert_eq!(
+            message.usage.cache_write_tokens, 75,
+            "cache_creation_input_tokens must map to cache_write_tokens"
+        );
+    }
+}
+
+// --- Missing-usage graceful handling (Phase 12 task 12.6, DoD clause 3) ---
+
+fn missing_usage_fixture() -> &'static str {
+    // message_start carries no `usage` object; message_delta carries an empty usage.
+    r#"event: message_start
+data: {"type":"message_start","message":{"id":"msg_nousage","type":"message","role":"assistant","content":[],"model":"claude-sonnet-4-5-20250514","stop_reason":null}}
+
+event: content_block_start
+data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"ok"}}
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":0}
+
+event: message_delta
+data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{}}
+
+event: message_stop
+data: {"type":"message_stop"}
+
+"#
+}
+
+#[test]
+fn missing_usage_yields_graceful_zero_tokens() {
+    let stream_events = map_fixture(missing_usage_fixture());
+
+    let done = stream_events
+        .iter()
+        .find(|e| matches!(e, AssistantStreamEvent::Done { .. }))
+        .expect("expected Done event");
+    if let AssistantStreamEvent::Done { message, .. } = done {
+        // A stream that reports no usage must map to zero usage without panicking.
+        assert_eq!(message.usage.input_tokens, 0);
+        assert_eq!(message.usage.output_tokens, 0);
+        assert_eq!(message.usage.cache_read_tokens, 0);
+        assert_eq!(message.usage.cache_write_tokens, 0);
+    }
+}
+
 // --- Error Fixture ---
 
 fn error_fixture() -> &'static str {

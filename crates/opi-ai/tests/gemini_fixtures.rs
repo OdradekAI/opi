@@ -262,6 +262,30 @@ async fn gemini_usage_in_done_event() {
 }
 
 // ---------------------------------------------------------------------------
+// Cache token fields (Phase 12 task 12.6, DoD clause 6)
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn gemini_cache_tokens_in_done_event() {
+    let provider = gemini_provider("key");
+    let sse = "data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"test\"}]},\"index\":0}]}\n\n\
+               data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"\"}]},\"finishReason\":\"STOP\",\"index\":0}],\"usageMetadata\":{\"promptTokenCount\":100,\"candidatesTokenCount\":20,\"totalTokenCount\":120,\"cachedContentTokenCount\":400}}\n\n";
+
+    let events = collect_stream(provider.stream_from_sse(sse, CancellationToken::new())).await;
+
+    let done = events
+        .iter()
+        .find(|e| matches!(e, AssistantStreamEvent::Done { .. }))
+        .expect("expected Done event");
+    if let AssistantStreamEvent::Done { message, .. } = done {
+        assert_eq!(
+            message.usage.cache_read_tokens, 400,
+            "cachedContentTokenCount must map to cache_read_tokens"
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Model list
 // ---------------------------------------------------------------------------
 

@@ -168,6 +168,7 @@ struct RawInputTokenDetails {
 enum ResponsesEvent {
     Created {
         model: Option<String>,
+        id: Option<String>,
     },
     OutputItemAdded {
         output_index: usize,
@@ -195,6 +196,7 @@ enum ResponsesEvent {
     Completed {
         usage: Option<Usage>,
         model: Option<String>,
+        id: Option<String>,
     },
     Error {
         message: String,
@@ -227,7 +229,8 @@ impl ResponsesEvent {
         match frame.event.as_str() {
             "response.created" => {
                 let model = data.response.as_ref().and_then(|r| r.model.clone());
-                ParsedEvent::Valid(ResponsesEvent::Created { model })
+                let id = data.response.as_ref().and_then(|r| r.id.clone());
+                ParsedEvent::Valid(ResponsesEvent::Created { model, id })
             }
             "response.output_item.added" => {
                 let output_index = data.output_index.unwrap_or(0);
@@ -289,7 +292,8 @@ impl ResponsesEvent {
                     })
                 });
                 let model = data.response.as_ref().and_then(|r| r.model.clone());
-                ParsedEvent::Valid(ResponsesEvent::Completed { usage, model })
+                let id = data.response.as_ref().and_then(|r| r.id.clone());
+                ParsedEvent::Valid(ResponsesEvent::Completed { usage, model, id })
             }
             "error" => ParsedEvent::Valid(ResponsesEvent::Error {
                 message: data.message.unwrap_or_else(|| "unknown error".into()),
@@ -333,9 +337,12 @@ impl ResponsesMapper {
             return Vec::new();
         }
         match event {
-            ResponsesEvent::Created { model } => {
+            ResponsesEvent::Created { model, id } => {
                 if let Some(m) = model {
                     self.partial.model = m;
+                }
+                if let Some(rid) = id {
+                    self.partial.response_id = Some(rid);
                 }
                 vec![AssistantStreamEvent::Start {
                     partial: self.partial.clone(),
@@ -489,7 +496,7 @@ impl ResponsesMapper {
                     Vec::new()
                 }
             }
-            ResponsesEvent::Completed { usage, model } => {
+            ResponsesEvent::Completed { usage, model, id } => {
                 let mut events = Vec::new();
 
                 // Close any open text block
@@ -535,6 +542,9 @@ impl ResponsesMapper {
 
                 if let Some(m) = model {
                     self.partial.model = m;
+                }
+                if let Some(rid) = id {
+                    self.partial.response_id = Some(rid);
                 }
                 if let Some(u) = usage {
                     self.partial.usage = u;
