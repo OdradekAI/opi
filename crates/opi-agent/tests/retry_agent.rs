@@ -331,3 +331,147 @@ async fn retry_auto_retry_start_fields() {
         "error_message should describe the error"
     );
 }
+
+// ---------------------------------------------------------------------------
+// No retry after partial streamed content (Phase 12 task 12.7 DoD clauses 4/5)
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn no_retry_after_partial_streamed_content() {
+    // Once the provider has streamed content (Start + TextDelta), a subsequent
+    // mid-stream retryable error must NOT trigger a retry: the caller has
+    // already observed partial output, and retrying would emit a second Start
+    // plus duplicated content. The error must surface through the runtime
+    // instead of panicking or silently retrying. (DoD clause 4: partial-output
+    // stream errors map into provider/runtime diagnostics; clause 5: no retry
+    // after partial streamed content.)
+    let mut partial_events = test_support::text_response("partial content");
+    partial_events.pop(); // drop Done, leaving Start + TextDelta
+
+    let provider = MockProvider::new_with_errors(
+        "mock",
+        vec![
+            MockResponse::EventsThenError(
+                partial_events,
+                ProviderError::RateLimited {
+                    retry_after_ms: Some(10),
+                },
+            ),
+            // A second response would only be consumed if the loop wrongly retried.
+            MockResponse::Events(test_support::text_response("after retry")),
+        ],
+    );
+
+    let (log, sink) = collect_events();
+    let result = agent_loop(
+        make_context(provider),
+        make_config(Some(fast_retry_config())),
+        &NoopHooks,
+        sink,
+        tokio_util::sync::CancellationToken::new(),
+    )
+    .await;
+
+    // The partial-output error must surface as a failure, not recover.
+    assert!(
+        result.is_err(),
+        "partial-output stream error should surface, not retry"
+    );
+    match result.unwrap_err() {
+        AgentError::Provider(msg) => assert!(
+            msg.contains("rate limited"),
+            "expected the mid-stream rate-limit error to surface, got: {msg}"
+        ),
+        other => panic!("expected AgentError::Provider from partial-output stream, got {other:?}"),
+    }
+
+    let events = log.lock().unwrap().clone();
+    let retry_starts: Vec<_> = events
+        .iter()
+        .filter(|e| matches!(e, AgentEvent::AutoRetryStart { .. }))
+        .collect();
+    assert!(
+        retry_starts.is_empty(),
+        "must NOT retry after partial streamed content (saw AutoRetryStart)"
+    );
+
+    // A retry would have consumed the second ("after retry") response and
+    // returned Ok; since the run surfaced Err with no AutoRetryStart, the
+    // second response was never popped.
+}
+
+// ---------------------------------------------------------------------------
+// Cancellation during retry backoff (Phase 12 task 12.7 DoD clause 8)
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn cancellation_during_retry_backoff_aborts() {
+    // A cancellation signal arriving during the retry backoff sleep must abort
+    // the run promptly instead of waiting for the backoff to elapse. This
+    // exercises the agent_loop tokio::select! arm tagged "during_retry_sleep".
+    let provider = MockProvider::new_with_errors(
+        "mock",
+        vec![
+            MockResponse::Error(ProviderError::RateLimited {
+                retry_after_ms: None,
+            }),
+            MockResponse::Events(test_support::text_response("after retry")),
+        ],
+    );
+
+    let retry = RetryConfig {
+        max_attempts: 3,
+        initial_delay_ms: 2000, // long backoff so the cancel lands mid-sleep
+        max_delay_ms: 5000,
+    };
+    let cancel = tokio_util::sync::CancellationToken::new();
+
+    let (log, sink) = collect_events();
+    let cancel_for_task = cancel.clone();
+    let handle = tokio::spawn(async move {
+        agent_loop(
+            make_context(provider),
+            make_config(Some(retry)),
+            &NoopHooks,
+            sink,
+            cancel_for_task,
+        )
+        .await
+    });
+
+    // Wait until the retry has actually started (AutoRetryStart emitted) so the
+    // cancel lands during the backoff sleep rather than racing setup. The 2s
+    // poll window is generous insurance against CI scheduler stalls even though
+    // AutoRetryStart is emitted synchronously well before the 2s backoff sleep.
+    let mut started = false;
+    for _ in 0..200 {
+        if log
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|e| matches!(e, AgentEvent::AutoRetryStart { .. }))
+        {
+            started = true;
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    assert!(started, "retry should have started within the poll window");
+    cancel.cancel();
+
+    let result = handle.await.expect("task should join");
+    assert!(result.is_err(), "cancelled run should return Err");
+    assert!(
+        matches!(result.unwrap_err(), AgentError::Cancelled),
+        "cancelled-during-backoff run should return AgentError::Cancelled"
+    );
+
+    let events = log.lock().unwrap().clone();
+    // No successful retry: the run was aborted during backoff, not recovered.
+    assert!(
+        !events
+            .iter()
+            .any(|e| matches!(e, AgentEvent::AutoRetryEnd { success: true, .. })),
+        "cancelled-during-backoff run must not report retry success"
+    );
+}

@@ -1014,3 +1014,58 @@ async fn stream_500_classifies_as_provider_with_redacted_excerpt() {
         other => panic!("expected provider error from HTTP 500, got {other:?}"),
     }
 }
+
+// ---------------------------------------------------------------------------
+// Fixture-path cancellation: named negative (Phase 12 task 12.7 DoD clause 7)
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn fixture_path_does_not_observe_cancel_documented_http_only_limitation() {
+    // Adapter-level cancellation for bedrock is implemented on the signed HTTP
+    // body-stream path (bedrock/mod.rs `cancel.cancelled()` select arm), which
+    // consumes AWS binary event-stream frames. The fixture suite drives the
+    // local `stream_from_fixture` decoder instead, and that path binds the
+    // token as a no-op placeholder. So a pre-cancelled token must NOT interrupt
+    // the fixture stream — this test pins that substrate limitation so
+    // cancellation coverage is not silently claimed for bedrock from the
+    // fixture path. Real cancellation for bedrock is exercised only through the
+    // signed HTTP path; mounting a successful binary event-stream response
+    // through wiremock is out of fixture scope.
+    let events_data = build_bedrock_stream(&[
+        ("messageStart", r#"{"role":"assistant"}"#),
+        (
+            "contentBlockStart",
+            r#"{"start":{"text":{}},"contentBlockIndex":0}"#,
+        ),
+        (
+            "contentBlockDelta",
+            r#"{"delta":{"text":"Hello!"},"contentBlockIndex":0}"#,
+        ),
+        ("contentBlockStop", r#"{"contentBlockIndex":0}"#),
+        ("messageStop", r#"{"stopReason":"end_turn"}"#),
+        (
+            "metadata",
+            r#"{"usage":{"inputTokens":10,"outputTokens":5}}"#,
+        ),
+    ]);
+
+    let provider = BedrockProvider::new(test_credentials(), None, Arc::new(HttpClient::new()));
+
+    let cancel = CancellationToken::new();
+    cancel.cancel(); // pre-cancelled before the stream starts
+    let mut request = text_stream_request();
+    request.cancel = cancel;
+
+    let stream = provider.stream_from_fixture(&events_data, request.cancel);
+    let events = collect_events(stream).await;
+
+    // The fixture stream completes normally despite the cancelled token: the
+    // fixture decoder path does not poll cancel (by design).
+    assert!(
+        events
+            .iter()
+            .any(|e| matches!(e, AssistantStreamEvent::Done { .. })),
+        "fixture-path stream must complete normally regardless of a cancelled token; \
+         bedrock adapter-level cancel is exercised only on the signed HTTP path"
+    );
+}

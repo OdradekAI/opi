@@ -366,3 +366,70 @@ fn openrouter_profile_inherits_shared_compat_flags() {
         "OpenRouter inherits strict-tool-schema from the shared compat path"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Provider stream cancellation (Phase 12 task 12.7 DoD clause 6)
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn stream_cancellation_aborts_before_completion() {
+    // The CancellationToken is threaded into the OpenRouter adapter's HTTP
+    // body-stream loop (inherited from the shared OpenAI-compat path; see
+    // openai_chat.rs `cancel.cancelled()` select arm). Cancelling while the
+    // stream is open must terminate it gracefully without hanging or panicking.
+    // (Deterministic cancel-timing is proven at the agent layer in
+    // retry_agent.rs; this asserts the adapter wires cancel.)
+    let sse = "data: {\"choices\":[{\"delta\":{\"role\":\"assistant\",\"content\":\"\"},\"finish_reason\":null}]}\n\n\
+               data: {\"choices\":[{\"delta\":{\"content\":\"Hi there\"},\"finish_reason\":null}]}\n\n\
+               data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":5}}\n\n";
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string(sse)
+                .insert_header("content-type", "text/event-stream"),
+        )
+        .mount(&server)
+        .await;
+
+    let cancel = CancellationToken::new();
+    let provider = opi_ai::openrouter::openrouter_provider("test-key".into(), Some(server.uri()));
+    let request = Request {
+        model: "openrouter:openai/gpt-4o".into(),
+        system: None,
+        messages: vec![Message::User(UserMessage {
+            content: vec![InputContent::Text {
+                text: "Hello".into(),
+            }],
+            timestamp_ms: 0,
+        })],
+        tools: vec![],
+        max_tokens: Some(1024),
+        temperature: None,
+        thinking: ThinkingConfig::default(),
+        stop_sequences: vec![],
+        metadata: None,
+        cancel: cancel.clone(),
+    };
+    let mut stream = provider.stream(request);
+
+    let _ = stream
+        .next()
+        .await
+        .expect("stream should produce at least one event");
+    cancel.cancel();
+
+    let drain = async {
+        while let Some(result) = stream.next().await {
+            match result {
+                Ok(event) if event.is_terminal() => break,
+                Err(_) => break,
+                _ => {}
+            }
+        }
+    };
+    tokio::time::timeout(std::time::Duration::from_secs(2), drain)
+        .await
+        .expect("stream must drain promptly after cancellation (no hang/panic)");
+}

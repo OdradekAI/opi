@@ -117,6 +117,12 @@ pub async fn agent_loop(
             trace_provider(&trace, TraceKind::ProviderRequest, &turn_id);
             let mut stream = context.provider.stream(request);
             assistant_content.clear();
+            // Track whether the provider has already delivered any stream item
+            // for this attempt. Once content has been emitted to the caller, a
+            // subsequent mid-stream retryable error must NOT trigger a retry:
+            // re-invoking the provider would emit a second Start plus duplicated
+            // content. (Phase 12 task 12.7 DoD clause 5.)
+            let mut stream_delivered_content = false;
 
             while let Some(item) = {
                 tokio::select! {
@@ -135,6 +141,9 @@ pub async fn agent_loop(
             } {
                 match item {
                     Ok(event) => {
+                        // Any successfully delivered stream item means the
+                        // caller has observed output for this attempt.
+                        stream_delivered_content = true;
                         if let Some(msg) =
                             process_stream_event(&event, &mut assistant_content, &events)
                         {
@@ -386,6 +395,7 @@ pub async fn agent_loop(
                     Err(e) => {
                         if e.is_retryable()
                             && retry_attempt < max_attempts
+                            && !stream_delivered_content
                             && let Some(ref rc) = config.retry
                         {
                             let retry_after_ms = match &e {

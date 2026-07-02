@@ -205,6 +205,13 @@ fn timeout_is_retryable() {
 }
 
 #[test]
+fn network_error_is_retryable() {
+    // Transient transport failures (DNS/TLS/connection) classify as Network
+    // and are retryable alongside RateLimited and Timeout.
+    assert!(ProviderError::Network("connection reset".into()).is_retryable());
+}
+
+#[test]
 fn auth_failed_is_not_retryable() {
     assert!(!ProviderError::AuthFailed("bad key".into()).is_retryable());
 }
@@ -212,6 +219,28 @@ fn auth_failed_is_not_retryable() {
 #[test]
 fn request_failed_is_not_retryable() {
     assert!(!ProviderError::RequestFailed("500 error".into()).is_retryable());
+}
+
+#[test]
+fn config_error_is_not_retryable() {
+    // Bad endpoint / unsupported model / bad profile is terminal: retrying will
+    // not change the outcome. (Phase 12 task 12.7 DoD clause 3: config.)
+    assert!(!ProviderError::Config("bad endpoint".into()).is_retryable());
+}
+
+#[test]
+fn unsupported_capability_is_not_retryable() {
+    // Preflight validation rejecting an unsupported image/tool/thinking
+    // capability is terminal. (Phase 12 task 12.7 DoD clause 3: validation.)
+    assert!(
+        !ProviderError::UnsupportedCapability("model lacks tool support".into()).is_retryable()
+    );
+}
+
+#[test]
+fn provider_side_error_is_not_retryable() {
+    // A non-rate-limit 5xx maps to ProviderSide and is not retried.
+    assert!(!ProviderError::ProviderSide("internal error".into()).is_retryable());
 }
 
 // ---------------------------------------------------------------------------

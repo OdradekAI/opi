@@ -16,6 +16,16 @@ pub enum MockResponse {
     Events(Vec<AssistantStreamEvent>),
     /// Provider error (e.g. rate-limited, timeout).
     Error(ProviderError),
+    /// Successful stream events followed by a mid-stream error.
+    ///
+    /// Models a provider that begins streaming content (Start/deltas) and then
+    /// fails partway through, used to assert retry-after-partial-output policy.
+    ///
+    /// Do NOT include a terminal `Done` event in `events`: the agent loop exits
+    /// the stream on `Done` (before reading further), so the trailing error
+    /// would never be observed. Build the partial prefix only (e.g. `Start` +
+    /// `TextDelta`).
+    EventsThenError(Vec<AssistantStreamEvent>, ProviderError),
 }
 
 /// A mock provider that returns pre-programmed response sequences.
@@ -212,6 +222,12 @@ impl Provider for MockProvider {
             }
             MockResponse::Error(e) => {
                 let stream = futures_util::stream::iter(vec![Err(e)]);
+                Box::pin(stream)
+            }
+            MockResponse::EventsThenError(events, e) => {
+                let ok_events = events.into_iter().map(Ok::<_, ProviderError>);
+                let err = std::iter::once(Err(e));
+                let stream = futures_util::stream::iter(ok_events.chain(err));
                 Box::pin(stream)
             }
         }
