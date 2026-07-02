@@ -569,15 +569,42 @@ fn build_openai_compatible_profile(
             .unwrap_or_else(|| "max_tokens".into()),
         tool_result_name_field: profile.tool_result_name_field,
         usage_in_stream: profile.usage_in_stream,
+        strict_tool_schema: profile.strict_tool_schema,
+        reasoning_effort: profile.reasoning_effort.clone(),
+        cache_key: profile.cache_key.clone(),
+        require_assistant_after_tool_result: profile.require_assistant_after_tool_result,
     };
+
+    // Session-affinity headers from config (Phase 12.3).
+    let extra_headers: Vec<(String, String)> = profile.extra_headers.clone();
+
+    // Model-level compat overrides win over the provider-level default for the
+    // models that declare them (Phase 12.3 provider/model precedence).
+    let mut model_overrides: std::collections::HashMap<
+        String,
+        opi_ai::openai_chat::ModelCompatOverride,
+    > = std::collections::HashMap::new();
+    for model in &profile.models {
+        if model.system_role_override.is_some() || model.max_tokens_field.is_some() {
+            model_overrides.insert(
+                model.id.clone(),
+                opi_ai::openai_chat::ModelCompatOverride {
+                    system_role_override: model.system_role_override.clone(),
+                    max_tokens_field: model.max_tokens_field.clone(),
+                },
+            );
+        }
+    }
+
     Ok(opi_ai::openai_chat::OpenAiChatProvider::new_for_profile(
         api_key,
         profile.base_url.clone(),
         profile.id.clone(),
         compat,
-        vec![],
+        extra_headers,
         models,
     )
+    .with_model_overrides(model_overrides)
     .with_shared_client(client))
 }
 

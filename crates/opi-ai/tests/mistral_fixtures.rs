@@ -5,8 +5,8 @@
 //! usage tracking, and Mistral-specific model list.
 
 use futures_util::StreamExt;
-use opi_ai::message::{InputContent, Message, UserMessage};
-use opi_ai::openai_chat::OpenAiChatProvider;
+use opi_ai::message::{InputContent, Message, ToolDef, UserMessage};
+use opi_ai::openai_chat::{CompatConfig, OpenAiChatProvider};
 use opi_ai::provider::{EventStream, Provider, Request, ThinkingConfig};
 use opi_ai::registry::ProviderRegistry;
 use opi_ai::stream::AssistantStreamEvent;
@@ -351,4 +351,65 @@ async fn stream_sends_text_request_body_and_auth_through_http() {
     // (prefix-stripped model + system/user messages + max_tokens), the Bearer
     // auth header, and the /v1/chat/completions path.
     server.verify().await;
+}
+
+// ---------------------------------------------------------------------------
+// Phase 12 task 12.3 — Mistral inherits the shared compat profile path
+// ---------------------------------------------------------------------------
+
+#[test]
+fn mistral_profile_inherits_shared_compat_flags() {
+    // Mistral is a config-driven OpenAI-compatible profile built on the shared
+    // OpenAI Chat adapter. With a developer-role + strict-tools compat + the
+    // max_completion_tokens field, its request body reflects all flags through
+    // the shared serializer (DoD), not a parallel Mistral-specific serializer.
+    let provider = OpenAiChatProvider::new_for_profile(
+        "test-key".into(),
+        "https://mistral.example.com".into(),
+        "mistral".into(),
+        CompatConfig {
+            system_role_override: Some("developer".into()),
+            max_tokens_field: "max_completion_tokens".into(),
+            strict_tool_schema: true,
+            ..Default::default()
+        },
+        vec![],
+        vec![],
+    );
+    let request = Request {
+        model: "mistral:mistral-large-latest".into(),
+        system: Some("You are helpful.".into()),
+        messages: vec![Message::User(UserMessage {
+            content: vec![InputContent::Text {
+                text: "list files".into(),
+            }],
+            timestamp_ms: 0,
+        })],
+        tools: vec![ToolDef {
+            name: "list_dir".into(),
+            description: "list a directory".into(),
+            input_schema: serde_json::json!({"type":"object","properties":{}}),
+        }],
+        max_tokens: Some(1024),
+        temperature: None,
+        thinking: ThinkingConfig::default(),
+        stop_sequences: vec![],
+        metadata: None,
+        cancel: CancellationToken::new(),
+    };
+    let body = provider.build_request_body(&request);
+    let messages = body["messages"].as_array().unwrap();
+    assert_eq!(
+        messages[0]["role"], "developer",
+        "Mistral inherits developer-role override from the shared compat path"
+    );
+    assert!(
+        body.get("max_completion_tokens").is_some(),
+        "Mistral inherits max_completion_tokens field from the shared compat path"
+    );
+    let tools = body["tools"].as_array().expect("tools present");
+    assert!(
+        tools[0]["function"]["strict"] == true,
+        "Mistral inherits strict-tool-schema from the shared compat path"
+    );
 }

@@ -4,6 +4,7 @@
 //! SSE lines (no `event:` prefix). Exposes [`CompatConfig`] so downstream profiles
 //! (OpenRouter, Mistral) can override role mapping, max_tokens field naming, etc.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use futures_util::{StreamExt, stream};
@@ -560,6 +561,17 @@ fn empty_assistant_message(api: crate::ApiKind, provider: &str) -> AssistantMess
 /// - `max_tokens_field`: field name for token limit ("max_tokens" vs "max_completion_tokens")
 /// - `tool_result_name_field`: whether tool results carry a "name" field
 /// - `usage_in_stream`: whether usage appears in every chunk vs only the last
+/// - `strict_tool_schema`: emit `"strict": true` on function tool definitions
+/// - `reasoning_effort`: emit top-level `reasoning_effort` for reasoning models
+/// - `cache_key`: emit `prompt_cache_key` for OpenAI prompt-cache affinity
+/// - `require_assistant_after_tool_result`: compatibility-metadata flag (see below)
+///
+/// `require_assistant_after_tool_result` records that a profile targets an
+/// endpoint whose legacy wire contract expected a synthetic assistant turn after
+/// each tool result. Modern OpenAI Chat Completions does not require this, so the
+/// shared adapter records the flag for compatibility metadata without altering
+/// message ordering; an endpoint that materially requires the legacy synthesis
+/// would need a reviewed first-class adapter (Phase 12 non-goal guard).
 #[derive(Debug, Clone)]
 pub struct CompatConfig {
     /// Override the role used for system messages (e.g. "developer" for o-series).
@@ -570,6 +582,14 @@ pub struct CompatConfig {
     pub tool_result_name_field: bool,
     /// Whether usage data appears in stream chunks (not just the final one).
     pub usage_in_stream: bool,
+    /// Emit `"strict": true` on each function tool definition.
+    pub strict_tool_schema: bool,
+    /// Emit a top-level `reasoning_effort` field (e.g. "low"/"medium"/"high").
+    pub reasoning_effort: Option<String>,
+    /// Emit a top-level `prompt_cache_key` for OpenAI prompt-cache affinity.
+    pub cache_key: Option<String>,
+    /// Compatibility-metadata flag for legacy assistant-after-tool-result wires.
+    pub require_assistant_after_tool_result: bool,
 }
 
 impl Default for CompatConfig {
@@ -579,8 +599,25 @@ impl Default for CompatConfig {
             max_tokens_field: "max_tokens".into(),
             tool_result_name_field: false,
             usage_in_stream: false,
+            strict_tool_schema: false,
+            reasoning_effort: None,
+            cache_key: None,
+            require_assistant_after_tool_result: false,
         }
     }
+}
+
+/// Per-model compat overrides (Phase 12 task 12.3).
+///
+/// A model entry may override a subset of the provider-level [`CompatConfig`].
+/// At request-build time the provider resolves the effective config by layering
+/// a model's override on top of the provider-level default (model wins).
+#[derive(Debug, Clone, Default)]
+pub struct ModelCompatOverride {
+    /// Override the system-role mapping for this model only.
+    pub system_role_override: Option<String>,
+    /// Override the max-tokens field name for this model only.
+    pub max_tokens_field: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -595,6 +632,7 @@ pub struct OpenAiChatProvider {
     base_url: String,
     models: Vec<ModelInfo>,
     compat: CompatConfig,
+    model_overrides: HashMap<String, ModelCompatOverride>,
     provider_id: String,
     extra_headers: Vec<(String, String)>,
     client: Arc<HttpClient>,
@@ -690,6 +728,7 @@ impl OpenAiChatProvider {
             base_url,
             models,
             compat,
+            model_overrides: HashMap::new(),
             provider_id,
             extra_headers,
             client,
@@ -710,6 +749,7 @@ impl OpenAiChatProvider {
             base_url,
             models,
             compat,
+            model_overrides: HashMap::new(),
             provider_id,
             extra_headers,
             client: Arc::new(HttpClient::new()),
@@ -720,6 +760,30 @@ impl OpenAiChatProvider {
     /// and connection pooling).
     pub fn with_shared_client(self, client: Arc<HttpClient>) -> Self {
         Self { client, ..self }
+    }
+
+    /// Attach per-model compat overrides (Phase 12 task 12.3). Model-level
+    /// overrides win over the provider-level [`CompatConfig`] for the models
+    /// they declare; models without an entry inherit the provider default.
+    pub fn with_model_overrides(mut self, overrides: HashMap<String, ModelCompatOverride>) -> Self {
+        self.model_overrides = overrides;
+        self
+    }
+
+    /// Resolve the effective [`CompatConfig`] for a request's model, layering
+    /// any model-level override on top of the provider-level default.
+    fn resolve_compat(&self, model_id: &str) -> CompatConfig {
+        let Some(ov) = self.model_overrides.get(model_id) else {
+            return self.compat.clone();
+        };
+        let mut resolved = self.compat.clone();
+        if let Some(role) = &ov.system_role_override {
+            resolved.system_role_override = Some(role.clone());
+        }
+        if let Some(field) = &ov.max_tokens_field {
+            resolved.max_tokens_field = field.clone();
+        }
+        resolved
     }
 
     /// Access the shared HTTP client (for testing client reuse).
@@ -735,14 +799,18 @@ impl OpenAiChatProvider {
             .map(|(_, id)| id)
             .unwrap_or(&request.model);
 
+        // Resolve the effective compat config for this model (model-level
+        // overrides win over the provider-level default).
+        let compat = self.resolve_compat(model_id);
+
         let mut body = serde_json::json!({
             "model": model_id,
             "stream": true,
-            "messages": serialize_messages(&request.messages, &request.system, &self.compat),
+            "messages": serialize_messages(&request.messages, &request.system, &compat),
         });
 
         if let Some(max_tokens) = request.max_tokens {
-            body[&self.compat.max_tokens_field] = serde_json::Value::Number(max_tokens.into());
+            body[&compat.max_tokens_field] = serde_json::Value::Number(max_tokens.into());
         }
         if let Some(temp) = request.temperature
             && let Some(n) = serde_json::Number::from_f64(temp)
@@ -755,13 +823,17 @@ impl OpenAiChatProvider {
                     .tools
                     .iter()
                     .map(|t| {
+                        let mut function = serde_json::json!({
+                            "name": t.name,
+                            "description": t.description,
+                            "parameters": t.input_schema,
+                        });
+                        if compat.strict_tool_schema {
+                            function["strict"] = serde_json::Value::Bool(true);
+                        }
                         serde_json::json!({
                             "type": "function",
-                            "function": {
-                                "name": t.name,
-                                "description": t.description,
-                                "parameters": t.input_schema,
-                            }
+                            "function": function,
                         })
                     })
                     .collect(),
@@ -775,6 +847,16 @@ impl OpenAiChatProvider {
                     .map(|s| serde_json::Value::String(s.clone()))
                     .collect(),
             );
+        }
+        if let Some(effort) = compat.reasoning_effort.as_ref()
+            && !effort.is_empty()
+        {
+            body["reasoning_effort"] = serde_json::Value::String(effort.clone());
+        }
+        if let Some(cache_key) = compat.cache_key.as_ref()
+            && !cache_key.is_empty()
+        {
+            body["prompt_cache_key"] = serde_json::Value::String(cache_key.clone());
         }
         body
     }

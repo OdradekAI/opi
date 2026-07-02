@@ -435,6 +435,143 @@ supports_thinking = false
     });
 }
 
+// ---------------------------------------------------------------------------
+// Phase 12 task 12.3 — OpenAI-compatible profile flags + override precedence
+// ---------------------------------------------------------------------------
+
+#[test]
+fn openai_compatible_profile_overrides() {
+    use opi_coding_agent::provider_factory::build_provider;
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    let env_var = "OPI_TEST_COMPAT_OVERRIDES_4F2A91";
+    std::fs::write(
+        &path,
+        format!(
+            r#"
+[defaults]
+model = "myprof:reasoning-model"
+
+[providers.openai_compatible.myprof]
+api_key_env = "{env_var}"
+base_url = "https://myprof.example.com"
+system_role_override = "system"
+max_tokens_field = "max_tokens"
+strict_tool_schema = true
+reasoning_effort = "medium"
+cache_key = "profile-cache"
+require_assistant_after_tool_result = true
+
+[providers.openai_compatible.myprof.extra_headers]
+X-Session-Id = "sess-1"
+
+[[providers.openai_compatible.myprof.models]]
+id = "reasoning-model"
+display_name = "Reasoning"
+context_window = 128000
+max_output_tokens = 4096
+system_role_override = "developer"
+max_tokens_field = "max_completion_tokens"
+
+[[providers.openai_compatible.myprof.models]]
+id = "plain-model"
+display_name = "Plain"
+context_window = 128000
+max_output_tokens = 4096
+"#
+        ),
+    )
+    .unwrap();
+    let config = load_config_file(&path).unwrap();
+
+    let profile = config
+        .providers
+        .openai_compatible
+        .get("myprof")
+        .expect("profile should be parsed");
+    assert!(profile.strict_tool_schema);
+    assert_eq!(profile.reasoning_effort.as_deref(), Some("medium"));
+    assert_eq!(profile.cache_key.as_deref(), Some("profile-cache"));
+    assert!(profile.require_assistant_after_tool_result);
+    assert_eq!(
+        profile.extra_headers,
+        vec![("X-Session-Id".to_string(), "sess-1".to_string())]
+    );
+    let reasoning = profile
+        .models
+        .iter()
+        .find(|m| m.id == "reasoning-model")
+        .expect("reasoning model");
+    assert_eq!(reasoning.system_role_override.as_deref(), Some("developer"));
+    assert_eq!(
+        reasoning.max_tokens_field.as_deref(),
+        Some("max_completion_tokens")
+    );
+    let plain = profile
+        .models
+        .iter()
+        .find(|m| m.id == "plain-model")
+        .expect("plain model");
+    assert!(plain.system_role_override.is_none());
+    assert!(plain.max_tokens_field.is_none());
+
+    // The config-driven profile routes through the shared factory path.
+    with_env_var(env_var, "test-key", || {
+        build_provider(&config).expect("config-driven profile builds through the factory");
+    });
+}
+
+#[test]
+fn config_driven_compatible_profiles_are_preferred() {
+    use opi_coding_agent::provider_factory::{ProviderBuildError, build_provider};
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    let env_var = "OPI_TEST_COMPAT_PREFERRED_7B1C04";
+    std::fs::write(
+        &path,
+        format!(
+            r#"
+[defaults]
+model = "acmeprof:acme-model"
+
+[providers.openai_compatible.acmeprof]
+api_key_env = "{env_var}"
+base_url = "https://acme.example.com"
+
+[[providers.openai_compatible.acmeprof.models]]
+id = "acme-model"
+display_name = "Acme"
+context_window = 128000
+max_output_tokens = 4096
+"#
+        ),
+    )
+    .unwrap();
+    let config = load_config_file(&path).unwrap();
+
+    // A compatible provider is representable through profile metadata + config
+    // overrides and routes through build_provider — the config-driven path is
+    // preferred for OpenAI-compatible breadth rather than a new first-class
+    // adapter (Phase 12 non-goal guard).
+    with_env_var(env_var, "test-key", || {
+        let provider = build_provider(&config).expect("config-driven profile is preferred");
+        assert_eq!(provider.id(), "acmeprof");
+    });
+
+    // A provider id that is neither built-in nor a declared profile does NOT
+    // silently become a first-class adapter — it fails explicitly. This guards
+    // against broad first-class provider expansion as the default path.
+    let mut cfg2 = config.clone();
+    cfg2.defaults.model = "brand-new-vendor:some-model".into();
+    match build_provider(&cfg2) {
+        Ok(_) => panic!("unknown provider must not become first-class"),
+        Err(ProviderBuildError::Config(_)) => {}
+        Err(other) => panic!("expected Config build error, got {other:?}"),
+    }
+}
+
 #[test]
 fn listing_collection_skips_whitespace_only_credentials() {
     use opi_coding_agent::config::load_config_file;

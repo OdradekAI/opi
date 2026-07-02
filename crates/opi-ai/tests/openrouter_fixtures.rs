@@ -4,8 +4,8 @@
 //! request body construction, and SSE streaming diagnostics.
 
 use futures_util::StreamExt;
-use opi_ai::message::{InputContent, Message, UserMessage};
-use opi_ai::openai_chat::OpenAiChatProvider;
+use opi_ai::message::{InputContent, Message, ToolDef, UserMessage};
+use opi_ai::openai_chat::{CompatConfig, OpenAiChatProvider};
 use opi_ai::provider::{EventStream, Provider, Request, ThinkingConfig};
 use opi_ai::registry::ProviderRegistry;
 use opi_ai::stream::AssistantStreamEvent;
@@ -305,4 +305,64 @@ async fn stream_sends_text_request_body_and_auth_through_http() {
     // auth header, the HTTP-Referer + X-Title identification headers, and the
     // /v1/chat/completions path.
     server.verify().await;
+}
+
+// ---------------------------------------------------------------------------
+// Phase 12 task 12.3 — OpenRouter inherits the shared compat profile path
+// ---------------------------------------------------------------------------
+
+#[test]
+fn openrouter_profile_inherits_shared_compat_flags() {
+    // OpenRouter is a config-driven OpenAI-compatible profile. Constructed with
+    // the shared OpenAI Chat adapter under the "openrouter" identity + its
+    // identification headers + a developer-role/strict-tools compat, its request
+    // body reflects all compat flags. This proves the family inherits the shared
+    // profile path (DoD) rather than carrying a parallel serializer.
+    let provider = OpenAiChatProvider::new_for_profile(
+        "test-key".into(),
+        "https://openrouter.example.com".into(),
+        "openrouter".into(),
+        CompatConfig {
+            system_role_override: Some("developer".into()),
+            strict_tool_schema: true,
+            ..Default::default()
+        },
+        vec![
+            ("HTTP-Referer".into(), "https://myapp.example.com".into()),
+            ("X-Title".into(), "my-app".into()),
+        ],
+        vec![],
+    );
+    let request = Request {
+        model: "openrouter:openai/gpt-4o".into(),
+        system: Some("You are helpful.".into()),
+        messages: vec![Message::User(UserMessage {
+            content: vec![InputContent::Text {
+                text: "list files".into(),
+            }],
+            timestamp_ms: 0,
+        })],
+        tools: vec![ToolDef {
+            name: "list_dir".into(),
+            description: "list a directory".into(),
+            input_schema: serde_json::json!({"type":"object","properties":{}}),
+        }],
+        max_tokens: Some(1024),
+        temperature: None,
+        thinking: ThinkingConfig::default(),
+        stop_sequences: vec![],
+        metadata: None,
+        cancel: CancellationToken::new(),
+    };
+    let body = provider.build_request_body(&request);
+    let messages = body["messages"].as_array().unwrap();
+    assert_eq!(
+        messages[0]["role"], "developer",
+        "OpenRouter inherits developer-role override from the shared compat path"
+    );
+    let tools = body["tools"].as_array().expect("tools present");
+    assert!(
+        tools[0]["function"]["strict"] == true,
+        "OpenRouter inherits strict-tool-schema from the shared compat path"
+    );
 }

@@ -13,7 +13,7 @@ use opi_ai::openai_chat::{
     CompatConfig, OpenAiChatEvent, OpenAiChatMapper, OpenAiChatProvider, ParsedEvent,
     parse_sse_events,
 };
-use opi_ai::provider::Provider;
+use opi_ai::provider::{Provider, validate_request_capabilities};
 use opi_ai::stream::{AssistantStreamEvent, StopReason};
 use wiremock::matchers::{body_partial_json, header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -586,6 +586,329 @@ fn build_request_body_developer_role_override() {
     assert_eq!(messages[0]["role"], "developer");
 }
 
+// --- Phase 12 task 12.3 — OpenAI-compatible profile compatibility flags ---
+//
+// DoD: config-driven profile metadata represents strict tool schema, reasoning
+// effort, cache control, session-affinity headers, assistant-after-tool-result,
+// and provider/model override precedence. These tests pin the representation
+// (CompatConfig fields) and the wire effects for the flags whose semantics the
+// modern OpenAI Chat Completions API defines.
+
+use opi_ai::message::{ImageSource, MediaType, OutputContent, ToolDef, ToolResultMessage};
+use opi_ai::provider::{ModelInfo, ProviderError, ProviderErrorCategory};
+
+#[test]
+fn compat_config_represents_strict_tool_schema() {
+    let config = CompatConfig {
+        strict_tool_schema: true,
+        ..Default::default()
+    };
+    assert!(config.strict_tool_schema);
+}
+
+#[test]
+fn compat_config_represents_reasoning_effort() {
+    let config = CompatConfig {
+        reasoning_effort: Some("high".into()),
+        ..Default::default()
+    };
+    assert_eq!(config.reasoning_effort.as_deref(), Some("high"));
+}
+
+#[test]
+fn compat_config_represents_cache_key() {
+    let config = CompatConfig {
+        cache_key: Some("sess-abc".into()),
+        ..Default::default()
+    };
+    assert_eq!(config.cache_key.as_deref(), Some("sess-abc"));
+}
+
+#[test]
+fn compat_config_represents_assistant_after_tool_result() {
+    // Metadata-only flag: modern OpenAI Chat Completions does not require a
+    // synthetic assistant turn after a tool result, so the shared adapter
+    // records the flag for compatibility metadata without altering wire
+    // ordering. Any compatible provider requiring legacy synthesis would need a
+    // reviewed first-class adapter (Phase 12 non-goal guard).
+    let config = CompatConfig {
+        require_assistant_after_tool_result: true,
+        ..Default::default()
+    };
+    assert!(config.require_assistant_after_tool_result);
+}
+
+fn make_tool_request() -> Request {
+    Request {
+        model: "openai:gpt-4o".into(),
+        system: Some("You are helpful.".into()),
+        messages: vec![Message::User(UserMessage {
+            content: vec![InputContent::Text {
+                text: "list files".into(),
+            }],
+            timestamp_ms: 0,
+        })],
+        tools: vec![ToolDef {
+            name: "list_dir".into(),
+            description: "list a directory".into(),
+            input_schema: serde_json::json!({"type":"object","properties":{}}),
+        }],
+        max_tokens: Some(1024),
+        temperature: None,
+        thinking: ThinkingConfig::default(),
+        stop_sequences: vec![],
+        metadata: None,
+        cancel: CancellationToken::new(),
+    }
+}
+
+#[test]
+fn build_request_body_strict_tool_schema_emits_strict_flag() {
+    let config = CompatConfig {
+        strict_tool_schema: true,
+        ..Default::default()
+    };
+    let provider = OpenAiChatProvider::new_with_compat("test-key".into(), None, config);
+    let body = provider.build_request_body(&make_tool_request());
+    let tools = body["tools"].as_array().expect("tools array present");
+    assert!(
+        tools[0]["function"]["strict"] == true,
+        "strict flag must be emitted when configured: {tools:?}"
+    );
+}
+
+#[test]
+fn build_request_body_strict_tool_schema_off_by_default() {
+    let provider = OpenAiChatProvider::new("test-key".into(), None);
+    let body = provider.build_request_body(&make_tool_request());
+    let tools = body["tools"].as_array().expect("tools array present");
+    assert!(
+        tools[0]["function"].get("strict").is_none(),
+        "strict must be absent by default: {tools:?}"
+    );
+}
+
+#[test]
+fn build_request_body_reasoning_effort_emits_field() {
+    let config = CompatConfig {
+        reasoning_effort: Some("high".into()),
+        ..Default::default()
+    };
+    let provider = OpenAiChatProvider::new_with_compat("test-key".into(), None, config);
+    let body = provider.build_request_body(&make_test_request());
+    assert_eq!(body["reasoning_effort"], "high");
+}
+
+#[test]
+fn build_request_body_reasoning_effort_absent_by_default() {
+    let provider = OpenAiChatProvider::new("test-key".into(), None);
+    let body = provider.build_request_body(&make_test_request());
+    assert!(body.get("reasoning_effort").is_none());
+}
+
+#[test]
+fn build_request_body_cache_key_emits_prompt_cache_key() {
+    let config = CompatConfig {
+        cache_key: Some("sess-abc".into()),
+        ..Default::default()
+    };
+    let provider = OpenAiChatProvider::new_with_compat("test-key".into(), None, config);
+    let body = provider.build_request_body(&make_test_request());
+    assert_eq!(body["prompt_cache_key"], "sess-abc");
+}
+
+#[test]
+fn build_request_body_cache_key_absent_by_default() {
+    let provider = OpenAiChatProvider::new("test-key".into(), None);
+    let body = provider.build_request_body(&make_test_request());
+    assert!(body.get("prompt_cache_key").is_none());
+}
+
+fn make_tool_result_request() -> Request {
+    Request {
+        model: "openai:gpt-4o".into(),
+        system: None,
+        messages: vec![
+            Message::User(UserMessage {
+                content: vec![InputContent::Text {
+                    text: "run it".into(),
+                }],
+                timestamp_ms: 0,
+            }),
+            Message::ToolResult(ToolResultMessage {
+                tool_call_id: "call_1".into(),
+                tool_name: "list_dir".into(),
+                content: vec![OutputContent::Text {
+                    text: "a.rs".into(),
+                }],
+                details: None,
+                is_error: false,
+                truncated: false,
+                timestamp_ms: 0,
+            }),
+        ],
+        tools: vec![],
+        max_tokens: Some(1024),
+        temperature: None,
+        thinking: ThinkingConfig::default(),
+        stop_sequences: vec![],
+        metadata: None,
+        cancel: CancellationToken::new(),
+    }
+}
+
+#[test]
+fn build_request_body_tool_result_name_field_wire_shape() {
+    let config = CompatConfig {
+        tool_result_name_field: true,
+        ..Default::default()
+    };
+    let provider = OpenAiChatProvider::new_with_compat("test-key".into(), None, config);
+    let body = provider.build_request_body(&make_tool_result_request());
+    let messages = body["messages"].as_array().unwrap();
+    let tool_msg = messages
+        .iter()
+        .find(|m| m["role"] == "tool")
+        .expect("tool message present");
+    assert_eq!(tool_msg["tool_call_id"], "call_1");
+    assert_eq!(
+        tool_msg["name"], "list_dir",
+        "name field must be present when tool_result_name_field is set"
+    );
+    assert_eq!(tool_msg["content"], "a.rs");
+}
+
+#[test]
+fn build_request_body_tool_result_name_field_absent_by_default() {
+    let provider = OpenAiChatProvider::new("test-key".into(), None);
+    let body = provider.build_request_body(&make_tool_result_request());
+    let messages = body["messages"].as_array().unwrap();
+    let tool_msg = messages
+        .iter()
+        .find(|m| m["role"] == "tool")
+        .expect("tool message present");
+    assert!(
+        tool_msg.get("name").is_none(),
+        "name field must be absent by default"
+    );
+}
+
+#[test]
+fn validate_rejects_image_on_text_only_openai_compatible_profile() {
+    // A config-driven OpenAI-compatible profile advertising a text-only model
+    // rejects image input through the shared capability preflight before the
+    // live call. This proves the unsupported-capability diagnostic flows from
+    // the shared profile path (DoD), not a per-adapter special case.
+    let text_only = ModelInfo {
+        id: "text-only-model".into(),
+        display_name: "Text Only".into(),
+        context_window: 8000,
+        max_output_tokens: 1024,
+        supports_images: false,
+        supports_streaming: true,
+        supports_thinking: false,
+    };
+    let provider = OpenAiChatProvider::new_for_profile(
+        "test-key".into(),
+        "https://example.test".into(),
+        "compatprof".into(),
+        CompatConfig::default(),
+        vec![],
+        vec![text_only],
+    );
+    let image_request = Request {
+        model: "compatprof:text-only-model".into(),
+        system: None,
+        messages: vec![Message::User(UserMessage {
+            content: vec![InputContent::Image {
+                source: ImageSource::Url {
+                    url: "https://example.test/i.png".into(),
+                },
+                media_type: MediaType::Png,
+            }],
+            timestamp_ms: 0,
+        })],
+        tools: vec![],
+        max_tokens: Some(1024),
+        temperature: None,
+        thinking: ThinkingConfig::default(),
+        stop_sequences: vec![],
+        metadata: None,
+        cancel: CancellationToken::new(),
+    };
+    let err = validate_request_capabilities(&provider, &image_request)
+        .expect_err("text-only profile model must reject image preflight");
+    assert_eq!(err.category(), ProviderErrorCategory::Capability);
+    assert!(
+        matches!(err, ProviderError::UnsupportedCapability(_)),
+        "must be UnsupportedCapability: {err:?}"
+    );
+}
+
+#[test]
+fn model_level_override_takes_precedence_over_provider_profile() {
+    // Phase 12 task 12.3: provider/model override precedence. The profile sets
+    // a provider-level default (system role, max_tokens). A model-level override
+    // wins for the model that declares it; other models inherit the profile
+    // default. Provider-level flags (strict_tool_schema) apply to all models.
+    use opi_ai::openai_chat::ModelCompatOverride;
+    let base = CompatConfig {
+        system_role_override: Some("system".into()),
+        max_tokens_field: "max_tokens".into(),
+        strict_tool_schema: true,
+        ..Default::default()
+    };
+    let mut overrides = std::collections::HashMap::new();
+    overrides.insert(
+        "o3".into(),
+        ModelCompatOverride {
+            system_role_override: Some("developer".into()),
+            max_tokens_field: Some("max_completion_tokens".into()),
+        },
+    );
+    let provider = OpenAiChatProvider::new_for_profile(
+        "key".into(),
+        "https://example.test".into(),
+        "prof".into(),
+        base,
+        vec![],
+        vec![],
+    )
+    .with_model_overrides(overrides);
+
+    // o3: model-level override wins for role + max_tokens field.
+    let mut req_o3 = make_tool_request();
+    req_o3.model = "prof:o3".into();
+    let body = provider.build_request_body(&req_o3);
+    let messages = body["messages"].as_array().unwrap();
+    assert_eq!(messages[0]["role"], "developer", "model override wins");
+    assert!(
+        body.get("max_completion_tokens").is_some(),
+        "model override selects max_completion_tokens"
+    );
+    assert!(body.get("max_tokens").is_none());
+    // Provider-level strict_tool_schema still applies under the override.
+    let tools = body["tools"].as_array().expect("tools present");
+    assert!(
+        tools[0]["function"]["strict"] == true,
+        "provider-level strict still applies"
+    );
+
+    // gpt-4o: no model override -> profile default applies.
+    let mut req_plain = make_tool_request();
+    req_plain.model = "prof:gpt-4o".into();
+    let body2 = provider.build_request_body(&req_plain);
+    let messages2 = body2["messages"].as_array().unwrap();
+    assert_eq!(
+        messages2[0]["role"], "system",
+        "profile default applies when no model override"
+    );
+    assert!(
+        body2.get("max_tokens").is_some(),
+        "profile default max_tokens_field applies"
+    );
+}
+
 // --- Multiple tool calls fixture ---
 
 fn multi_tool_fixture() -> &'static str {
@@ -685,5 +1008,68 @@ async fn stream_sends_text_request_body_and_auth_through_http() {
     // verify() confirms the production request carried the OpenAI chat body
     // (system + user messages, max_tokens), the Bearer auth header, and the
     // /v1/chat/completions path.
+    server.verify().await;
+}
+
+#[tokio::test]
+async fn profile_extra_headers_reach_the_http_wire() {
+    // Phase 12 task 12.3 (DoD "headers ... from the shared profile path"):
+    // a config-driven OpenAI-compatible profile's session-affinity headers,
+    // threaded through `new_for_profile` as `extra_headers`, are attached to
+    // every outbound HTTP request by the shared adapter.
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .and(header("authorization", "Bearer test-key"))
+        .and(header("X-Session-Id", "sess-1"))
+        .and(header("X-Affinity", "region-eu"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string(text_fixture())
+                .insert_header("content-type", "text/event-stream"),
+        )
+        .mount(&server)
+        .await;
+
+    let provider = OpenAiChatProvider::new_for_profile(
+        "test-key".into(),
+        server.uri(),
+        "affinityprof".into(),
+        CompatConfig::default(),
+        vec![
+            ("X-Session-Id".into(), "sess-1".into()),
+            ("X-Affinity".into(), "region-eu".into()),
+        ],
+        vec![],
+    );
+    let request = Request {
+        model: "affinityprof:any-model".into(),
+        system: Some("You are helpful.".into()),
+        messages: vec![Message::User(UserMessage {
+            content: vec![InputContent::Text {
+                text: "Hello".into(),
+            }],
+            timestamp_ms: 0,
+        })],
+        tools: vec![],
+        max_tokens: Some(1024),
+        temperature: None,
+        thinking: ThinkingConfig::default(),
+        stop_sequences: vec![],
+        metadata: None,
+        cancel: CancellationToken::new(),
+    };
+
+    let mut stream = provider.stream(request);
+    while let Some(result) = stream.next().await {
+        match result {
+            Ok(event) if event.is_terminal() => break,
+            Err(_) => break,
+            _ => {}
+        }
+    }
+
+    // verify() confirms both profile-declared session-affinity headers were
+    // sent on the production HTTP request through the shared adapter path.
     server.verify().await;
 }

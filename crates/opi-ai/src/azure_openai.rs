@@ -130,6 +130,24 @@ impl AzureOpenAIProvider {
         Self { client, ..self }
     }
 
+    /// Apply an OpenAI-compatible profile compat config to the inner shared
+    /// adapter (Phase 12 task 12.3). Azure is a first-class provider that
+    /// routes request-body serialization through the shared OpenAI Chat
+    /// adapter, so it honors the same compat flags (developer role, strict
+    /// tool schema, max-tokens field, tool-result name) as config-driven
+    /// profiles.
+    pub fn with_compat(mut self, compat: CompatConfig) -> Self {
+        self.inner = OpenAiChatProvider::new_for_profile(
+            self.api_key.clone(),
+            self.endpoint.clone(),
+            "azure".into(),
+            compat,
+            vec![],
+            vec![],
+        );
+        self
+    }
+
     /// Build the Azure deployment URL for a given deployment name.
     pub fn build_azure_url(&self, deployment: &str) -> String {
         format!(

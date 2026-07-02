@@ -191,6 +191,16 @@ pub struct OpenAiCompatibleProviderConfig {
     pub tool_result_name_field: bool,
     /// Whether usage can appear throughout the stream.
     pub usage_in_stream: bool,
+    /// Emit `"strict": true` on function tool definitions (Phase 12.3).
+    pub strict_tool_schema: bool,
+    /// Emit a top-level `reasoning_effort` for reasoning models (Phase 12.3).
+    pub reasoning_effort: Option<String>,
+    /// Emit `prompt_cache_key` for OpenAI prompt-cache affinity (Phase 12.3).
+    pub cache_key: Option<String>,
+    /// Extra request headers (session-affinity) applied to every request.
+    pub extra_headers: Vec<(String, String)>,
+    /// Compatibility-metadata flag for legacy assistant-after-tool-result wires.
+    pub require_assistant_after_tool_result: bool,
     /// Proxy configuration.
     pub proxy: Option<ProviderProxyConfig>,
 }
@@ -205,6 +215,12 @@ pub struct ConfiguredModelConfig {
     pub supports_images: bool,
     pub supports_streaming: bool,
     pub supports_thinking: bool,
+    /// Model-level override of the profile `system_role_override` (wins when
+    /// present). Phase 12.3 provider/model override precedence.
+    pub system_role_override: Option<String>,
+    /// Model-level override of the profile `max_tokens_field` (wins when
+    /// present). Phase 12.3 provider/model override precedence.
+    pub max_tokens_field: Option<String>,
 }
 
 /// Per-provider proxy configuration from `[providers.*.proxy]`.
@@ -378,6 +394,11 @@ struct TomlOpenAiCompatibleProvider {
     max_tokens_field: Option<String>,
     tool_result_name_field: Option<bool>,
     usage_in_stream: Option<bool>,
+    strict_tool_schema: Option<bool>,
+    reasoning_effort: Option<String>,
+    cache_key: Option<String>,
+    extra_headers: Option<BTreeMap<String, String>>,
+    require_assistant_after_tool_result: Option<bool>,
     proxy: Option<TomlProxy>,
 }
 
@@ -391,6 +412,8 @@ struct TomlConfiguredModel {
     supports_images: Option<bool>,
     supports_streaming: Option<bool>,
     supports_thinking: Option<bool>,
+    system_role_override: Option<String>,
+    max_tokens_field: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -639,6 +662,21 @@ impl TomlConfig {
             if let Some(v) = profile.usage_in_stream {
                 target.usage_in_stream = v;
             }
+            if let Some(v) = profile.strict_tool_schema {
+                target.strict_tool_schema = v;
+            }
+            if let Some(v) = profile.reasoning_effort {
+                target.reasoning_effort = Some(v);
+            }
+            if let Some(v) = profile.cache_key {
+                target.cache_key = Some(v);
+            }
+            if let Some(map) = profile.extra_headers {
+                target.extra_headers = map.into_iter().collect();
+            }
+            if let Some(v) = profile.require_assistant_after_tool_result {
+                target.require_assistant_after_tool_result = v;
+            }
             if let Some(models) = profile.models {
                 target.models = models
                     .into_iter()
@@ -652,6 +690,8 @@ impl TomlConfig {
                             supports_images: model.supports_images.unwrap_or(false),
                             supports_streaming: model.supports_streaming.unwrap_or(true),
                             supports_thinking: model.supports_thinking.unwrap_or(false),
+                            system_role_override: model.system_role_override,
+                            max_tokens_field: model.max_tokens_field,
                         }
                     })
                     .collect();

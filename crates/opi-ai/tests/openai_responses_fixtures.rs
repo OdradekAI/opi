@@ -5,8 +5,8 @@
 //! construction for the OpenAI Responses API (`/v1/responses`).
 
 use futures_util::StreamExt;
-use opi_ai::message::{InputContent, Message, UserMessage};
-use opi_ai::openai_responses::OpenAiResponsesProvider;
+use opi_ai::message::{InputContent, Message, ToolDef, UserMessage};
+use opi_ai::openai_responses::{OpenAiResponsesProvider, ResponsesConfig};
 use opi_ai::provider::{EventStream, Provider, Request, ThinkingConfig};
 use opi_ai::registry::ProviderRegistry;
 use opi_ai::stream::AssistantStreamEvent;
@@ -130,6 +130,151 @@ fn responses_request_body_strips_provider_prefix() {
     };
     let body = provider.build_request_body(&request);
     assert_eq!(body["model"], "o3");
+}
+
+// ---------------------------------------------------------------------------
+// Phase 12 task 12.3 — native Responses request semantics
+//
+// DoD: OpenAI Responses fixture tests assert native Responses request semantics
+// for store, strict JSON schema/tool schema, previous_response_id, and
+// reasoning.effort where supported by opi's existing request model, or 12.9
+// documents the unsupported bits as deferred provider correctness work.
+// ---------------------------------------------------------------------------
+
+fn responses_tool_request() -> Request {
+    Request {
+        model: "openai-responses:gpt-4o".into(),
+        system: Some("You are helpful.".into()),
+        messages: vec![Message::User(UserMessage {
+            content: vec![InputContent::Text {
+                text: "list files".into(),
+            }],
+            timestamp_ms: 0,
+        })],
+        tools: vec![ToolDef {
+            name: "list_dir".into(),
+            description: "list a directory".into(),
+            input_schema: serde_json::json!({"type":"object","properties":{}}),
+        }],
+        max_tokens: Some(1024),
+        temperature: None,
+        thinking: ThinkingConfig::default(),
+        stop_sequences: vec![],
+        metadata: None,
+        cancel: CancellationToken::new(),
+    }
+}
+
+#[test]
+fn responses_config_represents_store_reasoning_strict() {
+    let config = ResponsesConfig {
+        store: Some(true),
+        reasoning_effort: Some("high".into()),
+        strict_tools: true,
+    };
+    assert_eq!(config.store, Some(true));
+    assert_eq!(config.reasoning_effort.as_deref(), Some("high"));
+    assert!(config.strict_tools);
+}
+
+#[test]
+fn responses_request_body_store_emitted_when_configured() {
+    let provider = OpenAiResponsesProvider::new_with_config(
+        "key".into(),
+        None,
+        ResponsesConfig {
+            store: Some(false),
+            ..Default::default()
+        },
+    );
+    let body = provider.build_request_body(&responses_tool_request());
+    assert_eq!(
+        body["store"], false,
+        "store must be emitted when configured"
+    );
+}
+
+#[test]
+fn responses_request_body_store_absent_by_default() {
+    let provider = responses_provider("key");
+    let body = provider.build_request_body(&responses_tool_request());
+    assert!(
+        body.get("store").is_none(),
+        "store must be absent by default"
+    );
+}
+
+#[test]
+fn responses_request_body_reasoning_effort_emitted_when_configured() {
+    let provider = OpenAiResponsesProvider::new_with_config(
+        "key".into(),
+        None,
+        ResponsesConfig {
+            reasoning_effort: Some("high".into()),
+            ..Default::default()
+        },
+    );
+    let body = provider.build_request_body(&responses_tool_request());
+    assert_eq!(
+        body["reasoning"]["effort"], "high",
+        "reasoning.effort must be emitted when configured"
+    );
+}
+
+#[test]
+fn responses_request_body_reasoning_effort_absent_by_default() {
+    let provider = responses_provider("key");
+    let body = provider.build_request_body(&responses_tool_request());
+    assert!(
+        body.get("reasoning").is_none(),
+        "reasoning must be absent by default"
+    );
+}
+
+#[test]
+fn responses_request_body_strict_tools_emitted_when_configured() {
+    let provider = OpenAiResponsesProvider::new_with_config(
+        "key".into(),
+        None,
+        ResponsesConfig {
+            strict_tools: true,
+            ..Default::default()
+        },
+    );
+    let body = provider.build_request_body(&responses_tool_request());
+    let tools = body["tools"].as_array().expect("tools array present");
+    assert!(
+        tools[0]["strict"] == true,
+        "strict must be emitted on function tools when configured: {tools:?}"
+    );
+}
+
+#[test]
+fn responses_request_body_strict_tools_absent_by_default() {
+    let provider = responses_provider("key");
+    let body = provider.build_request_body(&responses_tool_request());
+    let tools = body["tools"].as_array().expect("tools array present");
+    assert!(
+        tools[0].get("strict").is_none(),
+        "strict must be absent by default: {tools:?}"
+    );
+}
+
+#[test]
+fn responses_request_body_previous_response_id_is_deferred() {
+    // DoD escape hatch: "where supported by opi's existing request model, or
+    // 12.9 must explicitly document any unsupported native Responses semantics
+    // as deferred." opi's Request model carries no prior-response state (the
+    // agent runtime reconstructs context from the message history, not from a
+    // server-side response chain), so previous_response_id is deferred to 12.9.
+    // This test pins that the shared Responses adapter does not synthesize a
+    // previous_response_id field today; 12.9 documents the deferral in docs.
+    let provider = responses_provider("key");
+    let body = provider.build_request_body(&responses_tool_request());
+    assert!(
+        body.get("previous_response_id").is_none(),
+        "previous_response_id is deferred (no response-loop state in opi's Request model)"
+    );
 }
 
 // ---------------------------------------------------------------------------

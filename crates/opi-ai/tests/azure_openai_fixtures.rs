@@ -442,3 +442,36 @@ async fn stream_http_error_maps_to_auth_failed() {
         other => panic!("expected AuthFailed from HTTP 401, got {other:?}"),
     }
 }
+
+// ---------------------------------------------------------------------------
+// Phase 12 task 12.3 — Azure inherits the shared compat profile path
+// ---------------------------------------------------------------------------
+
+#[test]
+fn azure_inherits_shared_compat_flags_via_with_compat() {
+    // Azure is a first-class provider that routes request-body serialization
+    // through the shared OpenAI Chat adapter. With a developer-role + strict-
+    // tools compat applied via with_compat, its request body reflects both
+    // flags through the shared serializer (DoD), not an Azure-specific one.
+    use opi_ai::openai_chat::CompatConfig;
+
+    let provider = make_provider().with_compat(CompatConfig {
+        system_role_override: Some("developer".into()),
+        strict_tool_schema: true,
+        ..Default::default()
+    });
+    // text_request carries a system message -> developer role override applies.
+    let body_text = provider.build_request_body(&text_request());
+    let messages = body_text["messages"].as_array().unwrap();
+    assert_eq!(
+        messages[0]["role"], "developer",
+        "Azure inherits developer-role override from the shared compat path"
+    );
+    // tool_request carries tools -> strict flag applies.
+    let body_tool = provider.build_request_body(&tool_request());
+    let tools = body_tool["tools"].as_array().expect("tools present");
+    assert!(
+        tools[0]["function"]["strict"] == true,
+        "Azure inherits strict-tool-schema from the shared compat path"
+    );
+}

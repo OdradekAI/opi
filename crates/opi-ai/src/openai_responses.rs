@@ -591,10 +591,28 @@ fn empty_assistant_message(provider: &str) -> AssistantMessage {
 // OpenAiResponsesProvider
 // ---------------------------------------------------------------------------
 
+/// Native OpenAI Responses API profile flags (Phase 12 task 12.3).
+///
+/// These map directly onto Responses-native request fields that have no
+/// Chat-Completions analogue. `previous_response_id` is intentionally absent:
+/// opi's `Request` model carries no server-side response-chain state (the agent
+/// runtime reconstructs context from the local message history), so it is
+/// deferred to 12.9 as documented provider-correctness work.
+#[derive(Debug, Clone, Default)]
+pub struct ResponsesConfig {
+    /// Emit the top-level `store` field (server-side response retention).
+    pub store: Option<bool>,
+    /// Emit `{"reasoning":{"effort": ...}}` for reasoning models.
+    pub reasoning_effort: Option<String>,
+    /// Emit `"strict": true` on each function tool definition.
+    pub strict_tools: bool,
+}
+
 pub struct OpenAiResponsesProvider {
     api_key: String,
     base_url: String,
     models: Vec<ModelInfo>,
+    config: ResponsesConfig,
     client: Arc<HttpClient>,
 }
 
@@ -605,6 +623,25 @@ impl OpenAiResponsesProvider {
 
     /// Create with a shared HTTP client.
     pub fn with_client(api_key: String, base_url: Option<String>, client: Arc<HttpClient>) -> Self {
+        Self::with_client_and_config(api_key, base_url, ResponsesConfig::default(), client)
+    }
+
+    /// Create with native Responses profile flags.
+    pub fn new_with_config(
+        api_key: String,
+        base_url: Option<String>,
+        config: ResponsesConfig,
+    ) -> Self {
+        Self::with_client_and_config(api_key, base_url, config, Arc::new(HttpClient::new()))
+    }
+
+    /// Create with a shared HTTP client and native Responses profile flags.
+    pub fn with_client_and_config(
+        api_key: String,
+        base_url: Option<String>,
+        config: ResponsesConfig,
+        client: Arc<HttpClient>,
+    ) -> Self {
         let base_url = base_url.unwrap_or_else(|| "https://api.openai.com".into());
         let models = vec![
             ModelInfo {
@@ -648,6 +685,7 @@ impl OpenAiResponsesProvider {
             api_key,
             base_url,
             models,
+            config,
             client,
         }
     }
@@ -801,15 +839,29 @@ impl OpenAiResponsesProvider {
                     .tools
                     .iter()
                     .map(|t| {
-                        serde_json::json!({
+                        let mut tool = serde_json::json!({
                             "type": "function",
                             "name": t.name,
                             "description": t.description,
                             "parameters": t.input_schema,
-                        })
+                        });
+                        if self.config.strict_tools {
+                            tool["strict"] = serde_json::Value::Bool(true);
+                        }
+                        tool
                     })
                     .collect(),
             );
+        }
+
+        // Native Responses profile flags (Phase 12 task 12.3).
+        if let Some(store) = self.config.store {
+            body["store"] = serde_json::Value::Bool(store);
+        }
+        if let Some(effort) = self.config.reasoning_effort.as_ref()
+            && !effort.is_empty()
+        {
+            body["reasoning"] = serde_json::json!({ "effort": effort });
         }
 
         body
