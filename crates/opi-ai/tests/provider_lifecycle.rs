@@ -262,7 +262,7 @@ async fn stream_http_429_maps_to_rate_limited() {
 }
 
 #[tokio::test]
-async fn stream_http_500_maps_to_request_failed() {
+async fn stream_http_500_maps_to_provider_side() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/v1/messages"))
@@ -277,10 +277,10 @@ async fn stream_http_500_maps_to_request_failed() {
 
     let result = stream.next().await.expect("should have event");
     match result {
-        Err(ProviderError::RequestFailed(msg)) => {
+        Err(ProviderError::ProviderSide(msg)) => {
             assert!(msg.contains("HTTP 500"), "should mention status: {msg}");
         }
-        other => panic!("expected RequestFailed, got: {other:?}"),
+        other => panic!("expected ProviderSide, got: {other:?}"),
     }
 }
 

@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::diagnostic::redact_public_value;
+use crate::diagnostic::{RedactionMode, redact_public_value, redact_text};
 use crate::message::AgentMessage;
 use crate::session_event::{CompactionReason, CompactionResult};
 use crate::tool::ToolDiagnostic;
@@ -172,6 +172,28 @@ impl AgentEvent {
                         context: redact_public_value(&d.context),
                     })
                     .collect(),
+            },
+            AgentEvent::AutoRetryStart {
+                attempt,
+                max_attempts,
+                delay_ms,
+                error_message,
+            } => AgentEvent::AutoRetryStart {
+                attempt: *attempt,
+                max_attempts: *max_attempts,
+                delay_ms: *delay_ms,
+                error_message: redact_text(error_message, RedactionMode::Summary),
+            },
+            AgentEvent::AutoRetryEnd {
+                success,
+                attempt,
+                final_error,
+            } => AgentEvent::AutoRetryEnd {
+                success: *success,
+                attempt: *attempt,
+                final_error: final_error
+                    .as_ref()
+                    .map(|error| redact_text(error, RedactionMode::Summary)),
             },
             other => other.clone(),
         }

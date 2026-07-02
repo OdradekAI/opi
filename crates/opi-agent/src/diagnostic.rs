@@ -224,6 +224,10 @@ pub mod code {
     pub const CODE_PROVIDER_TIMEOUT: &str = "provider_timeout";
     pub const CODE_PROVIDER_REQUEST_FAILED: &str = "provider_request_failed";
     pub const CODE_PROVIDER_STREAM_ERROR: &str = "provider_stream_error";
+    pub const CODE_PROVIDER_NETWORK: &str = "provider_network_error";
+    pub const CODE_PROVIDER_CONFIG: &str = "provider_config_error";
+    pub const CODE_PROVIDER_SIDE: &str = "provider_side_error";
+    pub const CODE_PROVIDER_CANCELLED: &str = "provider_cancelled";
     /// Generic provider failure surfaced through the agent loop when the
     /// structured [`opi_ai::provider::ProviderError`] category is no longer
     /// recoverable (e.g. retries exhausted).
@@ -638,6 +642,40 @@ impl From<&opi_ai::provider::ProviderError> for Diagnostic {
             )
             .details(serde_json::json!({ "provider_error": message }))
             .action(ACTION_CHECK_CREDENTIALS),
+            ProviderError::Network(message) => Diagnostic::new(
+                Severity::Warning,
+                code::CODE_PROVIDER_NETWORK,
+                SOURCE_PROVIDER,
+                "provider network or transport error",
+            )
+            .details(serde_json::json!({ "provider_error": message })),
+            ProviderError::Config(message) => Diagnostic::new(
+                Severity::Error,
+                code::CODE_PROVIDER_CONFIG,
+                SOURCE_PROVIDER,
+                "invalid provider configuration",
+            )
+            .details(serde_json::json!({ "provider_error": message })),
+            ProviderError::ProviderSide(message) => Diagnostic::new(
+                Severity::Error,
+                code::CODE_PROVIDER_SIDE,
+                SOURCE_PROVIDER,
+                "provider returned an error response",
+            )
+            .details(serde_json::json!({ "provider_error": message })),
+            ProviderError::UnsupportedCapability(message) => Diagnostic::new(
+                Severity::Error,
+                code::CODE_PROVIDER_CAPABILITY_INVALID,
+                SOURCE_PROVIDER,
+                "provider does not support this capability",
+            )
+            .details(serde_json::json!({ "provider_error": message })),
+            ProviderError::Cancelled => Diagnostic::new(
+                Severity::Info,
+                code::CODE_PROVIDER_CANCELLED,
+                SOURCE_PROVIDER,
+                "provider request cancelled",
+            ),
         }
     }
 }

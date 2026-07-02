@@ -1620,6 +1620,7 @@ dependencies = [
  "futures-util",
  "hex",
  "hmac",
+ "regex",
  "reqwest",
  "serde",
  "serde_json",

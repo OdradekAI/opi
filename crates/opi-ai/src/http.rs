@@ -237,3 +237,59 @@ pub fn redact_proxy_credentials(url: &str) -> String {
     }
     url.to_string()
 }
+
+// ---------------------------------------------------------------------------
+// Safe provider error body excerpts (Phase 12 task 12.2)
+// ---------------------------------------------------------------------------
+
+/// Maximum number of characters retained in a provider error body excerpt.
+const SAFE_EXCERPT_MAX_CHARS: usize = 256;
+
+static SECRET_KEY_RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+static BEARER_RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+static CREDENTIALED_URL_RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+
+fn secret_key_re() -> &'static regex::Regex {
+    SECRET_KEY_RE.get_or_init(|| {
+        regex::Regex::new(
+            r"sk-[A-Za-z0-9-]{20,}|gh[opsu]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{82,}|AIza[0-9A-Za-z_-]{35,}|eyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}",
+        )
+        .expect("valid secret-key regex")
+    })
+}
+
+fn bearer_re() -> &'static regex::Regex {
+    BEARER_RE.get_or_init(|| {
+        regex::Regex::new(r"(?i)bearer\s+[A-Za-z0-9._-]+").expect("valid bearer regex")
+    })
+}
+
+fn credentialed_url_re() -> &'static regex::Regex {
+    CREDENTIALED_URL_RE.get_or_init(|| {
+        regex::Regex::new(r"(?P<scheme>[a-zA-Z][a-zA-Z0-9+.-]*://)[^/\s:@]+:[^/\s@]+@")
+            .expect("valid credentialed-url regex")
+    })
+}
+
+/// Produce a safe, length-capped excerpt of a provider response body.
+///
+/// Provider error bodies are interpolated into [`crate::provider::ProviderError`]
+/// message strings that may be logged or surfaced before the diagnostic-layer
+/// redaction runs. This adapter-layer defense strips known credential patterns
+/// (API keys, bearer tokens, GitHub PATs, JWTs, and credentialed URL userinfo)
+/// and caps the excerpt length, so a body echoing a secret cannot leak.
+pub fn safe_excerpt(body: &str) -> String {
+    let scrubbed = secret_key_re().replace_all(body, "[REDACTED]").into_owned();
+    let scrubbed = bearer_re()
+        .replace_all(&scrubbed, "Bearer [REDACTED]")
+        .into_owned();
+    let scrubbed = credentialed_url_re()
+        .replace_all(&scrubbed, "${scheme}[REDACTED]@")
+        .into_owned();
+    if scrubbed.chars().count() > SAFE_EXCERPT_MAX_CHARS {
+        let truncated: String = scrubbed.chars().take(SAFE_EXCERPT_MAX_CHARS).collect();
+        format!("{truncated}…")
+    } else {
+        scrubbed
+    }
+}

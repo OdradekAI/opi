@@ -74,17 +74,17 @@ pub struct ModelInfo {
 
 /// Validate request content against model capabilities known by the provider.
 ///
-/// Unknown model IDs are left to the provider implementation so configured
-/// custom deployments can still work. Known text-only models fail locally
-/// before any network call is attempted.
+/// Returns `Err(UnsupportedCapability)` for a known text-only model receiving
+/// image input, before any network call is attempted. Unknown model IDs are
+/// left to the provider implementation so configured custom deployments can
+/// still work (no preflight). Thinking and tool capability are handled at the
+/// harness/config layer (`CodingHarness` clamps thinking off for non-thinking
+/// models per the spec's "reject or clamp where possible"), so they are not
+/// re-preflighted here.
 pub fn validate_request_capabilities(
     provider: &dyn Provider,
     request: &Request,
 ) -> Result<(), ProviderError> {
-    if !request.contains_image_input() {
-        return Ok(());
-    }
-
     let model_id = request
         .model
         .split_once(':')
@@ -97,22 +97,30 @@ pub fn validate_request_capabilities(
         })
         .unwrap_or(request.model.as_str());
 
-    let Some(model) = provider.models().iter().find(|m| m.id == model_id) else {
-        return Ok(());
-    };
+    let model = provider.models().iter().find(|m| m.id == model_id);
 
-    if model.supports_images {
-        return Ok(());
+    // Image preflight: a known text-only model rejects image input before the call.
+    if request.contains_image_input()
+        && let Some(model) = model
+        && !model.supports_images
+    {
+        return Err(ProviderError::UnsupportedCapability(format!(
+            "model '{}' for provider '{}' does not support image input",
+            model.id,
+            provider.id()
+        )));
     }
 
-    Err(ProviderError::RequestFailed(format!(
-        "model '{}' for provider '{}' does not support image input",
-        model.id,
-        provider.id()
-    )))
+    Ok(())
 }
 
 /// Errors that can occur during provider streaming.
+///
+/// The [`ProviderError::category`] taxonomy exposes the nine Phase 12 classes
+/// (auth, config, request, network, rate_limit, provider, stream, capability,
+/// cancelled). `Timeout` is retained as a distinct variant but classifies as
+/// `Network`, since the spec defines the network class as "DNS, TLS, proxy,
+/// timeout".
 #[derive(Debug, thiserror::Error)]
 pub enum ProviderError {
     #[error("rate limited")]
@@ -125,14 +133,26 @@ pub enum ProviderError {
     StreamError(String),
     #[error("authentication failed: {0}")]
     AuthFailed(String),
+    #[error("network error: {0}")]
+    Network(String),
+    #[error("invalid provider configuration: {0}")]
+    Config(String),
+    #[error("provider error: {0}")]
+    ProviderSide(String),
+    #[error("unsupported capability: {0}")]
+    UnsupportedCapability(String),
+    #[error("cancelled")]
+    Cancelled,
 }
 
 impl ProviderError {
-    /// Whether this error is retryable (rate-limited or timeout).
+    /// Whether this error is retryable (rate-limited, timeout, or transient
+    /// network failure). Retry timing/backoff behavior is owned by the agent
+    /// runtime; this is the taxonomy-layer retryability signal.
     pub fn is_retryable(&self) -> bool {
         matches!(
             self,
-            ProviderError::RateLimited { .. } | ProviderError::Timeout
+            ProviderError::RateLimited { .. } | ProviderError::Timeout | ProviderError::Network(_)
         )
     }
 
@@ -145,10 +165,14 @@ impl ProviderError {
     pub fn category(&self) -> ProviderErrorCategory {
         match self {
             ProviderError::AuthFailed(_) => ProviderErrorCategory::Auth,
-            ProviderError::RateLimited { .. } => ProviderErrorCategory::RateLimit,
-            ProviderError::Timeout => ProviderErrorCategory::Timeout,
+            ProviderError::Config(_) => ProviderErrorCategory::Config,
             ProviderError::RequestFailed(_) => ProviderErrorCategory::Request,
+            ProviderError::Timeout | ProviderError::Network(_) => ProviderErrorCategory::Network,
+            ProviderError::RateLimited { .. } => ProviderErrorCategory::RateLimit,
+            ProviderError::ProviderSide(_) => ProviderErrorCategory::Provider,
             ProviderError::StreamError(_) => ProviderErrorCategory::Stream,
+            ProviderError::UnsupportedCapability(_) => ProviderErrorCategory::Capability,
+            ProviderError::Cancelled => ProviderErrorCategory::Cancelled,
         }
     }
 
@@ -172,16 +196,25 @@ impl ProviderError {
 /// dependency on the shared `Diagnostic` model.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ProviderErrorCategory {
-    /// Authentication failed (bad key, expired token).
+    /// Authentication failed (missing/invalid/expired credentials).
     Auth,
+    /// Invalid provider configuration (bad endpoint, unsupported model, bad profile).
+    Config,
+    /// Local pre-request validation/schema failure (before the wire call).
+    Request,
+    /// Network/transport failure (DNS, TLS, proxy, timeout, connection).
+    Network,
     /// Rate limited; a retry may succeed after a delay.
     RateLimit,
-    /// Request timed out; a retry may succeed.
-    Timeout,
-    /// Request was rejected by the provider (non-retryable HTTP/logic error).
-    Request,
+    /// Provider-side 4xx/5xx response with a safe body excerpt.
+    Provider,
     /// Streaming response failed mid-flight.
     Stream,
+    /// Unsupported image/tool/thinking capability rejected before the call.
+    Capability,
+    /// User/runtime cancellation. Timing/backoff/stream-abort behavior is owned
+    /// by task 12.7; this class is the taxonomy/diagnostic-layer slot only.
+    Cancelled,
 }
 
 /// Discriminant for the kind of provider backend.

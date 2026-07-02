@@ -10,6 +10,7 @@ use opi_agent::diagnostic::{
     Diagnostic, RedactionMode, SOURCE_ADAPTER, SOURCE_CONFIG, SOURCE_PROVIDER, SOURCE_RPC,
     SOURCE_SESSION, SOURCE_TOOL, SOURCE_TUI, Severity, redact,
 };
+use opi_ai::provider::ProviderError;
 use serde_json::{Value, json};
 
 // ---------------------------------------------------------------------------
@@ -422,4 +423,105 @@ fn diagnostic_display_is_stable_one_line() {
     );
     // No ANSI color escapes leak into the runtime-layer formatting.
     assert!(!rendered.contains('\u{1b}'), "rendered: {rendered}");
+}
+
+// ---------------------------------------------------------------------------
+// Phase 12 task 12.2 — provider error taxonomy bridge (From<&ProviderError>).
+//
+// Each of the nine Phase 12 classes must reach a distinct, stable diagnostic
+// code with provider_error detail redaction (the detail value is registered in
+// CONTENT_SENSITIVE_KEYS, so it is scrubbed at the public surface). The Timeout
+// variant keeps its existing provider_timeout code (it classifies as Network at
+// the category layer but preserves its diagnostic code for back-compat).
+// ---------------------------------------------------------------------------
+
+#[test]
+fn provider_error_bridge_classifies_network_variant() {
+    let diag: Diagnostic = (&ProviderError::Network("dns lookup failed".into())).into();
+    assert_eq!(diag.source, SOURCE_PROVIDER);
+    assert_eq!(diag.severity, Severity::Warning);
+    assert_eq!(diag.code, "provider_network_error");
+    assert_eq!(
+        diag.details.as_ref().unwrap()["provider_error"],
+        "dns lookup failed"
+    );
+}
+
+#[test]
+fn provider_error_bridge_classifies_config_variant() {
+    let diag: Diagnostic = (&ProviderError::Config("invalid endpoint".into())).into();
+    assert_eq!(diag.source, SOURCE_PROVIDER);
+    assert_eq!(diag.severity, Severity::Error);
+    assert_eq!(diag.code, "provider_config_error");
+    assert_eq!(
+        diag.details.as_ref().unwrap()["provider_error"],
+        "invalid endpoint"
+    );
+}
+
+#[test]
+fn provider_error_bridge_classifies_provider_side_variant() {
+    let diag: Diagnostic = (&ProviderError::ProviderSide("HTTP 500: boom".into())).into();
+    assert_eq!(diag.source, SOURCE_PROVIDER);
+    assert_eq!(diag.severity, Severity::Error);
+    assert_eq!(diag.code, "provider_side_error");
+    assert_eq!(
+        diag.details.as_ref().unwrap()["provider_error"],
+        "HTTP 500: boom"
+    );
+}
+
+#[test]
+fn provider_error_bridge_classifies_unsupported_capability_variant() {
+    let diag: Diagnostic =
+        (&ProviderError::UnsupportedCapability("no image support".into())).into();
+    assert_eq!(diag.source, SOURCE_PROVIDER);
+    assert_eq!(diag.severity, Severity::Error);
+    assert_eq!(diag.code, "provider_capability_invalid");
+    assert_eq!(
+        diag.details.as_ref().unwrap()["provider_error"],
+        "no image support"
+    );
+}
+
+#[test]
+fn provider_error_bridge_classifies_cancelled_variant() {
+    let diag: Diagnostic = (&ProviderError::Cancelled).into();
+    assert_eq!(diag.source, SOURCE_PROVIDER);
+    assert_eq!(diag.severity, Severity::Info);
+    assert_eq!(diag.code, "provider_cancelled");
+    assert!(
+        diag.details.is_none(),
+        "cancelled carries no provider body/details"
+    );
+}
+
+#[test]
+fn provider_error_bridge_gives_each_class_a_distinct_code() {
+    // One-to-one category -> diagnostic code coverage for the nine classes.
+    let codes: std::collections::HashSet<&str> = [
+        (&ProviderError::AuthFailed("x".into()) as &ProviderError),
+        &ProviderError::Config("x".into()),
+        &ProviderError::RequestFailed("x".into()),
+        &ProviderError::Timeout,
+        &ProviderError::Network("x".into()),
+        &ProviderError::RateLimited {
+            retry_after_ms: None,
+        },
+        &ProviderError::ProviderSide("x".into()),
+        &ProviderError::StreamError("x".into()),
+        &ProviderError::UnsupportedCapability("x".into()),
+        &ProviderError::Cancelled,
+    ]
+    .iter()
+    .map(|e| {
+        let diag: Diagnostic = (*e).into();
+        diag.code
+    })
+    .collect();
+    assert_eq!(
+        codes.len(),
+        10,
+        "each provider error variant needs a distinct diagnostic code"
+    );
 }

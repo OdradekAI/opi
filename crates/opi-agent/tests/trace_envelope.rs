@@ -18,8 +18,8 @@ use opi_agent::diagnostic::code::*;
 use opi_agent::diagnostic::{RedactionMode, SOURCE_AGENT, SOURCE_PROVIDER, SOURCE_TOOL, Severity};
 use opi_agent::diagnostic_sink::RecordingSink;
 use opi_agent::{
-    FileTraceSink, RecordingTraceSink, TRACE_SCHEMA_VERSION, TraceCollector, TraceError, TraceKind,
-    TraceRecord, TraceSink,
+    AgentEvent, FileTraceSink, RecordingTraceSink, TRACE_SCHEMA_VERSION, TraceCollector,
+    TraceError, TraceKind, TraceRecord, TraceSink,
 };
 
 // A 20+ char Anthropic-style key body that SecretRedactor scrubs by value
@@ -2218,5 +2218,58 @@ mod phase8_runtime_contract_failures {
         assert!(trace_sink.snapshot().iter().any(|r| {
             r.kind == TraceKind::DiagnosticLinked && r.diagnostic_code == Some(CODE_AGENT_CANCELLED)
         }));
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Phase 12 task 12.2 — provider error metadata redacted at the public boundary.
+//
+// `AutoRetryStart.error_message` and `AutoRetryEnd.final_error` carry a
+// provider-error string into JSON/RPC/trace public surfaces. They must be
+// scrubbed by `AgentEvent::redacted_for_public` (the gate every public emit
+// passes through), so a secret embedded in the provider error cannot leak.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn auto_retry_provider_error_messages_are_redacted_for_public() {
+    let start: AgentEvent = serde_json::from_value(serde_json::json!({
+        "type": "AutoRetryStart",
+        "attempt": 1,
+        "max_attempts": 3,
+        "delay_ms": 100,
+        "error_message": format!("rate limited; rejected key {SCRUBBED_KEY}"),
+    }))
+    .expect("AutoRetryStart deserializes");
+    match start.redacted_for_public() {
+        AgentEvent::AutoRetryStart { error_message, .. } => {
+            assert!(
+                !error_message.contains(SCRUBBED_KEY),
+                "AutoRetryStart error_message must be redacted for public emit: {error_message}"
+            );
+        }
+        other => panic!("redacted_for_public changed variant: {other:?}"),
+    }
+
+    let end: AgentEvent = serde_json::from_value(serde_json::json!({
+        "type": "AutoRetryEnd",
+        "success": false,
+        "attempt": 3,
+        "final_error": format!("exhausted retries with key {SCRUBBED_KEY}"),
+    }))
+    .expect("AutoRetryEnd deserializes");
+    match end.redacted_for_public() {
+        AgentEvent::AutoRetryEnd {
+            final_error: Some(msg),
+            ..
+        } => {
+            assert!(
+                !msg.contains(SCRUBBED_KEY),
+                "AutoRetryEnd final_error must be redacted for public emit: {msg}"
+            );
+        }
+        AgentEvent::AutoRetryEnd {
+            final_error: None, ..
+        } => panic!("final_error dropped during redaction"),
+        other => panic!("redacted_for_public changed variant: {other:?}"),
     }
 }

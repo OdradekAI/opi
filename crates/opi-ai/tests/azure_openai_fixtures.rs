@@ -184,13 +184,13 @@ fn missing_endpoint_returns_error() {
     assert!(result.is_err(), "missing endpoint should return error");
     let err = result.unwrap_err();
     match err {
-        opi_ai::provider::ProviderError::RequestFailed(msg) => {
+        opi_ai::provider::ProviderError::Config(msg) => {
             assert!(
                 msg.contains("endpoint is required"),
                 "unexpected error: {msg}"
             );
         }
-        other => panic!("expected RequestFailed, got {other:?}"),
+        other => panic!("expected Config, got {other:?}"),
     }
 }
 

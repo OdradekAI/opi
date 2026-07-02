@@ -825,7 +825,7 @@ impl OpenAiChatProvider {
             .body(serde_json::to_string(body).unwrap_or_default())
             .send()
             .await
-            .map_err(|e| ProviderError::RequestFailed(e.to_string()))?;
+            .map_err(|e| ProviderError::Network(e.to_string()))?;
 
         let status = response.status();
         if !status.is_success() {
@@ -925,13 +925,21 @@ fn map_http_status(
     headers: &reqwest::header::HeaderMap,
 ) -> ProviderError {
     match status.as_u16() {
-        401 => ProviderError::AuthFailed(format!("authentication failed: {body}")),
-        403 => ProviderError::AuthFailed(format!("access denied: {body}")),
+        401 => ProviderError::AuthFailed(format!(
+            "authentication failed: {}",
+            crate::http::safe_excerpt(body)
+        )),
+        403 => ProviderError::AuthFailed(format!(
+            "access denied: {}",
+            crate::http::safe_excerpt(body)
+        )),
         429 => ProviderError::RateLimited {
             retry_after_ms: crate::retry::parse_retry_after(headers),
         },
         408 | 504 => ProviderError::Timeout,
-        code => ProviderError::RequestFailed(format!("HTTP {code}: {body}")),
+        code => {
+            ProviderError::ProviderSide(format!("HTTP {code}: {}", crate::http::safe_excerpt(body)))
+        }
     }
 }
 

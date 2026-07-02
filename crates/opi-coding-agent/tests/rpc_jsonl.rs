@@ -26,9 +26,9 @@ use std::time::Duration;
 use futures_util::stream;
 use opi_agent::diagnostic::{Diagnostic, SOURCE_PACKAGE, Severity, code};
 use opi_agent::extension::{Extension, ExtensionCommand, ExtensionError, ExtensionRegistry};
-use opi_ai::provider::{EventStream, ModelInfo, Provider, Request};
+use opi_ai::provider::{EventStream, ModelInfo, Provider, ProviderError, Request};
 use opi_ai::stream::{AssistantStreamEvent, StopReason};
-use opi_ai::test_support::{MockProvider, base_assistant, text_response};
+use opi_ai::test_support::{MockProvider, MockResponse, base_assistant, text_response};
 use opi_coding_agent::adapter_extension::ProcessAdapter;
 use opi_coding_agent::adapter_host::{AdapterHost, AdapterProcessConfig};
 use opi_coding_agent::config::OpiConfig;
@@ -2517,6 +2517,76 @@ async fn write_tool_result_carries_write_audit_details() {
     let _ = recv_response(&mut output_rx, "quit").await;
     let _ = task.await;
     let _ = std::fs::remove_file(workspace.path().join("out.txt"));
+}
+
+/// Phase 12 task 12.2 — provider-error events on the RPC JSONL surface must
+/// not leak credentials. A retryable `Network` error carrying a secret triggers
+/// `AutoRetryStart` whose `error_message` is the provider-error string; the
+/// public emit boundary scrubs it before it reaches the JSONL stream.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn provider_error_events_are_redacted() {
+    let secret = "sk-proj-1234567890abcdefghijklmnopqrstuv";
+    let make_err = || {
+        MockResponse::Error(ProviderError::Network(format!(
+            "conn reset; echoed key {secret}"
+        )))
+    };
+    let provider = MockProvider::new_with_errors(
+        "mock",
+        vec![
+            make_err(),
+            make_err(),
+            make_err(),
+            make_err(),
+            make_err(),
+            make_err(),
+        ],
+    );
+    let (command_tx, mut output_rx, task) = custom_provider_runner(provider);
+
+    let _ready = recv_rpc_line(&mut output_rx).await; // rpc_ready
+    command_tx
+        .send(RpcCommand::prompt {
+            id: Some("redact-rpc".into()),
+            message: "go".into(),
+        })
+        .unwrap();
+    let _accepted = recv_response(&mut output_rx, "prompt").await;
+
+    // Drain every event line the run emits and assert the secret never leaks.
+    let mut leaked = false;
+    let mut saw_auto_retry = false;
+    for _ in 0..256 {
+        let Ok(maybe_line) =
+            tokio::time::timeout(std::time::Duration::from_secs(2), output_rx.recv()).await
+        else {
+            break;
+        };
+        let Some(line) = maybe_line else {
+            break;
+        };
+        if line.to_string().contains(secret) {
+            leaked = true;
+        }
+        if line["type"] == "AutoRetryStart" {
+            saw_auto_retry = true;
+        }
+        if line["type"] == "AgentEnd" {
+            break;
+        }
+    }
+    assert!(
+        saw_auto_retry,
+        "test should have triggered an AutoRetryStart event"
+    );
+    assert!(
+        !leaked,
+        "RPC JSONL event stream leaked provider secret across the public boundary"
+    );
+
+    command_tx.send(RpcCommand::quit { id: None }).unwrap();
+    let _ = recv_response(&mut output_rx, "quit").await;
+    let _ = task.await;
 }
 
 /// Phase 11.5: edit diff-preview details cross the RPC JSONL output boundary.

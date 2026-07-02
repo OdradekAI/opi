@@ -58,7 +58,7 @@ impl AzureOpenAIProvider {
         api_version: Option<String>,
     ) -> Result<Self, ProviderError> {
         let endpoint = endpoint.ok_or_else(|| {
-            ProviderError::RequestFailed(
+            ProviderError::Config(
                 "Azure OpenAI endpoint is required. Set it via config [providers.azure] endpoint or AZURE_OPENAI_ENDPOINT env var.".into()
             )
         })?;
@@ -90,7 +90,7 @@ impl AzureOpenAIProvider {
         api_version: Option<String>,
     ) -> Result<Self, ProviderError> {
         let endpoint = endpoint.ok_or_else(|| {
-            ProviderError::RequestFailed(
+            ProviderError::Config(
                 "Azure OpenAI endpoint is required. Set it via config [providers.azure] endpoint or AZURE_OPENAI_ENDPOINT env var.".into()
             )
         })?;
@@ -237,7 +237,7 @@ async fn stream_azure_http(
         .body(serde_json::to_string(body).unwrap_or_default())
         .send()
         .await
-        .map_err(|e| ProviderError::RequestFailed(e.to_string()))?;
+        .map_err(|e| ProviderError::Network(e.to_string()))?;
 
     let status = response.status();
     if !status.is_success() {
@@ -326,13 +326,24 @@ fn map_azure_status(
     headers: &reqwest::header::HeaderMap,
 ) -> ProviderError {
     match status.as_u16() {
-        401 => ProviderError::AuthFailed(format!("authentication failed: {body}")),
-        403 => ProviderError::AuthFailed(format!("access denied: {body}")),
-        404 => ProviderError::RequestFailed(format!("deployment not found: {body}")),
+        401 => ProviderError::AuthFailed(format!(
+            "authentication failed: {}",
+            crate::http::safe_excerpt(body)
+        )),
+        403 => ProviderError::AuthFailed(format!(
+            "access denied: {}",
+            crate::http::safe_excerpt(body)
+        )),
+        404 => ProviderError::Config(format!(
+            "deployment not found: {}",
+            crate::http::safe_excerpt(body)
+        )),
         429 => ProviderError::RateLimited {
             retry_after_ms: crate::retry::parse_retry_after(headers),
         },
         408 | 504 => ProviderError::Timeout,
-        code => ProviderError::RequestFailed(format!("HTTP {code}: {body}")),
+        code => {
+            ProviderError::ProviderSide(format!("HTTP {code}: {}", crate::http::safe_excerpt(body)))
+        }
     }
 }

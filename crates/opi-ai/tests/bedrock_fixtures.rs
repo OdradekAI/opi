@@ -17,7 +17,7 @@ use opi_ai::message::{
     ImageSource, InputContent, MediaType, Message, OutputContent, ToolDef, ToolResultMessage,
     UserMessage,
 };
-use opi_ai::provider::{Provider, ProviderError, Request};
+use opi_ai::provider::{Provider, ProviderError, ProviderErrorCategory, Request};
 use opi_ai::stream::{AssistantStreamEvent, StopReason};
 use tokio_util::sync::CancellationToken;
 use wiremock::matchers::{body_partial_json, method, path};
@@ -361,11 +361,11 @@ fn timeout_mapped_correctly() {
 }
 
 #[test]
-fn server_error_mapped_to_request_failed() {
+fn server_error_mapped_to_provider_side() {
     let status = reqwest::StatusCode::from_u16(500).unwrap();
     let headers = reqwest::header::HeaderMap::new();
     let error = map_bedrock_status(status, "Internal error", &headers);
-    assert!(matches!(error, ProviderError::RequestFailed(_)));
+    assert!(matches!(error, ProviderError::ProviderSide(_)));
 }
 
 // ---------------------------------------------------------------------------
@@ -474,13 +474,13 @@ async fn url_image_rejected_with_clear_error() {
     let events: Vec<_> = stream.collect().await;
     assert_eq!(events.len(), 1, "expected exactly one event");
     match &events[0] {
-        Err(ProviderError::RequestFailed(msg)) => {
+        Err(ProviderError::UnsupportedCapability(msg)) => {
             assert!(
                 msg.contains("URL-sourced images are not supported"),
                 "unexpected error: {msg}"
             );
         }
-        other => panic!("expected RequestFailed error, got {other:?}"),
+        other => panic!("expected UnsupportedCapability error, got {other:?}"),
     }
 }
 
@@ -667,5 +667,44 @@ async fn stream_http_error_maps_to_auth_failed() {
             );
         }
         other => panic!("expected AuthFailed from HTTP 403, got {other:?}"),
+    }
+}
+
+/// Phase 12 task 12.2 — bedrock 5xx classifies as the shared `provider` class
+/// with a redacted body excerpt through the production stream path (closes the
+/// every-family coverage matrix alongside the other 8 HTTP families).
+#[tokio::test]
+async fn stream_500_classifies_as_provider_with_redacted_excerpt() {
+    let secret = "sk-proj-1234567890abcdefghijklmnopqrstuv";
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/model/anthropic.claude-sonnet-4/converse-stream"))
+        .respond_with(
+            ResponseTemplate::new(500).set_body_string(format!("rejected token {secret}")),
+        )
+        .mount(&server)
+        .await;
+
+    let provider = BedrockProvider::new(
+        test_credentials(),
+        Some(server.uri()),
+        Arc::new(HttpClient::new()),
+    );
+    let stream = provider.stream(lifecycle_text_request());
+    pin_mut!(stream);
+    let first = stream.next().await.expect("should produce an event");
+    match first {
+        Err(err) => {
+            assert_eq!(
+                err.category(),
+                ProviderErrorCategory::Provider,
+                "5xx must classify as provider: {err:?}"
+            );
+            assert!(
+                !err.to_string().contains(secret),
+                "bedrock error excerpt must redact the secret: {err}"
+            );
+        }
+        other => panic!("expected provider error from HTTP 500, got {other:?}"),
     }
 }

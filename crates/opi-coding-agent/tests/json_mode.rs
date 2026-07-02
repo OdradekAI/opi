@@ -308,6 +308,57 @@ async fn json_mode_provider_error_stderr_is_redacted() {
     );
 }
 
+/// Phase 12 task 12.2 — provider errors visible through the non-interactive
+/// NDJSON public surface must not leak credentials. A retryable `Network`
+/// error carrying a secret triggers an `AutoRetryStart` event whose
+/// `error_message` is the provider-error string; the public emit boundary
+/// (`AgentEvent::redacted_for_public`) must scrub it before it reaches stdout.
+#[tokio::test]
+async fn provider_errors_are_redacted() {
+    let secret = "sk-proj-1234567890abcdefghijklmnopqrstuv";
+    // Retryable Network error carrying a secret -> AutoRetryStart before the
+    // final failure. Default RetryConfig retries, so an AutoRetry event fires.
+    let make_err = || {
+        MockResponse::Error(ProviderError::Network(format!(
+            "conn reset; echoed key {secret}"
+        )))
+    };
+    let provider = MockProvider::new_with_errors(
+        "mock",
+        vec![
+            make_err(),
+            make_err(),
+            make_err(),
+            make_err(),
+            make_err(),
+            make_err(),
+        ],
+    );
+    let mut runner = NonInteractiveRunner::new(
+        Box::new(provider),
+        "mock-model".into(),
+        OpiConfig::default(),
+        std::env::current_dir().unwrap(),
+        false,
+        None,
+        Vec::new(),
+    );
+
+    let result = runner.run_json("test").await;
+
+    assert_eq!(result.exit_code, ExitCode::ProviderFailure as i32);
+    assert!(
+        !result.stdout.contains(secret),
+        "stdout NDJSON leaked provider secret via an AutoRetry event: {}",
+        result.stdout
+    );
+    assert!(
+        !result.stderr.contains(secret),
+        "stderr leaked provider secret: {}",
+        result.stderr
+    );
+}
+
 // ---------------------------------------------------------------------------
 // Tool call events emitted in JSON mode
 // ---------------------------------------------------------------------------

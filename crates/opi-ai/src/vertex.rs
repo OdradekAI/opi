@@ -217,7 +217,7 @@ async fn stream_vertex_http(
         .body(serde_json::to_string(body).unwrap_or_default())
         .send()
         .await
-        .map_err(|e| ProviderError::RequestFailed(e.to_string()))?;
+        .map_err(|e| ProviderError::Network(e.to_string()))?;
 
     let status = response.status();
     if !status.is_success() {
@@ -289,7 +289,10 @@ fn map_vertex_status(
     headers: &reqwest::header::HeaderMap,
 ) -> ProviderError {
     match status.as_u16() {
-        401 | 403 => ProviderError::AuthFailed(format!("authentication failed: {body}")),
+        401 | 403 => ProviderError::AuthFailed(format!(
+            "authentication failed: {}",
+            crate::http::safe_excerpt(body)
+        )),
         429 => ProviderError::RateLimited {
             retry_after_ms: crate::retry::parse_retry_after(headers),
         },
@@ -303,9 +306,16 @@ fn map_vertex_status(
                     .and_then(|c| c.as_i64())
                 && (code == 401 || code == 403)
             {
-                return ProviderError::AuthFailed(format!("authentication failed: {body}"));
+                return ProviderError::AuthFailed(format!(
+                    "authentication failed: {}",
+                    crate::http::safe_excerpt(body)
+                ));
             }
-            ProviderError::RequestFailed(format!("HTTP {}: {body}", status.as_u16()))
+            ProviderError::ProviderSide(format!(
+                "HTTP {}: {}",
+                status.as_u16(),
+                crate::http::safe_excerpt(body)
+            ))
         }
     }
 }

@@ -85,7 +85,7 @@ impl BedrockProvider {
         if SUPPORTED_FAMILIES.contains(&family) {
             Ok(())
         } else {
-            Err(ProviderError::RequestFailed(format!(
+            Err(ProviderError::Config(format!(
                 "unsupported Bedrock model family '{family}' in model ID '{model_id}'; supported families: {}",
                 SUPPORTED_FAMILIES.join(", ")
             )))
@@ -215,10 +215,12 @@ impl Provider for BedrockProvider {
                         ..
                     } = content
                     {
-                        return Box::pin(stream::iter(vec![Err(ProviderError::RequestFailed(
-                            "URL-sourced images are not supported by Bedrock. Use base64 or bytes."
-                                .into(),
-                        ))]));
+                        return Box::pin(stream::iter(vec![Err(
+                            ProviderError::UnsupportedCapability(
+                                "URL-sourced images are not supported by Bedrock. Use base64 or bytes."
+                                    .into(),
+                            )
+                        )]));
                     }
                 }
             }
@@ -311,7 +313,7 @@ impl BedrockProvider {
         let response = req
             .send()
             .await
-            .map_err(|e| ProviderError::RequestFailed(format!("Bedrock request failed: {e}")))?;
+            .map_err(|e| ProviderError::Network(format!("Bedrock request failed: {e}")))?;
 
         let status = response.status();
         if !status.is_success() {
@@ -963,12 +965,18 @@ pub fn map_bedrock_status(
     headers: &reqwest::header::HeaderMap,
 ) -> ProviderError {
     match status.as_u16() {
-        401 | 403 => ProviderError::AuthFailed(format!("Bedrock access denied: {body}")),
+        401 | 403 => ProviderError::AuthFailed(format!(
+            "Bedrock access denied: {}",
+            crate::http::safe_excerpt(body)
+        )),
         429 => ProviderError::RateLimited {
             retry_after_ms: crate::retry::parse_retry_after(headers),
         },
         408 | 504 => ProviderError::Timeout,
-        code => ProviderError::RequestFailed(format!("Bedrock HTTP {code}: {body}")),
+        code => ProviderError::ProviderSide(format!(
+            "Bedrock HTTP {code}: {}",
+            crate::http::safe_excerpt(body)
+        )),
     }
 }
 
