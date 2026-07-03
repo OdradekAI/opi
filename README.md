@@ -243,7 +243,15 @@ the agent can call; they are not an operating-system sandbox.
 - Production sub-agent, permission-gate, plan/todo, and MCP workflows are not
   built into the core CLI. The repository contains examples and package
   scaffolds for those patterns.
-- OAuth or subscription login flows are not implemented.
+- OAuth or subscription login flows are not implemented. Provider correctness
+  is a Phase 12 focus, not a breadth phase: OAuth login, Anthropic / OpenAI
+  Codex / GitHub Copilot subscription auth, a broad new first-class provider
+  list, image generation, browser usage, a provider streaming-adapter
+  protocol for packages, paid live provider calls in default tests, and
+  copying pi's provider-specific config file format remain deferred. See the
+  `opi-ai` README for the per-family behavior matrix, OpenAI-compatible
+  profile flags, cache / response-ID / session-affinity behavior, proxy, and
+  best-effort cost.
 - Dynamic Rust plugin loading from arbitrary extension paths is not supported.
 
 If you need stronger isolation, run `opi` inside a container, VM, or external

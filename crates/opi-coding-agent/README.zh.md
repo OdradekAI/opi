@@ -332,7 +332,23 @@ metadata 和启动诊断。
 - 修改性工具策略不是操作系统级 sandbox。
 - 生产级子 Agent、permission gate、plan/todo 和 MCP 工作流是 examples/package
   模式，不是内置核心工作流。
-- OAuth 或订阅登录流程尚未实现。
+- OAuth 或订阅登录流程尚未实现。第十二阶段 provider 正确性是正确性阶段，而非宽度
+  阶段；以下仍是推迟的产品决策：OAuth 登录、Anthropic / OpenAI Codex / GitHub
+  Copilot 订阅鉴权、大范围新增 first-class provider 列表（兼容 provider 保持为
+  config-driven 的 OpenAI-compatible profile）、图像生成（图片支持仅为输入侧）、
+  浏览器使用、面向 package 的 provider 流式 adapter 协议、默认测试中的付费实时
+  provider 调用，以及复制 pi 的 provider 专用配置文件格式。按 provider 的代理配置
+  （`proxy.url` / `proxy.no_proxy`，环境变量 `HTTPS_PROXY` > `HTTP_PROXY` >
+  `NO_PROXY`）和尽力而为的费用（显式未知值优先于虚假置信）已实现；详见 `opi-ai`
+  README 的按 family 行为矩阵、OpenAI-compatible profile 标志（`system_role_override`、
+  `max_tokens_field`、`tool_result_name_field`、`usage_in_stream`、
+  `strict_tool_schema`、`reasoning_effort`、`cache_key`、
+  `require_assistant_after_tool_result`；外加用于静态请求 header 的按 profile
+  `extra_headers`，它是 profile 配置字段，不是 `CompatConfig` 标志）、OpenAI Responses 原生语义
+  （`store` / `reasoning_effort` / `strict_tools` 已实现；`previous_response_id` 推迟），
+  以及缓存 / response-ID / 会话亲和行为。Phase 13 会话工作可以依赖经由共享 `opi-ai`
+  类型传递的 provider-correct usage、model、thinking 和 error 数据，而无需依赖
+  provider 专用内部实现。
 
 ## 许可证
 

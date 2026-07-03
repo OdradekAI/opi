@@ -353,7 +353,28 @@ Common methods include `prompt`, `prompt_with_content`, `queue_images`,
 - Mutating-tool policy is not an OS sandbox.
 - Production sub-agent, permission-gate, plan/todo, and MCP workflows are
   examples/package patterns, not built-in core workflows.
-- OAuth or subscription login flows are not implemented.
+- OAuth or subscription login flows are not implemented. Phase 12 provider
+  correctness is a correctness phase, not a breadth phase; the following
+  remain deferred product decisions: OAuth login, Anthropic / OpenAI Codex /
+  GitHub Copilot subscription auth, a broad new first-class provider list
+  (compatible providers stay config-driven OpenAI-compatible profiles), image
+  generation (image support is input-only), browser usage, a provider
+  streaming-adapter protocol for packages, paid live provider calls in
+  default tests, and copying pi's provider-specific config file format.
+  Per-provider proxy config (`proxy.url` / `proxy.no_proxy`, env
+  `HTTPS_PROXY` > `HTTP_PROXY` > `NO_PROXY`) and best-effort cost (explicit
+  unknown values over false confidence) are implemented; see the `opi-ai`
+  README for the per-family behavior matrix, OpenAI-compatible profile flags
+  (`system_role_override`, `max_tokens_field`, `tool_result_name_field`,
+  `usage_in_stream`, `strict_tool_schema`, `reasoning_effort`, `cache_key`,
+  `require_assistant_after_tool_result`; plus per-profile `extra_headers` for
+  static request headers, which is a profile config field, not a `CompatConfig`
+  flag), OpenAI Responses
+  native semantics (`store` / `reasoning_effort` / `strict_tools` implemented;
+  `previous_response_id` deferred), and cache / response-ID / session-affinity
+  behavior. Phase 13 session work may rely on provider-correct usage, model,
+  thinking, and error data through the shared `opi-ai` types, without
+  depending on provider-specific internals.
 
 ## License
 

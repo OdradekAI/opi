@@ -230,7 +230,13 @@ Agent 可调用哪些内置工具；它们不是操作系统级 sandbox。
   `opi doctor` 默认只做本地、无网络检查，trace 需要显式启用。
 - 生产级子 Agent、permission gate、plan/todo 和 MCP 工作流不内置在核心 CLI 中；
   仓库提供相关 examples 与 package 脚手架。
-- OAuth 或订阅登录流程尚未实现。
+- OAuth 或订阅登录流程尚未实现。Provider 正确性是第十二阶段的重点，不是宽度
+  阶段：OAuth 登录、Anthropic / OpenAI Codex / GitHub Copilot 订阅鉴权、大范围
+  新增 first-class provider 列表、图像生成、浏览器使用、面向 package 的 provider
+  流式 adapter 协议、默认测试中的付费实时 provider 调用，以及复制 pi 的 provider
+  专用配置文件格式仍被推迟。详见 `opi-ai` README 的按 family 行为矩阵、
+  OpenAI-compatible profile 标志、缓存 / response-ID / 会话亲和行为、代理和
+  尽力而为的费用。
 - 不支持从任意 extension 路径动态加载 Rust 插件。
 
 如果需要更强隔离，请在容器、虚拟机或外部 sandbox 中运行 `opi`，并按暴露给它的

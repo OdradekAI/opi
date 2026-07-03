@@ -1486,13 +1486,45 @@ persistent background shells or broad permission-popup systems.
 
 ### Phase 12 - Provider Correctness
 
-Status: planned; recast from the previous Phase 10.
+Status: implemented in the current `0.6.3` workspace.
 
 Phase 12 hardens the existing provider families and OpenAI-compatible profiles
 through fixture-backed lifecycle, error, auth, image-input, thinking, usage,
-retry, rate-limit, and compatibility tests. It should test through the Phase 10
-provider collection/auth seam. It is not a provider breadth phase and must not
-add OAuth login, image generation, or a broad catalog as a side effect.
+retry, rate-limit, and compatibility tests, all routed through the Phase 10
+provider collection/auth seam. It is not a provider breadth phase.
+
+Implemented provider-correctness surface: the nine built-in families
+(anthropic, openai chat, openai-responses, openrouter, mistral, gemini,
+bedrock, azure, vertex) plus config-driven OpenAI-compatible profiles carry
+per-family request/streaming/tool-call/thinking/image/usage fixtures; the
+nine-class provider error taxonomy (auth, config, request, network,
+rate_limit, provider, stream, capability, cancelled) maps to safe
+diagnostics; OpenAI-compatible `CompatConfig` flags (`system_role_override`,
+`max_tokens_field`, `tool_result_name_field`, `usage_in_stream`,
+`strict_tool_schema`, `reasoning_effort`, `cache_key`,
+`require_assistant_after_tool_result`) and model-level overrides honor
+model-over-provider precedence; per-profile static request headers
+(`extra_headers`) are a separate profile config field, not a `CompatConfig`
+flag; usage-side cache tokens and
+provider response IDs (Anthropic `message.id`, OpenAI Chat `chatcmpl-*`,
+Responses `resp_*`) round-trip into `AssistantMessage::response_id`; retry,
+partial-output no-retry, per-family cancellation, and per-provider proxy
+config are covered without live calls; provider construction validates
+credentials at build time and emits auth/config diagnostics with safe
+remediation.
+
+Explicitly deferred: OpenAI Responses `previous_response_id` and server-side
+session chaining (Responses requests are Chat-Completions analogues);
+request-side prompt-caching breakpoints (the `cache_key` profile flag is the
+available cache-affinity hint); image count/size limits beyond the existing
+per-model metadata; broad provider catalog expansion.
+
+Phase 12 non-goals (must not appear as current core behavior): OAuth login
+flows; Anthropic, OpenAI Codex, and GitHub Copilot subscription auth; a broad
+new first-class provider list; image generation; browser usage; a provider
+streaming-adapter protocol for packages; paid live provider calls in default
+tests; copying pi's provider-specific config file format. Best-effort cost
+mapping keeps explicit unknown values rather than inferring false confidence.
 
 ### Phase 13 - Session Tree and Context Reconstruction
 
@@ -1503,6 +1535,10 @@ harness/session facade semantics. It may add v2 entries for session metadata,
 model/thinking changes, labels, branch summaries, and custom messages while
 keeping v1 files readable. Exports are local files; web/share/session
 publishing remains future ecosystem scope.
+
+Phase 13 handoff: session work may rely on provider-correct usage, model,
+thinking, and error data through the shared `opi-ai` types, without depending
+on provider-specific internals.
 
 ### Phase 14 - TUI Product Polish
 

@@ -55,7 +55,7 @@ OpenAI-compatible profile 加入。
 | `ToolResultMessage` | 面向 Provider 的工具结果消息：content、可选 details、`is_error`、`truncated` 和时间戳元数据。 |
 | `AssistantStreamEvent` | Provider 无关流式事件，覆盖 start、text、thinking、tool call、done 和 error。 |
 | `ModelInfo` | 模型元数据：上下文窗口、输出上限、图片、流式和 thinking 支持。 |
-| `ProviderError` / `ProviderErrorCategory` | Provider 失败分类：鉴权、限流、超时、请求和流式错误。 |
+| `ProviderError` / `ProviderErrorCategory` | Provider 失败分类：auth、config、request、network、rate_limit、provider、stream、capability 和 cancelled（超时归为 network）。 |
 | `ProviderRegistry` | 解析 `provider:model`、注册自定义 Provider、叠加模型覆盖。 |
 | `ProviderCollection` / `AuthDescriptor` / `AuthStatus` | unstable-0.x 模型/鉴权 seam，位于 `ProviderRegistry` 之上：Provider+模型查找、脱敏鉴权解析、OpenAI-compatible 兼容性元数据，以及 stream/complete 派发。不含 OAuth/订阅鉴权。 |
 | `ApiKind` | crate 根枚举，标注 assistant 消息携带的后端家族（`Anthropic`、`OpenAi`、`Google`、`Mistral`）。 |
@@ -88,6 +88,107 @@ Converse 需要图片 bytes。
 成功的（`is_error = false`）工具结果 body 保持修复前的 wire 形状。
 `ToolResultMessage::details` 用于 opi 运行时/UI/会话边界；provider 请求 body 使用
 LLM 可见内容和 provider 专用失败信号。
+
+## Provider 行为矩阵
+
+按 family 列出能力与元数据行为。“yes” 表示 adapter 在 wire 上实现了该行为；
+“inherited” 表示继承共享的 OpenAI Chat 或 Gemini 路径；“—” 表示不产生。
+
+| Family | Thinking/reasoning | 图片输入 | Cache tokens（用量侧） | Response ID |
+|--------|--------------------|----------|------------------------|-------------|
+| `anthropic` | thinking blocks | PNG/JPEG/GIF/WebP | `cache_read` / `cache_creation` | `message.id` |
+| `openai_chat` | 经 compat profile 的 `reasoning_effort` | PNG/JPEG/GIF/WebP | `cached_tokens` | `chatcmpl-*`（`id`） |
+| `openai_responses` | `reasoning_effort`（`ResponsesConfig`） | PNG/JPEG/GIF/WebP | `cached_tokens` | `resp_*`（`id`） |
+| `openrouter` | inherited | PNG/JPEG/GIF/WebP | inherited | `chatcmpl-*` |
+| `mistral` | inherited | PNG/JPEG/GIF/WebP | inherited | `chatcmpl-*` |
+| `gemini` | thinking | PNG/JPEG/GIF/WebP | `cached_content` | — |
+| `bedrock` | `supports_thinking` 模型声明 thinking，但 Converse 流的 `reasoningContent` 块不会被解析为 thinking（parser 限制） | 仅 byte/base64；拒绝 URL 图片 | `cache_read` / `cache_write` | — |
+| `azure_openai` | inherited | PNG/JPEG/GIF/WebP | inherited | `chatcmpl-*` |
+| `vertex` | inherited | PNG/JPEG/GIF/WebP | `cached_content` | — |
+
+已捕获的 response ID（`message.id`、`chatcmpl-*`、`resp_*`）会回写到
+`AssistantMessage::response_id`；没有 provider response ID 的 family 保持为
+`None`。纯文本模型会在发起网络请求前通过 `validate_request_capabilities` 拒绝图片
+输入。
+
+## OpenAI-Compatible Profile
+
+兼容的 OpenAI 风格服务在缺少实质 wire/auth/能力差异时保持配置驱动
+（config-driven）。这是 provider breadth 的首选路径；新增 first-class provider 模块
+需要更新任务图，且默认属于 Phase 12 非目标。
+
+`CompatConfig` 携带按 profile 的兼容性标志：
+
+| 标志 | 作用 |
+|------|------|
+| `system_role_override` | 将 system prompt 渲染为 `developer`（或其他角色）而非 `system`。 |
+| `max_tokens_field` | 输出上限的请求字段名（`max_tokens` 还是 `max_completion_tokens`）。 |
+| `tool_result_name_field` | 在工具结果消息上回显工具名。 |
+| `usage_in_stream` | 在流式响应中预期 usage delta。 |
+| `strict_tool_schema` | 发出 strict JSON-schema 工具定义。 |
+| `reasoning_effort` | 为支持该能力的模型发送 reasoning-effort 提示。 |
+| `cache_key` | 发送 provider 的 prompt-cache key（cache-affinity 提示）。 |
+| `require_assistant_after_tool_result` | 作为 compat 元数据建模；以运行时校验强制执行，而非 wire 字段。 |
+
+`ModelCompatOverride` 在 profile 默认值之上叠加模型级的 `system_role_override` 和
+`max_tokens_field` 覆盖（model 优先于 provider）。静态的按 profile 请求 header
+（`extra_headers`，用于会话亲和 / 路由）是独立的 profile 配置字段，经
+`OpenAiChatProvider` 构造传入，不是 `CompatConfig` 标志。
+
+OpenAI Responses 原生语义（`ResponsesConfig`）：`store`、`reasoning_effort` 和
+`strict_tools` 已实现。`previous_response_id` 刻意缺省——Responses 请求按
+Chat-Completions 类比构造，因此服务端响应链未被接入。
+
+## 缓存、Response ID 与会话亲和
+
+只要 provider 提供，用量侧 cache token 就会被归一化（Anthropic
+`cache_read`/`cache_creation`、OpenAI Chat/Responses `cached_tokens`、Gemini
+`cached_content`、Bedrock `cache_read`/`cache_write`）。请求侧 prompt-caching 断点
+（例如 Anthropic `cache_control`）不由 opi 发出；`cache_key` profile 标志是可用的
+cache-affinity 提示。
+
+Provider response ID 被捕获并回写到 `AssistantMessage::response_id`（Anthropic
+`message.id`、OpenAI Chat `chatcmpl-*`、OpenAI Responses `resp_*`）；其它 family
+保持为 `None`。
+
+会话亲和刻意受限：`previous_response_id` 被推迟（见 OpenAI-Compatible Profile），
+兼容 profile 可携带静态 `extra_headers` 用于路由/会话钉扎。不存在服务端会话链。
+
+## 代理
+
+`HttpClient` 携带共享的 `reqwest` 连接池，支持显式按 provider 的代理配置
+（provider profile 的 `proxy.url` 和 `proxy.no_proxy`）以及环境变量回退
+（`HTTPS_PROXY` > `HTTP_PROXY` > `NO_PROXY`）。代理 URL 中的代理凭据在任何诊断
+展示前都会被脱敏。代理传输语义（经代理重试、取消）由 Phase 12 重试/代理覆盖范围
+负责。
+
+## 尽力而为的费用
+
+费用映射是 best-effort。错误的置信比显式未知更糟：当定价或用量缺失时，
+`Usage` / 费用辅助保留显式未知值（费用为 `None`），而不是推断一个数字。费用绝不
+阻塞成功的流。
+
+## Phase 12 非目标
+
+Phase 12 是 provider *正确性* 阶段，不是 breadth 阶段。以下是明确的非目标，不得
+作为当前核心行为出现：
+
+- OAuth 登录流程。
+- Anthropic 订阅鉴权。
+- OpenAI Codex 订阅鉴权。
+- GitHub Copilot 鉴权。
+- 大范围新增 first-class provider 列表（兼容 provider 保持为 config-driven
+  profile）。
+- 图像生成（图片支持仅为输入侧）。
+- 浏览器使用。
+- 面向 package 的 provider 流式 adapter 协议。
+- 默认测试中的付费实时 provider 调用（实时测试保持 `#[ignore]` 门控）。
+- 复制 pi 的 provider 专用配置文件格式。
+
+## Phase 13 交接
+
+Phase 13 的会话工作可以依赖经由共享 `opi-ai` 类型传递的 provider-correct usage、
+model、thinking 和 error 数据，而无需依赖 provider 专用内部实现。
 
 ## 最小示例
 

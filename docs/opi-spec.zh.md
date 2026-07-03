@@ -1295,15 +1295,23 @@ Typed hook result composition 由契约测试覆盖：扩展钩子在 base 钩�
 
 ### 第十二阶段 - Provider 正确性
 
-状态：计划中；由原第十阶段重排而来。
+状态：已完成于当前 `0.6.3` workspace。
 
-第十二阶段通过 fixture-backed lifecycle、error、auth、image-input、thinking、usage、retry、rate-limit 和 compatibility 测试加固现有 provider families 与 OpenAI-compatible profiles。它应通过第十阶段的 provider collection/auth 缝合点测试。这不是 provider 宽度阶段，不得把 OAuth login、图像生成或广泛 catalog 作为副作用加入。
+第十二阶段通过 fixture-backed lifecycle、error、auth、image-input、thinking、usage、retry、rate-limit 和 compatibility 测试加固现有 provider families 与 OpenAI-compatible profiles，全部经第十阶段的 provider collection/auth 缝合点路由。这不是 provider 宽度阶段。
+
+已交付的 provider 正确性面：九个内置 family（anthropic、openai chat、openai-responses、openrouter、mistral、gemini、bedrock、azure、vertex）加上 config-driven 的 OpenAI-compatible profile 承载按 family 的 request/streaming/tool-call/thinking/image/usage fixture；九类 provider 错误分类（auth、config、request、network、rate_limit、provider、stream、capability、cancelled）映射到安全诊断；OpenAI-compatible 的 `CompatConfig` 标志（`system_role_override`、`max_tokens_field`、`tool_result_name_field`、`usage_in_stream`、`strict_tool_schema`、`reasoning_effort`、`cache_key`、`require_assistant_after_tool_result`）和模型级 override 遵守 model-over-provider 优先级；按 profile 的静态请求 header（`extra_headers`）是独立的 profile 配置字段，不是 `CompatConfig` 标志；用量侧 cache token 和 provider response ID（Anthropic `message.id`、OpenAI Chat `chatcmpl-*`、Responses `resp_*`）回写到 `AssistantMessage::response_id`；retry、partial-output no-retry、按 family 的取消和按 provider 的代理配置在无实时调用情况下覆盖；provider 构造在构建时校验凭据，并发出带安全补救的 auth/config 诊断。
+
+明确推迟：OpenAI Responses 的 `previous_response_id` 和服务端会话链（Responses 请求按 Chat-Completions 类比构造）；请求侧 prompt-caching 断点（`cache_key` profile 标志是可用的 cache-affinity 提示）；超出既有 per-model metadata 的图片数量/大小限制；广泛的 provider catalog 扩张。
+
+Phase 12 非目标（不得作为当前核心行为出现）：OAuth 登录流程；Anthropic、OpenAI Codex 和 GitHub Copilot 订阅鉴权；大范围新增 first-class provider 列表；图像生成；浏览器使用；面向 package 的 provider 流式 adapter 协议；默认测试中的付费实时 provider 调用；复制 pi 的 provider 专用配置文件格式。尽力而为（best-effort）的费用映射保留显式未知值，而非推断虚假置信。
 
 ### 第十三阶段 - 会话树与上下文重建
 
 状态：计划中；由原第十一阶段重排而来。
 
 第十三阶段在第十阶段定义 generic harness/session facade 语义后深化 session-native context。它可以为 session metadata、model/thinking changes、labels、branch summaries 和 custom messages 增加 v2 条目，同时保持 v1 文件可读。Export 是本地文件；web/share/session publishing 仍是未来生态范围。
+
+Phase 13 交接：会话工作可以依赖经由共享 `opi-ai` 类型传递的 provider-correct usage、model、thinking 和 error 数据，而无需依赖 provider 专用内部实现。
 
 ### 第十四阶段 - TUI 产品打磨
 
