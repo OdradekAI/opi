@@ -5206,3 +5206,42 @@ mod phase7 {
         let _ = task.await;
     }
 }
+
+#[test]
+fn e2e_rpc_startup_auth_failure_exits_3_before_ready() {
+    // --rpc startup must map a missing API key to exit code 3 (AuthFailure)
+    // through run_rpc -> build_provider BEFORE the rpc_ready handshake is
+    // emitted on stdout. DoD: "rpc error surfaces" + "validates credentials at
+    // build time". RpcProcess::spawn hardcodes a key (so the happy path is
+    // always reached); this spawns the binary directly with an empty key to
+    // exercise the startup Auth branch (main.rs run_rpc build_provider match).
+    let binary = opi_binary_path();
+    let dir = tempfile::tempdir().unwrap();
+    let output = Command::new(&binary)
+        .arg("--rpc")
+        .arg("--model")
+        .arg("anthropic:claude-sonnet-4-5")
+        .current_dir(dir.path())
+        .env("OPI_SESSIONS_DIR", dir.path())
+        .env("ANTHROPIC_API_KEY", "")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .expect("opi --rpc binary runs");
+    let code = output.status.code().unwrap_or(-1);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(
+        code, 3,
+        "rpc startup auth failure should exit 3 (AuthFailure), got {code}\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(
+        !stdout.contains("rpc_ready"),
+        "rpc must not emit rpc_ready when build_provider fails at startup, got stdout: {stdout}"
+    );
+    assert!(
+        stderr.contains("ANTHROPIC_API_KEY"),
+        "rpc stderr should name the missing env var, got: {stderr}"
+    );
+}

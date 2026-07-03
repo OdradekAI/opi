@@ -338,3 +338,40 @@ supports_thinking = true
         "expected configured profile model in --list-models output, got: {stdout}"
     );
 }
+
+#[test]
+fn list_models_does_not_leak_api_key_value() {
+    // DoD: a configured API key value must never reach --list-models stdout or
+    // stderr in either table or JSON form. AuthDescriptor/SecretKey keep the
+    // value internal; this asserts that boundary through the CLI surface (the
+    // only credential-bearing list-models test sets a key and asserts positive
+    // content but never that the secret is redacted from output).
+    let sentinel = "opi-sentinel-key-do-not-leak-9F3A2B";
+
+    let table = run_opi(&["--list-models"], &[("ANTHROPIC_API_KEY", sentinel)]);
+    let table_stdout = String::from_utf8_lossy(&table.stdout);
+    let table_stderr = String::from_utf8_lossy(&table.stderr);
+    assert!(
+        !table_stdout.contains(sentinel),
+        "API key sentinel leaked into --list-models table stdout:\n{table_stdout}"
+    );
+    assert!(
+        !table_stderr.contains(sentinel),
+        "API key sentinel leaked into --list-models table stderr:\n{table_stderr}"
+    );
+
+    let json = run_opi(
+        &["--list-models", "--json"],
+        &[("ANTHROPIC_API_KEY", sentinel)],
+    );
+    let json_stdout = String::from_utf8_lossy(&json.stdout);
+    let json_stderr = String::from_utf8_lossy(&json.stderr);
+    assert!(
+        !json_stdout.contains(sentinel),
+        "API key sentinel leaked into --list-models --json stdout:\n{json_stdout}"
+    );
+    assert!(
+        !json_stderr.contains(sentinel),
+        "API key sentinel leaked into --list-models --json stderr:\n{json_stderr}"
+    );
+}
