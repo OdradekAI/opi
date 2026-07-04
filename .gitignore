@@ -4,7 +4,12 @@
 # Claude Code local-only state
 .claude
 !.claude/skill/opi-implement
+!.claude/skill/opi-calibrate
+!.claude/skill/opi-audit
+!.claude/skill/opi-remediate
+!.claude/skill/opi-document
 !.claude/skill/opi-release
+!.claude/skill/opi-realign
 .agents
 
 # Secrets / credentials (must never be committed)
