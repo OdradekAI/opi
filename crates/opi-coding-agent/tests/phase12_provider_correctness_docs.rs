@@ -46,6 +46,76 @@ fn contains_ci(haystack: &str, needle: &str) -> bool {
     haystack.to_lowercase().contains(&needle.to_lowercase())
 }
 
+fn windows_around(haystack: &str, needle: &str, radius: usize) -> Vec<String> {
+    let haystack_lower = haystack.to_lowercase();
+    let needle_lower = needle.to_lowercase();
+    let haystack_chars: Vec<char> = haystack_lower.chars().collect();
+    let mut windows = Vec::new();
+    let mut start = 0usize;
+    while let Some(idx) = haystack_lower[start..].find(&needle_lower) {
+        let hit = start + idx;
+        let hit_char = haystack_lower[..hit].chars().count();
+        let needle_chars = needle_lower.chars().count();
+        let from_char = hit_char.saturating_sub(radius);
+        let to_char = (hit_char + needle_chars + radius).min(haystack_chars.len());
+        windows.push(
+            haystack_chars[from_char..to_char]
+                .iter()
+                .collect::<String>(),
+        );
+        start = hit + needle_lower.len();
+    }
+    windows
+}
+
+fn mentions_runtime_enforcement_for_assistant_after_tool_result(doc: &str) -> bool {
+    let compat_windows = windows_around(doc, "require_assistant_after_tool_result", 320);
+    let shared_adapter_windows = windows_around(doc, "shared adapter", 320);
+    let shared_adapter_windows_zh = windows_around(doc, "共享适配器", 320);
+
+    let windows = compat_windows
+        .into_iter()
+        .chain(shared_adapter_windows)
+        .chain(shared_adapter_windows_zh);
+
+    windows.into_iter().any(|window| {
+        let mentions_runtime = window.contains("runtime")
+            || window.contains("运行时")
+            || window.contains("runtime check")
+            || window.contains("运行时校验");
+        let mentions_enforcement = window.contains("enforce")
+            || window.contains("enforced")
+            || window.contains("强制")
+            || window.contains("校验");
+        let mentions_extra_turn = window.contains("assistant turn")
+            || window.contains("assistant-after-tool-result")
+            || window.contains("after tool result")
+            || window.contains("extra assistant turn")
+            || window.contains("额外的 assistant 轮次")
+            || window.contains("assistant 轮次");
+        mentions_runtime && mentions_enforcement && mentions_extra_turn
+    })
+}
+
+fn count_pub_fields_in_struct(source: &str, struct_name: &str) -> usize {
+    let start = source
+        .find(&format!("pub struct {struct_name}"))
+        .unwrap_or_else(|| panic!("missing struct `{struct_name}` source anchor"));
+    let body = &source[start..];
+    let open = body
+        .find('{')
+        .unwrap_or_else(|| panic!("missing `{{` for `{struct_name}`"));
+    let rest = &body[open + 1..];
+    let close = rest
+        .find("\n}")
+        .unwrap_or_else(|| panic!("missing closing brace for `{struct_name}`"));
+    rest[..close]
+        .lines()
+        .map(str::trim)
+        .filter(|line| line.starts_with("pub "))
+        .count()
+}
+
 /// Doc surfaces task 12.9 owns (English + Simplified-Chinese counterparts).
 fn doc_surfaces() -> Vec<&'static str> {
     vec![
@@ -127,7 +197,9 @@ fn provider_docs_and_profile_policy_stay_in_sync() {
     let opi_ai = read_repo_file("crates/opi-ai/README.md");
     let opi_ai_zh = read_repo_file("crates/opi-ai/README.zh.md");
     let coding = read_repo_file("crates/opi-coding-agent/README.md");
+    let coding_zh = read_repo_file("crates/opi-coding-agent/README.zh.md");
     let root = read_repo_file("README.md");
+    let root_zh = read_repo_file("README.zh.md");
     let spec = read_repo_file("docs/opi-spec.md");
     let spec_zh = read_repo_file("docs/opi-spec.zh.md");
 
@@ -173,7 +245,7 @@ fn provider_docs_and_profile_policy_stay_in_sync() {
     //     is intentionally excluded here — it is a per-profile config field /
     //     OpenAiChatProvider constructor concern, not a CompatConfig flag; the
     //     session-affinity check below pins its documentation separately.
-    for flag in [
+    let compat_flags = [
         "system_role_override",
         "max_tokens_field",
         "tool_result_name_field",
@@ -182,7 +254,14 @@ fn provider_docs_and_profile_policy_stay_in_sync() {
         "reasoning_effort",
         "cache_key",
         "require_assistant_after_tool_result",
-    ] {
+    ];
+    let openai_chat_src = read_repo_file("crates/opi-ai/src/openai_chat.rs");
+    assert_eq!(
+        count_pub_fields_in_struct(&openai_chat_src, "CompatConfig"),
+        compat_flags.len(),
+        "CompatConfig field count changed; update the Phase 12 docs guard and owned docs together"
+    );
+    for flag in compat_flags {
         assert!(
             contains_ci(&opi_ai, flag),
             "opi-ai README must document profile flag `{flag}`"
@@ -192,10 +271,47 @@ fn provider_docs_and_profile_policy_stay_in_sync() {
             "opi-coding-agent README must document profile flag `{flag}`"
         );
     }
+    for (label, surface) in [
+        ("README.md", &opi_ai),
+        ("README.zh.md", &opi_ai_zh),
+        ("coding README.md", &coding),
+        ("coding README.zh.md", &coding_zh),
+        ("root README.md", &root),
+        ("root README.zh.md", &root_zh),
+        ("opi-spec.md", &spec),
+        ("opi-spec.zh.md", &spec_zh),
+    ] {
+        assert!(
+            !mentions_runtime_enforcement_for_assistant_after_tool_result(surface),
+            "{label} must not claim runtime enforcement for `require_assistant_after_tool_result`; it is metadata-only in the shared adapter"
+        );
+    }
     // ModelCompatOverride (model > provider precedence).
     assert!(
         contains_ci(&opi_ai, "ModelCompatOverride"),
         "opi-ai README must document ModelCompatOverride (model-over-provider precedence)"
+    );
+
+    // (4b) `usage_in_stream` docs stay aligned with the shared adapter.
+    assert!(
+        openai_chat_src.contains("stream_options") && openai_chat_src.contains("include_usage"),
+        "openai_chat.rs must source-anchor `usage_in_stream` to stream_options.include_usage"
+    );
+    for surface in [&opi_ai, &coding, &spec, &root] {
+        assert!(
+            contains_ci(surface, "include_usage"),
+            "owned English docs must name `stream_options.include_usage` for usage_in_stream"
+        );
+    }
+    for surface in [&opi_ai_zh, &coding_zh, &spec_zh, &root_zh] {
+        assert!(
+            contains_ci(surface, "include_usage"),
+            "owned Chinese docs must name `stream_options.include_usage` for usage_in_stream"
+        );
+    }
+    assert!(
+        contains_ci(&opi_ai, "any streaming chunk") && contains_ci(&opi_ai_zh, "任意流式 chunk"),
+        "opi-ai READMEs must say usage updates are preserved from any streaming chunk"
     );
 
     // (5) OpenAI Responses native semantics: implemented (ResponsesConfig) AND
@@ -225,6 +341,26 @@ fn provider_docs_and_profile_policy_stay_in_sync() {
         "opi-ai README must document response-ID round-trip into response_id"
     );
     assert!(
+        contains_ci(&opi_ai, "OpenAI Chat captures the ID from any")
+            && contains_ci(&opi_ai, "chunk carrying `id`")
+            && contains_ci(&opi_ai_zh, "OpenAI Chat 会从任何携带 `id` 的 chunk")
+            && contains_ci(&opi_ai_zh, "捕获 response ID")
+            && contains_ci(&coding, "OpenAI Chat captures response IDs")
+            && contains_ci(&coding, "chunk carrying `id`")
+            && contains_ci(&coding_zh, "OpenAI Chat 会从任何携带 `id` 的 chunk")
+            && contains_ci(&coding_zh, "捕获 response ID")
+            && contains_ci(&spec, "OpenAI Chat captures the ID from any")
+            && contains_ci(&spec, "chunk carrying `id`")
+            && contains_ci(&spec_zh, "OpenAI Chat 会从任何携带 `id` 的 chunk")
+            && contains_ci(&spec_zh, "捕获 response ID")
+            && contains_ci(&root, "OpenAI Chat chunk carrying `id`")
+            && contains_ci(&root, "response IDs captured")
+            && contains_ci(&root_zh, "OpenAI Chat chunk")
+            && contains_ci(&root_zh, "携带 `id`")
+            && contains_ci(&root_zh, "捕获 response ID"),
+        "owned docs must say OpenAI Chat captures response IDs from any chunk carrying `id`"
+    );
+    assert!(
         contains_ci(&opi_ai, "reasoningContent"),
         "opi-ai README must document the Bedrock reasoningContent parser limitation"
     );
@@ -240,6 +376,19 @@ fn provider_docs_and_profile_policy_stay_in_sync() {
     assert!(
         contains_ci(&opi_ai, "best-effort") || contains_ci(&opi_ai, "best effort"),
         "opi-ai README must state cost is best-effort"
+    );
+    assert!(
+        contains_ci(&opi_ai, "unknown usage")
+            && contains_ci(&opi_ai, "cost summaries should therefore be omitted")
+            && contains_ci(&opi_ai_zh, "usage 未知")
+            && contains_ci(&opi_ai_zh, "费用汇总就应省略")
+            && contains_ci(&coding, "session cost summaries")
+            && contains_ci(&coding, "omitted when any turn")
+            && contains_ci(&coding_zh, "会话费用汇总会被省略")
+            && contains_ci(&spec, "session cost summaries")
+            && contains_ci(&spec, "omitted")
+            && contains_ci(&spec_zh, "会话费用汇总会被省略"),
+        "docs must say missing usage stays explicitly unknown and cost summaries are omitted when usage or pricing is unknown"
     );
 
     // (8) Proxy precedence.

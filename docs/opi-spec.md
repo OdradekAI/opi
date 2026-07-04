@@ -1503,15 +1503,19 @@ diagnostics; OpenAI-compatible `CompatConfig` flags (`system_role_override`,
 `max_tokens_field`, `tool_result_name_field`, `usage_in_stream`,
 `strict_tool_schema`, `reasoning_effort`, `cache_key`,
 `require_assistant_after_tool_result`) and model-level overrides honor
-model-over-provider precedence; per-profile static request headers
-(`extra_headers`) are a separate profile config field, not a `CompatConfig`
-flag; usage-side cache tokens and
+model-over-provider precedence; `require_assistant_after_tool_result` is
+represented as compatibility metadata for legacy endpoints rather than
+runtime-enforced shared-adapter behavior; `usage_in_stream` requests
+`stream_options.include_usage` and preserves usage updates from any streaming
+chunk; per-profile static request headers (`extra_headers`) are a separate
+profile config field, not a `CompatConfig` flag; usage-side cache tokens and
 provider response IDs (Anthropic `message.id`, OpenAI Chat `chatcmpl-*`,
-Responses `resp_*`) round-trip into `AssistantMessage::response_id`; retry,
-partial-output no-retry, per-family cancellation, and per-provider proxy
-config are covered without live calls; provider construction validates
-credentials at build time and emits auth/config diagnostics with safe
-remediation.
+Responses `resp_*`) round-trip into `AssistantMessage::response_id`, and
+OpenAI Chat captures the ID from any chunk carrying `id`, not only role
+chunks; retry, partial-output no-retry, per-family cancellation, and
+per-provider proxy config are covered without live calls; provider
+construction validates credentials at build time and emits auth/config
+diagnostics with safe remediation.
 
 Explicitly deferred: OpenAI Responses `previous_response_id` and server-side
 session chaining (Responses requests are Chat-Completions analogues);
@@ -1524,7 +1528,9 @@ flows; Anthropic, OpenAI Codex, and GitHub Copilot subscription auth; a broad
 new first-class provider list; image generation; browser usage; a provider
 streaming-adapter protocol for packages; paid live provider calls in default
 tests; copying pi's provider-specific config file format. Best-effort cost
-mapping keeps explicit unknown values rather than inferring false confidence.
+mapping keeps explicit unknown values rather than inferring false confidence:
+missing usage is tracked as unknown, and session cost summaries are omitted
+when any turn has unknown usage or when pricing is unknown.
 
 ### Phase 13 - Session Tree and Context Reconstruction
 

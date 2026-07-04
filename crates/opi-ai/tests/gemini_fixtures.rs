@@ -532,12 +532,12 @@ async fn stream_sends_text_request_body_and_auth_through_http() {
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
-async fn stream_cancellation_aborts_before_completion() {
+async fn stream_cancellation_drains_without_hang_after_cancel() {
     // The CancellationToken is threaded into the Gemini adapter's HTTP
     // body-stream loop (gemini.rs `cancel.cancelled()` select arm). Cancelling
-    // while the stream is open must terminate it gracefully without hanging or
-    // panicking. (Deterministic cancel-timing is proven at the agent layer in
-    // retry_agent.rs; this asserts the adapter wires cancel.)
+    // while the stream is open must drain promptly without hanging. This
+    // wiremock fixture is fully buffered, so it does not prove cancellation
+    // wins a race against delayed terminal SSE data.
     let sse = "data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"Hi\"}]},\"index\":0}]}\n\n\
                data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"\"}]},\"finishReason\":\"STOP\",\"index\":0}],\"usageMetadata\":{\"promptTokenCount\":5,\"candidatesTokenCount\":2,\"totalTokenCount\":7}}\n\n";
     let server = MockServer::start().await;

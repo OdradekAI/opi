@@ -21,24 +21,14 @@ fn usage_default_has_zero_cache_tokens() {
 
 #[test]
 fn usage_with_cache_fields() {
-    let u = Usage {
-        input_tokens: 100,
-        output_tokens: 50,
-        cache_read_tokens: 200,
-        cache_write_tokens: 75,
-    };
+    let u = Usage::reported(100, 50, 200, 75);
     assert_eq!(u.cache_read_tokens, 200);
     assert_eq!(u.cache_write_tokens, 75);
 }
 
 #[test]
 fn usage_total_tokens_includes_cache() {
-    let u = Usage {
-        input_tokens: 100,
-        output_tokens: 50,
-        cache_read_tokens: 200,
-        cache_write_tokens: 75,
-    };
+    let u = Usage::reported(100, 50, 200, 75);
     // total = input + output + cache_read + cache_write
     assert_eq!(u.total_tokens(), 425);
 }
@@ -46,6 +36,12 @@ fn usage_total_tokens_includes_cache() {
 #[test]
 fn usage_total_tokens_zero_when_all_zero() {
     assert_eq!(Usage::default().total_tokens(), 0);
+}
+
+#[test]
+fn missing_usage_is_not_reported_as_known_zero_cost() {
+    let usage = Usage::unknown();
+    assert!(!usage.is_reported());
 }
 
 // ---------------------------------------------------------------------------
@@ -65,12 +61,7 @@ fn cumulative_usage_starts_at_zero() {
 #[test]
 fn cumulative_usage_accumulates_single_turn() {
     let mut cu = CumulativeUsage::default();
-    cu.accumulate(&Usage {
-        input_tokens: 100,
-        output_tokens: 50,
-        cache_read_tokens: 200,
-        cache_write_tokens: 75,
-    });
+    cu.accumulate(&Usage::reported(100, 50, 200, 75));
     assert_eq!(cu.total_input_tokens(), 100);
     assert_eq!(cu.total_output_tokens(), 50);
     assert_eq!(cu.total_cache_read_tokens(), 200);
@@ -81,18 +72,8 @@ fn cumulative_usage_accumulates_single_turn() {
 #[test]
 fn cumulative_usage_accumulates_multiple_turns() {
     let mut cu = CumulativeUsage::default();
-    cu.accumulate(&Usage {
-        input_tokens: 100,
-        output_tokens: 50,
-        cache_read_tokens: 200,
-        cache_write_tokens: 75,
-    });
-    cu.accumulate(&Usage {
-        input_tokens: 150,
-        output_tokens: 75,
-        cache_read_tokens: 300,
-        cache_write_tokens: 0,
-    });
+    cu.accumulate(&Usage::reported(100, 50, 200, 75));
+    cu.accumulate(&Usage::reported(150, 75, 300, 0));
     assert_eq!(cu.total_input_tokens(), 250);
     assert_eq!(cu.total_output_tokens(), 125);
     assert_eq!(cu.total_cache_read_tokens(), 500);
@@ -103,23 +84,14 @@ fn cumulative_usage_accumulates_multiple_turns() {
 #[test]
 fn cumulative_usage_as_usage_returns_aggregate() {
     let mut cu = CumulativeUsage::default();
-    cu.accumulate(&Usage {
-        input_tokens: 100,
-        output_tokens: 50,
-        cache_read_tokens: 200,
-        cache_write_tokens: 75,
-    });
-    cu.accumulate(&Usage {
-        input_tokens: 50,
-        output_tokens: 25,
-        cache_read_tokens: 100,
-        cache_write_tokens: 25,
-    });
+    cu.accumulate(&Usage::reported(100, 50, 200, 75));
+    cu.accumulate(&Usage::reported(50, 25, 100, 25));
     let aggregate = cu.as_usage();
     assert_eq!(aggregate.input_tokens, 150);
     assert_eq!(aggregate.output_tokens, 75);
     assert_eq!(aggregate.cache_read_tokens, 300);
     assert_eq!(aggregate.cache_write_tokens, 100);
+    assert!(aggregate.is_reported());
 }
 
 // ---------------------------------------------------------------------------
@@ -155,12 +127,7 @@ fn pricing_default_is_zero() {
 
 #[test]
 fn calculate_cost_basic_usage() {
-    let usage = Usage {
-        input_tokens: 1_000_000,
-        output_tokens: 1_000_000,
-        cache_read_tokens: 0,
-        cache_write_tokens: 0,
-    };
+    let usage = Usage::reported(1_000_000, 1_000_000, 0, 0);
     let pricing = Pricing {
         input_cost_per_mtok: 3.0,
         output_cost_per_mtok: 15.0,
@@ -177,12 +144,7 @@ fn calculate_cost_basic_usage() {
 
 #[test]
 fn calculate_cost_with_cache_tokens() {
-    let usage = Usage {
-        input_tokens: 500_000,
-        output_tokens: 250_000,
-        cache_read_tokens: 1_000_000,
-        cache_write_tokens: 500_000,
-    };
+    let usage = Usage::reported(500_000, 250_000, 1_000_000, 500_000);
     let pricing = Pricing {
         input_cost_per_mtok: 3.0,
         output_cost_per_mtok: 15.0,
@@ -213,12 +175,7 @@ fn calculate_cost_zero_usage() {
 #[test]
 fn calculate_cost_fractional_tokens() {
     // 500 tokens at $3.0/mtok = $0.0015
-    let usage = Usage {
-        input_tokens: 500,
-        output_tokens: 0,
-        cache_read_tokens: 0,
-        cache_write_tokens: 0,
-    };
+    let usage = Usage::reported(500, 0, 0, 0);
     let pricing = Pricing {
         input_cost_per_mtok: 3.0,
         output_cost_per_mtok: 0.0,
@@ -263,18 +220,8 @@ fn cumulative_cost_across_turns() {
         cache_read_cost_per_mtok: 0.30,
         cache_write_cost_per_mtok: 3.75,
     };
-    cu.accumulate(&Usage {
-        input_tokens: 100_000,
-        output_tokens: 50_000,
-        cache_read_tokens: 200_000,
-        cache_write_tokens: 50_000,
-    });
-    cu.accumulate(&Usage {
-        input_tokens: 50_000,
-        output_tokens: 25_000,
-        cache_read_tokens: 100_000,
-        cache_write_tokens: 0,
-    });
+    cu.accumulate(&Usage::reported(100_000, 50_000, 200_000, 50_000));
+    cu.accumulate(&Usage::reported(50_000, 25_000, 100_000, 0));
     let aggregate = cu.as_usage();
     let cost = calculate_cost(&aggregate, &pricing);
     // 150k input @ $3/mtok = $0.45

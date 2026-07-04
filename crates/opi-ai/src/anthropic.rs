@@ -159,6 +159,25 @@ struct RawUsage {
     cache_creation_input_tokens: Option<u32>,
 }
 
+impl RawUsage {
+    fn into_usage(self) -> Usage {
+        if self.input_tokens.is_some()
+            || self.output_tokens.is_some()
+            || self.cache_read_input_tokens.is_some()
+            || self.cache_creation_input_tokens.is_some()
+        {
+            Usage::reported(
+                self.input_tokens.unwrap_or(0),
+                self.output_tokens.unwrap_or(0),
+                self.cache_read_input_tokens.unwrap_or(0),
+                self.cache_creation_input_tokens.unwrap_or(0),
+            )
+        } else {
+            Usage::unknown()
+        }
+    }
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type")]
 enum RawContentBlock {
@@ -261,13 +280,8 @@ impl AnthropicEvent {
             AnthropicRawEvent::MessageStart { message } => {
                 let usage = message
                     .usage
-                    .map(|u| Usage {
-                        input_tokens: u.input_tokens.unwrap_or(0),
-                        output_tokens: u.output_tokens.unwrap_or(0),
-                        cache_read_tokens: u.cache_read_input_tokens.unwrap_or(0),
-                        cache_write_tokens: u.cache_creation_input_tokens.unwrap_or(0),
-                    })
-                    .unwrap_or_default();
+                    .map(RawUsage::into_usage)
+                    .unwrap_or_else(Usage::unknown);
                 AnthropicEvent::MessageStart {
                     id: message.id,
                     model: message.model,
@@ -305,12 +319,7 @@ impl AnthropicEvent {
             }
             AnthropicRawEvent::MessageDelta { delta, usage } => AnthropicEvent::MessageDelta {
                 stop_reason: delta.stop_reason,
-                usage: Usage {
-                    input_tokens: usage.input_tokens.unwrap_or(0),
-                    output_tokens: usage.output_tokens.unwrap_or(0),
-                    cache_read_tokens: usage.cache_read_input_tokens.unwrap_or(0),
-                    cache_write_tokens: usage.cache_creation_input_tokens.unwrap_or(0),
-                },
+                usage: usage.into_usage(),
             },
             AnthropicRawEvent::MessageStop => AnthropicEvent::MessageStop,
             AnthropicRawEvent::Error { error } => AnthropicEvent::Error {
@@ -520,11 +529,20 @@ impl AnthropicMapper {
             }
             AnthropicEvent::MessageDelta { stop_reason, usage } => {
                 self.partial.stop_reason = map_stop_reason(stop_reason.as_deref());
+                if usage.is_reported() {
+                    self.partial.usage.reported = true;
+                }
                 if usage.input_tokens > 0 {
                     self.partial.usage.input_tokens = usage.input_tokens;
                 }
                 if usage.output_tokens > 0 {
                     self.partial.usage.output_tokens = usage.output_tokens;
+                }
+                if usage.cache_read_tokens > 0 {
+                    self.partial.usage.cache_read_tokens = usage.cache_read_tokens;
+                }
+                if usage.cache_write_tokens > 0 {
+                    self.partial.usage.cache_write_tokens = usage.cache_write_tokens;
                 }
                 // message_delta doesn't emit a stream event; Done comes from message_stop
                 Vec::new()

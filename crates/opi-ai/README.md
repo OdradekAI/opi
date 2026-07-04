@@ -132,11 +132,11 @@ requires a task-graph update and is a Phase 12 non-goal by default.
 | `system_role_override` | Render the system prompt as `developer` (or another role) instead of `system`. |
 | `max_tokens_field` | Request field name for the output cap (`max_tokens` vs `max_completion_tokens`). |
 | `tool_result_name_field` | Echo the tool name on the tool-result message. |
-| `usage_in_stream` | Expect usage deltas in the streaming response. |
+| `usage_in_stream` | Request `stream_options.include_usage` and preserve usage updates from any streaming chunk. |
 | `strict_tool_schema` | Emit strict JSON-schema tool definitions. |
 | `reasoning_effort` | Send a reasoning-effort hint for models that support it. |
 | `cache_key` | Send the provider's prompt-cache key (cache-affinity hint). |
-| `require_assistant_after_tool_result` | Modeled as compat metadata; enforced as a runtime check, not a wire field. |
+| `require_assistant_after_tool_result` | Metadata-only compatibility marker for legacy endpoints; opi does not synthesize or enforce the extra assistant turn in the shared adapter. |
 
 `ModelCompatOverride` layers model-level overrides for `system_role_override`
 and `max_tokens_field` on top of the profile defaults (model wins over
@@ -160,7 +160,8 @@ available cache-affinity hint.
 
 Provider response IDs are captured and round-tripped into
 `AssistantMessage::response_id` (Anthropic `message.id`, OpenAI Chat
-`chatcmpl-*`, OpenAI Responses `resp_*`); other families leave it `None`.
+`chatcmpl-*`, OpenAI Responses `resp_*`); OpenAI Chat captures the ID from any
+chunk carrying `id`, not only role chunks, and other families leave it `None`.
 
 Session affinity is intentionally limited: `previous_response_id` is deferred
 (see OpenAI-Compatible Profiles), and compatible profiles may carry static
@@ -179,9 +180,11 @@ coverage.
 ## Best-Effort Cost
 
 Cost mapping is best-effort. Incorrect confidence is worse than explicit
-unknown values: when pricing or usage is absent, `Usage` / cost helpers keep
-explicit unknowns (cost `None`) rather than inferring a number. Cost never
-blocks a successful stream.
+unknown values: when provider usage is absent, `Usage::unknown()` and
+`CumulativeUsage` keep the turn explicitly unknown instead of treating it as
+known-zero usage. Session-facing cost summaries should therefore be omitted
+when any turn has unknown usage or when pricing is absent. Cost never blocks a
+successful stream.
 
 ## Phase 12 Non-Goals
 

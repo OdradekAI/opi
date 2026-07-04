@@ -6,14 +6,20 @@
 
 use std::sync::{Arc, Mutex};
 
+use futures_util::StreamExt;
 use opi_ai::anthropic::AnthropicProvider;
 use opi_ai::gemini::GeminiProvider;
 use opi_ai::http::{
     HttpClient, HttpClientBuilder, ProxyConfig, proxy_from_env, redact_proxy_credentials,
     resolve_proxy,
 };
+use opi_ai::message::{InputContent, Message, UserMessage};
 use opi_ai::openai_chat::OpenAiChatProvider;
 use opi_ai::openai_responses::OpenAiResponsesProvider;
+use opi_ai::provider::{Provider, Request, ThinkingConfig};
+use tokio_util::sync::CancellationToken;
+use wiremock::matchers::method;
+use wiremock::{Mock, MockServer, ResponseTemplate};
 
 // Serialize env-var tests to avoid parallel interference.
 static ENV_MUTEX: Mutex<()> = Mutex::new(());
@@ -333,4 +339,88 @@ fn gemini_provider_with_proxy_client() {
         provider.http_client().proxy_config().url.as_deref(),
         Some("http://proxy.example.com:8080")
     );
+}
+
+#[tokio::test]
+async fn openai_chat_provider_routes_http_requests_through_proxy() {
+    let proxy = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string(concat!(
+                    "data: {\"id\":\"chatcmpl-proxy\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"gpt-4o\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"\"},\"finish_reason\":null}]}\n\n",
+                    "data: {\"id\":\"chatcmpl-proxy\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"gpt-4o\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":1,\"completion_tokens\":1,\"total_tokens\":2}}\n\n",
+                    "data: [DONE]\n\n",
+                ))
+                .insert_header("content-type", "text/event-stream"),
+        )
+        .mount(&proxy)
+        .await;
+
+    let client = Arc::new(
+        HttpClientBuilder::new()
+            .proxy(ProxyConfig {
+                url: Some(proxy.uri()),
+                no_proxy: None,
+            })
+            .build()
+            .expect("build proxied client"),
+    );
+    let provider = OpenAiChatProvider::with_client(
+        "test-key".into(),
+        Some("http://upstream.test".into()),
+        "openai".into(),
+        vec![],
+        client,
+    );
+    let request = Request {
+        model: "openai:gpt-4o".into(),
+        system: Some("You are helpful.".into()),
+        messages: vec![Message::User(UserMessage {
+            content: vec![InputContent::Text {
+                text: "Hello".into(),
+            }],
+            timestamp_ms: 0,
+        })],
+        tools: vec![],
+        max_tokens: Some(64),
+        temperature: None,
+        thinking: ThinkingConfig::default(),
+        stop_sequences: vec![],
+        metadata: None,
+        cancel: CancellationToken::new(),
+    };
+
+    let mut stream = provider.stream(request);
+    while let Some(result) = stream.next().await {
+        match result {
+            Ok(event) if event.is_terminal() => break,
+            Ok(_) => {}
+            Err(err) => panic!("unexpected stream error: {err:?}"),
+        }
+    }
+
+    let received = proxy
+        .received_requests()
+        .await
+        .expect("proxy should record the routed request");
+    assert_eq!(received.len(), 1, "proxy should see exactly one request");
+
+    let proxied = &received[0];
+    assert_eq!(
+        proxied.url.as_str(),
+        "http://upstream.test/v1/chat/completions",
+        "proxy should receive the absolute-form upstream target"
+    );
+    assert_eq!(
+        proxied
+            .headers
+            .get("host")
+            .and_then(|value| value.to_str().ok()),
+        Some("upstream.test"),
+        "proxy-routed request should preserve the upstream Host header"
+    );
+
+    let body: serde_json::Value = proxied.body_json().expect("proxied request body");
+    assert_eq!(body["model"], "gpt-4o");
 }

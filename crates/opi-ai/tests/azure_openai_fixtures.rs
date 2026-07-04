@@ -158,6 +158,72 @@ async fn collect_events(stream: opi_ai::provider::EventStream) -> Vec<AssistantS
     events
 }
 
+async fn write_chunk(socket: &mut tokio::net::TcpStream, body: &str) -> std::io::Result<()> {
+    let chunk = format!("{:X}\r\n{}\r\n", body.len(), body);
+    tokio::io::AsyncWriteExt::write_all(socket, chunk.as_bytes()).await
+}
+
+async fn spawn_stalled_azure_server() -> String {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind stalled Azure server");
+    let addr = listener.local_addr().expect("stalled server addr");
+
+    tokio::spawn(async move {
+        let (mut socket, _) = listener.accept().await.expect("accept stalled stream");
+        let mut request = Vec::new();
+        let mut buf = [0_u8; 1024];
+
+        loop {
+            let read = tokio::io::AsyncReadExt::read(&mut socket, &mut buf)
+                .await
+                .expect("read request");
+            if read == 0 {
+                return;
+            }
+            request.extend_from_slice(&buf[..read]);
+            if request.windows(4).any(|window| window == b"\r\n\r\n") {
+                break;
+            }
+        }
+
+        let request_text = String::from_utf8_lossy(&request);
+        assert!(
+            request_text.starts_with(
+                "POST /openai/deployments/my-gpt4o/chat/completions?api-version=2024-06-01 "
+            ),
+            "unexpected request line: {request_text}"
+        );
+
+        tokio::io::AsyncWriteExt::write_all(
+            &mut socket,
+            b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n",
+        )
+        .await
+        .expect("write response headers");
+        write_chunk(&mut socket, stalled_azure_start_chunk())
+            .await
+            .expect("write initial SSE chunk");
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        let _ = write_chunk(&mut socket, stalled_azure_terminal_chunk()).await;
+        let _ = tokio::io::AsyncWriteExt::write_all(&mut socket, b"0\r\n\r\n").await;
+    });
+
+    format!("http://{addr}")
+}
+
+fn stalled_azure_start_chunk() -> &'static str {
+    "data: {\"id\":\"chatcmpl-slow\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"gpt-4o\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"\"},\"finish_reason\":null}]}\n\n"
+}
+
+fn stalled_azure_terminal_chunk() -> &'static str {
+    concat!(
+        "data: {\"id\":\"chatcmpl-slow\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"gpt-4o\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"late\"},\"finish_reason\":null}]}\n\n",
+        "data: {\"id\":\"chatcmpl-slow\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"gpt-4o\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":1,\"completion_tokens\":1,\"total_tokens\":2}}\n\n",
+        "data: [DONE]\n\n",
+    )
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -484,23 +550,15 @@ fn azure_inherits_shared_compat_flags_via_with_compat() {
 async fn stream_cancellation_aborts_before_completion() {
     // The CancellationToken is threaded into the Azure OpenAI adapter's HTTP
     // body-stream loop (azure_openai.rs `cancel.cancelled()` select arm).
-    // Cancelling while the stream is open must terminate it gracefully without
-    // hanging or panicking. (Deterministic cancel-timing is proven at the agent
-    // layer in retry_agent.rs; this asserts the adapter wires cancel.)
-    let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .set_body_string(text_sse_fixture())
-                .insert_header("content-type", "text/event-stream"),
-        )
-        .mount(&server)
-        .await;
+    // Cancelling while the stream is open must terminate it before the delayed
+    // terminal chunk arrives, proving the shared OpenAI-compatible adapter path
+    // observes cancellation under Azure's deployment URL shape.
+    let server = spawn_stalled_azure_server().await;
 
     let cancel = CancellationToken::new();
     let provider = AzureOpenAIProvider::new(
         "test-api-key-12345".into(),
-        Some(server.uri()),
+        Some(server),
         "my-gpt4o".into(),
         Some("2024-06-01".into()),
     )
@@ -509,22 +567,19 @@ async fn stream_cancellation_aborts_before_completion() {
     request.cancel = cancel.clone();
     let mut stream = provider.stream(request);
 
-    let _ = stream
+    let first = stream
         .next()
         .await
-        .expect("stream should produce at least one event");
+        .expect("stream should produce at least one event")
+        .expect("first event should be valid");
+    assert!(matches!(first, AssistantStreamEvent::Start { .. }));
     cancel.cancel();
 
-    let drain = async {
-        while let Some(result) = stream.next().await {
-            match result {
-                Ok(event) if event.is_terminal() => break,
-                Err(_) => break,
-                _ => {}
-            }
-        }
-    };
-    tokio::time::timeout(std::time::Duration::from_secs(2), drain)
+    let next = tokio::time::timeout(std::time::Duration::from_millis(200), stream.next())
         .await
-        .expect("stream must drain promptly after cancellation (no hang/panic)");
+        .expect("stream must close before the delayed terminal fixture completes");
+    assert!(
+        next.is_none(),
+        "stream should end on cancellation before the terminal SSE chunk arrives"
+    );
 }

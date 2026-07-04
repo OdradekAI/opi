@@ -248,12 +248,7 @@ fn session_coordinator_accumulates_usage() {
     )
     .unwrap();
 
-    let usage = opi_ai::stream::Usage {
-        input_tokens: 100,
-        output_tokens: 50,
-        cache_read_tokens: 0,
-        cache_write_tokens: 0,
-    };
+    let usage = opi_ai::stream::Usage::reported(100, 50, 0, 0);
 
     coord.on_turn_end_simple(&[], &usage).unwrap();
     assert_eq!(coord.usage().turn_count(), 1);
@@ -620,12 +615,7 @@ fn compaction_shrinks_buffer_and_returns_summary_plus_kept() {
         })
         .collect();
 
-    let usage = Usage {
-        input_tokens: 100,
-        output_tokens: 100,
-        cache_read_tokens: 0,
-        cache_write_tokens: 0,
-    };
+    let usage = Usage::reported(100, 100, 0, 0);
 
     let out = coord
         .on_turn_end_simple(&messages, &usage)
@@ -663,12 +653,7 @@ fn compaction_engine_reads_pricing_and_reports_cost() {
     .unwrap();
 
     // Sonnet pricing: $3/Mtok input, $15/Mtok output
-    let usage = Usage {
-        input_tokens: 1_000_000,
-        output_tokens: 500_000,
-        cache_read_tokens: 0,
-        cache_write_tokens: 0,
-    };
+    let usage = Usage::reported(1_000_000, 500_000, 0, 0);
     coord.on_turn_end_simple(&[], &usage).unwrap();
 
     let cost = coord.cost_summary().expect("sonnet pricing should resolve");
@@ -689,6 +674,28 @@ fn cost_summary_returns_none_for_unknown_model() {
         "future:unknown-model",
     )
     .unwrap();
+
+    assert!(coord.cost_summary().is_none());
+}
+
+#[test]
+fn cost_summary_returns_none_when_any_turn_has_unknown_usage() {
+    use opi_agent::compaction::CompactionConfig;
+    use opi_ai::stream::Usage;
+
+    let dir = tempfile::tempdir().unwrap();
+    let mut coord = SessionCoordinator::new(
+        dir.path(),
+        "/test",
+        CompactionConfig::default(),
+        "anthropic:claude-sonnet-4",
+    )
+    .unwrap();
+
+    coord
+        .on_turn_end_simple(&[], &Usage::reported(100, 50, 0, 0))
+        .unwrap();
+    coord.on_turn_end_simple(&[], &Usage::unknown()).unwrap();
 
     assert!(coord.cost_summary().is_none());
 }
@@ -1052,12 +1059,7 @@ async fn multi_assistant_turn_accumulates_all_assistant_usages() {
     tool_partial.content.push(AssistantContent::ToolCall {
         tool_call: tool_call.clone(),
     });
-    tool_partial.usage = Usage {
-        input_tokens: 100,
-        output_tokens: 30,
-        cache_read_tokens: 0,
-        cache_write_tokens: 0,
-    };
+    tool_partial.usage = Usage::reported(100, 30, 0, 0);
     let tool_response = vec![
         AssistantStreamEvent::Start {
             partial: test_support::base_assistant(),
@@ -1078,12 +1080,7 @@ async fn multi_assistant_turn_accumulates_all_assistant_usages() {
     final_partial.content.push(AssistantContent::Text {
         text: "done".into(),
     });
-    final_partial.usage = Usage {
-        input_tokens: 200,
-        output_tokens: 50,
-        cache_read_tokens: 0,
-        cache_write_tokens: 0,
-    };
+    final_partial.usage = Usage::reported(200, 50, 0, 0);
     let final_response = vec![
         AssistantStreamEvent::Start {
             partial: test_support::base_assistant(),
@@ -1739,12 +1736,7 @@ fn open_existing_replays_usage_from_assistant_messages() {
     asst1
         .content
         .push(AssistantContent::Text { text: "hi".into() });
-    asst1.usage = Usage {
-        input_tokens: 100,
-        output_tokens: 50,
-        cache_read_tokens: 10,
-        cache_write_tokens: 5,
-    };
+    asst1.usage = Usage::reported(100, 50, 10, 5);
     writer
         .append(&SessionEntry::Message(MessageEntry {
             id: "msg-2".into(),
@@ -1758,12 +1750,7 @@ fn open_existing_replays_usage_from_assistant_messages() {
     asst2.content.push(AssistantContent::Text {
         text: "world".into(),
     });
-    asst2.usage = Usage {
-        input_tokens: 200,
-        output_tokens: 80,
-        cache_read_tokens: 20,
-        cache_write_tokens: 10,
-    };
+    asst2.usage = Usage::reported(200, 80, 20, 10);
     writer
         .append(&SessionEntry::Message(MessageEntry {
             id: "msg-3".into(),
@@ -1821,6 +1808,91 @@ fn open_existing_replays_usage_from_assistant_messages() {
 // session JSONL land in the in-process RecordingSink and are counted by
 // diagnostic_counts() — not just in resource_metadata. This pins that wiring.
 // ---------------------------------------------------------------------------
+
+#[test]
+fn open_existing_treats_legacy_nonzero_usage_as_reported_for_cost_summary() {
+    use opi_agent::compaction::CompactionConfig;
+    use opi_agent::session::MessageEntry;
+    use opi_ai::message::{AssistantContent, Message};
+    use opi_ai::stream::Usage;
+    use std::io::Write;
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("legacy-usage-replay.jsonl");
+    let header = make_header("legacy-usage-replay", "/repo");
+    let mut writer = SessionWriter::create(&path, header).unwrap();
+
+    writer
+        .append(&SessionEntry::Message(MessageEntry {
+            id: "msg-1".into(),
+            parent_id: None,
+            timestamp: "2026-05-22T12:00:00Z".into(),
+            message: Message::User(UserMessage {
+                content: vec![InputContent::Text {
+                    text: "hello".into(),
+                }],
+                timestamp_ms: 0,
+            }),
+        }))
+        .unwrap();
+    drop(writer);
+
+    let mut assistant = test_support::base_assistant();
+    assistant.content.push(AssistantContent::Text {
+        text: "legacy".into(),
+    });
+    assistant.usage = Usage::reported(1_000_000, 500_000, 0, 0);
+    let assistant_entry = SessionEntry::Message(MessageEntry {
+        id: "msg-2".into(),
+        parent_id: None,
+        timestamp: "2026-05-22T12:00:01Z".into(),
+        message: Message::Assistant(assistant),
+    });
+    let mut legacy_value = serde_json::to_value(&assistant_entry).unwrap();
+    remove_reported_flags(&mut legacy_value);
+
+    let mut file = std::fs::OpenOptions::new()
+        .append(true)
+        .open(&path)
+        .unwrap();
+    writeln!(file, "{}", serde_json::to_string(&legacy_value).unwrap()).unwrap();
+    drop(file);
+
+    let (_header, entries) = SessionReader::read_all(&path).unwrap();
+    let resumed = SessionCoordinator::open_existing(
+        path,
+        "legacy-usage-replay".into(),
+        &entries,
+        2,
+        CompactionConfig::default(),
+        "anthropic:claude-sonnet-4",
+    )
+    .unwrap();
+
+    let cost = resumed
+        .cost_summary()
+        .expect("legacy nonzero usage without reported field should still price");
+    assert!((cost.input_cost - 3.0).abs() < 1e-6);
+    assert!((cost.output_cost - 7.5).abs() < 1e-6);
+    assert!((cost.total_cost() - 10.5).abs() < 1e-6);
+}
+
+fn remove_reported_flags(value: &mut serde_json::Value) {
+    match value {
+        serde_json::Value::Object(map) => {
+            map.remove("reported");
+            for child in map.values_mut() {
+                remove_reported_flags(child);
+            }
+        }
+        serde_json::Value::Array(items) => {
+            for item in items {
+                remove_reported_flags(item);
+            }
+        }
+        _ => {}
+    }
+}
 
 #[test]
 fn phase8_session_recovery_diagnostics_reach_in_process_sink() {

@@ -239,6 +239,7 @@ fn usage_updated_in_done_event() {
     let stream_events = map_fixture(text_fixture());
 
     if let AssistantStreamEvent::Done { message, .. } = &stream_events[5] {
+        assert!(message.usage.is_reported());
         assert_eq!(message.usage.output_tokens, 15);
         assert_eq!(message.usage.input_tokens, 25);
     } else {
@@ -251,6 +252,7 @@ fn tool_call_usage_tracked() {
     let stream_events = map_fixture(tool_call_fixture());
 
     if let AssistantStreamEvent::Done { message, .. } = &stream_events[4] {
+        assert!(message.usage.is_reported());
         assert_eq!(message.usage.input_tokens, 50);
         assert_eq!(message.usage.output_tokens, 100);
     } else {
@@ -337,6 +339,7 @@ fn missing_usage_yields_graceful_zero_tokens() {
         .expect("expected Done event");
     if let AssistantStreamEvent::Done { message, .. } = done {
         // A stream that reports no usage must map to zero usage without panicking.
+        assert!(!message.usage.is_reported());
         assert_eq!(message.usage.input_tokens, 0);
         assert_eq!(message.usage.output_tokens, 0);
         assert_eq!(message.usage.cache_read_tokens, 0);
@@ -1268,12 +1271,12 @@ async fn stream_sends_text_request_body_and_auth_through_http() {
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
-async fn stream_cancellation_aborts_before_completion() {
+async fn stream_cancellation_drains_without_hang_after_cancel() {
     // The CancellationToken is threaded into the Anthropic adapter's HTTP
     // body-stream loop (anthropic.rs `cancel.cancelled()` select arm).
-    // Cancelling while the stream is open must terminate it gracefully without
-    // hanging or panicking. (Deterministic cancel-timing behavior is proven at
-    // the agent layer in retry_agent.rs; this asserts the adapter wires cancel.)
+    // This wiremock fixture is fully buffered, so it only proves the adapter
+    // drains promptly after cancellation; it does not prove cancellation wins
+    // a race against delayed terminal SSE data.
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/v1/messages"))

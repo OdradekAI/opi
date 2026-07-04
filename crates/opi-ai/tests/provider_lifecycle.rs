@@ -330,7 +330,7 @@ async fn stream_no_terminal_event_produces_stream_error() {
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
-async fn stream_cancellation_ends_gracefully() {
+async fn stream_cancellation_drains_without_hang_after_cancel() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/v1/messages"))
@@ -351,22 +351,18 @@ async fn stream_cancellation_ends_gracefully() {
     assert!(first.is_ok(), "first event should be Ok");
     cancel.cancel();
 
-    // Stream should end without panicking
-    let mut got_terminal = false;
-    while let Some(result) = stream.next().await {
-        match result {
-            Ok(event) => {
-                if event.is_terminal() {
-                    got_terminal = true;
-                    break;
-                }
+    let drain = async {
+        while let Some(result) = stream.next().await {
+            match result {
+                Ok(event) if event.is_terminal() => break,
+                Err(_) => break,
+                _ => {}
             }
-            Err(_) => break,
         }
-    }
-    // Cancellation may or may not produce a terminal event depending on timing,
-    // but it should not panic or hang.
-    let _ = got_terminal;
+    };
+    tokio::time::timeout(std::time::Duration::from_secs(2), drain)
+        .await
+        .expect("stream must drain promptly after cancellation (no hang)");
 }
 
 // ---------------------------------------------------------------------------

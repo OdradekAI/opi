@@ -251,7 +251,9 @@ the agent can call; they are not an operating-system sandbox.
   copying pi's provider-specific config file format remain deferred. See the
   `opi-ai` README for the per-family behavior matrix, OpenAI-compatible
   profile flags, cache / response-ID / session-affinity behavior, proxy, and
-  best-effort cost.
+  best-effort cost, including `usage_in_stream` -> `stream_options.include_usage`,
+  response IDs captured from any OpenAI Chat chunk carrying `id`, and omitted
+  cost summaries when usage or pricing is unknown.
 - Dynamic Rust plugin loading from arbitrary extension paths is not supported.
 
 If you need stronger isolation, run `opi` inside a container, VM, or external

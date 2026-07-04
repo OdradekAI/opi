@@ -1190,20 +1190,38 @@ impl CodingHarness {
     /// assistant message carries its own `usage`; the cumulative session
     /// total must include all of them, not just the last one.
     fn aggregate_turn_usage(messages: &[AgentMessage]) -> opi_ai::stream::Usage {
-        let mut total = opi_ai::stream::Usage::default();
+        let mut saw_assistant = false;
+        let mut all_reported = true;
+        let mut input_tokens = 0u32;
+        let mut output_tokens = 0u32;
+        let mut cache_read_tokens = 0u32;
+        let mut cache_write_tokens = 0u32;
         for m in messages {
             if let AgentMessage::Llm(Message::Assistant(a)) = m {
-                total.input_tokens = total.input_tokens.saturating_add(a.usage.input_tokens);
-                total.output_tokens = total.output_tokens.saturating_add(a.usage.output_tokens);
-                total.cache_read_tokens = total
-                    .cache_read_tokens
-                    .saturating_add(a.usage.cache_read_tokens);
-                total.cache_write_tokens = total
-                    .cache_write_tokens
-                    .saturating_add(a.usage.cache_write_tokens);
+                saw_assistant = true;
+                all_reported &= a.usage.is_reported();
+                input_tokens = input_tokens.saturating_add(a.usage.input_tokens);
+                output_tokens = output_tokens.saturating_add(a.usage.output_tokens);
+                cache_read_tokens = cache_read_tokens.saturating_add(a.usage.cache_read_tokens);
+                cache_write_tokens = cache_write_tokens.saturating_add(a.usage.cache_write_tokens);
             }
         }
-        total
+        if saw_assistant && all_reported {
+            opi_ai::stream::Usage::reported(
+                input_tokens,
+                output_tokens,
+                cache_read_tokens,
+                cache_write_tokens,
+            )
+        } else {
+            opi_ai::stream::Usage {
+                input_tokens,
+                output_tokens,
+                cache_read_tokens,
+                cache_write_tokens,
+                reported: false,
+            }
+        }
     }
 
     /// Aggregate usage across all assistant messages in a turn and persist.

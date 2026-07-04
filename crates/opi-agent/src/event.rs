@@ -195,6 +195,22 @@ impl AgentEvent {
                     .as_ref()
                     .map(|error| redact_text(error, RedactionMode::Summary)),
             },
+            AgentEvent::CompactionEnd {
+                reason,
+                result,
+                aborted,
+                error_message,
+            } => AgentEvent::CompactionEnd {
+                reason: *reason,
+                result: result.clone(),
+                aborted: *aborted,
+                error_message: error_message
+                    .as_ref()
+                    .map(|message| redact_text(message, RedactionMode::Summary)),
+            },
+            AgentEvent::SessionPersistError { message } => AgentEvent::SessionPersistError {
+                message: redact_text(message, RedactionMode::Summary),
+            },
             other => other.clone(),
         }
     }

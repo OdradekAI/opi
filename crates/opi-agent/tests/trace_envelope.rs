@@ -17,6 +17,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use opi_agent::diagnostic::code::*;
 use opi_agent::diagnostic::{RedactionMode, SOURCE_AGENT, SOURCE_PROVIDER, SOURCE_TOOL, Severity};
 use opi_agent::diagnostic_sink::RecordingSink;
+use opi_agent::session_event::CompactionReason;
 use opi_agent::{
     AgentEvent, FileTraceSink, RecordingTraceSink, TRACE_SCHEMA_VERSION, TraceCollector,
     TraceError, TraceKind, TraceRecord, TraceSink,
@@ -1142,6 +1143,70 @@ mod wiring {
                 && r.diagnostic_code == Some(CODE_PROVIDER_RETRY_ATTEMPT)
         });
         assert!(retry_linked, "retry attempt diagnostic must be mirrored");
+    }
+
+    #[tokio::test]
+    async fn phase7_partial_after_retry_emits_suppressed_not_exhausted_diagnostic_linked() {
+        let mut partial_events = test_support::text_response("partial after retry");
+        partial_events.pop();
+
+        let provider = MockProvider::new_with_errors(
+            "mock",
+            vec![
+                MockResponse::Error(ProviderError::RateLimited {
+                    retry_after_ms: Some(1),
+                }),
+                MockResponse::EventsThenError(
+                    partial_events,
+                    ProviderError::RateLimited {
+                        retry_after_ms: Some(1),
+                    },
+                ),
+            ],
+        );
+        let diag = Arc::new(RecordingSink::new());
+        let trace_sink = Arc::new(RecordingTraceSink::new());
+        let trace = collector(trace_sink.clone(), diag.clone());
+
+        let result = agent_loop(
+            ctx(provider, diag.clone(), Some(trace), vec![]),
+            config(Some(fast_retry())),
+            &NoopHooks,
+            null_event_sink(),
+            tokio_util::sync::CancellationToken::new(),
+        )
+        .await;
+        assert!(
+            result.is_err(),
+            "partial stream error after retry should fail"
+        );
+
+        let kinds = kinds_of(&trace_sink);
+        assert!(
+            kinds.contains(&TraceKind::ProviderRetry),
+            "first retry attempt should still emit ProviderRetry"
+        );
+        assert!(
+            kinds.contains(&TraceKind::ProviderFailure),
+            "partial stream error after retry should still end in ProviderFailure"
+        );
+
+        let suppressed = trace_sink.snapshot().iter().any(|r| {
+            r.kind == TraceKind::DiagnosticLinked
+                && r.diagnostic_code == Some(CODE_PROVIDER_RETRY_SUPPRESSED_AFTER_PARTIAL_OUTPUT)
+        });
+        assert!(
+            suppressed,
+            "partial-after-retry suppression diagnostic must be mirrored"
+        );
+        let exhausted = trace_sink.snapshot().iter().any(|r| {
+            r.kind == TraceKind::DiagnosticLinked
+                && r.diagnostic_code == Some(CODE_PROVIDER_RETRY_EXHAUSTED)
+        });
+        assert!(
+            !exhausted,
+            "partial-after-retry suppression must not mirror retry_exhausted"
+        );
     }
 
     #[tokio::test]
@@ -2271,5 +2336,64 @@ fn auto_retry_provider_error_messages_are_redacted_for_public() {
             final_error: None, ..
         } => panic!("final_error dropped during redaction"),
         other => panic!("redacted_for_public changed variant: {other:?}"),
+    }
+}
+
+#[test]
+fn compaction_and_session_persist_errors_are_redacted_for_public() {
+    let secret = "sk-ant-1234567890abcdefghijklmnopqrstuv";
+    let query_url = "https://api.example.test/v1?api_key=query-secret&token=query-token";
+
+    let compaction = AgentEvent::CompactionEnd {
+        reason: CompactionReason::Manual,
+        result: None,
+        aborted: true,
+        error_message: Some(format!("failed with {secret} at {query_url}")),
+    }
+    .redacted_for_public();
+
+    match compaction {
+        AgentEvent::CompactionEnd {
+            error_message: Some(message),
+            ..
+        } => {
+            assert!(!message.contains(secret));
+            assert!(!message.contains("query-secret"));
+            assert!(!message.contains("query-token"));
+            assert!(message.contains("[REDACTED]"));
+        }
+        other => panic!("unexpected event: {other:?}"),
+    }
+
+    let persist = AgentEvent::SessionPersistError {
+        message: format!("persist failed with {secret} at {query_url}"),
+    }
+    .redacted_for_public();
+
+    match persist {
+        AgentEvent::SessionPersistError { message } => {
+            assert!(!message.contains(secret));
+            assert!(!message.contains("query-secret"));
+            assert!(!message.contains("query-token"));
+            assert!(message.contains("[REDACTED]"));
+        }
+        other => panic!("unexpected event: {other:?}"),
+    }
+
+    let query_only = AgentEvent::SessionPersistError {
+        message: "persist failed at https://api.example.test/v1?api_key=only-query-secret"
+            .to_owned(),
+    }
+    .redacted_for_public();
+
+    match query_only {
+        AgentEvent::SessionPersistError { message } => {
+            assert!(
+                !message.contains("only-query-secret"),
+                "query-string api_key values must be redacted even when no key prefix is present: {message}"
+            );
+            assert!(message.contains("[REDACTED]"));
+        }
+        other => panic!("unexpected event: {other:?}"),
     }
 }

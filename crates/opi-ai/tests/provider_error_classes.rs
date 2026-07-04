@@ -172,3 +172,42 @@ async fn vertex_500_classifies_as_provider_with_redacted_excerpt() {
     ));
     assert_provider_side_redacted(provider, "vertex:gemini-2.5-flash").await;
 }
+
+#[tokio::test]
+async fn provider_side_excerpt_redacts_query_secret_values() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(500).set_body_string(
+            "https://example.test/path?api_key=opaque-secret-token&token=another-secret",
+        ))
+        .mount(&server)
+        .await;
+
+    let provider: Box<dyn Provider> = Box::new(OpenAiChatProvider::new(
+        "test-key".into(),
+        Some(server.uri()),
+    ));
+    let mut stream = provider.stream(text_request("openai:gpt-4o"));
+
+    while let Some(result) = stream.next().await {
+        if let Err(error) = result {
+            assert_eq!(error.category(), ProviderErrorCategory::Provider);
+            let text = error.to_string();
+            assert!(
+                text.contains("[REDACTED]"),
+                "provider-side excerpt should show explicit redaction markers: {text}"
+            );
+            assert!(
+                !text.contains("opaque-secret-token"),
+                "provider-side excerpt leaked api_key query value: {text}"
+            );
+            assert!(
+                !text.contains("another-secret"),
+                "provider-side excerpt leaked token query value: {text}"
+            );
+            return;
+        }
+    }
+
+    panic!("stream produced no error event before completion");
+}

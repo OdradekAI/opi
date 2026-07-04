@@ -346,7 +346,10 @@ metadata 和启动诊断。
   `require_assistant_after_tool_result`；外加用于静态请求 header 的按 profile
   `extra_headers`，它是 profile 配置字段，不是 `CompatConfig` 标志）、OpenAI Responses 原生语义
   （`store` / `reasoning_effort` / `strict_tools` 已实现；`previous_response_id` 推迟），
-  以及缓存 / response-ID / 会话亲和行为。Phase 13 会话工作可以依赖经由共享 `opi-ai`
+  以及缓存 / response-ID / 会话亲和行为。具体来说，`usage_in_stream` 会请求
+  `stream_options.include_usage`，OpenAI Chat 会从任何携带 `id` 的 chunk 捕获 response ID，
+  `require_assistant_after_tool_result` 在共享适配器中保持为纯元数据，而当任一轮 usage 未知
+  或定价未知时，会话费用汇总会被省略。Phase 13 会话工作可以依赖经由共享 `opi-ai`
   类型传递的 provider-correct usage、model、thinking 和 error 数据，而无需依赖
   provider 专用内部实现。
 

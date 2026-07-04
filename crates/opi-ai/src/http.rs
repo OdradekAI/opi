@@ -248,11 +248,12 @@ const SAFE_EXCERPT_MAX_CHARS: usize = 256;
 static SECRET_KEY_RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
 static BEARER_RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
 static CREDENTIALED_URL_RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+static QUERY_SECRET_RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
 
 fn secret_key_re() -> &'static regex::Regex {
     SECRET_KEY_RE.get_or_init(|| {
         regex::Regex::new(
-            r"sk-[A-Za-z0-9-]{20,}|gh[opsu]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{82,}|AIza[0-9A-Za-z_-]{35,}|eyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}",
+            r"sk-[A-Za-z0-9-]{20,}|gh[pousr]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{82,}|AIza[0-9A-Za-z_-]{35,}|eyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}",
         )
         .expect("valid secret-key regex")
     })
@@ -271,6 +272,15 @@ fn credentialed_url_re() -> &'static regex::Regex {
     })
 }
 
+fn query_secret_re() -> &'static regex::Regex {
+    QUERY_SECRET_RE.get_or_init(|| {
+        regex::Regex::new(
+            r"(?i)([?&](?:api_key|apikey|key|token|access_token|refresh_token|secret|password)=)[^&#\s]+",
+        )
+        .expect("valid query-secret regex")
+    })
+}
+
 /// Produce a safe, length-capped excerpt of a provider response body.
 ///
 /// Provider error bodies are interpolated into [`crate::provider::ProviderError`]
@@ -285,6 +295,9 @@ pub fn safe_excerpt(body: &str) -> String {
         .into_owned();
     let scrubbed = credentialed_url_re()
         .replace_all(&scrubbed, "${scheme}[REDACTED]@")
+        .into_owned();
+    let scrubbed = query_secret_re()
+        .replace_all(&scrubbed, "${1}[REDACTED]")
         .into_owned();
     if scrubbed.chars().count() > SAFE_EXCERPT_MAX_CHARS {
         let truncated: String = scrubbed.chars().take(SAFE_EXCERPT_MAX_CHARS).collect();

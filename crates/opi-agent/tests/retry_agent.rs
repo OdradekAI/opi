@@ -7,10 +7,14 @@
 use std::sync::{Arc, Mutex};
 
 use opi_agent::agent_loop;
+use opi_agent::diagnostic::code::{
+    CODE_PROVIDER_RETRY_EXHAUSTED, CODE_PROVIDER_RETRY_SUPPRESSED_AFTER_PARTIAL_OUTPUT,
+};
 use opi_agent::event::{AgentEvent, AgentEventSink};
 use opi_agent::hooks::AgentHooks;
 use opi_agent::loop_types::{AgentError, AgentLoopConfig, AgentLoopContext};
 use opi_agent::message::AgentMessage;
+use opi_agent::{DiagnosticSink, RecordingSink};
 use opi_ai::message::{InputContent, Message, UserMessage};
 use opi_ai::provider::ProviderError;
 use opi_ai::retry::RetryConfig;
@@ -51,6 +55,20 @@ fn make_context(provider: MockProvider) -> AgentLoopContext {
         steering_queue: None,
         follow_up_queue: None,
         diagnostic_sink: None,
+        trace: None,
+    }
+}
+
+fn make_context_with_sink(provider: MockProvider, sink: Arc<RecordingSink>) -> AgentLoopContext {
+    AgentLoopContext {
+        provider: Box::new(provider),
+        tools: vec![],
+        messages: vec![user_msg("hello")],
+        model: "mock-model".into(),
+        system: None,
+        steering_queue: None,
+        follow_up_queue: None,
+        diagnostic_sink: Some(sink as Arc<dyn DiagnosticSink>),
         trace: None,
     }
 }
@@ -259,6 +277,45 @@ async fn retry_on_timeout_then_succeed() {
 }
 
 #[tokio::test]
+async fn retry_on_network_error_then_succeed() {
+    let provider = MockProvider::new_with_errors(
+        "mock",
+        vec![
+            MockResponse::Error(ProviderError::Network("connection reset".into())),
+            MockResponse::Events(test_support::text_response("success after network retry")),
+        ],
+    );
+
+    let (log, sink) = collect_events();
+    let result = agent_loop(
+        make_context(provider),
+        make_config(Some(fast_retry_config())),
+        &NoopHooks,
+        sink,
+        tokio_util::sync::CancellationToken::new(),
+    )
+    .await;
+
+    assert!(
+        result.is_ok(),
+        "network error should retry and then succeed: {result:?}"
+    );
+    let events = log.lock().unwrap().clone();
+    assert!(
+        events
+            .iter()
+            .any(|e| matches!(e, AgentEvent::AutoRetryStart { .. })),
+        "network retry should emit AutoRetryStart"
+    );
+    assert!(
+        events
+            .iter()
+            .any(|e| matches!(e, AgentEvent::AutoRetryEnd { success: true, .. })),
+        "network retry should emit AutoRetryEnd(success=true)"
+    );
+}
+
+#[tokio::test]
 async fn no_retry_when_config_is_none() {
     let provider = MockProvider::new_with_errors(
         "mock",
@@ -400,6 +457,51 @@ async fn no_retry_after_partial_streamed_content() {
     // second response was never popped.
 }
 
+#[tokio::test]
+async fn retry_after_prior_attempt_then_partial_stream_error_is_not_exhausted() {
+    let mut partial_events = test_support::text_response("partial after retry");
+    partial_events.pop();
+
+    let provider = MockProvider::new_with_errors(
+        "mock",
+        vec![
+            MockResponse::Error(ProviderError::RateLimited {
+                retry_after_ms: Some(1),
+            }),
+            MockResponse::EventsThenError(
+                partial_events,
+                ProviderError::RateLimited {
+                    retry_after_ms: Some(1),
+                },
+            ),
+        ],
+    );
+    let sink = Arc::new(RecordingSink::new());
+
+    let result = agent_loop(
+        make_context_with_sink(provider, sink.clone()),
+        make_config(Some(fast_retry_config())),
+        &NoopHooks,
+        Box::new(|_: AgentEvent| {}),
+        tokio_util::sync::CancellationToken::new(),
+    )
+    .await;
+
+    assert!(
+        result.is_err(),
+        "partial stream error after retry should fail"
+    );
+    let codes: Vec<_> = sink.snapshot().iter().map(|d| d.code).collect();
+    assert!(
+        codes.contains(&CODE_PROVIDER_RETRY_SUPPRESSED_AFTER_PARTIAL_OUTPUT),
+        "missing partial-output suppression diagnostic: {codes:?}"
+    );
+    assert!(
+        !codes.contains(&CODE_PROVIDER_RETRY_EXHAUSTED),
+        "partial-output suppression must not report retry exhaustion: {codes:?}"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // Cancellation during retry backoff (Phase 12 task 12.7 DoD clause 8)
 // ---------------------------------------------------------------------------
@@ -473,5 +575,37 @@ async fn cancellation_during_retry_backoff_aborts() {
             .iter()
             .any(|e| matches!(e, AgentEvent::AutoRetryEnd { success: true, .. })),
         "cancelled-during-backoff run must not report retry success"
+    );
+}
+
+#[tokio::test]
+async fn provider_cancelled_routes_to_agent_cancelled() {
+    let provider =
+        MockProvider::new_with_errors("mock", vec![MockResponse::Error(ProviderError::Cancelled)]);
+
+    let (log, sink) = collect_events();
+    let result = agent_loop(
+        make_context(provider),
+        make_config(Some(fast_retry_config())),
+        &NoopHooks,
+        sink,
+        tokio_util::sync::CancellationToken::new(),
+    )
+    .await;
+
+    assert!(
+        matches!(result, Err(AgentError::Cancelled)),
+        "provider cancellation should surface as AgentError::Cancelled, got {result:?}"
+    );
+
+    let events = log.lock().unwrap().clone();
+    assert!(
+        !events.iter().any(|e| {
+            matches!(
+                e,
+                AgentEvent::AutoRetryStart { .. } | AgentEvent::AutoRetryEnd { .. }
+            )
+        }),
+        "provider cancellation must not emit retry events"
     );
 }

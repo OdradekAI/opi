@@ -452,6 +452,9 @@ pub async fn agent_loop(
                         }
 
                         if retry_attempt > 0 {
+                            let retry_suppressed_after_partial_output =
+                                e.is_retryable() && stream_delivered_content;
+
                             emit_public_event(
                                 &events,
                                 AgentEvent::AutoRetryEnd {
@@ -460,21 +463,38 @@ pub async fn agent_loop(
                                     final_error: Some(e.to_string()),
                                 },
                             );
-                            observe(
-                                &diagnostic_sink,
-                                &trace,
-                                Diagnostic::new(
-                                    Severity::Error,
-                                    CODE_PROVIDER_RETRY_EXHAUSTED,
-                                    SOURCE_PROVIDER,
-                                    "provider retries exhausted",
-                                )
-                                .details(json!({
-                                    "attempts": retry_attempt,
-                                    "max_attempts": max_attempts,
-                                }))
-                                .action("reduce request frequency or check model availability"),
-                            );
+                            if retry_suppressed_after_partial_output {
+                                observe(
+                                    &diagnostic_sink,
+                                    &trace,
+                                    Diagnostic::new(
+                                        Severity::Warning,
+                                        CODE_PROVIDER_RETRY_SUPPRESSED_AFTER_PARTIAL_OUTPUT,
+                                        SOURCE_PROVIDER,
+                                        "retry suppressed after partial provider output",
+                                    )
+                                    .details(json!({
+                                        "attempts": retry_attempt,
+                                        "max_attempts": max_attempts,
+                                    })),
+                                );
+                            } else {
+                                observe(
+                                    &diagnostic_sink,
+                                    &trace,
+                                    Diagnostic::new(
+                                        Severity::Error,
+                                        CODE_PROVIDER_RETRY_EXHAUSTED,
+                                        SOURCE_PROVIDER,
+                                        "provider retries exhausted",
+                                    )
+                                    .details(json!({
+                                        "attempts": retry_attempt,
+                                        "max_attempts": max_attempts,
+                                    }))
+                                    .action("reduce request frequency or check model availability"),
+                                );
+                            }
                         }
 
                         // The underlying provider error is classified regardless of whether
@@ -486,6 +506,7 @@ pub async fn agent_loop(
                             opi_ai::provider::ProviderError::AuthFailed(msg) => {
                                 AgentError::AuthFailed(msg.clone())
                             }
+                            opi_ai::provider::ProviderError::Cancelled => AgentError::Cancelled,
                             _ => AgentError::Provider(e.to_string()),
                         });
                     }
