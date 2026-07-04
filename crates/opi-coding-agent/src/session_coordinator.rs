@@ -134,11 +134,14 @@ impl SessionCoordinator {
         let mut total_output: u64 = 0;
         let mut total_cache_read: u64 = 0;
         let mut total_cache_write: u64 = 0;
+        let mut unknown_turns: u32 = 0;
         // Count turns as user messages — each user prompt drives exactly one
         // on_turn_end call. Counting assistant messages would overcount because
         // a single user turn can produce multiple assistant messages (tool call
         // + final response).
         let mut user_count: u32 = 0;
+        let mut saw_user_turn = false;
+        let mut turn_has_unknown_usage = false;
 
         for entry in ordered {
             match entry {
@@ -151,9 +154,23 @@ impl SessionCoordinator {
                             total_output += a.usage.output_tokens as u64;
                             total_cache_read += a.usage.cache_read_tokens as u64;
                             total_cache_write += a.usage.cache_write_tokens as u64;
+                            let usage_is_known =
+                                a.usage.is_reported() || a.usage.total_tokens() > 0;
+                            if !usage_is_known {
+                                if saw_user_turn {
+                                    turn_has_unknown_usage = true;
+                                } else {
+                                    unknown_turns += 1;
+                                }
+                            }
                         }
                         Message::User(_) => {
+                            if saw_user_turn && turn_has_unknown_usage {
+                                unknown_turns += 1;
+                            }
                             user_count += 1;
+                            saw_user_turn = true;
+                            turn_has_unknown_usage = false;
                         }
                         _ => {}
                     }
@@ -196,12 +213,17 @@ impl SessionCoordinator {
             }
         }
 
+        if saw_user_turn && turn_has_unknown_usage {
+            unknown_turns += 1;
+        }
+
         let usage = CumulativeUsage::from_totals(
             total_input,
             total_output,
             total_cache_read,
             total_cache_write,
             user_count,
+            unknown_turns,
         );
         let watermark = usage.as_usage().total_tokens();
 
@@ -451,8 +473,12 @@ impl SessionCoordinator {
     }
 
     /// Compute the cost summary from the accumulated usage and the model
-    /// pricing table. Returns `None` if no pricing is known for the model.
+    /// pricing table. Returns `None` if any turn has unknown usage or if no
+    /// pricing is known for the model.
     pub fn cost_summary(&self) -> Option<opi_ai::stream::CostBreakdown> {
+        if self.usage.has_unknown_usage() {
+            return None;
+        }
         let pricing = lookup_pricing(&self.model)?;
         Some(opi_ai::stream::calculate_cost(
             &self.usage.as_usage(),

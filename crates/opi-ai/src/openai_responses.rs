@@ -192,11 +192,15 @@ enum ResponsesEvent {
         output_index: usize,
         delta: String,
     },
-    OutputItemDone,
+    OutputItemDone {
+        output_index: usize,
+        item: RawOutputItemOwned,
+    },
     Completed {
         usage: Option<Usage>,
         model: Option<String>,
         id: Option<String>,
+        output: Vec<RawOutputItemOwned>,
     },
     Error {
         message: String,
@@ -211,6 +215,7 @@ struct RawOutputItemOwned {
     id: Option<String>,
     call_id: Option<String>,
     name: Option<String>,
+    arguments: Option<String>,
     role: Option<String>,
 }
 
@@ -250,6 +255,7 @@ impl ResponsesEvent {
                         id: item.id,
                         call_id: item.call_id,
                         name: item.name,
+                        arguments: item.arguments,
                         role: item.role,
                     },
                 })
@@ -274,7 +280,28 @@ impl ResponsesEvent {
                     delta: data.delta.unwrap_or_default(),
                 })
             }
-            "response.output_item.done" => ParsedEvent::Valid(ResponsesEvent::OutputItemDone),
+            "response.output_item.done" => {
+                let output_index = data.output_index.unwrap_or(0);
+                let item = data
+                    .item
+                    .map(|item| RawOutputItemOwned {
+                        item_type: item.r#type.unwrap_or_default(),
+                        id: item.id,
+                        call_id: item.call_id,
+                        name: item.name,
+                        arguments: item.arguments,
+                        role: item.role,
+                    })
+                    .unwrap_or_else(|| RawOutputItemOwned {
+                        item_type: String::new(),
+                        id: None,
+                        call_id: None,
+                        name: None,
+                        arguments: None,
+                        role: None,
+                    });
+                ParsedEvent::Valid(ResponsesEvent::OutputItemDone { output_index, item })
+            }
             "response.completed" => {
                 let usage = data.response.as_ref().and_then(|r| {
                     r.usage.as_ref().map(|u| {
@@ -283,17 +310,40 @@ impl ResponsesEvent {
                             .as_ref()
                             .and_then(|d| d.cached_tokens)
                             .unwrap_or(0);
-                        Usage {
-                            input_tokens: u.input_tokens.unwrap_or(0),
-                            output_tokens: u.output_tokens.unwrap_or(0),
-                            cache_read_tokens: cached,
-                            cache_write_tokens: 0,
-                        }
+                        Usage::reported(
+                            u.input_tokens.unwrap_or(0),
+                            u.output_tokens.unwrap_or(0),
+                            cached,
+                            0,
+                        )
                     })
                 });
                 let model = data.response.as_ref().and_then(|r| r.model.clone());
                 let id = data.response.as_ref().and_then(|r| r.id.clone());
-                ParsedEvent::Valid(ResponsesEvent::Completed { usage, model, id })
+                let output = data
+                    .response
+                    .as_ref()
+                    .and_then(|r| r.output.as_ref())
+                    .map(|items| {
+                        items
+                            .iter()
+                            .map(|item| RawOutputItemOwned {
+                                item_type: item.r#type.clone().unwrap_or_default(),
+                                id: item.id.clone(),
+                                call_id: item.call_id.clone(),
+                                name: item.name.clone(),
+                                arguments: item.arguments.clone(),
+                                role: item.role.clone(),
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                ParsedEvent::Valid(ResponsesEvent::Completed {
+                    usage,
+                    model,
+                    id,
+                    output,
+                })
             }
             "error" => ParsedEvent::Valid(ResponsesEvent::Error {
                 message: data.message.unwrap_or_else(|| "unknown error".into()),
@@ -310,9 +360,12 @@ impl ResponsesEvent {
 // ---------------------------------------------------------------------------
 
 struct ToolCallState {
+    output_index: usize,
+    content_index: usize,
     id: String,
     name: String,
     arguments: String,
+    ended: bool,
 }
 
 pub struct ResponsesMapper {
@@ -348,13 +401,14 @@ impl ResponsesMapper {
                     partial: self.partial.clone(),
                 }]
             }
-            ResponsesEvent::OutputItemAdded { item, .. } => {
+            ResponsesEvent::OutputItemAdded { output_index, item } => {
                 match item.item_type.as_str() {
                     "message" => Vec::new(),
                     "function_call" => {
                         let id = item.id.unwrap_or_default();
                         let call_id = item.call_id.unwrap_or_default();
                         let name = item.name.unwrap_or_default();
+                        let arguments = item.arguments.unwrap_or_default();
                         // Use call_id as the ToolCall.id  - it's what function_call_output needs
                         let effective_id = if call_id.is_empty() {
                             id.clone()
@@ -382,14 +436,17 @@ impl ResponsesMapper {
                             tool_call: ToolCall {
                                 id: effective_id.clone(),
                                 name: name.clone(),
-                                arguments: String::new(),
+                                arguments: arguments.clone(),
                             },
                         });
 
                         self.tool_calls.push(ToolCallState {
+                            output_index,
+                            content_index,
                             id: effective_id,
                             name: name.clone(),
-                            arguments: String::new(),
+                            arguments,
+                            ended: false,
                         });
 
                         events.push(AssistantStreamEvent::ToolCallStart {
@@ -431,23 +488,24 @@ impl ResponsesMapper {
                 events
             }
             ResponsesEvent::TextDone { .. } => Vec::new(),
-            ResponsesEvent::FunctionCallDelta { delta, .. } => {
+            ResponsesEvent::FunctionCallDelta {
+                output_index,
+                delta,
+            } => {
                 if delta.is_empty() {
                     return Vec::new();
                 }
 
-                // Accumulate into the last tool call state
-                if let Some(tc) = self.tool_calls.last_mut() {
-                    tc.arguments.push_str(&delta);
-                }
-
-                // Find the last tool call content index
-                let tool_content_index = self
-                    .partial
-                    .content
+                let Some(tc_idx) = self
+                    .tool_calls
                     .iter()
-                    .rposition(|c| matches!(c, AssistantContent::ToolCall { .. }))
-                    .unwrap_or(0);
+                    .position(|tc| tc.output_index == output_index)
+                else {
+                    return Vec::new();
+                };
+
+                self.tool_calls[tc_idx].arguments.push_str(&delta);
+                let tool_content_index = self.tool_calls[tc_idx].content_index;
                 if let Some(AssistantContent::ToolCall { tool_call }) =
                     self.partial.content.get_mut(tool_content_index)
                 {
@@ -460,43 +518,19 @@ impl ResponsesMapper {
                     partial: self.partial.clone(),
                 }]
             }
-            ResponsesEvent::OutputItemDone => {
-                // Finalize the last tool call if we have one
-                if !self.tool_calls.is_empty() {
-                    // Find the last tool call content index
-                    let tool_content_index = self
-                        .partial
-                        .content
-                        .iter()
-                        .rposition(|c| matches!(c, AssistantContent::ToolCall { .. }))
-                        .unwrap_or(0);
-
-                    // Get the last tool call state (already tracked in vec)
-                    let tc_idx = self.tool_calls.len() - 1;
-                    let tc = &self.tool_calls[tc_idx];
-
-                    if let Some(AssistantContent::ToolCall { tool_call }) =
-                        self.partial.content.get_mut(tool_content_index)
-                    {
-                        tool_call.arguments = tc.arguments.clone();
-                    }
-
-                    let tool_call = ToolCall {
-                        id: tc.id.clone(),
-                        name: tc.name.clone(),
-                        arguments: tc.arguments.clone(),
-                    };
-
-                    vec![AssistantStreamEvent::ToolCallEnd {
-                        content_index: tool_content_index,
-                        tool_call,
-                        partial: self.partial.clone(),
-                    }]
-                } else {
-                    Vec::new()
+            ResponsesEvent::OutputItemDone { output_index, item } => {
+                if item.item_type != "function_call" {
+                    return Vec::new();
                 }
+                self.update_tool_call_from_item(output_index, &item);
+                self.finish_tool_call(output_index).into_iter().collect()
             }
-            ResponsesEvent::Completed { usage, model, id } => {
+            ResponsesEvent::Completed {
+                usage,
+                model,
+                id,
+                output,
+            } => {
                 let mut events = Vec::new();
 
                 // Close any open text block
@@ -511,33 +545,24 @@ impl ResponsesMapper {
                     }
                 }
 
-                // Close any unclosed tool calls (safety for truncated streams)
-                for (tc_idx, tc_state) in self.tool_calls.iter().enumerate() {
-                    if tc_state.id.is_empty() {
+                for (output_index, item) in output.iter().enumerate() {
+                    if item.item_type != "function_call" {
                         continue;
                     }
-                    let mut tool_count = 0;
-                    let tool_content_index = self
-                        .partial
-                        .content
-                        .iter()
-                        .position(|c| {
-                            if matches!(c, AssistantContent::ToolCall { .. }) {
-                                if tool_count == tc_idx {
-                                    return true;
-                                }
-                                tool_count += 1;
-                            }
-                            false
-                        })
-                        .unwrap_or(0);
-                    if let Some(AssistantContent::ToolCall { tool_call }) =
-                        self.partial.content.get_mut(tool_content_index)
-                    {
-                        tool_call.arguments = tc_state.arguments.clone();
+                    self.update_tool_call_from_item(output_index, item);
+                }
+
+                // Close any unclosed tool calls (safety for truncated streams)
+                let unfinished_tool_calls: Vec<usize> = self
+                    .tool_calls
+                    .iter()
+                    .filter(|tc| !tc.ended)
+                    .map(|tc| tc.output_index)
+                    .collect();
+                for output_index in unfinished_tool_calls {
+                    if let Some(event) = self.finish_tool_call(output_index) {
+                        events.push(event);
                     }
-                    // Only emit ToolCallEnd if OutputItemDone hasn't already done it
-                    // (this is a safety net  - normally OutputItemDone handles it)
                 }
 
                 if let Some(m) = model {
@@ -578,6 +603,88 @@ impl ResponsesMapper {
                     message: err_msg,
                 }]
             }
+        }
+    }
+
+    fn finish_tool_call(&mut self, output_index: usize) -> Option<AssistantStreamEvent> {
+        let tc_idx = self
+            .tool_calls
+            .iter()
+            .position(|tc| tc.output_index == output_index)?;
+        if self.tool_calls[tc_idx].ended {
+            return None;
+        }
+
+        let (content_index, id, name, arguments) = {
+            let tc = &mut self.tool_calls[tc_idx];
+            tc.ended = true;
+            (
+                tc.content_index,
+                tc.id.clone(),
+                tc.name.clone(),
+                tc.arguments.clone(),
+            )
+        };
+
+        if let Some(AssistantContent::ToolCall { tool_call }) =
+            self.partial.content.get_mut(content_index)
+        {
+            tool_call.arguments = arguments.clone();
+        }
+
+        Some(AssistantStreamEvent::ToolCallEnd {
+            content_index,
+            tool_call: ToolCall {
+                id,
+                name,
+                arguments,
+            },
+            partial: self.partial.clone(),
+        })
+    }
+
+    fn update_tool_call_from_item(&mut self, output_index: usize, item: &RawOutputItemOwned) {
+        let Some(tc_idx) = self
+            .tool_calls
+            .iter()
+            .position(|tc| tc.output_index == output_index && !tc.ended)
+        else {
+            return;
+        };
+
+        let (content_index, id, name, arguments) = {
+            let tc = &mut self.tool_calls[tc_idx];
+            if let Some(call_id) = item.call_id.as_ref()
+                && !call_id.is_empty()
+            {
+                tc.id = call_id.clone();
+            } else if let Some(id) = item.id.as_ref()
+                && tc.id.is_empty()
+            {
+                tc.id = id.clone();
+            }
+            if let Some(name) = item.name.as_ref()
+                && !name.is_empty()
+            {
+                tc.name = name.clone();
+            }
+            if let Some(arguments) = item.arguments.as_ref() {
+                tc.arguments = arguments.clone();
+            }
+            (
+                tc.content_index,
+                tc.id.clone(),
+                tc.name.clone(),
+                tc.arguments.clone(),
+            )
+        };
+
+        if let Some(AssistantContent::ToolCall { tool_call }) =
+            self.partial.content.get_mut(content_index)
+        {
+            tool_call.id = id;
+            tool_call.name = name;
+            tool_call.arguments = arguments;
         }
     }
 }

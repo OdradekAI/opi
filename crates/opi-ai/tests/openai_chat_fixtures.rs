@@ -13,7 +13,7 @@ use opi_ai::openai_chat::{
     CompatConfig, OpenAiChatEvent, OpenAiChatMapper, OpenAiChatProvider, ParsedEvent,
     parse_sse_events,
 };
-use opi_ai::provider::{Provider, validate_request_capabilities};
+use opi_ai::provider::{EventStream, Provider, validate_request_capabilities};
 use opi_ai::stream::{AssistantStreamEvent, StopReason};
 use wiremock::matchers::{body_partial_json, header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -27,7 +27,11 @@ fn map_fixture(input: &str) -> Vec<AssistantStreamEvent> {
         })
         .collect();
     let mut mapper = OpenAiChatMapper::new(opi_ai::ApiKind::OpenAi, "openai");
-    events.into_iter().flat_map(|e| mapper.process(e)).collect()
+    let mut stream_events: Vec<_> = events.into_iter().flat_map(|e| mapper.process(e)).collect();
+    if let Some(done) = mapper.flush_pending_done() {
+        stream_events.push(done);
+    }
+    stream_events
 }
 
 /// Helper: map with a custom provider label (for OpenRouter/Mistral profiles).
@@ -40,7 +44,11 @@ fn map_fixture_as(input: &str, api: opi_ai::ApiKind, provider: &str) -> Vec<Assi
         })
         .collect();
     let mut mapper = OpenAiChatMapper::new(api, provider);
-    events.into_iter().flat_map(|e| mapper.process(e)).collect()
+    let mut stream_events: Vec<_> = events.into_iter().flat_map(|e| mapper.process(e)).collect();
+    if let Some(done) = mapper.flush_pending_done() {
+        stream_events.push(done);
+    }
+    stream_events
 }
 
 /// Helper: collect valid OpenAiChatEvents from parsed output.
@@ -51,6 +59,75 @@ fn collect_valid_events(input: &str) -> Vec<OpenAiChatEvent> {
             ParsedEvent::Malformed { .. } => Vec::new(),
         })
         .collect()
+}
+
+/// Helper: collect stream events asynchronously.
+async fn collect_stream(stream: EventStream) -> Vec<AssistantStreamEvent> {
+    stream.filter_map(|r| async move { r.ok() }).collect().await
+}
+
+async fn write_chunk(socket: &mut tokio::net::TcpStream, body: &str) -> std::io::Result<()> {
+    let chunk = format!("{:X}\r\n{}\r\n", body.len(), body);
+    tokio::io::AsyncWriteExt::write_all(socket, chunk.as_bytes()).await
+}
+
+async fn spawn_stalled_openai_chat_server() -> String {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind stalled OpenAI Chat server");
+    let addr = listener.local_addr().expect("stalled server addr");
+
+    tokio::spawn(async move {
+        let (mut socket, _) = listener.accept().await.expect("accept stalled stream");
+        let mut request = Vec::new();
+        let mut buf = [0_u8; 1024];
+
+        loop {
+            let read = tokio::io::AsyncReadExt::read(&mut socket, &mut buf)
+                .await
+                .expect("read request");
+            if read == 0 {
+                return;
+            }
+            request.extend_from_slice(&buf[..read]);
+            if request.windows(4).any(|window| window == b"\r\n\r\n") {
+                break;
+            }
+        }
+
+        let request_text = String::from_utf8_lossy(&request);
+        assert!(
+            request_text.starts_with("POST /v1/chat/completions "),
+            "unexpected request line: {request_text}"
+        );
+
+        tokio::io::AsyncWriteExt::write_all(
+            &mut socket,
+            b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n",
+        )
+        .await
+        .expect("write response headers");
+        write_chunk(&mut socket, stalled_openai_chat_start_chunk())
+            .await
+            .expect("write initial SSE chunk");
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        let _ = write_chunk(&mut socket, stalled_openai_chat_terminal_chunk()).await;
+        let _ = tokio::io::AsyncWriteExt::write_all(&mut socket, b"0\r\n\r\n").await;
+    });
+
+    format!("http://{addr}")
+}
+
+fn stalled_openai_chat_start_chunk() -> &'static str {
+    "data: {\"id\":\"chatcmpl-slow\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"gpt-4o\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"\"},\"finish_reason\":null}]}\n\n"
+}
+
+fn stalled_openai_chat_terminal_chunk() -> &'static str {
+    concat!(
+        "data: {\"id\":\"chatcmpl-slow\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"gpt-4o\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"late\"},\"finish_reason\":null}]}\n\n",
+        "data: {\"id\":\"chatcmpl-slow\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"gpt-4o\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":1,\"completion_tokens\":1}}\n\n",
+        "data: [DONE]\n\n",
+    )
 }
 
 // --- SSE Parsing Tests ---
@@ -222,6 +299,7 @@ fn usage_captured_from_final_chunk() {
     let stream_events = map_fixture(text_fixture());
 
     if let AssistantStreamEvent::Done { message, .. } = &stream_events[5] {
+        assert!(message.usage.is_reported());
         assert_eq!(message.usage.input_tokens, 25);
         assert_eq!(message.usage.output_tokens, 8);
     } else {
@@ -234,6 +312,7 @@ fn tool_call_usage_tracked() {
     let stream_events = map_fixture(tool_call_fixture());
 
     if let AssistantStreamEvent::Done { message, .. } = &stream_events[5] {
+        assert!(message.usage.is_reported());
         assert_eq!(message.usage.input_tokens, 50);
         assert_eq!(message.usage.output_tokens, 30);
     } else {
@@ -256,6 +335,86 @@ fn chat_chunk_id_round_trips_into_response_id() {
     } else {
         panic!("expected Done event");
     }
+}
+
+#[tokio::test]
+async fn content_first_chunk_id_round_trips_into_response_id() {
+    let provider = OpenAiChatProvider::new("key".into(), None);
+    let sse = r#"data: {"id":"chatcmpl-content-first","object":"chat.completion.chunk","created":1,"model":"gpt-4o","choices":[{"index":0,"delta":{"content":"hello"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-content-first","object":"chat.completion.chunk","created":1,"model":"gpt-4o","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1}}
+
+"#;
+
+    let events = collect_stream(provider.stream_from_sse(sse, CancellationToken::new())).await;
+    assert!(
+        matches!(events.first(), Some(AssistantStreamEvent::Start { .. })),
+        "content-first chunks must still emit Start before TextStart/TextDelta: {events:?}"
+    );
+
+    let (response_id, model) = events
+        .into_iter()
+        .find_map(|event| match event {
+            AssistantStreamEvent::Done { message, .. } => {
+                Some((message.response_id, message.model))
+            }
+            _ => None,
+        })
+        .expect("Done event");
+
+    assert_eq!(response_id.as_deref(), Some("chatcmpl-content-first"));
+    assert_eq!(model, "gpt-4o");
+}
+
+#[tokio::test]
+async fn non_terminal_usage_chunk_updates_done_usage() {
+    let provider = OpenAiChatProvider::new("key".into(), None);
+    let sse = r#"data: {"id":"chatcmpl-usage-early","object":"chat.completion.chunk","created":1,"model":"gpt-4o","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}],"usage":{"prompt_tokens":7,"completion_tokens":0}}
+
+data: {"id":"chatcmpl-usage-early","object":"chat.completion.chunk","created":1,"model":"gpt-4o","choices":[{"index":0,"delta":{"content":"hello"},"finish_reason":null}],"usage":{"prompt_tokens":7,"completion_tokens":1}}
+
+data: {"id":"chatcmpl-usage-early","object":"chat.completion.chunk","created":1,"model":"gpt-4o","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
+
+"#;
+
+    let events = collect_stream(provider.stream_from_sse(sse, CancellationToken::new())).await;
+    let usage = events
+        .into_iter()
+        .find_map(|event| match event {
+            AssistantStreamEvent::Done { message, .. } => Some(message.usage),
+            _ => None,
+        })
+        .expect("done event");
+
+    assert_eq!(usage.input_tokens, 7);
+    assert_eq!(usage.output_tokens, 1);
+}
+
+#[tokio::test]
+async fn usage_only_empty_choices_chunk_updates_done_usage() {
+    let provider = OpenAiChatProvider::new("key".into(), None);
+    let sse = r#"data: {"id":"chatcmpl-usage-only","object":"chat.completion.chunk","created":1,"model":"gpt-4o","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-usage-only","object":"chat.completion.chunk","created":1,"model":"gpt-4o","choices":[{"index":0,"delta":{"content":"hello"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-usage-only","object":"chat.completion.chunk","created":1,"model":"gpt-4o","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
+
+data: {"id":"chatcmpl-usage-only","object":"chat.completion.chunk","created":1,"model":"gpt-4o","choices":[],"usage":{"prompt_tokens":7,"completion_tokens":2}}
+
+"#;
+
+    let events = collect_stream(provider.stream_from_sse(sse, CancellationToken::new())).await;
+    let usage = events
+        .into_iter()
+        .filter_map(|event| match event {
+            AssistantStreamEvent::Done { message, .. } => Some(message.usage),
+            _ => None,
+        })
+        .next_back()
+        .expect("done event");
+
+    assert_eq!(usage.input_tokens, 7);
+    assert_eq!(usage.output_tokens, 2);
 }
 
 // --- Cache token fields (Phase 12 task 12.6, DoD clause 6) ---
@@ -312,6 +471,39 @@ fn missing_usage_yields_graceful_zero_tokens() {
     if let AssistantStreamEvent::Done { message, .. } = done {
         // No usage chunk in the stream -> zero usage, no panic. This path is shared
         // by OpenRouter/Mistral/Azure, which inherit the OpenAI Chat mapper.
+        assert!(!message.usage.is_reported());
+        assert_eq!(message.usage.input_tokens, 0);
+        assert_eq!(message.usage.output_tokens, 0);
+        assert_eq!(message.usage.cache_read_tokens, 0);
+        assert_eq!(message.usage.cache_write_tokens, 0);
+    }
+}
+
+fn reported_zero_usage_fixture() -> &'static str {
+    r#"data: {"id":"chatcmpl-zero-usage","object":"chat.completion.chunk","created":1720000000,"model":"gpt-4o","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-zero-usage","object":"chat.completion.chunk","created":1720000000,"model":"gpt-4o","choices":[{"index":0,"delta":{"content":"ok"}}]}
+
+data: {"id":"chatcmpl-zero-usage","object":"chat.completion.chunk","created":1720000000,"model":"gpt-4o","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":0,"completion_tokens":0,"total_tokens":0}}
+
+data: [DONE]
+
+"#
+}
+
+#[test]
+fn reported_zero_usage_remains_reported() {
+    let stream_events = map_fixture(reported_zero_usage_fixture());
+
+    let done = stream_events
+        .iter()
+        .find(|e| matches!(e, AssistantStreamEvent::Done { .. }))
+        .expect("expected Done event");
+    if let AssistantStreamEvent::Done { message, .. } = done {
+        assert!(
+            message.usage.is_reported(),
+            "provider-reported zero usage must stay distinct from missing usage"
+        );
         assert_eq!(message.usage.input_tokens, 0);
         assert_eq!(message.usage.output_tokens, 0);
         assert_eq!(message.usage.cache_read_tokens, 0);
@@ -662,6 +854,34 @@ fn build_request_body_developer_role_override() {
     let body = provider.build_request_body(&make_test_request());
     let messages = body["messages"].as_array().unwrap();
     assert_eq!(messages[0]["role"], "developer");
+}
+
+#[test]
+fn build_request_body_usage_in_stream_emits_stream_options() {
+    let provider = OpenAiChatProvider::new_for_profile(
+        "key".into(),
+        "https://example.test".into(),
+        "compat".into(),
+        CompatConfig {
+            usage_in_stream: true,
+            ..CompatConfig::default()
+        },
+        vec![],
+        vec![ModelInfo {
+            id: "model".into(),
+            display_name: "model".into(),
+            context_window: 128000,
+            max_output_tokens: 4096,
+            supports_images: false,
+            supports_streaming: true,
+            supports_thinking: false,
+        }],
+    );
+
+    let mut request = make_test_request();
+    request.model = "compat:model".into();
+    let body = provider.build_request_body(&request);
+    assert_eq!(body["stream_options"]["include_usage"], true);
 }
 
 // --- Phase 12 task 12.3 — OpenAI-compatible profile compatibility flags ---
@@ -1198,23 +1418,13 @@ async fn profile_extra_headers_reach_the_http_wire() {
 async fn stream_cancellation_aborts_before_completion() {
     // The CancellationToken is threaded into the OpenAI Chat adapter's HTTP
     // body-stream loop (openai_chat.rs `cancel.cancelled()` select arm).
-    // Cancelling while the stream is open must terminate it gracefully without
-    // hanging or panicking. (Deterministic cancel-timing behavior is proven at
-    // the agent layer in retry_agent.rs; this asserts the adapter wires cancel.
-    // OpenRouter/Mistral/Azure inherit this same shared OpenAI-compat path.)
-    let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/v1/chat/completions"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .set_body_string(text_fixture())
-                .insert_header("content-type", "text/event-stream"),
-        )
-        .mount(&server)
-        .await;
+    // This fixture sends one Start-producing chunk, then stalls for a full
+    // second before the terminal chunk. Cancellation must close the stream well
+    // before that delayed terminal data could arrive.
+    let server = spawn_stalled_openai_chat_server().await;
 
     let cancel = CancellationToken::new();
-    let provider = OpenAiChatProvider::new("test-key".into(), Some(server.uri()));
+    let provider = OpenAiChatProvider::new("test-key".into(), Some(server));
     let request = Request {
         model: "openai:gpt-4o".into(),
         system: None,
@@ -1234,22 +1444,19 @@ async fn stream_cancellation_aborts_before_completion() {
     };
     let mut stream = provider.stream(request);
 
-    let _ = stream
+    let first = stream
         .next()
         .await
-        .expect("stream should produce at least one event");
+        .expect("stream should produce at least one event")
+        .expect("first event should be valid");
+    assert!(matches!(first, AssistantStreamEvent::Start { .. }));
     cancel.cancel();
 
-    let drain = async {
-        while let Some(result) = stream.next().await {
-            match result {
-                Ok(event) if event.is_terminal() => break,
-                Err(_) => break,
-                _ => {}
-            }
-        }
-    };
-    tokio::time::timeout(std::time::Duration::from_secs(2), drain)
+    let next = tokio::time::timeout(std::time::Duration::from_millis(200), stream.next())
         .await
-        .expect("stream must drain promptly after cancellation (no hang/panic)");
+        .expect("stream must close before the delayed terminal fixture completes");
+    assert!(
+        next.is_none(),
+        "stream should end on cancellation before the terminal SSE chunk arrives"
+    );
 }

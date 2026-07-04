@@ -153,11 +153,13 @@ impl ParsedEvent {
         let mut events = Vec::new();
 
         // Check for usage/finish in this chunk
-        let usage = resp.usage_metadata.map(|u| Usage {
-            input_tokens: u.prompt_token_count.unwrap_or(0),
-            output_tokens: u.candidates_token_count.unwrap_or(0),
-            cache_read_tokens: u.cached_content_token_count.unwrap_or(0),
-            cache_write_tokens: 0,
+        let usage = resp.usage_metadata.map(|u| {
+            Usage::reported(
+                u.prompt_token_count.unwrap_or(0),
+                u.candidates_token_count.unwrap_or(0),
+                u.cached_content_token_count.unwrap_or(0),
+                0,
+            )
         });
 
         if let Some(candidates) = &resp.candidates

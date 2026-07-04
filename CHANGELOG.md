@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `opi-ai`: OpenAI-compatible streaming usage now requests `stream_options.include_usage` when `usage_in_stream` is enabled, preserves usage updates from any streaming chunk, and records OpenAI Chat response IDs from any chunk carrying `id`, not only role chunks.
+- `opi-agent`: retry diagnostics now distinguish exhausted retry budgets from retry suppression after partial provider output.
+- `opi-ai` / `opi-coding-agent`: missing usage is tracked explicitly as unknown instead of known-zero usage; session cost summaries are omitted when any turn has unknown usage or when pricing is unknown.
+
+### Fixed
+
+- `opi-ai`: OpenAI Responses tool-call deltas and item completion now route by output item identity instead of the last observed tool call.
+- `opi-ai`: Bedrock HTTP streaming now flushes a pending terminal `Done` event when metadata is absent.
+- `opi-agent`: provider-returned cancellations now surface as `AgentError::Cancelled`.
+- `opi-agent`: compaction and session-persistence public events redact secret-looking error text.
+
 ## [0.6.3] - 2026-07-01
 
 ### Added

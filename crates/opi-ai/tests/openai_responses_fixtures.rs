@@ -433,6 +433,7 @@ async fn responses_usage_in_done_event() {
             _ => None,
         })
         .unwrap();
+    assert!(usage.is_reported());
     assert_eq!(usage.input_tokens, 42);
     assert_eq!(usage.output_tokens, 13);
 }
@@ -681,6 +682,140 @@ async fn responses_multi_tool_call_produces_two_calls() {
 }
 
 #[tokio::test]
+async fn responses_interleaved_tool_deltas_route_by_output_index() {
+    let provider = responses_provider("key");
+    let sse = r#"event: response.created
+data: {"type":"response.created","response":{"id":"resp_interleave","model":"gpt-4o"}}
+
+event: response.output_item.added
+data: {"type":"response.output_item.added","output_index":0,"item":{"type":"function_call","id":"fc_a","call_id":"call_a","name":"read_file","arguments":""}}
+
+event: response.output_item.added
+data: {"type":"response.output_item.added","output_index":1,"item":{"type":"function_call","id":"fc_b","call_id":"call_b","name":"bash","arguments":""}}
+
+event: response.function_call_arguments.delta
+data: {"type":"response.function_call_arguments.delta","output_index":0,"item_id":"fc_a","call_id":"call_a","delta":"{\"path\":"}
+
+event: response.function_call_arguments.delta
+data: {"type":"response.function_call_arguments.delta","output_index":1,"item_id":"fc_b","call_id":"call_b","delta":"{\"cmd\":"}
+
+event: response.function_call_arguments.delta
+data: {"type":"response.function_call_arguments.delta","output_index":0,"item_id":"fc_a","call_id":"call_a","delta":"\"a.rs\"}"}
+
+event: response.function_call_arguments.delta
+data: {"type":"response.function_call_arguments.delta","output_index":1,"item_id":"fc_b","call_id":"call_b","delta":"\"ls\"}"}
+
+event: response.output_item.done
+data: {"type":"response.output_item.done","output_index":0,"item":{"type":"function_call","id":"fc_a","call_id":"call_a","name":"read_file","arguments":"{\"path\":\"a.rs\"}"}}
+
+event: response.output_item.done
+data: {"type":"response.output_item.done","output_index":1,"item":{"type":"function_call","id":"fc_b","call_id":"call_b","name":"bash","arguments":"{\"cmd\":\"ls\"}"}}
+
+event: response.completed
+data: {"type":"response.completed","response":{"id":"resp_interleave","model":"gpt-4o","usage":{"input_tokens":1,"output_tokens":2}}}
+
+"#;
+
+    let events = collect_stream(provider.stream_from_sse(sse, CancellationToken::new())).await;
+    let ended: Vec<_> = events
+        .into_iter()
+        .filter_map(|event| match event {
+            AssistantStreamEvent::ToolCallEnd { tool_call, .. } => Some(tool_call),
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(ended.len(), 2);
+    assert_eq!(ended[0].id, "call_a");
+    assert_eq!(ended[0].arguments, "{\"path\":\"a.rs\"}");
+    assert_eq!(ended[1].id, "call_b");
+    assert_eq!(ended[1].arguments, "{\"cmd\":\"ls\"}");
+}
+
+#[tokio::test]
+async fn responses_message_output_item_done_does_not_duplicate_tool_end() {
+    let provider = responses_provider("key");
+    let sse = r#"event: response.created
+data: {"type":"response.created","response":{"id":"resp_mixed","model":"gpt-4o"}}
+
+event: response.output_item.added
+data: {"type":"response.output_item.added","output_index":0,"item":{"type":"function_call","id":"fc_1","call_id":"call_1","name":"read_file","arguments":""}}
+
+event: response.function_call_arguments.delta
+data: {"type":"response.function_call_arguments.delta","output_index":0,"item_id":"fc_1","call_id":"call_1","delta":"{\"path\":\"a.rs\"}"}
+
+event: response.output_item.done
+data: {"type":"response.output_item.done","output_index":0,"item":{"type":"function_call","id":"fc_1","call_id":"call_1","name":"read_file","arguments":"{\"path\":\"a.rs\"}"}}
+
+event: response.output_item.added
+data: {"type":"response.output_item.added","output_index":1,"item":{"type":"message","status":"in_progress","role":"assistant","content":[]}}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","output_index":1,"content_index":0,"delta":"ok"}
+
+event: response.output_item.done
+data: {"type":"response.output_item.done","output_index":1,"item":{"type":"message","status":"completed","role":"assistant","content":[{"type":"output_text","text":"ok"}]}}
+
+event: response.completed
+data: {"type":"response.completed","response":{"id":"resp_mixed","model":"gpt-4o","usage":{"input_tokens":1,"output_tokens":2}}}
+
+"#;
+
+    let events = collect_stream(provider.stream_from_sse(sse, CancellationToken::new())).await;
+    let tool_ends = events
+        .iter()
+        .filter(|event| matches!(event, AssistantStreamEvent::ToolCallEnd { .. }))
+        .count();
+
+    assert_eq!(tool_ends, 1);
+}
+
+#[tokio::test]
+async fn responses_completed_closes_unfinished_tool_call_before_done() {
+    let provider = responses_provider("key");
+    let sse = r#"event: response.created
+data: {"type":"response.created","response":{"id":"resp_fallback","model":"gpt-4o"}}
+
+event: response.output_item.added
+data: {"type":"response.output_item.added","output_index":0,"item":{"type":"function_call","id":"fc_1","call_id":"call_1","name":"read_file","arguments":""}}
+
+event: response.completed
+data: {"type":"response.completed","response":{"id":"resp_fallback","model":"gpt-4o","output":[{"type":"function_call","id":"fc_1","call_id":"call_1","name":"read_file","arguments":"{\"path\":\"a.rs\"}"}],"usage":{"input_tokens":1,"output_tokens":2}}}
+
+"#;
+
+    let events = collect_stream(provider.stream_from_sse(sse, CancellationToken::new())).await;
+    let ended: Vec<_> = events
+        .iter()
+        .filter_map(|event| match event {
+            AssistantStreamEvent::ToolCallEnd { tool_call, .. } => Some(tool_call.clone()),
+            _ => None,
+        })
+        .collect();
+    let tool_end_index = events
+        .iter()
+        .position(|event| matches!(event, AssistantStreamEvent::ToolCallEnd { .. }))
+        .expect("ToolCallEnd emitted before Done");
+    let done_index = events
+        .iter()
+        .position(|event| matches!(event, AssistantStreamEvent::Done { .. }))
+        .expect("Done emitted");
+    let tool_ends = events
+        .iter()
+        .filter(|event| matches!(event, AssistantStreamEvent::ToolCallEnd { .. }))
+        .count();
+
+    assert_eq!(tool_ends, 1, "one ToolCallEnd from completion fallback");
+    assert_eq!(ended[0].id, "call_1");
+    assert_eq!(ended[0].name, "read_file");
+    assert_eq!(ended[0].arguments, "{\"path\":\"a.rs\"}");
+    assert!(
+        tool_end_index < done_index,
+        "ToolCallEnd should be emitted before Done"
+    );
+}
+
+#[tokio::test]
 async fn responses_tool_call_id_is_the_call_id() {
     // Scenario 6: provider tool-call ID round-trip. The Responses API gives
     // function_call items both an `id` (fc_1) and a `call_id` (call_1); opi
@@ -698,16 +833,20 @@ async fn responses_tool_call_id_is_the_call_id() {
 
     let events = collect_stream(provider.stream_from_sse(sse, CancellationToken::new())).await;
 
-    let end_id = events
+    let end = events
         .iter()
         .find_map(|e| match e {
-            AssistantStreamEvent::ToolCallEnd { tool_call, .. } => Some(tool_call.id.clone()),
+            AssistantStreamEvent::ToolCallEnd { tool_call, .. } => Some(tool_call.clone()),
             _ => None,
         })
         .expect("ToolCallEnd emitted");
     assert_eq!(
-        end_id, "call_roundtrip",
+        end.id, "call_roundtrip",
         "ToolCall.id must be the Responses call_id, not the item id"
+    );
+    assert_eq!(
+        end.arguments, "{}",
+        "Responses tool-call arguments carried on output_item.added/done must be preserved even without argument deltas"
     );
 }
 
@@ -807,12 +946,12 @@ async fn stream_sends_text_request_body_and_auth_through_http() {
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
-async fn stream_cancellation_aborts_before_completion() {
+async fn stream_cancellation_drains_without_hang_after_cancel() {
     // The CancellationToken is threaded into the OpenAI Responses adapter's
     // HTTP body-stream loop (openai_responses.rs `cancel.cancelled()` select
-    // arm). Cancelling while the stream is open must terminate it gracefully
-    // without hanging or panicking. (Deterministic cancel-timing is proven at
-    // the agent layer in retry_agent.rs; this asserts the adapter wires cancel.)
+    // arm). This wiremock fixture is fully buffered, so it only proves the
+    // adapter drains promptly after cancellation; it does not prove
+    // cancellation wins a race against delayed terminal SSE data.
     let sse = concat!(
         "event: response.created\n",
         "data: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_1\",\"status\":\"in_progress\",\"model\":\"gpt-4o\",\"output\":[]}}\n\n",

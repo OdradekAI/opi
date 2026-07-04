@@ -240,6 +240,8 @@ pub mod code {
     pub const CODE_PROVIDER_RETRY_ATTEMPT: &str = "provider_retry_attempt";
     pub const CODE_PROVIDER_RETRY_SUCCEEDED: &str = "provider_retry_succeeded";
     pub const CODE_PROVIDER_RETRY_EXHAUSTED: &str = "provider_retry_exhausted";
+    pub const CODE_PROVIDER_RETRY_SUPPRESSED_AFTER_PARTIAL_OUTPUT: &str =
+        "provider_retry_suppressed_after_partial_output";
     pub const CODE_PROVIDER_CAPABILITY_INVALID: &str = "provider_capability_invalid";
     pub const CODE_TOOL_UNKNOWN: &str = "tool_unknown";
     pub const CODE_TOOL_VALIDATION_FAILED: &str = "tool_validation_failed";

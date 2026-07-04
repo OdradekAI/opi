@@ -175,20 +175,37 @@ pub enum OpenAiChatEvent {
         role: Option<String>,
         model: Option<String>,
         id: Option<String>,
+        usage: Option<Usage>,
     },
     /// Text content delta.
-    ContentDelta { content: String },
+    ContentDelta {
+        content: String,
+        id: Option<String>,
+        model: Option<String>,
+        usage: Option<Usage>,
+    },
     /// Tool call started (first appearance of a tool_calls entry with id+name).
     ToolCallStart {
         index: usize,
         id: String,
         name: String,
+        response_id: Option<String>,
+        model: Option<String>,
+        usage: Option<Usage>,
     },
     /// Tool call argument delta.
-    ToolCallDelta { index: usize, arguments: String },
+    ToolCallDelta {
+        index: usize,
+        arguments: String,
+        id: Option<String>,
+        model: Option<String>,
+        usage: Option<Usage>,
+    },
     /// Finish reason received (stop, tool_calls, length).
     Finish {
         finish_reason: String,
+        id: Option<String>,
+        model: Option<String>,
         usage: Option<Usage>,
     },
     /// Error from the API.
@@ -210,13 +227,16 @@ impl OpenAiChatEvent {
                 .as_ref()
                 .and_then(|d| d.cached_tokens)
                 .unwrap_or(0);
-            Usage {
-                input_tokens: u.prompt_tokens.unwrap_or(0),
-                output_tokens: u.completion_tokens.unwrap_or(0),
-                cache_read_tokens: cached,
-                cache_write_tokens: 0,
-            }
+            Usage::reported(
+                u.prompt_tokens.unwrap_or(0),
+                u.completion_tokens.unwrap_or(0),
+                cached,
+                0,
+            )
         });
+
+        let response_id = raw.id.clone();
+        let model = raw.model.clone();
 
         let choices = match raw.choices {
             Some(c) => c,
@@ -224,6 +244,8 @@ impl OpenAiChatEvent {
                 if let Some(u) = usage {
                     return vec![OpenAiChatEvent::Finish {
                         finish_reason: String::new(),
+                        id: response_id,
+                        model,
                         usage: Some(u),
                     }];
                 }
@@ -231,12 +253,26 @@ impl OpenAiChatEvent {
             }
         };
 
+        if choices.is_empty() {
+            if let Some(u) = usage {
+                return vec![OpenAiChatEvent::Finish {
+                    finish_reason: String::new(),
+                    id: response_id,
+                    model,
+                    usage: Some(u),
+                }];
+            }
+            return vec![];
+        }
+
         let mut events = Vec::new();
 
         if let Some(choice) = choices.into_iter().next() {
             if let Some(reason) = choice.finish_reason {
                 return vec![OpenAiChatEvent::Finish {
                     finish_reason: reason,
+                    id: response_id,
+                    model,
                     usage,
                 }];
             }
@@ -260,6 +296,9 @@ impl OpenAiChatEvent {
                             index: tc.index,
                             id,
                             name,
+                            response_id: response_id.clone(),
+                            model: model.clone(),
+                            usage: usage.clone(),
                         });
                     } else {
                         let arguments = func.arguments.unwrap_or_default();
@@ -267,6 +306,9 @@ impl OpenAiChatEvent {
                             events.push(OpenAiChatEvent::ToolCallDelta {
                                 index: tc.index,
                                 arguments,
+                                id: response_id.clone(),
+                                model: model.clone(),
+                                usage: usage.clone(),
                             });
                         }
                     }
@@ -280,15 +322,21 @@ impl OpenAiChatEvent {
             if delta.role.is_some() {
                 return vec![OpenAiChatEvent::RoleDelta {
                     role: delta.role,
-                    model: raw.model,
-                    id: raw.id,
+                    model,
+                    id: response_id,
+                    usage,
                 }];
             }
 
             // Text content delta
             let content = delta.content.unwrap_or_default();
             if !content.is_empty() {
-                return vec![OpenAiChatEvent::ContentDelta { content }];
+                return vec![OpenAiChatEvent::ContentDelta {
+                    content,
+                    id: response_id,
+                    model,
+                    usage,
+                }];
             }
         }
 
@@ -305,7 +353,9 @@ pub struct OpenAiChatMapper {
     partial: AssistantMessage,
     tool_calls: Vec<ToolCallState>,
     saw_done: bool,
+    started: bool,
     text_started: bool,
+    pending_stop_reason: Option<StopReason>,
 }
 
 struct ToolCallState {
@@ -320,8 +370,51 @@ impl OpenAiChatMapper {
             partial: empty_assistant_message(api, provider),
             tool_calls: Vec::new(),
             saw_done: false,
+            started: false,
             text_started: false,
+            pending_stop_reason: None,
         }
+    }
+
+    fn update_metadata(&mut self, id: Option<String>, model: Option<String>, usage: Option<Usage>) {
+        if let Some(response_id) = id {
+            self.partial.response_id = Some(response_id);
+        }
+        if let Some(model) = model
+            && !model.is_empty()
+        {
+            self.partial.model = model;
+        }
+        if let Some(usage) = usage {
+            self.partial.usage = usage;
+        }
+    }
+
+    fn emit_done(&mut self, reason: StopReason) -> AssistantStreamEvent {
+        self.partial.stop_reason = reason;
+        self.saw_done = true;
+        AssistantStreamEvent::Done {
+            reason,
+            message: self.partial.clone(),
+        }
+    }
+
+    fn ensure_start(&mut self, events: &mut Vec<AssistantStreamEvent>) {
+        if !self.started {
+            self.started = true;
+            events.push(AssistantStreamEvent::Start {
+                partial: self.partial.clone(),
+            });
+        }
+    }
+
+    pub fn flush_pending_done(&mut self) -> Option<AssistantStreamEvent> {
+        if self.saw_done {
+            return None;
+        }
+        self.pending_stop_reason
+            .take()
+            .map(|reason| self.emit_done(reason))
     }
 
     /// Process one OpenAI event, returning zero or more stream events.
@@ -330,21 +423,26 @@ impl OpenAiChatMapper {
             return Vec::new();
         }
         match event {
-            OpenAiChatEvent::RoleDelta { model, id, .. } => {
-                if let Some(m) = model {
-                    self.partial.model = m;
-                }
-                if let Some(rid) = id {
-                    self.partial.response_id = Some(rid);
-                }
-                let start = self.partial.clone();
-                vec![AssistantStreamEvent::Start { partial: start }]
+            OpenAiChatEvent::RoleDelta {
+                model, id, usage, ..
+            } => {
+                self.update_metadata(id, model, usage);
+                let mut events = Vec::new();
+                self.ensure_start(&mut events);
+                events
             }
-            OpenAiChatEvent::ContentDelta { content } => {
+            OpenAiChatEvent::ContentDelta {
+                content,
+                id,
+                model,
+                usage,
+            } => {
+                self.update_metadata(id, model, usage);
                 if content.is_empty() {
                     return Vec::new();
                 }
                 let mut events = Vec::new();
+                self.ensure_start(&mut events);
                 if !self.text_started {
                     self.text_started = true;
                     self.partial.content.push(AssistantContent::Text {
@@ -365,9 +463,18 @@ impl OpenAiChatMapper {
                 });
                 events
             }
-            OpenAiChatEvent::ToolCallStart { index, id, name } => {
+            OpenAiChatEvent::ToolCallStart {
+                index,
+                id,
+                name,
+                response_id,
+                model,
+                usage,
+            } => {
+                self.update_metadata(response_id, model, usage);
                 // End any open text block before starting tool calls
                 let mut events = Vec::new();
+                self.ensure_start(&mut events);
                 if self.text_started {
                     self.text_started = false;
                     if let Some(AssistantContent::Text { text }) = self.partial.content.last() {
@@ -409,7 +516,14 @@ impl OpenAiChatMapper {
                 });
                 events
             }
-            OpenAiChatEvent::ToolCallDelta { index, arguments } => {
+            OpenAiChatEvent::ToolCallDelta {
+                index,
+                arguments,
+                id,
+                model,
+                usage,
+            } => {
+                self.update_metadata(id, model, usage);
                 if arguments.is_empty() || index >= self.tool_calls.len() {
                     return Vec::new();
                 }
@@ -443,12 +557,20 @@ impl OpenAiChatMapper {
             }
             OpenAiChatEvent::Finish {
                 finish_reason,
+                id,
+                model,
                 usage,
             } => {
+                let has_usage = usage.is_some();
+                let is_metadata_only = finish_reason.is_empty();
+                self.update_metadata(id, model, usage);
                 let mut events = Vec::new();
+                if !is_metadata_only {
+                    self.ensure_start(&mut events);
+                }
 
                 // Close any open text block
-                if self.text_started {
+                if !is_metadata_only && self.pending_stop_reason.is_none() && self.text_started {
                     self.text_started = false;
                     if let Some(AssistantContent::Text { text }) = self.partial.content.last() {
                         let content = text.clone();
@@ -461,55 +583,61 @@ impl OpenAiChatMapper {
                 }
 
                 // Close any open tool calls
-                for (tc_idx, tc_state) in self.tool_calls.iter().enumerate() {
-                    // Skip placeholder entries from reserved indices
-                    if tc_state.id.is_empty() {
-                        continue;
-                    }
-                    // Map tool index to content index
-                    let mut tool_count = 0;
-                    let tool_content_index = self
-                        .partial
-                        .content
-                        .iter()
-                        .position(|c| {
-                            if matches!(c, AssistantContent::ToolCall { .. }) {
-                                if tool_count == tc_idx {
-                                    return true;
+                if !is_metadata_only && self.pending_stop_reason.is_none() {
+                    for (tc_idx, tc_state) in self.tool_calls.iter().enumerate() {
+                        // Skip placeholder entries from reserved indices
+                        if tc_state.id.is_empty() {
+                            continue;
+                        }
+                        // Map tool index to content index
+                        let mut tool_count = 0;
+                        let tool_content_index = self
+                            .partial
+                            .content
+                            .iter()
+                            .position(|c| {
+                                if matches!(c, AssistantContent::ToolCall { .. }) {
+                                    if tool_count == tc_idx {
+                                        return true;
+                                    }
+                                    tool_count += 1;
                                 }
-                                tool_count += 1;
-                            }
-                            false
-                        })
-                        .unwrap_or(0);
-                    if let Some(AssistantContent::ToolCall { tool_call }) =
-                        self.partial.content.get_mut(tool_content_index)
-                    {
-                        tool_call.arguments = tc_state.arguments.clone();
+                                false
+                            })
+                            .unwrap_or(0);
+                        if let Some(AssistantContent::ToolCall { tool_call }) =
+                            self.partial.content.get_mut(tool_content_index)
+                        {
+                            tool_call.arguments = tc_state.arguments.clone();
+                        }
+                        let tool_call = ToolCall {
+                            id: tc_state.id.clone(),
+                            name: tc_state.name.clone(),
+                            arguments: tc_state.arguments.clone(),
+                        };
+                        events.push(AssistantStreamEvent::ToolCallEnd {
+                            content_index: tool_content_index,
+                            tool_call,
+                            partial: self.partial.clone(),
+                        });
                     }
-                    let tool_call = ToolCall {
-                        id: tc_state.id.clone(),
-                        name: tc_state.name.clone(),
-                        arguments: tc_state.arguments.clone(),
-                    };
-                    events.push(AssistantStreamEvent::ToolCallEnd {
-                        content_index: tool_content_index,
-                        tool_call,
-                        partial: self.partial.clone(),
-                    });
                 }
 
-                // Update usage
-                if let Some(u) = usage {
-                    self.partial.usage = u;
+                if is_metadata_only {
+                    if let Some(done) = self.flush_pending_done() {
+                        events.push(done);
+                    } else {
+                        events.push(self.emit_done(map_stop_reason(&finish_reason)));
+                    }
+                    return events;
                 }
 
-                self.partial.stop_reason = map_stop_reason(&finish_reason);
-                self.saw_done = true;
-                events.push(AssistantStreamEvent::Done {
-                    reason: self.partial.stop_reason,
-                    message: self.partial.clone(),
-                });
+                let stop_reason = map_stop_reason(&finish_reason);
+                if has_usage {
+                    events.push(self.emit_done(stop_reason));
+                } else {
+                    self.pending_stop_reason = Some(stop_reason);
+                }
                 events
             }
             OpenAiChatEvent::Error { message } => {
@@ -813,6 +941,10 @@ impl OpenAiChatProvider {
             "messages": serialize_messages(&request.messages, &request.system, &compat),
         });
 
+        if compat.usage_in_stream {
+            body["stream_options"] = serde_json::json!({ "include_usage": true });
+        }
+
         if let Some(max_tokens) = request.max_tokens {
             body[&compat.max_tokens_field] = serde_json::Value::Number(max_tokens.into());
         }
@@ -882,6 +1014,9 @@ impl OpenAiChatProvider {
                     ))));
                 }
             }
+        }
+        if let Some(done) = mapper.flush_pending_done() {
+            stream_events.push(Ok(done));
         }
 
         let _cancel = cancel;
@@ -963,7 +1098,9 @@ impl OpenAiChatProvider {
             }
         }
 
-        if !mapper.saw_done {
+        if let Some(done) = mapper.flush_pending_done() {
+            let _ = tx.send(Ok(done)).await;
+        } else if !mapper.saw_done {
             let err = ProviderError::StreamError("stream ended without a terminal event".into());
             let _ = tx.send(Err(err)).await;
         }

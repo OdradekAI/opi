@@ -42,7 +42,9 @@
 //! - `sk-ant-*` (Anthropic API keys)
 //! - `sk-*` (OpenAI API keys)
 //! - `gh[pousr]_*` and `github_pat_*` (GitHub tokens)
+//! - `AIza*` (Google API keys)
 //! - Credentialed URL userinfo (`scheme://user:password@host`)
+//! - Credential-bearing URL query parameters (`api_key`, `token`, etc.)
 //! - Bearer tokens / JWTs (`eyJ*`)
 //! - JSON fields named `password`, `secret`, `token`, `api_key`, `apikey`,
 //!   `private_key`, `access_token`, `refresh_token`, `authorization`,
@@ -312,7 +314,10 @@ impl<R: BufRead, W: Write, H: ProxyHandler> ProxyEngine<R, W, H> {
 /// The default instance matches:
 /// - API keys in values: `sk-ant-*`, `sk-*`
 /// - GitHub tokens in values: `gh[pousr]_*`, `github_pat_*`
+/// - Google API keys in values: `AIza*`
 /// - Credentialed URL userinfo in values: `scheme://user:password@host`
+/// - Credential-bearing URL query parameters in values: `api_key`, `token`,
+///   `access_token`, `refresh_token`, `authorization`
 /// - JWT/Bearer tokens in values: `eyJ*`
 /// - Sensitive JSON field names: `password`, `secret`, `token`, `api_key`,
 ///   `apikey`, `private_key`, `access_token`, `refresh_token`,
@@ -340,10 +345,17 @@ impl Default for SecretRedactor {
             // evaluator.
             r"gh[pousr]_[A-Za-z0-9]{36,}".to_owned(),
             r"github_pat_[A-Za-z0-9_]{82,}".to_owned(),
+            // Google API keys
+            r"AIza[0-9A-Za-z_-]{35,}".to_owned(),
             // Credentialed URL userinfo: scheme://user:password@host. Catches
             // inline basic-auth credentials embedded in git/https URLs even
             // when the credential is not a recognized token prefix.
             r"[a-zA-Z][a-zA-Z0-9+.-]*://[^/\s@]+:[^/\s@]+@".to_owned(),
+            // Credential-bearing URL query parameters. This is intentionally
+            // value based (not field-name based) because provider and session
+            // errors often arrive as plain strings.
+            r"(?i)[?&](?:api[_-]?key|token|access[_-]?token|refresh[_-]?token|authorization)=[^&#\s]+"
+                .to_owned(),
             // OpenAI-style API keys
             r"sk-[a-zA-Z0-9-]{20,}".to_owned(),
             // JWT/Bearer tokens (eyJ header plus two token segments)

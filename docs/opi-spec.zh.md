@@ -1,4 +1,4 @@
-# Opi 技术规范
+e'x# Opi 技术规范
 
 > Opi 是 [pi](https://github.com/earendil-works/pi) AI 代理工具包的 Rust 重新实现。它保留了 pi 的运行时语义，同时采用 Rust 原生的 API、存储格式和发布实践。
 
@@ -1299,11 +1299,11 @@ Typed hook result composition 由契约测试覆盖：扩展钩子在 base 钩�
 
 第十二阶段通过 fixture-backed lifecycle、error、auth、image-input、thinking、usage、retry、rate-limit 和 compatibility 测试加固现有 provider families 与 OpenAI-compatible profiles，全部经第十阶段的 provider collection/auth 缝合点路由。这不是 provider 宽度阶段。
 
-已交付的 provider 正确性面：九个内置 family（anthropic、openai chat、openai-responses、openrouter、mistral、gemini、bedrock、azure、vertex）加上 config-driven 的 OpenAI-compatible profile 承载按 family 的 request/streaming/tool-call/thinking/image/usage fixture；九类 provider 错误分类（auth、config、request、network、rate_limit、provider、stream、capability、cancelled）映射到安全诊断；OpenAI-compatible 的 `CompatConfig` 标志（`system_role_override`、`max_tokens_field`、`tool_result_name_field`、`usage_in_stream`、`strict_tool_schema`、`reasoning_effort`、`cache_key`、`require_assistant_after_tool_result`）和模型级 override 遵守 model-over-provider 优先级；按 profile 的静态请求 header（`extra_headers`）是独立的 profile 配置字段，不是 `CompatConfig` 标志；用量侧 cache token 和 provider response ID（Anthropic `message.id`、OpenAI Chat `chatcmpl-*`、Responses `resp_*`）回写到 `AssistantMessage::response_id`；retry、partial-output no-retry、按 family 的取消和按 provider 的代理配置在无实时调用情况下覆盖；provider 构造在构建时校验凭据，并发出带安全补救的 auth/config 诊断。
+已交付的 provider 正确性面：九个内置 family（anthropic、openai chat、openai-responses、openrouter、mistral、gemini、bedrock、azure、vertex）加上 config-driven 的 OpenAI-compatible profile 承载按 family 的 request/streaming/tool-call/thinking/image/usage fixture；九类 provider 错误分类（auth、config、request、network、rate_limit、provider、stream、capability、cancelled）映射到安全诊断；OpenAI-compatible 的 `CompatConfig` 标志（`system_role_override`、`max_tokens_field`、`tool_result_name_field`、`usage_in_stream`、`strict_tool_schema`、`reasoning_effort`、`cache_key`、`require_assistant_after_tool_result`）和模型级 override 遵守 model-over-provider 优先级；其中 `require_assistant_after_tool_result` 仅表示面向遗留端点的兼容性元数据，不是由共享适配器在运行时强制执行的行为；`usage_in_stream` 会请求 `stream_options.include_usage`，并保留来自任意流式 chunk 的 usage 更新；按 profile 的静态请求 header（`extra_headers`）是独立的 profile 配置字段，不是 `CompatConfig` 标志；用量侧 cache token 和 provider response ID（Anthropic `message.id`、OpenAI Chat `chatcmpl-*`、Responses `resp_*`）回写到 `AssistantMessage::response_id`，其中 OpenAI Chat 会从任何携带 `id` 的 chunk 捕获 response ID，而不只是在 role chunk 中捕获；retry、partial-output no-retry、按 family 的取消和按 provider 的代理配置在无实时调用情况下覆盖；provider 构造在构建时校验凭据，并发出带安全补救的 auth/config 诊断。
 
 明确推迟：OpenAI Responses 的 `previous_response_id` 和服务端会话链（Responses 请求按 Chat-Completions 类比构造）；请求侧 prompt-caching 断点（`cache_key` profile 标志是可用的 cache-affinity 提示）；超出既有 per-model metadata 的图片数量/大小限制；广泛的 provider catalog 扩张。
 
-Phase 12 非目标（不得作为当前核心行为出现）：OAuth 登录流程；Anthropic、OpenAI Codex 和 GitHub Copilot 订阅鉴权；大范围新增 first-class provider 列表；图像生成；浏览器使用；面向 package 的 provider 流式 adapter 协议；默认测试中的付费实时 provider 调用；复制 pi 的 provider 专用配置文件格式。尽力而为（best-effort）的费用映射保留显式未知值，而非推断虚假置信。
+Phase 12 非目标（不得作为当前核心行为出现）：OAuth 登录流程；Anthropic、OpenAI Codex 和 GitHub Copilot 订阅鉴权；大范围新增 first-class provider 列表；图像生成；浏览器使用；面向 package 的 provider 流式 adapter 协议；默认测试中的付费实时 provider 调用；复制 pi 的 provider 专用配置文件格式。尽力而为（best-effort）的费用映射保留显式未知值，而非推断虚假置信：缺失 usage 会被明确跟踪为未知，而当任一轮 usage 未知或定价未知时，会话费用汇总会被省略。
 
 ### 第十三阶段 - 会话树与上下文重建
 

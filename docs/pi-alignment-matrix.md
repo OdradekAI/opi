@@ -249,7 +249,7 @@ with the older `.repo/pi-0.75.3` baseline.
 | 9 | pi 0.80.2 baseline realignment | docs | Planned | Documentation/evidence gate; no runtime changes. |
 | 10 | Core architecture deepening | `opi-ai`, `opi-agent`, `opi-coding-agent` | Partial | `Models/Auth`, generic `AgentHarness`, session facade, runtime hook boundaries. |
 | 11 | Tooling quality | `opi-coding-agent`, `opi-agent`, `opi-tui` | Planned | Recast from old Phase 9; depends on Phase 10 boundaries. |
-| 12 | Provider correctness | `opi-ai`, `opi-coding-agent` | Partial | Recast from old Phase 10; fixture lifecycle/error/taxonomy/profile-flags/cache/response-id/retry/cancel/auth-diagnostic coverage shipped through the provider collection/auth seam, with `previous_response_id` and request-side cache-control breakpoints explicitly deferred. |
+| 12 | Provider correctness | `opi-ai`, `opi-coding-agent` | Partial | Recast from old Phase 10; fixture lifecycle/error/taxonomy/profile-flags/cache/response-id/retry/cancel/auth-diagnostic coverage shipped through the provider collection/auth seam. `usage_in_stream` now requests `stream_options.include_usage`, OpenAI Chat captures response IDs from any chunk carrying `id`, missing usage stays explicitly unknown so session cost summaries can be omitted, and `previous_response_id` plus request-side cache-control breakpoints remain deferred. |
 | 13 | Session tree and context reconstruction | `opi-agent`, `opi-coding-agent`, `opi-tui` | Planned | Recast from old Phase 11; depends on generic harness/session facade. |
 | 14 | TUI product polish | `opi-tui`, `opi-coding-agent` | Planned | Recast from old Phase 12; built-in TUI only, not custom extension UI parity. |
 

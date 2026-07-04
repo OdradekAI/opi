@@ -361,6 +361,10 @@ impl BedrockProvider {
             }
         }
 
+        if let Some(pending) = mapper.flush_pending() {
+            let _ = tx.send(Ok(pending)).await;
+        }
+
         if !mapper.saw_done {
             let _ = tx
                 .send(Err(ProviderError::StreamError(
@@ -652,6 +656,7 @@ struct BedrockMapper {
     blocks: Vec<BlockState>,
     saw_done: bool,
     usage: BedrockUsage,
+    usage_reported: bool,
     /// Pending Done event held until Metadata arrives (Bedrock sends metadata after messageStop).
     pending_done: Option<AssistantStreamEvent>,
 }
@@ -674,19 +679,22 @@ impl BedrockMapper {
             blocks: Vec::new(),
             saw_done: false,
             usage: BedrockUsage::default(),
+            usage_reported: false,
             pending_done: None,
         }
     }
 
     /// Flush any pending Done event (when stream ends without metadata).
     pub fn flush_pending(&mut self) -> Option<AssistantStreamEvent> {
-        if let Some(AssistantStreamEvent::Done { message, .. }) = &mut self.pending_done {
-            message.usage = Usage {
-                input_tokens: self.usage.input_tokens,
-                output_tokens: self.usage.output_tokens,
-                cache_read_tokens: self.usage.cache_read_tokens,
-                cache_write_tokens: self.usage.cache_write_tokens,
-            };
+        if self.usage_reported
+            && let Some(AssistantStreamEvent::Done { message, .. }) = &mut self.pending_done
+        {
+            message.usage = Usage::reported(
+                self.usage.input_tokens,
+                self.usage.output_tokens,
+                self.usage.cache_read_tokens,
+                self.usage.cache_write_tokens,
+            );
         }
         self.pending_done.take()
     }
@@ -766,6 +774,13 @@ impl BedrockMapper {
                         {
                             acc.push_str(&input);
                         }
+                        if let Some(AssistantContent::ToolCall { tool_call }) =
+                            self.partial.content.last_mut()
+                            && let Some(BlockState::ToolUse { partial_input, .. }) =
+                                self.blocks.last()
+                        {
+                            tool_call.arguments = partial_input.clone();
+                        }
                         vec![AssistantStreamEvent::ToolCallDelta {
                             content_index,
                             delta: input,
@@ -820,14 +835,15 @@ impl BedrockMapper {
             }
             BedrockEvent::Metadata { usage } => {
                 self.usage = usage;
+                self.usage_reported = true;
                 // Flush pending Done with updated usage
                 if let Some(AssistantStreamEvent::Done { message, .. }) = &mut self.pending_done {
-                    message.usage = Usage {
-                        input_tokens: self.usage.input_tokens,
-                        output_tokens: self.usage.output_tokens,
-                        cache_read_tokens: self.usage.cache_read_tokens,
-                        cache_write_tokens: self.usage.cache_write_tokens,
-                    };
+                    message.usage = Usage::reported(
+                        self.usage.input_tokens,
+                        self.usage.output_tokens,
+                        self.usage.cache_read_tokens,
+                        self.usage.cache_write_tokens,
+                    );
                 }
                 self.pending_done.take().into_iter().collect()
             }

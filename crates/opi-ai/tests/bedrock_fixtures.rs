@@ -271,6 +271,29 @@ async fn tool_call_from_fixture() {
         "should have ToolCallEnd"
     );
 
+    let partial_arguments: Vec<_> = events
+        .iter()
+        .filter_map(|e| match e {
+            AssistantStreamEvent::ToolCallDelta { partial, .. } => {
+                partial.content.iter().find_map(|content| match content {
+                    opi_ai::message::AssistantContent::ToolCall { tool_call } => {
+                        Some(tool_call.arguments.clone())
+                    }
+                    _ => None,
+                })
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        partial_arguments,
+        vec![
+            r#"{"path":"#.to_string(),
+            r#"{"path":"/tmp/f"}"#.to_string()
+        ],
+        "ToolCallDelta partial.content must accumulate streamed tool arguments across deltas"
+    );
+
     // Done should have ToolUse stop reason
     if let Some(AssistantStreamEvent::Done { reason, .. }) = events.last() {
         assert_eq!(*reason, StopReason::ToolUse);
@@ -944,6 +967,47 @@ async fn stream_drains_text_lifecycle_through_http() {
     assert!(
         recorded.headers.contains_key("x-amz-content-sha256"),
         "Bedrock request must carry an x-amz-content-sha256 header"
+    );
+}
+
+#[tokio::test]
+async fn stream_http_flushes_done_without_metadata() {
+    let body_bytes = build_bedrock_stream(&[
+        ("messageStart", r#"{"role":"assistant"}"#),
+        (
+            "contentBlockStart",
+            r#"{"start":{"text":{}},"contentBlockIndex":0}"#,
+        ),
+        (
+            "contentBlockDelta",
+            r#"{"delta":{"text":"Hello without metadata"},"contentBlockIndex":0}"#,
+        ),
+        ("contentBlockStop", r#"{"contentBlockIndex":0}"#),
+        ("messageStop", r#"{"stopReason":"end_turn"}"#),
+    ]);
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/model/anthropic.claude-sonnet-4/converse-stream"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_raw(body_bytes, "application/vnd.amazon.eventstream"),
+        )
+        .mount(&server)
+        .await;
+
+    let provider = BedrockProvider::new(
+        test_credentials(),
+        Some(server.uri()),
+        Arc::new(HttpClient::new()),
+    );
+
+    let events = collect_events(provider.stream(lifecycle_text_request())).await;
+
+    assert!(
+        events
+            .iter()
+            .any(|event| matches!(event, AssistantStreamEvent::Done { .. })),
+        "HTTP Bedrock stream must flush pending Done when metadata is absent"
     );
 }
 

@@ -186,7 +186,7 @@
 | 9 | pi 0.80.2 baseline realignment | docs | 计划中 | 文档/证据门；不改变 runtime。 |
 | 10 | Core architecture deepening | `opi-ai`、`opi-agent`、`opi-coding-agent` | 部分 | `Models/Auth`、generic `AgentHarness`、session facade、runtime hook boundaries。 |
 | 11 | Tooling quality | `opi-coding-agent`、`opi-agent`、`opi-tui` | 计划中 | 由旧第 9 阶段重排；依赖第 10 阶段边界。 |
-| 12 | Provider correctness | `opi-ai`、`opi-coding-agent` | 部分 | 由旧第 10 阶段重排；通过 provider collection/auth seam 已交付 fixture lifecycle/error/taxonomy/profile-flags/cache/response-id/retry/cancel/auth-diagnostic 覆盖，`previous_response_id` 和请求侧 cache-control 断点被明确推迟。 |
+| 12 | Provider correctness | `opi-ai`、`opi-coding-agent` | 部分 | 由旧第 10 阶段重排；通过 provider collection/auth seam 已交付 fixture lifecycle/error/taxonomy/profile-flags/cache/response-id/retry/cancel/auth-diagnostic 覆盖。`usage_in_stream` 现在会请求 `stream_options.include_usage`，OpenAI Chat 会从任何携带 `id` 的 chunk 捕获 response ID，缺失 usage 会保持为显式未知，因此会话费用汇总可以被省略，而 `previous_response_id` 与请求侧 cache-control 断点仍被明确推迟。 |
 | 13 | Session tree and context reconstruction | `opi-agent`、`opi-coding-agent`、`opi-tui` | 计划中 | 由旧第 11 阶段重排；依赖 generic harness/session facade。 |
 | 14 | TUI product polish | `opi-tui`、`opi-coding-agent` | 计划中 | 由旧第 12 阶段重排；只打磨内置 TUI，不做 custom extension UI 对等。 |
 

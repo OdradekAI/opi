@@ -29,7 +29,7 @@ impl StopReason {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Usage {
     pub input_tokens: u32,
     pub output_tokens: u32,
@@ -37,9 +37,46 @@ pub struct Usage {
     pub cache_read_tokens: u32,
     #[serde(default)]
     pub cache_write_tokens: u32,
+    #[serde(default)]
+    pub reported: bool,
+}
+
+impl Default for Usage {
+    fn default() -> Self {
+        Self::unknown()
+    }
 }
 
 impl Usage {
+    pub fn unknown() -> Self {
+        Self {
+            input_tokens: 0,
+            output_tokens: 0,
+            cache_read_tokens: 0,
+            cache_write_tokens: 0,
+            reported: false,
+        }
+    }
+
+    pub fn reported(
+        input_tokens: u32,
+        output_tokens: u32,
+        cache_read_tokens: u32,
+        cache_write_tokens: u32,
+    ) -> Self {
+        Self {
+            input_tokens,
+            output_tokens,
+            cache_read_tokens,
+            cache_write_tokens,
+            reported: true,
+        }
+    }
+
+    pub fn is_reported(&self) -> bool {
+        self.reported
+    }
+
     pub fn total_tokens(&self) -> u64 {
         self.input_tokens as u64
             + self.output_tokens as u64
@@ -56,6 +93,7 @@ pub struct CumulativeUsage {
     cache_read_tokens: u64,
     cache_write_tokens: u64,
     turns: u32,
+    unknown_turns: u32,
 }
 
 impl CumulativeUsage {
@@ -66,6 +104,7 @@ impl CumulativeUsage {
         cache_read_tokens: u64,
         cache_write_tokens: u64,
         turns: u32,
+        unknown_turns: u32,
     ) -> Self {
         Self {
             input_tokens,
@@ -73,6 +112,7 @@ impl CumulativeUsage {
             cache_read_tokens,
             cache_write_tokens,
             turns,
+            unknown_turns,
         }
     }
 
@@ -96,20 +136,37 @@ impl CumulativeUsage {
         self.turns
     }
 
+    pub fn has_unknown_usage(&self) -> bool {
+        self.unknown_turns > 0
+    }
+
     pub fn accumulate(&mut self, turn: &Usage) {
         self.input_tokens += turn.input_tokens as u64;
         self.output_tokens += turn.output_tokens as u64;
         self.cache_read_tokens += turn.cache_read_tokens as u64;
         self.cache_write_tokens += turn.cache_write_tokens as u64;
         self.turns += 1;
+        if !turn.reported {
+            self.unknown_turns += 1;
+        }
     }
 
     pub fn as_usage(&self) -> Usage {
-        Usage {
-            input_tokens: self.input_tokens as u32,
-            output_tokens: self.output_tokens as u32,
-            cache_read_tokens: self.cache_read_tokens as u32,
-            cache_write_tokens: self.cache_write_tokens as u32,
+        if self.unknown_turns == 0 {
+            Usage::reported(
+                self.input_tokens as u32,
+                self.output_tokens as u32,
+                self.cache_read_tokens as u32,
+                self.cache_write_tokens as u32,
+            )
+        } else {
+            Usage {
+                input_tokens: self.input_tokens as u32,
+                output_tokens: self.output_tokens as u32,
+                cache_read_tokens: self.cache_read_tokens as u32,
+                cache_write_tokens: self.cache_write_tokens as u32,
+                reported: false,
+            }
         }
     }
 }

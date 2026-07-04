@@ -372,9 +372,13 @@ Common methods include `prompt`, `prompt_with_content`, `queue_images`,
   flag), OpenAI Responses
   native semantics (`store` / `reasoning_effort` / `strict_tools` implemented;
   `previous_response_id` deferred), and cache / response-ID / session-affinity
-  behavior. Phase 13 session work may rely on provider-correct usage, model,
-  thinking, and error data through the shared `opi-ai` types, without
-  depending on provider-specific internals.
+  behavior. In particular, `usage_in_stream` requests
+  `stream_options.include_usage`, OpenAI Chat captures response IDs from any
+  chunk carrying `id`, `require_assistant_after_tool_result` stays metadata-only
+  in the shared adapter, and session cost summaries are omitted when any turn
+  has unknown usage or when pricing is unknown. Phase 13 session work may rely
+  on provider-correct usage, model, thinking, and error data through the
+  shared `opi-ai` types, without depending on provider-specific internals.
 
 ## License
 

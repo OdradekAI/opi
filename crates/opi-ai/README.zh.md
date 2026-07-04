@@ -124,11 +124,11 @@ LLM 可见内容和 provider 专用失败信号。
 | `system_role_override` | 将 system prompt 渲染为 `developer`（或其他角色）而非 `system`。 |
 | `max_tokens_field` | 输出上限的请求字段名（`max_tokens` 还是 `max_completion_tokens`）。 |
 | `tool_result_name_field` | 在工具结果消息上回显工具名。 |
-| `usage_in_stream` | 在流式响应中预期 usage delta。 |
+| `usage_in_stream` | 请求 `stream_options.include_usage`，并保留来自任意流式 chunk 的 usage 更新。 |
 | `strict_tool_schema` | 发出 strict JSON-schema 工具定义。 |
 | `reasoning_effort` | 为支持该能力的模型发送 reasoning-effort 提示。 |
 | `cache_key` | 发送 provider 的 prompt-cache key（cache-affinity 提示）。 |
-| `require_assistant_after_tool_result` | 作为 compat 元数据建模；以运行时校验强制执行，而非 wire 字段。 |
+| `require_assistant_after_tool_result` | 面向遗留端点的纯兼容性元数据标记；opi 不会在共享适配器中合成或强制额外的 assistant 轮次。 |
 
 `ModelCompatOverride` 在 profile 默认值之上叠加模型级的 `system_role_override` 和
 `max_tokens_field` 覆盖（model 优先于 provider）。静态的按 profile 请求 header
@@ -148,8 +148,9 @@ Chat-Completions 类比构造，因此服务端响应链未被接入。
 cache-affinity 提示。
 
 Provider response ID 被捕获并回写到 `AssistantMessage::response_id`（Anthropic
-`message.id`、OpenAI Chat `chatcmpl-*`、OpenAI Responses `resp_*`）；其它 family
-保持为 `None`。
+`message.id`、OpenAI Chat `chatcmpl-*`、OpenAI Responses `resp_*`）；其中
+OpenAI Chat 会从任何携带 `id` 的 chunk 捕获 response ID，而不只是在 role chunk 中
+捕获；其它 family 保持为 `None`。
 
 会话亲和刻意受限：`previous_response_id` 被推迟（见 OpenAI-Compatible Profile），
 兼容 profile 可携带静态 `extra_headers` 用于路由/会话钉扎。不存在服务端会话链。
@@ -164,8 +165,9 @@ Provider response ID 被捕获并回写到 `AssistantMessage::response_id`（Ant
 
 ## 尽力而为的费用
 
-费用映射是 best-effort。错误的置信比显式未知更糟：当定价或用量缺失时，
-`Usage` / 费用辅助保留显式未知值（费用为 `None`），而不是推断一个数字。费用绝不
+费用映射是 best-effort。错误的置信比显式未知更糟：当 provider 用量缺失时，
+`Usage::unknown()` 和 `CumulativeUsage` 会把该轮次明确标记为未知，而不是当作已知零用量。
+因此，只要任一轮 usage 未知，或模型定价缺失，面向 session 的费用汇总就应省略。费用绝不
 阻塞成功的流。
 
 ## Phase 12 非目标

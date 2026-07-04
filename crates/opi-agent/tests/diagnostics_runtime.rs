@@ -684,6 +684,52 @@ mod runtime_emission {
     }
 
     #[tokio::test]
+    async fn retry_after_prior_attempt_then_partial_stream_error_emits_suppressed_not_exhausted() {
+        let mut partial_events = test_support::text_response("partial after retry");
+        partial_events.pop();
+
+        let provider = MockProvider::new_with_errors(
+            "mock",
+            vec![
+                MockResponse::Error(ProviderError::RateLimited {
+                    retry_after_ms: Some(1),
+                }),
+                MockResponse::EventsThenError(
+                    partial_events,
+                    ProviderError::RateLimited {
+                        retry_after_ms: Some(1),
+                    },
+                ),
+            ],
+        );
+        let sink = Arc::new(RecordingSink::new());
+        let result = agent_loop(
+            ctx(provider, sink.clone()),
+            config(Some(fast_retry())),
+            &NoopHooks,
+            null_event_sink(),
+            tokio_util::sync::CancellationToken::new(),
+        )
+        .await;
+        assert!(
+            result.is_err(),
+            "partial stream error after retry should fail"
+        );
+
+        let snap = sink.snapshot();
+        let suppressed = snap
+            .iter()
+            .find(|d| d.code == CODE_PROVIDER_RETRY_SUPPRESSED_AFTER_PARTIAL_OUTPUT)
+            .expect("partial-after-retry error must emit the suppression diagnostic");
+        assert_eq!(suppressed.severity, Severity::Warning);
+        assert_eq!(suppressed.source, SOURCE_PROVIDER);
+        assert!(
+            snap.iter().all(|d| d.code != CODE_PROVIDER_RETRY_EXHAUSTED),
+            "partial-after-retry suppression must not emit retry_exhausted"
+        );
+    }
+
+    #[tokio::test]
     async fn auth_failure_emits_provider_auth_diagnostic() {
         let provider = MockProvider::new_with_errors(
             "mock",
