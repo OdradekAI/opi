@@ -263,6 +263,11 @@ pub mod code {
     pub const CODE_SESSION_CORRUPT_ENTRIES: &str = "session_corrupt_entries";
     pub const CODE_SESSION_TRUNCATED_LINE: &str = "session_truncated_line";
     pub const CODE_SESSION_UNKNOWN_ENTRIES: &str = "session_unknown_entries";
+    /// Context reconstruction encountered an entry whose `parent_id` does not
+    /// resolve to any known entry. The orphan entry is included in the
+    /// reconstructed chain up to the break; the diagnostic explains where the
+    /// chain could not be extended further. Phase 13.2.
+    pub const CODE_SESSION_CONTEXT_MISSING_PARENT: &str = "session_context_missing_parent";
     // opi-coding-agent bridges (package/config). Package diagnostics carry a
     // dynamic granular code in `details.package_code`; the shared code is stable.
     pub const CODE_PACKAGE_DIAGNOSTIC: &str = "package_diagnostic";

@@ -223,6 +223,24 @@ impl SessionEntry {
             SessionEntry::BranchSummary(b) => &b.id,
         }
     }
+
+    /// Return the entry's `parent_id` regardless of variant. Metadata entries
+    /// (session_info, model_change, thinking_level_change, label,
+    /// branch_summary, extension_state) carry the content tip they were
+    /// parented to at write time and are attachments, not chain nodes.
+    pub fn parent_id(&self) -> Option<&str> {
+        match self {
+            SessionEntry::Message(m) => m.parent_id.as_deref(),
+            SessionEntry::Compaction(c) => c.parent_id.as_deref(),
+            SessionEntry::Leaf(l) => l.parent_id.as_deref(),
+            SessionEntry::ExtensionState(s) => s.parent_id.as_deref(),
+            SessionEntry::SessionInfo(s) => s.parent_id.as_deref(),
+            SessionEntry::ModelChange(m) => m.parent_id.as_deref(),
+            SessionEntry::ThinkingLevelChange(t) => t.parent_id.as_deref(),
+            SessionEntry::Label(l) => l.parent_id.as_deref(),
+            SessionEntry::BranchSummary(b) => b.parent_id.as_deref(),
+        }
+    }
 }
 
 /// Crash recovery status returned by [`SessionReader`].

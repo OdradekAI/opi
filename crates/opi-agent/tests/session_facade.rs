@@ -499,6 +499,49 @@ fn facade_metadata_appends_after_message_in_flush_order() {
 }
 
 #[test]
+fn facade_metadata_append_does_not_advance_active_tip() {
+    // Phase 13.2 DoD: "SessionFacade exposes a named metadata append API and
+    // tests compare active_tip before and after metadata append." Every flavor
+    // of metadata append parents to the content tip without advancing it.
+    let mut facade = SessionFacade::new(Box::new(RecordingSessionRepo::default())).unwrap();
+    facade.enqueue_message(user_msg("first")).unwrap();
+    facade.flush().unwrap();
+    let tip_before = facade.active_tip().unwrap();
+
+    // Append every metadata flavor the facade exposes.
+    facade.enqueue_session_info("named".into()).unwrap();
+    facade
+        .enqueue_model_change("anthropic:claude-b".into())
+        .unwrap();
+    facade
+        .enqueue_thinking_level_change(ThinkingLevel::High)
+        .unwrap();
+    facade
+        .enqueue_label("pinned".into(), LabelAction::Add)
+        .unwrap();
+    facade
+        .enqueue_branch_summary("earlier context".into())
+        .unwrap();
+    facade.flush().unwrap();
+
+    let tip_after = facade.active_tip().unwrap();
+    assert_eq!(
+        tip_before, tip_after,
+        "metadata appends must not advance the content tip"
+    );
+
+    // And the metadata is reachable on the reconstructed active chain via the
+    // reusable context API (the tip it was parented to is still the tip).
+    let (_h, entries, _r) = facade.load().unwrap();
+    let ctx = opi_agent::session_context::reconstruct_context(&entries, &CrashRecovery::default());
+    assert_eq!(ctx.active_tip_entry_id.as_deref(), tip_after.as_deref());
+    assert_eq!(ctx.session_name.as_deref(), Some("named"));
+    assert_eq!(ctx.model.as_deref(), Some("anthropic:claude-b"));
+    assert_eq!(ctx.thinking_level, Some(ThinkingLevel::High));
+    assert_eq!(ctx.labels, vec!["pinned".to_owned()]);
+}
+
+#[test]
 fn pending_writes_flush_in_order_at_save_points() {
     let dir = tempdir().unwrap();
     let path = dir.path().join("queue.jsonl");
