@@ -736,3 +736,220 @@ fn e2e_resume_nonexistent_exits_nonzero() {
         "stderr should mention 'not found', got: {stderr}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Phase 13.5: --export-session CLI mapping + absence-of-publish negative
+// ---------------------------------------------------------------------------
+
+#[test]
+fn phase13_export_cli_args_map_to_options() {
+    //! Phase 13.5 acceptance: the export CLI flags parse into the documented
+    //! field values. This is the parser half of the
+    //! `phase13_export_cli_args_and_failures` verification command.
+    use clap::Parser;
+    use opi_coding_agent::cli::{Cli, ExportFormat, ExportRedactMode};
+
+    // Defaults: markdown + summary redaction + active branch + inclusions on.
+    let cli = Cli::try_parse_from(["opi", "--export-session", "abc123", "--output", "out.md"])
+        .expect("default flags parse");
+    assert_eq!(cli.export_session.as_deref(), Some("abc123"));
+    assert_eq!(cli.output.as_deref(), Some(std::path::Path::new("out.md")));
+    assert_eq!(cli.format, ExportFormat::Markdown);
+    assert!(!cli.full_tree);
+    assert!(!cli.exclude_tool_output);
+    assert!(!cli.exclude_thinking);
+    assert_eq!(cli.redact, ExportRedactMode::Summary);
+
+    // Fully-specified invocation.
+    let cli = Cli::try_parse_from([
+        "opi",
+        "--export-session",
+        "/tmp/sess.jsonl",
+        "--format",
+        "json",
+        "--output",
+        "out.json",
+        "--full-tree",
+        "--exclude-tool-output",
+        "--exclude-thinking",
+        "--redact",
+        "none",
+    ])
+    .expect("full flags parse");
+    assert_eq!(cli.export_session.as_deref(), Some("/tmp/sess.jsonl"));
+    assert_eq!(cli.format, ExportFormat::Json);
+    assert!(cli.full_tree);
+    assert!(cli.exclude_tool_output);
+    assert!(cli.exclude_thinking);
+    assert_eq!(cli.redact, ExportRedactMode::None);
+
+    // Verbose redaction mode parses.
+    let cli = Cli::try_parse_from([
+        "opi",
+        "--export-session",
+        "x",
+        "--output",
+        "o",
+        "--redact",
+        "verbose",
+    ])
+    .expect("verbose parses");
+    assert_eq!(cli.redact, ExportRedactMode::Verbose);
+}
+
+#[test]
+fn phase13_export_rejects_unknown_format_and_redact() {
+    //! Bad enum values must be rejected so exports cannot silently pick a
+    //! wrong shape.
+    use clap::Parser;
+    use opi_coding_agent::cli::Cli;
+
+    let bad_format = Cli::try_parse_from([
+        "opi",
+        "--export-session",
+        "x",
+        "--output",
+        "o",
+        "--format",
+        "yaml",
+    ]);
+    assert!(bad_format.is_err(), "unknown --format must be rejected");
+
+    let bad_redact = Cli::try_parse_from([
+        "opi",
+        "--export-session",
+        "x",
+        "--output",
+        "o",
+        "--redact",
+        "paranoid",
+    ]);
+    assert!(bad_redact.is_err(), "unknown --redact must be rejected");
+}
+
+#[test]
+fn phase13_export_has_no_publish_or_share_path() {
+    //! Phase 13.5 non-goal negative: there is no CLI surface for publishing,
+    //! sharing, uploading, or syncing an export. Introspecting the clap
+    //! command metadata avoids the trailing-`prompt` var-arg swallowing the
+    //! candidate flag as a positional. This pins the "local-only / no sharing
+    //! service" branch of DoD scenario `phase13-local-session-export-redacted`.
+    use clap::CommandFactory;
+    use opi_coding_agent::cli::Cli;
+
+    let cmd = Cli::command();
+    let longs: Vec<String> = cmd
+        .get_arguments()
+        .filter_map(|a| a.get_long().map(str::to_owned))
+        .collect();
+    for forbidden in ["share", "publish", "upload", "sync", "cloud"] {
+        assert!(
+            !longs.iter().any(|l| l == forbidden),
+            "no --{forbidden} flag should exist on the CLI: longs = {longs:?}"
+        );
+    }
+
+    // Export-related flags ARE present.
+    for required in [
+        "export-session",
+        "format",
+        "output",
+        "full-tree",
+        "exclude-tool-output",
+        "exclude-thinking",
+        "redact",
+    ] {
+        assert!(
+            longs.iter().any(|l| l == required),
+            "--{required} flag must exist: longs = {longs:?}"
+        );
+    }
+}
+
+#[test]
+fn e2e_export_session_writes_output_and_preserves_source() {
+    //! Phase 13.5 E2E: the `opi --export-session` dispatch renders the active
+    //! branch to a markdown file, applies Summary redaction, and leaves the
+    //! source session unchanged. Exercises the production main.rs dispatch
+    //! path end to end.
+    build_opi_if_needed();
+
+    let sessions = tempfile::tempdir().unwrap();
+    let out_dir = tempfile::tempdir().unwrap();
+
+    // Build a session fixture with a secret canary directly on disk.
+    let session_path = sessions.path().join("e2e-export.jsonl");
+    let header = SessionHeader::new(
+        "e2e-export".into(),
+        "2026-07-05T00:00:00Z".into(),
+        "/workspace".into(),
+        None,
+    );
+    {
+        let mut writer = SessionWriter::create(&session_path, header).unwrap();
+        writer
+            .append(&SessionEntry::Message(MessageEntry {
+                id: "m1".into(),
+                parent_id: None,
+                timestamp: "2026-07-05T00:00:00Z".into(),
+                message: Message::User(UserMessage {
+                    content: vec![InputContent::Text {
+                        text: "key=sk-ant-FAKE1234567890abcdefghijklmnop".into(),
+                    }],
+                    timestamp_ms: 0,
+                }),
+            }))
+            .unwrap();
+    }
+    let before = std::fs::read(&session_path).unwrap();
+
+    let output = out_dir.path().join("export.md");
+    let status = std::process::Command::new(opi_binary())
+        .env("OPI_SESSIONS_DIR", sessions.path())
+        .arg("--export-session")
+        .arg("e2e-export")
+        .arg("--output")
+        .arg(&output)
+        .output()
+        .expect("failed to run opi");
+    assert!(
+        status.status.success(),
+        "export should succeed: {}",
+        String::from_utf8_lossy(&status.stderr)
+    );
+    assert!(output.exists(), "output file should be written");
+
+    let exported = std::fs::read_to_string(&output).unwrap();
+    assert!(
+        !exported.contains("sk-ant-FAKE1234567890abcdefghijklmnop"),
+        "API key must be redacted in E2E export: {exported}"
+    );
+
+    let after = std::fs::read(&session_path).unwrap();
+    assert_eq!(
+        before, after,
+        "source session bytes unchanged after E2E export"
+    );
+}
+
+#[test]
+fn e2e_export_session_without_output_fails_with_usage_error() {
+    //! `--export-session` without `--output` is an argument error (exit 2),
+    //! not a silent default or a crash.
+    build_opi_if_needed();
+
+    let sessions = tempfile::tempdir().unwrap();
+    let status = std::process::Command::new(opi_binary())
+        .env("OPI_SESSIONS_DIR", sessions.path())
+        .arg("--export-session")
+        .arg("anything")
+        .output()
+        .expect("failed to run opi");
+    let code = status.status.code().unwrap_or(0);
+    assert_eq!(code, 2, "missing --output must exit 2, got {code}");
+    let stderr = String::from_utf8_lossy(&status.stderr);
+    assert!(
+        stderr.contains("--output"),
+        "stderr should mention --output requirement: {stderr}"
+    );
+}

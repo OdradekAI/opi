@@ -6,7 +6,6 @@ use opi_coding_agent::harness::ResumeInfo;
 use opi_coding_agent::policy::{
     RunMode, ToolFlags, ToolRuntimeConfig, ToolSelection, resolve_tool_selection,
 };
-
 fn main() {
     // Load .env if present (for local development/testing convenience).
     dotenvy::dotenv().ok();
@@ -41,6 +40,21 @@ fn main() {
     // Doctor is network-free and must not require credentials or a provider.
     if let Some(opi_coding_agent::cli::Command::Doctor { json, scope }) = &cli.command {
         let exit_code = run_doctor_cli(&cli, scope.as_deref(), *json);
+        std::process::exit(exit_code);
+    }
+
+    // Handle --export-session early — local file render only, no provider or
+    // network needed (Phase 13.5).
+    if let Some(session_ref) = cli.export_session.clone() {
+        let exit_code = run_export_session(
+            session_ref,
+            cli.output.clone(),
+            cli.format,
+            cli.full_tree,
+            cli.exclude_tool_output,
+            cli.exclude_thinking,
+            cli.redact,
+        );
         std::process::exit(exit_code);
     }
 
@@ -167,6 +181,51 @@ fn main() {
         rt.block_on(async {
             run_interactive(&cli, &config, resumed_messages, resume_info, tool_selection).await
         });
+    }
+}
+
+/// Run `--export-session` and return the exit code (Phase 13.5).
+///
+/// Network-free: resolves the session ref (id or path), reads the source
+/// read-only, renders markdown or json with Phase 7 redaction plus
+/// tool-output / thinking omission flags, and writes only `output`. The
+/// source session is never opened for writing. Returns exit code 0 on
+/// success, 1 on export error, 2 on argument error (missing `--output`).
+fn run_export_session(
+    session_ref: String,
+    output: Option<std::path::PathBuf>,
+    format: opi_coding_agent::cli::ExportFormat,
+    full_tree: bool,
+    exclude_tool_output: bool,
+    exclude_thinking: bool,
+    redact: opi_coding_agent::cli::ExportRedactMode,
+) -> i32 {
+    use opi_coding_agent::session_cli::{ExportOptions, ExportScope, export_session};
+
+    let Some(output) = output else {
+        eprintln!("opi: --export-session requires --output <file>");
+        return 2;
+    };
+
+    let options = ExportOptions {
+        session_ref,
+        format,
+        output,
+        scope: if full_tree {
+            ExportScope::FullTree
+        } else {
+            ExportScope::ActiveBranch
+        },
+        include_tool_output: !exclude_tool_output,
+        include_thinking: !exclude_thinking,
+        redact,
+    };
+    match export_session(&options) {
+        Ok(()) => 0,
+        Err(e) => {
+            eprintln!("opi: {e}");
+            1
+        }
     }
 }
 

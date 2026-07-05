@@ -342,6 +342,367 @@ pub fn format_sessions_json(sessions: &[SessionInfo]) -> String {
     serde_json::to_string_pretty(sessions).unwrap_or_else(|_| "[]".into())
 }
 
+/// Branch scope for a session export (Phase 13.5).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExportScope {
+    /// Render only the active branch via `opi_agent::session_context::reconstruct_context`.
+    ActiveBranch,
+    /// Render every Message entry in file order across all branches.
+    FullTree,
+}
+
+/// Options for `--export-session` (Phase 13.5).
+#[derive(Debug, Clone)]
+pub struct ExportOptions {
+    /// Session id (resolved against the sessions directory) or a path to a
+    /// session JSONL file.
+    pub session_ref: String,
+    /// Output format.
+    pub format: crate::cli::ExportFormat,
+    /// Output file path. Only this file is written.
+    pub output: PathBuf,
+    /// Branch scope.
+    pub scope: ExportScope,
+    /// Include `Message::ToolResult` output content blocks.
+    pub include_tool_output: bool,
+    /// Include `AssistantContent::Thinking` blocks.
+    pub include_thinking: bool,
+    /// Redaction mode. Maps to Phase 7 `RedactionMode` plus an explicit
+    /// opt-out.
+    pub redact: crate::cli::ExportRedactMode,
+}
+
+/// Errors from session export (Phase 13.5).
+#[derive(Debug, Error)]
+pub enum ExportError {
+    #[error("session not found: {0}")]
+    NotFound(String),
+    #[error("session directory error: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("session file corrupt: {0}")]
+    Corrupt(String),
+    #[error("export write failed: {0}")]
+    Write(String),
+}
+
+/// Resolve a session ref (id or path) to a JSONL file path.
+///
+/// An absolute path or any string containing a path separator is treated as a
+/// direct file path; otherwise the value is treated as a session id and
+/// resolved against `dir`. Existing-file check is enforced so callers surface
+/// `NotFound` before opening.
+fn resolve_session_path(dir: &Path, session_ref: &str) -> Result<PathBuf, ExportError> {
+    let direct = PathBuf::from(session_ref);
+    if direct.is_absolute() || session_ref.contains('/') || session_ref.contains('\\') {
+        if !direct.exists() {
+            return Err(ExportError::NotFound(session_ref.into()));
+        }
+        return Ok(direct);
+    }
+    validate_session_id(session_ref).map_err(|_| ExportError::NotFound(session_ref.into()))?;
+    let path = dir.join(format!("{session_ref}.jsonl"));
+    if !path.exists() {
+        return Err(ExportError::NotFound(session_ref.into()));
+    }
+    Ok(path)
+}
+
+/// Run a session export (Phase 13.5).
+///
+/// Reads the source session read-only via `SessionReader::read_with_recovery`,
+/// reconstructs the requested scope through the opi-agent context API
+/// (active branch) or a full-tree walk, applies the redaction policy, and
+/// writes ONLY `options.output`. The source session is never opened for
+/// writing; on a write failure the source is byte-for-byte unchanged.
+pub fn export_session(options: &ExportOptions) -> Result<(), ExportError> {
+    let dir = session_dir();
+    let path = resolve_session_path(&dir, &options.session_ref)?;
+
+    let (header, entries, recovery) = opi_agent::session::SessionReader::read_with_recovery(&path)
+        .map_err(|e| ExportError::Corrupt(format!("{}: {e}", path.display())))?;
+
+    let messages = match options.scope {
+        ExportScope::ActiveBranch => {
+            let ctx = opi_agent::session_context::reconstruct_context(&entries, &recovery);
+            ctx.messages
+        }
+        ExportScope::FullTree => collect_full_tree_messages(&entries),
+    };
+
+    let rendered = match options.format {
+        crate::cli::ExportFormat::Markdown => render_markdown(&header, &messages, options),
+        crate::cli::ExportFormat::Json => render_json(&header, &messages, options),
+    };
+
+    std::fs::write(&options.output, rendered)
+        .map_err(|e| ExportError::Write(format!("{}: {e}", options.output.display())))?;
+    Ok(())
+}
+
+/// Collect every Message entry as an `AgentMessage::Llm` in file order,
+/// including messages on sibling branches. This is the full-tree renderer's
+/// deterministic walk: it does not apply compaction or branch summaries (those
+/// are active-branch-only semantics owned by `reconstruct_context`).
+fn collect_full_tree_messages(
+    entries: &[opi_agent::session::SessionEntry],
+) -> Vec<opi_agent::message::AgentMessage> {
+    use opi_agent::session::SessionEntry;
+    entries
+        .iter()
+        .filter_map(|entry| match entry {
+            SessionEntry::Message(m) => {
+                Some(opi_agent::message::AgentMessage::Llm(m.message.clone()))
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+/// Apply the export redaction mode to a single text value.
+fn redact_export_text(text: &str, mode: crate::cli::ExportRedactMode) -> String {
+    match mode {
+        crate::cli::ExportRedactMode::None => text.to_owned(),
+        crate::cli::ExportRedactMode::Summary => {
+            opi_agent::redact_text(text, opi_agent::RedactionMode::Summary)
+        }
+        crate::cli::ExportRedactMode::Verbose => {
+            opi_agent::redact_text(text, opi_agent::RedactionMode::Verbose)
+        }
+    }
+}
+
+/// Render the session as deterministic markdown suitable for review/handoff.
+fn render_markdown(
+    header: &opi_agent::session::SessionHeader,
+    messages: &[opi_agent::message::AgentMessage],
+    options: &ExportOptions,
+) -> String {
+    use opi_agent::message::AgentMessage;
+    use opi_ai::message::{AssistantContent, InputContent, Message, OutputContent};
+
+    let mut out = String::new();
+    out.push_str(&format!("# Session {}\n\n", header.id));
+    out.push_str(&format!("- timestamp: {}\n", header.timestamp));
+    out.push_str(&format!(
+        "- cwd: {}\n",
+        redact_export_text(&header.cwd, options.redact)
+    ));
+    if let Some(parent) = &header.parent_session {
+        out.push_str(&format!("- parent_session: {parent}\n"));
+    }
+    out.push('\n');
+
+    for msg in messages {
+        match msg {
+            AgentMessage::Llm(Message::User(u)) => {
+                out.push_str("## User\n\n");
+                for block in &u.content {
+                    if let InputContent::Text { text } = block {
+                        out.push_str(&redact_export_text(text, options.redact));
+                        out.push('\n');
+                    }
+                }
+                out.push('\n');
+            }
+            AgentMessage::Llm(Message::Assistant(a)) => {
+                out.push_str("## Assistant\n\n");
+                for block in &a.content {
+                    match block {
+                        AssistantContent::Text { text } => {
+                            out.push_str(&redact_export_text(text, options.redact));
+                            out.push('\n');
+                        }
+                        AssistantContent::Thinking { thinking } if options.include_thinking => {
+                            out.push_str("> thinking: ");
+                            out.push_str(&redact_export_text(thinking, options.redact));
+                            out.push('\n');
+                        }
+                        AssistantContent::Thinking { .. } => {}
+                        AssistantContent::ToolCall { tool_call } => {
+                            out.push_str(&format!(
+                                "*tool call: {} ({})* {}\n",
+                                tool_call.name,
+                                tool_call.id,
+                                redact_export_text(&tool_call.arguments, options.redact)
+                            ));
+                        }
+                        // AssistantContent is non_exhaustive.
+                        _ => {}
+                    }
+                }
+                out.push('\n');
+            }
+            AgentMessage::Llm(Message::ToolResult(t)) if options.include_tool_output => {
+                out.push_str(&format!("## Tool: {}\n\n", t.tool_name));
+                for block in &t.content {
+                    if let OutputContent::Text { text } = block {
+                        out.push_str(&redact_export_text(text, options.redact));
+                        out.push('\n');
+                    }
+                }
+                out.push('\n');
+            }
+            AgentMessage::Llm(Message::ToolResult(_)) => {}
+            AgentMessage::CompactionSummary(c) => {
+                out.push_str("## Compaction Summary\n\n");
+                out.push_str(&redact_export_text(&c.summary, options.redact));
+                out.push_str(&format!(
+                    "\n\n_(kept from {}, tokens {} -> {})_\n\n",
+                    c.first_kept_entry_id, c.tokens_before, c.tokens_after
+                ));
+            }
+            AgentMessage::BranchSummary(b) => {
+                out.push_str("## Branch Summary\n\n");
+                out.push_str(&redact_export_text(&b.summary, options.redact));
+                out.push('\n');
+                if !b.parent_session_id.is_empty() {
+                    out.push_str(&format!("\n_parent session: {}_\n", b.parent_session_id));
+                }
+                out.push('\n');
+            }
+            AgentMessage::Custom(c) => {
+                out.push_str(&format!("## Custom ({})\n\n", c.kind));
+                out.push_str(&c.data.to_string());
+                out.push('\n');
+            }
+            // AgentMessage is non_exhaustive; future variants are omitted from
+            // the markdown transcript rather than crashing the export.
+            _ => {}
+        }
+    }
+
+    out
+}
+
+/// Render the session as deterministic JSON for local tooling. Object keys are
+/// emitted via serde's default BTreeMap-backed mapping so output is stable
+/// regardless of insertion order.
+fn render_json(
+    header: &opi_agent::session::SessionHeader,
+    messages: &[opi_agent::message::AgentMessage],
+    options: &ExportOptions,
+) -> String {
+    use opi_agent::message::AgentMessage;
+    use opi_ai::message::{AssistantContent, InputContent, Message, OutputContent};
+
+    let mut header_obj = serde_json::Map::new();
+    header_obj.insert("id".into(), serde_json::json!(header.id));
+    header_obj.insert("timestamp".into(), serde_json::json!(header.timestamp));
+    header_obj.insert(
+        "cwd".into(),
+        serde_json::json!(redact_export_text(&header.cwd, options.redact)),
+    );
+    if let Some(parent) = &header.parent_session {
+        header_obj.insert("parent_session".into(), serde_json::json!(parent));
+    }
+
+    let mut msgs_arr = Vec::with_capacity(messages.len());
+    for msg in messages {
+        let entry = match msg {
+            AgentMessage::Llm(Message::User(u)) => {
+                let mut content = Vec::new();
+                for block in &u.content {
+                    if let InputContent::Text { text } = block {
+                        content.push(serde_json::json!({
+                            "type": "text",
+                            "text": redact_export_text(text, options.redact),
+                        }));
+                    }
+                }
+                serde_json::json!({
+                    "role": "user",
+                    "content": content,
+                })
+            }
+            AgentMessage::Llm(Message::Assistant(a)) => {
+                let mut content = Vec::new();
+                for block in &a.content {
+                    match block {
+                        AssistantContent::Text { text } => {
+                            content.push(serde_json::json!({
+                                "type": "text",
+                                "text": redact_export_text(text, options.redact),
+                            }));
+                        }
+                        AssistantContent::Thinking { thinking } if options.include_thinking => {
+                            content.push(serde_json::json!({
+                                "type": "thinking",
+                                "thinking": redact_export_text(thinking, options.redact),
+                            }));
+                        }
+                        AssistantContent::Thinking { .. } => {}
+                        AssistantContent::ToolCall { tool_call } => {
+                            content.push(serde_json::json!({
+                                "type": "tool_call",
+                                "id": tool_call.id,
+                                "name": tool_call.name,
+                                "arguments": redact_export_text(&tool_call.arguments, options.redact),
+                            }));
+                        }
+                        // AssistantContent is non_exhaustive.
+                        _ => {}
+                    }
+                }
+                serde_json::json!({
+                    "role": "assistant",
+                    "model": a.model,
+                    "provider": a.provider,
+                    "content": content,
+                })
+            }
+            AgentMessage::Llm(Message::ToolResult(t)) if options.include_tool_output => {
+                let mut content = Vec::new();
+                for block in &t.content {
+                    if let OutputContent::Text { text } = block {
+                        content.push(serde_json::json!({
+                            "type": "text",
+                            "text": redact_export_text(text, options.redact),
+                        }));
+                    }
+                }
+                serde_json::json!({
+                    "role": "tool_result",
+                    "tool_call_id": t.tool_call_id,
+                    "tool_name": t.tool_name,
+                    "is_error": t.is_error,
+                    "content": content,
+                })
+            }
+            AgentMessage::Llm(Message::ToolResult(_)) => {
+                continue;
+            }
+            AgentMessage::CompactionSummary(c) => serde_json::json!({
+                "role": "compaction_summary",
+                "summary": redact_export_text(&c.summary, options.redact),
+                "first_kept_entry_id": c.first_kept_entry_id,
+                "tokens_before": c.tokens_before,
+                "tokens_after": c.tokens_after,
+            }),
+            AgentMessage::BranchSummary(b) => serde_json::json!({
+                "role": "branch_summary",
+                "summary": redact_export_text(&b.summary, options.redact),
+                "parent_session_id": b.parent_session_id,
+                "entry_count": b.entry_count,
+            }),
+            AgentMessage::Custom(c) => serde_json::json!({
+                "role": "custom",
+                "kind": c.kind,
+                "data": c.data,
+                "include_in_llm_context": c.include_in_llm_context,
+            }),
+            // AgentMessage is non_exhaustive; future variants are skipped.
+            _ => continue,
+        };
+        msgs_arr.push(entry);
+    }
+
+    let root = serde_json::json!({
+        "session": serde_json::Value::Object(header_obj),
+        "messages": serde_json::Value::Array(msgs_arr),
+    });
+    serde_json::to_string_pretty(&root).unwrap_or_else(|_| "{}".into())
+}
+
 /// Handle session CLI dispatch.
 ///
 /// Returns `(handled, Some(ResumedSession))` for `--resume`,

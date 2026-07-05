@@ -15,6 +15,33 @@ pub enum ShellName {
     Elvish,
 }
 
+/// Output format for `--export-session` (Phase 13.5).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum ExportFormat {
+    #[clap(name = "markdown")]
+    Markdown,
+    #[clap(name = "json")]
+    Json,
+}
+
+/// Redaction mode for `--export-session` (Phase 13.5). Maps to the Phase 7
+/// `RedactionMode` plus an explicit opt-out for trusted-local exports.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum ExportRedactMode {
+    /// Phase 7 `Summary`: scrub secrets, content-sensitive fields, and
+    /// absolute paths. Safe-by-default.
+    #[clap(name = "summary")]
+    Summary,
+    /// Phase 7 `Verbose`: scrub secrets and content-sensitive fields, keep
+    /// absolute paths.
+    #[clap(name = "verbose")]
+    Verbose,
+    /// Skip redaction entirely. Only for trusted-local contexts where the
+    /// export never leaves the host.
+    #[clap(name = "none")]
+    None,
+}
+
 impl From<ShellName> for clap_complete::Shell {
     fn from(s: ShellName) -> Self {
         match s {
@@ -92,6 +119,37 @@ pub struct Cli {
     /// Delete a session by ID.
     #[arg(long)]
     pub delete_session: Option<String>,
+
+    /// Export a session to a local markdown or json file and exit. The
+    /// argument is a session id resolved against the sessions directory, or a
+    /// path to a session JSONL file (Phase 13.5).
+    #[arg(long, value_name = "ID_OR_PATH")]
+    pub export_session: Option<String>,
+
+    /// Output file path for `--export-session`. Required when exporting.
+    #[arg(long, value_name = "PATH")]
+    pub output: Option<PathBuf>,
+
+    /// Output format for `--export-session`. Default: markdown.
+    #[arg(long, value_enum, value_name = "FORMAT", default_value_t = ExportFormat::Markdown)]
+    pub format: ExportFormat,
+
+    /// Export the full branch tree instead of just the active branch.
+    #[arg(long)]
+    pub full_tree: bool,
+
+    /// Omit tool result output from the export.
+    #[arg(long)]
+    pub exclude_tool_output: bool,
+
+    /// Omit assistant thinking content from the export.
+    #[arg(long)]
+    pub exclude_thinking: bool,
+
+    /// Redaction mode for `--export-session`: summary, verbose, or none.
+    /// Default: summary.
+    #[arg(long, value_enum, value_name = "MODE", default_value_t = ExportRedactMode::Summary)]
+    pub redact: ExportRedactMode,
 
     /// Generate shell completions to stdout.
     #[arg(long, value_name = "SHELL")]
