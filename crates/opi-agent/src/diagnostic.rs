@@ -262,7 +262,7 @@ pub mod code {
     pub const CODE_COMPACTION_NOTHING_TO_COMPACT: &str = "compaction_nothing_to_compact";
     pub const CODE_SESSION_CORRUPT_ENTRIES: &str = "session_corrupt_entries";
     pub const CODE_SESSION_TRUNCATED_LINE: &str = "session_truncated_line";
-    pub const CODE_SESSION_CORRUPT_WITH_TRUNCATION: &str = "session_corrupt_with_truncation";
+    pub const CODE_SESSION_UNKNOWN_ENTRIES: &str = "session_unknown_entries";
     // opi-coding-agent bridges (package/config). Package diagnostics carry a
     // dynamic granular code in `details.package_code`; the shared code is stable.
     pub const CODE_PACKAGE_DIAGNOSTIC: &str = "package_diagnostic";

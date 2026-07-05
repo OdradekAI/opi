@@ -13,9 +13,12 @@ use std::collections::{HashMap, HashSet};
 
 use opi_agent::message::AgentMessage;
 use opi_agent::session::{
-    CompactionEntry, LeafEntry, MessageEntry, SessionEntry, SessionHeader, SessionReader,
-    SessionWriter,
+    BranchSummaryEntry, CompactionEntry, LabelAction, LabelEntry, LeafEntry, MessageEntry,
+    ModelChangeEntry, SessionEntry, SessionHeader, SessionInfoEntry, SessionReader, SessionWriter,
+    ThinkingLevelChangeEntry,
 };
+use opi_agent::session_branch::SessionTree;
+use opi_agent::session_event::ThinkingLevel;
 use opi_ai::message::{AssistantContent, AssistantMessage, InputContent, Message, UserMessage};
 
 // ---------------------------------------------------------------------------
@@ -167,6 +170,76 @@ fn jsonl_round_trip_preserves_entry_order() {
             assert_eq!(m.id, format!("e{i}"), "entry at index {i} has wrong id");
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Phase 13.1: additive metadata/context entries round-trip through JSONL and
+// do not create branch nodes in tree reconstruction.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn phase13_metadata_entries_round_trip_and_do_not_fork_branches() {
+    let header = make_header("rt-meta");
+    let entries = vec![
+        user_msg("e1", None, "Hello"),
+        assistant_msg("e2", Some("e1"), "Hi"),
+        // Metadata/context entries parented to e2 (the content tip). None may
+        // create branch forks or advance the active content tip.
+        SessionEntry::SessionInfo(SessionInfoEntry {
+            id: "si1".into(),
+            parent_id: Some("e2".into()),
+            timestamp: "2026-07-05T12:00:00Z".into(),
+            name: "named".into(),
+        }),
+        SessionEntry::ModelChange(ModelChangeEntry {
+            id: "mc1".into(),
+            parent_id: Some("e2".into()),
+            timestamp: "2026-07-05T12:00:01Z".into(),
+            model: "anthropic:claude-sonnet-4-5".into(),
+        }),
+        SessionEntry::ThinkingLevelChange(ThinkingLevelChangeEntry {
+            id: "tl1".into(),
+            parent_id: Some("e2".into()),
+            timestamp: "2026-07-05T12:00:02Z".into(),
+            level: ThinkingLevel::Medium,
+        }),
+        SessionEntry::Label(LabelEntry {
+            id: "lb1".into(),
+            parent_id: Some("e2".into()),
+            timestamp: "2026-07-05T12:00:03Z".into(),
+            label: "bug".into(),
+            action: LabelAction::Add,
+        }),
+        SessionEntry::BranchSummary(BranchSummaryEntry {
+            id: "bs1".into(),
+            parent_id: Some("e2".into()),
+            timestamp: "2026-07-05T12:00:04Z".into(),
+            summary: "summarized the branch".into(),
+        }),
+        leaf_entry("l1", Some("e2"), "e2"),
+    ];
+
+    let (_h, read_entries) = write_and_read(header, &entries);
+    assert_eq!(entries.len(), read_entries.len());
+
+    // Byte-identical JSON round-trip for every entry including the new
+    // metadata/context variants.
+    for (orig, read) in entries.iter().zip(read_entries.iter()) {
+        let orig_json = serde_json::to_string(orig).unwrap();
+        let read_json = serde_json::to_string(read).unwrap();
+        assert_eq!(orig_json, read_json, "entry JSON mismatch");
+    }
+
+    // Branch reconstruction: metadata must not fork the graph. The active tip
+    // is still the content entry the leaf points at (e2), and the trunk is a
+    // single branch.
+    let tree = SessionTree::from_entries(&read_entries);
+    assert_eq!(tree.active_tip(), Some("e2"));
+    assert_eq!(
+        tree.branches().len(),
+        1,
+        "metadata entries must not create extra branches"
+    );
 }
 
 // ---------------------------------------------------------------------------

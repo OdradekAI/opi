@@ -9,8 +9,9 @@ use std::io::Write;
 use opi_agent::AgentEvent;
 use opi_agent::message::AgentMessage;
 use opi_agent::session::{
-    CompactionEntry, CrashRecovery, ExtensionStateEntry, LeafEntry, MessageEntry, SessionEntry,
-    SessionHeader, SessionReader, SessionWriter,
+    BranchSummaryEntry, CompactionEntry, ExtensionStateEntry, FORMAT_VERSION, LabelAction,
+    LabelEntry, LeafEntry, MessageEntry, ModelChangeEntry, SessionEntry, SessionHeader,
+    SessionInfoEntry, SessionReader, SessionWriter, ThinkingLevelChangeEntry,
 };
 use opi_agent::session_event::{
     AgentSessionEvent, CompactionReason, CompactionResult, ThinkingLevel,
@@ -506,11 +507,12 @@ fn crash_recovery_skips_incomplete_final_line() {
 
     let (_read_header, entries, recovery) = SessionReader::read_with_recovery(&path).unwrap();
     assert_eq!(entries.len(), 1, "should have one valid entry");
-    assert_eq!(
-        recovery,
-        CrashRecovery::TruncatedLine,
-        "should report truncated final line"
+    assert!(
+        recovery.truncated_line,
+        "should report truncated final line, got {recovery:?}"
     );
+    assert_eq!(recovery.corrupt_count, 0);
+    assert_eq!(recovery.unknown_count, 0);
 }
 
 // ---------------------------------------------------------------------------
@@ -541,10 +543,11 @@ fn crash_recovery_reports_corrupt_middle_entry() {
     let (_read_header, entries, recovery) = SessionReader::read_with_recovery(&path).unwrap();
     assert_eq!(entries.len(), 2, "should have 2 valid entries");
     assert_eq!(
-        recovery,
-        CrashRecovery::CorruptEntries { count: 1 },
-        "should report 1 corrupt entry"
+        recovery.corrupt_count, 1,
+        "should report 1 corrupt entry, got {recovery:?}"
     );
+    assert!(!recovery.truncated_line);
+    assert_eq!(recovery.unknown_count, 0);
 }
 
 // ---------------------------------------------------------------------------
@@ -685,5 +688,256 @@ fn writer_truncates_all_when_no_newline_in_file() {
     assert!(
         content.ends_with('\n'),
         "file should end with a newline after append"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Phase 13.1: additive session entries — JSON shape + round trip
+// ---------------------------------------------------------------------------
+
+#[test]
+fn session_info_entry_round_trip_and_shape() {
+    let entry = SessionEntry::SessionInfo(SessionInfoEntry {
+        id: "si-1".into(),
+        parent_id: Some("msg-1".into()),
+        timestamp: "2026-07-05T12:00:00Z".into(),
+        name: "my session".into(),
+    });
+    let json = serde_json::to_string(&entry).unwrap();
+    let val: serde_json::Value = serde_json::from_str(&json).unwrap();
+    assert_eq!(val["type"], "session_info");
+    assert_eq!(val["name"], "my session");
+    let back: SessionEntry = serde_json::from_str(&json).unwrap();
+    if let SessionEntry::SessionInfo(s) = &back {
+        assert_eq!(s.name, "my session");
+        assert_eq!(s.parent_id.as_deref(), Some("msg-1"));
+    } else {
+        panic!("expected SessionInfo entry, got {back:?}");
+    }
+}
+
+#[test]
+fn model_change_entry_round_trip_and_shape() {
+    let entry = SessionEntry::ModelChange(ModelChangeEntry {
+        id: "mc-1".into(),
+        parent_id: Some("msg-1".into()),
+        timestamp: "2026-07-05T12:00:01Z".into(),
+        model: "anthropic:claude-sonnet-4-5".into(),
+    });
+    let json = serde_json::to_string(&entry).unwrap();
+    let val: serde_json::Value = serde_json::from_str(&json).unwrap();
+    assert_eq!(val["type"], "model_change");
+    assert_eq!(val["model"], "anthropic:claude-sonnet-4-5");
+    let back: SessionEntry = serde_json::from_str(&json).unwrap();
+    if let SessionEntry::ModelChange(m) = &back {
+        assert_eq!(m.model, "anthropic:claude-sonnet-4-5");
+    } else {
+        panic!("expected ModelChange entry, got {back:?}");
+    }
+}
+
+#[test]
+fn thinking_level_change_entry_round_trip_and_shape() {
+    for level in [
+        ThinkingLevel::None,
+        ThinkingLevel::Low,
+        ThinkingLevel::Medium,
+        ThinkingLevel::High,
+    ] {
+        let entry = SessionEntry::ThinkingLevelChange(ThinkingLevelChangeEntry {
+            id: "tl-1".into(),
+            parent_id: Some("msg-1".into()),
+            timestamp: "2026-07-05T12:00:02Z".into(),
+            level,
+        });
+        let json = serde_json::to_string(&entry).unwrap();
+        let val: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(val["type"], "thinking_level_change");
+        let back: SessionEntry = serde_json::from_str(&json).unwrap();
+        if let SessionEntry::ThinkingLevelChange(t) = &back {
+            assert_eq!(t.level, level);
+        } else {
+            panic!("expected ThinkingLevelChange entry, got {back:?}");
+        }
+    }
+}
+
+#[test]
+fn label_entry_round_trip_and_shape_for_add_and_remove() {
+    for action in [LabelAction::Add, LabelAction::Remove] {
+        let entry = SessionEntry::Label(LabelEntry {
+            id: "lbl-1".into(),
+            parent_id: Some("msg-1".into()),
+            timestamp: "2026-07-05T12:00:03Z".into(),
+            label: "bug".into(),
+            action,
+        });
+        let json = serde_json::to_string(&entry).unwrap();
+        let val: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(val["type"], "label");
+        assert_eq!(val["label"], "bug");
+        let back: SessionEntry = serde_json::from_str(&json).unwrap();
+        if let SessionEntry::Label(l) = &back {
+            assert_eq!(l.label, "bug");
+            assert_eq!(l.action, action);
+        } else {
+            panic!("expected Label entry, got {back:?}");
+        }
+    }
+}
+
+#[test]
+fn branch_summary_entry_round_trip_and_shape() {
+    let entry = SessionEntry::BranchSummary(BranchSummaryEntry {
+        id: "bs-1".into(),
+        parent_id: Some("msg-1".into()),
+        timestamp: "2026-07-05T12:00:04Z".into(),
+        summary: "Explored session entry model.".into(),
+    });
+    let json = serde_json::to_string(&entry).unwrap();
+    let val: serde_json::Value = serde_json::from_str(&json).unwrap();
+    assert_eq!(val["type"], "branch_summary");
+    assert_eq!(val["summary"], "Explored session entry model.");
+    let back: SessionEntry = serde_json::from_str(&json).unwrap();
+    if let SessionEntry::BranchSummary(b) = &back {
+        assert_eq!(b.summary, "Explored session entry model.");
+    } else {
+        panic!("expected BranchSummary entry, got {back:?}");
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Phase 13.1: forward-compat unknown-entry behavior (distinct from corruption)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn crash_recovery_reports_unknown_future_type_separately_from_corrupt() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("future.jsonl");
+    {
+        let mut f = std::fs::File::create(&path).unwrap();
+        writeln!(
+            f,
+            "{}",
+            serde_json::to_string(&make_header("future-1")).unwrap()
+        )
+        .unwrap();
+        writeln!(
+            f,
+            "{}",
+            serde_json::to_string(&test_message_entry("e1", "real")).unwrap()
+        )
+        .unwrap();
+        // Valid JSON object with a type tag this build does not recognize.
+        // Stands in for any additive entry a future opi might introduce.
+        writeln!(
+            f,
+            r#"{{"type":"some_future_entry_type","id":"x1","parent_id":"e1","timestamp":"2026-07-05T12:00:00Z"}}"#
+        )
+        .unwrap();
+    }
+
+    let (_header, entries, recovery) = SessionReader::read_with_recovery(&path).unwrap();
+    assert_eq!(entries.len(), 1, "known entry survives; unknown skipped");
+    assert_eq!(
+        recovery.unknown_count, 1,
+        "unknown future entry counted separately, got {recovery:?}"
+    );
+    assert_eq!(
+        recovery.corrupt_count, 0,
+        "unknown must not be counted as corrupt"
+    );
+    assert!(!recovery.truncated_line);
+}
+
+#[test]
+fn crash_recovery_unknown_and_corrupt_are_independent_buckets() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("mixed.jsonl");
+    {
+        let mut f = std::fs::File::create(&path).unwrap();
+        writeln!(
+            f,
+            "{}",
+            serde_json::to_string(&make_header("mixed-1")).unwrap()
+        )
+        .unwrap();
+        writeln!(
+            f,
+            "{}",
+            serde_json::to_string(&test_message_entry("e1", "real")).unwrap()
+        )
+        .unwrap();
+        // Unknown future type -> unknown bucket.
+        writeln!(
+            f,
+            r#"{{"type":"another_future_type","id":"x1","parent_id":"e1","timestamp":"t"}}"#
+        )
+        .unwrap();
+        // Genuine corruption -> corrupt bucket.
+        writeln!(f, "NOT VALID JSON").unwrap();
+    }
+
+    let (_header, entries, recovery) = SessionReader::read_with_recovery(&path).unwrap();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(recovery.unknown_count, 1);
+    assert_eq!(recovery.corrupt_count, 1);
+    assert!(!recovery.truncated_line);
+}
+
+#[test]
+fn crash_recovery_json_object_without_type_field_is_corrupt() {
+    // A JSON object with no `type` field is structurally invalid — corrupt,
+    // not a forward-compat unknown entry. Pins the doc contract in session.rs.
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("no-type.jsonl");
+    {
+        let mut f = std::fs::File::create(&path).unwrap();
+        writeln!(
+            f,
+            "{}",
+            serde_json::to_string(&make_header("notype-1")).unwrap()
+        )
+        .unwrap();
+        writeln!(
+            f,
+            "{}",
+            serde_json::to_string(&test_message_entry("e1", "real")).unwrap()
+        )
+        .unwrap();
+        writeln!(
+            f,
+            r#"{{"id":"x1","parent_id":"e1","timestamp":"t","note":"no type here"}}"#
+        )
+        .unwrap();
+    }
+
+    let (_header, entries, recovery) = SessionReader::read_with_recovery(&path).unwrap();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(
+        recovery.corrupt_count, 1,
+        "missing-type object must be corrupt, got {recovery:?}"
+    );
+    assert_eq!(recovery.unknown_count, 0);
+}
+
+// ---------------------------------------------------------------------------
+// Phase 13.1: version policy + pi session v3 compatibility disclaimer
+// ---------------------------------------------------------------------------
+
+#[test]
+fn session_format_version_is_v1_and_policy_disclaims_pi_v3_compatibility() {
+    // Phase 13 keeps header version 1 with additive entries; it does not
+    // introduce version 2 and does not claim pi session v3 compatibility.
+    assert_eq!(FORMAT_VERSION, 1);
+    let policy = opi_agent::session::SESSION_FORMAT_POLICY;
+    assert!(
+        policy.contains("version 1"),
+        "policy must state version 1, got: {policy}"
+    );
+    let lower = policy.to_lowercase();
+    assert!(
+        lower.contains("pi") && lower.contains("not") && lower.contains("compatib"),
+        "policy must disclaim pi compatibility, got: {policy}"
     );
 }

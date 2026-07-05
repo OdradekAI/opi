@@ -49,10 +49,11 @@ use crate::agent::{Agent, AgentControl};
 use crate::loop_types::AgentLoopConfig;
 use crate::message::AgentMessage;
 use crate::session::{
-    CompactionEntry, CrashRecovery, ExtensionStateEntry, MessageEntry, SessionEntry, SessionHeader,
-    SessionReader, SessionWriter,
+    BranchSummaryEntry, CompactionEntry, CrashRecovery, ExtensionStateEntry, LabelAction,
+    LabelEntry, MessageEntry, ModelChangeEntry, SessionEntry, SessionHeader, SessionInfoEntry,
+    SessionReader, SessionWriter, ThinkingLevelChangeEntry,
 };
-use crate::session_event::CompactionResult;
+use crate::session_event::{CompactionResult, ThinkingLevel};
 
 /// Lifecycle phase of an [`AgentHarness`].
 ///
@@ -95,14 +96,18 @@ pub type HarnessResult<T> = Result<T, HarnessError>;
 
 /// Kind of a queued pending write. Flush order places
 /// [`PendingWriteKind::AgentMessage`] writes before
-/// [`PendingWriteKind::ExtensionState`] writes so agent-emitted messages
-/// persist first.
+/// [`PendingWriteKind::ExtensionState`] and [`PendingWriteKind::Metadata`]
+/// writes so agent-emitted messages persist first.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PendingWriteKind {
     /// An agent-emitted write (message or compaction entry).
     AgentMessage,
     /// A pending extension/session-state write.
     ExtensionState,
+    /// A Phase 13 metadata/context entry (`session_info`, `model_change`,
+    /// `thinking_level_change`, `label`, `branch_summary`). Parented to the
+    /// content tip; does not advance it.
+    Metadata,
 }
 
 /// A queued durable write awaiting a save-point flush.
@@ -170,7 +175,7 @@ impl PendingWriteQueue {
 fn kind_rank(kind: PendingWriteKind) -> u8 {
     match kind {
         PendingWriteKind::AgentMessage => 0,
-        PendingWriteKind::ExtensionState => 1,
+        PendingWriteKind::ExtensionState | PendingWriteKind::Metadata => 1,
     }
 }
 
@@ -773,6 +778,92 @@ impl SessionFacade {
             state,
         });
         Ok(self.queue.enqueue(entry, PendingWriteKind::ExtensionState))
+    }
+
+    // -- Phase 13.1 metadata/context entries --------------------------------
+    //
+    // Each metadata append is parented to the current content tip and enqueued
+    // as [`PendingWriteKind::Metadata`]. None of them advance
+    // `content_tip_entry_id`: labels, session metadata, model/thinking changes,
+    // and branch summaries are attachments to the existing content branch, not
+    // new conversational turns. Flush order persists agent-emitted messages
+    // before metadata writes in the same batch.
+
+    /// Record a session rename (`session_info` entry) parented to the content
+    /// tip without advancing it.
+    pub fn enqueue_session_info(&mut self, name: String) -> HarnessResult<u64> {
+        let id = self.next_id();
+        let parent_id = self.content_tip_entry_id.clone();
+        let timestamp = self.next_timestamp();
+        let entry = SessionEntry::SessionInfo(SessionInfoEntry {
+            id,
+            parent_id,
+            timestamp,
+            name,
+        });
+        Ok(self.queue.enqueue(entry, PendingWriteKind::Metadata))
+    }
+
+    /// Record a provider/model change (`model_change` entry) parented to the
+    /// content tip without advancing it.
+    pub fn enqueue_model_change(&mut self, model: String) -> HarnessResult<u64> {
+        let id = self.next_id();
+        let parent_id = self.content_tip_entry_id.clone();
+        let timestamp = self.next_timestamp();
+        let entry = SessionEntry::ModelChange(ModelChangeEntry {
+            id,
+            parent_id,
+            timestamp,
+            model,
+        });
+        Ok(self.queue.enqueue(entry, PendingWriteKind::Metadata))
+    }
+
+    /// Record a thinking/reasoning level change (`thinking_level_change`
+    /// entry) parented to the content tip without advancing it.
+    pub fn enqueue_thinking_level_change(&mut self, level: ThinkingLevel) -> HarnessResult<u64> {
+        let id = self.next_id();
+        let parent_id = self.content_tip_entry_id.clone();
+        let timestamp = self.next_timestamp();
+        let entry = SessionEntry::ThinkingLevelChange(ThinkingLevelChangeEntry {
+            id,
+            parent_id,
+            timestamp,
+            level,
+        });
+        Ok(self.queue.enqueue(entry, PendingWriteKind::Metadata))
+    }
+
+    /// Add or remove a label (`label` entry) parented to the content tip
+    /// without advancing it. Labels are UI-visible and never enter LLM context.
+    pub fn enqueue_label(&mut self, label: String, action: LabelAction) -> HarnessResult<u64> {
+        let id = self.next_id();
+        let parent_id = self.content_tip_entry_id.clone();
+        let timestamp = self.next_timestamp();
+        let entry = SessionEntry::Label(LabelEntry {
+            id,
+            parent_id,
+            timestamp,
+            label,
+            action,
+        });
+        Ok(self.queue.enqueue(entry, PendingWriteKind::Metadata))
+    }
+
+    /// Record a branch summary (`branch_summary` entry) parented to the content
+    /// tip without advancing it. Whether it enters provider LLM context is
+    /// decided by the Phase 13 context builder (task 13.2).
+    pub fn enqueue_branch_summary(&mut self, summary: String) -> HarnessResult<u64> {
+        let id = self.next_id();
+        let parent_id = self.content_tip_entry_id.clone();
+        let timestamp = self.next_timestamp();
+        let entry = SessionEntry::BranchSummary(BranchSummaryEntry {
+            id,
+            parent_id,
+            timestamp,
+            summary,
+        });
+        Ok(self.queue.enqueue(entry, PendingWriteKind::Metadata))
     }
 
     /// Flush the pending-write queue at a save point. Agent-emitted messages

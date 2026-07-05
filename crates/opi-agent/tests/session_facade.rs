@@ -13,7 +13,10 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use opi_agent::harness::{HarnessError, JsonlSessionRepo, SessionFacade, SessionRepo};
-use opi_agent::session::{CrashRecovery, LeafEntry, MessageEntry, SessionEntry, SessionHeader};
+use opi_agent::session::{
+    CrashRecovery, LabelAction, LeafEntry, MessageEntry, SessionEntry, SessionHeader,
+};
+use opi_agent::session_event::ThinkingLevel;
 use opi_ai::message::{InputContent, Message, UserMessage};
 use serde_json::json;
 use tempfile::tempdir;
@@ -46,7 +49,11 @@ impl SessionRepo for RecordingSessionRepo {
         Ok(())
     }
     fn load(&self) -> std::io::Result<(SessionHeader, Vec<SessionEntry>, CrashRecovery)> {
-        Ok((header("rec"), self.entries.clone(), CrashRecovery::Clean))
+        Ok((
+            header("rec"),
+            self.entries.clone(),
+            CrashRecovery::default(),
+        ))
     }
     fn message_count(&self) -> std::io::Result<usize> {
         Ok(self.entries.len())
@@ -62,7 +69,7 @@ impl SessionRepo for FailingSessionRepo {
         Err(std::io::Error::other("simulated flush failure"))
     }
     fn load(&self) -> std::io::Result<(SessionHeader, Vec<SessionEntry>, CrashRecovery)> {
-        Ok((header("fail"), Vec::new(), CrashRecovery::Clean))
+        Ok((header("fail"), Vec::new(), CrashRecovery::default()))
     }
     fn message_count(&self) -> std::io::Result<usize> {
         Ok(0)
@@ -99,7 +106,7 @@ impl SessionRepo for FailOnAppend {
         Ok((
             header("partial"),
             self.entries.clone(),
-            CrashRecovery::Clean,
+            CrashRecovery::default(),
         ))
     }
 
@@ -270,10 +277,10 @@ fn session_facade_appends_and_reads_in_order() {
 }
 
 /// The key forward-compatibility proof: a v1 session file containing an
-/// unknown future entry type (simulating a Phase 13 v2 entry such as
-/// `branch_summary`) is read without fatal error. The known entry survives and
-/// the unknown entry is reported via `CrashRecovery`, not silently swallowed.
-/// This operationalizes Decision D1 (additive-v1) and Success Criteria 1/2.
+/// unknown future entry type (any additive tag this build does not recognize)
+/// is read without fatal error. The known entry survives and the unknown entry
+/// is reported via `CrashRecovery::unknown_count`, distinct from corruption.
+/// This operationalizes Decision D1 (additive-v1) and Success Criteria 1/2/3.
 #[test]
 fn session_facade_preserves_v1_readability_with_unknown_future_entry() {
     let dir = tempdir().unwrap();
@@ -288,11 +295,12 @@ fn session_facade_preserves_v1_readability_with_unknown_future_entry() {
             message: user_msg("real"),
         });
         writeln!(f, "{}", serde_json::to_string(&real).unwrap()).unwrap();
-        // An entry type this build does not know -- stands in for any Phase 13
-        // v2 additive entry written into a v1 file by a newer opi.
+        // An entry type this build does not know -- stands in for any additive
+        // entry written into a v1 file by a newer opi. Must be a tag no Phase
+        // 13 variant uses so it stays genuinely unknown.
         writeln!(
             f,
-            r#"{{"type":"branch_summary","id":"bs1","parent_id":"m1","timestamp":"0","summary":"fork"}}"#
+            r#"{{"type":"some_future_v2_entry","id":"bs1","parent_id":"m1","timestamp":"0","summary":"fork"}}"#
         )
         .unwrap();
     }
@@ -305,10 +313,14 @@ fn session_facade_preserves_v1_readability_with_unknown_future_entry() {
     assert_eq!(h.version, 1);
     assert_eq!(entries.len(), 1);
     assert!(matches!(entries[0], SessionEntry::Message(_)));
-    // The unknown entry is reported, never fatal.
+    // The unknown entry is reported as unknown (not corrupt), never fatal.
     assert!(
-        recovery.corrupt_count() >= 1,
-        "unknown future entry must be reported via CrashRecovery, got {recovery:?}"
+        recovery.unknown_count >= 1,
+        "unknown future entry must be reported via unknown_count, got {recovery:?}"
+    );
+    assert_eq!(
+        recovery.corrupt_count, 0,
+        "unknown future entry must not be counted as corrupt"
     );
 }
 
@@ -351,9 +363,140 @@ fn session_facade_reconstructs_active_branch_leaf_deterministically() {
 }
 
 // ---------------------------------------------------------------------------
-// Scenario 2: pending writes flush in documented order at save points and are
-// never silently dropped on abort.
+// Phase 13.1: additive metadata/context entries attach to the content tip
+// without advancing it, survive JSONL round-trip, and never enter branch graph
+// reconstruction as content nodes.
 // ---------------------------------------------------------------------------
+
+#[test]
+fn facade_metadata_entries_attach_to_tip_without_advancing_it() {
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("metadata.jsonl");
+    let repo = JsonlSessionRepo::create(&path, header("s1")).unwrap();
+    let mut facade = SessionFacade::new(Box::new(repo)).unwrap();
+
+    // Establish a content tip with one message.
+    facade.enqueue_message(user_msg("first")).unwrap();
+    facade.flush().unwrap();
+    let tip_before = facade
+        .active_tip()
+        .unwrap()
+        .expect("content tip after first message");
+
+    // Append every Phase 13 metadata/context entry. None may advance the tip.
+    facade.enqueue_session_info("renamed".into()).unwrap();
+    facade
+        .enqueue_model_change("anthropic:claude-sonnet-4-5".into())
+        .unwrap();
+    facade
+        .enqueue_thinking_level_change(ThinkingLevel::Medium)
+        .unwrap();
+    facade
+        .enqueue_label("bug".into(), LabelAction::Add)
+        .unwrap();
+    facade
+        .enqueue_branch_summary("summarized the branch".into())
+        .unwrap();
+    facade.flush().unwrap();
+
+    // Tip unchanged: metadata did not advance the content tip.
+    let tip_after = facade.active_tip().unwrap();
+    assert_eq!(
+        tip_after.as_deref(),
+        Some(tip_before.as_str()),
+        "metadata append must not advance the content tip"
+    );
+
+    // Every metadata entry is parented to the content tip and survives reload.
+    let (_h, entries, recovery) = facade.load().unwrap();
+    assert!(
+        recovery.is_clean(),
+        "no recovery expected, got {recovery:?}"
+    );
+
+    let mut saw_session_info = false;
+    let mut saw_model_change = false;
+    let mut saw_thinking_level_change = false;
+    let mut saw_label = false;
+    let mut saw_branch_summary = false;
+    for entry in &entries {
+        match entry {
+            SessionEntry::SessionInfo(s) => {
+                assert_eq!(s.name, "renamed");
+                assert_eq!(s.parent_id.as_deref(), Some(tip_before.as_str()));
+                saw_session_info = true;
+            }
+            SessionEntry::ModelChange(m) => {
+                assert_eq!(m.model, "anthropic:claude-sonnet-4-5");
+                assert_eq!(m.parent_id.as_deref(), Some(tip_before.as_str()));
+                saw_model_change = true;
+            }
+            SessionEntry::ThinkingLevelChange(t) => {
+                assert_eq!(t.level, ThinkingLevel::Medium);
+                assert_eq!(t.parent_id.as_deref(), Some(tip_before.as_str()));
+                saw_thinking_level_change = true;
+            }
+            SessionEntry::Label(l) => {
+                assert_eq!(l.label, "bug");
+                assert_eq!(l.action, LabelAction::Add);
+                assert_eq!(l.parent_id.as_deref(), Some(tip_before.as_str()));
+                saw_label = true;
+            }
+            SessionEntry::BranchSummary(b) => {
+                assert_eq!(b.summary, "summarized the branch");
+                assert_eq!(b.parent_id.as_deref(), Some(tip_before.as_str()));
+                saw_branch_summary = true;
+            }
+            // Content entries and any future additive variant are not metadata.
+            _ => {}
+        }
+    }
+    assert!(saw_session_info, "session_info entry must round-trip");
+    assert!(saw_model_change, "model_change entry must round-trip");
+    assert!(
+        saw_thinking_level_change,
+        "thinking_level_change entry must round-trip"
+    );
+    assert!(saw_label, "label entry must round-trip");
+    assert!(saw_branch_summary, "branch_summary entry must round-trip");
+
+    // Metadata does not create branch nodes: the active branch still has a
+    // single message and the tip is unchanged.
+    let messages: Vec<_> = entries
+        .iter()
+        .filter_map(|e| match e {
+            SessionEntry::Message(m) => Some(m),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(messages.len(), 1, "metadata must not add content messages");
+}
+
+#[test]
+fn facade_metadata_appends_after_message_in_flush_order() {
+    // A message enqueued AFTER metadata must still persist before the metadata
+    // writes (PendingWriteKind::Metadata ranks like ExtensionState).
+    let mut facade = SessionFacade::new(Box::new(RecordingSessionRepo::default())).unwrap();
+    facade.enqueue_message(user_msg("first")).unwrap();
+    facade.enqueue_session_info("named".into()).unwrap();
+    facade.enqueue_message(user_msg("second")).unwrap();
+
+    facade.flush().unwrap();
+    let (_h, entries, _r) = facade.load().unwrap();
+    // Both messages precede the session_info write.
+    let si_idx = entries
+        .iter()
+        .position(|e| matches!(e, SessionEntry::SessionInfo(_)))
+        .expect("session_info present");
+    let last_msg_idx = entries
+        .iter()
+        .rposition(|e| matches!(e, SessionEntry::Message(_)))
+        .expect("at least one message");
+    assert!(
+        last_msg_idx < si_idx,
+        "messages must flush before metadata writes, got msg@{last_msg_idx} vs si@{si_idx}"
+    );
+}
 
 #[test]
 fn pending_writes_flush_in_order_at_save_points() {

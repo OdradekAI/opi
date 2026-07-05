@@ -305,12 +305,16 @@ mod session_recovery_classification {
 
     #[test]
     fn clean_recovery_emits_no_diagnostics() {
-        assert!(CrashRecovery::Clean.diagnostics().is_empty());
+        assert!(CrashRecovery::default().diagnostics().is_empty());
     }
 
     #[test]
     fn truncated_line_emits_warning() {
-        let diags = CrashRecovery::TruncatedLine.diagnostics();
+        let recovery = CrashRecovery {
+            truncated_line: true,
+            ..Default::default()
+        };
+        let diags = recovery.diagnostics();
         assert_eq!(diags.len(), 1);
         assert_eq!(diags[0].code, CODE_SESSION_TRUNCATED_LINE);
         assert_eq!(diags[0].source, SOURCE_SESSION);
@@ -319,7 +323,11 @@ mod session_recovery_classification {
 
     #[test]
     fn corrupt_entries_carries_count() {
-        let diags = CrashRecovery::CorruptEntries { count: 3 }.diagnostics();
+        let recovery = CrashRecovery {
+            corrupt_count: 3,
+            ..Default::default()
+        };
+        let diags = recovery.diagnostics();
         assert_eq!(diags.len(), 1);
         assert_eq!(diags[0].code, CODE_SESSION_CORRUPT_ENTRIES);
         assert_eq!(diags[0].severity, Severity::Warning);
@@ -330,11 +338,38 @@ mod session_recovery_classification {
     }
 
     #[test]
-    fn corrupt_with_truncation_emits_distinct_code() {
-        let diags = CrashRecovery::CorruptEntriesWithTruncation { count: 2 }.diagnostics();
+    fn unknown_entries_carries_count() {
+        // Phase 13.1: unknown future entry types are reported separately from
+        // corruption, never fatal.
+        let recovery = CrashRecovery {
+            unknown_count: 4,
+            ..Default::default()
+        };
+        let diags = recovery.diagnostics();
         assert_eq!(diags.len(), 1);
-        assert_eq!(diags[0].code, CODE_SESSION_CORRUPT_WITH_TRUNCATION);
-        assert_eq!(diags[0].details.as_ref().unwrap()["corrupt_count"], 2);
+        assert_eq!(diags[0].code, CODE_SESSION_UNKNOWN_ENTRIES);
+        assert_eq!(diags[0].source, SOURCE_SESSION);
+        assert_eq!(diags[0].severity, Severity::Warning);
+        let details = diags[0].details.as_ref().expect("carries count");
+        assert_eq!(details["unknown_count"], 4);
+        assert!(details.get("entries").is_none());
+    }
+
+    #[test]
+    fn corrupt_and_truncation_emit_one_diagnostic_per_observation() {
+        // Phase 13.1 splits the historical combined "corrupt with truncation"
+        // code into two independent diagnostics so each observation keeps its
+        // own stable code.
+        let recovery = CrashRecovery {
+            truncated_line: true,
+            corrupt_count: 2,
+            ..Default::default()
+        };
+        let diags = recovery.diagnostics();
+        assert_eq!(diags.len(), 2);
+        assert_eq!(diags[0].code, CODE_SESSION_TRUNCATED_LINE);
+        assert_eq!(diags[1].code, CODE_SESSION_CORRUPT_ENTRIES);
+        assert_eq!(diags[1].details.as_ref().unwrap()["corrupt_count"], 2);
     }
 }
 
@@ -409,18 +444,37 @@ mod session_compaction_sink_round_trip {
     fn phase8_session_compaction_diagnostics_sink() {
         let sink = RecordingSink::new();
 
-        // --- Crash recovery variants round-trip through the sink ---
-        for diagnostic in CrashRecovery::TruncatedLine.diagnostics() {
+        // --- Crash recovery observations round-trip through the sink ---
+        for diagnostic in (CrashRecovery {
+            truncated_line: true,
+            ..Default::default()
+        })
+        .diagnostics()
+        {
             sink.record(diagnostic);
         }
-        for diagnostic in (CrashRecovery::CorruptEntries { count: 3 }).diagnostics() {
+        for diagnostic in (CrashRecovery {
+            corrupt_count: 3,
+            ..Default::default()
+        })
+        .diagnostics()
+        {
             sink.record(diagnostic);
         }
-        for diagnostic in (CrashRecovery::CorruptEntriesWithTruncation { count: 2 }).diagnostics() {
+        // A recovery that combines truncation and corruption now emits two
+        // independent diagnostics (Phase 13.1 split the historical combined
+        // code so each observation keeps its own stable code).
+        for diagnostic in (CrashRecovery {
+            truncated_line: true,
+            corrupt_count: 2,
+            ..Default::default()
+        })
+        .diagnostics()
+        {
             sink.record(diagnostic);
         }
         // Clean recovery emits nothing.
-        assert!(CrashRecovery::Clean.diagnostics().is_empty());
+        assert!(CrashRecovery::default().diagnostics().is_empty());
 
         // --- Compaction success + nothing-to-compact round-trip ---
         let output = CompactionOutput {
@@ -436,46 +490,50 @@ mod session_compaction_sink_round_trip {
         sink.record(Diagnostic::from(&CompactionError::NothingToCompact));
 
         let snapshot = sink.snapshot();
+        // truncated + corrupt(3) + (truncated + corrupt(2)) + compacted + nothing = 6
         assert_eq!(
             snapshot.len(),
-            5,
-            "expected truncated + corrupt + corrupt_with_truncation + compacted + nothing_to_compact"
+            6,
+            "expected four recovery diagnostics plus compacted and nothing_to_compact"
         );
 
-        // TruncatedLine: Warning, session_truncated_line, SOURCE_SESSION.
-        let truncated = &snapshot[0];
-        assert_eq!(truncated.code, CODE_SESSION_TRUNCATED_LINE);
-        assert_eq!(truncated.severity, Severity::Warning);
-        assert_eq!(truncated.source, SOURCE_SESSION);
-        assert!(
-            truncated.details.is_none(),
-            "truncated line carries no details"
-        );
+        // All four recovery diagnostics are warnings sourced from the session.
+        for diag in &snapshot[0..4] {
+            assert_eq!(diag.severity, Severity::Warning);
+            assert_eq!(diag.source, SOURCE_SESSION);
+        }
 
-        // CorruptEntries: count-bearing, no entry content.
-        let corrupt = &snapshot[1];
-        assert_eq!(corrupt.code, CODE_SESSION_CORRUPT_ENTRIES);
-        assert_eq!(corrupt.severity, Severity::Warning);
-        assert_eq!(corrupt.source, SOURCE_SESSION);
-        let corrupt_details = corrupt.details.as_ref().expect("corrupt carries count");
-        assert_eq!(corrupt_details["corrupt_count"], 3);
-        assert!(corrupt_details.get("entries").is_none(), "no entry content");
-
-        // CorruptEntriesWithTruncation: distinct code, count-bearing.
-        let both = &snapshot[2];
-        assert_eq!(both.code, CODE_SESSION_CORRUPT_WITH_TRUNCATION);
-        assert_eq!(both.severity, Severity::Warning);
-        assert_eq!(both.source, SOURCE_SESSION);
-        let both_details = both
-            .details
-            .as_ref()
-            .expect("corrupt+truncation carries count");
-        assert_eq!(both_details["corrupt_count"], 2);
-        assert!(both_details.get("entries").is_none(), "no entry content");
+        // Two truncated + two corrupt (counts 3 and 2) across the observations.
+        let truncated_count = snapshot
+            .iter()
+            .filter(|d| d.code == CODE_SESSION_TRUNCATED_LINE)
+            .count();
+        let corrupt_with = |n: i64| {
+            snapshot
+                .iter()
+                .filter(|d| {
+                    d.code == CODE_SESSION_CORRUPT_ENTRIES
+                        && d.details
+                            .as_ref()
+                            .is_some_and(|dt| dt["corrupt_count"].as_i64() == Some(n))
+                })
+                .count()
+        };
+        assert_eq!(truncated_count, 2);
+        assert_eq!(corrupt_with(3), 1);
+        assert_eq!(corrupt_with(2), 1);
+        // No entry content ever leaks into recovery details.
+        for diag in &snapshot[0..4] {
+            if let Some(details) = &diag.details {
+                assert!(details.get("entries").is_none(), "no entry content");
+            }
+        }
 
         // Compaction success: Info, session_compacted, token/source details survive.
-        let compacted = &snapshot[3];
-        assert_eq!(compacted.code, CODE_SESSION_COMPACTED);
+        let compacted = snapshot
+            .iter()
+            .find(|d| d.code == CODE_SESSION_COMPACTED)
+            .expect("compacted diagnostic present");
         assert_eq!(compacted.severity, Severity::Info);
         assert_eq!(compacted.source, SOURCE_SESSION);
         let compacted_details = compacted
@@ -487,8 +545,10 @@ mod session_compaction_sink_round_trip {
         assert_eq!(compacted_details["summary_source"], "hook");
 
         // NothingToCompact: Info, compaction_nothing_to_compact.
-        let nothing = &snapshot[4];
-        assert_eq!(nothing.code, CODE_COMPACTION_NOTHING_TO_COMPACT);
+        let nothing = snapshot
+            .iter()
+            .find(|d| d.code == CODE_COMPACTION_NOTHING_TO_COMPACT)
+            .expect("nothing_to_compact diagnostic present");
         assert_eq!(nothing.severity, Severity::Info);
         assert_eq!(nothing.source, SOURCE_SESSION);
 
@@ -498,7 +558,12 @@ mod session_compaction_sink_round_trip {
         // the buffer so we can snapshot it.
         let concrete = Arc::new(RecordingSink::new());
         let dyn_sink: Arc<dyn DiagnosticSink> = concrete.clone();
-        for diagnostic in (CrashRecovery::CorruptEntries { count: 7 }).diagnostics() {
+        for diagnostic in (CrashRecovery {
+            corrupt_count: 7,
+            ..Default::default()
+        })
+        .diagnostics()
+        {
             dyn_sink.record(diagnostic);
         }
         let dyn_snapshot = concrete.snapshot();
