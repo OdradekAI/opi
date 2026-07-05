@@ -1696,6 +1696,134 @@ Body should remain undisclosed.
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn phase13_rpc_session_info_returns_metadata() {
+    //! Phase 13.4 acceptance: RPC `session_info` returns the live session
+    //! metadata (name, labels, active branch, model, thinking) for a resumed
+    //! session, alongside the existing model/resources/session_id fields. This
+    //! is the RPC half of DoD scenario `phase13-session-name-label-commands`.
+
+    use opi_agent::message::AgentMessage;
+    use opi_agent::session::{LabelAction, SessionReader};
+    use opi_ai::message::{InputContent, Message, UserMessage};
+    use opi_coding_agent::harness::ResumeInfo;
+    use opi_coding_agent::session_coordinator::SessionCoordinator;
+
+    let workspace = tempfile::tempdir().expect("workspace tempdir");
+
+    // Pre-populate a session file with a content tip + typed metadata via the
+    // production coordinator (avoids hand-rolling entry fixtures).
+    let mut coord = SessionCoordinator::new(
+        workspace.path(),
+        &workspace.path().display().to_string(),
+        opi_agent::compaction::CompactionConfig::default(),
+        "mock:mock-model",
+    )
+    .expect("coordinator");
+    coord
+        .on_turn_end_simple(
+            &[AgentMessage::Llm(Message::User(UserMessage {
+                content: vec![InputContent::Text {
+                    text: "seed".into(),
+                }],
+                timestamp_ms: 0,
+            }))],
+            &opi_ai::stream::Usage::default(),
+        )
+        .expect("seed turn");
+    coord
+        .append_session_info("rpc-demo".into())
+        .expect("session_info");
+    coord
+        .append_label("bug".into(), LabelAction::Add)
+        .expect("label add bug");
+    coord
+        .append_label("draft".into(), LabelAction::Add)
+        .expect("label add draft");
+    coord
+        .append_label("bug".into(), LabelAction::Remove)
+        .expect("label remove bug");
+
+    let session_path = coord.session_path().to_path_buf();
+    let session_id = coord.session_id().to_owned();
+    let (_h, entries) = SessionReader::read_all(&session_path).expect("read back");
+    drop(coord);
+
+    let resume_info = ResumeInfo {
+        path: session_path,
+        session_id,
+        entries,
+        original_cwd: workspace.path().to_path_buf(),
+        diagnostics: Vec::new(),
+        recorded_model: None,
+        recorded_thinking: None,
+    };
+
+    let provider = MockProvider::new("mock", Vec::new());
+    let runner = RpcRunner::new_with_runtime_packages(
+        Box::new(provider),
+        "mock:mock-model".into(),
+        OpiConfig::default(),
+        workspace.path().to_path_buf(),
+        false,
+        ToolSelection::Disabled,
+        None,
+        Vec::new(),
+        RuntimePackageStartup {
+            extension_registry: ExtensionRegistry::new(),
+            installed_packages: Vec::new(),
+            diagnostics: Vec::new(),
+        },
+        Some(resume_info),
+    )
+    .expect("rpc runner should construct");
+
+    let (command_tx, command_rx) = tokio::sync::mpsc::unbounded_channel();
+    let (output_tx, mut output_rx) = tokio::sync::mpsc::unbounded_channel();
+    let task = tokio::spawn(async move {
+        let mut runner = runner;
+        runner.run_with_channels(command_rx, output_tx).await
+    });
+
+    let header = recv_rpc_line(&mut output_rx).await;
+    assert_eq!(header["type"], "rpc_ready");
+
+    command_tx
+        .send(RpcCommand::session_info {
+            id: Some("si-meta".into()),
+        })
+        .unwrap();
+    let resp = recv_response(&mut output_rx, "session_info").await;
+    assert_eq!(resp["success"], true, "session_info should succeed: {resp}");
+    assert_eq!(resp["id"], "si-meta");
+
+    // Name + labels are the typed metadata persisted above.
+    assert_eq!(resp["data"]["name"], "rpc-demo", "name surfaced: {resp}");
+    let labels: Vec<String> = resp["data"]["labels"]
+        .as_array()
+        .expect("labels is an array")
+        .iter()
+        .map(|v| v.as_str().expect("label string").to_owned())
+        .collect();
+    assert_eq!(
+        labels,
+        vec!["draft".to_string()],
+        "labels reflect Add bug + Add draft + Remove bug: {resp}"
+    );
+
+    // Active branch, model, thinking are surfaced from the live runtime state.
+    assert!(
+        resp["data"]["active_branch"].is_string(),
+        "active_branch is surfaced: {resp}"
+    );
+    assert_eq!(resp["data"]["model"], "mock:mock-model");
+    assert_eq!(resp["data"]["thinking"]["enabled"], false);
+
+    command_tx.send(RpcCommand::quit { id: None }).unwrap();
+    let _quit = recv_response(&mut output_rx, "quit").await;
+    assert_eq!(task.await.unwrap(), 0);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn rpc_extension_command_dispatches_to_registry_with_correlated_response_id() {
     struct RpcCommandExtension;
 

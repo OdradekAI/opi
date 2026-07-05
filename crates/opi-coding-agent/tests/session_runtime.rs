@@ -277,6 +277,194 @@ fn phase13_model_thinking_metadata_does_not_advance_leaf() {
 }
 
 #[test]
+fn phase13_session_info_and_label_appends_are_durable_and_do_not_advance_leaf() {
+    //! Phase 13.4 acceptance: idle `/name`, `/label`, and `/unlabel` appends
+    //! through SessionCoordinator persist `session_info` and `label` entries
+    //! parented to the current content tip WITHOUT appending a new Leaf or
+    //! changing the active content tip. The in-memory accessors surface the
+    //! latest name and the deduplicated, Add/Remove-applied label set.
+
+    use opi_agent::session::{LabelAction, SessionEntry};
+
+    let dir = tempfile::tempdir().unwrap();
+    let mut coord = SessionCoordinator::new(
+        dir.path(),
+        "/test",
+        opi_agent::compaction::CompactionConfig::default(),
+        "anthropic:claude-sonnet-4",
+    )
+    .unwrap();
+
+    let messages = vec![AgentMessage::Llm(Message::User(UserMessage {
+        content: vec![InputContent::Text {
+            text: "Hello".into(),
+        }],
+        timestamp_ms: 0,
+    }))];
+    coord
+        .on_turn_end_simple(&messages, &opi_ai::stream::Usage::default())
+        .unwrap();
+
+    let jsonl_path = dir.path().join(format!("{}.jsonl", coord.session_id()));
+    let (_header, entries_before) = SessionReader::read_all(&jsonl_path).unwrap();
+    let leaf_count_before = entries_before
+        .iter()
+        .filter(|e| matches!(e, SessionEntry::Leaf(_)))
+        .count();
+    assert_eq!(leaf_count_before, 1, "turn should append one Leaf");
+    let msg_tip_id = entries_before
+        .iter()
+        .rev()
+        .find_map(|e| match e {
+            SessionEntry::Message(m) => Some(m.id.clone()),
+            _ => None,
+        })
+        .expect("at least one Message");
+    let tip_before = entries_before
+        .iter()
+        .rev()
+        .find_map(|e| match e {
+            SessionEntry::Leaf(l) => Some(l.entry_id.clone()),
+            _ => None,
+        })
+        .expect("at least one Leaf");
+
+    // Phase 13.4 typed metadata appends through the coordinator.
+    coord.append_session_info("project-x".into()).unwrap();
+    coord.append_label("bug".into(), LabelAction::Add).unwrap();
+    coord
+        .append_label("draft".into(), LabelAction::Add)
+        .unwrap();
+    coord
+        .append_label("bug".into(), LabelAction::Remove)
+        .unwrap();
+
+    let (_header, entries_after) = SessionReader::read_all(&jsonl_path).unwrap();
+
+    // 1. session_info entry persisted, parented to the content tip.
+    let session_info = entries_after
+        .iter()
+        .find_map(|e| match e {
+            SessionEntry::SessionInfo(s) => Some(s.clone()),
+            _ => None,
+        })
+        .expect("session_info entry persisted");
+    assert_eq!(session_info.name, "project-x");
+    assert_eq!(
+        session_info.parent_id.as_deref(),
+        Some(msg_tip_id.as_str()),
+        "session_info must be parented to the content tip"
+    );
+
+    // 2. label entries persisted with correct actions, parented to the tip.
+    let label_entries: Vec<_> = entries_after
+        .iter()
+        .filter_map(|e| match e {
+            SessionEntry::Label(l) => Some(l.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        label_entries.len(),
+        3,
+        "three label appends expected (bug add, draft add, bug remove)"
+    );
+    for label in &label_entries {
+        assert_eq!(
+            label.parent_id.as_deref(),
+            Some(msg_tip_id.as_str()),
+            "label entries must be parented to the content tip"
+        );
+    }
+
+    // 3. NO new Leaf was appended and the active content tip is unchanged.
+    let leaf_count_after = entries_after
+        .iter()
+        .filter(|e| matches!(e, SessionEntry::Leaf(_)))
+        .count();
+    assert_eq!(
+        leaf_count_after, leaf_count_before,
+        "metadata append must not add a Leaf"
+    );
+    let tip_after = entries_after
+        .iter()
+        .rev()
+        .find_map(|e| match e {
+            SessionEntry::Leaf(l) => Some(l.entry_id.clone()),
+            _ => None,
+        })
+        .expect("at least one Leaf");
+    assert_eq!(tip_after, tip_before, "metadata must not change the tip");
+
+    // 4. In-memory accessors reflect the latest name + deduplicated label set
+    //    (bug removed, draft kept). This is the live read path used by
+    //    `/session info` and RPC `session_info`.
+    assert_eq!(coord.name(), Some("project-x"));
+    assert_eq!(coord.labels(), &["draft".to_string()]);
+    assert_eq!(
+        coord.active_branch_id(),
+        Some(msg_tip_id.as_str()),
+        "active_branch_id must report the content tip"
+    );
+}
+
+#[test]
+fn phase13_coordinator_open_existing_seeds_name_and_labels() {
+    //! Phase 13.4 acceptance: reopening a session via `open_existing` seeds
+    //! the in-memory name/labels view from the persisted active-chain entries
+    //! so `/session info` and RPC `session_info` reflect prior metadata
+    //! without a full reconstruct pass.
+
+    use opi_agent::session::{LabelAction, SessionEntry};
+
+    let dir = tempfile::tempdir().unwrap();
+    let mut coord = SessionCoordinator::new(
+        dir.path(),
+        "/test",
+        opi_agent::compaction::CompactionConfig::default(),
+        "anthropic:claude-sonnet-4",
+    )
+    .unwrap();
+    coord.append_session_info("seeded-name".into()).unwrap();
+    coord
+        .append_label("ready".into(), LabelAction::Add)
+        .unwrap();
+    coord.append_label("wip".into(), LabelAction::Add).unwrap();
+    coord
+        .append_label("ready".into(), LabelAction::Remove)
+        .unwrap();
+
+    let path = coord.session_path().to_path_buf();
+    let session_id = coord.session_id().to_string();
+    // Read back the entries the way the harness resume path would.
+    let (_header, entries) = SessionReader::read_all(&path).unwrap();
+    drop(coord);
+
+    let reopened = SessionCoordinator::open_existing(
+        path,
+        session_id,
+        &entries,
+        0,
+        opi_agent::compaction::CompactionConfig::default(),
+        "anthropic:claude-sonnet-4",
+    )
+    .unwrap();
+
+    assert_eq!(reopened.name(), Some("seeded-name"));
+    assert_eq!(reopened.labels(), &["wip".to_string()]);
+
+    // The coordinator seed accepts rootless metadata (the pre-first-turn
+    // case where `/name` is issued before any message). `reconstruct_context`
+    // walks the parent_id chain and does not surface rootless metadata, so we
+    // cross-check against a direct scan of the persisted entries instead.
+    let session_info_on_disk = entries.iter().find_map(|e| match e {
+        SessionEntry::SessionInfo(s) => Some(s.name.clone()),
+        _ => None,
+    });
+    assert_eq!(session_info_on_disk, Some("seeded-name".to_string()));
+}
+
+#[test]
 fn session_coordinator_redacts_tool_result_details_but_keeps_content() {
     let dir = tempfile::tempdir().unwrap();
     let mut coord = SessionCoordinator::new(
@@ -2401,6 +2589,184 @@ async fn phase13_model_thinking_changes_persist_via_harness() {
     assert_eq!(
         leaf_count_after_meta, leaf_count_after_prompt,
         "metadata writes must not append a Leaf"
+    );
+
+    clear_sessions_dir();
+}
+
+#[tokio::test]
+#[allow(clippy::await_holding_lock)]
+async fn phase13_labels_and_session_name_do_not_enter_provider_context() {
+    //! Phase 13.4 acceptance: `/label`, `/unlabel`, and `/name` appends through
+    //! the harness persist `label` and `session_info` entries (UI-visible
+    //! metadata) but the canary text never appears in any message sent to the
+    //! provider. This is the harness-level half of DoD scenario
+    //! `phase13-session-name-label-commands`.
+
+    use opi_ai::message::{AssistantContent, InputContent, Message};
+    use opi_ai::test_support;
+
+    let _lock = session_lock();
+    let workspace = tempfile::tempdir().unwrap();
+    let sessions = tempfile::tempdir().unwrap();
+    set_sessions_dir(sessions.path());
+
+    let provider = MockProvider::new("mock", vec![test_support::text_response("ok-response")]);
+    let call_log = provider.call_log_handle();
+    let mut harness = CodingHarness::builder(
+        Box::new(provider),
+        "mock:mock-model".into(),
+        OpiConfig::default(),
+        workspace.path().to_path_buf(),
+    )
+    .build();
+
+    // Idle metadata writes through the harness validated paths.
+    harness
+        .set_session_name("SECRET_NAME_CANARY".into())
+        .expect("session name appended");
+    harness
+        .add_label("SECRET_LABEL_CANARY".into())
+        .expect("label appended");
+
+    harness.prompt("hello").await.unwrap();
+
+    // No request sent to the provider carries the canaries in any message
+    // content. Labels and session_info are metadata only.
+    let log = call_log.lock().unwrap();
+    assert!(
+        !log.is_empty(),
+        "provider should have received at least one request"
+    );
+    for request in log.iter() {
+        for message in &request.messages {
+            match message {
+                Message::User(u) => {
+                    for c in &u.content {
+                        if let InputContent::Text { text } = c {
+                            assert!(
+                                !text.contains("SECRET_LABEL_CANARY"),
+                                "label text leaked into provider context: {text}"
+                            );
+                            assert!(
+                                !text.contains("SECRET_NAME_CANARY"),
+                                "session name leaked into provider context: {text}"
+                            );
+                        }
+                    }
+                }
+                Message::Assistant(a) => {
+                    for c in &a.content {
+                        if let AssistantContent::Text { text } = c {
+                            assert!(
+                                !text.contains("SECRET_LABEL_CANARY"),
+                                "label leaked via assistant content: {text}"
+                            );
+                            assert!(
+                                !text.contains("SECRET_NAME_CANARY"),
+                                "name leaked via assistant content: {text}"
+                            );
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        if let Some(system) = &request.system {
+            assert!(
+                !system.contains("SECRET_LABEL_CANARY") && !system.contains("SECRET_NAME_CANARY"),
+                "metadata leaked into system prompt: {system}"
+            );
+        }
+    }
+
+    clear_sessions_dir();
+}
+
+#[tokio::test]
+#[allow(clippy::await_holding_lock)]
+async fn phase13_session_metadata_aggregates_name_labels_branch_model_thinking() {
+    //! Phase 13.4 acceptance: `CodingHarness::session_metadata()` returns the
+    //! live aggregated view (name, labels, active branch, model, thinking)
+    //! that `/session info` and RPC `session_info` surface to the user.
+
+    let _lock = session_lock();
+    let workspace = tempfile::tempdir().unwrap();
+    let sessions = tempfile::tempdir().unwrap();
+    set_sessions_dir(sessions.path());
+    let mut harness = build_phase13_harness(workspace.path());
+    harness.prompt("seed turn").await.unwrap();
+
+    harness
+        .set_session_name("demo-session".into())
+        .expect("name appended");
+    harness.add_label("bug".into()).expect("label add");
+    harness.add_label("draft".into()).expect("label add");
+    harness.remove_label("bug".into()).expect("label remove");
+
+    let meta = harness
+        .session_metadata()
+        .expect("session_metadata returns Some when a session is active");
+    assert_eq!(meta.name.as_deref(), Some("demo-session"));
+    assert_eq!(meta.labels, vec!["draft".to_string()]);
+    assert!(
+        meta.active_branch.is_some(),
+        "active_branch must report the content tip after a turn"
+    );
+    assert_eq!(meta.model, "mock:mock-model");
+    // Mock model has no thinking; the aggregated config reflects that.
+    assert!(!meta.thinking.enabled);
+
+    clear_sessions_dir();
+}
+
+#[tokio::test]
+#[allow(clippy::await_holding_lock)]
+async fn phase13_session_metadata_survives_resume() {
+    //! Phase 13.4 acceptance: session name + labels written through the
+    //! harness idle paths survive a drop + resume cycle. This closes the
+    //! write-then-read loop through production wiring (harness write ->
+    //! SessionCoordinator append -> JSONL -> `resume_session_id` ->
+    //! `open_existing` seed -> `session_metadata`).
+
+    let _lock = session_lock();
+    let workspace = tempfile::tempdir().unwrap();
+    let sessions = tempfile::tempdir().unwrap();
+    set_sessions_dir(sessions.path());
+
+    // Write phase: seed a turn and write metadata through the harness.
+    let session_id = {
+        let mut harness_a = build_phase13_harness(workspace.path());
+        harness_a.prompt("seed turn").await.unwrap();
+        harness_a
+            .set_session_name("persistent-name".into())
+            .expect("name appended");
+        harness_a.add_label("keep".into()).expect("label keep add");
+        harness_a.add_label("drop".into()).expect("label drop add");
+        harness_a
+            .remove_label("drop".into())
+            .expect("label drop remove");
+        harness_a
+            .session()
+            .expect("session exists after prompt")
+            .session_id()
+            .to_owned()
+    };
+    // harness_a dropped here; its session file persists in `sessions`.
+
+    // Read phase: a fresh harness resumes by id and observes the metadata.
+    let mut harness_b = build_phase13_harness(workspace.path());
+    harness_b
+        .resume_session_id(&session_id)
+        .expect("resume succeeds");
+    let meta = harness_b
+        .session_metadata()
+        .expect("session_metadata after resume");
+    assert_eq!(meta.name.as_deref(), Some("persistent-name"));
+    assert_eq!(meta.labels, vec!["keep".to_string()]);
+    assert!(
+        meta.active_branch.is_some(),
+        "resumed session reports an active branch"
     );
 
     clear_sessions_dir();

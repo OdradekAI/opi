@@ -7,8 +7,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use opi_agent::compaction::{CompactionConfig, CompactionEngine, DefaultCompactionHooks, Entry};
 use opi_agent::message::{AgentMessage, CompactionSummaryMessage};
 use opi_agent::session::{
-    CompactionEntry, ExtensionStateEntry, LeafEntry, MessageEntry, ModelChangeEntry, SessionEntry,
-    SessionHeader, SessionWriter, ThinkingLevelChangeEntry,
+    CompactionEntry, ExtensionStateEntry, LabelAction, LabelEntry, LeafEntry, MessageEntry,
+    ModelChangeEntry, SessionEntry, SessionHeader, SessionInfoEntry, SessionWriter,
+    ThinkingLevelChangeEntry,
 };
 use opi_agent::session_event::{CompactionReason, CompactionResult, ThinkingLevel};
 use opi_ai::message::{AssistantContent, Message, ToolResultMessage};
@@ -57,6 +58,15 @@ pub struct SessionCoordinator {
     compaction_watermark_tokens: u64,
     /// Last persisted Message/Compaction entry on the active branch.
     active_tip_entry_id: Option<String>,
+    /// Latest `session_info` name on the active branch (Phase 13.4). UI-visible
+    /// metadata; never enters provider context. Seeded by `open_existing` and
+    /// updated by `append_session_info`.
+    name: Option<String>,
+    /// Active label set on the active branch (Phase 13.4): `Add`/`Remove`
+    /// applied in append order, deduplicated, preserving first-`Add` order.
+    /// UI-visible metadata; never enters provider context. Seeded by
+    /// `open_existing` and updated by `append_label`.
+    labels: Vec<String>,
 }
 
 impl SessionCoordinator {
@@ -84,6 +94,8 @@ impl SessionCoordinator {
             agent_message_count: 0,
             compaction_watermark_tokens: 0,
             active_tip_entry_id: None,
+            name: None,
+            labels: Vec::new(),
         })
     }
 
@@ -227,6 +239,16 @@ impl SessionCoordinator {
         );
         let watermark = usage.as_usage().total_tokens();
 
+        // Phase 13.4: seed the live name/labels view from the persisted
+        // active-chain metadata so `/session info` and RPC `session_info`
+        // reflect prior writes without a full reconstruct pass. `ordered`
+        // excludes metadata entries, so we scan the raw entries directly,
+        // filtering to the active content chain (or accepting rootless
+        // metadata when no content exists yet). Mirrors the
+        // `reconstruct_context` derivation and the
+        // `latest_extension_state_entry_for_active_branch` filter pattern.
+        let (name, labels) = seed_metadata_from_entries(existing_entries);
+
         Ok(Self {
             writer,
             compaction: CompactionEngine::new(compaction_config),
@@ -239,6 +261,8 @@ impl SessionCoordinator {
             agent_message_count: prior_agent_message_count,
             compaction_watermark_tokens: watermark,
             active_tip_entry_id,
+            name,
+            labels,
         })
     }
 
@@ -496,6 +520,66 @@ impl SessionCoordinator {
         self.writer.append(&entry)
     }
 
+    /// Record a `session_info` entry (session name) parented to the current
+    /// content tip **without** advancing it (Phase 13.4). Idle `/name <name>`
+    /// goes through here so a later resume observes the latest name on the
+    /// active branch. No `Leaf` is appended and `active_tip_entry_id` is
+    /// unchanged: session names are UI-visible metadata, not conversational
+    /// turns, and never enter provider context.
+    pub fn append_session_info(&mut self, name: String) -> Result<(), std::io::Error> {
+        let entry = SessionEntry::SessionInfo(SessionInfoEntry {
+            id: format!("info-{}", ENTRY_SEQ.fetch_add(1, Ordering::Relaxed)),
+            parent_id: self.active_tip_entry_id.clone(),
+            timestamp: now_iso(),
+            name: name.clone(),
+        });
+        self.writer.append(&entry)?;
+        self.name = Some(name);
+        Ok(())
+    }
+
+    /// Record a `label` entry (add or remove) parented to the current content
+    /// tip **without** advancing it (Phase 13.4). Idle `/label <label>` and
+    /// `/unlabel <label>` go through here so a later resume observes the
+    /// active label set on the active branch. The in-memory label set applies
+    /// `Add`/`Remove` in append order with first-`Add` deduplication; the
+    /// persisted entry records the raw action so reconstruct stays truthful.
+    /// No `Leaf` is appended and `active_tip_entry_id` is unchanged. Labels
+    /// are UI-visible metadata and never enter provider context.
+    pub fn append_label(
+        &mut self,
+        label: String,
+        action: LabelAction,
+    ) -> Result<(), std::io::Error> {
+        let entry = SessionEntry::Label(LabelEntry {
+            id: format!("label-{}", ENTRY_SEQ.fetch_add(1, Ordering::Relaxed)),
+            parent_id: self.active_tip_entry_id.clone(),
+            timestamp: now_iso(),
+            label: label.clone(),
+            action,
+        });
+        self.writer.append(&entry)?;
+        apply_label(&mut self.labels, &label, action);
+        Ok(())
+    }
+
+    /// Latest session name on the active branch, if any (Phase 13.4 read path).
+    pub fn name(&self) -> Option<&str> {
+        self.name.as_deref()
+    }
+
+    /// Active label set on the active branch (Phase 13.4 read path):
+    /// `Add`/`Remove` applied in append order, deduplicated, first-`Add` order.
+    pub fn labels(&self) -> &[String] {
+        &self.labels
+    }
+
+    /// Entry id at the tip of the active branch (Phase 13.4 read path). The
+    /// last persisted Message/Compaction entry on the active branch.
+    pub fn active_branch_id(&self) -> Option<&str> {
+        self.active_tip_entry_id.as_deref()
+    }
+
     fn append_leaf_for_tip(&mut self, entry_id: &str) -> Result<(), std::io::Error> {
         let entry = SessionEntry::Leaf(LeafEntry {
             id: format!("leaf-{}", ENTRY_SEQ.fetch_add(1, Ordering::Relaxed)),
@@ -558,6 +642,59 @@ fn tool_arguments_for_session(arguments: &str) -> String {
         .map(|value| opi_agent::diagnostic::redact_public_value(&value))
         .and_then(|value| serde_json::to_string(&value).ok())
         .unwrap_or_else(|| "\"[REDACTED]\"".to_owned())
+}
+
+/// Apply a label `Add`/`Remove` action to an in-memory label set in append
+/// order. `Add` pushes the label if it is not already present (first-`Add`
+/// wins on position); `Remove` drops every occurrence. Mirrors the
+/// `reconstruct_context` derivation so the live coordinator view and the
+/// disk-derived view stay consistent.
+fn apply_label(labels: &mut Vec<String>, label: &str, action: LabelAction) {
+    match action {
+        LabelAction::Add => {
+            if !labels.iter().any(|existing| existing == label) {
+                labels.push(label.to_owned());
+            }
+        }
+        LabelAction::Remove => labels.retain(|existing| existing != label),
+    }
+}
+
+/// Derive the live `(name, labels)` view for `open_existing` from the raw
+/// session entries. Scans every entry in file order, considering only metadata
+/// whose `parent_id` resolves to the active content chain — or accepting
+/// rootless metadata when no content exists yet (the pre-first-turn case).
+/// Latest `session_info` wins; `label` Add/Remove apply in append order with
+/// first-`Add` deduplication. Mirrors the `reconstruct_context` derivation and
+/// the `latest_extension_state_entry_for_active_branch` active-chain filter.
+fn seed_metadata_from_entries(entries: &[SessionEntry]) -> (Option<String>, Vec<String>) {
+    use std::collections::HashSet;
+
+    let active_ids_vec = crate::session_cli::active_content_entry_ids(entries);
+    let active_ids: HashSet<&str> = active_ids_vec.iter().map(String::as_str).collect();
+    let on_active = |parent: &Option<String>| -> bool {
+        match parent {
+            // Pre-first-turn case: no active content yet, so rootless metadata
+            // is on the (single empty) trunk.
+            None => active_ids.is_empty(),
+            Some(id) => active_ids.contains(id.as_str()),
+        }
+    };
+
+    let mut name: Option<String> = None;
+    let mut labels: Vec<String> = Vec::new();
+    for entry in entries {
+        match entry {
+            SessionEntry::SessionInfo(s) if on_active(&s.parent_id) => {
+                name = Some(s.name.clone());
+            }
+            SessionEntry::Label(l) if on_active(&l.parent_id) => {
+                apply_label(&mut labels, &l.label, l.action);
+            }
+            _ => {}
+        }
+    }
+    (name, labels)
 }
 
 fn content_entry_id(entry: &SessionEntry) -> Option<&str> {

@@ -27,7 +27,7 @@ use opi_tui::{
 };
 use opi_tui::{ImageData, ImagePayload, MediaType as TuiMediaType};
 
-use crate::harness::CodingHarness;
+use crate::harness::{CodingHarness, SessionMetadata};
 
 /// Shared state mutated by the agent callback and read by the TUI render loop.
 struct TuiState {
@@ -506,6 +506,23 @@ async fn tui_event_loop(
                     continue;
                 }
 
+                // Phase 13.4: /name, /label, /unlabel, /session info dispatch
+                // through the typed session-metadata path. The parser returns
+                // None for bare `/session` so the resume-picker block below
+                // continues to handle it (non-regression).
+                if let Some(command) = parse_session_metadata_command(&input) {
+                    let message = {
+                        let mut h = harness.lock().await;
+                        apply_session_metadata_command(&mut h, command)
+                    };
+                    state
+                        .lock()
+                        .unwrap()
+                        .messages
+                        .push(TuiMessage::new(TuiRole::System, message));
+                    continue;
+                }
+
                 if input == "/session" {
                     let dir = crate::session_cli::session_dir();
                     let items = crate::picker::session_picker_items(&dir).unwrap_or_default();
@@ -700,6 +717,106 @@ fn branch_picker_command(input: &str) -> Option<BranchPickerCommand> {
         "/tree" => Some(BranchPickerCommand::Tree),
         _ => None,
     }
+}
+
+/// A parsed Phase 13.4 session-metadata slash command (Phase 13.4). Returned
+/// by [`parse_session_metadata_command`]. Bare `/session` (resume picker) and
+/// every other input return `None` so existing dispatch paths are unchanged.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SessionMetadataCommand {
+    Name(String),
+    Label(String),
+    Unlabel(String),
+    Info,
+}
+
+/// Parse a Phase 13.4 session-metadata slash command from raw TUI input.
+///
+/// Returns `Some` only for:
+/// - `/name <name>` (non-empty)
+/// - `/label <label>` (non-empty)
+/// - `/unlabel <label>` (non-empty)
+/// - the exact form `/session info`
+///
+/// Returns `None` for bare `/session` so the existing resume-picker path
+/// continues to handle it, and for every other input (including `/model`,
+/// `/branch`, `/tree`, `/fork`, `/clone`, `/image`, and free-form prompts).
+pub fn parse_session_metadata_command(input: &str) -> Option<SessionMetadataCommand> {
+    let trimmed = input.trim();
+    if let Some(rest) = trimmed.strip_prefix("/name ") {
+        let name = rest.trim();
+        if !name.is_empty() {
+            return Some(SessionMetadataCommand::Name(name.to_owned()));
+        }
+        return None;
+    }
+    if let Some(rest) = trimmed.strip_prefix("/label ") {
+        let label = rest.trim();
+        if !label.is_empty() {
+            return Some(SessionMetadataCommand::Label(label.to_owned()));
+        }
+        return None;
+    }
+    if let Some(rest) = trimmed.strip_prefix("/unlabel ") {
+        let label = rest.trim();
+        if !label.is_empty() {
+            return Some(SessionMetadataCommand::Unlabel(label.to_owned()));
+        }
+        return None;
+    }
+    if trimmed == "/session info" {
+        return Some(SessionMetadataCommand::Info);
+    }
+    None
+}
+
+/// Apply a parsed session-metadata command against the harness (Phase 13.4)
+/// and return the human-readable status line the TUI should display. This is
+/// the shared dispatch path for `/name`, `/label`, `/unlabel`, and
+/// `/session info`, extracted so tests can exercise command → harness →
+/// coordinator → JSONL without driving the terminal event loop. Command
+/// failures are reported in the returned string before any success is claimed.
+pub fn apply_session_metadata_command(
+    harness: &mut CodingHarness,
+    command: SessionMetadataCommand,
+) -> String {
+    match command {
+        SessionMetadataCommand::Name(name) => match harness.set_session_name(name.clone()) {
+            Ok(()) => format!("[session name set: {name}]"),
+            Err(e) => format!("[/name failed: {e}]"),
+        },
+        SessionMetadataCommand::Label(label) => match harness.add_label(label.clone()) {
+            Ok(()) => format!("[label added: {label}]"),
+            Err(e) => format!("[/label failed: {e}]"),
+        },
+        SessionMetadataCommand::Unlabel(label) => match harness.remove_label(label.clone()) {
+            Ok(()) => format!("[label removed: {label}]"),
+            Err(e) => format!("[/unlabel failed: {e}]"),
+        },
+        SessionMetadataCommand::Info => match harness.session_metadata() {
+            Some(meta) => format_session_metadata(&meta),
+            None => "[session info: no active session]".to_string(),
+        },
+    }
+}
+
+/// Render the live session metadata as a single-line TUI status message.
+fn format_session_metadata(meta: &SessionMetadata) -> String {
+    let name = meta.name.clone().unwrap_or_else(|| "(unset)".to_string());
+    let labels = if meta.labels.is_empty() {
+        "(none)".to_string()
+    } else {
+        meta.labels.join(", ")
+    };
+    let branch = meta
+        .active_branch
+        .clone()
+        .unwrap_or_else(|| "(none)".to_string());
+    let thinking = if meta.thinking.enabled { "on" } else { "off" };
+    format!(
+        "[session name: {name} | labels: {labels} | branch: {branch} | model: {} | thinking: {thinking}]",
+        meta.model
+    )
 }
 
 fn session_fork_command(input: &str) -> Option<SessionForkCommand> {

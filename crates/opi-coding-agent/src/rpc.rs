@@ -801,6 +801,28 @@ impl RpcRunner {
                 if let Some(session) = harness.session() {
                     data["session_id"] = serde_json::Value::String(session.session_id().to_owned());
                 }
+                // Phase 13.4: surface live session metadata (name, labels,
+                // active branch, thinking) alongside the existing fields. The
+                // metadata view is read straight off the session coordinator.
+                if let Some(meta) = harness.session_metadata() {
+                    data["name"] = match &meta.name {
+                        Some(name) => serde_json::Value::String(name.clone()),
+                        None => serde_json::Value::Null,
+                    };
+                    data["labels"] = serde_json::Value::Array(
+                        meta.labels
+                            .iter()
+                            .map(|label| serde_json::Value::String(label.clone()))
+                            .collect(),
+                    );
+                    if let Some(branch) = meta.active_branch {
+                        data["active_branch"] = serde_json::Value::String(branch);
+                    }
+                    data["thinking"] = serde_json::json!({
+                        "enabled": meta.thinking.enabled,
+                        "budget_tokens": meta.thinking.budget_tokens,
+                    });
+                }
                 emit(&response_success_with_data(
                     cmd_id.as_deref(),
                     cmd_name,

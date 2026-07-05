@@ -403,3 +403,186 @@ async fn phase8_interactive_abort_shutdown_contract() {
         "harness accepts a new prompt after abort (idle): {result2:?}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Phase 13.4: session metadata slash commands (/name, /label, /unlabel,
+// /session info) parse into typed commands and dispatch through the harness
+// coordinator to durable JSONL entries. Bare /session stays the resume picker.
+// ---------------------------------------------------------------------------
+
+/// Set env var safely (edition 2024 requires unsafe for set_var).
+fn set_sessions_dir(dir: &std::path::Path) {
+    // SAFETY: test-only env var mutation; tests acquire SESSION_MUTEX first.
+    unsafe {
+        std::env::set_var("OPI_SESSIONS_DIR", dir);
+    }
+}
+
+/// Remove env var safely (edition 2024 requires unsafe for remove_var).
+fn clear_sessions_dir() {
+    // SAFETY: test-only env var mutation; tests acquire SESSION_MUTEX first.
+    unsafe {
+        std::env::remove_var("OPI_SESSIONS_DIR");
+    }
+}
+
+fn session_lock() -> std::sync::MutexGuard<'static, ()> {
+    static SESSION_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    // SAFETY: lock guards a process-global env var mutation; held for the
+    // whole test including awaits. No re-entrant acquisition across tests.
+    SESSION_MUTEX
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+#[test]
+fn phase13_session_picker_command_remains_resume_picker() {
+    //! Phase 13.4 acceptance: the metadata-command parser must NOT consume
+    //! bare `/session` (the resume picker trigger) or the other existing
+    //! slash commands. Only `/name <name>`, `/label <label>`, `/unlabel
+    //! <label>`, and the exact form `/session info` parse to a metadata
+    //! command. This is the parser half of DoD scenario
+    //! `phase13-session-name-label-commands`.
+
+    use opi_coding_agent::interactive::{SessionMetadataCommand, parse_session_metadata_command};
+
+    // Metadata commands parse to their typed variants.
+    assert_eq!(
+        parse_session_metadata_command("/name demo-session"),
+        Some(SessionMetadataCommand::Name("demo-session".into()))
+    );
+    assert_eq!(
+        parse_session_metadata_command("/label bug"),
+        Some(SessionMetadataCommand::Label("bug".into()))
+    );
+    assert_eq!(
+        parse_session_metadata_command("/unlabel bug"),
+        Some(SessionMetadataCommand::Unlabel("bug".into()))
+    );
+    assert_eq!(
+        parse_session_metadata_command("/session info"),
+        Some(SessionMetadataCommand::Info)
+    );
+
+    // Bare `/session` is the resume picker trigger — parser returns None so
+    // the existing picker path stays intact (non-regression).
+    assert_eq!(parse_session_metadata_command("/session"), None);
+    // Other existing slash commands are unaffected.
+    assert_eq!(parse_session_metadata_command("/model"), None);
+    assert_eq!(parse_session_metadata_command("/branch"), None);
+    assert_eq!(parse_session_metadata_command("/fork"), None);
+
+    // Empty / whitespace-only args do not parse (rejected before dispatch).
+    assert_eq!(parse_session_metadata_command("/name "), None);
+    assert_eq!(parse_session_metadata_command("/label "), None);
+    assert_eq!(parse_session_metadata_command("/unlabel "), None);
+
+    // Non-slash input is left for the agent.
+    assert_eq!(parse_session_metadata_command("hello world"), None);
+
+    // `/session info extra` is NOT the metadata command (exact form only),
+    // so it falls through to the agent like any other prompt.
+    assert_eq!(parse_session_metadata_command("/session info extra"), None);
+}
+
+#[tokio::test]
+#[allow(clippy::await_holding_lock)]
+async fn phase13_name_label_and_session_info_commands_persist_typed_entries() {
+    //! Phase 13.4 acceptance: dispatching parsed `/name`, `/label`, `/unlabel`,
+    //! and `/session info` commands through `apply_session_metadata_command`
+    //! persists typed `session_info` and `label` entries to the session JSONL
+    //! and the info command surfaces the live metadata. This is the dispatch
+    //! half of DoD scenario `phase13-session-name-label-commands`.
+
+    use opi_agent::session::{LabelAction, SessionEntry, SessionReader};
+    use opi_coding_agent::interactive::{
+        apply_session_metadata_command, parse_session_metadata_command,
+    };
+
+    let _lock = session_lock();
+    let workspace = tempfile::tempdir().unwrap();
+    let sessions = tempfile::tempdir().unwrap();
+    set_sessions_dir(sessions.path());
+
+    let provider = MockProvider::new("mock", vec![test_support::text_response("ok")]);
+    let mut harness = CodingHarness::builder(
+        Box::new(provider),
+        "mock:mock-model".into(),
+        OpiConfig::default(),
+        workspace.path().to_path_buf(),
+    )
+    .build();
+    harness.prompt("seed turn").await.unwrap();
+
+    let jsonl_path = {
+        let session = harness.session().expect("session exists after prompt");
+        let id = session.session_id().to_owned();
+        sessions.path().join(format!("{id}.jsonl"))
+    };
+
+    // Dispatch each metadata command via the parsed form, the way the TUI
+    // dispatcher would.
+    let name_msg = apply_session_metadata_command(
+        &mut harness,
+        parse_session_metadata_command("/name demo").unwrap(),
+    );
+    assert!(
+        name_msg.contains("demo") && !name_msg.contains("failed"),
+        "/name dispatch should report success: {name_msg}"
+    );
+    let label_msg = apply_session_metadata_command(
+        &mut harness,
+        parse_session_metadata_command("/label bug").unwrap(),
+    );
+    assert!(
+        label_msg.contains("bug") && !label_msg.contains("failed"),
+        "/label dispatch should report success: {label_msg}"
+    );
+    let unlabel_msg = apply_session_metadata_command(
+        &mut harness,
+        parse_session_metadata_command("/unlabel bug").unwrap(),
+    );
+    assert!(
+        unlabel_msg.contains("bug") && !unlabel_msg.contains("failed"),
+        "/unlabel dispatch should report success: {unlabel_msg}"
+    );
+
+    let info_msg = apply_session_metadata_command(
+        &mut harness,
+        parse_session_metadata_command("/session info").unwrap(),
+    );
+    assert!(
+        info_msg.contains("demo") && info_msg.contains("name"),
+        "/session info should surface the live name: {info_msg}"
+    );
+
+    // Read back the JSONL and confirm typed entries were persisted.
+    let (_h, entries) = SessionReader::read_all(&jsonl_path).unwrap();
+    let session_info = entries.iter().find_map(|e| match e {
+        SessionEntry::SessionInfo(s) => Some(s.name.clone()),
+        _ => None,
+    });
+    assert_eq!(session_info, Some("demo".to_string()));
+
+    let label_entries: Vec<_> = entries
+        .iter()
+        .filter_map(|e| match e {
+            SessionEntry::Label(l) => Some((l.label.clone(), l.action)),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        label_entries
+            .iter()
+            .any(|(l, a)| l == "bug" && *a == LabelAction::Add),
+        "Add label entry persisted: {label_entries:?}"
+    );
+    assert!(
+        label_entries
+            .iter()
+            .any(|(l, a)| l == "bug" && *a == LabelAction::Remove),
+        "Remove label entry persisted: {label_entries:?}"
+    );
+
+    clear_sessions_dir();
+}

@@ -139,6 +139,25 @@ pub struct RuntimeThinkingState {
     pub budget_tokens: Option<u64>,
 }
 
+/// Aggregated live session metadata (Phase 13.4) surfaced by `/session info`
+/// and RPC `session_info`. Name and labels are UI-visible metadata that never
+/// enter provider context; `active_branch`, `model`, and `thinking` mirror the
+/// current runtime state.
+#[derive(Debug, Clone)]
+pub struct SessionMetadata {
+    /// Latest `session_info` name on the active branch, if any.
+    pub name: Option<String>,
+    /// Active label set on the active branch (Add/Remove applied in append
+    /// order, deduplicated, first-Add order).
+    pub labels: Vec<String>,
+    /// Entry id at the tip of the active branch.
+    pub active_branch: Option<String>,
+    /// Current provider:model spec.
+    pub model: String,
+    /// Current thinking/reasoning configuration.
+    pub thinking: ThinkingConfig,
+}
+
 /// Public metadata for resources discovered by the coding harness.
 #[derive(Debug, Clone, Default, PartialEq, serde::Serialize)]
 pub struct DiscoveredResourceMetadata {
@@ -1026,6 +1045,61 @@ impl CodingHarness {
             _ => return,
         };
         let _ = session.append_thinking_level_change(parsed);
+    }
+
+    /// Set the session name (Phase 13.4 `/name <name>`). Persists a
+    /// `session_info` entry parented to the current content tip without
+    /// advancing it. Best-effort: a failed metadata write does not roll back
+    /// the in-memory name. Returns `Err` if no session is active.
+    pub fn set_session_name(&mut self, name: String) -> Result<(), String> {
+        let session = self
+            .session
+            .as_mut()
+            .ok_or_else(|| "no active session".to_string())?;
+        session
+            .append_session_info(name)
+            .map_err(|e| format!("session name write failed: {e}"))
+    }
+
+    /// Add a label to the active branch (Phase 13.4 `/label <label>`). Persists
+    /// a `label` entry with `Add` action parented to the current content tip
+    /// without advancing it. Best-effort: a failed metadata write does not roll
+    /// back the in-memory label set. Returns `Err` if no session is active.
+    pub fn add_label(&mut self, label: String) -> Result<(), String> {
+        let session = self
+            .session
+            .as_mut()
+            .ok_or_else(|| "no active session".to_string())?;
+        session
+            .append_label(label, opi_agent::session::LabelAction::Add)
+            .map_err(|e| format!("label write failed: {e}"))
+    }
+
+    /// Remove a label from the active branch (Phase 13.4 `/unlabel <label>`).
+    /// Persists a `label` entry with `Remove` action parented to the current
+    /// content tip without advancing it. Returns `Err` if no session is active.
+    pub fn remove_label(&mut self, label: String) -> Result<(), String> {
+        let session = self
+            .session
+            .as_mut()
+            .ok_or_else(|| "no active session".to_string())?;
+        session
+            .append_label(label, opi_agent::session::LabelAction::Remove)
+            .map_err(|e| format!("label write failed: {e}"))
+    }
+
+    /// Aggregate the live session metadata (Phase 13.4 read path) surfaced by
+    /// `/session info` and RPC `session_info`: name, labels, active branch,
+    /// model, and thinking config. Returns `None` when no session is active.
+    pub fn session_metadata(&self) -> Option<SessionMetadata> {
+        let session = self.session.as_ref()?;
+        Some(SessionMetadata {
+            name: session.name().map(str::to_owned),
+            labels: session.labels().to_vec(),
+            active_branch: session.active_branch_id().map(str::to_owned),
+            model: self.agent.model().to_owned(),
+            thinking: self.agent.thinking_config(),
+        })
     }
 
     fn active_model_info(&self) -> Option<ModelInfo> {
