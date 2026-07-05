@@ -9,7 +9,7 @@
 
 ## Status
 
-Current crate version: `0.6.3`, inherited from the workspace package version.
+Current crate version: `0.6.4`, inherited from the workspace package version.
 
 `opi-ai` owns the model/provider layer: request and message types, streaming
 events, model metadata, provider registration, HTTP/proxy plumbing, retry

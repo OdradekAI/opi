@@ -10,24 +10,23 @@
 
 ## Status
 
-The workspace package version in `Cargo.toml` is `0.6.3`. `opi` is usable as a
+The workspace package version in `Cargo.toml` is `0.6.4`. `opi` is usable as a
 terminal coding agent and as a set of Rust crates for embedding agent runtime
 pieces. This checkout may contain unreleased changes on top of the published
-`0.6.3` crates; check [CHANGELOG.md](CHANGELOG.md) for the current delta.
+`0.6.4` crates; check [CHANGELOG.md](CHANGELOG.md) for the current delta.
 
 `opi` reimplements selected pi ideas in Rust. It is not API-compatible with pi,
 does not read pi config by default, and uses its own TOML config and JSONL
 session format.
 
-The published `0.6.3` release includes the Phase 10 provider collection/auth,
-generic-harness, session-facade, and runtime-hook boundary seams plus Phase 11
-tooling-quality work. The current workspace also includes unreleased Phase 12
-provider-correctness changes: existing provider families have fixture-backed
-request, streaming, tool-call, thinking/image, usage, retry, cancellation, and
-error-taxonomy coverage; OpenAI-compatible profile behavior is config-driven
-and documented. Treat wire protocols, extension/package surfaces, trace
-payloads, and Phase 10-12 seams as unstable 0.x unless a crate README explicitly
-says otherwise.
+The published `0.6.4` release includes the Phase 10 provider collection/auth,
+generic-harness, session-facade, and runtime-hook boundary seams, Phase 11
+tooling-quality work, and Phase 12 provider-correctness work: existing provider
+families have fixture-backed request, streaming, tool-call, thinking/image,
+usage, retry, cancellation, and error-taxonomy coverage; OpenAI-compatible
+profile behavior is config-driven and documented. Treat wire protocols,
+extension/package surfaces, trace payloads, and Phase 10-12 seams as unstable
+0.x unless a crate README explicitly says otherwise.
 
 ## Install
 

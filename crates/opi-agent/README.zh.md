@@ -9,7 +9,7 @@
 
 ## 当前状态
 
-当前 crate 版本是 `0.6.3`，继承自 workspace 包版本。
+当前 crate 版本是 `0.6.4`，继承自 workspace 包版本。
 
 `opi-agent` 负责 Agent 主循环和运行时基础能力：工具契约、JSON Schema 参数校验、
 并行/串行工具执行、生命周期 hooks、事件输出、steering/follow-up 队列、会话

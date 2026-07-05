@@ -10,21 +10,21 @@
 
 ## 当前状态
 
-`Cargo.toml` 中的 workspace 包版本是 `0.6.3`。`opi` 既可以作为终端编程
+`Cargo.toml` 中的 workspace 包版本是 `0.6.4`。`opi` 既可以作为终端编程
 Agent 使用，也可以作为一组 Rust crate 嵌入到其他 Agent 运行时中。当前 checkout
-可能包含基于已发布 `0.6.3` crate 的未发布变更；当前差异见
+可能包含基于已发布 `0.6.4` crate 的未发布变更；当前差异见
 [CHANGELOG.md](CHANGELOG.md)。
 
 `opi` 用 Rust 重新实现 pi 的部分思路。它不与 pi API 兼容，默认不读取 pi
 配置，并使用自己的 TOML 配置和 JSONL 会话格式。
 
-已发布的 `0.6.3` 版本包含 Phase 10 的 provider collection/auth、通用 harness、
-session facade 和运行时 hook 边界 seam，以及 Phase 11 工具质量工作。当前
-workspace 还包含未发布的 Phase 12 provider 正确性变更：已有 provider family
-具备 fixture-backed 的 request、streaming、tool-call、thinking/image、usage、
-retry、cancellation 和错误分类覆盖；OpenAI-compatible profile 行为保持配置驱动并
-已文档化。除非 crate README 另有明确说明，wire protocol、extension/package 表面、
-trace payload 以及 Phase 10-12 seam 都应视为不稳定 0.x。
+已发布的 `0.6.4` 版本包含 Phase 10 的 provider collection/auth、通用 harness、
+session facade 和运行时 hook 边界 seam、Phase 11 工具质量工作，以及 Phase 12
+provider 正确性工作：已有 provider family 具备 fixture-backed 的 request、
+streaming、tool-call、thinking/image、usage、retry、cancellation 和错误分类覆盖；
+OpenAI-compatible profile 行为保持配置驱动并已文档化。除非 crate README 另有明确
+说明，wire protocol、extension/package 表面、trace payload 以及 Phase 10-12 seam
+都应视为不稳定 0.x。
 
 ## 安装
 

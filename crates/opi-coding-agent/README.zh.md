@@ -9,7 +9,7 @@
 
 ## 当前状态
 
-当前 crate 版本是 `0.6.3`，继承自 workspace 包版本。
+当前 crate 版本是 `0.6.4`，继承自 workspace 包版本。
 
 本 crate 把 `opi-ai`、`opi-agent` 和 `opi-tui` 连接成终端编程 Agent。它提供：
 

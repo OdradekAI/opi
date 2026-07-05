@@ -9,7 +9,7 @@
 
 ## Status
 
-Current crate version: `0.6.3`, inherited from the workspace package version.
+Current crate version: `0.6.4`, inherited from the workspace package version.
 
 `opi-tui` is a synchronous widget library. Callers own the event loop, async
 runtime, terminal setup, and application state. The crate provides rendering
