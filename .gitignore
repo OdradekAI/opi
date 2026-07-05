@@ -2,15 +2,34 @@
 .repo
 
 # Claude Code local-only state
-.claude
-!.claude/skill/opi-implement
-!.claude/skill/opi-calibrate
-!.claude/skill/opi-audit
-!.claude/skill/opi-remediate
-!.claude/skill/opi-document
-!.claude/skill/opi-release
-!.claude/skill/opi-realign
-.agents
+.claude/*
+!.claude/skills/
+.claude/skills/*
+!.claude/skills/opi-implement/
+!.claude/skills/opi-implement/**
+!.claude/skills/opi-calibrate/
+!.claude/skills/opi-calibrate/**
+!.claude/skills/opi-audit/
+!.claude/skills/opi-audit/**
+!.claude/skills/opi-remediate/
+!.claude/skills/opi-remediate/**
+!.claude/skills/opi-document/
+!.claude/skills/opi-document/**
+!.claude/skills/opi-release/
+!.claude/skills/opi-release/**
+!.claude/skills/opi-realign/
+!.claude/skills/opi-realign/**
+
+# Codex/agent local-only state
+.agents/*
+!.agents/skills/
+.agents/skills/*
+!.agents/skills/opi-implement/
+!.agents/skills/opi-implement/**
+!.agents/skills/opi-release/
+!.agents/skills/opi-release/**
+!.agents/skills/opi-realign/
+!.agents/skills/opi-realign/**
 
 # Secrets / credentials (must never be committed)
 .env

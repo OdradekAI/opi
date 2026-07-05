@@ -17,10 +17,19 @@ The goal is to make opi better at preserving and navigating development work
 over time while staying faithful to pi's terminal-first, append-only session
 model.
 
+Post-Phase-12 drift review refinement: Phase 13 is primarily a core session
+semantics phase, not a CLI convenience phase. Richer entries and context
+reconstruction must be owned by `opi-agent` through the session facade/context
+builder seam from Phase 10. `opi-coding-agent` may expose commands, exports,
+and TUI/RPC feedback, but it must not implement the new semantics through
+ad-hoc product-only JSONL scans or one-off CLI writes.
+
 ## Goals
 
 - Introduce an opi session v2 design where needed, preserving safe migration
   from existing opi v1 sessions.
+- Make `opi-agent` the semantic owner of new session entries, ordered session
+  reads, active-branch reconstruction, and context-building rules.
 - Add richer session entries for model changes, thinking level changes,
   session info, labels, and branch summaries when they are product-supported.
 - Improve tree reconstruction, branch navigation metadata, and context
@@ -40,6 +49,9 @@ model.
 - No session sharing service.
 - No web UI product.
 - No package ecosystem expansion.
+- No provider runtime, provider auth, OAuth, or `ProviderCollection` dispatch
+  refactor. Phase 13 may record provider/model identifiers as session data,
+  but provider routing remains outside this phase.
 
 ## Relationship to pi
 
@@ -58,6 +70,11 @@ leaf pointers, and extension state. It does not yet make pi-inspired branch
 summaries, extension custom messages, labels, or session info first-class in
 context reconstruction. Phase 13 closes that semantic gap without claiming pi
 session v3 file compatibility.
+
+The alignment target is pi's append-only tree/context model, not pi's exact
+TypeScript storage API. Rust crate ownership should remain explicit: core
+session semantics belong in `opi-agent`; product commands, storage location,
+and user presentation belong in `opi-coding-agent`.
 
 ## Session-Native Context Boundary
 
@@ -80,18 +97,34 @@ Not allowed:
 - hidden prompt injection from old sessions;
 - remote context sync.
 
+## Implementation Priority and Crate Boundaries
+
+| Priority | Scope | Owner | Requirement |
+|---|---|---|---|
+| P0 | Session entry types and compatibility rules | `opi-agent` | Define durable typed entries, migration/read behavior, and unknown-entry policy before product commands depend on them. |
+| P0 | Active branch and LLM context reconstruction | `opi-agent` | Provide a deterministic context builder that walks the active branch, applies compaction/branch summaries, and returns agent-runtime messages. |
+| P0 | Production append/load path | `opi-agent`, `opi-coding-agent` | Product commands must append through the session facade or an equivalent ordered writer, not by hand-editing raw JSONL shapes. |
+| P1 | Session metadata commands and local export | `opi-coding-agent` | Commands and export renderers consume typed session reads/context results and apply Phase 7 redaction rules. |
+| P1 | TUI/RPC handoff metadata | `opi-coding-agent` | Expose stable session/tree metadata for Phase 14 without redesigning the TUI in Phase 13. |
+| P2 | Extension custom context messages | `opi-agent`, `opi-coding-agent` | Implement only if provider-context and transcript semantics are clear; otherwise defer explicitly. |
+
+Phase 13 must not close an acceptance scenario by adding helper structs only.
+Each implemented entry needs at least one exercised production path that writes
+or reads it, plus tests for deterministic reconstruction where the entry affects
+LLM context.
+
 ## Session Entry Model
 
 Define or explicitly defer entries for:
 
-| Entry | Purpose |
-|---|---|
-| `model_change` | Record provider/model change on the active branch |
-| `thinking_level_change` | Record reasoning/thinking level change |
-| `session_info` | Store user-visible name and optional metadata |
-| `label` | Bookmark or label an entry |
-| `branch_summary` | Preserve context when leaving or forking a branch |
-| `custom_message` | Extension-injected LLM-context message with display semantics |
+| Entry | Purpose | Phase 13 priority |
+|---|---|---|
+| `session_info` | Store user-visible name and optional metadata | P0 if `/name` or session rename is product-supported |
+| `model_change` | Record provider/model change on the active branch | P0 for resumed run correctness |
+| `thinking_level_change` | Record reasoning/thinking level change | P0 for resumed run correctness |
+| `label` | Bookmark or label an entry | P1; UI-visible, not LLM context |
+| `branch_summary` | Preserve context when leaving or forking a branch | P0 semantics; P1 generation UX |
+| `custom_message` | Extension-injected LLM-context message with display semantics | P2 or explicit defer |
 
 Existing entries for messages, compaction, leaf pointers, and extension state
 remain. Any new entry must have clear context-building semantics and tests.
@@ -112,6 +145,10 @@ session file
   -> apply compaction and branch summaries
   -> produce app messages for agent runtime
 ```
+
+The context builder should live in `opi-agent`. `opi-coding-agent` should call
+it when resuming, exporting, or presenting session context instead of
+duplicating branch-walk logic.
 
 Rules should define:
 
@@ -156,6 +193,9 @@ Export should support:
 - include/exclude thinking content;
 - redaction options using Phase 7 rules.
 
+Export renderers are product-owned. They should consume typed session reads or
+context-builder output, not raw ad-hoc scans that duplicate session semantics.
+
 ## Commands and UI Surface
 
 Candidate commands:
@@ -183,7 +223,8 @@ redesign. Phase 14 can polish interactive presentation.
 ```text
 interactive/session command
   -> SessionCoordinator
-  -> append session entry
+  -> SessionFacade or ordered session writer
+  -> append typed session entry
   -> update active leaf where applicable
   -> emit AgentSessionEvent / diagnostics
   -> TUI or JSON/RPC presentation
@@ -217,6 +258,7 @@ Session operations should prefer recoverability:
 | session storage | new entry round trips, migration, unknown entry behavior |
 | context building | model/thinking changes, compaction, branch summaries |
 | branch tree | labels, session names, active leaf resolution |
+| production path | at least one command/resume/export path exercises each implemented entry class |
 | CLI | list/export/session metadata commands |
 | TUI snapshot | branch picker metadata if touched |
 | redaction | export redaction for prompts, tool output, secrets |
@@ -237,19 +279,24 @@ Update docs to state:
 
 Phase 13 is complete when:
 
-1. Session metadata and context-entry needs are either implemented or
-   explicitly deferred.
-2. New session entries, if added, round-trip and rebuild context
-   deterministically.
-3. Existing opi sessions continue to load.
+1. New session metadata and context entries, if added, are defined in
+   `opi-agent` and reached through a production append/read path.
+2. Context reconstruction is deterministic, tested, and owned by a reusable
+   `opi-agent` session/context API rather than product-only CLI scans.
+3. Existing opi v1 sessions continue to load, with documented compatibility
+   behavior for unknown or future entries.
 4. Branch, label, name, model, thinking, compaction, and summary semantics are
    documented where implemented.
 5. `branch_summary` and `custom_message` are either implemented with
-   provider/context semantics or explicitly deferred with reasons.
-6. Local export supports at least markdown or JSON with redaction options.
-7. Session files are documented as sensitive.
-8. No vector memory, global profile, cloud sync, session sharing service, or pi
-   session compatibility claim is added.
+   provider/context semantics and provider-conversion tests or explicitly
+   deferred with reasons.
+6. Local export supports at least markdown or JSON with redaction options and
+   does not modify the source session.
+7. TUI/RPC handoff metadata is stable enough for Phase 14 without requiring
+   Phase 13 to redesign terminal rendering.
+8. Session files are documented as sensitive.
+9. No vector memory, global profile, cloud sync, session sharing service,
+   provider auth refactor, web UI, or pi session compatibility claim is added.
 
 ## Phase 14 Handoff
 

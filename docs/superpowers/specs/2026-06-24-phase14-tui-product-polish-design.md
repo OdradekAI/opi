@@ -18,9 +18,18 @@ custom TUI component protocol for packages. The primary product remains the
 terminal coding agent. Extension UI/RPC UI sub-protocols and custom renderers
 remain future ecosystem candidates, not Phase 14 scope.
 
+Post-Phase-12 drift review refinement: Phase 14 is a built-in terminal product
+polish phase, not an ecosystem UI phase. It should consume Phase 13 session
+metadata through stable product view models and improve existing workflows
+without adding custom extension UI, web UI parity, provider login flows, or
+package-manager features.
+
 ## Goals
 
 - Improve session and branch navigation using Phase 13 metadata.
+- Introduce or standardize TUI view models at the
+  `opi-coding-agent`/`opi-tui` boundary so widgets do not parse raw session
+  files, provider config, or package manifests directly.
 - Add or refine a command palette for built-in slash commands, package
   commands, session commands, and extension commands where already supported.
 - Polish model/session pickers with search, filtering, metadata, and empty
@@ -43,6 +52,9 @@ remain future ecosystem candidates, not Phase 14 scope.
 - No mouse-first workflows.
 - No package ecosystem expansion.
 - No permission popup subsystem.
+- No session schema or context-reconstruction changes; those belong to Phase
+  13.
+- No provider auth, OAuth, login UX, or `ProviderCollection` runtime refactor.
 
 ## Relationship to pi
 
@@ -54,6 +66,26 @@ correct Rust-native base.
 Workflow-heavy UI, custom overlays, and extension-rendered widgets should remain
 future design topics. Phase 14 focuses on built-in product polish while keeping
 a clear future path for RPC/dialog/fire-and-forget extension UI surfaces.
+
+If Phase 13 metadata is incomplete, Phase 14 should show stable fallback UI or
+defer the dependent polish rather than inventing parallel session semantics in
+the TUI layer.
+
+## Implementation Priority and Crate Boundaries
+
+| Priority | Scope | Owner | Requirement |
+|---|---|---|---|
+| P0 | View models for session, branch, transcript, status, and commands | `opi-coding-agent` | Aggregate runtime/session/provider/package state into stable UI-facing structs. |
+| P0 | Pure rendering widgets and layout behavior | `opi-tui` | Render view models with deterministic layout and snapshot coverage; do not read session files or product config directly. |
+| P0 | Session/branch UI over Phase 13 metadata | `opi-coding-agent`, `opi-tui` | Display names, labels, active branch, summaries, model/thinking metadata, and recovery states from Phase 13 APIs. |
+| P1 | Command palette and picker polish | `opi-coding-agent`, `opi-tui` | Discover and dispatch only commands that already exist in product/runtime registries. |
+| P1 | Transcript/status/accessibility polish | `opi-tui` | Improve rendering, focus, no-color, CJK width, and narrow-terminal behavior. |
+| P2 | Theme and cosmetic refinement | `opi-tui` | Refine existing theme surfaces without introducing a new terminal framework. |
+
+Phase 14 must not satisfy product acceptance with isolated widget snapshots
+only. Workflows such as command discovery, branch selection, or model picker
+metadata need a production path from runtime/session state through the view
+model into the rendered widget.
 
 ## Product Surfaces
 
@@ -84,6 +116,9 @@ Add or refine a command palette that can show:
 
 The palette should not imply unsupported commands such as npm install, package
 update, or web-ui features.
+
+Commands unavailable because their backing runtime feature is out of scope
+should be hidden or clearly absent, not shown as disabled roadmap items.
 
 ### Pickers
 
@@ -145,7 +180,7 @@ Requirements:
 
 ```text
 runtime/session state
-  -> TUI view model
+  -> coding-agent view model
   -> picker/transcript/status renderers
   -> snapshot-tested terminal output
 ```
@@ -175,6 +210,7 @@ features, invalid Unicode width cases, or missing image dimensions.
 
 | Level | Coverage |
 |---|---|
+| view model | session/branch/status/command metadata assembled from production runtime state |
 | snapshot | branch picker, session picker, command palette, transcript, status bar |
 | unit | text wrapping, truncation, CJK width, keybinding resolution |
 | integration | command palette dispatch to existing commands |
@@ -202,19 +238,23 @@ If English user docs change, update localized counterparts in the same change.
 
 Phase 14 is complete when:
 
-1. Session and branch UI reflects Phase 13 metadata.
+1. Session and branch UI reflects Phase 13 metadata through a stable
+   coding-agent view model, not direct raw session parsing in widgets.
 2. Command discovery covers built-in and already-registered extension commands
    without advertising unsupported ecosystem features.
 3. Model/session/branch pickers handle search, empty states, CJK labels, and
-   narrow terminals.
+   narrow terminals through deterministic, snapshot-tested layouts.
 4. Transcript rendering for markdown, diffs, images, tool calls, diagnostics,
    thinking, and summaries has focused snapshot coverage.
 5. Status UI exposes model, thinking, tools, queue state, and degraded adapter
    state without relying only on color.
-6. `NO_COLOR`, CJK width, keyboard-only operation, and terminal fallback
+6. Production workflows exercise key view-model-to-widget paths for command
+   discovery, session/branch selection, and status feedback.
+7. `NO_COLOR`, CJK width, keyboard-only operation, and terminal fallback
    behavior are documented and tested where practical.
-7. No web-ui parity, custom TUI adapter protocol, permission popup subsystem,
-   or package ecosystem expansion is added.
+8. No session schema changes, provider auth/login work, web-ui parity, custom
+   TUI adapter protocol, permission popup subsystem, or package ecosystem
+   expansion is added.
 
 ## Ecosystem Handoff
 
