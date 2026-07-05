@@ -193,10 +193,21 @@ run 返回 `Err(AgentError::Cancelled)` 的 turn 根本不会被持久化，因�
 
 会话存储使用 append-only JSONL：
 
-- 第一行：`SessionHeader`。
+- 第一行：`SessionHeader`（第 13 阶段保持 `version = 1`）。
 - 条目：`MessageEntry`、`CompactionEntry`、`LeafEntry` 和 `ExtensionStateEntry`
   （`SessionEntry` 枚举为 `#[non_exhaustive]`；0.x 内可能新增附加变体）。
-- Reader 恢复时会跳过损坏条目和末尾截断行。
+- 第 13 阶段在 v1 头部上的增补类型条目：`SessionInfoEntry`（`session_info`）、
+  `ModelChangeEntry`（`model_change`）、`ThinkingLevelChangeEntry`
+  （`thinking_level_change`）、`LabelEntry`（`label`）和
+  `BranchSummaryEntry`（`branch_summary`）。元数据条目（`session_info`、
+  `model_change`、`thinking_level_change`、`label`）不推进内容 tip，也不进入
+  provider 上下文；`branch_summary` 由 `session_context::reconstruct_context`
+  作为 metadata-parented 消息注入重建的 LLM 上下文。
+- `custom_message` 推迟：第 13 阶段不提供 `custom_message` 写入器，并在读取时把未知
+  `custom_message` 条目当作其他未知未来条目处理。
+- Reader 恢复区分损坏的中间条目（畸形 JSON 或缺少必需字段，作为诊断上报）与未知未来
+  条目类型（格式良好的 JSON 但 `type` 无法识别，读取时保留并从上下文重建中排除），
+  并跳过末尾截断行。
 - `session_branch::SessionTree` 根据 `parent_id` 链接和最新 `LeafEntry` 重建活跃分支。
 
 压缩基础能力包括 threshold/manual/overflow 原因、

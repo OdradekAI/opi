@@ -90,6 +90,13 @@ opi --allow-mutating "更新 README。"
 | `--resume <ID>` | 恢复已保存会话。 |
 | `--fork <ID>` | fork 已保存会话为新会话。 |
 | `--delete-session <ID>` | 删除已保存会话并退出。 |
+| `--export-session <ID\|PATH>` | 把会话导出为 markdown 或 JSON 到本地文件。 |
+| `--format <md\|json>` | `--export-session` 的输出格式。 |
+| `--output <FILE>` | `--export-session` 的输出路径。 |
+| `--full-tree` | 导出完整会话树，而非仅活跃分支。 |
+| `--exclude-tool-output` | 从导出中省略工具输出。 |
+| `--exclude-thinking` | 从导出中省略思考内容。 |
+| `--redact <summary\|verbose\|none>` | `--export-session` 的第 7 阶段脱敏模式。 |
 | `--generate-completion <SHELL>` | 为 `bash`、`zsh`、`fish`、`powershell` 或 `elvish` 生成补全。 |
 | `--trace <PATH>` | 为非交互/JSON 运行写入可选的、已脱敏本地 trace envelope。 |
 | `doctor [--json] [--scope ...]` | 本地、无网络健康检查。 |
@@ -236,6 +243,10 @@ inline 结果；四个导航工具都会在访问 10,000 个条目后停止遍�
 |------|------|
 | `/model` | 打开当前 Provider 的模型选择器。 |
 | `/session` | 打开会话选择器。 |
+| `/session info` | 显示会话名称、标签、活跃分支、模型与思考元数据。 |
+| `/name <name>` | 设置当前会话的类型化名称（`session_info` 条目）。 |
+| `/label <label>` | 为当前会话添加标签（`label` 条目）。 |
+| `/unlabel <label>` | 移除当前会话的某个标签。 |
 | `/branch` | 打开分支选择器。 |
 | `/tree` | 打开会话树选择器。 |
 | `/fork` | 把当前活跃分支 fork 成新的父子会话。 |

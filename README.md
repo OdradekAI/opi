@@ -193,7 +193,10 @@ Sessions are append-only JSONL files written automatically.
 | Windows | `%LOCALAPPDATA%\opi\sessions\` |
 | Unix | `~/.local/share/opi/sessions/` |
 
-Use `OPI_SESSIONS_DIR` to override the location.
+Use `OPI_SESSIONS_DIR` to override the location. Session files are sensitive
+(they hold prompts, tool output, and possibly leaked secrets); Phase 13 keeps
+the v1 header with additive typed entries, and `opi --export-session` performs
+local, redacted export only.
 
 ## Workspace Crates
 

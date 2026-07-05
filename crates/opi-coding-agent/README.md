@@ -96,6 +96,13 @@ Run `opi --help` for the exact current surface. Important commands and flags:
 | `--resume <ID>` | Resume a stored session. |
 | `--fork <ID>` | Fork a stored session into a new session. |
 | `--delete-session <ID>` | Delete a stored session and exit. |
+| `--export-session <ID\|PATH>` | Export a session as markdown or JSON to a local file. |
+| `--format <md\|json>` | Output format for `--export-session`. |
+| `--output <FILE>` | Output path for `--export-session`. |
+| `--full-tree` | Export the full session tree, not just the active branch. |
+| `--exclude-tool-output` | Omit tool output from the export. |
+| `--exclude-thinking` | Omit thinking content from the export. |
+| `--redact <summary\|verbose\|none>` | Phase 7 redaction mode for `--export-session`. |
 | `--generate-completion <SHELL>` | Generate completion for `bash`, `zsh`, `fish`, `powershell`, or `elvish`. |
 | `--trace <PATH>` | Write an opt-in, redacted local trace envelope for a non-interactive/JSON run. |
 | `doctor [--json] [--scope ...]` | Local, network-free health check. |
@@ -250,6 +257,10 @@ With no prompt args, `opi` starts the ratatui TUI. Slash commands include:
 |---------|--------|
 | `/model` | Open the model picker for the active provider. |
 | `/session` | Open the session picker. |
+| `/session info` | Show session name, labels, active branch, model, and thinking metadata. |
+| `/name <name>` | Set the active session's typed name (`session_info` entry). |
+| `/label <label>` | Add a label to the active session (`label` entry). |
+| `/unlabel <label>` | Remove a label from the active session. |
 | `/branch` | Open the branch picker. |
 | `/tree` | Open the session tree picker. |
 | `/fork` | Fork the active branch into a new parented session. |

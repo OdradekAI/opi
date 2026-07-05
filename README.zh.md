@@ -188,7 +188,9 @@ provider 模块。只有 wire、auth、streaming、tool、image 或能力语义�
 | Windows | `%LOCALAPPDATA%\opi\sessions\` |
 | Unix | `~/.local/share/opi/sessions/` |
 
-可用 `OPI_SESSIONS_DIR` 覆盖该位置。
+可用 `OPI_SESSIONS_DIR` 覆盖该位置。会话文件属于敏感内容（其中包含提示词、工具输出，
+以及可能的泄露密钥）；第 13 阶段在 v1 头部上增补类型条目，`opi --export-session`
+仅执行本地、已脱敏的导出。
 
 ## Workspace Crates
 

@@ -815,7 +815,7 @@ opi 的会话格式是**Rust 原生**的仅追加 JSONL 树。它是一种独立
 {"type":"compaction","id":"c3d4e5f6","parent_id":"b2c3d4e5","timestamp":"2026-05-20T13:00:00Z","summary":"The session inspected CLI scaffolding.","first_kept_entry_id":"b2c3d4e5","tokens_before":45000,"tokens_after":8000}
 ```
 
-会话条目类型分为当前 v1 表面和第 13 阶段 v2 目标。第 13 阶段可以引入 `version = 2`，但必须保持 v1 文件可读，并且不得把自动迁移命令作为正常 resume 的前置条件。
+会话条目类型分为 v1 表面和第 13 阶段的增补条目。第 13 阶段保留头部 **版本 1**；新增的 metadata/context 条目是**增补**的，opi 在 v1 文件上直接读取它们，无需把自动迁移作为正常 resume 的前置条件。v1 会话保持可读和可恢复。
 
 | 类型 | 状态 | 用途 | LLM 上下文 |
 |---|---|---|---|
@@ -823,21 +823,23 @@ opi 的会话格式是**Rust 原生**的仅追加 JSONL 树。它是一种独立
 | `compaction` | v1 | 摘要加首个保留的条目 | 是 |
 | `leaf` | v1 | 当前分支指针 | 否 |
 | `extension_state` | v1 | 持久化扩展状态 | 否 |
-| `session_info` | 第 13 阶段 v2 目标 | 会话名称和元数据 | 否 |
-| `model_change` | 第 13 阶段 v2 目标 | 选择的供应商/模型已更改 | 否 |
-| `thinking_level_change` | 第 13 阶段 v2 目标 | 思考级别已更改 | 否 |
-| `label` | 第 13 阶段 v2 目标 | 用户标记或书签 | 否 |
-| `branch_summary` | 第 13 阶段 v2 目标 | 用于 tree/context 重建的父分支摘要 | 是 |
-| `custom_message` | 第 13 阶段 v2 目标 | 扩展提供的上下文消息 | 可配置 |
+| `session_info` | 第 13 阶段（在 v1 上增补） | 会话名称和元数据 | 否 |
+| `model_change` | 第 13 阶段（在 v1 上增补） | 选择的供应商/模型已更改 | 否 |
+| `thinking_level_change` | 第 13 阶段（在 v1 上增补） | 思考级别已更改 | 否 |
+| `label` | 第 13 阶段（在 v1 上增补） | 用户标记或书签 | 否 |
+| `branch_summary` | 第 13 阶段（在 v1 上增补） | 用于 tree/context 重建的父分支摘要 | 是 |
+| `custom_message` | 推迟 | 扩展提供的上下文消息 | 可配置 |
 
 第 13 阶段成功标准：
 
-- 当需要 v2 条目时，新写入使用选定的 session v2 形状；
+- 当需要这些条目时，新写入使用 v1 头部上的增补第 13 阶段条目（头部版本号保持 1）；
 - v1 session 仍可读取和恢复；
 - 当存在 label、name、model change、thinking change、branch summary 和 custom message 时，分支重建、`--list-sessions`、resume、fork、clone 和 tree 视图行为确定；
-- 合约测试覆盖 v1 fixture、v2 fixture、不完整最后一行、损坏的中间条目、活跃 leaf 重建，以及 branch-summary context 重建。
+- 合约测试覆盖 v1 fixture、增补第 13 阶段条目 fixture、不完整最后一行、损坏的中间条目、未知未来条目类型、活跃 leaf 重建，以及 branch-summary context 重建。
 
-崩溃恢复可以忽略不完整的最后一行。损坏的中间条目应当被报告；自动跳过中间条目应要求显式恢复模式。
+崩溃恢复可以忽略不完整的最后一行。损坏的中间条目（畸形 JSON 或缺少必需字段）应当作为诊断报告；自动跳过中间条目应要求显式恢复模式。未知的未来条目类型——格式良好的 JSON 但其 `type` 字段无法识别——在读取时保留并从上下文重建中排除，因此较新的写入器不会破坏较旧的读取器；读取器把未知未来条目与损坏中间条目分开，便于在诊断中区分二者。
+
+会话文件是敏感内容：它们包含提示词、工具输出、模型与思考选择，以及可能的泄露密钥。本地导出（`opi --export-session <id-or-path> --format markdown|json --output <file>`）渲染活跃分支或完整树，应用第 7 阶段的脱敏模式，并可通过 include/exclude 标志省略工具输出或思考内容。导出是本地且用户可控的：它只写入请求的输出文件，并在成功或失败时保持源会话不变。交互式 `/export` 以及任何 web/share/会话发布路径都推迟到后续产品打磨。
 
 会话 fork 命令会创建新的会话文件。新 header 的 `parent_session` 字段指向源会话 ID，复制的条目来自与 resume 相同的活跃分支重建路径。Fork 绝不能改写源会话文件。
 
@@ -1308,11 +1310,36 @@ Phase 12 非目标（不得作为当前核心行为出现）：OAuth 登录流�
 
 ### 第十三阶段 - 会话树与上下文重建
 
-状态：计划中；由原第十一阶段重排而来。
+状态：已实现基底及产品路径；由原第十一阶段重排而来。
 
-第十三阶段在第十阶段定义 generic harness/session facade 语义后深化 session-native context。它可以为 session metadata、model/thinking changes、labels、branch summaries 和 custom messages 增加 v2 条目，同时保持 v1 文件可读。Export 是本地文件；web/share/session publishing 仍是未来生态范围。
+第十三阶段在第十阶段定义的 generic harness/session facade 语义之上深化 session-native context。它为会话元数据（`session_info`）、模型与思考变更（`model_change`、`thinking_level_change`）、标签（`label`）以及分支摘要（`branch_summary`）增加增补类型条目，同时保持 v1 文件可读且头部版本号保持 1。`custom_message` 推迟（见下）。导出为本地文件；web/share/session publishing 仍是未来生态范围。
+
+已实现条目及其产品路径：
+
+- `session_info`、`label` —— 交互式 `/name`、`/label`、`/unlabel`、`/session info`，RPC `session_info`，以及 `--list-sessions --json`（第 13.4 阶段）。
+- `model_change`、`thinking_level_change` —— 空闲态 `set_model_validated` 与 `set_thinking_level` 通过 `SessionCoordinator` 追加，且不推进活跃 leaf；resume 在兼容时应用记录值（第 13.3 阶段）。
+- `branch_summary` —— `opi-agent::session_context::reconstruct_context` 把父分支摘要作为 metadata-parented 消息注入重建的 LLM 上下文（第 13.2 阶段基底）。
+
+显式决策与推迟（每条均引用第 13 阶段设计）：
+
+- `branch_summary` 仅作为上下文重建基底实现。其生成 UX 触发器——分支切换、fork、手动命令、扩展钩子——推迟到第 14 阶段终端/产品打磨；第 13 阶段不在这些触发器上自动生成分支摘要。
+- `custom_message` 的 provider-context 语义被推迟：扩展提供的上下文消息的 provider 转换与 transcript 规则尚未规定，因此第 13 阶段不提供 `custom_message` 写入器，并在读取时把未知 `custom_message` 条目当作其他未知未来条目处理。
+- 交互式 `/export` 推迟到第 14 阶段终端命令表面打磨；第 13 阶段仅提供本地 `--export-session` CLI。
 
 Phase 13 交接：会话工作可以依赖经由共享 `opi-ai` 类型传递的 provider-correct usage、model、thinking 和 error 数据，而无需依赖 provider 专用内部实现。
+
+第 13 阶段非目标（记录为推迟，不属于当前核心）：
+
+- 不声明向量数据库。
+- 不声明语义记忆服务。
+- 不声明全局用户画像记忆。
+- 不声明跨项目记忆注入。
+- 不声明 pi session v3 读写兼容性。
+- 不声明云同步。
+- 不声明会话分享服务。
+- 不声明 Web UI 产品。
+- 不声明包生态扩张。
+- 不声明 provider 运行时、provider 鉴权、OAuth 或 `ProviderCollection` 调度重构。
 
 ### 第十四阶段 - TUI 产品打磨
 

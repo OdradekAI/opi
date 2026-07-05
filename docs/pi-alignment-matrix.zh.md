@@ -144,8 +144,8 @@
 | 低层 agent loop | 完整 | Event order、tool scheduling、hooks、queues 和 cancellation 语义已实现并测试。 | 以第 8 阶段契约作为回归门。 |
 | 有状态 `Agent` wrapper | 完整 | Prompt/continue/abort/subscribe 和 queue behavior 已存在。 | 除非后续稳定化，否则保持 0.x API。 |
 | 通用 `AgentHarness` | 部分 | `CodingHarness` 目前拥有大量可比的编排行为。 | 第 10 阶段在 `opi-agent` 定义 generic harness phases、snapshots、save points、busy guards 和 runtime mutation semantics。 |
-| Session storage | 部分 | Append-only JSONL、resume/list/delete/fork、branch `parent_id`、`leaf`、compaction 和 extension state 已存在。 | 第 10 阶段定义 session facade；第 13 阶段增加更丰富的 context entries。 |
-| Pending session write ordering | 部分 | Generic harness/session facade 缝合点已暴露有序 pending-write 行为，但产品 session 采用仍是部分完成。 | 第 13 阶段应建立在该缝合点之上增加更丰富 entries，并保持 ordering contract tests。 |
+| Session storage | 部分 | Append-only JSONL、resume/list/delete/fork、branch `parent_id`、`leaf`、compaction、extension state，以及第 13 阶段在 v1 头部上的增补类型条目（`session_info`、`model_change`、`thinking_level_change`、`label`、`branch_summary`）已存在；`custom_message` 推迟。 | 第 10 阶段定义 session facade；第 13 阶段已实现更丰富的 context entries。`branch_summary` 生成 UX 与交互式 `/export` 推迟到第 14 阶段。 |
+| Pending session write ordering | 部分 | Generic harness/session facade 缝合点已暴露有序 pending-write 行为，但产品 session 采用仍是部分完成。 | 第 13 阶段建立在该缝合点之上增加更丰富 entries，并保持 ordering contract tests。 |
 | Compaction | 完整 | Threshold/manual/overflow primitives 和 session events 已存在。 | 保持 branch-aware compaction tests。 |
 | Extension trait/hooks/state | 部分 | Rust in-process extension API 和 process adapter bridge 已存在。 | 保持狭窄；未来 provider/UI/session lifecycle hooks 需要单独设计。 |
 

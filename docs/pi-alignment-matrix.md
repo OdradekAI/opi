@@ -207,8 +207,8 @@ with the older `.repo/pi-0.75.3` baseline.
 | Low-level agent loop | Full | Event order, tool scheduling, hooks, queues, and cancellation semantics are implemented and tested. | Keep Phase 8 contracts as regression gates. |
 | Stateful `Agent` wrapper | Full | Prompt/continue/abort/subscribe and queue behavior exist. | Preserve API as 0.x unless later stabilized. |
 | Generic `AgentHarness` | Partial | `CodingHarness` owns much of the comparable orchestration. | Phase 10 should define generic harness phases, snapshots, save points, busy guards, and runtime mutation semantics in `opi-agent`. |
-| Session storage | Partial | Append-only JSONL, resume/list/delete/fork, branch `parent_id`, `leaf`, compaction, and extension state exist. | Phase 10 defines session facade; Phase 13 adds richer context entries. |
-| Pending session write ordering | Partial | Generic harness/session facade seams expose ordered pending-write behavior, but product session adoption remains partial. | Phase 13 should build richer entries on the seam and keep ordering contract tests. |
+| Session storage | Partial | Append-only JSONL, resume/list/delete/fork, branch `parent_id`, `leaf`, compaction, extension state, and Phase 13 additive typed entries (`session_info`, `model_change`, `thinking_level_change`, `label`, `branch_summary`) on the v1 header exist; `custom_message` is deferred. | Phase 10 defined the session facade; Phase 13 implemented richer context entries. `branch_summary` generation UX and interactive `/export` are deferred to Phase 14. |
+| Pending session write ordering | Partial | Generic harness/session facade seams expose ordered pending-write behavior, but product session adoption remains partial. | Phase 13 builds richer entries on the seam and keeps ordering contract tests. |
 | Compaction | Full | Threshold/manual/overflow primitives and session events exist. | Keep branch-aware compaction tests. |
 | Extension trait/hooks/state | Partial | Rust in-process extension API and process adapter bridge exist. | Keep narrow; future provider/UI/session lifecycle hooks need separate designs. |
 

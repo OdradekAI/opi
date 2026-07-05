@@ -903,10 +903,11 @@ Subsequent lines are tree entries:
 {"type":"compaction","id":"c3d4e5f6","parent_id":"b2c3d4e5","timestamp":"2026-05-20T13:00:00Z","summary":"The session inspected CLI scaffolding.","first_kept_entry_id":"b2c3d4e5","tokens_before":45000,"tokens_after":8000}
 ```
 
-Session entry types are separated into the current v1 surface and the Phase 13
-v2 target. Phase 13 may introduce `version = 2`, but it MUST keep v1 files
-readable and MUST NOT require an automatic migration command as a precondition
-for normal resume.
+Session entry types are separated into the v1 surface and the Phase 13
+additive entries. Phase 13 keeps header **version 1**; the new metadata/context
+entries are **additive** and opi reads them on v1 files. Phase 13 requires
+no automatic migration as a precondition for normal resume. v1 sessions remain
+readable and resumable.
 
 | Type | Status | Purpose | LLM context |
 |---|---|---|---|
@@ -914,25 +915,42 @@ for normal resume.
 | `compaction` | v1 | summary plus first kept entry | yes |
 | `leaf` | v1 | current branch pointer | no |
 | `extension_state` | v1 | persisted extension state | no |
-| `session_info` | Phase 13 v2 target | session name and metadata | no |
-| `model_change` | Phase 13 v2 target | selected provider/model changed | no |
-| `thinking_level_change` | Phase 13 v2 target | thinking level changed | no |
-| `label` | Phase 13 v2 target | user marker or bookmark | no |
-| `branch_summary` | Phase 13 v2 target | parent branch summary used by tree/context reconstruction | yes |
-| `custom_message` | Phase 13 v2 target | extension-provided context message | configurable |
+| `session_info` | Phase 13 (additive on v1) | session name and metadata | no |
+| `model_change` | Phase 13 (additive on v1) | selected provider/model changed | no |
+| `thinking_level_change` | Phase 13 (additive on v1) | thinking level changed | no |
+| `label` | Phase 13 (additive on v1) | user marker or bookmark | no |
+| `branch_summary` | Phase 13 (additive on v1) | parent branch summary used by tree/context reconstruction | yes |
+| `custom_message` | deferred | extension-provided context message | configurable |
 
 Phase 13 success criteria:
 
-- new writes use the chosen session v2 shape when v2 entries are needed;
+- new writes use the additive Phase 13 entries on the v1 header when those
+  entries are needed (header version stays 1);
 - v1 sessions remain readable and resumable;
 - branch reconstruction, `--list-sessions`, resume, fork, clone, and tree views
   have deterministic behavior when labels, names, model changes, thinking
   changes, branch summaries, and custom messages are present;
-- contract tests cover v1 fixtures, v2 fixtures, truncated final lines, corrupt
-  middle entries, active leaf reconstruction, and branch-summary context
-  reconstruction.
+- contract tests cover v1 fixtures, additive Phase 13 entry fixtures, truncated
+  final lines, corrupt middle entries, unknown future entry types, active leaf
+  reconstruction, and branch-summary context reconstruction.
 
-Crash recovery MAY ignore an incomplete final line. Corrupt middle entries SHOULD be reported; automatic skipping of middle entries should require explicit recovery mode.
+Crash recovery MAY ignore an incomplete final line. Corrupt middle entries
+(malformed JSON or missing required fields) SHOULD be reported as diagnostics
+and automatic skipping of middle entries should require explicit recovery
+mode. Unknown future entry types — well-formed JSON whose `type` field is not
+recognized — are preserved on read and excluded from context reconstruction, so
+newer writers do not break older readers; the reader splits unknown future
+entries from corrupt middle entries so the two cases are distinguishable in
+diagnostics.
+
+Session files are sensitive: they contain prompts, tool outputs, model and
+thinking selections, and potentially leaked secrets. Local export
+(`opi --export-session <id-or-path> --format markdown|json --output <file>`)
+renders the active branch or full tree, applies Phase 7 redaction modes, and
+may omit tool output or thinking content via include/exclude flags. Export is
+local and user-controlled; it writes only the requested output file and leaves
+the source session unchanged on success or failure. Interactive `/export` and
+any web/share/session-publishing path are deferred to later product polish.
 
 Session fork commands create a new session file. The new header's
 `parent_session` field points at the source session ID, and the copied entries
@@ -1535,17 +1553,58 @@ when any turn has unknown usage or when pricing is unknown.
 
 ### Phase 13 - Session Tree and Context Reconstruction
 
-Status: planned; recast from the previous Phase 11.
+Status: implemented substrate plus product paths; recast from the previous
+Phase 11.
 
-Phase 13 deepens session-native context after Phase 10 defines generic
-harness/session facade semantics. It may add v2 entries for session metadata,
-model/thinking changes, labels, branch summaries, and custom messages while
-keeping v1 files readable. Exports are local files; web/share/session
-publishing remains future ecosystem scope.
+Phase 13 deepens session-native context on top of the Phase 10 generic
+harness/session facade semantics. It adds additive typed entries for session
+metadata (`session_info`), model and thinking changes (`model_change`,
+`thinking_level_change`), labels (`label`), and branch summaries
+(`branch_summary`) while keeping v1 files readable and header version 1.
+`custom_message` is deferred (see below). Exports are local files;
+web/share/session publishing remains future ecosystem scope.
+
+Implemented entries and their production paths:
+
+- `session_info`, `label` — interactive `/name`, `/label`, `/unlabel`,
+  `/session info`, RPC `session_info`, and `--list-sessions --json` (Phase 13.4).
+- `model_change`, `thinking_level_change` — idle `set_model_validated` and
+  `set_thinking_level` append through `SessionCoordinator` without advancing
+  the active leaf; resume applies recorded values when compatible (Phase 13.3).
+- `branch_summary` — `opi-agent::session_context::reconstruct_context` injects
+  a parent branch summary into reconstructed LLM context as a metadata-parented
+  message (Phase 13.2 substrate).
+
+Explicit decisions and deferrals (each cited to the Phase 13 design):
+
+- `branch_summary` is implemented as a context-reconstruction substrate only.
+  Its generation UX triggers — branch switch, fork, manual command, extension
+  hook — are deferred to Phase 14 terminal/product polish; Phase 13 does not
+  auto-generate branch summaries on these triggers.
+- `custom_message` provider-context semantics are deferred: provider conversion
+  and transcript rules for extension-provided context messages are not specified
+  yet, so Phase 13 ships no `custom_message` writer and treats unknown
+  `custom_message` entries like other unknown future entries on read.
+- Interactive `/export` is deferred to Phase 14 terminal command-surface
+  polish; Phase 13 ships the local `--export-session` CLI only.
 
 Phase 13 handoff: session work may rely on provider-correct usage, model,
 thinking, and error data through the shared `opi-ai` types, without depending
 on provider-specific internals.
+
+Phase 13 non-goals (documented as deferred, not current core):
+
+- No vector database.
+- No semantic memory service.
+- No global user profile memory.
+- No automatic cross-project memory injection.
+- opi does not claim pi session v3 read/write file compatibility.
+- No cloud sync.
+- No session sharing service.
+- No web UI product.
+- No package ecosystem expansion.
+- No provider runtime, provider auth, OAuth, or `ProviderCollection` dispatch
+  refactor.
 
 ### Phase 14 - TUI Product Polish
 
