@@ -771,6 +771,61 @@ data: {"type":"response.completed","response":{"id":"resp_mixed","model":"gpt-4o
 }
 
 #[tokio::test]
+async fn responses_text_after_tool_reports_actual_content_index() {
+    let provider = responses_provider("key");
+    let sse = r#"event: response.created
+data: {"type":"response.created","response":{"id":"resp_mixed_index","model":"gpt-4o"}}
+
+event: response.output_item.added
+data: {"type":"response.output_item.added","output_index":0,"item":{"type":"function_call","id":"fc_1","call_id":"call_1","name":"read_file","arguments":""}}
+
+event: response.function_call_arguments.delta
+data: {"type":"response.function_call_arguments.delta","output_index":0,"item_id":"fc_1","call_id":"call_1","delta":"{\"path\":\"a.rs\"}"}
+
+event: response.output_item.done
+data: {"type":"response.output_item.done","output_index":0,"item":{"type":"function_call","id":"fc_1","call_id":"call_1","name":"read_file","arguments":"{\"path\":\"a.rs\"}"}}
+
+event: response.output_item.added
+data: {"type":"response.output_item.added","output_index":1,"item":{"type":"message","status":"in_progress","role":"assistant","content":[]}}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","output_index":1,"content_index":0,"delta":"ok"}
+
+event: response.output_item.done
+data: {"type":"response.output_item.done","output_index":1,"item":{"type":"message","status":"completed","role":"assistant","content":[{"type":"output_text","text":"ok"}]}}
+
+event: response.completed
+data: {"type":"response.completed","response":{"id":"resp_mixed_index","model":"gpt-4o","usage":{"input_tokens":1,"output_tokens":2}}}
+
+"#;
+
+    let events = collect_stream(provider.stream_from_sse(sse, CancellationToken::new())).await;
+    let text_indexes: Vec<_> = events
+        .iter()
+        .filter_map(|event| match event {
+            AssistantStreamEvent::TextStart { content_index, .. }
+            | AssistantStreamEvent::TextDelta { content_index, .. }
+            | AssistantStreamEvent::TextEnd { content_index, .. } => Some(*content_index),
+            _ => None,
+        })
+        .collect();
+    let done_content_len = events
+        .iter()
+        .find_map(|event| match event {
+            AssistantStreamEvent::Done { message, .. } => Some(message.content.len()),
+            _ => None,
+        })
+        .expect("Done event");
+
+    assert_eq!(
+        text_indexes,
+        vec![1, 1, 1],
+        "text lifecycle events must point at the text block after the preceding tool call"
+    );
+    assert_eq!(done_content_len, 2);
+}
+
+#[tokio::test]
 async fn responses_completed_closes_unfinished_tool_call_before_done() {
     let provider = responses_provider("key");
     let sse = r#"event: response.created

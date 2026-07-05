@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - `opi-ai`: OpenAI Responses tool-call deltas and item completion now route by output item identity instead of the last observed tool call.
+- `opi-ai`: OpenAI Responses text lifecycle events now report the actual content index when text follows a tool call.
 - `opi-ai`: Bedrock HTTP streaming now flushes a pending terminal `Done` event when metadata is absent.
 - `opi-agent`: provider-returned cancellations now surface as `AgentError::Cancelled`.
 - `opi-agent`: compaction and session-persistence public events redact secret-looking error text.

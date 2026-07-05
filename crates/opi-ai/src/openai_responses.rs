@@ -372,6 +372,7 @@ pub struct ResponsesMapper {
     partial: AssistantMessage,
     saw_done: bool,
     text_started: bool,
+    text_content_index: Option<usize>,
     tool_calls: Vec<ToolCallState>,
 }
 
@@ -381,6 +382,7 @@ impl ResponsesMapper {
             partial: empty_assistant_message(provider),
             saw_done: false,
             text_started: false,
+            text_content_index: None,
             tool_calls: Vec::new(),
         }
     }
@@ -420,11 +422,15 @@ impl ResponsesMapper {
                         let mut events = Vec::new();
                         if self.text_started {
                             self.text_started = false;
+                            let content_index = self
+                                .text_content_index
+                                .take()
+                                .unwrap_or_else(|| self.partial.content.len().saturating_sub(1));
                             if let Some(AssistantContent::Text { text }) =
-                                self.partial.content.last()
+                                self.partial.content.get(content_index)
                             {
                                 events.push(AssistantStreamEvent::TextEnd {
-                                    content_index: 0,
+                                    content_index,
                                     content: text.clone(),
                                     partial: self.partial.clone(),
                                 });
@@ -467,21 +473,29 @@ impl ResponsesMapper {
                     return Vec::new();
                 }
                 let mut events = Vec::new();
-                if !self.text_started {
+                let content_index = if !self.text_started {
                     self.text_started = true;
+                    let content_index = self.partial.content.len();
                     self.partial.content.push(AssistantContent::Text {
                         text: String::new(),
                     });
+                    self.text_content_index = Some(content_index);
                     events.push(AssistantStreamEvent::TextStart {
-                        content_index: 0,
+                        content_index,
                         partial: self.partial.clone(),
                     });
-                }
-                if let Some(AssistantContent::Text { text }) = self.partial.content.last_mut() {
+                    content_index
+                } else {
+                    self.text_content_index
+                        .unwrap_or_else(|| self.partial.content.len().saturating_sub(1))
+                };
+                if let Some(AssistantContent::Text { text }) =
+                    self.partial.content.get_mut(content_index)
+                {
                     text.push_str(&delta);
                 }
                 events.push(AssistantStreamEvent::TextDelta {
-                    content_index: 0,
+                    content_index,
                     delta,
                     partial: self.partial.clone(),
                 });
@@ -536,9 +550,15 @@ impl ResponsesMapper {
                 // Close any open text block
                 if self.text_started {
                     self.text_started = false;
-                    if let Some(AssistantContent::Text { text }) = self.partial.content.last() {
+                    let content_index = self
+                        .text_content_index
+                        .take()
+                        .unwrap_or_else(|| self.partial.content.len().saturating_sub(1));
+                    if let Some(AssistantContent::Text { text }) =
+                        self.partial.content.get(content_index)
+                    {
                         events.push(AssistantStreamEvent::TextEnd {
-                            content_index: 0,
+                            content_index,
                             content: text.clone(),
                             partial: self.partial.clone(),
                         });
