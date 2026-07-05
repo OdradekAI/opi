@@ -301,6 +301,171 @@ fn session_picker_multibyte_cwd_does_not_panic() {
 }
 
 // ---------------------------------------------------------------------------
+// Phase 13.6: stable TUI/RPC handoff metadata for branch + session pickers
+// ---------------------------------------------------------------------------
+
+#[test]
+fn phase13_branch_picker_session_metadata() {
+    //! Phase 13.6 acceptance (picker half): `branch_picker_items` exposes a
+    //! stable, documented metadata contract (entry count, depth, tip id, active
+    //! marker) in stable tree order, and `session_picker_items` surfaces the
+    //! typed session name and label set that RPC `session_info` and
+    //! `--list-sessions --json` already expose. The picker renders in the
+    //! user's own terminal, so summaries are not redacted here; cross-process
+    //! handoff redaction is pinned by `phase13_rpc_session_metadata_shape`.
+
+    use opi_agent::session::{
+        LabelAction, LabelEntry, SessionEntry, SessionHeader, SessionInfoEntry, SessionWriter,
+    };
+
+    // --- Part A: branch_picker_items stability + metadata contract -------
+    let tree = SessionTree::from_entries(&[
+        test_user_entry("e1", None, "Root summary"),
+        test_user_entry("e2a", Some("e1"), "Branch A"),
+        test_user_entry("e2b", Some("e1"), "Branch B"),
+        SessionEntry::Leaf(LeafEntry {
+            id: "leaf-1".into(),
+            parent_id: None,
+            timestamp: "2026-06-01T12:03:00Z".into(),
+            entry_id: "e2a".into(),
+        }),
+    ]);
+    let items = picker::branch_picker_items(&tree);
+    assert_eq!(items.len(), 3, "three branch segments: {items:?}");
+    let tips: Vec<&str> = items.iter().map(|i| i.id.as_str()).collect();
+    assert_eq!(
+        tips,
+        vec!["e1", "e2a", "e2b"],
+        "stable tree-order tip ids: {items:?}"
+    );
+    for item in &items {
+        assert!(
+            item.metadata.contains("entries"),
+            "metadata exposes entry_count: {item:?}"
+        );
+        assert!(
+            item.metadata.contains("depth"),
+            "metadata exposes depth: {item:?}"
+        );
+        assert!(
+            item.metadata.contains("tip"),
+            "metadata exposes tip id: {item:?}"
+        );
+    }
+    let active_items: Vec<&opi_tui::select_list::SelectItem> = items
+        .iter()
+        .filter(|i| i.metadata.contains("active"))
+        .collect();
+    assert_eq!(
+        active_items.len(),
+        1,
+        "exactly one active branch: {items:?}"
+    );
+    assert_eq!(active_items[0].id, "e2a", "active branch is e2a");
+
+    // --- Part B: session_picker_items surfaces typed name + labels -------
+    let dir = tempfile::tempdir().unwrap();
+    create_named_labelled_session(
+        dir.path(),
+        "sess-meta",
+        "2026-07-06T10:00:00Z",
+        "/home/user/project",
+        "demo-session",
+        &["bug", "draft"],
+    );
+    // A second plain session with no name/labels, to confirm ordering is
+    // stable (newest-first) and plain rows are unaffected.
+    create_test_session(
+        dir.path(),
+        "sess-plain",
+        "2026-07-06T11:00:00Z",
+        "/home/user/other",
+    );
+
+    let items = picker::session_picker_items(dir.path()).unwrap();
+    assert_eq!(items.len(), 2, "two sessions listed: {items:?}");
+    // Sorted newest-first: sess-plain (11:00) then sess-meta (10:00).
+    assert_eq!(items[0].id, "sess-plain");
+    let meta_item = items
+        .iter()
+        .find(|i| i.id == "sess-meta")
+        .expect("sess-meta row present");
+    assert!(
+        meta_item.display.contains("demo-session"),
+        "session name surfaced in display: {meta_item:?}"
+    );
+    assert!(
+        meta_item.metadata.contains("bug"),
+        "label 'bug' surfaced in metadata: {meta_item:?}"
+    );
+    assert!(
+        meta_item.metadata.contains("draft"),
+        "label 'draft' surfaced in metadata: {meta_item:?}"
+    );
+
+    // --- Part C: forbidden Phase 13 non-goal markers absent --------------
+    for item in &items {
+        for forbidden in ["auth_token", "share_url", "publish", "sync_url", "cloud"] {
+            assert!(
+                !item.id.contains(forbidden)
+                    && !item.display.contains(forbidden)
+                    && !item.metadata.contains(forbidden),
+                "forbidden non-goal marker '{forbidden}' in picker item: {item:?}"
+            );
+        }
+    }
+
+    /// Write a session file with a content message plus typed `session_info`
+    /// (name) and `label` entries parented to the active tip, so
+    /// `list_sessions` -> `reconstruct_context` surfaces them.
+    fn create_named_labelled_session(
+        dir: &Path,
+        id: &str,
+        timestamp: &str,
+        cwd: &str,
+        name: &str,
+        labels: &[&str],
+    ) {
+        let header = SessionHeader::new(id.into(), timestamp.into(), cwd.into(), None);
+        let path = dir.join(format!("{id}.jsonl"));
+        let mut writer = SessionWriter::create(&path, header).expect("create session");
+        let tip_id = "msg-1";
+        writer
+            .append(&SessionEntry::Message(MessageEntry {
+                id: tip_id.into(),
+                parent_id: None,
+                timestamp: timestamp.into(),
+                message: Message::User(UserMessage {
+                    content: vec![InputContent::Text {
+                        text: "seed prompt".into(),
+                    }],
+                    timestamp_ms: 0,
+                }),
+            }))
+            .expect("append message");
+        writer
+            .append(&SessionEntry::SessionInfo(SessionInfoEntry {
+                id: "info-1".into(),
+                parent_id: Some(tip_id.into()),
+                timestamp: timestamp.into(),
+                name: name.into(),
+            }))
+            .expect("append session_info");
+        for (i, label) in labels.iter().enumerate() {
+            writer
+                .append(&SessionEntry::Label(LabelEntry {
+                    id: format!("label-{i}"),
+                    parent_id: Some(tip_id.into()),
+                    timestamp: timestamp.into(),
+                    label: (*label).into(),
+                    action: LabelAction::Add,
+                }))
+                .expect("append label");
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 

@@ -75,7 +75,11 @@ fn branch_picker_item(branch: &BranchInfo, index: usize, is_active: bool) -> Sel
 /// Collect SelectItem entries from session listing in the given directory.
 ///
 /// Each entry's `id` is the session id, `display` is the cwd (truncated if
-/// needed), and `metadata` is the timestamp.
+/// needed) prefixed by the typed session name when one is set, and `metadata`
+/// is the timestamp followed by the active label set in `[l1, l2]` form when
+/// labels exist. Name and labels are UI-visible metadata that never enter
+/// provider context (Phase 13.6); surfacing them here keeps the session picker
+/// consistent with RPC `session_info` and `--list-sessions --json`.
 pub fn session_picker_items(dir: &Path) -> Result<Vec<SelectItem>, std::io::Error> {
     let sessions = crate::session_cli::list_sessions(dir).unwrap_or_default();
     Ok(sessions
@@ -87,10 +91,23 @@ pub fn session_picker_items(dir: &Path) -> Result<Vec<SelectItem>, std::io::Erro
             } else {
                 s.cwd
             };
+            // Phase 13.6: prefix the typed name and append the label set so
+            // the picker previews the same metadata the handoff surfaces
+            // expose. Empty/missing name falls back to the cwd-only display.
+            let display = match s.name.as_deref() {
+                Some(name) if !name.is_empty() => format!("{name} - {cwd_short}"),
+                _ => cwd_short,
+            };
+            let mut metadata = s.timestamp.clone();
+            if !s.labels.is_empty() {
+                metadata.push_str(" [");
+                metadata.push_str(&s.labels.join(", "));
+                metadata.push(']');
+            }
             SelectItem {
                 id: s.id,
-                display: cwd_short,
-                metadata: s.timestamp,
+                display,
+                metadata,
             }
         })
         .collect())

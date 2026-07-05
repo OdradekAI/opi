@@ -76,7 +76,7 @@ use opi_agent::loop_types::AgentError;
 use opi_agent::message::AgentMessage;
 use opi_agent::sdk::{SDK_SCHEMA_VERSION, SdkCommand, SdkResponse, agent_event_to_value};
 use opi_agent::session_event::CompactionReason;
-use opi_agent::{RecordingTraceSink, RedactionMode, TRACE_SCHEMA_VERSION};
+use opi_agent::{RecordingTraceSink, RedactionMode, TRACE_SCHEMA_VERSION, redact_text};
 use opi_ai::provider::Provider;
 
 use crate::config::OpiConfig;
@@ -822,6 +822,48 @@ impl RpcRunner {
                         "enabled": meta.thinking.enabled,
                         "budget_tokens": meta.thinking.budget_tokens,
                     });
+                }
+                // Phase 13.6: surface the reconstructed branch tree so embedders
+                // and Phase 14 can render branch/session pickers without
+                // re-parsing JSONL. Summaries are derived from message text, so
+                // they are redacted through Phase 7 `redact_text` (Summary mode)
+                // before leaving the process; counts and ids are opaque metadata
+                // and emitted as-is.
+                if let Some(session) = harness.session() {
+                    let session_path = session.session_path().to_path_buf();
+                    if let Ok((_, entries)) =
+                        opi_agent::session::SessionReader::read_all(&session_path)
+                    {
+                        let tree = opi_agent::session_branch::SessionTree::from_entries(&entries);
+                        let active_idx = tree.active_branch_index();
+                        if let Some(idx) = active_idx {
+                            let branch = &tree.branches()[idx];
+                            data["entry_count"] = serde_json::json!(branch.entry_count);
+                            if let Some(summary) = branch.summary.as_deref() {
+                                data["branch_summary"] =
+                                    serde_json::json!(redact_text(summary, RedactionMode::Summary));
+                            }
+                        }
+                        let branches_arr = tree
+                            .branches()
+                            .iter()
+                            .enumerate()
+                            .map(|(idx, branch)| {
+                                let summary = branch
+                                    .summary
+                                    .as_deref()
+                                    .map(|s| redact_text(s, RedactionMode::Summary));
+                                serde_json::json!({
+                                    "tip": branch.tip_id,
+                                    "summary": summary,
+                                    "entry_count": branch.entry_count,
+                                    "depth": branch.depth,
+                                    "active": active_idx == Some(idx),
+                                })
+                            })
+                            .collect::<Vec<_>>();
+                        data["branches"] = serde_json::Value::Array(branches_arr);
+                    }
                 }
                 emit(&response_success_with_data(
                     cmd_id.as_deref(),

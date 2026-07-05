@@ -1824,6 +1824,248 @@ async fn phase13_rpc_session_info_returns_metadata() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn phase13_rpc_session_metadata_shape() {
+    //! Phase 13.6 acceptance (RPC half): `session_info` exposes the stable
+    //! session/tree handoff metadata Phase 14 needs -- active-branch
+    //! `entry_count` and `branch_summary`, plus a `branches` array carrying
+    //! `{tip, summary, entry_count, depth, active}` per branch in stable tree
+    //! order. Summaries are redacted through Phase 7 `redact_text` so secrets
+    //! embedded in user/assistant tip text cannot leak to embedders. No
+    //! provider-auth, web/share, or package-ecosystem keys are emitted.
+
+    use opi_agent::session::{
+        LeafEntry, MessageEntry, SessionEntry, SessionHeader, SessionReader, SessionWriter,
+    };
+    use opi_ai::message::{AssistantContent, AssistantMessage, InputContent, Message, UserMessage};
+    use opi_coding_agent::harness::ResumeInfo;
+
+    let workspace = tempfile::tempdir().expect("workspace tempdir");
+    let sessions = tempfile::tempdir().expect("sessions tempdir");
+
+    // A canary Anthropic-style API key (>=20 chars after the prefix) so the
+    // Phase 7 SecretRedactor `sk-ant-[a-zA-Z0-9-]{20,}` pattern matches it.
+    const KEY_CANARY: &str = "sk-ant-FAKE1234567890abcdefghijklmnop";
+
+    // Build a forked session file directly through SessionWriter:
+    //   m1 (user, canary) -> m2 (assistant, trunk tip)
+    //   m1 (user)         -> m3 (assistant, sibling tip, REDACTED text)
+    // Active tip = m3 (last Leaf). The active tip m3 carries the canary, so a
+    // summary derived from its first 80 chars would leak without redaction.
+    let session_id = "rpc-tree";
+    let session_path = sessions.path().join(format!("{session_id}.jsonl"));
+    let ts = "2026-07-06T00:00:00Z";
+    {
+        let header = SessionHeader::new(
+            session_id.into(),
+            ts.into(),
+            workspace.path().display().to_string(),
+            None,
+        );
+        let mut writer = SessionWriter::create(&session_path, header).expect("create session");
+
+        let m1 = MessageEntry {
+            id: "m1".into(),
+            parent_id: None,
+            timestamp: ts.into(),
+            message: Message::User(UserMessage {
+                content: vec![InputContent::Text {
+                    text: format!("plain trunk prompt {KEY_CANARY}"),
+                }],
+                timestamp_ms: 0,
+            }),
+        };
+        let m2 = MessageEntry {
+            id: "m2".into(),
+            parent_id: Some("m1".into()),
+            timestamp: ts.into(),
+            message: Message::Assistant(AssistantMessage {
+                content: vec![AssistantContent::Text {
+                    text: "trunk reply".into(),
+                }],
+                api: opi_ai::ApiKind::Anthropic,
+                provider: "anthropic".into(),
+                model: "claude-sonnet-4".into(),
+                response_model: None,
+                response_id: None,
+                usage: Default::default(),
+                stop_reason: opi_ai::stream::StopReason::Stop,
+                error_message: None,
+                timestamp_ms: 0,
+            }),
+        };
+        let m3 = MessageEntry {
+            id: "m3".into(),
+            parent_id: Some("m1".into()),
+            timestamp: ts.into(),
+            message: Message::Assistant(AssistantMessage {
+                content: vec![AssistantContent::Text {
+                    text: KEY_CANARY.into(),
+                }],
+                api: opi_ai::ApiKind::Anthropic,
+                provider: "anthropic".into(),
+                model: "claude-sonnet-4".into(),
+                response_model: None,
+                response_id: None,
+                usage: Default::default(),
+                stop_reason: opi_ai::stream::StopReason::Stop,
+                error_message: None,
+                timestamp_ms: 0,
+            }),
+        };
+        let leaf = LeafEntry {
+            id: "leaf-1".into(),
+            parent_id: Some("m3".into()),
+            timestamp: ts.into(),
+            entry_id: "m3".into(),
+        };
+        writer
+            .append(&SessionEntry::Message(m1))
+            .expect("append m1");
+        writer
+            .append(&SessionEntry::Message(m2))
+            .expect("append m2");
+        writer
+            .append(&SessionEntry::Message(m3))
+            .expect("append m3");
+        writer
+            .append(&SessionEntry::Leaf(leaf))
+            .expect("append leaf");
+    }
+
+    let (_h, entries) = SessionReader::read_all(&session_path).expect("read back entries");
+
+    let resume_info = ResumeInfo {
+        path: session_path,
+        session_id: session_id.into(),
+        entries,
+        original_cwd: workspace.path().to_path_buf(),
+        diagnostics: Vec::new(),
+        recorded_model: None,
+        recorded_thinking: None,
+    };
+
+    let provider = MockProvider::new("mock", Vec::new());
+    let runner = RpcRunner::new_with_runtime_packages(
+        Box::new(provider),
+        "mock:mock-model".into(),
+        OpiConfig::default(),
+        workspace.path().to_path_buf(),
+        false,
+        ToolSelection::Disabled,
+        None,
+        Vec::new(),
+        RuntimePackageStartup {
+            extension_registry: ExtensionRegistry::new(),
+            installed_packages: Vec::new(),
+            diagnostics: Vec::new(),
+        },
+        Some(resume_info),
+    )
+    .expect("rpc runner should construct");
+
+    let (command_tx, command_rx) = tokio::sync::mpsc::unbounded_channel();
+    let (output_tx, mut output_rx) = tokio::sync::mpsc::unbounded_channel();
+    let task = tokio::spawn(async move {
+        let mut runner = runner;
+        runner.run_with_channels(command_rx, output_tx).await
+    });
+
+    let header = recv_rpc_line(&mut output_rx).await;
+    assert_eq!(header["type"], "rpc_ready");
+
+    command_tx
+        .send(RpcCommand::session_info {
+            id: Some("si-shape".into()),
+        })
+        .unwrap();
+    let resp = recv_response(&mut output_rx, "session_info").await;
+    assert_eq!(resp["success"], true, "session_info should succeed: {resp}");
+    assert_eq!(resp["id"], "si-shape");
+
+    // Active-branch scalars: tip id, entry count, and redacted summary.
+    assert_eq!(
+        resp["data"]["active_branch"], "m3",
+        "active tip is m3 (last Leaf): {resp}"
+    );
+    assert_eq!(
+        resp["data"]["entry_count"], 1,
+        "SessionTree active segment m1->m3 owns 1 entry (m3): {resp}"
+    );
+    assert_eq!(
+        resp["data"]["branch_summary"], "[REDACTED]",
+        "active tip m3 carries the canary; summary must be redacted: {resp}"
+    );
+
+    // branches[] array, stable tree order, exactly one active, tip matches
+    // active_branch. SessionTree represents a fork-at-root as three segments:
+    // the trunk stub (m1, depth 0) plus each child branch (m2, m3).
+    let branches = resp["data"]["branches"]
+        .as_array()
+        .expect("branches is an array");
+    assert_eq!(branches.len(), 3, "three branch segments in tree: {resp}");
+    let tips: Vec<&str> = branches
+        .iter()
+        .map(|b| b["tip"].as_str().expect("tip string"))
+        .collect();
+    assert_eq!(tips, vec!["m1", "m2", "m3"], "stable tree order: {resp}");
+    for b in branches {
+        assert!(b.get("tip").is_some(), "branch has tip: {b}");
+        assert!(b.get("summary").is_some(), "branch has summary: {b}");
+        assert!(
+            b.get("entry_count").is_some(),
+            "branch has entry_count: {b}"
+        );
+        assert!(b.get("depth").is_some(), "branch has depth: {b}");
+        assert!(b.get("active").is_some(), "branch has active: {b}");
+    }
+    let active_count = branches.iter().filter(|b| b["active"] == true).count();
+    assert_eq!(active_count, 1, "exactly one active branch: {resp}");
+    let active_obj = branches
+        .iter()
+        .find(|b| b["active"] == true)
+        .expect("active branch present");
+    assert_eq!(active_obj["tip"], "m3", "active branch tip matches: {resp}");
+    assert_eq!(
+        active_obj["entry_count"], 1,
+        "active branch entry_count matches scalar: {resp}"
+    );
+
+    // resources.diagnostics is wired through (redaction itself is pinned by
+    // Phase 7's diagnostic-serializer tests).
+    assert!(
+        resp["data"]["resources"]["diagnostics"].is_array(),
+        "diagnostics array surfaced: {resp}"
+    );
+
+    // Redaction: the canary planted in m3's tip text must not leak through
+    // any of the new summary/branch fields.
+    let serialized = resp.to_string();
+    assert!(
+        !serialized.contains(KEY_CANARY),
+        "API key must be redacted from session_info handoff metadata: {serialized}"
+    );
+
+    // Forbidden Phase 13 non-goal keys absent from the handoff payload.
+    for forbidden in [
+        "auth_token",
+        "share_url",
+        "publish",
+        "sync_url",
+        "cloud",
+        "package_market",
+    ] {
+        assert!(
+            !serialized.contains(forbidden),
+            "forbidden non-goal key '{forbidden}' must not appear: {serialized}"
+        );
+    }
+
+    command_tx.send(RpcCommand::quit { id: None }).unwrap();
+    let _quit = recv_response(&mut output_rx, "quit").await;
+    assert_eq!(task.await.unwrap(), 0);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn rpc_extension_command_dispatches_to_registry_with_correlated_response_id() {
     struct RpcCommandExtension;
 
