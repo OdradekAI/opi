@@ -268,6 +268,17 @@ pub mod code {
     /// reconstructed chain up to the break; the diagnostic explains where the
     /// chain could not be extended further. Phase 13.2.
     pub const CODE_SESSION_CONTEXT_MISSING_PARENT: &str = "session_context_missing_parent";
+    /// Resume could not apply a recorded `model_change` because the recorded
+    /// provider/model is incompatible with the active CLI/config provider
+    /// selection. The CLI/config model is kept; the recorded entry is preserved
+    /// in the session file. Phase 13.3.
+    pub const CODE_SESSION_RESUME_MODEL_INCOMPATIBLE: &str = "session_resume_model_incompatible";
+    /// Resume could not apply a recorded `thinking_level_change` because the
+    /// level is incompatible with the active model's thinking budget/support.
+    /// The CLI/config thinking level is kept; the recorded entry is preserved
+    /// in the session file. Phase 13.3.
+    pub const CODE_SESSION_RESUME_THINKING_INCOMPATIBLE: &str =
+        "session_resume_thinking_incompatible";
     // opi-coding-agent bridges (package/config). Package diagnostics carry a
     // dynamic granular code in `details.package_code`; the shared code is stable.
     pub const CODE_PACKAGE_DIAGNOSTIC: &str = "package_diagnostic";

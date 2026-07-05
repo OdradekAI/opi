@@ -770,6 +770,8 @@ mod phase7 {
                 SOURCE_SESSION,
                 "session file ended with a truncated line",
             )],
+            recorded_model: None,
+            recorded_thinking: None,
         };
         let mut runner = NonInteractiveRunner::new_with_resume_and_runtime_packages(
             Box::new(provider),

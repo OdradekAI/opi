@@ -66,21 +66,30 @@ fn main() {
     // Handle session CLI commands first -- they don't need config or a provider.
     let (resumed_messages, resume_info) = match opi_coding_agent::session_cli::handle_session_cli(
         cli.list_sessions,
+        cli.json,
         cli.resume.as_deref(),
         cli.fork.as_deref(),
         cli.delete_session.as_deref(),
     ) {
         Ok((true, Some(session))) => {
-            let msgs = opi_coding_agent::session_cli::reconstruct_context(&session.entries);
+            // Phase 13.3: build the agent buffer through the opi-agent context
+            // API so resume/fork use the same deterministic reconstruction as
+            // `CodingHarness::resume_session_id` (no product-only walker).
+            let recovery = session.recovery.clone();
+            let ctx = opi_agent::session_context::reconstruct_context(&session.entries, &recovery);
+            let mut diagnostics = session.diagnostics;
+            diagnostics.extend(ctx.diagnostics);
             let original_cwd = std::path::PathBuf::from(&session.header.cwd);
             let info = ResumeInfo {
                 path: session.path,
                 session_id: session.header.id,
                 entries: session.entries,
                 original_cwd,
-                diagnostics: session.diagnostics,
+                diagnostics,
+                recorded_model: ctx.model,
+                recorded_thinking: ctx.thinking_level,
             };
-            (Some(msgs), Some(info))
+            (Some(ctx.messages), Some(info))
         }
         Ok((true, None)) => return,              // list/delete handled
         Ok((_, None | Some(_))) => (None, None), // no session command or unreachable

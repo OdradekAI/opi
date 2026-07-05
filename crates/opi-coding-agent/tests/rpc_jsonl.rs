@@ -4107,6 +4107,8 @@ mod phase7 {
             entries: Vec::new(),
             original_cwd: workspace.path().to_path_buf(),
             diagnostics: Vec::new(),
+            recorded_model: None,
+            recorded_thinking: None,
         }
     }
 
@@ -4220,6 +4222,8 @@ mod phase7 {
                 SOURCE_SESSION,
                 "session file ended with a truncated line",
             )],
+            recorded_model: None,
+            recorded_thinking: None,
         };
         let mut runner = RpcRunner::new_with_runtime_packages(
             Box::new(provider),

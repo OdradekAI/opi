@@ -385,6 +385,8 @@ async fn e2e_resume_context_from_original_workspace() {
         entries,
         original_cwd: original_cwd.to_path_buf(),
         diagnostics: Vec::new(),
+        recorded_model: None,
+        recorded_thinking: None,
     };
 
     let mock = MockProvider::new("mock", vec![text_response("done")]);

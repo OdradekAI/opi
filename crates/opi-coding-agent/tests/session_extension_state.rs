@@ -208,6 +208,8 @@ async fn extension_state_persists_to_session_jsonl_after_mutating_turn() {
         entries,
         original_cwd: dir.path().to_path_buf(),
         diagnostics: Vec::new(),
+        recorded_model: None,
+        recorded_thinking: None,
     };
     let mut harness = CodingHarness::builder(
         Box::new(provider),
@@ -269,6 +271,8 @@ async fn command_only_extension_state_persists_to_session_jsonl() {
         entries,
         original_cwd: dir.path().to_path_buf(),
         diagnostics: Vec::new(),
+        recorded_model: None,
+        recorded_thinking: None,
     };
     let mut harness = CodingHarness::builder(
         Box::new(provider),
@@ -345,6 +349,8 @@ async fn command_only_extension_command_restores_pending_session_state() {
         entries,
         original_cwd: dir.path().to_path_buf(),
         diagnostics: Vec::new(),
+        recorded_model: None,
+        recorded_thinking: None,
     };
     let mut harness = CodingHarness::builder(
         Box::new(provider),
@@ -407,6 +413,8 @@ async fn resumed_extension_state_is_restored_before_adapter_command() {
         entries,
         original_cwd: dir.path().to_path_buf(),
         diagnostics: Vec::new(),
+        recorded_model: None,
+        recorded_thinking: None,
     };
     let mut harness = CodingHarness::builder(
         Box::new(provider),

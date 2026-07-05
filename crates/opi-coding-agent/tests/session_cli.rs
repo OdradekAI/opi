@@ -131,6 +131,111 @@ fn list_sessions_finds_multiple_sessions() {
 }
 
 #[test]
+fn phase13_list_sessions_json_metadata_shape() {
+    //! Phase 13.3 acceptance: `--list-sessions` reconstructs active-branch
+    //! metadata through the opi-agent context API, and `--list-sessions --json`
+    //! emits deterministic rows carrying id, cwd, timestamp, parent_session,
+    //! name, labels, active_branch, model, and thinking metadata when present.
+
+    use opi_agent::session::{
+        LabelAction, LabelEntry, LeafEntry, MessageEntry, ModelChangeEntry,
+        SessionEntry as AgentSessionEntry, SessionInfoEntry, ThinkingLevelChangeEntry,
+    };
+    use opi_agent::session_event::ThinkingLevel;
+
+    let dir = create_session_dir();
+    let header = make_header("sess-meta", "/repo");
+    let path = dir.path().join("sess-meta.jsonl");
+    let mut writer = SessionWriter::create(&path, header).unwrap();
+
+    let user = AgentSessionEntry::Message(MessageEntry {
+        id: "m1".into(),
+        parent_id: None,
+        timestamp: "2026-07-05T12:00:01Z".into(),
+        message: Message::User(UserMessage {
+            content: vec![InputContent::Text { text: "hi".into() }],
+            timestamp_ms: 0,
+        }),
+    });
+    writer.append(&user).unwrap();
+    writer
+        .append(&AgentSessionEntry::SessionInfo(SessionInfoEntry {
+            id: "info-1".into(),
+            parent_id: Some("m1".into()),
+            timestamp: "2026-07-05T12:00:02Z".into(),
+            name: "my-sess".into(),
+        }))
+        .unwrap();
+    writer
+        .append(&AgentSessionEntry::Label(LabelEntry {
+            id: "label-1".into(),
+            parent_id: Some("m1".into()),
+            timestamp: "2026-07-05T12:00:03Z".into(),
+            label: "important".into(),
+            action: LabelAction::Add,
+        }))
+        .unwrap();
+    writer
+        .append(&AgentSessionEntry::ModelChange(ModelChangeEntry {
+            id: "model-1".into(),
+            parent_id: Some("m1".into()),
+            timestamp: "2026-07-05T12:00:04Z".into(),
+            model: "mock:custom-model".into(),
+        }))
+        .unwrap();
+    writer
+        .append(&AgentSessionEntry::ThinkingLevelChange(
+            ThinkingLevelChangeEntry {
+                id: "thinking-1".into(),
+                parent_id: Some("m1".into()),
+                timestamp: "2026-07-05T12:00:05Z".into(),
+                level: ThinkingLevel::Medium,
+            },
+        ))
+        .unwrap();
+    writer
+        .append(&AgentSessionEntry::Leaf(LeafEntry {
+            id: "leaf-1".into(),
+            parent_id: Some("m1".into()),
+            timestamp: "2026-07-05T12:00:06Z".into(),
+            entry_id: "m1".into(),
+        }))
+        .unwrap();
+    drop(writer);
+
+    let sessions = list_sessions(dir.path()).unwrap();
+    assert_eq!(sessions.len(), 1, "one session file");
+    let row = &sessions[0];
+    assert_eq!(row.id, "sess-meta");
+    assert_eq!(row.cwd, "/repo");
+    assert_eq!(row.parent_session, None);
+    assert_eq!(row.name.as_deref(), Some("my-sess"));
+    assert_eq!(row.labels, vec!["important".to_owned()]);
+    assert_eq!(row.active_branch.as_deref(), Some("m1"));
+    assert_eq!(row.model.as_deref(), Some("mock:custom-model"));
+    assert_eq!(row.thinking, Some(ThinkingLevel::Medium));
+
+    // JSON shape: deterministic, parseable, carries every populated field.
+    let json = session_cli::format_sessions_json(&sessions);
+    let parsed: Vec<serde_json::Value> =
+        serde_json::from_str(&json).expect("list-sessions JSON is a valid array");
+    assert_eq!(parsed.len(), 1);
+    let obj = &parsed[0];
+    assert_eq!(obj["id"], "sess-meta");
+    assert_eq!(obj["cwd"], "/repo");
+    assert_eq!(obj["timestamp"], "2026-05-22T12:00:00Z");
+    assert_eq!(obj["name"], "my-sess");
+    assert_eq!(obj["labels"], serde_json::json!(["important"]));
+    assert_eq!(obj["active_branch"], "m1");
+    assert_eq!(obj["model"], "mock:custom-model");
+    assert_eq!(obj["thinking"], "medium");
+    // parent_session is a core row field (DoD): always present, null when the
+    // session has no parent. Only the metadata fields (name/labels/etc.) are
+    // skipped when absent.
+    assert_eq!(obj["parent_session"], serde_json::Value::Null);
+}
+
+#[test]
 fn list_sessions_skips_non_jsonl_files() {
     let dir = create_session_dir();
     create_session_file(dir.path(), &make_header("sess-001", "/repo"));
@@ -237,14 +342,24 @@ fn fork_session_creates_new_session_with_parent_and_copied_entries() {
     assert_ne!(forked.header.id, "sess-001");
     assert_eq!(forked.header.cwd, "/repo");
     assert_eq!(forked.header.parent_session.as_deref(), Some("sess-001"));
-    assert_eq!(forked.entries.len(), 2);
+    // Phase 13.3: fork copies the active-chain content (e1, e2) AND appends a
+    // fresh Leaf pointer at the active tip so the forked session resumes from
+    // the same branch point as the source.
+    assert_eq!(forked.entries.len(), 3, "expected e1 + e2 + fresh leaf");
     assert!(forked.path.exists(), "forked session file should exist");
 
     let (read_header, read_entries) = opi_agent::session::SessionReader::read_all(&forked.path)
         .expect("forked session should be readable");
     assert_eq!(read_header.id, forked.header.id);
     assert_eq!(read_header.parent_session.as_deref(), Some("sess-001"));
-    assert_eq!(read_entries.len(), 2);
+    assert_eq!(read_entries.len(), 3);
+    // The persisted Leaf points at the active tip (e2).
+    let leaf = read_entries.iter().find_map(|e| match e {
+        SessionEntry::Leaf(l) => Some(l.clone()),
+        _ => None,
+    });
+    let leaf = leaf.expect("forked session has a fresh Leaf at the tip");
+    assert_eq!(leaf.entry_id, "e2");
 }
 
 #[test]
@@ -317,6 +432,11 @@ fn format_sessions_single_entry() {
         timestamp: "2026-05-22T12:00:00Z".into(),
         cwd: "/repo".into(),
         parent_session: None,
+        name: None,
+        labels: Vec::new(),
+        active_branch: None,
+        model: None,
+        thinking: None,
     };
     let output = session_cli::format_sessions(&[info]);
     assert!(
@@ -333,6 +453,11 @@ fn format_sessions_shows_parent_when_present() {
         timestamp: "2026-05-22T12:00:00Z".into(),
         cwd: "/repo".into(),
         parent_session: Some("sess-001".into()),
+        name: None,
+        labels: Vec::new(),
+        active_branch: None,
+        model: None,
+        thinking: None,
     };
     let output = session_cli::format_sessions(&[info]);
     assert!(

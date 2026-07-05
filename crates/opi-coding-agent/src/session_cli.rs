@@ -20,12 +20,32 @@ pub enum SessionCliError {
 }
 
 /// Summary of a session for display purposes.
-#[derive(Debug, Clone)]
+///
+/// Phase 13.3 extends this beyond the header-derived fields to carry the
+/// reconstructed active-branch metadata (name, labels, active_branch, model,
+/// thinking) so `--list-sessions --json` can emit stable, deterministic rows
+/// for tooling and Phase 14 handoff.
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct SessionInfo {
     pub id: String,
     pub timestamp: String,
     pub cwd: String,
     pub parent_session: Option<String>,
+    /// Latest `session_info` name on the active branch, if any.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// Active label set (Add/Remove applied in file order). UI-visible.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub labels: Vec<String>,
+    /// Active branch tip entry id (the last valid Leaf target), if any.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub active_branch: Option<String>,
+    /// Latest `model_change` model spec on the active branch, if any.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    /// Latest `thinking_level_change` level on the active branch, if any.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thinking: Option<opi_agent::session_event::ThinkingLevel>,
 }
 
 /// Result of a resume operation.
@@ -37,7 +57,12 @@ pub struct ResumedSession {
     pub path: PathBuf,
     /// Number of corrupt/unparseable entries skipped during load.
     pub skipped_entries: usize,
-    /// Structured recovery diagnostics produced while reading the session.
+    /// Structured crash recovery observed while reading the session. The
+    /// harness passes this to `opi_agent::session_context::reconstruct_context`
+    /// so load-time diagnostics and missing-parent warnings are unified.
+    pub recovery: opi_agent::session::CrashRecovery,
+    /// Structured recovery diagnostics produced while reading the session
+    /// (a snapshot of `recovery.diagnostics()` at load time).
     pub diagnostics: Vec<Diagnostic>,
 }
 
@@ -97,8 +122,12 @@ fn validate_session_id(id: &str) -> Result<(), SessionCliError> {
 
 /// List all sessions in the given directory.
 ///
-/// Returns session metadata parsed from the first line (header) of each `.jsonl`
-/// file. Corrupt or unreadable files are silently skipped.
+/// Reads each `.jsonl` file fully and reconstructs active-branch metadata
+/// through the opi-agent context API (Phase 13.3), so each row carries the
+/// latest `session_info` name, active label set, active branch tip, latest
+/// `model_change`, and latest `thinking_level_change` observed on the active
+/// branch. Files whose header cannot be parsed are skipped; files with corrupt
+/// middle entries still surface (their entries are read with recovery).
 pub fn list_sessions(dir: &Path) -> Result<Vec<SessionInfo>, SessionCliError> {
     if !dir.exists() {
         return Ok(vec![]);
@@ -115,26 +144,24 @@ pub fn list_sessions(dir: &Path) -> Result<Vec<SessionInfo>, SessionCliError> {
             continue;
         }
 
-        let content = match std::fs::read_to_string(&path) {
-            Ok(c) => c,
-            Err(_) => continue,
-        };
+        let (header, entries, recovery) =
+            match opi_agent::session::SessionReader::read_with_recovery(&path) {
+                Ok(t) => t,
+                Err(_) => continue,
+            };
 
-        let first_line = match content.lines().next() {
-            Some(line) => line,
-            None => continue,
-        };
-
-        let header: opi_agent::session::SessionHeader = match serde_json::from_str(first_line) {
-            Ok(h) => h,
-            Err(_) => continue,
-        };
+        let ctx = opi_agent::session_context::reconstruct_context(&entries, &recovery);
 
         sessions.push(SessionInfo {
             id: header.id,
             timestamp: header.timestamp,
             cwd: header.cwd,
             parent_session: header.parent_session,
+            name: ctx.session_name,
+            labels: ctx.labels,
+            active_branch: ctx.active_tip_entry_id,
+            model: ctx.model,
+            thinking: ctx.thinking_level,
         });
     }
 
@@ -161,33 +188,61 @@ pub fn resume_session(dir: &Path, session_id: &str) -> Result<ResumedSession, Se
         entries,
         path,
         skipped_entries,
+        recovery,
         diagnostics,
     })
 }
 
 /// Fork a session into a new JSONL file and return the fork as a resumed session.
 ///
-/// The source session file is not modified. The new session copies only the
-/// active branch that would be reconstructed by `--resume`, then records the
-/// source session ID in `parent_session`.
+/// The source session file is not modified. The fork copies **every entry on
+/// the active branch that resume would reconstruct** — content (Message /
+/// Compaction) plus all metadata parented to the active chain (Label,
+/// ModelChange, ThinkingLevelChange, SessionInfo, BranchSummary,
+/// ExtensionState) — then records the source session ID in `parent_session`
+/// and writes a fresh `Leaf` pointer at the active tip. File order is
+/// preserved so latest-wins metadata semantics match resume exactly.
+///
+/// Phase 13.3: this keeps fork consistent with the opi-agent context builder
+/// (`reconstruct_context`) so resume and fork observe identical context,
+/// including branch summaries and other metadata that the prior Message-only
+/// copy dropped.
 pub fn fork_session(dir: &Path, session_id: &str) -> Result<ResumedSession, SessionCliError> {
     let source = resume_session(dir, session_id)?;
-    let mut entries: Vec<opi_agent::session::SessionEntry> =
-        select_ordered_entries(&source.entries)
-            .into_iter()
-            .cloned()
-            .collect();
-    if let Some(state) = latest_extension_state_entry_for_active_branch(&source.entries) {
-        entries.push(opi_agent::session::SessionEntry::ExtensionState(
-            state.clone(),
-        ));
+
+    // Active-chain content entry ids in root->tip order. Metadata parented to
+    // any of these is on the active branch and must be copied so the fork
+    // reconstructs the same context resume would observe.
+    let active_chain: Vec<String> = active_content_entry_ids(&source.entries);
+    let active_tip = active_chain.last().cloned();
+    let active_set: std::collections::HashSet<&str> =
+        active_chain.iter().map(String::as_str).collect();
+
+    let mut entries: Vec<opi_agent::session::SessionEntry> = Vec::new();
+    for entry in &source.entries {
+        if entry_on_active_chain(entry, &active_set) {
+            entries.push(entry.clone());
+        }
     }
+
     let (header, path) = new_fork_session_target(dir, &source.header)?;
 
     std::fs::create_dir_all(dir)?;
     let mut writer = opi_agent::session::SessionWriter::create(&path, header.clone())?;
     for entry in &entries {
         writer.append(entry)?;
+    }
+    // Write a fresh Leaf at the active tip so the forked session resumes from
+    // the same branch point as the source.
+    if let Some(tip) = active_tip {
+        let leaf = opi_agent::session::SessionEntry::Leaf(opi_agent::session::LeafEntry {
+            id: format!("leaf-fork-{}", generate_session_id()),
+            parent_id: Some(tip.clone()),
+            timestamp: now_iso(),
+            entry_id: tip,
+        });
+        writer.append(&leaf)?;
+        entries.push(leaf);
     }
     drop(writer);
 
@@ -196,8 +251,56 @@ pub fn fork_session(dir: &Path, session_id: &str) -> Result<ResumedSession, Sess
         entries,
         path,
         skipped_entries: 0,
+        recovery: opi_agent::session::CrashRecovery::default(),
         diagnostics: Vec::new(),
     })
+}
+
+/// Whether `entry` lies on the active branch.
+///
+/// Content entries (Message / Compaction) qualify when their own id is in
+/// `active_set`. Metadata entries (Label, ModelChange, ThinkingLevelChange,
+/// SessionInfo, BranchSummary, ExtensionState) qualify when their `parent_id`
+/// is in `active_set`. Leaf pointers are excluded — the fork writes a single
+/// fresh Leaf at the tip instead of copying stale source Leaves.
+fn entry_on_active_chain(
+    entry: &opi_agent::session::SessionEntry,
+    active_set: &std::collections::HashSet<&str>,
+) -> bool {
+    use opi_agent::session::SessionEntry;
+
+    match entry {
+        SessionEntry::Message(m) => active_set.contains(m.id.as_str()),
+        SessionEntry::Compaction(c) => active_set.contains(c.id.as_str()),
+        SessionEntry::Label(l) => l
+            .parent_id
+            .as_deref()
+            .is_some_and(|id| active_set.contains(id)),
+        SessionEntry::ModelChange(m) => m
+            .parent_id
+            .as_deref()
+            .is_some_and(|id| active_set.contains(id)),
+        SessionEntry::ThinkingLevelChange(t) => t
+            .parent_id
+            .as_deref()
+            .is_some_and(|id| active_set.contains(id)),
+        SessionEntry::SessionInfo(s) => s
+            .parent_id
+            .as_deref()
+            .is_some_and(|id| active_set.contains(id)),
+        SessionEntry::BranchSummary(b) => b
+            .parent_id
+            .as_deref()
+            .is_some_and(|id| active_set.contains(id)),
+        SessionEntry::ExtensionState(x) => x
+            .parent_id
+            .as_deref()
+            .is_some_and(|id| active_set.contains(id)),
+        SessionEntry::Leaf(_) => false,
+        // Future entry variants are off-chain for fork purposes; the context
+        // builder decides whether they enter LLM context at runtime.
+        _ => false,
+    }
 }
 
 /// Delete a session file by ID.
@@ -211,7 +314,7 @@ pub fn delete_session(dir: &Path, session_id: &str) -> Result<(), SessionCliErro
     Ok(())
 }
 
-/// Format a list of session info for stdout display.
+/// Format a list of session info for stdout display (text mode).
 pub fn format_sessions(sessions: &[SessionInfo]) -> String {
     if sessions.is_empty() {
         return String::new();
@@ -228,13 +331,31 @@ pub fn format_sessions(sessions: &[SessionInfo]) -> String {
     lines.join("\n")
 }
 
+/// Format a list of session info as a deterministic JSON array (Phase 13.3).
+///
+/// Used by `--list-sessions --json`. Each row carries id, cwd, timestamp,
+/// parent_session, and (when present) name, labels, active_branch, model, and
+/// thinking metadata reconstructed from the active branch. Empty optional
+/// fields are omitted from the wire shape for stable, forward-compatible
+/// output.
+pub fn format_sessions_json(sessions: &[SessionInfo]) -> String {
+    serde_json::to_string_pretty(sessions).unwrap_or_else(|_| "[]".into())
+}
+
 /// Handle session CLI dispatch.
 ///
 /// Returns `(handled, Some(ResumedSession))` for `--resume`,
 /// `(true, None)` for list/delete (caller should exit),
 /// `(false, None)` if no session command was given (normal execution continues).
+///
+/// `json` selects the `--list-sessions --json` output shape: when true and
+/// `list` is set, rows are printed as a JSON array (one row per line via
+/// `println!` of the pretty-printed array). Resume/fork/delete ignore `json`
+/// and continue to print human-readable status to stderr so NDJSON stdout
+/// stays clean.
 pub fn handle_session_cli(
     list: bool,
+    json: bool,
     resume: Option<&str>,
     fork: Option<&str>,
     delete: Option<&str>,
@@ -244,9 +365,14 @@ pub fn handle_session_cli(
     if list {
         match list_sessions(&dir) {
             Ok(sessions) => {
-                let output = format_sessions(&sessions);
-                if !output.is_empty() {
+                if json {
+                    let output = format_sessions_json(&sessions);
                     println!("{output}");
+                } else {
+                    let output = format_sessions(&sessions);
+                    if !output.is_empty() {
+                        println!("{output}");
+                    }
                 }
                 Ok((true, None))
             }
@@ -403,39 +529,28 @@ fn is_leap(y: u64) -> bool {
 
 /// Reconstruct agent messages from session entries for resume.
 ///
-/// Two modes:
+/// Thin ergonomic facade over
+/// [`opi_agent::session_context::reconstruct_context`]: returns just the
+/// agent message buffer for a clean load (no recovery diagnostics). Callers
+/// that need recovery diagnostics, missing-parent warnings, model/thinking
+/// metadata, or labels should call the opi-agent API directly and read those
+/// fields off [`opi_agent::session_context::ReconstructedContext`].
 ///
-/// 1. **Active-branch mode (with `Leaf` entries).** The session file holds
-///    `leaf` pointer entries that record the active branch tip. When one or
-///    more `Leaf` entries are present, this function uses the last `Leaf`'s
-///    `entry_id` as the tip and walks the parent chain backward via
-///    `parent_id`, collecting only the entries on that branch. This is
-///    required for any session that contains branches — file-order replay
-///    would otherwise interleave messages from sibling branches into the
-///    reconstructed context.
-///
-/// 2. **Legacy linear mode (no `Leaf` entries).** Sessions written by the
-///    current runtime do not yet emit `Leaf` markers; for those the entire
-///    file is one linear branch and we replay every `Message`/`Compaction`
-///    entry in file order.
-///
-/// Compaction entries are honored in both modes by replaying their
-/// semantics: when a `Compaction` entry is encountered, every previously
-/// collected message that precedes the entry whose id equals
-/// `first_kept_entry_id` is dropped, the compaction summary is inserted in
-/// its place, and the kept tail (already persisted before the marker) is
-/// preserved. Messages written after the compaction marker are then
-/// appended as usual.
-///
-/// Defensive fallback: if a `Compaction` entry's `first_kept_entry_id` does
-/// not match any collected entry (corrupt or forward-incompatible session),
-/// the pre-summary buffer is dropped entirely so the summary still appears
-/// and post-compaction entries continue to accumulate.
+/// Phase 13.3 retired the product-only walker that used to live here; this
+/// facade delegates to the opi-agent context builder so resume/fork/list all
+/// share one deterministic reconstruction path. The branch-order selector
+/// (`select_ordered_entries`) is retained separately because
+/// `SessionCoordinator::open_existing` needs the raw active-chain entries
+/// (with usage) to seed its compaction buffer — a different concern from
+/// building agent messages.
 pub fn reconstruct_context(
     entries: &[opi_agent::session::SessionEntry],
 ) -> Vec<opi_agent::message::AgentMessage> {
-    let ordered = select_ordered_entries(entries);
-    apply_entries(&ordered)
+    opi_agent::session_context::reconstruct_context(
+        entries,
+        &opi_agent::session::CrashRecovery::default(),
+    )
+    .messages
 }
 
 /// Return session entries ordered by the active branch.
@@ -564,51 +679,4 @@ fn walk_active_branch<'a>(
     }
     chain.reverse();
     chain
-}
-
-/// Apply a sequence of message/compaction entries (in order) into the
-/// runtime `AgentMessage` buffer, honoring compaction summary semantics.
-fn apply_entries(
-    entries: &[&opi_agent::session::SessionEntry],
-) -> Vec<opi_agent::message::AgentMessage> {
-    use opi_agent::message::{AgentMessage, CompactionSummaryMessage};
-    use opi_agent::session::SessionEntry;
-
-    let mut messages: Vec<AgentMessage> = Vec::new();
-    let mut entry_ids: Vec<Option<String>> = Vec::new();
-
-    for entry in entries {
-        match entry {
-            SessionEntry::Message(m) => {
-                messages.push(AgentMessage::Llm(m.message.clone()));
-                entry_ids.push(Some(m.id.clone()));
-            }
-            SessionEntry::Compaction(c) => {
-                let kept_start = entry_ids
-                    .iter()
-                    .position(|id| id.as_deref() == Some(c.first_kept_entry_id.as_str()));
-
-                let (kept_messages, kept_ids): (Vec<_>, Vec<_>) = match kept_start {
-                    Some(idx) => (messages.split_off(idx), entry_ids.split_off(idx)),
-                    None => (Vec::new(), Vec::new()),
-                };
-
-                messages.clear();
-                entry_ids.clear();
-                messages.push(AgentMessage::CompactionSummary(CompactionSummaryMessage {
-                    summary: c.summary.clone(),
-                    first_kept_entry_id: c.first_kept_entry_id.clone(),
-                    tokens_before: c.tokens_before,
-                    tokens_after: c.tokens_after,
-                }));
-                entry_ids.push(None);
-                messages.extend(kept_messages);
-                entry_ids.extend(kept_ids);
-            }
-            SessionEntry::Leaf(_) => {}
-            _ => {}
-        }
-    }
-
-    messages
 }

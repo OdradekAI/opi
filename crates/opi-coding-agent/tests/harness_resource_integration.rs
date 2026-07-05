@@ -436,6 +436,8 @@ async fn resumed_installed_adapter_state_restores_on_current_thread_runtime() {
         entries,
         original_cwd: workspace.path().to_path_buf(),
         diagnostics: Vec::new(),
+        recorded_model: None,
+        recorded_thinking: None,
     };
     let mut harness = CodingHarness::builder(
         Box::new(provider),
@@ -1110,6 +1112,8 @@ async fn coding_harness_composes_generic_opi_agent_seams() {
         entries: seed_entries,
         original_cwd: workspace.path().to_path_buf(),
         diagnostics: Vec::new(),
+        recorded_model: None,
+        recorded_thinking: None,
     };
     let mut harness = CodingHarness::builder(
         Box::new(provider),

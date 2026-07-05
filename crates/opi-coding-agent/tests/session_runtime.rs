@@ -11,6 +11,7 @@ use futures_util::stream;
 use opi_agent::diagnostic::{SOURCE_SESSION, code};
 use opi_agent::message::AgentMessage;
 use opi_agent::session::{MessageEntry, SessionEntry, SessionHeader, SessionReader, SessionWriter};
+use opi_agent::session_event::ThinkingLevel;
 use opi_ai::message::{
     AssistantContent, InputContent, Message, OutputContent, ToolCall, ToolResultMessage,
     UserMessage,
@@ -34,6 +35,22 @@ fn test_message_entry(id: &str, text: &str) -> SessionEntry {
     SessionEntry::Message(MessageEntry {
         id: id.into(),
         parent_id: None,
+        timestamp: "2026-05-22T12:00:01Z".into(),
+        message: Message::User(UserMessage {
+            content: vec![InputContent::Text { text: text.into() }],
+            timestamp_ms: 0,
+        }),
+    })
+}
+
+/// Build a user Message entry chained to `parent` (Phase 13.3 fixture helper).
+/// The opi-agent context builder walks the `parent_id` chain, so linear-chain
+/// fixtures must set `parent_id` explicitly — rootless entries are treated as
+/// siblings, not a linear chain.
+fn chained_message_entry(id: &str, parent: &str, text: &str) -> SessionEntry {
+    SessionEntry::Message(MessageEntry {
+        id: id.into(),
+        parent_id: Some(parent.into()),
         timestamp: "2026-05-22T12:00:01Z".into(),
         message: Message::User(UserMessage {
             content: vec![InputContent::Text { text: text.into() }],
@@ -139,6 +156,123 @@ fn session_coordinator_persists_messages_on_turn_end() {
     assert!(
         matches!(entries.last(), Some(SessionEntry::Leaf(_))),
         "runtime should update the active branch leaf"
+    );
+}
+
+#[test]
+fn phase13_model_thinking_metadata_does_not_advance_leaf() {
+    //! Phase 13.3 acceptance: idle set_model_validated/set_thinking_level
+    //! appends must persist `model_change` and `thinking_level_change` entries
+    //! parented to the current content tip WITHOUT appending a new Leaf or
+    //! changing the active content tip. This is the coordinator-level half of
+    //! DoD scenario `phase13-model-thinking-write-read-and-branch-summary-runtime`.
+
+    use opi_agent::session::SessionEntry;
+    use opi_agent::session_event::ThinkingLevel;
+
+    let dir = tempfile::tempdir().unwrap();
+    let mut coord = SessionCoordinator::new(
+        dir.path(),
+        "/test",
+        opi_agent::compaction::CompactionConfig::default(),
+        "anthropic:claude-sonnet-4",
+    )
+    .unwrap();
+
+    let messages = vec![AgentMessage::Llm(Message::User(UserMessage {
+        content: vec![InputContent::Text {
+            text: "Hello".into(),
+        }],
+        timestamp_ms: 0,
+    }))];
+    coord
+        .on_turn_end_simple(&messages, &opi_ai::stream::Usage::default())
+        .unwrap();
+
+    let jsonl_path = dir.path().join(format!("{}.jsonl", coord.session_id()));
+    let (_header, entries_before) = SessionReader::read_all(&jsonl_path).unwrap();
+
+    // After the turn there is exactly one Leaf pointing at the message tip.
+    let leaf_count_before = entries_before
+        .iter()
+        .filter(|e| matches!(e, SessionEntry::Leaf(_)))
+        .count();
+    assert_eq!(leaf_count_before, 1, "turn should append one Leaf");
+
+    let tip_before = entries_before
+        .iter()
+        .rev()
+        .find_map(|e| match e {
+            SessionEntry::Leaf(l) => Some(l.entry_id.clone()),
+            _ => None,
+        })
+        .expect("at least one Leaf");
+    let msg_tip_id = entries_before
+        .iter()
+        .rev()
+        .find_map(|e| match e {
+            SessionEntry::Message(m) => Some(m.id.clone()),
+            _ => None,
+        })
+        .expect("at least one Message");
+
+    // Phase 13.3: typed metadata appends through the coordinator.
+    coord
+        .append_model_change("anthropic:claude-opus-4".into())
+        .unwrap();
+    coord
+        .append_thinking_level_change(ThinkingLevel::High)
+        .unwrap();
+
+    let (_header, entries_after) = SessionReader::read_all(&jsonl_path).unwrap();
+
+    // 1. The model_change and thinking_level_change entries were persisted,
+    //    parented to the content tip (the message tip id).
+    let model_change = entries_after.iter().find_map(|e| match e {
+        SessionEntry::ModelChange(m) => Some(m.clone()),
+        _ => None,
+    });
+    let thinking_change = entries_after.iter().find_map(|e| match e {
+        SessionEntry::ThinkingLevelChange(t) => Some(t.clone()),
+        _ => None,
+    });
+    let model_change = model_change.expect("model_change entry persisted");
+    let thinking_change = thinking_change.expect("thinking_level_change entry persisted");
+    assert_eq!(model_change.model, "anthropic:claude-opus-4");
+    assert_eq!(thinking_change.level, ThinkingLevel::High);
+    assert_eq!(
+        model_change.parent_id.as_deref(),
+        Some(msg_tip_id.as_str()),
+        "model_change must be parented to the content tip"
+    );
+    assert_eq!(
+        thinking_change.parent_id.as_deref(),
+        Some(msg_tip_id.as_str()),
+        "thinking_level_change must be parented to the content tip"
+    );
+
+    // 2. NO new Leaf was appended (metadata does not advance the content tip).
+    let leaf_count_after = entries_after
+        .iter()
+        .filter(|e| matches!(e, SessionEntry::Leaf(_)))
+        .count();
+    assert_eq!(
+        leaf_count_after, leaf_count_before,
+        "metadata append must not add a Leaf"
+    );
+
+    // 3. The active content tip is unchanged.
+    let tip_after = entries_after
+        .iter()
+        .rev()
+        .find_map(|e| match e {
+            SessionEntry::Leaf(l) => Some(l.entry_id.clone()),
+            _ => None,
+        })
+        .expect("at least one Leaf");
+    assert_eq!(
+        tip_after, tip_before,
+        "metadata append must not change the active content tip"
     );
 }
 
@@ -326,7 +460,9 @@ fn reconstruct_context_from_session_entries() {
     let mut writer = SessionWriter::create(&path, header).unwrap();
 
     writer.append(&test_message_entry("e1", "Hello")).unwrap();
-    writer.append(&test_message_entry("e2", "World")).unwrap();
+    writer
+        .append(&chained_message_entry("e2", "e1", "World"))
+        .unwrap();
 
     let (_header, entries) = SessionReader::read_all(&path).unwrap();
     let messages = opi_coding_agent::session_cli::reconstruct_context(&entries);
@@ -352,11 +488,13 @@ fn reconstruct_context_includes_compaction_summaries() {
 
     // first_kept_entry_id points at e2 — e1 must be dropped, e2 kept.
     writer.append(&test_message_entry("e1", "Hello")).unwrap();
-    writer.append(&test_message_entry("e2", "World")).unwrap();
+    writer
+        .append(&chained_message_entry("e2", "e1", "World"))
+        .unwrap();
     writer
         .append(&SessionEntry::Compaction(CompactionEntry {
             id: "c1".into(),
-            parent_id: None,
+            parent_id: Some("e2".into()),
             timestamp: "2026-05-22T12:00:02Z".into(),
             summary: "compacted".into(),
             first_kept_entry_id: "e2".into(),
@@ -365,7 +503,7 @@ fn reconstruct_context_includes_compaction_summaries() {
         }))
         .unwrap();
     writer
-        .append(&test_message_entry("e3", "Follow up"))
+        .append(&chained_message_entry("e3", "c1", "Follow up"))
         .unwrap();
 
     let (_header, entries) = SessionReader::read_all(&path).unwrap();
@@ -400,9 +538,12 @@ fn reconstruct_context_includes_compaction_summaries() {
 }
 
 #[test]
-fn reconstruct_context_missing_first_kept_id_falls_back_to_summary_only() {
+fn reconstruct_context_missing_first_kept_id_emits_summary_and_keeps_prior() {
     // Defensive: a corrupt/forward-incompatible session whose first_kept_entry_id
-    // does not match any prior entry must not crash — drop the pre-summary tail.
+    // does not match any chain entry must not crash. The opi-agent context
+    // builder (Phase 13.2) documents this case: no truncation is performed,
+    // but the summary is still emitted at the compaction entry's position,
+    // preserving the prior chain rather than dropping it.
     use opi_agent::message::AgentMessage;
     use opi_agent::session::CompactionEntry;
 
@@ -415,7 +556,7 @@ fn reconstruct_context_missing_first_kept_id_falls_back_to_summary_only() {
     writer
         .append(&SessionEntry::Compaction(CompactionEntry {
             id: "c1".into(),
-            parent_id: None,
+            parent_id: Some("e1".into()),
             timestamp: "2026-05-22T12:00:02Z".into(),
             summary: "compacted".into(),
             first_kept_entry_id: "missing".into(),
@@ -423,14 +564,18 @@ fn reconstruct_context_missing_first_kept_id_falls_back_to_summary_only() {
             tokens_after: 50,
         }))
         .unwrap();
-    writer.append(&test_message_entry("e2", "Post")).unwrap();
+    writer
+        .append(&chained_message_entry("e2", "c1", "Post"))
+        .unwrap();
 
     let (_header, entries) = SessionReader::read_all(&path).unwrap();
     let messages = opi_coding_agent::session_cli::reconstruct_context(&entries);
 
-    assert_eq!(messages.len(), 2);
+    // [summary(c1), e1, e2]: summary at front, prior chain preserved.
+    assert_eq!(messages.len(), 3);
     assert!(matches!(&messages[0], AgentMessage::CompactionSummary(_)));
     assert!(matches!(&messages[1], AgentMessage::Llm(_)));
+    assert!(matches!(&messages[2], AgentMessage::Llm(_)));
 }
 
 // ---------------------------------------------------------------------------
@@ -560,7 +705,20 @@ async fn harness_forks_current_session_into_new_parented_session() {
         forked_header.parent_session.as_deref(),
         Some(source_session_id.as_str())
     );
-    assert_eq!(forked_entries.len(), source_content_entries);
+    // Phase 13.3: fork copies the active-chain content AND appends a fresh
+    // Leaf at the tip, so the forked entry count is source content entries + 1
+    // (the new Leaf). Compare message-entry counts for the content invariant.
+    assert_eq!(
+        message_entry_count(&forked_entries),
+        source_content_entries,
+        "fork preserves the active-chain content"
+    );
+    assert!(
+        forked_entries
+            .iter()
+            .any(|e| matches!(e, SessionEntry::Leaf(_))),
+        "fork writes a fresh Leaf at the active tip"
+    );
     assert!(
         source_path.exists(),
         "source session must remain append-only"
@@ -1487,10 +1645,11 @@ fn open_existing_appends_new_turn_under_active_leaf_tip() {
 }
 
 #[test]
-fn reconstruct_context_without_leaf_falls_back_to_file_order() {
-    // Sessions written by the current runtime do not yet emit Leaf entries.
-    // Those linear sessions must continue to replay in file order so resume
-    // keeps working.
+fn reconstruct_context_walks_chain_without_leaf() {
+    // A linear session with a proper parent_id chain but no Leaf entries must
+    // still reconstruct in chain (root->tip) order. The opi-agent context
+    // builder walks the parent_id chain; a Leaf pointer is not required when
+    // the chain is unambiguous.
     use opi_agent::message::AgentMessage;
 
     let dir = tempfile::tempdir().unwrap();
@@ -1499,8 +1658,12 @@ fn reconstruct_context_without_leaf_falls_back_to_file_order() {
     let mut writer = SessionWriter::create(&path, header).unwrap();
 
     writer.append(&test_message_entry("e1", "a")).unwrap();
-    writer.append(&test_message_entry("e2", "b")).unwrap();
-    writer.append(&test_message_entry("e3", "c")).unwrap();
+    writer
+        .append(&chained_message_entry("e2", "e1", "b"))
+        .unwrap();
+    writer
+        .append(&chained_message_entry("e3", "e2", "c"))
+        .unwrap();
     drop(writer);
 
     let (_h, entries) = SessionReader::read_all(&path).unwrap();
@@ -2114,6 +2277,472 @@ async fn phase8_cancel_persists_only_finalized_state() {
     assert!(
         !leaked_texts.iter().any(|t| t == "second"),
         "the cancelled turn's user message must not be persisted: {leaked_texts:?}"
+    );
+
+    clear_sessions_dir();
+}
+
+// ---------------------------------------------------------------------------
+// Phase 13.3: idle model/thinking metadata writes through the harness
+// ---------------------------------------------------------------------------
+
+/// Custom-model extension override so `set_model_validated("mock:custom-model")`
+/// resolves against the same `mock` provider the harness was built with.
+struct ModelOverrideExtension;
+
+impl opi_agent::extension::Extension for ModelOverrideExtension {
+    fn name(&self) -> &str {
+        "model-override-extension"
+    }
+
+    fn model_overrides(&self) -> Vec<(String, opi_ai::provider::ModelInfo)> {
+        vec![(
+            "mock".into(),
+            opi_ai::provider::ModelInfo {
+                id: "custom-model".into(),
+                display_name: "Custom Model".into(),
+                context_window: 100_000,
+                max_output_tokens: 4_096,
+                supports_images: true,
+                supports_streaming: true,
+                supports_thinking: false,
+            },
+        )]
+    }
+}
+
+fn build_phase13_harness(workspace: &std::path::Path) -> CodingHarness {
+    let mut registry = opi_agent::extension::ExtensionRegistry::new();
+    registry.register(Box::new(ModelOverrideExtension)).unwrap();
+    CodingHarness::builder(
+        Box::new(MockProvider::new(
+            "mock",
+            vec![test_support::text_response("ok")],
+        )),
+        "mock:mock-model".into(),
+        OpiConfig::default(),
+        workspace.to_path_buf(),
+    )
+    .extension_registry(registry)
+    .build()
+}
+
+#[tokio::test]
+#[allow(clippy::await_holding_lock)]
+async fn phase13_model_thinking_changes_persist_via_harness() {
+    use opi_agent::session::SessionEntry;
+
+    let _lock = session_lock();
+    let workspace = tempfile::tempdir().unwrap();
+    let sessions = tempfile::tempdir().unwrap();
+    set_sessions_dir(sessions.path());
+    let mut harness = build_phase13_harness(workspace.path());
+
+    harness.prompt("seed turn").await.unwrap();
+
+    // Capture the session file state right after the turn (one Leaf at the
+    // content tip) so we can prove metadata writes do not advance it.
+    let jsonl_path = {
+        let session = harness.session().expect("session exists after prompt");
+        let id = session.session_id().to_owned();
+        sessions.path().join(format!("{id}.jsonl"))
+    };
+    let (_h, entries_after_prompt) = SessionReader::read_all(&jsonl_path).unwrap();
+    let leaf_count_after_prompt = entries_after_prompt
+        .iter()
+        .filter(|e| matches!(e, SessionEntry::Leaf(_)))
+        .count();
+
+    // Idle metadata writes through the validated harness paths.
+    harness
+        .set_model_validated("mock:custom-model".into())
+        .expect("same-provider model accepted");
+    harness
+        .set_thinking_level("off")
+        .expect("off accepted on non-thinking model");
+
+    let (_h, entries_after_meta) = SessionReader::read_all(&jsonl_path).unwrap();
+
+    let model_change = entries_after_meta.iter().find_map(|e| match e {
+        SessionEntry::ModelChange(m) => Some(m.clone()),
+        _ => None,
+    });
+    let thinking_change = entries_after_meta.iter().find_map(|e| match e {
+        SessionEntry::ThinkingLevelChange(t) => Some(t.clone()),
+        _ => None,
+    });
+    let model_change = model_change.expect("model_change entry persisted");
+    let thinking_change = thinking_change.expect("thinking_level_change entry persisted");
+    assert_eq!(model_change.model, "mock:custom-model");
+    assert_eq!(thinking_change.level, ThinkingLevel::None);
+
+    // Metadata is parented to the content tip (the last Message entry id), not
+    // to a new Leaf, and no new Leaf was appended.
+    let content_tip = entries_after_prompt
+        .iter()
+        .rev()
+        .find_map(|e| match e {
+            SessionEntry::Message(m) => Some(m.id.clone()),
+            _ => None,
+        })
+        .expect("a content tip exists");
+    assert_eq!(
+        model_change.parent_id.as_deref(),
+        Some(content_tip.as_str())
+    );
+    assert_eq!(
+        thinking_change.parent_id.as_deref(),
+        Some(content_tip.as_str())
+    );
+    let leaf_count_after_meta = entries_after_meta
+        .iter()
+        .filter(|e| matches!(e, SessionEntry::Leaf(_)))
+        .count();
+    assert_eq!(
+        leaf_count_after_meta, leaf_count_after_prompt,
+        "metadata writes must not append a Leaf"
+    );
+
+    clear_sessions_dir();
+}
+
+/// Pre-populate a session file with a recorded `model_change` and
+/// `thinking_level_change` parented to the content tip, plus a Leaf pointer.
+fn write_phase13_recorded_session(
+    dir: &std::path::Path,
+    session_id: &str,
+    recorded_model: &str,
+    recorded_thinking: ThinkingLevel,
+) -> std::path::PathBuf {
+    use opi_agent::session::{LeafEntry, ModelChangeEntry, ThinkingLevelChangeEntry};
+
+    let path = dir.join(format!("{session_id}.jsonl"));
+    let header = SessionHeader::new(
+        session_id.into(),
+        "2026-07-05T12:00:00Z".into(),
+        "/repo".into(),
+        None,
+    );
+    let mut writer = SessionWriter::create(&path, header).unwrap();
+    let user = SessionEntry::Message(MessageEntry {
+        id: "msg-1".into(),
+        parent_id: None,
+        timestamp: "2026-07-05T12:00:01Z".into(),
+        message: Message::User(UserMessage {
+            content: vec![InputContent::Text {
+                text: "seed".into(),
+            }],
+            timestamp_ms: 0,
+        }),
+    });
+    writer.append(&user).unwrap();
+    writer
+        .append(&SessionEntry::ModelChange(ModelChangeEntry {
+            id: "model-1".into(),
+            parent_id: Some("msg-1".into()),
+            timestamp: "2026-07-05T12:00:02Z".into(),
+            model: recorded_model.into(),
+        }))
+        .unwrap();
+    writer
+        .append(&SessionEntry::ThinkingLevelChange(
+            ThinkingLevelChangeEntry {
+                id: "thinking-1".into(),
+                parent_id: Some("msg-1".into()),
+                timestamp: "2026-07-05T12:00:03Z".into(),
+                level: recorded_thinking,
+            },
+        ))
+        .unwrap();
+    writer
+        .append(&SessionEntry::Leaf(LeafEntry {
+            id: "leaf-1".into(),
+            parent_id: Some("msg-1".into()),
+            timestamp: "2026-07-05T12:00:04Z".into(),
+            entry_id: "msg-1".into(),
+        }))
+        .unwrap();
+    path
+}
+
+#[tokio::test]
+#[allow(clippy::await_holding_lock)]
+async fn phase13_resume_applies_recorded_model_and_thinking() {
+    use opi_agent::session_event::ThinkingLevel;
+
+    let _lock = session_lock();
+    let sessions = tempfile::tempdir().unwrap();
+    set_sessions_dir(sessions.path());
+    write_phase13_recorded_session(
+        sessions.path(),
+        "resume-compat",
+        "mock:custom-model",
+        ThinkingLevel::None,
+    );
+
+    let workspace = tempfile::tempdir().unwrap();
+    let mut harness = build_phase13_harness(workspace.path());
+    // Harness starts on mock:mock-model; resume should re-apply the recorded
+    // mock:custom-model on the same provider.
+    assert_eq!(harness.model(), "mock:mock-model");
+    harness
+        .resume_session_id("resume-compat")
+        .expect("resume succeeds");
+
+    assert_eq!(
+        harness.model(),
+        "mock:custom-model",
+        "resume re-applies the recorded model_change when the provider matches"
+    );
+    let thinking = harness.thinking_config();
+    assert!(
+        !thinking.enabled,
+        "resume re-applies the recorded thinking_level_change (None -> disabled)"
+    );
+
+    clear_sessions_dir();
+}
+
+#[test]
+fn phase13_builder_resume_applies_recorded_model_cli_path() {
+    //! Phase 13.3 acceptance (M1): the CLI `--resume <ID>` path builds the
+    //! harness through `CodingHarnessBuilder::resume(ResumeInfo)`, which must
+    //! also re-apply the recorded `model_change` — not just the interactive
+    //! `resume_session_id` path. The recorded model/thinking are carried on
+    //! `ResumeInfo` from `main.rs` and applied at the end of
+    //! `new_with_build_options`.
+    use opi_coding_agent::harness::ResumeInfo;
+
+    let _lock = session_lock();
+    let sessions = tempfile::tempdir().unwrap();
+    let workspace = tempfile::tempdir().unwrap();
+    set_sessions_dir(sessions.path());
+
+    // A minimal session file the builder can point at (path + entries). The
+    // recorded metadata is supplied via ResumeInfo directly to exercise the
+    // builder-application path independent of reconstruct_context.
+    let session_path = sessions.path().join("cli-resume.jsonl");
+    let header = SessionHeader::new(
+        "cli-resume".into(),
+        "2026-07-05T12:00:00Z".into(),
+        workspace.path().display().to_string(),
+        None,
+    );
+    let mut writer = SessionWriter::create(&session_path, header).unwrap();
+    writer.append(&test_message_entry("m1", "seed")).unwrap();
+    drop(writer);
+
+    let mut registry = opi_agent::extension::ExtensionRegistry::new();
+    registry.register(Box::new(ModelOverrideExtension)).unwrap();
+    let harness = CodingHarness::builder(
+        Box::new(MockProvider::new(
+            "mock",
+            vec![test_support::text_response("ok")],
+        )),
+        "mock:mock-model".into(),
+        OpiConfig::default(),
+        workspace.path().to_path_buf(),
+    )
+    .extension_registry(registry)
+    .resume(ResumeInfo {
+        path: session_path,
+        session_id: "cli-resume".into(),
+        entries: Vec::new(),
+        original_cwd: workspace.path().to_path_buf(),
+        diagnostics: Vec::new(),
+        recorded_model: Some("mock:custom-model".into()),
+        recorded_thinking: Some(ThinkingLevel::None),
+    })
+    .build();
+
+    assert_eq!(
+        harness.model(),
+        "mock:custom-model",
+        "CLI --resume path must re-apply the recorded model_change"
+    );
+    assert!(
+        !harness.thinking_config().enabled,
+        "CLI --resume path must re-apply the recorded thinking_level_change"
+    );
+
+    clear_sessions_dir();
+}
+
+#[tokio::test]
+#[allow(clippy::await_holding_lock)]
+async fn phase13_resume_emits_diagnostic_for_incompatible_recorded_model() {
+    use opi_agent::diagnostic::code::CODE_SESSION_RESUME_MODEL_INCOMPATIBLE;
+
+    let _lock = session_lock();
+    let sessions = tempfile::tempdir().unwrap();
+    set_sessions_dir(sessions.path());
+    // Recorded model_change targets a different provider than the harness's
+    // active `mock` provider.
+    write_phase13_recorded_session(
+        sessions.path(),
+        "resume-incompat",
+        "openai:gpt-4o",
+        ThinkingLevel::None,
+    );
+
+    let workspace = tempfile::tempdir().unwrap();
+    let mut harness = CodingHarness::builder(
+        Box::new(MockProvider::new(
+            "mock",
+            vec![test_support::text_response("ok")],
+        )),
+        "mock:mock-model".into(),
+        OpiConfig::default(),
+        workspace.path().to_path_buf(),
+    )
+    .record_diagnostics(true)
+    .build();
+
+    harness
+        .resume_session_id("resume-incompat")
+        .expect("resume still succeeds despite the incompatible recording");
+
+    assert_eq!(
+        harness.model(),
+        "mock:mock-model",
+        "CLI/config model is kept when the recorded model is incompatible"
+    );
+    let diags = harness.recorded_diagnostics();
+    assert!(
+        diags
+            .iter()
+            .any(|d| d.code == CODE_SESSION_RESUME_MODEL_INCOMPATIBLE),
+        "expected a Phase 7 resume-model-incompatible diagnostic: {diags:?}"
+    );
+
+    clear_sessions_dir();
+}
+
+// ---------------------------------------------------------------------------
+// Phase 13.3: resume and fork route through the opi-agent context builder
+// ---------------------------------------------------------------------------
+
+/// Build a session file whose active branch carries a `branch_summary` parented
+/// to the content tip (per the 13.1 storage invariant, the summary does not
+/// advance the tip — the next message's parent_id is the content tip, not the
+/// summary id). Returns the session file path.
+fn write_phase13_branch_summary_session(
+    dir: &std::path::Path,
+    session_id: &str,
+) -> std::path::PathBuf {
+    use opi_agent::session::{BranchSummaryEntry, LeafEntry};
+
+    let ts = |s: &str| s.to_owned();
+    let path = dir.join(format!("{session_id}.jsonl"));
+    let header = SessionHeader::new(
+        session_id.into(),
+        ts("2026-07-05T12:00:00Z"),
+        "/repo".into(),
+        None,
+    );
+    let mut writer = SessionWriter::create(&path, header).unwrap();
+    let user_at = |id: &str, parent: Option<&str>, text: &str| {
+        SessionEntry::Message(MessageEntry {
+            id: id.into(),
+            parent_id: parent.map(str::to_owned),
+            timestamp: ts("2026-07-05T12:00:01Z"),
+            message: Message::User(UserMessage {
+                content: vec![InputContent::Text { text: text.into() }],
+                timestamp_ms: 0,
+            }),
+        })
+    };
+    writer.append(&user_at("m1", None, "root")).unwrap();
+    writer
+        .append(&SessionEntry::BranchSummary(BranchSummaryEntry {
+            id: "bs1".into(),
+            parent_id: Some("m1".into()),
+            timestamp: ts("2026-07-05T12:00:02Z"),
+            summary: "branch summary text".into(),
+        }))
+        .unwrap();
+    // m2 is parented to m1 (the content tip), NOT bs1 — branch summaries are
+    // metadata that do not advance the tip.
+    writer.append(&user_at("m2", Some("m1"), "child")).unwrap();
+    writer
+        .append(&SessionEntry::Leaf(LeafEntry {
+            id: "l1".into(),
+            parent_id: Some("m2".into()),
+            timestamp: ts("2026-07-05T12:00:03Z"),
+            entry_id: "m2".into(),
+        }))
+        .unwrap();
+    path
+}
+
+/// Fingerprint a message sequence as variant tags + a content probe, so resume
+/// and fork outputs can be compared without exposing AgentMessage internals.
+fn fingerprint_messages(messages: &[AgentMessage]) -> Vec<String> {
+    messages
+        .iter()
+        .map(|m| match m {
+            AgentMessage::Llm(Message::User(u)) => format!(
+                "user:{}",
+                u.content
+                    .iter()
+                    .find_map(|c| match c {
+                        InputContent::Text { text } => Some(text.clone()),
+                        _ => None,
+                    })
+                    .unwrap_or_default()
+            ),
+            AgentMessage::Llm(Message::Assistant(_)) => "assistant".into(),
+            AgentMessage::BranchSummary(b) => format!("branch_summary:{}", b.summary),
+            AgentMessage::CompactionSummary(c) => format!("compaction:{}", c.summary),
+            _ => "other".into(),
+        })
+        .collect()
+}
+
+#[test]
+fn phase13_resume_and_fork_use_context_builder() {
+    use opi_agent::session_context::reconstruct_context;
+
+    let _lock = session_lock();
+    let sessions = tempfile::tempdir().unwrap();
+    set_sessions_dir(sessions.path());
+    let source_path = write_phase13_branch_summary_session(sessions.path(), "bs-session");
+
+    // Resume reads the source; reconstruct via the opi-agent context API.
+    let resumed =
+        opi_coding_agent::session_cli::resume_session(sessions.path(), "bs-session").unwrap();
+    let resumed_fp =
+        fingerprint_messages(&reconstruct_context(&resumed.entries, &resumed.recovery).messages);
+
+    // Fork copies the same reconstructed active branch that resume would use.
+    let forked =
+        opi_coding_agent::session_cli::fork_session(sessions.path(), "bs-session").unwrap();
+    let forked_fp =
+        fingerprint_messages(&reconstruct_context(&forked.entries, &forked.recovery).messages);
+
+    // Both observe: root message, branch_summary injected after its parent,
+    // then the child message. branch_summary enters LLM context at the
+    // documented position.
+    assert_eq!(
+        resumed_fp,
+        vec![
+            "user:root".to_owned(),
+            "branch_summary:branch summary text".to_owned(),
+            "user:child".to_owned(),
+        ],
+        "resume must route through the opi-agent context builder"
+    );
+    assert_eq!(
+        resumed_fp, forked_fp,
+        "resume and fork must observe identical reconstructed context"
+    );
+
+    // Fork leaves the source session unchanged.
+    let (_h, entries_after) = SessionReader::read_all(&source_path).unwrap();
+    assert_eq!(
+        entries_after.len(),
+        4,
+        "fork must not modify the source session (m1 + bs1 + m2 + leaf)"
     );
 
     clear_sessions_dir();

@@ -27,13 +27,19 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use opi_agent::diagnostic::{Diagnostic, DiagnosticPayload, RedactionMode, Severity};
+use opi_agent::diagnostic::code::{
+    CODE_SESSION_RESUME_MODEL_INCOMPATIBLE, CODE_SESSION_RESUME_THINKING_INCOMPATIBLE,
+};
+use opi_agent::diagnostic::{
+    Diagnostic, DiagnosticPayload, RedactionMode, SOURCE_SESSION, Severity,
+};
 use opi_agent::event::AgentEvent;
 use opi_agent::extension::ExtensionRegistry;
 use opi_agent::hooks::AgentHooks;
 use opi_agent::loop_types::{AgentError, AgentLoopConfig};
 use opi_agent::message::AgentMessage;
-use opi_agent::session_event::SessionDiagnosticCounts;
+use opi_agent::session_context::reconstruct_context;
+use opi_agent::session_event::{SessionDiagnosticCounts, ThinkingLevel};
 use opi_agent::tool::Tool;
 use opi_agent::trace::TraceKind;
 use opi_agent::{Agent, DiagnosticSink, RecordingSink, TraceCollector, TraceSink};
@@ -66,6 +72,13 @@ pub struct ResumeInfo {
     pub original_cwd: PathBuf,
     /// Structured diagnostics observed while reading the resumed session.
     pub diagnostics: Vec<Diagnostic>,
+    /// Latest `model_change` recorded on the active branch (Phase 13.3), if
+    /// any. The harness re-applies it when compatible with the CLI/config
+    /// provider, mirroring `CodingHarness::resume_session_id`.
+    pub recorded_model: Option<String>,
+    /// Latest `thinking_level_change` recorded on the active branch (Phase
+    /// 13.3), if any. Re-applied when compatible with the active model.
+    pub recorded_thinking: Option<ThinkingLevel>,
 }
 
 /// Opt-in trace configuration handed to the harness (Phase 7 task 7.5).
@@ -814,6 +827,12 @@ impl CodingHarness {
             threshold_tokens: config.compaction.threshold_tokens,
         };
 
+        // Capture recorded model/thinking up front so `resume` can still move
+        // into SessionCoordinator::open_existing below. Applied after the
+        // harness is assembled (Phase 13.3).
+        let recorded_model = resume.as_ref().and_then(|info| info.recorded_model.clone());
+        let recorded_thinking = resume.as_ref().and_then(|info| info.recorded_thinking);
+
         let session = if let Some(info) = resume {
             SessionCoordinator::open_existing(
                 info.path,
@@ -841,7 +860,7 @@ impl CodingHarness {
         };
         let trace = build_options.trace;
 
-        Self {
+        let mut harness = Self {
             agent,
             config,
             system_prompt,
@@ -856,7 +875,16 @@ impl CodingHarness {
             trace,
             active_trace: None,
             run_seq: 0,
-        }
+        };
+
+        // Phase 13.3: re-apply recorded model/thinking on the CLI --resume path
+        // (and any other builder-driven resume), mirroring resume_session_id.
+        // The diagnostic sink is already wired above so incompat warnings flow
+        // through the same channel as the interactive path.
+        harness.apply_recorded_model(recorded_model.as_deref());
+        harness.apply_recorded_thinking(recorded_thinking);
+
+        harness
     }
 
     /// Add an extra tool to the harness (for testing with mock tools).
@@ -889,9 +917,30 @@ impl CodingHarness {
     }
 
     /// Validate and change the model used by subsequent prompts.
+    ///
+    /// On success the change is also persisted as a `model_change` entry on the
+    /// active session branch (Phase 13.3), parented to the current content tip
+    /// without advancing it. A later resume observes the recorded model and
+    /// re-applies it when compatible with the CLI/config provider.
     pub fn set_model_validated(&mut self, model: String) -> Result<&str, String> {
+        self.try_configure_model(&model)?;
+        self.agent.set_model(model.clone());
+        if let Some(session) = self.session.as_mut() {
+            // Persistence is best-effort: a failed metadata write must not roll
+            // back the in-memory model change. The next prompt's message write
+            // surfaces real I/O failures through its own error path.
+            let _ = session.append_model_change(model);
+        }
+        Ok(self.agent.model())
+    }
+
+    /// Validate that `model` is a known same-provider spec and compatible with
+    /// the current thinking configuration, without persisting or mutating
+    /// session state. Used by [`Self::set_model_validated`] (persists) and by
+    /// resume (applies a recorded model without re-persisting the entry).
+    fn try_configure_model(&mut self, model: &str) -> Result<(), String> {
         let (requested_provider, requested_model) =
-            crate::provider_factory::parse_model_spec(&model)?;
+            crate::provider_factory::parse_model_spec(model)?;
         let current_provider = self.agent.provider().id();
         if requested_provider != current_provider {
             return Err(format!(
@@ -907,13 +956,26 @@ impl CodingHarness {
         };
 
         self.validate_current_thinking_for_model(&requested_model_info)?;
-
-        self.agent.set_model(model);
-        Ok(self.agent.model())
+        Ok(())
     }
 
     /// Change the thinking level used by subsequent provider requests.
+    ///
+    /// On success the change is also persisted as a `thinking_level_change`
+    /// entry on the active session branch (Phase 13.3), parented to the current
+    /// content tip without advancing it. A later resume observes the recorded
+    /// level and re-applies it when compatible with the active model.
     pub fn set_thinking_level(&mut self, level: &str) -> Result<RuntimeThinkingState, String> {
+        let state = self.try_configure_thinking(level)?;
+        self.persist_thinking_level_change(level);
+        Ok(state)
+    }
+
+    /// Validate `level`, apply it to the agent, and return the resulting
+    /// runtime state, without persisting a session entry. Used by
+    /// [`Self::set_thinking_level`] (persists) and by resume (applies a
+    /// recorded level without re-persisting the entry).
+    fn try_configure_thinking(&mut self, level: &str) -> Result<RuntimeThinkingState, String> {
         let default_budget = self.config.thinking.budget_tokens as u64;
         let budget_tokens = match level {
             "off" => None,
@@ -946,6 +1008,24 @@ impl CodingHarness {
             enabled: state.enabled,
             budget_tokens: state.budget_tokens,
         })
+    }
+
+    /// Persist a `thinking_level_change` entry for the just-applied level, if a
+    /// session is active. Best-effort: a failed metadata write does not roll
+    /// back the in-memory change.
+    fn persist_thinking_level_change(&mut self, level: &str) {
+        let Some(session) = self.session.as_mut() else {
+            return;
+        };
+        let parsed = match level {
+            "off" => ThinkingLevel::None,
+            "low" => ThinkingLevel::Low,
+            "medium" => ThinkingLevel::Medium,
+            "high" => ThinkingLevel::High,
+            // Unreachable: try_configure_thinking rejects other values first.
+            _ => return,
+        };
+        let _ = session.append_thinking_level_change(parsed);
     }
 
     fn active_model_info(&self) -> Option<ModelInfo> {
@@ -981,25 +1061,46 @@ impl CodingHarness {
     }
 
     /// Resume an existing session by ID into this harness.
+    ///
+    /// Reconstructs the active-branch context through the opi-agent context
+    /// API (Phase 13.2/13.3): messages drive the agent buffer; the latest
+    /// recorded `model_change` and `thinking_level_change` on the active chain
+    /// are re-applied when compatible with the CLI/config provider selection,
+    /// and a Phase 7 diagnostic is emitted (without aborting the resume) when
+    /// they are not. Missing-parent warnings from the context builder are
+    /// surfaced alongside the load-time recovery diagnostics.
     pub fn resume_session_id(&mut self, session_id: &str) -> Result<usize, String> {
         let dir = crate::session_cli::session_dir();
         let session =
             crate::session_cli::resume_session(&dir, session_id).map_err(|e| e.to_string())?;
-        let messages = crate::session_cli::reconstruct_context(&session.entries);
-        let message_count = messages.len();
-        self.agent.replace_messages(messages);
+
+        // Phase 13.3: build the agent buffer and metadata view through the
+        // reusable opi-agent context API instead of the product-only walker.
+        let recovery = session.recovery.clone();
+        let ctx = reconstruct_context(&session.entries, &recovery);
+        let message_count = ctx.messages.len();
+        self.agent.replace_messages(ctx.messages);
         self.defer_extension_state_from_entries(&session.entries);
+
+        // Apply recorded model/thinking metadata (latest-wins on the active
+        // chain). Each branch keeps the CLI/config selection when the recorded
+        // value is incompatible and emits a Phase 7 diagnostic instead.
+        self.apply_recorded_model(ctx.model.as_deref());
+        self.apply_recorded_thinking(ctx.thinking_level);
+
+        // Surface recovery + missing-parent diagnostics. `session.diagnostics`
+        // is the load-time recovery set; `ctx.diagnostics` adds missing-parent
+        // warnings detected by the context builder.
         self.resources
             .metadata
             .diagnostics
             .extend(session.diagnostics.clone());
-        // Mirror resumed session-recovery diagnostics into the in-process
-        // recording sink (and the trace collector, when active) so they are
-        // counted by diagnostic_counts() and observable on a non-traced run.
-        // This matches how compaction is already wired via
-        // record_harness_diagnostic, closing the 7.2 session-recovery residual.
         for diagnostic in &session.diagnostics {
             self.record_harness_diagnostic(diagnostic.clone());
+        }
+        for diagnostic in ctx.diagnostics {
+            self.resources.metadata.diagnostics.push(diagnostic.clone());
+            self.record_harness_diagnostic(diagnostic);
         }
 
         let compaction_config = opi_agent::compaction::CompactionConfig {
@@ -1019,6 +1120,63 @@ impl CodingHarness {
         Ok(message_count)
     }
 
+    /// Re-apply a recorded `model_change` model spec on resume. Configures the
+    /// agent in place without persisting a new entry (the entry is already in
+    /// the source session). Emits a Phase 7 diagnostic and keeps the CLI/config
+    /// model when the recorded spec is incompatible.
+    fn apply_recorded_model(&mut self, recorded: Option<&str>) {
+        let Some(spec) = recorded else {
+            return;
+        };
+        if let Err(reason) = self.try_configure_model(spec) {
+            self.record_harness_diagnostic(
+                Diagnostic::new(
+                    Severity::Warning,
+                    CODE_SESSION_RESUME_MODEL_INCOMPATIBLE,
+                    SOURCE_SESSION,
+                    "recorded model_change is incompatible with the active provider; keeping CLI/config model",
+                )
+                .details(serde_json::json!({
+                    "recorded_model": spec,
+                    "active_model": self.agent.model(),
+                    "reason": reason,
+                })),
+            );
+            return;
+        }
+        self.agent.set_model(spec.to_owned());
+    }
+
+    /// Re-apply a recorded `thinking_level_change` on resume. Configures the
+    /// agent in place without persisting a new entry. Emits a Phase 7
+    /// diagnostic and keeps the CLI/config thinking level when the recorded
+    /// level is incompatible with the active model.
+    fn apply_recorded_thinking(&mut self, recorded: Option<ThinkingLevel>) {
+        let Some(level) = recorded else {
+            return;
+        };
+        let level_str = match level {
+            ThinkingLevel::None => "off",
+            ThinkingLevel::Low => "low",
+            ThinkingLevel::Medium => "medium",
+            ThinkingLevel::High => "high",
+        };
+        if let Err(reason) = self.try_configure_thinking(level_str) {
+            self.record_harness_diagnostic(
+                Diagnostic::new(
+                    Severity::Warning,
+                    CODE_SESSION_RESUME_THINKING_INCOMPATIBLE,
+                    SOURCE_SESSION,
+                    "recorded thinking_level_change is incompatible with the active model; keeping CLI/config thinking level",
+                )
+                .details(serde_json::json!({
+                    "recorded_level": level_str,
+                    "reason": reason,
+                })),
+            );
+        }
+    }
+
     /// Fork the active session into a new parented session and switch to it.
     pub fn fork_current_session(&mut self) -> Result<(String, usize), String> {
         let (dir, source_session_id) = {
@@ -1036,10 +1194,14 @@ impl CodingHarness {
 
         let forked = crate::session_cli::fork_session(&dir, &source_session_id)
             .map_err(|e| e.to_string())?;
-        let messages = crate::session_cli::reconstruct_context(&forked.entries);
-        let message_count = messages.len();
-        self.agent.replace_messages(messages);
+        let ctx = reconstruct_context(&forked.entries, &forked.recovery);
+        let message_count = ctx.messages.len();
+        self.agent.replace_messages(ctx.messages);
         self.defer_extension_state_from_entries(&forked.entries);
+        for diagnostic in ctx.diagnostics {
+            self.resources.metadata.diagnostics.push(diagnostic.clone());
+            self.record_harness_diagnostic(diagnostic);
+        }
 
         let compaction_config = opi_agent::compaction::CompactionConfig {
             enabled: self.config.compaction.enabled,
@@ -1095,10 +1257,14 @@ impl CodingHarness {
             .map_err(|e| format!("failed to select branch: {e}"))?;
         let (_, entries) = opi_agent::session::SessionReader::read_all(&path)
             .map_err(|e| format!("failed to read selected branch: {e}"))?;
-        let messages = crate::session_cli::reconstruct_context(&entries);
-        let message_count = messages.len();
-        self.agent.replace_messages(messages);
+        let ctx = reconstruct_context(&entries, &opi_agent::session::CrashRecovery::default());
+        let message_count = ctx.messages.len();
+        self.agent.replace_messages(ctx.messages);
         self.defer_extension_state_from_entries(&entries);
+        for diagnostic in ctx.diagnostics {
+            self.resources.metadata.diagnostics.push(diagnostic.clone());
+            self.record_harness_diagnostic(diagnostic);
+        }
 
         let compaction_config = opi_agent::compaction::CompactionConfig {
             enabled: self.config.compaction.enabled,
@@ -1429,6 +1595,22 @@ impl CodingHarness {
     /// Return the current model name.
     pub fn model(&self) -> &str {
         self.agent.model()
+    }
+
+    /// Return the current thinking configuration (Phase 13.3 read-side accessor
+    /// used to verify that a resumed `thinking_level_change` was applied).
+    pub fn thinking_config(&self) -> ThinkingConfig {
+        self.agent.thinking_config()
+    }
+
+    /// Return the diagnostics recorded during the run, when diagnostic
+    /// recording is enabled. Includes resume-emitted Phase 7 warnings such as
+    /// incompatible recorded `model_change`/`thinking_level_change`.
+    pub fn recorded_diagnostics(&self) -> Vec<Diagnostic> {
+        self.diagnostics
+            .as_ref()
+            .map(|sink| sink.snapshot())
+            .unwrap_or_default()
     }
 
     /// Queue a steering message for the next provider call.

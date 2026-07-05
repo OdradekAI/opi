@@ -7,10 +7,10 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use opi_agent::compaction::{CompactionConfig, CompactionEngine, DefaultCompactionHooks, Entry};
 use opi_agent::message::{AgentMessage, CompactionSummaryMessage};
 use opi_agent::session::{
-    CompactionEntry, ExtensionStateEntry, LeafEntry, MessageEntry, SessionEntry, SessionHeader,
-    SessionWriter,
+    CompactionEntry, ExtensionStateEntry, LeafEntry, MessageEntry, ModelChangeEntry, SessionEntry,
+    SessionHeader, SessionWriter, ThinkingLevelChangeEntry,
 };
-use opi_agent::session_event::{CompactionReason, CompactionResult};
+use opi_agent::session_event::{CompactionReason, CompactionResult, ThinkingLevel};
 use opi_ai::message::{AssistantContent, Message, ToolResultMessage};
 use opi_ai::stream::{CumulativeUsage, Usage};
 
@@ -458,6 +458,40 @@ impl SessionCoordinator {
             parent_id: self.active_tip_entry_id.clone(),
             timestamp: now_iso(),
             state,
+        });
+        self.writer.append(&entry)
+    }
+
+    /// Record a `model_change` entry parented to the current content tip
+    /// **without** advancing it (Phase 13.3). Idle `set_model_validated` calls
+    /// go through here so a later resume can observe the recorded model on the
+    /// active branch. No `Leaf` is appended and `active_tip_entry_id` is
+    /// unchanged: model changes are metadata attachments, not new
+    /// conversational turns.
+    pub fn append_model_change(&mut self, model: String) -> Result<(), std::io::Error> {
+        let entry = SessionEntry::ModelChange(ModelChangeEntry {
+            id: format!("model-{}", ENTRY_SEQ.fetch_add(1, Ordering::Relaxed)),
+            parent_id: self.active_tip_entry_id.clone(),
+            timestamp: now_iso(),
+            model,
+        });
+        self.writer.append(&entry)
+    }
+
+    /// Record a `thinking_level_change` entry parented to the current content
+    /// tip **without** advancing it (Phase 13.3). Idle `set_thinking_level`
+    /// calls go through here so a later resume can observe the recorded
+    /// thinking level on the active branch. No `Leaf` is appended and
+    /// `active_tip_entry_id` is unchanged.
+    pub fn append_thinking_level_change(
+        &mut self,
+        level: ThinkingLevel,
+    ) -> Result<(), std::io::Error> {
+        let entry = SessionEntry::ThinkingLevelChange(ThinkingLevelChangeEntry {
+            id: format!("thinking-{}", ENTRY_SEQ.fetch_add(1, Ordering::Relaxed)),
+            parent_id: self.active_tip_entry_id.clone(),
+            timestamp: now_iso(),
+            level,
         });
         self.writer.append(&entry)
     }
