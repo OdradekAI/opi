@@ -1,4 +1,0 @@
-interface:
-  display_name: "Opi Realign"
-  short_description: "Compare ports with target projects"
-  default_prompt: "Use $opi-realign to compare this project with target=<path> and recommend architecture and roadmap adjustments."

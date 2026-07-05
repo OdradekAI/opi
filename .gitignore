@@ -1,7 +1,7 @@
 /target
 .repo
 
-# Claude Code local-only state
+# Claude Code local-only state. Track only explicitly listed project skills.
 .claude/*
 !.claude/skills/
 .claude/skills/*
@@ -21,15 +21,7 @@
 !.claude/skills/opi-realign/**
 
 # Codex/agent local-only state
-.agents/*
-!.agents/skills/
-.agents/skills/*
-!.agents/skills/opi-implement/
-!.agents/skills/opi-implement/**
-!.agents/skills/opi-release/
-!.agents/skills/opi-release/**
-!.agents/skills/opi-realign/
-!.agents/skills/opi-realign/**
+.agents/
 
 # Secrets / credentials (must never be committed)
 .env
