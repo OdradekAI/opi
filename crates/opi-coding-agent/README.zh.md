@@ -24,9 +24,13 @@
 - 配置、上下文文件加载、会话持久化、压缩、重试、用量、费用摘要、package/资源发现、
   诊断和可选 trace。
 
-未发布的 Phase 11 变更在不新增核心工作流工具的前提下强化了内置工具：文件系统失败
-现在携带类型化诊断，read/bash 输出截断是显式状态，write/edit 记录审计元数据，导航
-工具共享有界的 gitignore-aware 遍历，失败工具结果会保留到 provider adapter。
+已发布 `0.6.3` crate 之后的当前 workspace 变更在不新增核心工作流工具的前提下加固
+既有行为。Phase 11 让文件系统失败携带类型化诊断，read/bash 输出截断成为显式状态，
+write/edit 记录可审计元数据，导航工具共享有界的 gitignore-aware 遍历，并让失败工具
+结果保留到 provider adapter。Phase 12 把 provider 正确性接入 CLI 与 harness：
+provider 构造会用已脱敏 diagnostics 校验 auth/config，OpenAI-compatible profile
+携带已文档化的兼容性标志和 `extra_headers`，provider 错误会进入 text/JSON/RPC
+diagnostics；当任一轮 usage 未知或定价未知时，会话费用汇总会被省略。
 
 本 crate 也可以通过 `CodingHarness` 作为库使用，但多数用户应先从 CLI 开始。
 
@@ -339,19 +343,19 @@ metadata 和启动诊断。
   浏览器使用、面向 package 的 provider 流式 adapter 协议、默认测试中的付费实时
   provider 调用，以及复制 pi 的 provider 专用配置文件格式。按 provider 的代理配置
   （`proxy.url` / `proxy.no_proxy`，环境变量 `HTTPS_PROXY` > `HTTP_PROXY` >
-  `NO_PROXY`）和尽力而为的费用（显式未知值优先于虚假置信）已实现；详见 `opi-ai`
+  `NO_PROXY`）和尽力而为的费用（显式未知值优先于虚假置信）已实现。详见 `opi-ai`
   README 的按 family 行为矩阵、OpenAI-compatible profile 标志（`system_role_override`、
   `max_tokens_field`、`tool_result_name_field`、`usage_in_stream`、
   `strict_tool_schema`、`reasoning_effort`、`cache_key`、
   `require_assistant_after_tool_result`；外加用于静态请求 header 的按 profile
-  `extra_headers`，它是 profile 配置字段，不是 `CompatConfig` 标志）、OpenAI Responses 原生语义
-  （`store` / `reasoning_effort` / `strict_tools` 已实现；`previous_response_id` 推迟），
-  以及缓存 / response-ID / 会话亲和行为。具体来说，`usage_in_stream` 会请求
-  `stream_options.include_usage`，OpenAI Chat 会从任何携带 `id` 的 chunk 捕获 response ID，
-  `require_assistant_after_tool_result` 在共享适配器中保持为纯元数据，而当任一轮 usage 未知
-  或定价未知时，会话费用汇总会被省略。Phase 13 会话工作可以依赖经由共享 `opi-ai`
-  类型传递的 provider-correct usage、model、thinking 和 error 数据，而无需依赖
-  provider 专用内部实现。
+  `extra_headers`，它是 profile 配置字段，不是 `CompatConfig` 标志）、OpenAI Responses
+  原生语义（`store` / `reasoning_effort` / `strict_tools` 已实现；
+  `previous_response_id` 推迟），以及缓存 / response-ID / 会话亲和行为。具体来说，
+  `usage_in_stream` 会请求 `stream_options.include_usage`，OpenAI Chat 会从任何携带 `id` 的 chunk
+  捕获 response ID，`require_assistant_after_tool_result` 在共享适配器中保持为纯元数据，而当任一轮
+  usage 未知或定价未知时，会话费用汇总会被省略。Phase 13
+  会话工作可以依赖经由共享 `opi-ai` 类型传递的 provider-correct usage、model、thinking
+  和 error 数据，而无需依赖 provider 专用内部实现。
 
 ## 许可证
 

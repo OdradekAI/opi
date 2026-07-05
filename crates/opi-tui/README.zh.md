@@ -17,9 +17,9 @@
 它不调用 Provider、不运行工具、不读取会话、不加载 package，也不管理后台任务。
 这些职责分别留在 `opi-agent` 和 `opi-coding-agent`。
 
-Phase 11 没有改变这个边界。工具执行和 diagnostics 留在本 crate 之外；
-`opi-tui` 负责渲染由上层传入的 transcript、工具状态、图片占位/escape 和编辑 diff
-预览。
+Phase 11 和 Phase 12 没有改变这个边界。工具执行、diagnostics、provider 正确性、
+retry、usage 和 session 都留在本 crate 之外；`opi-tui` 负责渲染由上层传入的
+transcript、工具状态、图片占位/escape 和编辑 diff 预览。
 
 ## 组件
 

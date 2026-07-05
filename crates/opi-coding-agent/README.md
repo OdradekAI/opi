@@ -25,11 +25,16 @@ agent. It provides:
 - config, context-file loading, session persistence, compaction, retry, usage,
   cost summaries, package/resource discovery, diagnostics, and opt-in traces.
 
-Unreleased Phase 11 changes harden the built-in tools without adding new core
-workflow tools: filesystem failures now carry typed diagnostics, read/bash
-output truncation is explicit, write/edit record audit metadata, navigation
-tools share bounded gitignore-aware walking, and failed tool results remain
-visible to provider adapters.
+Current workspace changes after the published `0.6.3` crate harden existing
+behavior without adding new core workflow tools. Phase 11 makes filesystem
+failures typed, read/bash output truncation explicit, write/edit metadata
+auditable, navigation tools bounded and gitignore-aware, and failed tool results
+visible to provider adapters. Phase 12 wires provider correctness through the
+CLI and harness: provider construction validates auth/config with redacted
+diagnostics, OpenAI-compatible profiles carry the documented compatibility
+flags and `extra_headers`, provider errors reach text/JSON/RPC diagnostics, and
+session cost summaries are omitted when any turn has unknown usage or when
+pricing is unknown.
 
 The crate is usable as a library through `CodingHarness`, but most users should
 start with the CLI.
@@ -359,26 +364,26 @@ Common methods include `prompt`, `prompt_with_content`, `queue_images`,
   GitHub Copilot subscription auth, a broad new first-class provider list
   (compatible providers stay config-driven OpenAI-compatible profiles), image
   generation (image support is input-only), browser usage, a provider
-  streaming-adapter protocol for packages, paid live provider calls in
-  default tests, and copying pi's provider-specific config file format.
-  Per-provider proxy config (`proxy.url` / `proxy.no_proxy`, env
-  `HTTPS_PROXY` > `HTTP_PROXY` > `NO_PROXY`) and best-effort cost (explicit
-  unknown values over false confidence) are implemented; see the `opi-ai`
-  README for the per-family behavior matrix, OpenAI-compatible profile flags
-  (`system_role_override`, `max_tokens_field`, `tool_result_name_field`,
-  `usage_in_stream`, `strict_tool_schema`, `reasoning_effort`, `cache_key`,
+  streaming-adapter protocol for packages, paid live provider calls in default
+  tests, and copying pi's provider-specific config file format. Per-provider
+  proxy config (`proxy.url` / `proxy.no_proxy`, env `HTTPS_PROXY` >
+  `HTTP_PROXY` > `NO_PROXY`) and best-effort cost (explicit unknown values over
+  false confidence) are implemented. See the `opi-ai` README for the per-family
+  behavior matrix, OpenAI-compatible profile flags (`system_role_override`,
+  `max_tokens_field`, `tool_result_name_field`, `usage_in_stream`,
+  `strict_tool_schema`, `reasoning_effort`, `cache_key`,
   `require_assistant_after_tool_result`; plus per-profile `extra_headers` for
   static request headers, which is a profile config field, not a `CompatConfig`
-  flag), OpenAI Responses
-  native semantics (`store` / `reasoning_effort` / `strict_tools` implemented;
-  `previous_response_id` deferred), and cache / response-ID / session-affinity
-  behavior. In particular, `usage_in_stream` requests
-  `stream_options.include_usage`, OpenAI Chat captures response IDs from any
-  chunk carrying `id`, `require_assistant_after_tool_result` stays metadata-only
-  in the shared adapter, and session cost summaries are omitted when any turn
-  has unknown usage or when pricing is unknown. Phase 13 session work may rely
-  on provider-correct usage, model, thinking, and error data through the
-  shared `opi-ai` types, without depending on provider-specific internals.
+  flag), OpenAI Responses native semantics (`store` / `reasoning_effort` /
+  `strict_tools` implemented; `previous_response_id` deferred), and cache /
+  response-ID / session-affinity behavior. In particular, `usage_in_stream`
+  requests `stream_options.include_usage`, OpenAI Chat captures response IDs
+  from any chunk carrying `id`, `require_assistant_after_tool_result` stays
+  metadata-only in the shared adapter, and session cost summaries are omitted
+  when any turn has unknown usage or when pricing is unknown. Phase 13 session
+  work may rely on provider-correct usage, model, thinking, and error data
+  through the shared `opi-ai` types, without depending on provider-specific
+  internals.
 
 ## License
 

@@ -24,11 +24,20 @@ with a provider-side auth contract (`AuthDescriptor` / `AuthStatus`),
 OpenAI-compatible compatibility metadata, and stream/complete dispatch. OAuth
 and subscription auth are explicit non-goals.
 
-Unreleased Phase 11 changes also pin provider-side tool-result failure
-semantics. `ToolResultMessage::is_error` stays visible to provider wire
-converters: providers with native error fields use them, while OpenAI-family
-wire formats that lack one use a deterministic text marker. This is a
-correctness fix for existing providers, not a provider-breadth phase.
+The current workspace includes Phase 12 provider-correctness work on top of the
+published `0.6.3` crate version. It tightens existing provider families rather
+than adding provider breadth: request/stream/error fixtures cover all built-in
+families, `ProviderError::category` exposes the nine documented classes,
+OpenAI-compatible profiles have tested `CompatConfig` and
+`ModelCompatOverride` behavior, cache tokens and provider response IDs
+round-trip where available, and missing usage remains explicit `unknown usage`
+instead of known-zero usage.
+
+The Phase 11 tool-result fix remains part of the provider contract:
+`ToolResultMessage::is_error` stays visible to provider wire converters.
+Providers with native error fields use them; OpenAI-family wire formats that
+lack one use a deterministic text marker. This is a correctness fix for
+existing providers, not a provider-breadth phase.
 
 ## Providers
 

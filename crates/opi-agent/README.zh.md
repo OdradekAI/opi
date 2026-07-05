@@ -16,9 +16,16 @@
 JSONL 存储、分支重建、上下文压缩、SDK/RPC 类型、扩展、本地诊断、已脱敏 trace
 envelope，以及 streaming proxy。
 
-未发布的 Phase 11 变更把 `truncated` 和工具自有结构化诊断加入工具契约。Agent
-主循环会把这些诊断提升为共享 diagnostic/trace 记录，并在公共 `ToolExecutionEnd`
-事件上暴露；面向 provider 的工具结果消息仍只携带 LLM 可见内容和失败状态。
+已发布 `0.6.3` crate 之后的当前 workspace 变更仍保持运行时契约聚焦，不新增核心
+工作流。Phase 11 把 `truncated` 和工具自有结构化诊断加入工具契约。Agent 主循环会
+把这些诊断提升为共享 diagnostic/trace 记录，并在公共 `ToolExecutionEnd` 事件上暴露；
+面向 provider 的工具结果消息仍只携带 LLM 可见内容和失败状态。
+
+Phase 12 使用既有运行时表面承载 provider 正确性：来自 `opi-ai` 的
+`ProviderErrorCategory` 会映射为已脱敏 diagnostics 和 trace 记录；provider 返回的
+cancellation 会表现为 `AgentError::Cancelled`；retry diagnostics 会区分重试预算耗尽与
+已有部分 provider 输出后的重试抑制；provider metadata 在公共 event、session、JSON、
+RPC 和 trace 边界保持有界。
 
 它依赖 `opi-ai` 的 Provider 和消息类型。它不实现 `opi` CLI、终端 UI 或具体的
 文件/ shell 内置工具；这些能力分别位于 `opi-coding-agent` 和 `opi-tui`。

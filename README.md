@@ -12,21 +12,21 @@
 
 The workspace package version in `Cargo.toml` is `0.6.3`. `opi` is usable as a
 terminal coding agent and as a set of Rust crates for embedding agent runtime
-pieces. The repository may also contain unreleased changes on top of that
-version; check [CHANGELOG.md](CHANGELOG.md) for the current delta.
+pieces. This checkout may contain unreleased changes on top of the published
+`0.6.3` crates; check [CHANGELOG.md](CHANGELOG.md) for the current delta.
 
 `opi` reimplements selected pi ideas in Rust. It is not API-compatible with pi,
 does not read pi config by default, and uses its own TOML config and JSONL
 session format.
 
-The `0.6.3` release includes the Phase 10 provider collection/auth,
-generic-harness, session-facade, and runtime-hook boundary seams, plus the
-Phase 11 tooling-quality work
-(see [CHANGELOG.md](CHANGELOG.md)): built-in tool results now carry consistent
-metadata, truncation flags, and structured diagnostics; public event/session
-surfaces redact sensitive tool details; provider adapters preserve failed
-tool-result semantics. Treat wire protocols, extension/package surfaces, trace
-payloads, and Phase 10/11 seams as unstable 0.x unless a crate README explicitly
+The published `0.6.3` release includes the Phase 10 provider collection/auth,
+generic-harness, session-facade, and runtime-hook boundary seams plus Phase 11
+tooling-quality work. The current workspace also includes unreleased Phase 12
+provider-correctness changes: existing provider families have fixture-backed
+request, streaming, tool-call, thinking/image, usage, retry, cancellation, and
+error-taxonomy coverage; OpenAI-compatible profile behavior is config-driven
+and documented. Treat wire protocols, extension/package surfaces, trace
+payloads, and Phase 10-12 seams as unstable 0.x unless a crate README explicitly
 says otherwise.
 
 ## Install
@@ -139,6 +139,10 @@ Provider support lives in `opi-ai` and is wired into `opi-coding-agent`.
 | `vertex:` | Google Vertex AI Gemini streaming | `VERTEX_ACCESS_TOKEN` plus project/location config |
 | configured profile | OpenAI-compatible Chat Completions profile | profile-specific `api_key_env` |
 
+Compatible OpenAI-style services should normally use configured profiles rather
+than new first-class provider modules. First-class adapters are reserved for
+material wire, auth, streaming, tool, image, or capability differences.
+
 ## Built-in Tools
 
 Available built-in tools are `read`, `write`, `edit`, `bash`, `grep`, `find`,
@@ -156,8 +160,7 @@ File writes and edits are scoped to the harness workspace root. Interactive
 `read` can inspect absolute paths and paths outside the workspace. These rules
 are tool policy, not an operating-system sandbox.
 
-Phase 11 makes tool results more inspectable without expanding the built-in
-tool set:
+Current tool results are inspectable without expanding the built-in tool set:
 
 - Built-in tool results carry `content`, optional `details`, `is_error`,
   `terminate`, `truncated`, and optional structured diagnostics.
@@ -243,17 +246,17 @@ the agent can call; they are not an operating-system sandbox.
 - Production sub-agent, permission-gate, plan/todo, and MCP workflows are not
   built into the core CLI. The repository contains examples and package
   scaffolds for those patterns.
-- OAuth or subscription login flows are not implemented. Provider correctness
-  is a Phase 12 focus, not a breadth phase: OAuth login, Anthropic / OpenAI
-  Codex / GitHub Copilot subscription auth, a broad new first-class provider
-  list, image generation, browser usage, a provider streaming-adapter
-  protocol for packages, paid live provider calls in default tests, and
-  copying pi's provider-specific config file format remain deferred. See the
-  `opi-ai` README for the per-family behavior matrix, OpenAI-compatible
-  profile flags, cache / response-ID / session-affinity behavior, proxy, and
-  best-effort cost, including `usage_in_stream` -> `stream_options.include_usage`,
-  response IDs captured from any OpenAI Chat chunk carrying `id`, and omitted
-  cost summaries when usage or pricing is unknown.
+- Phase 12 provider correctness is implemented for existing providers, not for
+  breadth. OAuth login, Anthropic / OpenAI Codex / GitHub Copilot subscription
+  auth, a broad new first-class provider list, image generation, browser usage,
+  a provider streaming-adapter protocol for packages, paid live provider calls
+  in default tests, and copying pi's provider-specific config file format remain
+  deferred. See the `opi-ai` README for the per-family behavior matrix,
+  OpenAI-compatible profile flags, cache / response-ID / session-affinity
+  behavior, proxy, and best-effort cost. Notable Phase 12 details:
+  `usage_in_stream` requests `stream_options.include_usage`; response IDs captured
+  from any OpenAI Chat chunk carrying `id` round-trip into `response_id`; cost
+  summaries are omitted when usage or pricing is unknown.
 - Dynamic Rust plugin loading from arbitrary extension paths is not supported.
 
 If you need stronger isolation, run `opi` inside a container, VM, or external

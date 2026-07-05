@@ -21,8 +21,15 @@ package 加载或内置编程工具；这些能力分别位于 `opi-agent` 和 `
 （`AuthDescriptor` / `AuthStatus`）、OpenAI-compatible 兼容性元数据，以及
 stream/complete 派发。OAuth 与订阅鉴权是明确的非目标。
 
-未发布的 Phase 11 变更还钉住了 Provider 侧工具结果失败语义。
-`ToolResultMessage::is_error` 会保留到 provider wire converter：有原生错误字段的
+当前 workspace 在已发布 `0.6.3` crate 版本之上包含 Phase 12 provider 正确性工作。
+它加固已有 provider family，而不是扩张 provider 宽度：所有内置 family 都有
+request/stream/error fixture 覆盖；`ProviderError::category` 暴露已文档化的九类错误；
+OpenAI-compatible profile 的 `CompatConfig` 和 `ModelCompatOverride` 行为经过测试；
+cache token 与 provider response ID 会在可用时回写；缺失用量保持为显式
+`unknown usage`，而不是已知零用量。
+
+Phase 11 的工具结果修复仍是 provider 契约的一部分：
+`ToolResultMessage::is_error` 会保留到 provider wire converter。有原生错误字段的
 provider 使用原生字段；没有原生字段的 OpenAI-family wire 格式使用确定性的文本
 标记。这是对现有 provider 的正确性修复，不是 provider breadth 阶段。
 

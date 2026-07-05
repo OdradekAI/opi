@@ -11,19 +11,20 @@
 ## 当前状态
 
 `Cargo.toml` 中的 workspace 包版本是 `0.6.3`。`opi` 既可以作为终端编程
-Agent 使用，也可以作为一组 Rust crate 嵌入到其他 Agent 运行时中。仓库中
-可能包含基于该版本的未发布变更；当前差异见 [CHANGELOG.md](CHANGELOG.md)。
+Agent 使用，也可以作为一组 Rust crate 嵌入到其他 Agent 运行时中。当前 checkout
+可能包含基于已发布 `0.6.3` crate 的未发布变更；当前差异见
+[CHANGELOG.md](CHANGELOG.md)。
 
 `opi` 用 Rust 重新实现 pi 的部分思路。它不与 pi API 兼容，默认不读取 pi
 配置，并使用自己的 TOML 配置和 JSONL 会话格式。
 
-`0.6.3` 版本包含 Phase 10 的 provider collection/auth、通用 harness、
-session facade 和运行时 hook 边界 seam，以及 Phase 11 工具质量工作
-（见 [CHANGELOG.md](CHANGELOG.md)）：内置工具结果现在携带
-一致的元数据、截断标志和结构化诊断；公共事件/会话表面会脱敏敏感工具 details；
-provider adapter 会保留失败工具结果语义。除非 crate README 另有明确说明，wire
-protocol、extension/package 表面、trace payload 以及 Phase 10/11 seam 都应视为
-不稳定 0.x。
+已发布的 `0.6.3` 版本包含 Phase 10 的 provider collection/auth、通用 harness、
+session facade 和运行时 hook 边界 seam，以及 Phase 11 工具质量工作。当前
+workspace 还包含未发布的 Phase 12 provider 正确性变更：已有 provider family
+具备 fixture-backed 的 request、streaming、tool-call、thinking/image、usage、
+retry、cancellation 和错误分类覆盖；OpenAI-compatible profile 行为保持配置驱动并
+已文档化。除非 crate README 另有明确说明，wire protocol、extension/package 表面、
+trace payload 以及 Phase 10-12 seam 都应视为不稳定 0.x。
 
 ## 安装
 
@@ -135,6 +136,10 @@ Provider 支持在 `opi-ai` 中实现，并接入 `opi-coding-agent`。
 | `vertex:` | Google Vertex AI Gemini streaming | `VERTEX_ACCESS_TOKEN` 加 project/location 配置 |
 | 已配置 profile | OpenAI-compatible Chat Completions profile | profile 自己的 `api_key_env` |
 
+兼容 OpenAI 风格的服务通常应通过已配置 profile 接入，而不是新增 first-class
+provider 模块。只有 wire、auth、streaming、tool、image 或能力语义存在实质差异时，
+才应添加 first-class adapter。
+
 ## 内置工具
 
 可用内置工具包括 `read`、`write`、`edit`、`bash`、`grep`、`find`、`ls` 和
@@ -151,7 +156,7 @@ Provider 支持在 `opi-ai` 中实现，并接入 `opi-coding-agent`。
 文件写入和编辑限制在 harness workspace 根目录内。交互式 `read` 可以检查绝对
 路径和 workspace 外路径。这些规则是工具策略，不是操作系统级 sandbox。
 
-Phase 11 提升了工具结果的可检查性，但没有扩张内置工具集：
+当前工具结果可检查，但没有扩张内置工具集：
 
 - 内置工具结果携带 `content`、可选 `details`、`is_error`、`terminate`、
   `truncated` 和可选结构化诊断。
@@ -230,15 +235,15 @@ Agent 可调用哪些内置工具；它们不是操作系统级 sandbox。
   `opi doctor` 默认只做本地、无网络检查，trace 需要显式启用。
 - 生产级子 Agent、permission gate、plan/todo 和 MCP 工作流不内置在核心 CLI 中；
   仓库提供相关 examples 与 package 脚手架。
-- OAuth 或订阅登录流程尚未实现。Provider 正确性是第十二阶段的重点，不是宽度
-  阶段：OAuth 登录、Anthropic / OpenAI Codex / GitHub Copilot 订阅鉴权、大范围
-  新增 first-class provider 列表、图像生成、浏览器使用、面向 package 的 provider
-  流式 adapter 协议、默认测试中的付费实时 provider 调用，以及复制 pi 的 provider
-  专用配置文件格式仍被推迟。详见 `opi-ai` README 的按 family 行为矩阵、
+- Phase 12 provider 正确性已经覆盖已有 provider，而不是扩张 provider 宽度。
+  OAuth 登录、Anthropic / OpenAI Codex / GitHub Copilot 订阅鉴权、大范围新增
+  first-class provider 列表、图像生成、浏览器使用、面向 package 的 provider 流式
+  adapter 协议、默认测试中的付费实时 provider 调用，以及复制 pi 的 provider 专用
+  配置文件格式仍被推迟。详见 `opi-ai` README 的按 family 行为矩阵、
   OpenAI-compatible profile 标志、缓存 / response-ID / 会话亲和行为、代理和
-  尽力而为的费用，其中包括 `usage_in_stream` -> `stream_options.include_usage`、
-  从任何携带 `id` 的 OpenAI Chat chunk 捕获 response ID，以及在 usage 或定价未知时省略
-  费用汇总。
+  尽力而为的费用。关键 Phase 12 细节包括：`usage_in_stream` 请求
+  `stream_options.include_usage`；从任何携带 `id` 的 OpenAI Chat chunk 捕获 response ID
+  并回写到 `response_id`；当 usage 或定价未知时省略费用汇总。
 
 - 不支持从任意 extension 路径动态加载 Rust 插件。
 
