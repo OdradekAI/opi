@@ -9,7 +9,10 @@
 
 use std::path::PathBuf;
 
-use opi_agent::session::{SessionEntry, SessionHeader, SessionWriter};
+use opi_agent::message::AgentMessage;
+use opi_agent::session::{
+    BranchSummaryEntry, SessionEntry, SessionHeader, SessionInfoEntry, SessionReader, SessionWriter,
+};
 use opi_ai::message::{
     AssistantContent, AssistantMessage, InputContent, Message, OutputContent, ToolCall,
     ToolResultMessage, UserMessage,
@@ -172,6 +175,24 @@ fn leaf(id: &str, parent: Option<&str>, entry_id: &str) -> SessionEntry {
     })
 }
 
+fn branch_summary(id: &str, parent: Option<&str>, summary: &str) -> SessionEntry {
+    SessionEntry::BranchSummary(BranchSummaryEntry {
+        id: id.into(),
+        parent_id: parent.map(str::to_owned),
+        timestamp: TS.into(),
+        summary: summary.into(),
+    })
+}
+
+fn session_info(id: &str, parent: Option<&str>, name: &str) -> SessionEntry {
+    SessionEntry::SessionInfo(SessionInfoEntry {
+        id: id.into(),
+        parent_id: parent.map(str::to_owned),
+        timestamp: TS.into(),
+        name: name.into(),
+    })
+}
+
 /// Build a session JSONL on disk inside `dir` with the given entries and
 /// return `(session_id, path)`. The active tip is set via a trailing Leaf
 /// when `active_tip_entry_id` is `Some`.
@@ -261,6 +282,161 @@ fn phase13_export_active_branch_markdown_redacts_and_preserves_source() {
     assert_eq!(
         before, after,
         "source session bytes must be unchanged after a successful export"
+    );
+
+    clear_sessions_dir();
+}
+
+#[test]
+fn phase13_export_verbose_preserves_paths_but_redacts_secrets() {
+    let _lock = session_lock();
+    let sessions = tempfile::tempdir().unwrap();
+    let out_dir = tempfile::tempdir().unwrap();
+    set_sessions_dir(sessions.path());
+
+    let entries = vec![user_msg(
+        "m1",
+        None,
+        &format!("path={PATH_CANARY} key={KEY_CANARY}"),
+    )];
+    let path = write_session(sessions.path(), "sess-verbose", &entries, Some("m1"));
+    let before = read_bytes(&path);
+
+    let output = out_dir.path().join("verbose.md");
+    export_session(&ExportOptions {
+        session_ref: "sess-verbose".into(),
+        format: ExportFormat::Markdown,
+        output: output.clone(),
+        scope: ExportScope::ActiveBranch,
+        include_tool_output: true,
+        include_thinking: true,
+        redact: ExportRedactMode::Verbose,
+    })
+    .expect("verbose export succeeds");
+
+    let exported = std::fs::read_to_string(&output).unwrap();
+    assert!(
+        exported.contains(PATH_CANARY),
+        "verbose export should preserve path evidence: {exported}"
+    );
+    assert!(
+        !exported.contains(KEY_CANARY),
+        "verbose export must still redact secrets: {exported}"
+    );
+    assert!(exported.contains("[REDACTED]"));
+    assert_eq!(before, read_bytes(&path), "source session unchanged");
+
+    clear_sessions_dir();
+}
+
+#[test]
+fn phase13_export_renders_branch_summary_entry() {
+    let _lock = session_lock();
+    let sessions = tempfile::tempdir().unwrap();
+    let out_dir = tempfile::tempdir().unwrap();
+    set_sessions_dir(sessions.path());
+
+    let entries = vec![
+        user_msg("m1", None, "root"),
+        branch_summary(
+            "bs1",
+            Some("m1"),
+            &format!("parent branch carried {KEY_CANARY}"),
+        ),
+        assistant_msg("m2", Some("m1"), "active child"),
+    ];
+    write_session(sessions.path(), "sess-branch-summary", &entries, Some("m2"));
+
+    let md_output = out_dir.path().join("branch-summary.md");
+    export_session(&ExportOptions {
+        session_ref: "sess-branch-summary".into(),
+        format: ExportFormat::Markdown,
+        output: md_output.clone(),
+        scope: ExportScope::ActiveBranch,
+        include_tool_output: true,
+        include_thinking: true,
+        redact: ExportRedactMode::Summary,
+    })
+    .expect("markdown export succeeds");
+    let md = std::fs::read_to_string(&md_output).unwrap();
+    assert!(md.contains("## Branch Summary"), "{md}");
+    assert!(!md.contains(KEY_CANARY), "{md}");
+    assert!(md.contains("[REDACTED]"), "{md}");
+
+    let json_output = out_dir.path().join("branch-summary.json");
+    export_session(&ExportOptions {
+        session_ref: "sess-branch-summary".into(),
+        format: ExportFormat::Json,
+        output: json_output.clone(),
+        scope: ExportScope::ActiveBranch,
+        include_tool_output: true,
+        include_thinking: true,
+        redact: ExportRedactMode::Summary,
+    })
+    .expect("json export succeeds");
+    let value: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&json_output).unwrap()).unwrap();
+    let branch_summary = value["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|msg| msg["role"] == "branch_summary")
+        .expect("branch_summary message exported");
+    assert_eq!(branch_summary["parent_session_id"], "");
+    assert_eq!(branch_summary["entry_count"], 0);
+    assert!(
+        !branch_summary["summary"]
+            .as_str()
+            .unwrap_or_default()
+            .contains(KEY_CANARY)
+    );
+
+    clear_sessions_dir();
+}
+
+#[test]
+fn phase13_unicode_metadata_round_trips_through_context_and_export() {
+    let _lock = session_lock();
+    let sessions = tempfile::tempdir().unwrap();
+    let out_dir = tempfile::tempdir().unwrap();
+    set_sessions_dir(sessions.path());
+
+    let unicode_name = "session-\u{4f1a}\u{8bdd}";
+    let unicode_summary = "summary-\u{5206}\u{652f}-\u{2713}";
+    let entries = vec![
+        user_msg("m1", None, "root"),
+        session_info("info1", Some("m1"), unicode_name),
+        branch_summary("bs1", Some("m1"), unicode_summary),
+        assistant_msg("m2", Some("m1"), "active child"),
+    ];
+    let path = write_session(sessions.path(), "sess-unicode", &entries, Some("m2"));
+
+    let (_header, read_entries, recovery) = SessionReader::read_with_recovery(&path).unwrap();
+    assert!(recovery.is_clean());
+    let ctx = opi_agent::session_context::reconstruct_context(&read_entries, &recovery);
+    assert_eq!(ctx.session_name.as_deref(), Some(unicode_name));
+    assert!(ctx.messages.iter().any(|msg| {
+        matches!(
+            msg,
+            AgentMessage::BranchSummary(summary) if summary.summary == unicode_summary
+        )
+    }));
+
+    let output = out_dir.path().join("unicode.md");
+    export_session(&ExportOptions {
+        session_ref: "sess-unicode".into(),
+        format: ExportFormat::Markdown,
+        output: output.clone(),
+        scope: ExportScope::ActiveBranch,
+        include_tool_output: true,
+        include_thinking: true,
+        redact: ExportRedactMode::None,
+    })
+    .expect("unicode export succeeds");
+    let md = std::fs::read_to_string(&output).unwrap();
+    assert!(
+        md.contains(unicode_summary),
+        "unicode branch summary must survive export: {md}"
     );
 
     clear_sessions_dir();

@@ -354,6 +354,56 @@ async fn runner_resume_forwards_compaction_summary_to_provider() {
     );
 }
 
+#[tokio::test]
+async fn runner_resume_forwards_branch_summary_to_provider() {
+    use opi_agent::message::{AgentMessage, BranchSummaryMessage};
+    use opi_ai::message::{InputContent, Message};
+
+    let response = test_support::text_response("ack");
+    let provider = MockProvider::new("mock", vec![response]);
+    let call_log = provider.call_log_handle();
+
+    let summary_text = "Parent branch established the retry contract.";
+    let initial_messages = vec![AgentMessage::BranchSummary(BranchSummaryMessage {
+        parent_session_id: "parent-session".into(),
+        summary: summary_text.into(),
+        entry_count: 7,
+    })];
+
+    let mut runner = NonInteractiveRunner::new(
+        Box::new(provider),
+        "mock-model".into(),
+        OpiConfig::default(),
+        std::env::current_dir().unwrap(),
+        false,
+        None,
+        initial_messages,
+    );
+
+    let result = runner.run("continue please").await;
+    assert_eq!(result.exit_code, ExitCode::Success as i32);
+
+    let log = call_log.lock().unwrap();
+    let first_request = log.first().expect("provider was called at least once");
+
+    let saw_summary = first_request.messages.iter().any(|msg| {
+        if let Message::User(u) = msg {
+            return u.content.iter().any(|content| {
+                matches!(
+                    content,
+                    InputContent::Text { text } if text.contains(summary_text)
+                )
+            });
+        }
+        false
+    });
+    assert!(
+        saw_summary,
+        "provider request messages must include branch summary text; got: {:?}",
+        first_request.messages
+    );
+}
+
 // ---------------------------------------------------------------------------
 // Test 5: format_persist_errors captures errors that occur during the run
 // ---------------------------------------------------------------------------

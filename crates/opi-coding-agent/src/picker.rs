@@ -4,6 +4,7 @@
 use std::path::Path;
 
 use opi_agent::session_branch::{BranchInfo, SessionTree};
+use opi_agent::{RedactionMode, redact_text};
 use opi_tui::select_list::SelectItem;
 
 /// Collect SelectItem entries from all registered providers' model lists.
@@ -55,7 +56,9 @@ fn branch_picker_item(branch: &BranchInfo, index: usize, is_active: bool) -> Sel
         format!("Branch {}", index + 1)
     };
     let display = match branch.summary.as_deref() {
-        Some(summary) if !summary.is_empty() => format!("{name}: {summary}"),
+        Some(summary) if !summary.is_empty() => {
+            format!("{name}: {}", redact_text(summary, RedactionMode::Summary))
+        }
         _ => name,
     };
     let mut metadata = format!(

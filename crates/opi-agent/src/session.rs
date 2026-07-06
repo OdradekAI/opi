@@ -26,9 +26,9 @@
 //! `branch_summary`, `session_info`, `model_change`, `thinking_level_change`,
 //! and `label` are metadata/context attachments: they are parented to the
 //! current content tip but do **not** advance it, and they do not enter the
-//! branch graph in [`crate::session_branch::SessionTree`]. Whether and how
-//! `branch_summary` enters provider LLM context is owned by the Phase 13
-//! context builder (task 13.2), not by this entry model.
+//! branch graph in [`crate::session_branch::SessionTree`]. `branch_summary`
+//! context reconstruction and provider conversion are owned by the Phase 13
+//! context/product paths, not by this entry model.
 //!
 //! `custom_message` is **deferred**: Phase 13 does not add a dedicated
 //! `custom_message` durable entry variant. Extension-provided messages persist
@@ -180,9 +180,8 @@ pub enum LabelAction {
 }
 
 /// Branch summary preserving context when leaving or forking a branch
-/// (Phase 13 `branch_summary` entry). Whether it enters provider LLM context
-/// is decided by the Phase 13 context builder (task 13.2); the durable entry
-/// only stores the summary text.
+/// (Phase 13 `branch_summary` entry). Context reconstruction and provider
+/// conversion decide how the stored summary enters later turns.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BranchSummaryEntry {
     pub id: String,
@@ -324,7 +323,7 @@ impl CrashRecovery {
     }
 }
 
-/// Append-only JSONL writer with crash-safe flush.
+/// Append-only JSONL writer with fsync and recoverable line-boundary handling.
 pub struct SessionWriter {
     file: std::fs::File,
 }
@@ -402,7 +401,7 @@ impl SessionWriter {
 pub struct SessionReader;
 
 impl SessionReader {
-    /// Read all entries from a session file (strict mode — errors on corrupt data).
+    /// Read all entries from a session file, discarding recovery metadata.
     pub fn read_all(path: &Path) -> std::io::Result<(SessionHeader, Vec<SessionEntry>)> {
         let (header, entries, _recovery) = Self::read_with_recovery(path)?;
         Ok((header, entries))
@@ -524,3 +523,104 @@ const KNOWN_ENTRY_TYPES: &[&str] = &[
     "label",
     "branch_summary",
 ];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::BTreeSet;
+
+    fn user_message() -> opi_ai::message::Message {
+        opi_ai::message::Message::User(opi_ai::message::UserMessage {
+            content: vec![opi_ai::message::InputContent::Text {
+                text: "hello".into(),
+            }],
+            timestamp_ms: 0,
+        })
+    }
+
+    fn emitted_tag(entry: SessionEntry) -> String {
+        serde_json::to_value(entry)
+            .unwrap()
+            .get("type")
+            .and_then(serde_json::Value::as_str)
+            .expect("SessionEntry serializes a type tag")
+            .to_owned()
+    }
+
+    #[test]
+    fn known_entry_types_matches_serde_emitted_variant_tags() {
+        let entries = vec![
+            SessionEntry::Message(MessageEntry {
+                id: "m1".into(),
+                parent_id: None,
+                timestamp: "2026-07-06T00:00:00Z".into(),
+                message: user_message(),
+            }),
+            SessionEntry::Compaction(CompactionEntry {
+                id: "c1".into(),
+                parent_id: Some("m1".into()),
+                timestamp: "2026-07-06T00:00:00Z".into(),
+                summary: "summary".into(),
+                first_kept_entry_id: "m1".into(),
+                tokens_before: 10,
+                tokens_after: 5,
+            }),
+            SessionEntry::Leaf(LeafEntry {
+                id: "l1".into(),
+                parent_id: Some("c1".into()),
+                timestamp: "2026-07-06T00:00:00Z".into(),
+                entry_id: "c1".into(),
+            }),
+            SessionEntry::ExtensionState(ExtensionStateEntry {
+                id: "state1".into(),
+                parent_id: Some("m1".into()),
+                timestamp: "2026-07-06T00:00:00Z".into(),
+                state: serde_json::json!({"ok": true}),
+            }),
+            SessionEntry::SessionInfo(SessionInfoEntry {
+                id: "info1".into(),
+                parent_id: Some("m1".into()),
+                timestamp: "2026-07-06T00:00:00Z".into(),
+                name: "demo".into(),
+            }),
+            SessionEntry::ModelChange(ModelChangeEntry {
+                id: "model1".into(),
+                parent_id: Some("m1".into()),
+                timestamp: "2026-07-06T00:00:00Z".into(),
+                model: "mock:model".into(),
+            }),
+            SessionEntry::ThinkingLevelChange(ThinkingLevelChangeEntry {
+                id: "thinking1".into(),
+                parent_id: Some("m1".into()),
+                timestamp: "2026-07-06T00:00:00Z".into(),
+                level: crate::session_event::ThinkingLevel::Low,
+            }),
+            SessionEntry::Label(LabelEntry {
+                id: "label1".into(),
+                parent_id: Some("m1".into()),
+                timestamp: "2026-07-06T00:00:00Z".into(),
+                label: "bug".into(),
+                action: LabelAction::Add,
+            }),
+            SessionEntry::BranchSummary(BranchSummaryEntry {
+                id: "summary1".into(),
+                parent_id: Some("m1".into()),
+                timestamp: "2026-07-06T00:00:00Z".into(),
+                summary: "parent branch".into(),
+            }),
+        ];
+
+        let emitted: BTreeSet<String> = entries.into_iter().map(emitted_tag).collect();
+        let known: BTreeSet<String> = KNOWN_ENTRY_TYPES
+            .iter()
+            .map(|tag| (*tag).to_owned())
+            .collect();
+
+        assert_eq!(known, emitted);
+        assert_eq!(
+            KNOWN_ENTRY_TYPES.len(),
+            emitted.len(),
+            "KNOWN_ENTRY_TYPES must have exactly one tag per serde-emitting variant"
+        );
+    }
+}

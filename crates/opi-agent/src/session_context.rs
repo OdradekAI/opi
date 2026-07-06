@@ -10,8 +10,10 @@
 //!
 //! ```text
 //! ordered session entries
-//!   -> SessionTree -> active tip (last valid Leaf, else trunk tip)
+//!   -> SessionTree -> active tip
+//!      (last valid Leaf, else trunk tip, else legacy no-Leaf file order)
 //!   -> walk parent_id chain from active tip to root
+//!      (or file order for legacy no-Leaf multi-root content)
 //!   -> reverse to root->tip order
 //!   -> apply Message / Compaction / BranchSummary on the chain
 //!   -> collect metadata parented to the active chain
@@ -46,15 +48,21 @@
 //!   file order to produce the active label set. Labels never enter LLM
 //!   context.
 //!
-//! Metadata entries parented to a content entry that is **not** on the active
-//! chain (a sibling branch) do not apply to the reconstructed context.
+//! When the active content chain is empty, rootless metadata entries
+//! (`parent_id: None`) apply to the empty trunk. Once content exists, metadata
+//! must be parented to an entry on the active chain.
+//!
+//! Metadata entries parented to an entry that is **not** on the active chain
+//! (a sibling branch) do not apply to the reconstructed context.
 //!
 //! # Diagnostics
 //!
 //! Missing-parent warnings (an entry whose `parent_id` does not resolve to any
 //! known entry) are emitted with [`CODE_SESSION_CONTEXT_MISSING_PARENT`].
-//! Corrupt/truncated/unknown observations are forwarded from the input
-//! [`CrashRecovery`] so a single call surfaces every load-time anomaly.
+//! Stale `Leaf` pointers whose targets are missing from the branch graph are
+//! emitted with [`CODE_SESSION_LEAF_TIP_MISSING`]. Corrupt/truncated/unknown
+//! observations are forwarded from the input [`CrashRecovery`] so a single
+//! call surfaces every load-time anomaly.
 
 use std::collections::{HashMap, HashSet};
 
@@ -80,7 +88,9 @@ pub struct ReconstructedContext {
     /// appear here.
     pub messages: Vec<AgentMessage>,
     /// Entry id at the tip of the active branch (the last valid Leaf's
-    /// `entry_id`, falling back to the trunk tip when no Leaf entries exist).
+    /// `entry_id`, falling back to the trunk tip when the last Leaf is missing
+    /// or no Leaf entries exist, and to legacy file-order replay for no-Leaf
+    /// multi-root content).
     /// `None` only when the session has no content entries.
     pub active_tip_entry_id: Option<String>,
     /// Latest `model_change` model spec on the active chain, if any.
@@ -113,21 +123,22 @@ pub fn reconstruct_context(
 ) -> ReconstructedContext {
     let mut diagnostics = recovery.diagnostics();
 
-    // Index entries by id for parent resolution and metadata attribution.
-    // NOTE: this indexes ALL entry variants (content + metadata + leaves),
-    // whereas `SessionTree::from_entries` indexes only Message/Compaction for
-    // branch-graph purposes. The divergence is deliberate: the missing-parent
-    // scan below must recognize any entry id as a valid parent target so that
-    // metadata parented to a content tip resolves correctly. Do not "unify"
-    // the two maps without revisiting the scan-all contract.
-    let entries_by_id: HashMap<&str, &SessionEntry> =
-        entries.iter().map(|e| (e.entry_id(), e)).collect();
+    let entries_by_id = entries_by_id(entries);
 
     // Active tip comes from the existing SessionTree (last valid Leaf, else
     // trunk tip). The tree also ignores metadata entries for branch graph
     // purposes, matching the "metadata does not enter the branch graph" rule.
     let tree = SessionTree::from_entries(entries);
     let active_tip: Option<&str> = tree.active_tip();
+    if let Some(leaf_tip) = last_leaf_tip(entries)
+        && active_tip != Some(leaf_tip)
+        && !entries
+            .iter()
+            .filter_map(content_entry_id)
+            .any(|id| id == leaf_tip)
+    {
+        diagnostics.push(leaf_tip_missing_diagnostic(leaf_tip, active_tip));
+    }
 
     // Missing-parent scan: any entry (on any branch) whose `parent_id` does
     // not resolve to a known entry surfaces a warning. This catches corruption
@@ -144,31 +155,7 @@ pub fn reconstruct_context(
         }
     }
 
-    // Walk parent_id from the active tip to the root, recording chain index
-    // for each visited content entry. Metadata entries are attachments and
-    // are not part of this walk; they are attributed by parent_id below.
-    let mut chain: Vec<&str> = Vec::new();
-    if let Some(start) = active_tip {
-        let mut cursor: Option<&str> = Some(start);
-        let mut visited: HashSet<&str> = HashSet::new();
-        while let Some(id) = cursor {
-            // Cycle guard (defensive; SessionTree already breaks cycles).
-            if !visited.insert(id) {
-                break;
-            }
-            let Some(entry) = entries_by_id.get(id).copied() else {
-                break;
-            };
-            chain.push(id);
-            // Stop at entries whose parent does not resolve; the missing-parent
-            // diagnostic was already recorded in the scan above.
-            cursor = entry
-                .parent_id()
-                .filter(|pid| entries_by_id.contains_key(*pid));
-        }
-        // The walk produced tip->root; reverse for root->tip.
-        chain.reverse();
-    }
+    let chain = active_chain_ids_for_entries(entries, &entries_by_id, active_tip);
 
     // chain_index: entry id -> position in root->tip order. Used by compaction
     // to decide what to drop (everything strictly before first_kept_entry_id).
@@ -239,11 +226,12 @@ pub fn reconstruct_context(
     // Metadata pass: iterate entries in file order so "latest wins" lands on
     // the last attribution. Only metadata parented to the active chain
     // applies; metadata on sibling branches is skipped.
+    let active_tip_entry_id = chain.last().map(|id| (*id).to_owned());
     let metadata = collect_metadata(entries, &chain_set);
 
     ReconstructedContext {
         messages,
-        active_tip_entry_id: active_tip.map(str::to_owned),
+        active_tip_entry_id,
         model: metadata.model,
         thinking_level: metadata.thinking_level,
         session_name: metadata.session_name,
@@ -251,6 +239,112 @@ pub fn reconstruct_context(
         extension_state: metadata.extension_state,
         diagnostics,
     }
+}
+
+/// Return the active `parent_id` chain as ordered session entry IDs.
+///
+/// This is the raw chain-selection counterpart to [`reconstruct_context`].
+/// It uses the same [`SessionTree::active_tip`] resolution, legacy no-Leaf
+/// fallback, and all-entry parent walk, so product code that needs source
+/// entries can avoid maintaining a second walker with subtly different
+/// degraded-input behavior.
+pub fn active_chain_entry_ids(entries: &[SessionEntry]) -> Vec<String> {
+    let entries_by_id = entries_by_id(entries);
+    let tree = SessionTree::from_entries(entries);
+    active_chain_ids_for_entries(entries, &entries_by_id, tree.active_tip())
+        .into_iter()
+        .map(str::to_owned)
+        .collect()
+}
+
+fn entries_by_id(entries: &[SessionEntry]) -> HashMap<&str, &SessionEntry> {
+    // Index ALL entry variants (content + metadata + leaves), whereas
+    // `SessionTree::from_entries` indexes only Message/Compaction for
+    // branch-graph purposes. The divergence is deliberate: the missing-parent
+    // scan and active-chain walk must recognize any entry id as a valid parent
+    // target so metadata parent links are traversed consistently.
+    entries.iter().map(|e| (e.entry_id(), e)).collect()
+}
+
+fn active_chain_ids_for_entries<'a>(
+    entries: &'a [SessionEntry],
+    entries_by_id: &HashMap<&'a str, &'a SessionEntry>,
+    active_tip: Option<&str>,
+) -> Vec<&'a str> {
+    if should_replay_legacy_file_order(entries) {
+        return entries.iter().filter_map(content_entry_id).collect();
+    }
+    active_chain_ids(entries_by_id, active_tip)
+}
+
+fn should_replay_legacy_file_order(entries: &[SessionEntry]) -> bool {
+    if entries
+        .iter()
+        .any(|entry| matches!(entry, SessionEntry::Leaf(_)))
+    {
+        return false;
+    }
+
+    let content_ids: HashSet<&str> = entries.iter().filter_map(content_entry_id).collect();
+    let mut root_count = 0usize;
+    for entry in entries {
+        if content_entry_id(entry).is_none() {
+            continue;
+        }
+        let has_valid_parent = entry
+            .parent_id()
+            .is_some_and(|parent_id| content_ids.contains(parent_id));
+        if !has_valid_parent {
+            root_count += 1;
+            if root_count > 1 {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+fn content_entry_id(entry: &SessionEntry) -> Option<&str> {
+    match entry {
+        SessionEntry::Message(m) => Some(m.id.as_str()),
+        SessionEntry::Compaction(c) => Some(c.id.as_str()),
+        _ => None,
+    }
+}
+
+fn last_leaf_tip(entries: &[SessionEntry]) -> Option<&str> {
+    entries.iter().rev().find_map(|entry| match entry {
+        SessionEntry::Leaf(l) => Some(l.entry_id.as_str()),
+        _ => None,
+    })
+}
+
+fn active_chain_ids<'a>(
+    entries_by_id: &HashMap<&'a str, &'a SessionEntry>,
+    active_tip: Option<&str>,
+) -> Vec<&'a str> {
+    let mut chain = Vec::new();
+    let mut cursor = active_tip;
+    let mut visited: HashSet<&str> = HashSet::new();
+
+    while let Some(id) = cursor {
+        let Some(entry) = entries_by_id.get(id).copied() else {
+            break;
+        };
+        let entry_id = entry.entry_id();
+        if !visited.insert(entry_id) {
+            break;
+        }
+        chain.push(entry_id);
+        // Stop at entries whose parent does not resolve; the missing-parent
+        // diagnostic is recorded by `reconstruct_context`.
+        cursor = entry
+            .parent_id()
+            .filter(|pid| entries_by_id.contains_key(*pid));
+    }
+
+    chain.reverse();
+    chain
 }
 
 /// Drop accumulated messages strictly before the compaction's
@@ -295,7 +389,10 @@ fn collect_metadata(entries: &[SessionEntry], chain_set: &HashSet<&str>) -> Coll
     let mut out = CollectedMetadata::default();
 
     let on_chain = |parent_id: Option<&str>| -> bool {
-        parent_id.and_then(|pid| chain_set.get(pid)).is_some()
+        match parent_id {
+            None => chain_set.is_empty(),
+            Some(pid) => chain_set.contains(pid),
+        }
     };
 
     for entry in entries {
@@ -356,6 +453,21 @@ fn missing_parent_diagnostic(entry_id: &str, parent_id: Option<&str>) -> Diagnos
     .details(serde_json::json!({
         "entry_id": entry_id,
         "parent_id": parent_id.unwrap_or(""),
+    }))
+}
+
+/// Build the stale-leaf diagnostic when active-tip resolution falls back
+/// because the last Leaf target is not a content entry in the branch graph.
+fn leaf_tip_missing_diagnostic(leaf_entry_id: &str, fallback_tip: Option<&str>) -> Diagnostic {
+    Diagnostic::new(
+        Severity::Warning,
+        CODE_SESSION_LEAF_TIP_MISSING,
+        SOURCE_SESSION,
+        "session leaf target is missing; falling back to trunk tip",
+    )
+    .details(serde_json::json!({
+        "leaf_entry_id": leaf_entry_id,
+        "fallback_tip": fallback_tip.unwrap_or(""),
     }))
 }
 

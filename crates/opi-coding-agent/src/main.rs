@@ -91,8 +91,7 @@ fn main() {
             // `CodingHarness::resume_session_id` (no product-only walker).
             let recovery = session.recovery.clone();
             let ctx = opi_agent::session_context::reconstruct_context(&session.entries, &recovery);
-            let mut diagnostics = session.diagnostics;
-            diagnostics.extend(ctx.diagnostics);
+            let diagnostics = ctx.diagnostics.clone();
             let original_cwd = std::path::PathBuf::from(&session.header.cwd);
             let info = ResumeInfo {
                 path: session.path,

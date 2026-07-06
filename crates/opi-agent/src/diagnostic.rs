@@ -268,6 +268,10 @@ pub mod code {
     /// reconstructed chain up to the break; the diagnostic explains where the
     /// chain could not be extended further. Phase 13.2.
     pub const CODE_SESSION_CONTEXT_MISSING_PARENT: &str = "session_context_missing_parent";
+    /// Context reconstruction found a `Leaf` pointer whose target is not a
+    /// content entry in the branch graph, so active-tip resolution fell back to
+    /// the trunk tip. Phase 13.2.
+    pub const CODE_SESSION_LEAF_TIP_MISSING: &str = "session_leaf_tip_missing";
     /// Resume could not apply a recorded `model_change` because the recorded
     /// provider/model is incompatible with the active CLI/config provider
     /// selection. The CLI/config model is kept; the recorded entry is preserved

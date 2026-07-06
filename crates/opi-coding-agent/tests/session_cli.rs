@@ -10,7 +10,11 @@ use std::io::Write;
 use std::path::PathBuf;
 
 use opi_agent::diagnostic::code::{CODE_SESSION_CORRUPT_ENTRIES, CODE_SESSION_TRUNCATED_LINE};
-use opi_agent::session::{MessageEntry, SessionEntry, SessionHeader, SessionWriter};
+use opi_agent::session::{
+    LabelAction, LabelEntry, LeafEntry, MessageEntry, SessionEntry, SessionHeader,
+    SessionInfoEntry, SessionWriter,
+};
+use opi_agent::session_context::reconstruct_context;
 use opi_ai::message::{InputContent, Message, UserMessage};
 use opi_coding_agent::session_cli::{
     self, SessionInfo, delete_session, fork_session, list_sessions, resume_session,
@@ -37,6 +41,18 @@ fn test_message_entry(id: &str, text: &str) -> SessionEntry {
     SessionEntry::Message(MessageEntry {
         id: id.into(),
         parent_id: None,
+        timestamp: "2026-05-22T12:00:01Z".into(),
+        message: Message::User(UserMessage {
+            content: vec![InputContent::Text { text: text.into() }],
+            timestamp_ms: 0,
+        }),
+    })
+}
+
+fn test_message_entry_with_parent(id: &str, parent_id: Option<&str>, text: &str) -> SessionEntry {
+    SessionEntry::Message(MessageEntry {
+        id: id.into(),
+        parent_id: parent_id.map(str::to_owned),
         timestamp: "2026-05-22T12:00:01Z".into(),
         message: Message::User(UserMessage {
             content: vec![InputContent::Text { text: text.into() }],
@@ -306,8 +322,12 @@ fn resume_session_returns_entries() {
     let header = make_header("sess-001", "/repo");
     let path = dir.path().join("sess-001.jsonl");
     let mut writer = SessionWriter::create(&path, header.clone()).unwrap();
-    writer.append(&test_message_entry("e1", "Hello")).unwrap();
-    writer.append(&test_message_entry("e2", "World")).unwrap();
+    writer
+        .append(&test_message_entry_with_parent("e1", None, "Hello"))
+        .unwrap();
+    writer
+        .append(&test_message_entry_with_parent("e2", Some("e1"), "World"))
+        .unwrap();
 
     let result = resume_session(dir.path(), "sess-001").unwrap();
     assert_eq!(result.entries.len(), 2);
@@ -333,8 +353,12 @@ fn fork_session_creates_new_session_with_parent_and_copied_entries() {
     let header = make_header("sess-001", "/repo");
     let path = dir.path().join("sess-001.jsonl");
     let mut writer = SessionWriter::create(&path, header.clone()).unwrap();
-    writer.append(&test_message_entry("e1", "Hello")).unwrap();
-    writer.append(&test_message_entry("e2", "World")).unwrap();
+    writer
+        .append(&test_message_entry_with_parent("e1", None, "Hello"))
+        .unwrap();
+    writer
+        .append(&test_message_entry_with_parent("e2", Some("e1"), "World"))
+        .unwrap();
     drop(writer);
 
     let forked = fork_session(dir.path(), "sess-001").unwrap();
@@ -360,6 +384,161 @@ fn fork_session_creates_new_session_with_parent_and_copied_entries() {
     });
     let leaf = leaf.expect("forked session has a fresh Leaf at the tip");
     assert_eq!(leaf.entry_id, "e2");
+}
+
+#[test]
+fn fork_session_uses_trunk_fallback_when_leaf_points_to_missing_entry() {
+    let dir = create_session_dir();
+    let header = make_header("stale-leaf", "/repo");
+    let path = dir.path().join("stale-leaf.jsonl");
+    let mut writer = SessionWriter::create(&path, header).unwrap();
+    writer
+        .append(&test_message_entry_with_parent("e1", None, "root"))
+        .unwrap();
+    writer
+        .append(&test_message_entry_with_parent("e2", Some("e1"), "trunk"))
+        .unwrap();
+    writer
+        .append(&SessionEntry::Leaf(LeafEntry {
+            id: "leaf-stale".into(),
+            parent_id: Some("e2".into()),
+            timestamp: "2026-05-22T12:00:02Z".into(),
+            entry_id: "missing-entry".into(),
+        }))
+        .unwrap();
+    drop(writer);
+
+    let forked = fork_session(dir.path(), "stale-leaf").unwrap();
+
+    let copied_ids = forked
+        .entries
+        .iter()
+        .filter_map(|entry| match entry {
+            SessionEntry::Message(message) => Some(message.id.as_str()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        copied_ids,
+        vec!["e1", "e2"],
+        "fork should use the same trunk fallback as reconstruct_context"
+    );
+    let leaf = forked.entries.iter().find_map(|entry| match entry {
+        SessionEntry::Leaf(leaf) => Some(leaf),
+        _ => None,
+    });
+    assert_eq!(leaf.map(|leaf| leaf.entry_id.as_str()), Some("e2"));
+}
+
+#[test]
+fn fork_session_preserves_rootless_metadata_when_no_content_exists() {
+    let dir = create_session_dir();
+    let header = make_header("metadata-only", "/repo");
+    let path = dir.path().join("metadata-only.jsonl");
+    let mut writer = SessionWriter::create(&path, header).unwrap();
+    writer
+        .append(&SessionEntry::SessionInfo(SessionInfoEntry {
+            id: "info-1".into(),
+            parent_id: None,
+            timestamp: "2026-05-22T12:00:01Z".into(),
+            name: "named-before-prompt".into(),
+        }))
+        .unwrap();
+    writer
+        .append(&SessionEntry::Label(LabelEntry {
+            id: "label-1".into(),
+            parent_id: None,
+            timestamp: "2026-05-22T12:00:02Z".into(),
+            label: "setup".into(),
+            action: LabelAction::Add,
+        }))
+        .unwrap();
+    drop(writer);
+
+    let forked = fork_session(dir.path(), "metadata-only").unwrap();
+
+    assert!(forked.entries.iter().any(|entry| {
+        matches!(
+            entry,
+            SessionEntry::SessionInfo(SessionInfoEntry { name, parent_id: None, .. })
+                if name == "named-before-prompt"
+        )
+    }));
+    assert!(forked.entries.iter().any(|entry| {
+        matches!(
+            entry,
+            SessionEntry::Label(LabelEntry { label, parent_id: None, action: LabelAction::Add, .. })
+                if label == "setup"
+        )
+    }));
+    assert!(
+        !forked
+            .entries
+            .iter()
+            .any(|entry| matches!(entry, SessionEntry::Leaf(_))),
+        "metadata-only forks have no content tip to point a fresh Leaf at"
+    );
+}
+
+#[test]
+fn fork_session_preserves_metadata_parented_to_active_metadata_entry() {
+    let dir = create_session_dir();
+    let header = make_header("metadata-through-metadata", "/repo");
+    let path = dir.path().join("metadata-through-metadata.jsonl");
+    let mut writer = SessionWriter::create(&path, header).unwrap();
+    writer
+        .append(&test_message_entry_with_parent("m1", None, "root"))
+        .unwrap();
+    writer
+        .append(&SessionEntry::SessionInfo(SessionInfoEntry {
+            id: "info-1".into(),
+            parent_id: Some("m1".into()),
+            timestamp: "2026-05-22T12:00:02Z".into(),
+            name: "metadata-parent".into(),
+        }))
+        .unwrap();
+    writer
+        .append(&SessionEntry::Label(LabelEntry {
+            id: "label-1".into(),
+            parent_id: Some("info-1".into()),
+            timestamp: "2026-05-22T12:00:03Z".into(),
+            label: "carried".into(),
+            action: LabelAction::Add,
+        }))
+        .unwrap();
+    writer
+        .append(&test_message_entry_with_parent(
+            "m2",
+            Some("info-1"),
+            "child through metadata parent",
+        ))
+        .unwrap();
+    writer
+        .append(&SessionEntry::Leaf(LeafEntry {
+            id: "leaf-1".into(),
+            parent_id: Some("m2".into()),
+            timestamp: "2026-05-22T12:00:04Z".into(),
+            entry_id: "m2".into(),
+        }))
+        .unwrap();
+    drop(writer);
+
+    let forked = fork_session(dir.path(), "metadata-through-metadata").unwrap();
+    let ctx = reconstruct_context(&forked.entries, &forked.recovery);
+
+    assert_eq!(ctx.session_name.as_deref(), Some("metadata-parent"));
+    assert_eq!(
+        ctx.labels,
+        vec!["carried".to_owned()],
+        "fork should copy metadata whose parent is another active metadata entry"
+    );
+    assert!(forked.entries.iter().any(|entry| {
+        matches!(
+            entry,
+            SessionEntry::Label(LabelEntry { label, parent_id: Some(parent), .. })
+                if label == "carried" && parent == "info-1"
+        )
+    }));
 }
 
 #[test]
@@ -795,6 +974,18 @@ fn phase13_export_cli_args_map_to_options() {
     ])
     .expect("verbose parses");
     assert_eq!(cli.redact, ExportRedactMode::Verbose);
+
+    let cli = Cli::try_parse_from([
+        "opi",
+        "--export-session",
+        "abc123",
+        "--format",
+        "md",
+        "--output",
+        "out.md",
+    ])
+    .expect("md alias parses");
+    assert_eq!(cli.format, ExportFormat::Markdown);
 }
 
 #[test]

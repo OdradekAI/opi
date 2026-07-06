@@ -14,6 +14,8 @@ use opi_ai::stream::AssistantStreamEvent;
 use opi_coding_agent::picker;
 use opi_tui::select_list::SelectListState;
 
+const KEY_CANARY: &str = "sk-ant-FAKE1234567890abcdefghijklmnop";
+
 /// Minimal provider with configurable models for picker tests.
 struct TestProvider {
     id: String,
@@ -183,6 +185,25 @@ fn branch_picker_items_from_session_tree() {
     assert_eq!(items[1].id, "e2a");
     assert!(items[1].display.contains("Branch A"));
     assert!(items[1].metadata.contains("active"));
+}
+
+#[test]
+fn branch_picker_items_redact_branch_summaries() {
+    let tree = SessionTree::from_entries(&[test_user_entry(
+        "e1",
+        None,
+        &format!("Root contains {KEY_CANARY}"),
+    )]);
+
+    let items = picker::branch_picker_items(&tree);
+
+    assert_eq!(items.len(), 1);
+    assert!(
+        !items[0].display.contains(KEY_CANARY),
+        "branch picker summary must be redacted: {}",
+        items[0].display
+    );
+    assert!(items[0].display.contains("[REDACTED]"));
 }
 
 fn test_user_entry(id: &str, parent_id: Option<&str>, text: &str) -> SessionEntry {

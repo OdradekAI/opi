@@ -412,14 +412,26 @@ async fn tui_event_loop(
             } {
                 match action {
                     PickerAction::SelectModel(model) => {
-                        let mut h = harness.lock().await;
-                        h.set_model(model.clone());
+                        let result = {
+                            let mut h = harness.lock().await;
+                            h.set_model_validated(model).map(str::to_owned)
+                        };
                         let mut s = state.lock().unwrap();
-                        s.model = model.clone();
-                        s.messages.push(TuiMessage::new(
-                            TuiRole::System,
-                            format!("[model switched: {model}]"),
-                        ));
+                        match result {
+                            Ok(actual_model) => {
+                                s.model = actual_model.clone();
+                                s.messages.push(TuiMessage::new(
+                                    TuiRole::System,
+                                    format!("[model switched: {actual_model}]"),
+                                ));
+                            }
+                            Err(e) => {
+                                s.messages.push(TuiMessage::new(
+                                    TuiRole::System,
+                                    format!("[model switch failed: {e}]"),
+                                ));
+                            }
+                        }
                     }
                     PickerAction::SelectSession(session_id) => {
                         let result = {
@@ -728,14 +740,15 @@ pub enum SessionMetadataCommand {
     Label(String),
     Unlabel(String),
     Info,
+    Usage(String),
 }
 
 /// Parse a Phase 13.4 session-metadata slash command from raw TUI input.
 ///
 /// Returns `Some` only for:
-/// - `/name <name>` (non-empty)
-/// - `/label <label>` (non-empty)
-/// - `/unlabel <label>` (non-empty)
+/// - `/name <name>` (non-empty) or a local usage hint for empty args
+/// - `/label <label>` (non-empty) or a local usage hint for empty args
+/// - `/unlabel <label>` (non-empty) or a local usage hint for empty args
 /// - the exact form `/session info`
 ///
 /// Returns `None` for bare `/session` so the existing resume-picker path
@@ -743,26 +756,43 @@ pub enum SessionMetadataCommand {
 /// `/branch`, `/tree`, `/fork`, `/clone`, `/image`, and free-form prompts).
 pub fn parse_session_metadata_command(input: &str) -> Option<SessionMetadataCommand> {
     let trimmed = input.trim();
+    if trimmed == "/name" {
+        return Some(SessionMetadataCommand::Usage("usage: /name <name>".into()));
+    }
     if let Some(rest) = trimmed.strip_prefix("/name ") {
         let name = rest.trim();
         if !name.is_empty() {
             return Some(SessionMetadataCommand::Name(name.to_owned()));
         }
-        return None;
+        return Some(SessionMetadataCommand::Usage("usage: /name <name>".into()));
+    }
+    if trimmed == "/label" {
+        return Some(SessionMetadataCommand::Usage(
+            "usage: /label <label>".into(),
+        ));
     }
     if let Some(rest) = trimmed.strip_prefix("/label ") {
         let label = rest.trim();
         if !label.is_empty() {
             return Some(SessionMetadataCommand::Label(label.to_owned()));
         }
-        return None;
+        return Some(SessionMetadataCommand::Usage(
+            "usage: /label <label>".into(),
+        ));
+    }
+    if trimmed == "/unlabel" {
+        return Some(SessionMetadataCommand::Usage(
+            "usage: /unlabel <label>".into(),
+        ));
     }
     if let Some(rest) = trimmed.strip_prefix("/unlabel ") {
         let label = rest.trim();
         if !label.is_empty() {
             return Some(SessionMetadataCommand::Unlabel(label.to_owned()));
         }
-        return None;
+        return Some(SessionMetadataCommand::Usage(
+            "usage: /unlabel <label>".into(),
+        ));
     }
     if trimmed == "/session info" {
         return Some(SessionMetadataCommand::Info);
@@ -797,6 +827,7 @@ pub fn apply_session_metadata_command(
             Some(meta) => format_session_metadata(&meta),
             None => "[session info: no active session]".to_string(),
         },
+        SessionMetadataCommand::Usage(usage) => format!("[{usage}]"),
     }
 }
 

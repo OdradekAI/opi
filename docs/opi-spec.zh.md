@@ -52,7 +52,7 @@ Opi 不声称 pi package 生态对等，也不支持 npm package 安装、market
 | 代理消息 vs LLM 消息 | `AgentMessage[] -> transformContext -> convertToLlm -> Message[]` | 应用消息在 `opi-agent`，供应商消息在 `opi-ai` |
 | 工具隔离 | LLM 边界处的 TypeBox schema | 类型化的 Rust 工具输入，在 LLM 边界生成 JSON Schema |
 | 错误在流内 | 供应商故障变为 `error` 流事件 | 供应商/运行时故障作为事件呈现，而非 panic |
-| 仅追加会话 | 崩溃安全的 JSONL 会话文件 | opi 版本化树状 JSONL，灵感来自 pi |
+| 仅追加会话 | 崩溃可恢复的 JSONL 会话文件 | opi 版本化树状 JSONL，灵感来自 pi |
 | 锁步发布 | 所有包共享版本 | 所有 crate 共享 `workspace.package.version` |
 
 ### 2.1 非目标
@@ -837,7 +837,7 @@ opi 的会话格式是**Rust 原生**的仅追加 JSONL 树。它是一种独立
 - 当存在 label、name、model change、thinking change、branch summary 和 custom message 时，分支重建、`--list-sessions`、resume、fork、clone 和 tree 视图行为确定；
 - 合约测试覆盖 v1 fixture、增补第 13 阶段条目 fixture、不完整最后一行、损坏的中间条目、未知未来条目类型、活跃 leaf 重建，以及 branch-summary context 重建。
 
-崩溃恢复可以忽略不完整的最后一行。损坏的中间条目（畸形 JSON 或缺少必需字段）应当作为诊断报告；自动跳过中间条目应要求显式恢复模式。未知的未来条目类型——格式良好的 JSON 但其 `type` 字段无法识别——在读取时保留并从上下文重建中排除，因此较新的写入器不会破坏较旧的读取器；读取器把未知未来条目与损坏中间条目分开，便于在诊断中区分二者。
+崩溃恢复可以忽略不完整的最后一行。损坏的中间条目（畸形 JSON 或缺少必需字段）应当作为诊断报告；自动跳过中间条目应要求显式恢复模式。未知的未来条目类型——格式良好的 JSON 但其 `type` 字段无法识别——会被跳过并计数，但不会跨 read+rewrite 保留；读取器把未知未来条目与损坏中间条目分开，便于在诊断中区分二者。
 
 会话文件是敏感内容：它们包含提示词、工具输出、模型与思考选择，以及可能的泄露密钥。本地导出（`opi --export-session <id-or-path> --format markdown|json --output <file>`）渲染活跃分支或完整树，应用第 7 阶段的脱敏模式，并可通过 include/exclude 标志省略工具输出或思考内容。导出是本地且用户可控的：它只写入请求的输出文件，并在成功或失败时保持源会话不变。交互式 `/export` 以及任何 web/share/会话发布路径都推迟到后续产品打磨。
 
@@ -882,6 +882,14 @@ opi 的会话 JSONL 是一种 Rust 原生格式，它表示 pi 会话概念的�
 JSON 模式属于第 2 阶段范围。在事件 schema 有合约测试后，它向 stdout 每行输出一个 `AgentSessionEvent` JSON 对象。人类可读的日志发送到 stderr。第 2 阶段 JSON 模式应当接近 pi 的事件模型，但必须包含 opi schema 版本。
 
 RPC 模式是第 4 阶段早期可扩展性表面。它应使用严格的 JSONL 帧：stdin 上每行一个命令，通过可选 `id` 关联响应，stdout 上发送异步事件。RPC 和 SDK 组合应先于动态插件运行时，因为它们贴近 pi 的进程集成模型，同时不会扩张核心策略。
+
+RPC `session_info` 始终返回 `model` 和 `resources`。没有活跃 session 时，来源于
+session 的字段（`session_id`、`name`、`labels`、`active_branch`、`thinking`、
+`entry_count`、`branch_summary`、`branches`、`tree_recovery`）缺省。有活跃
+session 时，若没有适用的 `session_info` 条目则 `name` 为 `null`，没有适用 label
+则 `labels` 为空数组；内容 tip 出现前 `active_branch` 缺省；活跃分支没有摘要时
+`branch_summary` 缺省；读取干净时 `tree_recovery` 缺省；只有 session 文件无法用于
+tree 重建时才出现 `tree_read_error`。
 
 默认的 extension 执行策略是显式注册，而不是动态加载 Rust 库。嵌入方可以通过 `ExtensionRegistry` 注册进程内 Rust extension；外部 package 应通过进程/RPC adapter 暴露可执行行为，把 package 命令转换为 `extension_command` 等 SDK 命令。package/resource discovery 默认只代表元数据和资源组合，除非 adapter 显式注册可执行代码。核心二进制默认不得 `dlopen` 任意 Rust crate，也不得为了保留 pi 的 TypeScript extension 机制而要求 Node/`jiti`。
 
@@ -1318,11 +1326,11 @@ Phase 12 非目标（不得作为当前核心行为出现）：OAuth 登录流�
 
 - `session_info`、`label` —— 交互式 `/name`、`/label`、`/unlabel`、`/session info`，RPC `session_info`，以及 `--list-sessions --json`（第 13.4 阶段）。
 - `model_change`、`thinking_level_change` —— 空闲态 `set_model_validated` 与 `set_thinking_level` 通过 `SessionCoordinator` 追加，且不推进活跃 leaf；resume 在兼容时应用记录值（第 13.3 阶段）。
-- `branch_summary` —— `opi-agent::session_context::reconstruct_context` 把父分支摘要作为 metadata-parented 消息注入重建的 LLM 上下文（第 13.2 阶段基底）。
+- `branch_summary` —— `opi-agent::session_context::reconstruct_context` 把父分支摘要作为 metadata-parented 消息注入重建的 LLM 上下文，并在存在时由 `opi-coding-agent` 转发给 provider（第 13.2 阶段基底）。同一 session 内合成的 `BranchSummaryMessage` 当前将 `parent_session_id` 置为 `""`、将 `entry_count` 置为 `0`，因为持久化条目只保存摘要文本；嵌入方应把这两个字段视为占位，直到跨 session 摘要注入携带更完整的来源信息。
 
 显式决策与推迟（每条均引用第 13 阶段设计）：
 
-- `branch_summary` 仅作为上下文重建基底实现。其生成 UX 触发器——分支切换、fork、手动命令、扩展钩子——推迟到第 14 阶段终端/产品打磨；第 13 阶段不在这些触发器上自动生成分支摘要。
+- `branch_summary` 作为上下文重建和 provider 转换基底实现。其生成 UX 触发器——分支切换、fork、手动命令、扩展钩子——推迟到第 14 阶段终端/产品打磨；第 13 阶段不在这些触发器上自动生成分支摘要。
 - `custom_message` 的 provider-context 语义被推迟：扩展提供的上下文消息的 provider 转换与 transcript 规则尚未规定，因此第 13 阶段不提供 `custom_message` 写入器，并在读取时把未知 `custom_message` 条目当作其他未知未来条目处理。
 - 交互式 `/export` 推迟到第 14 阶段终端命令表面打磨；第 13 阶段仅提供本地 `--export-session` CLI。
 

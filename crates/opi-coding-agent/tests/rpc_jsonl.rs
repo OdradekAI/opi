@@ -2066,6 +2066,217 @@ async fn phase13_rpc_session_metadata_shape() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn phase13_rpc_session_info_reports_tree_recovery_diagnostics() {
+    use opi_agent::session::{
+        MessageEntry, SessionEntry, SessionHeader, SessionReader, SessionWriter,
+    };
+    use opi_ai::message::{InputContent, Message, UserMessage};
+    use opi_coding_agent::harness::ResumeInfo;
+
+    let workspace = tempfile::tempdir().expect("workspace tempdir");
+    let sessions = tempfile::tempdir().expect("sessions tempdir");
+    let session_id = "rpc-tree-recovery";
+    let session_path = sessions.path().join(format!("{session_id}.jsonl"));
+    let ts = "2026-07-06T00:00:00Z";
+
+    {
+        let header = SessionHeader::new(
+            session_id.into(),
+            ts.into(),
+            workspace.path().display().to_string(),
+            None,
+        );
+        let mut writer = SessionWriter::create(&session_path, header).expect("create session");
+        writer
+            .append(&SessionEntry::Message(MessageEntry {
+                id: "m1".into(),
+                parent_id: None,
+                timestamp: ts.into(),
+                message: Message::User(UserMessage {
+                    content: vec![InputContent::Text {
+                        text: "seed".into(),
+                    }],
+                    timestamp_ms: 0,
+                }),
+            }))
+            .expect("append message");
+    }
+    {
+        let mut file = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&session_path)
+            .expect("open session for corrupt fixture");
+        writeln!(file, "{{not valid json}}").expect("write corrupt line");
+    }
+
+    let (_header, entries, recovery) =
+        SessionReader::read_with_recovery(&session_path).expect("read with recovery");
+    assert!(
+        recovery.corrupt_count > 0,
+        "fixture must carry corrupt recovery"
+    );
+    let resume_info = ResumeInfo {
+        path: session_path,
+        session_id: session_id.into(),
+        entries,
+        original_cwd: workspace.path().to_path_buf(),
+        diagnostics: recovery.diagnostics(),
+        recorded_model: None,
+        recorded_thinking: None,
+    };
+
+    let provider = MockProvider::new("mock", Vec::new());
+    let runner = RpcRunner::new_with_runtime_packages(
+        Box::new(provider),
+        "mock:mock-model".into(),
+        OpiConfig::default(),
+        workspace.path().to_path_buf(),
+        false,
+        ToolSelection::Disabled,
+        None,
+        Vec::new(),
+        RuntimePackageStartup {
+            extension_registry: ExtensionRegistry::new(),
+            installed_packages: Vec::new(),
+            diagnostics: Vec::new(),
+        },
+        Some(resume_info),
+    )
+    .expect("rpc runner should construct");
+
+    let (command_tx, command_rx) = tokio::sync::mpsc::unbounded_channel();
+    let (output_tx, mut output_rx) = tokio::sync::mpsc::unbounded_channel();
+    let task = tokio::spawn(async move {
+        let mut runner = runner;
+        runner.run_with_channels(command_rx, output_tx).await
+    });
+
+    let header = recv_rpc_line(&mut output_rx).await;
+    assert_eq!(header["type"], "rpc_ready");
+
+    command_tx
+        .send(RpcCommand::session_info {
+            id: Some("si-tree-recovery".into()),
+        })
+        .unwrap();
+    let resp = recv_response(&mut output_rx, "session_info").await;
+    assert_eq!(resp["success"], true, "session_info should succeed: {resp}");
+
+    let recovery = resp["data"]["tree_recovery"]
+        .as_array()
+        .expect("tree_recovery diagnostics are surfaced");
+    assert!(
+        recovery
+            .iter()
+            .any(|diag| diag["code"] == code::CODE_SESSION_CORRUPT_ENTRIES),
+        "tree_recovery should include corrupt-entry diagnostic: {resp}"
+    );
+
+    command_tx.send(RpcCommand::quit { id: None }).unwrap();
+    let _quit = recv_response(&mut output_rx, "quit").await;
+    assert_eq!(task.await.unwrap(), 0);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn phase13_rpc_session_info_reports_tree_read_error() {
+    use opi_agent::session::{
+        MessageEntry, SessionEntry, SessionHeader, SessionReader, SessionWriter,
+    };
+    use opi_ai::message::{InputContent, Message, UserMessage};
+    use opi_coding_agent::harness::ResumeInfo;
+
+    let workspace = tempfile::tempdir().expect("workspace tempdir");
+    let sessions = tempfile::tempdir().expect("sessions tempdir");
+    let session_id = "rpc-tree-read-error";
+    let session_path = sessions.path().join(format!("{session_id}.jsonl"));
+    let ts = "2026-07-06T00:00:00Z";
+
+    {
+        let header = SessionHeader::new(
+            session_id.into(),
+            ts.into(),
+            workspace.path().display().to_string(),
+            None,
+        );
+        let mut writer = SessionWriter::create(&session_path, header).expect("create session");
+        writer
+            .append(&SessionEntry::Message(MessageEntry {
+                id: "m1".into(),
+                parent_id: None,
+                timestamp: ts.into(),
+                message: Message::User(UserMessage {
+                    content: vec![InputContent::Text {
+                        text: "seed".into(),
+                    }],
+                    timestamp_ms: 0,
+                }),
+            }))
+            .expect("append message");
+    }
+
+    let (_header, entries) = SessionReader::read_all(&session_path).expect("read valid session");
+    let resume_info = ResumeInfo {
+        path: session_path.clone(),
+        session_id: session_id.into(),
+        entries,
+        original_cwd: workspace.path().to_path_buf(),
+        diagnostics: Vec::new(),
+        recorded_model: None,
+        recorded_thinking: None,
+    };
+
+    let provider = MockProvider::new("mock", Vec::new());
+    let runner = RpcRunner::new_with_runtime_packages(
+        Box::new(provider),
+        "mock:mock-model".into(),
+        OpiConfig::default(),
+        workspace.path().to_path_buf(),
+        false,
+        ToolSelection::Disabled,
+        None,
+        Vec::new(),
+        RuntimePackageStartup {
+            extension_registry: ExtensionRegistry::new(),
+            installed_packages: Vec::new(),
+            diagnostics: Vec::new(),
+        },
+        Some(resume_info),
+    )
+    .expect("rpc runner should construct");
+
+    let (command_tx, command_rx) = tokio::sync::mpsc::unbounded_channel();
+    let (output_tx, mut output_rx) = tokio::sync::mpsc::unbounded_channel();
+    let task = tokio::spawn(async move {
+        let mut runner = runner;
+        runner.run_with_channels(command_rx, output_tx).await
+    });
+
+    let header = recv_rpc_line(&mut output_rx).await;
+    assert_eq!(header["type"], "rpc_ready");
+
+    std::fs::write(&session_path, "not a valid session header\n")
+        .expect("corrupt live session file");
+
+    command_tx
+        .send(RpcCommand::session_info {
+            id: Some("si-tree-read-error".into()),
+        })
+        .unwrap();
+    let resp = recv_response(&mut output_rx, "session_info").await;
+    assert_eq!(resp["success"], true, "session_info should succeed: {resp}");
+    assert!(
+        resp["data"]["tree_read_error"]
+            .as_str()
+            .is_some_and(|message| message.contains("session file could not be read")),
+        "tree read failure should be surfaced without failing session_info: {resp}"
+    );
+
+    command_tx.send(RpcCommand::quit { id: None }).unwrap();
+    let _quit = recv_response(&mut output_rx, "quit").await;
+    assert_eq!(task.await.unwrap(), 0);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn rpc_extension_command_dispatches_to_registry_with_correlated_response_id() {
     struct RpcCommandExtension;
 

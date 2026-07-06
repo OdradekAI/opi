@@ -232,14 +232,15 @@ Session storage is append-only JSONL:
   (`session_info`, `model_change`, `thinking_level_change`, `label`) do not
   advance the content tip and do not enter provider context; `branch_summary`
   is injected into reconstructed LLM context as a metadata-parented message by
-  `session_context::reconstruct_context`.
+  `session_context::reconstruct_context`, and product provider conversion
+  forwards it as context when present.
 - `custom_message` is deferred: Phase 13 ships no `custom_message` writer and
   treats unknown `custom_message` entries like other unknown future entries on
   read.
 - Reader recovery distinguishes corrupt middle entries (malformed JSON or
   missing required fields, surfaced as diagnostics) from unknown future entry
-  types (well-formed JSON with an unrecognized `type`, preserved on read and
-  excluded from context reconstruction), and skips truncated trailing lines.
+  types (well-formed JSON with an unrecognized `type`, skipped and counted but
+  not preserved across read+rewrite), and skips truncated trailing lines.
 - `session_branch::SessionTree` reconstructs active branches from `parent_id`
   links and the latest `LeafEntry`.
 

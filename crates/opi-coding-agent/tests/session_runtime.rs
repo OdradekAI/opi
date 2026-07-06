@@ -409,6 +409,34 @@ fn phase13_session_info_and_label_appends_are_durable_and_do_not_advance_leaf() 
 }
 
 #[test]
+fn phase13_empty_string_name_and_label_are_preserved_by_coordinator_api() {
+    use opi_agent::session::LabelAction;
+
+    let dir = tempfile::tempdir().unwrap();
+    let mut coord = SessionCoordinator::new(
+        dir.path(),
+        "/test",
+        opi_agent::compaction::CompactionConfig::default(),
+        "anthropic:claude-sonnet-4",
+    )
+    .unwrap();
+
+    coord.append_session_info(String::new()).unwrap();
+    coord.append_label(String::new(), LabelAction::Add).unwrap();
+
+    assert_eq!(coord.name(), Some(""));
+    assert_eq!(coord.labels(), &["".to_string()]);
+
+    let (_header, entries) = SessionReader::read_all(coord.session_path()).unwrap();
+    let ctx = opi_agent::session_context::reconstruct_context(
+        &entries,
+        &opi_agent::session::CrashRecovery::default(),
+    );
+    assert_eq!(ctx.session_name.as_deref(), Some(""));
+    assert_eq!(ctx.labels, vec!["".to_string()]);
+}
+
+#[test]
 fn phase13_coordinator_open_existing_seeds_name_and_labels() {
     //! Phase 13.4 acceptance: reopening a session via `open_existing` seeds
     //! the in-memory name/labels view from the persisted active-chain entries
@@ -462,6 +490,79 @@ fn phase13_coordinator_open_existing_seeds_name_and_labels() {
         _ => None,
     });
     assert_eq!(session_info_on_disk, Some("seeded-name".to_string()));
+}
+
+#[test]
+fn phase13_coordinator_open_existing_seeds_metadata_parented_to_active_metadata_entry() {
+    use opi_agent::session::{LabelAction, LabelEntry, LeafEntry, SessionInfoEntry};
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("metadata-through-metadata.jsonl");
+    let header = SessionHeader::new(
+        "metadata-through-metadata".into(),
+        "2026-07-06T00:00:00Z".into(),
+        "/test".into(),
+        None,
+    );
+    let mut writer = SessionWriter::create(&path, header).unwrap();
+    writer.append(&test_message_entry("m1", "root")).unwrap();
+    writer
+        .append(&SessionEntry::SessionInfo(SessionInfoEntry {
+            id: "info-1".into(),
+            parent_id: Some("m1".into()),
+            timestamp: "2026-07-06T00:00:01Z".into(),
+            name: "metadata-parent".into(),
+        }))
+        .unwrap();
+    writer
+        .append(&SessionEntry::Label(LabelEntry {
+            id: "label-1".into(),
+            parent_id: Some("info-1".into()),
+            timestamp: "2026-07-06T00:00:02Z".into(),
+            label: "carried".into(),
+            action: LabelAction::Add,
+        }))
+        .unwrap();
+    writer
+        .append(&chained_message_entry(
+            "m2",
+            "info-1",
+            "child through metadata parent",
+        ))
+        .unwrap();
+    writer
+        .append(&SessionEntry::Leaf(LeafEntry {
+            id: "leaf-1".into(),
+            parent_id: Some("m2".into()),
+            timestamp: "2026-07-06T00:00:03Z".into(),
+            entry_id: "m2".into(),
+        }))
+        .unwrap();
+    drop(writer);
+
+    let (_header, entries) = SessionReader::read_all(&path).unwrap();
+    let message_count = opi_agent::session_context::reconstruct_context(
+        &entries,
+        &opi_agent::session::CrashRecovery::default(),
+    )
+    .messages
+    .len();
+    let reopened = SessionCoordinator::open_existing(
+        path,
+        "metadata-through-metadata".into(),
+        &entries,
+        message_count,
+        opi_agent::compaction::CompactionConfig::default(),
+        "anthropic:claude-sonnet-4",
+    )
+    .unwrap();
+
+    assert_eq!(reopened.name(), Some("metadata-parent"));
+    assert_eq!(
+        reopened.labels(),
+        &["carried".to_string()],
+        "coordinator seed should include metadata whose parent is active metadata"
+    );
 }
 
 #[test]
@@ -2484,22 +2585,40 @@ impl opi_agent::extension::Extension for ModelOverrideExtension {
     }
 
     fn model_overrides(&self) -> Vec<(String, opi_ai::provider::ModelInfo)> {
-        vec![(
-            "mock".into(),
-            opi_ai::provider::ModelInfo {
-                id: "custom-model".into(),
-                display_name: "Custom Model".into(),
-                context_window: 100_000,
-                max_output_tokens: 4_096,
-                supports_images: true,
-                supports_streaming: true,
-                supports_thinking: false,
-            },
-        )]
+        vec![
+            (
+                "mock".into(),
+                opi_ai::provider::ModelInfo {
+                    id: "custom-model".into(),
+                    display_name: "Custom Model".into(),
+                    context_window: 100_000,
+                    max_output_tokens: 4_096,
+                    supports_images: true,
+                    supports_streaming: true,
+                    supports_thinking: false,
+                },
+            ),
+            (
+                "mock".into(),
+                opi_ai::provider::ModelInfo {
+                    id: "thinking-model".into(),
+                    display_name: "Thinking Model".into(),
+                    context_window: 100_000,
+                    max_output_tokens: 4_096,
+                    supports_images: true,
+                    supports_streaming: true,
+                    supports_thinking: true,
+                },
+            ),
+        ]
     }
 }
 
 fn build_phase13_harness(workspace: &std::path::Path) -> CodingHarness {
+    build_phase13_harness_with_model(workspace, "mock:mock-model")
+}
+
+fn build_phase13_harness_with_model(workspace: &std::path::Path, model: &str) -> CodingHarness {
     let mut registry = opi_agent::extension::ExtensionRegistry::new();
     registry.register(Box::new(ModelOverrideExtension)).unwrap();
     CodingHarness::builder(
@@ -2507,12 +2626,23 @@ fn build_phase13_harness(workspace: &std::path::Path) -> CodingHarness {
             "mock",
             vec![test_support::text_response("ok")],
         )),
-        "mock:mock-model".into(),
+        model.into(),
         OpiConfig::default(),
         workspace.to_path_buf(),
     )
     .extension_registry(registry)
     .build()
+}
+
+fn delete_active_session_file(harness: &CodingHarness) -> std::path::PathBuf {
+    let path = harness
+        .session()
+        .expect("session exists")
+        .session_path()
+        .to_path_buf();
+    std::fs::remove_file(&path).expect("delete active session file");
+    assert!(!path.exists(), "session path removed before metadata write");
+    path
 }
 
 #[tokio::test]
@@ -2589,6 +2719,77 @@ async fn phase13_model_thinking_changes_persist_via_harness() {
     assert_eq!(
         leaf_count_after_meta, leaf_count_after_prompt,
         "metadata writes must not append a Leaf"
+    );
+
+    clear_sessions_dir();
+}
+
+#[tokio::test]
+#[allow(clippy::await_holding_lock)]
+async fn phase13_model_change_write_failure_leaves_runtime_model_unchanged() {
+    let _lock = session_lock();
+    let workspace = tempfile::tempdir().unwrap();
+    let sessions = tempfile::tempdir().unwrap();
+    set_sessions_dir(sessions.path());
+    let mut harness = build_phase13_harness(workspace.path());
+
+    let previous_model = harness.model().to_owned();
+    let deleted_path = delete_active_session_file(&harness);
+
+    let err = harness
+        .set_model_validated("mock:custom-model".into())
+        .expect_err("missing session path must fail before mutating model");
+
+    assert!(
+        err.contains("model change write failed"),
+        "metadata write failure should be surfaced: {err}"
+    );
+    assert_eq!(
+        harness.model(),
+        previous_model,
+        "failed metadata write must leave runtime model unchanged"
+    );
+    assert!(
+        !deleted_path.exists(),
+        "failed metadata write must not recreate the deleted session path"
+    );
+
+    clear_sessions_dir();
+}
+
+#[tokio::test]
+#[allow(clippy::await_holding_lock)]
+async fn phase13_thinking_change_write_failure_leaves_runtime_thinking_unchanged() {
+    let _lock = session_lock();
+    let workspace = tempfile::tempdir().unwrap();
+    let sessions = tempfile::tempdir().unwrap();
+    set_sessions_dir(sessions.path());
+    let mut harness = build_phase13_harness_with_model(workspace.path(), "mock:thinking-model");
+
+    let previous = harness.thinking_config();
+    let deleted_path = delete_active_session_file(&harness);
+
+    let err = match harness.set_thinking_level("low") {
+        Ok(_) => panic!("missing session path must fail before mutating thinking config"),
+        Err(err) => err,
+    };
+
+    assert!(
+        err.contains("thinking level write failed"),
+        "metadata write failure should be surfaced: {err}"
+    );
+    let current = harness.thinking_config();
+    assert_eq!(
+        current.enabled, previous.enabled,
+        "failed metadata write must leave thinking enabled flag unchanged"
+    );
+    assert_eq!(
+        current.budget_tokens, previous.budget_tokens,
+        "failed metadata write must leave thinking budget unchanged"
+    );
+    assert!(
+        !deleted_path.exists(),
+        "failed metadata write must not recreate the deleted session path"
     );
 
     clear_sessions_dir();
@@ -2768,6 +2969,47 @@ async fn phase13_session_metadata_survives_resume() {
         meta.active_branch.is_some(),
         "resumed session reports an active branch"
     );
+
+    clear_sessions_dir();
+}
+
+#[tokio::test]
+#[allow(clippy::await_holding_lock)]
+async fn phase13_harness_session_tree_accessor_matches_direct_reader_tree() {
+    //! Phase 13 remediation: branch picker, branch resume, and RPC session_info
+    //! should share one harness-level session-tree read path built on
+    //! `SessionReader::read_with_recovery`, rather than each re-reading the
+    //! JSONL with slightly different recovery behavior.
+
+    let _lock = session_lock();
+    let workspace = tempfile::tempdir().unwrap();
+    let sessions = tempfile::tempdir().unwrap();
+    set_sessions_dir(sessions.path());
+
+    let mut harness = build_phase13_harness(workspace.path());
+    harness.prompt("seed turn").await.unwrap();
+
+    let (tree, recovery) = harness
+        .session_tree()
+        .expect("active harness exposes a session tree");
+    assert!(recovery.is_clean(), "fresh session should read cleanly");
+
+    let path = harness
+        .session()
+        .expect("session exists after prompt")
+        .session_path()
+        .to_path_buf();
+    let (_header, entries, direct_recovery) =
+        SessionReader::read_with_recovery(&path).expect("direct session read");
+    assert!(direct_recovery.is_clean());
+    let direct_tree = opi_agent::session_branch::SessionTree::from_entries(&entries);
+
+    assert_eq!(tree.active_tip(), direct_tree.active_tip());
+    assert_eq!(
+        tree.active_branch_index(),
+        direct_tree.active_branch_index()
+    );
+    assert_eq!(tree.branches().len(), direct_tree.branches().len());
 
     clear_sessions_dir();
 }

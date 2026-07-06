@@ -54,7 +54,7 @@ The central design rule:
 | Agent vs LLM messages | `AgentMessage[] -> transformContext -> convertToLlm -> Message[]` | app messages in `opi-agent`, provider messages in `opi-ai` |
 | Tool isolation | TypeBox schema at LLM boundary | typed Rust tool inputs, generated JSON Schema at the LLM boundary |
 | Errors in band | provider failures become `error` stream events | provider/runtime failures surface as events, not panics |
-| Append-only sessions | crash-safe JSONL session files | opi versioned tree JSONL inspired by pi |
+| Append-only sessions | crash-recoverable JSONL session files | opi versioned tree JSONL inspired by pi |
 | Lockstep release | all packages share a version | all crates share `workspace.package.version` |
 
 ### 2.1 Non-Goals
@@ -938,10 +938,9 @@ Crash recovery MAY ignore an incomplete final line. Corrupt middle entries
 (malformed JSON or missing required fields) SHOULD be reported as diagnostics
 and automatic skipping of middle entries should require explicit recovery
 mode. Unknown future entry types — well-formed JSON whose `type` field is not
-recognized — are preserved on read and excluded from context reconstruction, so
-newer writers do not break older readers; the reader splits unknown future
-entries from corrupt middle entries so the two cases are distinguishable in
-diagnostics.
+recognized — are skipped and counted, but are not preserved across read+rewrite;
+the reader splits unknown future entries from corrupt middle entries so the two
+cases are distinguishable in diagnostics.
 
 Session files are sensitive: they contain prompts, tool outputs, model and
 thinking selections, and potentially leaked secrets. Local export
@@ -1009,6 +1008,16 @@ Suggested exit codes:
 JSON mode is Phase 2 scope. It emits one `AgentSessionEvent` JSON object per line to stdout after the event schema has contract tests. Human-readable logs go to stderr. Phase 2 JSON mode SHOULD stay close to pi's event model but MUST include an opi schema version.
 
 RPC mode is an early Phase 4 extensibility surface. It should use strict JSONL framing: one command per line on stdin, correlated responses by optional `id`, and async events on stdout. RPC and SDK composition should precede dynamic plugin runtimes because they match pi's process-integration model without expanding core policy. Provider breadth beyond the Phase 3 set should primarily arrive through the Phase 4 SDK, extension, and model registry path instead of adding every provider to core.
+
+RPC `session_info` always returns `model` and `resources`. When no active
+session exists, session-derived fields (`session_id`, `name`, `labels`,
+`active_branch`, `thinking`, `entry_count`, `branch_summary`, `branches`,
+`tree_recovery`) are absent. With an active session, `name` is `null` when no
+`session_info` entry applies, `labels` is an empty array when no labels apply,
+`active_branch` is absent until a content tip exists, `branch_summary` is absent
+when the active branch has no summary, `tree_recovery` is absent on a clean
+read, and `tree_read_error` appears only when the session file cannot be read
+for tree reconstruction.
 
 The default extension execution strategy is explicit registration, not dynamic Rust library loading. Embedders can register in-process Rust extensions through `ExtensionRegistry`; external packages should expose executable behavior through process/RPC adapters that translate package commands into SDK commands such as `extension_command`. Package/resource discovery remains metadata and resource composition unless an adapter explicitly registers executable code. The core binary MUST NOT `dlopen` arbitrary Rust crates by default, and it MUST NOT require Node/`jiti` to preserve pi's TypeScript extension mechanism.
 
@@ -1573,14 +1582,19 @@ Implemented entries and their production paths:
   the active leaf; resume applies recorded values when compatible (Phase 13.3).
 - `branch_summary` — `opi-agent::session_context::reconstruct_context` injects
   a parent branch summary into reconstructed LLM context as a metadata-parented
-  message (Phase 13.2 substrate).
+  message, and `opi-coding-agent` forwards that message to providers when
+  present (Phase 13.2 substrate). The same-session synthesized
+  `BranchSummaryMessage` currently sets `parent_session_id` to `""` and
+  `entry_count` to `0` because the durable entry stores only the summary text;
+  embedders must treat those fields as placeholders until cross-session summary
+  injection carries richer provenance.
 
 Explicit decisions and deferrals (each cited to the Phase 13 design):
 
-- `branch_summary` is implemented as a context-reconstruction substrate only.
-  Its generation UX triggers — branch switch, fork, manual command, extension
-  hook — are deferred to Phase 14 terminal/product polish; Phase 13 does not
-  auto-generate branch summaries on these triggers.
+- `branch_summary` is implemented as a context-reconstruction and provider-
+  conversion substrate. Its generation UX triggers — branch switch, fork,
+  manual command, extension hook — are deferred to Phase 14 terminal/product
+  polish; Phase 13 does not auto-generate branch summaries on these triggers.
 - `custom_message` provider-context semantics are deferred: provider conversion
   and transcript rules for extension-provided context messages are not specified
   yet, so Phase 13 ships no `custom_message` writer and treats unknown

@@ -196,10 +196,10 @@ pub fn resume_session(dir: &Path, session_id: &str) -> Result<ResumedSession, Se
 /// Fork a session into a new JSONL file and return the fork as a resumed session.
 ///
 /// The source session file is not modified. The fork copies **every entry on
-/// the active branch that resume would reconstruct** — content (Message /
+/// the active branch that resume would reconstruct** - content (Message /
 /// Compaction) plus all metadata parented to the active chain (Label,
 /// ModelChange, ThinkingLevelChange, SessionInfo, BranchSummary,
-/// ExtensionState) — then records the source session ID in `parent_session`
+/// ExtensionState) - then records the source session ID in `parent_session`
 /// and writes a fresh `Leaf` pointer at the active tip. File order is
 /// preserved so latest-wins metadata semantics match resume exactly.
 ///
@@ -210,11 +210,12 @@ pub fn resume_session(dir: &Path, session_id: &str) -> Result<ResumedSession, Se
 pub fn fork_session(dir: &Path, session_id: &str) -> Result<ResumedSession, SessionCliError> {
     let source = resume_session(dir, session_id)?;
 
-    // Active-chain content entry ids in root->tip order. Metadata parented to
-    // any of these is on the active branch and must be copied so the fork
-    // reconstructs the same context resume would observe.
-    let active_chain: Vec<String> = active_content_entry_ids(&source.entries);
-    let active_tip = active_chain.last().cloned();
+    // Active-chain entry ids in root->tip order. Keep the content-only tip for
+    // the fresh Leaf, but filter copied metadata against the full chain so
+    // degraded sessions whose parent walk passes through metadata preserve the
+    // same context that resume reconstructs.
+    let active_chain: Vec<String> = active_entry_ids(&source.entries);
+    let active_tip = active_content_entry_ids(&source.entries).last().cloned();
     let active_set: std::collections::HashSet<&str> =
         active_chain.iter().map(String::as_str).collect();
 
@@ -261,41 +262,31 @@ pub fn fork_session(dir: &Path, session_id: &str) -> Result<ResumedSession, Sess
 /// Content entries (Message / Compaction) qualify when their own id is in
 /// `active_set`. Metadata entries (Label, ModelChange, ThinkingLevelChange,
 /// SessionInfo, BranchSummary, ExtensionState) qualify when their `parent_id`
-/// is in `active_set`. Leaf pointers are excluded — the fork writes a single
-/// fresh Leaf at the tip instead of copying stale source Leaves.
+/// is in `active_set`, which is the full active chain rather than only content
+/// ids. Leaf pointers are excluded - the fork writes a single fresh Leaf at
+/// the tip instead of copying stale source Leaves.
 fn entry_on_active_chain(
     entry: &opi_agent::session::SessionEntry,
     active_set: &std::collections::HashSet<&str>,
 ) -> bool {
     use opi_agent::session::SessionEntry;
 
+    let metadata_on_active = |parent_id: Option<&str>| -> bool {
+        match parent_id {
+            None => active_set.is_empty(),
+            Some(id) => active_set.contains(id),
+        }
+    };
+
     match entry {
         SessionEntry::Message(m) => active_set.contains(m.id.as_str()),
         SessionEntry::Compaction(c) => active_set.contains(c.id.as_str()),
-        SessionEntry::Label(l) => l
-            .parent_id
-            .as_deref()
-            .is_some_and(|id| active_set.contains(id)),
-        SessionEntry::ModelChange(m) => m
-            .parent_id
-            .as_deref()
-            .is_some_and(|id| active_set.contains(id)),
-        SessionEntry::ThinkingLevelChange(t) => t
-            .parent_id
-            .as_deref()
-            .is_some_and(|id| active_set.contains(id)),
-        SessionEntry::SessionInfo(s) => s
-            .parent_id
-            .as_deref()
-            .is_some_and(|id| active_set.contains(id)),
-        SessionEntry::BranchSummary(b) => b
-            .parent_id
-            .as_deref()
-            .is_some_and(|id| active_set.contains(id)),
-        SessionEntry::ExtensionState(x) => x
-            .parent_id
-            .as_deref()
-            .is_some_and(|id| active_set.contains(id)),
+        SessionEntry::Label(l) => metadata_on_active(l.parent_id.as_deref()),
+        SessionEntry::ModelChange(m) => metadata_on_active(m.parent_id.as_deref()),
+        SessionEntry::ThinkingLevelChange(t) => metadata_on_active(t.parent_id.as_deref()),
+        SessionEntry::SessionInfo(s) => metadata_on_active(s.parent_id.as_deref()),
+        SessionEntry::BranchSummary(b) => metadata_on_active(b.parent_id.as_deref()),
+        SessionEntry::ExtensionState(x) => metadata_on_active(x.parent_id.as_deref()),
         SessionEntry::Leaf(_) => false,
         // Future entry variants are off-chain for fork purposes; the context
         // builder decides whether they enter LLM context at runtime.
@@ -465,8 +456,32 @@ fn redact_export_text(text: &str, mode: crate::cli::ExportRedactMode) -> String 
         crate::cli::ExportRedactMode::Summary => {
             opi_agent::redact_text(text, opi_agent::RedactionMode::Summary)
         }
+        crate::cli::ExportRedactMode::Verbose => redact_export_verbose_text(text),
+    }
+}
+
+fn redact_export_verbose_text(text: &str) -> String {
+    let mut redacted = text.to_owned();
+    for pattern in opi_agent::SecretRedactor::default().patterns() {
+        let Ok(regex) = regex::Regex::new(pattern) else {
+            continue;
+        };
+        redacted = regex.replace_all(&redacted, "[REDACTED]").into_owned();
+    }
+    redacted
+}
+
+fn redact_export_value(
+    value: &serde_json::Value,
+    mode: crate::cli::ExportRedactMode,
+) -> serde_json::Value {
+    match mode {
+        crate::cli::ExportRedactMode::None => value.clone(),
+        crate::cli::ExportRedactMode::Summary => {
+            opi_agent::redact(value, opi_agent::RedactionMode::Summary)
+        }
         crate::cli::ExportRedactMode::Verbose => {
-            opi_agent::redact_text(text, opi_agent::RedactionMode::Verbose)
+            opi_agent::redact(value, opi_agent::RedactionMode::Verbose)
         }
     }
 }
@@ -562,7 +577,7 @@ fn render_markdown(
             }
             AgentMessage::Custom(c) => {
                 out.push_str(&format!("## Custom ({})\n\n", c.kind));
-                out.push_str(&c.data.to_string());
+                out.push_str(&redact_export_value(&c.data, options.redact).to_string());
                 out.push('\n');
             }
             // AgentMessage is non_exhaustive; future variants are omitted from
@@ -687,7 +702,7 @@ fn render_json(
             AgentMessage::Custom(c) => serde_json::json!({
                 "role": "custom",
                 "kind": c.kind,
-                "data": c.data,
+                "data": redact_export_value(&c.data, options.redact),
                 "include_in_llm_context": c.include_in_llm_context,
             }),
             // AgentMessage is non_exhaustive; future variants are skipped.
@@ -902,7 +917,7 @@ fn is_leap(y: u64) -> bool {
 /// share one deterministic reconstruction path. The branch-order selector
 /// (`select_ordered_entries`) is retained separately because
 /// `SessionCoordinator::open_existing` needs the raw active-chain entries
-/// (with usage) to seed its compaction buffer — a different concern from
+/// (with usage) to seed its compaction buffer - a different concern from
 /// building agent messages.
 pub fn reconstruct_context(
     entries: &[opi_agent::session::SessionEntry],
@@ -914,32 +929,29 @@ pub fn reconstruct_context(
     .messages
 }
 
-/// Return session entries ordered by the active branch.
+/// Return entries on the same active chain selected by
+/// `opi_agent::session_context::reconstruct_context`.
 ///
-/// When the session contains `Leaf` pointer entries, the last Leaf's
-/// `entry_id` is used as the branch tip and the parent chain is walked
-/// backward to collect only the active-branch entries (root to tip).
-/// Without Leaves, all Message/Compaction entries are returned in file order
-/// (legacy linear sessions). This is the shared ordering logic used by both
-/// `reconstruct_context` (Agent message buffer) and
-/// `SessionCoordinator::open_existing` (compaction buffer).
+/// The opi-agent context API owns active-tip fallback and parent-walk
+/// semantics. Product code delegates here so fork, coordinator seeding, and
+/// resume observe the same degraded-session behavior.
 pub(crate) fn select_ordered_entries(
     entries: &[opi_agent::session::SessionEntry],
 ) -> Vec<&opi_agent::session::SessionEntry> {
-    use opi_agent::session::SessionEntry;
+    use std::collections::HashMap;
 
-    let last_leaf_tip: Option<&str> = entries.iter().rev().find_map(|e| match e {
-        SessionEntry::Leaf(l) => Some(l.entry_id.as_str()),
-        _ => None,
-    });
+    let by_id: HashMap<&str, &opi_agent::session::SessionEntry> = entries
+        .iter()
+        .map(|entry| (entry.entry_id(), entry))
+        .collect();
+    active_entry_ids(entries)
+        .into_iter()
+        .filter_map(|id| by_id.get(id.as_str()).copied())
+        .collect()
+}
 
-    match last_leaf_tip {
-        Some(tip) => walk_active_branch(entries, tip),
-        None => entries
-            .iter()
-            .filter(|e| content_entry_id(e).is_some())
-            .collect(),
-    }
+pub(crate) fn active_entry_ids(entries: &[opi_agent::session::SessionEntry]) -> Vec<String> {
+    opi_agent::session_context::active_chain_entry_ids(entries)
 }
 
 pub(crate) fn active_content_entry_ids(
@@ -959,10 +971,10 @@ pub(crate) fn latest_extension_state_entry_for_active_branch(
 
     use opi_agent::session::SessionEntry;
 
-    let active_ids: HashSet<String> = active_content_entry_ids(entries).into_iter().collect();
+    let active_ids: HashSet<String> = active_entry_ids(entries).into_iter().collect();
     if active_ids.is_empty() {
         return entries.iter().rev().find_map(|entry| match entry {
-            SessionEntry::ExtensionState(state) => Some(state),
+            SessionEntry::ExtensionState(state) if state.parent_id.is_none() => Some(state),
             _ => None,
         });
     }
@@ -990,54 +1002,75 @@ fn content_entry_id(entry: &opi_agent::session::SessionEntry) -> Option<&str> {
     }
 }
 
-/// Walk the active branch backward from `tip_entry_id`, returning entries
-/// from root to tip (ancestors first). `Leaf` entries themselves are
-/// excluded from the result — they are pointers, not content.
-///
-/// If the tip id is not found, returns an empty vector; callers fall back
-/// to legacy behavior or treat the resume as empty depending on context.
-fn walk_active_branch<'a>(
-    entries: &'a [opi_agent::session::SessionEntry],
-    tip_entry_id: &str,
-) -> Vec<&'a opi_agent::session::SessionEntry> {
-    use std::collections::HashMap;
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-    use opi_agent::session::SessionEntry;
+    const KEY_CANARY: &str = "sk-ant-FAKE1234567890abcdefghijklmnop";
 
-    let mut by_id: HashMap<&str, &SessionEntry> = HashMap::new();
-    for entry in entries {
-        let id = match entry {
-            SessionEntry::Message(m) => Some(m.id.as_str()),
-            SessionEntry::Compaction(c) => Some(c.id.as_str()),
-            // Leaf pointers are excluded from the chain; the tip references
-            // a Message/Compaction directly.
-            SessionEntry::Leaf(_) => None,
-            _ => None,
-        };
-        if let Some(id) = id {
-            by_id.insert(id, entry);
+    fn test_header() -> opi_agent::session::SessionHeader {
+        opi_agent::session::SessionHeader::new(
+            "custom-export".into(),
+            "2026-07-06T00:00:00Z".into(),
+            "/repo".into(),
+            None,
+        )
+    }
+
+    fn test_export_options(format: crate::cli::ExportFormat) -> ExportOptions {
+        ExportOptions {
+            session_ref: "custom-export".into(),
+            format,
+            output: std::path::PathBuf::from("unused"),
+            scope: ExportScope::ActiveBranch,
+            include_tool_output: true,
+            include_thinking: true,
+            redact: crate::cli::ExportRedactMode::Summary,
         }
     }
 
-    let mut chain: Vec<&SessionEntry> = Vec::new();
-    let mut cursor: Option<&str> = Some(tip_entry_id);
-    let mut visited: std::collections::HashSet<&str> = std::collections::HashSet::new();
-    while let Some(id) = cursor {
-        if !visited.insert(id) {
-            // Cycle in parent_id graph: stop walking to avoid an infinite
-            // loop on a corrupt file.
-            break;
-        }
-        let Some(entry) = by_id.get(id).copied() else {
-            break;
-        };
-        chain.push(entry);
-        cursor = match entry {
-            SessionEntry::Message(m) => m.parent_id.as_deref(),
-            SessionEntry::Compaction(c) => c.parent_id.as_deref(),
-            _ => None,
-        };
+    fn custom_message() -> opi_agent::message::AgentMessage {
+        opi_agent::message::AgentMessage::Custom(opi_agent::message::CustomAgentMessage {
+            kind: "test-extension".into(),
+            data: serde_json::json!({
+                "api_key": KEY_CANARY,
+                "kept": "ordinary metadata"
+            }),
+            include_in_llm_context: false,
+        })
     }
-    chain.reverse();
-    chain
+
+    #[test]
+    fn markdown_export_redacts_custom_message_data() {
+        let rendered = render_markdown(
+            &test_header(),
+            &[custom_message()],
+            &test_export_options(crate::cli::ExportFormat::Markdown),
+        );
+
+        assert!(
+            !rendered.contains(KEY_CANARY),
+            "custom message data must be redacted in markdown export: {rendered}"
+        );
+        assert!(rendered.contains("[REDACTED]"));
+        assert!(rendered.contains("ordinary metadata"));
+    }
+
+    #[test]
+    fn json_export_redacts_custom_message_data() {
+        let rendered = render_json(
+            &test_header(),
+            &[custom_message()],
+            &test_export_options(crate::cli::ExportFormat::Json),
+        );
+
+        assert!(
+            !rendered.contains(KEY_CANARY),
+            "custom message data must be redacted in JSON export: {rendered}"
+        );
+        let value: serde_json::Value = serde_json::from_str(&rendered).unwrap();
+        let data = &value["messages"][0]["data"];
+        assert_eq!(data["api_key"], "[REDACTED]");
+        assert_eq!(data["kept"], "ordinary metadata");
+    }
 }

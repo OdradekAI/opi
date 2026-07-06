@@ -806,6 +806,90 @@ fn branch_summary_entry_round_trip_and_shape() {
     }
 }
 
+#[test]
+fn known_entry_types_match_session_entry_serde_tags() {
+    let fixtures = vec![
+        test_message_entry("msg-1", "hello"),
+        SessionEntry::Compaction(CompactionEntry {
+            id: "cmp-1".into(),
+            parent_id: Some("msg-1".into()),
+            timestamp: "2026-07-05T12:00:01Z".into(),
+            summary: "summary".into(),
+            first_kept_entry_id: "msg-1".into(),
+            tokens_before: 10,
+            tokens_after: 4,
+        }),
+        SessionEntry::Leaf(LeafEntry {
+            id: "leaf-1".into(),
+            parent_id: Some("msg-1".into()),
+            timestamp: "2026-07-05T12:00:02Z".into(),
+            entry_id: "msg-1".into(),
+        }),
+        SessionEntry::ExtensionState(opi_agent::session::ExtensionStateEntry {
+            id: "state-1".into(),
+            parent_id: Some("msg-1".into()),
+            timestamp: "2026-07-05T12:00:03Z".into(),
+            state: serde_json::json!({"ok": true}),
+        }),
+        SessionEntry::SessionInfo(SessionInfoEntry {
+            id: "info-1".into(),
+            parent_id: Some("msg-1".into()),
+            timestamp: "2026-07-05T12:00:04Z".into(),
+            name: "demo".into(),
+        }),
+        SessionEntry::ModelChange(ModelChangeEntry {
+            id: "model-1".into(),
+            parent_id: Some("msg-1".into()),
+            timestamp: "2026-07-05T12:00:05Z".into(),
+            model: "anthropic:claude-sonnet-4".into(),
+        }),
+        SessionEntry::ThinkingLevelChange(ThinkingLevelChangeEntry {
+            id: "thinking-1".into(),
+            parent_id: Some("msg-1".into()),
+            timestamp: "2026-07-05T12:00:06Z".into(),
+            level: ThinkingLevel::Low,
+        }),
+        SessionEntry::Label(LabelEntry {
+            id: "label-1".into(),
+            parent_id: Some("msg-1".into()),
+            timestamp: "2026-07-05T12:00:07Z".into(),
+            label: "bug".into(),
+            action: LabelAction::Add,
+        }),
+        SessionEntry::BranchSummary(BranchSummaryEntry {
+            id: "branch-1".into(),
+            parent_id: Some("msg-1".into()),
+            timestamp: "2026-07-05T12:00:08Z".into(),
+            summary: "branch summary".into(),
+        }),
+    ];
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("known-tags.jsonl");
+    {
+        let mut file = std::fs::File::create(&path).unwrap();
+        writeln!(
+            file,
+            "{}",
+            serde_json::to_string(&make_header("known-tags")).unwrap()
+        )
+        .unwrap();
+        for fixture in &fixtures {
+            let value = serde_json::to_value(fixture).unwrap();
+            let tag = value["type"].as_str().expect("serde tag").to_owned();
+            // The type tag is known, but the payload is intentionally malformed.
+            // If KNOWN_ENTRY_TYPES omits the tag, this lands in unknown_count
+            // instead of corrupt_count.
+            writeln!(file, "{}", serde_json::json!({ "type": tag })).unwrap();
+        }
+    }
+
+    let (_header, entries, recovery) = SessionReader::read_with_recovery(&path).unwrap();
+    assert!(entries.is_empty(), "malformed entries must be skipped");
+    assert_eq!(recovery.corrupt_count, fixtures.len());
+    assert_eq!(recovery.unknown_count, 0);
+}
+
 // ---------------------------------------------------------------------------
 // Phase 13.1: forward-compat unknown-entry behavior (distinct from corruption)
 // ---------------------------------------------------------------------------

@@ -129,10 +129,9 @@ impl SessionCoordinator {
         // Advance the global sequence counter past any existing IDs.
         advance_seq_from_entries(existing_entries);
 
-        // Replay entries in active-branch order (not raw file order) to seed
-        // the compaction buffer. This uses the same Leaf-based branch
-        // selection as reconstruct_context so the coordinator's internal
-        // state stays aligned with the Agent's message buffer.
+        // Replay entries through the opi-agent active-chain selector so the
+        // coordinator's compaction buffer stays aligned with the Agent's
+        // reconstructed message buffer, including degraded Leaf fallback.
         let ordered = crate::session_cli::select_ordered_entries(existing_entries);
         let active_tip_entry_id = ordered
             .iter()
@@ -242,9 +241,9 @@ impl SessionCoordinator {
         // Phase 13.4: seed the live name/labels view from the persisted
         // active-chain metadata so `/session info` and RPC `session_info`
         // reflect prior writes without a full reconstruct pass. `ordered`
-        // excludes metadata entries, so we scan the raw entries directly,
-        // filtering to the active content chain (or accepting rootless
-        // metadata when no content exists yet). Mirrors the
+        // is used for the compaction buffer, so we scan the raw entries
+        // directly, filtering to the full active entry chain (or accepting
+        // rootless metadata when no content exists yet). Mirrors the
         // `reconstruct_context` derivation and the
         // `latest_extension_state_entry_for_active_branch` filter pattern.
         let (name, labels) = seed_metadata_from_entries(existing_entries);
@@ -283,6 +282,7 @@ impl SessionCoordinator {
         usage: &Usage,
         turn_start_agent_index: usize,
     ) -> Result<Option<CompactionReason>, std::io::Error> {
+        self.ensure_session_path_available()?;
         self.usage.accumulate(usage);
 
         let mut agent_idx = turn_start_agent_index;
@@ -298,7 +298,7 @@ impl SessionCoordinator {
                     timestamp: now_iso(),
                     message: persisted_message,
                 });
-                self.writer.append(&entry)?;
+                self.append_entry(&entry)?;
                 self.entries.push(Entry {
                     id: entry_id.clone(),
                     message: msg.clone(),
@@ -403,7 +403,7 @@ impl SessionCoordinator {
                 // Persist the compaction marker BEFORE mutating in-memory state.
                 // If this fails, the runtime context remains un-compacted so
                 // the session file and memory stay consistent.
-                self.writer.append(&compaction_entry)?;
+                self.append_entry(&compaction_entry)?;
                 self.append_leaf_for_tip(&compaction_id)?;
 
                 // Reset internal entries to [summary, ...kept]. The summary
@@ -483,7 +483,7 @@ impl SessionCoordinator {
             timestamp: now_iso(),
             state,
         });
-        self.writer.append(&entry)
+        self.append_entry(&entry)
     }
 
     /// Record a `model_change` entry parented to the current content tip
@@ -499,7 +499,7 @@ impl SessionCoordinator {
             timestamp: now_iso(),
             model,
         });
-        self.writer.append(&entry)
+        self.append_entry(&entry)
     }
 
     /// Record a `thinking_level_change` entry parented to the current content
@@ -517,7 +517,7 @@ impl SessionCoordinator {
             timestamp: now_iso(),
             level,
         });
-        self.writer.append(&entry)
+        self.append_entry(&entry)
     }
 
     /// Record a `session_info` entry (session name) parented to the current
@@ -533,7 +533,7 @@ impl SessionCoordinator {
             timestamp: now_iso(),
             name: name.clone(),
         });
-        self.writer.append(&entry)?;
+        self.append_entry(&entry)?;
         self.name = Some(name);
         Ok(())
     }
@@ -558,7 +558,7 @@ impl SessionCoordinator {
             label: label.clone(),
             action,
         });
-        self.writer.append(&entry)?;
+        self.append_entry(&entry)?;
         apply_label(&mut self.labels, &label, action);
         Ok(())
     }
@@ -587,7 +587,7 @@ impl SessionCoordinator {
             timestamp: now_iso(),
             entry_id: entry_id.to_owned(),
         });
-        self.writer.append(&entry)
+        self.append_entry(&entry)
     }
 
     /// Compute the cost summary from the accumulated usage and the model
@@ -601,6 +601,21 @@ impl SessionCoordinator {
         Some(opi_ai::stream::calculate_cost(
             &self.usage.as_usage(),
             &pricing,
+        ))
+    }
+
+    fn append_entry(&mut self, entry: &SessionEntry) -> Result<(), std::io::Error> {
+        self.ensure_session_path_available()?;
+        self.writer.append(entry)
+    }
+
+    fn ensure_session_path_available(&self) -> Result<(), std::io::Error> {
+        if self.session_path.is_file() {
+            return Ok(());
+        }
+        Err(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            format!("session file missing: {}", self.session_path.display()),
         ))
     }
 
@@ -670,7 +685,7 @@ fn apply_label(labels: &mut Vec<String>, label: &str, action: LabelAction) {
 fn seed_metadata_from_entries(entries: &[SessionEntry]) -> (Option<String>, Vec<String>) {
     use std::collections::HashSet;
 
-    let active_ids_vec = crate::session_cli::active_content_entry_ids(entries);
+    let active_ids_vec = crate::session_cli::active_entry_ids(entries);
     let active_ids: HashSet<&str> = active_ids_vec.iter().map(String::as_str).collect();
     let on_active = |parent: &Option<String>| -> bool {
         match parent {

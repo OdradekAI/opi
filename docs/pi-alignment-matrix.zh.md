@@ -69,7 +69,7 @@
 | Image generation collection | `.repo/pi-0.80.2/packages/ai/CHANGELOG.md:86`; `packages/ai/README.md:634-663` | 聊天侧 provider collection/auth correctness 稳定后再作为未来生态候选。 |
 | `AgentHarness` 导出和文档 | `.repo/pi-0.80.2/packages/agent/src/index.ts:5,28-40`; `packages/agent/docs/agent-harness.md:3` | `opi-agent` 应在拥有 Rust 原生通用 harness 缝合点前标为 Partial。 |
 | Turn snapshot/save-point 语义 | `.repo/pi-0.80.2/packages/agent/docs/agent-harness.md:58-60,140-150` | 第 10 阶段应先定义 snapshot/save-point 契约，再进入第 13 阶段 session 工作。 |
-| Pending session writes 和计划中的 facade | `.repo/pi-0.80.2/packages/agent/docs/agent-harness.md:84-90,176-196` | 第 13 阶段应建立在 session facade 上，而不是临时 CLI-only writes。 |
+| Pending session writes 和计划中的 facade | `.repo/pi-0.80.2/packages/agent/docs/agent-harness.md:84-90,176-196` | 第 13 阶段建立在 session facade 上，而不是临时 CLI-only writes。 |
 | Semi-durable harness | `.repo/pi-0.80.2/packages/agent/docs/durable-harness.md:19-28,38-44,118-121` | 长期上下文应属于 session entries；除非 sidecar 有明确持久引用模型，否则不引入隐藏全局记忆。 |
 | Extension UI 和 lifecycle 宽度 | `.repo/pi-0.80.2/packages/coding-agent/docs/extensions.md:10-14,297-299,438-440,2177-2185,2397-2403,2524-2526` | 不声明 extension UI 对等；内置 TUI 稳定后再作为未来生态工作。 |
 | Provider hook 宽度 | `.repo/pi-0.80.2/packages/agent/docs/agent-harness.md:443`; `.repo/pi-0.80.2/packages/coding-agent/docs/extensions.md:1646-1681` | Provider request/response adapter hooks 应等 provider seam、trace 和 redaction 契约稳定后再做。 |
@@ -166,10 +166,10 @@
 | CLI modes | 完整 | Interactive、non-interactive、JSON、RPC、model listing、completions、sessions、doctor 和 package commands 已存在。 | 保持 command contracts 文档化和测试覆盖。 |
 | Built-in tools | 部分 | `read`、`write`、`edit`、`bash`、`grep`、`find`、`ls` 和 `glob` 已存在，并有 mode-aware policy。 | 第 11 阶段加固 paths、encodings、truncation、cancellation 和 diagnostics。 |
 | Config/resource discovery | 部分 | TOML layers、provider profiles、context files、resources、skills、prompt fragments、themes、packages 和 extensions 已存在。 | 保持 precedence 和 diagnostics 显式。 |
-| Sessions 和 branch workflows | 部分 | Resume/list/delete/fork、`/tree`、`/branch`、`/fork`、`/clone`、active branch continuation 和 compaction 已存在。 | 第 13 阶段增加稳定 metadata、summaries、labels 和 export。 |
+| Sessions 和 branch workflows | 部分 | Resume/list/delete/fork、`/tree`、`/branch`、`/fork`、`/clone`、active branch continuation、compaction、稳定 metadata、labels、本地 export 和 branch-summary context 基底已存在。 | Branch-summary 生成 UX 仍推迟到第 14 阶段。 |
 | Package/process adapter substrate | 部分 | Local/git package sources、manifest V2、`process-jsonl`、adapter tools/commands/hooks/events/state/cancellation 和 examples 已存在。通过 `opi-extension-jsonl-v1` 运行的 process-JSONL adapter 会把 package command、tool、hook、event、state 和 cancellation 桥接进 runtime。 | 稳定后再考虑 npm/gallery/update/enable/disable。 |
 | Provider hooks/login UX | 缺失 | Custom provider registration 已存在；provider request/response hook parity 和 login flows 不存在。 | 第 10/12 阶段 provider seam 与 redaction/trace 设计后作为未来候选。 |
-| Export/share/web surfaces | 缺失 | 本地 session/export 方向计划中；web/share 未实现。 | 第 13 阶段 sensitivity 和 redaction 规则之后作为未来候选。 |
+| Export/share/web surfaces | 部分 | 本地 session export 已存在；web/share 未实现。 | 第 13 阶段 sensitivity 和 redaction 规则之后作为未来候选。 |
 
 ## Phase 对齐
 
@@ -187,7 +187,7 @@
 | 10 | Core architecture deepening | `opi-ai`、`opi-agent`、`opi-coding-agent` | 部分 | `Models/Auth`、generic `AgentHarness`、session facade、runtime hook boundaries。 |
 | 11 | Tooling quality | `opi-coding-agent`、`opi-agent`、`opi-tui` | 计划中 | 由旧第 9 阶段重排；依赖第 10 阶段边界。 |
 | 12 | Provider correctness | `opi-ai`、`opi-coding-agent` | 部分 | 由旧第 10 阶段重排；通过 provider collection/auth seam 已交付 fixture lifecycle/error/taxonomy/profile-flags/cache/response-id/retry/cancel/auth-diagnostic 覆盖。`usage_in_stream` 现在会请求 `stream_options.include_usage`，OpenAI Chat 会从任何携带 `id` 的 chunk 捕获 response ID，缺失 usage 会保持为显式未知，因此会话费用汇总可以被省略，而 `previous_response_id` 与请求侧 cache-control 断点仍被明确推迟。 |
-| 13 | Session tree and context reconstruction | `opi-agent`、`opi-coding-agent`、`opi-tui` | 计划中 | 由旧第 11 阶段重排；依赖 generic harness/session facade。 |
+| 13 | Session tree and context reconstruction | `opi-agent`、`opi-coding-agent`、`opi-tui` | 部分 | 由旧第 11 阶段重排；generic harness/session facade 已存在，生成 UX 打磨延续到第 14 阶段。 |
 | 14 | TUI product polish | `opi-tui`、`opi-coding-agent` | 计划中 | 由旧第 12 阶段重排；只打磨内置 TUI，不做 custom extension UI 对等。 |
 
 ## 路线图含义

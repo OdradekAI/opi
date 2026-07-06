@@ -132,7 +132,7 @@ with the older `.repo/pi-0.75.3` baseline.
 | Image generation collection | `.repo/pi-0.80.2/packages/ai/CHANGELOG.md:86`; `packages/ai/README.md:634-663` | Future ecosystem candidate after chat-side provider collection/auth correctness. |
 | `AgentHarness` export and docs | `.repo/pi-0.80.2/packages/agent/src/index.ts:5,28-40`; `packages/agent/docs/agent-harness.md:3` | `opi-agent` should be marked Partial until it owns a Rust-native generic harness seam. |
 | Turn snapshot/save-point semantics | `.repo/pi-0.80.2/packages/agent/docs/agent-harness.md:58-60,140-150` | Phase 10 should define snapshot/save-point contracts before Phase 13 session work. |
-| Pending session writes and planned facade | `.repo/pi-0.80.2/packages/agent/docs/agent-harness.md:84-90,176-196` | Phase 13 should build on a session facade, not ad hoc CLI-only writes. |
+| Pending session writes and planned facade | `.repo/pi-0.80.2/packages/agent/docs/agent-harness.md:84-90,176-196` | Phase 13 builds on the session facade instead of ad hoc CLI-only writes. |
 | Semi-durable harness | `.repo/pi-0.80.2/packages/agent/docs/durable-harness.md:19-28,38-44,118-121` | Long-running context belongs in session entries unless a sidecar has a clear durable reference model. |
 | Extension UI and lifecycle breadth | `.repo/pi-0.80.2/packages/coding-agent/docs/extensions.md:10-14,297-299,438-440,2177-2185,2397-2403,2524-2526` | Do not claim extension UI parity; keep it as future ecosystem work after built-in TUI is stable. |
 | Provider hook breadth | `.repo/pi-0.80.2/packages/agent/docs/agent-harness.md:443`; `.repo/pi-0.80.2/packages/coding-agent/docs/extensions.md:1646-1681` | Provider request/response adapter hooks are future work after provider seam, trace, and redaction contracts are stable. |
@@ -229,10 +229,10 @@ with the older `.repo/pi-0.75.3` baseline.
 | CLI modes | Full | Interactive, non-interactive, JSON, RPC, model listing, completions, sessions, doctor, and package commands exist. | Keep command contracts documented and tested. |
 | Built-in tools | Partial | `read`, `write`, `edit`, `bash`, `grep`, `find`, `ls`, and `glob` exist with mode-aware policy. | Phase 11 should harden paths, encodings, truncation, cancellation, and diagnostics. |
 | Config/resource discovery | Partial | TOML layers, provider profiles, context files, resources, skills, prompt fragments, themes, packages, and extensions exist. | Keep precedence and diagnostics explicit. |
-| Sessions and branch workflows | Partial | Resume/list/delete/fork, `/tree`, `/branch`, `/fork`, `/clone`, active branch continuation, and compaction exist. | Phase 13 should add stable metadata, summaries, labels, and export. |
+| Sessions and branch workflows | Partial | Resume/list/delete/fork, `/tree`, `/branch`, `/fork`, `/clone`, active branch continuation, compaction, stable metadata, labels, local export, and branch-summary context substrate exist. | Branch-summary generation UX remains deferred to Phase 14. |
 | Package/process adapter substrate | Partial | Local/git package sources, manifest V2, `process-jsonl`, adapter tools/commands/hooks/events/state/cancellation, examples. | Stabilize before npm/gallery/update/enable/disable. |
 | Provider hooks/login UX | Missing | Custom provider registration exists; provider request/response hook parity and login flows do not. | Future candidate after Phase 10/12 provider seam and redaction/trace design. |
-| Export/share/web surfaces | Missing | Local session/export direction is planned; web/share not implemented. | Future candidate after Phase 13 sensitivity and redaction rules. |
+| Export/share/web surfaces | Partial | Local session export exists; web/share is not implemented. | Future candidate after Phase 13 sensitivity and redaction rules. |
 
 ## Phase Alignment
 
@@ -250,7 +250,7 @@ with the older `.repo/pi-0.75.3` baseline.
 | 10 | Core architecture deepening | `opi-ai`, `opi-agent`, `opi-coding-agent` | Partial | `Models/Auth`, generic `AgentHarness`, session facade, runtime hook boundaries. |
 | 11 | Tooling quality | `opi-coding-agent`, `opi-agent`, `opi-tui` | Planned | Recast from old Phase 9; depends on Phase 10 boundaries. |
 | 12 | Provider correctness | `opi-ai`, `opi-coding-agent` | Partial | Recast from old Phase 10; fixture lifecycle/error/taxonomy/profile-flags/cache/response-id/retry/cancel/auth-diagnostic coverage shipped through the provider collection/auth seam. `usage_in_stream` now requests `stream_options.include_usage`, OpenAI Chat captures response IDs from any chunk carrying `id`, missing usage stays explicitly unknown so session cost summaries can be omitted, and `previous_response_id` plus request-side cache-control breakpoints remain deferred. |
-| 13 | Session tree and context reconstruction | `opi-agent`, `opi-coding-agent`, `opi-tui` | Planned | Recast from old Phase 11; depends on generic harness/session facade. |
+| 13 | Session tree and context reconstruction | `opi-agent`, `opi-coding-agent`, `opi-tui` | Partial | Recast from old Phase 11; generic harness/session facade is present. Generation UX polish continues in Phase 14. |
 | 14 | TUI product polish | `opi-tui`, `opi-coding-agent` | Planned | Recast from old Phase 12; built-in TUI only, not custom extension UI parity. |
 
 ## Roadmap Implications

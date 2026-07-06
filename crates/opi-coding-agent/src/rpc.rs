@@ -829,40 +829,59 @@ impl RpcRunner {
                 // they are redacted through Phase 7 `redact_text` (Summary mode)
                 // before leaving the process; counts and ids are opaque metadata
                 // and emitted as-is.
-                if let Some(session) = harness.session() {
-                    let session_path = session.session_path().to_path_buf();
-                    if let Ok((_, entries)) =
-                        opi_agent::session::SessionReader::read_all(&session_path)
-                    {
-                        let tree = opi_agent::session_branch::SessionTree::from_entries(&entries);
-                        let active_idx = tree.active_branch_index();
-                        if let Some(idx) = active_idx {
-                            let branch = &tree.branches()[idx];
-                            data["entry_count"] = serde_json::json!(branch.entry_count);
-                            if let Some(summary) = branch.summary.as_deref() {
-                                data["branch_summary"] =
-                                    serde_json::json!(redact_text(summary, RedactionMode::Summary));
-                            }
-                        }
-                        let branches_arr = tree
-                            .branches()
-                            .iter()
-                            .enumerate()
-                            .map(|(idx, branch)| {
-                                let summary = branch
-                                    .summary
-                                    .as_deref()
-                                    .map(|s| redact_text(s, RedactionMode::Summary));
-                                serde_json::json!({
-                                    "tip": branch.tip_id,
-                                    "summary": summary,
-                                    "entry_count": branch.entry_count,
-                                    "depth": branch.depth,
-                                    "active": active_idx == Some(idx),
+                if harness.session().is_some() {
+                    match harness.session_tree() {
+                        Ok((tree, recovery)) => {
+                            let recovery_diagnostics = recovery
+                                .diagnostics()
+                                .into_iter()
+                                .map(|diagnostic| {
+                                    serde_json::to_value(
+                                        diagnostic.redacted_payload(RedactionMode::Summary),
+                                    )
+                                    .unwrap_or(serde_json::Value::Null)
                                 })
-                            })
-                            .collect::<Vec<_>>();
-                        data["branches"] = serde_json::Value::Array(branches_arr);
+                                .collect::<Vec<_>>();
+                            if !recovery_diagnostics.is_empty() {
+                                data["tree_recovery"] =
+                                    serde_json::Value::Array(recovery_diagnostics);
+                            }
+                            let active_idx = tree.active_branch_index();
+                            if let Some(idx) = active_idx {
+                                let branch = &tree.branches()[idx];
+                                data["entry_count"] = serde_json::json!(branch.entry_count);
+                                if let Some(summary) = branch.summary.as_deref() {
+                                    data["branch_summary"] = serde_json::json!(redact_text(
+                                        summary,
+                                        RedactionMode::Summary
+                                    ));
+                                }
+                            }
+                            let branches_arr = tree
+                                .branches()
+                                .iter()
+                                .enumerate()
+                                .map(|(idx, branch)| {
+                                    let summary = branch
+                                        .summary
+                                        .as_deref()
+                                        .map(|s| redact_text(s, RedactionMode::Summary));
+                                    serde_json::json!({
+                                        "tip": branch.tip_id,
+                                        "summary": summary,
+                                        "entry_count": branch.entry_count,
+                                        "depth": branch.depth,
+                                        "active": active_idx == Some(idx),
+                                    })
+                                })
+                                .collect::<Vec<_>>();
+                            data["branches"] = serde_json::Value::Array(branches_arr);
+                        }
+                        Err(e) => {
+                            data["tree_read_error"] = serde_json::json!(format!(
+                                "session file could not be read for branch tree: {e}"
+                            ));
+                        }
                     }
                 }
                 emit(&response_success_with_data(

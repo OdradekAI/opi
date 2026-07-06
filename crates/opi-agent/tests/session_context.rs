@@ -17,13 +17,16 @@ use opi_agent::diagnostic::{Diagnostic, SOURCE_SESSION, Severity, code::*};
 use opi_agent::message::AgentMessage;
 use opi_agent::session::{
     BranchSummaryEntry, CompactionEntry, CrashRecovery, ExtensionStateEntry, LabelAction,
-    LabelEntry, LeafEntry, MessageEntry, ModelChangeEntry, SessionEntry, SessionInfoEntry,
-    ThinkingLevelChangeEntry,
+    LabelEntry, LeafEntry, MessageEntry, ModelChangeEntry, SessionEntry, SessionHeader,
+    SessionInfoEntry, SessionReader, SessionWriter, ThinkingLevelChangeEntry,
 };
-use opi_agent::session_context::{ReconstructedContext, reconstruct_context};
+use opi_agent::session_context::{
+    ReconstructedContext, active_chain_entry_ids, reconstruct_context,
+};
 use opi_agent::session_event::ThinkingLevel;
 use opi_ai::message::{AssistantContent, AssistantMessage, InputContent, Message, UserMessage};
 use serde_json::json;
+use std::io::Write;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -182,6 +185,34 @@ fn linear_chain_reconstructs_messages_in_order() {
 }
 
 #[test]
+fn legacy_rootless_content_without_leaf_replays_file_order() {
+    let entries = vec![
+        user_msg("m1", None, "old"),
+        user_msg("m2", None, "kept"),
+        compaction("c1", None, "m2"),
+    ];
+
+    assert_eq!(
+        active_chain_entry_ids(&entries),
+        vec!["m1".to_owned(), "m2".to_owned(), "c1".to_owned()]
+    );
+
+    let ctx = reconstruct_context(&entries, &clean());
+
+    assert_eq!(ctx.active_tip_entry_id.as_deref(), Some("c1"));
+    assert_eq!(
+        ctx.messages.len(),
+        2,
+        "legacy rootless replay should apply compaction over file order"
+    );
+    assert!(matches!(
+        ctx.messages[0],
+        AgentMessage::CompactionSummary(_)
+    ));
+    assert_eq!(llm_text(&ctx.messages[1]), Some("kept"));
+}
+
+#[test]
 fn empty_entries_yield_empty_context() {
     let ctx = reconstruct_context(&[], &clean());
 
@@ -275,6 +306,29 @@ fn duplicate_adds_deduplicate() {
     let ctx = reconstruct_context(&entries, &clean());
 
     assert_eq!(ctx.labels, vec!["a".to_owned()]);
+}
+
+#[test]
+fn rootless_metadata_applies_when_chain_is_empty() {
+    let entries = vec![
+        session_info("info1", None, "pre-first-turn"),
+        model_change("mc1", None, "anthropic:claude-sonnet-4"),
+        thinking_change("th1", None, ThinkingLevel::Low),
+        label("l1", None, "setup", LabelAction::Add),
+        extension_state("state1", None, json!({"restored": true})),
+    ];
+
+    let ctx = reconstruct_context(&entries, &clean());
+
+    assert!(
+        ctx.messages.is_empty(),
+        "rootless metadata must not synthesize provider messages"
+    );
+    assert_eq!(ctx.session_name.as_deref(), Some("pre-first-turn"));
+    assert_eq!(ctx.model.as_deref(), Some("anthropic:claude-sonnet-4"));
+    assert_eq!(ctx.thinking_level, Some(ThinkingLevel::Low));
+    assert_eq!(ctx.labels, vec!["setup".to_owned()]);
+    assert_eq!(ctx.extension_state, Some(json!({"restored": true})));
 }
 
 // ---------------------------------------------------------------------------
@@ -541,6 +595,58 @@ fn missing_parent_emits_warning_diagnostic() {
 }
 
 #[test]
+fn active_chain_entry_ids_falls_back_like_reconstruct_context_for_invalid_leaf() {
+    let entries = vec![
+        user_msg("m1", None, "root"),
+        assistant_msg("m2", Some("m1"), "trunk"),
+        leaf("leaf1", Some("m2"), "missing-tip"),
+    ];
+
+    let ids = active_chain_entry_ids(&entries);
+    let ctx = reconstruct_context(&entries, &clean());
+
+    assert_eq!(ids, vec!["m1".to_owned(), "m2".to_owned()]);
+    assert_eq!(ctx.active_tip_entry_id.as_deref(), Some("m2"));
+    assert_eq!(ctx.messages.len(), 2);
+}
+
+#[test]
+fn active_tip_fallback_emits_diagnostic_when_leaf_target_missing() {
+    let entries = vec![
+        user_msg("m1", None, "root"),
+        assistant_msg("m2", Some("m1"), "trunk"),
+        leaf("leaf1", Some("m2"), "missing-tip"),
+    ];
+
+    let ctx = reconstruct_context(&entries, &clean());
+
+    assert_eq!(ctx.active_tip_entry_id.as_deref(), Some("m2"));
+    assert_eq!(count_code(&ctx, CODE_SESSION_LEAF_TIP_MISSING), 1);
+    assert!(ctx.diagnostics.iter().any(|d| {
+        d.code == CODE_SESSION_LEAF_TIP_MISSING
+            && d.severity == Severity::Warning
+            && d.source == SOURCE_SESSION
+            && d.details.as_ref().and_then(|v| v["leaf_entry_id"].as_str()) == Some("missing-tip")
+            && d.details.as_ref().and_then(|v| v["fallback_tip"].as_str()) == Some("m2")
+    }));
+}
+
+#[test]
+fn reconstruct_context_terminates_on_circular_parent_ids() {
+    let entries = vec![
+        user_msg("a", Some("b"), "cycle a"),
+        assistant_msg("b", Some("a"), "cycle b"),
+    ];
+
+    let ctx = reconstruct_context(&entries, &clean());
+
+    assert!(
+        ctx.messages.len() <= 2,
+        "cycle guard must terminate reconstruction without duplicating indefinitely"
+    );
+}
+
+#[test]
 fn corrupt_middle_entries_forwarded_from_crash_recovery() {
     let entries = vec![user_msg("m1", None, "hello")];
     let recovery = CrashRecovery {
@@ -553,6 +659,39 @@ fn corrupt_middle_entries_forwarded_from_crash_recovery() {
 
     assert_eq!(count_code(&ctx, CODE_SESSION_CORRUPT_ENTRIES), 1);
     assert_eq!(count_code(&ctx, CODE_SESSION_UNKNOWN_ENTRIES), 0);
+}
+
+#[test]
+fn read_with_recovery_feeds_corrupt_middle_into_reconstruct_context() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("corrupt-middle.jsonl");
+    let header = SessionHeader::new(
+        "corrupt-middle".into(),
+        "2026-07-01T00:00:00Z".into(),
+        "/repo".into(),
+        None,
+    );
+    let mut writer = SessionWriter::create(&path, header).unwrap();
+    writer.append(&user_msg("m1", None, "hello")).unwrap();
+    drop(writer);
+
+    let mut file = std::fs::OpenOptions::new()
+        .append(true)
+        .open(&path)
+        .unwrap();
+    writeln!(file, "{{not valid json}}").unwrap();
+
+    let (_header, entries, recovery) = SessionReader::read_with_recovery(&path).unwrap();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(recovery.corrupt_count(), 1);
+
+    let ctx = reconstruct_context(&entries, &recovery);
+
+    assert_eq!(count_code(&ctx, CODE_SESSION_CORRUPT_ENTRIES), 1);
+    assert!(ctx.diagnostics.iter().any(|d| {
+        d.code == CODE_SESSION_CORRUPT_ENTRIES
+            && d.details.as_ref().and_then(|v| v["corrupt_count"].as_u64()) == Some(1)
+    }));
 }
 
 #[test]
@@ -611,6 +750,23 @@ fn metadata_on_inactive_branch_does_not_apply() {
 // ---------------------------------------------------------------------------
 // 12. Diagnostics helper coverage — Diagnostic fields used by tests exist.
 // ---------------------------------------------------------------------------
+
+#[test]
+fn active_branch_metadata_wins_over_later_inactive_metadata() {
+    let entries = vec![
+        user_msg("m1", None, "root"),
+        assistant_msg("m2a", Some("m1"), "branch A"),
+        assistant_msg("m2b", Some("m1"), "branch B"),
+        model_change("mc_active", Some("m2b"), "anthropic:active-model"),
+        model_change("mc_inactive", Some("m2a"), "anthropic:inactive-model"),
+        leaf("l1", Some("m2b"), "m2b"),
+    ];
+
+    let ctx = reconstruct_context(&entries, &clean());
+
+    assert_eq!(ctx.active_tip_entry_id.as_deref(), Some("m2b"));
+    assert_eq!(ctx.model.as_deref(), Some("anthropic:active-model"));
+}
 
 #[test]
 fn diagnostic_fields_round_trip() {

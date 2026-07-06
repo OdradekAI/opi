@@ -18,7 +18,7 @@ pub enum ShellName {
 /// Output format for `--export-session` (Phase 13.5).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum ExportFormat {
-    #[clap(name = "markdown")]
+    #[clap(name = "markdown", alias = "md")]
     Markdown,
     #[clap(name = "json")]
     Json,

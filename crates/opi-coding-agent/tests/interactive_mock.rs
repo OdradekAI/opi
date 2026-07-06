@@ -113,7 +113,9 @@ fn event_name(event: &AgentEvent) -> &'static str {
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
+#[allow(clippy::await_holding_lock)]
 async fn harness_text_prompt_with_mock() {
+    let _lock = session_lock();
     let response = test_support::text_response("Hello from harness!");
     let provider = MockProvider::new("mock", vec![response]);
 
@@ -170,7 +172,9 @@ async fn harness_text_prompt_with_mock() {
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
+#[allow(clippy::await_holding_lock)]
 async fn harness_tool_call_with_mock() {
+    let _lock = session_lock();
     let tool_call_log: Arc<Mutex<Vec<serde_json::Value>>> = Arc::new(Mutex::new(Vec::new()));
 
     let first = test_support::tool_call_response("tc-1", "record_tool", r#"{"arg":"hello"}"#);
@@ -210,6 +214,7 @@ async fn harness_tool_call_with_mock() {
 
 #[tokio::test]
 async fn harness_system_prompt_includes_tools() {
+    let _lock = session_lock();
     let response = test_support::text_response("ok");
     let provider = MockProvider::new("mock", vec![response]);
 
@@ -241,7 +246,9 @@ async fn harness_system_prompt_includes_tools() {
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
+#[allow(clippy::await_holding_lock)]
 async fn harness_multi_turn_with_mock() {
+    let _lock = session_lock();
     let first = test_support::text_response("First response");
     let second = test_support::text_response("Second response");
 
@@ -273,6 +280,7 @@ async fn harness_multi_turn_with_mock() {
 
 #[tokio::test]
 async fn harness_respects_max_iterations_config() {
+    let _lock = session_lock();
     let response = test_support::text_response("ok");
     let provider = MockProvider::new("mock", vec![response]);
 
@@ -344,7 +352,9 @@ impl Provider for HangingThenCompleteProvider {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[allow(clippy::await_holding_lock)]
 async fn phase8_interactive_abort_shutdown_contract() {
+    let _lock = session_lock();
     let provider = HangingThenCompleteProvider::new();
     let mut harness = CodingHarness::new(
         Box::new(provider),
@@ -428,8 +438,10 @@ fn clear_sessions_dir() {
 
 fn session_lock() -> std::sync::MutexGuard<'static, ()> {
     static SESSION_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
-    // SAFETY: lock guards a process-global env var mutation; held for the
-    // whole test including awaits. No re-entrant acquisition across tests.
+    // The lock guards both process-global env var mutation and harness/session
+    // creation while another test temporarily points OPI_SESSIONS_DIR at a
+    // fixture directory. It is held for the whole test including awaits.
+    // No re-entrant acquisition across tests.
     SESSION_MUTEX
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
@@ -472,10 +484,24 @@ fn phase13_session_picker_command_remains_resume_picker() {
     assert_eq!(parse_session_metadata_command("/branch"), None);
     assert_eq!(parse_session_metadata_command("/fork"), None);
 
-    // Empty / whitespace-only args do not parse (rejected before dispatch).
-    assert_eq!(parse_session_metadata_command("/name "), None);
-    assert_eq!(parse_session_metadata_command("/label "), None);
-    assert_eq!(parse_session_metadata_command("/unlabel "), None);
+    // Empty / whitespace-only args parse to local usage hints instead of
+    // falling through to the LLM as user prompts.
+    assert_eq!(
+        parse_session_metadata_command("/name "),
+        Some(SessionMetadataCommand::Usage("usage: /name <name>".into()))
+    );
+    assert_eq!(
+        parse_session_metadata_command("/label "),
+        Some(SessionMetadataCommand::Usage(
+            "usage: /label <label>".into()
+        ))
+    );
+    assert_eq!(
+        parse_session_metadata_command("/unlabel "),
+        Some(SessionMetadataCommand::Usage(
+            "usage: /unlabel <label>".into()
+        ))
+    );
 
     // Non-slash input is left for the agent.
     assert_eq!(parse_session_metadata_command("hello world"), None);
@@ -554,6 +580,14 @@ async fn phase13_name_label_and_session_info_commands_persist_typed_entries() {
     assert!(
         info_msg.contains("demo") && info_msg.contains("name"),
         "/session info should surface the live name: {info_msg}"
+    );
+    let metadata = harness
+        .session_metadata()
+        .expect("metadata commands keep session metadata available");
+    assert_eq!(metadata.name.as_deref(), Some("demo"));
+    assert!(
+        metadata.labels.is_empty(),
+        "/unlabel dispatch should remove the label from the live aggregate"
     );
 
     // Read back the JSONL and confirm typed entries were persisted.

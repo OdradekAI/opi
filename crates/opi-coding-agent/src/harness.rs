@@ -112,7 +112,7 @@ pub struct CodingHarness {
     model_registry: opi_ai::ProviderCollection,
     extension_registry: Option<ExtensionRegistry>,
     session: Option<SessionCoordinator>,
-    /// Message count before the current turn — used to slice only new messages for persistence.
+    /// Message count before the current turn - used to slice only new messages for persistence.
     turn_offset: usize,
     /// Images queued from --image CLI flag, injected into the first prompt.
     pending_images: Vec<opi_ai::message::InputContent>,
@@ -137,6 +137,13 @@ pub struct RuntimeThinkingState {
     pub level: String,
     pub enabled: bool,
     pub budget_tokens: Option<u64>,
+}
+
+struct PendingThinkingChange {
+    persisted_level: ThinkingLevel,
+    thinking: Option<ThinkingConfig>,
+    max_tokens: Option<u64>,
+    state: RuntimeThinkingState,
 }
 
 /// Aggregated live session metadata (Phase 13.4) surfaced by `/session info`
@@ -943,13 +950,12 @@ impl CodingHarness {
     /// re-applies it when compatible with the CLI/config provider.
     pub fn set_model_validated(&mut self, model: String) -> Result<&str, String> {
         self.try_configure_model(&model)?;
-        self.agent.set_model(model.clone());
         if let Some(session) = self.session.as_mut() {
-            // Persistence is best-effort: a failed metadata write must not roll
-            // back the in-memory model change. The next prompt's message write
-            // surfaces real I/O failures through its own error path.
-            let _ = session.append_model_change(model);
+            session
+                .append_model_change(model.clone())
+                .map_err(|e| format!("model change write failed: {e}"))?;
         }
+        self.agent.set_model(model);
         Ok(self.agent.model())
     }
 
@@ -985,9 +991,9 @@ impl CodingHarness {
     /// content tip without advancing it. A later resume observes the recorded
     /// level and re-applies it when compatible with the active model.
     pub fn set_thinking_level(&mut self, level: &str) -> Result<RuntimeThinkingState, String> {
-        let state = self.try_configure_thinking(level)?;
-        self.persist_thinking_level_change(level);
-        Ok(state)
+        let change = self.prepare_thinking_change(level)?;
+        self.persist_thinking_level_change(change.persisted_level)?;
+        Ok(self.apply_thinking_change(change))
     }
 
     /// Validate `level`, apply it to the agent, and return the resulting
@@ -995,12 +1001,17 @@ impl CodingHarness {
     /// [`Self::set_thinking_level`] (persists) and by resume (applies a
     /// recorded level without re-persisting the entry).
     fn try_configure_thinking(&mut self, level: &str) -> Result<RuntimeThinkingState, String> {
+        let change = self.prepare_thinking_change(level)?;
+        Ok(self.apply_thinking_change(change))
+    }
+
+    fn prepare_thinking_change(&self, level: &str) -> Result<PendingThinkingChange, String> {
         let default_budget = self.config.thinking.budget_tokens as u64;
-        let budget_tokens = match level {
-            "off" => None,
-            "low" => Some(2_048),
-            "medium" => Some(default_budget),
-            "high" => Some(default_budget.max(20_000)),
+        let (persisted_level, budget_tokens) = match level {
+            "off" => (ThinkingLevel::None, None),
+            "low" => (ThinkingLevel::Low, Some(2_048)),
+            "medium" => (ThinkingLevel::Medium, Some(default_budget)),
+            "high" => (ThinkingLevel::High, Some(default_budget.max(20_000))),
             _ => {
                 return Err(format!(
                     "invalid thinking level '{level}': expected off, low, medium, or high"
@@ -1019,32 +1030,36 @@ impl CodingHarness {
             None => (None, None),
         };
 
-        self.agent.set_max_tokens(max_tokens);
-        self.agent.set_thinking_config(thinking);
-        let state = self.agent.thinking_config();
-        Ok(RuntimeThinkingState {
+        let state = RuntimeThinkingState {
             level: level.to_owned(),
-            enabled: state.enabled,
-            budget_tokens: state.budget_tokens,
+            enabled: thinking.as_ref().is_some_and(|thinking| thinking.enabled),
+            budget_tokens: thinking
+                .as_ref()
+                .and_then(|thinking| thinking.budget_tokens),
+        };
+        Ok(PendingThinkingChange {
+            persisted_level,
+            thinking,
+            max_tokens,
+            state,
         })
     }
 
-    /// Persist a `thinking_level_change` entry for the just-applied level, if a
-    /// session is active. Best-effort: a failed metadata write does not roll
-    /// back the in-memory change.
-    fn persist_thinking_level_change(&mut self, level: &str) {
+    fn apply_thinking_change(&mut self, change: PendingThinkingChange) -> RuntimeThinkingState {
+        self.agent.set_max_tokens(change.max_tokens);
+        self.agent.set_thinking_config(change.thinking);
+        change.state
+    }
+
+    /// Persist a `thinking_level_change` entry before applying the runtime
+    /// change, if a session is active.
+    fn persist_thinking_level_change(&mut self, level: ThinkingLevel) -> Result<(), String> {
         let Some(session) = self.session.as_mut() else {
-            return;
+            return Ok(());
         };
-        let parsed = match level {
-            "off" => ThinkingLevel::None,
-            "low" => ThinkingLevel::Low,
-            "medium" => ThinkingLevel::Medium,
-            "high" => ThinkingLevel::High,
-            // Unreachable: try_configure_thinking rejects other values first.
-            _ => return,
-        };
-        let _ = session.append_thinking_level_change(parsed);
+        session
+            .append_thinking_level_change(level)
+            .map_err(|e| format!("thinking level write failed: {e}"))
     }
 
     /// Set the session name (Phase 13.4 `/name <name>`). Persists a
@@ -1162,16 +1177,9 @@ impl CodingHarness {
         self.apply_recorded_model(ctx.model.as_deref());
         self.apply_recorded_thinking(ctx.thinking_level);
 
-        // Surface recovery + missing-parent diagnostics. `session.diagnostics`
-        // is the load-time recovery set; `ctx.diagnostics` adds missing-parent
-        // warnings detected by the context builder.
-        self.resources
-            .metadata
-            .diagnostics
-            .extend(session.diagnostics.clone());
-        for diagnostic in &session.diagnostics {
-            self.record_harness_diagnostic(diagnostic.clone());
-        }
+        // Surface recovery + missing-parent diagnostics. `reconstruct_context`
+        // already forwards load-time recovery diagnostics, so do not append
+        // `session.diagnostics` separately.
         for diagnostic in ctx.diagnostics {
             self.resources.metadata.diagnostics.push(diagnostic.clone());
             self.record_harness_diagnostic(diagnostic);
@@ -1305,33 +1313,70 @@ impl CodingHarness {
             .session
             .as_ref()
             .ok_or_else(|| "no active session".to_owned())?;
-        let (_, entries) = opi_agent::session::SessionReader::read_all(session.session_path())
-            .map_err(|e| format!("failed to read session: {e}"))?;
-        let tree = opi_agent::session_branch::SessionTree::from_entries(&entries);
+        let (tree, _recovery) = Self::read_session_tree(session.session_path())?;
         Ok(crate::picker::branch_picker_items(&tree))
+    }
+
+    /// Return the reconstructed session tree for the active session, plus the
+    /// read recovery metadata from the JSONL load.
+    pub fn session_tree(
+        &self,
+    ) -> Result<
+        (
+            opi_agent::session_branch::SessionTree,
+            opi_agent::session::CrashRecovery,
+        ),
+        String,
+    > {
+        let session = self
+            .session
+            .as_ref()
+            .ok_or_else(|| "no active session".to_owned())?;
+        Self::read_session_tree(session.session_path())
+    }
+
+    fn read_session_tree(
+        path: &Path,
+    ) -> Result<
+        (
+            opi_agent::session_branch::SessionTree,
+            opi_agent::session::CrashRecovery,
+        ),
+        String,
+    > {
+        let (_, entries, recovery) = opi_agent::session::SessionReader::read_with_recovery(path)
+            .map_err(|e| format!("failed to read session: {e}"))?;
+        Ok((
+            opi_agent::session_branch::SessionTree::from_entries(&entries),
+            recovery,
+        ))
     }
 
     /// Switch the current session to the branch ending at `tip_id`.
     pub fn resume_session_branch_tip(&mut self, tip_id: &str) -> Result<usize, String> {
-        let session = self
-            .session
-            .as_mut()
-            .ok_or_else(|| "no active session".to_owned())?;
-        let path = session.session_path().to_path_buf();
-        let session_id = session.session_id().to_owned();
-        let (_, entries) = opi_agent::session::SessionReader::read_all(&path)
-            .map_err(|e| format!("failed to read session: {e}"))?;
-        let tree = opi_agent::session_branch::SessionTree::from_entries(&entries);
+        let (path, session_id) = {
+            let session = self
+                .session
+                .as_ref()
+                .ok_or_else(|| "no active session".to_owned())?;
+            (
+                session.session_path().to_path_buf(),
+                session.session_id().to_owned(),
+            )
+        };
+        let (tree, _recovery) = Self::read_session_tree(&path)?;
         if !tree.branches().iter().any(|branch| branch.tip_id == tip_id) {
             return Err(format!("unknown branch tip: {tip_id}"));
         }
 
-        session
+        self.session
+            .as_mut()
+            .ok_or_else(|| "no active session".to_owned())?
             .append_leaf(tip_id)
             .map_err(|e| format!("failed to select branch: {e}"))?;
-        let (_, entries) = opi_agent::session::SessionReader::read_all(&path)
+        let (_, entries, recovery) = opi_agent::session::SessionReader::read_with_recovery(&path)
             .map_err(|e| format!("failed to read selected branch: {e}"))?;
-        let ctx = reconstruct_context(&entries, &opi_agent::session::CrashRecovery::default());
+        let ctx = reconstruct_context(&entries, &recovery);
         let message_count = ctx.messages.len();
         self.agent.replace_messages(ctx.messages);
         self.defer_extension_state_from_entries(&entries);
@@ -1508,7 +1553,7 @@ impl CodingHarness {
                         });
                     }
                     Err(e) => {
-                        // Compaction marker failed to persist — leave in-memory
+                        // Compaction marker failed to persist - leave in-memory
                         // state un-compacted (SessionCoordinator already skipped
                         // the mutation) and surface the error to subscribers.
                         self.agent.emit_event(AgentEvent::CompactionEnd {
@@ -2175,8 +2220,10 @@ fn thinking_budget_exceeds_model_limit(
 /// - `AgentMessage::CompactionSummary` is rendered as a synthetic user
 ///   message so the provider sees a textual marker for context that was
 ///   compacted away.
-/// - Other variants (`BranchSummary`, `Custom`) are dropped — they have no
-///   provider-facing representation yet.
+/// - `AgentMessage::BranchSummary` is rendered as a synthetic user message so
+///   reconstructed parent-branch context reaches the provider when present.
+/// - `AgentMessage::Custom` is dropped; extension provider-context semantics
+///   remain deferred.
 pub(crate) fn agent_messages_to_llm(messages: &[AgentMessage]) -> Vec<Message> {
     let mut result = Vec::with_capacity(messages.len());
     for msg in messages {
@@ -2189,6 +2236,14 @@ pub(crate) fn agent_messages_to_llm(messages: &[AgentMessage]) -> Vec<Message> {
                             "[Context was compacted. Summary of earlier conversation: {}]",
                             summary.summary
                         ),
+                    }],
+                    timestamp_ms: 0,
+                }));
+            }
+            AgentMessage::BranchSummary(summary) => {
+                result.push(Message::User(opi_ai::message::UserMessage {
+                    content: vec![opi_ai::message::InputContent::Text {
+                        text: format!("[Context from parent branch: {}]", summary.summary),
                     }],
                     timestamp_ms: 0,
                 }));
