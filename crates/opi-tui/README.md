@@ -19,10 +19,10 @@ It does not call providers, run tools, read sessions, load packages, or manage
 background tasks. Those responsibilities stay in `opi-agent` and
 `opi-coding-agent`.
 
-Phase 11 and Phase 12 did not change that boundary. Tool execution,
-diagnostics, provider correctness, retries, usage, and sessions stay outside
-this crate; `opi-tui` renders the resulting transcript, tool status, image
-placeholders/escapes, and edit diff previews.
+Phase 11 through Phase 13 did not change that boundary. Tool execution,
+diagnostics, provider correctness, retries, usage, session storage, and session
+export stay outside this crate; `opi-tui` renders the resulting transcript,
+tool status, image placeholders/escapes, picker rows, and edit diff previews.
 
 ## Components
 

@@ -21,12 +21,12 @@ package 加载或内置编程工具；这些能力分别位于 `opi-agent` 和 `
 （`AuthDescriptor` / `AuthStatus`）、OpenAI-compatible 兼容性元数据，以及
 stream/complete 派发。OAuth 与订阅鉴权是明确的非目标。
 
-当前 workspace 在已发布 `0.6.3` crate 版本之上包含 Phase 12 provider 正确性工作。
-它加固已有 provider family，而不是扩张 provider 宽度：所有内置 family 都有
-request/stream/error fixture 覆盖；`ProviderError::category` 暴露已文档化的九类错误；
-OpenAI-compatible profile 的 `CompatConfig` 和 `ModelCompatOverride` 行为经过测试；
-cache token 与 provider response ID 会在可用时回写；缺失用量保持为显式
-`unknown usage`，而不是已知零用量。
+workspace 包版本是 `0.6.4`；当前 checkout 也可能包含尚未发布的 Phase 13 会话集成
+变更。Phase 12 的 provider 正确性工作加固已有 provider family，而不是扩张 provider
+宽度：所有内置 family 都有 request/stream/error fixture 覆盖；
+`ProviderError::category` 暴露已文档化的九类错误；OpenAI-compatible profile 的
+`CompatConfig` 和 `ModelCompatOverride` 行为经过测试；cache token 与 provider
+response ID 会在可用时回写；缺失用量保持为显式 `unknown usage`，而不是已知零用量。
 
 Phase 11 的工具结果修复仍是 provider 契约的一部分：
 `ToolResultMessage::is_error` 会保留到 provider wire converter。有原生错误字段的
@@ -194,10 +194,11 @@ Phase 12 是 provider *正确性* 阶段，不是 breadth 阶段。以下是明�
 - 默认测试中的付费实时 provider 调用（实时测试保持 `#[ignore]` 门控）。
 - 复制 pi 的 provider 专用配置文件格式。
 
-## Phase 13 交接
+## Phase 13 会话集成
 
-Phase 13 的会话工作可以依赖经由共享 `opi-ai` 类型传递的 provider-correct usage、
-model、thinking 和 error 数据，而无需依赖 provider 专用内部实现。
+Phase 13 的会话工作依赖经由共享 `opi-ai` 类型传递的 provider-correct usage、model、
+thinking、cache、response ID、cancellation 和 error 数据。它不新增 provider family，
+也不要求调用方依赖 provider 专用内部实现。
 
 ## 最小示例
 

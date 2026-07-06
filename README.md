@@ -10,23 +10,19 @@
 
 ## Status
 
-The workspace package version in `Cargo.toml` is `0.6.4`. `opi` is usable as a
-terminal coding agent and as a set of Rust crates for embedding agent runtime
-pieces. This checkout may contain unreleased changes on top of the published
-`0.6.4` crates; check [CHANGELOG.md](CHANGELOG.md) for the current delta.
+The workspace package version in `Cargo.toml` is `0.6.4`. This checkout also
+contains unreleased Phase 13 session-tree and context-reconstruction fixes on
+top of the published `0.6.4` crates; check [CHANGELOG.md](CHANGELOG.md) before
+making release claims.
 
-`opi` reimplements selected pi ideas in Rust. It is not API-compatible with pi,
-does not read pi config by default, and uses its own TOML config and JSONL
-session format.
+`opi` is usable today as a terminal coding agent and as a set of Rust crates
+for building agent runtimes. It reimplements selected pi ideas in Rust, but it
+is not API-compatible with pi, does not read pi config by default, and uses its
+own TOML config plus append-only JSONL session format.
 
-The published `0.6.4` release includes the Phase 10 provider collection/auth,
-generic-harness, session-facade, and runtime-hook boundary seams, Phase 11
-tooling-quality work, and Phase 12 provider-correctness work: existing provider
-families have fixture-backed request, streaming, tool-call, thinking/image,
-usage, retry, cancellation, and error-taxonomy coverage; OpenAI-compatible
-profile behavior is config-driven and documented. Treat wire protocols,
-extension/package surfaces, trace payloads, and Phase 10-12 seams as unstable
-0.x unless a crate README explicitly says otherwise.
+Wire protocols, session/export formats, packages, extensions, SDK/RPC, and
+trace envelopes remain unstable 0.x surfaces. Pin exact crate versions for
+embedders.
 
 ## Install
 
@@ -42,7 +38,7 @@ to [GitHub Releases](https://github.com/OdradekAI/opi/releases).
 
 ## Quick Start
 
-Set credentials for the provider you want to use:
+Set credentials for one provider:
 
 ```sh
 export ANTHROPIC_API_KEY=sk-ant-...
@@ -56,13 +52,13 @@ Run the interactive TUI:
 opi
 ```
 
-Run a single prompt:
+Run one prompt:
 
 ```sh
 opi "List the Rust crates in this workspace."
 ```
 
-Emit NDJSON events for automation:
+Emit NDJSON events:
 
 ```sh
 opi --json "Summarize this repository."
@@ -81,6 +77,34 @@ opi -m anthropic:claude-sonnet-4-5-20250514 "Explain crates/opi-agent/src/lib.rs
 opi -m openai:gpt-4o "Review the public API shape."
 ```
 
+Export a saved session locally:
+
+```sh
+opi --export-session <ID_OR_PATH> --output session.md
+opi --export-session <ID_OR_PATH> --output session.json --format json
+```
+
+## Workspace Crates
+
+All crates share the workspace version, edition, license, repository, and
+authors.
+
+| Crate | Purpose |
+| --- | --- |
+| [`opi-ai`](crates/opi-ai) | Provider-neutral LLM API, streaming events, model registry, retries, HTTP/proxy support, usage, and best-effort cost helpers. |
+| [`opi-agent`](crates/opi-agent) | Agent loop, tool contract, hooks, events, queues, sessions, compaction, SDK/RPC types, extensions, diagnostics, and streaming proxy. |
+| [`opi-tui`](crates/opi-tui) | Ratatui widgets, transcript rendering, diff view, pickers, terminal images, themes, and keybindings. |
+| [`opi-coding-agent`](crates/opi-coding-agent) | The `opi` binary, built-in coding tools, config/session/package handling, and embeddable `CodingHarness`. |
+
+Internal dependency shape:
+
+```text
+opi-ai
+opi-tui
+opi-agent -> opi-ai
+opi-coding-agent -> opi-ai + opi-agent + opi-tui -> opi binary
+```
+
 ## Main CLI Surface
 
 ```sh
@@ -92,41 +116,33 @@ opi doctor
 opi package list
 ```
 
-Common mode flags:
+Common mode and session flags:
 
 | Flag | Purpose |
-|------|---------|
+| --- | --- |
 | `--non-interactive` | Force one-shot text mode. |
 | `--json` | One-shot NDJSON event stream. |
 | `--rpc` | Persistent JSONL command/event protocol over stdin/stdout. |
 | `--resume <ID>` | Resume a saved session. |
 | `--fork <ID>` | Fork a saved session into a new session. |
+| `--export-session <ID_OR_PATH>` | Render a saved session to a local markdown or JSON file. |
+| `--output <PATH>` | Required output path for `--export-session`. |
+| `--format <markdown\|json>` | Export format; `md` is accepted as a markdown alias. |
+| `--full-tree` | Export the whole session tree instead of only the active branch. |
+| `--exclude-tool-output` | Omit tool result output from exported transcripts. |
+| `--exclude-thinking` | Omit assistant thinking content from exported transcripts. |
+| `--redact <summary\|verbose\|none>` | Export redaction mode; default is `summary`. |
 | `--tools read,grep` | Enable only the listed built-in tools. |
 | `--no-tools` | Disable all tools. |
 | `--allow-mutating` | Allow `write`, `edit`, and `bash` in non-interactive/RPC runs. |
-| `--trace <PATH>` | Write an opt-in, redacted local trace envelope for the run. |
-
-## Wire Versions
-
-Automation and embedder surfaces are versioned, but still unstable 0.x:
-
-| Surface | Current version | Where it appears |
-|---------|-----------------|------------------|
-| NDJSON mode | `NDJSON_SCHEMA_VERSION = 2` | `opi --json` schema header |
-| RPC / SDK | `SDK_SCHEMA_VERSION = 3` | `opi --rpc` `rpc_ready.schema_version` |
-| Trace envelope | `TRACE_SCHEMA_VERSION = 1` | `--trace <PATH>` and RPC `trace` payloads |
-
-RPC runtime-state rejections may carry a stable machine-readable `error_code`:
-`unsupported_trace_request`, `agent_busy`, `harness_unavailable`,
-`compaction_failed`, or `extension_command_not_handled`. Idle capability errors
-from `set_model` and `set_thinking_level` remain free-text validation errors.
+| `--trace <PATH>` | Write an opt-in, redacted local trace envelope for a non-interactive or JSON run. |
 
 ## Providers
 
 Provider support lives in `opi-ai` and is wired into `opi-coding-agent`.
 
 | Prefix | Backend | Default credentials |
-|--------|---------|---------------------|
+| --- | --- | --- |
 | `anthropic:` | Anthropic Messages streaming | `ANTHROPIC_API_KEY` |
 | `openai:` | OpenAI Chat Completions streaming | `OPENAI_API_KEY` |
 | `openai-responses:` | OpenAI Responses streaming | `OPENAI_API_KEY` |
@@ -139,39 +155,32 @@ Provider support lives in `opi-ai` and is wired into `opi-coding-agent`.
 | configured profile | OpenAI-compatible Chat Completions profile | profile-specific `api_key_env` |
 
 Compatible OpenAI-style services should normally use configured profiles rather
-than new first-class provider modules. First-class adapters are reserved for
-material wire, auth, streaming, tool, image, or capability differences.
+than new first-class provider modules. For `usage_in_stream`, OpenAI-compatible
+profiles request `stream_options.include_usage`; response IDs captured from any
+OpenAI Chat chunk carrying `id` round-trip into `response_id`. Cost summaries
+are omitted when usage or pricing is unknown.
 
 ## Built-in Tools
 
 Available built-in tools are `read`, `write`, `edit`, `bash`, `grep`, `find`,
 `ls`, and `glob`.
 
-Default active tools depend on run mode:
-
 | Mode | Default tools |
-|------|---------------|
+| --- | --- |
 | Interactive TUI | `read`, `write`, `edit`, `bash` |
 | Non-interactive / RPC | `read`, `grep`, `find`, `ls`, `glob` |
 | Non-interactive / RPC with mutating opt-in | `read`, `write`, `edit`, `bash` |
 
 File writes and edits are scoped to the harness workspace root. Interactive
-`read` can inspect absolute paths and paths outside the workspace. These rules
-are tool policy, not an operating-system sandbox.
+`read` can inspect absolute paths and paths outside the workspace. `bash`
+starts in the workspace root but is not path-confined. These are tool policy
+checks, not an operating-system sandbox.
 
-Current tool results are inspectable without expanding the built-in tool set:
-
-- Built-in tool results carry `content`, optional `details`, `is_error`,
-  `terminate`, `truncated`, and optional structured diagnostics.
-- `read` returns line and path metadata, caps omitted output by default at 2000
-  lines, and still applies a 64 KiB byte cap.
-- `bash` runs one foreground command, reports cwd/shell/exit/timeout/cancel
-  metadata, caps combined stdout/stderr at 64 KiB, and may spill the complete
-  output path to `details.full_output`.
-- `grep`, `find`, `ls`, and `glob` share gitignore-aware walking, deterministic
-  ordering, bounded result counts, and skipped-file diagnostics.
-- Tool-selection safety is not a permission system. Use external containers,
-  VMs, or sandboxes when OS-level isolation is required.
+Tool results carry LLM-visible `content`, optional structured `details`,
+`is_error`, `terminate`, `truncated`, and optional diagnostics. `read` returns
+line/path metadata and defaults to a 2000-line preview with a 64 KiB byte cap.
+`bash` runs one foreground command, caps combined stdout/stderr at 64 KiB, and
+may spill complete output to `details.full_output`.
 
 ## Config and Sessions
 
@@ -189,76 +198,55 @@ file. Model precedence is:
 Sessions are append-only JSONL files written automatically.
 
 | Platform | Default session directory |
-|----------|---------------------------|
+| --- | --- |
 | Windows | `%LOCALAPPDATA%\opi\sessions\` |
 | Unix | `~/.local/share/opi/sessions/` |
 
-Use `OPI_SESSIONS_DIR` to override the location. Session files are sensitive
-(they hold prompts, tool output, and possibly leaked secrets); Phase 13 keeps
-the v1 header with additive typed entries, and `opi --export-session` performs
-local, redacted export only.
-
-## Workspace Crates
-
-All crates share the workspace version, edition, license, repository, and
-authors.
-
-| Crate | Published | Purpose |
-|-------|-----------|---------|
-| [`opi-ai`](crates/opi-ai) | yes | Provider-neutral LLM API, streaming events, model registry, retries, HTTP/proxy support, usage and cost helpers. |
-| [`opi-agent`](crates/opi-agent) | yes | Agent loop, tool execution, hooks, events, queues, sessions, compaction, SDK types, extensions, streaming proxy. |
-| [`opi-tui`](crates/opi-tui) | yes | Ratatui widgets, transcript rendering, diff view, pickers, terminal images, themes, keybindings. |
-| [`opi-coding-agent`](crates/opi-coding-agent) | yes | The `opi` binary and embeddable coding harness. |
-
-Internal dependency shape:
-
-```text
-opi-ai
-opi-tui
-opi-agent -> opi-ai
-opi-coding-agent -> opi-ai + opi-agent + opi-tui -> opi binary
-```
+Use `OPI_SESSIONS_DIR` to override the location. Session files are sensitive:
+they contain prompts, tool output, and possibly leaked secrets. Phase 13 keeps
+the v1 header and adds typed entries for session names, model changes, thinking
+levels, labels, and branch summaries. `--resume`, `--fork`, `--list-sessions`,
+RPC `session_info`, and `--export-session` all reconstruct the active branch
+through the same context path. `opi --export-session` is local-only and applies
+redaction by default.
 
 ## Extensibility
 
-`opi --rpc` exposes an unstable 0.x JSONL command/event protocol with schema
-version checks. `opi-agent` also exposes shared SDK types and extension
-registry primitives for embedders. RPC commands include `prompt`, `continue`,
-`steer`, `follow_up`, `abort`, `set_model`, `set_thinking_level`, `compact`,
-`session_info`, `extension_command`, `trace`, and `quit`.
+`opi --rpc` exposes an unstable 0.x JSONL command/event protocol. Current wire
+versions are:
+
+| Surface | Current version | Where it appears |
+| --- | --- | --- |
+| NDJSON mode | `NDJSON_SCHEMA_VERSION = 2` | `opi --json` schema header |
+| RPC / SDK | `SDK_SCHEMA_VERSION = 3` | `opi --rpc` `rpc_ready.schema_version` |
+| Trace envelope | `TRACE_SCHEMA_VERSION = 1` | `--trace <PATH>` and RPC `trace` payloads |
+
+RPC commands include `prompt`, `continue`, `steer`, `follow_up`, `abort`,
+`set_model`, `set_thinking_level`, `compact`, `session_info`,
+`extension_command`, `trace`, and `quit`.
 
 Resource discovery supports extensions, packages, skills, prompt fragments, and
-themes. Package manifests can start `process-jsonl` adapters that expose custom
-tools, commands, hooks, event observers, state, and model/provider overrides.
+themes. `opi package add/remove/list/doctor` works for local and git package
+sources. Package manifests can start `process-jsonl` adapters using the
+`opi-extension-jsonl-v1` protocol; adapters can expose tools, commands, hooks,
+events, state, and model/provider overrides.
 
 ## Permissions and Trust Boundaries
 
 `opi` runs with the operating-system permissions of the user and process that
-launched it. Tool selection and mutating-tool flags control which built-in tools
-the agent can call; they are not an operating-system sandbox.
+launched it. Tool selection and mutating-tool flags control which built-in
+tools the agent can call; they are not an operating-system sandbox.
 
-- File writes and edits are scoped to the harness workspace root. `bash` starts
-  in the workspace root but can execute commands with the launching user's OS
-  permissions.
-- Packages are trusted code. A package can start child processes with the same
-  OS permissions as `opi`; package permission declarations are metadata, not enforced sandbox policy.
+- `bash` can execute commands with the launching user's OS permissions.
+- Packages are trusted code. A package can start child processes with the same OS permissions as `opi`; package permission declarations are metadata, not enforced sandbox policy.
 - Observability is local and explicit: `opi` does not collect telemetry or
   analytics, does not share sessions automatically, `opi doctor` is local and
-  network-free by default, and traces are opt-in.
-- Production sub-agent, permission-gate, plan/todo, and MCP workflows are not
-  built into the core CLI. The repository contains examples and package
-  scaffolds for those patterns.
-- Phase 12 provider correctness is implemented for existing providers, not for
-  breadth. OAuth login, Anthropic / OpenAI Codex / GitHub Copilot subscription
-  auth, a broad new first-class provider list, image generation, browser usage,
-  a provider streaming-adapter protocol for packages, paid live provider calls
-  in default tests, and copying pi's provider-specific config file format remain
-  deferred. See the `opi-ai` README for the per-family behavior matrix,
-  OpenAI-compatible profile flags, cache / response-ID / session-affinity
-  behavior, proxy, and best-effort cost. Notable Phase 12 details:
-  `usage_in_stream` requests `stream_options.include_usage`; response IDs captured
-  from any OpenAI Chat chunk carrying `id` round-trip into `response_id`; cost
-  summaries are omitted when usage or pricing is unknown.
+  network-free by default, and `trace` is opt-in.
+- Production sub-agent, permission-gate, plan/todo, and MCP workflows are
+  examples/package patterns, not built-in core workflows.
+- OAuth login, subscription auth, image generation, browser usage, provider
+  streaming-adapter protocols for packages, paid live provider calls in default
+  tests, and copying pi's provider-specific config file format remain deferred.
 - Dynamic Rust plugin loading from arbitrary extension paths is not supported.
 
 If you need stronger isolation, run `opi` inside a container, VM, or external

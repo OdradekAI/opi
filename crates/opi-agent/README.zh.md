@@ -16,16 +16,21 @@
 JSONL 存储、分支重建、上下文压缩、SDK/RPC 类型、扩展、本地诊断、已脱敏 trace
 envelope，以及 streaming proxy。
 
-已发布 `0.6.3` crate 之后的当前 workspace 变更仍保持运行时契约聚焦，不新增核心
-工作流。Phase 11 把 `truncated` 和工具自有结构化诊断加入工具契约。Agent 主循环会
-把这些诊断提升为共享 diagnostic/trace 记录，并在公共 `ToolExecutionEnd` 事件上暴露；
-面向 provider 的工具结果消息仍只携带 LLM 可见内容和失败状态。
+workspace 包版本是 `0.6.4`；当前 checkout 也可能包含尚未发布的 Phase 13 会话工作。
+近期变更仍保持运行时契约聚焦，不新增核心工作流。Phase 11 把 `truncated` 和工具自有
+结构化诊断加入工具契约。Agent 主循环会把这些诊断提升为共享 diagnostic/trace 记录，
+并在公共 `ToolExecutionEnd` 事件上暴露；面向 provider 的工具结果消息仍只携带 LLM
+可见内容和失败状态。
 
 Phase 12 使用既有运行时表面承载 provider 正确性：来自 `opi-ai` 的
 `ProviderErrorCategory` 会映射为已脱敏 diagnostics 和 trace 记录；provider 返回的
 cancellation 会表现为 `AgentError::Cancelled`；retry diagnostics 会区分重试预算耗尽与
 已有部分 provider 输出后的重试抑制；provider metadata 在公共 event、session、JSON、
 RPC 和 trace 边界保持有界。
+
+Phase 13 在 append-only session 存储中加入类型化 metadata 条目和分支摘要，同时保持
+`SessionHeader::version = 1`。metadata 条目不进入 provider 上下文；分支摘要会通过
+`session_context::reconstruct_context` 进入 provider 上下文。
 
 它依赖 `opi-ai` 的 Provider 和消息类型。它不实现 `opi` CLI、终端 UI 或具体的
 文件/ shell 内置工具；这些能力分别位于 `opi-coding-agent` 和 `opi-tui`。
@@ -332,7 +337,8 @@ crate 版本。本地 trace envelope 携带 `TRACE_SCHEMA_VERSION = 1`。
 
 `agent`、`compaction`、`diagnostic`、`diagnostic_sink`、`event`、`extension`、
 `harness`、`hooks`、`loop_types`、`message`、`sdk`、`session`、`session_branch`、
-`session_event`、`state`、`streaming_proxy`、`tool`、`trace` 和 `validation`。
+`session_context`、`session_event`、`state`、`streaming_proxy`、`tool`、`trace` 和
+`validation`。
 
 crate root 重新导出了常用运行时类型，包括 `Agent`、`Tool`、`ToolResult`、
 `ToolError`、`ExecutionMode`、`AgentHooks`、`AgentEvent`、`AgentSessionEvent`、

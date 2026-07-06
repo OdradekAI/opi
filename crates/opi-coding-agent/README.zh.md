@@ -24,13 +24,15 @@
 - 配置、上下文文件加载、会话持久化、压缩、重试、用量、费用摘要、package/资源发现、
   诊断和可选 trace。
 
-已发布 `0.6.3` crate 之后的当前 workspace 变更在不新增核心工作流工具的前提下加固
-既有行为。Phase 11 让文件系统失败携带类型化诊断，read/bash 输出截断成为显式状态，
-write/edit 记录可审计元数据，导航工具共享有界的 gitignore-aware 遍历，并让失败工具
-结果保留到 provider adapter。Phase 12 把 provider 正确性接入 CLI 与 harness：
-provider 构造会用已脱敏 diagnostics 校验 auth/config，OpenAI-compatible profile
-携带已文档化的兼容性标志和 `extra_headers`，provider 错误会进入 text/JSON/RPC
-diagnostics；当任一轮 usage 未知或定价未知时，会话费用汇总会被省略。
+workspace 包版本是 `0.6.4`；当前 checkout 也可能包含尚未发布的 Phase 13 会话工作。
+近期阶段在不新增核心工作流工具的前提下加固既有行为。Phase 11 让文件系统失败携带
+类型化诊断，read/bash 输出截断成为显式状态，write/edit 记录可审计元数据，导航工具
+共享有界的 gitignore-aware 遍历，并让失败工具结果保留到 provider adapter。
+Phase 12 把 provider 正确性接入 CLI 与 harness：provider 构造会用已脱敏 diagnostics
+校验 auth/config，OpenAI-compatible profile 携带已文档化的兼容性标志和
+`extra_headers`，provider 错误会进入 text/JSON/RPC diagnostics；当任一轮 usage 未知
+或定价未知时，会话费用汇总会被省略。Phase 13 增加类型化会话 metadata、分支摘要、
+活跃分支重建诊断、持久化 model/thinking 状态和本地会话导出命令。
 
 本 crate 也可以通过 `CodingHarness` 作为库使用，但多数用户应先从 CLI 开始。
 

@@ -24,10 +24,11 @@ with a provider-side auth contract (`AuthDescriptor` / `AuthStatus`),
 OpenAI-compatible compatibility metadata, and stream/complete dispatch. OAuth
 and subscription auth are explicit non-goals.
 
-The current workspace includes Phase 12 provider-correctness work on top of the
-published `0.6.3` crate version. It tightens existing provider families rather
-than adding provider breadth: request/stream/error fixtures cover all built-in
-families, `ProviderError::category` exposes the nine documented classes,
+The workspace package version is `0.6.4`; the checkout may also contain
+unreleased Phase 13 session-integration changes. Provider-correctness work from
+Phase 12 tightens existing provider families rather than adding provider
+breadth: request/stream/error fixtures cover all built-in families,
+`ProviderError::category` exposes the nine documented classes,
 OpenAI-compatible profiles have tested `CompatConfig` and
 `ModelCompatOverride` behavior, cache tokens and provider response IDs
 round-trip where available, and missing usage remains explicit `unknown usage`
@@ -212,11 +213,12 @@ are explicit non-goals and must not appear as current core behavior:
 - Paid live provider calls in default tests (live tests stay `#[ignore]`-gated).
 - Copying pi's provider-specific config file format.
 
-## Phase 13 Handoff
+## Phase 13 Session Integration
 
-Session work in Phase 13 may rely on provider-correct usage, model, thinking,
-and error data through the shared `opi-ai` types, without depending on
-provider-specific internals.
+Phase 13 session work relies on provider-correct usage, model, thinking, cache,
+response ID, cancellation, and error data through shared `opi-ai` types. It does
+not add provider families or require callers to depend on provider-specific
+internals.
 
 ## Minimal Example
 

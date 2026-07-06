@@ -17,12 +17,13 @@ hooks, event emission, steering/follow-up queues, session JSONL storage,
 branch reconstruction, context compaction, SDK/RPC types, extensions, local
 diagnostics, redacted trace envelopes, and streaming proxy support.
 
-Current workspace changes after the published `0.6.3` crate keep the runtime
-contract focused rather than adding workflows. Phase 11 extends the tool
-contract with `truncated` and tool-owned structured diagnostics. The agent loop
-lifts those diagnostics into the shared diagnostic/trace system and exposes
-them on public `ToolExecutionEnd` events, while keeping provider-facing
-tool-result messages limited to LLM-visible content and failure state.
+The workspace package version is `0.6.4`; the checkout may also contain
+unreleased Phase 13 session work. Recent changes keep the runtime contract
+focused rather than adding workflows. Phase 11 extends the tool contract with
+`truncated` and tool-owned structured diagnostics. The agent loop lifts those
+diagnostics into the shared diagnostic/trace system and exposes them on public
+`ToolExecutionEnd` events, while keeping provider-facing tool-result messages
+limited to LLM-visible content and failure state.
 
 Phase 12 uses the existing runtime surfaces for provider correctness:
 `ProviderErrorCategory` values from `opi-ai` map into redacted diagnostics and
@@ -30,6 +31,11 @@ trace records, provider-returned cancellations surface as `AgentError::Cancelled
 retry diagnostics distinguish exhausted retry budgets from suppression after
 partial provider output, and provider metadata stays bounded at public event,
 session, JSON, RPC, and trace boundaries.
+
+Phase 13 extends append-only session storage with typed metadata entries and
+branch summaries while keeping `SessionHeader::version = 1`. Metadata entries
+do not enter provider context; branch summaries do, through
+`session_context::reconstruct_context`.
 
 It depends on `opi-ai` for provider and message types. It does not implement the
 `opi` CLI, terminal UI, or built-in filesystem/shell tools; those live in
@@ -378,7 +384,8 @@ and are not claimed:
 
 `agent`, `compaction`, `diagnostic`, `diagnostic_sink`, `event`, `extension`,
 `harness`, `hooks`, `loop_types`, `message`, `sdk`, `session`, `session_branch`,
-`session_event`, `state`, `streaming_proxy`, `tool`, `trace`, and `validation`.
+`session_context`, `session_event`, `state`, `streaming_proxy`, `tool`, `trace`,
+and `validation`.
 
 The crate root re-exports the most common runtime types, including `Agent`,
 `Tool`, `ToolResult`, `ToolError`, `ExecutionMode`, `AgentHooks`, `AgentEvent`,

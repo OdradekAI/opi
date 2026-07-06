@@ -25,16 +25,19 @@ agent. It provides:
 - config, context-file loading, session persistence, compaction, retry, usage,
   cost summaries, package/resource discovery, diagnostics, and opt-in traces.
 
-Current workspace changes after the published `0.6.3` crate harden existing
-behavior without adding new core workflow tools. Phase 11 makes filesystem
-failures typed, read/bash output truncation explicit, write/edit metadata
-auditable, navigation tools bounded and gitignore-aware, and failed tool results
-visible to provider adapters. Phase 12 wires provider correctness through the
-CLI and harness: provider construction validates auth/config with redacted
-diagnostics, OpenAI-compatible profiles carry the documented compatibility
-flags and `extra_headers`, provider errors reach text/JSON/RPC diagnostics, and
-session cost summaries are omitted when any turn has unknown usage or when
-pricing is unknown.
+The workspace package version is `0.6.4`; the checkout may also contain
+unreleased Phase 13 session work. Recent phases harden existing behavior without
+adding new core workflow tools. Phase 11 makes filesystem failures typed,
+read/bash output truncation explicit, write/edit metadata auditable, navigation
+tools bounded and gitignore-aware, and failed tool results visible to provider
+adapters. Phase 12 wires provider correctness through the CLI and harness:
+provider construction validates auth/config with redacted diagnostics,
+OpenAI-compatible profiles carry the documented compatibility flags and
+`extra_headers`, provider errors reach text/JSON/RPC diagnostics, and session
+cost summaries are omitted when any turn has unknown usage or when pricing is
+unknown. Phase 13 adds typed session metadata, branch summaries, active-branch
+reconstruction diagnostics, persisted model/thinking state, and local session
+export commands.
 
 The crate is usable as a library through `CodingHarness`, but most users should
 start with the CLI.
