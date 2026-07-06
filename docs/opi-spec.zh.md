@@ -11,7 +11,7 @@ e'x# Opi 技术规范
 | 最后更新 | 2026-06-24 |
 | 仓库 | `https://github.com/OdradekAI/opi` |
 | 参考上游 | `pi` 0.80.2，位于 `.repo/pi-0.80.2/`；持久证据位于 [`docs/pi-alignment-matrix.zh.md`](pi-alignment-matrix.zh.md) |
-| 当前实现 | `opi` 0.6.4 workspace，第 8 阶段运行时稳定化已完成；第 7 阶段可靠性/可观测性和第 5 阶段 package/process-adapter 表面已存在 |
+| 当前实现 | `opi` 0.6.5 workspace，第 8 阶段运行时稳定化已完成；第 7 阶段可靠性/可观测性和第 5 阶段 package/process-adapter 表面已存在 |
 | 下一里程碑 | 第 9 阶段基线重校准和第 10 阶段核心架构深化，先于功能宽度扩张 |
 
 本文档对当前设计具有规范性。涉及公共 API、事件协议、会话存储、发布行为或阶段边界变更的修改，应在同一变更中更新本文件。
@@ -152,12 +152,12 @@ Pi 是行为参考。以下行为应被视为继承的设计，而非偶然的�
 
 ## 4. 当前基线
 
-### 4.1 版本 0.6.4
+### 4.1 版本 0.6.5
 
 | 领域 | 当前状态 |
 |---|---|
 | 工作区 | 一个 Cargo 工作区下的四个 crate |
-| 版本控制 | 锁步 `0.6.4` |
+| 版本控制 | 锁步 `0.6.5` |
 | 版本（Edition） | Rust 2024 |
 | 内部依赖 | `opi-agent -> opi-ai`、`opi-coding-agent -> opi-ai + opi-agent + opi-tui` |
 | 外部依赖 | 来自工作区依赖的 Rust 原生异步、HTTP/SSE、schema、配置、TUI、搜索、追踪和测试技术栈 |
@@ -1087,6 +1087,7 @@ Opi 以用户权限运行本地工具。主要风险是危险的本地命令、�
 | 0.6.2 workspace | 第 10 阶段架构深化：provider collection/auth、通用 harness 与 session facade 缝合点 | 可发布 crate 走 GitHub + crates.io |
 | 0.6.3 workspace | 第 11 阶段工具质量：内置工具加固、工具结果诊断与元数据、公共表面脱敏与 provider wire 一致性 | 可发布 crate 走 GitHub + crates.io |
 | 0.6.4 workspace | 第 12 阶段 provider 正确性：provider 错误分类与安全诊断、OpenAI-compatible profile 兼容性标志、覆盖所有内置 family 的 fixture-backed provider wire，以及 provider 正确性文档守卫 | 可发布 crate 走 GitHub + crates.io |
+| 0.6.5 workspace | 第 13 阶段会话树与上下文重建：类型化前向兼容 session entry、跨 resume/fork/list/export 的可复用上下文重建、交互式 session 元数据命令、本地脱敏 session 导出，以及 RPC/TUI session 交接元数据 | 可发布 crate 走 GitHub + crates.io |
 
 首次 crates.io 发布由质量门控，而非仅由版本号决定。如果所有已发布的 crate 暴露真实的、文档化的行为而非占位公共 API，公共文档构建干净，合约测试覆盖已交付的供应商/工具/运行时边界，且发布技能的检查通过，它可以在 0.2.0 发生。如果这些门控未达标，crates.io 发布应当移至后续的 0.2.x 或 0.3.0 版本，同时 GitHub 二进制发布继续进行。因为二进制 crate 依赖内部库 crate，这些库应按依赖顺序一起发布。所有 0.x 公共 API 除非另有明确文档说明，否则为不稳定。
 
@@ -1199,7 +1200,7 @@ Opi 以用户权限运行本地工具。主要风险是危险的本地命令、�
 
 ### 第 4 阶段 - 可扩展性
 
-状态：当前 `0.6.4` workspace 中可扩展性基底已实现。
+状态：当前 `0.6.5` workspace 中可扩展性基底已实现。
 
 | # | 任务 | Crate |
 |---|---|---|
@@ -1218,7 +1219,7 @@ Opi 以用户权限运行本地工具。主要风险是危险的本地命令、�
 
 ### 第五阶段 - Rust 原生 Package 和 Process-Adapter MVP
 
-状态：当前 `0.6.4` workspace 中已实现。
+状态：当前 `0.6.5` workspace 中已实现。
 
 第五阶段添加了 package 管理和可执行 adapter 托管，使外部 package 可以通过子进程 adapter 提供工具、命令、hooks 和事件，而无需修补核心 crate。它有意不声称与 pi 的 npm package 生态、TypeScript extension runtime、热重载行为、marketplace 约定、provider streaming adapters、自定义 TUI adapters 或 package 权限执行对等。
 
@@ -1238,19 +1239,19 @@ Opi 以用户权限运行本地工具。主要风险是危险的本地命令、�
 
 ### 第六阶段 - 对齐与可靠性加固
 
-状态：当前 `0.6.4` workspace 中已完成。
+状态：当前 `0.6.5` workspace 中已完成。
 
 第六阶段加固了第四/第五阶段表面的文档、package/runtime 集成、provider 配置行为和可靠性。它不改变核心范围：package adapters 和工作流示例仍是扩展基底路径，不是内置产品工作流。
 
 ### 第七阶段 - 可靠性与可观测性加固
 
-状态：当前 `0.6.4` workspace 中已完成。
+状态：当前 `0.6.5` workspace 中已完成。
 
 第七阶段加入共享 diagnostics、redaction、provider/runtime 错误分类、可选本地 trace envelopes，以及 `opi doctor`。可观测性是本地且显式的；它不引入 telemetry、analytics、自动 session sharing 或稳定 1.0 trace 协议。
 
 ### 第八阶段 - 运行时稳定化
 
-状态：当前 `0.6.4` workspace 中已完成。
+状态：当前 `0.6.5` workspace 中已完成。
 
 第八阶段文档化并测试了 runtime event order、hook 语义、tool scheduling/termination、cancellation、SDK/RPC command state、diagnostics/trace wire 行为和 public API surface classification。它保持 public API 为 0.x 成熟度，不声明 TypeScript extension API 兼容、package 生态扩张、provider OAuth login、MCP runtime、共享 `opi-types` crate 或整体 agent loop 重写。
 
@@ -1306,7 +1307,7 @@ Typed hook result composition 由契约测试覆盖：扩展钩子在 base 钩�
 
 ### 第十二阶段 - Provider 正确性
 
-状态：已完成于当前 `0.6.4` workspace。
+状态：已完成于当前 `0.6.5` workspace。
 
 第十二阶段通过 fixture-backed lifecycle、error、auth、image-input、thinking、usage、retry、rate-limit 和 compatibility 测试加固现有 provider families 与 OpenAI-compatible profiles，全部经第十阶段的 provider collection/auth 缝合点路由。这不是 provider 宽度阶段。
 

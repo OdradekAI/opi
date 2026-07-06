@@ -8,17 +8,17 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.6.4"
+version = "0.6.5"
 edition = "2024"
 license = "MIT"
 repository = "https://github.com/OdradekAI/opi"
 authors = ["OdradekAI"]
 
 [workspace.dependencies]
-opi-ai = { path = "crates/opi-ai", version = "0.6.4" }
-opi-agent = { path = "crates/opi-agent", version = "0.6.4" }
-opi-coding-agent = { path = "crates/opi-coding-agent", version = "0.6.4" }
-opi-tui = { path = "crates/opi-tui", version = "0.6.4" }
+opi-ai = { path = "crates/opi-ai", version = "0.6.5" }
+opi-agent = { path = "crates/opi-agent", version = "0.6.5" }
+opi-coding-agent = { path = "crates/opi-coding-agent", version = "0.6.5" }
+opi-tui = { path = "crates/opi-tui", version = "0.6.5" }
 
 # async runtime
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "process", "io-util", "fs"] }

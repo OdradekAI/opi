@@ -9,7 +9,7 @@
 
 ## 当前状态
 
-当前 crate 版本是 `0.6.4`，继承自 workspace 包版本。
+当前 crate 版本是 `0.6.5`，继承自 workspace 包版本。
 
 `opi-ai` 负责模型/Provider 层：请求和消息类型、流式事件、模型元数据、Provider
 注册、HTTP/代理连接、重试辅助、图片内容、用量累计、尽力而为的费用辅助，以及供
@@ -21,7 +21,7 @@ package 加载或内置编程工具；这些能力分别位于 `opi-agent` 和 `
 （`AuthDescriptor` / `AuthStatus`）、OpenAI-compatible 兼容性元数据，以及
 stream/complete 派发。OAuth 与订阅鉴权是明确的非目标。
 
-workspace 包版本是 `0.6.4`；当前 checkout 也可能包含尚未发布的 Phase 13 会话集成
+workspace 包版本是 `0.6.5`；当前 checkout 也可能包含尚未发布的 Phase 13 会话集成
 变更。Phase 12 的 provider 正确性工作加固已有 provider family，而不是扩张 provider
 宽度：所有内置 family 都有 request/stream/error fixture 覆盖；
 `ProviderError::category` 暴露已文档化的九类错误；OpenAI-compatible profile 的

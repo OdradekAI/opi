@@ -10,8 +10,8 @@
 
 ## 当前状态
 
-`Cargo.toml` 中的 workspace 包版本是 `0.6.4`。当前 checkout 还包含基于已发布
-`0.6.4` crate 的未发布 Phase 13 会话树与上下文重建修复；发布相关判断请先查看
+`Cargo.toml` 中的 workspace 包版本是 `0.6.5`。当前 checkout 可能包含基于已发布
+`0.6.5` crate 的未发布变更；发布相关判断请先查看
 [CHANGELOG.md](CHANGELOG.md)。
 
 `opi` 现在既可作为终端编程 Agent 使用，也可作为一组 Rust crate 嵌入其他 Agent

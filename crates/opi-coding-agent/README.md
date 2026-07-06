@@ -9,7 +9,7 @@
 
 ## Status
 
-Current crate version: `0.6.4`, inherited from the workspace package version.
+Current crate version: `0.6.5`, inherited from the workspace package version.
 
 This crate connects `opi-ai`, `opi-agent`, and `opi-tui` into a terminal coding
 agent. It provides:
@@ -25,7 +25,7 @@ agent. It provides:
 - config, context-file loading, session persistence, compaction, retry, usage,
   cost summaries, package/resource discovery, diagnostics, and opt-in traces.
 
-The workspace package version is `0.6.4`; the checkout may also contain
+The workspace package version is `0.6.5`; the checkout may also contain
 unreleased Phase 13 session work. Recent phases harden existing behavior without
 adding new core workflow tools. Phase 11 makes filesystem failures typed,
 read/bash output truncation explicit, write/edit metadata auditable, navigation

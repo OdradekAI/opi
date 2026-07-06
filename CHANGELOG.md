@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.5] - 2026-07-06
+
+### Added
+
+- `opi-agent`: Phase 13 session entry model. The session journal gains typed, forward-compatible entries (`session_info`, `model_change`, `thinking_level_change`, `label`, `branch_summary`) layered additively on the v1 header, with no automatic migration. `SessionReader` now distinguishes unknown future entry types (reported via `CrashRecovery::unknown_count`) from genuine corruption, and treats a JSON object lacking a `type` field as corrupt. `CrashRecovery` is now a struct `{truncated_line, corrupt_count, unknown_count}`. `SessionFacade` gains `enqueue_*` metadata methods that parent entries to the active content tip without advancing it.
+- `opi-agent`: reusable session context reconstruction. `reconstruct_context(&[SessionEntry], &CrashRecovery) -> ReconstructedContext` deterministically walks the active branch by `parent_id`, applies compaction and `branch_summary` entries at their documented positions, collects model/thinking/session_name/labels/extension_state metadata parented to the active chain, and emits diagnostics for missing parents plus forwarded corrupt/truncated/unknown observations.
+- `opi-coding-agent`: interactive session metadata commands. `/name`, `/label`, `/unlabel`, and `/session info` (plus RPC `session_info`) append and read typed `session_info`/`label` entries through `SessionCoordinator` parented to the active content tip without advancing it; labels and `session_info` never enter provider context.
+- `opi-coding-agent`: local session export. `opi --export-session <id-or-path> --format markdown|json [--output ...]` supports active-branch and full-tree scopes, include/exclude flags for tool output and thinking content, and a Phase 7 redaction mode (`summary|verbose|none`). Dispatch runs before config/provider construction (network-free); the source session is opened read-only and stays byte-for-byte identical on success and failure.
+- `opi-coding-agent`: session/tree handoff metadata. RPC `session_info` now emits active-branch `entry_count` and a redacted `branch_summary`, plus a `branches[]` array of `{tip, summary, entry_count, depth, active}` built from `SessionTree`, so embedders can render branch/session pickers without re-parsing JSONL. `session_picker_items` prefixes the typed session name to the display line and appends the label set to metadata.
+- `opi-agent` / `opi-coding-agent`: resume and fork re-apply recorded model and thinking metadata when provider-compatible (`ResumeInfo` carries `recorded_model`/`recorded_thinking`), and `--list-sessions --json` emits deterministic rows carrying name, labels, active branch, model, and thinking metadata reconstructed from the active branch.
+
+### Changed
+
+- `opi-coding-agent`: resume, fork, branch-select, non-interactive resume, and `--list-sessions` now route through `opi_agent::session_context::reconstruct_context` instead of a duplicated product-only JSONL walker, which is retired.
+- Documented the session format/version policy (v1 header kept, additive entries, no automatic migration), the unknown-future-entry vs corrupt recovery split, and local export/redaction/sensitivity behavior in `docs/opi-spec.md` and the crate READMEs (EN + ZH), with Phase 13 non-goal guard tests pinning the boundaries.
+- Bumped the workspace version to `0.6.5` and refreshed the Phase 4 specification-hash ledger to match the current `docs/opi-spec.md`.
+- This release publishes the publishable crates to both GitHub Releases and crates.io in dependency order.
+
 ### Fixed
 
 - `opi-agent` / `opi-coding-agent`: aligned active-branch reconstruction across resume, fork, export, and session metadata, including invalid leaf fallback, rootless pre-turn metadata, and legacy no-leaf multi-root sessions.
@@ -393,6 +411,7 @@ boundaries; functional implementations land in subsequent releases.
 - This release is published as a GitHub Release only; crates.io publish
   is deferred until the crates have real implementations.
 
+[0.6.5]: https://github.com/OdradekAI/opi/releases/tag/v0.6.5
 [0.6.1]: https://github.com/OdradekAI/opi/releases/tag/v0.6.1
 [0.6.0]: https://github.com/OdradekAI/opi/releases/tag/v0.6.0
 [0.5.4]: https://github.com/OdradekAI/opi/releases/tag/v0.5.4

@@ -10,10 +10,9 @@
 
 ## Status
 
-The workspace package version in `Cargo.toml` is `0.6.4`. This checkout also
-contains unreleased Phase 13 session-tree and context-reconstruction fixes on
-top of the published `0.6.4` crates; check [CHANGELOG.md](CHANGELOG.md) before
-making release claims.
+The workspace package version in `Cargo.toml` is `0.6.5`. This checkout may
+contain unreleased changes on top of the published `0.6.5` crates; check
+[CHANGELOG.md](CHANGELOG.md) for the current delta.
 
 `opi` is usable today as a terminal coding agent and as a set of Rust crates
 for building agent runtimes. It reimplements selected pi ideas in Rust, but it

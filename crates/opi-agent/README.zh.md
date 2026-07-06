@@ -9,14 +9,14 @@
 
 ## 当前状态
 
-当前 crate 版本是 `0.6.4`，继承自 workspace 包版本。
+当前 crate 版本是 `0.6.5`，继承自 workspace 包版本。
 
 `opi-agent` 负责 Agent 主循环和运行时基础能力：工具契约、JSON Schema 参数校验、
 并行/串行工具执行、生命周期 hooks、事件输出、steering/follow-up 队列、会话
 JSONL 存储、分支重建、上下文压缩、SDK/RPC 类型、扩展、本地诊断、已脱敏 trace
 envelope，以及 streaming proxy。
 
-workspace 包版本是 `0.6.4`；当前 checkout 也可能包含尚未发布的 Phase 13 会话工作。
+workspace 包版本是 `0.6.5`；当前 checkout 也可能包含尚未发布的 Phase 13 会话工作。
 近期变更仍保持运行时契约聚焦，不新增核心工作流。Phase 11 把 `truncated` 和工具自有
 结构化诊断加入工具契约。Agent 主循环会把这些诊断提升为共享 diagnostic/trace 记录，
 并在公共 `ToolExecutionEnd` 事件上暴露；面向 provider 的工具结果消息仍只携带 LLM

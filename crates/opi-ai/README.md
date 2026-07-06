@@ -9,7 +9,7 @@
 
 ## Status
 
-Current crate version: `0.6.4`, inherited from the workspace package version.
+Current crate version: `0.6.5`, inherited from the workspace package version.
 
 `opi-ai` owns the model/provider layer: request and message types, streaming
 events, model metadata, provider registration, HTTP/proxy plumbing, retry
@@ -24,7 +24,7 @@ with a provider-side auth contract (`AuthDescriptor` / `AuthStatus`),
 OpenAI-compatible compatibility metadata, and stream/complete dispatch. OAuth
 and subscription auth are explicit non-goals.
 
-The workspace package version is `0.6.4`; the checkout may also contain
+The workspace package version is `0.6.5`; the checkout may also contain
 unreleased Phase 13 session-integration changes. Provider-correctness work from
 Phase 12 tightens existing provider families rather than adding provider
 breadth: request/stream/error fixtures cover all built-in families,

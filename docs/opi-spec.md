@@ -11,7 +11,7 @@
 | Last updated | 2026-06-24 |
 | Repository | `https://github.com/OdradekAI/opi` |
 | Upstream studied | `pi` 0.80.2 at `.repo/pi-0.80.2/`; durable evidence lives in [`docs/pi-alignment-matrix.md`](pi-alignment-matrix.md) |
-| Current implementation | `opi` 0.6.4 workspace, Phase 8 runtime stabilization complete; Phase 7 reliability/observability and Phase 5 package/process-adapter surfaces are present |
+| Current implementation | `opi` 0.6.5 workspace, Phase 8 runtime stabilization complete; Phase 7 reliability/observability and Phase 5 package/process-adapter surfaces are present |
 | Next milestone | Phase 9 baseline realignment and Phase 10 core architecture deepening before feature breadth |
 
 This document is normative for the current design. Changes that alter public APIs, event protocols, session storage, release behavior, or phase boundaries SHOULD update this file in the same change.
@@ -166,12 +166,12 @@ sub-agents, plan mode, todos, permission popups, and background bash.
 
 ## 4. Current Baseline
 
-### 4.1 Version 0.6.4
+### 4.1 Version 0.6.5
 
 | Area | Current state |
 |---|---|
 | Workspace | four crates under one Cargo workspace |
-| Versioning | lockstep `0.6.4` |
+| Versioning | lockstep `0.6.5` |
 | Edition | Rust 2024 |
 | Internal dependencies | `opi-agent -> opi-ai`, `opi-coding-agent -> opi-ai + opi-agent + opi-tui` |
 | External dependencies | Rust-native async, HTTP/SSE, schema, config, TUI, search, tracing, and test stacks from workspace dependencies |
@@ -1217,6 +1217,7 @@ All crates share one workspace version.
 | 0.6.2 workspace | Phase 10 architecture deepening: provider collection/auth, generic harness, and session facade seams | GitHub + crates.io for publishable crates |
 | 0.6.3 workspace | Phase 11 tooling quality: hardened built-in tools, tool-result diagnostics and metadata, public-surface redaction, and provider wire fidelity | GitHub + crates.io for publishable crates |
 | 0.6.4 workspace | Phase 12 provider correctness: provider error taxonomy and safe diagnostics, OpenAI-compatible profile compatibility flags, fixture-backed provider wire coverage across all built-in families, and provider-correctness documentation guards | GitHub + crates.io for publishable crates |
+| 0.6.5 workspace | Phase 13 session tree and context reconstruction: typed forward-compatible session entries, reusable context reconstruction across resume/fork/list/export, interactive session metadata commands, local redacted session export, and RPC/TUI session handoff metadata | GitHub + crates.io for publishable crates |
 
 The first crates.io publish is gated by quality, not by the version number alone.
 It MAY happen at 0.2.0 if all published crates expose real, documented behavior
@@ -1346,7 +1347,7 @@ Exit criteria: enterprise providers work, image and terminal-image flows work, p
 
 ### Phase 4 - Extensibility Substrate
 
-Status: substrate implemented in the current `0.6.4` workspace.
+Status: substrate implemented in the current `0.6.5` workspace.
 
 Phase 4 is ordered so the reusable substrate lands before workflow-heavy
 features. Later tasks may depend on earlier tasks, but examples must not become
@@ -1369,7 +1370,7 @@ Exit criteria: third parties can compose and extend opi through RPC, SDK, extens
 
 ### Phase 5 - Rust-Native Package and Process-Adapter MVP
 
-Status: implemented in the current `0.6.4` workspace.
+Status: implemented in the current `0.6.5` workspace.
 
 Phase 5 adds package management and executable adapter hosting so that external packages can provide tools, commands, hooks, and events through child process adapters without patching core crates. It deliberately does not claim parity with pi's npm package ecosystem, TypeScript extension runtime, hot reload behavior, marketplace conventions, provider streaming adapters, custom TUI adapters, or package permission enforcement.
 
@@ -1389,7 +1390,7 @@ Exit criteria: `opi package add/remove/list/doctor` works for local and git pack
 
 ### Phase 6 - Alignment and Reliability Hardening
 
-Status: complete in the current `0.6.4` workspace.
+Status: complete in the current `0.6.5` workspace.
 
 Phase 6 tightened documentation, package/runtime integration, provider
 configuration behavior, and reliability around the Phase 4-5 surfaces. It did
@@ -1398,7 +1399,7 @@ substrate-level extension paths, not built-in product workflows.
 
 ### Phase 7 - Reliability and Observability Hardening
 
-Status: complete in the current `0.6.4` workspace.
+Status: complete in the current `0.6.5` workspace.
 
 Phase 7 added shared diagnostics, redaction, provider/runtime error
 classification, opt-in local trace envelopes, and `opi doctor`. Observability
@@ -1407,7 +1408,7 @@ session sharing, or a stable 1.0 trace protocol.
 
 ### Phase 8 - Runtime Stabilization
 
-Status: complete in the current `0.6.4` workspace.
+Status: complete in the current `0.6.5` workspace.
 
 Phase 8 documented and tested runtime event order, hook semantics, tool
 scheduling/termination, cancellation, SDK/RPC command state, diagnostics/trace
@@ -1514,7 +1515,7 @@ persistent background shells or broad permission-popup systems.
 
 ### Phase 12 - Provider Correctness
 
-Status: implemented in the current `0.6.4` workspace.
+Status: implemented in the current `0.6.5` workspace.
 
 Phase 12 hardens the existing provider families and OpenAI-compatible profiles
 through fixture-backed lifecycle, error, auth, image-input, thinking, usage,

@@ -9,7 +9,7 @@
 
 ## Status
 
-Current crate version: `0.6.4`, inherited from the workspace package version.
+Current crate version: `0.6.5`, inherited from the workspace package version.
 
 `opi-agent` owns the agent loop and runtime primitives: tool contracts,
 JSON Schema argument validation, parallel/sequential tool execution, lifecycle
@@ -17,7 +17,7 @@ hooks, event emission, steering/follow-up queues, session JSONL storage,
 branch reconstruction, context compaction, SDK/RPC types, extensions, local
 diagnostics, redacted trace envelopes, and streaming proxy support.
 
-The workspace package version is `0.6.4`; the checkout may also contain
+The workspace package version is `0.6.5`; the checkout may also contain
 unreleased Phase 13 session work. Recent changes keep the runtime contract
 focused rather than adding workflows. Phase 11 extends the tool contract with
 `truncated` and tool-owned structured diagnostics. The agent loop lifts those
