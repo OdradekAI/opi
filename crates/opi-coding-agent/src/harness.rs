@@ -2237,7 +2237,7 @@ pub(crate) fn agent_messages_to_llm(messages: &[AgentMessage]) -> Vec<Message> {
                             summary.summary
                         ),
                     }],
-                    timestamp_ms: 0,
+                    timestamp_ms: opi_ai::time::now_ms(),
                 }));
             }
             AgentMessage::BranchSummary(summary) => {
@@ -2245,7 +2245,7 @@ pub(crate) fn agent_messages_to_llm(messages: &[AgentMessage]) -> Vec<Message> {
                     content: vec![opi_ai::message::InputContent::Text {
                         text: format!("[Context from parent branch: {}]", summary.summary),
                     }],
-                    timestamp_ms: 0,
+                    timestamp_ms: opi_ai::time::now_ms(),
                 }));
             }
             _ => {}

@@ -163,7 +163,7 @@ impl Agent {
         self.messages
             .push(AgentMessage::Llm(Message::User(UserMessage {
                 content: vec![InputContent::Text { text: text.into() }],
-                timestamp_ms: 0,
+                timestamp_ms: opi_ai::time::now_ms(),
             })));
         self.run_with_token(token).await
     }
@@ -179,7 +179,7 @@ impl Agent {
         self.messages
             .push(AgentMessage::Llm(Message::User(UserMessage {
                 content,
-                timestamp_ms: 0,
+                timestamp_ms: opi_ai::time::now_ms(),
             })));
         self.run_with_token(token).await
     }
@@ -201,7 +201,7 @@ impl Agent {
         self.messages
             .push(AgentMessage::Llm(Message::User(UserMessage {
                 content: vec![InputContent::Text { text: text.into() }],
-                timestamp_ms: 0,
+                timestamp_ms: opi_ai::time::now_ms(),
             })));
         self.run_with_token(token).await
     }

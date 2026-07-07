@@ -123,7 +123,7 @@ pub fn base_assistant() -> AssistantMessage {
         usage: Usage::default(),
         stop_reason: StopReason::Stop,
         error_message: None,
-        timestamp_ms: 0,
+        timestamp_ms: crate::time::now_ms(),
     }
 }
 

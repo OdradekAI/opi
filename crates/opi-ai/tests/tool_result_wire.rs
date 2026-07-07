@@ -415,6 +415,7 @@ fn provider_tool_result_error_no_phase12_breadth_guard() {
         "retry",
         "stream",
         "test_support",
+        "time",
         "vertex",
     ];
     let declared: Vec<&str> = lib_rs

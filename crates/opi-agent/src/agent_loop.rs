@@ -250,7 +250,7 @@ pub async fn agent_loop(
                                             details: result.details,
                                             is_error,
                                             truncated,
-                                            timestamp_ms: 0,
+                                            timestamp_ms: opi_ai::time::now_ms(),
                                         };
                                         tool_results.push(trm.clone());
                                         messages.push(AgentMessage::Llm(Message::ToolResult(trm)));
@@ -337,7 +337,7 @@ pub async fn agent_loop(
                                             details: result.details,
                                             is_error,
                                             truncated,
-                                            timestamp_ms: 0,
+                                            timestamp_ms: opi_ai::time::now_ms(),
                                         };
                                         tool_results.push(trm.clone());
                                         messages.push(AgentMessage::Llm(Message::ToolResult(trm)));
@@ -901,7 +901,7 @@ fn pop_follow_up(queue: &Option<Arc<Mutex<VecDeque<String>>>>) -> Vec<String> {
 fn user_text_message(text: String) -> AgentMessage {
     AgentMessage::Llm(Message::User(UserMessage {
         content: vec![InputContent::Text { text }],
-        timestamp_ms: 0,
+        timestamp_ms: opi_ai::time::now_ms(),
     }))
 }
 
