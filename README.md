@@ -63,6 +63,8 @@ Emit NDJSON events:
 opi --json "Summarize this repository."
 ```
 
+The final `session_summary` line reports `turns` (accepted user prompt turns) and `provider_turns` (provider request/response cycles, i.e. `TurnStart` events).
+
 Attach images to the first prompt:
 
 ```sh

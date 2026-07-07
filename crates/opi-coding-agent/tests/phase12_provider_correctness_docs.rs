@@ -151,6 +151,7 @@ const FIRST_CLASS_PROVIDERS: &[(&str, &str)] = &[
 /// provider set when parsing lib.rs / scanning opi-ai/src).
 const NON_PROVIDER_MODULES: &[&str] = &[
     "config",
+    "endpoint",
     "http",
     "message",
     "model",
@@ -160,6 +161,7 @@ const NON_PROVIDER_MODULES: &[&str] = &[
     "retry",
     "stream",
     "test_support",
+    "time",
 ];
 
 /// The ten Phase 12 non-goals (design doc, "Non-Goals") with an English and a
@@ -240,7 +242,7 @@ fn provider_docs_and_profile_policy_stay_in_sync() {
         "opi-ai README must state config-driven profiles are the preferred breadth path"
     );
 
-    // (4) Profile flags: the eight CompatConfig field names verbatim (anchored
+    // (4) Profile flags: the nine CompatConfig field names verbatim (anchored
     //     to the struct at crates/opi-ai/src/openai_chat.rs). `extra_headers`
     //     is intentionally excluded here — it is a per-profile config field /
     //     OpenAiChatProvider constructor concern, not a CompatConfig flag; the
@@ -254,6 +256,7 @@ fn provider_docs_and_profile_policy_stay_in_sync() {
         "reasoning_effort",
         "cache_key",
         "require_assistant_after_tool_result",
+        "chat_completions_path",
     ];
     let openai_chat_src = read_repo_file("crates/opi-ai/src/openai_chat.rs");
     assert_eq!(

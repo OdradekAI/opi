@@ -81,6 +81,7 @@ opi --allow-mutating "更新 README。"
 | `-s, --system <FILE>` | 把用户系统提示词文件追加到内置编程提示词。 |
 | `--non-interactive` | 强制单次文本模式；仍然需要提示词文本。 |
 | `--json` | 向 stdout 输出 NDJSON session/agent 事件。 |
+| `--json-compact` | 紧凑 `--json`：流式 `text_delta` 更新省略冗余累积快照（~线性字节）。 |
 | `--rpc` | 通过 stdin/stdout 启动双向 JSONL 命令/事件模式。 |
 | `--allow-mutating` | 在交互模式之外允许 `write`、`edit` 和 `bash`。 |
 | `--tools <TOOLS>` | 逗号分隔的内置工具 allowlist。 |
@@ -260,7 +261,14 @@ inline 结果；四个导航工具都会在访问 10,000 个条目后停止遍�
 
 文本模式把助手文本写到 stdout，把诊断写到 stderr。`--json` 会输出 schema header、
 序列化 session/agent 事件，以及最终 `session_summary`，格式为 NDJSON。当前 NDJSON
-schema version 是 `NDJSON_SCHEMA_VERSION = 2`。
+schema version 是 `NDJSON_SCHEMA_VERSION = 2`。在 `session_summary` 中，`turns` 统计
+已接受的用户提示词轮数，而 `provider_turns` 统计 provider 请求/响应周期（`TurnStart`
+事件），因此使用工具的提示词通常 `provider_turns > turns`。
+
+`--json-compact` 是一个可选标志，使流式 `text_delta` 更新变为固定大小：它省略冗余的
+`assistant_event.partial` 快照，并清空这些更新中 `event.message` 的累积文本，从而让
+长时间流式轮次在字节上按 ~线性增长。消费者可从增量重建完整文本，或读取终态
+`Done`/`MessageEnd` 快照。默认 `--json` 输出和 `NDJSON_SCHEMA_VERSION = 2` 保持不变。
 
 退出码：
 
@@ -360,7 +368,7 @@ metadata 和启动诊断。
   README 的按 family 行为矩阵、OpenAI-compatible profile 标志（`system_role_override`、
   `max_tokens_field`、`tool_result_name_field`、`usage_in_stream`、
   `strict_tool_schema`、`reasoning_effort`、`cache_key`、
-  `require_assistant_after_tool_result`；外加用于静态请求 header 的按 profile
+  `require_assistant_after_tool_result`、`chat_completions_path`；外加用于静态请求 header 的按 profile
   `extra_headers`，它是 profile 配置字段，不是 `CompatConfig` 标志）、OpenAI Responses
   原生语义（`store` / `reasoning_effort` / `strict_tools` 已实现；
   `previous_response_id` 推迟），以及缓存 / response-ID / 会话亲和行为。具体来说，

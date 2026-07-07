@@ -88,6 +88,7 @@ Run `opi --help` for the exact current surface. Important commands and flags:
 | `-s, --system <FILE>` | Append a user system prompt file to the built-in coding prompt. |
 | `--non-interactive` | Force one-shot text mode; prompt text is still required. |
 | `--json` | Emit NDJSON session/agent events to stdout. |
+| `--json-compact` | Compact `--json`: streamed `text_delta` updates omit the redundant cumulative snapshot (~linear bytes). |
 | `--rpc` | Start bidirectional JSONL command/event mode over stdin/stdout. |
 | `--allow-mutating` | Allow `write`, `edit`, and `bash` outside interactive mode. |
 | `--tools <TOOLS>` | Comma-separated built-in tool allowlist. |
@@ -276,7 +277,16 @@ With no prompt args, `opi` starts the ratatui TUI. Slash commands include:
 Text mode writes assistant text to stdout and diagnostics to stderr. `--json`
 writes a schema header, serialized session/agent events, and a final
 `session_summary` as NDJSON. The current NDJSON schema version is
-`NDJSON_SCHEMA_VERSION = 2`.
+`NDJSON_SCHEMA_VERSION = 2`. In `session_summary`, `turns` counts accepted user
+prompt turns, while `provider_turns` counts provider request/response cycles
+(`TurnStart` events), so a tool-using prompt usually has `provider_turns > turns`.
+
+`--json-compact` is an opt-in flag that makes streamed `text_delta` updates
+constant-size: it omits the redundant `assistant_event.partial` snapshot and
+empties the cumulative text in `event.message` for those updates, so a long
+streamed turn scales ~linearly in bytes. Consumers reconstruct the full text
+from the deltas or read the terminal `Done`/`MessageEnd` snapshot. Default
+`--json` output and `NDJSON_SCHEMA_VERSION = 2` are unchanged.
 
 Exit codes:
 
@@ -386,7 +396,7 @@ Common methods include `prompt`, `prompt_with_content`, `queue_images`,
   behavior matrix, OpenAI-compatible profile flags (`system_role_override`,
   `max_tokens_field`, `tool_result_name_field`, `usage_in_stream`,
   `strict_tool_schema`, `reasoning_effort`, `cache_key`,
-  `require_assistant_after_tool_result`; plus per-profile `extra_headers` for
+  `require_assistant_after_tool_result`, `chat_completions_path`; plus per-profile `extra_headers` for
   static request headers, which is a profile config field, not a `CompatConfig`
   flag), OpenAI Responses native semantics (`store` / `reasoning_effort` /
   `strict_tools` implemented; `previous_response_id` deferred), and cache /

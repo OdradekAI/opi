@@ -61,6 +61,8 @@ opi "列出这个 workspace 中的 Rust crate。"
 opi --json "总结这个仓库。"
 ```
 
+最终的 `session_summary` 行报告 `turns`（已接受的用户提示词轮数）和 `provider_turns`（provider 请求/响应周期，即 `TurnStart` 事件）。
+
 给第一条提示词附加图片：
 
 ```sh

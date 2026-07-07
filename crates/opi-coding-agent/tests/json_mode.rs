@@ -1113,3 +1113,230 @@ mod phase7 {
         );
     }
 }
+
+#[tokio::test]
+async fn json_mode_read_tool_result_does_not_leak_workspace_root() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    std::fs::write(workspace.path().join("safe.txt"), "secret body").unwrap();
+
+    let first = test_support::tool_call_response("tc-read", "read", r#"{"path":"safe.txt"}"#);
+    let second = test_support::text_response("done");
+    let provider = MockProvider::new("mock", vec![first, second]);
+    let mut runner = NonInteractiveRunner::new(
+        Box::new(provider),
+        "mock-model".into(),
+        OpiConfig::default(),
+        workspace.path().to_path_buf(),
+        false,
+        None,
+        Vec::new(),
+    );
+
+    let result = runner.run_json("read safe.txt").await;
+    assert_eq!(result.exit_code, ExitCode::Success as i32);
+    let root = workspace.path().display().to_string();
+    assert!(
+        !result.stdout.contains(&root),
+        "NDJSON leaked workspace root {root}: {}",
+        result.stdout
+    );
+    assert!(
+        result.stdout.contains("safe.txt"),
+        "NDJSON should retain useful relative path context"
+    );
+}
+
+#[tokio::test]
+async fn json_mode_runtime_messages_have_nonzero_timestamps() {
+    let provider = MockProvider::new("mock", vec![test_support::text_response("hi")]);
+    let mut runner = NonInteractiveRunner::new(
+        Box::new(provider),
+        "mock-model".into(),
+        OpiConfig::default(),
+        std::env::current_dir().unwrap(),
+        false,
+        None,
+        Vec::new(),
+    );
+
+    let result = runner.run_json("hello").await;
+    assert_eq!(result.exit_code, ExitCode::Success as i32);
+    let lines = parse_ndjson(&result.stdout);
+    let mut timestamps = Vec::new();
+    for value in lines {
+        if value["type"].as_str() != Some("Agent") {
+            continue;
+        }
+        if let Some(ts) = value["event"]["message"]["timestamp_ms"].as_i64() {
+            timestamps.push(ts);
+        }
+    }
+    assert!(
+        !timestamps.is_empty(),
+        "expected streamed message timestamps"
+    );
+    assert!(
+        timestamps.iter().all(|ts| *ts > 0),
+        "all runtime timestamps must be nonzero: {timestamps:?}"
+    );
+}
+
+#[tokio::test]
+async fn json_mode_session_summary_reports_provider_turns() {
+    let first = test_support::tool_call_response(
+        "tc-read",
+        "read",
+        r#"{"path":"Cargo.toml","offset":1,"limit":1}"#,
+    );
+    let second = test_support::text_response("done");
+    let provider = MockProvider::new("mock", vec![first, second]);
+    let mut runner = NonInteractiveRunner::new(
+        Box::new(provider),
+        "mock-model".into(),
+        OpiConfig::default(),
+        std::env::current_dir().unwrap(),
+        false,
+        None,
+        Vec::new(),
+    );
+
+    let result = runner.run_json("read Cargo.toml").await;
+    assert_eq!(result.exit_code, ExitCode::Success as i32);
+    let lines = parse_ndjson(&result.stdout);
+    let provider_turns_seen = lines
+        .iter()
+        .filter(|v| {
+            v["type"].as_str() == Some("Agent") && v["event"]["type"].as_str() == Some("TurnStart")
+        })
+        .count() as u64;
+    let summary = lines
+        .iter()
+        .find(|v| v["type"].as_str() == Some("session_summary"))
+        .expect("summary");
+
+    assert_eq!(
+        summary["turns"], 1,
+        "legacy turns remains user prompt count"
+    );
+    assert_eq!(
+        summary["provider_turns"].as_u64(),
+        Some(provider_turns_seen),
+        "provider_turns must match TurnStart events"
+    );
+    assert!(
+        provider_turns_seen > 1,
+        "tool loop should require more than one provider turn"
+    );
+}
+
+#[tokio::test]
+async fn json_mode_compact_text_deltas_are_constant_size() {
+    use opi_ai::message::AssistantContent;
+    use opi_ai::stream::AssistantStreamEvent;
+
+    let mut events = vec![AssistantStreamEvent::Start {
+        partial: test_support::base_assistant(),
+    }];
+    for i in 1u32..=200 {
+        let mut partial = test_support::base_assistant();
+        partial.content = vec![AssistantContent::Text {
+            text: "x".repeat(i as usize),
+        }];
+        events.push(AssistantStreamEvent::TextDelta {
+            content_index: 0,
+            delta: "x".into(),
+            partial,
+        });
+    }
+    let mut done = test_support::base_assistant();
+    done.content = vec![AssistantContent::Text {
+        text: "x".repeat(200),
+    }];
+    events.push(AssistantStreamEvent::Done {
+        reason: opi_ai::stream::StopReason::Stop,
+        message: done,
+    });
+
+    let provider = MockProvider::new("mock", vec![events]);
+    let mut runner = NonInteractiveRunner::new(
+        Box::new(provider),
+        "mock-model".into(),
+        OpiConfig::default(),
+        std::env::current_dir().unwrap(),
+        false,
+        None,
+        Vec::new(),
+    )
+    .with_compact_ndjson(true);
+
+    let result = runner.run_json("stream").await;
+    assert_eq!(result.exit_code, ExitCode::Success as i32);
+
+    let text_delta_lines: Vec<&str> = result
+        .stdout
+        .lines()
+        .filter(|line| line.contains(r#""text_delta""#))
+        .collect();
+    assert_eq!(text_delta_lines.len(), 200, "expected 200 text_delta lines");
+    // Each compact line must be constant-size (proves ~linear, not quadratic).
+    assert!(
+        text_delta_lines.iter().all(|line| line.len() < 700),
+        "each compact text_delta line must be constant-size; got a line > 700 bytes"
+    );
+    assert!(
+        !text_delta_lines
+            .iter()
+            .any(|line| line.contains(r#""partial""#)),
+        "compact text_delta lines must omit assistant_event.partial"
+    );
+    // Cumulative text (a long run of 'x') must not appear in any delta line.
+    assert!(
+        !text_delta_lines
+            .iter()
+            .any(|line| line.contains("xxxxxxxxxx")),
+        "compact text_delta lines must omit cumulative event.message text"
+    );
+}
+
+#[tokio::test]
+async fn json_mode_default_output_still_carries_partial() {
+    use opi_ai::message::AssistantContent;
+    use opi_ai::stream::AssistantStreamEvent;
+
+    let mut partial = test_support::base_assistant();
+    partial.content = vec![AssistantContent::Text { text: "ab".into() }];
+    let events = vec![
+        AssistantStreamEvent::Start {
+            partial: test_support::base_assistant(),
+        },
+        AssistantStreamEvent::TextDelta {
+            content_index: 0,
+            delta: "ab".into(),
+            partial: partial.clone(),
+        },
+        AssistantStreamEvent::Done {
+            reason: opi_ai::stream::StopReason::Stop,
+            message: partial,
+        },
+    ];
+    let provider = MockProvider::new("mock", vec![events]);
+    let mut runner = NonInteractiveRunner::new(
+        Box::new(provider),
+        "mock-model".into(),
+        OpiConfig::default(),
+        std::env::current_dir().unwrap(),
+        false,
+        None,
+        Vec::new(),
+    ); // no with_compact_ndjson -> default mode
+
+    let result = runner.run_json("stream").await;
+    assert_eq!(result.exit_code, ExitCode::Success as i32);
+    assert!(
+        result
+            .stdout
+            .lines()
+            .any(|l| l.contains(r#""text_delta""#) && l.contains(r#""partial""#)),
+        "default mode must still carry assistant_event.partial (non-breaking)"
+    );
+}

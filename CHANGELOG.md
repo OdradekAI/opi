@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `opi-coding-agent`: `--json-compact` opt-in flag that makes streamed `text_delta` updates constant-size (~linear byte cost for long streamed turns). It omits the redundant `assistant_event.partial` snapshot and empties the cumulative text in `event.message` for those updates. Default `--json` output and `NDJSON_SCHEMA_VERSION = 2` are unchanged.
+
+### Changed
+
+- `opi-coding-agent`: `session_summary` now includes `provider_turns` (provider request/response cycles, i.e. `TurnStart` events) alongside the existing `turns` (user prompt turns), so a tool-using prompt usually reports `provider_turns > turns`.
+
+### Fixed
+
+- `opi-ai` / `opi-coding-agent`: support custom OpenAI-compatible chat completions endpoint paths for providers whose `base_url` already includes a provider-specific API prefix (e.g. BigModel `/api/paas/v4/...`), configured via `chat_completions_path` on an `openai_compatible` profile. Default OpenAI/OpenRouter/Mistral behavior still posts to `/v1/chat/completions`.
+- `opi-ai` / `opi-agent` / `opi-coding-agent`: populate runtime message timestamps instead of emitting `timestamp_ms: 0` for runtime-produced user, assistant, and tool result messages.
+- `opi-coding-agent`: avoid exposing resolved absolute workspace paths in successful `read` tool output text and structured `details` for inside-workspace reads.
+
 ## [0.6.5] - 2026-07-06
 
 ### Added

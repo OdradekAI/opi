@@ -950,6 +950,7 @@ fn first_class_provider_set_is_unchanged() {
     let infra: std::collections::BTreeSet<&str> = [
         "lib",
         "config",
+        "endpoint",
         "http",
         "message",
         "model",
@@ -959,6 +960,7 @@ fn first_class_provider_set_is_unchanged() {
         "retry",
         "stream",
         "test_support",
+        "time",
     ]
     .into_iter()
     .collect();
