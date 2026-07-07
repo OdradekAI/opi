@@ -201,6 +201,8 @@ pub struct OpenAiCompatibleProviderConfig {
     pub extra_headers: Vec<(String, String)>,
     /// Compatibility-metadata flag for legacy assistant-after-tool-result wires.
     pub require_assistant_after_tool_result: bool,
+    /// Optional chat completions endpoint path relative to base_url.
+    pub chat_completions_path: Option<String>,
     /// Proxy configuration.
     pub proxy: Option<ProviderProxyConfig>,
 }
@@ -399,6 +401,7 @@ struct TomlOpenAiCompatibleProvider {
     cache_key: Option<String>,
     extra_headers: Option<BTreeMap<String, String>>,
     require_assistant_after_tool_result: Option<bool>,
+    chat_completions_path: Option<String>,
     proxy: Option<TomlProxy>,
 }
 
@@ -676,6 +679,9 @@ impl TomlConfig {
             }
             if let Some(v) = profile.require_assistant_after_tool_result {
                 target.require_assistant_after_tool_result = v;
+            }
+            if let Some(v) = profile.chat_completions_path {
+                target.chat_completions_path = Some(v);
             }
             if let Some(models) = profile.models {
                 target.models = models

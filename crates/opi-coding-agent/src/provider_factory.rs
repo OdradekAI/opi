@@ -573,6 +573,10 @@ fn build_openai_compatible_profile(
         reasoning_effort: profile.reasoning_effort.clone(),
         cache_key: profile.cache_key.clone(),
         require_assistant_after_tool_result: profile.require_assistant_after_tool_result,
+        chat_completions_path: profile
+            .chat_completions_path
+            .clone()
+            .unwrap_or_else(|| "/v1/chat/completions".into()),
     };
 
     // Session-affinity headers from config (Phase 12.3).

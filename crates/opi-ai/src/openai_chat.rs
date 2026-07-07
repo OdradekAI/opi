@@ -678,7 +678,7 @@ fn empty_assistant_message(api: crate::ApiKind, provider: &str) -> AssistantMess
         usage: Usage::default(),
         stop_reason: StopReason::Stop,
         error_message: None,
-        timestamp_ms: 0,
+        timestamp_ms: crate::time::now_ms(),
     }
 }
 
@@ -722,6 +722,8 @@ pub struct CompatConfig {
     pub cache_key: Option<String>,
     /// Compatibility-metadata flag for legacy assistant-after-tool-result wires.
     pub require_assistant_after_tool_result: bool,
+    /// Endpoint path for chat completions relative to `base_url`.
+    pub chat_completions_path: String,
 }
 
 impl Default for CompatConfig {
@@ -735,6 +737,7 @@ impl Default for CompatConfig {
             reasoning_effort: None,
             cache_key: None,
             require_assistant_after_tool_result: false,
+            chat_completions_path: "/v1/chat/completions".into(),
         }
     }
 }
@@ -1030,13 +1033,17 @@ impl OpenAiChatProvider {
         api_key: String,
         base_url: String,
         provider_id: String,
+        chat_completions_path: String,
         extra_headers: Vec<(String, String)>,
         body: &serde_json::Value,
         cancel: CancellationToken,
         tx: &tokio::sync::mpsc::Sender<Result<AssistantStreamEvent, ProviderError>>,
     ) -> Result<(), ProviderError> {
         let mut req = http_client
-            .post(format!("{base_url}/v1/chat/completions"))
+            .post(crate::endpoint::join_endpoint(
+                &base_url,
+                &chat_completions_path,
+            ))
             .header("authorization", format!("Bearer {api_key}"))
             .header("content-type", "application/json");
         for (name, value) in &extra_headers {
@@ -1311,6 +1318,7 @@ impl Provider for OpenAiChatProvider {
         let api_key = self.api_key.clone();
         let base_url = self.base_url.clone();
         let provider_id = self.provider_id.clone();
+        let chat_completions_path = self.compat.chat_completions_path.clone();
         let extra_headers = self.extra_headers.clone();
         let body = self.build_request_body(&request);
         let cancel = request.cancel.clone();
@@ -1324,6 +1332,7 @@ impl Provider for OpenAiChatProvider {
                 api_key,
                 base_url,
                 provider_id,
+                chat_completions_path,
                 extra_headers,
                 &body,
                 cancel,

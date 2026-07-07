@@ -279,6 +279,68 @@ supports_thinking = true
 }
 
 #[test]
+fn toml_parses_openai_compatible_profile_custom_chat_completions_path() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    std::fs::write(
+        &path,
+        r#"
+[providers.openai_compatible.zai]
+api_key_env = "ZAI_API_KEY"
+base_url = "https://open.bigmodel.cn"
+chat_completions_path = "/api/paas/v4/chat/completions"
+
+[[providers.openai_compatible.zai.models]]
+id = "glm-4.5-flash"
+display_name = "GLM 4.5 Flash"
+context_window = 128000
+max_output_tokens = 8192
+"#,
+    )
+    .unwrap();
+    let config = load_config_file(&path).unwrap();
+    let profile = config
+        .providers
+        .openai_compatible
+        .get("zai")
+        .expect("zai profile should be parsed");
+    assert_eq!(
+        profile.chat_completions_path.as_deref(),
+        Some("/api/paas/v4/chat/completions")
+    );
+
+    // Profiles without the field default to None; the factory then resolves
+    // the path to "/v1/chat/completions".
+    let dir2 = tempfile::tempdir().unwrap();
+    let path2 = dir2.path().join("config2.toml");
+    std::fs::write(
+        &path2,
+        r#"
+[providers.openai_compatible.plain]
+api_key_env = "PLAIN_API_KEY"
+base_url = "https://plain.example.com"
+
+[[providers.openai_compatible.plain.models]]
+id = "m"
+display_name = "m"
+context_window = 8000
+max_output_tokens = 1024
+"#,
+    )
+    .unwrap();
+    let config2 = load_config_file(&path2).unwrap();
+    let plain = config2
+        .providers
+        .openai_compatible
+        .get("plain")
+        .expect("plain profile should be parsed");
+    assert!(
+        plain.chat_completions_path.is_none(),
+        "absent chat_completions_path must default to None"
+    );
+}
+
+#[test]
 fn toml_parses_openrouter_provider() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("config.toml");

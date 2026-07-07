@@ -136,6 +136,7 @@ LLM 可见内容和 provider 专用失败信号。
 | `reasoning_effort` | 为支持该能力的模型发送 reasoning-effort 提示。 |
 | `cache_key` | 发送 provider 的 prompt-cache key（cache-affinity 提示）。 |
 | `require_assistant_after_tool_result` | 面向遗留端点的纯兼容性元数据标记；opi 不会在共享适配器中合成或强制额外的 assistant 轮次。 |
+| `chat_completions_path` | 相对 `base_url` 的 chat completions 端点路径（默认 `/v1/chat/completions`）；当 provider 的 base URL 已包含 API 前缀时设置（如 BigModel `/api/paas/v4/...`）。 |
 
 `ModelCompatOverride` 在 profile 默认值之上叠加模型级的 `system_role_override` 和
 `max_tokens_field` 覆盖（model 优先于 provider）。静态的按 profile 请求 header

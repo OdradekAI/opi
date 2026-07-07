@@ -147,6 +147,7 @@ requires a task-graph update and is a Phase 12 non-goal by default.
 | `reasoning_effort` | Send a reasoning-effort hint for models that support it. |
 | `cache_key` | Send the provider's prompt-cache key (cache-affinity hint). |
 | `require_assistant_after_tool_result` | Metadata-only compatibility marker for legacy endpoints; opi does not synthesize or enforce the extra assistant turn in the shared adapter. |
+| `chat_completions_path` | Chat completions endpoint path relative to `base_url` (default `/v1/chat/completions`); set for providers whose base URL already includes an API prefix (e.g. BigModel `/api/paas/v4/...`). |
 
 `ModelCompatOverride` layers model-level overrides for `system_role_override`
 and `max_tokens_field` on top of the profile defaults (model wins over

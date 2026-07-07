@@ -212,3 +212,71 @@ async fn stream_no_terminal_event() {
         "should produce StreamError about missing terminal event"
     );
 }
+
+#[tokio::test]
+async fn stream_custom_chat_completions_path() {
+    use opi_ai::openai_chat::CompatConfig;
+
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/api/paas/v4/chat/completions"))
+        .and(header("authorization", "Bearer test-key"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string(text_sse_fixture())
+                .insert_header("content-type", "text/event-stream"),
+        )
+        .mount(&server)
+        .await;
+
+    // Real signature is (api_key, base_url, provider_id, compat, extra_headers, models).
+    let provider = OpenAiChatProvider::new_for_profile(
+        "test-key".into(),
+        server.uri(),
+        "zai".into(),
+        CompatConfig {
+            chat_completions_path: "/api/paas/v4/chat/completions".into(),
+            ..CompatConfig::default()
+        },
+        Vec::new(),
+        Vec::new(),
+    );
+
+    let mut stream = provider.stream(make_request(CancellationToken::new()));
+    let first = stream
+        .next()
+        .await
+        .expect("event produced")
+        .expect("stream ok");
+    assert!(
+        matches!(first, AssistantStreamEvent::Start { .. }),
+        "expected Start event, got {first:?}"
+    );
+}
+
+#[tokio::test]
+async fn stream_default_chat_completions_path_stays_v1() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .and(header("authorization", "Bearer test-key"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string(text_sse_fixture())
+                .insert_header("content-type", "text/event-stream"),
+        )
+        .mount(&server)
+        .await;
+
+    let provider = OpenAiChatProvider::new("test-key".into(), Some(server.uri()));
+    let mut stream = provider.stream(make_request(CancellationToken::new()));
+    let first = stream
+        .next()
+        .await
+        .expect("event produced")
+        .expect("stream ok");
+    assert!(
+        matches!(first, AssistantStreamEvent::Start { .. }),
+        "expected Start event, got {first:?}"
+    );
+}

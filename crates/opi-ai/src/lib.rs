@@ -8,6 +8,7 @@ pub mod anthropic;
 pub mod azure_openai;
 pub mod bedrock;
 pub mod config;
+mod endpoint;
 pub mod gemini;
 pub mod http;
 pub mod message;
@@ -23,6 +24,7 @@ pub mod retry;
 pub mod stream;
 #[doc(hidden)]
 pub mod test_support;
+pub mod time;
 pub mod vertex;
 
 pub use config::{Config, Error};
