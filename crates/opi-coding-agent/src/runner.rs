@@ -64,6 +64,47 @@ pub struct NonInteractiveResult {
 /// Non-interactive runner that executes a single prompt and captures output.
 pub struct NonInteractiveRunner {
     harness: CodingHarness,
+    compact_ndjson: bool,
+}
+
+/// Serialize a session event for NDJSON, applying compact-mode stripping to
+/// `text_delta` MessageUpdate lines. Other lines pass through unchanged.
+fn compact_ndjson_line(session_event: &AgentSessionEvent) -> Option<String> {
+    let mut value = serde_json::to_value(session_event).ok()?;
+    let inner = value.get("event")?;
+    let is_compact_target = value.get("type").and_then(|v| v.as_str()) == Some("Agent")
+        && inner.get("type").and_then(|v| v.as_str()) == Some("MessageUpdate")
+        && inner
+            .get("assistant_event")
+            .and_then(|a| a.get("type"))
+            .and_then(|v| v.as_str())
+            == Some("text_delta");
+    if !is_compact_target {
+        return serde_json::to_string(&value).ok();
+    }
+    let event_obj = value.get_mut("event").and_then(|e| e.as_object_mut())?;
+    // 1) Drop the redundant cumulative snapshot carried on the assistant_event.
+    if let Some(ae) = event_obj
+        .get_mut("assistant_event")
+        .and_then(|a| a.as_object_mut())
+    {
+        ae.remove("partial");
+    }
+    // 2) Empty the cumulative text in event.message so the line is constant-size.
+    if let Some(content) = event_obj
+        .get_mut("message")
+        .and_then(|m| m.get_mut("content"))
+        .and_then(|c| c.as_array_mut())
+    {
+        for block in content.iter_mut() {
+            if let Some(obj) = block.as_object_mut()
+                && obj.get("type").and_then(|v| v.as_str()) == Some("text")
+            {
+                obj.insert("text".into(), serde_json::Value::String(String::new()));
+            }
+        }
+    }
+    serde_json::to_string(&value).ok()
 }
 
 impl NonInteractiveRunner {
@@ -170,7 +211,18 @@ impl NonInteractiveRunner {
             }));
         }
         let harness = builder.build();
-        Ok(Self { harness })
+        Ok(Self {
+            harness,
+            compact_ndjson: false,
+        })
+    }
+
+    /// Enable compact NDJSON output (opt-in `--json-compact`). Streamed
+    /// `text_delta` updates become constant-size, so a long streamed turn
+    /// scales ~linearly in bytes. Default `--json` output is unchanged.
+    pub fn with_compact_ndjson(mut self, enabled: bool) -> Self {
+        self.compact_ndjson = enabled;
+        self
     }
 
     /// Run a single prompt in JSON mode, returning NDJSON output in stdout.
@@ -205,6 +257,7 @@ impl NonInteractiveRunner {
             }
         }
 
+        let compact = self.compact_ndjson;
         let out = output.clone();
         self.harness.subscribe(Box::new(move |event| {
             let session_event = match event {
@@ -247,11 +300,24 @@ impl NonInteractiveRunner {
                     event: event.clone(),
                 },
             };
-            if let Ok(json) = serde_json::to_string(&session_event)
+            let json_opt = if compact {
+                compact_ndjson_line(&session_event)
+            } else {
+                serde_json::to_string(&session_event).ok()
+            };
+            if let Some(json) = json_opt
                 && let Ok(mut guard) = out.lock()
             {
                 guard.push_str(&json);
                 guard.push('\n');
+            }
+        }));
+
+        let provider_turns = Arc::new(std::sync::atomic::AtomicU32::new(0));
+        let turn_counter = Arc::clone(&provider_turns);
+        self.harness.subscribe(Box::new(move |event| {
+            if matches!(event, AgentEvent::TurnStart) {
+                turn_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             }
         }));
 
@@ -273,6 +339,7 @@ impl NonInteractiveRunner {
                 session_id: session.session_id().to_owned(),
                 model: session.model().to_owned(),
                 turns: usage.turn_count(),
+                provider_turns: provider_turns.load(std::sync::atomic::Ordering::Relaxed),
                 tokens: SessionTokenTotals {
                     input: usage.total_input_tokens(),
                     output: usage.total_output_tokens(),
@@ -401,6 +468,7 @@ impl NonInteractiveRunner {
             }
         }
 
+        let compact = self.compact_ndjson;
         let out = output.clone();
         self.harness.subscribe(Box::new(move |event| {
             let session_event = match event {
@@ -443,11 +511,24 @@ impl NonInteractiveRunner {
                     event: event.clone(),
                 },
             };
-            if let Ok(json) = serde_json::to_string(&session_event)
+            let json_opt = if compact {
+                compact_ndjson_line(&session_event)
+            } else {
+                serde_json::to_string(&session_event).ok()
+            };
+            if let Some(json) = json_opt
                 && let Ok(mut guard) = out.lock()
             {
                 guard.push_str(&json);
                 guard.push('\n');
+            }
+        }));
+
+        let provider_turns = Arc::new(std::sync::atomic::AtomicU32::new(0));
+        let turn_counter = Arc::clone(&provider_turns);
+        self.harness.subscribe(Box::new(move |event| {
+            if matches!(event, AgentEvent::TurnStart) {
+                turn_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             }
         }));
 
@@ -466,6 +547,7 @@ impl NonInteractiveRunner {
                 session_id: session.session_id().to_owned(),
                 model: session.model().to_owned(),
                 turns: usage.turn_count(),
+                provider_turns: provider_turns.load(std::sync::atomic::Ordering::Relaxed),
                 tokens: SessionTokenTotals {
                     input: usage.total_input_tokens(),
                     output: usage.total_output_tokens(),

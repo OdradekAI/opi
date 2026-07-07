@@ -87,6 +87,10 @@ pub enum AgentSessionEvent {
         session_id: String,
         model: String,
         turns: u32,
+        /// Number of provider request/response cycles observed in this run
+        /// (`TurnStart` events). A tool-using prompt usually has
+        /// `provider_turns > turns`.
+        provider_turns: u32,
         tokens: SessionTokenTotals,
         #[serde(skip_serializing_if = "Option::is_none")]
         cost_usd: Option<SessionCostTotals>,
