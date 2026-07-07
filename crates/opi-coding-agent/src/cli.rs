@@ -100,6 +100,12 @@ pub struct Cli {
     #[arg(long)]
     pub json: bool,
 
+    /// Compact `--json` output: streamed `text_delta` updates omit the
+    /// redundant cumulative snapshot, making long streamed turns ~linear in
+    /// bytes. Default `--json` output is unchanged.
+    #[arg(long, default_value_t = false)]
+    pub json_compact: bool,
+
     /// RPC JSONL mode: bidirectional command/event protocol over stdin/stdout.
     #[arg(long)]
     pub rpc: bool,

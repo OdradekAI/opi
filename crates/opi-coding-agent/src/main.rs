@@ -378,7 +378,8 @@ async fn run_non_interactive(
             eprintln!("opi: {e}");
             return ExitCode::ConfigError as i32;
         }
-    };
+    }
+    .with_compact_ndjson(cli.json_compact);
 
     let result = if cli.image.is_empty() {
         // No images -- use the plain text path.
