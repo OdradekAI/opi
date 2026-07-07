@@ -67,6 +67,23 @@ impl ReadTool {
     }
 }
 
+/// Display path for a read result: workspace-relative when the file is inside
+/// the workspace, otherwise the user-supplied path. Keeping inside-workspace
+/// reads relative avoids leaking the resolved absolute workspace root to the
+/// model and into public NDJSON `details`.
+fn display_path_for_tool_result(
+    workspace_root: &std::path::Path,
+    file_path: &std::path::Path,
+    user_path: &str,
+) -> String {
+    if let Ok(relative) = file_path.strip_prefix(workspace_root)
+        && !relative.as_os_str().is_empty()
+    {
+        return relative.display().to_string();
+    }
+    user_path.to_owned()
+}
+
 impl Tool for ReadTool {
     fn definition(&self) -> ToolDef {
         ToolDef {
@@ -235,7 +252,26 @@ impl Tool for ReadTool {
                 details["truncation_reason"] = json!(reason);
             }
 
-            let text = format!("{}\n{}", file_path.display(), body);
+            // Relativize the structured details for inside-workspace reads so the
+            // resolved absolute workspace root does not leak via public NDJSON
+            // `ToolExecutionEnd` events (the `details` block is carried verbatim).
+            if matches!(workspace_relation, result::WorkspaceRelation::Inside) {
+                if details.get("workspace_root").is_some() {
+                    details["workspace_root"] = json!(".");
+                }
+                if let Some(resolved) = details
+                    .get("resolved_path")
+                    .and_then(|v| v.as_str())
+                    .map(str::to_owned)
+                    && let Ok(rel) = std::path::Path::new(&resolved).strip_prefix(&workspace_root)
+                {
+                    details["resolved_path"] = json!(rel.display().to_string());
+                }
+            }
+
+            let display_path =
+                display_path_for_tool_result(&workspace_root, &file_path, &path_for_display);
+            let text = format!("{display_path}\n{body}");
             let mut res = result::ok(vec![OutputContent::Text { text }], details);
             res.truncated = truncated;
             Ok(res)

@@ -3641,3 +3641,41 @@ fn all_tools_execution_mode_contract() {
     assert_eq!(sequential.len(), 3);
     assert_eq!(parallel.len(), 5);
 }
+
+#[tokio::test]
+async fn read_tool_result_text_uses_relative_path_for_inside_workspace() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("safe.txt"), "visible").unwrap();
+
+    let tool = ReadTool::new(dir.path().to_path_buf());
+    let result = tool
+        .execute(
+            "read-safe-path",
+            json!({ "path": "safe.txt" }),
+            CancellationToken::new(),
+            None,
+        )
+        .await
+        .unwrap();
+
+    assert!(!result.is_error, "{}", tool_result_text(&result));
+    let text = tool_result_text(&result);
+    assert!(
+        text.starts_with("safe.txt\n"),
+        "read output should start with relative path, got {text:?}"
+    );
+    let root = dir.path().display().to_string();
+    assert!(
+        !text.contains(&root),
+        "read text leaked workspace root: {text:?}"
+    );
+    let details_json = result
+        .details
+        .as_ref()
+        .map(|d| serde_json::to_string(d).unwrap())
+        .unwrap_or_default();
+    assert!(
+        !details_json.contains(&root),
+        "read details leaked workspace root: {details_json:?}"
+    );
+}
