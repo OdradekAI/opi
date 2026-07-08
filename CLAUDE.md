@@ -76,16 +76,21 @@ These rules bias toward caution over speed. For trivial tasks, use judgment.
   abstractions, configurability, or error handling for impossible cases unless
   the user asked for them.
 - Push back when a simpler approach exists or the requested path would add
-  unnecessary complexity.
+  unnecessary complexity. Self-test: if a 200-line change could be 50, rewrite
+  it; if a senior engineer would call it overcomplicated, simplify.
 - Make surgical changes. Every changed line should trace directly to the
   user's request. Do not refactor, reformat, or improve adjacent code that is
   outside the task.
 - Clean up only changes you caused. Remove imports, variables, functions,
   tests, or docs made unused by your work; mention unrelated dead code instead
   of deleting it.
-- For multi-step work, define success criteria and a short verification plan
-  before implementation. Loop until the criteria are met or state exactly what
-  remains unverified.
+- Transform tasks into verifiable goals, then loop until the check passes:
+  "add validation" -> write tests for invalid inputs, then make them pass;
+  "fix the bug" -> write a test that reproduces it, then make it pass;
+  "refactor X" -> confirm tests pass before and after. For multi-step work,
+  state each step as `step -> verify: <check>` and loop until it passes or
+  state exactly what remains unverified. Strong criteria ("tests pass") let you
+  loop independently; weak ones ("make it work") force clarification loops.
 
 ## Code quality
 
