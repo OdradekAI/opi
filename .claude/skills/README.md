@@ -5,12 +5,12 @@ spec, through implementation, independent audit, remediation, runtime regression
 documentation, to release. This README describes the end-to-end workflow and how
 to use each skill.
 
-There are six opi-* skills: **opi-realign**, **opi-implement**, **opi-audit**,
-**opi-remediate**, **opi-eval**, and **opi-release**. They are independent
-artifacts with strict ownership boundaries — each one states what it does and,
-just as importantly, what it refuses to do.
+There are seven opi-* skills: **opi-realign**, **opi-implement**, **opi-audit**,
+**opi-remediate**, **opi-eval**, **opi-document**, and **opi-release**. They are
+independent artifacts with strict ownership boundaries — each one states what it
+does and, just as importantly, what it refuses to do.
 
-> Scope note: this README covers the six `opi-*` product skills only. The other
+> Scope note: this README covers the seven `opi-*` product skills only. The other
 > skills in this directory (`caveman`, `grill-me`, `tdd`, `to-prd`, `prototype`,
 > etc.) are general-purpose utilities unrelated to the opi lifecycle.
 
@@ -30,7 +30,7 @@ entry condition and an exit gate; do not skip the gates.
 | Phase 4 | `opi-audit` | multi-model, independent auditors |
 | Phase 5 | `opi-remediate` | verify + fix; loop to pass |
 | (eval gate) | `opi-eval` | runtime regression (real provider credits) |
-| Phase 6 | manual | documentation + EN/ZH; planned `opi-document` |
+| Phase 6 | `opi-document` | documentation + EN/ZH sync (guard-verified) |
 | Phase 7 | `opi-release` | GitHub Releases + crates.io |
 
 ### Two cross-cutting patterns
@@ -150,14 +150,24 @@ that a static audit cannot. It costs real API credits and never auto-fires.
 - **Entry:** runtime changes merged; provider credentials configured.
 - **Exit:** report written; regressions (if any) fed back to Phase 5.
 
-### Phase 6 — Documentation & translation (planned `opi-document`; currently manual)
+### Phase 6 — Documentation & EN/ZH sync
 
-**Planned skill:** `opi-document` — a dedicated skill for doc updates and EN/ZH
-translation. **It does not exist yet.** Today this phase is manual: doc-sync
-happens inline in `opi-implement` Phase D (the documentation verification tier),
-and translation is done by hand. (`opi-release` Phase 5 stages only
-`Cargo.toml` / `Cargo.lock` / `CHANGELOG.md` and does not itself define a
-doc-sync step.) Building `opi-document` is tracked as future work.
+**Skill:** `opi-document`. Refresh opi docs so they stay truthful to the shipped
+code and the English/Chinese mirrors stay in sync, editing **inside** the eight
+doc-guard suites rather than around them. Use it for a full phase doc refresh, a
+targeted update after a change, or a version-bump doc-resync.
+
+- **Entry:** Phases 3–5 (implement / audit / remediate) passing; or an ad-hoc
+  doc-change / translation request.
+- **Exit gate:** every guard suite (`productized_packages_docs`,
+  `phase11_tooling_quality_docs`, `phase12_provider_correctness_docs`,
+  `phase13_session_context_docs`, `observability_docs`, `runtime_contract_docs`,
+  `transport`) reports `0 failed` for EN + ZH; no unintended phase-jargon
+  remains; version-bearing lines moved in lockstep if a version bumped.
+- **Critical guardrails:** never drops a guard-pinned token; never introduces a
+  forbidden overclaim phrase outside a negation; re-syncs the phase4 spec-hash
+  ledger if it touches `docs/opi-spec.md`; does not edit code, `Cargo.toml`, or
+  version (that is `opi-release`'s job); does not weaken guard tests.
 
 ### Phase 7 — Release
 
@@ -363,6 +373,34 @@ readonly evaluator subagent to detect fidelity degradation.
   cannot fail; only subsequent runs are scored against the 1.5×/3× thresholds.
   Add a new case by appending a `## Case N:` section to `test-cases.md`.
 
+### opi-document
+
+Refresh opi documentation so it stays truthful to the shipped code, with the
+English and Simplified-Chinese mirrors kept in sync and the doc-guard suites
+green. This is the dedicated Phase 6 skill (previously manual).
+
+- **When to invoke:** "update the docs/README", "refresh the README", "sync
+  EN/ZH", "translate the README", "fix doc drift", the Chinese triggers
+  文档更新 / 文档同步 / 更新 README / 翻译, or at Phase 6 of the opi workflow
+  (post-implementation, pre-release).
+- **Inputs:** `scope=<full|targeted|version-bump>` (default targeted);
+  `files=<...>`; `version=<X.Y.Z>` for a version bump.
+- **What it does:** seven phases — discover the doc delta; audit docs for
+  drift/noise/gaps against source; load the doc-guard constraints; decide
+  guard-safe scope; edit EN docs; mirror to ZH surgically (composing
+  `baoyu-translate` for net-new prose, preserving pinned ZH tokens verbatim);
+  verify by running the eight guard suites plus a phase-jargon grep.
+- **What it does NOT do:** no code/`Cargo.toml`/version changes; no commits or
+  releases; no authoring of `opi-spec.md` normative content (only doc-sync
+  edits, which re-sync the phase4 ledger); no weakening of guard tests; no
+  free-regeneration of Chinese docs.
+- **Artifacts:** reads the affected docs + `CHANGELOG.md` + crate `src/` + the
+  guard-test files + baoyu-translate `EXTEND.md`; writes the docs (EN + ZH) and,
+  on an `opi-spec.md` edit, the re-synced phase4 ledger hash.
+- **In the workflow:** Phase 6.
+- **Notes:** the doc-guard constraints live in
+  `opi-document/references/doc-guards.md`.
+
 ### opi-release
 
 Orchestrate the full release process for the opi Rust workspace — publish to
@@ -403,10 +441,6 @@ user confirmation.
 
 ## Gaps & future work
 
-- **`opi-document` (Phase 6)** does not exist yet. Documentation updates and
-  EN/ZH translation are currently manual (inline in `opi-implement` Phase D;
-  `opi-release` does not define its own doc-sync step). Building a dedicated
-  skill is tracked as future work.
 - **Model/agent switching** between phases (evaluation in Phase 2, auditing in
   Phase 4, verification in Phase 5) is currently manual. Automating multi-model
   orchestration is future work.

@@ -4,11 +4,11 @@
 独立审计、修复、运行时回归、文档，到发布。本 README 描述端到端工作流以及每个技能的
 使用方式。
 
-共有六个 opi-* 技能：**opi-realign**、**opi-implement**、**opi-audit**、
-**opi-remediate**、**opi-eval**、**opi-release**。它们是彼此独立的产物，边界严格——
+共有七个 opi-* 技能：**opi-realign**、**opi-implement**、**opi-audit**、
+**opi-remediate**、**opi-eval**、**opi-document**、**opi-release**。它们是彼此独立的产物，边界严格——
 每个技能都明确说明自己做什么，以及同样重要地，**拒绝**做什么。
 
-> 范围说明：本 README 仅覆盖六个 `opi-*` 产品技能。本目录下的其他技能
+> 范围说明：本 README 仅覆盖七个 `opi-*` 产品技能。本目录下的其他技能
 >（`caveman`、`grill-me`、`tdd`、`to-prd`、`prototype` 等）是通用工具，与 opi 生命周期
 > 无关。
 
@@ -28,7 +28,7 @@
 | Phase 4 | `opi-audit` | 多模型、独立审计员 |
 | Phase 5 | `opi-remediate` | 验证 + 修复；循环至通过 |
 | （eval 关卡） | `opi-eval` | 运行时回归（真实 provider 金额） |
-| Phase 6 | 手动 | 文档 + EN/ZH；计划中的 `opi-document` |
+| Phase 6 | `opi-document` | 文档 + EN/ZH 同步（guard 验证） |
 | Phase 7 | `opi-release` | GitHub Releases + crates.io |
 
 ### 两条贯穿全局的模式
@@ -124,12 +124,20 @@ Cannot confirm / Refuted），产出按依赖分层的 `remediation-plan.md`，�
 - **进入：** 运行时改动已合并；provider 凭据已配置。
 - **退出：** 报告已写；退化（若有）回馈 Phase 5。
 
-### Phase 6 —— 文档与翻译（计划中的 `opi-document`；当前手动）
+### Phase 6 —— 文档与 EN/ZH 同步
 
-**计划技能：** `opi-document` —— 一个负责文档更新与 EN/ZH 翻译的专门技能。**目前不存在。**
-当前这一阶段是手动的：文档同步在 `opi-implement` Phase D（文档验证 tier）内联进行，翻译靠
-手工。（`opi-release` Phase 5 仅 stage `Cargo.toml`/`Cargo.lock`/`CHANGELOG.md`，自身不定义
-文档同步步骤。）构建 `opi-document` 列为后续工作。
+**技能：** `opi-document`。刷新 opi 文档，使其与已发布代码保持一致，并保持 EN/ZH 镜像同步——在
+八个 doc-guard 套件 **之内** 编辑，而非绕过它们。用于一次完整的阶段文档刷新、一次改动后的定点
+更新，或版本号 bump 的文档重同步。
+
+- **进入：** Phase 3–5（实现 / 审计 / 修复）通过；或一次临时的文档 / 翻译请求。
+- **退出关卡：** 每个 guard 套件（`productized_packages_docs`、`phase11_tooling_quality_docs`、
+  `phase12_provider_correctness_docs`、`phase13_session_context_docs`、`observability_docs`、
+  `runtime_contract_docs`、`transport`）EN + ZH 均报告 `0 failed`；无遗留的内部阶段术语；若发生
+  版本号 bump，所有含版本号的行已同步更新。
+- **关键护栏：** 永不删除 guard 固定的 token；永不引入非否定形态的禁止性过度声明；若触碰
+  `docs/opi-spec.md` 则重新同步 phase4 spec-hash 台账；不改代码、`Cargo.toml` 或版本号（那是
+  `opi-release` 的职责）；不弱化 guard 测试。
 
 ### Phase 7 —— 发布
 
@@ -283,6 +291,26 @@ trace、派发只读评估器子 agent 以检测保真度退化。
 - **备注：** 任一用例首次运行建立资源基线且不能失败；只有后续运行才按 1.5×/3× 阈值打分。新增
   用例只需在 `test-cases.md` 追加 `## Case N:` 小节。
 
+### opi-document
+
+刷新 opi 文档，使其与已发布代码保持一致，同时保持 EN 与简体中文镜像同步、doc-guard 套件全
+绿。这是专门的 Phase 6 技能（此前为手动）。
+
+- **何时调用：** "update the docs/README"、"refresh the README"、"sync EN/ZH"、"translate the
+  README"、"fix doc drift"，中文触发词 文档更新 / 文档同步 / 更新 README / 翻译，或 opi 工作流
+  的 Phase 6（实现之后、发布之前）。
+- **输入：** `scope=<full|targeted|version-bump>`（默认 targeted）；`files=<...>`；版本号 bump 时
+  `version=<X.Y.Z>`。
+- **做什么：** 七阶段——发现文档 delta；对照源码审计漂移 / 噪声 / 缺口；载入 doc-guard 约束；
+  决定 guard-safe 范围；编辑 EN 文档；外科式镜像到 ZH（对新增文案组合 `baoyu-translate`，逐字
+  保留固化的 ZH token）；跑八个 guard 套件加一次阶段术语 grep 来验证。
+- **不做什么：** 不改代码 / `Cargo.toml` / 版本号；不提交或发布；不撰写 `opi-spec.md` 规范内容
+  （只做 doc-sync 编辑，且会重新同步 phase4 台账）；不弱化 guard 测试；不整篇重生成中文文档。
+- **产物：** 读相关文档 + `CHANGELOG.md` + crate `src/` + guard 测试文件 + baoyu-translate
+  `EXTEND.md`；写文档（EN + ZH），并在编辑 `opi-spec.md` 时重新同步 phase4 台账哈希。
+- **在工作流中：** Phase 6。
+- **备注：** doc-guard 约束位于 `opi-document/references/doc-guards.md`。
+
 ### opi-release
 
 编排 opi Rust 工作区的完整发布流程——通过七个带安全 gate 的阶段发布到 GitHub Releases 和
@@ -316,8 +344,5 @@ crates.io，每个阶段都需要用户确认。
 
 ## 缺口与后续工作
 
-- **`opi-document`（Phase 6）** 目前不存在。文档更新与 EN/ZH 翻译当前是手动的（在
-  `opi-implement` Phase D 内联；`opi-release` 自身不定义文档同步步骤）。构建专门技能列为后续
-  工作。
 - **模型 / agent 切换** 在阶段之间（Phase 2 评估、Phase 4 审计、Phase 5 验证）目前是手动的。
   自动化多模型编排是后续工作。
