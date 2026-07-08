@@ -27,6 +27,9 @@
 # Codex/agent local-only state
 .agents/
 
+# Local third-party skill packs (e.g. baoyu-translate), not tracked
+.baoyu-skills/
+
 # Secrets / credentials (must never be committed)
 .env
 .env.*
