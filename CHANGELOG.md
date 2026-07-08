@@ -10,10 +10,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - `opi-coding-agent`: `--json-compact` opt-in flag that makes streamed `text_delta` updates constant-size (~linear byte cost for long streamed turns). It omits the redundant `assistant_event.partial` snapshot and empties the cumulative text in `event.message` for those updates. Default `--json` output and `NDJSON_SCHEMA_VERSION = 2` are unchanged.
+- Repository: `scripts/opi-artifact-audit.py` (plus `.ps1`/`.sh` wrappers) — a deterministic, network-free checker for saved runtime, NDJSON, session, provider, and browser evidence (workspace-root leakage, all-zero timestamps, provider-turn mismatch, duplicate `text_delta` partials, failure claims without preserved artifacts) — paired with an `opi-implement` Artifact Truthfulness Gate (Phase D.0a) requiring verified artifacts for runtime/CLI/NDJSON/session claims. Backed by a fixture-driven `opi-coding-agent` integration test.
 
 ### Changed
 
 - `opi-coding-agent`: `session_summary` now includes `provider_turns` (provider request/response cycles, i.e. `TurnStart` events) alongside the existing `turns` (user prompt turns), so a tool-using prompt usually reports `provider_turns > turns`.
+- `opi-release`: pre-flight checks are documented as deterministic and must not depend on live provider or dogfood runs; any cited dogfood evidence must already have passed the `opi-implement` Artifact Truthfulness Gate.
 
 ### Fixed
 

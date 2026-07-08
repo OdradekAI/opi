@@ -19,6 +19,10 @@
 !.claude/skills/opi-release/**
 !.claude/skills/opi-realign/
 !.claude/skills/opi-realign/**
+!.claude/skills/opi-eval/
+!.claude/skills/opi-eval/**
+!.claude/skills/README.md
+!.claude/skills/README.zh.md
 
 # Codex/agent local-only state
 .agents/

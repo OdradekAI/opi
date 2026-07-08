@@ -36,6 +36,11 @@ Phase 7: Finalize & post-release verification
 
 ## Phase 1: Pre-flight Checks
 
+Release pre-flight gates are deterministic and must not depend on live provider
+or dogfood runs. If a release candidate cites a dogfood report as evidence,
+that report must already have passed the opi-implement Artifact Truthfulness
+Gate; opi-release does not run live model checks.
+
 Create a TaskCreate for Phase 1. Run ALL checks below and report a summary table.
 
 ### 1.1 File Presence

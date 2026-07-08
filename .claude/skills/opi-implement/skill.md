@@ -156,6 +156,17 @@ E is the only phase that mutates git **during normal task execution**.
      - If the scenario cannot be exercised yet, the task may pass only as
        substrate coverage and must leave the scenario open on a later vertical
        slice task.
+   - D.0a Artifact truthfulness gate:
+     - If a task claims runtime, CLI, JSON/NDJSON, RPC, session, provider, tool,
+       browser, or generated-artifact behavior, read
+       `references/artifact-truthfulness.md` before verification.
+     - Preserve command, stdout, stderr, exit code, session/NDJSON artifacts,
+       and provider/browser captures needed by the claim.
+     - Run `scripts/opi-artifact-audit.py` or its platform wrapper when an
+       artifact directory exists.
+     - Classify each claim as `verified`, `observed-unpreserved`,
+       `source-inferred`, or `not-opi`; only `verified` closes runtime
+       acceptance criteria.
    - D.1 Tier-specific mechanical gates and phase-specific addenda
    - D.2 Task-level risk evaluator (when `evaluator_required = true`)
    - D.3 Cross-cutting gates: fmt, clippy, doc, smoke

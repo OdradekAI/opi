@@ -130,6 +130,10 @@ Additional gates:
    vertical-slice task owns closure.
 5. Before Phase E, the planned commit evidence must include `Opi-Acceptance`
    for every closed scenario.
+6. Runtime/CLI/NDJSON/session claims must also satisfy the Artifact Truthfulness
+   Gate in `artifact-truthfulness.md`; helper tests alone are substrate
+   coverage unless a production command or saved artifact exercises the claimed
+   surface.
 
 ## Phase-Specific Addenda
 
