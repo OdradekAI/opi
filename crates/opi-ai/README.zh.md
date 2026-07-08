@@ -7,6 +7,13 @@
 
 [English](README.md) | [opi workspace](../../README.zh.md)
 
+Rust 的 Provider 无关 LLM API：一个 `Request` 与流式事件模型，由九个内置 Provider family
+和配置驱动的 OpenAI-compatible profile 共享。
+
+```sh
+cargo add opi-ai
+```
+
 ## 当前状态
 
 当前 crate 版本是 `0.6.5`，继承自 workspace 包版本。
@@ -16,22 +23,10 @@
 `opi-agent` 诊断层使用的 Provider 侧错误分类。它不实现 Agent 主循环、会话、
 package 加载或内置编程工具；这些能力分别位于 `opi-agent` 和 `opi-coding-agent`。
 
-`opi-ai` 还暴露一个 unstable-0.x 的模型/鉴权 seam（Phase 10）：`provider_collection`
+`opi-ai` 还暴露一个 unstable-0.x 的模型/鉴权 seam：`provider_collection`
 模块（`ProviderCollection`）在 `ProviderRegistry` 之上叠加了 Provider 侧鉴权契约
 （`AuthDescriptor` / `AuthStatus`）、OpenAI-compatible 兼容性元数据，以及
 stream/complete 派发。OAuth 与订阅鉴权是明确的非目标。
-
-workspace 包版本是 `0.6.5`；当前 checkout 也可能包含尚未发布的 Phase 13 会话集成
-变更。Phase 12 的 provider 正确性工作加固已有 provider family，而不是扩张 provider
-宽度：所有内置 family 都有 request/stream/error fixture 覆盖；
-`ProviderError::category` 暴露已文档化的九类错误；OpenAI-compatible profile 的
-`CompatConfig` 和 `ModelCompatOverride` 行为经过测试；cache token 与 provider
-response ID 会在可用时回写；缺失用量保持为显式 `unknown usage`，而不是已知零用量。
-
-Phase 11 的工具结果修复仍是 provider 契约的一部分：
-`ToolResultMessage::is_error` 会保留到 provider wire converter。有原生错误字段的
-provider 使用原生字段；没有原生字段的 OpenAI-family wire 格式使用确定性的文本
-标记。这是对现有 provider 的正确性修复，不是 provider breadth 阶段。
 
 ## Provider
 
@@ -122,7 +117,7 @@ LLM 可见内容和 provider 专用失败信号。
 
 兼容的 OpenAI 风格服务在缺少实质 wire/auth/能力差异时保持配置驱动
 （config-driven）。这是 provider breadth 的首选路径；新增 first-class provider 模块
-需要更新任务图，且默认属于 Phase 12 非目标。
+是保留给这些实质差异的非默认步骤。
 
 `CompatConfig` 携带按 profile 的兼容性标志：
 
@@ -168,8 +163,7 @@ OpenAI Chat 会从任何携带 `id` 的 chunk 捕获 response ID，而不只是�
 `HttpClient` 携带共享的 `reqwest` 连接池，支持显式按 provider 的代理配置
 （provider profile 的 `proxy.url` 和 `proxy.no_proxy`）以及环境变量回退
 （`HTTPS_PROXY` > `HTTP_PROXY` > `NO_PROXY`）。代理 URL 中的代理凭据在任何诊断
-展示前都会被脱敏。代理传输语义（经代理重试、取消）由 Phase 12 重试/代理覆盖范围
-负责。
+展示前都会被脱敏。代理传输语义（经代理重试、取消）由重试/代理覆盖范围负责。
 
 ## 尽力而为的费用
 
@@ -178,10 +172,9 @@ OpenAI Chat 会从任何携带 `id` 的 chunk 捕获 response ID，而不只是�
 因此，只要任一轮 usage 未知，或模型定价缺失，面向 session 的费用汇总就应省略。费用绝不
 阻塞成功的流。
 
-## Phase 12 非目标
+## 非目标
 
-Phase 12 是 provider *正确性* 阶段，不是 breadth 阶段。以下是明确的非目标，不得
-作为当前核心行为出现：
+以下是明确的非目标，不得作为当前核心行为出现：
 
 - OAuth 登录流程。
 - Anthropic 订阅鉴权。
@@ -195,55 +188,53 @@ Phase 12 是 provider *正确性* 阶段，不是 breadth 阶段。以下是明�
 - 默认测试中的付费实时 provider 调用（实时测试保持 `#[ignore]` 门控）。
 - 复制 pi 的 provider 专用配置文件格式。
 
-## Phase 13 会话集成
-
-Phase 13 的会话工作依赖经由共享 `opi-ai` 类型传递的 provider-correct usage、model、
-thinking、cache、response ID、cancellation 和 error 数据。它不新增 provider family，
-也不要求调用方依赖 provider 专用内部实现。
-
 ## 最小示例
 
 ```rust
+// Cargo.toml 依赖：opi-ai、tokio（features "macros"、"rt-multi-thread"）、
+// tokio-util、futures-util。
 use futures_util::StreamExt;
 use opi_ai::anthropic::AnthropicProvider;
 use opi_ai::message::{InputContent, Message, UserMessage};
 use opi_ai::provider::{Provider, Request, ThinkingConfig};
 use tokio_util::sync::CancellationToken;
 
-# async fn run() -> Result<(), Box<dyn std::error::Error>> {
-let provider = AnthropicProvider::new(
-    std::env::var("ANTHROPIC_API_KEY")?,
-    None,
-);
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let provider = AnthropicProvider::new(
+        std::env::var("ANTHROPIC_API_KEY")?,
+        None,
+    );
 
-let request = Request {
-    model: "claude-sonnet-4-5-20250514".into(),
-    system: Some("回答要简洁。".into()),
-    messages: vec![Message::User(UserMessage {
-        content: vec![InputContent::Text { text: "你好".into() }],
-        timestamp_ms: 0,
-    })],
-    tools: vec![],
-    max_tokens: Some(1024),
-    temperature: None,
-    thinking: ThinkingConfig::default(),
-    stop_sequences: vec![],
-    metadata: None,
-    cancel: CancellationToken::new(),
-};
+    let request = Request {
+        model: "claude-sonnet-4-5-20250514".into(),
+        system: Some("回答要简洁。".into()),
+        messages: vec![Message::User(UserMessage {
+            content: vec![InputContent::Text { text: "你好".into() }],
+            timestamp_ms: 0,
+        })],
+        tools: vec![],
+        max_tokens: Some(1024),
+        temperature: None,
+        thinking: ThinkingConfig::default(),
+        stop_sequences: vec![],
+        metadata: None,
+        cancel: CancellationToken::new(),
+    };
 
-let mut stream = provider.stream(request);
-while let Some(event) = stream.next().await {
-    println!("{:?}", event?);
+    let mut stream = provider.stream(request);
+    while let Some(event) = stream.next().await {
+        println!("{:?}", event?);
+    }
+    Ok(())
 }
-# Ok(()) }
 ```
 
 ## 模块
 
 `provider`、`message`、`stream`、`registry`、`provider_collection`、`http`、
 `retry`、`model`、`anthropic`、`openai_chat`、`openai_responses`、`openrouter`、
-`mistral`、`gemini`、`bedrock`、`azure_openai`、`vertex`、`config` 和
+`mistral`、`gemini`、`bedrock`、`azure_openai`、`vertex`、`config`、`time` 和
 `test_support`。
 
 ## 许可证

@@ -7,6 +7,14 @@
 
 [Simplified Chinese](README.zh.md) | [opi workspace](../../README.md)
 
+Provider-independent agent runtime for Rust: the agent loop, JSON-Schema tool
+contract, lifecycle hooks, session storage and compaction, SDK/RPC types,
+extensions, and a streaming proxy — the engine `opi-coding-agent` builds on.
+
+```sh
+cargo add opi-agent
+```
+
 ## Status
 
 Current crate version: `0.6.5`, inherited from the workspace package version.
@@ -17,25 +25,18 @@ hooks, event emission, steering/follow-up queues, session JSONL storage,
 branch reconstruction, context compaction, SDK/RPC types, extensions, local
 diagnostics, redacted trace envelopes, and streaming proxy support.
 
-The workspace package version is `0.6.5`; the checkout may also contain
-unreleased Phase 13 session work. Recent changes keep the runtime contract
-focused rather than adding workflows. Phase 11 extends the tool contract with
-`truncated` and tool-owned structured diagnostics. The agent loop lifts those
-diagnostics into the shared diagnostic/trace system and exposes them on public
-`ToolExecutionEnd` events, while keeping provider-facing tool-result messages
-limited to LLM-visible content and failure state.
-
-Phase 12 uses the existing runtime surfaces for provider correctness:
+The runtime contract stays focused on the loop itself rather than adding
+workflows. Tool results carry `truncated` and tool-owned structured diagnostics,
+which the loop lifts into the shared diagnostic/trace system and exposes on
+public `ToolExecutionEnd` events while keeping provider-facing tool-result
+messages limited to LLM-visible content and failure state.
 `ProviderErrorCategory` values from `opi-ai` map into redacted diagnostics and
 trace records, provider-returned cancellations surface as `AgentError::Cancelled`,
-retry diagnostics distinguish exhausted retry budgets from suppression after
-partial provider output, and provider metadata stays bounded at public event,
-session, JSON, RPC, and trace boundaries.
-
-Phase 13 extends append-only session storage with typed metadata entries and
-branch summaries while keeping `SessionHeader::version = 1`. Metadata entries
-do not enter provider context; branch summaries do, through
-`session_context::reconstruct_context`.
+and retry diagnostics distinguish exhausted retry budgets from suppression
+after partial provider output. Append-only session storage carries typed
+metadata entries and branch summaries while keeping `SessionHeader::version =
+1`; metadata entries do not enter provider context, but branch summaries do,
+through `session_context::reconstruct_context`.
 
 It depends on `opi-ai` for provider and message types. It does not implement the
 `opi` CLI, terminal UI, or built-in filesystem/shell tools; those live in
@@ -227,11 +228,11 @@ tool result.
 
 Session storage is append-only JSONL:
 
-- First line: `SessionHeader` (Phase 13 keeps `version = 1`).
+- First line: `SessionHeader` (`version = 1`).
 - Entries: `MessageEntry`, `CompactionEntry`, `LeafEntry`, and
   `ExtensionStateEntry` (the `SessionEntry` enum is `#[non_exhaustive]`;
   additive variants may arrive across 0.x).
-- Phase 13 additive typed entries on the v1 header: `SessionInfoEntry`
+- Additive typed entries on the v1 header: `SessionInfoEntry`
   (`session_info`), `ModelChangeEntry` (`model_change`),
   `ThinkingLevelChangeEntry` (`thinking_level_change`), `LabelEntry` (`label`),
   and `BranchSummaryEntry` (`branch_summary`). Metadata entries
@@ -240,9 +241,8 @@ Session storage is append-only JSONL:
   is injected into reconstructed LLM context as a metadata-parented message by
   `session_context::reconstruct_context`, and product provider conversion
   forwards it as context when present.
-- `custom_message` is deferred: Phase 13 ships no `custom_message` writer and
-  treats unknown `custom_message` entries like other unknown future entries on
-  read.
+- `custom_message` is deferred: opi ships no `custom_message` writer and treats
+  unknown `custom_message` entries like other unknown future entries on read.
 - Reader recovery distinguishes corrupt middle entries (malformed JSON or
   missing required fields, surfaced as diagnostics) from unknown future entry
   types (well-formed JSON with an unrecognized `type`, skipped and counted but
@@ -258,8 +258,8 @@ sessions.
 
 ## SDK and RPC Command Contract
 
-`sdk` (`SDK_SCHEMA_VERSION = 3`, re-exported as `RPC_SCHEMA_VERSION`) defines the
-unstable 0.x command set shared by RPC JSONL mode and embedders. Each command
+`sdk` (`SDK_SCHEMA_VERSION = 3`) defines the unstable 0.x command set shared by
+RPC JSONL mode and embedders. Each command
 carries an optional `id` echoed on its response; RPC emits one `response` per
 command, carrying `command`, `success`, optional `id`/`error`, optional
 structured `error_code` (e.g. `unsupported_trace_request`), and optional `data`.
@@ -348,7 +348,7 @@ versions and pin exact crate versions when needed.
 | `Diagnostic`, `DiagnosticPayload`, `RedactionMode`, `Severity`, `redact`, `redact_text`, `DiagnosticSink`, `NullSink`, `RecordingSink` | unstable internal | Diagnostic payload and sink plumbing used by runtime surfaces; current contract is redaction/schema-version behavior, not a stable API shape. |
 | `FileTraceSink`, `RecordingTraceSink`, `TRACE_SCHEMA_VERSION`, `TraceCollector`, `TraceError`, `TraceKind`, `TraceRecord`, `TraceSink` | unstable internal | Local trace envelope plumbing; the `trace` module marks it unstable 0.x and carries `TRACE_SCHEMA_VERSION = 1`. |
 | `AgentState` | unstable internal | Runtime state holder exposed for crate layout and harness integration; not a supported embedder contract. |
-| `AgentHarness`, `Phase`, `HarnessError`, `HarnessResult`, `HarnessSnapshot`, `HarnessSession`, `HarnessRuntimeConfig`, `HarnessRuntimeConfigBuilder`, `SavePoint`, `PendingWriteQueue`, `PendingWrite`, `PendingWriteKind`, `SessionRepo`, `SessionFacade`, `JsonlHarnessSession`, `JsonlSessionRepo` | unstable internal | Generic agent-harness/session-facade orchestration seam above `Agent` (Phase 10, Workstream 10.2/10.3); contract-tested but does not drive the loop itself yet. The `harness` module marks it unstable 0.x. |
+| `AgentHarness`, `Phase`, `HarnessError`, `HarnessResult`, `HarnessSnapshot`, `HarnessSession`, `HarnessRuntimeConfig`, `HarnessRuntimeConfigBuilder`, `SavePoint`, `PendingWriteQueue`, `PendingWrite`, `PendingWriteKind`, `SessionRepo`, `SessionFacade`, `JsonlHarnessSession`, `JsonlSessionRepo` | unstable internal | Generic agent-harness/session-facade orchestration seam above `Agent`; contract-tested but does not drive the loop itself yet. The `harness` module marks it unstable 0.x. |
 
 This review found no candidate-removal crate-root re-exports. Every crate-root
 `pub use` in `src/lib.rs` is named in the table above. Public modules may expose
@@ -364,9 +364,8 @@ crate versions. The local trace envelope carries `TRACE_SCHEMA_VERSION = 1`.
 
 ## Non-Goals
 
-The runtime stabilized as of `0.5.4`; the crate stays 0.x and the Phase 10
-`harness` seam is internal-only. The following remain explicitly out of scope
-and are not claimed:
+The crate stays 0.x and the `harness` seam is internal-only. The following
+remain explicitly out of scope and are not claimed:
 
 - No stable 1.0 public API promise (surfaces stay 0.x).
 - No TypeScript extension API compatibility.

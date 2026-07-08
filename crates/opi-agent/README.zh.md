@@ -7,6 +7,14 @@
 
 [English](README.md) | [opi workspace](../../README.zh.md)
 
+Rust 的 Provider 无关 Agent 运行时：Agent 主循环、JSON-Schema 工具契约、生命周期
+hooks、会话存储与压缩、SDK/RPC 类型、扩展，以及 streaming proxy——`opi-coding-agent`
+构建于其上的引擎。
+
+```sh
+cargo add opi-agent
+```
+
 ## 当前状态
 
 当前 crate 版本是 `0.6.5`，继承自 workspace 包版本。
@@ -16,21 +24,14 @@
 JSONL 存储、分支重建、上下文压缩、SDK/RPC 类型、扩展、本地诊断、已脱敏 trace
 envelope，以及 streaming proxy。
 
-workspace 包版本是 `0.6.5`；当前 checkout 也可能包含尚未发布的 Phase 13 会话工作。
-近期变更仍保持运行时契约聚焦，不新增核心工作流。Phase 11 把 `truncated` 和工具自有
-结构化诊断加入工具契约。Agent 主循环会把这些诊断提升为共享 diagnostic/trace 记录，
-并在公共 `ToolExecutionEnd` 事件上暴露；面向 provider 的工具结果消息仍只携带 LLM
-可见内容和失败状态。
-
-Phase 12 使用既有运行时表面承载 provider 正确性：来自 `opi-ai` 的
-`ProviderErrorCategory` 会映射为已脱敏 diagnostics 和 trace 记录；provider 返回的
-cancellation 会表现为 `AgentError::Cancelled`；retry diagnostics 会区分重试预算耗尽与
-已有部分 provider 输出后的重试抑制；provider metadata 在公共 event、session、JSON、
-RPC 和 trace 边界保持有界。
-
-Phase 13 在 append-only session 存储中加入类型化 metadata 条目和分支摘要，同时保持
-`SessionHeader::version = 1`。metadata 条目不进入 provider 上下文；分支摘要会通过
-`session_context::reconstruct_context` 进入 provider 上下文。
+运行时契约保持聚焦于主循环本身，而非新增工作流。工具结果携带 `truncated` 和工具自有
+结构化诊断；主循环把这些诊断提升为共享 diagnostic/trace 系统，并在公共
+`ToolExecutionEnd` 事件上暴露，同时让面向 provider 的工具结果消息只携带 LLM 可见内容
+和失败状态。来自 `opi-ai` 的 `ProviderErrorCategory` 会映射为已脱敏 diagnostics 和
+trace 记录；provider 返回的 cancellation 表现为 `AgentError::Cancelled`；retry diagnostics
+会区分重试预算耗尽与部分 provider 输出后的重试抑制。append-only 会话存储携带类型化
+metadata 条目和分支摘要，同时保持 `SessionHeader::version = 1`；metadata 条目不进入
+provider 上下文，但分支摘要会通过 `session_context::reconstruct_context` 进入。
 
 它依赖 `opi-ai` 的 Provider 和消息类型。它不实现 `opi` CLI、终端 UI 或具体的
 文件/ shell 内置工具；这些能力分别位于 `opi-coding-agent` 和 `opi-tui`。
@@ -198,10 +199,10 @@ run 返回 `Err(AgentError::Cancelled)` 的 turn 根本不会被持久化，因�
 
 会话存储使用 append-only JSONL：
 
-- 第一行：`SessionHeader`（第 13 阶段保持 `version = 1`）。
+- 第一行：`SessionHeader`（`version = 1`）。
 - 条目：`MessageEntry`、`CompactionEntry`、`LeafEntry` 和 `ExtensionStateEntry`
   （`SessionEntry` 枚举为 `#[non_exhaustive]`；0.x 内可能新增附加变体）。
-- 第 13 阶段在 v1 头部上的增补类型条目：`SessionInfoEntry`（`session_info`）、
+- v1 头部上的增补类型条目：`SessionInfoEntry`（`session_info`）、
   `ModelChangeEntry`（`model_change`）、`ThinkingLevelChangeEntry`
   （`thinking_level_change`）、`LabelEntry`（`label`）和
   `BranchSummaryEntry`（`branch_summary`）。元数据条目（`session_info`、
@@ -209,7 +210,7 @@ run 返回 `Err(AgentError::Cancelled)` 的 turn 根本不会被持久化，因�
   provider 上下文；`branch_summary` 由 `session_context::reconstruct_context`
   作为 metadata-parented 消息注入重建的 LLM 上下文，并在存在时由产品层 provider
   转换作为上下文转发。
-- `custom_message` 推迟：第 13 阶段不提供 `custom_message` 写入器，并在读取时把未知
+- `custom_message` 推迟：opi 不提供 `custom_message` 写入器，并在读取时把未知
   `custom_message` 条目当作其他未知未来条目处理。
 - Reader 恢复区分损坏的中间条目（畸形 JSON 或缺少必需字段，作为诊断上报）与未知未来
   条目类型（格式良好的 JSON 但 `type` 无法识别，会被跳过并计数，但不会跨
@@ -223,8 +224,8 @@ run 返回 `Err(AgentError::Cancelled)` 的 turn 根本不会被持久化，因�
 
 ## SDK 与 RPC 命令契约
 
-`sdk`（`SDK_SCHEMA_VERSION = 3`，RPC 侧再导出为 `RPC_SCHEMA_VERSION`）定义了 RPC
-JSONL 模式与嵌入方共享的不稳定 0.x 命令集合。每条命令携带可选的 `id`，并在其响应中
+`sdk`（`SDK_SCHEMA_VERSION = 3`）定义了 RPC JSONL 模式与嵌入方共享的不稳定 0.x 命令
+集合。每条命令携带可选的 `id`，并在其响应中
 回显；RPC 对每条命令只输出一个 `response`，包含 `command`、`success`、可选的
 `id`/`error`、可选的结构化 `error_code`（如 `unsupported_trace_request`），以及可选的
 `data`。
@@ -306,7 +307,7 @@ JSONL 模式与嵌入方共享的不稳定 0.x 命令集合。每条命令携带
 | `Diagnostic`、`DiagnosticPayload`、`RedactionMode`、`Severity`、`redact`、`redact_text`、`DiagnosticSink`、`NullSink`、`RecordingSink` | 不稳定内部 | 运行时表面使用的诊断 payload 与 sink plumbing；当前契约是 redaction/schema-version 行为，不是稳定 API 形状。 |
 | `FileTraceSink`、`RecordingTraceSink`、`TRACE_SCHEMA_VERSION`、`TraceCollector`、`TraceError`、`TraceKind`、`TraceRecord`、`TraceSink` | 不稳定内部 | 本地 trace envelope plumbing；`trace` 模块标注为不稳定 0.x，并携带 `TRACE_SCHEMA_VERSION = 1`。 |
 | `AgentState` | 不稳定内部 | 为 crate 布局与 harness 集成暴露的运行时状态持有器；不是受支持的嵌入方契约。 |
-| `AgentHarness`、`Phase`、`HarnessError`、`HarnessResult`、`HarnessSnapshot`、`HarnessSession`、`HarnessRuntimeConfig`、`HarnessRuntimeConfigBuilder`、`SavePoint`、`PendingWriteQueue`、`PendingWrite`、`PendingWriteKind`、`SessionRepo`、`SessionFacade`、`JsonlHarnessSession`、`JsonlSessionRepo` | 不稳定内部 | 位于 `Agent` 之上的通用 agent-harness/session-facade 编排 seam（Phase 10，Workstream 10.2/10.3）；经契约测试，但尚未自行驱动主循环。`harness` 模块标注为不稳定 0.x。 |
+| `AgentHarness`、`Phase`、`HarnessError`、`HarnessResult`、`HarnessSnapshot`、`HarnessSession`、`HarnessRuntimeConfig`、`HarnessRuntimeConfigBuilder`、`SavePoint`、`PendingWriteQueue`、`PendingWrite`、`PendingWriteKind`、`SessionRepo`、`SessionFacade`、`JsonlHarnessSession`、`JsonlSessionRepo` | 不稳定内部 | 位于 `Agent` 之上的通用 agent-harness/session-facade 编排 seam；经契约测试，但尚未自行驱动主循环。`harness` 模块标注为不稳定 0.x。 |
 
 本次审查没有发现候选移除的 crate-root re-export。`src/lib.rs` 中的每个
 crate-root `pub use` 都已在上表点名。公共模块可能还会通过模块路径暴露其他项；
@@ -320,7 +321,7 @@ crate 版本。本地 trace envelope 携带 `TRACE_SCHEMA_VERSION = 1`。
 
 ## 非目标（Non-Goals）
 
-运行时自 `0.5.4` 起已稳定；crate 维持 0.x，Phase 10 的 `harness` seam 仅为内部使用。以下明确不在范围内，不作声明：
+crate 维持 0.x，`harness` seam 仅为内部使用。以下明确不在范围内，不作声明：
 
 - 不声明稳定 1.0 公共 API 承诺（表面保持 0.x）。
 - 不得引入 TypeScript 扩展 API 兼容。

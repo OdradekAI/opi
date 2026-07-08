@@ -6,7 +6,10 @@
 > 受 [earendil-works/pi](https://github.com/earendil-works/pi) 启发的 Rust AI
 > Agent 工具包与终端优先的编程 Agent。
 
-[English](README.md) | [更新日志](CHANGELOG.md) | [技术规范草案](docs/opi-spec.zh.md)
+opi 是一个可嵌入的多 Provider 编程 Agent 运行时，可通过交互式 TUI、单次 CLI、NDJSON
+事件流或 RPC harness 驱动。
+
+[English](README.md) | [更新日志](CHANGELOG.md)
 
 ## 当前状态
 
@@ -120,6 +123,7 @@ opi package list
 | --- | --- |
 | `--non-interactive` | 强制单次文本模式。 |
 | `--json` | 单次 NDJSON 事件流。 |
+| `--json-compact` | 紧凑 `--json`：流式 `text_delta` 更新省略冗余累积快照（长轮次 ~线性字节）。 |
 | `--rpc` | 通过 stdin/stdout 运行持久 JSONL 命令/事件协议。 |
 | `--resume <ID>` | 恢复已保存会话。 |
 | `--fork <ID>` | 将已保存会话 fork 成新会话。 |
@@ -132,6 +136,7 @@ opi package list
 | `--redact <summary\|verbose\|none>` | 导出脱敏模式；默认是 `summary`。 |
 | `--tools read,grep` | 只启用列出的内置工具。 |
 | `--no-tools` | 禁用所有工具。 |
+| `--no-builtin-tools` | 关闭内置工具，同时保留 extension/custom 工具可用。 |
 | `--allow-mutating` | 在非交互/RPC 运行中允许 `write`、`edit` 和 `bash`。 |
 | `--trace <PATH>` | 为非交互或 JSON 运行写入可选、已脱敏的本地 trace envelope。 |
 
@@ -155,7 +160,8 @@ Provider 支持在 `opi-ai` 中实现，并接入 `opi-coding-agent`。
 兼容 OpenAI 风格的服务通常应通过已配置 profile 接入，而不是新增 first-class provider
 模块。对 `usage_in_stream`，OpenAI-compatible profile 会请求
 `stream_options.include_usage`；从任何 OpenAI Chat chunk 携带 `id` 的位置捕获 response ID，
-并回写到 `response_id`。当 usage 或定价未知时，会省略费用汇总。
+并回写到 `response_id`。profile 还可以设置 `chat_completions_path`，用于已包含 API 前缀的
+base URL。当 usage 或定价未知时，会省略费用汇总。
 
 ## 内置工具
 
@@ -197,7 +203,7 @@ workspace 外路径。`bash` 从 workspace 根目录启动，但不限制在工�
 | Unix | `~/.local/share/opi/sessions/` |
 
 可用 `OPI_SESSIONS_DIR` 覆盖该位置。会话文件属于敏感内容：其中包含提示词、工具输出，
-以及可能泄露的密钥。Phase 13 保持 v1 header，并新增会话名称、模型变化、thinking
+以及可能泄露的密钥。v1 header 保持不变，并新增会话名称、模型变化、thinking
 level、label 和 branch summary 的类型化条目。`--resume`、`--fork`、
 `--list-sessions`、RPC `session_info` 和 `--export-session` 都通过同一条上下文路径重建
 活跃分支。`opi --export-session` 只做本地导出，并默认脱敏。

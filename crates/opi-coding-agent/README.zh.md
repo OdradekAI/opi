@@ -7,6 +7,9 @@
 
 [English](README.md) | [opi workspace](../../README.zh.md)
 
+`opi-coding-agent` 产出 `opi` CLI 与可嵌入的 `CodingHarness`：交互式 ratatui TUI、单次
+文本与 NDJSON 模式、RPC harness、八个内置工具，以及会话/配置/package 处理。
+
 ## 当前状态
 
 当前 crate 版本是 `0.6.5`，继承自 workspace 包版本。
@@ -24,15 +27,12 @@
 - 配置、上下文文件加载、会话持久化、压缩、重试、用量、费用摘要、package/资源发现、
   诊断和可选 trace。
 
-workspace 包版本是 `0.6.5`；当前 checkout 也可能包含尚未发布的 Phase 13 会话工作。
-近期阶段在不新增核心工作流工具的前提下加固既有行为。Phase 11 让文件系统失败携带
-类型化诊断，read/bash 输出截断成为显式状态，write/edit 记录可审计元数据，导航工具
-共享有界的 gitignore-aware 遍历，并让失败工具结果保留到 provider adapter。
-Phase 12 把 provider 正确性接入 CLI 与 harness：provider 构造会用已脱敏 diagnostics
-校验 auth/config，OpenAI-compatible profile 携带已文档化的兼容性标志和
-`extra_headers`，provider 错误会进入 text/JSON/RPC diagnostics；当任一轮 usage 未知
-或定价未知时，会话费用汇总会被省略。Phase 13 增加类型化会话 metadata、分支摘要、
-活跃分支重建诊断、持久化 model/thinking 状态和本地会话导出命令。
+workspace 包版本是 `0.6.5`。当前 checkout 也可能包含未发布变更；delta 见
+[CHANGELOG.md](../../CHANGELOG.md)。
+
+opi 加固既有表面，而非新增核心工作流：类型化文件系统工具失败、显式 read/bash 截断、
+有界的 gitignore-aware 导航、对 provider adapter 可见的失败工具结果、已脱敏的
+provider auth/config 诊断，以及当任一轮 usage 未知或定价未知时会话费用汇总会被省略。
 
 本 crate 也可以通过 `CodingHarness` 作为库使用，但多数用户应先从 CLI 开始。
 
@@ -99,9 +99,10 @@ opi --allow-mutating "更新 README。"
 | `--full-tree` | 导出完整会话树，而非仅活跃分支。 |
 | `--exclude-tool-output` | 从导出中省略工具输出。 |
 | `--exclude-thinking` | 从导出中省略思考内容。 |
-| `--redact <summary\|verbose\|none>` | `--export-session` 的第 7 阶段脱敏模式。 |
+| `--redact <summary\|verbose\|none>` | `--export-session` 的脱敏模式。 |
 | `--generate-completion <SHELL>` | 为 `bash`、`zsh`、`fish`、`powershell` 或 `elvish` 生成补全。 |
 | `--trace <PATH>` | 为非交互/JSON 运行写入可选的、已脱敏本地 trace envelope。 |
+| `-v, --verbose` | 启用调试追踪。 |
 | `doctor [--json] [--scope ...]` | 本地、无网络健康检查。 |
 | `package <add|remove|list|doctor>` | 管理本地/git extension package。 |
 
@@ -357,10 +358,9 @@ metadata 和启动诊断。
 - 修改性工具策略不是操作系统级 sandbox。
 - 生产级子 Agent、permission gate、plan/todo 和 MCP 工作流是 examples/package
   模式，不是内置核心工作流。
-- OAuth 或订阅登录流程尚未实现。第十二阶段 provider 正确性是正确性阶段，而非宽度
-  阶段；以下仍是推迟的产品决策：OAuth 登录、Anthropic / OpenAI Codex / GitHub
-  Copilot 订阅鉴权、大范围新增 first-class provider 列表（兼容 provider 保持为
-  config-driven 的 OpenAI-compatible profile）、图像生成（图片支持仅为输入侧）、
+- OAuth 或订阅登录流程尚未实现。以下仍是推迟的产品决策：OAuth 登录、Anthropic /
+  OpenAI Codex / GitHub Copilot 订阅鉴权、大范围新增 first-class provider 列表（兼容
+  provider 保持为 config-driven 的 OpenAI-compatible profile）、图像生成（图片支持仅为输入侧）、
   浏览器使用、面向 package 的 provider 流式 adapter 协议、默认测试中的付费实时
   provider 调用，以及复制 pi 的 provider 专用配置文件格式。按 provider 的代理配置
   （`proxy.url` / `proxy.no_proxy`，环境变量 `HTTPS_PROXY` > `HTTP_PROXY` >
@@ -374,9 +374,7 @@ metadata 和启动诊断。
   `previous_response_id` 推迟），以及缓存 / response-ID / 会话亲和行为。具体来说，
   `usage_in_stream` 会请求 `stream_options.include_usage`，OpenAI Chat 会从任何携带 `id` 的 chunk
   捕获 response ID，`require_assistant_after_tool_result` 在共享适配器中保持为纯元数据，而当任一轮
-  usage 未知或定价未知时，会话费用汇总会被省略。Phase 13
-  会话工作可以依赖经由共享 `opi-ai` 类型传递的 provider-correct usage、model、thinking
-  和 error 数据，而无需依赖 provider 专用内部实现。
+  usage 未知或定价未知时，会话费用汇总会被省略。
 
 ## 许可证
 

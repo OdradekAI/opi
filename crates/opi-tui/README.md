@@ -7,6 +7,16 @@
 
 [Simplified Chinese](README.zh.md) | [opi workspace](../../README.md)
 
+Ratatui-based terminal UI widget library for Rust: transcript, diff and
+markdown rendering, fuzzy pickers, terminal-image escapes, themes, and
+keybindings — the rendering layer `opi-coding-agent`'s TUI uses.
+
+```sh
+cargo add opi-tui
+```
+
+Requires Rust 1.85+ (edition 2024) and ratatui 0.30 / crossterm 0.29.
+
 ## Status
 
 Current crate version: `0.6.5`, inherited from the workspace package version.
@@ -17,12 +27,10 @@ primitives used by `opi-coding-agent`'s interactive TUI.
 
 It does not call providers, run tools, read sessions, load packages, or manage
 background tasks. Those responsibilities stay in `opi-agent` and
-`opi-coding-agent`.
-
-Phase 11 through Phase 13 did not change that boundary. Tool execution,
-diagnostics, provider correctness, retries, usage, session storage, and session
-export stay outside this crate; `opi-tui` renders the resulting transcript,
-tool status, image placeholders/escapes, picker rows, and edit diff previews.
+`opi-coding-agent`. Tool execution, diagnostics, provider correctness, retries,
+usage, session storage, and session export stay outside this crate; `opi-tui`
+renders the resulting transcript, tool status, image placeholders/escapes,
+picker rows, and edit diff previews.
 
 ## Components
 
@@ -31,7 +39,7 @@ tool status, image placeholders/escapes, picker rows, and edit diff previews.
 | `Shell` | Top-level layout for transcript, status bar, editor, and optional tool-call view. |
 | `MessageList` | Scrollable conversation transcript with role styling, diffs, and image payloads. |
 | `InputEditor` | Multi-line input buffer with cursor/edit helpers. |
-| `StatusBar` | App state, model, token/cost status, and live activity. |
+| `StatusBar` | App state, model, and token/cost status. |
 | `ToolCallView` | Tool-call line with name, args, and status. |
 | `MarkdownView` / `CodeBlock` | Markdown and fenced code-block rendering. |
 | `DiffView` | Unified diff rendering for before/after file edits and edit-preview snapshots. |

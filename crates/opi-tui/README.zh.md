@@ -7,6 +7,15 @@
 
 [English](README.md) | [opi workspace](../../README.zh.md)
 
+基于 ratatui 的 Rust 终端 UI 组件库：transcript、diff 与 markdown 渲染、模糊选择器、
+terminal-image escape、主题和按键绑定——`opi-coding-agent` TUI 使用的渲染层。
+
+```sh
+cargo add opi-tui
+```
+
+需要 Rust 1.85+（edition 2024）以及 ratatui 0.30 / crossterm 0.29。
+
 ## 当前状态
 
 当前 crate 版本是 `0.6.5`，继承自 workspace 包版本。
@@ -15,11 +24,9 @@
 应用状态。本 crate 提供 `opi-coding-agent` 交互式 TUI 使用的渲染基础组件。
 
 它不调用 Provider、不运行工具、不读取会话、不加载 package，也不管理后台任务。
-这些职责分别留在 `opi-agent` 和 `opi-coding-agent`。
-
-Phase 11 到 Phase 13 没有改变这个边界。工具执行、diagnostics、provider 正确性、
-retry、usage、session 存储和 session 导出都留在本 crate 之外；`opi-tui` 负责渲染
-由上层传入的 transcript、工具状态、图片占位/escape、选择器行和编辑 diff 预览。
+这些职责分别留在 `opi-agent` 和 `opi-coding-agent`。工具执行、diagnostics、provider
+正确性、retry、usage、session 存储和 session 导出都留在本 crate 之外；`opi-tui` 负责
+渲染由上层传入的 transcript、工具状态、图片占位/escape、选择器行和编辑 diff 预览。
 
 ## 组件
 
@@ -28,7 +35,7 @@ retry、usage、session 存储和 session 导出都留在本 crate 之外；`opi
 | `Shell` | 对话记录、状态栏、编辑器和可选工具调用视图的顶层布局。 |
 | `MessageList` | 可滚动对话记录，支持角色样式、diff 和图片 payload。 |
 | `InputEditor` | 多行输入缓冲区，带光标和编辑辅助。 |
-| `StatusBar` | 应用状态、模型、token/费用状态和实时活动。 |
+| `StatusBar` | 应用状态、模型和 token/费用状态。 |
 | `ToolCallView` | 展示工具名、参数和状态的工具调用行。 |
 | `MarkdownView` / `CodeBlock` | Markdown 与 fenced code block 渲染。 |
 | `DiffView` | 为文件编辑 before/after 和编辑预览快照渲染 unified diff。 |

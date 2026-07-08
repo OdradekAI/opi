@@ -7,6 +7,14 @@
 
 [Simplified Chinese](README.zh.md) | [opi workspace](../../README.md)
 
+Provider-neutral LLM API for Rust: one `Request` and streaming-event model
+shared across nine built-in provider families and config-driven
+OpenAI-compatible profiles.
+
+```sh
+cargo add opi-ai
+```
+
 ## Status
 
 Current crate version: `0.6.5`, inherited from the workspace package version.
@@ -18,27 +26,11 @@ provider-side error taxonomy consumed by `opi-agent` diagnostics. It does not
 implement an agent loop, sessions, package loading, or built-in coding tools;
 those live in `opi-agent` and `opi-coding-agent`.
 
-`opi-ai` also exposes an unstable-0.x models/auth seam (Phase 10): the
+`opi-ai` also exposes an unstable-0.x models/auth seam: the
 `provider_collection` module (`ProviderCollection`) wraps `ProviderRegistry`
 with a provider-side auth contract (`AuthDescriptor` / `AuthStatus`),
 OpenAI-compatible compatibility metadata, and stream/complete dispatch. OAuth
 and subscription auth are explicit non-goals.
-
-The workspace package version is `0.6.5`; the checkout may also contain
-unreleased Phase 13 session-integration changes. Provider-correctness work from
-Phase 12 tightens existing provider families rather than adding provider
-breadth: request/stream/error fixtures cover all built-in families,
-`ProviderError::category` exposes the nine documented classes,
-OpenAI-compatible profiles have tested `CompatConfig` and
-`ModelCompatOverride` behavior, cache tokens and provider response IDs
-round-trip where available, and missing usage remains explicit `unknown usage`
-instead of known-zero usage.
-
-The Phase 11 tool-result fix remains part of the provider contract:
-`ToolResultMessage::is_error` stays visible to provider wire converters.
-Providers with native error fields use them; OpenAI-family wire formats that
-lack one use a deterministic text marker. This is a correctness fix for
-existing providers, not a provider-breadth phase.
 
 ## Providers
 
@@ -133,7 +125,7 @@ it `None`. Text-only models reject image input through
 Compatible OpenAI-style services stay config-driven unless a material
 wire/auth/capability difference requires a first-class adapter. This is the
 preferred path for provider breadth; adding a new first-class provider module
-requires a task-graph update and is a Phase 12 non-goal by default.
+is a non-default step reserved for those material differences.
 
 `CompatConfig` carries the per-profile compatibility flags:
 
@@ -185,8 +177,7 @@ chain.
 config (provider profile `proxy.url` and `proxy.no_proxy`) and environment
 fallback (`HTTPS_PROXY` > `HTTP_PROXY` > `NO_PROXY`). Proxy credentials in a
 proxy URL are redacted before any diagnostic display. Proxy transport semantics
-(retry-through-proxy, cancellation) are owned by the Phase 12 retry/proxy
-coverage.
+(retry-through-proxy, cancellation) are part of the retry/proxy coverage.
 
 ## Best-Effort Cost
 
@@ -197,10 +188,10 @@ known-zero usage. Session-facing cost summaries should therefore be omitted
 when any turn has unknown usage or when pricing is absent. Cost never blocks a
 successful stream.
 
-## Phase 12 Non-Goals
+## Non-Goals
 
-Phase 12 is a provider-*correctness* phase, not a breadth phase. The following
-are explicit non-goals and must not appear as current core behavior:
+The following are explicit non-goals and must not appear as current core
+behavior:
 
 - OAuth login flows.
 - Anthropic subscription auth.
@@ -214,56 +205,53 @@ are explicit non-goals and must not appear as current core behavior:
 - Paid live provider calls in default tests (live tests stay `#[ignore]`-gated).
 - Copying pi's provider-specific config file format.
 
-## Phase 13 Session Integration
-
-Phase 13 session work relies on provider-correct usage, model, thinking, cache,
-response ID, cancellation, and error data through shared `opi-ai` types. It does
-not add provider families or require callers to depend on provider-specific
-internals.
-
 ## Minimal Example
 
 ```rust
+// Cargo.toml deps: opi-ai, tokio (features "macros", "rt-multi-thread"),
+// tokio-util, futures-util.
 use futures_util::StreamExt;
 use opi_ai::anthropic::AnthropicProvider;
 use opi_ai::message::{InputContent, Message, UserMessage};
 use opi_ai::provider::{Provider, Request, ThinkingConfig};
 use tokio_util::sync::CancellationToken;
 
-# async fn run() -> Result<(), Box<dyn std::error::Error>> {
-let provider = AnthropicProvider::new(
-    std::env::var("ANTHROPIC_API_KEY")?,
-    None,
-);
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let provider = AnthropicProvider::new(
+        std::env::var("ANTHROPIC_API_KEY")?,
+        None,
+    );
 
-let request = Request {
-    model: "claude-sonnet-4-5-20250514".into(),
-    system: Some("You are concise.".into()),
-    messages: vec![Message::User(UserMessage {
-        content: vec![InputContent::Text { text: "Hi".into() }],
-        timestamp_ms: 0,
-    })],
-    tools: vec![],
-    max_tokens: Some(1024),
-    temperature: None,
-    thinking: ThinkingConfig::default(),
-    stop_sequences: vec![],
-    metadata: None,
-    cancel: CancellationToken::new(),
-};
+    let request = Request {
+        model: "claude-sonnet-4-5-20250514".into(),
+        system: Some("You are concise.".into()),
+        messages: vec![Message::User(UserMessage {
+            content: vec![InputContent::Text { text: "Hi".into() }],
+            timestamp_ms: 0,
+        })],
+        tools: vec![],
+        max_tokens: Some(1024),
+        temperature: None,
+        thinking: ThinkingConfig::default(),
+        stop_sequences: vec![],
+        metadata: None,
+        cancel: CancellationToken::new(),
+    };
 
-let mut stream = provider.stream(request);
-while let Some(event) = stream.next().await {
-    println!("{:?}", event?);
+    let mut stream = provider.stream(request);
+    while let Some(event) = stream.next().await {
+        println!("{:?}", event?);
+    }
+    Ok(())
 }
-# Ok(()) }
 ```
 
 ## Modules
 
 `provider`, `message`, `stream`, `registry`, `provider_collection`, `http`,
 `retry`, `model`, `anthropic`, `openai_chat`, `openai_responses`, `openrouter`,
-`mistral`, `gemini`, `bedrock`, `azure_openai`, `vertex`, `config`, and
+`mistral`, `gemini`, `bedrock`, `azure_openai`, `vertex`, `config`, `time`, and
 `test_support`.
 
 ## License

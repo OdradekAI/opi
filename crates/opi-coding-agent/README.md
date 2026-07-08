@@ -7,6 +7,10 @@
 
 [Simplified Chinese](README.zh.md) | [opi workspace](../../README.md)
 
+`opi-coding-agent` produces the `opi` CLI and an embeddable `CodingHarness`:
+an interactive ratatui TUI, one-shot text and NDJSON modes, an RPC harness,
+eight built-in tools, and session/config/package handling.
+
 ## Status
 
 Current crate version: `0.6.5`, inherited from the workspace package version.
@@ -25,19 +29,14 @@ agent. It provides:
 - config, context-file loading, session persistence, compaction, retry, usage,
   cost summaries, package/resource discovery, diagnostics, and opt-in traces.
 
-The workspace package version is `0.6.5`; the checkout may also contain
-unreleased Phase 13 session work. Recent phases harden existing behavior without
-adding new core workflow tools. Phase 11 makes filesystem failures typed,
-read/bash output truncation explicit, write/edit metadata auditable, navigation
-tools bounded and gitignore-aware, and failed tool results visible to provider
-adapters. Phase 12 wires provider correctness through the CLI and harness:
-provider construction validates auth/config with redacted diagnostics,
-OpenAI-compatible profiles carry the documented compatibility flags and
-`extra_headers`, provider errors reach text/JSON/RPC diagnostics, and session
-cost summaries are omitted when any turn has unknown usage or when pricing is
-unknown. Phase 13 adds typed session metadata, branch summaries, active-branch
-reconstruction diagnostics, persisted model/thinking state, and local session
-export commands.
+The workspace package version is `0.6.5`. This checkout may also contain
+unreleased changes; see [CHANGELOG.md](../../CHANGELOG.md) for the delta.
+
+opi hardens existing surfaces rather than adding new core workflows: typed
+filesystem-tool failures, explicit read/bash truncation, bounded gitignore-aware
+navigation, failed tool results visible to provider adapters, redacted
+provider auth/config diagnostics, and session cost summaries omitted when any
+turn has unknown usage or pricing is unknown.
 
 The crate is usable as a library through `CodingHarness`, but most users should
 start with the CLI.
@@ -106,9 +105,10 @@ Run `opi --help` for the exact current surface. Important commands and flags:
 | `--full-tree` | Export the full session tree, not just the active branch. |
 | `--exclude-tool-output` | Omit tool output from the export. |
 | `--exclude-thinking` | Omit thinking content from the export. |
-| `--redact <summary\|verbose\|none>` | Phase 7 redaction mode for `--export-session`. |
+| `--redact <summary\|verbose\|none>` | Redaction mode for `--export-session`. |
 | `--generate-completion <SHELL>` | Generate completion for `bash`, `zsh`, `fish`, `powershell`, or `elvish`. |
 | `--trace <PATH>` | Write an opt-in, redacted local trace envelope for a non-interactive/JSON run. |
+| `-v, --verbose` | Enable debug tracing. |
 | `doctor [--json] [--scope ...]` | Local, network-free health check. |
 | `package <add|remove|list|doctor>` | Manage local/git extension packages. |
 
@@ -382,32 +382,28 @@ Common methods include `prompt`, `prompt_with_content`, `queue_images`,
 - Mutating-tool policy is not an OS sandbox.
 - Production sub-agent, permission-gate, plan/todo, and MCP workflows are
   examples/package patterns, not built-in core workflows.
-- OAuth or subscription login flows are not implemented. Phase 12 provider
-  correctness is a correctness phase, not a breadth phase; the following
-  remain deferred product decisions: OAuth login, Anthropic / OpenAI Codex /
-  GitHub Copilot subscription auth, a broad new first-class provider list
-  (compatible providers stay config-driven OpenAI-compatible profiles), image
-  generation (image support is input-only), browser usage, a provider
-  streaming-adapter protocol for packages, paid live provider calls in default
-  tests, and copying pi's provider-specific config file format. Per-provider
-  proxy config (`proxy.url` / `proxy.no_proxy`, env `HTTPS_PROXY` >
-  `HTTP_PROXY` > `NO_PROXY`) and best-effort cost (explicit unknown values over
-  false confidence) are implemented. See the `opi-ai` README for the per-family
-  behavior matrix, OpenAI-compatible profile flags (`system_role_override`,
-  `max_tokens_field`, `tool_result_name_field`, `usage_in_stream`,
-  `strict_tool_schema`, `reasoning_effort`, `cache_key`,
-  `require_assistant_after_tool_result`, `chat_completions_path`; plus per-profile `extra_headers` for
-  static request headers, which is a profile config field, not a `CompatConfig`
-  flag), OpenAI Responses native semantics (`store` / `reasoning_effort` /
-  `strict_tools` implemented; `previous_response_id` deferred), and cache /
-  response-ID / session-affinity behavior. In particular, `usage_in_stream`
-  requests `stream_options.include_usage`, OpenAI Chat captures response IDs
-  from any chunk carrying `id`, `require_assistant_after_tool_result` stays
-  metadata-only in the shared adapter, and session cost summaries are omitted
-  when any turn has unknown usage or when pricing is unknown. Phase 13 session
-  work may rely on provider-correct usage, model, thinking, and error data
-  through the shared `opi-ai` types, without depending on provider-specific
-  internals.
+- OAuth or subscription login flows are not implemented. The following remain
+  deferred product decisions: OAuth login, Anthropic / OpenAI Codex / GitHub
+  Copilot subscription auth, a broad new first-class provider list (compatible
+  providers stay config-driven OpenAI-compatible profiles), image generation
+  (image support is input-only), browser usage, a provider streaming-adapter
+  protocol for packages, paid live provider calls in default tests, and copying
+  pi's provider-specific config file format. Per-provider proxy config
+  (`proxy.url` / `proxy.no_proxy`, env `HTTPS_PROXY` > `HTTP_PROXY` > `NO_PROXY`)
+  and best-effort cost (explicit unknown values over false confidence) are
+  implemented. See the `opi-ai` README for the per-family behavior matrix,
+  OpenAI-compatible profile flags (`system_role_override`, `max_tokens_field`,
+  `tool_result_name_field`, `usage_in_stream`, `strict_tool_schema`,
+  `reasoning_effort`, `cache_key`, `require_assistant_after_tool_result`,
+  `chat_completions_path`; plus per-profile `extra_headers` for static request
+  headers, which is a profile config field, not a `CompatConfig` flag), OpenAI
+  Responses native semantics (`store` / `reasoning_effort` / `strict_tools`
+  implemented; `previous_response_id` deferred), and cache / response-ID /
+  session-affinity behavior. In particular, `usage_in_stream` requests
+  `stream_options.include_usage`, OpenAI Chat captures response IDs from any
+  chunk carrying `id`, `require_assistant_after_tool_result` stays metadata-only
+  in the shared adapter, and session cost summaries are omitted when any turn
+  has unknown usage or when pricing is unknown.
 
 ## License
 

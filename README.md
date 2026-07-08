@@ -6,7 +6,10 @@
 > Rust AI agent toolkit and terminal-first coding agent inspired by
 > [earendil-works/pi](https://github.com/earendil-works/pi).
 
-[Simplified Chinese](README.zh.md) | [Changelog](CHANGELOG.md) | [Spec draft](docs/opi-spec.md)
+opi is an embeddable, multi-provider coding-agent runtime you can drive as an
+interactive TUI, a one-shot CLI, an NDJSON event stream, or an RPC harness.
+
+[简体中文](README.zh.md) | [Changelog](CHANGELOG.md)
 
 ## Status
 
@@ -123,6 +126,7 @@ Common mode and session flags:
 | --- | --- |
 | `--non-interactive` | Force one-shot text mode. |
 | `--json` | One-shot NDJSON event stream. |
+| `--json-compact` | Compact `--json`: streamed `text_delta` updates omit the redundant cumulative snapshot (~linear bytes for long turns). |
 | `--rpc` | Persistent JSONL command/event protocol over stdin/stdout. |
 | `--resume <ID>` | Resume a saved session. |
 | `--fork <ID>` | Fork a saved session into a new session. |
@@ -135,6 +139,7 @@ Common mode and session flags:
 | `--redact <summary\|verbose\|none>` | Export redaction mode; default is `summary`. |
 | `--tools read,grep` | Enable only the listed built-in tools. |
 | `--no-tools` | Disable all tools. |
+| `--no-builtin-tools` | Drop built-in tools while leaving extension/custom tools available. |
 | `--allow-mutating` | Allow `write`, `edit`, and `bash` in non-interactive/RPC runs. |
 | `--trace <PATH>` | Write an opt-in, redacted local trace envelope for a non-interactive or JSON run. |
 
@@ -158,8 +163,9 @@ Provider support lives in `opi-ai` and is wired into `opi-coding-agent`.
 Compatible OpenAI-style services should normally use configured profiles rather
 than new first-class provider modules. For `usage_in_stream`, OpenAI-compatible
 profiles request `stream_options.include_usage`; response IDs captured from any
-OpenAI Chat chunk carrying `id` round-trip into `response_id`. Cost summaries
-are omitted when usage or pricing is unknown.
+OpenAI Chat chunk carrying `id` round-trip into `response_id`. A profile may
+also set `chat_completions_path` for base URLs that already include an API
+prefix. Cost summaries are omitted when usage or pricing is unknown.
 
 ## Built-in Tools
 
@@ -204,8 +210,8 @@ Sessions are append-only JSONL files written automatically.
 | Unix | `~/.local/share/opi/sessions/` |
 
 Use `OPI_SESSIONS_DIR` to override the location. Session files are sensitive:
-they contain prompts, tool output, and possibly leaked secrets. Phase 13 keeps
-the v1 header and adds typed entries for session names, model changes, thinking
+they contain prompts, tool output, and possibly leaked secrets. The v1 JSONL
+header is kept, with typed entries for session names, model changes, thinking
 levels, labels, and branch summaries. `--resume`, `--fork`, `--list-sessions`,
 RPC `session_info`, and `--export-session` all reconstruct the active branch
 through the same context path. `opi --export-session` is local-only and applies
