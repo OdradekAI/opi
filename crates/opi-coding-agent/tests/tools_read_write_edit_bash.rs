@@ -2868,34 +2868,56 @@ fn phase11_workspace_root() -> std::path::PathBuf {
 
 /// Strip `//` line comments and `/* */` block comments (char-based, UTF-8 safe).
 fn phase11_strip_comments(src: &str) -> String {
+    let bytes = src.as_bytes();
     let mut out = String::with_capacity(src.len());
-    let mut chars = src.chars().peekable();
-    while let Some(c) = chars.next() {
-        if c == '/' {
-            match chars.peek() {
-                Some('/') => {
-                    for cc in chars.by_ref() {
-                        if cc == '\n' {
-                            out.push('\n');
-                            break;
-                        }
-                    }
-                    continue;
+    let mut i = 0;
+    while i < bytes.len() {
+        let c = bytes[i];
+        if c == b'/' && i + 1 < bytes.len() {
+            if bytes[i + 1] == b'/' {
+                while i < bytes.len() && bytes[i] != b'\n' {
+                    i += 1;
                 }
-                Some('*') => {
-                    chars.next();
-                    while let Some(cc) = chars.next() {
-                        if cc == '*' && chars.peek() == Some(&'/') {
-                            chars.next();
-                            break;
-                        }
+                continue;
+            } else if bytes[i + 1] == b'*' {
+                let mut depth = 1;
+                i += 2;
+                while i < bytes.len() && depth > 0 {
+                    if bytes[i] == b'/' && i + 1 < bytes.len() && bytes[i + 1] == b'*' {
+                        depth += 1;
+                        i += 2;
+                    } else if bytes[i] == b'*' && i + 1 < bytes.len() && bytes[i + 1] == b'/' {
+                        depth -= 1;
+                        i += 2;
+                    } else {
+                        i += 1;
                     }
-                    continue;
                 }
-                _ => {}
+                continue;
             }
         }
-        out.push(c);
+        if c == b'"' || c == b'\'' {
+            let quote = c;
+            out.push(c as char);
+            i += 1;
+            while i < bytes.len() {
+                if bytes[i] == b'\\' && i + 1 < bytes.len() {
+                    out.push(bytes[i] as char);
+                    out.push(bytes[i + 1] as char);
+                    i += 2;
+                    continue;
+                }
+                out.push(bytes[i] as char);
+                if bytes[i] == quote {
+                    i += 1;
+                    break;
+                }
+                i += 1;
+            }
+            continue;
+        }
+        out.push(c as char);
+        i += 1;
     }
     out
 }
