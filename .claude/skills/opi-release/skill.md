@@ -58,13 +58,19 @@ git tag -l "v$VERSION"  # must NOT exist
 git ls-remote --tags origin "refs/tags/v$VERSION"  # must NOT exist
 ```
 
+> **Unpushed-HEAD check (run before any other Phase 1 work):** if `origin/main`
+> is behind `HEAD` (the `git diff origin/main..HEAD --stat` above is non-empty),
+> the release payload has never been pushed or run in CI. Stop and ask the user
+> whether to push `main`; once CI is green on the new HEAD, re-enter Phase 1.
+> Never start a release on local-only commits.
+
 ### 1.3 CI Status (HEAD-bound)
 ```bash
 HEAD_SHA=$(git rev-parse HEAD)
 gh api repos/OdradekAI/opi/commits/$HEAD_SHA/check-runs \
   --jq '.check_runs[] | {name, conclusion}'
 ```
-ALL required checks must be `success` for the exact HEAD SHA. If any `failure` or `pending`: BLOCKED.
+ALL required checks must be `success` for the exact HEAD SHA. If any `failure` or `pending`: BLOCKED. If `gh api` returns HTTP 422 / "No commit found for SHA", HEAD is not on `origin` (unpushed) — see the 1.2 unpushed-HEAD note; push and wait for CI before continuing.
 
 ### 1.4 Code Quality
 ```bash
@@ -180,7 +186,19 @@ for crate in $ORDER; do
   cargo publish --dry-run -p $crate
 done
 ```
-If dry-run fails: **BLOCKED** — revert with `git checkout -- Cargo.toml`.
+Interpret dry-run results by the crate's position in the publish order:
+- **Leaf crates** (no internal deps, e.g. `opi-ai`, `opi-tui`): a dry-run
+  failure is a real packaging defect (missing field, bad metadata, unwanted
+  file) → **BLOCKED**; revert with `git checkout -- Cargo.toml`.
+- **Dependent crates** (e.g. `opi-agent`, `opi-coding-agent`): a dry-run that
+  fails ONLY with `failed to select a version for opi-<leaf> = "^$VERSION"` /
+  `candidate versions found which didn't match` is the **expected publish-order
+  situation** — their internal deps at the new version are not on crates.io
+  yet. This is NOT a defect; it resolves when Phase 6 publishes leaves first.
+  Any OTHER failure (metadata, packaging) is still a blocker.
+
+Always pass `--allow-dirty` for the pre-commit dry-run: the version bump is
+intentionally uncommitted at this point (it is committed in Phase 5).
 
 ## Phase 3: Changelog Generation
 
@@ -420,7 +438,7 @@ for crate in opi-ai opi-tui opi-agent opi-coding-agent; do
   echo "$crate: $STATUS"
 done
 ```
-- 200 = built, 404 = not yet built (non-blocking, may take minutes)
+- 200 = built; 302 = redirect/build queued; 404 = not yet built. All non-200 are non-blocking (docs.rs builds can take 10–30 min). Raw `curl` to crates.io returns 403 (bot protection) — use `cargo search <crate>` for the authoritative published-version check.
 
 ### 7.3 Final Report
 ```
@@ -507,3 +525,17 @@ After Phase 7 completes (or on abort), remove transient release artifacts:
 rm -f release-notes.md
 ```
 The `release-artifacts/v$VERSION/` directory is retained for local reference (checksums, archives). It is in `.gitignore` and does not pollute the repo.
+
+### Reclaim disk (optional, recommended on space-constrained hosts)
+
+The release build plus the version-bump recompiles can leave `target/` large
+(a full `cargo test --workspace --all-targets` smoke can add ~100 GB; a
+release-cycle `target/` is typically tens of GB). Once the release is live
+(binaries are on the GitHub Release, crates are on the registry), the local
+`target/` is stale cache:
+```bash
+du -sh target      # measure first if unsure
+cargo clean        # reclaims target/; safe (source untouched, recompile to rebuild)
+```
+Skip this if you are continuing heavy development immediately afterwards — it
+forces full recompiles.
