@@ -21,6 +21,8 @@
 !.claude/skills/opi-realign/**
 !.claude/skills/opi-eval/
 !.claude/skills/opi-eval/**
+!.claude/skills/opi-slim-tests/
+!.claude/skills/opi-slim-tests/**
 !.claude/skills/README.md
 !.claude/skills/README.zh.md
 
