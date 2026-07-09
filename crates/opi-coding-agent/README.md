@@ -13,7 +13,7 @@ eight built-in tools, and session/config/package handling.
 
 ## Status
 
-Current crate version: `0.6.5`, inherited from the workspace package version.
+Current crate version: `0.7.0`, inherited from the workspace package version.
 
 This crate connects `opi-ai`, `opi-agent`, and `opi-tui` into a terminal coding
 agent. It provides:
@@ -29,7 +29,7 @@ agent. It provides:
 - config, context-file loading, session persistence, compaction, retry, usage,
   cost summaries, package/resource discovery, diagnostics, and opt-in traces.
 
-The workspace package version is `0.6.5`. This checkout may also contain
+The workspace package version is `0.7.0`. This checkout may also contain
 unreleased changes; see [CHANGELOG.md](../../CHANGELOG.md) for the delta.
 
 opi hardens existing surfaces rather than adding new core workflows: typed

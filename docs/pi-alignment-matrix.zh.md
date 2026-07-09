@@ -12,7 +12,7 @@
 |---|---|
 | 上游路径 | `.repo/pi-0.80.2` |
 | 上游包版本 | `@earendil-works/pi-ai`、`@earendil-works/pi-agent-core`、`@earendil-works/pi-tui` 和 `@earendil-works/pi-coding-agent` 均为 `0.80.2` |
-| Opi workspace 版本 | `0.6.5` |
+| Opi workspace 版本 | `0.7.0` |
 | 采样日期 | 2026-06-24 |
 | 证据范围 | `.repo/pi-0.80.2` 下的本地文件、当前 `docs/opi-spec.md`、当前 `docs/pi-alignment-matrix.md` 和当前 `crates/*` 布局 |
 | 更新策略 | 当研究的 `pi` 基线变化，或 `opi` 关闭本文列出的缺口时更新本文。保留有价值的旧证据作为历史上下文，不要静默重写。 |
@@ -206,7 +206,7 @@
 
 | 优先级 | 领域 | 状态 | 下一步 |
 |---|---|---|---|
-| P0 | 基线真实性 | 当前文档描述 `0.6.5` workspace，并使用 `.repo/pi-0.80.2` 作为研究的上游基线。 | 保持本矩阵和 `opi-spec` 同步；保留内嵌证据锚点。 |
+| P0 | 基线真实性 | 当前文档描述 `0.7.0` workspace，并使用 `.repo/pi-0.80.2` 作为研究的上游基线。 | 保持本矩阵和 `opi-spec` 同步；保留内嵌证据锚点。 |
 | P1 | `Models/Auth` | Registry/profile/provider construction 已存在，但 `opi-ai` 尚未拥有完整 collection/auth runtime。 | 第 10 阶段先设计/实现，再进入第 12 阶段 provider correctness。 |
 | P1 | Generic harness | `CodingHarness` 拥有过多通用编排行为。 | 在 `opi-agent` 中移动或定义 generic phase/snapshot/save-point/session facade 语义。 |
 | P1 | Session facade | Sessions 可用，但 richer context 不应通过临时 CLI-only writes 增加。 | 先第 10 阶段缝合点，再第 13 阶段 entries。 |

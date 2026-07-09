@@ -19,7 +19,7 @@ Requires Rust 1.85+ (edition 2024) and ratatui 0.30 / crossterm 0.29.
 
 ## Status
 
-Current crate version: `0.6.5`, inherited from the workspace package version.
+Current crate version: `0.7.0`, inherited from the workspace package version.
 
 `opi-tui` is a synchronous widget library. Callers own the event loop, async
 runtime, terminal setup, and application state. The crate provides rendering

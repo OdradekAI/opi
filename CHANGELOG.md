@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-07-09
+
 ### Added
 
 - `opi-coding-agent`: `--json-compact` opt-in flag that makes streamed `text_delta` updates constant-size (~linear byte cost for long streamed turns). It omits the redundant `assistant_event.partial` snapshot and empties the cumulative text in `event.message` for those updates. Default `--json` output and `NDJSON_SCHEMA_VERSION = 2` are unchanged.
@@ -16,6 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `opi-coding-agent`: `session_summary` now includes `provider_turns` (provider request/response cycles, i.e. `TurnStart` events) alongside the existing `turns` (user prompt turns), so a tool-using prompt usually reports `provider_turns > turns`.
 - `opi-release`: pre-flight checks are documented as deterministic and must not depend on live provider or dogfood runs; any cited dogfood evidence must already have passed the `opi-implement` Artifact Truthfulness Gate.
+- Bumped the workspace version to `0.7.0` and refreshed the Phase 4 and Phase 6 specification-hash ledgers to match the current `docs/opi-spec.md`.
+- This release publishes the publishable crates to both GitHub Releases and crates.io in dependency order.
 
 ### Fixed
 
@@ -427,6 +431,7 @@ boundaries; functional implementations land in subsequent releases.
 - This release is published as a GitHub Release only; crates.io publish
   is deferred until the crates have real implementations.
 
+[0.7.0]: https://github.com/OdradekAI/opi/releases/tag/v0.7.0
 [0.6.5]: https://github.com/OdradekAI/opi/releases/tag/v0.6.5
 [0.6.1]: https://github.com/OdradekAI/opi/releases/tag/v0.6.1
 [0.6.0]: https://github.com/OdradekAI/opi/releases/tag/v0.6.0

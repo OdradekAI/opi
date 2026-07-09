@@ -13,8 +13,8 @@ opi 是一个可嵌入的多 Provider 编程 Agent 运行时，可通过交互�
 
 ## 当前状态
 
-`Cargo.toml` 中的 workspace 包版本是 `0.6.5`。当前 checkout 可能包含基于已发布
-`0.6.5` crate 的未发布变更；发布相关判断请先查看
+`Cargo.toml` 中的 workspace 包版本是 `0.7.0`。当前 checkout 可能包含基于已发布
+`0.7.0` crate 的未发布变更；发布相关判断请先查看
 [CHANGELOG.md](CHANGELOG.md)。
 
 `opi` 现在既可作为终端编程 Agent 使用，也可作为一组 Rust crate 嵌入其他 Agent

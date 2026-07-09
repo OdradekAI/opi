@@ -18,7 +18,7 @@ cargo add opi-tui
 
 ## 当前状态
 
-当前 crate 版本是 `0.6.5`，继承自 workspace 包版本。
+当前 crate 版本是 `0.7.0`，继承自 workspace 包版本。
 
 `opi-tui` 是同步 widget library。调用方负责事件循环、异步 runtime、终端初始化和
 应用状态。本 crate 提供 `opi-coding-agent` 交互式 TUI 使用的渲染基础组件。
