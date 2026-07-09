@@ -3,28 +3,15 @@
 //! Validates gitignore-aware file discovery with pi-style argument naming,
 //! path scoping, hidden-file handling, and error cases.
 
+mod common;
+
 use std::fs;
 
-use opi_agent::tool::{ExecutionMode, Tool, ToolResult};
+use common::{create_gitignore, tool_result_text};
+use opi_agent::tool::{ExecutionMode, Tool};
 use opi_coding_agent::tool::{FindTool, MAX_NAV_RESULTS, MAX_NAV_VISITED_ENTRIES};
 use serde_json::json;
 use tokio_util::sync::CancellationToken;
-
-fn tool_result_text(result: &ToolResult) -> String {
-    result
-        .content
-        .iter()
-        .filter_map(|c| match c {
-            opi_ai::message::OutputContent::Text { text } => Some(text.as_str()),
-            _ => None,
-        })
-        .collect::<Vec<_>>()
-        .join("")
-}
-
-fn create_gitignore(dir: &std::path::Path, content: &str) {
-    fs::write(dir.join(".gitignore"), content).unwrap();
-}
 
 // --- Basic pattern matching ---
 

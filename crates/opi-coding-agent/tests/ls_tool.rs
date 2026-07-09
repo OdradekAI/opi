@@ -3,25 +3,16 @@
 //! Validates directory listing with bounded output, deterministic ordering,
 //! hidden-file handling, path traversal rejection, and error cases.
 
+mod common;
+
 use std::fs;
 
+use common::tool_result_text;
 use opi_agent::diagnostic::code;
-use opi_agent::tool::{ExecutionMode, Tool, ToolResult};
+use opi_agent::tool::{ExecutionMode, Tool};
 use opi_coding_agent::tool::{LsTool, MAX_NAV_RESULTS, MAX_NAV_VISITED_ENTRIES};
 use serde_json::json;
 use tokio_util::sync::CancellationToken;
-
-fn tool_result_text(result: &ToolResult) -> String {
-    result
-        .content
-        .iter()
-        .filter_map(|c| match c {
-            opi_ai::message::OutputContent::Text { text } => Some(text.as_str()),
-            _ => None,
-        })
-        .collect::<Vec<_>>()
-        .join("")
-}
 
 // --- Basic listing ---
 
