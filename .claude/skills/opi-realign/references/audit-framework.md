@@ -1,50 +1,49 @@
-# Realignment Audit Framework
+# Audit framework: layers, drift, evidence
 
-## Evidence Pass
+## Layer rule
 
-Collect evidence from both projects before judging drift:
+The report has two layers, kept strictly separate.
 
-- guidance files: `AGENTS.md`, `CLAUDE.md`, `CONTRIBUTING.md`;
-- product docs: README, changelog, docs/specs, ADRs, design notes;
-- manifests: workspace files, package manifests, dependency catalogs;
-- source topology: packages/crates/modules, binaries, public library surfaces;
-- tests and fixtures: contract tests, snapshots, integration tests, mocks;
-- roadmap artifacts: phases, PRDs, implementation ledgers, issue lists.
+- **Layer A — objective.** Current state of each project, cited, and the raw
+  differences. This is the body. No classification, no priorities, no roadmap
+  phases, no "matrix says".
+- **Layer B — judgment.** Drift classification and recommendations. This is an
+  appendix, produced only when asked. It never frames Layer A.
 
-Prefer local evidence over memory. For changing or remote facts, browse or use
-the relevant source of truth only when required by the user or task.
+Why the split: a measured difference is a fact about today's code; a
+classification is an opinion about intent. Mixing them ages the report badly
+(the classification goes stale as code changes) and confuses "where are we" with
+"what should we do". Measure facts; offer opinions separately, on request.
 
-## Comparison Dimensions
+## Drift taxonomy (Layer B)
 
-| Dimension | Questions |
+| Level | Meaning |
 |---|---|
-| Product intent | What user workflows does each project optimize for? What is explicitly out of scope? |
-| Package boundaries | Which package owns provider/runtime/UI/config/session/tool/plugin concerns? |
-| Runtime flow | How do requests, streaming events, tool calls, hooks, cancellation, and retries move through the system? |
-| Data formats | What config, session, trace, RPC, cache, or package formats are persisted or exposed? |
-| Extension model | Are plugins/extensions in-process, subprocess, dynamic language runtime, RPC, or static compile-time surfaces? |
-| Provider/integration model | How are providers registered, authenticated, streamed, tested, diagnosed, and extended? |
-| UI model | Which product UI surfaces are core, which are extension surfaces, and which are future ecosystem work? |
-| Testing contract | Which behaviors are contract-tested, snapshot-tested, or left as manual workflows? |
-| Operations/security | How are credentials, redaction, local files, shells, sandboxing, telemetry, and diagnostics handled? |
-| Roadmap/phases | Do planned phases deepen existing seams or chase breadth before foundations are stable? |
+| Aligned | Current behavior matches target semantics or accepted design intent. |
+| Intentional divergence | Difference is justified by language, runtime, product scope, or an explicit non-goal. |
+| Partial | A seam or subset exists but does not yet cover target semantics. |
+| Missing | Target capability exists and is relevant; the current project lacks it. |
+| Overreach | The current project adds target-adjacent scope that is not justified. |
+| Risk | The implementation is in the wrong layer or could block future alignment. |
 
-## Drift Taxonomy
+Distinguish "not implemented yet" (Partial) from "implemented in the wrong
+layer" (Risk).
 
-| Level | Meaning | Typical action |
-|---|---|---|
-| Aligned | Current behavior matches target semantics or accepted design intent. | Preserve and add regression tests if important. |
-| Intentional divergence | Difference is justified by language, runtime, product scope, or explicit non-goal. | Document it and guard against false parity claims. |
-| Partial | A seam or subset exists but does not yet cover target semantics. | Deepen the seam before adding new breadth. |
-| Missing | Target capability exists and is relevant, but current project lacks it. | Add to roadmap or explicitly defer. |
-| Overreach | Current project adds target-adjacent scope that is not justified. | Remove, defer, or move to extension/package layer. |
-| Risk | The implementation is in the wrong layer or could block future alignment. | Prioritize architecture adjustment. |
+## Verification outcomes
 
-## Evidence Discipline
+Every delta carries one:
 
-- Use line-specific citations for consequential claims.
+- `confirmed` — re-checked against source on both sides; solid.
+- `refuted` — the claimed gap or parity does not hold; drop or footnote.
+- `refined` — directionally right but overstated or imprecise; correct it.
+- `added` — a real difference the measurer missed; fold in.
+
+## Evidence discipline
+
+- Cite `file:line` for every claim, or state `absent: searched <paths>`. Silence
+  is not absence.
 - Mark inference separately from documented evidence.
-- Avoid treating examples, demos, or package samples as core product behavior.
-- Check changelogs before claiming a capability is current.
-- If the target has broader ecosystem features, separate ecosystem parity from
-  core semantic alignment.
+- Examples, demos, and package samples are not core product behavior.
+- Check the changelog before claiming a capability is current.
+- Separate ecosystem parity (breadth the target has) from core semantic
+  alignment (whether the shared behavior is correct).

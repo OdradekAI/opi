@@ -1,61 +1,55 @@
-# Realignment Report Template
+# Report template
 
-Use the user's language for the final report unless they request otherwise.
-Keep the chat summary high-signal; place exhaustive tables in a local report
-when the audit is large.
+File path: `docs/realign/YYYY-MM-DD-<current>-vs-<target>.md`
+(for example `docs/realign/2026-07-10-opi-vs-pi-0.80.2.md`).
 
-## Executive Summary
+The body is Layer A (objective). Layer B (judgment) is an appendix, produced
+only when asked. See `audit-framework.md` for the layer rule and taxonomy.
 
-```text
-Conclusion: <low/medium/high drift>.
-Core semantic drift: <level>.
-Product parity gap: <level>.
-Ecosystem parity gap: <level>.
-Main risk: <one sentence>.
-Recommended next move: <one sentence>.
-```
+## Body (Layer A)
 
-## Required Tables
+Header:
 
-### Package / Module Mapping
+- Title: `<current> vs <target> — Objective Differences`.
+- One line: fresh measurement, date, current project + version vs target +
+  version, read from source with file:line anchors. State "No phases, no
+  baseline, no roadmap framing."
+- Source roots for both projects (path, language, crates/packages).
+- Method line: number of dimensions measured; that each delta was adversarially
+  verified (refute-on-gap); note any dimension re-measured from source.
 
-| Target package/module | Current package/module | Target responsibility | Current implementation | Verdict | Adjustment |
-|---|---|---|---|---|---|
+A short "How to read" block: columns are factual current state with citations;
+"Difference" is one line, factual, no judgment; absence is stated with where
+searched; drift classification lives in the appendix.
 
-### Feature / Function Mapping
+Then one section per dimension, in the `dimensions.md` order. For each:
 
-| Area | Target behavior | Current behavior | Evidence | Verdict | Priority |
-|---|---|---|---|---|---|
+- `**<current>:**` 1–3 sentence summary, then `Key facts:` as a bulleted list,
+  one `file:line` anchor per fact.
+- `**<target>:**` same shape.
+- A difference table with columns `Item | <current> | <target> | Difference`.
 
-### Roadmap / Phase Alignment
+Body-cleanliness gate: after writing, grep the body for
+`Phase [0-9]|roadmap|matrix says|should|needs to|planned` and remove any hit
+that crept in. A `Phase` type/enum name (e.g. the harness `Phase` enum) is fine;
+a numbered roadmap phase is not. The body reports state, not intent.
 
-| Current phase/plan | Target evidence | Alignment | Risk | Recommendation |
-|---|---|---|---|---|
+## Appendix A — Drift classification (Layer B, only if asked)
 
-### Language-Native Architecture
+A table with columns `Dimension | Item | Classification | Note`, classification
+drawn from the `audit-framework.md` taxonomy.
 
-| Architecture choice | Target shape | Current-language best practice | Current choice | Verdict |
-|---|---|---|---|---|
+## Appendix B — Method & verification
 
-### Adjustment Priorities
+State the dimension count and the outcome tally (see `audit-framework.md`).
+List any refuted deltas as footnotes. Flag any dimension that was
+single-sourced (re-measured from source rather than adversarially verified) and
+why.
 
-| Priority | Change | Owner/path | Why | Verification |
-|---|---|---|---|---|
+## Chat summary
 
-## Recommendation Rules
-
-- `P0`: direction or layering risk that could make later work expensive.
-- `P1`: important seam or product gap needed by near-term roadmap.
-- `P2`: useful parity work after foundations are stable.
-- `P3`: ecosystem breadth, polish, or optional compatibility.
-
-## Spec-Adjustment Addendum
-
-When the user asks to update specs or roadmap docs, include:
-
-- exact files changed;
-- boundaries added or clarified;
-- non-goals added;
-- acceptance criteria made more concrete;
-- localized docs touched or reason not touched;
-- validation commands run.
+Lead with nothing about phases or the prior audit. Give the highest-signal
+deltas, one line each and dimension-prefixed, grouped as "where the target is
+ahead" and "where the current project is ahead". Note any single-sourced
+dimension. Point at the report file. Mention spot-checks only if you performed
+them.

@@ -37,8 +37,7 @@ integration-critical semantics while adopting the current language's strengths.
   to wire quickly.
 - Core runtime absorbs workflow features that the target project keeps in
   extensions, examples, or packages.
-- Roadmap phases add broad ecosystem parity before stabilizing seams needed by
-  those features.
+- Broad ecosystem parity lands before the seams it depends on are stable.
 - Compatibility wording implies users can share files/config/plugins between
   projects when only semantic inspiration exists.
 
@@ -47,5 +46,5 @@ integration-critical semantics while adopting the current language's strengths.
 - The current project keeps target-aligned behavior at user and protocol
   boundaries.
 - Internal architecture is idiomatic for the current language.
-- Planned phases deepen load-bearing seams before expanding ecosystem breadth.
+- Load-bearing seams deepen before ecosystem breadth expands.
 - Non-goals are explicit and test/docs guard against accidental parity claims.

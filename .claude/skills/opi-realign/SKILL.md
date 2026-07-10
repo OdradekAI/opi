@@ -1,88 +1,84 @@
 ---
 name: opi-realign
-description: Compare a current implementation with a target/reference project and produce an architecture, feature, design-philosophy, package-boundary, and roadmap realignment review. Use when the user asks to realign, audit drift, compare a port/reimplementation, check whether planned phases match an upstream project, or evaluate cross-language architecture against a target project path.
+description: Fresh, objective delta audit of this project against a target/reference project.
+disable-model-invocation: true
 ---
 
 # Opi Realign
 
+A realign audit is **fresh**: it measures current source on both projects and
+produces a **delta ledger** of objective, cited differences. *Fresh* means
+today's code is the only input that counts — a completed phase, a prior audit,
+or any baseline doc are irrelevant to the measurement; quote them only for
+`file:line` anchors or recorded non-goals. Judgment (drift classification,
+priorities) is a separate appendix, never the frame.
+
 ## Inputs
 
-Require a target/reference project path. If the user omits it and no obvious
-path is present, ask for it before auditing.
+- `target=<path>` — required. The reference/upstream project to compare against.
+- `current=<path>` — optional, defaults to cwd.
+- `scope=<text>` — optional. A named slice (dimensions, packages, or surfaces)
+  instead of the full audit.
+- Labels optional.
 
-Supported input shape:
+Treat `@path`, quoted, Windows, and POSIX paths as valid.
 
-```text
-current=<path>        # optional; defaults to cwd
-target=<path>         # required; local reference/upstream/project path
-current_label=<name>  # optional display label
-target_label=<name>   # optional display label/version
-scope=<text>          # optional packages, phases, docs, or roadmap slice
-```
+## Process
 
-Treat `@path`, quoted paths, Windows paths, and POSIX paths as valid path
-arguments. Do not hard-code `pi`; the target project can change.
+1. **Scope.** Confirm current and target paths and the scope (full or a named
+   slice). State assumptions that affect the outcome.
+   *Done when:* both paths resolve and the scope is stated.
 
-## Workflow
+2. **Measure fresh, both sides, per dimension.** For every dimension in
+   `references/dimensions.md` (or the chosen slice): read current source on BOTH
+   projects and record each side's state with a `file:line` anchor. State absence
+   explicitly (`absent: searched <paths>`), never by silence.
+   *Done when:* every in-scope dimension has a cited current-state entry for both projects.
 
-1. **Establish scope**
-   - Identify current path, target path, labels, and requested scope.
-   - State assumptions that affect the audit.
-   - If the user asks a question, answer it before editing or running a long audit.
+3. **Write the deltas.** For each dimension, write the objective differences —
+   current state | target state | raw difference, one line each, factual, no
+   judgment language.
+   *Done when:* every consequential difference is a delta, and no delta contains phase/roadmap/plan/should language.
 
-2. **Build evidence inventories**
-   - Read repository guidance files first: `AGENTS.md`, `CLAUDE.md`, README,
-     changelogs, specs, architecture docs, package manifests, and phase plans.
-   - Inventory packages/crates/modules, public binaries, extension points,
-     config/session formats, tests, and roadmap docs in both projects.
-   - Prefer `rg`/`rg --files`; read full relevant docs before broad claims.
+4. **Verify each delta adversarially.** For every delta claiming the current
+   project *lacks* a capability, hunt the current source for it before accepting
+   (refute-on-gap); for every "has", confirm it is real and not overstated. Give
+   each delta an outcome (defined in `references/audit-framework.md`). Drop or
+   footnote refuted deltas; fold in refined and added ones.
+   *Done when:* every delta carries an outcome. See `references/audit-framework.md`.
 
-3. **Compare semantics, not file shapes**
-   - Separate core semantic alignment, product parity, and ecosystem parity.
-   - Compare architecture boundaries, runtime flow, data formats, provider or
-     integration surfaces, UI surfaces, extension/plugin models, tests, docs,
-     operational assumptions, and explicit non-goals.
-   - When source and target languages differ, use the current implementation
-     language's best practices. Do not require one-to-one package/file mapping.
+5. **Render the ledger (Layer A).** Write the report under `docs/realign/`
+   (filename pattern and template in `references/report-template.md`). The body
+   is pure objective state: dimension sections, per-project facts with anchors, a
+   difference table.
+   *Done when:* the body passes the cleanliness gate defined in
+   `references/report-template.md` (no numbered-phase / roadmap / baseline /
+   plan language leaks in).
 
-4. **Classify drift**
-   - Use levels: `Aligned`, `Intentional divergence`, `Partial`, `Missing`,
-     `Overreach`, `Risk`.
-   - Distinguish "not implemented yet" from "implemented in the wrong layer".
-   - Cite local files/lines for important claims.
+6. **Judgment appendix (Layer B) — only if asked.** Add drift classification
+   and/or recommendations as a clearly separated appendix, so it never frames
+   the body. Keep recommendations as proposals for the user to action.
+   *Done when:* Layer B sits in an appendix, not interleaved into Layer A.
 
-5. **Recommend adjustment**
-   - Prioritize changes as `P0` through `P3`.
-   - Prefer strengthening existing seams before adding breadth.
-   - Identify work that should remain future ecosystem scope.
-   - If asked to update specs, edit the registered/current spec files only and
-     keep localized counterparts in sync when safely editable.
+For a full audit, fan out one measurer + one verifier per dimension (see
+`references/dimensions.md`); the verifier red-teams the measurer's gaps.
 
-6. **Report**
-   - Lead with the conclusion: degree of drift and what to change next.
-   - Include tables for package mapping, feature/function mapping, roadmap or
-     phase alignment, language-native architecture judgment, and priorities.
-   - For large audits, create a local HTML or markdown report in a generated
-     report directory and summarize the highest-signal findings in chat.
-
-## References
-
-- Read `references/audit-framework.md` for the full comparison dimensions and
-  drift taxonomy.
-- Read `references/language-porting.md` when the current and target projects
-  use different languages, runtimes, or packaging models.
-- Read `references/report-template.md` when producing a detailed written
-  report, tables, or spec-adjustment recommendations.
+Summarize the highest-signal deltas in chat and point at the report file.
 
 ## Guardrails
 
-- Do not claim API, config, package, or file-format compatibility unless the
+- Stay fresh: never frame the audit relative to a prior audit, baseline,
+  phase, or roadmap.
+- Keep judgment (classification, priorities) out of the objective body.
+- Cite `file:line` for every claim, or state absence with the search performed.
+- Do not claim API, config, package, or file-format compatibility unless
   evidence proves it.
-- Do not treat target-project breadth as automatically desirable in the current
-  project.
+- Target breadth is not automatically desirable; prefer strengthening existing
+  seams.
 - Do not recommend copying target-language architecture when it conflicts with
   current-language ownership, dependency, concurrency, packaging, or testing
-  norms.
-- Do not modify source code, specs, or roadmaps unless the user explicitly asks
-  for edits.
-- Do not commit unless the user explicitly asks.
+  norms. See `references/language-porting.md`.
+- Reports under `docs/realign/` are generated, non-normative artifacts. Do not
+  edit source, `opi-spec.md`, READMEs, or roadmaps; state findings and let the
+  user action them.
+- Do not commit unless asked.
