@@ -52,8 +52,9 @@ Repository: https://github.com/OdradekAI/opi
 change, update both in lockstep to avoid drift.
 
 Normative design references live in `docs/`: `opi-spec.md` is the technical
-spec, and `pi-alignment-matrix.md` maps opi behavior against upstream pi.
-Consult them before answering scope or behavior questions.
+spec. Consult it before answering scope or behavior questions. Fresh alignment
+audits against upstream are produced under `docs/realign/` by the `opi-realign`
+skill.
 
 ## Conversational style
 

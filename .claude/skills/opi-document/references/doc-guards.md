@@ -22,13 +22,13 @@ cargo test -p opi-coding-agent \
 cargo test -p opi-agent --test transport
 ```
 
-Expect `0 failed` across all suites (~67 tests total). Any failure names the
+Expect `0 failed` across all suites. Any failure names the
 file + the missing/forbidden phrase.
 
 ## The eight suites and what each pins
 
 ### `crates/opi-coding-agent/tests/productized_packages_docs.rs` (Phases 5/6/9/10)
-Reads: root `README`(.zh), `docs/opi-spec.md`(.zh), `docs/pi-alignment-matrix.md`(.zh),
+Reads: root `README`(.zh), `docs/opi-spec.md`(.zh),
 `AGENTS.md`, `CLAUDE.md`, `CHANGELOG.md`, the four crate `README`s (EN+ZH),
 `.claude/skills/opi-release/skill.md`.
 - Version strings, **exact**: root `The workspace package version in \`Cargo.toml\` is \`0.6.5\``
@@ -63,7 +63,7 @@ languages: `permission popup` / `权限弹窗`, `background bash` / `后台 bash
 
 ### `crates/opi-coding-agent/tests/phase12_provider_correctness_docs.rs`
 Reads: `crates/opi-ai/README.md`(.zh), `crates/opi-coding-agent/README.md`(.zh),
-root `README`(.zh), `docs/opi-spec.md`(.zh), `docs/pi-alignment-matrix.md`(.zh).
+root `README`(.zh), `docs/opi-spec.md`(.zh).
 - The nine provider module ids (`anthropic`, `openai`, `openai-responses`,
   `openrouter`, `mistral`, `gemini`, `bedrock`, `azure`, `vertex`) in the root
   README; the nine `pub mod` names backticked in the opi-ai README.
@@ -105,7 +105,7 @@ Reads: `docs/opi-spec.md`(.zh), `crates/opi-agent/README.md`(.zh),
   `custom_message` and `branch_summary`.
 
 ### `crates/opi-coding-agent/tests/observability_docs.rs` (Phase 7)
-Reads: `docs/opi-spec.md`(.zh), root `README`(.zh), `docs/pi-alignment-matrix.md`(.zh),
+Reads: `docs/opi-spec.md`(.zh), root `README`(.zh),
 `crates/opi-coding-agent/README.md`(.zh).
 - `local` + `explicit` (EN) / `本地` + `显式` (ZH); `0.x` or `unstable` (EN) /
   `不稳定` or `0.x` (ZH).
@@ -113,8 +113,7 @@ Reads: `docs/opi-spec.md`(.zh), root `README`(.zh), `docs/pi-alignment-matrix.md
   `startup_diagnostics` in the coding README (EN + ZH).
 
 ### `crates/opi-coding-agent/tests/runtime_contract_docs.rs` (Phase 8) — structural
-Reads: `crates/opi-agent/README.md`(.zh), root `README`(.zh), `docs/opi-spec.md`(.zh),
-`docs/pi-alignment-matrix.md`(.zh).
+Reads: `crates/opi-agent/README.md`(.zh), root `README`(.zh), `docs/opi-spec.md`(.zh).
 Parses the opi-agent README between headings **`## API Surface Classification`**
 and **`## Non-Goals`** (ZH: `## API 表面分类` / `## 非目标（Non-Goals）`) and
 asserts every crate-root `pub use` in `crates/opi-agent/src/lib.rs` appears as a

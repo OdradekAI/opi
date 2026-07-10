@@ -165,13 +165,11 @@ fn phase7_docs_state_local_explicit_observability() {
     // English surfaces.
     let spec = read_repo_file("docs/opi-spec.md");
     let readme = read_repo_file("README.md");
-    let matrix = read_repo_file("docs/pi-alignment-matrix.md");
     let coding_readme = read_repo_file("crates/opi-coding-agent/README.md");
 
     for (name, content) in [
         ("opi-spec.md", spec.as_str()),
         ("README.md", readme.as_str()),
-        ("pi-alignment-matrix.md", matrix.as_str()),
         ("opi-coding-agent/README.md", coding_readme.as_str()),
     ] {
         assert!(
@@ -187,13 +185,11 @@ fn phase7_docs_state_local_explicit_observability() {
     // Chinese counterparts carry the same posture (local/explicit/unstable).
     let spec_zh = read_repo_file("docs/opi-spec.zh.md");
     let readme_zh = read_repo_file("README.zh.md");
-    let matrix_zh = read_repo_file("docs/pi-alignment-matrix.zh.md");
     let coding_readme_zh = read_repo_file("crates/opi-coding-agent/README.zh.md");
 
     for (name, content) in [
         ("opi-spec.zh.md", spec_zh.as_str()),
         ("README.zh.md", readme_zh.as_str()),
-        ("pi-alignment-matrix.zh.md", matrix_zh.as_str()),
         ("opi-coding-agent/README.zh.md", coding_readme_zh.as_str()),
     ] {
         assert!(
@@ -263,8 +259,6 @@ fn phase7_non_goals_are_not_claimed_or_implemented() {
         "README.zh.md",
         "docs/opi-spec.md",
         "docs/opi-spec.zh.md",
-        "docs/pi-alignment-matrix.md",
-        "docs/pi-alignment-matrix.zh.md",
     ];
 
     // --- Doc side: Phase 7 non-goals must not be positively claimed. ---

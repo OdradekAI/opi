@@ -524,8 +524,6 @@ fn phase8_non_goals_not_claimed_or_implemented() {
         "README.zh.md",
         "docs/opi-spec.md",
         "docs/opi-spec.zh.md",
-        "docs/pi-alignment-matrix.md",
-        "docs/pi-alignment-matrix.zh.md",
         "crates/opi-agent/README.md",
         "crates/opi-agent/README.zh.md",
     ];

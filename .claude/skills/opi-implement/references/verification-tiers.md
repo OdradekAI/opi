@@ -188,17 +188,14 @@ Additional gates:
 Additional gates:
 1. Documentation tier is required unless a reviewed source update changes
    Phase 9 scope.
-2. `docs/pi-alignment-matrix.md` contains document control, `pi` architecture,
-   version evolution signals, evidence index, alignment dashboard, roadmap
-   implications, and maintenance rules.
-3. English and Chinese normative docs name `.repo/pi-0.80.2` as the current
+2. English and Chinese normative docs name `.repo/pi-0.80.2` as the current
    studied upstream baseline.
-4. Stale `.repo/pi-0.75.3` references appear only as historical notes, not as
+3. Stale `.repo/pi-0.75.3` references appear only as historical notes, not as
    current baseline statements.
-5. Docs guards reject current-scope overclaims for OAuth parity, image
+4. Docs guards reject current-scope overclaims for OAuth parity, image
    generation, custom extension UI parity, npm/gallery/update/enable/disable,
    web/share, and `pi` session compatibility.
-6. No Rust code, runtime behavior, provider auth, image generation, custom UI,
+5. No Rust code, runtime behavior, provider auth, image generation, custom UI,
    package ecosystem, web/share flow, `pi` session compatibility, or
    `opi-types` crate is added.
 

@@ -10,15 +10,15 @@
 | Spec version | 0.6-draft |
 | Last updated | 2026-06-24 |
 | Repository | `https://github.com/OdradekAI/opi` |
-| Upstream studied | `pi` 0.80.2 at `.repo/pi-0.80.2/`; durable evidence lives in [`docs/pi-alignment-matrix.md`](pi-alignment-matrix.md) |
+| Upstream studied | `pi` 0.80.2 at `.repo/pi-0.80.2/`; alignment is assessed by fresh `opi-realign` audits under [`docs/realign/`](realign/) |
 | Current implementation | `opi` 0.7.0 workspace, Phase 8 runtime stabilization complete; Phase 7 reliability/observability and Phase 5 package/process-adapter surfaces are present |
 | Next milestone | Phase 9 baseline realignment and Phase 10 core architecture deepening before feature breadth |
 
 This document is normative for the current design. Changes that alter public APIs, event protocols, session storage, release behavior, or phase boundaries SHOULD update this file in the same change.
 
-The current upstream evidence baseline is `.repo/pi-0.80.2`. The alignment
-matrix records architecture anchors, version-evolution signals, and the current
-`opi` alignment dashboard.
+The current upstream evidence baseline is `.repo/pi-0.80.2`. Alignment against
+upstream is assessed by fresh `opi-realign` audits whose reports are written
+under `docs/realign/`.
 
 Normative terms:
 
@@ -140,13 +140,13 @@ Pi is the behavioral reference. The following behavior should be treated as inhe
 | custom extension UI/message renderers | future | ecosystem candidate after built-in TUI and a UI/RPC subprotocol are designed |
 | image generation | future | ecosystem candidate after chat provider collection/auth is stable |
 
-The maintained package/phase drift ledger lives in
-[`docs/pi-alignment-matrix.md`](pi-alignment-matrix.md).
+Fresh per-dimension drift audits against `.repo/pi-0.80.2` are produced under
+[`docs/realign/`](realign/) by the `opi-realign` skill.
 
 ### 3.4 pi Alignment Status Vocabulary
 
-The alignment matrix MUST use this fixed status vocabulary so that pi drift is
-tracked consistently across phases:
+Fresh `opi-realign` audits classify drift with this fixed status vocabulary so
+that pi drift is tracked consistently:
 
 | Status | Meaning | Required next action |
 |---|---|---|
@@ -156,7 +156,7 @@ tracked consistently across phases:
 | `Missing` | pi has the capability and opi does not, but the capability may still belong on the roadmap | file or link a future phase/task before claiming parity |
 | `Out of Scope` | pi has the capability, but opi explicitly does not plan to carry it in core | keep the capability out of core unless a later design changes the scope |
 
-At minimum, the drift ledger SHOULD track core semantic parity, product parity,
+At minimum, a fresh audit SHOULD track core semantic parity, product parity,
 and ecosystem parity across agent loop semantics, generic harness ownership,
 built-in tools, session format, session tree semantics, provider collection,
 auth, provider catalog, OAuth/subscription login, image input, image
@@ -1423,17 +1423,16 @@ ecosystem expansion, provider OAuth work, MCP core runtime work, a shared
 Status: planned documentation/evidence gate.
 
 Phase 9 updates the project baseline from the earlier studied upstream snapshot
-to `.repo/pi-0.80.2`. It maintains
-[`docs/pi-alignment-matrix.md`](pi-alignment-matrix.md) as the durable evidence
-and alignment baseline, and documents the revised Phase 9-14 roadmap. It is
+to `.repo/pi-0.80.2` and documents the revised Phase 9-14 roadmap. It is
 documentation-only: no runtime behavior changes, code migration, OAuth, image
 generation, custom UI protocol, npm/gallery workflow, web/share flow, or `pi`
 session compatibility promise belongs in this phase.
 
-Exit criteria: the alignment matrix contains the evidence baseline; English and
-Chinese normative docs name `.repo/pi-0.80.2` as the current baseline;
-`opi-agent` alignment reflects the generic harness gap honestly; and future
-ecosystem candidates have entry conditions.
+Exit criteria: English and Chinese normative docs name `.repo/pi-0.80.2` as the
+current baseline; `opi-agent` alignment reflects the generic harness gap
+honestly; and future ecosystem candidates have entry conditions. (Phase 9
+originally maintained a durable alignment-matrix evidence baseline; ongoing
+alignment is now done by fresh `opi-realign` audits under `docs/realign/`.)
 
 ### Phase 10 - Core Architecture Deepening
 
@@ -1671,7 +1670,7 @@ their entry conditions are met.
 | ADR-018 | crates.io timing | quality-gated first publish | publish only after placeholder APIs are hidden or replaced and release gates pass |
 | ADR-019 | Tool safety | allowlists, visibility, and hooks over core permission profiles | pi explicitly avoids built-in permission popups; environment-specific gates belong in extensions/packages or external sandboxes |
 | ADR-020 | Context files | `AGENTS.md` / `CLAUDE.md` before `OPI.md` | preserves pi behavior and ecosystem convention |
-| ADR-021 | Current upstream baseline | `.repo/pi-0.80.2` plus durable alignment matrix | `pi` architecture moved materially around `Models/Auth`, `AgentHarness`, sessions, and extension UI surfaces after the earlier baseline |
+| ADR-021 | Current upstream baseline | `.repo/pi-0.80.2` | `pi` architecture moved materially around `Models/Auth`, `AgentHarness`, sessions, and extension UI surfaces after the earlier baseline |
 
 ## 17. Non-Functional Requirements
 
@@ -1735,7 +1734,6 @@ Phase 10-14 depth work is stable.
 ## 20. References
 
 - [pi source](https://github.com/earendil-works/pi)
-- [`docs/pi-alignment-matrix.md`](pi-alignment-matrix.md)
 - `.repo/pi-0.80.2/packages/ai/README.md`
 - `.repo/pi-0.80.2/packages/ai/CHANGELOG.md`
 - `.repo/pi-0.80.2/packages/agent/src/index.ts`

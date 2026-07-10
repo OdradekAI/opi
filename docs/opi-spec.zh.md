@@ -10,13 +10,13 @@ e'x# Opi 技术规范
 | 规范版本 | 0.6-draft |
 | 最后更新 | 2026-06-24 |
 | 仓库 | `https://github.com/OdradekAI/opi` |
-| 参考上游 | `pi` 0.80.2，位于 `.repo/pi-0.80.2/`；持久证据位于 [`docs/pi-alignment-matrix.zh.md`](pi-alignment-matrix.zh.md) |
+| 参考上游 | `pi` 0.80.2，位于 `.repo/pi-0.80.2/`；对齐由 `opi-realign` 新鲜审计评估，报告位于 [`docs/realign/`](realign/) |
 | 当前实现 | `opi` 0.7.0 workspace，第 8 阶段运行时稳定化已完成；第 7 阶段可靠性/可观测性和第 5 阶段 package/process-adapter 表面已存在 |
 | 下一里程碑 | 第 9 阶段基线重校准和第 10 阶段核心架构深化，先于功能宽度扩张 |
 
 本文档对当前设计具有规范性。涉及公共 API、事件协议、会话存储、发布行为或阶段边界变更的修改，应在同一变更中更新本文件。
 
-当前上游证据基线是 `.repo/pi-0.80.2`。对齐矩阵记录架构锚点、版本演进信号和当前 `opi` 对齐仪表盘。
+当前上游证据基线是 `.repo/pi-0.80.2`。与上游的对齐由 `opi-realign` 新鲜审计评估，报告写入 `docs/realign/`。
 
 规范性术语：
 
@@ -133,12 +133,12 @@ Pi 是行为参考。以下行为应被视为继承的设计，而非偶然的�
 | 自定义扩展 UI/message renderer | 未来 | 内置 TUI 稳定且 UI/RPC 子协议完成设计后的生态候选 |
 | 图像生成 | 未来 | 聊天侧 provider collection/auth 稳定后的生态候选 |
 
-持续维护的包级/阶段级偏移账本位于
-[`docs/pi-alignment-matrix.zh.md`](pi-alignment-matrix.zh.md)。
+针对 `.repo/pi-0.80.2` 的按维度新鲜偏移审计由 `opi-realign` 技能产出，位于
+[`docs/realign/`](realign/)。
 
 ### 3.4 pi 对齐状态词汇
 
-对齐矩阵必须使用以下固定状态词汇，以便跨阶段一致追踪 pi 偏移：
+新鲜 `opi-realign` 审计使用以下固定状态词汇对偏移分类，以便一致追踪 pi 偏移：
 
 | 状态 | 含义 | 后续要求 |
 |---|---|---|
@@ -148,7 +148,7 @@ Pi 是行为参考。以下行为应被视为继承的设计，而非偶然的�
 | `Missing` | pi 有该能力，opi 没有，但该能力未来仍可能进入路线图 | 在宣称对等前创建或链接未来阶段/任务 |
 | `Out of Scope` | pi 有该能力，但 opi 明确不计划放入核心 | 除非后续设计改变范围，否则保持在核心之外 |
 
-偏移账本至少应以核心语义对等、产品对等和生态对等三层追踪 agent loop 语义、通用 harness 归属、内置工具、会话格式、会话树语义、provider collection、auth、provider catalog、OAuth/subscription login、图像输入、图像生成、package 生态、TypeScript extension 兼容性、TUI renderer 架构，以及 pi 保持在核心之外的工作流功能，例如 MCP、子 Agent、plan mode、todos、permission popups 和 background bash。
+新鲜审计至少应以核心语义对等、产品对等和生态对等三层追踪 agent loop 语义、通用 harness 归属、内置工具、会话格式、会话树语义、provider collection、auth、provider catalog、OAuth/subscription login、图像输入、图像生成、package 生态、TypeScript extension 兼容性、TUI renderer 架构，以及 pi 保持在核心之外的工作流功能，例如 MCP、子 Agent、plan mode、todos、permission popups 和 background bash。
 
 ## 4. 当前基线
 
@@ -1260,9 +1260,9 @@ Opi 以用户权限运行本地工具。主要风险是危险的本地命令、�
 
 状态：计划中的文档/证据门。
 
-第九阶段把项目基线从较早研究的上游快照更新到 `.repo/pi-0.80.2`。它维护 [`docs/pi-alignment-matrix.zh.md`](pi-alignment-matrix.zh.md) 作为持久证据和对齐基线，并记录修订后的第 9-14 阶段路线图。该阶段仅限文档：runtime 行为变更、代码迁移、OAuth、图像生成、自定义 UI 协议、npm/gallery 工作流、web/share 流程或 `pi` session 兼容承诺都不属于该阶段。
+第九阶段把项目基线从较早研究的上游快照更新到 `.repo/pi-0.80.2`，并记录修订后的第 9-14 阶段路线图。该阶段仅限文档：runtime 行为变更、代码迁移、OAuth、图像生成、自定义 UI 协议、npm/gallery 工作流、web/share 流程或 `pi` session 兼容承诺都不属于该阶段。
 
-退出标准：对齐矩阵包含证据基线；英文和中文规范文档都把 `.repo/pi-0.80.2` 命名为当前基线；`opi-agent` alignment 如实反映 generic harness 缺口；future ecosystem candidates 具有进入条件。
+退出标准：英文和中文规范文档都把 `.repo/pi-0.80.2` 命名为当前基线；`opi-agent` alignment 如实反映 generic harness 缺口；future ecosystem candidates 具有进入条件。（第九阶段最初维护一个持久对齐矩阵证据基线；持续对齐现在由 `opi-realign` 新鲜审计在 `docs/realign/` 下完成。）
 
 ### 第十阶段 - 核心架构深化
 
@@ -1395,7 +1395,7 @@ Phase 13 交接：会话工作可以依赖经由共享 `opi-ai` 类型传递的 
 | ADR-018 | crates.io 时机 | 质量门控的首次发布 | 仅在占位 API 被隐藏或替换且发布门控通过后发布 |
 | ADR-019 | 工具安全 | allowlist、可见性和钩子优先于核心权限配置文件 | pi 明确避免内置权限弹窗；环境特定门禁属于扩展/包或外部沙箱 |
 | ADR-020 | 上下文文件 | `AGENTS.md` / `CLAUDE.md` 先于 `OPI.md` | 保留 pi 行为和生态约定 |
-| ADR-021 | 当前上游基线 | `.repo/pi-0.80.2` 加持久对齐矩阵 | 较早基线之后，`pi` 架构在 `Models/Auth`、`AgentHarness`、sessions 和 extension UI surfaces 周围发生了实质变化 |
+| ADR-021 | 当前上游基线 | `.repo/pi-0.80.2` | 较早基线之后，`pi` 架构在 `Models/Auth`、`AgentHarness`、sessions 和 extension UI surfaces 周围发生了实质变化 |
 
 ## 17. 非功能性需求
 
@@ -1454,7 +1454,6 @@ Rustls 优于 OpenSSL 以构建可移植二进制文件。
 ## 20. 参考资料
 
 - [pi 源代码](https://github.com/earendil-works/pi)
-- [`docs/pi-alignment-matrix.zh.md`](pi-alignment-matrix.zh.md)
 - `.repo/pi-0.80.2/packages/ai/README.md`
 - `.repo/pi-0.80.2/packages/ai/CHANGELOG.md`
 - `.repo/pi-0.80.2/packages/agent/src/index.ts`

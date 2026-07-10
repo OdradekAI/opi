@@ -90,8 +90,6 @@ fn docs_do_not_claim_package_marketplace_or_gallery() {
         "README.zh.md",
         "docs/opi-spec.md",
         "docs/opi-spec.zh.md",
-        "docs/pi-alignment-matrix.md",
-        "docs/pi-alignment-matrix.zh.md",
     ];
     for needle in [
         "package marketplace",
@@ -316,17 +314,6 @@ fn spec_mentions_adapter_protocol() {
     assert!(
         contains_ci(&en, "opi-extension-jsonl"),
         "opi-spec must mention the opi-extension-jsonl-v1 adapter protocol"
-    );
-}
-
-#[test]
-fn alignment_matrix_mentions_process_adapters() {
-    let matrix = read_repo_file("docs/pi-alignment-matrix.md");
-
-    // The alignment matrix should reflect that process adapters are now present.
-    assert!(
-        contains_ci(&matrix, "process") && contains_ci(&matrix, "adapter"),
-        "pi-alignment-matrix must mention process adapters in the Phase 5 update"
     );
 }
 
@@ -578,13 +565,6 @@ fn phase6_current_docs_match_workspace_version() {
         "opi-spec Phase 4/5 status lines must reference the current `{version}` workspace"
     );
 
-    // The alignment matrix P0 row advances the current version.
-    assert!(
-        read_repo_file("docs/pi-alignment-matrix.md")
-            .contains(&format!("Current docs describe the `{version}` workspace")),
-        "pi-alignment-matrix P0 row must describe the current `{version}` workspace"
-    );
-
     // Historical 0.5.0 release row is preserved, not rewritten to the current version.
     assert!(
         read_repo_file("CHANGELOG.md").contains("## [0.5.0]"),
@@ -624,24 +604,6 @@ fn phase6_localized_docs_stay_in_sync() {
             .any(|line| line.contains("当前实现") && line.contains(&format!("{version} workspace"))),
         "opi-spec.zh Current implementation row must reference the {version} workspace"
     );
-
-    // Alignment matrix P0 row.
-    assert!(
-        read_repo_file("docs/pi-alignment-matrix.zh.md")
-            .contains(&format!("当前文档描述 `{version}` workspace")),
-        "pi-alignment-matrix.zh P0 row must describe the current `{version}` workspace"
-    );
-    let matrix_zh = read_repo_file("docs/pi-alignment-matrix.zh.md");
-    assert!(
-        matrix_zh.contains("| 5 | Package store")
-            && matrix_zh.contains("process-JSONL adapter hosting")
-            && matrix_zh.contains("opi-extension-jsonl-v1"),
-        "pi-alignment-matrix.zh must include the Phase 5 package/adapter capability row"
-    );
-    assert!(
-        matrix_zh.contains("通过 `opi-extension-jsonl-v1` 运行的 process-JSONL adapter 会把 package command、tool、hook、event、state 和 cancellation 桥接进 runtime。"),
-        "pi-alignment-matrix.zh P1 extension/package execution row must match the current process-JSONL bridge claim"
-    );
 }
 
 #[test]
@@ -654,8 +616,6 @@ fn current_docs_do_not_reference_removed_web_ui_crate() {
         "CLAUDE.md",
         "docs/opi-spec.md",
         "docs/opi-spec.zh.md",
-        "docs/pi-alignment-matrix.md",
-        "docs/pi-alignment-matrix.zh.md",
         ".claude/skills/opi-release/skill.md",
     ];
 
@@ -775,12 +735,7 @@ fn docs_do_not_claim_bundled_js_ts_runtime() {
 #[test]
 fn docs_do_not_claim_ts_extension_api_compat() {
     // opi is not TypeScript-extension-API compatible with pi.
-    let files = [
-        "docs/opi-spec.md",
-        "docs/opi-spec.zh.md",
-        "docs/pi-alignment-matrix.md",
-        "docs/pi-alignment-matrix.zh.md",
-    ];
+    let files = ["docs/opi-spec.md", "docs/opi-spec.zh.md"];
     // "TypeScript extension API" / "TypeScript-compatible" scope the claim to the
     // extension surface; the bare "TypeScript API compatibility" phrase is
     // intentionally avoided because docs legitimately disclaim it ("It is not a
@@ -803,8 +758,6 @@ fn docs_do_not_claim_pi_session_v3_compat() {
         "README.zh.md",
         "docs/opi-spec.md",
         "docs/opi-spec.zh.md",
-        "docs/pi-alignment-matrix.md",
-        "docs/pi-alignment-matrix.zh.md",
     ];
     for needle in [
         "pi session v3 compatibility",
@@ -826,8 +779,6 @@ fn docs_do_not_claim_broad_oauth_provider_parity() {
         "README.zh.md",
         "docs/opi-spec.md",
         "docs/opi-spec.zh.md",
-        "docs/pi-alignment-matrix.md",
-        "docs/pi-alignment-matrix.zh.md",
     ];
     for needle in [
         "OAuth parity",
@@ -852,8 +803,6 @@ fn docs_do_not_claim_opi_types_or_protocol_migration() {
         "README.zh.md",
         "docs/opi-spec.md",
         "docs/opi-spec.zh.md",
-        "docs/pi-alignment-matrix.md",
-        "docs/pi-alignment-matrix.zh.md",
     ];
     for needle in [
         "moved to opi-types",
@@ -1041,14 +990,13 @@ fn docs_describe_phase5_adapter_capability_surface() {
 // Phase 9 guards: pi 0.80.2 baseline realignment documentation gates.
 //
 // These guards implement the Phase 9 design Testing and Guard Strategy and
-// Success Criteria 1-8. They assert that the durable evidence baseline
-// (`docs/pi-alignment-matrix.md`), the normative spec (`docs/opi-spec.md`), and
-// their Chinese counterparts name `.repo/pi-0.80.2` as the current upstream,
-// carry the three-layer alignment dashboard, keep the Phase 9-14 roadmap
-// consistent, document future ecosystem candidates with entry conditions, and
-// reject current-scope overclaims for deferred ecosystem breadth (OAuth parity,
-// image generation, custom extension UI parity, npm/gallery, web/share, and pi
-// session compatibility). Phase 9 is documentation-only; Success Criterion 9
+// Success Criteria 1-8. They assert that the normative spec (`docs/opi-spec.md`)
+// and its Chinese counterpart name `.repo/pi-0.80.2` as the current upstream,
+// keep the Phase 9-14 roadmap consistent, document future ecosystem candidates
+// with entry conditions, and reject current-scope overclaims for deferred
+// ecosystem breadth (OAuth parity, image generation, custom extension UI parity,
+// npm/gallery, web/share, and pi session compatibility). Phase 9 is
+// documentation-only; Success Criterion 9
 // (no runtime behavior change) is enforced by the task's no-runtime-scope
 // library gate rather than a Rust test.
 //
@@ -1088,78 +1036,11 @@ fn ws_normalized(s: &str) -> String {
 }
 
 #[test]
-fn phase9_alignment_matrix_evidence_baseline() {
-    // SC 1 + 5 + Evidence Baseline in the Alignment Matrix: the durable matrix
-    // carries document control, pi architecture, version-evolution signals, a
-    // local evidence index, the three-layer dashboard, an honest opi-agent
-    // Partial status caused by the generic harness gap, and maintenance rules.
-    let matrix = read_repo_file("docs/pi-alignment-matrix.md");
-
-    // Document control names the current upstream path and package version.
-    assert!(
-        matrix.contains("| Upstream path | `.repo/pi-0.80.2` |"),
-        "alignment matrix Document Control must name `.repo/pi-0.80.2` as the upstream path"
-    );
-    assert!(
-        matrix.contains("| Upstream package version | `0.80.2`"),
-        "alignment matrix Document Control must name upstream package version 0.80.2"
-    );
-
-    // Pi architecture covers all four upstream packages.
-    assert!(
-        matrix.contains("### `@earendil-works/pi-ai`")
-            && matrix.contains("### `@earendil-works/pi-agent-core`")
-            && matrix.contains("### `@earendil-works/pi-tui`")
-            && matrix.contains("### `@earendil-works/pi-coding-agent`"),
-        "alignment matrix Pi Architecture must cover all four upstream packages"
-    );
-
-    // Required analytical sections.
-    for heading in [
-        "## Version Evolution Signals",
-        "## Evidence Index",
-        "## Alignment Dashboard",
-        "## Roadmap Implications",
-        "## Maintenance Rules",
-    ] {
-        assert!(
-            matrix.contains(heading),
-            "alignment matrix must include the `{heading}` section"
-        );
-    }
-
-    // Three-layer dashboard.
-    assert!(
-        matrix.contains("Core semantic parity")
-            && matrix.contains("Product parity")
-            && matrix.contains("Ecosystem parity"),
-        "alignment matrix dashboard must carry the core/product/ecosystem parity layers"
-    );
-
-    // opi-agent honestly marked Partial pending the generic harness gap.
-    assert!(
-        matrix.contains("| `@earendil-works/pi-agent-core` | `opi-agent` | Partial |"),
-        "alignment matrix must mark opi-agent Partial until the generic AgentHarness gap closes"
-    );
-
-    // Evidence index cites local .repo/pi-0.80.2 anchors.
-    assert!(
-        matrix.contains(".repo/pi-0.80.2/packages/agent"),
-        "alignment matrix Evidence Index must cite local .repo/pi-0.80.2 anchors"
-    );
-}
-
-#[test]
 fn phase9_current_baseline_is_pi_0_80_2() {
     // SC 2: current-baseline statements name `.repo/pi-0.80.2`; the older
     // `.repo/pi-0.75.3` snapshot may appear only as historical prior-baseline
     // context, never as the current studied upstream baseline.
-    let docs = [
-        "docs/opi-spec.md",
-        "docs/opi-spec.zh.md",
-        "docs/pi-alignment-matrix.md",
-        "docs/pi-alignment-matrix.zh.md",
-    ];
+    let docs = ["docs/opi-spec.md", "docs/opi-spec.zh.md"];
 
     for path in docs {
         let content = read_repo_file(path);
@@ -1191,16 +1072,6 @@ fn phase9_current_baseline_is_pi_0_80_2() {
             .contains("| 参考上游 | `pi` 0.80.2，位于 `.repo/pi-0.80.2/`"),
         "opi-spec.zh Document Control must name `pi` 0.80.2 at `.repo/pi-0.80.2/` as upstream studied"
     );
-    assert!(
-        read_repo_file("docs/pi-alignment-matrix.md")
-            .contains("| Upstream path | `.repo/pi-0.80.2` |"),
-        "alignment matrix Document Control must name `.repo/pi-0.80.2` as the upstream path"
-    );
-    assert!(
-        read_repo_file("docs/pi-alignment-matrix.zh.md")
-            .contains("| 上游路径 | `.repo/pi-0.80.2` |"),
-        "alignment matrix.zh Document Control must name `.repo/pi-0.80.2` as the upstream path"
-    );
 }
 
 #[test]
@@ -1211,8 +1082,6 @@ fn phase9_localized_docs_stay_in_sync() {
     // matched pair (both EN and ZH wrong) cannot satisfy the sync requirement.
     let spec_en = read_repo_file("docs/opi-spec.md");
     let spec_zh = read_repo_file("docs/opi-spec.zh.md");
-    let matrix_en = read_repo_file("docs/pi-alignment-matrix.md");
-    let matrix_zh = read_repo_file("docs/pi-alignment-matrix.zh.md");
 
     // Phase 9 section headings.
     assert!(
@@ -1232,40 +1101,6 @@ fn phase9_localized_docs_stay_in_sync() {
     assert!(
         spec_zh.contains("### 未来生态候选"),
         "opi-spec.zh must include the Future Ecosystem Candidates section"
-    );
-
-    // Alignment dashboard layers (matrix).
-    assert!(
-        matrix_en.contains("Core semantic parity")
-            && matrix_en.contains("Product parity")
-            && matrix_en.contains("Ecosystem parity"),
-        "alignment matrix must carry the three English dashboard layers"
-    );
-    assert!(
-        matrix_zh.contains("核心语义对等")
-            && matrix_zh.contains("产品对等")
-            && matrix_zh.contains("生态对等"),
-        "alignment matrix.zh must carry the three Chinese dashboard layers"
-    );
-
-    // opi-agent Partial in both languages.
-    assert!(
-        matrix_en.contains("`opi-agent` | Partial"),
-        "alignment matrix must mark opi-agent Partial (EN)"
-    );
-    assert!(
-        matrix_zh.contains("`opi-agent` | 部分"),
-        "alignment matrix.zh must mark opi-agent Partial (ZH)"
-    );
-
-    // Document-control upstream path in both languages.
-    assert!(
-        matrix_en.contains("| Upstream path | `.repo/pi-0.80.2` |"),
-        "alignment matrix Document Control must name the upstream path (EN)"
-    );
-    assert!(
-        matrix_zh.contains("| 上游路径 | `.repo/pi-0.80.2` |"),
-        "alignment matrix.zh Document Control must name the upstream path (ZH)"
     );
 
     // Non-goal framing stays synchronized: both specs list the deferred
@@ -1288,8 +1123,6 @@ fn phase9_roadmap_numbering_consistent() {
     // Phase 10 deepening targets.
     let spec_en = read_repo_file("docs/opi-spec.md");
     let spec_zh = read_repo_file("docs/opi-spec.zh.md");
-    let matrix_en = read_repo_file("docs/pi-alignment-matrix.md");
-    let matrix_zh = read_repo_file("docs/pi-alignment-matrix.zh.md");
 
     let en_headings = [
         "### Phase 9 - pi 0.80.2 Baseline Realignment",
@@ -1320,33 +1153,6 @@ fn phase9_roadmap_numbering_consistent() {
         );
     }
 
-    // Matrix phase rows cover phases 9-14 in both languages.
-    for phase in 9..=14 {
-        let prefix = format!("| {phase} |");
-        assert!(
-            matrix_en.lines().any(|line| line.starts_with(&prefix)),
-            "alignment matrix must have a Phase {phase} row (EN)"
-        );
-        assert!(
-            matrix_zh.lines().any(|line| line.starts_with(&prefix)),
-            "alignment matrix.zh must have a Phase {phase} row (ZH)"
-        );
-    }
-
-    // Models/Auth + AgentHarness are named as Phase 10 targets in the matrix.
-    assert!(
-        matrix_en.lines().any(|line| line.starts_with("| 10 |")
-            && line.contains("Models/Auth")
-            && line.contains("AgentHarness")),
-        "alignment matrix Phase 10 row must name Models/Auth and AgentHarness"
-    );
-    assert!(
-        matrix_zh.lines().any(|line| line.starts_with("| 10 |")
-            && line.contains("Models/Auth")
-            && line.contains("AgentHarness")),
-        "alignment matrix.zh Phase 10 row must name Models/Auth and AgentHarness"
-    );
-
     // Spec Phase 10 workstream table names both seams with their owning crate.
     assert!(
         spec_en.contains("| `Models/Auth` seam | `opi-ai` |"),
@@ -1374,8 +1180,6 @@ fn phase9_future_ecosystem_candidates_have_entry_conditions() {
     // with entry conditions, not as scheduled near-term phase promises.
     let spec_en = read_repo_file("docs/opi-spec.md");
     let spec_zh = read_repo_file("docs/opi-spec.zh.md");
-    let matrix_en = read_repo_file("docs/pi-alignment-matrix.md");
-    let matrix_zh = read_repo_file("docs/pi-alignment-matrix.zh.md");
 
     // Section headings present in both languages.
     assert!(
@@ -1386,25 +1190,11 @@ fn phase9_future_ecosystem_candidates_have_entry_conditions() {
         spec_zh.contains("### 未来生态候选"),
         "opi-spec.zh must include the Future Ecosystem Candidates section"
     );
-    assert!(
-        matrix_en.contains("## Future Ecosystem Candidates"),
-        "alignment matrix must include the Future Ecosystem Candidates section"
-    );
-    assert!(
-        matrix_zh.contains("## 未来生态候选"),
-        "alignment matrix.zh must include the Future Ecosystem Candidates section"
-    );
-
     // Entry-condition column header present.
     assert!(
         spec_en.contains("| Candidate | Entry condition |"),
         "opi-spec Future Ecosystem Candidates must have an Entry condition column"
     );
-    assert!(
-        matrix_en.contains("Entry condition"),
-        "alignment matrix Future Ecosystem Candidates must name entry conditions"
-    );
-
     // Non-committal framing: candidates are NOT scheduled phases yet.
     assert!(
         spec_en.contains("not scheduled phases"),
@@ -1429,10 +1219,6 @@ fn phase9_future_ecosystem_candidates_have_entry_conditions() {
             contains_ci(&spec_en, candidate),
             "opi-spec Future Ecosystem Candidates must name `{candidate}`"
         );
-        assert!(
-            matrix_en.contains(candidate),
-            "alignment matrix Future Ecosystem Candidates must name `{candidate}`"
-        );
     }
 }
 
@@ -1451,8 +1237,6 @@ fn phase9_forbidden_current_scope_claims_rejected() {
         "README.zh.md",
         "docs/opi-spec.md",
         "docs/opi-spec.zh.md",
-        "docs/pi-alignment-matrix.md",
-        "docs/pi-alignment-matrix.zh.md",
     ];
 
     // Parity / compatibility overclaims for deferred ecosystem breadth.
@@ -1680,12 +1464,7 @@ fn phase10_runtime_hook_boundaries() {
     // (d) SC1: docs must not imply pi TypeScript extension API surfaces are
     // current opi scope. Complementary to the Phase 5/9 TypeScript-extension
     // guards already in this file.
-    let docs = [
-        "docs/opi-spec.md",
-        "docs/opi-spec.zh.md",
-        "docs/pi-alignment-matrix.md",
-        "docs/pi-alignment-matrix.zh.md",
-    ];
+    let docs = ["docs/opi-spec.md", "docs/opi-spec.zh.md"];
     for needle in [
         "TypeScript extension API compatibility",
         "TypeScript 扩展 API 兼容",
@@ -1791,8 +1570,6 @@ fn phase10_forbidden_current_scope_claims_rejected() {
         "README.zh.md",
         "docs/opi-spec.md",
         "docs/opi-spec.zh.md",
-        "docs/pi-alignment-matrix.md",
-        "docs/pi-alignment-matrix.zh.md",
     ];
     let claims: [(&[&str], &[&str]); 6] = [
         (

@@ -56,8 +56,6 @@ fn doc_surfaces() -> Vec<&'static str> {
         "crates/opi-coding-agent/README.zh.md",
         "docs/opi-spec.md",
         "docs/opi-spec.zh.md",
-        "docs/pi-alignment-matrix.md",
-        "docs/pi-alignment-matrix.zh.md",
     ]
 }
 
