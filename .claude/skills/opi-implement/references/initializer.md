@@ -120,6 +120,26 @@ Phase 4 examples:
 - `4.7 | skills, prompt fragments, themes, and packages with progressive discovery` becomes `4.7.1` skills, `4.7.2` prompt fragments/templates, `4.7.3` themes, and `4.7.4` packages.
 - `4.8 | extension/package examples: permission gate, protected paths, sub-agent, plan mode, todo, MCP adapter` becomes six package/example tasks; the parent row is not executable.
 
+### A.init.2e Verify
+
+Run the six-lens audit over the draft graph (post-`A.init.2a/2c/2d`,
+pre-review) against the active phase's registered source design doc. Cheap path
+(default) = one agent; deep path (`--deep-init`) = the Workflow at
+`scripts/opi-init-verify.workflow.js`. Read `references/init-verify.md` for the
+lens charters, finding schema, fold matrix, citation grammar, and the
+cheap/deep protocols.
+
+### A.init.2f Fold + Report
+
+Apply high- and medium-high-confidence findings whose `suggested_fix` is a field
+edit on an existing task as draft edits, each recorded in `inference_notes` with
+provenance. Findings whose fix requires task-graph surgery, whose citation does
+not resolve, or that the deep-path adversarial verify rejected, are flagged for
+human (never folded). Write the folded draft to `.opi-impl-state.draft.json`,
+record `init_verification` (mode, `wf_ref` on deep, counts, timestamp), and emit
+the verification report block at `A.init.3`. This is the only mutation of the
+draft between extraction and the human review gate.
+
 ### A.init.3 Task-Graph Review Gate
 
 Render complete draft as table with: id, title, tier, `task_owned_paths`

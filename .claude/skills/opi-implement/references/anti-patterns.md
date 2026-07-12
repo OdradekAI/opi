@@ -35,6 +35,7 @@ column explains reasoning so you can apply judgment in edge cases.
 | Never broaden into cross-task refactors without graph update | Scope creep invalidates adjacent task assumptions. Graph must reflect reality. |
 | Never clean/restore/discard user changes from failure gate | Working tree may contain in-progress manual fixes. Automated cleanup destroys expensive context. |
 | Never let sub-agent completion order decide result order | Non-deterministic ordering = unreproducible results. `parallelize` array defines canonical order. |
+| Never run verify-and-fold after `A.init.3` confirmation | Verify-and-fold (`A.init.2e`/`A.init.2f`) runs pre-confirmation, where the graph is not yet a reviewed contract. Running it post-confirmation would silently rewrite confirmed metadata, violating red flag #7 (graph is a reviewed contract). The folded draft is an input to the gate, never a mutation of a confirmed graph. |
 
 The skill refuses to act if any rule would be violated, even if the user
 requests it during an interactive failure-decision gate.

@@ -96,6 +96,7 @@ Atomic writes via `.opi-impl-state.json.tmp` + rename.
 | `spec_files` | array | const-on-init, reinit-editable | Normative spec file paths whose drift triggers reinit refusal. Default `["docs/opi-spec.md"]`. Supplemental phases MUST include only the reviewed source files registered in `skill.md` for the active phase, plus `docs/opi-spec.md`. Adding or removing a path requires `--reinit`. |
 | `spec_files_sha256` | object | reinit-only | Map of file path → SHA-256 hash at last init/reinit. Each entry is checked independently; any mismatch triggers the spec-alignment guard. |
 | `task_graph_confirmed_at` | string/null | init/reinit | ISO-8601 confirmation time |
+| `init_verification` | object/null | init-only | Written at `A.init.2f`. Shape: `{ mode ("cheap"|"deep"), wf_ref (string/null — null on the cheap path; the Workflow run id on deep), folded_count, flagged_count, rejected_count, ran_at }`. Additive and optional: absent on older ledgers and tolerated; populated on the next init. Does NOT affect `schema_version`. |
 | `current_phase` | int | auto | Lowest phase with non-`passing` task |
 | `tasks[].id` | string | const | Matches a row in `opi-spec.md` §15 OR a sub-task expansion. Pattern: `^\d+\.\d+(\.\d+)?$`. Sub-task IDs carry a third component (e.g. `4.6.1`) and MUST also set `parent_spec_row`. |
 | `tasks[].phase` | int | const | From row's phase grouping |
@@ -107,7 +108,7 @@ Atomic writes via `.opi-impl-state.json.tmp` + rename.
 | `tasks[].replaces` | string/null | const | Prior task title/meaning superseded during reinit, when the same task ID was repurposed by spec changes |
 | `tasks[].status` | enum | runtime | `failing`/`in_progress`/`passing`/`blocked`/`archived` |
 | `tasks[].depends_on` | array | const | Task IDs that must be `passing` |
-| `tasks[].inference_notes` | array | const | Reasons for inferred fields. Phase non-goal guards are recorded with `field = "forbidden_scope"` and an exact source heading. |
+| `tasks[].inference_notes` | array | const | Reasons for inferred fields. Phase non-goal guards use `field = "forbidden_scope"` with an exact source heading. Init-verify (L5) defer/split/residual devices use `field` ∈ {`deferred`,`split`,`residual`} with `reason` packed as `"<verb>: trigger=<clause|null>"` (a `null` trigger means the human must specify it at `A.init.3`). |
 | `tasks[].tier` | enum | const | `documentation`/`workspace`/`library`/`cli-tool`/`cli-runtime`/`tui` |
 | `tasks[].commit_type` | enum | const | `feat`/`fix`/`docs`/`refactor`/`test`/`chore`/`perf` |
 | `tasks[].parallelize` | array | const | Sub-unit names for parallel dispatch |

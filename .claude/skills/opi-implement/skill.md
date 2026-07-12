@@ -61,6 +61,7 @@ opi-implement                                  # auto-pick next unblocked task
 opi-implement <task-id>                        # specific task (validates deps)
 opi-implement --status                         # print ledger summary
 opi-implement --reinit                         # re-parse spec, reconcile
+opi-implement --deep-init                      # init only: multi-lens verify-and-fold (deep Workflow)
 opi-implement <task-id> --resume-from-manual   # verify a manual commit
 opi-implement <task-id> --extend-cap <N>       # raise iteration cap
 opi-implement --clear-blocker <id> --because <text>  # unblock a task
@@ -199,6 +200,10 @@ E is the only phase that mutates git **during normal task execution**.
      - F.4c If declined: leave tasks array intact; no snapshot written.
 
 **When init/reinit runs:** Read `references/initializer.md` for the full flow.
+
+**When A.init.2e/2f (verify-and-fold) runs:** Read `references/init-verify.md`
+for the six lens charters, fold matrix, citation grammar, and cheap/deep
+protocols.
 
 **When Phase D runs:** Read `references/verification-tiers.md` for gate details.
 
