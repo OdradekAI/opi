@@ -1118,7 +1118,7 @@ fn phase9_localized_docs_stay_in_sync() {
 
 #[test]
 fn phase9_roadmap_numbering_consistent() {
-    // SC 4 + 6 + Revised Roadmap: the roadmap consistently lists Phase 9-14
+    // SC 4 + 6 + Revised Roadmap: the roadmap consistently lists Phase 9-17
     // with the revised names, and Models/Auth + AgentHarness are named as the
     // Phase 10 deepening targets.
     let spec_en = read_repo_file("docs/opi-spec.md");
@@ -1130,7 +1130,10 @@ fn phase9_roadmap_numbering_consistent() {
         "### Phase 11 - Tooling Quality",
         "### Phase 12 - Provider Correctness",
         "### Phase 13 - Session Tree and Context Reconstruction",
-        "### Phase 14 - TUI Product Polish",
+        "### Phase 14 - Provider & Auth",
+        "### Phase 15 - Safety & Sandbox",
+        "### Phase 16 - Agent Intelligence",
+        "### Phase 17 - TUI Engine, Extension Surface, and Product Polish",
     ];
     let zh_headings = [
         "### 第九阶段 - pi 0.80.2 基线重校准",
@@ -1138,7 +1141,10 @@ fn phase9_roadmap_numbering_consistent() {
         "### 第十一阶段 - 工具质量",
         "### 第十二阶段 - Provider 正确性",
         "### 第十三阶段 - 会话树与上下文重建",
-        "### 第十四阶段 - TUI 产品打磨",
+        "### 第十四阶段 - Provider & Auth",
+        "### 第十五阶段 - Safety & Sandbox",
+        "### 第十六阶段 - Agent Intelligence",
+        "### 第十七阶段 - TUI 引擎、扩展表面与产品打磨",
     ];
     for heading in en_headings {
         assert!(
@@ -1293,15 +1299,15 @@ fn phase9_forbidden_current_scope_claims_rejected() {
         "opi-spec.zh must list image generation and web/share flows as not supported (ZH)"
     );
 
-    // Custom extension UI parity is explicitly excluded from Phase 14 scope, not
+    // Custom extension UI parity is explicitly excluded from Phase 17 scope, not
     // claimed as a current capability.
     assert!(
         spec_en.contains("does not promise web UI parity"),
-        "opi-spec Phase 14 must disclaim web UI / custom extension UI parity (EN)"
+        "opi-spec Phase 17 must disclaim web UI / custom extension UI parity (EN)"
     );
     assert!(
         spec_zh.contains("不声明 web UI parity"),
-        "opi-spec.zh Phase 14 must disclaim web UI / custom extension UI parity (ZH)"
+        "opi-spec.zh Phase 17 must disclaim web UI / custom extension UI parity (ZH)"
     );
 }
 
@@ -1457,7 +1463,7 @@ fn phase10_runtime_hook_boundaries() {
     );
     assert!(
         spec_en.contains("Custom extension UI / message renderer")
-            && spec_en.contains("Phase 14 built-in TUI is stable"),
+            && spec_en.contains("Phase 17 built-in TUI is stable"),
         "opi-spec must document the custom UI/message renderer deferral prerequisite (EN)"
     );
 

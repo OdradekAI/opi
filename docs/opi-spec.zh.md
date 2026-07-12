@@ -1293,8 +1293,8 @@ Opi 以用户权限运行本地工具。主要风险是危险的本地命令、�
 | 通用 harness 事件/结果 | `opi-agent` | 仅在 generic lifecycle 需要时设计 typed event/result reducer。 |
 | Coding-agent 扩展注册表 | `opi-coding-agent` / 桥接到 `opi-agent` | product 专属 commands、resources 与 packages 通过 `ExtensionRegistry` 组合。 |
 | 进程适配器协议 | `opi-coding-agent` | 拥有 `opi-extension-jsonl-v1` 解析与子进程托管；除非非 CLI host 需要，进程适配器协议不迁移进 `opi-agent`。 |
-| Provider 请求/响应钩子 | 未来候选 | 推迟至 provider 缝合点与 trace/redaction semantics 稳定。 |
-| 自定义 TUI UI / 消息渲染器 | 未来候选 | 推迟至第十四阶段内置 TUI 稳定且设计了 UI/RPC 子协议。 |
+| Provider 请求/响应钩子 | 未来候选 | 推迟；前提已在设计中满足（第十二阶段 correctness + 第七阶段 redaction + 第十四阶段 Request enrichment），消费者待定。 |
+| 自定义 TUI UI / 消息渲染器 | 未来候选 | 推迟至第十七阶段内置 TUI 稳定且设计了 UI/RPC 子协议。 |
 
 Typed hook result composition 由契约测试覆盖：扩展钩子在 base 钩子之后按注册顺序运行，`Block`/`Deny` 短路链条，coding-agent 进程适配器通过同一个 `ExtensionRegistry::wrap_hooks` 组合桥接（无绕过）。扩展 API 文档不声明 `pi` TypeScript 扩展 API 兼容为当前 `opi` 范围。
 
@@ -1332,9 +1332,9 @@ Phase 12 非目标（不得作为当前核心行为出现）：OAuth 登录流�
 
 显式决策与推迟（每条均引用第 13 阶段设计）：
 
-- `branch_summary` 作为上下文重建和 provider 转换基底实现。其生成 UX 触发器——分支切换、fork、手动命令、扩展钩子——推迟到第 14 阶段终端/产品打磨；第 13 阶段不在这些触发器上自动生成分支摘要。
+- `branch_summary` 作为上下文重建和 provider 转换基底实现。其生成 UX 触发器——分支切换、fork、手动命令、扩展钩子——推迟到第十六阶段 Agent Intelligence；第 13 阶段不在这些触发器上自动生成分支摘要。
 - `custom_message` 的 provider-context 语义被推迟：扩展提供的上下文消息的 provider 转换与 transcript 规则尚未规定，因此第 13 阶段不提供 `custom_message` 写入器，并在读取时把未知 `custom_message` 条目当作其他未知未来条目处理。
-- 交互式 `/export` 推迟到第 14 阶段终端命令表面打磨；第 13 阶段仅提供本地 `--export-session` CLI。
+- 交互式 `/export` 推迟到第十七阶段 TUI 产品打磨；第 13 阶段仅提供本地 `--export-session` CLI。
 
 Phase 13 交接：会话工作可以依赖经由共享 `opi-ai` 类型传递的 provider-correct usage、model、thinking 和 error 数据，而无需依赖 provider 专用内部实现。
 
@@ -1351,11 +1351,29 @@ Phase 13 交接：会话工作可以依赖经由共享 `opi-ai` 类型传递的 
 - 不声明包生态扩张。
 - 不声明 provider 运行时、provider 鉴权、OAuth 或 `ProviderCollection` 调度重构。
 
-### 第十四阶段 - TUI 产品打磨
+### 第十四阶段 - Provider & Auth
 
-状态：计划中；由原第十二阶段重排而来。
+状态：已设计；实现待定。设计：`docs/superpowers/specs/2026-07-11-phase14-provider-auth-design.md`。
 
-第十四阶段打磨内置终端产品：model/session/branch pickers、transcript rendering、command discovery、status/error feedback、accessibility、terminal compatibility，以及 image/diff presentation。它不声明 web UI parity、custom extension UI、message renderer parity 或通用 TUI framework。
+第十四阶段把 Provider/Auth 集群提升为正式阶段。它增加 OS keychain 凭据存储（`CredentialStore`/`Credential` 在 `opi-ai`；keychain/env 实现与 `CredentialResolver` 在 `opi-coding-agent`）、三个 pi provider（Anthropic、GitHub Copilot、OpenAI Codex）的 OAuth（每个具体 provider 持有 `AuthSource` 按请求重新解析鉴权），以及对 `opi_ai::Request` 的增补丰富（`timeout`、`extra_headers`、`cache_retention`、`session_id`）、`Usage`/`CostBreakdown` 的 cache 与 reasoning 字段、驱动 Anthropic prompt-cache 标记的跨 provider `ModelCapabilities` struct，以及动态 `refresh_models` trait 方法。该存储使用 `fs4` 锁定并在边界使用 `secrecy`；不存在 opi 管理的明文凭据文件。非目标：按调用 `apiKey` 覆盖（pi `ApiStreamOptions`）、`onPayload`/`onResponse` 流式钩子、流式过程中自动重新登录，以及贯穿 provider 构造的端到端 `SecretString`。
+
+### 第十五阶段 - Safety & Sandbox
+
+状态：已设计；实现待定。设计：`docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md`。
+
+第十五阶段把 Safety/Sandbox 集群与按工具 Operations 缝合点提升为正式阶段。它为 `bash` 增加 OS 原生子进程树沙箱（Linux seccomp + Landlock、macOS `sandbox-exec`、Windows Job Object）作为 opt-in defense-in-depth——明确不是安全边界——带始终开启的 L0 tree-kill 基线；一个按工具的 `Operations` 缝合点（`FileOperations`/`BashOperations` 在 `opi-coding-agent`）分层位于 `PathPolicy` 之下，为沙箱在 local `BashOperations::exec` 内提供结构上正确的归宿；以及一个项目信任门（`ProjectTrustStore`、`--trust`/`--no-trust`、`AppState::AwaitingTrust`），门控项目本地资源（含适配器声明）的加载，关闭原生子进程爆炸半径缺口。opi 偏离 pi：不对未信任项目自动注入项目 `AGENTS.md`/`CLAUDE.md`。非目标：opi 自身 confinement、适配器 strict-confinement、远端后端，以及 nav-tool Operations。
+
+### 第十六阶段 - Agent Intelligence
+
+状态：已设计；实现待定。设计：`docs/superpowers/specs/2026-07-11-phase16-agent-intelligence-design.md`。
+
+第十六阶段把 Agent Intelligence 集群提升为正式阶段。它增加生产级 skills/fragments 运行时（`/skill:`/`/fragment:` 分发、pi 风格的 `<available_skills>` 系统提示词段、基于 `ignore` 的递归 skill 发现，以及接线既有的 `disable_model_invocation`/`expand_fragment_body` 机制）；LLM 驱动的压缩与分支摘要（把 `CompactionHooks::generate_summary` 拓宽为 async boxed `Result` future，首个 provider-backed hook 实现位于 `opi-coding-agent`，token-budget `find_split_point`（`keep_recent_tokens = 20000`），以及 `SessionCoordinator::move_to` 加 `ForkTarget` enum）；以及 read-tool 内联图像（经 `image` crate 解码/缩放、配套 `OutputContent::Text` 标签，以及跨 Anthropic/Gemini/Vertex/Bedrock 的 `tool_result` 图像 wire 修复）。`opi-agent` 保持 skill-free；T8 trait 拓宽在 `opi-agent`，provider-backed 实现在 `opi-coding-agent`。非目标：skill-body 参数替换、专用 RPC `SdkCommand::Skill`、`readFiles`/`modifiedFiles` 条目、split-mid-turn 压缩，以及 EXIF re-orientation。
+
+### 第十七阶段 - TUI 引擎、扩展表面与产品打磨
+
+状态：计划中；由原第十四阶段（TUI 产品打磨）重排而来并拓宽至 TUI 引擎与扩展表面；设计经由 wayfinder map 进行中。
+
+第十七阶段落地事件驱动 TUI 引擎（`OverlayStack`、streaming-redraw throttle）并在此基础上打磨内置终端产品：model/session/branch pickers、transcript rendering、命令发现、status/error 反馈、accessibility、terminal compatibility，以及 image/diff 呈现。它还引入扩展 UI 表面（内联渲染器、overlay/dialog、provider 请求/响应钩子）作为 deferred-with-pinned-designs，由具体消费者重新触发。它不声明 web UI parity、custom extension UI、message renderer parity 或通用 TUI framework。从第十三阶段推迟的交互式 `/export` 在此落地。
 
 ### 未来生态候选
 
@@ -1363,13 +1381,13 @@ Phase 13 交接：会话工作可以依赖经由共享 `opi-ai` 类型传递的 
 
 | 候选 | 进入条件 |
 |---|---|
-| Provider OAuth / subscription auth | `Models/Auth` 缝合点稳定；credential store、redaction、doctor、session interaction、login UX、refresh 和 revocation 已设计。 |
+| 第十四阶段之外的 OAuth/subscription auth | 第十四阶段为 Anthropic、GitHub Copilot 与 OpenAI Codex 落地 OAuth（credential store、redaction、doctor、session interaction、login UX、refresh、revocation）；额外 OAuth/subscription provider 在用户需求出现前仍属未来。 |
 | 广泛 provider catalog | 第十二阶段 provider correctness 稳定；OpenAI-compatible profile quirks 有文档化兼容模型。 |
 | 图像生成 | 聊天侧 provider collection、auth、model metadata、cost 和 error semantics 稳定。 |
-| Custom extension UI / message renderer | 第十四阶段内置 TUI 稳定；单独的 RPC/UI 子协议已设计。 |
+| Custom extension UI / message renderer | 第十七阶段内置 TUI 稳定；单独的 RPC/UI 子协议已设计。 |
 | npm/gallery/update/enable/disable | Package adapter lifecycle、trust/source model、diagnostics 和 lock/update policy 稳定。 |
 | Web/share/session publishing | 第十三阶段 export、redaction 和 session sensitivity 规则稳定。 |
-| Provider request/response adapter hooks | Core provider seam、hook ordering、redaction 和 trace semantics 稳定。 |
+| Provider request/response adapter hooks | Core provider seam、hook ordering、redaction 和 trace semantics 稳定；前提已在设计中满足（第十二阶段 + 第七阶段 + 第十四阶段），消费者待定。 |
 | `pi` session import/migration | `opi` session v2 稳定；用户价值明确；正常 resume 不受影响。 |
 
 ## 16. 决策日志

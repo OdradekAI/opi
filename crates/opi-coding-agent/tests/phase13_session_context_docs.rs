@@ -375,10 +375,10 @@ fn phase13_non_goals_not_in_core() {
         }
     }
 
-    // (5) Interactive /export stays deferred (Phase 14), not claimed as core.
+    // (5) Interactive /export stays deferred (Phase 17), not claimed as core.
     let coding = read_repo_file("crates/opi-coding-agent/README.md");
     assert!(
         !contains_ci(&coding, "interactive /export is implemented"),
-        "opi-coding-agent README must not claim interactive /export is implemented (deferred to Phase 14)"
+        "opi-coding-agent README must not claim interactive /export is implemented (deferred to Phase 17)"
     );
 }
