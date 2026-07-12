@@ -6,7 +6,7 @@ description: Use when executing opi-spec.md tasks or reviewed supplemental opi p
 # opi-implement
 
 Long-running-agent harness that drives `docs/opi-spec.md` implementation, plus
-reviewed supplemental Phase 5-14 product-hardening specs listed in this skill,
+reviewed supplemental Phase 14-16 product-hardening specs listed in this skill,
 one task at a time with TDD for code tasks, documentation guard verification
 for docs-only tasks, tiered verification, and JSON-ledger checkpointing.
 
@@ -28,22 +28,15 @@ registry. Do not auto-parse arbitrary files from `docs/superpowers/specs/`.
 
 | Phase | Source files |
 |---:|---|
-| 5 | `docs/superpowers/plans/2026-06-08-productized-extensions-package-ecosystem.md` |
-| 6 | `docs/snapshots/phase6/2026-06-15-phase6-alignment-hardening-design.md` |
-| 7 | `docs/snapshots/phase7/2026-06-15-phase7-reliability-observability-design.md` |
-| 8 | `docs/snapshots/phase8/2026-06-15-phase8-agent-runtime-stabilization-design.md` |
-| 9 | `docs/snapshots/phase9/2026-06-24-phase9-pi-0-80-2-baseline-realignment-design.md` |
-| 10 | `docs/snapshots/phase10/2026-06-24-phase10-core-architecture-deepening-design.md` |
-| 11 | `docs/snapshots/phase11/2026-06-24-phase11-tooling-quality-design.md` |
-| 12 | `docs/snapshots/phase12/2026-06-24-phase12-provider-correctness-design.md` |
-| 13 | `docs/snapshots/phase13/2026-06-24-phase13-session-tree-context-reconstruction-design.md` |
+| 14 | `docs/superpowers/specs/2026-07-11-phase14-provider-auth-design.md` |
+| 15 | `docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md` |
+| 16 | `docs/superpowers/specs/2026-07-11-phase16-agent-intelligence-design.md` |
 
 When a ledger is initialized or reconciled for a supplemental phase, the
 phase's registered source files MUST be included in `spec_files` and hashed in
-`spec_files_sha256` alongside `docs/opi-spec.md`. Phase 5 uses its reviewed
-implementation plan for task rows; phases 6-14 derive draft task rows from the
-registered design's workstreams, testing strategy, documentation updates, and
-success criteria, then require task-graph review before execution.
+`spec_files_sha256` alongside `docs/opi-spec.md`. Phases 14-16 derive draft
+task rows from the registered design's goals, per-ticket design sections,
+sequencing, and residuals, then require task-graph review before execution.
 
 **Product-loop integrity rule:** A phase is not complete merely because every
 component task is green. When a source spec contains goals, success criteria,
@@ -376,14 +369,7 @@ Print a summary table of all tasks:
 
 Full design rationale: `docs/superpowers/specs/2026-05-20-opi-implement-skill-design.md`
 
-Supplemental Phase 5 implementation plan: `docs/superpowers/plans/2026-06-08-productized-extensions-package-ecosystem.md`
-
-Supplemental Phase 6-14 designs:
-- `docs/snapshots/phase6/2026-06-15-phase6-alignment-hardening-design.md`
-- `docs/snapshots/phase7/2026-06-15-phase7-reliability-observability-design.md`
-- `docs/snapshots/phase8/2026-06-15-phase8-agent-runtime-stabilization-design.md`
-- `docs/snapshots/phase9/2026-06-24-phase9-pi-0-80-2-baseline-realignment-design.md`
-- `docs/snapshots/phase10/2026-06-24-phase10-core-architecture-deepening-design.md`
-- `docs/snapshots/phase11/2026-06-24-phase11-tooling-quality-design.md`
-- `docs/snapshots/phase12/2026-06-24-phase12-provider-correctness-design.md`
-- `docs/snapshots/phase13/2026-06-24-phase13-session-tree-context-reconstruction-design.md`
+Supplemental Phase 14-16 designs:
+- `docs/superpowers/specs/2026-07-11-phase14-provider-auth-design.md`
+- `docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md`
+- `docs/superpowers/specs/2026-07-11-phase16-agent-intelligence-design.md`

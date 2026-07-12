@@ -29,21 +29,16 @@ Parse `opi-spec.md` §15 roadmap tables. For each task row extract:
   - The task remains non-executable until the task-graph review gate confirms
     the inferred DoD.
 
-### A.init.2d Reviewed Phase 6-14 Task Sources
+### A.init.2d Reviewed Phase 14-16 Task Sources
 
-After Phase 5 exits, phases 6-14 are sourced only from the reviewed design
-registry in `skill.md`. Do not scan arbitrary `docs/superpowers/specs/` files.
+Supplemental phases (currently 14-16) are sourced only from the reviewed
+design registry in `skill.md`. Do not scan arbitrary `docs/superpowers/specs/` files.
 
 | Phase | Registered source | Draft task extraction |
 |---:|---|---|
-| 6 | `docs/snapshots/phase6/2026-06-15-phase6-alignment-hardening-design.md` | Workstreams, Testing Strategy, Documentation Updates, Success Criteria |
-| 7 | `docs/snapshots/phase7/2026-06-15-phase7-reliability-observability-design.md` | Diagnostic Model, Trace Model, `opi doctor`, JSON/RPC Exposure, Testing Strategy, Success Criteria |
-| 8 | `docs/snapshots/phase8/2026-06-15-phase8-agent-runtime-stabilization-design.md` | Runtime Contracts, API Surface Review, SDK and RPC Contract, Testing Strategy, Success Criteria |
-| 9 | `docs/snapshots/phase9/2026-06-24-phase9-pi-0-80-2-baseline-realignment-design.md` | Evidence Baseline, Normative Documentation Changes, Revised Roadmap, Success Criteria |
-| 10 | `docs/snapshots/phase10/2026-06-24-phase10-core-architecture-deepening-design.md` | Provider Collection/Auth, Generic Harness, Session Facade, Runtime Hook Boundaries, Success Criteria |
-| 11 | `docs/snapshots/phase11/2026-06-24-phase11-tooling-quality-design.md` | Tool Result Contract, per-tool sections, Filesystem Tool Policy, Documentation Updates, Success Criteria |
-| 12 | `docs/snapshots/phase12/2026-06-24-phase12-provider-correctness-design.md` | Provider Contract Areas, Error Taxonomy, OpenAI-Compatible Profile Correctness, Testing Strategy, Success Criteria |
-| 13 | `docs/snapshots/phase13/2026-06-24-phase13-session-tree-context-reconstruction-design.md` | Session Entry Model, Context Building, Export, Commands and UI Surface, Documentation Updates, Success Criteria |
+| 14 | `docs/superpowers/specs/2026-07-11-phase14-provider-auth-design.md` | Goals, Non-Goals, T1 Credential store, T2 OAuth + per-request auth, T3 Request enrichment, Sequencing, Residuals |
+| 15 | `docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md` | Goals, Non-Goals, T4 OS-native sandbox, T5 Operations seam, T6 Project-trust gate, Sequencing, Cross-ticket interactions, Residuals |
+| 16 | `docs/superpowers/specs/2026-07-11-phase16-agent-intelligence-design.md` | Goals, Non-Goals, T7 Skills/templates runtime, T8 LLM compaction + branch-summary, T9 Read-tool inline image, Sequencing, Cross-ticket interactions, Residuals |
 
 For each active phase:
 
