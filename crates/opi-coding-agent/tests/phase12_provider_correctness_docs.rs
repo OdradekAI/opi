@@ -640,7 +640,7 @@ fn default_provider_tests_are_network_free() {
     let mut matched = 0usize;
     for entry in std::fs::read_dir(&opi_ai_tests).expect("read opi-ai/tests") {
         let path = entry.expect("dir entry").path();
-        if path.extension().is_some_and(|e| e != "rs") {
+        if path.is_dir() || path.extension().is_some_and(|e| e != "rs") {
             continue;
         }
         let name = path
@@ -688,7 +688,7 @@ fn default_provider_tests_are_network_free() {
     ] {
         for entry in std::fs::read_dir(&dir).expect("read tests dir") {
             let path = entry.expect("dir entry").path();
-            if path.extension().is_some_and(|e| e != "rs") {
+            if path.is_dir() || path.extension().is_some_and(|e| e != "rs") {
                 continue;
             }
             // This guard file legitimately contains the credential literals as
