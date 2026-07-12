@@ -1,6 +1,6 @@
 export const meta = {
-  name: 'opi-init-verify',
-  description: 'Adversarial multi-lens verification of an opi-implement init task-graph draft',
+  name: 'plan-verify',
+  description: 'Plan-stage adversarial multi-lens verification of an opi-implement task-graph draft',
   phases: [
     { title: 'Lens audit' },
     { title: 'Fold' },

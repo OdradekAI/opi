@@ -372,3 +372,36 @@ call-site traces, and current source-spec success/exit criteria. It answers:
 
 If evaluator fails → back to Phase C with findings as input. Generator may NOT
 self-approve the finding away.
+
+### Verify engine exec stage (Phase D.2)
+
+The D.2 evaluator is realized by the verify engine's exec stage (see
+`references/verify-engine.md`):
+
+- `evaluator_required = true` tasks → full 6-lens deep Workflow at
+  `scripts/exec.workflow.js` (L-D1 implementation-matches-DoD, L-D2
+  tests-non-vacuous, L-D3 production-call-site-proven, L-D4
+  evidence-truthfulness, L-D5 non-goal-leak, L-D6 workspace-deps-honored), with
+  adversarial verify before any must-fix disposition.
+- All other tasks → the 2-lens single-agent pass (L-D1 + L-D5); no script, no
+  fan-out.
+
+Must-fix findings BLOCK Phase D pass, route to Phase C, and increment
+`iteration_count` against `max_iterations` (5). The engine records a
+`verify_runs` ledger entry (`stage = "exec"`) and never auto-edits code.
+
+## Phase-Exit Verify Gate (Phase F.1a)
+
+The F.1a phase-exit evaluator produces its criteria trace (working machinery,
+phases 1-13); the verify engine's phase-exit stage then adversarially audits
+that trace (see `references/verify-engine.md`). It always runs the full 5-lens
+deep Workflow at `scripts/phase-exit.workflow.js` (L-F1 traced-to-code, L-F2
+traced-to-test, L-F3 non-goals-respected, L-F4 residuals-exactly-cited, L-F5
+substrate-vs-product-honest), once per phase.
+
+Findings that survive adversarial verify upsert
+`phase_exit[N].criteria_trace[C].status = not-met` (with the finding's
+`source_citation` as evidence pointer); `F.1b`'s existing REFUSE rule then fires
+on that row, blocking phase archive. Flagged findings surface in the report only
+and do not mutate the trace. The engine records a `verify_runs` ledger entry
+(`stage = "phase-exit"`).

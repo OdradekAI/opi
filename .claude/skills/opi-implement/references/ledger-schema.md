@@ -93,10 +93,10 @@ Atomic writes via `.opi-impl-state.json.tmp` + rename.
 | Field | Type | Mutability | Notes |
 |---|---|---|---|
 | `schema_version` | int | reinit-only | Current value `2`. v2 adds `task_owned_paths`, `definition_source`, `replaces`, `baseline_dirty_files`, `spec_files`, `spec_files_sha256`, `phase_exit[N].snapshot_path`, `phase_exit[N].task_summary`, dotted sub-task IDs, and open-string `crate` values. Reading a v1 ledger requires explicit reinit-time migration; refuse unknown versions. |
-| `spec_files` | array | const-on-init, reinit-editable | Normative spec file paths whose drift triggers reinit refusal. Default `["docs/opi-spec.md"]`. Supplemental phases MUST include only the reviewed source files registered in `skill.md` for the active phase, plus `docs/opi-spec.md`. Adding or removing a path requires `--reinit`. |
+| `spec_files` | array | const-on-init, reinit-editable | Normative spec file paths whose drift triggers the plan path's drift branch. Default `["docs/opi-spec.md"]`. Supplemental phases MUST include only the reviewed source files registered in `skill.md` for the active phase, plus `docs/opi-spec.md`. Adding or removing a path requires a plan-path sync. |
 | `spec_files_sha256` | object | reinit-only | Map of file path → SHA-256 hash at last init/reinit. Each entry is checked independently; any mismatch triggers the spec-alignment guard. |
 | `task_graph_confirmed_at` | string/null | init/reinit | ISO-8601 confirmation time |
-| `init_verification` | object/null | init-only | Written at `A.init.2f`. Shape: `{ mode ("cheap"|"deep"), wf_ref (string/null — null on the cheap path; the Workflow run id on deep), folded_count, flagged_count, rejected_count, ran_at }`. Additive and optional: absent on older ledgers and tolerated; populated on the next init. Does NOT affect `schema_version`. |
+| `verify_runs` | array/null | plan+exec+phase-exit | Written by the verify engine at each stage it runs. Each entry: `{ stage ("plan"|"exec"|"phase-exit"), wf_ref (string/null — null when the run used the single-agent path), folded_count, flagged_count, rejected_count, ran_at, task_id (string for exec; null for plan/phase-exit), criterion_id (string for phase-exit; null for plan/exec) }`. Additive/optional; absent on older ledgers, populated as stages run. Does NOT affect `schema_version`. |
 | `current_phase` | int | auto | Lowest phase with non-`passing` task |
 | `tasks[].id` | string | const | Matches a row in `opi-spec.md` §15 OR a sub-task expansion. Pattern: `^\d+\.\d+(\.\d+)?$`. Sub-task IDs carry a third component (e.g. `4.6.1`) and MUST also set `parent_spec_row`. |
 | `tasks[].phase` | int | const | From row's phase grouping |
@@ -167,7 +167,7 @@ Validation rule: every Non-Goal in the registered active phase source MUST be
 represented either by a `forbidden_scope` inference note on the relevant task
 family or by a phase-specific verification addendum. A task that implements a
 phase non-goal cannot be marked passing unless the source spec was updated and
-the ledger was reconciled through `--reinit`.
+the ledger was reconciled through the plan path.
 
 Validation rule: a task with non-empty `acceptance_scenarios` MUST include at
 least one behavioral, subprocess, harness, or integration verification command
@@ -259,6 +259,16 @@ Top-level field rules:
 
 After successful migration AND task-graph review gate confirmation, write
 `schema_version: 2` via the atomic write protocol.
+
+## verify_runs migration
+
+A ledger carrying the legacy single `init_verification` object is migrated on
+first run by pushing one `verify_runs` entry: `stage = "plan"`, `task_id = null`,
+`criterion_id = null`, and the legacy `wf_ref` / `folded_count` / `flagged_count`
+/ `rejected_count` / `ran_at` copied verbatim. **The legacy `mode` field
+("cheap"|"deep") is dropped** — cheap-vs-deep is no longer recorded at the
+ledger level after the auto-deep unification; `wf_ref` is the only surviving
+distinguisher. (Consumer-visible break; CHANGELOG'd.)
 
 ## Interrupt Recovery
 

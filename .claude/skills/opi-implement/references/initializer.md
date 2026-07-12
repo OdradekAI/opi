@@ -2,7 +2,9 @@
 
 ## Init Mode (A.init)
 
-Triggered when `.opi-impl-state.json` is absent OR `--reinit` is passed.
+Triggered when `.opi-impl-state.json` is absent (fresh) or when the unified plan
+path detects spec drift. The `plan` verb forces the plan path; a bare or
+run-specific invocation enters it only on drift.
 
 ### A.init.1 Pre-flight
 - Record current branch, baseline dirty files, and `opi-spec.md` presence.
@@ -123,11 +125,12 @@ Phase 4 examples:
 ### A.init.2e Verify
 
 Run the six-lens audit over the draft graph (post-`A.init.2a/2c/2d`,
-pre-review) against the active phase's registered source design doc. Cheap path
-(default) = one agent; deep path (`--deep-init`) = the Workflow at
-`scripts/opi-init-verify.workflow.js`. Read `references/init-verify.md` for the
-lens charters, finding schema, fold matrix, citation grammar, and the
-cheap/deep protocols.
+pre-review) against the active phase's registered source design doc. Mode is
+auto-deep by drift magnitude (single-agent for routine drift; the Workflow at
+`scripts/plan.workflow.js` for substantive change or first-init-of-a-phase).
+Read `references/verify-engine.md` for the lens charters, finding schema, fold
+matrix, citation grammar, the auto-deep classifier, and the plan-stage
+protocols.
 
 ### A.init.2f Fold + Report
 
@@ -136,7 +139,8 @@ edit on an existing task as draft edits, each recorded in `inference_notes` with
 provenance. Findings whose fix requires task-graph surgery, whose citation does
 not resolve, or that the deep-path adversarial verify rejected, are flagged for
 human (never folded). Write the folded draft to `.opi-impl-state.draft.json`,
-record `init_verification` (mode, `wf_ref` on deep, counts, timestamp), and emit
+record a `verify_runs` entry (`stage = "plan"`, `wf_ref` on deep, counts,
+timestamp), and emit
 the verification report block at `A.init.3`. This is the only mutation of the
 draft between extraction and the human review gate.
 
@@ -195,22 +199,29 @@ infrastructure (smoke script + .gitignore), not task implementation code.
 
 ## Schema Version Migration
 
-On every invocation (not just `--reinit`), inspect `schema_version` from the
-ledger before any other step.
+On every invocation, inspect `schema_version` from the ledger before any other
+step.
 
 - `schema_version == 2` (current): proceed.
-- `schema_version == 1`: refuse normal task execution. Print
-  "Ledger is v1; running v1 → v2 migration as part of `--reinit`." If the
-  invocation is not `--reinit`, exit and instruct the user to run
-  `opi-implement --reinit`. If `--reinit`: apply the v1 → v2 migration
-  documented in `ledger-schema.md`, then continue with the rest of reinit
-  reconciliation below.
+- `schema_version == 1`: route the ledger into the unified plan path's
+  fresh/drift detection. Print "Ledger is v1; running v1 → v2 migration as part
+  of plan-path sync." Apply the v1 → v2 migration documented in
+  `ledger-schema.md`, then continue with the rest of plan-path sync (drift
+  reconciliation below + `A.init.2e/2f` verify + `A.init.3` gate).
 - `schema_version > 2` or missing: refuse with an explicit message identifying
   the offending value.
 
-## Reinit Reconciliation
+## Reinit Reconciliation (drift branch of the plan path)
 
-When `--reinit` runs against an existing ledger:
+This is the drift branch of the unified plan path (spec §5.3), reached when the
+plan path detects a `spec_files_sha256` mismatch — not via a separate `--reinit`
+flag. When drift is detected on a bare (make-progress) or run-specific
+invocation, the harness runs this reconciliation, then `A.init.2e/2f`
+verify-and-fold, then PRESENTS the `A.init.3` gate and pauses — it does not
+auto-pick or run a task until the human confirms the reconciled graph. The
+`plan` verb stops at the gate regardless.
+
+When drift is detected against an existing ledger:
 
 1. For each path in `spec_files`, recompute its SHA-256 and compare with
    `spec_files_sha256`. If every entry matches → refuse, suggest `--status`.

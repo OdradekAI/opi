@@ -16,12 +16,14 @@ push commits, publish crates, or make network calls to providers.
 
 **Spec alignment rule:** Before executing any task whose `phase >= current_phase`,
 compare each entry in the ledger `spec_files_sha256` map with the current hash
-of the corresponding file in `spec_files`. If any entry differs, refuse task
-execution and direct the user to `opi-implement --reinit`. Status-only commands
-(`--status`) remain available. Phase 1/2 retries that fall below `current_phase`
-are allowed because their `Opi-DoD-SHA256` commit footers are the authoritative
-contract for shipped work. Do not run stale ledger tasks whose title or DoD
-contradicts the current spec.
+of the corresponding file in `spec_files`. If any entry differs, auto-enter the
+plan path's drift branch (Reinit Reconciliation + `A.init.2e/2f` verify-and-fold
++ the `A.init.3` gate) per `references/initializer.md` and spec §5.3; do not
+auto-pick or run a task until the human confirms the reconciled graph. Only
+`--status` bypasses drift handling. Phase 1/2 retries that fall below
+`current_phase` are allowed because their `Opi-DoD-SHA256` commit footers are
+the authoritative contract for shipped work. Do not run stale ledger tasks whose
+title or DoD contradicts the current spec.
 
 **Reviewed supplemental sources:** Supplemental tasks come only from this
 registry. Do not auto-parse arbitrary files from `docs/superpowers/specs/`.
@@ -57,11 +59,10 @@ not executable until expanded or explicitly accepted as a substrate-only task.
 ## Invocation
 
 ```text
-opi-implement                                  # auto-pick next unblocked task
-opi-implement <task-id>                        # specific task (validates deps)
+opi-implement                                  # make-progress: sync-if-needed -> auto-pick -> run (no-drift); plan+pause (drift)
+opi-implement plan                             # sync-only plan path (init or drift-reconcile), don't run
+opi-implement <task-id>                        # specific task (sync-if-needed first; validates deps)
 opi-implement --status                         # print ledger summary
-opi-implement --reinit                         # re-parse spec, reconcile
-opi-implement --deep-init                      # init only: multi-lens verify-and-fold (deep Workflow)
 opi-implement <task-id> --resume-from-manual   # verify a manual commit
 opi-implement <task-id> --extend-cap <N>       # raise iteration cap
 opi-implement --clear-blocker <id> --because <text>  # unblock a task
@@ -69,30 +70,48 @@ opi-implement --clear-blocker <id> --because <text>  # unblock a task
 
 ## Mode Detection
 
+Dispatch order (first match wins): `--status` → status mode; `--clear-blocker`
+→ clear-blocker mode; `<task-id>` with `--resume-from-manual` / `--extend-cap`
+→ task-lifecycle mode; `plan` verb → plan-only mode (sync, then stop at the
+`A.init.3` gate); `<task-id>` → run-specific mode (sync-if-needed first);
+bare → make-progress mode (sync-if-needed → auto-pick → run). Only `--status`
+bypasses drift handling.
+
 ```dot
 digraph mode {
   "Parse args" [shape=box];
-  "Ledger exists?" [shape=diamond];
-  "--reinit?" [shape=diamond];
   "--status?" [shape=diamond];
-  "Task arg?" [shape=diamond];
-  "Init mode" [shape=box];
-  "Reinit mode" [shape=box];
+  "--clear-blocker?" [shape=diamond];
+  "<task-id> + lifecycle flag?" [shape=diamond];
+  "plan verb?" [shape=diamond];
+  "<task-id>?" [shape=diamond];
   "Status mode" [shape=box];
-  "Task mode" [shape=box];
-  "Auto-pick mode" [shape=box];
+  "Clear-blocker mode" [shape=box];
+  "Task-lifecycle mode" [shape=box];
+  "Plan-only mode" [shape=box];
+  "Run-specific mode" [shape=box];
+  "Make-progress mode" [shape=box];
 
-  "Parse args" -> "Ledger exists?";
-  "Ledger exists?" -> "Init mode" [label="no"];
-  "Ledger exists?" -> "--reinit?" [label="yes"];
-  "--reinit?" -> "Reinit mode" [label="yes"];
-  "--reinit?" -> "--status?" [label="no"];
+  "Parse args" -> "--status?";
   "--status?" -> "Status mode" [label="yes"];
-  "--status?" -> "Task arg?" [label="no"];
-  "Task arg?" -> "Task mode" [label="yes"];
-  "Task arg?" -> "Auto-pick mode" [label="no"];
+  "--status?" -> "--clear-blocker?" [label="no"];
+  "--clear-blocker?" -> "Clear-blocker mode" [label="yes"];
+  "--clear-blocker?" -> "<task-id> + lifecycle flag?" [label="no"];
+  "<task-id> + lifecycle flag?" -> "Task-lifecycle mode" [label="yes"];
+  "<task-id> + lifecycle flag?" -> "plan verb?" [label="no"];
+  "plan verb?" -> "Plan-only mode" [label="yes"];
+  "plan verb?" -> "<task-id>?" [label="no"];
+  "<task-id>?" -> "Run-specific mode" [label="yes"];
+  "<task-id>?" -> "Make-progress mode" [label="no (bare)"];
 }
 ```
+
+**Drift rule (spec §5.3):** make-progress and run-specific both sync-if-needed
+first. On no drift, they proceed (make-progress auto-picks and runs;
+run-specific runs the named task). On drift, both run Reinit Reconciliation +
+`A.init.2e/2f` verify-and-fold, then PRESENT the `A.init.3` gate and PAUSE —
+neither auto-picks nor runs a task until the human confirms the reconciled
+graph. Bare `opi-implement` thus degrades to plan+pause when drift is detected.
 
 **Auto-pick rule:** Lowest task ID (lexicographic, numerically aware) whose
 `status` is `failing` AND every `depends_on` entry is `passing`. A dependency
@@ -114,10 +133,10 @@ active tasks or archived phase summaries; print which dep is missing.
 
 Phases A, B, F are cheap and always execute. C and D are the work body.
 E is the only phase that mutates git **during normal task execution**.
-(Init and reinit also commit tracked harness files - see `references/initializer.md`.)
+(The plan path also commits tracked harness files - see `references/initializer.md`.)
 
 1. **Phase A: Bootstrap**
-   - A.1 Detect mode (init / status / reinit / task / auto)
+   - A.1 Detect mode (status / clear-blocker / task-lifecycle / plan / run-specific / make-progress)
    - A.2 Load or create `.opi-impl-state.json`
    - A.3 Session ritual: `pwd`, `git status`, `git log -5 --oneline`, smoke
    - A.4 Select target task (auto-pick or validate override)
@@ -161,7 +180,11 @@ E is the only phase that mutates git **during normal task execution**.
        `source-inferred`, or `not-opi`; only `verified` closes runtime
        acceptance criteria.
    - D.1 Tier-specific mechanical gates and phase-specific addenda
-   - D.2 Task-level risk evaluator (when `evaluator_required = true`)
+   - D.2 Task-level risk evaluator: for `evaluator_required = true` tasks it
+     invokes `scripts/exec.workflow.js` (full 6-lens deep); for all others the
+     2-lens single-agent L-D1+L-D5 pass per `references/verify-engine.md`.
+     Must-fix findings block Phase D and route to Phase C (incrementing
+     `iteration_count`).
    - D.3 Cross-cutting gates: fmt, clippy, doc, smoke
    - D.4 If any fail -> back to Phase C
 
@@ -177,7 +200,10 @@ E is the only phase that mutates git **during normal task execution**.
      criteria, goals, non-goals, and named workflows from the current spec
      files, inspect code/tests independently of ledger claims, and produce a
      criteria trace with one of:
-     `met`, `deferred-by-updated-design`, or `not-met`.
+     `met`, `deferred-by-updated-design`, or `not-met`. It then invokes
+     `scripts/phase-exit.workflow.js` (5-lens audit of the trace per
+     `references/verify-engine.md`); accepted findings upsert
+     `criteria_trace[C].status = not-met`, and F.1b REFUSEs archive.
    - F.1b REFUSE phase archive when any criterion is `not-met`, or when
      `deferred-by-updated-design` lacks an exact source citation from the
      current spec/plan.
@@ -199,11 +225,11 @@ E is the only phase that mutates git **during normal task execution**.
        `chore: archive opi-implement phase <N> ledger snapshot`.
      - F.4c If declined: leave tasks array intact; no snapshot written.
 
-**When init/reinit runs:** Read `references/initializer.md` for the full flow.
+**When the plan path runs (init or drift-reconcile):** Read `references/initializer.md` for the full flow.
 
-**When A.init.2e/2f (verify-and-fold) runs:** Read `references/init-verify.md`
-for the six lens charters, fold matrix, citation grammar, and cheap/deep
-protocols.
+**When A.init.2e/2f (verify-and-fold) runs:** Read `references/verify-engine.md`
+for the six plan-stage lens charters, the shared harness, the auto-deep
+classifier, and the exec/phase-exit stage protocols.
 
 **When Phase D runs:** Read `references/verification-tiers.md` for gate details.
 
@@ -243,7 +269,7 @@ digraph select {
 | C.1 | `superpowers:test-driven-development` | red-green-refactor body |
 | C.1 | `superpowers:dispatching-parallel-agents` | when `parallelize` non-empty |
 | C.2 | `superpowers:systematic-debugging` | attempt 3+ can't reach green |
-| D.2 | code-reviewer subagent OR `superpowers:requesting-code-review` | independent evaluator for risk-gated tasks |
+| D.2 | verify engine exec stage (`scripts/exec.workflow.js` deep, or single-agent L-D1+L-D5) | adversarial must-fix verify for risk-gated tasks |
 | D pre-commit | `superpowers:verification-before-completion` | evidence-before-claim |
 | Failure (b) | `superpowers:brainstorming` | DoD interpretation ambiguous |
 
