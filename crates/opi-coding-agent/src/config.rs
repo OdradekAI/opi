@@ -40,6 +40,25 @@ pub struct DefaultsConfig {
     pub max_image_bytes: u64,
     pub theme: String,
     pub allow_mutating_tools: bool,
+    /// Phase 14 opt-in: when `Some(Keychain)`, API-key built-in providers are
+    /// described as [`opi_ai::AuthDescriptor::StoreCredential`] and doctor /
+    /// `--list-models` probe the OS keychain (keychain-first, env fallback).
+    /// Defaults to `None` (env), preserving pre-Phase-14 behavior.
+    pub credential_backend: Option<CredentialBackendSource>,
+}
+
+/// Where an API-key built-in provider sources its credential.
+///
+/// `Env` (default): the configured environment variable. `Keychain`: the OS
+/// keychain via the credential store, with env fallback on a headless host.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CredentialBackendSource {
+    /// Environment variable (pre-Phase-14 default).
+    #[default]
+    Env,
+    /// OS keychain via the credential store.
+    Keychain,
 }
 
 impl Default for DefaultsConfig {
@@ -51,6 +70,7 @@ impl Default for DefaultsConfig {
             max_image_bytes: crate::image::DEFAULT_MAX_IMAGE_BYTES,
             theme: "default".into(),
             allow_mutating_tools: false,
+            credential_backend: None,
         }
     }
 }
@@ -304,6 +324,7 @@ struct TomlDefaults {
     max_image_bytes: Option<u64>,
     theme: Option<String>,
     allow_mutating_tools: Option<bool>,
+    credential_backend: Option<CredentialBackendSource>,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -474,6 +495,9 @@ impl TomlConfig {
         }
         if let Some(v) = self.defaults.allow_mutating_tools {
             config.defaults.allow_mutating_tools = v;
+        }
+        if let Some(v) = self.defaults.credential_backend {
+            config.defaults.credential_backend = Some(v);
         }
         if let Some(v) = self.thinking.enabled {
             config.thinking.enabled = v;

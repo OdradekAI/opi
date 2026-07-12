@@ -42,6 +42,7 @@ use opi_agent::diagnostic::Diagnostic;
 use opi_agent::extension::ExtensionRegistry;
 use opi_ai::provider::{EventStream, ModelInfo, Provider, ProviderError, Request};
 use opi_ai::{AuthDescriptor, CompatMetadata, ProviderCollection, ProviderRegistry};
+use secrecy::ExposeSecret;
 
 use crate::config::{OpenAiCompatibleProviderConfig, OpiConfig, build_http_client};
 use crate::diagnostic_bridge::diagnostic_for_model_registry_error;
@@ -244,6 +245,12 @@ pub(crate) const BUILT_IN_PROVIDER_IDS: &[&str] = &[
     "azure",
     "vertex",
 ];
+
+/// Public accessor for the built-in provider id list (the binary target is a
+/// separate crate and cannot see the `pub(crate)` const directly).
+pub fn built_in_provider_ids() -> &'static [&'static str] {
+    BUILT_IN_PROVIDER_IDS
+}
 
 // ---------------------------------------------------------------------------
 // Lightweight per-provider builders for --list-models
@@ -625,18 +632,121 @@ pub fn build_provider(config: &OpiConfig) -> Result<Box<dyn Provider>, ProviderB
         ))
     })?;
 
-    build_runtime_provider(config, provider_id)
+    build_runtime_provider(config, provider_id, None)
+}
+
+/// Build the active provider, resolving its API key via `resolver`
+/// (keychain-first with env fallback). This is the Phase 14 production path;
+/// it composes [`crate::credential_store::CredentialResolver`] with provider
+/// construction. Bedrock and other non-API-key providers ignore the resolver
+/// and use their existing credential chain.
+pub async fn build_provider_with_resolver(
+    config: &OpiConfig,
+    resolver: &crate::credential_store::CredentialResolver,
+) -> Result<Box<dyn Provider>, ProviderBuildError> {
+    let spec = &config.defaults.model;
+    let (provider_id, _) = parse_model_spec(spec).map_err(|_| {
+        ProviderBuildError::Config(format!(
+            "invalid model spec: {spec:?} (expected provider:model)"
+        ))
+    })?;
+    // Resolve via the configured env var name (keychain -> env fallback).
+    let pre_resolved = if let Some(env_name) = api_key_env_name(config, provider_id) {
+        resolver
+            .resolve_api_key(provider_id, &env_name)
+            .await
+            .map(|resolved| {
+                // `source` is diagnostic-only; the secret is exposed only at
+                // this narrow construction boundary.
+                resolved.value.expose_secret().to_owned()
+            })
+    } else {
+        // Non-API-key providers (bedrock) have no env_name; fall through to
+        // their own credential chain below.
+        None
+    };
+    // Surface the headless backend-unavailable fallback as a warning so the
+    // diagnostic is visible without blocking construction (env fallback keeps
+    // the provider usable).
+    build_runtime_provider(config, provider_id, pre_resolved)
+}
+
+/// Build the active provider through the production credential resolver: a
+/// [`crate::credential_store::KeychainCredentialStore`] over the platform
+/// keychain with env fallback. In Phase 14.1 (no native store crate compiled)
+/// the keychain probe resolves to `BackendUnavailable` and the resolver falls
+/// back to env, so behavior matches the legacy env path; real keychain storage
+/// ships with T2.
+pub async fn build_provider_production(
+    config: &OpiConfig,
+    user_config_dir: std::path::PathBuf,
+) -> Result<Box<dyn Provider>, ProviderBuildError> {
+    let store = Arc::new(crate::credential_store::KeychainCredentialStore::new(
+        Box::new(crate::credential_store::KeyringCoreBackend::new()),
+        user_config_dir,
+    ));
+    let resolver = crate::credential_store::CredentialResolver::production(store);
+    build_provider_with_resolver(config, &resolver).await
+}
+
+/// Resolve the API-key env var name for a built-in provider, or `None` for
+/// providers that do not source a single API key (bedrock).
+fn api_key_env_name(config: &OpiConfig, provider_id: &str) -> Option<String> {
+    match provider_id {
+        "anthropic" => Some(config.providers.anthropic.api_key_env.clone()),
+        "openai" => Some(resolve_env_name(
+            &config.providers.openai.api_key_env,
+            "OPENAI_API_KEY",
+        )),
+        "openrouter" => Some(resolve_env_name(
+            &config.providers.openrouter.api_key_env,
+            "OPENROUTER_API_KEY",
+        )),
+        "mistral" => Some(resolve_env_name(
+            &config.providers.mistral.api_key_env,
+            "MISTRAL_API_KEY",
+        )),
+        "openai-responses" => Some(resolve_env_name(
+            &config.providers.openai_responses.api_key_env,
+            "OPENAI_API_KEY",
+        )),
+        "gemini" => Some(resolve_env_name(
+            &config.providers.gemini.api_key_env,
+            "GEMINI_API_KEY",
+        )),
+        "azure" => Some(resolve_env_name(
+            &config.providers.azure.api_key_env,
+            "AZURE_OPENAI_API_KEY",
+        )),
+        "vertex" => Some(resolve_env_name(
+            &config.providers.vertex.access_token_env,
+            "VERTEX_ACCESS_TOKEN",
+        )),
+        _ => None,
+    }
+}
+
+/// Return a pre-resolved key if present, otherwise read it from `env_name`.
+fn resolved_or_env(
+    pre_resolved: Option<String>,
+    env_name: &str,
+) -> Result<String, ProviderBuildError> {
+    match pre_resolved {
+        Some(key) => Ok(key),
+        None => require_api_key(env_name),
+    }
 }
 
 fn build_runtime_provider(
     config: &OpiConfig,
     provider_id: &str,
+    pre_resolved: Option<String>,
 ) -> Result<Box<dyn Provider>, ProviderBuildError> {
     let spec = &config.defaults.model;
     match provider_id {
         "anthropic" => {
             let env_name = &config.providers.anthropic.api_key_env;
-            let api_key = require_api_key(env_name)?;
+            let api_key = resolved_or_env(pre_resolved.clone(), env_name)?;
             let client = build_proxied_client(config.providers.anthropic.proxy.as_ref())?;
             let provider = opi_ai::anthropic::AnthropicProvider::with_client(
                 api_key,
@@ -647,7 +757,7 @@ fn build_runtime_provider(
         }
         "openai" => {
             let env_name = resolve_env_name(&config.providers.openai.api_key_env, "OPENAI_API_KEY");
-            let api_key = require_api_key(&env_name)?;
+            let api_key = resolved_or_env(pre_resolved.clone(), &env_name)?;
             let client = build_proxied_client(config.providers.openai.proxy.as_ref())?;
             let provider = opi_ai::openai_chat::OpenAiChatProvider::with_client(
                 api_key,
@@ -663,7 +773,7 @@ fn build_runtime_provider(
                 &config.providers.openrouter.api_key_env,
                 "OPENROUTER_API_KEY",
             );
-            let api_key = require_api_key(&env_name)?;
+            let api_key = resolved_or_env(pre_resolved.clone(), &env_name)?;
             let client = build_proxied_client(config.providers.openrouter.proxy.as_ref())?;
             // If a custom referer is configured, build the provider directly with it.
             let provider = if let Some(ref referer) = config.providers.openrouter.referer {
@@ -705,7 +815,7 @@ fn build_runtime_provider(
         "mistral" => {
             let env_name =
                 resolve_env_name(&config.providers.mistral.api_key_env, "MISTRAL_API_KEY");
-            let api_key = require_api_key(&env_name)?;
+            let api_key = resolved_or_env(pre_resolved.clone(), &env_name)?;
             let client = build_proxied_client(config.providers.mistral.proxy.as_ref())?;
             let provider = opi_ai::mistral::mistral_provider(
                 api_key,
@@ -719,7 +829,7 @@ fn build_runtime_provider(
                 &config.providers.openai_responses.api_key_env,
                 "OPENAI_API_KEY",
             );
-            let api_key = require_api_key(&env_name)?;
+            let api_key = resolved_or_env(pre_resolved.clone(), &env_name)?;
             let client = build_proxied_client(config.providers.openai_responses.proxy.as_ref())?;
             let provider = opi_ai::openai_responses::OpenAiResponsesProvider::with_client(
                 api_key,
@@ -730,7 +840,7 @@ fn build_runtime_provider(
         }
         "gemini" => {
             let env_name = resolve_env_name(&config.providers.gemini.api_key_env, "GEMINI_API_KEY");
-            let api_key = require_api_key(&env_name)?;
+            let api_key = resolved_or_env(pre_resolved.clone(), &env_name)?;
             let client = build_proxied_client(config.providers.gemini.proxy.as_ref())?;
             let provider = opi_ai::gemini::GeminiProvider::with_client(
                 api_key,
@@ -794,7 +904,7 @@ fn build_runtime_provider(
         "azure" => {
             let azure_config = &config.providers.azure;
             let env_name = resolve_env_name(&azure_config.api_key_env, "AZURE_OPENAI_API_KEY");
-            let api_key = require_api_key(&env_name)?;
+            let api_key = resolved_or_env(pre_resolved.clone(), &env_name)?;
 
             // Extract deployment name from model spec (azure:deployment-name)
             let deployment = spec.split_once(':').map(|(_, id)| id).unwrap_or("");
@@ -820,7 +930,7 @@ fn build_runtime_provider(
         "vertex" => {
             let vertex_config = &config.providers.vertex;
             let env_name = resolve_env_name(&vertex_config.access_token_env, "VERTEX_ACCESS_TOKEN");
-            let access_token = require_api_key(&env_name)?;
+            let access_token = resolved_or_env(pre_resolved.clone(), &env_name)?;
 
             let project = vertex_config.project.as_deref().ok_or_else(|| {
                 ProviderBuildError::Config("vertex provider requires project".into())
@@ -894,7 +1004,20 @@ pub fn auth_descriptor_for(config: &OpiConfig, provider_id: &str) -> Option<Auth
         "bedrock" => "AWS_ACCESS_KEY_ID".to_string(),
         _ => return None,
     };
-    Some(AuthDescriptor::EnvApiKey { env_var })
+    // Phase 14 opt-in: API-key providers (everything except Bedrock's AWS
+    // credential chain) describe their credential as keychain-sourced when the
+    // user selects the keychain backend. The descriptor is secret-free; the
+    // redacted probe state is injected separately by the caller.
+    if config.defaults.credential_backend == Some(crate::config::CredentialBackendSource::Keychain)
+        && provider_id != "bedrock"
+    {
+        Some(AuthDescriptor::StoreCredential {
+            key: provider_id.to_owned(),
+            display_source: format!("keychain opi:{provider_id}"),
+        })
+    } else {
+        Some(AuthDescriptor::EnvApiKey { env_var })
+    }
 }
 
 fn resolved_auth_descriptor_for(config: &OpiConfig, provider_id: &str) -> AuthDescriptor {
@@ -960,17 +1083,34 @@ pub fn compat_metadata_for_profile(profile: &OpenAiCompatibleProviderConfig) -> 
 /// config (e.g. invalid proxy) is fatal.
 pub fn build_collection_for_listing(
     config: &OpiConfig,
+    store_probe: &std::collections::HashMap<String, opi_ai::CredentialSource>,
 ) -> Result<ProviderCollection, ListModelsError> {
     let mut collection = ProviderCollection::new();
     for provider_id in BUILT_IN_PROVIDER_IDS {
         match build_list_models_provider(config, provider_id) {
             Ok(provider) => {
-                let auth = resolved_auth_descriptor_for(config, provider_id);
+                // Preserve the legacy Resolved descriptor for env-backed
+                // providers; only keychain-backend (StoreCredential) providers
+                // carry the secret-free store descriptor + injected probe.
+                let auth = match auth_descriptor_for(config, provider_id) {
+                    Some(store_auth @ AuthDescriptor::StoreCredential { .. }) => store_auth,
+                    _ => resolved_auth_descriptor_for(config, provider_id),
+                };
                 let compat = compat_metadata_for(provider_id);
-                if let Err(e) = collection.register(provider, auth, compat) {
+                if let Err(e) = collection.register(provider, auth.clone(), compat) {
                     return Err(ListModelsError::Config(format!(
                         "provider registration failed: {e}"
                     )));
+                }
+                // Inject the redacted, precomputed probe for StoreCredential
+                // providers so the listing collection carries keychain state
+                // without the secret.
+                if matches!(auth, AuthDescriptor::StoreCredential { .. }) {
+                    let source = store_probe
+                        .get(*provider_id)
+                        .cloned()
+                        .unwrap_or(opi_ai::CredentialSource::Absent);
+                    collection.set_probe(provider_id, source);
                 }
             }
             Err(ListModelsError::MissingCredentials) => continue,

@@ -497,7 +497,7 @@ supports_thinking = false
     assert!(auth_descriptor_for(&config, "not-a-real-provider").is_none());
 
     with_env_var(env_var, "test-key", || {
-        let collection = build_collection_for_listing(&config)
+        let collection = build_collection_for_listing(&config, &std::collections::HashMap::new())
             .expect("listing collection builds through the factory");
 
         // The factory returns the ProviderCollection/auth-seam type and the profile
@@ -698,8 +698,8 @@ supports_thinking = false
     let config = load_config_file(&path).unwrap();
 
     with_env_vars(&[(openai_env, "   "), (profile_env, "\t ")], || {
-        let collection =
-            build_collection_for_listing(&config).expect("whitespace credentials are skipped");
+        let collection = build_collection_for_listing(&config, &std::collections::HashMap::new())
+            .expect("whitespace credentials are skipped");
         let provider_ids = collection.provider_ids();
         assert!(!provider_ids.contains(&"openai"));
         assert!(!provider_ids.contains(&"testprof"));
@@ -728,7 +728,8 @@ api_key_env = "{env_var}"
     let config = load_config_file(&path).unwrap();
 
     with_env_var(env_var, "test-key", || {
-        let collection = build_collection_for_listing(&config).expect("listing collection builds");
+        let collection = build_collection_for_listing(&config, &std::collections::HashMap::new())
+            .expect("listing collection builds");
         assert_eq!(
             collection.auth_status("openai"),
             Some(AuthStatus::Configured)
@@ -1002,7 +1003,7 @@ max_output_tokens = 4096
             Ok(_) => panic!("runtime empty-base_url should be Config, got Ok provider"),
         }
 
-        match build_collection_for_listing(&config) {
+        match build_collection_for_listing(&config, &std::collections::HashMap::new()) {
             Err(ListModelsError::Config(msg)) => assert!(
                 msg.contains("base_url"),
                 "listing empty-base_url Config should mention base_url, got: {msg:?}"
@@ -1070,7 +1071,7 @@ max_output_tokens = 4096
         || {
             let mut cfg = opi_coding_agent::config::OpiConfig::default();
             cfg.providers.azure.endpoint = Some("https://test.openai.azure.com".into());
-            match build_collection_for_listing(&cfg) {
+            match build_collection_for_listing(&cfg, &std::collections::HashMap::new()) {
                 Err(ListModelsError::Config(msg)) => assert!(
                     msg.contains("deployments"),
                     "azure no-deployments Config should mention deployments, got: {msg:?}"

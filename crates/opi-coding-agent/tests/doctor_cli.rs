@@ -55,12 +55,18 @@ fn ctx<'a>(
         no_color: false,
         colorterm: None,
         env_var,
+        store_probe: &EMPTY_STORE_PROBE,
     }
 }
 
 fn no_env(_: &str) -> Option<String> {
     None
 }
+
+/// Shared empty probe map for tests that do not exercise StoreCredential.
+static EMPTY_STORE_PROBE: std::sync::LazyLock<
+    std::collections::HashMap<String, opi_ai::CredentialSource>,
+> = std::sync::LazyLock::new(std::collections::HashMap::new);
 
 /// Collect the distinct scope strings present in a report's NDJSON output.
 fn scope_strings(report: &DoctorReport) -> Vec<String> {
@@ -974,4 +980,193 @@ fn package_doctor_remains_a_distinct_intact_subcommand() {
         output.status.code() == Some(0),
         "package doctor should exit 0 in a clean environment\nstdout: {stdout}",
     );
+}
+
+// ---------------------------------------------------------------------------
+// Phase 14.1: stored-credential probe surfaces (acceptance scenario)
+// ---------------------------------------------------------------------------
+
+/// Acceptance scenario `phase14-store-probe-surfaces` (doctor half): with a
+/// keychain-backend config, doctor consults the injected redacted probe and
+/// distinguishes Present / Absent / BackendUnavailable with distinct
+/// severities+messages, and never emits the credential value. Exercises the
+/// production `run_doctor` path with a hand-built store_probe map (the async
+/// outer orchestration in `run_doctor_cli` produces exactly this map).
+/// Acceptance scenario `phase14-store-probe-surfaces` (doctor half): with a
+/// keychain-backend config, a REAL secret-bearing credential is seeded in the
+/// store; doctor probes it (Present, label-only — never reading the secret) and
+/// emits only the redacted label. The seeded access/refresh secrets must NOT
+/// appear in either output mode. This is non-vacuous: the secrets ARE in the
+/// store, so a regression that read+emitted the secret would fail this test.
+/// (The Absent-vs-BackendUnavailable distinction is covered by
+/// `stored_credential_backend_unavailable_is_distinct_from_absent`.)
+#[tokio::test]
+async fn stored_credential_probe_is_redacted() {
+    use opi_ai::credential::CredentialStore;
+    use opi_ai::{AuthDescriptor, Credential, CredentialSource};
+    use opi_coding_agent::config::CredentialBackendSource;
+    use opi_coding_agent::credential_store::{FakeKeyringBackend, KeychainCredentialStore};
+    use secrecy::SecretString;
+
+    let mut config = OpiConfig::default();
+    config.defaults.model = "anthropic:claude-store-probe".into();
+    config.defaults.credential_backend = Some(CredentialBackendSource::Keychain);
+
+    // Keychain backend -> StoreCredential descriptor for the API-key provider.
+    let descriptor =
+        opi_coding_agent::provider_factory::auth_descriptor_for(&config, "anthropic").unwrap();
+    assert!(
+        matches!(descriptor, AuthDescriptor::StoreCredential { .. }),
+        "expected StoreCredential descriptor, got {descriptor:?}"
+    );
+
+    let secret_access = "atk-doctor-probe-DO-NOT-LEAK";
+    let secret_refresh = "rtk-doctor-probe-DO-NOT-LEAK";
+
+    let dir = tempfile::tempdir().unwrap();
+    let store = KeychainCredentialStore::new(
+        Box::new(FakeKeyringBackend::new()),
+        dir.path().to_path_buf(),
+    );
+    // Seed a real OAuth credential carrying access + refresh secrets.
+    store
+        .write(
+            "anthropic",
+            &Credential::OAuthToken {
+                access: SecretString::new(secret_access.to_owned().into_boxed_str()),
+                refresh: SecretString::new(secret_refresh.to_owned().into_boxed_str()),
+                expires_at: None,
+                base_url: Some("https://copilot.example/api".to_owned()),
+            },
+        )
+        .await
+        .unwrap();
+
+    // Probe -> Present{label}, carrying NO secret. The async outer command path
+    // (run_doctor_cli) builds exactly this map from store.probe.
+    let probed = store.probe("anthropic").await;
+    assert!(
+        matches!(probed, CredentialSource::Present { .. }),
+        "expected Present probe, got {probed:?}"
+    );
+    let mut store_probe = HashMap::new();
+    store_probe.insert("anthropic".to_string(), probed);
+
+    let env_probe = |_: &str| None;
+    let report = run_doctor(
+        &[DoctorScope::Provider],
+        &DoctorContext {
+            config: &config,
+            config_error: None,
+            workspace_root: Path::new("."),
+            user_config_dir: dir.path(),
+            sessions_dir: dir.path(),
+            term: None,
+            term_program: None,
+            term_features: None,
+            no_color: false,
+            colorterm: None,
+            env_var: &env_probe,
+            store_probe: &store_probe,
+        },
+    );
+
+    let entry = report
+        .entries
+        .iter()
+        .find(|e| e.diagnostic.source == opi_agent::diagnostic::SOURCE_PROVIDER)
+        .expect("provider diagnostic present");
+    assert_eq!(entry.diagnostic.severity, Severity::Info);
+
+    // NON-VACUOUS redaction: access + refresh ARE in the store; doctor only
+    // probed, so neither may appear in text or JSON output.
+    let text = format_text(&report);
+    let json = format_json(&report);
+    assert!(!text.contains(secret_access), "text leaked access: {text}");
+    assert!(
+        !text.contains(secret_refresh),
+        "text leaked refresh: {text}"
+    );
+    assert!(!json.contains(secret_access), "json leaked access: {json}");
+    assert!(
+        !json.contains(secret_refresh),
+        "json leaked refresh: {json}"
+    );
+}
+
+/// BackendUnavailable must be a *distinct* diagnostic from Absent (spec SC1:
+/// doctor distinguishes "missing entry" from "no keychain daemon").
+#[test]
+fn stored_credential_backend_unavailable_is_distinct_from_absent() {
+    use opi_ai::CredentialSource;
+    use opi_coding_agent::config::CredentialBackendSource;
+
+    let mut config = OpiConfig::default();
+    config.defaults.model = "anthropic:claude-distinct".into();
+    config.defaults.credential_backend = Some(CredentialBackendSource::Keychain);
+
+    let dir = tempfile::tempdir().unwrap();
+    let env_probe = |_: &str| None;
+
+    let mut absent = HashMap::new();
+    absent.insert("anthropic".to_string(), CredentialSource::Absent);
+    let absent_report = run_doctor(
+        &[DoctorScope::Provider],
+        &DoctorContext {
+            config: &config,
+            config_error: None,
+            workspace_root: Path::new("."),
+            user_config_dir: dir.path(),
+            sessions_dir: dir.path(),
+            term: None,
+            term_program: None,
+            term_features: None,
+            no_color: false,
+            colorterm: None,
+            env_var: &env_probe,
+            store_probe: &absent,
+        },
+    );
+
+    let mut unavail = HashMap::new();
+    unavail.insert(
+        "anthropic".to_string(),
+        CredentialSource::BackendUnavailable {
+            reason: "no keychain daemon".to_owned(),
+        },
+    );
+    let unavail_report = run_doctor(
+        &[DoctorScope::Provider],
+        &DoctorContext {
+            config: &config,
+            config_error: None,
+            workspace_root: Path::new("."),
+            user_config_dir: dir.path(),
+            sessions_dir: dir.path(),
+            term: None,
+            term_program: None,
+            term_features: None,
+            no_color: false,
+            colorterm: None,
+            env_var: &env_probe,
+            store_probe: &unavail,
+        },
+    );
+
+    // Different diagnostic codes: Absent -> doctor_provider_credentials,
+    // BackendUnavailable -> doctor_provider_credential_backend.
+    let absent_code = absent_report
+        .entries
+        .iter()
+        .find(|e| e.diagnostic.source == opi_agent::diagnostic::SOURCE_PROVIDER)
+        .map(|e| e.diagnostic.code)
+        .expect("absent provider diagnostic");
+    let unavail_code = unavail_report
+        .entries
+        .iter()
+        .find(|e| e.diagnostic.source == opi_agent::diagnostic::SOURCE_PROVIDER)
+        .map(|e| e.diagnostic.code)
+        .expect("unavailable provider diagnostic");
+    assert_ne!(absent_code, unavail_code);
+    assert_eq!(unavail_code, "doctor_provider_credential_backend");
 }

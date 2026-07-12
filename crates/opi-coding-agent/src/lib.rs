@@ -4,6 +4,7 @@ pub mod adapter_protocol;
 pub mod cli;
 pub mod config;
 pub mod context_files;
+pub mod credential_store;
 pub mod diagnostic_bridge;
 pub mod doctor;
 pub mod harness;

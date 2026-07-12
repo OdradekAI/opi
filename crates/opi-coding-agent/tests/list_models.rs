@@ -463,3 +463,81 @@ fn list_models_json_output_is_valid_json() {
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// Phase 14.1: stored-credential metadata is redacted (acceptance scenario)
+// ---------------------------------------------------------------------------
+
+/// Acceptance scenario `phase14-store-probe-surfaces` (list-models half):
+/// with a keychain-backend config, `build_collection_for_listing` carries the
+/// redacted, precomputed probe for the StoreCredential provider and exposes no
+/// credential value through the listing entries. The env key is set only so the
+/// provider constructs for model enumeration; it never reaches the probe or the
+/// listing rows.
+#[test]
+fn stored_credential_metadata_is_redacted() {
+    use std::collections::HashMap;
+    use std::sync::Mutex;
+
+    use opi_ai::{AuthDescriptor, CredentialSource};
+    use opi_coding_agent::config::CredentialBackendSource;
+    use opi_coding_agent::provider_factory::build_collection_for_listing;
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+    let _guard = ENV_LOCK.lock().unwrap();
+    let secret = "sk-listmodels-DO-NOT-LEAK";
+    let original = std::env::var_os("ANTHROPIC_API_KEY");
+    // SAFETY: serialized by ENV_LOCK; restored below.
+    unsafe { std::env::set_var("ANTHROPIC_API_KEY", secret) };
+
+    let outcome = build_collection_for_listing(
+        &{
+            let mut config = opi_coding_agent::config::OpiConfig::default();
+            config.defaults.model = "anthropic:claude-listmodels".into();
+            config.defaults.credential_backend = Some(CredentialBackendSource::Keychain);
+            config
+        },
+        &{
+            let mut probe_map = HashMap::new();
+            probe_map.insert(
+                "anthropic".to_string(),
+                CredentialSource::Present {
+                    label: "keychain opi:anthropic".to_owned(),
+                },
+            );
+            probe_map
+        },
+    );
+
+    // Restore env regardless of outcome.
+    match original {
+        Some(v) => unsafe { std::env::set_var("ANTHROPIC_API_KEY", v) },
+        None => unsafe { std::env::remove_var("ANTHROPIC_API_KEY") },
+    }
+
+    let collection = outcome.expect("listing collection builds with env key");
+    // Redacted probe carried, no secret.
+    let probe = collection.probe("anthropic").expect("probe injected");
+    assert!(
+        matches!(probe, CredentialSource::Present { .. }),
+        "expected Present probe, got {probe:?}"
+    );
+    assert!(!format!("{probe:?}").contains(secret));
+    // StoreCredential descriptor, no secret.
+    let desc = collection
+        .auth_descriptor("anthropic")
+        .expect("descriptor present");
+    assert!(
+        matches!(desc, AuthDescriptor::StoreCredential { .. }),
+        "expected StoreCredential, got {desc:?}"
+    );
+    assert!(!format!("{desc:?}").contains(secret));
+    // Model rows enumerate and carry no secret.
+    let entries = model_entries_from_registry(collection.registry());
+    assert!(entries.iter().any(|e| e.provider_id == "anthropic"));
+    for e in &entries {
+        assert!(!e.provider_id.contains(secret));
+        assert!(!e.model_id.contains(secret));
+        assert!(!e.display_name.contains(secret));
+    }
+}

@@ -34,6 +34,7 @@
 //! runtime; all environment and filesystem access is threaded through
 //! [`DoctorContext`] by the binary.
 
+use std::collections::HashMap;
 use std::path::Path;
 
 use serde::Serialize;
@@ -43,6 +44,7 @@ use opi_agent::diagnostic::{
 };
 use opi_agent::{Diagnostic, DiagnosticPayload, RedactionMode, Severity};
 use opi_ai::AuthDescriptor;
+use opi_ai::credential::CredentialSource;
 
 use crate::config::{ConfigError, OpiConfig};
 use crate::diagnostic_bridge::{diagnostic_from_config, diagnostic_from_package};
@@ -145,6 +147,12 @@ pub struct DoctorContext<'a> {
     pub colorterm: Option<&'a str>,
     /// Probe for an environment variable's presence (credential checks).
     pub env_var: &'a dyn Fn(&str) -> Option<String>,
+    /// Phase 14: precomputed, redacted probe state for
+    /// [`AuthDescriptor::StoreCredential`] providers. The async outer command
+    /// path probes the credential store and passes the resulting
+    /// [`CredentialSource`] map here so the secret-free descriptor does not
+    /// have to perform IO. Carries no secret.
+    pub store_probe: &'a HashMap<String, CredentialSource>,
 }
 
 /// A single doctor diagnostic tagged with the scope that produced it.
@@ -193,6 +201,7 @@ impl DoctorReport {
 const CODE_DOCTOR_CONFIG_MODEL: &str = "doctor_config_model";
 const CODE_DOCTOR_CONFIG_PROXY: &str = "doctor_config_proxy";
 const CODE_DOCTOR_PROVIDER_CREDENTIALS: &str = "doctor_provider_credentials";
+const CODE_DOCTOR_PROVIDER_CREDENTIAL_BACKEND: &str = "doctor_provider_credential_backend";
 const CODE_DOCTOR_PROVIDER_ENDPOINT: &str = "doctor_provider_endpoint";
 const CODE_DOCTOR_PROVIDER_UNKNOWN: &str = "doctor_provider_unknown";
 const CODE_DOCTOR_PACKAGE_SUMMARY: &str = "doctor_package_summary";
@@ -219,7 +228,7 @@ pub fn run_doctor(scopes: &[DoctorScope], ctx: &DoctorContext) -> DoctorReport {
         }
         let diagnostics = match scope {
             DoctorScope::Config => config_diagnostics(ctx.config, ctx.config_error),
-            DoctorScope::Provider => provider_diagnostics(ctx.config, ctx.env_var),
+            DoctorScope::Provider => provider_diagnostics(ctx.config, ctx.env_var, ctx.store_probe),
             DoctorScope::Package => package_diagnostics(ctx.workspace_root, ctx.user_config_dir),
             DoctorScope::Session => session_diagnostics(ctx.sessions_dir),
             DoctorScope::Tui => tui_diagnostics(
@@ -332,6 +341,7 @@ fn config_diagnostics(config: &OpiConfig, config_error: Option<&ConfigError>) ->
 fn provider_diagnostics(
     config: &OpiConfig,
     env_var: &dyn Fn(&str) -> Option<String>,
+    store_probe: &HashMap<String, CredentialSource>,
 ) -> Vec<Diagnostic> {
     let mut out = Vec::new();
 
@@ -348,36 +358,47 @@ fn provider_diagnostics(
         return out;
     };
 
-    match provider_credential_probe(config, provider, env_var) {
+    match provider_credential_probe(config, provider, env_var, store_probe) {
         Some(probe) => {
-            let message = if probe.present {
-                format!(
-                    "provider {:?} credentials present ({})",
-                    provider, probe.label
-                )
-            } else {
-                format!(
-                    "provider {:?} credentials not set ({})",
-                    provider, probe.label
-                )
-            };
-            let severity = if probe.present {
-                Severity::Info
-            } else {
-                Severity::Warning
+            let (severity, message, code, present_flag) = match probe.state {
+                ProbeState::Present => (
+                    Severity::Info,
+                    format!(
+                        "provider {:?} credentials present ({})",
+                        provider, probe.label
+                    ),
+                    CODE_DOCTOR_PROVIDER_CREDENTIALS,
+                    true,
+                ),
+                ProbeState::Absent => (
+                    Severity::Warning,
+                    format!(
+                        "provider {:?} credentials not set ({})",
+                        provider, probe.label
+                    ),
+                    CODE_DOCTOR_PROVIDER_CREDENTIALS,
+                    false,
+                ),
+                // BackendUnavailable is its own diagnostic so a headless host
+                // (no keychain daemon) is distinct from a missing entry.
+                ProbeState::BackendUnavailable => (
+                    Severity::Warning,
+                    format!(
+                        "provider {:?} credential backend unavailable ({})",
+                        provider, probe.label
+                    ),
+                    CODE_DOCTOR_PROVIDER_CREDENTIAL_BACKEND,
+                    false,
+                ),
             };
             out.push(
-                Diagnostic::new(
-                    severity,
-                    CODE_DOCTOR_PROVIDER_CREDENTIALS,
-                    SOURCE_PROVIDER,
-                    message,
-                )
-                .details(serde_json::json!({
-                    "provider": provider,
-                    "credentials_present": probe.present,
-                    "credential_probe": probe.label,
-                })),
+                Diagnostic::new(severity, code, SOURCE_PROVIDER, message).details(
+                    serde_json::json!({
+                        "provider": provider,
+                        "credentials_present": present_flag,
+                        "credential_probe": probe.label,
+                    }),
+                ),
             );
         }
         None => out.push(Diagnostic::new(
@@ -594,15 +615,26 @@ fn rpc_diagnostics() -> Vec<Diagnostic> {
 // Config helpers
 // ---------------------------------------------------------------------------
 
+/// Three-state credential probe outcome. Distinct from a plain bool so doctor
+/// can separate "missing entry" from "backend unavailable".
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ProbeState {
+    Present,
+    Absent,
+    BackendUnavailable,
+}
+
 struct CredentialProbe {
+    /// Non-secret display label (env var name, keychain label, reason, ...).
     label: String,
-    present: bool,
+    state: ProbeState,
 }
 
 fn provider_credential_probe(
     config: &OpiConfig,
     provider: &str,
     env_var: &dyn Fn(&str) -> Option<String>,
+    store_probe: &HashMap<String, CredentialSource>,
 ) -> Option<CredentialProbe> {
     if provider == "bedrock" {
         return Some(bedrock_credential_probe(config, env_var));
@@ -617,13 +649,51 @@ fn provider_credential_probe(
     })?;
     match descriptor {
         AuthDescriptor::EnvApiKey { env_var: env_name } => Some(CredentialProbe {
-            present: env_value_present(env_var, &env_name),
+            state: if env_value_present(env_var, &env_name) {
+                ProbeState::Present
+            } else {
+                ProbeState::Absent
+            },
             label: format!("env {env_name}"),
         }),
         AuthDescriptor::StaticApiKey { value } => Some(CredentialProbe {
-            present: value.is_present(),
+            state: if value.is_present() {
+                ProbeState::Present
+            } else {
+                ProbeState::Absent
+            },
             label: "static api key".to_string(),
         }),
+        // StoreCredential is secret-free: consult the precomputed redacted
+        // probe injected via DoctorContext.store_probe. The explicit arm
+        // ensures the variant is never silently absorbed by a wildcard
+        // (spec: "the existing wildcard in doctor must not silently absorb it").
+        AuthDescriptor::StoreCredential {
+            key,
+            display_source,
+        } => {
+            let state = match store_probe.get(&key) {
+                Some(CredentialSource::Present { .. }) => ProbeState::Present,
+                Some(CredentialSource::BackendUnavailable { reason }) => {
+                    return Some(CredentialProbe {
+                        label: format!("{display_source} (backend unavailable: {reason})"),
+                        state: ProbeState::BackendUnavailable,
+                    });
+                }
+                // Absent, or no probe injected for this provider.
+                _ => ProbeState::Absent,
+            };
+            Some(CredentialProbe {
+                label: display_source,
+                state,
+            })
+        }
+        // Resolved descriptors have no presence to probe; emit nothing rather
+        // than falling through a wildcard that would misclassify them.
+        AuthDescriptor::Resolved { .. } => None,
+        // `AuthDescriptor` is `#[non_exhaustive]`, so a wildcard is required
+        // for cross-crate matching; StoreCredential is handled explicitly above
+        // so it is never silently absorbed here.
         _ => None,
     }
 }
@@ -646,13 +716,13 @@ fn bedrock_credential_probe(
     let secret_present = env_value_present(env_var, secret_env);
     if config_access_present && secret_present {
         return CredentialProbe {
-            present: true,
+            state: ProbeState::Present,
             label: format!("config access_key_id + env {secret_env}"),
         };
     }
     if env_access_present && secret_present {
         return CredentialProbe {
-            present: true,
+            state: ProbeState::Present,
             label: format!("env AWS_ACCESS_KEY_ID + env {secret_env}"),
         };
     }
@@ -662,19 +732,19 @@ fn bedrock_credential_probe(
         .filter(|profile| !profile.trim().is_empty())
     {
         return CredentialProbe {
-            present: true,
+            state: ProbeState::Present,
             label: format!("profile {profile}"),
         };
     }
     if let Some(profile) = env_var("AWS_PROFILE").filter(|profile| !profile.trim().is_empty()) {
         return CredentialProbe {
-            present: true,
+            state: ProbeState::Present,
             label: format!("env AWS_PROFILE {profile}"),
         };
     }
 
     CredentialProbe {
-        present: false,
+        state: ProbeState::Absent,
         label: if config_access_present {
             format!("config access_key_id + env {secret_env}")
         } else {

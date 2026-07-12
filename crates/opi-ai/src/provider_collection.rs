@@ -37,6 +37,7 @@ use std::collections::HashMap;
 
 use futures_util::StreamExt;
 
+use crate::credential::CredentialSource;
 use crate::message::AssistantMessage;
 use crate::provider::{EventStream, ModelInfo, Provider, ProviderError, Request};
 use crate::registry::{ModelCapabilities, ProviderRegistry, RegistrationError, RegistryError};
@@ -116,6 +117,20 @@ pub enum AuthDescriptor {
         /// Non-secret credential source label.
         source: String,
     },
+    /// A credential sourced from the OS keychain via the credential store.
+    ///
+    /// Additive Phase 14 variant. Secret-free: `key` is the store account key
+    /// (usually the provider id) and `display_source` is a non-secret label
+    /// shown in diagnostics. The descriptor itself cannot perform IO, so the
+    /// redacted [`CredentialSource`] probe state is injected separately at
+    /// construction via [`ProviderCollection::set_probe`] and consulted by
+    /// [`ProviderCollection::dispatch_stream`].
+    StoreCredential {
+        /// Store account key (typically the provider id).
+        key: String,
+        /// Non-secret display label (e.g. `keychain opi:anthropic`).
+        display_source: String,
+    },
 }
 
 impl AuthDescriptor {
@@ -155,6 +170,12 @@ impl AuthDescriptor {
                     AuthStatus::Configured
                 }
             }
+            // Not authoritative: the secret-free descriptor cannot perform IO,
+            // so the redacted probe state is injected via set_probe and gated in
+            // dispatch_stream. Returning Configured here keeps auth_status()
+            // non-blocking for the variant; dispatch_stream never consults
+            // auth_status() for StoreCredential providers (see its hoisted gate).
+            AuthDescriptor::StoreCredential { .. } => AuthStatus::Configured,
         }
     }
 }
@@ -246,6 +267,11 @@ pub struct ProviderCollection {
     registry: ProviderRegistry,
     auth: HashMap<String, AuthDescriptor>,
     compat: HashMap<String, CompatMetadata>,
+    /// Redacted, precomputed probe state for [`AuthDescriptor::StoreCredential`]
+    /// providers. The secret-free descriptor cannot perform IO, so the async
+    /// outer command path probes the store and injects the result here;
+    /// [`ProviderCollection::dispatch_stream`] consults it.
+    probed: HashMap<String, CredentialSource>,
 }
 
 impl ProviderCollection {
@@ -255,6 +281,7 @@ impl ProviderCollection {
             registry: ProviderRegistry::new(),
             auth: HashMap::new(),
             compat: HashMap::new(),
+            probed: HashMap::new(),
         }
     }
 
@@ -270,6 +297,7 @@ impl ProviderCollection {
             registry,
             auth: HashMap::new(),
             compat: HashMap::new(),
+            probed: HashMap::new(),
         }
     }
 
@@ -320,8 +348,28 @@ impl ProviderCollection {
 
     /// Resolve the current redacted auth status for a provider, if the
     /// collection owns an auth descriptor for it.
+    ///
+    /// Not authoritative for [`AuthDescriptor::StoreCredential`]: that variant
+    /// always resolves to [`AuthStatus::Configured`] here because the
+    /// secret-free descriptor cannot perform IO. The redacted probe state
+    /// injected via [`Self::set_probe`] is consulted separately in
+    /// [`Self::dispatch_stream`].
     pub fn auth_status(&self, provider_id: &str) -> Option<AuthStatus> {
         self.auth.get(provider_id).map(AuthDescriptor::resolve)
+    }
+
+    /// Inject the redacted probe state for a [`AuthDescriptor::StoreCredential`]
+    /// provider. The async outer command path (doctor / `--list-models`) probes
+    /// the store and passes the resulting [`CredentialSource`] here so the
+    /// secret-free descriptor does not have to perform IO.
+    pub fn set_probe(&mut self, provider_id: &str, source: CredentialSource) {
+        self.probed.insert(provider_id.to_owned(), source);
+    }
+
+    /// The redacted probe state previously injected for a StoreCredential
+    /// provider, if any.
+    pub fn probe(&self, provider_id: &str) -> Option<&CredentialSource> {
+        self.probed.get(provider_id)
     }
 
     /// The compatibility metadata associated with a provider, if any.
@@ -334,15 +382,34 @@ impl ProviderCollection {
     /// Dispatch is auth-gated only for providers the collection owns an auth
     /// descriptor for. A [`AuthStatus::Missing`] descriptor yields a redacted
     /// [`CollectionError::AuthNotConfigured`] before the provider is touched.
+    ///
+    /// [`AuthDescriptor::StoreCredential`] providers are gated on the injected
+    /// [`CredentialSource`] (see [`Self::set_probe`]): `Absent` rejects, while
+    /// `Present` and `BackendUnavailable` proceed. `BackendUnavailable`
+    /// proceeds intentionally — keychain-required enforcement is the
+    /// responsibility of the live per-stream resolver (T2), not this non-live
+    /// status gate (the spec confines `dispatch_stream` to a non-live role).
+    /// A StoreCredential provider with no injected probe is treated as
+    /// non-gated, matching `from_registry`'s "no descriptor" semantics.
     pub fn dispatch_stream(
         &self,
         spec: &str,
         request: Request,
     ) -> Result<EventStream, CollectionError> {
         let (provider, _) = self.registry.resolve(spec)?;
-        if let Some(AuthStatus::Missing { source }) = self.auth_status(provider.id()) {
+        let id = provider.id();
+        if let Some(AuthDescriptor::StoreCredential { display_source, .. }) = self.auth.get(id) {
+            // Secret-free descriptor: consult the injected probe, not resolve().
+            if matches!(self.probed.get(id), Some(CredentialSource::Absent)) {
+                return Err(CollectionError::AuthNotConfigured {
+                    provider: id.to_owned(),
+                    detail: display_source.clone(),
+                });
+            }
+            // Present | BackendUnavailable | no probe injected -> proceed.
+        } else if let Some(AuthStatus::Missing { source }) = self.auth_status(id) {
             return Err(CollectionError::AuthNotConfigured {
-                provider: provider.id().to_owned(),
+                provider: id.to_owned(),
                 detail: source,
             });
         }

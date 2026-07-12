@@ -274,6 +274,46 @@ fn run_doctor_cli(cli: &Cli, scope: Option<&str>, json: bool) -> i32 {
     let colorterm = std::env::var("COLORTERM").ok();
     let env_probe = |name: &str| std::env::var(name).ok();
 
+    // Phase 14: probe the credential store for StoreCredential providers so
+    // doctor reports redacted, three-state keychain presence. Probing happens
+    // in a local runtime (run_doctor_cli runs before the main runtime is built
+    // and then process::exits). Production uses the platform keychain; in
+    // 14.1 (no native store compiled) every probe is BackendUnavailable.
+    let store_probe: std::collections::HashMap<String, opi_ai::CredentialSource> = {
+        let selected_provider = config.defaults.model.split_once(':').map(|(p, _)| p);
+        let needs_probe = selected_provider.is_some_and(|p| {
+            matches!(
+                opi_coding_agent::provider_factory::auth_descriptor_for(&config, p),
+                Some(opi_ai::AuthDescriptor::StoreCredential { .. })
+            )
+        });
+        if needs_probe {
+            let provider = selected_provider.expect("checked above");
+            let rt = match tokio::runtime::Runtime::new() {
+                Ok(rt) => rt,
+                Err(error) => {
+                    eprintln!("opi doctor: runtime error: {error}");
+                    return 1;
+                }
+            };
+            let store = std::sync::Arc::new(
+                opi_coding_agent::credential_store::KeychainCredentialStore::new(
+                    Box::new(opi_coding_agent::credential_store::KeyringCoreBackend::new()),
+                    user_config_dir.clone(),
+                ),
+            );
+            let probed: opi_ai::CredentialSource = rt.block_on(async move {
+                use opi_ai::credential::CredentialStore;
+                store.probe(provider).await
+            });
+            let mut map = std::collections::HashMap::new();
+            map.insert(provider.to_owned(), probed);
+            map
+        } else {
+            std::collections::HashMap::new()
+        }
+    };
+
     let ctx = DoctorContext {
         config: &config,
         config_error: config_error.as_ref(),
@@ -286,6 +326,7 @@ fn run_doctor_cli(cli: &Cli, scope: Option<&str>, json: bool) -> i32 {
         no_color,
         colorterm: colorterm.as_deref(),
         env_var: &env_probe,
+        store_probe: &store_probe,
     };
 
     let report = run_doctor(&scopes, &ctx);
@@ -317,7 +358,12 @@ async fn run_non_interactive(
         return ExitCode::ConfigError as i32;
     }
 
-    let provider = match opi_coding_agent::provider_factory::build_provider(config) {
+    let provider = match opi_coding_agent::provider_factory::build_provider_production(
+        config,
+        opi_coding_agent::config::user_config_dir(),
+    )
+    .await
+    {
         Ok(p) => p,
         Err(opi_coding_agent::provider_factory::ProviderBuildError::Auth(msg)) => {
             eprintln!("opi: {msg}");
@@ -433,7 +479,12 @@ async fn run_rpc(
     use opi_coding_agent::rpc::RpcRunner;
     use opi_coding_agent::runner::ExitCode;
 
-    let provider = match opi_coding_agent::provider_factory::build_provider(config) {
+    let provider = match opi_coding_agent::provider_factory::build_provider_production(
+        config,
+        opi_coding_agent::config::user_config_dir(),
+    )
+    .await
+    {
         Ok(p) => p,
         Err(opi_coding_agent::provider_factory::ProviderBuildError::Auth(msg)) => {
             eprintln!("opi: {msg}");
@@ -508,7 +559,12 @@ async fn run_interactive(
     use opi_coding_agent::harness::{CodingHarness, InteractiveCodingHooks};
     use opi_coding_agent::interactive;
 
-    let provider = match opi_coding_agent::provider_factory::build_provider(config) {
+    let provider = match opi_coding_agent::provider_factory::build_provider_production(
+        config,
+        opi_coding_agent::config::user_config_dir(),
+    )
+    .await
+    {
         Ok(p) => p,
         Err(opi_coding_agent::provider_factory::ProviderBuildError::Auth(msg)) => {
             eprintln!("opi: {msg}");
@@ -617,8 +673,51 @@ fn parse_keybindings(config: &opi_coding_agent::config::KeybindingsConfig) -> op
 /// List available models from all configured providers.
 /// Returns exit code: 0 on success, 1 if no models found, 2 on config error.
 fn list_models(config: &opi_coding_agent::config::OpiConfig, json_output: bool) -> i32 {
-    let collection = match opi_coding_agent::provider_factory::build_collection_for_listing(config)
-    {
+    // Phase 14: probe StoreCredential providers upfront so the listing
+    // collection carries redacted, three-state keychain presence. Probing
+    // happens in a local runtime (list_models runs before the main runtime).
+    let store_probe: std::collections::HashMap<String, opi_ai::CredentialSource> = {
+        let candidates: Vec<String> = opi_coding_agent::provider_factory::built_in_provider_ids()
+            .iter()
+            .filter(|pid| {
+                matches!(
+                    opi_coding_agent::provider_factory::auth_descriptor_for(config, pid),
+                    Some(opi_ai::AuthDescriptor::StoreCredential { .. })
+                )
+            })
+            .map(|pid| pid.to_string())
+            .collect();
+        if candidates.is_empty() {
+            std::collections::HashMap::new()
+        } else {
+            let user_config_dir = opi_coding_agent::config::user_config_dir();
+            let rt = match tokio::runtime::Runtime::new() {
+                Ok(rt) => rt,
+                Err(error) => {
+                    eprintln!("opi: runtime error: {error}");
+                    return 1;
+                }
+            };
+            rt.block_on(async move {
+                let store = std::sync::Arc::new(
+                    opi_coding_agent::credential_store::KeychainCredentialStore::new(
+                        Box::new(opi_coding_agent::credential_store::KeyringCoreBackend::new()),
+                        user_config_dir,
+                    ),
+                );
+                use opi_ai::credential::CredentialStore;
+                let mut map = std::collections::HashMap::new();
+                for pid in &candidates {
+                    map.insert(pid.clone(), store.probe(pid).await);
+                }
+                map
+            })
+        }
+    };
+    let collection = match opi_coding_agent::provider_factory::build_collection_for_listing(
+        config,
+        &store_probe,
+    ) {
         Ok(collection) => collection,
         Err(opi_coding_agent::provider_factory::ListModelsError::MissingCredentials) => {
             eprintln!("opi: no models available (configure API keys to list models)");

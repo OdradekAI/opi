@@ -396,11 +396,13 @@ fn provider_tool_result_error_no_phase12_breadth_guard() {
     // Provider-module freeze: the public module set declared in lib.rs must equal
     // the reviewed Phase 11 baseline. Adding a provider family (Phase 12) requires
     // deliberately updating this baseline; this guard catches an accidental add.
+    // (Phase 14 deliberately added the `credential` module.)
     let baseline_modules = vec![
         "anthropic",
         "azure_openai",
         "bedrock",
         "config",
+        "credential",
         "gemini",
         "http",
         "message",

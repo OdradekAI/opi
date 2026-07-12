@@ -27,8 +27,10 @@ hmac = { workspace = true }
 sha2 = { workspace = true }
 hex = { workspace = true }
 regex = { workspace = true }
+secrecy = { workspace = true }
 
 [dev-dependencies]
 futures-util = { workspace = true }
 tempfile = { workspace = true }
 wiremock = { workspace = true }
+secrecy = { workspace = true }

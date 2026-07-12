@@ -8,6 +8,7 @@ pub mod anthropic;
 pub mod azure_openai;
 pub mod bedrock;
 pub mod config;
+pub mod credential;
 mod endpoint;
 pub mod gemini;
 pub mod http;
@@ -28,6 +29,9 @@ pub mod time;
 pub mod vertex;
 
 pub use config::{Config, Error};
+pub use credential::{
+    BoxAuthFuture, Credential, CredentialSource, CredentialStore, CredentialStoreError,
+};
 pub use model::Model;
 pub use provider::Provider;
 pub use provider_collection::{

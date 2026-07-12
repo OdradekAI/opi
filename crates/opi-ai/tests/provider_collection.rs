@@ -534,3 +534,294 @@ fn collection_wraps_existing_registry_via_from_registry() {
     assert!(collection.auth_descriptor("wrapped").is_none());
     assert!(collection.auth_status("wrapped").is_none());
 }
+
+// ---------------------------------------------------------------------------
+// Phase 14.1: credential store substrate + StoreCredential dispatch gate
+//
+// These cover the opi-ai substrate only: the Credential/CredentialSource
+// types, the object-safe CredentialStore trait, the AuthDescriptor::
+// StoreCredential variant, and the precomputed-probe dispatch gate. Concrete
+// keychain/env/resolver/lock behavior lives in opi-coding-agent tests.
+// ---------------------------------------------------------------------------
+
+use opi_ai::credential::{
+    BoxAuthFuture, Credential, CredentialSource, CredentialStore, CredentialStoreError,
+};
+use std::collections::HashMap;
+// `Mutex` is already imported at the top of this file; only `Arc` is new here.
+use std::sync::Arc;
+
+fn secret(value: &str) -> secrecy::SecretString {
+    // secrecy 0.10 SecretString::new takes `Box<str>`.
+    secrecy::SecretString::new(value.into())
+}
+
+const STORE_API_KEY: &str = "sk-store-api-key-DO-NOT-LEAK";
+const STORE_ACCESS: &str = "atk-store-access-DO-NOT-LEAK";
+const STORE_REFRESH: &str = "rtk-store-refresh-DO-NOT-LEAK";
+
+fn store_descriptor(provider: &str) -> AuthDescriptor {
+    AuthDescriptor::StoreCredential {
+        key: provider.to_owned(),
+        display_source: format!("keychain opi:{provider}"),
+    }
+}
+
+#[test]
+fn credential_source_display_label_and_presence() {
+    let present = CredentialSource::Present {
+        label: "keychain opi:anthropic".to_owned(),
+    };
+    assert!(present.is_present());
+    assert_eq!(present.display_source(), "keychain opi:anthropic");
+
+    let absent = CredentialSource::Absent;
+    assert!(!absent.is_present());
+    assert_eq!(absent.display_source(), "absent");
+
+    let unavail = CredentialSource::BackendUnavailable {
+        reason: "no keychain daemon".to_owned(),
+    };
+    assert!(!unavail.is_present());
+    assert!(unavail.display_source().contains("no keychain daemon"));
+}
+
+#[test]
+fn credential_api_key_redacts_in_debug() {
+    let cred = Credential::ApiKey(secret(STORE_API_KEY));
+    let debug = format!("{cred:?}");
+    assert!(
+        !debug.contains(STORE_API_KEY),
+        "ApiKey leaked in Debug: {debug}"
+    );
+    assert!(debug.contains("redacted"));
+}
+
+#[test]
+fn credential_oauth_token_redacts_secrets_but_keeps_base_url() {
+    let cred = Credential::OAuthToken {
+        access: secret(STORE_ACCESS),
+        refresh: secret(STORE_REFRESH),
+        expires_at: None,
+        base_url: Some("https://copilot.example/api".to_owned()),
+    };
+    let debug = format!("{cred:?}");
+    assert!(!debug.contains(STORE_ACCESS), "access leaked: {debug}");
+    assert!(!debug.contains(STORE_REFRESH), "refresh leaked: {debug}");
+    // base_url is non-secret and must survive redaction.
+    assert!(
+        debug.contains("https://copilot.example/api"),
+        "base_url dropped: {debug}"
+    );
+}
+
+#[test]
+fn auth_descriptor_store_credential_resolves_configured_not_authoritative() {
+    // resolve() is intentionally not authoritative for StoreCredential: the
+    // descriptor is secret-free and cannot perform IO, so it returns
+    // Configured (never blocks). The real gate is the injected probe
+    // consulted in dispatch_stream.
+    let descriptor = store_descriptor("anthropic");
+    assert_eq!(descriptor.resolve(), AuthStatus::Configured);
+    // The descriptor itself carries no secret material.
+    let debug = format!("{descriptor:?}");
+    assert!(!debug.contains(STORE_API_KEY));
+    assert!(debug.contains("anthropic"));
+}
+
+#[tokio::test]
+async fn store_credential_dispatch_proceeds_when_probe_present() {
+    let mut collection = ProviderCollection::new();
+    collection
+        .register(
+            text_mock("storeprov", "ok"),
+            store_descriptor("storeprov"),
+            CompatMetadata::default(),
+        )
+        .unwrap();
+    collection.set_probe(
+        "storeprov",
+        CredentialSource::Present {
+            label: "keychain opi:storeprov".to_owned(),
+        },
+    );
+    let stream = collection.dispatch_stream(
+        "storeprov:mock-model",
+        minimal_request("storeprov:mock-model"),
+    );
+    assert!(
+        stream.is_ok(),
+        "Present probe should dispatch: {:?}",
+        stream.err()
+    );
+}
+
+#[tokio::test]
+async fn store_credential_dispatch_rejects_when_probe_absent_with_redacted_detail() {
+    let mut collection = ProviderCollection::new();
+    collection
+        .register(
+            text_mock("absentprov", "should not stream"),
+            store_descriptor("absentprov"),
+            CompatMetadata::default(),
+        )
+        .unwrap();
+    collection.set_probe("absentprov", CredentialSource::Absent);
+
+    // Match instead of unwrap_err: the stream Ok type is not Debug.
+    let err = match collection.dispatch_stream(
+        "absentprov:mock-model",
+        minimal_request("absentprov:mock-model"),
+    ) {
+        Err(error) => error,
+        Ok(_) => panic!("expected AuthNotConfigured error, got a stream"),
+    };
+    match err {
+        CollectionError::AuthNotConfigured { provider, detail } => {
+            assert_eq!(provider, "absentprov");
+            // detail is the redacted display_source, never a secret.
+            assert_eq!(detail, "keychain opi:absentprov");
+            assert!(!detail.contains(STORE_API_KEY));
+        }
+        other => panic!("expected AuthNotConfigured, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn store_credential_dispatch_proceeds_when_backend_unavailable() {
+    // BackendUnavailable proceeds intentionally: keychain-required enforcement
+    // is the live per-stream resolver's job (T2), not this non-live status gate.
+    let mut collection = ProviderCollection::new();
+    collection
+        .register(
+            text_mock("unavailprov", "ok"),
+            store_descriptor("unavailprov"),
+            CompatMetadata::default(),
+        )
+        .unwrap();
+    collection.set_probe(
+        "unavailprov",
+        CredentialSource::BackendUnavailable {
+            reason: "no daemon".to_owned(),
+        },
+    );
+    let stream = collection.dispatch_stream(
+        "unavailprov:mock-model",
+        minimal_request("unavailprov:mock-model"),
+    );
+    assert!(
+        stream.is_ok(),
+        "BackendUnavailable should dispatch: {:?}",
+        stream.err()
+    );
+}
+
+#[tokio::test]
+async fn store_credential_dispatch_proceeds_when_no_probe_injected() {
+    // No probe injected -> non-gated, matching from_registry's "no descriptor"
+    // semantics. The factory always injects a probe for StoreCredential
+    // providers before listing; this pins the fallback contract.
+    let mut collection = ProviderCollection::new();
+    collection
+        .register(
+            text_mock("noprobe", "ok"),
+            store_descriptor("noprobe"),
+            CompatMetadata::default(),
+        )
+        .unwrap();
+    assert_eq!(collection.probe("noprobe"), None);
+    let stream =
+        collection.dispatch_stream("noprobe:mock-model", minimal_request("noprobe:mock-model"));
+    assert!(
+        stream.is_ok(),
+        "no-probe should be non-gated: {:?}",
+        stream.err()
+    );
+}
+
+/// In-memory fake credential store proving the trait is object-safe behind
+/// `Arc<dyn CredentialStore>` and exercising probe/read/write/delete without
+/// any keychain.
+struct FakeStore {
+    entries: Mutex<HashMap<String, Credential>>,
+}
+
+impl CredentialStore for FakeStore {
+    fn read<'a>(
+        &'a self,
+        provider_id: &'a str,
+    ) -> BoxAuthFuture<'a, Result<Option<Credential>, CredentialStoreError>> {
+        Box::pin(async move { Ok(self.entries.lock().unwrap().get(provider_id).cloned()) })
+    }
+    fn write<'a>(
+        &'a self,
+        provider_id: &'a str,
+        cred: &'a Credential,
+    ) -> BoxAuthFuture<'a, Result<(), CredentialStoreError>> {
+        Box::pin(async move {
+            self.entries
+                .lock()
+                .unwrap()
+                .insert(provider_id.to_owned(), cred.clone());
+            Ok(())
+        })
+    }
+    fn delete<'a>(
+        &'a self,
+        provider_id: &'a str,
+    ) -> BoxAuthFuture<'a, Result<(), CredentialStoreError>> {
+        Box::pin(async move {
+            self.entries.lock().unwrap().remove(provider_id);
+            Ok(())
+        })
+    }
+    fn probe<'a>(&'a self, provider_id: &'a str) -> BoxAuthFuture<'a, CredentialSource> {
+        Box::pin(async move {
+            if self.entries.lock().unwrap().contains_key(provider_id) {
+                CredentialSource::Present {
+                    label: format!("keychain opi:{provider_id}"),
+                }
+            } else {
+                CredentialSource::Absent
+            }
+        })
+    }
+}
+
+#[tokio::test]
+async fn credential_store_is_object_safe_and_round_trips() {
+    let store: Arc<dyn CredentialStore> = Arc::new(FakeStore {
+        entries: Mutex::new(HashMap::new()),
+    });
+    // `Arc<dyn CredentialStore>` compiles => the trait is object-safe.
+
+    // Missing entry probes Absent and reads None.
+    assert_eq!(store.probe("anthropic").await, CredentialSource::Absent);
+    assert!(store.read("anthropic").await.unwrap().is_none());
+
+    let api_key = Credential::ApiKey(secret(STORE_API_KEY));
+    store.write("anthropic", &api_key).await.unwrap();
+
+    // Present probe carries only the non-secret label.
+    let probed = store.probe("anthropic").await;
+    assert_eq!(
+        probed,
+        CredentialSource::Present {
+            label: "keychain opi:anthropic".to_owned()
+        }
+    );
+    assert!(!format!("{probed:?}").contains(STORE_API_KEY));
+
+    let read_back = store
+        .read("anthropic")
+        .await
+        .unwrap()
+        .expect("entry present after write");
+    assert!(matches!(read_back, Credential::ApiKey(_)));
+    // Debug of the read-back credential never leaks the secret.
+    assert!(!format!("{read_back:?}").contains(STORE_API_KEY));
+
+    store.delete("anthropic").await.unwrap();
+    assert_eq!(store.probe("anthropic").await, CredentialSource::Absent);
+    assert!(store.read("anthropic").await.unwrap().is_none());
+}
