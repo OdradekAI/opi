@@ -28,6 +28,7 @@ jobs:
             os: ubuntu-latest
             artifact: opi-linux-x64
             ext: tar.gz
+            smoke: true
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-latest
             artifact: opi-linux-arm64
@@ -41,10 +42,12 @@ jobs:
             os: macos-latest
             artifact: opi-darwin-arm64
             ext: tar.gz
+            smoke: true
           - target: x86_64-pc-windows-msvc
             os: windows-latest
             artifact: opi-windows-x64
             ext: zip
+            smoke: true
           - target: aarch64-pc-windows-msvc
             os: windows-latest
             artifact: opi-windows-arm64
@@ -52,6 +55,8 @@ jobs:
             tier2: true
 
     runs-on: ${{ matrix.os }}
+    # windows-arm64 is a Tier-2 target; a build break omits its artifact
+    # rather than failing the whole release.
     continue-on-error: ${{ matrix.tier2 == true }}
     steps:
       - uses: actions/checkout@v4
@@ -77,6 +82,14 @@ jobs:
       - name: Build (native)
         if: "!matrix.cross"
         run: cargo build --release --target ${{ matrix.target }} -p opi-coding-agent
+
+      - name: Smoke test binary
+        if: matrix.smoke
+        shell: bash
+        run: |
+          bin="target/${{ matrix.target }}/release/opi"
+          [ "${{ matrix.ext }}" = "zip" ] && bin="$bin.exe"
+          "$bin" --version
 
       - name: Package (unix)
         if: matrix.ext == 'tar.gz'
