@@ -29,25 +29,6 @@ Parse `opi-spec.md` §15 roadmap tables. For each task row extract:
   - The task remains non-executable until the task-graph review gate confirms
     the inferred DoD.
 
-### A.init.2b Supplemental Phase 5 Task Source
-
-After Phase 4 exits, Phase 5 productized extension/package tasks are not
-derived from arbitrary roadmap rows. They are derived from these reviewed
-sources:
-
-- `docs/superpowers/specs/2026-06-08-productized-extensions-package-ecosystem-design.md`
-- `docs/superpowers/plans/2026-06-08-productized-extensions-package-ecosystem.md`
-
-When either source exists, the initializer MAY add Phase 5 tasks from the
-implementation plan's task list, but it MUST include both paths in
-`spec_files` and MUST record SHA-256 hashes for both in `spec_files_sha256`.
-Do not auto-scan `docs/superpowers/specs/` or `docs/superpowers/plans/`.
-
-Phase 5 task IDs use `5.<N>` in plan order. Task titles, DoDs, owned paths,
-verification gates, and dependencies come from the reviewed implementation
-plan, not from inferred prose. If the plan and design spec contradict each
-other, stop and ask for a revised design/plan before writing the ledger.
-
 ### A.init.2d Reviewed Phase 6-14 Task Sources
 
 After Phase 5 exits, phases 6-14 are sourced only from the reviewed design
@@ -55,15 +36,14 @@ registry in `skill.md`. Do not scan arbitrary `docs/superpowers/specs/` files.
 
 | Phase | Registered source | Draft task extraction |
 |---:|---|---|
-| 6 | `docs/superpowers/specs/2026-06-15-phase6-alignment-hardening-design.md` | Workstreams, Testing Strategy, Documentation Updates, Success Criteria |
-| 7 | `docs/superpowers/specs/2026-06-15-phase7-reliability-observability-design.md` | Diagnostic Model, Trace Model, `opi doctor`, JSON/RPC Exposure, Testing Strategy, Success Criteria |
-| 8 | `docs/superpowers/specs/2026-06-15-phase8-agent-runtime-stabilization-design.md` | Runtime Contracts, API Surface Review, SDK and RPC Contract, Testing Strategy, Success Criteria |
-| 9 | `docs/superpowers/specs/2026-06-24-phase9-pi-0-80-2-baseline-realignment-design.md` | Evidence Baseline, Normative Documentation Changes, Revised Roadmap, Success Criteria |
-| 10 | `docs/superpowers/specs/2026-06-24-phase10-core-architecture-deepening-design.md` | Provider Collection/Auth, Generic Harness, Session Facade, Runtime Hook Boundaries, Success Criteria |
-| 11 | `docs/superpowers/specs/2026-06-24-phase11-tooling-quality-design.md` | Tool Result Contract, per-tool sections, Filesystem Tool Policy, Documentation Updates, Success Criteria |
-| 12 | `docs/superpowers/specs/2026-06-24-phase12-provider-correctness-design.md` | Provider Contract Areas, Error Taxonomy, OpenAI-Compatible Profile Correctness, Testing Strategy, Success Criteria |
-| 13 | `docs/superpowers/specs/2026-06-24-phase13-session-tree-context-reconstruction-design.md` | Session Entry Model, Context Building, Export, Commands and UI Surface, Documentation Updates, Success Criteria |
-| 14 | `docs/superpowers/specs/2026-06-24-phase14-tui-product-polish-design.md` | Product Surfaces, Accessibility and Terminal Compatibility, Testing Strategy, Documentation Updates, Success Criteria |
+| 6 | `docs/snapshots/phase6/2026-06-15-phase6-alignment-hardening-design.md` | Workstreams, Testing Strategy, Documentation Updates, Success Criteria |
+| 7 | `docs/snapshots/phase7/2026-06-15-phase7-reliability-observability-design.md` | Diagnostic Model, Trace Model, `opi doctor`, JSON/RPC Exposure, Testing Strategy, Success Criteria |
+| 8 | `docs/snapshots/phase8/2026-06-15-phase8-agent-runtime-stabilization-design.md` | Runtime Contracts, API Surface Review, SDK and RPC Contract, Testing Strategy, Success Criteria |
+| 9 | `docs/snapshots/phase9/2026-06-24-phase9-pi-0-80-2-baseline-realignment-design.md` | Evidence Baseline, Normative Documentation Changes, Revised Roadmap, Success Criteria |
+| 10 | `docs/snapshots/phase10/2026-06-24-phase10-core-architecture-deepening-design.md` | Provider Collection/Auth, Generic Harness, Session Facade, Runtime Hook Boundaries, Success Criteria |
+| 11 | `docs/snapshots/phase11/2026-06-24-phase11-tooling-quality-design.md` | Tool Result Contract, per-tool sections, Filesystem Tool Policy, Documentation Updates, Success Criteria |
+| 12 | `docs/snapshots/phase12/2026-06-24-phase12-provider-correctness-design.md` | Provider Contract Areas, Error Taxonomy, OpenAI-Compatible Profile Correctness, Testing Strategy, Success Criteria |
+| 13 | `docs/snapshots/phase13/2026-06-24-phase13-session-tree-context-reconstruction-design.md` | Session Entry Model, Context Building, Export, Commands and UI Surface, Documentation Updates, Success Criteria |
 
 For each active phase:
 

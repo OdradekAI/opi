@@ -28,16 +28,15 @@ registry. Do not auto-parse arbitrary files from `docs/superpowers/specs/`.
 
 | Phase | Source files |
 |---:|---|
-| 5 | `docs/superpowers/specs/2026-06-08-productized-extensions-package-ecosystem-design.md`; `docs/superpowers/plans/2026-06-08-productized-extensions-package-ecosystem.md` |
-| 6 | `docs/superpowers/specs/2026-06-15-phase6-alignment-hardening-design.md` |
-| 7 | `docs/superpowers/specs/2026-06-15-phase7-reliability-observability-design.md` |
-| 8 | `docs/superpowers/specs/2026-06-15-phase8-agent-runtime-stabilization-design.md` |
-| 9 | `docs/superpowers/specs/2026-06-24-phase9-pi-0-80-2-baseline-realignment-design.md` |
-| 10 | `docs/superpowers/specs/2026-06-24-phase10-core-architecture-deepening-design.md` |
-| 11 | `docs/superpowers/specs/2026-06-24-phase11-tooling-quality-design.md` |
-| 12 | `docs/superpowers/specs/2026-06-24-phase12-provider-correctness-design.md` |
-| 13 | `docs/superpowers/specs/2026-06-24-phase13-session-tree-context-reconstruction-design.md` |
-| 14 | `docs/superpowers/specs/2026-06-24-phase14-tui-product-polish-design.md` |
+| 5 | `docs/superpowers/plans/2026-06-08-productized-extensions-package-ecosystem.md` |
+| 6 | `docs/snapshots/phase6/2026-06-15-phase6-alignment-hardening-design.md` |
+| 7 | `docs/snapshots/phase7/2026-06-15-phase7-reliability-observability-design.md` |
+| 8 | `docs/snapshots/phase8/2026-06-15-phase8-agent-runtime-stabilization-design.md` |
+| 9 | `docs/snapshots/phase9/2026-06-24-phase9-pi-0-80-2-baseline-realignment-design.md` |
+| 10 | `docs/snapshots/phase10/2026-06-24-phase10-core-architecture-deepening-design.md` |
+| 11 | `docs/snapshots/phase11/2026-06-24-phase11-tooling-quality-design.md` |
+| 12 | `docs/snapshots/phase12/2026-06-24-phase12-provider-correctness-design.md` |
+| 13 | `docs/snapshots/phase13/2026-06-24-phase13-session-tree-context-reconstruction-design.md` |
 
 When a ledger is initialized or reconciled for a supplemental phase, the
 phase's registered source files MUST be included in `spec_files` and hashed in
@@ -377,17 +376,14 @@ Print a summary table of all tasks:
 
 Full design rationale: `docs/superpowers/specs/2026-05-20-opi-implement-skill-design.md`
 
-Supplemental Phase 5 design: `docs/superpowers/specs/2026-06-08-productized-extensions-package-ecosystem-design.md`
-
 Supplemental Phase 5 implementation plan: `docs/superpowers/plans/2026-06-08-productized-extensions-package-ecosystem.md`
 
 Supplemental Phase 6-14 designs:
-- `docs/superpowers/specs/2026-06-15-phase6-alignment-hardening-design.md`
-- `docs/superpowers/specs/2026-06-15-phase7-reliability-observability-design.md`
-- `docs/superpowers/specs/2026-06-15-phase8-agent-runtime-stabilization-design.md`
-- `docs/superpowers/specs/2026-06-24-phase9-pi-0-80-2-baseline-realignment-design.md`
-- `docs/superpowers/specs/2026-06-24-phase10-core-architecture-deepening-design.md`
-- `docs/superpowers/specs/2026-06-24-phase11-tooling-quality-design.md`
-- `docs/superpowers/specs/2026-06-24-phase12-provider-correctness-design.md`
-- `docs/superpowers/specs/2026-06-24-phase13-session-tree-context-reconstruction-design.md`
-- `docs/superpowers/specs/2026-06-24-phase14-tui-product-polish-design.md`
+- `docs/snapshots/phase6/2026-06-15-phase6-alignment-hardening-design.md`
+- `docs/snapshots/phase7/2026-06-15-phase7-reliability-observability-design.md`
+- `docs/snapshots/phase8/2026-06-15-phase8-agent-runtime-stabilization-design.md`
+- `docs/snapshots/phase9/2026-06-24-phase9-pi-0-80-2-baseline-realignment-design.md`
+- `docs/snapshots/phase10/2026-06-24-phase10-core-architecture-deepening-design.md`
+- `docs/snapshots/phase11/2026-06-24-phase11-tooling-quality-design.md`
+- `docs/snapshots/phase12/2026-06-24-phase12-provider-correctness-design.md`
+- `docs/snapshots/phase13/2026-06-24-phase13-session-tree-context-reconstruction-design.md`

@@ -268,23 +268,6 @@ Additional gates:
    session sharing service, web UI product, or pi session v3 compatibility
    claim is added.
 
-### Phase 14 TUI Product Polish
-
-Additional gates:
-1. Snapshot tests cover changed branch/session/model pickers, command palette,
-   transcript rendering, diagnostics, tool calls, thinking, images, status bar,
-   and narrow terminal layouts.
-2. Snapshot updates are intentional and reviewed; never rebaseline unrelated
-   snapshots.
-3. Unit tests cover wrapping, truncation, CJK width, keybinding resolution,
-   `NO_COLOR`, contrast/non-color indicators, and keyboard-only flow where
-   touched.
-4. Command discovery shows built-in and already-registered extension commands
-   without advertising unsupported npm/update/web-ui/custom-TUI features.
-5. No standalone browser app, pi-web-ui parity, custom TUI adapter protocol,
-   extension overlay/widget system, permission popup subsystem, or package
-   ecosystem expansion is added.
-
 ## Cross-Cutting Gates (Non-Documentation Tiers)
 
 Run after tier-specific gates:
