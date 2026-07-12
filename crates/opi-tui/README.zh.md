@@ -14,7 +14,7 @@ terminal-image escape、主题和按键绑定——`opi-coding-agent` TUI 使用
 cargo add opi-tui
 ```
 
-需要 Rust 1.85+（edition 2024）以及 ratatui 0.30 / crossterm 0.29。
+需要 Rust 1.97+（workspace MSRV；edition 2024）以及 ratatui 0.30 / crossterm 0.29。
 
 ## 当前状态
 

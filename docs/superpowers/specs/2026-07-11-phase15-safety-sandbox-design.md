@@ -190,7 +190,7 @@ tree-kill) is **default-on**; L1 (filesystem), L2 (network), L3 (syscalls) are
 `#![deny(unsafe_code)]`, no C deps) for syscalls, composed with `landlock` 0.4.5
 (MSRV 1.71, kernel 5.13+ for FS / 6.2+ for net; 4 contained unsafe syscall
 wrappers inside the crate). Both crate MSRVs sit below the workspace floor of
-1.85; the 5.13/6.2 kernel floors are covered by the D6 fail-open-with-diagnostic
+1.97; the 5.13/6.2 kernel floors are covered by the D6 fail-open-with-diagnostic
 path on older kernels. Applied in the child's `pre_exec` on the bash spawn.
 The **parent** pre-builds the ruleset/BPF; the **child** runs only the raw apply
 syscalls (`landlock_restrict_self`, `seccomp(SECCOMP_SET_FILTER)`) — both

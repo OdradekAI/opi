@@ -239,10 +239,7 @@ fn first_file_ancestor(start: &Path) -> Option<PathBuf> {
         match std::fs::metadata(current) {
             Ok(meta) if meta.is_file() => return Some(current.to_path_buf()),
             Ok(_) => return None, // existing dir (or symlink-to-dir): ancestors are dirs
-            Err(_) => match current.parent() {
-                Some(parent) => current = parent,
-                None => return None,
-            },
+            Err(_) => current = current.parent()?,
         }
     }
 }

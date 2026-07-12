@@ -261,7 +261,7 @@ sandbox appropriate for the tools and credentials you expose to it.
 
 ## Development
 
-Rust 1.85 or newer is required because the workspace uses Rust edition 2024.
+Rust 1.97 or newer is required (workspace MSRV; the workspace uses edition 2024).
 
 ```sh
 cargo build

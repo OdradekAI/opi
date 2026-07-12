@@ -1630,15 +1630,24 @@ Phase 14 promotes the Provider/Auth cluster to a real phase. It adds an
 OS-keychain credential store (`CredentialStore`/`Credential` in `opi-ai`;
 keychain/env impls and `CredentialResolver` in `opi-coding-agent`), OAuth for
 the three pi providers (Anthropic, GitHub Copilot, OpenAI Codex) with
-per-request auth re-resolution through an `AuthSource` held by each concrete
-provider, and additive `opi_ai::Request` enrichment (`timeout`,
+per-request auth re-resolution through an `Arc<dyn AuthResolver>` held by each
+concrete provider and implemented by the coding-agent-owned `AuthSource`, and
+additive `opi_ai::Request` enrichment (`timeout`,
 `extra_headers`, `cache_retention`, `session_id`), `Usage`/`CostBreakdown`
-cache-and-reasoning fields, a cross-provider `ModelCapabilities` struct that
-drives Anthropic prompt-cache markers, and a dynamic `refresh_models` trait
-method. The store uses `fs4` locking and `secrecy` at the boundary; there is no
+cache-and-reasoning accounting, migration of the existing
+`opi_ai::registry::ModelCapabilities` into the single nested capability value
+on `ModelInfo` that drives Anthropic prompt-cache markers, and a dynamic
+`refresh_models` trait substrate. `cache_write_1h_tokens` is a subset of cache
+writes and `reasoning_tokens` is a subset of output, so cost and token totals do
+not double-count them. The first three Request knobs are public `opi-ai`
+substrate with no Phase 14 config/harness producer; only `session_id` traverses
+the production harness/agent path. Dynamic refresh has mock collection coverage but no
+Phase 14 production trigger and therefore closes no product acceptance path.
+The store uses `fs4` locking and `secrecy` at the boundary; there is no
 opi-managed plaintext credential file. Non-goals: per-call `apiKey` override
 (pi `ApiStreamOptions`), `onPayload`/`onResponse` streaming hooks,
-auto-relogin mid-stream, and end-to-end `SecretString` through provider
+auto-relogin mid-stream, broad Copilot multi-wire catalog parity, a separate
+Codex provider type, and end-to-end `SecretString` through provider
 construction.
 
 ### Phase 15 - Safety & Sandbox

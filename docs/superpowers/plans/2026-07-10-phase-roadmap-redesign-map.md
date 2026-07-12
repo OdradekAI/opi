@@ -26,7 +26,7 @@ open before implementation.
 ## Notes
 
 - **Domain.** opi is a Rust reimplementation of pi (earendil-works/pi). Edition
-  2024, Rust 1.85+. Four crates: `opi-ai` (LLM API, no internal deps), `opi-tui`
+  2024, Rust 1.97+. Four crates: `opi-ai` (LLM API, no internal deps), `opi-tui`
   (terminal UI, no internal deps), `opi-agent` (→ `opi-ai`; agent runtime, tools,
   sessions, compaction), `opi-coding-agent` (→ `opi-ai`, `opi-agent`, `opi-tui`;
   produces the `opi` binary).
@@ -669,7 +669,7 @@ for interactive input. Small, bounded, user-ergonomics. **Accept or reject?**
 
 **Resolution (2026-07-11, grilling; grounded in `main.rs:138-181` — ACCEPTED).**
 - **ACCEPT.** opi auto-switches interactive→print when **stdin is non-TTY** AND **not `--rpc`** AND **no positional prompt** — reads piped stdin as the prompt, routes to non-interactive. A minimal addition to the `else`-interactive branch of the 3-way mode split (`main.rs:138-181`). First non-deferred ticket in the roadmap: T11–T14 deferred under no-driver; T15 has a concrete driver (piping into opi hangs today).
-- **Trigger — stdin non-TTY only.** `std::io::stdin().is_terminal()` (stable since Rust 1.70; opi is 1.85+ → no new dep, no `atty` crate). stdout-TTY (`opi | cat`) is OUT of scope — pi's `resolveAppMode` checks both, but stdout-auto-switch is more invasive and a separate bug; stdin-only covers the `echo prompt | opi` case.
+- **Trigger — stdin non-TTY only.** `std::io::stdin().is_terminal()` (stable since Rust 1.70; opi is 1.97+ → no new dep, no `atty` crate). stdout-TTY (`opi | cat`) is OUT of scope — pi's `resolveAppMode` checks both, but stdout-auto-switch is more invasive and a separate bug; stdin-only covers the `echo prompt | opi` case.
 - **`--rpc` safe:** checked FIRST (`if cli.rpc`), so the TTY auto-switch in the non-rpc path never touches RPC's stdin-JSONL reader. No conflict.
 - **Positional-wins:** if a positional prompt arg is present, use it and do NOT read stdin (avoids ambiguity). `echo p | opi --json` fills `--json`'s otherwise-empty prompt slot (small improvement, consistent).
 - **Empty piped stdin** → existing `"no prompt provided"` error (`main.rs:315`); correct, no change.

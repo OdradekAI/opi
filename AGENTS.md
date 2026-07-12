@@ -275,7 +275,7 @@ enables the mutating default tool set.
 
 ## Edition
 
-Workspace is on Rust edition 2024, so Rust 1.85+ is required.
+Workspace is on Rust edition 2024; the declared MSRV is Rust 1.97.
 
 ## Commands
 

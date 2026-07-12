@@ -1176,7 +1176,7 @@ Checked at Phase A.1. Missing tool = clean refusal.
 
 | Tool | Required | Notes |
 |---|---|---|
-| `cargo` | yes | Rust ≥ 1.85 (edition 2024). Verify via `rustc --version`. |
+| `cargo` | yes | Rust ≥ 1.97 (edition 2024). Verify via `rustc --version`. |
 | `git` | yes | |
 | `jq` | preferred | Non-jq fallback via Python or PowerShell JSON cmdlets. |
 | SHA-256 | yes | `sha256sum`, `shasum -a 256`, or PowerShell `Get-FileHash`. |

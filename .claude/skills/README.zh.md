@@ -203,7 +203,7 @@ Phase 5 部分可逆（push 时提交/tag 即公开），Phase 6（crates.io）�
   - `opi-implement <task-id> --resume-from-manual` —— 验证一次手工提交。
   - `opi-implement <task-id> --extend-cap <N>` —— 调高迭代上限。
   - `opi-implement --clear-blocker <id> --because <text>` —— 解除阻塞。
-  - 需要 `cargo`（Rust ≥ 1.85）与 `git`。
+  - 需要 `cargo`（Rust ≥ 1.97）与 `git`。
 - **做什么：** 每任务六阶段——A Bootstrap、B Plan（打印 DoD + tier + 验收场景 + 调用点 +
   禁止范围 guard，用户 gate）、C Implement（TDD red-green-refactor，可选并行派发，第 3 次尝试
   起用 systematic debugging）、D Verify（产品验收 D.0、Artifact Truthfulness Gate D.0a、分层

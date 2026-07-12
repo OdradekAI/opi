@@ -324,7 +324,7 @@ Commit scope is the crate name. Example: `feat(opi-agent): implement agent_loop`
   forward-slash paths
 - SHA-256: use `sha256sum`, PowerShell `Get-FileHash`, Python, or Rust helper
 - JSON manipulation: `jq` when present; fallback to PowerShell/Python
-- Required: `cargo` (Rust >= 1.85), `git`
+- Required: `cargo` (Rust >= 1.97), `git`
 - NOT required: `gh` CLI (belongs to `opi-release`)
 
 ## Red Flags - STOP Immediately

@@ -787,7 +787,7 @@ Checked at Phase A.1 of every invocation. Missing tool = clean refusal.
 
 | Tool | Required | Notes |
 |---|---|---|
-| `cargo` | yes | Rust toolchain ≥ 1.85 (edition 2024). Verified via `rustc --version`. |
+| `cargo` | yes | Rust toolchain ≥ 1.97 (edition 2024). Verified via `rustc --version`. |
 | `git` | yes | |
 | `jq` | preferred | Used only when present. The skill must have a non-`jq` path via PowerShell JSON cmdlets, Python, or a small Rust helper. |
 | SHA-256 helper | yes | `sha256sum`, PowerShell `Get-FileHash`, Python, or Rust helper. Do not require a specific binary on every OS. |

@@ -250,7 +250,7 @@ be violated.
   - `opi-implement <task-id> --resume-from-manual` — verify a manual commit.
   - `opi-implement <task-id> --extend-cap <N>` — raise the iteration cap.
   - `opi-implement --clear-blocker <id> --because <text>` — unblock a task.
-  - Requires `cargo` (Rust ≥ 1.85) and `git`.
+  - Requires `cargo` (Rust ≥ 1.97) and `git`.
 - **What it does:** six-phase invocation per task — A Bootstrap, B Plan (print
   DoD + tier + acceptance scenarios + call sites + forbidden-scope guards, user
   gate), C Implement (TDD red-green-refactor, optional parallel dispatch,

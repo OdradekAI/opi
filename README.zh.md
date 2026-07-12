@@ -249,7 +249,7 @@ RPC 命令包括 `prompt`、`continue`、`steer`、`follow_up`、`abort`、`set_
 
 ## 开发
 
-Workspace 使用 Rust edition 2024，因此需要 Rust 1.85 或更新版本。
+Workspace 使用 Rust edition 2024；声明 MSRV 为 Rust 1.97 或更新版本。
 
 ```sh
 cargo build

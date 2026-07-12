@@ -15,7 +15,7 @@ keybindings — the rendering layer `opi-coding-agent`'s TUI uses.
 cargo add opi-tui
 ```
 
-Requires Rust 1.85+ (edition 2024) and ratatui 0.30 / crossterm 0.29.
+Requires Rust 1.97+ (workspace MSRV; edition 2024) and ratatui 0.30 / crossterm 0.29.
 
 ## Status
 
