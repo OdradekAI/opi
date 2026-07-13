@@ -155,11 +155,19 @@ struct RawUsage {
     input_tokens: Option<u32>,
     output_tokens: Option<u32>,
     input_tokens_details: Option<RawInputTokenDetails>,
+    #[serde(default)]
+    output_tokens_details: Option<RawOutputTokenDetails>,
 }
 
 #[derive(Debug, Deserialize)]
 struct RawInputTokenDetails {
     cached_tokens: Option<u32>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawOutputTokenDetails {
+    #[serde(default)]
+    reasoning_tokens: Option<u32>,
 }
 
 // ---------------------------------------------------------------------------
@@ -313,11 +321,21 @@ impl ResponsesEvent {
                             .as_ref()
                             .and_then(|d| d.cached_tokens)
                             .unwrap_or(0);
+                        let output = u.output_tokens.unwrap_or(0);
+                        let reasoning = u
+                            .output_tokens_details
+                            .as_ref()
+                            .and_then(|d| d.reasoning_tokens)
+                            .unwrap_or(0);
+                        // Reject malformed subset: reasoning > output is invalid.
+                        let reasoning = if reasoning > output { 0 } else { reasoning };
                         Usage::reported(
                             u.input_tokens.unwrap_or(0),
-                            u.output_tokens.unwrap_or(0),
+                            output,
                             cached,
                             0,
+                            0, // cache_write_1h_tokens — Responses doesn't write cache
+                            reasoning,
                         )
                     })
                 });

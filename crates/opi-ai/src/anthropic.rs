@@ -160,10 +160,23 @@ struct RawUsage {
     output_tokens: Option<u32>,
     cache_read_input_tokens: Option<u32>,
     cache_creation_input_tokens: Option<u32>,
+    /// Subset of `cache_creation_input_tokens` eligible for 1h TTL.
+    #[serde(default)]
+    cache_creation_input_tokens_1h: Option<u32>,
 }
 
 impl RawUsage {
     fn into_usage(self) -> Usage {
+        let cache_write = self.cache_creation_input_tokens.unwrap_or(0);
+        let cache_write_1h = self.cache_creation_input_tokens_1h.unwrap_or(0);
+        let cache_write_1h = if cache_write_1h > cache_write {
+            // Malformed response: subset exceeds parent. Reject by
+            // returning unknown usage so no invalid event is emitted and
+            // subsequent turns are not costed from bad data.
+            return Usage::unknown();
+        } else {
+            cache_write_1h
+        };
         if self.input_tokens.is_some()
             || self.output_tokens.is_some()
             || self.cache_read_input_tokens.is_some()
@@ -173,7 +186,9 @@ impl RawUsage {
                 self.input_tokens.unwrap_or(0),
                 self.output_tokens.unwrap_or(0),
                 self.cache_read_input_tokens.unwrap_or(0),
-                self.cache_creation_input_tokens.unwrap_or(0),
+                cache_write,
+                cache_write_1h,
+                0, // reasoning_tokens
             )
         } else {
             Usage::unknown()
@@ -546,6 +561,9 @@ impl AnthropicMapper {
                 }
                 if usage.cache_write_tokens > 0 {
                     self.partial.usage.cache_write_tokens = usage.cache_write_tokens;
+                }
+                if usage.cache_write_1h_tokens > 0 {
+                    self.partial.usage.cache_write_1h_tokens = usage.cache_write_1h_tokens;
                 }
                 // message_delta doesn't emit a stream event; Done comes from message_stop
                 Vec::new()

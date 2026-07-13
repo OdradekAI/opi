@@ -145,6 +145,8 @@ impl SessionCoordinator {
         let mut total_output: u64 = 0;
         let mut total_cache_read: u64 = 0;
         let mut total_cache_write: u64 = 0;
+        let mut total_cache_write_1h: u64 = 0;
+        let mut total_reasoning: u64 = 0;
         let mut unknown_turns: u32 = 0;
         // Count turns as user messages — each user prompt drives exactly one
         // on_turn_end call. Counting assistant messages would overcount because
@@ -165,6 +167,8 @@ impl SessionCoordinator {
                             total_output += a.usage.output_tokens as u64;
                             total_cache_read += a.usage.cache_read_tokens as u64;
                             total_cache_write += a.usage.cache_write_tokens as u64;
+                            total_cache_write_1h += a.usage.cache_write_1h_tokens as u64;
+                            total_reasoning += a.usage.reasoning_tokens as u64;
                             let usage_is_known =
                                 a.usage.is_reported() || a.usage.total_tokens() > 0;
                             if !usage_is_known {
@@ -233,6 +237,8 @@ impl SessionCoordinator {
             total_output,
             total_cache_read,
             total_cache_write,
+            total_cache_write_1h,
+            total_reasoning,
             user_count,
             unknown_turns,
         );

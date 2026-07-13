@@ -526,6 +526,68 @@ async fn responses_cache_tokens_in_done_event() {
     }
 }
 
+// --- Reasoning tokens (Phase 14 task 14.5) ---
+
+#[tokio::test]
+async fn responses_reasoning_tokens_in_done_event() {
+    let provider = responses_provider("key");
+    let sse = "event: response.created\n\
+               data: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_reason\",\"status\":\"in_progress\",\"model\":\"o3\",\"output\":[]}}\n\n\
+               event: response.output_item.added\n\
+               data: {\"type\":\"response.output_item.added\",\"output_index\":0,\"item\":{\"type\":\"message\",\"status\":\"in_progress\",\"role\":\"assistant\",\"content\":[]}}\n\n\
+               event: response.content_part.added\n\
+               data: {\"type\":\"response.content_part.added\",\"output_index\":0,\"content_index\":0,\"part\":{\"type\":\"output_text\",\"text\":\"\"}}\n\n\
+               event: response.output_text.delta\n\
+               data: {\"type\":\"response.output_text.delta\",\"output_index\":0,\"content_index\":0,\"delta\":\"ok\"}\n\n\
+               event: response.output_text.done\n\
+               data: {\"type\":\"response.output_text.done\",\"output_index\":0,\"content_index\":0,\"text\":\"ok\"}\n\n\
+               event: response.output_item.done\n\
+               data: {\"type\":\"response.output_item.done\",\"output_index\":0,\"item\":{\"type\":\"message\",\"status\":\"completed\",\"role\":\"assistant\",\"content\":[{\"type\":\"output_text\",\"text\":\"ok\"}]}}\n\n\
+               event: response.completed\n\
+               data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_reason\",\"status\":\"completed\",\"model\":\"o3\",\"output\":[],\"usage\":{\"input_tokens\":100,\"output_tokens\":500,\"input_tokens_details\":{\"cached_tokens\":0},\"output_tokens_details\":{\"reasoning_tokens\":300}}}}\n\n";
+
+    let events = collect_stream(provider.stream_from_sse(sse, CancellationToken::new())).await;
+    let done = events
+        .iter()
+        .find(|e| matches!(e, AssistantStreamEvent::Done { .. }))
+        .expect("expected Done event");
+    if let AssistantStreamEvent::Done { message, .. } = done {
+        assert_eq!(message.usage.output_tokens, 500);
+        assert_eq!(message.usage.reasoning_tokens, 300);
+        assert!(message.usage.reasoning_tokens <= message.usage.output_tokens);
+    }
+}
+
+#[tokio::test]
+async fn responses_reasoning_malformed_clamped_to_zero() {
+    let provider = responses_provider("key");
+    // reasoning_tokens (800) > output_tokens (500): malformed, clamped to 0.
+    let sse = "event: response.created\n\
+               data: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_badr\",\"status\":\"in_progress\",\"model\":\"o3\",\"output\":[]}}\n\n\
+               event: response.output_item.added\n\
+               data: {\"type\":\"response.output_item.added\",\"output_index\":0,\"item\":{\"type\":\"message\",\"status\":\"in_progress\",\"role\":\"assistant\",\"content\":[]}}\n\n\
+               event: response.content_part.added\n\
+               data: {\"type\":\"response.content_part.added\",\"output_index\":0,\"content_index\":0,\"part\":{\"type\":\"output_text\",\"text\":\"\"}}\n\n\
+               event: response.output_text.delta\n\
+               data: {\"type\":\"response.output_text.delta\",\"output_index\":0,\"content_index\":0,\"delta\":\"bad\"}\n\n\
+               event: response.output_text.done\n\
+               data: {\"type\":\"response.output_text.done\",\"output_index\":0,\"content_index\":0,\"text\":\"bad\"}\n\n\
+               event: response.output_item.done\n\
+               data: {\"type\":\"response.output_item.done\",\"output_index\":0,\"item\":{\"type\":\"message\",\"status\":\"completed\",\"role\":\"assistant\",\"content\":[{\"type\":\"output_text\",\"text\":\"bad\"}]}}\n\n\
+               event: response.completed\n\
+               data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_badr\",\"status\":\"completed\",\"model\":\"o3\",\"output\":[],\"usage\":{\"input_tokens\":100,\"output_tokens\":500,\"output_tokens_details\":{\"reasoning_tokens\":800}}}}\n\n";
+
+    let events = collect_stream(provider.stream_from_sse(sse, CancellationToken::new())).await;
+    let done = events
+        .iter()
+        .find(|e| matches!(e, AssistantStreamEvent::Done { .. }))
+        .expect("expected Done event");
+    if let AssistantStreamEvent::Done { message, .. } = done {
+        assert_eq!(message.usage.output_tokens, 500);
+        assert_eq!(message.usage.reasoning_tokens, 0);
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Model list
 // ---------------------------------------------------------------------------

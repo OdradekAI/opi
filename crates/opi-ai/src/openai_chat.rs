@@ -152,11 +152,19 @@ struct RawUsage {
     #[allow(dead_code)]
     total_tokens: Option<u32>,
     prompt_tokens_details: Option<RawPromptTokenDetails>,
+    #[serde(default)]
+    completion_tokens_details: Option<RawCompletionTokenDetails>,
 }
 
 #[derive(Debug, Deserialize)]
 struct RawPromptTokenDetails {
     cached_tokens: Option<u32>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawCompletionTokenDetails {
+    #[serde(default)]
+    reasoning_tokens: Option<u32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -230,11 +238,21 @@ impl OpenAiChatEvent {
                 .as_ref()
                 .and_then(|d| d.cached_tokens)
                 .unwrap_or(0);
+            let output = u.completion_tokens.unwrap_or(0);
+            let reasoning = u
+                .completion_tokens_details
+                .as_ref()
+                .and_then(|d| d.reasoning_tokens)
+                .unwrap_or(0);
+            // Reject malformed subset: reasoning > output is invalid.
+            let reasoning = if reasoning > output { 0 } else { reasoning };
             Usage::reported(
                 u.prompt_tokens.unwrap_or(0),
-                u.completion_tokens.unwrap_or(0),
+                output,
                 cached,
                 0,
+                0, // cache_write_1h_tokens — Chat doesn't write cache
+                reasoning,
             )
         });
 

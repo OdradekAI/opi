@@ -304,6 +304,87 @@ fn cache_tokens_captured_from_message_start() {
     }
 }
 
+// --- 1h cache write subset (Phase 14 task 14.5) ---
+
+fn cache_1h_fixture() -> &'static str {
+    r#"event: message_start
+data: {"type":"message_start","message":{"id":"msg_1h","type":"message","role":"assistant","content":[],"model":"claude-sonnet-4-5-20250514","stop_reason":null,"usage":{"input_tokens":100,"output_tokens":0,"cache_read_input_tokens":0,"cache_creation_input_tokens":200,"cache_creation_input_tokens_1h":150}}}
+
+event: content_block_start
+data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"1h"}}
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":0}
+
+event: message_delta
+data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":20}}
+
+event: message_stop
+data: {"type":"message_stop"}
+
+"#
+}
+
+#[test]
+fn cache_1h_tokens_parsed_as_subset_of_cache_write() {
+    let stream_events = map_fixture(cache_1h_fixture());
+    let done = stream_events
+        .iter()
+        .find(|e| matches!(e, AssistantStreamEvent::Done { .. }))
+        .expect("expected Done event");
+    if let AssistantStreamEvent::Done { message, .. } = done {
+        assert_eq!(message.usage.cache_write_tokens, 200);
+        assert_eq!(message.usage.cache_write_1h_tokens, 150);
+        assert!(message.usage.cache_write_1h_tokens <= message.usage.cache_write_tokens);
+        assert!(message.usage.is_reported());
+    }
+}
+
+fn cache_1h_malformed_fixture() -> &'static str {
+    // cache_creation_input_tokens_1h (500) > cache_creation_input_tokens (200) is malformed.
+    r#"event: message_start
+data: {"type":"message_start","message":{"id":"msg_bad","type":"message","role":"assistant","content":[],"model":"claude-sonnet-4-5-20250514","stop_reason":null,"usage":{"input_tokens":100,"output_tokens":0,"cache_read_input_tokens":0,"cache_creation_input_tokens":200,"cache_creation_input_tokens_1h":500}}}
+
+event: content_block_start
+data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"bad"}}
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":0}
+
+event: message_delta
+data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":20}}
+
+event: message_stop
+data: {"type":"message_stop"}
+
+"#
+}
+
+#[test]
+fn cache_1h_malformed_subset_rejected_as_unknown() {
+    let stream_events = map_fixture(cache_1h_malformed_fixture());
+    let done = stream_events
+        .iter()
+        .find(|e| matches!(e, AssistantStreamEvent::Done { .. }))
+        .expect("expected Done event");
+    if let AssistantStreamEvent::Done { message, .. } = done {
+        // The message_start usage was malformed (1h > total), so its
+        // contribution was dropped (unknown). The message_delta added 20
+        // output tokens and marked usage reported since its own usage
+        // was valid.
+        assert_eq!(message.usage.output_tokens, 20);
+        // cache_write and cache_write_1h from message_start were rejected.
+        assert_eq!(message.usage.cache_write_tokens, 0);
+        assert_eq!(message.usage.cache_write_1h_tokens, 0);
+    }
+}
+
 // --- Missing-usage graceful handling (Phase 12 task 12.6, DoD clause 3) ---
 
 fn missing_usage_fixture() -> &'static str {

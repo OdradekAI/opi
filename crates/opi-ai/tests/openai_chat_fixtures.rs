@@ -445,6 +445,58 @@ fn cache_tokens_captured_from_final_chunk() {
     }
 }
 
+// --- Reasoning tokens (Phase 14 task 14.5) ---
+
+fn reasoning_tokens_fixture() -> &'static str {
+    r#"data: {"id":"chatcmpl-reason","object":"chat.completion.chunk","created":1720000000,"model":"o3","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-reason","object":"chat.completion.chunk","created":1720000000,"model":"o3","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":100,"completion_tokens":500,"total_tokens":600,"completion_tokens_details":{"reasoning_tokens":300}}}
+
+data: [DONE]
+
+"#
+}
+
+#[test]
+fn reasoning_tokens_captured_from_final_chunk() {
+    let stream_events = map_fixture(reasoning_tokens_fixture());
+    let done = stream_events
+        .iter()
+        .find(|e| matches!(e, AssistantStreamEvent::Done { .. }))
+        .expect("expected Done event");
+    if let AssistantStreamEvent::Done { message, .. } = done {
+        assert_eq!(message.usage.output_tokens, 500);
+        assert_eq!(message.usage.reasoning_tokens, 300);
+        assert!(message.usage.reasoning_tokens <= message.usage.output_tokens);
+    }
+}
+
+fn reasoning_malformed_fixture() -> &'static str {
+    // reasoning_tokens (800) > completion_tokens (500) is malformed.
+    r#"data: {"id":"chatcmpl-bad","object":"chat.completion.chunk","created":1720000000,"model":"o3","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-bad","object":"chat.completion.chunk","created":1720000000,"model":"o3","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":100,"completion_tokens":500,"total_tokens":600,"completion_tokens_details":{"reasoning_tokens":800}}}
+
+data: [DONE]
+
+"#
+}
+
+#[test]
+fn reasoning_malformed_subset_clamped_to_zero() {
+    let stream_events = map_fixture(reasoning_malformed_fixture());
+    let done = stream_events
+        .iter()
+        .find(|e| matches!(e, AssistantStreamEvent::Done { .. }))
+        .expect("expected Done event");
+    if let AssistantStreamEvent::Done { message, .. } = done {
+        assert_eq!(message.usage.output_tokens, 500);
+        // Malformed reasoning > output: clamped to 0 (no invalid event emitted).
+        assert_eq!(message.usage.reasoning_tokens, 0);
+        assert!(message.usage.is_reported());
+    }
+}
+
 // --- Missing-usage graceful handling (Phase 12 task 12.6, DoD clause 3) ---
 
 fn missing_usage_fixture() -> &'static str {

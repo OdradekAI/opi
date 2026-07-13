@@ -672,7 +672,7 @@ fn session_coordinator_accumulates_usage() {
     )
     .unwrap();
 
-    let usage = opi_ai::stream::Usage::reported(100, 50, 0, 0);
+    let usage = opi_ai::stream::Usage::reported(100, 50, 0, 0, 0, 0);
 
     coord.on_turn_end_simple(&[], &usage).unwrap();
     assert_eq!(coord.usage().turn_count(), 1);
@@ -1063,7 +1063,7 @@ fn compaction_shrinks_buffer_and_returns_summary_plus_kept() {
         })
         .collect();
 
-    let usage = Usage::reported(100, 100, 0, 0);
+    let usage = Usage::reported(100, 100, 0, 0, 0, 0);
 
     let out = coord
         .on_turn_end_simple(&messages, &usage)
@@ -1101,7 +1101,7 @@ fn compaction_engine_reads_pricing_and_reports_cost() {
     .unwrap();
 
     // Sonnet pricing: $3/Mtok input, $15/Mtok output
-    let usage = Usage::reported(1_000_000, 500_000, 0, 0);
+    let usage = Usage::reported(1_000_000, 500_000, 0, 0, 0, 0);
     coord.on_turn_end_simple(&[], &usage).unwrap();
 
     let cost = coord.cost_summary().expect("sonnet pricing should resolve");
@@ -1141,7 +1141,7 @@ fn cost_summary_returns_none_when_any_turn_has_unknown_usage() {
     .unwrap();
 
     coord
-        .on_turn_end_simple(&[], &Usage::reported(100, 50, 0, 0))
+        .on_turn_end_simple(&[], &Usage::reported(100, 50, 0, 0, 0, 0))
         .unwrap();
     coord.on_turn_end_simple(&[], &Usage::unknown()).unwrap();
 
@@ -1507,7 +1507,7 @@ async fn multi_assistant_turn_accumulates_all_assistant_usages() {
     tool_partial.content.push(AssistantContent::ToolCall {
         tool_call: tool_call.clone(),
     });
-    tool_partial.usage = Usage::reported(100, 30, 0, 0);
+    tool_partial.usage = Usage::reported(100, 30, 0, 0, 0, 0);
     let tool_response = vec![
         AssistantStreamEvent::Start {
             partial: test_support::base_assistant(),
@@ -1528,7 +1528,7 @@ async fn multi_assistant_turn_accumulates_all_assistant_usages() {
     final_partial.content.push(AssistantContent::Text {
         text: "done".into(),
     });
-    final_partial.usage = Usage::reported(200, 50, 0, 0);
+    final_partial.usage = Usage::reported(200, 50, 0, 0, 0, 0);
     let final_response = vec![
         AssistantStreamEvent::Start {
             partial: test_support::base_assistant(),
@@ -2189,7 +2189,7 @@ fn open_existing_replays_usage_from_assistant_messages() {
     asst1
         .content
         .push(AssistantContent::Text { text: "hi".into() });
-    asst1.usage = Usage::reported(100, 50, 10, 5);
+    asst1.usage = Usage::reported(100, 50, 10, 5, 0, 0);
     writer
         .append(&SessionEntry::Message(MessageEntry {
             id: "msg-2".into(),
@@ -2203,7 +2203,7 @@ fn open_existing_replays_usage_from_assistant_messages() {
     asst2.content.push(AssistantContent::Text {
         text: "world".into(),
     });
-    asst2.usage = Usage::reported(200, 80, 20, 10);
+    asst2.usage = Usage::reported(200, 80, 20, 10, 0, 0);
     writer
         .append(&SessionEntry::Message(MessageEntry {
             id: "msg-3".into(),
@@ -2294,7 +2294,7 @@ fn open_existing_treats_legacy_nonzero_usage_as_reported_for_cost_summary() {
     assistant.content.push(AssistantContent::Text {
         text: "legacy".into(),
     });
-    assistant.usage = Usage::reported(1_000_000, 500_000, 0, 0);
+    assistant.usage = Usage::reported(1_000_000, 500_000, 0, 0, 0, 0);
     let assistant_entry = SessionEntry::Message(MessageEntry {
         id: "msg-2".into(),
         parent_id: None,
