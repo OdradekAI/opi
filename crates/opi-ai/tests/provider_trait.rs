@@ -252,3 +252,13 @@ fn provider_trait_has_no_complete_method() {
     // Since DummyProvider only implements id/models/stream, this compiles.
     let _provider = DummyProvider;
 }
+
+// --- refresh_models default (task 14.6) ---
+
+#[tokio::test]
+async fn provider_refresh_models_default_returns_none() {
+    let provider = DummyProvider;
+    let result = provider.refresh_models().await;
+    assert!(result.is_ok());
+    assert!(result.unwrap().is_none());
+}

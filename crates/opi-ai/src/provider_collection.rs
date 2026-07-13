@@ -432,13 +432,45 @@ impl ProviderCollection {
         Ok(drain_to_completion(stream).await?)
     }
 
-    /// Refresh provider-side state (model catalogs, rotated tokens).
+    /// Refresh provider-side model catalogs.
     ///
-    /// Phase 10 implements no refresh behavior; this is the documented
-    /// extension point so providers that can refresh model lists or rotate
-    /// credentials at run time can be added later without redesigning the
-    /// collection contract.
-    pub async fn refresh(&self) -> Result<(), CollectionError> {
+    /// Calls [`Provider::refresh_models`] on every registered provider in
+    /// deterministic (sorted) id order. Collects all results: if every
+    /// provider succeeds, atomically replaces the registry-owned dynamic
+    /// catalogs. If **any** provider returns an error, the last-known
+    /// catalogs are left unchanged and the first error is returned.
+    ///
+    /// Static providers return `Ok(None)` from their default implementation
+    /// and are silently skipped. Dynamic providers return `Ok(Some(models))`
+    /// and their catalog replaces any prior dynamic catalog for that provider
+    /// on success. Repeated refreshes replace rather than append.
+    pub async fn refresh(&mut self) -> Result<(), CollectionError> {
+        let ids = self.registry.provider_ids();
+        let ids: Vec<String> = ids.into_iter().map(|s| s.to_owned()).collect();
+
+        // Collect all results first (no mutation until every provider succeeds).
+        let mut new_catalogs: HashMap<String, Vec<ModelInfo>> = HashMap::new();
+        for id in &ids {
+            let provider = match self.registry.get_provider(id) {
+                Some(p) => p,
+                None => continue,
+            };
+            match provider.refresh_models().await {
+                Ok(Some(models)) => {
+                    new_catalogs.insert(id.clone(), models);
+                }
+                Ok(None) => {
+                    // Static provider — keep whatever was there (no change).
+                }
+                Err(err) => {
+                    // Atomic rollback: leave last-known catalogs unchanged.
+                    return Err(CollectionError::Provider(err));
+                }
+            }
+        }
+
+        // All succeeded — atomically replace.
+        self.registry.replace_all_dynamic_catalogs(new_catalogs);
         Ok(())
     }
 }

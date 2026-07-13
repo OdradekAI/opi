@@ -170,6 +170,11 @@ pub struct ProviderRegistry {
     providers: Vec<Box<dyn Provider>>,
     /// Supplementary model overrides keyed by `(provider_id, model_id)`.
     model_overrides: HashMap<(String, String), ModelInfo>,
+    /// Per-provider dynamic catalogs populated by `Provider::refresh_models`.
+    /// When present, the dynamic catalog replaces the provider's built-in
+    /// model list for resolution and enumeration. Cleared and replaced
+    /// atomically by `ProviderCollection::refresh`.
+    dynamic_catalogs: HashMap<String, Vec<ModelInfo>>,
 }
 
 impl ProviderRegistry {
@@ -177,6 +182,7 @@ impl ProviderRegistry {
         Self {
             providers: Vec::new(),
             model_overrides: HashMap::new(),
+            dynamic_catalogs: HashMap::new(),
         }
     }
 
@@ -256,8 +262,10 @@ impl ProviderRegistry {
 
     /// Resolve a `provider:model` spec into provider reference + model info.
     ///
-    /// Checks the override layer first, then falls back to the provider's own
-    /// model list.
+    /// Layering (first match wins):
+    /// 1. Model overrides (registered via [`register_model`](Self::register_model)).
+    /// 2. Dynamic catalog (populated by [`Provider::refresh_models`]).
+    /// 3. Provider built-in model list.
     pub fn resolve(&self, spec: &str) -> Result<(&dyn Provider, &ModelInfo), RegistryError> {
         let (provider_id, model_id) = split_spec(spec)?;
         let provider = self
@@ -270,6 +278,19 @@ impl ProviderRegistry {
         let key = (provider_id.to_owned(), model_id.to_owned());
         if let Some(model) = self.model_overrides.get(&key) {
             return Ok((provider.as_ref(), model));
+        }
+
+        // Check dynamic catalog (from refresh_models).
+        if let Some(catalog) = self.dynamic_catalogs.get(provider_id) {
+            if let Some(model) = catalog.iter().find(|m| m.id == model_id) {
+                return Ok((provider.as_ref(), model));
+            }
+            // Dynamic catalog is authoritative when present — don't fall through
+            // to built-in models.
+            return Err(RegistryError::UnknownModel {
+                provider: provider_id.to_owned(),
+                model: model_id.to_owned(),
+            });
         }
 
         // Fall back to provider's own models.
@@ -300,30 +321,47 @@ impl ProviderRegistry {
 
     /// Return all models across all providers and the override layer.
     ///
-    /// Each entry is `(provider_id, &ModelInfo)`. When a model override
-    /// shadows a provider's built-in model (same provider id and model id),
-    /// the override entry replaces the built-in entry so consumers see a
-    /// deduplicated view consistent with [`resolve`](Self::resolve).
+    /// Each entry is `(provider_id, &ModelInfo)`. Layering (first wins):
+    /// 1. Model overrides shadow dynamic catalogs and built-in models.
+    /// 2. Dynamic catalogs (from `refresh_models`) replace built-in models.
+    /// 3. Provider built-in models are the base layer.
     ///
     /// Useful for `--list-models` style enumeration.
     pub fn all_models(&self) -> Vec<(&str, &ModelInfo)> {
         let mut result = Vec::new();
 
-        // Models from registered providers, skipping any that are shadowed
-        // by an override.
+        // Collect overridden model keys so we can skip shadowed entries.
+        let overridden: Vec<(&String, &String)> = self
+            .model_overrides
+            .keys()
+            .map(|(pid, mid)| (pid, mid))
+            .collect();
+
         for provider in &self.providers {
-            for model in provider.models() {
-                let key = (provider.id().to_owned(), model.id.clone());
-                if self.model_overrides.contains_key(&key) {
-                    continue; // override will be added below
+            let pid = provider.id();
+
+            // If a dynamic catalog exists for this provider, use it instead of
+            // built-in models.
+            if let Some(catalog) = self.dynamic_catalogs.get(pid) {
+                for model in catalog {
+                    if overridden.contains(&(&pid.to_owned(), &model.id)) {
+                        continue; // override will be added below
+                    }
+                    result.push((pid, model));
                 }
-                result.push((provider.id(), model));
+            } else {
+                for model in provider.models() {
+                    if overridden.contains(&(&pid.to_owned(), &model.id)) {
+                        continue; // override will be added below
+                    }
+                    result.push((pid, model));
+                }
             }
         }
 
-        // Override models (supplement or shadow provider models). HashMap
-        // iteration is intentionally normalized so list-models/pickers stay
-        // deterministic once overrides are present.
+        // Override models (supplement or shadow). HashMap iteration is
+        // intentionally normalized so list-models/pickers stay deterministic
+        // once overrides are present.
         let mut overrides = self.model_overrides.iter().collect::<Vec<_>>();
         overrides.sort_by(|((provider_a, model_a), _), ((provider_b, model_b), _)| {
             provider_a
@@ -335,6 +373,27 @@ impl ProviderRegistry {
         }
 
         result
+    }
+
+    /// Replace the dynamic catalog for a single provider.
+    ///
+    /// Used by [`ProviderCollection::refresh`] to atomically install refreshed
+    /// catalogs after all providers succeed.
+    pub fn set_dynamic_catalog(&mut self, provider_id: &str, models: Vec<ModelInfo>) {
+        self.dynamic_catalogs.insert(provider_id.to_owned(), models);
+    }
+
+    /// Atomically replace all dynamic catalogs.
+    ///
+    /// Clears existing catalogs and installs `catalogs` as the new set.
+    /// Used by [`ProviderCollection::refresh`] for all-or-nothing replacement.
+    pub fn replace_all_dynamic_catalogs(&mut self, catalogs: HashMap<String, Vec<ModelInfo>>) {
+        self.dynamic_catalogs = catalogs;
+    }
+
+    /// Clear all dynamic catalogs (rollback on refresh error).
+    pub fn clear_dynamic_catalogs(&mut self) {
+        self.dynamic_catalogs.clear();
     }
 }
 

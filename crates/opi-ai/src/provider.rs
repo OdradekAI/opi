@@ -5,6 +5,7 @@ use std::pin::Pin;
 use futures_core::Stream;
 use tokio_util::sync::CancellationToken;
 
+use crate::credential::BoxAuthFuture;
 use crate::message::{InputContent, Message, ToolDef};
 use crate::stream::AssistantStreamEvent;
 
@@ -20,6 +21,17 @@ pub trait Provider: Send + Sync {
     /// until a terminal event (`Done` or `Error`) is reached or the caller
     /// cancels via `Request::cancel`.
     fn stream(&self, request: Request) -> EventStream;
+
+    /// Refresh this provider's model catalog at runtime.
+    ///
+    /// Static providers return `Ok(None)`. Dynamic providers return
+    /// `Ok(Some(models))` with the latest model list, or an explicit error.
+    /// The caller owns collection-level atomicity: it collects all provider
+    /// results and only replaces the registry-owned dynamic catalogs after
+    /// every provider succeeds.
+    fn refresh_models(&self) -> BoxAuthFuture<'_, Result<Option<Vec<ModelInfo>>, ProviderError>> {
+        Box::pin(async { Ok(None) })
+    }
 }
 
 /// Stream of assistant events from a provider.

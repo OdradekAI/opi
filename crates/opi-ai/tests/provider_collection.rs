@@ -508,7 +508,7 @@ async fn collection_supports_provider_correctness_fixtures() {
 
 #[tokio::test]
 async fn collection_refresh_is_a_documented_noop_extension_point() {
-    let collection = ProviderCollection::new();
+    let mut collection = ProviderCollection::new();
     let result = collection.refresh().await;
     assert!(result.is_ok());
 }
@@ -823,4 +823,384 @@ async fn credential_store_is_object_safe_and_round_trips() {
     store.delete("anthropic").await.unwrap();
     assert_eq!(store.probe("anthropic").await, CredentialSource::Absent);
     assert!(store.read("anthropic").await.unwrap().is_none());
+}
+
+// ---------------------------------------------------------------------------
+// Task 14.6: Dynamic provider model refresh (substrate-only)
+// ---------------------------------------------------------------------------
+
+use opi_ai::provider::ModelInfo;
+
+/// A mock provider that implements `refresh_models` to return a dynamic catalog.
+struct RefreshProvider {
+    id: &'static str,
+    builtin_models: Vec<ModelInfo>,
+    refreshed_models: std::sync::Mutex<Option<Vec<ModelInfo>>>,
+    events: std::sync::Mutex<
+        Option<Vec<Result<opi_ai::AssistantStreamEvent, opi_ai::provider::ProviderError>>>,
+    >,
+}
+
+impl RefreshProvider {
+    fn new(id: &'static str, builtin_models: Vec<ModelInfo>) -> Self {
+        Self {
+            id,
+            builtin_models,
+            refreshed_models: std::sync::Mutex::new(None),
+            events: std::sync::Mutex::new(Some(Vec::new())),
+        }
+    }
+
+    fn with_refresh(mut self, models: Vec<ModelInfo>) -> Self {
+        self.refreshed_models = std::sync::Mutex::new(Some(models));
+        self
+    }
+}
+
+impl Provider for RefreshProvider {
+    fn id(&self) -> &str {
+        self.id
+    }
+
+    fn models(&self) -> &[ModelInfo] {
+        // Leak a static to satisfy the &[ModelInfo] return type.
+        // Only used in tests; the leak is intentional and bounded.
+        Box::leak(self.builtin_models.clone().into_boxed_slice())
+    }
+
+    fn stream(&self, _request: Request) -> opi_ai::provider::EventStream {
+        let events = self.events.lock().unwrap().take().unwrap_or_default();
+        Box::pin(futures_util::stream::iter(events))
+    }
+
+    fn refresh_models(
+        &self,
+    ) -> opi_ai::credential::BoxAuthFuture<
+        '_,
+        Result<Option<Vec<ModelInfo>>, opi_ai::provider::ProviderError>,
+    > {
+        let result = self.refreshed_models.lock().unwrap().clone();
+        Box::pin(async move { Ok(result) })
+    }
+}
+
+fn model_info(id: &str, display: &str) -> ModelInfo {
+    ModelInfo {
+        id: id.into(),
+        display_name: display.into(),
+        capabilities: ModelCapabilities::new(128_000, 4096),
+    }
+}
+
+/// A mock provider whose `refresh_models` returns an error.
+struct ErrorRefreshProvider {
+    id: &'static str,
+    error_msg: &'static str,
+}
+
+impl Provider for ErrorRefreshProvider {
+    fn id(&self) -> &str {
+        self.id
+    }
+
+    fn models(&self) -> &[ModelInfo] {
+        &[]
+    }
+
+    fn stream(&self, _request: Request) -> opi_ai::provider::EventStream {
+        Box::pin(futures_util::stream::empty())
+    }
+
+    fn refresh_models(
+        &self,
+    ) -> opi_ai::credential::BoxAuthFuture<
+        '_,
+        Result<Option<Vec<ModelInfo>>, opi_ai::provider::ProviderError>,
+    > {
+        let msg = self.error_msg.to_owned();
+        Box::pin(async move { Err(opi_ai::provider::ProviderError::ProviderSide(msg)) })
+    }
+}
+
+/// Shared mutable refresh catalog behind an `Arc<Mutex<>>` so tests can
+/// change the result between refresh calls.
+struct MutableRefreshProvider {
+    id: &'static str,
+    builtin_models: Vec<ModelInfo>,
+    refresh_result: Arc<std::sync::Mutex<Option<Vec<ModelInfo>>>>,
+}
+
+impl MutableRefreshProvider {
+    fn new(
+        id: &'static str,
+        builtin_models: Vec<ModelInfo>,
+        initial_refresh: Vec<ModelInfo>,
+    ) -> Self {
+        Self {
+            id,
+            builtin_models,
+            refresh_result: Arc::new(std::sync::Mutex::new(Some(initial_refresh))),
+        }
+    }
+}
+
+impl Provider for MutableRefreshProvider {
+    fn id(&self) -> &str {
+        self.id
+    }
+
+    fn models(&self) -> &[ModelInfo] {
+        // Leak is intentional and bounded — test-only.
+        Box::leak(self.builtin_models.clone().into_boxed_slice())
+    }
+
+    fn stream(&self, _request: Request) -> opi_ai::provider::EventStream {
+        Box::pin(futures_util::stream::empty())
+    }
+
+    fn refresh_models(
+        &self,
+    ) -> opi_ai::credential::BoxAuthFuture<
+        '_,
+        Result<Option<Vec<ModelInfo>>, opi_ai::provider::ProviderError>,
+    > {
+        let result = self.refresh_result.lock().unwrap().clone();
+        Box::pin(async move { Ok(result) })
+    }
+}
+
+#[tokio::test]
+async fn refresh_models_is_atomic_substrate() {
+    // Mixed static + dynamic providers.
+    let mut collection = ProviderCollection::new();
+
+    // Static provider — default refresh_models returns Ok(None).
+    let static_prov = text_mock("staticprov", "static");
+    collection
+        .register(
+            static_prov,
+            AuthDescriptor::StaticApiKey {
+                value: SecretKey::new("key"),
+            },
+            CompatMetadata::default(),
+        )
+        .unwrap();
+
+    // Dynamic provider A — refresh returns a new catalog.
+    let dyn_a =
+        RefreshProvider::new("dyna", vec![model_info("old-a", "Old A")]).with_refresh(vec![
+            model_info("fresh-a1", "Fresh A1"),
+            model_info("fresh-a2", "Fresh A2"),
+        ]);
+    collection
+        .register(
+            Box::new(dyn_a),
+            AuthDescriptor::StaticApiKey {
+                value: SecretKey::new("key"),
+            },
+            CompatMetadata::default(),
+        )
+        .unwrap();
+
+    // Dynamic provider B — refresh returns a different catalog.
+    let dyn_b = RefreshProvider::new("dynb", vec![model_info("old-b", "Old B")])
+        .with_refresh(vec![model_info("fresh-b", "Fresh B")]);
+    collection
+        .register(
+            Box::new(dyn_b),
+            AuthDescriptor::StaticApiKey {
+                value: SecretKey::new("key"),
+            },
+            CompatMetadata::default(),
+        )
+        .unwrap();
+
+    // Before refresh: built-in models are visible.
+    assert!(collection.resolve("dyna:old-a").is_ok());
+    assert!(collection.resolve("dynb:old-b").is_ok());
+    // Fresh models not yet visible.
+    assert!(collection.resolve("dyna:fresh-a1").is_err());
+
+    // Refresh succeeds.
+    collection.refresh().await.unwrap();
+
+    // After refresh: dynamic catalogs replace built-in models.
+    // Old models gone, fresh models visible.
+    assert!(
+        collection.resolve("dyna:old-a").is_err(),
+        "old built-in model should be replaced by dynamic catalog"
+    );
+    let (prov_a1, model_a1) = collection.resolve("dyna:fresh-a1").unwrap();
+    assert_eq!(prov_a1.id(), "dyna");
+    assert_eq!(model_a1.id, "fresh-a1");
+    assert!(collection.resolve("dyna:fresh-a2").is_ok());
+
+    let (prov_b, model_b) = collection.resolve("dynb:fresh-b").unwrap();
+    assert_eq!(prov_b.id(), "dynb");
+    assert_eq!(model_b.id, "fresh-b");
+
+    // Static provider is unaffected.
+    assert!(collection.resolve("staticprov:mock-model").is_ok());
+
+    // all_models includes dynamic catalogs.
+    let all: Vec<(&str, &str)> = collection
+        .registry()
+        .all_models()
+        .into_iter()
+        .map(|(pid, m)| (pid, m.id.as_str()))
+        .collect();
+    // Dynamic provider A: old-a gone, fresh-a1 + fresh-a2 present.
+    assert!(!all.contains(&("dyna", "old-a")));
+    assert!(all.contains(&("dyna", "fresh-a1")));
+    assert!(all.contains(&("dyna", "fresh-a2")));
+    // Dynamic provider B: old-b gone, fresh-b present.
+    assert!(!all.contains(&("dynb", "old-b")));
+    assert!(all.contains(&("dynb", "fresh-b")));
+}
+
+#[tokio::test]
+async fn refresh_models_atomic_rollback_on_error() {
+    let mut collection = ProviderCollection::new();
+
+    // Dynamic provider that succeeds on refresh.
+    let good =
+        RefreshProvider::new("good", vec![]).with_refresh(vec![model_info("good-model", "Good")]);
+    collection
+        .register(
+            Box::new(good),
+            AuthDescriptor::StaticApiKey {
+                value: SecretKey::new("key"),
+            },
+            CompatMetadata::default(),
+        )
+        .unwrap();
+
+    // Dynamic provider that fails on refresh.
+    collection
+        .register(
+            Box::new(ErrorRefreshProvider {
+                id: "bad",
+                error_msg: "failed to refresh models",
+            }),
+            AuthDescriptor::StaticApiKey {
+                value: SecretKey::new("key"),
+            },
+            CompatMetadata::default(),
+        )
+        .unwrap();
+
+    // Verify initial state: no models yet (empty built-in).
+    assert!(collection.resolve("good:good-model").is_err());
+
+    // Refresh fails because "bad" returns an error.
+    let err = collection.refresh().await.unwrap_err();
+    assert!(
+        err.to_string().contains("failed to refresh models"),
+        "expected error message, got: {err}"
+    );
+
+    // Atomic rollback: good's catalog must NOT be installed.
+    assert!(
+        collection.resolve("good:good-model").is_err(),
+        "good's catalog should NOT be visible after rollback"
+    );
+}
+
+#[tokio::test]
+async fn refresh_models_deterministic_ordering() {
+    // Refresh evaluates providers in deterministic (sorted) id order.
+    // Test: the result is the same regardless of registration order.
+    let mut collection = ProviderCollection::new();
+
+    // Register in non-alphabetical order.
+    for id in ["zulu", "alpha", "mike"] {
+        let prov = RefreshProvider::new(id, vec![])
+            .with_refresh(vec![model_info(&format!("{id}-refreshed"), "refreshed")]);
+        collection
+            .register(
+                Box::new(prov),
+                AuthDescriptor::StaticApiKey {
+                    value: SecretKey::new("key"),
+                },
+                CompatMetadata::default(),
+            )
+            .unwrap();
+    }
+
+    collection.refresh().await.unwrap();
+
+    // All refreshed models are present.
+    assert!(collection.resolve("alpha:alpha-refreshed").is_ok());
+    assert!(collection.resolve("mike:mike-refreshed").is_ok());
+    assert!(collection.resolve("zulu:zulu-refreshed").is_ok());
+}
+
+#[tokio::test]
+async fn refresh_models_repeated_refresh_replaces() {
+    let mut collection = ProviderCollection::new();
+
+    let prov = MutableRefreshProvider::new("dyn", vec![], vec![model_info("v1", "Version 1")]);
+    let refresh_result = Arc::clone(&prov.refresh_result);
+    collection
+        .register(
+            Box::new(prov),
+            AuthDescriptor::StaticApiKey {
+                value: SecretKey::new("key"),
+            },
+            CompatMetadata::default(),
+        )
+        .unwrap();
+
+    // First refresh.
+    collection.refresh().await.unwrap();
+    assert!(collection.resolve("dyn:v1").is_ok());
+    assert!(collection.resolve("dyn:v2").is_err());
+
+    // Change the refresh result for the next call.
+    *refresh_result.lock().unwrap() = Some(vec![
+        model_info("v2", "Version 2"),
+        model_info("v3", "Version 3"),
+    ]);
+
+    // Second refresh — replaces v1 with v2+v3.
+    collection.refresh().await.unwrap();
+    assert!(
+        collection.resolve("dyn:v1").is_err(),
+        "v1 should be replaced"
+    );
+    assert!(collection.resolve("dyn:v2").is_ok());
+    assert!(collection.resolve("dyn:v3").is_ok());
+}
+
+#[tokio::test]
+async fn refresh_models_empty_catalog_is_valid() {
+    let mut collection = ProviderCollection::new();
+
+    let dyn_prov = RefreshProvider::new("dyn", vec![model_info("old", "Old")]).with_refresh(vec![]); // Empty catalog.
+    collection
+        .register(
+            Box::new(dyn_prov),
+            AuthDescriptor::StaticApiKey {
+                value: SecretKey::new("key"),
+            },
+            CompatMetadata::default(),
+        )
+        .unwrap();
+
+    assert!(collection.resolve("dyn:old").is_ok());
+
+    collection.refresh().await.unwrap();
+
+    // Empty dynamic catalog: old model gone, no new models.
+    assert!(collection.resolve("dyn:old").is_err());
+    let dyn_models: Vec<_> = collection
+        .registry()
+        .all_models()
+        .into_iter()
+        .filter(|(pid, _)| *pid == "dyn")
+        .collect();
+    assert!(
+        dyn_models.is_empty(),
+        "empty dynamic catalog should yield no models: got {dyn_models:?}"
+    );
 }
