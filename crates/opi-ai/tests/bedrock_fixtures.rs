@@ -17,7 +17,7 @@ use opi_ai::message::{
     ImageSource, InputContent, MediaType, Message, OutputContent, ToolDef, ToolResultMessage,
     UserMessage,
 };
-use opi_ai::provider::{Provider, ProviderError, ProviderErrorCategory, Request, CacheRetention};
+use opi_ai::provider::{CacheRetention, Provider, ProviderError, ProviderErrorCategory, Request};
 use opi_ai::stream::{AssistantStreamEvent, StopReason};
 use tokio_util::sync::CancellationToken;
 use wiremock::matchers::{body_partial_json, method, path};
@@ -159,11 +159,11 @@ fn models_have_required_fields() {
             "display_name should not be empty"
         );
         assert!(
-            model.context_window > 0,
+            model.capabilities.context_window > 0,
             "context_window should be positive"
         );
         assert!(
-            model.max_output_tokens > 0,
+            model.capabilities.max_output_tokens > 0,
             "max_output_tokens should be positive"
         );
     }
@@ -739,7 +739,7 @@ fn bedrock_models_advertise_supports_thinking() {
     let thinking: Vec<_> = provider
         .models()
         .iter()
-        .filter(|m| m.supports_thinking)
+        .filter(|m| m.capabilities.supports_thinking)
         .collect();
     assert!(
         !thinking.is_empty(),

@@ -6,7 +6,8 @@
 //! All tests use MockProvider -- no live provider calls.
 
 use opi_agent::extension::{Extension, ExtensionRegistry};
-use opi_ai::provider::{ModelInfo, Provider, CacheRetention};
+use opi_ai::provider::{CacheRetention, ModelInfo, Provider};
+use opi_ai::registry::ModelCapabilities;
 use opi_ai::registry::ProviderRegistry;
 use opi_ai::test_support::{MockProvider, text_response};
 
@@ -18,11 +19,7 @@ fn custom_model(id: &str, display: &str) -> ModelInfo {
     ModelInfo {
         id: id.into(),
         display_name: display.into(),
-        context_window: 50_000,
-        max_output_tokens: 2_048,
-        supports_images: false,
-        supports_streaming: true,
-        supports_thinking: false,
+        capabilities: ModelCapabilities::new(50_000, 2_048).with_streaming(true),
     }
 }
 

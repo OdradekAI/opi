@@ -26,7 +26,7 @@ use opi_ai::http::HttpClient;
 use opi_ai::message::{InputContent, Message, UserMessage};
 use opi_ai::openai_chat::OpenAiChatProvider;
 use opi_ai::openai_responses::{OpenAiResponsesProvider, ResponsesConfig};
-use opi_ai::provider::{Provider, ProviderError, Request, ThinkingConfig, CacheRetention};
+use opi_ai::provider::{CacheRetention, Provider, ProviderError, Request, ThinkingConfig};
 use secrecy::SecretString;
 use tokio_util::sync::CancellationToken;
 use wiremock::matchers::method;
@@ -124,7 +124,10 @@ async fn anthropic_oauth_emits_bearer_plus_exact_beta_header() {
         .unwrap();
     assert_eq!(auth, "Bearer oauth-token-anthropic");
     // The required OAuth beta header, exact value.
-    let beta = req.headers.get("anthropic-beta").map(|v| v.to_str().unwrap());
+    let beta = req
+        .headers
+        .get("anthropic-beta")
+        .map(|v| v.to_str().unwrap());
     assert_eq!(
         beta,
         Some(ANTHROPIC_OAUTH_BETA),
@@ -162,9 +165,7 @@ async fn anthropic_api_key_path_sends_xapi_key_no_bearer_no_beta() {
 
     let req = one_captured_request(&server).await;
     assert_eq!(
-        req.headers
-            .get("x-api-key")
-            .map(|v| v.to_str().unwrap()),
+        req.headers.get("x-api-key").map(|v| v.to_str().unwrap()),
         Some("ak-anthropic")
     );
     assert!(
@@ -348,9 +349,8 @@ async fn openai_chat_api_key_401_stays_authfailed() {
 fn codex_jwt(account_id: &str) -> String {
     use base64::Engine;
     let header = br#"{"alg":"HS256","typ":"JWT"}"#;
-    let payload = format!(
-        r#"{{"https://api.openai.com/auth":{{"chatgpt_account_id":"{account_id}"}}}}"#
-    );
+    let payload =
+        format!(r#"{{"https://api.openai.com/auth":{{"chatgpt_account_id":"{account_id}"}}}}"#);
     let h = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(header);
     let p = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(payload);
     format!("{h}.{p}.sig")

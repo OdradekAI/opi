@@ -17,6 +17,7 @@ use opi_ai::message::{
     UserMessage,
 };
 use opi_ai::provider::{EventStream, Provider, ProviderError, Request};
+use opi_ai::registry::ModelCapabilities;
 use opi_ai::stream::AssistantStreamEvent;
 use opi_ai::test_support::{self, MockProvider};
 use opi_coding_agent::config::OpiConfig;
@@ -2591,11 +2592,9 @@ impl opi_agent::extension::Extension for ModelOverrideExtension {
                 opi_ai::provider::ModelInfo {
                     id: "custom-model".into(),
                     display_name: "Custom Model".into(),
-                    context_window: 100_000,
-                    max_output_tokens: 4_096,
-                    supports_images: true,
-                    supports_streaming: true,
-                    supports_thinking: false,
+                    capabilities: ModelCapabilities::new(100_000, 4_096)
+                        .with_images(true)
+                        .with_streaming(true),
                 },
             ),
             (
@@ -2603,11 +2602,10 @@ impl opi_agent::extension::Extension for ModelOverrideExtension {
                 opi_ai::provider::ModelInfo {
                     id: "thinking-model".into(),
                     display_name: "Thinking Model".into(),
-                    context_window: 100_000,
-                    max_output_tokens: 4_096,
-                    supports_images: true,
-                    supports_streaming: true,
-                    supports_thinking: true,
+                    capabilities: ModelCapabilities::new(100_000, 4_096)
+                        .with_images(true)
+                        .with_streaming(true)
+                        .with_thinking(true),
                 },
             ),
         ]

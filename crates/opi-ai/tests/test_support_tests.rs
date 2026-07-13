@@ -5,7 +5,7 @@
 
 use futures_util::StreamExt;
 use opi_ai::message::{InputContent, Message, UserMessage};
-use opi_ai::provider::{Provider, Request, CacheRetention};
+use opi_ai::provider::{CacheRetention, Provider, Request};
 use opi_ai::stream::{AssistantStreamEvent, StopReason, Usage};
 use opi_ai::test_support::{self, MockProvider};
 use tokio_util::sync::CancellationToken;
@@ -26,7 +26,7 @@ fn mock_provider_returns_models() {
     let models = provider.models();
     assert_eq!(models.len(), 1);
     assert_eq!(models[0].id, "mock-model");
-    assert!(models[0].supports_streaming);
+    assert!(models[0].capabilities.supports_streaming);
 }
 
 #[test]

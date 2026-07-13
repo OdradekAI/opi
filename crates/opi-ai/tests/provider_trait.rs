@@ -3,6 +3,7 @@
 //! DoD: "stream(Request) replaces complete"
 
 use futures_util::{StreamExt, stream};
+use opi_ai::registry::ModelCapabilities;
 use opi_ai::{
     message::{AssistantContent, AssistantMessage, Message, ToolDef},
     provider::{
@@ -94,15 +95,14 @@ fn model_info_fields() {
     let info = ModelInfo {
         id: "claude-sonnet-4-5-20250514".into(),
         display_name: "Claude Sonnet 4.5".into(),
-        context_window: 200000,
-        max_output_tokens: 8192,
-        supports_images: true,
-        supports_streaming: true,
-        supports_thinking: true,
+        capabilities: ModelCapabilities::new(200000, 8192)
+            .with_images(true)
+            .with_streaming(true)
+            .with_thinking(true),
     };
     assert_eq!(info.id, "claude-sonnet-4-5-20250514");
-    assert_eq!(info.context_window, 200000);
-    assert!(info.supports_thinking);
+    assert_eq!(info.capabilities.context_window, 200000);
+    assert!(info.capabilities.supports_thinking);
 }
 
 // --- Request construction tests ---

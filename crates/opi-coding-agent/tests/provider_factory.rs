@@ -6,7 +6,7 @@
 
 use std::sync::Mutex;
 
-use opi_ai::provider::{Provider, Request, ThinkingConfig, CacheRetention};
+use opi_ai::provider::{CacheRetention, Provider, Request, ThinkingConfig};
 use opi_ai::test_support::MockProvider;
 use opi_coding_agent::config::{
     GenericProviderConfig, OpenRouterProviderConfig, OpiConfig, load_config_file,

@@ -5,7 +5,8 @@
 //! streaming, and model listing all work through the existing contracts.
 //! All tests use MockProvider — no live provider calls.
 
-use opi_ai::provider::{ModelInfo, Provider, CacheRetention};
+use opi_ai::provider::{CacheRetention, ModelInfo, Provider};
+use opi_ai::registry::ModelCapabilities;
 use opi_ai::registry::ProviderRegistry;
 use opi_ai::test_support::{MockProvider, text_response};
 use opi_ai::{RegistrationError, RegistryError};
@@ -18,11 +19,7 @@ fn custom_model(id: &str, display: &str) -> ModelInfo {
     ModelInfo {
         id: id.into(),
         display_name: display.into(),
-        context_window: 50_000,
-        max_output_tokens: 2_048,
-        supports_images: false,
-        supports_streaming: true,
-        supports_thinking: false,
+        capabilities: ModelCapabilities::new(50_000, 2_048).with_streaming(true),
     }
 }
 
@@ -144,11 +141,7 @@ fn register_model_empty_id_rejected() {
     let model = ModelInfo {
         id: String::new(),
         display_name: "Empty".into(),
-        context_window: 0,
-        max_output_tokens: 0,
-        supports_images: false,
-        supports_streaming: false,
-        supports_thinking: false,
+        capabilities: ModelCapabilities::new(0, 0),
     };
     let err = registry.register_model("prov", model).unwrap_err();
     assert!(matches!(err, RegistrationError::EmptyModelId { .. }));
@@ -182,11 +175,10 @@ fn capabilities_for_custom_provider() {
     let model = ModelInfo {
         id: "cap-model".into(),
         display_name: "Cap Model".into(),
-        context_window: 200_000,
-        max_output_tokens: 8_192,
-        supports_images: true,
-        supports_streaming: true,
-        supports_thinking: true,
+        capabilities: ModelCapabilities::new(200_000, 8_192)
+            .with_images(true)
+            .with_streaming(true)
+            .with_thinking(true),
     };
     registry
         .register_provider(custom_provider("cap-prov", vec![model]))
@@ -210,11 +202,7 @@ fn capabilities_for_model_override() {
     let model = ModelInfo {
         id: "override-model".into(),
         display_name: "Override".into(),
-        context_window: 300_000,
-        max_output_tokens: 16_384,
-        supports_images: false,
-        supports_streaming: true,
-        supports_thinking: false,
+        capabilities: ModelCapabilities::new(300_000, 16_384).with_streaming(true),
     };
     registry.register_model("prov", model).unwrap();
 
@@ -347,11 +335,7 @@ fn all_models_deduplicates_when_override_shadows_built_in() {
     let base_model = ModelInfo {
         id: "shared".into(),
         display_name: "Base Shared".into(),
-        context_window: 100_000,
-        max_output_tokens: 4_096,
-        supports_images: false,
-        supports_streaming: true,
-        supports_thinking: false,
+        capabilities: ModelCapabilities::new(100_000, 4_096).with_streaming(true),
     };
     registry
         .register_provider(custom_provider("prov", vec![base_model]))
@@ -361,11 +345,9 @@ fn all_models_deduplicates_when_override_shadows_built_in() {
     let override_model = ModelInfo {
         id: "shared".into(),
         display_name: "Override Shared".into(),
-        context_window: 200_000,
-        max_output_tokens: 8_192,
-        supports_images: true,
-        supports_streaming: true,
-        supports_thinking: false,
+        capabilities: ModelCapabilities::new(200_000, 8_192)
+            .with_images(true)
+            .with_streaming(true),
     };
     registry.register_model("prov", override_model).unwrap();
 
@@ -388,11 +370,7 @@ fn resolve_override_takes_precedence_over_provider_model() {
     let base_model = ModelInfo {
         id: "shared".into(),
         display_name: "Base Shared".into(),
-        context_window: 100_000,
-        max_output_tokens: 4_096,
-        supports_images: false,
-        supports_streaming: true,
-        supports_thinking: false,
+        capabilities: ModelCapabilities::new(100_000, 4_096).with_streaming(true),
     };
     registry
         .register_provider(custom_provider("prov", vec![base_model]))
@@ -402,11 +380,9 @@ fn resolve_override_takes_precedence_over_provider_model() {
     let override_model = ModelInfo {
         id: "shared".into(),
         display_name: "Override Shared".into(),
-        context_window: 200_000,
-        max_output_tokens: 8_192,
-        supports_images: true,
-        supports_streaming: true,
-        supports_thinking: false,
+        capabilities: ModelCapabilities::new(200_000, 8_192)
+            .with_images(true)
+            .with_streaming(true),
     };
     registry.register_model("prov", override_model).unwrap();
 

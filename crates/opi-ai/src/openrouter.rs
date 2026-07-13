@@ -7,6 +7,7 @@
 
 use crate::openai_chat::{CompatConfig, OpenAiChatProvider};
 use crate::provider::ModelInfo;
+use crate::registry::ModelCapabilities;
 
 /// Default OpenRouter API base URL (without the `/v1` suffix, which the adapter adds).
 const BASE_URL: &str = "https://openrouter.ai/api";
@@ -39,56 +40,42 @@ fn default_models() -> Vec<ModelInfo> {
         ModelInfo {
             id: "anthropic/claude-sonnet-4".into(),
             display_name: "Claude Sonnet 4 (via OpenRouter)".into(),
-            context_window: 200000,
-            max_output_tokens: 64000,
-            supports_images: true,
-            supports_streaming: true,
-            supports_thinking: false,
+            capabilities: ModelCapabilities::new(200000, 64000)
+                .with_images(true)
+                .with_streaming(true),
         },
         ModelInfo {
             id: "anthropic/claude-haiku-4".into(),
             display_name: "Claude Haiku 4 (via OpenRouter)".into(),
-            context_window: 200000,
-            max_output_tokens: 8192,
-            supports_images: true,
-            supports_streaming: true,
-            supports_thinking: false,
+            capabilities: ModelCapabilities::new(200000, 8192)
+                .with_images(true)
+                .with_streaming(true),
         },
         ModelInfo {
             id: "openai/gpt-4o".into(),
             display_name: "GPT-4o (via OpenRouter)".into(),
-            context_window: 128000,
-            max_output_tokens: 16384,
-            supports_images: true,
-            supports_streaming: true,
-            supports_thinking: false,
+            capabilities: ModelCapabilities::new(128000, 16384)
+                .with_images(true)
+                .with_streaming(true),
         },
         ModelInfo {
             id: "openai/gpt-4o-mini".into(),
             display_name: "GPT-4o Mini (via OpenRouter)".into(),
-            context_window: 128000,
-            max_output_tokens: 16384,
-            supports_images: true,
-            supports_streaming: true,
-            supports_thinking: false,
+            capabilities: ModelCapabilities::new(128000, 16384)
+                .with_images(true)
+                .with_streaming(true),
         },
         ModelInfo {
             id: "google/gemini-2.5-pro".into(),
             display_name: "Gemini 2.5 Pro (via OpenRouter)".into(),
-            context_window: 1048576,
-            max_output_tokens: 65536,
-            supports_images: true,
-            supports_streaming: true,
-            supports_thinking: false,
+            capabilities: ModelCapabilities::new(1048576, 65536)
+                .with_images(true)
+                .with_streaming(true),
         },
         ModelInfo {
             id: "deepseek/deepseek-r1".into(),
             display_name: "DeepSeek R1 (via OpenRouter)".into(),
-            context_window: 131072,
-            max_output_tokens: 32768,
-            supports_images: false,
-            supports_streaming: true,
-            supports_thinking: false,
+            capabilities: ModelCapabilities::new(131072, 32768).with_streaming(true),
         },
     ]
 }

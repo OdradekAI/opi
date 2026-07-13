@@ -16,6 +16,7 @@ use tokio_util::sync::CancellationToken;
 use crate::gemini::{GeminiMapper, GeminiProvider, ParsedEvent, drain_sse_data, parse_sse_data};
 use crate::http::HttpClient;
 use crate::provider::{EventStream, ModelInfo, Provider, ProviderError, Request};
+use crate::registry::ModelCapabilities;
 use crate::stream::AssistantStreamEvent;
 
 /// Google Vertex AI provider.
@@ -82,11 +83,9 @@ impl VertexProvider {
             .map(|id| ModelInfo {
                 id: id.clone(),
                 display_name: id.clone(),
-                context_window: 1_000_000,
-                max_output_tokens: 65536,
-                supports_images: true,
-                supports_streaming: true,
-                supports_thinking: false,
+                capabilities: ModelCapabilities::new(1_000_000, 65536)
+                    .with_images(true)
+                    .with_streaming(true),
             })
             .collect();
         Self {
@@ -325,20 +324,16 @@ fn default_vertex_models() -> Vec<ModelInfo> {
         ModelInfo {
             id: "gemini-2.5-flash".into(),
             display_name: "Gemini 2.5 Flash (Vertex)".into(),
-            context_window: 1_000_000,
-            max_output_tokens: 65536,
-            supports_images: true,
-            supports_streaming: true,
-            supports_thinking: false,
+            capabilities: ModelCapabilities::new(1_000_000, 65536)
+                .with_images(true)
+                .with_streaming(true),
         },
         ModelInfo {
             id: "gemini-2.5-pro".into(),
             display_name: "Gemini 2.5 Pro (Vertex)".into(),
-            context_window: 1_000_000,
-            max_output_tokens: 65536,
-            supports_images: true,
-            supports_streaming: true,
-            supports_thinking: false,
+            capabilities: ModelCapabilities::new(1_000_000, 65536)
+                .with_images(true)
+                .with_streaming(true),
         },
     ]
 }

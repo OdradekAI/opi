@@ -9,6 +9,7 @@
 use std::process::Command;
 
 use opi_ai::provider::{EventStream, ModelInfo, Provider, ProviderError, Request};
+use opi_ai::registry::ModelCapabilities;
 use opi_ai::stream::AssistantStreamEvent;
 use opi_coding_agent::model_listing::model_entries_from_registry;
 
@@ -36,11 +37,7 @@ fn model(id: &str, display_name: &str) -> ModelInfo {
     ModelInfo {
         id: id.into(),
         display_name: display_name.into(),
-        context_window: 100_000,
-        max_output_tokens: 4_096,
-        supports_images: false,
-        supports_streaming: true,
-        supports_thinking: false,
+        capabilities: ModelCapabilities::new(100_000, 4_096).with_streaming(true),
     }
 }
 

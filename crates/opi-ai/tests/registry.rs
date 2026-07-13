@@ -4,6 +4,7 @@
 
 use opi_ai::anthropic::AnthropicProvider;
 use opi_ai::provider::{EventStream, ModelInfo, Provider, Request};
+use opi_ai::registry::ModelCapabilities;
 use opi_ai::registry::{ProviderRegistry, RegistryError};
 
 /// Minimal stub provider for multi-provider tests.
@@ -19,11 +20,9 @@ impl StubProvider {
             models: vec![ModelInfo {
                 id: format!("{id}-model-1"),
                 display_name: format!("{id} Model 1"),
-                context_window: 128000,
-                max_output_tokens: 4096,
-                supports_images: true,
-                supports_streaming: true,
-                supports_thinking: false,
+                capabilities: ModelCapabilities::new(128000, 4096)
+                    .with_images(true)
+                    .with_streaming(true),
             }],
         }
     }
@@ -87,7 +86,7 @@ fn resolve_anthropic_model() {
     let (provider, model) = reg.resolve("anthropic:claude-sonnet-4-5-20250514").unwrap();
     assert_eq!(provider.id(), "anthropic");
     assert_eq!(model.id, "claude-sonnet-4-5-20250514");
-    assert!(model.supports_streaming);
+    assert!(model.capabilities.supports_streaming);
 }
 
 #[test]

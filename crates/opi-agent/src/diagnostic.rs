@@ -757,9 +757,7 @@ impl From<&crate::loop_types::AgentError> for Diagnostic {
                 SOURCE_PROVIDER,
                 format!("credential needed for '{provider_id}' — run /login {provider_id}"),
             )
-            .details(
-                serde_json::json!({ "credential_needed_for": provider_id }),
-            )
+            .details(serde_json::json!({ "credential_needed_for": provider_id }))
             .action(format!("run /login {provider_id}")),
             AgentError::CredentialRevoked { provider_id } => Diagnostic::new(
                 Severity::Error,
@@ -767,9 +765,7 @@ impl From<&crate::loop_types::AgentError> for Diagnostic {
                 SOURCE_PROVIDER,
                 format!("credential revoked for '{provider_id}' — login required"),
             )
-            .details(
-                serde_json::json!({ "credential_revoked_for": provider_id }),
-            )
+            .details(serde_json::json!({ "credential_revoked_for": provider_id }))
             .action(format!("run /login {provider_id} to re-authenticate")),
             AgentError::Tool(message) => Diagnostic::new(
                 Severity::Error,

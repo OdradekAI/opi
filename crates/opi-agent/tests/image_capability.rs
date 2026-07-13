@@ -8,6 +8,7 @@ use opi_agent::loop_types::{AgentError, AgentLoopConfig, AgentLoopContext};
 use opi_agent::message::AgentMessage;
 use opi_ai::message::{ImageSource, InputContent, MediaType, Message, UserMessage};
 use opi_ai::provider::{EventStream, ModelInfo, Provider, Request};
+use opi_ai::registry::ModelCapabilities;
 use tokio_util::sync::CancellationToken;
 
 struct TextOnlyProvider {
@@ -22,11 +23,7 @@ impl TextOnlyProvider {
             models: vec![ModelInfo {
                 id: "text-only".into(),
                 display_name: "Text Only".into(),
-                context_window: 8192,
-                max_output_tokens: 1024,
-                supports_images: false,
-                supports_streaming: true,
-                supports_thinking: false,
+                capabilities: ModelCapabilities::new(8192, 1024).with_streaming(true),
             }],
         }
     }

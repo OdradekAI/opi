@@ -17,6 +17,7 @@ use crate::bedrock::sigv4::{AwsCredentials, sign_request};
 use crate::http::HttpClient;
 use crate::message::{AssistantContent, AssistantMessage, ToolCall};
 use crate::provider::{EventStream, ModelInfo, Provider, ProviderError, Request};
+use crate::registry::ModelCapabilities;
 use crate::stream::{AssistantStreamEvent, StopReason, Usage};
 
 /// Model families supported by this provider.
@@ -1018,29 +1019,26 @@ fn default_bedrock_models() -> Vec<ModelInfo> {
         ModelInfo {
             id: "anthropic.claude-sonnet-4-20250514-v2:0".into(),
             display_name: "Claude Sonnet 4 (Bedrock)".into(),
-            context_window: 200000,
-            max_output_tokens: 8192,
-            supports_images: true,
-            supports_streaming: true,
-            supports_thinking: true,
+            capabilities: ModelCapabilities::new(200000, 8192)
+                .with_images(true)
+                .with_streaming(true)
+                .with_thinking(true),
         },
         ModelInfo {
             id: "anthropic.claude-opus-4-20250514-v1:0".into(),
             display_name: "Claude Opus 4 (Bedrock)".into(),
-            context_window: 200000,
-            max_output_tokens: 8192,
-            supports_images: true,
-            supports_streaming: true,
-            supports_thinking: true,
+            capabilities: ModelCapabilities::new(200000, 8192)
+                .with_images(true)
+                .with_streaming(true)
+                .with_thinking(true),
         },
         ModelInfo {
             id: "anthropic.claude-haiku-4-5-20250514-v1:0".into(),
             display_name: "Claude Haiku 4.5 (Bedrock)".into(),
-            context_window: 200000,
-            max_output_tokens: 8192,
-            supports_images: true,
-            supports_streaming: true,
-            supports_thinking: true,
+            capabilities: ModelCapabilities::new(200000, 8192)
+                .with_images(true)
+                .with_streaming(true)
+                .with_thinking(true),
         },
     ]
 }

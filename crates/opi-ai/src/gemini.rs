@@ -13,6 +13,7 @@ use tokio_util::sync::CancellationToken;
 use crate::http::HttpClient;
 use crate::message::{AssistantContent, AssistantMessage, OutputContent, ToolCall};
 use crate::provider::{EventStream, ModelInfo, Provider, ProviderError, Request};
+use crate::registry::ModelCapabilities;
 use crate::stream::{AssistantStreamEvent, StopReason, Usage};
 
 // ---------------------------------------------------------------------------
@@ -453,29 +454,23 @@ impl GeminiProvider {
             ModelInfo {
                 id: "gemini-2.5-flash".into(),
                 display_name: "Gemini 2.5 Flash".into(),
-                context_window: 1_000_000,
-                max_output_tokens: 65536,
-                supports_images: true,
-                supports_streaming: true,
-                supports_thinking: false,
+                capabilities: ModelCapabilities::new(1_000_000, 65536)
+                    .with_images(true)
+                    .with_streaming(true),
             },
             ModelInfo {
                 id: "gemini-2.5-pro".into(),
                 display_name: "Gemini 2.5 Pro".into(),
-                context_window: 1_000_000,
-                max_output_tokens: 65536,
-                supports_images: true,
-                supports_streaming: true,
-                supports_thinking: false,
+                capabilities: ModelCapabilities::new(1_000_000, 65536)
+                    .with_images(true)
+                    .with_streaming(true),
             },
             ModelInfo {
                 id: "gemini-2.0-flash".into(),
                 display_name: "Gemini 2.0 Flash".into(),
-                context_window: 1_000_000,
-                max_output_tokens: 8192,
-                supports_images: true,
-                supports_streaming: true,
-                supports_thinking: false,
+                capabilities: ModelCapabilities::new(1_000_000, 8192)
+                    .with_images(true)
+                    .with_streaming(true),
             },
         ];
         Self {

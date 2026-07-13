@@ -100,7 +100,13 @@ fn request_scalars_carry_explicit_values() {
 
 #[test]
 fn extra_headers_reject_auth_header_names() {
-    let auth_names = ["authorization", "Authorization", "AUTHORIZATION", "x-api-key", "X-Api-Key"];
+    let auth_names = [
+        "authorization",
+        "Authorization",
+        "AUTHORIZATION",
+        "x-api-key",
+        "X-Api-Key",
+    ];
     for name in &auth_names {
         let headers = vec![(name.to_string(), "secret".into())];
         let err = validate_extra_headers(&headers).unwrap_err();
@@ -171,9 +177,11 @@ async fn provider_no_timeout_completes_normally() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/v1/messages"))
-        .respond_with(ResponseTemplate::new(200).set_body_string(
-            "event: message_stop\r\ndata: {\"type\":\"message_stop\"}\r\n\r\n",
-        ))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_string(
+                "event: message_stop\r\ndata: {\"type\":\"message_stop\"}\r\n\r\n",
+            ),
+        )
         .mount(&server)
         .await;
 
@@ -203,9 +211,11 @@ async fn extra_headers_reach_anthropic_wire() {
     Mock::given(method("POST"))
         .and(path("/v1/messages"))
         .and(header("X-Custom", "my-value"))
-        .respond_with(ResponseTemplate::new(200).set_body_string(
-            "event: message_stop\r\ndata: {\"type\":\"message_stop\"}\r\n\r\n",
-        ))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_string(
+                "event: message_stop\r\ndata: {\"type\":\"message_stop\"}\r\n\r\n",
+            ),
+        )
         .expect(1)
         .mount(&server)
         .await;
@@ -242,7 +252,8 @@ async fn openai_chat_session_id_becomes_prompt_cache_key() {
         .await;
 
     let cancel = CancellationToken::new();
-    let provider = opi_ai::openai_chat::OpenAiChatProvider::new("test-key".into(), Some(server.uri()));
+    let provider =
+        opi_ai::openai_chat::OpenAiChatProvider::new("test-key".into(), Some(server.uri()));
     let request = make_openai_chat_request(cancel, Some("sess-abc123".into()));
 
     let mut stream = provider.stream(request);
@@ -271,7 +282,8 @@ async fn openai_chat_session_id_clamps_to_64_chars() {
         .await;
 
     let cancel = CancellationToken::new();
-    let provider = opi_ai::openai_chat::OpenAiChatProvider::new("test-key".into(), Some(server.uri()));
+    let provider =
+        opi_ai::openai_chat::OpenAiChatProvider::new("test-key".into(), Some(server.uri()));
     let request = make_openai_chat_request(cancel, Some(session_id));
 
     let mut stream = provider.stream(request);
@@ -297,7 +309,8 @@ async fn openai_chat_no_session_id_no_cache_key_header() {
         .await;
 
     let cancel = CancellationToken::new();
-    let provider = opi_ai::openai_chat::OpenAiChatProvider::new("test-key".into(), Some(server.uri()));
+    let provider =
+        opi_ai::openai_chat::OpenAiChatProvider::new("test-key".into(), Some(server.uri()));
     let request = make_openai_chat_request(cancel, None);
 
     let mut stream = provider.stream(request);

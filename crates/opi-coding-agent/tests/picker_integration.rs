@@ -10,6 +10,7 @@ use opi_agent::session::{LeafEntry, MessageEntry, SessionEntry};
 use opi_agent::session_branch::SessionTree;
 use opi_ai::message::{InputContent, Message, UserMessage};
 use opi_ai::provider::{EventStream, ModelInfo, Provider, ProviderError, Request};
+use opi_ai::registry::ModelCapabilities;
 use opi_ai::stream::AssistantStreamEvent;
 use opi_coding_agent::picker;
 use opi_tui::select_list::SelectListState;
@@ -54,20 +55,18 @@ fn sample_registry() -> opi_ai::registry::ProviderRegistry {
         ModelInfo {
             id: "claude-sonnet-4-5-20250514".into(),
             display_name: "Claude Sonnet 4.5".into(),
-            context_window: 200000,
-            max_output_tokens: 8192,
-            supports_images: true,
-            supports_streaming: true,
-            supports_thinking: true,
+            capabilities: ModelCapabilities::new(200000, 8192)
+                .with_images(true)
+                .with_streaming(true)
+                .with_thinking(true),
         },
         ModelInfo {
             id: "claude-opus-4-20250514".into(),
             display_name: "Claude Opus 4".into(),
-            context_window: 200000,
-            max_output_tokens: 8192,
-            supports_images: true,
-            supports_streaming: true,
-            supports_thinking: true,
+            capabilities: ModelCapabilities::new(200000, 8192)
+                .with_images(true)
+                .with_streaming(true)
+                .with_thinking(true),
         },
     ];
     let provider = TestProvider::new("anthropic", models);
@@ -104,11 +103,10 @@ fn model_picker_multiple_providers() {
         vec![ModelInfo {
             id: "claude-sonnet-4-5-20250514".into(),
             display_name: "Claude Sonnet 4.5".into(),
-            context_window: 200000,
-            max_output_tokens: 8192,
-            supports_images: true,
-            supports_streaming: true,
-            supports_thinking: true,
+            capabilities: ModelCapabilities::new(200000, 8192)
+                .with_images(true)
+                .with_streaming(true)
+                .with_thinking(true),
         }],
     );
     let p2 = TestProvider::new(
@@ -116,11 +114,9 @@ fn model_picker_multiple_providers() {
         vec![ModelInfo {
             id: "gpt-4o".into(),
             display_name: "GPT-4o".into(),
-            context_window: 128000,
-            max_output_tokens: 4096,
-            supports_images: true,
-            supports_streaming: true,
-            supports_thinking: false,
+            capabilities: ModelCapabilities::new(128000, 4096)
+                .with_images(true)
+                .with_streaming(true),
         }],
     );
     let mut registry = opi_ai::registry::ProviderRegistry::new();
@@ -145,11 +141,10 @@ fn model_picker_items_include_registry_model_overrides() {
             ModelInfo {
                 id: "custom-sonnet".into(),
                 display_name: "Custom Sonnet".into(),
-                context_window: 200000,
-                max_output_tokens: 8192,
-                supports_images: true,
-                supports_streaming: true,
-                supports_thinking: true,
+                capabilities: ModelCapabilities::new(200000, 8192)
+                    .with_images(true)
+                    .with_streaming(true)
+                    .with_thinking(true),
             },
         )
         .unwrap();

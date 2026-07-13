@@ -27,6 +27,7 @@ use futures_util::stream;
 use opi_agent::diagnostic::{Diagnostic, SOURCE_PACKAGE, Severity, code};
 use opi_agent::extension::{Extension, ExtensionCommand, ExtensionError, ExtensionRegistry};
 use opi_ai::provider::{EventStream, ModelInfo, Provider, ProviderError, Request};
+use opi_ai::registry::ModelCapabilities;
 use opi_ai::stream::{AssistantStreamEvent, StopReason};
 use opi_ai::test_support::{MockProvider, MockResponse, base_assistant, text_response};
 use opi_coding_agent::adapter_extension::ProcessAdapter;
@@ -2360,14 +2361,12 @@ fn rpc_model_info_with_max_output(
     ModelInfo {
         id: id.into(),
         display_name: id.into(),
-        context_window: 100_000,
-        max_output_tokens,
-        supports_images: true,
-        supports_streaming: true,
-        supports_thinking,
+        capabilities: ModelCapabilities::new(100_000, max_output_tokens)
+            .with_images(true)
+            .with_streaming(true)
+            .with_thinking(supports_thinking),
     }
 }
-
 #[derive(Clone)]
 struct BlockingCleanupProvider {
     cleanup_finished: Arc<AtomicBool>,
@@ -2389,11 +2388,9 @@ impl Provider for BlockingCleanupProvider {
             vec![ModelInfo {
                 id: "mock-model".into(),
                 display_name: "Mock Model".into(),
-                context_window: 100_000,
-                max_output_tokens: 4_096,
-                supports_images: true,
-                supports_streaming: true,
-                supports_thinking: false,
+                capabilities: ModelCapabilities::new(100_000, 4_096)
+                    .with_images(true)
+                    .with_streaming(true),
             }]
         });
         &MODELS
@@ -2454,11 +2451,9 @@ impl Provider for ControlledEmitCleanupProvider {
             vec![ModelInfo {
                 id: "mock-model".into(),
                 display_name: "Mock Model".into(),
-                context_window: 100_000,
-                max_output_tokens: 4_096,
-                supports_images: true,
-                supports_streaming: true,
-                supports_thinking: false,
+                capabilities: ModelCapabilities::new(100_000, 4_096)
+                    .with_images(true)
+                    .with_streaming(true),
             }]
         });
         &MODELS
@@ -2545,20 +2540,16 @@ impl Provider for HeldRequestProvider {
                 ModelInfo {
                     id: "mock-model".into(),
                     display_name: "Mock Model".into(),
-                    context_window: 100_000,
-                    max_output_tokens: 4_096,
-                    supports_images: true,
-                    supports_streaming: true,
-                    supports_thinking: false,
+                    capabilities: ModelCapabilities::new(100_000, 4_096)
+                        .with_images(true)
+                        .with_streaming(true),
                 },
                 ModelInfo {
                     id: "next-model".into(),
                     display_name: "Next Model".into(),
-                    context_window: 100_000,
-                    max_output_tokens: 4_096,
-                    supports_images: true,
-                    supports_streaming: true,
-                    supports_thinking: false,
+                    capabilities: ModelCapabilities::new(100_000, 4_096)
+                        .with_images(true)
+                        .with_streaming(true),
                 },
             ]
         });
@@ -2617,11 +2608,9 @@ impl Provider for PanickingProvider {
             vec![ModelInfo {
                 id: "mock-model".into(),
                 display_name: "Mock Model".into(),
-                context_window: 100_000,
-                max_output_tokens: 4_096,
-                supports_images: true,
-                supports_streaming: true,
-                supports_thinking: false,
+                capabilities: ModelCapabilities::new(100_000, 4_096)
+                    .with_images(true)
+                    .with_streaming(true),
             }]
         });
         &MODELS
@@ -2775,11 +2764,9 @@ impl Provider for ControlledProvider {
             vec![ModelInfo {
                 id: "mock-model".into(),
                 display_name: "Mock Model".into(),
-                context_window: 100_000,
-                max_output_tokens: 4_096,
-                supports_images: true,
-                supports_streaming: true,
-                supports_thinking: false,
+                capabilities: ModelCapabilities::new(100_000, 4_096)
+                    .with_images(true)
+                    .with_streaming(true),
             }]
         });
         &MODELS
@@ -2881,11 +2868,9 @@ impl Provider for SecondTurnGatedDeltaProvider {
             vec![ModelInfo {
                 id: "mock-model".into(),
                 display_name: "Mock Model".into(),
-                context_window: 100_000,
-                max_output_tokens: 4_096,
-                supports_images: true,
-                supports_streaming: true,
-                supports_thinking: false,
+                capabilities: ModelCapabilities::new(100_000, 4_096)
+                    .with_images(true)
+                    .with_streaming(true),
             }]
         });
         &MODELS

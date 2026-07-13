@@ -19,6 +19,7 @@ use opi_agent::message::AgentMessage;
 use opi_agent::tool::{ExecutionMode, Tool, ToolError, ToolResult};
 use opi_ai::message::{OutputContent, ToolDef};
 use opi_ai::provider::ModelInfo;
+use opi_ai::registry::ModelCapabilities;
 use opi_ai::test_support::{MockProvider, text_response, tool_call_response};
 use opi_coding_agent::config::OpiConfig;
 use opi_coding_agent::harness::CodingHarness;
@@ -782,11 +783,9 @@ fn harness_builder_model_picker_includes_current_provider_extension_overrides() 
                 ModelInfo {
                     id: "custom-model".into(),
                     display_name: "Custom Model".into(),
-                    context_window: 100_000,
-                    max_output_tokens: 4_096,
-                    supports_images: true,
-                    supports_streaming: true,
-                    supports_thinking: false,
+                    capabilities: ModelCapabilities::new(100_000, 4_096)
+                        .with_images(true)
+                        .with_streaming(true),
                 },
             )]
         }
@@ -829,11 +828,9 @@ fn harness_builder_set_model_validated_accepts_current_provider_extension_overri
                 ModelInfo {
                     id: "custom-model".into(),
                     display_name: "Custom Model".into(),
-                    context_window: 100_000,
-                    max_output_tokens: 4_096,
-                    supports_images: true,
-                    supports_streaming: true,
-                    supports_thinking: false,
+                    capabilities: ModelCapabilities::new(100_000, 4_096)
+                        .with_images(true)
+                        .with_streaming(true),
                 },
             )]
         }

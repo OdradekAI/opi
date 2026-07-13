@@ -8,7 +8,7 @@ use opi_ai::anthropic::{
     AnthropicEvent, AnthropicMapper, AnthropicProvider, ParsedEvent, parse_sse_events,
 };
 use opi_ai::message::{AssistantContent, InputContent, Message, UserMessage};
-use opi_ai::provider::{Provider, Request, ThinkingConfig, CacheRetention};
+use opi_ai::provider::{CacheRetention, Provider, Request, ThinkingConfig};
 use opi_ai::stream::{AssistantStreamEvent, StopReason};
 use tokio_util::sync::CancellationToken;
 use wiremock::matchers::{body_partial_json, header, method, path};

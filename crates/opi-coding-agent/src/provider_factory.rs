@@ -41,6 +41,7 @@ use std::sync::Arc;
 use opi_agent::diagnostic::Diagnostic;
 use opi_agent::extension::ExtensionRegistry;
 use opi_ai::provider::{EventStream, ModelInfo, Provider, ProviderError, Request};
+use opi_ai::registry::ModelCapabilities;
 use opi_ai::{AuthDescriptor, CompatMetadata, ProviderCollection, ProviderRegistry};
 use secrecy::ExposeSecret;
 
@@ -577,11 +578,7 @@ fn build_openai_compatible_profile(
             } else {
                 model.display_name.clone()
             },
-            context_window: model.context_window,
-            max_output_tokens: model.max_output_tokens,
-            supports_images: model.supports_images,
-            supports_streaming: model.supports_streaming,
-            supports_thinking: model.supports_thinking,
+            capabilities: ModelCapabilities::new(model.context_window, model.max_output_tokens),
         });
     }
 

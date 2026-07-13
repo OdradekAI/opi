@@ -17,6 +17,7 @@ use crate::openai_chat::{
     CompatConfig, OpenAiChatMapper, OpenAiChatProvider, ParsedEvent, parse_sse_events,
 };
 use crate::provider::{EventStream, ModelInfo, Provider, ProviderError, Request};
+use crate::registry::ModelCapabilities;
 use crate::stream::AssistantStreamEvent;
 
 /// Default Azure OpenAI API version.
@@ -100,11 +101,9 @@ impl AzureOpenAIProvider {
             .map(|d| ModelInfo {
                 id: d.clone(),
                 display_name: d.clone(),
-                context_window: 128000,
-                max_output_tokens: 16384,
-                supports_images: true,
-                supports_streaming: true,
-                supports_thinking: false,
+                capabilities: ModelCapabilities::new(128000, 16384)
+                    .with_images(true)
+                    .with_streaming(true),
             })
             .collect();
         let inner = OpenAiChatProvider::new_for_profile(

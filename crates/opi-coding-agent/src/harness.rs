@@ -50,12 +50,12 @@ use serde::Serialize;
 use crate::config::OpiConfig;
 use crate::context_files;
 use crate::credential_store::KeychainCredentialStore;
-use crate::oauth::OAuthProviderRegistry;
 use crate::diagnostic_bridge::{
     diagnostic_for_package_discovery_error, diagnostic_for_resource_discovery_error,
     diagnostic_for_resource_layer_message, diagnostic_from_package,
     diagnostic_from_package_resolution_error,
 };
+use crate::oauth::OAuthProviderRegistry;
 use crate::package_discovery::PackageResource;
 use crate::policy::{RunMode, ToolRuntimeConfig, ToolSelection};
 use crate::prompt::SystemPromptBuilder;
@@ -1885,10 +1885,7 @@ impl CodingHarness {
     /// agent loop so providers receive it on every Request. Called after
     /// new-session creation, resume, and fork.
     fn sync_session_id(&mut self) {
-        let id = self
-            .session
-            .as_ref()
-            .map(|s| s.session_id().to_owned());
+        let id = self.session.as_ref().map(|s| s.session_id().to_owned());
         self.agent.set_session_id(id);
     }
 
@@ -2182,14 +2179,14 @@ fn initial_thinking_request_config(
     };
 
     if let Ok((_, model)) = collection.resolve(model) {
-        if !model.supports_thinking {
+        if !model.capabilities.supports_thinking {
             return (None, None);
         }
-        if max_tokens > model.max_output_tokens {
-            if model.max_output_tokens <= 1 {
+        if max_tokens > model.capabilities.max_output_tokens {
+            if model.capabilities.max_output_tokens <= 1 {
                 return (None, None);
             }
-            let adjusted_budget = model.max_output_tokens - 1;
+            let adjusted_budget = model.capabilities.max_output_tokens - 1;
             let Ok((adjusted_thinking, adjusted_max_tokens)) =
                 request_config_for_thinking_budget(adjusted_budget)
             else {
@@ -2225,14 +2222,14 @@ fn validate_thinking_budget_for_model(
     budget_tokens: u64,
     max_tokens: u64,
 ) -> Result<(), String> {
-    if !model.supports_thinking {
+    if !model.capabilities.supports_thinking {
         return Err(model_does_not_support_thinking(&model.id));
     }
-    if max_tokens > model.max_output_tokens {
+    if max_tokens > model.capabilities.max_output_tokens {
         return Err(thinking_budget_exceeds_model_limit(
             budget_tokens,
             max_tokens,
-            model.max_output_tokens,
+            model.capabilities.max_output_tokens,
             &model.id,
         ));
     }

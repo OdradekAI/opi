@@ -13,10 +13,14 @@ use std::time::Duration;
 
 use common::{MockLoginPresenter, extract_query_param, extract_redirect_port};
 use opi_ai::anthropic::AnthropicProvider;
-use opi_ai::auth::{AuthResolver, AuthScheme, LoginPresenter, OAuthCredential, OAuthProvider, ResolvedAuth};
+use opi_ai::auth::{
+    AuthResolver, AuthScheme, LoginPresenter, OAuthCredential, OAuthProvider, ResolvedAuth,
+};
 use opi_ai::credential::{BoxAuthFuture, Credential, CredentialStore};
 use opi_ai::http::HttpClient;
-use opi_ai::provider::{Provider, ProviderError as AiProviderError, Request, ThinkingConfig, CacheRetention};
+use opi_ai::provider::{
+    CacheRetention, Provider, ProviderError as AiProviderError, Request, ThinkingConfig,
+};
 use opi_coding_agent::config::OpiConfig;
 use opi_coding_agent::credential_store::{
     AuthSource, CredentialResolver, EnvLookup, FakeKeyringBackend, KEYCHAIN_SERVICE,
@@ -1164,7 +1168,10 @@ async fn resolver_read_oauth_base_url_and_presence_reflect_stored_cred() {
     };
     store.write("anthropic", &anthropic_cred).await.unwrap();
     assert!(resolver.has_oauth_credential("anthropic").await.unwrap());
-    assert_eq!(resolver.read_oauth_base_url("anthropic").await.unwrap(), None);
+    assert_eq!(
+        resolver.read_oauth_base_url("anthropic").await.unwrap(),
+        None
+    );
 }
 
 // ===========================================================================
@@ -1606,11 +1613,15 @@ async fn factory_routes_copilot_to_chat_with_oauth_wire_shape() {
     let req = &requests[0];
     assert_eq!(req.url.path(), "/chat/completions");
     assert_eq!(
-        req.headers.get("authorization").map(|v| v.to_str().unwrap()),
+        req.headers
+            .get("authorization")
+            .map(|v| v.to_str().unwrap()),
         Some("Bearer copilot-access-fake")
     );
     assert_eq!(
-        req.headers.get("Openai-Intent").map(|v| v.to_str().unwrap()),
+        req.headers
+            .get("Openai-Intent")
+            .map(|v| v.to_str().unwrap()),
         Some("conversation-edits")
     );
     assert_eq!(
@@ -1667,7 +1678,9 @@ async fn factory_routes_codex_to_codex_responses_with_oauth_wire_shape() {
     let req = &requests[0];
     assert_eq!(req.url.path(), "/codex/responses");
     assert_eq!(
-        req.headers.get("authorization").map(|v| v.to_str().unwrap()),
+        req.headers
+            .get("authorization")
+            .map(|v| v.to_str().unwrap()),
         Some("Bearer codex-access-fake")
     );
     assert_eq!(
@@ -1722,7 +1735,9 @@ async fn factory_routes_anthropic_to_oauth_when_cred_stored() {
     let req = &requests[0];
     // OAuth path: Bearer + the beta header, NO x-api-key.
     assert_eq!(
-        req.headers.get("authorization").map(|v| v.to_str().unwrap()),
+        req.headers
+            .get("authorization")
+            .map(|v| v.to_str().unwrap()),
         Some("Bearer anthropic-oauth-fake")
     );
     assert_eq!(
@@ -1816,7 +1831,9 @@ async fn anthropic_env_oauth_token_precedence_stored_wins_env_fallback() {
     let req = &requests[0];
     // EnvOAuthToken emits Bearer (with the beta header), no x-api-key.
     assert_eq!(
-        req.headers.get("authorization").map(|v| v.to_str().unwrap()),
+        req.headers
+            .get("authorization")
+            .map(|v| v.to_str().unwrap()),
         Some("Bearer env-oauth-token")
     );
     assert_eq!(
@@ -1841,10 +1858,7 @@ async fn anthropic_env_oauth_token_precedence_stored_wins_env_fallback() {
     let backend2 = FakeKeyringBackend::new();
     let (_dir2, store2, _b2) = store_with(backend2);
     store2
-        .write(
-            "anthropic",
-            &stored_oauth("stored-wins", "ref", None),
-        )
+        .write("anthropic", &stored_oauth("stored-wins", "ref", None))
         .await
         .unwrap();
     let resolver2 = CredentialResolver::new(
@@ -1871,7 +1885,9 @@ async fn anthropic_env_oauth_token_precedence_stored_wins_env_fallback() {
     let req2 = &requests2[0];
     // Stored cred wins: Bearer is "stored-wins", NOT the env token.
     assert_eq!(
-        req2.headers.get("authorization").map(|v| v.to_str().unwrap()),
+        req2.headers
+            .get("authorization")
+            .map(|v| v.to_str().unwrap()),
         Some("Bearer stored-wins"),
         "stored OAuth cred must take precedence over ANTHROPIC_OAUTH_TOKEN env"
     );
@@ -1952,10 +1968,7 @@ async fn logout_credential_deletes_stored_entry() {
     let backend = FakeKeyringBackend::new();
     let (_dir, store, _b) = store_with(backend);
     store
-        .write(
-            "anthropic",
-            &stored_oauth("access", "refresh", None),
-        )
+        .write("anthropic", &stored_oauth("access", "refresh", None))
         .await
         .unwrap();
     assert!(store.read("anthropic").await.unwrap().is_some());
@@ -1987,12 +2000,7 @@ async fn logout_credential_missing_entry_is_noop() {
 async fn all_builtin_flows_support_manual_fallback() {
     // --- Anthropic PKCE: manual code ---
     let server_a = MockServer::start().await;
-    mount_token_stub(
-        &server_a,
-        200,
-        token_body("atk-anth", "rtk-anth", 3600),
-    )
-    .await;
+    mount_token_stub(&server_a, 200, token_body("atk-anth", "rtk-anth", 3600)).await;
     let provider_anth = Arc::new(anthropic_provider(
         format!("{}/oauth/token", server_a.uri()),
         Duration::from_secs(60),
@@ -2016,12 +2024,7 @@ async fn all_builtin_flows_support_manual_fallback() {
 
     // --- Codex PKCE: manual code ---
     let server_cx = MockServer::start().await;
-    mount_token_stub(
-        &server_cx,
-        200,
-        token_body("atk-codex", "rtk-codex", 3600),
-    )
-    .await;
+    mount_token_stub(&server_cx, 200, token_body("atk-codex", "rtk-codex", 3600)).await;
     let provider_codex = Arc::new(codex_provider(
         format!("{}/oauth/token", server_cx.uri()),
         Duration::from_secs(60),
@@ -2057,10 +2060,7 @@ async fn all_builtin_flows_support_manual_fallback() {
         json!({"token":"copilot-tok","expires_at":copilot_expires_soon()}),
     )
     .await;
-    let provider_copilot = Arc::new(copilot_provider(
-        server_cp.uri(),
-        Duration::from_secs(60),
-    ));
+    let provider_copilot = Arc::new(copilot_provider(server_cp.uri(), Duration::from_secs(60)));
     let mut registry3 = OAuthProviderRegistry::new();
     registry3.register(provider_copilot).unwrap();
     let backend3 = FakeKeyringBackend::new();
@@ -2130,11 +2130,8 @@ async fn anthropic_oauth_revoked_stops_turn_without_retry_or_relogin() {
         provider_id: "anthropic".into(),
         revoked: std::sync::atomic::AtomicBool::new(false),
     });
-    let provider = AnthropicProvider::with_auth(
-        resolver,
-        Some(server.uri()),
-        Arc::new(HttpClient::new()),
-    );
+    let provider =
+        AnthropicProvider::with_auth(resolver, Some(server.uri()), Arc::new(HttpClient::new()));
     let mut stream = provider.stream(factory_request("anthropic:claude-sonnet-4-5-20250514"));
     drain_stream(&mut stream).await;
     // First call succeeded.

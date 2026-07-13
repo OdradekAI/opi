@@ -10,7 +10,8 @@ use tokio_util::sync::CancellationToken;
 use crate::auth::{AuthResolver, AuthScheme, ResolvedAuth, StaticAuthResolver};
 use crate::http::HttpClient;
 use crate::message::{AssistantContent, AssistantMessage, ToolCall};
-use crate::provider::{EventStream, ModelInfo, Provider, ProviderError, Request};
+use crate::provider::{CacheRetention, EventStream, ModelInfo, Provider, ProviderError, Request};
+use crate::registry::ModelCapabilities;
 use crate::stream::{AssistantStreamEvent, StopReason, Usage};
 
 // ---------------------------------------------------------------------------
@@ -648,29 +649,32 @@ impl AnthropicProvider {
             ModelInfo {
                 id: "claude-sonnet-4-5-20250514".into(),
                 display_name: "Claude Sonnet 4.5".into(),
-                context_window: 200000,
-                max_output_tokens: 8192,
-                supports_images: true,
-                supports_streaming: true,
-                supports_thinking: true,
+                capabilities: ModelCapabilities::new(200000, 8192)
+                    .with_images(true)
+                    .with_streaming(true)
+                    .with_thinking(true)
+                    .with_cache_control(true)
+                    .with_long_cache_retention(true),
             },
             ModelInfo {
                 id: "claude-opus-4-20250514".into(),
                 display_name: "Claude Opus 4".into(),
-                context_window: 200000,
-                max_output_tokens: 8192,
-                supports_images: true,
-                supports_streaming: true,
-                supports_thinking: true,
+                capabilities: ModelCapabilities::new(200000, 8192)
+                    .with_images(true)
+                    .with_streaming(true)
+                    .with_thinking(true)
+                    .with_cache_control(true)
+                    .with_long_cache_retention(true),
             },
             ModelInfo {
                 id: "claude-haiku-4-5-20250514".into(),
                 display_name: "Claude Haiku 4.5".into(),
-                context_window: 200000,
-                max_output_tokens: 8192,
-                supports_images: true,
-                supports_streaming: true,
-                supports_thinking: true,
+                capabilities: ModelCapabilities::new(200000, 8192)
+                    .with_images(true)
+                    .with_streaming(true)
+                    .with_thinking(true)
+                    .with_cache_control(true)
+                    .with_long_cache_retention(true),
             },
         ];
         Self {
@@ -687,20 +691,59 @@ impl AnthropicProvider {
     }
 
     /// Build the Anthropic Messages API request body.
+    ///
+    /// Emits `cache_control` markers when the selected model advertises
+    /// `supports_cache_control`, the request does not disable caching
+    /// (`CacheRetention::Disabled`), and retention is not `None`. Markers
+    /// land on: the system prompt block, the last user-message text block,
+    /// the last assistant-message text block, and the last tool definition.
+    /// TTL `"1h"` is used only when the model also advertises
+    /// `supports_long_cache_retention` and the request retention is `Long`.
     pub fn build_request_body(&self, request: &Request) -> serde_json::Value {
         let model_id = request
             .model
             .split_once(':')
             .map(|(_, id)| id)
             .unwrap_or(&request.model);
+
+        // Resolve cache-control policy for this model+request combination.
+        let cache_enabled = request.cache_retention != CacheRetention::None
+            && request.cache_retention != CacheRetention::Disabled;
+        let model_caps = self.models.iter().find(|m| m.id == model_id);
+        let supports_cache = model_caps
+            .map(|m| m.capabilities.supports_cache_control)
+            .unwrap_or(false);
+        let emit_cache = cache_enabled && supports_cache;
+        let use_long_ttl = emit_cache
+            && request.cache_retention == CacheRetention::Long
+            && model_caps
+                .map(|m| m.capabilities.supports_long_cache_retention)
+                .unwrap_or(false);
+
+        let cache_marker = if use_long_ttl {
+            serde_json::json!({"type": "ephemeral", "ttl": "1h"})
+        } else {
+            serde_json::json!({"type": "ephemeral"})
+        };
+
         let mut body = serde_json::json!({
             "model": model_id,
             "stream": true,
-            "messages": serialize_messages(&request.messages),
+            "messages": serialize_messages(&request.messages, emit_cache, &cache_marker),
         });
 
+        // System prompt: when caching is active, wrap the bare string as a
+        // singled-content-block array so the marker has a place to live.
         if let Some(ref system) = request.system {
-            body["system"] = serde_json::Value::String(system.clone());
+            if emit_cache {
+                body["system"] = serde_json::json!([{
+                    "type": "text",
+                    "text": system,
+                    "cache_control": cache_marker,
+                }]);
+            } else {
+                body["system"] = serde_json::Value::String(system.clone());
+            }
         }
         if let Some(max_tokens) = request.max_tokens {
             body["max_tokens"] = serde_json::Value::Number(max_tokens.into());
@@ -713,19 +756,21 @@ impl AnthropicProvider {
                 .unwrap_or(serde_json::Value::Null);
         }
         if !request.tools.is_empty() {
-            body["tools"] = serde_json::Value::Array(
-                request
-                    .tools
-                    .iter()
-                    .map(|t| {
-                        serde_json::json!({
-                            "name": t.name,
-                            "description": t.description,
-                            "input_schema": t.input_schema,
-                        })
+            let mut tools: Vec<serde_json::Value> = request
+                .tools
+                .iter()
+                .map(|t| {
+                    serde_json::json!({
+                        "name": t.name,
+                        "description": t.description,
+                        "input_schema": t.input_schema,
                     })
-                    .collect(),
-            );
+                })
+                .collect();
+            if emit_cache && let Some(last) = tools.last_mut() {
+                last["cache_control"] = cache_marker.clone();
+            }
+            body["tools"] = serde_json::Value::Array(tools);
         }
         if !request.stop_sequences.is_empty() {
             body["stop_sequences"] = serde_json::Value::Array(
@@ -802,16 +847,13 @@ impl AnthropicProvider {
                 .header("authorization", format!("Bearer {secret}"))
                 .header("anthropic-beta", ANTHROPIC_OAUTH_BETA_HEADER),
         };
-        let response = request
-            .send()
-            .await
-            .map_err(|e| {
-                if e.is_timeout() {
-                    ProviderError::Timeout
-                } else {
-                    ProviderError::Network(e.to_string())
-                }
-            })?;
+        let response = request.send().await.map_err(|e| {
+            if e.is_timeout() {
+                ProviderError::Timeout
+            } else {
+                ProviderError::Network(e.to_string())
+            }
+        })?;
 
         let status = response.status();
         if !status.is_success() {
@@ -954,119 +996,158 @@ fn map_http_status(
     }
 }
 
-fn serialize_messages(messages: &[crate::message::Message]) -> serde_json::Value {
-    serde_json::Value::Array(
-        messages
-            .iter()
-            .map(|msg| match msg {
-                crate::message::Message::User(u) => {
-                    let content: Vec<serde_json::Value> = u
-                        .content
-                        .iter()
-                        .map(|c| match c {
-                            crate::message::InputContent::Text { text } => {
-                                serde_json::json!({"type": "text", "text": text})
-                            }
-                            crate::message::InputContent::Image { source, media_type } => {
-                                match source {
-                                    crate::message::ImageSource::Url { url } => {
-                                        serde_json::json!({
-                                            "type": "image",
-                                            "source": {
-                                                "type": "url",
-                                                "url": url,
-                                            }
-                                        })
-                                    }
-                                    crate::message::ImageSource::Base64 { data } => {
-                                        serde_json::json!({
-                                            "type": "image",
-                                            "source": {
-                                                "type": "base64",
-                                                "media_type": media_type.as_str(),
-                                                "data": data,
-                                            }
-                                        })
-                                    }
-                                    crate::message::ImageSource::Bytes { data } => {
-                                        serde_json::json!({
-                                            "type": "image",
-                                            "source": {
-                                                "type": "base64",
-                                                "media_type": media_type.as_str(),
-                                                "data": base64::Engine::encode(
-                                                    &base64::engine::general_purpose::STANDARD,
-                                                    data,
-                                                ),
-                                            }
-                                        })
-                                    }
+fn serialize_messages(
+    messages: &[crate::message::Message],
+    emit_cache: bool,
+    cache_marker: &serde_json::Value,
+) -> serde_json::Value {
+    use crate::message::AssistantContent;
+
+    let mut array: Vec<serde_json::Value> = messages
+        .iter()
+        .map(|msg| match msg {
+            crate::message::Message::User(u) => {
+                let content: Vec<serde_json::Value> = u
+                    .content
+                    .iter()
+                    .map(|c| match c {
+                        crate::message::InputContent::Text { text } => {
+                            serde_json::json!({"type": "text", "text": text})
+                        }
+                        crate::message::InputContent::Image { source, media_type } => {
+                            match source {
+                                crate::message::ImageSource::Url { url } => {
+                                    serde_json::json!({
+                                        "type": "image",
+                                        "source": {
+                                            "type": "url",
+                                            "url": url,
+                                        }
+                                    })
+                                }
+                                crate::message::ImageSource::Base64 { data } => {
+                                    serde_json::json!({
+                                        "type": "image",
+                                        "source": {
+                                            "type": "base64",
+                                            "media_type": media_type.as_str(),
+                                            "data": data,
+                                        }
+                                    })
+                                }
+                                crate::message::ImageSource::Bytes { data } => {
+                                    serde_json::json!({
+                                        "type": "image",
+                                        "source": {
+                                            "type": "base64",
+                                            "media_type": media_type.as_str(),
+                                            "data": base64::Engine::encode(
+                                                &base64::engine::general_purpose::STANDARD,
+                                                data,
+                                            ),
+                                        }
+                                    })
                                 }
                             }
-                        })
-                        .collect();
-                    serde_json::json!({"role": "user", "content": content})
-                }
-                crate::message::Message::Assistant(a) => {
-                    let content: Vec<serde_json::Value> = a
-                        .content
-                        .iter()
-                        .map(|c| match c {
-                            AssistantContent::Text { text } => {
-                                serde_json::json!({"type": "text", "text": text})
-                            }
-                            AssistantContent::ToolCall { tool_call } => {
-                                let input: serde_json::Value =
-                                    serde_json::from_str(&tool_call.arguments)
-                                        .ok()
-                                        .filter(|v: &serde_json::Value| v.is_object())
-                                        .unwrap_or(serde_json::json!({}));
-                                serde_json::json!({
-                                    "type": "tool_use",
-                                    "id": tool_call.id,
-                                    "name": tool_call.name,
-                                    "input": input,
-                                })
-                            }
-                            AssistantContent::Thinking { thinking } => {
-                                serde_json::json!({"type": "thinking", "thinking": thinking})
-                            }
-                        })
-                        .collect();
-                    serde_json::json!({"role": "assistant", "content": content})
-                }
-                crate::message::Message::ToolResult(t) => {
-                    let text = t
-                        .content
-                        .iter()
-                        .map(|c| match c {
-                            crate::message::OutputContent::Text { text } => text.clone(),
-                            crate::message::OutputContent::Image { media_type, .. } => {
-                                format!("[image: {}]", media_type.as_str())
-                            }
-                        })
-                        .collect::<Vec<_>>()
-                        .join("");
-                    let mut block = serde_json::json!({
-                        "type": "tool_result",
-                        "tool_use_id": t.tool_call_id,
-                        "content": text,
-                    });
-                    // Phase 11.9: the Anthropic Messages API documents `is_error` on
-                    // the tool_result content block as the failure signal. Emit it
-                    // only on failure so the is_error:false body stays byte-identical
-                    // to the pre-fix shape.
-                    if t.is_error {
-                        block["is_error"] = serde_json::Value::Bool(true);
-                    }
-                    serde_json::json!({
-                        "role": "user",
-                        "content": [block],
+                        }
                     })
+                    .collect();
+                serde_json::json!({"role": "user", "content": content})
+            }
+            crate::message::Message::Assistant(a) => {
+                let content: Vec<serde_json::Value> = a
+                    .content
+                    .iter()
+                    .map(|c| match c {
+                        AssistantContent::Text { text } => {
+                            serde_json::json!({"type": "text", "text": text})
+                        }
+                        AssistantContent::ToolCall { tool_call } => {
+                            let input: serde_json::Value =
+                                serde_json::from_str(&tool_call.arguments)
+                                    .ok()
+                                    .filter(|v: &serde_json::Value| v.is_object())
+                                    .unwrap_or(serde_json::json!({}));
+                            serde_json::json!({
+                                "type": "tool_use",
+                                "id": tool_call.id,
+                                "name": tool_call.name,
+                                "input": input,
+                            })
+                        }
+                        AssistantContent::Thinking { thinking } => {
+                            serde_json::json!({"type": "thinking", "thinking": thinking})
+                        }
+                    })
+                    .collect();
+                serde_json::json!({"role": "assistant", "content": content})
+            }
+            crate::message::Message::ToolResult(t) => {
+                let text = t
+                    .content
+                    .iter()
+                    .map(|c| match c {
+                        crate::message::OutputContent::Text { text } => text.clone(),
+                        crate::message::OutputContent::Image { media_type, .. } => {
+                            format!("[image: {}]", media_type.as_str())
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .join("");
+                let mut block = serde_json::json!({
+                    "type": "tool_result",
+                    "tool_use_id": t.tool_call_id,
+                    "content": text,
+                });
+                // Phase 11.9: the Anthropic Messages API documents `is_error` on
+                // the tool_result content block as the failure signal. Emit it
+                // only on failure so the is_error:false body stays byte-identical
+                // to the pre-fix shape.
+                if t.is_error {
+                    block["is_error"] = serde_json::Value::Bool(true);
                 }
-            })
-            .collect(),
-    )
+                serde_json::json!({
+                    "role": "user",
+                    "content": [block],
+                })
+            }
+        })
+        .collect();
+
+    // Post-process: when caching is active, mark the last text block in the
+    // last user message and the last text block in the last assistant message.
+    if emit_cache && !array.is_empty() {
+        // Last user-message text block
+        for msg in array.iter_mut().rev() {
+            if msg["role"] == "user" {
+                if let Some(blocks) = msg["content"].as_array_mut() {
+                    for block in blocks.iter_mut().rev() {
+                        if block["type"] == "text" {
+                            block["cache_control"] = cache_marker.clone();
+                            break;
+                        }
+                    }
+                }
+                break;
+            }
+        }
+        // Last assistant-message text block
+        for msg in array.iter_mut().rev() {
+            if msg["role"] == "assistant" {
+                if let Some(blocks) = msg["content"].as_array_mut() {
+                    for block in blocks.iter_mut().rev() {
+                        if block["type"] == "text" {
+                            block["cache_control"] = cache_marker.clone();
+                            break;
+                        }
+                    }
+                }
+                break;
+            }
+        }
+    }
+
+    serde_json::Value::Array(array)
 }
 
 impl Provider for AnthropicProvider {
@@ -1094,8 +1175,17 @@ impl Provider for AnthropicProvider {
                     return;
                 }
             };
-            if let Err(e) =
-                Self::stream_http(http_client, resolved, base_url, &body, cancel, timeout, extra_headers, &tx).await
+            if let Err(e) = Self::stream_http(
+                http_client,
+                resolved,
+                base_url,
+                &body,
+                cancel,
+                timeout,
+                extra_headers,
+                &tx,
+            )
+            .await
             {
                 let _ = tx.send(Err(e)).await;
             }
@@ -1116,7 +1206,7 @@ impl Provider for AnthropicProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::message::{AssistantContent, AssistantMessage, Message, ToolCall};
+    use crate::message::{AssistantContent, AssistantMessage, Message, ToolCall, UserMessage};
     use crate::stream::{StopReason, Usage};
 
     fn test_assistant_msg(content: Vec<AssistantContent>) -> Message {
@@ -1144,7 +1234,7 @@ mod tests {
             },
         }]);
 
-        let serialized = serialize_messages(&[msg]);
+        let serialized = serialize_messages(&[msg], false, &serde_json::Value::Null);
         let input = &serialized[0]["content"][0]["input"];
         assert!(input.is_object(), "input must be JSON object, got: {input}");
         assert_eq!(input["path"], "/tmp/foo.txt");
@@ -1160,7 +1250,7 @@ mod tests {
             },
         }]);
 
-        let serialized = serialize_messages(&[msg]);
+        let serialized = serialize_messages(&[msg], false, &serde_json::Value::Null);
         let input = &serialized[0]["content"][0]["input"];
         assert!(input.is_object());
         assert_eq!(input.as_object().unwrap().len(), 0);
@@ -1183,7 +1273,7 @@ mod tests {
                 },
             }]);
 
-            let serialized = serialize_messages(&[msg]);
+            let serialized = serialize_messages(&[msg], false, &serde_json::Value::Null);
             let input = &serialized[0]["content"][0]["input"];
             assert!(
                 input.is_object(),
@@ -1195,5 +1285,181 @@ mod tests {
                 "{label}: input should be empty object"
             );
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // Cache-control marker tests (task 14.4)
+    // -----------------------------------------------------------------------
+
+    /// Build a test AnthropicProvider whose models have cache capabilities.
+    fn cache_capable_provider() -> AnthropicProvider {
+        let auth = Arc::new(StaticAuthResolver::new(
+            crate::auth::AuthScheme::ApiKey,
+            SecretString::from("test-key"),
+        ));
+        AnthropicProvider::with_auth(
+            auth,
+            Some("https://api.anthropic.com".into()),
+            Arc::new(crate::http::HttpClient::new()),
+        )
+    }
+
+    fn make_request(cache_retention: CacheRetention) -> Request {
+        Request {
+            model: "anthropic:claude-sonnet-4-5-20250514".into(),
+            system: Some("You are a test assistant.".into()),
+            messages: vec![
+                Message::User(UserMessage {
+                    content: vec![crate::message::InputContent::Text {
+                        text: "Hello".into(),
+                    }],
+                    timestamp_ms: 0,
+                }),
+                Message::Assistant(AssistantMessage {
+                    content: vec![AssistantContent::Text {
+                        text: "Hi there!".into(),
+                    }],
+                    api: crate::ApiKind::Anthropic,
+                    provider: "anthropic".into(),
+                    model: "claude-sonnet-4-5-20250514".into(),
+                    response_model: None,
+                    response_id: None,
+                    usage: crate::stream::Usage::unknown(),
+                    stop_reason: crate::stream::StopReason::Stop,
+                    error_message: None,
+                    timestamp_ms: 0,
+                }),
+            ],
+            tools: vec![crate::message::ToolDef {
+                name: "greet".into(),
+                description: "Say hello".into(),
+                input_schema: serde_json::json!({"type": "object"}),
+            }],
+            max_tokens: Some(100),
+            temperature: None,
+            thinking: crate::provider::ThinkingConfig::default(),
+            stop_sequences: vec![],
+            metadata: None,
+            cancel: tokio_util::sync::CancellationToken::new(),
+            timeout: None,
+            extra_headers: vec![],
+            cache_retention,
+            session_id: None,
+        }
+    }
+
+    #[test]
+    fn cache_control_long_ttl_emits_all_markers() {
+        let provider = cache_capable_provider();
+        let request = make_request(CacheRetention::Long);
+        let body = provider.build_request_body(&request);
+
+        // System prompt wrapped as array with cache_control
+        let system = &body["system"];
+        assert!(system.is_array(), "system must be array when caching");
+        let sys_block = &system[0];
+        assert_eq!(sys_block["type"], "text");
+        assert_eq!(sys_block["cache_control"]["type"], "ephemeral");
+        assert_eq!(sys_block["cache_control"]["ttl"], "1h");
+
+        // Last user text block has cache_control
+        let msgs = body["messages"].as_array().unwrap();
+        let user_msg = msgs.iter().rev().find(|m| m["role"] == "user").unwrap();
+        let user_blocks = user_msg["content"].as_array().unwrap();
+        let last_text = user_blocks
+            .iter()
+            .rev()
+            .find(|b| b["type"] == "text")
+            .unwrap();
+        assert_eq!(last_text["cache_control"]["type"], "ephemeral");
+        assert_eq!(last_text["cache_control"]["ttl"], "1h");
+
+        // Last assistant text block has cache_control
+        let assistant_msg = msgs
+            .iter()
+            .rev()
+            .find(|m| m["role"] == "assistant")
+            .unwrap();
+        let asst_blocks = assistant_msg["content"].as_array().unwrap();
+        let last_asst_text = asst_blocks
+            .iter()
+            .rev()
+            .find(|b| b["type"] == "text")
+            .unwrap();
+        assert_eq!(last_asst_text["cache_control"]["type"], "ephemeral");
+        assert_eq!(last_asst_text["cache_control"]["ttl"], "1h");
+
+        // Last tool has cache_control
+        let tools = body["tools"].as_array().unwrap();
+        let last_tool = tools.last().unwrap();
+        assert_eq!(last_tool["cache_control"]["type"], "ephemeral");
+        assert_eq!(last_tool["cache_control"]["ttl"], "1h");
+    }
+
+    #[test]
+    fn cache_control_short_uses_ephemeral_no_ttl() {
+        let provider = cache_capable_provider();
+        let request = make_request(CacheRetention::Short);
+        let body = provider.build_request_body(&request);
+
+        let system = &body["system"];
+        assert!(system.is_array());
+        assert!(
+            system[0]["cache_control"]["ttl"].is_null(),
+            "Short retention should not have ttl field"
+        );
+        assert_eq!(system[0]["cache_control"]["type"], "ephemeral");
+    }
+
+    #[test]
+    fn cache_control_disabled_suppresses_all_markers() {
+        let provider = cache_capable_provider();
+        let request = make_request(CacheRetention::Disabled);
+        let body = provider.build_request_body(&request);
+
+        // System stays as string (no array wrapping)
+        assert!(
+            body["system"].is_string(),
+            "system must be string when caching disabled"
+        );
+
+        // No cache_control on any content block
+        let msgs = body["messages"].as_array().unwrap();
+        for msg in msgs {
+            for block in msg["content"].as_array().unwrap() {
+                assert!(
+                    block["cache_control"].is_null(),
+                    "cache_control must be absent when Disabled"
+                );
+            }
+        }
+
+        // No cache_control on tools
+        if let Some(tools) = body["tools"].as_array() {
+            for tool in tools {
+                assert!(tool["cache_control"].is_null());
+            }
+        }
+    }
+
+    #[test]
+    fn cache_control_none_preserves_unmarked_body() {
+        let provider = cache_capable_provider();
+        let request = make_request(CacheRetention::None);
+        let body = provider.build_request_body(&request);
+
+        // None = no cache signal, same as pre-enrichment behavior
+        assert!(body["system"].is_string());
+    }
+
+    #[test]
+    fn cache_control_unknown_model_emits_no_markers() {
+        let provider = cache_capable_provider();
+        let mut request = make_request(CacheRetention::Long);
+        request.model = "anthropic:unknown-model".into();
+        let body = provider.build_request_body(&request);
+
+        // Unknown model has no capabilities, so no cache markers
+        assert!(body["system"].is_string());
     }
 }

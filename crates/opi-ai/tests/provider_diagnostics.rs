@@ -17,6 +17,7 @@ use opi_ai::provider::{
     CacheRetention, ModelInfo, ProviderError, ProviderErrorCategory, Request, ThinkingConfig,
     validate_request_capabilities,
 };
+use opi_ai::registry::ModelCapabilities;
 use opi_ai::test_support::MockProvider;
 use tokio_util::sync::CancellationToken;
 
@@ -297,11 +298,7 @@ fn text_only_model(id: &str) -> ModelInfo {
     ModelInfo {
         id: id.into(),
         display_name: id.into(),
-        context_window: 100_000,
-        max_output_tokens: 4_096,
-        supports_images: false,
-        supports_streaming: true,
-        supports_thinking: false,
+        capabilities: ModelCapabilities::new(100_000, 4_096).with_streaming(true),
     }
 }
 
@@ -352,7 +349,7 @@ fn validate_rejects_image_on_text_only_model_as_capability() {
 #[test]
 fn validate_allows_image_on_image_capable_model() {
     let mut model = text_only_model("image-capable");
-    model.supports_images = true;
+    model.capabilities.supports_images = true;
     let provider = MockProvider::new_with_models("mock", vec![model], vec![]);
     validate_request_capabilities(&provider, &image_request("mock:image-capable"))
         .expect("image-capable model must accept image input");

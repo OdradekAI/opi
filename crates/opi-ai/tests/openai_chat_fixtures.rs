@@ -13,7 +13,7 @@ use opi_ai::openai_chat::{
     CompatConfig, OpenAiChatEvent, OpenAiChatMapper, OpenAiChatProvider, ParsedEvent,
     parse_sse_events,
 };
-use opi_ai::provider::{EventStream, Provider, validate_request_capabilities, CacheRetention};
+use opi_ai::provider::{CacheRetention, EventStream, Provider, validate_request_capabilities};
 use opi_ai::stream::{AssistantStreamEvent, StopReason};
 use wiremock::matchers::{body_partial_json, header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -874,11 +874,7 @@ fn build_request_body_usage_in_stream_emits_stream_options() {
         vec![ModelInfo {
             id: "model".into(),
             display_name: "model".into(),
-            context_window: 128000,
-            max_output_tokens: 4096,
-            supports_images: false,
-            supports_streaming: true,
-            supports_thinking: false,
+            capabilities: ModelCapabilities::new(128000, 4096).with_streaming(true),
         }],
     );
 
@@ -898,6 +894,7 @@ fn build_request_body_usage_in_stream_emits_stream_options() {
 
 use opi_ai::message::{ImageSource, MediaType, OutputContent, ToolDef, ToolResultMessage};
 use opi_ai::provider::{ModelInfo, ProviderError, ProviderErrorCategory};
+use opi_ai::registry::ModelCapabilities;
 
 #[test]
 fn compat_config_represents_strict_tool_schema() {
@@ -1112,11 +1109,7 @@ fn validate_rejects_image_on_text_only_openai_compatible_profile() {
     let text_only = ModelInfo {
         id: "text-only-model".into(),
         display_name: "Text Only".into(),
-        context_window: 8000,
-        max_output_tokens: 1024,
-        supports_images: false,
-        supports_streaming: true,
-        supports_thinking: false,
+        capabilities: ModelCapabilities::new(8000, 1024).with_streaming(true),
     };
     let provider = OpenAiChatProvider::new_for_profile(
         "test-key".into(),

@@ -5,7 +5,7 @@
 
 use futures_util::StreamExt;
 use opi_ai::message::{ImageSource, InputContent, MediaType, Message, UserMessage};
-use opi_ai::provider::{Provider, Request, ThinkingConfig, CacheRetention};
+use opi_ai::provider::{CacheRetention, Provider, Request, ThinkingConfig};
 use tokio_util::sync::CancellationToken;
 use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};

@@ -18,6 +18,7 @@ use crate::message::{
     AssistantContent, AssistantMessage, OutputContent, TOOL_ERROR_MARKER, ToolCall,
 };
 use crate::provider::{EventStream, ModelInfo, Provider, ProviderError, Request};
+use crate::registry::ModelCapabilities;
 use crate::stream::{AssistantStreamEvent, StopReason, Usage};
 
 // ---------------------------------------------------------------------------
@@ -837,38 +838,30 @@ impl OpenAiChatProvider {
             ModelInfo {
                 id: "gpt-4o".into(),
                 display_name: "GPT-4o".into(),
-                context_window: 128000,
-                max_output_tokens: 16384,
-                supports_images: true,
-                supports_streaming: true,
-                supports_thinking: false,
+                capabilities: ModelCapabilities::new(128000, 16384)
+                    .with_images(true)
+                    .with_streaming(true),
             },
             ModelInfo {
                 id: "gpt-4o-mini".into(),
                 display_name: "GPT-4o Mini".into(),
-                context_window: 128000,
-                max_output_tokens: 16384,
-                supports_images: true,
-                supports_streaming: true,
-                supports_thinking: false,
+                capabilities: ModelCapabilities::new(128000, 16384)
+                    .with_images(true)
+                    .with_streaming(true),
             },
             ModelInfo {
                 id: "o3".into(),
                 display_name: "o3".into(),
-                context_window: 200000,
-                max_output_tokens: 100000,
-                supports_images: true,
-                supports_streaming: true,
-                supports_thinking: false,
+                capabilities: ModelCapabilities::new(200000, 100000)
+                    .with_images(true)
+                    .with_streaming(true),
             },
             ModelInfo {
                 id: "o4-mini".into(),
                 display_name: "o4-mini".into(),
-                context_window: 200000,
-                max_output_tokens: 100000,
-                supports_images: true,
-                supports_streaming: true,
-                supports_thinking: false,
+                capabilities: ModelCapabilities::new(200000, 100000)
+                    .with_images(true)
+                    .with_streaming(true),
             },
         ];
         Self {

@@ -39,7 +39,7 @@ use opi_ai::mistral::mistral_provider;
 use opi_ai::openai_chat::OpenAiChatProvider;
 use opi_ai::openai_responses::OpenAiResponsesProvider;
 use opi_ai::openrouter::openrouter_provider;
-use opi_ai::provider::{Request, ThinkingConfig, CacheRetention};
+use opi_ai::provider::{CacheRetention, Request, ThinkingConfig};
 use opi_ai::vertex::VertexProvider;
 use tokio_util::sync::CancellationToken;
 

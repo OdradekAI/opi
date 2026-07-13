@@ -7,7 +7,7 @@
 use futures_util::StreamExt;
 use opi_ai::message::{InputContent, Message, ToolDef, UserMessage};
 use opi_ai::openai_responses::{OpenAiResponsesProvider, ResponsesConfig};
-use opi_ai::provider::{EventStream, Provider, Request, ThinkingConfig, CacheRetention};
+use opi_ai::provider::{CacheRetention, EventStream, Provider, Request, ThinkingConfig};
 use opi_ai::registry::ProviderRegistry;
 use opi_ai::stream::AssistantStreamEvent;
 use tokio_util::sync::CancellationToken;

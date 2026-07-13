@@ -7,6 +7,7 @@
 
 use crate::openai_chat::{CompatConfig, OpenAiChatProvider};
 use crate::provider::ModelInfo;
+use crate::registry::ModelCapabilities;
 
 /// Default Mistral API base URL (without the `/v1` suffix, which the adapter adds).
 const BASE_URL: &str = "https://api.mistral.ai";
@@ -32,38 +33,22 @@ fn default_models() -> Vec<ModelInfo> {
         ModelInfo {
             id: "mistral-large-latest".into(),
             display_name: "Mistral Large".into(),
-            context_window: 128000,
-            max_output_tokens: 8192,
-            supports_images: false,
-            supports_streaming: true,
-            supports_thinking: false,
+            capabilities: ModelCapabilities::new(128000, 8192).with_streaming(true),
         },
         ModelInfo {
             id: "mistral-medium-latest".into(),
             display_name: "Mistral Medium".into(),
-            context_window: 32000,
-            max_output_tokens: 8192,
-            supports_images: false,
-            supports_streaming: true,
-            supports_thinking: false,
+            capabilities: ModelCapabilities::new(32000, 8192).with_streaming(true),
         },
         ModelInfo {
             id: "mistral-small-latest".into(),
             display_name: "Mistral Small".into(),
-            context_window: 32000,
-            max_output_tokens: 8192,
-            supports_images: false,
-            supports_streaming: true,
-            supports_thinking: false,
+            capabilities: ModelCapabilities::new(32000, 8192).with_streaming(true),
         },
         ModelInfo {
             id: "codestral-latest".into(),
             display_name: "Codestral".into(),
-            context_window: 256000,
-            max_output_tokens: 8192,
-            supports_images: false,
-            supports_streaming: true,
-            supports_thinking: false,
+            capabilities: ModelCapabilities::new(256000, 8192).with_streaming(true),
         },
     ]
 }

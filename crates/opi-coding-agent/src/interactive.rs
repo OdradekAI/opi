@@ -387,10 +387,7 @@ async fn tui_event_loop(
                 Ok(Err(AgentError::CredentialNeeded { provider_id })) => {
                     // Run the OAuth login flow inline (blocks TUI briefly —
                     // TODO: background-task login with spinner overlay).
-                    let login_ok = match (
-                        &credential_store,
-                        &oauth_registry,
-                    ) {
+                    let login_ok = match (&credential_store, &oauth_registry) {
                         (Some(store), Some(registry)) => {
                             match oauth::login_oauth(
                                 &provider_id,
@@ -412,9 +409,7 @@ async fn tui_event_loop(
                                     let mut s = state.lock().unwrap();
                                     s.messages.push(TuiMessage::new(
                                         TuiRole::System,
-                                        format!(
-                                            "[login failed for '{provider_id}': {e}]"
-                                        ),
+                                        format!("[login failed for '{provider_id}': {e}]"),
                                     ));
                                     false
                                 }
@@ -729,12 +724,7 @@ async fn tui_event_loop(
                 {
                     let provider_id = provider_id.trim().to_owned();
                     if let Some(store) = &credential_store {
-                        match oauth::logout_credential(
-                            &provider_id,
-                            store,
-                        )
-                        .await
-                        {
+                        match oauth::logout_credential(&provider_id, store).await {
                             Ok(()) => {
                                 let mut s = state.lock().unwrap();
                                 s.messages.push(TuiMessage::new(
@@ -773,9 +763,7 @@ async fn tui_event_loop(
                     && !provider_id.trim().is_empty()
                 {
                     let provider_id = provider_id.trim().to_owned();
-                    if let (Some(store), Some(registry)) =
-                        (&credential_store, &oauth_registry)
-                    {
+                    if let (Some(store), Some(registry)) = (&credential_store, &oauth_registry) {
                         match oauth::login_oauth(
                             &provider_id,
                             registry,

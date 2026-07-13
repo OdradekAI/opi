@@ -220,9 +220,7 @@ impl Agent {
     /// error is resolved via interactive login — the user message from the
     /// original `prompt`/`continue_` call is already in `self.messages`, so
     /// pushing another would duplicate it in the session.
-    pub async fn retry_last_turn(
-        &mut self,
-    ) -> Result<Vec<AgentMessage>, AgentError> {
+    pub async fn retry_last_turn(&mut self) -> Result<Vec<AgentMessage>, AgentError> {
         self.maybe_reset_cancel();
         let token = self.cancel.child_token();
         self.run_with_token(token).await

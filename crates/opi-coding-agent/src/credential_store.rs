@@ -827,12 +827,12 @@ impl CredentialResolver {
     /// `probe()` (secret-free, cannot fail), so a `BackendUnavailable` keychain
     /// is treated as "no credential" — the API-key/env fallback handles routing,
     /// same as `resolve_api_key`. Does not read the credential value.
-    pub async fn has_oauth_credential(
-        &self,
-        provider_id: &str,
-    ) -> Result<bool, ProviderError> {
+    pub async fn has_oauth_credential(&self, provider_id: &str) -> Result<bool, ProviderError> {
         let source = self.store.probe(provider_id).await;
-        Ok(matches!(source, opi_ai::credential::CredentialSource::Present { .. }))
+        Ok(matches!(
+            source,
+            opi_ai::credential::CredentialSource::Present { .. }
+        ))
     }
 
     /// The stored OAuth credential's non-secret `base_url` (e.g. a Copilot
@@ -844,10 +844,7 @@ impl CredentialResolver {
         &self,
         provider_id: &str,
     ) -> Result<Option<String>, ProviderError> {
-        Ok(self
-            .read_oauth(provider_id)
-            .await?
-            .and_then(|c| c.base_url))
+        Ok(self.read_oauth(provider_id).await?.and_then(|c| c.base_url))
     }
 
     /// The injectable environment lookup, for constructing an

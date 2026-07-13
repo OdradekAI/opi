@@ -97,9 +97,7 @@ impl Request {
 /// `content-type`), not every possible header a custom profile might set.
 ///
 /// Returns `Err(ProviderError::RequestFailed(...))` on the first invalid header.
-pub fn validate_extra_headers(
-    headers: &[(String, String)],
-) -> Result<(), ProviderError> {
+pub fn validate_extra_headers(headers: &[(String, String)]) -> Result<(), ProviderError> {
     /// Headers managed by built-in providers that extra_headers must not override.
     const RESERVED: &[&str] = &[
         "authorization",
@@ -142,11 +140,9 @@ pub struct ThinkingConfig {
 pub struct ModelInfo {
     pub id: String,
     pub display_name: String,
-    pub context_window: u64,
-    pub max_output_tokens: u64,
-    pub supports_images: bool,
-    pub supports_streaming: bool,
-    pub supports_thinking: bool,
+    /// Declared model capabilities (context window, output tokens, image,
+    /// streaming, thinking, cache-control).
+    pub capabilities: crate::registry::ModelCapabilities,
 }
 
 /// Validate request content against model capabilities known by the provider.
@@ -179,7 +175,7 @@ pub fn validate_request_capabilities(
     // Image preflight: a known text-only model rejects image input before the call.
     if request.contains_image_input()
         && let Some(model) = model
-        && !model.supports_images
+        && !model.capabilities.supports_images
     {
         return Err(ProviderError::UnsupportedCapability(format!(
             "model '{}' for provider '{}' does not support image input",

@@ -7,6 +7,7 @@ use std::sync::{Arc, Mutex};
 
 use crate::message::AssistantMessage;
 use crate::provider::{EventStream, ModelInfo, Provider, ProviderError, Request};
+use crate::registry::ModelCapabilities;
 use crate::stream::{AssistantStreamEvent, StopReason, Usage};
 
 /// A response that a mock provider can return per `stream()` call.
@@ -59,11 +60,9 @@ impl MockProvider {
             models: vec![ModelInfo {
                 id: "mock-model".into(),
                 display_name: "Mock Model".into(),
-                context_window: 100_000,
-                max_output_tokens: 4_096,
-                supports_images: true,
-                supports_streaming: true,
-                supports_thinking: false,
+                capabilities: ModelCapabilities::new(100_000, 4_096)
+                    .with_images(true)
+                    .with_streaming(true),
             }],
             responses: Arc::new(Mutex::new(responses)),
             call_log: Arc::new(Mutex::new(Vec::new())),

@@ -8,7 +8,7 @@
 //! regression asserting all built-in providers still resolve.
 
 use opi_ai::message::{AssistantContent, AssistantMessage};
-use opi_ai::provider::{Provider, Request, ThinkingConfig, CacheRetention};
+use opi_ai::provider::{CacheRetention, Provider, Request, ThinkingConfig};
 use opi_ai::provider_collection::{
     AuthDescriptor, AuthStatus, CollectionError, CompatMetadata, CompletedRequest,
     ProviderCollection, SecretKey,
@@ -97,11 +97,7 @@ impl Provider for StreamProvider {
             vec![opi_ai::provider::ModelInfo {
                 id: "mock-model".into(),
                 display_name: "Mock Model".into(),
-                context_window: 128_000,
-                max_output_tokens: 4096,
-                supports_images: false,
-                supports_streaming: true,
-                supports_thinking: false,
+                capabilities: ModelCapabilities::new(128_000, 4096).with_streaming(true),
             }]
         })
     }
@@ -439,11 +435,9 @@ async fn collection_supports_provider_correctness_fixtures() {
     let profile_model = ModelInfo {
         id: "profile-model".into(),
         display_name: "Profile Model".into(),
-        context_window: 128_000,
-        max_output_tokens: 4_096,
-        supports_images: true,
-        supports_streaming: true,
-        supports_thinking: false,
+        capabilities: ModelCapabilities::new(128_000, 4_096)
+            .with_images(true)
+            .with_streaming(true),
     };
     let profile_provider = Box::new(MockProvider::new_with_models(
         "openrouter-profile",
@@ -551,6 +545,7 @@ fn collection_wraps_existing_registry_via_from_registry() {
 use opi_ai::credential::{
     BoxAuthFuture, Credential, CredentialSource, CredentialStore, CredentialStoreError,
 };
+use opi_ai::registry::ModelCapabilities;
 use std::collections::HashMap;
 // `Mutex` is already imported at the top of this file; only `Arc` is new here.
 use std::sync::Arc;

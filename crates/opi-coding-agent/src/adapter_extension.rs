@@ -63,6 +63,7 @@ use opi_agent::tool::{ExecutionMode, Tool, ToolError, ToolResult};
 use opi_agent::trace::{TraceCollector, TraceKind};
 use opi_ai::message::{OutputContent, ToolDef};
 use opi_ai::provider::ModelInfo;
+use opi_ai::registry::ModelCapabilities;
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 
@@ -333,11 +334,7 @@ impl Extension for ProcessAdapter {
                     ModelInfo {
                         id: mo.model.clone(),
                         display_name: mo.model.clone(),
-                        context_window: 128_000,
-                        max_output_tokens: 16_384,
-                        supports_images: false,
-                        supports_streaming: true,
-                        supports_thinking: false,
+                        capabilities: ModelCapabilities::new(128_000, 16_384).with_streaming(true),
                     },
                 )
             })
