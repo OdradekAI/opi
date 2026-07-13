@@ -1054,6 +1054,8 @@ impl OpenAiChatProvider {
         extra_headers: Vec<(String, String)>,
         body: &serde_json::Value,
         cancel: CancellationToken,
+        timeout: Option<std::time::Duration>,
+        session_id: Option<String>,
         tx: &tokio::sync::mpsc::Sender<Result<AssistantStreamEvent, ProviderError>>,
     ) -> Result<(), ProviderError> {
         let mut req = http_client
@@ -1066,14 +1068,29 @@ impl OpenAiChatProvider {
                 format!("Bearer {}", resolved.secret.expose_secret()),
             )
             .header("content-type", "application/json");
+        // Apply per-request timeout.
+        if let Some(d) = timeout {
+            req = req.timeout(d);
+        }
         for (name, value) in &extra_headers {
             req = req.header(name.as_str(), value.as_str());
+        }
+        // Map session_id to prompt_cache_key (64-char clamped).
+        if let Some(ref sid) = session_id {
+            let clamped: String = sid.chars().take(64).collect();
+            req = req.header("prompt-cache-key", clamped);
         }
         let response = req
             .body(serde_json::to_string(body).unwrap_or_default())
             .send()
             .await
-            .map_err(|e| ProviderError::Network(e.to_string()))?;
+            .map_err(|e| {
+                if e.is_timeout() {
+                    ProviderError::Timeout
+                } else {
+                    ProviderError::Network(e.to_string())
+                }
+            })?;
 
         let status = response.status();
         if !status.is_success() {
@@ -1353,7 +1370,11 @@ impl Provider for OpenAiChatProvider {
         let base_url = self.base_url.clone();
         let provider_id = self.provider_id.clone();
         let chat_completions_path = self.compat.chat_completions_path.clone();
-        let extra_headers = self.extra_headers.clone();
+        // Merge static provider extra_headers with per-request extra_headers.
+        let mut extra_headers = self.extra_headers.clone();
+        extra_headers.extend(request.extra_headers.clone());
+        let timeout = request.timeout;
+        let session_id = request.session_id.clone();
         let body = self.build_request_body(&request);
         let cancel = request.cancel.clone();
         let http_client = self.client.client().clone();
@@ -1361,6 +1382,11 @@ impl Provider for OpenAiChatProvider {
         let (tx, rx) = tokio::sync::mpsc::channel(64);
 
         tokio::spawn(async move {
+            // Validate merged extra headers before any network call.
+            if let Err(e) = crate::provider::validate_extra_headers(&extra_headers) {
+                let _ = tx.send(Err(e)).await;
+                return;
+            }
             let resolved = match auth.resolve().await {
                 Ok(resolved) => resolved,
                 Err(e) => {
@@ -1377,6 +1403,8 @@ impl Provider for OpenAiChatProvider {
                 extra_headers,
                 &body,
                 cancel,
+                timeout,
+                session_id,
                 &tx,
             )
             .await

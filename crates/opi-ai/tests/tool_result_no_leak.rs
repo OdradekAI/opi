@@ -13,7 +13,7 @@ use opi_ai::gemini::GeminiProvider;
 use opi_ai::message::{InputContent, Message, OutputContent, ToolResultMessage, UserMessage};
 use opi_ai::openai_chat::OpenAiChatProvider;
 use opi_ai::openai_responses::OpenAiResponsesProvider;
-use opi_ai::provider::{Request, ThinkingConfig};
+use opi_ai::provider::{Request, ThinkingConfig, CacheRetention};
 use tokio_util::sync::CancellationToken;
 
 fn request_with_truncated_tool_result() -> Request {
@@ -44,6 +44,10 @@ fn request_with_truncated_tool_result() -> Request {
         stop_sequences: vec![],
         metadata: None,
         cancel: CancellationToken::new(),
+        timeout: None,
+        extra_headers: vec![],
+        cache_retention: CacheRetention::None,
+        session_id: None,
     }
 }
 

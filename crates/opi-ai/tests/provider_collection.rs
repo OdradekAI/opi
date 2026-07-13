@@ -8,7 +8,7 @@
 //! regression asserting all built-in providers still resolve.
 
 use opi_ai::message::{AssistantContent, AssistantMessage};
-use opi_ai::provider::{Provider, Request, ThinkingConfig};
+use opi_ai::provider::{Provider, Request, ThinkingConfig, CacheRetention};
 use opi_ai::provider_collection::{
     AuthDescriptor, AuthStatus, CollectionError, CompatMetadata, CompletedRequest,
     ProviderCollection, SecretKey,
@@ -34,6 +34,10 @@ fn minimal_request(model: &str) -> Request {
         stop_sequences: vec![],
         metadata: None,
         cancel: CancellationToken::new(),
+        timeout: None,
+        extra_headers: vec![],
+        cache_retention: CacheRetention::None,
+        session_id: None,
     }
 }
 

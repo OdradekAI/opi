@@ -60,6 +60,10 @@ pub struct AgentLoopContext {
     /// (the default) runs untraced with no behavior change. Tracing is opt-in
     /// and fail-open: a trace sink write failure never aborts the run.
     pub trace: Option<Arc<TraceCollector>>,
+    /// Opaque session identifier, set by the harness from the active
+    /// SessionCoordinator. Propagated into every Request so providers can
+    /// emit session-affinity headers.
+    pub session_id: Option<String>,
 }
 
 /// Configuration for the agent loop.

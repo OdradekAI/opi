@@ -17,7 +17,7 @@ use opi_ai::message::{
     ImageSource, InputContent, MediaType, Message, OutputContent, ToolDef, ToolResultMessage,
     UserMessage,
 };
-use opi_ai::provider::{Provider, ProviderError, ProviderErrorCategory, Request};
+use opi_ai::provider::{Provider, ProviderError, ProviderErrorCategory, Request, CacheRetention};
 use opi_ai::stream::{AssistantStreamEvent, StopReason};
 use tokio_util::sync::CancellationToken;
 use wiremock::matchers::{body_partial_json, method, path};
@@ -53,6 +53,10 @@ fn text_stream_request() -> Request {
         stop_sequences: vec![],
         metadata: None,
         cancel: CancellationToken::new(),
+        timeout: None,
+        extra_headers: vec![],
+        cache_retention: CacheRetention::None,
+        session_id: None,
     }
 }
 
@@ -81,6 +85,10 @@ fn tool_call_request() -> Request {
         stop_sequences: vec![],
         metadata: None,
         cancel: CancellationToken::new(),
+        timeout: None,
+        extra_headers: vec![],
+        cache_retention: CacheRetention::None,
+        session_id: None,
     }
 }
 
@@ -526,6 +534,10 @@ async fn url_image_rejected_with_clear_error() {
         stop_sequences: vec![],
         metadata: None,
         cancel: CancellationToken::new(),
+        timeout: None,
+        extra_headers: vec![],
+        cache_retention: CacheRetention::None,
+        session_id: None,
     };
     let stream = provider.stream(request);
     use futures_util::StreamExt;
@@ -871,6 +883,10 @@ fn lifecycle_text_request() -> Request {
         stop_sequences: vec![],
         metadata: None,
         cancel: CancellationToken::new(),
+        timeout: None,
+        extra_headers: vec![],
+        cache_retention: CacheRetention::None,
+        session_id: None,
     }
 }
 

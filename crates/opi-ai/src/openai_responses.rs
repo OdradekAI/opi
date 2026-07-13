@@ -1097,6 +1097,8 @@ impl OpenAiResponsesProvider {
         provider_id: String,
         body: &serde_json::Value,
         cancel: CancellationToken,
+        timeout: Option<std::time::Duration>,
+        session_id: Option<String>,
         tx: &tokio::sync::mpsc::Sender<Result<AssistantStreamEvent, ProviderError>>,
     ) -> Result<(), ProviderError> {
         let url = crate::endpoint::join_endpoint(&base_url, &config.responses_path);
@@ -1107,23 +1109,38 @@ impl OpenAiResponsesProvider {
                 format!("Bearer {}", resolved.secret.expose_secret()),
             )
             .header("content-type", "application/json");
+        // Apply per-request timeout.
+        if let Some(d) = timeout {
+            req = req.timeout(d);
+        }
         for (name, value) in &extra_headers {
             req = req.header(name.as_str(), value.as_str());
         }
-        if config.derive_codex_account_id {
-            // Per-request derivation: the token changes on refresh, so the id
-            // cannot be baked at construction. On ANY decode failure the header
-            // is omitted rather than risking formatting the token/segment into
-            // an error or header value.
-            if let Some(account_id) = derive_codex_account_id(&resolved.secret) {
-                req = req.header("chatgpt-account-id", account_id);
-            }
+        // Session-affinity: prompt_cache_key + x-client-request-id from
+        // session_id. Codex Responses profile already sends session-id and
+        // x-client-request-id through its static extra_headers; standard
+        // Responses emits prompt_cache_key and x-client-request-id.
+        if let Some(ref sid) = session_id {
+            let clamped: String = sid.chars().take(64).collect();
+            req = req.header("prompt-cache-key", &clamped);
+            req = req.header("x-client-request-id", &clamped);
+        }
+        if config.derive_codex_account_id
+            && let Some(account_id) = derive_codex_account_id(&resolved.secret)
+        {
+            req = req.header("chatgpt-account-id", account_id);
         }
         let response = req
             .body(serde_json::to_string(body).unwrap_or_default())
             .send()
             .await
-            .map_err(|e| ProviderError::Network(e.to_string()))?;
+            .map_err(|e| {
+                if e.is_timeout() {
+                    ProviderError::Timeout
+                } else {
+                    ProviderError::Network(e.to_string())
+                }
+            })?;
 
         let status = response.status();
         if !status.is_success() {
@@ -1287,8 +1304,11 @@ impl Provider for OpenAiResponsesProvider {
         let auth = self.auth.clone();
         let base_url = self.base_url.clone();
         let config = self.config.clone();
-        let extra_headers = self.extra_headers.clone();
+        let mut extra_headers = self.extra_headers.clone();
+        extra_headers.extend(request.extra_headers.clone());
         let provider_id = self.provider_id.clone();
+        let timeout = request.timeout;
+        let session_id = request.session_id.clone();
         let body = self.build_request_body(&request);
         let cancel = request.cancel.clone();
         let http_client = self.client.client().clone();
@@ -1296,6 +1316,10 @@ impl Provider for OpenAiResponsesProvider {
         let (tx, rx) = tokio::sync::mpsc::channel(64);
 
         tokio::spawn(async move {
+            if let Err(e) = crate::provider::validate_extra_headers(&extra_headers) {
+                let _ = tx.send(Err(e)).await;
+                return;
+            }
             let resolved = match auth.resolve().await {
                 Ok(resolved) => resolved,
                 Err(e) => {
@@ -1312,6 +1336,8 @@ impl Provider for OpenAiResponsesProvider {
                 provider_id,
                 &body,
                 cancel,
+                timeout,
+                session_id,
                 &tx,
             )
             .await

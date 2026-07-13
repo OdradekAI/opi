@@ -6,7 +6,8 @@ use futures_util::{StreamExt, stream};
 use opi_ai::{
     message::{AssistantContent, AssistantMessage, Message, ToolDef},
     provider::{
-        EventStream, ModelInfo, Provider, ProviderError, ProviderKind, Request, ThinkingConfig,
+        CacheRetention, EventStream, ModelInfo, Provider, ProviderError, ProviderKind, Request,
+        ThinkingConfig,
     },
     stream::{AssistantStreamEvent, StopReason, Usage},
 };
@@ -129,6 +130,10 @@ fn request_builds_with_all_fields() {
         stop_sequences: vec!["STOP".into()],
         metadata: Some(serde_json::json!({"session": "abc"})),
         cancel: cancel.clone(),
+        timeout: None,
+        extra_headers: vec![],
+        cache_retention: CacheRetention::None,
+        session_id: None,
     };
     assert_eq!(req.model, "claude-sonnet-4-5-20250514");
     assert_eq!(req.messages.len(), 1);
@@ -150,6 +155,10 @@ fn request_cancellation_propagates() {
         stop_sequences: vec![],
         metadata: None,
         cancel: cancel.clone(),
+        timeout: None,
+        extra_headers: vec![],
+        cache_retention: CacheRetention::None,
+        session_id: None,
     };
     cancel.cancel();
     assert!(req.cancel.is_cancelled());
@@ -193,6 +202,10 @@ async fn provider_trait_yields_done_event() {
         stop_sequences: vec![],
         metadata: None,
         cancel,
+        timeout: None,
+        extra_headers: vec![],
+        cache_retention: CacheRetention::None,
+        session_id: None,
     };
     let mut stream = provider.stream(request);
     let event = stream.next().await.unwrap().unwrap();

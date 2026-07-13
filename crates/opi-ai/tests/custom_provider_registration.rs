@@ -5,7 +5,7 @@
 //! streaming, and model listing all work through the existing contracts.
 //! All tests use MockProvider — no live provider calls.
 
-use opi_ai::provider::{ModelInfo, Provider};
+use opi_ai::provider::{ModelInfo, Provider, CacheRetention};
 use opi_ai::registry::ProviderRegistry;
 use opi_ai::test_support::{MockProvider, text_response};
 use opi_ai::{RegistrationError, RegistryError};
@@ -253,6 +253,10 @@ async fn stream_from_custom_provider() {
         stop_sequences: vec![],
         metadata: None,
         cancel: CancellationToken::new(),
+        timeout: None,
+        extra_headers: vec![],
+        cache_retention: CacheRetention::None,
+        session_id: None,
     };
 
     let stream = provider.stream(request);

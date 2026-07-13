@@ -17,7 +17,7 @@ use opi_ai::http::HttpClient;
 use opi_ai::message::{InputContent, Message, UserMessage};
 use opi_ai::openai_chat::OpenAiChatProvider;
 use opi_ai::openai_responses::OpenAiResponsesProvider;
-use opi_ai::provider::{Provider, ProviderError, Request, ThinkingConfig};
+use opi_ai::provider::{Provider, ProviderError, Request, ThinkingConfig, CacheRetention};
 use secrecy::SecretString;
 use tokio_util::sync::CancellationToken;
 use wiremock::matchers::{header, method};
@@ -52,6 +52,10 @@ fn sample_request(model: &str) -> Request {
         stop_sequences: vec![],
         metadata: None,
         cancel: CancellationToken::new(),
+        timeout: None,
+        extra_headers: vec![],
+        cache_retention: CacheRetention::None,
+        session_id: None,
     }
 }
 

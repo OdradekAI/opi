@@ -8,7 +8,7 @@
 use futures_util::StreamExt;
 use opi_ai::anthropic::AnthropicProvider;
 use opi_ai::message::{InputContent, Message, UserMessage};
-use opi_ai::provider::{Provider, ProviderError, Request};
+use opi_ai::provider::{Provider, ProviderError, Request, CacheRetention};
 use opi_ai::stream::{AssistantStreamEvent, StopReason};
 use tokio_util::sync::CancellationToken;
 use wiremock::matchers::{header, method, path};
@@ -31,6 +31,10 @@ fn make_request(cancel: CancellationToken) -> Request {
         stop_sequences: vec![],
         metadata: None,
         cancel,
+        timeout: None,
+        extra_headers: vec![],
+        cache_retention: CacheRetention::None,
+        session_id: None,
     }
 }
 

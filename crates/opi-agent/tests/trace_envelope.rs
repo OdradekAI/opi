@@ -816,6 +816,7 @@ mod wiring {
             follow_up_queue: None,
             diagnostic_sink: Some(sink as Arc<dyn DiagnosticSink>),
             trace,
+        session_id: None,
         }
     }
 
@@ -1629,6 +1630,7 @@ mod phase8_runtime_contract_failures {
             follow_up_queue: None,
             diagnostic_sink: Some(sink as Arc<dyn DiagnosticSink>),
             trace,
+        session_id: None,
         }
     }
 

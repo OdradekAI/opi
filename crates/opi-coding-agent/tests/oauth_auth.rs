@@ -16,7 +16,7 @@ use opi_ai::anthropic::AnthropicProvider;
 use opi_ai::auth::{AuthResolver, AuthScheme, LoginPresenter, OAuthCredential, OAuthProvider, ResolvedAuth};
 use opi_ai::credential::{BoxAuthFuture, Credential, CredentialStore};
 use opi_ai::http::HttpClient;
-use opi_ai::provider::{Provider, ProviderError as AiProviderError, Request, ThinkingConfig};
+use opi_ai::provider::{Provider, ProviderError as AiProviderError, Request, ThinkingConfig, CacheRetention};
 use opi_coding_agent::config::OpiConfig;
 use opi_coding_agent::credential_store::{
     AuthSource, CredentialResolver, EnvLookup, FakeKeyringBackend, KEYCHAIN_SERVICE,
@@ -1533,6 +1533,10 @@ fn factory_request(model: &str) -> Request {
         stop_sequences: vec![],
         metadata: None,
         cancel: CancellationToken::new(),
+        timeout: None,
+        extra_headers: vec![],
+        cache_retention: CacheRetention::None,
+        session_id: None,
     }
 }
 

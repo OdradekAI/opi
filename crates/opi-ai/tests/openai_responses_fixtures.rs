@@ -7,7 +7,7 @@
 use futures_util::StreamExt;
 use opi_ai::message::{InputContent, Message, ToolDef, UserMessage};
 use opi_ai::openai_responses::{OpenAiResponsesProvider, ResponsesConfig};
-use opi_ai::provider::{EventStream, Provider, Request, ThinkingConfig};
+use opi_ai::provider::{EventStream, Provider, Request, ThinkingConfig, CacheRetention};
 use opi_ai::registry::ProviderRegistry;
 use opi_ai::stream::AssistantStreamEvent;
 use tokio_util::sync::CancellationToken;
@@ -86,6 +86,10 @@ fn responses_request_body_uses_input_field() {
         stop_sequences: vec![],
         metadata: None,
         cancel: CancellationToken::new(),
+        timeout: None,
+        extra_headers: vec![],
+        cache_retention: CacheRetention::None,
+        session_id: None,
     };
     let body = provider.build_request_body(&request);
     // Responses API uses "input" not "messages"
@@ -127,6 +131,10 @@ fn responses_request_body_strips_provider_prefix() {
         stop_sequences: vec![],
         metadata: None,
         cancel: CancellationToken::new(),
+        timeout: None,
+        extra_headers: vec![],
+        cache_retention: CacheRetention::None,
+        session_id: None,
     };
     let body = provider.build_request_body(&request);
     assert_eq!(body["model"], "o3");
@@ -162,6 +170,10 @@ fn responses_tool_request() -> Request {
         stop_sequences: vec![],
         metadata: None,
         cancel: CancellationToken::new(),
+        timeout: None,
+        extra_headers: vec![],
+        cache_retention: CacheRetention::None,
+        session_id: None,
     }
 }
 
@@ -980,6 +992,10 @@ async fn stream_sends_text_request_body_and_auth_through_http() {
         stop_sequences: vec![],
         metadata: None,
         cancel: CancellationToken::new(),
+        timeout: None,
+        extra_headers: vec![],
+        cache_retention: CacheRetention::None,
+        session_id: None,
     };
 
     let mut stream = provider.stream(request);
@@ -1043,6 +1059,10 @@ async fn stream_cancellation_drains_without_hang_after_cancel() {
         stop_sequences: vec![],
         metadata: None,
         cancel: cancel.clone(),
+        timeout: None,
+        extra_headers: vec![],
+        cache_retention: CacheRetention::None,
+        session_id: None,
     };
     let mut stream = provider.stream(request);
 

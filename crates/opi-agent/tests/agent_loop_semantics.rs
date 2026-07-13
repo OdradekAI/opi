@@ -428,6 +428,7 @@ fn make_context(provider: Box<dyn Provider>, tools: Vec<Box<dyn Tool>>) -> Agent
         follow_up_queue: None,
         diagnostic_sink: None,
         trace: None,
+        session_id: None,
     }
 }
 
@@ -1113,6 +1114,7 @@ async fn phase8_event_order_prepare_next_turn_injection() {
         follow_up_queue: Some(follow_up_queue),
         diagnostic_sink: None,
         trace: None,
+        session_id: None,
     };
     let hooks = InjectingHooks::new(1, "injected-context".into());
 

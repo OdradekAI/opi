@@ -156,6 +156,7 @@ async fn no_tool_turn_emits_lifecycle_events() {
         follow_up_queue: None,
         diagnostic_sink: None,
         trace: None,
+        session_id: None,
     };
 
     let config = AgentLoopConfig {
@@ -252,6 +253,7 @@ async fn tool_use_turn_executes_tool_and_loops() {
         follow_up_queue: None,
         diagnostic_sink: None,
         trace: None,
+        session_id: None,
     };
 
     let config = AgentLoopConfig {
@@ -318,6 +320,7 @@ async fn text_content_preserved_in_assistant_message() {
         follow_up_queue: None,
         diagnostic_sink: None,
         trace: None,
+        session_id: None,
     };
 
     let config = AgentLoopConfig {

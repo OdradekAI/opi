@@ -769,20 +769,31 @@ impl AnthropicProvider {
     }
 
     /// Real HTTP streaming: POST to Anthropic Messages API and parse SSE from the byte stream.
+    #[allow(clippy::too_many_arguments)]
     async fn stream_http(
         client: reqwest::Client,
         resolved: ResolvedAuth,
         base_url: String,
         body: &serde_json::Value,
         cancel: CancellationToken,
+        timeout: Option<std::time::Duration>,
+        extra_headers: Vec<(String, String)>,
         tx: &tokio::sync::mpsc::Sender<Result<AssistantStreamEvent, ProviderError>>,
     ) -> Result<(), ProviderError> {
         let secret = resolved.secret.expose_secret();
-        let request = client
+        let mut request = client
             .post(format!("{base_url}/v1/messages"))
             .header("anthropic-version", "2023-06-01")
             .header("content-type", "application/json")
             .body(serde_json::to_string(body).unwrap_or_default());
+        // Apply extra headers from Request (validated by caller).
+        for (name, value) in &extra_headers {
+            request = request.header(name.as_str(), value.as_str());
+        }
+        // Apply per-request timeout.
+        if let Some(d) = timeout {
+            request = request.timeout(d);
+        }
         let request = match resolved.scheme {
             AuthScheme::ApiKey => request.header("x-api-key", secret),
             // OAuth Bearer credential: the required beta header rides the same
@@ -794,7 +805,13 @@ impl AnthropicProvider {
         let response = request
             .send()
             .await
-            .map_err(|e| ProviderError::Network(e.to_string()))?;
+            .map_err(|e| {
+                if e.is_timeout() {
+                    ProviderError::Timeout
+                } else {
+                    ProviderError::Network(e.to_string())
+                }
+            })?;
 
         let status = response.status();
         if !status.is_success() {
@@ -1058,11 +1075,18 @@ impl Provider for AnthropicProvider {
         let base_url = self.base_url.clone();
         let body = self.build_request_body(&request);
         let cancel = request.cancel.clone();
+        let timeout = request.timeout;
+        let extra_headers = request.extra_headers.clone();
         let http_client = self.client.client().clone();
 
         let (tx, rx) = tokio::sync::mpsc::channel(64);
 
         tokio::spawn(async move {
+            // Validate extra headers before any network call.
+            if let Err(e) = crate::provider::validate_extra_headers(&extra_headers) {
+                let _ = tx.send(Err(e)).await;
+                return;
+            }
             let resolved = match auth.resolve().await {
                 Ok(resolved) => resolved,
                 Err(e) => {
@@ -1071,7 +1095,7 @@ impl Provider for AnthropicProvider {
                 }
             };
             if let Err(e) =
-                Self::stream_http(http_client, resolved, base_url, &body, cancel, &tx).await
+                Self::stream_http(http_client, resolved, base_url, &body, cancel, timeout, extra_headers, &tx).await
             {
                 let _ = tx.send(Err(e)).await;
             }

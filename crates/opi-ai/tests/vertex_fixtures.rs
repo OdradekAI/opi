@@ -6,7 +6,7 @@
 
 use futures_util::StreamExt;
 use opi_ai::message::{InputContent, Message, UserMessage};
-use opi_ai::provider::{EventStream, Provider, Request, ThinkingConfig};
+use opi_ai::provider::{EventStream, Provider, Request, ThinkingConfig, CacheRetention};
 use opi_ai::registry::ProviderRegistry;
 use opi_ai::stream::AssistantStreamEvent;
 use opi_ai::vertex::VertexProvider;
@@ -303,6 +303,10 @@ fn vertex_request_body_uses_gemini_format() {
         stop_sequences: vec![],
         metadata: None,
         cancel: CancellationToken::new(),
+        timeout: None,
+        extra_headers: vec![],
+        cache_retention: CacheRetention::None,
+        session_id: None,
     };
     let body = provider.build_request_body(&request);
     assert!(
@@ -380,6 +384,10 @@ fn lifecycle_text_request() -> Request {
         stop_sequences: vec![],
         metadata: None,
         cancel: CancellationToken::new(),
+        timeout: None,
+        extra_headers: vec![],
+        cache_retention: CacheRetention::None,
+        session_id: None,
     }
 }
 

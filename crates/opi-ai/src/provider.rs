@@ -26,6 +26,25 @@ pub trait Provider: Send + Sync {
 pub type EventStream =
     Pin<Box<dyn Stream<Item = Result<AssistantStreamEvent, ProviderError>> + Send>>;
 
+/// Hint for cache-related behaviour on a provider request.
+///
+/// `None` preserves provider defaults. `Disabled` suppresses all cache/affinity
+/// fields. `Short` requests ordinary ephemeral markers; `Long` requests one-hour
+/// markers where the model and provider support them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CacheRetention {
+    /// Preserve provider defaults — no explicit cache/affinity signal.
+    #[default]
+    None,
+    /// Suppress all cache-control and session-affinity fields on the wire.
+    Disabled,
+    /// Ordinary ephemeral cache markers.
+    Short,
+    /// One-hour cache markers (only emitted when both the model capability and
+    /// the provider wire path support them).
+    Long,
+}
+
 /// A single request to a provider.
 pub struct Request {
     pub model: String,
@@ -38,6 +57,22 @@ pub struct Request {
     pub stop_sequences: Vec<String>,
     pub metadata: Option<serde_json::Value>,
     pub cancel: CancellationToken,
+    /// Per-request HTTP timeout. `None` uses the provider/client default.
+    /// Timeout is distinct from cancellation: a timeout produces
+    /// `ProviderError::Timeout`; a cancelled request produces
+    /// `ProviderError::Cancelled`.
+    pub timeout: Option<std::time::Duration>,
+    /// Additional HTTP headers appended to the outbound request. Headers with
+    /// names that appear in the provider-managed auth set (e.g. `authorization`,
+    /// `x-api-key`) are rejected with [`ProviderError::RequestFailed`] before
+    /// any network call. Default empty.
+    pub extra_headers: Vec<(String, String)>,
+    /// Cache-control and session-affinity hint for this request.
+    pub cache_retention: CacheRetention,
+    /// Opaque session identifier carried through the agent loop so providers
+    /// can map it to session-affinity or prompt-cache-key headers. `None` means
+    /// no session is active.
+    pub session_id: Option<String>,
 }
 
 impl Request {
@@ -51,6 +86,48 @@ impl Request {
             _ => false,
         })
     }
+}
+
+/// Validate extra headers supplied on a [`Request`].
+///
+/// Rejects header names that are empty, contain control characters, or match
+/// the provider-managed auth header set. Auth header rejection is
+/// case-insensitive and non-exhaustive: it covers the headers the built-in
+/// providers manage (`authorization`, `x-api-key`, `api-key`, `anthropic-version`,
+/// `content-type`), not every possible header a custom profile might set.
+///
+/// Returns `Err(ProviderError::RequestFailed(...))` on the first invalid header.
+pub fn validate_extra_headers(
+    headers: &[(String, String)],
+) -> Result<(), ProviderError> {
+    /// Headers managed by built-in providers that extra_headers must not override.
+    const RESERVED: &[&str] = &[
+        "authorization",
+        "x-api-key",
+        "api-key",
+        "anthropic-version",
+        "content-type",
+    ];
+
+    for (name, _value) in headers {
+        if name.is_empty() {
+            return Err(ProviderError::RequestFailed(
+                "extra_headers contains an empty header name".into(),
+            ));
+        }
+        if name.contains(|c: char| c.is_control() || c == ':') {
+            return Err(ProviderError::RequestFailed(format!(
+                "extra_headers name contains invalid characters: {name:?}"
+            )));
+        }
+        let lower = name.to_ascii_lowercase();
+        if RESERVED.contains(&lower.as_str()) {
+            return Err(ProviderError::RequestFailed(format!(
+                "extra_headers name '{name}' is reserved for provider-managed auth"
+            )));
+        }
+    }
+    Ok(())
 }
 
 /// Thinking/reasoning configuration for extended thinking models.

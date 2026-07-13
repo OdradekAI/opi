@@ -6,7 +6,7 @@
 
 use futures_util::StreamExt;
 use opi_ai::azure_openai::AzureOpenAIProvider;
-use opi_ai::provider::Provider;
+use opi_ai::provider::{CacheRetention, Provider};
 use opi_ai::stream::AssistantStreamEvent;
 use tokio_util::sync::CancellationToken;
 use wiremock::matchers::{body_partial_json, header, method, path, query_param};
@@ -55,6 +55,10 @@ fn text_request() -> opi_ai::provider::Request {
         stop_sequences: vec![],
         metadata: None,
         cancel: CancellationToken::new(),
+        timeout: None,
+        extra_headers: vec![],
+        cache_retention: CacheRetention::None,
+        session_id: None,
     }
 }
 
@@ -87,6 +91,10 @@ fn tool_request() -> opi_ai::provider::Request {
         stop_sequences: vec![],
         metadata: None,
         cancel: CancellationToken::new(),
+        timeout: None,
+        extra_headers: vec![],
+        cache_retention: CacheRetention::None,
+        session_id: None,
     }
 }
 

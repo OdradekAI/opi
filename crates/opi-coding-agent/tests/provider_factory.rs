@@ -6,7 +6,7 @@
 
 use std::sync::Mutex;
 
-use opi_ai::provider::{Provider, Request, ThinkingConfig};
+use opi_ai::provider::{Provider, Request, ThinkingConfig, CacheRetention};
 use opi_ai::test_support::MockProvider;
 use opi_coding_agent::config::{
     GenericProviderConfig, OpenRouterProviderConfig, OpiConfig, load_config_file,
@@ -100,6 +100,10 @@ fn minimal_request(model: &str) -> Request {
         stop_sequences: vec![],
         metadata: None,
         cancel: CancellationToken::new(),
+        timeout: None,
+        extra_headers: vec![],
+        cache_retention: CacheRetention::None,
+        session_id: None,
     }
 }
 

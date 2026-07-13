@@ -8,7 +8,7 @@ use opi_ai::anthropic::{
     AnthropicEvent, AnthropicMapper, AnthropicProvider, ParsedEvent, parse_sse_events,
 };
 use opi_ai::message::{AssistantContent, InputContent, Message, UserMessage};
-use opi_ai::provider::{Provider, Request, ThinkingConfig};
+use opi_ai::provider::{Provider, Request, ThinkingConfig, CacheRetention};
 use opi_ai::stream::{AssistantStreamEvent, StopReason};
 use tokio_util::sync::CancellationToken;
 use wiremock::matchers::{body_partial_json, header, method, path};
@@ -729,6 +729,10 @@ fn build_request_body_includes_thinking_when_enabled() {
         stop_sequences: vec![],
         metadata: None,
         cancel: CancellationToken::new(),
+        timeout: None,
+        extra_headers: vec![],
+        cache_retention: CacheRetention::None,
+        session_id: None,
     };
 
     let body = provider.build_request_body(&request);
@@ -762,6 +766,10 @@ fn build_request_body_uses_default_budget_when_none() {
         stop_sequences: vec![],
         metadata: None,
         cancel: CancellationToken::new(),
+        timeout: None,
+        extra_headers: vec![],
+        cache_retention: CacheRetention::None,
+        session_id: None,
     };
 
     let body = provider.build_request_body(&request);
@@ -794,6 +802,10 @@ fn build_request_body_omits_thinking_when_disabled() {
         stop_sequences: vec![],
         metadata: None,
         cancel: CancellationToken::new(),
+        timeout: None,
+        extra_headers: vec![],
+        cache_retention: CacheRetention::None,
+        session_id: None,
     };
 
     let body = provider.build_request_body(&request);
@@ -1250,6 +1262,10 @@ async fn stream_sends_text_request_body_and_auth_through_http() {
         stop_sequences: vec![],
         metadata: None,
         cancel: CancellationToken::new(),
+        timeout: None,
+        extra_headers: vec![],
+        cache_retention: CacheRetention::None,
+        session_id: None,
     };
 
     let mut stream = provider.stream(request);
@@ -1306,6 +1322,10 @@ async fn stream_cancellation_drains_without_hang_after_cancel() {
         stop_sequences: vec![],
         metadata: None,
         cancel: cancel.clone(),
+        timeout: None,
+        extra_headers: vec![],
+        cache_retention: CacheRetention::None,
+        session_id: None,
     };
     let mut stream = provider.stream(request);
 

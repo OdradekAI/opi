@@ -7,7 +7,7 @@
 use futures_util::StreamExt;
 use opi_ai::message::{InputContent, Message, ToolDef, UserMessage};
 use opi_ai::openai_chat::{CompatConfig, OpenAiChatProvider};
-use opi_ai::provider::{EventStream, Provider, Request, ThinkingConfig};
+use opi_ai::provider::{EventStream, Provider, Request, ThinkingConfig, CacheRetention};
 use opi_ai::registry::ProviderRegistry;
 use opi_ai::stream::AssistantStreamEvent;
 use tokio_util::sync::CancellationToken;
@@ -150,6 +150,10 @@ fn mistral_request_body_strips_provider_prefix() {
         stop_sequences: vec![],
         metadata: None,
         cancel: CancellationToken::new(),
+        timeout: None,
+        extra_headers: vec![],
+        cache_retention: CacheRetention::None,
+        session_id: None,
     };
     let body = provider.build_request_body(&request);
     assert_eq!(body["model"], "mistral-small-latest");
@@ -400,6 +404,10 @@ async fn stream_sends_text_request_body_and_auth_through_http() {
         stop_sequences: vec![],
         metadata: None,
         cancel: CancellationToken::new(),
+        timeout: None,
+        extra_headers: vec![],
+        cache_retention: CacheRetention::None,
+        session_id: None,
     };
 
     let mut stream = provider.stream(request);
@@ -460,6 +468,10 @@ fn mistral_profile_inherits_shared_compat_flags() {
         stop_sequences: vec![],
         metadata: None,
         cancel: CancellationToken::new(),
+        timeout: None,
+        extra_headers: vec![],
+        cache_retention: CacheRetention::None,
+        session_id: None,
     };
     let body = provider.build_request_body(&request);
     let messages = body["messages"].as_array().unwrap();
@@ -509,6 +521,10 @@ async fn stream_cancellation_aborts_before_completion() {
         stop_sequences: vec![],
         metadata: None,
         cancel: cancel.clone(),
+        timeout: None,
+        extra_headers: vec![],
+        cache_retention: CacheRetention::None,
+        session_id: None,
     };
     let mut stream = provider.stream(request);
 

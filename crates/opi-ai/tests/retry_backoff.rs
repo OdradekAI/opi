@@ -9,7 +9,7 @@
 //! Agent-level retry integration tests are in opi-agent/tests/retry_agent.rs.
 
 use opi_ai::Provider;
-use opi_ai::provider::ProviderError;
+use opi_ai::provider::{CacheRetention, ProviderError};
 use opi_ai::retry::{
     RetryConfig, calculate_backoff_delay, parse_http_date_delay, parse_retry_after,
 };
@@ -172,6 +172,10 @@ async fn mock_provider_returns_error_response() {
         stop_sequences: vec![],
         metadata: None,
         cancel: tokio_util::sync::CancellationToken::new(),
+        timeout: None,
+        extra_headers: vec![],
+        cache_retention: CacheRetention::None,
+        session_id: None,
     };
     use futures_util::StreamExt;
     let mut stream = provider.stream(request);

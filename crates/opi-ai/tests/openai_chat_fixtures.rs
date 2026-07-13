@@ -13,7 +13,7 @@ use opi_ai::openai_chat::{
     CompatConfig, OpenAiChatEvent, OpenAiChatMapper, OpenAiChatProvider, ParsedEvent,
     parse_sse_events,
 };
-use opi_ai::provider::{EventStream, Provider, validate_request_capabilities};
+use opi_ai::provider::{EventStream, Provider, validate_request_capabilities, CacheRetention};
 use opi_ai::stream::{AssistantStreamEvent, StopReason};
 use wiremock::matchers::{body_partial_json, header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -811,6 +811,10 @@ fn make_test_request() -> Request {
         stop_sequences: vec![],
         metadata: None,
         cancel: CancellationToken::new(),
+        timeout: None,
+        extra_headers: vec![],
+        cache_retention: CacheRetention::None,
+        session_id: None,
     }
 }
 
@@ -957,6 +961,10 @@ fn make_tool_request() -> Request {
         stop_sequences: vec![],
         metadata: None,
         cancel: CancellationToken::new(),
+        timeout: None,
+        extra_headers: vec![],
+        cache_retention: CacheRetention::None,
+        session_id: None,
     }
 }
 
@@ -1052,6 +1060,10 @@ fn make_tool_result_request() -> Request {
         stop_sequences: vec![],
         metadata: None,
         cancel: CancellationToken::new(),
+        timeout: None,
+        extra_headers: vec![],
+        cache_retention: CacheRetention::None,
+        session_id: None,
     }
 }
 
@@ -1133,6 +1145,10 @@ fn validate_rejects_image_on_text_only_openai_compatible_profile() {
         stop_sequences: vec![],
         metadata: None,
         cancel: CancellationToken::new(),
+        timeout: None,
+        extra_headers: vec![],
+        cache_retention: CacheRetention::None,
+        session_id: None,
     };
     let err = validate_request_capabilities(&provider, &image_request)
         .expect_err("text-only profile model must reject image preflight");
@@ -1330,6 +1346,10 @@ async fn stream_sends_text_request_body_and_auth_through_http() {
         stop_sequences: vec![],
         metadata: None,
         cancel: CancellationToken::new(),
+        timeout: None,
+        extra_headers: vec![],
+        cache_retention: CacheRetention::None,
+        session_id: None,
     };
 
     let mut stream = provider.stream(request);
@@ -1394,6 +1414,10 @@ async fn profile_extra_headers_reach_the_http_wire() {
         stop_sequences: vec![],
         metadata: None,
         cancel: CancellationToken::new(),
+        timeout: None,
+        extra_headers: vec![],
+        cache_retention: CacheRetention::None,
+        session_id: None,
     };
 
     let mut stream = provider.stream(request);
@@ -1441,6 +1465,10 @@ async fn stream_cancellation_aborts_before_completion() {
         stop_sequences: vec![],
         metadata: None,
         cancel: cancel.clone(),
+        timeout: None,
+        extra_headers: vec![],
+        cache_retention: CacheRetention::None,
+        session_id: None,
     };
     let mut stream = provider.stream(request);
 

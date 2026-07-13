@@ -94,6 +94,7 @@ pub struct Agent {
     tools: Vec<Arc<dyn Tool>>,
     model: String,
     system: Option<String>,
+    session_id: Option<String>,
     config: AgentLoopConfig,
     hooks: Box<dyn AgentHooks>,
     cancel: CancellationToken,
@@ -129,7 +130,15 @@ impl Agent {
             follow_up_queue: Arc::new(Mutex::new(VecDeque::new())),
             diagnostic_sink: None,
             trace_collector: None,
+            session_id: None,
         }
+    }
+
+    /// Set the opaque session identifier carried into every provider Request.
+    /// The harness calls this on startup, resume, and fork so the active
+    /// session id flows through the agent loop to provider affinity headers.
+    pub fn set_session_id(&mut self, session_id: Option<String>) {
+        self.session_id = session_id;
     }
 
     /// Install a diagnostic sink that receives observations emitted from
@@ -384,6 +393,7 @@ impl Agent {
             follow_up_queue: Some(self.follow_up_queue.clone()),
             diagnostic_sink: self.diagnostic_sink.clone(),
             trace: self.trace_collector.clone(),
+            session_id: self.session_id.clone(),
         };
 
         let sink = self.build_event_sink();

@@ -5,7 +5,7 @@
 
 use futures_util::StreamExt;
 use opi_ai::message::{ImageSource, InputContent, MediaType, Message, UserMessage};
-use opi_ai::provider::{Provider, Request, ThinkingConfig};
+use opi_ai::provider::{Provider, Request, ThinkingConfig, CacheRetention};
 use tokio_util::sync::CancellationToken;
 use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -87,6 +87,10 @@ fn make_request(messages: Vec<Message>) -> Request {
         stop_sequences: vec![],
         metadata: None,
         cancel: CancellationToken::new(),
+        timeout: None,
+        extra_headers: vec![],
+        cache_retention: CacheRetention::None,
+        session_id: None,
     }
 }
 

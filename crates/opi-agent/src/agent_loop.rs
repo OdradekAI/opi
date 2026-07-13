@@ -5,7 +5,7 @@ use futures_util::StreamExt;
 use opi_ai::message::{
     AssistantContent, InputContent, Message, ToolCall, ToolResultMessage, UserMessage,
 };
-use opi_ai::provider::{Request, validate_request_capabilities};
+use opi_ai::provider::{CacheRetention, Request, validate_request_capabilities};
 use serde_json::json;
 use tokio_util::sync::CancellationToken;
 
@@ -98,6 +98,10 @@ pub async fn agent_loop(
                 stop_sequences: vec![],
                 metadata: None,
                 cancel: cancel.clone(),
+                timeout: None,
+                extra_headers: vec![],
+                cache_retention: CacheRetention::None,
+                session_id: context.session_id.clone(),
             };
             if let Err(e) = validate_request_capabilities(context.provider.as_ref(), &request) {
                 observe(

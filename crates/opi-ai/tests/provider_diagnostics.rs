@@ -14,7 +14,7 @@ use std::collections::HashSet;
 use opi_ai::http::safe_excerpt;
 use opi_ai::message::{ImageSource, InputContent, MediaType, Message, UserMessage};
 use opi_ai::provider::{
-    ModelInfo, ProviderError, ProviderErrorCategory, Request, ThinkingConfig,
+    CacheRetention, ModelInfo, ProviderError, ProviderErrorCategory, Request, ThinkingConfig,
     validate_request_capabilities,
 };
 use opi_ai::test_support::MockProvider;
@@ -325,6 +325,10 @@ fn image_request(model: &str) -> Request {
         stop_sequences: vec![],
         metadata: None,
         cancel: CancellationToken::new(),
+        timeout: None,
+        extra_headers: vec![],
+        cache_retention: CacheRetention::None,
+        session_id: None,
     }
 }
 

@@ -918,6 +918,7 @@ impl CodingHarness {
         // through the same channel as the interactive path.
         harness.apply_recorded_model(recorded_model.as_deref());
         harness.apply_recorded_thinking(recorded_thinking);
+        harness.sync_session_id();
 
         harness
     }
@@ -1207,6 +1208,7 @@ impl CodingHarness {
             self.agent.model().to_string(),
         )
         .ok();
+        self.sync_session_id();
         self.turn_offset = message_count;
         Ok(message_count)
     }
@@ -1313,6 +1315,7 @@ impl CodingHarness {
             .map_err(|e| format!("failed to open forked session: {e}"))?,
         );
         self.turn_offset = message_count;
+        self.sync_session_id();
         Ok((session_id, message_count))
     }
 
@@ -1876,6 +1879,17 @@ impl CodingHarness {
     /// Return the session coordinator, if active.
     pub fn session(&self) -> Option<&SessionCoordinator> {
         self.session.as_ref()
+    }
+
+    /// Propagate the active session id from [`SessionCoordinator`] into the
+    /// agent loop so providers receive it on every Request. Called after
+    /// new-session creation, resume, and fork.
+    fn sync_session_id(&mut self) {
+        let id = self
+            .session
+            .as_ref()
+            .map(|s| s.session_id().to_owned());
+        self.agent.set_session_id(id);
     }
 
     /// Execute compaction on the session and return the public result plus the

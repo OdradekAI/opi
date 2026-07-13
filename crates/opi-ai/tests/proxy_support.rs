@@ -16,7 +16,7 @@ use opi_ai::http::{
 use opi_ai::message::{InputContent, Message, UserMessage};
 use opi_ai::openai_chat::OpenAiChatProvider;
 use opi_ai::openai_responses::OpenAiResponsesProvider;
-use opi_ai::provider::{Provider, Request, ThinkingConfig};
+use opi_ai::provider::{Provider, Request, ThinkingConfig, CacheRetention};
 use tokio_util::sync::CancellationToken;
 use wiremock::matchers::method;
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -389,6 +389,10 @@ async fn openai_chat_provider_routes_http_requests_through_proxy() {
         stop_sequences: vec![],
         metadata: None,
         cancel: CancellationToken::new(),
+        timeout: None,
+        extra_headers: vec![],
+        cache_retention: CacheRetention::None,
+        session_id: None,
     };
 
     let mut stream = provider.stream(request);

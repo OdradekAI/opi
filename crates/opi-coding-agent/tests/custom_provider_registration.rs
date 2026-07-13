@@ -6,7 +6,7 @@
 //! All tests use MockProvider -- no live provider calls.
 
 use opi_agent::extension::{Extension, ExtensionRegistry};
-use opi_ai::provider::{ModelInfo, Provider};
+use opi_ai::provider::{ModelInfo, Provider, CacheRetention};
 use opi_ai::registry::ProviderRegistry;
 use opi_ai::test_support::{MockProvider, text_response};
 
@@ -242,6 +242,10 @@ async fn extension_provider_streams_without_network() {
         stop_sequences: vec![],
         metadata: None,
         cancel: CancellationToken::new(),
+        timeout: None,
+        extra_headers: vec![],
+        cache_retention: CacheRetention::None,
+        session_id: None,
     };
 
     let stream = provider.stream(request);

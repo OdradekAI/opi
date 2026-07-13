@@ -120,6 +120,7 @@ async fn run_truncated(mode: ExecutionMode) -> (Option<bool>, Option<bool>) {
         follow_up_queue: None,
         diagnostic_sink: None,
         trace: None,
+        session_id: None,
     };
     let config = AgentLoopConfig {
         max_turns: 10,

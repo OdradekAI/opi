@@ -5,7 +5,7 @@
 
 use futures_util::StreamExt;
 use opi_ai::message::{InputContent, Message, UserMessage};
-use opi_ai::provider::{Provider, Request};
+use opi_ai::provider::{Provider, Request, CacheRetention};
 use opi_ai::stream::{AssistantStreamEvent, StopReason, Usage};
 use opi_ai::test_support::{self, MockProvider};
 use tokio_util::sync::CancellationToken;
@@ -58,6 +58,10 @@ async fn stream_yields_text_response_events() {
         stop_sequences: vec![],
         metadata: None,
         cancel: CancellationToken::new(),
+        timeout: None,
+        extra_headers: vec![],
+        cache_retention: CacheRetention::None,
+        session_id: None,
     };
 
     let stream = provider.stream(request);
@@ -98,6 +102,10 @@ async fn stream_yields_tool_call_response_events() {
         stop_sequences: vec![],
         metadata: None,
         cancel: CancellationToken::new(),
+        timeout: None,
+        extra_headers: vec![],
+        cache_retention: CacheRetention::None,
+        session_id: None,
     };
 
     let stream = provider.stream(request);
@@ -141,6 +149,10 @@ async fn stream_yields_error_response_events() {
         stop_sequences: vec![],
         metadata: None,
         cancel: CancellationToken::new(),
+        timeout: None,
+        extra_headers: vec![],
+        cache_retention: CacheRetention::None,
+        session_id: None,
     };
 
     let stream = provider.stream(request);
@@ -181,6 +193,10 @@ async fn multiple_stream_calls_consume_responses_in_order() {
         stop_sequences: vec![],
         metadata: None,
         cancel: CancellationToken::new(),
+        timeout: None,
+        extra_headers: vec![],
+        cache_retention: CacheRetention::None,
+        session_id: None,
     };
 
     // First call
@@ -200,6 +216,10 @@ async fn multiple_stream_calls_consume_responses_in_order() {
         stop_sequences: vec![],
         metadata: None,
         cancel: CancellationToken::new(),
+        timeout: None,
+        extra_headers: vec![],
+        cache_retention: CacheRetention::None,
+        session_id: None,
     });
     let events2: Vec<_> = stream2.collect::<Vec<_>>().await;
     assert_eq!(events2.len(), 3);

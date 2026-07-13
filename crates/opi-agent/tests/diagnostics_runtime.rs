@@ -633,6 +633,7 @@ mod runtime_emission {
             follow_up_queue: None,
             diagnostic_sink: Some(sink as Arc<dyn DiagnosticSink>),
             trace: None,
+        session_id: None,
         }
     }
 
@@ -939,6 +940,7 @@ mod runtime_emission {
             follow_up_queue: None,
             diagnostic_sink: Some(sink.clone() as Arc<dyn DiagnosticSink>),
             trace: None,
+        session_id: None,
         };
         let cfg = AgentLoopConfig {
             max_turns: 2,

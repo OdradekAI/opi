@@ -9,7 +9,7 @@ mod openai_chat_profile {
     use futures_util::StreamExt;
     use opi_ai::message::{InputContent, Message, UserMessage};
     use opi_ai::openai_chat::OpenAiChatProvider;
-    use opi_ai::provider::{Provider, ProviderError, Request, ThinkingConfig};
+    use opi_ai::provider::{CacheRetention, Provider, ProviderError, Request, ThinkingConfig};
     use opi_ai::stream::AssistantStreamEvent;
     use tokio_util::sync::CancellationToken;
     use wiremock::matchers::{header, method, path};
@@ -32,6 +32,10 @@ mod openai_chat_profile {
             stop_sequences: vec![],
             metadata: None,
             cancel,
+            timeout: None,
+            extra_headers: vec![],
+            cache_retention: CacheRetention::None,
+            session_id: None,
         }
     }
 
@@ -289,7 +293,7 @@ mod mistral_profile {
     use futures_util::StreamExt;
     use opi_ai::message::{InputContent, Message, UserMessage};
     use opi_ai::openai_chat::{CompatConfig, OpenAiChatProvider};
-    use opi_ai::provider::{Provider, ProviderError, Request, ThinkingConfig};
+    use opi_ai::provider::{CacheRetention, Provider, ProviderError, Request, ThinkingConfig};
     use opi_ai::stream::AssistantStreamEvent;
     use tokio_util::sync::CancellationToken;
     use wiremock::matchers::{header, method, path};
@@ -312,6 +316,10 @@ mod mistral_profile {
             stop_sequences: vec![],
             metadata: None,
             cancel,
+            timeout: None,
+            extra_headers: vec![],
+            cache_retention: CacheRetention::None,
+            session_id: None,
         }
     }
 
@@ -513,7 +521,7 @@ mod openrouter_profile {
     use futures_util::StreamExt;
     use opi_ai::message::{InputContent, Message, UserMessage};
     use opi_ai::openai_chat::{CompatConfig, OpenAiChatProvider};
-    use opi_ai::provider::{Provider, ProviderError, Request, ThinkingConfig};
+    use opi_ai::provider::{CacheRetention, Provider, ProviderError, Request, ThinkingConfig};
     use opi_ai::stream::AssistantStreamEvent;
     use tokio_util::sync::CancellationToken;
     use wiremock::matchers::{header, method, path};
@@ -536,6 +544,10 @@ mod openrouter_profile {
             stop_sequences: vec![],
             metadata: None,
             cancel,
+            timeout: None,
+            extra_headers: vec![],
+            cache_retention: CacheRetention::None,
+            session_id: None,
         }
     }
 
