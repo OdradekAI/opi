@@ -22,7 +22,7 @@ opi-coding-agent = { path = "crates/opi-coding-agent", version = "0.7.0" }
 opi-tui = { path = "crates/opi-tui", version = "0.7.0" }
 
 # async runtime
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "process", "io-util", "fs"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "process", "io-util", "fs", "net"] }
 tokio-util = "0.7"
 futures-core = "0.3"
 futures-util = "0.3"
@@ -84,6 +84,8 @@ proptest = "1"
 hmac = "0.12"
 sha2 = "0.10"
 hex = "0.4"
+# CSPRNG for PKCE code_verifier/state (Phase 14.2 OAuth)
+rand = "0.8"
 
 # env loading
 dotenvy = "0.15"

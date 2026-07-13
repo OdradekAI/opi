@@ -133,6 +133,17 @@ pub enum ProviderError {
     StreamError(String),
     #[error("authentication failed: {0}")]
     AuthFailed(String),
+    /// No credential is available for the provider. Non-retryable: the caller
+    /// must obtain a credential (interactive login or a typed non-interactive
+    /// diagnostic) before retrying. Distinct from [`AuthFailed`](Self::AuthFailed)
+    /// because it routes to the login/credential-needed path, not retry.
+    #[error("credential needed for provider '{provider_id}'; run `/login {provider_id}`")]
+    CredentialNeeded { provider_id: String },
+    /// A previously valid credential was rejected by the provider (e.g. 401 on
+    /// an OAuth token). Non-retryable and never auto-relogs-in: the current
+    /// turn ends and a later explicit `/login` is required.
+    #[error("credential revoked for provider '{provider_id}'; re-login required")]
+    CredentialRevoked { provider_id: String },
     #[error("network error: {0}")]
     Network(String),
     #[error("invalid provider configuration: {0}")]
@@ -164,7 +175,9 @@ impl ProviderError {
     /// diagnostic `code`/`severity`/`source` triple.
     pub fn category(&self) -> ProviderErrorCategory {
         match self {
-            ProviderError::AuthFailed(_) => ProviderErrorCategory::Auth,
+            ProviderError::AuthFailed(_)
+            | ProviderError::CredentialNeeded { .. }
+            | ProviderError::CredentialRevoked { .. } => ProviderErrorCategory::Auth,
             ProviderError::Config(_) => ProviderErrorCategory::Config,
             ProviderError::RequestFailed(_) => ProviderErrorCategory::Request,
             ProviderError::Timeout | ProviderError::Network(_) => ProviderErrorCategory::Network,

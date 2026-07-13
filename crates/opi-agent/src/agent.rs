@@ -206,6 +206,19 @@ impl Agent {
         self.run_with_token(token).await
     }
 
+    /// Re-run the agent loop with the current messages, without pushing a new
+    /// user message. Used by the harness to retry after a `CredentialNeeded`
+    /// error is resolved via interactive login — the user message from the
+    /// original `prompt`/`continue_` call is already in `self.messages`, so
+    /// pushing another would duplicate it in the session.
+    pub async fn retry_last_turn(
+        &mut self,
+    ) -> Result<Vec<AgentMessage>, AgentError> {
+        self.maybe_reset_cancel();
+        let token = self.cancel.child_token();
+        self.run_with_token(token).await
+    }
+
     /// Cancel the current operation.
     ///
     /// Equivalent to the first Ctrl+C. The running `prompt` or `continue_`

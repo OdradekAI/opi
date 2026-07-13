@@ -45,7 +45,9 @@ use opi_ai::{AuthDescriptor, CompatMetadata, ProviderCollection, ProviderRegistr
 use secrecy::ExposeSecret;
 
 use crate::config::{OpenAiCompatibleProviderConfig, OpiConfig, build_http_client};
+use crate::credential_store::{AuthSource, CredentialResolver};
 use crate::diagnostic_bridge::diagnostic_for_model_registry_error;
+use crate::oauth::OAuthProviderRegistry;
 
 // ---------------------------------------------------------------------------
 // Errors
@@ -75,6 +77,21 @@ pub enum ListModelsError {
     MissingCredentials,
     #[error("{0}")]
     Config(String),
+}
+
+/// The provider, credential store, and OAuth registry produced at production
+/// startup. Callers that need the store and registry for `/login`, `/logout`,
+/// or `CredentialNeeded` same-turn retry (i.e. the interactive TUI) take the
+/// full bundle; non-interactive and RPC callers extract only `provider`.
+pub struct ProviderBundle {
+    /// The active runtime provider.
+    pub provider: Box<dyn Provider>,
+    /// The OS-keychain-backed credential store (for `/login`/`/logout`).
+    pub store: Arc<crate::credential_store::KeychainCredentialStore>,
+    /// The credential resolver built over the same store.
+    pub resolver: crate::credential_store::CredentialResolver,
+    /// The built-in OAuth provider registry.
+    pub registry: OAuthProviderRegistry,
 }
 
 // ---------------------------------------------------------------------------
@@ -671,22 +688,239 @@ pub async fn build_provider_with_resolver(
     build_runtime_provider(config, provider_id, pre_resolved)
 }
 
-/// Build the active provider through the production credential resolver: a
-/// [`crate::credential_store::KeychainCredentialStore`] over the platform
-/// keychain with env fallback. In Phase 14.1 (no native store crate compiled)
-/// the keychain probe resolves to `BackendUnavailable` and the resolver falls
-/// back to env, so behavior matches the legacy env path; real keychain storage
-/// ships with T2.
-pub async fn build_provider_production(
+// ---------------------------------------------------------------------------
+// Phase 14.2 OAuth provider construction
+// ---------------------------------------------------------------------------
+
+/// Default Copilot API base URL. A stored OAuth credential may carry an
+/// enterprise host (its `base_url`), which takes precedence at construction.
+const COPILOT_DEFAULT_BASE_URL: &str = "https://api.individual.githubcopilot.com";
+
+/// Default Codex API base URL.
+const CODEX_DEFAULT_BASE_URL: &str = "https://api.openai.com";
+
+/// The static required Copilot Chat headers (the "captured required headers"
+/// minus `X-Initiator`, which is per-request and deferred — see RESIDUAL).
+fn copilot_extra_headers() -> Vec<(String, String)> {
+    vec![
+        ("Editor-Version".into(), "opi/0.7.0".into()),
+        ("Editor-Plugin-Version".into(), "opi/0.7.0".into()),
+        ("Copilot-Integration-Id".into(), "vscode-chat".into()),
+        ("Openai-Intent".into(), "conversation-edits".into()),
+    ]
+}
+
+/// The static required Codex Responses headers.
+fn codex_extra_headers() -> Vec<(String, String)> {
+    vec![
+        ("OpenAI-Beta".into(), "responses=experimental".into()),
+        ("originator".into(), "opi".into()),
+        ("accept".into(), "text/event-stream".into()),
+    ]
+}
+
+/// Build the Anthropic OAuth provider (Bearer auth with the beta header,
+/// applied inside the provider's stream). Auth is resolved per-request via
+/// [`AuthSource::Store`], refreshing near expiry through the resolver. `base_url`
+/// follows the config default (Anthropic PKCE derives no per-credential base URL).
+async fn build_anthropic_oauth(
+    config: &OpiConfig,
+    resolver: &CredentialResolver,
+    registry: &OAuthProviderRegistry,
+) -> Result<Box<dyn Provider>, ProviderBuildError> {
+    let oauth = registry.lookup("anthropic").ok_or_else(|| {
+        ProviderBuildError::Config("no anthropic OAuth provider registered".into())
+    })?;
+    let client = build_proxied_client(config.providers.anthropic.proxy.as_ref())?;
+    let provider = opi_ai::anthropic::AnthropicProvider::with_auth(
+        Arc::new(AuthSource::Store {
+            resolver: Arc::new(resolver.clone()),
+            provider_id: "anthropic".into(),
+            oauth,
+        }),
+        config.providers.anthropic.base_url.clone(),
+        client,
+    );
+    Ok(Box::new(provider))
+}
+
+/// Build the Anthropic OAuth provider from a non-refreshable
+/// `ANTHROPIC_OAUTH_TOKEN` environment variable. Precedence: a stored OAuth
+/// credential wins (-> [`build_anthropic_oauth`]); this path is the fallback
+/// when `ANTHROPIC_OAUTH_TOKEN` is present but no credential is stored. The
+/// token is used until 401, then the turn stops (CredentialRevoked) and
+/// explicit re-login is required — no auto-refresh.
+async fn build_anthropic_env_oauth(
+    config: &OpiConfig,
+    resolver: &CredentialResolver,
+) -> Result<Box<dyn Provider>, ProviderBuildError> {
+    let client = build_proxied_client(config.providers.anthropic.proxy.as_ref())?;
+    let provider = opi_ai::anthropic::AnthropicProvider::with_auth(
+        Arc::new(AuthSource::EnvOAuthToken {
+            env_var: "ANTHROPIC_OAUTH_TOKEN".into(),
+            env_lookup: resolver.env_lookup(),
+        }),
+        config.providers.anthropic.base_url.clone(),
+        client,
+    );
+    Ok(Box::new(provider))
+}
+
+/// Build the Copilot Chat provider (OpenAI Chat compat profile) over a stored
+/// OAuth credential. The per-credential `base_url` (enterprise host) is read
+/// from the store at construction; absent that, the default Copilot host.
+async fn build_copilot_oauth(
+    resolver: &CredentialResolver,
+    registry: &OAuthProviderRegistry,
+) -> Result<Box<dyn Provider>, ProviderBuildError> {
+    let oauth = registry
+        .lookup("copilot")
+        .ok_or_else(|| ProviderBuildError::Config("no copilot OAuth provider registered".into()))?;
+    let base_url = resolver
+        .read_oauth_base_url("copilot")
+        .await
+        .map_err(ProviderBuildError::Provider)?
+        .unwrap_or_else(|| COPILOT_DEFAULT_BASE_URL.to_owned());
+    let client = build_proxied_client(None)?;
+    // Copilot Chat uses `/chat/completions` (no `/v1`); the Copilot compat
+    // profile overrides the path the default OpenAI config would use.
+    let compat = opi_ai::openai_chat::CompatConfig {
+        chat_completions_path: "/chat/completions".into(),
+        ..Default::default()
+    };
+    let provider = opi_ai::openai_chat::OpenAiChatProvider::with_auth(
+        Arc::new(AuthSource::Store {
+            resolver: Arc::new(resolver.clone()),
+            provider_id: "copilot".into(),
+            oauth,
+        }),
+        Some(base_url),
+        compat,
+        "copilot".into(),
+        copilot_extra_headers(),
+        client,
+    );
+    Ok(Box::new(provider))
+}
+
+/// Build the Codex Responses provider (Codex compat profile) over a stored
+/// OAuth credential, targeting `/codex/responses` with the account-id
+/// derivation and the required Codex headers. The base URL is the stored
+/// credential's `base_url` when present, otherwise [`CODEX_DEFAULT_BASE_URL`]
+/// (production Codex PKCE carries no base URL, so the default always wins).
+async fn build_codex_oauth(
+    resolver: &CredentialResolver,
+    registry: &OAuthProviderRegistry,
+) -> Result<Box<dyn Provider>, ProviderBuildError> {
+    let oauth = registry
+        .lookup("codex")
+        .ok_or_else(|| ProviderBuildError::Config("no codex OAuth provider registered".into()))?;
+    let base_url = resolver
+        .read_oauth_base_url("codex")
+        .await
+        .map_err(ProviderBuildError::Provider)?
+        .unwrap_or_else(|| CODEX_DEFAULT_BASE_URL.to_owned());
+    let client = build_proxied_client(None)?;
+    let config = opi_ai::openai_responses::ResponsesConfig {
+        responses_path: "/codex/responses".into(),
+        derive_codex_account_id: true,
+        ..Default::default()
+    };
+    let provider = opi_ai::openai_responses::OpenAiResponsesProvider::with_auth_extra(
+        Arc::new(AuthSource::Store {
+            resolver: Arc::new(resolver.clone()),
+            provider_id: "codex".into(),
+            oauth,
+        }),
+        Some(base_url),
+        config,
+        "codex".into(),
+        codex_extra_headers(),
+        client,
+    );
+    Ok(Box::new(provider))
+}
+
+/// Build the active provider, routing Anthropic/Copilot/Codex to their OAuth
+/// builders when an OAuth credential is in play, and falling through to the
+/// API-key resolver path for everything else. This is the Phase 14.2 production
+/// routing entry point; [`build_provider_production`] constructs the resolver +
+/// registry and delegates here.
+///
+/// Routing:
+/// - `copilot:` / `codex:` model specs are OAuth-only -> their OAuth builder.
+/// - `anthropic:` -> precedence: stored OAuth credential >
+///   `ANTHROPIC_OAUTH_TOKEN` env > API-key env/fallback.
+/// - everything else -> the API-key path.
+pub async fn build_provider_with_oauth(
+    config: &OpiConfig,
+    resolver: &CredentialResolver,
+    registry: &OAuthProviderRegistry,
+) -> Result<Box<dyn Provider>, ProviderBuildError> {
+    let spec = &config.defaults.model;
+    let (provider_id, _) = parse_model_spec(spec).map_err(|_| {
+        ProviderBuildError::Config(format!(
+            "invalid model spec: {spec:?} (expected provider:model)"
+        ))
+    })?;
+    match provider_id {
+        "copilot" => build_copilot_oauth(resolver, registry).await,
+        "codex" => build_codex_oauth(resolver, registry).await,
+        "anthropic" => {
+            let has_store = resolver
+                .has_oauth_credential("anthropic")
+                .await
+                .map_err(ProviderBuildError::Provider)?;
+            if has_store {
+                build_anthropic_oauth(config, resolver, registry).await
+            } else if resolver.env_value("ANTHROPIC_OAUTH_TOKEN").is_some() {
+                build_anthropic_env_oauth(config, resolver).await
+            } else {
+                build_provider_with_resolver(config, resolver).await
+            }
+        }
+        _ => build_provider_with_resolver(config, resolver).await,
+    }
+}
+
+/// Build the [`ProviderBundle`] (provider + store + resolver + OAuth registry)
+/// for production startup. Callers that need the store and registry for
+/// `/login`, `/logout`, or `CredentialNeeded` retry take the full bundle; others
+/// extract only the provider.
+pub async fn build_provider_bundle(
     config: &OpiConfig,
     user_config_dir: std::path::PathBuf,
-) -> Result<Box<dyn Provider>, ProviderBuildError> {
+) -> Result<ProviderBundle, ProviderBuildError> {
     let store = Arc::new(crate::credential_store::KeychainCredentialStore::new(
         Box::new(crate::credential_store::KeyringCoreBackend::new()),
         user_config_dir,
     ));
-    let resolver = crate::credential_store::CredentialResolver::production(store);
-    build_provider_with_resolver(config, &resolver).await
+    let resolver = crate::credential_store::CredentialResolver::production(store.clone());
+    let registry = crate::oauth::OAuthProviderRegistry::registry_with_builtins();
+    let provider = build_provider_with_oauth(config, &resolver, &registry).await?;
+    Ok(ProviderBundle {
+        provider,
+        store,
+        resolver,
+        registry,
+    })
+}
+
+/// Build the active provider through the production credential resolver: a
+/// [`crate::credential_store::KeychainCredentialStore`] over the platform
+/// keychain with env fallback, plus the built-in OAuth provider registry. Routes
+/// Anthropic/Copilot/Codex to their OAuth builders when an OAuth credential is
+/// stored, and falls through to the API-key path otherwise. This is a
+/// convenience wrapper around [`build_provider_bundle`]; callers that need the
+/// store + registry for `/login`/`/logout` should call [`build_provider_bundle`]
+/// directly.
+pub async fn build_provider_production(
+    config: &OpiConfig,
+    user_config_dir: std::path::PathBuf,
+) -> Result<Box<dyn Provider>, ProviderBuildError> {
+    build_provider_bundle(config, user_config_dir)
+        .await
+        .map(|bundle| bundle.provider)
 }
 
 /// Resolve the API-key env var name for a built-in provider, or `None` for

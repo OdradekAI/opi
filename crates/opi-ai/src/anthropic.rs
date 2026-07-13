@@ -3,9 +3,11 @@
 use std::sync::Arc;
 
 use futures_util::{StreamExt, stream};
+use secrecy::{ExposeSecret, SecretString};
 use serde::Deserialize;
 use tokio_util::sync::CancellationToken;
 
+use crate::auth::{AuthResolver, AuthScheme, ResolvedAuth, StaticAuthResolver};
 use crate::http::HttpClient;
 use crate::message::{AssistantContent, AssistantMessage, ToolCall};
 use crate::provider::{EventStream, ModelInfo, Provider, ProviderError, Request};
@@ -600,11 +602,18 @@ fn empty_assistant_message() -> AssistantMessage {
 // AnthropicProvider
 // ---------------------------------------------------------------------------
 
+/// The `anthropic-beta` tag Anthropic OAuth requires on every request issued
+/// under a Bearer (OAuth) credential. API-key requests do not send it. Gated on
+/// `AuthScheme::Bearer` in `stream_http` — the only Bearer path for Anthropic —
+/// so no extra-headers field or flag is needed. RESIDUAL: the exact tag value
+/// was set from the upstream pi source at slice-5 time; it must be re-confirmed
+/// against a current Anthropic OAuth reference before a production login is
+/// advertised, since beta tags rotate.
+const ANTHROPIC_OAUTH_BETA_HEADER: &str = "oauth-2025-04-20";
+
 /// Concrete Anthropic Messages API provider.
 pub struct AnthropicProvider {
-    #[allow(dead_code)] // used by HTTP streaming path
-    api_key: String,
-    #[allow(dead_code)] // used by HTTP streaming path
+    auth: Arc<dyn AuthResolver>,
     base_url: String,
     models: Vec<ModelInfo>,
     client: Arc<HttpClient>,
@@ -617,6 +626,23 @@ impl AnthropicProvider {
 
     /// Create with a shared HTTP client for connection pooling.
     pub fn with_client(api_key: String, base_url: Option<String>, client: Arc<HttpClient>) -> Self {
+        let auth = Arc::new(StaticAuthResolver::new(
+            AuthScheme::ApiKey,
+            SecretString::from(api_key),
+        ));
+        Self::with_auth(auth, base_url, client)
+    }
+
+    /// Build with an injected per-request auth resolver (Phase 14.2). The
+    /// resolver is consulted inside `Provider::stream` immediately before each
+    /// HTTP request; `new`/`with_client` wrap a fixed key in a
+    /// [`StaticAuthResolver`]. OAuth/env-backed resolution is supplied through
+    /// this entry point by `opi-coding-agent`.
+    pub fn with_auth(
+        auth: Arc<dyn AuthResolver>,
+        base_url: Option<String>,
+        client: Arc<HttpClient>,
+    ) -> Self {
         let base_url = base_url.unwrap_or_else(|| "https://api.anthropic.com".into());
         let models = vec![
             ModelInfo {
@@ -648,7 +674,7 @@ impl AnthropicProvider {
             },
         ];
         Self {
-            api_key,
+            auth,
             base_url,
             models,
             client,
@@ -745,18 +771,27 @@ impl AnthropicProvider {
     /// Real HTTP streaming: POST to Anthropic Messages API and parse SSE from the byte stream.
     async fn stream_http(
         client: reqwest::Client,
-        api_key: String,
+        resolved: ResolvedAuth,
         base_url: String,
         body: &serde_json::Value,
         cancel: CancellationToken,
         tx: &tokio::sync::mpsc::Sender<Result<AssistantStreamEvent, ProviderError>>,
     ) -> Result<(), ProviderError> {
-        let response = client
+        let secret = resolved.secret.expose_secret();
+        let request = client
             .post(format!("{base_url}/v1/messages"))
-            .header("x-api-key", &api_key)
             .header("anthropic-version", "2023-06-01")
             .header("content-type", "application/json")
-            .body(serde_json::to_string(body).unwrap_or_default())
+            .body(serde_json::to_string(body).unwrap_or_default());
+        let request = match resolved.scheme {
+            AuthScheme::ApiKey => request.header("x-api-key", secret),
+            // OAuth Bearer credential: the required beta header rides the same
+            // arm. API-key construction never enters this arm.
+            AuthScheme::Bearer => request
+                .header("authorization", format!("Bearer {secret}"))
+                .header("anthropic-beta", ANTHROPIC_OAUTH_BETA_HEADER),
+        };
+        let response = request
             .send()
             .await
             .map_err(|e| ProviderError::Network(e.to_string()))?;
@@ -765,7 +800,12 @@ impl AnthropicProvider {
         if !status.is_success() {
             let headers = response.headers().clone();
             let error_body = response.text().await.unwrap_or_default();
-            return Err(map_http_status(status, &error_body, &headers));
+            return Err(map_http_status(
+                status,
+                &error_body,
+                &headers,
+                resolved.scheme,
+            ));
         }
 
         let mut byte_stream = response.bytes_stream();
@@ -862,12 +902,23 @@ fn drain_sse_events(buffer: &mut String) -> Vec<ParsedEvent> {
 }
 
 /// Map an HTTP status code + body + headers to a `ProviderError`.
+///
+/// `scheme` makes the 401 path scheme-aware: a 401 on a Bearer (OAuth)
+/// credential is typed non-retryable `CredentialRevoked` with the body DROPPED
+/// (an enterprise proxy may echo the submitted Bearer in a 401 body, so the body
+/// never reaches a Display string), while an API-key 401 stays `AuthFailed` with
+/// a redacted excerpt. 403 is `AuthFailed` for both schemes.
 fn map_http_status(
     status: reqwest::StatusCode,
     body: &str,
     headers: &reqwest::header::HeaderMap,
+    scheme: AuthScheme,
 ) -> ProviderError {
     match status.as_u16() {
+        401 if scheme == AuthScheme::Bearer => ProviderError::CredentialRevoked {
+            // Body intentionally dropped.
+            provider_id: "anthropic".to_owned(),
+        },
         401 => ProviderError::AuthFailed(format!(
             "authentication failed: {}",
             crate::http::safe_excerpt(body)
@@ -1003,7 +1054,7 @@ fn serialize_messages(messages: &[crate::message::Message]) -> serde_json::Value
 
 impl Provider for AnthropicProvider {
     fn stream(&self, request: Request) -> EventStream {
-        let api_key = self.api_key.clone();
+        let auth = self.auth.clone();
         let base_url = self.base_url.clone();
         let body = self.build_request_body(&request);
         let cancel = request.cancel.clone();
@@ -1012,8 +1063,15 @@ impl Provider for AnthropicProvider {
         let (tx, rx) = tokio::sync::mpsc::channel(64);
 
         tokio::spawn(async move {
+            let resolved = match auth.resolve().await {
+                Ok(resolved) => resolved,
+                Err(e) => {
+                    let _ = tx.send(Err(e)).await;
+                    return;
+                }
+            };
             if let Err(e) =
-                Self::stream_http(http_client, api_key, base_url, &body, cancel, &tx).await
+                Self::stream_http(http_client, resolved, base_url, &body, cancel, &tx).await
             {
                 let _ = tx.send(Err(e)).await;
             }

@@ -5,6 +5,7 @@
 //! OpenAI-compatible profiles for OpenRouter and Mistral.
 
 pub mod anthropic;
+pub mod auth;
 pub mod azure_openai;
 pub mod bedrock;
 pub mod config;
@@ -28,6 +29,10 @@ pub mod test_support;
 pub mod time;
 pub mod vertex;
 
+pub use auth::{
+    AuthResolver, AuthScheme, LoginPresenter, OAuthCredential, OAuthProvider, ResolvedAuth,
+    StaticAuthResolver,
+};
 pub use config::{Config, Error};
 pub use credential::{
     BoxAuthFuture, Credential, CredentialSource, CredentialStore, CredentialStoreError,

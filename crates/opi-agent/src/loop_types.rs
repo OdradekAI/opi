@@ -16,6 +16,10 @@ pub enum AgentError {
     Provider(String),
     #[error("authentication failed: {0}")]
     AuthFailed(String),
+    #[error("credential needed for '{provider_id}': run /login {provider_id}")]
+    CredentialNeeded { provider_id: String },
+    #[error("credential revoked for '{provider_id}': login required")]
+    CredentialRevoked { provider_id: String },
     #[error("tool error: {0}")]
     Tool(String),
     #[error("hook error: {0}")]

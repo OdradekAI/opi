@@ -8,6 +8,11 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
+use opi_ai::anthropic::AnthropicProvider;
+use opi_ai::auth::{AuthResolver, ResolvedAuth};
+use opi_ai::credential::BoxAuthFuture;
+use opi_ai::http::HttpClient;
+use opi_ai::provider::ProviderError;
 use opi_ai::test_support::{self, MockProvider};
 use opi_coding_agent::config::OpiConfig;
 use opi_coding_agent::package_resolver::local_lock_entry;
@@ -543,5 +548,73 @@ fn e2e_non_interactive_text_mode_auth_failure_exits_3() {
     assert!(
         stdout.is_empty(),
         "text non-interactive auth failure should not write stdout, got: {stdout:?}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Phase 14.2: typed CredentialNeeded -> exit 3, no prompt, no blocking
+// ---------------------------------------------------------------------------
+
+/// A resolver that always reports no credential is available for the given
+/// provider, producing `ProviderError::CredentialNeeded`.
+struct CredentialMissingResolver {
+    provider_id: &'static str,
+}
+
+impl AuthResolver for CredentialMissingResolver {
+    fn resolve<'a>(&'a self) -> BoxAuthFuture<'a, Result<ResolvedAuth, ProviderError>> {
+        let provider_id = self.provider_id.to_owned();
+        Box::pin(async move { Err(ProviderError::CredentialNeeded { provider_id }) })
+    }
+}
+
+#[tokio::test]
+async fn non_interactive_credential_needed_exits_3_without_prompt() {
+    let provider = AnthropicProvider::with_auth(
+        Arc::new(CredentialMissingResolver {
+            provider_id: "anthropic",
+        }),
+        None,
+        Arc::new(HttpClient::new()),
+    );
+
+    let mut runner = NonInteractiveRunner::new(
+        Box::new(provider),
+        "anthropic:claude-sonnet-4-5".into(),
+        OpiConfig::default(),
+        std::env::current_dir().unwrap(),
+        false,
+        None,
+        Vec::new(),
+    );
+
+    let result = runner.run("hello").await;
+
+    assert_eq!(
+        result.exit_code,
+        ExitCode::AuthFailure as i32,
+        "CredentialNeeded must exit 3 (AuthFailure), got {}",
+        result.exit_code
+    );
+    assert!(
+        result.stderr.contains("credential needed"),
+        "stderr must contain 'credential needed': {}",
+        result.stderr
+    );
+    assert!(
+        result.stderr.contains("anthropic"),
+        "stderr must name the provider: {}",
+        result.stderr
+    );
+    assert!(
+        result.stderr.contains("/login anthropic"),
+        "stderr must include remediation '/login anthropic': {}",
+        result.stderr
+    );
+    // Non-interactive mode must NOT prompt, block, or start an OAuth flow.
+    assert!(
+        result.stdout.is_empty(),
+        "non-interactive CredentialNeeded must not write stdout: {:?}",
+        result.stdout
     );
 }

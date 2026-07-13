@@ -559,13 +559,13 @@ async fn run_interactive(
     use opi_coding_agent::harness::{CodingHarness, InteractiveCodingHooks};
     use opi_coding_agent::interactive;
 
-    let provider = match opi_coding_agent::provider_factory::build_provider_production(
+    let bundle = match opi_coding_agent::provider_factory::build_provider_bundle(
         config,
         opi_coding_agent::config::user_config_dir(),
     )
     .await
     {
-        Ok(p) => p,
+        Ok(b) => b,
         Err(opi_coding_agent::provider_factory::ProviderBuildError::Auth(msg)) => {
             eprintln!("opi: {msg}");
             std::process::exit(3);
@@ -579,6 +579,7 @@ async fn run_interactive(
             std::process::exit(2);
         }
     };
+    let provider = bundle.provider;
 
     let user_system_prompt = cli
         .system
@@ -645,6 +646,11 @@ async fn run_interactive(
     let model_display = config.defaults.model.clone();
     let theme_name = config.defaults.theme.clone();
     let keybindings = parse_keybindings(&config.keybindings);
+    // Phase 14.2: attach the credential store and OAuth registry so the
+    // interactive loop can handle /login, /logout, and CredentialNeeded retry.
+    harness.credential_store = Some(bundle.store);
+    harness.oauth_registry = Some(bundle.registry);
+
     if let Err(e) =
         interactive::run_interactive_tui(harness, model_display, &theme_name, keybindings).await
     {

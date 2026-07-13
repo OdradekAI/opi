@@ -9,9 +9,11 @@
 use std::sync::Arc;
 
 use futures_util::{StreamExt, stream};
+use secrecy::{ExposeSecret, SecretString};
 use serde::Deserialize;
 use tokio_util::sync::CancellationToken;
 
+use crate::auth::{AuthResolver, AuthScheme, ResolvedAuth, StaticAuthResolver};
 use crate::http::HttpClient;
 use crate::message::{
     AssistantContent, AssistantMessage, OutputContent, TOOL_ERROR_MARKER, ToolCall,
@@ -735,7 +737,7 @@ fn empty_assistant_message(provider: &str) -> AssistantMessage {
 /// opi's `Request` model carries no server-side response-chain state (the agent
 /// runtime reconstructs context from the local message history), so it is
 /// deferred to 12.9 as documented provider-correctness work.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct ResponsesConfig {
     /// Emit the top-level `store` field (server-side response retention).
     pub store: Option<bool>,
@@ -743,13 +745,40 @@ pub struct ResponsesConfig {
     pub reasoning_effort: Option<String>,
     /// Emit `"strict": true` on each function tool definition.
     pub strict_tools: bool,
+    /// Request path appended to `base_url` (default `/v1/responses`). The Codex
+    /// compatibility profile sets this to `/codex/responses`.
+    pub responses_path: String,
+    /// Derive the `chatgpt-account-id` header from the bearer token (a JWT) on
+    /// each request. Set by the Codex profile; the standard OpenAI Responses
+    /// profile leaves it false. The derivation is per-request because the token
+    /// changes on refresh.
+    pub derive_codex_account_id: bool,
+}
+
+impl Default for ResponsesConfig {
+    fn default() -> Self {
+        Self {
+            store: None,
+            reasoning_effort: None,
+            strict_tools: false,
+            responses_path: "/v1/responses".into(),
+            derive_codex_account_id: false,
+        }
+    }
 }
 
 pub struct OpenAiResponsesProvider {
-    api_key: String,
+    auth: Arc<dyn AuthResolver>,
     base_url: String,
     models: Vec<ModelInfo>,
     config: ResponsesConfig,
+    /// Provider id returned by `id()`. `"openai-responses"` for standard
+    /// construction; the Codex compatibility profile sets `"codex"` so a revoked
+    /// credential maps to `CredentialRevoked { provider_id: "codex" }` and
+    /// `/login codex` remediation resolves.
+    provider_id: String,
+    /// Static per-request headers (Codex `OpenAI-Beta`, `originator`, `accept`).
+    extra_headers: Vec<(String, String)>,
     client: Arc<HttpClient>,
 }
 
@@ -760,7 +789,11 @@ impl OpenAiResponsesProvider {
 
     /// Create with a shared HTTP client.
     pub fn with_client(api_key: String, base_url: Option<String>, client: Arc<HttpClient>) -> Self {
-        Self::with_client_and_config(api_key, base_url, ResponsesConfig::default(), client)
+        let auth = Arc::new(StaticAuthResolver::new(
+            AuthScheme::ApiKey,
+            SecretString::from(api_key),
+        ));
+        Self::with_auth(auth, base_url, ResponsesConfig::default(), client)
     }
 
     /// Create with native Responses profile flags.
@@ -769,14 +802,39 @@ impl OpenAiResponsesProvider {
         base_url: Option<String>,
         config: ResponsesConfig,
     ) -> Self {
-        Self::with_client_and_config(api_key, base_url, config, Arc::new(HttpClient::new()))
+        let auth = Arc::new(StaticAuthResolver::new(
+            AuthScheme::ApiKey,
+            SecretString::from(api_key),
+        ));
+        Self::with_auth(auth, base_url, config, Arc::new(HttpClient::new()))
     }
 
-    /// Create with a shared HTTP client and native Responses profile flags.
-    pub fn with_client_and_config(
-        api_key: String,
+    /// Build with an injected per-request auth resolver (Phase 14.2). The
+    /// resolver is consulted inside `Provider::stream` immediately before each
+    /// HTTP request; `new`/`with_client`/`new_with_config` wrap a fixed key in
+    /// a [`StaticAuthResolver`]. OAuth/env-backed resolution (Codex) is supplied
+    /// through [`Self::with_auth_extra`] by `opi-coding-agent`. This entry point
+    /// keeps the standard `"openai-responses"` id and no extra headers.
+    pub fn with_auth(
+        auth: Arc<dyn AuthResolver>,
         base_url: Option<String>,
         config: ResponsesConfig,
+        client: Arc<HttpClient>,
+    ) -> Self {
+        Self::with_auth_extra(auth, base_url, config, "openai-responses".into(), vec![], client)
+    }
+
+    /// Build with an injected auth resolver AND an explicit provider id + static
+    /// headers (Phase 14.2 Codex profile). The Codex compatibility profile
+    /// passes `provider_id = "codex"`, `responses_path = "/codex/responses"`,
+    /// `derive_codex_account_id = true`, and the required Codex headers; the
+    /// standard OpenAI Responses path uses [`Self::with_auth`].
+    pub fn with_auth_extra(
+        auth: Arc<dyn AuthResolver>,
+        base_url: Option<String>,
+        config: ResponsesConfig,
+        provider_id: String,
+        extra_headers: Vec<(String, String)>,
         client: Arc<HttpClient>,
     ) -> Self {
         let base_url = base_url.unwrap_or_else(|| "https://api.openai.com".into());
@@ -819,10 +877,12 @@ impl OpenAiResponsesProvider {
             },
         ];
         Self {
-            api_key,
+            auth,
             base_url,
             models,
             config,
+            provider_id,
+            extra_headers,
             client,
         }
     }
@@ -1027,18 +1087,39 @@ impl OpenAiResponsesProvider {
     }
 
     /// Real HTTP streaming: POST to OpenAI Responses API.
+    #[allow(clippy::too_many_arguments)]
     async fn stream_http(
         http_client: reqwest::Client,
-        api_key: String,
+        resolved: ResolvedAuth,
         base_url: String,
+        config: ResponsesConfig,
+        extra_headers: Vec<(String, String)>,
+        provider_id: String,
         body: &serde_json::Value,
         cancel: CancellationToken,
         tx: &tokio::sync::mpsc::Sender<Result<AssistantStreamEvent, ProviderError>>,
     ) -> Result<(), ProviderError> {
-        let response = http_client
-            .post(format!("{base_url}/v1/responses"))
-            .header("authorization", format!("Bearer {api_key}"))
-            .header("content-type", "application/json")
+        let url = crate::endpoint::join_endpoint(&base_url, &config.responses_path);
+        let mut req = http_client
+            .post(url)
+            .header(
+                "authorization",
+                format!("Bearer {}", resolved.secret.expose_secret()),
+            )
+            .header("content-type", "application/json");
+        for (name, value) in &extra_headers {
+            req = req.header(name.as_str(), value.as_str());
+        }
+        if config.derive_codex_account_id {
+            // Per-request derivation: the token changes on refresh, so the id
+            // cannot be baked at construction. On ANY decode failure the header
+            // is omitted rather than risking formatting the token/segment into
+            // an error or header value.
+            if let Some(account_id) = derive_codex_account_id(&resolved.secret) {
+                req = req.header("chatgpt-account-id", account_id);
+            }
+        }
+        let response = req
             .body(serde_json::to_string(body).unwrap_or_default())
             .send()
             .await
@@ -1048,7 +1129,13 @@ impl OpenAiResponsesProvider {
         if !status.is_success() {
             let headers = response.headers().clone();
             let error_body = response.text().await.unwrap_or_default();
-            return Err(map_http_status(status, &error_body, &headers));
+            return Err(map_http_status(
+                status,
+                &error_body,
+                &headers,
+                resolved.scheme,
+                &provider_id,
+            ));
         }
 
         let mut byte_stream = response.bytes_stream();
@@ -1136,12 +1223,47 @@ fn drain_sse_frames(buffer: &mut String) -> Vec<SseFrame> {
     frames
 }
 
+/// Derive the `chatgpt-account-id` from a Codex access token (a JWT) for the
+/// per-request `chatgpt-account-id` header. The Codex token's JWT payload
+/// carries the account id under `https://api.openai.com/auth.chatgpt_account_id`.
+///
+/// Returns `None` on any decode failure (opaque token, non-JWT, malformed
+/// base64, non-JSON payload, missing claim). The token and every JWT segment
+/// are NEVER formatted into a `String` flowing to an error or header value, so
+/// an undecodable token simply omits the header rather than leaking material.
+fn derive_codex_account_id(secret: &secrecy::SecretString) -> Option<String> {
+    use base64::Engine;
+    let raw: &str = secret.expose_secret();
+    // A JWT has three dot-separated base64url segments; the payload is middle.
+    let mut parts = raw.split('.');
+    let _header = parts.next()?;
+    let payload = parts.next()?;
+    let decoded = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(payload)
+        .or_else(|_| base64::engine::general_purpose::URL_SAFE.decode(payload))
+        .ok()?;
+    let value: serde_json::Value = serde_json::from_slice(&decoded).ok()?;
+    value
+        .get("https://api.openai.com/auth")
+        .and_then(|auth| auth.get("chatgpt_account_id"))
+        .and_then(|v| v.as_str())
+        .map(str::to_owned)
+}
+
 fn map_http_status(
     status: reqwest::StatusCode,
     body: &str,
     headers: &reqwest::header::HeaderMap,
+    scheme: AuthScheme,
+    provider_id: &str,
 ) -> ProviderError {
     match status.as_u16() {
+        // A 401 on a Bearer (OAuth) credential — e.g. Codex — is typed
+        // non-retryable CredentialRevoked with the body dropped (the body may
+        // echo the submitted token). API-key Responses stays AuthFailed.
+        401 if scheme == AuthScheme::Bearer => ProviderError::CredentialRevoked {
+            provider_id: provider_id.to_owned(),
+        },
         401 => ProviderError::AuthFailed(format!(
             "authentication failed: {}",
             crate::http::safe_excerpt(body)
@@ -1162,8 +1284,11 @@ fn map_http_status(
 
 impl Provider for OpenAiResponsesProvider {
     fn stream(&self, request: Request) -> EventStream {
-        let api_key = self.api_key.clone();
+        let auth = self.auth.clone();
         let base_url = self.base_url.clone();
+        let config = self.config.clone();
+        let extra_headers = self.extra_headers.clone();
+        let provider_id = self.provider_id.clone();
         let body = self.build_request_body(&request);
         let cancel = request.cancel.clone();
         let http_client = self.client.client().clone();
@@ -1171,8 +1296,25 @@ impl Provider for OpenAiResponsesProvider {
         let (tx, rx) = tokio::sync::mpsc::channel(64);
 
         tokio::spawn(async move {
-            if let Err(e) =
-                Self::stream_http(http_client, api_key, base_url, &body, cancel, &tx).await
+            let resolved = match auth.resolve().await {
+                Ok(resolved) => resolved,
+                Err(e) => {
+                    let _ = tx.send(Err(e)).await;
+                    return;
+                }
+            };
+            if let Err(e) = Self::stream_http(
+                http_client,
+                resolved,
+                base_url,
+                config,
+                extra_headers,
+                provider_id,
+                &body,
+                cancel,
+                &tx,
+            )
+            .await
             {
                 let _ = tx.send(Err(e)).await;
             }
@@ -1182,7 +1324,7 @@ impl Provider for OpenAiResponsesProvider {
     }
 
     fn id(&self) -> &str {
-        "openai-responses"
+        &self.provider_id
     }
 
     fn models(&self) -> &[ModelInfo] {

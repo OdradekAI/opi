@@ -506,6 +506,16 @@ pub async fn agent_loop(
                             opi_ai::provider::ProviderError::AuthFailed(msg) => {
                                 AgentError::AuthFailed(msg.clone())
                             }
+                            opi_ai::provider::ProviderError::CredentialNeeded {
+                                provider_id,
+                            } => AgentError::CredentialNeeded {
+                                provider_id: provider_id.clone(),
+                            },
+                            opi_ai::provider::ProviderError::CredentialRevoked {
+                                provider_id,
+                            } => AgentError::CredentialRevoked {
+                                provider_id: provider_id.clone(),
+                            },
                             opi_ai::provider::ProviderError::Cancelled => AgentError::Cancelled,
                             _ => AgentError::Provider(e.to_string()),
                         });

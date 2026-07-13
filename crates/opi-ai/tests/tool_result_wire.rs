@@ -378,8 +378,10 @@ fn provider_tool_result_error_no_phase12_breadth_guard() {
     }
 
     let lib_lower = lib_rs.to_lowercase();
+    // Phase 14.2 deliberately added the scoped `auth` module (OAuth auth
+    // contracts) to lib.rs; "oauth" is no longer a forbidden token there. The
+    // module-freeze below still catches accidental module additions.
     for forbidden in [
-        "oauth",
         "image_gen",
         "image_generation",
         "marketplace",
@@ -396,9 +398,11 @@ fn provider_tool_result_error_no_phase12_breadth_guard() {
     // Provider-module freeze: the public module set declared in lib.rs must equal
     // the reviewed Phase 11 baseline. Adding a provider family (Phase 12) requires
     // deliberately updating this baseline; this guard catches an accidental add.
-    // (Phase 14 deliberately added the `credential` module.)
+    // (Phase 14.1 added the `credential` module; Phase 14.2 added the `auth`
+    // module with scoped OAuth auth contracts.)
     let baseline_modules = vec![
         "anthropic",
+        "auth",
         "azure_openai",
         "bedrock",
         "config",

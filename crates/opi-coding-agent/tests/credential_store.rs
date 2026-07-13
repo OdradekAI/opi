@@ -459,7 +459,7 @@ async fn keychain_store_reaches_production_construction() {
     use opi_coding_agent::credential_store::{CredentialResolver, KeychainCredentialStore};
 
     let dir = TempDir::new().unwrap();
-    let store: Arc<dyn CredentialStore> = Arc::new(KeychainCredentialStore::new(
+    let store: Arc<KeychainCredentialStore> = Arc::new(KeychainCredentialStore::new(
         Box::new(FakeKeyringBackend::new()),
         dir.path().to_path_buf(),
     ));

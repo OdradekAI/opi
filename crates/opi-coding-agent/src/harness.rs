@@ -49,6 +49,8 @@ use serde::Serialize;
 
 use crate::config::OpiConfig;
 use crate::context_files;
+use crate::credential_store::KeychainCredentialStore;
+use crate::oauth::OAuthProviderRegistry;
 use crate::diagnostic_bridge::{
     diagnostic_for_package_discovery_error, diagnostic_for_resource_discovery_error,
     diagnostic_for_resource_layer_message, diagnostic_from_package,
@@ -131,6 +133,11 @@ pub struct CodingHarness {
     active_trace: Option<Arc<TraceCollector>>,
     /// Monotonic counter minting per-run trace run ids.
     run_seq: u64,
+    /// The OS-keychain-backed credential store, set by production startup.
+    /// Used by the interactive loop for `/login` and `/logout`.
+    pub credential_store: Option<Arc<KeychainCredentialStore>>,
+    /// The built-in OAuth provider registry, set by production startup.
+    pub oauth_registry: Option<OAuthProviderRegistry>,
 }
 
 pub struct RuntimeThinkingState {
@@ -901,6 +908,8 @@ impl CodingHarness {
             trace,
             active_trace: None,
             run_seq: 0,
+            credential_store: None,
+            oauth_registry: None,
         };
 
         // Phase 13.3: re-apply recorded model/thinking on the CLI --resume path
@@ -1434,6 +1443,29 @@ impl CodingHarness {
         self.prepare_trace_run()?;
         let offset = self.turn_offset;
         let messages = match self.agent.prompt_with_content(content).await {
+            Ok(m) => m,
+            Err(e) => {
+                self.finish_trace_run();
+                return Err(e);
+            }
+        };
+        let new = &messages[offset..];
+        self.persist_turn(new, offset).await;
+        self.finish_trace_run();
+        let final_messages = self.current_messages();
+        self.turn_offset = final_messages.len();
+        Ok(final_messages)
+    }
+
+    /// Retry the agent loop with the current messages (no new user message),
+    /// used after a `CredentialNeeded` error is resolved via interactive login.
+    /// The user message from the original `prompt`/`continue_` call is already
+    /// in the agent's message list, so re-prompting would duplicate it.
+    pub async fn retry_last_prompt(&mut self) -> Result<Vec<AgentMessage>, AgentError> {
+        self.restore_pending_extension_state().await;
+        self.prepare_trace_run()?;
+        let offset = self.turn_offset;
+        let messages = match self.agent.retry_last_turn().await {
             Ok(m) => m,
             Err(e) => {
                 self.finish_trace_run();

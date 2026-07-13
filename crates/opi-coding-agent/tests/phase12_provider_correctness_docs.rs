@@ -160,6 +160,10 @@ const NON_PROVIDER_MODULES: &[&str] = &[
     "stream",
     "test_support",
     "time",
+    // Phase 14 auth-contract modules (not providers): per-request auth
+    // resolution contracts (auth.rs) and the credential envelope (credential.rs).
+    "auth",
+    "credential",
 ];
 
 /// The ten Phase 12 non-goals (design doc, "Non-Goals") with an English and a
@@ -672,14 +676,18 @@ fn default_provider_tests_are_network_free() {
     //     pattern is `var("X")` (reading host credentials), which a live test
     //     would require. Endpoint-URL presence is not flagged because a real
     //     domain as a config base_url does not imply a live HTTP call.
+    // Tokens are qualified with `::` so write helpers like `remove_var("X")` /
+    // `set_var("X")` (which contain the `var("X")` substring) are not mistaken
+    // for credential reads. `std::env::var("X")` / `env::var("X")` reads are
+    // still caught; `var_os` reads are out of scope (unchanged).
     let real_creds = [
-        "var(\"ANTHROPIC_API_KEY\")",
-        "var(\"OPENAI_API_KEY\")",
-        "var(\"GEMINI_API_KEY\")",
-        "var(\"AZURE_OPENAI_API_KEY\")",
-        "var(\"VERTEX_ACCESS_TOKEN\")",
-        "var(\"OPENROUTER_API_KEY\")",
-        "var(\"MISTRAL_API_KEY\")",
+        "::var(\"ANTHROPIC_API_KEY\")",
+        "::var(\"OPENAI_API_KEY\")",
+        "::var(\"GEMINI_API_KEY\")",
+        "::var(\"AZURE_OPENAI_API_KEY\")",
+        "::var(\"VERTEX_ACCESS_TOKEN\")",
+        "::var(\"OPENROUTER_API_KEY\")",
+        "::var(\"MISTRAL_API_KEY\")",
     ];
     let mut scanned_files = 0usize;
     for dir in [

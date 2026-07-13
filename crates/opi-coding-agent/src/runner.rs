@@ -697,7 +697,9 @@ fn stderr_for_agent_error(error: &AgentError, suffix: &str) -> String {
 fn exit_code_for_agent_error(error: &AgentError) -> i32 {
     match error {
         AgentError::Cancelled => ExitCode::Interrupted as i32,
-        AgentError::AuthFailed(_) => ExitCode::AuthFailure as i32,
+        AgentError::AuthFailed(_)
+        | AgentError::CredentialNeeded { .. }
+        | AgentError::CredentialRevoked { .. } => ExitCode::AuthFailure as i32,
         AgentError::Provider(_) => ExitCode::ProviderFailure as i32,
         AgentError::Tool(_) => ExitCode::ToolFailure as i32,
         AgentError::Hook(_) | AgentError::MaxTurnsExceeded(_) | AgentError::TraceSetup(_) => {

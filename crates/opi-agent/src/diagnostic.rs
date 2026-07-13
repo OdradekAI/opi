@@ -228,6 +228,15 @@ pub mod code {
     pub const CODE_PROVIDER_CONFIG: &str = "provider_config_error";
     pub const CODE_PROVIDER_SIDE: &str = "provider_side_error";
     pub const CODE_PROVIDER_CANCELLED: &str = "provider_cancelled";
+    /// No credential is available for the provider; the caller must obtain one
+    /// (interactive `/login` or a typed non-interactive diagnostic). Distinct
+    /// from `provider_auth_failed` because it routes to the login path, not
+    /// retry. Non-retryable.
+    pub const CODE_PROVIDER_CREDENTIAL_NEEDED: &str = "provider_credential_needed";
+    /// A previously valid credential was rejected by the provider (e.g. 401 on
+    /// an OAuth token). Non-retryable; the turn ends and a later explicit
+    /// `/login` is required. Never auto-relogs-in mid-stream.
+    pub const CODE_PROVIDER_CREDENTIAL_REVOKED: &str = "provider_credential_revoked";
     /// Generic provider failure surfaced through the agent loop when the
     /// structured [`opi_ai::provider::ProviderError`] category is no longer
     /// recoverable (e.g. retries exhausted).
@@ -664,6 +673,22 @@ impl From<&opi_ai::provider::ProviderError> for Diagnostic {
             )
             .details(serde_json::json!({ "provider_error": message }))
             .action(ACTION_CHECK_CREDENTIALS),
+            ProviderError::CredentialNeeded { provider_id } => Diagnostic::new(
+                Severity::Warning,
+                code::CODE_PROVIDER_CREDENTIAL_NEEDED,
+                SOURCE_PROVIDER,
+                "credential needed for provider",
+            )
+            .details(serde_json::json!({ "provider_id": provider_id }))
+            .action("run `/login <provider>` to authenticate"),
+            ProviderError::CredentialRevoked { provider_id } => Diagnostic::new(
+                Severity::Error,
+                code::CODE_PROVIDER_CREDENTIAL_REVOKED,
+                SOURCE_PROVIDER,
+                "credential revoked by provider",
+            )
+            .details(serde_json::json!({ "provider_id": provider_id }))
+            .action("re-login required via `/login <provider>`"),
             ProviderError::Network(message) => Diagnostic::new(
                 Severity::Warning,
                 code::CODE_PROVIDER_NETWORK,
@@ -726,6 +751,26 @@ impl From<&crate::loop_types::AgentError> for Diagnostic {
             )
             .details(serde_json::json!({ "provider_error": message }))
             .action(ACTION_CHECK_CREDENTIALS),
+            AgentError::CredentialNeeded { provider_id } => Diagnostic::new(
+                Severity::Error,
+                code::CODE_PROVIDER_CREDENTIAL_NEEDED,
+                SOURCE_PROVIDER,
+                format!("credential needed for '{provider_id}' — run /login {provider_id}"),
+            )
+            .details(
+                serde_json::json!({ "credential_needed_for": provider_id }),
+            )
+            .action(format!("run /login {provider_id}")),
+            AgentError::CredentialRevoked { provider_id } => Diagnostic::new(
+                Severity::Error,
+                code::CODE_PROVIDER_CREDENTIAL_REVOKED,
+                SOURCE_PROVIDER,
+                format!("credential revoked for '{provider_id}' — login required"),
+            )
+            .details(
+                serde_json::json!({ "credential_revoked_for": provider_id }),
+            )
+            .action(format!("run /login {provider_id} to re-authenticate")),
             AgentError::Tool(message) => Diagnostic::new(
                 Severity::Error,
                 code::CODE_TOOL_FAILED,

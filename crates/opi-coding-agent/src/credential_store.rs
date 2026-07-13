@@ -26,9 +26,11 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
+use opi_ai::auth::{AuthResolver, AuthScheme, OAuthCredential, OAuthProvider, ResolvedAuth};
 use opi_ai::credential::{
     BoxAuthFuture, Credential, CredentialSource, CredentialStore, CredentialStoreError,
 };
+use opi_ai::provider::ProviderError;
 use secrecy::{ExposeSecret, SecretString};
 
 /// Keychain service name. Every opi entry is stored under service `opi` with
@@ -209,6 +211,14 @@ impl FakeKeyringBackend {
             .unwrap()
             .get(&(service.to_owned(), provider_id.to_owned()))
             .cloned()
+    }
+
+    /// Seed an already-decoded credential for `(service, provider_id)` by
+    /// encoding it through the versioned envelope. Lets a test inject a
+    /// concurrent writer's fresh credential into shared backend state without
+    /// going through the (locked) store write.
+    pub fn seed_credential(&self, service: &str, provider_id: &str, cred: &Credential) {
+        self.seed_raw(service, provider_id, &encode_credential(cred));
     }
 }
 
@@ -571,6 +581,13 @@ impl KeychainCredentialStore {
             .delete(&self.service, provider_id)
             .map_err(|error| self.backend_err(provider_id, error))
     }
+
+    /// Acquire the mutation lock (Phase 14.2 OAuth refresh). Holds the exclusive
+    /// `fs4` lock across the refresh-HTTP + write so refresh-token rotation
+    /// cannot race a concurrent refresh. Drop the returned guard to release.
+    pub(crate) async fn acquire_lock(&self) -> Result<LockGuard, CredentialStoreError> {
+        self.lock.acquire().await
+    }
 }
 
 impl CredentialStore for KeychainCredentialStore {
@@ -658,18 +675,19 @@ pub struct ResolvedApiKey {
 /// keychain is primary; on `Absent` or `BackendUnavailable` the resolver falls
 /// back to the configured env var. Persisted OAuth remains keychain-required
 /// (no env fallback) and is owned by T2.
+#[derive(Clone)]
 pub struct CredentialResolver {
-    store: Arc<dyn CredentialStore>,
+    store: Arc<KeychainCredentialStore>,
     env_lookup: EnvLookup,
 }
 
 impl CredentialResolver {
-    pub fn new(store: Arc<dyn CredentialStore>, env_lookup: EnvLookup) -> Self {
+    pub fn new(store: Arc<KeychainCredentialStore>, env_lookup: EnvLookup) -> Self {
         Self { store, env_lookup }
     }
 
     /// Production resolver: env access via `std::env::var`.
-    pub fn production(store: Arc<dyn CredentialStore>) -> Self {
+    pub fn production(store: Arc<KeychainCredentialStore>) -> Self {
         Self::new(store, Arc::new(|name: &str| std::env::var(name).ok()))
     }
 
@@ -706,5 +724,217 @@ impl CredentialResolver {
                     backend_unavailable,
                 },
             })
+    }
+
+    /// Resolve a stored OAuth credential for `provider_id`, refreshing under the
+    /// mutation lock when the access token is near expiry (5-minute skew via
+    /// [`OAuthCredential::needs_refresh`]). Double-checks under the lock and
+    /// re-reads after a refresh failure so a concurrent writer's fresh token is
+    /// used. Writes only on a successful refresh (no partial write). Returns
+    /// [`ProviderError::CredentialNeeded`] when no OAuth credential is stored.
+    pub async fn resolve_oauth(
+        &self,
+        provider_id: &str,
+        oauth: &dyn OAuthProvider,
+    ) -> Result<ResolvedAuth, ProviderError> {
+        // Fast path: lock-free read.
+        let cred = match self.read_oauth(provider_id).await? {
+            Some(cred) => cred,
+            None => {
+                return Err(ProviderError::CredentialNeeded {
+                    provider_id: provider_id.to_owned(),
+                });
+            }
+        };
+        if !cred.needs_refresh() {
+            return Ok(ResolvedAuth {
+                scheme: AuthScheme::Bearer,
+                secret: cred.access.clone(),
+            });
+        }
+        // Slow path: hold the lock across re-read + refresh-HTTP + write so
+        // refresh-token rotation cannot race a concurrent refresh.
+        let _guard = self
+            .store
+            .acquire_lock()
+            .await
+            .map_err(store_err_to_provider)?;
+        let cred = match self.read_oauth(provider_id).await? {
+            Some(cred) => cred,
+            None => {
+                return Err(ProviderError::CredentialNeeded {
+                    provider_id: provider_id.to_owned(),
+                });
+            }
+        };
+        if !cred.needs_refresh() {
+            // Another writer refreshed between our fast read and the lock.
+            return Ok(ResolvedAuth {
+                scheme: AuthScheme::Bearer,
+                secret: cred.access.clone(),
+            });
+        }
+        match oauth.refresh(&cred).await {
+            Ok(refreshed) => {
+                let new_store = Credential::from(refreshed.clone());
+                self.store
+                    .write_unlocked(provider_id, &new_store)
+                    .await
+                    .map_err(store_err_to_provider)?;
+                Ok(ResolvedAuth {
+                    scheme: AuthScheme::Bearer,
+                    secret: refreshed.access,
+                })
+            }
+            Err(refresh_err) => {
+                // Post-failure re-read under the lock: a concurrent writer may
+                // have refreshed despite our HTTP failing.
+                match self.read_oauth(provider_id).await? {
+                    Some(reread) if !reread.needs_refresh() => Ok(ResolvedAuth {
+                        scheme: AuthScheme::Bearer,
+                        secret: reread.access.clone(),
+                    }),
+                    _ => Err(refresh_err),
+                }
+            }
+        }
+    }
+
+    /// Read the stored OAuth credential (lock-free). Returns `None` for a
+    /// missing entry or a stored non-OAuth credential.
+    async fn read_oauth(
+        &self,
+        provider_id: &str,
+    ) -> Result<Option<OAuthCredential>, ProviderError> {
+        match self.store.read_unlocked(provider_id).await {
+            Ok(Some(Credential::OAuthToken {
+                access,
+                refresh,
+                expires_at,
+                base_url,
+            })) => Ok(Some(OAuthCredential {
+                access,
+                refresh,
+                expires_at,
+                base_url,
+            })),
+            Ok(Some(_)) | Ok(None) => Ok(None),
+            Err(error) => Err(store_err_to_provider(error)),
+        }
+    }
+
+    /// Whether a stored OAuth credential exists for `provider_id`. Uses
+    /// `probe()` (secret-free, cannot fail), so a `BackendUnavailable` keychain
+    /// is treated as "no credential" — the API-key/env fallback handles routing,
+    /// same as `resolve_api_key`. Does not read the credential value.
+    pub async fn has_oauth_credential(
+        &self,
+        provider_id: &str,
+    ) -> Result<bool, ProviderError> {
+        let source = self.store.probe(provider_id).await;
+        Ok(matches!(source, opi_ai::credential::CredentialSource::Present { .. }))
+    }
+
+    /// The stored OAuth credential's non-secret `base_url` (e.g. a Copilot
+    /// enterprise host), or `None` when no credential is stored OR the stored
+    /// credential has no base_url (Anthropic PKCE). Returns ONLY the base_url —
+    /// access/refresh secrets never leave the resolver. The `None` result is
+    /// meaningful only together with [`has_oauth_credential`](Self::has_oauth_credential).
+    pub async fn read_oauth_base_url(
+        &self,
+        provider_id: &str,
+    ) -> Result<Option<String>, ProviderError> {
+        Ok(self
+            .read_oauth(provider_id)
+            .await?
+            .and_then(|c| c.base_url))
+    }
+
+    /// The injectable environment lookup, for constructing an
+    /// [`AuthSource::EnvOAuthToken`] variant that shares this resolver's
+    /// injected env (tests pass a controlled map; production reads the real
+    /// environment).
+    pub fn env_lookup(&self) -> EnvLookup {
+        Arc::clone(&self.env_lookup)
+    }
+
+    /// Convenience: read `env_var` through the injected lookup (or `None` when
+    /// absent/empty). Used by the factory to decide the Anthropic OAuth path.
+    pub fn env_value(&self, env_var: &str) -> Option<String> {
+        (self.env_lookup)(env_var).filter(|v| !v.trim().is_empty())
+    }
+}
+
+fn store_err_to_provider(error: CredentialStoreError) -> ProviderError {
+    ProviderError::Config(format!("credential store error: {error}"))
+}
+
+// ---------------------------------------------------------------------------
+// AuthSource — how opi-coding-agent sources auth for a provider (Phase 14.2)
+// ---------------------------------------------------------------------------
+
+/// How `opi-coding-agent` sources auth for a provider. Implements
+/// [`AuthResolver`]: [`Baked`](Self::Baked) returns a fixed key;
+/// [`Store`](Self::Store) reads/refreshes a stored OAuth credential via
+/// [`CredentialResolver`]; [`EnvOAuthToken`](Self::EnvOAuthToken) reads a
+/// non-refreshable OAuth access token from an environment variable.
+pub enum AuthSource {
+    /// A fixed secret baked at construction (static API keys).
+    Baked(SecretString),
+    /// A stored OAuth credential refreshed near expiry via the resolver.
+    Store {
+        resolver: Arc<CredentialResolver>,
+        provider_id: String,
+        oauth: Arc<dyn OAuthProvider>,
+    },
+    /// A non-refreshable OAuth access token read from an environment variable
+    /// (e.g. `ANTHROPIC_OAUTH_TOKEN`). Used until 401, then explicit re-login.
+    EnvOAuthToken {
+        env_var: String,
+        env_lookup: EnvLookup,
+    },
+}
+
+impl AuthResolver for AuthSource {
+    fn resolve<'a>(&'a self) -> BoxAuthFuture<'a, Result<ResolvedAuth, ProviderError>> {
+        match self {
+            AuthSource::Baked(secret) => {
+                let secret = secret.clone();
+                Box::pin(async move {
+                    Ok(ResolvedAuth {
+                        scheme: AuthScheme::ApiKey,
+                        secret,
+                    })
+                })
+            }
+            AuthSource::Store {
+                resolver,
+                provider_id,
+                oauth,
+            } => {
+                let resolver = resolver.clone();
+                let provider_id = provider_id.clone();
+                let oauth = oauth.clone();
+                Box::pin(async move { resolver.resolve_oauth(&provider_id, &*oauth).await })
+            }
+            AuthSource::EnvOAuthToken {
+                env_var,
+                env_lookup,
+            } => {
+                let env_var = env_var.clone();
+                let env_lookup = env_lookup.clone();
+                Box::pin(async move {
+                    match (env_lookup)(&env_var) {
+                        Some(value) if !value.trim().is_empty() => Ok(ResolvedAuth {
+                            scheme: AuthScheme::Bearer,
+                            secret: SecretString::new(value.into_boxed_str()),
+                        }),
+                        _ => Err(ProviderError::CredentialNeeded {
+                            provider_id: env_var,
+                        }),
+                    }
+                })
+            }
+        }
     }
 }

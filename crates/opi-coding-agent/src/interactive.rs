@@ -28,6 +28,7 @@ use opi_tui::{
 use opi_tui::{ImageData, ImagePayload, MediaType as TuiMediaType};
 
 use crate::harness::{CodingHarness, SessionMetadata};
+use crate::oauth;
 
 /// Shared state mutated by the agent callback and read by the TUI render loop.
 struct TuiState {
@@ -318,6 +319,12 @@ pub async fn run_interactive_tui(
         }
     }));
 
+    // Capture the store & registry as local variables before the harness moves
+    // into the Arc<Mutex>. These are accessed by /login, /logout, and the
+    // CredentialNeeded same-turn retry path. take() is safe here.
+    let credential_store = harness.credential_store.take();
+    let oauth_registry = harness.oauth_registry.take();
+
     let harness = Arc::new(tokio::sync::Mutex::new(harness));
 
     // Setup terminal
@@ -328,7 +335,14 @@ pub async fn run_interactive_tui(
     let mut terminal = Terminal::new(backend)?;
 
     // Main TUI loop
-    let result = tui_event_loop(&mut terminal, &harness, &state).await;
+    let result = tui_event_loop(
+        &mut terminal,
+        &harness,
+        &state,
+        credential_store,
+        oauth_registry,
+    )
+    .await;
 
     // Restore terminal
     terminal::disable_raw_mode()?;
@@ -342,6 +356,8 @@ async fn tui_event_loop(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     harness: &Arc<tokio::sync::Mutex<CodingHarness>>,
     state: &Arc<Mutex<TuiState>>,
+    credential_store: Option<Arc<crate::credential_store::KeychainCredentialStore>>,
+    oauth_registry: Option<crate::oauth::OAuthProviderRegistry>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut pending: Option<tokio::task::JoinHandle<Result<Vec<AgentMessage>, AgentError>>> = None;
     let mut cancel_token = harness.lock().await.cancel_token();
@@ -355,6 +371,7 @@ async fn tui_event_loop(
         }
 
         // Check if pending prompt finished (non-blocking)
+        let mut did_retry = false;
         if let Some(handle) = &mut pending
             && handle.is_finished()
         {
@@ -366,6 +383,69 @@ async fn tui_event_loop(
                 Ok(Err(AgentError::Cancelled)) => {
                     let mut s = state.lock().unwrap();
                     s.app_state = AppState::Idle;
+                }
+                Ok(Err(AgentError::CredentialNeeded { provider_id })) => {
+                    // Run the OAuth login flow inline (blocks TUI briefly —
+                    // TODO: background-task login with spinner overlay).
+                    let login_ok = match (
+                        &credential_store,
+                        &oauth_registry,
+                    ) {
+                        (Some(store), Some(registry)) => {
+                            match oauth::login_oauth(
+                                &provider_id,
+                                registry,
+                                store,
+                                &crate::oauth::TuiLoginPresenter::new(),
+                            )
+                            .await
+                            {
+                                Ok(()) => {
+                                    let mut s = state.lock().unwrap();
+                                    s.messages.push(TuiMessage::new(
+                                        TuiRole::System,
+                                        format!("[/login: {provider_id} succeeded, retrying…]"),
+                                    ));
+                                    true
+                                }
+                                Err(e) => {
+                                    let mut s = state.lock().unwrap();
+                                    s.messages.push(TuiMessage::new(
+                                        TuiRole::System,
+                                        format!(
+                                            "[login failed for '{provider_id}': {e}]"
+                                        ),
+                                    ));
+                                    false
+                                }
+                            }
+                        }
+                        _ => {
+                            let mut s = state.lock().unwrap();
+                            s.messages.push(TuiMessage::new(
+                                TuiRole::System,
+                                format!(
+                                    "credential needed for '{provider_id}' — run /login {provider_id}"
+                                ),
+                            ));
+                            false
+                        }
+                    };
+                    if login_ok {
+                        // Re-spawn the retry as a background task; the original
+                        // user message is already in the agent, so retry_last_prompt
+                        // re-runs the loop without duplicating it.
+                        let h = harness.clone();
+                        let handle = tokio::spawn(async move {
+                            let mut h = h.lock().await;
+                            h.retry_last_prompt().await
+                        });
+                        pending = Some(handle);
+                        did_retry = true;
+                    } else {
+                        let mut s = state.lock().unwrap();
+                        s.app_state = AppState::Idle;
+                    }
                 }
                 Ok(Err(e)) => {
                     let mut s = state.lock().unwrap();
@@ -395,7 +475,9 @@ async fn tui_event_loop(
             // Refresh cancel token — Agent::maybe_reset_cancel() creates a new one
             // after cancellation, so the old token would be stale.
             cancel_token = harness.lock().await.cancel_token();
-            pending = None;
+            if !did_retry {
+                pending = None;
+            }
         }
 
         // Poll for terminal events (non-blocking with timeout)
@@ -638,6 +720,100 @@ async fn tui_event_loop(
                             }
                         }
                     }
+                    continue;
+                }
+
+                // Phase 14.2: /logout <provider> — delete stored credential
+                if let Some(provider_id) = input.strip_prefix("/logout ")
+                    && !provider_id.trim().is_empty()
+                {
+                    let provider_id = provider_id.trim().to_owned();
+                    if let Some(store) = &credential_store {
+                        match oauth::logout_credential(
+                            &provider_id,
+                            store,
+                        )
+                        .await
+                        {
+                            Ok(()) => {
+                                let mut s = state.lock().unwrap();
+                                s.messages.push(TuiMessage::new(
+                                    TuiRole::System,
+                                    format!("[/logout: {provider_id} deleted]"),
+                                ));
+                            }
+                            Err(e) => {
+                                let mut s = state.lock().unwrap();
+                                s.messages.push(TuiMessage::new(
+                                    TuiRole::System,
+                                    format!("[/logout: {e}]"),
+                                ));
+                            }
+                        }
+                    } else {
+                        let mut s = state.lock().unwrap();
+                        s.messages.push(TuiMessage::new(
+                            TuiRole::System,
+                            "[/logout: credential store not available]".to_string(),
+                        ));
+                    }
+                    continue;
+                }
+                if input == "/logout" {
+                    let mut s = state.lock().unwrap();
+                    s.messages.push(TuiMessage::new(
+                        TuiRole::System,
+                        "[/logout: usage: /logout <provider>]".to_string(),
+                    ));
+                    continue;
+                }
+
+                // Phase 14.2: /login <provider> — run OAuth login flow
+                if let Some(provider_id) = input.strip_prefix("/login ")
+                    && !provider_id.trim().is_empty()
+                {
+                    let provider_id = provider_id.trim().to_owned();
+                    if let (Some(store), Some(registry)) =
+                        (&credential_store, &oauth_registry)
+                    {
+                        match oauth::login_oauth(
+                            &provider_id,
+                            registry,
+                            store,
+                            &crate::oauth::TuiLoginPresenter::new(),
+                        )
+                        .await
+                        {
+                            Ok(()) => {
+                                let mut s = state.lock().unwrap();
+                                s.messages.push(TuiMessage::new(
+                                    TuiRole::System,
+                                    format!("[/login: {provider_id} succeeded]"),
+                                ));
+                            }
+                            Err(e) => {
+                                let mut s = state.lock().unwrap();
+                                s.messages.push(TuiMessage::new(
+                                    TuiRole::System,
+                                    format!("[/login: {e}]"),
+                                ));
+                            }
+                        }
+                    } else {
+                        let mut s = state.lock().unwrap();
+                        s.messages.push(TuiMessage::new(
+                            TuiRole::System,
+                            "[/login: credential store not available]".to_string(),
+                        ));
+                    }
+                    continue;
+                }
+                if input == "/login" {
+                    let mut s = state.lock().unwrap();
+                    s.messages.push(TuiMessage::new(
+                        TuiRole::System,
+                        "[/login: usage: /login <provider>]".to_string(),
+                    ));
                     continue;
                 }
 

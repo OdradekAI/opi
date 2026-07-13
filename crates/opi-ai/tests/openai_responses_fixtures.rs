@@ -171,6 +171,7 @@ fn responses_config_represents_store_reasoning_strict() {
         store: Some(true),
         reasoning_effort: Some("high".into()),
         strict_tools: true,
+        ..Default::default()
     };
     assert_eq!(config.store, Some(true));
     assert_eq!(config.reasoning_effort.as_deref(), Some("high"));

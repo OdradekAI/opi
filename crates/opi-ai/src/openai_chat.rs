@@ -8,9 +8,11 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use futures_util::{StreamExt, stream};
+use secrecy::{ExposeSecret, SecretString};
 use serde::Deserialize;
 use tokio_util::sync::CancellationToken;
 
+use crate::auth::{AuthResolver, AuthScheme, ResolvedAuth, StaticAuthResolver};
 use crate::http::HttpClient;
 use crate::message::{
     AssistantContent, AssistantMessage, OutputContent, TOOL_ERROR_MARKER, ToolCall,
@@ -761,9 +763,7 @@ pub struct ModelCompatOverride {
 
 /// Concrete OpenAI Chat Completions API provider.
 pub struct OpenAiChatProvider {
-    #[allow(dead_code)] // used by HTTP streaming path
-    api_key: String,
-    #[allow(dead_code)] // used by HTTP streaming path
+    auth: Arc<dyn AuthResolver>,
     base_url: String,
     models: Vec<ModelInfo>,
     compat: CompatConfig,
@@ -783,8 +783,12 @@ impl OpenAiChatProvider {
         base_url: Option<String>,
         compat: CompatConfig,
     ) -> Self {
-        Self::with_client_and_compat(
-            api_key,
+        let auth = Arc::new(StaticAuthResolver::new(
+            AuthScheme::ApiKey,
+            SecretString::from(api_key),
+        ));
+        Self::with_auth(
+            auth,
             base_url,
             compat,
             "openai".into(),
@@ -801,8 +805,12 @@ impl OpenAiChatProvider {
         extra_headers: Vec<(String, String)>,
         client: Arc<HttpClient>,
     ) -> Self {
-        Self::with_client_and_compat(
-            api_key,
+        let auth = Arc::new(StaticAuthResolver::new(
+            AuthScheme::ApiKey,
+            SecretString::from(api_key),
+        ));
+        Self::with_auth(
+            auth,
             base_url,
             CompatConfig::default(),
             provider_id,
@@ -811,8 +819,13 @@ impl OpenAiChatProvider {
         )
     }
 
-    fn with_client_and_compat(
-        api_key: String,
+    /// Build with an injected per-request auth resolver (Phase 14.2). The
+    /// resolver is consulted inside `Provider::stream` immediately before each
+    /// HTTP request; `new`/`new_with_compat`/`with_client` wrap a fixed key in
+    /// a [`StaticAuthResolver`]. OAuth/env-backed resolution (Copilot) is
+    /// supplied through this entry point by `opi-coding-agent`.
+    pub fn with_auth(
+        auth: Arc<dyn AuthResolver>,
         base_url: Option<String>,
         compat: CompatConfig,
         provider_id: String,
@@ -859,7 +872,7 @@ impl OpenAiChatProvider {
             },
         ];
         Self {
-            api_key,
+            auth,
             base_url,
             models,
             compat,
@@ -879,8 +892,12 @@ impl OpenAiChatProvider {
         extra_headers: Vec<(String, String)>,
         models: Vec<ModelInfo>,
     ) -> Self {
+        let auth = Arc::new(StaticAuthResolver::new(
+            AuthScheme::ApiKey,
+            SecretString::from(api_key),
+        ));
         Self {
-            api_key,
+            auth,
             base_url,
             models,
             compat,
@@ -1030,7 +1047,7 @@ impl OpenAiChatProvider {
     #[allow(clippy::too_many_arguments)]
     async fn stream_http(
         http_client: reqwest::Client,
-        api_key: String,
+        resolved: ResolvedAuth,
         base_url: String,
         provider_id: String,
         chat_completions_path: String,
@@ -1044,7 +1061,10 @@ impl OpenAiChatProvider {
                 &base_url,
                 &chat_completions_path,
             ))
-            .header("authorization", format!("Bearer {api_key}"))
+            .header(
+                "authorization",
+                format!("Bearer {}", resolved.secret.expose_secret()),
+            )
             .header("content-type", "application/json");
         for (name, value) in &extra_headers {
             req = req.header(name.as_str(), value.as_str());
@@ -1059,7 +1079,13 @@ impl OpenAiChatProvider {
         if !status.is_success() {
             let headers = response.headers().clone();
             let error_body = response.text().await.unwrap_or_default();
-            return Err(map_http_status(status, &error_body, &headers));
+            return Err(map_http_status(
+                status,
+                &error_body,
+                &headers,
+                resolved.scheme,
+                &provider_id,
+            ));
         }
 
         let mut byte_stream = response.bytes_stream();
@@ -1153,8 +1179,16 @@ fn map_http_status(
     status: reqwest::StatusCode,
     body: &str,
     headers: &reqwest::header::HeaderMap,
+    scheme: AuthScheme,
+    provider_id: &str,
 ) -> ProviderError {
     match status.as_u16() {
+        // A 401 on a Bearer (OAuth) credential — e.g. Copilot — is typed
+        // non-retryable CredentialRevoked with the body dropped (the body may
+        // echo the submitted token). API-key profiles keep AuthFailed.
+        401 if scheme == AuthScheme::Bearer => ProviderError::CredentialRevoked {
+            provider_id: provider_id.to_owned(),
+        },
         401 => ProviderError::AuthFailed(format!(
             "authentication failed: {}",
             crate::http::safe_excerpt(body)
@@ -1315,7 +1349,7 @@ fn serialize_messages(
 
 impl Provider for OpenAiChatProvider {
     fn stream(&self, request: Request) -> EventStream {
-        let api_key = self.api_key.clone();
+        let auth = self.auth.clone();
         let base_url = self.base_url.clone();
         let provider_id = self.provider_id.clone();
         let chat_completions_path = self.compat.chat_completions_path.clone();
@@ -1327,9 +1361,16 @@ impl Provider for OpenAiChatProvider {
         let (tx, rx) = tokio::sync::mpsc::channel(64);
 
         tokio::spawn(async move {
+            let resolved = match auth.resolve().await {
+                Ok(resolved) => resolved,
+                Err(e) => {
+                    let _ = tx.send(Err(e)).await;
+                    return;
+                }
+            };
             if let Err(e) = Self::stream_http(
                 http_client,
-                api_key,
+                resolved,
                 base_url,
                 provider_id,
                 chat_completions_path,
