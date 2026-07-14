@@ -18,9 +18,12 @@ use opi_ai::auth::{
 };
 use opi_ai::credential::{BoxAuthFuture, Credential, CredentialStore};
 use opi_ai::http::HttpClient;
+use opi_ai::message::Message;
 use opi_ai::provider::{
-    CacheRetention, Provider, ProviderError as AiProviderError, Request, ThinkingConfig,
+    CacheRetention, EventStream, ModelInfo, Provider, ProviderError as AiProviderError, Request,
+    ThinkingConfig,
 };
+use opi_ai::registry::ModelCapabilities;
 use opi_coding_agent::config::OpiConfig;
 use opi_coding_agent::credential_store::{
     AuthSource, CredentialResolver, EnvLookup, FakeKeyringBackend, KEYCHAIN_SERVICE,
@@ -30,7 +33,9 @@ use opi_coding_agent::oauth::{
     AnthropicOAuthProvider, CodexOAuthProvider, CopilotOAuthProvider, OAuthProviderRegistry,
     RegistryError, TuiLoginPresenter, login_oauth, logout_credential,
 };
+use opi_coding_agent::policy::ToolSelection;
 use opi_coding_agent::provider_factory::build_provider_with_oauth;
+use opi_coding_agent::rpc::{RpcCommand, RpcRunner};
 use secrecy::{ExposeSecret, SecretString};
 use serde_json::json;
 use tempfile::TempDir;
@@ -39,7 +44,7 @@ use tokio_util::sync::CancellationToken;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use futures_util::StreamExt;
+use futures_util::{StreamExt, stream};
 
 const AUTHORIZE_URL: &str = "https://authorize.example/oauth/authorize";
 
@@ -88,6 +93,91 @@ fn oauth_cred(access: &str, refresh: &str, base_url: Option<String>) -> OAuthCre
 const PROVIDER: &str = "anthropic";
 const FRESH_ACCESS: &str = "atk-fresh-DO-NOT-LEAK";
 const REFRESHED_ACCESS: &str = "atk-refreshed-DO-NOT-LEAK";
+
+struct CredentialNeededRpcProvider {
+    models: Vec<ModelInfo>,
+}
+
+impl CredentialNeededRpcProvider {
+    fn new() -> Self {
+        Self {
+            models: vec![ModelInfo {
+                id: "mock-model".into(),
+                display_name: "Mock Model".into(),
+                capabilities: ModelCapabilities::new(8_192, 1_024).with_streaming(true),
+            }],
+        }
+    }
+}
+
+impl Provider for CredentialNeededRpcProvider {
+    fn id(&self) -> &str {
+        "mock"
+    }
+
+    fn models(&self) -> &[ModelInfo] {
+        &self.models
+    }
+
+    fn stream(&self, _request: Request) -> EventStream {
+        Box::pin(stream::once(async {
+            Err(AiProviderError::CredentialNeeded {
+                provider_id: "anthropic".into(),
+            })
+        }))
+    }
+}
+
+#[tokio::test]
+async fn rpc_credential_needed_fails_without_blocking() {
+    let workspace = tempfile::tempdir().unwrap();
+    let runner = RpcRunner::new(
+        Box::new(CredentialNeededRpcProvider::new()),
+        "mock:mock-model".into(),
+        OpiConfig::default(),
+        workspace.path().to_path_buf(),
+        false,
+        ToolSelection::Disabled,
+        None,
+        Vec::new(),
+    )
+    .unwrap();
+    let (command_tx, command_rx) = tokio::sync::mpsc::unbounded_channel();
+    let (output_tx, mut output_rx) = tokio::sync::mpsc::unbounded_channel();
+    let task = tokio::spawn(async move {
+        let mut runner = runner;
+        runner.run_with_channels(command_rx, output_tx).await
+    });
+
+    assert_eq!(output_rx.recv().await.unwrap()["type"], "rpc_ready");
+    command_tx
+        .send(RpcCommand::prompt {
+            id: Some("auth-1".into()),
+            message: "hello".into(),
+        })
+        .unwrap();
+
+    let credential_needed = tokio::time::timeout(Duration::from_secs(2), async {
+        loop {
+            let line = output_rx.recv().await.expect("RPC output remains open");
+            if line["type"] == "CredentialNeeded" {
+                break line;
+            }
+        }
+    })
+    .await
+    .expect("RPC must report CredentialNeeded without prompting or blocking");
+
+    assert_eq!(credential_needed["provider_id"], "anthropic");
+    assert_eq!(credential_needed["remediation"], "/login anthropic");
+    assert_eq!(
+        credential_needed["diagnostic"]["code"],
+        "provider_credential_needed"
+    );
+    command_tx.send(RpcCommand::quit { id: None }).unwrap();
+    assert_eq!(task.await.unwrap(), 0);
+}
+
 const ENV_TOKEN: &str = "atk-env-oauth-DO-NOT-LEAK";
 
 fn secret(value: &str) -> SecretString {
@@ -482,6 +572,17 @@ async fn anthropic_oauth_login_manual_code_wins_race() {
     assert_eq!(cred.refresh.expose_secret(), "rtk-123");
     assert!(cred.expires_at.is_some());
     assert_eq!(presenter.notify_success_count.load(Ordering::SeqCst), 1);
+    let authorize_url = presenter.captured_url().expect("authorize URL");
+    assert_eq!(
+        extract_query_param(&authorize_url, "code").as_deref(),
+        Some("true")
+    );
+    assert_eq!(
+        extract_query_param(&authorize_url, "scope").as_deref(),
+        Some(
+            "org:create_api_key user:profile user:inference user:sessions:claude_code user:mcp_servers user:file_upload"
+        )
+    );
     // The token POST received the manual code + a code_verifier + grant_type.
     let requests = server.received_requests().await.expect("recorded");
     let token_req = requests
@@ -887,6 +988,23 @@ async fn codex_login_manual_code_wins_drives_token_post_and_returns_credential()
     assert_eq!(cred.access.expose_secret(), "codex-atk");
     assert_eq!(cred.refresh.expose_secret(), "codex-rtk");
     assert_eq!(presenter.notify_success_count.load(Ordering::SeqCst), 1);
+    let authorize_url = presenter.captured_url().expect("authorize URL");
+    assert_eq!(
+        extract_query_param(&authorize_url, "scope").as_deref(),
+        Some("openid profile email offline_access")
+    );
+    assert_eq!(
+        extract_query_param(&authorize_url, "id_token_add_organizations").as_deref(),
+        Some("true")
+    );
+    assert_eq!(
+        extract_query_param(&authorize_url, "codex_cli_simplified_flow").as_deref(),
+        Some("true")
+    );
+    assert_eq!(
+        extract_query_param(&authorize_url, "originator").as_deref(),
+        Some("opi")
+    );
     let requests = server.received_requests().await.unwrap();
     let body = std::str::from_utf8(&requests[0].body).unwrap();
     assert!(body.contains("code=CODE-XYZ"), "body: {body}");
@@ -1208,7 +1326,7 @@ async fn mount_device_poll(server: &MockServer, body: serde_json::Value, times: 
 }
 
 async fn mount_copilot_token(server: &MockServer, status: u16, body: serde_json::Value) {
-    Mock::given(method("POST"))
+    Mock::given(method("GET"))
         .and(path("/copilot_internal/v2/token"))
         .respond_with(ResponseTemplate::new(status).set_body_json(body))
         .mount(server)
@@ -1607,9 +1725,15 @@ async fn factory_routes_copilot_to_chat_with_oauth_wire_shape() {
     assert_eq!(provider.id(), "copilot");
     let mut stream = provider.stream(factory_request("copilot:gpt-4o"));
     drain_stream(&mut stream).await;
+    let mut agent_request = factory_request("copilot:gpt-4o");
+    agent_request
+        .messages
+        .push(Message::Assistant(opi_ai::test_support::base_assistant()));
+    let mut stream = provider.stream(agent_request);
+    drain_stream(&mut stream).await;
 
     let requests = server.received_requests().await.unwrap();
-    assert_eq!(requests.len(), 1, "exactly one Copilot Chat request");
+    assert_eq!(requests.len(), 2, "two Copilot Chat requests");
     let req = &requests[0];
     assert_eq!(req.url.path(), "/chat/completions");
     assert_eq!(
@@ -1629,6 +1753,17 @@ async fn factory_routes_copilot_to_chat_with_oauth_wire_shape() {
             .get("Copilot-Integration-Id")
             .map(|v| v.to_str().unwrap()),
         Some("vscode-chat")
+    );
+    assert_eq!(
+        req.headers.get("X-Initiator").map(|v| v.to_str().unwrap()),
+        Some("user")
+    );
+    assert_eq!(
+        requests[1]
+            .headers
+            .get("X-Initiator")
+            .map(|v| v.to_str().unwrap()),
+        Some("agent")
     );
 }
 
@@ -1744,7 +1879,7 @@ async fn factory_routes_anthropic_to_oauth_when_cred_stored() {
         req.headers
             .get("anthropic-beta")
             .map(|v| v.to_str().unwrap()),
-        Some("oauth-2025-04-20")
+        Some("claude-code-20250219,oauth-2025-04-20")
     );
     assert!(
         req.headers.get("x-api-key").is_none(),
@@ -1840,7 +1975,7 @@ async fn anthropic_env_oauth_token_precedence_stored_wins_env_fallback() {
         req.headers
             .get("anthropic-beta")
             .map(|v| v.to_str().unwrap()),
-        Some("oauth-2025-04-20")
+        Some("claude-code-20250219,oauth-2025-04-20")
     );
     assert!(req.headers.get("x-api-key").is_none());
 
@@ -2161,5 +2296,38 @@ async fn anthropic_oauth_revoked_stops_turn_without_retry_or_relogin() {
         requests.len(),
         1,
         "revoked credential must not trigger an HTTP request"
+    );
+}
+
+#[test]
+fn login_logout_commands_are_discoverable() {
+    let binary = option_env!("CARGO_BIN_EXE_opi")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| {
+            let mut path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+            path.push("../../target/debug/opi");
+            if cfg!(windows) {
+                path.set_extension("exe");
+            }
+            path
+        });
+    let output = std::process::Command::new(&binary)
+        .arg("--help")
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run {} --help: {error}", binary.display()));
+    assert!(output.status.success(), "opi --help failed: {output:?}");
+    let stdout = String::from_utf8(output.stdout).expect("opi --help is UTF-8");
+
+    for command in ["/login <provider>", "/logout <provider>"] {
+        assert!(
+            stdout.contains(command),
+            "opi --help must make interactive command `{command}` discoverable; got:\n{stdout}"
+        );
+    }
+    assert!(
+        stdout.contains("Anthropic")
+            && stdout.contains("GitHub Copilot")
+            && stdout.contains("OpenAI Codex"),
+        "opi --help must name the three approved OAuth profiles; got:\n{stdout}"
     );
 }

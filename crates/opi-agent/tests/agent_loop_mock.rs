@@ -7,6 +7,7 @@
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 
+use opi_agent::Agent;
 use opi_agent::event::{AgentEvent, AgentEventSink};
 use opi_agent::hooks::{
     AgentHooks, BeforeToolCallContext, BeforeToolCallResult, ShouldStopAfterTurnContext,
@@ -351,4 +352,34 @@ async fn text_content_preserved_in_assistant_message() {
         "assistant message must contain text, got: {:?}",
         assistant.content
     );
+}
+
+#[tokio::test]
+async fn session_id_reaches_every_request() {
+    let provider = MockProvider::new(
+        "mock",
+        vec![
+            test_support::text_response("first"),
+            test_support::text_response("second"),
+        ],
+    );
+    let call_log = provider.call_log_handle();
+    let mut agent = Agent::new(
+        Box::new(provider),
+        vec![],
+        "mock-model".into(),
+        None,
+        AgentLoopConfig::default(),
+        Box::new(TestHooks),
+    );
+
+    agent.set_session_id(Some("session-a".into()));
+    agent.prompt("first").await.unwrap();
+    agent.set_session_id(Some("session-b".into()));
+    agent.continue_("second").await.unwrap();
+
+    let calls = call_log.lock().unwrap();
+    assert_eq!(calls.len(), 2);
+    assert_eq!(calls[0].session_id.as_deref(), Some("session-a"));
+    assert_eq!(calls[1].session_id.as_deref(), Some("session-b"));
 }

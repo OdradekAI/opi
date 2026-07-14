@@ -7,11 +7,15 @@
 //! variant (renamed for wire compatibility); all stdout lines after the
 //! header round-trip through `AgentSessionEvent`.
 
+use opi_agent::session::{SessionHeader, SessionWriter};
 use opi_agent::session_event::AgentSessionEvent;
-use opi_ai::provider::ProviderError;
+use opi_ai::provider::{Provider, ProviderError};
 use opi_ai::test_support::{self, MockProvider, MockResponse};
 use opi_coding_agent::config::OpiConfig;
+use opi_coding_agent::harness::ResumeInfo;
+use opi_coding_agent::policy::ToolSelection;
 use opi_coding_agent::runner::{ExitCode, NDJSON_SCHEMA_VERSION, NonInteractiveRunner};
+use opi_coding_agent::runtime_packages::RuntimePackageStartup;
 
 /// Parse NDJSON output into individual JSON values, one per line.
 fn parse_ndjson(output: &str) -> Vec<serde_json::Value> {
@@ -20,6 +24,48 @@ fn parse_ndjson(output: &str) -> Vec<serde_json::Value> {
         .filter(|l| !l.is_empty())
         .map(|line| serde_json::from_str(line).unwrap_or_else(|_| panic!("invalid JSON: {line}")))
         .collect()
+}
+
+fn runner_with_isolated_session(
+    provider: Box<dyn Provider>,
+    model: &str,
+    session_dir: &tempfile::TempDir,
+    runtime_startup: Option<RuntimePackageStartup>,
+) -> NonInteractiveRunner {
+    let workspace = std::env::current_dir().expect("workspace cwd");
+    let session_id = "json-mode-summary".to_owned();
+    let session_path = session_dir.path().join(format!("{session_id}.jsonl"));
+    let header = SessionHeader::new(
+        session_id.clone(),
+        "2026-07-14T00:00:00Z".into(),
+        workspace.display().to_string(),
+        None,
+    );
+    SessionWriter::create(&session_path, header).expect("create isolated session");
+    let resume = ResumeInfo {
+        path: session_path,
+        session_id,
+        entries: Vec::new(),
+        original_cwd: workspace.clone(),
+        diagnostics: Vec::new(),
+        recorded_model: None,
+        recorded_thinking: None,
+    };
+
+    NonInteractiveRunner::new_with_resume_and_runtime_packages(
+        provider,
+        model.into(),
+        OpiConfig::default(),
+        workspace,
+        false,
+        None,
+        Vec::new(),
+        Some(resume),
+        ToolSelection::Default,
+        runtime_startup,
+        None,
+    )
+    .expect("isolated non-interactive runner")
 }
 
 /// Phase 11.8 D2 wire-compat: a `ToolExecutionEnd` with empty diagnostics omits
@@ -480,14 +526,12 @@ async fn json_mode_stdout_is_only_ndjson() {
 async fn json_mode_emits_session_summary_with_token_totals() {
     let response = test_support::text_response("hi");
     let provider = MockProvider::new("mock", vec![response]);
-    let mut runner = NonInteractiveRunner::new(
+    let session_dir = tempfile::tempdir().expect("session dir");
+    let mut runner = runner_with_isolated_session(
         Box::new(provider),
-        "anthropic:claude-sonnet-4".into(),
-        OpiConfig::default(),
-        std::env::current_dir().unwrap(),
-        false,
+        "anthropic:claude-sonnet-4",
+        &session_dir,
         None,
-        Vec::new(),
     );
 
     let result = runner.run_json("test").await;
@@ -635,14 +679,12 @@ async fn json_mode_session_summary_roundtrips_through_agent_session_event() {
     // as a sequence of AgentSessionEvent values rely on this.
     let response = test_support::text_response("hi");
     let provider = MockProvider::new("mock", vec![response]);
-    let mut runner = NonInteractiveRunner::new(
+    let session_dir = tempfile::tempdir().expect("session dir");
+    let mut runner = runner_with_isolated_session(
         Box::new(provider),
-        "anthropic:claude-sonnet-4".into(),
-        OpiConfig::default(),
-        std::env::current_dir().unwrap(),
-        false,
+        "anthropic:claude-sonnet-4",
+        &session_dir,
         None,
-        Vec::new(),
     );
 
     let result = runner.run_json("test").await;
@@ -887,7 +929,17 @@ mod phase7 {
                 MockResponse::Events(test_support::text_response("ok")),
             ],
         );
-        let mut runner = runner_with_startup(Box::new(provider), Vec::new(), None);
+        let session_dir = tempfile::tempdir().expect("session dir");
+        let mut runner = super::runner_with_isolated_session(
+            Box::new(provider),
+            "mock-model",
+            &session_dir,
+            Some(RuntimePackageStartup {
+                extension_registry: ExtensionRegistry::new(),
+                installed_packages: Vec::new(),
+                diagnostics: Vec::new(),
+            }),
+        );
         let result = runner.run_json("hello").await;
         assert_eq!(result.exit_code, ExitCode::Success as i32);
 
@@ -1190,15 +1242,9 @@ async fn json_mode_session_summary_reports_provider_turns() {
     );
     let second = test_support::text_response("done");
     let provider = MockProvider::new("mock", vec![first, second]);
-    let mut runner = NonInteractiveRunner::new(
-        Box::new(provider),
-        "mock-model".into(),
-        OpiConfig::default(),
-        std::env::current_dir().unwrap(),
-        false,
-        None,
-        Vec::new(),
-    );
+    let session_dir = tempfile::tempdir().expect("session dir");
+    let mut runner =
+        runner_with_isolated_session(Box::new(provider), "mock-model", &session_dir, None);
 
     let result = runner.run_json("read Cargo.toml").await;
     assert_eq!(result.exit_code, ExitCode::Success as i32);

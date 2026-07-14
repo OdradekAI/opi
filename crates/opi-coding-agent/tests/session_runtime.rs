@@ -1017,6 +1017,55 @@ async fn harness_forks_current_session_into_new_parented_session() {
     clear_sessions_dir();
 }
 
+#[tokio::test]
+#[allow(clippy::await_holding_lock)]
+async fn phase14_session_affinity_tracks_new_resume_and_fork() {
+    let _lock = session_lock();
+    let workspace = tempfile::tempdir().unwrap();
+    let sessions = tempfile::tempdir().unwrap();
+    set_sessions_dir(sessions.path());
+    let provider = MockProvider::new(
+        "mock",
+        vec![
+            test_support::text_response("new"),
+            test_support::text_response("resumed"),
+            test_support::text_response("forked"),
+        ],
+    );
+    let call_log = provider.call_log_handle();
+    let mut harness = CodingHarness::builder(
+        Box::new(provider),
+        "mock:mock-model".into(),
+        OpiConfig::default(),
+        workspace.path().to_path_buf(),
+    )
+    .build();
+
+    let source_session_id = harness.session().unwrap().session_id().to_owned();
+    harness.prompt("new session").await.unwrap();
+    harness.resume_session_id(&source_session_id).unwrap();
+    harness.prompt("resumed session").await.unwrap();
+    let (forked_session_id, _) = harness.fork_current_session().unwrap();
+    harness.prompt("forked session").await.unwrap();
+
+    let calls = call_log.lock().unwrap();
+    assert_eq!(calls.len(), 3);
+    assert_eq!(
+        calls[0].session_id.as_deref(),
+        Some(source_session_id.as_str())
+    );
+    assert_eq!(
+        calls[1].session_id.as_deref(),
+        Some(source_session_id.as_str())
+    );
+    assert_eq!(
+        calls[2].session_id.as_deref(),
+        Some(forked_session_id.as_str())
+    );
+    drop(calls);
+    clear_sessions_dir();
+}
+
 // ---------------------------------------------------------------------------
 // Compaction tests
 // ---------------------------------------------------------------------------

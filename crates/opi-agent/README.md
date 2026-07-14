@@ -42,6 +42,23 @@ It depends on `opi-ai` for provider and message types. It does not implement the
 `opi` CLI, terminal UI, or built-in filesystem/shell tools; those live in
 `opi-coding-agent` and `opi-tui`.
 
+## Phase 14 Auth and Session-Affinity Boundary
+
+`opi-agent` does not perform credential IO or construct OAuth providers. It
+does preserve typed auth outcomes across the live loop: non-retryable
+`ProviderError::CredentialNeeded` and `ProviderError::CredentialRevoked` map
+to matching `AgentError` variants and redacted diagnostics without string
+matching. The interactive product may retry the same pending turn after a
+successful user-initiated login; non-interactive products can fail with an
+actionable provider id, and revoked credentials never trigger automatic
+re-login.
+
+The agent also carries an opaque `session_id` from `Agent` through
+`AgentLoopContext` into every provider `Request`. It owns no persistence or
+provider-specific header mapping: `opi-coding-agent` supplies the active
+session id, and `opi-ai` adapters decide whether their reviewed cache-affinity
+mapping consumes it.
+
 ## Core Abstractions
 
 | Item | Purpose |
@@ -372,7 +389,9 @@ remain explicitly out of scope and are not claimed:
 - No package ecosystem expansion or package marketplace.
 - No new adapter kind beyond `process-jsonl` (`opi-extension-jsonl-v1`).
 - No web UI product work.
-- No provider OAuth login work.
+- No credential store, login presenter, or vendor OAuth flow implementation in
+  `opi-agent`; those remain owned by `opi-ai` contracts and
+  `opi-coding-agent` product wiring.
 - No in-core plan mode, sub-agent, todo, permission popup, or MCP runtime.
 - No shared `opi-types` crate.
 - No unjustified public type migration between crates.

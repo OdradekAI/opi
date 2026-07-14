@@ -83,6 +83,53 @@ enum SessionForkCommand {
     Clone,
 }
 
+trait LoginTerminalControl {
+    fn suspend_for_login(&mut self) -> io::Result<()>;
+    fn resume_after_login(&mut self) -> io::Result<()>;
+}
+
+impl LoginTerminalControl for Terminal<CrosstermBackend<io::Stdout>> {
+    fn suspend_for_login(&mut self) -> io::Result<()> {
+        terminal::disable_raw_mode()?;
+        crossterm::execute!(self.backend_mut(), LeaveAlternateScreen)?;
+        self.show_cursor()
+    }
+
+    fn resume_after_login(&mut self) -> io::Result<()> {
+        crossterm::execute!(self.backend_mut(), EnterAlternateScreen)?;
+        terminal::enable_raw_mode()?;
+        self.hide_cursor()?;
+        self.clear()
+    }
+}
+
+async fn with_login_terminal_suspended<T, F, Fut, R, E>(
+    terminal: &mut T,
+    operation: F,
+) -> Result<R, String>
+where
+    T: LoginTerminalControl,
+    F: FnOnce() -> Fut,
+    Fut: std::future::Future<Output = Result<R, E>>,
+    E: std::fmt::Display,
+{
+    terminal
+        .suspend_for_login()
+        .map_err(|e| format!("failed to suspend terminal for login: {e}"))?;
+    let operation_result = operation().await.map_err(|e| e.to_string());
+    let resume_result = terminal
+        .resume_after_login()
+        .map_err(|e| format!("failed to restore terminal after login: {e}"));
+    match (operation_result, resume_result) {
+        (Ok(value), Ok(())) => Ok(value),
+        (Err(error), Ok(())) => Err(error),
+        (Ok(_), Err(error)) => Err(error),
+        (Err(operation_error), Err(resume_error)) => {
+            Err(format!("{operation_error}; {resume_error}"))
+        }
+    }
+}
+
 impl SessionForkCommand {
     fn verb(self) -> &'static str {
         match self {
@@ -389,12 +436,10 @@ async fn tui_event_loop(
                     // TODO: background-task login with spinner overlay).
                     let login_ok = match (&credential_store, &oauth_registry) {
                         (Some(store), Some(registry)) => {
-                            match oauth::login_oauth(
-                                &provider_id,
-                                registry,
-                                store,
-                                &crate::oauth::TuiLoginPresenter::new(),
-                            )
+                            let presenter = crate::oauth::TuiLoginPresenter::new();
+                            match with_login_terminal_suspended(terminal, || {
+                                oauth::login_oauth(&provider_id, registry, store, &presenter)
+                            })
                             .await
                             {
                                 Ok(()) => {
@@ -764,12 +809,10 @@ async fn tui_event_loop(
                 {
                     let provider_id = provider_id.trim().to_owned();
                     if let (Some(store), Some(registry)) = (&credential_store, &oauth_registry) {
-                        match oauth::login_oauth(
-                            &provider_id,
-                            registry,
-                            store,
-                            &crate::oauth::TuiLoginPresenter::new(),
-                        )
+                        let presenter = crate::oauth::TuiLoginPresenter::new();
+                        match with_login_terminal_suspended(terminal, || {
+                            oauth::login_oauth(&provider_id, registry, store, &presenter)
+                        })
                         .await
                         {
                             Ok(()) => {
@@ -1096,6 +1139,34 @@ mod tests {
     use crate::resource::{DiscoveryLayer, ResourceDiscoveryLayers};
     use opi_ai::test_support::MockProvider;
     use opi_tui::SelectItem;
+
+    #[derive(Default)]
+    struct RecordingLoginTerminal {
+        transitions: Vec<&'static str>,
+    }
+
+    impl LoginTerminalControl for RecordingLoginTerminal {
+        fn suspend_for_login(&mut self) -> io::Result<()> {
+            self.transitions.push("suspend");
+            Ok(())
+        }
+
+        fn resume_after_login(&mut self) -> io::Result<()> {
+            self.transitions.push("resume");
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn oauth_login_restores_terminal_after_flow_failure() {
+        let mut terminal = RecordingLoginTerminal::default();
+        let result =
+            with_login_terminal_suspended(&mut terminal, || async { Err::<(), _>("login failed") })
+                .await;
+
+        assert_eq!(result.unwrap_err(), "login failed");
+        assert_eq!(terminal.transitions, ["suspend", "resume"]);
+    }
 
     fn state_with_picker(kind: PickerKind) -> TuiState {
         TuiState {

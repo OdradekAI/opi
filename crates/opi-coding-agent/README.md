@@ -27,7 +27,8 @@ agent. It provides:
 - session list/resume/fork/delete commands;
 - eight built-in tools;
 - config, context-file loading, session persistence, compaction, retry, usage,
-  cost summaries, package/resource discovery, diagnostics, and opt-in traces.
+  cost summaries, package/resource discovery, diagnostics, opt-in traces, an
+  OS-keychain credential store, and interactive OAuth login/logout.
 
 The workspace package version is `0.7.0`. This checkout may also contain
 unreleased changes; see [CHANGELOG.md](../../CHANGELOG.md) for the delta.
@@ -73,6 +74,13 @@ opi --image screenshot.png "Review this screenshot."
 
 # Allow write/edit/bash in non-interactive automation
 opi --allow-mutating "Update the README."
+```
+
+Inside the interactive TUI, manage stored OAuth credentials with:
+
+```text
+/login anthropic
+/logout anthropic
 ```
 
 ## CLI Commands and Flags
@@ -125,10 +133,47 @@ Run `opi --help` for the exact current surface. Important commands and flags:
 | `bedrock:` | `BedrockProvider` | AWS env vars or shared AWS profile/config |
 | `azure:` | `AzureOpenAIProvider` | `AZURE_OPENAI_API_KEY`; endpoint/deployments in config |
 | `vertex:` | `VertexProvider` | `VERTEX_ACCESS_TOKEN`; project/location in config |
+| `copilot:` | Explicit GitHub Copilot OpenAI Chat compatibility profile | OS keychain via `/login copilot` |
+| `codex:` | Explicit OpenAI Codex Responses compatibility profile | OS keychain via `/login codex` |
 | configured profile | OpenAI-compatible profile | profile-specific `api_key_env`, `base_url`, and model list |
 
 Provider credential env names, base URLs, model lists, and proxies can be
 overridden in config.
+
+## Credential Store and OAuth
+
+`opi-ai` owns the IO-free `CredentialStore`, `OAuthProvider`,
+`LoginPresenter`, and `AuthResolver` contracts. This crate owns
+`KeychainCredentialStore`, `CredentialResolver`, environment lookup, the
+cross-process `credential.lock`, and provider HTTP refresh. Persisted API keys
+and OAuth envelopes use the OS keychain; API keys can fall back to their env
+source when the backend is unavailable. No opi-managed plaintext credential
+file is created. `opi doctor` and `--list-models` await a probe and format only
+redacted present/absent/backend-unavailable state.
+
+`/login <provider>` and `/logout <provider>` support Anthropic PKCE, GitHub
+Copilot device-code, and OpenAI Codex PKCE. Headless Anthropic/Codex flows can
+paste a code manually; Copilot presents its device code. Copilot uses an
+explicit OpenAI Chat compatibility profile and Codex uses the existing
+Responses implementation at `/codex/responses`; this is not broad Copilot
+multi-wire parity or a separate Codex provider type. `ANTHROPIC_OAUTH_TOKEN`
+is a non-refreshable bearer source and takes precedence over
+`ANTHROPIC_API_KEY` when no stored credential exists.
+
+Auth is re-resolved inside the three approved Anthropic, Copilot, and Codex
+provider streams. Interactive `CredentialNeeded` starts login only through the explicit user-facing flow and
+can retry the same pending turn after success. Non-interactive, JSON, and RPC
+modes do not prompt: they report the provider and `/login anthropic`-style
+remediation, then fail. `CredentialRevoked` is non-retryable and never causes
+automatic re-login.
+
+Phase 14 also carries the active `session_id` through `CodingHarness` and the
+agent loop into reviewed provider cache-affinity mappings. The other new
+`Request` scalars (`timeout`, `extra_headers`, `CacheRetention`) remain direct
+`opi-ai` request substrate. `cache_write_1h_tokens` and `reasoning_tokens` keep
+subset accounting through session cost summaries. `refresh_models` remains
+substrate-only with no production trigger in the CLI, TUI, RPC, doctor, model
+listing, or startup paths.
 
 ## Built-in Tools
 
@@ -270,6 +315,8 @@ With no prompt args, `opi` starts the ratatui TUI. Slash commands include:
 | `/fork` | Fork the active branch into a new parented session. |
 | `/clone` | Clone the active branch into a new parented session. |
 | `/image <path>` | Queue an image for the next prompt. |
+| `/login <provider>` | Run the approved OAuth flow and persist the credential in the OS keychain. |
+| `/logout <provider>` | Delete the provider's stored credential. |
 | `exit` / `quit` | Exit. |
 
 ### Non-interactive and JSON
@@ -280,6 +327,9 @@ writes a schema header, serialized session/agent events, and a final
 `NDJSON_SCHEMA_VERSION = 2`. In `session_summary`, `turns` counts accepted user
 prompt turns, while `provider_turns` counts provider request/response cycles
 (`TurnStart` events), so a tool-using prompt usually has `provider_turns > turns`.
+Typed `CredentialNeeded` failures exit with code `3`, name the provider and
+`/login <provider>` remediation, and never start an OAuth flow or block for
+input.
 
 `--json-compact` is an opt-in flag that makes streamed `text_delta` updates
 constant-size: it omits the redundant `assistant_event.partial` snapshot and
@@ -382,10 +432,10 @@ Common methods include `prompt`, `prompt_with_content`, `queue_images`,
 - Mutating-tool policy is not an OS sandbox.
 - Production sub-agent, permission-gate, plan/todo, and MCP workflows are
   examples/package patterns, not built-in core workflows.
-- OAuth or subscription login flows are not implemented. The following remain
-  deferred product decisions: OAuth login, Anthropic / OpenAI Codex / GitHub
-  Copilot subscription auth, a broad new first-class provider list (compatible
-  providers stay config-driven OpenAI-compatible profiles), image generation
+- OAuth providers beyond Anthropic, GitHub Copilot, and OpenAI Codex remain
+  deferred. Other deferred product decisions are broad Copilot multi-wire
+  parity, a broad new first-class provider list (compatible providers stay
+  config-driven OpenAI-compatible profiles), image generation
   (image support is input-only), browser usage, a provider streaming-adapter
   protocol for packages, paid live provider calls in default tests, and copying
   pi's provider-specific config file format. Per-provider proxy config
@@ -394,7 +444,8 @@ Common methods include `prompt`, `prompt_with_content`, `queue_images`,
   implemented. See the `opi-ai` README for the per-family behavior matrix,
   OpenAI-compatible profile flags (`system_role_override`, `max_tokens_field`,
   `tool_result_name_field`, `usage_in_stream`, `strict_tool_schema`,
-  `reasoning_effort`, `cache_key`, `require_assistant_after_tool_result`,
+  `reasoning_effort`, `cache_key`, `send_session_affinity_headers`,
+  `require_assistant_after_tool_result`,
   `chat_completions_path`; plus per-profile `extra_headers` for static request
   headers, which is a profile config field, not a `CompatConfig` flag), OpenAI
   Responses native semantics (`store` / `reasoning_effort` / `strict_tools`

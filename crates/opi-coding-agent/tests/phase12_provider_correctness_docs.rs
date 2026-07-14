@@ -16,8 +16,8 @@
 //!   first-class provider module set is exactly the nine built-in families; a
 //!   new module cannot appear without updating the allow-list (the "graph
 //!   update"). Closes the 12.3 forward-reference.
-//! - **SC9 non-goals** (`phase12_non_goals_not_in_core`) — the ten Phase 12
-//!   non-goals are documented as deferred and are absent from core through
+//! - **SC9 non-goals** (`phase12_non_goals_not_in_core`) — the six Phase 12
+//!   non-goals not superseded by Phase 14 remain absent from core through
 //!   structural positives (no forbidden crate deps, no forbidden modules).
 //! - **Network-free** (`default_provider_tests_are_network_free`) — default
 //!   provider tests are fixture/wiremock/MockProvider, carry the no-live-calls
@@ -166,14 +166,9 @@ const NON_PROVIDER_MODULES: &[&str] = &[
     "credential",
 ];
 
-/// The ten Phase 12 non-goals (design doc, "Non-Goals") with an English and a
-/// Simplified-Chinese token each, used to confirm the opi-ai README non-goal
-/// list carries all ten in both languages.
+/// Phase 12 non-goals not superseded by Phase 14, with an English and a
+/// Simplified-Chinese token each.
 const PHASE12_NON_GOALS: &[(&str, &str)] = &[
-    ("OAuth login", "OAuth 登录"),
-    ("Anthropic subscription auth", "Anthropic 订阅鉴权"),
-    ("OpenAI Codex subscription auth", "OpenAI Codex 订阅鉴权"),
-    ("GitHub Copilot auth", "GitHub Copilot 鉴权"),
     (
         "broad new first-class provider list",
         "first-class provider 列表",
@@ -244,7 +239,7 @@ fn provider_docs_and_profile_policy_stay_in_sync() {
         "opi-ai README must state config-driven profiles are the preferred breadth path"
     );
 
-    // (4) Profile flags: the nine CompatConfig field names verbatim (anchored
+    // (4) Profile flags: the ten CompatConfig field names verbatim (anchored
     //     to the struct at crates/opi-ai/src/openai_chat.rs). `extra_headers`
     //     is intentionally excluded here — it is a per-profile config field /
     //     OpenAiChatProvider constructor concern, not a CompatConfig flag; the
@@ -257,6 +252,7 @@ fn provider_docs_and_profile_policy_stay_in_sync() {
         "strict_tool_schema",
         "reasoning_effort",
         "cache_key",
+        "send_session_affinity_headers",
         "require_assistant_after_tool_result",
         "chat_completions_path",
     ];
@@ -515,15 +511,15 @@ fn first_class_provider_guard() {
 // SC9: Phase 12 non-goals documented as deferred and absent from core
 // ===========================================================================
 
-/// The ten Phase 12 non-goals are documented (EN+ZH) and are absent from core:
-/// no forbidden crate dependency, no forbidden opi-ai module, and no positive
-/// current-core claim in any owned doc surface.
+/// Phase 12 non-goals not superseded by Phase 14 are documented (EN+ZH) and
+/// absent from core: no forbidden crate dependency, no forbidden opi-ai module,
+/// and no positive current-core claim in any owned doc surface.
 #[test]
 fn phase12_non_goals_not_in_core() {
     let opi_ai = read_repo_file("crates/opi-ai/README.md");
     let opi_ai_zh = read_repo_file("crates/opi-ai/README.zh.md");
 
-    // (1) All ten non-goals are documented as deferred in both languages.
+    // (1) All remaining non-goals are documented in both languages.
     for (en, zh) in PHASE12_NON_GOALS {
         assert!(
             contains_ci(&opi_ai, en),
@@ -537,11 +533,6 @@ fn phase12_non_goals_not_in_core() {
 
     // (2) No positive current-core claim of a non-goal anywhere in the surfaces.
     let forbidden_positive = [
-        "supports oauth",
-        "oauth is supported",
-        "oauth login is implemented",
-        "subscription auth is implemented",
-        "subscription auth is supported",
         "image generation is implemented",
         "image generation is supported",
         "browser usage is supported",
@@ -568,9 +559,6 @@ fn phase12_non_goals_not_in_core() {
         }
     }
     let forbidden_crates = [
-        "oauth2",
-        "openidconnect",
-        "copilot",
         "puppeteer",
         "playwright",
         "chromiumoxide",
@@ -595,15 +583,12 @@ fn phase12_non_goals_not_in_core() {
         "vacuous-guard: cargo scan must visit at least 4 Cargo.toml files (saw {scanned_cargo})"
     );
 
-    // (4) Structural positive: no oauth/subscription/copilot/browser module.
+    // (4) Structural positive: no browser module.
     let lib_rs = read_repo_file("crates/opi-ai/src/lib.rs");
-    for forbidden_mod in ["oauth", "subscription", "copilot", "browser"] {
-        assert!(
-            !lib_rs.contains(&format!("pub mod {forbidden_mod}"))
-                && !lib_rs.contains(&format!("mod {forbidden_mod}")),
-            "opi-ai must not declare an `{forbidden_mod}` module (Phase 12 non-goal)"
-        );
-    }
+    assert!(
+        !lib_rs.contains("pub mod browser") && !lib_rs.contains("mod browser"),
+        "opi-ai must not declare a `browser` module (Phase 12 non-goal)"
+    );
 }
 
 // ===========================================================================

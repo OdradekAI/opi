@@ -25,7 +25,7 @@
 - 会话 list/resume/fork/delete 命令；
 - 8 个内置工具；
 - 配置、上下文文件加载、会话持久化、压缩、重试、用量、费用摘要、package/资源发现、
-  诊断和可选 trace。
+  诊断、可选 trace、OS-keychain 凭据 store，以及交互式 OAuth 登录/登出。
 
 workspace 包版本是 `0.7.0`。当前 checkout 也可能包含未发布变更；delta 见
 [CHANGELOG.md](../../CHANGELOG.md)。
@@ -67,6 +67,13 @@ opi --image screenshot.png "审查这张截图。"
 
 # 在非交互自动化中允许 write/edit/bash
 opi --allow-mutating "更新 README。"
+```
+
+在交互式 TUI 内管理已存储 OAuth 凭据：
+
+```text
+/login anthropic
+/logout anthropic
 ```
 
 ## CLI 命令与参数
@@ -119,9 +126,39 @@ opi --allow-mutating "更新 README。"
 | `bedrock:` | `BedrockProvider` | AWS 环境变量或共享 AWS profile/config |
 | `azure:` | `AzureOpenAIProvider` | `AZURE_OPENAI_API_KEY`；endpoint/deployments 在配置中 |
 | `vertex:` | `VertexProvider` | `VERTEX_ACCESS_TOKEN`；project/location 在配置中 |
+| `copilot:` | 显式 GitHub Copilot OpenAI Chat 兼容 profile | 通过 `/login copilot` 写入 OS keychain |
+| `codex:` | 显式 OpenAI Codex Responses 兼容 profile | 通过 `/login codex` 写入 OS keychain |
 | 已配置 profile | OpenAI-compatible profile | profile 自己的 `api_key_env`、`base_url` 和模型列表 |
 
 Provider 凭据环境变量名、base URL、模型列表和代理都可以在配置中覆盖。
+
+## 凭据 Store 与 OAuth
+
+`opi-ai` 拥有无 IO 的 `CredentialStore`、`OAuthProvider`、`LoginPresenter` 和
+`AuthResolver` 契约。本 crate 拥有 `KeychainCredentialStore`、
+`CredentialResolver`、环境变量查找、跨进程 `credential.lock` 与 Provider HTTP
+refresh。持久化 API key 和 OAuth envelope 使用 OS keychain；backend 不可用时 API key
+可回退到对应 env source。不会创建 opi 自行管理的明文凭据文件。`opi doctor` 与
+`--list-models` 等待 probe，并只格式化已脱敏的 present/absent/backend-unavailable 状态。
+
+`/login <provider>` 与 `/logout <provider>` 支持 Anthropic PKCE、GitHub Copilot
+device-code 和 OpenAI Codex PKCE。无浏览器的 Anthropic/Codex flow 可手动粘贴 code；
+Copilot 显示 device code。Copilot 使用显式 OpenAI Chat 兼容 profile，Codex 使用现有
+Responses 实现的 `/codex/responses`；这不是宽泛 Copilot 多 wire 对等，也不是独立 Codex
+provider 类型。没有已存储凭据时，`ANTHROPIC_OAUTH_TOKEN` 是优先于
+`ANTHROPIC_API_KEY` 的不可 refresh bearer source。
+
+只有三个获批的 Anthropic、Copilot 与 Codex Provider stream 会重新解析鉴权。交互式
+`CredentialNeeded` 只通过显式用户界面启动登录，并可在成功后重试同一个待处理轮次。
+非交互、JSON 与 RPC 模式不提示：它们报告
+provider 和 `/login anthropic` 形式的修复提示后失败。`CredentialRevoked` 不可重试，
+绝不会造成自动重新登录。
+
+第十四阶段还把活跃 `session_id` 从 `CodingHarness` 经 Agent 主循环带入审查过的 Provider
+cache-affinity 映射。其它新 `Request` 标量（`timeout`、`extra_headers`、
+`CacheRetention`）仍是直接 `opi-ai` request 基底。`cache_write_1h_tokens` 与
+`reasoning_tokens` 在会话费用摘要中保持子集记账。`refresh_models` 仍仅为基底、无生产触发；
+CLI、TUI、RPC、doctor、模型列表和启动路径都不会调用它。
 
 ## 内置工具
 
@@ -256,6 +293,8 @@ inline 结果；四个导航工具都会在访问 10,000 个条目后停止遍�
 | `/fork` | 把当前活跃分支 fork 成新的父子会话。 |
 | `/clone` | 把当前活跃分支 clone 成新的父子会话。 |
 | `/image <path>` | 为下一条提示词排队一张图片。 |
+| `/login <provider>` | 运行获批 OAuth flow，并把凭据持久化到 OS keychain。 |
+| `/logout <provider>` | 删除该 Provider 的已存储凭据。 |
 | `exit` / `quit` | 退出。 |
 
 ### 非交互与 JSON
@@ -265,6 +304,8 @@ inline 结果；四个导航工具都会在访问 10,000 个条目后停止遍�
 schema version 是 `NDJSON_SCHEMA_VERSION = 2`。在 `session_summary` 中，`turns` 统计
 已接受的用户提示词轮数，而 `provider_turns` 统计 provider 请求/响应周期（`TurnStart`
 事件），因此使用工具的提示词通常 `provider_turns > turns`。
+类型化 `CredentialNeeded` 失败以 code `3` 退出，点名 provider 与
+`/login <provider>` 修复提示，绝不启动 OAuth flow 或阻塞等待输入。
 
 `--json-compact` 是一个可选标志，使流式 `text_delta` 更新变为固定大小：它省略冗余的
 `assistant_event.partial` 快照，并清空这些更新中 `event.message` 的累积文本，从而让
@@ -358,8 +399,8 @@ metadata 和启动诊断。
 - 修改性工具策略不是操作系统级 sandbox。
 - 生产级子 Agent、permission gate、plan/todo 和 MCP 工作流是 examples/package
   模式，不是内置核心工作流。
-- OAuth 或订阅登录流程尚未实现。以下仍是推迟的产品决策：OAuth 登录、Anthropic /
-  OpenAI Codex / GitHub Copilot 订阅鉴权、大范围新增 first-class provider 列表（兼容
+- Anthropic、GitHub Copilot 与 OpenAI Codex 之外的 OAuth provider 仍被推迟。其它推迟的
+  产品决策包括宽泛 Copilot 多 wire 对等、大范围新增 first-class provider 列表（兼容
   provider 保持为 config-driven 的 OpenAI-compatible profile）、图像生成（图片支持仅为输入侧）、
   浏览器使用、面向 package 的 provider 流式 adapter 协议、默认测试中的付费实时
   provider 调用，以及复制 pi 的 provider 专用配置文件格式。按 provider 的代理配置
@@ -368,6 +409,7 @@ metadata 和启动诊断。
   README 的按 family 行为矩阵、OpenAI-compatible profile 标志（`system_role_override`、
   `max_tokens_field`、`tool_result_name_field`、`usage_in_stream`、
   `strict_tool_schema`、`reasoning_effort`、`cache_key`、
+  `send_session_affinity_headers`、
   `require_assistant_after_tool_result`、`chat_completions_path`；外加用于静态请求 header 的按 profile
   `extra_headers`，它是 profile 配置字段，不是 `CompatConfig` 标志）、OpenAI Responses
   原生语义（`store` / `reasoning_effort` / `strict_tools` 已实现；

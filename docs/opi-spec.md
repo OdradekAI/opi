@@ -8,11 +8,11 @@
 |---|---|
 | Status | Draft |
 | Spec version | 0.6-draft |
-| Last updated | 2026-06-24 |
+| Last updated | 2026-07-14 |
 | Repository | `https://github.com/OdradekAI/opi` |
 | Upstream studied | `pi` 0.80.2 at `.repo/pi-0.80.2/`; alignment is assessed by fresh `opi-realign` audits under [`docs/realign/`](realign/) |
-| Current implementation | `opi` 0.7.0 workspace, Phase 8 runtime stabilization complete; Phase 7 reliability/observability and Phase 5 package/process-adapter surfaces are present |
-| Next milestone | Phase 9 baseline realignment and Phase 10 core architecture deepening before feature breadth |
+| Current implementation | `opi` 0.7.0 workspace with Phases 1-14 implemented; Phase 14 provider/auth product paths are present, while dynamic model refresh remains substrate-only |
+| Next milestone | Phase 15 safety/sandbox implementation |
 
 This document is normative for the current design. Changes that alter public APIs, event protocols, session storage, release behavior, or phase boundaries SHOULD update this file in the same change.
 
@@ -35,9 +35,14 @@ Opi mirrors pi's package structure with four Rust crates:
 - `opi-tui`: terminal UI components.
 - `opi-coding-agent`: the `opi` CLI binary.
 
-The repository has completed the Phase 4 extensibility substrate on top of the Phase 3 terminal coding agent: RPC JSONL mode, shared SDK types, extension hooks/tools/state, resource discovery, skills, prompt fragments, themes, packages, custom provider/model registration, session branch selection, and streaming proxy primitives are present. Phase 5 adds a Rust-native package and process-adapter MVP: local and git package sources, a `package add/remove/list/doctor` CLI, manifest V2 with `[adapter]` declarations, `process-jsonl` adapter hosting with the `opi-extension-jsonl-v1` protocol, and adapter-to-runtime bridging for tools, commands, hooks, events, state, and cancellation. Phase 8 has stabilized the runtime contracts around event ordering, hooks, tool scheduling, cancellation, and SDK/RPC state. The next work is not ecosystem breadth; Phase 9 rebases the project against `pi` 0.80.2 evidence, and Phase 10 deepens `Models/Auth`, generic harness, and session-facade seams before the old tooling/provider/session/TUI phases continue.
+The repository has completed Phases 1-14. In addition to the terminal agent,
+runtime, package, provider-correctness, tooling, and session-context work,
+Phase 14 now supplies OS-keychain credential storage, OAuth for Anthropic,
+GitHub Copilot, and OpenAI Codex, per-stream auth resolution, request/session
+affinity enrichment, capability-gated Anthropic cache markers, cache/reasoning
+usage accounting, and a substrate-only dynamic model refresh API.
 
-Opi does not claim pi package ecosystem parity and does not support npm package install, marketplace behavior, TypeScript extension live reload, provider stream interception through adapters, custom terminal UI adapter rendering, package permission policy enforcement, provider OAuth login, image generation, or web/share flows. MCP, sub-agents, plan mode, todos, permission gates, and dynamic plugin loading should build on the substrate rather than become core features.
+Opi does not claim pi package ecosystem parity and does not support npm package install, marketplace behavior, TypeScript extension live reload, provider stream interception through adapters, custom terminal UI adapter rendering, package permission policy enforcement, OAuth providers beyond the three reviewed Phase 14 profiles, image generation, or web/share flows. MCP, sub-agents, plan mode, todos, permission gates, and dynamic plugin loading should build on the substrate rather than become core features.
 
 The central design rule:
 
@@ -50,7 +55,7 @@ The central design rule:
 | Minimal core | `CONTRIBUTING.md` and coding-agent docs keep workflow-specific features outside core | Phase 1-3 avoid MCP, dynamic plugin, sub-agent, plan-mode, todo, and background-bash scope creep |
 | Layered runtime | `agentLoop` -> `Agent` -> `AgentHarness` / `AgentSession` | `agent_loop` -> `Agent` -> `Harness` / `CodingHarness` |
 | Streaming first | `AssistantMessageEventStream` and agent event streams | `Stream<Item = Result<Event, Error>>` with terminal events |
-| Provider agnostic | provider owns model catalog, auth, and stream behavior through `Models` | `Provider` trait, registry, provider adapters, and planned provider collection/auth seam |
+| Provider agnostic | provider owns model catalog, auth, and stream behavior through `Models` | `Provider` trait, registry/collection, provider adapters, credential/OAuth contracts, and per-stream auth resolution |
 | Agent vs LLM messages | `AgentMessage[] -> transformContext -> convertToLlm -> Message[]` | app messages in `opi-agent`, provider messages in `opi-ai` |
 | Tool isolation | TypeBox schema at LLM boundary | typed Rust tool inputs, generated JSON Schema at the LLM boundary |
 | Errors in band | provider failures become `error` stream events | provider/runtime failures surface as events, not panics |
@@ -78,9 +83,9 @@ chooses to depart:
 - MCP, sub-agents, plan mode, permission gates, and todos belong in extensions, packages, or external tools rather than built-in core.
 - Tool safety is primarily controlled through tool selection, visibility, containers/sandboxes, and extension hooks.
 - RPC and SDK surfaces support composition without making the terminal product secondary.
-- Provider OAuth, image generation, custom extension UI, npm/gallery workflows,
-  and web/share flows are ecosystem surfaces that need reviewed designs before
-  entering `opi`.
+- OAuth providers beyond Anthropic, GitHub Copilot, and OpenAI Codex, image
+  generation, custom extension UI, npm/gallery workflows, and web/share flows
+  need reviewed designs before entering `opi`.
 
 ## 3. Relationship to pi
 
@@ -123,7 +128,7 @@ Pi is the behavioral reference. The following behavior should be treated as inhe
 | binary | Phase 0 placeholder, Phase 1 useful | ship `opi`, not `pi` |
 | provider streaming | Phase 1 | preserve stream lifecycle and in-band errors |
 | Anthropic provider | Phase 1 | first provider implementation |
-| `Models` / provider-owned auth | Phase 10 | Rust-native provider collection/auth seam in `opi-ai`; does not provide near-term OAuth parity |
+| `Models` / provider-owned auth | Phase 10/14 | Rust-native collection/auth seam plus OS-keychain credentials and reviewed OAuth flows for Anthropic, GitHub Copilot, and OpenAI Codex |
 | `agentLoop` / `Agent` | Phase 1 | preserve loop, hook, queue, and tool batching semantics |
 | `AgentHarness` / session repo | Phase 10/13 | generic harness/session facade in `opi-agent`, coding product wrapper in `opi-coding-agent` |
 | default coding tools | Phase 1 | interactive defaults are `read`, `write`, `edit`, and `bash` |
@@ -1623,15 +1628,17 @@ Phase 13 non-goals (documented as deferred, not current core):
 
 ### Phase 14 - Provider & Auth
 
-Status: designed; implementation pending. Design:
+Status: implemented. Design:
 `docs/superpowers/specs/2026-07-11-phase14-provider-auth-design.md`.
 
 Phase 14 promotes the Provider/Auth cluster to a real phase. It adds an
 OS-keychain credential store (`CredentialStore`/`Credential` in `opi-ai`;
 keychain/env impls and `CredentialResolver` in `opi-coding-agent`), OAuth for
-the three pi providers (Anthropic, GitHub Copilot, OpenAI Codex) with
-per-request auth re-resolution through an `Arc<dyn AuthResolver>` held by each
-concrete provider and implemented by the coding-agent-owned `AuthSource`, and
+the three pi providers (Anthropic, GitHub Copilot, OpenAI Codex) through the
+`OAuthProvider` contract, with per-request auth re-resolution through an
+`Arc<dyn AuthResolver>` held only by the approved Anthropic Messages,
+Copilot-compatible Chat, and Codex-compatible Responses paths and implemented
+by the coding-agent-owned `AuthSource`, and
 additive `opi_ai::Request` enrichment (`timeout`,
 `extra_headers`, `cache_retention`, `session_id`), `Usage`/`CostBreakdown`
 cache-and-reasoning accounting, migration of the existing
@@ -1649,6 +1656,31 @@ opi-managed plaintext credential file. Non-goals: per-call `apiKey` override
 auto-relogin mid-stream, broad Copilot multi-wire catalog parity, a separate
 Codex provider type, and end-to-end `SecretString` through provider
 construction.
+
+Phase 14 explicitly retains eight boundaries: no opi-managed plaintext
+credential file; no auto-relogin mid-stream; no per-call credential
+(`apiKey`/`env`) or provider-managed auth-header override (additive
+`Request::extra_headers` remains available only for non-reserved transport
+headers); no `onPayload`/`onResponse` streaming hooks; no
+`maxRetries`/`maxRetryDelay` on `Request`; no end-to-end `SecretString`
+provider-construction migration; no OAuth providers beyond Anthropic, GitHub
+Copilot, and OpenAI Codex; and no session-schema or context-reconstruction
+changes. TUI changes are limited to the reviewed `/login`, `/logout`,
+`CredentialNeeded` presenter, and raw/alternate-screen suspension around
+login.
+
+Phase 14 acceptance trace:
+
+| Criterion | Owner | Production/evidence trace |
+|---|---:|---|
+| SC1 credential storage and probes | 14.1 | `credential_store`, `doctor_cli`, and `list_models` fake-backend integration tests exercise production construction and redacted probe surfaces. |
+| SC2 OAuth product flows | 14.2 | `oauth_auth` exercises the production registry, `/login`, `/logout`, PKCE/device-code flows, persistence, exact provider profiles, and `interactive::oauth_login_restores_terminal_after_flow_failure`. |
+| SC3 live auth and session interaction | 14.2 | `oauth_auth`, `non_interactive`, and `oauth_auth::rpc_credential_needed_fails_without_blocking` exercise per-stream resolution on the three approved auth paths, typed retry/remediation, revocation, structured RPC failure, and no auto-login paths. |
+| SC4 Request and session affinity | 14.3 | `agent_loop_mock::session_id_reaches_every_request`, `session_runtime::phase14_session_affinity_tracks_new_resume_and_fork`, and `request_enrichment::session_affinity_wire_mappings` trace production propagation and exact positive/negative wire mappings. |
+| SC5 capabilities and cache markers | 14.4 | `model_capabilities_migration` and Anthropic fixtures prove the nested capability model and capability-gated marker positions/TTL. |
+| SC6 usage and cost | 14.5 | `usage_cost`, provider fixtures, and session runtime tests preserve `cache_write_1h_tokens` and `reasoning_tokens` subset semantics without double counting. |
+| SC7 dynamic refresh substrate | 14.6 | `provider_collection` and `provider_trait` mock tests prove deterministic atomic replacement; this is substrate-only with no production trigger. |
+| SC8 documentation and guards | 14.7 | `phase14_provider_auth_docs`, `oauth_auth::login_logout_commands_are_discoverable`, and `non_interactive::credential_needed_fails_without_prompt` pin localized docs, runtime help, and remediation. |
 
 ### Phase 15 - Safety & Sandbox
 

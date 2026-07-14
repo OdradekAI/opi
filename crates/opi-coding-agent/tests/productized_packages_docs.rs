@@ -910,6 +910,10 @@ fn first_class_provider_set_is_unchanged() {
         "stream",
         "test_support",
         "time",
+        // Phase 14 provider/auth contracts; these are support modules, not
+        // additional first-class provider families.
+        "auth",
+        "credential",
     ]
     .into_iter()
     .collect();
@@ -1267,9 +1271,11 @@ fn phase9_forbidden_current_scope_claims_rejected() {
     }
 
     // Positive counterpart: the spec executive summary explicitly disclaims the
-    // ecosystem breadth that Phase 9 keeps out of current scope. These prose
-    // claims are checked against whitespace-normalized content so markdown
-    // rewrapping does not weaken the guard.
+    // ecosystem breadth that remains out of current scope. Phase 14 implements
+    // OAuth login for three approved profiles, while the parity guard above
+    // continues to reject broad OAuth/provider parity. These prose claims are
+    // checked against whitespace-normalized content so markdown rewrapping does
+    // not weaken the guard.
     let spec_en = ws_normalized(&read_repo_file("docs/opi-spec.md"));
     let spec_zh = ws_normalized(&read_repo_file("docs/opi-spec.zh.md"));
     assert!(
@@ -1281,10 +1287,8 @@ fn phase9_forbidden_current_scope_claims_rejected() {
         "opi-spec must disclaim npm package install support (EN)"
     );
     assert!(
-        spec_en.contains("provider OAuth login")
-            && spec_en.contains("image generation")
-            && spec_en.contains("web/share flows"),
-        "opi-spec must list provider OAuth login, image generation, and web/share flows as not supported (EN)"
+        spec_en.contains("image generation") && spec_en.contains("web/share flows"),
+        "opi-spec must list image generation and web/share flows as not supported (EN)"
     );
     assert!(
         spec_zh.contains("不声称 pi package 生态对等"),

@@ -8,11 +8,11 @@ e'x# Opi 技术规范
 |---|---|
 | 状态 | 草案 |
 | 规范版本 | 0.6-draft |
-| 最后更新 | 2026-06-24 |
+| 最后更新 | 2026-07-14 |
 | 仓库 | `https://github.com/OdradekAI/opi` |
 | 参考上游 | `pi` 0.80.2，位于 `.repo/pi-0.80.2/`；对齐由 `opi-realign` 新鲜审计评估，报告位于 [`docs/realign/`](realign/) |
-| 当前实现 | `opi` 0.7.0 workspace，第 8 阶段运行时稳定化已完成；第 7 阶段可靠性/可观测性和第 5 阶段 package/process-adapter 表面已存在 |
-| 下一里程碑 | 第 9 阶段基线重校准和第 10 阶段核心架构深化，先于功能宽度扩张 |
+| 当前实现 | `opi` 0.7.0 workspace，第 1-14 阶段已实现；第十四阶段 Provider/Auth 产品路径已存在，动态模型 refresh 仍仅为基底 |
+| 下一里程碑 | 第十五阶段 Safety/Sandbox 实现 |
 
 本文档对当前设计具有规范性。涉及公共 API、事件协议、会话存储、发布行为或阶段边界变更的修改，应在同一变更中更新本文件。
 
@@ -33,9 +33,9 @@ Opi 以四个 Rust crate 映射 pi 的包结构：
 - `opi-tui`：终端 UI 组件。
 - `opi-coding-agent`：`opi` CLI 二进制文件。
 
-本仓库已经在第三阶段终端编程 Agent 基础上完成第四阶段可扩展性基底：RPC JSONL 模式、共享 SDK 类型、extension hooks/tools/state、资源发现、skills、prompt fragments、themes、packages、自定义 provider/model 注册、会话分支选择和 streaming proxy 原语已经存在。第五阶段添加的是 Rust 原生 package 和 process-adapter MVP：本地和 git package 来源、`package add/remove/list/doctor` CLI、带 `[adapter]` 声明的 manifest V2、使用 `opi-extension-jsonl-v1` 协议的 `process-jsonl` adapter 托管，以及 adapter 到运行时的工具/命令/hooks/事件/状态/取消桥接。第八阶段已经稳定了事件顺序、hooks、工具调度、取消和 SDK/RPC 状态等运行时契约。下一步不是扩张生态宽度：第九阶段把项目重新校准到 `pi` 0.80.2 证据，第十阶段先深化 `Models/Auth`、通用 harness 和 session facade 等核心缝合点，然后再继续旧的工具、供应商、会话和 TUI 阶段。
+本仓库已完成第 1-14 阶段。除终端 Agent、运行时、package、Provider correctness、工具和会话上下文工作外，第十四阶段现在还提供 OS-keychain 凭据存储、Anthropic/GitHub Copilot/OpenAI Codex OAuth、按 stream 鉴权解析、Request/会话亲和扩充、能力门控的 Anthropic cache marker、cache/reasoning 用量记账，以及仅为基底的动态模型 refresh API。
 
-Opi 不声称 pi package 生态对等，也不支持 npm package 安装、marketplace 行为、TypeScript extension live reload、通过 adapter 拦截 provider stream、自定义终端 UI adapter 渲染、package 权限策略执行、provider OAuth 登录、图像生成或 web/share 流程。MCP、子 Agent、plan mode、todos、permission gates 和动态插件加载应建立在该基底之上，而不是成为核心功能。
+Opi 不声称 pi package 生态对等，也不支持 npm package 安装、marketplace 行为、TypeScript extension live reload、通过 adapter 拦截 provider stream、自定义终端 UI adapter 渲染、package 权限策略执行、第十四阶段三个获批 profile 之外的 OAuth provider、图像生成或 web/share 流程。MCP、子 Agent、plan mode、todos、permission gates 和动态插件加载应建立在该基底之上，而不是成为核心功能。
 
 核心设计规则：
 
@@ -48,7 +48,7 @@ Opi 不声称 pi package 生态对等，也不支持 npm package 安装、market
 | 最小化核心 | `CONTRIBUTING.md` 和编程代理文档将工作流特定功能保持在核心之外 | 第 1-3 阶段避免 MCP、动态插件、子代理、计划模式、待办系统和后台 bash 的范围蔓延 |
 | 分层运行时 | `agentLoop` -> `Agent` -> `AgentHarness` / `AgentSession` | `agent_loop` -> `Agent` -> `Harness` / `CodingHarness` |
 | 流式优先 | `AssistantMessageEventStream` 和代理事件流 | `Stream<Item = Result<Event, Error>>` 加终端事件 |
-| 供应商无关 | provider 通过 `Models` 拥有模型目录、认证和流式行为 | `Provider` trait、注册表、供应商适配器，以及计划中的 provider collection/auth 缝合点 |
+| 供应商无关 | provider 通过 `Models` 拥有模型目录、认证和流式行为 | `Provider` trait、registry/collection、Provider adapter、凭据/OAuth 契约与按 stream 鉴权解析 |
 | 代理消息 vs LLM 消息 | `AgentMessage[] -> transformContext -> convertToLlm -> Message[]` | 应用消息在 `opi-agent`，供应商消息在 `opi-ai` |
 | 工具隔离 | LLM 边界处的 TypeBox schema | 类型化的 Rust 工具输入，在 LLM 边界生成 JSON Schema |
 | 错误在流内 | 供应商故障变为 `error` 流事件 | 供应商/运行时故障作为事件呈现，而非 panic |
@@ -74,7 +74,7 @@ Pi 0.80.2 已经比最初的终端编程 harness 更宽，但它仍保留一些�
 - MCP、子代理、计划模式、权限门禁和待办系统属于扩展、包或外部工具，而不是内置核心。
 - 工具安全主要通过工具选择、可见性、容器/沙箱和扩展钩子控制。
 - RPC 和 SDK 表面支持组合，但不应让终端产品退居次要。
-- Provider OAuth、图像生成、自定义扩展 UI、npm/gallery 工作流和 web/share 流程属于生态表面，进入 `opi` 前需要单独审查设计。
+- Anthropic、GitHub Copilot 与 OpenAI Codex 之外的 OAuth provider、图像生成、自定义扩展 UI、npm/gallery 工作流和 web/share 流程在进入 `opi` 前需要单独审查设计。
 
 ## 3. 与 pi 的关系
 
@@ -117,7 +117,7 @@ Pi 是行为参考。以下行为应被视为继承的设计，而非偶然的�
 | 二进制 | 第 0 阶段占位符，第 1 阶段可用 | `opi`，非 `pi` |
 | 供应商流式处理 | 第 1 阶段 | 语义对等 |
 | Anthropic 供应商 | 第 1 阶段 | 语义对等 |
-| `Models` / provider-owned auth | 第 10 阶段 | `opi-ai` 中的 Rust 原生 provider collection/auth 缝合点，不声明近期 OAuth 对等 |
+| `Models` / provider-owned auth | 第 10/14 阶段 | Rust 原生 collection/auth 缝合点，加 OS-keychain 凭据与 Anthropic、GitHub Copilot、OpenAI Codex 获批 OAuth flow |
 | `agentLoop` / `Agent` | 第 1 阶段 | 语义对等 |
 | `AgentHarness` / session repo | 第 10/13 阶段 | `opi-agent` 中的通用 harness/session facade，`opi-coding-agent` 中保留编程产品包装层 |
 | read/write/edit/bash 加文件搜索/列表工具 | 第 1/3 阶段 | 行为对等；保留 `glob` 作为 opi 原生搜索工具，在声明稳定 CLI 前补齐 `find`/`ls` 对等 |
@@ -1353,9 +1353,24 @@ Phase 13 交接：会话工作可以依赖经由共享 `opi-ai` 类型传递的 
 
 ### 第十四阶段 - Provider & Auth
 
-状态：已设计；实现待定。设计：`docs/superpowers/specs/2026-07-11-phase14-provider-auth-design.md`。
+状态：已实现。设计：`docs/superpowers/specs/2026-07-11-phase14-provider-auth-design.md`。
 
-第十四阶段把 Provider/Auth 集群提升为正式阶段。它增加 OS keychain 凭据存储（`CredentialStore`/`Credential` 在 `opi-ai`；keychain/env 实现与 `CredentialResolver` 在 `opi-coding-agent`）、三个 pi provider（Anthropic、GitHub Copilot、OpenAI Codex）的 OAuth（每个具体 provider 持有 `Arc<dyn AuthResolver>`，由 coding-agent 所有的 `AuthSource` 实现按请求重新解析鉴权），以及对 `opi_ai::Request` 的增补丰富（`timeout`、`extra_headers`、`cache_retention`、`session_id`）、`Usage`/`CostBreakdown` 的 cache 与 reasoning 记账、把现有 `opi_ai::registry::ModelCapabilities` 迁移为 `ModelInfo` 上唯一的嵌套能力值以驱动 Anthropic prompt-cache 标记，以及动态 `refresh_models` trait 基底。`cache_write_1h_tokens` 是 cache-write 的子集，`reasoning_tokens` 是 output 的子集，因此成本和 token 总数不会重复计算。前三个 Request 参数在第十四阶段只是公开的 `opi-ai` 基底，不新增 config/harness 生产端；只有 `session_id` 贯穿真实的 harness/agent 路径。动态 refresh 只有 mock collection 覆盖，第十四阶段不增加生产触发点，也不以它关闭产品验收路径。该存储使用 `fs4` 锁定并在边界使用 `secrecy`；不存在 opi 管理的明文凭据文件。非目标：按调用 `apiKey` 覆盖（pi `ApiStreamOptions`）、`onPayload`/`onResponse` 流式钩子、流式过程中自动重新登录、宽泛的 Copilot 多 wire catalog 对等、独立 Codex provider 类型，以及贯穿 provider 构造的端到端 `SecretString`。
+第十四阶段把 Provider/Auth 集群提升为正式阶段。它增加 OS keychain 凭据存储（`CredentialStore`/`Credential` 在 `opi-ai`；keychain/env 实现与 `CredentialResolver` 在 `opi-coding-agent`）、通过 `OAuthProvider` 契约实现三个 pi provider（Anthropic、GitHub Copilot、OpenAI Codex）的 OAuth（只有获批的 Anthropic Messages、Copilot-compatible Chat 与 Codex-compatible Responses 路径持有 `Arc<dyn AuthResolver>`，由 coding-agent 所有的 `AuthSource` 实现按请求重新解析鉴权），以及对 `opi_ai::Request` 的增补丰富（`timeout`、`extra_headers`、`cache_retention`、`session_id`）、`Usage`/`CostBreakdown` 的 cache 与 reasoning 记账、把现有 `opi_ai::registry::ModelCapabilities` 迁移为 `ModelInfo` 上唯一的嵌套能力值以驱动 Anthropic prompt-cache 标记，以及动态 `refresh_models` trait 基底。`cache_write_1h_tokens` 是 cache-write 的子集，`reasoning_tokens` 是 output 的子集，因此成本和 token 总数不会重复计算。前三个 Request 参数在第十四阶段只是公开的 `opi-ai` 基底，不新增 config/harness 生产端；只有 `session_id` 贯穿真实的 harness/agent 路径。动态 refresh 只有 mock collection 覆盖，第十四阶段不增加生产触发点，也不以它关闭产品验收路径。该存储使用 `fs4` 锁定并在边界使用 `secrecy`；不存在 opi 管理的明文凭据文件。非目标：按调用 `apiKey` 覆盖（pi `ApiStreamOptions`）、`onPayload`/`onResponse` 流式钩子、流式过程中自动重新登录、宽泛的 Copilot 多 wire catalog 对等、独立 Codex provider 类型，以及贯穿 provider 构造的端到端 `SecretString`。
+
+第十四阶段明确保留八条边界：不创建 opi 管理的明文凭据文件；不在 stream 中途自动重新登录；不允许按调用覆盖凭据（`apiKey`/`env`）或 Provider 管理的鉴权 header（`Request::extra_headers` 只可附加非保留 transport header）；不增加 `onPayload`/`onResponse` 流式钩子；不在 `Request` 上增加 `maxRetries`/`maxRetryDelay`；不进行贯穿 Provider 构造的端到端 `SecretString` 迁移；不增加 Anthropic、GitHub Copilot 与 OpenAI Codex 之外的 OAuth Provider；不修改 session schema 或 context reconstruction。TUI 改动仅限审查过的 `/login`、`/logout`、`CredentialNeeded` presenter，以及登录期间暂停 raw/alternate-screen。
+
+第十四阶段验收追踪：
+
+| 条件 | Owner | 生产/证据追踪 |
+|---|---:|---|
+| SC1 凭据存储与 probe | 14.1 | `credential_store`、`doctor_cli` 与 `list_models` fake-backend 集成测试覆盖生产构造和已脱敏 probe 表面。 |
+| SC2 OAuth 产品 flow | 14.2 | `oauth_auth` 覆盖生产 registry、`/login`、`/logout`、PKCE/device-code、持久化、精确 Provider profile，以及 `interactive::oauth_login_restores_terminal_after_flow_failure`。 |
+| SC3 真实鉴权与会话交互 | 14.2 | `oauth_auth`、`non_interactive` 与 `oauth_auth::rpc_credential_needed_fails_without_blocking` 覆盖三个获批鉴权路径的按 stream 解析、类型化重试/修复、撤销、结构化 RPC 失败与禁止自动登录。 |
+| SC4 Request 与会话亲和 | 14.3 | `agent_loop_mock::session_id_reaches_every_request`、`session_runtime::phase14_session_affinity_tracks_new_resume_and_fork` 与 `request_enrichment::session_affinity_wire_mappings` 追踪生产传播和精确的正负 wire 映射。 |
+| SC5 能力与 cache marker | 14.4 | `model_capabilities_migration` 与 Anthropic fixture 证明嵌套能力模型及能力门控 marker 位置/TTL。 |
+| SC6 用量与费用 | 14.5 | `usage_cost`、Provider fixture 与 session runtime 测试保留 `cache_write_1h_tokens` 和 `reasoning_tokens` 子集语义且不重复计算。 |
+| SC7 动态 refresh 基底 | 14.6 | `provider_collection` 与 `provider_trait` mock 测试证明确定性原子替换；它仅为基底、无生产触发。 |
+| SC8 文档与 guard | 14.7 | `phase14_provider_auth_docs`、`oauth_auth::login_logout_commands_are_discoverable` 与 `non_interactive::credential_needed_fails_without_prompt` 固定本地化文档、运行时 help 与修复提示。 |
 
 ### 第十五阶段 - Safety & Sandbox
 

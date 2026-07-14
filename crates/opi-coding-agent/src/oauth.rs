@@ -90,6 +90,7 @@ struct PkceLoginConfig {
     authorize_url: String,
     token_url: String,
     client_id: String,
+    authorize_params: Vec<(String, String)>,
     client: reqwest::Client,
     timeout: Duration,
 }
@@ -144,7 +145,7 @@ async fn run_pkce_login(
     let challenge = code_challenge_s256(&verifier);
     let state = generate_state();
     let redirect_uri = format!("http://127.0.0.1:{port}/");
-    let authorize_url = format!(
+    let mut authorize_url = format!(
         "{}?response_type=code&client_id={}&redirect_uri={}&code_challenge={}&code_challenge_method=S256&state={}",
         config.authorize_url,
         url_encode(&config.client_id),
@@ -152,6 +153,12 @@ async fn run_pkce_login(
         challenge,
         state,
     );
+    for (name, value) in &config.authorize_params {
+        authorize_url.push('&');
+        authorize_url.push_str(name);
+        authorize_url.push('=');
+        authorize_url.push_str(&url_encode(value));
+    }
 
     presenter.present_auth_url(&authorize_url).await?;
 
@@ -503,6 +510,13 @@ impl OAuthProvider for AnthropicOAuthProvider {
             authorize_url: self.authorize_url.clone(),
             token_url: self.token_url.clone(),
             client_id: self.client_id.clone(),
+            authorize_params: vec![
+                ("code".into(), "true".into()),
+                (
+                    "scope".into(),
+                    "org:create_api_key user:profile user:inference user:sessions:claude_code user:mcp_servers user:file_upload".into(),
+                ),
+            ],
             client: self.client.clone(),
             timeout: self.timeout,
         };
@@ -579,6 +593,12 @@ impl OAuthProvider for CodexOAuthProvider {
             authorize_url: self.authorize_url.clone(),
             token_url: self.token_url.clone(),
             client_id: self.client_id.clone(),
+            authorize_params: vec![
+                ("scope".into(), "openid profile email offline_access".into()),
+                ("id_token_add_organizations".into(), "true".into()),
+                ("codex_cli_simplified_flow".into(), "true".into()),
+                ("originator".into(), "opi".into()),
+            ],
             client: self.client.clone(),
             timeout: self.timeout,
         };
@@ -609,6 +629,11 @@ impl OAuthProvider for CodexOAuthProvider {
 // ---------------------------------------------------------------------------
 // CopilotOAuthProvider (GitHub device-code, then Copilot token exchange)
 // ---------------------------------------------------------------------------
+
+const COPILOT_USER_AGENT: &str = "GitHubCopilotChat/0.35.0";
+const COPILOT_EDITOR_VERSION: &str = "vscode/1.107.0";
+const COPILOT_PLUGIN_VERSION: &str = "copilot-chat/0.35.0";
+const COPILOT_INTEGRATION_ID: &str = "vscode-chat";
 
 /// Device-authorization response (RFC 8628). `device_code` is secret; only
 /// `user_code` and `verification_uri` reach the presenter.
@@ -677,6 +702,8 @@ async fn poll_device_token(
     ];
     let resp = client
         .post(token_url)
+        .header("accept", "application/json")
+        .header("user-agent", COPILOT_USER_AGENT)
         .form(&params)
         .send()
         .await
@@ -754,7 +781,12 @@ impl CopilotOAuthProvider {
         base_url_fallback: Option<String>,
     ) -> Result<(SecretString, Option<OffsetDateTime>, Option<String>), ProviderError> {
         let resp = client
-            .post(copilot_token_url)
+            .get(copilot_token_url)
+            .header("accept", "application/json")
+            .header("user-agent", COPILOT_USER_AGENT)
+            .header("Editor-Version", COPILOT_EDITOR_VERSION)
+            .header("Editor-Plugin-Version", COPILOT_PLUGIN_VERSION)
+            .header("Copilot-Integration-Id", COPILOT_INTEGRATION_ID)
             .bearer_auth(github_token)
             .send()
             .await
@@ -804,6 +836,8 @@ impl OAuthProvider for CopilotOAuthProvider {
             let params = [("client_id", client_id.as_str()), ("scope", scope.as_str())];
             let resp = client
                 .post(&da_url)
+                .header("accept", "application/json")
+                .header("user-agent", COPILOT_USER_AGENT)
                 .form(&params)
                 .send()
                 .await
@@ -933,15 +967,15 @@ impl OAuthProvider for CopilotOAuthProvider {
 }
 
 // ---------------------------------------------------------------------------
-// TuiLoginPresenter — production LoginPresenter (print-only in slice 4)
+// TuiLoginPresenter — production LoginPresenter
 // ---------------------------------------------------------------------------
 
-/// Production `LoginPresenter`. Slice 4 ships a PRINT-ONLY implementation:
+/// Production `LoginPresenter`. The presenter itself uses normal terminal IO:
 /// `present_auth_url` prints the URL (no browser-open; headless/SSH parity),
 /// `present_device_code` prints the public `user_code` + verification URI,
 /// `await_manual_code` reads one line from stdin, and `notify_*` print a status
-/// line. Slice 6 wraps this in a TUI modal that suspends the ratatui alternate
-/// screen; slice 4 deliberately does not touch the TUI render loop. No method
+/// line. The interactive dispatcher suspends raw mode and the ratatui alternate
+/// screen before invoking it, then restores both afterward. No method
 /// logs access/refresh tokens, authorization codes, or device codes (only the
 /// public `user_code` is shown via `present_device_code`).
 pub struct TuiLoginPresenter;
@@ -989,9 +1023,8 @@ impl LoginPresenter for TuiLoginPresenter {
             print!("Paste the authorization code: ");
             let _ = std::io::Write::flush(&mut std::io::stdout());
             // Blocking stdin read moved off the async executor. The interactive
-            // TUI modal (slice 6) replaces this with ratatui input; the
-            // print-only presenter uses a blocking line read for headless/SSH
-            // manual paste.
+            // dispatcher suspends raw/alternate-screen state around this
+            // blocking line read so manual paste works in local and SSH terms.
             let line = tokio::task::spawn_blocking(|| {
                 let mut line = String::new();
                 std::io::stdin().read_line(&mut line).map(|_| line)
@@ -1072,16 +1105,9 @@ impl OAuthProviderRegistry {
     /// and client ids. This is the single source of truth the provider factory
     /// and the `/login` command consult; tests assert registration consistency.
     ///
-    /// # RESIDUAL — production endpoint verification
-    ///
-    /// The client ids and URLs below were corroborated against public community
-    /// sources (claude.ai live redirect, the well-known VS Code Copilot GitHub
-    /// App id, multiple Codex-CLI-derived projects), NOT against the upstream pi
-    /// repository (not cloned locally). They MUST be re-confirmed against pi (or
-    /// a live login) before a production OAuth login is advertised: a wrong
-    /// client_id or authorize URL breaks `/login` at runtime while every test
-    /// still passes (tests assert registration, not endpoint reachability). The
-    /// Codex OAuth authorize/token URLs in particular are least certain.
+    /// The endpoint and client-id constants below are pinned to the reviewed
+    /// `.repo/pi-0.80.6` OAuth profiles. Tests remain offline and never contact
+    /// these production endpoints.
     pub fn registry_with_builtins() -> Self {
         let mut registry = Self::new();
         // 5-minute login budget (callback wait / device-code polling).
@@ -1090,14 +1116,13 @@ impl OAuthProviderRegistry {
         registry
             .register(Arc::new(AnthropicOAuthProvider::new(
                 "https://claude.ai/oauth/authorize".to_owned(),
-                "https://console.anthropic.com/v1/oauth/token".to_owned(),
+                "https://platform.claude.com/v1/oauth/token".to_owned(),
                 "9d1c250a-e61b-44d9-88ed-5944d1962f5e".to_owned(),
                 LOGIN_TIMEOUT,
             )))
             .expect("anthropic OAuth provider id is unique in a fresh registry");
         registry
             .register(Arc::new(CodexOAuthProvider::new(
-                // RESIDUAL: Codex (ChatGPT) OAuth endpoints — confirm against pi.
                 "https://auth.openai.com/oauth/authorize".to_owned(),
                 "https://auth.openai.com/oauth/token".to_owned(),
                 "app_EMoamEEZ73f0CkXaXp7hrann".to_owned(),
@@ -1108,7 +1133,7 @@ impl OAuthProviderRegistry {
             .register(Arc::new(CopilotOAuthProvider::new(
                 "https://github.com/login/device/code".to_owned(),
                 "https://github.com/login/oauth/access_token".to_owned(),
-                "https://api.github.com/copilot_internal/v2/tokens".to_owned(),
+                "https://api.github.com/copilot_internal/v2/token".to_owned(),
                 "Iv1.b507a08c87ecfe98".to_owned(),
                 "read:user".to_owned(),
                 LOGIN_TIMEOUT,

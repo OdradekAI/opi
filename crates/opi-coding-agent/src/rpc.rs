@@ -586,6 +586,9 @@ impl RpcRunner {
         match joined {
             Ok((harness, result)) => {
                 self.harness = Some(harness);
+                if !self.handle_agent_result(result, emit) {
+                    return false;
+                }
                 // Phase 7 task 7.5: emit a run-summary event with structured
                 // diagnostic counts after the run completes. Additive event.
                 if let Some(harness) = self.harness.as_ref()
@@ -601,7 +604,6 @@ impl RpcRunner {
                     });
                     let _ = emit(&event);
                 }
-                self.handle_agent_result(result);
                 true
             }
             Err(e) => {
@@ -1000,10 +1002,38 @@ impl RpcRunner {
         true
     }
 
-    fn handle_agent_result(&self, result: Result<Vec<AgentMessage>, AgentError>) {
+    fn handle_agent_result(
+        &self,
+        result: Result<Vec<AgentMessage>, AgentError>,
+        emit: &mut impl FnMut(&serde_json::Value) -> bool,
+    ) -> bool {
         match result {
-            Ok(_) | Err(AgentError::Cancelled) => {}
-            Err(_) => {}
+            Ok(_) | Err(AgentError::Cancelled) => true,
+            Err(AgentError::CredentialNeeded { provider_id }) => {
+                let error = AgentError::CredentialNeeded {
+                    provider_id: provider_id.clone(),
+                };
+                let diagnostic: Diagnostic = (&error).into();
+                emit(&serde_json::json!({
+                    "type": "CredentialNeeded",
+                    "provider_id": provider_id,
+                    "remediation": format!("/login {provider_id}"),
+                    "diagnostic": diagnostic.redacted_payload(RedactionMode::Summary),
+                }))
+            }
+            Err(AgentError::CredentialRevoked { provider_id }) => {
+                let error = AgentError::CredentialRevoked {
+                    provider_id: provider_id.clone(),
+                };
+                let diagnostic: Diagnostic = (&error).into();
+                emit(&serde_json::json!({
+                    "type": "CredentialRevoked",
+                    "provider_id": provider_id,
+                    "remediation": format!("/login {provider_id}"),
+                    "diagnostic": diagnostic.redacted_payload(RedactionMode::Summary),
+                }))
+            }
+            Err(_) => true,
         }
     }
 }

@@ -569,7 +569,7 @@ impl AuthResolver for CredentialMissingResolver {
 }
 
 #[tokio::test]
-async fn non_interactive_credential_needed_exits_3_without_prompt() {
+async fn credential_needed_fails_without_prompt() {
     let provider = AnthropicProvider::with_auth(
         Arc::new(CredentialMissingResolver {
             provider_id: "anthropic",

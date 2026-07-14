@@ -54,6 +54,13 @@ Run the interactive TUI:
 opi
 ```
 
+Inside the TUI, stored OAuth credentials are managed explicitly:
+
+```text
+/login anthropic
+/logout anthropic
+```
+
 Run one prompt:
 
 ```sh
@@ -158,6 +165,8 @@ Provider support lives in `opi-ai` and is wired into `opi-coding-agent`.
 | `bedrock:` | AWS Bedrock Converse streaming | AWS env vars or shared AWS config |
 | `azure:` | Azure OpenAI deployment | `AZURE_OPENAI_API_KEY` plus endpoint config |
 | `vertex:` | Google Vertex AI Gemini streaming | `VERTEX_ACCESS_TOKEN` plus project/location config |
+| `copilot:` | GitHub Copilot OpenAI Chat compatibility profile | OS keychain via `/login copilot` |
+| `codex:` | OpenAI Codex Responses compatibility profile | OS keychain via `/login codex` |
 | configured profile | OpenAI-compatible Chat Completions profile | profile-specific `api_key_env` |
 
 Compatible OpenAI-style services should normally use configured profiles rather
@@ -166,6 +175,33 @@ profiles request `stream_options.include_usage`; response IDs captured from any
 OpenAI Chat chunk carrying `id` round-trip into `response_id`. A profile may
 also set `chat_completions_path` for base URLs that already include an API
 prefix. Cost summaries are omitted when usage or pricing is unknown.
+
+## Credentials, OAuth, and Provider Metadata
+
+`opi-ai` defines the IO-free `CredentialStore`, `Credential`,
+`OAuthProvider`, and `AuthResolver` contracts. `opi-coding-agent` supplies the
+OS-keychain `CredentialResolver`, an env-var fallback for API keys, and one
+secret-free coordination file (`credential.lock`). It never writes an
+opi-managed plaintext credential file. `opi doctor` and `--list-models` probe
+only redacted credential state.
+
+Interactive `/login <provider>` and `/logout <provider>` support Anthropic
+PKCE, GitHub Copilot device-code, and OpenAI Codex PKCE. This is exact auth and
+compatibility-profile coverage, not broad Copilot multi-wire parity and not a
+separate Codex provider type. `CredentialNeeded` can retry the same pending
+interactive turn after a successful user-initiated login. Non-interactive,
+JSON, and RPC modes instead report the provider plus `/login <provider>` and
+fail without starting OAuth. `CredentialRevoked` is non-retryable; opi does
+not auto-relogin mid-stream.
+
+`Request` now carries `timeout`, `extra_headers`, `CacheRetention`, and
+`session_id`. Only `session_id` has a production harness producer in this
+phase; providers map it through their reviewed prompt-cache/session-affinity
+rules. `ModelInfo` uses the single nested `ModelCapabilities` value, including
+Anthropic cache-control capabilities. `cache_write_1h_tokens` remains a subset
+of cache writes and `reasoning_tokens` a subset of output, so totals and costs
+do not double-count them. `Provider::refresh_models` and collection refresh are
+substrate-only with no production trigger.
 
 ## Built-in Tools
 
@@ -251,9 +287,11 @@ tools the agent can call; they are not an operating-system sandbox.
   network-free by default, and `trace` is opt-in.
 - Production sub-agent, permission-gate, plan/todo, and MCP workflows are
   examples/package patterns, not built-in core workflows.
-- OAuth login, subscription auth, image generation, browser usage, provider
-  streaming-adapter protocols for packages, paid live provider calls in default
-  tests, and copying pi's provider-specific config file format remain deferred.
+- OAuth providers beyond Anthropic, GitHub Copilot, and OpenAI Codex; broad
+  Copilot catalog parity; image generation; browser usage; provider
+  streaming-adapter protocols for packages; paid live provider calls in
+  default tests; and copying pi's provider-specific config file format remain
+  deferred.
 - Dynamic Rust plugin loading from arbitrary extension paths is not supported.
 
 If you need stronger isolation, run `opi` inside a container, VM, or external

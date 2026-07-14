@@ -46,8 +46,9 @@ breaks this doc into tasks; it is not itself a task list.
   sidesteps the encryption-key bootstrap problem on headless hosts).
 - No auto-relogin mid-stream (T2 D5): a revoked token stops the turn and prompts
   re-login; the running turn is not silently re-authorized.
-- No per-call `apiKey` / `headers` / `env` override (pi `ApiStreamOptions`) —
-  deferred to fog (T2 D8); no multi-tenant use case.
+- No per-call credential (`apiKey` / `env`) or provider-managed auth-header
+  override (pi `ApiStreamOptions`). `Request::extra_headers` remains additive
+  for non-reserved transport headers; reserved auth headers are rejected.
 - No `onPayload` / `onResponse` streaming hooks (T3 3d) — deferred to fog;
   distinct from Phase 17 T14's turn-level provider hook.
 - No `maxRetries` / `maxRetryDelay` on `Request` — retry policy is `opi-agent`'s
@@ -55,8 +56,10 @@ breaks this doc into tasks; it is not itself a task list.
 - No end-to-end `SecretString`-through-provider-construction refactor (T1 D5
   scope cap; deferred follow-up).
 - No new OAuth providers beyond the three pi ships.
-- No changes to session schema, context reconstruction, or the TUI (those belong
-  to Phases 13 and 17).
+- No session-schema or context-reconstruction changes. TUI changes are limited
+  to the reviewed `/login`, `/logout`, `CredentialNeeded` presenter, and
+  raw/alternate-screen suspension around login; unrelated TUI product changes
+  remain in Phases 13 and 17.
 
 ## Relationship to pi
 
@@ -74,8 +77,8 @@ code/URL-paste fallback for headless and SSH hosts, mirroring pi's
 pi's live run path routes through `ProviderCollection` per request for auth
 re-resolution. opi keeps the live path on `Box<dyn Provider>`
 (`agent_loop.rs:118` calls `context.provider.stream(request)` directly) and
-instead makes each concrete provider hold an injected `AuthSource` that
-re-resolves on each `stream()`. `ProviderCollection` stays off the live path
+instead makes the three approved live provider paths hold an injected
+`AuthResolver` that re-resolves on each `stream()`. `ProviderCollection` stays off the live path
 (preserves the Phase 10 boundary); refresh and locking are centralized in the
 credential store.
 
@@ -105,8 +108,8 @@ OAuth providers and their registry, the `AuthSource` resolver, and presenter
 impls — live in `opi-coding-agent`.
 
 `opi-agent` remains unchanged for provider construction and auth resolution:
-auth is resolved inside each concrete provider's `stream()`, reached through
-the existing `Box<dyn Provider>` seam. T3 makes one narrow, auth-independent
+auth is resolved inside the three approved Anthropic, Copilot, and Codex
+provider streams, reached through the existing `Box<dyn Provider>` seam. T3 makes one narrow, auth-independent
 change to `opi-agent`: it carries the active session-affinity id through
 `Agent` / `AgentLoopContext` into `Request::session_id`.
 
@@ -281,8 +284,9 @@ on T1's locked `write`/`delete`.
 
 ### T2 — OAuth architecture and per-request auth re-resolution
 
-**Routing.** Each concrete provider holds an injected
-`Arc<dyn AuthResolver>` from `opi-ai`. `ResolvedAuth` carries only the auth
+**Routing.** The approved Anthropic Messages, Copilot-compatible Chat, and
+Codex-compatible Responses paths hold an injected `Arc<dyn AuthResolver>` from
+`opi-ai`. `ResolvedAuth` carries only the auth
 scheme and secret needed by the provider's HTTP boundary:
 
 ```rust

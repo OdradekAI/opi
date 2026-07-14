@@ -24,9 +24,10 @@ cargo add opi-ai
 package 加载或内置编程工具；这些能力分别位于 `opi-agent` 和 `opi-coding-agent`。
 
 `opi-ai` 还暴露一个 unstable-0.x 的模型/鉴权 seam：`provider_collection`
-模块（`ProviderCollection`）在 `ProviderRegistry` 之上叠加了 Provider 侧鉴权契约
-（`AuthDescriptor` / `AuthStatus`）、OpenAI-compatible 兼容性元数据，以及
-stream/complete 派发。OAuth 与订阅鉴权是明确的非目标。
+模块（`ProviderCollection`）在 `ProviderRegistry` 之上叠加 Provider 侧鉴权契约、
+OpenAI-compatible 兼容性元数据，以及 stream/complete 派发。无 IO 的凭据与 OAuth
+trait 位于本 crate；keychain、环境变量、登录 presenter 和 refresh 实现仍位于
+`opi-coding-agent`。
 
 ## Provider
 
@@ -51,20 +52,50 @@ OpenAI-compatible profile 加入。
 | 项 | 作用 |
 |----|------|
 | `Provider` | 后端 trait，包含 `id`、`models` 和 `stream(Request)`。 |
-| `Request` | Provider 请求：模型、消息、工具、token 限制、thinking 配置、metadata、取消信号。 |
+| `Request` / `CacheRetention` | Provider 请求：模型、消息、工具、token 限制、thinking 配置、metadata、取消、timeout、额外 header、cache retention 和会话亲和。 |
 | `Message` | 面向 Provider 的 user、assistant 和 tool-result 消息。 |
 | `InputContent` / `OutputContent` | 文本与图片内容块。 |
 | `ToolResultMessage` | 面向 Provider 的工具结果消息：content、可选 details、`is_error`、`truncated` 和时间戳元数据。 |
 | `AssistantStreamEvent` | Provider 无关流式事件，覆盖 start、text、thinking、tool call、done 和 error。 |
-| `ModelInfo` | 模型元数据：上下文窗口、输出上限、图片、流式和 thinking 支持。 |
+| `ModelInfo` / `ModelCapabilities` | 使用唯一嵌套能力值的模型元数据，包括 cache-control 与长 retention 支持。 |
 | `ProviderError` / `ProviderErrorCategory` | Provider 失败分类：auth、config、request、network、rate_limit、provider、stream、capability 和 cancelled（超时归为 network）。 |
 | `ProviderRegistry` | 解析 `provider:model`、注册自定义 Provider、叠加模型覆盖。 |
-| `ProviderCollection` / `AuthDescriptor` / `AuthStatus` | unstable-0.x 模型/鉴权 seam，位于 `ProviderRegistry` 之上：Provider+模型查找、脱敏鉴权解析、OpenAI-compatible 兼容性元数据，以及 stream/complete 派发。不含 OAuth/订阅鉴权。 |
+| `ProviderCollection` / `AuthDescriptor` / `AuthStatus` | unstable-0.x 模型/鉴权 seam，位于 `ProviderRegistry` 之上：Provider+模型查找、脱敏鉴权状态、OpenAI-compatible 兼容性元数据、派发与原子动态目录 refresh。 |
+| `CredentialStore` / `Credential` / `CredentialSource` | 无 IO、object-safe 的凭据持久化与已脱敏三态探测契约。 |
+| `OAuthProvider` / `OAuthCredential` / `LoginPresenter` | 与 flow 无关的 boxed-future OAuth 契约；具体 flow 位于 `opi-coding-agent`。 |
+| `AuthResolver` / `ResolvedAuth` | 在 Provider HTTP 前使用的按 stream 鉴权解析契约。 |
 | `ApiKind` | crate 根枚举，标注 assistant 消息携带的后端家族（`Anthropic`、`OpenAi`、`Google`、`Mistral`）。 |
 | `HttpClient` | 共享 `reqwest` client，支持连接池和显式/环境变量代理。 |
 | `retry` | 重试配置、指数退避和 `Retry-After` 解析。 |
 | `Usage` / `CumulativeUsage` | token 累计和费用辅助。 |
 | `test_support::MockProvider` | 供下游测试使用的确定性 mock provider。 |
+
+## 凭据、Request 扩充与 Refresh
+
+`CredentialStore` 将 backend 错误与条目缺失区分开，`CredentialSource` 则在不暴露
+秘密的前提下报告 present、absent 或 backend-unavailable 状态。
+`AuthDescriptor::StoreCredential` 只携带 key 与 display source。
+`OAuthProvider`、`LoginPresenter` 和 `AuthResolver` 是 object-safe boxed-future
+seam。`opi-coding-agent` 提供 OS-keychain store，以及获批的 Anthropic、GitHub
+Copilot 和 OpenAI Codex 登录 flow；`opi-ai` 不执行 keychain、环境变量或 presenter IO。
+
+三个获批的真实鉴权路径——Anthropic Messages、Copilot-compatible OpenAI Chat 与
+Codex-compatible OpenAI Responses——都在返回的 stream 内、紧邻 HTTP 之前解析
+`AuthResolver`。凭据缺失与撤销分别成为显式且不可重试的
+`ProviderError::CredentialNeeded` 和
+`ProviderError::CredentialRevoked`。按调用凭据仍不在范围内：`extra_headers` 会拒绝
+Provider 管理的鉴权 header。
+
+`Request` 新增 `timeout`、`extra_headers`、`CacheRetention` 和 `session_id`。前三项是
+公开的 request-to-wire 基底；本阶段只有 `session_id` 在 coding harness 中具有生产生成方。
+OpenAI family 只通过审查过的兼容标志映射该 id，Anthropic 则使用模型能力门控的 cache
+marker。`ModelInfo` 包含现有的嵌套 `ModelCapabilities`；未知/自定义模型默认关闭 cache
+支持。
+
+`Usage::cache_write_1h_tokens` 是 cache-write token 的子集，
+`Usage::reasoning_tokens` 是 output token 的子集。费用与总 token 计算只计一次父 bucket。
+`Provider::refresh_models` 与 `ProviderCollection::refresh` 实现确定性的原子目录替换，
+但仅为基底、无生产触发。
 
 ## 图片支持
 
@@ -130,6 +161,7 @@ LLM 可见内容和 provider 专用失败信号。
 | `strict_tool_schema` | 发出 strict JSON-schema 工具定义。 |
 | `reasoning_effort` | 为支持该能力的模型发送 reasoning-effort 提示。 |
 | `cache_key` | 发送 provider 的 prompt-cache key（cache-affinity 提示）。 |
+| `send_session_affinity_headers` | 把请求 `session_id` 映射为兼容的 `session_id`、`x-client-request-id` 与 `x-session-affinity` header；默认关闭。 |
 | `require_assistant_after_tool_result` | 面向遗留端点的纯兼容性元数据标记；opi 不会在共享适配器中合成或强制额外的 assistant 轮次。 |
 | `chat_completions_path` | 相对 `base_url` 的 chat completions 端点路径（默认 `/v1/chat/completions`）；当 provider 的 base URL 已包含 API 前缀时设置（如 BigModel `/api/paas/v4/...`）。 |
 
@@ -176,10 +208,11 @@ OpenAI Chat 会从任何携带 `id` 的 chunk 捕获 response ID，而不只是�
 
 以下是明确的非目标，不得作为当前核心行为出现：
 
-- OAuth 登录流程。
-- Anthropic 订阅鉴权。
-- OpenAI Codex 订阅鉴权。
-- GitHub Copilot 鉴权。
+- Anthropic、GitHub Copilot 与 OpenAI Codex 之外的 OAuth provider。
+- 宽泛的 GitHub Copilot 多 wire catalog 对等。
+- 凭据撤销后的自动重新登录。
+- 按调用 API key、env 或鉴权 header 覆盖。
+- Provider payload/response 流式 hook。
 - 大范围新增 first-class provider 列表（兼容 provider 保持为 config-driven
   profile）。
 - 图像生成（图片支持仅为输入侧）。
@@ -220,6 +253,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         stop_sequences: vec![],
         metadata: None,
         cancel: CancellationToken::new(),
+        timeout: None,
+        extra_headers: vec![],
+        cache_retention: opi_ai::provider::CacheRetention::None,
+        session_id: None,
     };
 
     let mut stream = provider.stream(request);
@@ -232,10 +269,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ## 模块
 
-`provider`、`message`、`stream`、`registry`、`provider_collection`、`http`、
-`retry`、`model`、`anthropic`、`openai_chat`、`openai_responses`、`openrouter`、
-`mistral`、`gemini`、`bedrock`、`azure_openai`、`vertex`、`config`、`time` 和
-`test_support`。
+`provider`、`message`、`stream`、`registry`、`provider_collection`、`auth`、
+`credential`、`http`、`retry`、`model`、`anthropic`、`openai_chat`、
+`openai_responses`、`openrouter`、`mistral`、`gemini`、`bedrock`、
+`azure_openai`、`vertex`、`config`、`time` 和 `test_support`。
 
 ## 许可证
 

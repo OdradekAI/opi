@@ -377,7 +377,7 @@ impl ProviderRegistry {
 
     /// Replace the dynamic catalog for a single provider.
     ///
-    /// Used by [`ProviderCollection::refresh`] to atomically install refreshed
+    /// Used by [`crate::ProviderCollection::refresh`] to atomically install refreshed
     /// catalogs after all providers succeed.
     pub fn set_dynamic_catalog(&mut self, provider_id: &str, models: Vec<ModelInfo>) {
         self.dynamic_catalogs.insert(provider_id.to_owned(), models);
@@ -386,7 +386,7 @@ impl ProviderRegistry {
     /// Atomically replace all dynamic catalogs.
     ///
     /// Clears existing catalogs and installs `catalogs` as the new set.
-    /// Used by [`ProviderCollection::refresh`] for all-or-nothing replacement.
+    /// Used by [`crate::ProviderCollection::refresh`] for all-or-nothing replacement.
     pub fn replace_all_dynamic_catalogs(&mut self, catalogs: HashMap<String, Vec<ModelInfo>>) {
         self.dynamic_catalogs = catalogs;
     }

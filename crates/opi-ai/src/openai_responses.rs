@@ -18,7 +18,7 @@ use crate::http::HttpClient;
 use crate::message::{
     AssistantContent, AssistantMessage, OutputContent, TOOL_ERROR_MARKER, ToolCall,
 };
-use crate::provider::{EventStream, ModelInfo, Provider, ProviderError, Request};
+use crate::provider::{CacheRetention, EventStream, ModelInfo, Provider, ProviderError, Request};
 use crate::registry::ModelCapabilities;
 use crate::stream::{AssistantStreamEvent, StopReason, Usage};
 
@@ -772,6 +772,10 @@ pub struct ResponsesConfig {
     /// profile leaves it false. The derivation is per-request because the token
     /// changes on refresh.
     pub derive_codex_account_id: bool,
+    /// Emit the standard Responses `session_id` header together with
+    /// `x-client-request-id`. Built-in direct Responses enables this; custom
+    /// profiles can disable it, while Codex uses its separate spelling.
+    pub send_session_id_header: bool,
 }
 
 impl Default for ResponsesConfig {
@@ -782,6 +786,7 @@ impl Default for ResponsesConfig {
             strict_tools: false,
             responses_path: "/v1/responses".into(),
             derive_codex_account_id: false,
+            send_session_id_header: true,
         }
     }
 }
@@ -1134,14 +1139,16 @@ impl OpenAiResponsesProvider {
         for (name, value) in &extra_headers {
             req = req.header(name.as_str(), value.as_str());
         }
-        // Session-affinity: prompt_cache_key + x-client-request-id from
-        // session_id. Codex Responses profile already sends session-id and
-        // x-client-request-id through its static extra_headers; standard
-        // Responses emits prompt_cache_key and x-client-request-id.
+        // Session-affinity headers use the profile-specific spelling. Standard
+        // Responses sends `session_id`; Codex sends `session-id`.
         if let Some(ref sid) = session_id {
-            let clamped: String = sid.chars().take(64).collect();
-            req = req.header("prompt-cache-key", &clamped);
-            req = req.header("x-client-request-id", &clamped);
+            if config.derive_codex_account_id {
+                req = req.header("session-id", sid);
+                req = req.header("x-client-request-id", sid);
+            } else if config.send_session_id_header {
+                req = req.header("session_id", sid);
+                req = req.header("x-client-request-id", sid);
+            }
         }
         if config.derive_codex_account_id
             && let Some(account_id) = derive_codex_account_id(&resolved.secret)
@@ -1326,8 +1333,19 @@ impl Provider for OpenAiResponsesProvider {
         extra_headers.extend(request.extra_headers.clone());
         let provider_id = self.provider_id.clone();
         let timeout = request.timeout;
-        let session_id = request.session_id.clone();
-        let body = self.build_request_body(&request);
+        let session_id = if request.cache_retention != CacheRetention::Disabled {
+            request.session_id.clone().filter(|id| !id.is_empty())
+        } else {
+            None
+        };
+        let mut body = self.build_request_body(&request);
+        if !config.derive_codex_account_id
+            && config.send_session_id_header
+            && let Some(session_id) = session_id.as_deref()
+        {
+            body["prompt_cache_key"] =
+                serde_json::Value::String(session_id.chars().take(64).collect());
+        }
         let cancel = request.cancel.clone();
         let http_client = self.client.client().clone();
 

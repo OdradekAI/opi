@@ -6,7 +6,7 @@
 //! must emit — not merely "a Bearer token reached the wire":
 //!
 //! - Anthropic OAuth selects `authorization: Bearer` AND the required
-//!   `anthropic-beta: oauth-2025-04-20` header, while API-key construction
+//!   `anthropic-beta: claude-code-20250219,oauth-2025-04-20` header, while API-key construction
 //!   keeps `x-api-key` and emits neither `authorization` nor the beta header.
 //! - A 401 on a Bearer (OAuth) credential maps to typed non-retryable
 //!   `ProviderError::CredentialRevoked`, dropping the body so an enterprise
@@ -32,13 +32,11 @@ use tokio_util::sync::CancellationToken;
 use wiremock::matchers::method;
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-/// The Anthropic OAuth beta tag. Pinned as a literal here (not re-exported from
-/// the provider, which keeps it a private module const) so a future rotation in
-/// `anthropic.rs` is caught at this assertion. RESIDUAL: the value itself was
-/// not confirmed against a public Anthropic source at slice-5 landing time; it
-/// must be re-confirmed against the pi source before a production login is
-/// advertised.
-const ANTHROPIC_OAUTH_BETA: &str = "oauth-2025-04-20";
+/// The Anthropic OAuth beta tags. Pinned as a literal here (not re-exported
+/// from the provider, which keeps them in a private module constant) so a
+/// future rotation in `anthropic.rs` is caught at this assertion. The value is
+/// pinned to the reviewed pi 0.80.6 profile.
+const ANTHROPIC_OAUTH_BETA: &str = "claude-code-20250219,oauth-2025-04-20";
 
 fn sample_request(model: &str) -> Request {
     Request {

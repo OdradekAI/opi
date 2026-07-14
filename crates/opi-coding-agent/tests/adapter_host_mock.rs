@@ -8,6 +8,8 @@
 //!   command, hook, state_serialize, state_restore, shutdown
 //! - `hang` — reads initialize but never responds (timeout test)
 //! - `crash` — reads initialize then exits with code 1 (crash test)
+//! - `crash_on_request` — sends capabilities, then exits on the next request
+//!   (post-handshake crash test)
 //! - `hang_request` — responds to initialize, then never responds again
 //!   (per-request timeout test)
 
@@ -24,6 +26,7 @@ fn main() {
         "capabilities" => run_capabilities(&mut reader, &mut writer),
         "hang" => run_hang(&mut reader),
         "crash" => run_crash(&mut reader),
+        "crash_on_request" => run_crash_on_request(&mut reader, &mut writer),
         "hang_request" => run_hang_request(&mut reader, &mut writer),
         "gate" => run_gate(&mut reader, &mut writer),
         "prepare" => run_prepare(&mut reader, &mut writer),
@@ -174,6 +177,34 @@ fn run_crash(reader: &mut impl BufRead) {
     let mut line = String::new();
     let _ = reader.read_line(&mut line);
     std::process::exit(1);
+}
+
+fn run_crash_on_request(reader: &mut impl BufRead, writer: &mut impl Write) {
+    if let Some(line) = read_line(reader) {
+        let msg: serde_json::Value = match serde_json::from_str(&line) {
+            Ok(message) => message,
+            Err(_) => return,
+        };
+        if msg["type"].as_str() != Some("initialize") {
+            return;
+        }
+        let id = msg["id"].as_str().unwrap_or("1");
+        write_msg(
+            writer,
+            &serde_json::json!({
+                "type": "capabilities",
+                "id": id,
+                "tools": [],
+                "commands": [],
+                "hooks": [],
+                "model_overrides": []
+            }),
+        );
+
+        // Keep the process alive until the handshake has completed, then
+        // terminate without replying to the first normal request.
+        let _ = read_line(reader);
+    }
 }
 
 fn run_hang_request(reader: &mut impl BufRead, writer: &mut impl Write) {

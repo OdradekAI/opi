@@ -593,6 +593,7 @@ fn build_openai_compatible_profile(
         strict_tool_schema: profile.strict_tool_schema,
         reasoning_effort: profile.reasoning_effort.clone(),
         cache_key: profile.cache_key.clone(),
+        send_session_affinity_headers: false,
         require_assistant_after_tool_result: profile.require_assistant_after_tool_result,
         chat_completions_path: profile
             .chat_completions_path
@@ -696,8 +697,8 @@ const COPILOT_DEFAULT_BASE_URL: &str = "https://api.individual.githubcopilot.com
 /// Default Codex API base URL.
 const CODEX_DEFAULT_BASE_URL: &str = "https://api.openai.com";
 
-/// The static required Copilot Chat headers (the "captured required headers"
-/// minus `X-Initiator`, which is per-request and deferred — see RESIDUAL).
+/// The static required Copilot Chat headers. `X-Initiator` is derived from the
+/// current request messages by `OpenAiChatProvider::with_copilot_initiator`.
 fn copilot_extra_headers() -> Vec<(String, String)> {
     vec![
         ("Editor-Version".into(), "opi/0.7.0".into()),
@@ -796,7 +797,8 @@ async fn build_copilot_oauth(
         "copilot".into(),
         copilot_extra_headers(),
         client,
-    );
+    )
+    .with_copilot_initiator();
     Ok(Box::new(provider))
 }
 

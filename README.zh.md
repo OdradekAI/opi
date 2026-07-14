@@ -52,6 +52,13 @@ export ANTHROPIC_API_KEY=sk-ant-...
 opi
 ```
 
+在 TUI 内显式管理已存储的 OAuth 凭据：
+
+```text
+/login anthropic
+/logout anthropic
+```
+
 运行单次提示词：
 
 ```sh
@@ -155,6 +162,8 @@ Provider 支持在 `opi-ai` 中实现，并接入 `opi-coding-agent`。
 | `bedrock:` | AWS Bedrock Converse streaming | AWS 环境变量或共享 AWS 配置 |
 | `azure:` | Azure OpenAI deployment | `AZURE_OPENAI_API_KEY` 加 endpoint 配置 |
 | `vertex:` | Google Vertex AI Gemini streaming | `VERTEX_ACCESS_TOKEN` 加 project/location 配置 |
+| `copilot:` | GitHub Copilot OpenAI Chat 兼容 profile | 通过 `/login copilot` 写入 OS keychain |
+| `codex:` | OpenAI Codex Responses 兼容 profile | 通过 `/login codex` 写入 OS keychain |
 | 已配置 profile | OpenAI-compatible Chat Completions profile | profile 自己的 `api_key_env` |
 
 兼容 OpenAI 风格的服务通常应通过已配置 profile 接入，而不是新增 first-class provider
@@ -162,6 +171,28 @@ Provider 支持在 `opi-ai` 中实现，并接入 `opi-coding-agent`。
 `stream_options.include_usage`；从任何 OpenAI Chat chunk 携带 `id` 的位置捕获 response ID，
 并回写到 `response_id`。profile 还可以设置 `chat_completions_path`，用于已包含 API 前缀的
 base URL。当 usage 或定价未知时，会省略费用汇总。
+
+## 凭据、OAuth 与 Provider 元数据
+
+`opi-ai` 定义无 IO 的 `CredentialStore`、`Credential`、`OAuthProvider` 和
+`AuthResolver` 契约。`opi-coding-agent` 提供 OS-keychain
+`CredentialResolver`、API key 的环境变量回退，以及一个不含秘密的协调文件
+`credential.lock`。opi 不写入自行管理的明文凭据文件。`opi doctor` 与
+`--list-models` 只探测已脱敏的凭据状态。
+
+交互式 `/login <provider>` 与 `/logout <provider>` 支持 Anthropic PKCE、GitHub
+Copilot device-code 和 OpenAI Codex PKCE。这是精确的鉴权与兼容 profile 覆盖，不是
+宽泛的 Copilot 多 wire 对等，也不是独立的 Codex provider 类型。成功的用户发起登录后，
+`CredentialNeeded` 可以重试同一个待处理交互轮次。非交互、JSON 和 RPC 模式只报告
+provider 与 `/login <provider>` 修复提示，并在不启动 OAuth 的情况下失败。
+`CredentialRevoked` 不可重试；opi 不会在流中自动重新登录。
+
+`Request` 现在携带 `timeout`、`extra_headers`、`CacheRetention` 和 `session_id`。
+本阶段只有 `session_id` 具有生产 harness 生成方；provider 按审查过的 prompt-cache /
+会话亲和规则映射它。`ModelInfo` 使用唯一的嵌套 `ModelCapabilities` 值，其中包括
+Anthropic cache-control 能力。`cache_write_1h_tokens` 是 cache write 的子集，
+`reasoning_tokens` 是 output 的子集，因此 token 总数与费用不会重复计算。
+`Provider::refresh_models` 和 collection refresh 仅为基底、无生产触发。
 
 ## 内置工具
 
@@ -239,9 +270,9 @@ RPC 命令包括 `prompt`、`continue`、`steer`、`follow_up`、`abort`、`set_
   `opi doctor` 默认只做本地、无网络检查，`trace` 需要显式启用。
 - 生产级子 Agent、permission gate、plan/todo 和 MCP 工作流是 examples/package
   模式，不是内置核心工作流。
-- OAuth 登录、订阅鉴权、图像生成、浏览器使用、面向 package 的 provider 流式
-  adapter 协议、默认测试中的付费实时 provider 调用，以及复制 pi 的 provider 专用
-  配置文件格式仍被推迟。
+- Anthropic、GitHub Copilot 与 OpenAI Codex 之外的 OAuth provider、宽泛 Copilot
+  catalog 对等、图像生成、浏览器使用、面向 package 的 provider 流式 adapter 协议、
+  默认测试中的付费实时 provider 调用，以及复制 pi 的 provider 专用配置文件格式仍被推迟。
 - 不支持从任意 extension 路径动态加载 Rust 插件。
 
 如果需要更强隔离，请在容器、虚拟机或外部 sandbox 中运行 `opi`，并按暴露给它的工具和

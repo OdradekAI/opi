@@ -624,11 +624,9 @@ fn empty_assistant_message() -> AssistantMessage {
 /// The `anthropic-beta` tag Anthropic OAuth requires on every request issued
 /// under a Bearer (OAuth) credential. API-key requests do not send it. Gated on
 /// `AuthScheme::Bearer` in `stream_http` — the only Bearer path for Anthropic —
-/// so no extra-headers field or flag is needed. RESIDUAL: the exact tag value
-/// was set from the upstream pi source at slice-5 time; it must be re-confirmed
-/// against a current Anthropic OAuth reference before a production login is
-/// advertised, since beta tags rotate.
-const ANTHROPIC_OAUTH_BETA_HEADER: &str = "oauth-2025-04-20";
+/// so no extra-headers field or flag is needed. Values are pinned to the
+/// reviewed pi 0.80.6 Anthropic OAuth profile.
+const ANTHROPIC_OAUTH_BETA_HEADER: &str = "claude-code-20250219,oauth-2025-04-20";
 
 /// Concrete Anthropic Messages API provider.
 pub struct AnthropicProvider {

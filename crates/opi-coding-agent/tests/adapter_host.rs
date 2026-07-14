@@ -36,15 +36,16 @@ fn mock_adapter_bin() -> PathBuf {
     let exe_suffix = if cfg!(windows) { ".exe" } else { "" };
     let prefix = "adapter_host_mock-";
     if let Ok(entries) = std::fs::read_dir(deps_dir) {
-        for entry in entries.flatten() {
-            let name = entry.file_name();
-            let name_str = name.to_string_lossy();
-            if name_str.starts_with(prefix)
-                && name_str.ends_with(exe_suffix)
-                && !name_str.ends_with(".d")
-            {
-                return entry.path();
-            }
+        let newest = entries
+            .flatten()
+            .filter(|entry| {
+                let name = entry.file_name();
+                let name = name.to_string_lossy();
+                name.starts_with(prefix) && name.ends_with(exe_suffix) && !name.ends_with(".d")
+            })
+            .max_by_key(|entry| entry.metadata().and_then(|meta| meta.modified()).ok());
+        if let Some(entry) = newest {
+            return entry.path();
         }
     }
 
@@ -453,29 +454,18 @@ async fn shutdown_waits_for_child_exit_before_kill() {
 
 #[tokio::test]
 async fn host_reports_unavailable_after_crash() {
-    // Start a capabilities host, then kill the mock adapter externally
-    let host = start_capabilities_host().await;
+    // The mock completes initialization, then exits without replying to the
+    // first normal request. This exercises a post-handshake crash without
+    // relying on OS-level process-kill permission.
+    let host = AdapterHost::start(
+        "mock",
+        config_for_mode("crash_on_request"),
+        Duration::from_secs(5),
+    )
+    .await
+    .expect("start crash-on-request host");
 
-    // Force-kill the child process
-    let pid = host.child_pid();
-    #[cfg(windows)]
-    {
-        let _ = std::process::Command::new("taskkill")
-            .args(["/PID", &pid.to_string(), "/F"])
-            .output();
-    }
-    #[cfg(not(windows))]
-    {
-        let _ = std::process::Command::new("kill")
-            .arg("-9")
-            .arg(pid.to_string())
-            .output();
-    }
-
-    // Give the reader task time to detect the crash
-    tokio::time::sleep(Duration::from_millis(200)).await;
-
-    // Subsequent request should fail with AdapterUnavailable or AdapterExited
+    // The request that triggers the crash should fail as unavailable.
     let id = host.next_id();
     let result = host
         .send_request(
@@ -490,7 +480,7 @@ async fn host_reports_unavailable_after_crash() {
 
     assert!(
         result.is_err(),
-        "request after crash should fail, got: {:?}",
+        "request that crashes adapter should fail, got: {:?}",
         result
     );
     let err = result.unwrap_err();

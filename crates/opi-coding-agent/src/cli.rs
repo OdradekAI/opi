@@ -73,6 +73,11 @@ Bash policy:
   The default timeout is 30 seconds; timeout_secs overrides it per call.
   Combined stdout/stderr are capped at 64 KiB. Larger output sets truncated and may write the complete output path in details.full_output.
   This is a tool-selection check, not a permission popup or sandbox subsystem.
+
+Interactive authentication:
+  /login <provider> starts login for Anthropic, GitHub Copilot, or OpenAI Codex.
+  /logout <provider> deletes that provider's stored credential.
+  Non-interactive, JSON, and RPC modes never start login; CredentialNeeded reports the provider and /login remediation.
 "
 )]
 pub struct Cli {

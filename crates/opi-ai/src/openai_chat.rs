@@ -17,7 +17,7 @@ use crate::http::HttpClient;
 use crate::message::{
     AssistantContent, AssistantMessage, OutputContent, TOOL_ERROR_MARKER, ToolCall,
 };
-use crate::provider::{EventStream, ModelInfo, Provider, ProviderError, Request};
+use crate::provider::{CacheRetention, EventStream, ModelInfo, Provider, ProviderError, Request};
 use crate::registry::ModelCapabilities;
 use crate::stream::{AssistantStreamEvent, StopReason, Usage};
 
@@ -717,6 +717,7 @@ fn empty_assistant_message(api: crate::ApiKind, provider: &str) -> AssistantMess
 /// - `strict_tool_schema`: emit `"strict": true` on function tool definitions
 /// - `reasoning_effort`: emit top-level `reasoning_effort` for reasoning models
 /// - `cache_key`: emit `prompt_cache_key` for OpenAI prompt-cache affinity
+/// - `send_session_affinity_headers`: emit compatible session-affinity headers
 /// - `require_assistant_after_tool_result`: compatibility-metadata flag (see below)
 ///
 /// `require_assistant_after_tool_result` records that a profile targets an
@@ -741,6 +742,9 @@ pub struct CompatConfig {
     pub reasoning_effort: Option<String>,
     /// Emit a top-level `prompt_cache_key` for OpenAI prompt-cache affinity.
     pub cache_key: Option<String>,
+    /// Emit compatible `session_id`, `x-client-request-id`, and
+    /// `x-session-affinity` headers from a request session id.
+    pub send_session_affinity_headers: bool,
     /// Compatibility-metadata flag for legacy assistant-after-tool-result wires.
     pub require_assistant_after_tool_result: bool,
     /// Endpoint path for chat completions relative to `base_url`.
@@ -757,6 +761,7 @@ impl Default for CompatConfig {
             strict_tool_schema: false,
             reasoning_effort: None,
             cache_key: None,
+            send_session_affinity_headers: false,
             require_assistant_after_tool_result: false,
             chat_completions_path: "/v1/chat/completions".into(),
         }
@@ -789,6 +794,8 @@ pub struct OpenAiChatProvider {
     model_overrides: HashMap<String, ModelCompatOverride>,
     provider_id: String,
     extra_headers: Vec<(String, String)>,
+    direct_prompt_cache_key: bool,
+    copilot_initiator: bool,
     client: Arc<HttpClient>,
 }
 
@@ -882,6 +889,7 @@ impl OpenAiChatProvider {
                     .with_streaming(true),
             },
         ];
+        let direct_prompt_cache_key = provider_id == "openai";
         Self {
             auth,
             base_url,
@@ -890,6 +898,8 @@ impl OpenAiChatProvider {
             model_overrides: HashMap::new(),
             provider_id,
             extra_headers,
+            direct_prompt_cache_key,
+            copilot_initiator: false,
             client,
         }
     }
@@ -915,8 +925,18 @@ impl OpenAiChatProvider {
             model_overrides: HashMap::new(),
             provider_id,
             extra_headers,
+            direct_prompt_cache_key: false,
+            copilot_initiator: false,
             client: Arc::new(HttpClient::new()),
         }
+    }
+
+    /// Enable the GitHub Copilot `X-Initiator` request header. The value is
+    /// derived inside each stream from the last conversation message: user
+    /// prompts map to `user`; assistant/tool continuations map to `agent`.
+    pub fn with_copilot_initiator(mut self) -> Self {
+        self.copilot_initiator = true;
+        self
     }
 
     /// Replace the HTTP client with a shared one (for proxy configuration
@@ -1020,10 +1040,19 @@ impl OpenAiChatProvider {
         {
             body["reasoning_effort"] = serde_json::Value::String(effort.clone());
         }
-        if let Some(cache_key) = compat.cache_key.as_ref()
-            && !cache_key.is_empty()
-        {
-            body["prompt_cache_key"] = serde_json::Value::String(cache_key.clone());
+        if request.cache_retention != CacheRetention::Disabled {
+            if let Some(cache_key) = compat.cache_key.as_ref()
+                && !cache_key.is_empty()
+            {
+                body["prompt_cache_key"] = serde_json::Value::String(cache_key.clone());
+            }
+            if self.direct_prompt_cache_key
+                && let Some(session_id) = request.session_id.as_deref()
+                && !session_id.is_empty()
+            {
+                body["prompt_cache_key"] =
+                    serde_json::Value::String(session_id.chars().take(64).collect());
+            }
         }
         body
     }
@@ -1066,7 +1095,6 @@ impl OpenAiChatProvider {
         body: &serde_json::Value,
         cancel: CancellationToken,
         timeout: Option<std::time::Duration>,
-        session_id: Option<String>,
         tx: &tokio::sync::mpsc::Sender<Result<AssistantStreamEvent, ProviderError>>,
     ) -> Result<(), ProviderError> {
         let mut req = http_client
@@ -1085,11 +1113,6 @@ impl OpenAiChatProvider {
         }
         for (name, value) in &extra_headers {
             req = req.header(name.as_str(), value.as_str());
-        }
-        // Map session_id to prompt_cache_key (64-char clamped).
-        if let Some(ref sid) = session_id {
-            let clamped: String = sid.chars().take(64).collect();
-            req = req.header("prompt-cache-key", clamped);
         }
         let response = req
             .body(serde_json::to_string(body).unwrap_or_default())
@@ -1384,8 +1407,34 @@ impl Provider for OpenAiChatProvider {
         // Merge static provider extra_headers with per-request extra_headers.
         let mut extra_headers = self.extra_headers.clone();
         extra_headers.extend(request.extra_headers.clone());
+        if self.copilot_initiator {
+            extra_headers.retain(|(name, _)| !name.eq_ignore_ascii_case("x-initiator"));
+            let initiator = match request.messages.last() {
+                Some(crate::message::Message::User(_)) | None => "user",
+                Some(_) => "agent",
+            };
+            extra_headers.push(("X-Initiator".into(), initiator.into()));
+        }
+        if self.compat.send_session_affinity_headers
+            && request.cache_retention != CacheRetention::Disabled
+            && let Some(session_id) = request.session_id.as_deref()
+            && !session_id.is_empty()
+        {
+            const AFFINITY_HEADERS: [&str; 3] =
+                ["session_id", "x-client-request-id", "x-session-affinity"];
+            extra_headers.retain(|(name, _)| {
+                !AFFINITY_HEADERS
+                    .iter()
+                    .any(|managed| name.eq_ignore_ascii_case(managed))
+            });
+            let clamped: String = session_id.chars().take(64).collect();
+            extra_headers.extend(
+                AFFINITY_HEADERS
+                    .into_iter()
+                    .map(|name| (name.into(), clamped.clone())),
+            );
+        }
         let timeout = request.timeout;
-        let session_id = request.session_id.clone();
         let body = self.build_request_body(&request);
         let cancel = request.cancel.clone();
         let http_client = self.client.client().clone();
@@ -1415,7 +1464,6 @@ impl Provider for OpenAiChatProvider {
                 &body,
                 cancel,
                 timeout,
-                session_id,
                 &tx,
             )
             .await

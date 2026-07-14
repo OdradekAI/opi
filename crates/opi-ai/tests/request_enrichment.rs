@@ -2,13 +2,19 @@
 //! cache_retention, and session_id fields on `opi_ai::provider::Request`, plus
 //! CacheRetention wire semantics and invalid-header rejection (no live calls).
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use futures_util::StreamExt;
+use opi_ai::auth::{AuthScheme, StaticAuthResolver};
+use opi_ai::http::HttpClient;
 use opi_ai::message::{InputContent, Message, UserMessage};
 use opi_ai::provider::{
-    CacheRetention, Provider, ProviderError, Request, ThinkingConfig, validate_extra_headers,
+    CacheRetention, ModelInfo, Provider, ProviderError, Request, ThinkingConfig,
+    validate_extra_headers,
 };
+use opi_ai::registry::ModelCapabilities;
+use secrecy::SecretString;
 use tokio_util::sync::CancellationToken;
 use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -243,7 +249,6 @@ async fn openai_chat_session_id_becomes_prompt_cache_key() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/v1/chat/completions"))
-        .and(header("prompt-cache-key", "sess-abc123"))
         .respond_with(ResponseTemplate::new(200).set_body_string(
             "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"delta\":{\"content\":\"hi\"},\"index\":0,\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n",
         ))
@@ -263,17 +268,22 @@ async fn openai_chat_session_id_becomes_prompt_cache_key() {
             Err(e) => panic!("unexpected error: {e}"),
         }
     }
+    let request = server.received_requests().await.unwrap().remove(0);
+    assert_eq!(
+        request_body_json(&request)["prompt_cache_key"],
+        "sess-abc123"
+    );
+    assert_eq!(header_value(&request, "prompt-cache-key"), None);
 }
 
 #[tokio::test]
 async fn openai_chat_session_id_clamps_to_64_chars() {
     let session_id = "a".repeat(100);
-    let clamped = &session_id[..64];
+    let clamped = session_id[..64].to_owned();
 
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/v1/chat/completions"))
-        .and(header("prompt-cache-key", clamped))
         .respond_with(ResponseTemplate::new(200).set_body_string(
             "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"delta\":{\"content\":\"hi\"},\"index\":0,\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n",
         ))
@@ -293,6 +303,8 @@ async fn openai_chat_session_id_clamps_to_64_chars() {
             Err(e) => panic!("unexpected error: {e}"),
         }
     }
+    let request = server.received_requests().await.unwrap().remove(0);
+    assert_eq!(request_body_json(&request)["prompt_cache_key"], clamped);
 }
 
 #[tokio::test]
@@ -319,6 +331,208 @@ async fn openai_chat_no_session_id_no_cache_key_header() {
             Ok(_) => {}
             Err(e) => panic!("unexpected error: {e}"),
         }
+    }
+    let request = server.received_requests().await.unwrap().remove(0);
+    assert!(
+        request_body_json(&request)
+            .get("prompt_cache_key")
+            .is_none()
+    );
+    assert_eq!(header_value(&request, "prompt-cache-key"), None);
+}
+
+#[tokio::test]
+async fn session_affinity_wire_mappings() {
+    let chat_server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("data: [DONE]\n\n"))
+        .expect(4)
+        .mount(&chat_server)
+        .await;
+    let models = vec![ModelInfo {
+        id: "model".into(),
+        display_name: "Model".into(),
+        capabilities: ModelCapabilities::new(8_192, 1_024).with_streaming(true),
+    }];
+    let direct =
+        opi_ai::openai_chat::OpenAiChatProvider::new("test-key".into(), Some(chat_server.uri()));
+    drain(direct.stream(make_openai_chat_request(
+        CancellationToken::new(),
+        Some("session-direct".into()),
+    )))
+    .await;
+    let compatible = opi_ai::openai_chat::OpenAiChatProvider::new_for_profile(
+        "test-key".into(),
+        chat_server.uri(),
+        "compatible".into(),
+        opi_ai::openai_chat::CompatConfig {
+            send_session_affinity_headers: true,
+            ..Default::default()
+        },
+        vec![],
+        models.clone(),
+    );
+    drain(compatible.stream(make_openai_chat_request(
+        CancellationToken::new(),
+        Some("session-compatible".into()),
+    )))
+    .await;
+    let compatible_default = opi_ai::openai_chat::OpenAiChatProvider::new_for_profile(
+        "test-key".into(),
+        chat_server.uri(),
+        "compatible-default".into(),
+        Default::default(),
+        vec![],
+        models,
+    );
+    drain(compatible_default.stream(make_openai_chat_request(
+        CancellationToken::new(),
+        Some("session-default".into()),
+    )))
+    .await;
+    let mut disabled =
+        make_openai_chat_request(CancellationToken::new(), Some("session-disabled".into()));
+    disabled.cache_retention = CacheRetention::Disabled;
+    drain(compatible.stream(disabled)).await;
+
+    let chat_requests = chat_server.received_requests().await.unwrap();
+    assert_eq!(chat_requests.len(), 4);
+    assert_eq!(
+        request_body_json(&chat_requests[0])["prompt_cache_key"],
+        "session-direct"
+    );
+    for name in ["session_id", "x-client-request-id", "x-session-affinity"] {
+        assert_eq!(header_value(&chat_requests[0], name), None);
+        assert_eq!(
+            header_value(&chat_requests[1], name),
+            Some("session-compatible")
+        );
+        assert_eq!(header_value(&chat_requests[2], name), None);
+        assert_eq!(header_value(&chat_requests[3], name), None);
+    }
+    for request in &chat_requests[1..] {
+        assert!(request_body_json(request).get("prompt_cache_key").is_none());
+    }
+
+    let responses_server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("data: [DONE]\n\n"))
+        .expect(4)
+        .mount(&responses_server)
+        .await;
+    let standard = opi_ai::openai_responses::OpenAiResponsesProvider::new(
+        "test-key".into(),
+        Some(responses_server.uri()),
+    );
+    drain(standard.stream(make_openai_responses_request(
+        "openai-responses:model",
+        "session-standard",
+    )))
+    .await;
+    let codex = opi_ai::openai_responses::OpenAiResponsesProvider::with_auth_extra(
+        Arc::new(StaticAuthResolver::new(
+            AuthScheme::Bearer,
+            SecretString::from("test-token"),
+        )),
+        Some(responses_server.uri()),
+        opi_ai::openai_responses::ResponsesConfig {
+            responses_path: "/codex/responses".into(),
+            derive_codex_account_id: true,
+            ..Default::default()
+        },
+        "codex".into(),
+        vec![],
+        Arc::new(HttpClient::new()),
+    );
+    drain(codex.stream(make_openai_responses_request(
+        "codex:model",
+        "session-codex",
+    )))
+    .await;
+    let mut disabled = make_openai_responses_request("openai-responses:model", "session-disabled");
+    disabled.cache_retention = CacheRetention::Disabled;
+    drain(standard.stream(disabled)).await;
+    let custom = opi_ai::openai_responses::OpenAiResponsesProvider::with_auth_extra(
+        Arc::new(StaticAuthResolver::new(
+            AuthScheme::Bearer,
+            SecretString::from("test-token"),
+        )),
+        Some(responses_server.uri()),
+        opi_ai::openai_responses::ResponsesConfig {
+            send_session_id_header: false,
+            ..Default::default()
+        },
+        "custom-responses".into(),
+        vec![],
+        Arc::new(HttpClient::new()),
+    );
+    drain(custom.stream(make_openai_responses_request(
+        "custom-responses:model",
+        "session-custom",
+    )))
+    .await;
+
+    let response_requests = responses_server.received_requests().await.unwrap();
+    assert_eq!(response_requests.len(), 4);
+    assert_eq!(
+        request_body_json(&response_requests[0])["prompt_cache_key"],
+        "session-standard"
+    );
+    assert_eq!(
+        header_value(&response_requests[0], "x-client-request-id"),
+        Some("session-standard")
+    );
+    assert_eq!(
+        header_value(&response_requests[0], "session_id"),
+        Some("session-standard")
+    );
+    assert_eq!(
+        header_value(&response_requests[1], "x-client-request-id"),
+        Some("session-codex")
+    );
+    assert_eq!(
+        header_value(&response_requests[1], "session-id"),
+        Some("session-codex")
+    );
+    assert_eq!(header_value(&response_requests[1], "session_id"), None);
+    assert!(
+        request_body_json(&response_requests[1])
+            .get("prompt_cache_key")
+            .is_none()
+    );
+    for request in &response_requests[2..] {
+        assert!(request_body_json(request).get("prompt_cache_key").is_none());
+        for name in ["session_id", "session-id", "x-client-request-id"] {
+            assert_eq!(header_value(request, name), None);
+        }
+    }
+
+    let anthropic_server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/messages"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(""))
+        .expect(1)
+        .mount(&anthropic_server)
+        .await;
+    let anthropic =
+        opi_ai::anthropic::AnthropicProvider::new("test-key".into(), Some(anthropic_server.uri()));
+    let mut request = make_anthropic_request(CancellationToken::new(), None);
+    request.session_id = Some("session-anthropic".into());
+    drain(anthropic.stream(request)).await;
+    let request = anthropic_server
+        .received_requests()
+        .await
+        .unwrap()
+        .remove(0);
+    for name in [
+        "prompt-cache-key",
+        "session-id",
+        "session_id",
+        "x-client-request-id",
+        "x-session-affinity",
+    ] {
+        assert_eq!(header_value(&request, name), None);
     }
 }
 
@@ -368,4 +582,25 @@ fn make_openai_chat_request(cancel: CancellationToken, session_id: Option<String
         cache_retention: CacheRetention::None,
         session_id,
     }
+}
+
+fn make_openai_responses_request(model: &str, session_id: &str) -> Request {
+    let mut request = make_openai_chat_request(CancellationToken::new(), Some(session_id.into()));
+    request.model = model.into();
+    request
+}
+
+async fn drain(mut stream: opi_ai::provider::EventStream) {
+    while stream.next().await.is_some() {}
+}
+
+fn header_value<'a>(request: &'a wiremock::Request, name: &str) -> Option<&'a str> {
+    request
+        .headers
+        .get(name)
+        .and_then(|value| value.to_str().ok())
+}
+
+fn request_body_json(request: &wiremock::Request) -> serde_json::Value {
+    serde_json::from_slice(&request.body).expect("captured request body should be JSON")
 }

@@ -36,6 +36,18 @@ provider 上下文，但分支摘要会通过 `session_context::reconstruct_cont
 它依赖 `opi-ai` 的 Provider 和消息类型。它不实现 `opi` CLI、终端 UI 或具体的
 文件/ shell 内置工具；这些能力分别位于 `opi-coding-agent` 和 `opi-tui`。
 
+## 第十四阶段鉴权与会话亲和边界
+
+`opi-agent` 不执行凭据 IO，也不构造 OAuth provider。它会在真实主循环中保留类型化鉴权
+结果：不可重试的 `ProviderError::CredentialNeeded` 与
+`ProviderError::CredentialRevoked` 无需字符串匹配即可映射为对应 `AgentError` 变体和
+已脱敏诊断。交互产品可在用户发起的登录成功后重试同一个待处理轮次；非交互产品可携带
+可操作的 provider id 失败，而撤销凭据绝不会触发自动重新登录。
+
+Agent 还把不透明 `session_id` 从 `Agent` 经 `AgentLoopContext` 携带到每个 Provider
+`Request`。它不拥有持久化或 Provider 专用 header 映射：`opi-coding-agent` 提供活跃会话
+id，`opi-ai` adapter 决定审查过的 cache-affinity 映射是否消费该值。
+
 ## 核心抽象
 
 | 项 | 作用 |
@@ -328,7 +340,8 @@ crate 维持 0.x，`harness` seam 仅为内部使用。以下明确不在范围�
 - 不得引入 package 生态扩张或 package 市场。
 - 除 `process-jsonl`（`opi-extension-jsonl-v1`）外不得引入新 adapter 类型。
 - 不得添加 Web UI 产品工作。
-- 不得添加供应商 OAuth 登录工作。
+- `opi-agent` 不得实现凭据 store、登录 presenter 或供应商 OAuth flow；这些仍由
+  `opi-ai` 契约与 `opi-coding-agent` 产品接线拥有。
 - 不得添加内核 plan mode、sub-agent、todo、权限弹窗或 MCP 运行时。
 - 不得引入共享 `opi-types` crate。
 - 不得在 crate 之间无理由地迁移公共类型。

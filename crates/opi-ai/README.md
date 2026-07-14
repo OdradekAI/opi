@@ -28,9 +28,10 @@ those live in `opi-agent` and `opi-coding-agent`.
 
 `opi-ai` also exposes an unstable-0.x models/auth seam: the
 `provider_collection` module (`ProviderCollection`) wraps `ProviderRegistry`
-with a provider-side auth contract (`AuthDescriptor` / `AuthStatus`),
-OpenAI-compatible compatibility metadata, and stream/complete dispatch. OAuth
-and subscription auth are explicit non-goals.
+with provider-side auth contracts, OpenAI-compatible compatibility metadata,
+and stream/complete dispatch. IO-free credential and OAuth traits live here;
+keychain, environment, login-presenter, and refresh implementations remain in
+`opi-coding-agent`.
 
 ## Providers
 
@@ -55,20 +56,53 @@ added through registry overrides or configured OpenAI-compatible profiles.
 | Item | Purpose |
 |------|---------|
 | `Provider` | Backend trait with `id`, `models`, and `stream(Request)`. |
-| `Request` | Provider request: model, messages, tools, token limits, thinking config, metadata, cancellation. |
+| `Request` / `CacheRetention` | Provider request: model, messages, tools, token limits, thinking config, metadata, cancellation, timeout, extra headers, cache retention, and session affinity. |
 | `Message` | Provider-facing user, assistant, and tool-result messages. |
 | `InputContent` / `OutputContent` | Text and image content blocks. |
 | `ToolResultMessage` | Provider-facing tool-result message: content, optional details, `is_error`, `truncated`, and timestamp metadata. |
 | `AssistantStreamEvent` | Provider-neutral stream events for start, text, thinking, tool calls, done, and error. |
-| `ModelInfo` | Model metadata: context window, output limit, image, streaming, and thinking support. |
+| `ModelInfo` / `ModelCapabilities` | Model metadata with one nested capability value, including cache-control and long-retention support. |
 | `ProviderError` / `ProviderErrorCategory` | Provider failure taxonomy: auth, config, request, network, rate_limit, provider, stream, capability, and cancelled (timeouts classify as network). |
 | `ProviderRegistry` | Resolves `provider:model`, registers custom providers, and layers model overrides. |
-| `ProviderCollection` / `AuthDescriptor` / `AuthStatus` | Unstable-0.x models/auth seam above `ProviderRegistry`: provider+model lookup, redacted auth resolution, OpenAI-compatible compat metadata, and stream/complete dispatch. No OAuth/subscription auth. |
+| `ProviderCollection` / `AuthDescriptor` / `AuthStatus` | Unstable-0.x models/auth seam above `ProviderRegistry`: provider+model lookup, redacted auth state, OpenAI-compatible compat metadata, dispatch, and atomic dynamic-catalog refresh. |
+| `CredentialStore` / `Credential` / `CredentialSource` | IO-free, object-safe credential persistence and redacted three-state probe contracts. |
+| `OAuthProvider` / `OAuthCredential` / `LoginPresenter` | Flow-independent boxed-future OAuth contracts; concrete flows live in `opi-coding-agent`. |
+| `AuthResolver` / `ResolvedAuth` | Per-stream auth resolution contract used immediately before provider HTTP. |
 | `ApiKind` | Crate-root enum tagging the backend family (`Anthropic`, `OpenAi`, `Google`, `Mistral`) carried on assistant messages. |
 | `HttpClient` | Shared `reqwest` client with pooling and explicit/env proxy support. |
 | `retry` | Retry config, exponential backoff, and `Retry-After` parsing. |
 | `Usage` / `CumulativeUsage` | Token accumulation and cost helpers. |
 | `test_support::MockProvider` | Deterministic mock provider for downstream tests. |
+
+## Credentials, Request Enrichment, and Refresh
+
+`CredentialStore` keeps backend errors distinct from missing entries, while
+`CredentialSource` reports present, absent, or backend-unavailable state
+without exposing a secret. `AuthDescriptor::StoreCredential` carries only a
+key and display source. `OAuthProvider`, `LoginPresenter`, and `AuthResolver`
+are object-safe boxed-future seams. `opi-coding-agent` supplies the OS-keychain
+store and the approved Anthropic, GitHub Copilot, and OpenAI Codex login flows;
+`opi-ai` performs no keychain, environment, or presenter IO.
+
+The three approved live auth paths—Anthropic Messages, Copilot-compatible
+OpenAI Chat, and Codex-compatible OpenAI Responses—resolve `AuthResolver`
+inside the returned stream, immediately before HTTP. Missing and revoked
+credentials surface as explicit, non-retryable `ProviderError::CredentialNeeded` and
+`ProviderError::CredentialRevoked` variants. Per-call credentials remain out
+of scope: `extra_headers` rejects provider-managed auth headers.
+
+`Request` adds `timeout`, `extra_headers`, `CacheRetention`, and `session_id`.
+The first three are public request-to-wire substrate; only `session_id` has a
+Phase 14 production producer in the coding harness. OpenAI-family adapters map
+that id only through reviewed compatibility flags, while Anthropic uses
+model-gated cache markers. `ModelInfo` contains the existing nested
+`ModelCapabilities`; unknown/custom models default cache support off.
+
+`Usage::cache_write_1h_tokens` is a subset of cache-write tokens and
+`Usage::reasoning_tokens` is a subset of output tokens. Cost and total-token
+calculation count the parent buckets once. `Provider::refresh_models` and
+`ProviderCollection::refresh` implement deterministic atomic catalog
+replacement, but remain substrate-only with no production trigger.
 
 ## Image Support
 
@@ -138,6 +172,7 @@ is a non-default step reserved for those material differences.
 | `strict_tool_schema` | Emit strict JSON-schema tool definitions. |
 | `reasoning_effort` | Send a reasoning-effort hint for models that support it. |
 | `cache_key` | Send the provider's prompt-cache key (cache-affinity hint). |
+| `send_session_affinity_headers` | Map a request `session_id` to the compatible `session_id`, `x-client-request-id`, and `x-session-affinity` headers; disabled by default. |
 | `require_assistant_after_tool_result` | Metadata-only compatibility marker for legacy endpoints; opi does not synthesize or enforce the extra assistant turn in the shared adapter. |
 | `chat_completions_path` | Chat completions endpoint path relative to `base_url` (default `/v1/chat/completions`); set for providers whose base URL already includes an API prefix (e.g. BigModel `/api/paas/v4/...`). |
 
@@ -193,10 +228,11 @@ successful stream.
 The following are explicit non-goals and must not appear as current core
 behavior:
 
-- OAuth login flows.
-- Anthropic subscription auth.
-- OpenAI Codex subscription auth.
-- GitHub Copilot auth.
+- OAuth providers beyond Anthropic, GitHub Copilot, and OpenAI Codex.
+- Broad GitHub Copilot multi-wire catalog parity.
+- Automatic re-login after credential revocation.
+- Per-call API-key/env/auth-header override.
+- Provider payload/response streaming hooks.
 - A broad new first-class provider list (compatible providers stay
   config-driven profiles).
 - Image generation (image support is input-only).
@@ -237,6 +273,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         stop_sequences: vec![],
         metadata: None,
         cancel: CancellationToken::new(),
+        timeout: None,
+        extra_headers: vec![],
+        cache_retention: opi_ai::provider::CacheRetention::None,
+        session_id: None,
     };
 
     let mut stream = provider.stream(request);
@@ -249,10 +289,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ## Modules
 
-`provider`, `message`, `stream`, `registry`, `provider_collection`, `http`,
-`retry`, `model`, `anthropic`, `openai_chat`, `openai_responses`, `openrouter`,
-`mistral`, `gemini`, `bedrock`, `azure_openai`, `vertex`, `config`, `time`, and
-`test_support`.
+`provider`, `message`, `stream`, `registry`, `provider_collection`, `auth`,
+`credential`, `http`, `retry`, `model`, `anthropic`, `openai_chat`,
+`openai_responses`, `openrouter`, `mistral`, `gemini`, `bedrock`,
+`azure_openai`, `vertex`, `config`, `time`, and `test_support`.
 
 ## License
 
