@@ -7,6 +7,11 @@ Historical note: under the 2026-07-10 roadmap redesign
 This doc synthesizes tickets T1 (credential store), T2 (OAuth + per-request
 auth), and T3 (opi-ai Request enrichment), all resolved 2026-07-11.
 
+> Remediation status (2026-07-14): tasks 14.1-14.7 shipped, but phase exit
+> returned `not-met-block`. The reviewed corrective source is
+> `docs/superpowers/specs/2026-07-14-phase14-exit-remediation-design.md`;
+> it adds tasks 14.8-14.13 without rewriting this historical design.
+
 ## Overview
 
 Phase 14 closes the provider/auth cluster (cluster A) identified by the

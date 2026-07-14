@@ -379,7 +379,7 @@ The D.2 evaluator is realized by the verify engine's exec stage (see
 `references/verify-engine.md`):
 
 - `evaluator_required = true` tasks → full 6-lens deep Workflow at
-  `scripts/exec.workflow.js` (L-D1 implementation-matches-DoD, L-D2
+  `.claude/skills/opi-implement/scripts/exec.workflow.js` (L-D1 implementation-matches-DoD, L-D2
   tests-non-vacuous, L-D3 production-call-site-proven, L-D4
   evidence-truthfulness, L-D5 non-goal-leak, L-D6 workspace-deps-honored), with
   adversarial verify before any must-fix disposition.
@@ -395,7 +395,7 @@ Must-fix findings BLOCK Phase D pass, route to Phase C, and increment
 The F.1a phase-exit evaluator produces its criteria trace (working machinery,
 phases 1-13); the verify engine's phase-exit stage then adversarially audits
 that trace (see `references/verify-engine.md`). It always runs the full 5-lens
-deep Workflow at `scripts/phase-exit.workflow.js` (L-F1 traced-to-code, L-F2
+deep Workflow at `.claude/skills/opi-implement/scripts/phase-exit.workflow.js` (L-F1 traced-to-code, L-F2
 traced-to-test, L-F3 non-goals-respected, L-F4 residuals-exactly-cited, L-F5
 substrate-vs-product-honest), once per phase.
 

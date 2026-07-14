@@ -127,7 +127,7 @@ Phase 4 examples:
 Run the six-lens audit over the draft graph (post-`A.init.2a/2c/2d`,
 pre-review) against the active phase's registered source design doc. Mode is
 auto-deep by drift magnitude (single-agent for routine drift; the Workflow at
-`scripts/plan.workflow.js` for substantive change or first-init-of-a-phase).
+`.claude/skills/opi-implement/scripts/plan.workflow.js` for substantive change or first-init-of-a-phase).
 Read `references/verify-engine.md` for the lens charters, finding schema, fold
 matrix, citation grammar, the auto-deep classifier, and the plan-stage
 protocols.

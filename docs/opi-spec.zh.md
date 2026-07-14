@@ -1353,7 +1353,9 @@ Phase 13 交接：会话工作可以依赖经由共享 `opi-ai` 类型传递的 
 
 ### 第十四阶段 - Provider & Auth
 
-状态：已实现。设计：`docs/superpowers/specs/2026-07-11-phase14-provider-auth-design.md`。
+状态：已实现；修复待完成。历史设计：
+`docs/superpowers/specs/2026-07-11-phase14-provider-auth-design.md`。修复设计：
+`docs/superpowers/specs/2026-07-14-phase14-exit-remediation-design.md`。
 
 第十四阶段把 Provider/Auth 集群提升为正式阶段。它增加 OS keychain 凭据存储（`CredentialStore`/`Credential` 在 `opi-ai`；keychain/env 实现与 `CredentialResolver` 在 `opi-coding-agent`）、通过 `OAuthProvider` 契约实现三个 pi provider（Anthropic、GitHub Copilot、OpenAI Codex）的 OAuth（只有获批的 Anthropic Messages、Copilot-compatible Chat 与 Codex-compatible Responses 路径持有 `Arc<dyn AuthResolver>`，由 coding-agent 所有的 `AuthSource` 实现按请求重新解析鉴权），以及对 `opi_ai::Request` 的增补丰富（`timeout`、`extra_headers`、`cache_retention`、`session_id`）、`Usage`/`CostBreakdown` 的 cache 与 reasoning 记账、把现有 `opi_ai::registry::ModelCapabilities` 迁移为 `ModelInfo` 上唯一的嵌套能力值以驱动 Anthropic prompt-cache 标记，以及动态 `refresh_models` trait 基底。`cache_write_1h_tokens` 是 cache-write 的子集，`reasoning_tokens` 是 output 的子集，因此成本和 token 总数不会重复计算。前三个 Request 参数在第十四阶段只是公开的 `opi-ai` 基底，不新增 config/harness 生产端；只有 `session_id` 贯穿真实的 harness/agent 路径。动态 refresh 只有 mock collection 覆盖，第十四阶段不增加生产触发点，也不以它关闭产品验收路径。该存储使用 `fs4` 锁定并在边界使用 `secrecy`；不存在 opi 管理的明文凭据文件。非目标：按调用 `apiKey` 覆盖（pi `ApiStreamOptions`）、`onPayload`/`onResponse` 流式钩子、流式过程中自动重新登录、宽泛的 Copilot 多 wire catalog 对等、独立 Codex provider 类型，以及贯穿 provider 构造的端到端 `SecretString`。
 

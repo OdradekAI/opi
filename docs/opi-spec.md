@@ -1628,8 +1628,9 @@ Phase 13 non-goals (documented as deferred, not current core):
 
 ### Phase 14 - Provider & Auth
 
-Status: implemented. Design:
-`docs/superpowers/specs/2026-07-11-phase14-provider-auth-design.md`.
+Status: implemented; remediation pending. Historical design:
+`docs/superpowers/specs/2026-07-11-phase14-provider-auth-design.md`. Corrective design:
+`docs/superpowers/specs/2026-07-14-phase14-exit-remediation-design.md`.
 
 Phase 14 promotes the Provider/Auth cluster to a real phase. It adds an
 OS-keychain credential store (`CredentialStore`/`Credential` in `opi-ai`;

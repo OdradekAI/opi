@@ -36,13 +36,13 @@ graph, passes a task, or archives a phase.
 ## 3. Modes
 
 - **plan — auto-deep (§5.4 classifier).** Deep (full multi-lens Workflow at
-  `scripts/plan.workflow.js`) for first-init-of-a-phase or substantive
+  `.claude/skills/opi-implement/scripts/plan.workflow.js`) for first-init-of-a-phase or substantive
   spec-section change; single-agent verify for routine drift; defaults deep when
   uncertain. No `--deep-init` flag.
 - **exec — risk-gated (§7.2).** `evaluator_required = true` → full 6-lens deep
-  Workflow (`scripts/exec.workflow.js`). All other tasks → 2-lens single-agent
+  Workflow (`.claude/skills/opi-implement/scripts/exec.workflow.js`). All other tasks → 2-lens single-agent
   pass (L-D1 + L-D5), no script.
-- **phase-exit — always deep (§8.3).** `scripts/phase-exit.workflow.js`, all 5
+- **phase-exit — always deep (§8.3).** `.claude/skills/opi-implement/scripts/phase-exit.workflow.js`, all 5
   lenses, every time (runs once per phase).
 
 ### 3.1 Plan auto-deep magnitude classifier (concrete procedure)
@@ -247,7 +247,7 @@ be closed by substrate-only evidence.
 ### Plan-stage protocols
 
 - **Deep path** — invoke the Workflow tool with
-  `scriptPath: "scripts/plan.workflow.js"` and
+  `scriptPath: ".claude/skills/opi-implement/scripts/plan.workflow.js"` and
   `args = { draftTasks, sourceDesignPath, phase }`. The script fans L1–L6 out in
   parallel, deterministically folds, adversarially verifies each foldable finding
   (default-reject on uncertainty; surgery fixes rejected), and synthesizes a
@@ -288,7 +288,7 @@ code.
 ### 6.2 Risk-gating
 
 - `evaluator_required = true` → full 6-lens deep Workflow (fan-out + adversarial
-  verify) via `scripts/exec.workflow.js`.
+  verify) via `.claude/skills/opi-implement/scripts/exec.workflow.js`.
 - All other tasks → **2-lens single-agent pass: L-D1 + L-D5.** L-D3
   (production-call-site) is already mechanically enforced by the D.0 Product
   Acceptance addendum + the ledger `production_call_sites` validation rule, so it
@@ -314,7 +314,7 @@ code.
 
 ### 6.4 Deep-path protocol
 
-Invoke the Workflow tool with `scriptPath: "scripts/exec.workflow.js"` and
+Invoke the Workflow tool with `scriptPath: ".claude/skills/opi-implement/scripts/exec.workflow.js"` and
 `args = { task, sourceDesignPath, commit }`. The script fans the 6 lenses out in
 parallel, adversarially verifies each foldable finding, and synthesizes the
 report. It returns `{ must_fix, flagged_for_human, rejected, report }`. Read the
@@ -340,7 +340,7 @@ every time. Outcome = `not-met-block`.
 F.1a produces the criteria trace (working machinery, phases 1–13); the 5 lenses
 take that trace as input and adversarially audit it. F.1a's output → lenses'
 input. Invoke the Workflow tool with
-`scriptPath: "scripts/phase-exit.workflow.js"` and
+`scriptPath: ".claude/skills/opi-implement/scripts/phase-exit.workflow.js"` and
 `args = { criteriaTrace, sourceDesignPath, phase }`. The script returns
 `{ not_met, flagged_for_human, rejected, report }`.
 

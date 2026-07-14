@@ -132,7 +132,7 @@ fn localized_docs_pin_exact_phase14_claims_and_acceptance_rows() {
         "docs/opi-spec.md",
         &spec,
         &[
-            "Status: implemented.",
+            "Status: implemented; remediation pending. Historical design: `docs/superpowers/specs/2026-07-11-phase14-provider-auth-design.md`. Corrective design: `docs/superpowers/specs/2026-07-14-phase14-exit-remediation-design.md`.",
             "held only by the approved Anthropic Messages, Copilot-compatible Chat, and Codex-compatible Responses paths",
             "Dynamic refresh has mock collection coverage but no Phase 14 production trigger and therefore closes no product acceptance path.",
         ],
@@ -141,7 +141,7 @@ fn localized_docs_pin_exact_phase14_claims_and_acceptance_rows() {
         "docs/opi-spec.zh.md",
         &spec_zh,
         &[
-            "状态：已实现。",
+            "状态：已实现；修复待完成。历史设计： `docs/superpowers/specs/2026-07-11-phase14-provider-auth-design.md`。修复设计： `docs/superpowers/specs/2026-07-14-phase14-exit-remediation-design.md`。",
             "只有获批的 Anthropic Messages、Copilot-compatible Chat 与 Codex-compatible Responses 路径持有 `Arc<dyn AuthResolver>`",
             "动态 refresh 只有 mock collection 覆盖，第十四阶段不增加生产触发点，也不以它关闭产品验收路径。",
         ],
