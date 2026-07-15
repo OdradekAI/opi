@@ -239,16 +239,24 @@ fn every_phase14_non_goal_has_documented_and_structural_evidence() {
     }
 
     let interactive = read_repo_file("crates/opi-coding-agent/src/interactive.rs");
+    let interactive_auth = read_repo_file("crates/opi-coding-agent/src/interactive_auth.rs");
     let rpc = read_repo_file("crates/opi-coding-agent/src/rpc.rs");
     let runner = read_repo_file("crates/opi-coding-agent/src/runner.rs");
-    assert_eq!(interactive.matches("oauth::login_oauth(").count(), 2);
-    assert_eq!(
-        interactive
-            .matches("match with_login_terminal_suspended(terminal, ||")
-            .count(),
-        2,
-        "both interactive login paths must suspend raw/alternate-screen mode"
-    );
+    assert!(interactive.contains("dispatch_auth_command("));
+    assert!(interactive.contains("AuthCommandServices"));
+    for forbidden in [
+        "with_login_terminal_suspended",
+        "oauth::login_oauth(",
+        "oauth::logout_credential(",
+    ] {
+        assert!(
+            !interactive.contains(forbidden),
+            "interactive.rs must not contain inline auth branch `{forbidden}`"
+        );
+    }
+    assert!(interactive_auth.contains("pub async fn dispatch_auth_command"));
+    assert!(interactive_auth.contains("oauth::login_oauth("));
+    assert!(interactive_auth.contains("oauth::logout_credential("));
     for (path, source) in [("rpc.rs", &rpc), ("runner.rs", &runner)] {
         assert!(
             !source.contains("login_oauth("),

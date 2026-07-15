@@ -10,6 +10,7 @@ pub mod doctor;
 pub mod harness;
 pub mod image;
 pub mod interactive;
+pub mod interactive_auth;
 pub mod model_listing;
 pub mod native_keyring;
 pub mod oauth;

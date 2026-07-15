@@ -2092,9 +2092,47 @@ async fn login_oauth_unknown_provider_errors() {
     let err = login_oauth("nonexistent", &registry, store_ref, &presenter)
         .await
         .expect_err("unknown provider errors");
+    let message = err.to_string();
     assert!(
-        err.contains("nonexistent"),
-        "error mentions provider id: {err}"
+        message.contains("nonexistent"),
+        "error mentions provider id: {message}"
+    );
+}
+
+#[tokio::test]
+async fn login_oauth_store_failure_stays_typed_and_does_not_report_success() {
+    let server = MockServer::start().await;
+    mount_token_stub(
+        &server,
+        200,
+        token_body("access-token", "refresh-token", 3600),
+    )
+    .await;
+    let mut registry = OAuthProviderRegistry::new();
+    registry
+        .register(Arc::new(anthropic_provider(
+            format!("{}/oauth/token", server.uri()),
+            Duration::from_secs(60),
+        )))
+        .unwrap();
+    let (_dir, store, _backend) = store_with(FakeKeyringBackend::new().with_unavailable());
+    let presenter = MockLoginPresenter::new();
+    presenter.supply_manual_code("test-auth-code");
+
+    let error = login_oauth("anthropic", &registry, &store, &presenter)
+        .await
+        .expect_err("unavailable store must fail login");
+
+    assert!(matches!(error, AiProviderError::Config(_)), "{error:?}");
+    assert_eq!(presenter.notify_success_count.load(Ordering::SeqCst), 0);
+    let message = error.to_string();
+    assert!(
+        !message.contains("access-token"),
+        "secret leaked: {message}"
+    );
+    assert!(
+        !message.contains("refresh-token"),
+        "secret leaked: {message}"
     );
 }
 
@@ -2125,6 +2163,17 @@ async fn logout_credential_missing_entry_is_noop() {
     logout_credential("anthropic", store_ref)
         .await
         .expect("logout on missing entry is a no-op");
+}
+
+#[tokio::test]
+async fn logout_credential_store_failure_stays_typed() {
+    let (_dir, store, _backend) = store_with(FakeKeyringBackend::new().with_unavailable());
+
+    let error = logout_credential("anthropic", &store)
+        .await
+        .expect_err("unavailable store must fail logout");
+
+    assert!(matches!(error, AiProviderError::Config(_)), "{error:?}");
 }
 
 // ===========================================================================

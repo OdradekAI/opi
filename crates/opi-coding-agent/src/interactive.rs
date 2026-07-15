@@ -28,7 +28,10 @@ use opi_tui::{
 use opi_tui::{ImageData, ImagePayload, MediaType as TuiMediaType};
 
 use crate::harness::{CodingHarness, SessionMetadata};
-use crate::oauth;
+use crate::interactive_auth::{
+    AuthCommandOutcome, AuthCommandServices, dispatch_auth_command, is_terminal_restore_failure,
+};
+use crate::oauth::{OAuthProviderRegistry, TuiLoginPresenter};
 
 /// Shared state mutated by the agent callback and read by the TUI render loop.
 struct TuiState {
@@ -81,53 +84,6 @@ impl BranchPickerCommand {
 enum SessionForkCommand {
     Fork,
     Clone,
-}
-
-trait LoginTerminalControl {
-    fn suspend_for_login(&mut self) -> io::Result<()>;
-    fn resume_after_login(&mut self) -> io::Result<()>;
-}
-
-impl LoginTerminalControl for Terminal<CrosstermBackend<io::Stdout>> {
-    fn suspend_for_login(&mut self) -> io::Result<()> {
-        terminal::disable_raw_mode()?;
-        crossterm::execute!(self.backend_mut(), LeaveAlternateScreen)?;
-        self.show_cursor()
-    }
-
-    fn resume_after_login(&mut self) -> io::Result<()> {
-        crossterm::execute!(self.backend_mut(), EnterAlternateScreen)?;
-        terminal::enable_raw_mode()?;
-        self.hide_cursor()?;
-        self.clear()
-    }
-}
-
-async fn with_login_terminal_suspended<T, F, Fut, R, E>(
-    terminal: &mut T,
-    operation: F,
-) -> Result<R, String>
-where
-    T: LoginTerminalControl,
-    F: FnOnce() -> Fut,
-    Fut: std::future::Future<Output = Result<R, E>>,
-    E: std::fmt::Display,
-{
-    terminal
-        .suspend_for_login()
-        .map_err(|e| format!("failed to suspend terminal for login: {e}"))?;
-    let operation_result = operation().await.map_err(|e| e.to_string());
-    let resume_result = terminal
-        .resume_after_login()
-        .map_err(|e| format!("failed to restore terminal after login: {e}"));
-    match (operation_result, resume_result) {
-        (Ok(value), Ok(())) => Ok(value),
-        (Err(error), Ok(())) => Err(error),
-        (Ok(_), Err(error)) => Err(error),
-        (Err(operation_error), Err(resume_error)) => {
-            Err(format!("{operation_error}; {resume_error}"))
-        }
-    }
 }
 
 impl SessionForkCommand {
@@ -366,11 +322,16 @@ pub async fn run_interactive_tui(
         }
     }));
 
-    // Capture the store & registry as local variables before the harness moves
-    // into the Arc<Mutex>. These are accessed by /login, /logout, and the
-    // CredentialNeeded same-turn retry path. take() is safe here.
-    let credential_store = harness.credential_store.take();
-    let oauth_registry = harness.oauth_registry.take();
+    // Capture the store & registry before the harness moves into Arc<Mutex>;
+    // the authentication dispatcher owns their interactive command access.
+    let credential_store = harness
+        .credential_store
+        .take()
+        .ok_or_else(|| io::Error::other("interactive credential store is not configured"))?;
+    let oauth_registry = harness
+        .oauth_registry
+        .take()
+        .ok_or_else(|| io::Error::other("interactive OAuth registry is not configured"))?;
 
     let harness = Arc::new(tokio::sync::Mutex::new(harness));
 
@@ -403,8 +364,8 @@ async fn tui_event_loop(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     harness: &Arc<tokio::sync::Mutex<CodingHarness>>,
     state: &Arc<Mutex<TuiState>>,
-    credential_store: Option<Arc<crate::credential_store::KeychainCredentialStore>>,
-    oauth_registry: Option<crate::oauth::OAuthProviderRegistry>,
+    credential_store: Arc<crate::credential_store::KeychainCredentialStore>,
+    oauth_registry: OAuthProviderRegistry,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut pending: Option<tokio::task::JoinHandle<Result<Vec<AgentMessage>, AgentError>>> = None;
     let mut cancel_token = harness.lock().await.cancel_token();
@@ -418,7 +379,6 @@ async fn tui_event_loop(
         }
 
         // Check if pending prompt finished (non-blocking)
-        let mut did_retry = false;
         if let Some(handle) = &mut pending
             && handle.is_finished()
         {
@@ -432,60 +392,16 @@ async fn tui_event_loop(
                     s.app_state = AppState::Idle;
                 }
                 Ok(Err(AgentError::CredentialNeeded { provider_id })) => {
-                    // Run the OAuth login flow inline (blocks TUI briefly —
-                    // TODO: background-task login with spinner overlay).
-                    let login_ok = match (&credential_store, &oauth_registry) {
-                        (Some(store), Some(registry)) => {
-                            let presenter = crate::oauth::TuiLoginPresenter::new();
-                            match with_login_terminal_suspended(terminal, || {
-                                oauth::login_oauth(&provider_id, registry, store, &presenter)
-                            })
-                            .await
-                            {
-                                Ok(()) => {
-                                    let mut s = state.lock().unwrap();
-                                    s.messages.push(TuiMessage::new(
-                                        TuiRole::System,
-                                        format!("[/login: {provider_id} succeeded, retrying…]"),
-                                    ));
-                                    true
-                                }
-                                Err(e) => {
-                                    let mut s = state.lock().unwrap();
-                                    s.messages.push(TuiMessage::new(
-                                        TuiRole::System,
-                                        format!("[login failed for '{provider_id}': {e}]"),
-                                    ));
-                                    false
-                                }
-                            }
-                        }
-                        _ => {
-                            let mut s = state.lock().unwrap();
-                            s.messages.push(TuiMessage::new(
-                                TuiRole::System,
-                                format!(
-                                    "credential needed for '{provider_id}' — run /login {provider_id}"
-                                ),
-                            ));
-                            false
-                        }
-                    };
-                    if login_ok {
-                        // Re-spawn the retry as a background task; the original
-                        // user message is already in the agent, so retry_last_prompt
-                        // re-runs the loop without duplicating it.
-                        let h = harness.clone();
-                        let handle = tokio::spawn(async move {
-                            let mut h = h.lock().await;
-                            h.retry_last_prompt().await
-                        });
-                        pending = Some(handle);
-                        did_retry = true;
-                    } else {
-                        let mut s = state.lock().unwrap();
-                        s.app_state = AppState::Idle;
-                    }
+                    let mut s = state
+                        .lock()
+                        .map_err(|_| io::Error::other("TUI state lock poisoned"))?;
+                    s.messages.push(TuiMessage::new(
+                        TuiRole::System,
+                        format!(
+                            "[credential needed for '{provider_id}': run /login {provider_id}]"
+                        ),
+                    ));
+                    s.app_state = AppState::Idle;
                 }
                 Ok(Err(e)) => {
                     let mut s = state.lock().unwrap();
@@ -515,9 +431,7 @@ async fn tui_event_loop(
             // Refresh cancel token — Agent::maybe_reset_cancel() creates a new one
             // after cancellation, so the old token would be stale.
             cancel_token = harness.lock().await.cancel_token();
-            if !did_retry {
-                pending = None;
-            }
+            pending = None;
         }
 
         // Poll for terminal events (non-blocking with timeout)
@@ -763,88 +677,23 @@ async fn tui_event_loop(
                     continue;
                 }
 
-                // Phase 14.2: /logout <provider> — delete stored credential
-                if let Some(provider_id) = input.strip_prefix("/logout ")
-                    && !provider_id.trim().is_empty()
-                {
-                    let provider_id = provider_id.trim().to_owned();
-                    if let Some(store) = &credential_store {
-                        match oauth::logout_credential(&provider_id, store).await {
-                            Ok(()) => {
-                                let mut s = state.lock().unwrap();
-                                s.messages.push(TuiMessage::new(
-                                    TuiRole::System,
-                                    format!("[/logout: {provider_id} deleted]"),
-                                ));
-                            }
-                            Err(e) => {
-                                let mut s = state.lock().unwrap();
-                                s.messages.push(TuiMessage::new(
-                                    TuiRole::System,
-                                    format!("[/logout: {e}]"),
-                                ));
-                            }
-                        }
-                    } else {
-                        let mut s = state.lock().unwrap();
-                        s.messages.push(TuiMessage::new(
-                            TuiRole::System,
-                            "[/logout: credential store not available]".to_string(),
-                        ));
-                    }
-                    continue;
-                }
-                if input == "/logout" {
-                    let mut s = state.lock().unwrap();
-                    s.messages.push(TuiMessage::new(
-                        TuiRole::System,
-                        "[/logout: usage: /logout <provider>]".to_string(),
-                    ));
-                    continue;
-                }
-
-                // Phase 14.2: /login <provider> — run OAuth login flow
-                if let Some(provider_id) = input.strip_prefix("/login ")
-                    && !provider_id.trim().is_empty()
-                {
-                    let provider_id = provider_id.trim().to_owned();
-                    if let (Some(store), Some(registry)) = (&credential_store, &oauth_registry) {
-                        let presenter = crate::oauth::TuiLoginPresenter::new();
-                        match with_login_terminal_suspended(terminal, || {
-                            oauth::login_oauth(&provider_id, registry, store, &presenter)
-                        })
-                        .await
-                        {
-                            Ok(()) => {
-                                let mut s = state.lock().unwrap();
-                                s.messages.push(TuiMessage::new(
-                                    TuiRole::System,
-                                    format!("[/login: {provider_id} succeeded]"),
-                                ));
-                            }
-                            Err(e) => {
-                                let mut s = state.lock().unwrap();
-                                s.messages.push(TuiMessage::new(
-                                    TuiRole::System,
-                                    format!("[/login: {e}]"),
-                                ));
-                            }
-                        }
-                    } else {
-                        let mut s = state.lock().unwrap();
-                        s.messages.push(TuiMessage::new(
-                            TuiRole::System,
-                            "[/login: credential store not available]".to_string(),
-                        ));
-                    }
-                    continue;
-                }
-                if input == "/login" {
-                    let mut s = state.lock().unwrap();
-                    s.messages.push(TuiMessage::new(
-                        TuiRole::System,
-                        "[/login: usage: /login <provider>]".to_string(),
-                    ));
+                let presenter = TuiLoginPresenter::new();
+                let auth_outcome = dispatch_auth_command(
+                    &input,
+                    terminal,
+                    AuthCommandServices {
+                        store: credential_store.as_ref(),
+                        registry: &oauth_registry,
+                        presenter: &presenter,
+                    },
+                )
+                .await;
+                if let Some(message) = route_auth_outcome(auth_outcome)? {
+                    state
+                        .lock()
+                        .map_err(|_| io::Error::other("TUI state lock poisoned"))?
+                        .messages
+                        .push(TuiMessage::new(TuiRole::System, message));
                     continue;
                 }
 
@@ -899,6 +748,25 @@ fn resolve_interactive_theme(harness: &CodingHarness, theme_name: &str) -> Theme
     harness
         .resolve_theme(theme_name)
         .unwrap_or_else(|_| resolve_theme(theme_name))
+}
+
+fn route_auth_outcome(outcome: AuthCommandOutcome) -> io::Result<Option<String>> {
+    if is_terminal_restore_failure(&outcome) {
+        return Err(io::Error::other("terminal restore failed"));
+    }
+    Ok(match outcome {
+        AuthCommandOutcome::NotHandled => None,
+        AuthCommandOutcome::Usage(usage) => Some(format!("[{usage}]")),
+        AuthCommandOutcome::LoggedIn { provider_id } => {
+            Some(format!("[/login: {provider_id} succeeded]"))
+        }
+        AuthCommandOutcome::LoggedOut { provider_id } => {
+            Some(format!("[/logout: {provider_id} deleted]"))
+        }
+        AuthCommandOutcome::Failed { message } => {
+            Some(format!("[authentication command failed: {message}]"))
+        }
+    })
 }
 
 fn build_shell(s: &TuiState) -> Shell {
@@ -1140,32 +1008,23 @@ mod tests {
     use opi_ai::test_support::MockProvider;
     use opi_tui::SelectItem;
 
-    #[derive(Default)]
-    struct RecordingLoginTerminal {
-        transitions: Vec<&'static str>,
-    }
+    #[test]
+    fn auth_outcome_routing_makes_only_terminal_restore_failure_fatal() {
+        let ordinary = route_auth_outcome(AuthCommandOutcome::Failed {
+            message: "authentication failed".to_owned(),
+        })
+        .expect("ordinary auth failure continues the TUI");
+        assert_eq!(
+            ordinary,
+            Some("[authentication command failed: authentication failed]".to_owned())
+        );
 
-    impl LoginTerminalControl for RecordingLoginTerminal {
-        fn suspend_for_login(&mut self) -> io::Result<()> {
-            self.transitions.push("suspend");
-            Ok(())
-        }
-
-        fn resume_after_login(&mut self) -> io::Result<()> {
-            self.transitions.push("resume");
-            Ok(())
-        }
-    }
-
-    #[tokio::test]
-    async fn oauth_login_restores_terminal_after_flow_failure() {
-        let mut terminal = RecordingLoginTerminal::default();
-        let result =
-            with_login_terminal_suspended(&mut terminal, || async { Err::<(), _>("login failed") })
-                .await;
-
-        assert_eq!(result.unwrap_err(), "login failed");
-        assert_eq!(terminal.transitions, ["suspend", "resume"]);
+        let fatal = route_auth_outcome(AuthCommandOutcome::Failed {
+            message: "terminal restore failed".to_owned(),
+        })
+        .expect_err("terminal restoration failure must leave the event loop");
+        assert_eq!(fatal.kind(), io::ErrorKind::Other);
+        assert_eq!(fatal.to_string(), "terminal restore failed");
     }
 
     fn state_with_picker(kind: PickerKind) -> TuiState {
