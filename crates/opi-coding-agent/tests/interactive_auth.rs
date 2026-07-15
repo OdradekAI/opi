@@ -5,12 +5,18 @@ use std::time::Duration;
 
 use opi_ai::auth::{LoginPresenter, OAuthCredential, OAuthProvider};
 use opi_ai::credential::{BoxAuthFuture, Credential, CredentialStore};
+use opi_ai::message::Message;
 use opi_ai::provider::ProviderError;
+use opi_ai::test_support::{self, MockProvider, MockResponse};
+use opi_coding_agent::config::OpiConfig;
 use opi_coding_agent::credential_store::{FakeKeyringBackend, KeychainCredentialStore};
+use opi_coding_agent::harness::CodingHarness;
+use opi_coding_agent::interactive::{PendingAuthTurn, spawn_pending_auth_retry};
 use opi_coding_agent::interactive_auth::{
     AuthCommandOutcome, AuthCommandServices, LoginTerminalControl, dispatch_auth_command,
 };
 use opi_coding_agent::oauth::OAuthProviderRegistry;
+use opi_coding_agent::policy::ToolSelection;
 use secrecy::SecretString;
 
 const PROVIDERS: [&str; 3] = ["anthropic", "copilot", "codex"];
@@ -473,4 +479,79 @@ async fn interactive_auth_dispatcher_reports_lock_failure_without_success() {
     assert_eq!(presenter.success_count.load(Ordering::SeqCst), 0);
     assert!(store.read("anthropic").await.unwrap().is_none());
     assert_eq!(terminal.transitions, ["suspend", "resume"]);
+}
+
+#[tokio::test]
+async fn interactive_explicit_login_retries_pending_turn_once() {
+    let provider = MockProvider::new_with_errors(
+        "mock",
+        vec![
+            MockResponse::Error(ProviderError::CredentialNeeded {
+                provider_id: "anthropic".into(),
+            }),
+            MockResponse::Events(test_support::text_response("recovered")),
+        ],
+    );
+    let call_log = provider.call_log_handle();
+    let workspace = tempfile::tempdir().unwrap();
+    let mut harness = CodingHarness::builder(
+        Box::new(provider),
+        "mock:mock-model".into(),
+        OpiConfig::default(),
+        workspace.path().to_path_buf(),
+    )
+    .tool_selection(ToolSelection::Disabled)
+    .build();
+
+    let first_error = harness
+        .prompt("one user message")
+        .await
+        .expect_err("first stream requires a credential");
+    let mut pending_turn = PendingAuthTurn::default();
+    pending_turn.capture_error(&first_error);
+    let harness = Arc::new(tokio::sync::Mutex::new(harness));
+    let failed_login = AuthCommandOutcome::Failed {
+        message: "authentication cancelled".into(),
+    };
+    assert!(
+        spawn_pending_auth_retry(&mut pending_turn, &failed_login, harness.clone()).is_none(),
+        "cancelled or failed login must leave the pending turn failed"
+    );
+
+    let store = test_store(workspace.path(), Duration::from_secs(1));
+    let registry = registry_with([("anthropic", LoginBehavior::Success)]);
+    let presenter = MockPresenter::default();
+    let mut terminal = RecordingTerminal::default();
+    let outcome = dispatch_auth_command(
+        "/login anthropic",
+        &mut terminal,
+        services(&store, &registry, &presenter),
+    )
+    .await;
+    assert!(matches!(outcome, AuthCommandOutcome::LoggedIn { .. }));
+
+    let retry = spawn_pending_auth_retry(&mut pending_turn, &outcome, harness.clone())
+        .expect("successful explicit login consumes the pending turn");
+    retry
+        .await
+        .expect("retry task joins")
+        .expect("pending turn succeeds after login");
+    assert!(
+        spawn_pending_auth_retry(&mut pending_turn, &outcome, harness).is_none(),
+        "one successful login may retry the pending turn only once"
+    );
+
+    let requests = call_log.lock().unwrap();
+    assert_eq!(requests.len(), 2, "one initial attempt and one retry");
+    for request in requests.iter() {
+        assert_eq!(
+            request
+                .messages
+                .iter()
+                .filter(|message| matches!(message, Message::User(_)))
+                .count(),
+            1,
+            "retry must reuse the existing user message"
+        );
+    }
 }

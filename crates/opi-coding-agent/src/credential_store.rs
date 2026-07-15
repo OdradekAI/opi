@@ -58,6 +58,9 @@ pub const KEYCHAIN_PRESENCE_SERVICE: &str = "opi.presence";
 /// [`CredentialStoreError::UnknownEnvelope`].
 const ENVELOPE_VERSION: u32 = 1;
 
+/// Maximum time a refresh HTTP future may hold the mutation lock.
+const OAUTH_REFRESH_TIMEOUT: Duration = Duration::from_secs(30);
+
 // ---------------------------------------------------------------------------
 // Backend injection seam
 // ---------------------------------------------------------------------------
@@ -805,11 +808,27 @@ pub struct ResolvedApiKey {
 pub struct CredentialResolver {
     store: Arc<KeychainCredentialStore>,
     env_lookup: EnvLookup,
+    refresh_timeout: Duration,
 }
 
 impl CredentialResolver {
     pub fn new(store: Arc<KeychainCredentialStore>, env_lookup: EnvLookup) -> Self {
-        Self { store, env_lookup }
+        Self::with_refresh_timeout(store, env_lookup, OAUTH_REFRESH_TIMEOUT)
+    }
+
+    /// Construct a resolver with an explicit refresh timeout. Production uses
+    /// 30 seconds; tests inject a shorter bound without contacting a provider.
+    #[doc(hidden)]
+    pub fn with_refresh_timeout(
+        store: Arc<KeychainCredentialStore>,
+        env_lookup: EnvLookup,
+        refresh_timeout: Duration,
+    ) -> Self {
+        Self {
+            store,
+            env_lookup,
+            refresh_timeout,
+        }
     }
 
     /// Production resolver: env access via `std::env::var`.
@@ -930,7 +949,14 @@ impl CredentialResolver {
                 secret: cred.access.clone(),
             });
         }
-        match oauth.refresh(&cred).await {
+        let refresh = tokio::time::timeout(self.refresh_timeout, oauth.refresh(&cred))
+            .await
+            .map_err(|_| {
+                ProviderError::AuthFailed(format!(
+                    "OAuth refresh timed out for provider '{provider_id}'"
+                ))
+            })?;
+        match refresh {
             Ok(refreshed) => {
                 let new_store = Credential::from(refreshed.clone());
                 self.store
@@ -1043,7 +1069,7 @@ impl CredentialResolver {
     }
 
     /// Convenience: read `env_var` through the injected lookup (or `None` when
-    /// absent/empty). Used by the factory to decide the Anthropic OAuth path.
+    /// absent/empty). Layered auth calls this for every Anthropic stream.
     pub fn env_value(&self, env_var: &str) -> Option<String> {
         (self.env_lookup)(env_var).filter(|v| !v.trim().is_empty())
     }
@@ -1061,7 +1087,9 @@ fn store_err_to_provider(error: CredentialStoreError) -> ProviderError {
 /// [`AuthResolver`]: [`Baked`](Self::Baked) returns a fixed key;
 /// [`Store`](Self::Store) reads/refreshes a stored OAuth credential via
 /// [`CredentialResolver`]; [`EnvOAuthToken`](Self::EnvOAuthToken) reads a
-/// non-refreshable OAuth access token from an environment variable.
+/// non-refreshable OAuth access token from an environment variable; and
+/// [`Layered`](Self::Layered) re-evaluates store/OAuth-env/API-key precedence
+/// on every stream.
 pub enum AuthSource {
     /// A fixed secret baked at construction (static API keys).
     Baked(SecretString),
@@ -1074,8 +1102,18 @@ pub enum AuthSource {
     /// A non-refreshable OAuth access token read from an environment variable
     /// (e.g. `ANTHROPIC_OAUTH_TOKEN`). Used until 401, then explicit re-login.
     EnvOAuthToken {
+        provider_id: String,
         env_var: String,
         env_lookup: EnvLookup,
+    },
+    /// Per-stream precedence for providers that support stored OAuth, an
+    /// OAuth access-token environment variable, and an API key.
+    Layered {
+        resolver: Arc<CredentialResolver>,
+        provider_id: String,
+        oauth: Arc<dyn OAuthProvider>,
+        oauth_env_var: String,
+        api_key_env_var: String,
     },
 }
 
@@ -1102,9 +1140,11 @@ impl AuthResolver for AuthSource {
                 Box::pin(async move { resolver.resolve_oauth(&provider_id, &*oauth).await })
             }
             AuthSource::EnvOAuthToken {
+                provider_id,
                 env_var,
                 env_lookup,
             } => {
+                let provider_id = provider_id.clone();
                 let env_var = env_var.clone();
                 let env_lookup = env_lookup.clone();
                 Box::pin(async move {
@@ -1113,9 +1153,42 @@ impl AuthResolver for AuthSource {
                             scheme: AuthScheme::Bearer,
                             secret: SecretString::new(value.into_boxed_str()),
                         }),
-                        _ => Err(ProviderError::CredentialNeeded {
-                            provider_id: env_var,
+                        _ => Err(ProviderError::CredentialNeeded { provider_id }),
+                    }
+                })
+            }
+            AuthSource::Layered {
+                resolver,
+                provider_id,
+                oauth,
+                oauth_env_var,
+                api_key_env_var,
+            } => {
+                let resolver = resolver.clone();
+                let provider_id = provider_id.clone();
+                let oauth = oauth.clone();
+                let oauth_env_var = oauth_env_var.clone();
+                let api_key_env_var = api_key_env_var.clone();
+                Box::pin(async move {
+                    if resolver.has_oauth_credential(&provider_id).await? {
+                        return resolver.resolve_oauth(&provider_id, &*oauth).await;
+                    }
+                    if let Some(value) = resolver.env_value(&oauth_env_var) {
+                        return Ok(ResolvedAuth {
+                            scheme: AuthScheme::Bearer,
+                            secret: SecretString::new(value.into_boxed_str()),
+                        });
+                    }
+                    match resolver
+                        .resolve_api_key(&provider_id, &api_key_env_var)
+                        .await
+                        .map_err(store_err_to_provider)?
+                    {
+                        Some(resolved) => Ok(ResolvedAuth {
+                            scheme: AuthScheme::ApiKey,
+                            secret: resolved.value,
                         }),
+                        None => Err(ProviderError::CredentialNeeded { provider_id }),
                     }
                 })
             }

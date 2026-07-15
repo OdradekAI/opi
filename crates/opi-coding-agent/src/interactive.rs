@@ -86,6 +86,53 @@ enum SessionForkCommand {
     Clone,
 }
 
+/// One pre-output turn that may be retried after an explicit successful login.
+#[doc(hidden)]
+#[derive(Default)]
+pub struct PendingAuthTurn {
+    provider_id: Option<String>,
+}
+
+impl PendingAuthTurn {
+    /// Retain only typed pre-output credential failures.
+    #[doc(hidden)]
+    pub fn capture_error(&mut self, error: &AgentError) {
+        if let AgentError::CredentialNeeded { provider_id } = error {
+            self.provider_id = Some(provider_id.clone());
+        }
+    }
+
+    fn clear(&mut self) {
+        self.provider_id = None;
+    }
+
+    fn consume_login(&mut self, outcome: &AuthCommandOutcome) -> bool {
+        let AuthCommandOutcome::LoggedIn { provider_id } = outcome else {
+            return false;
+        };
+        if self.provider_id.as_deref() != Some(provider_id.as_str()) {
+            return false;
+        }
+        self.provider_id = None;
+        true
+    }
+}
+
+/// Spawn the no-duplicate-message retry used by the TUI after `/login`.
+#[doc(hidden)]
+pub fn spawn_pending_auth_retry(
+    pending_turn: &mut PendingAuthTurn,
+    outcome: &AuthCommandOutcome,
+    harness: Arc<tokio::sync::Mutex<CodingHarness>>,
+) -> Option<tokio::task::JoinHandle<Result<Vec<AgentMessage>, AgentError>>> {
+    pending_turn.consume_login(outcome).then(|| {
+        tokio::spawn(async move {
+            let mut harness = harness.lock().await;
+            harness.retry_last_prompt().await
+        })
+    })
+}
+
 impl SessionForkCommand {
     fn verb(self) -> &'static str {
         match self {
@@ -368,6 +415,7 @@ async fn tui_event_loop(
     oauth_registry: OAuthProviderRegistry,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut pending: Option<tokio::task::JoinHandle<Result<Vec<AgentMessage>, AgentError>>> = None;
+    let mut pending_auth_turn = PendingAuthTurn::default();
     let mut cancel_token = harness.lock().await.cancel_token();
 
     loop {
@@ -391,7 +439,12 @@ async fn tui_event_loop(
                     let mut s = state.lock().unwrap();
                     s.app_state = AppState::Idle;
                 }
-                Ok(Err(AgentError::CredentialNeeded { provider_id })) => {
+                Ok(Err(
+                    ref error @ AgentError::CredentialNeeded {
+                        ref provider_id, ..
+                    },
+                )) => {
+                    pending_auth_turn.capture_error(error);
                     let mut s = state
                         .lock()
                         .map_err(|_| io::Error::other("TUI state lock poisoned"))?;
@@ -688,16 +741,28 @@ async fn tui_event_loop(
                     },
                 )
                 .await;
+                let retry = spawn_pending_auth_retry(
+                    &mut pending_auth_turn,
+                    &auth_outcome,
+                    harness.clone(),
+                );
                 if let Some(message) = route_auth_outcome(auth_outcome)? {
-                    state
+                    let mut s = state
                         .lock()
-                        .map_err(|_| io::Error::other("TUI state lock poisoned"))?
-                        .messages
-                        .push(TuiMessage::new(TuiRole::System, message));
+                        .map_err(|_| io::Error::other("TUI state lock poisoned"))?;
+                    s.messages.push(TuiMessage::new(TuiRole::System, message));
+                    if retry.is_some() {
+                        s.app_state = AppState::Thinking;
+                    }
+                    drop(s);
+                    if let Some(handle) = retry {
+                        pending = Some(handle);
+                    }
                     continue;
                 }
 
                 // Add user message to display
+                pending_auth_turn.clear();
                 {
                     let mut s = state.lock().unwrap();
                     s.messages

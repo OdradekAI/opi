@@ -372,11 +372,14 @@ impl NonInteractiveRunner {
                     exit_code: ExitCode::Success as i32,
                 }
             }
-            Err(error) => NonInteractiveResult {
-                stdout: output.lock().map(|g| g.clone()).unwrap_or_default(),
-                stderr: stderr_for_agent_error(&error, ""),
-                exit_code: exit_code_for_agent_error(&error),
-            },
+            Err(error) => {
+                append_credential_remediation(&output, &error);
+                NonInteractiveResult {
+                    stdout: output.lock().map(|g| g.clone()).unwrap_or_default(),
+                    stderr: stderr_for_agent_error(&error, ""),
+                    exit_code: exit_code_for_agent_error(&error),
+                }
+            }
         }
     }
 
@@ -580,11 +583,14 @@ impl NonInteractiveRunner {
                     exit_code: ExitCode::Success as i32,
                 }
             }
-            Err(error) => NonInteractiveResult {
-                stdout: output.lock().map(|g| g.clone()).unwrap_or_default(),
-                stderr: stderr_for_agent_error(&error, ""),
-                exit_code: exit_code_for_agent_error(&error),
-            },
+            Err(error) => {
+                append_credential_remediation(&output, &error);
+                NonInteractiveResult {
+                    stdout: output.lock().map(|g| g.clone()).unwrap_or_default(),
+                    stderr: stderr_for_agent_error(&error, ""),
+                    exit_code: exit_code_for_agent_error(&error),
+                }
+            }
         }
     }
 
@@ -679,6 +685,28 @@ fn provider_error_stderr(error: &str) -> String {
     Diagnostic::from(&error)
         .redacted_payload(RedactionMode::Summary)
         .message
+}
+
+fn append_credential_remediation(output: &Arc<Mutex<String>>, error: &AgentError) {
+    let event = match error {
+        AgentError::CredentialNeeded { provider_id } => AgentSessionEvent::CredentialNeeded {
+            provider_id: provider_id.clone(),
+            remediation: format!("/login {provider_id}"),
+            diagnostic: Diagnostic::from(error).redacted_payload(RedactionMode::Summary),
+        },
+        AgentError::CredentialRevoked { provider_id } => AgentSessionEvent::CredentialRevoked {
+            provider_id: provider_id.clone(),
+            remediation: format!("/login {provider_id}"),
+            diagnostic: Diagnostic::from(error).redacted_payload(RedactionMode::Summary),
+        },
+        _ => return,
+    };
+    if let Ok(json) = serde_json::to_string(&event)
+        && let Ok(mut guard) = output.lock()
+    {
+        guard.push_str(&json);
+        guard.push('\n');
+    }
 }
 
 fn stderr_for_agent_error(error: &AgentError, suffix: &str) -> String {

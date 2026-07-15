@@ -737,51 +737,58 @@ fn codex_extra_headers() -> Vec<(String, String)> {
     ]
 }
 
-/// Build the Anthropic OAuth provider (Bearer auth with the beta header,
-/// applied inside the provider's stream). Auth is resolved per-request via
-/// [`AuthSource::Store`], refreshing near expiry through the resolver. `base_url`
-/// follows the config default (Anthropic PKCE derives no per-credential base URL).
-async fn build_anthropic_oauth(
+/// Build Anthropic with per-stream credential-source precedence: stored OAuth,
+/// `ANTHROPIC_OAUTH_TOKEN`, then the configured API-key environment source.
+/// Construction never requires an immediately available credential.
+async fn build_anthropic_live_auth(
     config: &OpiConfig,
     resolver: &CredentialResolver,
     registry: &OAuthProviderRegistry,
-) -> Result<Box<dyn Provider>, ProviderBuildError> {
+) -> Result<ProviderBuildOutcome, ProviderBuildError> {
     let oauth = registry.lookup("anthropic").ok_or_else(|| {
         ProviderBuildError::Config("no anthropic OAuth provider registered".into())
     })?;
     let client = build_proxied_client(config.providers.anthropic.proxy.as_ref())?;
     let provider = opi_ai::anthropic::AnthropicProvider::with_auth(
-        Arc::new(AuthSource::Store {
+        Arc::new(AuthSource::Layered {
             resolver: Arc::new(resolver.clone()),
             provider_id: "anthropic".into(),
             oauth,
+            oauth_env_var: "ANTHROPIC_OAUTH_TOKEN".into(),
+            api_key_env_var: config.providers.anthropic.api_key_env.clone(),
         }),
         config.providers.anthropic.base_url.clone(),
         client,
     );
-    Ok(Box::new(provider))
-}
-
-/// Build the Anthropic OAuth provider from a non-refreshable
-/// `ANTHROPIC_OAUTH_TOKEN` environment variable. Precedence: a stored OAuth
-/// credential wins (-> [`build_anthropic_oauth`]); this path is the fallback
-/// when `ANTHROPIC_OAUTH_TOKEN` is present but no credential is stored. The
-/// token is used until 401, then the turn stops (CredentialRevoked) and
-/// explicit re-login is required — no auto-refresh.
-async fn build_anthropic_env_oauth(
-    config: &OpiConfig,
-    resolver: &CredentialResolver,
-) -> Result<Box<dyn Provider>, ProviderBuildError> {
-    let client = build_proxied_client(config.providers.anthropic.proxy.as_ref())?;
-    let provider = opi_ai::anthropic::AnthropicProvider::with_auth(
-        Arc::new(AuthSource::EnvOAuthToken {
-            env_var: "ANTHROPIC_OAUTH_TOKEN".into(),
-            env_lookup: resolver.env_lookup(),
-        }),
-        config.providers.anthropic.base_url.clone(),
-        client,
-    );
-    Ok(Box::new(provider))
+    let mut diagnostics = Vec::new();
+    match resolver
+        .resolve_api_key("anthropic", &config.providers.anthropic.api_key_env)
+        .await
+    {
+        Ok(Some(resolved)) => {
+            if let ApiKeySource::Env {
+                env_var,
+                backend_unavailable: true,
+            } = resolved.source
+            {
+                diagnostics.push(backend_fallback_diagnostic("anthropic", &env_var));
+            }
+        }
+        Ok(None)
+        | Err(opi_ai::CredentialStoreError::UnexpectedCredentialKind {
+            actual: "oauth_token",
+            ..
+        }) => {}
+        Err(error) => {
+            return Err(ProviderBuildError::Provider(ProviderError::Config(
+                format!("credential store error: {error}"),
+            )));
+        }
+    }
+    Ok(ProviderBuildOutcome {
+        provider: Box::new(provider),
+        diagnostics,
+    })
 }
 
 /// Build the Copilot Chat provider (OpenAI Chat compat profile) over a stored
@@ -860,11 +867,11 @@ async fn build_codex_oauth(
     Ok(Box::new(provider))
 }
 
-/// Build the active provider, routing Anthropic/Copilot/Codex to their OAuth
-/// builders when an OAuth credential is in play, and falling through to the
-/// API-key resolver path for everything else. This is the Phase 14.2 production
-/// routing entry point; [`build_provider_production`] constructs the resolver +
-/// registry and delegates here.
+/// Build the active provider, routing Anthropic/Copilot/Codex to providers that
+/// resolve their approved credential sources from each stream, and falling
+/// through to the API-key resolver path for everything else. This is the Phase
+/// 14 production routing entry point; [`build_provider_production`] constructs
+/// the resolver + registry and delegates here.
 ///
 /// Routing:
 /// - `copilot:` / `codex:` model specs are OAuth-only -> their OAuth builder.
@@ -899,23 +906,7 @@ async fn build_provider_with_oauth_outcome(
         "codex" => build_codex_oauth(resolver, registry)
             .await
             .map(ProviderBuildOutcome::without_diagnostics),
-        "anthropic" => {
-            let has_store = resolver
-                .has_oauth_credential("anthropic")
-                .await
-                .map_err(ProviderBuildError::Provider)?;
-            if has_store {
-                build_anthropic_oauth(config, resolver, registry)
-                    .await
-                    .map(ProviderBuildOutcome::without_diagnostics)
-            } else if resolver.env_value("ANTHROPIC_OAUTH_TOKEN").is_some() {
-                build_anthropic_env_oauth(config, resolver)
-                    .await
-                    .map(ProviderBuildOutcome::without_diagnostics)
-            } else {
-                build_provider_with_resolver_outcome(config, resolver).await
-            }
-        }
+        "anthropic" => build_anthropic_live_auth(config, resolver, registry).await,
         _ => build_provider_with_resolver_outcome(config, resolver).await,
     }
 }
@@ -948,10 +939,10 @@ pub async fn build_provider_bundle(
 /// Build the active provider through the production credential resolver: a
 /// [`crate::credential_store::KeychainCredentialStore`] over the platform
 /// keychain with env fallback, plus the built-in OAuth provider registry. Routes
-/// Anthropic/Copilot/Codex to their OAuth builders when an OAuth credential is
-/// stored, and falls through to the API-key path otherwise. This is a
-/// convenience wrapper around [`build_provider_bundle`] that selects the
-/// target-native backend factory.
+/// Anthropic/Copilot/Codex to their live-auth builders, which may defer a
+/// missing-credential error until stream polling. This is a convenience wrapper
+/// around [`build_provider_bundle`] that selects the target-native backend
+/// factory.
 pub async fn build_provider_production(
     config: &OpiConfig,
     user_config_dir: std::path::PathBuf,

@@ -354,6 +354,59 @@ async fn json_mode_provider_error_stderr_is_redacted() {
     );
 }
 
+#[tokio::test]
+async fn json_mode_credential_needed_emits_typed_remediation_without_prompt() {
+    let provider = MockProvider::new_with_errors(
+        "anthropic",
+        vec![MockResponse::Error(ProviderError::CredentialNeeded {
+            provider_id: "anthropic".into(),
+        })],
+    );
+    let call_log = provider.call_log_handle();
+    let mut runner = NonInteractiveRunner::new(
+        Box::new(provider),
+        "anthropic:claude-sonnet-4-5".into(),
+        OpiConfig::default(),
+        std::env::current_dir().unwrap(),
+        false,
+        None,
+        Vec::new(),
+    );
+
+    let result = tokio::time::timeout(std::time::Duration::from_secs(2), runner.run_json("hello"))
+        .await
+        .expect("JSON credential remediation must not prompt or block");
+
+    assert_eq!(result.exit_code, ExitCode::AuthFailure as i32);
+    let lines = parse_ndjson(&result.stdout);
+    assert_eq!(lines[0]["schema_version"], NDJSON_SCHEMA_VERSION);
+    let raw_remediation = result
+        .stdout
+        .lines()
+        .find(|line| line.contains("\"type\":\"CredentialNeeded\""))
+        .expect("raw CredentialNeeded remediation line");
+    println!("{raw_remediation}");
+    let remediation = lines
+        .iter()
+        .find(|line| line["type"] == "CredentialNeeded")
+        .expect("typed CredentialNeeded remediation record");
+    let typed: AgentSessionEvent = serde_json::from_value(remediation.clone())
+        .expect("credential remediation remains inside AgentSessionEvent");
+    match typed {
+        AgentSessionEvent::CredentialNeeded {
+            provider_id,
+            remediation,
+            diagnostic,
+        } => {
+            assert_eq!(provider_id, "anthropic");
+            assert_eq!(remediation, "/login anthropic");
+            assert_eq!(diagnostic.code, "provider_credential_needed");
+        }
+        other => panic!("unexpected remediation event: {other:?}"),
+    }
+    assert_eq!(call_log.lock().unwrap().len(), 1, "no automatic retry");
+}
+
 /// Phase 12 task 12.2 — provider errors visible through the non-interactive
 /// NDJSON public surface must not leak credentials. A retryable `Network`
 /// error carrying a secret triggers an `AutoRetryStart` event whose

@@ -1786,7 +1786,8 @@ mod tests {
 
     #[test]
     fn noninteractive_auth_failure_uses_production_core_in_text_and_json_modes() {
-        use opi_ai::test_support::{MockProvider, text_response};
+        use opi_ai::provider::ProviderError;
+        use opi_ai::test_support::{MockProvider, MockResponse};
         use opi_coding_agent::runner::ExitCode;
 
         let _env_lock = PROVIDER_ENV_LOCK.lock().expect("provider env lock");
@@ -1816,9 +1817,11 @@ mod tests {
                     workspace_dir.path().to_path_buf(),
                     user_config_dir.path().to_path_buf(),
                     empty_backend_factory(),
-                    Some(Box::new(MockProvider::new(
+                    Some(Box::new(MockProvider::new_with_errors(
                         "anthropic",
-                        vec![text_response("must not run")],
+                        vec![MockResponse::Error(ProviderError::CredentialNeeded {
+                            provider_id: "anthropic".into(),
+                        })],
                     ))),
                     output,
                     move |_| observed_result.store(true, Ordering::SeqCst),
@@ -1826,21 +1829,31 @@ mod tests {
             );
 
             assert_eq!(exit_code, ExitCode::AuthFailure as i32);
-            assert!(!observed.load(Ordering::SeqCst));
-            assert!(stdout.lock().expect("stdout capture").is_empty());
-            assert!(
-                stderr
-                    .lock()
-                    .expect("stderr capture")
-                    .contains("ANTHROPIC_API_KEY")
-            );
+            assert!(observed.load(Ordering::SeqCst));
+            let stdout = stdout.lock().expect("stdout capture").clone();
+            if json {
+                let remediation = stdout
+                    .lines()
+                    .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+                    .find(|line| line["type"] == "CredentialNeeded")
+                    .expect("typed stream-time credential remediation");
+                assert_eq!(remediation["provider_id"], "anthropic");
+                assert_eq!(remediation["remediation"], "/login anthropic");
+            } else {
+                assert!(stdout.is_empty());
+            }
+            let stderr = stderr.lock().expect("stderr capture").clone();
+            assert!(stderr.contains("credential needed"), "{stderr}");
+            assert!(stderr.contains("/login anthropic"), "{stderr}");
         }
         assert!(session_blocker.is_file());
     }
 
     #[test]
-    fn rpc_auth_failure_uses_production_core_before_ready() {
-        use opi_ai::test_support::{MockProvider, text_response};
+    fn rpc_auth_failure_uses_production_core_after_ready() {
+        use opi_ai::provider::ProviderError;
+        use opi_ai::test_support::{MockProvider, MockResponse};
+        use opi_coding_agent::rpc::RpcCommand;
         use opi_coding_agent::runner::ExitCode;
 
         let _env_lock = PROVIDER_ENV_LOCK.lock().expect("provider env lock");
@@ -1850,44 +1863,83 @@ mod tests {
         let session_blocker = session_blocker(&session_dir);
         let _env = ProviderEnvGuard::scoped(&[("OPI_SESSIONS_DIR", session_blocker.as_os_str())]);
         let cli = Cli::parse_from(["opi", "--rpc"]);
-        let (_command_tx, command_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (command_tx, command_rx) = tokio::sync::mpsc::unbounded_channel();
         let (output_tx, mut output_rx) = tokio::sync::mpsc::unbounded_channel();
         let (output, stdout, stderr) = CommandOutput::capturing();
+        let config = keychain_config();
 
-        let exit_code = tokio::runtime::Runtime::new()
-            .expect("runtime")
-            .block_on(run_rpc_core(
-                &cli,
-                &keychain_config(),
-                None,
-                None,
-                opi_coding_agent::policy::ToolSelection::Default,
-                workspace_dir.path().to_path_buf(),
-                user_config_dir.path().to_path_buf(),
-                empty_backend_factory(),
-                Some(Box::new(MockProvider::new(
-                    "anthropic",
-                    vec![text_response("must not run")],
-                ))),
-                output,
-                RpcTransport::Channels {
-                    command_rx,
-                    output_tx,
-                },
-            ));
+        let (exit_code, emitted) =
+            tokio::runtime::Runtime::new()
+                .expect("runtime")
+                .block_on(async {
+                    let run = run_rpc_core(
+                        &cli,
+                        &config,
+                        None,
+                        None,
+                        opi_coding_agent::policy::ToolSelection::Default,
+                        workspace_dir.path().to_path_buf(),
+                        user_config_dir.path().to_path_buf(),
+                        empty_backend_factory(),
+                        Some(Box::new(MockProvider::new_with_errors(
+                            "anthropic",
+                            vec![MockResponse::Error(ProviderError::CredentialNeeded {
+                                provider_id: "anthropic".into(),
+                            })],
+                        ))),
+                        output,
+                        RpcTransport::Channels {
+                            command_rx,
+                            output_tx,
+                        },
+                    );
+                    let drive = async move {
+                        let mut emitted = Vec::new();
+                        let ready = output_rx.recv().await.expect("rpc_ready");
+                        assert_eq!(ready["type"], "rpc_ready");
+                        emitted.push(ready);
+                        command_tx
+                            .send(RpcCommand::prompt {
+                                id: Some("auth-prompt".into()),
+                                message: "hello".into(),
+                            })
+                            .expect("queue prompt");
+                        loop {
+                            let line = output_rx.recv().await.expect("credential event");
+                            let credential_needed = line["type"] == "CredentialNeeded";
+                            emitted.push(line);
+                            if credential_needed {
+                                break;
+                            }
+                        }
+                        command_tx
+                            .send(RpcCommand::quit {
+                                id: Some("quit-after-auth".into()),
+                            })
+                            .expect("queue quit");
+                        while let Some(line) = output_rx.recv().await {
+                            let quit = line["type"] == "response"
+                                && line["command"] == "quit"
+                                && line["success"] == true;
+                            emitted.push(line);
+                            if quit {
+                                break;
+                            }
+                        }
+                        emitted
+                    };
+                    tokio::join!(run, drive)
+                });
 
-        assert_eq!(exit_code, ExitCode::AuthFailure as i32);
-        assert!(
-            output_rx.try_recv().is_err(),
-            "rpc_ready must not be emitted"
-        );
+        assert_eq!(exit_code, ExitCode::Success as i32);
+        let remediation = emitted
+            .iter()
+            .find(|line| line["type"] == "CredentialNeeded")
+            .expect("typed stream-time RPC remediation");
+        assert_eq!(remediation["provider_id"], "anthropic");
+        assert_eq!(remediation["remediation"], "/login anthropic");
         assert!(stdout.lock().expect("stdout capture").is_empty());
-        assert!(
-            stderr
-                .lock()
-                .expect("stderr capture")
-                .contains("ANTHROPIC_API_KEY")
-        );
+        assert!(stderr.lock().expect("stderr capture").is_empty());
         assert!(session_blocker.is_file());
     }
 
