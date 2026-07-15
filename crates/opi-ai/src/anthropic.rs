@@ -628,6 +628,42 @@ fn empty_assistant_message() -> AssistantMessage {
 /// reviewed pi 0.80.6 Anthropic OAuth profile.
 const ANTHROPIC_OAUTH_BETA_HEADER: &str = "claude-code-20250219,oauth-2025-04-20";
 
+/// Built-in Anthropic model metadata without credentials or HTTP construction.
+pub fn model_catalog() -> Vec<ModelInfo> {
+    vec![
+        ModelInfo {
+            id: "claude-sonnet-4-5-20250514".into(),
+            display_name: "Claude Sonnet 4.5".into(),
+            capabilities: ModelCapabilities::new(200000, 8192)
+                .with_images(true)
+                .with_streaming(true)
+                .with_thinking(true)
+                .with_cache_control(true)
+                .with_long_cache_retention(true),
+        },
+        ModelInfo {
+            id: "claude-opus-4-20250514".into(),
+            display_name: "Claude Opus 4".into(),
+            capabilities: ModelCapabilities::new(200000, 8192)
+                .with_images(true)
+                .with_streaming(true)
+                .with_thinking(true)
+                .with_cache_control(true)
+                .with_long_cache_retention(true),
+        },
+        ModelInfo {
+            id: "claude-haiku-4-5-20250514".into(),
+            display_name: "Claude Haiku 4.5".into(),
+            capabilities: ModelCapabilities::new(200000, 8192)
+                .with_images(true)
+                .with_streaming(true)
+                .with_thinking(true)
+                .with_cache_control(true)
+                .with_long_cache_retention(true),
+        },
+    ]
+}
+
 /// Concrete Anthropic Messages API provider.
 pub struct AnthropicProvider {
     auth: Arc<dyn AuthResolver>,
@@ -661,38 +697,7 @@ impl AnthropicProvider {
         client: Arc<HttpClient>,
     ) -> Self {
         let base_url = base_url.unwrap_or_else(|| "https://api.anthropic.com".into());
-        let models = vec![
-            ModelInfo {
-                id: "claude-sonnet-4-5-20250514".into(),
-                display_name: "Claude Sonnet 4.5".into(),
-                capabilities: ModelCapabilities::new(200000, 8192)
-                    .with_images(true)
-                    .with_streaming(true)
-                    .with_thinking(true)
-                    .with_cache_control(true)
-                    .with_long_cache_retention(true),
-            },
-            ModelInfo {
-                id: "claude-opus-4-20250514".into(),
-                display_name: "Claude Opus 4".into(),
-                capabilities: ModelCapabilities::new(200000, 8192)
-                    .with_images(true)
-                    .with_streaming(true)
-                    .with_thinking(true)
-                    .with_cache_control(true)
-                    .with_long_cache_retention(true),
-            },
-            ModelInfo {
-                id: "claude-haiku-4-5-20250514".into(),
-                display_name: "Claude Haiku 4.5".into(),
-                capabilities: ModelCapabilities::new(200000, 8192)
-                    .with_images(true)
-                    .with_streaming(true)
-                    .with_thinking(true)
-                    .with_cache_control(true)
-                    .with_long_cache_retention(true),
-            },
-        ];
+        let models = model_catalog();
         Self {
             auth,
             base_url,

@@ -138,19 +138,43 @@ impl CredentialSource {
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum CredentialStoreError {
+    /// The native credential service is not reachable on this host.
+    #[error("credential backend unavailable for '{provider}': {reason}")]
+    BackendUnavailable { provider: String, reason: String },
     /// The credential backend could not be reached or rejected the operation.
     #[error("credential backend error for '{provider}': {reason}")]
     Backend { provider: String, reason: String },
     /// The stored envelope could not be parsed as the expected JSON shape.
     #[error("malformed credential envelope for '{provider}': {reason}")]
     MalformedEnvelope { provider: String, reason: String },
+    /// The non-secret presence/kind marker is missing required structure, has
+    /// an unknown closed-set value, or disagrees with the protected entry.
+    /// Raw marker bytes are intentionally never retained in this error.
+    #[error("corrupt credential marker for '{provider}'")]
+    CorruptMarker { provider: String },
     /// The stored envelope uses an unknown version or credential kind.
-    #[error("unknown credential envelope for '{provider}': version={version:?}, kind={kind:?}")]
+    #[error("unknown credential envelope for '{provider}': version={version:?}, field={field:?}")]
     UnknownEnvelope {
         provider: String,
         version: Option<u32>,
-        kind: Option<String>,
+        field: UnknownEnvelopeField,
     },
+    /// A provider entry exists, but its credential kind is not valid for this path.
+    #[error("unexpected credential kind for '{provider}': expected {expected}, found {actual}")]
+    UnexpectedCredentialKind {
+        provider: String,
+        expected: &'static str,
+        actual: &'static str,
+    },
+}
+
+/// Closed, non-secret classification for an unknown envelope discriminator.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UnknownEnvelopeField {
+    /// The numeric envelope version is unsupported.
+    Version,
+    /// The credential kind discriminator is unsupported.
+    Kind,
 }
 
 // ---------------------------------------------------------------------------

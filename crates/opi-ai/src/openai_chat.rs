@@ -799,6 +799,40 @@ pub struct OpenAiChatProvider {
     client: Arc<HttpClient>,
 }
 
+/// Built-in OpenAI Chat model metadata without credentials or HTTP construction.
+pub fn model_catalog() -> Vec<ModelInfo> {
+    vec![
+        ModelInfo {
+            id: "gpt-4o".into(),
+            display_name: "GPT-4o".into(),
+            capabilities: ModelCapabilities::new(128000, 16384)
+                .with_images(true)
+                .with_streaming(true),
+        },
+        ModelInfo {
+            id: "gpt-4o-mini".into(),
+            display_name: "GPT-4o Mini".into(),
+            capabilities: ModelCapabilities::new(128000, 16384)
+                .with_images(true)
+                .with_streaming(true),
+        },
+        ModelInfo {
+            id: "o3".into(),
+            display_name: "o3".into(),
+            capabilities: ModelCapabilities::new(200000, 100000)
+                .with_images(true)
+                .with_streaming(true),
+        },
+        ModelInfo {
+            id: "o4-mini".into(),
+            display_name: "o4-mini".into(),
+            capabilities: ModelCapabilities::new(200000, 100000)
+                .with_images(true)
+                .with_streaming(true),
+        },
+    ]
+}
+
 impl OpenAiChatProvider {
     pub fn new(api_key: String, base_url: Option<String>) -> Self {
         Self::new_with_compat(api_key, base_url, CompatConfig::default())
@@ -859,36 +893,7 @@ impl OpenAiChatProvider {
         client: Arc<HttpClient>,
     ) -> Self {
         let base_url = base_url.unwrap_or_else(|| "https://api.openai.com".into());
-        let models = vec![
-            ModelInfo {
-                id: "gpt-4o".into(),
-                display_name: "GPT-4o".into(),
-                capabilities: ModelCapabilities::new(128000, 16384)
-                    .with_images(true)
-                    .with_streaming(true),
-            },
-            ModelInfo {
-                id: "gpt-4o-mini".into(),
-                display_name: "GPT-4o Mini".into(),
-                capabilities: ModelCapabilities::new(128000, 16384)
-                    .with_images(true)
-                    .with_streaming(true),
-            },
-            ModelInfo {
-                id: "o3".into(),
-                display_name: "o3".into(),
-                capabilities: ModelCapabilities::new(200000, 100000)
-                    .with_images(true)
-                    .with_streaming(true),
-            },
-            ModelInfo {
-                id: "o4-mini".into(),
-                display_name: "o4-mini".into(),
-                capabilities: ModelCapabilities::new(200000, 100000)
-                    .with_images(true)
-                    .with_streaming(true),
-            },
-        ];
+        let models = model_catalog();
         let direct_prompt_cache_key = provider_id == "openai";
         Self {
             auth,

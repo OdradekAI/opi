@@ -5,21 +5,24 @@
 //!   `run_doctor`, `DoctorReport`, formatters) directly. These pin scope
 //!   parsing, per-scope diagnostics, the exit-code policy, the NDJSON shape,
 //!   and the credential-value non-leak guarantee without spawning anything.
-//! - **Binary** tests spawn the real `opi` binary to prove the top-level CLI
-//!   dispatch, exit codes, scope selection, network-free behavior, and that
-//!   `opi package doctor` remains a distinct, intact subcommand.
+//! - A single **binary parse smoke** proves unknown doctor scopes return before
+//!   credential-aware orchestration. Behavioral output contracts use the
+//!   injected production command core in the binary's unit tests.
 //!
 //! No test makes a network call or requires real credentials. Provider scope
 //! checks credential *presence* only; the credential *value* is never emitted.
 
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 
 use opi_agent::{Diagnostic, Severity};
 use opi_coding_agent::config::{ConfigError, OpiConfig};
 use opi_coding_agent::diagnostic_bridge::{diagnostic_from_config, diagnostic_from_package};
 use opi_coding_agent::doctor::{
     DoctorContext, DoctorEntry, DoctorReport, DoctorScope, format_json, format_text, run_doctor,
+    run_doctor_command, run_doctor_with_store,
 };
 use opi_coding_agent::package_resolver::{
     InstalledPackageScope, PackageDiagnostic, PackageDiagnosticSeverity,
@@ -67,6 +70,131 @@ fn no_env(_: &str) -> Option<String> {
 static EMPTY_STORE_PROBE: std::sync::LazyLock<
     std::collections::HashMap<String, opi_ai::CredentialSource>,
 > = std::sync::LazyLock::new(std::collections::HashMap::new);
+
+struct DoctorPresenceBackend {
+    secret_get_calls: Arc<AtomicUsize>,
+    presence_calls: Arc<AtomicUsize>,
+}
+
+impl opi_coding_agent::credential_store::KeyringBackend for DoctorPresenceBackend {
+    fn get(
+        &self,
+        service: &str,
+        provider_id: &str,
+    ) -> Result<Option<String>, opi_coding_agent::credential_store::BackendError> {
+        if service == "opi.presence" {
+            self.presence_calls.fetch_add(1, Ordering::SeqCst);
+            Ok((provider_id == "anthropic").then(|| "api_key".to_owned()))
+        } else {
+            self.secret_get_calls.fetch_add(1, Ordering::SeqCst);
+            Err(opi_coding_agent::credential_store::BackendError::Other(
+                "secret get forbidden".to_owned(),
+            ))
+        }
+    }
+
+    fn set(
+        &self,
+        _service: &str,
+        _provider_id: &str,
+        _value: &str,
+    ) -> Result<(), opi_coding_agent::credential_store::BackendError> {
+        Err(opi_coding_agent::credential_store::BackendError::Other(
+            "unused set".to_owned(),
+        ))
+    }
+
+    fn delete(
+        &self,
+        _service: &str,
+        _provider_id: &str,
+    ) -> Result<(), opi_coding_agent::credential_store::BackendError> {
+        Err(opi_coding_agent::credential_store::BackendError::Other(
+            "unused delete".to_owned(),
+        ))
+    }
+}
+
+struct OrderingKeyringBackend {
+    inner: opi_coding_agent::credential_store::FakeKeyringBackend,
+    events: Arc<Mutex<Vec<&'static str>>>,
+}
+
+impl OrderingKeyringBackend {
+    fn inner(&self) -> &opi_coding_agent::credential_store::FakeKeyringBackend {
+        &self.inner
+    }
+
+    fn record_entry_creation(&self) {
+        self.events
+            .lock()
+            .expect("ordering events")
+            .push("entry_creation");
+    }
+}
+
+impl opi_coding_agent::credential_store::KeyringBackend for OrderingKeyringBackend {
+    fn get(
+        &self,
+        service: &str,
+        provider_id: &str,
+    ) -> Result<Option<String>, opi_coding_agent::credential_store::BackendError> {
+        self.record_entry_creation();
+        opi_coding_agent::credential_store::KeyringBackend::get(self.inner(), service, provider_id)
+    }
+
+    fn set(
+        &self,
+        service: &str,
+        provider_id: &str,
+        value: &str,
+    ) -> Result<(), opi_coding_agent::credential_store::BackendError> {
+        self.record_entry_creation();
+        opi_coding_agent::credential_store::KeyringBackend::set(
+            self.inner(),
+            service,
+            provider_id,
+            value,
+        )
+    }
+
+    fn delete(
+        &self,
+        service: &str,
+        provider_id: &str,
+    ) -> Result<(), opi_coding_agent::credential_store::BackendError> {
+        self.record_entry_creation();
+        opi_coding_agent::credential_store::KeyringBackend::delete(
+            self.inner(),
+            service,
+            provider_id,
+        )
+    }
+}
+
+impl Drop for OrderingKeyringBackend {
+    fn drop(&mut self) {
+        self.events
+            .lock()
+            .expect("ordering events")
+            .push("guard_drop");
+    }
+}
+
+fn assert_native_entry_drop_order(events: &Arc<Mutex<Vec<&'static str>>>) {
+    let events = events.lock().expect("ordering events");
+    assert_eq!(events.first(), Some(&"native_install"), "{events:?}");
+    let first_entry = events
+        .iter()
+        .position(|event| *event == "entry_creation")
+        .expect("at least one keyring entry creation");
+    let guard_drop = events
+        .iter()
+        .position(|event| *event == "guard_drop")
+        .expect("native guard drop event");
+    assert!(0 < first_entry && first_entry < guard_drop, "{events:?}");
+    assert_eq!(events.last(), Some(&"guard_drop"), "{events:?}");
+}
 
 /// Collect the distinct scope strings present in a report's NDJSON output.
 fn scope_strings(report: &DoctorReport) -> Vec<String> {
@@ -410,6 +538,61 @@ fn provider_scope_bedrock_accepts_aws_profile_env() {
                 })
         }),
         "bedrock should report AWS_PROFILE as present: {:?}",
+        report.entries
+    );
+}
+
+#[test]
+fn provider_scope_bedrock_custom_secret_env_does_not_replace_default_env_pair() {
+    let mut config = test_config("bedrock:anthropic.claude-test");
+    config.providers.bedrock.secret_access_key_env = Some("BEDROCK_SECRET".into());
+    let dir = tempfile::tempdir().unwrap();
+    let env_values: HashMap<&str, String> = [
+        ("AWS_ACCESS_KEY_ID", "akid".into()),
+        ("AWS_SECRET_ACCESS_KEY", "secret".into()),
+    ]
+    .into_iter()
+    .collect();
+    let env = |n: &str| env_values.get(n).cloned();
+
+    let report = run_doctor(&[DoctorScope::Provider], &ctx(&config, dir.path(), &env));
+
+    assert!(
+        report.entries.iter().any(|e| {
+            e.diagnostic.severity == Severity::Info
+                && e.diagnostic.details.as_ref().is_some_and(|details| {
+                    details["credentials_present"] == true
+                        && details["credential_probe"]
+                            == "env AWS_ACCESS_KEY_ID + env AWS_SECRET_ACCESS_KEY"
+                })
+        }),
+        "bedrock should preserve the fixed default env pair when a custom secret env is configured: {:?}",
+        report.entries
+    );
+}
+
+#[test]
+fn provider_scope_bedrock_config_access_requires_configured_secret_env() {
+    let mut config = test_config("bedrock:anthropic.claude-test");
+    config.providers.bedrock.access_key_id = Some("CONFIG_AKID".into());
+    let dir = tempfile::tempdir().unwrap();
+    let env_values: HashMap<&str, String> = [("AWS_SECRET_ACCESS_KEY", "secret".into())]
+        .into_iter()
+        .collect();
+    let env = |n: &str| env_values.get(n).cloned();
+
+    let report = run_doctor(&[DoctorScope::Provider], &ctx(&config, dir.path(), &env));
+
+    assert!(
+        report.entries.iter().any(|e| {
+            e.diagnostic.severity == Severity::Warning
+                && e.diagnostic.details.as_ref().is_some_and(|details| {
+                    details["credentials_present"] == false
+                        && details["credential_probe"]
+                            == "config access_key_id + configured secret env"
+                })
+        }),
+        "bedrock config access_key_id must not pair with the fixed default secret env unless it is configured: {:?}",
         report.entries
     );
 }
@@ -799,103 +982,21 @@ fn opi_bin() -> String {
     path.to_string_lossy().into_owned()
 }
 
-fn run_opi(args: &[&str], envs: &[(&str, &str)]) -> std::process::Output {
+fn run_unknown_scope_smoke() -> std::process::Output {
     let bin = opi_bin();
     let tmp = tempfile::tempdir().unwrap();
-    let mut cmd = std::process::Command::new(&bin);
-    cmd.args(args).current_dir(tmp.path()).env_clear();
-    for (k, v) in envs {
-        cmd.env(k, v);
-    }
-    cmd.output()
+    std::process::Command::new(&bin)
+        .args(["doctor", "--scope", "bogus"])
+        .current_dir(tmp.path())
+        .env_clear()
+        .output()
         .unwrap_or_else(|e| panic!("failed to run {bin}: {e}"))
-}
-
-#[test]
-fn doctor_clean_env_exits_zero() {
-    // No credentials, no config files, from a clean tempdir: doctor should run
-    // with only warnings/info (missing provider credentials is a warning) and
-    // exit 0.
-    let output = run_opi(&["doctor"], &[]);
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert_eq!(
-        output.status.code(),
-        Some(0),
-        "expected exit 0 for clean doctor run\nstdout: {stdout}\nstderr: {stderr}",
-    );
-    assert!(
-        !stdout.trim().is_empty(),
-        "doctor should print a report to stdout, got empty stdout\nstderr: {stderr}"
-    );
-}
-
-#[test]
-fn doctor_json_reports_all_scopes_without_network() {
-    // Acceptance scenario `phase7-doctor-all-scopes`: every scope is reported
-    // as NDJSON with no network and no credentials.
-    let output = run_opi(&["doctor", "--json"], &[]);
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert_eq!(
-        output.status.code(),
-        Some(0),
-        "expected exit 0\nstdout: {stdout}\nstderr: {stderr}",
-    );
-
-    let mut scopes: Vec<String> = Vec::new();
-    for line in stdout.lines() {
-        if line.trim().is_empty() {
-            continue;
-        }
-        let value: serde_json::Value = serde_json::from_str(line)
-            .unwrap_or_else(|e| panic!("doctor --json line not valid JSON: {line}\n{e}"));
-        if let Some(scope) = value.get("scope").and_then(|v| v.as_str()) {
-            scopes.push(scope.to_string());
-        }
-    }
-    scopes.sort();
-    scopes.dedup();
-    assert_eq!(
-        scopes,
-        vec!["config", "package", "provider", "rpc", "session", "tui"],
-        "doctor --json must report all six scopes, got: {scopes:?}\nstdout: {stdout}",
-    );
-}
-
-#[test]
-fn doctor_scope_subset_reports_only_requested_scopes() {
-    let output = run_opi(&["doctor", "--json", "--scope", "config,rpc"], &[]);
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert_eq!(
-        output.status.code(),
-        Some(0),
-        "expected exit 0; stdout: {stdout}",
-    );
-    let mut scopes: Vec<String> = Vec::new();
-    for line in stdout.lines() {
-        if line.trim().is_empty() {
-            continue;
-        }
-        let value: serde_json::Value =
-            serde_json::from_str(line).expect("doctor --json line must be valid JSON");
-        if let Some(scope) = value.get("scope").and_then(|v| v.as_str()) {
-            scopes.push(scope.to_string());
-        }
-    }
-    scopes.sort();
-    scopes.dedup();
-    assert_eq!(
-        scopes,
-        vec!["config", "rpc"],
-        "only requested scopes, got: {scopes:?}"
-    );
 }
 
 #[test]
 fn doctor_unknown_scope_exits_one() {
     // An unknown scope token is an internal doctor command failure -> exit 1.
-    let output = run_opi(&["doctor", "--scope", "bogus"], &[]);
+    let output = run_unknown_scope_smoke();
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert_eq!(
         output.status.code(),
@@ -905,81 +1006,18 @@ fn doctor_unknown_scope_exits_one() {
 }
 
 #[test]
-fn doctor_config_error_exits_two() {
-    // A malformed config must surface as an error-severity diagnostic (exit 2),
-    // reported through the shared diagnostic shape, not exit 1.
-    let tmp = tempfile::tempdir().unwrap();
-    let config_path = tmp.path().join("broken.toml");
-    std::fs::write(&config_path, "this is = = not valid toml [[[\n").unwrap();
-    let bin = opi_bin();
-    let output = std::process::Command::new(&bin)
-        .args([
-            "--config",
-            config_path.to_str().unwrap(),
-            "doctor",
-            "--json",
-        ])
-        .current_dir(tmp.path())
-        .env_clear()
-        .output()
-        .unwrap_or_else(|e| panic!("failed to run {bin}: {e}"));
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert_eq!(
-        output.status.code(),
-        Some(2),
-        "expected exit 2 for config error\nstdout: {stdout}\nstderr: {stderr}",
-    );
-    // The error must be carried as a structured diagnostic in --json output.
-    let saw_config_error = stdout.lines().any(|line| {
-        let Ok(value) = serde_json::from_str::<serde_json::Value>(line) else {
-            return false;
-        };
-        value.get("source").and_then(|v| v.as_str()) == Some("config")
-            && value.get("severity").and_then(|v| v.as_str()) == Some("error")
-    });
-    assert!(
-        saw_config_error,
-        "expected a config error diagnostic in --json, got stdout: {stdout}",
-    );
-}
+fn package_doctor_remains_a_distinct_parseable_subcommand() {
+    use clap::Parser;
+    use opi_coding_agent::cli::{Cli, Command, PackageCommand};
 
-#[test]
-fn doctor_does_not_leak_credential_value_end_to_end() {
-    // Set a real-looking credential; doctor --json --scope provider must report
-    // presence but never the value itself.
-    let sentinel = "sk-test-SECRET-VALUE-xyz";
-    let output = run_opi(
-        &["doctor", "--json", "--scope", "provider"],
-        &[(ANTHROPIC_ENV, sentinel)],
-    );
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert_eq!(
-        output.status.code(),
-        Some(0),
-        "expected exit 0\nstdout: {stdout}\nstderr: {stderr}",
-    );
-    assert!(
-        !stdout.contains(sentinel),
-        "credential value leaked into doctor output: {stdout}",
-    );
-}
-
-#[test]
-fn package_doctor_remains_a_distinct_intact_subcommand() {
-    // `opi package doctor` is a separate subcommand from the top-level
-    // `opi doctor` and must keep working unchanged.
-    let output = run_opi(&["package", "doctor"], &[]);
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let _ = String::from_utf8_lossy(&output.stderr); // package doctor prints to stdout/stderr
-    // A clean environment (no installed packages, env_clear) yields no package
-    // diagnostics, so package doctor must exit 0. Pin the exact code so an
-    // exit-semantic regression cannot hide behind a 0-or-2 disjunction.
-    assert!(
-        output.status.code() == Some(0),
-        "package doctor should exit 0 in a clean environment\nstdout: {stdout}",
-    );
+    let cli = Cli::try_parse_from(["opi", "package", "doctor"])
+        .expect("package doctor remains parseable");
+    assert!(matches!(
+        cli.command,
+        Some(Command::Package {
+            command: PackageCommand::Doctor { json: false }
+        })
+    ));
 }
 
 // ---------------------------------------------------------------------------
@@ -1092,6 +1130,134 @@ async fn stored_credential_probe_is_redacted() {
         !json.contains(secret_refresh),
         "json leaked refresh: {json}"
     );
+}
+
+#[tokio::test]
+async fn doctor_store_probe_uses_async_command_orchestration() {
+    use opi_ai::credential::{Credential, CredentialStore};
+    use opi_coding_agent::config::CredentialBackendSource;
+    use opi_coding_agent::credential_store::{FakeKeyringBackend, KeychainCredentialStore};
+    use secrecy::SecretString;
+
+    let canary = "sk-doctor-orchestration-DO-NOT-LEAK";
+    let env_probe = |_: &str| None;
+
+    for (model, backend, credential) in [
+        (
+            "anthropic:present",
+            FakeKeyringBackend::new(),
+            Some(Credential::ApiKey(SecretString::new(
+                canary.to_owned().into_boxed_str(),
+            ))),
+        ),
+        ("openai:absent", FakeKeyringBackend::new(), None),
+        (
+            "gemini:unavailable",
+            FakeKeyringBackend::new().with_unavailable(),
+            None,
+        ),
+    ] {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let store = KeychainCredentialStore::new(Box::new(backend), dir.path().to_path_buf());
+        if let Some(credential) = credential {
+            let provider = model.split_once(':').expect("model spec").0;
+            store
+                .write(provider, &credential)
+                .await
+                .expect("seed fake store");
+        }
+        let mut config = OpiConfig::default();
+        config.defaults.model = model.into();
+        config.defaults.credential_backend = Some(CredentialBackendSource::Keychain);
+        let report = run_doctor_with_store(
+            &[DoctorScope::Provider],
+            &ctx(&config, dir.path(), &env_probe),
+            &store,
+        )
+        .await;
+        let rendered = format!("{}{}", format_text(&report), format_json(&report));
+        assert!(
+            !rendered.contains(canary),
+            "doctor leaked secret: {rendered}"
+        );
+        if model.contains("present") {
+            assert!(rendered.contains("credentials present"), "{rendered}");
+        } else if model.contains("absent") {
+            assert!(rendered.contains("credentials not set"), "{rendered}");
+        } else {
+            assert!(rendered.contains("backend unavailable"), "{rendered}");
+        }
+    }
+}
+
+#[tokio::test]
+async fn native_keyring_precedes_doctor_orchestration() {
+    use opi_coding_agent::config::CredentialBackendSource;
+    use opi_coding_agent::credential_store::{FakeKeyringBackend, KeyringBackendFactory};
+
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let factory_events = Arc::clone(&events);
+    let backend_factory: KeyringBackendFactory = Box::new(move || {
+        let backend = FakeKeyringBackend::new();
+        factory_events
+            .lock()
+            .expect("ordering events")
+            .push("native_install");
+        Box::new(OrderingKeyringBackend {
+            inner: backend,
+            events: Arc::clone(&factory_events),
+        })
+    });
+    let dir = tempfile::tempdir().expect("temp dir");
+    let mut config = OpiConfig::default();
+    config.defaults.model = "anthropic:doctor-ordering".into();
+    config.defaults.credential_backend = Some(CredentialBackendSource::Keychain);
+    assert!(
+        events.lock().expect("ordering events").is_empty(),
+        "backend construction must remain lazy until the command core"
+    );
+    let report = run_doctor_command(
+        &[DoctorScope::Provider],
+        &ctx(&config, dir.path(), &no_env),
+        dir.path().to_path_buf(),
+        backend_factory,
+    )
+    .await;
+    assert!(
+        format_text(&report).contains("credentials not set"),
+        "mock entry should be created only after native installation"
+    );
+    assert_native_entry_drop_order(&events);
+}
+
+#[tokio::test]
+async fn doctor_presence_probe_never_reads_secret() {
+    use opi_coding_agent::config::CredentialBackendSource;
+    use opi_coding_agent::credential_store::KeychainCredentialStore;
+
+    let secret_get_calls = Arc::new(AtomicUsize::new(0));
+    let presence_calls = Arc::new(AtomicUsize::new(0));
+    let dir = tempfile::tempdir().expect("temp dir");
+    let store = KeychainCredentialStore::new(
+        Box::new(DoctorPresenceBackend {
+            secret_get_calls: Arc::clone(&secret_get_calls),
+            presence_calls: Arc::clone(&presence_calls),
+        }),
+        dir.path().to_path_buf(),
+    );
+    let mut config = OpiConfig::default();
+    config.defaults.model = "anthropic:doctor-presence".into();
+    config.defaults.credential_backend = Some(CredentialBackendSource::Keychain);
+
+    let report = run_doctor_with_store(
+        &[DoctorScope::Provider],
+        &ctx(&config, dir.path(), &no_env),
+        &store,
+    )
+    .await;
+    assert!(format_text(&report).contains("credentials present"));
+    assert_eq!(secret_get_calls.load(Ordering::SeqCst), 0);
+    assert!(presence_calls.load(Ordering::SeqCst) > 0);
 }
 
 /// BackendUnavailable must be a *distinct* diagnostic from Absent (spec SC1:

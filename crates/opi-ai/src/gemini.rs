@@ -443,6 +443,33 @@ pub struct GeminiProvider {
     client: Arc<HttpClient>,
 }
 
+/// Built-in Gemini model metadata without credentials or HTTP construction.
+pub fn model_catalog() -> Vec<ModelInfo> {
+    vec![
+        ModelInfo {
+            id: "gemini-2.5-flash".into(),
+            display_name: "Gemini 2.5 Flash".into(),
+            capabilities: ModelCapabilities::new(1_000_000, 65536)
+                .with_images(true)
+                .with_streaming(true),
+        },
+        ModelInfo {
+            id: "gemini-2.5-pro".into(),
+            display_name: "Gemini 2.5 Pro".into(),
+            capabilities: ModelCapabilities::new(1_000_000, 65536)
+                .with_images(true)
+                .with_streaming(true),
+        },
+        ModelInfo {
+            id: "gemini-2.0-flash".into(),
+            display_name: "Gemini 2.0 Flash".into(),
+            capabilities: ModelCapabilities::new(1_000_000, 8192)
+                .with_images(true)
+                .with_streaming(true),
+        },
+    ]
+}
+
 impl GeminiProvider {
     pub fn new(api_key: String, base_url: Option<String>) -> Self {
         Self::with_client(api_key, base_url, Arc::new(HttpClient::new()))
@@ -452,29 +479,7 @@ impl GeminiProvider {
     pub fn with_client(api_key: String, base_url: Option<String>, client: Arc<HttpClient>) -> Self {
         let base_url =
             base_url.unwrap_or_else(|| "https://generativelanguage.googleapis.com".into());
-        let models = vec![
-            ModelInfo {
-                id: "gemini-2.5-flash".into(),
-                display_name: "Gemini 2.5 Flash".into(),
-                capabilities: ModelCapabilities::new(1_000_000, 65536)
-                    .with_images(true)
-                    .with_streaming(true),
-            },
-            ModelInfo {
-                id: "gemini-2.5-pro".into(),
-                display_name: "Gemini 2.5 Pro".into(),
-                capabilities: ModelCapabilities::new(1_000_000, 65536)
-                    .with_images(true)
-                    .with_streaming(true),
-            },
-            ModelInfo {
-                id: "gemini-2.0-flash".into(),
-                display_name: "Gemini 2.0 Flash".into(),
-                capabilities: ModelCapabilities::new(1_000_000, 8192)
-                    .with_images(true)
-                    .with_streaming(true),
-            },
-        ];
+        let models = model_catalog();
         Self {
             api_key,
             base_url,

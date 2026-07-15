@@ -11,6 +11,7 @@ pub mod harness;
 pub mod image;
 pub mod interactive;
 pub mod model_listing;
+pub mod native_keyring;
 pub mod oauth;
 pub mod package_cli;
 pub mod package_discovery;

@@ -37,7 +37,7 @@ impl BedrockProvider {
         base_url: Option<String>,
         client: Arc<HttpClient>,
     ) -> Self {
-        let models = default_bedrock_models();
+        let models = model_catalog();
         Self {
             credentials,
             base_url,
@@ -1018,7 +1018,8 @@ pub fn redact_credentials(access_key_id: &str, _secret_key: &str) -> String {
 // Default models
 // ---------------------------------------------------------------------------
 
-fn default_bedrock_models() -> Vec<ModelInfo> {
+/// Built-in Bedrock model metadata without credentials or HTTP construction.
+pub fn model_catalog() -> Vec<ModelInfo> {
     vec![
         ModelInfo {
             id: "anthropic.claude-sonnet-4-20250514-v2:0".into(),

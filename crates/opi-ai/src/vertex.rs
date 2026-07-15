@@ -55,7 +55,7 @@ impl VertexProvider {
         let base_url =
             base_url.unwrap_or_else(|| format!("https://{location}-aiplatform.googleapis.com"));
         let inner = GeminiProvider::new(String::new(), None);
-        let models = default_vertex_models();
+        let models = model_catalog();
         Self {
             access_token,
             project,
@@ -319,7 +319,8 @@ fn map_vertex_status(
     }
 }
 
-fn default_vertex_models() -> Vec<ModelInfo> {
+/// Built-in Vertex model metadata without credentials or HTTP construction.
+pub fn model_catalog() -> Vec<ModelInfo> {
     vec![
         ModelInfo {
             id: "gemini-2.5-flash".into(),

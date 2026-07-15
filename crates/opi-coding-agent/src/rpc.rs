@@ -327,13 +327,8 @@ impl RpcRunner {
                     Ok(line) => line,
                     Err(_) => break,
                 };
-                let trimmed = line.trim_end_matches('\r').trim();
-                if trimmed.is_empty() {
+                let Some(input) = parse_rpc_line(&line) else {
                     continue;
-                }
-                let input = match serde_json::from_str::<SdkCommand>(trimmed) {
-                    Ok(command) => RpcInput::Command(command),
-                    Err(e) => RpcInput::ParseError(format!("failed to parse command: {e}")),
                 };
                 if input_tx.send(input).is_err() {
                     break;
@@ -1038,6 +1033,17 @@ impl RpcRunner {
     }
 }
 
+fn parse_rpc_line(line: &str) -> Option<RpcInput> {
+    let trimmed = line.trim_end_matches('\r').trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    Some(match serde_json::from_str::<SdkCommand>(trimmed) {
+        Ok(command) => RpcInput::Command(command),
+        Err(error) => RpcInput::ParseError(format!("failed to parse command: {error}")),
+    })
+}
+
 fn response_success(id: Option<&str>, command: &str) -> serde_json::Value {
     serde_json::to_value(SdkResponse::success(id, command)).unwrap()
 }
@@ -1101,5 +1107,16 @@ mod tests {
             ERR_EXTENSION_COMMAND_NOT_HANDLED,
             "extension_command_not_handled"
         );
+    }
+
+    #[test]
+    fn stdin_line_parser_ignores_blanks_and_rejects_malformed_commands() {
+        assert!(parse_rpc_line(" \t\r").is_none());
+        for line in ["not json", r#"{"type":"fly_to_moon"}"#] {
+            assert!(matches!(
+                parse_rpc_line(line),
+                Some(RpcInput::ParseError(_))
+            ));
+        }
     }
 }

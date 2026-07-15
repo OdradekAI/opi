@@ -94,3 +94,6 @@ dotenvy = "0.15"
 secrecy = "0.10"
 fs4 = { version = "1.1", features = ["tokio"] }
 keyring-core = "1.0"
+apple-native-keyring-store = "1.0"
+windows-native-keyring-store = "1.1"
+zbus-secret-service-keyring-store = "1.0"

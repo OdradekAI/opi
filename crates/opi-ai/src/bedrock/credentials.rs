@@ -94,21 +94,21 @@ pub fn resolve_credentials(
     input: &CredentialResolutionInput<'_>,
 ) -> Option<(BedrockCredentials, CredentialSource)> {
     // 1. Explicit config takes highest precedence
-    if let (Some(akid), Some(sak)) = (input.config_access_key_id, input.config_secret_access_key)
-        && !akid.is_empty()
-        && !sak.is_empty()
-    {
+    if let (Some(akid), Some(sak)) = (
+        non_blank(input.config_access_key_id),
+        non_blank(input.config_secret_access_key),
+    ) {
         return Some((
             BedrockCredentials {
                 access_key_id: akid.to_string(),
                 secret_access_key: sak.to_string(),
                 session_token: input
                     .config_session_token
-                    .filter(|s| !s.is_empty())
+                    .filter(|s| !s.trim().is_empty())
                     .map(|s| s.to_string()),
                 region: input
                     .config_region
-                    .filter(|s| !s.is_empty())
+                    .filter(|s| !s.trim().is_empty())
                     .unwrap_or("us-east-1")
                     .to_string(),
             },
@@ -117,21 +117,21 @@ pub fn resolve_credentials(
     }
 
     // 2. Environment variables
-    if let (Some(akid), Some(sak)) = (input.env_access_key_id, input.env_secret_access_key)
-        && !akid.is_empty()
-        && !sak.is_empty()
-    {
+    if let (Some(akid), Some(sak)) = (
+        non_blank(input.env_access_key_id),
+        non_blank(input.env_secret_access_key),
+    ) {
         return Some((
             BedrockCredentials {
                 access_key_id: akid.to_string(),
                 secret_access_key: sak.to_string(),
                 session_token: input
                     .env_session_token
-                    .filter(|s| !s.is_empty())
+                    .filter(|s| !s.trim().is_empty())
                     .map(|s| s.to_string()),
                 region: input
                     .env_region
-                    .filter(|s| !s.is_empty())
+                    .filter(|s| !s.trim().is_empty())
                     .unwrap_or("us-east-1")
                     .to_string(),
             },
@@ -144,7 +144,7 @@ pub fn resolve_credentials(
     // calls are attempted from opi.
     let profile = input
         .profile_name
-        .filter(|profile| !profile.is_empty())
+        .filter(|profile| !profile.trim().is_empty())
         .unwrap_or("default");
 
     let credentials_props = input
@@ -216,8 +216,12 @@ struct ProfileProperties {
 fn first_non_empty<'a>(values: &[Option<&'a str>]) -> Option<&'a str> {
     values
         .iter()
-        .filter_map(|value| value.and_then(|s| (!s.is_empty()).then_some(s)))
+        .filter_map(|value| value.and_then(|s| (!s.trim().is_empty()).then_some(s)))
         .next()
+}
+
+fn non_blank(value: Option<&str>) -> Option<&str> {
+    value.filter(|value| !value.trim().is_empty())
 }
 
 fn merge_profile_properties(
@@ -253,12 +257,17 @@ fn profile_properties_to_credentials(
     region: String,
 ) -> Option<BedrockCredentials> {
     match (&props.access_key_id, &props.secret_access_key) {
-        (Some(a), Some(s)) if !a.is_empty() && !s.is_empty() => Some(BedrockCredentials {
-            access_key_id: a.clone(),
-            secret_access_key: s.clone(),
-            session_token: props.session_token.clone(),
-            region,
-        }),
+        (Some(a), Some(s)) if !a.trim().is_empty() && !s.trim().is_empty() => {
+            Some(BedrockCredentials {
+                access_key_id: a.clone(),
+                secret_access_key: s.clone(),
+                session_token: props
+                    .session_token
+                    .clone()
+                    .filter(|token| !token.trim().is_empty()),
+                region,
+            })
+        }
         _ => None,
     }
 }
@@ -340,14 +349,18 @@ fn run_credential_process(command: &str, region: String) -> Option<BedrockCreden
         return None;
     }
     let parsed: CredentialProcessOutput = serde_json::from_slice(&output.stdout).ok()?;
-    if parsed.version != 1 || parsed.access_key_id.is_empty() || parsed.secret_access_key.is_empty()
+    if parsed.version != 1
+        || parsed.access_key_id.trim().is_empty()
+        || parsed.secret_access_key.trim().is_empty()
     {
         return None;
     }
     Some(BedrockCredentials {
         access_key_id: parsed.access_key_id,
         secret_access_key: parsed.secret_access_key,
-        session_token: parsed.session_token.filter(|token| !token.is_empty()),
+        session_token: parsed
+            .session_token
+            .filter(|token| !token.trim().is_empty()),
         region,
     })
 }
@@ -638,6 +651,85 @@ mod tests {
         let (result, source) = resolve_credentials(&inp).unwrap();
         assert_eq!(result.access_key_id, "ENV_AKID");
         assert_eq!(source, CredentialSource::Environment);
+    }
+
+    #[test]
+    fn whitespace_only_static_credential_pairs_are_absent() {
+        for inp in [
+            input(
+                Some(" \t"),
+                Some("CONFIG_SAK"),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            ),
+            input(
+                Some("CONFIG_AKID"),
+                Some(" \n"),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            ),
+            input(
+                None,
+                None,
+                None,
+                None,
+                Some(" \t"),
+                Some("ENV_SAK"),
+                None,
+                None,
+                None,
+                None,
+            ),
+            input(
+                None,
+                None,
+                None,
+                None,
+                Some("ENV_AKID"),
+                Some(" \n"),
+                None,
+                None,
+                None,
+                None,
+            ),
+        ] {
+            assert!(
+                resolve_credentials(&inp).is_none(),
+                "whitespace-only access/secret values must be absent"
+            );
+        }
+    }
+
+    #[test]
+    fn whitespace_only_optional_values_are_absent() {
+        let inp = input(
+            Some("CONFIG_AKID"),
+            Some("CONFIG_SAK"),
+            Some(" \t"),
+            Some(" \n"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+        let (credentials, source) = resolve_credentials(&inp).expect("valid configured pair");
+        assert_eq!(source, CredentialSource::ExplicitConfig);
+        assert_eq!(credentials.session_token, None);
+        assert_eq!(credentials.region, "us-east-1");
     }
 
     #[test]

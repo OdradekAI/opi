@@ -38,7 +38,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use opi_agent::diagnostic::Diagnostic;
+use opi_agent::diagnostic::{Diagnostic, SOURCE_PROVIDER, Severity};
 use opi_agent::extension::ExtensionRegistry;
 use opi_ai::provider::{EventStream, ModelInfo, Provider, ProviderError, Request};
 use opi_ai::registry::ModelCapabilities;
@@ -46,7 +46,7 @@ use opi_ai::{AuthDescriptor, CompatMetadata, ProviderCollection, ProviderRegistr
 use secrecy::ExposeSecret;
 
 use crate::config::{OpenAiCompatibleProviderConfig, OpiConfig, build_http_client};
-use crate::credential_store::{AuthSource, CredentialResolver};
+use crate::credential_store::{ApiKeySource, AuthSource, CredentialResolver};
 use crate::diagnostic_bridge::diagnostic_for_model_registry_error;
 use crate::oauth::OAuthProviderRegistry;
 
@@ -82,8 +82,9 @@ pub enum ListModelsError {
 
 /// The provider, credential store, and OAuth registry produced at production
 /// startup. Callers that need the store and registry for `/login`, `/logout`,
-/// or `CredentialNeeded` same-turn retry (i.e. the interactive TUI) take the
-/// full bundle; non-interactive and RPC callers extract only `provider`.
+/// or `CredentialNeeded` same-turn retry (i.e. the interactive TUI) use those
+/// fields directly; every caller retains the full bundle while the provider
+/// can be called so the native-store guard remains live.
 pub struct ProviderBundle {
     /// The active runtime provider.
     pub provider: Box<dyn Provider>,
@@ -93,6 +94,39 @@ pub struct ProviderBundle {
     pub resolver: crate::credential_store::CredentialResolver,
     /// The built-in OAuth provider registry.
     pub registry: OAuthProviderRegistry,
+    /// Redacted provider diagnostics discovered during credential resolution.
+    pub diagnostics: Vec<Diagnostic>,
+}
+
+struct ProviderBuildOutcome {
+    provider: Box<dyn Provider>,
+    diagnostics: Vec<Diagnostic>,
+}
+
+impl ProviderBuildOutcome {
+    fn without_diagnostics(provider: Box<dyn Provider>) -> Self {
+        Self {
+            provider,
+            diagnostics: Vec::new(),
+        }
+    }
+}
+
+const CODE_PROVIDER_CREDENTIAL_BACKEND_UNAVAILABLE: &str =
+    "provider_credential_backend_unavailable";
+
+fn backend_fallback_diagnostic(provider_id: &str, env_var: &str) -> Diagnostic {
+    Diagnostic::new(
+        Severity::Warning,
+        CODE_PROVIDER_CREDENTIAL_BACKEND_UNAVAILABLE,
+        SOURCE_PROVIDER,
+        format!("credential backend unavailable for {provider_id}; using environment fallback"),
+    )
+    .details(serde_json::json!({
+        "provider": provider_id,
+        "env_var": env_var,
+        "credential_source": "environment_fallback",
+    }))
 }
 
 // ---------------------------------------------------------------------------
@@ -136,10 +170,6 @@ fn non_empty_env_var(env_name: &str) -> Option<String> {
     std::env::var(env_name)
         .ok()
         .filter(|value| !value.trim().is_empty())
-}
-
-fn require_list_models_api_key(env_name: &str) -> Result<String, ListModelsError> {
-    non_empty_env_var(env_name).ok_or(ListModelsError::MissingCredentials)
 }
 
 /// Read AWS credentials from environment variables.
@@ -220,6 +250,13 @@ struct MetadataProvider {
 }
 
 impl MetadataProvider {
+    fn new(id: impl Into<String>, models: Vec<ModelInfo>) -> Self {
+        Self {
+            id: id.into(),
+            models,
+        }
+    }
+
     fn from_provider(provider: &dyn Provider) -> Self {
         Self {
             id: provider.id().to_owned(),
@@ -271,241 +308,8 @@ pub fn built_in_provider_ids() -> &'static [&'static str] {
 }
 
 // ---------------------------------------------------------------------------
-// Lightweight per-provider builders for --list-models
-// (silent skip on missing credentials)
+// Metadata-only per-provider builders for --list-models
 // ---------------------------------------------------------------------------
-
-fn build_anthropic(
-    config: &OpiConfig,
-) -> Result<opi_ai::anthropic::AnthropicProvider, ListModelsError> {
-    let api_key = require_list_models_api_key(&config.providers.anthropic.api_key_env)?;
-    let client = build_proxied_client_for_listing(config.providers.anthropic.proxy.as_ref())?;
-    Ok(opi_ai::anthropic::AnthropicProvider::with_client(
-        api_key,
-        config.providers.anthropic.base_url.clone(),
-        client,
-    ))
-}
-
-fn build_openai(
-    config: &OpiConfig,
-) -> Result<opi_ai::openai_chat::OpenAiChatProvider, ListModelsError> {
-    let env_name = resolve_env_name(&config.providers.openai.api_key_env, "OPENAI_API_KEY");
-    let api_key = require_list_models_api_key(&env_name)?;
-    let client = build_proxied_client_for_listing(config.providers.openai.proxy.as_ref())?;
-    Ok(opi_ai::openai_chat::OpenAiChatProvider::with_client(
-        api_key,
-        config.providers.openai.base_url.clone(),
-        "openai".into(),
-        vec![],
-        client,
-    ))
-}
-
-fn build_openrouter(
-    config: &OpiConfig,
-) -> Result<opi_ai::openai_chat::OpenAiChatProvider, ListModelsError> {
-    let env_name = resolve_env_name(
-        &config.providers.openrouter.api_key_env,
-        "OPENROUTER_API_KEY",
-    );
-    let api_key = require_list_models_api_key(&env_name)?;
-    let client = build_proxied_client_for_listing(config.providers.openrouter.proxy.as_ref())?;
-    if let Some(ref referer) = config.providers.openrouter.referer {
-        let base_url = config
-            .providers
-            .openrouter
-            .base_url
-            .clone()
-            .unwrap_or_else(|| "https://openrouter.ai/api".into());
-        let compat = opi_ai::openai_chat::CompatConfig::default();
-        let extra_headers = vec![
-            ("HTTP-Referer".into(), referer.clone()),
-            ("X-Title".into(), "opi".into()),
-        ];
-        let temp = opi_ai::openrouter::openrouter_provider(
-            String::new(),
-            config.providers.openrouter.base_url.clone(),
-        );
-        let models = temp.models().to_vec();
-        Ok(opi_ai::openai_chat::OpenAiChatProvider::new_for_profile(
-            api_key,
-            base_url,
-            "openrouter".into(),
-            compat,
-            extra_headers,
-            models,
-        )
-        .with_shared_client(client))
-    } else {
-        Ok(opi_ai::openrouter::openrouter_provider(
-            api_key,
-            config.providers.openrouter.base_url.clone(),
-        )
-        .with_shared_client(client))
-    }
-}
-
-fn build_mistral(
-    config: &OpiConfig,
-) -> Result<opi_ai::openai_chat::OpenAiChatProvider, ListModelsError> {
-    let env_name = resolve_env_name(&config.providers.mistral.api_key_env, "MISTRAL_API_KEY");
-    let api_key = require_list_models_api_key(&env_name)?;
-    let client = build_proxied_client_for_listing(config.providers.mistral.proxy.as_ref())?;
-    Ok(
-        opi_ai::mistral::mistral_provider(api_key, config.providers.mistral.base_url.clone())
-            .with_shared_client(client),
-    )
-}
-
-fn build_openai_responses(
-    config: &OpiConfig,
-) -> Result<opi_ai::openai_responses::OpenAiResponsesProvider, ListModelsError> {
-    let env_name = resolve_env_name(
-        &config.providers.openai_responses.api_key_env,
-        "OPENAI_API_KEY",
-    );
-    let api_key = require_list_models_api_key(&env_name)?;
-    let client =
-        build_proxied_client_for_listing(config.providers.openai_responses.proxy.as_ref())?;
-    Ok(
-        opi_ai::openai_responses::OpenAiResponsesProvider::with_client(
-            api_key,
-            config.providers.openai_responses.base_url.clone(),
-            client,
-        ),
-    )
-}
-
-fn build_gemini(config: &OpiConfig) -> Result<opi_ai::gemini::GeminiProvider, ListModelsError> {
-    let env_name = resolve_env_name(&config.providers.gemini.api_key_env, "GEMINI_API_KEY");
-    let api_key = require_list_models_api_key(&env_name)?;
-    let client = build_proxied_client_for_listing(config.providers.gemini.proxy.as_ref())?;
-    Ok(opi_ai::gemini::GeminiProvider::with_client(
-        api_key,
-        config.providers.gemini.base_url.clone(),
-        client,
-    ))
-}
-
-/// Build a Bedrock provider for `--list-models`. The credential-resolution
-/// shape here (env + config + profile/files, fed to `resolve_credentials`)
-/// is mirrored by the Bedrock arm of `build_runtime_provider`; extracting a
-/// shared resolver is intentionally deferred (Phase 10 audit, opus-F-33) to
-/// keep the factory extraction behavior-neutral.
-fn build_bedrock(config: &OpiConfig) -> Result<opi_ai::bedrock::BedrockProvider, ListModelsError> {
-    let bedrock_config = &config.providers.bedrock;
-    let (akid, sak, token, env_region) = resolve_bedrock_env_credentials();
-    let env_profile = std::env::var("AWS_PROFILE").ok();
-    let profile_name = bedrock_config.profile.as_deref().or(env_profile.as_deref());
-    let credentials_file = aws_credentials_path();
-    let config_file = aws_config_path();
-    let secret_key = bedrock_config
-        .secret_access_key_env
-        .as_deref()
-        .and_then(non_empty_env_var);
-    let session_token = bedrock_config
-        .session_token_env
-        .as_deref()
-        .and_then(non_empty_env_var);
-    let input = opi_ai::bedrock::credentials::CredentialResolutionInput {
-        config_access_key_id: bedrock_config.access_key_id.as_deref(),
-        config_secret_access_key: secret_key.as_deref(),
-        config_session_token: session_token.as_deref(),
-        config_region: bedrock_config.region.as_deref(),
-        env_access_key_id: akid.as_deref(),
-        env_secret_access_key: sak.as_deref(),
-        env_session_token: token.as_deref(),
-        env_region: env_region.as_deref(),
-        profile_name,
-        credentials_file_path: credentials_file.as_deref(),
-        config_file_path: config_file.as_deref(),
-    };
-    let resolved = opi_ai::bedrock::credentials::resolve_credentials(&input);
-    let (bedrock_creds, _) = resolved.ok_or(ListModelsError::MissingCredentials)?;
-    let client = build_proxied_client_for_listing(bedrock_config.proxy.as_ref())?;
-    Ok(opi_ai::bedrock::BedrockProvider::from_credentials(
-        bedrock_creds,
-        bedrock_config.base_url.clone(),
-        client,
-    ))
-}
-
-fn build_azure(
-    config: &OpiConfig,
-) -> Result<opi_ai::azure_openai::AzureOpenAIProvider, ListModelsError> {
-    let azure_config = &config.providers.azure;
-    let env_name = resolve_env_name(&azure_config.api_key_env, "AZURE_OPENAI_API_KEY");
-    let api_key = require_list_models_api_key(&env_name)?;
-    if azure_config.deployments.is_empty() {
-        return Err(ListModelsError::Config(
-            "azure provider has no deployments configured".into(),
-        ));
-    }
-    let provider = opi_ai::azure_openai::AzureOpenAIProvider::from_config(
-        api_key,
-        azure_config.endpoint.clone(),
-        azure_config.deployments.clone(),
-        azure_config.api_version.clone(),
-    )
-    .map_err(|e| ListModelsError::Config(e.to_string()))?;
-    Ok(provider.with_client(build_proxied_client_for_listing(
-        azure_config.proxy.as_ref(),
-    )?))
-}
-
-fn build_vertex(config: &OpiConfig) -> Result<opi_ai::vertex::VertexProvider, ListModelsError> {
-    let vertex_config = &config.providers.vertex;
-    let env_name = resolve_env_name(&vertex_config.access_token_env, "VERTEX_ACCESS_TOKEN");
-    let access_token = require_list_models_api_key(&env_name)?;
-    let project = vertex_config
-        .project
-        .as_deref()
-        .ok_or_else(|| ListModelsError::Config("vertex provider requires project".into()))?;
-    let location = vertex_config
-        .location
-        .as_deref()
-        .ok_or_else(|| ListModelsError::Config("vertex provider requires location".into()))?;
-    let provider = if vertex_config.models.is_empty() {
-        opi_ai::vertex::VertexProvider::new(
-            access_token,
-            project.into(),
-            location.into(),
-            vertex_config.base_url.clone(),
-        )
-    } else {
-        opi_ai::vertex::VertexProvider::from_config(
-            access_token,
-            project.into(),
-            location.into(),
-            vertex_config.models.clone(),
-            vertex_config.base_url.clone(),
-        )
-    };
-    Ok(provider.with_client(build_proxied_client_for_listing(
-        vertex_config.proxy.as_ref(),
-    )?))
-}
-
-fn build_list_models_provider(
-    config: &OpiConfig,
-    provider_id: &str,
-) -> Result<Box<dyn Provider>, ListModelsError> {
-    match provider_id {
-        "anthropic" => Ok(Box::new(build_anthropic(config)?) as Box<dyn Provider>),
-        "openai" => Ok(Box::new(build_openai(config)?) as Box<dyn Provider>),
-        "openrouter" => Ok(Box::new(build_openrouter(config)?) as Box<dyn Provider>),
-        "mistral" => Ok(Box::new(build_mistral(config)?) as Box<dyn Provider>),
-        "openai-responses" => Ok(Box::new(build_openai_responses(config)?) as Box<dyn Provider>),
-        "gemini" => Ok(Box::new(build_gemini(config)?) as Box<dyn Provider>),
-        "bedrock" => Ok(Box::new(build_bedrock(config)?) as Box<dyn Provider>),
-        "azure" => Ok(Box::new(build_azure(config)?) as Box<dyn Provider>),
-        "vertex" => Ok(Box::new(build_vertex(config)?) as Box<dyn Provider>),
-        other => Err(ListModelsError::Config(format!(
-            "unknown provider in built-in list: {other}"
-        ))),
-    }
-}
 
 /// `build_proxied_client` adapted for the list-models error type.
 fn build_proxied_client_for_listing(
@@ -518,35 +322,209 @@ fn build_proxied_client_for_listing(
     })
 }
 
+fn listing_auth_available(
+    env_name: Option<&str>,
+    store_probe: Option<&opi_ai::CredentialSource>,
+) -> bool {
+    let env_present = env_name
+        .and_then(std::env::var_os)
+        .and_then(|value| value.into_string().ok())
+        .is_some_and(|value| !value.trim().is_empty());
+    env_present || matches!(store_probe, Some(opi_ai::CredentialSource::Present { .. }))
+}
+
+/// Secret-free Bedrock credential-presence result shared by listing and doctor.
+///
+/// This mirrors the explicit inputs accepted by runtime credential resolution:
+/// a complete configured pair, the fixed default environment pair, or an
+/// explicit profile name. It intentionally does not read shared AWS profile
+/// files or retain any credential value.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum BedrockAuthPresence {
+    ConfigPair { secret_env: String },
+    DefaultEnvPair,
+    ConfigProfile { profile: String },
+    EnvProfile { profile: String },
+    MissingConfigPair { secret_env: Option<String> },
+    MissingDefaultEnvPair,
+}
+
+impl BedrockAuthPresence {
+    pub(crate) fn is_present(&self) -> bool {
+        matches!(
+            self,
+            Self::ConfigPair { .. }
+                | Self::DefaultEnvPair
+                | Self::ConfigProfile { .. }
+                | Self::EnvProfile { .. }
+        )
+    }
+}
+
+pub(crate) fn bedrock_auth_presence(
+    config: &OpiConfig,
+    env_var: &dyn Fn(&str) -> Option<String>,
+) -> BedrockAuthPresence {
+    let bedrock = &config.providers.bedrock;
+    let config_access_present = bedrock
+        .access_key_id
+        .as_deref()
+        .is_some_and(|value| !value.trim().is_empty());
+    let configured_secret_env = bedrock
+        .secret_access_key_env
+        .as_deref()
+        .filter(|name| !name.trim().is_empty());
+
+    if config_access_present
+        && let Some(secret_env) =
+            configured_secret_env.filter(|name| env_value_present(env_var, name))
+    {
+        return BedrockAuthPresence::ConfigPair {
+            secret_env: secret_env.to_owned(),
+        };
+    }
+    if env_value_present(env_var, "AWS_ACCESS_KEY_ID")
+        && env_value_present(env_var, "AWS_SECRET_ACCESS_KEY")
+    {
+        return BedrockAuthPresence::DefaultEnvPair;
+    }
+    if let Some(profile) = bedrock
+        .profile
+        .as_deref()
+        .filter(|profile| !profile.trim().is_empty())
+    {
+        return BedrockAuthPresence::ConfigProfile {
+            profile: profile.to_owned(),
+        };
+    }
+    if let Some(profile) = env_var("AWS_PROFILE").filter(|profile| !profile.trim().is_empty()) {
+        return BedrockAuthPresence::EnvProfile { profile };
+    }
+
+    if config_access_present {
+        BedrockAuthPresence::MissingConfigPair {
+            secret_env: configured_secret_env.map(str::to_owned),
+        }
+    } else {
+        BedrockAuthPresence::MissingDefaultEnvPair
+    }
+}
+
+fn select_bedrock_profile<'a>(
+    configured: Option<&'a str>,
+    environment: Option<&'a str>,
+) -> Option<&'a str> {
+    configured
+        .filter(|profile| !profile.trim().is_empty())
+        .or(environment.filter(|profile| !profile.trim().is_empty()))
+}
+
+fn env_value_present(env_var: &dyn Fn(&str) -> Option<String>, name: &str) -> bool {
+    env_var(name).is_some_and(|value| !value.trim().is_empty())
+}
+
+fn configured_models(
+    ids: &[String],
+    context_window: u64,
+    max_output_tokens: u64,
+) -> Vec<ModelInfo> {
+    ids.iter()
+        .map(|id| ModelInfo {
+            id: id.clone(),
+            display_name: id.clone(),
+            capabilities: ModelCapabilities::new(context_window, max_output_tokens)
+                .with_images(true)
+                .with_streaming(true),
+        })
+        .collect()
+}
+
+fn build_list_models_metadata(
+    config: &OpiConfig,
+    provider_id: &str,
+) -> Result<MetadataProvider, ListModelsError> {
+    let (proxy, models) = match provider_id {
+        "anthropic" => (
+            config.providers.anthropic.proxy.as_ref(),
+            opi_ai::anthropic::model_catalog(),
+        ),
+        "openai" => (
+            config.providers.openai.proxy.as_ref(),
+            opi_ai::openai_chat::model_catalog(),
+        ),
+        "openrouter" => (
+            config.providers.openrouter.proxy.as_ref(),
+            opi_ai::openrouter::model_catalog(),
+        ),
+        "mistral" => (
+            config.providers.mistral.proxy.as_ref(),
+            opi_ai::mistral::model_catalog(),
+        ),
+        "openai-responses" => (
+            config.providers.openai_responses.proxy.as_ref(),
+            opi_ai::openai_responses::model_catalog(),
+        ),
+        "gemini" => (
+            config.providers.gemini.proxy.as_ref(),
+            opi_ai::gemini::model_catalog(),
+        ),
+        "bedrock" => (
+            config.providers.bedrock.proxy.as_ref(),
+            opi_ai::bedrock::model_catalog(),
+        ),
+        "azure" => {
+            let azure = &config.providers.azure;
+            if azure.deployments.is_empty() {
+                return Err(ListModelsError::Config(
+                    "azure provider has no deployments configured".into(),
+                ));
+            }
+            if azure.endpoint.is_none() {
+                return Err(ListModelsError::Config(
+                    "Azure OpenAI endpoint is required. Set it via config [providers.azure] endpoint or AZURE_OPENAI_ENDPOINT env var.".into(),
+                ));
+            }
+            (
+                azure.proxy.as_ref(),
+                configured_models(&azure.deployments, 128000, 16384),
+            )
+        }
+        "vertex" => {
+            let vertex = &config.providers.vertex;
+            if vertex.project.is_none() {
+                return Err(ListModelsError::Config(
+                    "vertex provider requires project".into(),
+                ));
+            }
+            if vertex.location.is_none() {
+                return Err(ListModelsError::Config(
+                    "vertex provider requires location".into(),
+                ));
+            }
+            let models = if vertex.models.is_empty() {
+                opi_ai::vertex::model_catalog()
+            } else {
+                configured_models(&vertex.models, 1_000_000, 65536)
+            };
+            (vertex.proxy.as_ref(), models)
+        }
+        other => {
+            return Err(ListModelsError::Config(format!(
+                "unknown provider in built-in list: {other}"
+            )));
+        }
+    };
+    let _ = build_proxied_client_for_listing(proxy)?;
+    Ok(MetadataProvider::new(provider_id, models))
+}
+
 // ---------------------------------------------------------------------------
 // openai_compatible profile builders
 // ---------------------------------------------------------------------------
 
-fn build_runtime_openai_compatible_profile(
+fn openai_compatible_model_catalog(
     profile: &OpenAiCompatibleProviderConfig,
-) -> Result<opi_ai::openai_chat::OpenAiChatProvider, ProviderBuildError> {
-    let default_env = profile_api_key_env_default(&profile.id);
-    let env_name = resolve_env_name(&profile.api_key_env, &default_env);
-    let api_key = require_api_key(&env_name)?;
-    let client = build_proxied_client(profile.proxy.as_ref())?;
-    build_openai_compatible_profile(profile, api_key, client).map_err(ProviderBuildError::Config)
-}
-
-fn build_list_models_openai_compatible_profile(
-    profile: &OpenAiCompatibleProviderConfig,
-) -> Result<opi_ai::openai_chat::OpenAiChatProvider, ListModelsError> {
-    let default_env = profile_api_key_env_default(&profile.id);
-    let env_name = resolve_env_name(&profile.api_key_env, &default_env);
-    let api_key = require_list_models_api_key(&env_name)?;
-    let client = build_proxied_client_for_listing(profile.proxy.as_ref())?;
-    build_openai_compatible_profile(profile, api_key, client).map_err(ListModelsError::Config)
-}
-
-fn build_openai_compatible_profile(
-    profile: &OpenAiCompatibleProviderConfig,
-    api_key: String,
-    client: Arc<opi_ai::http::HttpClient>,
-) -> Result<opi_ai::openai_chat::OpenAiChatProvider, String> {
+) -> Result<Vec<ModelInfo>, String> {
     if profile.id.trim().is_empty() {
         return Err("openai-compatible profile id cannot be empty".into());
     }
@@ -581,6 +559,25 @@ fn build_openai_compatible_profile(
             capabilities: ModelCapabilities::new(model.context_window, model.max_output_tokens),
         });
     }
+    Ok(models)
+}
+
+fn build_runtime_openai_compatible_profile(
+    profile: &OpenAiCompatibleProviderConfig,
+) -> Result<opi_ai::openai_chat::OpenAiChatProvider, ProviderBuildError> {
+    let default_env = profile_api_key_env_default(&profile.id);
+    let env_name = resolve_env_name(&profile.api_key_env, &default_env);
+    let api_key = require_api_key(&env_name)?;
+    let client = build_proxied_client(profile.proxy.as_ref())?;
+    build_openai_compatible_profile(profile, api_key, client).map_err(ProviderBuildError::Config)
+}
+
+fn build_openai_compatible_profile(
+    profile: &OpenAiCompatibleProviderConfig,
+    api_key: String,
+    client: Arc<opi_ai::http::HttpClient>,
+) -> Result<opi_ai::openai_chat::OpenAiChatProvider, String> {
+    let models = openai_compatible_model_catalog(profile)?;
 
     let compat = opi_ai::openai_chat::CompatConfig {
         system_role_override: profile.system_role_override.clone(),
@@ -659,6 +656,15 @@ pub async fn build_provider_with_resolver(
     config: &OpiConfig,
     resolver: &crate::credential_store::CredentialResolver,
 ) -> Result<Box<dyn Provider>, ProviderBuildError> {
+    build_provider_with_resolver_outcome(config, resolver)
+        .await
+        .map(|outcome| outcome.provider)
+}
+
+async fn build_provider_with_resolver_outcome(
+    config: &OpiConfig,
+    resolver: &crate::credential_store::CredentialResolver,
+) -> Result<ProviderBuildOutcome, ProviderBuildError> {
     let spec = &config.defaults.model;
     let (provider_id, _) = parse_model_spec(spec).map_err(|_| {
         ProviderBuildError::Config(format!(
@@ -666,11 +672,24 @@ pub async fn build_provider_with_resolver(
         ))
     })?;
     // Resolve via the configured env var name (keychain -> env fallback).
+    let mut diagnostics = Vec::new();
     let pre_resolved = if let Some(env_name) = api_key_env_name(config, provider_id) {
         resolver
             .resolve_api_key(provider_id, &env_name)
             .await
+            .map_err(|error| {
+                ProviderBuildError::Provider(ProviderError::Config(format!(
+                    "credential store error: {error}"
+                )))
+            })?
             .map(|resolved| {
+                if let ApiKeySource::Env {
+                    env_var,
+                    backend_unavailable: true,
+                } = &resolved.source
+                {
+                    diagnostics.push(backend_fallback_diagnostic(provider_id, env_var));
+                }
                 // `source` is diagnostic-only; the secret is exposed only at
                 // this narrow construction boundary.
                 resolved.value.expose_secret().to_owned()
@@ -680,10 +699,11 @@ pub async fn build_provider_with_resolver(
         // their own credential chain below.
         None
     };
-    // Surface the headless backend-unavailable fallback as a warning so the
-    // diagnostic is visible without blocking construction (env fallback keeps
-    // the provider usable).
-    build_runtime_provider(config, provider_id, pre_resolved)
+    let provider = build_runtime_provider(config, provider_id, pre_resolved)?;
+    Ok(ProviderBuildOutcome {
+        provider,
+        diagnostics,
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -856,6 +876,16 @@ pub async fn build_provider_with_oauth(
     resolver: &CredentialResolver,
     registry: &OAuthProviderRegistry,
 ) -> Result<Box<dyn Provider>, ProviderBuildError> {
+    build_provider_with_oauth_outcome(config, resolver, registry)
+        .await
+        .map(|outcome| outcome.provider)
+}
+
+async fn build_provider_with_oauth_outcome(
+    config: &OpiConfig,
+    resolver: &CredentialResolver,
+    registry: &OAuthProviderRegistry,
+) -> Result<ProviderBuildOutcome, ProviderBuildError> {
     let spec = &config.defaults.model;
     let (provider_id, _) = parse_model_spec(spec).map_err(|_| {
         ProviderBuildError::Config(format!(
@@ -863,45 +893,55 @@ pub async fn build_provider_with_oauth(
         ))
     })?;
     match provider_id {
-        "copilot" => build_copilot_oauth(resolver, registry).await,
-        "codex" => build_codex_oauth(resolver, registry).await,
+        "copilot" => build_copilot_oauth(resolver, registry)
+            .await
+            .map(ProviderBuildOutcome::without_diagnostics),
+        "codex" => build_codex_oauth(resolver, registry)
+            .await
+            .map(ProviderBuildOutcome::without_diagnostics),
         "anthropic" => {
             let has_store = resolver
                 .has_oauth_credential("anthropic")
                 .await
                 .map_err(ProviderBuildError::Provider)?;
             if has_store {
-                build_anthropic_oauth(config, resolver, registry).await
+                build_anthropic_oauth(config, resolver, registry)
+                    .await
+                    .map(ProviderBuildOutcome::without_diagnostics)
             } else if resolver.env_value("ANTHROPIC_OAUTH_TOKEN").is_some() {
-                build_anthropic_env_oauth(config, resolver).await
+                build_anthropic_env_oauth(config, resolver)
+                    .await
+                    .map(ProviderBuildOutcome::without_diagnostics)
             } else {
-                build_provider_with_resolver(config, resolver).await
+                build_provider_with_resolver_outcome(config, resolver).await
             }
         }
-        _ => build_provider_with_resolver(config, resolver).await,
+        _ => build_provider_with_resolver_outcome(config, resolver).await,
     }
 }
 
 /// Build the [`ProviderBundle`] (provider + store + resolver + OAuth registry)
 /// for production startup. Callers that need the store and registry for
-/// `/login`, `/logout`, or `CredentialNeeded` retry take the full bundle; others
-/// extract only the provider.
+/// `/login`, `/logout`, or `CredentialNeeded` retry use those fields directly;
+/// all callers retain the bundle while the provider can be called.
 pub async fn build_provider_bundle(
     config: &OpiConfig,
     user_config_dir: std::path::PathBuf,
+    backend_factory: crate::credential_store::KeyringBackendFactory,
 ) -> Result<ProviderBundle, ProviderBuildError> {
-    let store = Arc::new(crate::credential_store::KeychainCredentialStore::new(
-        Box::new(crate::credential_store::KeyringCoreBackend::new()),
+    let store = Arc::new(crate::credential_store::keychain_store_from_factory(
         user_config_dir,
+        backend_factory,
     ));
     let resolver = crate::credential_store::CredentialResolver::production(store.clone());
     let registry = crate::oauth::OAuthProviderRegistry::registry_with_builtins();
-    let provider = build_provider_with_oauth(config, &resolver, &registry).await?;
+    let outcome = build_provider_with_oauth_outcome(config, &resolver, &registry).await?;
     Ok(ProviderBundle {
-        provider,
+        provider: outcome.provider,
         store,
         resolver,
         registry,
+        diagnostics: outcome.diagnostics,
     })
 }
 
@@ -910,16 +950,18 @@ pub async fn build_provider_bundle(
 /// keychain with env fallback, plus the built-in OAuth provider registry. Routes
 /// Anthropic/Copilot/Codex to their OAuth builders when an OAuth credential is
 /// stored, and falls through to the API-key path otherwise. This is a
-/// convenience wrapper around [`build_provider_bundle`]; callers that need the
-/// store + registry for `/login`/`/logout` should call [`build_provider_bundle`]
-/// directly.
+/// convenience wrapper around [`build_provider_bundle`] that selects the
+/// target-native backend factory.
 pub async fn build_provider_production(
     config: &OpiConfig,
     user_config_dir: std::path::PathBuf,
-) -> Result<Box<dyn Provider>, ProviderBuildError> {
-    build_provider_bundle(config, user_config_dir)
-        .await
-        .map(|bundle| bundle.provider)
+) -> Result<ProviderBundle, ProviderBuildError> {
+    build_provider_bundle(
+        config,
+        user_config_dir,
+        crate::credential_store::native_keyring_backend_factory(),
+    )
+    .await
 }
 
 /// Resolve the API-key env var name for a built-in provider, or `None` for
@@ -970,227 +1012,256 @@ fn resolved_or_env(
     }
 }
 
+fn build_anthropic(
+    config: &OpiConfig,
+    pre_resolved: Option<String>,
+) -> Result<Box<dyn Provider>, ProviderBuildError> {
+    let env_name = &config.providers.anthropic.api_key_env;
+    let api_key = resolved_or_env(pre_resolved, env_name)?;
+    let client = build_proxied_client(config.providers.anthropic.proxy.as_ref())?;
+    let provider = opi_ai::anthropic::AnthropicProvider::with_client(
+        api_key,
+        config.providers.anthropic.base_url.clone(),
+        client,
+    );
+    Ok(Box::new(provider))
+}
+
+fn build_openai(
+    config: &OpiConfig,
+    pre_resolved: Option<String>,
+) -> Result<Box<dyn Provider>, ProviderBuildError> {
+    let env_name = resolve_env_name(&config.providers.openai.api_key_env, "OPENAI_API_KEY");
+    let api_key = resolved_or_env(pre_resolved, &env_name)?;
+    let client = build_proxied_client(config.providers.openai.proxy.as_ref())?;
+    let provider = opi_ai::openai_chat::OpenAiChatProvider::with_client(
+        api_key,
+        config.providers.openai.base_url.clone(),
+        "openai".into(),
+        vec![],
+        client,
+    );
+    Ok(Box::new(provider))
+}
+
+fn build_openrouter(
+    config: &OpiConfig,
+    pre_resolved: Option<String>,
+) -> Result<Box<dyn Provider>, ProviderBuildError> {
+    let env_name = resolve_env_name(
+        &config.providers.openrouter.api_key_env,
+        "OPENROUTER_API_KEY",
+    );
+    let api_key = resolved_or_env(pre_resolved, &env_name)?;
+    let client = build_proxied_client(config.providers.openrouter.proxy.as_ref())?;
+    // If a custom referer is configured, build the provider directly with it.
+    let provider = if let Some(ref referer) = config.providers.openrouter.referer {
+        let base_url = config
+            .providers
+            .openrouter
+            .base_url
+            .clone()
+            .unwrap_or_else(|| "https://openrouter.ai/api".into());
+        let compat = opi_ai::openai_chat::CompatConfig::default();
+        let extra_headers = vec![
+            ("HTTP-Referer".into(), referer.clone()),
+            ("X-Title".into(), "opi".into()),
+        ];
+        opi_ai::openai_chat::OpenAiChatProvider::new_for_profile(
+            api_key,
+            base_url,
+            "openrouter".into(),
+            compat,
+            extra_headers,
+            opi_ai::openrouter::model_catalog(),
+        )
+        .with_shared_client(client)
+    } else {
+        opi_ai::openrouter::openrouter_provider(
+            api_key,
+            config.providers.openrouter.base_url.clone(),
+        )
+        .with_shared_client(client)
+    };
+    Ok(Box::new(provider))
+}
+
+fn build_mistral(
+    config: &OpiConfig,
+    pre_resolved: Option<String>,
+) -> Result<Box<dyn Provider>, ProviderBuildError> {
+    let env_name = resolve_env_name(&config.providers.mistral.api_key_env, "MISTRAL_API_KEY");
+    let api_key = resolved_or_env(pre_resolved, &env_name)?;
+    let client = build_proxied_client(config.providers.mistral.proxy.as_ref())?;
+    let provider =
+        opi_ai::mistral::mistral_provider(api_key, config.providers.mistral.base_url.clone())
+            .with_shared_client(client);
+    Ok(Box::new(provider))
+}
+
+fn build_openai_responses(
+    config: &OpiConfig,
+    pre_resolved: Option<String>,
+) -> Result<Box<dyn Provider>, ProviderBuildError> {
+    let env_name = resolve_env_name(
+        &config.providers.openai_responses.api_key_env,
+        "OPENAI_API_KEY",
+    );
+    let api_key = resolved_or_env(pre_resolved, &env_name)?;
+    let client = build_proxied_client(config.providers.openai_responses.proxy.as_ref())?;
+    let provider = opi_ai::openai_responses::OpenAiResponsesProvider::with_client(
+        api_key,
+        config.providers.openai_responses.base_url.clone(),
+        client,
+    );
+    Ok(Box::new(provider))
+}
+
+fn build_gemini(
+    config: &OpiConfig,
+    pre_resolved: Option<String>,
+) -> Result<Box<dyn Provider>, ProviderBuildError> {
+    let env_name = resolve_env_name(&config.providers.gemini.api_key_env, "GEMINI_API_KEY");
+    let api_key = resolved_or_env(pre_resolved, &env_name)?;
+    let client = build_proxied_client(config.providers.gemini.proxy.as_ref())?;
+    let provider = opi_ai::gemini::GeminiProvider::with_client(
+        api_key,
+        config.providers.gemini.base_url.clone(),
+        client,
+    );
+    Ok(Box::new(provider))
+}
+
+fn build_bedrock(config: &OpiConfig) -> Result<Box<dyn Provider>, ProviderBuildError> {
+    let bedrock_config = &config.providers.bedrock;
+
+    // Resolve credentials: config > env > profile
+    let (akid, sak, token, env_region) = resolve_bedrock_env_credentials();
+    let env_profile = std::env::var("AWS_PROFILE").ok();
+    let profile_name =
+        select_bedrock_profile(bedrock_config.profile.as_deref(), env_profile.as_deref());
+    let credentials_file = aws_credentials_path();
+    let config_file = aws_config_path();
+    let secret_key = bedrock_config
+        .secret_access_key_env
+        .as_deref()
+        .and_then(non_empty_env_var);
+    let session_token = bedrock_config
+        .session_token_env
+        .as_deref()
+        .and_then(non_empty_env_var);
+
+    let input = opi_ai::bedrock::credentials::CredentialResolutionInput {
+        config_access_key_id: bedrock_config.access_key_id.as_deref(),
+        config_secret_access_key: secret_key.as_deref(),
+        config_session_token: session_token.as_deref(),
+        config_region: bedrock_config.region.as_deref(),
+        env_access_key_id: akid.as_deref(),
+        env_secret_access_key: sak.as_deref(),
+        env_session_token: token.as_deref(),
+        env_region: env_region.as_deref(),
+        profile_name,
+        credentials_file_path: credentials_file.as_deref(),
+        config_file_path: config_file.as_deref(),
+    };
+    let resolved = opi_ai::bedrock::credentials::resolve_credentials(&input);
+    let (bedrock_creds, _source) = resolved.ok_or_else(|| {
+        ProviderBuildError::Auth(
+            "no AWS credentials found: set AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY env vars, configure [providers.bedrock], or set up AWS shared credentials/config profiles".into(),
+        )
+    })?;
+
+    let client = build_proxied_client(bedrock_config.proxy.as_ref())?;
+    let provider = opi_ai::bedrock::BedrockProvider::from_credentials(
+        bedrock_creds,
+        bedrock_config.base_url.clone(),
+        client,
+    );
+    Ok(Box::new(provider))
+}
+
+fn build_azure(
+    config: &OpiConfig,
+    pre_resolved: Option<String>,
+) -> Result<Box<dyn Provider>, ProviderBuildError> {
+    let azure_config = &config.providers.azure;
+    let env_name = resolve_env_name(&azure_config.api_key_env, "AZURE_OPENAI_API_KEY");
+    let api_key = resolved_or_env(pre_resolved, &env_name)?;
+    let deployment = config
+        .defaults
+        .model
+        .split_once(':')
+        .map(|(_, id)| id)
+        .unwrap_or("");
+    let provider = if azure_config.deployments.is_empty() {
+        opi_ai::azure_openai::AzureOpenAIProvider::new(
+            api_key,
+            azure_config.endpoint.clone(),
+            deployment.to_string(),
+            azure_config.api_version.clone(),
+        )?
+    } else {
+        opi_ai::azure_openai::AzureOpenAIProvider::from_config(
+            api_key,
+            azure_config.endpoint.clone(),
+            azure_config.deployments.clone(),
+            azure_config.api_version.clone(),
+        )?
+    }
+    .with_client(build_proxied_client(azure_config.proxy.as_ref())?);
+    Ok(Box::new(provider))
+}
+
+fn build_vertex(
+    config: &OpiConfig,
+    pre_resolved: Option<String>,
+) -> Result<Box<dyn Provider>, ProviderBuildError> {
+    let vertex_config = &config.providers.vertex;
+    let env_name = resolve_env_name(&vertex_config.access_token_env, "VERTEX_ACCESS_TOKEN");
+    let access_token = resolved_or_env(pre_resolved, &env_name)?;
+    let project = vertex_config
+        .project
+        .as_deref()
+        .ok_or_else(|| ProviderBuildError::Config("vertex provider requires project".into()))?;
+    let location = vertex_config
+        .location
+        .as_deref()
+        .ok_or_else(|| ProviderBuildError::Config("vertex provider requires location".into()))?;
+    let provider = if vertex_config.models.is_empty() {
+        opi_ai::vertex::VertexProvider::new(
+            access_token,
+            project.into(),
+            location.into(),
+            vertex_config.base_url.clone(),
+        )
+    } else {
+        opi_ai::vertex::VertexProvider::from_config(
+            access_token,
+            project.into(),
+            location.into(),
+            vertex_config.models.clone(),
+            vertex_config.base_url.clone(),
+        )
+    }
+    .with_client(build_proxied_client(vertex_config.proxy.as_ref())?);
+    Ok(Box::new(provider))
+}
+
 fn build_runtime_provider(
     config: &OpiConfig,
     provider_id: &str,
     pre_resolved: Option<String>,
 ) -> Result<Box<dyn Provider>, ProviderBuildError> {
-    let spec = &config.defaults.model;
     match provider_id {
-        "anthropic" => {
-            let env_name = &config.providers.anthropic.api_key_env;
-            let api_key = resolved_or_env(pre_resolved.clone(), env_name)?;
-            let client = build_proxied_client(config.providers.anthropic.proxy.as_ref())?;
-            let provider = opi_ai::anthropic::AnthropicProvider::with_client(
-                api_key,
-                config.providers.anthropic.base_url.clone(),
-                client,
-            );
-            Ok(Box::new(provider) as Box<dyn Provider>)
-        }
-        "openai" => {
-            let env_name = resolve_env_name(&config.providers.openai.api_key_env, "OPENAI_API_KEY");
-            let api_key = resolved_or_env(pre_resolved.clone(), &env_name)?;
-            let client = build_proxied_client(config.providers.openai.proxy.as_ref())?;
-            let provider = opi_ai::openai_chat::OpenAiChatProvider::with_client(
-                api_key,
-                config.providers.openai.base_url.clone(),
-                "openai".into(),
-                vec![],
-                client,
-            );
-            Ok(Box::new(provider) as Box<dyn Provider>)
-        }
-        "openrouter" => {
-            let env_name = resolve_env_name(
-                &config.providers.openrouter.api_key_env,
-                "OPENROUTER_API_KEY",
-            );
-            let api_key = resolved_or_env(pre_resolved.clone(), &env_name)?;
-            let client = build_proxied_client(config.providers.openrouter.proxy.as_ref())?;
-            // If a custom referer is configured, build the provider directly with it.
-            let provider = if let Some(ref referer) = config.providers.openrouter.referer {
-                let base_url = config
-                    .providers
-                    .openrouter
-                    .base_url
-                    .clone()
-                    .unwrap_or_else(|| "https://openrouter.ai/api".into());
-                let compat = opi_ai::openai_chat::CompatConfig::default();
-                let extra_headers = vec![
-                    ("HTTP-Referer".into(), referer.clone()),
-                    ("X-Title".into(), "opi".into()),
-                ];
-                // Use the default model list from the openrouter module.
-                let temp = opi_ai::openrouter::openrouter_provider(
-                    String::new(),
-                    config.providers.openrouter.base_url.clone(),
-                );
-                let models = temp.models().to_vec();
-                opi_ai::openai_chat::OpenAiChatProvider::new_for_profile(
-                    api_key,
-                    base_url,
-                    "openrouter".into(),
-                    compat,
-                    extra_headers,
-                    models,
-                )
-                .with_shared_client(client)
-            } else {
-                opi_ai::openrouter::openrouter_provider(
-                    api_key,
-                    config.providers.openrouter.base_url.clone(),
-                )
-                .with_shared_client(client)
-            };
-            Ok(Box::new(provider) as Box<dyn Provider>)
-        }
-        "mistral" => {
-            let env_name =
-                resolve_env_name(&config.providers.mistral.api_key_env, "MISTRAL_API_KEY");
-            let api_key = resolved_or_env(pre_resolved.clone(), &env_name)?;
-            let client = build_proxied_client(config.providers.mistral.proxy.as_ref())?;
-            let provider = opi_ai::mistral::mistral_provider(
-                api_key,
-                config.providers.mistral.base_url.clone(),
-            )
-            .with_shared_client(client);
-            Ok(Box::new(provider) as Box<dyn Provider>)
-        }
-        "openai-responses" => {
-            let env_name = resolve_env_name(
-                &config.providers.openai_responses.api_key_env,
-                "OPENAI_API_KEY",
-            );
-            let api_key = resolved_or_env(pre_resolved.clone(), &env_name)?;
-            let client = build_proxied_client(config.providers.openai_responses.proxy.as_ref())?;
-            let provider = opi_ai::openai_responses::OpenAiResponsesProvider::with_client(
-                api_key,
-                config.providers.openai_responses.base_url.clone(),
-                client,
-            );
-            Ok(Box::new(provider) as Box<dyn Provider>)
-        }
-        "gemini" => {
-            let env_name = resolve_env_name(&config.providers.gemini.api_key_env, "GEMINI_API_KEY");
-            let api_key = resolved_or_env(pre_resolved.clone(), &env_name)?;
-            let client = build_proxied_client(config.providers.gemini.proxy.as_ref())?;
-            let provider = opi_ai::gemini::GeminiProvider::with_client(
-                api_key,
-                config.providers.gemini.base_url.clone(),
-                client,
-            );
-            Ok(Box::new(provider) as Box<dyn Provider>)
-        }
-        "bedrock" => {
-            let bedrock_config = &config.providers.bedrock;
-
-            // Resolve credentials: config > env > profile
-            let (akid, sak, token, env_region) = resolve_bedrock_env_credentials();
-            let env_profile = std::env::var("AWS_PROFILE").ok();
-            let profile_name = bedrock_config.profile.as_deref().or(env_profile.as_deref());
-            let credentials_file = aws_credentials_path();
-            let config_file = aws_config_path();
-
-            // Read secret key from configured env var
-            let secret_key = bedrock_config
-                .secret_access_key_env
-                .as_deref()
-                .and_then(non_empty_env_var);
-
-            // Read session token from configured env var
-            let session_token = bedrock_config
-                .session_token_env
-                .as_deref()
-                .and_then(non_empty_env_var);
-
-            let input = opi_ai::bedrock::credentials::CredentialResolutionInput {
-                config_access_key_id: bedrock_config.access_key_id.as_deref(),
-                config_secret_access_key: secret_key.as_deref(),
-                config_session_token: session_token.as_deref(),
-                config_region: bedrock_config.region.as_deref(),
-                env_access_key_id: akid.as_deref(),
-                env_secret_access_key: sak.as_deref(),
-                env_session_token: token.as_deref(),
-                env_region: env_region.as_deref(),
-                profile_name,
-                credentials_file_path: credentials_file.as_deref(),
-                config_file_path: config_file.as_deref(),
-            };
-
-            let resolved = opi_ai::bedrock::credentials::resolve_credentials(&input);
-
-            let (bedrock_creds, _source) = resolved.ok_or_else(|| {
-                ProviderBuildError::Auth(
-                    "no AWS credentials found: set AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY env vars, configure [providers.bedrock], or set up AWS shared credentials/config profiles".into(),
-                )
-            })?;
-
-            let client = build_proxied_client(bedrock_config.proxy.as_ref())?;
-            let provider = opi_ai::bedrock::BedrockProvider::from_credentials(
-                bedrock_creds,
-                bedrock_config.base_url.clone(),
-                client,
-            );
-            Ok(Box::new(provider) as Box<dyn Provider>)
-        }
-        "azure" => {
-            let azure_config = &config.providers.azure;
-            let env_name = resolve_env_name(&azure_config.api_key_env, "AZURE_OPENAI_API_KEY");
-            let api_key = resolved_or_env(pre_resolved.clone(), &env_name)?;
-
-            // Extract deployment name from model spec (azure:deployment-name)
-            let deployment = spec.split_once(':').map(|(_, id)| id).unwrap_or("");
-
-            let provider = if azure_config.deployments.is_empty() {
-                opi_ai::azure_openai::AzureOpenAIProvider::new(
-                    api_key,
-                    azure_config.endpoint.clone(),
-                    deployment.to_string(),
-                    azure_config.api_version.clone(),
-                )?
-            } else {
-                opi_ai::azure_openai::AzureOpenAIProvider::from_config(
-                    api_key,
-                    azure_config.endpoint.clone(),
-                    azure_config.deployments.clone(),
-                    azure_config.api_version.clone(),
-                )?
-            }
-            .with_client(build_proxied_client(azure_config.proxy.as_ref())?);
-            Ok(Box::new(provider) as Box<dyn Provider>)
-        }
-        "vertex" => {
-            let vertex_config = &config.providers.vertex;
-            let env_name = resolve_env_name(&vertex_config.access_token_env, "VERTEX_ACCESS_TOKEN");
-            let access_token = resolved_or_env(pre_resolved.clone(), &env_name)?;
-
-            let project = vertex_config.project.as_deref().ok_or_else(|| {
-                ProviderBuildError::Config("vertex provider requires project".into())
-            })?;
-            let location = vertex_config.location.as_deref().ok_or_else(|| {
-                ProviderBuildError::Config("vertex provider requires location".into())
-            })?;
-
-            let provider = if vertex_config.models.is_empty() {
-                opi_ai::vertex::VertexProvider::new(
-                    access_token,
-                    project.into(),
-                    location.into(),
-                    vertex_config.base_url.clone(),
-                )
-            } else {
-                opi_ai::vertex::VertexProvider::from_config(
-                    access_token,
-                    project.into(),
-                    location.into(),
-                    vertex_config.models.clone(),
-                    vertex_config.base_url.clone(),
-                )
-            }
-            .with_client(build_proxied_client(vertex_config.proxy.as_ref())?);
-            Ok(Box::new(provider) as Box<dyn Provider>)
-        }
+        "anthropic" => build_anthropic(config, pre_resolved),
+        "openai" => build_openai(config, pre_resolved),
+        "openrouter" => build_openrouter(config, pre_resolved),
+        "mistral" => build_mistral(config, pre_resolved),
+        "openai-responses" => build_openai_responses(config, pre_resolved),
+        "gemini" => build_gemini(config, pre_resolved),
+        "bedrock" => build_bedrock(config),
+        "azure" => build_azure(config, pre_resolved),
+        "vertex" => build_vertex(config, pre_resolved),
         other => {
             if let Some(profile) = config.providers.openai_compatible.get(other) {
                 let provider = build_runtime_openai_compatible_profile(profile)?;
@@ -1320,52 +1391,79 @@ pub fn build_collection_for_listing(
 ) -> Result<ProviderCollection, ListModelsError> {
     let mut collection = ProviderCollection::new();
     for provider_id in BUILT_IN_PROVIDER_IDS {
-        match build_list_models_provider(config, provider_id) {
-            Ok(provider) => {
-                // Preserve the legacy Resolved descriptor for env-backed
-                // providers; only keychain-backend (StoreCredential) providers
-                // carry the secret-free store descriptor + injected probe.
-                let auth = match auth_descriptor_for(config, provider_id) {
-                    Some(store_auth @ AuthDescriptor::StoreCredential { .. }) => store_auth,
-                    _ => resolved_auth_descriptor_for(config, provider_id),
-                };
-                let compat = compat_metadata_for(provider_id);
-                if let Err(e) = collection.register(provider, auth.clone(), compat) {
-                    return Err(ListModelsError::Config(format!(
-                        "provider registration failed: {e}"
-                    )));
-                }
-                // Inject the redacted, precomputed probe for StoreCredential
-                // providers so the listing collection carries keychain state
-                // without the secret.
-                if matches!(auth, AuthDescriptor::StoreCredential { .. }) {
-                    let source = store_probe
-                        .get(*provider_id)
-                        .cloned()
-                        .unwrap_or(opi_ai::CredentialSource::Absent);
-                    collection.set_probe(provider_id, source);
-                }
-            }
-            Err(ListModelsError::MissingCredentials) => continue,
-            Err(e @ ListModelsError::Config(_)) => return Err(e),
+        let auth_available = if *provider_id == "bedrock" {
+            bedrock_auth_presence(config, &|name| std::env::var(name).ok()).is_present()
+        } else {
+            let env_name = api_key_env_name(config, provider_id);
+            listing_auth_available(env_name.as_deref(), store_probe.get(*provider_id))
+        };
+        if !auth_available {
+            continue;
+        }
+        let provider = build_list_models_metadata(config, provider_id)?;
+        // Preserve the legacy Resolved descriptor for env-backed providers;
+        // only keychain-backend providers carry the redacted store descriptor.
+        let auth = match auth_descriptor_for(config, provider_id) {
+            Some(store_auth @ AuthDescriptor::StoreCredential { .. }) => store_auth,
+            _ => resolved_auth_descriptor_for(config, provider_id),
+        };
+        let compat = compat_metadata_for(provider_id);
+        if let Err(e) = collection.register(Box::new(provider), auth.clone(), compat) {
+            return Err(ListModelsError::Config(format!(
+                "provider registration failed: {e}"
+            )));
+        }
+        if matches!(auth, AuthDescriptor::StoreCredential { .. }) {
+            let source = store_probe
+                .get(*provider_id)
+                .cloned()
+                .unwrap_or(opi_ai::CredentialSource::Absent);
+            collection.set_probe(provider_id, source);
         }
     }
     for profile in config.providers.openai_compatible.values() {
-        match build_list_models_openai_compatible_profile(profile) {
-            Ok(provider) => {
-                let auth = resolved_auth_descriptor_for_profile(profile);
-                let compat = compat_metadata_for_profile(profile);
-                if let Err(e) = collection.register(Box::new(provider), auth, compat) {
-                    return Err(ListModelsError::Config(format!(
-                        "profile registration failed: {e}"
-                    )));
-                }
-            }
-            Err(ListModelsError::MissingCredentials) => continue,
-            Err(e @ ListModelsError::Config(_)) => return Err(e),
+        let default_env = profile_api_key_env_default(&profile.id);
+        let env_name = resolve_env_name(&profile.api_key_env, &default_env);
+        if !listing_auth_available(Some(&env_name), None) {
+            continue;
+        }
+        let _ = build_proxied_client_for_listing(profile.proxy.as_ref())?;
+        let models = openai_compatible_model_catalog(profile).map_err(ListModelsError::Config)?;
+        let provider = MetadataProvider::new(profile.id.clone(), models);
+        let auth = resolved_auth_descriptor_for_profile(profile);
+        let compat = compat_metadata_for_profile(profile);
+        if let Err(e) = collection.register(Box::new(provider), auth, compat) {
+            return Err(ListModelsError::Config(format!(
+                "profile registration failed: {e}"
+            )));
         }
     }
     Ok(collection)
+}
+
+/// Probe stored credential presence, then build a metadata-only listing collection.
+pub async fn build_collection_for_listing_with_store(
+    config: &OpiConfig,
+    store: &dyn opi_ai::credential::CredentialStore,
+) -> Result<ProviderCollection, ListModelsError> {
+    let provider_ids = BUILT_IN_PROVIDER_IDS
+        .iter()
+        .map(|provider_id| (*provider_id).to_owned());
+    let probes = crate::credential_store::collect_credential_probes(store, provider_ids).await;
+    build_collection_for_listing(config, &probes)
+}
+
+/// Production model-listing command core: create the backend inside the
+/// command path and retain its native-store owner while presence probes run.
+#[doc(hidden)]
+pub async fn build_collection_for_listing_command(
+    config: &OpiConfig,
+    user_config_dir: std::path::PathBuf,
+    backend_factory: crate::credential_store::KeyringBackendFactory,
+) -> Result<ProviderCollection, ListModelsError> {
+    let store =
+        crate::credential_store::keychain_store_from_factory(user_config_dir, backend_factory);
+    build_collection_for_listing_with_store(config, &store).await
 }
 
 /// Assemble the harness model-lookup collection from an already-built active
@@ -1412,4 +1510,232 @@ pub fn assemble_harness_collection(
     }
 
     (ProviderCollection::from_registry(registry), diagnostics)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+    use std::ffi::OsString;
+    use std::sync::Mutex;
+
+    use super::{build_bedrock, build_collection_for_listing_command};
+    use crate::config::OpiConfig;
+    use crate::credential_store::FakeKeyringBackend;
+    use crate::doctor::{DoctorContext, DoctorScope, run_doctor};
+
+    static BEDROCK_ENV_LOCK: Mutex<()> = Mutex::new(());
+    const BEDROCK_ENV_NAMES: [&str; 9] = [
+        "AWS_ACCESS_KEY_ID",
+        "AWS_SECRET_ACCESS_KEY",
+        "AWS_SESSION_TOKEN",
+        "AWS_REGION",
+        "AWS_DEFAULT_REGION",
+        "AWS_PROFILE",
+        "AWS_SHARED_CREDENTIALS_FILE",
+        "AWS_CONFIG_FILE",
+        "OPI_TEST_BEDROCK_SECRET",
+    ];
+
+    struct ScopedBedrockEnv(Vec<(&'static str, Option<OsString>)>);
+
+    impl ScopedBedrockEnv {
+        fn new(
+            values: &[(&str, &str)],
+            credentials_file: &std::path::Path,
+            config_file: &std::path::Path,
+        ) -> Self {
+            let original = BEDROCK_ENV_NAMES
+                .into_iter()
+                .map(|name| (name, std::env::var_os(name)))
+                .collect();
+            for name in BEDROCK_ENV_NAMES {
+                // SAFETY: this test module serializes and restores these variables.
+                unsafe { std::env::remove_var(name) };
+            }
+            // SAFETY: this test module serializes and restores these variables.
+            unsafe {
+                std::env::set_var("AWS_SHARED_CREDENTIALS_FILE", credentials_file);
+                std::env::set_var("AWS_CONFIG_FILE", config_file);
+            }
+            for (name, value) in values {
+                assert!(BEDROCK_ENV_NAMES.contains(name), "untracked env {name}");
+                // SAFETY: this test module serializes and restores these variables.
+                unsafe { std::env::set_var(name, value) };
+            }
+            Self(original)
+        }
+    }
+
+    impl Drop for ScopedBedrockEnv {
+        fn drop(&mut self) {
+            for (name, value) in self.0.drain(..) {
+                match value {
+                    Some(value) => {
+                        // SAFETY: this test module serializes and restores these variables.
+                        unsafe { std::env::set_var(name, value) };
+                    }
+                    None => {
+                        // SAFETY: this test module serializes and restores these variables.
+                        unsafe { std::env::remove_var(name) };
+                    }
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
+    async fn bedrock_whitespace_presence_matches_listing_doctor_and_runtime() {
+        struct Case {
+            name: &'static str,
+            access_key_id: Option<&'static str>,
+            secret_access_key_env: Option<&'static str>,
+            configured: Option<&'static str>,
+            env: &'static [(&'static str, &'static str)],
+            expected_present: bool,
+        }
+
+        for case in [
+            Case {
+                name: "all absent",
+                access_key_id: None,
+                secret_access_key_env: None,
+                configured: None,
+                env: &[],
+                expected_present: false,
+            },
+            Case {
+                name: "blank configured access key",
+                access_key_id: Some(" \t"),
+                secret_access_key_env: Some("OPI_TEST_BEDROCK_SECRET"),
+                configured: None,
+                env: &[("OPI_TEST_BEDROCK_SECRET", "secret")],
+                expected_present: false,
+            },
+            Case {
+                name: "blank configured secret",
+                access_key_id: Some("access"),
+                secret_access_key_env: Some("OPI_TEST_BEDROCK_SECRET"),
+                configured: None,
+                env: &[("OPI_TEST_BEDROCK_SECRET", " \n")],
+                expected_present: false,
+            },
+            Case {
+                name: "blank environment access key",
+                access_key_id: None,
+                secret_access_key_env: None,
+                configured: None,
+                env: &[
+                    ("AWS_ACCESS_KEY_ID", " \t"),
+                    ("AWS_SECRET_ACCESS_KEY", "secret"),
+                ],
+                expected_present: false,
+            },
+            Case {
+                name: "blank environment secret",
+                access_key_id: None,
+                secret_access_key_env: None,
+                configured: None,
+                env: &[
+                    ("AWS_ACCESS_KEY_ID", "access"),
+                    ("AWS_SECRET_ACCESS_KEY", " \n"),
+                ],
+                expected_present: false,
+            },
+            Case {
+                name: "blank profiles",
+                access_key_id: None,
+                secret_access_key_env: None,
+                configured: Some(" \t"),
+                env: &[("AWS_PROFILE", " \n")],
+                expected_present: false,
+            },
+            Case {
+                name: "blank configured profile falls through to environment profile",
+                access_key_id: None,
+                secret_access_key_env: None,
+                configured: Some(" \t"),
+                env: &[("AWS_PROFILE", "env-profile")],
+                expected_present: true,
+            },
+            Case {
+                name: "valid configured profile wins",
+                access_key_id: None,
+                secret_access_key_env: None,
+                configured: Some("config-profile"),
+                env: &[("AWS_PROFILE", "env-profile")],
+                expected_present: true,
+            },
+        ] {
+            let _env_lock = BEDROCK_ENV_LOCK.lock().expect("Bedrock env lock");
+            let root = tempfile::tempdir().expect("temp root");
+            let credentials_file = root.path().join("credentials");
+            let config_file = root.path().join("config");
+            std::fs::write(
+                &credentials_file,
+                "[config-profile]\naws_access_key_id = config-access\naws_secret_access_key = config-secret\n\
+                 [env-profile]\naws_access_key_id = env-access\naws_secret_access_key = env-secret\n",
+            )
+            .expect("credentials fixture");
+            std::fs::write(&config_file, "").expect("config fixture");
+            let _env = ScopedBedrockEnv::new(case.env, &credentials_file, &config_file);
+            let mut config = OpiConfig::default();
+            config.defaults.model = "bedrock:anthropic.claude-test".into();
+            config.providers.bedrock.access_key_id = case.access_key_id.map(str::to_owned);
+            config.providers.bedrock.secret_access_key_env =
+                case.secret_access_key_env.map(str::to_owned);
+            config.providers.bedrock.profile = case.configured.map(str::to_owned);
+            let env_values: HashMap<_, _> = case.env.iter().copied().collect();
+            let env_var = |name: &str| env_values.get(name).map(|value| (*value).to_owned());
+            let empty_probe = HashMap::new();
+            let doctor_context = DoctorContext {
+                config: &config,
+                config_error: None,
+                workspace_root: root.path(),
+                user_config_dir: root.path(),
+                sessions_dir: root.path(),
+                term: None,
+                term_program: None,
+                term_features: None,
+                no_color: false,
+                colorterm: None,
+                env_var: &env_var,
+                store_probe: &empty_probe,
+            };
+            let doctor = run_doctor(&[DoctorScope::Provider], &doctor_context);
+            let doctor_present = doctor.entries.iter().find_map(|entry| {
+                entry
+                    .diagnostic
+                    .details
+                    .as_ref()
+                    .and_then(|details| details["credentials_present"].as_bool())
+            });
+
+            assert_eq!(
+                doctor_present,
+                Some(case.expected_present),
+                "{}: doctor",
+                case.name
+            );
+            let collection = build_collection_for_listing_command(
+                &config,
+                root.path().to_path_buf(),
+                Box::new(|| Box::new(FakeKeyringBackend::new())),
+            )
+            .await
+            .unwrap_or_else(|error| panic!("{}: listing: {error}", case.name));
+            assert_eq!(
+                collection.registry().get_provider("bedrock").is_some(),
+                case.expected_present,
+                "{}: listing",
+                case.name
+            );
+            assert_eq!(
+                build_bedrock(&config).is_ok(),
+                case.expected_present,
+                "{}: runtime build",
+                case.name
+            );
+        }
+    }
 }
