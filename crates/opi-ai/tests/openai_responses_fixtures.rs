@@ -7,7 +7,9 @@
 use futures_util::StreamExt;
 use opi_ai::message::{InputContent, Message, ToolDef, UserMessage};
 use opi_ai::openai_responses::{OpenAiResponsesProvider, ResponsesConfig};
-use opi_ai::provider::{CacheRetention, EventStream, Provider, Request, ThinkingConfig};
+use opi_ai::provider::{
+    CacheRetention, EventStream, Provider, ProviderError, Request, ThinkingConfig,
+};
 use opi_ai::registry::ProviderRegistry;
 use opi_ai::stream::AssistantStreamEvent;
 use tokio_util::sync::CancellationToken;
@@ -528,6 +530,27 @@ async fn responses_cache_tokens_in_done_event() {
 
 // --- Reasoning tokens (Phase 14 task 14.5) ---
 
+fn responses_reasoning_fixture(reasoning_tokens: Option<u64>, output_tokens: u32) -> String {
+    let mut usage = serde_json::json!({
+        "input_tokens": 100,
+        "output_tokens": output_tokens,
+    });
+    if let Some(tokens) = reasoning_tokens {
+        usage["output_tokens_details"] = serde_json::json!({"reasoning_tokens": tokens});
+    }
+    let payload = serde_json::json!({
+        "type": "response.completed",
+        "response": {
+            "id": "resp_reason",
+            "status": "completed",
+            "model": "o3",
+            "output": [],
+            "usage": usage,
+        },
+    });
+    format!("event: response.completed\ndata: {payload}\n\n")
+}
+
 #[tokio::test]
 async fn responses_reasoning_tokens_in_done_event() {
     let provider = responses_provider("key");
@@ -553,39 +576,61 @@ async fn responses_reasoning_tokens_in_done_event() {
         .expect("expected Done event");
     if let AssistantStreamEvent::Done { message, .. } = done {
         assert_eq!(message.usage.output_tokens, 500);
-        assert_eq!(message.usage.reasoning_tokens, 300);
-        assert!(message.usage.reasoning_tokens <= message.usage.output_tokens);
+        assert_eq!(message.usage.reasoning_tokens, Some(300));
+        assert!(message.usage.reasoning_tokens.unwrap() <= u64::from(message.usage.output_tokens));
     }
 }
 
 #[tokio::test]
-async fn responses_reasoning_malformed_clamped_to_zero() {
+async fn responses_reasoning_absent_zero_and_equality_are_preserved() {
     let provider = responses_provider("key");
-    // reasoning_tokens (800) > output_tokens (500): malformed, clamped to 0.
-    let sse = "event: response.created\n\
-               data: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_badr\",\"status\":\"in_progress\",\"model\":\"o3\",\"output\":[]}}\n\n\
-               event: response.output_item.added\n\
-               data: {\"type\":\"response.output_item.added\",\"output_index\":0,\"item\":{\"type\":\"message\",\"status\":\"in_progress\",\"role\":\"assistant\",\"content\":[]}}\n\n\
-               event: response.content_part.added\n\
-               data: {\"type\":\"response.content_part.added\",\"output_index\":0,\"content_index\":0,\"part\":{\"type\":\"output_text\",\"text\":\"\"}}\n\n\
-               event: response.output_text.delta\n\
-               data: {\"type\":\"response.output_text.delta\",\"output_index\":0,\"content_index\":0,\"delta\":\"bad\"}\n\n\
-               event: response.output_text.done\n\
-               data: {\"type\":\"response.output_text.done\",\"output_index\":0,\"content_index\":0,\"text\":\"bad\"}\n\n\
-               event: response.output_item.done\n\
-               data: {\"type\":\"response.output_item.done\",\"output_index\":0,\"item\":{\"type\":\"message\",\"status\":\"completed\",\"role\":\"assistant\",\"content\":[{\"type\":\"output_text\",\"text\":\"bad\"}]}}\n\n\
-               event: response.completed\n\
-               data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_badr\",\"status\":\"completed\",\"model\":\"o3\",\"output\":[],\"usage\":{\"input_tokens\":100,\"output_tokens\":500,\"output_tokens_details\":{\"reasoning_tokens\":800}}}}\n\n";
-
-    let events = collect_stream(provider.stream_from_sse(sse, CancellationToken::new())).await;
-    let done = events
-        .iter()
-        .find(|e| matches!(e, AssistantStreamEvent::Done { .. }))
-        .expect("expected Done event");
-    if let AssistantStreamEvent::Done { message, .. } = done {
-        assert_eq!(message.usage.output_tokens, 500);
-        assert_eq!(message.usage.reasoning_tokens, 0);
+    for (reasoning, expected) in [(None, None), (Some(0), Some(0)), (Some(500), Some(500))] {
+        let sse = responses_reasoning_fixture(reasoning, 500);
+        let events = collect_stream(provider.stream_from_sse(&sse, CancellationToken::new())).await;
+        let usage = events
+            .iter()
+            .find_map(|event| match event {
+                AssistantStreamEvent::Done { message, .. } => Some(&message.usage),
+                _ => None,
+            })
+            .expect("expected Done event");
+        assert_eq!(usage.reasoning_tokens, expected);
     }
+}
+
+#[tokio::test]
+async fn responses_reasoning_malformed_subset_stops_production_stream_with_non_retryable_error() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/responses"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string(responses_reasoning_fixture(Some(800), 500))
+                .insert_header("content-type", "text/event-stream"),
+        )
+        .mount(&server)
+        .await;
+
+    let provider = OpenAiResponsesProvider::new("test-key".into(), Some(server.uri()));
+    let results: Vec<_> = provider.stream(responses_tool_request()).collect().await;
+    let errors: Vec<_> = results
+        .iter()
+        .filter_map(|result| result.as_ref().err())
+        .collect();
+    assert_eq!(errors.len(), 1, "invalid usage must emit one error");
+    assert!(matches!(errors[0], ProviderError::StreamError(_)));
+    assert!(!errors[0].is_retryable());
+    assert!(matches!(
+        results.last(),
+        Some(Err(ProviderError::StreamError(_)))
+    ));
+    assert!(
+        !results.iter().any(|result| matches!(
+            result,
+            Ok(AssistantStreamEvent::Done { .. } | AssistantStreamEvent::Error { .. })
+        )),
+        "no completion event may follow malformed usage"
+    );
 }
 
 // ---------------------------------------------------------------------------

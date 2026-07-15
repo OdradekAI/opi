@@ -695,8 +695,8 @@ impl BedrockMapper {
                 self.usage.output_tokens,
                 self.usage.cache_read_tokens,
                 self.usage.cache_write_tokens,
-                0, // cache_write_1h_tokens
-                0, // reasoning_tokens
+                None, // cache_write_1h_tokens
+                None, // reasoning_tokens
             );
         }
         self.pending_done.take()
@@ -846,8 +846,8 @@ impl BedrockMapper {
                         self.usage.output_tokens,
                         self.usage.cache_read_tokens,
                         self.usage.cache_write_tokens,
-                        0, // cache_write_1h_tokens
-                        0, // reasoning_tokens
+                        None, // cache_write_1h_tokens
+                        None, // reasoning_tokens
                     );
                 }
                 self.pending_done.take().into_iter().collect()

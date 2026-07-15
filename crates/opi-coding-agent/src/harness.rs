@@ -1516,8 +1516,8 @@ impl CodingHarness {
         let mut output_tokens = 0u32;
         let mut cache_read_tokens = 0u32;
         let mut cache_write_tokens = 0u32;
-        let mut cache_write_1h_tokens = 0u32;
-        let mut reasoning_tokens = 0u32;
+        let mut cache_write_1h_tokens = None;
+        let mut reasoning_tokens = None;
         for m in messages {
             if let AgentMessage::Llm(Message::Assistant(a)) = m {
                 saw_assistant = true;
@@ -1526,9 +1526,14 @@ impl CodingHarness {
                 output_tokens = output_tokens.saturating_add(a.usage.output_tokens);
                 cache_read_tokens = cache_read_tokens.saturating_add(a.usage.cache_read_tokens);
                 cache_write_tokens = cache_write_tokens.saturating_add(a.usage.cache_write_tokens);
-                cache_write_1h_tokens =
-                    cache_write_1h_tokens.saturating_add(a.usage.cache_write_1h_tokens);
-                reasoning_tokens = reasoning_tokens.saturating_add(a.usage.reasoning_tokens);
+                if let Some(tokens) = a.usage.cache_write_1h_tokens {
+                    cache_write_1h_tokens =
+                        Some(cache_write_1h_tokens.unwrap_or(0u64).saturating_add(tokens));
+                }
+                if let Some(tokens) = a.usage.reasoning_tokens {
+                    reasoning_tokens =
+                        Some(reasoning_tokens.unwrap_or(0u64).saturating_add(tokens));
+                }
             }
         }
         if saw_assistant && all_reported {

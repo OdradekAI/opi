@@ -160,8 +160,8 @@ impl ParsedEvent {
                 u.candidates_token_count.unwrap_or(0),
                 u.cached_content_token_count.unwrap_or(0),
                 0,
-                0, // cache_write_1h_tokens
-                0, // reasoning_tokens
+                None, // cache_write_1h_tokens
+                None, // reasoning_tokens
             )
         });
 

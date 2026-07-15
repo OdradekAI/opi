@@ -672,7 +672,7 @@ fn session_coordinator_accumulates_usage() {
     )
     .unwrap();
 
-    let usage = opi_ai::stream::Usage::reported(100, 50, 0, 0, 0, 0);
+    let usage = opi_ai::stream::Usage::reported(100, 50, 0, 0, None, None);
 
     coord.on_turn_end_simple(&[], &usage).unwrap();
     assert_eq!(coord.usage().turn_count(), 1);
@@ -1112,7 +1112,7 @@ fn compaction_shrinks_buffer_and_returns_summary_plus_kept() {
         })
         .collect();
 
-    let usage = Usage::reported(100, 100, 0, 0, 0, 0);
+    let usage = Usage::reported(100, 100, 0, 0, None, None);
 
     let out = coord
         .on_turn_end_simple(&messages, &usage)
@@ -1150,7 +1150,7 @@ fn compaction_engine_reads_pricing_and_reports_cost() {
     .unwrap();
 
     // Sonnet pricing: $3/Mtok input, $15/Mtok output
-    let usage = Usage::reported(1_000_000, 500_000, 0, 0, 0, 0);
+    let usage = Usage::reported(1_000_000, 500_000, 0, 0, None, None);
     coord.on_turn_end_simple(&[], &usage).unwrap();
 
     let cost = coord.cost_summary().expect("sonnet pricing should resolve");
@@ -1190,7 +1190,7 @@ fn cost_summary_returns_none_when_any_turn_has_unknown_usage() {
     .unwrap();
 
     coord
-        .on_turn_end_simple(&[], &Usage::reported(100, 50, 0, 0, 0, 0))
+        .on_turn_end_simple(&[], &Usage::reported(100, 50, 0, 0, None, None))
         .unwrap();
     coord.on_turn_end_simple(&[], &Usage::unknown()).unwrap();
 
@@ -1556,7 +1556,7 @@ async fn multi_assistant_turn_accumulates_all_assistant_usages() {
     tool_partial.content.push(AssistantContent::ToolCall {
         tool_call: tool_call.clone(),
     });
-    tool_partial.usage = Usage::reported(100, 30, 0, 0, 0, 0);
+    tool_partial.usage = Usage::reported(100, 30, 0, 0, None, None);
     let tool_response = vec![
         AssistantStreamEvent::Start {
             partial: test_support::base_assistant(),
@@ -1577,7 +1577,7 @@ async fn multi_assistant_turn_accumulates_all_assistant_usages() {
     final_partial.content.push(AssistantContent::Text {
         text: "done".into(),
     });
-    final_partial.usage = Usage::reported(200, 50, 0, 0, 0, 0);
+    final_partial.usage = Usage::reported(200, 50, 0, 0, None, None);
     let final_response = vec![
         AssistantStreamEvent::Start {
             partial: test_support::base_assistant(),
@@ -2238,7 +2238,7 @@ fn open_existing_replays_usage_from_assistant_messages() {
     asst1
         .content
         .push(AssistantContent::Text { text: "hi".into() });
-    asst1.usage = Usage::reported(100, 50, 10, 5, 0, 0);
+    asst1.usage = Usage::reported(100, 50, 10, 5, None, None);
     writer
         .append(&SessionEntry::Message(MessageEntry {
             id: "msg-2".into(),
@@ -2252,7 +2252,7 @@ fn open_existing_replays_usage_from_assistant_messages() {
     asst2.content.push(AssistantContent::Text {
         text: "world".into(),
     });
-    asst2.usage = Usage::reported(200, 80, 20, 10, 0, 0);
+    asst2.usage = Usage::reported(200, 80, 20, 10, None, None);
     writer
         .append(&SessionEntry::Message(MessageEntry {
             id: "msg-3".into(),
@@ -2302,6 +2302,164 @@ fn open_existing_replays_usage_from_assistant_messages() {
     );
 }
 
+#[test]
+fn phase14_usage_subsets_survive_session_resume() {
+    use std::io::Write as _;
+
+    use opi_agent::compaction::CompactionConfig;
+    use opi_agent::session::FORMAT_VERSION;
+    use opi_ai::message::AssistantContent;
+    use opi_ai::stream::Usage;
+    use opi_coding_agent::harness::ResumeInfo;
+
+    let dir = tempfile::tempdir().unwrap();
+    let mut coordinator = SessionCoordinator::new(
+        dir.path(),
+        "/repo",
+        CompactionConfig::default(),
+        "anthropic:claude-sonnet-4",
+    )
+    .unwrap();
+    let session_id = coordinator.session_id().to_owned();
+    let session_path = coordinator.session_path().to_path_buf();
+
+    let usage = Usage::reported(
+        1_000_000,
+        500_000,
+        200_000,
+        100_000,
+        Some(25_000),
+        Some(100_000),
+    );
+    let mut assistant = test_support::base_assistant();
+    assistant.content.push(AssistantContent::Text {
+        text: "persisted".into(),
+    });
+    assistant.usage = usage.clone();
+    let messages = vec![
+        AgentMessage::Llm(Message::User(UserMessage {
+            content: vec![InputContent::Text {
+                text: "persist usage".into(),
+            }],
+            timestamp_ms: 0,
+        })),
+        AgentMessage::Llm(Message::Assistant(assistant)),
+    ];
+    coordinator.on_turn_end_simple(&messages, &usage).unwrap();
+
+    let original_usage = coordinator.usage().clone();
+    let original_cost = coordinator
+        .cost_summary()
+        .expect("reported usage has known model pricing");
+    drop(coordinator);
+
+    let raw = std::fs::read_to_string(&session_path).unwrap();
+    if let Some(artifact_dir) = std::env::var_os("OPI_TEST_ARTIFACT_DIR") {
+        let artifact_dir = std::path::PathBuf::from(artifact_dir);
+        std::fs::create_dir_all(&artifact_dir).unwrap();
+        std::fs::write(artifact_dir.join("phase14-session-resume.jsonl"), &raw).unwrap();
+    }
+    assert!(
+        !raw.contains("\"cost\""),
+        "calculated cost must not be persisted in session JSONL"
+    );
+    let (header, entries, recovery) = SessionReader::read_with_recovery(&session_path).unwrap();
+    assert!(recovery.is_clean());
+    assert_eq!(header.version, FORMAT_VERSION);
+    assert_eq!(
+        FORMAT_VERSION, 1,
+        "usage correction must not bump session schema"
+    );
+
+    let reconstructed = opi_agent::session_context::reconstruct_context(&entries, &recovery);
+    let resumed_harness = CodingHarness::builder(
+        Box::new(MockProvider::new("anthropic", Vec::new())),
+        "anthropic:claude-sonnet-4".into(),
+        OpiConfig::default(),
+        dir.path().to_path_buf(),
+    )
+    .initial_messages(reconstructed.messages)
+    .resume(ResumeInfo {
+        path: session_path,
+        session_id,
+        entries: entries.clone(),
+        original_cwd: dir.path().to_path_buf(),
+        diagnostics: reconstructed.diagnostics,
+        recorded_model: reconstructed.model,
+        recorded_thinking: reconstructed.thinking_level,
+    })
+    .build();
+    let resumed = resumed_harness
+        .session()
+        .expect("fresh harness resumed the persisted session");
+    assert_eq!(resumed.usage(), &original_usage);
+    assert_eq!(resumed.usage().total_cache_write_1h_tokens(), Some(25_000));
+    assert_eq!(resumed.usage().total_reasoning_tokens(), Some(100_000));
+    assert_eq!(resumed.cost_summary(), Some(original_cost));
+
+    let legacy_path = dir.path().join("legacy-missing-optional-usage.jsonl");
+    let legacy_header = make_header("legacy-missing-optional-usage", "/repo");
+    let legacy_assistant = entries
+        .iter()
+        .find(|entry| {
+            matches!(
+                entry,
+                SessionEntry::Message(MessageEntry {
+                    message: Message::Assistant(_),
+                    ..
+                })
+            )
+        })
+        .expect("persisted assistant entry");
+    let mut legacy_value = serde_json::to_value(legacy_assistant).unwrap();
+    fn remove_optional_usage_fields(value: &mut serde_json::Value) {
+        match value {
+            serde_json::Value::Object(map) => {
+                map.remove("cache_write_1h_tokens");
+                map.remove("reasoning_tokens");
+                for child in map.values_mut() {
+                    remove_optional_usage_fields(child);
+                }
+            }
+            serde_json::Value::Array(items) => {
+                for item in items {
+                    remove_optional_usage_fields(item);
+                }
+            }
+            _ => {}
+        }
+    }
+    remove_optional_usage_fields(&mut legacy_value);
+    let legacy_writer = SessionWriter::create(&legacy_path, legacy_header).unwrap();
+    drop(legacy_writer);
+    let mut legacy_file = std::fs::OpenOptions::new()
+        .append(true)
+        .open(&legacy_path)
+        .unwrap();
+    writeln!(
+        legacy_file,
+        "{}",
+        serde_json::to_string(&legacy_value).unwrap()
+    )
+    .unwrap();
+    drop(legacy_file);
+
+    let (legacy_header, legacy_entries) = SessionReader::read_all(&legacy_path).unwrap();
+    assert_eq!(legacy_header.version, FORMAT_VERSION);
+    let legacy_usage = legacy_entries
+        .iter()
+        .find_map(|entry| match entry {
+            SessionEntry::Message(MessageEntry {
+                message: Message::Assistant(assistant),
+                ..
+            }) => Some(&assistant.usage),
+            _ => None,
+        })
+        .expect("legacy assistant usage deserialized");
+    assert_eq!(legacy_usage.cache_write_1h_tokens, None);
+    assert_eq!(legacy_usage.reasoning_tokens, None);
+}
+
 // ---------------------------------------------------------------------------
 // Phase 8 task 8.6 — resumed session-recovery diagnostics reach the in-process sink
 //
@@ -2343,7 +2501,7 @@ fn open_existing_treats_legacy_nonzero_usage_as_reported_for_cost_summary() {
     assistant.content.push(AssistantContent::Text {
         text: "legacy".into(),
     });
-    assistant.usage = Usage::reported(1_000_000, 500_000, 0, 0, 0, 0);
+    assistant.usage = Usage::reported(1_000_000, 500_000, 0, 0, None, None);
     let assistant_entry = SessionEntry::Message(MessageEntry {
         id: "msg-2".into(),
         parent_id: None,
