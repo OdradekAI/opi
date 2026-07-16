@@ -17,6 +17,10 @@
 //! `--list-models` can distinguish "no stored credential" from "no keychain
 //! daemon".
 //!
+//! Production native-store selection remains owned by `opi-coding-agent`,
+//! which installs Windows Credential Manager, macOS Keychain Services, or
+//! Freedesktop Secret Service before credential-aware startup paths.
+//!
 //! # Unstable
 //!
 //! This surface is part of the **unstable 0.x extension substrate**. Breaking
@@ -45,9 +49,9 @@ pub enum Credential {
     /// A static API key (Anthropic, OpenAI, Mistral, ...).
     ApiKey(SecretString),
     /// An OAuth token envelope. `base_url` preserves provider-specific
-    /// endpoints (e.g. a Copilot enterprise host). T2 owns the concrete
-    /// `OAuthCredential`/`ResolvedAuth` and the live HTTP refresh bridge; T1
-    /// only persists and probes this envelope.
+    /// endpoints (e.g. a Copilot enterprise host). `opi-coding-agent` owns the
+    /// concrete `OAuthCredential`/`ResolvedAuth` flow and live HTTP refresh
+    /// bridge; this crate owns the persistence contract.
     OAuthToken {
         /// Bearer/access token. Redacted in all diagnostics.
         access: SecretString,

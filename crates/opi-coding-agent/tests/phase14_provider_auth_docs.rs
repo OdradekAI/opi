@@ -1,6 +1,16 @@
-//! Phase 14 provider/auth documentation and forbidden-scope guards (task 14.7).
+//! Phase 14 provider/auth documentation and forbidden-scope guards (task 14.13).
 
 use std::path::{Path, PathBuf};
+
+use opi_coding_agent::interactive_auth::AUTH_HELP;
+use opi_coding_agent::runner::ExitCode;
+
+#[path = "common/phase14_auth_runtime.rs"]
+mod phase14_auth_runtime;
+use phase14_auth_runtime::{
+    credential_runner, run_json_credential_capture, run_rpc_stdio_capture,
+    run_text_credential_capture,
+};
 
 fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
@@ -67,6 +77,7 @@ fn localized_docs_pin_exact_phase14_claims_and_acceptance_rows() {
         &root,
         &[
             "Interactive `/login <provider>` and `/logout <provider>` support Anthropic PKCE, GitHub Copilot device-code, and OpenAI Codex PKCE.",
+            "Only a successful, user-initiated `/login <provider>` retries a pending interactive turn; `CredentialNeeded` never starts login automatically.",
             "Non-interactive, JSON, and RPC modes instead report the provider plus `/login <provider>` and fail without starting OAuth.",
             "Provider::refresh_models` and collection refresh are substrate-only with no production trigger.",
         ],
@@ -76,6 +87,7 @@ fn localized_docs_pin_exact_phase14_claims_and_acceptance_rows() {
         &root_zh,
         &[
             "交互式 `/login <provider>` 与 `/logout <provider>` 支持 Anthropic PKCE、GitHub Copilot device-code 和 OpenAI Codex PKCE。",
+            "只有用户显式执行且成功的 `/login <provider>` 才会重试待处理的交互轮次；`CredentialNeeded` 绝不自动启动登录。",
             "非交互、JSON 和 RPC 模式只报告 provider 与 `/login <provider>` 修复提示，并在不启动 OAuth 的情况下失败。",
             "`Provider::refresh_models` 和 collection refresh 仅为基底、无生产触发。",
         ],
@@ -86,6 +98,7 @@ fn localized_docs_pin_exact_phase14_claims_and_acceptance_rows() {
         &[
             "The three approved live auth paths—Anthropic Messages, Copilot-compatible OpenAI Chat, and Codex-compatible OpenAI Responses—resolve `AuthResolver` inside the returned stream, immediately before HTTP.",
             "Per-call credentials remain out of scope: `extra_headers` rejects provider-managed auth headers.",
+            "Capable built-in Anthropic models emit `cache_control` on the system prompt, final user text, final assistant text, and final tool definition.",
         ],
     );
     assert_claims(
@@ -94,6 +107,7 @@ fn localized_docs_pin_exact_phase14_claims_and_acceptance_rows() {
         &[
             "三个获批的真实鉴权路径——Anthropic Messages、Copilot-compatible OpenAI Chat 与 Codex-compatible OpenAI Responses——都在返回的 stream 内、紧邻 HTTP 之前解析 `AuthResolver`。",
             "按调用凭据仍不在范围内：`extra_headers` 会拒绝 Provider 管理的鉴权 header。",
+            "具备能力的 Anthropic 内置模型会在 system prompt、最后一段 user text、最后一段 assistant text 和最后一个 tool definition 上发出 `cache_control`。",
         ],
     );
     assert_claims(
@@ -132,7 +146,7 @@ fn localized_docs_pin_exact_phase14_claims_and_acceptance_rows() {
         "docs/opi-spec.md",
         &spec,
         &[
-            "Status: implemented; remediation pending. Historical design: `docs/superpowers/specs/2026-07-11-phase14-provider-auth-design.md`. Corrective design: `docs/superpowers/specs/2026-07-14-phase14-exit-remediation-design.md`.",
+            "Status: implemented; remediation complete. Historical design: `docs/superpowers/specs/2026-07-11-phase14-provider-auth-design.md`. Corrective design: `docs/superpowers/specs/2026-07-14-phase14-exit-remediation-design.md`.",
             "held only by the approved Anthropic Messages, Copilot-compatible Chat, and Codex-compatible Responses paths",
             "Dynamic refresh has mock collection coverage but no Phase 14 production trigger and therefore closes no product acceptance path.",
         ],
@@ -141,31 +155,31 @@ fn localized_docs_pin_exact_phase14_claims_and_acceptance_rows() {
         "docs/opi-spec.zh.md",
         &spec_zh,
         &[
-            "状态：已实现；修复待完成。历史设计： `docs/superpowers/specs/2026-07-11-phase14-provider-auth-design.md`。修复设计： `docs/superpowers/specs/2026-07-14-phase14-exit-remediation-design.md`。",
+            "状态：已实现；修复已完成。历史设计： `docs/superpowers/specs/2026-07-11-phase14-provider-auth-design.md`。修复设计： `docs/superpowers/specs/2026-07-14-phase14-exit-remediation-design.md`。",
             "只有获批的 Anthropic Messages、Copilot-compatible Chat 与 Codex-compatible Responses 路径持有 `Arc<dyn AuthResolver>`",
             "动态 refresh 只有 mock collection 覆盖，第十四阶段不增加生产触发点，也不以它关闭产品验收路径。",
         ],
     );
 
     let exact_en_rows = [
-        "| SC1 credential storage and probes | 14.1 | `credential_store`, `doctor_cli`, and `list_models` fake-backend integration tests exercise production construction and redacted probe surfaces. |",
-        "| SC2 OAuth product flows | 14.2 | `oauth_auth` exercises the production registry, `/login`, `/logout`, PKCE/device-code flows, persistence, exact provider profiles, and `interactive::oauth_login_restores_terminal_after_flow_failure`. |",
-        "| SC3 live auth and session interaction | 14.2 | `oauth_auth`, `non_interactive`, and `oauth_auth::rpc_credential_needed_fails_without_blocking` exercise per-stream resolution on the three approved auth paths, typed retry/remediation, revocation, structured RPC failure, and no auto-login paths. |",
+        "| SC1 credential storage and probes | 14.1, 14.8 | Native-store selection plus async `credential_store`, `doctor_cli`, and `list_models` fake-backend tests exercise production startup, strict resolver errors, stored-only listing, and redacted probes. |",
+        "| SC2 OAuth product flows | 14.2, 14.9 | `interactive_auth` drives the production `/login` and `/logout` dispatcher, locked persistence, terminal suspension/restoration, and all three reviewed OAuth profiles. |",
+        "| SC3 live auth and session interaction | 14.2, 14.10 | Factory-built provider, `interactive_auth`, `json_mode`, RPC, and text tests cover lazy per-stream auth, changed credentials, bounded refresh, explicit same-turn retry, revocation, provider-id remediation, and no automatic login. |",
         "| SC4 Request and session affinity | 14.3 | `agent_loop_mock::session_id_reaches_every_request`, `session_runtime::phase14_session_affinity_tracks_new_resume_and_fork`, and `request_enrichment::session_affinity_wire_mappings` trace production propagation and exact positive/negative wire mappings. |",
-        "| SC5 capabilities and cache markers | 14.4 | `model_capabilities_migration` and Anthropic fixtures prove the nested capability model and capability-gated marker positions/TTL. |",
-        "| SC6 usage and cost | 14.5 | `usage_cost`, provider fixtures, and session runtime tests preserve `cache_write_1h_tokens` and `reasoning_tokens` subset semantics without double counting. |",
+        "| SC5 capabilities and cache markers | 14.4, 14.11 | `anthropic_cache_markers` captures capability-gated marker positions and TTL through a factory-built concrete Anthropic stream. |",
+        "| SC6 usage and cost | 14.5, 14.12 | Public-contract, provider-fixture, cost, and session-resume tests preserve optional `u64` child subsets, reject malformed usage, and prevent double counting. |",
         "| SC7 dynamic refresh substrate | 14.6 | `provider_collection` and `provider_trait` mock tests prove deterministic atomic replacement; this is substrate-only with no production trigger. |",
-        "| SC8 documentation and guards | 14.7 | `phase14_provider_auth_docs`, `oauth_auth::login_logout_commands_are_discoverable`, and `non_interactive::credential_needed_fails_without_prompt` pin localized docs, runtime help, and remediation. |",
+        "| SC8 documentation and guards | 14.7, 14.13 | `phase14_provider_auth_docs`, production-dispatcher TUI help, `json_mode`, RPC, and text tests pin localized truth, runtime discovery, typed remediation, and the renewed `api-map` disposition. |",
     ];
     let exact_zh_rows = [
-        "| SC1 凭据存储与 probe | 14.1 | `credential_store`、`doctor_cli` 与 `list_models` fake-backend 集成测试覆盖生产构造和已脱敏 probe 表面。 |",
-        "| SC2 OAuth 产品 flow | 14.2 | `oauth_auth` 覆盖生产 registry、`/login`、`/logout`、PKCE/device-code、持久化、精确 Provider profile，以及 `interactive::oauth_login_restores_terminal_after_flow_failure`。 |",
-        "| SC3 真实鉴权与会话交互 | 14.2 | `oauth_auth`、`non_interactive` 与 `oauth_auth::rpc_credential_needed_fails_without_blocking` 覆盖三个获批鉴权路径的按 stream 解析、类型化重试/修复、撤销、结构化 RPC 失败与禁止自动登录。 |",
+        "| SC1 凭据存储与 probe | 14.1, 14.8 | 原生 store 选择以及异步 `credential_store`、`doctor_cli` 与 `list_models` fake-backend 测试覆盖生产启动、严格 resolver 错误、仅已存储凭据的模型列表和脱敏 probe。 |",
+        "| SC2 OAuth 产品 flow | 14.2, 14.9 | `interactive_auth` 驱动生产 `/login` 与 `/logout` dispatcher、带锁持久化、终端暂停/恢复以及三个经审查 OAuth profile。 |",
+        "| SC3 真实鉴权与会话交互 | 14.2, 14.10 | Factory-built Provider、`interactive_auth`、`json_mode`、RPC 与文本测试覆盖惰性按 stream 鉴权、凭据变更、有界 refresh、显式同轮重试、撤销、provider-id 修复提示和禁止自动登录。 |",
         "| SC4 Request 与会话亲和 | 14.3 | `agent_loop_mock::session_id_reaches_every_request`、`session_runtime::phase14_session_affinity_tracks_new_resume_and_fork` 与 `request_enrichment::session_affinity_wire_mappings` 追踪生产传播和精确的正负 wire 映射。 |",
-        "| SC5 能力与 cache marker | 14.4 | `model_capabilities_migration` 与 Anthropic fixture 证明嵌套能力模型及能力门控 marker 位置/TTL。 |",
-        "| SC6 用量与费用 | 14.5 | `usage_cost`、Provider fixture 与 session runtime 测试保留 `cache_write_1h_tokens` 和 `reasoning_tokens` 子集语义且不重复计算。 |",
+        "| SC5 能力与 cache marker | 14.4, 14.11 | `anthropic_cache_markers` 通过 factory-built 具体 Anthropic stream 捕获能力门控的 marker 位置与 TTL。 |",
+        "| SC6 用量与费用 | 14.5, 14.12 | 公开契约、Provider fixture、费用和 session-resume 测试保留可选 `u64` 子集、拒绝非法用量并防止重复计算。 |",
         "| SC7 动态 refresh 基底 | 14.6 | `provider_collection` 与 `provider_trait` mock 测试证明确定性原子替换；它仅为基底、无生产触发。 |",
-        "| SC8 文档与 guard | 14.7 | `phase14_provider_auth_docs`、`oauth_auth::login_logout_commands_are_discoverable` 与 `non_interactive::credential_needed_fails_without_prompt` 固定本地化文档、运行时 help 与修复提示。 |",
+        "| SC8 文档与 guard | 14.7, 14.13 | `phase14_provider_auth_docs`、生产 dispatcher TUI help、`json_mode`、RPC 与文本测试固定本地化真相、运行时发现、类型化修复提示以及更新的 `api-map` disposition。 |",
     ];
     for row in exact_en_rows {
         assert!(
@@ -179,6 +193,92 @@ fn localized_docs_pin_exact_phase14_claims_and_acceptance_rows() {
             "localized spec must retain exact row `{row}`"
         );
     }
+}
+
+#[test]
+fn final_phase14_contracts_native_targets_and_api_map_are_truthful() {
+    let spec = read_repo_file("docs/opi-spec.md");
+    let spec_zh = read_repo_file("docs/opi-spec.zh.md");
+
+    for content in [&spec, &spec_zh] {
+        for exact in [
+            "x86_64-pc-windows-msvc",
+            "aarch64-pc-windows-msvc",
+            "x86_64-apple-darwin",
+            "aarch64-apple-darwin",
+            "x86_64-unknown-linux-gnu",
+            "aarch64-unknown-linux-gnu",
+            "windows-native-keyring-store",
+            "apple-native-keyring-store",
+            "zbus-secret-service-keyring-store",
+            "Windows Credential Manager",
+            "macOS Keychain Services",
+            "Freedesktop Secret Service",
+        ] {
+            assert!(content.contains(exact), "spec must name `{exact}`");
+        }
+        assert!(!content.contains("~/.local/share/opi/auth/"));
+        assert_claims(
+            "Phase 14 public signatures",
+            content,
+            &[
+                r#"pub trait Provider: Send + Sync {
+                    fn id(&self) -> &str;
+                    fn models(&self) -> &[ModelInfo];
+                    fn stream(&self, request: Request) -> EventStream;
+                    fn refresh_models(&self) -> BoxAuthFuture<'_, Result<Option<Vec<ModelInfo>>, ProviderError>>;
+                }"#,
+                r#"pub struct Request {
+                    pub model: String,
+                    pub system: Option<String>,
+                    pub messages: Vec<Message>,
+                    pub tools: Vec<ToolDef>,
+                    pub max_tokens: Option<u64>,
+                    pub temperature: Option<f64>,
+                    pub thinking: ThinkingConfig,
+                    pub stop_sequences: Vec<String>,
+                    pub metadata: Option<serde_json::Value>,
+                    pub cancel: CancellationToken,
+                    pub timeout: Option<std::time::Duration>,
+                    pub extra_headers: Vec<(String, String)>,
+                    pub cache_retention: CacheRetention,
+                    pub session_id: Option<String>,
+                }"#,
+                r#"pub struct Usage {
+                    pub input_tokens: u32,
+                    pub output_tokens: u32,
+                    pub cache_read_tokens: u32,
+                    pub cache_write_tokens: u32,
+                    pub cache_write_1h_tokens: Option<u64>,
+                    pub reasoning_tokens: Option<u64>,
+                    pub reported: bool,
+                }"#,
+                r#"pub struct CostBreakdown {
+                    pub input_cost: f64,
+                    pub output_cost: f64,
+                    pub cache_read_cost: f64,
+                    pub cache_write_cost: f64,
+                }"#,
+            ],
+        );
+    }
+
+    assert_claims(
+        "docs/opi-spec.md",
+        &spec,
+        &[
+            "`api-map`: `deferred-by-updated-design` under `docs/superpowers/specs/2026-07-14-phase14-exit-remediation-design.md`.",
+            "New trigger: one catalog/provider identity must require at least two concrete wire families and explicit provider profiles must be inadequate. A separate reviewed design must then define model-to-wire selection, per-stream auth, capability routing, and the `ProviderCollection` boundary.",
+        ],
+    );
+    assert_claims(
+        "docs/opi-spec.zh.md",
+        &spec_zh,
+        &[
+            "`api-map`：依据 `docs/superpowers/specs/2026-07-14-phase14-exit-remediation-design.md` 记为 `deferred-by-updated-design`。",
+            "新触发条件：一个 catalog/provider identity 必须要求至少两个具体 wire family，且显式 provider profile 必须不足以表达；届时必须由单独审查的设计定义 model-to-wire selection、per-stream auth、capability routing 和 `ProviderCollection` boundary。",
+        ],
+    );
 }
 
 #[test]
@@ -422,4 +522,61 @@ fn changelog_and_refresh_docs_remain_truthful() {
     let coding_sources = rust_sources_under("crates/opi-coding-agent/src");
     assert!(!coding_sources.contains("refresh_models("));
     assert!(!coding_sources.contains("ProviderCollection::refresh"));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn localized_truth_target_executes_declared_runtime_api_map() {
+    assert!(
+        AUTH_HELP.iter().any(|(command, description)| {
+            *command == "/login <provider>"
+                && *description == "authenticate and persist an OAuth credential"
+        }),
+        "localized truth target binds the production auth help table"
+    );
+    assert!(
+        AUTH_HELP.iter().any(|(command, description)| {
+            *command == "/logout <provider>" && *description == "delete the persisted credential"
+        }),
+        "localized truth target binds the production logout help table"
+    );
+
+    let workspace = tempfile::tempdir().unwrap();
+    let json = run_json_credential_capture(credential_runner(workspace.path())).await;
+    assert_eq!(json["exit_code"], ExitCode::AuthFailure as i32);
+    assert!(
+        json["stdout"]
+            .as_str()
+            .unwrap()
+            .contains("\"type\":\"CredentialNeeded\"")
+    );
+    assert!(
+        json["stdout"]
+            .as_str()
+            .unwrap()
+            .contains("/login anthropic")
+    );
+
+    let text = run_text_credential_capture(credential_runner(workspace.path())).await;
+    assert_eq!(text["exit_code"], ExitCode::AuthFailure as i32);
+    assert!(text["stderr"].as_str().unwrap().contains("anthropic"));
+    assert!(
+        text["stderr"]
+            .as_str()
+            .unwrap()
+            .contains("/login anthropic")
+    );
+
+    let rpc = run_rpc_stdio_capture("phase14_docs_rpc_run_stdio_child");
+    let remediation = rpc
+        .iter()
+        .find(|line| line["type"] == "CredentialNeeded")
+        .expect("RpcRunner::run emits typed credential remediation");
+    assert_eq!(remediation["provider_id"], "anthropic");
+    assert_eq!(remediation["remediation"], "/login anthropic");
+}
+
+#[tokio::test]
+#[ignore = "subprocess-only RPC stdio entry point"]
+async fn phase14_docs_rpc_run_stdio_child() {
+    phase14_auth_runtime::run_rpc_stdio_child().await;
 }

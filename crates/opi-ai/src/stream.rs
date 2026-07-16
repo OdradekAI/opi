@@ -29,6 +29,11 @@ impl StopReason {
     }
 }
 
+/// Provider-reported token usage.
+///
+/// The optional `u64` child subsets preserve absent versus explicit zero:
+/// `cache_write_1h_tokens` is contained by `cache_write_tokens`, and
+/// `reasoning_tokens` is contained by `output_tokens`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Usage {
     pub input_tokens: u32,

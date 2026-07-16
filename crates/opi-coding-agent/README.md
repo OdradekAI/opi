@@ -151,6 +151,10 @@ source when the backend is unavailable. No opi-managed plaintext credential
 file is created. `opi doctor` and `--list-models` await a probe and format only
 redacted present/absent/backend-unavailable state.
 
+Production startup installs Windows Credential Manager on Windows, macOS
+Keychain Services on macOS, or Freedesktop Secret Service on Linux before any
+credential-aware path constructs an entry.
+
 `/login <provider>` and `/logout <provider>` support Anthropic PKCE, GitHub
 Copilot device-code, and OpenAI Codex PKCE. Headless Anthropic/Codex flows can
 paste a code manually; Copilot presents its device code. Copilot uses an
@@ -161,8 +165,9 @@ is a non-refreshable bearer source and takes precedence over
 `ANTHROPIC_API_KEY` when no stored credential exists.
 
 Auth is re-resolved inside the three approved Anthropic, Copilot, and Codex
-provider streams. Interactive `CredentialNeeded` starts login only through the explicit user-facing flow and
-can retry the same pending turn after success. Non-interactive, JSON, and RPC
+provider streams. Only a successful explicit `/login <provider>` can retry a
+pending interactive turn; `CredentialNeeded` never starts login automatically.
+Non-interactive, JSON, and RPC
 modes do not prompt: they report the provider and `/login anthropic`-style
 remediation, then fail. `CredentialRevoked` is non-retryable and never causes
 automatic re-login.
@@ -315,6 +320,7 @@ With no prompt args, `opi` starts the ratatui TUI. Slash commands include:
 | `/fork` | Fork the active branch into a new parented session. |
 | `/clone` | Clone the active branch into a new parented session. |
 | `/image <path>` | Queue an image for the next prompt. |
+| `/help` | Show the registered authentication commands and descriptions. |
 | `/login <provider>` | Run the approved OAuth flow and persist the credential in the OS keychain. |
 | `/logout <provider>` | Delete the provider's stored credential. |
 | `exit` / `quit` | Exit. |

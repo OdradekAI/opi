@@ -10,6 +10,10 @@ use crate::message::{InputContent, Message, ToolDef};
 use crate::stream::AssistantStreamEvent;
 
 /// Provider trait — each concrete provider (Anthropic, OpenAI, etc.) implements this.
+///
+/// Runtime catalog refresh is an object-safe substrate. The coding agent has
+/// no production refresh trigger; callers that invoke [`Provider::refresh_models`]
+/// own collection-level atomic replacement.
 pub trait Provider: Send + Sync {
     /// Unique identifier for this provider instance (e.g. "anthropic").
     fn id(&self) -> &str;
@@ -221,7 +225,8 @@ pub enum ProviderError {
     /// No credential is available for the provider. Non-retryable: the caller
     /// must obtain a credential (interactive login or a typed non-interactive
     /// diagnostic) before retrying. Distinct from [`AuthFailed`](Self::AuthFailed)
-    /// because it routes to the login/credential-needed path, not retry.
+    /// because it routes to the login/credential-needed path, not retry. It
+    /// never starts login automatically.
     #[error("credential needed for provider '{provider_id}'; run `/login {provider_id}`")]
     CredentialNeeded { provider_id: String },
     /// A previously valid credential was rejected by the provider (e.g. 401 on

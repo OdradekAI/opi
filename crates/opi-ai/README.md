@@ -91,6 +91,11 @@ credentials surface as explicit, non-retryable `ProviderError::CredentialNeeded`
 `ProviderError::CredentialRevoked` variants. Per-call credentials remain out
 of scope: `extra_headers` rejects provider-managed auth headers.
 
+Capable built-in Anthropic models emit `cache_control` on the system prompt,
+final user text, final assistant text, and final tool definition. Long
+retention adds `ttl: "1h"`; short/default ephemeral retention omits the TTL,
+while explicit disablement and unknown/custom models emit no markers.
+
 `Request` adds `timeout`, `extra_headers`, `CacheRetention`, and `session_id`.
 The first three are public request-to-wire substrate; only `session_id` has a
 Phase 14 production producer in the coding harness. OpenAI-family adapters map
@@ -98,9 +103,13 @@ that id only through reviewed compatibility flags, while Anthropic uses
 model-gated cache markers. `ModelInfo` contains the existing nested
 `ModelCapabilities`; unknown/custom models default cache support off.
 
-`Usage::cache_write_1h_tokens` is a subset of cache-write tokens and
-`Usage::reasoning_tokens` is a subset of output tokens. Cost and total-token
-calculation count the parent buckets once. `Provider::refresh_models` and
+`Usage::cache_write_1h_tokens` and `Usage::reasoning_tokens` are optional
+`u64` child subsets, preserving absent versus explicitly reported zero.
+`CostBreakdown` has four lines: `input_cost`, `output_cost`,
+`cache_read_cost`, and `cache_write_cost`. The weighted one-hour write subset
+is folded into `cache_write_cost`, reasoning remains in `output_cost`, and
+cost and total-token calculation count the parent buckets once.
+`Provider::refresh_models` and
 `ProviderCollection::refresh` implement deterministic atomic catalog
 replacement, but remain substrate-only with no production trigger.
 
@@ -192,9 +201,10 @@ as Chat-Completions analogues, so server-side response chaining is not wired.
 Usage-side cache tokens are normalized where the provider supplies them
 (Anthropic `cache_read`/`cache_creation`, OpenAI Chat/Responses
 `cached_tokens`, Gemini `cached_content`, Bedrock `cache_read`/`cache_write`).
-Request-side prompt-caching breakpoints (for example Anthropic
-`cache_control`) are not emitted by opi; the `cache_key` profile flag is the
-available cache-affinity hint.
+For capable built-in Anthropic models, request-side prompt-caching breakpoints
+are emitted on the system prompt, final user/assistant text blocks, and final
+tool definition according to `CacheRetention`. Compatible OpenAI-style
+profiles use the separate `cache_key` cache-affinity hint.
 
 Provider response IDs are captured and round-tripped into
 `AssistantMessage::response_id` (Anthropic `message.id`, OpenAI Chat

@@ -114,12 +114,16 @@ impl<T: LoginTerminalControl> Drop for LoginTerminalGuard<'_, T> {
 enum ParsedAuthCommand<'a> {
     Login(&'a str),
     Logout(&'a str),
+    Help,
     Usage(&'static str),
     NotHandled,
 }
 
 fn parse_auth_command(input: &str) -> ParsedAuthCommand<'_> {
     let input = input.trim();
+    if input == "/help" {
+        return ParsedAuthCommand::Help;
+    }
     for (command, usage, login) in [
         ("/login", "usage: /login <provider>", true),
         ("/logout", "usage: /logout <provider>", false),
@@ -155,6 +159,13 @@ pub async fn dispatch_auth_command<T: LoginTerminalControl>(
 ) -> AuthCommandOutcome {
     match parse_auth_command(input) {
         ParsedAuthCommand::NotHandled => AuthCommandOutcome::NotHandled,
+        ParsedAuthCommand::Help => AuthCommandOutcome::Usage(
+            AUTH_HELP
+                .iter()
+                .map(|(command, description)| format!("{command}  {description}"))
+                .collect::<Vec<_>>()
+                .join("\n"),
+        ),
         ParsedAuthCommand::Usage(usage) => AuthCommandOutcome::Usage(usage.to_owned()),
         ParsedAuthCommand::Logout(provider_id) => {
             if services.registry.lookup(provider_id).is_none() {

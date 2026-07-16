@@ -141,6 +141,10 @@ refresh。持久化 API key 和 OAuth envelope 使用 OS keychain；backend 不�
 可回退到对应 env source。不会创建 opi 自行管理的明文凭据文件。`opi doctor` 与
 `--list-models` 等待 probe，并只格式化已脱敏的 present/absent/backend-unavailable 状态。
 
+生产启动会在任何凭据感知路径构造 entry 前，先在 Windows 上安装 Windows
+Credential Manager、在 macOS 上安装 macOS Keychain Services，或在 Linux 上安装
+Freedesktop Secret Service。
+
 `/login <provider>` 与 `/logout <provider>` 支持 Anthropic PKCE、GitHub Copilot
 device-code 和 OpenAI Codex PKCE。无浏览器的 Anthropic/Codex flow 可手动粘贴 code；
 Copilot 显示 device code。Copilot 使用显式 OpenAI Chat 兼容 profile，Codex 使用现有
@@ -148,8 +152,8 @@ Responses 实现的 `/codex/responses`；这不是宽泛 Copilot 多 wire 对等
 provider 类型。没有已存储凭据时，`ANTHROPIC_OAUTH_TOKEN` 是优先于
 `ANTHROPIC_API_KEY` 的不可 refresh bearer source。
 
-只有三个获批的 Anthropic、Copilot 与 Codex Provider stream 会重新解析鉴权。交互式
-`CredentialNeeded` 只通过显式用户界面启动登录，并可在成功后重试同一个待处理轮次。
+只有三个获批的 Anthropic、Copilot 与 Codex Provider stream 会重新解析鉴权。只有成功的显式
+`/login <provider>` 才能重试待处理的交互轮次；`CredentialNeeded` 绝不自动启动登录。
 非交互、JSON 与 RPC 模式不提示：它们报告
 provider 和 `/login anthropic` 形式的修复提示后失败。`CredentialRevoked` 不可重试，
 绝不会造成自动重新登录。
@@ -293,6 +297,7 @@ inline 结果；四个导航工具都会在访问 10,000 个条目后停止遍�
 | `/fork` | 把当前活跃分支 fork 成新的父子会话。 |
 | `/clone` | 把当前活跃分支 clone 成新的父子会话。 |
 | `/image <path>` | 为下一条提示词排队一张图片。 |
+| `/help` | 显示已注册的鉴权命令及其说明。 |
 | `/login <provider>` | 运行获批 OAuth flow，并把凭据持久化到 OS keychain。 |
 | `/logout <provider>` | 删除该 Provider 的已存储凭据。 |
 | `exit` / `quit` | 退出。 |

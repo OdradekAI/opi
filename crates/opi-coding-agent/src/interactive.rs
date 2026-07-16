@@ -6,6 +6,8 @@
 
 use std::io;
 use std::sync::{Arc, Mutex};
+#[cfg(debug_assertions)]
+use std::sync::{OnceLock, atomic::AtomicU64, atomic::Ordering};
 
 use crossterm::{
     event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
@@ -29,7 +31,8 @@ use opi_tui::{ImageData, ImagePayload, MediaType as TuiMediaType};
 
 use crate::harness::{CodingHarness, SessionMetadata};
 use crate::interactive_auth::{
-    AuthCommandOutcome, AuthCommandServices, dispatch_auth_command, is_terminal_restore_failure,
+    AuthCommandOutcome, AuthCommandServices, LoginTerminalControl, dispatch_auth_command,
+    is_terminal_restore_failure,
 };
 use crate::oauth::{OAuthProviderRegistry, TuiLoginPresenter};
 
@@ -91,6 +94,106 @@ enum SessionForkCommand {
 #[derive(Default)]
 pub struct PendingAuthTurn {
     provider_id: Option<String>,
+}
+
+/// Capture produced by the debug-only, headless interactive entry-point driver.
+///
+/// The driver is an integration-test seam: it cannot be selected by terminal
+/// input, configuration, or environment variables, and it is absent from
+/// release builds.
+#[cfg(debug_assertions)]
+#[doc(hidden)]
+#[derive(Clone, Debug, Default, serde::Serialize)]
+pub struct InteractiveTuiTestCapture {
+    pub system_messages: Vec<String>,
+    pub terminal_transitions: Vec<String>,
+}
+
+#[cfg(debug_assertions)]
+#[derive(Clone)]
+struct InteractiveTuiTestDriver {
+    id: u64,
+    inputs: Vec<String>,
+    capture: Arc<Mutex<InteractiveTuiTestCapture>>,
+}
+
+#[cfg(debug_assertions)]
+static INTERACTIVE_TUI_TEST_DRIVER: OnceLock<Mutex<Option<InteractiveTuiTestDriver>>> =
+    OnceLock::new();
+#[cfg(debug_assertions)]
+static NEXT_INTERACTIVE_TUI_TEST_DRIVER_ID: AtomicU64 = AtomicU64::new(1);
+
+#[cfg(debug_assertions)]
+fn interactive_tui_test_driver_slot() -> &'static Mutex<Option<InteractiveTuiTestDriver>> {
+    INTERACTIVE_TUI_TEST_DRIVER.get_or_init(|| Mutex::new(None))
+}
+
+/// RAII guard for the debug-only headless TUI driver.
+#[cfg(debug_assertions)]
+#[doc(hidden)]
+pub struct InteractiveTuiTestDriverGuard {
+    id: u64,
+    capture: Arc<Mutex<InteractiveTuiTestCapture>>,
+}
+
+#[cfg(debug_assertions)]
+impl InteractiveTuiTestDriverGuard {
+    #[doc(hidden)]
+    pub fn capture(&self) -> InteractiveTuiTestCapture {
+        self.capture
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
+    }
+}
+
+#[cfg(debug_assertions)]
+impl Drop for InteractiveTuiTestDriverGuard {
+    fn drop(&mut self) {
+        let mut slot = interactive_tui_test_driver_slot()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if slot.as_ref().is_some_and(|driver| driver.id == self.id) {
+            *slot = None;
+        }
+    }
+}
+
+/// Install one RAII-scoped, race-safe headless script for `run_interactive_tui`.
+#[cfg(debug_assertions)]
+#[doc(hidden)]
+pub fn install_interactive_tui_test_driver<I, S>(
+    inputs: I,
+) -> io::Result<InteractiveTuiTestDriverGuard>
+where
+    I: IntoIterator<Item = S>,
+    S: Into<String>,
+{
+    let id = NEXT_INTERACTIVE_TUI_TEST_DRIVER_ID.fetch_add(1, Ordering::Relaxed);
+    let capture = Arc::new(Mutex::new(InteractiveTuiTestCapture::default()));
+    let driver = InteractiveTuiTestDriver {
+        id,
+        inputs: inputs.into_iter().map(Into::into).collect(),
+        capture: capture.clone(),
+    };
+    let mut slot = interactive_tui_test_driver_slot()
+        .lock()
+        .map_err(|_| io::Error::other("headless TUI driver lock poisoned"))?;
+    if slot.is_some() {
+        return Err(io::Error::other(
+            "a headless TUI driver is already installed",
+        ));
+    }
+    *slot = Some(driver);
+    Ok(InteractiveTuiTestDriverGuard { id, capture })
+}
+
+#[cfg(debug_assertions)]
+fn active_interactive_tui_test_driver() -> Option<InteractiveTuiTestDriver> {
+    interactive_tui_test_driver_slot()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .clone()
 }
 
 impl PendingAuthTurn {
@@ -381,6 +484,17 @@ pub async fn run_interactive_tui(
         .ok_or_else(|| io::Error::other("interactive OAuth registry is not configured"))?;
 
     let harness = Arc::new(tokio::sync::Mutex::new(harness));
+
+    #[cfg(debug_assertions)]
+    if let Some(driver) = active_interactive_tui_test_driver() {
+        return run_headless_interactive_tui_driver(
+            driver,
+            &harness,
+            credential_store,
+            oauth_registry,
+        )
+        .await;
+    }
 
     // Setup terminal
     terminal::enable_raw_mode()?;
@@ -731,31 +845,27 @@ async fn tui_event_loop(
                 }
 
                 let presenter = TuiLoginPresenter::new();
-                let auth_outcome = dispatch_auth_command(
+                if let Some(routed) = dispatch_interactive_auth_input(
                     &input,
                     terminal,
-                    AuthCommandServices {
-                        store: credential_store.as_ref(),
-                        registry: &oauth_registry,
-                        presenter: &presenter,
-                    },
-                )
-                .await;
-                let retry = spawn_pending_auth_retry(
+                    credential_store.as_ref(),
+                    &oauth_registry,
+                    &presenter,
                     &mut pending_auth_turn,
-                    &auth_outcome,
                     harness.clone(),
-                );
-                if let Some(message) = route_auth_outcome(auth_outcome)? {
+                )
+                .await?
+                {
                     let mut s = state
                         .lock()
                         .map_err(|_| io::Error::other("TUI state lock poisoned"))?;
-                    s.messages.push(TuiMessage::new(TuiRole::System, message));
-                    if retry.is_some() {
+                    s.messages
+                        .push(TuiMessage::new(TuiRole::System, routed.message));
+                    if routed.retry.is_some() {
                         s.app_state = AppState::Thinking;
                     }
                     drop(s);
-                    if let Some(handle) = retry {
+                    if let Some(handle) = routed.retry {
                         pending = Some(handle);
                     }
                     continue;
@@ -832,6 +942,106 @@ fn route_auth_outcome(outcome: AuthCommandOutcome) -> io::Result<Option<String>>
             Some(format!("[authentication command failed: {message}]"))
         }
     })
+}
+
+struct RoutedAuthCommand {
+    message: String,
+    retry: Option<tokio::task::JoinHandle<Result<Vec<AgentMessage>, AgentError>>>,
+}
+
+async fn dispatch_interactive_auth_input<T: LoginTerminalControl>(
+    input: &str,
+    terminal: &mut T,
+    credential_store: &crate::credential_store::KeychainCredentialStore,
+    oauth_registry: &OAuthProviderRegistry,
+    presenter: &dyn opi_ai::auth::LoginPresenter,
+    pending_auth_turn: &mut PendingAuthTurn,
+    harness: Arc<tokio::sync::Mutex<CodingHarness>>,
+) -> io::Result<Option<RoutedAuthCommand>> {
+    let outcome = dispatch_auth_command(
+        input,
+        terminal,
+        AuthCommandServices {
+            store: credential_store,
+            registry: oauth_registry,
+            presenter,
+        },
+    )
+    .await;
+    let retry = spawn_pending_auth_retry(pending_auth_turn, &outcome, harness);
+    Ok(route_auth_outcome(outcome)?.map(|message| RoutedAuthCommand { message, retry }))
+}
+
+#[cfg(debug_assertions)]
+struct HeadlessLoginTerminal {
+    capture: Arc<Mutex<InteractiveTuiTestCapture>>,
+}
+
+#[cfg(debug_assertions)]
+impl LoginTerminalControl for HeadlessLoginTerminal {
+    fn suspend_for_login(&mut self) -> io::Result<()> {
+        self.capture
+            .lock()
+            .map_err(|_| io::Error::other("headless TUI capture lock poisoned"))?
+            .terminal_transitions
+            .push("suspend".into());
+        Ok(())
+    }
+
+    fn resume_after_login(&mut self) -> io::Result<()> {
+        self.capture
+            .lock()
+            .map_err(|_| io::Error::other("headless TUI capture lock poisoned"))?
+            .terminal_transitions
+            .push("resume".into());
+        Ok(())
+    }
+}
+
+#[cfg(debug_assertions)]
+async fn run_headless_interactive_tui_driver(
+    driver: InteractiveTuiTestDriver,
+    harness: &Arc<tokio::sync::Mutex<CodingHarness>>,
+    credential_store: Arc<crate::credential_store::KeychainCredentialStore>,
+    oauth_registry: OAuthProviderRegistry,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mut terminal = HeadlessLoginTerminal {
+        capture: driver.capture.clone(),
+    };
+    let presenter = TuiLoginPresenter::new();
+    let mut pending_auth_turn = PendingAuthTurn::default();
+
+    for input in driver.inputs {
+        if input == "exit" || input == "quit" {
+            return Ok(());
+        }
+        let routed = dispatch_interactive_auth_input(
+            &input,
+            &mut terminal,
+            credential_store.as_ref(),
+            &oauth_registry,
+            &presenter,
+            &mut pending_auth_turn,
+            harness.clone(),
+        )
+        .await?
+        .ok_or_else(|| {
+            io::Error::other(format!(
+                "headless TUI driver accepts only auth commands or exit, got {input:?}"
+            ))
+        })?;
+        driver
+            .capture
+            .lock()
+            .map_err(|_| io::Error::other("headless TUI capture lock poisoned"))?
+            .system_messages
+            .push(routed.message);
+        if let Some(retry) = routed.retry {
+            retry.await??;
+        }
+    }
+
+    Err(io::Error::other("headless TUI script ended without exit").into())
 }
 
 fn build_shell(s: &TuiState) -> Shell {

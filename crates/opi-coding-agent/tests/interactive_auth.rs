@@ -11,13 +11,25 @@ use opi_ai::test_support::{self, MockProvider, MockResponse};
 use opi_coding_agent::config::OpiConfig;
 use opi_coding_agent::credential_store::{FakeKeyringBackend, KeychainCredentialStore};
 use opi_coding_agent::harness::CodingHarness;
-use opi_coding_agent::interactive::{PendingAuthTurn, spawn_pending_auth_retry};
+use opi_coding_agent::interactive::{
+    PendingAuthTurn, install_interactive_tui_test_driver, run_interactive_tui,
+    spawn_pending_auth_retry,
+};
 use opi_coding_agent::interactive_auth::{
     AuthCommandOutcome, AuthCommandServices, LoginTerminalControl, dispatch_auth_command,
 };
 use opi_coding_agent::oauth::OAuthProviderRegistry;
 use opi_coding_agent::policy::ToolSelection;
+use opi_coding_agent::runner::ExitCode;
+use opi_tui::Keybindings;
 use secrecy::SecretString;
+
+#[path = "common/phase14_auth_runtime.rs"]
+mod phase14_auth_runtime;
+use phase14_auth_runtime::{
+    credential_runner, run_json_credential_capture, run_rpc_stdio_capture,
+    run_text_credential_capture,
+};
 
 const PROVIDERS: [&str; 3] = ["anthropic", "copilot", "codex"];
 const SECRET_CANARY: &str = "AUTH-DO-NOT-LEAK";
@@ -444,6 +456,134 @@ async fn interactive_auth_dispatcher_parses_the_reviewed_command_forms() {
         terminal.transitions,
         ["suspend", "resume", "suspend", "resume"]
     );
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn interactive_auth_help_is_discoverable_through_dispatcher() {
+    let workspace = tempfile::tempdir().unwrap();
+    let store = Arc::new(test_store(workspace.path(), Duration::from_secs(1)));
+    let registry = registry_with(PROVIDERS.map(|id| (id, LoginBehavior::Success)));
+    let provider = MockProvider::new("mock", Vec::new());
+    let mut harness = CodingHarness::builder(
+        Box::new(provider),
+        "mock:mock-model".into(),
+        OpiConfig::default(),
+        workspace.path().to_path_buf(),
+    )
+    .tool_selection(ToolSelection::Disabled)
+    .build();
+    harness.credential_store = Some(store);
+    harness.oauth_registry = Some(registry);
+
+    let driver = install_interactive_tui_test_driver(["/help", "exit"])
+        .expect("the debug-only headless TUI driver installs once");
+    run_interactive_tui(
+        harness,
+        "mock:mock-model".into(),
+        "default",
+        Keybindings::default(),
+    )
+    .await
+    .expect("outer interactive entry point handles scripted auth input");
+    let capture = driver.capture();
+    let help = capture
+        .system_messages
+        .iter()
+        .find(|message| message.contains("/login <provider>"))
+        .expect("/help must render production command help through run_interactive_tui");
+
+    for (command, description) in [
+        (
+            "/login <provider>",
+            "authenticate and persist an OAuth credential",
+        ),
+        ("/logout <provider>", "delete the persisted credential"),
+    ] {
+        assert!(help.contains(command), "missing command {command}: {help}");
+        assert!(
+            help.contains(description),
+            "missing description {description}: {help}"
+        );
+    }
+    assert!(capture.terminal_transitions.is_empty());
+
+    let json_runner = credential_runner(workspace.path());
+    let json = run_json_credential_capture(json_runner).await;
+    let text_runner = credential_runner(workspace.path());
+    let text = run_text_credential_capture(text_runner).await;
+    let rpc = run_rpc_stdio_capture("phase14_rpc_run_stdio_child");
+
+    assert_eq!(json["exit_code"], ExitCode::AuthFailure as i32);
+    assert!(
+        json["stdout"]
+            .as_str()
+            .unwrap()
+            .contains("\"type\":\"CredentialNeeded\"")
+    );
+    assert!(
+        json["stdout"]
+            .as_str()
+            .unwrap()
+            .contains("/login anthropic")
+    );
+    assert_eq!(text["exit_code"], ExitCode::AuthFailure as i32);
+    assert!(text["stderr"].as_str().unwrap().contains("anthropic"));
+    assert!(
+        text["stderr"]
+            .as_str()
+            .unwrap()
+            .contains("/login anthropic")
+    );
+    let remediation = rpc
+        .iter()
+        .find(|line| line["type"] == "CredentialNeeded")
+        .expect("RpcRunner::run emits typed credential remediation");
+    assert_eq!(remediation["provider_id"], "anthropic");
+    assert_eq!(remediation["remediation"], "/login anthropic");
+
+    if let Some(root) = std::env::var_os("OPI_TEST_ARTIFACT_DIR") {
+        let protocol = std::path::PathBuf::from(root).join("protocol");
+        std::fs::create_dir_all(&protocol).expect("create protocol artifact directory");
+        std::fs::write(
+            protocol.join("runtime-auth-help-tui.json"),
+            serde_json::to_vec_pretty(&serde_json::json!({
+                "entry_point": "run_interactive_tui",
+                "capture": capture,
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        std::fs::write(
+            protocol.join("runtime-auth-help-ndjson-metadata.json"),
+            serde_json::to_vec_pretty(&json).unwrap(),
+        )
+        .unwrap();
+        std::fs::write(
+            protocol.join("run-runtime-auth-help.ndjson"),
+            json["stdout"].as_str().unwrap(),
+        )
+        .unwrap();
+        std::fs::write(
+            protocol.join("runtime-auth-help-text.json"),
+            serde_json::to_vec_pretty(&text).unwrap(),
+        )
+        .unwrap();
+        std::fs::write(
+            protocol.join("runtime-auth-help-rpc.jsonl"),
+            rpc.iter()
+                .map(serde_json::Value::to_string)
+                .collect::<Vec<_>>()
+                .join("\n")
+                + "\n",
+        )
+        .unwrap();
+    }
+}
+
+#[tokio::test]
+#[ignore = "subprocess-only RPC stdio entry point"]
+async fn phase14_rpc_run_stdio_child() {
+    phase14_auth_runtime::run_rpc_stdio_child().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

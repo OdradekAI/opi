@@ -183,13 +183,16 @@ prefix. Cost summaries are omitted when usage or pricing is unknown.
 OS-keychain `CredentialResolver`, an env-var fallback for API keys, and one
 secret-free coordination file (`credential.lock`). It never writes an
 opi-managed plaintext credential file. `opi doctor` and `--list-models` probe
-only redacted credential state.
+only redacted credential state. On Windows, macOS, and Linux, persisted
+credentials use Windows Credential Manager, macOS Keychain Services, and
+Freedesktop Secret Service, respectively.
 
 Interactive `/login <provider>` and `/logout <provider>` support Anthropic
 PKCE, GitHub Copilot device-code, and OpenAI Codex PKCE. This is exact auth and
 compatibility-profile coverage, not broad Copilot multi-wire parity and not a
-separate Codex provider type. `CredentialNeeded` can retry the same pending
-interactive turn after a successful user-initiated login. Non-interactive,
+separate Codex provider type. Only a successful, user-initiated
+`/login <provider>` retries a pending interactive turn; `CredentialNeeded`
+never starts login automatically. Non-interactive,
 JSON, and RPC modes instead report the provider plus `/login <provider>` and
 fail without starting OAuth. `CredentialRevoked` is non-retryable; opi does
 not auto-relogin mid-stream.

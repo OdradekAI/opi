@@ -501,6 +501,7 @@ pub trait Provider: Send + Sync {
     fn id(&self) -> &str;
     fn models(&self) -> &[ModelInfo];
     fn stream(&self, request: Request) -> EventStream;
+    fn refresh_models(&self) -> BoxAuthFuture<'_, Result<Option<Vec<ModelInfo>>, ProviderError>>;
 }
 
 pub type EventStream =
@@ -521,8 +522,36 @@ pub struct Request {
     pub stop_sequences: Vec<String>,
     pub metadata: Option<serde_json::Value>,
     pub cancel: CancellationToken,
+    pub timeout: Option<std::time::Duration>,
+    pub extra_headers: Vec<(String, String)>,
+    pub cache_retention: CacheRetention,
+    pub session_id: Option<String>,
 }
 ```
+
+Provider 上报的用量与费用行为：
+
+```rust
+pub struct Usage {
+    pub input_tokens: u32,
+    pub output_tokens: u32,
+    pub cache_read_tokens: u32,
+    pub cache_write_tokens: u32,
+    pub cache_write_1h_tokens: Option<u64>,
+    pub reasoning_tokens: Option<u64>,
+    pub reported: bool,
+}
+
+pub struct CostBreakdown {
+    pub input_cost: f64,
+    pub output_cost: f64,
+    pub cache_read_cost: f64,
+    pub cache_write_cost: f64,
+}
+```
+
+可选子集保留缺失与显式上报零的区别。加权的一小时 cache-write 子集折算进
+`cache_write_cost`，reasoning 仍计入 `output_cost`，total 只计一次每个父 bucket。
 
 供应商优先级：
 
@@ -792,7 +821,6 @@ new_line = "shift+enter"
 ~/.config/opi/config.toml
 ~/.config/opi/themes/
 ~/.local/share/opi/sessions/
-~/.local/share/opi/auth/
 ```
 
 Windows 上应当使用 `%APPDATA%\opi\` 存放配置类数据，`%LOCALAPPDATA%\opi\` 存放缓存类数据。
@@ -1353,26 +1381,46 @@ Phase 13 交接：会话工作可以依赖经由共享 `opi-ai` 类型传递的 
 
 ### 第十四阶段 - Provider & Auth
 
-状态：已实现；修复待完成。历史设计：
+状态：已实现；修复已完成。历史设计：
 `docs/superpowers/specs/2026-07-11-phase14-provider-auth-design.md`。修复设计：
 `docs/superpowers/specs/2026-07-14-phase14-exit-remediation-design.md`。
 
+生产启动会在任何凭据感知路径之前安装原生凭据 store：
+
+| 发布目标 | Store crate | 原生服务 |
+|---|---|---|
+| `x86_64-pc-windows-msvc`, `aarch64-pc-windows-msvc` | `windows-native-keyring-store` | Windows Credential Manager |
+| `x86_64-apple-darwin`, `aarch64-apple-darwin` | `apple-native-keyring-store` | macOS Keychain Services |
+| `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu` | `zbus-secret-service-keyring-store` | Freedesktop Secret Service |
+
 第十四阶段把 Provider/Auth 集群提升为正式阶段。它增加 OS keychain 凭据存储（`CredentialStore`/`Credential` 在 `opi-ai`；keychain/env 实现与 `CredentialResolver` 在 `opi-coding-agent`）、通过 `OAuthProvider` 契约实现三个 pi provider（Anthropic、GitHub Copilot、OpenAI Codex）的 OAuth（只有获批的 Anthropic Messages、Copilot-compatible Chat 与 Codex-compatible Responses 路径持有 `Arc<dyn AuthResolver>`，由 coding-agent 所有的 `AuthSource` 实现按请求重新解析鉴权），以及对 `opi_ai::Request` 的增补丰富（`timeout`、`extra_headers`、`cache_retention`、`session_id`）、`Usage`/`CostBreakdown` 的 cache 与 reasoning 记账、把现有 `opi_ai::registry::ModelCapabilities` 迁移为 `ModelInfo` 上唯一的嵌套能力值以驱动 Anthropic prompt-cache 标记，以及动态 `refresh_models` trait 基底。`cache_write_1h_tokens` 是 cache-write 的子集，`reasoning_tokens` 是 output 的子集，因此成本和 token 总数不会重复计算。前三个 Request 参数在第十四阶段只是公开的 `opi-ai` 基底，不新增 config/harness 生产端；只有 `session_id` 贯穿真实的 harness/agent 路径。动态 refresh 只有 mock collection 覆盖，第十四阶段不增加生产触发点，也不以它关闭产品验收路径。该存储使用 `fs4` 锁定并在边界使用 `secrecy`；不存在 opi 管理的明文凭据文件。非目标：按调用 `apiKey` 覆盖（pi `ApiStreamOptions`）、`onPayload`/`onResponse` 流式钩子、流式过程中自动重新登录、宽泛的 Copilot 多 wire catalog 对等、独立 Codex provider 类型，以及贯穿 provider 构造的端到端 `SecretString`。
 
+`cache_write_1h_tokens` 与 `reasoning_tokens` 都是可选 `u64` 子字段，因此能区分
+缺失与显式上报的零。四行 `CostBreakdown` 把加权的一小时 write 折算进
+`cache_write_cost`，把 reasoning 保留在 `output_cost`，总量只计一次每个父 bucket。
+
 第十四阶段明确保留八条边界：不创建 opi 管理的明文凭据文件；不在 stream 中途自动重新登录；不允许按调用覆盖凭据（`apiKey`/`env`）或 Provider 管理的鉴权 header（`Request::extra_headers` 只可附加非保留 transport header）；不增加 `onPayload`/`onResponse` 流式钩子；不在 `Request` 上增加 `maxRetries`/`maxRetryDelay`；不进行贯穿 Provider 构造的端到端 `SecretString` 迁移；不增加 Anthropic、GitHub Copilot 与 OpenAI Codex 之外的 OAuth Provider；不修改 session schema 或 context reconstruction。TUI 改动仅限审查过的 `/login`、`/logout`、`CredentialNeeded` presenter，以及登录期间暂停 raw/alternate-screen。
+
+只有用户显式执行且成功的 `/login <provider>` 才会重试待处理的交互轮次；
+`CredentialNeeded` 绝不自动启动登录。JSON、RPC 和文本模式报告 `provider_id` 与
+`/login <provider>` 修复提示，然后在不启动 presenter、浏览器或输入提示的情况下失败。
+
+`api-map`：依据 `docs/superpowers/specs/2026-07-14-phase14-exit-remediation-design.md`
+记为 `deferred-by-updated-design`。旧触发条件已发生，但当前的显式 provider profile 仍然足够。
+新触发条件：一个 catalog/provider identity 必须要求至少两个具体 wire family，且显式 provider profile 必须不足以表达；届时必须由单独审查的设计定义 model-to-wire selection、per-stream auth、capability routing 和 `ProviderCollection` boundary。
 
 第十四阶段验收追踪：
 
 | 条件 | Owner | 生产/证据追踪 |
 |---|---:|---|
-| SC1 凭据存储与 probe | 14.1 | `credential_store`、`doctor_cli` 与 `list_models` fake-backend 集成测试覆盖生产构造和已脱敏 probe 表面。 |
-| SC2 OAuth 产品 flow | 14.2 | `oauth_auth` 覆盖生产 registry、`/login`、`/logout`、PKCE/device-code、持久化、精确 Provider profile，以及 `interactive::oauth_login_restores_terminal_after_flow_failure`。 |
-| SC3 真实鉴权与会话交互 | 14.2 | `oauth_auth`、`non_interactive` 与 `oauth_auth::rpc_credential_needed_fails_without_blocking` 覆盖三个获批鉴权路径的按 stream 解析、类型化重试/修复、撤销、结构化 RPC 失败与禁止自动登录。 |
+| SC1 凭据存储与 probe | 14.1, 14.8 | 原生 store 选择以及异步 `credential_store`、`doctor_cli` 与 `list_models` fake-backend 测试覆盖生产启动、严格 resolver 错误、仅已存储凭据的模型列表和脱敏 probe。 |
+| SC2 OAuth 产品 flow | 14.2, 14.9 | `interactive_auth` 驱动生产 `/login` 与 `/logout` dispatcher、带锁持久化、终端暂停/恢复以及三个经审查 OAuth profile。 |
+| SC3 真实鉴权与会话交互 | 14.2, 14.10 | Factory-built Provider、`interactive_auth`、`json_mode`、RPC 与文本测试覆盖惰性按 stream 鉴权、凭据变更、有界 refresh、显式同轮重试、撤销、provider-id 修复提示和禁止自动登录。 |
 | SC4 Request 与会话亲和 | 14.3 | `agent_loop_mock::session_id_reaches_every_request`、`session_runtime::phase14_session_affinity_tracks_new_resume_and_fork` 与 `request_enrichment::session_affinity_wire_mappings` 追踪生产传播和精确的正负 wire 映射。 |
-| SC5 能力与 cache marker | 14.4 | `model_capabilities_migration` 与 Anthropic fixture 证明嵌套能力模型及能力门控 marker 位置/TTL。 |
-| SC6 用量与费用 | 14.5 | `usage_cost`、Provider fixture 与 session runtime 测试保留 `cache_write_1h_tokens` 和 `reasoning_tokens` 子集语义且不重复计算。 |
+| SC5 能力与 cache marker | 14.4, 14.11 | `anthropic_cache_markers` 通过 factory-built 具体 Anthropic stream 捕获能力门控的 marker 位置与 TTL。 |
+| SC6 用量与费用 | 14.5, 14.12 | 公开契约、Provider fixture、费用和 session-resume 测试保留可选 `u64` 子集、拒绝非法用量并防止重复计算。 |
 | SC7 动态 refresh 基底 | 14.6 | `provider_collection` 与 `provider_trait` mock 测试证明确定性原子替换；它仅为基底、无生产触发。 |
-| SC8 文档与 guard | 14.7 | `phase14_provider_auth_docs`、`oauth_auth::login_logout_commands_are_discoverable` 与 `non_interactive::credential_needed_fails_without_prompt` 固定本地化文档、运行时 help 与修复提示。 |
+| SC8 文档与 guard | 14.7, 14.13 | `phase14_provider_auth_docs`、生产 dispatcher TUI help、`json_mode`、RPC 与文本测试固定本地化真相、运行时发现、类型化修复提示以及更新的 `api-map` disposition。 |
 
 ### 第十五阶段 - Safety & Sandbox
 
