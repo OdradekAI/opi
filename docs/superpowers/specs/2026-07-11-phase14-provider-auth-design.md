@@ -7,10 +7,13 @@ Historical note: under the 2026-07-10 roadmap redesign
 This doc synthesizes tickets T1 (credential store), T2 (OAuth + per-request
 auth), and T3 (opi-ai Request enrichment), all resolved 2026-07-11.
 
-> Remediation status (2026-07-14): tasks 14.1-14.7 shipped, but phase exit
-> returned `not-met-block`. The reviewed corrective source is
+> Remediation status (updated 2026-07-17): tasks 14.1-14.13 shipped, but the
+> latest Phase F reconstruction still leaves SC1-SC3 `not-met`. The reviewed
+> corrective source is
 > `docs/superpowers/specs/2026-07-14-phase14-exit-remediation-design.md`;
-> it adds tasks 14.8-14.13 without rewriting this historical design.
+> it adds tasks 14.14-14.16 after the completed 14.8-14.13 remediation. This
+> historical design is changed only where its universal manual-paste wording
+> contradicted the implemented Copilot device-code flow.
 
 ## Overview
 
@@ -31,8 +34,9 @@ breaks this doc into tasks; it is not itself a task list.
 - An OS-keychain credential store with env-var fallback, atomic cross-process
   locking, and redacted probing — no opi-managed plaintext credential file.
 - OAuth (PKCE authorization-code and device-code flows) for Anthropic, GitHub
-  Copilot, and OpenAI Codex, with double-checked-locking token refresh and a
-  manual-paste login fallback for headless/no-browser hosts.
+  Copilot, and OpenAI Codex, with double-checked-locking token refresh, PKCE
+  manual-code fallback, and Copilot device-code presentation for
+  headless/no-browser hosts.
 - Per-request auth re-resolution on the live run path without moving dispatch
   onto `ProviderCollection` (preserving the Phase 10 boundary).
 - Additive `Request` scalars (`timeout`, `extra_headers`, `cache_retention`,
@@ -75,9 +79,11 @@ This is a deliberate security improvement, not parity.
 
 pi has three OAuth providers — Anthropic, GitHub Copilot, OpenAI Codex — using
 PKCE authorization-code with a local `127.0.0.1` callback (Anthropic, Codex) and
-device-code (Copilot). opi matches all three. Every flow supports a manual
-code/URL-paste fallback for headless and SSH hosts, mirroring pi's
-`onManualCodeInput`.
+device-code (Copilot). opi matches all three. Anthropic and Codex support the
+manual code/URL-paste fallback for headless and SSH hosts. Copilot instead
+presents its verification URL and user code and polls the device endpoint;
+that device-code presentation is its headless/manual flow and never calls
+`LoginPresenter::await_manual_code`.
 
 pi's live run path routes through `ProviderCollection` per request for auth
 re-resolution. opi keeps the live path on `Box<dyn Provider>`
@@ -141,7 +147,7 @@ single nested value. It does not create a second same-named type.
 | P0 | Existing `registry::ModelCapabilities` migrated onto `ModelInfo` | `opi-ai` | Make the existing type `#[non_exhaustive]`, add exact `supports_cache_control` and `supports_long_cache_retention` fields, embed it in `ModelInfo`, and migrate registry/collection capability queries. Custom/unknown defaults stay off. |
 | P0 | Anthropic `cache_control` markers | `opi-ai` (anthropic provider) | Emit `{type:ephemeral,ttl}` on system + last user/assistant text + last tool def when `supports_cache_control`; `ttl='1h'` when `supports_long_cache_retention && cache_retention==Long`. |
 | P1 | `refresh_models` substrate on `Provider` trait | `opi-ai` | Object-safe boxed-future `Result<Option<Vec<ModelInfo>>, ProviderError>`, default `Ok(None)`; mutable `ProviderCollection::refresh` atomically replaces successful dynamic catalogs only when the full refresh batch succeeds. Phase 14 adds no production trigger. |
-| P1 | `LoginPresenter` trait + impls | `opi-ai` (trait) / `opi-coding-agent` (impls) | `TuiLoginPresenter` / `RpcLoginPresenter` / `NonInteractiveLoginPresenter`; manual-paste fallback mandatory on every flow. |
+| P1 | `LoginPresenter` trait + impls | `opi-ai` (trait) / `opi-coding-agent` (impls) | `TuiLoginPresenter` / `RpcLoginPresenter` / `NonInteractiveLoginPresenter`; PKCE flows support manual code paste, while Copilot presents and polls device authorization without paste-back. |
 | P1 | `doctor` `CredentialProbe` store arm | `opi-coding-agent` | Extend the `EnvApiKey` / `StaticApiKey` arms at `doctor.rs:619-625` to report `store.probe` presence without reading the secret. |
 | P1 | Phase documentation, localized mirrors, changelog, and final guards | `workspace docs/tests` | After 14.1-14.6, update public docs/help and localized counterparts, record public 0.x breaks/additions, verify every Non-Goal, and align the Phase 14 status text without claiming runtime model refresh. |
 
@@ -371,6 +377,8 @@ object-safe; no `async-trait` dependency is needed. Flow specifics (PKCE
 callback server vs device-code polling) live inside each implementation's
 `login()`; the trait is flow-agnostic. `LoginPresenter::await_manual_code`
 uses the same boxed-future convention when called through `dyn LoginPresenter`.
+Only the Anthropic and Codex PKCE flows call it; Copilot calls
+`present_device_code` and polls without requesting manual input.
 
 ```rust
 pub struct OAuthCredential {
@@ -411,8 +419,9 @@ URL by starting a login flow. There is no auto-relogin mid-stream: a 401 is
 **LoginPresenter (opi-ai trait).** `present_auth_url`, `present_device_code`,
 `await_manual_code` (the manual-paste fallback), `notify_success`,
 `notify_failure`. The production `TuiLoginPresenter` lives in
-`opi-coding-agent`. Every OAuth flow supports manual paste in the interactive
-command, including headless/SSH/no-browser use. RPC/JSON/non-interactive
+`opi-coding-agent`. Anthropic and Codex use `await_manual_code` for their PKCE
+fallback. Copilot uses `present_device_code` as its headless/SSH/no-browser
+path and never requests a paste-back code. RPC/JSON/non-interactive
 credential-needed handling is a typed diagnostic path, not an unused presenter
 implementation and not a login-flow trigger.
 
@@ -623,9 +632,9 @@ named production path or, for SC7, explicitly classified substrate evidence:
    credential artifact or formatted secret.
 2. **OAuth product flows.** Anthropic PKCE, Copilot device-code, and Codex PKCE
    complete through the production registry and newly created `/login` command;
-   manual fallback, cancellation, failure, `/logout`, provider-specific URL and
-   header capture, and keychain-required persistence are covered without live
-   calls.
+   PKCE manual fallback, Copilot device-code presentation without paste-back,
+   cancellation, failure, `/logout`, provider-specific URL and header capture,
+   and keychain-required persistence are covered without live calls.
 3. **Live auth and session interaction.** Every approved concrete provider
    resolves auth inside each returned stream. Typed `CredentialNeeded` can
    resume the same interactive turn only after successful user-initiated login;

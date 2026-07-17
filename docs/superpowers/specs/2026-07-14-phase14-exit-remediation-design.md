@@ -1,6 +1,7 @@
 # Phase 14 Exit Remediation Design
 
-Status: user-approved on 2026-07-14.
+Status: user-approved on 2026-07-14; Phase F closure addendum user-approved
+on 2026-07-17.
 
 This design responds to the Phase 14 phase-exit result `not-met-block`. It is
 self-contained: the generated reports under
@@ -191,9 +192,11 @@ they do not reproduce its branching logic.
 
 `/login <provider>` runs the selected production OAuth implementation and
 writes the resulting credential through the same locked mutation coordinator
-used by refresh. `/logout <provider>` deletes through that coordinator. The
-three provider flows retain their existing PKCE/device-code and manual-paste
-behavior.
+used by refresh. `/logout <provider>` deletes through that coordinator.
+Anthropic and Codex retain PKCE callback/manual-code fallback behavior.
+Copilot presents its device URL and code and polls the device authorization;
+that presentation is its headless/manual flow and it does not request a
+paste-back code.
 
 Raw-mode and alternate-screen suspension use RAII. Success, failure,
 cancellation, presenter failure, callback timeout, and lock contention all
@@ -479,6 +482,198 @@ The intended implementation commits are one per corrective task:
 
 Every commit stages only exact task-owned paths. The baseline workflow-script
 relocation is never swept into these commits.
+
+## Phase F Closure Addendum (2026-07-17)
+
+Tasks 14.8-14.13 passed their task gates, but the independent Phase F
+reconstruction still returned `not-met` for SC1, SC2, and SC3. The reports at
+`target/opi-artifacts/phase14-phase-exit/PHASE_EXIT_REPORT.md` and
+`target/opi-artifacts/phase14-phase-exit/PHASE_EXIT_SCENARIO_AUDIT.md`
+accepted four remaining findings:
+
+| Finding | Criterion | Remaining gap |
+|---|---|---|
+| F14-01 | SC1 | The native-keyring host-selection test installs an injected mock directly and never traverses the production platform-selection layer. |
+| F14-02 | SC2 | The normative source says every OAuth flow calls the manual-code presenter, while Copilot device-code intentionally does not. |
+| F14-03 | SC2 | Dispatcher tests use a fake OAuth provider; concrete Anthropic, Copilot, and Codex tests bypass the dispatcher. |
+| F14-04 | SC3 | The same-turn retry test composes helpers directly and never enters the outer interactive TUI path. |
+
+SC4-SC8 remain met, all original Non-Goals remain respected, and `api-map`
+remains exactly `deferred-by-updated-design`. The four findings add tasks
+14.14-14.16 to this already registered corrective source; they do not reopen
+or rewrite the passing task history of 14.8-14.13 and do not require a new
+supplemental-source registry entry.
+
+### Corrected OAuth flow semantics
+
+Manual fallback is flow-specific:
+
+- Anthropic and Codex use PKCE authorization-code flows. They attempt the
+  loopback callback and may call `LoginPresenter::await_manual_code` for the
+  reviewed manual code/URL-paste fallback.
+- Copilot uses device-code authorization. It calls
+  `LoginPresenter::present_device_code`, polls the device endpoint, and never
+  calls `await_manual_code`. Displaying the verification URL and user code is
+  the Copilot headless/SSH/manual path; there is no second code to paste back
+  into opi.
+
+The original provider/auth design is synchronized to this distinction in the
+same design commit. This is a correction of the documented behavior, not a new
+OAuth flow or a compatibility exception.
+
+### Task graph
+
+```text
+14.14 native keyring host selection -----------+
+                                                +-> Phase F rebuild
+14.15 concrete OAuth dispatcher vertical path  |
+  -> 14.16 outer TUI same-turn retry -----------+
+```
+
+Tasks 14.14 and 14.15 are logically independent. Task 14.16 follows 14.15 so
+the outer TUI evidence consumes the corrected login semantics and dispatcher
+service boundary. All three tasks set `evaluator_required = true`.
+
+### 14.14 - Native Keyring Host Selection
+
+Keep the production lifecycle unchanged: `install_native_keyring()` selects
+the current target's native store through the same cfg-gated platform factory,
+installs it as the `keyring-core` default, and returns the process-lifetime
+guard that unsets the default store on drop.
+
+Add only a package-private constructor seam at that platform-selection
+boundary. The focused test injects a mock constructor but enters the same
+host-selection layer used by `install_native_keyring()`; calling
+`install_store(mock)` directly is not acceptance evidence. On the current
+host, the test must prove:
+
+- the expected cfg branch selected and invoked its constructor exactly once;
+- the returned store became the `keyring-core` default;
+- the installation guard retained and then released that default exactly
+  once; and
+- `BackendUnavailable` and other native-construction errors retain their
+  existing typed mappings.
+
+The test must not create, read, write, or delete a real OS-keychain entry. The
+six-target release matrix remains the cross-target compile check; the focused
+test executes the current host branch.
+
+#### Definition of done
+
+- The focused acceptance command selects at least one test that traverses the
+  production platform-selection layer.
+- Removing or disconnecting the cfg-selected factory makes that test fail.
+- Default-store and guard cleanup behavior is proven without user-keychain IO.
+- Native error classification is unchanged.
+
+### 14.15 - Concrete OAuth Dispatcher Vertical Path
+
+Correct the source semantics above and add a package-private endpoint-config
+seam for constructing the built-in OAuth registry in tests. Production
+construction continues to use the existing Anthropic, GitHub Copilot, and
+OpenAI Codex endpoint constants; the seam is not a public configuration
+surface.
+
+Mock-backed integration tests must start `/login <provider>` and
+`/logout <provider>` at `dispatch_auth_command`, use the real built-in registry
+and concrete `AnthropicOAuthProvider`, `CopilotOAuthProvider`, and
+`CodexOAuthProvider`, and finish through the injected locked credential store.
+They must not call a concrete provider directly as a substitute for dispatcher
+coverage.
+
+The vertical tests verify, for each provider:
+
+- the provider-specific authorization and token URL, required request headers,
+  and persisted credential profile;
+- locked mutation-coordinator persistence and deletion;
+- terminal suspension/restoration exactly once on success and failure; and
+- redacted typed failure when persistence or lock acquisition fails.
+
+Anthropic and Codex exercise the PKCE manual-code seam without opening a real
+browser or callback listener. Copilot asserts at least one
+`present_device_code` call and exactly zero `await_manual_code` calls while the
+mock device endpoint drives pending/success. No test contacts a real OAuth
+endpoint, browser, terminal, or keychain.
+
+#### Definition of done
+
+- Dispatcher-to-real-provider login and logout are covered for all three
+  built-ins.
+- The tests fail if the dispatcher stops using the production registry, locked
+  mutation coordinator, terminal guard, or provider-specific wire contract.
+- Copilot's device-code presentation is proven as its headless/manual flow,
+  with no paste-back request.
+- The focused acceptance command selects the owning vertical tests.
+
+### 14.16 - Outer TUI Credential Retry
+
+Extract the smallest shared production state machine needed to process a
+normal prompt result, retain a pre-output `CredentialNeeded` pending turn, and
+handle the following auth command. Both the real `tui_event_loop` and a
+debug-only scripted headless driver call this state machine. The driver is only
+an input/terminal adapter; it must not duplicate prompt, pending-turn, login,
+or retry branching.
+
+The owning integration test enters `run_interactive_tui` and scripts:
+
+```text
+normal prompt -> CredentialNeeded(anthropic) -> /login anthropic -> exit
+```
+
+It asserts one persisted user message, two provider calls, and exactly one
+retry of the original pending turn. A successful login for a different
+provider, cancellation, presenter failure, login failure, or store failure
+leaves the pending turn failed and performs zero retries. Those paths must not
+append a duplicate user message.
+
+The shared state machine is deliberately narrow. It does not redesign the TUI
+event model, command registry, session schema, provider construction, or
+non-interactive behavior, and the test uses fake terminal/store/provider
+boundaries without user runtime state or network access.
+
+#### Definition of done
+
+- The success and negative tests enter the outer TUI function rather than
+  manually composing retry helpers.
+- The real event loop and scripted driver share the same prompt/auth/retry
+  state transitions.
+- Provider identity gates the retry and all failure/cancellation paths perform
+  zero retries.
+- The focused acceptance command selects the owning outer-path tests.
+
+### Trace and final verification
+
+The new ownership is:
+
+| Criterion | New owner | Required closure |
+|---|---:|---|
+| SC1 | 14.14 | Current-host cfg selection, native-store installation, and guard lifecycle through one production selection seam. |
+| SC2 | 14.15 | Truthful flow semantics plus dispatcher-to-real-provider login/logout coverage for all three built-ins. |
+| SC3 | 14.16 | Outer-TUI `CredentialNeeded` login and same-turn retry with exact message/call counts and negative paths. |
+
+The three affected acceptance commands must be replaced or extended so each
+selects the intended new test. Final verification then reruns all 29 historical
+commands, every corrective command, workspace format/clippy/doc/test/smoke
+gates, the artifact audit, and the five-lens Phase F evaluator with independent
+adversarial verification.
+
+Archive remains a separate gate. It is permitted only when SC1-SC8 are all
+`met`, every Non-Goal remains preserved, and the `api-map` residual retains its
+exact `deferred-by-updated-design` citation.
+
+### Task and commit boundaries
+
+- 14.14 owns `native_keyring.rs`, its focused host-selection tests, and its
+  acceptance metadata.
+- 14.15 owns the synchronized OAuth design text, the internal built-in-registry
+  endpoint seam, concrete dispatcher vertical tests, and its acceptance
+  metadata.
+- 14.16 owns the narrow interactive state-machine changes, outer-TUI tests,
+  Phase F evidence, and its acceptance metadata.
+
+Implementation uses one exact-path commit per task. The pre-existing
+workflow-script relocation, `.gitignore`, skill registry, and ledger-schema
+changes remain outside all three commits. There is no automatic archive commit.
 
 ## External Technical References
 
