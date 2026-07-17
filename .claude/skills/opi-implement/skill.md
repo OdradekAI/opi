@@ -311,6 +311,21 @@ Commit scope is the crate name. Example: `feat(opi-agent): implement agent_loop`
 - Temp: `.opi-impl-state.json.tmp` (gitignored)
 - Draft: `.opi-impl-state.draft.json` (gitignored)
 - All writes use structured JSON APIs, never string concatenation
+- On Windows, validate every candidate and perform every replacement through
+  `.claude/skills/opi-implement/scripts/ledger-guard.ps1`. Pass the SHA-256
+  observed before mutation as `-ExpectedTargetSha256`; a mismatch means another
+  writer changed the ledger, so stop and re-read instead of overwriting it.
+  Encoding-recovery operations also pass `-BackupPath` so the atomic replacement
+  retains the corrupt source for audit instead of deleting it.
+- The guard requires strict BOM-less UTF-8, valid schema-v2 JSON, a maximum
+  16 MiB ledger, a maximum 65,536 characters per string, and no known repeated
+  UTF-8/GB2312 mojibake markers. Put larger narratives in audit Markdown or
+  artifact files and keep only their paths and short summaries in the ledger.
+- Windows PowerShell 5.1 MUST NOT round-trip ledger text through default
+  `Get-Content`, `Set-Content`, `Out-File`, or PowerShell `>` redirection. Its
+  default text encoding follows the system ANSI code page and can corrupt
+  BOM-less UTF-8. If a candidate is created outside the guard, use a structured
+  writer with explicit strict UTF-8 and let the guard validate it before install.
 - Shared-workspace rule: capture the pre-task baseline dirty file set at Phase B.
   Verification and commit gates must stage only task-owned files and must not
   require unrelated pre-existing user changes to be cleaned.
@@ -325,6 +340,8 @@ Commit scope is the crate name. Example: `feat(opi-agent): implement agent_loop`
   forward-slash paths
 - SHA-256: use `sha256sum`, PowerShell `Get-FileHash`, Python, or Rust helper
 - JSON manipulation: `jq` when present; fallback to PowerShell/Python
+- Windows ledger validation/install:
+  `.claude/skills/opi-implement/scripts/ledger-guard.ps1`
 - Required: `cargo` (Rust >= 1.97), `git`
 - NOT required: `gh` CLI (belongs to `opi-release`)
 
