@@ -24,11 +24,12 @@ pub fn mistral_provider(api_key: String, base_url: Option<String>) -> OpenAiChat
         "mistral".into(),
         CompatConfig::default(),
         vec![],
-        default_models(),
+        model_catalog(),
     )
 }
 
-fn default_models() -> Vec<ModelInfo> {
+/// Built-in Mistral model metadata without credentials or HTTP construction.
+pub fn model_catalog() -> Vec<ModelInfo> {
     vec![
         ModelInfo {
             id: "mistral-large-latest".into(),

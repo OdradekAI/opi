@@ -31,6 +31,7 @@ registry. Do not auto-parse arbitrary files from `docs/superpowers/specs/`.
 | Phase | Source files |
 |---:|---|
 | 14 | `docs/superpowers/specs/2026-07-11-phase14-provider-auth-design.md` |
+| 14 | `docs/superpowers/specs/2026-07-14-phase14-exit-remediation-design.md` |
 | 15 | `docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md` |
 | 16 | `docs/superpowers/specs/2026-07-11-phase16-agent-intelligence-design.md` |
 
@@ -181,7 +182,7 @@ E is the only phase that mutates git **during normal task execution**.
        acceptance criteria.
    - D.1 Tier-specific mechanical gates and phase-specific addenda
    - D.2 Task-level risk evaluator: for `evaluator_required = true` tasks it
-     invokes `scripts/exec.workflow.js` (full 6-lens deep); for all others the
+     invokes `.claude/skills/opi-implement/scripts/exec.workflow.js` (full 6-lens deep); for all others the
      2-lens single-agent L-D1+L-D5 pass per `references/verify-engine.md`.
      Must-fix findings block Phase D and route to Phase C (incrementing
      `iteration_count`).
@@ -201,7 +202,7 @@ E is the only phase that mutates git **during normal task execution**.
      files, inspect code/tests independently of ledger claims, and produce a
      criteria trace with one of:
      `met`, `deferred-by-updated-design`, or `not-met`. It then invokes
-     `scripts/phase-exit.workflow.js` (5-lens audit of the trace per
+     `.claude/skills/opi-implement/scripts/phase-exit.workflow.js` (5-lens audit of the trace per
      `references/verify-engine.md`); accepted findings upsert
      `criteria_trace[C].status = not-met`, and F.1b REFUSEs archive.
    - F.1b REFUSE phase archive when any criterion is `not-met`, or when
@@ -269,7 +270,7 @@ digraph select {
 | C.1 | `superpowers:test-driven-development` | red-green-refactor body |
 | C.1 | `superpowers:dispatching-parallel-agents` | when `parallelize` non-empty |
 | C.2 | `superpowers:systematic-debugging` | attempt 3+ can't reach green |
-| D.2 | verify engine exec stage (`scripts/exec.workflow.js` deep, or single-agent L-D1+L-D5) | adversarial must-fix verify for risk-gated tasks |
+| D.2 | verify engine exec stage (`.claude/skills/opi-implement/scripts/exec.workflow.js` deep, or single-agent L-D1+L-D5) | adversarial must-fix verify for risk-gated tasks |
 | D pre-commit | `superpowers:verification-before-completion` | evidence-before-claim |
 | Failure (b) | `superpowers:brainstorming` | DoD interpretation ambiguous |
 
@@ -310,6 +311,21 @@ Commit scope is the crate name. Example: `feat(opi-agent): implement agent_loop`
 - Temp: `.opi-impl-state.json.tmp` (gitignored)
 - Draft: `.opi-impl-state.draft.json` (gitignored)
 - All writes use structured JSON APIs, never string concatenation
+- On Windows, validate every candidate and perform every replacement through
+  `.claude/skills/opi-implement/scripts/ledger-guard.ps1`. Pass the SHA-256
+  observed before mutation as `-ExpectedTargetSha256`; a mismatch means another
+  writer changed the ledger, so stop and re-read instead of overwriting it.
+  Encoding-recovery operations also pass `-BackupPath` so the atomic replacement
+  retains the corrupt source for audit instead of deleting it.
+- The guard requires strict BOM-less UTF-8, valid schema-v2 JSON, a maximum
+  16 MiB ledger, a maximum 65,536 characters per string, and no known repeated
+  UTF-8/GB2312 mojibake markers. Put larger narratives in audit Markdown or
+  artifact files and keep only their paths and short summaries in the ledger.
+- Windows PowerShell 5.1 MUST NOT round-trip ledger text through default
+  `Get-Content`, `Set-Content`, `Out-File`, or PowerShell `>` redirection. Its
+  default text encoding follows the system ANSI code page and can corrupt
+  BOM-less UTF-8. If a candidate is created outside the guard, use a structured
+  writer with explicit strict UTF-8 and let the guard validate it before install.
 - Shared-workspace rule: capture the pre-task baseline dirty file set at Phase B.
   Verification and commit gates must stage only task-owned files and must not
   require unrelated pre-existing user changes to be cleaned.
@@ -324,6 +340,8 @@ Commit scope is the crate name. Example: `feat(opi-agent): implement agent_loop`
   forward-slash paths
 - SHA-256: use `sha256sum`, PowerShell `Get-FileHash`, Python, or Rust helper
 - JSON manipulation: `jq` when present; fallback to PowerShell/Python
+- Windows ledger validation/install:
+  `.claude/skills/opi-implement/scripts/ledger-guard.ps1`
 - Required: `cargo` (Rust >= 1.97), `git`
 - NOT required: `gh` CLI (belongs to `opi-release`)
 
@@ -402,5 +420,6 @@ Full design rationale: `docs/superpowers/specs/2026-05-20-opi-implement-skill-de
 
 Supplemental Phase 14-16 designs:
 - `docs/superpowers/specs/2026-07-11-phase14-provider-auth-design.md`
+- `docs/superpowers/specs/2026-07-14-phase14-exit-remediation-design.md`
 - `docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md`
 - `docs/superpowers/specs/2026-07-11-phase16-agent-intelligence-design.md`

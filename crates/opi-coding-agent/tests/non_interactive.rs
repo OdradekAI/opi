@@ -498,59 +498,6 @@ fn phase11_cli_help_tool_policy() {
     );
 }
 
-/// Locate the `opi` binary for end-to-end subprocess tests. cargo provides
-/// `CARGO_BIN_EXE_opi` for integration tests in the package that defines the
-/// bin; fall back to the workspace target/debug dir for direct invocation.
-fn opi_binary_path() -> PathBuf {
-    if let Some(path) = option_env!("CARGO_BIN_EXE_opi") {
-        return PathBuf::from(path);
-    }
-    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
-    let mut path = PathBuf::from(&manifest_dir);
-    path.push("../../target/debug/opi");
-    if cfg!(windows) {
-        path.set_extension("exe");
-    }
-    path
-}
-
-#[test]
-fn e2e_non_interactive_text_mode_auth_failure_exits_3() {
-    // Plain text non-interactive mode (no --json) must map a missing API key
-    // to exit code 3 (AuthFailure) through the production run_non_interactive
-    // -> build_provider boundary, with the diagnostic on stderr and nothing on
-    // stdout. DoD: "non-interactive error surfaces" + "validates credentials
-    // at build time". Only --json was covered before
-    // (json_mode::e2e_json_mode_auth_failure_produces_ndjson_stderr); this is
-    // the text-mode sibling and the first test to pin exit code 3.
-    let binary = opi_binary_path();
-    let dir = tempfile::tempdir().unwrap();
-    let output = std::process::Command::new(&binary)
-        .arg("--model")
-        .arg("anthropic:claude-sonnet-4-5")
-        .arg("hi")
-        .current_dir(dir.path())
-        .env("OPI_SESSIONS_DIR", dir.path())
-        .env("ANTHROPIC_API_KEY", "")
-        .output()
-        .expect("opi binary runs");
-    let code = output.status.code().unwrap_or(-1);
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert_eq!(
-        code, 3,
-        "text non-interactive auth failure should exit 3 (AuthFailure), got {code}\nstdout: {stdout}\nstderr: {stderr}"
-    );
-    assert!(
-        stderr.contains("ANTHROPIC_API_KEY"),
-        "stderr should name the missing env var, got: {stderr}"
-    );
-    assert!(
-        stdout.is_empty(),
-        "text non-interactive auth failure should not write stdout, got: {stdout:?}"
-    );
-}
-
 // ---------------------------------------------------------------------------
 // Phase 14.2: typed CredentialNeeded -> exit 3, no prompt, no blocking
 // ---------------------------------------------------------------------------

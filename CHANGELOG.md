@@ -10,19 +10,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Breaking Changes
 
 - Raised the workspace Minimum Supported Rust Version (MSRV) from 1.85 to 1.97 (`rust-version` in `[workspace.package]`, inherited by all crates). Builds now require Rust 1.97 or newer; the workspace remains on edition 2024.
-- `opi-ai` 0.x API: `Request` adds `timeout`, `extra_headers`, `cache_retention`, and `session_id`; `Provider` adds the object-safe `refresh_models` method; `ModelInfo` replaces flattened capability fields with one nested `ModelCapabilities`; and `Usage` adds optional `cache_write_1h_tokens` and `reasoning_tokens` subset fields. Downstream struct literals and custom provider implementations must be updated.
+- `opi-ai` 0.x API: `Request` adds `timeout`, `extra_headers`, `cache_retention`, and `session_id`; `Provider` adds the object-safe `refresh_models` method; `ModelInfo` replaces flattened capability fields with one nested `ModelCapabilities`; `Usage.cache_write_1h_tokens` and `Usage.reasoning_tokens` are corrected from `u32` to `Option<u64>` so absent and explicit zero remain distinct; and `CostBreakdown` removes the separate `cache_write_1h_cost` field. Downstream struct literals and custom provider implementations must be updated.
 
 ### Added
 
 - `opi-ai`: IO-free, object-safe `CredentialStore`, `Credential`, `CredentialSource`, `OAuthProvider`, `OAuthCredential`, `LoginPresenter`, `AuthResolver`, and `ResolvedAuth` contracts; secret-free `AuthDescriptor::StoreCredential`; and typed non-retryable `CredentialNeeded` / `CredentialRevoked` provider failures.
-- `opi-coding-agent`: OS-keychain credential persistence with env API-key fallback, cross-process mutation locking, redacted doctor/model-list probes, and explicit interactive `/login <provider>` / `/logout <provider>` flows for Anthropic PKCE, GitHub Copilot device-code, and OpenAI Codex PKCE. Non-interactive, JSON, and RPC modes report provider-specific `/login` remediation without starting OAuth.
+- `opi-coding-agent`: OS-keychain credential persistence using Windows Credential Manager, macOS Keychain Services, or Freedesktop Secret Service across the six release targets, with env API-key fallback, cross-process mutation locking, redacted doctor/model-list probes, and explicit interactive `/login <provider>` / `/logout <provider>` flows for Anthropic PKCE, GitHub Copilot device-code, and OpenAI Codex PKCE. Non-interactive, JSON, and RPC modes report provider-specific `/login` remediation without starting OAuth.
 - `opi-ai` / `opi-agent` / `opi-coding-agent`: request timeout and extra-header wire handling; production `session_id` propagation with provider-specific cache-affinity mappings; nested cache capabilities and Anthropic cache markers; and cache-write/reasoning usage accounting without double counting.
 - `opi-ai`: deterministic atomic dynamic-model catalog replacement through `Provider::refresh_models` and `ProviderCollection::refresh`. This remains substrate-only with no production trigger.
 
 ### Changed
 
-- Concrete Anthropic, Copilot Chat, and Codex Responses providers re-resolve authentication inside every returned stream. Interactive missing credentials may retry the same pending turn after successful user-initiated login; revoked credentials are non-retryable and never auto-relogin.
-- `CostBreakdown` remains separate and `Copy`: the one-hour cache-write subset is charged at its distinct rate, reasoning stays inside output cost, and neither subset is counted twice in token totals or cost.
+- Concrete Anthropic, Copilot Chat, and Codex Responses providers re-resolve authentication inside every returned stream. TUI `/help` discovers `/login` and `/logout` through the production dispatcher; only a successful user-initiated login may retry the same pending turn. Missing or revoked credentials never auto-login.
+- `CostBreakdown` remains separate and `Copy` with four public lines (`input_cost`, `output_cost`, `cache_read_cost`, and `cache_write_cost`): the weighted one-hour cache-write subset is folded into `cache_write_cost`, reasoning stays inside `output_cost`, and neither subset is counted twice.
 
 ## [0.7.0] - 2026-07-09
 

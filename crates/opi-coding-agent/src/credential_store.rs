@@ -29,29 +29,52 @@ use std::time::{Duration, Instant};
 use opi_ai::auth::{AuthResolver, AuthScheme, OAuthCredential, OAuthProvider, ResolvedAuth};
 use opi_ai::credential::{
     BoxAuthFuture, Credential, CredentialSource, CredentialStore, CredentialStoreError,
+    UnknownEnvelopeField,
 };
 use opi_ai::provider::ProviderError;
 use secrecy::{ExposeSecret, SecretString};
+
+/// Collect redacted credential-presence probes without reading credentials.
+pub async fn collect_credential_probes(
+    store: &dyn CredentialStore,
+    provider_ids: impl IntoIterator<Item = String>,
+) -> HashMap<String, CredentialSource> {
+    let mut probes = HashMap::new();
+    for provider_id in provider_ids {
+        probes.insert(provider_id.clone(), store.probe(&provider_id).await);
+    }
+    probes
+}
 
 /// Keychain service name. Every opi entry is stored under service `opi` with
 /// the provider id as the account key.
 pub const KEYCHAIN_SERVICE: &str = "opi";
 
+/// Collision-free service containing only closed, non-secret credential-kind
+/// markers. Protected credential envelopes remain under [`KEYCHAIN_SERVICE`].
+pub const KEYCHAIN_PRESENCE_SERVICE: &str = "opi.presence";
+
 /// Versioned envelope marker. Unknown versions decode to an explicit
 /// [`CredentialStoreError::UnknownEnvelope`].
 const ENVELOPE_VERSION: u32 = 1;
+
+/// Maximum time a refresh HTTP future may hold the mutation lock.
+const OAUTH_REFRESH_TIMEOUT: Duration = Duration::from_secs(30);
 
 // ---------------------------------------------------------------------------
 // Backend injection seam
 // ---------------------------------------------------------------------------
 
 /// Errors from a [`KeyringBackend`] operation.
-#[derive(Debug)]
+#[derive(Clone, Debug, thiserror::Error)]
 pub enum BackendError {
-    /// The credential backend could not be reached (no keychain daemon, no
-    /// compiled native store, platform error). API keys may fall back to env.
+    /// The configured credential backend is explicitly unreachable. On Linux,
+    /// this is limited to narrow Secret Service daemon-absence signatures.
+    /// API keys may fall back to env.
+    #[error("credential backend unavailable: {0}")]
     BackendUnavailable(String),
     /// Any other backend failure.
+    #[error("credential backend error: {0}")]
     Other(String),
 }
 
@@ -70,18 +93,46 @@ pub trait KeyringBackend: Send + Sync {
     fn delete(&self, service: &str, provider_id: &str) -> Result<(), BackendError>;
 }
 
-/// Production backend wrapping `keyring-core`.
+/// One-shot backend factory used by production command/startup orchestration.
 ///
-/// In Phase 14.1 no native store crate is compiled in, so `Entry::new` returns
-/// `NoDefaultStore` and every probe resolves to
-/// [`CredentialSource::BackendUnavailable`] -> env fallback. Real platform
-/// storage (and the write/login path) ship with T2, which adds the native
-/// store crates and `/login`.
-pub struct KeyringCoreBackend;
+/// The factory is invoked inside the command core, so native installation
+/// cannot be performed early by a caller and then bypassed with an already
+/// constructed backend.
+#[doc(hidden)]
+pub type KeyringBackendFactory = Box<dyn FnOnce() -> Box<dyn KeyringBackend> + Send + 'static>;
+
+/// Factory for the target-native production backend.
+#[doc(hidden)]
+pub fn native_keyring_backend_factory() -> KeyringBackendFactory {
+    Box::new(|| Box::new(KeyringCoreBackend::new()))
+}
+
+/// Production backend wrapping `keyring-core` and owning the installed native
+/// store for its full lifetime.
+pub struct KeyringCoreBackend {
+    _native: Option<crate::native_keyring::NativeKeyringGuard>,
+    initialization_error: Option<BackendError>,
+}
 
 impl KeyringCoreBackend {
     pub fn new() -> Self {
-        Self
+        match crate::native_keyring::install_native_keyring() {
+            Ok(guard) => Self {
+                _native: Some(guard),
+                initialization_error: None,
+            },
+            Err(error) => Self {
+                _native: None,
+                initialization_error: Some(error),
+            },
+        }
+    }
+
+    fn ensure_available(&self) -> Result<(), BackendError> {
+        match &self.initialization_error {
+            Some(error) => Err(error.clone()),
+            None => Ok(()),
+        }
     }
 }
 
@@ -93,53 +144,59 @@ impl Default for KeyringCoreBackend {
 
 impl KeyringBackend for KeyringCoreBackend {
     fn get(&self, service: &str, provider_id: &str) -> Result<Option<String>, BackendError> {
-        let entry = match keyring_core::Entry::new(service, provider_id) {
-            Ok(entry) => entry,
-            Err(keyring_core::Error::NoDefaultStore) => {
-                return Err(BackendError::BackendUnavailable(
-                    "no default keyring store".to_owned(),
-                ));
-            }
-            Err(error) => return Err(BackendError::Other(error.to_string())),
-        };
+        self.ensure_available()?;
+        let entry = keyring_core::Entry::new(service, provider_id).map_err(map_keyring_error)?;
         match entry.get_password() {
             Ok(value) => Ok(Some(value)),
             Err(keyring_core::Error::NoEntry) => Ok(None),
-            Err(error) => Err(BackendError::Other(error.to_string())),
+            Err(error) => Err(map_keyring_error(error)),
         }
     }
 
     fn set(&self, service: &str, provider_id: &str, value: &str) -> Result<(), BackendError> {
-        let entry = match keyring_core::Entry::new(service, provider_id) {
-            Ok(entry) => entry,
-            Err(keyring_core::Error::NoDefaultStore) => {
-                return Err(BackendError::BackendUnavailable(
-                    "no default keyring store".to_owned(),
-                ));
-            }
-            Err(error) => return Err(BackendError::Other(error.to_string())),
-        };
-        entry
-            .set_password(value)
-            .map_err(|error| BackendError::Other(error.to_string()))
+        self.ensure_available()?;
+        let entry = keyring_core::Entry::new(service, provider_id).map_err(map_keyring_error)?;
+        entry.set_password(value).map_err(map_keyring_error)
     }
 
     fn delete(&self, service: &str, provider_id: &str) -> Result<(), BackendError> {
-        let entry = match keyring_core::Entry::new(service, provider_id) {
-            Ok(entry) => entry,
-            Err(keyring_core::Error::NoDefaultStore) => {
-                return Err(BackendError::BackendUnavailable(
-                    "no default keyring store".to_owned(),
-                ));
-            }
-            Err(error) => return Err(BackendError::Other(error.to_string())),
-        };
+        self.ensure_available()?;
+        let entry = keyring_core::Entry::new(service, provider_id).map_err(map_keyring_error)?;
         match entry.delete_credential() {
             Ok(()) => Ok(()),
             Err(keyring_core::Error::NoEntry) => Ok(()),
-            Err(error) => Err(BackendError::Other(error.to_string())),
+            Err(error) => Err(map_keyring_error(error)),
         }
     }
+}
+
+fn map_keyring_error(error: keyring_core::Error) -> BackendError {
+    map_keyring_error_for_platform(std::env::consts::OS, error)
+}
+
+fn map_keyring_error_for_platform(target_os: &str, error: keyring_core::Error) -> BackendError {
+    match error {
+        error @ keyring_core::Error::NoDefaultStore => BackendError::Other(error.to_string()),
+        keyring_core::Error::NoStorageAccess(reason)
+            if target_os == "linux" && secret_service_is_unavailable(&reason.to_string()) =>
+        {
+            BackendError::BackendUnavailable(reason.to_string())
+        }
+        keyring_core::Error::NoStorageAccess(reason) => BackendError::Other(reason.to_string()),
+        keyring_core::Error::PlatformFailure(reason)
+            if target_os == "linux" && secret_service_is_unavailable(&reason.to_string()) =>
+        {
+            BackendError::BackendUnavailable(reason.to_string())
+        }
+        other => BackendError::Other(other.to_string()),
+    }
+}
+
+pub(crate) fn secret_service_is_unavailable(reason: &str) -> bool {
+    let reason = reason.to_ascii_lowercase();
+    reason.contains("serviceunknown")
+        || reason.contains("namehasnoowner")
+        || reason.contains("connection refused")
 }
 
 /// In-memory keychain backend for tests. Never touches the OS keychain.
@@ -248,18 +305,23 @@ impl KeyringBackend for FakeKeyringBackend {
                 "no keychain daemon".to_owned(),
             ));
         }
-        // Record the critical-section window AROUND the (optional) delay + the
-        // map insert, so a test can prove two writers did not overlap.
-        let start = Instant::now();
-        if !self.set_delay.is_zero() {
+        // Mutation-window tests measure only the protected entry. Marker
+        // writes are non-secret metadata and intentionally remain immediate.
+        let track_window = service == KEYCHAIN_SERVICE;
+        let start = track_window.then(Instant::now);
+        if track_window && !self.set_delay.is_zero() {
             std::thread::sleep(self.set_delay);
         }
         self.entries.lock().unwrap().insert(
             (service.to_owned(), provider_id.to_owned()),
             value.to_owned(),
         );
-        let end = Instant::now();
-        self.set_windows.lock().unwrap().push((start, end));
+        if let Some(start) = start {
+            self.set_windows
+                .lock()
+                .unwrap()
+                .push((start, Instant::now()));
+        }
         Ok(())
     }
     fn delete(&self, service: &str, provider_id: &str) -> Result<(), BackendError> {
@@ -301,6 +363,38 @@ struct EnvelopeFields {
     expires_at: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     base_url: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CredentialKind {
+    ApiKey,
+    OAuthToken,
+}
+
+impl CredentialKind {
+    fn for_credential(credential: &Credential) -> Self {
+        match credential {
+            Credential::ApiKey(_) => Self::ApiKey,
+            Credential::OAuthToken { .. } => Self::OAuthToken,
+        }
+    }
+
+    fn marker(self) -> &'static str {
+        match self {
+            Self::ApiKey => "api_key",
+            Self::OAuthToken => "oauth_token",
+        }
+    }
+
+    fn parse_marker(marker: &str, provider_id: &str) -> Result<Self, CredentialStoreError> {
+        match marker {
+            "api_key" => Ok(Self::ApiKey),
+            "oauth_token" => Ok(Self::OAuthToken),
+            _ => Err(CredentialStoreError::CorruptMarker {
+                provider: provider_id.to_owned(),
+            }),
+        }
+    }
 }
 
 fn secret_string(value: impl Into<String>) -> SecretString {
@@ -350,15 +444,15 @@ fn encode_credential(cred: &Credential) -> String {
 /// fallback.
 fn decode_credential(raw: &str, provider_id: &str) -> Result<Credential, CredentialStoreError> {
     let envelope: Envelope =
-        serde_json::from_str(raw).map_err(|error| CredentialStoreError::MalformedEnvelope {
+        serde_json::from_str(raw).map_err(|_| CredentialStoreError::MalformedEnvelope {
             provider: provider_id.to_owned(),
-            reason: error.to_string(),
+            reason: "credential envelope does not match the expected schema".to_owned(),
         })?;
     if envelope.version != ENVELOPE_VERSION {
         return Err(CredentialStoreError::UnknownEnvelope {
             provider: provider_id.to_owned(),
             version: Some(envelope.version),
-            kind: None,
+            field: UnknownEnvelopeField::Version,
         });
     }
     match envelope.kind.as_str() {
@@ -406,10 +500,10 @@ fn decode_credential(raw: &str, provider_id: &str) -> Result<Credential, Credent
                 base_url: envelope.fields.base_url,
             })
         }
-        other => Err(CredentialStoreError::UnknownEnvelope {
+        _ => Err(CredentialStoreError::UnknownEnvelope {
             provider: provider_id.to_owned(),
-            version: None,
-            kind: Some(other.to_owned()),
+            version: Some(envelope.version),
+            field: UnknownEnvelopeField::Kind,
         }),
     }
 }
@@ -535,12 +629,27 @@ impl KeychainCredentialStore {
 
     fn backend_err(&self, provider_id: &str, error: BackendError) -> CredentialStoreError {
         match error {
-            BackendError::BackendUnavailable(reason) | BackendError::Other(reason) => {
-                CredentialStoreError::Backend {
-                    provider: provider_id.to_owned(),
-                    reason,
-                }
-            }
+            BackendError::BackendUnavailable(reason) => CredentialStoreError::BackendUnavailable {
+                provider: provider_id.to_owned(),
+                reason,
+            },
+            BackendError::Other(reason) => CredentialStoreError::Backend {
+                provider: provider_id.to_owned(),
+                reason,
+            },
+        }
+    }
+
+    /// Read the sole credential presence/kind metadata source. The marker is
+    /// non-secret, but its raw value is still never retained in an error.
+    fn read_marker_kind(
+        &self,
+        provider_id: &str,
+    ) -> Result<Option<CredentialKind>, CredentialStoreError> {
+        match self.backend.get(KEYCHAIN_PRESENCE_SERVICE, provider_id) {
+            Ok(Some(marker)) => Ok(Some(CredentialKind::parse_marker(&marker, provider_id)?)),
+            Ok(None) => Ok(None),
+            Err(error) => Err(self.backend_err(provider_id, error)),
         }
     }
 
@@ -565,6 +674,11 @@ impl KeychainCredentialStore {
         provider_id: &str,
         cred: &Credential,
     ) -> Result<(), CredentialStoreError> {
+        let marker = CredentialKind::for_credential(cred).marker();
+        self.backend
+            .set(KEYCHAIN_PRESENCE_SERVICE, provider_id, marker)
+            .map_err(|error| self.backend_err(provider_id, error))?;
+
         let raw = encode_credential(cred);
         self.backend
             .set(&self.service, provider_id, &raw)
@@ -579,6 +693,9 @@ impl KeychainCredentialStore {
     ) -> Result<(), CredentialStoreError> {
         self.backend
             .delete(&self.service, provider_id)
+            .map_err(|error| self.backend_err(provider_id, error))?;
+        self.backend
+            .delete(KEYCHAIN_PRESENCE_SERVICE, provider_id)
             .map_err(|error| self.backend_err(provider_id, error))
     }
 
@@ -588,6 +705,13 @@ impl KeychainCredentialStore {
     pub(crate) async fn acquire_lock(&self) -> Result<LockGuard, CredentialStoreError> {
         self.lock.acquire().await
     }
+}
+
+pub(crate) fn keychain_store_from_factory(
+    user_config_dir: PathBuf,
+    backend_factory: KeyringBackendFactory,
+) -> KeychainCredentialStore {
+    KeychainCredentialStore::new(backend_factory(), user_config_dir)
 }
 
 impl CredentialStore for KeychainCredentialStore {
@@ -625,16 +749,21 @@ impl CredentialStore for KeychainCredentialStore {
     fn probe<'a>(&'a self, provider_id: &'a str) -> BoxAuthFuture<'a, CredentialSource> {
         let label = format!("keychain {}:{}", self.service, provider_id);
         Box::pin(async move {
-            match self.backend.get(&self.service, provider_id) {
+            match self.read_marker_kind(provider_id) {
                 Ok(Some(_)) => CredentialSource::Present { label },
                 Ok(None) => CredentialSource::Absent,
-                Err(BackendError::BackendUnavailable(reason)) => {
+                Err(CredentialStoreError::BackendUnavailable { reason, .. })
+                | Err(CredentialStoreError::Backend { reason, .. }) => {
                     CredentialSource::BackendUnavailable { reason }
                 }
-                // Probe surfaces any backend failure as unavailable so doctor
-                // reports it distinctly from a missing entry; the corrupt
-                // envelope itself is surfaced on read.
-                Err(BackendError::Other(reason)) => CredentialSource::BackendUnavailable { reason },
+                Err(CredentialStoreError::CorruptMarker { .. }) => {
+                    CredentialSource::BackendUnavailable {
+                        reason: "credential marker is corrupt".to_owned(),
+                    }
+                }
+                Err(_) => CredentialSource::BackendUnavailable {
+                    reason: "credential marker probe failed".to_owned(),
+                },
             }
         })
     }
@@ -679,11 +808,27 @@ pub struct ResolvedApiKey {
 pub struct CredentialResolver {
     store: Arc<KeychainCredentialStore>,
     env_lookup: EnvLookup,
+    refresh_timeout: Duration,
 }
 
 impl CredentialResolver {
     pub fn new(store: Arc<KeychainCredentialStore>, env_lookup: EnvLookup) -> Self {
-        Self { store, env_lookup }
+        Self::with_refresh_timeout(store, env_lookup, OAUTH_REFRESH_TIMEOUT)
+    }
+
+    /// Construct a resolver with an explicit refresh timeout. Production uses
+    /// 30 seconds; tests inject a shorter bound without contacting a provider.
+    #[doc(hidden)]
+    pub fn with_refresh_timeout(
+        store: Arc<KeychainCredentialStore>,
+        env_lookup: EnvLookup,
+        refresh_timeout: Duration,
+    ) -> Self {
+        Self {
+            store,
+            env_lookup,
+            refresh_timeout,
+        }
     }
 
     /// Production resolver: env access via `std::env::var`.
@@ -697,20 +842,42 @@ impl CredentialResolver {
         &self,
         provider_id: &str,
         env_var: &str,
-    ) -> Option<ResolvedApiKey> {
-        match self.store.probe(provider_id).await {
-            CredentialSource::Present { .. } => match self.store.read(provider_id).await {
-                Ok(Some(Credential::ApiKey(key))) => Some(ResolvedApiKey {
-                    value: key,
-                    source: ApiKeySource::Store,
-                }),
-                // Stored an OAuth envelope (T2 territory) or lost a probe race:
-                // fall back to env rather than emitting nothing.
-                Ok(_) => self.env_fallback(env_var, false),
-                Err(_) => self.env_fallback(env_var, true),
-            },
-            CredentialSource::Absent => self.env_fallback(env_var, false),
-            CredentialSource::BackendUnavailable { .. } => self.env_fallback(env_var, true),
+    ) -> Result<Option<ResolvedApiKey>, CredentialStoreError> {
+        let kind = match self.store.read_marker_kind(provider_id) {
+            Ok(Some(kind)) => kind,
+            Ok(None) => return Ok(self.env_fallback(env_var, false)),
+            Err(CredentialStoreError::BackendUnavailable { .. }) => {
+                return Ok(self.env_fallback(env_var, true));
+            }
+            Err(error) => return Err(error),
+        };
+        if kind == CredentialKind::OAuthToken {
+            return Err(CredentialStoreError::UnexpectedCredentialKind {
+                provider: provider_id.to_owned(),
+                expected: "api_key",
+                actual: "oauth_token",
+            });
+        }
+
+        match self.store.read_unlocked(provider_id).await {
+            Ok(Some(Credential::ApiKey(value))) => Ok(Some(ResolvedApiKey {
+                value,
+                source: ApiKeySource::Store,
+            })),
+            Ok(Some(Credential::OAuthToken { .. })) => {
+                Err(CredentialStoreError::UnexpectedCredentialKind {
+                    provider: provider_id.to_owned(),
+                    expected: "api_key",
+                    actual: "oauth_token",
+                })
+            }
+            Ok(None) => Err(CredentialStoreError::CorruptMarker {
+                provider: provider_id.to_owned(),
+            }),
+            Err(CredentialStoreError::BackendUnavailable { .. }) => {
+                Ok(self.env_fallback(env_var, true))
+            }
+            Err(error) => Err(error),
         }
     }
 
@@ -738,7 +905,11 @@ impl CredentialResolver {
         oauth: &dyn OAuthProvider,
     ) -> Result<ResolvedAuth, ProviderError> {
         // Fast path: lock-free read.
-        let cred = match self.read_oauth(provider_id).await? {
+        let cred = match self
+            .read_oauth(provider_id)
+            .await
+            .map_err(store_err_to_provider)?
+        {
             Some(cred) => cred,
             None => {
                 return Err(ProviderError::CredentialNeeded {
@@ -759,7 +930,11 @@ impl CredentialResolver {
             .acquire_lock()
             .await
             .map_err(store_err_to_provider)?;
-        let cred = match self.read_oauth(provider_id).await? {
+        let cred = match self
+            .read_oauth(provider_id)
+            .await
+            .map_err(store_err_to_provider)?
+        {
             Some(cred) => cred,
             None => {
                 return Err(ProviderError::CredentialNeeded {
@@ -774,7 +949,14 @@ impl CredentialResolver {
                 secret: cred.access.clone(),
             });
         }
-        match oauth.refresh(&cred).await {
+        let refresh = tokio::time::timeout(self.refresh_timeout, oauth.refresh(&cred))
+            .await
+            .map_err(|_| {
+                ProviderError::AuthFailed(format!(
+                    "OAuth refresh timed out for provider '{provider_id}'"
+                ))
+            })?;
+        match refresh {
             Ok(refreshed) => {
                 let new_store = Credential::from(refreshed.clone());
                 self.store
@@ -789,7 +971,11 @@ impl CredentialResolver {
             Err(refresh_err) => {
                 // Post-failure re-read under the lock: a concurrent writer may
                 // have refreshed despite our HTTP failing.
-                match self.read_oauth(provider_id).await? {
+                match self
+                    .read_oauth(provider_id)
+                    .await
+                    .map_err(store_err_to_provider)?
+                {
                     Some(reread) if !reread.needs_refresh() => Ok(ResolvedAuth {
                         scheme: AuthScheme::Bearer,
                         secret: reread.access.clone(),
@@ -800,12 +986,25 @@ impl CredentialResolver {
         }
     }
 
-    /// Read the stored OAuth credential (lock-free). Returns `None` for a
-    /// missing entry or a stored non-OAuth credential.
+    /// Read the stored OAuth credential (lock-free). The marker is the sole
+    /// kind source: an API-key marker returns a typed wrong-kind error without
+    /// reading the protected entry.
     async fn read_oauth(
         &self,
         provider_id: &str,
-    ) -> Result<Option<OAuthCredential>, ProviderError> {
+    ) -> Result<Option<OAuthCredential>, CredentialStoreError> {
+        match self.store.read_marker_kind(provider_id)? {
+            None => return Ok(None),
+            Some(CredentialKind::ApiKey) => {
+                return Err(CredentialStoreError::UnexpectedCredentialKind {
+                    provider: provider_id.to_owned(),
+                    expected: "oauth_token",
+                    actual: "api_key",
+                });
+            }
+            Some(CredentialKind::OAuthToken) => {}
+        }
+
         match self.store.read_unlocked(provider_id).await {
             Ok(Some(Credential::OAuthToken {
                 access,
@@ -818,21 +1017,31 @@ impl CredentialResolver {
                 expires_at,
                 base_url,
             })),
-            Ok(Some(_)) | Ok(None) => Ok(None),
-            Err(error) => Err(store_err_to_provider(error)),
+            Ok(Some(Credential::ApiKey(_))) => {
+                Err(CredentialStoreError::UnexpectedCredentialKind {
+                    provider: provider_id.to_owned(),
+                    expected: "oauth_token",
+                    actual: "api_key",
+                })
+            }
+            Ok(None) => Err(CredentialStoreError::CorruptMarker {
+                provider: provider_id.to_owned(),
+            }),
+            Err(error) => Err(error),
         }
     }
 
-    /// Whether a stored OAuth credential exists for `provider_id`. Uses
-    /// `probe()` (secret-free, cannot fail), so a `BackendUnavailable` keychain
-    /// is treated as "no credential" — the API-key/env fallback handles routing,
-    /// same as `resolve_api_key`. Does not read the credential value.
+    /// Whether a stored OAuth credential exists for `provider_id`. Reads only
+    /// the closed non-secret marker. Backend unavailability is treated as no
+    /// OAuth so Anthropic may use API-key env fallback; operational and
+    /// corrupt-marker errors propagate.
     pub async fn has_oauth_credential(&self, provider_id: &str) -> Result<bool, ProviderError> {
-        let source = self.store.probe(provider_id).await;
-        Ok(matches!(
-            source,
-            opi_ai::credential::CredentialSource::Present { .. }
-        ))
+        match self.store.read_marker_kind(provider_id) {
+            Ok(Some(CredentialKind::OAuthToken)) => Ok(true),
+            Ok(Some(CredentialKind::ApiKey)) | Ok(None) => Ok(false),
+            Err(CredentialStoreError::BackendUnavailable { .. }) => Ok(false),
+            Err(error) => Err(store_err_to_provider(error)),
+        }
     }
 
     /// The stored OAuth credential's non-secret `base_url` (e.g. a Copilot
@@ -844,7 +1053,11 @@ impl CredentialResolver {
         &self,
         provider_id: &str,
     ) -> Result<Option<String>, ProviderError> {
-        Ok(self.read_oauth(provider_id).await?.and_then(|c| c.base_url))
+        Ok(self
+            .read_oauth(provider_id)
+            .await
+            .map_err(store_err_to_provider)?
+            .and_then(|c| c.base_url))
     }
 
     /// The injectable environment lookup, for constructing an
@@ -856,7 +1069,7 @@ impl CredentialResolver {
     }
 
     /// Convenience: read `env_var` through the injected lookup (or `None` when
-    /// absent/empty). Used by the factory to decide the Anthropic OAuth path.
+    /// absent/empty). Layered auth calls this for every Anthropic stream.
     pub fn env_value(&self, env_var: &str) -> Option<String> {
         (self.env_lookup)(env_var).filter(|v| !v.trim().is_empty())
     }
@@ -874,7 +1087,9 @@ fn store_err_to_provider(error: CredentialStoreError) -> ProviderError {
 /// [`AuthResolver`]: [`Baked`](Self::Baked) returns a fixed key;
 /// [`Store`](Self::Store) reads/refreshes a stored OAuth credential via
 /// [`CredentialResolver`]; [`EnvOAuthToken`](Self::EnvOAuthToken) reads a
-/// non-refreshable OAuth access token from an environment variable.
+/// non-refreshable OAuth access token from an environment variable; and
+/// [`Layered`](Self::Layered) re-evaluates store/OAuth-env/API-key precedence
+/// on every stream.
 pub enum AuthSource {
     /// A fixed secret baked at construction (static API keys).
     Baked(SecretString),
@@ -887,8 +1102,18 @@ pub enum AuthSource {
     /// A non-refreshable OAuth access token read from an environment variable
     /// (e.g. `ANTHROPIC_OAUTH_TOKEN`). Used until 401, then explicit re-login.
     EnvOAuthToken {
+        provider_id: String,
         env_var: String,
         env_lookup: EnvLookup,
+    },
+    /// Per-stream precedence for providers that support stored OAuth, an
+    /// OAuth access-token environment variable, and an API key.
+    Layered {
+        resolver: Arc<CredentialResolver>,
+        provider_id: String,
+        oauth: Arc<dyn OAuthProvider>,
+        oauth_env_var: String,
+        api_key_env_var: String,
     },
 }
 
@@ -915,9 +1140,11 @@ impl AuthResolver for AuthSource {
                 Box::pin(async move { resolver.resolve_oauth(&provider_id, &*oauth).await })
             }
             AuthSource::EnvOAuthToken {
+                provider_id,
                 env_var,
                 env_lookup,
             } => {
+                let provider_id = provider_id.clone();
                 let env_var = env_var.clone();
                 let env_lookup = env_lookup.clone();
                 Box::pin(async move {
@@ -926,12 +1153,368 @@ impl AuthResolver for AuthSource {
                             scheme: AuthScheme::Bearer,
                             secret: SecretString::new(value.into_boxed_str()),
                         }),
-                        _ => Err(ProviderError::CredentialNeeded {
-                            provider_id: env_var,
+                        _ => Err(ProviderError::CredentialNeeded { provider_id }),
+                    }
+                })
+            }
+            AuthSource::Layered {
+                resolver,
+                provider_id,
+                oauth,
+                oauth_env_var,
+                api_key_env_var,
+            } => {
+                let resolver = resolver.clone();
+                let provider_id = provider_id.clone();
+                let oauth = oauth.clone();
+                let oauth_env_var = oauth_env_var.clone();
+                let api_key_env_var = api_key_env_var.clone();
+                Box::pin(async move {
+                    if resolver.has_oauth_credential(&provider_id).await? {
+                        return resolver.resolve_oauth(&provider_id, &*oauth).await;
+                    }
+                    if let Some(value) = resolver.env_value(&oauth_env_var) {
+                        return Ok(ResolvedAuth {
+                            scheme: AuthScheme::Bearer,
+                            secret: SecretString::new(value.into_boxed_str()),
+                        });
+                    }
+                    match resolver
+                        .resolve_api_key(&provider_id, &api_key_env_var)
+                        .await
+                        .map_err(store_err_to_provider)?
+                    {
+                        Some(resolved) => Ok(ResolvedAuth {
+                            scheme: AuthScheme::ApiKey,
+                            secret: resolved.value,
                         }),
+                        None => Err(ProviderError::CredentialNeeded { provider_id }),
                     }
                 })
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    struct FixedErrorBackend(super::BackendError);
+
+    impl super::KeyringBackend for FixedErrorBackend {
+        fn get(
+            &self,
+            _service: &str,
+            _provider_id: &str,
+        ) -> Result<Option<String>, super::BackendError> {
+            Err(self.0.clone())
+        }
+
+        fn set(
+            &self,
+            _service: &str,
+            _provider_id: &str,
+            _value: &str,
+        ) -> Result<(), super::BackendError> {
+            unreachable!("fixed-error test backend is read-only")
+        }
+
+        fn delete(&self, _service: &str, _provider_id: &str) -> Result<(), super::BackendError> {
+            unreachable!("fixed-error test backend is read-only")
+        }
+    }
+
+    #[tokio::test]
+    async fn initialization_error_category_controls_env_fallback() {
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        use opi_ai::credential::CredentialStoreError;
+        use secrecy::ExposeSecret;
+
+        let unavailable_calls = Arc::new(AtomicUsize::new(0));
+        let observed_calls = Arc::clone(&unavailable_calls);
+        let unavailable_store = super::KeychainCredentialStore::new(
+            Box::new(super::KeyringCoreBackend {
+                _native: None,
+                initialization_error: Some(super::BackendError::BackendUnavailable(
+                    "no daemon".to_owned(),
+                )),
+            }),
+            tempfile::tempdir().expect("temp dir").path().to_path_buf(),
+        );
+        let unavailable_resolver = super::CredentialResolver::new(
+            Arc::new(unavailable_store),
+            Arc::new(move |_name: &str| {
+                observed_calls.fetch_add(1, Ordering::SeqCst);
+                Some("env-fallback-canary".to_owned())
+            }),
+        );
+        let resolved = unavailable_resolver
+            .resolve_api_key("anthropic", "ANTHROPIC_API_KEY")
+            .await
+            .expect("backend unavailable permits env fallback")
+            .expect("env fallback exists");
+        assert_eq!(resolved.value.expose_secret(), "env-fallback-canary");
+        assert_eq!(unavailable_calls.load(Ordering::SeqCst), 1);
+
+        let operational_calls = Arc::new(AtomicUsize::new(0));
+        let observed_calls = Arc::clone(&operational_calls);
+        let operational_store = super::KeychainCredentialStore::new(
+            Box::new(super::KeyringCoreBackend {
+                _native: None,
+                initialization_error: Some(super::BackendError::Other(
+                    "credential store locked".to_owned(),
+                )),
+            }),
+            tempfile::tempdir().expect("temp dir").path().to_path_buf(),
+        );
+        let operational_resolver = super::CredentialResolver::new(
+            Arc::new(operational_store),
+            Arc::new(move |_name: &str| {
+                observed_calls.fetch_add(1, Ordering::SeqCst);
+                Some("must-not-fallback".to_owned())
+            }),
+        );
+        assert!(matches!(
+            operational_resolver
+                .resolve_api_key("anthropic", "ANTHROPIC_API_KEY")
+                .await,
+            Err(CredentialStoreError::Backend { ref reason, .. })
+                if reason.contains("locked")
+        ));
+        assert_eq!(operational_calls.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn no_storage_access_locked_is_operational_error() {
+        let error = keyring_core::Error::NoStorageAccess(Box::new(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "credential store locked",
+        )));
+
+        match super::map_keyring_error(error) {
+            super::BackendError::Other(reason) => assert!(reason.contains("locked")),
+            other => panic!("expected operational backend error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn keyring_error_mapping_only_allows_narrow_linux_daemon_absence() {
+        use keyring_core::Error::{NoStorageAccess, PlatformFailure};
+
+        for (target_os, storage_access, reason, unavailable) in [
+            (
+                "linux",
+                true,
+                "org.freedesktop.DBus.Error.ServiceUnknown",
+                true,
+            ),
+            ("linux", false, "connection refused", true),
+            ("linux", true, "credential store locked", false),
+            ("linux", false, "permission denied", false),
+            (
+                "windows",
+                true,
+                "org.freedesktop.DBus.Error.ServiceUnknown",
+                false,
+            ),
+            ("windows", false, "connection refused", false),
+            (
+                "macos",
+                true,
+                "org.freedesktop.DBus.Error.NameHasNoOwner",
+                false,
+            ),
+            ("macos", false, "failed to connect", false),
+        ] {
+            let platform_error = Box::new(std::io::Error::other(reason));
+            let error = if storage_access {
+                NoStorageAccess(platform_error)
+            } else {
+                PlatformFailure(platform_error)
+            };
+            let classified = super::map_keyring_error_for_platform(target_os, error);
+            assert_eq!(
+                matches!(classified, super::BackendError::BackendUnavailable(_)),
+                unavailable,
+                "{target_os}: {reason}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn no_default_store_is_operational_and_never_allows_env_fallback() {
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        use opi_ai::credential::CredentialStoreError;
+
+        let mapped =
+            super::map_keyring_error_for_platform("linux", keyring_core::Error::NoDefaultStore);
+        assert!(matches!(mapped, super::BackendError::Other(_)));
+
+        let store = super::KeychainCredentialStore::new(
+            Box::new(FixedErrorBackend(mapped)),
+            tempfile::tempdir().expect("temp dir").path().to_path_buf(),
+        );
+        let fallback_calls = Arc::new(AtomicUsize::new(0));
+        let observed_calls = Arc::clone(&fallback_calls);
+        let resolver = super::CredentialResolver::new(
+            Arc::new(store),
+            Arc::new(move |_name: &str| {
+                observed_calls.fetch_add(1, Ordering::SeqCst);
+                Some("must-not-fallback".to_owned())
+            }),
+        );
+
+        assert!(matches!(
+            resolver
+                .resolve_api_key("anthropic", "ANTHROPIC_API_KEY")
+                .await,
+            Err(CredentialStoreError::Backend { ref reason, .. })
+                if reason.contains("No default store")
+        ));
+        assert_eq!(fallback_calls.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn failed_to_connect_with_operational_reason_never_allows_env_fallback() {
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        use keyring_core::Error::{NoStorageAccess, PlatformFailure};
+        use opi_ai::credential::CredentialStoreError;
+
+        for (reason, storage_access) in [
+            (
+                "failed to connect to Secret Service: permission denied",
+                true,
+            ),
+            (
+                "failed to connect to Secret Service: credential store locked",
+                false,
+            ),
+        ] {
+            let platform_error = Box::new(std::io::Error::other(reason));
+            let error = if storage_access {
+                NoStorageAccess(platform_error)
+            } else {
+                PlatformFailure(platform_error)
+            };
+            let mapped = super::map_keyring_error_for_platform("linux", error);
+            assert!(
+                matches!(mapped, super::BackendError::Other(_)),
+                "operational failure was classified as unavailable: {reason}"
+            );
+
+            let store = super::KeychainCredentialStore::new(
+                Box::new(FixedErrorBackend(mapped)),
+                tempfile::tempdir().expect("temp dir").path().to_path_buf(),
+            );
+            let fallback_calls = Arc::new(AtomicUsize::new(0));
+            let observed_calls = Arc::clone(&fallback_calls);
+            let resolver = super::CredentialResolver::new(
+                Arc::new(store),
+                Arc::new(move |_name: &str| {
+                    observed_calls.fetch_add(1, Ordering::SeqCst);
+                    Some("must-not-fallback".to_owned())
+                }),
+            );
+
+            assert!(matches!(
+                resolver
+                    .resolve_api_key("anthropic", "ANTHROPIC_API_KEY")
+                    .await,
+                Err(CredentialStoreError::Backend { ref reason, .. })
+                    if reason.contains("failed to connect")
+            ));
+            assert_eq!(fallback_calls.load(Ordering::SeqCst), 0);
+        }
+    }
+
+    #[test]
+    fn secret_service_name_alone_never_means_daemon_unavailable() {
+        for reason in [
+            "org.freedesktop.secrets: collection locked",
+            "org.freedesktop.secrets: access denied",
+            "permission denied opening org.freedesktop.secrets",
+        ] {
+            assert!(
+                !super::secret_service_is_unavailable(reason),
+                "service name is not an absence signature: {reason}"
+            );
+        }
+    }
+
+    #[test]
+    fn explicit_secret_service_absence_signatures_are_unavailable() {
+        for reason in [
+            "org.freedesktop.DBus.Error.ServiceUnknown",
+            "org.freedesktop.DBus.Error.NameHasNoOwner",
+            "connection refused",
+        ] {
+            assert!(
+                super::secret_service_is_unavailable(reason),
+                "explicit daemon absence must be recognized: {reason}"
+            );
+        }
+    }
+
+    #[test]
+    fn keyring_core_backend_probe_reads_only_nonsecret_marker_entry() {
+        use super::KeyringBackend;
+        use futures_util::FutureExt;
+        use opi_ai::credential::{CredentialSource, CredentialStore};
+
+        let _serial = crate::native_keyring::KEYRING_TEST_LOCK
+            .lock()
+            .expect("keyring test lock");
+        keyring_core::unset_default_store();
+        let mock: std::sync::Arc<keyring_core::CredentialStore> =
+            keyring_core::mock::Store::new().expect("mock keyring store");
+        let native = crate::native_keyring::install_store(mock).expect("install mock store");
+        let backend = super::KeyringCoreBackend {
+            _native: Some(native),
+            initialization_error: None,
+        };
+        backend
+            .set(
+                super::KEYCHAIN_SERVICE,
+                "anthropic",
+                "protected-test-secret",
+            )
+            .expect("write protected entry through production backend");
+        backend
+            .set(super::KEYCHAIN_PRESENCE_SERVICE, "anthropic", "api_key")
+            .expect("write non-secret marker through production backend");
+
+        let protected = keyring_core::Entry::new(super::KEYCHAIN_SERVICE, "anthropic")
+            .expect("protected mock entry");
+        let mock_credential = protected
+            .as_any()
+            .downcast_ref::<keyring_core::mock::Cred>()
+            .expect("mock credential");
+        mock_credential.set_error(keyring_core::Error::Invalid(
+            "protected read".to_owned(),
+            "must remain untouched during probe".to_owned(),
+        ));
+
+        let dir = tempfile::tempdir().expect("temp config dir");
+        let store =
+            super::KeychainCredentialStore::new(Box::new(backend), dir.path().to_path_buf());
+        let probe = store
+            .probe("anthropic")
+            .now_or_never()
+            .expect("marker probe has no suspension point");
+        assert!(matches!(probe, CredentialSource::Present { .. }));
+        assert!(
+            matches!(
+                protected.get_password(),
+                Err(keyring_core::Error::Invalid(_, _))
+            ),
+            "the pending protected-read failure proves probe never touched it"
+        );
+        drop(store);
+        assert!(keyring_core::get_default_store().is_none());
     }
 }

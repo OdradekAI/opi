@@ -167,7 +167,7 @@ struct RawInputTokenDetails {
 #[derive(Debug, Deserialize)]
 struct RawOutputTokenDetails {
     #[serde(default)]
-    reasoning_tokens: Option<u32>,
+    reasoning_tokens: Option<u64>,
 }
 
 // ---------------------------------------------------------------------------
@@ -314,6 +314,22 @@ impl ResponsesEvent {
                 ParsedEvent::Valid(ResponsesEvent::OutputItemDone { output_index, item })
             }
             "response.completed" => {
+                if let Some(usage) = data.response.as_ref().and_then(|r| r.usage.as_ref()) {
+                    let output = u64::from(usage.output_tokens.unwrap_or(0));
+                    if let Some(reasoning) = usage
+                        .output_tokens_details
+                        .as_ref()
+                        .and_then(|details| details.reasoning_tokens)
+                        && reasoning > output
+                    {
+                        return ParsedEvent::Malformed {
+                            data: frame.data.clone(),
+                            error: format!(
+                                "reasoning_tokens ({reasoning}) exceeds output_tokens ({output})"
+                            ),
+                        };
+                    }
+                }
                 let usage = data.response.as_ref().and_then(|r| {
                     r.usage.as_ref().map(|u| {
                         let cached = u
@@ -325,16 +341,13 @@ impl ResponsesEvent {
                         let reasoning = u
                             .output_tokens_details
                             .as_ref()
-                            .and_then(|d| d.reasoning_tokens)
-                            .unwrap_or(0);
-                        // Reject malformed subset: reasoning > output is invalid.
-                        let reasoning = if reasoning > output { 0 } else { reasoning };
+                            .and_then(|d| d.reasoning_tokens);
                         Usage::reported(
                             u.input_tokens.unwrap_or(0),
                             output,
                             cached,
                             0,
-                            0, // cache_write_1h_tokens — Responses doesn't write cache
+                            None, // cache_write_1h_tokens — Responses doesn't write cache
                             reasoning,
                         )
                     })
@@ -806,6 +819,40 @@ pub struct OpenAiResponsesProvider {
     client: Arc<HttpClient>,
 }
 
+/// Built-in OpenAI Responses model metadata without credentials or HTTP construction.
+pub fn model_catalog() -> Vec<ModelInfo> {
+    vec![
+        ModelInfo {
+            id: "gpt-4o".into(),
+            display_name: "GPT-4o".into(),
+            capabilities: ModelCapabilities::new(128000, 16384)
+                .with_images(true)
+                .with_streaming(true),
+        },
+        ModelInfo {
+            id: "gpt-4o-mini".into(),
+            display_name: "GPT-4o Mini".into(),
+            capabilities: ModelCapabilities::new(128000, 16384)
+                .with_images(true)
+                .with_streaming(true),
+        },
+        ModelInfo {
+            id: "o3".into(),
+            display_name: "o3".into(),
+            capabilities: ModelCapabilities::new(200000, 100000)
+                .with_images(true)
+                .with_streaming(true),
+        },
+        ModelInfo {
+            id: "o4-mini".into(),
+            display_name: "o4-mini".into(),
+            capabilities: ModelCapabilities::new(200000, 100000)
+                .with_images(true)
+                .with_streaming(true),
+        },
+    ]
+}
+
 impl OpenAiResponsesProvider {
     pub fn new(api_key: String, base_url: Option<String>) -> Self {
         Self::with_client(api_key, base_url, Arc::new(HttpClient::new()))
@@ -869,36 +916,7 @@ impl OpenAiResponsesProvider {
         client: Arc<HttpClient>,
     ) -> Self {
         let base_url = base_url.unwrap_or_else(|| "https://api.openai.com".into());
-        let models = vec![
-            ModelInfo {
-                id: "gpt-4o".into(),
-                display_name: "GPT-4o".into(),
-                capabilities: ModelCapabilities::new(128000, 16384)
-                    .with_images(true)
-                    .with_streaming(true),
-            },
-            ModelInfo {
-                id: "gpt-4o-mini".into(),
-                display_name: "GPT-4o Mini".into(),
-                capabilities: ModelCapabilities::new(128000, 16384)
-                    .with_images(true)
-                    .with_streaming(true),
-            },
-            ModelInfo {
-                id: "o3".into(),
-                display_name: "o3".into(),
-                capabilities: ModelCapabilities::new(200000, 100000)
-                    .with_images(true)
-                    .with_streaming(true),
-            },
-            ModelInfo {
-                id: "o4-mini".into(),
-                display_name: "o4-mini".into(),
-                capabilities: ModelCapabilities::new(200000, 100000)
-                    .with_images(true)
-                    .with_streaming(true),
-            },
-        ];
+        let models = model_catalog();
         Self {
             auth,
             base_url,
@@ -1101,6 +1119,7 @@ impl OpenAiResponsesProvider {
                     stream_events.push(Err(ProviderError::StreamError(format!(
                         "malformed SSE data: {error} (data: {data:.80})"
                     ))));
+                    break;
                 }
             }
         }
@@ -1210,12 +1229,9 @@ impl OpenAiResponsesProvider {
                         }
                     }
                     ParsedEvent::Malformed { data, error } => {
-                        let err = ProviderError::StreamError(format!(
+                        return Err(ProviderError::StreamError(format!(
                             "malformed SSE data: {error} (data: {data:.80})"
-                        ));
-                        if tx.send(Err(err)).await.is_err() {
-                            return Ok(());
-                        }
+                        )));
                     }
                 }
             }

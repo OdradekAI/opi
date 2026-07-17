@@ -354,6 +354,59 @@ async fn json_mode_provider_error_stderr_is_redacted() {
     );
 }
 
+#[tokio::test]
+async fn json_mode_credential_needed_emits_typed_remediation_without_prompt() {
+    let provider = MockProvider::new_with_errors(
+        "anthropic",
+        vec![MockResponse::Error(ProviderError::CredentialNeeded {
+            provider_id: "anthropic".into(),
+        })],
+    );
+    let call_log = provider.call_log_handle();
+    let mut runner = NonInteractiveRunner::new(
+        Box::new(provider),
+        "anthropic:claude-sonnet-4-5".into(),
+        OpiConfig::default(),
+        std::env::current_dir().unwrap(),
+        false,
+        None,
+        Vec::new(),
+    );
+
+    let result = tokio::time::timeout(std::time::Duration::from_secs(2), runner.run_json("hello"))
+        .await
+        .expect("JSON credential remediation must not prompt or block");
+
+    assert_eq!(result.exit_code, ExitCode::AuthFailure as i32);
+    let lines = parse_ndjson(&result.stdout);
+    assert_eq!(lines[0]["schema_version"], NDJSON_SCHEMA_VERSION);
+    let raw_remediation = result
+        .stdout
+        .lines()
+        .find(|line| line.contains("\"type\":\"CredentialNeeded\""))
+        .expect("raw CredentialNeeded remediation line");
+    println!("{raw_remediation}");
+    let remediation = lines
+        .iter()
+        .find(|line| line["type"] == "CredentialNeeded")
+        .expect("typed CredentialNeeded remediation record");
+    let typed: AgentSessionEvent = serde_json::from_value(remediation.clone())
+        .expect("credential remediation remains inside AgentSessionEvent");
+    match typed {
+        AgentSessionEvent::CredentialNeeded {
+            provider_id,
+            remediation,
+            diagnostic,
+        } => {
+            assert_eq!(provider_id, "anthropic");
+            assert_eq!(remediation, "/login anthropic");
+            assert_eq!(diagnostic.code, "provider_credential_needed");
+        }
+        other => panic!("unexpected remediation event: {other:?}"),
+    }
+    assert_eq!(call_log.lock().unwrap().len(), 1, "no automatic retry");
+}
+
 /// Phase 12 task 12.2 — provider errors visible through the non-interactive
 /// NDJSON public surface must not leak credentials. A retryable `Network`
 /// error carrying a secret triggers an `AutoRetryStart` event whose
@@ -556,120 +609,6 @@ async fn json_mode_emits_session_summary_with_token_totals() {
             .unwrap_or_default(),
         "anthropic:claude-sonnet-4"
     );
-}
-
-// ---------------------------------------------------------------------------
-// Subprocess E2E: exercise the full CLI wiring for --json
-// ---------------------------------------------------------------------------
-
-fn opi_binary() -> std::path::PathBuf {
-    let crate_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| ".".into());
-    let workspace_root = std::path::PathBuf::from(&crate_dir)
-        .parent()
-        .and_then(|p| p.parent())
-        .expect("crate should be in crates/opi-coding-agent")
-        .to_path_buf();
-    let bin_name = if cfg!(windows) { "opi.exe" } else { "opi" };
-    let path = workspace_root.join("target").join("debug").join(bin_name);
-    assert!(
-        path.exists(),
-        "opi binary must be built: run `cargo build -p opi-coding-agent`"
-    );
-    path
-}
-
-fn build_opi_if_needed() {
-    let bin = opi_binary();
-    if !bin.exists() {
-        let status = std::process::Command::new("cargo")
-            .args(["build", "-p", "opi-coding-agent"])
-            .status()
-            .expect("failed to run cargo build");
-        assert!(status.success(), "cargo build failed");
-    }
-}
-
-#[test]
-fn e2e_json_mode_auth_failure_produces_ndjson_stderr() {
-    // Without API keys, the binary should fail with an auth error.
-    // The test validates CLI wiring: arg parsing → config → provider → runner → exit code.
-    build_opi_if_needed();
-
-    let dir = tempfile::tempdir().unwrap();
-    let output = std::process::Command::new(opi_binary())
-        .env("OPI_SESSIONS_DIR", dir.path())
-        .env("ANTHROPIC_API_KEY", "") // ensure no key
-        .arg("--json")
-        .arg("--model")
-        .arg("anthropic:claude-sonnet-4")
-        .arg("test prompt")
-        .output()
-        .expect("failed to run opi");
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-
-    // Auth failure should produce non-zero exit code
-    assert!(
-        !output.status.success(),
-        "expected non-zero exit code without API key, got {}",
-        output.status
-    );
-
-    // stderr should mention the auth problem (either missing key or auth failure)
-    assert!(
-        stderr.contains("API key")
-            || stderr.contains("api key")
-            || stderr.contains("missing")
-            || stderr.contains("authentication")
-            || stderr.contains("access denied"),
-        "stderr should mention auth failure, got: {stderr}"
-    );
-
-    // stdout should not contain non-JSON text (CLI wiring must route all
-    // diagnostics to stderr, keeping stdout reserved for NDJSON)
-    if !stdout.is_empty() {
-        for (i, line) in stdout.lines().enumerate() {
-            let parsed: Result<serde_json::Value, _> = serde_json::from_str(line);
-            assert!(
-                parsed.is_ok(),
-                "stdout line {i} is not valid JSON (CLI should not write plain text to stdout in --json mode): {line}"
-            );
-        }
-    }
-}
-
-#[test]
-fn e2e_json_mode_schema_header_on_stdout() {
-    // Even when the run fails (no API key), the first stdout line should be
-    // the schema version header if any output was produced.
-    build_opi_if_needed();
-
-    let dir = tempfile::tempdir().unwrap();
-    let output = std::process::Command::new(opi_binary())
-        .env("OPI_SESSIONS_DIR", dir.path())
-        .env("ANTHROPIC_API_KEY", "")
-        .arg("--json")
-        .arg("--model")
-        .arg("anthropic:claude-sonnet-4")
-        .arg("test prompt")
-        .output()
-        .expect("failed to run opi");
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    if !stdout.is_empty() {
-        let first_line = stdout.lines().next().unwrap_or("");
-        let header: serde_json::Value = serde_json::from_str(first_line)
-            .unwrap_or_else(|e| panic!("first stdout line must be JSON: {e}: {first_line}"));
-        assert_eq!(
-            header["type"], "session_header",
-            "first line must be session_header"
-        );
-        assert_eq!(
-            header["schema_version"], NDJSON_SCHEMA_VERSION,
-            "schema_version must match NDJSON_SCHEMA_VERSION"
-        );
-    }
 }
 
 #[tokio::test]

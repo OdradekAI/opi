@@ -29,7 +29,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use opi_ai::auth::{LoginPresenter, OAuthCredential, OAuthProvider};
-use opi_ai::credential::{BoxAuthFuture, CredentialStore};
+use opi_ai::credential::{BoxAuthFuture, CredentialStore, CredentialStoreError};
 use opi_ai::provider::ProviderError;
 use secrecy::{ExposeSecret, SecretString};
 use time::OffsetDateTime;
@@ -1164,11 +1164,62 @@ impl std::fmt::Debug for OAuthProviderRegistry {
 // /login and /logout command helpers (Phase 14.2 slice 6)
 // ---------------------------------------------------------------------------
 
+/// Presenter adapter that delays the success notification until the acquired
+/// credential has been persisted. Provider failures still reach the real
+/// presenter immediately.
+struct DeferredSuccessPresenter<'a> {
+    inner: &'a dyn LoginPresenter,
+}
+
+impl LoginPresenter for DeferredSuccessPresenter<'_> {
+    fn present_auth_url<'a>(
+        &'a self,
+        url: &'a str,
+    ) -> BoxAuthFuture<'a, Result<(), ProviderError>> {
+        self.inner.present_auth_url(url)
+    }
+
+    fn present_device_code<'a>(
+        &'a self,
+        user_code: &'a str,
+        verification_uri: &'a str,
+    ) -> BoxAuthFuture<'a, Result<(), ProviderError>> {
+        self.inner.present_device_code(user_code, verification_uri)
+    }
+
+    fn await_manual_code<'a>(&'a self) -> BoxAuthFuture<'a, Result<String, ProviderError>> {
+        self.inner.await_manual_code()
+    }
+
+    fn notify_success(&self) {}
+
+    fn notify_failure(&self, reason: &str) {
+        self.inner.notify_failure(reason);
+    }
+}
+
+fn store_error_to_provider(error: CredentialStoreError) -> ProviderError {
+    let message = match error {
+        CredentialStoreError::BackendUnavailable { .. } => "credential store unavailable",
+        CredentialStoreError::Backend { reason, .. } if reason.contains("credential lock") => {
+            "credential store lock failed"
+        }
+        CredentialStoreError::Backend { .. } => "credential store backend failed",
+        CredentialStoreError::MalformedEnvelope { .. }
+        | CredentialStoreError::CorruptMarker { .. }
+        | CredentialStoreError::UnknownEnvelope { .. }
+        | CredentialStoreError::UnexpectedCredentialKind { .. } => {
+            "credential store data is invalid"
+        }
+        _ => "credential store operation failed",
+    };
+    ProviderError::Config(message.to_owned())
+}
+
 /// Run the OAuth login flow for `provider_id`, writing the resulting
 /// credential to `store` on success. `store` is the locked keychain store;
-/// the write acquires the cross-process mutation lock. Called by the
-/// interactive `/login <provider>` command and by the `CredentialNeeded`
-/// same-turn retry path.
+/// the write acquires the cross-process mutation lock. Called by the explicit
+/// `/login <provider>` production dispatcher.
 ///
 /// `presenter` is the UX seam: the production `TuiLoginPresenter` drives the
 /// real TUI, while tests inject a `MockLoginPresenter` to avoid the real
@@ -1178,16 +1229,18 @@ pub async fn login_oauth(
     registry: &OAuthProviderRegistry,
     store: &crate::credential_store::KeychainCredentialStore,
     presenter: &dyn LoginPresenter,
-) -> Result<(), String> {
+) -> Result<(), ProviderError> {
     let oauth = registry
         .lookup(provider_id)
-        .ok_or_else(|| format!("unknown OAuth provider: {provider_id}"))?;
-    let cred = oauth.login(presenter).await.map_err(|e| e.to_string())?;
+        .ok_or_else(|| ProviderError::Config(format!("unknown OAuth provider: {provider_id}")))?;
+    let deferred_presenter = DeferredSuccessPresenter { inner: presenter };
+    let cred = oauth.login(&deferred_presenter).await?;
     let stored: opi_ai::credential::Credential = cred.into();
     store
         .write(provider_id, &stored)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(store_error_to_provider)?;
+    presenter.notify_success();
     Ok(())
 }
 
@@ -1197,8 +1250,11 @@ pub async fn login_oauth(
 pub async fn logout_credential(
     provider_id: &str,
     store: &crate::credential_store::KeychainCredentialStore,
-) -> Result<(), String> {
-    store.delete(provider_id).await.map_err(|e| e.to_string())?;
+) -> Result<(), ProviderError> {
+    store
+        .delete(provider_id)
+        .await
+        .map_err(store_error_to_provider)?;
     Ok(())
 }
 

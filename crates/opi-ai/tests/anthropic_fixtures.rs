@@ -8,7 +8,7 @@ use opi_ai::anthropic::{
     AnthropicEvent, AnthropicMapper, AnthropicProvider, ParsedEvent, parse_sse_events,
 };
 use opi_ai::message::{AssistantContent, InputContent, Message, UserMessage};
-use opi_ai::provider::{CacheRetention, Provider, Request, ThinkingConfig};
+use opi_ai::provider::{CacheRetention, Provider, ProviderError, Request, ThinkingConfig};
 use opi_ai::stream::{AssistantStreamEvent, StopReason};
 use tokio_util::sync::CancellationToken;
 use wiremock::matchers::{body_partial_json, header, method, path};
@@ -19,6 +19,7 @@ fn map_fixture(input: &str) -> Vec<AssistantStreamEvent> {
     let events: Vec<AnthropicEvent> = parse_sse_events(input)
         .filter_map(|p| match p {
             ParsedEvent::Valid(e) => Some(e),
+            ParsedEvent::UsageError(_) => None,
             ParsedEvent::Malformed { .. } => None,
         })
         .collect();
@@ -31,6 +32,7 @@ fn collect_valid_events(input: &str) -> Vec<AnthropicEvent> {
     parse_sse_events(input)
         .filter_map(|p| match p {
             ParsedEvent::Valid(e) => Some(e),
+            ParsedEvent::UsageError(_) => None,
             ParsedEvent::Malformed { .. } => None,
         })
         .collect()
@@ -337,9 +339,41 @@ fn cache_1h_tokens_parsed_as_subset_of_cache_write() {
         .expect("expected Done event");
     if let AssistantStreamEvent::Done { message, .. } = done {
         assert_eq!(message.usage.cache_write_tokens, 200);
-        assert_eq!(message.usage.cache_write_1h_tokens, 150);
-        assert!(message.usage.cache_write_1h_tokens <= message.usage.cache_write_tokens);
+        assert_eq!(message.usage.cache_write_1h_tokens, Some(150));
+        assert!(
+            message.usage.cache_write_1h_tokens.unwrap()
+                <= u64::from(message.usage.cache_write_tokens)
+        );
         assert!(message.usage.is_reported());
+    }
+}
+
+#[test]
+fn cache_1h_absent_zero_and_equality_are_preserved() {
+    let absent = cache_1h_fixture().replace(",\"cache_creation_input_tokens_1h\":150", "");
+    let zero = cache_1h_fixture().replace(
+        "\"cache_creation_input_tokens_1h\":150",
+        "\"cache_creation_input_tokens_1h\":0",
+    );
+    let equal = cache_1h_fixture().replace(
+        "\"cache_creation_input_tokens_1h\":150",
+        "\"cache_creation_input_tokens_1h\":200",
+    );
+
+    for (fixture, expected) in [
+        (absent.as_str(), None),
+        (zero.as_str(), Some(0)),
+        (equal.as_str(), Some(200)),
+    ] {
+        let stream_events = map_fixture(fixture);
+        let usage = stream_events
+            .iter()
+            .find_map(|event| match event {
+                AssistantStreamEvent::Done { message, .. } => Some(&message.usage),
+                _ => None,
+            })
+            .expect("expected Done event");
+        assert_eq!(usage.cache_write_1h_tokens, expected);
     }
 }
 
@@ -366,23 +400,54 @@ data: {"type":"message_stop"}
 "#
 }
 
-#[test]
-fn cache_1h_malformed_subset_rejected_as_unknown() {
-    let stream_events = map_fixture(cache_1h_malformed_fixture());
-    let done = stream_events
-        .iter()
-        .find(|e| matches!(e, AssistantStreamEvent::Done { .. }))
-        .expect("expected Done event");
-    if let AssistantStreamEvent::Done { message, .. } = done {
-        // The message_start usage was malformed (1h > total), so its
-        // contribution was dropped (unknown). The message_delta added 20
-        // output tokens and marked usage reported since its own usage
-        // was valid.
-        assert_eq!(message.usage.output_tokens, 20);
-        // cache_write and cache_write_1h from message_start were rejected.
-        assert_eq!(message.usage.cache_write_tokens, 0);
-        assert_eq!(message.usage.cache_write_1h_tokens, 0);
-    }
+#[tokio::test]
+async fn cache_1h_malformed_subset_stops_production_stream_with_non_retryable_error() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/messages"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string(cache_1h_malformed_fixture())
+                .insert_header("content-type", "text/event-stream"),
+        )
+        .mount(&server)
+        .await;
+
+    let provider = AnthropicProvider::new("test-key".into(), Some(server.uri()));
+    let request = Request {
+        model: "anthropic:claude-sonnet-4-5-20250514".into(),
+        system: None,
+        messages: vec![Message::User(UserMessage {
+            content: vec![InputContent::Text {
+                text: "Hello".into(),
+            }],
+            timestamp_ms: 0,
+        })],
+        tools: vec![],
+        max_tokens: Some(1024),
+        temperature: None,
+        thinking: ThinkingConfig::default(),
+        stop_sequences: vec![],
+        metadata: None,
+        cancel: CancellationToken::new(),
+        timeout: None,
+        extra_headers: vec![],
+        cache_retention: CacheRetention::None,
+        session_id: None,
+    };
+
+    let results: Vec<_> = provider.stream(request).collect().await;
+    assert_eq!(results.len(), 1, "invalid usage must stop the stream");
+    let error = results[0].as_ref().expect_err("expected StreamError");
+    assert!(matches!(error, ProviderError::StreamError(_)));
+    assert!(!error.is_retryable());
+    assert!(
+        !results.iter().any(|result| matches!(
+            result,
+            Ok(AssistantStreamEvent::Done { .. } | AssistantStreamEvent::Error { .. })
+        )),
+        "no completion event may follow malformed usage"
+    );
 }
 
 // --- Missing-usage graceful handling (Phase 12 task 12.6, DoD clause 3) ---

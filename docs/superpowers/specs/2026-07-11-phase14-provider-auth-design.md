@@ -7,6 +7,17 @@ Historical note: under the 2026-07-10 roadmap redesign
 This doc synthesizes tickets T1 (credential store), T2 (OAuth + per-request
 auth), and T3 (opi-ai Request enrichment), all resolved 2026-07-11.
 
+> Remediation status (updated 2026-07-17): tasks 14.1-14.13 shipped, but the
+> latest Phase F reconstruction still leaves SC1-SC3 `not-met`. A subsequent
+> comparison with pi 0.80.6 also found that this historical design incorrectly
+> narrowed Codex to browser PKCE, modeled Codex as a Responses compatibility
+> profile, and deferred `api-map` even though GitHub Copilot is a concrete
+> multi-wire provider. The reviewed corrective source is
+> `docs/superpowers/specs/2026-07-14-phase14-exit-remediation-design.md`; its
+> 2026-07-17 alignment revision adds tasks 14.14-14.21 and supersedes this
+> file wherever provider ids, login methods, wire identity, model metadata,
+> catalog scope, or `api-map` differ.
+
 ## Overview
 
 Phase 14 closes the provider/auth cluster (cluster A) identified by the
@@ -26,8 +37,9 @@ breaks this doc into tasks; it is not itself a task list.
 - An OS-keychain credential store with env-var fallback, atomic cross-process
   locking, and redacted probing — no opi-managed plaintext credential file.
 - OAuth (PKCE authorization-code and device-code flows) for Anthropic, GitHub
-  Copilot, and OpenAI Codex, with double-checked-locking token refresh and a
-  manual-paste login fallback for headless/no-browser hosts.
+  Copilot, and OpenAI Codex, with double-checked-locking token refresh,
+  flow-specific manual fallback, and an explicit Browser/Device Code choice
+  for OpenAI Codex.
 - Per-request auth re-resolution on the live run path without moving dispatch
   onto `ProviderCollection` (preserving the Phase 10 boundary).
 - Additive `Request` scalars (`timeout`, `extra_headers`, `cache_retention`,
@@ -68,11 +80,20 @@ keychain is the primary store for all persisted credentials (API keys and OAuth
 tokens), with env-var fallback for API keys on hosts without a keychain daemon.
 This is a deliberate security improvement, not parity.
 
-pi has three OAuth providers — Anthropic, GitHub Copilot, OpenAI Codex — using
-PKCE authorization-code with a local `127.0.0.1` callback (Anthropic, Codex) and
-device-code (Copilot). opi matches all three. Every flow supports a manual
-code/URL-paste fallback for headless and SSH hosts, mirroring pi's
-`onManualCodeInput`.
+pi has three OAuth providers: Anthropic, GitHub Copilot, and OpenAI Codex.
+Anthropic uses PKCE authorization-code with a local `127.0.0.1` callback and
+manual code/URL-paste fallback. Copilot uses device-code and never calls
+`LoginPresenter::await_manual_code`. Codex first asks the user to choose
+Browser (default) or Device Code (headless): Browser uses PKCE callback/manual
+paste, while Device Code presents the verification URL and user code and
+polls without paste-back.
+
+pi also gives every model an exact wire identity. GitHub Copilot owns one
+provider id and catalog spanning `anthropic-messages`, `openai-completions`,
+and `openai-responses`; OpenAI Codex uses the dedicated
+`openai-codex-responses` wire. The corrective source adopts that architecture
+while retaining opi's native-keychain, typed-error, strict-usage,
+reserved-header, same-turn-retry, and atomic-refresh hardening.
 
 pi's live run path routes through `ProviderCollection` per request for auth
 re-resolution. opi keeps the live path on `Box<dyn Provider>`
@@ -128,7 +149,7 @@ single nested value. It does not create a second same-named type.
 | P0 | `AuthDescriptor::StoreCredential` variant | `opi-ai` | Additive `{ key, display_source }`; cheap, `Clone`, no secret. New match arms in `doctor`, `dispatch_stream`, `--list-models`. |
 | P0 | `KeychainCredentialStore` + `EnvCredentialSource` + `CredentialResolver` + `fs4` global lock | `opi-coding-agent` | `keyring-core` primary; env fallback; single `<user_config_dir>/opi/credential.lock`; acquire-then-re-read. |
 | P0 | `OAuthProvider` trait + `OAuthCredential` | `opi-ai` | `id()` / boxed-future `login(presenter)` / boxed-future `refresh(refresh)`; flow-agnostic and object-safe for the heterogeneous registry. |
-| P0 | Three OAuth impls + `OAuthProviderRegistry` | `opi-coding-agent` | Anthropic (PKCE + `127.0.0.1` callback), Copilot (device-code), Codex (PKCE); `register_oauth_provider` with the three built-ins. |
+| P0 | Three OAuth impls + `OAuthProviderRegistry` | `opi-coding-agent` | Anthropic (PKCE + `127.0.0.1` callback), Copilot (device-code), Codex (Browser PKCE + Device Code selector); register `anthropic`, `github-copilot`, and `openai-codex`. |
 | P0 | object-safe auth-resolution seam | `opi-ai` / `opi-coding-agent` | `AuthResolver` + `ResolvedAuth` are abstract in `opi-ai`; the concrete `AuthSource` (`Baked` / `Store` / `EnvOAuthToken`) lives in `opi-coding-agent`, implements the boxed-future seam, and is resolved per `stream()`. |
 | P0 | `Request` enrichment scalars | `opi-ai` | `timeout: Option<Duration>`, `extra_headers: HeaderMap`, `cache_retention: Option<CacheRetention>`, `session_id: Option<String>` (additive, default None/empty). |
 | P0 | session-affinity propagation | `opi-agent` / `opi-coding-agent` | `CodingHarness` sets the active `SessionCoordinator` id on `Agent`; `AgentLoopContext` copies it into every `Request`, including after resume/fork. Provider-specific wire mappings are cache-gated and compatibility-gated. |
@@ -136,7 +157,7 @@ single nested value. It does not create a second same-named type.
 | P0 | Existing `registry::ModelCapabilities` migrated onto `ModelInfo` | `opi-ai` | Make the existing type `#[non_exhaustive]`, add exact `supports_cache_control` and `supports_long_cache_retention` fields, embed it in `ModelInfo`, and migrate registry/collection capability queries. Custom/unknown defaults stay off. |
 | P0 | Anthropic `cache_control` markers | `opi-ai` (anthropic provider) | Emit `{type:ephemeral,ttl}` on system + last user/assistant text + last tool def when `supports_cache_control`; `ttl='1h'` when `supports_long_cache_retention && cache_retention==Long`. |
 | P1 | `refresh_models` substrate on `Provider` trait | `opi-ai` | Object-safe boxed-future `Result<Option<Vec<ModelInfo>>, ProviderError>`, default `Ok(None)`; mutable `ProviderCollection::refresh` atomically replaces successful dynamic catalogs only when the full refresh batch succeeds. Phase 14 adds no production trigger. |
-| P1 | `LoginPresenter` trait + impls | `opi-ai` (trait) / `opi-coding-agent` (impls) | `TuiLoginPresenter` / `RpcLoginPresenter` / `NonInteractiveLoginPresenter`; manual-paste fallback mandatory on every flow. |
+| P1 | `LoginPresenter` trait + impl | `opi-ai` (trait) / `opi-coding-agent` (impl) | `TuiLoginPresenter`; PKCE flows support manual code paste, device flows present and poll without paste-back, and Codex selects Browser or Device Code. RPC/JSON/text remediation never constructs a presenter. |
 | P1 | `doctor` `CredentialProbe` store arm | `opi-coding-agent` | Extend the `EnvApiKey` / `StaticApiKey` arms at `doctor.rs:619-625` to report `store.probe` presence without reading the secret. |
 | P1 | Phase documentation, localized mirrors, changelog, and final guards | `workspace docs/tests` | After 14.1-14.6, update public docs/help and localized counterparts, record public 0.x breaks/additions, verify every Non-Goal, and align the Phase 14 status text without claiming runtime model refresh. |
 
@@ -169,6 +190,7 @@ pub enum Credential {
         refresh: SecretString,
         expires_at: Option<OffsetDateTime>,
         base_url: Option<String>,
+        account_id: Option<String>,
     },
 }
 
@@ -208,7 +230,8 @@ access. This is where the credential file lock lives, not in the trait.
 
 Keychain entries use service `opi`, provider id as the account key, and a
 versioned JSON envelope whose v1 payload distinguishes API-key and OAuth
-credentials and preserves OAuth `base_url`. Missing entries return `Ok(None)`;
+credentials and preserves OAuth `base_url` plus the optional non-secret Codex
+`account_id`. Missing entries return `Ok(None)`;
 malformed JSON, an unknown envelope version/type, and keychain backend failure
 return distinct `CredentialStoreError` values and are never collapsed into
 absence or env fallback. Tests inject the keyring backend and never access the
@@ -286,8 +309,8 @@ on T1's locked `write`/`delete`.
 
 **Routing.** The approved Anthropic Messages, Copilot-compatible Chat, and
 Codex-compatible Responses paths hold an injected `Arc<dyn AuthResolver>` from
-`opi-ai`. `ResolvedAuth` carries only the auth
-scheme and secret needed by the provider's HTTP boundary:
+`opi-ai`. `ResolvedAuth` carries the auth scheme/secret plus the optional
+non-secret base URL and account id needed by the provider's HTTP boundary:
 
 ```rust
 pub enum AuthScheme {
@@ -298,6 +321,8 @@ pub enum AuthScheme {
 pub struct ResolvedAuth {
     pub scheme: AuthScheme,
     pub secret: SecretString,
+    pub base_url: Option<String>,
+    pub account_id: Option<String>,
 }
 
 pub trait AuthResolver: Send + Sync {
@@ -334,25 +359,25 @@ boundary. `ProviderCollection` stays off the live path, and the provider types
 do not become generic over the resolver.
 
 **OAuth providers.** Complete Phase 14 OAuth coverage for Anthropic, GitHub
-Copilot, and OpenAI Codex. The trait handles PKCE authorization-code
-(Anthropic, Codex) and device-code (Copilot) from the start. This is auth-flow
-coverage, not broad Copilot model/wire catalog parity.
+Copilot, and OpenAI Codex. The trait handles Anthropic PKCE, Copilot
+device-code, and both Codex Browser PKCE and Codex Device Code. The corrective
+source also requires Copilot model/wire catalog parity with the reviewed
+pi-0.80.6 snapshot.
 
 The provider mapping is exact rather than an auth-header-only approximation:
 
 - Anthropic OAuth selects Bearer auth and the required OAuth beta header while
   API-key construction retains `x-api-key`.
 - GitHub Copilot device login exchanges the GitHub token for the short-lived
-  Copilot token, derives the per-credential API base URL (including enterprise
-  hosts), and uses the existing OpenAI Chat implementation through an explicit
-  Copilot compatibility profile with captured required headers. Phase 14 does
-  not claim the rest of pi's multi-wire Copilot catalog.
-- OpenAI Codex uses `OpenAiResponsesProvider` through an explicit Codex
-  compatibility profile, not through the standard OpenAI Responses profile.
-  The profile targets `/codex/responses`, derives `chatgpt-account-id` from the
-  access token, and emits the required `originator`, beta, content, and session
-  headers. It is a profile on the existing Responses implementation, not a new
-  provider wire type.
+  Copilot token and derives the per-credential API base URL, including
+  enterprise hosts. One `github-copilot` provider/catalog routes models through
+  Anthropic Messages, OpenAI Chat Completions, or OpenAI Responses according to
+  each model's exact wire identity.
+- OpenAI Codex uses a dedicated `OpenAiCodexResponsesProvider`, targets
+  `https://chatgpt.com/backend-api/codex/responses`, requires the persisted
+  `chatgpt-account-id`, and owns its request body, headers, and stream mapping.
+  Shared low-level Responses parsing helpers are allowed; construction through
+  `OpenAiResponsesProvider` compatibility flags is not.
 
 Mock request capture must assert these URLs and headers. A test that checks only
 that a Bearer token reached an HTTP request is not sufficient evidence for
@@ -366,6 +391,8 @@ object-safe; no `async-trait` dependency is needed. Flow specifics (PKCE
 callback server vs device-code polling) live inside each implementation's
 `login()`; the trait is flow-agnostic. `LoginPresenter::await_manual_code`
 uses the same boxed-future convention when called through `dyn LoginPresenter`.
+Only the Anthropic and Codex Browser PKCE flows call it; Copilot calls
+`present_device_code` and polls without requesting manual input.
 
 ```rust
 pub struct OAuthCredential {
@@ -373,6 +400,7 @@ pub struct OAuthCredential {
     pub refresh: SecretString,
     pub expires_at: Option<OffsetDateTime>,
     pub base_url: Option<String>,  // Copilot enterprise
+    pub account_id: Option<String>, // OpenAI Codex
 }
 ```
 
@@ -403,11 +431,12 @@ prompting or blocking. They do not manufacture a transient OAuth authorization
 URL by starting a login flow. There is no auto-relogin mid-stream: a 401 is
 `CredentialRevoked`, stops the turn, and requires a later explicit login.
 
-**LoginPresenter (opi-ai trait).** `present_auth_url`, `present_device_code`,
-`await_manual_code` (the manual-paste fallback), `notify_success`,
-`notify_failure`. The production `TuiLoginPresenter` lives in
-`opi-coding-agent`. Every OAuth flow supports manual paste in the interactive
-command, including headless/SSH/no-browser use. RPC/JSON/non-interactive
+**LoginPresenter (opi-ai trait).** `select_login_method`,
+`present_auth_url`, `present_device_code`, `await_manual_code`,
+`notify_success`, and `notify_failure`. The production `TuiLoginPresenter`
+lives in `opi-coding-agent`. Anthropic Browser PKCE and Codex Browser PKCE use
+`await_manual_code` for fallback. Copilot and Codex Device Code use
+`present_device_code` and never request paste-back. RPC/JSON/non-interactive
 credential-needed handling is a typed diagnostic path, not an unused presenter
 implementation and not a login-flow trigger.
 
@@ -420,9 +449,10 @@ cancellation behavior. None of these paths log authorization codes, access
 tokens, refresh tokens, or keychain payloads.
 
 Auth-invalid mock responses are captured separately for factory-built
-Anthropic OAuth, Copilot Chat compatibility, and Codex Responses compatibility.
-Each maps to typed non-retryable `CredentialRevoked`, emits no retry or login
-call, and performs no request after the auth-invalid response.
+Anthropic OAuth, all three `github-copilot` routes, and the dedicated
+`openai-codex` route. Each maps to typed non-retryable `CredentialRevoked`,
+emits no retry or login call, and performs no request after the auth-invalid
+response.
 
 **ANTHROPIC_OAUTH_TOKEN.** Recognized as `AuthSource::EnvOAuthToken` (no refresh
 token, non-refreshable, use until 401 then re-login), with precedence over
@@ -502,10 +532,9 @@ only when `session_id` is non-empty and caching is not explicitly disabled:
   `x-client-request-id`; `ResponsesConfig::send_session_id_header` controls the
   `session_id` header and defaults `true` for the built-in direct profile.
   Custom/proxy profiles must opt in.
-- The Codex Responses compatibility profile emits the Codex spelling
-  `session-id` plus `x-client-request-id`; this is enabled only for that
-  explicit profile and is never inferred for standard/custom Responses
-  endpoints.
+- The dedicated OpenAI Codex Responses wire emits the Codex spelling
+  `session-id` plus `x-client-request-id`; standard/custom Responses endpoints
+  never infer Codex behavior.
 - The official Anthropic endpoint emits no session header. Its prompt caching
   is controlled by the 3b `cache_control` markers. A future Anthropic-compatible
   profile may add an explicit `x-session-affinity` compatibility flag, but it
@@ -594,12 +623,90 @@ interception needs a separate Rust-native design (closures cannot live on a
 serde-derived `Request`), and is distinct from Phase 17 T14's turn-level
 provider hook. Deferred to fog.
 
+## 2026-07-17 pi-0.80.6 Alignment Revision
+
+The corrective source adds one provider/wire/catalog workstream after the
+completed T1-T3 implementation. It does not rewrite the shipped history above,
+but its current contracts supersede the historical Codex compatibility-profile
+and `api-map` deferral language.
+
+### Exact wire identity and mapped providers
+
+The existing `ApiKind` remains the normalized assistant-message source
+classification. A separate non-exhaustive `WireApi` identifies the exact
+request wire. Every `ModelInfo` declares one `wire_api`; the initial set is
+`anthropic-messages`, `openai-completions`, `openai-responses`,
+`openai-codex-responses`, `google-generative-ai`, `google-vertex`,
+`bedrock-converse-stream`, and `azure-openai-completions`.
+
+`ApiMappedProvider` exposes one provider id and catalog and holds a checked
+`WireApi -> Provider` route map. It resolves the requested model in its own
+catalog before dispatch. Unknown models, missing routes, and wire/compat
+mismatches fail with typed non-retryable errors before network IO. All routes
+for one mapped provider receive the same `Arc<dyn AuthResolver>`, provider id,
+and default endpoint.
+
+### Model metadata
+
+`ModelInfo` is the catalog source of truth for:
+
+- exact wire identity and capabilities;
+- `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, and `max` thinking-level
+  mappings, including explicitly unsupported levels;
+- wire-specific compatibility metadata; and
+- optional base pricing plus deterministic input-token threshold tiers.
+
+The existing strict Usage subset semantics remain unchanged. Pricing-tier
+selection chooses the applicable `Pricing`; it does not add cost lines or
+double-count cache/reasoning subsets. `ThinkingConfig` carries the selected
+level alongside the existing enabled/budget fields so the wire can apply the
+model map. New thinking levels are additive session event values and do not
+change the session schema version or branch/context reconstruction model.
+
+### User-configured multi-wire providers
+
+`[providers.custom.<id>]` accepts one provider-level credential source,
+authentication scheme, default `base_url`, proxy, headers, and optional default
+`api`. Each model must inherit or declare an exact API and may override
+`base_url`, capabilities, thinking map, compatibility metadata, and pricing.
+The TOML surface permits Anthropic Messages, OpenAI Chat Completions, and
+OpenAI Responses. The subscription-only Codex wire is built-in-only.
+
+The existing `[providers.openai_compatible]` table remains the single-wire
+OpenAI Completions shorthand but lowers into the same mapped-provider
+construction path. Unknown/disabled wires, invalid compatibility metadata,
+duplicate models, missing routes, invalid price tiers, and reserved auth
+headers fail during configuration/build before a request.
+
+### Built-in parity targets
+
+- Provider ids become `github-copilot` and `openai-codex`. The development-only
+  `copilot` and `codex` ids, config values, and keychain account keys receive
+  no aliases or migration; users re-login.
+- `github-copilot` uses one pi-0.80.6 catalog across Anthropic Messages
+  (`/v1/messages`), OpenAI Completions (`/chat/completions`), and OpenAI
+  Responses (`/responses`). Every stream re-resolves both token and enterprise
+  base URL.
+- `openai-codex` uses the reviewed pi-0.80.6 catalog and the dedicated
+  `openai-codex-responses` implementation at
+  `https://chatgpt.com/backend-api/codex/responses`.
+- Codex login offers Browser (default) and Device Code (headless). Browser is
+  PKCE callback/manual paste; Device Code uses OpenAI's device authorization,
+  polling, and authorization-code exchange endpoints without paste-back.
+
+The checked-in catalog fixture records pi version and SHA-256 and is the
+offline acceptance oracle. `--list-models` shows that static snapshot without
+reading OAuth secrets or calling Copilot entitlement/model-enable endpoints.
+
+Detailed task ownership, error behavior, test commands, and final exit rules
+are normative in the corrective source's 2026-07-17 alignment revision.
+
 ## Sequencing
 
 T1 is the substrate. T2 builds on T1's locked `write`/`delete` for login,
 logout, and refresh; it must follow T1. T3 3a's generic request fields are
-independent, but its Codex-specific session mapping follows T2 because T2
-creates that compatibility profile. T3 3b follows 3a because cache markers
+independent, but its Codex-specific session mapping follows the dedicated
+Codex provider/wire work in the corrective source. T3 3b follows 3a because cache markers
 consume `CacheRetention`; 3c usage/cost accounting and the 3e refresh substrate are
 independent and may land before 3a. The final documentation/guard task follows
 all six implementation tasks. Phase 14 has no hard dependency on Phase 15 or 16;
@@ -616,17 +723,18 @@ named production path or, for SC7, explicitly classified substrate evidence:
    and `--list-models` store arms, redaction, corrupt/backend-unavailable
    diagnostics, and the exact temp-root/output scan proving no plaintext
    credential artifact or formatted secret.
-2. **OAuth product flows.** Anthropic PKCE, Copilot device-code, and Codex PKCE
-   complete through the production registry and newly created `/login` command;
-   manual fallback, cancellation, failure, `/logout`, provider-specific URL and
-   header capture, and keychain-required persistence are covered without live
-   calls.
+2. **OAuth product flows.** Anthropic PKCE, Copilot device-code, Codex Browser
+   PKCE, and Codex Device Code complete through the production registry and
+   `/login` command; method selection, flow-specific manual behavior,
+   cancellation, failure, `/logout`, provider-specific URL/header capture, and
+   keychain-required persistence are covered without live calls.
 3. **Live auth and session interaction.** Every approved concrete provider
    resolves auth inside each returned stream. Typed `CredentialNeeded` can
    resume the same interactive turn only after successful user-initiated login;
    RPC/JSON/non-interactive fail without blocking, and typed
-   `CredentialRevoked` is non-retryable and never auto-relogs in across all
-   three approved provider profiles.
+   `CredentialRevoked` is non-retryable and never auto-relogs in across
+   Anthropic, all three GitHub Copilot wire routes, and the dedicated OpenAI
+   Codex provider.
 4. **Request and session affinity.** Timeout, extra headers, and cache retention
    are proven as public Request-to-concrete-provider substrate with no claimed
    Phase 14 config/harness producer. The active session id traverses the real
@@ -673,9 +781,8 @@ provider network, or user runtime directory is accessed.
 
 ## Out of scope (cross-ref map)
 
-- Multi-API provider (`api-map`) internals — fog; sharpen after T3 settles the
-  `Request` surface and T2 settles per-request auth routing.
 - Image-generation (cluster I) internals — fog; depends on the T2 auth seam.
-- Broad provider catalog / dedicated Mistral or Codex wires (cluster B) — Future
-  Ecosystem.
-- Full pi parity (posture B chose strategic gap-closing).
+- Broad provider catalogs beyond the reviewed GitHub Copilot and OpenAI Codex
+  pi-0.80.6 snapshots remain Future Ecosystem.
+- Full pi behavior parity remains out of scope where the corrective source
+  records an intentional opi hardening or security boundary.

@@ -7,11 +7,12 @@
 
 mod common;
 
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use common::{MockLoginPresenter, extract_query_param, extract_redirect_port};
+use opi_agent::AgentError;
 use opi_ai::anthropic::AnthropicProvider;
 use opi_ai::auth::{
     AuthResolver, AuthScheme, LoginPresenter, OAuthCredential, OAuthProvider, ResolvedAuth,
@@ -29,6 +30,7 @@ use opi_coding_agent::credential_store::{
     AuthSource, CredentialResolver, EnvLookup, FakeKeyringBackend, KEYCHAIN_SERVICE,
     KeychainCredentialStore,
 };
+use opi_coding_agent::harness::CodingHarness;
 use opi_coding_agent::oauth::{
     AnthropicOAuthProvider, CodexOAuthProvider, CopilotOAuthProvider, OAuthProviderRegistry,
     RegistryError, TuiLoginPresenter, login_oauth, logout_credential,
@@ -336,6 +338,7 @@ fn env_lookup(value: Option<&str>) -> EnvLookup {
 #[tokio::test]
 async fn auth_source_env_oauth_token_present_resolves_bearer() {
     let src = AuthSource::EnvOAuthToken {
+        provider_id: "anthropic".into(),
         env_var: "ANTHROPIC_OAUTH_TOKEN".into(),
         env_lookup: env_lookup(Some(ENV_TOKEN)),
     };
@@ -347,12 +350,13 @@ async fn auth_source_env_oauth_token_present_resolves_bearer() {
 #[tokio::test]
 async fn auth_source_env_oauth_token_absent_yields_credential_needed() {
     let src = AuthSource::EnvOAuthToken {
+        provider_id: "anthropic".into(),
         env_var: "ANTHROPIC_OAUTH_TOKEN".into(),
         env_lookup: env_lookup(None),
     };
     match src.resolve().await {
         Err(AiProviderError::CredentialNeeded { provider_id }) => {
-            assert_eq!(provider_id, "ANTHROPIC_OAUTH_TOKEN");
+            assert_eq!(provider_id, "anthropic");
         }
         other => panic!("expected CredentialNeeded, got {other:?}"),
     }
@@ -2092,9 +2096,47 @@ async fn login_oauth_unknown_provider_errors() {
     let err = login_oauth("nonexistent", &registry, store_ref, &presenter)
         .await
         .expect_err("unknown provider errors");
+    let message = err.to_string();
     assert!(
-        err.contains("nonexistent"),
-        "error mentions provider id: {err}"
+        message.contains("nonexistent"),
+        "error mentions provider id: {message}"
+    );
+}
+
+#[tokio::test]
+async fn login_oauth_store_failure_stays_typed_and_does_not_report_success() {
+    let server = MockServer::start().await;
+    mount_token_stub(
+        &server,
+        200,
+        token_body("access-token", "refresh-token", 3600),
+    )
+    .await;
+    let mut registry = OAuthProviderRegistry::new();
+    registry
+        .register(Arc::new(anthropic_provider(
+            format!("{}/oauth/token", server.uri()),
+            Duration::from_secs(60),
+        )))
+        .unwrap();
+    let (_dir, store, _backend) = store_with(FakeKeyringBackend::new().with_unavailable());
+    let presenter = MockLoginPresenter::new();
+    presenter.supply_manual_code("test-auth-code");
+
+    let error = login_oauth("anthropic", &registry, &store, &presenter)
+        .await
+        .expect_err("unavailable store must fail login");
+
+    assert!(matches!(error, AiProviderError::Config(_)), "{error:?}");
+    assert_eq!(presenter.notify_success_count.load(Ordering::SeqCst), 0);
+    let message = error.to_string();
+    assert!(
+        !message.contains("access-token"),
+        "secret leaked: {message}"
+    );
+    assert!(
+        !message.contains("refresh-token"),
+        "secret leaked: {message}"
     );
 }
 
@@ -2125,6 +2167,17 @@ async fn logout_credential_missing_entry_is_noop() {
     logout_credential("anthropic", store_ref)
         .await
         .expect("logout on missing entry is a no-op");
+}
+
+#[tokio::test]
+async fn logout_credential_store_failure_stays_typed() {
+    let (_dir, store, _backend) = store_with(FakeKeyringBackend::new().with_unavailable());
+
+    let error = logout_credential("anthropic", &store)
+        .await
+        .expect_err("unavailable store must fail logout");
+
+    assert!(matches!(error, AiProviderError::Config(_)), "{error:?}");
 }
 
 // ===========================================================================
@@ -2330,4 +2383,325 @@ fn login_logout_commands_are_discoverable() {
             && stdout.contains("OpenAI Codex"),
         "opi --help must name the three approved OAuth profiles; got:\n{stdout}"
     );
+}
+
+#[tokio::test]
+async fn factory_built_approved_profiles_resolve_auth_inside_each_stream() {
+    for (provider_id, model) in [
+        ("anthropic", "claude-sonnet-4-5-20250514"),
+        ("copilot", "gpt-4o"),
+        ("codex", "gpt-5"),
+    ] {
+        let server = MockServer::start().await;
+        let (_dir, store, _backend) = store_with(FakeKeyringBackend::new());
+        let resolver = resolver_with(store);
+        let registry = OAuthProviderRegistry::registry_with_builtins();
+        let mut config = OpiConfig::default();
+        config.defaults.model = format!("{provider_id}:{model}");
+        if provider_id == "anthropic" {
+            config.providers.anthropic.base_url = Some(server.uri());
+        }
+
+        let provider = build_provider_with_oauth(&config, &resolver, &registry)
+            .await
+            .unwrap_or_else(|error| {
+                panic!("{provider_id} must construct without an available credential: {error}")
+            });
+        let mut stream = provider.stream(factory_request(&config.defaults.model));
+        let first = tokio::time::timeout(Duration::from_secs(2), stream.next())
+            .await
+            .unwrap_or_else(|_| panic!("{provider_id} auth resolution blocked"))
+            .unwrap_or_else(|| panic!("{provider_id} stream ended without auth result"))
+            .expect_err("missing credential must fail before provider output");
+        match first {
+            AiProviderError::CredentialNeeded {
+                provider_id: actual,
+            } => assert_eq!(actual, provider_id),
+            other => panic!("{provider_id} expected CredentialNeeded, got {other:?}"),
+        }
+        if provider_id == "anthropic" {
+            assert!(
+                server.received_requests().await.unwrap().is_empty(),
+                "{provider_id} must resolve auth before any HTTP request"
+            );
+            continue;
+        }
+
+        // Copilot and Codex derive their API base URL from the stored OAuth
+        // profile during construction. Seed that route, construct, then remove
+        // the credential so the first stream proves auth fails before HTTP.
+        let (_routed_dir, routed_store, _routed_backend) = store_with(FakeKeyringBackend::new());
+        routed_store
+            .write(
+                provider_id,
+                &stored_oauth("route-only", "route-refresh", Some(server.uri())),
+            )
+            .await
+            .unwrap();
+        let routed_resolver = resolver_with(routed_store.clone());
+        let routed_provider = build_provider_with_oauth(&config, &routed_resolver, &registry)
+            .await
+            .unwrap();
+        routed_store.delete(provider_id).await.unwrap();
+
+        let mut routed_stream = routed_provider.stream(factory_request(&config.defaults.model));
+        let routed_error = tokio::time::timeout(Duration::from_secs(2), routed_stream.next())
+            .await
+            .unwrap_or_else(|_| panic!("{provider_id} routed auth resolution blocked"))
+            .unwrap_or_else(|| panic!("{provider_id} routed stream ended without auth result"))
+            .expect_err("removed credential must fail before routed provider output");
+        match routed_error {
+            AiProviderError::CredentialNeeded {
+                provider_id: actual,
+            } => assert_eq!(actual, provider_id),
+            other => panic!("{provider_id} expected routed CredentialNeeded, got {other:?}"),
+        }
+        assert!(
+            server.received_requests().await.unwrap().is_empty(),
+            "{provider_id} must resolve auth before any routed HTTP request"
+        );
+    }
+}
+
+#[tokio::test]
+async fn factory_stream_reresolves_after_store_change() {
+    for (provider_id, model, request_path) in [
+        ("anthropic", "claude-sonnet-4-5-20250514", "/v1/messages"),
+        ("copilot", "gpt-4o", "/chat/completions"),
+        ("codex", "gpt-5", "/codex/responses"),
+    ] {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path(request_path))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_string("")
+                    .insert_header("content-type", "text/event-stream"),
+            )
+            .mount(&server)
+            .await;
+
+        let (_dir, store, _backend) = store_with(FakeKeyringBackend::new());
+        let old = format!("old-{provider_id}-credential");
+        if provider_id == "anthropic" {
+            store
+                .write(provider_id, &Credential::ApiKey(secret(&old)))
+                .await
+                .unwrap();
+        } else {
+            store
+                .write(
+                    provider_id,
+                    &stored_oauth(&old, "old-refresh", Some(server.uri())),
+                )
+                .await
+                .unwrap();
+        }
+        let resolver = resolver_with(store.clone());
+        let registry = OAuthProviderRegistry::registry_with_builtins();
+        let mut config = OpiConfig::default();
+        config.defaults.model = format!("{provider_id}:{model}");
+        if provider_id == "anthropic" {
+            config.providers.anthropic.base_url = Some(server.uri());
+        }
+        let provider = build_provider_with_oauth(&config, &resolver, &registry)
+            .await
+            .unwrap();
+
+        let mut first = provider.stream(factory_request(&config.defaults.model));
+        drain_stream(&mut first).await;
+
+        let new = format!("new-{provider_id}-credential");
+        let base_url = (provider_id != "anthropic").then(|| server.uri());
+        store
+            .write(provider_id, &stored_oauth(&new, "new-refresh", base_url))
+            .await
+            .unwrap();
+        let mut second = provider.stream(factory_request(&config.defaults.model));
+        drain_stream(&mut second).await;
+
+        let requests = server.received_requests().await.unwrap();
+        assert_eq!(requests.len(), 2, "{provider_id} request count");
+        if provider_id == "anthropic" {
+            assert_eq!(
+                requests[0]
+                    .headers
+                    .get("x-api-key")
+                    .map(|value| value.to_str().unwrap()),
+                Some(old.as_str())
+            );
+            assert_eq!(
+                requests[1]
+                    .headers
+                    .get("authorization")
+                    .map(|value| value.to_str().unwrap()),
+                Some(format!("Bearer {new}").as_str())
+            );
+        } else {
+            assert_eq!(
+                requests[0]
+                    .headers
+                    .get("authorization")
+                    .map(|value| value.to_str().unwrap()),
+                Some(format!("Bearer {old}").as_str())
+            );
+            assert_eq!(
+                requests[1]
+                    .headers
+                    .get("authorization")
+                    .map(|value| value.to_str().unwrap()),
+                Some(format!("Bearer {new}").as_str())
+            );
+        }
+    }
+}
+
+struct RefreshDropFlag(Arc<AtomicBool>);
+
+impl Drop for RefreshDropFlag {
+    fn drop(&mut self) {
+        self.0.store(true, Ordering::SeqCst);
+    }
+}
+
+struct HangingRefreshProvider {
+    dropped: Arc<AtomicBool>,
+}
+
+impl OAuthProvider for HangingRefreshProvider {
+    fn id(&self) -> &str {
+        PROVIDER
+    }
+
+    fn login<'a>(
+        &'a self,
+        _presenter: &'a dyn LoginPresenter,
+    ) -> BoxAuthFuture<'a, Result<OAuthCredential, AiProviderError>> {
+        Box::pin(async { Err(AiProviderError::Config("unused login".into())) })
+    }
+
+    fn refresh<'a>(
+        &'a self,
+        _cred: &'a OAuthCredential,
+    ) -> BoxAuthFuture<'a, Result<OAuthCredential, AiProviderError>> {
+        let dropped = self.dropped.clone();
+        Box::pin(async move {
+            let _drop_flag = RefreshDropFlag(dropped);
+            std::future::pending::<Result<OAuthCredential, AiProviderError>>().await
+        })
+    }
+}
+
+#[tokio::test]
+async fn refresh_timeout_releases_lock_and_preserves_prior_credential() {
+    let (dir, store, backend) = store_with(FakeKeyringBackend::new());
+    let prior = oauth_credential("prior-access", Some(near_expiry()));
+    store.write(PROVIDER, &prior).await.unwrap();
+    let raw_before = backend
+        .raw_entry(KEYCHAIN_SERVICE, PROVIDER)
+        .expect("prior credential envelope");
+    let resolver = CredentialResolver::with_refresh_timeout(
+        store.clone(),
+        Arc::new(|_: &str| None),
+        Duration::from_millis(25),
+    );
+    let dropped = Arc::new(AtomicBool::new(false));
+    let oauth = HangingRefreshProvider {
+        dropped: dropped.clone(),
+    };
+
+    let error = resolver
+        .resolve_oauth(PROVIDER, &oauth)
+        .await
+        .expect_err("hung refresh must be bounded");
+    assert!(matches!(error, AiProviderError::AuthFailed(_)), "{error:?}");
+    assert!(!error.is_retryable());
+    assert!(error.to_string().contains(PROVIDER));
+    assert!(
+        dropped.load(Ordering::SeqCst),
+        "refresh future was not dropped"
+    );
+    assert_eq!(
+        backend.raw_entry(KEYCHAIN_SERVICE, PROVIDER).as_deref(),
+        Some(raw_before.as_str()),
+        "timeout must not partially replace the credential"
+    );
+
+    let competing_store = KeychainCredentialStore::with_lock_timeout(
+        Box::new(backend),
+        dir.path().to_path_buf(),
+        Duration::from_millis(100),
+    );
+    tokio::time::timeout(
+        Duration::from_millis(250),
+        competing_store.write("lock-probe", &Credential::ApiKey(secret("probe"))),
+    )
+    .await
+    .expect("refresh timeout must release the mutation lock")
+    .expect("lock probe write succeeds");
+}
+
+#[tokio::test]
+async fn factory_built_approved_profiles_map_revocation_without_retry() {
+    for (provider_id, model, request_path) in [
+        ("anthropic", "claude-sonnet-4-5-20250514", "/v1/messages"),
+        ("copilot", "gpt-4o", "/chat/completions"),
+        ("codex", "gpt-5", "/codex/responses"),
+    ] {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path(request_path))
+            .respond_with(ResponseTemplate::new(401).set_body_string("revoked-secret-canary"))
+            .mount(&server)
+            .await;
+        let (_dir, store, _backend) = store_with(FakeKeyringBackend::new());
+        let base_url = (provider_id != "anthropic").then(|| server.uri());
+        store
+            .write(
+                provider_id,
+                &stored_oauth("revoked-access", "revoked-refresh", base_url),
+            )
+            .await
+            .unwrap();
+        let resolver = resolver_with(store);
+        let registry = OAuthProviderRegistry::registry_with_builtins();
+        let mut config = OpiConfig::default();
+        config.defaults.model = format!("{provider_id}:{model}");
+        if provider_id == "anthropic" {
+            config.providers.anthropic.base_url = Some(server.uri());
+        }
+        let provider = build_provider_with_oauth(&config, &resolver, &registry)
+            .await
+            .unwrap();
+        let workspace = tempfile::tempdir().unwrap();
+        let mut harness = CodingHarness::builder(
+            provider,
+            config.defaults.model.clone(),
+            config,
+            workspace.path().to_path_buf(),
+        )
+        .tool_selection(ToolSelection::Disabled)
+        .build();
+
+        let error = tokio::time::timeout(Duration::from_secs(2), harness.prompt("hello"))
+            .await
+            .unwrap_or_else(|_| panic!("{provider_id} revocation blocked"))
+            .expect_err("auth-invalid response must fail the agent turn");
+        match &error {
+            AgentError::CredentialRevoked {
+                provider_id: actual,
+            } => assert_eq!(actual, provider_id),
+            other => panic!("{provider_id} expected CredentialRevoked, got {other:?}"),
+        }
+        assert!(
+            !error.to_string().contains("revoked-secret-canary"),
+            "{provider_id} leaked the auth-invalid body"
+        );
+        tokio::task::yield_now().await;
+        assert_eq!(
+            server.received_requests().await.unwrap().len(),
+            1,
+            "{provider_id} must issue exactly one request"
+        );
+    }
 }

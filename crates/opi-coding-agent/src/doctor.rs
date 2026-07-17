@@ -30,8 +30,9 @@
 //! crash. [`DoctorReport::exit_code`] covers the 0/2 policy; the binary wrapper
 //! adds 1 for argument failures.
 //!
-//! This module is pure and synchronous so it can be unit-tested without a
-//! runtime; all environment and filesystem access is threaded through
+//! Diagnostic collection and formatting remain pure and synchronous. The
+//! production command uses an async outer layer to probe credential presence;
+//! all other environment and filesystem access is threaded through
 //! [`DoctorContext`] by the binary.
 
 use std::collections::HashMap;
@@ -245,6 +246,47 @@ pub fn run_doctor(scopes: &[DoctorScope], ctx: &DoctorContext) -> DoctorReport {
         }
     }
     DoctorReport { entries }
+}
+
+/// Probe the injected credential store, then run the pure doctor formatter.
+pub async fn run_doctor_with_store(
+    scopes: &[DoctorScope],
+    ctx: &DoctorContext<'_>,
+    store: &dyn opi_ai::credential::CredentialStore,
+) -> DoctorReport {
+    let provider_ids = provider_factory::built_in_provider_ids()
+        .iter()
+        .map(|provider_id| (*provider_id).to_owned());
+    let store_probe = crate::credential_store::collect_credential_probes(store, provider_ids).await;
+    let probed_ctx = DoctorContext {
+        config: ctx.config,
+        config_error: ctx.config_error,
+        workspace_root: ctx.workspace_root,
+        user_config_dir: ctx.user_config_dir,
+        sessions_dir: ctx.sessions_dir,
+        term: ctx.term,
+        term_program: ctx.term_program,
+        term_features: ctx.term_features,
+        no_color: ctx.no_color,
+        colorterm: ctx.colorterm,
+        env_var: ctx.env_var,
+        store_probe: &store_probe,
+    };
+    run_doctor(scopes, &probed_ctx)
+}
+
+/// Production doctor command core: install/create the credential backend,
+/// retain it while probes run, then return the redacted report.
+#[doc(hidden)]
+pub async fn run_doctor_command(
+    scopes: &[DoctorScope],
+    ctx: &DoctorContext<'_>,
+    user_config_dir: std::path::PathBuf,
+    backend_factory: crate::credential_store::KeyringBackendFactory,
+) -> DoctorReport {
+    let store =
+        crate::credential_store::keychain_store_from_factory(user_config_dir, backend_factory);
+    run_doctor_with_store(scopes, ctx, &store).await
 }
 
 /// Format the report as human-readable text (one line per diagnostic).
@@ -702,53 +744,35 @@ fn bedrock_credential_probe(
     config: &OpiConfig,
     env_var: &dyn Fn(&str) -> Option<String>,
 ) -> CredentialProbe {
-    let bedrock = &config.providers.bedrock;
-    let config_access_present = bedrock
-        .access_key_id
-        .as_deref()
-        .is_some_and(|value| !value.trim().is_empty());
-    let env_access_present = env_value_present(env_var, "AWS_ACCESS_KEY_ID");
-    let secret_env = bedrock
-        .secret_access_key_env
-        .as_deref()
-        .filter(|name| !name.trim().is_empty())
-        .unwrap_or("AWS_SECRET_ACCESS_KEY");
-    let secret_present = env_value_present(env_var, secret_env);
-    if config_access_present && secret_present {
-        return CredentialProbe {
+    use provider_factory::BedrockAuthPresence;
+
+    match provider_factory::bedrock_auth_presence(config, env_var) {
+        BedrockAuthPresence::ConfigPair { secret_env } => CredentialProbe {
             state: ProbeState::Present,
             label: format!("config access_key_id + env {secret_env}"),
-        };
-    }
-    if env_access_present && secret_present {
-        return CredentialProbe {
+        },
+        BedrockAuthPresence::DefaultEnvPair => CredentialProbe {
             state: ProbeState::Present,
-            label: format!("env AWS_ACCESS_KEY_ID + env {secret_env}"),
-        };
-    }
-    if let Some(profile) = bedrock
-        .profile
-        .as_deref()
-        .filter(|profile| !profile.trim().is_empty())
-    {
-        return CredentialProbe {
+            label: "env AWS_ACCESS_KEY_ID + env AWS_SECRET_ACCESS_KEY".to_string(),
+        },
+        BedrockAuthPresence::ConfigProfile { profile } => CredentialProbe {
             state: ProbeState::Present,
             label: format!("profile {profile}"),
-        };
-    }
-    if let Some(profile) = env_var("AWS_PROFILE").filter(|profile| !profile.trim().is_empty()) {
-        return CredentialProbe {
+        },
+        BedrockAuthPresence::EnvProfile { profile } => CredentialProbe {
             state: ProbeState::Present,
             label: format!("env AWS_PROFILE {profile}"),
-        };
-    }
-
-    CredentialProbe {
-        state: ProbeState::Absent,
-        label: if config_access_present {
-            format!("config access_key_id + env {secret_env}")
-        } else {
-            format!("env AWS_ACCESS_KEY_ID + env {secret_env}")
+        },
+        BedrockAuthPresence::MissingConfigPair { secret_env } => CredentialProbe {
+            state: ProbeState::Absent,
+            label: secret_env.map_or_else(
+                || "config access_key_id + configured secret env".to_string(),
+                |secret_env| format!("config access_key_id + env {secret_env}"),
+            ),
+        },
+        BedrockAuthPresence::MissingDefaultEnvPair => CredentialProbe {
+            state: ProbeState::Absent,
+            label: "env AWS_ACCESS_KEY_ID + env AWS_SECRET_ACCESS_KEY".to_string(),
         },
     }
 }

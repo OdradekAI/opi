@@ -108,6 +108,20 @@ pub enum AgentSessionEvent {
     StartupDiagnostics {
         diagnostics: Vec<DiagnosticPayload>,
     },
+    /// A run could not start because no credential is currently available.
+    /// Consumers can surface `remediation` without parsing a diagnostic string.
+    CredentialNeeded {
+        provider_id: String,
+        remediation: String,
+        diagnostic: DiagnosticPayload,
+    },
+    /// A provider rejected a previously available credential. The current run
+    /// has ended and a later explicit login is required.
+    CredentialRevoked {
+        provider_id: String,
+        remediation: String,
+        diagnostic: DiagnosticPayload,
+    },
 }
 
 /// Severity tally for a run, attached to [`AgentSessionEvent::SessionSummary`].

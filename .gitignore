@@ -55,3 +55,4 @@ release-notes.md
 .opi-impl-state.json
 .opi-impl-state.json.tmp
 .opi-impl-state.draft.json
+.opi-impl-state.corrupt-*.json

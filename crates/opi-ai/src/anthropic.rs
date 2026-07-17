@@ -38,6 +38,7 @@ struct SseFrame {
 /// Parsed result for a single SSE frame  - either a valid event or a parse error.
 pub enum ParsedEvent {
     Valid(AnthropicEvent),
+    UsageError(ProviderError),
     Malformed {
         event_type: String,
         data: String,
@@ -53,7 +54,10 @@ pub fn parse_sse_events(input: &str) -> impl Iterator<Item = ParsedEvent> + '_ {
             return None;
         }
         match serde_json::from_str::<AnthropicRawEvent>(&frame.data) {
-            Ok(raw) => Some(ParsedEvent::Valid(AnthropicEvent::from_raw(raw))),
+            Ok(raw) => Some(match AnthropicEvent::from_raw(raw) {
+                Ok(event) => ParsedEvent::Valid(event),
+                Err(error) => ParsedEvent::UsageError(error),
+            }),
             Err(e) => Some(ParsedEvent::Malformed {
                 event_type: frame.event.clone(),
                 data: frame.data.clone(),
@@ -162,36 +166,34 @@ struct RawUsage {
     cache_creation_input_tokens: Option<u32>,
     /// Subset of `cache_creation_input_tokens` eligible for 1h TTL.
     #[serde(default)]
-    cache_creation_input_tokens_1h: Option<u32>,
+    cache_creation_input_tokens_1h: Option<u64>,
 }
 
 impl RawUsage {
-    fn into_usage(self) -> Usage {
+    fn into_usage(self) -> Result<Usage, ProviderError> {
         let cache_write = self.cache_creation_input_tokens.unwrap_or(0);
-        let cache_write_1h = self.cache_creation_input_tokens_1h.unwrap_or(0);
-        let cache_write_1h = if cache_write_1h > cache_write {
-            // Malformed response: subset exceeds parent. Reject by
-            // returning unknown usage so no invalid event is emitted and
-            // subsequent turns are not costed from bad data.
-            return Usage::unknown();
-        } else {
-            cache_write_1h
-        };
+        let cache_write_1h = self.cache_creation_input_tokens_1h;
+        if cache_write_1h.is_some_and(|tokens| tokens > u64::from(cache_write)) {
+            return Err(ProviderError::StreamError(format!(
+                "cache_creation_input_tokens_1h ({}) exceeds cache_creation_input_tokens ({cache_write})",
+                cache_write_1h.unwrap_or(0)
+            )));
+        }
         if self.input_tokens.is_some()
             || self.output_tokens.is_some()
             || self.cache_read_input_tokens.is_some()
             || self.cache_creation_input_tokens.is_some()
         {
-            Usage::reported(
+            Ok(Usage::reported(
                 self.input_tokens.unwrap_or(0),
                 self.output_tokens.unwrap_or(0),
                 self.cache_read_input_tokens.unwrap_or(0),
                 cache_write,
                 cache_write_1h,
-                0, // reasoning_tokens
-            )
+                None, // reasoning_tokens
+            ))
         } else {
-            Usage::unknown()
+            Ok(Usage::unknown())
         }
     }
 }
@@ -293,12 +295,13 @@ pub enum DeltaData {
 }
 
 impl AnthropicEvent {
-    fn from_raw(raw: AnthropicRawEvent) -> Self {
-        match raw {
+    fn from_raw(raw: AnthropicRawEvent) -> Result<Self, ProviderError> {
+        let event = match raw {
             AnthropicRawEvent::MessageStart { message } => {
                 let usage = message
                     .usage
                     .map(RawUsage::into_usage)
+                    .transpose()?
                     .unwrap_or_else(Usage::unknown);
                 AnthropicEvent::MessageStart {
                     id: message.id,
@@ -337,13 +340,14 @@ impl AnthropicEvent {
             }
             AnthropicRawEvent::MessageDelta { delta, usage } => AnthropicEvent::MessageDelta {
                 stop_reason: delta.stop_reason,
-                usage: usage.into_usage(),
+                usage: usage.into_usage()?,
             },
             AnthropicRawEvent::MessageStop => AnthropicEvent::MessageStop,
             AnthropicRawEvent::Error { error } => AnthropicEvent::Error {
                 message: error.message,
             },
-        }
+        };
+        Ok(event)
     }
 }
 
@@ -562,7 +566,7 @@ impl AnthropicMapper {
                 if usage.cache_write_tokens > 0 {
                     self.partial.usage.cache_write_tokens = usage.cache_write_tokens;
                 }
-                if usage.cache_write_1h_tokens > 0 {
+                if usage.cache_write_1h_tokens.is_some() {
                     self.partial.usage.cache_write_1h_tokens = usage.cache_write_1h_tokens;
                 }
                 // message_delta doesn't emit a stream event; Done comes from message_stop
@@ -628,6 +632,42 @@ fn empty_assistant_message() -> AssistantMessage {
 /// reviewed pi 0.80.6 Anthropic OAuth profile.
 const ANTHROPIC_OAUTH_BETA_HEADER: &str = "claude-code-20250219,oauth-2025-04-20";
 
+/// Built-in Anthropic model metadata without credentials or HTTP construction.
+pub fn model_catalog() -> Vec<ModelInfo> {
+    vec![
+        ModelInfo {
+            id: "claude-sonnet-4-5-20250514".into(),
+            display_name: "Claude Sonnet 4.5".into(),
+            capabilities: ModelCapabilities::new(200000, 8192)
+                .with_images(true)
+                .with_streaming(true)
+                .with_thinking(true)
+                .with_cache_control(true)
+                .with_long_cache_retention(true),
+        },
+        ModelInfo {
+            id: "claude-opus-4-20250514".into(),
+            display_name: "Claude Opus 4".into(),
+            capabilities: ModelCapabilities::new(200000, 8192)
+                .with_images(true)
+                .with_streaming(true)
+                .with_thinking(true)
+                .with_cache_control(true)
+                .with_long_cache_retention(true),
+        },
+        ModelInfo {
+            id: "claude-haiku-4-5-20250514".into(),
+            display_name: "Claude Haiku 4.5".into(),
+            capabilities: ModelCapabilities::new(200000, 8192)
+                .with_images(true)
+                .with_streaming(true)
+                .with_thinking(true)
+                .with_cache_control(true)
+                .with_long_cache_retention(true),
+        },
+    ]
+}
+
 /// Concrete Anthropic Messages API provider.
 pub struct AnthropicProvider {
     auth: Arc<dyn AuthResolver>,
@@ -661,38 +701,7 @@ impl AnthropicProvider {
         client: Arc<HttpClient>,
     ) -> Self {
         let base_url = base_url.unwrap_or_else(|| "https://api.anthropic.com".into());
-        let models = vec![
-            ModelInfo {
-                id: "claude-sonnet-4-5-20250514".into(),
-                display_name: "Claude Sonnet 4.5".into(),
-                capabilities: ModelCapabilities::new(200000, 8192)
-                    .with_images(true)
-                    .with_streaming(true)
-                    .with_thinking(true)
-                    .with_cache_control(true)
-                    .with_long_cache_retention(true),
-            },
-            ModelInfo {
-                id: "claude-opus-4-20250514".into(),
-                display_name: "Claude Opus 4".into(),
-                capabilities: ModelCapabilities::new(200000, 8192)
-                    .with_images(true)
-                    .with_streaming(true)
-                    .with_thinking(true)
-                    .with_cache_control(true)
-                    .with_long_cache_retention(true),
-            },
-            ModelInfo {
-                id: "claude-haiku-4-5-20250514".into(),
-                display_name: "Claude Haiku 4.5".into(),
-                capabilities: ModelCapabilities::new(200000, 8192)
-                    .with_images(true)
-                    .with_streaming(true)
-                    .with_thinking(true)
-                    .with_cache_control(true)
-                    .with_long_cache_retention(true),
-            },
-        ];
+        let models = model_catalog();
         Self {
             auth,
             base_url,
@@ -815,6 +824,10 @@ impl AnthropicProvider {
                 ParsedEvent::Valid(event) => {
                     stream_events.extend(mapper.process(event).into_iter().map(Ok));
                 }
+                ParsedEvent::UsageError(error) => {
+                    stream_events.push(Err(error));
+                    break;
+                }
                 ParsedEvent::Malformed {
                     event_type, error, ..
                 } => {
@@ -912,6 +925,7 @@ impl AnthropicProvider {
                             }
                         }
                     }
+                    ParsedEvent::UsageError(error) => return Err(error),
                     ParsedEvent::Malformed {
                         event_type, error, ..
                     } => {

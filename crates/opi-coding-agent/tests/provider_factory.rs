@@ -4,7 +4,7 @@
 //! provider reports the correct ID. Config integration tests verify that
 //! TOML-deserialized provider configs resolve to the right env var names.
 
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use opi_ai::provider::{CacheRetention, Provider, Request, ThinkingConfig};
 use opi_ai::test_support::MockProvider;
@@ -14,6 +14,86 @@ use opi_coding_agent::config::{
 use tokio_util::sync::CancellationToken;
 
 static ENV_MUTEX: Mutex<()> = Mutex::new(());
+struct OrderingKeyringBackend {
+    inner: opi_coding_agent::credential_store::FakeKeyringBackend,
+    events: Arc<Mutex<Vec<&'static str>>>,
+}
+
+impl OrderingKeyringBackend {
+    fn inner(&self) -> &opi_coding_agent::credential_store::FakeKeyringBackend {
+        &self.inner
+    }
+
+    fn record_entry_creation(&self) {
+        self.events
+            .lock()
+            .expect("ordering events")
+            .push("entry_creation");
+    }
+}
+
+impl opi_coding_agent::credential_store::KeyringBackend for OrderingKeyringBackend {
+    fn get(
+        &self,
+        service: &str,
+        provider_id: &str,
+    ) -> Result<Option<String>, opi_coding_agent::credential_store::BackendError> {
+        self.record_entry_creation();
+        opi_coding_agent::credential_store::KeyringBackend::get(self.inner(), service, provider_id)
+    }
+
+    fn set(
+        &self,
+        service: &str,
+        provider_id: &str,
+        value: &str,
+    ) -> Result<(), opi_coding_agent::credential_store::BackendError> {
+        self.record_entry_creation();
+        opi_coding_agent::credential_store::KeyringBackend::set(
+            self.inner(),
+            service,
+            provider_id,
+            value,
+        )
+    }
+
+    fn delete(
+        &self,
+        service: &str,
+        provider_id: &str,
+    ) -> Result<(), opi_coding_agent::credential_store::BackendError> {
+        self.record_entry_creation();
+        opi_coding_agent::credential_store::KeyringBackend::delete(
+            self.inner(),
+            service,
+            provider_id,
+        )
+    }
+}
+
+impl Drop for OrderingKeyringBackend {
+    fn drop(&mut self) {
+        self.events
+            .lock()
+            .expect("ordering events")
+            .push("guard_drop");
+    }
+}
+
+fn assert_native_entry_drop_order(events: &Arc<Mutex<Vec<&'static str>>>) {
+    let events = events.lock().expect("ordering events");
+    assert_eq!(events.first(), Some(&"native_install"), "{events:?}");
+    let first_entry = events
+        .iter()
+        .position(|event| *event == "entry_creation")
+        .expect("at least one keyring entry creation");
+    let guard_drop = events
+        .iter()
+        .position(|event| *event == "guard_drop")
+        .expect("native guard drop event");
+    assert!(0 < first_entry && first_entry < guard_drop, "{events:?}");
+    assert_eq!(events.last(), Some(&"guard_drop"), "{events:?}");
+}
 
 struct EnvVarGuard {
     key: String,
@@ -145,6 +225,309 @@ fn openai_responses_provider_construction() {
 fn gemini_provider_construction() {
     let provider = opi_ai::gemini::GeminiProvider::new("test-key".into(), None);
     assert_eq!(provider.id(), "gemini");
+}
+
+fn assert_same_models(
+    actual: &[opi_ai::provider::ModelInfo],
+    expected: &[opi_ai::provider::ModelInfo],
+) {
+    assert_eq!(actual.len(), expected.len());
+    for (actual, expected) in actual.iter().zip(expected) {
+        assert_eq!(actual.id, expected.id);
+        assert_eq!(actual.display_name, expected.display_name);
+        assert_eq!(
+            format!("{:?}", actual.capabilities),
+            format!("{:?}", expected.capabilities)
+        );
+    }
+}
+
+#[test]
+fn anthropic_model_catalog_matches_constructor() {
+    let provider = opi_ai::anthropic::AnthropicProvider::new("test-key".into(), None);
+    assert_same_models(provider.models(), &opi_ai::anthropic::model_catalog());
+}
+
+#[test]
+fn openai_chat_model_catalog_matches_constructor() {
+    let provider = opi_ai::openai_chat::OpenAiChatProvider::new("test-key".into(), None);
+    assert_same_models(provider.models(), &opi_ai::openai_chat::model_catalog());
+}
+
+#[test]
+fn openai_responses_model_catalog_matches_constructor() {
+    let provider = opi_ai::openai_responses::OpenAiResponsesProvider::new("test-key".into(), None);
+    assert_same_models(
+        provider.models(),
+        &opi_ai::openai_responses::model_catalog(),
+    );
+}
+
+#[test]
+fn openrouter_model_catalog_matches_constructor() {
+    let provider = opi_ai::openrouter::openrouter_provider("test-key".into(), None);
+    assert_same_models(provider.models(), &opi_ai::openrouter::model_catalog());
+}
+
+#[test]
+fn mistral_model_catalog_matches_constructor() {
+    let provider = opi_ai::mistral::mistral_provider("test-key".into(), None);
+    assert_same_models(provider.models(), &opi_ai::mistral::model_catalog());
+}
+
+#[test]
+fn gemini_model_catalog_matches_constructor() {
+    let provider = opi_ai::gemini::GeminiProvider::new("test-key".into(), None);
+    assert_same_models(provider.models(), &opi_ai::gemini::model_catalog());
+}
+
+#[test]
+fn bedrock_model_catalog_matches_constructor() {
+    let provider = opi_ai::bedrock::BedrockProvider::new(
+        opi_ai::bedrock::sigv4::AwsCredentials {
+            access_key_id: "test".into(),
+            secret_access_key: "test".into(),
+            session_token: None,
+            region: "us-east-1".into(),
+        },
+        None,
+        std::sync::Arc::new(opi_ai::http::HttpClient::new()),
+    );
+    assert_same_models(provider.models(), &opi_ai::bedrock::model_catalog());
+}
+
+#[test]
+fn vertex_model_catalog_matches_constructor() {
+    let provider = opi_ai::vertex::VertexProvider::new(
+        "test-token".into(),
+        "test-project".into(),
+        "us-central1".into(),
+        None,
+    );
+    assert_same_models(provider.models(), &opi_ai::vertex::model_catalog());
+}
+
+#[tokio::test]
+async fn native_keyring_precedes_live_provider_construction() {
+    use opi_coding_agent::credential_store::{
+        FakeKeyringBackend, KEYCHAIN_PRESENCE_SERVICE, KEYCHAIN_SERVICE, KeyringBackendFactory,
+    };
+    use opi_coding_agent::provider_factory::build_provider_bundle;
+
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let factory_events = Arc::clone(&events);
+    let backend_factory: KeyringBackendFactory = Box::new(move || {
+        let backend = FakeKeyringBackend::new();
+        factory_events
+            .lock()
+            .expect("ordering events")
+            .push("native_install");
+        backend.seed_raw(
+            KEYCHAIN_SERVICE,
+            "anthropic",
+            r#"{"version":1,"kind":"api_key","api_key":"test-provider-ordering"}"#,
+        );
+        backend.seed_raw(KEYCHAIN_PRESENCE_SERVICE, "anthropic", "api_key");
+        Box::new(OrderingKeyringBackend {
+            inner: backend,
+            events: Arc::clone(&factory_events),
+        })
+    });
+
+    let dir = tempfile::tempdir().expect("temp dir");
+    let mut config = OpiConfig::default();
+    config.defaults.model = "anthropic:claude-sonnet-4-5-20250514".into();
+    assert!(
+        events.lock().expect("ordering events").is_empty(),
+        "backend construction must remain lazy until provider startup"
+    );
+    let bundle = build_provider_bundle(&config, dir.path().to_path_buf(), backend_factory)
+        .await
+        .expect("provider bundle builds after native installation");
+    assert_eq!(bundle.provider.id(), "anthropic");
+    drop(bundle);
+    assert_native_entry_drop_order(&events);
+}
+
+#[test]
+fn provider_bundle_retains_redacted_backend_fallback_diagnostic() {
+    use opi_agent::diagnostic::{RedactionMode, SOURCE_PROVIDER, Severity};
+    use opi_coding_agent::credential_store::FakeKeyringBackend;
+    use opi_coding_agent::provider_factory::build_provider_bundle;
+
+    const ENV_VAR: &str = "OPI_TEST_BACKEND_FALLBACK_KEY_D1D4";
+    const SECRET_CANARY: &str = "d1d4-secret-canary-must-not-appear";
+
+    let dir = tempfile::tempdir().expect("temp dir");
+    let mut config = OpiConfig::default();
+    config.defaults.model = "anthropic:claude-sonnet-4-5-20250514".into();
+    config.providers.anthropic.api_key_env = ENV_VAR.into();
+
+    with_env_managed(
+        &["ANTHROPIC_OAUTH_TOKEN"],
+        &[(ENV_VAR, SECRET_CANARY)],
+        || {
+            let runtime = tokio::runtime::Runtime::new().expect("tokio runtime");
+            let bundle = runtime
+                .block_on(build_provider_bundle(
+                    &config,
+                    dir.path().to_path_buf(),
+                    Box::new(|| Box::new(FakeKeyringBackend::new().with_unavailable())),
+                ))
+                .expect("environment fallback keeps provider construction usable");
+
+            assert_eq!(bundle.provider.id(), "anthropic");
+            assert_eq!(
+                bundle.diagnostics.len(),
+                1,
+                "factory must retain exactly one backend fallback diagnostic"
+            );
+            let payload = bundle.diagnostics[0].redacted_payload(RedactionMode::Summary);
+            assert_eq!(payload.severity, Severity::Warning);
+            assert_eq!(payload.source, SOURCE_PROVIDER);
+            assert_eq!(payload.code, "provider_credential_backend_unavailable");
+
+            let encoded = serde_json::to_string(&payload).expect("diagnostic serializes");
+            assert!(encoded.contains("anthropic"), "{encoded}");
+            assert!(encoded.contains(ENV_VAR), "{encoded}");
+            assert!(encoded.contains("environment_fallback"), "{encoded}");
+            assert!(!encoded.contains(SECRET_CANARY), "{encoded}");
+        },
+    );
+}
+
+#[test]
+fn build_provider_production_returns_store_owning_bundle() {
+    use std::future::Future;
+
+    use opi_coding_agent::provider_factory::{
+        ProviderBuildError, ProviderBundle, build_provider_production,
+    };
+
+    fn assert_bundle_output<F>(_: F)
+    where
+        F: Future<Output = Result<ProviderBundle, ProviderBuildError>>,
+    {
+    }
+
+    let config = OpiConfig::default();
+    assert_bundle_output(build_provider_production(
+        &config,
+        std::path::PathBuf::from("unused-unpolled-keyring-path"),
+    ));
+}
+
+#[tokio::test]
+async fn provider_bundle_retains_native_store_while_provider_is_callable() {
+    use futures_util::StreamExt;
+    use opi_coding_agent::credential_store::{
+        CredentialResolver, FakeKeyringBackend, KeychainCredentialStore,
+    };
+    use opi_coding_agent::oauth::OAuthProviderRegistry;
+    use opi_coding_agent::provider_factory::ProviderBundle;
+
+    let events = Arc::new(Mutex::new(vec!["native_install"]));
+    let dir = tempfile::tempdir().expect("temp dir");
+    let store = Arc::new(KeychainCredentialStore::new(
+        Box::new(OrderingKeyringBackend {
+            inner: FakeKeyringBackend::new(),
+            events: Arc::clone(&events),
+        }),
+        dir.path().to_path_buf(),
+    ));
+    let resolver = CredentialResolver::production(store.clone());
+    let registry = OAuthProviderRegistry::registry_with_builtins();
+    let bundle = ProviderBundle {
+        provider: Box::new(MockProvider::new(
+            "owned-provider",
+            vec![opi_ai::test_support::text_response("delegated")],
+        )),
+        store,
+        resolver,
+        registry,
+        diagnostics: Vec::new(),
+    };
+
+    assert!(!events.lock().unwrap().contains(&"guard_drop"));
+    assert_eq!(bundle.provider.id(), "owned-provider");
+    assert_eq!(bundle.provider.models()[0].id, "mock-model");
+    let mut stream = bundle.provider.stream(minimal_request("mock-model"));
+    assert!(
+        stream.next().await.is_some(),
+        "stream delegates to inner provider"
+    );
+    assert!(!events.lock().unwrap().contains(&"guard_drop"));
+
+    drop(stream);
+    drop(bundle);
+    assert_eq!(events.lock().unwrap().last(), Some(&"guard_drop"));
+}
+
+#[tokio::test]
+async fn anthropic_stored_api_key_routes_to_api_key_wire_auth() {
+    use futures_util::StreamExt;
+    use opi_ai::credential::{Credential, CredentialStore};
+    use opi_coding_agent::credential_store::{
+        CredentialResolver, FakeKeyringBackend, KeychainCredentialStore,
+    };
+    use opi_coding_agent::oauth::OAuthProviderRegistry;
+    use secrecy::SecretString;
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/messages"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string("")
+                .insert_header("content-type", "text/event-stream"),
+        )
+        .mount(&server)
+        .await;
+
+    let dir = tempfile::tempdir().unwrap();
+    let store = Arc::new(KeychainCredentialStore::new(
+        Box::new(FakeKeyringBackend::new()),
+        dir.path().to_path_buf(),
+    ));
+    let api_key = "sk-anthropic-stored-api";
+    store
+        .write(
+            "anthropic",
+            &Credential::ApiKey(SecretString::new(api_key.to_owned().into_boxed_str())),
+        )
+        .await
+        .unwrap();
+    let resolver =
+        CredentialResolver::new(store, Arc::new(|_name: &str| -> Option<String> { None }));
+    let registry = OAuthProviderRegistry::registry_with_builtins();
+    let mut config = OpiConfig::default();
+    config.defaults.model = "anthropic:claude-sonnet-4-5-20250514".into();
+    config.providers.anthropic.base_url = Some(server.uri());
+
+    let provider = opi_coding_agent::provider_factory::build_provider_with_oauth(
+        &config, &resolver, &registry,
+    )
+    .await
+    .expect("Anthropic API-key provider builds");
+    let mut stream = provider.stream(minimal_request("anthropic:claude-sonnet-4-5-20250514"));
+    while let Some(event) = stream.next().await {
+        if event.as_ref().is_ok_and(|event| event.is_terminal()) || event.is_err() {
+            break;
+        }
+    }
+
+    let requests = server.received_requests().await.unwrap();
+    assert_eq!(requests.len(), 1, "exactly one Anthropic request");
+    assert_eq!(
+        requests[0]
+            .headers
+            .get("x-api-key")
+            .map(|value| value.to_str().unwrap()),
+        Some(api_key)
+    );
+    assert!(requests[0].headers.get("authorization").is_none());
 }
 
 // ---------------------------------------------------------------------------
@@ -1306,23 +1689,15 @@ fn provider_policy_is_centralized() {
         "fn parse_model_spec",
         "fn build_provider",
         "fn build_runtime_provider",
-        "fn build_list_models_provider",
-        "fn build_anthropic",
-        "fn build_openai",
-        "fn build_openrouter",
-        "fn build_mistral",
-        "fn build_openai_responses",
-        "fn build_gemini",
-        "fn build_bedrock",
-        "fn build_azure",
-        "fn build_vertex",
+        "fn build_list_models_metadata",
+        "fn listing_auth_available",
+        "fn openai_compatible_model_catalog",
         "fn build_runtime_openai_compatible_profile",
-        "fn build_list_models_openai_compatible_profile",
         "fn build_openai_compatible_profile",
         "fn build_collection_for_listing",
+        "fn build_collection_for_listing_with_store",
         "fn assemble_harness_collection",
         "fn require_api_key",
-        "fn require_list_models_api_key",
         "fn non_empty_env_var",
         "fn resolve_env_name",
         "fn resolve_bedrock_env_credentials",

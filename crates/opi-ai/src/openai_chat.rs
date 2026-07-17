@@ -44,7 +44,13 @@ pub fn parse_sse_events(input: &str) -> impl Iterator<Item = ParsedEvent> + '_ {
             return None;
         }
         match serde_json::from_str::<OpenAiRawChunk>(&frame.data) {
-            Ok(raw) => Some(ParsedEvent::Valid(OpenAiChatEvent::from_raw_vec(raw))),
+            Ok(raw) => Some(match validate_usage_subset(&raw) {
+                Ok(()) => ParsedEvent::Valid(OpenAiChatEvent::from_raw_vec(raw)),
+                Err(error) => ParsedEvent::Malformed {
+                    data: frame.data.clone(),
+                    error: error.to_string(),
+                },
+            }),
             Err(e) => Some(ParsedEvent::Malformed {
                 data: frame.data.clone(),
                 error: e.to_string(),
@@ -164,7 +170,7 @@ struct RawPromptTokenDetails {
 #[derive(Debug, Deserialize)]
 struct RawCompletionTokenDetails {
     #[serde(default)]
-    reasoning_tokens: Option<u32>,
+    reasoning_tokens: Option<u64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -172,6 +178,24 @@ struct RawError {
     message: Option<String>,
     #[allow(dead_code)]
     r#type: Option<String>,
+}
+
+fn validate_usage_subset(raw: &OpenAiRawChunk) -> Result<(), ProviderError> {
+    let Some(usage) = raw.usage.as_ref() else {
+        return Ok(());
+    };
+    let output = u64::from(usage.completion_tokens.unwrap_or(0));
+    if let Some(reasoning) = usage
+        .completion_tokens_details
+        .as_ref()
+        .and_then(|details| details.reasoning_tokens)
+        && reasoning > output
+    {
+        return Err(ProviderError::StreamError(format!(
+            "reasoning_tokens ({reasoning}) exceeds completion_tokens ({output})"
+        )));
+    }
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -242,16 +266,13 @@ impl OpenAiChatEvent {
             let reasoning = u
                 .completion_tokens_details
                 .as_ref()
-                .and_then(|d| d.reasoning_tokens)
-                .unwrap_or(0);
-            // Reject malformed subset: reasoning > output is invalid.
-            let reasoning = if reasoning > output { 0 } else { reasoning };
+                .and_then(|d| d.reasoning_tokens);
             Usage::reported(
                 u.prompt_tokens.unwrap_or(0),
                 output,
                 cached,
                 0,
-                0, // cache_write_1h_tokens — Chat doesn't write cache
+                None, // cache_write_1h_tokens — Chat doesn't write cache
                 reasoning,
             )
         });
@@ -799,6 +820,40 @@ pub struct OpenAiChatProvider {
     client: Arc<HttpClient>,
 }
 
+/// Built-in OpenAI Chat model metadata without credentials or HTTP construction.
+pub fn model_catalog() -> Vec<ModelInfo> {
+    vec![
+        ModelInfo {
+            id: "gpt-4o".into(),
+            display_name: "GPT-4o".into(),
+            capabilities: ModelCapabilities::new(128000, 16384)
+                .with_images(true)
+                .with_streaming(true),
+        },
+        ModelInfo {
+            id: "gpt-4o-mini".into(),
+            display_name: "GPT-4o Mini".into(),
+            capabilities: ModelCapabilities::new(128000, 16384)
+                .with_images(true)
+                .with_streaming(true),
+        },
+        ModelInfo {
+            id: "o3".into(),
+            display_name: "o3".into(),
+            capabilities: ModelCapabilities::new(200000, 100000)
+                .with_images(true)
+                .with_streaming(true),
+        },
+        ModelInfo {
+            id: "o4-mini".into(),
+            display_name: "o4-mini".into(),
+            capabilities: ModelCapabilities::new(200000, 100000)
+                .with_images(true)
+                .with_streaming(true),
+        },
+    ]
+}
+
 impl OpenAiChatProvider {
     pub fn new(api_key: String, base_url: Option<String>) -> Self {
         Self::new_with_compat(api_key, base_url, CompatConfig::default())
@@ -859,36 +914,7 @@ impl OpenAiChatProvider {
         client: Arc<HttpClient>,
     ) -> Self {
         let base_url = base_url.unwrap_or_else(|| "https://api.openai.com".into());
-        let models = vec![
-            ModelInfo {
-                id: "gpt-4o".into(),
-                display_name: "GPT-4o".into(),
-                capabilities: ModelCapabilities::new(128000, 16384)
-                    .with_images(true)
-                    .with_streaming(true),
-            },
-            ModelInfo {
-                id: "gpt-4o-mini".into(),
-                display_name: "GPT-4o Mini".into(),
-                capabilities: ModelCapabilities::new(128000, 16384)
-                    .with_images(true)
-                    .with_streaming(true),
-            },
-            ModelInfo {
-                id: "o3".into(),
-                display_name: "o3".into(),
-                capabilities: ModelCapabilities::new(200000, 100000)
-                    .with_images(true)
-                    .with_streaming(true),
-            },
-            ModelInfo {
-                id: "o4-mini".into(),
-                display_name: "o4-mini".into(),
-                capabilities: ModelCapabilities::new(200000, 100000)
-                    .with_images(true)
-                    .with_streaming(true),
-            },
-        ];
+        let models = model_catalog();
         let direct_prompt_cache_key = provider_id == "openai";
         Self {
             auth,
@@ -1072,6 +1098,7 @@ impl OpenAiChatProvider {
                     stream_events.push(Err(ProviderError::StreamError(format!(
                         "malformed SSE data: {error} (data: {data:.80})"
                     ))));
+                    break;
                 }
             }
         }
@@ -1171,12 +1198,9 @@ impl OpenAiChatProvider {
                         }
                     }
                     ParsedEvent::Malformed { data, error } => {
-                        let err = ProviderError::StreamError(format!(
+                        return Err(ProviderError::StreamError(format!(
                             "malformed SSE data: {error} (data: {data:.80})"
-                        ));
-                        if tx.send(Err(err)).await.is_err() {
-                            return Ok(());
-                        }
+                        )));
                     }
                 }
             }

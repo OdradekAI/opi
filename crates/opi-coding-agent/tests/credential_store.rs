@@ -8,13 +8,20 @@
 //! the injected [`FakeKeyringBackend`] and a temp user-config root; none touch
 //! the OS keychain.
 
-use std::sync::Arc;
+use std::collections::VecDeque;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use opi_ai::credential::{Credential, CredentialSource, CredentialStore, CredentialStoreError};
+use opi_ai::auth::{LoginPresenter, OAuthCredential, OAuthProvider};
+use opi_ai::credential::{
+    BoxAuthFuture, Credential, CredentialSource, CredentialStore, CredentialStoreError,
+    UnknownEnvelopeField,
+};
+use opi_ai::provider::ProviderError;
 use opi_coding_agent::credential_store::{
-    ApiKeySource, CredentialResolver, EnvLookup, FakeKeyringBackend, KEYCHAIN_SERVICE,
-    KeychainCredentialStore,
+    ApiKeySource, BackendError, CredentialResolver, EnvLookup, FakeKeyringBackend,
+    KEYCHAIN_PRESENCE_SERVICE, KEYCHAIN_SERVICE, KeychainCredentialStore, KeyringBackend,
 };
 use secrecy::{ExposeSecret, SecretString};
 use tempfile::TempDir;
@@ -23,6 +30,184 @@ const API_KEY: &str = "sk-test-api-key-DO-NOT-LEAK";
 const ACCESS: &str = "atk-test-access-DO-NOT-LEAK";
 const REFRESH: &str = "rtk-test-refresh-DO-NOT-LEAK";
 const COPILOT_BASE_URL: &str = "https://copilot.enterprise.example/api";
+
+#[derive(Clone, Copy)]
+enum PresenceReply {
+    Present,
+    Absent,
+    BackendUnavailable,
+}
+
+struct PresenceOnlyBackend {
+    reply: PresenceReply,
+    secret_get_calls: Arc<AtomicUsize>,
+    presence_calls: Arc<AtomicUsize>,
+}
+
+impl KeyringBackend for PresenceOnlyBackend {
+    fn get(&self, service: &str, _provider_id: &str) -> Result<Option<String>, BackendError> {
+        if service == "opi.presence" {
+            self.presence_calls.fetch_add(1, Ordering::SeqCst);
+            match self.reply {
+                PresenceReply::Present => Ok(Some("api_key".to_owned())),
+                PresenceReply::Absent => Ok(None),
+                PresenceReply::BackendUnavailable => Err(BackendError::BackendUnavailable(
+                    "no keychain daemon".to_owned(),
+                )),
+            }
+        } else {
+            self.secret_get_calls.fetch_add(1, Ordering::SeqCst);
+            Err(BackendError::Other("secret get forbidden".to_owned()))
+        }
+    }
+
+    fn set(&self, _service: &str, _provider_id: &str, _value: &str) -> Result<(), BackendError> {
+        Err(BackendError::Other("unused set".to_owned()))
+    }
+
+    fn delete(&self, _service: &str, _provider_id: &str) -> Result<(), BackendError> {
+        Err(BackendError::Other("unused delete".to_owned()))
+    }
+}
+
+struct OperationalErrorBackend;
+
+impl KeyringBackend for OperationalErrorBackend {
+    fn get(&self, _service: &str, _provider_id: &str) -> Result<Option<String>, BackendError> {
+        Err(BackendError::Other(
+            "org.freedesktop.secrets access denied".to_owned(),
+        ))
+    }
+
+    fn set(&self, _service: &str, _provider_id: &str, _value: &str) -> Result<(), BackendError> {
+        Err(BackendError::Other(
+            "org.freedesktop.secrets access denied".to_owned(),
+        ))
+    }
+
+    fn delete(&self, _service: &str, _provider_id: &str) -> Result<(), BackendError> {
+        Err(BackendError::Other(
+            "org.freedesktop.secrets access denied".to_owned(),
+        ))
+    }
+}
+
+/// Native-adapter-shaped boundary: metadata reads are allowed, while any
+/// attempt to inspect the protected entry fails loudly.
+struct MarkerOnlyBackend {
+    marker: Option<&'static str>,
+    protected_get_calls: Arc<AtomicUsize>,
+}
+
+impl KeyringBackend for MarkerOnlyBackend {
+    fn get(&self, service: &str, _provider_id: &str) -> Result<Option<String>, BackendError> {
+        if service == "opi.presence" {
+            Ok(self.marker.map(str::to_owned))
+        } else {
+            self.protected_get_calls.fetch_add(1, Ordering::SeqCst);
+            Err(BackendError::Other(
+                "protected credential read forbidden".to_owned(),
+            ))
+        }
+    }
+
+    fn set(&self, _service: &str, _provider_id: &str, _value: &str) -> Result<(), BackendError> {
+        Err(BackendError::Other("unused set".to_owned()))
+    }
+
+    fn delete(&self, _service: &str, _provider_id: &str) -> Result<(), BackendError> {
+        Err(BackendError::Other("unused delete".to_owned()))
+    }
+}
+
+#[derive(Clone)]
+struct StepFailureBackend {
+    inner: FakeKeyringBackend,
+    fail_set: Arc<Mutex<VecDeque<&'static str>>>,
+    fail_delete: Arc<Mutex<VecDeque<&'static str>>>,
+}
+
+struct UnusedOAuthProvider;
+
+impl OAuthProvider for UnusedOAuthProvider {
+    fn id(&self) -> &str {
+        "unused"
+    }
+
+    fn login<'a>(
+        &'a self,
+        _presenter: &'a dyn LoginPresenter,
+    ) -> BoxAuthFuture<'a, Result<OAuthCredential, ProviderError>> {
+        Box::pin(async { Err(ProviderError::Config("unused login".to_owned())) })
+    }
+
+    fn refresh<'a>(
+        &'a self,
+        _cred: &'a OAuthCredential,
+    ) -> BoxAuthFuture<'a, Result<OAuthCredential, ProviderError>> {
+        Box::pin(async { Err(ProviderError::Config("unused refresh".to_owned())) })
+    }
+}
+
+impl StepFailureBackend {
+    fn new(inner: FakeKeyringBackend) -> Self {
+        Self {
+            inner,
+            fail_set: Arc::new(Mutex::new(VecDeque::new())),
+            fail_delete: Arc::new(Mutex::new(VecDeque::new())),
+        }
+    }
+
+    fn fail_next_set(&self, service: &'static str) {
+        self.fail_set
+            .lock()
+            .expect("set failures")
+            .push_back(service);
+    }
+
+    fn fail_next_delete(&self, service: &'static str) {
+        self.fail_delete
+            .lock()
+            .expect("delete failures")
+            .push_back(service);
+    }
+
+    fn take_failure(queue: &Mutex<VecDeque<&'static str>>, service: &str) -> bool {
+        let mut queue = queue.lock().expect("failure queue");
+        if queue.front().is_some_and(|expected| *expected == service) {
+            queue.pop_front();
+            true
+        } else {
+            false
+        }
+    }
+}
+
+impl KeyringBackend for StepFailureBackend {
+    fn get(&self, service: &str, provider_id: &str) -> Result<Option<String>, BackendError> {
+        self.inner.get(service, provider_id)
+    }
+
+    fn set(&self, service: &str, provider_id: &str, value: &str) -> Result<(), BackendError> {
+        if Self::take_failure(&self.fail_set, service) {
+            Err(BackendError::Other(format!(
+                "deterministic set failure for {service}"
+            )))
+        } else {
+            self.inner.set(service, provider_id, value)
+        }
+    }
+
+    fn delete(&self, service: &str, provider_id: &str) -> Result<(), BackendError> {
+        if Self::take_failure(&self.fail_delete, service) {
+            Err(BackendError::Other(format!(
+                "deterministic delete failure for {service}"
+            )))
+        } else {
+            self.inner.delete(service, provider_id)
+        }
+    }
+}
 
 fn secret(value: &str) -> SecretString {
     SecretString::new(value.to_owned().into_boxed_str())
@@ -55,7 +240,8 @@ fn oauth_credential() -> Credential {
 
 #[tokio::test]
 async fn api_key_envelope_round_trips_and_probes_present() {
-    let (_dir, store) = store_with(FakeKeyringBackend::new());
+    let backend = FakeKeyringBackend::new();
+    let (_dir, store) = store_with(backend.clone());
 
     assert_eq!(store.probe("anthropic").await, CredentialSource::Absent);
     assert!(store.read("anthropic").await.unwrap().is_none());
@@ -64,6 +250,12 @@ async fn api_key_envelope_round_trips_and_probes_present() {
         .write("anthropic", &api_key_credential())
         .await
         .unwrap();
+
+    assert_eq!(
+        backend.raw_entry("opi.presence", "anthropic").as_deref(),
+        Some("api_key"),
+        "the closed non-secret marker is the presence/kind source"
+    );
 
     let probed = store.probe("anthropic").await;
     assert!(
@@ -88,9 +280,15 @@ async fn api_key_envelope_round_trips_and_probes_present() {
 
 #[tokio::test]
 async fn oauth_envelope_round_trips_and_preserves_base_url() {
-    let (_dir, store) = store_with(FakeKeyringBackend::new());
+    let backend = FakeKeyringBackend::new();
+    let (_dir, store) = store_with(backend.clone());
 
     store.write("copilot", &oauth_credential()).await.unwrap();
+
+    assert_eq!(
+        backend.raw_entry("opi.presence", "copilot").as_deref(),
+        Some("oauth_token")
+    );
 
     let read_back = store
         .read("copilot")
@@ -150,7 +348,9 @@ async fn unknown_envelope_version_surfaces_distinct_error() {
 
     match store.read("anthropic").await {
         Err(CredentialStoreError::UnknownEnvelope {
-            version: Some(2), ..
+            version: Some(2),
+            field: UnknownEnvelopeField::Version,
+            ..
         }) => {}
         other => panic!("expected UnknownEnvelope version=2, got {other:?}"),
     }
@@ -166,10 +366,413 @@ async fn unknown_envelope_kind_surfaces_distinct_error() {
 
     match store.read("anthropic").await {
         Err(CredentialStoreError::UnknownEnvelope {
-            kind: Some(ref k), ..
-        }) if k == "bogus" => {}
+            version: Some(1),
+            field: UnknownEnvelopeField::Kind,
+            ..
+        }) => {}
         other => panic!("expected UnknownEnvelope kind=bogus, got {other:?}"),
     }
+}
+
+#[tokio::test]
+async fn unknown_envelope_kind_never_appears_in_display_or_debug() {
+    let raw_kind = format!("{API_KEY}:{ACCESS}:{REFRESH}");
+    let payload = format!(r#"{{"version":1,"kind":"{raw_kind}","api_key":"x"}}"#);
+    let backend = FakeKeyringBackend::new();
+    backend.seed_raw("opi.presence", "anthropic", "api_key");
+    backend.seed_raw(KEYCHAIN_SERVICE, "anthropic", &payload);
+    let (_dir, store) = store_with(backend);
+    let store = Arc::new(store);
+
+    let error = store.read("anthropic").await.unwrap_err();
+    for canary in [API_KEY, ACCESS, REFRESH] {
+        assert!(!format!("{error}").contains(canary));
+        assert!(!format!("{error:?}").contains(canary));
+    }
+
+    let resolver = CredentialResolver::new(
+        store,
+        Arc::new(|_name: &str| Some("env-must-not-hide-corruption".to_owned())),
+    );
+    let resolver_error = match resolver
+        .resolve_api_key("anthropic", "ANTHROPIC_API_KEY")
+        .await
+    {
+        Err(error) => error,
+        Ok(_) => panic!("unknown envelope kind must block env fallback"),
+    };
+    let mut config = opi_coding_agent::config::OpiConfig::default();
+    config.defaults.model = "anthropic:claude-unknown-kind".to_owned();
+    let provider_error =
+        match opi_coding_agent::provider_factory::build_provider_with_resolver(&config, &resolver)
+            .await
+        {
+            Err(error) => error,
+            Ok(_) => panic!("provider construction must retain the typed corruption error"),
+        };
+    for canary in [API_KEY, ACCESS, REFRESH] {
+        for rendered in [
+            format!("{resolver_error}"),
+            format!("{resolver_error:?}"),
+            format!("{provider_error}"),
+            format!("{provider_error:?}"),
+        ] {
+            assert!(
+                !rendered.contains(canary),
+                "error leaked {canary}: {rendered}"
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn valid_json_wrong_type_never_leaks_or_falls_back_to_env() {
+    const VERSION_CANARY: &str = "malformed-version-canary-DO-NOT-LEAK";
+    const EXPIRY_CANARY: &str = "malformed-expiry-canary-DO-NOT-LEAK";
+
+    for (payload, canary) in [
+        (
+            format!(r#"{{"version":"{VERSION_CANARY}","kind":"api_key","api_key":"stored"}}"#),
+            VERSION_CANARY,
+        ),
+        (
+            format!(
+                r#"{{"version":1,"kind":"oauth","access":"stored","refresh":"stored","expires_at":"{EXPIRY_CANARY}"}}"#
+            ),
+            EXPIRY_CANARY,
+        ),
+    ] {
+        let backend = FakeKeyringBackend::new();
+        backend.seed_raw("opi.presence", "anthropic", "api_key");
+        backend.seed_raw(KEYCHAIN_SERVICE, "anthropic", &payload);
+        let (_dir, store) = store_with(backend);
+        let store = Arc::new(store);
+
+        let store_error = store.read("anthropic").await.unwrap_err();
+        assert!(matches!(
+            store_error,
+            CredentialStoreError::MalformedEnvelope { .. }
+        ));
+        for rendered in [format!("{store_error}"), format!("{store_error:?}")] {
+            assert!(
+                !rendered.contains(canary),
+                "store error leaked wrong-type canary: {rendered}"
+            );
+        }
+
+        let fallback_calls = Arc::new(AtomicUsize::new(0));
+        let observed_calls = Arc::clone(&fallback_calls);
+        let resolver = CredentialResolver::new(
+            store,
+            Arc::new(move |_name: &str| {
+                observed_calls.fetch_add(1, Ordering::SeqCst);
+                Some(API_KEY.to_owned())
+            }),
+        );
+        let resolver_error = match resolver
+            .resolve_api_key("anthropic", "ANTHROPIC_API_KEY")
+            .await
+        {
+            Err(error) => error,
+            Ok(_) => panic!("wrong-type envelope must block env fallback"),
+        };
+        assert_eq!(fallback_calls.load(Ordering::SeqCst), 0);
+
+        let mut config = opi_coding_agent::config::OpiConfig::default();
+        config.defaults.model = "anthropic:claude-malformed-envelope".to_owned();
+        let provider_error = match opi_coding_agent::provider_factory::build_provider_with_resolver(
+            &config, &resolver,
+        )
+        .await
+        {
+            Err(error) => error,
+            Ok(_) => panic!("provider construction must retain malformed-envelope failure"),
+        };
+        assert_eq!(fallback_calls.load(Ordering::SeqCst), 0);
+        for rendered in [
+            format!("{resolver_error}"),
+            format!("{resolver_error:?}"),
+            format!("{provider_error}"),
+            format!("{provider_error:?}"),
+        ] {
+            assert!(
+                !rendered.contains(canary),
+                "resolver/provider surface leaked wrong-type canary: {rendered}"
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn protected_entry_without_marker_is_absent_and_never_read_for_kind() {
+    let protected_get_calls = Arc::new(AtomicUsize::new(0));
+    let dir = TempDir::new().expect("temp dir");
+    let store = KeychainCredentialStore::new(
+        Box::new(MarkerOnlyBackend {
+            marker: None,
+            protected_get_calls: Arc::clone(&protected_get_calls),
+        }),
+        dir.path().to_path_buf(),
+    );
+
+    assert_eq!(store.probe("anthropic").await, CredentialSource::Absent);
+    assert_eq!(protected_get_calls.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn marker_reports_present_without_reading_protected_entry() {
+    let protected_get_calls = Arc::new(AtomicUsize::new(0));
+    let dir = TempDir::new().expect("temp dir");
+    let store = KeychainCredentialStore::new(
+        Box::new(MarkerOnlyBackend {
+            marker: Some("api_key"),
+            protected_get_calls: Arc::clone(&protected_get_calls),
+        }),
+        dir.path().to_path_buf(),
+    );
+
+    assert!(matches!(
+        store.probe("anthropic").await,
+        CredentialSource::Present { .. }
+    ));
+    assert_eq!(protected_get_calls.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn corrupt_marker_is_redacted_and_blocks_env_fallback() {
+    let marker = "sk-marker-DO-NOT-LEAK";
+    let backend = FakeKeyringBackend::new();
+    backend.seed_raw("opi.presence", "anthropic", marker);
+    backend.seed_raw(
+        KEYCHAIN_SERVICE,
+        "anthropic",
+        r#"{"version":1,"kind":"api_key","api_key":"stored"}"#,
+    );
+    let (_dir, store) = store_with(backend);
+    let resolver = CredentialResolver::new(
+        Arc::new(store),
+        Arc::new(|_name: &str| Some("env-canary".to_owned())),
+    );
+
+    let error = match resolver
+        .resolve_api_key("anthropic", "ANTHROPIC_API_KEY")
+        .await
+    {
+        Err(error) => error,
+        Ok(_) => panic!("corrupt marker must not use the protected entry or env"),
+    };
+    assert!(!format!("{error}").contains(marker));
+    assert!(!format!("{error:?}").contains(marker));
+
+    let oauth_error = resolver
+        .has_oauth_credential("anthropic")
+        .await
+        .expect_err("corrupt marker must be an operational error");
+    assert!(!format!("{oauth_error}").contains(marker));
+    assert!(!format!("{oauth_error:?}").contains(marker));
+}
+
+#[tokio::test]
+async fn marker_first_step_failure_writes_nothing() {
+    let inner = FakeKeyringBackend::new();
+    let backend = StepFailureBackend::new(inner.clone());
+    backend.fail_next_set(KEYCHAIN_PRESENCE_SERVICE);
+    let dir = TempDir::new().expect("temp dir");
+    let store = KeychainCredentialStore::new(Box::new(backend), dir.path().to_path_buf());
+
+    let error = store
+        .write("anthropic", &api_key_credential())
+        .await
+        .expect_err("marker failure must fail the write");
+    assert!(format!("{error}").contains("deterministic set failure"));
+    assert_eq!(inner.raw_entry(KEYCHAIN_SERVICE, "anthropic"), None);
+    assert_eq!(
+        inner.raw_entry(KEYCHAIN_PRESENCE_SERVICE, "anthropic"),
+        None
+    );
+}
+
+#[tokio::test]
+async fn marker_only_state_is_typed_and_never_falls_back_to_env() {
+    let inner = FakeKeyringBackend::new();
+    inner.seed_raw(KEYCHAIN_PRESENCE_SERVICE, "anthropic", "api_key");
+    let (_dir, store) = store_with(inner);
+    let fallback_calls = Arc::new(AtomicUsize::new(0));
+    let observed_calls = Arc::clone(&fallback_calls);
+    let resolver = CredentialResolver::new(
+        Arc::new(store),
+        Arc::new(move |_name: &str| {
+            observed_calls.fetch_add(1, Ordering::SeqCst);
+            Some(API_KEY.to_owned())
+        }),
+    );
+
+    assert!(matches!(
+        resolver
+            .resolve_api_key("anthropic", "ANTHROPIC_API_KEY")
+            .await,
+        Err(CredentialStoreError::CorruptMarker { .. })
+    ));
+    assert_eq!(fallback_calls.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn oauth_marker_only_state_is_typed_and_never_leaks_secrets() {
+    let inner = FakeKeyringBackend::new();
+    inner.seed_raw(KEYCHAIN_PRESENCE_SERVICE, "copilot", "oauth_token");
+    let (_dir, store) = store_with(inner);
+    let resolver = CredentialResolver::new(
+        Arc::new(store),
+        Arc::new(|_name: &str| Some(API_KEY.to_owned())),
+    );
+
+    let error = resolver
+        .read_oauth_base_url("copilot")
+        .await
+        .expect_err("marker-only OAuth must remain a typed store error");
+    assert!(matches!(error, ProviderError::Config(_)));
+    let rendered = format!("{error:?} {error}");
+    assert!(rendered.contains("corrupt credential marker for 'copilot'"));
+    for canary in [API_KEY, ACCESS, REFRESH] {
+        assert!(!rendered.contains(canary), "OAuth error leaked {canary}");
+    }
+}
+
+#[tokio::test]
+async fn protected_write_failure_leaves_marker_and_blocks_env_fallback() {
+    let inner = FakeKeyringBackend::new();
+    let backend = StepFailureBackend::new(inner.clone());
+    backend.fail_next_set(KEYCHAIN_SERVICE);
+    let dir = TempDir::new().expect("temp dir");
+    let store = Arc::new(KeychainCredentialStore::new(
+        Box::new(backend),
+        dir.path().to_path_buf(),
+    ));
+
+    let error = store
+        .write("anthropic", &api_key_credential())
+        .await
+        .expect_err("protected second-step failure must fail write");
+    assert!(format!("{error}").contains("deterministic set failure"));
+    assert_eq!(
+        inner
+            .raw_entry(KEYCHAIN_PRESENCE_SERVICE, "anthropic")
+            .as_deref(),
+        Some("api_key")
+    );
+    assert_eq!(inner.raw_entry(KEYCHAIN_SERVICE, "anthropic"), None);
+
+    let fallback_calls = Arc::new(AtomicUsize::new(0));
+    let observed_calls = Arc::clone(&fallback_calls);
+    let resolver = CredentialResolver::new(
+        store,
+        Arc::new(move |_name: &str| {
+            observed_calls.fetch_add(1, Ordering::SeqCst);
+            Some(API_KEY.to_owned())
+        }),
+    );
+    assert!(matches!(
+        resolver
+            .resolve_api_key("anthropic", "ANTHROPIC_API_KEY")
+            .await,
+        Err(CredentialStoreError::CorruptMarker { .. })
+    ));
+    assert_eq!(fallback_calls.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn protected_delete_failure_preserves_both_entries() {
+    let inner = FakeKeyringBackend::new();
+    inner.seed_raw(KEYCHAIN_PRESENCE_SERVICE, "anthropic", "api_key");
+    inner.seed_credential(KEYCHAIN_SERVICE, "anthropic", &api_key_credential());
+    let backend = StepFailureBackend::new(inner.clone());
+    backend.fail_next_delete(KEYCHAIN_SERVICE);
+    let dir = TempDir::new().expect("temp dir");
+    let store = KeychainCredentialStore::new(Box::new(backend), dir.path().to_path_buf());
+
+    store
+        .delete("anthropic")
+        .await
+        .expect_err("protected first-step failure must fail delete");
+    assert!(
+        inner
+            .raw_entry(KEYCHAIN_PRESENCE_SERVICE, "anthropic")
+            .is_some()
+    );
+    assert!(inner.raw_entry(KEYCHAIN_SERVICE, "anthropic").is_some());
+}
+
+#[tokio::test]
+async fn marker_delete_failure_leaves_typed_marker_only_state_and_retry_completes() {
+    let inner = FakeKeyringBackend::new();
+    inner.seed_raw(KEYCHAIN_PRESENCE_SERVICE, "anthropic", "api_key");
+    inner.seed_credential(KEYCHAIN_SERVICE, "anthropic", &api_key_credential());
+    let backend = StepFailureBackend::new(inner.clone());
+    backend.fail_next_delete(KEYCHAIN_PRESENCE_SERVICE);
+    let dir = TempDir::new().expect("temp dir");
+    let store = Arc::new(KeychainCredentialStore::new(
+        Box::new(backend),
+        dir.path().to_path_buf(),
+    ));
+
+    store
+        .delete("anthropic")
+        .await
+        .expect_err("marker second-step failure must fail delete");
+    assert_eq!(inner.raw_entry(KEYCHAIN_SERVICE, "anthropic"), None);
+    assert!(
+        inner
+            .raw_entry(KEYCHAIN_PRESENCE_SERVICE, "anthropic")
+            .is_some()
+    );
+
+    let fallback_calls = Arc::new(AtomicUsize::new(0));
+    let observed_calls = Arc::clone(&fallback_calls);
+    let resolver = CredentialResolver::new(
+        Arc::clone(&store),
+        Arc::new(move |_name: &str| {
+            observed_calls.fetch_add(1, Ordering::SeqCst);
+            Some(API_KEY.to_owned())
+        }),
+    );
+    assert!(matches!(
+        resolver
+            .resolve_api_key("anthropic", "ANTHROPIC_API_KEY")
+            .await,
+        Err(CredentialStoreError::CorruptMarker { .. })
+    ));
+    assert_eq!(fallback_calls.load(Ordering::SeqCst), 0);
+
+    store.delete("anthropic").await.expect("retry delete");
+    assert_eq!(inner.raw_entry(KEYCHAIN_SERVICE, "anthropic"), None);
+    assert_eq!(
+        inner.raw_entry(KEYCHAIN_PRESENCE_SERVICE, "anthropic"),
+        None
+    );
+}
+
+#[tokio::test]
+async fn api_key_marker_is_not_oauth_and_resolve_oauth_returns_safe_wrong_kind() {
+    let api_key = "sk-kind-api-DO-NOT-LEAK";
+    let (_dir, store) = store_with(FakeKeyringBackend::new());
+    store
+        .write("anthropic", &Credential::ApiKey(secret(api_key)))
+        .await
+        .unwrap();
+    let resolver = CredentialResolver::new(
+        Arc::new(store),
+        Arc::new(|_name: &str| -> Option<String> { None }),
+    );
+
+    assert!(!resolver.has_oauth_credential("anthropic").await.unwrap());
+    let error = resolver
+        .resolve_oauth("anthropic", &UnusedOAuthProvider)
+        .await
+        .expect_err("API key must return wrong-kind, not CredentialNeeded");
+    assert!(matches!(error, ProviderError::Config(_)), "{error:?}");
+    assert!(format!("{error}").contains("expected oauth_token, found api_key"));
+    assert!(!format!("{error}").contains(api_key));
+    assert!(!format!("{error:?}").contains(api_key));
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -290,6 +893,7 @@ async fn resolver_reads_api_key_from_store_when_present() {
     let resolved = resolver
         .resolve_api_key("anthropic", "ANTHROPIC_API_KEY")
         .await
+        .expect("store read succeeds")
         .expect("resolved");
     assert_eq!(resolved.value.expose_secret(), API_KEY);
     assert!(matches!(resolved.source, ApiKeySource::Store));
@@ -308,6 +912,7 @@ async fn resolver_falls_back_to_env_when_store_absent() {
     let resolved = resolver
         .resolve_api_key("anthropic", "ANTHROPIC_API_KEY")
         .await
+        .expect("store read succeeds")
         .expect("resolved from env");
     assert_eq!(resolved.value.expose_secret(), API_KEY);
     match resolved.source {
@@ -323,6 +928,156 @@ async fn resolver_falls_back_to_env_when_store_absent() {
         }
         other => panic!("expected Env source, got {other:?}"),
     }
+}
+
+#[tokio::test]
+async fn keychain_probe_uses_presence_without_reading_secret() {
+    for reply in [
+        PresenceReply::Present,
+        PresenceReply::Absent,
+        PresenceReply::BackendUnavailable,
+    ] {
+        let secret_get_calls = Arc::new(AtomicUsize::new(0));
+        let presence_calls = Arc::new(AtomicUsize::new(0));
+        let dir = TempDir::new().expect("temp dir");
+        let store = KeychainCredentialStore::new(
+            Box::new(PresenceOnlyBackend {
+                reply,
+                secret_get_calls: Arc::clone(&secret_get_calls),
+                presence_calls: Arc::clone(&presence_calls),
+            }),
+            dir.path().to_path_buf(),
+        );
+
+        let source = store.probe("anthropic").await;
+        match reply {
+            PresenceReply::Present => {
+                assert!(matches!(source, CredentialSource::Present { .. }))
+            }
+            PresenceReply::Absent => assert_eq!(source, CredentialSource::Absent),
+            PresenceReply::BackendUnavailable => assert!(matches!(
+                source,
+                CredentialSource::BackendUnavailable { .. }
+            )),
+        }
+        assert_eq!(secret_get_calls.load(Ordering::SeqCst), 0);
+        assert_eq!(presence_calls.load(Ordering::SeqCst), 1);
+    }
+}
+
+#[tokio::test]
+async fn resolver_operational_backend_error_never_falls_back_to_env() {
+    let dir = TempDir::new().expect("temp dir");
+    let store =
+        KeychainCredentialStore::new(Box::new(OperationalErrorBackend), dir.path().to_path_buf());
+    let resolver = CredentialResolver::new(
+        Arc::new(store),
+        Arc::new(|_name: &str| Some(API_KEY.to_owned())),
+    );
+
+    let result = resolver
+        .resolve_api_key("anthropic", "ANTHROPIC_API_KEY")
+        .await;
+    assert!(matches!(
+        result,
+        Err(CredentialStoreError::Backend { ref reason, .. })
+            if reason.contains("access denied")
+    ));
+}
+
+#[tokio::test]
+async fn resolver_corrupt_envelope_never_falls_back_to_env() {
+    let backend = FakeKeyringBackend::new();
+    backend.seed_raw("opi.presence", "anthropic", "api_key");
+    backend.seed_raw(KEYCHAIN_SERVICE, "anthropic", "{ malformed");
+    let (_dir, store) = store_with(backend);
+    let resolver = CredentialResolver::new(
+        Arc::new(store),
+        Arc::new(|_name: &str| Some(API_KEY.to_owned())),
+    );
+
+    let resolved = resolver
+        .resolve_api_key("anthropic", "ANTHROPIC_API_KEY")
+        .await;
+
+    assert!(matches!(
+        resolved,
+        Err(CredentialStoreError::MalformedEnvelope { .. })
+    ));
+}
+
+#[tokio::test]
+async fn resolver_unknown_envelope_never_falls_back_to_env() {
+    let backend = FakeKeyringBackend::new();
+    backend.seed_raw("opi.presence", "anthropic", "api_key");
+    backend.seed_raw(
+        KEYCHAIN_SERVICE,
+        "anthropic",
+        r#"{"version":999,"kind":"api_key","api_key":"stored"}"#,
+    );
+    let (_dir, store) = store_with(backend);
+    let resolver = CredentialResolver::new(
+        Arc::new(store),
+        Arc::new(|_name: &str| Some(API_KEY.to_owned())),
+    );
+
+    let resolved = resolver
+        .resolve_api_key("anthropic", "ANTHROPIC_API_KEY")
+        .await;
+
+    assert!(matches!(
+        resolved,
+        Err(CredentialStoreError::UnknownEnvelope {
+            version: Some(999),
+            ..
+        })
+    ));
+}
+
+#[tokio::test]
+async fn resolver_wrong_credential_kind_never_falls_back_to_env() {
+    let (_dir, store) = store_with(FakeKeyringBackend::new());
+    store.write("anthropic", &oauth_credential()).await.unwrap();
+    let resolver = CredentialResolver::new(
+        Arc::new(store),
+        Arc::new(|_name: &str| Some(API_KEY.to_owned())),
+    );
+
+    let resolved = resolver
+        .resolve_api_key("anthropic", "ANTHROPIC_API_KEY")
+        .await;
+
+    assert!(matches!(
+        resolved,
+        Err(CredentialStoreError::UnexpectedCredentialKind {
+            expected: "api_key",
+            actual: "oauth_token",
+            ..
+        })
+    ));
+}
+
+#[tokio::test]
+async fn resolver_backend_unavailable_falls_back_to_env_with_diagnostic_bit() {
+    let (_dir, store) = store_with(FakeKeyringBackend::new().with_unavailable());
+    let resolver = CredentialResolver::new(
+        Arc::new(store),
+        Arc::new(|_name: &str| Some(API_KEY.to_owned())),
+    );
+
+    let resolved = resolver
+        .resolve_api_key("anthropic", "ANTHROPIC_API_KEY")
+        .await
+        .expect("store read succeeds")
+        .expect("backend unavailability should fall back to env");
+
+    assert!(matches!(
+        resolved.source,
+        ApiKeySource::Env {
+            backend_unavailable: true,
+            ..
+        }
+    ));
 }
 
 #[tokio::test]
@@ -346,6 +1101,7 @@ async fn headless_api_key_env_fallback() {
     let resolved = resolver
         .resolve_api_key("anthropic", "ANTHROPIC_API_KEY")
         .await
+        .expect("store read succeeds")
         .expect("resolved from env on headless host");
     assert_eq!(resolved.value.expose_secret(), API_KEY);
     match resolved.source {

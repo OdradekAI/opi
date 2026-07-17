@@ -202,11 +202,27 @@ Opi-Acceptance: <scenario ids>; <command/test/call-site evidence summary>
 
 ## Atomic Write Protocol
 
-1. Serialize full JSON with a structured writer (not shell echo/string concat).
-2. Write to `.opi-impl-state.json.tmp` in repo root.
-3. Flush file; fsync parent directory when platform exposes it.
-4. Rename `.opi-impl-state.json.tmp` over `.opi-impl-state.json`.
-5. On failure, leave previous ledger intact; print tmp path for inspection.
+1. Read the target as strict UTF-8 and record its SHA-256 for optimistic
+   concurrency. Never use the Windows PowerShell 5.1 default text encoding.
+2. Serialize full JSON with a structured writer (not shell echo/string concat).
+3. Validate the candidate before replacement: schema v2, strict BOM-less UTF-8,
+   valid JSON, at most 16 MiB total, at most 65,536 characters in any string,
+   and no known repeated UTF-8/GB2312 mojibake markers.
+4. Write to `.opi-impl-state.json.tmp` in repo root and flush it. Fsync the
+   parent directory when the platform exposes that operation.
+5. Recheck the target SHA-256. If it changed, preserve both files and stop so
+   the caller can re-read the newer ledger.
+6. Atomically rename `.opi-impl-state.json.tmp` over `.opi-impl-state.json`.
+7. On failure, leave the previous ledger intact and print the tmp path for
+   inspection.
+
+On Windows, use
+`.claude/skills/opi-implement/scripts/ledger-guard.ps1` for candidate validation
+and installation. Do not use default `Get-Content`, `Set-Content`, `Out-File`,
+or PowerShell `>` redirection for ledger data; Windows PowerShell 5.1 otherwise
+decodes BOM-less UTF-8 through the system ANSI code page. Recovery writes pass
+`-BackupPath` to retain the corrupt target as the atomic replacement backup;
+normal checkpoint writes use the guard's transient replacement backup.
 
 **Write boundaries** (the only times the ledger is written):
 - End of Phase B (user confirms): mark `in_progress`, record `start_commit`

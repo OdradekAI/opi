@@ -228,6 +228,98 @@ fn run_export_session(
     }
 }
 
+#[derive(Debug, PartialEq, Eq)]
+struct CommandOutcome {
+    stdout: String,
+    stderr: String,
+    exit_code: i32,
+}
+
+struct CommandOutput {
+    stdout: Box<dyn FnMut(&str)>,
+    stderr: Box<dyn FnMut(&str)>,
+}
+
+impl CommandOutput {
+    fn stdio() -> Self {
+        Self {
+            stdout: Box::new(|text| print!("{text}")),
+            stderr: Box::new(|text| eprintln!("{text}")),
+        }
+    }
+
+    #[cfg(test)]
+    fn discard() -> Self {
+        Self {
+            stdout: Box::new(|_| {}),
+            stderr: Box::new(|_| {}),
+        }
+    }
+
+    #[cfg(test)]
+    fn capturing() -> (
+        Self,
+        std::sync::Arc<std::sync::Mutex<String>>,
+        std::sync::Arc<std::sync::Mutex<String>>,
+    ) {
+        let stdout = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
+        let stderr = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
+        let stdout_capture = std::sync::Arc::clone(&stdout);
+        let stderr_capture = std::sync::Arc::clone(&stderr);
+        (
+            Self {
+                stdout: Box::new(move |text| {
+                    stdout_capture
+                        .lock()
+                        .expect("stdout capture")
+                        .push_str(text)
+                }),
+                stderr: Box::new(move |text| {
+                    stderr_capture
+                        .lock()
+                        .expect("stderr capture")
+                        .push_str(text)
+                }),
+            },
+            stdout,
+            stderr,
+        )
+    }
+
+    fn write_stdout(&mut self, text: &str) {
+        (self.stdout)(text);
+    }
+
+    fn write_stderr(&mut self, text: &str) {
+        (self.stderr)(text);
+    }
+}
+
+fn write_command_outcome(
+    outcome: &CommandOutcome,
+    stdout: &mut impl std::io::Write,
+    stderr: &mut impl std::io::Write,
+) -> std::io::Result<i32> {
+    stdout.write_all(outcome.stdout.as_bytes())?;
+    stderr.write_all(outcome.stderr.as_bytes())?;
+    Ok(outcome.exit_code)
+}
+
+fn emit_command_outcome(outcome: &CommandOutcome) -> i32 {
+    let result = {
+        let stdout = std::io::stdout();
+        let stderr = std::io::stderr();
+        write_command_outcome(outcome, &mut stdout.lock(), &mut stderr.lock())
+    };
+    match result {
+        Ok(exit_code) => exit_code,
+        Err(error) => {
+            eprintln!("opi: output error: {error}");
+            1
+        }
+    }
+}
+
 /// Run the top-level `opi doctor` command and return the exit code.
 ///
 /// Network-free: config is resolved best-effort so a broken config surfaces as
@@ -235,9 +327,7 @@ fn run_export_session(
 /// (exit 1). An unparseable `--scope` list is an internal failure (exit 1).
 fn run_doctor_cli(cli: &Cli, scope: Option<&str>, json: bool) -> i32 {
     use opi_coding_agent::config::OpiConfig;
-    use opi_coding_agent::doctor::{
-        DoctorContext, DoctorScope, format_json, format_text, run_doctor,
-    };
+    use opi_coding_agent::doctor::{DoctorContext, DoctorScope};
 
     let scopes = match scope {
         Some(raw) => match DoctorScope::parse_list(raw) {
@@ -274,45 +364,7 @@ fn run_doctor_cli(cli: &Cli, scope: Option<&str>, json: bool) -> i32 {
     let colorterm = std::env::var("COLORTERM").ok();
     let env_probe = |name: &str| std::env::var(name).ok();
 
-    // Phase 14: probe the credential store for StoreCredential providers so
-    // doctor reports redacted, three-state keychain presence. Probing happens
-    // in a local runtime (run_doctor_cli runs before the main runtime is built
-    // and then process::exits). Production uses the platform keychain; in
-    // 14.1 (no native store compiled) every probe is BackendUnavailable.
-    let store_probe: std::collections::HashMap<String, opi_ai::CredentialSource> = {
-        let selected_provider = config.defaults.model.split_once(':').map(|(p, _)| p);
-        let needs_probe = selected_provider.is_some_and(|p| {
-            matches!(
-                opi_coding_agent::provider_factory::auth_descriptor_for(&config, p),
-                Some(opi_ai::AuthDescriptor::StoreCredential { .. })
-            )
-        });
-        if needs_probe {
-            let provider = selected_provider.expect("checked above");
-            let rt = match tokio::runtime::Runtime::new() {
-                Ok(rt) => rt,
-                Err(error) => {
-                    eprintln!("opi doctor: runtime error: {error}");
-                    return 1;
-                }
-            };
-            let store = std::sync::Arc::new(
-                opi_coding_agent::credential_store::KeychainCredentialStore::new(
-                    Box::new(opi_coding_agent::credential_store::KeyringCoreBackend::new()),
-                    user_config_dir.clone(),
-                ),
-            );
-            let probed: opi_ai::CredentialSource = rt.block_on(async move {
-                use opi_ai::credential::CredentialStore;
-                store.probe(provider).await
-            });
-            let mut map = std::collections::HashMap::new();
-            map.insert(provider.to_owned(), probed);
-            map
-        } else {
-            std::collections::HashMap::new()
-        }
-    };
+    let empty_store_probe = std::collections::HashMap::new();
 
     let ctx = DoctorContext {
         config: &config,
@@ -326,21 +378,73 @@ fn run_doctor_cli(cli: &Cli, scope: Option<&str>, json: bool) -> i32 {
         no_color,
         colorterm: colorterm.as_deref(),
         env_var: &env_probe,
-        store_probe: &store_probe,
+        store_probe: &empty_store_probe,
     };
 
-    let report = run_doctor(&scopes, &ctx);
-    if json {
-        let json_out = format_json(&report);
-        if json_out.is_empty() {
-            println!();
-        } else {
-            println!("{json_out}");
+    let rt = match tokio::runtime::Runtime::new() {
+        Ok(rt) => rt,
+        Err(error) => {
+            eprintln!("opi doctor: runtime error: {error}");
+            return 1;
         }
+    };
+    let outcome = rt.block_on(run_doctor_command_core(
+        &scopes,
+        &ctx,
+        json,
+        user_config_dir.clone(),
+        opi_coding_agent::credential_store::native_keyring_backend_factory(),
+    ));
+    emit_command_outcome(&outcome)
+}
+
+async fn run_doctor_command_core(
+    scopes: &[opi_coding_agent::doctor::DoctorScope],
+    ctx: &opi_coding_agent::doctor::DoctorContext<'_>,
+    json_output: bool,
+    user_config_dir: std::path::PathBuf,
+    backend_factory: opi_coding_agent::credential_store::KeyringBackendFactory,
+) -> CommandOutcome {
+    let report =
+        opi_coding_agent::doctor::run_doctor_command(scopes, ctx, user_config_dir, backend_factory)
+            .await;
+    let stdout = if json_output {
+        format!("{}\n", opi_coding_agent::doctor::format_json(&report))
     } else {
-        print!("{}", format_text(&report));
+        opi_coding_agent::doctor::format_text(&report)
+    };
+    CommandOutcome {
+        stdout,
+        stderr: String::new(),
+        exit_code: report.exit_code(),
     }
-    report.exit_code()
+}
+
+async fn with_provider_bundle<T, F, Fut>(
+    bundle: opi_coding_agent::provider_factory::ProviderBundle,
+    callback: F,
+) -> T
+where
+    F: FnOnce(Box<dyn opi_ai::provider::Provider>, Vec<opi_agent::Diagnostic>) -> Fut,
+    Fut: std::future::Future<Output = T>,
+{
+    let opi_coding_agent::provider_factory::ProviderBundle {
+        provider,
+        store,
+        resolver,
+        registry,
+        diagnostics,
+    } = bundle;
+    let result = callback(provider, diagnostics).await;
+    drop((store, resolver, registry));
+    result
+}
+
+fn merge_provider_diagnostics(
+    startup: &mut opi_coding_agent::runtime_packages::RuntimePackageStartup,
+    diagnostics: Vec<opi_agent::Diagnostic>,
+) {
+    startup.diagnostics.extend(diagnostics);
 }
 
 async fn run_non_interactive(
@@ -351,33 +455,76 @@ async fn run_non_interactive(
     resume_info: Option<ResumeInfo>,
     tool_selection: ToolSelection,
 ) -> i32 {
+    let workspace_root = resume_info
+        .as_ref()
+        .map(|info| info.original_cwd.clone())
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+    run_non_interactive_core(
+        cli,
+        config,
+        prompt_text,
+        resumed_messages,
+        resume_info,
+        tool_selection,
+        workspace_root,
+        opi_coding_agent::config::user_config_dir(),
+        opi_coding_agent::credential_store::native_keyring_backend_factory(),
+        None,
+        CommandOutput::stdio(),
+        |_| {},
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn run_non_interactive_core<Observe>(
+    cli: &Cli,
+    config: &opi_coding_agent::config::OpiConfig,
+    prompt_text: &str,
+    resumed_messages: Option<Vec<opi_agent::message::AgentMessage>>,
+    resume_info: Option<ResumeInfo>,
+    tool_selection: ToolSelection,
+    workspace_root: std::path::PathBuf,
+    user_config_dir: std::path::PathBuf,
+    backend_factory: opi_coding_agent::credential_store::KeyringBackendFactory,
+    provider_override: Option<Box<dyn opi_ai::provider::Provider>>,
+    mut output: CommandOutput,
+    observe_result: Observe,
+) -> i32
+where
+    Observe: FnOnce(&opi_coding_agent::runner::NonInteractiveResult),
+{
     use opi_coding_agent::runner::{ExitCode, NonInteractiveRunner};
 
     if prompt_text.is_empty() {
-        eprintln!("opi: no prompt provided");
+        output.write_stderr("opi: no prompt provided");
         return ExitCode::ConfigError as i32;
     }
 
-    let provider = match opi_coding_agent::provider_factory::build_provider_production(
+    let mut bundle = match opi_coding_agent::provider_factory::build_provider_bundle(
         config,
-        opi_coding_agent::config::user_config_dir(),
+        user_config_dir.clone(),
+        backend_factory,
     )
     .await
     {
         Ok(p) => p,
         Err(opi_coding_agent::provider_factory::ProviderBuildError::Auth(msg)) => {
-            eprintln!("opi: {msg}");
+            output.write_stderr(&format!("opi: {msg}"));
             return ExitCode::AuthFailure as i32;
         }
         Err(opi_coding_agent::provider_factory::ProviderBuildError::Config(msg)) => {
-            eprintln!("opi: {msg}");
+            output.write_stderr(&format!("opi: {msg}"));
             return ExitCode::ConfigError as i32;
         }
         Err(opi_coding_agent::provider_factory::ProviderBuildError::Provider(e)) => {
-            eprintln!("opi: {e}");
+            output.write_stderr(&format!("opi: {e}"));
             return ExitCode::ConfigError as i32;
         }
     };
+    if let Some(provider) = provider_override {
+        bundle.provider = provider;
+    }
 
     let allow_mutating = cli.allow_mutating || config.defaults.allow_mutating_tools;
 
@@ -387,86 +534,96 @@ async fn run_non_interactive(
             .and_then(|path| match std::fs::read_to_string(path) {
                 Ok(content) => Some(content),
                 Err(e) => {
-                    eprintln!(
+                    output.write_stderr(&format!(
                         "opi: warning: failed to read system prompt file {}: {e}",
                         path.display()
-                    );
+                    ));
                     None
                 }
             });
 
-    let workspace_root = resume_info
-        .as_ref()
-        .map(|info| info.original_cwd.clone())
-        .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
-    let user_config_dir = opi_coding_agent::config::user_config_dir();
     let runtime_startup = opi_coding_agent::runtime_packages::start_installed_package_runtime(
         &workspace_root,
         &user_config_dir,
     )
     .await;
 
-    let mut runner = match NonInteractiveRunner::new_with_resume_and_runtime_packages(
-        provider,
-        config.defaults.model.clone(),
-        config.clone(),
-        workspace_root,
-        allow_mutating,
-        user_system_prompt,
-        resumed_messages.unwrap_or_default(),
-        resume_info,
-        tool_selection,
-        Some(runtime_startup),
-        cli.trace.clone(),
-    ) {
-        Ok(runner) => runner,
-        Err(e) => {
-            eprintln!("opi: {e}");
-            return ExitCode::ConfigError as i32;
-        }
-    }
-    .with_compact_ndjson(cli.json_compact);
-
-    let result = if cli.image.is_empty() {
-        // No images -- use the plain text path.
-        if cli.json {
-            runner.run_json(prompt_text).await
-        } else {
-            runner.run(prompt_text).await
-        }
-    } else {
-        // Load images and combine with text prompt.
-        let mut content: Vec<opi_ai::message::InputContent> = Vec::new();
-        content.push(opi_ai::message::InputContent::Text {
-            text: prompt_text.to_owned(),
-        });
-        for image_path in &cli.image {
-            match opi_coding_agent::image::load_image_with_limit(
-                image_path,
-                config.defaults.max_image_bytes,
-            ) {
-                Ok(img) => content.push(img),
-                Err(e) => {
-                    eprintln!("opi: {e}");
-                    return ExitCode::ConfigError as i32;
-                }
+    with_provider_bundle(bundle, move |provider, provider_diagnostics| async move {
+        let mut runtime_startup = runtime_startup;
+        merge_provider_diagnostics(&mut runtime_startup, provider_diagnostics);
+        let mut runner = match NonInteractiveRunner::new_with_resume_and_runtime_packages(
+            provider,
+            config.defaults.model.clone(),
+            config.clone(),
+            workspace_root,
+            allow_mutating,
+            user_system_prompt,
+            resumed_messages.unwrap_or_default(),
+            resume_info,
+            tool_selection,
+            Some(runtime_startup),
+            cli.trace.clone(),
+        ) {
+            Ok(runner) => runner,
+            Err(e) => {
+                output.write_stderr(&format!("opi: {e}"));
+                return ExitCode::ConfigError as i32;
             }
         }
-        if cli.json {
-            runner.run_json_with_content(content).await
+        .with_compact_ndjson(cli.json_compact);
+
+        let result = if cli.image.is_empty() {
+            // No images -- use the plain text path.
+            if cli.json {
+                runner.run_json(prompt_text).await
+            } else {
+                runner.run(prompt_text).await
+            }
         } else {
-            runner.run_with_content(content).await
+            // Load images and combine with text prompt.
+            let mut content: Vec<opi_ai::message::InputContent> = Vec::new();
+            content.push(opi_ai::message::InputContent::Text {
+                text: prompt_text.to_owned(),
+            });
+            for image_path in &cli.image {
+                match opi_coding_agent::image::load_image_with_limit(
+                    image_path,
+                    config.defaults.max_image_bytes,
+                ) {
+                    Ok(img) => content.push(img),
+                    Err(e) => {
+                        output.write_stderr(&format!("opi: {e}"));
+                        return ExitCode::ConfigError as i32;
+                    }
+                }
+            }
+            if cli.json {
+                runner.run_json_with_content(content).await
+            } else {
+                runner.run_with_content(content).await
+            }
+        };
+
+        observe_result(&result);
+        if !result.stdout.is_empty() {
+            output.write_stdout(&result.stdout);
         }
-    };
+        if !result.stderr.is_empty() {
+            output.write_stderr(&result.stderr);
+        }
 
-    if !result.stdout.is_empty() {
-        print!("{}", result.stdout);
-    }
-    if !result.stderr.is_empty() {
-        eprintln!("{}", result.stderr);
-    }
+        result.exit_code
+    })
+    .await
+}
 
-    result.exit_code
+enum RpcTransport {
+    Stdio,
+    #[cfg(test)]
+    Channels {
+        command_rx: tokio::sync::mpsc::UnboundedReceiver<opi_coding_agent::rpc::RpcCommand>,
+        output_tx: tokio::sync::mpsc::UnboundedSender<serde_json::Value>,
+    },
 }
 
 async fn run_rpc(
@@ -476,29 +633,67 @@ async fn run_rpc(
     resume_info: Option<ResumeInfo>,
     tool_selection: ToolSelection,
 ) -> i32 {
+    let workspace_root = resume_info
+        .as_ref()
+        .map(|info| info.original_cwd.clone())
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+    run_rpc_core(
+        cli,
+        config,
+        resumed_messages,
+        resume_info,
+        tool_selection,
+        workspace_root,
+        opi_coding_agent::config::user_config_dir(),
+        opi_coding_agent::credential_store::native_keyring_backend_factory(),
+        None,
+        CommandOutput::stdio(),
+        RpcTransport::Stdio,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn run_rpc_core(
+    cli: &Cli,
+    config: &opi_coding_agent::config::OpiConfig,
+    resumed_messages: Option<Vec<opi_agent::message::AgentMessage>>,
+    resume_info: Option<ResumeInfo>,
+    tool_selection: ToolSelection,
+    workspace_root: std::path::PathBuf,
+    user_config_dir: std::path::PathBuf,
+    backend_factory: opi_coding_agent::credential_store::KeyringBackendFactory,
+    provider_override: Option<Box<dyn opi_ai::provider::Provider>>,
+    mut output: CommandOutput,
+    transport: RpcTransport,
+) -> i32 {
     use opi_coding_agent::rpc::RpcRunner;
     use opi_coding_agent::runner::ExitCode;
 
-    let provider = match opi_coding_agent::provider_factory::build_provider_production(
+    let mut bundle = match opi_coding_agent::provider_factory::build_provider_bundle(
         config,
-        opi_coding_agent::config::user_config_dir(),
+        user_config_dir.clone(),
+        backend_factory,
     )
     .await
     {
         Ok(p) => p,
         Err(opi_coding_agent::provider_factory::ProviderBuildError::Auth(msg)) => {
-            eprintln!("opi: {msg}");
+            output.write_stderr(&format!("opi: {msg}"));
             return ExitCode::AuthFailure as i32;
         }
         Err(opi_coding_agent::provider_factory::ProviderBuildError::Config(msg)) => {
-            eprintln!("opi: {msg}");
+            output.write_stderr(&format!("opi: {msg}"));
             return ExitCode::ConfigError as i32;
         }
         Err(opi_coding_agent::provider_factory::ProviderBuildError::Provider(e)) => {
-            eprintln!("opi: {e}");
+            output.write_stderr(&format!("opi: {e}"));
             return ExitCode::ConfigError as i32;
         }
     };
+    if let Some(provider) = provider_override {
+        bundle.provider = provider;
+    }
 
     let allow_mutating = cli.allow_mutating || config.defaults.allow_mutating_tools;
 
@@ -508,45 +703,52 @@ async fn run_rpc(
             .and_then(|path| match std::fs::read_to_string(path) {
                 Ok(content) => Some(content),
                 Err(e) => {
-                    eprintln!(
+                    output.write_stderr(&format!(
                         "opi: warning: failed to read system prompt file {}: {e}",
                         path.display()
-                    );
+                    ));
                     None
                 }
             });
 
-    let workspace_root = resume_info
-        .as_ref()
-        .map(|info| info.original_cwd.clone())
-        .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
-    let user_config_dir = opi_coding_agent::config::user_config_dir();
     let runtime_startup = opi_coding_agent::runtime_packages::start_installed_package_runtime(
         &workspace_root,
         &user_config_dir,
     )
     .await;
 
-    let mut runner = match RpcRunner::new_with_runtime_packages(
-        provider,
-        config.defaults.model.clone(),
-        config.clone(),
-        workspace_root,
-        allow_mutating,
-        tool_selection,
-        user_system_prompt,
-        resumed_messages.unwrap_or_default(),
-        runtime_startup,
-        resume_info,
-    ) {
-        Ok(runner) => runner,
-        Err(e) => {
-            eprintln!("opi: {e}");
-            return ExitCode::ConfigError as i32;
-        }
-    };
+    with_provider_bundle(bundle, move |provider, provider_diagnostics| async move {
+        let mut runtime_startup = runtime_startup;
+        merge_provider_diagnostics(&mut runtime_startup, provider_diagnostics);
+        let mut runner = match RpcRunner::new_with_runtime_packages(
+            provider,
+            config.defaults.model.clone(),
+            config.clone(),
+            workspace_root,
+            allow_mutating,
+            tool_selection,
+            user_system_prompt,
+            resumed_messages.unwrap_or_default(),
+            runtime_startup,
+            resume_info,
+        ) {
+            Ok(runner) => runner,
+            Err(e) => {
+                output.write_stderr(&format!("opi: {e}"));
+                return ExitCode::ConfigError as i32;
+            }
+        };
 
-    runner.run().await
+        match transport {
+            RpcTransport::Stdio => runner.run().await,
+            #[cfg(test)]
+            RpcTransport::Channels {
+                command_rx,
+                output_tx,
+            } => runner.run_with_channels(command_rx, output_tx).await,
+        }
+    })
+    .await
 }
 
 async fn run_interactive(
@@ -556,12 +758,56 @@ async fn run_interactive(
     resume_info: Option<ResumeInfo>,
     tool_selection: ToolSelection,
 ) {
-    use opi_coding_agent::harness::{CodingHarness, InteractiveCodingHooks};
     use opi_coding_agent::interactive;
 
-    let bundle = match opi_coding_agent::provider_factory::build_provider_bundle(
+    let workspace_root = resume_info
+        .as_ref()
+        .map(|info| info.original_cwd.clone())
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+    run_interactive_core(
+        cli,
         config,
+        resumed_messages,
+        resume_info,
+        tool_selection,
+        workspace_root,
         opi_coding_agent::config::user_config_dir(),
+        opi_coding_agent::credential_store::native_keyring_backend_factory(),
+        |harness, model_display, theme_name, keybindings| async move {
+            interactive::run_interactive_tui(harness, model_display, &theme_name, keybindings).await
+        },
+    )
+    .await;
+}
+
+/// Credential-aware interactive startup core shared verbatim by production
+/// and the launch-boundary ordering test.
+#[allow(clippy::too_many_arguments)]
+async fn run_interactive_core<Launch, LaunchFuture>(
+    cli: &Cli,
+    config: &opi_coding_agent::config::OpiConfig,
+    resumed_messages: Option<Vec<opi_agent::message::AgentMessage>>,
+    resume_info: Option<ResumeInfo>,
+    tool_selection: ToolSelection,
+    workspace_root: std::path::PathBuf,
+    user_config_dir: std::path::PathBuf,
+    backend_factory: opi_coding_agent::credential_store::KeyringBackendFactory,
+    launch_tui: Launch,
+) where
+    Launch: FnOnce(
+        opi_coding_agent::harness::CodingHarness,
+        String,
+        String,
+        opi_tui::Keybindings,
+    ) -> LaunchFuture,
+    LaunchFuture: std::future::Future<Output = Result<(), Box<dyn std::error::Error>>>,
+{
+    use opi_coding_agent::harness::{CodingHarness, InteractiveCodingHooks};
+
+    let mut bundle = match opi_coding_agent::provider_factory::build_provider_bundle(
+        config,
+        user_config_dir.clone(),
+        backend_factory,
     )
     .await
     {
@@ -579,6 +825,7 @@ async fn run_interactive(
             std::process::exit(2);
         }
     };
+    let provider_diagnostics = std::mem::take(&mut bundle.diagnostics);
     let provider = bundle.provider;
 
     let user_system_prompt = cli
@@ -588,16 +835,12 @@ async fn run_interactive(
 
     let hooks = Box::new(InteractiveCodingHooks::new(true));
     let initial_messages = resumed_messages.unwrap_or_default();
-    let workspace_root = resume_info
-        .as_ref()
-        .map(|info| info.original_cwd.clone())
-        .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
-    let user_config_dir = opi_coding_agent::config::user_config_dir();
-    let runtime_startup = opi_coding_agent::runtime_packages::start_installed_package_runtime(
+    let mut runtime_startup = opi_coding_agent::runtime_packages::start_installed_package_runtime(
         &workspace_root,
         &user_config_dir,
     )
     .await;
+    merge_provider_diagnostics(&mut runtime_startup, provider_diagnostics);
 
     let tool_config =
         ToolRuntimeConfig::resolve(RunMode::Interactive, true, tool_selection.clone())
@@ -651,9 +894,7 @@ async fn run_interactive(
     harness.credential_store = Some(bundle.store);
     harness.oauth_registry = Some(bundle.registry);
 
-    if let Err(e) =
-        interactive::run_interactive_tui(harness, model_display, &theme_name, keybindings).await
-    {
+    if let Err(e) = launch_tui(harness, model_display, theme_name, keybindings).await {
         eprintln!("opi: TUI error: {e}");
         std::process::exit(1);
     }
@@ -679,69 +920,63 @@ fn parse_keybindings(config: &opi_coding_agent::config::KeybindingsConfig) -> op
 /// List available models from all configured providers.
 /// Returns exit code: 0 on success, 1 if no models found, 2 on config error.
 fn list_models(config: &opi_coding_agent::config::OpiConfig, json_output: bool) -> i32 {
-    // Phase 14: probe StoreCredential providers upfront so the listing
-    // collection carries redacted, three-state keychain presence. Probing
-    // happens in a local runtime (list_models runs before the main runtime).
-    let store_probe: std::collections::HashMap<String, opi_ai::CredentialSource> = {
-        let candidates: Vec<String> = opi_coding_agent::provider_factory::built_in_provider_ids()
-            .iter()
-            .filter(|pid| {
-                matches!(
-                    opi_coding_agent::provider_factory::auth_descriptor_for(config, pid),
-                    Some(opi_ai::AuthDescriptor::StoreCredential { .. })
-                )
-            })
-            .map(|pid| pid.to_string())
-            .collect();
-        if candidates.is_empty() {
-            std::collections::HashMap::new()
-        } else {
-            let user_config_dir = opi_coding_agent::config::user_config_dir();
-            let rt = match tokio::runtime::Runtime::new() {
-                Ok(rt) => rt,
-                Err(error) => {
-                    eprintln!("opi: runtime error: {error}");
-                    return 1;
-                }
-            };
-            rt.block_on(async move {
-                let store = std::sync::Arc::new(
-                    opi_coding_agent::credential_store::KeychainCredentialStore::new(
-                        Box::new(opi_coding_agent::credential_store::KeyringCoreBackend::new()),
-                        user_config_dir,
-                    ),
-                );
-                use opi_ai::credential::CredentialStore;
-                let mut map = std::collections::HashMap::new();
-                for pid in &candidates {
-                    map.insert(pid.clone(), store.probe(pid).await);
-                }
-                map
-            })
-        }
-    };
-    let collection = match opi_coding_agent::provider_factory::build_collection_for_listing(
-        config,
-        &store_probe,
-    ) {
-        Ok(collection) => collection,
-        Err(opi_coding_agent::provider_factory::ListModelsError::MissingCredentials) => {
-            eprintln!("opi: no models available (configure API keys to list models)");
+    let rt = match tokio::runtime::Runtime::new() {
+        Ok(rt) => rt,
+        Err(error) => {
+            eprintln!("opi: runtime error: {error}");
             return 1;
         }
+    };
+    let outcome = rt.block_on(run_list_models_command_core(
+        config,
+        json_output,
+        opi_coding_agent::config::user_config_dir(),
+        opi_coding_agent::credential_store::native_keyring_backend_factory(),
+    ));
+    emit_command_outcome(&outcome)
+}
+
+async fn run_list_models_command_core(
+    config: &opi_coding_agent::config::OpiConfig,
+    json_output: bool,
+    user_config_dir: std::path::PathBuf,
+    backend_factory: opi_coding_agent::credential_store::KeyringBackendFactory,
+) -> CommandOutcome {
+    let collection = match opi_coding_agent::provider_factory::build_collection_for_listing_command(
+        config,
+        user_config_dir,
+        backend_factory,
+    )
+    .await
+    {
+        Ok(collection) => collection,
+        Err(opi_coding_agent::provider_factory::ListModelsError::MissingCredentials) => {
+            return CommandOutcome {
+                stdout: String::new(),
+                stderr: "opi: no models available (configure API keys to list models)\n".to_owned(),
+                exit_code: 1,
+            };
+        }
         Err(opi_coding_agent::provider_factory::ListModelsError::Config(msg)) => {
-            eprintln!("opi: config error: {msg}");
-            return 2;
+            return CommandOutcome {
+                stdout: String::new(),
+                stderr: format!("opi: config error: {msg}\n"),
+                exit_code: 2,
+            };
         }
     };
     let entries =
         opi_coding_agent::model_listing::model_entries_from_registry(collection.registry());
 
     if entries.is_empty() {
-        eprintln!("opi: no models available (configure API keys to list models)");
-        return 1;
+        return CommandOutcome {
+            stdout: String::new(),
+            stderr: "opi: no models available (configure API keys to list models)\n".to_owned(),
+            exit_code: 1,
+        };
     }
 
+    let mut stdout = String::new();
     if json_output {
         for entry in &entries {
             let json = serde_json::json!({
@@ -749,7 +984,7 @@ fn list_models(config: &opi_coding_agent::config::OpiConfig, json_output: bool) 
                 "provider": entry.provider_id,
                 "display_name": entry.display_name,
             });
-            println!("{json}");
+            stdout.push_str(&format!("{json}\n"));
         }
     } else {
         // Compute column widths
@@ -766,31 +1001,1521 @@ fn list_models(config: &opi_coding_agent::config::OpiConfig, json_output: bool) 
             .unwrap_or(8);
 
         // Header
-        println!(
-            "{:<width_prov$}  {:<width_id$}  DISPLAY NAME",
+        stdout.push_str(&format!(
+            "{:<width_prov$}  {:<width_id$}  DISPLAY NAME\n",
             "PROVIDER",
             "MODEL ID",
             width_prov = max_prov,
             width_id = max_id,
-        );
-        println!(
-            "{}  {}  {}",
+        ));
+        stdout.push_str(&format!(
+            "{}  {}  {}\n",
             "-".repeat(max_prov),
             "-".repeat(max_id),
             "-".repeat(max_name),
-        );
+        ));
 
         for entry in &entries {
-            println!(
-                "{:<width_prov$}  {:<width_id$}  {}",
+            stdout.push_str(&format!(
+                "{:<width_prov$}  {:<width_id$}  {}\n",
                 entry.provider_id,
                 entry.model_id,
                 entry.display_name,
                 width_prov = max_prov,
                 width_id = max_id,
-            );
+            ));
         }
     }
 
-    0
+    CommandOutcome {
+        stdout,
+        stderr: String::new(),
+        exit_code: 0,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    use std::sync::{Arc, Mutex};
+
+    use clap::Parser;
+
+    use super::{
+        CommandOutcome, CommandOutput, RpcTransport, run_doctor_command_core, run_interactive_core,
+        run_list_models_command_core, run_non_interactive_core, run_rpc_core, with_provider_bundle,
+        write_command_outcome,
+    };
+    use opi_coding_agent::cli::Cli;
+    use opi_coding_agent::config::{CredentialBackendSource, OpiConfig, ProviderProxyConfig};
+    use opi_coding_agent::credential_store::{
+        BackendError, FakeKeyringBackend, KEYCHAIN_PRESENCE_SERVICE, KEYCHAIN_SERVICE,
+        KeyringBackend, KeyringBackendFactory,
+    };
+    use opi_coding_agent::doctor::{DoctorContext, DoctorScope};
+
+    const FIX_F_SECRET_CANARY: &str = "sk-fix-f-command-core-DO-NOT-LEAK";
+    const FIX_G_API_KEY_ENV: &str = "OPI_TEST_PHASE14_BACKEND_FALLBACK_KEY";
+    const FIX_G_SECRET_CANARY: &str = "sk-fix-g-backend-fallback-DO-NOT-LEAK";
+    const FIX_I_STORED_CANARY: &str = "fix-i-stored-wrong-type-DO-NOT-LEAK";
+    const FIX_I_FALLBACK_CANARY: &str = "fix-i-env-fallback-DO-NOT-LEAK";
+    const FIX_I_FALLBACK_ENV: &str = "OPI_TEST_FIX_I_FALLBACK_KEY";
+    const FIX_I_REDACTED_MALFORMED_DIAGNOSTIC: &str = "credential store error: malformed credential envelope for 'anthropic': credential envelope does not match the expected schema";
+
+    #[derive(Clone, Copy)]
+    enum CanaryReply {
+        Present,
+        BackendUnavailable,
+    }
+
+    #[derive(Default)]
+    struct CanaryCounts {
+        factory_calls: AtomicUsize,
+        presence_get_calls: AtomicUsize,
+        protected_get_calls: AtomicUsize,
+        set_calls: AtomicUsize,
+        delete_calls: AtomicUsize,
+    }
+
+    struct CanaryKeyringBackend {
+        reply: CanaryReply,
+        counts: Arc<CanaryCounts>,
+    }
+
+    impl KeyringBackend for CanaryKeyringBackend {
+        fn get(&self, service: &str, provider_id: &str) -> Result<Option<String>, BackendError> {
+            if service == KEYCHAIN_PRESENCE_SERVICE {
+                self.counts
+                    .presence_get_calls
+                    .fetch_add(1, Ordering::SeqCst);
+                return match self.reply {
+                    CanaryReply::Present => {
+                        Ok((provider_id == "anthropic").then(|| "api_key".to_owned()))
+                    }
+                    CanaryReply::BackendUnavailable => Err(BackendError::BackendUnavailable(
+                        "fix-f-canary-backend-unavailable".to_owned(),
+                    )),
+                };
+            }
+
+            self.counts
+                .protected_get_calls
+                .fetch_add(1, Ordering::SeqCst);
+            Err(BackendError::Other(format!(
+                "protected credential read forbidden: {FIX_F_SECRET_CANARY}"
+            )))
+        }
+
+        fn set(
+            &self,
+            _service: &str,
+            _provider_id: &str,
+            _value: &str,
+        ) -> Result<(), BackendError> {
+            self.counts.set_calls.fetch_add(1, Ordering::SeqCst);
+            Err(BackendError::Other("unexpected canary set".to_owned()))
+        }
+
+        fn delete(&self, _service: &str, _provider_id: &str) -> Result<(), BackendError> {
+            self.counts.delete_calls.fetch_add(1, Ordering::SeqCst);
+            Err(BackendError::Other("unexpected canary delete".to_owned()))
+        }
+    }
+
+    fn canary_factory(reply: CanaryReply, counts: Arc<CanaryCounts>) -> KeyringBackendFactory {
+        Box::new(move || {
+            counts.factory_calls.fetch_add(1, Ordering::SeqCst);
+            Box::new(CanaryKeyringBackend { reply, counts })
+        })
+    }
+
+    fn assert_canary_route(counts: &CanaryCounts, outcome: &CommandOutcome) {
+        assert_eq!(counts.factory_calls.load(Ordering::SeqCst), 1);
+        assert!(counts.presence_get_calls.load(Ordering::SeqCst) > 0);
+        assert_eq!(counts.protected_get_calls.load(Ordering::SeqCst), 0);
+        assert_eq!(counts.set_calls.load(Ordering::SeqCst), 0);
+        assert_eq!(counts.delete_calls.load(Ordering::SeqCst), 0);
+        assert!(!outcome.stdout.contains(FIX_F_SECRET_CANARY));
+        assert!(!outcome.stderr.contains(FIX_F_SECRET_CANARY));
+    }
+
+    fn keychain_config() -> OpiConfig {
+        let mut config = OpiConfig::default();
+        config.defaults.model = "anthropic:claude-fix-f".to_owned();
+        config.defaults.credential_backend = Some(CredentialBackendSource::Keychain);
+        config
+    }
+
+    static PROVIDER_ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    struct ProviderEnvGuard(Vec<(&'static str, Option<std::ffi::OsString>)>);
+
+    impl ProviderEnvGuard {
+        fn clear() -> Self {
+            Self::scoped(&[])
+        }
+
+        fn scoped(overrides: &[(&'static str, &std::ffi::OsStr)]) -> Self {
+            let mut names = vec![
+                "ANTHROPIC_API_KEY",
+                "ANTHROPIC_OAUTH_TOKEN",
+                "OPENAI_API_KEY",
+                "OPENROUTER_API_KEY",
+                "MISTRAL_API_KEY",
+                "GEMINI_API_KEY",
+                "AZURE_OPENAI_API_KEY",
+                "VERTEX_ACCESS_TOKEN",
+                "AWS_ACCESS_KEY_ID",
+                "AWS_SECRET_ACCESS_KEY",
+                "AWS_PROFILE",
+            ];
+            for (name, _) in overrides {
+                if !names.contains(name) {
+                    names.push(name);
+                }
+            }
+            let original = names
+                .iter()
+                .copied()
+                .map(|name| (name, std::env::var_os(name)))
+                .collect();
+            for name in &names {
+                // SAFETY: command-core tests serialize and restore these variables.
+                unsafe { std::env::remove_var(name) };
+            }
+            for (name, value) in overrides {
+                // SAFETY: command-core tests serialize and restore these variables.
+                unsafe { std::env::set_var(name, value) };
+            }
+            Self(original)
+        }
+    }
+
+    impl Drop for ProviderEnvGuard {
+        fn drop(&mut self) {
+            for (name, value) in self.0.drain(..) {
+                match value {
+                    Some(value) => {
+                        // SAFETY: command-core tests serialize and restore these variables.
+                        unsafe { std::env::set_var(name, value) };
+                    }
+                    None => {
+                        // SAFETY: command-core tests serialize and restore these variables.
+                        unsafe { std::env::remove_var(name) };
+                    }
+                }
+            }
+        }
+    }
+
+    fn doctor_context<'a>(
+        config: &'a OpiConfig,
+        dir: &'a std::path::Path,
+        config_error: Option<&'a opi_coding_agent::config::ConfigError>,
+    ) -> DoctorContext<'a> {
+        static EMPTY_PROBES: std::sync::LazyLock<
+            std::collections::HashMap<String, opi_ai::CredentialSource>,
+        > = std::sync::LazyLock::new(std::collections::HashMap::new);
+        DoctorContext {
+            config,
+            config_error,
+            workspace_root: dir,
+            user_config_dir: dir,
+            sessions_dir: dir,
+            term: None,
+            term_program: None,
+            term_features: None,
+            no_color: false,
+            colorterm: None,
+            env_var: &|_| None,
+            store_probe: &EMPTY_PROBES,
+        }
+    }
+
+    #[test]
+    fn list_models_command_core_uses_injected_present_backend() {
+        let _env_lock = PROVIDER_ENV_LOCK.lock().expect("provider env lock");
+        let _env = ProviderEnvGuard::clear();
+        let dir = tempfile::tempdir().expect("temp dir");
+        let counts = Arc::new(CanaryCounts::default());
+        let outcome = tokio::runtime::Runtime::new().expect("runtime").block_on(
+            run_list_models_command_core(
+                &keychain_config(),
+                false,
+                dir.path().to_path_buf(),
+                canary_factory(CanaryReply::Present, Arc::clone(&counts)),
+            ),
+        );
+
+        assert_canary_route(&counts, &outcome);
+        assert_eq!(outcome.exit_code, 0);
+        assert!(outcome.stderr.is_empty(), "{}", outcome.stderr);
+        assert!(outcome.stdout.contains("PROVIDER"));
+        assert!(outcome.stdout.contains("anthropic"));
+        assert!(outcome.stdout.contains("claude"));
+    }
+
+    #[test]
+    fn list_models_command_core_uses_injected_unavailable_backend() {
+        let _env_lock = PROVIDER_ENV_LOCK.lock().expect("provider env lock");
+        let _env = ProviderEnvGuard::clear();
+        let dir = tempfile::tempdir().expect("temp dir");
+        let counts = Arc::new(CanaryCounts::default());
+        let outcome = tokio::runtime::Runtime::new().expect("runtime").block_on(
+            run_list_models_command_core(
+                &keychain_config(),
+                false,
+                dir.path().to_path_buf(),
+                canary_factory(CanaryReply::BackendUnavailable, Arc::clone(&counts)),
+            ),
+        );
+
+        assert_canary_route(&counts, &outcome);
+        assert_eq!(outcome.exit_code, 1);
+        assert!(outcome.stdout.is_empty());
+        assert_eq!(
+            outcome.stderr,
+            "opi: no models available (configure API keys to list models)\n"
+        );
+    }
+
+    #[test]
+    fn list_models_command_core_preserves_json_and_config_error_contract() {
+        let _env_lock = PROVIDER_ENV_LOCK.lock().expect("provider env lock");
+        let _env = ProviderEnvGuard::clear();
+        let dir = tempfile::tempdir().expect("temp dir");
+        let runtime = tokio::runtime::Runtime::new().expect("runtime");
+
+        let json_counts = Arc::new(CanaryCounts::default());
+        let json = runtime.block_on(run_list_models_command_core(
+            &keychain_config(),
+            true,
+            dir.path().to_path_buf(),
+            canary_factory(CanaryReply::Present, Arc::clone(&json_counts)),
+        ));
+        assert_canary_route(&json_counts, &json);
+        assert_eq!(json.exit_code, 0);
+        assert!(json.stderr.is_empty());
+        for line in json.stdout.lines() {
+            let value: serde_json::Value = serde_json::from_str(line).expect("NDJSON model row");
+            assert!(value.get("model").is_some());
+            assert!(value.get("provider").is_some());
+            assert!(value.get("display_name").is_some());
+        }
+
+        let mut invalid = keychain_config();
+        invalid.providers.anthropic.proxy = Some(ProviderProxyConfig {
+            url: "not a proxy url".to_owned(),
+            no_proxy: None,
+        });
+        let error_counts = Arc::new(CanaryCounts::default());
+        let error = runtime.block_on(run_list_models_command_core(
+            &invalid,
+            false,
+            dir.path().to_path_buf(),
+            canary_factory(CanaryReply::Present, Arc::clone(&error_counts)),
+        ));
+        assert_canary_route(&error_counts, &error);
+        assert_eq!(error.exit_code, 2);
+        assert!(error.stdout.is_empty());
+        assert!(error.stderr.contains("opi: config error:"));
+        assert!(
+            error
+                .stderr
+                .contains("failed to build HTTP client with proxy config")
+        );
+    }
+
+    #[test]
+    fn doctor_command_core_uses_injected_present_backend() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let config = keychain_config();
+        let counts = Arc::new(CanaryCounts::default());
+        let outcome =
+            tokio::runtime::Runtime::new()
+                .expect("runtime")
+                .block_on(run_doctor_command_core(
+                    &[DoctorScope::Provider],
+                    &doctor_context(&config, dir.path(), None),
+                    false,
+                    dir.path().to_path_buf(),
+                    canary_factory(CanaryReply::Present, Arc::clone(&counts)),
+                ));
+
+        assert_canary_route(&counts, &outcome);
+        assert_eq!(outcome.exit_code, 0);
+        assert!(outcome.stderr.is_empty());
+        assert!(outcome.stdout.contains("credentials present"));
+    }
+
+    #[test]
+    fn doctor_command_core_uses_injected_unavailable_backend() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let config = keychain_config();
+        let counts = Arc::new(CanaryCounts::default());
+        let outcome =
+            tokio::runtime::Runtime::new()
+                .expect("runtime")
+                .block_on(run_doctor_command_core(
+                    &[DoctorScope::Provider],
+                    &doctor_context(&config, dir.path(), None),
+                    true,
+                    dir.path().to_path_buf(),
+                    canary_factory(CanaryReply::BackendUnavailable, Arc::clone(&counts)),
+                ));
+
+        assert_canary_route(&counts, &outcome);
+        assert_eq!(outcome.exit_code, 0);
+        assert!(outcome.stderr.is_empty());
+        assert!(
+            outcome
+                .stdout
+                .contains("doctor_provider_credential_backend")
+        );
+        assert!(outcome.stdout.contains("fix-f-canary-backend-unavailable"));
+    }
+
+    #[test]
+    fn doctor_command_core_preserves_scope_and_config_error_contract() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let config = keychain_config();
+        let runtime = tokio::runtime::Runtime::new().expect("runtime");
+
+        let subset_counts = Arc::new(CanaryCounts::default());
+        let subset = runtime.block_on(run_doctor_command_core(
+            &[DoctorScope::Config, DoctorScope::Rpc],
+            &doctor_context(&config, dir.path(), None),
+            true,
+            dir.path().to_path_buf(),
+            canary_factory(CanaryReply::Present, Arc::clone(&subset_counts)),
+        ));
+        assert_canary_route(&subset_counts, &subset);
+        assert_eq!(subset.exit_code, 0);
+        let scopes: std::collections::HashSet<_> = subset
+            .stdout
+            .lines()
+            .map(|line| {
+                serde_json::from_str::<serde_json::Value>(line).expect("doctor NDJSON row")["scope"]
+                    .as_str()
+                    .expect("scope string")
+                    .to_owned()
+            })
+            .collect();
+        assert_eq!(scopes, ["config".to_owned(), "rpc".to_owned()].into());
+
+        let config_error = opi_coding_agent::config::ConfigError::Read {
+            path: dir.path().join("broken.toml"),
+            source: std::io::Error::new(std::io::ErrorKind::InvalidData, "broken config"),
+        };
+        let error_counts = Arc::new(CanaryCounts::default());
+        let error = runtime.block_on(run_doctor_command_core(
+            &[DoctorScope::Config],
+            &doctor_context(&config, dir.path(), Some(&config_error)),
+            true,
+            dir.path().to_path_buf(),
+            canary_factory(CanaryReply::BackendUnavailable, Arc::clone(&error_counts)),
+        ));
+        assert_canary_route(&error_counts, &error);
+        assert_eq!(error.exit_code, 2);
+        assert!(error.stderr.is_empty());
+        assert!(error.stdout.contains("\"source\":\"config\""));
+        assert!(error.stdout.contains("\"severity\":\"error\""));
+    }
+
+    #[test]
+    fn write_command_outcome_preserves_stdout_stderr_and_exit_code() {
+        let outcome = CommandOutcome {
+            stdout: "stdout bytes\n".to_owned(),
+            stderr: "stderr bytes\n".to_owned(),
+            exit_code: 2,
+        };
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+
+        let exit_code = write_command_outcome(&outcome, &mut stdout, &mut stderr)
+            .expect("in-memory output write");
+
+        assert_eq!(stdout, b"stdout bytes\n");
+        assert_eq!(stderr, b"stderr bytes\n");
+        assert_eq!(exit_code, 2);
+    }
+
+    struct OrderingKeyringBackend {
+        inner: FakeKeyringBackend,
+        events: Arc<Mutex<Vec<&'static str>>>,
+        live: Arc<AtomicBool>,
+    }
+
+    impl OrderingKeyringBackend {
+        fn inner(&self) -> &FakeKeyringBackend {
+            &self.inner
+        }
+
+        fn record_entry_creation(&self) {
+            assert!(
+                self.live.load(Ordering::SeqCst),
+                "entry creation must follow test-owned store installation"
+            );
+            self.events
+                .lock()
+                .expect("ordering events")
+                .push("entry_creation");
+        }
+    }
+
+    impl KeyringBackend for OrderingKeyringBackend {
+        fn get(&self, service: &str, provider_id: &str) -> Result<Option<String>, BackendError> {
+            self.record_entry_creation();
+            self.inner().get(service, provider_id)
+        }
+
+        fn set(&self, service: &str, provider_id: &str, value: &str) -> Result<(), BackendError> {
+            self.record_entry_creation();
+            self.inner().set(service, provider_id, value)
+        }
+
+        fn delete(&self, service: &str, provider_id: &str) -> Result<(), BackendError> {
+            self.record_entry_creation();
+            self.inner().delete(service, provider_id)
+        }
+    }
+
+    impl Drop for OrderingKeyringBackend {
+        fn drop(&mut self) {
+            self.live.store(false, Ordering::SeqCst);
+            self.events
+                .lock()
+                .expect("ordering events")
+                .push("guard_drop");
+        }
+    }
+
+    #[allow(clippy::await_holding_lock)]
+    #[tokio::test]
+    async fn native_keyring_precedes_interactive_startup() {
+        let _env_lock = PROVIDER_ENV_LOCK.lock().expect("provider env lock");
+        let session_dir = tempfile::tempdir().expect("session temp dir");
+        let session_blocker = session_blocker(&session_dir);
+        let _env = ProviderEnvGuard::scoped(&[("OPI_SESSIONS_DIR", session_blocker.as_os_str())]);
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let live = Arc::new(AtomicBool::new(false));
+        let factory_events = Arc::clone(&events);
+        let factory_live = Arc::clone(&live);
+        let backend_factory: KeyringBackendFactory = Box::new(move || {
+            let backend = FakeKeyringBackend::new();
+            factory_live.store(true, Ordering::SeqCst);
+            factory_events
+                .lock()
+                .expect("ordering events")
+                .push("native_install");
+            backend.seed_raw(
+                KEYCHAIN_SERVICE,
+                "openai",
+                r#"{"version":1,"kind":"api_key","api_key":"test-interactive-ordering"}"#,
+            );
+            backend.seed_raw(KEYCHAIN_PRESENCE_SERVICE, "openai", "api_key");
+            Box::new(OrderingKeyringBackend {
+                inner: backend,
+                events: Arc::clone(&factory_events),
+                live: Arc::clone(&factory_live),
+            })
+        });
+
+        let workspace_dir = tempfile::tempdir().expect("workspace temp dir");
+        let user_config_dir = tempfile::tempdir().expect("user config temp dir");
+        let mut config = opi_coding_agent::config::OpiConfig::default();
+        config.defaults.model = "openai:gpt-4o".into();
+        let cli = Cli::parse_from(["opi"]);
+        let launch_events = Arc::clone(&events);
+        let launch_live = Arc::clone(&live);
+        assert!(
+            events.lock().expect("ordering events").is_empty(),
+            "backend construction must remain lazy until interactive core"
+        );
+        run_interactive_core(
+            &cli,
+            &config,
+            None,
+            None,
+            opi_coding_agent::policy::ToolSelection::Default,
+            workspace_dir.path().to_path_buf(),
+            user_config_dir.path().to_path_buf(),
+            backend_factory,
+            move |_harness, _model, _theme_name, _keybindings| async move {
+                assert!(
+                    launch_live.load(Ordering::SeqCst),
+                    "test-owned store must remain installed at the TUI launch boundary"
+                );
+                launch_events
+                    .lock()
+                    .expect("ordering events")
+                    .push("tui_launch");
+                Ok::<(), Box<dyn std::error::Error>>(())
+            },
+        )
+        .await;
+        assert!(!live.load(Ordering::SeqCst));
+        assert!(
+            session_blocker.is_file(),
+            "session path must remain blocked"
+        );
+
+        let events = events.lock().expect("ordering events");
+        assert_eq!(events.first(), Some(&"native_install"), "{events:?}");
+        let first_entry = events
+            .iter()
+            .position(|event| *event == "entry_creation")
+            .expect("at least one keyring entry creation");
+        let tui_launch = events
+            .iter()
+            .position(|event| *event == "tui_launch")
+            .expect("actual TUI launch boundary");
+        let guard_drop = events
+            .iter()
+            .position(|event| *event == "guard_drop")
+            .expect("native guard drop event");
+        assert!(
+            0 < first_entry && first_entry < tui_launch && tui_launch < guard_drop,
+            "{events:?}"
+        );
+        assert_eq!(events.last(), Some(&"guard_drop"), "{events:?}");
+    }
+
+    async fn assert_store_lives_through_run_callback(run_mode: &'static str) {
+        let backend = FakeKeyringBackend::new();
+        backend.seed_raw(
+            KEYCHAIN_SERVICE,
+            "anthropic",
+            r#"{"version":1,"kind":"api_key","api_key":"test-run-lifetime"}"#,
+        );
+        backend.seed_raw(KEYCHAIN_PRESENCE_SERVICE, "anthropic", "api_key");
+        let events = Arc::new(Mutex::new(vec!["native_install"]));
+        let live = Arc::new(AtomicBool::new(true));
+
+        let dir = tempfile::tempdir().expect("temp dir");
+        let mut config = opi_coding_agent::config::OpiConfig::default();
+        config.defaults.model = "anthropic:claude-sonnet-4-5-20250514".into();
+        let bundle = opi_coding_agent::provider_factory::build_provider_bundle(
+            &config,
+            dir.path().to_path_buf(),
+            Box::new({
+                let events = Arc::clone(&events);
+                let live = Arc::clone(&live);
+                move || {
+                    Box::new(OrderingKeyringBackend {
+                        inner: backend,
+                        events,
+                        live,
+                    })
+                }
+            }),
+        )
+        .await
+        .expect("ordinary API-key provider bundle");
+
+        let callback_live = Arc::clone(&live);
+        let completed = with_provider_bundle(bundle, move |provider, _diagnostics| async move {
+            assert_eq!(provider.id(), "anthropic");
+            assert!(
+                callback_live.load(Ordering::SeqCst),
+                "test-owned store must remain installed throughout {run_mode} callback"
+            );
+            tokio::task::yield_now().await;
+            assert!(
+                callback_live.load(Ordering::SeqCst),
+                "test-owned store must remain installed after an await in {run_mode} callback"
+            );
+            true
+        })
+        .await;
+
+        assert!(completed);
+        assert!(
+            !live.load(Ordering::SeqCst),
+            "test-owned store must be dropped after {run_mode} callback returns"
+        );
+    }
+
+    #[tokio::test]
+    async fn native_store_lives_through_noninteractive_run_callback() {
+        assert_store_lives_through_run_callback("noninteractive").await;
+    }
+
+    #[tokio::test]
+    async fn native_store_lives_through_rpc_run_callback() {
+        assert_store_lives_through_run_callback("rpc").await;
+    }
+
+    fn backend_fallback_config() -> OpiConfig {
+        let mut config = OpiConfig::default();
+        config.defaults.model = "anthropic:claude-sonnet-4-5-20250514".into();
+        config.providers.anthropic.api_key_env = FIX_G_API_KEY_ENV.into();
+        config
+    }
+
+    fn unavailable_backend_factory() -> KeyringBackendFactory {
+        Box::new(|| Box::new(FakeKeyringBackend::new().with_unavailable()))
+    }
+
+    fn empty_backend_factory() -> KeyringBackendFactory {
+        Box::new(|| Box::new(FakeKeyringBackend::new()))
+    }
+
+    fn configured_backend_factory() -> KeyringBackendFactory {
+        let backend = FakeKeyringBackend::new();
+        backend.seed_raw(KEYCHAIN_PRESENCE_SERVICE, "anthropic", "api_key");
+        backend.seed_raw(
+            KEYCHAIN_SERVICE,
+            "anthropic",
+            r#"{"version":1,"kind":"api_key","api_key":"test-command-core"}"#,
+        );
+        Box::new(move || Box::new(backend.clone()))
+    }
+
+    fn malformed_backend_factory() -> KeyringBackendFactory {
+        let backend = FakeKeyringBackend::new();
+        backend.seed_raw(KEYCHAIN_PRESENCE_SERVICE, "anthropic", "api_key");
+        backend.seed_raw(
+            KEYCHAIN_SERVICE,
+            "anthropic",
+            &format!(
+                r#"{{"version":"{FIX_I_STORED_CANARY}","kind":"api_key","api_key":"stored"}}"#
+            ),
+        );
+        Box::new(move || Box::new(backend.clone()))
+    }
+
+    fn malformed_keychain_config() -> OpiConfig {
+        let mut config = keychain_config();
+        config.providers.anthropic.api_key_env = FIX_I_FALLBACK_ENV.into();
+        config
+    }
+
+    fn session_blocker(dir: &tempfile::TempDir) -> std::path::PathBuf {
+        let path = dir.path().join("sessions-must-stay-disabled");
+        std::fs::write(&path, b"not a directory").expect("session blocker file");
+        path
+    }
+
+    #[test]
+    fn credential_aware_production_core_tests_isolate_sessions() {
+        let source = include_str!("main.rs");
+        let core_markers = [
+            ["run_", "interactive_core("].concat(),
+            ["run_", "non_interactive_core("].concat(),
+            ["run_", "rpc_core("].concat(),
+        ];
+        let required_markers = [
+            ["PROVIDER_ENV", "_LOCK"].concat(),
+            ["ProviderEnvGuard", "::scoped"].concat(),
+            ["OPI_SESSIONS", "_DIR"].concat(),
+            ["session_blocker", ".is_file()"].concat(),
+        ];
+        let mut current_test = None::<String>;
+        let mut test_chunks = Vec::new();
+
+        for line in source.lines() {
+            let trimmed = line.trim();
+            let starts_test = line.starts_with("    #[")
+                && (trimmed == "#[test]" || trimmed.starts_with("#[tokio::test"));
+            if starts_test && let Some(chunk) = current_test.replace(String::new()) {
+                test_chunks.push(chunk);
+            }
+            if let Some(chunk) = &mut current_test {
+                chunk.push_str(line);
+                chunk.push('\n');
+            }
+        }
+        if let Some(chunk) = current_test {
+            test_chunks.push(chunk);
+        }
+
+        let mut failures = Vec::new();
+        for chunk in test_chunks {
+            if !core_markers.iter().any(|marker| chunk.contains(marker)) {
+                continue;
+            }
+            let name = chunk
+                .lines()
+                .find_map(|line| {
+                    let signature = line
+                        .trim()
+                        .strip_prefix("fn ")
+                        .or_else(|| line.trim().strip_prefix("async fn "))?;
+                    signature.split('(').next()
+                })
+                .unwrap_or("unknown test");
+            for required in &required_markers {
+                if !chunk.contains(required) {
+                    failures.push(format!("{name} is missing `{required}`"));
+                }
+            }
+        }
+
+        assert!(
+            failures.is_empty(),
+            "credential-aware production-core tests must isolate session IO:\n{}",
+            failures.join("\n")
+        );
+    }
+
+    fn assert_single_backend_fallback(diagnostics: &[serde_json::Value]) {
+        use opi_agent::diagnostic::SOURCE_PROVIDER;
+
+        let matches: Vec<_> = diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic["code"] == "provider_credential_backend_unavailable")
+            .collect();
+        assert_eq!(matches.len(), 1, "{diagnostics:?}");
+        let diagnostic = matches[0];
+        assert_eq!(diagnostic["source"], SOURCE_PROVIDER);
+        assert_eq!(diagnostic["severity"], "warning");
+        assert_eq!(diagnostic["details"]["provider"], "anthropic");
+        assert_eq!(diagnostic["details"]["env_var"], FIX_G_API_KEY_ENV);
+        assert_eq!(
+            diagnostic["details"]["credential_source"],
+            "environment_fallback"
+        );
+        assert!(
+            !serde_json::to_string(diagnostic)
+                .expect("diagnostic serializes")
+                .contains(FIX_G_SECRET_CANARY),
+            "fallback diagnostic must not leak the API key canary"
+        );
+    }
+
+    #[test]
+    fn noninteractive_auth_failure_uses_production_core_in_text_and_json_modes() {
+        use opi_ai::provider::ProviderError;
+        use opi_ai::test_support::{MockProvider, MockResponse};
+        use opi_coding_agent::runner::ExitCode;
+
+        let _env_lock = PROVIDER_ENV_LOCK.lock().expect("provider env lock");
+        let workspace_dir = tempfile::tempdir().expect("workspace temp dir");
+        let user_config_dir = tempfile::tempdir().expect("user config temp dir");
+        let session_dir = tempfile::tempdir().expect("session temp dir");
+        let session_blocker = session_blocker(&session_dir);
+        let _env = ProviderEnvGuard::scoped(&[("OPI_SESSIONS_DIR", session_blocker.as_os_str())]);
+
+        for json in [false, true] {
+            let cli = if json {
+                Cli::parse_from(["opi", "--json"])
+            } else {
+                Cli::parse_from(["opi"])
+            };
+            let observed = Arc::new(AtomicBool::new(false));
+            let observed_result = Arc::clone(&observed);
+            let (output, stdout, stderr) = CommandOutput::capturing();
+            let exit_code = tokio::runtime::Runtime::new().expect("runtime").block_on(
+                run_non_interactive_core(
+                    &cli,
+                    &keychain_config(),
+                    "hello",
+                    None,
+                    None,
+                    opi_coding_agent::policy::ToolSelection::Default,
+                    workspace_dir.path().to_path_buf(),
+                    user_config_dir.path().to_path_buf(),
+                    empty_backend_factory(),
+                    Some(Box::new(MockProvider::new_with_errors(
+                        "anthropic",
+                        vec![MockResponse::Error(ProviderError::CredentialNeeded {
+                            provider_id: "anthropic".into(),
+                        })],
+                    ))),
+                    output,
+                    move |_| observed_result.store(true, Ordering::SeqCst),
+                ),
+            );
+
+            assert_eq!(exit_code, ExitCode::AuthFailure as i32);
+            assert!(observed.load(Ordering::SeqCst));
+            let stdout = stdout.lock().expect("stdout capture").clone();
+            if json {
+                let remediation = stdout
+                    .lines()
+                    .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+                    .find(|line| line["type"] == "CredentialNeeded")
+                    .expect("typed stream-time credential remediation");
+                assert_eq!(remediation["provider_id"], "anthropic");
+                assert_eq!(remediation["remediation"], "/login anthropic");
+            } else {
+                assert!(stdout.is_empty());
+            }
+            let stderr = stderr.lock().expect("stderr capture").clone();
+            assert!(stderr.contains("credential needed"), "{stderr}");
+            assert!(stderr.contains("/login anthropic"), "{stderr}");
+        }
+        assert!(session_blocker.is_file());
+    }
+
+    #[test]
+    fn rpc_auth_failure_uses_production_core_after_ready() {
+        use opi_ai::provider::ProviderError;
+        use opi_ai::test_support::{MockProvider, MockResponse};
+        use opi_coding_agent::rpc::RpcCommand;
+        use opi_coding_agent::runner::ExitCode;
+
+        let _env_lock = PROVIDER_ENV_LOCK.lock().expect("provider env lock");
+        let workspace_dir = tempfile::tempdir().expect("workspace temp dir");
+        let user_config_dir = tempfile::tempdir().expect("user config temp dir");
+        let session_dir = tempfile::tempdir().expect("session temp dir");
+        let session_blocker = session_blocker(&session_dir);
+        let _env = ProviderEnvGuard::scoped(&[("OPI_SESSIONS_DIR", session_blocker.as_os_str())]);
+        let cli = Cli::parse_from(["opi", "--rpc"]);
+        let (command_tx, command_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (output_tx, mut output_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (output, stdout, stderr) = CommandOutput::capturing();
+        let config = keychain_config();
+
+        let (exit_code, emitted) =
+            tokio::runtime::Runtime::new()
+                .expect("runtime")
+                .block_on(async {
+                    let run = run_rpc_core(
+                        &cli,
+                        &config,
+                        None,
+                        None,
+                        opi_coding_agent::policy::ToolSelection::Default,
+                        workspace_dir.path().to_path_buf(),
+                        user_config_dir.path().to_path_buf(),
+                        empty_backend_factory(),
+                        Some(Box::new(MockProvider::new_with_errors(
+                            "anthropic",
+                            vec![MockResponse::Error(ProviderError::CredentialNeeded {
+                                provider_id: "anthropic".into(),
+                            })],
+                        ))),
+                        output,
+                        RpcTransport::Channels {
+                            command_rx,
+                            output_tx,
+                        },
+                    );
+                    let drive = async move {
+                        let mut emitted = Vec::new();
+                        let ready = output_rx.recv().await.expect("rpc_ready");
+                        assert_eq!(ready["type"], "rpc_ready");
+                        emitted.push(ready);
+                        command_tx
+                            .send(RpcCommand::prompt {
+                                id: Some("auth-prompt".into()),
+                                message: "hello".into(),
+                            })
+                            .expect("queue prompt");
+                        loop {
+                            let line = output_rx.recv().await.expect("credential event");
+                            let credential_needed = line["type"] == "CredentialNeeded";
+                            emitted.push(line);
+                            if credential_needed {
+                                break;
+                            }
+                        }
+                        command_tx
+                            .send(RpcCommand::quit {
+                                id: Some("quit-after-auth".into()),
+                            })
+                            .expect("queue quit");
+                        while let Some(line) = output_rx.recv().await {
+                            let quit = line["type"] == "response"
+                                && line["command"] == "quit"
+                                && line["success"] == true;
+                            emitted.push(line);
+                            if quit {
+                                break;
+                            }
+                        }
+                        emitted
+                    };
+                    tokio::join!(run, drive)
+                });
+
+        assert_eq!(exit_code, ExitCode::Success as i32);
+        let remediation = emitted
+            .iter()
+            .find(|line| line["type"] == "CredentialNeeded")
+            .expect("typed stream-time RPC remediation");
+        assert_eq!(remediation["provider_id"], "anthropic");
+        assert_eq!(remediation["remediation"], "/login anthropic");
+        assert!(stdout.lock().expect("stdout capture").is_empty());
+        assert!(stderr.lock().expect("stderr capture").is_empty());
+        assert!(session_blocker.is_file());
+    }
+
+    #[test]
+    fn malformed_startup_errors_are_captured_and_redacted_through_both_cores() {
+        use opi_ai::test_support::{MockProvider, text_response};
+        use opi_coding_agent::runner::ExitCode;
+
+        let _env_lock = PROVIDER_ENV_LOCK.lock().expect("provider env lock");
+        let workspace_dir = tempfile::tempdir().expect("workspace temp dir");
+        let user_config_dir = tempfile::tempdir().expect("user config temp dir");
+        let session_dir = tempfile::tempdir().expect("session temp dir");
+        let session_blocker = session_blocker(&session_dir);
+        let _env = ProviderEnvGuard::scoped(&[
+            (
+                FIX_I_FALLBACK_ENV,
+                std::ffi::OsStr::new(FIX_I_FALLBACK_CANARY),
+            ),
+            ("OPI_SESSIONS_DIR", session_blocker.as_os_str()),
+        ]);
+        let config = malformed_keychain_config();
+
+        let cli = Cli::parse_from(["opi", "--json"]);
+        let observed = Arc::new(AtomicBool::new(false));
+        let observed_result = Arc::clone(&observed);
+        let (output, stdout, stderr) = CommandOutput::capturing();
+        let noninteractive_exit =
+            tokio::runtime::Runtime::new()
+                .expect("runtime")
+                .block_on(run_non_interactive_core(
+                    &cli,
+                    &config,
+                    "hello",
+                    None,
+                    None,
+                    opi_coding_agent::policy::ToolSelection::Default,
+                    workspace_dir.path().to_path_buf(),
+                    user_config_dir.path().to_path_buf(),
+                    malformed_backend_factory(),
+                    Some(Box::new(MockProvider::new(
+                        "anthropic",
+                        vec![text_response("must not run")],
+                    ))),
+                    output,
+                    move |_| observed_result.store(true, Ordering::SeqCst),
+                ));
+        assert_eq!(noninteractive_exit, ExitCode::ConfigError as i32);
+        assert!(!observed.load(Ordering::SeqCst));
+        assert!(stdout.lock().expect("stdout capture").is_empty());
+        let diagnostic = stderr.lock().expect("stderr capture").clone();
+        assert!(diagnostic.starts_with("opi: "), "{diagnostic}");
+        assert!(
+            diagnostic.contains(FIX_I_REDACTED_MALFORMED_DIAGNOSTIC),
+            "unexpected non-interactive classification: {diagnostic}"
+        );
+        for canary in [FIX_I_STORED_CANARY, FIX_I_FALLBACK_CANARY] {
+            assert!(
+                !diagnostic.contains(canary),
+                "leaked {canary}: {diagnostic}"
+            );
+        }
+
+        let cli = Cli::parse_from(["opi", "--rpc"]);
+        let (_command_tx, command_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (output_tx, mut output_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (output, stdout, stderr) = CommandOutput::capturing();
+        let rpc_exit = tokio::runtime::Runtime::new()
+            .expect("runtime")
+            .block_on(run_rpc_core(
+                &cli,
+                &config,
+                None,
+                None,
+                opi_coding_agent::policy::ToolSelection::Default,
+                workspace_dir.path().to_path_buf(),
+                user_config_dir.path().to_path_buf(),
+                malformed_backend_factory(),
+                Some(Box::new(MockProvider::new(
+                    "anthropic",
+                    vec![text_response("must not run")],
+                ))),
+                output,
+                RpcTransport::Channels {
+                    command_rx,
+                    output_tx,
+                },
+            ));
+        assert_eq!(rpc_exit, ExitCode::ConfigError as i32);
+        assert!(
+            output_rx.try_recv().is_err(),
+            "rpc_ready must not be emitted"
+        );
+        assert!(stdout.lock().expect("stdout capture").is_empty());
+        let diagnostic = stderr.lock().expect("stderr capture").clone();
+        assert!(diagnostic.starts_with("opi: "), "{diagnostic}");
+        assert!(
+            diagnostic.contains(FIX_I_REDACTED_MALFORMED_DIAGNOSTIC),
+            "unexpected RPC classification: {diagnostic}"
+        );
+        for canary in [FIX_I_STORED_CANARY, FIX_I_FALLBACK_CANARY] {
+            assert!(
+                !diagnostic.contains(canary),
+                "leaked {canary}: {diagnostic}"
+            );
+        }
+        assert!(session_blocker.is_file());
+    }
+
+    #[test]
+    fn rpc_production_core_preserves_ready_correlation_and_installed_packages() {
+        use opi_ai::test_support::MockProvider;
+        use opi_coding_agent::package_resolver::local_lock_entry;
+        use opi_coding_agent::package_store::{PackageDeclaration, PackageStore};
+        use opi_coding_agent::rpc::RpcCommand;
+        use opi_coding_agent::runner::ExitCode;
+
+        let _env_lock = PROVIDER_ENV_LOCK.lock().expect("provider env lock");
+        let workspace_dir = tempfile::tempdir().expect("workspace temp dir");
+        let user_config_dir = tempfile::tempdir().expect("user config temp dir");
+        let session_dir = tempfile::tempdir().expect("session temp dir");
+        let session_blocker = session_blocker(&session_dir);
+        let _env = ProviderEnvGuard::scoped(&[("OPI_SESSIONS_DIR", session_blocker.as_os_str())]);
+
+        let package_dir = workspace_dir.path().join("vendor").join("rpc-suite");
+        std::fs::create_dir_all(&package_dir).expect("package dir");
+        std::fs::write(
+            package_dir.join("package.toml"),
+            "name = \"rpc-suite\"\ndescription = \"RPC suite\"\nversion = \"0.1.0\"\n",
+        )
+        .expect("package manifest");
+        let store = PackageStore::project(workspace_dir.path().to_path_buf());
+        store
+            .write_declarations(&[PackageDeclaration {
+                source: "./vendor/rpc-suite".into(),
+                filters: Default::default(),
+            }])
+            .expect("package declarations");
+        store
+            .write_lock(
+                &[local_lock_entry("./vendor/rpc-suite".into(), &package_dir)
+                    .expect("package lock entry")],
+            )
+            .expect("package lock");
+
+        let cli = Cli::parse_from(["opi", "--rpc"]);
+        let (command_tx, command_rx) = tokio::sync::mpsc::unbounded_channel();
+        command_tx
+            .send(RpcCommand::session_info {
+                id: Some("session-1".into()),
+            })
+            .expect("queue first session_info");
+        command_tx
+            .send(RpcCommand::session_info {
+                id: Some("session-2".into()),
+            })
+            .expect("queue second session_info");
+        command_tx
+            .send(RpcCommand::quit {
+                id: Some("quit-1".into()),
+            })
+            .expect("queue quit");
+        drop(command_tx);
+        let (output_tx, mut output_rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let exit_code = tokio::runtime::Runtime::new()
+            .expect("runtime")
+            .block_on(run_rpc_core(
+                &cli,
+                &keychain_config(),
+                None,
+                None,
+                opi_coding_agent::policy::ToolSelection::Default,
+                workspace_dir.path().to_path_buf(),
+                user_config_dir.path().to_path_buf(),
+                configured_backend_factory(),
+                Some(Box::new(MockProvider::new("anthropic", Vec::new()))),
+                CommandOutput::discard(),
+                RpcTransport::Channels {
+                    command_rx,
+                    output_tx,
+                },
+            ));
+
+        assert_eq!(exit_code, ExitCode::Success as i32);
+        let output: Vec<_> = std::iter::from_fn(|| output_rx.try_recv().ok()).collect();
+        assert_eq!(output[0]["type"], "rpc_ready", "{output:?}");
+        for id in ["session-1", "session-2"] {
+            let response = output
+                .iter()
+                .find(|line| line["type"] == "response" && line["id"] == id)
+                .unwrap_or_else(|| panic!("missing correlated response {id}: {output:?}"));
+            assert_eq!(response["success"], true);
+            assert!(
+                response["data"]["resources"]["packages"]
+                    .as_array()
+                    .is_some_and(|packages| packages.iter().any(|name| name == "rpc-suite")),
+                "installed package missing from session_info: {response}"
+            );
+        }
+        assert!(output.iter().any(|line| {
+            line["type"] == "response"
+                && line["command"] == "quit"
+                && line["id"] == "quit-1"
+                && line["success"] == true
+        }));
+        assert!(session_blocker.is_file());
+    }
+
+    #[test]
+    fn provider_backend_fallback_reaches_noninteractive_startup_diagnostics_once() {
+        use opi_ai::test_support::{MockProvider, text_response};
+        use opi_coding_agent::runner::ExitCode;
+
+        let _env_lock = PROVIDER_ENV_LOCK.lock().expect("provider env lock");
+        let workspace_dir = tempfile::tempdir().expect("workspace temp dir");
+        let user_config_dir = tempfile::tempdir().expect("user config temp dir");
+        let session_dir = tempfile::tempdir().expect("session temp dir");
+        let session_blocker = session_blocker(&session_dir);
+        let _env = ProviderEnvGuard::scoped(&[
+            (FIX_G_API_KEY_ENV, std::ffi::OsStr::new(FIX_G_SECRET_CANARY)),
+            ("OPI_SESSIONS_DIR", session_blocker.as_os_str()),
+        ]);
+        let config = backend_fallback_config();
+        let cli = Cli::parse_from(["opi", "--json"]);
+        let observed = Arc::new(AtomicBool::new(false));
+        let observed_result = Arc::clone(&observed);
+
+        let exit_code =
+            tokio::runtime::Runtime::new()
+                .expect("runtime")
+                .block_on(run_non_interactive_core(
+                    &cli,
+                    &config,
+                    "hello",
+                    None,
+                    None,
+                    opi_coding_agent::policy::ToolSelection::Default,
+                    workspace_dir.path().to_path_buf(),
+                    user_config_dir.path().to_path_buf(),
+                    unavailable_backend_factory(),
+                    Some(Box::new(MockProvider::new(
+                        "anthropic",
+                        vec![text_response("done")],
+                    ))),
+                    CommandOutput::discard(),
+                    move |result| {
+                        observed_result.store(true, Ordering::SeqCst);
+                        assert_eq!(result.exit_code, ExitCode::Success as i32);
+                        let lines: Vec<serde_json::Value> = result
+                            .stdout
+                            .lines()
+                            .map(|line| serde_json::from_str(line).expect("NDJSON line"))
+                            .collect();
+                        let startup: Vec<_> = lines
+                            .iter()
+                            .filter(|line| line["type"] == "StartupDiagnostics")
+                            .collect();
+                        assert_eq!(startup.len(), 1, "{lines:?}");
+                        assert_single_backend_fallback(
+                            startup[0]["diagnostics"]
+                                .as_array()
+                                .expect("startup diagnostics array"),
+                        );
+                    },
+                ));
+
+        assert_eq!(exit_code, ExitCode::Success as i32);
+        assert!(observed.load(Ordering::SeqCst));
+        assert!(
+            session_blocker.is_file(),
+            "session path must remain blocked"
+        );
+    }
+
+    #[test]
+    fn provider_backend_fallback_reaches_rpc_ready_once() {
+        use opi_coding_agent::rpc::RpcCommand;
+        use opi_coding_agent::runner::ExitCode;
+
+        let _env_lock = PROVIDER_ENV_LOCK.lock().expect("provider env lock");
+        let workspace_dir = tempfile::tempdir().expect("workspace temp dir");
+        let user_config_dir = tempfile::tempdir().expect("user config temp dir");
+        let session_dir = tempfile::tempdir().expect("session temp dir");
+        let session_blocker = session_blocker(&session_dir);
+        let _env = ProviderEnvGuard::scoped(&[
+            (FIX_G_API_KEY_ENV, std::ffi::OsStr::new(FIX_G_SECRET_CANARY)),
+            ("OPI_SESSIONS_DIR", session_blocker.as_os_str()),
+        ]);
+        let config = backend_fallback_config();
+        let cli = Cli::parse_from(["opi", "--rpc"]);
+        let (command_tx, command_rx) = tokio::sync::mpsc::unbounded_channel();
+        command_tx
+            .send(RpcCommand::quit { id: None })
+            .expect("queue quit command");
+        drop(command_tx);
+        let (output_tx, mut output_rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let exit_code = tokio::runtime::Runtime::new()
+            .expect("runtime")
+            .block_on(run_rpc_core(
+                &cli,
+                &config,
+                None,
+                None,
+                opi_coding_agent::policy::ToolSelection::Default,
+                workspace_dir.path().to_path_buf(),
+                user_config_dir.path().to_path_buf(),
+                unavailable_backend_factory(),
+                None,
+                CommandOutput::discard(),
+                RpcTransport::Channels {
+                    command_rx,
+                    output_tx,
+                },
+            ));
+
+        assert_eq!(exit_code, ExitCode::Success as i32);
+        let output: Vec<_> = std::iter::from_fn(|| output_rx.try_recv().ok()).collect();
+        let ready: Vec<_> = output
+            .iter()
+            .filter(|line| line["type"] == "rpc_ready")
+            .collect();
+        assert_eq!(ready.len(), 1, "{output:?}");
+        assert_single_backend_fallback(
+            ready[0]["startup_diagnostics"]
+                .as_array()
+                .expect("rpc_ready startup diagnostics array"),
+        );
+        assert!(
+            session_blocker.is_file(),
+            "session path must remain blocked"
+        );
+    }
+
+    #[test]
+    fn provider_backend_fallback_reaches_interactive_launcher_once() {
+        use opi_agent::diagnostic::RedactionMode;
+
+        let _env_lock = PROVIDER_ENV_LOCK.lock().expect("provider env lock");
+        let workspace_dir = tempfile::tempdir().expect("workspace temp dir");
+        let user_config_dir = tempfile::tempdir().expect("user config temp dir");
+        let session_dir = tempfile::tempdir().expect("session temp dir");
+        let session_blocker = session_blocker(&session_dir);
+        let _env = ProviderEnvGuard::scoped(&[
+            (FIX_G_API_KEY_ENV, std::ffi::OsStr::new(FIX_G_SECRET_CANARY)),
+            ("OPI_SESSIONS_DIR", session_blocker.as_os_str()),
+        ]);
+        let config = backend_fallback_config();
+        let cli = Cli::parse_from(["opi"]);
+        let launch_count = Arc::new(AtomicUsize::new(0));
+        let observed_launches = Arc::clone(&launch_count);
+
+        tokio::runtime::Runtime::new()
+            .expect("runtime")
+            .block_on(run_interactive_core(
+                &cli,
+                &config,
+                None,
+                None,
+                opi_coding_agent::policy::ToolSelection::Default,
+                workspace_dir.path().to_path_buf(),
+                user_config_dir.path().to_path_buf(),
+                unavailable_backend_factory(),
+                move |harness, _model, _theme_name, _keybindings| async move {
+                    observed_launches.fetch_add(1, Ordering::SeqCst);
+                    let diagnostics = harness
+                        .resource_metadata()
+                        .diagnostic_payloads(RedactionMode::Summary)
+                        .into_iter()
+                        .map(|diagnostic| {
+                            serde_json::to_value(diagnostic).expect("diagnostic serializes")
+                        })
+                        .collect::<Vec<_>>();
+                    assert_single_backend_fallback(&diagnostics);
+                    Ok::<(), Box<dyn std::error::Error>>(())
+                },
+            ));
+
+        assert_eq!(launch_count.load(Ordering::SeqCst), 1);
+        assert!(
+            session_blocker.is_file(),
+            "session path must remain blocked"
+        );
+    }
+
+    fn is_pre_provider_subprocess(file: &str, context: &str) -> bool {
+        match file {
+            "doctor_cli.rs" => context.contains(".args([\"doctor\", \"--scope\", \"bogus\"])"),
+            "oauth_auth.rs" => context.contains(".arg(\"--help\")"),
+            "package_cli.rs" => {
+                context.starts_with("opi_command(opi:") || context.contains(".args([\"package\",")
+            }
+            "session_cli.rs" => {
+                [
+                    ".arg(\"--list-sessions\")",
+                    ".arg(\"--delete-session\")",
+                    ".arg(\"--export-session\")",
+                ]
+                .iter()
+                .any(|flag| context.contains(flag))
+                    || (context.contains(".arg(\"--resume\")")
+                        && context.contains(".arg(\"nonexistent-session\")"))
+            }
+            "shell_completions.rs" => context.contains(".arg(\"--generate-completion\")"),
+            _ => false,
+        }
+    }
+
+    #[test]
+    fn session_resume_classifier_rejects_provider_reaching_fixture() {
+        let existing_resume = r#"std::process::Command::new(opi_binary())
+            .arg("--resume")
+            .arg("existing-session")
+            .output()"#;
+        assert!(!is_pre_provider_subprocess(
+            "session_cli.rs",
+            existing_resume
+        ));
+    }
+
+    #[test]
+    fn real_opi_subprocesses_are_pre_provider_early_exits_only() {
+        let tests_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests");
+        let allowed = [
+            (
+                "doctor_cli.rs",
+                "std::process::Command::new(&bin)",
+                1usize,
+                "fn opi_bin()",
+                1usize,
+                1usize,
+            ),
+            (
+                "oauth_auth.rs",
+                "std::process::Command::new(&binary)",
+                1,
+                "CARGO_BIN_EXE_opi",
+                1,
+                1,
+            ),
+            (
+                "package_cli.rs",
+                "opi_command(",
+                11,
+                "fn opi_binary()",
+                1,
+                4,
+            ),
+            (
+                "session_cli.rs",
+                "std::process::Command::new(opi_binary())",
+                5,
+                "fn opi_binary()",
+                1,
+                6,
+            ),
+            (
+                "shell_completions.rs",
+                "Command::new(&bin)",
+                4,
+                "fn opi_bin()",
+                1,
+                4,
+            ),
+        ];
+        let forbidden_markers = [
+            "CARGO_BIN_EXE_opi",
+            "opi_bin(",
+            "opi_binary(",
+            "opi_binary_path(",
+            "Command::new(\"opi\")",
+            "target/debug/opi",
+        ];
+        for mutation in [
+            "let binary = opi_bin();",
+            "let binary = opi_binary();",
+            "let binary = opi_binary_path();",
+        ] {
+            assert!(
+                forbidden_markers
+                    .iter()
+                    .any(|marker| mutation.contains(marker)),
+                "generic opi-binary calls must remain classified: {mutation}"
+            );
+        }
+        let mut failures = Vec::new();
+
+        for entry in std::fs::read_dir(&tests_dir).expect("integration test directory") {
+            let path = entry.expect("test entry").path();
+            if path.extension().and_then(|value| value.to_str()) != Some("rs") {
+                continue;
+            }
+            let source = std::fs::read_to_string(&path).expect("integration test source");
+            let file = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("");
+            let Some((
+                _,
+                launch_marker,
+                expected_count,
+                binary_marker,
+                expected_binary_markers,
+                expected_commands,
+            )) = allowed
+                .iter()
+                .find(|(allowed_file, ..)| *allowed_file == file)
+            else {
+                for marker in forbidden_markers {
+                    if source.contains(marker) {
+                        failures.push(format!(
+                            "{} contains forbidden real-opi marker `{marker}`",
+                            path.display()
+                        ));
+                    }
+                }
+                continue;
+            };
+
+            let count = source.matches(launch_marker).count();
+            if count != *expected_count {
+                failures.push(format!(
+                    "{} expected {expected_count} `{launch_marker}` occurrences, found {count}",
+                    path.display()
+                ));
+                continue;
+            }
+            let binary_marker_count = source.matches(binary_marker).count();
+            if binary_marker_count != *expected_binary_markers {
+                failures.push(format!(
+                    "{} expected {expected_binary_markers} `{binary_marker}` occurrences, found {binary_marker_count}",
+                    path.display()
+                ));
+            }
+            let command_count = source.matches("Command::new(").count();
+            if command_count != *expected_commands {
+                failures.push(format!(
+                    "{} expected {expected_commands} subprocess launch sites, found {command_count}",
+                    path.display()
+                ));
+            }
+
+            for (index, _) in source.match_indices(launch_marker) {
+                let context = &source[index..(index + 500).min(source.len())];
+                let early_exit = is_pre_provider_subprocess(file, context);
+                if !early_exit {
+                    failures.push(format!(
+                        "{} has an unclassified `{launch_marker}` invocation",
+                        path.display()
+                    ));
+                }
+            }
+        }
+
+        for target in ["json_mode.rs", "non_interactive.rs", "rpc_jsonl.rs"] {
+            let source =
+                std::fs::read_to_string(tests_dir.join(target)).expect("target test source");
+            let command_count = source.matches("Command::new(").count();
+            if command_count != 0 {
+                failures.push(format!(
+                    "{target} must contain no subprocess launch sites, found {command_count}"
+                ));
+            }
+            for marker in forbidden_markers {
+                if source.contains(marker) {
+                    failures.push(format!(
+                        "{target} must not contain real-opi marker `{marker}`"
+                    ));
+                }
+            }
+        }
+
+        assert!(
+            failures.is_empty(),
+            "real opi subprocesses must be proven pre-provider early exits:\n{}",
+            failures.join("\n")
+        );
+    }
 }

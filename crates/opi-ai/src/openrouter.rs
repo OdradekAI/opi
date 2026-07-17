@@ -31,11 +31,12 @@ pub fn openrouter_provider(api_key: String, base_url: Option<String>) -> OpenAiC
             ),
             ("X-Title".into(), "opi".into()),
         ],
-        default_models(),
+        model_catalog(),
     )
 }
 
-fn default_models() -> Vec<ModelInfo> {
+/// Built-in OpenRouter model metadata without credentials or HTTP construction.
+pub fn model_catalog() -> Vec<ModelInfo> {
     vec![
         ModelInfo {
             id: "anthropic/claude-sonnet-4".into(),

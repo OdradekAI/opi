@@ -86,14 +86,21 @@ Codex-compatible OpenAI Responses——都在返回的 stream 内、紧邻 HTTP 
 `ProviderError::CredentialRevoked`。按调用凭据仍不在范围内：`extra_headers` 会拒绝
 Provider 管理的鉴权 header。
 
+具备能力的 Anthropic 内置模型会在 system prompt、最后一段 user text、最后一段
+assistant text 和最后一个 tool definition 上发出 `cache_control`。Long retention
+会增加 `ttl: "1h"`；short/default ephemeral retention 不带 TTL，显式禁用以及
+未知/自定义模型不发出 marker。
+
 `Request` 新增 `timeout`、`extra_headers`、`CacheRetention` 和 `session_id`。前三项是
 公开的 request-to-wire 基底；本阶段只有 `session_id` 在 coding harness 中具有生产生成方。
 OpenAI family 只通过审查过的兼容标志映射该 id，Anthropic 则使用模型能力门控的 cache
 marker。`ModelInfo` 包含现有的嵌套 `ModelCapabilities`；未知/自定义模型默认关闭 cache
 支持。
 
-`Usage::cache_write_1h_tokens` 是 cache-write token 的子集，
-`Usage::reasoning_tokens` 是 output token 的子集。费用与总 token 计算只计一次父 bucket。
+`Usage::cache_write_1h_tokens` 与 `Usage::reasoning_tokens` 是可选 `u64` 子集，
+可区分缺失与显式上报的零。`CostBreakdown` 只有四行：`input_cost`、`output_cost`、
+`cache_read_cost` 和 `cache_write_cost`。加权的一小时 write 子集折算进
+`cache_write_cost`，reasoning 仍计入 `output_cost`，费用与总 token 只计一次父 bucket。
 `Provider::refresh_models` 与 `ProviderCollection::refresh` 实现确定性的原子目录替换，
 但仅为基底、无生产触发。
 
@@ -178,9 +185,10 @@ Chat-Completions 类比构造，因此服务端响应链未被接入。
 
 只要 provider 提供，用量侧 cache token 就会被归一化（Anthropic
 `cache_read`/`cache_creation`、OpenAI Chat/Responses `cached_tokens`、Gemini
-`cached_content`、Bedrock `cache_read`/`cache_write`）。请求侧 prompt-caching 断点
-（例如 Anthropic `cache_control`）不由 opi 发出；`cache_key` profile 标志是可用的
-cache-affinity 提示。
+`cached_content`、Bedrock `cache_read`/`cache_write`）。具备能力的 Anthropic 内置模型会按
+`CacheRetention` 在 system prompt、最后的 user/assistant text block 和最后的 tool
+definition 上发出请求侧 prompt-caching 断点。兼容 OpenAI 风格的 profile 使用独立的
+`cache_key` cache-affinity 提示。
 
 Provider response ID 被捕获并回写到 `AssistantMessage::response_id`（Anthropic
 `message.id`、OpenAI Chat `chatcmpl-*`、OpenAI Responses `resp_*`）；其中

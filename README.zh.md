@@ -178,12 +178,15 @@ base URL。当 usage 或定价未知时，会省略费用汇总。
 `AuthResolver` 契约。`opi-coding-agent` 提供 OS-keychain
 `CredentialResolver`、API key 的环境变量回退，以及一个不含秘密的协调文件
 `credential.lock`。opi 不写入自行管理的明文凭据文件。`opi doctor` 与
-`--list-models` 只探测已脱敏的凭据状态。
+`--list-models` 只探测已脱敏的凭据状态。Windows、macOS 和 Linux 上的持久化凭据
+分别使用 Windows Credential Manager、macOS Keychain Services 和
+Freedesktop Secret Service。
 
 交互式 `/login <provider>` 与 `/logout <provider>` 支持 Anthropic PKCE、GitHub
 Copilot device-code 和 OpenAI Codex PKCE。这是精确的鉴权与兼容 profile 覆盖，不是
-宽泛的 Copilot 多 wire 对等，也不是独立的 Codex provider 类型。成功的用户发起登录后，
-`CredentialNeeded` 可以重试同一个待处理交互轮次。非交互、JSON 和 RPC 模式只报告
+宽泛的 Copilot 多 wire 对等，也不是独立的 Codex provider 类型。只有用户显式执行且成功的
+`/login <provider>` 才会重试待处理的交互轮次；`CredentialNeeded` 绝不自动启动登录。
+非交互、JSON 和 RPC 模式只报告
 provider 与 `/login <provider>` 修复提示，并在不启动 OAuth 的情况下失败。
 `CredentialRevoked` 不可重试；opi 不会在流中自动重新登录。
 

@@ -466,8 +466,36 @@ fn reasoning_tokens_captured_from_final_chunk() {
         .expect("expected Done event");
     if let AssistantStreamEvent::Done { message, .. } = done {
         assert_eq!(message.usage.output_tokens, 500);
-        assert_eq!(message.usage.reasoning_tokens, 300);
-        assert!(message.usage.reasoning_tokens <= message.usage.output_tokens);
+        assert_eq!(message.usage.reasoning_tokens, Some(300));
+        assert!(message.usage.reasoning_tokens.unwrap() <= u64::from(message.usage.output_tokens));
+    }
+}
+
+#[test]
+fn reasoning_absent_zero_and_equality_are_preserved() {
+    let absent = reasoning_tokens_fixture().replace(
+        ",\"completion_tokens_details\":{\"reasoning_tokens\":300}",
+        "",
+    );
+    let zero =
+        reasoning_tokens_fixture().replace("\"reasoning_tokens\":300", "\"reasoning_tokens\":0");
+    let equal =
+        reasoning_tokens_fixture().replace("\"reasoning_tokens\":300", "\"reasoning_tokens\":500");
+
+    for (fixture, expected) in [
+        (absent.as_str(), None),
+        (zero.as_str(), Some(0)),
+        (equal.as_str(), Some(500)),
+    ] {
+        let stream_events = map_fixture(fixture);
+        let usage = stream_events
+            .iter()
+            .find_map(|event| match event {
+                AssistantStreamEvent::Done { message, .. } => Some(&message.usage),
+                _ => None,
+            })
+            .expect("expected Done event");
+        assert_eq!(usage.reasoning_tokens, expected);
     }
 }
 
@@ -482,19 +510,39 @@ data: [DONE]
 "#
 }
 
-#[test]
-fn reasoning_malformed_subset_clamped_to_zero() {
-    let stream_events = map_fixture(reasoning_malformed_fixture());
-    let done = stream_events
+#[tokio::test]
+async fn reasoning_malformed_subset_stops_production_stream_with_non_retryable_error() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string(reasoning_malformed_fixture())
+                .insert_header("content-type", "text/event-stream"),
+        )
+        .mount(&server)
+        .await;
+
+    let provider = OpenAiChatProvider::new("test-key".into(), Some(server.uri()));
+    let results: Vec<_> = provider.stream(make_test_request()).collect().await;
+    let errors: Vec<_> = results
         .iter()
-        .find(|e| matches!(e, AssistantStreamEvent::Done { .. }))
-        .expect("expected Done event");
-    if let AssistantStreamEvent::Done { message, .. } = done {
-        assert_eq!(message.usage.output_tokens, 500);
-        // Malformed reasoning > output: clamped to 0 (no invalid event emitted).
-        assert_eq!(message.usage.reasoning_tokens, 0);
-        assert!(message.usage.is_reported());
-    }
+        .filter_map(|result| result.as_ref().err())
+        .collect();
+    assert_eq!(errors.len(), 1, "invalid usage must emit one error");
+    assert!(matches!(errors[0], ProviderError::StreamError(_)));
+    assert!(!errors[0].is_retryable());
+    assert!(matches!(
+        results.last(),
+        Some(Err(ProviderError::StreamError(_)))
+    ));
+    assert!(
+        !results.iter().any(|result| matches!(
+            result,
+            Ok(AssistantStreamEvent::Done { .. } | AssistantStreamEvent::Error { .. })
+        )),
+        "no completion event may follow malformed usage"
+    );
 }
 
 // --- Missing-usage graceful handling (Phase 12 task 12.6, DoD clause 3) ---

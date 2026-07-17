@@ -566,6 +566,7 @@ pub trait Provider: Send + Sync {
     fn id(&self) -> &str;
     fn models(&self) -> &[ModelInfo];
     fn stream(&self, request: Request) -> EventStream;
+    fn refresh_models(&self) -> BoxAuthFuture<'_, Result<Option<Vec<ModelInfo>>, ProviderError>>;
 }
 
 pub type EventStream =
@@ -586,8 +587,38 @@ pub struct Request {
     pub stop_sequences: Vec<String>,
     pub metadata: Option<serde_json::Value>,
     pub cancel: CancellationToken,
+    pub timeout: Option<std::time::Duration>,
+    pub extra_headers: Vec<(String, String)>,
+    pub cache_retention: CacheRetention,
+    pub session_id: Option<String>,
 }
 ```
+
+The provider-reported usage and cost lines are:
+
+```rust
+pub struct Usage {
+    pub input_tokens: u32,
+    pub output_tokens: u32,
+    pub cache_read_tokens: u32,
+    pub cache_write_tokens: u32,
+    pub cache_write_1h_tokens: Option<u64>,
+    pub reasoning_tokens: Option<u64>,
+    pub reported: bool,
+}
+
+pub struct CostBreakdown {
+    pub input_cost: f64,
+    pub output_cost: f64,
+    pub cache_read_cost: f64,
+    pub cache_write_cost: f64,
+}
+```
+
+The optional child subsets preserve absent versus explicitly reported zero.
+The weighted one-hour cache-write subset is folded into `cache_write_cost`,
+reasoning remains inside `output_cost`, and totals count each parent bucket
+once.
 
 Provider priority:
 
@@ -879,7 +910,6 @@ Phase 2 MAY add a `[compaction]` table with fields such as `enabled`,
 ~/.config/opi/config.toml
 ~/.config/opi/themes/
 ~/.local/share/opi/sessions/
-~/.local/share/opi/auth/
 ```
 
 Windows SHOULD use `%APPDATA%\opi\` for config-like data and `%LOCALAPPDATA%\opi\` for cache-like data.
@@ -1628,8 +1658,18 @@ Phase 13 non-goals (documented as deferred, not current core):
 
 ### Phase 14 - Provider & Auth
 
-Status: implemented. Design:
-`docs/superpowers/specs/2026-07-11-phase14-provider-auth-design.md`.
+Status: implemented; remediation complete. Historical design:
+`docs/superpowers/specs/2026-07-11-phase14-provider-auth-design.md`. Corrective design:
+`docs/superpowers/specs/2026-07-14-phase14-exit-remediation-design.md`.
+
+Production startup installs a native credential store before any
+credential-aware path:
+
+| Release targets | Store crate | Native service |
+|---|---|---|
+| `x86_64-pc-windows-msvc`, `aarch64-pc-windows-msvc` | `windows-native-keyring-store` | Windows Credential Manager |
+| `x86_64-apple-darwin`, `aarch64-apple-darwin` | `apple-native-keyring-store` | macOS Keychain Services |
+| `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu` | `zbus-secret-service-keyring-store` | Freedesktop Secret Service |
 
 Phase 14 promotes the Provider/Auth cluster to a real phase. It adds an
 OS-keychain credential store (`CredentialStore`/`Credential` in `opi-ai`;
@@ -1645,8 +1685,11 @@ cache-and-reasoning accounting, migration of the existing
 `opi_ai::registry::ModelCapabilities` into the single nested capability value
 on `ModelInfo` that drives Anthropic prompt-cache markers, and a dynamic
 `refresh_models` trait substrate. `cache_write_1h_tokens` is a subset of cache
-writes and `reasoning_tokens` is a subset of output, so cost and token totals do
-not double-count them. The first three Request knobs are public `opi-ai`
+writes and `reasoning_tokens` is a subset of output; both are optional `u64`
+children so absent and explicitly reported zero remain distinct. The four-line
+`CostBreakdown` folds weighted one-hour writes into `cache_write_cost` and
+reasoning into `output_cost`, so cost and token totals do not double-count
+them. The first three Request knobs are public `opi-ai`
 substrate with no Phase 14 config/harness producer; only `session_id` traverses
 the production harness/agent path. Dynamic refresh has mock collection coverage but no
 Phase 14 production trigger and therefore closes no product acceptance path.
@@ -1669,18 +1712,31 @@ changes. TUI changes are limited to the reviewed `/login`, `/logout`,
 `CredentialNeeded` presenter, and raw/alternate-screen suspension around
 login.
 
+Only a successful, user-initiated `/login <provider>` retries a pending
+interactive turn; `CredentialNeeded` never starts login automatically. JSON,
+RPC, and text modes report `provider_id` plus `/login <provider>` remediation
+and fail without a presenter, browser, or input prompt.
+
+`api-map`: `deferred-by-updated-design` under
+`docs/superpowers/specs/2026-07-14-phase14-exit-remediation-design.md`. The old
+trigger has fired, but current explicit provider profiles remain sufficient.
+New trigger: one catalog/provider identity must require at least two concrete
+wire families and explicit provider profiles must be inadequate. A separate
+reviewed design must then define model-to-wire selection, per-stream auth,
+capability routing, and the `ProviderCollection` boundary.
+
 Phase 14 acceptance trace:
 
 | Criterion | Owner | Production/evidence trace |
 |---|---:|---|
-| SC1 credential storage and probes | 14.1 | `credential_store`, `doctor_cli`, and `list_models` fake-backend integration tests exercise production construction and redacted probe surfaces. |
-| SC2 OAuth product flows | 14.2 | `oauth_auth` exercises the production registry, `/login`, `/logout`, PKCE/device-code flows, persistence, exact provider profiles, and `interactive::oauth_login_restores_terminal_after_flow_failure`. |
-| SC3 live auth and session interaction | 14.2 | `oauth_auth`, `non_interactive`, and `oauth_auth::rpc_credential_needed_fails_without_blocking` exercise per-stream resolution on the three approved auth paths, typed retry/remediation, revocation, structured RPC failure, and no auto-login paths. |
+| SC1 credential storage and probes | 14.1, 14.8 | Native-store selection plus async `credential_store`, `doctor_cli`, and `list_models` fake-backend tests exercise production startup, strict resolver errors, stored-only listing, and redacted probes. |
+| SC2 OAuth product flows | 14.2, 14.9 | `interactive_auth` drives the production `/login` and `/logout` dispatcher, locked persistence, terminal suspension/restoration, and all three reviewed OAuth profiles. |
+| SC3 live auth and session interaction | 14.2, 14.10 | Factory-built provider, `interactive_auth`, `json_mode`, RPC, and text tests cover lazy per-stream auth, changed credentials, bounded refresh, explicit same-turn retry, revocation, provider-id remediation, and no automatic login. |
 | SC4 Request and session affinity | 14.3 | `agent_loop_mock::session_id_reaches_every_request`, `session_runtime::phase14_session_affinity_tracks_new_resume_and_fork`, and `request_enrichment::session_affinity_wire_mappings` trace production propagation and exact positive/negative wire mappings. |
-| SC5 capabilities and cache markers | 14.4 | `model_capabilities_migration` and Anthropic fixtures prove the nested capability model and capability-gated marker positions/TTL. |
-| SC6 usage and cost | 14.5 | `usage_cost`, provider fixtures, and session runtime tests preserve `cache_write_1h_tokens` and `reasoning_tokens` subset semantics without double counting. |
+| SC5 capabilities and cache markers | 14.4, 14.11 | `anthropic_cache_markers` captures capability-gated marker positions and TTL through a factory-built concrete Anthropic stream. |
+| SC6 usage and cost | 14.5, 14.12 | Public-contract, provider-fixture, cost, and session-resume tests preserve optional `u64` child subsets, reject malformed usage, and prevent double counting. |
 | SC7 dynamic refresh substrate | 14.6 | `provider_collection` and `provider_trait` mock tests prove deterministic atomic replacement; this is substrate-only with no production trigger. |
-| SC8 documentation and guards | 14.7 | `phase14_provider_auth_docs`, `oauth_auth::login_logout_commands_are_discoverable`, and `non_interactive::credential_needed_fails_without_prompt` pin localized docs, runtime help, and remediation. |
+| SC8 documentation and guards | 14.7, 14.13 | `phase14_provider_auth_docs`, production-dispatcher TUI help, `json_mode`, RPC, and text tests pin localized truth, runtime discovery, typed remediation, and the renewed `api-map` disposition. |
 
 ### Phase 15 - Safety & Sandbox
 
