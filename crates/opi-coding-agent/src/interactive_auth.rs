@@ -9,7 +9,7 @@ use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 
 use crate::credential_store::KeychainCredentialStore;
-use crate::oauth::{self, OAuthProviderRegistry};
+use crate::oauth::{self, OAuthEndpointConfig, OAuthProviderRegistry};
 
 pub const AUTH_HELP: &[(&str, &str)] = &[
     (
@@ -50,8 +50,47 @@ pub enum AuthCommandOutcome {
 
 pub struct AuthCommandServices<'a> {
     pub store: &'a KeychainCredentialStore,
-    pub registry: &'a OAuthProviderRegistry,
     pub presenter: &'a dyn LoginPresenter,
+    endpoints: OAuthEndpointConfig,
+    client: reqwest::Client,
+}
+
+impl<'a> AuthCommandServices<'a> {
+    pub(crate) fn new(
+        store: &'a KeychainCredentialStore,
+        presenter: &'a dyn LoginPresenter,
+        endpoints: OAuthEndpointConfig,
+        client: reqwest::Client,
+    ) -> Self {
+        Self {
+            store,
+            presenter,
+            endpoints,
+            client,
+        }
+    }
+
+    #[cfg(debug_assertions)]
+    #[doc(hidden)]
+    pub fn with_test_services(
+        store: &'a KeychainCredentialStore,
+        presenter: &'a dyn LoginPresenter,
+        client: reqwest::Client,
+        endpoint_base_url: String,
+        login_timeout: std::time::Duration,
+        codex_device_timeout: std::time::Duration,
+    ) -> Self {
+        Self::new(
+            store,
+            presenter,
+            OAuthEndpointConfig::with_test_base_url(
+                endpoint_base_url,
+                login_timeout,
+                codex_device_timeout,
+            ),
+            client,
+        )
+    }
 }
 
 const TERMINAL_RESTORE_FAILURE: &str = "terminal restore failed";
@@ -157,6 +196,8 @@ pub async fn dispatch_auth_command<T: LoginTerminalControl>(
     terminal: &mut T,
     services: AuthCommandServices<'_>,
 ) -> AuthCommandOutcome {
+    let registry =
+        OAuthProviderRegistry::registry_with_services(&services.endpoints, services.client.clone());
     match parse_auth_command(input) {
         ParsedAuthCommand::NotHandled => AuthCommandOutcome::NotHandled,
         ParsedAuthCommand::Help => AuthCommandOutcome::Usage(
@@ -168,7 +209,7 @@ pub async fn dispatch_auth_command<T: LoginTerminalControl>(
         ),
         ParsedAuthCommand::Usage(usage) => AuthCommandOutcome::Usage(usage.to_owned()),
         ParsedAuthCommand::Logout(provider_id) => {
-            if services.registry.lookup(provider_id).is_none() {
+            if registry.lookup(provider_id).is_none() {
                 return AuthCommandOutcome::Failed {
                     message: "unknown OAuth provider".to_owned(),
                 };
@@ -192,13 +233,9 @@ pub async fn dispatch_auth_command<T: LoginTerminalControl>(
                 }
                 Err(TerminalGuardError::Restore) => return terminal_restore_failure(),
             };
-            let login_result = oauth::login_oauth(
-                provider_id,
-                services.registry,
-                services.store,
-                services.presenter,
-            )
-            .await;
+            let login_result =
+                oauth::login_oauth(provider_id, &registry, services.store, services.presenter)
+                    .await;
             let resume_result = guard.resume();
 
             if resume_result.is_err() {

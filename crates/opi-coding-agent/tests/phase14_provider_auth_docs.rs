@@ -406,21 +406,44 @@ fn every_phase14_non_goal_has_documented_and_structural_evidence() {
     }
 
     let oauth = read_repo_file("crates/opi-coding-agent/src/oauth.rs");
-    let registry = oauth
+    let registry_with_services = oauth
+        .split_once("pub(crate) fn registry_with_services(")
+        .expect("service-backed OAuth registry")
+        .1
+        .split_once("/// Register the three production OAuth providers")
+        .expect("end of service-backed OAuth registry")
+        .0;
+    assert_eq!(registry_with_services.matches(".register(").count(), 3);
+    for provider_type in [
+        "AnthropicOAuthProvider::with_services(",
+        "CodexOAuthProvider::with_services(",
+        "CopilotOAuthProvider::with_services(",
+    ] {
+        assert_eq!(registry_with_services.matches(provider_type).count(), 1);
+    }
+
+    let registry_with_builtins = oauth
         .split_once("pub fn registry_with_builtins() -> Self")
         .expect("built-in OAuth registry")
         .1
         .split_once("impl Default for OAuthProviderRegistry")
         .expect("end of built-in OAuth registry")
         .0;
-    assert_eq!(registry.matches(".register(").count(), 3);
-    for provider_type in [
-        "AnthropicOAuthProvider::new(",
-        "CodexOAuthProvider::new(",
-        "CopilotOAuthProvider::new(",
-    ] {
-        assert_eq!(registry.matches(provider_type).count(), 1);
-    }
+    assert_eq!(registry_with_builtins.matches(".register(").count(), 0);
+    assert_claims(
+        "production OAuth registry",
+        registry_with_builtins,
+        &[r#"Self::registry_with_services(
+            &OAuthEndpointConfig::production(),
+            production_oauth_client(),
+        )"#],
+    );
+    assert!(oauth.contains("#[cfg(debug_assertions)]\n    pub(crate) fn with_test_base_url("));
+    assert!(
+        interactive_auth.contains(
+            "#[cfg(debug_assertions)]\n    #[doc(hidden)]\n    pub fn with_test_services("
+        )
+    );
 
     let session = read_repo_file("crates/opi-agent/src/session.rs");
     for forbidden in ["OAuth", "Credential", "access_token", "refresh_token"] {

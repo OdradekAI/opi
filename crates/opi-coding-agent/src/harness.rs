@@ -55,7 +55,7 @@ use crate::diagnostic_bridge::{
     diagnostic_for_resource_layer_message, diagnostic_from_package,
     diagnostic_from_package_resolution_error,
 };
-use crate::oauth::OAuthProviderRegistry;
+use crate::oauth::{OAuthEndpointConfig, OAuthProviderRegistry};
 use crate::package_discovery::PackageResource;
 use crate::policy::{RunMode, ToolRuntimeConfig, ToolSelection};
 use crate::prompt::SystemPromptBuilder;
@@ -138,6 +138,8 @@ pub struct CodingHarness {
     pub credential_store: Option<Arc<KeychainCredentialStore>>,
     /// The built-in OAuth provider registry, set by production startup.
     pub oauth_registry: Option<OAuthProviderRegistry>,
+    pub(crate) oauth_endpoints: OAuthEndpointConfig,
+    pub(crate) oauth_http_client: reqwest::Client,
 }
 
 pub struct RuntimeThinkingState {
@@ -915,6 +917,8 @@ impl CodingHarness {
             run_seq: 0,
             credential_store: None,
             oauth_registry: None,
+            oauth_endpoints: OAuthEndpointConfig::production(),
+            oauth_http_client: crate::oauth::production_oauth_client(),
         };
 
         // Phase 13.3: re-apply recorded model/thinking on the CLI --resume path

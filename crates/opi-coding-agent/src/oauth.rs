@@ -497,6 +497,117 @@ fn no_redirect_client() -> reqwest::Client {
         .expect("valid reqwest client")
 }
 
+pub(crate) fn production_oauth_client() -> reqwest::Client {
+    no_redirect_client()
+}
+
+#[derive(Clone)]
+pub(crate) struct AnthropicOAuthEndpointConfig {
+    authorize_url: String,
+    token_url: String,
+    client_id: String,
+    login_timeout: Duration,
+}
+
+#[derive(Clone)]
+pub(crate) struct CopilotOAuthEndpointConfig {
+    device_authorization_url: String,
+    token_url: String,
+    copilot_token_url: String,
+    client_id: String,
+    scope: String,
+    login_timeout: Duration,
+}
+
+#[derive(Clone)]
+pub(crate) struct CodexOAuthEndpointConfig {
+    authorize_url: String,
+    token_url: String,
+    device_user_code_url: String,
+    device_token_url: String,
+    device_verification_uri: String,
+    device_redirect_uri: String,
+    client_id: String,
+    browser_timeout: Duration,
+    device_timeout: Duration,
+}
+
+#[derive(Clone)]
+pub(crate) struct OAuthEndpointConfig {
+    anthropic: AnthropicOAuthEndpointConfig,
+    copilot: CopilotOAuthEndpointConfig,
+    codex: CodexOAuthEndpointConfig,
+}
+
+impl OAuthEndpointConfig {
+    pub(crate) fn production() -> Self {
+        const LOGIN_TIMEOUT: Duration = Duration::from_secs(300);
+        Self {
+            anthropic: AnthropicOAuthEndpointConfig {
+                authorize_url: "https://claude.ai/oauth/authorize".to_owned(),
+                token_url: "https://platform.claude.com/v1/oauth/token".to_owned(),
+                client_id: "9d1c250a-e61b-44d9-88ed-5944d1962f5e".to_owned(),
+                login_timeout: LOGIN_TIMEOUT,
+            },
+            copilot: CopilotOAuthEndpointConfig {
+                device_authorization_url: "https://github.com/login/device/code".to_owned(),
+                token_url: "https://github.com/login/oauth/access_token".to_owned(),
+                copilot_token_url: "https://api.github.com/copilot_internal/v2/token".to_owned(),
+                client_id: "Iv1.b507a08c87ecfe98".to_owned(),
+                scope: "read:user".to_owned(),
+                login_timeout: LOGIN_TIMEOUT,
+            },
+            codex: CodexOAuthEndpointConfig {
+                authorize_url: "https://auth.openai.com/oauth/authorize".to_owned(),
+                token_url: "https://auth.openai.com/oauth/token".to_owned(),
+                device_user_code_url: CODEX_DEVICE_USER_CODE_URL.to_owned(),
+                device_token_url: CODEX_DEVICE_TOKEN_URL.to_owned(),
+                device_verification_uri: CODEX_DEVICE_VERIFICATION_URI.to_owned(),
+                device_redirect_uri: CODEX_DEVICE_REDIRECT_URI.to_owned(),
+                client_id: "app_EMoamEEZ73f0CkXaXp7hrann".to_owned(),
+                browser_timeout: LOGIN_TIMEOUT,
+                device_timeout: CODEX_DEVICE_TIMEOUT,
+            },
+        }
+    }
+
+    #[cfg(debug_assertions)]
+    pub(crate) fn with_test_base_url(
+        base_url: String,
+        login_timeout: Duration,
+        codex_device_timeout: Duration,
+    ) -> Self {
+        let base_url = base_url.trim_end_matches('/');
+        Self {
+            anthropic: AnthropicOAuthEndpointConfig {
+                authorize_url: format!("{base_url}/anthropic/authorize"),
+                token_url: format!("{base_url}/anthropic/token"),
+                client_id: "9d1c250a-e61b-44d9-88ed-5944d1962f5e".to_owned(),
+                login_timeout,
+            },
+            copilot: CopilotOAuthEndpointConfig {
+                device_authorization_url: format!("{base_url}/copilot/device/code"),
+                token_url: format!("{base_url}/copilot/oauth/token"),
+                copilot_token_url: format!("{base_url}/copilot/token"),
+                client_id: "Iv1.b507a08c87ecfe98".to_owned(),
+                scope: "read:user".to_owned(),
+                login_timeout,
+            },
+            codex: CodexOAuthEndpointConfig {
+                authorize_url: format!("{base_url}/codex/authorize"),
+                token_url: format!("{base_url}/codex/token"),
+                device_user_code_url: format!("{base_url}/codex/device/usercode"),
+                device_token_url: format!("{base_url}/codex/device/token"),
+                device_verification_uri: format!("{base_url}/codex/device"),
+                device_redirect_uri: CODEX_DEVICE_REDIRECT_URI.to_owned(),
+                client_id: "app_EMoamEEZ73f0CkXaXp7hrann".to_owned(),
+                browser_timeout: login_timeout,
+                device_timeout: codex_device_timeout,
+            },
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // AnthropicOAuthProvider (PKCE)
 // ---------------------------------------------------------------------------
@@ -514,6 +625,16 @@ pub struct AnthropicOAuthProvider {
 }
 
 impl AnthropicOAuthProvider {
+    fn with_services(endpoints: &AnthropicOAuthEndpointConfig, client: reqwest::Client) -> Self {
+        Self {
+            authorize_url: endpoints.authorize_url.clone(),
+            token_url: endpoints.token_url.clone(),
+            client_id: endpoints.client_id.clone(),
+            client,
+            timeout: endpoints.login_timeout,
+        }
+    }
+
     /// Construct with configurable endpoints and a login timeout. Builds a
     /// redirect-`none` HTTP client for the token exchange.
     pub fn new(
@@ -626,6 +747,21 @@ pub struct CodexOAuthProvider {
 }
 
 impl CodexOAuthProvider {
+    fn with_services(endpoints: &CodexOAuthEndpointConfig, client: reqwest::Client) -> Self {
+        Self {
+            authorize_url: endpoints.authorize_url.clone(),
+            token_url: endpoints.token_url.clone(),
+            device_user_code_url: endpoints.device_user_code_url.clone(),
+            device_token_url: endpoints.device_token_url.clone(),
+            device_verification_uri: endpoints.device_verification_uri.clone(),
+            device_redirect_uri: endpoints.device_redirect_uri.clone(),
+            client_id: endpoints.client_id.clone(),
+            client,
+            browser_timeout: endpoints.browser_timeout,
+            device_timeout: endpoints.device_timeout,
+        }
+    }
+
     /// Construct with configurable browser endpoints and a login timeout.
     ///
     /// Device-code login uses the production OpenAI endpoints and its fixed
@@ -1084,6 +1220,18 @@ pub struct CopilotOAuthProvider {
 }
 
 impl CopilotOAuthProvider {
+    fn with_services(endpoints: &CopilotOAuthEndpointConfig, client: reqwest::Client) -> Self {
+        Self {
+            device_authorization_url: endpoints.device_authorization_url.clone(),
+            token_url: endpoints.token_url.clone(),
+            copilot_token_url: endpoints.copilot_token_url.clone(),
+            client_id: endpoints.client_id.clone(),
+            scope: endpoints.scope.clone(),
+            client,
+            total_budget: endpoints.login_timeout,
+        }
+    }
+
     /// Construct with configurable endpoints, the device-flow `scope`, and a
     /// total login budget (bounds polling + inter-poll sleeps).
     pub fn new(
@@ -1486,6 +1634,32 @@ impl OAuthProviderRegistry {
         ids
     }
 
+    pub(crate) fn registry_with_services(
+        endpoints: &OAuthEndpointConfig,
+        client: reqwest::Client,
+    ) -> Self {
+        let mut registry = Self::new();
+        registry
+            .register(Arc::new(AnthropicOAuthProvider::with_services(
+                &endpoints.anthropic,
+                client.clone(),
+            )))
+            .expect("anthropic OAuth provider id is unique in a fresh registry");
+        registry
+            .register(Arc::new(CodexOAuthProvider::with_services(
+                &endpoints.codex,
+                client.clone(),
+            )))
+            .expect("codex OAuth provider id is unique in a fresh registry");
+        registry
+            .register(Arc::new(CopilotOAuthProvider::with_services(
+                &endpoints.copilot,
+                client,
+            )))
+            .expect("copilot OAuth provider id is unique in a fresh registry");
+        registry
+    }
+
     /// Register the three production OAuth providers (Anthropic PKCE, GitHub
     /// Copilot device-code, OpenAI Codex browser/device-code) with their
     /// production endpoints and client ids. This is the single source of truth
@@ -1495,38 +1669,10 @@ impl OAuthProviderRegistry {
     /// `.repo/pi-0.80.6` OAuth profiles. Tests remain offline and never contact
     /// these production endpoints.
     pub fn registry_with_builtins() -> Self {
-        let mut registry = Self::new();
-        // Browser callbacks and Copilot polling use five minutes. Codex's
-        // production constructor applies its dedicated 15-minute device budget.
-        const LOGIN_TIMEOUT: Duration = Duration::from_secs(300);
-
-        registry
-            .register(Arc::new(AnthropicOAuthProvider::new(
-                "https://claude.ai/oauth/authorize".to_owned(),
-                "https://platform.claude.com/v1/oauth/token".to_owned(),
-                "9d1c250a-e61b-44d9-88ed-5944d1962f5e".to_owned(),
-                LOGIN_TIMEOUT,
-            )))
-            .expect("anthropic OAuth provider id is unique in a fresh registry");
-        registry
-            .register(Arc::new(CodexOAuthProvider::new(
-                "https://auth.openai.com/oauth/authorize".to_owned(),
-                "https://auth.openai.com/oauth/token".to_owned(),
-                "app_EMoamEEZ73f0CkXaXp7hrann".to_owned(),
-                LOGIN_TIMEOUT,
-            )))
-            .expect("codex OAuth provider id is unique in a fresh registry");
-        registry
-            .register(Arc::new(CopilotOAuthProvider::new(
-                "https://github.com/login/device/code".to_owned(),
-                "https://github.com/login/oauth/access_token".to_owned(),
-                "https://api.github.com/copilot_internal/v2/token".to_owned(),
-                "Iv1.b507a08c87ecfe98".to_owned(),
-                "read:user".to_owned(),
-                LOGIN_TIMEOUT,
-            )))
-            .expect("copilot OAuth provider id is unique in a fresh registry");
-        registry
+        Self::registry_with_services(
+            &OAuthEndpointConfig::production(),
+            production_oauth_client(),
+        )
     }
 }
 

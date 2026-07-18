@@ -34,7 +34,7 @@ use crate::interactive_auth::{
     AuthCommandOutcome, AuthCommandServices, LoginTerminalControl, dispatch_auth_command,
     is_terminal_restore_failure,
 };
-use crate::oauth::{OAuthProviderRegistry, TuiLoginPresenter};
+use crate::oauth::{OAuthEndpointConfig, TuiLoginPresenter};
 
 /// Shared state mutated by the agent callback and read by the TUI render loop.
 struct TuiState {
@@ -472,28 +472,23 @@ pub async fn run_interactive_tui(
         }
     }));
 
-    // Capture the store & registry before the harness moves into Arc<Mutex>;
-    // the authentication dispatcher owns their interactive command access.
+    // Capture the authentication services before the harness moves into
+    // Arc<Mutex>; the dispatcher constructs the concrete registry per command.
     let credential_store = harness
         .credential_store
         .take()
         .ok_or_else(|| io::Error::other("interactive credential store is not configured"))?;
-    let oauth_registry = harness
-        .oauth_registry
-        .take()
-        .ok_or_else(|| io::Error::other("interactive OAuth registry is not configured"))?;
+    let oauth = OAuthDispatchRuntime {
+        endpoints: harness.oauth_endpoints.clone(),
+        client: harness.oauth_http_client.clone(),
+    };
 
     let harness = Arc::new(tokio::sync::Mutex::new(harness));
 
     #[cfg(debug_assertions)]
     if let Some(driver) = active_interactive_tui_test_driver() {
-        return run_headless_interactive_tui_driver(
-            driver,
-            &harness,
-            credential_store,
-            oauth_registry,
-        )
-        .await;
+        return run_headless_interactive_tui_driver(driver, &harness, credential_store, oauth)
+            .await;
     }
 
     // Setup terminal
@@ -504,14 +499,7 @@ pub async fn run_interactive_tui(
     let mut terminal = Terminal::new(backend)?;
 
     // Main TUI loop
-    let result = tui_event_loop(
-        &mut terminal,
-        &harness,
-        &state,
-        credential_store,
-        oauth_registry,
-    )
-    .await;
+    let result = tui_event_loop(&mut terminal, &harness, &state, credential_store, oauth).await;
 
     // Restore terminal
     terminal::disable_raw_mode()?;
@@ -526,7 +514,7 @@ async fn tui_event_loop(
     harness: &Arc<tokio::sync::Mutex<CodingHarness>>,
     state: &Arc<Mutex<TuiState>>,
     credential_store: Arc<crate::credential_store::KeychainCredentialStore>,
-    oauth_registry: OAuthProviderRegistry,
+    oauth: OAuthDispatchRuntime,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut pending: Option<tokio::task::JoinHandle<Result<Vec<AgentMessage>, AgentError>>> = None;
     let mut pending_auth_turn = PendingAuthTurn::default();
@@ -849,7 +837,7 @@ async fn tui_event_loop(
                     &input,
                     terminal,
                     credential_store.as_ref(),
-                    &oauth_registry,
+                    &oauth,
                     &presenter,
                     &mut pending_auth_turn,
                     harness.clone(),
@@ -949,11 +937,17 @@ struct RoutedAuthCommand {
     retry: Option<tokio::task::JoinHandle<Result<Vec<AgentMessage>, AgentError>>>,
 }
 
+#[derive(Clone)]
+struct OAuthDispatchRuntime {
+    endpoints: OAuthEndpointConfig,
+    client: reqwest::Client,
+}
+
 async fn dispatch_interactive_auth_input<T: LoginTerminalControl>(
     input: &str,
     terminal: &mut T,
     credential_store: &crate::credential_store::KeychainCredentialStore,
-    oauth_registry: &OAuthProviderRegistry,
+    oauth: &OAuthDispatchRuntime,
     presenter: &dyn opi_ai::auth::LoginPresenter,
     pending_auth_turn: &mut PendingAuthTurn,
     harness: Arc<tokio::sync::Mutex<CodingHarness>>,
@@ -961,11 +955,12 @@ async fn dispatch_interactive_auth_input<T: LoginTerminalControl>(
     let outcome = dispatch_auth_command(
         input,
         terminal,
-        AuthCommandServices {
-            store: credential_store,
-            registry: oauth_registry,
+        AuthCommandServices::new(
+            credential_store,
             presenter,
-        },
+            oauth.endpoints.clone(),
+            oauth.client.clone(),
+        ),
     )
     .await;
     let retry = spawn_pending_auth_retry(pending_auth_turn, &outcome, harness);
@@ -1003,7 +998,7 @@ async fn run_headless_interactive_tui_driver(
     driver: InteractiveTuiTestDriver,
     harness: &Arc<tokio::sync::Mutex<CodingHarness>>,
     credential_store: Arc<crate::credential_store::KeychainCredentialStore>,
-    oauth_registry: OAuthProviderRegistry,
+    oauth: OAuthDispatchRuntime,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut terminal = HeadlessLoginTerminal {
         capture: driver.capture.clone(),
@@ -1019,7 +1014,7 @@ async fn run_headless_interactive_tui_driver(
             &input,
             &mut terminal,
             credential_store.as_ref(),
-            &oauth_registry,
+            &oauth,
             &presenter,
             &mut pending_auth_turn,
             harness.clone(),
