@@ -3262,7 +3262,7 @@
       "definition_of_done": "install_native_keyring traverses the same cfg-gated platform_store_with selection seam used by the focused test; the injected constructor is called once, installs the default store, preserves it across two leases, unsets it after the final guard, and retains existing typed BackendUnavailable and operational-error classification without user-keychain IO.",
       "definition_source": "draft-reviewed",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [],
       "inference_notes": [
         {
@@ -3305,7 +3305,7 @@
             "opi_coding_agent::native_keyring::install_native_keyring_with",
             "opi_coding_agent::native_keyring::platform_store_with"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "phase14-native-keyring-error-classification",
@@ -3318,7 +3318,7 @@
             "opi_coding_agent::native_keyring::platform_store_with",
             "opi_coding_agent::native_keyring::classify_platform_store_error"
           ],
-          "status": "open"
+          "status": "met"
         }
       ],
       "production_call_sites": [
@@ -3327,18 +3327,75 @@
         "opi_coding_agent::native_keyring::platform_store_with"
       ],
       "substrate_only": false,
-      "iteration_count": 0,
+      "iteration_count": 1,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "b73fe043a2fd03548bf4193e0793b9d769bc9747",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "crates/opi-coding-agent/src/native_keyring.rs"
       ],
-      "last_attempt": null,
-      "verified_at_commit": null,
-      "evidence": null,
+      "last_attempt": {
+        "attempt": 1,
+        "started_at": "2026-07-18T06:06:48.932Z",
+        "ended_at": "2026-07-18T06:38:15.326Z",
+        "outcome": "passing",
+        "failing_gate": null,
+        "touched_files": [
+          "crates/opi-coding-agent/src/native_keyring.rs"
+        ]
+      },
+      "verified_at_commit": "62b12dde6821c6f62e50db10ec3a374ca8e0f30a",
+      "evidence": {
+        "commit": "62b12dde6821c6f62e50db10ec3a374ca8e0f30a",
+        "task": "14.14",
+        "dod_sha256": "2c4c59637b5f9e590171fbbdb8a0b3088b72e2e9d412614a57756f6b1fa96e7f",
+        "verification": "cli-runtime; fresh focused acceptance 1/1, native_keyring module 5/5, fmt, workspace clippy -D warnings, diff-check, and exact one-file boundary passed",
+        "evaluator": "passed; independent six-lens review accepted 0, flagged 0, rejected 6 candidates",
+        "acceptance": "cfg-selected install seam, one-to-two reuse, one-to-zero unset, no entry IO, and typed platform error classification verified",
+        "acceptance_scenarios": [
+          "phase14-native-keyring-host-selection",
+          "phase14-native-keyring-error-classification"
+        ],
+        "verify_workflows": [
+          ".superpowers/sdd/task-14.14-review.md",
+          ".superpowers/sdd/task-14.14-evaluator.md",
+          "codex-collaboration:task14.14-six-lens-20260718"
+        ]
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-07-18T06:06:48.932Z",
+          "attempt": 1,
+          "summary": "Phase B confirmed from the user-invoked reviewed plan; starting TDD implementation in the isolated worktree.",
+          "gate_results": {
+            "stage": "B",
+            "outcome": "confirmed",
+            "accepted": [
+              "reviewed task brief",
+              "clean baseline",
+              "task-owned path boundary"
+            ],
+            "flagged": [],
+            "rejected": []
+          }
+        },
+        {
+          "timestamp": "2026-07-18T06:38:15.326Z",
+          "attempt": 1,
+          "summary": "Task 14.14 passed focused verification, fresh controller gates, independent spec/quality review, and independent six-lens evaluation with no accepted or flagged findings.",
+          "gate_results": {
+            "focused": "passing: 1/1 host-selection; 5/5 native_keyring module",
+            "fmt": "passing",
+            "clippy": "passing: workspace all-targets with -D warnings",
+            "diff_check": "passing",
+            "source_boundary": "passing: exact one committed task-owned path",
+            "review": "approved: no must-fix findings",
+            "evaluator": "passing: L-D1 through L-D6; accepted 0, flagged 0, rejected 6",
+            "commit": "62b12dde6821c6f62e50db10ec3a374ca8e0f30a"
+          }
+        }
+      ]
     },
     {
       "id": "14.15",
@@ -5815,6 +5872,16 @@
       "rejected_count": 5,
       "ran_at": "2026-07-18T06:04:18.855Z",
       "task_id": null,
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": "codex-collaboration:task14.14-six-lens-20260718",
+      "folded_count": 0,
+      "flagged_count": 0,
+      "rejected_count": 6,
+      "ran_at": "2026-07-18T06:38:15.326Z",
+      "task_id": "14.14",
       "criterion_id": null
     }
   ]
