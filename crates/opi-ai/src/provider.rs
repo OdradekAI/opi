@@ -6,7 +6,7 @@ use futures_core::Stream;
 use tokio_util::sync::CancellationToken;
 
 use crate::credential::BoxAuthFuture;
-use crate::message::{InputContent, Message, ToolDef};
+use crate::message::{InputContent, Message, OutputContent, ToolDef};
 use crate::model_info::{ThinkingLevel, WireApi};
 use crate::stream::AssistantStreamEvent;
 
@@ -95,15 +95,60 @@ pub struct Request {
 }
 
 impl Request {
-    /// Returns true when any user message contains image input.
-    pub fn contains_image_input(&self) -> bool {
+    /// Returns true when any user or tool-result message contains image content.
+    pub fn contains_image_content(&self) -> bool {
         self.messages.iter().any(|message| match message {
             Message::User(user) => user
                 .content
                 .iter()
                 .any(|content| matches!(content, InputContent::Image { .. })),
+            Message::ToolResult(tool_result) => tool_result
+                .content
+                .iter()
+                .any(|content| matches!(content, OutputContent::Image { .. })),
             _ => false,
         })
+    }
+}
+
+const GITHUB_COPILOT_MANAGED_HEADERS: &[&str] = &[
+    "user-agent",
+    "editor-version",
+    "editor-plugin-version",
+    "copilot-integration-id",
+    "x-initiator",
+    "openai-intent",
+    "copilot-vision-request",
+];
+
+/// Build the request-dependent GitHub Copilot headers other than `X-Initiator`.
+///
+/// All Copilot-managed names are rejected in per-request headers before any
+/// network call. Concrete wire providers append the separately derived
+/// initiator so the same policy applies to every Copilot route.
+pub(crate) fn github_copilot_route_headers(
+    request: &Request,
+) -> Result<Vec<(String, String)>, ProviderError> {
+    if let Some((name, _)) = request.extra_headers.iter().find(|(name, _)| {
+        GITHUB_COPILOT_MANAGED_HEADERS.contains(&name.to_ascii_lowercase().as_str())
+    }) {
+        return Err(ProviderError::RequestFailed(format!(
+            "request header '{name}' is reserved for GitHub Copilot"
+        )));
+    }
+
+    let mut headers = vec![("Openai-Intent".into(), "conversation-edits".into())];
+    if request.contains_image_content() {
+        headers.push(("Copilot-Vision-Request".into(), "true".into()));
+    }
+    Ok(headers)
+}
+
+/// Derive GitHub Copilot's initiator from the final conversation message.
+pub(crate) fn github_copilot_initiator(request: &Request) -> &'static str {
+    match request.messages.last() {
+        Some(Message::User(_)) | None => "user",
+        Some(_) => "agent",
     }
 }
 
@@ -193,7 +238,7 @@ pub fn validate_request_capabilities(
     let model = provider.models().iter().find(|m| m.id == model_id);
 
     // Image preflight: a known text-only model rejects image input before the call.
-    if request.contains_image_input()
+    if request.contains_image_content()
         && let Some(model) = model
         && !model.capabilities.supports_images
     {

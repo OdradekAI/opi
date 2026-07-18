@@ -18,7 +18,10 @@ use crate::message::{
     AssistantContent, AssistantMessage, OutputContent, TOOL_ERROR_MARKER, ToolCall,
 };
 use crate::model_info::WireApi;
-use crate::provider::{CacheRetention, EventStream, ModelInfo, Provider, ProviderError, Request};
+use crate::provider::{
+    CacheRetention, EventStream, ModelInfo, Provider, ProviderError, Request,
+    github_copilot_initiator, github_copilot_route_headers,
+};
 use crate::provider_headers::ProviderHeaders;
 use crate::registry::ModelCapabilities;
 use crate::stream::{AssistantStreamEvent, StopReason, Usage};
@@ -1443,14 +1446,18 @@ impl Provider for OpenAiChatProvider {
         let model_base_url = model.and_then(|model| model.base_url.clone());
         let chat_completions_path = self.resolve_compat(model_id).chat_completions_path;
         let mut extra_headers = self.route_headers.clone();
-        if self.copilot_initiator {
-            extra_headers.retain(|(name, _)| !name.eq_ignore_ascii_case("x-initiator"));
-            let initiator = match request.messages.last() {
-                Some(crate::message::Message::User(_)) | None => "user",
-                Some(_) => "agent",
-            };
-            extra_headers.push(("X-Initiator".into(), initiator.into()));
-        }
+        let copilot_headers = if self.copilot_initiator {
+            match github_copilot_route_headers(&request) {
+                Ok(mut extra_headers) => {
+                    let initiator = github_copilot_initiator(&request);
+                    extra_headers.push(("X-Initiator".into(), initiator.into()));
+                    Ok(extra_headers)
+                }
+                Err(error) => Err(error),
+            }
+        } else {
+            Ok(Vec::new())
+        };
         if self.resolve_compat(model_id).send_session_affinity_headers
             && request.cache_retention != CacheRetention::Disabled
             && let Some(session_id) = request.session_id.as_deref()
@@ -1470,9 +1477,11 @@ impl Provider for OpenAiChatProvider {
                     .map(|name| (name.into(), clamped.clone())),
             );
         }
-        let extra_headers = self
-            .headers
-            .merge_request(&extra_headers, &request.extra_headers);
+        let extra_headers = copilot_headers.and_then(|copilot_headers| {
+            extra_headers.extend(copilot_headers);
+            self.headers
+                .merge_request(&extra_headers, &request.extra_headers)
+        });
         let timeout = request.timeout;
         let body = self.build_request_body(&request);
         let cancel = request.cancel.clone();

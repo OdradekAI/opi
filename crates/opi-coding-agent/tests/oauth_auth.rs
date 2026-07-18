@@ -19,7 +19,6 @@ use opi_ai::auth::{
 };
 use opi_ai::credential::{BoxAuthFuture, Credential, CredentialStore};
 use opi_ai::http::HttpClient;
-use opi_ai::message::Message;
 use opi_ai::provider::{
     CacheRetention, EventStream, ModelInfo, Provider, ProviderError as AiProviderError, Request,
     ThinkingConfig,
@@ -1718,17 +1717,19 @@ fn stored_oauth(access: &str, refresh: &str, base_url: Option<String>) -> Creden
 }
 
 #[tokio::test]
-async fn factory_routes_copilot_to_chat_with_oauth_wire_shape() {
+async fn factory_routes_github_copilot_models_by_declared_wire() {
     let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/chat/completions"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .set_body_string("")
-                .insert_header("content-type", "text/event-stream"),
-        )
-        .mount(&server)
-        .await;
+    for request_path in ["/v1/messages", "/chat/completions", "/responses"] {
+        Mock::given(method("POST"))
+            .and(path(request_path))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_string("")
+                    .insert_header("content-type", "text/event-stream"),
+            )
+            .mount(&server)
+            .await;
+    }
 
     let backend = FakeKeyringBackend::new();
     let (_dir, store, _b) = store_with(backend);
@@ -1747,54 +1748,36 @@ async fn factory_routes_copilot_to_chat_with_oauth_wire_shape() {
     let registry = OAuthProviderRegistry::registry_with_builtins();
 
     let mut config = OpiConfig::default();
-    config.defaults.model = "github-copilot:gpt-4o".into();
+    config.defaults.model = "github-copilot:gpt-4.1".into();
 
     let provider = build_provider_with_oauth(&config, &resolver, &registry)
         .await
         .expect("copilot OAuth provider builds");
     assert_eq!(provider.id(), "github-copilot");
-    let mut stream = provider.stream(factory_request("github-copilot:gpt-4o"));
-    drain_stream(&mut stream).await;
-    let mut agent_request = factory_request("github-copilot:gpt-4o");
-    agent_request
-        .messages
-        .push(Message::Assistant(opi_ai::test_support::base_assistant()));
-    let mut stream = provider.stream(agent_request);
-    drain_stream(&mut stream).await;
+    for model in ["claude-sonnet-4.5", "gpt-4.1", "gpt-5.4"] {
+        let mut stream = provider.stream(factory_request(&format!("github-copilot:{model}")));
+        drain_stream(&mut stream).await;
+    }
 
     let requests = server.received_requests().await.unwrap();
-    assert_eq!(requests.len(), 2, "two Copilot Chat requests");
-    let req = &requests[0];
-    assert_eq!(req.url.path(), "/chat/completions");
+    assert_eq!(requests.len(), 3, "one request per declared wire");
     assert_eq!(
-        req.headers
-            .get("authorization")
-            .map(|v| v.to_str().unwrap()),
-        Some("Bearer copilot-access-fake")
+        requests
+            .iter()
+            .map(|request| request.url.path())
+            .collect::<std::collections::BTreeSet<_>>(),
+        std::collections::BTreeSet::from(["/v1/messages", "/chat/completions", "/responses",])
     );
-    assert_eq!(
-        req.headers
-            .get("Openai-Intent")
-            .map(|v| v.to_str().unwrap()),
-        Some("conversation-edits")
-    );
-    assert_eq!(
-        req.headers
-            .get("Copilot-Integration-Id")
-            .map(|v| v.to_str().unwrap()),
-        Some("vscode-chat")
-    );
-    assert_eq!(
-        req.headers.get("X-Initiator").map(|v| v.to_str().unwrap()),
-        Some("user")
-    );
-    assert_eq!(
-        requests[1]
-            .headers
-            .get("X-Initiator")
-            .map(|v| v.to_str().unwrap()),
-        Some("agent")
-    );
+    for request in requests {
+        assert_eq!(
+            request
+                .headers
+                .get("authorization")
+                .map(|value| value.to_str().unwrap()),
+            Some("Bearer copilot-access-fake")
+        );
+        assert!(request.headers.get("x-api-key").is_none());
+    }
 }
 
 #[tokio::test]
@@ -2417,7 +2400,7 @@ fn login_logout_commands_are_discoverable() {
 async fn factory_built_approved_profiles_resolve_auth_inside_each_stream() {
     for (provider_id, model) in [
         ("anthropic", "claude-sonnet-4-5-20250514"),
-        ("github-copilot", "gpt-4o"),
+        ("github-copilot", "gpt-4.1"),
         ("openai-codex", "gpt-5"),
     ] {
         let server = MockServer::start().await;
@@ -2495,7 +2478,7 @@ async fn factory_built_approved_profiles_resolve_auth_inside_each_stream() {
 async fn factory_stream_reresolves_after_store_change() {
     for (provider_id, model, request_path) in [
         ("anthropic", "claude-sonnet-4-5-20250514", "/v1/messages"),
-        ("github-copilot", "gpt-4o", "/chat/completions"),
+        ("github-copilot", "gpt-4.1", "/chat/completions"),
         ("openai-codex", "gpt-5", "/codex/responses"),
     ] {
         let server = MockServer::start().await;
@@ -2673,7 +2656,7 @@ async fn refresh_timeout_releases_lock_and_preserves_prior_credential() {
 async fn factory_built_approved_profiles_map_revocation_without_retry() {
     for (provider_id, model, request_path) in [
         ("anthropic", "claude-sonnet-4-5-20250514", "/v1/messages"),
-        ("github-copilot", "gpt-4o", "/chat/completions"),
+        ("github-copilot", "gpt-4.1", "/chat/completions"),
         ("openai-codex", "gpt-5", "/codex/responses"),
     ] {
         let server = MockServer::start().await;

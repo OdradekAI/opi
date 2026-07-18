@@ -499,7 +499,7 @@ fn build_list_models_metadata(
             config.providers.openai_responses.proxy.as_ref(),
             opi_ai::openai_responses::model_catalog(),
         ),
-        "github-copilot" => (None, opi_ai::openai_chat::model_catalog()),
+        "github-copilot" => (None, crate::github_copilot::github_copilot_catalog()),
         "openai-codex" => (None, opi_ai::openai_responses::model_catalog()),
         "gemini" => (
             config.providers.gemini.proxy.as_ref(),
@@ -830,23 +830,8 @@ async fn build_provider_with_resolver_outcome(
 // Phase 14.2 OAuth provider construction
 // ---------------------------------------------------------------------------
 
-/// Default Copilot API base URL. A stored OAuth credential may carry an
-/// enterprise host (its `base_url`), which takes precedence at construction.
-const COPILOT_DEFAULT_BASE_URL: &str = "https://api.individual.githubcopilot.com";
-
 /// Default Codex API base URL.
 const CODEX_DEFAULT_BASE_URL: &str = "https://api.openai.com";
-
-/// The static required Copilot Chat headers. `X-Initiator` is derived from the
-/// current request messages by `OpenAiChatProvider::with_copilot_initiator`.
-fn copilot_extra_headers() -> Vec<(String, String)> {
-    vec![
-        ("Editor-Version".into(), "opi/0.7.0".into()),
-        ("Editor-Plugin-Version".into(), "opi/0.7.0".into()),
-        ("Copilot-Integration-Id".into(), "vscode-chat".into()),
-        ("Openai-Intent".into(), "conversation-edits".into()),
-    ]
-}
 
 /// The static required Codex Responses headers.
 fn codex_extra_headers() -> Vec<(String, String)> {
@@ -911,9 +896,10 @@ async fn build_anthropic_live_auth(
     })
 }
 
-/// Build the Copilot Chat provider (OpenAI Chat compat profile) over a stored
-/// OAuth credential. The per-credential `base_url` (enterprise host) is read
-/// from the store at construction; absent that, the default Copilot host.
+/// Build GitHub Copilot's static catalog over three concrete wire routes.
+///
+/// All routes share one lazy store-backed resolver, so each stream observes
+/// the current OAuth token and any per-credential enterprise base URL.
 async fn build_copilot_oauth(
     resolver: &CredentialResolver,
     registry: &OAuthProviderRegistry,
@@ -921,31 +907,73 @@ async fn build_copilot_oauth(
     let oauth = registry.lookup("github-copilot").ok_or_else(|| {
         ProviderBuildError::Config("no github-copilot OAuth provider registered".into())
     })?;
-    let base_url = resolver
-        .read_oauth_base_url("github-copilot")
-        .await
-        .map_err(ProviderBuildError::Provider)?
-        .unwrap_or_else(|| COPILOT_DEFAULT_BASE_URL.to_owned());
     let client = build_proxied_client(None)?;
-    // Copilot Chat uses `/chat/completions` (no `/v1`); the Copilot compat
-    // profile overrides the path the default OpenAI config would use.
-    let compat = opi_ai::openai_chat::CompatConfig {
-        chat_completions_path: "/chat/completions".into(),
-        ..Default::default()
-    };
-    let provider = opi_ai::openai_chat::OpenAiChatProvider::with_auth(
-        Arc::new(AuthSource::Store {
-            resolver: Arc::new(resolver.clone()),
-            provider_id: "github-copilot".into(),
-            oauth,
-        }),
-        Some(base_url),
-        compat,
-        "github-copilot".into(),
-        copilot_extra_headers(),
-        client,
-    )
-    .with_copilot_initiator();
+    let auth: Arc<dyn opi_ai::AuthResolver> = Arc::new(AuthSource::Store {
+        resolver: Arc::new(resolver.clone()),
+        provider_id: "github-copilot".into(),
+        oauth,
+    });
+    let headers =
+        opi_ai::ProviderHeaders::try_new(crate::github_copilot::github_copilot_static_headers())
+            .map_err(|error| ProviderBuildError::Config(error.to_string()))?;
+    let catalog = crate::github_copilot::github_copilot_catalog();
+    let mut routes: std::collections::BTreeMap<WireApi, Box<dyn Provider>> =
+        std::collections::BTreeMap::new();
+
+    for wire in [
+        WireApi::AnthropicMessages,
+        WireApi::OpenAiCompletions,
+        WireApi::OpenAiResponses,
+    ] {
+        let models = catalog
+            .iter()
+            .filter(|model| model.wire_api == wire)
+            .cloned()
+            .collect();
+        let default_base_url =
+            Some(crate::github_copilot::GITHUB_COPILOT_DEFAULT_BASE_URL.to_owned());
+        let route: Box<dyn Provider> = match wire {
+            WireApi::AnthropicMessages => Box::new(
+                opi_ai::anthropic::AnthropicProvider::for_route(
+                    Arc::clone(&auth),
+                    "github-copilot".into(),
+                    models,
+                    default_base_url,
+                    headers.clone(),
+                    Arc::clone(&client),
+                    false,
+                )
+                .with_copilot_headers(),
+            ),
+            WireApi::OpenAiCompletions => Box::new(
+                opi_ai::openai_chat::OpenAiChatProvider::for_route(
+                    Arc::clone(&auth),
+                    default_base_url,
+                    "github-copilot".into(),
+                    headers.clone(),
+                    models,
+                    Arc::clone(&client),
+                )
+                .with_copilot_initiator(),
+            ),
+            WireApi::OpenAiResponses => Box::new(
+                opi_ai::openai_responses::OpenAiResponsesProvider::for_route(
+                    Arc::clone(&auth),
+                    default_base_url,
+                    "github-copilot".into(),
+                    headers.clone(),
+                    models,
+                    Arc::clone(&client),
+                )
+                .with_copilot_headers(),
+            ),
+            _ => unreachable!("GitHub Copilot catalog uses three reviewed wires"),
+        };
+        routes.insert(wire, route);
+    }
+
+    let provider = opi_ai::ApiMappedProvider::try_new("github-copilot", catalog, routes)
+        .map_err(|error| ProviderBuildError::Config(error.to_string()))?;
     Ok(Box::new(provider))
 }
 
@@ -1577,7 +1605,9 @@ pub fn build_collection_for_listing(
 ) -> Result<ProviderCollection, ListModelsError> {
     let mut collection = ProviderCollection::new();
     for provider_id in BUILT_IN_PROVIDER_IDS {
-        let auth_available = if *provider_id == "bedrock" {
+        let auth_available = if *provider_id == "github-copilot" {
+            true
+        } else if *provider_id == "bedrock" {
             bedrock_auth_presence(config, &|name| std::env::var(name).ok()).is_present()
         } else {
             let env_name = api_key_env_name(config, provider_id);
@@ -1650,6 +1680,7 @@ pub async fn build_collection_for_listing_with_store(
 ) -> Result<ProviderCollection, ListModelsError> {
     let provider_ids = BUILT_IN_PROVIDER_IDS
         .iter()
+        .filter(|provider_id| **provider_id != "github-copilot")
         .map(|provider_id| (*provider_id).to_owned());
     let probes = crate::credential_store::collect_credential_probes(store, provider_ids).await;
     build_collection_for_listing(config, &probes)

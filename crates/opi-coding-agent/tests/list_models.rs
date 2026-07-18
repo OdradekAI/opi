@@ -323,6 +323,7 @@ fn stored_credential_metadata_is_redacted() {
 struct ProbeOnlyCredentialStore {
     credentials: std::sync::Mutex<std::collections::HashMap<String, Credential>>,
     read_calls: AtomicUsize,
+    probed_provider_ids: std::sync::Mutex<Vec<String>>,
 }
 
 impl CredentialStore for ProbeOnlyCredentialStore {
@@ -360,6 +361,10 @@ impl CredentialStore for ProbeOnlyCredentialStore {
 
     fn probe<'a>(&'a self, provider_id: &'a str) -> BoxAuthFuture<'a, CredentialSource> {
         Box::pin(async move {
+            self.probed_provider_ids
+                .lock()
+                .unwrap()
+                .push(provider_id.to_owned());
             if self.credentials.lock().unwrap().contains_key(provider_id) {
                 CredentialSource::Present {
                     label: format!("fake store {provider_id}"),
@@ -369,6 +374,35 @@ impl CredentialStore for ProbeOnlyCredentialStore {
             }
         })
     }
+}
+
+#[tokio::test]
+async fn github_copilot_static_catalog_lists_without_store_reads() {
+    use opi_coding_agent::provider_factory::build_collection_for_listing_with_store;
+
+    let store = ProbeOnlyCredentialStore::default();
+    let collection = build_collection_for_listing_with_store(
+        &opi_coding_agent::config::OpiConfig::default(),
+        &store,
+    )
+    .await
+    .expect("static GitHub Copilot listing");
+
+    let entries = model_entries_from_registry(collection.registry())
+        .into_iter()
+        .filter(|entry| entry.provider_id == "github-copilot")
+        .collect::<Vec<_>>();
+    assert_eq!(entries.len(), 25);
+    assert_eq!(store.read_calls.load(Ordering::SeqCst), 0);
+    assert!(
+        !store
+            .probed_provider_ids
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|provider_id| provider_id == "github-copilot"),
+        "static catalog listing must not probe GitHub Copilot credentials"
+    );
 }
 
 #[tokio::test]

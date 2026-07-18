@@ -464,6 +464,50 @@ async fn provider_bundle_retains_native_store_while_provider_is_callable() {
 }
 
 #[tokio::test]
+async fn github_copilot_factory_builds_one_three_wire_provider() {
+    use std::collections::BTreeSet;
+
+    use opi_ai::WireApi;
+    use opi_coding_agent::credential_store::{
+        CredentialResolver, FakeKeyringBackend, KeychainCredentialStore,
+    };
+    use opi_coding_agent::oauth::OAuthProviderRegistry;
+    use opi_coding_agent::provider_factory::build_provider_with_oauth;
+
+    let dir = tempfile::tempdir().unwrap();
+    let store = Arc::new(KeychainCredentialStore::new(
+        Box::new(FakeKeyringBackend::new()),
+        dir.path().to_path_buf(),
+    ));
+    let resolver = CredentialResolver::new(store, Arc::new(|_: &str| None));
+    let mut config = OpiConfig::default();
+    config.defaults.model = "github-copilot:gpt-4.1".into();
+
+    let provider = build_provider_with_oauth(
+        &config,
+        &resolver,
+        &OAuthProviderRegistry::registry_with_builtins(),
+    )
+    .await
+    .expect("static GitHub Copilot factory");
+
+    assert_eq!(provider.id(), "github-copilot");
+    assert_eq!(provider.models().len(), 25);
+    assert_eq!(
+        provider
+            .models()
+            .iter()
+            .map(|model| model.wire_api)
+            .collect::<BTreeSet<_>>(),
+        BTreeSet::from([
+            WireApi::AnthropicMessages,
+            WireApi::OpenAiCompletions,
+            WireApi::OpenAiResponses,
+        ])
+    );
+}
+
+#[tokio::test]
 async fn anthropic_stored_api_key_routes_to_api_key_wire_auth() {
     use futures_util::StreamExt;
     use opi_ai::credential::{Credential, CredentialStore};

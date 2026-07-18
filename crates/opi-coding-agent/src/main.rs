@@ -1271,11 +1271,17 @@ mod tests {
         );
 
         assert_canary_route(&counts, &outcome);
-        assert_eq!(outcome.exit_code, 1);
-        assert!(outcome.stdout.is_empty());
+        assert_eq!(outcome.exit_code, 0);
+        assert!(outcome.stderr.is_empty());
         assert_eq!(
-            outcome.stderr,
-            "opi: no models available (configure API keys to list models)\n"
+            outcome
+                .stdout
+                .lines()
+                .filter(|line| line.contains("github-copilot"))
+                .count(),
+            25,
+            "{}",
+            outcome.stdout
         );
     }
 

@@ -11,7 +11,10 @@ use crate::auth::{AuthResolver, AuthScheme, ResolvedAuth, StaticAuthResolver};
 use crate::http::HttpClient;
 use crate::message::{AssistantContent, AssistantMessage, ToolCall};
 use crate::model_info::WireApi;
-use crate::provider::{CacheRetention, EventStream, ModelInfo, Provider, ProviderError, Request};
+use crate::provider::{
+    CacheRetention, EventStream, ModelInfo, Provider, ProviderError, Request,
+    github_copilot_initiator, github_copilot_route_headers,
+};
 use crate::provider_headers::ProviderHeaders;
 use crate::registry::ModelCapabilities;
 use crate::stream::{AssistantStreamEvent, StopReason, Usage};
@@ -685,6 +688,7 @@ pub struct AnthropicProvider {
     models: Vec<ModelInfo>,
     headers: ProviderHeaders,
     direct_oauth_beta: bool,
+    copilot_headers: bool,
     client: Arc<HttpClient>,
 }
 
@@ -743,8 +747,15 @@ impl AnthropicProvider {
             models,
             headers,
             direct_oauth_beta,
+            copilot_headers: false,
             client,
         }
+    }
+
+    /// Enable GitHub Copilot's request-dependent route headers.
+    pub fn with_copilot_headers(mut self) -> Self {
+        self.copilot_headers = true;
+        self
     }
 
     /// Access the shared HTTP client (for testing client reuse).
@@ -1241,7 +1252,22 @@ impl Provider for AnthropicProvider {
         let body = self.build_request_body(&request);
         let cancel = request.cancel.clone();
         let timeout = request.timeout;
-        let extra_headers = self.headers.merge_request(&[], &request.extra_headers);
+        let copilot_headers = if self.copilot_headers {
+            match github_copilot_route_headers(&request) {
+                Ok(mut headers) => {
+                    let initiator = github_copilot_initiator(&request);
+                    headers.push(("X-Initiator".into(), initiator.into()));
+                    Ok(headers)
+                }
+                Err(error) => Err(error),
+            }
+        } else {
+            Ok(Vec::new())
+        };
+        let extra_headers = copilot_headers.and_then(|route_headers| {
+            self.headers
+                .merge_request(&route_headers, &request.extra_headers)
+        });
         let http_client = self.client.client().clone();
 
         let (tx, rx) = tokio::sync::mpsc::channel(64);

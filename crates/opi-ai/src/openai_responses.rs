@@ -19,7 +19,10 @@ use crate::message::{
     AssistantContent, AssistantMessage, OutputContent, TOOL_ERROR_MARKER, ToolCall,
 };
 use crate::model_info::WireApi;
-use crate::provider::{CacheRetention, EventStream, ModelInfo, Provider, ProviderError, Request};
+use crate::provider::{
+    CacheRetention, EventStream, ModelInfo, Provider, ProviderError, Request,
+    github_copilot_initiator, github_copilot_route_headers,
+};
 use crate::provider_headers::ProviderHeaders;
 use crate::registry::ModelCapabilities;
 use crate::stream::{AssistantStreamEvent, StopReason, Usage};
@@ -821,6 +824,7 @@ pub struct OpenAiResponsesProvider {
     headers: ProviderHeaders,
     route_headers: Vec<(String, String)>,
     catalog_compat: bool,
+    copilot_headers: bool,
     client: Arc<HttpClient>,
 }
 
@@ -938,6 +942,7 @@ impl OpenAiResponsesProvider {
             headers: ProviderHeaders::default(),
             route_headers: extra_headers,
             catalog_compat: false,
+            copilot_headers: false,
             client,
         }
     }
@@ -960,8 +965,15 @@ impl OpenAiResponsesProvider {
             headers,
             route_headers: Vec::new(),
             catalog_compat: true,
+            copilot_headers: false,
             client,
         }
+    }
+
+    /// Enable GitHub Copilot's request-dependent route headers.
+    pub fn with_copilot_headers(mut self) -> Self {
+        self.copilot_headers = true;
+        self
     }
 
     fn resolve_config(&self, model_id: &str) -> ResponsesConfig {
@@ -1412,9 +1424,24 @@ impl Provider for OpenAiResponsesProvider {
             .find(|model| model.id == model_id)
             .and_then(|model| model.base_url.clone());
         let config = self.resolve_config(model_id);
-        let extra_headers = self
-            .headers
-            .merge_request(&self.route_headers, &request.extra_headers);
+        let copilot_headers = if self.copilot_headers {
+            match github_copilot_route_headers(&request) {
+                Ok(mut headers) => {
+                    let initiator = github_copilot_initiator(&request);
+                    headers.push(("X-Initiator".into(), initiator.into()));
+                    Ok(headers)
+                }
+                Err(error) => Err(error),
+            }
+        } else {
+            Ok(Vec::new())
+        };
+        let extra_headers = copilot_headers.and_then(|copilot_headers| {
+            let mut route_headers = self.route_headers.clone();
+            route_headers.extend(copilot_headers);
+            self.headers
+                .merge_request(&route_headers, &request.extra_headers)
+        });
         let timeout = request.timeout;
         let session_id = if request.cache_retention != CacheRetention::Disabled {
             request.session_id.clone().filter(|id| !id.is_empty())
