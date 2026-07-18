@@ -911,10 +911,12 @@ fn first_class_provider_set_is_unchanged() {
         "stream",
         "test_support",
         "time",
-        // Phase 14 provider/auth contracts; these are support modules, not
-        // additional first-class provider families.
+        // Phase 14 provider/auth and API-mapped routing contracts; these are
+        // support modules, not additional first-class provider families.
+        "api_mapped",
         "auth",
         "credential",
+        "provider_headers",
     ]
     .into_iter()
     .collect();

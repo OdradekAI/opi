@@ -19,6 +19,7 @@ use crate::message::{
 };
 use crate::model_info::WireApi;
 use crate::provider::{CacheRetention, EventStream, ModelInfo, Provider, ProviderError, Request};
+use crate::provider_headers::ProviderHeaders;
 use crate::registry::ModelCapabilities;
 use crate::stream::{AssistantStreamEvent, StopReason, Usage};
 
@@ -775,7 +776,9 @@ pub struct OpenAiChatProvider {
     compat: CompatConfig,
     model_overrides: HashMap<String, ModelCompatOverride>,
     provider_id: String,
-    extra_headers: Vec<(String, String)>,
+    headers: ProviderHeaders,
+    route_headers: Vec<(String, String)>,
+    catalog_compat: bool,
     direct_prompt_cache_key: bool,
     copilot_initiator: bool,
     client: Arc<HttpClient>,
@@ -890,7 +893,9 @@ impl OpenAiChatProvider {
             compat,
             model_overrides: HashMap::new(),
             provider_id,
-            extra_headers,
+            headers: ProviderHeaders::default(),
+            route_headers: extra_headers,
+            catalog_compat: false,
             direct_prompt_cache_key,
             copilot_initiator: false,
             client,
@@ -917,10 +922,37 @@ impl OpenAiChatProvider {
             compat,
             model_overrides: HashMap::new(),
             provider_id,
-            extra_headers,
+            headers: ProviderHeaders::default(),
+            route_headers: extra_headers,
+            catalog_compat: false,
             direct_prompt_cache_key: false,
             copilot_initiator: false,
             client: Arc::new(HttpClient::new()),
+        }
+    }
+
+    /// Build a Chat Completions route for a mapped provider.
+    pub fn for_route(
+        auth: Arc<dyn AuthResolver>,
+        default_base_url: Option<String>,
+        provider_id: String,
+        headers: ProviderHeaders,
+        models: Vec<ModelInfo>,
+        client: Arc<HttpClient>,
+    ) -> Self {
+        Self {
+            auth,
+            base_url: default_base_url.unwrap_or_else(|| "https://api.openai.com".into()),
+            models,
+            compat: CompatConfig::default(),
+            model_overrides: HashMap::new(),
+            provider_id,
+            headers,
+            route_headers: Vec::new(),
+            catalog_compat: true,
+            direct_prompt_cache_key: false,
+            copilot_initiator: false,
+            client,
         }
     }
 
@@ -949,6 +981,14 @@ impl OpenAiChatProvider {
     /// Resolve the effective [`CompatConfig`] for a request's model, layering
     /// any model-level override on top of the provider-level default.
     fn resolve_compat(&self, model_id: &str) -> CompatConfig {
+        if self.catalog_compat
+            && let Some(ModelInfo {
+                compat: crate::model_info::WireCompat::OpenAiCompletions(compat),
+                ..
+            }) = self.models.iter().find(|model| model.id == model_id)
+        {
+            return compat.clone();
+        }
         let Some(ov) = self.model_overrides.get(model_id) else {
             return self.compat.clone();
         };
@@ -1228,7 +1268,7 @@ fn map_http_status(
         // A 401 on a Bearer (OAuth) credential — e.g. Copilot — is typed
         // non-retryable CredentialRevoked with the body dropped (the body may
         // echo the submitted token). API-key profiles keep AuthFailed.
-        401 if scheme == AuthScheme::Bearer => ProviderError::CredentialRevoked {
+        401 | 403 if scheme == AuthScheme::Bearer => ProviderError::CredentialRevoked {
             provider_id: provider_id.to_owned(),
         },
         401 => ProviderError::AuthFailed(format!(
@@ -1392,12 +1432,17 @@ fn serialize_messages(
 impl Provider for OpenAiChatProvider {
     fn stream(&self, request: Request) -> EventStream {
         let auth = self.auth.clone();
-        let base_url = self.base_url.clone();
+        let default_base_url = self.base_url.clone();
         let provider_id = self.provider_id.clone();
-        let chat_completions_path = self.compat.chat_completions_path.clone();
-        // Merge static provider extra_headers with per-request extra_headers.
-        let mut extra_headers = self.extra_headers.clone();
-        extra_headers.extend(request.extra_headers.clone());
+        let model_id = request
+            .model
+            .split_once(':')
+            .map(|(_, model_id)| model_id)
+            .unwrap_or(&request.model);
+        let model = self.models.iter().find(|model| model.id == model_id);
+        let model_base_url = model.and_then(|model| model.base_url.clone());
+        let chat_completions_path = self.resolve_compat(model_id).chat_completions_path;
+        let mut extra_headers = self.route_headers.clone();
         if self.copilot_initiator {
             extra_headers.retain(|(name, _)| !name.eq_ignore_ascii_case("x-initiator"));
             let initiator = match request.messages.last() {
@@ -1406,7 +1451,7 @@ impl Provider for OpenAiChatProvider {
             };
             extra_headers.push(("X-Initiator".into(), initiator.into()));
         }
-        if self.compat.send_session_affinity_headers
+        if self.resolve_compat(model_id).send_session_affinity_headers
             && request.cache_retention != CacheRetention::Disabled
             && let Some(session_id) = request.session_id.as_deref()
             && !session_id.is_empty()
@@ -1425,6 +1470,9 @@ impl Provider for OpenAiChatProvider {
                     .map(|name| (name.into(), clamped.clone())),
             );
         }
+        let extra_headers = self
+            .headers
+            .merge_request(&extra_headers, &request.extra_headers);
         let timeout = request.timeout;
         let body = self.build_request_body(&request);
         let cancel = request.cancel.clone();
@@ -1433,11 +1481,13 @@ impl Provider for OpenAiChatProvider {
         let (tx, rx) = tokio::sync::mpsc::channel(64);
 
         tokio::spawn(async move {
-            // Validate merged extra headers before any network call.
-            if let Err(e) = crate::provider::validate_extra_headers(&extra_headers) {
-                let _ = tx.send(Err(e)).await;
-                return;
-            }
+            let extra_headers = match extra_headers {
+                Ok(headers) => headers,
+                Err(error) => {
+                    let _ = tx.send(Err(error)).await;
+                    return;
+                }
+            };
             let resolved = match auth.resolve().await {
                 Ok(resolved) => resolved,
                 Err(e) => {
@@ -1445,6 +1495,11 @@ impl Provider for OpenAiChatProvider {
                     return;
                 }
             };
+            let base_url = resolved
+                .base_url
+                .clone()
+                .or(model_base_url)
+                .unwrap_or(default_base_url);
             if let Err(e) = Self::stream_http(
                 http_client,
                 resolved,

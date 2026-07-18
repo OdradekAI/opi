@@ -20,6 +20,7 @@ use crate::message::{
 };
 use crate::model_info::WireApi;
 use crate::provider::{CacheRetention, EventStream, ModelInfo, Provider, ProviderError, Request};
+use crate::provider_headers::ProviderHeaders;
 use crate::registry::ModelCapabilities;
 use crate::stream::{AssistantStreamEvent, StopReason, Usage};
 
@@ -817,7 +818,9 @@ pub struct OpenAiResponsesProvider {
     /// `/login openai-codex` remediation resolves.
     provider_id: String,
     /// Static per-request headers (Codex `OpenAI-Beta`, `originator`, `accept`).
-    extra_headers: Vec<(String, String)>,
+    headers: ProviderHeaders,
+    route_headers: Vec<(String, String)>,
+    catalog_compat: bool,
     client: Arc<HttpClient>,
 }
 
@@ -932,9 +935,52 @@ impl OpenAiResponsesProvider {
             models,
             config,
             provider_id,
-            extra_headers,
+            headers: ProviderHeaders::default(),
+            route_headers: extra_headers,
+            catalog_compat: false,
             client,
         }
+    }
+
+    /// Build a Responses route for a mapped provider.
+    pub fn for_route(
+        auth: Arc<dyn AuthResolver>,
+        default_base_url: Option<String>,
+        provider_id: String,
+        headers: ProviderHeaders,
+        models: Vec<ModelInfo>,
+        client: Arc<HttpClient>,
+    ) -> Self {
+        Self {
+            auth,
+            base_url: default_base_url.unwrap_or_else(|| "https://api.openai.com".into()),
+            models,
+            config: ResponsesConfig::default(),
+            provider_id,
+            headers,
+            route_headers: Vec::new(),
+            catalog_compat: true,
+            client,
+        }
+    }
+
+    fn resolve_config(&self, model_id: &str) -> ResponsesConfig {
+        if self.catalog_compat
+            && let Some(ModelInfo {
+                compat: crate::model_info::WireCompat::OpenAiResponses(compat),
+                ..
+            }) = self.models.iter().find(|model| model.id == model_id)
+        {
+            return ResponsesConfig {
+                store: compat.store,
+                reasoning_effort: compat.reasoning_effort.clone(),
+                strict_tools: compat.strict_tools,
+                responses_path: compat.responses_path.clone(),
+                derive_codex_account_id: false,
+                send_session_id_header: compat.send_session_id_header,
+            };
+        }
+        self.config.clone()
     }
 
     /// Access the shared HTTP client.
@@ -949,6 +995,7 @@ impl OpenAiResponsesProvider {
             .split_once(':')
             .map(|(_, id)| id)
             .unwrap_or(&request.model);
+        let config = self.resolve_config(model_id);
 
         let mut input = Vec::new();
 
@@ -1092,7 +1139,7 @@ impl OpenAiResponsesProvider {
                             "description": t.description,
                             "parameters": t.input_schema,
                         });
-                        if self.config.strict_tools {
+                        if config.strict_tools {
                             tool["strict"] = serde_json::Value::Bool(true);
                         }
                         tool
@@ -1102,10 +1149,10 @@ impl OpenAiResponsesProvider {
         }
 
         // Native Responses profile flags (Phase 12 task 12.3).
-        if let Some(store) = self.config.store {
+        if let Some(store) = config.store {
             body["store"] = serde_json::Value::Bool(store);
         }
-        if let Some(effort) = self.config.reasoning_effort.as_ref()
+        if let Some(effort) = config.reasoning_effort.as_ref()
             && !effort.is_empty()
         {
             body["reasoning"] = serde_json::json!({ "effort": effort });
@@ -1210,7 +1257,7 @@ impl OpenAiResponsesProvider {
 
         let mut byte_stream = response.bytes_stream();
         let mut buffer = String::new();
-        let mut mapper = ResponsesMapper::new("openai-responses");
+        let mut mapper = ResponsesMapper::new(&provider_id);
 
         loop {
             let chunk = tokio::select! {
@@ -1328,7 +1375,7 @@ fn map_http_status(
         // A 401 on a Bearer (OAuth) credential — e.g. Codex — is typed
         // non-retryable CredentialRevoked with the body dropped (the body may
         // echo the submitted token). API-key Responses stays AuthFailed.
-        401 if scheme == AuthScheme::Bearer => ProviderError::CredentialRevoked {
+        401 | 403 if scheme == AuthScheme::Bearer => ProviderError::CredentialRevoked {
             provider_id: provider_id.to_owned(),
         },
         401 => ProviderError::AuthFailed(format!(
@@ -1352,11 +1399,22 @@ fn map_http_status(
 impl Provider for OpenAiResponsesProvider {
     fn stream(&self, request: Request) -> EventStream {
         let auth = self.auth.clone();
-        let base_url = self.base_url.clone();
-        let config = self.config.clone();
-        let mut extra_headers = self.extra_headers.clone();
-        extra_headers.extend(request.extra_headers.clone());
+        let default_base_url = self.base_url.clone();
         let provider_id = self.provider_id.clone();
+        let model_id = request
+            .model
+            .split_once(':')
+            .map(|(_, model_id)| model_id)
+            .unwrap_or(&request.model);
+        let model_base_url = self
+            .models
+            .iter()
+            .find(|model| model.id == model_id)
+            .and_then(|model| model.base_url.clone());
+        let config = self.resolve_config(model_id);
+        let extra_headers = self
+            .headers
+            .merge_request(&self.route_headers, &request.extra_headers);
         let timeout = request.timeout;
         let session_id = if request.cache_retention != CacheRetention::Disabled {
             request.session_id.clone().filter(|id| !id.is_empty())
@@ -1377,10 +1435,13 @@ impl Provider for OpenAiResponsesProvider {
         let (tx, rx) = tokio::sync::mpsc::channel(64);
 
         tokio::spawn(async move {
-            if let Err(e) = crate::provider::validate_extra_headers(&extra_headers) {
-                let _ = tx.send(Err(e)).await;
-                return;
-            }
+            let extra_headers = match extra_headers {
+                Ok(headers) => headers,
+                Err(error) => {
+                    let _ = tx.send(Err(error)).await;
+                    return;
+                }
+            };
             let resolved = match auth.resolve().await {
                 Ok(resolved) => resolved,
                 Err(e) => {
@@ -1388,6 +1449,11 @@ impl Provider for OpenAiResponsesProvider {
                     return;
                 }
             };
+            let base_url = resolved
+                .base_url
+                .clone()
+                .or(model_base_url)
+                .unwrap_or(default_base_url);
             if let Err(e) = Self::stream_http(
                 http_client,
                 resolved,

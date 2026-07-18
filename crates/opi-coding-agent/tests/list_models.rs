@@ -702,3 +702,85 @@ async fn bedrock_listing_matches_secret_free_runtime_auth_presence() {
         }
     }
 }
+
+#[test]
+fn custom_mapped_provider_lists_one_identity() {
+    use std::collections::HashMap;
+
+    use opi_coding_agent::config::load_config_file;
+    use opi_coding_agent::provider_factory::build_collection_for_listing;
+
+    let _env_guard = ENV_LOCK.lock().expect("env lock");
+    let env_name = "OPI_TEST_CUSTOM_LIST_ONE_IDENTITY_1416";
+    let original = std::env::var_os(env_name);
+    // SAFETY: the test uses a task-unique variable and restores it below.
+    unsafe { std::env::set_var(env_name, "test-key") };
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("config.toml");
+    std::fs::write(
+        &path,
+        format!(
+            r#"
+[providers.custom.acme]
+base_url = "https://api.acme.example"
+api_key_env = "{env_name}"
+auth_scheme = "bearer"
+
+[[providers.custom.acme.models]]
+id = "claude"
+api = "anthropic-messages"
+context_window = 200000
+max_output_tokens = 8192
+
+[[providers.custom.acme.models]]
+id = "chat"
+api = "openai-completions"
+context_window = 128000
+max_output_tokens = 8192
+
+[[providers.custom.acme.models]]
+id = "responses"
+api = "openai-responses"
+context_window = 128000
+max_output_tokens = 8192
+"#
+        ),
+    )
+    .unwrap();
+    let config = load_config_file(&path).unwrap();
+    let collection = build_collection_for_listing(&config, &HashMap::new()).unwrap();
+    let entries = model_entries_from_registry(collection.registry());
+
+    let custom: Vec<_> = entries
+        .iter()
+        .filter(|entry| entry.provider_id == "acme")
+        .collect();
+    assert_eq!(custom.len(), 3);
+    assert_eq!(
+        custom
+            .iter()
+            .map(|entry| entry.model_id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["claude", "chat", "responses"]
+    );
+    assert!(
+        entries.iter().all(|entry| {
+            !entry.provider_id.contains("route")
+                && !entry.provider_id.contains("anthropic-messages")
+                && !entry.provider_id.contains("openai-completions")
+                && !entry.provider_id.contains("openai-responses")
+        }),
+        "hidden route ids leaked into listing"
+    );
+
+    match original {
+        Some(value) => {
+            // SAFETY: restoring the task-unique variable.
+            unsafe { std::env::set_var(env_name, value) };
+        }
+        None => {
+            // SAFETY: restoring the task-unique variable.
+            unsafe { std::env::remove_var(env_name) };
+        }
+    }
+}

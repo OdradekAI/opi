@@ -43,9 +43,11 @@ use opi_agent::extension::ExtensionRegistry;
 use opi_ai::provider::{EventStream, ModelInfo, Provider, ProviderError, Request};
 use opi_ai::registry::ModelCapabilities;
 use opi_ai::{AuthDescriptor, CompatMetadata, ProviderCollection, ProviderRegistry, WireApi};
-use secrecy::ExposeSecret;
+use secrecy::{ExposeSecret, SecretString};
 
-use crate::config::{OpenAiCompatibleProviderConfig, OpiConfig, build_http_client};
+use crate::config::{
+    CustomProviderConfig, OpenAiCompatibleProviderConfig, OpiConfig, build_http_client,
+};
 use crate::credential_store::{ApiKeySource, AuthSource, CredentialResolver};
 use crate::diagnostic_bridge::diagnostic_for_model_registry_error;
 use crate::oauth::OAuthProviderRegistry;
@@ -216,6 +218,33 @@ fn profile_api_key_env_default(provider_id: &str) -> String {
         "{}_API_KEY",
         provider_id.replace('-', "_").to_ascii_uppercase()
     )
+}
+
+struct EnvAuthResolver {
+    provider_id: String,
+    env_name: String,
+    scheme: opi_ai::AuthScheme,
+}
+
+impl opi_ai::AuthResolver for EnvAuthResolver {
+    fn resolve<'a>(
+        &'a self,
+    ) -> opi_ai::BoxAuthFuture<'a, Result<opi_ai::ResolvedAuth, ProviderError>> {
+        Box::pin(async move {
+            let secret = std::env::var(&self.env_name)
+                .ok()
+                .filter(|value| !value.trim().is_empty())
+                .ok_or_else(|| ProviderError::CredentialNeeded {
+                    provider_id: self.provider_id.clone(),
+                })?;
+            Ok(opi_ai::ResolvedAuth {
+                scheme: self.scheme,
+                secret: SecretString::from(secret),
+                base_url: None,
+                account_id: None,
+            })
+        })
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -562,23 +591,60 @@ fn openai_compatible_model_catalog(
                 profile.id
             ));
         }
-        models.push(ModelInfo::new(
-            &model.id,
-            if model.display_name.is_empty() {
-                model.id.clone()
-            } else {
-                model.display_name.clone()
-            },
-            WireApi::OpenAiCompletions,
-            ModelCapabilities::new(model.context_window, model.max_output_tokens),
-        ));
+        models.push(
+            ModelInfo::new(
+                &model.id,
+                if model.display_name.is_empty() {
+                    model.id.clone()
+                } else {
+                    model.display_name.clone()
+                },
+                WireApi::OpenAiCompletions,
+                ModelCapabilities::new(model.context_window, model.max_output_tokens)
+                    .with_images(model.supports_images)
+                    .with_streaming(model.supports_streaming)
+                    .with_thinking(model.supports_thinking),
+            )
+            .with_compat(opi_ai::WireCompat::OpenAiCompletions({
+                let mut compat = opi_ai::model_info::OpenAiCompletionsCompat {
+                    system_role_override: profile.system_role_override.clone(),
+                    max_tokens_field: profile
+                        .max_tokens_field
+                        .clone()
+                        .unwrap_or_else(|| "max_tokens".into()),
+                    tool_result_name_field: profile.tool_result_name_field,
+                    usage_in_stream: profile.usage_in_stream,
+                    strict_tool_schema: profile.strict_tool_schema,
+                    reasoning_effort: profile.reasoning_effort.clone(),
+                    cache_key: profile.cache_key.clone(),
+                    send_session_affinity_headers: false,
+                    require_assistant_after_tool_result: profile
+                        .require_assistant_after_tool_result,
+                    chat_completions_path: profile
+                        .chat_completions_path
+                        .clone()
+                        .unwrap_or_else(|| "/v1/chat/completions".into()),
+                    supports_store: false,
+                    supports_developer_role: false,
+                    supports_reasoning_effort: profile.reasoning_effort.is_some(),
+                };
+                if let Some(value) = &model.system_role_override {
+                    compat.system_role_override = Some(value.clone());
+                }
+                if let Some(value) = &model.max_tokens_field {
+                    compat.max_tokens_field = value.clone();
+                }
+                compat
+            }))
+            .map_err(|error| error.to_string())?,
+        );
     }
     Ok(models)
 }
 
 fn build_runtime_openai_compatible_profile(
     profile: &OpenAiCompatibleProviderConfig,
-) -> Result<opi_ai::openai_chat::OpenAiChatProvider, ProviderBuildError> {
+) -> Result<opi_ai::ApiMappedProvider, ProviderBuildError> {
     let default_env = profile_api_key_env_default(&profile.id);
     let env_name = resolve_env_name(&profile.api_key_env, &default_env);
     let api_key = require_api_key(&env_name)?;
@@ -590,62 +656,99 @@ fn build_openai_compatible_profile(
     profile: &OpenAiCompatibleProviderConfig,
     api_key: String,
     client: Arc<opi_ai::http::HttpClient>,
-) -> Result<opi_ai::openai_chat::OpenAiChatProvider, String> {
+) -> Result<opi_ai::ApiMappedProvider, String> {
     let models = openai_compatible_model_catalog(profile)?;
-
-    let compat = opi_ai::openai_chat::CompatConfig {
-        system_role_override: profile.system_role_override.clone(),
-        max_tokens_field: profile
-            .max_tokens_field
-            .clone()
-            .unwrap_or_else(|| "max_tokens".into()),
-        tool_result_name_field: profile.tool_result_name_field,
-        usage_in_stream: profile.usage_in_stream,
-        strict_tool_schema: profile.strict_tool_schema,
-        reasoning_effort: profile.reasoning_effort.clone(),
-        cache_key: profile.cache_key.clone(),
-        send_session_affinity_headers: false,
-        require_assistant_after_tool_result: profile.require_assistant_after_tool_result,
-        chat_completions_path: profile
-            .chat_completions_path
-            .clone()
-            .unwrap_or_else(|| "/v1/chat/completions".into()),
-        supports_store: false,
-        supports_developer_role: false,
-        supports_reasoning_effort: profile.reasoning_effort.is_some(),
-    };
-
-    // Session-affinity headers from config (Phase 12.3).
-    let extra_headers: Vec<(String, String)> = profile.extra_headers.clone();
-
-    // Model-level compat overrides win over the provider-level default for the
-    // models that declare them (Phase 12.3 provider/model precedence).
-    let mut model_overrides: std::collections::HashMap<
-        String,
-        opi_ai::openai_chat::ModelCompatOverride,
-    > = std::collections::HashMap::new();
-    for model in &profile.models {
-        if model.system_role_override.is_some() || model.max_tokens_field.is_some() {
-            model_overrides.insert(
-                model.id.clone(),
-                opi_ai::openai_chat::ModelCompatOverride {
-                    system_role_override: model.system_role_override.clone(),
-                    max_tokens_field: model.max_tokens_field.clone(),
-                },
-            );
-        }
-    }
-
-    Ok(opi_ai::openai_chat::OpenAiChatProvider::new_for_profile(
-        api_key,
-        profile.base_url.clone(),
+    let headers = opi_ai::ProviderHeaders::try_new(profile.extra_headers.clone())
+        .map_err(|e| e.to_string())?;
+    let auth: Arc<dyn opi_ai::AuthResolver> = Arc::new(opi_ai::StaticAuthResolver::new(
+        opi_ai::AuthScheme::Bearer,
+        SecretString::from(api_key),
+    ));
+    let route = opi_ai::openai_chat::OpenAiChatProvider::for_route(
+        auth,
+        Some(profile.base_url.clone()),
         profile.id.clone(),
-        compat,
-        extra_headers,
-        models,
-    )
-    .with_model_overrides(model_overrides)
-    .with_shared_client(client))
+        headers,
+        models.clone(),
+        client,
+    );
+    let mut routes: std::collections::BTreeMap<WireApi, Box<dyn Provider>> =
+        std::collections::BTreeMap::new();
+    routes.insert(WireApi::OpenAiCompletions, Box::new(route));
+    opi_ai::ApiMappedProvider::try_new(profile.id.clone(), models, routes)
+        .map_err(|error| error.to_string())
+}
+
+fn build_custom_provider(
+    profile: &CustomProviderConfig,
+    pre_resolved: Option<String>,
+) -> Result<opi_ai::ApiMappedProvider, ProviderBuildError> {
+    let client = build_proxied_client(profile.proxy.as_ref())?;
+    let headers = opi_ai::ProviderHeaders::try_new(profile.headers.clone())
+        .map_err(|error| ProviderBuildError::Config(error.to_string()))?;
+    let auth: Arc<dyn opi_ai::AuthResolver> = match pre_resolved {
+        Some(secret) => Arc::new(opi_ai::StaticAuthResolver::new(
+            profile.auth_scheme,
+            SecretString::from(secret),
+        )),
+        None => Arc::new(EnvAuthResolver {
+            provider_id: profile.id.clone(),
+            env_name: profile.api_key_env.clone(),
+            scheme: profile.auth_scheme,
+        }),
+    };
+    let mut routes: std::collections::BTreeMap<WireApi, Box<dyn Provider>> =
+        std::collections::BTreeMap::new();
+    for wire in profile
+        .models
+        .iter()
+        .map(|model| model.wire_api)
+        .collect::<std::collections::BTreeSet<_>>()
+    {
+        let models: Vec<ModelInfo> = profile
+            .models
+            .iter()
+            .filter(|model| model.wire_api == wire)
+            .cloned()
+            .collect();
+        let route: Box<dyn Provider> = match wire {
+            WireApi::AnthropicMessages => {
+                Box::new(opi_ai::anthropic::AnthropicProvider::for_route(
+                    Arc::clone(&auth),
+                    profile.id.clone(),
+                    models,
+                    profile.base_url.clone(),
+                    headers.clone(),
+                    Arc::clone(&client),
+                    false,
+                ))
+            }
+            WireApi::OpenAiCompletions => {
+                Box::new(opi_ai::openai_chat::OpenAiChatProvider::for_route(
+                    Arc::clone(&auth),
+                    profile.base_url.clone(),
+                    profile.id.clone(),
+                    headers.clone(),
+                    models,
+                    Arc::clone(&client),
+                ))
+            }
+            WireApi::OpenAiResponses => Box::new(
+                opi_ai::openai_responses::OpenAiResponsesProvider::for_route(
+                    Arc::clone(&auth),
+                    profile.base_url.clone(),
+                    profile.id.clone(),
+                    headers.clone(),
+                    models,
+                    Arc::clone(&client),
+                ),
+            ),
+            _ => unreachable!("custom config validation restricts the route set"),
+        };
+        routes.insert(wire, route);
+    }
+    opi_ai::ApiMappedProvider::try_new(profile.id.clone(), profile.models.clone(), routes)
+        .map_err(|error| ProviderBuildError::Config(error.to_string()))
 }
 
 // ---------------------------------------------------------------------------
@@ -1006,7 +1109,11 @@ fn api_key_env_name(config: &OpiConfig, provider_id: &str) -> Option<String> {
             &config.providers.vertex.access_token_env,
             "VERTEX_ACCESS_TOKEN",
         )),
-        _ => None,
+        _ => config
+            .providers
+            .custom
+            .get(provider_id)
+            .map(|profile| profile.api_key_env.clone()),
     }
 }
 
@@ -1293,7 +1400,10 @@ fn build_runtime_provider(
         ),
         "vertex" => (build_vertex(config, pre_resolved)?, WireApi::GoogleVertex),
         other => {
-            if let Some(profile) = config.providers.openai_compatible.get(other) {
+            if let Some(profile) = config.providers.custom.get(other) {
+                let provider = build_custom_provider(profile, pre_resolved)?;
+                return Ok(Box::new(provider));
+            } else if let Some(profile) = config.providers.openai_compatible.get(other) {
                 let provider = build_runtime_openai_compatible_profile(profile)?;
                 (
                     Box::new(provider) as Box<dyn Provider>,
@@ -1511,6 +1621,22 @@ pub fn build_collection_for_listing(
         if let Err(e) = collection.register(Box::new(provider), auth, compat) {
             return Err(ListModelsError::Config(format!(
                 "profile registration failed: {e}"
+            )));
+        }
+    }
+    for profile in config.providers.custom.values() {
+        if !listing_auth_available(Some(&profile.api_key_env), None) {
+            continue;
+        }
+        let _ = build_proxied_client_for_listing(profile.proxy.as_ref())?;
+        let provider = MetadataProvider::new(profile.id.clone(), profile.models.clone());
+        let auth = AuthDescriptor::Resolved {
+            source: format!("env {}", profile.api_key_env),
+        };
+        if let Err(error) = collection.register(Box::new(provider), auth, CompatMetadata::default())
+        {
+            return Err(ListModelsError::Config(format!(
+                "custom provider registration failed: {error}"
             )));
         }
     }

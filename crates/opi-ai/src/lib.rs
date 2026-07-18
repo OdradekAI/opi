@@ -5,6 +5,7 @@
 //! OpenAI-compatible profiles for OpenRouter and Mistral.
 
 pub mod anthropic;
+pub mod api_mapped;
 pub mod auth;
 pub mod azure_openai;
 pub mod bedrock;
@@ -22,6 +23,7 @@ pub mod openai_responses;
 pub mod openrouter;
 pub mod provider;
 pub mod provider_collection;
+pub mod provider_headers;
 pub mod registry;
 pub mod retry;
 pub mod stream;
@@ -30,6 +32,7 @@ pub mod test_support;
 pub mod time;
 pub mod vertex;
 
+pub use api_mapped::{ApiMapError, ApiMappedProvider};
 pub use auth::{
     AuthResolver, AuthScheme, LoginPresenter, OAuthCredential, OAuthProvider, ResolvedAuth,
     StaticAuthResolver,
@@ -48,6 +51,7 @@ pub use provider_collection::{
     AuthDescriptor, AuthStatus, CollectionError, CompatMetadata, CompletedRequest,
     ProviderCollection, SecretKey,
 };
+pub use provider_headers::{ProviderHeaders, ProviderHeadersError};
 pub use registry::{ProviderRegistry, RegistrationError, RegistryError};
 pub use stream::AssistantStreamEvent;
 pub use stream::{CostBreakdown, CumulativeUsage, Pricing, calculate_cost};

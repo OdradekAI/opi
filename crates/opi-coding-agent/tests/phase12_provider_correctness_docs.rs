@@ -161,10 +161,12 @@ const NON_PROVIDER_MODULES: &[&str] = &[
     "stream",
     "test_support",
     "time",
-    // Phase 14 auth-contract modules (not providers): per-request auth
-    // resolution contracts (auth.rs) and the credential envelope (credential.rs).
+    // Phase 14 infrastructure modules (not first-class providers): per-request
+    // auth resolution, credential envelopes, and API-mapped routing/header policy.
+    "api_mapped",
     "auth",
     "credential",
+    "provider_headers",
 ];
 
 /// Phase 12 non-goals not superseded by Phase 14, with an English and a

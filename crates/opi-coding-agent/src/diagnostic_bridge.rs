@@ -237,5 +237,22 @@ pub fn diagnostic_from_config(err: &ConfigError) -> Diagnostic {
         )
         .details(serde_json::json!({ "path": path.display().to_string() }))
         .action("check file permissions or remove the file to use defaults"),
+        ConfigError::InvalidCustomProvider {
+            provider,
+            model,
+            field,
+            ..
+        } => Diagnostic::new(
+            Severity::Error,
+            CODE_CONFIG_PARSE_FAILED,
+            SOURCE_CONFIG,
+            "invalid custom provider configuration",
+        )
+        .details(serde_json::json!({
+            "provider": provider,
+            "model": model,
+            "field": field,
+        }))
+        .action("fix the custom provider contract before starting opi"),
     }
 }

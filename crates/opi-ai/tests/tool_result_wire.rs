@@ -404,9 +404,11 @@ fn provider_tool_result_error_no_phase12_breadth_guard() {
     // deliberately updating this baseline; this guard catches an accidental add.
     // (Phase 14.1 added the `credential` module; Phase 14.2 added the `auth`
     // module with scoped OAuth auth contracts; Phase 14.15 added the
-    // `model_info` model-routing metadata contract.)
+    // `model_info` model-routing metadata contract; Phase 14.16 added
+    // `api_mapped` and `provider_headers` for custom mapped routing.)
     let baseline_modules = vec![
         "anthropic",
+        "api_mapped",
         "auth",
         "azure_openai",
         "bedrock",
@@ -423,6 +425,7 @@ fn provider_tool_result_error_no_phase12_breadth_guard() {
         "openrouter",
         "provider",
         "provider_collection",
+        "provider_headers",
         "registry",
         "retry",
         "stream",

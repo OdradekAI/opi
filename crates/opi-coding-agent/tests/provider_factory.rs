@@ -1896,6 +1896,58 @@ max_tokens_field = "max_completion_tokens"
     server.verify().await;
 }
 
+#[tokio::test]
+#[allow(clippy::await_holding_lock)] // Serializes process-env mutation; awaited mapped streaming never re-acquires this lock.
+async fn openai_compatible_profiles_lower_through_mapped_provider() {
+    use futures_util::StreamExt;
+    use opi_coding_agent::config::load_config_file;
+    use opi_coding_agent::provider_factory::build_provider;
+
+    let _env_guard = ENV_MUTEX.lock().expect("env lock");
+    let env_var = "OPI_TEST_OPENAI_COMPAT_MAPPED_1416";
+    let _guard = EnvVarGuard::set(env_var, "test-key");
+    let dir = tempfile::tempdir().unwrap();
+    let config_path = dir.path().join("mapped-profile.toml");
+    std::fs::write(
+        &config_path,
+        format!(
+            r#"
+[defaults]
+model = "prof:m1"
+
+[providers.openai_compatible.prof]
+api_key_env = "{env_var}"
+base_url = "http://127.0.0.1:9"
+
+[[providers.openai_compatible.prof.models]]
+id = "m1"
+display_name = "M1"
+context_window = 128000
+max_output_tokens = 4096
+"#
+        ),
+    )
+    .unwrap();
+    let config = load_config_file(&config_path).unwrap();
+    let provider = build_provider(&config).unwrap();
+    let model_count_before_unknown_request = provider.models().len();
+    let error = provider
+        .stream(minimal_request("prof:unknown"))
+        .next()
+        .await
+        .unwrap()
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        opi_ai::provider::ProviderError::UnknownModel {
+            ref provider_id,
+            ref model_id
+        } if provider_id == "prof" && model_id == "unknown"
+    ));
+    assert_eq!(provider.id(), "prof");
+    assert_eq!(model_count_before_unknown_request, 1);
+}
+
 /// The harness model-lookup collection is built via
 /// `ProviderCollection::from_registry` with NO auth descriptors, distinct from
 /// `build_collection_for_listing`'s register-with-AuthDescriptor listing path.

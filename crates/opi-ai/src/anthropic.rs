@@ -12,6 +12,7 @@ use crate::http::HttpClient;
 use crate::message::{AssistantContent, AssistantMessage, ToolCall};
 use crate::model_info::WireApi;
 use crate::provider::{CacheRetention, EventStream, ModelInfo, Provider, ProviderError, Request};
+use crate::provider_headers::ProviderHeaders;
 use crate::registry::ModelCapabilities;
 use crate::stream::{AssistantStreamEvent, StopReason, Usage};
 
@@ -385,8 +386,12 @@ impl Default for AnthropicMapper {
 
 impl AnthropicMapper {
     pub fn new() -> Self {
+        Self::new_for_provider("anthropic")
+    }
+
+    fn new_for_provider(provider_id: &str) -> Self {
         Self {
-            partial: empty_assistant_message(),
+            partial: empty_assistant_message(provider_id),
             blocks: Vec::new(),
             saw_done: false,
         }
@@ -607,11 +612,11 @@ fn map_stop_reason(raw: Option<&str>) -> StopReason {
     }
 }
 
-fn empty_assistant_message() -> AssistantMessage {
+fn empty_assistant_message(provider_id: &str) -> AssistantMessage {
     AssistantMessage {
         content: Vec::new(),
         api: crate::ApiKind::Anthropic,
-        provider: "anthropic".into(),
+        provider: provider_id.into(),
         model: String::new(),
         response_model: None,
         response_id: None,
@@ -675,8 +680,11 @@ pub fn model_catalog() -> Vec<ModelInfo> {
 /// Concrete Anthropic Messages API provider.
 pub struct AnthropicProvider {
     auth: Arc<dyn AuthResolver>,
-    base_url: String,
+    provider_id: String,
+    default_base_url: String,
     models: Vec<ModelInfo>,
+    headers: ProviderHeaders,
+    direct_oauth_beta: bool,
     client: Arc<HttpClient>,
 }
 
@@ -704,12 +712,37 @@ impl AnthropicProvider {
         base_url: Option<String>,
         client: Arc<HttpClient>,
     ) -> Self {
-        let base_url = base_url.unwrap_or_else(|| "https://api.anthropic.com".into());
-        let models = model_catalog();
+        Self::for_route(
+            auth,
+            "anthropic".into(),
+            model_catalog(),
+            base_url,
+            ProviderHeaders::default(),
+            client,
+            true,
+        )
+    }
+
+    /// Build an Anthropic Messages route for a mapped provider.
+    #[allow(clippy::too_many_arguments)]
+    pub fn for_route(
+        auth: Arc<dyn AuthResolver>,
+        provider_id: String,
+        models: Vec<ModelInfo>,
+        default_base_url: Option<String>,
+        headers: ProviderHeaders,
+        client: Arc<HttpClient>,
+        direct_oauth_beta: bool,
+    ) -> Self {
+        let default_base_url =
+            default_base_url.unwrap_or_else(|| "https://api.anthropic.com".into());
         Self {
             auth,
-            base_url,
+            provider_id,
+            default_base_url,
             models,
+            headers,
+            direct_oauth_beta,
             client,
         }
     }
@@ -852,6 +885,8 @@ impl AnthropicProvider {
         client: reqwest::Client,
         resolved: ResolvedAuth,
         base_url: String,
+        provider_id: String,
+        direct_oauth_beta: bool,
         body: &serde_json::Value,
         cancel: CancellationToken,
         timeout: Option<std::time::Duration>,
@@ -876,9 +911,10 @@ impl AnthropicProvider {
             AuthScheme::ApiKey => request.header("x-api-key", secret),
             // OAuth Bearer credential: the required beta header rides the same
             // arm. API-key construction never enters this arm.
-            AuthScheme::Bearer => request
+            AuthScheme::Bearer if direct_oauth_beta => request
                 .header("authorization", format!("Bearer {secret}"))
                 .header("anthropic-beta", ANTHROPIC_OAUTH_BETA_HEADER),
+            AuthScheme::Bearer => request.header("authorization", format!("Bearer {secret}")),
         };
         let response = request.send().await.map_err(|e| {
             if e.is_timeout() {
@@ -897,12 +933,13 @@ impl AnthropicProvider {
                 &error_body,
                 &headers,
                 resolved.scheme,
+                &provider_id,
             ));
         }
 
         let mut byte_stream = response.bytes_stream();
         let mut buffer = String::new();
-        let mut mapper = AnthropicMapper::new();
+        let mut mapper = AnthropicMapper::new_for_provider(&provider_id);
 
         loop {
             let chunk = tokio::select! {
@@ -1006,11 +1043,12 @@ fn map_http_status(
     body: &str,
     headers: &reqwest::header::HeaderMap,
     scheme: AuthScheme,
+    provider_id: &str,
 ) -> ProviderError {
     match status.as_u16() {
-        401 if scheme == AuthScheme::Bearer => ProviderError::CredentialRevoked {
+        401 | 403 if scheme == AuthScheme::Bearer => ProviderError::CredentialRevoked {
             // Body intentionally dropped.
-            provider_id: "anthropic".to_owned(),
+            provider_id: provider_id.to_owned(),
         },
         401 => ProviderError::AuthFailed(format!(
             "authentication failed: {}",
@@ -1187,21 +1225,36 @@ fn serialize_messages(
 impl Provider for AnthropicProvider {
     fn stream(&self, request: Request) -> EventStream {
         let auth = self.auth.clone();
-        let base_url = self.base_url.clone();
+        let default_base_url = self.default_base_url.clone();
+        let provider_id = self.provider_id.clone();
+        let direct_oauth_beta = self.direct_oauth_beta;
+        let model_id = request
+            .model
+            .split_once(':')
+            .map(|(_, model_id)| model_id)
+            .unwrap_or(&request.model);
+        let model_base_url = self
+            .models
+            .iter()
+            .find(|model| model.id == model_id)
+            .and_then(|model| model.base_url.clone());
         let body = self.build_request_body(&request);
         let cancel = request.cancel.clone();
         let timeout = request.timeout;
-        let extra_headers = request.extra_headers.clone();
+        let extra_headers = self.headers.merge_request(&[], &request.extra_headers);
         let http_client = self.client.client().clone();
 
         let (tx, rx) = tokio::sync::mpsc::channel(64);
 
         tokio::spawn(async move {
             // Validate extra headers before any network call.
-            if let Err(e) = crate::provider::validate_extra_headers(&extra_headers) {
-                let _ = tx.send(Err(e)).await;
-                return;
-            }
+            let extra_headers = match extra_headers {
+                Ok(headers) => headers,
+                Err(error) => {
+                    let _ = tx.send(Err(error)).await;
+                    return;
+                }
+            };
             let resolved = match auth.resolve().await {
                 Ok(resolved) => resolved,
                 Err(e) => {
@@ -1209,10 +1262,17 @@ impl Provider for AnthropicProvider {
                     return;
                 }
             };
+            let base_url = resolved
+                .base_url
+                .clone()
+                .or(model_base_url)
+                .unwrap_or(default_base_url);
             if let Err(e) = Self::stream_http(
                 http_client,
                 resolved,
                 base_url,
+                provider_id,
+                direct_oauth_beta,
                 &body,
                 cancel,
                 timeout,
@@ -1229,7 +1289,7 @@ impl Provider for AnthropicProvider {
     }
 
     fn id(&self) -> &str {
-        "anthropic"
+        &self.provider_id
     }
 
     fn models(&self) -> &[ModelInfo] {

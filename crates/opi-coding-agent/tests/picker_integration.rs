@@ -5,6 +5,7 @@
 //! collection and result handling.
 
 use std::path::Path;
+use std::sync::Mutex;
 
 use opi_agent::session::{LeafEntry, MessageEntry, SessionEntry};
 use opi_agent::session_branch::SessionTree;
@@ -16,6 +17,7 @@ use opi_coding_agent::picker;
 use opi_tui::select_list::SelectListState;
 
 const KEY_CANARY: &str = "sk-ant-FAKE1234567890abcdefghijklmnop";
+static ENV_MUTEX: Mutex<()> = Mutex::new(());
 
 /// Minimal provider with configurable models for picker tests.
 struct TestProvider {
@@ -161,6 +163,98 @@ fn model_picker_items_include_registry_model_overrides() {
             .iter()
             .any(|item| item.id == "anthropic:custom-sonnet" && item.display == "Custom Sonnet")
     );
+}
+
+#[test]
+fn custom_mapped_provider_picker_uses_one_production_identity() {
+    use opi_coding_agent::config::load_config_file;
+    use opi_coding_agent::harness::CodingHarness;
+    use opi_coding_agent::provider_factory::build_provider;
+
+    let _env_guard = ENV_MUTEX.lock().expect("env lock");
+    let env_name = "OPI_TEST_CUSTOM_PICKER_ONE_IDENTITY_1416";
+    let original = std::env::var_os(env_name);
+    // SAFETY: the test uses a task-unique variable and restores it below.
+    unsafe { std::env::set_var(env_name, "test-key") };
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("config.toml");
+    std::fs::write(
+        &path,
+        format!(
+            r#"
+[defaults]
+model = "acme:claude"
+
+[providers.custom.acme]
+base_url = "https://api.acme.example"
+api_key_env = "{env_name}"
+auth_scheme = "bearer"
+
+[[providers.custom.acme.models]]
+id = "claude"
+display_name = "Claude"
+api = "anthropic-messages"
+context_window = 200000
+max_output_tokens = 8192
+
+[[providers.custom.acme.models]]
+id = "chat"
+display_name = "Chat"
+api = "openai-completions"
+context_window = 128000
+max_output_tokens = 8192
+
+[[providers.custom.acme.models]]
+id = "responses"
+display_name = "Responses"
+api = "openai-responses"
+context_window = 128000
+max_output_tokens = 8192
+"#
+        ),
+    )
+    .unwrap();
+    let config = load_config_file(&path).unwrap();
+    let provider = build_provider(&config).expect("build mapped runtime provider");
+    let harness = CodingHarness::builder(
+        provider,
+        config.defaults.model.clone(),
+        config,
+        root.path().to_path_buf(),
+    )
+    .global_config_dir(root.path().join("global"))
+    .build();
+    let items = harness.model_picker_items();
+
+    let custom: Vec<_> = items
+        .iter()
+        .filter(|item| item.metadata == "acme")
+        .collect();
+    assert_eq!(custom.len(), 3);
+    assert_eq!(
+        custom
+            .iter()
+            .map(|item| item.id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["acme:claude", "acme:chat", "acme:responses"]
+    );
+    assert!(items.iter().all(|item| {
+        !item.metadata.contains("route")
+            && !item.metadata.contains("anthropic-messages")
+            && !item.metadata.contains("openai-completions")
+            && !item.metadata.contains("openai-responses")
+    }));
+
+    match original {
+        Some(value) => {
+            // SAFETY: restoring the task-unique variable.
+            unsafe { std::env::set_var(env_name, value) };
+        }
+        None => {
+            // SAFETY: restoring the task-unique variable.
+            unsafe { std::env::remove_var(env_name) };
+        }
+    }
 }
 
 #[test]

@@ -690,6 +690,24 @@ fn build_http_client_without_proxy_succeeds() {
     assert!(client.proxy_config().url.is_none());
 }
 
+#[test]
+fn custom_provider_standalone_document_remains_strict() {
+    let file = write_toml(
+        r#"
+[providers.custom.incomplete]
+api_key_env = "INCOMPLETE_API_KEY"
+auth_scheme = "bearer"
+[[providers.custom.incomplete.models]]
+id = "m"
+context_window = 128000
+max_output_tokens = 4096
+"#,
+    );
+    let error = load_config_file(file.path()).unwrap_err().to_string();
+    assert!(error.contains("incomplete"));
+    assert!(error.contains("api"));
+}
+
 // ---------------------------------------------------------------------------
 // Keybindings ([keybindings] TOML) — merged from keybindings_config.rs
 // ---------------------------------------------------------------------------
