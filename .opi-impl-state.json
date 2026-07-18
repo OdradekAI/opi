@@ -4975,7 +4975,7 @@
       "definition_of_done": "dispatch_auth_command constructs the real built-in registry from injectable production endpoint/client/store/presenter services and completes login/logout for Anthropic, GitHub Copilot, and both OpenAI Codex methods through the locked store. Wiremock captures provider URLs, methods, headers, bodies, persistence/deletion, and no success before persistence; terminal RAII restores exactly once on every concrete success, failure, cancellation, timeout, store/lock, and drop path.",
       "definition_source": "draft-reviewed",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "14.17",
         "14.18"
@@ -4990,6 +4990,16 @@
           "field": "forbidden_scope",
           "reason": "OAuth work is limited to Anthropic, GitHub Copilot, and OpenAI Codex; tests use fake store, wiremock, presenter, terminal, and clock only.",
           "source": "docs/superpowers/specs/2026-07-11-phase14-provider-auth-design.md#Non-Goals"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Phase C pre-edit ownership expansion: replacing AuthCommandServices' caller-supplied registry with endpoint/client services makes the production interactive dispatcher construction mechanically incomplete; the existing TUI call sites must pass the new service fields while preserving their behavior.",
+          "source": "pre-edit source evidence at crates/opi-coding-agent/src/interactive.rs:952-968: dispatch_interactive_auth_input accepts OAuthProviderRegistry and constructs AuthCommandServices { registry: oauth_registry, ... }"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Phase C iteration-2 pre-edit ownership expansion: the historical Phase 14 source-shape guard requires explicit provider constructors inside registry_with_builtins, contradicting the binding Task 14.19 requirement that it delegate to registry_with_services; the guard must assert the reviewed single construction path.",
+          "source": "independent review P1 and cargo test -p opi-coding-agent --test phase14_provider_auth_docs every_phase14_non_goal_has_documented_and_structural_evidence; stale assertions at lines 408-423 require three registrations and legacy constructors inside registry_with_builtins"
         }
       ],
       "tier": "cli-runtime",
@@ -5026,7 +5036,7 @@
             "opi_coding_agent::oauth::OAuthProviderRegistry::registry_with_services",
             "opi_coding_agent::credential_store::LockedCredentialStore"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "phase14-dispatcher-terminal-and-failure-contract",
@@ -5042,7 +5052,7 @@
             "opi_coding_agent::interactive_auth::dispatch_auth_command",
             "opi_coding_agent::oauth::CodexOAuthProvider"
           ],
-          "status": "open"
+          "status": "met"
         }
       ],
       "production_call_sites": [
@@ -5052,9 +5062,9 @@
         "opi_coding_agent::credential_store::LockedCredentialStore"
       ],
       "substrate_only": false,
-      "iteration_count": 0,
+      "iteration_count": 3,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "95b7e1ea13392261f6f059ae2697eb1731e1fd38",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "crates/opi-coding-agent/src/oauth.rs",
@@ -5062,13 +5072,136 @@
         "crates/opi-coding-agent/src/harness.rs",
         "crates/opi-coding-agent/src/provider_factory.rs",
         "crates/opi-coding-agent/tests/interactive_auth.rs",
-        "crates/opi-coding-agent/tests/oauth_auth.rs"
+        "crates/opi-coding-agent/tests/oauth_auth.rs",
+        "crates/opi-coding-agent/src/interactive.rs",
+        "crates/opi-coding-agent/tests/phase14_provider_auth_docs.rs"
       ],
-      "last_attempt": null,
-      "verified_at_commit": null,
-      "evidence": null,
+      "last_attempt": {
+        "attempt": 3,
+        "started_at": "2026-07-18T20:26:15.865Z",
+        "ended_at": "2026-07-18T20:48:47.993Z",
+        "outcome": "passing",
+        "failing_gate": null,
+        "touched_files": [
+          "crates/opi-coding-agent/src/harness.rs",
+          "crates/opi-coding-agent/src/interactive.rs",
+          "crates/opi-coding-agent/src/interactive_auth.rs",
+          "crates/opi-coding-agent/src/oauth.rs",
+          "crates/opi-coding-agent/tests/interactive_auth.rs",
+          "crates/opi-coding-agent/tests/phase14_provider_auth_docs.rs"
+        ]
+      },
+      "verified_at_commit": "502ea52d8d2b5cb2e94360b9999ee9399d979f91",
+      "evidence": {
+        "commit": "502ea52d8d2b5cb2e94360b9999ee9399d979f91",
+        "task": "14.19",
+        "dod_sha256": "9a2d503bb7c723b852c584440342ae328e7968efd7764d410f18e926f1187b81",
+        "verification": "cli-runtime; controller focused acceptance 9/9, full workspace all-targets, release check, fmt, workspace clippy -D warnings, diff-check, and exact 6-of-8 ownership boundary passed",
+        "evaluator": "passed; independent six-lens evaluation found 0 current must-fix, folded 4 prior-valid-now-fixed findings, flagged 0, and rejected 1 candidate",
+        "acceptance": "dispatcher-owned concrete registry, exact four-flow OAuth wire, locked persistence/deletion, success ordering, terminal RAII, typed redacted failures, and no-manual device flows verified",
+        "acceptance_scenarios": [
+          "phase14-dispatcher-concrete-oauth-login-logout",
+          "phase14-dispatcher-terminal-and-failure-contract"
+        ],
+        "verify_workflows": [
+          ".superpowers/sdd/task-14.19-review.md",
+          ".superpowers/sdd/task-14.19-review-iteration2.md",
+          ".superpowers/sdd/task-14.19-review-iteration3.md",
+          ".superpowers/sdd/task-14.19-evaluator.md",
+          "codex-collaboration:task14.19-six-lens-20260718"
+        ]
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-07-18T19:13:20.584Z",
+          "attempt": 1,
+          "summary": "Phase B confirmed after the Task 14.18 ledger checkpoint; starting the concrete OAuth dispatcher vertical path from the committed provider/login substrate.",
+          "gate_results": {
+            "stage": "B",
+            "outcome": "confirmed",
+            "accepted": [
+              "reviewed task brief",
+              "clean baseline",
+              "Task 14.17 dependency passing",
+              "Task 14.18 dependency passing",
+              "complete six-path ownership set",
+              "production registry and concrete-provider vertical acceptance boundary",
+              "task-specific E: Cargo target directory"
+            ],
+            "flagged": [],
+            "rejected": []
+          }
+        },
+        {
+          "timestamp": "2026-07-18T19:18:42.061Z",
+          "attempt": 1,
+          "summary": "Pre-edit ownership expansion added the production interactive AuthCommandServices construction mechanically required by the binding dispatcher-owned registry contract.",
+          "gate_results": {
+            "stage": "C.1a",
+            "outcome": "ownership-expanded-before-edit",
+            "accepted": [
+              "crates/opi-coding-agent/src/interactive.rs"
+            ],
+            "flagged": [],
+            "rejected": [
+              "retain a caller-supplied OAuthProviderRegistry in AuthCommandServices"
+            ]
+          }
+        },
+        {
+          "timestamp": "2026-07-18T20:03:14.996Z",
+          "attempt": 1,
+          "summary": "Independent Task 14.19 review rejected the first implementation on the required single registry path, release-visible endpoint injection, and incomplete vertical exact-wire assertions; all three findings are accepted and routed to Phase C iteration 2.",
+          "gate_results": {
+            "stage": "task-review",
+            "outcome": "must-fix-block",
+            "accepted": [
+              "make registry_with_builtins delegate to registry_with_services with production endpoint/client services and update the stale structural guard",
+              "gate the public integration-test endpoint adapter and test endpoint constructor out of release builds",
+              "pin complete Anthropic and Codex Browser/Device request query, body, and required header contracts at dispatcher level",
+              "crates/opi-coding-agent/tests/phase14_provider_auth_docs.rs"
+            ],
+            "flagged": [],
+            "rejected": [],
+            "report": ".superpowers/sdd/task-14.19-review.md"
+          }
+        },
+        {
+          "timestamp": "2026-07-18T20:26:15.865Z",
+          "attempt": 2,
+          "summary": "Independent iteration-2 review confirmed the registry, release-boundary, Anthropic, and Codex fixes but found the Copilot dispatcher wire evidence still partial; the finding is accepted and routed to Phase C iteration 3.",
+          "gate_results": {
+            "stage": "task-review",
+            "outcome": "must-fix-block",
+            "accepted": [
+              "decode and compare complete Copilot device-authorization and token-poll form maps",
+              "assert form content type plus required accept and user-agent headers on both Copilot POSTs",
+              "assert the exact captured Copilot public user code and verification URI so presentation is non-vacuous"
+            ],
+            "flagged": [],
+            "rejected": [],
+            "report": ".superpowers/sdd/task-14.19-review-iteration2.md"
+          }
+        },
+        {
+          "timestamp": "2026-07-18T20:48:47.993Z",
+          "attempt": 3,
+          "summary": "Task 14.19 passed fresh controller verification, independent iteration-3 review, and independent six-lens evaluation with no current must-fix findings.",
+          "gate_results": {
+            "focused": "passing: concrete dispatcher 4/4; terminal restore 1/1; store/lock 1/1; device no-manual 1/1; built-in registry 1/1; structural guard 1/1",
+            "workspace_tests": "passing: cargo test --workspace --all-targets with task-specific E: target and temporary exact doctor CLI fallback binary removed afterward",
+            "release_check": "passing: cargo check -p opi-coding-agent --release; test endpoint injection absent",
+            "fmt": "passing",
+            "clippy": "passing: workspace all-targets with -D warnings",
+            "diff_check": "passing",
+            "source_boundary": "passing: 6 committed paths within 8 task-owned paths; Task 14.20 remains unstarted",
+            "review": "approved: iteration 3 closed single registry delegation, release endpoint boundary, and exact/non-vacuous four-flow OAuth wire evidence",
+            "evaluator": "passing: L-D1 through L-D6; current must-fix 0, folded 4 fixed, flagged 0, rejected 1",
+            "commit": "502ea52d8d2b5cb2e94360b9999ee9399d979f91"
+          }
+        }
+      ]
     },
     {
       "id": "14.20",
@@ -6938,6 +7071,16 @@
       "rejected_count": 1,
       "ran_at": "2026-07-18T19:11:06.964Z",
       "task_id": "14.18",
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": "codex-collaboration:task14.19-six-lens-20260718",
+      "folded_count": 4,
+      "flagged_count": 0,
+      "rejected_count": 1,
+      "ran_at": "2026-07-18T20:48:47.993Z",
+      "task_id": "14.19",
       "criterion_id": null
     }
   ]
