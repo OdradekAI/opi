@@ -4416,7 +4416,7 @@
       "definition_of_done": "OpenAI Codex uses a dedicated OpenAiCodexResponsesProvider and exact offline seven-model fixture, never standard Responses compatibility flags. Browser is the default PKCE/manual choice; Device Code covers pending, slow-down, success, denial, expiry, timeout, and cancellation without await_manual_code. Login and refresh require a non-secret account id, and a bounded redaction scenario proves no credential, authorization code, device secret/verifier, JWT, or envelope reaches output or errors.",
       "definition_source": "draft-reviewed",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "14.16"
       ],
@@ -4430,6 +4430,76 @@
           "field": "forbidden_scope",
           "reason": "OAuth work is limited to Anthropic, GitHub Copilot, and OpenAI Codex; do not add a codex alias, migrate legacy credentials, or log OAuth/JWT/device secrets.",
           "source": "docs/superpowers/specs/2026-07-14-phase14-exit-remediation-design.md#OpenAI Codex parity"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Phase C pre-edit ownership expansion: the binding-required typed LoginCancelled and missing Codex account-id errors must be added to the sole ProviderError definition and category mapping.",
+          "source": "cargo test -p opi-ai --test openai_codex_responses RED E0599: no ProviderError::AccountIdMissing; crates/opi-ai/src/provider.rs owns ProviderError and ProviderErrorCategory mapping"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Phase C pre-edit ownership expansion: adding the binding-required ProviderError::AccountIdMissing and LoginCancelled variants makes the opi-agent exhaustive diagnostic bridge non-exhaustive; the new typed errors require auth/cancelled diagnostic classification.",
+          "source": "Task 14.18 GREEN compile E0004 at crates/opi-agent/src/diagnostic.rs:639 after adding the reviewed ProviderError variants"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Phase C pre-edit ownership expansion: the reviewed ProviderError::AccountIdMissing and LoginCancelled variants make interactive auth error summarization non-exhaustive; they require minimal re-login/cancellation classifications before Task 14.19 builds on the committed file.",
+          "source": "cargo test -p opi-coding-agent --test openai_codex_provider openai_codex_catalog_ E0004 at crates/opi-coding-agent/src/interactive_auth.rs:220"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Phase C pre-edit ownership expansion: the binding-mandated deterministic 15-minute Device Code timeout and slow-down tests require Tokio paused-time support; add only the existing workspace tokio dependency test-util feature.",
+          "source": "cargo test -p opi-coding-agent --test oauth_auth openai_codex_ RED E0599 no method start_paused; workspace tokio features at Cargo.toml:25 omit test-util"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Phase C pre-edit ownership expansion: removing the forbidden Codex toggles from the standard Responses compatibility surface makes legacy tests that construct those fields fail; superseded Codex-via-standard coverage must move to the dedicated wire while standard Responses/Copilot coverage remains.",
+          "source": "cargo test -p opi-ai --test oauth_wire_shape --no-run E0560 at lines 383/384/442/479 and cargo test -p opi-ai --test request_enrichment --no-run E0560 at lines 441/442 for responses_path/derive_codex_account_id"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Phase C pre-edit ownership expansion: adding optional account_id to OAuthCredential makes three direct legacy test literals incomplete; they require only account_id: None to preserve their existing non-Codex contracts.",
+          "source": "cargo test --workspace --all-targets --no-run E0063 at crates/opi-ai/tests/auth_contracts.rs lines 66, 138, and 152"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Phase C pre-edit ownership expansion: adding optional account_id to Credential::OAuthToken makes one legacy provider-collection test literal incomplete; it requires only account_id: None.",
+          "source": "CARGO_TARGET_DIR on E: cargo test --workspace --all-targets --no-run E0063 at crates/opi-ai/tests/provider_collection.rs:603"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Phase C pre-edit ownership expansion: adding optional account_id to Credential::OAuthToken makes one doctor CLI test literal incomplete; it requires only account_id: None.",
+          "source": "E:-target cargo test --workspace --all-targets --no-run E0063 at crates/opi-coding-agent/tests/doctor_cli.rs:1073"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Phase C pre-edit ownership expansion: adding optional account_id to OAuth credentials makes one GitHub Copilot Credential::OAuthToken literal and one interactive-auth OAuthCredential literal incomplete; both require only account_id: None.",
+          "source": "E:-target cargo test --workspace --all-targets --no-run E0063 at crates/opi-coding-agent/tests/github_copilot_provider.rs:244 and crates/opi-coding-agent/tests/interactive_auth.rs:91"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Phase C pre-edit ownership expansion: the deliberate opi-ai public-module breadth guard must recognize the reviewed public openai_codex_responses module while the private openai_responses_shared module remains absent.",
+          "source": "E:-target cargo test --workspace --all-targets failure provider_tool_result_error_no_phase12_breadth_guard at crates/opi-ai/tests/tool_result_wire.rs:441; actual adds exactly openai_codex_responses"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Phase C pre-edit ownership expansion: the Phase 12 first-class provider source guard must recognize the reviewed dedicated openai_codex_responses provider module; the standard previous_response_id source anchor remains restored in its already-owned module.",
+          "source": "E:-target cargo test --workspace --all-targets failures first_class_provider_guard at crates/opi-coding-agent/tests/phase12_provider_correctness_docs.rs:475 and provider_docs_and_profile_policy_stay_in_sync identifying owned standard-module anchor restoration"
+        },
+        {
+          "field": "phase12_provider_guard",
+          "reason": "The private openai_responses_shared module is scoped wire infrastructure, not a general provider family; classify it alongside the dedicated Codex module in the already-owned NON_PROVIDER_MODULES guard while keeping it private in lib.rs.",
+          "source": "E:-target first_class_provider_guard assertion at crates/opi-coding-agent/tests/phase12_provider_correctness_docs.rs:496 after the public-module classification"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Phase C pre-edit ownership expansion: the productized first-class provider-set guard must classify the reviewed dedicated openai_codex_responses and private openai_responses_shared modules as scoped infrastructure rather than new general provider families.",
+          "source": "E:-target cargo test --workspace --all-targets failure first_class_provider_set_is_unchanged at crates/opi-coding-agent/tests/productized_packages_docs.rs:933"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Phase C iteration-2 scope confirmation within already-owned Cargo.toml: active Device Code cancellation uses production TuiLoginPresenter Ctrl-C, which requires adding only Tokio signal beside the previously approved test-util feature.",
+          "source": "filtered Task 14.18 cancellation gate E0433 at crates/opi-coding-agent/src/oauth.rs:1422: tokio::signal::ctrl_c configured out behind Tokio signal feature; Cargo.lock already contains signal-hook-registry"
         }
       ],
       "tier": "workspace",
@@ -4472,7 +4542,7 @@
             "opi_coding_agent::provider_factory::build_provider",
             "opi_ai::openai_codex_responses::OpenAiCodexResponsesProvider::stream"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "phase14-openai-codex-dual-login-account-id",
@@ -4487,7 +4557,7 @@
             "opi_coding_agent::credential_store::CredentialResolver",
             "opi_ai::credential::OAuthCredential"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "phase14-openai-codex-redaction",
@@ -4502,7 +4572,7 @@
             "opi_coding_agent::credential_store::CredentialResolver",
             "opi_ai::openai_codex_responses::OpenAiCodexResponsesProvider::stream"
           ],
-          "status": "open"
+          "status": "met"
         }
       ],
       "production_call_sites": [
@@ -4512,9 +4582,9 @@
         "opi_ai::openai_codex_responses::OpenAiCodexResponsesProvider::stream"
       ],
       "substrate_only": false,
-      "iteration_count": 0,
+      "iteration_count": 2,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "dbd971731f6c91e707c657ced7b9830177f42ec6",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "crates/opi-ai/src/openai_responses_shared.rs",
@@ -4534,13 +4604,367 @@
         "crates/opi-coding-agent/tests/oauth_auth.rs",
         "crates/opi-coding-agent/tests/credential_store.rs",
         "crates/opi-coding-agent/tests/list_models.rs",
-        "crates/opi-coding-agent/tests/provider_factory.rs"
+        "crates/opi-coding-agent/tests/provider_factory.rs",
+        "crates/opi-ai/src/provider.rs",
+        "crates/opi-agent/src/diagnostic.rs",
+        "crates/opi-coding-agent/src/interactive_auth.rs",
+        "Cargo.toml",
+        "crates/opi-ai/tests/oauth_wire_shape.rs",
+        "crates/opi-ai/tests/request_enrichment.rs",
+        "crates/opi-ai/tests/auth_contracts.rs",
+        "crates/opi-ai/tests/provider_collection.rs",
+        "crates/opi-coding-agent/tests/doctor_cli.rs",
+        "crates/opi-coding-agent/tests/github_copilot_provider.rs",
+        "crates/opi-coding-agent/tests/interactive_auth.rs",
+        "crates/opi-ai/tests/tool_result_wire.rs",
+        "crates/opi-coding-agent/tests/phase12_provider_correctness_docs.rs",
+        "crates/opi-coding-agent/tests/productized_packages_docs.rs"
       ],
-      "last_attempt": null,
-      "verified_at_commit": null,
-      "evidence": null,
+      "last_attempt": {
+        "attempt": 2,
+        "started_at": "2026-07-18T18:05:49.413Z",
+        "ended_at": "2026-07-18T19:11:06.964Z",
+        "outcome": "passing",
+        "failing_gate": null,
+        "touched_files": [
+          "Cargo.toml",
+          "crates/opi-agent/src/diagnostic.rs",
+          "crates/opi-ai/src/auth.rs",
+          "crates/opi-ai/src/credential.rs",
+          "crates/opi-ai/src/lib.rs",
+          "crates/opi-ai/src/openai_codex_responses.rs",
+          "crates/opi-ai/src/openai_responses.rs",
+          "crates/opi-ai/src/openai_responses_shared.rs",
+          "crates/opi-ai/src/provider.rs",
+          "crates/opi-ai/tests/auth_contracts.rs",
+          "crates/opi-ai/tests/oauth_wire_shape.rs",
+          "crates/opi-ai/tests/openai_codex_responses.rs",
+          "crates/opi-ai/tests/provider_collection.rs",
+          "crates/opi-ai/tests/request_enrichment.rs",
+          "crates/opi-ai/tests/tool_result_wire.rs",
+          "crates/opi-coding-agent/src/credential_store.rs",
+          "crates/opi-coding-agent/src/interactive_auth.rs",
+          "crates/opi-coding-agent/src/lib.rs",
+          "crates/opi-coding-agent/src/oauth.rs",
+          "crates/opi-coding-agent/src/openai_codex.rs",
+          "crates/opi-coding-agent/src/provider_factory.rs",
+          "crates/opi-coding-agent/tests/credential_store.rs",
+          "crates/opi-coding-agent/tests/doctor_cli.rs",
+          "crates/opi-coding-agent/tests/fixtures/pi-0.80.6/openai-codex.models.json",
+          "crates/opi-coding-agent/tests/github_copilot_provider.rs",
+          "crates/opi-coding-agent/tests/interactive_auth.rs",
+          "crates/opi-coding-agent/tests/list_models.rs",
+          "crates/opi-coding-agent/tests/oauth_auth.rs",
+          "crates/opi-coding-agent/tests/openai_codex_provider.rs",
+          "crates/opi-coding-agent/tests/phase12_provider_correctness_docs.rs",
+          "crates/opi-coding-agent/tests/productized_packages_docs.rs",
+          "crates/opi-coding-agent/tests/provider_factory.rs"
+        ]
+      },
+      "verified_at_commit": "1833876d3f69089fd2d999d3ddc03519b2016d40",
+      "evidence": {
+        "commit": "1833876d3f69089fd2d999d3ddc03519b2016d40",
+        "task": "14.18",
+        "dod_sha256": "4d858c826c9d44f6f9b183e0b6c6aa48b2c99b711f3a8cbea1c4adde02b8345a",
+        "verification": "workspace; controller focused acceptance 30/30, full workspace all-targets, fmt, workspace clippy -D warnings, diff-check, exact 32-of-32 ownership boundary, and clean task range passed",
+        "evaluator": "passed; independent six-lens evaluation found 0 current must-fix, folded 3 prior-valid-now-fixed findings, flagged 1 non-blocking documentation wording issue, and rejected 1 candidate",
+        "acceptance": "dedicated wire, exact offline seven-model catalog, Browser and Device Code login, account-id persistence, generated UUIDv7 headers, active cancellation, and bounded secret redaction verified",
+        "acceptance_scenarios": [
+          "phase14-openai-codex-dedicated-wire-catalog",
+          "phase14-openai-codex-dual-login-account-id",
+          "phase14-openai-codex-redaction"
+        ],
+        "verify_workflows": [
+          ".superpowers/sdd/task-14.18-review.md",
+          ".superpowers/sdd/task-14.18-review-iteration2.md",
+          ".superpowers/sdd/task-14.18-evaluator.md",
+          "codex-collaboration:task14.18-six-lens-20260718"
+        ]
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-07-18T15:17:24.613Z",
+          "attempt": 1,
+          "summary": "Phase B confirmed after the Task 14.17 ledger checkpoint; starting the dedicated OpenAI Codex wire/catalog/account-id/dual-login/redaction task from the committed overlapping provider and OAuth files.",
+          "gate_results": {
+            "stage": "B",
+            "outcome": "confirmed",
+            "accepted": [
+              "reviewed task brief",
+              "clean baseline",
+              "Task 14.16 dependency passing",
+              "Task 14.17 committed and checkpointed",
+              "14.17/14.18 non-concurrency constraint satisfied",
+              "complete 18-path ownership set",
+              "pinned pi-0.80.6 fixture provenance and clean-checkout rule"
+            ],
+            "flagged": [],
+            "rejected": []
+          }
+        },
+        {
+          "timestamp": "2026-07-18T15:23:03.026Z",
+          "attempt": 1,
+          "summary": "Controller corrected the expanded Task 14.18 start SHA before any task source/test edit; the brief and ledger now reference the actual Task 14.17 checkpoint commit.",
+          "gate_results": {
+            "stage": "B",
+            "outcome": "boundary-corrected-before-edit",
+            "accepted": [
+              "dbd971731f6c91e707c657ced7b9830177f42ec6"
+            ],
+            "flagged": [],
+            "rejected": [
+              "nonexistent controller-expanded SHA dbd97174804758cbbdf595251a8a5ad52def1fe8"
+            ]
+          }
+        },
+        {
+          "timestamp": "2026-07-18T15:38:09.559Z",
+          "attempt": 1,
+          "summary": "Pre-edit ownership expansion added the sole ProviderError definition required by the dedicated typed Codex login-cancelled and missing-account-id contracts.",
+          "gate_results": {
+            "stage": "C.1a",
+            "outcome": "ownership-expanded-before-edit",
+            "accepted": [
+              "crates/opi-ai/src/provider.rs"
+            ],
+            "flagged": [],
+            "rejected": []
+          }
+        },
+        {
+          "timestamp": "2026-07-18T15:42:06.924Z",
+          "attempt": 1,
+          "summary": "Pre-edit ownership expansion added the exhaustive opi-agent diagnostic bridge mechanically required by the two reviewed ProviderError variants.",
+          "gate_results": {
+            "stage": "C.1a",
+            "outcome": "ownership-expanded-before-edit",
+            "accepted": [
+              "crates/opi-agent/src/diagnostic.rs"
+            ],
+            "flagged": [],
+            "rejected": []
+          }
+        },
+        {
+          "timestamp": "2026-07-18T15:47:00.862Z",
+          "attempt": 1,
+          "summary": "Pre-edit ownership expansion added the interactive auth exhaustive error summary mechanically required by Task 14.18 typed errors; Task 14.19 will start from this committed surgical mapping.",
+          "gate_results": {
+            "stage": "C.1a",
+            "outcome": "ownership-expanded-before-edit",
+            "accepted": [
+              "crates/opi-coding-agent/src/interactive_auth.rs"
+            ],
+            "flagged": [],
+            "rejected": []
+          }
+        },
+        {
+          "timestamp": "2026-07-18T16:09:49.249Z",
+          "attempt": 1,
+          "summary": "Pre-edit ownership expansion added the root workspace dependency declaration solely to enable Tokio test-util for the reviewed paused-time Device Code acceptance tests.",
+          "gate_results": {
+            "stage": "C.1a",
+            "outcome": "ownership-expanded-before-edit",
+            "accepted": [
+              "Cargo.toml (tokio test-util feature only)"
+            ],
+            "flagged": [],
+            "rejected": []
+          }
+        },
+        {
+          "timestamp": "2026-07-18T16:30:34.877Z",
+          "attempt": 1,
+          "summary": "Pre-edit ownership expansion added the two legacy standard-Responses tests mechanically broken by removal of the forbidden Codex compatibility toggles.",
+          "gate_results": {
+            "stage": "C.1a",
+            "outcome": "ownership-expanded-before-edit",
+            "accepted": [
+              "crates/opi-ai/tests/oauth_wire_shape.rs",
+              "crates/opi-ai/tests/request_enrichment.rs"
+            ],
+            "flagged": [],
+            "rejected": []
+          }
+        },
+        {
+          "timestamp": "2026-07-18T16:50:31.816Z",
+          "attempt": 1,
+          "summary": "Pre-edit ownership expansion added three legacy OAuthCredential test literals mechanically required by the new optional account-id field; the same no-run attempt then hit environmental D: disk exhaustion and verification moved to a task-specific E: target directory.",
+          "gate_results": {
+            "stage": "C.1a",
+            "outcome": "ownership-expanded-before-edit",
+            "accepted": [
+              "crates/opi-ai/tests/auth_contracts.rs (three account_id: None literals only)",
+              "task-specific CARGO_TARGET_DIR on E: for generated build artifacts"
+            ],
+            "flagged": [
+              "D: had approximately 0.01 GiB free; rustc/linker reported no-space and PDB filesystem errors"
+            ],
+            "rejected": []
+          }
+        },
+        {
+          "timestamp": "2026-07-18T16:57:39.470Z",
+          "attempt": 1,
+          "summary": "Pre-edit ownership expansion added one provider-collection OAuthToken literal mechanically required by the optional account-id field.",
+          "gate_results": {
+            "stage": "C.1a",
+            "outcome": "ownership-expanded-before-edit",
+            "accepted": [
+              "crates/opi-ai/tests/provider_collection.rs (one account_id: None literal only)"
+            ],
+            "flagged": [],
+            "rejected": []
+          }
+        },
+        {
+          "timestamp": "2026-07-18T17:00:58.024Z",
+          "attempt": 1,
+          "summary": "Pre-edit ownership expansion added one doctor CLI OAuthToken literal mechanically required by the optional account-id field.",
+          "gate_results": {
+            "stage": "C.1a",
+            "outcome": "ownership-expanded-before-edit",
+            "accepted": [
+              "crates/opi-coding-agent/tests/doctor_cli.rs (one account_id: None literal only)"
+            ],
+            "flagged": [],
+            "rejected": []
+          }
+        },
+        {
+          "timestamp": "2026-07-18T17:03:12.629Z",
+          "attempt": 1,
+          "summary": "Pre-edit ownership expansion added two legacy non-Codex OAuth literals mechanically required by the optional account-id field.",
+          "gate_results": {
+            "stage": "C.1a",
+            "outcome": "ownership-expanded-before-edit",
+            "accepted": [
+              "crates/opi-coding-agent/tests/github_copilot_provider.rs (one account_id: None literal only)",
+              "crates/opi-coding-agent/tests/interactive_auth.rs (one account_id: None literal only)"
+            ],
+            "flagged": [],
+            "rejected": []
+          }
+        },
+        {
+          "timestamp": "2026-07-18T17:18:37.942Z",
+          "attempt": 1,
+          "summary": "Pre-edit ownership expansion added the opi-ai public-module breadth guard affected by the intentional dedicated Codex provider module.",
+          "gate_results": {
+            "stage": "C.1a",
+            "outcome": "ownership-expanded-before-edit",
+            "accepted": [
+              "crates/opi-ai/tests/tool_result_wire.rs (add openai_codex_responses baseline entry only)"
+            ],
+            "flagged": [],
+            "rejected": []
+          }
+        },
+        {
+          "timestamp": "2026-07-18T17:23:59.722Z",
+          "attempt": 1,
+          "summary": "Pre-edit ownership expansion added the Phase 12 first-class provider source guard for the intentional dedicated Codex module; the separate standard Responses deferral anchor is restored inside existing ownership.",
+          "gate_results": {
+            "stage": "C.1a",
+            "outcome": "ownership-expanded-before-edit",
+            "accepted": [
+              "crates/opi-coding-agent/tests/phase12_provider_correctness_docs.rs (add openai_codex_responses allow-list entry only)",
+              "restore previous_response_id deferral anchor in owned openai_responses.rs"
+            ],
+            "flagged": [],
+            "rejected": []
+          }
+        },
+        {
+          "timestamp": "2026-07-18T17:26:33.950Z",
+          "attempt": 1,
+          "summary": "Within the already-expanded Phase 12 guard, compiler/runtime source-set evidence required classifying private openai_responses_shared as scoped infrastructure beside the dedicated Codex module.",
+          "gate_results": {
+            "stage": "C.1a",
+            "outcome": "scope-confirmed-within-owned-path",
+            "accepted": [
+              "add openai_responses_shared to NON_PROVIDER_MODULES while keeping it private in opi-ai/src/lib.rs"
+            ],
+            "flagged": [],
+            "rejected": [
+              "treat openai_responses_shared as a tenth general provider family"
+            ]
+          }
+        },
+        {
+          "timestamp": "2026-07-18T17:32:13.035Z",
+          "attempt": 1,
+          "summary": "Pre-edit ownership expansion added the productized provider-set guard affected by the intentional dedicated/public and shared/private Responses modules.",
+          "gate_results": {
+            "stage": "C.1a",
+            "outcome": "ownership-expanded-before-edit",
+            "accepted": [
+              "crates/opi-coding-agent/tests/productized_packages_docs.rs (scoped exclusions for openai_codex_responses and openai_responses_shared only)"
+            ],
+            "flagged": [],
+            "rejected": [
+              "classify either module as a new general first-class provider family"
+            ]
+          }
+        },
+        {
+          "timestamp": "2026-07-18T18:05:49.413Z",
+          "attempt": 1,
+          "summary": "Independent Task 14.18 review rejected the first implementation on three acceptance gaps; all are accepted and routed to Phase C iteration 2, while an optional constructor/config cleanup is rejected as unnecessary scope.",
+          "gate_results": {
+            "stage": "task-review",
+            "outcome": "must-fix-block",
+            "accepted": [
+              "redact both malformed and valid-error dedicated Codex SSE payload paths and add sentinel output/error tests",
+              "exercise cancellation after Device Code selection inside the active flow and prove no poll/exchange/store write",
+              "capture two no-session requests and prove generated session-id UUIDv7 plus fresh distinct x-client-request-id UUIDv7 values"
+            ],
+            "flagged": [],
+            "rejected": [
+              "refactor the offline device endpoint/token exchange constructors solely to remove the nine-argument/dummy-config code smell"
+            ],
+            "report": ".superpowers/sdd/task-14.18-review.md"
+          }
+        },
+        {
+          "timestamp": "2026-07-18T18:22:54.089Z",
+          "attempt": 2,
+          "summary": "Within the already-owned root dependency declaration, exact compiler evidence approved the Tokio signal feature required by production Ctrl-C cancellation of an active Device Code flow.",
+          "gate_results": {
+            "stage": "C.1a",
+            "outcome": "scope-confirmed-within-owned-path",
+            "accepted": [
+              "Cargo.toml: add Tokio signal feature only"
+            ],
+            "flagged": [],
+            "rejected": [
+              "dependency version change",
+              "new cancellation dependency or constructor refactor"
+            ]
+          }
+        },
+        {
+          "timestamp": "2026-07-18T19:11:06.964Z",
+          "attempt": 2,
+          "summary": "Task 14.18 passed fresh controller verification, the independent iteration-2 review, and independent six-lens evaluation with no current must-fix findings.",
+          "gate_results": {
+            "focused": "passing: dedicated Responses 8/8; Codex OAuth 13/13; dedicated provider 4/4; OAuth envelope 3/3; static list 1/1; factory 1/1",
+            "workspace_tests": "passing: cargo test --workspace --all-targets using the task-specific E: target; doctor CLI fallback used the already-built binary copied to the exact worktree fallback path for verification only, then removed",
+            "fmt": "passing",
+            "clippy": "passing: workspace all-targets with -D warnings",
+            "diff_check": "passing",
+            "source_boundary": "passing: 32 committed paths exactly equal the 32 task-owned paths; Task 14.19 remains unstarted",
+            "review": "approved: iteration 2 closed dedicated SSE redaction, active Device Code cancellation, and generated/fresh UUIDv7 evidence gaps",
+            "evaluator": "passing: L-D1 through L-D6; accepted 0 current must-fix, folded 3 fixed, flagged 1 non-blocking, rejected 1",
+            "environmental": "generated Cargo artifacts used E:\\codex-targets\\opi-phase14-task-14-18 after D: disk exhaustion; no generated target path remains in the worktree",
+            "commit": "1833876d3f69089fd2d999d3ddc03519b2016d40"
+          }
+        }
+      ]
     },
     {
       "id": "14.19",
@@ -6504,6 +6928,16 @@
       "rejected_count": 5,
       "ran_at": "2026-07-18T13:02:39.218Z",
       "task_id": "14.16",
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": "codex-collaboration:task14.18-six-lens-20260718",
+      "folded_count": 3,
+      "flagged_count": 1,
+      "rejected_count": 1,
+      "ran_at": "2026-07-18T19:11:06.964Z",
+      "task_id": "14.18",
       "criterion_id": null
     }
   ]
