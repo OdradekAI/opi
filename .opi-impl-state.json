@@ -4194,7 +4194,7 @@
       "definition_of_done": "One github-copilot ApiMappedProvider contains the exact checked-in 25-model pi-0.80.6 catalog and dispatches each declared Anthropic Messages, OpenAI Completions, or OpenAI Responses model to its reviewed endpoint with shared lazy Store auth. It applies audited static/dynamic headers, sees changed token and enterprise base URL on the next stream, maps 401/403 on every wire to CredentialRevoked, and lists the static catalog without store reads or live entitlement calls.",
       "definition_source": "draft-reviewed",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "14.16"
       ],
@@ -4208,6 +4208,11 @@
           "field": "forbidden_scope",
           "reason": "OAuth work is limited to Anthropic, GitHub Copilot, and OpenAI Codex; do not call live Copilot entitlement/model-enable endpoints or read OAuth credentials while listing models.",
           "source": "docs/superpowers/specs/2026-07-14-phase14-exit-remediation-design.md#GitHub Copilot parity"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Phase C pre-edit ownership expansion: the CLI list-models unit contract must accept the credential-independent 25-model GitHub Copilot catalog when every credential probe is unavailable, while still proving the injected backend is not read for Copilot.",
+          "source": "cargo test --workspace --all-targets failure main::tests::list_models_command_core_uses_injected_unavailable_backend at crates/opi-coding-agent/src/main.rs:1259; seven later failures were poisoned-lock fallout"
         }
       ],
       "tier": "workspace",
@@ -4245,7 +4250,7 @@
             "opi_coding_agent::provider_factory::build_provider",
             "opi_coding_agent::provider_factory::build_collection_for_listing"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "phase14-github-copilot-three-wire-streams",
@@ -4262,7 +4267,7 @@
             "opi_ai::openai_chat::OpenAiChatProvider::stream",
             "opi_ai::openai_responses::OpenAiResponsesProvider::stream"
           ],
-          "status": "open"
+          "status": "met"
         }
       ],
       "production_call_sites": [
@@ -4271,9 +4276,9 @@
         "opi_ai::api_mapped::ApiMappedProvider::stream"
       ],
       "substrate_only": false,
-      "iteration_count": 0,
+      "iteration_count": 2,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "8ddc60f695c2f01ba968d2b012f379b8451b9c69",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "crates/opi-coding-agent/src/github_copilot.rs",
@@ -4288,13 +4293,119 @@
         "crates/opi-ai/src/openai_responses.rs",
         "crates/opi-coding-agent/tests/oauth_auth.rs",
         "crates/opi-coding-agent/tests/list_models.rs",
-        "crates/opi-coding-agent/tests/provider_factory.rs"
+        "crates/opi-coding-agent/tests/provider_factory.rs",
+        "crates/opi-coding-agent/src/main.rs"
       ],
-      "last_attempt": null,
-      "verified_at_commit": null,
-      "evidence": null,
+      "last_attempt": {
+        "attempt": 2,
+        "started_at": "2026-07-18T14:38:00.359Z",
+        "ended_at": "2026-07-18T15:14:28.298Z",
+        "outcome": "passing",
+        "failing_gate": null,
+        "touched_files": [
+          "crates/opi-ai/src/anthropic.rs",
+          "crates/opi-ai/src/openai_chat.rs",
+          "crates/opi-ai/src/openai_responses.rs",
+          "crates/opi-ai/src/provider.rs",
+          "crates/opi-coding-agent/src/github_copilot.rs",
+          "crates/opi-coding-agent/src/lib.rs",
+          "crates/opi-coding-agent/src/main.rs",
+          "crates/opi-coding-agent/src/provider_factory.rs",
+          "crates/opi-coding-agent/tests/fixtures/pi-0.80.6/github-copilot.models.json",
+          "crates/opi-coding-agent/tests/github_copilot_provider.rs",
+          "crates/opi-coding-agent/tests/list_models.rs",
+          "crates/opi-coding-agent/tests/oauth_auth.rs",
+          "crates/opi-coding-agent/tests/provider_factory.rs"
+        ]
+      },
+      "verified_at_commit": "708f026050dd25ad96d263cc842c973b605e5243",
+      "evidence": {
+        "commit": "708f026050dd25ad96d263cc842c973b605e5243",
+        "task": "14.17",
+        "dod_sha256": "204ab5a34db260a1887f5aae88d80a33c78f7c03fae6af21aea3921c88d0b38e",
+        "verification": "workspace; fresh controller focused acceptance 16/16, full workspace all-targets, fmt, workspace clippy -D warnings, diff-check, exact 13-of-14 ownership boundary, and clean status passed; initial broad wrapper timeout was environmental and the bounded rerun passed",
+        "evaluator": "passed; independent six-lens evaluation accepted 0, folded 1 corrected finding, flagged 1 non-blocking weak canary, rejected 3 candidates",
+        "acceptance": "tracked pi-0.80.6 25-model offline catalog, exact 8/9/8 three-wire dispatch, shared lazy store auth and enterprise routing, audited static/dynamic headers, user/tool-result vision, all-wire revocation, and credential-free static listing verified",
+        "acceptance_scenarios": [
+          "phase14-github-copilot-offline-catalog",
+          "phase14-github-copilot-three-wire-streams"
+        ],
+        "verify_workflows": [
+          ".superpowers/sdd/task-14.17-review.md",
+          ".superpowers/sdd/task-14.17-review-iteration2.md",
+          ".superpowers/sdd/task-14.17-evaluator.md",
+          "codex-collaboration:task14.17-six-lens-20260718"
+        ]
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-07-18T13:05:20.461Z",
+          "attempt": 1,
+          "summary": "Phase B confirmed after Task 14.16 checkpoint; starting the offline GitHub Copilot three-wire catalog alone under the reviewed 14.17/14.18 non-concurrency rule.",
+          "gate_results": {
+            "stage": "B",
+            "outcome": "confirmed",
+            "accepted": [
+              "reviewed task brief",
+              "clean baseline",
+              "Task 14.16 dependency passing",
+              "complete task-owned path set",
+              "pinned pi-0.80.6 fixture provenance",
+              "14.17/14.18 non-concurrency constraint"
+            ],
+            "flagged": [],
+            "rejected": []
+          }
+        },
+        {
+          "timestamp": "2026-07-18T14:05:14.501Z",
+          "attempt": 1,
+          "summary": "Pre-edit ownership expansion added the CLI list-models unit acceptance affected by credential-independent static Copilot registration.",
+          "gate_results": {
+            "stage": "C.1a",
+            "outcome": "ownership-expanded-before-edit",
+            "accepted": [
+              "crates/opi-coding-agent/src/main.rs"
+            ],
+            "flagged": [],
+            "rejected": []
+          }
+        },
+        {
+          "timestamp": "2026-07-18T14:38:00.359Z",
+          "attempt": 1,
+          "summary": "Independent Task 14.17 review rejected the first implementation because a committed catalog parity test read ignored `.repo` content at runtime; the clean-checkout fix is accepted and routed to Phase C iteration 2, while optional dynamic-header consolidation is rejected as unnecessary scope.",
+          "gate_results": {
+            "stage": "task-review",
+            "outcome": "must-fix-block",
+            "accepted": [
+              "remove the committed test runtime dependency on ignored `.repo` and validate pinned provenance plus full catalog parity solely from the tracked fixture"
+            ],
+            "flagged": [],
+            "rejected": [
+              "consolidate the already-correct route-specific dynamic-header append code"
+            ],
+            "report": ".superpowers/sdd/task-14.17-review.md"
+          }
+        },
+        {
+          "timestamp": "2026-07-18T15:14:28.298Z",
+          "attempt": 2,
+          "summary": "Task 14.17 passed fresh controller verification, full workspace gates, independent iteration-2 review, and independent six-lens evaluation with no current must-fix findings.",
+          "gate_results": {
+            "focused": "passing: github_copilot_provider 12/12; oauth route 1/1; static list 1/1; factory 1/1; CLI regression 1/1",
+            "workspace_tests": "passing: cargo test --workspace --all-targets -j 1; first run was terminated only by the command wrapper timeout and the longer bounded rerun passed",
+            "fmt": "passing",
+            "clippy": "passing: workspace all-targets with -D warnings",
+            "diff_check": "passing",
+            "source_boundary": "passing: 13 committed paths, all within 14 task-owned paths; oauth.rs unchanged",
+            "review": "approved: iteration 2 no spec or standards findings after clean-checkout fixture correction",
+            "evaluator": "passing: L-D1 through L-D6; accepted 0, folded 1, flagged 1 non-blocking, rejected 3",
+            "commit": "708f026050dd25ad96d263cc842c973b605e5243"
+          }
+        }
+      ]
     },
     {
       "id": "14.18",
