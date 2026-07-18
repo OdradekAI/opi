@@ -5212,7 +5212,7 @@
       "definition_of_done": "run_interactive_tui and the debug scripted adapter share one narrow prompt/auth/pending-turn state machine. A pre-output CredentialNeeded followed by successful same-provider login retries CodingHarness::retry_last_prompt exactly once with one persisted user message and two provider calls; different-provider login, cancellation, presenter/OAuth/store/terminal failure, midstream revocation, and JSON/RPC/text paths perform no retry and never construct a presenter.",
       "definition_source": "draft-reviewed",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "14.19"
       ],
@@ -5266,7 +5266,7 @@
             "opi_coding_agent::interactive::tui_event_loop",
             "opi_coding_agent::harness::CodingHarness::retry_last_prompt"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "phase14-outer-tui-negative-retry-gates",
@@ -5283,7 +5283,7 @@
             "opi_coding_agent::runner::NonInteractiveRunner",
             "opi_coding_agent::rpc::run_rpc"
           ],
-          "status": "open"
+          "status": "met"
         }
       ],
       "production_call_sites": [
@@ -5293,9 +5293,9 @@
         "opi_coding_agent::interactive_auth::dispatch_auth_command"
       ],
       "substrate_only": false,
-      "iteration_count": 0,
+      "iteration_count": 2,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "e83d7f9d6254aaaf8083ce5d5195c2d56258317b",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "crates/opi-coding-agent/src/interactive.rs",
@@ -5303,11 +5303,94 @@
         "crates/opi-coding-agent/tests/interactive_auth.rs",
         "crates/opi-coding-agent/tests/interactive_tui_auth.rs"
       ],
-      "last_attempt": null,
-      "verified_at_commit": null,
-      "evidence": null,
+      "last_attempt": {
+        "attempt": 2,
+        "started_at": "2026-07-18T21:41:21.739Z",
+        "ended_at": "2026-07-18T22:17:02.959Z",
+        "outcome": "passing",
+        "failing_gate": null,
+        "touched_files": [
+          "crates/opi-coding-agent/src/interactive.rs",
+          "crates/opi-coding-agent/src/interactive_auth.rs",
+          "crates/opi-coding-agent/tests/interactive_auth.rs",
+          "crates/opi-coding-agent/tests/interactive_tui_auth.rs"
+        ]
+      },
+      "verified_at_commit": "aa3bee7e0c443c9260174c1c11b038f8177de8b7",
+      "evidence": {
+        "commit": "aa3bee7e0c443c9260174c1c11b038f8177de8b7",
+        "task": "14.20",
+        "dod_sha256": "a13f74ab00f8497db06ae32e68ffe05d25504187b1be0f68a50cb13e0642e54b",
+        "verification": "tui; controller focused acceptance, release clippy, full workspace all-targets, fmt, workspace clippy -D warnings, and diff-check passed",
+        "evaluator": "passed; independent six-lens evaluation found 0 must-fix, 0 flagged, and rejected 7 adversarial candidates",
+        "acceptance": "public outer-TUI entry proves exact same-provider 1/2/1 recovery, distinct no-retry failures, retry-clear boundaries, and JSON/RPC/text no-presenter behavior",
+        "acceptance_scenarios": [
+          "phase14-outer-tui-same-provider-retry",
+          "phase14-outer-tui-negative-retry-gates"
+        ],
+        "verify_workflows": [
+          ".superpowers/sdd/task-14.20-review.md",
+          ".superpowers/sdd/task-14.20-review-iteration2.md",
+          ".superpowers/sdd/task-14.20-evaluator.md",
+          "codex-collaboration:task14.20-six-lens-20260718"
+        ]
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-07-18T20:51:24.921Z",
+          "attempt": 1,
+          "summary": "Phase B confirmed after the Task 14.19 ledger checkpoint; starting the outer TUI prompt/auth/pending-turn retry vertical path from the committed concrete dispatcher.",
+          "gate_results": {
+            "stage": "B",
+            "outcome": "confirmed",
+            "accepted": [
+              "reviewed task brief",
+              "clean baseline",
+              "Task 14.19 dependency passing",
+              "complete four-path ownership set",
+              "public run_interactive_tui and shared real/headless state-machine boundary",
+              "task-specific E: Cargo target directory"
+            ],
+            "flagged": [],
+            "rejected": []
+          }
+        },
+        {
+          "timestamp": "2026-07-18T21:41:21.739Z",
+          "attempt": 1,
+          "summary": "Independent Task 14.20 review accepted the shared outer-TUI state machine but found release-only capture leakage, non-specific negative evidence, and three untested retry-clear boundaries; all findings are accepted and routed to Phase C iteration 2.",
+          "gate_results": {
+            "stage": "task-review",
+            "outcome": "must-fix-block",
+            "accepted": [
+              "gate provider-call and other capture-only counters out of release code and pass release clippy",
+              "prove each named negative reaches its distinct login, presenter, OAuth, store, or terminal outcome",
+              "add public-entry coverage for new-prompt invalidation, retry-consumption, and post-MessageUpdate CredentialNeeded"
+            ],
+            "flagged": [],
+            "rejected": [],
+            "report": ".superpowers/sdd/task-14.20-review.md"
+          }
+        },
+        {
+          "timestamp": "2026-07-18T22:17:02.959Z",
+          "attempt": 2,
+          "summary": "Task 14.20 passed fresh controller verification, independent iteration-2 review, and independent six-lens evaluation after resolving all three accepted first-review findings.",
+          "gate_results": {
+            "focused": "passing: interactive_tui_auth 12 active/1 ignored; interactive_auth 3/3; revoked, non-interactive, and RPC checks 1/1 each",
+            "workspace_tests": "passing: cargo test --workspace --all-targets with task-specific E: target and temporary exact doctor CLI fallback binary removed afterward",
+            "release_clippy": "passing: opi-coding-agent release build with -D warnings; capture-only counters absent",
+            "fmt": "passing",
+            "clippy": "passing: workspace all-targets with -D warnings",
+            "diff_check": "passing",
+            "source_boundary": "passing: exactly 4 committed paths equal the 4 task-owned paths; Task 14.21 remains unstarted",
+            "review": "approved: iteration 2 proved release cfg gating, distinct negative triggers, and all three retry-clear boundaries",
+            "evaluator": "passing: L-D1 through L-D6; must-fix 0, flagged 0, rejected 7",
+            "commit": "aa3bee7e0c443c9260174c1c11b038f8177de8b7"
+          }
+        }
+      ]
     },
     {
       "id": "14.21",
@@ -7081,6 +7164,16 @@
       "rejected_count": 1,
       "ran_at": "2026-07-18T20:48:47.993Z",
       "task_id": "14.19",
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": "codex-collaboration:task14.20-six-lens-20260718",
+      "folded_count": 0,
+      "flagged_count": 0,
+      "rejected_count": 7,
+      "ran_at": "2026-07-18T22:17:02.959Z",
+      "task_id": "14.20",
       "criterion_id": null
     }
   ]
