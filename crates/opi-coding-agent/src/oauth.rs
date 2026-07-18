@@ -1,8 +1,8 @@
 //! OAuth provider registry + PKCE/device-code flows (Phase 14.2).
 //!
 //! Owns the concrete `OAuthProvider` implementations (Anthropic PKCE, GitHub
-//! Copilot device-code, OpenAI Codex PKCE), the `OAuthProviderRegistry`, and
-//! the production `TuiLoginPresenter`. All flow HTTP is mockable: authorize/
+//! Copilot device-code, OpenAI Codex browser/device-code), the
+//! `OAuthProviderRegistry`, and the production `TuiLoginPresenter`. All flow HTTP is mockable: authorize/
 //! token endpoints are configurable so tests point them at a `wiremock` server,
 //! and the `LoginPresenter` is an injected seam.
 //!
@@ -28,7 +28,7 @@ use std::io;
 use std::sync::Arc;
 use std::time::Duration;
 
-use opi_ai::auth::{LoginPresenter, OAuthCredential, OAuthProvider};
+use opi_ai::auth::{LoginPresenter, OAuthCredential, OAuthLoginMethod, OAuthProvider};
 use opi_ai::credential::{BoxAuthFuture, CredentialStore, CredentialStoreError};
 use opi_ai::provider::ProviderError;
 use secrecy::{ExposeSecret, SecretString};
@@ -133,6 +133,7 @@ struct TokenResponse {
 async fn run_pkce_login(
     config: PkceLoginConfig,
     presenter: &dyn LoginPresenter,
+    finalize_credential: fn(OAuthCredential) -> Result<OAuthCredential, ProviderError>,
 ) -> Result<OAuthCredential, ProviderError> {
     let listener = bind_loopback()
         .await
@@ -207,7 +208,10 @@ async fn run_pkce_login(
 
     // Token exchange runs OUTSIDE the select so a timeout firing mid-POST
     // cannot drop the POST future and consume the auth code irrecoverably.
-    match exchange_authorization_code(&config, &code, &redirect_uri, &verifier).await {
+    match exchange_authorization_code(&config, &code, &redirect_uri, &verifier)
+        .await
+        .and_then(finalize_credential)
+    {
         Ok(cred) => {
             presenter.notify_success();
             Ok(cred)
@@ -217,6 +221,42 @@ async fn run_pkce_login(
             Err(e)
         }
     }
+}
+
+fn accept_oauth_credential(credential: OAuthCredential) -> Result<OAuthCredential, ProviderError> {
+    Ok(credential)
+}
+
+fn require_codex_account_id(
+    mut credential: OAuthCredential,
+) -> Result<OAuthCredential, ProviderError> {
+    #[derive(serde::Deserialize)]
+    struct CodexClaims {
+        #[serde(rename = "https://api.openai.com/auth")]
+        auth: Option<CodexAuthClaims>,
+    }
+
+    #[derive(serde::Deserialize)]
+    struct CodexAuthClaims {
+        chatgpt_account_id: Option<String>,
+    }
+
+    let account_id = credential
+        .access
+        .expose_secret()
+        .split('.')
+        .nth(1)
+        .and_then(|payload| URL_SAFE_NO_PAD.decode(payload).ok())
+        .and_then(|payload| serde_json::from_slice::<CodexClaims>(&payload).ok())
+        .and_then(|claims| claims.auth)
+        .and_then(|claims| claims.chatgpt_account_id)
+        .map(|account_id| account_id.trim().to_owned())
+        .filter(|account_id| !account_id.is_empty())
+        .ok_or_else(|| ProviderError::AccountIdMissing {
+            provider_id: "openai-codex".to_owned(),
+        })?;
+    credential.account_id = Some(account_id);
+    Ok(credential)
 }
 
 /// Exchange an authorization code for tokens (PKCE login). Requires both
@@ -263,6 +303,7 @@ async fn exchange_authorization_code(
         refresh: SecretString::new(refresh.into_boxed_str()),
         expires_at: Some(OffsetDateTime::now_utc() + time::Duration::seconds(expires_in)),
         base_url: None,
+        account_id: None,
     })
 }
 
@@ -378,33 +419,27 @@ async fn refresh_oauth_token(
         refresh,
         expires_at,
         base_url,
+        account_id: cred.account_id.clone(),
     })
 }
 
-/// Build a non-retryable auth error from a token-endpoint non-2xx response,
-/// surfacing only the OAuth `{error, error_description}` fields. The raw body
-/// is never embedded (it could echo the submitted `code_verifier` or
-/// `refresh_token`).
+/// Build a non-retryable auth error from a token-endpoint non-2xx response.
+/// Only the OAuth error code is surfaced: descriptions and raw response bodies
+/// can echo the submitted authorization code, verifier, or refresh token.
 fn token_endpoint_error(status: reqwest::StatusCode, body: &str) -> ProviderError {
     #[derive(serde::Deserialize)]
     struct OAuthError {
         #[serde(default)]
         error: Option<String>,
-        #[serde(default)]
-        error_description: Option<String>,
     }
     let parsed: Option<OAuthError> = serde_json::from_str(body).ok();
     let code = parsed
         .as_ref()
         .and_then(|e| e.error.as_deref())
         .unwrap_or("");
-    let desc = parsed
-        .as_ref()
-        .and_then(|e| e.error_description.as_deref())
-        .filter(|d| !d.is_empty());
-    let msg = match desc {
-        Some(d) => format!("token endpoint: {status} {code}: {d}"),
-        None => format!("token endpoint: {status} {code}"),
+    let msg = match code.is_empty() {
+        false => format!("token endpoint: {status} {code}"),
+        true => format!("token endpoint: {status}"),
     };
     ProviderError::AuthFailed(msg)
 }
@@ -520,7 +555,7 @@ impl OAuthProvider for AnthropicOAuthProvider {
             client: self.client.clone(),
             timeout: self.timeout,
         };
-        Box::pin(async move { run_pkce_login(config, presenter).await })
+        Box::pin(async move { run_pkce_login(config, presenter, accept_oauth_credential).await })
     }
 
     fn refresh<'a>(
@@ -545,25 +580,56 @@ impl OAuthProvider for AnthropicOAuthProvider {
 }
 
 // ---------------------------------------------------------------------------
-// CodexOAuthProvider (PKCE) — a profile on the shared runner, NOT a new wire
-// type. The dedicated Codex Responses compatibility profile is wired by the
-// factory (slice 5); here we only implement the OAuth login/refresh contract.
+// CodexOAuthProvider (browser PKCE + device-code)
 // ---------------------------------------------------------------------------
 
-/// OpenAI Codex OAuth provider using PKCE authorization-code with a
-/// `127.0.0.1` loopback callback. Structurally identical to
-/// [`AnthropicOAuthProvider`] (same shared runner); differs only in `id`,
-/// endpoints, and `client_id`. No dedicated Codex wire type is introduced.
+/// OpenAI Codex OAuth provider supporting browser PKCE with a `127.0.0.1`
+/// loopback callback and OpenAI's device-code flow.
+const CODEX_DEVICE_USER_CODE_URL: &str = "https://auth.openai.com/api/accounts/deviceauth/usercode";
+const CODEX_DEVICE_TOKEN_URL: &str = "https://auth.openai.com/api/accounts/deviceauth/token";
+const CODEX_DEVICE_VERIFICATION_URI: &str = "https://auth.openai.com/codex/device";
+const CODEX_DEVICE_REDIRECT_URI: &str = "https://auth.openai.com/deviceauth/callback";
+const CODEX_DEVICE_TIMEOUT: Duration = Duration::from_secs(15 * 60);
+
+#[derive(serde::Deserialize)]
+struct CodexDeviceAuthorization {
+    device_auth_id: String,
+    user_code: String,
+    interval: serde_json::Value,
+}
+
+#[derive(serde::Deserialize)]
+struct CodexDeviceToken {
+    authorization_code: String,
+    code_verifier: String,
+}
+
+enum CodexDevicePoll {
+    Pending,
+    SlowDown,
+    Denied,
+    Expired,
+    Complete(CodexDeviceToken),
+}
+
 pub struct CodexOAuthProvider {
     authorize_url: String,
     token_url: String,
+    device_user_code_url: String,
+    device_token_url: String,
+    device_verification_uri: String,
+    device_redirect_uri: String,
     client_id: String,
     client: reqwest::Client,
-    timeout: Duration,
+    browser_timeout: Duration,
+    device_timeout: Duration,
 }
 
 impl CodexOAuthProvider {
-    /// Construct with configurable endpoints and a login timeout.
+    /// Construct with configurable browser endpoints and a login timeout.
+    ///
+    /// Device-code login uses the production OpenAI endpoints and its fixed
+    /// 15-minute budget.
     pub fn new(
         authorize_url: String,
         token_url: String,
@@ -573,10 +639,263 @@ impl CodexOAuthProvider {
         Self {
             authorize_url,
             token_url,
+            device_user_code_url: CODEX_DEVICE_USER_CODE_URL.to_owned(),
+            device_token_url: CODEX_DEVICE_TOKEN_URL.to_owned(),
+            device_verification_uri: CODEX_DEVICE_VERIFICATION_URI.to_owned(),
+            device_redirect_uri: CODEX_DEVICE_REDIRECT_URI.to_owned(),
             client_id,
             client: no_redirect_client(),
-            timeout,
+            browser_timeout: timeout,
+            device_timeout: CODEX_DEVICE_TIMEOUT,
         }
+    }
+
+    /// Construct with fully configurable endpoints for offline wire tests.
+    #[doc(hidden)]
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_with_device_endpoints(
+        authorize_url: String,
+        token_url: String,
+        device_user_code_url: String,
+        device_token_url: String,
+        device_verification_uri: String,
+        device_redirect_uri: String,
+        client_id: String,
+        browser_timeout: Duration,
+        device_timeout: Duration,
+    ) -> Self {
+        Self {
+            authorize_url,
+            token_url,
+            device_user_code_url,
+            device_token_url,
+            device_verification_uri,
+            device_redirect_uri,
+            client_id,
+            client: no_redirect_client(),
+            browser_timeout,
+            device_timeout,
+        }
+    }
+}
+
+fn codex_device_interval(value: &serde_json::Value) -> Option<Duration> {
+    let seconds = match value {
+        serde_json::Value::Number(number) => number.as_u64(),
+        serde_json::Value::String(text) => text.trim().parse::<u64>().ok(),
+        _ => None,
+    }?;
+    Some(Duration::from_secs(seconds))
+}
+
+fn codex_device_error_code(body: &str) -> Option<String> {
+    let value: serde_json::Value = serde_json::from_str(body).ok()?;
+    match value.get("error")? {
+        serde_json::Value::String(code) => Some(code.clone()),
+        serde_json::Value::Object(error) => error.get("code")?.as_str().map(str::to_owned),
+        _ => None,
+    }
+}
+
+async fn poll_codex_device_token(
+    client: &reqwest::Client,
+    token_url: &str,
+    device_auth_id: &str,
+    user_code: &str,
+) -> Result<CodexDevicePoll, ProviderError> {
+    let response = client
+        .post(token_url)
+        .json(&serde_json::json!({
+            "device_auth_id": device_auth_id,
+            "user_code": user_code,
+        }))
+        .send()
+        .await
+        .map_err(|_| ProviderError::Network("device token poll failed".into()))?;
+    let status = response.status();
+    if status.is_success() {
+        let token = response.json::<CodexDeviceToken>().await.map_err(|_| {
+            ProviderError::Config("device token response missing required fields".into())
+        })?;
+        if token.authorization_code.is_empty() || token.code_verifier.is_empty() {
+            return Err(ProviderError::Config(
+                "device token response missing required fields".into(),
+            ));
+        }
+        return Ok(CodexDevicePoll::Complete(token));
+    }
+    let body = response.text().await.unwrap_or_default();
+    if status == reqwest::StatusCode::FORBIDDEN || status == reqwest::StatusCode::NOT_FOUND {
+        return Ok(CodexDevicePoll::Pending);
+    }
+    match codex_device_error_code(&body).as_deref() {
+        Some("deviceauth_authorization_pending") | Some("authorization_pending") => {
+            Ok(CodexDevicePoll::Pending)
+        }
+        Some("slow_down") => Ok(CodexDevicePoll::SlowDown),
+        Some("access_denied") | Some("deviceauth_access_denied") => Ok(CodexDevicePoll::Denied),
+        Some("expired_token") | Some("deviceauth_expired") => Ok(CodexDevicePoll::Expired),
+        _ => Err(ProviderError::AuthFailed(format!(
+            "device authorization failed ({status})"
+        ))),
+    }
+}
+
+async fn run_codex_device_login_flow(
+    provider: &CodexOAuthProvider,
+    presenter: &dyn LoginPresenter,
+) -> Result<OAuthCredential, ProviderError> {
+    let deadline = tokio::time::Instant::now() + provider.device_timeout;
+    let response = tokio::select! {
+        response = provider.client
+            .post(&provider.device_user_code_url)
+            .json(&serde_json::json!({"client_id": provider.client_id}))
+            .send() => response.map_err(|_| {
+                ProviderError::Network("device authorization request failed".into())
+            })?,
+        _ = tokio::time::sleep_until(deadline) => {
+            presenter.notify_failure("device authorization timed out");
+            return Err(ProviderError::Timeout);
+        }
+    };
+    let status = response.status();
+    if !status.is_success() {
+        let _ = response.text().await;
+        presenter.notify_failure("device authorization request failed");
+        return Err(ProviderError::AuthFailed(format!(
+            "device authorization request failed ({status})"
+        )));
+    }
+    let device = response
+        .json::<CodexDeviceAuthorization>()
+        .await
+        .map_err(|_| {
+            ProviderError::Config("device authorization response missing required fields".into())
+        })?;
+    let mut interval = codex_device_interval(&device.interval).ok_or_else(|| {
+        ProviderError::Config("device authorization response has invalid interval".into())
+    })?;
+    if device.device_auth_id.is_empty() || device.user_code.is_empty() {
+        return Err(ProviderError::Config(
+            "device authorization response missing required fields".into(),
+        ));
+    }
+
+    tokio::select! {
+        result = presenter.present_device_code(
+            &device.user_code,
+            &provider.device_verification_uri,
+        ) => result?,
+        _ = tokio::time::sleep_until(deadline) => {
+            presenter.notify_failure("device authorization timed out");
+            return Err(ProviderError::Timeout);
+        }
+    }
+
+    let token = loop {
+        let outcome = tokio::select! {
+            outcome = poll_codex_device_token(
+                &provider.client,
+                &provider.device_token_url,
+                &device.device_auth_id,
+                &device.user_code,
+            ) => outcome,
+            _ = tokio::time::sleep_until(deadline) => {
+                presenter.notify_failure("device authorization timed out");
+                return Err(ProviderError::Timeout);
+            }
+        };
+        match outcome {
+            Ok(CodexDevicePoll::Complete(token)) => break token,
+            Ok(CodexDevicePoll::Pending) => {
+                tokio::select! {
+                    _ = tokio::time::sleep(interval) => {}
+                    _ = tokio::time::sleep_until(deadline) => {
+                        presenter.notify_failure("device authorization timed out");
+                        return Err(ProviderError::Timeout);
+                    }
+                }
+            }
+            Ok(CodexDevicePoll::SlowDown) => {
+                interval += Duration::from_secs(5);
+                tokio::select! {
+                    _ = tokio::time::sleep(interval) => {}
+                    _ = tokio::time::sleep_until(deadline) => {
+                        presenter.notify_failure("device authorization timed out");
+                        return Err(ProviderError::Timeout);
+                    }
+                }
+            }
+            Ok(CodexDevicePoll::Denied) => {
+                presenter.notify_failure("device authorization denied");
+                return Err(ProviderError::CredentialRevoked {
+                    provider_id: "openai-codex".to_owned(),
+                });
+            }
+            Ok(CodexDevicePoll::Expired) => {
+                presenter.notify_failure("device code expired");
+                return Err(ProviderError::CredentialRevoked {
+                    provider_id: "openai-codex".to_owned(),
+                });
+            }
+            Err(error) => {
+                presenter.notify_failure("device authorization failed");
+                return Err(error);
+            }
+        }
+    };
+
+    let exchange_config = PkceLoginConfig {
+        authorize_url: String::new(),
+        token_url: provider.token_url.clone(),
+        client_id: provider.client_id.clone(),
+        authorize_params: Vec::new(),
+        client: provider.client.clone(),
+        timeout: provider.device_timeout,
+    };
+    let credential = tokio::select! {
+        credential = exchange_authorization_code(
+            &exchange_config,
+            &token.authorization_code,
+            &provider.device_redirect_uri,
+            &token.code_verifier,
+        ) => credential,
+        _ = tokio::time::sleep_until(deadline) => {
+            presenter.notify_failure("device authorization timed out");
+            return Err(ProviderError::Timeout);
+        }
+    }
+    .and_then(require_codex_account_id);
+    match credential {
+        Ok(credential) => {
+            presenter.notify_success();
+            Ok(credential)
+        }
+        Err(error) => {
+            presenter.notify_failure("token exchange failed");
+            Err(error)
+        }
+    }
+}
+
+async fn run_codex_device_login(
+    provider: &CodexOAuthProvider,
+    presenter: &dyn LoginPresenter,
+) -> Result<OAuthCredential, ProviderError> {
+    let flow = run_codex_device_login_flow(provider, presenter);
+    let cancellation = presenter.await_login_cancelled();
+    tokio::pin!(flow);
+    tokio::pin!(cancellation);
+    tokio::select! {
+        biased;
+        cancelled = &mut cancellation => {
+            cancelled?;
+            presenter.notify_failure("device authorization cancelled");
+            Err(ProviderError::LoginCancelled {
+                provider_id: "openai-codex".to_owned(),
+            })
+        }
+        result = &mut flow => result,
     }
 }
 
@@ -589,20 +908,34 @@ impl OAuthProvider for CodexOAuthProvider {
         &'a self,
         presenter: &'a dyn LoginPresenter,
     ) -> BoxAuthFuture<'a, Result<OAuthCredential, ProviderError>> {
-        let config = PkceLoginConfig {
-            authorize_url: self.authorize_url.clone(),
-            token_url: self.token_url.clone(),
-            client_id: self.client_id.clone(),
-            authorize_params: vec![
-                ("scope".into(), "openid profile email offline_access".into()),
-                ("id_token_add_organizations".into(), "true".into()),
-                ("codex_cli_simplified_flow".into(), "true".into()),
-                ("originator".into(), "opi".into()),
-            ],
-            client: self.client.clone(),
-            timeout: self.timeout,
-        };
-        Box::pin(async move { run_pkce_login(config, presenter).await })
+        Box::pin(async move {
+            let method = presenter
+                .select_login_method(
+                    "openai-codex",
+                    &[OAuthLoginMethod::Browser, OAuthLoginMethod::DeviceCode],
+                    OAuthLoginMethod::Browser,
+                )
+                .await?;
+            match method {
+                OAuthLoginMethod::Browser => {
+                    let config = PkceLoginConfig {
+                        authorize_url: self.authorize_url.clone(),
+                        token_url: self.token_url.clone(),
+                        client_id: self.client_id.clone(),
+                        authorize_params: vec![
+                            ("scope".into(), "openid profile email offline_access".into()),
+                            ("id_token_add_organizations".into(), "true".into()),
+                            ("codex_cli_simplified_flow".into(), "true".into()),
+                            ("originator".into(), "opi".into()),
+                        ],
+                        client: self.client.clone(),
+                        timeout: self.browser_timeout,
+                    };
+                    run_pkce_login(config, presenter, require_codex_account_id).await
+                }
+                OAuthLoginMethod::DeviceCode => run_codex_device_login(self, presenter).await,
+            }
+        })
     }
 
     fn refresh<'a>(
@@ -613,7 +946,7 @@ impl OAuthProvider for CodexOAuthProvider {
         let client_id = self.client_id.clone();
         let client = self.client.clone();
         Box::pin(async move {
-            refresh_oauth_token(
+            let credential = refresh_oauth_token(
                 &client,
                 &token_url,
                 &client_id,
@@ -621,7 +954,8 @@ impl OAuthProvider for CodexOAuthProvider {
                 "openai-codex",
                 cred.base_url.clone(),
             )
-            .await
+            .await?;
+            require_codex_account_id(credential)
         })
     }
 }
@@ -935,6 +1269,7 @@ impl OAuthProvider for CopilotOAuthProvider {
                 refresh: SecretString::new(github_token.into_boxed_str()),
                 expires_at,
                 base_url,
+                account_id: None,
             };
             presenter.notify_success();
             Ok(cred)
@@ -961,6 +1296,7 @@ impl OAuthProvider for CopilotOAuthProvider {
                 refresh: cred.refresh.clone(),
                 expires_at,
                 base_url,
+                account_id: None,
             })
         })
     }
@@ -994,6 +1330,49 @@ impl Default for TuiLoginPresenter {
 }
 
 impl LoginPresenter for TuiLoginPresenter {
+    fn select_login_method<'a>(
+        &'a self,
+        provider_id: &'a str,
+        methods: &'a [OAuthLoginMethod],
+        default: OAuthLoginMethod,
+    ) -> BoxAuthFuture<'a, Result<OAuthLoginMethod, ProviderError>> {
+        let provider_id = provider_id.to_owned();
+        let methods = methods.to_vec();
+        Box::pin(async move {
+            if provider_id != "openai-codex"
+                || methods != [OAuthLoginMethod::Browser, OAuthLoginMethod::DeviceCode]
+                || default != OAuthLoginMethod::Browser
+            {
+                return Err(ProviderError::Config(format!(
+                    "OAuth provider '{provider_id}' supplied unsupported login methods"
+                )));
+            }
+            tokio::task::spawn_blocking(|| {
+                println!("Select OpenAI Codex login method:");
+                println!("  1. Browser login (default)");
+                println!("  2. Device code login (headless)");
+                print!("Choice [1]: ");
+                let _ = std::io::Write::flush(&mut std::io::stdout());
+                let mut line = String::new();
+                std::io::stdin()
+                    .read_line(&mut line)
+                    .map_err(|e| ProviderError::Config(format!("stdin read failed: {e}")))?;
+                match line.trim() {
+                    "" | "1" => Ok(OAuthLoginMethod::Browser),
+                    "2" => Ok(OAuthLoginMethod::DeviceCode),
+                    "q" | "quit" | "cancel" => Err(ProviderError::LoginCancelled {
+                        provider_id: "openai-codex".to_owned(),
+                    }),
+                    _ => Err(ProviderError::Config(
+                        "invalid OpenAI Codex login method".into(),
+                    )),
+                }
+            })
+            .await
+            .map_err(|e| ProviderError::Config(format!("login method join failed: {e}")))?
+        })
+    }
+
     fn present_auth_url<'a>(
         &'a self,
         url: &'a str,
@@ -1036,6 +1415,14 @@ impl LoginPresenter for TuiLoginPresenter {
         })
     }
 
+    fn await_login_cancelled<'a>(&'a self) -> BoxAuthFuture<'a, Result<(), ProviderError>> {
+        Box::pin(async move {
+            tokio::signal::ctrl_c()
+                .await
+                .map_err(|_| ProviderError::Config("login cancellation signal failed".into()))
+        })
+    }
+
     fn notify_success(&self) {
         println!("Login successful.");
     }
@@ -1060,10 +1447,9 @@ pub enum RegistryError {
 }
 
 /// Heterogeneous registry of OAuth providers keyed by `id()`. Holds
-/// `Arc<dyn OAuthProvider>` so PKCE (Anthropic/Codex) and device-code (Copilot)
-/// providers coexist behind one type. [`lookup`](Self::lookup) returns an owned
-/// `Arc` clone so it can be moved into `AuthSource::Store` without borrowing the
-/// registry.
+/// `Arc<dyn OAuthProvider>` so PKCE and device-code providers coexist behind
+/// one type. [`lookup`](Self::lookup) returns an owned `Arc` clone so it can be
+/// moved into `AuthSource::Store` without borrowing the registry.
 pub struct OAuthProviderRegistry {
     providers: HashMap<String, Arc<dyn OAuthProvider>>,
 }
@@ -1101,16 +1487,17 @@ impl OAuthProviderRegistry {
     }
 
     /// Register the three production OAuth providers (Anthropic PKCE, GitHub
-    /// Copilot device-code, OpenAI Codex PKCE) with their production endpoints
-    /// and client ids. This is the single source of truth the provider factory
-    /// and the `/login` command consult; tests assert registration consistency.
+    /// Copilot device-code, OpenAI Codex browser/device-code) with their
+    /// production endpoints and client ids. This is the single source of truth
+    /// the provider factory and the `/login` command consult.
     ///
     /// The endpoint and client-id constants below are pinned to the reviewed
     /// `.repo/pi-0.80.6` OAuth profiles. Tests remain offline and never contact
     /// these production endpoints.
     pub fn registry_with_builtins() -> Self {
         let mut registry = Self::new();
-        // 5-minute login budget (callback wait / device-code polling).
+        // Browser callbacks and Copilot polling use five minutes. Codex's
+        // production constructor applies its dedicated 15-minute device budget.
         const LOGIN_TIMEOUT: Duration = Duration::from_secs(300);
 
         registry
@@ -1172,6 +1559,16 @@ struct DeferredSuccessPresenter<'a> {
 }
 
 impl LoginPresenter for DeferredSuccessPresenter<'_> {
+    fn select_login_method<'a>(
+        &'a self,
+        provider_id: &'a str,
+        methods: &'a [OAuthLoginMethod],
+        default: OAuthLoginMethod,
+    ) -> BoxAuthFuture<'a, Result<OAuthLoginMethod, ProviderError>> {
+        self.inner
+            .select_login_method(provider_id, methods, default)
+    }
+
     fn present_auth_url<'a>(
         &'a self,
         url: &'a str,
@@ -1189,6 +1586,10 @@ impl LoginPresenter for DeferredSuccessPresenter<'_> {
 
     fn await_manual_code<'a>(&'a self) -> BoxAuthFuture<'a, Result<String, ProviderError>> {
         self.inner.await_manual_code()
+    }
+
+    fn await_login_cancelled<'a>(&'a self) -> BoxAuthFuture<'a, Result<(), ProviderError>> {
+        self.inner.await_login_cancelled()
     }
 
     fn notify_success(&self) {}

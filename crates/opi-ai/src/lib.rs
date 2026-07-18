@@ -19,7 +19,9 @@ pub mod mistral;
 pub mod model;
 pub mod model_info;
 pub mod openai_chat;
+pub mod openai_codex_responses;
 pub mod openai_responses;
+mod openai_responses_shared;
 pub mod openrouter;
 pub mod provider;
 pub mod provider_collection;
@@ -34,8 +36,8 @@ pub mod vertex;
 
 pub use api_mapped::{ApiMapError, ApiMappedProvider};
 pub use auth::{
-    AuthResolver, AuthScheme, LoginPresenter, OAuthCredential, OAuthProvider, ResolvedAuth,
-    StaticAuthResolver,
+    AuthResolver, AuthScheme, LoginPresenter, OAuthCredential, OAuthLoginMethod, OAuthProvider,
+    ResolvedAuth, StaticAuthResolver,
 };
 pub use config::{Config, Error};
 pub use credential::{

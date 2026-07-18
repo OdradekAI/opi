@@ -21,12 +21,14 @@ use std::sync::Arc;
 
 use futures_util::StreamExt;
 use opi_ai::anthropic::AnthropicProvider;
-use opi_ai::auth::{AuthResolver, AuthScheme, StaticAuthResolver};
+use opi_ai::auth::{AuthResolver, AuthScheme, ResolvedAuth, StaticAuthResolver};
+use opi_ai::credential::BoxAuthFuture;
 use opi_ai::http::HttpClient;
 use opi_ai::message::{InputContent, Message, UserMessage};
 use opi_ai::openai_chat::OpenAiChatProvider;
-use opi_ai::openai_responses::{OpenAiResponsesProvider, ResponsesConfig};
+use opi_ai::openai_codex_responses::OpenAiCodexResponsesProvider;
 use opi_ai::provider::{CacheRetention, Provider, ProviderError, Request, ThinkingConfig};
+use opi_ai::{ModelCapabilities, ModelInfo, WireApi};
 use secrecy::SecretString;
 use tokio_util::sync::CancellationToken;
 use wiremock::matchers::method;
@@ -340,27 +342,48 @@ async fn openai_chat_api_key_401_stays_authfailed() {
     );
 }
 
-// --- Codex (OpenAiResponsesProvider, Codex profile) wire shape ---
+// --- Dedicated Codex Responses wire shape ---
 
-/// Forge a JWT-shaped bearer carrying `chatgpt_account_id` under the Codex auth
-/// claim. Signature segment is irrelevant — the provider does not verify it.
-fn codex_jwt(account_id: &str) -> String {
-    use base64::Engine;
-    let header = br#"{"alg":"HS256","typ":"JWT"}"#;
-    let payload =
-        format!(r#"{{"https://api.openai.com/auth":{{"chatgpt_account_id":"{account_id}"}}}}"#);
-    let h = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(header);
-    let p = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(payload);
-    format!("{h}.{p}.sig")
+/// Fixed auth carrying the dedicated wire's bearer token and account id.
+struct FixedCodexAuth {
+    secret: SecretString,
+    account_id: Option<String>,
 }
 
-/// The static header set the Codex compatibility profile attaches.
-fn codex_static_headers() -> Vec<(String, String)> {
-    vec![
-        ("OpenAI-Beta".into(), "responses=experimental".into()),
-        ("originator".into(), "opi".into()),
-        ("accept".into(), "text/event-stream".into()),
-    ]
+impl AuthResolver for FixedCodexAuth {
+    fn resolve<'a>(&'a self) -> BoxAuthFuture<'a, Result<ResolvedAuth, ProviderError>> {
+        let secret = self.secret.clone();
+        let account_id = self.account_id.clone();
+        Box::pin(async move {
+            Ok(ResolvedAuth {
+                scheme: AuthScheme::Bearer,
+                secret,
+                base_url: None,
+                account_id,
+            })
+        })
+    }
+}
+
+fn codex_provider(
+    server: &MockServer,
+    secret: &str,
+    account_id: Option<&str>,
+) -> OpenAiCodexResponsesProvider {
+    OpenAiCodexResponsesProvider::new(
+        Arc::new(FixedCodexAuth {
+            secret: SecretString::from(secret),
+            account_id: account_id.map(str::to_owned),
+        }),
+        Some(server.uri()),
+        vec![ModelInfo::new(
+            "gpt-5",
+            "GPT-5",
+            WireApi::OpenAiCodexResponses,
+            ModelCapabilities::new(128_000, 16_384),
+        )],
+        Arc::new(HttpClient::new()),
+    )
 }
 
 #[tokio::test]
@@ -375,23 +398,7 @@ async fn codex_responses_targets_codex_path_with_required_headers_and_account_id
         .mount(&server)
         .await;
 
-    let resolver: Arc<dyn AuthResolver> = Arc::new(StaticAuthResolver::new(
-        AuthScheme::Bearer,
-        SecretString::from(codex_jwt("acct-fixed")),
-    ));
-    let config = ResponsesConfig {
-        responses_path: "/codex/responses".into(),
-        derive_codex_account_id: true,
-        ..Default::default()
-    };
-    let provider = OpenAiResponsesProvider::with_auth_extra(
-        resolver,
-        Some(server.uri()),
-        config,
-        "openai-codex".into(),
-        codex_static_headers(),
-        Arc::new(HttpClient::new()),
-    );
+    let provider = codex_provider(&server, "codex-bearer", Some("acct-fixed"));
     let mut stream = provider.stream(sample_request("openai-codex:gpt-5"));
     drain(&mut stream).await;
 
@@ -421,7 +428,7 @@ async fn codex_responses_targets_codex_path_with_required_headers_and_account_id
 }
 
 #[tokio::test]
-async fn codex_account_id_invalid_jwt_omits_header() {
+async fn codex_missing_account_id_is_rejected_before_http() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .respond_with(
@@ -432,32 +439,17 @@ async fn codex_account_id_invalid_jwt_omits_header() {
         .mount(&server)
         .await;
 
-    // An opaque (non-JWT) token: derivation must return None and omit the
-    // header, never formatting the token into a header or error.
-    let resolver: Arc<dyn AuthResolver> = Arc::new(StaticAuthResolver::new(
-        AuthScheme::Bearer,
-        SecretString::from("opaque-not-a-jwt"),
-    ));
-    let config = ResponsesConfig {
-        derive_codex_account_id: true,
-        ..Default::default()
-    };
-    let provider = OpenAiResponsesProvider::with_auth_extra(
-        resolver,
-        Some(server.uri()),
-        config,
-        "openai-codex".into(),
-        vec![],
-        Arc::new(HttpClient::new()),
-    );
+    let provider = codex_provider(&server, "opaque-not-a-jwt", None);
     let mut stream = provider.stream(sample_request("openai-codex:gpt-5"));
-    drain(&mut stream).await;
-
-    let req = one_captured_request(&server).await;
     assert!(
-        req.headers.get("chatgpt-account-id").is_none(),
-        "opaque token must not produce a chatgpt-account-id header"
+        matches!(
+            stream.next().await,
+            Some(Err(ProviderError::AccountIdMissing { ref provider_id }))
+                if provider_id == "openai-codex"
+        ),
+        "missing account id must fail before HTTP"
     );
+    assert!(server.received_requests().await.unwrap().is_empty());
 }
 
 #[tokio::test]
@@ -471,22 +463,7 @@ async fn codex_responses_401_maps_to_credential_revoked_without_body_leak() {
         .mount(&server)
         .await;
 
-    let resolver: Arc<dyn AuthResolver> = Arc::new(StaticAuthResolver::new(
-        AuthScheme::Bearer,
-        SecretString::from("codex-bearer-xyz"),
-    ));
-    let config = ResponsesConfig {
-        responses_path: "/codex/responses".into(),
-        ..Default::default()
-    };
-    let provider = OpenAiResponsesProvider::with_auth_extra(
-        resolver,
-        Some(server.uri()),
-        config,
-        "openai-codex".into(),
-        vec![],
-        Arc::new(HttpClient::new()),
-    );
+    let provider = codex_provider(&server, "codex-bearer-xyz", Some("acct"));
     let mut stream = provider.stream(sample_request("openai-codex:gpt-5"));
     let err = stream
         .next()

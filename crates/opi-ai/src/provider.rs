@@ -302,6 +302,14 @@ pub enum ProviderError {
     /// turn ends and a later explicit `/login` is required.
     #[error("credential revoked for provider '{provider_id}'; re-login required")]
     CredentialRevoked { provider_id: String },
+    /// The provider requires a non-secret account identifier alongside its
+    /// bearer token, but the credential did not contain one.
+    #[error("credential for provider '{provider_id}' is missing its account id; re-login required")]
+    AccountIdMissing { provider_id: String },
+    /// The user cancelled login-method selection before any credential flow
+    /// or persistence operation began.
+    #[error("login cancelled for provider '{provider_id}'")]
+    LoginCancelled { provider_id: String },
     #[error("network error: {0}")]
     Network(String),
     #[error("invalid provider configuration: {0}")]
@@ -353,7 +361,8 @@ impl ProviderError {
         match self {
             ProviderError::AuthFailed(_)
             | ProviderError::CredentialNeeded { .. }
-            | ProviderError::CredentialRevoked { .. } => ProviderErrorCategory::Auth,
+            | ProviderError::CredentialRevoked { .. }
+            | ProviderError::AccountIdMissing { .. } => ProviderErrorCategory::Auth,
             ProviderError::Config(_)
             | ProviderError::MissingWireRoute { .. }
             | ProviderError::WireCompatMismatch { .. } => ProviderErrorCategory::Config,
@@ -365,7 +374,9 @@ impl ProviderError {
             ProviderError::ProviderSide(_) => ProviderErrorCategory::Provider,
             ProviderError::StreamError(_) => ProviderErrorCategory::Stream,
             ProviderError::UnsupportedCapability(_) => ProviderErrorCategory::Capability,
-            ProviderError::Cancelled => ProviderErrorCategory::Cancelled,
+            ProviderError::Cancelled | ProviderError::LoginCancelled { .. } => {
+                ProviderErrorCategory::Cancelled
+            }
         }
     }
 

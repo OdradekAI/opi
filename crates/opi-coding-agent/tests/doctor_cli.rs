@@ -1075,6 +1075,7 @@ async fn stored_credential_probe_is_redacted() {
                 refresh: SecretString::new(secret_refresh.to_owned().into_boxed_str()),
                 expires_at: None,
                 base_url: Some("https://copilot.example/api".to_owned()),
+                account_id: None,
             },
         )
         .await

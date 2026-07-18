@@ -916,6 +916,11 @@ fn first_class_provider_set_is_unchanged() {
         "api_mapped",
         "auth",
         "credential",
+        // OpenAI Codex uses a dedicated Responses wire while sharing only
+        // wire-neutral conversion/SSE infrastructure with standard Responses.
+        // Neither module broadens the general first-class provider family set.
+        "openai_codex_responses",
+        "openai_responses_shared",
         "provider_headers",
     ]
     .into_iter()

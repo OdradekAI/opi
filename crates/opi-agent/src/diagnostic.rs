@@ -702,6 +702,14 @@ impl From<&opi_ai::provider::ProviderError> for Diagnostic {
             )
             .details(serde_json::json!({ "provider_id": provider_id }))
             .action("re-login required via `/login <provider>`"),
+            ProviderError::AccountIdMissing { provider_id } => Diagnostic::new(
+                Severity::Error,
+                code::CODE_PROVIDER_AUTH_FAILED,
+                SOURCE_PROVIDER,
+                "provider credential is missing its account id",
+            )
+            .details(serde_json::json!({ "provider_id": provider_id }))
+            .action("re-login required via `/login <provider>`"),
             ProviderError::Network(message) => Diagnostic::new(
                 Severity::Warning,
                 code::CODE_PROVIDER_NETWORK,
@@ -764,6 +772,13 @@ impl From<&opi_ai::provider::ProviderError> for Diagnostic {
                 SOURCE_PROVIDER,
                 "provider request cancelled",
             ),
+            ProviderError::LoginCancelled { provider_id } => Diagnostic::new(
+                Severity::Info,
+                code::CODE_PROVIDER_CANCELLED,
+                SOURCE_PROVIDER,
+                "provider login cancelled",
+            )
+            .details(serde_json::json!({ "provider_id": provider_id })),
         }
     }
 }

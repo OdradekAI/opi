@@ -419,7 +419,7 @@ async fn session_affinity_wire_mappings() {
     let responses_server = MockServer::start().await;
     Mock::given(method("POST"))
         .respond_with(ResponseTemplate::new(200).set_body_string("data: [DONE]\n\n"))
-        .expect(4)
+        .expect(3)
         .mount(&responses_server)
         .await;
     let standard = opi_ai::openai_responses::OpenAiResponsesProvider::new(
@@ -429,26 +429,6 @@ async fn session_affinity_wire_mappings() {
     drain(standard.stream(make_openai_responses_request(
         "openai-responses:model",
         "session-standard",
-    )))
-    .await;
-    let codex = opi_ai::openai_responses::OpenAiResponsesProvider::with_auth_extra(
-        Arc::new(StaticAuthResolver::new(
-            AuthScheme::Bearer,
-            SecretString::from("test-token"),
-        )),
-        Some(responses_server.uri()),
-        opi_ai::openai_responses::ResponsesConfig {
-            responses_path: "/codex/responses".into(),
-            derive_codex_account_id: true,
-            ..Default::default()
-        },
-        "openai-codex".into(),
-        vec![],
-        Arc::new(HttpClient::new()),
-    );
-    drain(codex.stream(make_openai_responses_request(
-        "openai-codex:model",
-        "session-codex",
     )))
     .await;
     let mut disabled = make_openai_responses_request("openai-responses:model", "session-disabled");
@@ -475,7 +455,7 @@ async fn session_affinity_wire_mappings() {
     .await;
 
     let response_requests = responses_server.received_requests().await.unwrap();
-    assert_eq!(response_requests.len(), 4);
+    assert_eq!(response_requests.len(), 3);
     assert_eq!(
         request_body_json(&response_requests[0])["prompt_cache_key"],
         "session-standard"
@@ -488,21 +468,7 @@ async fn session_affinity_wire_mappings() {
         header_value(&response_requests[0], "session_id"),
         Some("session-standard")
     );
-    assert_eq!(
-        header_value(&response_requests[1], "x-client-request-id"),
-        Some("session-codex")
-    );
-    assert_eq!(
-        header_value(&response_requests[1], "session-id"),
-        Some("session-codex")
-    );
-    assert_eq!(header_value(&response_requests[1], "session_id"), None);
-    assert!(
-        request_body_json(&response_requests[1])
-            .get("prompt_cache_key")
-            .is_none()
-    );
-    for request in &response_requests[2..] {
+    for request in &response_requests[1..] {
         assert!(request_body_json(request).get("prompt_cache_key").is_none());
         for name in ["session_id", "session-id", "x-client-request-id"] {
             assert_eq!(header_value(request, name), None);

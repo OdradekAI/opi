@@ -22,7 +22,7 @@ opi-coding-agent = { path = "crates/opi-coding-agent", version = "0.7.0" }
 opi-tui = { path = "crates/opi-tui", version = "0.7.0" }
 
 # async runtime
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "process", "io-util", "fs", "net"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "test-util", "signal", "process", "io-util", "fs", "net"] }
 tokio-util = "0.7"
 futures-core = "0.3"
 futures-util = "0.3"

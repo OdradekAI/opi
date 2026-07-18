@@ -500,7 +500,7 @@ fn build_list_models_metadata(
             opi_ai::openai_responses::model_catalog(),
         ),
         "github-copilot" => (None, crate::github_copilot::github_copilot_catalog()),
-        "openai-codex" => (None, opi_ai::openai_responses::model_catalog()),
+        "openai-codex" => (None, crate::openai_codex::openai_codex_catalog()),
         "gemini" => (
             config.providers.gemini.proxy.as_ref(),
             opi_ai::gemini::model_catalog(),
@@ -830,18 +830,6 @@ async fn build_provider_with_resolver_outcome(
 // Phase 14.2 OAuth provider construction
 // ---------------------------------------------------------------------------
 
-/// Default Codex API base URL.
-const CODEX_DEFAULT_BASE_URL: &str = "https://api.openai.com";
-
-/// The static required Codex Responses headers.
-fn codex_extra_headers() -> Vec<(String, String)> {
-    vec![
-        ("OpenAI-Beta".into(), "responses=experimental".into()),
-        ("originator".into(), "opi".into()),
-        ("accept".into(), "text/event-stream".into()),
-    ]
-}
-
 /// Build Anthropic with per-stream credential-source precedence: stored OAuth,
 /// `ANTHROPIC_OAUTH_TOKEN`, then the configured API-key environment source.
 /// Construction never requires an immediately available credential.
@@ -977,11 +965,7 @@ async fn build_copilot_oauth(
     Ok(Box::new(provider))
 }
 
-/// Build the Codex Responses provider (Codex compat profile) over a stored
-/// OAuth credential, targeting `/codex/responses` with the account-id
-/// derivation and the required Codex headers. The base URL is the stored
-/// credential's `base_url` when present, otherwise [`CODEX_DEFAULT_BASE_URL`]
-/// (production Codex PKCE carries no base URL, so the default always wins).
+/// Build the dedicated Codex Responses provider over lazy stored OAuth.
 async fn build_codex_oauth(
     resolver: &CredentialResolver,
     registry: &OAuthProviderRegistry,
@@ -989,27 +973,15 @@ async fn build_codex_oauth(
     let oauth = registry.lookup("openai-codex").ok_or_else(|| {
         ProviderBuildError::Config("no openai-codex OAuth provider registered".into())
     })?;
-    let base_url = resolver
-        .read_oauth_base_url("openai-codex")
-        .await
-        .map_err(ProviderBuildError::Provider)?
-        .unwrap_or_else(|| CODEX_DEFAULT_BASE_URL.to_owned());
     let client = build_proxied_client(None)?;
-    let config = opi_ai::openai_responses::ResponsesConfig {
-        responses_path: "/codex/responses".into(),
-        derive_codex_account_id: true,
-        ..Default::default()
-    };
-    let provider = opi_ai::openai_responses::OpenAiResponsesProvider::with_auth_extra(
+    let provider = opi_ai::openai_codex_responses::OpenAiCodexResponsesProvider::new(
         Arc::new(AuthSource::Store {
             resolver: Arc::new(resolver.clone()),
             provider_id: "openai-codex".into(),
             oauth,
         }),
-        Some(base_url),
-        config,
-        "openai-codex".into(),
-        codex_extra_headers(),
+        None,
+        crate::openai_codex::openai_codex_catalog(),
         client,
     );
     Ok(Box::new(provider))
@@ -1605,7 +1577,7 @@ pub fn build_collection_for_listing(
 ) -> Result<ProviderCollection, ListModelsError> {
     let mut collection = ProviderCollection::new();
     for provider_id in BUILT_IN_PROVIDER_IDS {
-        let auth_available = if *provider_id == "github-copilot" {
+        let auth_available = if matches!(*provider_id, "github-copilot" | "openai-codex") {
             true
         } else if *provider_id == "bedrock" {
             bedrock_auth_presence(config, &|name| std::env::var(name).ok()).is_present()
@@ -1680,7 +1652,7 @@ pub async fn build_collection_for_listing_with_store(
 ) -> Result<ProviderCollection, ListModelsError> {
     let provider_ids = BUILT_IN_PROVIDER_IDS
         .iter()
-        .filter(|provider_id| **provider_id != "github-copilot")
+        .filter(|provider_id| !matches!(**provider_id, "github-copilot" | "openai-codex"))
         .map(|provider_id| (*provider_id).to_owned());
     let probes = crate::credential_store::collect_credential_probes(store, provider_ids).await;
     build_collection_for_listing(config, &probes)

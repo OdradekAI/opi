@@ -406,6 +406,50 @@ async fn github_copilot_static_catalog_lists_without_store_reads() {
 }
 
 #[tokio::test]
+async fn openai_codex_static_catalog_lists_without_store_reads() {
+    use opi_coding_agent::provider_factory::build_collection_for_listing_with_store;
+
+    let store = ProbeOnlyCredentialStore::default();
+    let collection = build_collection_for_listing_with_store(
+        &opi_coding_agent::config::OpiConfig::default(),
+        &store,
+    )
+    .await
+    .expect("static OpenAI Codex listing");
+
+    let entries = model_entries_from_registry(collection.registry())
+        .into_iter()
+        .filter(|entry| entry.provider_id == "openai-codex")
+        .collect::<Vec<_>>();
+    assert_eq!(entries.len(), 7);
+    assert_eq!(
+        entries
+            .iter()
+            .map(|entry| entry.model_id.as_str())
+            .collect::<Vec<_>>(),
+        vec![
+            "gpt-5.3-codex-spark",
+            "gpt-5.4",
+            "gpt-5.4-mini",
+            "gpt-5.5",
+            "gpt-5.6-luna",
+            "gpt-5.6-sol",
+            "gpt-5.6-terra",
+        ]
+    );
+    assert_eq!(store.read_calls.load(Ordering::SeqCst), 0);
+    assert!(
+        !store
+            .probed_provider_ids
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|provider_id| provider_id == "openai-codex"),
+        "static catalog listing must not probe OpenAI Codex credentials"
+    );
+}
+
+#[tokio::test]
 #[allow(clippy::await_holding_lock)] // Serializes process-env mutation; the awaited store orchestration never re-acquires this lock.
 async fn stored_only_credential_lists_models_through_async_orchestration() {
     use opi_coding_agent::config::CredentialBackendSource;

@@ -154,6 +154,8 @@ const NON_PROVIDER_MODULES: &[&str] = &[
     "message",
     "model",
     "model_info",
+    "openai_codex_responses",
+    "openai_responses_shared",
     "provider",
     "provider_collection",
     "registry",

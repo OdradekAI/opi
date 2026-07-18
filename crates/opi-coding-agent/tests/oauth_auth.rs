@@ -15,7 +15,8 @@ use common::{MockLoginPresenter, extract_query_param, extract_redirect_port};
 use opi_agent::AgentError;
 use opi_ai::anthropic::AnthropicProvider;
 use opi_ai::auth::{
-    AuthResolver, AuthScheme, LoginPresenter, OAuthCredential, OAuthProvider, ResolvedAuth,
+    AuthResolver, AuthScheme, LoginPresenter, OAuthCredential, OAuthLoginMethod, OAuthProvider,
+    ResolvedAuth,
 };
 use opi_ai::credential::{BoxAuthFuture, Credential, CredentialStore};
 use opi_ai::http::HttpClient;
@@ -42,7 +43,7 @@ use serde_json::json;
 use tempfile::TempDir;
 use time::OffsetDateTime;
 use tokio_util::sync::CancellationToken;
-use wiremock::matchers::{method, path};
+use wiremock::matchers::{body_json, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use futures_util::{StreamExt, stream};
@@ -82,13 +83,142 @@ fn codex_provider(token_url: String, timeout: Duration) -> CodexOAuthProvider {
     )
 }
 
+fn codex_device_provider(server_uri: &str, timeout: Duration) -> CodexOAuthProvider {
+    CodexOAuthProvider::new_with_device_endpoints(
+        AUTHORIZE_URL.to_owned(),
+        format!("{server_uri}/oauth/token"),
+        format!("{server_uri}/device/usercode"),
+        format!("{server_uri}/device/token"),
+        "https://auth.openai.com/codex/device".to_owned(),
+        "https://auth.openai.com/deviceauth/callback".to_owned(),
+        "codex-client-id".to_owned(),
+        Duration::from_secs(60),
+        timeout,
+    )
+}
+
+type LoginSelection = (String, Vec<OAuthLoginMethod>, OAuthLoginMethod);
+
+struct MethodPresenter {
+    inner: MockLoginPresenter,
+    method: Option<OAuthLoginMethod>,
+    selections: Arc<Mutex<Vec<LoginSelection>>>,
+    device_code_presented: Arc<tokio::sync::Notify>,
+    cancel_device_login: Arc<tokio::sync::Notify>,
+    block_device_presentation: bool,
+}
+
+impl MethodPresenter {
+    fn new(method: Option<OAuthLoginMethod>) -> Self {
+        Self {
+            inner: MockLoginPresenter::new(),
+            method,
+            selections: Arc::new(Mutex::new(Vec::new())),
+            device_code_presented: Arc::new(tokio::sync::Notify::new()),
+            cancel_device_login: Arc::new(tokio::sync::Notify::new()),
+            block_device_presentation: false,
+        }
+    }
+
+    fn cancelling_active_device_flow() -> Self {
+        Self {
+            block_device_presentation: true,
+            ..Self::new(Some(OAuthLoginMethod::DeviceCode))
+        }
+    }
+}
+
+impl LoginPresenter for MethodPresenter {
+    fn select_login_method<'a>(
+        &'a self,
+        provider_id: &'a str,
+        methods: &'a [OAuthLoginMethod],
+        default: OAuthLoginMethod,
+    ) -> BoxAuthFuture<'a, Result<OAuthLoginMethod, AiProviderError>> {
+        let provider_id = provider_id.to_owned();
+        let methods = methods.to_vec();
+        let selections = self.selections.clone();
+        let method = self.method;
+        Box::pin(async move {
+            selections
+                .lock()
+                .unwrap()
+                .push((provider_id.clone(), methods, default));
+            method.ok_or(AiProviderError::LoginCancelled { provider_id })
+        })
+    }
+
+    fn present_auth_url<'a>(
+        &'a self,
+        url: &'a str,
+    ) -> BoxAuthFuture<'a, Result<(), AiProviderError>> {
+        self.inner.present_auth_url(url)
+    }
+
+    fn present_device_code<'a>(
+        &'a self,
+        user_code: &'a str,
+        verification_uri: &'a str,
+    ) -> BoxAuthFuture<'a, Result<(), AiProviderError>> {
+        let presented = self.device_code_presented.clone();
+        let block = self.block_device_presentation;
+        Box::pin(async move {
+            self.inner
+                .present_device_code(user_code, verification_uri)
+                .await?;
+            presented.notify_one();
+            if block {
+                return std::future::pending::<Result<(), AiProviderError>>().await;
+            }
+            Ok(())
+        })
+    }
+
+    fn await_login_cancelled<'a>(&'a self) -> BoxAuthFuture<'a, Result<(), AiProviderError>> {
+        let cancel = self.cancel_device_login.clone();
+        Box::pin(async move {
+            cancel.notified().await;
+            Ok(())
+        })
+    }
+
+    fn await_manual_code<'a>(&'a self) -> BoxAuthFuture<'a, Result<String, AiProviderError>> {
+        self.inner.await_manual_code()
+    }
+
+    fn notify_success(&self) {
+        self.inner.notify_success();
+    }
+
+    fn notify_failure(&self, reason: &str) {
+        self.inner.notify_failure(reason);
+    }
+}
+
 fn oauth_cred(access: &str, refresh: &str, base_url: Option<String>) -> OAuthCredential {
     OAuthCredential {
         access: secret(access),
         refresh: secret(refresh),
         expires_at: Some(OffsetDateTime::now_utc() + Duration::from_secs(3600)),
         base_url,
+        account_id: None,
     }
+}
+
+fn codex_jwt(account_id: Option<&str>) -> String {
+    use base64::Engine;
+    let header = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(r#"{"alg":"none"}"#);
+    let payload = match account_id {
+        Some(account_id) => json!({
+            "https://api.openai.com/auth": {
+                "chatgpt_account_id": account_id,
+            }
+        }),
+        None => json!({"sub":"synthetic-user"}),
+    };
+    let payload = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .encode(serde_json::to_vec(&payload).unwrap());
+    format!("{header}.{payload}.synthetic-signature")
 }
 
 const PROVIDER: &str = "anthropic";
@@ -192,6 +322,7 @@ fn oauth_credential(access: &str, expires_at: Option<OffsetDateTime>) -> Credent
         refresh: secret("rtk-DO-NOT-LEAK"),
         expires_at,
         base_url: None,
+        account_id: None,
     }
 }
 
@@ -267,6 +398,7 @@ impl OAuthProvider for MockOAuthProvider {
         let fail = self.fail;
         let refresh_secret = cred.refresh.clone();
         let base_url = cred.base_url.clone();
+        let account_id = cred.account_id.clone();
         Box::pin(async move {
             if let (Some(fresh), Some(backend)) = (inject, backend) {
                 backend.seed_credential(KEYCHAIN_SERVICE, PROVIDER, &fresh);
@@ -279,6 +411,7 @@ impl OAuthProvider for MockOAuthProvider {
                 refresh: refresh_secret,
                 expires_at: Some(fresh_expiry()),
                 base_url,
+                account_id,
             })
         })
     }
@@ -981,7 +1114,8 @@ async fn codex_oauth_provider_id_is_codex() {
 #[tokio::test]
 async fn codex_login_manual_code_wins_drives_token_post_and_returns_credential() {
     let server = MockServer::start().await;
-    mount_token_stub(&server, 200, token_body("codex-atk", "codex-rtk", 3600)).await;
+    let access = codex_jwt(Some("account-browser"));
+    mount_token_stub(&server, 200, token_body(&access, "codex-rtk", 3600)).await;
     let provider = codex_provider(
         format!("{}/oauth/token", server.uri()),
         Duration::from_secs(60),
@@ -989,8 +1123,9 @@ async fn codex_login_manual_code_wins_drives_token_post_and_returns_credential()
     let presenter = MockLoginPresenter::new();
     presenter.supply_manual_code("CODE-XYZ");
     let cred = provider.login(&presenter).await.expect("login");
-    assert_eq!(cred.access.expose_secret(), "codex-atk");
+    assert_eq!(cred.access.expose_secret(), access);
     assert_eq!(cred.refresh.expose_secret(), "codex-rtk");
+    assert_eq!(cred.account_id.as_deref(), Some("account-browser"));
     assert_eq!(presenter.notify_success_count.load(Ordering::SeqCst), 1);
     let authorize_url = presenter.captured_url().expect("authorize URL");
     assert_eq!(
@@ -1019,7 +1154,8 @@ async fn codex_login_manual_code_wins_drives_token_post_and_returns_credential()
 #[tokio::test]
 async fn codex_login_callback_wins_completes_token_exchange_and_returns_credential() {
     let server = MockServer::start().await;
-    mount_token_stub(&server, 200, token_body("codex-atk", "codex-rtk", 3600)).await;
+    let access = codex_jwt(Some("account-callback"));
+    mount_token_stub(&server, 200, token_body(&access, "codex-rtk", 3600)).await;
     let provider = codex_provider(
         format!("{}/oauth/token", server.uri()),
         Duration::from_secs(60),
@@ -1039,13 +1175,19 @@ async fn codex_login_callback_wins_completes_token_exchange_and_returns_credenti
     };
     let (cred, _) = tokio::join!(login_fut, drive_fut);
     let cred = cred.expect("login");
-    assert_eq!(cred.access.expose_secret(), "codex-atk");
+    assert_eq!(cred.access.expose_secret(), access);
+    assert_eq!(cred.account_id.as_deref(), Some("account-callback"));
 }
 
 #[tokio::test]
 async fn codex_login_state_mismatch_rejects_callback_and_notifies_failure() {
     let server = MockServer::start().await;
-    mount_token_stub(&server, 200, token_body("codex-atk", "codex-rtk", 3600)).await;
+    mount_token_stub(
+        &server,
+        200,
+        token_body(&codex_jwt(Some("unused-account")), "codex-rtk", 3600),
+    )
+    .await;
     let provider = codex_provider(
         format!("{}/oauth/token", server.uri()),
         Duration::from_secs(60),
@@ -1091,11 +1233,12 @@ async fn codex_login_timeout_returns_error_without_token_exchange() {
 async fn codex_refresh_preserves_base_url_and_handles_missing_refresh_token() {
     let server = MockServer::start().await;
     // Response omits refresh_token -> Codex reuses the old one (rotation-optional).
+    let new_access = codex_jwt(Some("account-refreshed"));
     Mock::given(method("POST"))
         .and(path("/oauth/token"))
         .respond_with(
             ResponseTemplate::new(200)
-                .set_body_json(json!({"access_token":"codex-new","expires_in":3600})),
+                .set_body_json(json!({"access_token":new_access,"expires_in":3600})),
         )
         .mount(&server)
         .await;
@@ -1109,15 +1252,96 @@ async fn codex_refresh_preserves_base_url_and_handles_missing_refresh_token() {
         Some("https://enterprise".to_owned()),
     );
     let refreshed = provider.refresh(&cred).await.expect("refresh");
-    assert_eq!(refreshed.access.expose_secret(), "codex-new");
+    assert_eq!(refreshed.access.expose_secret(), new_access);
     assert_eq!(refreshed.refresh.expose_secret(), "codex-rtk-old");
     assert_eq!(refreshed.base_url.as_deref(), Some("https://enterprise"));
+    assert_eq!(refreshed.account_id.as_deref(), Some("account-refreshed"));
+}
+
+#[tokio::test]
+async fn openai_codex_login_rejects_token_without_chatgpt_account_id() {
+    let server = MockServer::start().await;
+    let missing_account_jwt = codex_jwt(None);
+    mount_token_stub(
+        &server,
+        200,
+        token_body(&missing_account_jwt, "sentinel-refresh", 3600),
+    )
+    .await;
+    let provider = codex_provider(
+        format!("{}/oauth/token", server.uri()),
+        Duration::from_secs(60),
+    );
+    let presenter = MockLoginPresenter::new();
+    presenter.supply_manual_code("sentinel-authorization-code");
+    let error = provider.login(&presenter).await.expect_err("account id");
+    assert!(matches!(
+        error,
+        AiProviderError::AccountIdMissing { ref provider_id }
+            if provider_id == "openai-codex"
+    ));
+    let rendered = format!("{error:?} {error}");
+    for sentinel in [
+        missing_account_jwt.as_str(),
+        "sentinel-refresh",
+        "sentinel-authorization-code",
+    ] {
+        assert!(!rendered.contains(sentinel));
+    }
+    assert!(!error.is_retryable());
+}
+
+#[tokio::test]
+async fn openai_codex_refresh_rejects_token_without_chatgpt_account_id() {
+    let server = MockServer::start().await;
+    let missing_account_jwt = codex_jwt(None);
+    Mock::given(method("POST"))
+        .and(path("/oauth/token"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "access_token": missing_account_jwt,
+            "refresh_token": "sentinel-refresh-new",
+            "expires_in": 3600
+        })))
+        .mount(&server)
+        .await;
+    let provider = codex_provider(
+        format!("{}/oauth/token", server.uri()),
+        Duration::from_secs(60),
+    );
+    let mut credential = oauth_cred("sentinel-access-old", "sentinel-refresh-old", None);
+    credential.account_id = Some("account-old".into());
+    let error = provider
+        .refresh(&credential)
+        .await
+        .expect_err("new account id missing");
+    assert!(matches!(
+        error,
+        AiProviderError::AccountIdMissing { ref provider_id }
+            if provider_id == "openai-codex"
+    ));
+    let rendered = format!("{error:?} {error}");
+    for sentinel in [
+        missing_account_jwt.as_str(),
+        "sentinel-refresh-new",
+        "sentinel-refresh-old",
+        "sentinel-access-old",
+    ] {
+        assert!(!rendered.contains(sentinel));
+    }
 }
 
 #[tokio::test]
 async fn codex_login_does_not_leak_verifier_or_tokens_into_error_strings() {
     let server = MockServer::start().await;
-    mount_token_stub(&server, 500, json!({"error":"server_error"})).await;
+    mount_token_stub(
+        &server,
+        500,
+        json!({
+            "error": "server_error",
+            "error_description": "sentinel-token-endpoint-echo"
+        }),
+    )
+    .await;
     let provider = codex_provider(
         format!("{}/oauth/token", server.uri()),
         Duration::from_secs(60),
@@ -1141,11 +1365,696 @@ async fn codex_login_does_not_leak_verifier_or_tokens_into_error_strings() {
         !msg.contains("CODE-VERIFIER-TEST"),
         "auth code leaked: {msg}"
     );
+    assert!(
+        !msg.contains("sentinel-token-endpoint-echo"),
+        "token endpoint detail leaked: {msg}"
+    );
 }
 
 // ===========================================================================
 // Slice 4 — OAuthProviderRegistry
 // ===========================================================================
+
+async fn mount_codex_device_start(
+    server: &MockServer,
+    device_auth_id: &str,
+    user_code: &str,
+    interval: u64,
+) {
+    Mock::given(method("POST"))
+        .and(path("/device/usercode"))
+        .and(body_json(json!({"client_id":"codex-client-id"})))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "device_auth_id": device_auth_id,
+            "user_code": user_code,
+            "interval": interval
+        })))
+        .mount(server)
+        .await;
+}
+
+async fn mount_codex_device_poll(
+    server: &MockServer,
+    status: u16,
+    body: serde_json::Value,
+    times: Option<u64>,
+) {
+    let mut mock = Mock::given(method("POST"))
+        .and(path("/device/token"))
+        .and(body_json(json!({
+            "device_auth_id": "device-auth-sentinel",
+            "user_code": "PUBLIC-CODE"
+        })))
+        .respond_with(ResponseTemplate::new(status).set_body_json(body));
+    if let Some(times) = times {
+        mock = mock.up_to_n_times(times);
+    }
+    mock.mount(server).await;
+}
+
+async fn mount_codex_device_exchange(server: &MockServer, account_id: &str) {
+    mount_token_stub(
+        server,
+        200,
+        token_body(
+            &codex_jwt(Some(account_id)),
+            "device-refresh-sentinel",
+            3600,
+        ),
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn openai_codex_browser_is_default_and_preserves_pkce_manual_race() {
+    let server = MockServer::start().await;
+    mount_token_stub(
+        &server,
+        200,
+        token_body(
+            &codex_jwt(Some("browser-default-account")),
+            "browser-refresh",
+            3600,
+        ),
+    )
+    .await;
+    let provider = codex_device_provider(&server.uri(), Duration::from_secs(60));
+    let presenter = MethodPresenter::new(Some(OAuthLoginMethod::Browser));
+    presenter.inner.supply_manual_code("browser-manual-code");
+
+    let credential = provider.login(&presenter).await.expect("browser login");
+
+    assert_eq!(
+        credential.account_id.as_deref(),
+        Some("browser-default-account")
+    );
+    assert_eq!(presenter.inner.manual_code_calls.load(Ordering::SeqCst), 1);
+    let selections = presenter.selections.lock().unwrap();
+    assert_eq!(
+        selections.as_slice(),
+        &[(
+            "openai-codex".to_owned(),
+            vec![OAuthLoginMethod::Browser, OAuthLoginMethod::DeviceCode],
+            OAuthLoginMethod::Browser,
+        )]
+    );
+}
+
+#[tokio::test]
+async fn openai_codex_device_code_success_exchanges_authorization_code() {
+    let server = MockServer::start().await;
+    mount_codex_device_start(&server, "device-auth-sentinel", "PUBLIC-CODE", 0).await;
+    mount_codex_device_poll(
+        &server,
+        200,
+        json!({
+            "authorization_code": "authorization-code-sentinel",
+            "code_verifier": "device-verifier-sentinel"
+        }),
+        None,
+    )
+    .await;
+    mount_codex_device_exchange(&server, "device-account").await;
+    let provider = codex_device_provider(&server.uri(), Duration::from_secs(60));
+    let presenter = MethodPresenter::new(Some(OAuthLoginMethod::DeviceCode));
+
+    let credential = provider.login(&presenter).await.expect("device login");
+
+    assert_eq!(credential.account_id.as_deref(), Some("device-account"));
+    assert_eq!(
+        presenter
+            .inner
+            .captured_device_codes
+            .lock()
+            .unwrap()
+            .as_slice(),
+        &[(
+            "PUBLIC-CODE".to_owned(),
+            "https://auth.openai.com/codex/device".to_owned()
+        )]
+    );
+    let requests = server.received_requests().await.expect("requests");
+    let token_exchange = requests
+        .iter()
+        .find(|request| request.url.path() == "/oauth/token")
+        .expect("token exchange");
+    let body = std::str::from_utf8(&token_exchange.body).expect("form body");
+    assert!(body.contains("code=authorization-code-sentinel"), "{body}");
+    assert!(
+        body.contains("code_verifier=device-verifier-sentinel"),
+        "{body}"
+    );
+    assert!(
+        body.contains("redirect_uri=https%3A%2F%2Fauth.openai.com%2Fdeviceauth%2Fcallback"),
+        "{body}"
+    );
+}
+
+#[tokio::test]
+async fn openai_codex_device_code_pending_then_success() {
+    let server = MockServer::start().await;
+    mount_codex_device_start(&server, "device-auth-sentinel", "PUBLIC-CODE", 0).await;
+    mount_codex_device_poll(
+        &server,
+        403,
+        json!({"error":"deviceauth_authorization_pending"}),
+        Some(1),
+    )
+    .await;
+    mount_codex_device_poll(
+        &server,
+        400,
+        json!({"error":{"code":"deviceauth_authorization_pending"}}),
+        Some(1),
+    )
+    .await;
+    mount_codex_device_poll(
+        &server,
+        200,
+        json!({
+            "authorization_code": "authorization-code",
+            "code_verifier": "device-verifier"
+        }),
+        None,
+    )
+    .await;
+    mount_codex_device_exchange(&server, "pending-account").await;
+    let provider = codex_device_provider(&server.uri(), Duration::from_secs(60));
+    let presenter = MethodPresenter::new(Some(OAuthLoginMethod::DeviceCode));
+
+    let credential = provider.login(&presenter).await.expect("device login");
+
+    assert_eq!(credential.account_id.as_deref(), Some("pending-account"));
+    let polls = server
+        .received_requests()
+        .await
+        .expect("requests")
+        .iter()
+        .filter(|request| request.url.path() == "/device/token")
+        .count();
+    assert_eq!(polls, 3);
+}
+
+#[tokio::test]
+async fn openai_codex_device_code_slow_down_increases_poll_delay() {
+    let server = MockServer::start().await;
+    mount_codex_device_start(&server, "device-auth-sentinel", "PUBLIC-CODE", 0).await;
+    mount_codex_device_poll(&server, 400, json!({"error":"slow_down"}), Some(1)).await;
+    mount_codex_device_poll(
+        &server,
+        200,
+        json!({
+            "authorization_code": "authorization-code",
+            "code_verifier": "device-verifier"
+        }),
+        None,
+    )
+    .await;
+    mount_codex_device_exchange(&server, "slow-account").await;
+    let provider = codex_device_provider(&server.uri(), Duration::from_secs(60));
+    let presenter = MethodPresenter::new(Some(OAuthLoginMethod::DeviceCode));
+    let started = tokio::time::Instant::now();
+
+    provider.login(&presenter).await.expect("device login");
+
+    assert!(
+        tokio::time::Instant::now().duration_since(started) >= Duration::from_secs(5),
+        "slow_down must persistently add five seconds to the poll delay"
+    );
+}
+
+async fn codex_device_terminal_error(error_code: &str) -> AiProviderError {
+    let server = MockServer::start().await;
+    mount_codex_device_start(&server, "device-auth-sentinel", "PUBLIC-CODE", 0).await;
+    mount_codex_device_poll(
+        &server,
+        400,
+        json!({"error":{"code":error_code},"echo":"device-verifier-sentinel"}),
+        None,
+    )
+    .await;
+    let provider = codex_device_provider(&server.uri(), Duration::from_secs(60));
+    let presenter = MethodPresenter::new(Some(OAuthLoginMethod::DeviceCode));
+    provider
+        .login(&presenter)
+        .await
+        .expect_err("terminal error")
+}
+
+#[tokio::test]
+async fn openai_codex_device_code_denial_is_typed_and_redacted() {
+    let error = codex_device_terminal_error("access_denied").await;
+    assert!(matches!(
+        error,
+        AiProviderError::CredentialRevoked { ref provider_id }
+            if provider_id == "openai-codex"
+    ));
+    let rendered = format!("{error:?} {error}");
+    assert!(!rendered.contains("device-auth-sentinel"));
+    assert!(!rendered.contains("device-verifier-sentinel"));
+}
+
+#[tokio::test]
+async fn openai_codex_device_code_expiry_is_typed_and_redacted() {
+    let error = codex_device_terminal_error("expired_token").await;
+    assert!(matches!(
+        error,
+        AiProviderError::CredentialRevoked { ref provider_id }
+            if provider_id == "openai-codex"
+    ));
+    let rendered = format!("{error:?} {error}");
+    assert!(!rendered.contains("device-auth-sentinel"));
+    assert!(!rendered.contains("device-verifier-sentinel"));
+}
+
+#[tokio::test(start_paused = true)]
+async fn openai_codex_device_code_timeout_is_15_minutes_under_paused_time() {
+    let server = MockServer::start().await;
+    mount_codex_device_start(&server, "device-auth-sentinel", "PUBLIC-CODE", 901).await;
+    mount_codex_device_poll(
+        &server,
+        403,
+        json!({"error":"deviceauth_authorization_pending"}),
+        None,
+    )
+    .await;
+    let provider = codex_device_provider(&server.uri(), Duration::from_secs(15 * 60));
+    let presenter = MethodPresenter::new(Some(OAuthLoginMethod::DeviceCode));
+    let started = tokio::time::Instant::now();
+
+    let error = provider.login(&presenter).await.expect_err("timeout");
+
+    assert!(matches!(error, AiProviderError::Timeout), "{error:?}");
+    assert_eq!(
+        tokio::time::Instant::now().duration_since(started),
+        Duration::from_secs(15 * 60)
+    );
+}
+
+#[tokio::test]
+async fn openai_codex_device_code_cancellation_writes_nothing() {
+    let server = MockServer::start().await;
+    mount_codex_device_start(&server, "device-auth-sentinel", "PUBLIC-CODE", 0).await;
+    let provider = Arc::new(codex_device_provider(
+        &server.uri(),
+        Duration::from_secs(15 * 60),
+    ));
+    let mut registry = OAuthProviderRegistry::new();
+    registry.register(provider).unwrap();
+    let (_dir, store, _backend) = store_with(FakeKeyringBackend::new());
+    let presenter = MethodPresenter::cancelling_active_device_flow();
+
+    let login = login_oauth("openai-codex", &registry, &store, &presenter);
+    let cancel_after_presentation = async {
+        presenter.device_code_presented.notified().await;
+        presenter.cancel_device_login.notify_one();
+    };
+    let (result, ()) = tokio::join!(login, cancel_after_presentation);
+    let error = result.expect_err("active device login cancelled");
+
+    assert!(matches!(
+        error,
+        AiProviderError::LoginCancelled { ref provider_id }
+            if provider_id == "openai-codex"
+    ));
+    assert!(!error.is_retryable());
+    assert_eq!(
+        presenter
+            .inner
+            .captured_device_codes
+            .lock()
+            .unwrap()
+            .as_slice(),
+        &[(
+            "PUBLIC-CODE".to_owned(),
+            "https://auth.openai.com/codex/device".to_owned()
+        )]
+    );
+    assert_eq!(presenter.inner.manual_code_calls.load(Ordering::SeqCst), 0);
+    assert!(store.read("openai-codex").await.unwrap().is_none());
+    let requests = server.received_requests().await.expect("captured requests");
+    assert_eq!(requests.len(), 1, "{requests:?}");
+    assert_eq!(requests[0].url.path(), "/device/usercode");
+}
+
+#[tokio::test]
+async fn openai_codex_device_code_never_calls_await_manual_code() {
+    let server = MockServer::start().await;
+    mount_codex_device_start(&server, "device-auth-sentinel", "PUBLIC-CODE", 0).await;
+    mount_codex_device_poll(
+        &server,
+        200,
+        json!({
+            "authorization_code": "authorization-code",
+            "code_verifier": "device-verifier"
+        }),
+        None,
+    )
+    .await;
+    mount_codex_device_exchange(&server, "no-manual-account").await;
+    let provider = codex_device_provider(&server.uri(), Duration::from_secs(60));
+    let presenter = MethodPresenter::new(Some(OAuthLoginMethod::DeviceCode));
+
+    provider.login(&presenter).await.expect("device login");
+
+    assert_eq!(
+        presenter.inner.manual_code_calls.load(Ordering::SeqCst),
+        0,
+        "device code must not enter the manual-code race"
+    );
+    assert!(presenter.inner.captured_urls.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn anthropic_and_copilot_never_invoke_login_method_selector() {
+    let anthropic_server = MockServer::start().await;
+    mount_token_stub(
+        &anthropic_server,
+        200,
+        token_body("anthropic-access", "anthropic-refresh", 3600),
+    )
+    .await;
+    let anthropic = anthropic_provider(
+        format!("{}/oauth/token", anthropic_server.uri()),
+        Duration::from_secs(60),
+    );
+    let anthropic_presenter = MethodPresenter::new(None);
+    anthropic_presenter
+        .inner
+        .supply_manual_code("anthropic-code");
+    anthropic
+        .login(&anthropic_presenter)
+        .await
+        .expect("Anthropic login");
+    assert!(anthropic_presenter.selections.lock().unwrap().is_empty());
+
+    let copilot_server = MockServer::start().await;
+    mount_device_auth(
+        &copilot_server,
+        json!({
+            "device_code": "copilot-device",
+            "user_code": "PUBLIC-CODE",
+            "verification_uri": "https://github.com/login/device",
+            "interval": 0
+        }),
+    )
+    .await;
+    mount_device_poll(
+        &copilot_server,
+        json!({"access_token": "copilot-github-token"}),
+        None,
+    )
+    .await;
+    mount_copilot_token(
+        &copilot_server,
+        200,
+        json!({"token": "copilot-access", "expires_at": copilot_expires_soon()}),
+    )
+    .await;
+    let copilot = copilot_provider(copilot_server.uri(), Duration::from_secs(60));
+    let copilot_presenter = MethodPresenter::new(None);
+    copilot
+        .login(&copilot_presenter)
+        .await
+        .expect("Copilot login");
+    assert!(copilot_presenter.selections.lock().unwrap().is_empty());
+}
+
+async fn capture_codex_factory_sse(body: String) -> Vec<String> {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/codex/responses"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string(body)
+                .insert_header("content-type", "text/event-stream"),
+        )
+        .mount(&server)
+        .await;
+    let (_dir, store, _backend) = store_with(FakeKeyringBackend::new());
+    store
+        .write(
+            "openai-codex",
+            &stored_oauth_for(
+                "openai-codex",
+                "synthetic-sse-access",
+                "synthetic-sse-refresh",
+                Some(server.uri()),
+            ),
+        )
+        .await
+        .unwrap();
+    let resolver = resolver_with(store);
+    let mut config = OpiConfig::default();
+    config.defaults.model = "openai-codex:gpt-5.4".into();
+    let provider = build_provider_with_oauth(
+        &config,
+        &resolver,
+        &OAuthProviderRegistry::registry_with_builtins(),
+    )
+    .await
+    .expect("dedicated provider");
+    let mut stream = provider.stream(factory_request("openai-codex:gpt-5.4"));
+    let mut captures = Vec::new();
+    while let Some(result) = stream.next().await {
+        match result {
+            Ok(event) => {
+                captures.push(format!("{event:?}"));
+                captures.push(serde_json::to_string(&event).expect("serialize stream event"));
+                if event.is_terminal() {
+                    break;
+                }
+            }
+            Err(error) => {
+                captures.push(format!("{error:?} {error}"));
+                captures.push(format!("{:?}", opi_agent::Diagnostic::from(&error)));
+                break;
+            }
+        }
+    }
+    captures
+}
+
+#[tokio::test]
+async fn openai_codex_bounded_redaction_scenario() {
+    const ACCESS: &str = "sentinel-bounded-access";
+    const REFRESH: &str = "sentinel-bounded-refresh";
+    const AUTH_CODE: &str = "sentinel-bounded-authorization-code";
+    const DEVICE_SECRET: &str = "device-auth-sentinel";
+    const DEVICE_VERIFIER: &str = "device-verifier-sentinel";
+    const SERIALIZED_ENVELOPE: &str =
+        r#"{"version":1,"type":"oauth_token","access":"sentinel-envelope-access"}"#;
+    const MALFORMED_SSE: &str = "sentinel-bounded-malformed-sse";
+    const SSE_MESSAGE: &str = "sentinel-bounded-sse-message";
+    const SSE_EVENT: &str = "sentinel-bounded-sse-event";
+
+    let missing_account_jwt = codex_jwt(None);
+    let persisted_jwt = codex_jwt(Some("bounded-account"));
+    let mut captures = Vec::new();
+
+    // Browser login: the actual authorization code, refresh token, and
+    // synthetic JWT must not survive the typed missing-account failure.
+    let browser_server = MockServer::start().await;
+    mount_token_stub(
+        &browser_server,
+        200,
+        token_body(&missing_account_jwt, REFRESH, 3600),
+    )
+    .await;
+    let browser = codex_provider(
+        format!("{}/oauth/token", browser_server.uri()),
+        Duration::from_secs(60),
+    );
+    let browser_presenter = MockLoginPresenter::new();
+    browser_presenter.supply_manual_code(AUTH_CODE);
+    let browser_error = browser
+        .login(&browser_presenter)
+        .await
+        .expect_err("missing browser account id");
+    captures.push(format!("{browser_error:?} {browser_error}"));
+    captures.push(format!("{:?}", opi_agent::Diagnostic::from(&browser_error)));
+    captures.extend(
+        browser_presenter
+            .notify_failure_reasons
+            .lock()
+            .unwrap()
+            .clone(),
+    );
+    captures.extend(browser_presenter.captured_urls.lock().unwrap().clone());
+
+    // Device Code: terminal server data may echo the device identifier or a
+    // verifier, but neither is allowed into errors, diagnostics, or presenter
+    // output.
+    let device_server = MockServer::start().await;
+    mount_codex_device_start(&device_server, DEVICE_SECRET, "PUBLIC-CODE", 0).await;
+    mount_codex_device_poll(
+        &device_server,
+        400,
+        json!({
+            "error": {"code": "access_denied"},
+            "echo": DEVICE_VERIFIER
+        }),
+        None,
+    )
+    .await;
+    let device = codex_device_provider(&device_server.uri(), Duration::from_secs(60));
+    let device_presenter = MethodPresenter::new(Some(OAuthLoginMethod::DeviceCode));
+    let device_error = device
+        .login(&device_presenter)
+        .await
+        .expect_err("device denial");
+    captures.push(format!("{device_error:?} {device_error}"));
+    captures.push(format!("{:?}", opi_agent::Diagnostic::from(&device_error)));
+    captures.push(format!(
+        "{:?}",
+        device_presenter
+            .inner
+            .captured_device_codes
+            .lock()
+            .unwrap()
+            .clone()
+    ));
+
+    // Refresh: old access/refresh material and the returned synthetic JWT are
+    // all absent from the strict missing-account failure.
+    let refresh_server = MockServer::start().await;
+    mount_token_stub(
+        &refresh_server,
+        200,
+        token_body(&missing_account_jwt, REFRESH, 3600),
+    )
+    .await;
+    let refresh = codex_provider(
+        format!("{}/oauth/token", refresh_server.uri()),
+        Duration::from_secs(60),
+    );
+    let mut old_credential = oauth_cred(ACCESS, REFRESH, None);
+    old_credential.account_id = Some("old-account".into());
+    let refresh_error = refresh
+        .refresh(&old_credential)
+        .await
+        .expect_err("missing refreshed account id");
+    captures.push(format!("{refresh_error:?} {refresh_error}"));
+    captures.push(format!("{:?}", opi_agent::Diagnostic::from(&refresh_error)));
+
+    // Persistence failure: successful browser exchange material never reaches
+    // the error or a raw persisted capture.
+    let persistence_server = MockServer::start().await;
+    mount_token_stub(
+        &persistence_server,
+        200,
+        token_body(&persisted_jwt, REFRESH, 3600),
+    )
+    .await;
+    let mut registry = OAuthProviderRegistry::new();
+    registry
+        .register(Arc::new(codex_provider(
+            format!("{}/oauth/token", persistence_server.uri()),
+            Duration::from_secs(60),
+        )))
+        .unwrap();
+    let unavailable_backend = FakeKeyringBackend::new().with_unavailable();
+    let (_dir, unavailable_store, backend_capture) = store_with(unavailable_backend);
+    let persistence_presenter = MockLoginPresenter::new();
+    persistence_presenter.supply_manual_code(AUTH_CODE);
+    let persistence_error = login_oauth(
+        "openai-codex",
+        &registry,
+        &unavailable_store,
+        &persistence_presenter,
+    )
+    .await
+    .expect_err("persistence failure");
+    captures.push(format!("{persistence_error:?} {persistence_error}"));
+    captures.push(format!(
+        "{:?}",
+        opi_agent::Diagnostic::from(&persistence_error)
+    ));
+    captures.push(format!(
+        "{:?}",
+        backend_capture.raw_entry(KEYCHAIN_SERVICE, "openai-codex")
+    ));
+
+    // Dedicated provider failure: even an upstream body that echoes every
+    // bounded sentinel and a serialized envelope remains redacted.
+    let provider_server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/codex/responses"))
+        .respond_with(ResponseTemplate::new(500).set_body_string(format!(
+            "{ACCESS} {REFRESH} {AUTH_CODE} {DEVICE_SECRET} {DEVICE_VERIFIER} \
+             {missing_account_jwt} {persisted_jwt} {SERIALIZED_ENVELOPE}"
+        )))
+        .mount(&provider_server)
+        .await;
+    let (_dir, provider_store, _backend) = store_with(FakeKeyringBackend::new());
+    let persisted_credential =
+        stored_oauth_for("openai-codex", ACCESS, REFRESH, Some(provider_server.uri()));
+    captures.push(format!("{persisted_credential:?}"));
+    provider_store
+        .write("openai-codex", &persisted_credential)
+        .await
+        .unwrap();
+    let resolver = resolver_with(provider_store);
+    let mut config = OpiConfig::default();
+    config.defaults.model = "openai-codex:gpt-5.4".into();
+    let provider = build_provider_with_oauth(
+        &config,
+        &resolver,
+        &OAuthProviderRegistry::registry_with_builtins(),
+    )
+    .await
+    .expect("dedicated provider");
+    let mut stream = provider.stream(factory_request("openai-codex:gpt-5.4"));
+    let provider_error = loop {
+        match stream.next().await {
+            Some(Err(error)) => break error,
+            Some(Ok(_)) => {}
+            None => panic!("provider failure stream ended without error"),
+        }
+    };
+    captures.push(format!("{provider_error:?} {provider_error}"));
+    captures.push(format!(
+        "{:?}",
+        opi_agent::Diagnostic::from(&provider_error)
+    ));
+
+    // Dedicated streaming failures: malformed data becomes a fixed typed
+    // ProviderError/diagnostic, while valid upstream error messages and
+    // unknown event names become fixed AssistantStreamEvent output.
+    captures.extend(
+        capture_codex_factory_sse(format!(
+            "event: response.output_text.delta\ndata: {{{MALFORMED_SSE}\n\n"
+        ))
+        .await,
+    );
+    captures.extend(
+        capture_codex_factory_sse(format!(
+            "event: error\ndata: {{\"message\":\"{SSE_MESSAGE}\"}}\n\n"
+        ))
+        .await,
+    );
+    captures.extend(capture_codex_factory_sse(format!("event: {SSE_EVENT}\ndata: {{}}\n\n")).await);
+
+    let rendered = captures.join("\n");
+    for sentinel in [
+        ACCESS,
+        REFRESH,
+        AUTH_CODE,
+        DEVICE_SECRET,
+        DEVICE_VERIFIER,
+        missing_account_jwt.as_str(),
+        persisted_jwt.as_str(),
+        SERIALIZED_ENVELOPE,
+        MALFORMED_SSE,
+        SSE_MESSAGE,
+        SSE_EVENT,
+    ] {
+        assert!(
+            !rendered.contains(sentinel),
+            "bounded redaction leaked {sentinel}: {rendered}"
+        );
+    }
+}
 
 fn anthropic_arc(token_url: String) -> Arc<dyn OAuthProvider> {
     Arc::new(anthropic_provider(token_url, Duration::from_secs(60)))
@@ -1284,6 +2193,7 @@ async fn resolver_read_oauth_base_url_and_presence_reflect_stored_cred() {
         refresh: secret("refresh-copilot"),
         expires_at: Some(fresh_expiry()),
         base_url: Some("https://enterprise.githubcopilot.com".into()),
+        account_id: None,
     };
     store.write("github-copilot", &cred).await.unwrap();
     assert!(
@@ -1306,6 +2216,7 @@ async fn resolver_read_oauth_base_url_and_presence_reflect_stored_cred() {
         refresh: secret("refresh-anthropic"),
         expires_at: Some(fresh_expiry()),
         base_url: None,
+        account_id: None,
     };
     store.write("anthropic", &anthropic_cred).await.unwrap();
     assert!(resolver.has_oauth_credential("anthropic").await.unwrap());
@@ -1313,6 +2224,35 @@ async fn resolver_read_oauth_base_url_and_presence_reflect_stored_cred() {
         resolver.read_oauth_base_url("anthropic").await.unwrap(),
         None
     );
+}
+
+#[tokio::test]
+async fn openai_codex_resolver_propagates_account_id_without_secret_logging() {
+    let (_dir, store, _backend) = store_with(FakeKeyringBackend::new());
+    store
+        .write(
+            "openai-codex",
+            &Credential::OAuthToken {
+                access: secret("sentinel-resolver-access"),
+                refresh: secret("sentinel-resolver-refresh"),
+                expires_at: Some(fresh_expiry()),
+                base_url: None,
+                account_id: Some("account-resolved".into()),
+            },
+        )
+        .await
+        .unwrap();
+    let resolver = resolver_with(store);
+    let registry = OAuthProviderRegistry::registry_with_builtins();
+    let oauth = registry.lookup("openai-codex").unwrap();
+    let resolved = resolver
+        .resolve_oauth("openai-codex", &*oauth)
+        .await
+        .expect("resolved Codex credential");
+    assert_eq!(resolved.account_id.as_deref(), Some("account-resolved"));
+    let rendered = format!("{resolved:?}");
+    assert!(!rendered.contains("sentinel-resolver-access"));
+    assert!(!rendered.contains("sentinel-resolver-refresh"));
 }
 
 // ===========================================================================
@@ -1713,7 +2653,24 @@ fn stored_oauth(access: &str, refresh: &str, base_url: Option<String>) -> Creden
         refresh: secret(refresh),
         expires_at: Some(fresh_expiry()),
         base_url,
+        account_id: None,
     }
+}
+
+fn stored_oauth_for(
+    provider_id: &str,
+    access: &str,
+    refresh: &str,
+    base_url: Option<String>,
+) -> Credential {
+    let mut credential = stored_oauth(access, refresh, base_url);
+    if provider_id == "openai-codex" {
+        let Credential::OAuthToken { account_id, .. } = &mut credential else {
+            unreachable!("stored_oauth always returns OAuthToken");
+        };
+        *account_id = Some("account-test".into());
+    }
+    credential
 }
 
 #[tokio::test]
@@ -1795,12 +2752,13 @@ async fn factory_routes_codex_to_codex_responses_with_oauth_wire_shape() {
 
     let backend = FakeKeyringBackend::new();
     let (_dir, store, _b) = store_with(backend);
-    // Production Codex PKCE carries no base_url (CODEX_DEFAULT_BASE_URL wins);
+    // Production Codex browser PKCE carries no base_url (the default wins);
     // the stored base_url here is a test seam redirecting dispatch to the mock.
     store
         .write(
             "openai-codex",
-            &stored_oauth(
+            &stored_oauth_for(
+                "openai-codex",
                 "codex-access-fake",
                 "codex-refresh-fake",
                 Some(server.uri()),
@@ -2221,7 +3179,12 @@ async fn all_builtin_flows_support_manual_fallback() {
 
     // --- Codex PKCE: manual code ---
     let server_cx = MockServer::start().await;
-    mount_token_stub(&server_cx, 200, token_body("atk-codex", "rtk-codex", 3600)).await;
+    mount_token_stub(
+        &server_cx,
+        200,
+        token_body(&codex_jwt(Some("account-manual")), "rtk-codex", 3600),
+    )
+    .await;
     let provider_codex = Arc::new(codex_provider(
         format!("{}/oauth/token", server_cx.uri()),
         Duration::from_secs(60),
@@ -2445,7 +3408,12 @@ async fn factory_built_approved_profiles_resolve_auth_inside_each_stream() {
         routed_store
             .write(
                 provider_id,
-                &stored_oauth("route-only", "route-refresh", Some(server.uri())),
+                &stored_oauth_for(
+                    provider_id,
+                    "route-only",
+                    "route-refresh",
+                    Some(server.uri()),
+                ),
             )
             .await
             .unwrap();
@@ -2503,7 +3471,7 @@ async fn factory_stream_reresolves_after_store_change() {
             store
                 .write(
                     provider_id,
-                    &stored_oauth(&old, "old-refresh", Some(server.uri())),
+                    &stored_oauth_for(provider_id, &old, "old-refresh", Some(server.uri())),
                 )
                 .await
                 .unwrap();
@@ -2525,7 +3493,10 @@ async fn factory_stream_reresolves_after_store_change() {
         let new = format!("new-{provider_id}-credential");
         let base_url = (provider_id != "anthropic").then(|| server.uri());
         store
-            .write(provider_id, &stored_oauth(&new, "new-refresh", base_url))
+            .write(
+                provider_id,
+                &stored_oauth_for(provider_id, &new, "new-refresh", base_url),
+            )
             .await
             .unwrap();
         let mut second = provider.stream(factory_request(&config.defaults.model));
@@ -2670,7 +3641,7 @@ async fn factory_built_approved_profiles_map_revocation_without_retry() {
         store
             .write(
                 provider_id,
-                &stored_oauth("revoked-access", "revoked-refresh", base_url),
+                &stored_oauth_for(provider_id, "revoked-access", "revoked-refresh", base_url),
             )
             .await
             .unwrap();

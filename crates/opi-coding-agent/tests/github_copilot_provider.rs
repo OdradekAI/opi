@@ -246,6 +246,7 @@ fn oauth_credential(access: &str, base_url: String) -> Credential {
         refresh: SecretString::new("offline-refresh".to_owned().into_boxed_str()),
         expires_at: Some(OffsetDateTime::now_utc() + std::time::Duration::from_secs(3600)),
         base_url: Some(base_url),
+        account_id: None,
     }
 }
 

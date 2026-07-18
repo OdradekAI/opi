@@ -363,6 +363,8 @@ struct EnvelopeFields {
     expires_at: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     base_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    account_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -417,6 +419,7 @@ fn encode_credential(cred: &Credential) -> String {
             refresh,
             expires_at,
             base_url,
+            account_id,
         } => (
             "oauth",
             EnvelopeFields {
@@ -424,6 +427,7 @@ fn encode_credential(cred: &Credential) -> String {
                 refresh: Some(refresh.expose_secret().to_owned()),
                 expires_at: expires_at.map(|t| t.unix_timestamp()),
                 base_url: base_url.clone(),
+                account_id: account_id.clone(),
                 ..Default::default()
             },
         ),
@@ -498,6 +502,7 @@ fn decode_credential(raw: &str, provider_id: &str) -> Result<Credential, Credent
                 refresh: secret_string(refresh),
                 expires_at,
                 base_url: envelope.fields.base_url,
+                account_id: envelope.fields.account_id,
             })
         }
         _ => Err(CredentialStoreError::UnknownEnvelope {
@@ -922,7 +927,7 @@ impl CredentialResolver {
                 scheme: AuthScheme::Bearer,
                 secret: cred.access.clone(),
                 base_url: cred.base_url.clone(),
-                account_id: None,
+                account_id: cred.account_id.clone(),
             });
         }
         // Slow path: hold the lock across re-read + refresh-HTTP + write so
@@ -950,7 +955,7 @@ impl CredentialResolver {
                 scheme: AuthScheme::Bearer,
                 secret: cred.access.clone(),
                 base_url: cred.base_url.clone(),
-                account_id: None,
+                account_id: cred.account_id.clone(),
             });
         }
         let refresh = tokio::time::timeout(self.refresh_timeout, oauth.refresh(&cred))
@@ -971,7 +976,7 @@ impl CredentialResolver {
                     scheme: AuthScheme::Bearer,
                     secret: refreshed.access,
                     base_url: refreshed.base_url,
-                    account_id: None,
+                    account_id: refreshed.account_id,
                 })
             }
             Err(refresh_err) => {
@@ -986,7 +991,7 @@ impl CredentialResolver {
                         scheme: AuthScheme::Bearer,
                         secret: reread.access.clone(),
                         base_url: reread.base_url.clone(),
-                        account_id: None,
+                        account_id: reread.account_id.clone(),
                     }),
                     _ => Err(refresh_err),
                 }
@@ -1019,11 +1024,13 @@ impl CredentialResolver {
                 refresh,
                 expires_at,
                 base_url,
+                account_id,
             })) => Ok(Some(OAuthCredential {
                 access,
                 refresh,
                 expires_at,
                 base_url,
+                account_id,
             })),
             Ok(Some(Credential::ApiKey(_))) => {
                 Err(CredentialStoreError::UnexpectedCredentialKind {

@@ -68,6 +68,7 @@ async fn oauth_credential_debug_redacts_secrets_and_keeps_base_url() {
         refresh: SecretString::from("refresh-secret"),
         expires_at: None,
         base_url: Some("https://example.com".to_owned()),
+        account_id: None,
     };
     let dbg = format!("{cred:?}");
     assert!(!dbg.contains("access-secret"), "access leaked: {dbg}");
@@ -140,6 +141,7 @@ impl OAuthProvider for MockOAuthProvider {
                 refresh: SecretString::from("refresh-fixed"),
                 expires_at: None,
                 base_url: None,
+                account_id: None,
             })
         })
     }
@@ -154,6 +156,7 @@ impl OAuthProvider for MockOAuthProvider {
                 refresh: cred.refresh.clone(),
                 expires_at: cred.expires_at,
                 base_url: cred.base_url.clone(),
+                account_id: None,
             })
         })
     }

@@ -133,6 +133,8 @@ pub struct OAuthCredential {
     /// Provider-specific base URL preserved across refresh (e.g. Copilot
     /// enterprise). Non-secret.
     pub base_url: Option<String>,
+    /// Provider account identity, when required by a concrete wire. Non-secret.
+    pub account_id: Option<String>,
 }
 
 impl std::fmt::Debug for OAuthCredential {
@@ -142,6 +144,7 @@ impl std::fmt::Debug for OAuthCredential {
             .field("refresh", &"<redacted>")
             .field("expires_at", &self.expires_at)
             .field("base_url", &self.base_url)
+            .field("account_id", &self.account_id)
             .finish()
     }
 }
@@ -166,8 +169,16 @@ impl From<OAuthCredential> for Credential {
             refresh: o.refresh,
             expires_at: o.expires_at,
             base_url: o.base_url,
+            account_id: o.account_id,
         }
     }
+}
+
+/// Login methods offered by an OAuth provider.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OAuthLoginMethod {
+    Browser,
+    DeviceCode,
 }
 
 /// Object-safe OAuth provider contract.
@@ -204,6 +215,27 @@ pub trait OAuthProvider: Send + Sync {
 /// modes do not construct a presenter; their credential-needed handling is a
 /// typed diagnostic path, not an unused presenter implementation.
 pub trait LoginPresenter: Send + Sync {
+    /// Select one of the provider's supported login methods.
+    ///
+    /// The object-safe default is deterministic and preserves existing
+    /// presenters: it returns `default` when that method is present.
+    fn select_login_method<'a>(
+        &'a self,
+        provider_id: &'a str,
+        methods: &'a [OAuthLoginMethod],
+        default: OAuthLoginMethod,
+    ) -> BoxAuthFuture<'a, Result<OAuthLoginMethod, ProviderError>> {
+        Box::pin(async move {
+            if methods.contains(&default) {
+                Ok(default)
+            } else {
+                Err(ProviderError::Config(format!(
+                    "OAuth provider '{provider_id}' supplied an invalid default login method"
+                )))
+            }
+        })
+    }
+
     /// Present an authorization URL to the user (open browser / display link).
     fn present_auth_url<'a>(&'a self, url: &'a str)
     -> BoxAuthFuture<'a, Result<(), ProviderError>>;
@@ -220,6 +252,15 @@ pub trait LoginPresenter: Send + Sync {
         user_code: &'a str,
         verification_uri: &'a str,
     ) -> BoxAuthFuture<'a, Result<(), ProviderError>>;
+
+    /// Wait for the user to cancel an active login flow.
+    ///
+    /// The default stays pending so existing presenters and providers preserve
+    /// their behavior. Providers that support active-flow cancellation race
+    /// this single-shot future against their authorization flow.
+    fn await_login_cancelled<'a>(&'a self) -> BoxAuthFuture<'a, Result<(), ProviderError>> {
+        Box::pin(std::future::pending())
+    }
 
     /// Await the user pasting the manual code (headless fallback). Returns the
     /// pasted code.

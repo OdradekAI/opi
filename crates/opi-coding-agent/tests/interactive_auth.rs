@@ -93,6 +93,7 @@ fn oauth_credential(provider_id: &str) -> OAuthCredential {
         refresh: SecretString::new(format!("refresh-{provider_id}").into_boxed_str()),
         expires_at: None,
         base_url: None,
+        account_id: None,
     }
 }
 

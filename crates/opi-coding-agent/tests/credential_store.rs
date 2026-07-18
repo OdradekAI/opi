@@ -235,6 +235,7 @@ fn oauth_credential() -> Credential {
         refresh: secret(REFRESH),
         expires_at: None,
         base_url: Some(COPILOT_BASE_URL.to_owned()),
+        account_id: None,
     }
 }
 
@@ -306,12 +307,63 @@ async fn oauth_envelope_round_trips_and_preserves_base_url() {
             refresh,
             base_url,
             expires_at,
+            account_id,
         } => {
             assert_eq!(access.expose_secret(), ACCESS);
             assert_eq!(refresh.expose_secret(), REFRESH);
             assert_eq!(base_url.as_deref(), Some(COPILOT_BASE_URL));
+            assert!(account_id.is_none());
             assert!(expires_at.is_none());
         }
+        other => panic!("expected OAuthToken, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn oauth_envelope_round_trips_optional_account_id() {
+    let backend = FakeKeyringBackend::new();
+    let (_dir, store) = store_with(backend.clone());
+    store
+        .write(
+            "openai-codex",
+            &Credential::OAuthToken {
+                access: secret(ACCESS),
+                refresh: secret(REFRESH),
+                expires_at: None,
+                base_url: None,
+                account_id: Some("account-123".into()),
+            },
+        )
+        .await
+        .unwrap();
+    let raw = backend
+        .raw_entry(KEYCHAIN_SERVICE, "openai-codex")
+        .expect("persisted envelope");
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&raw).unwrap()["version"],
+        1
+    );
+    let read = store.read("openai-codex").await.unwrap().unwrap();
+    match read {
+        Credential::OAuthToken { account_id, .. } => {
+            assert_eq!(account_id.as_deref(), Some("account-123"));
+        }
+        other => panic!("expected OAuthToken, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn oauth_envelope_legacy_without_account_id_still_decodes() {
+    let backend = FakeKeyringBackend::new();
+    backend.seed_raw(KEYCHAIN_PRESENCE_SERVICE, "openai-codex", "oauth_token");
+    backend.seed_raw(
+        KEYCHAIN_SERVICE,
+        "openai-codex",
+        r#"{"version":1,"kind":"oauth","access":"synthetic-access","refresh":"synthetic-refresh"}"#,
+    );
+    let (_dir, store) = store_with(backend);
+    match store.read("openai-codex").await.unwrap().unwrap() {
+        Credential::OAuthToken { account_id, .. } => assert!(account_id.is_none()),
         other => panic!("expected OAuthToken, got {other:?}"),
     }
 }

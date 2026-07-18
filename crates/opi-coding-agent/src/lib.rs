@@ -15,6 +15,7 @@ pub mod interactive_auth;
 pub mod model_listing;
 pub mod native_keyring;
 pub mod oauth;
+pub mod openai_codex;
 pub mod package_cli;
 pub mod package_discovery;
 pub mod package_resolver;

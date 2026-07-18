@@ -508,6 +508,65 @@ async fn github_copilot_factory_builds_one_three_wire_provider() {
 }
 
 #[tokio::test]
+async fn openai_codex_factory_uses_dedicated_provider() {
+    use opi_ai::WireApi;
+    use opi_coding_agent::credential_store::{
+        CredentialResolver, FakeKeyringBackend, KeychainCredentialStore,
+    };
+    use opi_coding_agent::oauth::OAuthProviderRegistry;
+    use opi_coding_agent::provider_factory::build_provider_with_oauth;
+
+    let dir = tempfile::tempdir().unwrap();
+    let store = Arc::new(KeychainCredentialStore::new(
+        Box::new(FakeKeyringBackend::new()),
+        dir.path().to_path_buf(),
+    ));
+    let resolver = CredentialResolver::new(store, Arc::new(|_: &str| None));
+    let mut config = OpiConfig::default();
+    config.defaults.model = "openai-codex:gpt-5.6-sol".into();
+
+    let provider = build_provider_with_oauth(
+        &config,
+        &resolver,
+        &OAuthProviderRegistry::registry_with_builtins(),
+    )
+    .await
+    .expect("dedicated OpenAI Codex factory");
+
+    assert_eq!(provider.id(), "openai-codex");
+    assert_eq!(provider.models().len(), 7);
+    assert!(
+        provider
+            .models()
+            .iter()
+            .all(|model| model.wire_api == WireApi::OpenAiCodexResponses)
+    );
+
+    let factory_source = include_str!("../src/provider_factory.rs");
+    let build_codex = factory_source
+        .split("async fn build_codex_oauth")
+        .nth(1)
+        .and_then(|tail| tail.split("pub async fn build_provider_with_oauth").next())
+        .expect("Codex factory block");
+    assert!(
+        !build_codex.contains("OpenAiResponsesProvider"),
+        "Codex factory must not use the standard Responses provider"
+    );
+
+    let standard_source = include_str!("../../opi-ai/src/openai_responses.rs");
+    for forbidden in [
+        "derive_codex_account_id",
+        "codex/responses",
+        "chatgpt-account-id",
+    ] {
+        assert!(
+            !standard_source.contains(forbidden),
+            "standard Responses module still exposes Codex toggle `{forbidden}`"
+        );
+    }
+}
+
+#[tokio::test]
 async fn anthropic_stored_api_key_routes_to_api_key_wire_auth() {
     use futures_util::StreamExt;
     use opi_ai::credential::{Credential, CredentialStore};

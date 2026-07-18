@@ -605,6 +605,7 @@ fn credential_oauth_token_redacts_secrets_but_keeps_base_url() {
         refresh: secret(STORE_REFRESH),
         expires_at: None,
         base_url: Some("https://copilot.example/api".to_owned()),
+        account_id: None,
     };
     let debug = format!("{cred:?}");
     assert!(!debug.contains(STORE_ACCESS), "access leaked: {debug}");

@@ -227,6 +227,7 @@ fn present_provider_error(error: &ProviderError) -> String {
         ProviderError::AuthFailed(_) => "authentication failed",
         ProviderError::CredentialNeeded { .. } => "credential is still required",
         ProviderError::CredentialRevoked { .. } => "credential was denied or expired",
+        ProviderError::AccountIdMissing { .. } => "credential is missing its account id",
         ProviderError::Network(_) => "authentication network request failed",
         ProviderError::Config(message) if message.starts_with("credential store") => {
             "credential store operation failed"
@@ -236,7 +237,9 @@ fn present_provider_error(error: &ProviderError) -> String {
         | ProviderError::WireCompatMismatch { .. } => "authentication configuration failed",
         ProviderError::ProviderSide(_) => "authentication provider failed",
         ProviderError::UnsupportedCapability(_) => "authentication is not supported",
-        ProviderError::Cancelled => "authentication cancelled",
+        ProviderError::Cancelled | ProviderError::LoginCancelled { .. } => {
+            "authentication cancelled"
+        }
     }
     .to_owned()
 }
