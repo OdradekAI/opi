@@ -3406,7 +3406,7 @@
       "definition_of_done": "opi-ai exposes validated WireApi, ModelInfo, thinking-map, compatibility, and model-pricing contracts; every built-in catalog has one exact wire and canonical github-copilot/openai-codex identities with no alias or credential migration. The coding-agent carries selected thinking and embedded pricing across session lifecycle without a schema bump. Representative production-factory streams for every existing single-wire family prove ModelInfo.wire_api agrees with the selected route or endpoint, and a mismatch fails before network I/O.",
       "definition_source": "draft-reviewed",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [],
       "inference_notes": [
         {
@@ -3423,6 +3423,46 @@
           "field": "forbidden_scope",
           "reason": "Do not accept copilot/codex aliases, read or migrate legacy keychain entries, or change the session schema version.",
           "source": "docs/superpowers/specs/2026-07-14-phase14-exit-remediation-design.md#pi-0.80.6 Alignment Revision (2026-07-17)"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Phase C compile-driven ownership correction: adding ThinkingConfig.level makes the existing public struct literals in opi-agent thinking_integration and opi-ai anthropic_fixtures fail all-target compilation; each test must explicitly preserve the prior Medium enabled default.",
+          "source": "cargo check -p opi-ai --all-targets E0063 at anthropic_fixtures.rs:871/908 plus rg ThinkingConfig literal at thinking_integration.rs:90"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Phase C pre-edit ownership expansion: the fixed ResolvedAuth base_url/account_id contract requires all production credential resolver branches to populate the new fields, including stored OAuth base_url propagation, before all-target compilation and auth contract tests can pass.",
+          "source": "docs/superpowers/plans/2026-07-17-phase14-pi-0806-alignment.md#GREEN: provider-id migration plus rg ResolvedAuth struct literals"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Phase C pre-edit ownership expansion: the reviewed typed UnknownModel, MissingWireRoute, and WireCompatMismatch variants make opi-agent diagnostic classification non-exhaustive; this production mapping must classify request versus configuration failures.",
+          "source": "cargo check -p opi-agent --lib E0004 at crates/opi-agent/src/diagnostic.rs:639"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Phase C pre-edit ownership expansion: the required provider error variants make interactive auth failure rendering non-exhaustive; safe canonical remediation needs explicit non-secret reason arms.",
+          "source": "cargo check -p opi-coding-agent --lib E0004 at crates/opi-coding-agent/src/interactive_auth.rs:220"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Phase C pre-edit ownership expansion: the reviewed new public opi-ai model_info module intentionally changes the Phase 12 public-module breadth-guard baseline, so the exact baseline test must include model_info.",
+          "source": "cargo test --workspace --all-targets failure in tool_result_wire::provider_tool_result_error_no_phase12_breadth_guard"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Phase C pre-edit ownership expansion: Phase 12 source guards must distinguish the new model_info metadata module from provider families and accept CompatConfig as the reviewed alias of OpenAiCompletionsCompat.",
+          "source": "cargo test --workspace --all-targets failures first_class_provider_guard and provider_docs_and_profile_policy_stay_in_sync"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Phase C pre-edit ownership expansion: the productized provider-set guard must classify the reviewed model_info public metadata module as a non-provider module.",
+          "source": "cargo test --workspace --all-targets failure productized_packages_docs::first_class_provider_set_is_unchanged"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Phase C iteration-2 pre-edit ownership expansion: the reviewed Azure exact-wire contract supersedes the old empty-catalog assertion; the focused fixture must require selected-deployment ModelInfo with AzureOpenAiCompletions.",
+          "source": ".superpowers/sdd/task-14.15-review.md finding 2 plus focused azure_openai_fixtures RED"
         }
       ],
       "tier": "workspace",
@@ -3464,7 +3504,7 @@
             "opi_ai::model_info::ModelPricing",
             "opi_ai::provider::Provider"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "phase14-single-wire-factory-routing",
@@ -3480,7 +3520,7 @@
             "opi_ai::openai_chat::OpenAiChatProvider::stream",
             "opi_ai::openai_responses::OpenAiResponsesProvider::stream"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "phase14-canonical-identity-and-session-pricing",
@@ -3495,7 +3535,7 @@
             "opi_coding_agent::session_coordinator::SessionCoordinator::set_cost_model",
             "opi_agent::session_event::ThinkingLevel"
           ],
-          "status": "open"
+          "status": "met"
         }
       ],
       "production_call_sites": [
@@ -3505,9 +3545,9 @@
         "opi_ai::provider::Provider"
       ],
       "substrate_only": false,
-      "iteration_count": 0,
+      "iteration_count": 3,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "236afd24451929ce415f498963ef1c6199783f17",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "crates/opi-ai/src/model_info.rs",
@@ -3557,13 +3597,284 @@
         "crates/opi-coding-agent/tests/picker_integration.rs",
         "crates/opi-coding-agent/tests/provider_factory.rs",
         "crates/opi-coding-agent/tests/rpc_jsonl.rs",
-        "crates/opi-coding-agent/tests/session_runtime.rs"
+        "crates/opi-coding-agent/tests/session_runtime.rs",
+        "crates/opi-agent/tests/thinking_integration.rs",
+        "crates/opi-ai/tests/anthropic_fixtures.rs",
+        "crates/opi-coding-agent/src/credential_store.rs",
+        "crates/opi-agent/src/diagnostic.rs",
+        "crates/opi-coding-agent/src/interactive_auth.rs",
+        "crates/opi-ai/tests/tool_result_wire.rs",
+        "crates/opi-coding-agent/tests/phase12_provider_correctness_docs.rs",
+        "crates/opi-coding-agent/tests/productized_packages_docs.rs",
+        "crates/opi-ai/tests/azure_openai_fixtures.rs"
       ],
-      "last_attempt": null,
-      "verified_at_commit": null,
-      "evidence": null,
+      "last_attempt": {
+        "attempt": 3,
+        "started_at": "2026-07-18T09:35:16.456Z",
+        "ended_at": "2026-07-18T10:30:44.514Z",
+        "outcome": "passing",
+        "failing_gate": null,
+        "touched_files": [
+          "crates/opi-agent/src/diagnostic.rs",
+          "crates/opi-agent/src/session_event.rs",
+          "crates/opi-agent/tests/image_capability.rs",
+          "crates/opi-agent/tests/thinking_integration.rs",
+          "crates/opi-ai/src/anthropic.rs",
+          "crates/opi-ai/src/auth.rs",
+          "crates/opi-ai/src/azure_openai.rs",
+          "crates/opi-ai/src/bedrock/mod.rs",
+          "crates/opi-ai/src/gemini.rs",
+          "crates/opi-ai/src/lib.rs",
+          "crates/opi-ai/src/mistral.rs",
+          "crates/opi-ai/src/model_info.rs",
+          "crates/opi-ai/src/openai_chat.rs",
+          "crates/opi-ai/src/openai_responses.rs",
+          "crates/opi-ai/src/openrouter.rs",
+          "crates/opi-ai/src/provider.rs",
+          "crates/opi-ai/src/registry.rs",
+          "crates/opi-ai/src/test_support.rs",
+          "crates/opi-ai/src/vertex.rs",
+          "crates/opi-ai/tests/anthropic_fixtures.rs",
+          "crates/opi-ai/tests/auth_contracts.rs",
+          "crates/opi-ai/tests/azure_openai_fixtures.rs",
+          "crates/opi-ai/tests/custom_provider_registration.rs",
+          "crates/opi-ai/tests/model_capabilities_migration.rs",
+          "crates/opi-ai/tests/model_wire_metadata.rs",
+          "crates/opi-ai/tests/oauth_wire_shape.rs",
+          "crates/opi-ai/tests/openai_chat_fixtures.rs",
+          "crates/opi-ai/tests/provider_collection.rs",
+          "crates/opi-ai/tests/provider_diagnostics.rs",
+          "crates/opi-ai/tests/provider_trait.rs",
+          "crates/opi-ai/tests/registry.rs",
+          "crates/opi-ai/tests/request_enrichment.rs",
+          "crates/opi-ai/tests/tool_result_wire.rs",
+          "crates/opi-coding-agent/src/adapter_extension.rs",
+          "crates/opi-coding-agent/src/credential_store.rs",
+          "crates/opi-coding-agent/src/harness.rs",
+          "crates/opi-coding-agent/src/interactive_auth.rs",
+          "crates/opi-coding-agent/src/oauth.rs",
+          "crates/opi-coding-agent/src/provider_factory.rs",
+          "crates/opi-coding-agent/src/session_coordinator.rs",
+          "crates/opi-coding-agent/tests/anthropic_cache_markers.rs",
+          "crates/opi-coding-agent/tests/credential_store.rs",
+          "crates/opi-coding-agent/tests/custom_provider_registration.rs",
+          "crates/opi-coding-agent/tests/extensions.rs",
+          "crates/opi-coding-agent/tests/interactive_auth.rs",
+          "crates/opi-coding-agent/tests/list_models.rs",
+          "crates/opi-coding-agent/tests/oauth_auth.rs",
+          "crates/opi-coding-agent/tests/phase12_provider_correctness_docs.rs",
+          "crates/opi-coding-agent/tests/picker_integration.rs",
+          "crates/opi-coding-agent/tests/productized_packages_docs.rs",
+          "crates/opi-coding-agent/tests/provider_factory.rs",
+          "crates/opi-coding-agent/tests/provider_identity.rs",
+          "crates/opi-coding-agent/tests/rpc_jsonl.rs",
+          "crates/opi-coding-agent/tests/session_runtime.rs"
+        ]
+      },
+      "verified_at_commit": "0589a18bc222baf872e414bb462a51fa112ed123",
+      "evidence": {
+        "commit": "0589a18bc222baf872e414bb462a51fa112ed123",
+        "task": "14.15",
+        "dod_sha256": "811d8c442505f5728226655d26e3209d5410f09b95760ad9120e86743ea89c68",
+        "verification": "workspace; fresh focused wire, capability, enrichment, collection, image, identity, pricing lifecycle, thinking, factory-routing, and Azure tests passed; full workspace all-targets, fmt, workspace clippy -D warnings, diff-check, and exact 54-file ownership boundary passed",
+        "evaluator": "passed; independent six-lens evaluation accepted 0, folded 4 corrected findings, flagged 0, rejected 8 candidates",
+        "acceptance": "public wire/model contracts, all nine concrete single-wire routes and zero-I/O mismatch guard, canonical identities, exact thinking serialization, Azure selected-deployment metadata, strict pricing tiers, and embedded pricing across construction/switch/rejection/resume/fork verified",
+        "acceptance_scenarios": [
+          "phase14-model-wire-public-contract",
+          "phase14-single-wire-factory-routing",
+          "phase14-canonical-identity-and-session-pricing"
+        ],
+        "verify_workflows": [
+          ".superpowers/sdd/task-14.15-review.md",
+          ".superpowers/sdd/task-14.15-review-iteration2.md",
+          ".superpowers/sdd/task-14.15-review-iteration3.md",
+          ".superpowers/sdd/task-14.15-evaluator.md",
+          "codex-collaboration:task14.15-six-lens-20260718"
+        ]
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-07-18T06:40:03.654Z",
+          "attempt": 1,
+          "summary": "Phase B confirmed from the user-invoked reviewed plan after Task 14.14 checkpoint; starting the wire/model foundation with the reconciled factory-routing acceptance scenario.",
+          "gate_results": {
+            "stage": "B",
+            "outcome": "confirmed",
+            "accepted": [
+              "reviewed task brief",
+              "clean baseline",
+              "complete task-owned path set",
+              "single-wire factory acceptance correction"
+            ],
+            "flagged": [],
+            "rejected": []
+          }
+        },
+        {
+          "timestamp": "2026-07-18T07:12:10.756Z",
+          "attempt": 1,
+          "summary": "Ownership correction: two required ThinkingConfig literal migrations were edited before the controller registered them. Work paused immediately on detection; compile evidence confirmed both are mechanically required, and the exact paths are now appended before further verification or staging.",
+          "gate_results": {
+            "stage": "C.1a",
+            "outcome": "ownership-corrected-after-edit",
+            "accepted": [
+              "crates/opi-agent/tests/thinking_integration.rs",
+              "crates/opi-ai/tests/anthropic_fixtures.rs"
+            ],
+            "flagged": [
+              "ownership append occurred after the minimal level-field edits, not before"
+            ],
+            "rejected": []
+          }
+        },
+        {
+          "timestamp": "2026-07-18T07:12:57.728Z",
+          "attempt": 1,
+          "summary": "Pre-edit ownership expansion added the production credential resolver required by the reviewed ResolvedAuth contract.",
+          "gate_results": {
+            "stage": "C.1a",
+            "outcome": "ownership-expanded-before-edit",
+            "accepted": [
+              "crates/opi-coding-agent/src/credential_store.rs"
+            ],
+            "flagged": [],
+            "rejected": []
+          }
+        },
+        {
+          "timestamp": "2026-07-18T07:15:01.614Z",
+          "attempt": 1,
+          "summary": "Pre-edit ownership expansion added opi-agent diagnostic classification for the required provider error variants.",
+          "gate_results": {
+            "stage": "C.1a",
+            "outcome": "ownership-expanded-before-edit",
+            "accepted": [
+              "crates/opi-agent/src/diagnostic.rs"
+            ],
+            "flagged": [],
+            "rejected": []
+          }
+        },
+        {
+          "timestamp": "2026-07-18T07:16:48.964Z",
+          "attempt": 1,
+          "summary": "Pre-edit ownership expansion added interactive auth error rendering for the required typed provider failures.",
+          "gate_results": {
+            "stage": "C.1a",
+            "outcome": "ownership-expanded-before-edit",
+            "accepted": [
+              "crates/opi-coding-agent/src/interactive_auth.rs"
+            ],
+            "flagged": [],
+            "rejected": []
+          }
+        },
+        {
+          "timestamp": "2026-07-18T08:01:10.036Z",
+          "attempt": 1,
+          "summary": "Pre-edit ownership expansion added the exact public-module breadth guard that must recognize the intentional model_info module.",
+          "gate_results": {
+            "stage": "C.1a",
+            "outcome": "ownership-expanded-before-edit",
+            "accepted": [
+              "crates/opi-ai/tests/tool_result_wire.rs"
+            ],
+            "flagged": [],
+            "rejected": []
+          }
+        },
+        {
+          "timestamp": "2026-07-18T08:12:12.680Z",
+          "attempt": 1,
+          "summary": "Pre-edit ownership expansion added the exact Phase 12 provider/source guard affected by the reviewed metadata module and compat-type move.",
+          "gate_results": {
+            "stage": "C.1a",
+            "outcome": "ownership-expanded-before-edit",
+            "accepted": [
+              "crates/opi-coding-agent/tests/phase12_provider_correctness_docs.rs"
+            ],
+            "flagged": [],
+            "rejected": []
+          }
+        },
+        {
+          "timestamp": "2026-07-18T08:16:25.920Z",
+          "attempt": 1,
+          "summary": "Pre-edit ownership expansion added the exact productized-provider guard affected by model_info.",
+          "gate_results": {
+            "stage": "C.1a",
+            "outcome": "ownership-expanded-before-edit",
+            "accepted": [
+              "crates/opi-coding-agent/tests/productized_packages_docs.rs"
+            ],
+            "flagged": [],
+            "rejected": []
+          }
+        },
+        {
+          "timestamp": "2026-07-18T08:52:45.384Z",
+          "attempt": 1,
+          "summary": "Independent Task 14.15 review rejected the first implementation on three must-fix findings; all were accepted after source/diff verification and route to Phase C iteration 2.",
+          "gate_results": {
+            "stage": "task-review",
+            "outcome": "must-fix-block",
+            "accepted": [
+              "factory-routing acceptance does not observe concrete endpoints",
+              "default Azure construction exposes an empty catalog and passes wire validation vacuously",
+              "ThinkingLevel::XHigh serialized session spelling must be xhigh"
+            ],
+            "flagged": [],
+            "rejected": [],
+            "report": ".superpowers/sdd/task-14.15-review.md"
+          }
+        },
+        {
+          "timestamp": "2026-07-18T09:12:45.707Z",
+          "attempt": 2,
+          "summary": "Pre-edit ownership expansion added the Azure fixture that asserted the superseded empty-catalog behavior rejected by independent review.",
+          "gate_results": {
+            "stage": "C.1a",
+            "outcome": "ownership-expanded-before-edit",
+            "accepted": [
+              "crates/opi-ai/tests/azure_openai_fixtures.rs"
+            ],
+            "flagged": [],
+            "rejected": []
+          }
+        },
+        {
+          "timestamp": "2026-07-18T09:35:16.456Z",
+          "attempt": 2,
+          "summary": "Iteration-2 re-review confirmed the three prior findings resolved but accepted one new lifecycle must-fix: unprefixed active models bypass embedded pricing lookup.",
+          "gate_results": {
+            "stage": "task-review",
+            "outcome": "must-fix-block",
+            "accepted": [
+              "normalize supported unprefixed models in active_model_info and cover new/switch/resume/fork pricing lifecycle"
+            ],
+            "flagged": [],
+            "rejected": [],
+            "report": ".superpowers/sdd/task-14.15-review-iteration2.md"
+          }
+        },
+        {
+          "timestamp": "2026-07-18T10:30:44.514Z",
+          "attempt": 3,
+          "summary": "Task 14.15 passed fresh controller verification, complete workspace gates, independent iteration-3 spec/quality review, and independent six-lens evaluation with no accepted or flagged findings.",
+          "gate_results": {
+            "focused": "passing: wire/model 7/7; capabilities 7/7; enrichment 15/15; collection 30/30; image 1/1; identity 3/3; embedded pricing 2/2 plus unprefixed lifecycle 1/1; thinking RPC 7/7; Azure fixtures 15/15 and factory 3/3; concrete nine-wire routing 1/1",
+            "workspace_tests": "passing: cargo test --workspace --all-targets",
+            "fmt": "passing",
+            "clippy": "passing: workspace all-targets with -D warnings",
+            "diff_check": "passing",
+            "source_boundary": "passing: 54 committed paths, all within 57 task-owned paths",
+            "review": "approved: iteration 3 no must-fix findings",
+            "evaluator": "passing: L-D1 through L-D6; accepted 0, folded 4, flagged 0, rejected 8",
+            "commit": "0589a18bc222baf872e414bb462a51fa112ed123"
+          }
+        }
+      ]
     },
     {
       "id": "14.16",
@@ -5882,6 +6193,16 @@
       "rejected_count": 6,
       "ran_at": "2026-07-18T06:38:15.326Z",
       "task_id": "14.14",
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": "codex-collaboration:task14.15-six-lens-20260718",
+      "folded_count": 4,
+      "flagged_count": 0,
+      "rejected_count": 8,
+      "ran_at": "2026-07-18T10:30:44.514Z",
+      "task_id": "14.15",
       "criterion_id": null
     }
   ]
