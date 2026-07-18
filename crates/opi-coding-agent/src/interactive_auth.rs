@@ -187,6 +187,15 @@ fn parse_auth_command(input: &str) -> ParsedAuthCommand<'_> {
     ParsedAuthCommand::NotHandled
 }
 
+pub(crate) fn is_auth_command(input: &str) -> bool {
+    !matches!(parse_auth_command(input), ParsedAuthCommand::NotHandled)
+}
+
+#[cfg(debug_assertions)]
+pub(crate) fn auth_command_requires_presenter(input: &str) -> bool {
+    matches!(parse_auth_command(input), ParsedAuthCommand::Login(_))
+}
+
 /// Dispatch an interactive authentication slash command.
 ///
 /// Only login suspends the terminal. The guard restores it on every normal
