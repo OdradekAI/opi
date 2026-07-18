@@ -817,8 +817,13 @@ impl CodingHarness {
         }
         let system_prompt = builder.build();
 
+        let model_for_capability_lookup = if model.contains(':') {
+            model.clone()
+        } else {
+            format!("{}:{model}", provider.id())
+        };
         let (thinking, max_tokens) =
-            initial_thinking_request_config(&model_registry, &model, &config);
+            initial_thinking_request_config(&model_registry, &model_for_capability_lookup, &config);
         let agent_config = AgentLoopConfig {
             max_turns: config.defaults.max_iterations,
             max_tokens,
@@ -918,6 +923,7 @@ impl CodingHarness {
         // through the same channel as the interactive path.
         harness.apply_recorded_model(recorded_model.as_deref());
         harness.apply_recorded_thinking(recorded_thinking);
+        harness.sync_session_cost_model();
         harness.sync_session_id();
 
         harness
@@ -950,6 +956,7 @@ impl CodingHarness {
     /// Change the model used by subsequent prompts.
     pub fn set_model(&mut self, model: String) {
         self.agent.set_model(model);
+        self.sync_session_cost_model();
     }
 
     /// Validate and change the model used by subsequent prompts.
@@ -966,6 +973,7 @@ impl CodingHarness {
                 .map_err(|e| format!("model change write failed: {e}"))?;
         }
         self.agent.set_model(model);
+        self.sync_session_cost_model();
         Ok(self.agent.model())
     }
 
@@ -974,9 +982,16 @@ impl CodingHarness {
     /// session state. Used by [`Self::set_model_validated`] (persists) and by
     /// resume (applies a recorded model without re-persisting the entry).
     fn try_configure_model(&mut self, model: &str) -> Result<(), String> {
-        let (requested_provider, requested_model) =
-            crate::provider_factory::parse_model_spec(model)?;
         let current_provider = self.agent.provider().id();
+        let normalized;
+        let model_spec = if model.contains(':') || self.model_info(model).is_none() {
+            model
+        } else {
+            normalized = format!("{current_provider}:{model}");
+            &normalized
+        };
+        let (requested_provider, requested_model) =
+            crate::provider_factory::parse_model_spec(model_spec)?;
         if requested_provider != current_provider {
             return Err(format!(
                 "cannot switch provider from {current_provider} to {requested_provider} at runtime"
@@ -1019,19 +1034,23 @@ impl CodingHarness {
         let default_budget = self.config.thinking.budget_tokens as u64;
         let (persisted_level, budget_tokens) = match level {
             "off" => (ThinkingLevel::None, None),
+            "minimal" => (ThinkingLevel::Minimal, Some(1_024)),
             "low" => (ThinkingLevel::Low, Some(2_048)),
             "medium" => (ThinkingLevel::Medium, Some(default_budget)),
             "high" => (ThinkingLevel::High, Some(default_budget.max(20_000))),
+            "xhigh" => (ThinkingLevel::XHigh, Some(default_budget.max(20_000))),
+            "max" => (ThinkingLevel::Max, Some(default_budget.max(20_000))),
             _ => {
                 return Err(format!(
-                    "invalid thinking level '{level}': expected off, low, medium, or high"
+                    "invalid thinking level '{level}': expected off, minimal, low, medium, high, xhigh, or max"
                 ));
             }
         };
 
         let (thinking, max_tokens) = match budget_tokens {
             Some(budget_tokens) => {
-                let (thinking, max_tokens) = request_config_for_thinking_budget(budget_tokens)?;
+                let (mut thinking, max_tokens) = request_config_for_thinking_budget(budget_tokens)?;
+                thinking.level = persisted_level;
                 if let Some(model) = self.active_model_info() {
                     validate_thinking_budget_for_model(&model, budget_tokens, max_tokens)?;
                 }
@@ -1128,15 +1147,31 @@ impl CodingHarness {
     }
 
     fn active_model_info(&self) -> Option<ModelInfo> {
-        let Ok((provider_id, model_id)) =
-            crate::provider_factory::parse_model_spec(self.agent.model())
+        let current_provider = self.agent.provider().id();
+        let active_model = self.agent.model();
+        let normalized;
+        let model_spec = if active_model.contains(':') {
+            active_model
+        } else {
+            normalized = format!("{current_provider}:{active_model}");
+            &normalized
+        };
+        let Ok((provider_id, model_id)) = crate::provider_factory::parse_model_spec(model_spec)
         else {
             return None;
         };
-        if provider_id != self.agent.provider().id() {
+        if provider_id != current_provider {
             return None;
         }
         self.model_info(model_id)
+    }
+
+    fn sync_session_cost_model(&mut self) {
+        let model_spec = self.agent.model().to_owned();
+        let pricing = self.active_model_info().and_then(|model| model.pricing);
+        if let Some(session) = self.session.as_mut() {
+            session.set_cost_model(model_spec, pricing);
+        }
     }
 
     fn model_info(&self, model_id: &str) -> Option<ModelInfo> {
@@ -1208,6 +1243,7 @@ impl CodingHarness {
             self.agent.model().to_string(),
         )
         .ok();
+        self.sync_session_cost_model();
         self.sync_session_id();
         self.turn_offset = message_count;
         Ok(message_count)
@@ -1250,9 +1286,12 @@ impl CodingHarness {
         };
         let level_str = match level {
             ThinkingLevel::None => "off",
+            ThinkingLevel::Minimal => "minimal",
             ThinkingLevel::Low => "low",
             ThinkingLevel::Medium => "medium",
             ThinkingLevel::High => "high",
+            ThinkingLevel::XHigh => "xhigh",
+            ThinkingLevel::Max => "max",
         };
         if let Err(reason) = self.try_configure_thinking(level_str) {
             self.record_harness_diagnostic(
@@ -1314,6 +1353,7 @@ impl CodingHarness {
             )
             .map_err(|e| format!("failed to open forked session: {e}"))?,
         );
+        self.sync_session_cost_model();
         self.turn_offset = message_count;
         self.sync_session_id();
         Ok((session_id, message_count))
@@ -1412,6 +1452,7 @@ impl CodingHarness {
             )
             .map_err(|e| format!("failed to reopen selected branch: {e}"))?,
         );
+        self.sync_session_cost_model();
         self.turn_offset = message_count;
         Ok(message_count)
     }
@@ -2220,6 +2261,7 @@ fn request_config_for_thinking_budget(budget_tokens: u64) -> Result<(ThinkingCon
         ThinkingConfig {
             enabled: true,
             budget_tokens: Some(budget_tokens),
+            level: ThinkingLevel::Medium,
         },
         max_tokens,
     ))

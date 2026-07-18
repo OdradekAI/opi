@@ -2,6 +2,7 @@
 //!
 //! DoD: "resolves anthropic:model and capabilities"
 
+use opi_ai::WireApi;
 use opi_ai::anthropic::AnthropicProvider;
 use opi_ai::provider::{EventStream, ModelInfo, Provider, Request};
 use opi_ai::registry::ModelCapabilities;
@@ -17,13 +18,14 @@ impl StubProvider {
     fn new(id: &str) -> Self {
         Self {
             id: id.to_owned(),
-            models: vec![ModelInfo {
-                id: format!("{id}-model-1"),
-                display_name: format!("{id} Model 1"),
-                capabilities: ModelCapabilities::new(128000, 4096)
+            models: vec![ModelInfo::new(
+                format!("{id}-model-1"),
+                format!("{id} Model 1"),
+                WireApi::OpenAiCompletions,
+                ModelCapabilities::new(128000, 4096)
                     .with_images(true)
                     .with_streaming(true),
-            }],
+            )],
         }
     }
 }

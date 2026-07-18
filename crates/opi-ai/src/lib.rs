@@ -16,6 +16,7 @@ pub mod http;
 pub mod message;
 pub mod mistral;
 pub mod model;
+pub mod model_info;
 pub mod openai_chat;
 pub mod openai_responses;
 pub mod openrouter;
@@ -38,6 +39,10 @@ pub use credential::{
     BoxAuthFuture, Credential, CredentialSource, CredentialStore, CredentialStoreError,
 };
 pub use model::Model;
+pub use model_info::{
+    ModelCapabilities, ModelInfo, ModelInfoError, ModelPricing, PricingTier, ThinkingLevel,
+    ThinkingLevelMap, ThinkingLevelMapping, WireApi, WireCompat,
+};
 pub use provider::Provider;
 pub use provider_collection::{
     AuthDescriptor, AuthStatus, CollectionError, CompatMetadata, CompletedRequest,

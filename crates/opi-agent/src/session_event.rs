@@ -6,6 +6,8 @@
 
 use serde::{Deserialize, Serialize};
 
+pub use opi_ai::ThinkingLevel;
+
 use crate::diagnostic::DiagnosticPayload;
 use crate::event::AgentEvent;
 
@@ -25,16 +27,6 @@ pub struct CompactionResult {
     pub first_kept_entry_id: String,
     pub tokens_before: u64,
     pub tokens_after: u64,
-}
-
-/// Thinking/reasoning level configuration (S9.1).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ThinkingLevel {
-    None,
-    Low,
-    Medium,
-    High,
 }
 
 /// Events emitted during a session's lifetime (S7.5).

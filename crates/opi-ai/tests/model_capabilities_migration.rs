@@ -131,11 +131,12 @@ fn non_anthropic_models_default_cache_to_false() {
     let responses: Vec<Vec<opi_ai::stream::AssistantStreamEvent>> = vec![text_response("ok")];
     let mock = MockProvider::new_with_models(
         "test-prov",
-        vec![ModelInfo {
-            id: "test-model".into(),
-            display_name: "Test".into(),
-            capabilities: ModelCapabilities::new(100_000, 4_096).with_streaming(true),
-        }],
+        vec![ModelInfo::new(
+            "test-model",
+            "Test",
+            opi_ai::WireApi::OpenAiCompletions,
+            ModelCapabilities::new(100_000, 4_096).with_streaming(true),
+        )],
         responses,
     );
     let mut registry = ProviderRegistry::new();

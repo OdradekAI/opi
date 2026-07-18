@@ -13,6 +13,7 @@ use futures_util::{StreamExt, stream};
 use tokio_util::sync::CancellationToken;
 
 use crate::http::HttpClient;
+use crate::model_info::WireApi;
 use crate::openai_chat::{
     CompatConfig, OpenAiChatMapper, OpenAiChatProvider, ParsedEvent, parse_sse_events,
 };
@@ -64,6 +65,12 @@ impl AzureOpenAIProvider {
             )
         })?;
         let api_version = api_version.unwrap_or_else(|| DEFAULT_API_VERSION.into());
+        if deployment.trim().is_empty() {
+            return Err(ProviderError::Config(
+                "Azure OpenAI deployment must not be empty".into(),
+            ));
+        }
+        let models = vec![deployment_model(&deployment)];
         let inner = OpenAiChatProvider::new_for_profile(
             api_key.clone(),
             endpoint.clone(),
@@ -72,12 +79,11 @@ impl AzureOpenAIProvider {
             vec![],
             vec![],
         );
-        let _ = deployment; // stored in models if needed
         Ok(Self {
             api_key,
             endpoint,
             api_version,
-            models: vec![],
+            models,
             inner,
             client: Arc::new(HttpClient::new()),
         })
@@ -96,15 +102,18 @@ impl AzureOpenAIProvider {
             )
         })?;
         let api_version = api_version.unwrap_or_else(|| DEFAULT_API_VERSION.into());
+        if deployments.is_empty()
+            || deployments
+                .iter()
+                .any(|deployment| deployment.trim().is_empty())
+        {
+            return Err(ProviderError::Config(
+                "Azure OpenAI deployments must contain only non-empty deployment names".into(),
+            ));
+        }
         let models = deployments
             .iter()
-            .map(|d| ModelInfo {
-                id: d.clone(),
-                display_name: d.clone(),
-                capabilities: ModelCapabilities::new(128000, 16384)
-                    .with_images(true)
-                    .with_streaming(true),
-            })
+            .map(|deployment| deployment_model(deployment))
             .collect();
         let inner = OpenAiChatProvider::new_for_profile(
             api_key.clone(),
@@ -182,6 +191,17 @@ impl AzureOpenAIProvider {
         let _cancel = cancel;
         Box::pin(stream::iter(stream_events))
     }
+}
+
+fn deployment_model(deployment: &str) -> ModelInfo {
+    ModelInfo::new(
+        deployment,
+        deployment,
+        WireApi::AzureOpenAiCompletions,
+        ModelCapabilities::new(128000, 16384)
+            .with_images(true)
+            .with_streaming(true),
+    )
 }
 
 // Minimal ReceiverStream adapter for the tokio mpsc channel.

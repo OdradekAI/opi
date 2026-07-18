@@ -5,6 +5,7 @@
 //! [`OpenAiChatProvider`] with OpenRouter's base URL, identification headers, and
 //! a curated model list.
 
+use crate::model_info::WireApi;
 use crate::openai_chat::{CompatConfig, OpenAiChatProvider};
 use crate::provider::ModelInfo;
 use crate::registry::ModelCapabilities;
@@ -38,45 +39,53 @@ pub fn openrouter_provider(api_key: String, base_url: Option<String>) -> OpenAiC
 /// Built-in OpenRouter model metadata without credentials or HTTP construction.
 pub fn model_catalog() -> Vec<ModelInfo> {
     vec![
-        ModelInfo {
-            id: "anthropic/claude-sonnet-4".into(),
-            display_name: "Claude Sonnet 4 (via OpenRouter)".into(),
-            capabilities: ModelCapabilities::new(200000, 64000)
+        ModelInfo::new(
+            "anthropic/claude-sonnet-4",
+            "Claude Sonnet 4 (via OpenRouter)",
+            WireApi::OpenAiCompletions,
+            ModelCapabilities::new(200000, 64000)
                 .with_images(true)
                 .with_streaming(true),
-        },
-        ModelInfo {
-            id: "anthropic/claude-haiku-4".into(),
-            display_name: "Claude Haiku 4 (via OpenRouter)".into(),
-            capabilities: ModelCapabilities::new(200000, 8192)
+        ),
+        ModelInfo::new(
+            "anthropic/claude-haiku-4",
+            "Claude Haiku 4 (via OpenRouter)",
+            WireApi::OpenAiCompletions,
+            ModelCapabilities::new(200000, 8192)
                 .with_images(true)
                 .with_streaming(true),
-        },
-        ModelInfo {
-            id: "openai/gpt-4o".into(),
-            display_name: "GPT-4o (via OpenRouter)".into(),
-            capabilities: ModelCapabilities::new(128000, 16384)
+        ),
+        ModelInfo::new(
+            "openai/gpt-4o",
+            "GPT-4o (via OpenRouter)",
+            WireApi::OpenAiCompletions,
+            ModelCapabilities::new(128000, 16384)
                 .with_images(true)
                 .with_streaming(true),
-        },
-        ModelInfo {
-            id: "openai/gpt-4o-mini".into(),
-            display_name: "GPT-4o Mini (via OpenRouter)".into(),
-            capabilities: ModelCapabilities::new(128000, 16384)
+        ),
+        ModelInfo::new(
+            "openai/gpt-4o-mini",
+            "GPT-4o Mini (via OpenRouter)",
+            WireApi::OpenAiCompletions,
+            ModelCapabilities::new(128000, 16384)
                 .with_images(true)
                 .with_streaming(true),
-        },
-        ModelInfo {
-            id: "google/gemini-2.5-pro".into(),
-            display_name: "Gemini 2.5 Pro (via OpenRouter)".into(),
-            capabilities: ModelCapabilities::new(1048576, 65536)
+        ),
+        ModelInfo::new(
+            "google/gemini-2.5-pro",
+            "Gemini 2.5 Pro (via OpenRouter)",
+            WireApi::OpenAiCompletions,
+            ModelCapabilities::new(1048576, 65536)
                 .with_images(true)
                 .with_streaming(true),
-        },
-        ModelInfo {
-            id: "deepseek/deepseek-r1".into(),
-            display_name: "DeepSeek R1 (via OpenRouter)".into(),
-            capabilities: ModelCapabilities::new(131072, 32768).with_streaming(true),
-        },
+        ),
+        ModelInfo::new(
+            "deepseek/deepseek-r1",
+            "DeepSeek R1 (via OpenRouter)",
+            WireApi::OpenAiCompletions,
+            ModelCapabilities::new(131072, 32768)
+                .with_streaming(true)
+                .with_thinking(true),
+        ),
     ]
 }

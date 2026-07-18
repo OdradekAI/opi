@@ -90,6 +90,7 @@ async fn thinking_config_passed_to_provider() {
         thinking: Some(ThinkingConfig {
             enabled: true,
             budget_tokens: Some(10_000),
+            level: opi_ai::ThinkingLevel::Medium,
         }),
         ..Default::default()
     };

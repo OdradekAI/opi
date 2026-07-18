@@ -658,6 +658,19 @@ impl From<&opi_ai::provider::ProviderError> for Diagnostic {
                 "provider request failed",
             )
             .details(serde_json::json!({ "provider_error": message })),
+            ProviderError::UnknownModel {
+                provider_id,
+                model_id,
+            } => Diagnostic::new(
+                Severity::Error,
+                code::CODE_PROVIDER_REQUEST_FAILED,
+                SOURCE_PROVIDER,
+                "unknown provider model",
+            )
+            .details(serde_json::json!({
+                "provider_id": provider_id,
+                "model_id": model_id,
+            })),
             ProviderError::StreamError(message) => Diagnostic::new(
                 Severity::Error,
                 code::CODE_PROVIDER_STREAM_ERROR,
@@ -703,6 +716,34 @@ impl From<&opi_ai::provider::ProviderError> for Diagnostic {
                 "invalid provider configuration",
             )
             .details(serde_json::json!({ "provider_error": message })),
+            ProviderError::MissingWireRoute {
+                provider_id,
+                wire_api,
+            } => Diagnostic::new(
+                Severity::Error,
+                code::CODE_PROVIDER_CONFIG,
+                SOURCE_PROVIDER,
+                "provider model wire route is missing",
+            )
+            .details(serde_json::json!({
+                "provider_id": provider_id,
+                "wire_api": wire_api.to_string(),
+            })),
+            ProviderError::WireCompatMismatch {
+                model_id,
+                wire_api,
+                compat_wire,
+            } => Diagnostic::new(
+                Severity::Error,
+                code::CODE_PROVIDER_CONFIG,
+                SOURCE_PROVIDER,
+                "provider model wire compatibility mismatch",
+            )
+            .details(serde_json::json!({
+                "model_id": model_id,
+                "wire_api": wire_api.to_string(),
+                "compat_wire": compat_wire.to_string(),
+            })),
             ProviderError::ProviderSide(message) => Diagnostic::new(
                 Severity::Error,
                 code::CODE_PROVIDER_SIDE,

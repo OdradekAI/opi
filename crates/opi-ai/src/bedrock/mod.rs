@@ -16,6 +16,7 @@ use crate::bedrock::credentials::BedrockCredentials;
 use crate::bedrock::sigv4::{AwsCredentials, sign_request};
 use crate::http::HttpClient;
 use crate::message::{AssistantContent, AssistantMessage, ToolCall};
+use crate::model_info::WireApi;
 use crate::provider::{EventStream, ModelInfo, Provider, ProviderError, Request};
 use crate::registry::ModelCapabilities;
 use crate::stream::{AssistantStreamEvent, StopReason, Usage};
@@ -1021,29 +1022,32 @@ pub fn redact_credentials(access_key_id: &str, _secret_key: &str) -> String {
 /// Built-in Bedrock model metadata without credentials or HTTP construction.
 pub fn model_catalog() -> Vec<ModelInfo> {
     vec![
-        ModelInfo {
-            id: "anthropic.claude-sonnet-4-20250514-v2:0".into(),
-            display_name: "Claude Sonnet 4 (Bedrock)".into(),
-            capabilities: ModelCapabilities::new(200000, 8192)
+        ModelInfo::new(
+            "anthropic.claude-sonnet-4-20250514-v2:0",
+            "Claude Sonnet 4 (Bedrock)",
+            WireApi::BedrockConverseStream,
+            ModelCapabilities::new(200000, 8192)
                 .with_images(true)
                 .with_streaming(true)
                 .with_thinking(true),
-        },
-        ModelInfo {
-            id: "anthropic.claude-opus-4-20250514-v1:0".into(),
-            display_name: "Claude Opus 4 (Bedrock)".into(),
-            capabilities: ModelCapabilities::new(200000, 8192)
+        ),
+        ModelInfo::new(
+            "anthropic.claude-opus-4-20250514-v1:0",
+            "Claude Opus 4 (Bedrock)",
+            WireApi::BedrockConverseStream,
+            ModelCapabilities::new(200000, 8192)
                 .with_images(true)
                 .with_streaming(true)
                 .with_thinking(true),
-        },
-        ModelInfo {
-            id: "anthropic.claude-haiku-4-5-20250514-v1:0".into(),
-            display_name: "Claude Haiku 4.5 (Bedrock)".into(),
-            capabilities: ModelCapabilities::new(200000, 8192)
+        ),
+        ModelInfo::new(
+            "anthropic.claude-haiku-4-5-20250514-v1:0",
+            "Claude Haiku 4.5 (Bedrock)",
+            WireApi::BedrockConverseStream,
+            ModelCapabilities::new(200000, 8192)
                 .with_images(true)
                 .with_streaming(true)
                 .with_thinking(true),
-        },
+        ),
     ]
 }

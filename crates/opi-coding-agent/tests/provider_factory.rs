@@ -1245,6 +1245,341 @@ fn build_provider_wires_each_builtin_provider_family() {
     }
 }
 
+#[tokio::test]
+async fn builtin_single_wire_models_route_by_declared_wire() {
+    use futures_util::StreamExt;
+    use opi_ai::model_info::WireApi;
+    use opi_coding_agent::provider_factory::build_provider;
+    use wiremock::matchers::method;
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    #[derive(Clone, Copy)]
+    enum Route {
+        Anthropic,
+        OpenAiChat,
+        OpenAiResponses,
+        Gemini,
+        Vertex,
+        Bedrock,
+        Azure,
+    }
+
+    struct RouteCase {
+        provider_id: &'static str,
+        expected_wire: WireApi,
+        route: Route,
+    }
+
+    let cases = [
+        RouteCase {
+            provider_id: "anthropic",
+            expected_wire: WireApi::AnthropicMessages,
+            route: Route::Anthropic,
+        },
+        RouteCase {
+            provider_id: "openai",
+            expected_wire: WireApi::OpenAiCompletions,
+            route: Route::OpenAiChat,
+        },
+        RouteCase {
+            provider_id: "openai-responses",
+            expected_wire: WireApi::OpenAiResponses,
+            route: Route::OpenAiResponses,
+        },
+        RouteCase {
+            provider_id: "openrouter",
+            expected_wire: WireApi::OpenAiCompletions,
+            route: Route::OpenAiChat,
+        },
+        RouteCase {
+            provider_id: "mistral",
+            expected_wire: WireApi::OpenAiCompletions,
+            route: Route::OpenAiChat,
+        },
+        RouteCase {
+            provider_id: "gemini",
+            expected_wire: WireApi::GoogleGenerativeAi,
+            route: Route::Gemini,
+        },
+        RouteCase {
+            provider_id: "vertex",
+            expected_wire: WireApi::GoogleVertex,
+            route: Route::Vertex,
+        },
+        RouteCase {
+            provider_id: "bedrock",
+            expected_wire: WireApi::BedrockConverseStream,
+            route: Route::Bedrock,
+        },
+        RouteCase {
+            provider_id: "azure",
+            expected_wire: WireApi::AzureOpenAiCompletions,
+            route: Route::Azure,
+        },
+    ];
+
+    const ROUTE_KEY_ENV: &str = "OPI_TEST_FACTORY_ROUTE_KEY_14_15";
+
+    for case in cases {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(404).set_body_string("offline route capture"))
+            .mount(&server)
+            .await;
+
+        let mut config = OpiConfig::default();
+        let selected_model = if case.provider_id == "bedrock" {
+            "anthropic.route-model"
+        } else {
+            "route-model"
+        };
+        config.defaults.model = format!("{}:{selected_model}", case.provider_id);
+        match case.provider_id {
+            "anthropic" => {
+                config.providers.anthropic.api_key_env = ROUTE_KEY_ENV.into();
+                config.providers.anthropic.base_url = Some(server.uri());
+            }
+            "openai" => {
+                config.providers.openai.api_key_env = ROUTE_KEY_ENV.into();
+                config.providers.openai.base_url = Some(server.uri());
+            }
+            "openai-responses" => {
+                config.providers.openai_responses.api_key_env = ROUTE_KEY_ENV.into();
+                config.providers.openai_responses.base_url = Some(server.uri());
+            }
+            "openrouter" => {
+                config.providers.openrouter.api_key_env = ROUTE_KEY_ENV.into();
+                config.providers.openrouter.base_url = Some(server.uri());
+            }
+            "mistral" => {
+                config.providers.mistral.api_key_env = ROUTE_KEY_ENV.into();
+                config.providers.mistral.base_url = Some(server.uri());
+            }
+            "gemini" => {
+                config.providers.gemini.api_key_env = ROUTE_KEY_ENV.into();
+                config.providers.gemini.base_url = Some(server.uri());
+            }
+            "vertex" => {
+                config.providers.vertex.access_token_env = ROUTE_KEY_ENV.into();
+                config.providers.vertex.project = Some("test-project".into());
+                config.providers.vertex.location = Some("us-central1".into());
+                config.providers.vertex.base_url = Some(server.uri());
+            }
+            "bedrock" => {
+                config.providers.bedrock.access_key_id = Some("test-akid".into());
+                config.providers.bedrock.secret_access_key_env = Some(ROUTE_KEY_ENV.into());
+                config.providers.bedrock.region = Some("us-east-1".into());
+                config.providers.bedrock.base_url = Some(server.uri());
+            }
+            "azure" => {
+                config.providers.azure.api_key_env = ROUTE_KEY_ENV.into();
+                config.providers.azure.endpoint = Some(server.uri());
+                assert!(
+                    config.providers.azure.deployments.is_empty(),
+                    "exercise the selected-model fallback branch"
+                );
+            }
+            other => unreachable!("unhandled route case {other}"),
+        }
+
+        let provider = with_env_var(ROUTE_KEY_ENV, "test-secret", || {
+            build_provider(&config).unwrap_or_else(|error| {
+                panic!("build_provider({}) failed: {error:?}", case.provider_id)
+            })
+        });
+        let model = provider
+            .models()
+            .first()
+            .unwrap_or_else(|| panic!("{} factory returned an empty catalog", case.provider_id));
+        assert_eq!(
+            model.wire_api, case.expected_wire,
+            "{}:{} wire metadata",
+            case.provider_id, model.id
+        );
+        model.validate().unwrap();
+        let model_id = model.id.clone();
+
+        let mut stream =
+            provider.stream(minimal_request(&format!("{}:{model_id}", case.provider_id)));
+        tokio::time::timeout(std::time::Duration::from_secs(2), stream.next())
+            .await
+            .unwrap_or_else(|_| panic!("{} stream did not issue a request", case.provider_id));
+        drop(stream);
+
+        let requests = server.received_requests().await.unwrap();
+        assert_eq!(
+            requests.len(),
+            1,
+            "{} must emit exactly one request",
+            case.provider_id
+        );
+        let request = &requests[0];
+        assert_eq!(request.method.as_str(), "POST", "{}", case.provider_id);
+        let expected_path = match case.route {
+            Route::Anthropic => "/v1/messages".to_owned(),
+            Route::OpenAiChat => "/v1/chat/completions".to_owned(),
+            Route::OpenAiResponses => "/v1/responses".to_owned(),
+            Route::Gemini => {
+                format!("/v1beta/models/{model_id}:streamGenerateContent")
+            }
+            Route::Vertex => format!(
+                "/v1/projects/test-project/locations/us-central1/publishers/google/models/{model_id}:streamGenerateContent"
+            ),
+            Route::Bedrock => format!("/model/{model_id}/converse-stream"),
+            Route::Azure => {
+                format!("/openai/deployments/{model_id}/chat/completions")
+            }
+        };
+        assert_eq!(
+            request.url.path(),
+            expected_path,
+            "{} concrete route",
+            case.provider_id
+        );
+        match case.route {
+            Route::Gemini | Route::Vertex => {
+                assert_eq!(request.url.query(), Some("alt=sse"), "{}", case.provider_id);
+            }
+            Route::Azure => {
+                assert_eq!(
+                    request.url.query(),
+                    Some("api-version=2024-06-01"),
+                    "azure API version route"
+                );
+            }
+            _ => assert!(request.url.query().is_none(), "{}", case.provider_id),
+        }
+        match case.route {
+            Route::Anthropic => {
+                assert_eq!(
+                    request
+                        .headers
+                        .get("x-api-key")
+                        .and_then(|value| value.to_str().ok()),
+                    Some("test-secret")
+                );
+            }
+            Route::OpenAiChat | Route::OpenAiResponses | Route::Vertex => {
+                assert_eq!(
+                    request
+                        .headers
+                        .get("authorization")
+                        .and_then(|value| value.to_str().ok()),
+                    Some("Bearer test-secret"),
+                    "{} auth transport",
+                    case.provider_id
+                );
+            }
+            Route::Gemini => {
+                assert_eq!(
+                    request
+                        .headers
+                        .get("x-goog-api-key")
+                        .and_then(|value| value.to_str().ok()),
+                    Some("test-secret")
+                );
+            }
+            Route::Bedrock => {
+                assert!(
+                    request
+                        .headers
+                        .get("authorization")
+                        .and_then(|value| value.to_str().ok())
+                        .is_some_and(|value| value.starts_with("AWS4-HMAC-SHA256 ")),
+                    "Bedrock must use SigV4 ConverseStream transport"
+                );
+            }
+            Route::Azure => {
+                assert_eq!(
+                    request
+                        .headers
+                        .get("api-key")
+                        .and_then(|value| value.to_str().ok()),
+                    Some("test-secret")
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn single_wire_factory_guard_rejects_mismatch_before_stream() {
+    use opi_ai::model_info::WireApi;
+    use opi_coding_agent::provider_factory::validate_single_wire_provider;
+
+    let mut mismatched = opi_ai::ModelInfo::new(
+        "mismatch",
+        "Mismatch",
+        WireApi::OpenAiCompletions,
+        opi_ai::ModelCapabilities::new(8_192, 1_024),
+    );
+    mismatched.compat = opi_ai::WireCompat::AnthropicMessages(Default::default());
+    let provider = MockProvider::new_with_models("factory-test", vec![mismatched], vec![]);
+    let call_log = provider.call_log_handle();
+
+    assert!(matches!(
+        validate_single_wire_provider(Box::new(provider), WireApi::OpenAiCompletions),
+        Err(
+            opi_coding_agent::provider_factory::ProviderBuildError::Provider(
+                opi_ai::provider::ProviderError::WireCompatMismatch { .. }
+            )
+        )
+    ));
+    assert!(
+        call_log.lock().unwrap().is_empty(),
+        "factory validation must fail before Provider::stream can emit a request"
+    );
+}
+
+#[test]
+fn azure_default_factory_catalog_uses_selected_deployment_wire() {
+    use opi_ai::model_info::WireApi;
+    use opi_coding_agent::provider_factory::build_provider;
+
+    const KEY_ENV: &str = "OPI_TEST_AZURE_SELECTED_DEPLOYMENT_14_15";
+    let mut config = OpiConfig::default();
+    config.defaults.model = "azure:selected-deployment".into();
+    config.providers.azure.api_key_env = KEY_ENV.into();
+    config.providers.azure.endpoint = Some("http://127.0.0.1:9".into());
+    assert!(config.providers.azure.deployments.is_empty());
+
+    let provider = with_env_var(KEY_ENV, "test-key", || build_provider(&config).unwrap());
+    assert_eq!(provider.models().len(), 1);
+    assert_eq!(provider.models()[0].id, "selected-deployment");
+    assert_eq!(
+        provider.models()[0].wire_api,
+        WireApi::AzureOpenAiCompletions
+    );
+}
+
+#[test]
+fn azure_constructor_rejects_empty_selected_deployment() {
+    assert!(matches!(
+        opi_ai::azure_openai::AzureOpenAIProvider::new(
+            "test-key".into(),
+            Some("https://test.openai.azure.com".into()),
+            " \t".into(),
+            None,
+        ),
+        Err(opi_ai::provider::ProviderError::Config(message))
+            if message.contains("deployment")
+    ));
+}
+
+#[test]
+fn azure_config_constructor_rejects_empty_deployment_catalog() {
+    assert!(matches!(
+        opi_ai::azure_openai::AzureOpenAIProvider::from_config(
+            "test-key".into(),
+            Some("https://test.openai.azure.com".into()),
+            vec![],
+            None,
+        ),
+        Err(opi_ai::provider::ProviderError::Config(message))
+            if message.contains("deployment")
+    ));
+}
+
 /// Credentials are validated at build time before any provider construction
 /// or dispatch. DoD: "validates credentials at build time" + "missing or
 /// invalid credentials emit safe diagnostics with provider/error class and

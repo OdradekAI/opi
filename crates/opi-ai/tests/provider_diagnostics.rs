@@ -295,11 +295,12 @@ fn safe_excerpt_preserves_benign_content() {
 // ---------------------------------------------------------------------------
 
 fn text_only_model(id: &str) -> ModelInfo {
-    ModelInfo {
-        id: id.into(),
-        display_name: id.into(),
-        capabilities: ModelCapabilities::new(100_000, 4_096).with_streaming(true),
-    }
+    ModelInfo::new(
+        id,
+        id,
+        opi_ai::WireApi::OpenAiCompletions,
+        ModelCapabilities::new(100_000, 4_096).with_streaming(true),
+    )
 }
 
 fn image_request(model: &str) -> Request {
@@ -368,6 +369,7 @@ fn validate_rejects_thinking_on_non_thinking_model_as_capability() {
     request.thinking = ThinkingConfig {
         enabled: true,
         budget_tokens: Some(1024),
+        level: opi_ai::ThinkingLevel::Medium,
     };
     request.messages = vec![Message::User(UserMessage {
         content: vec![InputContent::Text {
@@ -375,8 +377,10 @@ fn validate_rejects_thinking_on_non_thinking_model_as_capability() {
         }],
         timestamp_ms: 0,
     })];
-    validate_request_capabilities(&provider, &request)
-        .expect("thinking preflight is owned by the harness layer, not opi-ai");
+    assert!(matches!(
+        validate_request_capabilities(&provider, &request),
+        Err(ProviderError::UnsupportedCapability(_))
+    ));
 }
 
 #[test]

@@ -6,6 +6,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use opi_agent::hooks::AgentHooks;
 use opi_agent::loop_types::{AgentError, AgentLoopConfig, AgentLoopContext};
 use opi_agent::message::AgentMessage;
+use opi_ai::WireApi;
 use opi_ai::message::{ImageSource, InputContent, MediaType, Message, UserMessage};
 use opi_ai::provider::{EventStream, ModelInfo, Provider, Request};
 use opi_ai::registry::ModelCapabilities;
@@ -20,11 +21,12 @@ impl TextOnlyProvider {
     fn new(calls: Arc<AtomicUsize>) -> Self {
         Self {
             calls,
-            models: vec![ModelInfo {
-                id: "text-only".into(),
-                display_name: "Text Only".into(),
-                capabilities: ModelCapabilities::new(8192, 1024).with_streaming(true),
-            }],
+            models: vec![ModelInfo::new(
+                "text-only",
+                "Text Only",
+                WireApi::OpenAiCompletions,
+                ModelCapabilities::new(8192, 1024).with_streaming(true),
+            )],
         }
     }
 }

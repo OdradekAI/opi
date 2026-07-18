@@ -65,6 +65,8 @@ use std::collections::HashMap;
 
 use crate::provider::{ModelInfo, Provider};
 
+pub use crate::model_info::ModelCapabilities;
+
 // ---------------------------------------------------------------------------
 // Error types
 // ---------------------------------------------------------------------------
@@ -94,68 +96,6 @@ pub enum RegistrationError {
     /// Model with the same id already exists for this provider.
     #[error("model '{model}' already registered for provider '{provider}'")]
     DuplicateModel { provider: String, model: String },
-}
-
-/// Capabilities of a resolved model.
-///
-/// This type is `#[non_exhaustive]` so external consumers must construct it
-/// through [`ModelCapabilities::new`] or the builder-style setters.
-#[derive(Debug, Clone, Copy)]
-#[non_exhaustive]
-pub struct ModelCapabilities {
-    pub context_window: u64,
-    pub max_output_tokens: u64,
-    pub supports_images: bool,
-    pub supports_streaming: bool,
-    pub supports_thinking: bool,
-    /// True when the provider supports Anthropic-style `cache_control` markers
-    /// on content blocks and tool definitions.
-    pub supports_cache_control: bool,
-    /// True when the provider/model pair supports one-hour
-    /// `cache_control { ttl: "1h" }` markers.
-    pub supports_long_cache_retention: bool,
-}
-
-impl ModelCapabilities {
-    /// Create capabilities with required sizing fields. All boolean flags
-    /// default to `false`; use builder methods to enable them.
-    pub fn new(context_window: u64, max_output_tokens: u64) -> Self {
-        Self {
-            context_window,
-            max_output_tokens,
-            supports_images: false,
-            supports_streaming: false,
-            supports_thinking: false,
-            supports_cache_control: false,
-            supports_long_cache_retention: false,
-        }
-    }
-    pub fn with_images(mut self, v: bool) -> Self {
-        self.supports_images = v;
-        self
-    }
-    pub fn with_streaming(mut self, v: bool) -> Self {
-        self.supports_streaming = v;
-        self
-    }
-    pub fn with_thinking(mut self, v: bool) -> Self {
-        self.supports_thinking = v;
-        self
-    }
-    pub fn with_cache_control(mut self, v: bool) -> Self {
-        self.supports_cache_control = v;
-        self
-    }
-    pub fn with_long_cache_retention(mut self, v: bool) -> Self {
-        self.supports_long_cache_retention = v;
-        self
-    }
-}
-
-impl Default for ModelCapabilities {
-    fn default() -> Self {
-        Self::new(0, 0)
-    }
 }
 
 // ---------------------------------------------------------------------------

@@ -582,7 +582,7 @@ impl CodexOAuthProvider {
 
 impl OAuthProvider for CodexOAuthProvider {
     fn id(&self) -> &str {
-        "codex"
+        "openai-codex"
     }
 
     fn login<'a>(
@@ -618,7 +618,7 @@ impl OAuthProvider for CodexOAuthProvider {
                 &token_url,
                 &client_id,
                 cred,
-                "codex",
+                "openai-codex",
                 cred.base_url.clone(),
             )
             .await
@@ -795,7 +795,7 @@ impl CopilotOAuthProvider {
         if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
             let _ = resp.text().await;
             return Err(ProviderError::CredentialRevoked {
-                provider_id: "copilot".to_owned(),
+                provider_id: "github-copilot".to_owned(),
             });
         }
         if !status.is_success() {
@@ -817,7 +817,7 @@ impl CopilotOAuthProvider {
 
 impl OAuthProvider for CopilotOAuthProvider {
     fn id(&self) -> &str {
-        "copilot"
+        "github-copilot"
     }
 
     fn login<'a>(
@@ -902,13 +902,13 @@ impl OAuthProvider for CopilotOAuthProvider {
                     DevicePollOutcome::Denied => {
                         presenter.notify_failure("device authorization denied");
                         return Err(ProviderError::CredentialRevoked {
-                            provider_id: "copilot".to_owned(),
+                            provider_id: "github-copilot".to_owned(),
                         });
                     }
                     DevicePollOutcome::Expired => {
                         presenter.notify_failure("device code expired");
                         return Err(ProviderError::CredentialRevoked {
-                            provider_id: "copilot".to_owned(),
+                            provider_id: "github-copilot".to_owned(),
                         });
                     }
                     DevicePollOutcome::Token(github_token) => break github_token,

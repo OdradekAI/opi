@@ -15,6 +15,7 @@ use opi_ai::provider_collection::{
 };
 use opi_ai::registry::ProviderRegistry;
 use opi_ai::test_support::{MockProvider, text_response};
+use opi_ai::{ModelCapabilities, ModelInfo, WireApi};
 use std::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 
@@ -94,11 +95,12 @@ impl Provider for StreamProvider {
         static MODELS: std::sync::OnceLock<Vec<opi_ai::provider::ModelInfo>> =
             std::sync::OnceLock::new();
         MODELS.get_or_init(|| {
-            vec![opi_ai::provider::ModelInfo {
-                id: "mock-model".into(),
-                display_name: "Mock Model".into(),
-                capabilities: ModelCapabilities::new(128_000, 4096).with_streaming(true),
-            }]
+            vec![opi_ai::provider::ModelInfo::new(
+                "mock-model",
+                "Mock Model",
+                WireApi::OpenAiCompletions,
+                ModelCapabilities::new(128_000, 4096).with_streaming(true),
+            )]
         })
     }
 
@@ -432,13 +434,14 @@ async fn collection_supports_provider_correctness_fixtures() {
     use opi_ai::provider::ModelInfo;
 
     // An OpenAI-compatible profile provider, as Phase 12 fixtures will exercise.
-    let profile_model = ModelInfo {
-        id: "profile-model".into(),
-        display_name: "Profile Model".into(),
-        capabilities: ModelCapabilities::new(128_000, 4_096)
+    let profile_model = ModelInfo::new(
+        "profile-model",
+        "Profile Model",
+        WireApi::OpenAiCompletions,
+        ModelCapabilities::new(128_000, 4_096)
             .with_images(true)
             .with_streaming(true),
-    };
+    );
     let profile_provider = Box::new(MockProvider::new_with_models(
         "openrouter-profile",
         vec![profile_model],
@@ -545,7 +548,6 @@ fn collection_wraps_existing_registry_via_from_registry() {
 use opi_ai::credential::{
     BoxAuthFuture, Credential, CredentialSource, CredentialStore, CredentialStoreError,
 };
-use opi_ai::registry::ModelCapabilities;
 use std::collections::HashMap;
 // `Mutex` is already imported at the top of this file; only `Arc` is new here.
 use std::sync::Arc;
@@ -829,8 +831,6 @@ async fn credential_store_is_object_safe_and_round_trips() {
 // Task 14.6: Dynamic provider model refresh (substrate-only)
 // ---------------------------------------------------------------------------
 
-use opi_ai::provider::ModelInfo;
-
 /// A mock provider that implements `refresh_models` to return a dynamic catalog.
 struct RefreshProvider {
     id: &'static str,
@@ -885,11 +885,12 @@ impl Provider for RefreshProvider {
 }
 
 fn model_info(id: &str, display: &str) -> ModelInfo {
-    ModelInfo {
-        id: id.into(),
-        display_name: display.into(),
-        capabilities: ModelCapabilities::new(128_000, 4096),
-    }
+    ModelInfo::new(
+        id,
+        display,
+        WireApi::OpenAiCompletions,
+        ModelCapabilities::new(128_000, 4096),
+    )
 }
 
 /// A mock provider whose `refresh_models` returns an error.

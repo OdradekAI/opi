@@ -1028,7 +1028,7 @@ async fn rpc_set_thinking_level_rejects_invalid_level() {
     assert_eq!(resp["success"], false);
     assert_eq!(
         resp["error"],
-        "invalid thinking level 'maximum': expected off, low, medium, or high"
+        "invalid thinking level 'maximum': expected off, minimal, low, medium, high, xhigh, or max"
     );
 
     command_tx.send(RpcCommand::quit { id: None }).unwrap();
@@ -1824,14 +1824,15 @@ fn rpc_model_info_with_max_output(
     supports_thinking: bool,
     max_output_tokens: u64,
 ) -> ModelInfo {
-    ModelInfo {
-        id: id.into(),
-        display_name: id.into(),
-        capabilities: ModelCapabilities::new(100_000, max_output_tokens)
+    ModelInfo::new(
+        id,
+        id,
+        opi_ai::WireApi::OpenAiCompletions,
+        ModelCapabilities::new(100_000, max_output_tokens)
             .with_images(true)
             .with_streaming(true)
             .with_thinking(supports_thinking),
-    }
+    )
 }
 #[derive(Clone)]
 struct BlockingCleanupProvider {
@@ -1850,15 +1851,8 @@ impl Provider for BlockingCleanupProvider {
     }
 
     fn models(&self) -> &[ModelInfo] {
-        static MODELS: std::sync::LazyLock<Vec<ModelInfo>> = std::sync::LazyLock::new(|| {
-            vec![ModelInfo {
-                id: "mock-model".into(),
-                display_name: "Mock Model".into(),
-                capabilities: ModelCapabilities::new(100_000, 4_096)
-                    .with_images(true)
-                    .with_streaming(true),
-            }]
-        });
+        static MODELS: std::sync::LazyLock<Vec<ModelInfo>> =
+            std::sync::LazyLock::new(|| vec![rpc_model_info("mock-model", false)]);
         &MODELS
     }
 
@@ -1913,15 +1907,8 @@ impl Provider for ControlledEmitCleanupProvider {
     }
 
     fn models(&self) -> &[ModelInfo] {
-        static MODELS: std::sync::LazyLock<Vec<ModelInfo>> = std::sync::LazyLock::new(|| {
-            vec![ModelInfo {
-                id: "mock-model".into(),
-                display_name: "Mock Model".into(),
-                capabilities: ModelCapabilities::new(100_000, 4_096)
-                    .with_images(true)
-                    .with_streaming(true),
-            }]
-        });
+        static MODELS: std::sync::LazyLock<Vec<ModelInfo>> =
+            std::sync::LazyLock::new(|| vec![rpc_model_info("mock-model", false)]);
         &MODELS
     }
 
@@ -2003,20 +1990,8 @@ impl Provider for HeldRequestProvider {
     fn models(&self) -> &[ModelInfo] {
         static MODELS: std::sync::LazyLock<Vec<ModelInfo>> = std::sync::LazyLock::new(|| {
             vec![
-                ModelInfo {
-                    id: "mock-model".into(),
-                    display_name: "Mock Model".into(),
-                    capabilities: ModelCapabilities::new(100_000, 4_096)
-                        .with_images(true)
-                        .with_streaming(true),
-                },
-                ModelInfo {
-                    id: "next-model".into(),
-                    display_name: "Next Model".into(),
-                    capabilities: ModelCapabilities::new(100_000, 4_096)
-                        .with_images(true)
-                        .with_streaming(true),
-                },
+                rpc_model_info("mock-model", false),
+                rpc_model_info("next-model", false),
             ]
         });
         &MODELS
@@ -2070,15 +2045,8 @@ impl Provider for PanickingProvider {
     }
 
     fn models(&self) -> &[ModelInfo] {
-        static MODELS: std::sync::LazyLock<Vec<ModelInfo>> = std::sync::LazyLock::new(|| {
-            vec![ModelInfo {
-                id: "mock-model".into(),
-                display_name: "Mock Model".into(),
-                capabilities: ModelCapabilities::new(100_000, 4_096)
-                    .with_images(true)
-                    .with_streaming(true),
-            }]
-        });
+        static MODELS: std::sync::LazyLock<Vec<ModelInfo>> =
+            std::sync::LazyLock::new(|| vec![rpc_model_info("mock-model", false)]);
         &MODELS
     }
 
@@ -2226,15 +2194,8 @@ impl Provider for ControlledProvider {
     }
 
     fn models(&self) -> &[ModelInfo] {
-        static MODELS: std::sync::LazyLock<Vec<ModelInfo>> = std::sync::LazyLock::new(|| {
-            vec![ModelInfo {
-                id: "mock-model".into(),
-                display_name: "Mock Model".into(),
-                capabilities: ModelCapabilities::new(100_000, 4_096)
-                    .with_images(true)
-                    .with_streaming(true),
-            }]
-        });
+        static MODELS: std::sync::LazyLock<Vec<ModelInfo>> =
+            std::sync::LazyLock::new(|| vec![rpc_model_info("mock-model", false)]);
         &MODELS
     }
 
@@ -2330,15 +2291,8 @@ impl Provider for SecondTurnGatedDeltaProvider {
     }
 
     fn models(&self) -> &[ModelInfo] {
-        static MODELS: std::sync::LazyLock<Vec<ModelInfo>> = std::sync::LazyLock::new(|| {
-            vec![ModelInfo {
-                id: "mock-model".into(),
-                display_name: "Mock Model".into(),
-                capabilities: ModelCapabilities::new(100_000, 4_096)
-                    .with_images(true)
-                    .with_streaming(true),
-            }]
-        });
+        static MODELS: std::sync::LazyLock<Vec<ModelInfo>> =
+            std::sync::LazyLock::new(|| vec![rpc_model_info("mock-model", false)]);
         &MODELS
     }
 

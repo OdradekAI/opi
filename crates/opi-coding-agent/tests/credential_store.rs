@@ -283,15 +283,20 @@ async fn oauth_envelope_round_trips_and_preserves_base_url() {
     let backend = FakeKeyringBackend::new();
     let (_dir, store) = store_with(backend.clone());
 
-    store.write("copilot", &oauth_credential()).await.unwrap();
+    store
+        .write("github-copilot", &oauth_credential())
+        .await
+        .unwrap();
 
     assert_eq!(
-        backend.raw_entry("opi.presence", "copilot").as_deref(),
+        backend
+            .raw_entry("opi.presence", "github-copilot")
+            .as_deref(),
         Some("oauth_token")
     );
 
     let read_back = store
-        .read("copilot")
+        .read("github-copilot")
         .await
         .unwrap()
         .expect("oauth entry present");
@@ -619,7 +624,7 @@ async fn marker_only_state_is_typed_and_never_falls_back_to_env() {
 #[tokio::test]
 async fn oauth_marker_only_state_is_typed_and_never_leaks_secrets() {
     let inner = FakeKeyringBackend::new();
-    inner.seed_raw(KEYCHAIN_PRESENCE_SERVICE, "copilot", "oauth_token");
+    inner.seed_raw(KEYCHAIN_PRESENCE_SERVICE, "github-copilot", "oauth_token");
     let (_dir, store) = store_with(inner);
     let resolver = CredentialResolver::new(
         Arc::new(store),
@@ -627,12 +632,12 @@ async fn oauth_marker_only_state_is_typed_and_never_leaks_secrets() {
     );
 
     let error = resolver
-        .read_oauth_base_url("copilot")
+        .read_oauth_base_url("github-copilot")
         .await
         .expect_err("marker-only OAuth must remain a typed store error");
     assert!(matches!(error, ProviderError::Config(_)));
     let rendered = format!("{error:?} {error}");
-    assert!(rendered.contains("corrupt credential marker for 'copilot'"));
+    assert!(rendered.contains("corrupt credential marker for 'github-copilot'"));
     for canary in [API_KEY, ACCESS, REFRESH] {
         assert!(!rendered.contains(canary), "OAuth error leaked {canary}");
     }
@@ -1149,7 +1154,10 @@ async fn redaction_only_secret_free_lock_exists_outside_fake_keyring() {
         .write("anthropic", &api_key_credential())
         .await
         .unwrap();
-    store.write("copilot", &oauth_credential()).await.unwrap();
+    store
+        .write("github-copilot", &oauth_credential())
+        .await
+        .unwrap();
 
     let mut entries: Vec<std::ffi::OsString> = std::fs::read_dir(dir.path())
         .expect("read temp dir")
@@ -1176,7 +1184,7 @@ async fn redaction_only_secret_free_lock_exists_outside_fake_keyring() {
     // Read-back credential Debug never leaks access/refresh (the serialized
     // envelope leaves the secret only behind SecretString's redacting Debug).
     let read_back = store
-        .read("copilot")
+        .read("github-copilot")
         .await
         .unwrap()
         .expect("oauth entry present");

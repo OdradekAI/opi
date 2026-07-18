@@ -871,6 +871,7 @@ fn build_request_body_includes_thinking_when_enabled() {
         thinking: ThinkingConfig {
             enabled: true,
             budget_tokens: Some(5000),
+            level: opi_ai::ThinkingLevel::Medium,
         },
         stop_sequences: vec![],
         metadata: None,
@@ -908,6 +909,7 @@ fn build_request_body_uses_default_budget_when_none() {
         thinking: ThinkingConfig {
             enabled: true,
             budget_tokens: None,
+            level: opi_ai::ThinkingLevel::Medium,
         },
         stop_sequences: vec![],
         metadata: None,

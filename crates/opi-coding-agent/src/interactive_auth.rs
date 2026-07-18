@@ -220,7 +220,9 @@ fn present_provider_error(error: &ProviderError) -> String {
     match error {
         ProviderError::RateLimited { .. } => "authentication was rate limited",
         ProviderError::Timeout => "authentication timed out",
-        ProviderError::RequestFailed(_) => "authentication request failed",
+        ProviderError::RequestFailed(_) | ProviderError::UnknownModel { .. } => {
+            "authentication request failed"
+        }
         ProviderError::StreamError(_) => "authentication stream failed",
         ProviderError::AuthFailed(_) => "authentication failed",
         ProviderError::CredentialNeeded { .. } => "credential is still required",
@@ -229,7 +231,9 @@ fn present_provider_error(error: &ProviderError) -> String {
         ProviderError::Config(message) if message.starts_with("credential store") => {
             "credential store operation failed"
         }
-        ProviderError::Config(_) => "authentication configuration failed",
+        ProviderError::Config(_)
+        | ProviderError::MissingWireRoute { .. }
+        | ProviderError::WireCompatMismatch { .. } => "authentication configuration failed",
         ProviderError::ProviderSide(_) => "authentication provider failed",
         ProviderError::UnsupportedCapability(_) => "authentication is not supported",
         ProviderError::Cancelled => "authentication cancelled",

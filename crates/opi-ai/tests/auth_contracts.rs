@@ -30,12 +30,12 @@ async fn provider_error_credential_needed_is_non_retryable_auth() {
 #[tokio::test]
 async fn provider_error_credential_revoked_is_non_retryable_auth() {
     let e = ProviderError::CredentialRevoked {
-        provider_id: "copilot".to_owned(),
+        provider_id: "github-copilot".to_owned(),
     };
     assert!(!e.is_retryable());
     assert_eq!(e.category(), ProviderErrorCategory::Auth);
     let s = format!("{e}");
-    assert!(s.contains("copilot"));
+    assert!(s.contains("github-copilot"));
 }
 
 #[tokio::test]
@@ -52,6 +52,8 @@ async fn resolved_auth_debug_redacts_secret() {
     let resolved = ResolvedAuth {
         scheme: AuthScheme::Bearer,
         secret: SecretString::from("sk-secret-xyz"),
+        base_url: None,
+        account_id: None,
     };
     let dbg = format!("{resolved:?}");
     assert!(!dbg.contains("sk-secret-xyz"), "secret leaked: {dbg}");

@@ -921,6 +921,8 @@ impl CredentialResolver {
             return Ok(ResolvedAuth {
                 scheme: AuthScheme::Bearer,
                 secret: cred.access.clone(),
+                base_url: cred.base_url.clone(),
+                account_id: None,
             });
         }
         // Slow path: hold the lock across re-read + refresh-HTTP + write so
@@ -947,6 +949,8 @@ impl CredentialResolver {
             return Ok(ResolvedAuth {
                 scheme: AuthScheme::Bearer,
                 secret: cred.access.clone(),
+                base_url: cred.base_url.clone(),
+                account_id: None,
             });
         }
         let refresh = tokio::time::timeout(self.refresh_timeout, oauth.refresh(&cred))
@@ -966,6 +970,8 @@ impl CredentialResolver {
                 Ok(ResolvedAuth {
                     scheme: AuthScheme::Bearer,
                     secret: refreshed.access,
+                    base_url: refreshed.base_url,
+                    account_id: None,
                 })
             }
             Err(refresh_err) => {
@@ -979,6 +985,8 @@ impl CredentialResolver {
                     Some(reread) if !reread.needs_refresh() => Ok(ResolvedAuth {
                         scheme: AuthScheme::Bearer,
                         secret: reread.access.clone(),
+                        base_url: reread.base_url.clone(),
+                        account_id: None,
                     }),
                     _ => Err(refresh_err),
                 }
@@ -1126,6 +1134,8 @@ impl AuthResolver for AuthSource {
                     Ok(ResolvedAuth {
                         scheme: AuthScheme::ApiKey,
                         secret,
+                        base_url: None,
+                        account_id: None,
                     })
                 })
             }
@@ -1152,6 +1162,8 @@ impl AuthResolver for AuthSource {
                         Some(value) if !value.trim().is_empty() => Ok(ResolvedAuth {
                             scheme: AuthScheme::Bearer,
                             secret: SecretString::new(value.into_boxed_str()),
+                            base_url: None,
+                            account_id: None,
                         }),
                         _ => Err(ProviderError::CredentialNeeded { provider_id }),
                     }
@@ -1177,6 +1189,8 @@ impl AuthResolver for AuthSource {
                         return Ok(ResolvedAuth {
                             scheme: AuthScheme::Bearer,
                             secret: SecretString::new(value.into_boxed_str()),
+                            base_url: None,
+                            account_id: None,
                         });
                     }
                     match resolver
@@ -1187,6 +1201,8 @@ impl AuthResolver for AuthSource {
                         Some(resolved) => Ok(ResolvedAuth {
                             scheme: AuthScheme::ApiKey,
                             secret: resolved.value,
+                            base_url: None,
+                            account_id: None,
                         }),
                         None => Err(ProviderError::CredentialNeeded { provider_id }),
                     }

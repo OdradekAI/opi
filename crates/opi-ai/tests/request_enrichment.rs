@@ -350,11 +350,12 @@ async fn session_affinity_wire_mappings() {
         .expect(4)
         .mount(&chat_server)
         .await;
-    let models = vec![ModelInfo {
-        id: "model".into(),
-        display_name: "Model".into(),
-        capabilities: ModelCapabilities::new(8_192, 1_024).with_streaming(true),
-    }];
+    let models = vec![ModelInfo::new(
+        "model",
+        "Model",
+        opi_ai::WireApi::OpenAiCompletions,
+        ModelCapabilities::new(8_192, 1_024).with_streaming(true),
+    )];
     let direct =
         opi_ai::openai_chat::OpenAiChatProvider::new("test-key".into(), Some(chat_server.uri()));
     drain(direct.stream(make_openai_chat_request(
@@ -441,12 +442,12 @@ async fn session_affinity_wire_mappings() {
             derive_codex_account_id: true,
             ..Default::default()
         },
-        "codex".into(),
+        "openai-codex".into(),
         vec![],
         Arc::new(HttpClient::new()),
     );
     drain(codex.stream(make_openai_responses_request(
-        "codex:model",
+        "openai-codex:model",
         "session-codex",
     )))
     .await;

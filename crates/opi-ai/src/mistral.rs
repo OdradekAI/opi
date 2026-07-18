@@ -5,6 +5,7 @@
 //! module creates a pre-configured [`OpenAiChatProvider`] with Mistral's
 //! base URL and a curated model list.
 
+use crate::model_info::WireApi;
 use crate::openai_chat::{CompatConfig, OpenAiChatProvider};
 use crate::provider::ModelInfo;
 use crate::registry::ModelCapabilities;
@@ -31,25 +32,29 @@ pub fn mistral_provider(api_key: String, base_url: Option<String>) -> OpenAiChat
 /// Built-in Mistral model metadata without credentials or HTTP construction.
 pub fn model_catalog() -> Vec<ModelInfo> {
     vec![
-        ModelInfo {
-            id: "mistral-large-latest".into(),
-            display_name: "Mistral Large".into(),
-            capabilities: ModelCapabilities::new(128000, 8192).with_streaming(true),
-        },
-        ModelInfo {
-            id: "mistral-medium-latest".into(),
-            display_name: "Mistral Medium".into(),
-            capabilities: ModelCapabilities::new(32000, 8192).with_streaming(true),
-        },
-        ModelInfo {
-            id: "mistral-small-latest".into(),
-            display_name: "Mistral Small".into(),
-            capabilities: ModelCapabilities::new(32000, 8192).with_streaming(true),
-        },
-        ModelInfo {
-            id: "codestral-latest".into(),
-            display_name: "Codestral".into(),
-            capabilities: ModelCapabilities::new(256000, 8192).with_streaming(true),
-        },
+        ModelInfo::new(
+            "mistral-large-latest",
+            "Mistral Large",
+            WireApi::OpenAiCompletions,
+            ModelCapabilities::new(128000, 8192).with_streaming(true),
+        ),
+        ModelInfo::new(
+            "mistral-medium-latest",
+            "Mistral Medium",
+            WireApi::OpenAiCompletions,
+            ModelCapabilities::new(32000, 8192).with_streaming(true),
+        ),
+        ModelInfo::new(
+            "mistral-small-latest",
+            "Mistral Small",
+            WireApi::OpenAiCompletions,
+            ModelCapabilities::new(32000, 8192).with_streaming(true),
+        ),
+        ModelInfo::new(
+            "codestral-latest",
+            "Codestral",
+            WireApi::OpenAiCompletions,
+            ModelCapabilities::new(256000, 8192).with_streaming(true),
+        ),
     ]
 }

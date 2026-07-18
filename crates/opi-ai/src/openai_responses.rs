@@ -18,6 +18,7 @@ use crate::http::HttpClient;
 use crate::message::{
     AssistantContent, AssistantMessage, OutputContent, TOOL_ERROR_MARKER, ToolCall,
 };
+use crate::model_info::WireApi;
 use crate::provider::{CacheRetention, EventStream, ModelInfo, Provider, ProviderError, Request};
 use crate::registry::ModelCapabilities;
 use crate::stream::{AssistantStreamEvent, StopReason, Usage};
@@ -810,9 +811,10 @@ pub struct OpenAiResponsesProvider {
     models: Vec<ModelInfo>,
     config: ResponsesConfig,
     /// Provider id returned by `id()`. `"openai-responses"` for standard
-    /// construction; the Codex compatibility profile sets `"codex"` so a revoked
-    /// credential maps to `CredentialRevoked { provider_id: "codex" }` and
-    /// `/login codex` remediation resolves.
+    /// construction; the Codex compatibility profile sets `"openai-codex"` so
+    /// a revoked credential maps to
+    /// `CredentialRevoked { provider_id: "openai-codex" }` and
+    /// `/login openai-codex` remediation resolves.
     provider_id: String,
     /// Static per-request headers (Codex `OpenAI-Beta`, `originator`, `accept`).
     extra_headers: Vec<(String, String)>,
@@ -822,34 +824,40 @@ pub struct OpenAiResponsesProvider {
 /// Built-in OpenAI Responses model metadata without credentials or HTTP construction.
 pub fn model_catalog() -> Vec<ModelInfo> {
     vec![
-        ModelInfo {
-            id: "gpt-4o".into(),
-            display_name: "GPT-4o".into(),
-            capabilities: ModelCapabilities::new(128000, 16384)
+        ModelInfo::new(
+            "gpt-4o",
+            "GPT-4o",
+            WireApi::OpenAiResponses,
+            ModelCapabilities::new(128000, 16384)
                 .with_images(true)
                 .with_streaming(true),
-        },
-        ModelInfo {
-            id: "gpt-4o-mini".into(),
-            display_name: "GPT-4o Mini".into(),
-            capabilities: ModelCapabilities::new(128000, 16384)
+        ),
+        ModelInfo::new(
+            "gpt-4o-mini",
+            "GPT-4o Mini",
+            WireApi::OpenAiResponses,
+            ModelCapabilities::new(128000, 16384)
                 .with_images(true)
                 .with_streaming(true),
-        },
-        ModelInfo {
-            id: "o3".into(),
-            display_name: "o3".into(),
-            capabilities: ModelCapabilities::new(200000, 100000)
+        ),
+        ModelInfo::new(
+            "o3",
+            "o3",
+            WireApi::OpenAiResponses,
+            ModelCapabilities::new(200000, 100000)
                 .with_images(true)
-                .with_streaming(true),
-        },
-        ModelInfo {
-            id: "o4-mini".into(),
-            display_name: "o4-mini".into(),
-            capabilities: ModelCapabilities::new(200000, 100000)
+                .with_streaming(true)
+                .with_thinking(true),
+        ),
+        ModelInfo::new(
+            "o4-mini",
+            "o4-mini",
+            WireApi::OpenAiResponses,
+            ModelCapabilities::new(200000, 100000)
                 .with_images(true)
-                .with_streaming(true),
-        },
+                .with_streaming(true)
+                .with_thinking(true),
+        ),
     ]
 }
 
@@ -904,9 +912,10 @@ impl OpenAiResponsesProvider {
 
     /// Build with an injected auth resolver AND an explicit provider id + static
     /// headers (Phase 14.2 Codex profile). The Codex compatibility profile
-    /// passes `provider_id = "codex"`, `responses_path = "/codex/responses"`,
-    /// `derive_codex_account_id = true`, and the required Codex headers; the
-    /// standard OpenAI Responses path uses [`Self::with_auth`].
+    /// passes `provider_id = "openai-codex"`,
+    /// `responses_path = "/codex/responses"`, `derive_codex_account_id = true`,
+    /// and the required Codex headers; the standard OpenAI Responses path uses
+    /// [`Self::with_auth`].
     pub fn with_auth_extra(
         auth: Arc<dyn AuthResolver>,
         base_url: Option<String>,

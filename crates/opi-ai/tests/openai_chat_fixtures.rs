@@ -971,11 +971,12 @@ fn build_request_body_usage_in_stream_emits_stream_options() {
             ..CompatConfig::default()
         },
         vec![],
-        vec![ModelInfo {
-            id: "model".into(),
-            display_name: "model".into(),
-            capabilities: ModelCapabilities::new(128000, 4096).with_streaming(true),
-        }],
+        vec![ModelInfo::new(
+            "model",
+            "model",
+            opi_ai::WireApi::OpenAiCompletions,
+            ModelCapabilities::new(128000, 4096).with_streaming(true),
+        )],
     );
 
     let mut request = make_test_request();
@@ -1206,11 +1207,12 @@ fn validate_rejects_image_on_text_only_openai_compatible_profile() {
     // rejects image input through the shared capability preflight before the
     // live call. This proves the unsupported-capability diagnostic flows from
     // the shared profile path (DoD), not a per-adapter special case.
-    let text_only = ModelInfo {
-        id: "text-only-model".into(),
-        display_name: "Text Only".into(),
-        capabilities: ModelCapabilities::new(8000, 1024).with_streaming(true),
-    };
+    let text_only = ModelInfo::new(
+        "text-only-model",
+        "Text Only",
+        opi_ai::WireApi::OpenAiCompletions,
+        ModelCapabilities::new(8000, 1024).with_streaming(true),
+    );
     let provider = OpenAiChatProvider::new_for_profile(
         "test-key".into(),
         "https://example.test".into(),

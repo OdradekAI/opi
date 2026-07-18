@@ -61,6 +61,7 @@ use opi_agent::loop_types::AgentLoopTurnUpdate;
 use opi_agent::message::AgentMessage;
 use opi_agent::tool::{ExecutionMode, Tool, ToolError, ToolResult};
 use opi_agent::trace::{TraceCollector, TraceKind};
+use opi_ai::WireApi;
 use opi_ai::message::{OutputContent, ToolDef};
 use opi_ai::provider::ModelInfo;
 use opi_ai::registry::ModelCapabilities;
@@ -331,11 +332,12 @@ impl Extension for ProcessAdapter {
             .map(|mo| {
                 (
                     mo.model.clone(),
-                    ModelInfo {
-                        id: mo.model.clone(),
-                        display_name: mo.model.clone(),
-                        capabilities: ModelCapabilities::new(128_000, 16_384).with_streaming(true),
-                    },
+                    ModelInfo::new(
+                        &mo.model,
+                        &mo.model,
+                        WireApi::OpenAiCompletions,
+                        ModelCapabilities::new(128_000, 16_384).with_streaming(true),
+                    ),
                 )
             })
             .collect()

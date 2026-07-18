@@ -6,6 +6,7 @@
 use std::sync::{Arc, Mutex};
 
 use crate::message::AssistantMessage;
+use crate::model_info::WireApi;
 use crate::provider::{EventStream, ModelInfo, Provider, ProviderError, Request};
 use crate::registry::ModelCapabilities;
 use crate::stream::{AssistantStreamEvent, StopReason, Usage};
@@ -57,13 +58,14 @@ impl MockProvider {
     pub fn new_with_errors(id: &str, responses: Vec<MockResponse>) -> Self {
         Self {
             id: id.to_owned(),
-            models: vec![ModelInfo {
-                id: "mock-model".into(),
-                display_name: "Mock Model".into(),
-                capabilities: ModelCapabilities::new(100_000, 4_096)
+            models: vec![ModelInfo::new(
+                "mock-model",
+                "Mock Model",
+                WireApi::OpenAiCompletions,
+                ModelCapabilities::new(100_000, 4_096)
                     .with_images(true)
                     .with_streaming(true),
-            }],
+            )],
             responses: Arc::new(Mutex::new(responses)),
             call_log: Arc::new(Mutex::new(Vec::new())),
         }

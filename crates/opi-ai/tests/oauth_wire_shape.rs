@@ -290,11 +290,11 @@ async fn copilot_chat_401_maps_to_credential_revoked() {
         resolver,
         Some(server.uri()),
         Default::default(),
-        "copilot".into(),
+        "github-copilot".into(),
         vec![],
         Arc::new(HttpClient::new()),
     );
-    let mut stream = provider.stream(sample_request("copilot:gpt-4o"));
+    let mut stream = provider.stream(sample_request("github-copilot:gpt-4o"));
     let err = stream
         .next()
         .await
@@ -302,7 +302,7 @@ async fn copilot_chat_401_maps_to_credential_revoked() {
         .expect_err("401 yields an error");
     match err {
         ProviderError::CredentialRevoked { provider_id } => {
-            assert_eq!(provider_id, "copilot");
+            assert_eq!(provider_id, "github-copilot");
         }
         other => panic!("expected CredentialRevoked, got {other:?}"),
     }
@@ -388,11 +388,11 @@ async fn codex_responses_targets_codex_path_with_required_headers_and_account_id
         resolver,
         Some(server.uri()),
         config,
-        "codex".into(),
+        "openai-codex".into(),
         codex_static_headers(),
         Arc::new(HttpClient::new()),
     );
-    let mut stream = provider.stream(sample_request("codex:gpt-5"));
+    let mut stream = provider.stream(sample_request("openai-codex:gpt-5"));
     drain(&mut stream).await;
 
     let req = one_captured_request(&server).await;
@@ -446,11 +446,11 @@ async fn codex_account_id_invalid_jwt_omits_header() {
         resolver,
         Some(server.uri()),
         config,
-        "codex".into(),
+        "openai-codex".into(),
         vec![],
         Arc::new(HttpClient::new()),
     );
-    let mut stream = provider.stream(sample_request("codex:gpt-5"));
+    let mut stream = provider.stream(sample_request("openai-codex:gpt-5"));
     drain(&mut stream).await;
 
     let req = one_captured_request(&server).await;
@@ -483,11 +483,11 @@ async fn codex_responses_401_maps_to_credential_revoked_without_body_leak() {
         resolver,
         Some(server.uri()),
         config,
-        "codex".into(),
+        "openai-codex".into(),
         vec![],
         Arc::new(HttpClient::new()),
     );
-    let mut stream = provider.stream(sample_request("codex:gpt-5"));
+    let mut stream = provider.stream(sample_request("openai-codex:gpt-5"));
     let err = stream
         .next()
         .await
@@ -495,7 +495,7 @@ async fn codex_responses_401_maps_to_credential_revoked_without_body_leak() {
         .expect_err("401 yields an error");
     match &err {
         ProviderError::CredentialRevoked { provider_id } => {
-            assert_eq!(provider_id, "codex");
+            assert_eq!(provider_id, "openai-codex");
         }
         other => panic!("expected CredentialRevoked, got {other:?}"),
     }

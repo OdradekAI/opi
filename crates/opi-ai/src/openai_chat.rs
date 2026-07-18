@@ -17,6 +17,7 @@ use crate::http::HttpClient;
 use crate::message::{
     AssistantContent, AssistantMessage, OutputContent, TOOL_ERROR_MARKER, ToolCall,
 };
+use crate::model_info::WireApi;
 use crate::provider::{CacheRetention, EventStream, ModelInfo, Provider, ProviderError, Request};
 use crate::registry::ModelCapabilities;
 use crate::stream::{AssistantStreamEvent, StopReason, Usage};
@@ -747,47 +748,7 @@ fn empty_assistant_message(api: crate::ApiKind, provider: &str) -> AssistantMess
 /// shared adapter records the flag for compatibility metadata without altering
 /// message ordering; an endpoint that materially requires the legacy synthesis
 /// would need a reviewed first-class adapter (Phase 12 non-goal guard).
-#[derive(Debug, Clone)]
-pub struct CompatConfig {
-    /// Override the role used for system messages (e.g. "developer" for o-series).
-    pub system_role_override: Option<String>,
-    /// JSON field name for max tokens in the request body.
-    pub max_tokens_field: String,
-    /// Whether tool result messages should include a "name" field.
-    pub tool_result_name_field: bool,
-    /// Whether usage data appears in stream chunks (not just the final one).
-    pub usage_in_stream: bool,
-    /// Emit `"strict": true` on each function tool definition.
-    pub strict_tool_schema: bool,
-    /// Emit a top-level `reasoning_effort` field (e.g. "low"/"medium"/"high").
-    pub reasoning_effort: Option<String>,
-    /// Emit a top-level `prompt_cache_key` for OpenAI prompt-cache affinity.
-    pub cache_key: Option<String>,
-    /// Emit compatible `session_id`, `x-client-request-id`, and
-    /// `x-session-affinity` headers from a request session id.
-    pub send_session_affinity_headers: bool,
-    /// Compatibility-metadata flag for legacy assistant-after-tool-result wires.
-    pub require_assistant_after_tool_result: bool,
-    /// Endpoint path for chat completions relative to `base_url`.
-    pub chat_completions_path: String,
-}
-
-impl Default for CompatConfig {
-    fn default() -> Self {
-        Self {
-            system_role_override: None,
-            max_tokens_field: "max_tokens".into(),
-            tool_result_name_field: false,
-            usage_in_stream: false,
-            strict_tool_schema: false,
-            reasoning_effort: None,
-            cache_key: None,
-            send_session_affinity_headers: false,
-            require_assistant_after_tool_result: false,
-            chat_completions_path: "/v1/chat/completions".into(),
-        }
-    }
-}
+pub use crate::model_info::OpenAiCompletionsCompat as CompatConfig;
 
 /// Per-model compat overrides (Phase 12 task 12.3).
 ///
@@ -823,34 +784,40 @@ pub struct OpenAiChatProvider {
 /// Built-in OpenAI Chat model metadata without credentials or HTTP construction.
 pub fn model_catalog() -> Vec<ModelInfo> {
     vec![
-        ModelInfo {
-            id: "gpt-4o".into(),
-            display_name: "GPT-4o".into(),
-            capabilities: ModelCapabilities::new(128000, 16384)
+        ModelInfo::new(
+            "gpt-4o",
+            "GPT-4o",
+            WireApi::OpenAiCompletions,
+            ModelCapabilities::new(128000, 16384)
                 .with_images(true)
                 .with_streaming(true),
-        },
-        ModelInfo {
-            id: "gpt-4o-mini".into(),
-            display_name: "GPT-4o Mini".into(),
-            capabilities: ModelCapabilities::new(128000, 16384)
+        ),
+        ModelInfo::new(
+            "gpt-4o-mini",
+            "GPT-4o Mini",
+            WireApi::OpenAiCompletions,
+            ModelCapabilities::new(128000, 16384)
                 .with_images(true)
                 .with_streaming(true),
-        },
-        ModelInfo {
-            id: "o3".into(),
-            display_name: "o3".into(),
-            capabilities: ModelCapabilities::new(200000, 100000)
+        ),
+        ModelInfo::new(
+            "o3",
+            "o3",
+            WireApi::OpenAiCompletions,
+            ModelCapabilities::new(200000, 100000)
                 .with_images(true)
-                .with_streaming(true),
-        },
-        ModelInfo {
-            id: "o4-mini".into(),
-            display_name: "o4-mini".into(),
-            capabilities: ModelCapabilities::new(200000, 100000)
+                .with_streaming(true)
+                .with_thinking(true),
+        ),
+        ModelInfo::new(
+            "o4-mini",
+            "o4-mini",
+            WireApi::OpenAiCompletions,
+            ModelCapabilities::new(200000, 100000)
                 .with_images(true)
-                .with_streaming(true),
-        },
+                .with_streaming(true)
+                .with_thinking(true),
+        ),
     ]
 }
 

@@ -12,6 +12,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::http::HttpClient;
 use crate::message::{AssistantContent, AssistantMessage, OutputContent, ToolCall};
+use crate::model_info::WireApi;
 use crate::provider::{EventStream, ModelInfo, Provider, ProviderError, Request};
 use crate::registry::ModelCapabilities;
 use crate::stream::{AssistantStreamEvent, StopReason, Usage};
@@ -446,27 +447,30 @@ pub struct GeminiProvider {
 /// Built-in Gemini model metadata without credentials or HTTP construction.
 pub fn model_catalog() -> Vec<ModelInfo> {
     vec![
-        ModelInfo {
-            id: "gemini-2.5-flash".into(),
-            display_name: "Gemini 2.5 Flash".into(),
-            capabilities: ModelCapabilities::new(1_000_000, 65536)
+        ModelInfo::new(
+            "gemini-2.5-flash",
+            "Gemini 2.5 Flash",
+            WireApi::GoogleGenerativeAi,
+            ModelCapabilities::new(1_000_000, 65536)
                 .with_images(true)
                 .with_streaming(true),
-        },
-        ModelInfo {
-            id: "gemini-2.5-pro".into(),
-            display_name: "Gemini 2.5 Pro".into(),
-            capabilities: ModelCapabilities::new(1_000_000, 65536)
+        ),
+        ModelInfo::new(
+            "gemini-2.5-pro",
+            "Gemini 2.5 Pro",
+            WireApi::GoogleGenerativeAi,
+            ModelCapabilities::new(1_000_000, 65536)
                 .with_images(true)
                 .with_streaming(true),
-        },
-        ModelInfo {
-            id: "gemini-2.0-flash".into(),
-            display_name: "Gemini 2.0 Flash".into(),
-            capabilities: ModelCapabilities::new(1_000_000, 8192)
+        ),
+        ModelInfo::new(
+            "gemini-2.0-flash",
+            "Gemini 2.0 Flash",
+            WireApi::GoogleGenerativeAi,
+            ModelCapabilities::new(1_000_000, 8192)
                 .with_images(true)
                 .with_streaming(true),
-        },
+        ),
     ]
 }
 

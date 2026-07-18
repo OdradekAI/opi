@@ -278,9 +278,14 @@ fn models_from_config_deployments() {
 }
 
 #[test]
-fn empty_models_when_no_deployments_configured() {
+fn selected_deployment_is_advertised_when_catalog_not_configured() {
     let provider = make_provider();
-    assert!(provider.models().is_empty());
+    assert_eq!(provider.models().len(), 1);
+    assert_eq!(provider.models()[0].id, "my-gpt4o");
+    assert_eq!(
+        provider.models()[0].wire_api,
+        opi_ai::WireApi::AzureOpenAiCompletions
+    );
 }
 
 #[tokio::test]

@@ -42,7 +42,7 @@ use opi_agent::diagnostic::{Diagnostic, SOURCE_PROVIDER, Severity};
 use opi_agent::extension::ExtensionRegistry;
 use opi_ai::provider::{EventStream, ModelInfo, Provider, ProviderError, Request};
 use opi_ai::registry::ModelCapabilities;
-use opi_ai::{AuthDescriptor, CompatMetadata, ProviderCollection, ProviderRegistry};
+use opi_ai::{AuthDescriptor, CompatMetadata, ProviderCollection, ProviderRegistry, WireApi};
 use secrecy::ExposeSecret;
 
 use crate::config::{OpenAiCompatibleProviderConfig, OpiConfig, build_http_client};
@@ -299,6 +299,8 @@ pub(crate) const BUILT_IN_PROVIDER_IDS: &[&str] = &[
     "bedrock",
     "azure",
     "vertex",
+    "github-copilot",
+    "openai-codex",
 ];
 
 /// Public accessor for the built-in provider id list (the binary target is a
@@ -425,16 +427,20 @@ fn env_value_present(env_var: &dyn Fn(&str) -> Option<String>, name: &str) -> bo
 
 fn configured_models(
     ids: &[String],
+    wire_api: WireApi,
     context_window: u64,
     max_output_tokens: u64,
 ) -> Vec<ModelInfo> {
     ids.iter()
-        .map(|id| ModelInfo {
-            id: id.clone(),
-            display_name: id.clone(),
-            capabilities: ModelCapabilities::new(context_window, max_output_tokens)
-                .with_images(true)
-                .with_streaming(true),
+        .map(|id| {
+            ModelInfo::new(
+                id,
+                id,
+                wire_api,
+                ModelCapabilities::new(context_window, max_output_tokens)
+                    .with_images(true)
+                    .with_streaming(true),
+            )
         })
         .collect()
 }
@@ -464,6 +470,8 @@ fn build_list_models_metadata(
             config.providers.openai_responses.proxy.as_ref(),
             opi_ai::openai_responses::model_catalog(),
         ),
+        "github-copilot" => (None, opi_ai::openai_chat::model_catalog()),
+        "openai-codex" => (None, opi_ai::openai_responses::model_catalog()),
         "gemini" => (
             config.providers.gemini.proxy.as_ref(),
             opi_ai::gemini::model_catalog(),
@@ -486,7 +494,12 @@ fn build_list_models_metadata(
             }
             (
                 azure.proxy.as_ref(),
-                configured_models(&azure.deployments, 128000, 16384),
+                configured_models(
+                    &azure.deployments,
+                    WireApi::AzureOpenAiCompletions,
+                    128000,
+                    16384,
+                ),
             )
         }
         "vertex" => {
@@ -504,7 +517,7 @@ fn build_list_models_metadata(
             let models = if vertex.models.is_empty() {
                 opi_ai::vertex::model_catalog()
             } else {
-                configured_models(&vertex.models, 1_000_000, 65536)
+                configured_models(&vertex.models, WireApi::GoogleVertex, 1_000_000, 65536)
             };
             (vertex.proxy.as_ref(), models)
         }
@@ -549,15 +562,16 @@ fn openai_compatible_model_catalog(
                 profile.id
             ));
         }
-        models.push(ModelInfo {
-            id: model.id.clone(),
-            display_name: if model.display_name.is_empty() {
+        models.push(ModelInfo::new(
+            &model.id,
+            if model.display_name.is_empty() {
                 model.id.clone()
             } else {
                 model.display_name.clone()
             },
-            capabilities: ModelCapabilities::new(model.context_window, model.max_output_tokens),
-        });
+            WireApi::OpenAiCompletions,
+            ModelCapabilities::new(model.context_window, model.max_output_tokens),
+        ));
     }
     Ok(models)
 }
@@ -596,6 +610,9 @@ fn build_openai_compatible_profile(
             .chat_completions_path
             .clone()
             .unwrap_or_else(|| "/v1/chat/completions".into()),
+        supports_store: false,
+        supports_developer_role: false,
+        supports_reasoning_effort: profile.reasoning_effort.is_some(),
     };
 
     // Session-affinity headers from config (Phase 12.3).
@@ -798,11 +815,11 @@ async fn build_copilot_oauth(
     resolver: &CredentialResolver,
     registry: &OAuthProviderRegistry,
 ) -> Result<Box<dyn Provider>, ProviderBuildError> {
-    let oauth = registry
-        .lookup("copilot")
-        .ok_or_else(|| ProviderBuildError::Config("no copilot OAuth provider registered".into()))?;
+    let oauth = registry.lookup("github-copilot").ok_or_else(|| {
+        ProviderBuildError::Config("no github-copilot OAuth provider registered".into())
+    })?;
     let base_url = resolver
-        .read_oauth_base_url("copilot")
+        .read_oauth_base_url("github-copilot")
         .await
         .map_err(ProviderBuildError::Provider)?
         .unwrap_or_else(|| COPILOT_DEFAULT_BASE_URL.to_owned());
@@ -816,12 +833,12 @@ async fn build_copilot_oauth(
     let provider = opi_ai::openai_chat::OpenAiChatProvider::with_auth(
         Arc::new(AuthSource::Store {
             resolver: Arc::new(resolver.clone()),
-            provider_id: "copilot".into(),
+            provider_id: "github-copilot".into(),
             oauth,
         }),
         Some(base_url),
         compat,
-        "copilot".into(),
+        "github-copilot".into(),
         copilot_extra_headers(),
         client,
     )
@@ -838,11 +855,11 @@ async fn build_codex_oauth(
     resolver: &CredentialResolver,
     registry: &OAuthProviderRegistry,
 ) -> Result<Box<dyn Provider>, ProviderBuildError> {
-    let oauth = registry
-        .lookup("codex")
-        .ok_or_else(|| ProviderBuildError::Config("no codex OAuth provider registered".into()))?;
+    let oauth = registry.lookup("openai-codex").ok_or_else(|| {
+        ProviderBuildError::Config("no openai-codex OAuth provider registered".into())
+    })?;
     let base_url = resolver
-        .read_oauth_base_url("codex")
+        .read_oauth_base_url("openai-codex")
         .await
         .map_err(ProviderBuildError::Provider)?
         .unwrap_or_else(|| CODEX_DEFAULT_BASE_URL.to_owned());
@@ -855,12 +872,12 @@ async fn build_codex_oauth(
     let provider = opi_ai::openai_responses::OpenAiResponsesProvider::with_auth_extra(
         Arc::new(AuthSource::Store {
             resolver: Arc::new(resolver.clone()),
-            provider_id: "codex".into(),
+            provider_id: "openai-codex".into(),
             oauth,
         }),
         Some(base_url),
         config,
-        "codex".into(),
+        "openai-codex".into(),
         codex_extra_headers(),
         client,
     );
@@ -874,7 +891,8 @@ async fn build_codex_oauth(
 /// the resolver + registry and delegates here.
 ///
 /// Routing:
-/// - `copilot:` / `codex:` model specs are OAuth-only -> their OAuth builder.
+/// - `github-copilot:` / `openai-codex:` model specs are OAuth-only -> their
+///   OAuth builder.
 /// - `anthropic:` -> precedence: stored OAuth credential >
 ///   `ANTHROPIC_OAUTH_TOKEN` env > API-key env/fallback.
 /// - everything else -> the API-key path.
@@ -900,10 +918,10 @@ async fn build_provider_with_oauth_outcome(
         ))
     })?;
     match provider_id {
-        "copilot" => build_copilot_oauth(resolver, registry)
+        "github-copilot" => build_copilot_oauth(resolver, registry)
             .await
             .map(ProviderBuildOutcome::without_diagnostics),
-        "codex" => build_codex_oauth(resolver, registry)
+        "openai-codex" => build_codex_oauth(resolver, registry)
             .await
             .map(ProviderBuildOutcome::without_diagnostics),
         "anthropic" => build_anthropic_live_auth(config, resolver, registry).await,
@@ -1243,27 +1261,94 @@ fn build_runtime_provider(
     provider_id: &str,
     pre_resolved: Option<String>,
 ) -> Result<Box<dyn Provider>, ProviderBuildError> {
-    match provider_id {
-        "anthropic" => build_anthropic(config, pre_resolved),
-        "openai" => build_openai(config, pre_resolved),
-        "openrouter" => build_openrouter(config, pre_resolved),
-        "mistral" => build_mistral(config, pre_resolved),
-        "openai-responses" => build_openai_responses(config, pre_resolved),
-        "gemini" => build_gemini(config, pre_resolved),
-        "bedrock" => build_bedrock(config),
-        "azure" => build_azure(config, pre_resolved),
-        "vertex" => build_vertex(config, pre_resolved),
+    let (provider, wire_api) = match provider_id {
+        "anthropic" => (
+            build_anthropic(config, pre_resolved)?,
+            WireApi::AnthropicMessages,
+        ),
+        "openai" => (
+            build_openai(config, pre_resolved)?,
+            WireApi::OpenAiCompletions,
+        ),
+        "openrouter" => (
+            build_openrouter(config, pre_resolved)?,
+            WireApi::OpenAiCompletions,
+        ),
+        "mistral" => (
+            build_mistral(config, pre_resolved)?,
+            WireApi::OpenAiCompletions,
+        ),
+        "openai-responses" => (
+            build_openai_responses(config, pre_resolved)?,
+            WireApi::OpenAiResponses,
+        ),
+        "gemini" => (
+            build_gemini(config, pre_resolved)?,
+            WireApi::GoogleGenerativeAi,
+        ),
+        "bedrock" => (build_bedrock(config)?, WireApi::BedrockConverseStream),
+        "azure" => (
+            build_azure(config, pre_resolved)?,
+            WireApi::AzureOpenAiCompletions,
+        ),
+        "vertex" => (build_vertex(config, pre_resolved)?, WireApi::GoogleVertex),
         other => {
             if let Some(profile) = config.providers.openai_compatible.get(other) {
                 let provider = build_runtime_openai_compatible_profile(profile)?;
-                Ok(Box::new(provider) as Box<dyn Provider>)
+                (
+                    Box::new(provider) as Box<dyn Provider>,
+                    WireApi::OpenAiCompletions,
+                )
             } else {
-                Err(ProviderBuildError::Config(format!(
+                return Err(ProviderBuildError::Config(format!(
                     "unknown provider: {other}"
-                )))
+                )));
             }
         }
+    };
+    validate_single_wire_provider(provider, wire_api)
+}
+
+/// Apply the production single-wire catalog guard before returning a provider
+/// to a caller that can invoke [`Provider::stream`].
+#[doc(hidden)]
+pub fn validate_single_wire_provider(
+    provider: Box<dyn Provider>,
+    expected_wire: WireApi,
+) -> Result<Box<dyn Provider>, ProviderBuildError> {
+    validate_single_wire_models(provider.id(), expected_wire, provider.models())?;
+    Ok(provider)
+}
+
+/// Validate a single-wire production factory catalog before the provider can
+/// issue a request.
+#[doc(hidden)]
+pub fn validate_single_wire_models(
+    provider_id: &str,
+    expected_wire: WireApi,
+    models: &[ModelInfo],
+) -> Result<(), ProviderError> {
+    for model in models {
+        model.validate().map_err(|error| match error {
+            opi_ai::ModelInfoError::WireCompatMismatch {
+                model_id,
+                wire_api,
+                compat_wire,
+            } => ProviderError::WireCompatMismatch {
+                model_id,
+                wire_api,
+                compat_wire,
+            },
+            other => ProviderError::Config(other.to_string()),
+        })?;
+        if model.wire_api != expected_wire {
+            return Err(ProviderError::MissingWireRoute {
+                provider_id: provider_id.to_owned(),
+                wire_api: model.wire_api,
+            });
+        }
     }
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------

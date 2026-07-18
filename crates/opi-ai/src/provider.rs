@@ -7,7 +7,10 @@ use tokio_util::sync::CancellationToken;
 
 use crate::credential::BoxAuthFuture;
 use crate::message::{InputContent, Message, ToolDef};
+use crate::model_info::{ThinkingLevel, WireApi};
 use crate::stream::AssistantStreamEvent;
+
+pub use crate::model_info::ModelInfo;
 
 /// Provider trait — each concrete provider (Anthropic, OpenAI, etc.) implements this.
 ///
@@ -145,20 +148,21 @@ pub fn validate_extra_headers(headers: &[(String, String)]) -> Result<(), Provid
 }
 
 /// Thinking/reasoning configuration for extended thinking models.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct ThinkingConfig {
     pub enabled: bool,
     pub budget_tokens: Option<u64>,
+    pub level: ThinkingLevel,
 }
 
-/// Metadata about a model offered by a provider.
-#[derive(Debug, Clone)]
-pub struct ModelInfo {
-    pub id: String,
-    pub display_name: String,
-    /// Declared model capabilities (context window, output tokens, image,
-    /// streaming, thinking, cache-control).
-    pub capabilities: crate::registry::ModelCapabilities,
+impl Default for ThinkingConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            budget_tokens: None,
+            level: ThinkingLevel::None,
+        }
+    }
 }
 
 /// Validate request content against model capabilities known by the provider.
@@ -200,6 +204,25 @@ pub fn validate_request_capabilities(
         )));
     }
 
+    if let Some(model) = model {
+        model.validate().map_err(|error| match error {
+            crate::model_info::ModelInfoError::WireCompatMismatch {
+                model_id,
+                wire_api,
+                compat_wire,
+            } => ProviderError::WireCompatMismatch {
+                model_id,
+                wire_api,
+                compat_wire,
+            },
+            other => ProviderError::Config(other.to_string()),
+        })?;
+        model
+            .thinking_level_map
+            .resolve(request.thinking.level)
+            .map_err(|error| ProviderError::UnsupportedCapability(error.to_string()))?;
+    }
+
     Ok(())
 }
 
@@ -238,6 +261,24 @@ pub enum ProviderError {
     Network(String),
     #[error("invalid provider configuration: {0}")]
     Config(String),
+    #[error("unknown model '{model_id}' for provider '{provider_id}'")]
+    UnknownModel {
+        provider_id: String,
+        model_id: String,
+    },
+    #[error("provider '{provider_id}' has no route for wire API '{wire_api}'")]
+    MissingWireRoute {
+        provider_id: String,
+        wire_api: WireApi,
+    },
+    #[error(
+        "model '{model_id}' wire API '{wire_api}' does not match compatibility wire '{compat_wire}'"
+    )]
+    WireCompatMismatch {
+        model_id: String,
+        wire_api: WireApi,
+        compat_wire: WireApi,
+    },
     #[error("provider error: {0}")]
     ProviderSide(String),
     #[error("unsupported capability: {0}")]
@@ -268,8 +309,12 @@ impl ProviderError {
             ProviderError::AuthFailed(_)
             | ProviderError::CredentialNeeded { .. }
             | ProviderError::CredentialRevoked { .. } => ProviderErrorCategory::Auth,
-            ProviderError::Config(_) => ProviderErrorCategory::Config,
-            ProviderError::RequestFailed(_) => ProviderErrorCategory::Request,
+            ProviderError::Config(_)
+            | ProviderError::MissingWireRoute { .. }
+            | ProviderError::WireCompatMismatch { .. } => ProviderErrorCategory::Config,
+            ProviderError::RequestFailed(_) | ProviderError::UnknownModel { .. } => {
+                ProviderErrorCategory::Request
+            }
             ProviderError::Timeout | ProviderError::Network(_) => ProviderErrorCategory::Network,
             ProviderError::RateLimited { .. } => ProviderErrorCategory::RateLimit,
             ProviderError::ProviderSide(_) => ProviderErrorCategory::Provider,

@@ -153,6 +153,7 @@ const NON_PROVIDER_MODULES: &[&str] = &[
     "http",
     "message",
     "model",
+    "model_info",
     "provider",
     "provider_collection",
     "registry",
@@ -239,8 +240,9 @@ fn provider_docs_and_profile_policy_stay_in_sync() {
         "opi-ai README must state config-driven profiles are the preferred breadth path"
     );
 
-    // (4) Profile flags: the ten CompatConfig field names verbatim (anchored
-    //     to the struct at crates/opi-ai/src/openai_chat.rs). `extra_headers`
+    // (4) Profile flags: the ten Phase 12 CompatConfig field names verbatim.
+    //     Task 14.15 moved their definition to OpenAiCompletionsCompat and
+    //     retained CompatConfig as a public alias. `extra_headers`
     //     is intentionally excluded here — it is a per-profile config field /
     //     OpenAiChatProvider constructor concern, not a CompatConfig flag; the
     //     session-affinity check below pins its documentation separately.
@@ -256,11 +258,12 @@ fn provider_docs_and_profile_policy_stay_in_sync() {
         "require_assistant_after_tool_result",
         "chat_completions_path",
     ];
+    let model_info_src = read_repo_file("crates/opi-ai/src/model_info.rs");
     let openai_chat_src = read_repo_file("crates/opi-ai/src/openai_chat.rs");
     assert_eq!(
-        count_pub_fields_in_struct(&openai_chat_src, "CompatConfig"),
-        compat_flags.len(),
-        "CompatConfig field count changed; update the Phase 12 docs guard and owned docs together"
+        count_pub_fields_in_struct(&model_info_src, "OpenAiCompletionsCompat"),
+        compat_flags.len() + 3,
+        "OpenAiCompletionsCompat field count changed; update the Phase 12 docs guard and owned docs together"
     );
     for flag in compat_flags {
         assert!(

@@ -16,11 +16,12 @@ use opi_ai::test_support::{MockProvider, text_response};
 // ---------------------------------------------------------------------------
 
 fn custom_model(id: &str, display: &str) -> ModelInfo {
-    ModelInfo {
-        id: id.into(),
-        display_name: display.into(),
-        capabilities: ModelCapabilities::new(50_000, 2_048).with_streaming(true),
-    }
+    ModelInfo::new(
+        id,
+        display,
+        opi_ai::WireApi::OpenAiCompletions,
+        ModelCapabilities::new(50_000, 2_048).with_streaming(true),
+    )
 }
 
 /// A test extension that provides custom providers and model overrides.

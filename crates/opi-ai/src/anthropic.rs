@@ -10,6 +10,7 @@ use tokio_util::sync::CancellationToken;
 use crate::auth::{AuthResolver, AuthScheme, ResolvedAuth, StaticAuthResolver};
 use crate::http::HttpClient;
 use crate::message::{AssistantContent, AssistantMessage, ToolCall};
+use crate::model_info::WireApi;
 use crate::provider::{CacheRetention, EventStream, ModelInfo, Provider, ProviderError, Request};
 use crate::registry::ModelCapabilities;
 use crate::stream::{AssistantStreamEvent, StopReason, Usage};
@@ -635,36 +636,39 @@ const ANTHROPIC_OAUTH_BETA_HEADER: &str = "claude-code-20250219,oauth-2025-04-20
 /// Built-in Anthropic model metadata without credentials or HTTP construction.
 pub fn model_catalog() -> Vec<ModelInfo> {
     vec![
-        ModelInfo {
-            id: "claude-sonnet-4-5-20250514".into(),
-            display_name: "Claude Sonnet 4.5".into(),
-            capabilities: ModelCapabilities::new(200000, 8192)
+        ModelInfo::new(
+            "claude-sonnet-4-5-20250514",
+            "Claude Sonnet 4.5",
+            WireApi::AnthropicMessages,
+            ModelCapabilities::new(200000, 8192)
                 .with_images(true)
                 .with_streaming(true)
                 .with_thinking(true)
                 .with_cache_control(true)
                 .with_long_cache_retention(true),
-        },
-        ModelInfo {
-            id: "claude-opus-4-20250514".into(),
-            display_name: "Claude Opus 4".into(),
-            capabilities: ModelCapabilities::new(200000, 8192)
+        ),
+        ModelInfo::new(
+            "claude-opus-4-20250514",
+            "Claude Opus 4",
+            WireApi::AnthropicMessages,
+            ModelCapabilities::new(200000, 8192)
                 .with_images(true)
                 .with_streaming(true)
                 .with_thinking(true)
                 .with_cache_control(true)
                 .with_long_cache_retention(true),
-        },
-        ModelInfo {
-            id: "claude-haiku-4-5-20250514".into(),
-            display_name: "Claude Haiku 4.5".into(),
-            capabilities: ModelCapabilities::new(200000, 8192)
+        ),
+        ModelInfo::new(
+            "claude-haiku-4-5-20250514",
+            "Claude Haiku 4.5",
+            WireApi::AnthropicMessages,
+            ModelCapabilities::new(200000, 8192)
                 .with_images(true)
                 .with_streaming(true)
                 .with_thinking(true)
                 .with_cache_control(true)
                 .with_long_cache_retention(true),
-        },
+        ),
     ]
 }
 

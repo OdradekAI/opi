@@ -780,13 +780,14 @@ fn harness_builder_model_picker_includes_current_provider_extension_overrides() 
         fn model_overrides(&self) -> Vec<(String, ModelInfo)> {
             vec![(
                 "mock".into(),
-                ModelInfo {
-                    id: "custom-model".into(),
-                    display_name: "Custom Model".into(),
-                    capabilities: ModelCapabilities::new(100_000, 4_096)
+                ModelInfo::new(
+                    "custom-model",
+                    "Custom Model",
+                    opi_ai::WireApi::OpenAiCompletions,
+                    ModelCapabilities::new(100_000, 4_096)
                         .with_images(true)
                         .with_streaming(true),
-                },
+                ),
             )]
         }
     }
@@ -825,13 +826,14 @@ fn harness_builder_set_model_validated_accepts_current_provider_extension_overri
         fn model_overrides(&self) -> Vec<(String, ModelInfo)> {
             vec![(
                 "mock".into(),
-                ModelInfo {
-                    id: "custom-model".into(),
-                    display_name: "Custom Model".into(),
-                    capabilities: ModelCapabilities::new(100_000, 4_096)
+                ModelInfo::new(
+                    "custom-model",
+                    "Custom Model",
+                    opi_ai::WireApi::OpenAiCompletions,
+                    ModelCapabilities::new(100_000, 4_096)
                         .with_images(true)
                         .with_streaming(true),
-                },
+                ),
             )]
         }
     }

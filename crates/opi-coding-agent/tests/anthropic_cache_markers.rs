@@ -223,11 +223,12 @@ async fn factory_built_anthropic_cache_markers_follow_final_capabilities() {
     registry
         .register_model(
             "anthropic",
-            ModelInfo {
-                id: "custom-claude".into(),
-                display_name: "Custom Claude".into(),
-                capabilities: ModelCapabilities::new(100_000, 4_096),
-            },
+            ModelInfo::new(
+                "custom-claude",
+                "Custom Claude",
+                opi_ai::WireApi::AnthropicMessages,
+                ModelCapabilities::new(100_000, 4_096),
+            ),
         )
         .expect("register custom model with default-off cache capabilities");
     let custom = registry

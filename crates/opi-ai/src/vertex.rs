@@ -15,6 +15,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::gemini::{GeminiMapper, GeminiProvider, ParsedEvent, drain_sse_data, parse_sse_data};
 use crate::http::HttpClient;
+use crate::model_info::WireApi;
 use crate::provider::{EventStream, ModelInfo, Provider, ProviderError, Request};
 use crate::registry::ModelCapabilities;
 use crate::stream::AssistantStreamEvent;
@@ -80,12 +81,15 @@ impl VertexProvider {
         let inner = GeminiProvider::new(String::new(), None);
         let model_list = models
             .iter()
-            .map(|id| ModelInfo {
-                id: id.clone(),
-                display_name: id.clone(),
-                capabilities: ModelCapabilities::new(1_000_000, 65536)
-                    .with_images(true)
-                    .with_streaming(true),
+            .map(|id| {
+                ModelInfo::new(
+                    id,
+                    id,
+                    WireApi::GoogleVertex,
+                    ModelCapabilities::new(1_000_000, 65536)
+                        .with_images(true)
+                        .with_streaming(true),
+                )
             })
             .collect();
         Self {
@@ -322,19 +326,21 @@ fn map_vertex_status(
 /// Built-in Vertex model metadata without credentials or HTTP construction.
 pub fn model_catalog() -> Vec<ModelInfo> {
     vec![
-        ModelInfo {
-            id: "gemini-2.5-flash".into(),
-            display_name: "Gemini 2.5 Flash (Vertex)".into(),
-            capabilities: ModelCapabilities::new(1_000_000, 65536)
+        ModelInfo::new(
+            "gemini-2.5-flash",
+            "Gemini 2.5 Flash (Vertex)",
+            WireApi::GoogleVertex,
+            ModelCapabilities::new(1_000_000, 65536)
                 .with_images(true)
                 .with_streaming(true),
-        },
-        ModelInfo {
-            id: "gemini-2.5-pro".into(),
-            display_name: "Gemini 2.5 Pro (Vertex)".into(),
-            capabilities: ModelCapabilities::new(1_000_000, 65536)
+        ),
+        ModelInfo::new(
+            "gemini-2.5-pro",
+            "Gemini 2.5 Pro (Vertex)",
+            WireApi::GoogleVertex,
+            ModelCapabilities::new(1_000_000, 65536)
                 .with_images(true)
                 .with_streaming(true),
-        },
+        ),
     ]
 }

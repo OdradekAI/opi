@@ -45,6 +45,10 @@ pub struct ResolvedAuth {
     pub scheme: AuthScheme,
     /// The secret value. Redacted in all diagnostics.
     pub secret: SecretString,
+    /// Provider-specific endpoint resolved with the credential.
+    pub base_url: Option<String>,
+    /// Provider account identity, when required by a concrete wire.
+    pub account_id: Option<String>,
 }
 
 impl std::fmt::Debug for ResolvedAuth {
@@ -54,6 +58,8 @@ impl std::fmt::Debug for ResolvedAuth {
         f.debug_struct("ResolvedAuth")
             .field("scheme", &self.scheme)
             .field("secret", &"<redacted>")
+            .field("base_url", &self.base_url)
+            .field("account_id", &self.account_id)
             .finish()
     }
 }
@@ -95,7 +101,14 @@ impl AuthResolver for StaticAuthResolver {
     fn resolve<'a>(&'a self) -> BoxAuthFuture<'a, Result<ResolvedAuth, ProviderError>> {
         let scheme = self.scheme;
         let secret = self.secret.clone();
-        Box::pin(async move { Ok(ResolvedAuth { scheme, secret }) })
+        Box::pin(async move {
+            Ok(ResolvedAuth {
+                scheme,
+                secret,
+                base_url: None,
+                account_id: None,
+            })
+        })
     }
 }
 
@@ -166,7 +179,8 @@ impl From<OAuthCredential> for Credential {
 /// (PKCE callback server vs device-code polling) live inside each
 /// implementation's `login`; the trait is flow-agnostic.
 pub trait OAuthProvider: Send + Sync {
-    /// Provider identifier (e.g. "anthropic", "copilot", "codex").
+    /// Provider identifier (for example `anthropic`, `github-copilot`, or
+    /// `openai-codex`).
     fn id(&self) -> &str;
 
     /// Run the authorization flow, returning a fresh credential on success.

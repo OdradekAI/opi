@@ -103,11 +103,12 @@ struct CredentialNeededRpcProvider {
 impl CredentialNeededRpcProvider {
     fn new() -> Self {
         Self {
-            models: vec![ModelInfo {
-                id: "mock-model".into(),
-                display_name: "Mock Model".into(),
-                capabilities: ModelCapabilities::new(8_192, 1_024).with_streaming(true),
-            }],
+            models: vec![ModelInfo::new(
+                "mock-model",
+                "Mock Model",
+                opi_ai::WireApi::OpenAiCompletions,
+                ModelCapabilities::new(8_192, 1_024).with_streaming(true),
+            )],
         }
     }
 }
@@ -975,7 +976,7 @@ async fn login_secret_leak_canary_no_auth_code_in_outputs() {
 #[tokio::test]
 async fn codex_oauth_provider_id_is_codex() {
     let provider = codex_provider("https://token.example".to_owned(), Duration::from_secs(60));
-    assert_eq!(provider.id(), "codex");
+    assert_eq!(provider.id(), "openai-codex");
 }
 
 #[tokio::test]
@@ -1215,10 +1216,10 @@ fn registry_holds_heterogeneous_providers_behind_dyn() {
         Some("anthropic".to_owned())
     );
     assert_eq!(
-        registry.lookup("codex").map(|p| p.id().to_owned()),
-        Some("codex".to_owned())
+        registry.lookup("openai-codex").map(|p| p.id().to_owned()),
+        Some("openai-codex".to_owned())
     );
-    assert_eq!(registry.ids(), vec!["anthropic", "codex"]);
+    assert_eq!(registry.ids(), vec!["anthropic", "openai-codex"]);
 }
 
 #[test]
@@ -1246,10 +1247,10 @@ fn registry_with_builtins_registers_anthropic_codex_copilot() {
     let registry = OAuthProviderRegistry::registry_with_builtins();
     assert_eq!(
         registry.ids(),
-        vec!["anthropic", "codex", "copilot"],
+        vec!["anthropic", "github-copilot", "openai-codex"],
         "registry_with_builtins must register all three OAuth providers"
     );
-    for id in ["anthropic", "codex", "copilot"] {
+    for id in ["anthropic", "github-copilot", "openai-codex"] {
         let provider = registry
             .lookup(id)
             .unwrap_or_else(|| panic!("registry_with_builtins missing {id}"));
@@ -1264,8 +1265,19 @@ async fn resolver_read_oauth_base_url_and_presence_reflect_stored_cred() {
     let resolver = resolver_with(store.clone());
 
     // No cred initially.
-    assert!(!resolver.has_oauth_credential("copilot").await.unwrap());
-    assert_eq!(resolver.read_oauth_base_url("copilot").await.unwrap(), None);
+    assert!(
+        !resolver
+            .has_oauth_credential("github-copilot")
+            .await
+            .unwrap()
+    );
+    assert_eq!(
+        resolver
+            .read_oauth_base_url("github-copilot")
+            .await
+            .unwrap(),
+        None
+    );
 
     // Store an OAuth cred with an enterprise base_url.
     let cred = Credential::OAuthToken {
@@ -1274,10 +1286,18 @@ async fn resolver_read_oauth_base_url_and_presence_reflect_stored_cred() {
         expires_at: Some(fresh_expiry()),
         base_url: Some("https://enterprise.githubcopilot.com".into()),
     };
-    store.write("copilot", &cred).await.unwrap();
-    assert!(resolver.has_oauth_credential("copilot").await.unwrap());
+    store.write("github-copilot", &cred).await.unwrap();
+    assert!(
+        resolver
+            .has_oauth_credential("github-copilot")
+            .await
+            .unwrap()
+    );
     assert_eq!(
-        resolver.read_oauth_base_url("copilot").await.unwrap(),
+        resolver
+            .read_oauth_base_url("github-copilot")
+            .await
+            .unwrap(),
         Some("https://enterprise.githubcopilot.com".to_owned()),
     );
 
@@ -1489,7 +1509,9 @@ async fn copilot_login_access_denied_returns_typed_error_no_exchange() {
     let presenter = MockLoginPresenter::new();
     let err = provider.login(&presenter).await.expect_err("denied");
     match err {
-        AiProviderError::CredentialRevoked { provider_id } => assert_eq!(provider_id, "copilot"),
+        AiProviderError::CredentialRevoked { provider_id } => {
+            assert_eq!(provider_id, "github-copilot")
+        }
         other => panic!("expected CredentialRevoked, got {other:?}"),
     }
     // No Copilot token exchange happened.
@@ -1517,7 +1539,9 @@ async fn copilot_login_expired_token_returns_typed_error() {
     let presenter = MockLoginPresenter::new();
     let err = provider.login(&presenter).await.expect_err("expired");
     match err {
-        AiProviderError::CredentialRevoked { provider_id } => assert_eq!(provider_id, "copilot"),
+        AiProviderError::CredentialRevoked { provider_id } => {
+            assert_eq!(provider_id, "github-copilot")
+        }
         other => panic!("expected CredentialRevoked, got {other:?}"),
     }
 }
@@ -1614,7 +1638,9 @@ async fn copilot_refresh_401_returns_credential_revoked() {
     let cred = oauth_cred("copilot-old", "ghub-LEAK-CANARY", None);
     let err = provider.refresh(&cred).await.expect_err("401");
     match &err {
-        AiProviderError::CredentialRevoked { provider_id } => assert_eq!(provider_id, "copilot"),
+        AiProviderError::CredentialRevoked { provider_id } => {
+            assert_eq!(provider_id, "github-copilot")
+        }
         other => panic!("expected CredentialRevoked, got {other:?}"),
     }
     assert!(
@@ -1708,7 +1734,7 @@ async fn factory_routes_copilot_to_chat_with_oauth_wire_shape() {
     let (_dir, store, _b) = store_with(backend);
     store
         .write(
-            "copilot",
+            "github-copilot",
             &stored_oauth(
                 "copilot-access-fake",
                 "copilot-refresh-fake",
@@ -1721,15 +1747,15 @@ async fn factory_routes_copilot_to_chat_with_oauth_wire_shape() {
     let registry = OAuthProviderRegistry::registry_with_builtins();
 
     let mut config = OpiConfig::default();
-    config.defaults.model = "copilot:gpt-4o".into();
+    config.defaults.model = "github-copilot:gpt-4o".into();
 
     let provider = build_provider_with_oauth(&config, &resolver, &registry)
         .await
         .expect("copilot OAuth provider builds");
-    assert_eq!(provider.id(), "copilot");
-    let mut stream = provider.stream(factory_request("copilot:gpt-4o"));
+    assert_eq!(provider.id(), "github-copilot");
+    let mut stream = provider.stream(factory_request("github-copilot:gpt-4o"));
     drain_stream(&mut stream).await;
-    let mut agent_request = factory_request("copilot:gpt-4o");
+    let mut agent_request = factory_request("github-copilot:gpt-4o");
     agent_request
         .messages
         .push(Message::Assistant(opi_ai::test_support::base_assistant()));
@@ -1790,7 +1816,7 @@ async fn factory_routes_codex_to_codex_responses_with_oauth_wire_shape() {
     // the stored base_url here is a test seam redirecting dispatch to the mock.
     store
         .write(
-            "codex",
+            "openai-codex",
             &stored_oauth(
                 "codex-access-fake",
                 "codex-refresh-fake",
@@ -1803,13 +1829,13 @@ async fn factory_routes_codex_to_codex_responses_with_oauth_wire_shape() {
     let registry = OAuthProviderRegistry::registry_with_builtins();
 
     let mut config = OpiConfig::default();
-    config.defaults.model = "codex:gpt-5".into();
+    config.defaults.model = "openai-codex:gpt-5".into();
 
     let provider = build_provider_with_oauth(&config, &resolver, &registry)
         .await
         .expect("codex OAuth provider builds");
-    assert_eq!(provider.id(), "codex");
-    let mut stream = provider.stream(factory_request("codex:gpt-5"));
+    assert_eq!(provider.id(), "openai-codex");
+    let mut stream = provider.stream(factory_request("openai-codex:gpt-5"));
     drain_stream(&mut stream).await;
 
     let requests = server.received_requests().await.unwrap();
@@ -2225,10 +2251,10 @@ async fn all_builtin_flows_support_manual_fallback() {
     let presenter2 = MockLoginPresenter::new();
     presenter2.supply_manual_code("codex-code");
 
-    login_oauth("codex", &registry2, store_ref2, &presenter2)
+    login_oauth("openai-codex", &registry2, store_ref2, &presenter2)
         .await
         .expect("codex login");
-    let cred2 = store2.read("codex").await.unwrap().unwrap();
+    let cred2 = store2.read("openai-codex").await.unwrap().unwrap();
     assert!(
         matches!(cred2, Credential::OAuthToken { .. }),
         "codex cred stored"
@@ -2256,10 +2282,10 @@ async fn all_builtin_flows_support_manual_fallback() {
     let store_ref3 = &*store3;
     let presenter3 = MockLoginPresenter::new();
     // Copilot never calls await_manual_code (device code only).
-    login_oauth("copilot", &registry3, store_ref3, &presenter3)
+    login_oauth("github-copilot", &registry3, store_ref3, &presenter3)
         .await
         .expect("copilot login");
-    let cred3 = store3.read("copilot").await.unwrap().unwrap();
+    let cred3 = store3.read("github-copilot").await.unwrap().unwrap();
     assert!(
         matches!(cred3, Credential::OAuthToken { .. }),
         "copilot cred stored"
@@ -2293,6 +2319,8 @@ impl AuthResolver for OneShotThenRevokedResolver {
                 Ok(ResolvedAuth {
                     scheme: AuthScheme::Bearer,
                     secret,
+                    base_url: None,
+                    account_id: None,
                 })
             }
         })
@@ -2389,8 +2417,8 @@ fn login_logout_commands_are_discoverable() {
 async fn factory_built_approved_profiles_resolve_auth_inside_each_stream() {
     for (provider_id, model) in [
         ("anthropic", "claude-sonnet-4-5-20250514"),
-        ("copilot", "gpt-4o"),
-        ("codex", "gpt-5"),
+        ("github-copilot", "gpt-4o"),
+        ("openai-codex", "gpt-5"),
     ] {
         let server = MockServer::start().await;
         let (_dir, store, _backend) = store_with(FakeKeyringBackend::new());
@@ -2467,8 +2495,8 @@ async fn factory_built_approved_profiles_resolve_auth_inside_each_stream() {
 async fn factory_stream_reresolves_after_store_change() {
     for (provider_id, model, request_path) in [
         ("anthropic", "claude-sonnet-4-5-20250514", "/v1/messages"),
-        ("copilot", "gpt-4o", "/chat/completions"),
-        ("codex", "gpt-5", "/codex/responses"),
+        ("github-copilot", "gpt-4o", "/chat/completions"),
+        ("openai-codex", "gpt-5", "/codex/responses"),
     ] {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
@@ -2645,8 +2673,8 @@ async fn refresh_timeout_releases_lock_and_preserves_prior_credential() {
 async fn factory_built_approved_profiles_map_revocation_without_retry() {
     for (provider_id, model, request_path) in [
         ("anthropic", "claude-sonnet-4-5-20250514", "/v1/messages"),
-        ("copilot", "gpt-4o", "/chat/completions"),
-        ("codex", "gpt-5", "/codex/responses"),
+        ("github-copilot", "gpt-4o", "/chat/completions"),
+        ("openai-codex", "gpt-5", "/codex/responses"),
     ] {
         let server = MockServer::start().await;
         Mock::given(method("POST"))

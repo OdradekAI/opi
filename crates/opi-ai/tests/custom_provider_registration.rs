@@ -9,18 +9,19 @@ use opi_ai::provider::{CacheRetention, ModelInfo, Provider};
 use opi_ai::registry::ModelCapabilities;
 use opi_ai::registry::ProviderRegistry;
 use opi_ai::test_support::{MockProvider, text_response};
-use opi_ai::{RegistrationError, RegistryError};
+use opi_ai::{RegistrationError, RegistryError, WireApi};
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
 fn custom_model(id: &str, display: &str) -> ModelInfo {
-    ModelInfo {
-        id: id.into(),
-        display_name: display.into(),
-        capabilities: ModelCapabilities::new(50_000, 2_048).with_streaming(true),
-    }
+    ModelInfo::new(
+        id,
+        display,
+        WireApi::OpenAiCompletions,
+        ModelCapabilities::new(50_000, 2_048).with_streaming(true),
+    )
 }
 
 fn custom_provider(id: &str, models: Vec<ModelInfo>) -> Box<dyn Provider> {
@@ -138,11 +139,12 @@ fn register_model_duplicate_rejected() {
 #[test]
 fn register_model_empty_id_rejected() {
     let mut registry = ProviderRegistry::new();
-    let model = ModelInfo {
-        id: String::new(),
-        display_name: "Empty".into(),
-        capabilities: ModelCapabilities::new(0, 0),
-    };
+    let model = ModelInfo::new(
+        "",
+        "Empty",
+        WireApi::OpenAiCompletions,
+        ModelCapabilities::new(0, 0),
+    );
     let err = registry.register_model("prov", model).unwrap_err();
     assert!(matches!(err, RegistrationError::EmptyModelId { .. }));
 }
@@ -172,14 +174,15 @@ fn register_model_override_duplicate_override_rejected() {
 #[test]
 fn capabilities_for_custom_provider() {
     let mut registry = ProviderRegistry::new();
-    let model = ModelInfo {
-        id: "cap-model".into(),
-        display_name: "Cap Model".into(),
-        capabilities: ModelCapabilities::new(200_000, 8_192)
+    let model = ModelInfo::new(
+        "cap-model",
+        "Cap Model",
+        WireApi::OpenAiCompletions,
+        ModelCapabilities::new(200_000, 8_192)
             .with_images(true)
             .with_streaming(true)
             .with_thinking(true),
-    };
+    );
     registry
         .register_provider(custom_provider("cap-prov", vec![model]))
         .unwrap();
@@ -199,11 +202,12 @@ fn capabilities_for_model_override() {
         .register_provider(custom_provider("prov", vec![]))
         .unwrap();
 
-    let model = ModelInfo {
-        id: "override-model".into(),
-        display_name: "Override".into(),
-        capabilities: ModelCapabilities::new(300_000, 16_384).with_streaming(true),
-    };
+    let model = ModelInfo::new(
+        "override-model",
+        "Override",
+        WireApi::OpenAiCompletions,
+        ModelCapabilities::new(300_000, 16_384).with_streaming(true),
+    );
     registry.register_model("prov", model).unwrap();
 
     let caps = registry.capabilities("prov:override-model").unwrap();
@@ -332,23 +336,25 @@ fn all_models_deduplicates_when_override_shadows_built_in() {
     let mut registry = ProviderRegistry::new();
 
     // Provider has "shared" model.
-    let base_model = ModelInfo {
-        id: "shared".into(),
-        display_name: "Base Shared".into(),
-        capabilities: ModelCapabilities::new(100_000, 4_096).with_streaming(true),
-    };
+    let base_model = ModelInfo::new(
+        "shared",
+        "Base Shared",
+        WireApi::OpenAiCompletions,
+        ModelCapabilities::new(100_000, 4_096).with_streaming(true),
+    );
     registry
         .register_provider(custom_provider("prov", vec![base_model]))
         .unwrap();
 
     // Override shadows "shared".
-    let override_model = ModelInfo {
-        id: "shared".into(),
-        display_name: "Override Shared".into(),
-        capabilities: ModelCapabilities::new(200_000, 8_192)
+    let override_model = ModelInfo::new(
+        "shared",
+        "Override Shared",
+        WireApi::OpenAiCompletions,
+        ModelCapabilities::new(200_000, 8_192)
             .with_images(true)
             .with_streaming(true),
-    };
+    );
     registry.register_model("prov", override_model).unwrap();
 
     let models = registry.all_models();
@@ -367,23 +373,25 @@ fn resolve_override_takes_precedence_over_provider_model() {
     let mut registry = ProviderRegistry::new();
 
     // Provider declares model "shared" with context_window 100_000.
-    let base_model = ModelInfo {
-        id: "shared".into(),
-        display_name: "Base Shared".into(),
-        capabilities: ModelCapabilities::new(100_000, 4_096).with_streaming(true),
-    };
+    let base_model = ModelInfo::new(
+        "shared",
+        "Base Shared",
+        WireApi::OpenAiCompletions,
+        ModelCapabilities::new(100_000, 4_096).with_streaming(true),
+    );
     registry
         .register_provider(custom_provider("prov", vec![base_model]))
         .unwrap();
 
     // Override with different context_window.
-    let override_model = ModelInfo {
-        id: "shared".into(),
-        display_name: "Override Shared".into(),
-        capabilities: ModelCapabilities::new(200_000, 8_192)
+    let override_model = ModelInfo::new(
+        "shared",
+        "Override Shared",
+        WireApi::OpenAiCompletions,
+        ModelCapabilities::new(200_000, 8_192)
             .with_images(true)
             .with_streaming(true),
-    };
+    );
     registry.register_model("prov", override_model).unwrap();
 
     // Override should win.

@@ -903,6 +903,7 @@ fn first_class_provider_set_is_unchanged() {
         "http",
         "message",
         "model",
+        "model_info",
         "provider",
         "provider_collection",
         "registry",

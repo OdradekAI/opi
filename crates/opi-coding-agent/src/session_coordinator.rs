@@ -12,6 +12,7 @@ use opi_agent::session::{
     ThinkingLevelChangeEntry,
 };
 use opi_agent::session_event::{CompactionReason, CompactionResult, ThinkingLevel};
+use opi_ai::ModelPricing;
 use opi_ai::message::{AssistantContent, Message, ToolResultMessage};
 use opi_ai::stream::{CumulativeUsage, Usage};
 
@@ -42,6 +43,7 @@ pub struct SessionCoordinator {
     session_id: String,
     session_path: PathBuf,
     model: String,
+    model_pricing: Option<ModelPricing>,
     /// Entries accumulated so far, used as compaction input.
     /// Indexed in parallel with `agent_message_indices`.
     entries: Vec<Entry>,
@@ -89,6 +91,7 @@ impl SessionCoordinator {
             session_id: id,
             session_path: path,
             model: model.into(),
+            model_pricing: None,
             entries: Vec::new(),
             agent_message_indices: Vec::new(),
             agent_message_count: 0,
@@ -267,6 +270,7 @@ impl SessionCoordinator {
             session_id,
             session_path: path,
             model: model.into(),
+            model_pricing: None,
             entries,
             agent_message_indices: indices,
             agent_message_count: prior_agent_message_count,
@@ -609,7 +613,11 @@ impl SessionCoordinator {
         if self.usage.has_unknown_usage() {
             return None;
         }
-        let pricing = lookup_pricing(&self.model)?;
+        let pricing = self
+            .model_pricing
+            .as_ref()
+            .map(|pricing| pricing.effective(self.usage.total_input_tokens()))
+            .or_else(|| lookup_pricing(&self.model))?;
         Some(opi_ai::stream::calculate_cost(
             &self.usage.as_usage(),
             &pricing,
@@ -633,6 +641,12 @@ impl SessionCoordinator {
 
     pub fn model(&self) -> &str {
         &self.model
+    }
+
+    /// Update the model identity and its catalog-owned pricing atomically.
+    pub fn set_cost_model(&mut self, model_spec: impl Into<String>, pricing: Option<ModelPricing>) {
+        self.model = model_spec.into();
+        self.model_pricing = pricing;
     }
 }
 

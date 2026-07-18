@@ -403,7 +403,8 @@ fn provider_tool_result_error_no_phase12_breadth_guard() {
     // the reviewed Phase 11 baseline. Adding a provider family (Phase 12) requires
     // deliberately updating this baseline; this guard catches an accidental add.
     // (Phase 14.1 added the `credential` module; Phase 14.2 added the `auth`
-    // module with scoped OAuth auth contracts.)
+    // module with scoped OAuth auth contracts; Phase 14.15 added the
+    // `model_info` model-routing metadata contract.)
     let baseline_modules = vec![
         "anthropic",
         "auth",
@@ -416,6 +417,7 @@ fn provider_tool_result_error_no_phase12_breadth_guard() {
         "message",
         "mistral",
         "model",
+        "model_info",
         "openai_chat",
         "openai_responses",
         "openrouter",

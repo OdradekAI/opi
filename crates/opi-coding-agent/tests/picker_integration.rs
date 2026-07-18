@@ -52,22 +52,24 @@ impl Provider for TestProvider {
 
 fn sample_registry() -> opi_ai::registry::ProviderRegistry {
     let models = vec![
-        ModelInfo {
-            id: "claude-sonnet-4-5-20250514".into(),
-            display_name: "Claude Sonnet 4.5".into(),
-            capabilities: ModelCapabilities::new(200000, 8192)
+        ModelInfo::new(
+            "claude-sonnet-4-5-20250514",
+            "Claude Sonnet 4.5",
+            opi_ai::WireApi::AnthropicMessages,
+            ModelCapabilities::new(200000, 8192)
                 .with_images(true)
                 .with_streaming(true)
                 .with_thinking(true),
-        },
-        ModelInfo {
-            id: "claude-opus-4-20250514".into(),
-            display_name: "Claude Opus 4".into(),
-            capabilities: ModelCapabilities::new(200000, 8192)
+        ),
+        ModelInfo::new(
+            "claude-opus-4-20250514",
+            "Claude Opus 4",
+            opi_ai::WireApi::AnthropicMessages,
+            ModelCapabilities::new(200000, 8192)
                 .with_images(true)
                 .with_streaming(true)
                 .with_thinking(true),
-        },
+        ),
     ];
     let provider = TestProvider::new("anthropic", models);
     let mut registry = opi_ai::registry::ProviderRegistry::new();
@@ -100,24 +102,26 @@ fn model_picker_filter_and_select() {
 fn model_picker_multiple_providers() {
     let p1 = TestProvider::new(
         "anthropic",
-        vec![ModelInfo {
-            id: "claude-sonnet-4-5-20250514".into(),
-            display_name: "Claude Sonnet 4.5".into(),
-            capabilities: ModelCapabilities::new(200000, 8192)
+        vec![ModelInfo::new(
+            "claude-sonnet-4-5-20250514",
+            "Claude Sonnet 4.5",
+            opi_ai::WireApi::AnthropicMessages,
+            ModelCapabilities::new(200000, 8192)
                 .with_images(true)
                 .with_streaming(true)
                 .with_thinking(true),
-        }],
+        )],
     );
     let p2 = TestProvider::new(
         "openai",
-        vec![ModelInfo {
-            id: "gpt-4o".into(),
-            display_name: "GPT-4o".into(),
-            capabilities: ModelCapabilities::new(128000, 4096)
+        vec![ModelInfo::new(
+            "gpt-4o",
+            "GPT-4o",
+            opi_ai::WireApi::OpenAiCompletions,
+            ModelCapabilities::new(128000, 4096)
                 .with_images(true)
                 .with_streaming(true),
-        }],
+        )],
     );
     let mut registry = opi_ai::registry::ProviderRegistry::new();
     registry.register(Box::new(p1));
@@ -138,14 +142,15 @@ fn model_picker_items_include_registry_model_overrides() {
     registry
         .register_model(
             "anthropic",
-            ModelInfo {
-                id: "custom-sonnet".into(),
-                display_name: "Custom Sonnet".into(),
-                capabilities: ModelCapabilities::new(200000, 8192)
+            ModelInfo::new(
+                "custom-sonnet",
+                "Custom Sonnet",
+                opi_ai::WireApi::AnthropicMessages,
+                ModelCapabilities::new(200000, 8192)
                     .with_images(true)
                     .with_streaming(true)
                     .with_thinking(true),
-            },
+            ),
         )
         .unwrap();
 

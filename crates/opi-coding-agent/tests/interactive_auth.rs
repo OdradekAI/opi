@@ -31,7 +31,7 @@ use phase14_auth_runtime::{
     run_text_credential_capture,
 };
 
-const PROVIDERS: [&str; 3] = ["anthropic", "copilot", "codex"];
+const PROVIDERS: [&str; 3] = ["anthropic", "github-copilot", "openai-codex"];
 const SECRET_CANARY: &str = "AUTH-DO-NOT-LEAK";
 
 #[derive(Clone, Copy)]

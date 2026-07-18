@@ -212,11 +212,12 @@ impl Provider for TestProvider {
 }
 
 fn model(id: &str, display_name: &str) -> ModelInfo {
-    ModelInfo {
-        id: id.into(),
-        display_name: display_name.into(),
-        capabilities: ModelCapabilities::new(100_000, 4_096).with_streaming(true),
-    }
+    ModelInfo::new(
+        id,
+        display_name,
+        opi_ai::WireApi::OpenAiCompletions,
+        ModelCapabilities::new(100_000, 4_096).with_streaming(true),
+    )
 }
 
 #[test]

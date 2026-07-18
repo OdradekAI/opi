@@ -1197,6 +1197,277 @@ fn cost_summary_returns_none_when_any_turn_has_unknown_usage() {
     assert!(coord.cost_summary().is_none());
 }
 
+#[tokio::test]
+#[allow(clippy::await_holding_lock)]
+async fn harness_unprefixed_embedded_pricing_survives_switch_resume_and_fork() {
+    use opi_ai::message::AssistantContent;
+    use opi_ai::model_info::{ModelInfo, ModelPricing, WireApi};
+    use opi_ai::stream::{Pricing, StopReason, Usage};
+
+    fn priced_model(id: &str, input: f64, output: f64) -> ModelInfo {
+        ModelInfo::new(
+            id,
+            id,
+            WireApi::AnthropicMessages,
+            ModelCapabilities::new(200_000, 8_192).with_streaming(true),
+        )
+        .with_pricing(
+            ModelPricing::try_new(
+                Pricing {
+                    input_cost_per_mtok: input,
+                    output_cost_per_mtok: output,
+                    cache_read_cost_per_mtok: 0.0,
+                    cache_write_cost_per_mtok: 0.0,
+                },
+                vec![],
+            )
+            .unwrap(),
+        )
+        .unwrap()
+    }
+
+    fn assert_total_cost(harness: &CodingHarness, expected: f64, lifecycle: &str) {
+        let cost = harness
+            .session()
+            .and_then(|session| session.cost_summary())
+            .unwrap_or_else(|| panic!("{lifecycle}: embedded pricing was cleared"));
+        assert!(
+            (cost.total_cost() - expected).abs() < 1e-6,
+            "{lifecycle}: expected {expected}, got {}",
+            cost.total_cost()
+        );
+    }
+
+    let _lock = session_lock();
+    let sessions = tempfile::tempdir().unwrap();
+    let workspace = tempfile::tempdir().unwrap();
+    set_sessions_dir(sessions.path());
+
+    let mut assistant = test_support::base_assistant();
+    assistant.content.push(AssistantContent::Text {
+        text: "priced".into(),
+    });
+    assistant.usage = Usage::reported(1_000_000, 1_000_000, 0, 0, None, None);
+    let response = vec![
+        AssistantStreamEvent::Start {
+            partial: test_support::base_assistant(),
+        },
+        AssistantStreamEvent::TextDelta {
+            content_index: 0,
+            delta: "priced".into(),
+            partial: assistant.clone(),
+        },
+        AssistantStreamEvent::Done {
+            reason: StopReason::Stop,
+            message: assistant,
+        },
+    ];
+    let provider = MockProvider::new_with_models(
+        "anthropic",
+        vec![
+            priced_model("claude-sonnet-4", 7.0, 11.0),
+            priced_model("claude-opus-4", 19.0, 23.0),
+        ],
+        vec![response],
+    );
+    let mut harness = CodingHarness::new(
+        Box::new(provider),
+        "claude-sonnet-4".into(),
+        OpiConfig::default(),
+        workspace.path().to_path_buf(),
+    );
+
+    assert_total_cost(&harness, 0.0, "new construction");
+    harness.prompt("record priced usage").await.unwrap();
+    assert_total_cost(&harness, 18.0, "new session usage");
+    let source_session_id = harness.session().unwrap().session_id().to_owned();
+
+    harness.set_model("claude-opus-4".into());
+    assert_eq!(harness.model(), "claude-opus-4");
+    assert_total_cost(&harness, 42.0, "unprefixed set_model");
+
+    assert_eq!(
+        harness
+            .set_model_validated("claude-sonnet-4".into())
+            .unwrap(),
+        "claude-sonnet-4"
+    );
+    assert_total_cost(&harness, 18.0, "unprefixed set_model_validated");
+    let unknown = harness
+        .set_model_validated("unknown-model".into())
+        .unwrap_err();
+    assert!(
+        unknown.contains("invalid model spec") || unknown.contains("unknown model"),
+        "{unknown}"
+    );
+    let other_provider = harness
+        .set_model_validated("openai:gpt-4o".into())
+        .unwrap_err();
+    assert!(
+        other_provider.contains("cannot switch provider"),
+        "{other_provider}"
+    );
+    assert_eq!(harness.model(), "claude-sonnet-4");
+    assert_total_cost(&harness, 18.0, "rejected model changes");
+
+    harness.resume_session_id(&source_session_id).unwrap();
+    assert_eq!(harness.model(), "claude-sonnet-4");
+    assert_total_cost(&harness, 18.0, "resume");
+
+    harness.fork_current_session().unwrap();
+    assert_eq!(harness.model(), "claude-sonnet-4");
+    assert_total_cost(&harness, 18.0, "fork");
+
+    clear_sessions_dir();
+}
+
+#[test]
+fn embedded_model_pricing_overrides_legacy_fallback() {
+    use opi_agent::compaction::CompactionConfig;
+    use opi_ai::model_info::{ModelPricing, PricingTier};
+    use opi_ai::stream::{Pricing, Usage};
+
+    let dir = tempfile::tempdir().unwrap();
+    let mut coord = SessionCoordinator::new(
+        dir.path(),
+        "/test",
+        CompactionConfig::default(),
+        "anthropic:claude-sonnet-4",
+    )
+    .unwrap();
+    coord.set_cost_model(
+        "anthropic:claude-sonnet-4",
+        Some(
+            ModelPricing::try_new(
+                Pricing {
+                    input_cost_per_mtok: 1.0,
+                    output_cost_per_mtok: 2.0,
+                    cache_read_cost_per_mtok: 0.1,
+                    cache_write_cost_per_mtok: 1.25,
+                },
+                vec![PricingTier {
+                    input_tokens_above: 2_000_000,
+                    pricing: Pricing {
+                        input_cost_per_mtok: 2.0,
+                        output_cost_per_mtok: 4.0,
+                        cache_read_cost_per_mtok: 0.2,
+                        cache_write_cost_per_mtok: 2.5,
+                    },
+                }],
+            )
+            .unwrap(),
+        ),
+    );
+    coord
+        .on_turn_end_simple(&[], &Usage::reported(1_000_000, 500_000, 0, 0, None, None))
+        .unwrap();
+
+    let cost = coord.cost_summary().unwrap();
+    assert!((cost.input_cost - 1.0).abs() < 1e-6);
+    assert!((cost.output_cost - 1.0).abs() < 1e-6);
+}
+
+#[test]
+fn embedded_model_pricing_updates_on_model_switch_and_resume() {
+    use opi_agent::compaction::CompactionConfig;
+    use opi_ai::model_info::ModelPricing;
+    use opi_ai::stream::{Pricing, Usage};
+
+    let dir = tempfile::tempdir().unwrap();
+    let mut coord = SessionCoordinator::new(
+        dir.path(),
+        "/test",
+        CompactionConfig::default(),
+        "future:first",
+    )
+    .unwrap();
+    let embedded = ModelPricing::try_new(
+        Pricing {
+            input_cost_per_mtok: 7.0,
+            output_cost_per_mtok: 11.0,
+            cache_read_cost_per_mtok: 0.0,
+            cache_write_cost_per_mtok: 0.0,
+        },
+        Vec::new(),
+    )
+    .unwrap();
+    coord.set_cost_model("future:second", Some(embedded.clone()));
+    let usage = Usage::reported(1_000_000, 1_000_000, 0, 0, None, None);
+    let mut assistant = test_support::base_assistant();
+    assistant.usage = usage.clone();
+    coord
+        .on_turn_end_simple(
+            &[
+                AgentMessage::Llm(Message::User(UserMessage {
+                    content: vec![InputContent::Text {
+                        text: "pricing".into(),
+                    }],
+                    timestamp_ms: 0,
+                })),
+                AgentMessage::Llm(Message::Assistant(assistant)),
+            ],
+            &usage,
+        )
+        .unwrap();
+    let path = coord.session_path().to_path_buf();
+    let session_id = coord.session_id().to_owned();
+    drop(coord);
+    let (_, entries) = SessionReader::read_all(&path).unwrap();
+
+    let mut resumed = SessionCoordinator::open_existing(
+        path,
+        session_id,
+        &entries,
+        0,
+        CompactionConfig::default(),
+        "future:second",
+    )
+    .unwrap();
+    resumed.set_cost_model("future:second", Some(embedded));
+    let cost = resumed.cost_summary().unwrap();
+    assert!((cost.total_cost() - 18.0).abs() < 1e-6);
+}
+
+#[test]
+fn legacy_pricing_fallback_remains_for_unmigrated_model() {
+    use opi_agent::compaction::CompactionConfig;
+    use opi_ai::stream::Usage;
+
+    let dir = tempfile::tempdir().unwrap();
+    let mut coord = SessionCoordinator::new(
+        dir.path(),
+        "/test",
+        CompactionConfig::default(),
+        "anthropic:claude-sonnet-4",
+    )
+    .unwrap();
+    coord.set_cost_model("anthropic:claude-sonnet-4", None);
+    coord
+        .on_turn_end_simple(&[], &Usage::reported(1_000_000, 0, 0, 0, None, None))
+        .unwrap();
+    assert!((coord.cost_summary().unwrap().input_cost - 3.0).abs() < 1e-6);
+}
+
+#[test]
+fn thinking_level_additions_round_trip_without_schema_bump() {
+    use opi_agent::session::FORMAT_VERSION;
+
+    assert_eq!(FORMAT_VERSION, 1);
+    for (level, expected) in [
+        (ThinkingLevel::None, "\"none\""),
+        (ThinkingLevel::Minimal, "\"minimal\""),
+        (ThinkingLevel::XHigh, "\"xhigh\""),
+        (ThinkingLevel::Max, "\"max\""),
+    ] {
+        let encoded = serde_json::to_string(&level).unwrap();
+        assert_eq!(encoded, expected);
+        assert_eq!(
+            serde_json::from_str::<ThinkingLevel>(&encoded).unwrap(),
+            level
+        );
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Resume: open_existing reuses the original session file
 // ---------------------------------------------------------------------------
@@ -2796,24 +3067,26 @@ impl opi_agent::extension::Extension for ModelOverrideExtension {
         vec![
             (
                 "mock".into(),
-                opi_ai::provider::ModelInfo {
-                    id: "custom-model".into(),
-                    display_name: "Custom Model".into(),
-                    capabilities: ModelCapabilities::new(100_000, 4_096)
+                opi_ai::provider::ModelInfo::new(
+                    "custom-model",
+                    "Custom Model",
+                    opi_ai::WireApi::OpenAiCompletions,
+                    ModelCapabilities::new(100_000, 4_096)
                         .with_images(true)
                         .with_streaming(true),
-                },
+                ),
             ),
             (
                 "mock".into(),
-                opi_ai::provider::ModelInfo {
-                    id: "thinking-model".into(),
-                    display_name: "Thinking Model".into(),
-                    capabilities: ModelCapabilities::new(100_000, 4_096)
+                opi_ai::provider::ModelInfo::new(
+                    "thinking-model",
+                    "Thinking Model",
+                    opi_ai::WireApi::OpenAiCompletions,
+                    ModelCapabilities::new(100_000, 4_096)
                         .with_images(true)
                         .with_streaming(true)
                         .with_thinking(true),
-                },
+                ),
             ),
         ]
     }
