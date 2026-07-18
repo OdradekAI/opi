@@ -3885,7 +3885,7 @@
       "definition_of_done": "ApiMappedProvider validates one model catalog against exactly one route per declared WireApi and delegates streams without resolving auth itself. Custom TOML and openai_compatible profiles lower through that path after final-layer validation, reject invalid wire/compat/pricing/header/auth contracts before provider construction, and list both CLI and TUI picker models under one provider identity without hidden route ids.",
       "definition_source": "draft-reviewed",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "14.15"
       ],
@@ -3899,6 +3899,26 @@
           "field": "forbidden_scope",
           "reason": "Do not allow per-call credential or provider-managed auth-header overrides, and do not expose the built-in-only openai-codex-responses wire through TOML.",
           "source": "docs/superpowers/specs/2026-07-14-phase14-exit-remediation-design.md#Non-Goals"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Phase C pre-edit ownership expansion: the binding-required typed ConfigError::InvalidCustomProvider makes diagnostic_bridge exhaustive classification non-exhaustive; one production diagnostic mapping arm is mechanically required.",
+          "source": "cargo test -p opi-coding-agent --test custom_provider_map --no-run E0004 at crates/opi-coding-agent/src/diagnostic_bridge.rs:223"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Phase C pre-edit ownership expansion: the deliberate opi-ai public-module breadth guard must recognize the reviewed api_mapped and provider_headers modules introduced by Task 14.16.",
+          "source": "cargo test -p opi-ai failure provider_tool_result_error_no_phase12_breadth_guard at crates/opi-ai/tests/tool_result_wire.rs:438"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Phase C pre-edit ownership expansion: the Phase 12 first-class provider source guard must classify Task 14.16 api_mapped and provider_headers as routing infrastructure rather than provider families.",
+          "source": "cargo test --workspace --all-targets failure first_class_provider_guard at crates/opi-coding-agent/tests/phase12_provider_correctness_docs.rs:473"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Phase C pre-edit ownership expansion: the productized first-class provider-set guard must classify Task 14.16 api_mapped and provider_headers as non-provider routing infrastructure.",
+          "source": "cargo test --workspace --all-targets failure first_class_provider_set_is_unchanged at crates/opi-coding-agent/tests/productized_packages_docs.rs:931"
         }
       ],
       "tier": "workspace",
@@ -3939,7 +3959,7 @@
             "opi_ai::api_mapped::ApiMappedProvider::stream",
             "opi_ai::provider_headers::ProviderHeaders"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "phase14-custom-provider-final-merge",
@@ -3953,7 +3973,7 @@
             "opi_coding_agent::config::load_config_file",
             "opi_coding_agent::provider_factory::build_provider"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "phase14-custom-provider-visible-as-one-identity",
@@ -3967,7 +3987,7 @@
             "opi_coding_agent::provider_factory::build_collection_for_listing",
             "opi_coding_agent::interactive::tui_event_loop"
           ],
-          "status": "open"
+          "status": "met"
         }
       ],
       "production_call_sites": [
@@ -3978,9 +3998,9 @@
         "opi_coding_agent::provider_factory::build_collection_for_listing"
       ],
       "substrate_only": false,
-      "iteration_count": 0,
+      "iteration_count": 2,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "ad166e7c939ed5c639726300ceda92b40e297894",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "crates/opi-ai/src/api_mapped.rs",
@@ -3997,13 +4017,173 @@
         "crates/opi-coding-agent/tests/config_tests.rs",
         "crates/opi-coding-agent/tests/provider_factory.rs",
         "crates/opi-coding-agent/tests/list_models.rs",
-        "crates/opi-coding-agent/tests/picker_integration.rs"
+        "crates/opi-coding-agent/tests/picker_integration.rs",
+        "crates/opi-coding-agent/src/diagnostic_bridge.rs",
+        "crates/opi-ai/tests/tool_result_wire.rs",
+        "crates/opi-coding-agent/tests/phase12_provider_correctness_docs.rs",
+        "crates/opi-coding-agent/tests/productized_packages_docs.rs"
       ],
-      "last_attempt": null,
-      "verified_at_commit": null,
-      "evidence": null,
+      "last_attempt": {
+        "attempt": 2,
+        "started_at": "2026-07-18T12:06:53.011Z",
+        "ended_at": "2026-07-18T13:02:39.218Z",
+        "outcome": "passing",
+        "failing_gate": null,
+        "touched_files": [
+          "crates/opi-ai/src/anthropic.rs",
+          "crates/opi-ai/src/api_mapped.rs",
+          "crates/opi-ai/src/lib.rs",
+          "crates/opi-ai/src/openai_chat.rs",
+          "crates/opi-ai/src/openai_responses.rs",
+          "crates/opi-ai/src/provider_headers.rs",
+          "crates/opi-ai/tests/api_mapped_provider.rs",
+          "crates/opi-ai/tests/tool_result_wire.rs",
+          "crates/opi-coding-agent/src/config.rs",
+          "crates/opi-coding-agent/src/diagnostic_bridge.rs",
+          "crates/opi-coding-agent/src/provider_factory.rs",
+          "crates/opi-coding-agent/tests/config_tests.rs",
+          "crates/opi-coding-agent/tests/custom_provider_map.rs",
+          "crates/opi-coding-agent/tests/list_models.rs",
+          "crates/opi-coding-agent/tests/phase12_provider_correctness_docs.rs",
+          "crates/opi-coding-agent/tests/picker_integration.rs",
+          "crates/opi-coding-agent/tests/productized_packages_docs.rs",
+          "crates/opi-coding-agent/tests/provider_factory.rs"
+        ]
+      },
+      "verified_at_commit": "f34949c8f7fee61a6ffcc0b416db384ec641f794",
+      "evidence": {
+        "commit": "f34949c8f7fee61a6ffcc0b416db384ec641f794",
+        "task": "14.16",
+        "dod_sha256": "8104e2070f9c9f71bf0d380a44860246cf7db690de45a05401e681e119f45dac",
+        "verification": "workspace; fresh controller focused acceptance 25/25, workspace clippy -D warnings, full workspace all-targets, fmt, diff-check, exact 18-of-19 ownership boundary, and clean secret audit passed after generated-target disk cleanup",
+        "evaluator": "passed; independent six-lens evaluation accepted 0, folded 6 corrected findings, flagged 0, rejected 5 candidates",
+        "acceptance": "three-wire mapped dispatch with lazy shared auth, duplicate/missing/mismatch rejection, final-layer custom TOML validation, openai-compatible lowering, and one-identity CLI/production-harness picker visibility verified",
+        "acceptance_scenarios": [
+          "phase14-api-map-three-wire-lazy-auth",
+          "phase14-custom-provider-final-merge",
+          "phase14-custom-provider-visible-as-one-identity"
+        ],
+        "verify_workflows": [
+          ".superpowers/sdd/task-14.16-review.md",
+          ".superpowers/sdd/task-14.16-review-iteration2.md",
+          ".superpowers/sdd/task-14.16-evaluator.md",
+          "codex-collaboration:task14.16-six-lens-20260718"
+        ]
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-07-18T10:33:52.758Z",
+          "attempt": 1,
+          "summary": "Phase B confirmed after Task 14.15 checkpoint; starting mapped-provider and custom-TOML implementation with the reconciled production-picker one-identity acceptance scenario.",
+          "gate_results": {
+            "stage": "B",
+            "outcome": "confirmed",
+            "accepted": [
+              "reviewed task brief",
+              "clean baseline",
+              "Task 14.15 dependency passing",
+              "complete task-owned path set",
+              "CLI and production picker one-identity acceptance correction"
+            ],
+            "flagged": [],
+            "rejected": []
+          }
+        },
+        {
+          "timestamp": "2026-07-18T10:53:55.338Z",
+          "attempt": 1,
+          "summary": "Pre-edit ownership expansion added the diagnostic bridge arm mechanically required by the new typed custom-provider configuration error.",
+          "gate_results": {
+            "stage": "C.1a",
+            "outcome": "ownership-expanded-before-edit",
+            "accepted": [
+              "crates/opi-coding-agent/src/diagnostic_bridge.rs"
+            ],
+            "flagged": [],
+            "rejected": []
+          }
+        },
+        {
+          "timestamp": "2026-07-18T11:20:44.776Z",
+          "attempt": 1,
+          "summary": "Pre-edit ownership expansion added the exact public-module breadth guard affected by the two intentional Task 14.16 modules.",
+          "gate_results": {
+            "stage": "C.1a",
+            "outcome": "ownership-expanded-before-edit",
+            "accepted": [
+              "crates/opi-ai/tests/tool_result_wire.rs"
+            ],
+            "flagged": [],
+            "rejected": []
+          }
+        },
+        {
+          "timestamp": "2026-07-18T11:31:22.468Z",
+          "attempt": 1,
+          "summary": "Pre-edit ownership expansion added the exact Phase 12 source allowlist affected by the two reviewed routing-infrastructure modules.",
+          "gate_results": {
+            "stage": "C.1a",
+            "outcome": "ownership-expanded-before-edit",
+            "accepted": [
+              "crates/opi-coding-agent/tests/phase12_provider_correctness_docs.rs"
+            ],
+            "flagged": [],
+            "rejected": []
+          }
+        },
+        {
+          "timestamp": "2026-07-18T11:34:18.519Z",
+          "attempt": 1,
+          "summary": "Pre-edit ownership expansion added the productized provider-set guard affected by the two reviewed routing-infrastructure modules.",
+          "gate_results": {
+            "stage": "C.1a",
+            "outcome": "ownership-expanded-before-edit",
+            "accepted": [
+              "crates/opi-coding-agent/tests/productized_packages_docs.rs"
+            ],
+            "flagged": [],
+            "rejected": []
+          }
+        },
+        {
+          "timestamp": "2026-07-18T12:06:53.011Z",
+          "attempt": 1,
+          "summary": "Independent Task 14.16 review rejected the first implementation on four must-fix areas; all are accepted and routed to Phase C iteration 2, with two local naming cleanups accepted and cross-binary fixture extraction rejected as unnecessary scope.",
+          "gate_results": {
+            "stage": "task-review",
+            "outcome": "must-fix-block",
+            "accepted": [
+              "reject compatibility fields that do not belong to the selected wire",
+              "preserve duplicate route entries at the ApiMappedProvider input boundary and reject them non-vacuously",
+              "exercise one-identity visibility through CodingHarness::model_picker_items on a production-built mapped provider",
+              "serialize all four new process-environment-mutating tests",
+              "rename the parsed Anthropic model id and provider-factory model-count locals for clarity"
+            ],
+            "flagged": [],
+            "rejected": [
+              "extract duplicated list-models/picker fixture across separate integration-test binaries"
+            ],
+            "report": ".superpowers/sdd/task-14.16-review.md"
+          }
+        },
+        {
+          "timestamp": "2026-07-18T13:02:39.218Z",
+          "attempt": 2,
+          "summary": "Task 14.16 passed fresh controller verification, complete workspace gates, independent iteration-2 spec/standards review, and independent six-lens evaluation with no accepted or flagged findings.",
+          "gate_results": {
+            "focused": "passing: api_mapped 10/10; custom_provider_map 6/6; standalone config 1/1; openai-compatible lowering 6/6; CLI identity 1/1; production harness picker identity 1/1",
+            "workspace_tests": "passing: cargo test --workspace --all-targets after cleaning only generated target artifacts following an environmental disk-space link failure",
+            "fmt": "passing",
+            "clippy": "passing: workspace all-targets with -D warnings",
+            "diff_check": "passing",
+            "source_boundary": "passing: 18 committed paths, all within 19 task-owned paths",
+            "review": "approved: iteration 2 no spec or standards findings",
+            "evaluator": "passing: L-D1 through L-D6; accepted 0, folded 6, flagged 0, rejected 5",
+            "commit": "f34949c8f7fee61a6ffcc0b416db384ec641f794"
+          }
+        }
+      ]
     },
     {
       "id": "14.17",
@@ -6203,6 +6383,16 @@
       "rejected_count": 8,
       "ran_at": "2026-07-18T10:30:44.514Z",
       "task_id": "14.15",
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": "codex-collaboration:task14.16-six-lens-20260718",
+      "folded_count": 6,
+      "flagged_count": 0,
+      "rejected_count": 5,
+      "ran_at": "2026-07-18T13:02:39.218Z",
+      "task_id": "14.16",
       "criterion_id": null
     }
   ]
