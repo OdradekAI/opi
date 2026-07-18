@@ -17,6 +17,8 @@ static INSTALL_STATE: Mutex<InstallState> = Mutex::new(InstallState {
     leases: 0,
 });
 
+type PlatformStoreConstructor = fn() -> Result<Arc<keyring_core::CredentialStore>, String>;
+
 #[cfg(test)]
 pub(crate) static KEYRING_TEST_LOCK: Mutex<()> = Mutex::new(());
 
@@ -44,6 +46,12 @@ impl Drop for NativeKeyringGuard {
 
 /// Install the native credential store selected for the current release target.
 pub fn install_native_keyring() -> Result<NativeKeyringGuard, BackendError> {
+    install_native_keyring_with(native_platform_store)
+}
+
+fn install_native_keyring_with(
+    constructor: PlatformStoreConstructor,
+) -> Result<NativeKeyringGuard, BackendError> {
     {
         let mut state = lock_install_state();
         if state.leases > 0 {
@@ -51,7 +59,7 @@ pub fn install_native_keyring() -> Result<NativeKeyringGuard, BackendError> {
             return Ok(NativeKeyringGuard { leased: true });
         }
     }
-    let store = platform_store()?;
+    let store = platform_store_with(constructor)?;
     install_store(store)
 }
 
@@ -76,30 +84,72 @@ fn classify_platform_store_error(target_os: &str, reason: String) -> BackendErro
 }
 
 #[cfg(target_os = "windows")]
-fn platform_store() -> Result<Arc<keyring_core::CredentialStore>, BackendError> {
-    let store: Arc<keyring_core::CredentialStore> = windows_native_keyring_store::Store::new()
-        .map_err(|error| classify_platform_store_error("windows", error.to_string()))?;
+fn platform_store_with(
+    constructor: PlatformStoreConstructor,
+) -> Result<Arc<keyring_core::CredentialStore>, BackendError> {
+    constructor().map_err(|reason| classify_platform_store_error("windows", reason))
+}
+
+#[cfg(target_os = "windows")]
+fn native_platform_store() -> Result<Arc<keyring_core::CredentialStore>, String> {
+    let store: Arc<keyring_core::CredentialStore> =
+        windows_native_keyring_store::Store::new().map_err(|error| error.to_string())?;
     Ok(store)
 }
 
 #[cfg(target_os = "macos")]
-fn platform_store() -> Result<Arc<keyring_core::CredentialStore>, BackendError> {
+fn platform_store_with(
+    constructor: PlatformStoreConstructor,
+) -> Result<Arc<keyring_core::CredentialStore>, BackendError> {
+    constructor().map_err(|reason| classify_platform_store_error("macos", reason))
+}
+
+#[cfg(target_os = "macos")]
+fn native_platform_store() -> Result<Arc<keyring_core::CredentialStore>, String> {
     let store: Arc<keyring_core::CredentialStore> =
-        apple_native_keyring_store::keychain::Store::new()
-            .map_err(|error| classify_platform_store_error("macos", error.to_string()))?;
+        apple_native_keyring_store::keychain::Store::new().map_err(|error| error.to_string())?;
     Ok(store)
 }
 
 #[cfg(target_os = "linux")]
-fn platform_store() -> Result<Arc<keyring_core::CredentialStore>, BackendError> {
-    let store: Arc<keyring_core::CredentialStore> = zbus_secret_service_keyring_store::Store::new()
-        .map_err(|error| classify_platform_store_error("linux", error.to_string()))?;
+fn platform_store_with(
+    constructor: PlatformStoreConstructor,
+) -> Result<Arc<keyring_core::CredentialStore>, BackendError> {
+    constructor().map_err(|reason| classify_platform_store_error("linux", reason))
+}
+
+#[cfg(target_os = "linux")]
+fn native_platform_store() -> Result<Arc<keyring_core::CredentialStore>, String> {
+    let store: Arc<keyring_core::CredentialStore> =
+        zbus_secret_service_keyring_store::Store::new().map_err(|error| error.to_string())?;
     Ok(store)
 }
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+
+    static PLATFORM_STORE_CONSTRUCTOR_CALLS: AtomicUsize = AtomicUsize::new(0);
+
+    fn mock_platform_store_constructor() -> Result<Arc<keyring_core::CredentialStore>, String> {
+        PLATFORM_STORE_CONSTRUCTOR_CALLS.fetch_add(1, Ordering::SeqCst);
+        keyring_core::mock::Store::new()
+            .map(|store| store as Arc<keyring_core::CredentialStore>)
+            .map_err(|error| error.to_string())
+    }
+
+    fn unavailable_platform_store_constructor() -> Result<Arc<keyring_core::CredentialStore>, String>
+    {
+        Err("connection refused".to_owned())
+    }
+
+    fn operational_platform_store_constructor() -> Result<Arc<keyring_core::CredentialStore>, String>
+    {
+        Err("permission denied".to_owned())
+    }
 
     #[test]
     fn platform_initialization_errors_preserve_operational_classification() {
@@ -125,21 +175,54 @@ mod tests {
     }
 
     #[test]
+    fn platform_store_with_preserves_host_error_classification() {
+        use crate::credential_store::BackendError;
+
+        let unavailable = super::platform_store_with(unavailable_platform_store_constructor);
+        #[cfg(target_os = "linux")]
+        assert!(matches!(
+            unavailable,
+            Err(BackendError::BackendUnavailable(reason)) if reason == "connection refused"
+        ));
+        #[cfg(not(target_os = "linux"))]
+        assert!(matches!(
+            unavailable,
+            Err(BackendError::Other(reason)) if reason == "connection refused"
+        ));
+
+        assert!(matches!(
+            super::platform_store_with(operational_platform_store_constructor),
+            Err(BackendError::Other(reason)) if reason == "permission denied"
+        ));
+    }
+
+    #[test]
     fn native_keyring_host_selection_installs_a_default_store() {
         let _serial = super::KEYRING_TEST_LOCK.lock().expect("keyring test lock");
         keyring_core::unset_default_store();
-        let store: Arc<keyring_core::CredentialStore> =
-            keyring_core::mock::Store::new().expect("mock store");
+        PLATFORM_STORE_CONSTRUCTOR_CALLS.store(0, Ordering::SeqCst);
 
-        let guard = super::install_store(store).expect("install mock default store");
+        let first_guard = super::install_native_keyring_with(mock_platform_store_constructor)
+            .expect("install mock default store");
         assert!(keyring_core::get_default_store().is_some());
-        let entry = keyring_core::Entry::new("opi-test", "native-guard")
-            .expect("entry uses installed mock store");
-        entry
-            .set_password("test-only")
-            .expect("mock entry accepts password");
+        let first_store_id = keyring_core::get_default_store()
+            .expect("first guard installs a default store")
+            .id();
 
-        drop(guard);
+        let second_guard = super::install_native_keyring_with(mock_platform_store_constructor)
+            .expect("reuse mock default store");
+        assert_eq!(PLATFORM_STORE_CONSTRUCTOR_CALLS.load(Ordering::SeqCst), 1);
+        assert_eq!(
+            keyring_core::get_default_store()
+                .expect("second guard retains a default store")
+                .id(),
+            first_store_id,
+            "the second lease must not replace the first store"
+        );
+
+        drop(first_guard);
+        assert!(keyring_core::get_default_store().is_some());
+        drop(second_guard);
         assert!(keyring_core::get_default_store().is_none());
     }
 
