@@ -8,8 +8,8 @@
 [Simplified Chinese](README.zh.md) | [opi workspace](../../README.md)
 
 Provider-neutral LLM API for Rust: one `Request` and streaming-event model
-shared across nine built-in provider families and config-driven
-OpenAI-compatible profiles.
+shared across built-in provider families, a checked multi-wire provider, and
+config-driven profiles.
 
 ```sh
 cargo add opi-ai
@@ -40,6 +40,8 @@ keychain, environment, login-presenter, and refresh implementations remain in
 | `anthropic` | `anthropic` | Anthropic Messages streaming |
 | `openai_chat` | `openai` | OpenAI Chat Completions streaming |
 | `openai_responses` | `openai-responses` | OpenAI Responses streaming |
+| `openai_codex_responses` | `openai-codex` | Subscription-specific OpenAI Codex Responses streaming |
+| `api_mapped` | caller-defined | One provider identity/catalog routed across checked concrete wires |
 | `openrouter` | `openrouter` | OpenAI-compatible OpenRouter profile |
 | `mistral` | `mistral` | OpenAI-compatible Mistral profile |
 | `gemini` | `gemini` | Gemini `streamGenerateContent?alt=sse` |
@@ -61,7 +63,8 @@ added through registry overrides or configured OpenAI-compatible profiles.
 | `InputContent` / `OutputContent` | Text and image content blocks. |
 | `ToolResultMessage` | Provider-facing tool-result message: content, optional details, `is_error`, `truncated`, and timestamp metadata. |
 | `AssistantStreamEvent` | Provider-neutral stream events for start, text, thinking, tool calls, done, and error. |
-| `ModelInfo` / `ModelCapabilities` | Model metadata with one nested capability value, including cache-control and long-retention support. |
+| `WireApi` / `ModelInfo` / `ModelCapabilities` | Exact request-wire identity plus model capability, thinking, compatibility, and pricing metadata. |
+| `ApiMappedProvider` | One public provider identity/catalog dispatched through a validated `WireApi -> Provider` route map. |
 | `ProviderError` / `ProviderErrorCategory` | Provider failure taxonomy: auth, config, request, network, rate_limit, provider, stream, capability, and cancelled (timeouts classify as network). |
 | `ProviderRegistry` | Resolves `provider:model`, registers custom providers, and layers model overrides. |
 | `ProviderCollection` / `AuthDescriptor` / `AuthStatus` | Unstable-0.x models/auth seam above `ProviderRegistry`: provider+model lookup, redacted auth state, OpenAI-compatible compat metadata, dispatch, and atomic dynamic-catalog refresh. |
@@ -84,12 +87,21 @@ are object-safe boxed-future seams. `opi-coding-agent` supplies the OS-keychain
 store and the approved Anthropic, GitHub Copilot, and OpenAI Codex login flows;
 `opi-ai` performs no keychain, environment, or presenter IO.
 
-The three approved live auth paths—Anthropic Messages, Copilot-compatible
-OpenAI Chat, and Codex-compatible OpenAI Responses—resolve `AuthResolver`
-inside the returned stream, immediately before HTTP. Missing and revoked
-credentials surface as explicit, non-retryable `ProviderError::CredentialNeeded` and
-`ProviderError::CredentialRevoked` variants. Per-call credentials remain out
-of scope: `extra_headers` rejects provider-managed auth headers.
+`WireApi` gives every `ModelInfo` one exact request wire, while public
+`ApiMappedProvider` exposes one provider identity and catalog and validates
+its `WireApi -> Provider` routes before dispatch. One mapped provider shares
+one lazy `AuthResolver` across all routes; provider/model metadata chooses the
+route before network IO. Unknown models, missing routes, and wire/compatibility
+mismatches are typed non-retryable failures.
+
+GitHub Copilot routes one static catalog through Anthropic Messages, OpenAI
+Completions/Chat, and OpenAI Responses; OpenAI Codex uses its dedicated
+Responses provider rather than standard Responses compatibility flags. Each
+route resolves `AuthResolver` inside the returned stream immediately before
+HTTP. Missing and revoked credentials surface as explicit, non-retryable
+`ProviderError::CredentialNeeded` and `ProviderError::CredentialRevoked`
+variants. Per-call credentials remain out of scope: `extra_headers` rejects
+provider-managed auth headers.
 
 Capable built-in Anthropic models emit `cache_control` on the system prompt,
 final user text, final assistant text, and final tool definition. Long
@@ -239,7 +251,8 @@ The following are explicit non-goals and must not appear as current core
 behavior:
 
 - OAuth providers beyond Anthropic, GitHub Copilot, and OpenAI Codex.
-- Broad GitHub Copilot multi-wire catalog parity.
+- Provider catalogs beyond the audited static pi-0.80.6 GitHub Copilot and
+  OpenAI Codex snapshots, including live entitlement filtering.
 - Automatic re-login after credential revocation.
 - Per-call API-key/env/auth-header override.
 - Provider payload/response streaming hooks.
@@ -299,10 +312,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ## Modules
 
-`provider`, `message`, `stream`, `registry`, `provider_collection`, `auth`,
-`credential`, `http`, `retry`, `model`, `anthropic`, `openai_chat`,
-`openai_responses`, `openrouter`, `mistral`, `gemini`, `bedrock`,
-`azure_openai`, `vertex`, `config`, `time`, and `test_support`.
+`provider`, `message`, `stream`, `model_info`, `api_mapped`, `registry`,
+`provider_collection`, `auth`, `credential`, `http`, `retry`, `model`,
+`anthropic`, `openai_chat`, `openai_responses`, `openai_codex_responses`,
+`openrouter`, `mistral`, `gemini`, `bedrock`, `azure_openai`, `vertex`,
+`config`, `time`, and `test_support`.
 
 ## License
 

@@ -80,7 +80,9 @@ Inside the interactive TUI, manage stored OAuth credentials with:
 
 ```text
 /login anthropic
-/logout anthropic
+/login github-copilot
+/login openai-codex
+/logout <provider>
 ```
 
 ## CLI Commands and Flags
@@ -133,12 +135,44 @@ Run `opi --help` for the exact current surface. Important commands and flags:
 | `bedrock:` | `BedrockProvider` | AWS env vars or shared AWS profile/config |
 | `azure:` | `AzureOpenAIProvider` | `AZURE_OPENAI_API_KEY`; endpoint/deployments in config |
 | `vertex:` | `VertexProvider` | `VERTEX_ACCESS_TOKEN`; project/location in config |
-| `copilot:` | Explicit GitHub Copilot OpenAI Chat compatibility profile | OS keychain via `/login copilot` |
-| `codex:` | Explicit OpenAI Codex Responses compatibility profile | OS keychain via `/login codex` |
+| `github-copilot:` | One audited static catalog mapped across Anthropic Messages, OpenAI Completions/Chat, and OpenAI Responses | OS keychain via `/login github-copilot` |
+| `openai-codex:` | Dedicated `OpenAiCodexResponsesProvider` | OS keychain via `/login openai-codex` |
 | configured profile | OpenAI-compatible profile | profile-specific `api_key_env`, `base_url`, and model list |
 
 Provider credential env names, base URLs, model lists, and proxies can be
 overridden in config.
+
+### Custom mapped providers
+
+`[providers.custom.<id>]` defines one mapped provider with one shared
+credential source and auth scheme; provider `api` and `base_url` are defaults,
+while model values take precedence.
+
+```toml
+[providers.custom.acme]
+name = "Acme"
+base_url = "https://api.acme.example"
+api_key_env = "ACME_API_KEY"
+auth_scheme = "bearer"
+api = "openai-completions"
+
+[[providers.custom.acme.models]]
+id = "chat"
+display_name = "Acme Chat"
+context_window = 128000
+max_output_tokens = 16384
+thinking_level_map = { low = true, high = "high", max = false }
+```
+
+Custom models may use only `anthropic-messages`, `openai-completions`, or
+`openai-responses`; thinking maps encode identity as `true`, unsupported as
+`false`, or a wire value as a string. Model `api` and `base_url` override
+provider defaults. A model can also declare capabilities, wire-tagged
+`compat`, base pricing, and strictly ascending `pricing.tiers`.
+Compatibility metadata is wire-tagged, pricing tiers apply only when input
+tokens are strictly greater than `input_tokens_above`, and provider-managed
+authentication headers are reserved. The subscription-only
+`openai-codex-responses` wire cannot be selected by custom TOML.
 
 ## Credential Store and OAuth
 
@@ -155,22 +189,28 @@ Production startup installs Windows Credential Manager on Windows, macOS
 Keychain Services on macOS, or Freedesktop Secret Service on Linux before any
 credential-aware path constructs an entry.
 
-`/login <provider>` and `/logout <provider>` support Anthropic PKCE, GitHub
-Copilot device-code, and OpenAI Codex PKCE. Headless Anthropic/Codex flows can
-paste a code manually; Copilot presents its device code. Copilot uses an
-explicit OpenAI Chat compatibility profile and Codex uses the existing
-Responses implementation at `/codex/responses`; this is not broad Copilot
-multi-wire parity or a separate Codex provider type. `ANTHROPIC_OAUTH_TOKEN`
-is a non-refreshable bearer source and takes precedence over
-`ANTHROPIC_API_KEY` when no stored credential exists.
+`github-copilot` uses one audited static pi-0.80.6 catalog and one lazy stored
+credential across Anthropic Messages, OpenAI Completions/Chat, and OpenAI
+Responses routes. Its model listing intentionally does not call live account
+entitlement/model-enable endpoints. `openai-codex` uses the dedicated
+`openai-codex-responses` provider at `/codex/responses`.
 
-Auth is re-resolved inside the three approved Anthropic, Copilot, and Codex
-provider streams. Only a successful explicit `/login <provider>` can retry a
-pending interactive turn; `CredentialNeeded` never starts login automatically.
-Non-interactive, JSON, and RPC
-modes do not prompt: they report the provider and `/login anthropic`-style
-remediation, then fail. `CredentialRevoked` is non-retryable and never causes
-automatic re-login.
+`/login openai-codex` offers Browser (default) and Device Code. Anthropic and
+Codex Browser are PKCE flows with callback/manual-paste fallback. GitHub
+Copilot and Codex Device Code call `present_device_code`, poll their provider
+endpoint, and never call `await_manual_code`. Persisted credentials use the
+native OS keychain. The development ids `copilot` and `codex` have no alias or
+credential migration; users of those development entries must log in again
+with the canonical id. `ANTHROPIC_OAUTH_TOKEN` is a non-refreshable bearer
+source and takes precedence over `ANTHROPIC_API_KEY` when no stored credential
+exists.
+
+After a pre-output `CredentialNeeded`, the outer TUI retries the same pending
+turn exactly once only when an explicit login succeeds for the same provider;
+it does not append a duplicate user message. Non-interactive, JSON, and RPC
+modes do not prompt or construct a presenter: they report the canonical
+provider and `/login <provider>` remediation, then fail. `CredentialRevoked`
+is non-retryable and never causes automatic re-login.
 
 Phase 14 also carries the active `session_id` through `CodingHarness` and the
 agent loop into reviewed provider cache-affinity mappings. The other new
@@ -439,8 +479,9 @@ Common methods include `prompt`, `prompt_with_content`, `queue_images`,
 - Production sub-agent, permission-gate, plan/todo, and MCP workflows are
   examples/package patterns, not built-in core workflows.
 - OAuth providers beyond Anthropic, GitHub Copilot, and OpenAI Codex remain
-  deferred. Other deferred product decisions are broad Copilot multi-wire
-  parity, a broad new first-class provider list (compatible providers stay
+  deferred. Other deferred product decisions are provider catalogs beyond the
+  audited static pi-0.80.6 Copilot/Codex snapshots, a broad new first-class
+  provider list (compatible providers stay
   config-driven OpenAI-compatible profiles), image generation
   (image support is input-only), browser usage, a provider streaming-adapter
   protocol for packages, paid live provider calls in default tests, and copying

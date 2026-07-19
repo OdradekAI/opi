@@ -58,7 +58,9 @@ Inside the TUI, stored OAuth credentials are managed explicitly:
 
 ```text
 /login anthropic
-/logout anthropic
+/login github-copilot
+/login openai-codex
+/logout <provider>
 ```
 
 Run one prompt:
@@ -165,8 +167,8 @@ Provider support lives in `opi-ai` and is wired into `opi-coding-agent`.
 | `bedrock:` | AWS Bedrock Converse streaming | AWS env vars or shared AWS config |
 | `azure:` | Azure OpenAI deployment | `AZURE_OPENAI_API_KEY` plus endpoint config |
 | `vertex:` | Google Vertex AI Gemini streaming | `VERTEX_ACCESS_TOKEN` plus project/location config |
-| `copilot:` | GitHub Copilot OpenAI Chat compatibility profile | OS keychain via `/login copilot` |
-| `codex:` | OpenAI Codex Responses compatibility profile | OS keychain via `/login codex` |
+| `github-copilot:` | One audited static catalog routed through Anthropic Messages, OpenAI Completions/Chat, and OpenAI Responses | OS keychain via `/login github-copilot` |
+| `openai-codex:` | Dedicated OpenAI Codex Responses wire | OS keychain via `/login openai-codex` |
 | configured profile | OpenAI-compatible Chat Completions profile | profile-specific `api_key_env` |
 
 Compatible OpenAI-style services should normally use configured profiles rather
@@ -187,15 +189,27 @@ only redacted credential state. On Windows, macOS, and Linux, persisted
 credentials use Windows Credential Manager, macOS Keychain Services, and
 Freedesktop Secret Service, respectively.
 
-Interactive `/login <provider>` and `/logout <provider>` support Anthropic
-PKCE, GitHub Copilot device-code, and OpenAI Codex PKCE. This is exact auth and
-compatibility-profile coverage, not broad Copilot multi-wire parity and not a
-separate Codex provider type. Only a successful, user-initiated
-`/login <provider>` retries a pending interactive turn; `CredentialNeeded`
-never starts login automatically. Non-interactive,
-JSON, and RPC modes instead report the provider plus `/login <provider>` and
-fail without starting OAuth. `CredentialRevoked` is non-retryable; opi does
-not auto-relogin mid-stream.
+GitHub Copilot uses the canonical `github-copilot` identity and one audited
+static pi-0.80.6 catalog across Anthropic Messages, OpenAI Completions/Chat,
+and OpenAI Responses routes. This intentionally differs from live account
+entitlement filtering: `--list-models` reads the static catalog without an
+OAuth secret or entitlement/model-enable request.
+
+OpenAI Codex uses the canonical `openai-codex` identity, the dedicated
+`openai-codex-responses` wire, and Browser (default) plus Device Code login.
+Only Browser PKCE flows await a manual code or callback; GitHub Copilot and
+OpenAI Codex Device Code call `present_device_code` and never
+`await_manual_code`.
+
+Persisted credentials use the native OS keychain; the development ids
+`copilot` and `codex` have no alias or credential migration, so affected users
+must log in again with the canonical id. After a pre-output
+`CredentialNeeded`, a successful explicit login for the same provider makes
+the outer TUI retry the same pending turn exactly once without appending a
+duplicate user message. Non-interactive text, JSON, and RPC modes emit
+canonical provider remediation and fail without constructing a
+`LoginPresenter`, opening a browser, or waiting for input.
+`CredentialRevoked` is non-retryable; opi does not auto-relogin mid-stream.
 
 `Request` now carries `timeout`, `extra_headers`, `CacheRetention`, and
 `session_id`. Only `session_id` has a production harness producer in this
@@ -290,8 +304,9 @@ tools the agent can call; they are not an operating-system sandbox.
   network-free by default, and `trace` is opt-in.
 - Production sub-agent, permission-gate, plan/todo, and MCP workflows are
   examples/package patterns, not built-in core workflows.
-- OAuth providers beyond Anthropic, GitHub Copilot, and OpenAI Codex; broad
-  Copilot catalog parity; image generation; browser usage; provider
+- OAuth providers beyond Anthropic, GitHub Copilot, and OpenAI Codex; provider
+  catalogs beyond the two audited pi-0.80.6 snapshots; image generation;
+  browser automation; provider
   streaming-adapter protocols for packages; paid live provider calls in
   default tests; and copying pi's provider-specific config file format remain
   deferred.

@@ -1,4 +1,9 @@
 //! Public model routing, capability, thinking, compatibility, and pricing metadata.
+//!
+//! [`WireApi`] is the exact request protocol, separate from the normalized
+//! assistant-message `ApiKind`. Every [`ModelInfo`] has one wire, a matching
+//! tagged [`WireCompat`], a thinking-level map, and optional pricing with
+//! deterministic input-token threshold tiers.
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -68,6 +73,11 @@ impl Default for ModelCapabilities {
 
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+/// Exact request wire used to dispatch a model.
+///
+/// Custom mapped providers may select Anthropic Messages, OpenAI Completions,
+/// or OpenAI Responses. `openai-codex-responses` is subscription-specific and
+/// reserved for the built-in OpenAI Codex provider.
 pub enum WireApi {
     #[serde(rename = "anthropic-messages")]
     AnthropicMessages,
@@ -455,6 +465,12 @@ fn validate_pricing(pricing: &Pricing) -> Result<(), ModelInfoError> {
 
 #[non_exhaustive]
 #[derive(Clone, Debug, PartialEq)]
+/// Complete public metadata for one model in a provider catalog.
+///
+/// `wire_api` selects the concrete route. `compat` must carry the same wire
+/// tag, `thinking_level_map` maps or rejects each public thinking level, and
+/// `pricing` chooses a tier only when input tokens are strictly greater than
+/// that tier's threshold.
 pub struct ModelInfo {
     pub id: String,
     pub display_name: String,

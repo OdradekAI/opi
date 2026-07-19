@@ -614,8 +614,8 @@ impl OAuthEndpointConfig {
 
 /// Anthropic OAuth provider using PKCE authorization-code with a `127.0.0.1`
 /// loopback callback. Endpoints are configurable so tests point them at a
-/// `wiremock` server. Bearer auth + the OAuth beta header are applied by the
-/// factory (slice 5) via the compatibility profile, not here.
+/// `wiremock` server. The factory supplies a lazy Bearer credential source;
+/// `AnthropicProvider` applies the OAuth beta header for that auth scheme.
 pub struct AnthropicOAuthProvider {
     authorize_url: String,
     token_url: String,

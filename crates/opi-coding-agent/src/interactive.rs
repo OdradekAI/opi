@@ -482,6 +482,13 @@ enum PickerAction {
     Cancel,
 }
 
+/// Run the outer interactive TUI and its prompt/auth state machine.
+///
+/// A pre-output `CredentialNeeded` retains one pending turn. A successful
+/// explicit login for that same provider retries the turn exactly once without
+/// appending a duplicate user message. Different-provider login and every
+/// cancellation, presenter, OAuth, store, terminal, or mid-stream revocation
+/// failure perform no retry.
 pub async fn run_interactive_tui(
     harness: CodingHarness,
     model: String,

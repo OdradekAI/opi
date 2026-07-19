@@ -7,8 +7,8 @@
 
 [English](README.md) | [opi workspace](../../README.zh.md)
 
-Rust 的 Provider 无关 LLM API：一个 `Request` 与流式事件模型，由九个内置 Provider family
-和配置驱动的 OpenAI-compatible profile 共享。
+Rust 的 Provider 无关 LLM API：一个 `Request` 与流式事件模型，由内置 Provider
+family、checked multi-wire provider 和配置驱动的 profile 共享。
 
 ```sh
 cargo add opi-ai
@@ -36,6 +36,8 @@ trait 位于本 crate；keychain、环境变量、登录 presenter 和 refresh �
 | `anthropic` | `anthropic` | Anthropic Messages streaming |
 | `openai_chat` | `openai` | OpenAI Chat Completions streaming |
 | `openai_responses` | `openai-responses` | OpenAI Responses streaming |
+| `openai_codex_responses` | `openai-codex` | subscription-specific OpenAI Codex Responses streaming |
+| `api_mapped` | 调用方定义 | 把一个 Provider identity/catalog 路由到 checked 具体 wire |
 | `openrouter` | `openrouter` | OpenAI-compatible OpenRouter profile |
 | `mistral` | `mistral` | OpenAI-compatible Mistral profile |
 | `gemini` | `gemini` | Gemini `streamGenerateContent?alt=sse` |
@@ -57,7 +59,8 @@ OpenAI-compatible profile 加入。
 | `InputContent` / `OutputContent` | 文本与图片内容块。 |
 | `ToolResultMessage` | 面向 Provider 的工具结果消息：content、可选 details、`is_error`、`truncated` 和时间戳元数据。 |
 | `AssistantStreamEvent` | Provider 无关流式事件，覆盖 start、text、thinking、tool call、done 和 error。 |
-| `ModelInfo` / `ModelCapabilities` | 使用唯一嵌套能力值的模型元数据，包括 cache-control 与长 retention 支持。 |
+| `WireApi` / `ModelInfo` / `ModelCapabilities` | 精确请求 wire identity，以及模型能力、thinking、compatibility 与 pricing 元数据。 |
+| `ApiMappedProvider` | 通过经校验的 `WireApi -> Provider` route map 派发一个公开 Provider identity/catalog。 |
 | `ProviderError` / `ProviderErrorCategory` | Provider 失败分类：auth、config、request、network、rate_limit、provider、stream、capability 和 cancelled（超时归为 network）。 |
 | `ProviderRegistry` | 解析 `provider:model`、注册自定义 Provider、叠加模型覆盖。 |
 | `ProviderCollection` / `AuthDescriptor` / `AuthStatus` | unstable-0.x 模型/鉴权 seam，位于 `ProviderRegistry` 之上：Provider+模型查找、脱敏鉴权状态、OpenAI-compatible 兼容性元数据、派发与原子动态目录 refresh。 |
@@ -79,12 +82,17 @@ OpenAI-compatible profile 加入。
 seam。`opi-coding-agent` 提供 OS-keychain store，以及获批的 Anthropic、GitHub
 Copilot 和 OpenAI Codex 登录 flow；`opi-ai` 不执行 keychain、环境变量或 presenter IO。
 
-三个获批的真实鉴权路径——Anthropic Messages、Copilot-compatible OpenAI Chat 与
-Codex-compatible OpenAI Responses——都在返回的 stream 内、紧邻 HTTP 之前解析
+`WireApi` 为每个 `ModelInfo` 指定一个精确请求 wire；公开
+`ApiMappedProvider` 暴露一个 provider identity 与 catalog，并在派发前校验其
+`WireApi -> Provider` route。一个 mapped provider 的所有 route 共享一个惰性
+`AuthResolver`；provider/model 元数据会在网络 IO 前选择 route。未知 model、缺少
+route 与 wire/compatibility 不匹配都会成为类型化、不可重试的失败。
+
+GitHub Copilot 把一个静态 catalog 路由到 Anthropic Messages、OpenAI Completions/Chat 与 OpenAI Responses；OpenAI Codex 使用专用 Responses provider，而不是标准 Responses 兼容标志。
+每个 route 都在返回的 stream 内、紧邻 HTTP 之前解析
 `AuthResolver`。凭据缺失与撤销分别成为显式且不可重试的
-`ProviderError::CredentialNeeded` 和
-`ProviderError::CredentialRevoked`。按调用凭据仍不在范围内：`extra_headers` 会拒绝
-Provider 管理的鉴权 header。
+`ProviderError::CredentialNeeded` 和 `ProviderError::CredentialRevoked`。
+按调用凭据仍不在范围内：`extra_headers` 会拒绝 Provider 管理的鉴权 header。
 
 具备能力的 Anthropic 内置模型会在 system prompt、最后一段 user text、最后一段
 assistant text 和最后一个 tool definition 上发出 `cache_control`。Long retention
@@ -217,7 +225,8 @@ OpenAI Chat 会从任何携带 `id` 的 chunk 捕获 response ID，而不只是�
 以下是明确的非目标，不得作为当前核心行为出现：
 
 - Anthropic、GitHub Copilot 与 OpenAI Codex 之外的 OAuth provider。
-- 宽泛的 GitHub Copilot 多 wire catalog 对等。
+- 经审计的静态 pi-0.80.6 GitHub Copilot/OpenAI Codex snapshot 之外的
+  Provider catalog，包括在线 entitlement filtering。
 - 凭据撤销后的自动重新登录。
 - 按调用 API key、env 或鉴权 header 覆盖。
 - Provider payload/response 流式 hook。
@@ -277,10 +286,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ## 模块
 
-`provider`、`message`、`stream`、`registry`、`provider_collection`、`auth`、
-`credential`、`http`、`retry`、`model`、`anthropic`、`openai_chat`、
-`openai_responses`、`openrouter`、`mistral`、`gemini`、`bedrock`、
-`azure_openai`、`vertex`、`config`、`time` 和 `test_support`。
+`provider`、`message`、`stream`、`model_info`、`api_mapped`、`registry`、
+`provider_collection`、`auth`、`credential`、`http`、`retry`、`model`、
+`anthropic`、`openai_chat`、`openai_responses`、`openai_codex_responses`、
+`openrouter`、`mistral`、`gemini`、`bedrock`、`azure_openai`、`vertex`、
+`config`、`time` 和 `test_support`。
 
 ## 许可证
 

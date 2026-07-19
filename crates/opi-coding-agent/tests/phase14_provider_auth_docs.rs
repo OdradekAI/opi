@@ -1,4 +1,4 @@
-//! Phase 14 provider/auth documentation and forbidden-scope guards (task 14.13).
+//! Phase 14 provider/auth documentation and forbidden-scope guards (task 14.21).
 
 use std::path::{Path, PathBuf};
 
@@ -32,6 +32,16 @@ fn assert_claims(path: &str, content: &str, claims: &[&str]) {
         assert!(
             normalized.contains(&normalize_whitespace(claim)),
             "{path} must contain the exact Phase 14 claim `{claim}`"
+        );
+    }
+}
+
+fn assert_absent(path: &str, content: &str, claims: &[&str]) {
+    let normalized = normalize_whitespace(content);
+    for claim in claims {
+        assert!(
+            !normalized.contains(&normalize_whitespace(claim)),
+            "{path} must not retain the superseded Phase 14 claim `{claim}`"
         );
     }
 }
@@ -76,9 +86,12 @@ fn localized_docs_pin_exact_phase14_claims_and_acceptance_rows() {
         "README.md",
         &root,
         &[
-            "Interactive `/login <provider>` and `/logout <provider>` support Anthropic PKCE, GitHub Copilot device-code, and OpenAI Codex PKCE.",
-            "Only a successful, user-initiated `/login <provider>` retries a pending interactive turn; `CredentialNeeded` never starts login automatically.",
-            "Non-interactive, JSON, and RPC modes instead report the provider plus `/login <provider>` and fail without starting OAuth.",
+            "GitHub Copilot uses the canonical `github-copilot` identity and one audited static pi-0.80.6 catalog across Anthropic Messages, OpenAI Completions/Chat, and OpenAI Responses routes.",
+            "OpenAI Codex uses the canonical `openai-codex` identity, the dedicated `openai-codex-responses` wire, and Browser (default) plus Device Code login.",
+            "Persisted credentials use the native OS keychain; the development ids `copilot` and `codex` have no alias or credential migration, so affected users must log in again with the canonical id.",
+            "Only Browser PKCE flows await a manual code or callback; GitHub Copilot and OpenAI Codex Device Code call `present_device_code` and never `await_manual_code`.",
+            "After a pre-output `CredentialNeeded`, a successful explicit login for the same provider makes the outer TUI retry the same pending turn exactly once without appending a duplicate user message.",
+            "Non-interactive text, JSON, and RPC modes emit canonical provider remediation and fail without constructing a `LoginPresenter`, opening a browser, or waiting for input.",
             "Provider::refresh_models` and collection refresh are substrate-only with no production trigger.",
         ],
     );
@@ -86,9 +99,12 @@ fn localized_docs_pin_exact_phase14_claims_and_acceptance_rows() {
         "README.zh.md",
         &root_zh,
         &[
-            "交互式 `/login <provider>` 与 `/logout <provider>` 支持 Anthropic PKCE、GitHub Copilot device-code 和 OpenAI Codex PKCE。",
-            "只有用户显式执行且成功的 `/login <provider>` 才会重试待处理的交互轮次；`CredentialNeeded` 绝不自动启动登录。",
-            "非交互、JSON 和 RPC 模式只报告 provider 与 `/login <provider>` 修复提示，并在不启动 OAuth 的情况下失败。",
+            "GitHub Copilot 使用规范 `github-copilot` identity，以及一个经审计的静态 pi-0.80.6 catalog；该 catalog 覆盖 Anthropic Messages、OpenAI Completions/Chat 与 OpenAI Responses route。",
+            "OpenAI Codex 使用规范 `openai-codex` identity、专用 `openai-codex-responses` wire，以及 Browser（默认）和 Device Code 登录。",
+            "持久化凭据使用原生 OS keychain；开发期 id `copilot` 与 `codex` 没有 alias 或凭据迁移，因此受影响用户必须使用规范 id 重新登录。",
+            "只有 Browser PKCE flow 会等待手动 code 或 callback；GitHub Copilot 与 OpenAI Codex Device Code 调用 `present_device_code`，绝不调用 `await_manual_code`。",
+            "在输出开始前收到 `CredentialNeeded` 后，只有同一 provider 的显式登录成功，outer TUI 才会对同一待处理轮次精确重试一次，且不追加重复 user message。",
+            "非交互文本、JSON 与 RPC 模式会输出规范 provider 修复提示并失败，绝不构造 `LoginPresenter`、打开浏览器或等待输入。",
             "`Provider::refresh_models` 和 collection refresh 仅为基底、无生产触发。",
         ],
     );
@@ -96,7 +112,9 @@ fn localized_docs_pin_exact_phase14_claims_and_acceptance_rows() {
         "crates/opi-ai/README.md",
         &ai,
         &[
-            "The three approved live auth paths—Anthropic Messages, Copilot-compatible OpenAI Chat, and Codex-compatible OpenAI Responses—resolve `AuthResolver` inside the returned stream, immediately before HTTP.",
+            "`WireApi` gives every `ModelInfo` one exact request wire, while public `ApiMappedProvider` exposes one provider identity and catalog and validates its `WireApi -> Provider` routes before dispatch.",
+            "One mapped provider shares one lazy `AuthResolver` across all routes; provider/model metadata chooses the route before network IO.",
+            "GitHub Copilot routes one static catalog through Anthropic Messages, OpenAI Completions/Chat, and OpenAI Responses; OpenAI Codex uses its dedicated Responses provider rather than standard Responses compatibility flags.",
             "Per-call credentials remain out of scope: `extra_headers` rejects provider-managed auth headers.",
             "Capable built-in Anthropic models emit `cache_control` on the system prompt, final user text, final assistant text, and final tool definition.",
         ],
@@ -105,7 +123,9 @@ fn localized_docs_pin_exact_phase14_claims_and_acceptance_rows() {
         "crates/opi-ai/README.zh.md",
         &ai_zh,
         &[
-            "三个获批的真实鉴权路径——Anthropic Messages、Copilot-compatible OpenAI Chat 与 Codex-compatible OpenAI Responses——都在返回的 stream 内、紧邻 HTTP 之前解析 `AuthResolver`。",
+            "`WireApi` 为每个 `ModelInfo` 指定一个精确请求 wire；公开 `ApiMappedProvider` 暴露一个 provider identity 与 catalog，并在派发前校验其 `WireApi -> Provider` route。",
+            "一个 mapped provider 的所有 route 共享一个惰性 `AuthResolver`；provider/model 元数据会在网络 IO 前选择 route。",
+            "GitHub Copilot 把一个静态 catalog 路由到 Anthropic Messages、OpenAI Completions/Chat 与 OpenAI Responses；OpenAI Codex 使用专用 Responses provider，而不是标准 Responses 兼容标志。",
             "按调用凭据仍不在范围内：`extra_headers` 会拒绝 Provider 管理的鉴权 header。",
             "具备能力的 Anthropic 内置模型会在 system prompt、最后一段 user text、最后一段 assistant text 和最后一个 tool definition 上发出 `cache_control`。",
         ],
@@ -115,6 +135,7 @@ fn localized_docs_pin_exact_phase14_claims_and_acceptance_rows() {
         &agent,
         &[
             "`opi-agent` does not perform credential IO or construct OAuth providers.",
+            "The outer interactive product may retry one pre-output pending turn exactly once after a successful explicit login for the same provider; non-interactive products never prompt, and revoked credentials never trigger automatic re-login.",
             "The agent also carries an opaque `session_id` from `Agent` through `AgentLoopContext` into every provider `Request`.",
         ],
     );
@@ -123,6 +144,7 @@ fn localized_docs_pin_exact_phase14_claims_and_acceptance_rows() {
         &agent_zh,
         &[
             "`opi-agent` 不执行凭据 IO，也不构造 OAuth provider。",
+            "outer 交互产品只能在同一 provider 的显式登录成功后，对一个输出前的待处理轮次精确重试一次；非交互产品绝不提示，撤销凭据也绝不会触发自动重新登录。",
             "Agent 还把不透明 `session_id` 从 `Agent` 经 `AgentLoopContext` 携带到每个 Provider `Request`。",
         ],
     );
@@ -130,24 +152,28 @@ fn localized_docs_pin_exact_phase14_claims_and_acceptance_rows() {
         "crates/opi-coding-agent/README.md",
         &coding,
         &[
-            "Auth is re-resolved inside the three approved Anthropic, Copilot, and Codex provider streams.",
-            "Non-interactive, JSON, and RPC modes do not prompt: they report the provider and `/login anthropic`-style remediation, then fail.",
+            "`[providers.custom.<id>]` defines one mapped provider with one shared credential source and auth scheme; provider `api` and `base_url` are defaults, while model values take precedence.",
+            "Custom models may use only `anthropic-messages`, `openai-completions`, or `openai-responses`; thinking maps encode identity as `true`, unsupported as `false`, or a wire value as a string.",
+            "Compatibility metadata is wire-tagged, pricing tiers apply only when input tokens are strictly greater than `input_tokens_above`, and provider-managed authentication headers are reserved.",
+            "Non-interactive, JSON, and RPC modes do not prompt or construct a presenter: they report the canonical provider and `/login <provider>` remediation, then fail.",
         ],
     );
     assert_claims(
         "crates/opi-coding-agent/README.zh.md",
         &coding_zh,
         &[
-            "只有三个获批的 Anthropic、Copilot 与 Codex Provider stream 会重新解析鉴权。",
-            "非交互、JSON 与 RPC 模式不提示：它们报告 provider 和 `/login anthropic` 形式的修复提示后失败。",
+            "`[providers.custom.<id>]` 定义一个 mapped provider，并让所有 route 共享一个凭据 source 与 auth scheme；provider `api` 和 `base_url` 是默认值，model 值优先。",
+            "自定义 model 只能使用 `anthropic-messages`、`openai-completions` 或 `openai-responses`；thinking map 用 `true` 表示 identity、`false` 表示 unsupported，或用 string 表示 wire 值。",
+            "兼容元数据按 wire 加 tag；只有 input token 严格大于 `input_tokens_above` 时才应用 pricing tier；Provider 管理的鉴权 header 保持保留。",
+            "非交互、JSON 与 RPC 模式既不提示也不构造 presenter：它们报告规范 provider 与 `/login <provider>` 修复提示后失败。",
         ],
     );
     assert_claims(
         "docs/opi-spec.md",
         &spec,
         &[
-            "Status: implemented; remediation complete. Historical design: `docs/superpowers/specs/2026-07-11-phase14-provider-auth-design.md`. Corrective design: `docs/superpowers/specs/2026-07-14-phase14-exit-remediation-design.md`.",
-            "held only by the approved Anthropic Messages, Copilot-compatible Chat, and Codex-compatible Responses paths",
+            "Status: implemented; pi-0.80.6 alignment complete. Historical design: `docs/superpowers/specs/2026-07-11-phase14-provider-auth-design.md`. Corrective design: `docs/superpowers/specs/2026-07-14-phase14-exit-remediation-design.md`.",
+            "The offline pi-0.80.6 fixtures `github-copilot.models.json` and `openai-codex.models.json` pin catalog provenance, while `mapped_provider_dispatches_one_catalog_across_three_wires`, `mapped_routes_share_one_lazy_auth_resolver`, `custom_provider_api_and_base_url_precedence`, and `invalid_custom_provider_contracts_fail_at_load` pin mapped-provider behavior.",
             "Dynamic refresh has mock collection coverage but no Phase 14 production trigger and therefore closes no product acceptance path.",
         ],
     );
@@ -155,31 +181,31 @@ fn localized_docs_pin_exact_phase14_claims_and_acceptance_rows() {
         "docs/opi-spec.zh.md",
         &spec_zh,
         &[
-            "状态：已实现；修复已完成。历史设计： `docs/superpowers/specs/2026-07-11-phase14-provider-auth-design.md`。修复设计： `docs/superpowers/specs/2026-07-14-phase14-exit-remediation-design.md`。",
-            "只有获批的 Anthropic Messages、Copilot-compatible Chat 与 Codex-compatible Responses 路径持有 `Arc<dyn AuthResolver>`",
+            "状态：已实现；pi-0.80.6 对齐已完成。历史设计： `docs/superpowers/specs/2026-07-11-phase14-provider-auth-design.md`。修复设计： `docs/superpowers/specs/2026-07-14-phase14-exit-remediation-design.md`。",
+            "离线 pi-0.80.6 fixture `github-copilot.models.json` 与 `openai-codex.models.json` 固定 catalog provenance；`mapped_provider_dispatches_one_catalog_across_three_wires`、`mapped_routes_share_one_lazy_auth_resolver`、`custom_provider_api_and_base_url_precedence` 与 `invalid_custom_provider_contracts_fail_at_load` 固定 mapped-provider 行为。",
             "动态 refresh 只有 mock collection 覆盖，第十四阶段不增加生产触发点，也不以它关闭产品验收路径。",
         ],
     );
 
     let exact_en_rows = [
-        "| SC1 credential storage and probes | 14.1, 14.8 | Native-store selection plus async `credential_store`, `doctor_cli`, and `list_models` fake-backend tests exercise production startup, strict resolver errors, stored-only listing, and redacted probes. |",
-        "| SC2 OAuth product flows | 14.2, 14.9 | `interactive_auth` drives the production `/login` and `/logout` dispatcher, locked persistence, terminal suspension/restoration, and all three reviewed OAuth profiles. |",
-        "| SC3 live auth and session interaction | 14.2, 14.10 | Factory-built provider, `interactive_auth`, `json_mode`, RPC, and text tests cover lazy per-stream auth, changed credentials, bounded refresh, explicit same-turn retry, revocation, provider-id remediation, and no automatic login. |",
+        "| SC1 credential storage and probes | 14.1, 14.8, 14.14 | The cfg-gated host-selection test enters the production native-store selector and proves constructor, default-store, and guard lifecycle; async store/doctor/listing tests retain strict redacted resolver behavior. |",
+        "| SC2 OAuth product flows | 14.2, 14.9, 14.18, 14.19 | Concrete dispatcher tests cover Anthropic Browser PKCE, GitHub Copilot Device Code, and OpenAI Codex Browser/Device Code through locked persistence and exact terminal restoration. |",
+        "| SC3 live auth and session interaction | 14.2, 14.10, 14.17, 14.18, 14.20 | Factory-built provider tests prove lazy auth and revocation on every approved wire; outer `run_interactive_tui` tests prove one same-provider retry and all negative gates; text/JSON/RPC never construct a presenter. |",
         "| SC4 Request and session affinity | 14.3 | `agent_loop_mock::session_id_reaches_every_request`, `session_runtime::phase14_session_affinity_tracks_new_resume_and_fork`, and `request_enrichment::session_affinity_wire_mappings` trace production propagation and exact positive/negative wire mappings. |",
-        "| SC5 capabilities and cache markers | 14.4, 14.11 | `anthropic_cache_markers` captures capability-gated marker positions and TTL through a factory-built concrete Anthropic stream. |",
-        "| SC6 usage and cost | 14.5, 14.12 | Public-contract, provider-fixture, cost, and session-resume tests preserve optional `u64` child subsets, reject malformed usage, and prevent double counting. |",
-        "| SC7 dynamic refresh substrate | 14.6 | `provider_collection` and `provider_trait` mock tests prove deterministic atomic replacement; this is substrate-only with no production trigger. |",
-        "| SC8 documentation and guards | 14.7, 14.13 | `phase14_provider_auth_docs`, production-dispatcher TUI help, `json_mode`, RPC, and text tests pin localized truth, runtime discovery, typed remediation, and the renewed `api-map` disposition. |",
+        "| SC5 capabilities and cache markers | 14.4, 14.11, 14.15 | `ModelInfo` carries exact wire/capability metadata, and `anthropic_cache_markers` captures capability-gated marker positions and TTL through a factory-built concrete Anthropic stream. |",
+        "| SC6 usage, metadata, and cost | 14.5, 14.12, 14.15, 14.17, 14.18 | Public contracts, pi catalog fixtures, pricing-tier tests, provider fixtures, cost tests, and session resume preserve strict subsets and deterministic model pricing without double counting. |",
+        "| SC7 dynamic refresh and api-map substrate | 14.6, 14.16 | `ApiMappedProvider` and custom TOML tests prove checked multi-wire dispatch with shared lazy auth; collection tests retain deterministic atomic refresh, which has no production trigger. |",
+        "| SC8 documentation and guards | 14.7, 14.13, 14.21 | Paired public docs, rustdoc, TUI help, runtime remediation tests, the 58-row acceptance manifest, and workspace gates pin current provider/auth truth and api-map implementation. |",
     ];
     let exact_zh_rows = [
-        "| SC1 凭据存储与 probe | 14.1, 14.8 | 原生 store 选择以及异步 `credential_store`、`doctor_cli` 与 `list_models` fake-backend 测试覆盖生产启动、严格 resolver 错误、仅已存储凭据的模型列表和脱敏 probe。 |",
-        "| SC2 OAuth 产品 flow | 14.2, 14.9 | `interactive_auth` 驱动生产 `/login` 与 `/logout` dispatcher、带锁持久化、终端暂停/恢复以及三个经审查 OAuth profile。 |",
-        "| SC3 真实鉴权与会话交互 | 14.2, 14.10 | Factory-built Provider、`interactive_auth`、`json_mode`、RPC 与文本测试覆盖惰性按 stream 鉴权、凭据变更、有界 refresh、显式同轮重试、撤销、provider-id 修复提示和禁止自动登录。 |",
+        "| SC1 凭据存储与 probe | 14.1, 14.8, 14.14 | cfg-gated host-selection 测试进入生产原生 store selector，证明 constructor、default-store 与 guard 生命周期；异步 store/doctor/listing 测试保留严格且脱敏的 resolver 行为。 |",
+        "| SC2 OAuth 产品 flow | 14.2, 14.9, 14.18, 14.19 | 具体 dispatcher 测试覆盖 Anthropic Browser PKCE、GitHub Copilot Device Code 与 OpenAI Codex Browser/Device Code，并贯穿带锁持久化和精确终端恢复。 |",
+        "| SC3 真实鉴权与会话交互 | 14.2, 14.10, 14.17, 14.18, 14.20 | Factory-built Provider 测试证明每条获批 wire 的惰性鉴权与撤销；outer `run_interactive_tui` 测试证明一次同 provider 重试和全部负向 gate；文本/JSON/RPC 绝不构造 presenter。 |",
         "| SC4 Request 与会话亲和 | 14.3 | `agent_loop_mock::session_id_reaches_every_request`、`session_runtime::phase14_session_affinity_tracks_new_resume_and_fork` 与 `request_enrichment::session_affinity_wire_mappings` 追踪生产传播和精确的正负 wire 映射。 |",
-        "| SC5 能力与 cache marker | 14.4, 14.11 | `anthropic_cache_markers` 通过 factory-built 具体 Anthropic stream 捕获能力门控的 marker 位置与 TTL。 |",
-        "| SC6 用量与费用 | 14.5, 14.12 | 公开契约、Provider fixture、费用和 session-resume 测试保留可选 `u64` 子集、拒绝非法用量并防止重复计算。 |",
-        "| SC7 动态 refresh 基底 | 14.6 | `provider_collection` 与 `provider_trait` mock 测试证明确定性原子替换；它仅为基底、无生产触发。 |",
-        "| SC8 文档与 guard | 14.7, 14.13 | `phase14_provider_auth_docs`、生产 dispatcher TUI help、`json_mode`、RPC 与文本测试固定本地化真相、运行时发现、类型化修复提示以及更新的 `api-map` disposition。 |",
+        "| SC5 能力与 cache marker | 14.4, 14.11, 14.15 | `ModelInfo` 携带精确 wire/能力元数据，`anthropic_cache_markers` 通过 factory-built 具体 Anthropic stream 捕获能力门控的 marker 位置与 TTL。 |",
+        "| SC6 用量、元数据与费用 | 14.5, 14.12, 14.15, 14.17, 14.18 | 公开契约、pi catalog fixture、pricing-tier 测试、Provider fixture、费用测试与 session resume 保留严格子集和确定性 model pricing，且不重复计算。 |",
+        "| SC7 动态 refresh 与 api-map 基底 | 14.6, 14.16 | `ApiMappedProvider` 与自定义 TOML 测试证明带共享惰性鉴权的 checked multi-wire 派发；collection 测试保留确定性原子 refresh，且无生产触发。 |",
+        "| SC8 文档与 guard | 14.7, 14.13, 14.21 | 成对公共文档、rustdoc、TUI help、运行时修复测试、58-row 验收 manifest 与 workspace gate 固定当前 Provider/Auth 真相和 api-map 实现。 |",
     ];
     for row in exact_en_rows {
         assert!(
@@ -191,6 +217,36 @@ fn localized_docs_pin_exact_phase14_claims_and_acceptance_rows() {
         assert!(
             spec_zh.contains(row),
             "localized spec must retain exact row `{row}`"
+        );
+    }
+
+    for (path, content) in [
+        ("README.md", &root),
+        ("README.zh.md", &root_zh),
+        ("crates/opi-ai/README.md", &ai),
+        ("crates/opi-ai/README.zh.md", &ai_zh),
+        ("crates/opi-coding-agent/README.md", &coding),
+        ("crates/opi-coding-agent/README.zh.md", &coding_zh),
+        ("docs/opi-spec.md", &spec),
+        ("docs/opi-spec.zh.md", &spec_zh),
+    ] {
+        assert_absent(
+            path,
+            content,
+            &[
+                "`copilot:`",
+                "`codex:`",
+                "`/login copilot`",
+                "`/login codex`",
+                "Copilot OpenAI Chat compatibility profile",
+                "Codex Responses compatibility profile",
+                "Copilot-compatible OpenAI Chat",
+                "Codex-compatible OpenAI Responses",
+                "broad Copilot multi-wire parity",
+                "separate Codex provider type",
+                "`api-map`: `deferred-by-updated-design`",
+                "`api-map`：依据",
+            ],
         );
     }
 }
@@ -267,16 +323,16 @@ fn final_phase14_contracts_native_targets_and_api_map_are_truthful() {
         "docs/opi-spec.md",
         &spec,
         &[
-            "`api-map`: `deferred-by-updated-design` under `docs/superpowers/specs/2026-07-14-phase14-exit-remediation-design.md`.",
-            "New trigger: one catalog/provider identity must require at least two concrete wire families and explicit provider profiles must be inadequate. A separate reviewed design must then define model-to-wire selection, per-stream auth, capability routing, and the `ProviderCollection` boundary.",
+            "`api-map`: `implemented` by Task 14.16.",
+            "The public Rust `ApiMappedProvider` contract and `[providers.custom.<id>]` TOML contract route one provider catalog across checked concrete wires with one shared lazy credential source.",
         ],
     );
     assert_claims(
         "docs/opi-spec.zh.md",
         &spec_zh,
         &[
-            "`api-map`：依据 `docs/superpowers/specs/2026-07-14-phase14-exit-remediation-design.md` 记为 `deferred-by-updated-design`。",
-            "新触发条件：一个 catalog/provider identity 必须要求至少两个具体 wire family，且显式 provider profile 必须不足以表达；届时必须由单独审查的设计定义 model-to-wire selection、per-stream auth、capability routing 和 `ProviderCollection` boundary。",
+            "`api-map`：由 Task 14.16 标记为 `implemented`。",
+            "公开 Rust `ApiMappedProvider` 契约与 `[providers.custom.<id>]` TOML 契约让一个 provider catalog 通过 checked 具体 wire 路由，并共享一个惰性凭据 source。",
         ],
     );
 }

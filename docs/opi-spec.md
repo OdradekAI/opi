@@ -1658,7 +1658,7 @@ Phase 13 non-goals (documented as deferred, not current core):
 
 ### Phase 14 - Provider & Auth
 
-Status: implemented; remediation complete. Historical design:
+Status: implemented; pi-0.80.6 alignment complete. Historical design:
 `docs/superpowers/specs/2026-07-11-phase14-provider-auth-design.md`. Corrective design:
 `docs/superpowers/specs/2026-07-14-phase14-exit-remediation-design.md`.
 
@@ -1671,34 +1671,86 @@ credential-aware path:
 | `x86_64-apple-darwin`, `aarch64-apple-darwin` | `apple-native-keyring-store` | macOS Keychain Services |
 | `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu` | `zbus-secret-service-keyring-store` | Freedesktop Secret Service |
 
-Phase 14 promotes the Provider/Auth cluster to a real phase. It adds an
-OS-keychain credential store (`CredentialStore`/`Credential` in `opi-ai`;
-keychain/env impls and `CredentialResolver` in `opi-coding-agent`), OAuth for
-the three pi providers (Anthropic, GitHub Copilot, OpenAI Codex) through the
-`OAuthProvider` contract, with per-request auth re-resolution through an
-`Arc<dyn AuthResolver>` held only by the approved Anthropic Messages,
-Copilot-compatible Chat, and Codex-compatible Responses paths and implemented
-by the coding-agent-owned `AuthSource`, and
-additive `opi_ai::Request` enrichment (`timeout`,
-`extra_headers`, `cache_retention`, `session_id`), `Usage`/`CostBreakdown`
-cache-and-reasoning accounting, migration of the existing
-`opi_ai::registry::ModelCapabilities` into the single nested capability value
-on `ModelInfo` that drives Anthropic prompt-cache markers, and a dynamic
-`refresh_models` trait substrate. `cache_write_1h_tokens` is a subset of cache
-writes and `reasoning_tokens` is a subset of output; both are optional `u64`
-children so absent and explicitly reported zero remain distinct. The four-line
-`CostBreakdown` folds weighted one-hour writes into `cache_write_cost` and
-reasoning into `output_cost`, so cost and token totals do not double-count
-them. The first three Request knobs are public `opi-ai`
-substrate with no Phase 14 config/harness producer; only `session_id` traverses
-the production harness/agent path. Dynamic refresh has mock collection coverage but no
-Phase 14 production trigger and therefore closes no product acceptance path.
-The store uses `fs4` locking and `secrecy` at the boundary; there is no
-opi-managed plaintext credential file. Non-goals: per-call `apiKey` override
-(pi `ApiStreamOptions`), `onPayload`/`onResponse` streaming hooks,
-auto-relogin mid-stream, broad Copilot multi-wire catalog parity, a separate
-Codex provider type, and end-to-end `SecretString` through provider
-construction.
+Phase 14 promotes Provider/Auth to a production cluster. `opi-ai` owns the
+IO-free `CredentialStore`, `OAuthProvider`, `LoginPresenter`, `AuthResolver`,
+`WireApi`, `ModelInfo`, and `ApiMappedProvider` contracts.
+`opi-coding-agent` owns native-keychain IO, environment fallback, refresh and
+mutation locking, concrete login flows, provider construction, and the outer
+TUI interaction policy. The store uses `fs4` locking and `secrecy` at the
+boundary; there is no opi-managed plaintext credential file.
+
+The canonical OAuth provider and keychain account ids are `anthropic`,
+`github-copilot`, and `openai-codex`. The development ids `copilot` and
+`codex` have no runtime alias, config alias, or keychain migration; users with
+those development entries must explicitly log in again with the canonical id.
+
+Every `ModelInfo` declares one exact `WireApi`, a matching tagged
+compatibility value, capabilities, a thinking-level map, and optional pricing.
+Pricing tiers are deterministic: a tier applies only when input tokens are
+strictly greater than `input_tokens_above`. Public `ApiMappedProvider` exposes
+one provider id and catalog, validates exactly one concrete route for each
+catalog wire, and rejects unknown models, missing routes, and wire/compatibility
+mismatches before network IO. All routes for one mapped provider share one
+lazy `AuthResolver`.
+
+GitHub Copilot uses the canonical `github-copilot` identity and one audited
+static pi-0.80.6 catalog spanning `anthropic-messages`,
+`openai-completions`, and `openai-responses`. Each route re-resolves the
+current token and enterprise base URL immediately before HTTP. The static
+catalog is an intentional opi divergence from live account-entitlement and
+model-enable filtering: model listing reads no OAuth secret and makes no
+entitlement request.
+
+OpenAI Codex uses the canonical `openai-codex` identity and the dedicated
+`openai-codex-responses` provider at
+`https://chatgpt.com/backend-api/codex/responses`. It is not standard
+Responses with compatibility flags. Codex requires the persisted account id
+and emits its dedicated body, headers, session affinity, and SSE mapping.
+
+`[providers.custom.<id>]` exposes the mapped-provider contract to TOML. One
+provider owns one shared `api_key_env`, auth scheme, default `base_url`, proxy,
+and header set. A provider `api` is the model default; model `api` and
+`base_url` override provider defaults. Custom models may select only
+`anthropic-messages`, `openai-completions`, or `openai-responses`;
+`openai-codex-responses` is built-in-only. Thinking-map values are `true`
+(identity), `false` (unsupported), or a non-empty string (wire value).
+Compatibility values are wire-tagged. Models may declare base pricing and
+strictly ascending threshold tiers. Unknown/disabled wires, duplicate models,
+missing APIs/routes/base URLs, mismatched compatibility fields, invalid
+pricing, and provider-managed authentication headers fail during config load.
+The older `[providers.openai_compatible]` table remains a single-wire
+Completions shorthand and lowers into the same mapped construction path.
+
+Anthropic and OpenAI Codex Browser login use Browser PKCE with a loopback
+callback and manual-code/redirect-URL fallback. GitHub Copilot Device Code and
+OpenAI Codex Device Code call `present_device_code`, poll the device endpoint,
+and never call `await_manual_code`. `/login openai-codex` offers Browser as the
+default and Device Code as the headless option. `/login` and `/logout` run
+through the production dispatcher, concrete provider registry, locked store,
+and RAII terminal suspension/restoration.
+
+After a pre-output `CredentialNeeded`, a successful explicit login for the
+same provider makes the outer `run_interactive_tui` state machine retry the
+same pending turn exactly once without appending a duplicate user message.
+Different-provider login, cancellation, presenter/OAuth/store/terminal
+failure, and mid-stream `CredentialRevoked` perform no retry. JSON, RPC, and
+text modes report the canonical `provider_id` plus `/login <provider>`
+remediation and fail without constructing a presenter, opening a browser, or
+waiting for input.
+
+Phase 14 also adds `opi_ai::Request` enrichment (`timeout`,
+`extra_headers`, `cache_retention`, `session_id`), strict
+`Usage`/`CostBreakdown` cache-and-reasoning accounting, the single nested
+`ModelCapabilities` value that drives Anthropic prompt-cache markers, and the
+dynamic `refresh_models` trait substrate. `cache_write_1h_tokens` is a subset
+of cache writes and `reasoning_tokens` is a subset of output; both are optional
+`u64` children so absent and explicitly reported zero remain distinct. The
+four-line `CostBreakdown` folds weighted one-hour writes into
+`cache_write_cost` and reasoning into `output_cost`, so parent buckets are
+counted once. The first three Request knobs have no Phase 14 config/harness
+producer; only `session_id` traverses the production harness/agent path.
+Dynamic refresh has mock collection coverage but no Phase 14 production
+trigger and therefore closes no product acceptance path.
 
 Phase 14 explicitly retains eight boundaries: no opi-managed plaintext
 credential file; no auto-relogin mid-stream; no per-call credential
@@ -1717,26 +1769,28 @@ interactive turn; `CredentialNeeded` never starts login automatically. JSON,
 RPC, and text modes report `provider_id` plus `/login <provider>` remediation
 and fail without a presenter, browser, or input prompt.
 
-`api-map`: `deferred-by-updated-design` under
-`docs/superpowers/specs/2026-07-14-phase14-exit-remediation-design.md`. The old
-trigger has fired, but current explicit provider profiles remain sufficient.
-New trigger: one catalog/provider identity must require at least two concrete
-wire families and explicit provider profiles must be inadequate. A separate
-reviewed design must then define model-to-wire selection, per-stream auth,
-capability routing, and the `ProviderCollection` boundary.
+`api-map`: `implemented` by Task 14.16. The public Rust
+`ApiMappedProvider` contract and `[providers.custom.<id>]` TOML contract route
+one provider catalog across checked concrete wires with one shared lazy
+credential source. The offline pi-0.80.6 fixtures
+`github-copilot.models.json` and `openai-codex.models.json` pin catalog
+provenance, while `mapped_provider_dispatches_one_catalog_across_three_wires`,
+`mapped_routes_share_one_lazy_auth_resolver`,
+`custom_provider_api_and_base_url_precedence`, and
+`invalid_custom_provider_contracts_fail_at_load` pin mapped-provider behavior.
 
 Phase 14 acceptance trace:
 
 | Criterion | Owner | Production/evidence trace |
 |---|---:|---|
-| SC1 credential storage and probes | 14.1, 14.8 | Native-store selection plus async `credential_store`, `doctor_cli`, and `list_models` fake-backend tests exercise production startup, strict resolver errors, stored-only listing, and redacted probes. |
-| SC2 OAuth product flows | 14.2, 14.9 | `interactive_auth` drives the production `/login` and `/logout` dispatcher, locked persistence, terminal suspension/restoration, and all three reviewed OAuth profiles. |
-| SC3 live auth and session interaction | 14.2, 14.10 | Factory-built provider, `interactive_auth`, `json_mode`, RPC, and text tests cover lazy per-stream auth, changed credentials, bounded refresh, explicit same-turn retry, revocation, provider-id remediation, and no automatic login. |
+| SC1 credential storage and probes | 14.1, 14.8, 14.14 | The cfg-gated host-selection test enters the production native-store selector and proves constructor, default-store, and guard lifecycle; async store/doctor/listing tests retain strict redacted resolver behavior. |
+| SC2 OAuth product flows | 14.2, 14.9, 14.18, 14.19 | Concrete dispatcher tests cover Anthropic Browser PKCE, GitHub Copilot Device Code, and OpenAI Codex Browser/Device Code through locked persistence and exact terminal restoration. |
+| SC3 live auth and session interaction | 14.2, 14.10, 14.17, 14.18, 14.20 | Factory-built provider tests prove lazy auth and revocation on every approved wire; outer `run_interactive_tui` tests prove one same-provider retry and all negative gates; text/JSON/RPC never construct a presenter. |
 | SC4 Request and session affinity | 14.3 | `agent_loop_mock::session_id_reaches_every_request`, `session_runtime::phase14_session_affinity_tracks_new_resume_and_fork`, and `request_enrichment::session_affinity_wire_mappings` trace production propagation and exact positive/negative wire mappings. |
-| SC5 capabilities and cache markers | 14.4, 14.11 | `anthropic_cache_markers` captures capability-gated marker positions and TTL through a factory-built concrete Anthropic stream. |
-| SC6 usage and cost | 14.5, 14.12 | Public-contract, provider-fixture, cost, and session-resume tests preserve optional `u64` child subsets, reject malformed usage, and prevent double counting. |
-| SC7 dynamic refresh substrate | 14.6 | `provider_collection` and `provider_trait` mock tests prove deterministic atomic replacement; this is substrate-only with no production trigger. |
-| SC8 documentation and guards | 14.7, 14.13 | `phase14_provider_auth_docs`, production-dispatcher TUI help, `json_mode`, RPC, and text tests pin localized truth, runtime discovery, typed remediation, and the renewed `api-map` disposition. |
+| SC5 capabilities and cache markers | 14.4, 14.11, 14.15 | `ModelInfo` carries exact wire/capability metadata, and `anthropic_cache_markers` captures capability-gated marker positions and TTL through a factory-built concrete Anthropic stream. |
+| SC6 usage, metadata, and cost | 14.5, 14.12, 14.15, 14.17, 14.18 | Public contracts, pi catalog fixtures, pricing-tier tests, provider fixtures, cost tests, and session resume preserve strict subsets and deterministic model pricing without double counting. |
+| SC7 dynamic refresh and api-map substrate | 14.6, 14.16 | `ApiMappedProvider` and custom TOML tests prove checked multi-wire dispatch with shared lazy auth; collection tests retain deterministic atomic refresh, which has no production trigger. |
+| SC8 documentation and guards | 14.7, 14.13, 14.21 | Paired public docs, rustdoc, TUI help, runtime remediation tests, the 58-row acceptance manifest, and workspace gates pin current provider/auth truth and api-map implementation. |
 
 ### Phase 15 - Safety & Sandbox
 

@@ -209,11 +209,13 @@ pub trait OAuthProvider: Send + Sync {
 
 /// Object-safe login UX contract.
 ///
-/// The production `TuiLoginPresenter` lives in `opi-coding-agent`. Every OAuth
-/// flow supports manual paste (headless/SSH/no-browser) via
-/// [`await_manual_code`](Self::await_manual_code). RPC/JSON/non-interactive
-/// modes do not construct a presenter; their credential-needed handling is a
-/// typed diagnostic path, not an unused presenter implementation.
+/// The production `TuiLoginPresenter` lives in `opi-coding-agent`. Browser
+/// PKCE flows may race a loopback callback against
+/// [`await_manual_code`](Self::await_manual_code). GitHub Copilot and OpenAI
+/// Codex Device Code instead call
+/// [`present_device_code`](Self::present_device_code), poll their provider,
+/// and never await paste-back. RPC/JSON/non-interactive modes do not construct
+/// a presenter; their credential-needed handling is a typed diagnostic path.
 pub trait LoginPresenter: Send + Sync {
     /// Select one of the provider's supported login methods.
     ///
@@ -262,8 +264,10 @@ pub trait LoginPresenter: Send + Sync {
         Box::pin(std::future::pending())
     }
 
-    /// Await the user pasting the manual code (headless fallback). Returns the
-    /// pasted code.
+    /// Await the user pasting a Browser-PKCE manual code or redirect URL.
+    ///
+    /// Device-code providers must not call this method; they present the public
+    /// user code through [`present_device_code`](Self::present_device_code).
     fn await_manual_code<'a>(&'a self) -> BoxAuthFuture<'a, Result<String, ProviderError>>;
 
     /// Notify the user that login succeeded.

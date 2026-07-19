@@ -1,4 +1,9 @@
 //! Dedicated OpenAI Codex Responses wire.
+//!
+//! This subscription-specific provider is separate from standard
+//! [`crate::openai_responses::OpenAiResponsesProvider`]. It owns the
+//! `/codex/responses` body, account-id and managed-header contract, session
+//! affinity, error classification, and SSE mapping.
 
 use std::sync::Arc;
 
@@ -31,6 +36,11 @@ const MANAGED_HEADERS: &[&str] = &[
 ];
 
 /// OpenAI Codex provider using the subscription-specific Responses wire.
+///
+/// Authentication is resolved lazily for every stream and must include the
+/// non-secret ChatGPT account id. Provider-managed authorization, account,
+/// originator, beta, content, accept, and session headers are reserved from
+/// `Request::extra_headers`.
 pub struct OpenAiCodexResponsesProvider {
     auth: Arc<dyn AuthResolver>,
     base_url: String,

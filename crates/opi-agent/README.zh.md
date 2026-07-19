@@ -41,8 +41,9 @@ provider 上下文，但分支摘要会通过 `session_context::reconstruct_cont
 `opi-agent` 不执行凭据 IO，也不构造 OAuth provider。它会在真实主循环中保留类型化鉴权
 结果：不可重试的 `ProviderError::CredentialNeeded` 与
 `ProviderError::CredentialRevoked` 无需字符串匹配即可映射为对应 `AgentError` 变体和
-已脱敏诊断。交互产品可在用户发起的登录成功后重试同一个待处理轮次；非交互产品可携带
-可操作的 provider id 失败，而撤销凭据绝不会触发自动重新登录。
+已脱敏诊断。outer 交互产品只能在同一 provider 的显式登录成功后，对一个输出前的待处理轮次精确重试一次；非交互产品绝不提示，撤销凭据也绝不会触发自动重新登录。
+`opi-agent` 只保留类型化
+结果与现有 message buffer；coding-agent outer TUI 拥有登录和重试策略。
 
 Agent 还把不透明 `session_id` 从 `Agent` 经 `AgentLoopContext` 携带到每个 Provider
 `Request`。它不拥有持久化或 Provider 专用 header 映射：`opi-coding-agent` 提供活跃会话

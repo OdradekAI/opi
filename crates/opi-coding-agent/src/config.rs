@@ -107,7 +107,13 @@ pub struct ProvidersConfig {
     pub custom: BTreeMap<String, CustomProviderConfig>,
 }
 
-/// Fully validated custom mapped provider.
+/// Fully validated `[providers.custom.<id>]` mapped provider.
+///
+/// One provider shares one credential environment source and auth scheme
+/// across all routes. Provider API/base URL values are defaults; model values
+/// win. Config loading accepts only Anthropic Messages, OpenAI Completions,
+/// and OpenAI Responses custom wires, validates wire-tagged compatibility,
+/// thinking maps, pricing tiers, and rejects provider-managed auth headers.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CustomProviderConfig {
     pub id: String,

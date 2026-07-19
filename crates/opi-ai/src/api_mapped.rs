@@ -1,4 +1,9 @@
-//! One public provider catalog dispatched across concrete wire providers.
+//! One public provider identity and catalog dispatched across concrete wires.
+//!
+//! Construction validates the complete model-to-wire route graph. A mapped
+//! provider delegates auth to its route providers; callers should construct
+//! those routes with the same lazy [`crate::AuthResolver`] so every stream
+//! observes the current shared credential.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -8,8 +13,14 @@ use crate::credential::BoxAuthFuture;
 use crate::model_info::{ModelInfoError, WireApi};
 use crate::provider::{EventStream, ModelInfo, Provider, ProviderError, Request};
 
-/// A provider that exposes one model identity while delegating to one route
-/// per wire API used by its catalog.
+/// A provider that exposes one provider identity/catalog while delegating to
+/// one route per wire API used by its catalog.
+///
+/// [`try_new`](Self::try_new) rejects duplicate models/routes, missing or
+/// unexpected routes, hidden provider ids, catalog mismatches, and
+/// wire/compatibility mismatches before any request can reach the network.
+/// [`Provider::stream`] then resolves the requested model in this public
+/// catalog and delegates to its exact [`WireApi`] route.
 pub struct ApiMappedProvider {
     id: String,
     models: Vec<ModelInfo>,
@@ -28,7 +39,11 @@ impl std::fmt::Debug for ApiMappedProvider {
 }
 
 impl ApiMappedProvider {
-    /// Validate a catalog and its concrete routes before construction.
+    /// Validate a complete catalog and its concrete routes before construction.
+    ///
+    /// Each route must expose the same provider id and exactly the catalog
+    /// subset for its wire. Static mapped providers keep model refresh
+    /// substrate disabled by returning `Ok(None)`.
     pub fn try_new<I>(
         id: impl Into<String>,
         models: Vec<ModelInfo>,

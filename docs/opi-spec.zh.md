@@ -1381,7 +1381,7 @@ Phase 13 交接：会话工作可以依赖经由共享 `opi-ai` 类型传递的 
 
 ### 第十四阶段 - Provider & Auth
 
-状态：已实现；修复已完成。历史设计：
+状态：已实现；pi-0.80.6 对齐已完成。历史设计：
 `docs/superpowers/specs/2026-07-11-phase14-provider-auth-design.md`。修复设计：
 `docs/superpowers/specs/2026-07-14-phase14-exit-remediation-design.md`。
 
@@ -1393,11 +1393,67 @@ Phase 13 交接：会话工作可以依赖经由共享 `opi-ai` 类型传递的 
 | `x86_64-apple-darwin`, `aarch64-apple-darwin` | `apple-native-keyring-store` | macOS Keychain Services |
 | `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu` | `zbus-secret-service-keyring-store` | Freedesktop Secret Service |
 
-第十四阶段把 Provider/Auth 集群提升为正式阶段。它增加 OS keychain 凭据存储（`CredentialStore`/`Credential` 在 `opi-ai`；keychain/env 实现与 `CredentialResolver` 在 `opi-coding-agent`）、通过 `OAuthProvider` 契约实现三个 pi provider（Anthropic、GitHub Copilot、OpenAI Codex）的 OAuth（只有获批的 Anthropic Messages、Copilot-compatible Chat 与 Codex-compatible Responses 路径持有 `Arc<dyn AuthResolver>`，由 coding-agent 所有的 `AuthSource` 实现按请求重新解析鉴权），以及对 `opi_ai::Request` 的增补丰富（`timeout`、`extra_headers`、`cache_retention`、`session_id`）、`Usage`/`CostBreakdown` 的 cache 与 reasoning 记账、把现有 `opi_ai::registry::ModelCapabilities` 迁移为 `ModelInfo` 上唯一的嵌套能力值以驱动 Anthropic prompt-cache 标记，以及动态 `refresh_models` trait 基底。`cache_write_1h_tokens` 是 cache-write 的子集，`reasoning_tokens` 是 output 的子集，因此成本和 token 总数不会重复计算。前三个 Request 参数在第十四阶段只是公开的 `opi-ai` 基底，不新增 config/harness 生产端；只有 `session_id` 贯穿真实的 harness/agent 路径。动态 refresh 只有 mock collection 覆盖，第十四阶段不增加生产触发点，也不以它关闭产品验收路径。该存储使用 `fs4` 锁定并在边界使用 `secrecy`；不存在 opi 管理的明文凭据文件。非目标：按调用 `apiKey` 覆盖（pi `ApiStreamOptions`）、`onPayload`/`onResponse` 流式钩子、流式过程中自动重新登录、宽泛的 Copilot 多 wire catalog 对等、独立 Codex provider 类型，以及贯穿 provider 构造的端到端 `SecretString`。
+第十四阶段把 Provider/Auth 提升为生产集群。`opi-ai` 拥有无 IO 的
+`CredentialStore`、`OAuthProvider`、`LoginPresenter`、`AuthResolver`、`WireApi`、
+`ModelInfo` 与 `ApiMappedProvider` 契约。`opi-coding-agent` 拥有原生 keychain IO、
+环境变量回退、refresh 与 mutation locking、具体登录 flow、Provider 构造和 outer TUI
+交互策略。store 使用 `fs4` 锁定，并在边界使用 `secrecy`；不存在 opi 管理的明文凭据文件。
 
-`cache_write_1h_tokens` 与 `reasoning_tokens` 都是可选 `u64` 子字段，因此能区分
-缺失与显式上报的零。四行 `CostBreakdown` 把加权的一小时 write 折算进
-`cache_write_cost`，把 reasoning 保留在 `output_cost`，总量只计一次每个父 bucket。
+规范 OAuth provider 与 keychain account id 是 `anthropic`、`github-copilot` 和
+`openai-codex`。开发期 id `copilot` 与 `codex` 没有 runtime alias、config alias 或
+keychain migration；持有这些开发期条目的用户必须使用规范 id 显式重新登录。
+
+每个 `ModelInfo` 声明一个精确 `WireApi`、匹配且带 tag 的 compatibility 值、capabilities、
+thinking-level map 与可选 pricing。pricing tier 是确定性的：只有 input token 严格大于
+`input_tokens_above` 时才应用 tier。公开 `ApiMappedProvider` 暴露一个 provider id 与
+catalog，为每个 catalog wire 校验精确一个具体 route，并在网络 IO 前拒绝未知 model、
+缺少 route 与 wire/compatibility 不匹配。一个 mapped provider 的所有 route 共享一个
+惰性 `AuthResolver`。
+
+GitHub Copilot 使用规范 `github-copilot` identity，以及一个经审计的静态 pi-0.80.6
+catalog；该 catalog 覆盖 `anthropic-messages`、`openai-completions` 与
+`openai-responses`。每条 route 都会在 HTTP 前重新解析当前 token 与 enterprise base URL。
+静态 catalog 是 opi 相对在线 account entitlement/model-enable filtering 的有意差异：
+模型列表既不读取 OAuth secret，也不发出 entitlement 请求。
+
+OpenAI Codex 使用规范 `openai-codex` identity，以及
+`https://chatgpt.com/backend-api/codex/responses` 上的专用
+`openai-codex-responses` provider。它不是带 compatibility flag 的标准 Responses。
+Codex 要求已持久化的 account id，并发出专用 body、header、session affinity 与 SSE mapping。
+
+`[providers.custom.<id>]` 向 TOML 暴露 mapped-provider 契约。一个 provider 拥有一个共享
+`api_key_env`、auth scheme、默认 `base_url`、proxy 与 header 集合。provider `api` 是
+model 默认值；model `api` 与 `base_url` 覆盖 provider 默认值。自定义 model 只能选择
+`anthropic-messages`、`openai-completions` 或 `openai-responses`；
+`openai-codex-responses` 仅供内置使用。thinking-map 值是 `true`（identity）、
+`false`（unsupported）或非空 string（wire 值）。compatibility 值按 wire 加 tag。
+model 可以声明 base pricing 与严格递增的 threshold tier。未知/disabled wire、重复 model、
+缺少 API/route/base URL、compatibility 字段不匹配、非法 pricing 与 Provider 管理的鉴权
+header 都会在 config load 时失败。旧 `[providers.openai_compatible]` table 保持为单 wire
+Completions shorthand，并降低到同一 mapped 构造路径。
+
+Anthropic 与 OpenAI Codex Browser 登录使用带 loopback callback 和
+manual-code/redirect-URL fallback 的 Browser PKCE。GitHub Copilot Device Code 与
+OpenAI Codex Device Code 调用 `present_device_code`，轮询 device endpoint，绝不调用
+`await_manual_code`。`/login openai-codex` 以 Browser 为默认项，以 Device Code 为
+headless 选项。`/login` 与 `/logout` 贯穿生产 dispatcher、具体 provider registry、
+带锁 store 和 RAII 终端暂停/恢复。
+
+在输出开始前收到 `CredentialNeeded` 后，只有同一 provider 的显式登录成功，outer
+`run_interactive_tui` 状态机才会对同一待处理轮次精确重试一次，且不追加重复 user message。
+不同 provider 登录、取消、presenter/OAuth/store/terminal 失败以及流中
+`CredentialRevoked` 都不重试。JSON、RPC 与文本模式报告规范 `provider_id` 与
+`/login <provider>` 修复提示后失败，不构造 presenter、不打开浏览器，也不等待输入。
+
+第十四阶段还增加 `opi_ai::Request` 扩充（`timeout`、`extra_headers`、
+`cache_retention`、`session_id`）、严格的 `Usage`/`CostBreakdown` cache/reasoning
+记账、驱动 Anthropic prompt-cache marker 的唯一嵌套 `ModelCapabilities`，以及动态
+`refresh_models` trait 基底。`cache_write_1h_tokens` 是 cache write 的子集，
+`reasoning_tokens` 是 output 的子集；二者都是可选 `u64` 子字段，因此能区分缺失与显式
+上报的零。四行 `CostBreakdown` 把加权的一小时 write 折算进 `cache_write_cost`，
+把 reasoning 保留在 `output_cost`，每个父 bucket 只计一次。前三个 Request 参数在
+第十四阶段不增加 config/harness 生产端；只有 `session_id` 贯穿真实 harness/agent 路径。
+动态 refresh 只有 mock collection 覆盖，第十四阶段不增加生产触发点，也不以它关闭产品验收路径。
 
 第十四阶段明确保留八条边界：不创建 opi 管理的明文凭据文件；不在 stream 中途自动重新登录；不允许按调用覆盖凭据（`apiKey`/`env`）或 Provider 管理的鉴权 header（`Request::extra_headers` 只可附加非保留 transport header）；不增加 `onPayload`/`onResponse` 流式钩子；不在 `Request` 上增加 `maxRetries`/`maxRetryDelay`；不进行贯穿 Provider 构造的端到端 `SecretString` 迁移；不增加 Anthropic、GitHub Copilot 与 OpenAI Codex 之外的 OAuth Provider；不修改 session schema 或 context reconstruction。TUI 改动仅限审查过的 `/login`、`/logout`、`CredentialNeeded` presenter，以及登录期间暂停 raw/alternate-screen。
 
@@ -1405,22 +1461,23 @@ Phase 13 交接：会话工作可以依赖经由共享 `opi-ai` 类型传递的 
 `CredentialNeeded` 绝不自动启动登录。JSON、RPC 和文本模式报告 `provider_id` 与
 `/login <provider>` 修复提示，然后在不启动 presenter、浏览器或输入提示的情况下失败。
 
-`api-map`：依据 `docs/superpowers/specs/2026-07-14-phase14-exit-remediation-design.md`
-记为 `deferred-by-updated-design`。旧触发条件已发生，但当前的显式 provider profile 仍然足够。
-新触发条件：一个 catalog/provider identity 必须要求至少两个具体 wire family，且显式 provider profile 必须不足以表达；届时必须由单独审查的设计定义 model-to-wire selection、per-stream auth、capability routing 和 `ProviderCollection` boundary。
+`api-map`：由 Task 14.16 标记为 `implemented`。公开 Rust
+`ApiMappedProvider` 契约与 `[providers.custom.<id>]` TOML 契约让一个 provider
+catalog 通过 checked 具体 wire 路由，并共享一个惰性凭据 source。
+离线 pi-0.80.6 fixture `github-copilot.models.json` 与 `openai-codex.models.json` 固定 catalog provenance；`mapped_provider_dispatches_one_catalog_across_three_wires`、`mapped_routes_share_one_lazy_auth_resolver`、`custom_provider_api_and_base_url_precedence` 与 `invalid_custom_provider_contracts_fail_at_load` 固定 mapped-provider 行为。
 
 第十四阶段验收追踪：
 
 | 条件 | Owner | 生产/证据追踪 |
 |---|---:|---|
-| SC1 凭据存储与 probe | 14.1, 14.8 | 原生 store 选择以及异步 `credential_store`、`doctor_cli` 与 `list_models` fake-backend 测试覆盖生产启动、严格 resolver 错误、仅已存储凭据的模型列表和脱敏 probe。 |
-| SC2 OAuth 产品 flow | 14.2, 14.9 | `interactive_auth` 驱动生产 `/login` 与 `/logout` dispatcher、带锁持久化、终端暂停/恢复以及三个经审查 OAuth profile。 |
-| SC3 真实鉴权与会话交互 | 14.2, 14.10 | Factory-built Provider、`interactive_auth`、`json_mode`、RPC 与文本测试覆盖惰性按 stream 鉴权、凭据变更、有界 refresh、显式同轮重试、撤销、provider-id 修复提示和禁止自动登录。 |
+| SC1 凭据存储与 probe | 14.1, 14.8, 14.14 | cfg-gated host-selection 测试进入生产原生 store selector，证明 constructor、default-store 与 guard 生命周期；异步 store/doctor/listing 测试保留严格且脱敏的 resolver 行为。 |
+| SC2 OAuth 产品 flow | 14.2, 14.9, 14.18, 14.19 | 具体 dispatcher 测试覆盖 Anthropic Browser PKCE、GitHub Copilot Device Code 与 OpenAI Codex Browser/Device Code，并贯穿带锁持久化和精确终端恢复。 |
+| SC3 真实鉴权与会话交互 | 14.2, 14.10, 14.17, 14.18, 14.20 | Factory-built Provider 测试证明每条获批 wire 的惰性鉴权与撤销；outer `run_interactive_tui` 测试证明一次同 provider 重试和全部负向 gate；文本/JSON/RPC 绝不构造 presenter。 |
 | SC4 Request 与会话亲和 | 14.3 | `agent_loop_mock::session_id_reaches_every_request`、`session_runtime::phase14_session_affinity_tracks_new_resume_and_fork` 与 `request_enrichment::session_affinity_wire_mappings` 追踪生产传播和精确的正负 wire 映射。 |
-| SC5 能力与 cache marker | 14.4, 14.11 | `anthropic_cache_markers` 通过 factory-built 具体 Anthropic stream 捕获能力门控的 marker 位置与 TTL。 |
-| SC6 用量与费用 | 14.5, 14.12 | 公开契约、Provider fixture、费用和 session-resume 测试保留可选 `u64` 子集、拒绝非法用量并防止重复计算。 |
-| SC7 动态 refresh 基底 | 14.6 | `provider_collection` 与 `provider_trait` mock 测试证明确定性原子替换；它仅为基底、无生产触发。 |
-| SC8 文档与 guard | 14.7, 14.13 | `phase14_provider_auth_docs`、生产 dispatcher TUI help、`json_mode`、RPC 与文本测试固定本地化真相、运行时发现、类型化修复提示以及更新的 `api-map` disposition。 |
+| SC5 能力与 cache marker | 14.4, 14.11, 14.15 | `ModelInfo` 携带精确 wire/能力元数据，`anthropic_cache_markers` 通过 factory-built 具体 Anthropic stream 捕获能力门控的 marker 位置与 TTL。 |
+| SC6 用量、元数据与费用 | 14.5, 14.12, 14.15, 14.17, 14.18 | 公开契约、pi catalog fixture、pricing-tier 测试、Provider fixture、费用测试与 session resume 保留严格子集和确定性 model pricing，且不重复计算。 |
+| SC7 动态 refresh 与 api-map 基底 | 14.6, 14.16 | `ApiMappedProvider` 与自定义 TOML 测试证明带共享惰性鉴权的 checked multi-wire 派发；collection 测试保留确定性原子 refresh，且无生产触发。 |
+| SC8 文档与 guard | 14.7, 14.13, 14.21 | 成对公共文档、rustdoc、TUI help、运行时修复测试、58-row 验收 manifest 与 workspace gate 固定当前 Provider/Auth 真相和 api-map 实现。 |
 
 ### 第十五阶段 - Safety & Sandbox
 

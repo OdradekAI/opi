@@ -73,7 +73,9 @@ opi --allow-mutating "更新 README。"
 
 ```text
 /login anthropic
-/logout anthropic
+/login github-copilot
+/login openai-codex
+/logout <provider>
 ```
 
 ## CLI 命令与参数
@@ -126,11 +128,39 @@ opi --allow-mutating "更新 README。"
 | `bedrock:` | `BedrockProvider` | AWS 环境变量或共享 AWS profile/config |
 | `azure:` | `AzureOpenAIProvider` | `AZURE_OPENAI_API_KEY`；endpoint/deployments 在配置中 |
 | `vertex:` | `VertexProvider` | `VERTEX_ACCESS_TOKEN`；project/location 在配置中 |
-| `copilot:` | 显式 GitHub Copilot OpenAI Chat 兼容 profile | 通过 `/login copilot` 写入 OS keychain |
-| `codex:` | 显式 OpenAI Codex Responses 兼容 profile | 通过 `/login codex` 写入 OS keychain |
+| `github-copilot:` | 一个经审计的静态 catalog，映射到 Anthropic Messages、OpenAI Completions/Chat 与 OpenAI Responses | 通过 `/login github-copilot` 写入 OS keychain |
+| `openai-codex:` | 专用 `OpenAiCodexResponsesProvider` | 通过 `/login openai-codex` 写入 OS keychain |
 | 已配置 profile | OpenAI-compatible profile | profile 自己的 `api_key_env`、`base_url` 和模型列表 |
 
 Provider 凭据环境变量名、base URL、模型列表和代理都可以在配置中覆盖。
+
+### 自定义 mapped provider
+
+`[providers.custom.<id>]` 定义一个 mapped provider，并让所有 route 共享一个凭据
+source 与 auth scheme；provider `api` 和 `base_url` 是默认值，model 值优先。
+
+```toml
+[providers.custom.acme]
+name = "Acme"
+base_url = "https://api.acme.example"
+api_key_env = "ACME_API_KEY"
+auth_scheme = "bearer"
+api = "openai-completions"
+
+[[providers.custom.acme.models]]
+id = "chat"
+display_name = "Acme Chat"
+context_window = 128000
+max_output_tokens = 16384
+thinking_level_map = { low = true, high = "high", max = false }
+```
+
+自定义 model 只能使用 `anthropic-messages`、`openai-completions` 或 `openai-responses`；thinking map 用 `true` 表示 identity、`false` 表示 unsupported，或用 string 表示 wire 值。
+model `api` 与 `base_url` 覆盖 provider 默认值。model 还可
+声明 capabilities、按 wire 加 tag 的 `compat`、base pricing 与严格递增的
+`pricing.tiers`。兼容元数据按 wire 加 tag；只有 input token 严格大于
+`input_tokens_above` 时才应用 pricing tier；Provider 管理的鉴权 header 保持保留。
+subscription-only `openai-codex-responses` wire 不能由自定义 TOML 选择。
 
 ## 凭据 Store 与 OAuth
 
@@ -145,18 +175,22 @@ refresh。持久化 API key 和 OAuth envelope 使用 OS keychain；backend 不�
 Credential Manager、在 macOS 上安装 macOS Keychain Services，或在 Linux 上安装
 Freedesktop Secret Service。
 
-`/login <provider>` 与 `/logout <provider>` 支持 Anthropic PKCE、GitHub Copilot
-device-code 和 OpenAI Codex PKCE。无浏览器的 Anthropic/Codex flow 可手动粘贴 code；
-Copilot 显示 device code。Copilot 使用显式 OpenAI Chat 兼容 profile，Codex 使用现有
-Responses 实现的 `/codex/responses`；这不是宽泛 Copilot 多 wire 对等，也不是独立 Codex
-provider 类型。没有已存储凭据时，`ANTHROPIC_OAUTH_TOKEN` 是优先于
-`ANTHROPIC_API_KEY` 的不可 refresh bearer source。
+`github-copilot` 使用一个经审计的静态 pi-0.80.6 catalog 与一个惰性已存储凭据，
+并路由到 Anthropic Messages、OpenAI Completions/Chat 与 OpenAI Responses。模型列表
+有意不调用在线 account entitlement/model-enable endpoint。`openai-codex` 在
+`/codex/responses` 使用专用 `openai-codex-responses` provider。
 
-只有三个获批的 Anthropic、Copilot 与 Codex Provider stream 会重新解析鉴权。只有成功的显式
-`/login <provider>` 才能重试待处理的交互轮次；`CredentialNeeded` 绝不自动启动登录。
-非交互、JSON 与 RPC 模式不提示：它们报告
-provider 和 `/login anthropic` 形式的修复提示后失败。`CredentialRevoked` 不可重试，
-绝不会造成自动重新登录。
+`/login openai-codex` 提供 Browser（默认）和 Device Code。Anthropic 与 Codex
+Browser 是带 callback/manual-paste fallback 的 PKCE flow。GitHub Copilot 与 Codex
+Device Code 调用 `present_device_code`，轮询 provider endpoint，绝不调用
+`await_manual_code`。持久化凭据使用原生 OS keychain。开发期 id `copilot` 与 `codex`
+没有 alias 或凭据迁移；这些开发期条目的用户必须使用规范 id 重新登录。没有已存储凭据时，
+`ANTHROPIC_OAUTH_TOKEN` 是优先于 `ANTHROPIC_API_KEY` 的不可 refresh bearer source。
+
+在输出开始前收到 `CredentialNeeded` 后，只有同一 provider 的显式登录成功，outer TUI
+才会对同一待处理轮次精确重试一次，且不追加重复 user message。
+非交互、JSON 与 RPC 模式既不提示也不构造 presenter：它们报告规范 provider 与 `/login <provider>` 修复提示后失败。
+`CredentialRevoked` 不可重试，绝不会造成自动重新登录。
 
 第十四阶段还把活跃 `session_id` 从 `CodingHarness` 经 Agent 主循环带入审查过的 Provider
 cache-affinity 映射。其它新 `Request` 标量（`timeout`、`extra_headers`、
@@ -405,7 +439,8 @@ metadata 和启动诊断。
 - 生产级子 Agent、permission gate、plan/todo 和 MCP 工作流是 examples/package
   模式，不是内置核心工作流。
 - Anthropic、GitHub Copilot 与 OpenAI Codex 之外的 OAuth provider 仍被推迟。其它推迟的
-  产品决策包括宽泛 Copilot 多 wire 对等、大范围新增 first-class provider 列表（兼容
+  产品决策包括经审计的静态 pi-0.80.6 Copilot/Codex snapshot 之外的 provider catalog、
+  大范围新增 first-class provider 列表（兼容
   provider 保持为 config-driven 的 OpenAI-compatible profile）、图像生成（图片支持仅为输入侧）、
   浏览器使用、面向 package 的 provider 流式 adapter 协议、默认测试中的付费实时
   provider 调用，以及复制 pi 的 provider 专用配置文件格式。按 provider 的代理配置

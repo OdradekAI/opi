@@ -56,7 +56,9 @@ opi
 
 ```text
 /login anthropic
-/logout anthropic
+/login github-copilot
+/login openai-codex
+/logout <provider>
 ```
 
 运行单次提示词：
@@ -162,8 +164,8 @@ Provider 支持在 `opi-ai` 中实现，并接入 `opi-coding-agent`。
 | `bedrock:` | AWS Bedrock Converse streaming | AWS 环境变量或共享 AWS 配置 |
 | `azure:` | Azure OpenAI deployment | `AZURE_OPENAI_API_KEY` 加 endpoint 配置 |
 | `vertex:` | Google Vertex AI Gemini streaming | `VERTEX_ACCESS_TOKEN` 加 project/location 配置 |
-| `copilot:` | GitHub Copilot OpenAI Chat 兼容 profile | 通过 `/login copilot` 写入 OS keychain |
-| `codex:` | OpenAI Codex Responses 兼容 profile | 通过 `/login codex` 写入 OS keychain |
+| `github-copilot:` | 一个经审计的静态 catalog，路由到 Anthropic Messages、OpenAI Completions/Chat 与 OpenAI Responses | 通过 `/login github-copilot` 写入 OS keychain |
+| `openai-codex:` | 专用 OpenAI Codex Responses wire | 通过 `/login openai-codex` 写入 OS keychain |
 | 已配置 profile | OpenAI-compatible Chat Completions profile | profile 自己的 `api_key_env` |
 
 兼容 OpenAI 风格的服务通常应通过已配置 profile 接入，而不是新增 first-class provider
@@ -182,13 +184,22 @@ base URL。当 usage 或定价未知时，会省略费用汇总。
 分别使用 Windows Credential Manager、macOS Keychain Services 和
 Freedesktop Secret Service。
 
-交互式 `/login <provider>` 与 `/logout <provider>` 支持 Anthropic PKCE、GitHub
-Copilot device-code 和 OpenAI Codex PKCE。这是精确的鉴权与兼容 profile 覆盖，不是
-宽泛的 Copilot 多 wire 对等，也不是独立的 Codex provider 类型。只有用户显式执行且成功的
-`/login <provider>` 才会重试待处理的交互轮次；`CredentialNeeded` 绝不自动启动登录。
-非交互、JSON 和 RPC 模式只报告
-provider 与 `/login <provider>` 修复提示，并在不启动 OAuth 的情况下失败。
-`CredentialRevoked` 不可重试；opi 不会在流中自动重新登录。
+GitHub Copilot 使用规范 `github-copilot` identity，以及一个经审计的静态
+pi-0.80.6 catalog；该 catalog 覆盖 Anthropic Messages、OpenAI Completions/Chat 与
+OpenAI Responses route。这有意不同于在线 account entitlement filtering：
+`--list-models` 读取静态 catalog，不读取 OAuth secret，也不请求 entitlement/model-enable
+endpoint。
+
+OpenAI Codex 使用规范 `openai-codex` identity、专用
+`openai-codex-responses` wire，以及 Browser（默认）和 Device Code 登录。
+只有 Browser PKCE flow 会等待手动 code 或 callback；GitHub Copilot 与 OpenAI Codex
+Device Code 调用 `present_device_code`，绝不调用 `await_manual_code`。
+
+持久化凭据使用原生 OS keychain；开发期 id `copilot` 与 `codex` 没有 alias 或凭据迁移，因此受影响用户必须使用规范 id 重新登录。
+在输出开始前收到 `CredentialNeeded` 后，只有同一 provider 的显式登录成功，outer TUI 才会对同一待处理轮次精确重试一次，且不追加重复 user message。
+非交互文本、JSON 与 RPC 模式会输出规范 provider 修复提示并失败，绝不构造 `LoginPresenter`、打开浏览器或等待输入。
+`CredentialRevoked` 不可重试；
+opi 不会在流中自动重新登录。
 
 `Request` 现在携带 `timeout`、`extra_headers`、`CacheRetention` 和 `session_id`。
 本阶段只有 `session_id` 具有生产 harness 生成方；provider 按审查过的 prompt-cache /
@@ -273,8 +284,9 @@ RPC 命令包括 `prompt`、`continue`、`steer`、`follow_up`、`abort`、`set_
   `opi doctor` 默认只做本地、无网络检查，`trace` 需要显式启用。
 - 生产级子 Agent、permission gate、plan/todo 和 MCP 工作流是 examples/package
   模式，不是内置核心工作流。
-- Anthropic、GitHub Copilot 与 OpenAI Codex 之外的 OAuth provider、宽泛 Copilot
-  catalog 对等、图像生成、浏览器使用、面向 package 的 provider 流式 adapter 协议、
+- Anthropic、GitHub Copilot 与 OpenAI Codex 之外的 OAuth provider、两个经审计
+  pi-0.80.6 snapshot 之外的 provider catalog、图像生成、浏览器自动化、面向 package
+  的 provider 流式 adapter 协议、
   默认测试中的付费实时 provider 调用，以及复制 pi 的 provider 专用配置文件格式仍被推迟。
 - 不支持从任意 extension 路径动态加载 Rust 插件。
 

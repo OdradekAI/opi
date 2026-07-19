@@ -48,10 +48,11 @@ It depends on `opi-ai` for provider and message types. It does not implement the
 does preserve typed auth outcomes across the live loop: non-retryable
 `ProviderError::CredentialNeeded` and `ProviderError::CredentialRevoked` map
 to matching `AgentError` variants and redacted diagnostics without string
-matching. The interactive product may retry the same pending turn after a
-successful user-initiated login; non-interactive products can fail with an
-actionable provider id, and revoked credentials never trigger automatic
-re-login.
+matching. The outer interactive product may retry one pre-output pending turn exactly
+once after a successful explicit login for the same provider; non-interactive
+products never prompt, and revoked credentials never trigger automatic
+re-login. `opi-agent` only preserves the typed outcomes and existing message
+buffer; the coding-agent outer TUI owns login and retry policy.
 
 The agent also carries an opaque `session_id` from `Agent` through
 `AgentLoopContext` into every provider `Request`. It owns no persistence or
