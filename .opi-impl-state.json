@@ -6,7 +6,7 @@
     "docs/superpowers/specs/2026-07-14-phase14-exit-remediation-design.md"
   ],
   "spec_files_sha256": {
-    "docs/opi-spec.md": "3b0e3765b345b16d621452477cfcddbdec78f9af51ccbbd2f03c4d59721f86f4",
+    "docs/opi-spec.md": "22ba587d4110e455902bcfe312245b1e453d14ca215cedbdad4a451cb4ef3c42",
     "docs/superpowers/specs/2026-07-11-phase14-provider-auth-design.md": "2af6b21fed97dff563d089d872cc9faed713bfdc83b83ef0628602d1d1e66ff4",
     "docs/superpowers/specs/2026-07-14-phase14-exit-remediation-design.md": "fe4c63c6de1a480c6d0d62623a2f5328b97cbb9b6a7e9cdf7e886059753b7896"
   },
@@ -5401,7 +5401,7 @@
       "definition_of_done": "English/Chinese public documentation, rustdoc, CLI/TUI help, and CHANGELOG Unreleased claims describe canonical mapped GitHub Copilot, dedicated dual-login OpenAI Codex, native-keychain no-migration behavior, and api-map as implemented. The documentation guard, focused and historical acceptance manifests, workspace gates, rebuilt Phase F evidence, artifact audit, and five-lens evaluator prove SC1-SC8 with no unauthorized deferred residual or archive commit.",
       "definition_source": "draft-reviewed",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "14.14",
         "14.17",
@@ -5424,6 +5424,16 @@
           "field": "forbidden_scope",
           "reason": "OAuth work remains limited to Anthropic, GitHub Copilot, and OpenAI Codex; this task must not add another OAuth provider.",
           "source": "docs/superpowers/specs/2026-07-11-phase14-provider-auth-design.md#Non-Goals"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "User-approved ownership expansion after the workspace all-target gate proved that the Task 14.21 docs/opi-spec.md update mechanically requires refreshing the Phase 4 snapshot hash consumed by phase4_ledger_spec_hash_matches_current_spec.",
+          "source": "crates/opi-coding-agent/tests/phase4_ledger.rs reads docs/snapshots/phase4/opi-impl-state.json and compares its docs/opi-spec.md hash to the current LF-normalized specification; historical spec-changing commits update this snapshot hash."
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "The same user-approved snapshot-hash expansion applies to the paired Phase 6 guard, which the resumed workspace all-target gate proved also consumes the current LF-normalized docs/opi-spec.md hash.",
+          "source": "crates/opi-coding-agent/tests/phase6_ledger.rs reads docs/snapshots/phase6/opi-impl-state.json and compares its docs/opi-spec.md hash to the current specification and the Phase 4 snapshot."
         }
       ],
       "tier": "workspace",
@@ -5461,7 +5471,7 @@
             "opi_coding_agent::runner::NonInteractiveRunner",
             "opi_coding_agent::rpc::run_rpc"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "phase14-acceptance-manifest-and-workspace-gates",
@@ -5479,7 +5489,7 @@
             "opi_coding_agent::interactive::run_interactive_tui",
             "opi_coding_agent::interactive_auth::dispatch_auth_command"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "phase14-phase-f-rebuild",
@@ -5495,7 +5505,7 @@
             "opi_coding_agent::interactive_auth::dispatch_auth_command",
             "opi_coding_agent::interactive::run_interactive_tui"
           ],
-          "status": "open"
+          "status": "met"
         }
       ],
       "production_call_sites": [
@@ -5506,9 +5516,9 @@
         "opi_coding_agent::rpc::run_rpc"
       ],
       "substrate_only": false,
-      "iteration_count": 0,
+      "iteration_count": 2,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "a0ff815f9f022e00952045200b320923f3c20a21",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "README.md",
@@ -5556,13 +5566,158 @@
         "crates/opi-coding-agent/src/pricing.rs",
         "crates/opi-coding-agent/src/adapter_extension.rs",
         "crates/opi-coding-agent/src/lib.rs",
-        "target/opi-artifacts/phase14-phase-exit/**"
+        "target/opi-artifacts/phase14-phase-exit/**",
+        "docs/snapshots/phase4/opi-impl-state.json",
+        "docs/snapshots/phase6/opi-impl-state.json"
       ],
-      "last_attempt": null,
-      "verified_at_commit": null,
-      "evidence": null,
+      "last_attempt": {
+        "attempt": 2,
+        "started_at": "2026-07-19T00:18:39.866Z",
+        "ended_at": "2026-07-19T00:52:40.192Z",
+        "outcome": "passing",
+        "failing_gate": null,
+        "touched_files": [
+          "CHANGELOG.md",
+          "README.md",
+          "README.zh.md",
+          "crates/opi-agent/README.md",
+          "crates/opi-agent/README.zh.md",
+          "crates/opi-ai/README.md",
+          "crates/opi-ai/README.zh.md",
+          "crates/opi-ai/src/api_mapped.rs",
+          "crates/opi-ai/src/auth.rs",
+          "crates/opi-ai/src/model_info.rs",
+          "crates/opi-ai/src/openai_codex_responses.rs",
+          "crates/opi-coding-agent/README.md",
+          "crates/opi-coding-agent/README.zh.md",
+          "crates/opi-coding-agent/src/config.rs",
+          "crates/opi-coding-agent/src/interactive.rs",
+          "crates/opi-coding-agent/src/oauth.rs",
+          "crates/opi-coding-agent/tests/phase14_provider_auth_docs.rs",
+          "docs/opi-spec.md",
+          "docs/opi-spec.zh.md",
+          "docs/snapshots/phase4/opi-impl-state.json",
+          "docs/snapshots/phase6/opi-impl-state.json"
+        ]
+      },
+      "verified_at_commit": "8364e74a9077a194cb4a7fd68db2e3c4b420111a",
+      "evidence": {
+        "commit": "8364e74a9077a194cb4a7fd68db2e3c4b420111a",
+        "task": "14.21",
+        "dod_sha256": "5aad38138925641839bab99ae3dac9289335b271b83cfae8e107bc56c828be8d",
+        "verification": "workspace; docs guard 7 selected, 29 alignment + 29 historical nonempty, fmt, clippy, rustdoc, doctest, all-targets, and smoke passed",
+        "evaluator": "passed; task six-lens evaluation accepted and repaired one stale Anthropic OAuth rustdoc finding, then returned 0 must-fix and 0 flagged; commit-bound Phase F five-lens and adversarial re-evaluation passed after four exact-trace findings were repaired",
+        "acceptance": "phase14-public-docs-and-help-truth, phase14-acceptance-manifest-and-workspace-gates, phase14-phase-f-rebuild; commit-bound SC1-SC8, F14-01 through F14-04, api-map, and Non-Goals accepted; archive remains a separate user gate",
+        "acceptance_scenarios": [
+          "phase14-public-docs-and-help-truth",
+          "phase14-acceptance-manifest-and-workspace-gates",
+          "phase14-phase-f-rebuild"
+        ],
+        "verify_workflows": [
+          ".superpowers/sdd/task-14.21-review-iteration2.md",
+          ".superpowers/sdd/task-14.21-evaluator.md",
+          "codex-collaboration:task14.21-six-lens-20260719",
+          ".superpowers/sdd/phase14-phase-f-evaluator-iteration2.md",
+          ".superpowers/sdd/phase14-phase-f-adversarial-iteration2.md",
+          "codex-collaboration:phase14-five-lens-20260719"
+        ]
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-07-18T22:27:35.913Z",
+          "attempt": 1,
+          "summary": "Phase B confirmed after the Task 14.20 ledger checkpoint; starting final paired documentation, acceptance manifests, and Phase F reconstruction.",
+          "gate_results": {
+            "stage": "B",
+            "outcome": "confirmed",
+            "accepted": [
+              "reviewed Task 14.21 brief and exact ownership set",
+              "clean baseline at a0ff815f9f022e00952045200b320923f3c20a21",
+              "all Task 14.21 dependencies passing",
+              "all registered spec hashes matched before documentation edits",
+              "scripts/opi-impl-smoke.ps1 passed with the task-specific E: Cargo target",
+              "ignored Phase F artifacts remain untracked and never staged",
+              "archive remains a separate user gate"
+            ],
+            "flagged": [],
+            "rejected": []
+          }
+        },
+        {
+          "timestamp": "2026-07-18T23:24:54.527Z",
+          "attempt": 1,
+          "summary": "Expanded Task 14.21 ownership to the Phase 4 snapshot hash after explicit user approval so the required docs/opi-spec.md update can satisfy the existing workspace gate.",
+          "gate_results": {
+            "stage": "C.1a",
+            "outcome": "ownership-expanded-before-edit",
+            "accepted": [
+              "docs/snapshots/phase4/opi-impl-state.json"
+            ],
+            "flagged": [
+              "workspace all-target gate exposed the stale Phase 4 snapshot hash"
+            ],
+            "rejected": [
+              "leave the workspace gate failing",
+              "change the phase4_ledger guard",
+              "revert the required public specification update"
+            ]
+          }
+        },
+        {
+          "timestamp": "2026-07-18T23:30:30.830Z",
+          "attempt": 1,
+          "summary": "Expanded Task 14.21 ownership to the paired Phase 6 snapshot hash after its existing workspace guard exposed the same mechanical dependency as Phase 4.",
+          "gate_results": {
+            "stage": "C.1a",
+            "outcome": "ownership-expanded-before-edit",
+            "accepted": [
+              "docs/snapshots/phase6/opi-impl-state.json"
+            ],
+            "flagged": [
+              "workspace all-target gate exposed the stale paired Phase 6 snapshot hash"
+            ],
+            "rejected": [
+              "leave the workspace gate failing",
+              "change the phase6_ledger guard",
+              "revert the required public specification update"
+            ]
+          }
+        },
+        {
+          "timestamp": "2026-07-19T00:18:39.866Z",
+          "attempt": 1,
+          "summary": "Independent Task 14.21 six-lens evaluation accepted the documentation and evidence set but found one stale Anthropic OAuth rustdoc claim that still described direct Bearer/beta handling as a compatibility profile; the finding was accepted and routed to iteration 2.",
+          "gate_results": {
+            "stage": "task-evaluator",
+            "outcome": "must-fix-block",
+            "accepted": [
+              "replace the stale compatibility-profile sentence with the current factory-supplied lazy Bearer credential source and direct AnthropicProvider AuthScheme-gated beta-header behavior",
+              "rerun the affected documentation guard, formatting, clippy, warning-denied rustdoc, doctests, workspace all-targets, reviewed smoke, guards, and artifact audit"
+            ],
+            "flagged": [],
+            "rejected": [],
+            "report": ".superpowers/sdd/task-14.21-evaluator.md"
+          }
+        },
+        {
+          "timestamp": "2026-07-19T00:52:40.192Z",
+          "attempt": 2,
+          "summary": "Task 14.21 and commit-bound Phase F passed after correcting the task evaluator's stale Anthropic OAuth rustdoc finding and the Phase F reviewers' four exact criteria-trace completeness findings. All 58 nonempty acceptance commands and final workspace gates passed; ignored evidence is commit-bound, portable, audited, and archive-neutral.",
+          "gate_results": {
+            "documentation_guard": "passing: 7 selected",
+            "acceptance_manifest": "passing: 29 alignment plus 29 historical commands; zero empty selections",
+            "focused_snapshot_guards": "passing: Phase 4 and Phase 6, 1 selected each",
+            "workspace_gates": "passing: fmt, workspace clippy -D warnings, rustdoc -D warnings, doctest, workspace all-targets, and reviewed smoke",
+            "artifact_audit": "passing: strict UTF-8/control/path/secret audit, zero issues",
+            "task_review": "approved: iteration 2",
+            "task_evaluator": "passing: 0 must-fix, 0 flagged, 8 rejected; 1 prior finding repaired",
+            "phase_exit": "passing: SC1-SC8, F14-01 through F14-04, api-map, and Non-Goals; 4 prior trace findings repaired; 4 attacks rejected",
+            "commit": "8364e74a9077a194cb4a7fd68db2e3c4b420111a",
+            "archive": "not performed; separate user approval gate"
+          }
+        }
+      ]
     }
   ],
   "phase_exit": {
@@ -6681,10 +6836,10 @@
       }
     },
     "14": {
-      "attempted_at": "2026-07-16T19:51:58.565Z",
-      "completed_at": null,
-      "exit_criteria_met": false,
-      "evaluator_summary": "Phase-exit not-met-block. Manual five-lens fallback rebuilt current criteria independently; adversarial verification accepted 4 findings, rejected 0, and flagged 0. SC1, SC2, and SC3 are not met; SC4-SC8 and all Non-Goals are met; api-map remains deferred-by-updated-design with an exact current citation.",
+      "attempted_at": "2026-07-19T00:52:40.192Z",
+      "completed_at": "2026-07-19T00:52:40.192Z",
+      "exit_criteria_met": true,
+      "evaluator_summary": "Commit-bound five-lens Phase F evaluation and independent adversarial verification passed for 8364e74a9077a194cb4a7fd68db2e3c4b420111a; four initial SC1/SC3/SC5/SC6 trace-completeness findings were repaired, all criteria and Non-Goals are met, and 4 final attacks were rejected. Archive remains a separate user gate and was not performed.",
       "snapshot_path": null,
       "task_summary": [
         {
@@ -6764,141 +6919,203 @@
           "title": "Documentation, verification, and residual closure",
           "status": "passing",
           "verified_at_commit": "6c6ceb41ef92c5f66866ff0fc5d990079cda813d"
+        },
+        {
+          "id": "14.14",
+          "title": "Native keyring host selection",
+          "status": "passing",
+          "verified_at_commit": "62b12dde6821c6f62e50db10ec3a374ca8e0f30a"
+        },
+        {
+          "id": "14.15",
+          "title": "WireApi, model metadata, pricing, thinking, and canonical IDs",
+          "status": "passing",
+          "verified_at_commit": "0589a18bc222baf872e414bb462a51fa112ed123"
+        },
+        {
+          "id": "14.16",
+          "title": "ApiMappedProvider and TOML custom providers",
+          "status": "passing",
+          "verified_at_commit": "f34949c8f7fee61a6ffcc0b416db384ec641f794"
+        },
+        {
+          "id": "14.17",
+          "title": "GitHub Copilot three-wire catalog",
+          "status": "passing",
+          "verified_at_commit": "708f026050dd25ad96d263cc842c973b605e5243"
+        },
+        {
+          "id": "14.18",
+          "title": "OpenAI Codex dedicated wire, catalog, and dual login",
+          "status": "passing",
+          "verified_at_commit": "1833876d3f69089fd2d999d3ddc03519b2016d40"
+        },
+        {
+          "id": "14.19",
+          "title": "Concrete OAuth dispatcher vertical path",
+          "status": "passing",
+          "verified_at_commit": "502ea52d8d2b5cb2e94360b9999ee9399d979f91"
+        },
+        {
+          "id": "14.20",
+          "title": "Outer TUI credential retry",
+          "status": "passing",
+          "verified_at_commit": "aa3bee7e0c443c9260174c1c11b038f8177de8b7"
+        },
+        {
+          "id": "14.21",
+          "title": "Documentation, acceptance artifacts, and Phase F",
+          "status": "passing",
+          "verified_at_commit": "8364e74a9077a194cb4a7fd68db2e3c4b420111a"
         }
       ],
       "criteria_trace": [
         {
           "kind": "success_criterion",
           "id": "SC1",
-          "status": "not-met",
+          "status": "met",
           "source": "docs/superpowers/specs/2026-07-11-phase14-provider-auth-design.md#Success and Exit Criteria",
-          "evidence": "Credential storage and probes: The named host-selection test calls install_store(mock), not platform_store/install_native_keyring; injected startup-order tests do not exercise target-native selection."
+          "evidence": "target/opi-artifacts/phase14-phase-exit/criteria-trace.json#SC1; exact storage/resolver/orchestration map and preserved all-target log"
         },
         {
           "kind": "success_criterion",
           "id": "SC2",
-          "status": "not-met",
+          "status": "met",
           "source": "docs/superpowers/specs/2026-07-11-phase14-provider-auth-design.md#Success and Exit Criteria",
-          "evidence": "OAuth product flows: Copilot contradicts the reviewed every-flow await_manual_code fallback, and no test drives dispatcher -> concrete Anthropic/Copilot/Codex implementation -> locked store."
+          "evidence": "target/opi-artifacts/phase14-phase-exit/criteria-trace.json#SC2; concrete Browser/Device dispatcher and persistence rows"
         },
         {
           "kind": "success_criterion",
           "id": "SC3",
-          "status": "not-met",
+          "status": "met",
           "source": "docs/superpowers/specs/2026-07-11-phase14-provider-auth-design.md#Success and Exit Criteria",
-          "evidence": "Live auth and session interaction: The same-turn retry test manually composes helpers and never exercises the outer run_interactive_tui/tui_event_loop/dispatch_interactive_auth_input retry bridge."
+          "evidence": "target/opi-artifacts/phase14-phase-exit/criteria-trace.json#SC3; exact factory stream-auth/revocation and outer-TUI negative map"
         },
         {
           "kind": "success_criterion",
           "id": "SC4",
           "status": "met",
           "source": "docs/superpowers/specs/2026-07-11-phase14-provider-auth-design.md#Success and Exit Criteria",
-          "evidence": "Request and session affinity: target/opi-artifacts/phase14-task14.13/commands.jsonl and raw/"
+          "evidence": "target/opi-artifacts/phase14-phase-exit/criteria-trace.json#SC4; request/session affinity production mappings"
         },
         {
           "kind": "success_criterion",
           "id": "SC5",
           "status": "met",
           "source": "docs/superpowers/specs/2026-07-11-phase14-provider-auth-design.md#Success and Exit Criteria",
-          "evidence": "Capabilities and cache markers: target/opi-artifacts/phase14-task14.13/reused-artifacts.json"
+          "evidence": "target/opi-artifacts/phase14-phase-exit/criteria-trace.json#SC5; factory-built Anthropic cache-marker integration"
         },
         {
           "kind": "success_criterion",
           "id": "SC6",
           "status": "met",
           "source": "docs/superpowers/specs/2026-07-11-phase14-provider-auth-design.md#Success and Exit Criteria",
-          "evidence": "Usage and cost: target/opi-artifacts/phase14-task14.13/sessions/phase14-session-resume.jsonl"
+          "evidence": "target/opi-artifacts/phase14-phase-exit/criteria-trace.json#SC6; strict usage subset, cumulative, and resume mappings"
         },
         {
           "kind": "success_criterion",
           "id": "SC7",
           "status": "met",
           "source": "docs/superpowers/specs/2026-07-11-phase14-provider-auth-design.md#Success and Exit Criteria",
-          "evidence": "Dynamic refresh substrate: target/opi-artifacts/phase14-task14.13/raw/26-historical-26-refresh-substrate.result.json"
+          "evidence": "target/opi-artifacts/phase14-phase-exit/criteria-trace.json#SC7; refresh substrate bounded and api-map separately implemented"
         },
         {
           "kind": "success_criterion",
           "id": "SC8",
           "status": "met",
           "source": "docs/superpowers/specs/2026-07-11-phase14-provider-auth-design.md#Success and Exit Criteria",
-          "evidence": "Documentation and guards: target/opi-artifacts/phase14-task14.13/CLAIM_CLASSIFICATION.md, artifact-manifest.json, and artifact-audit-final.json"
+          "evidence": "target/opi-artifacts/phase14-phase-exit/criteria-trace.json#SC8; paired docs/help guards and 58-command manifest"
         },
         {
-          "kind": "residual",
-          "id": "R1",
-          "status": "deferred-by-updated-design",
-          "source": "docs/superpowers/specs/2026-07-14-phase14-exit-remediation-design.md#`api-map` disposition",
-          "evidence": "api-map disposition: target/opi-artifacts/phase14-task14.13/raw/52-corrective-23-localized-truth.result.json"
+          "kind": "corrective_obligation",
+          "id": "F14-01",
+          "status": "met",
+          "source": "docs/superpowers/specs/2026-07-14-phase14-exit-remediation-design.md#Updated obligation trace",
+          "evidence": "target/opi-artifacts/phase14-phase-exit/criteria-trace.json#F14-01; target/opi-artifacts/phase14-phase-exit/PHASE_EXIT_REPORT.md"
+        },
+        {
+          "kind": "corrective_obligation",
+          "id": "F14-02",
+          "status": "met",
+          "source": "docs/superpowers/specs/2026-07-14-phase14-exit-remediation-design.md#Updated obligation trace",
+          "evidence": "target/opi-artifacts/phase14-phase-exit/criteria-trace.json#F14-02; target/opi-artifacts/phase14-phase-exit/PHASE_EXIT_REPORT.md"
+        },
+        {
+          "kind": "corrective_obligation",
+          "id": "F14-03",
+          "status": "met",
+          "source": "docs/superpowers/specs/2026-07-14-phase14-exit-remediation-design.md#Updated obligation trace",
+          "evidence": "target/opi-artifacts/phase14-phase-exit/criteria-trace.json#F14-03; target/opi-artifacts/phase14-phase-exit/PHASE_EXIT_REPORT.md"
+        },
+        {
+          "kind": "corrective_obligation",
+          "id": "F14-04",
+          "status": "met",
+          "source": "docs/superpowers/specs/2026-07-14-phase14-exit-remediation-design.md#Updated obligation trace",
+          "evidence": "target/opi-artifacts/phase14-phase-exit/criteria-trace.json#F14-04; target/opi-artifacts/phase14-phase-exit/PHASE_EXIT_REPORT.md"
+        },
+        {
+          "kind": "obligation",
+          "id": "api-map",
+          "status": "met",
+          "source": "docs/superpowers/specs/2026-07-14-phase14-exit-remediation-design.md#Updated obligation trace",
+          "evidence": "target/opi-artifacts/phase14-phase-exit/criteria-trace.json#api-map; Task 14.16 public Rust/TOML contract"
         },
         {
           "kind": "non_goal",
           "id": "NG1",
           "status": "met",
           "source": "docs/superpowers/specs/2026-07-14-phase14-exit-remediation-design.md#Non-Goals",
-          "evidence": "No opi-managed plaintext credential file: credential-store temp-root/output scans, command 52 structural guard"
+          "evidence": "target/opi-artifacts/phase14-phase-exit/criteria-trace.json#non-goals; no opi-managed plaintext credential file"
         },
         {
           "kind": "non_goal",
           "id": "NG2",
           "status": "met",
           "source": "docs/superpowers/specs/2026-07-14-phase14-exit-remediation-design.md#Non-Goals",
-          "evidence": "No automatic re-login after mid-stream revocation: commands 10 and 44"
+          "evidence": "target/opi-artifacts/phase14-phase-exit/criteria-trace.json#non-goals; no automatic re-login after mid-stream revocation"
         },
         {
           "kind": "non_goal",
           "id": "NG3",
           "status": "met",
           "source": "docs/superpowers/specs/2026-07-14-phase14-exit-remediation-design.md#Non-Goals",
-          "evidence": "No per-call credential or provider-managed auth-header override: command 52 structural guard"
+          "evidence": "target/opi-artifacts/phase14-phase-exit/criteria-trace.json#non-goals; no per-call credential or provider-managed auth-header override"
         },
         {
           "kind": "non_goal",
           "id": "NG4",
           "status": "met",
           "source": "docs/superpowers/specs/2026-07-14-phase14-exit-remediation-design.md#Non-Goals",
-          "evidence": "No onPayload/onResponse streaming hooks: command 52 structural guard"
+          "evidence": "target/opi-artifacts/phase14-phase-exit/criteria-trace.json#non-goals; no onPayload or onResponse streaming hooks"
         },
         {
           "kind": "non_goal",
           "id": "NG5",
           "status": "met",
           "source": "docs/superpowers/specs/2026-07-14-phase14-exit-remediation-design.md#Non-Goals",
-          "evidence": "No maxRetries/maxRetryDelay Request fields: command 52 structural guard"
+          "evidence": "target/opi-artifacts/phase14-phase-exit/criteria-trace.json#non-goals; no maxRetries or maxRetryDelay fields on Request"
         },
         {
           "kind": "non_goal",
           "id": "NG6",
           "status": "met",
           "source": "docs/superpowers/specs/2026-07-14-phase14-exit-remediation-design.md#Non-Goals",
-          "evidence": "No end-to-end SecretString provider-construction migration: command 52 structural guard"
+          "evidence": "target/opi-artifacts/phase14-phase-exit/criteria-trace.json#non-goals; no end-to-end SecretString provider-construction migration"
         },
         {
           "kind": "non_goal",
           "id": "NG7",
           "status": "met",
           "source": "docs/superpowers/specs/2026-07-14-phase14-exit-remediation-design.md#Non-Goals",
-          "evidence": "No OAuth providers beyond Anthropic, GitHub Copilot, and OpenAI Codex: commands 5, 38, and 52"
+          "evidence": "target/opi-artifacts/phase14-phase-exit/criteria-trace.json#non-goals; no OAuth providers beyond Anthropic, GitHub Copilot, and OpenAI Codex"
         },
         {
           "kind": "non_goal",
           "id": "NG8",
           "status": "met",
           "source": "docs/superpowers/specs/2026-07-14-phase14-exit-remediation-design.md#Non-Goals",
-          "evidence": "No session-schema or context-reconstruction redesign: command 50 session resume, command 52 structural guard"
-        },
-        {
-          "kind": "non_goal",
-          "id": "NG9",
-          "status": "met",
-          "source": "docs/superpowers/specs/2026-07-14-phase14-exit-remediation-design.md#Non-Goals",
-          "evidence": "No api-map implementation or production model-refresh trigger: commands 26 and 52"
-        },
-        {
-          "kind": "non_goal",
-          "id": "NG10",
-          "status": "met",
-          "source": "docs/superpowers/specs/2026-07-14-phase14-exit-remediation-design.md#Non-Goals",
-          "evidence": "Do not reopen SC4/SC7 without regression evidence: commands 16-20 and 26"
+          "evidence": "target/opi-artifacts/phase14-phase-exit/criteria-trace.json#non-goals; no session-schema-version or context-reconstruction redesign"
         }
       ],
       "report_path": "target/opi-artifacts/phase14-phase-exit/PHASE_EXIT_REPORT.md",
@@ -6913,7 +7130,8 @@
     "opi-implement: Phase 14 repair plan-verify folded 16 unique L1-L6 findings and rejected one proposed 14.2 split as redundant graph expansion; T2 remains one reviewed vertical auth slice.",
     "opi-implement: Phase 14 phase-exit attempted at 2026-07-14T07:33:01.3684127+00:00; F.1b refused archive after 20 adversarially verified not-met findings (SC1/2/3/5/6/8 plus residual-api-map). No snapshot or archive commit was created.",
     "opi-implement: recovered encoding-corrupted ledger at 2026-07-16T02:57:58.0747110Z; corrupt source deleted at user request on 2026-07-16; prior archive .opi-impl-state.corrupt-20260716-4ef12a4f.json had SHA-256 4ef12a4f75c79df157eda6f6ac20be723f74d8425ceed6e1cea598f01ad8e021.",
-    "opi-implement: reconciled reviewed Phase 14 pi-0.80.6 alignment graph at 2026-07-18T06:04:18.855Z; preserved passing 14.1-14.13 history and prior failed phase-exit evidence, added failing tasks 14.14-14.21, refreshed registered spec hashes, folded five independently confirmed plan-audit corrections, and preserved the existing user-approved trigger=null SecretString residual on Task 14.1."
+    "opi-implement: reconciled reviewed Phase 14 pi-0.80.6 alignment graph at 2026-07-18T06:04:18.855Z; preserved passing 14.1-14.13 history and prior failed phase-exit evidence, added failing tasks 14.14-14.21, refreshed registered spec hashes, folded five independently confirmed plan-audit corrections, and preserved the existing user-approved trigger=null SecretString residual on Task 14.1.",
+    "opi-implement: Phase 14 commit-bound phase exit passed at 2026-07-19T00:52:40.192Z for 8364e74a9077a194cb4a7fd68db2e3c4b420111a; SC1-SC8, F14-01 through F14-04, api-map, and all Non-Goals are met after repairing four exact-trace findings. No snapshot or archive commit was created because archive remains a separate user gate."
   ],
   "verify_runs": [
     {
@@ -7174,6 +7392,26 @@
       "rejected_count": 7,
       "ran_at": "2026-07-18T22:17:02.959Z",
       "task_id": "14.20",
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": "codex-collaboration:task14.21-six-lens-20260719",
+      "folded_count": 1,
+      "flagged_count": 0,
+      "rejected_count": 8,
+      "ran_at": "2026-07-19T00:52:40.192Z",
+      "task_id": "14.21",
+      "criterion_id": null
+    },
+    {
+      "stage": "phase-exit",
+      "wf_ref": "codex-collaboration:phase14-five-lens-20260719",
+      "folded_count": 4,
+      "flagged_count": 0,
+      "rejected_count": 4,
+      "ran_at": "2026-07-19T00:52:40.192Z",
+      "task_id": null,
       "criterion_id": null
     }
   ]
