@@ -20,6 +20,7 @@ fn read_repo_file(relative: &str) -> String {
     let path = repo_root().join(relative);
     std::fs::read_to_string(&path)
         .unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()))
+        .replace("\r\n", "\n")
 }
 
 fn normalize_whitespace(value: &str) -> String {
