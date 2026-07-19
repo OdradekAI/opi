@@ -445,8 +445,18 @@ The design rationale is in
 ## Implementation workflow
 
 Long-running spec implementations track state in `.opi-impl-state.json` at the
-repo root, driven by the `opi-implement` skill. Do not delete or hand-edit this
-file; use the skill's commands to query, advance, or reset progress.
+repo root, driven by the `opi-implement` skill. The canonical ledger is tracked
+in Git; temporary, draft, candidate, backup, and corrupt copies are not. Do not
+delete or hand-edit the canonical file; use the skill's guarded atomic-write
+flow to query, advance, recover, or reset progress.
+
+When the user authorizes an implementation task commit, commit task-owned work
+first with its `Opi-*` footers, then record that commit SHA in the ledger and
+create a separate ledger-checkpoint commit. Blocked handoffs, phase-exit
+updates, and reviewed graph reconciliation are also durable checkpoint
+boundaries. Before removing a worktree, refuse cleanup unless its canonical
+ledger is clean and every required ledger checkpoint is contained in the
+destination branch.
 
 The skill runs `scripts/opi-impl-smoke.{sh,ps1}` at Phase A.3. That smoke check
 bundles `cargo build`, `cargo fmt --check --all`,

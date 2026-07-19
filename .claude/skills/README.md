@@ -93,8 +93,9 @@ something the skill encodes; `opi-implement` Phase C itself composes
 `superpowers:test-driven-development` (red-green-refactor), with optional
 parallel dispatch and `systematic-debugging` from attempt 3. Each task runs the
 harness phases A→F: bootstrap, plan, implement via TDD, verify (tier gates +
-Artifact Truthfulness Gate), commit with `Opi-*` footers, phase-exit check.
-After each task commits, **`compact`**, then continue.
+Artifact Truthfulness Gate), commit with `Opi-*` footers, checkpoint the tracked
+ledger in a separate commit, then run the phase-exit check. After both commits,
+**`compact`**, then continue.
 
 - **Entry:** finalized ledger from Phase 2.
 - **Exit gate:** all tasks in the phase are `passing`; the phase-exit evaluator
@@ -186,8 +187,10 @@ gates appear throughout.
 
 ## Shared contracts
 
-- **`.opi-impl-state.json`** (gitignored, repo root) — `opi-implement`'s live
-  task ledger. `opi-remediate` and `opi-audit` only ever *read* it — and both
+- **`.opi-impl-state.json`** (Git-tracked, repo root) — `opi-implement`'s
+  canonical live task ledger. Task commits and ledger checkpoints are separate;
+  temporary/draft/recovery copies remain ignored. `opi-remediate` and
+  `opi-audit` only ever *read* it — and both
   read the **frozen per-phase snapshot** at `docs/snapshots/phase<N>/opi-impl-state.json`,
   not the live repo-root file. No other skill writes it.
 - **`docs/snapshots/phase<N>/`** — frozen per-phase archive: a snapshot of
@@ -256,8 +259,9 @@ be violated.
   gate), C Implement (TDD red-green-refactor, optional parallel dispatch,
   systematic debugging by attempt 3), D Verify (product acceptance D.0, Artifact
   Truthfulness Gate D.0a, tier gates D.1, risk evaluator D.2, cross-cutting gates
-  D.3), E Commit + ledger update (Conventional commit with `Opi-*` footers),
-  F Phase-Exit check. Infers task metadata on init/reinit; enforces a spec-hash
+  D.3), E task commit + separate tracked-ledger checkpoint (Conventional task
+  commit with `Opi-*` footers), F Phase-Exit check. Infers task metadata on
+  init/reinit; enforces a spec-hash
   alignment guard; runs tiered verification — **six tiers** (workspace /
   documentation / library / cli-tool / cli-runtime / tui) plus **conditional
   addenda** applied on top (provider-contract, multimodal, product acceptance).
@@ -268,8 +272,9 @@ be violated.
   `git restore`/`clean`/`reset`/`--no-verify`/`--force`/`git add -A`, and does
   not satisfy a DoD with stubs or TODOs.
 - **Artifacts:** reads `docs/opi-spec.md` §15 + reviewed Phase 5–14 sources;
-  writes `.opi-impl-state.json` (gitignored), phase snapshots under
-  `docs/snapshots/phase<N>/`, and task commits carrying `Opi-*` footers.
+  writes tracked `.opi-impl-state.json`, ignored transient ledger files, phase
+  snapshots under `docs/snapshots/phase<N>/`, task commits carrying `Opi-*`
+  footers, and separate ledger-checkpoint commits.
 - **In the workflow:** Phases 2 (init) and 3 (implement loop).
 - **Notes:** full-workspace smoke is expensive and has filled the host disk
   before — for library-tier tasks prefer the per-task library gates with

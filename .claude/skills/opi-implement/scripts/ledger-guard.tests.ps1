@@ -79,6 +79,53 @@ try {
     $validChineseResult = Invoke-Guard @("-Command", "Validate", "-Path", $validChinesePath)
     Assert-Equal 0 $validChineseResult.ExitCode "Legitimate Chinese text should pass"
 
+    $benignMetadataPath = Join-Path $tempRoot "benign-metadata.json"
+    Write-Utf8File $benignMetadataPath @'
+{"schema_version":2,"credential_backend":"environment","redacted":true,"footer":"Opi-Task: 14.13","message":"API keys are never stored in the ledger."}
+'@
+    $benignMetadata = Invoke-Guard @("-Command", "Validate", "-Path", $benignMetadataPath)
+    Assert-Equal 0 $benignMetadata.ExitCode "Benign credential metadata should pass"
+
+    $benignBearerPlaceholderPath = Join-Path $tempRoot "benign-bearer-placeholder.json"
+    Write-Utf8File $benignBearerPlaceholderPath '{"schema_version":2,"message":"wire fixture uses Bearer github-access-token for a redacted capture"}'
+    $benignBearerPlaceholder = Invoke-Guard @("-Command", "Validate", "-Path", $benignBearerPlaceholderPath)
+    Assert-Equal 0 $benignBearerPlaceholder.ExitCode "Explicit lowercase bearer placeholders should pass"
+
+    $benignBearerIdentifierPath = Join-Path $tempRoot "benign-bearer-identifier.json"
+    Write-Utf8File $benignBearerIdentifierPath '{"schema_version":2,"message":"test code maps Bearer github_token into a redacted request"}'
+    $benignBearerIdentifier = Invoke-Guard @("-Command", "Validate", "-Path", $benignBearerIdentifierPath)
+    Assert-Equal 0 $benignBearerIdentifier.ExitCode "Explicit lowercase bearer fixture identifiers should pass"
+
+    $sensitiveProperties = @(
+        "api_key",
+        "apikey",
+        "access_token",
+        "refresh_token",
+        "authorization",
+        "password",
+        "private_key",
+        "client_secret"
+    )
+    foreach ($propertyName in $sensitiveProperties) {
+        $sensitivePropertyPath = Join-Path $tempRoot ("sensitive-" + $propertyName + ".json")
+        Write-Utf8File $sensitivePropertyPath ('{"schema_version":2,"' + $propertyName + '":"credential-value"}')
+        $sensitiveProperty = Invoke-Guard @("-Command", "Validate", "-Path", $sensitivePropertyPath)
+        Assert-Equal 1 $sensitiveProperty.ExitCode "Sensitive property '$propertyName' should be rejected"
+        Assert-Contains "sensitive content" $sensitiveProperty.Output "Sensitive-property failure should be explicit"
+    }
+
+    $bearerPath = Join-Path $tempRoot "bearer.json"
+    Write-Utf8File $bearerPath '{"schema_version":2,"message":"Authorization: Bearer abcdefghijklmnop"}'
+    $bearer = Invoke-Guard @("-Command", "Validate", "-Path", $bearerPath)
+    Assert-Equal 1 $bearer.ExitCode "Bearer credentials should be rejected"
+    Assert-Contains "sensitive content" $bearer.Output "Bearer failure should be explicit"
+
+    $privateKeyPath = Join-Path $tempRoot "private-key.json"
+    Write-Utf8File $privateKeyPath '{"schema_version":2,"message":"-----BEGIN PRIVATE KEY-----"}'
+    $privateKey = Invoke-Guard @("-Command", "Validate", "-Path", $privateKeyPath)
+    Assert-Equal 1 $privateKey.ExitCode "PEM private-key headers should be rejected"
+    Assert-Contains "sensitive content" $privateKey.Output "Private-key failure should be explicit"
+
     $mojibakePath = Join-Path $tempRoot "mojibake.json"
     $mojibake = ([string][char]0x95C2) + "?"
     Write-Utf8File $mojibakePath ('{"schema_version":2,"message":"' + $mojibake + '"}')

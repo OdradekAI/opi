@@ -1,7 +1,7 @@
 # Ledger Schema Reference
 
-Path: `.opi-impl-state.json` at repository root. Gitignored runtime artifact.
-Atomic writes via `.opi-impl-state.json.tmp` + rename.
+Path: `.opi-impl-state.json` at repository root. Git-tracked canonical ledger.
+Atomic writes use an ignored `.opi-impl-state.json.tmp` plus rename.
 
 ## Schema
 
@@ -181,8 +181,8 @@ open, and create or retain a later vertical-slice task.
 
 ## Durable Evidence Contract
 
-The ledger is mutable runtime state (gitignored). Every successful task commit
-MUST include parseable footers:
+The ledger is mutable but Git-tracked coordination state. Every successful task
+commit MUST include parseable footers:
 
 ```text
 Opi-Task: <id>
@@ -191,8 +191,9 @@ Opi-Verification: <tier>; <short command/result summary>
 Opi-Evaluator: <not-required | passed>
 ```
 
-These values are also copied into `tasks[].evidence`. A fresh clone without the
-ledger can reconstruct completion status via `git log --grep "Opi-Task:"`.
+These values are copied into `tasks[].evidence` after the task commit. The
+resulting canonical ledger is then committed separately. Git footers remain the
+authoritative recovery source if a checkpoint is lost or conflicted.
 
 Tasks with non-empty `acceptance_scenarios` also include:
 
@@ -207,7 +208,8 @@ Opi-Acceptance: <scenario ids>; <command/test/call-site evidence summary>
 2. Serialize full JSON with a structured writer (not shell echo/string concat).
 3. Validate the candidate before replacement: schema v2, strict BOM-less UTF-8,
    valid JSON, at most 16 MiB total, at most 65,536 characters in any string,
-   and no known repeated UTF-8/GB2312 mojibake markers.
+   no known repeated UTF-8/GB2312 mojibake markers, and no forbidden sensitive
+   property names, bearer credentials, or private-key material.
 4. Write to `.opi-impl-state.json.tmp` in repo root and flush it. Fsync the
    parent directory when the platform exposes that operation.
 5. Recheck the target SHA-256. If it changed, preserve both files and stop so
@@ -230,6 +232,23 @@ normal checkpoint writes use the guard's transient replacement backup.
 - Failure decision gate: mark `blocked`, extend cap, or record handoff
 - End of Phase E: mark `passing`, record commit + evidence
 - Reinit after task-graph review gate confirmed
+
+**Checkpoint boundaries:**
+- Phase B and failed-attempt writes may remain dirty and are not committed as
+  standalone progress noise.
+- A successful task first commits task-owned files, then records that commit SHA
+  and commits only the canonical ledger as
+  `chore(opi-implement): checkpoint task <id> ledger`.
+- Blocked handoffs, phase-exit updates, reviewed graph reconciliation, and
+  phase archival are durable boundaries and must checkpoint the canonical
+  ledger.
+- Temporary, draft, candidate, backup, and corrupt ledger files are never
+  tracked.
+
+Before worktree removal, the canonical ledger must be clean, no temp candidate
+may remain, and every required checkpoint must be contained in the destination
+branch. Resolve a ledger merge conflict by plan-path reconciliation against
+both branches' `Opi-*` evidence, never by accepting one side wholesale.
 
 ## v1 → v2 Migration
 

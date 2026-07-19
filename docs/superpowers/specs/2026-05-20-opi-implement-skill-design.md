@@ -2,6 +2,11 @@
 
 > A long-running-agent harness, packaged as a single superpowers skill, that drives the implementation of `docs/opi-spec.md` one task at a time with TDD, tiered verification, and JSON-ledger checkpointing.
 
+> **Superseded policy:** The untracked-ledger and one-task/one-commit portions
+> of this historical design are superseded by
+> `docs/superpowers/specs/2026-07-18-opi-implement-tracked-ledger-design.md`.
+> The remainder is retained as historical rationale.
+
 ## 0. Document Control
 
 | Field | Value |

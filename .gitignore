@@ -51,8 +51,10 @@ credentials.toml
 release-notes.md
 /release-artifacts/
 
-# opi-implement runtime state (never committed)
-.opi-impl-state.json
+# opi-implement transient/recovery state (canonical ledger is tracked)
 .opi-impl-state.json.tmp
 .opi-impl-state.draft.json
-.opi-impl-state.corrupt-*.json
+.opi-impl-state.corrupt-*
+.opi-impl-state.*candidate*.json
+.opi-impl-state.*backup*.json
+.opi-impl-state.pre-*.json

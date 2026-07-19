@@ -146,7 +146,8 @@ E is the only phase that mutates git **during normal task execution**.
    - B.1 Print task DoD + verification tier + parallelize plan + owned
      acceptance scenarios + required production call-site traces + phase
      source files + phase-specific forbidden-scope guards
-   - B.2 User gate: "proceed with task `<id>` and create the one task commit if verification passes?"
+   - B.2 User gate: "proceed with task `<id>` and create the task commit plus
+     its separate ledger-checkpoint commit if verification passes?"
    - B.3 If confirmed: mark `in_progress`, record `start_commit`, write ledger
 
 3. **Phase C: Implement**
@@ -189,10 +190,13 @@ E is the only phase that mutates git **during normal task execution**.
    - D.3 Cross-cutting gates: fmt, clippy, doc, smoke
    - D.4 If any fail -> back to Phase C
 
-5. **Phase E: Commit & Ledger Update**
-   - E.1 Conventional commit with `Opi-*` evidence footers
-   - E.2 Capture HEAD SHA + evidence -> ledger
-   - E.3 Flip status to `passing`; append session_note
+5. **Phase E: Task Commit & Ledger Checkpoint**
+   - E.1 Commit only task-owned implementation files with `Opi-*` evidence
+     footers; never stage the dirty canonical ledger in this commit
+   - E.2 Capture the task commit SHA + evidence, flip status to `passing`, and
+     append the session note through the atomic ledger protocol
+   - E.3 Validate and commit only `.opi-impl-state.json` with message
+     `chore(opi-implement): checkpoint task <id> ledger`
    - E.4 No push (push is separate human action)
 
 6. **Phase F: Phase-Exit Check**
@@ -222,7 +226,7 @@ E is the only phase that mutates git **during normal task execution**.
        `phase_exit[<N>].task_summary`, set `phase_exit[<N>].snapshot_path`,
        keep only compact phase-exit metadata in the root entry, and remove
        those tasks from the active `tasks` array. Commit ONLY the new snapshot
-       file with message
+       and canonical ledger with message
        `chore: archive opi-implement phase <N> ledger snapshot`.
      - F.4c If declined: leave tasks array intact; no snapshot written.
 
@@ -307,9 +311,10 @@ Commit scope is the crate name. Example: `feat(opi-agent): implement agent_loop`
 
 ## Ledger Location & Safety
 
-- Path: `.opi-impl-state.json` (gitignored, NEVER committed)
+- Path: `.opi-impl-state.json` (tracked canonical ledger)
 - Temp: `.opi-impl-state.json.tmp` (gitignored)
 - Draft: `.opi-impl-state.draft.json` (gitignored)
+- Candidates, backups, and corrupt copies are gitignored and NEVER committed
 - All writes use structured JSON APIs, never string concatenation
 - On Windows, validate every candidate and perform every replacement through
   `.claude/skills/opi-implement/scripts/ledger-guard.ps1`. Pass the SHA-256
@@ -318,9 +323,11 @@ Commit scope is the crate name. Example: `feat(opi-agent): implement agent_loop`
   Encoding-recovery operations also pass `-BackupPath` so the atomic replacement
   retains the corrupt source for audit instead of deleting it.
 - The guard requires strict BOM-less UTF-8, valid schema-v2 JSON, a maximum
-  16 MiB ledger, a maximum 65,536 characters per string, and no known repeated
-  UTF-8/GB2312 mojibake markers. Put larger narratives in audit Markdown or
-  artifact files and keep only their paths and short summaries in the ledger.
+  16 MiB ledger, a maximum 65,536 characters per string, no known repeated
+  UTF-8/GB2312 mojibake markers, and no sensitive property names, bearer
+  credentials, or private-key material. Put larger or sensitive narratives in
+  redacted audit artifacts and keep only paths and short summaries in the
+  ledger.
 - Windows PowerShell 5.1 MUST NOT round-trip ledger text through default
   `Get-Content`, `Set-Content`, `Out-File`, or PowerShell `>` redirection. Its
   default text encoding follows the system ANSI code page and can corrupt
@@ -329,6 +336,16 @@ Commit scope is the crate name. Example: `feat(opi-agent): implement agent_loop`
 - Shared-workspace rule: capture the pre-task baseline dirty file set at Phase B.
   Verification and commit gates must stage only task-owned files and must not
   require unrelated pre-existing user changes to be cleaned.
+- Phase B and failed attempts may leave the tracked ledger dirty. Successful
+  tasks checkpoint it after the task commit; blocked handoffs, phase-exit
+  updates, and reviewed graph reconciliation checkpoint it at the durable
+  boundary.
+- Before removing a worktree, refuse cleanup if its canonical ledger is dirty,
+  staged, or untracked; if a ledger temp remains; or if a required checkpoint
+  commit is not contained in the destination branch.
+- Resolve ledger merge conflicts by rebuilding through plan-path
+  reconciliation from destination state and both branches' `Opi-*` evidence.
+  Never choose one side wholesale.
 - **When ledger manipulation needed:** Read `references/ledger-schema.md`
 
 ## Platform Detection
@@ -358,7 +375,9 @@ in `references/anti-patterns.md`.
    candidate commands; let the human decide.
 6. **Never satisfy DoD with stubs/TODOs.** Unless DoD explicitly says scaffolding.
 7. **Never silently rewrite task graph metadata.** Graph is a reviewed contract.
-8. **Never commit ledger files.** They are gitignored runtime state.
+8. **Never commit transient ledger files.** The canonical ledger requires a
+   dedicated checkpoint; tmp, draft, candidate, backup, and corrupt files
+   remain untracked.
 9. **Never skip `[workspace.dependencies]` for internal deps.** Lockstep versioning.
 10. **Never run live provider tests.** They belong in `#[ignore]`-gated tests.
 11. **Never close a product scenario with component-only tests.** Helper,

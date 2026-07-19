@@ -17,7 +17,9 @@ column explains reasoning so you can apply judgment in edge cases.
 | Never auto-accept TUI snapshot changes | Snapshot diffs are visual regressions until proven otherwise. Only human can judge intent. |
 | Never silently rewrite inferred task graph metadata | Graph is a reviewed contract. Silent changes reorder execution, skip gates, break confirmed assumptions. |
 | Never run live provider tests from this skill | Non-deterministic, costs money, hits rate limits. Belong in `#[ignore]`-gated tests run manually. |
-| Never commit ledger/tmp/draft files | High-churn runtime artifacts. Pollutes history, creates merge conflicts. |
+| Never mix the canonical ledger into a task commit or commit transient ledger files | The task SHA is not known until the task commit exists, so the canonical ledger needs a separate checkpoint commit. Tmp, draft, candidate, backup, and corrupt files are nondurable artifacts and must remain ignored. |
+| Never resolve a canonical-ledger conflict by choosing one side | Parallel branches carry independent task evidence. Reconcile both branches' `Opi-*` footers through the plan path or valid progress is silently lost. |
+| Never remove a worktree with dirty or uncontained ledger state | A worktree-local ignored ledger caused the Phase 14 recovery incident. Cleanup must prove the canonical ledger is clean, no temp remains, and required checkpoints reached the destination branch. |
 | Never skip `[workspace.dependencies]` for internal deps | Lockstep versioning requires workspace table. Bare path deps break `cargo publish`. |
 | Never execute a stale ledger after `opi-spec.md` changed | The ledger is an implementation cache. If the spec hash changed, task title, DoD, dependencies, and phase scope may now mean something different. |
 | Never silently default v1 fields when migrating to v2 | Defaults mask the case where a v1 task was inferred under old rules and would now be re-classified. Migration must re-evaluate each new field per v2 semantics and demote to `failing` when the old evidence does not match. |

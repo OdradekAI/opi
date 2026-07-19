@@ -179,19 +179,20 @@ MUST NOT silently apply inferred changes.
 
 ### A.init.4 Write Ledger
 - Write `.opi-impl-state.json` atomically
-- Add `.opi-impl-state.json`, `.opi-impl-state.json.tmp`,
-  `.opi-impl-state.draft.json` to `.gitignore` if missing
+- Ensure `.opi-impl-state.json` is tracked
+- Add `.opi-impl-state.json.tmp`, `.opi-impl-state.draft.json`, candidate,
+  backup, and corrupt ledger patterns to `.gitignore` if missing
 
 ### A.init.5 Write Smoke Script
 - `scripts/opi-impl-smoke.sh` (+ `.ps1` sibling on Windows)
 
 ### A.init.6 Commit
 
-**Note:** This is the only git mutation outside Phase E. It commits harness
-infrastructure (smoke script + .gitignore), not task implementation code.
+**Note:** This is the bootstrap checkpoint outside normal task Phase E. It
+commits harness infrastructure and the confirmed canonical ledger, not task
+implementation code.
 
-- Commit ONLY tracked files (smoke + .gitignore update)
-- Ledger is NOT committed (gitignored runtime state)
+- Commit ONLY the canonical ledger, smoke scripts, and any `.gitignore` update
 - Message: `chore: bootstrap opi-implement ledger and smoke`
 
 ### A.init.7 Print Summary
@@ -238,9 +239,11 @@ When drift is detected against an existing ledger:
      task-graph review gate with row-level diff, require confirmation
 4. Update every entry in `spec_files_sha256` to the freshly recomputed hash
    after confirmation.
-5. If tracked files changed (.gitignore, smoke): commit with
+5. Commit the reconciled canonical ledger and any changed harness files
+   (`.gitignore`, smoke) with
    `chore: reconcile opi-implement harness files with opi-spec.md changes`
-6. If no tracked file changed: no empty commit. Ledger/draft remain gitignored.
+6. The ignored draft is never committed. If reconciliation produces no
+   canonical-ledger or harness-file change, do not create an empty commit.
 
 ### Changed Task Meaning
 

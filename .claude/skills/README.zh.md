@@ -77,7 +77,8 @@
 `opi-implement` Phase C 本身组合 `superpowers:test-driven-development`（red-green-refactor），
 外加可选并行派发与第 3 次尝试起的 `systematic-debugging`。每个任务跑 harness 阶段 A→F：
 bootstrap、plan、用 TDD 实现、verify（分层 gate + Artifact Truthfulness Gate）、带 `Opi-*`
-footer 提交、phase-exit 检查。每个任务提交后 **`compact`**，再继续。
+footer 提交、以独立提交检查点化受 Git 跟踪的台账、phase-exit 检查。两个提交完成后
+**`compact`**，再继续。
 
 - **进入：** Phase 2 定稿的台账。
 - **退出关卡：** 该阶段所有任务 `passing`；phase-exit 评估器把每条成功/退出标准追踪到
@@ -154,8 +155,9 @@ Phase 5 部分可逆（push 时提交/tag 即公开），Phase 6（crates.io）�
 
 ## 共享契约
 
-- **`.opi-impl-state.json`**（gitignored，仓库根）—— `opi-implement` 的活动任务台账。
-  `opi-remediate` 与 `opi-audit` 只 *读* 它——且两者读的都是 `docs/snapshots/phase<N>/opi-impl-state.json`
+- **`.opi-impl-state.json`**（Git 跟踪，仓库根）—— `opi-implement` 的规范活动任务台账。
+  任务提交与台账检查点提交相互独立；临时、草稿和恢复副本继续忽略。`opi-remediate` 与
+  `opi-audit` 只 *读* 它——且两者读的都是 `docs/snapshots/phase<N>/opi-impl-state.json`
   处的 **冻结按阶段快照**，而非仓库根的活动文件。其他技能不写它。
 - **`docs/snapshots/phase<N>/`** —— 冻结的按阶段归档：`opi-impl-state.json` 快照、
   `audit.<model-id>.md` 报告、`remediation-plan.md`。
@@ -207,16 +209,18 @@ Phase 5 部分可逆（push 时提交/tag 即公开），Phase 6（crates.io）�
 - **做什么：** 每任务六阶段——A Bootstrap、B Plan（打印 DoD + tier + 验收场景 + 调用点 +
   禁止范围 guard，用户 gate）、C Implement（TDD red-green-refactor，可选并行派发，第 3 次尝试
   起用 systematic debugging）、D Verify（产品验收 D.0、Artifact Truthfulness Gate D.0a、分层
-  gate D.1、风险评估器 D.2、横切 gate D.3）、E Commit + 台账更新（Conventional commit 带
-  `Opi-*` footer）、F Phase-Exit 检查。init/reinit 时推断任务元数据；强制 spec 哈希对齐 guard；
+  gate D.1、风险评估器 D.2、横切 gate D.3）、E 任务提交 + 独立的受跟踪台账检查点
+  （Conventional 任务提交带 `Opi-*` footer）、F Phase-Exit 检查。init/reinit 时推断任务元数据；
+  强制 spec 哈希对齐 guard；
   跑分层验证——**六个 tier**（workspace / documentation / library / cli-tool / cli-runtime /
   tui）外加叠加在其上的**条件 addenda**（provider-contract、multimodal、product acceptance）。
 - **不做什么：** 不编辑 `opi-spec.md`（除非一个已评审、拥有它的文档任务）、不 push 提交/tag、
   不发布或开 PR/release、不调用 provider API、不删除或削弱测试、不 crate 级 bypass clippy、不
   自动接受 TUI 快照、不运行 `git restore`/`clean`/`reset`/`--no-verify`/`--force`/
   `git add -A`、不以 stub 或 TODO 满足 DoD。
-- **产物：** 读 `docs/opi-spec.md` §15 + 已评审 Phase 5–14 来源；写 `.opi-impl-state.json`
-  （gitignored）、`docs/snapshots/phase<N>/` 下的阶段快照、带 `Opi-*` footer 的任务提交。
+- **产物：** 读 `docs/opi-spec.md` §15 + 已评审 Phase 5–14 来源；写受跟踪的
+  `.opi-impl-state.json`、忽略的临时台账文件、`docs/snapshots/phase<N>/` 下的阶段快照、
+  带 `Opi-*` footer 的任务提交和独立的台账检查点提交。
 - **在工作流中：** Phase 2（init）与 Phase 3（实现循环）。
 - **备注：** 全工作区 smoke 开销大且曾撑满本机磁盘——库层任务优先用每任务 library gate 加
   `CARGO_INCREMENTAL=0`。本 Windows 主机用 `python` 而非 `python3`。

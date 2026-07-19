@@ -19,6 +19,27 @@ param(
 
 $ErrorActionPreference = "Stop"
 $strictUtf8 = New-Object System.Text.UTF8Encoding($false, $true)
+$sensitivePropertyNames = @(
+    "api_key",
+    "apikey",
+    "access_token",
+    "refresh_token",
+    "authorization",
+    "password",
+    "private_key",
+    "client_secret"
+)
+
+function Assert-LedgerPropertyNameSafe {
+    param(
+        [Parameter(Mandatory = $true)][string]$PropertyName,
+        [Parameter(Mandatory = $true)][string]$JsonPath
+    )
+
+    if ($sensitivePropertyNames -contains $PropertyName) {
+        throw "ledger sensitive content detected at ${JsonPath}: forbidden property '$PropertyName'"
+    }
+}
 
 function Get-Sha256 {
     param([Parameter(Mandatory = $true)][string]$FilePath)
@@ -50,6 +71,24 @@ function Test-LedgerValue {
             throw "ledger string limit exceeded at ${JsonPath}: $($Value.Length) > $StringLimit"
         }
 
+        $bearerPattern = "(?i)\bBearer\s+(?<token>[-A-Za-z0-9._~+/]{12,}=*)"
+        foreach ($match in [System.Text.RegularExpressions.Regex]::Matches($Value, $bearerPattern)) {
+            $token = $match.Groups["token"].Value
+            $isExplicitPlaceholder = [System.Text.RegularExpressions.Regex]::IsMatch(
+                $token,
+                "^[a-z]+(?:[-_][a-z]+)*[-_]token$"
+            )
+            if (-not $isExplicitPlaceholder) {
+                throw "ledger sensitive content detected at $JsonPath"
+            }
+        }
+        if ([System.Text.RegularExpressions.Regex]::IsMatch(
+            $Value,
+            "-----BEGIN(?: [A-Z0-9]+)? PRIVATE KEY-----"
+        )) {
+            throw "ledger sensitive content detected at $JsonPath"
+        }
+
         $markers = @(
             (([string][char]0x9225) + "?"),
             (([string][char]0x922B) + "?"),
@@ -72,6 +111,7 @@ function Test-LedgerValue {
 
     if ($Value -is [System.Collections.IDictionary]) {
         foreach ($key in $Value.Keys) {
+            Assert-LedgerPropertyNameSafe -PropertyName ([string]$key) -JsonPath "$JsonPath.$key"
             Test-LedgerValue -Value $Value[$key] -JsonPath "$JsonPath.$key" -StringLimit $StringLimit
         }
         return
@@ -87,6 +127,7 @@ function Test-LedgerValue {
     }
 
     foreach ($property in $Value.PSObject.Properties) {
+        Assert-LedgerPropertyNameSafe -PropertyName $property.Name -JsonPath "$JsonPath.$($property.Name)"
         Test-LedgerValue -Value $property.Value -JsonPath "$JsonPath.$($property.Name)" -StringLimit $StringLimit
     }
 }
