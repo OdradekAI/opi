@@ -182,8 +182,11 @@ authentication headers are reserved. The subscription-only
 cross-process `credential.lock`, and provider HTTP refresh. Persisted API keys
 and OAuth envelopes use the OS keychain; API keys can fall back to their env
 source when the backend is unavailable. No opi-managed plaintext credential
-file is created. `opi doctor` and `--list-models` await a probe and format only
-redacted present/absent/backend-unavailable state.
+file is created. `opi doctor` and credential-gated `--list-models` paths await
+secret-free probes and format only redacted
+present/absent/backend-unavailable state; the unconditional static GitHub
+Copilot and OpenAI Codex subscription catalogs perform no credential probe
+during listing.
 
 Production startup installs Windows Credential Manager on Windows, macOS
 Keychain Services on macOS, or Freedesktop Secret Service on Linux before any
@@ -495,9 +498,12 @@ Common methods include `prompt`, `prompt_with_content`, `queue_images`,
   `require_assistant_after_tool_result`,
   `chat_completions_path`; plus per-profile `extra_headers` for static request
   headers, which is a profile config field, not a `CompatConfig` flag), OpenAI
-  Responses native semantics (`store` / `reasoning_effort` / `strict_tools`
-  implemented; `previous_response_id` deferred), and cache / response-ID /
-  session-affinity behavior. In particular, `usage_in_stream` requests
+  Responses native semantics (`store` / `strict_tools` implemented; static
+  `reasoning_effort` is legacy compatibility/profile metadata;
+  `request.thinking` plus the selected `ModelInfo::thinking_level_map`
+  controls Chat/Responses wire output; `previous_response_id` deferred), and
+  cache / response-ID / session-affinity behavior. In particular,
+  `usage_in_stream` requests
   `stream_options.include_usage`, OpenAI Chat captures response IDs from any
   chunk carrying `id`, `require_assistant_after_tool_result` stays metadata-only
   in the shared adapter, and session cost summaries are omitted when any turn

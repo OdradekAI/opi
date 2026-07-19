@@ -71,6 +71,42 @@ struct ListingPresenceBackend {
     presence_calls: Arc<AtomicUsize>,
 }
 
+struct ListingOperationalProbeBackend;
+
+impl opi_coding_agent::credential_store::KeyringBackend for ListingOperationalProbeBackend {
+    fn get(
+        &self,
+        service: &str,
+        _provider_id: &str,
+    ) -> Result<Option<String>, opi_coding_agent::credential_store::BackendError> {
+        assert_eq!(service, "opi.presence");
+        Err(opi_coding_agent::credential_store::BackendError::Other(
+            "credential service access denied".to_owned(),
+        ))
+    }
+
+    fn set(
+        &self,
+        _service: &str,
+        _provider_id: &str,
+        _value: &str,
+    ) -> Result<(), opi_coding_agent::credential_store::BackendError> {
+        Err(opi_coding_agent::credential_store::BackendError::Other(
+            "unused set".to_owned(),
+        ))
+    }
+
+    fn delete(
+        &self,
+        _service: &str,
+        _provider_id: &str,
+    ) -> Result<(), opi_coding_agent::credential_store::BackendError> {
+        Err(opi_coding_agent::credential_store::BackendError::Other(
+            "unused delete".to_owned(),
+        ))
+    }
+}
+
 impl opi_coding_agent::credential_store::KeyringBackend for ListingPresenceBackend {
     fn get(
         &self,
@@ -319,6 +355,167 @@ fn stored_credential_metadata_is_redacted() {
     }
 }
 
+#[test]
+fn anthropic_oauth_env_alone_enables_secret_free_listing() {
+    use std::collections::HashMap;
+
+    use opi_coding_agent::provider_factory::build_collection_for_listing;
+
+    let _guard = ENV_LOCK.lock().unwrap();
+    let oauth_canary = "oauth-listing-canary-DO-NOT-LEAK";
+    let original_api = std::env::var_os("ANTHROPIC_API_KEY");
+    let original_oauth = std::env::var_os("ANTHROPIC_OAUTH_TOKEN");
+    // SAFETY: serialized by ENV_LOCK; both variables are restored below.
+    unsafe {
+        std::env::remove_var("ANTHROPIC_API_KEY");
+        std::env::set_var("ANTHROPIC_OAUTH_TOKEN", oauth_canary);
+    }
+
+    let outcome = build_collection_for_listing(
+        &opi_coding_agent::config::OpiConfig::default(),
+        &HashMap::new(),
+    );
+
+    match original_api {
+        Some(value) => unsafe { std::env::set_var("ANTHROPIC_API_KEY", value) },
+        None => unsafe { std::env::remove_var("ANTHROPIC_API_KEY") },
+    }
+    match original_oauth {
+        Some(value) => unsafe { std::env::set_var("ANTHROPIC_OAUTH_TOKEN", value) },
+        None => unsafe { std::env::remove_var("ANTHROPIC_OAUTH_TOKEN") },
+    }
+
+    let collection = outcome.expect("OAuth-env-only Anthropic listing");
+    let entries = model_entries_from_registry(collection.registry());
+    assert!(entries.iter().any(|entry| entry.provider_id == "anthropic"));
+    let rendered = format!(
+        "{:?}{:?}{}",
+        collection.auth_descriptor("anthropic"),
+        collection.auth_status("anthropic"),
+        entries
+            .iter()
+            .map(|entry| format!(
+                "{}:{}:{}",
+                entry.provider_id, entry.model_id, entry.display_name
+            ))
+            .collect::<Vec<_>>()
+            .join("\n")
+    );
+    assert!(!rendered.contains(oauth_canary));
+}
+
+#[tokio::test]
+#[allow(clippy::await_holding_lock)] // Serializes process-env mutation; the awaited listing core never re-acquires this lock.
+async fn listing_uses_selected_credential_kind_and_source_label() {
+    use opi_ai::credential::Credential;
+    use opi_ai::{AuthDescriptor, AuthScheme};
+    use opi_coding_agent::config::CustomProviderConfig;
+    use opi_coding_agent::credential_store::{FakeKeyringBackend, KeychainCredentialStore};
+    use opi_coding_agent::provider_factory::build_collection_for_listing_with_store;
+    use secrecy::SecretString;
+
+    fn secret(value: &str) -> SecretString {
+        SecretString::new(value.to_owned().into_boxed_str())
+    }
+
+    let _guard = ENV_LOCK.lock().unwrap();
+    let original_api = std::env::var_os("ANTHROPIC_API_KEY");
+    let original_oauth = std::env::var_os("ANTHROPIC_OAUTH_TOKEN");
+    let original_custom = std::env::var_os("ACME_API_KEY");
+    // SAFETY: serialized by ENV_LOCK; all variables are restored below.
+    unsafe {
+        std::env::remove_var("ANTHROPIC_API_KEY");
+        std::env::set_var(
+            "ANTHROPIC_OAUTH_TOKEN",
+            "oauth-listing-precedence-canary-DO-NOT-LEAK",
+        );
+        std::env::set_var(
+            "ACME_API_KEY",
+            "custom-listing-wrong-kind-canary-DO-NOT-LEAK",
+        );
+    }
+
+    let dir = tempfile::tempdir().unwrap();
+    let store = KeychainCredentialStore::new(
+        Box::new(FakeKeyringBackend::new()),
+        dir.path().to_path_buf(),
+    );
+    store
+        .write("anthropic", &Credential::ApiKey(secret("stored-api-key")))
+        .await
+        .unwrap();
+    store
+        .write(
+            "acme",
+            &Credential::OAuthToken {
+                access: secret("custom-oauth-access"),
+                refresh: secret("custom-oauth-refresh"),
+                expires_at: None,
+                base_url: None,
+                account_id: None,
+            },
+        )
+        .await
+        .unwrap();
+
+    let mut config = opi_coding_agent::config::OpiConfig::default();
+    config.providers.custom.insert(
+        "acme".into(),
+        CustomProviderConfig {
+            id: "acme".into(),
+            name: "Acme".into(),
+            base_url: Some("https://api.acme.example".into()),
+            api_key_env: "ACME_API_KEY".into(),
+            auth_scheme: AuthScheme::Bearer,
+            proxy: None,
+            headers: Vec::new(),
+            models: vec![model("model", "Model")],
+        },
+    );
+    let outcome = build_collection_for_listing_with_store(&config, &store).await;
+
+    match original_api {
+        Some(value) => unsafe { std::env::set_var("ANTHROPIC_API_KEY", value) },
+        None => unsafe { std::env::remove_var("ANTHROPIC_API_KEY") },
+    }
+    match original_oauth {
+        Some(value) => unsafe { std::env::set_var("ANTHROPIC_OAUTH_TOKEN", value) },
+        None => unsafe { std::env::remove_var("ANTHROPIC_OAUTH_TOKEN") },
+    }
+    match original_custom {
+        Some(value) => unsafe { std::env::set_var("ACME_API_KEY", value) },
+        None => unsafe { std::env::remove_var("ACME_API_KEY") },
+    }
+
+    let collection = outcome.expect("kind-aware listing");
+    assert!(
+        matches!(
+            collection.auth_descriptor("anthropic"),
+            Some(AuthDescriptor::Resolved { source })
+                if source == "env ANTHROPIC_OAUTH_TOKEN"
+        ),
+        "listing metadata must name the source selected by live Anthropic precedence: {:?}",
+        collection.auth_descriptor("anthropic")
+    );
+    assert!(
+        collection.registry().get_provider("acme").is_none(),
+        "stored OAuth must reject an API-key-only custom provider without falling back to env"
+    );
+    let rendered = format!(
+        "{:?}{:?}",
+        collection.auth_descriptor("anthropic"),
+        collection.auth_descriptor("acme")
+    );
+    for canary in [
+        "oauth-listing-precedence-canary-DO-NOT-LEAK",
+        "custom-listing-wrong-kind-canary-DO-NOT-LEAK",
+        "custom-oauth-access",
+        "custom-oauth-refresh",
+    ] {
+        assert!(!rendered.contains(canary), "secret leaked: {rendered}");
+    }
+}
+
 #[derive(Default)]
 struct ProbeOnlyCredentialStore {
     credentials: std::sync::Mutex<std::collections::HashMap<String, Credential>>,
@@ -371,6 +568,41 @@ impl CredentialStore for ProbeOnlyCredentialStore {
                 }
             } else {
                 CredentialSource::Absent
+            }
+        })
+    }
+}
+
+impl opi_coding_agent::credential_store::CredentialMetadataStore for ProbeOnlyCredentialStore {
+    fn probe_metadata<'a>(
+        &'a self,
+        provider_id: &'a str,
+    ) -> BoxAuthFuture<'a, opi_coding_agent::credential_store::CredentialMetadataProbe> {
+        Box::pin(async move {
+            use opi_coding_agent::credential_store::{
+                CredentialMetadataProbe, StoredCredentialKind,
+            };
+
+            self.probed_provider_ids
+                .lock()
+                .unwrap()
+                .push(provider_id.to_owned());
+            let credentials = self.credentials.lock().unwrap();
+            let kind = match credentials.get(provider_id) {
+                Some(Credential::ApiKey(_)) => Some(StoredCredentialKind::ApiKey),
+                Some(Credential::OAuthToken { .. }) => Some(StoredCredentialKind::OAuthToken),
+                None => None,
+            };
+            CredentialMetadataProbe {
+                source: if kind.is_some() {
+                    CredentialSource::Present {
+                        label: format!("fake store {provider_id}"),
+                    }
+                } else {
+                    CredentialSource::Absent
+                },
+                kind,
+                failure: None,
             }
         })
     }
@@ -595,6 +827,68 @@ async fn listing_presence_probe_never_reads_secret() {
     assert!(collection.registry().get_provider("anthropic").is_some());
     assert_eq!(secret_get_calls.load(Ordering::SeqCst), 0);
     assert!(presence_calls.load(Ordering::SeqCst) > 0);
+}
+
+#[tokio::test]
+#[allow(clippy::await_holding_lock)] // Serializes process-env mutation; the awaited listing core never re-acquires this lock.
+async fn listing_fails_closed_on_operational_and_corrupt_store_probes_with_env_present() {
+    use opi_coding_agent::credential_store::{
+        FakeKeyringBackend, KEYCHAIN_PRESENCE_SERVICE, KeychainCredentialStore, KeyringBackend,
+    };
+    use opi_coding_agent::provider_factory::build_collection_for_listing_with_store;
+
+    let _env_guard = ENV_LOCK.lock().expect("env lock");
+    let env_canary = "listing-fail-closed-env-canary-DO-NOT-LEAK";
+    let original_api = std::env::var_os("ANTHROPIC_API_KEY");
+    let original_oauth = std::env::var_os("ANTHROPIC_OAUTH_TOKEN");
+    // SAFETY: serialized by ENV_LOCK; both variables are restored before assertions.
+    unsafe {
+        std::env::set_var("ANTHROPIC_API_KEY", env_canary);
+        std::env::remove_var("ANTHROPIC_OAUTH_TOKEN");
+    }
+
+    let corrupt = FakeKeyringBackend::new();
+    corrupt.seed_raw(KEYCHAIN_PRESENCE_SERVICE, "anthropic", "corrupt-marker");
+    let cases: [(&str, Box<dyn KeyringBackend>); 2] = [
+        ("operational", Box::new(ListingOperationalProbeBackend)),
+        ("corrupt", Box::new(corrupt)),
+    ];
+    let mut outcomes = Vec::new();
+    for (name, backend) in cases {
+        let dir = tempfile::tempdir().unwrap();
+        let store = KeychainCredentialStore::new(backend, dir.path().to_path_buf());
+        outcomes.push((
+            name,
+            build_collection_for_listing_with_store(
+                &opi_coding_agent::config::OpiConfig::default(),
+                &store,
+            )
+            .await,
+        ));
+    }
+
+    match original_api {
+        Some(value) => unsafe { std::env::set_var("ANTHROPIC_API_KEY", value) },
+        None => unsafe { std::env::remove_var("ANTHROPIC_API_KEY") },
+    }
+    match original_oauth {
+        Some(value) => unsafe { std::env::set_var("ANTHROPIC_OAUTH_TOKEN", value) },
+        None => unsafe { std::env::remove_var("ANTHROPIC_OAUTH_TOKEN") },
+    }
+
+    for (name, outcome) in outcomes {
+        let collection = outcome.unwrap_or_else(|error| panic!("{name}: {error}"));
+        assert!(
+            collection.registry().get_provider("anthropic").is_none(),
+            "{name}: fail-closed store probe must not use API-key env fallback"
+        );
+        let rendered = format!(
+            "{:?}{:?}",
+            collection.auth_descriptor("anthropic"),
+            collection.auth_status("anthropic")
+        );
+        assert!(!rendered.contains(env_canary), "{name}: {rendered}");
+    }
 }
 
 #[tokio::test]

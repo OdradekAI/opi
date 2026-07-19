@@ -78,6 +78,52 @@ fn duplicate_registration_replaces() {
     assert_eq!(reg.provider_ids().len(), 1);
 }
 
+#[test]
+fn validated_provider_replacement_clears_dynamic_catalog() {
+    let mut reg = ProviderRegistry::new();
+    reg.register_provider(Box::new(StubProvider::new("p")))
+        .unwrap();
+    reg.set_dynamic_catalog(
+        "p",
+        vec![ModelInfo::new(
+            "dynamic",
+            "Dynamic",
+            WireApi::OpenAiCompletions,
+            ModelCapabilities::new(128_000, 4_096),
+        )],
+    );
+    assert!(reg.resolve("p:dynamic").is_ok());
+    assert!(reg.resolve("p:p-model-1").is_err());
+
+    reg.register_provider(Box::new(StubProvider::new("p")))
+        .unwrap();
+
+    assert!(reg.resolve("p:dynamic").is_err());
+    assert!(reg.resolve("p:p-model-1").is_ok());
+}
+
+#[test]
+fn compatibility_provider_replacement_clears_dynamic_catalog() {
+    let mut reg = ProviderRegistry::new();
+    reg.register(Box::new(StubProvider::new("p")));
+    reg.set_dynamic_catalog(
+        "p",
+        vec![ModelInfo::new(
+            "dynamic",
+            "Dynamic",
+            WireApi::OpenAiCompletions,
+            ModelCapabilities::new(128_000, 4_096),
+        )],
+    );
+    assert!(reg.resolve("p:dynamic").is_ok());
+    assert!(reg.resolve("p:p-model-1").is_err());
+
+    reg.register(Box::new(StubProvider::new("p")));
+
+    assert!(reg.resolve("p:dynamic").is_err());
+    assert!(reg.resolve("p:p-model-1").is_ok());
+}
+
 // ---------------------------------------------------------------------------
 // Resolve: provider:model ->(Provider, ModelInfo)
 // ---------------------------------------------------------------------------

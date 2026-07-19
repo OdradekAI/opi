@@ -397,23 +397,25 @@ fn provider_bundle_retains_redacted_backend_fallback_diagnostic() {
 }
 
 #[test]
-fn build_provider_production_returns_store_owning_bundle() {
+fn build_provider_production_future_has_provider_bundle_output_type() {
     use std::future::Future;
 
     use opi_coding_agent::provider_factory::{
         ProviderBuildError, ProviderBundle, build_provider_production,
     };
 
-    fn assert_bundle_output<F>(_: F)
+    fn assert_provider_bundle_output<F>(_: F)
     where
         F: Future<Output = Result<ProviderBundle, ProviderBuildError>>,
     {
     }
 
     let config = OpiConfig::default();
-    assert_bundle_output(build_provider_production(
+    // Compile-time return-type coverage only: this future is intentionally
+    // unpolled. The separate async lifetime test below owns runtime behavior.
+    assert_provider_bundle_output(build_provider_production(
         &config,
-        std::path::PathBuf::from("unused-unpolled-keyring-path"),
+        std::path::PathBuf::from("compile-only-unpolled-keyring-path"),
     ));
 }
 

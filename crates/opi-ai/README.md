@@ -110,10 +110,11 @@ while explicit disablement and unknown/custom models emit no markers.
 
 `Request` adds `timeout`, `extra_headers`, `CacheRetention`, and `session_id`.
 The first three are public request-to-wire substrate; only `session_id` has a
-Phase 14 production producer in the coding harness. OpenAI-family adapters map
-that id only through reviewed compatibility flags, while Anthropic uses
-model-gated cache markers. `ModelInfo` contains the existing nested
-`ModelCapabilities`; unknown/custom models default cache support off.
+Phase 14 production producer in the coding harness. Session-affinity behavior
+differs between direct Responses and custom/proxy routes as detailed below,
+while Anthropic uses model-gated cache markers. `ModelInfo` contains the
+existing nested `ModelCapabilities`; unknown/custom models default cache
+support off.
 
 `Usage::cache_write_1h_tokens` and `Usage::reasoning_tokens` are optional
 `u64` child subsets, preserving absent versus explicitly reported zero.
@@ -161,8 +162,8 @@ or Gemini path; "—" means not produced.
 | Family | Thinking/reasoning | Image input | Cache tokens (usage) | Response ID |
 |--------|--------------------|-------------|----------------------|-------------|
 | `anthropic` | thinking blocks | PNG/JPEG/GIF/WebP | `cache_read` / `cache_creation` | `message.id` |
-| `openai_chat` | `reasoning_effort` via compat profile | PNG/JPEG/GIF/WebP | `cached_tokens` | `chatcmpl-*` (`id`) |
-| `openai_responses` | `reasoning_effort` (`ResponsesConfig`) | PNG/JPEG/GIF/WebP | `cached_tokens` | `resp_*` (`id`) |
+| `openai_chat` | `request.thinking` + selected `ModelInfo::thinking_level_map` | PNG/JPEG/GIF/WebP | `cached_tokens` | `chatcmpl-*` (`id`) |
+| `openai_responses` | `request.thinking` + selected `ModelInfo::thinking_level_map` | PNG/JPEG/GIF/WebP | `cached_tokens` | `resp_*` (`id`) |
 | `openrouter` | inherited | PNG/JPEG/GIF/WebP | inherited | `chatcmpl-*` |
 | `mistral` | inherited | PNG/JPEG/GIF/WebP | inherited | `chatcmpl-*` |
 | `gemini` | thinking | PNG/JPEG/GIF/WebP | `cached_content` | — |
@@ -191,7 +192,7 @@ is a non-default step reserved for those material differences.
 | `tool_result_name_field` | Echo the tool name on the tool-result message. |
 | `usage_in_stream` | Request `stream_options.include_usage` and preserve usage updates from any streaming chunk. |
 | `strict_tool_schema` | Emit strict JSON-schema tool definitions. |
-| `reasoning_effort` | Send a reasoning-effort hint for models that support it. |
+| `reasoning_effort` | Legacy compatibility/profile metadata; wire reasoning comes from `request.thinking` and the selected `ModelInfo::thinking_level_map`. |
 | `cache_key` | Send the provider's prompt-cache key (cache-affinity hint). |
 | `send_session_affinity_headers` | Map a request `session_id` to the compatible `session_id`, `x-client-request-id`, and `x-session-affinity` headers; disabled by default. |
 | `require_assistant_after_tool_result` | Metadata-only compatibility marker for legacy endpoints; opi does not synthesize or enforce the extra assistant turn in the shared adapter. |
@@ -203,8 +204,11 @@ provider). Static per-profile request headers (`extra_headers`, used for
 session affinity / routing) are a separate profile config field threaded
 through `OpenAiChatProvider` construction, not a `CompatConfig` flag.
 
-OpenAI Responses native semantics (`ResponsesConfig`): `store`,
-`reasoning_effort`, and `strict_tools` are implemented.
+OpenAI Responses native semantics (`ResponsesConfig`): `store` and
+`strict_tools` are implemented. Static `reasoning_effort` remains legacy
+compatibility metadata; `request.thinking` plus the selected
+`ModelInfo::thinking_level_map` is authoritative for Chat and Responses wire
+output.
 `previous_response_id` is intentionally absent — Responses requests are built
 as Chat-Completions analogues, so server-side response chaining is not wired.
 
@@ -223,10 +227,13 @@ Provider response IDs are captured and round-tripped into
 `chatcmpl-*`, OpenAI Responses `resp_*`); OpenAI Chat captures the ID from any
 chunk carrying `id`, not only role chunks, and other families leave it `None`.
 
-Session affinity is intentionally limited: `previous_response_id` is deferred
-(see OpenAI-Compatible Profiles), and compatible profiles may carry static
-`extra_headers` for routing/session pinning. There is no server-side session
-chain.
+Session affinity is intentionally limited. For an effective session, direct
+OpenAI Responses automatically derives `prompt_cache_key` and a fresh
+`x-client-request-id`; `send_session_id_header` gates only `session_id`.
+Custom/proxy affinity remains disabled by default and requires explicit
+opt-in. `previous_response_id` is deferred (see OpenAI-Compatible Profiles),
+and compatible profiles may carry static `extra_headers` for routing/session
+pinning. There is no server-side session chain.
 
 ## Proxy
 

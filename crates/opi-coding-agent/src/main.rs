@@ -1838,11 +1838,17 @@ mod tests {
             assert!(observed.load(Ordering::SeqCst));
             let stdout = stdout.lock().expect("stdout capture").clone();
             if json {
-                let remediation = stdout
+                let remediation_events: Vec<_> = stdout
                     .lines()
                     .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
-                    .find(|line| line["type"] == "CredentialNeeded")
-                    .expect("typed stream-time credential remediation");
+                    .filter(|line| line["type"] == "CredentialNeeded")
+                    .collect();
+                assert_eq!(
+                    remediation_events.len(),
+                    1,
+                    "expected exactly one typed stream-time credential remediation"
+                );
+                let remediation = &remediation_events[0];
                 assert_eq!(remediation["provider_id"], "anthropic");
                 assert_eq!(remediation["remediation"], "/login anthropic");
             } else {
@@ -1923,25 +1929,29 @@ mod tests {
                                 id: Some("quit-after-auth".into()),
                             })
                             .expect("queue quit");
-                        while let Some(line) = output_rx.recv().await {
-                            let quit = line["type"] == "response"
-                                && line["command"] == "quit"
-                                && line["success"] == true;
-                            emitted.push(line);
-                            if quit {
-                                break;
+                        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+                            while let Some(line) = output_rx.recv().await {
+                                emitted.push(line);
                             }
-                        }
+                        })
+                        .await
+                        .expect("RPC output channel closes after quit");
                         emitted
                     };
                     tokio::join!(run, drive)
                 });
 
         assert_eq!(exit_code, ExitCode::Success as i32);
-        let remediation = emitted
+        let remediation_events: Vec<_> = emitted
             .iter()
-            .find(|line| line["type"] == "CredentialNeeded")
-            .expect("typed stream-time RPC remediation");
+            .filter(|line| line["type"] == "CredentialNeeded")
+            .collect();
+        assert_eq!(
+            remediation_events.len(),
+            1,
+            "expected exactly one typed stream-time RPC remediation"
+        );
+        let remediation = remediation_events[0];
         assert_eq!(remediation["provider_id"], "anthropic");
         assert_eq!(remediation["remediation"], "/login anthropic");
         assert!(stdout.lock().expect("stdout capture").is_empty());

@@ -8,7 +8,7 @@
 
 use opi_ai::stream::{CostBreakdown, CumulativeUsage, Pricing, Usage, calculate_cost};
 
-fn assert_optional_u64(_: Option<u64>) {}
+fn compile_time_assert_optional_u64(_: Option<u64>) {}
 
 // ---------------------------------------------------------------------------
 // Usage struct with cache fields
@@ -21,8 +21,8 @@ fn usage_default_preserves_absent_optional_subsets() {
     assert_eq!(u.output_tokens, 0);
     assert_eq!(u.cache_read_tokens, 0);
     assert_eq!(u.cache_write_tokens, 0);
-    assert_optional_u64(u.cache_write_1h_tokens);
-    assert_optional_u64(u.reasoning_tokens);
+    compile_time_assert_optional_u64(u.cache_write_1h_tokens);
+    compile_time_assert_optional_u64(u.reasoning_tokens);
     assert_eq!(u.cache_write_1h_tokens, None);
     assert_eq!(u.reasoning_tokens, None);
 }
@@ -99,8 +99,8 @@ fn cumulative_usage_starts_at_zero() {
     assert_eq!(cu.total_output_tokens(), 0);
     assert_eq!(cu.total_cache_read_tokens(), 0);
     assert_eq!(cu.total_cache_write_tokens(), 0);
-    assert_optional_u64(cu.total_cache_write_1h_tokens());
-    assert_optional_u64(cu.total_reasoning_tokens());
+    compile_time_assert_optional_u64(cu.total_cache_write_1h_tokens());
+    compile_time_assert_optional_u64(cu.total_reasoning_tokens());
     assert_eq!(cu.total_cache_write_1h_tokens(), None);
     assert_eq!(cu.total_reasoning_tokens(), None);
     assert_eq!(cu.turn_count(), 0);
@@ -146,6 +146,132 @@ fn cumulative_usage_as_usage_returns_aggregate() {
     assert_eq!(aggregate.cache_write_1h_tokens, Some(40));
     assert_eq!(aggregate.reasoning_tokens, Some(15));
     assert!(aggregate.is_reported());
+}
+
+#[test]
+fn cumulative_reported_usage_saturates_parent_buckets_at_u32_max() {
+    let above_max = u64::from(u32::MAX) + 1;
+    let cumulative =
+        CumulativeUsage::from_totals(above_max, above_max, above_max, above_max, None, None, 1, 0);
+
+    let aggregate = cumulative.as_usage();
+
+    assert_eq!(aggregate.input_tokens, u32::MAX);
+    assert_eq!(aggregate.output_tokens, u32::MAX);
+    assert_eq!(aggregate.cache_read_tokens, u32::MAX);
+    assert_eq!(aggregate.cache_write_tokens, u32::MAX);
+    assert!(aggregate.is_reported());
+}
+
+#[test]
+fn cumulative_unknown_usage_saturates_parent_buckets_at_u32_max() {
+    let above_max = u64::from(u32::MAX) + 1;
+    let cumulative =
+        CumulativeUsage::from_totals(above_max, above_max, above_max, above_max, None, None, 1, 1);
+
+    let aggregate = cumulative.as_usage();
+
+    assert_eq!(aggregate.input_tokens, u32::MAX);
+    assert_eq!(aggregate.output_tokens, u32::MAX);
+    assert_eq!(aggregate.cache_read_tokens, u32::MAX);
+    assert_eq!(aggregate.cache_write_tokens, u32::MAX);
+    assert!(!aggregate.is_reported());
+}
+
+#[test]
+fn cumulative_usage_saturates_child_subsets_to_parent_boundaries() {
+    let above_max = u64::from(u32::MAX) + 1;
+    let cumulative = CumulativeUsage::from_totals(
+        0,
+        above_max,
+        0,
+        above_max,
+        Some(above_max),
+        Some(above_max),
+        1,
+        0,
+    );
+
+    let aggregate = cumulative.as_usage();
+
+    assert_eq!(aggregate.cache_write_1h_tokens, Some(u64::from(u32::MAX)));
+    assert_eq!(aggregate.reasoning_tokens, Some(u64::from(u32::MAX)));
+    assert!(aggregate.cache_write_1h_tokens.unwrap() <= u64::from(aggregate.cache_write_tokens));
+    assert!(aggregate.reasoning_tokens.unwrap() <= u64::from(aggregate.output_tokens));
+}
+
+#[test]
+fn cumulative_usage_accumulation_saturates_totals_and_counters() {
+    let mut cumulative = CumulativeUsage::from_totals(
+        u64::MAX,
+        u64::MAX,
+        u64::MAX,
+        u64::MAX,
+        Some(u64::MAX),
+        Some(u64::MAX),
+        u32::MAX,
+        u32::MAX,
+    );
+    let unknown_turn = Usage {
+        input_tokens: 1,
+        output_tokens: 1,
+        cache_read_tokens: 1,
+        cache_write_tokens: 1,
+        cache_write_1h_tokens: Some(1),
+        reasoning_tokens: Some(1),
+        reported: false,
+    };
+
+    cumulative.accumulate(&unknown_turn);
+
+    assert_eq!(cumulative.total_input_tokens(), u64::MAX);
+    assert_eq!(cumulative.total_output_tokens(), u64::MAX);
+    assert_eq!(cumulative.total_cache_read_tokens(), u64::MAX);
+    assert_eq!(cumulative.total_cache_write_tokens(), u64::MAX);
+    assert_eq!(cumulative.total_cache_write_1h_tokens(), Some(u64::MAX));
+    assert_eq!(cumulative.total_reasoning_tokens(), Some(u64::MAX));
+    assert_eq!(cumulative.turn_count(), u32::MAX);
+    assert!(cumulative.has_unknown_usage());
+
+    let aggregate = cumulative.as_usage();
+    assert!(!aggregate.is_reported());
+    assert!(aggregate.cache_write_1h_tokens.unwrap() <= u64::from(aggregate.cache_write_tokens));
+    assert!(aggregate.reasoning_tokens.unwrap() <= u64::from(aggregate.output_tokens));
+}
+
+#[test]
+fn cumulative_cost_remains_finite_and_nonnegative_at_saturation() {
+    let above_max = u64::from(u32::MAX) + 1;
+    let aggregate = CumulativeUsage::from_totals(
+        above_max,
+        above_max,
+        above_max,
+        above_max,
+        Some(above_max),
+        Some(above_max),
+        1,
+        0,
+    )
+    .as_usage();
+    let pricing = Pricing {
+        input_cost_per_mtok: 3.0,
+        output_cost_per_mtok: 15.0,
+        cache_read_cost_per_mtok: 0.30,
+        cache_write_cost_per_mtok: 3.75,
+    };
+
+    let cost = calculate_cost(&aggregate, &pricing);
+
+    for amount in [
+        cost.input_cost,
+        cost.output_cost,
+        cost.cache_read_cost,
+        cost.cache_write_cost,
+        cost.total_cost(),
+    ] {
+        assert!(amount.is_finite());
+        assert!(amount >= 0.0);
+    }
 }
 
 #[test]

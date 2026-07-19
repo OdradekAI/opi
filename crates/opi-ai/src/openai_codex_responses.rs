@@ -16,7 +16,7 @@ use crate::http::HttpClient;
 use crate::openai_responses_shared::{
     ParsedEvent, ResponsesEvent, ResponsesMapper, convert_messages, drain_sse_frames,
 };
-use crate::provider::{EventStream, ModelInfo, Provider, ProviderError, Request};
+use crate::provider::{CacheRetention, EventStream, ModelInfo, Provider, ProviderError, Request};
 use crate::stream::AssistantStreamEvent;
 
 const PROVIDER_ID: &str = "openai-codex";
@@ -71,7 +71,11 @@ impl OpenAiCodexResponsesProvider {
             .map(|(_, id)| id)
             .unwrap_or(&request.model);
         let input = convert_messages(request);
-        let session_id = request.session_id.as_deref().filter(|id| !id.is_empty());
+        let session_id = if request.cache_retention != CacheRetention::Disabled {
+            request.session_id.as_deref().filter(|id| !id.is_empty())
+        } else {
+            None
+        };
         let mut body = serde_json::json!({
             "model": model_id,
             "store": false,
@@ -262,11 +266,12 @@ impl Provider for OpenAiCodexResponsesProvider {
         let extra_headers = validate_headers(&request.extra_headers);
         let body = self.build_request_body(&request);
         let timeout = request.timeout;
-        let session_id = request
-            .session_id
-            .clone()
-            .filter(|id| !id.is_empty())
-            .unwrap_or_else(|| uuid::Uuid::now_v7().to_string());
+        let session_id = if request.cache_retention != CacheRetention::Disabled {
+            request.session_id.clone().filter(|id| !id.is_empty())
+        } else {
+            None
+        }
+        .unwrap_or_else(|| uuid::Uuid::now_v7().to_string());
         let request_id = uuid::Uuid::now_v7().to_string();
         let cancel = request.cancel.clone();
         let client = self.client.client().clone();

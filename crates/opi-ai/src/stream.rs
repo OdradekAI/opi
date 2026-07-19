@@ -120,6 +120,15 @@ pub struct CumulativeUsage {
     unknown_turns: u32,
 }
 
+/// Largest cumulative token count representable by the public [`Usage`] buckets.
+const MAX_USAGE_BUCKET_TOKENS: u64 = u32::MAX as u64;
+
+/// Convert an internal cumulative total to a public bucket without wrapping.
+fn saturating_usage_bucket(tokens: u64) -> u32 {
+    u32::try_from(tokens.min(MAX_USAGE_BUCKET_TOKENS))
+        .expect("token total was clamped to the u32 range")
+}
+
 impl CumulativeUsage {
     /// Construct from pre-computed totals (e.g. when replaying a session).
     #[allow(clippy::too_many_arguments)]
@@ -178,10 +187,18 @@ impl CumulativeUsage {
     }
 
     pub fn accumulate(&mut self, turn: &Usage) {
-        self.input_tokens += turn.input_tokens as u64;
-        self.output_tokens += turn.output_tokens as u64;
-        self.cache_read_tokens += turn.cache_read_tokens as u64;
-        self.cache_write_tokens += turn.cache_write_tokens as u64;
+        self.input_tokens = self
+            .input_tokens
+            .saturating_add(u64::from(turn.input_tokens));
+        self.output_tokens = self
+            .output_tokens
+            .saturating_add(u64::from(turn.output_tokens));
+        self.cache_read_tokens = self
+            .cache_read_tokens
+            .saturating_add(u64::from(turn.cache_read_tokens));
+        self.cache_write_tokens = self
+            .cache_write_tokens
+            .saturating_add(u64::from(turn.cache_write_tokens));
         if let Some(tokens) = turn.cache_write_1h_tokens {
             self.cache_write_1h_tokens = Some(
                 self.cache_write_1h_tokens
@@ -192,32 +209,27 @@ impl CumulativeUsage {
         if let Some(tokens) = turn.reasoning_tokens {
             self.reasoning_tokens = Some(self.reasoning_tokens.unwrap_or(0).saturating_add(tokens));
         }
-        self.turns += 1;
+        self.turns = self.turns.saturating_add(1);
         if !turn.reported {
-            self.unknown_turns += 1;
+            self.unknown_turns = self.unknown_turns.saturating_add(1);
         }
     }
 
     pub fn as_usage(&self) -> Usage {
-        if self.unknown_turns == 0 {
-            Usage::reported(
-                self.input_tokens as u32,
-                self.output_tokens as u32,
-                self.cache_read_tokens as u32,
-                self.cache_write_tokens as u32,
-                self.cache_write_1h_tokens,
-                self.reasoning_tokens,
-            )
-        } else {
-            Usage {
-                input_tokens: self.input_tokens as u32,
-                output_tokens: self.output_tokens as u32,
-                cache_read_tokens: self.cache_read_tokens as u32,
-                cache_write_tokens: self.cache_write_tokens as u32,
-                cache_write_1h_tokens: self.cache_write_1h_tokens,
-                reasoning_tokens: self.reasoning_tokens,
-                reported: false,
-            }
+        let output_tokens = saturating_usage_bucket(self.output_tokens);
+        let cache_write_tokens = saturating_usage_bucket(self.cache_write_tokens);
+        Usage {
+            input_tokens: saturating_usage_bucket(self.input_tokens),
+            output_tokens,
+            cache_read_tokens: saturating_usage_bucket(self.cache_read_tokens),
+            cache_write_tokens,
+            cache_write_1h_tokens: self
+                .cache_write_1h_tokens
+                .map(|tokens| tokens.min(u64::from(cache_write_tokens))),
+            reasoning_tokens: self
+                .reasoning_tokens
+                .map(|tokens| tokens.min(u64::from(output_tokens))),
+            reported: self.unknown_turns == 0,
         }
     }
 }

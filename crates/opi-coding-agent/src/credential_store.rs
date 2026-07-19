@@ -34,14 +34,71 @@ use opi_ai::credential::{
 use opi_ai::provider::ProviderError;
 use secrecy::{ExposeSecret, SecretString};
 
-/// Collect redacted credential-presence probes without reading credentials.
+/// Non-secret stored credential kind discovered from the presence marker.
+#[doc(hidden)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StoredCredentialKind {
+    ApiKey,
+    OAuthToken,
+}
+
+/// Non-secret classification for a failed metadata probe.
+#[doc(hidden)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CredentialProbeFailure {
+    /// The credential backend is genuinely unavailable, so runtime API-key
+    /// resolution permits environment fallback.
+    BackendUnavailable,
+    /// The backend returned an operational error; runtime fails closed.
+    Operational,
+    /// The non-secret credential-kind marker is corrupt; runtime fails closed.
+    CorruptMarker,
+}
+
+/// Redacted credential-store probe plus the optional stored credential kind.
+///
+/// `kind` is populated only by stores that can inspect non-secret metadata.
+/// It never requires reading the protected credential entry.
+#[doc(hidden)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CredentialMetadataProbe {
+    pub source: CredentialSource,
+    pub kind: Option<StoredCredentialKind>,
+    pub failure: Option<CredentialProbeFailure>,
+}
+
+impl From<CredentialSource> for CredentialMetadataProbe {
+    fn from(source: CredentialSource) -> Self {
+        let failure = matches!(source, CredentialSource::BackendUnavailable { .. })
+            .then_some(CredentialProbeFailure::BackendUnavailable);
+        Self {
+            source,
+            kind: None,
+            failure,
+        }
+    }
+}
+
+/// Credential store capable of a secret-free presence-and-kind probe.
+#[doc(hidden)]
+pub trait CredentialMetadataStore: CredentialStore {
+    fn probe_metadata<'a>(
+        &'a self,
+        provider_id: &'a str,
+    ) -> BoxAuthFuture<'a, CredentialMetadataProbe>;
+}
+
+/// Collect redacted credential metadata without reading protected credentials.
 pub async fn collect_credential_probes(
-    store: &dyn CredentialStore,
+    store: &dyn CredentialMetadataStore,
     provider_ids: impl IntoIterator<Item = String>,
-) -> HashMap<String, CredentialSource> {
+) -> HashMap<String, CredentialMetadataProbe> {
     let mut probes = HashMap::new();
     for provider_id in provider_ids {
-        probes.insert(provider_id.clone(), store.probe(&provider_id).await);
+        probes.insert(
+            provider_id.clone(),
+            store.probe_metadata(&provider_id).await,
+        );
     }
     probes
 }
@@ -373,6 +430,15 @@ enum CredentialKind {
     OAuthToken,
 }
 
+impl From<CredentialKind> for StoredCredentialKind {
+    fn from(kind: CredentialKind) -> Self {
+        match kind {
+            CredentialKind::ApiKey => Self::ApiKey,
+            CredentialKind::OAuthToken => Self::OAuthToken,
+        }
+    }
+}
+
 impl CredentialKind {
     fn for_credential(credential: &Credential) -> Self {
         match credential {
@@ -553,7 +619,7 @@ impl LockCoordinator {
         }
         let file = tokio::fs::OpenOptions::new()
             .create(true)
-            .truncate(true)
+            .truncate(false)
             .read(true)
             .write(true)
             .open(&self.lock_path)
@@ -752,22 +818,53 @@ impl CredentialStore for KeychainCredentialStore {
     }
 
     fn probe<'a>(&'a self, provider_id: &'a str) -> BoxAuthFuture<'a, CredentialSource> {
+        Box::pin(async move { self.probe_metadata(provider_id).await.source })
+    }
+}
+
+impl CredentialMetadataStore for KeychainCredentialStore {
+    fn probe_metadata<'a>(
+        &'a self,
+        provider_id: &'a str,
+    ) -> BoxAuthFuture<'a, CredentialMetadataProbe> {
         let label = format!("keychain {}:{}", self.service, provider_id);
         Box::pin(async move {
             match self.read_marker_kind(provider_id) {
-                Ok(Some(_)) => CredentialSource::Present { label },
-                Ok(None) => CredentialSource::Absent,
-                Err(CredentialStoreError::BackendUnavailable { reason, .. })
-                | Err(CredentialStoreError::Backend { reason, .. }) => {
-                    CredentialSource::BackendUnavailable { reason }
-                }
-                Err(CredentialStoreError::CorruptMarker { .. }) => {
-                    CredentialSource::BackendUnavailable {
-                        reason: "credential marker is corrupt".to_owned(),
+                Ok(Some(kind)) => CredentialMetadataProbe {
+                    source: CredentialSource::Present { label },
+                    kind: Some(kind.into()),
+                    failure: None,
+                },
+                Ok(None) => CredentialMetadataProbe {
+                    source: CredentialSource::Absent,
+                    kind: None,
+                    failure: None,
+                },
+                Err(CredentialStoreError::BackendUnavailable { reason, .. }) => {
+                    CredentialMetadataProbe {
+                        source: CredentialSource::BackendUnavailable { reason },
+                        kind: None,
+                        failure: Some(CredentialProbeFailure::BackendUnavailable),
                     }
                 }
-                Err(_) => CredentialSource::BackendUnavailable {
-                    reason: "credential marker probe failed".to_owned(),
+                Err(CredentialStoreError::Backend { reason, .. }) => CredentialMetadataProbe {
+                    source: CredentialSource::BackendUnavailable { reason },
+                    kind: None,
+                    failure: Some(CredentialProbeFailure::Operational),
+                },
+                Err(CredentialStoreError::CorruptMarker { .. }) => CredentialMetadataProbe {
+                    source: CredentialSource::BackendUnavailable {
+                        reason: "credential marker is corrupt".to_owned(),
+                    },
+                    kind: None,
+                    failure: Some(CredentialProbeFailure::CorruptMarker),
+                },
+                Err(_) => CredentialMetadataProbe {
+                    source: CredentialSource::BackendUnavailable {
+                        reason: "credential marker probe failed".to_owned(),
+                    },
+                    kind: None,
+                    failure: Some(CredentialProbeFailure::Operational),
                 },
             }
         })
@@ -958,13 +1055,12 @@ impl CredentialResolver {
                 account_id: cred.account_id.clone(),
             });
         }
-        let refresh = tokio::time::timeout(self.refresh_timeout, oauth.refresh(&cred))
-            .await
-            .map_err(|_| {
-                ProviderError::AuthFailed(format!(
-                    "OAuth refresh timed out for provider '{provider_id}'"
-                ))
-            })?;
+        let refresh = match tokio::time::timeout(self.refresh_timeout, oauth.refresh(&cred)).await {
+            Ok(refresh) => refresh,
+            Err(_) => Err(ProviderError::AuthFailed(format!(
+                "OAuth refresh timed out for provider '{provider_id}'"
+            ))),
+        };
         match refresh {
             Ok(refreshed) => {
                 let new_store = Credential::from(refreshed.clone());
@@ -982,12 +1078,8 @@ impl CredentialResolver {
             Err(refresh_err) => {
                 // Post-failure re-read under the lock: a concurrent writer may
                 // have refreshed despite our HTTP failing.
-                match self
-                    .read_oauth(provider_id)
-                    .await
-                    .map_err(store_err_to_provider)?
-                {
-                    Some(reread) if !reread.needs_refresh() => Ok(ResolvedAuth {
+                match self.read_oauth(provider_id).await {
+                    Ok(Some(reread)) if !reread.needs_refresh() => Ok(ResolvedAuth {
                         scheme: AuthScheme::Bearer,
                         secret: reread.access.clone(),
                         base_url: reread.base_url.clone(),

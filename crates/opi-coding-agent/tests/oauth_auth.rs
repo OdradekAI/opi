@@ -1,4 +1,4 @@
-//! Phase 14.2 — OAuth auth source, per-request refresh, and command flows.
+//! Phase 14.2 閳?OAuth auth source, per-request refresh, and command flows.
 //!
 //! Slice 3 covers `AuthSource::{Baked, Store, EnvOAuthToken}` and the
 //! `CredentialResolver` OAuth refresh bridge (double-checked locking, 5-minute
@@ -42,11 +42,13 @@ use secrecy::{ExposeSecret, SecretString};
 use serde_json::json;
 use tempfile::TempDir;
 use time::OffsetDateTime;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpListener;
 use tokio_util::sync::CancellationToken;
 use wiremock::matchers::{body_json, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use futures_util::{StreamExt, stream};
+use futures_util::{FutureExt, StreamExt, stream};
 
 const AUTHORIZE_URL: &str = "https://authorize.example/oauth/authorize";
 
@@ -63,6 +65,195 @@ async fn mount_token_stub(server: &MockServer, status: u16, body: serde_json::Va
         .respond_with(ResponseTemplate::new(status).set_body_json(body))
         .mount(server)
         .await;
+}
+
+struct RawJsonRoute {
+    method: &'static str,
+    path: &'static str,
+    body: serde_json::Value,
+    body_delay: Duration,
+    probe: RawRouteProbe,
+}
+
+#[derive(Clone)]
+struct RawRouteProbe {
+    method: &'static str,
+    path: &'static str,
+    reached: Arc<AtomicBool>,
+    headers_sent: Arc<AtomicBool>,
+    body_boundary_reached: Arc<AtomicBool>,
+    changed: Arc<tokio::sync::Notify>,
+}
+
+impl RawRouteProbe {
+    fn new(method: &'static str, path: &'static str) -> Self {
+        Self {
+            method,
+            path,
+            reached: Arc::new(AtomicBool::new(false)),
+            headers_sent: Arc::new(AtomicBool::new(false)),
+            body_boundary_reached: Arc::new(AtomicBool::new(false)),
+            changed: Arc::new(tokio::sync::Notify::new()),
+        }
+    }
+
+    fn mark(flag: &AtomicBool, changed: &tokio::sync::Notify) {
+        flag.store(true, Ordering::SeqCst);
+        changed.notify_waiters();
+    }
+
+    async fn wait_for(&self, flag: &AtomicBool, stage: &str) {
+        tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                let changed = self.changed.notified();
+                if flag.load(Ordering::SeqCst) {
+                    break;
+                }
+                changed.await;
+            }
+        })
+        .await
+        .unwrap_or_else(|_| panic!("{} {} never reached {stage}", self.method, self.path));
+    }
+
+    async fn wait_for_headers(&self) {
+        self.wait_for(&self.headers_sent, "response headers").await;
+        assert!(self.reached.load(Ordering::SeqCst));
+    }
+
+    async fn assert_body_boundary_reached(&self) {
+        self.wait_for(&self.body_boundary_reached, "response body boundary")
+            .await;
+        assert!(self.reached.load(Ordering::SeqCst));
+        assert!(self.headers_sent.load(Ordering::SeqCst));
+    }
+}
+
+fn raw_json_route(
+    method: &'static str,
+    path: &'static str,
+    body: serde_json::Value,
+    body_delay: Duration,
+) -> (RawJsonRoute, RawRouteProbe) {
+    let probe = RawRouteProbe::new(method, path);
+    (
+        RawJsonRoute {
+            method,
+            path,
+            body,
+            body_delay,
+            probe: probe.clone(),
+        },
+        probe,
+    )
+}
+
+struct RawBodyDelayServer {
+    uri: String,
+    task: tokio::task::JoinHandle<()>,
+}
+
+impl RawBodyDelayServer {
+    async fn start(routes: Vec<RawJsonRoute>) -> Self {
+        let listener = TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .expect("bind raw body-delay server");
+        let uri = format!(
+            "http://{}",
+            listener
+                .local_addr()
+                .expect("raw body-delay server address")
+        );
+        let task = tokio::spawn(async move {
+            for _ in 0..routes.len() {
+                let (mut socket, _) = listener
+                    .accept()
+                    .await
+                    .expect("accept raw body-delay request");
+                let mut request = Vec::new();
+                let header_end = loop {
+                    let mut chunk = [0_u8; 1024];
+                    let read = socket
+                        .read(&mut chunk)
+                        .await
+                        .expect("read raw body-delay request");
+                    assert!(read > 0, "request closed before headers");
+                    request.extend_from_slice(&chunk[..read]);
+                    if let Some(end) = request
+                        .windows(4)
+                        .position(|window| window == b"\r\n\r\n")
+                        .map(|index| index + 4)
+                    {
+                        break end;
+                    }
+                };
+                let headers =
+                    std::str::from_utf8(&request[..header_end]).expect("ASCII request headers");
+                let request_line = headers.lines().next().expect("request line");
+                let mut request_parts = request_line.split_ascii_whitespace();
+                let method = request_parts.next().expect("request method").to_owned();
+                let path = request_parts.next().expect("request path").to_owned();
+                let content_length = headers
+                    .lines()
+                    .find_map(|line| {
+                        let (name, value) = line.split_once(':')?;
+                        name.eq_ignore_ascii_case("content-length")
+                            .then(|| value.trim().parse::<usize>().expect("content length"))
+                    })
+                    .unwrap_or(0);
+                while request.len() - header_end < content_length {
+                    let mut chunk = [0_u8; 1024];
+                    let read = socket
+                        .read(&mut chunk)
+                        .await
+                        .expect("read raw body-delay request body");
+                    assert!(read > 0, "request closed before body");
+                    request.extend_from_slice(&chunk[..read]);
+                }
+
+                let route = routes
+                    .iter()
+                    .find(|route| route.method == method && route.path == path)
+                    .unwrap_or_else(|| panic!("unexpected raw request: {method} {path}"));
+                RawRouteProbe::mark(&route.probe.reached, &route.probe.changed);
+                let body = serde_json::to_vec(&route.body).expect("serialize raw JSON body");
+                let headers = format!(
+                    "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n",
+                    body.len()
+                );
+                socket
+                    .write_all(headers.as_bytes())
+                    .await
+                    .expect("write raw response headers");
+                socket.flush().await.expect("flush raw response headers");
+                RawRouteProbe::mark(&route.probe.headers_sent, &route.probe.changed);
+                tokio::time::sleep(route.body_delay).await;
+                RawRouteProbe::mark(&route.probe.body_boundary_reached, &route.probe.changed);
+                if let Err(error) = socket.write_all(&body).await {
+                    assert!(
+                        matches!(
+                            error.kind(),
+                            std::io::ErrorKind::BrokenPipe
+                                | std::io::ErrorKind::ConnectionAborted
+                                | std::io::ErrorKind::ConnectionReset
+                        ),
+                        "write delayed raw response body: {error}"
+                    );
+                }
+            }
+        });
+        Self { uri, task }
+    }
+
+    fn uri(&self) -> &str {
+        &self.uri
+    }
+}
+
+impl Drop for RawBodyDelayServer {
+    fn drop(&mut self) {
+        self.task.abort();
+    }
 }
 
 fn anthropic_provider(token_url: String, timeout: Duration) -> AnthropicOAuthProvider {
@@ -83,7 +274,51 @@ fn codex_provider(token_url: String, timeout: Duration) -> CodexOAuthProvider {
     )
 }
 
+#[derive(Clone, Copy, Debug)]
+enum BrowserPkceProvider {
+    Anthropic,
+    Codex,
+}
+
+impl BrowserPkceProvider {
+    fn build(self, token_url: String) -> Box<dyn OAuthProvider> {
+        self.build_with_timeout(token_url, Duration::from_secs(60))
+    }
+
+    fn build_with_timeout(self, token_url: String, timeout: Duration) -> Box<dyn OAuthProvider> {
+        match self {
+            Self::Anthropic => Box::new(anthropic_provider(token_url, timeout)),
+            Self::Codex => Box::new(codex_provider(token_url, timeout)),
+        }
+    }
+
+    fn provider_id(self) -> &'static str {
+        match self {
+            Self::Anthropic => "anthropic",
+            Self::Codex => "openai-codex",
+        }
+    }
+
+    fn success_access(self) -> String {
+        match self {
+            Self::Anthropic => "anthropic-access".to_owned(),
+            Self::Codex => codex_jwt(Some("browser-pkce-account")),
+        }
+    }
+}
+
+const BROWSER_PKCE_PROVIDERS: [BrowserPkceProvider; 2] =
+    [BrowserPkceProvider::Anthropic, BrowserPkceProvider::Codex];
+
 fn codex_device_provider(server_uri: &str, timeout: Duration) -> CodexOAuthProvider {
+    codex_provider_with_flow_timeouts(server_uri, Duration::from_secs(60), timeout)
+}
+
+fn codex_provider_with_flow_timeouts(
+    server_uri: &str,
+    browser_timeout: Duration,
+    device_timeout: Duration,
+) -> CodexOAuthProvider {
     CodexOAuthProvider::new_with_device_endpoints(
         AUTHORIZE_URL.to_owned(),
         format!("{server_uri}/oauth/token"),
@@ -92,8 +327,8 @@ fn codex_device_provider(server_uri: &str, timeout: Duration) -> CodexOAuthProvi
         "https://auth.openai.com/codex/device".to_owned(),
         "https://auth.openai.com/deviceauth/callback".to_owned(),
         "codex-client-id".to_owned(),
-        Duration::from_secs(60),
-        timeout,
+        browser_timeout,
+        device_timeout,
     )
 }
 
@@ -103,8 +338,11 @@ struct MethodPresenter {
     inner: MockLoginPresenter,
     method: Option<OAuthLoginMethod>,
     selections: Arc<Mutex<Vec<LoginSelection>>>,
+    selection_started: Arc<tokio::sync::Notify>,
     device_code_presented: Arc<tokio::sync::Notify>,
     cancel_device_login: Arc<tokio::sync::Notify>,
+    selection_delay: Duration,
+    block_method_selection: bool,
     block_device_presentation: bool,
 }
 
@@ -114,9 +352,26 @@ impl MethodPresenter {
             inner: MockLoginPresenter::new(),
             method,
             selections: Arc::new(Mutex::new(Vec::new())),
+            selection_started: Arc::new(tokio::sync::Notify::new()),
             device_code_presented: Arc::new(tokio::sync::Notify::new()),
             cancel_device_login: Arc::new(tokio::sync::Notify::new()),
+            selection_delay: Duration::ZERO,
+            block_method_selection: false,
             block_device_presentation: false,
+        }
+    }
+
+    fn blocking_method_selection() -> Self {
+        Self {
+            block_method_selection: true,
+            ..Self::new(Some(OAuthLoginMethod::DeviceCode))
+        }
+    }
+
+    fn delayed_method_selection(method: OAuthLoginMethod, selection_delay: Duration) -> Self {
+        Self {
+            selection_delay,
+            ..Self::new(Some(method))
         }
     }
 
@@ -139,11 +394,19 @@ impl LoginPresenter for MethodPresenter {
         let methods = methods.to_vec();
         let selections = self.selections.clone();
         let method = self.method;
+        let selection_started = self.selection_started.clone();
+        let selection_delay = self.selection_delay;
+        let block = self.block_method_selection;
         Box::pin(async move {
             selections
                 .lock()
                 .unwrap()
                 .push((provider_id.clone(), methods, default));
+            selection_started.notify_one();
+            tokio::time::sleep(selection_delay).await;
+            if block {
+                return std::future::pending::<Result<OAuthLoginMethod, AiProviderError>>().await;
+            }
             method.ok_or(AiProviderError::LoginCancelled { provider_id })
         })
     }
@@ -639,7 +902,7 @@ async fn auth_source_store_resolves_via_resolver_and_coalesces_to_bearer() {
 }
 
 // ===========================================================================
-// Slice 4 — MockLoginPresenter seam + AnthropicOAuthProvider PKCE flow
+// Slice 4 閳?MockLoginPresenter seam + AnthropicOAuthProvider PKCE flow
 // ===========================================================================
 
 // --- MockLoginPresenter seam ---
@@ -737,6 +1000,200 @@ async fn anthropic_oauth_login_manual_code_wins_race() {
 }
 
 #[tokio::test]
+async fn pkce_manual_redirect_url_is_normalized_for_anthropic_and_codex() {
+    for provider_kind in BROWSER_PKCE_PROVIDERS {
+        let server = MockServer::start().await;
+        mount_token_stub(
+            &server,
+            200,
+            token_body(&provider_kind.success_access(), "encoded-url-refresh", 3600),
+        )
+        .await;
+        let provider = provider_kind.build(format!("{}/oauth/token", server.uri()));
+        let presenter = MockLoginPresenter::new();
+        let manual_code_tx = presenter.manual_code_sender();
+
+        let login = provider.login(&presenter);
+        let paste_redirect = async {
+            presenter.wait_for_auth_url().await;
+            let authorize_url = presenter.captured_url().expect("authorize URL");
+            let state = extract_query_param(&authorize_url, "state").expect("state");
+            let encoded_state = state
+                .bytes()
+                .map(|byte| format!("%{byte:02X}"))
+                .collect::<Vec<_>>()
+                .concat();
+            manual_code_tx
+                .send(format!(
+                    "http://127.0.0.1/callback?code=encoded+code%2Fpart&state={encoded_state}"
+                ))
+                .expect("manual code receiver");
+        };
+        let (credential, ()) = tokio::join!(login, paste_redirect);
+
+        credential.unwrap_or_else(|error| {
+            panic!("{provider_kind:?} encoded redirect login failed: {error:?}")
+        });
+        let requests = server.received_requests().await.expect("requests");
+        assert_eq!(requests.len(), 1);
+        let body = std::str::from_utf8(&requests[0].body).expect("form body");
+        assert!(body.contains("code=encoded+code%2Fpart"), "{body}");
+    }
+}
+
+#[tokio::test]
+async fn pkce_manual_redirect_rejections_prevent_token_exchange_for_both_providers() {
+    for provider_kind in BROWSER_PKCE_PROVIDERS {
+        for case in [
+            "missing state",
+            "state mismatch",
+            "missing code",
+            "malformed escape",
+            "invalid UTF-8",
+            "malformed URL",
+            "duplicate code before state",
+            "duplicate code after state",
+            "duplicate state before code",
+            "duplicate state after code",
+        ] {
+            let server = MockServer::start().await;
+            mount_token_stub(
+                &server,
+                200,
+                token_body(&provider_kind.success_access(), "unused-refresh", 3600),
+            )
+            .await;
+            let provider = provider_kind.build(format!("{}/oauth/token", server.uri()));
+            let presenter = MockLoginPresenter::new();
+            let manual_code_tx = presenter.manual_code_sender();
+
+            let login = provider.login(&presenter);
+            let paste_redirect = async {
+                presenter.wait_for_auth_url().await;
+                let authorize_url = presenter.captured_url().expect("authorize URL");
+                let state = extract_query_param(&authorize_url, "state").expect("state");
+                let input = match case {
+                    "missing state" => {
+                        "http://127.0.0.1/callback?code=rejected-code-canary".to_owned()
+                    }
+                    "state mismatch" => {
+                        "http://127.0.0.1/callback?code=rejected-code-canary&state=wrong-state"
+                            .to_owned()
+                    }
+                    "missing code" => {
+                        format!("http://127.0.0.1/callback?state={state}")
+                    }
+                    "malformed escape" => {
+                        format!("http://127.0.0.1/callback?code=rejected%ZZcode&state={state}")
+                    }
+                    "invalid UTF-8" => {
+                        format!("http://127.0.0.1/callback?code=invalid%FFcanary&state={state}")
+                    }
+                    "malformed URL" => "http://[::1/callback?code=rejected-code-canary".to_owned(),
+                    "duplicate code before state" => format!(
+                        "http://127.0.0.1/callback?code=first-code-canary&code=second-code-canary&state={state}"
+                    ),
+                    "duplicate code after state" => format!(
+                        "http://127.0.0.1/callback?code=first-code-canary&state={state}&code=second-code-canary"
+                    ),
+                    "duplicate state before code" => format!(
+                        "http://127.0.0.1/callback?state={state}&state=second-state-canary&code=code-canary"
+                    ),
+                    "duplicate state after code" => format!(
+                        "http://127.0.0.1/callback?state={state}&code=code-canary&state=second-state-canary"
+                    ),
+                    _ => unreachable!(),
+                };
+                manual_code_tx.send(input).expect("manual code receiver");
+            };
+            let (result, ()) = tokio::join!(login, paste_redirect);
+
+            let error = result.unwrap_err();
+            let expected = match case {
+                "missing state" => "oauth redirect missing state",
+                "state mismatch" => "oauth state mismatch",
+                "missing code" => "oauth redirect missing code",
+                "malformed escape" => "oauth redirect query escape malformed",
+                "invalid UTF-8" => "oauth redirect query is not valid UTF-8",
+                "malformed URL" => "oauth redirect URL malformed",
+                "duplicate code before state" | "duplicate code after state" => {
+                    "oauth redirect has duplicate code"
+                }
+                "duplicate state before code" | "duplicate state after code" => {
+                    "oauth redirect has duplicate state"
+                }
+                _ => unreachable!(),
+            };
+            match &error {
+                AiProviderError::Config(message) => assert_eq!(message, expected),
+                other => panic!("{provider_kind:?} {case}: expected Config, got {other:?}"),
+            }
+            assert_eq!(
+                presenter.notify_failure_reasons.lock().unwrap().as_slice(),
+                &["manual redirect error"]
+            );
+            assert_oauth_error_surfaces_are_redacted(
+                &error,
+                Some(&presenter),
+                &[
+                    "rejected-code-canary",
+                    "rejected%ZZcode",
+                    "wrong-state",
+                    "invalid%FFcanary",
+                    "first-code-canary",
+                    "second-code-canary",
+                    "second-state-canary",
+                ],
+            );
+            assert!(
+                server.received_requests().await.unwrap().is_empty(),
+                "{provider_kind:?} {case} reached token endpoint"
+            );
+            assert_eq!(presenter.notify_success_count.load(Ordering::SeqCst), 0);
+        }
+    }
+}
+
+#[tokio::test]
+async fn pkce_empty_manual_code_is_rejected_before_token_exchange_for_both_providers() {
+    for provider_kind in BROWSER_PKCE_PROVIDERS {
+        for input in ["", " \t\r\n "] {
+            let server = MockServer::start().await;
+            mount_token_stub(
+                &server,
+                200,
+                token_body(&provider_kind.success_access(), "unused-refresh", 3600),
+            )
+            .await;
+            let provider = provider_kind.build(format!("{}/oauth/token", server.uri()));
+            let presenter = MockLoginPresenter::new();
+            presenter.supply_manual_code(input);
+
+            let error = provider
+                .login(&presenter)
+                .await
+                .expect_err("empty manual code must fail");
+
+            match &error {
+                AiProviderError::Config(message) => {
+                    assert_eq!(message, "oauth redirect missing code");
+                }
+                other => panic!("{provider_kind:?} expected Config, got {other:?}"),
+            }
+            assert_eq!(
+                presenter.notify_failure_reasons.lock().unwrap().as_slice(),
+                &["manual redirect error"]
+            );
+            assert_eq!(presenter.notify_success_count.load(Ordering::SeqCst), 0);
+            assert!(
+                server.received_requests().await.unwrap().is_empty(),
+                "{provider_kind:?} posted an empty manual code"
+            );
+        }
+    }
+}
+
+#[tokio::test]
 async fn anthropic_oauth_login_loopback_callback_wins_race() {
     let server = MockServer::start().await;
     mount_token_stub(&server, 200, token_body("atk-cb", "rtk-cb", 3600)).await;
@@ -751,11 +1208,16 @@ async fn anthropic_oauth_login_loopback_callback_wins_race() {
         let url = presenter.captured_url().expect("auth url");
         let port = extract_redirect_port(&url).expect("loopback port");
         let state = extract_query_param(&url, "state").expect("state");
+        let encoded_state = state
+            .bytes()
+            .map(|byte| format!("%{byte:02X}"))
+            .collect::<Vec<_>>()
+            .concat();
         // The authorize URL carries code_challenge, never the verifier.
         assert!(url.contains("code_challenge="));
         assert!(!url.contains("code_verifier"));
         let _ = reqwest::get(format!(
-            "http://127.0.0.1:{port}/?code=CB-CODE&state={state}"
+            "http://127.0.0.1:{port}/?code=CB+CODE&state={encoded_state}"
         ))
         .await
         .expect("callback GET");
@@ -766,7 +1228,7 @@ async fn anthropic_oauth_login_loopback_callback_wins_race() {
     // Token POST used the callback code.
     let requests = server.received_requests().await.expect("recorded");
     let body = std::str::from_utf8(&requests.last().unwrap().body).unwrap();
-    assert!(body.contains("code=CB-CODE"), "body: {body}");
+    assert!(body.contains("code=CB+CODE"), "body: {body}");
     assert_eq!(presenter.notify_success_count.load(Ordering::SeqCst), 1);
 }
 
@@ -839,6 +1301,107 @@ async fn anthropic_oauth_login_state_mismatch_rejects_and_notifies_failure() {
 }
 
 #[tokio::test]
+async fn pkce_loopback_callback_rejections_are_fixed_and_redacted_for_both_providers() {
+    for provider_kind in BROWSER_PKCE_PROVIDERS {
+        for case in [
+            "missing code",
+            "missing state",
+            "state mismatch",
+            "malformed escape",
+            "invalid UTF-8",
+            "duplicate code",
+            "duplicate state",
+        ] {
+            let server = MockServer::start().await;
+            mount_token_stub(
+                &server,
+                200,
+                token_body(&provider_kind.success_access(), "unused-refresh", 3600),
+            )
+            .await;
+            let provider = provider_kind.build(format!("{}/oauth/token", server.uri()));
+            let presenter = MockLoginPresenter::new();
+
+            let login = provider.login(&presenter);
+            let callback = async {
+                presenter.wait_for_auth_url().await;
+                let authorize_url = presenter.captured_url().expect("authorize URL");
+                let port = extract_redirect_port(&authorize_url).expect("redirect port");
+                let state = extract_query_param(&authorize_url, "state").expect("state");
+                let query = match case {
+                    "missing code" => format!("state={state}"),
+                    "missing state" => "code=callback-code-canary".to_owned(),
+                    "state mismatch" => {
+                        "code=callback-code-canary&state=callback-state-canary".to_owned()
+                    }
+                    "malformed escape" => {
+                        format!("code=callback%ZZcode&state={state}")
+                    }
+                    "invalid UTF-8" => format!("code=%FF&state={state}"),
+                    "duplicate code" => {
+                        format!("code=first-code-canary&state={state}&code=second-code-canary")
+                    }
+                    "duplicate state" => {
+                        format!("state={state}&code=callback-code-canary&state=second-state-canary")
+                    }
+                    _ => unreachable!(),
+                };
+                reqwest::get(format!("http://127.0.0.1:{port}/?{query}"))
+                    .await
+                    .expect("callback GET");
+            };
+            let (result, ()) = tokio::time::timeout(Duration::from_secs(2), async {
+                tokio::join!(login, callback)
+            })
+            .await
+            .expect("callback login must not hang");
+
+            let error = result.expect_err("invalid callback must fail");
+            let (expected_error, expected_notification) = match case {
+                "missing code" => ("oauth redirect missing code", "callback parse error"),
+                "missing state" => ("oauth redirect missing state", "callback parse error"),
+                "state mismatch" => ("oauth state mismatch", "state mismatch"),
+                "malformed escape" => (
+                    "oauth redirect query escape malformed",
+                    "callback parse error",
+                ),
+                "invalid UTF-8" => (
+                    "oauth redirect query is not valid UTF-8",
+                    "callback parse error",
+                ),
+                "duplicate code" => ("oauth redirect has duplicate code", "callback parse error"),
+                "duplicate state" => ("oauth redirect has duplicate state", "callback parse error"),
+                _ => unreachable!(),
+            };
+            match &error {
+                AiProviderError::Config(message) => assert_eq!(message, expected_error),
+                other => panic!("{provider_kind:?} {case}: expected Config, got {other:?}"),
+            }
+            assert_eq!(
+                presenter.notify_failure_reasons.lock().unwrap().as_slice(),
+                &[expected_notification]
+            );
+            assert_oauth_error_surfaces_are_redacted(
+                &error,
+                Some(&presenter),
+                &[
+                    "callback-code-canary",
+                    "callback-state-canary",
+                    "first-code-canary",
+                    "second-code-canary",
+                    "second-state-canary",
+                ],
+            );
+            assert_eq!(presenter.notify_success_count.load(Ordering::SeqCst), 0);
+            assert!(
+                server.received_requests().await.unwrap().is_empty(),
+                "{provider_kind:?} {case} reached the token endpoint"
+            );
+        }
+    }
+}
+
+#[tokio::test]
 async fn anthropic_oauth_login_timeout_returns_error_and_notifies_failure() {
     let server = MockServer::start().await;
     let provider = anthropic_provider(
@@ -858,6 +1421,212 @@ async fn anthropic_oauth_login_timeout_returns_error_and_notifies_failure() {
 }
 
 #[tokio::test]
+async fn oauth_flow_budget_rejects_unrepresentable_duration_without_panicking() {
+    let provider = anthropic_provider("http://127.0.0.1:1/oauth/token".to_owned(), Duration::MAX);
+    let presenter = MockLoginPresenter::new();
+
+    let outcome = std::panic::AssertUnwindSafe(provider.login(&presenter))
+        .catch_unwind()
+        .await;
+    let result = outcome.expect("an oversized OAuth flow duration must not panic");
+    assert!(
+        matches!(
+            result,
+            Err(AiProviderError::Config(ref message))
+                if message == "OAuth login timeout is too large"
+        ),
+        "{result:?}"
+    );
+}
+
+#[tokio::test]
+async fn pkce_total_budget_includes_manual_wait_and_token_response_for_both_providers() {
+    for provider_kind in BROWSER_PKCE_PROVIDERS {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/oauth/token"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(token_body(
+                        &provider_kind.success_access(),
+                        "budget-refresh",
+                        3600,
+                    ))
+                    .set_delay(Duration::from_millis(80)),
+            )
+            .mount(&server)
+            .await;
+        let provider = provider_kind.build_with_timeout(
+            format!("{}/oauth/token", server.uri()),
+            Duration::from_millis(100),
+        );
+        let presenter = MockLoginPresenter::new();
+        let manual_code = presenter.manual_code_sender();
+
+        let login = provider.login(&presenter);
+        let delayed_code = async {
+            presenter.wait_for_auth_url().await;
+            tokio::time::sleep(Duration::from_millis(60)).await;
+            manual_code.send("budget-code".to_owned()).unwrap();
+        };
+        let (result, ()) = tokio::join!(login, delayed_code);
+
+        assert!(
+            matches!(result, Err(AiProviderError::Timeout)),
+            "{provider_kind:?} restarted its timeout before token response: {result:?}"
+        );
+        assert_eq!(
+            presenter.notify_failure_reasons.lock().unwrap().as_slice(),
+            &["timeout"]
+        );
+        assert_eq!(presenter.notify_success_count.load(Ordering::SeqCst), 0);
+    }
+}
+
+#[tokio::test]
+async fn pkce_total_budget_bounds_token_response_body_after_headers() {
+    for provider_kind in BROWSER_PKCE_PROVIDERS {
+        let (token_route, token_probe) = raw_json_route(
+            "POST",
+            "/oauth/token",
+            token_body(
+                &provider_kind.success_access(),
+                "delayed-body-refresh",
+                3600,
+            ),
+            Duration::from_millis(250),
+        );
+        let server = RawBodyDelayServer::start(vec![token_route]).await;
+        let provider = provider_kind.build_with_timeout(
+            format!("{}/oauth/token", server.uri()),
+            Duration::from_millis(100),
+        );
+        let presenter = MockLoginPresenter::new();
+        presenter.supply_manual_code("one-use-code");
+
+        let result = provider.login(&presenter).await;
+        token_probe.assert_body_boundary_reached().await;
+
+        assert!(
+            matches!(result, Err(AiProviderError::Timeout)),
+            "{provider_kind:?} did not bound token response body decoding: {result:?}"
+        );
+        assert_eq!(
+            presenter.notify_failure_reasons.lock().unwrap().as_slice(),
+            &["timeout"]
+        );
+        assert_eq!(presenter.notify_success_count.load(Ordering::SeqCst), 0);
+    }
+}
+
+#[tokio::test]
+async fn pkce_cancellation_is_biased_and_prevents_exchange_and_persistence() {
+    for provider_kind in BROWSER_PKCE_PROVIDERS {
+        let server = MockServer::start().await;
+        mount_token_stub(
+            &server,
+            200,
+            token_body(&provider_kind.success_access(), "unused-refresh", 3600),
+        )
+        .await;
+        let provider: Arc<dyn OAuthProvider> = match provider_kind {
+            BrowserPkceProvider::Anthropic => Arc::new(anthropic_provider(
+                format!("{}/oauth/token", server.uri()),
+                Duration::from_secs(60),
+            )),
+            BrowserPkceProvider::Codex => Arc::new(codex_provider(
+                format!("{}/oauth/token", server.uri()),
+                Duration::from_secs(60),
+            )),
+        };
+        let mut registry = OAuthProviderRegistry::new();
+        registry.register(provider).unwrap();
+        let (_dir, store, _backend) = store_with(FakeKeyringBackend::new());
+        let presenter = MockLoginPresenter::new();
+        let cancel = presenter.login_cancelled_sender();
+        let manual_code = presenter.manual_code_sender();
+        let login = login_oauth(provider_kind.provider_id(), &registry, &store, &presenter);
+        let make_both_ready = async {
+            presenter.wait_for_auth_url().await;
+            manual_code.send("ready-code-must-lose".to_owned()).unwrap();
+            cancel.send(()).unwrap();
+        };
+        let (result, ()) = tokio::join!(login, make_both_ready);
+        let error = result.expect_err("ready cancellation must win the browser fallback race");
+
+        assert!(matches!(
+            error,
+            AiProviderError::LoginCancelled { ref provider_id }
+                if provider_id == provider_kind.provider_id()
+        ));
+        assert_eq!(
+            presenter.notify_failure_reasons.lock().unwrap().as_slice(),
+            &["login cancelled"]
+        );
+        assert_eq!(presenter.notify_success_count.load(Ordering::SeqCst), 0);
+        assert!(
+            server.received_requests().await.unwrap().is_empty(),
+            "{provider_kind:?} exchanged a code after cancellation"
+        );
+        assert!(
+            store
+                .read(provider_kind.provider_id())
+                .await
+                .unwrap()
+                .is_none()
+        );
+        let authorize_url = presenter.captured_url().expect("authorization URL");
+        let port = extract_redirect_port(&authorize_url).expect("loopback port");
+        assert!(
+            reqwest::get(format!("http://127.0.0.1:{port}/?code=late&state=late"))
+                .await
+                .is_err(),
+            "{provider_kind:?} left its callback listener open"
+        );
+    }
+}
+
+#[tokio::test]
+async fn pkce_post_code_cancellation_is_ignored_but_original_deadline_still_applies() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/oauth/token"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(token_body("late-access", "late-refresh", 3600))
+                .set_delay(Duration::from_millis(80)),
+        )
+        .mount(&server)
+        .await;
+    let provider = anthropic_provider(
+        format!("{}/oauth/token", server.uri()),
+        Duration::from_millis(100),
+    );
+    let presenter = MockLoginPresenter::new();
+    let manual_code = presenter.manual_code_sender();
+    let cancel = presenter.login_cancelled_sender();
+
+    let login = provider.login(&presenter);
+    let drive = async {
+        presenter.wait_for_auth_url().await;
+        tokio::time::sleep(Duration::from_millis(40)).await;
+        manual_code.send("one-use-code".to_owned()).unwrap();
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        let _ = cancel.send(());
+    };
+    let (result, ()) = tokio::join!(login, drive);
+
+    assert!(
+        matches!(result, Err(AiProviderError::Timeout)),
+        "post-code cancellation must not replace the bounded exchange result: {result:?}"
+    );
+    assert_eq!(
+        presenter.notify_failure_reasons.lock().unwrap().as_slice(),
+        &["timeout"]
+    );
+}
+
+#[tokio::test]
 async fn anthropic_oauth_login_token_endpoint_non_2xx_returns_auth_error_without_body() {
     let server = MockServer::start().await;
     mount_token_stub(
@@ -873,17 +1642,15 @@ async fn anthropic_oauth_login_token_endpoint_non_2xx_returns_auth_error_without
     let presenter = MockLoginPresenter::new();
     presenter.supply_manual_code("AUTHCODE-LEAK-CANARY");
     let err = provider.login(&presenter).await.expect_err("non-2xx");
-    let msg = match err {
+    let msg = match &err {
         AiProviderError::AuthFailed(m) => m,
         other => panic!("expected AuthFailed, got {other:?}"),
     };
-    // OAuth error fields may be surfaced...
-    assert!(
-        msg.contains("invalid_grant") || msg.contains("400"),
-        "msg: {msg}"
+    assert_eq!(
+        msg, "token endpoint: 400 Bad Request invalid_grant",
+        "known protocol error must map to its fixed class"
     );
-    // ...but the auth code must NOT.
-    assert!(!msg.contains("AUTHCODE-LEAK-CANARY"), "code leaked: {msg}");
+    assert_oauth_error_surfaces_are_redacted(&err, Some(&presenter), &["AUTHCODE-LEAK-CANARY"]);
     let reasons = presenter.notify_failure_reasons.lock().unwrap().clone();
     assert!(
         reasons.iter().any(|r| r.contains("token")),
@@ -1102,8 +1869,100 @@ async fn login_secret_leak_canary_no_auth_code_in_outputs() {
 }
 
 // ===========================================================================
-// Slice 4 — CodexOAuthProvider (PKCE, delegates to the shared runner)
+// Slice 4 閳?CodexOAuthProvider (PKCE, delegates to the shared runner)
 // ===========================================================================
+
+fn assert_oauth_error_surfaces_are_redacted(
+    error: &AiProviderError,
+    presenter: Option<&MockLoginPresenter>,
+    canaries: &[&str],
+) {
+    let mut surfaces = vec![
+        error.to_string(),
+        format!("{error:?}"),
+        format!("{:?}", opi_agent::Diagnostic::from(error)),
+    ];
+    if let Some(presenter) = presenter {
+        surfaces.extend(presenter.notify_failure_reasons.lock().unwrap().clone());
+    }
+    let rendered = surfaces.join("\n");
+    for canary in canaries {
+        assert!(!rendered.contains(canary), "leaked {canary}: {rendered}");
+    }
+}
+
+#[tokio::test]
+async fn pkce_token_endpoint_unknown_error_code_is_closed_and_redacted() {
+    const AUTHORIZATION_CODE: &str = "authorization-code-server-error-canary";
+    const VERIFIER: &str = "verifier-server-error-canary";
+
+    let server = MockServer::start().await;
+    mount_token_stub(
+        &server,
+        400,
+        json!({
+            "error": format!("invalid_grant:{AUTHORIZATION_CODE}:{VERIFIER}"),
+            "error_description": format!("{AUTHORIZATION_CODE}:{VERIFIER}")
+        }),
+    )
+    .await;
+    let provider = anthropic_provider(
+        format!("{}/oauth/token", server.uri()),
+        Duration::from_secs(60),
+    );
+    let presenter = MockLoginPresenter::new();
+    presenter.supply_manual_code(AUTHORIZATION_CODE);
+
+    let error = provider.login(&presenter).await.expect_err("token error");
+
+    match &error {
+        AiProviderError::AuthFailed(message) => assert_eq!(
+            message,
+            "token endpoint: 400 Bad Request unknown_oauth_error"
+        ),
+        other => panic!("expected AuthFailed, got {other:?}"),
+    }
+    assert_oauth_error_surfaces_are_redacted(
+        &error,
+        Some(&presenter),
+        &[AUTHORIZATION_CODE, VERIFIER],
+    );
+}
+
+#[tokio::test]
+async fn refresh_token_endpoint_unknown_error_code_is_closed_and_redacted() {
+    const REFRESH_TOKEN: &str = "refresh-token-server-error-canary";
+
+    let server = MockServer::start().await;
+    mount_token_stub(
+        &server,
+        400,
+        json!({
+            "error": format!("invalid_grant:{REFRESH_TOKEN}"),
+            "error_description": REFRESH_TOKEN
+        }),
+    )
+    .await;
+    let provider = anthropic_provider(
+        format!("{}/oauth/token", server.uri()),
+        Duration::from_secs(60),
+    );
+    let credential = oauth_cred("old-access", REFRESH_TOKEN, None);
+
+    let error = provider
+        .refresh(&credential)
+        .await
+        .expect_err("refresh error");
+
+    match &error {
+        AiProviderError::AuthFailed(message) => assert_eq!(
+            message,
+            "token endpoint: 400 Bad Request unknown_oauth_error"
+        ),
+        other => panic!("expected AuthFailed, got {other:?}"),
+    }
+    assert_oauth_error_surfaces_are_redacted(&error, None, &[REFRESH_TOKEN]);
+}
 
 #[tokio::test]
 async fn codex_oauth_provider_id_is_codex() {
@@ -1372,7 +2231,7 @@ async fn codex_login_does_not_leak_verifier_or_tokens_into_error_strings() {
 }
 
 // ===========================================================================
-// Slice 4 — OAuthProviderRegistry
+// Slice 4 閳?OAuthProviderRegistry
 // ===========================================================================
 
 async fn mount_codex_device_start(
@@ -1457,6 +2316,348 @@ async fn openai_codex_browser_is_default_and_preserves_pkce_manual_race() {
             vec![OAuthLoginMethod::Browser, OAuthLoginMethod::DeviceCode],
             OAuthLoginMethod::Browser,
         )]
+    );
+}
+
+#[tokio::test]
+async fn openai_codex_browser_budget_includes_method_selection() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/oauth/token"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(token_body(
+                    &codex_jwt(Some("slow-selection-account")),
+                    "slow-selection-refresh",
+                    3600,
+                ))
+                .set_delay(Duration::from_millis(80)),
+        )
+        .mount(&server)
+        .await;
+    let provider = codex_provider_with_flow_timeouts(
+        &server.uri(),
+        Duration::from_millis(100),
+        Duration::from_secs(2),
+    );
+    let presenter = MethodPresenter::delayed_method_selection(
+        OAuthLoginMethod::Browser,
+        Duration::from_millis(60),
+    );
+    presenter.inner.supply_manual_code("slow-selection-code");
+    let started = tokio::time::Instant::now();
+
+    let error = provider
+        .login(&presenter)
+        .await
+        .expect_err("Browser selection must consume the Browser flow budget");
+
+    assert!(matches!(error, AiProviderError::Timeout), "{error:?}");
+    assert!(
+        started.elapsed() < Duration::from_millis(140),
+        "Browser flow received a fresh post-selection deadline"
+    );
+    assert_eq!(
+        presenter
+            .inner
+            .notify_failure_reasons
+            .lock()
+            .unwrap()
+            .as_slice(),
+        &["timeout"]
+    );
+}
+
+#[tokio::test]
+async fn openai_codex_device_selection_preserves_its_longer_budget() {
+    let server = MockServer::start().await;
+    mount_codex_device_start(&server, "device-auth-sentinel", "PUBLIC-CODE", 0).await;
+    mount_codex_device_poll(
+        &server,
+        200,
+        json!({
+            "authorization_code":"device-authorization-code",
+            "code_verifier":"device-code-verifier"
+        }),
+        None,
+    )
+    .await;
+    mount_codex_device_exchange(&server, "device-selection-account").await;
+    let provider = codex_provider_with_flow_timeouts(
+        &server.uri(),
+        Duration::from_millis(50),
+        Duration::from_millis(500),
+    );
+    let presenter = MethodPresenter::delayed_method_selection(
+        OAuthLoginMethod::DeviceCode,
+        Duration::from_millis(100),
+    );
+
+    let credential = provider
+        .login(&presenter)
+        .await
+        .expect("Device selection must use its distinct longer budget");
+
+    assert_eq!(
+        credential.account_id.as_deref(),
+        Some("device-selection-account")
+    );
+}
+
+#[tokio::test]
+async fn openai_codex_typed_method_selection_cancellation_notifies_once() {
+    let server = MockServer::start().await;
+    let provider = codex_device_provider(&server.uri(), Duration::from_secs(2));
+    let presenter = MethodPresenter::new(None);
+
+    let error = provider
+        .login(&presenter)
+        .await
+        .expect_err("typed selection cancellation");
+
+    assert!(matches!(
+        error,
+        AiProviderError::LoginCancelled { ref provider_id }
+            if provider_id == "openai-codex"
+    ));
+    assert_eq!(
+        presenter
+            .inner
+            .notify_failure_reasons
+            .lock()
+            .unwrap()
+            .as_slice(),
+        &["login cancelled"]
+    );
+    assert!(server.received_requests().await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn openai_codex_cancellation_is_installed_before_method_selection() {
+    let server = MockServer::start().await;
+    let provider = codex_device_provider(&server.uri(), Duration::from_secs(60));
+    let presenter = MethodPresenter::blocking_method_selection();
+
+    let login = provider.login(&presenter);
+    let cancel_selection = async {
+        presenter.selection_started.notified().await;
+        presenter.cancel_device_login.notify_one();
+    };
+    let (result, ()) = tokio::time::timeout(Duration::from_millis(500), async {
+        tokio::join!(login, cancel_selection)
+    })
+    .await
+    .expect("Codex method selection ignored cancellation");
+    let error = result.expect_err("method selection must be cancellable");
+
+    assert!(matches!(
+        error,
+        AiProviderError::LoginCancelled { ref provider_id }
+            if provider_id == "openai-codex"
+    ));
+    assert_eq!(
+        presenter
+            .inner
+            .notify_failure_reasons
+            .lock()
+            .unwrap()
+            .as_slice(),
+        &["login cancelled"]
+    );
+    assert!(server.received_requests().await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn openai_codex_device_budget_includes_method_selection() {
+    let server = MockServer::start().await;
+    let provider = codex_provider_with_flow_timeouts(
+        &server.uri(),
+        Duration::from_millis(500),
+        Duration::from_millis(50),
+    );
+    let presenter = MethodPresenter::delayed_method_selection(
+        OAuthLoginMethod::DeviceCode,
+        Duration::from_millis(75),
+    );
+
+    let error = tokio::time::timeout(Duration::from_millis(500), provider.login(&presenter))
+        .await
+        .expect("Codex method selection escaped its flow budget")
+        .expect_err("method selection must consume the device flow budget");
+
+    assert!(matches!(error, AiProviderError::Timeout), "{error:?}");
+    assert_eq!(
+        presenter
+            .inner
+            .notify_failure_reasons
+            .lock()
+            .unwrap()
+            .as_slice(),
+        &["device authorization timed out"]
+    );
+    assert!(server.received_requests().await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn openai_codex_device_budget_bounds_initial_body_after_headers() {
+    let (device_route, device_probe) = raw_json_route(
+        "POST",
+        "/device/usercode",
+        json!({
+            "device_auth_id":"device-auth-sentinel",
+            "user_code":"PUBLIC-CODE",
+            "interval":0
+        }),
+        Duration::from_millis(250),
+    );
+    let server = RawBodyDelayServer::start(vec![device_route]).await;
+    let provider = codex_device_provider(server.uri(), Duration::from_millis(100));
+    let presenter = MethodPresenter::new(Some(OAuthLoginMethod::DeviceCode));
+
+    let error = provider
+        .login(&presenter)
+        .await
+        .expect_err("initial device body decode must use the flow budget");
+    device_probe.assert_body_boundary_reached().await;
+
+    assert!(matches!(error, AiProviderError::Timeout), "{error:?}");
+    assert_eq!(
+        presenter
+            .inner
+            .notify_failure_reasons
+            .lock()
+            .unwrap()
+            .as_slice(),
+        &["device authorization timed out"]
+    );
+    assert!(
+        presenter
+            .inner
+            .captured_device_codes
+            .lock()
+            .unwrap()
+            .is_empty(),
+        "device code was presented after its response-body deadline"
+    );
+}
+
+#[tokio::test]
+async fn openai_codex_device_budget_bounds_final_exchange_body_after_headers() {
+    let (device_route, device_probe) = raw_json_route(
+        "POST",
+        "/device/usercode",
+        json!({
+            "device_auth_id":"device-auth-sentinel",
+            "user_code":"PUBLIC-CODE",
+            "interval":0
+        }),
+        Duration::ZERO,
+    );
+    let (poll_route, poll_probe) = raw_json_route(
+        "POST",
+        "/device/token",
+        json!({
+            "authorization_code":"authorization-code-sentinel",
+            "code_verifier":"device-verifier-sentinel"
+        }),
+        Duration::ZERO,
+    );
+    let (exchange_route, exchange_probe) = raw_json_route(
+        "POST",
+        "/oauth/token",
+        token_body(
+            &codex_jwt(Some("raw-final-account")),
+            "raw-final-refresh",
+            3600,
+        ),
+        Duration::from_millis(250),
+    );
+    let server = RawBodyDelayServer::start(vec![device_route, poll_route, exchange_route]).await;
+    let provider = codex_device_provider(server.uri(), Duration::from_millis(100));
+    let presenter = MethodPresenter::new(Some(OAuthLoginMethod::DeviceCode));
+
+    let error = provider
+        .login(&presenter)
+        .await
+        .expect_err("final exchange body decode must use the original flow budget");
+    device_probe.assert_body_boundary_reached().await;
+    poll_probe.assert_body_boundary_reached().await;
+    exchange_probe.assert_body_boundary_reached().await;
+
+    assert!(matches!(error, AiProviderError::Timeout), "{error:?}");
+    assert_eq!(
+        presenter
+            .inner
+            .notify_failure_reasons
+            .lock()
+            .unwrap()
+            .as_slice(),
+        &["device authorization timed out"]
+    );
+    assert_eq!(
+        presenter.inner.notify_success_count.load(Ordering::SeqCst),
+        0
+    );
+}
+
+#[tokio::test]
+async fn openai_codex_device_post_code_cancellation_is_ignored() {
+    let (device_route, device_probe) = raw_json_route(
+        "POST",
+        "/device/usercode",
+        json!({
+            "device_auth_id":"device-auth-sentinel",
+            "user_code":"PUBLIC-CODE",
+            "interval":0
+        }),
+        Duration::ZERO,
+    );
+    let (poll_route, poll_probe) = raw_json_route(
+        "POST",
+        "/device/token",
+        json!({
+            "authorization_code":"authorization-code-sentinel",
+            "code_verifier":"device-verifier-sentinel"
+        }),
+        Duration::ZERO,
+    );
+    let (exchange_route, exchange_probe) = raw_json_route(
+        "POST",
+        "/oauth/token",
+        token_body(
+            &codex_jwt(Some("post-code-account")),
+            "post-code-refresh",
+            3600,
+        ),
+        Duration::from_millis(250),
+    );
+    let server = RawBodyDelayServer::start(vec![device_route, poll_route, exchange_route]).await;
+    let provider = codex_device_provider(server.uri(), Duration::from_secs(2));
+    let presenter = MethodPresenter::new(Some(OAuthLoginMethod::DeviceCode));
+
+    let login = provider.login(&presenter);
+    let cancel_after_code = async {
+        exchange_probe.wait_for_headers().await;
+        presenter.cancel_device_login.notify_one();
+    };
+    let (result, ()) = tokio::join!(login, cancel_after_code);
+    device_probe.assert_body_boundary_reached().await;
+    poll_probe.assert_body_boundary_reached().await;
+    exchange_probe.assert_body_boundary_reached().await;
+    let credential = result.expect("post-code cancellation must not burn the one-use code");
+
+    assert_eq!(credential.account_id.as_deref(), Some("post-code-account"));
+    assert_eq!(
+        presenter.inner.notify_success_count.load(Ordering::SeqCst),
+        1
+    );
+    assert!(
+        presenter
+            .inner
+            .notify_failure_reasons
+            .lock()
+            .unwrap()
+            .is_empty()
     );
 }
 
@@ -2147,7 +3348,7 @@ fn registry_debug_does_not_leak_secrets_or_provider_internals() {
 }
 
 // ===========================================================================
-// Slice 5 — registry_with_builtins (production OAuth providers)
+// Slice 5 閳?registry_with_builtins (production OAuth providers)
 // ===========================================================================
 
 #[test]
@@ -2256,7 +3457,7 @@ async fn openai_codex_resolver_propagates_account_id_without_secret_logging() {
 }
 
 // ===========================================================================
-// Slice 4 — CopilotOAuthProvider (GitHub device-code)
+// Slice 4 閳?CopilotOAuthProvider (GitHub device-code)
 // ===========================================================================
 
 fn copilot_provider(server_uri: String, total_budget: Duration) -> CopilotOAuthProvider {
@@ -2410,10 +3611,10 @@ async fn copilot_login_slow_down_is_non_terminal_and_gated_by_budget() {
     )
     .await;
     // slow_down is NOT a terminal error (unlike access_denied/expired_token): the
-    // impl increases the interval by exactly 5s (RFC 8628 §3.5, persistent) and
+    // impl increases the interval by exactly 5s (RFC 8628 鎼?.5, persistent) and
     // continues polling. With a total budget shorter than the post-slow_down
     // sleep, the flow times out during that sleep rather than returning a
-    // CredentialRevoked denial — proving slow_down was handled as a backoff.
+    // CredentialRevoked denial 閳?proving slow_down was handled as a backoff.
     mount_device_poll(&server, json!({"error":"slow_down"}), None).await;
     let provider = copilot_provider(server.uri(), Duration::from_millis(80));
     let presenter = MockLoginPresenter::new();
@@ -2506,6 +3707,348 @@ async fn copilot_login_total_budget_timeout_returns_timeout() {
 }
 
 #[tokio::test]
+async fn copilot_total_budget_bounds_initial_device_authorization_response() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/device/code"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(json!({
+                    "device_code":"dc",
+                    "user_code":"UC",
+                    "verification_uri":"https://x",
+                    "interval":0
+                }))
+                .set_delay(Duration::from_millis(100)),
+        )
+        .mount(&server)
+        .await;
+    mount_device_poll(&server, json!({"access_token":"ghub"}), None).await;
+    mount_copilot_token(
+        &server,
+        200,
+        json!({"token":"cop","expires_at":copilot_expires_soon()}),
+    )
+    .await;
+    let provider = copilot_provider(server.uri(), Duration::from_millis(50));
+    let presenter = MockLoginPresenter::new();
+
+    let error = provider
+        .login(&presenter)
+        .await
+        .expect_err("initial authorization body must consume the flow budget");
+
+    assert!(matches!(error, AiProviderError::Timeout), "{error:?}");
+    assert_eq!(
+        presenter.notify_failure_reasons.lock().unwrap().as_slice(),
+        &["device authorization timed out"]
+    );
+    assert!(presenter.captured_device_codes.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn copilot_total_budget_bounds_initial_authorization_body_after_headers() {
+    let (device_route, device_probe) = raw_json_route(
+        "POST",
+        "/device/code",
+        json!({
+            "device_code":"dc",
+            "user_code":"UC",
+            "verification_uri":"https://x",
+            "interval":0
+        }),
+        Duration::from_millis(250),
+    );
+    let server = RawBodyDelayServer::start(vec![device_route]).await;
+    let provider = copilot_provider(server.uri().to_owned(), Duration::from_millis(100));
+    let presenter = MockLoginPresenter::new();
+
+    let error = provider
+        .login(&presenter)
+        .await
+        .expect_err("initial authorization body decode must use the flow budget");
+    device_probe.assert_body_boundary_reached().await;
+
+    assert!(matches!(error, AiProviderError::Timeout), "{error:?}");
+    assert_eq!(
+        presenter.notify_failure_reasons.lock().unwrap().as_slice(),
+        &["device authorization timed out"]
+    );
+    assert!(
+        presenter.captured_device_codes.lock().unwrap().is_empty(),
+        "device code was presented after its response-body deadline"
+    );
+}
+
+#[tokio::test]
+async fn copilot_cancellation_is_installed_before_initial_response_body() {
+    let (device_route, device_probe) = raw_json_route(
+        "POST",
+        "/device/code",
+        json!({
+            "device_code":"dc",
+            "user_code":"UC",
+            "verification_uri":"https://x",
+            "interval":0
+        }),
+        Duration::from_millis(750),
+    );
+    let server = RawBodyDelayServer::start(vec![device_route]).await;
+    let provider = copilot_provider(server.uri().to_owned(), Duration::from_secs(2));
+    let presenter = MockLoginPresenter::new();
+    let cancel = presenter.login_cancelled_sender();
+
+    let login = provider.login(&presenter);
+    let cancel_during_body = async {
+        device_probe.wait_for_headers().await;
+        cancel.send(()).unwrap();
+    };
+    let (result, ()) = tokio::time::timeout(Duration::from_millis(300), async {
+        tokio::join!(login, cancel_during_body)
+    })
+    .await
+    .expect("Copilot waited for the initial body before observing cancellation");
+    device_probe.assert_body_boundary_reached().await;
+    let error = result.expect_err("initial device authorization must be cancellable");
+
+    assert!(matches!(
+        error,
+        AiProviderError::LoginCancelled { ref provider_id }
+            if provider_id == "github-copilot"
+    ));
+    assert_eq!(
+        presenter.notify_failure_reasons.lock().unwrap().as_slice(),
+        &["login cancelled"]
+    );
+    assert!(presenter.captured_device_codes.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn copilot_ready_cancellation_prevents_initial_request() {
+    let server = MockServer::start().await;
+    let provider = copilot_provider(server.uri(), Duration::from_secs(2));
+    let presenter = MockLoginPresenter::new();
+    presenter.login_cancelled_sender().send(()).unwrap();
+
+    let error = provider
+        .login(&presenter)
+        .await
+        .expect_err("ready cancellation must win before the initial request");
+
+    assert!(matches!(
+        error,
+        AiProviderError::LoginCancelled { ref provider_id }
+            if provider_id == "github-copilot"
+    ));
+    assert_eq!(
+        presenter.notify_failure_reasons.lock().unwrap().as_slice(),
+        &["login cancelled"]
+    );
+    assert!(server.received_requests().await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn copilot_total_budget_bounds_final_exchange_after_poll_response_delay() {
+    let server = MockServer::start().await;
+    mount_device_auth(
+        &server,
+        json!({
+            "device_code":"dc",
+            "user_code":"UC",
+            "verification_uri":"https://x",
+            "interval":0
+        }),
+    )
+    .await;
+    Mock::given(method("POST"))
+        .and(path("/login/oauth/access_token"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(json!({"access_token":"ghub"}))
+                .set_delay(Duration::from_millis(60)),
+        )
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/copilot_internal/v2/token"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(json!({
+                    "token":"cop",
+                    "expires_at":copilot_expires_soon()
+                }))
+                .set_delay(Duration::from_millis(80)),
+        )
+        .mount(&server)
+        .await;
+    let provider = copilot_provider(server.uri(), Duration::from_millis(100));
+    let presenter = MockLoginPresenter::new();
+
+    let error = provider
+        .login(&presenter)
+        .await
+        .expect_err("final exchange must use the poll flow's remaining budget");
+
+    assert!(matches!(error, AiProviderError::Timeout), "{error:?}");
+    assert_eq!(
+        presenter.notify_failure_reasons.lock().unwrap().as_slice(),
+        &["device authorization timed out"]
+    );
+    assert_eq!(presenter.notify_success_count.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn copilot_total_budget_bounds_final_exchange_body_after_headers() {
+    let (device_route, device_probe) = raw_json_route(
+        "POST",
+        "/device/code",
+        json!({
+            "device_code":"dc",
+            "user_code":"UC",
+            "verification_uri":"https://x",
+            "interval":0
+        }),
+        Duration::ZERO,
+    );
+    let (poll_route, poll_probe) = raw_json_route(
+        "POST",
+        "/login/oauth/access_token",
+        json!({"access_token":"ghub"}),
+        Duration::ZERO,
+    );
+    let (exchange_route, exchange_probe) = raw_json_route(
+        "GET",
+        "/copilot_internal/v2/token",
+        json!({
+            "token":"cop",
+            "expires_at":copilot_expires_soon()
+        }),
+        Duration::from_millis(250),
+    );
+    let server = RawBodyDelayServer::start(vec![device_route, poll_route, exchange_route]).await;
+    let provider = copilot_provider(server.uri().to_owned(), Duration::from_millis(100));
+    let presenter = MockLoginPresenter::new();
+
+    let error = provider
+        .login(&presenter)
+        .await
+        .expect_err("final exchange body decode must use the remaining flow budget");
+    device_probe.assert_body_boundary_reached().await;
+    poll_probe.assert_body_boundary_reached().await;
+    exchange_probe.assert_body_boundary_reached().await;
+
+    assert!(matches!(error, AiProviderError::Timeout), "{error:?}");
+    assert_eq!(
+        presenter.notify_failure_reasons.lock().unwrap().as_slice(),
+        &["device authorization timed out"]
+    );
+    assert_eq!(presenter.notify_success_count.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn copilot_cancellation_prevents_final_exchange_and_persistence() {
+    let server = MockServer::start().await;
+    mount_device_auth(
+        &server,
+        json!({
+            "device_code":"dc",
+            "user_code":"UC",
+            "verification_uri":"https://x",
+            "interval":60
+        }),
+    )
+    .await;
+    mount_device_poll(&server, json!({"error":"authorization_pending"}), None).await;
+    mount_copilot_token(
+        &server,
+        200,
+        json!({"token":"unused","expires_at":copilot_expires_soon()}),
+    )
+    .await;
+    let provider: Arc<dyn OAuthProvider> =
+        Arc::new(copilot_provider(server.uri(), Duration::from_millis(250)));
+    let mut registry = OAuthProviderRegistry::new();
+    registry.register(provider).unwrap();
+    let (_dir, store, _backend) = store_with(FakeKeyringBackend::new());
+    let presenter = MockLoginPresenter::new();
+    let cancel = presenter.login_cancelled_sender();
+
+    let login = login_oauth("github-copilot", &registry, &store, &presenter);
+    let cancel_after_presentation = async {
+        presenter.wait_for_device_code().await;
+        cancel.send(()).unwrap();
+    };
+    let (result, ()) = tokio::join!(login, cancel_after_presentation);
+    let error = result.expect_err("active Copilot login must be cancellable");
+
+    assert!(matches!(
+        error,
+        AiProviderError::LoginCancelled { ref provider_id }
+            if provider_id == "github-copilot"
+    ));
+    assert_eq!(
+        presenter.notify_failure_reasons.lock().unwrap().as_slice(),
+        &["login cancelled"]
+    );
+    assert_eq!(presenter.notify_success_count.load(Ordering::SeqCst), 0);
+    assert!(store.read("github-copilot").await.unwrap().is_none());
+    assert!(
+        server
+            .received_requests()
+            .await
+            .unwrap()
+            .iter()
+            .all(|request| request.url.path() != "/copilot_internal/v2/token"),
+        "Copilot final exchange ran after cancellation"
+    );
+}
+
+#[tokio::test]
+async fn copilot_post_token_cancellation_is_ignored_during_bounded_final_exchange() {
+    let server = MockServer::start().await;
+    mount_device_auth(
+        &server,
+        json!({
+            "device_code":"dc",
+            "user_code":"UC",
+            "verification_uri":"https://x",
+            "interval":0
+        }),
+    )
+    .await;
+    mount_device_poll(&server, json!({"access_token":"ghub"}), None).await;
+    let final_exchange_started = Arc::new(tokio::sync::Notify::new());
+    let notify = final_exchange_started.clone();
+    Mock::given(method("GET"))
+        .and(path("/copilot_internal/v2/token"))
+        .respond_with(move |_: &wiremock::Request| {
+            notify.notify_one();
+            ResponseTemplate::new(200)
+                .set_body_json(json!({
+                    "token":"cop",
+                    "expires_at":copilot_expires_soon()
+                }))
+                .set_delay(Duration::from_millis(80))
+        })
+        .mount(&server)
+        .await;
+    let provider = copilot_provider(server.uri(), Duration::from_millis(500));
+    let presenter = MockLoginPresenter::new();
+    let cancel = presenter.login_cancelled_sender();
+
+    let login = provider.login(&presenter);
+    let cancel_after_token = async {
+        final_exchange_started.notified().await;
+        cancel.send(()).unwrap();
+    };
+    let (result, ()) = tokio::join!(login, cancel_after_token);
+
+    result.expect("post-token cancellation must not burn the acquired token");
+    assert_eq!(presenter.notify_success_count.load(Ordering::SeqCst), 1);
+    assert!(presenter.notify_failure_reasons.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
 async fn copilot_login_device_code_never_leaks_to_presenter_or_errors() {
     let server = MockServer::start().await;
     mount_device_auth(&server, json!({"device_code":"DEVICE-DO-NOT-LEAK","user_code":"USERCODE","verification_uri":"https://x","interval":0})).await;
@@ -2536,6 +4079,87 @@ async fn copilot_login_device_code_never_leaks_to_presenter_or_errors() {
     for u in &urls {
         assert!(!u.contains("DEVICE-DO-NOT-LEAK"), "device_code in url: {u}");
     }
+}
+
+#[tokio::test]
+async fn copilot_poll_unknown_error_code_is_closed_and_redacted() {
+    const DEVICE_CODE: &str = "device-code-server-error-canary";
+
+    let server = MockServer::start().await;
+    mount_device_auth(
+        &server,
+        json!({
+            "device_code": DEVICE_CODE,
+            "user_code": "PUBLIC-CODE",
+            "verification_uri": "https://x",
+            "interval": 0
+        }),
+    )
+    .await;
+    mount_device_poll(
+        &server,
+        json!({
+            "error": format!("authorization_pending:{DEVICE_CODE}"),
+            "error_description": DEVICE_CODE
+        }),
+        None,
+    )
+    .await;
+    let provider = copilot_provider(server.uri(), Duration::from_secs(60));
+    let presenter = MockLoginPresenter::new();
+
+    let error = provider.login(&presenter).await.expect_err("poll error");
+
+    match &error {
+        AiProviderError::Config(message) => {
+            assert_eq!(message, "device authorization error: unknown_oauth_error");
+        }
+        other => panic!("expected Config, got {other:?}"),
+    }
+    assert_oauth_error_surfaces_are_redacted(&error, Some(&presenter), &[DEVICE_CODE]);
+}
+
+#[tokio::test]
+async fn copilot_exchange_unknown_error_code_is_closed_and_redacted() {
+    const GITHUB_TOKEN: &str = "github-token-server-error-canary";
+
+    let server = MockServer::start().await;
+    mount_device_auth(
+        &server,
+        json!({
+            "device_code": "device-code",
+            "user_code": "PUBLIC-CODE",
+            "verification_uri": "https://x",
+            "interval": 0
+        }),
+    )
+    .await;
+    mount_device_poll(&server, json!({"access_token": GITHUB_TOKEN}), None).await;
+    mount_copilot_token(
+        &server,
+        400,
+        json!({
+            "error": format!("invalid_token:{GITHUB_TOKEN}"),
+            "error_description": GITHUB_TOKEN
+        }),
+    )
+    .await;
+    let provider = copilot_provider(server.uri(), Duration::from_secs(60));
+    let presenter = MockLoginPresenter::new();
+
+    let error = provider
+        .login(&presenter)
+        .await
+        .expect_err("exchange error");
+
+    match &error {
+        AiProviderError::AuthFailed(message) => assert_eq!(
+            message,
+            "token endpoint: 400 Bad Request unknown_oauth_error"
+        ),
+        other => panic!("expected AuthFailed, got {other:?}"),
+    }
+    assert_oauth_error_surfaces_are_redacted(&error, Some(&presenter), &[GITHUB_TOKEN]);
 }
 
 #[tokio::test]
@@ -2589,7 +4213,7 @@ async fn copilot_refresh_401_returns_credential_revoked() {
 }
 
 // ===========================================================================
-// Slice 4 — TuiLoginPresenter (production, print-only substrate)
+// Slice 4 閳?TuiLoginPresenter (production, print-only substrate)
 // ===========================================================================
 
 #[tokio::test]
@@ -2612,7 +4236,7 @@ async fn tui_login_presenter_print_only_methods_succeed_without_panic() {
 }
 
 // ===========================================================================
-// Slice 5 — factory OAuth wiring (product-loop via build_provider_with_oauth)
+// Slice 5 閳?factory OAuth wiring (product-loop via build_provider_with_oauth)
 // ===========================================================================
 
 fn factory_request(model: &str) -> Request {
@@ -2897,6 +4521,107 @@ async fn concurrent_near_expiry_resolves_coalesce_to_single_refresh() {
 }
 
 #[tokio::test]
+async fn anthropic_oauth_env_skips_unreadable_lower_priority_api_key() {
+    struct UnreadableApiKeyBackend {
+        protected_get_calls: Arc<AtomicUsize>,
+    }
+
+    impl opi_coding_agent::credential_store::KeyringBackend for UnreadableApiKeyBackend {
+        fn get(
+            &self,
+            service: &str,
+            _provider_id: &str,
+        ) -> Result<Option<String>, opi_coding_agent::credential_store::BackendError> {
+            if service == opi_coding_agent::credential_store::KEYCHAIN_PRESENCE_SERVICE {
+                Ok(Some("api_key".to_owned()))
+            } else {
+                self.protected_get_calls.fetch_add(1, Ordering::SeqCst);
+                Err(opi_coding_agent::credential_store::BackendError::Other(
+                    "protected API-key entry is unreadable".to_owned(),
+                ))
+            }
+        }
+
+        fn set(
+            &self,
+            _service: &str,
+            _provider_id: &str,
+            _value: &str,
+        ) -> Result<(), opi_coding_agent::credential_store::BackendError> {
+            Err(opi_coding_agent::credential_store::BackendError::Other(
+                "unused set".to_owned(),
+            ))
+        }
+
+        fn delete(
+            &self,
+            _service: &str,
+            _provider_id: &str,
+        ) -> Result<(), opi_coding_agent::credential_store::BackendError> {
+            Err(opi_coding_agent::credential_store::BackendError::Other(
+                "unused delete".to_owned(),
+            ))
+        }
+    }
+
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string("")
+                .insert_header("content-type", "text/event-stream"),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let protected_get_calls = Arc::new(AtomicUsize::new(0));
+    let dir = TempDir::new().unwrap();
+    let store = Arc::new(KeychainCredentialStore::new(
+        Box::new(UnreadableApiKeyBackend {
+            protected_get_calls: Arc::clone(&protected_get_calls),
+        }),
+        dir.path().to_path_buf(),
+    ));
+    let resolver = CredentialResolver::new(
+        store,
+        Arc::new(|name: &str| {
+            (name == "ANTHROPIC_OAUTH_TOKEN").then(|| "higher-priority-oauth-token".to_owned())
+        }),
+    );
+    let registry = OAuthProviderRegistry::registry_with_builtins();
+    let mut config = OpiConfig::default();
+    config.defaults.model = "anthropic:claude-sonnet-4-5-20250514".into();
+    config.providers.anthropic.base_url = Some(server.uri());
+
+    let provider = build_provider_with_oauth(&config, &resolver, &registry)
+        .await
+        .expect("OAuth env must bypass unreadable lower-priority API-key entry");
+    assert_eq!(
+        protected_get_calls.load(Ordering::SeqCst),
+        0,
+        "construction must not read the lower-priority API-key entry"
+    );
+
+    let mut stream = provider.stream(factory_request("anthropic:claude-sonnet-4-5-20250514"));
+    drain_stream(&mut stream).await;
+    assert_eq!(
+        protected_get_calls.load(Ordering::SeqCst),
+        0,
+        "stream auth selection must not read the lower-priority API-key entry"
+    );
+    let requests = server.received_requests().await.unwrap();
+    assert_eq!(
+        requests[0]
+            .headers
+            .get("authorization")
+            .and_then(|value| value.to_str().ok()),
+        Some("Bearer higher-priority-oauth-token")
+    );
+    assert!(requests[0].headers.get("x-api-key").is_none());
+}
+
+#[tokio::test]
 async fn anthropic_env_oauth_token_precedence_stored_wins_env_fallback() {
     // 1. ANTHROPIC_OAUTH_TOKEN present, no stored cred -> EnvOAuthToken path.
     let server = MockServer::start().await;
@@ -3000,7 +4725,7 @@ async fn anthropic_env_oauth_token_precedence_stored_wins_env_fallback() {
 }
 
 // ===========================================================================
-// Slice 6 — login_oauth / logout_credential store integration
+// Slice 6 閳?login_oauth / logout_credential store integration
 // ===========================================================================
 
 #[tokio::test]
@@ -3096,14 +4821,17 @@ async fn login_oauth_store_failure_stays_typed_and_does_not_report_success() {
 
     assert!(matches!(error, AiProviderError::Config(_)), "{error:?}");
     assert_eq!(presenter.notify_success_count.load(Ordering::SeqCst), 0);
-    let message = error.to_string();
-    assert!(
-        !message.contains("access-token"),
-        "secret leaked: {message}"
+    let reasons = presenter.notify_failure_reasons.lock().unwrap().clone();
+    assert_eq!(
+        reasons,
+        vec!["credential store write failed"],
+        "persistence failure must emit exactly one fixed notification"
     );
-    assert!(
-        !message.contains("refresh-token"),
-        "secret leaked: {message}"
+    drop(reasons);
+    assert_oauth_error_surfaces_are_redacted(
+        &error,
+        Some(&presenter),
+        &["access-token", "refresh-token", "test-auth-code"],
     );
 }
 
@@ -3129,7 +4857,7 @@ async fn logout_credential_deletes_stored_entry() {
 async fn logout_credential_missing_entry_is_noop() {
     let backend = FakeKeyringBackend::new();
     let (_dir, store, _b) = store_with(backend);
-    // No credential stored — delete is a no-op.
+    // No credential stored 閳?delete is a no-op.
     let store_ref = &*store;
     logout_credential("anthropic", store_ref)
         .await
@@ -3148,7 +4876,7 @@ async fn logout_credential_store_failure_stays_typed() {
 }
 
 // ===========================================================================
-// Slice 6 — acceptance scenarios
+// Slice 6 閳?acceptance scenarios
 // ===========================================================================
 
 #[tokio::test]
@@ -3241,7 +4969,7 @@ async fn all_builtin_flows_support_manual_fallback() {
 }
 
 // ===========================================================================
-// Slice 6 — revoked/no-auto-relogin acceptance
+// Slice 6 閳?revoked/no-auto-relogin acceptance
 // ===========================================================================
 
 /// A resolver that returns a fixed Bearer credential, then `CredentialRevoked`.

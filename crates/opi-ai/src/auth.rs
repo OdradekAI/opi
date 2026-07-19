@@ -34,6 +34,31 @@ pub enum AuthScheme {
     Bearer,
 }
 
+/// Route-level handling for provider 401/403 responses.
+///
+/// This is intentionally independent of [`AuthScheme`]: Bearer syntax alone
+/// does not imply that opi owns a refreshable credential lifecycle.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AuthInvalidPolicy {
+    /// The route is backed by opi-managed credentials and rejection invalidates
+    /// the current credential.
+    CredentialManaged,
+    /// The route uses a fixed/static credential. Rejection is a bodyless auth
+    /// failure and does not enter credential lifecycle handling.
+    Static,
+}
+
+impl AuthInvalidPolicy {
+    pub(crate) fn error(self, provider_id: &str) -> ProviderError {
+        match self {
+            Self::CredentialManaged => ProviderError::CredentialRevoked {
+                provider_id: provider_id.to_owned(),
+            },
+            Self::Static => ProviderError::AuthFailed("authentication failed".into()),
+        }
+    }
+}
+
 /// The auth scheme and secret a provider needs to issue one HTTP request.
 ///
 /// Carries only what the provider's HTTP boundary consumes; the secret is a
@@ -269,6 +294,15 @@ pub trait LoginPresenter: Send + Sync {
     /// Device-code providers must not call this method; they present the public
     /// user code through [`present_device_code`](Self::present_device_code).
     fn await_manual_code<'a>(&'a self) -> BoxAuthFuture<'a, Result<String, ProviderError>>;
+
+    /// Cancel an abandoned manual-code read and wait until any external input
+    /// reader has terminated.
+    ///
+    /// Presenters whose [`await_manual_code`](Self::await_manual_code) never
+    /// spawns an external reader may retain this no-op default.
+    fn cancel_manual_code<'a>(&'a self) -> BoxAuthFuture<'a, Result<(), ProviderError>> {
+        Box::pin(async { Ok(()) })
+    }
 
     /// Notify the user that login succeeded.
     fn notify_success(&self);

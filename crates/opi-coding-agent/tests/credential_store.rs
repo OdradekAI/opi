@@ -92,6 +92,115 @@ impl KeyringBackend for OperationalErrorBackend {
     }
 }
 
+struct ScriptedOAuthRereadBackend {
+    expired_raw: String,
+    fresh_raw: String,
+    protected_get_calls: Arc<AtomicUsize>,
+}
+
+impl KeyringBackend for ScriptedOAuthRereadBackend {
+    fn get(&self, service: &str, _provider_id: &str) -> Result<Option<String>, BackendError> {
+        match service {
+            KEYCHAIN_PRESENCE_SERVICE => Ok(Some("oauth_token".to_owned())),
+            KEYCHAIN_SERVICE => {
+                let call = self.protected_get_calls.fetch_add(1, Ordering::SeqCst);
+                Ok(Some(if call < 2 {
+                    self.expired_raw.clone()
+                } else {
+                    self.fresh_raw.clone()
+                }))
+            }
+            _ => Ok(None),
+        }
+    }
+
+    fn set(&self, _service: &str, _provider_id: &str, _value: &str) -> Result<(), BackendError> {
+        Err(BackendError::Other("unexpected scripted write".to_owned()))
+    }
+
+    fn delete(&self, _service: &str, _provider_id: &str) -> Result<(), BackendError> {
+        Err(BackendError::Other("unexpected scripted delete".to_owned()))
+    }
+}
+
+struct FailingOAuthRereadBackend {
+    expired_raw: String,
+    protected_get_calls: Arc<AtomicUsize>,
+}
+
+impl KeyringBackend for FailingOAuthRereadBackend {
+    fn get(&self, service: &str, _provider_id: &str) -> Result<Option<String>, BackendError> {
+        match service {
+            KEYCHAIN_PRESENCE_SERVICE => Ok(Some("oauth_token".to_owned())),
+            KEYCHAIN_SERVICE => {
+                let call = self.protected_get_calls.fetch_add(1, Ordering::SeqCst);
+                if call < 2 {
+                    Ok(Some(self.expired_raw.clone()))
+                } else {
+                    Err(BackendError::Other("post-failure reread broke".to_owned()))
+                }
+            }
+            _ => Ok(None),
+        }
+    }
+
+    fn set(&self, _service: &str, _provider_id: &str, _value: &str) -> Result<(), BackendError> {
+        Err(BackendError::Other("unexpected scripted write".to_owned()))
+    }
+
+    fn delete(&self, _service: &str, _provider_id: &str) -> Result<(), BackendError> {
+        Err(BackendError::Other("unexpected scripted delete".to_owned()))
+    }
+}
+
+struct HangingOAuthProvider;
+
+impl OAuthProvider for HangingOAuthProvider {
+    fn id(&self) -> &str {
+        "scripted-oauth"
+    }
+
+    fn login<'a>(
+        &'a self,
+        _presenter: &'a dyn LoginPresenter,
+    ) -> BoxAuthFuture<'a, Result<OAuthCredential, ProviderError>> {
+        Box::pin(async { Err(ProviderError::Config("unused login".to_owned())) })
+    }
+
+    fn refresh<'a>(
+        &'a self,
+        _cred: &'a OAuthCredential,
+    ) -> BoxAuthFuture<'a, Result<OAuthCredential, ProviderError>> {
+        Box::pin(std::future::pending())
+    }
+}
+
+struct FailingRefreshProvider;
+
+impl OAuthProvider for FailingRefreshProvider {
+    fn id(&self) -> &str {
+        "scripted-oauth"
+    }
+
+    fn login<'a>(
+        &'a self,
+        _presenter: &'a dyn LoginPresenter,
+    ) -> BoxAuthFuture<'a, Result<OAuthCredential, ProviderError>> {
+        Box::pin(async { Err(ProviderError::Config("unused login".to_owned())) })
+    }
+
+    fn refresh<'a>(
+        &'a self,
+        _cred: &'a OAuthCredential,
+    ) -> BoxAuthFuture<'a, Result<OAuthCredential, ProviderError>> {
+        Box::pin(async {
+            Err(ProviderError::Network(
+                "original refresh failure".to_owned(),
+            ))
+        })
+    }
+}
+
 /// Native-adapter-shaped boundary: metadata reads are allowed, while any
 /// attempt to inspect the protected entry fails loudly.
 struct MarkerOnlyBackend {
@@ -933,6 +1042,155 @@ async fn mutation_lock_times_out_under_contention() {
         }
         other => panic!("expected Backend(timeout), got {other:?}"),
     }
+}
+
+#[tokio::test]
+async fn losing_lock_contender_does_not_mutate_existing_lock_file() {
+    let dir = TempDir::new().unwrap();
+    let lock_path = dir.path().join("credential.lock");
+    let sentinel = b"lock-owner-sentinel";
+    std::fs::write(&lock_path, sentinel).unwrap();
+    let owner = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(&lock_path)
+        .unwrap();
+    fs4::FileExt::lock(&owner).unwrap();
+
+    let contender = KeychainCredentialStore::with_lock_timeout(
+        Box::new(FakeKeyringBackend::new()),
+        dir.path().to_path_buf(),
+        Duration::from_millis(40),
+    );
+    let error = contender
+        .write("anthropic", &api_key_credential())
+        .await
+        .expect_err("losing contender must time out");
+    assert!(
+        matches!(
+            error,
+            CredentialStoreError::Backend { ref reason, .. } if reason.contains("timeout")
+        ),
+        "{error:?}"
+    );
+    fs4::FileExt::unlock(&owner).unwrap();
+    assert_eq!(
+        std::fs::read(&lock_path).unwrap(),
+        sentinel,
+        "opening or contending for the lock must not change owner bytes"
+    );
+}
+
+#[tokio::test]
+async fn refresh_timeout_rereads_and_returns_newer_scripted_credential() {
+    let dir = TempDir::new().unwrap();
+    let now = time::OffsetDateTime::now_utc().unix_timestamp();
+    let expired_raw = serde_json::json!({
+        "version": 1,
+        "kind": "oauth",
+        "access": "expired-access",
+        "refresh": "expired-refresh",
+        "expires_at": now + 60,
+    })
+    .to_string();
+    let fresh_raw = serde_json::json!({
+        "version": 1,
+        "kind": "oauth",
+        "access": "newer-access",
+        "refresh": "newer-refresh",
+        "expires_at": now + 3600,
+    })
+    .to_string();
+    let protected_get_calls = Arc::new(AtomicUsize::new(0));
+    let store = Arc::new(KeychainCredentialStore::new(
+        Box::new(ScriptedOAuthRereadBackend {
+            expired_raw,
+            fresh_raw,
+            protected_get_calls: Arc::clone(&protected_get_calls),
+        }),
+        dir.path().to_path_buf(),
+    ));
+    let resolver = CredentialResolver::with_refresh_timeout(
+        store,
+        Arc::new(|_: &str| None),
+        Duration::from_millis(20),
+    );
+
+    let resolved = resolver
+        .resolve_oauth("scripted-oauth", &HangingOAuthProvider)
+        .await
+        .expect("post-timeout reread returns the newer credential");
+    assert_eq!(resolved.secret.expose_secret(), "newer-access");
+    assert_eq!(
+        protected_get_calls.load(Ordering::SeqCst),
+        3,
+        "fast read, locked read, and post-timeout reread"
+    );
+}
+
+fn resolver_with_failing_post_refresh_reread(
+    refresh_timeout: Duration,
+) -> (TempDir, CredentialResolver, Arc<AtomicUsize>) {
+    let dir = TempDir::new().unwrap();
+    let now = time::OffsetDateTime::now_utc().unix_timestamp();
+    let expired_raw = serde_json::json!({
+        "version": 1,
+        "kind": "oauth",
+        "access": "expired-access",
+        "refresh": "expired-refresh",
+        "expires_at": now + 60,
+    })
+    .to_string();
+    let protected_get_calls = Arc::new(AtomicUsize::new(0));
+    let store = Arc::new(KeychainCredentialStore::new(
+        Box::new(FailingOAuthRereadBackend {
+            expired_raw,
+            protected_get_calls: Arc::clone(&protected_get_calls),
+        }),
+        dir.path().to_path_buf(),
+    ));
+    let resolver =
+        CredentialResolver::with_refresh_timeout(store, Arc::new(|_: &str| None), refresh_timeout);
+    (dir, resolver, protected_get_calls)
+}
+
+#[tokio::test]
+async fn refresh_timeout_survives_failed_post_failure_reread() {
+    let (_dir, resolver, protected_get_calls) =
+        resolver_with_failing_post_refresh_reread(Duration::from_millis(20));
+
+    let error = resolver
+        .resolve_oauth("scripted-oauth", &HangingOAuthProvider)
+        .await
+        .expect_err("timeout remains the primary failure");
+    assert!(
+        matches!(
+            error,
+            ProviderError::AuthFailed(ref reason)
+                if reason == "OAuth refresh timed out for provider 'scripted-oauth'"
+        ),
+        "post-failure reread must not replace the typed timeout: {error:?}"
+    );
+    assert_eq!(protected_get_calls.load(Ordering::SeqCst), 3);
+}
+
+#[tokio::test]
+async fn provider_refresh_error_survives_failed_post_failure_reread() {
+    let (_dir, resolver, protected_get_calls) =
+        resolver_with_failing_post_refresh_reread(Duration::from_secs(1));
+
+    let error = resolver
+        .resolve_oauth("scripted-oauth", &FailingRefreshProvider)
+        .await
+        .expect_err("provider refresh failure remains primary");
+    assert!(
+        matches!(
+            error,
+            ProviderError::Network(ref reason) if reason == "original refresh failure"
+        ),
+        "post-failure reread must not replace the provider error: {error:?}"
+    );
+    assert_eq!(protected_get_calls.load(Ordering::SeqCst), 3);
 }
 
 #[tokio::test]

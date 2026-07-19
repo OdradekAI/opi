@@ -145,6 +145,7 @@ pub fn run_rpc_stdio_capture(child_test_name: &str) -> Vec<serde_json::Value> {
         value["type"] == "response" && value["command"] == "quit"
     });
     drop(stdin);
+    drain_rpc_until_eof(&line_rx, &mut records);
 
     let deadline = std::time::Instant::now() + Duration::from_secs(5);
     let status = loop {
@@ -173,10 +174,7 @@ fn recv_rpc_until(
         let line = lines
             .recv_timeout(remaining)
             .unwrap_or_else(|error| panic!("timed out waiting for RPC record: {error}"));
-        let Some(start) = line.find('{') else {
-            continue;
-        };
-        let Ok(value) = serde_json::from_str::<serde_json::Value>(&line[start..]) else {
+        let Some(value) = parse_rpc_record(&line) else {
             continue;
         };
         let done = predicate(&value);
@@ -184,5 +182,55 @@ fn recv_rpc_until(
         if done {
             return;
         }
+    }
+}
+
+fn drain_rpc_until_eof(lines: &mpsc::Receiver<String>, records: &mut Vec<serde_json::Value>) {
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+        match lines.recv_timeout(remaining) {
+            Ok(line) => {
+                if let Some(value) = parse_rpc_record(&line) {
+                    records.push(value);
+                }
+            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => return,
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                panic!("timed out draining RPC records through stdout EOF");
+            }
+        }
+    }
+}
+
+fn parse_rpc_record(line: &str) -> Option<serde_json::Value> {
+    let start = line.find('{')?;
+    serde_json::from_str(&line[start..]).ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rpc_record_drain_includes_records_queued_after_quit_response() {
+        let (line_tx, line_rx) = mpsc::channel();
+        line_tx
+            .send(r#"{"type":"response","command":"quit","success":true}"#.to_owned())
+            .unwrap();
+        line_tx
+            .send(r#"{"type":"CredentialNeeded","provider_id":"late"}"#.to_owned())
+            .unwrap();
+        drop(line_tx);
+
+        let mut records = Vec::new();
+        recv_rpc_until(&line_rx, &mut records, |value| {
+            value["type"] == "response" && value["command"] == "quit"
+        });
+        drain_rpc_until_eof(&line_rx, &mut records);
+
+        assert_eq!(records.len(), 2);
+        assert_eq!(records[1]["type"], "CredentialNeeded");
+        assert_eq!(records[1]["provider_id"], "late");
     }
 }

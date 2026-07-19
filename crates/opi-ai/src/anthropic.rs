@@ -7,7 +7,7 @@ use secrecy::{ExposeSecret, SecretString};
 use serde::Deserialize;
 use tokio_util::sync::CancellationToken;
 
-use crate::auth::{AuthResolver, AuthScheme, ResolvedAuth, StaticAuthResolver};
+use crate::auth::{AuthInvalidPolicy, AuthResolver, AuthScheme, ResolvedAuth, StaticAuthResolver};
 use crate::http::HttpClient;
 use crate::message::{AssistantContent, AssistantMessage, ToolCall};
 use crate::model_info::WireApi;
@@ -687,6 +687,7 @@ pub struct AnthropicProvider {
     default_base_url: String,
     models: Vec<ModelInfo>,
     headers: ProviderHeaders,
+    auth_invalid_policy: AuthInvalidPolicy,
     direct_oauth_beta: bool,
     copilot_headers: bool,
     client: Arc<HttpClient>,
@@ -703,7 +704,15 @@ impl AnthropicProvider {
             AuthScheme::ApiKey,
             SecretString::from(api_key),
         ));
-        Self::with_auth(auth, base_url, client)
+        Self::for_route(
+            auth,
+            "anthropic".into(),
+            model_catalog(),
+            base_url,
+            ProviderHeaders::default(),
+            client,
+            false,
+        )
     }
 
     /// Build with an injected per-request auth resolver (Phase 14.2). The
@@ -725,6 +734,7 @@ impl AnthropicProvider {
             client,
             true,
         )
+        .with_auth_invalid_policy(AuthInvalidPolicy::CredentialManaged)
     }
 
     /// Build an Anthropic Messages route for a mapped provider.
@@ -746,10 +756,17 @@ impl AnthropicProvider {
             default_base_url,
             models,
             headers,
+            auth_invalid_policy: AuthInvalidPolicy::Static,
             direct_oauth_beta,
             copilot_headers: false,
             client,
         }
+    }
+
+    /// Override how this route classifies provider 401/403 responses.
+    pub fn with_auth_invalid_policy(mut self, policy: AuthInvalidPolicy) -> Self {
+        self.auth_invalid_policy = policy;
+        self
     }
 
     /// Enable GitHub Copilot's request-dependent route headers.
@@ -767,7 +784,8 @@ impl AnthropicProvider {
     ///
     /// Emits `cache_control` markers when the selected model advertises
     /// `supports_cache_control`, the request does not disable caching
-    /// (`CacheRetention::Disabled`), and retention is not `None`. Markers
+    /// (`CacheRetention::Disabled`). `None` preserves the provider default,
+    /// which is the ordinary ephemeral marker used by `Short`. Markers
     /// land on: the system prompt block, the last user-message text block,
     /// the last assistant-message text block, and the last tool definition.
     /// TTL `"1h"` is used only when the model also advertises
@@ -780,8 +798,7 @@ impl AnthropicProvider {
             .unwrap_or(&request.model);
 
         // Resolve cache-control policy for this model+request combination.
-        let cache_enabled = request.cache_retention != CacheRetention::None
-            && request.cache_retention != CacheRetention::Disabled;
+        let cache_enabled = request.cache_retention != CacheRetention::Disabled;
         let model_caps = self.models.iter().find(|m| m.id == model_id);
         let supports_cache = model_caps
             .map(|m| m.capabilities.supports_cache_control)
@@ -897,6 +914,7 @@ impl AnthropicProvider {
         resolved: ResolvedAuth,
         base_url: String,
         provider_id: String,
+        auth_invalid_policy: AuthInvalidPolicy,
         direct_oauth_beta: bool,
         body: &serde_json::Value,
         cancel: CancellationToken,
@@ -943,7 +961,7 @@ impl AnthropicProvider {
                 status,
                 &error_body,
                 &headers,
-                resolved.scheme,
+                auth_invalid_policy,
                 &provider_id,
             ));
         }
@@ -1044,31 +1062,18 @@ fn drain_sse_events(buffer: &mut String) -> Vec<ParsedEvent> {
 
 /// Map an HTTP status code + body + headers to a `ProviderError`.
 ///
-/// `scheme` makes the 401 path scheme-aware: a 401 on a Bearer (OAuth)
-/// credential is typed non-retryable `CredentialRevoked` with the body DROPPED
-/// (an enterprise proxy may echo the submitted Bearer in a 401 body, so the body
-/// never reaches a Display string), while an API-key 401 stays `AuthFailed` with
-/// a redacted excerpt. 403 is `AuthFailed` for both schemes.
+/// `policy` is route construction policy rather than HTTP auth syntax. Both
+/// auth-invalid outcomes drop the response body because a proxy may echo the
+/// submitted credential.
 fn map_http_status(
     status: reqwest::StatusCode,
     body: &str,
     headers: &reqwest::header::HeaderMap,
-    scheme: AuthScheme,
+    policy: AuthInvalidPolicy,
     provider_id: &str,
 ) -> ProviderError {
     match status.as_u16() {
-        401 | 403 if scheme == AuthScheme::Bearer => ProviderError::CredentialRevoked {
-            // Body intentionally dropped.
-            provider_id: provider_id.to_owned(),
-        },
-        401 => ProviderError::AuthFailed(format!(
-            "authentication failed: {}",
-            crate::http::safe_excerpt(body)
-        )),
-        403 => ProviderError::AuthFailed(format!(
-            "access denied: {}",
-            crate::http::safe_excerpt(body)
-        )),
+        401 | 403 => policy.error(provider_id),
         429 => ProviderError::RateLimited {
             retry_after_ms: crate::retry::parse_retry_after(headers),
         },
@@ -1200,37 +1205,34 @@ fn serialize_messages(
     // Post-process: when caching is active, mark the last text block in the
     // last user message and the last text block in the last assistant message.
     if emit_cache && !array.is_empty() {
-        // Last user-message text block
-        for msg in array.iter_mut().rev() {
-            if msg["role"] == "user" {
-                if let Some(blocks) = msg["content"].as_array_mut() {
-                    for block in blocks.iter_mut().rev() {
-                        if block["type"] == "text" {
-                            block["cache_control"] = cache_marker.clone();
-                            break;
-                        }
-                    }
-                }
-                break;
-            }
-        }
-        // Last assistant-message text block
-        for msg in array.iter_mut().rev() {
-            if msg["role"] == "assistant" {
-                if let Some(blocks) = msg["content"].as_array_mut() {
-                    for block in blocks.iter_mut().rev() {
-                        if block["type"] == "text" {
-                            block["cache_control"] = cache_marker.clone();
-                            break;
-                        }
-                    }
-                }
-                break;
-            }
-        }
+        mark_last_role_text(&mut array, "user", cache_marker);
+        mark_last_role_text(&mut array, "assistant", cache_marker);
     }
 
     serde_json::Value::Array(array)
+}
+
+fn mark_last_role_text(
+    messages: &mut [serde_json::Value],
+    role: &str,
+    cache_marker: &serde_json::Value,
+) {
+    for message in messages.iter_mut().rev() {
+        if message["role"] != role {
+            continue;
+        }
+        let Some(blocks) = message["content"].as_array_mut() else {
+            continue;
+        };
+        if let Some(block) = blocks
+            .iter_mut()
+            .rev()
+            .find(|block| block["type"] == "text")
+        {
+            block["cache_control"] = cache_marker.clone();
+            return;
+        }
+    }
 }
 
 impl Provider for AnthropicProvider {
@@ -1238,6 +1240,7 @@ impl Provider for AnthropicProvider {
         let auth = self.auth.clone();
         let default_base_url = self.default_base_url.clone();
         let provider_id = self.provider_id.clone();
+        let auth_invalid_policy = self.auth_invalid_policy;
         let direct_oauth_beta = self.direct_oauth_beta;
         let model_id = request
             .model
@@ -1298,6 +1301,7 @@ impl Provider for AnthropicProvider {
                 resolved,
                 base_url,
                 provider_id,
+                auth_invalid_policy,
                 direct_oauth_beta,
                 &body,
                 cancel,
@@ -1326,7 +1330,10 @@ impl Provider for AnthropicProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::message::{AssistantContent, AssistantMessage, Message, ToolCall, UserMessage};
+    use crate::message::{
+        AssistantContent, AssistantMessage, ImageSource, InputContent, MediaType, Message,
+        OutputContent, ToolCall, ToolResultMessage, UserMessage,
+    };
     use crate::stream::{StopReason, Usage};
 
     fn test_assistant_msg(content: Vec<AssistantContent>) -> Message {
@@ -1563,13 +1570,87 @@ mod tests {
     }
 
     #[test]
-    fn cache_control_none_preserves_unmarked_body() {
+    fn cache_control_none_preserves_provider_default_markers() {
         let provider = cache_capable_provider();
         let request = make_request(CacheRetention::None);
         let body = provider.build_request_body(&request);
 
-        // None = no cache signal, same as pre-enrichment behavior
-        assert!(body["system"].is_string());
+        assert_eq!(body["system"][0]["cache_control"]["type"], "ephemeral");
+        assert!(
+            body["system"][0]["cache_control"].get("ttl").is_none(),
+            "provider-default markers use the ordinary ephemeral retention"
+        );
+    }
+
+    #[test]
+    fn cache_control_reverse_scan_skips_textless_matching_roles() {
+        let provider = cache_capable_provider();
+        let mut request = make_request(CacheRetention::Short);
+        request.messages = vec![
+            Message::User(UserMessage {
+                content: vec![InputContent::Text {
+                    text: "cache this user text".into(),
+                }],
+                timestamp_ms: 0,
+            }),
+            Message::User(UserMessage {
+                content: vec![InputContent::Image {
+                    source: ImageSource::Url {
+                        url: "https://example.test/image.png".into(),
+                    },
+                    media_type: MediaType::Png,
+                }],
+                timestamp_ms: 0,
+            }),
+            Message::ToolResult(ToolResultMessage {
+                tool_call_id: "tool-1".into(),
+                tool_name: "inspect".into(),
+                content: vec![OutputContent::Image {
+                    source: ImageSource::Bytes {
+                        data: vec![1, 2, 3],
+                    },
+                    media_type: MediaType::Png,
+                }],
+                details: None,
+                is_error: false,
+                truncated: false,
+                timestamp_ms: 0,
+            }),
+            test_assistant_msg(vec![AssistantContent::Text {
+                text: "cache this assistant text".into(),
+            }]),
+            test_assistant_msg(vec![AssistantContent::ToolCall {
+                tool_call: ToolCall {
+                    id: "tool-2".into(),
+                    name: "read".into(),
+                    arguments: "{}".into(),
+                },
+            }]),
+            test_assistant_msg(vec![AssistantContent::Thinking {
+                thinking: "textless for cache marker purposes".into(),
+            }]),
+        ];
+
+        let body = provider.build_request_body(&request);
+        assert_eq!(
+            body["messages"][0]["content"][0]["cache_control"]["type"],
+            "ephemeral"
+        );
+        assert_eq!(
+            body["messages"][3]["content"][0]["cache_control"]["type"],
+            "ephemeral"
+        );
+        for message_index in [1, 2, 4, 5] {
+            for block in body["messages"][message_index]["content"]
+                .as_array()
+                .unwrap()
+            {
+                assert!(
+                    block.get("cache_control").is_none(),
+                    "textless trailing block at message {message_index} must not be marked"
+                );
+            }
+        }
     }
 
     #[test]

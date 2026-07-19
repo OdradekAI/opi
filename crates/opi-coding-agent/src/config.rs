@@ -233,7 +233,8 @@ pub struct OpenAiCompatibleProviderConfig {
     pub usage_in_stream: bool,
     /// Emit `"strict": true` on function tool definitions (Phase 12.3).
     pub strict_tool_schema: bool,
-    /// Emit a top-level `reasoning_effort` for reasoning models (Phase 12.3).
+    /// Legacy compatibility metadata for reasoning profiles. Request thinking
+    /// and the selected model's thinking map are authoritative for wire output.
     pub reasoning_effort: Option<String>,
     /// Emit `prompt_cache_key` for OpenAI prompt-cache affinity (Phase 12.3).
     pub cache_key: Option<String>,
@@ -1215,7 +1216,7 @@ fn custom_compat(
                 store: raw.store,
                 reasoning_effort: raw.reasoning_effort,
                 strict_tools: raw.strict_tools.unwrap_or_default(),
-                send_session_id_header: raw.send_session_id_header.unwrap_or(true),
+                send_session_id_header: raw.send_session_id_header.unwrap_or(false),
                 ..Default::default()
             };
             if let Some(value) = raw.responses_path {

@@ -506,7 +506,7 @@ async fn collection_supports_provider_correctness_fixtures() {
 }
 
 // ---------------------------------------------------------------------------
-// Optional refresh extension point (documented no-op in Phase 10)
+// Empty-collection refresh
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
@@ -517,7 +517,7 @@ async fn collection_refresh_is_a_documented_noop_extension_point() {
 }
 
 // ---------------------------------------------------------------------------
-// from_registry wrapping (for the coding-agent provider factory in 10.2)
+// from_registry wrapping
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -1172,6 +1172,37 @@ async fn refresh_models_repeated_refresh_replaces() {
     );
     assert!(collection.resolve("dyn:v2").is_ok());
     assert!(collection.resolve("dyn:v3").is_ok());
+}
+
+#[tokio::test]
+async fn refresh_models_none_clears_prior_dynamic_snapshot() {
+    let mut collection = ProviderCollection::new();
+
+    let provider = MutableRefreshProvider::new(
+        "dyn",
+        vec![model_info("builtin", "Built In")],
+        vec![model_info("dynamic", "Dynamic")],
+    );
+    let refresh_result = Arc::clone(&provider.refresh_result);
+    collection
+        .register(
+            Box::new(provider),
+            AuthDescriptor::StaticApiKey {
+                value: SecretKey::new("key"),
+            },
+            CompatMetadata::default(),
+        )
+        .unwrap();
+
+    collection.refresh().await.unwrap();
+    assert!(collection.resolve("dyn:dynamic").is_ok());
+    assert!(collection.resolve("dyn:builtin").is_err());
+
+    *refresh_result.lock().unwrap() = None;
+    collection.refresh().await.unwrap();
+
+    assert!(collection.resolve("dyn:dynamic").is_err());
+    assert!(collection.resolve("dyn:builtin").is_ok());
 }
 
 #[tokio::test]

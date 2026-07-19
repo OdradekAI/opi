@@ -1,4 +1,4 @@
-//! Provider collection/auth seam (Workstream 10.1).
+//! Provider collection, catalog, and redacted auth-status facade.
 //!
 //! [`ProviderCollection`] is the higher-level facade above [`ProviderRegistry`]
 //! that owns provider and model lookup, the provider-side auth contract,
@@ -7,12 +7,14 @@
 //! than replacing it, so existing provider paths and the documented unstable
 //! registration API keep working.
 //!
-//! # Auth resolution timing (D2)
+//! # Auth descriptor, resolver, and store split
 //!
-//! Auth descriptors are resolved at dispatch time and the resulting status is
-//! snapshot for that dispatch. The collection deliberately has no notion of a
-//! run or a turn — those concepts belong to the generic harness (Workstream
-//! 10.2) and must not leak into `opi-ai`.
+//! [`AuthDescriptor`] carries redaction-safe collection metadata and supports
+//! non-live dispatch gates. Concrete routes use [`crate::AuthResolver`] to
+//! resolve live credentials for each stream, while [`crate::CredentialStore`]
+//! owns persisted credential IO and redacted availability probes. OAuth flows
+//! populate or refresh stored credentials outside this collection; the
+//! collection does not perform login.
 //!
 //! # Complete-dispatch decision
 //!
@@ -21,12 +23,6 @@
 //! adapter), complete dispatch is implemented by draining the stream returned
 //! by [`Provider::stream`] to its terminal event. This keeps the decision
 //! compatible with the existing streaming contract.
-//!
-//! # Future OAuth (not implemented)
-//!
-//! [`AuthDescriptor`] is `#[non_exhaustive]` so a future OAuth variant can be
-//! added without redesigning provider construction (Workstream 10.1 SC4).
-//! Phase 10 implements no OAuth login and no subscription auth.
 //!
 //! # Unstable
 //!
@@ -88,13 +84,14 @@ impl std::fmt::Display for SecretKey {
 // Auth contract
 // ---------------------------------------------------------------------------
 
-/// Provider-owned auth contract.
+/// Provider-owned, redacted auth metadata for collection diagnostics and gates.
 ///
 /// Describes how a provider's credential is sourced without leaking the secret
 /// itself. Current variants cover raw static API keys, env-described API keys,
-/// and already-resolved credentials whose non-secret source can be named.
-/// OAuth is an explicit future extension point and is not implemented in
-/// Phase 10.
+/// already-resolved credentials whose non-secret source can be named, and
+/// secret-free references to credential-store entries. Live per-stream
+/// resolution is owned by [`crate::AuthResolver`], and persisted credential IO
+/// is owned by [`crate::CredentialStore`].
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub enum AuthDescriptor {
@@ -119,11 +116,11 @@ pub enum AuthDescriptor {
     },
     /// A credential sourced from the OS keychain via the credential store.
     ///
-    /// Additive Phase 14 variant. Secret-free: `key` is the store account key
-    /// (usually the provider id) and `display_source` is a non-secret label
-    /// shown in diagnostics. The descriptor itself cannot perform IO, so the
-    /// redacted [`CredentialSource`] probe state is injected separately at
-    /// construction via [`ProviderCollection::set_probe`] and consulted by
+    /// Secret-free: `key` is the store account key (usually the provider id)
+    /// and `display_source` is a non-secret label shown in diagnostics. The
+    /// descriptor itself cannot perform IO, so the redacted
+    /// [`CredentialSource`] probe state is injected separately via
+    /// [`ProviderCollection::set_probe`] and consulted by
     /// [`ProviderCollection::dispatch_stream`].
     StoreCredential {
         /// Store account key (typically the provider id).
@@ -196,9 +193,8 @@ pub enum AuthStatus {
 
 /// Collection-level home for OpenAI-compatible profile flags.
 ///
-/// Workstream 10.1 decision: profile compatibility flags live alongside model
-/// metadata in the collection instead of being scattered across factory call
-/// sites (SC3).
+/// Profile compatibility flags live alongside model metadata in the
+/// collection instead of being scattered across factory call sites.
 #[derive(Debug, Clone, Default)]
 pub struct CompatMetadata {
     /// Whether the provider speaks an OpenAI-compatible Chat Completions API.
@@ -261,8 +257,8 @@ pub enum CollectionError {
 /// A collection of providers/models that owns provider+model lookup, auth
 /// resolution, compatibility metadata, and stream/complete dispatch.
 ///
-/// Wraps a [`ProviderRegistry`] (D1) and layers the auth/collection contract
-/// on top so existing provider paths keep working.
+/// Wraps a [`ProviderRegistry`] and layers the auth/collection contract on top
+/// so provider paths share one lookup surface.
 pub struct ProviderCollection {
     registry: ProviderRegistry,
     auth: HashMap<String, AuthDescriptor>,
@@ -285,9 +281,8 @@ impl ProviderCollection {
         }
     }
 
-    /// Wrap an existing registry. Used by the coding-agent provider factory
-    /// (Workstream 10.2) to layer collection semantics onto providers it
-    /// constructs from config/env/package inputs.
+    /// Wrap an existing registry to layer collection semantics onto providers
+    /// constructed by an outer factory.
     ///
     /// Pre-registered providers have no auth descriptor until one is attached,
     /// so [`ProviderCollection::auth_status`] returns `None` for them and
@@ -387,8 +382,8 @@ impl ProviderCollection {
     /// [`CredentialSource`] (see [`Self::set_probe`]): `Absent` rejects, while
     /// `Present` and `BackendUnavailable` proceed. `BackendUnavailable`
     /// proceeds intentionally — keychain-required enforcement is the
-    /// responsibility of the live per-stream resolver (T2), not this non-live
-    /// status gate (the spec confines `dispatch_stream` to a non-live role).
+    /// responsibility of the live per-stream resolver, not this deliberately
+    /// non-live status gate.
     /// A StoreCredential provider with no injected probe is treated as
     /// non-gated, matching `from_registry`'s "no descriptor" semantics.
     pub fn dispatch_stream(
@@ -440,10 +435,10 @@ impl ProviderCollection {
     /// catalogs. If **any** provider returns an error, the last-known
     /// catalogs are left unchanged and the first error is returned.
     ///
-    /// Static providers return `Ok(None)` from their default implementation
-    /// and are silently skipped. Dynamic providers return `Ok(Some(models))`
-    /// and their catalog replaces any prior dynamic catalog for that provider
-    /// on success. Repeated refreshes replace rather than append.
+    /// Refresh results are replace-all snapshots: `Ok(Some(models))` replaces
+    /// that provider's prior dynamic catalog, while `Ok(None)` clears any prior
+    /// dynamic snapshot and exposes the provider's built-in models. Repeated
+    /// refreshes replace rather than append.
     pub async fn refresh(&mut self) -> Result<(), CollectionError> {
         let ids = self.registry.provider_ids();
         let ids: Vec<String> = ids.into_iter().map(|s| s.to_owned()).collect();
@@ -460,7 +455,7 @@ impl ProviderCollection {
                     new_catalogs.insert(id.clone(), models);
                 }
                 Ok(None) => {
-                    // Static provider — keep whatever was there (no change).
+                    // No dynamic snapshot for this provider in the replacement.
                 }
                 Err(err) => {
                     // Atomic rollback: leave last-known catalogs unchanged.

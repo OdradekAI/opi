@@ -37,7 +37,8 @@
 //!   [`RegistrationError::DuplicateModel`]. Registering an override for a
 //!   model that already exists in the provider's built-in list is allowed —
 //!   the override shadows the built-in at resolve time. An empty model id
-//!   returns [`RegistrationError::EmptyModelId`].
+//!   returns [`RegistrationError::EmptyModelId`], and invalid metadata returns
+//!   [`RegistrationError::InvalidModel`].
 //!
 //! # --list-models Integration
 //!
@@ -63,6 +64,7 @@
 
 use std::collections::HashMap;
 
+use crate::model_info::ModelInfoError;
 use crate::provider::{ModelInfo, Provider};
 
 pub use crate::model_info::ModelCapabilities;
@@ -96,6 +98,14 @@ pub enum RegistrationError {
     /// Model with the same id already exists for this provider.
     #[error("model '{model}' already registered for provider '{provider}'")]
     DuplicateModel { provider: String, model: String },
+    /// Model metadata failed validation.
+    #[error("invalid model '{model}' for provider '{provider}': {source}")]
+    InvalidModel {
+        provider: String,
+        model: String,
+        #[source]
+        source: ModelInfoError,
+    },
 }
 
 // ---------------------------------------------------------------------------
@@ -127,7 +137,7 @@ impl ProviderRegistry {
     }
 
     /// Register a custom provider. Replaces any existing provider with the same
-    /// id.
+    /// id and clears that provider's prior dynamic catalog snapshot.
     ///
     /// # Errors
     ///
@@ -142,15 +152,18 @@ impl ProviderRegistry {
         }
         let id = provider.id().to_owned();
         self.providers.retain(|p| p.id() != id);
+        self.dynamic_catalogs.remove(&id);
         self.providers.push(provider);
         Ok(())
     }
 
-    /// Backward-compatible alias: register a provider without validation.
+    /// Backward-compatible alias: register a provider without id validation,
+    /// clearing that provider's prior dynamic catalog snapshot.
     /// Prefer [`register_provider`](Self::register_provider) for new code.
     pub fn register(&mut self, provider: Box<dyn Provider>) {
         let id = provider.id().to_owned();
         self.providers.retain(|p| p.id() != id);
+        self.dynamic_catalogs.remove(&id);
         self.providers.push(provider);
     }
 
@@ -165,6 +178,7 @@ impl ProviderRegistry {
     /// # Errors
     ///
     /// - [`RegistrationError::EmptyModelId`] if the model id is empty.
+    /// - [`RegistrationError::InvalidModel`] if the model metadata is invalid.
     /// - [`RegistrationError::DuplicateModel`] if the same `(provider_id,
     ///   model_id)` pair already exists in the override layer.
     pub fn register_model(
@@ -189,6 +203,13 @@ impl ProviderRegistry {
             });
         }
 
+        model
+            .validate()
+            .map_err(|source| RegistrationError::InvalidModel {
+                provider: provider_id.to_owned(),
+                model: model.id.clone(),
+                source,
+            })?;
         self.model_overrides.insert(key, model);
         Ok(())
     }

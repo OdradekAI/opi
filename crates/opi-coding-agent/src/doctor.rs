@@ -44,7 +44,6 @@ use opi_agent::diagnostic::{
     SOURCE_CONFIG, SOURCE_PACKAGE, SOURCE_PROVIDER, SOURCE_RPC, SOURCE_SESSION, SOURCE_TUI,
 };
 use opi_agent::{Diagnostic, DiagnosticPayload, RedactionMode, Severity};
-use opi_ai::AuthDescriptor;
 use opi_ai::credential::CredentialSource;
 
 use crate::config::{ConfigError, OpiConfig};
@@ -149,7 +148,7 @@ pub struct DoctorContext<'a> {
     /// Probe for an environment variable's presence (credential checks).
     pub env_var: &'a dyn Fn(&str) -> Option<String>,
     /// Phase 14: precomputed, redacted probe state for
-    /// [`AuthDescriptor::StoreCredential`] providers. The async outer command
+    /// [`opi_ai::AuthDescriptor::StoreCredential`] providers. The async outer command
     /// path probes the credential store and passes the resulting
     /// [`CredentialSource`] map here so the secret-free descriptor does not
     /// have to perform IO. Carries no secret.
@@ -216,6 +215,24 @@ const CODE_DOCTOR_RPC_SCHEMA: &str = "doctor_rpc_schema";
 /// Output is emitted in canonical [`DoctorScope::ALL`] order; duplicates and
 /// out-of-order tokens in a user `--scope` list are normalized.
 pub fn run_doctor(scopes: &[DoctorScope], ctx: &DoctorContext) -> DoctorReport {
+    let store_probe = ctx
+        .store_probe
+        .iter()
+        .map(|(provider_id, source)| {
+            (
+                provider_id.clone(),
+                crate::credential_store::CredentialMetadataProbe::from(source.clone()),
+            )
+        })
+        .collect();
+    run_doctor_with_probes(scopes, ctx, &store_probe)
+}
+
+fn run_doctor_with_probes(
+    scopes: &[DoctorScope],
+    ctx: &DoctorContext<'_>,
+    store_probe: &HashMap<String, crate::credential_store::CredentialMetadataProbe>,
+) -> DoctorReport {
     let requested: Vec<DoctorScope> = if scopes.is_empty() {
         DoctorScope::ALL.to_vec()
     } else {
@@ -229,7 +246,7 @@ pub fn run_doctor(scopes: &[DoctorScope], ctx: &DoctorContext) -> DoctorReport {
         }
         let diagnostics = match scope {
             DoctorScope::Config => config_diagnostics(ctx.config, ctx.config_error),
-            DoctorScope::Provider => provider_diagnostics(ctx.config, ctx.env_var, ctx.store_probe),
+            DoctorScope::Provider => provider_diagnostics(ctx.config, ctx.env_var, store_probe),
             DoctorScope::Package => package_diagnostics(ctx.workspace_root, ctx.user_config_dir),
             DoctorScope::Session => session_diagnostics(ctx.sessions_dir),
             DoctorScope::Tui => tui_diagnostics(
@@ -252,27 +269,14 @@ pub fn run_doctor(scopes: &[DoctorScope], ctx: &DoctorContext) -> DoctorReport {
 pub async fn run_doctor_with_store(
     scopes: &[DoctorScope],
     ctx: &DoctorContext<'_>,
-    store: &dyn opi_ai::credential::CredentialStore,
+    store: &dyn crate::credential_store::CredentialMetadataStore,
 ) -> DoctorReport {
     let provider_ids = provider_factory::built_in_provider_ids()
         .iter()
-        .map(|provider_id| (*provider_id).to_owned());
+        .map(|provider_id| (*provider_id).to_owned())
+        .chain(ctx.config.providers.custom.keys().cloned());
     let store_probe = crate::credential_store::collect_credential_probes(store, provider_ids).await;
-    let probed_ctx = DoctorContext {
-        config: ctx.config,
-        config_error: ctx.config_error,
-        workspace_root: ctx.workspace_root,
-        user_config_dir: ctx.user_config_dir,
-        sessions_dir: ctx.sessions_dir,
-        term: ctx.term,
-        term_program: ctx.term_program,
-        term_features: ctx.term_features,
-        no_color: ctx.no_color,
-        colorterm: ctx.colorterm,
-        env_var: ctx.env_var,
-        store_probe: &store_probe,
-    };
-    run_doctor(scopes, &probed_ctx)
+    run_doctor_with_probes(scopes, ctx, &store_probe)
 }
 
 /// Production doctor command core: install/create the credential backend,
@@ -383,7 +387,7 @@ fn config_diagnostics(config: &OpiConfig, config_error: Option<&ConfigError>) ->
 fn provider_diagnostics(
     config: &OpiConfig,
     env_var: &dyn Fn(&str) -> Option<String>,
-    store_probe: &HashMap<String, CredentialSource>,
+    store_probe: &HashMap<String, crate::credential_store::CredentialMetadataProbe>,
 ) -> Vec<Diagnostic> {
     let mut out = Vec::new();
 
@@ -676,109 +680,19 @@ fn provider_credential_probe(
     config: &OpiConfig,
     provider: &str,
     env_var: &dyn Fn(&str) -> Option<String>,
-    store_probe: &HashMap<String, CredentialSource>,
+    store_probe: &HashMap<String, crate::credential_store::CredentialMetadataProbe>,
 ) -> Option<CredentialProbe> {
-    if provider == "bedrock" {
-        return Some(bedrock_credential_probe(config, env_var));
-    }
-
-    let descriptor = provider_factory::auth_descriptor_for(config, provider).or_else(|| {
-        config
-            .providers
-            .openai_compatible
-            .get(provider)
-            .map(provider_factory::auth_descriptor_for_profile)
-    })?;
-    match descriptor {
-        AuthDescriptor::EnvApiKey { env_var: env_name } => Some(CredentialProbe {
-            state: if env_value_present(env_var, &env_name) {
-                ProbeState::Present
-            } else {
-                ProbeState::Absent
-            },
-            label: format!("env {env_name}"),
-        }),
-        AuthDescriptor::StaticApiKey { value } => Some(CredentialProbe {
-            state: if value.is_present() {
-                ProbeState::Present
-            } else {
-                ProbeState::Absent
-            },
-            label: "static api key".to_string(),
-        }),
-        // StoreCredential is secret-free: consult the precomputed redacted
-        // probe injected via DoctorContext.store_probe. The explicit arm
-        // ensures the variant is never silently absorbed by a wildcard
-        // (spec: "the existing wildcard in doctor must not silently absorb it").
-        AuthDescriptor::StoreCredential {
-            key,
-            display_source,
-        } => {
-            let state = match store_probe.get(&key) {
-                Some(CredentialSource::Present { .. }) => ProbeState::Present,
-                Some(CredentialSource::BackendUnavailable { reason }) => {
-                    return Some(CredentialProbe {
-                        label: format!("{display_source} (backend unavailable: {reason})"),
-                        state: ProbeState::BackendUnavailable,
-                    });
-                }
-                // Absent, or no probe injected for this provider.
-                _ => ProbeState::Absent,
-            };
-            Some(CredentialProbe {
-                label: display_source,
-                state,
-            })
-        }
-        // Resolved descriptors have no presence to probe; emit nothing rather
-        // than falling through a wildcard that would misclassify them.
-        AuthDescriptor::Resolved { .. } => None,
-        // `AuthDescriptor` is `#[non_exhaustive]`, so a wildcard is required
-        // for cross-crate matching; StoreCredential is handled explicitly above
-        // so it is never silently absorbed here.
-        _ => None,
-    }
-}
-
-fn bedrock_credential_probe(
-    config: &OpiConfig,
-    env_var: &dyn Fn(&str) -> Option<String>,
-) -> CredentialProbe {
-    use provider_factory::BedrockAuthPresence;
-
-    match provider_factory::bedrock_auth_presence(config, env_var) {
-        BedrockAuthPresence::ConfigPair { secret_env } => CredentialProbe {
-            state: ProbeState::Present,
-            label: format!("config access_key_id + env {secret_env}"),
-        },
-        BedrockAuthPresence::DefaultEnvPair => CredentialProbe {
-            state: ProbeState::Present,
-            label: "env AWS_ACCESS_KEY_ID + env AWS_SECRET_ACCESS_KEY".to_string(),
-        },
-        BedrockAuthPresence::ConfigProfile { profile } => CredentialProbe {
-            state: ProbeState::Present,
-            label: format!("profile {profile}"),
-        },
-        BedrockAuthPresence::EnvProfile { profile } => CredentialProbe {
-            state: ProbeState::Present,
-            label: format!("env AWS_PROFILE {profile}"),
-        },
-        BedrockAuthPresence::MissingConfigPair { secret_env } => CredentialProbe {
-            state: ProbeState::Absent,
-            label: secret_env.map_or_else(
-                || "config access_key_id + configured secret env".to_string(),
-                |secret_env| format!("config access_key_id + env {secret_env}"),
-            ),
-        },
-        BedrockAuthPresence::MissingDefaultEnvPair => CredentialProbe {
-            state: ProbeState::Absent,
-            label: "env AWS_ACCESS_KEY_ID + env AWS_SECRET_ACCESS_KEY".to_string(),
-        },
-    }
-}
-
-fn env_value_present(env_var: &dyn Fn(&str) -> Option<String>, name: &str) -> bool {
-    env_var(name).is_some_and(|value| !value.trim().is_empty())
+    let availability =
+        provider_factory::provider_availability(config, provider, env_var, store_probe)?;
+    let state = match availability.state {
+        provider_factory::AvailabilityState::Present => ProbeState::Present,
+        provider_factory::AvailabilityState::Absent => ProbeState::Absent,
+        provider_factory::AvailabilityState::BackendUnavailable => ProbeState::BackendUnavailable,
+    };
+    Some(CredentialProbe {
+        label: availability.label,
+        state,
+    })
 }
 
 /// The configured proxy URL for the selected provider, if any.

@@ -42,7 +42,10 @@ use opi_agent::diagnostic::{Diagnostic, SOURCE_PROVIDER, Severity};
 use opi_agent::extension::ExtensionRegistry;
 use opi_ai::provider::{EventStream, ModelInfo, Provider, ProviderError, Request};
 use opi_ai::registry::ModelCapabilities;
-use opi_ai::{AuthDescriptor, CompatMetadata, ProviderCollection, ProviderRegistry, WireApi};
+use opi_ai::{
+    AuthDescriptor, AuthInvalidPolicy, CompatMetadata, ProviderCollection, ProviderRegistry,
+    WireApi,
+};
 use secrecy::{ExposeSecret, SecretString};
 
 use crate::config::{
@@ -247,6 +250,36 @@ impl opi_ai::AuthResolver for EnvAuthResolver {
     }
 }
 
+struct CredentialAuthResolver {
+    resolver: CredentialResolver,
+    provider_id: String,
+    env_name: String,
+    scheme: opi_ai::AuthScheme,
+}
+
+impl opi_ai::AuthResolver for CredentialAuthResolver {
+    fn resolve<'a>(
+        &'a self,
+    ) -> opi_ai::BoxAuthFuture<'a, Result<opi_ai::ResolvedAuth, ProviderError>> {
+        Box::pin(async move {
+            let resolved = self
+                .resolver
+                .resolve_api_key(&self.provider_id, &self.env_name)
+                .await
+                .map_err(|error| ProviderError::Config(format!("credential store error: {error}")))?
+                .ok_or_else(|| ProviderError::CredentialNeeded {
+                    provider_id: self.provider_id.clone(),
+                })?;
+            Ok(opi_ai::ResolvedAuth {
+                scheme: self.scheme,
+                secret: resolved.value,
+                base_url: None,
+                account_id: None,
+            })
+        })
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Model-spec resolution
 // ---------------------------------------------------------------------------
@@ -364,6 +397,369 @@ fn listing_auth_available(
     env_present || matches!(store_probe, Some(opi_ai::CredentialSource::Present { .. }))
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum AvailabilityState {
+    Present,
+    Absent,
+    BackendUnavailable,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ProviderAvailability {
+    pub(crate) state: AvailabilityState,
+    pub(crate) label: String,
+    listing_available: bool,
+}
+
+impl ProviderAvailability {
+    fn present(label: impl Into<String>) -> Self {
+        Self {
+            state: AvailabilityState::Present,
+            label: label.into(),
+            listing_available: true,
+        }
+    }
+
+    fn absent(label: impl Into<String>, listing_available: bool) -> Self {
+        Self {
+            state: AvailabilityState::Absent,
+            label: label.into(),
+            listing_available,
+        }
+    }
+
+    fn backend_unavailable(provider_id: &str, reason: &str, listing_available: bool) -> Self {
+        Self {
+            state: AvailabilityState::BackendUnavailable,
+            label: format!("keychain opi:{provider_id} (backend unavailable: {reason})"),
+            listing_available,
+        }
+    }
+
+    fn fail_closed_probe(
+        provider_id: &str,
+        probe: &crate::credential_store::CredentialMetadataProbe,
+        listing_available: bool,
+    ) -> Option<Self> {
+        if !matches!(
+            probe.failure,
+            Some(
+                crate::credential_store::CredentialProbeFailure::Operational
+                    | crate::credential_store::CredentialProbeFailure::CorruptMarker
+            )
+        ) {
+            return None;
+        }
+        let reason = match &probe.source {
+            opi_ai::CredentialSource::BackendUnavailable { reason } => reason.as_str(),
+            _ => "credential metadata probe failed",
+        };
+        Some(Self {
+            state: AvailabilityState::BackendUnavailable,
+            label: format!("keychain opi:{provider_id} (probe failed: {reason})"),
+            listing_available,
+        })
+    }
+
+    fn wrong_kind(
+        provider_id: &str,
+        actual: crate::credential_store::StoredCredentialKind,
+        expected: crate::credential_store::StoredCredentialKind,
+        listing_available: bool,
+    ) -> Self {
+        let kind_label = |kind| match kind {
+            crate::credential_store::StoredCredentialKind::ApiKey => "api_key",
+            crate::credential_store::StoredCredentialKind::OAuthToken => "oauth_token",
+        };
+        Self::absent(
+            format!(
+                "keychain opi:{provider_id} contains {}; expected {}",
+                kind_label(actual),
+                kind_label(expected)
+            ),
+            listing_available,
+        )
+    }
+
+    fn api_key_backed(
+        provider_id: &str,
+        env_name: &str,
+        env_var: &dyn Fn(&str) -> Option<String>,
+        store_probe: &std::collections::HashMap<
+            String,
+            crate::credential_store::CredentialMetadataProbe,
+        >,
+    ) -> Self {
+        let store_label = format!("keychain opi:{provider_id}");
+        if let Some(failure) = store_probe
+            .get(provider_id)
+            .and_then(|probe| Self::fail_closed_probe(provider_id, probe, false))
+        {
+            return failure;
+        }
+        let backend_unavailable = match store_probe.get(provider_id) {
+            Some(crate::credential_store::CredentialMetadataProbe {
+                source: opi_ai::CredentialSource::Present { .. },
+                kind: Some(crate::credential_store::StoredCredentialKind::OAuthToken),
+                ..
+            }) => {
+                return Self::wrong_kind(
+                    provider_id,
+                    crate::credential_store::StoredCredentialKind::OAuthToken,
+                    crate::credential_store::StoredCredentialKind::ApiKey,
+                    false,
+                );
+            }
+            Some(crate::credential_store::CredentialMetadataProbe {
+                source: opi_ai::CredentialSource::Present { .. },
+                kind: Some(crate::credential_store::StoredCredentialKind::ApiKey) | None,
+                ..
+            }) => return Self::present(store_label),
+            Some(crate::credential_store::CredentialMetadataProbe {
+                source: opi_ai::CredentialSource::BackendUnavailable { reason },
+                ..
+            }) => Some(reason.as_str()),
+            Some(crate::credential_store::CredentialMetadataProbe {
+                source: opi_ai::CredentialSource::Absent,
+                ..
+            })
+            | None => None,
+        };
+        if env_value_present(env_var, env_name) {
+            return Self::present(format!("env {env_name}"));
+        }
+        if let Some(reason) = backend_unavailable {
+            Self::backend_unavailable(provider_id, reason, false)
+        } else {
+            Self::absent(format!("env {env_name}"), false)
+        }
+    }
+
+    fn oauth_store_backed(
+        provider_id: &str,
+        store_probe: &std::collections::HashMap<
+            String,
+            crate::credential_store::CredentialMetadataProbe,
+        >,
+        listing_available_without_credential: bool,
+    ) -> Self {
+        if let Some(failure) = store_probe.get(provider_id).and_then(|probe| {
+            Self::fail_closed_probe(provider_id, probe, listing_available_without_credential)
+        }) {
+            return failure;
+        }
+        match store_probe.get(provider_id) {
+            Some(crate::credential_store::CredentialMetadataProbe {
+                source: opi_ai::CredentialSource::Present { .. },
+                kind: Some(crate::credential_store::StoredCredentialKind::ApiKey),
+                ..
+            }) => Self::wrong_kind(
+                provider_id,
+                crate::credential_store::StoredCredentialKind::ApiKey,
+                crate::credential_store::StoredCredentialKind::OAuthToken,
+                listing_available_without_credential,
+            ),
+            Some(crate::credential_store::CredentialMetadataProbe {
+                source: opi_ai::CredentialSource::Present { .. },
+                kind: Some(crate::credential_store::StoredCredentialKind::OAuthToken) | None,
+                ..
+            }) => Self::present(format!("keychain opi:{provider_id}")),
+            Some(crate::credential_store::CredentialMetadataProbe {
+                source: opi_ai::CredentialSource::BackendUnavailable { reason },
+                ..
+            }) => {
+                Self::backend_unavailable(provider_id, reason, listing_available_without_credential)
+            }
+            Some(crate::credential_store::CredentialMetadataProbe {
+                source: opi_ai::CredentialSource::Absent,
+                ..
+            })
+            | None => Self::absent(
+                format!("keychain opi:{provider_id}"),
+                listing_available_without_credential,
+            ),
+        }
+    }
+
+    fn anthropic(
+        api_key_env: &str,
+        env_var: &dyn Fn(&str) -> Option<String>,
+        store_probe: &std::collections::HashMap<
+            String,
+            crate::credential_store::CredentialMetadataProbe,
+        >,
+    ) -> Self {
+        let probe = store_probe.get("anthropic");
+        if let Some(failure) =
+            probe.and_then(|probe| Self::fail_closed_probe("anthropic", probe, false))
+        {
+            return failure;
+        }
+        if matches!(
+            probe,
+            Some(crate::credential_store::CredentialMetadataProbe {
+                source: opi_ai::CredentialSource::Present { .. },
+                kind: Some(crate::credential_store::StoredCredentialKind::OAuthToken),
+                ..
+            })
+        ) {
+            return Self::present("keychain opi:anthropic");
+        }
+        if env_value_present(env_var, "ANTHROPIC_OAUTH_TOKEN") {
+            return Self::present("env ANTHROPIC_OAUTH_TOKEN");
+        }
+        if matches!(
+            probe,
+            Some(crate::credential_store::CredentialMetadataProbe {
+                source: opi_ai::CredentialSource::Present { .. },
+                kind: Some(crate::credential_store::StoredCredentialKind::ApiKey) | None,
+                ..
+            })
+        ) {
+            return Self::present("keychain opi:anthropic");
+        }
+        if env_value_present(env_var, api_key_env) {
+            return Self::present(format!("env {api_key_env}"));
+        }
+        match probe {
+            Some(crate::credential_store::CredentialMetadataProbe {
+                source: opi_ai::CredentialSource::BackendUnavailable { reason },
+                ..
+            }) => Self::backend_unavailable("anthropic", reason, false),
+            _ => Self::absent(
+                format!("env ANTHROPIC_OAUTH_TOKEN or env {api_key_env}"),
+                false,
+            ),
+        }
+    }
+
+    fn from_legacy_source(
+        source: opi_ai::CredentialSource,
+    ) -> crate::credential_store::CredentialMetadataProbe {
+        crate::credential_store::CredentialMetadataProbe::from(source)
+    }
+
+    fn source_is_keychain(&self) -> bool {
+        self.state == AvailabilityState::Present && self.label.starts_with("keychain ")
+    }
+
+    pub(crate) fn listing_available(&self) -> bool {
+        self.listing_available
+    }
+}
+
+fn metadata_probes_from_sources(
+    store_probe: &std::collections::HashMap<String, opi_ai::CredentialSource>,
+) -> std::collections::HashMap<String, crate::credential_store::CredentialMetadataProbe> {
+    store_probe
+        .iter()
+        .map(|(provider_id, source)| {
+            (
+                provider_id.clone(),
+                ProviderAvailability::from_legacy_source(source.clone()),
+            )
+        })
+        .collect()
+}
+
+impl ProviderAvailability {
+    fn env_only(env_name: &str, env_var: &dyn Fn(&str) -> Option<String>) -> Self {
+        if env_value_present(env_var, env_name) {
+            Self::present(format!("env {env_name}"))
+        } else {
+            Self::absent(format!("env {env_name}"), false)
+        }
+    }
+}
+
+/// Calculate secret-free provider availability using the same source
+/// precedence as live provider construction.
+pub(crate) fn provider_availability(
+    config: &OpiConfig,
+    provider_id: &str,
+    env_var: &dyn Fn(&str) -> Option<String>,
+    store_probe: &std::collections::HashMap<
+        String,
+        crate::credential_store::CredentialMetadataProbe,
+    >,
+) -> Option<ProviderAvailability> {
+    if provider_id == "bedrock" {
+        let presence = bedrock_auth_presence(config, env_var);
+        let (state, label) = match presence {
+            BedrockAuthPresence::ConfigPair { secret_env } => (
+                AvailabilityState::Present,
+                format!("config access_key_id + env {secret_env}"),
+            ),
+            BedrockAuthPresence::DefaultEnvPair => (
+                AvailabilityState::Present,
+                "env AWS_ACCESS_KEY_ID + env AWS_SECRET_ACCESS_KEY".to_owned(),
+            ),
+            BedrockAuthPresence::ConfigProfile { profile } => {
+                (AvailabilityState::Present, format!("profile {profile}"))
+            }
+            BedrockAuthPresence::EnvProfile { profile } => (
+                AvailabilityState::Present,
+                format!("env AWS_PROFILE {profile}"),
+            ),
+            BedrockAuthPresence::MissingConfigPair { secret_env } => (
+                AvailabilityState::Absent,
+                secret_env.map_or_else(
+                    || "config access_key_id + configured secret env".to_owned(),
+                    |secret_env| format!("config access_key_id + env {secret_env}"),
+                ),
+            ),
+            BedrockAuthPresence::MissingDefaultEnvPair => (
+                AvailabilityState::Absent,
+                "env AWS_ACCESS_KEY_ID + env AWS_SECRET_ACCESS_KEY".to_owned(),
+            ),
+        };
+        return Some(ProviderAvailability {
+            state,
+            label,
+            listing_available: state == AvailabilityState::Present,
+        });
+    }
+
+    if matches!(provider_id, "github-copilot" | "openai-codex") {
+        return Some(ProviderAvailability::oauth_store_backed(
+            provider_id,
+            store_probe,
+            true,
+        ));
+    }
+
+    if provider_id == "anthropic" {
+        return Some(ProviderAvailability::anthropic(
+            &config.providers.anthropic.api_key_env,
+            env_var,
+            store_probe,
+        ));
+    }
+
+    if let Some(profile) = config.providers.custom.get(provider_id) {
+        return Some(ProviderAvailability::api_key_backed(
+            provider_id,
+            &profile.api_key_env,
+            env_var,
+            store_probe,
+        ));
+    }
+
+    if let Some(profile) = config.providers.openai_compatible.get(provider_id) {
+        let default_env = profile_api_key_env_default(&profile.id);
+        let env_name = resolve_env_name(&profile.api_key_env, &default_env);
+        return Some(ProviderAvailability::env_only(&env_name, env_var));
+    }
+
+    let env_name = api_key_env_name(config, provider_id)?;
+    Some(ProviderAvailability::api_key_backed(
+        provider_id,
+        &env_name,
+        env_var,
+        store_probe,
+    ))
+}
+
 /// Secret-free Bedrock credential-presence result shared by listing and doctor.
 ///
 /// This mirrors the explicit inputs accepted by runtime credential resolution:
@@ -378,18 +774,6 @@ pub(crate) enum BedrockAuthPresence {
     EnvProfile { profile: String },
     MissingConfigPair { secret_env: Option<String> },
     MissingDefaultEnvPair,
-}
-
-impl BedrockAuthPresence {
-    pub(crate) fn is_present(&self) -> bool {
-        matches!(
-            self,
-            Self::ConfigPair { .. }
-                | Self::DefaultEnvPair
-                | Self::ConfigProfile { .. }
-                | Self::EnvProfile { .. }
-        )
-    }
 }
 
 pub(crate) fn bedrock_auth_presence(
@@ -681,22 +1065,11 @@ fn build_openai_compatible_profile(
 
 fn build_custom_provider(
     profile: &CustomProviderConfig,
-    pre_resolved: Option<String>,
+    auth: Arc<dyn opi_ai::AuthResolver>,
 ) -> Result<opi_ai::ApiMappedProvider, ProviderBuildError> {
     let client = build_proxied_client(profile.proxy.as_ref())?;
     let headers = opi_ai::ProviderHeaders::try_new(profile.headers.clone())
         .map_err(|error| ProviderBuildError::Config(error.to_string()))?;
-    let auth: Arc<dyn opi_ai::AuthResolver> = match pre_resolved {
-        Some(secret) => Arc::new(opi_ai::StaticAuthResolver::new(
-            profile.auth_scheme,
-            SecretString::from(secret),
-        )),
-        None => Arc::new(EnvAuthResolver {
-            provider_id: profile.id.clone(),
-            env_name: profile.api_key_env.clone(),
-            scheme: profile.auth_scheme,
-        }),
-    };
     let mut routes: std::collections::BTreeMap<WireApi, Box<dyn Provider>> =
         std::collections::BTreeMap::new();
     for wire in profile
@@ -793,6 +1166,33 @@ async fn build_provider_with_resolver_outcome(
     })?;
     // Resolve via the configured env var name (keychain -> env fallback).
     let mut diagnostics = Vec::new();
+    if let Some(profile) = config.providers.custom.get(provider_id) {
+        if let Some(resolved) = resolver
+            .resolve_api_key(provider_id, &profile.api_key_env)
+            .await
+            .map_err(|error| {
+                ProviderBuildError::Provider(ProviderError::Config(format!(
+                    "credential store error: {error}"
+                )))
+            })?
+            && let ApiKeySource::Env {
+                env_var,
+                backend_unavailable: true,
+            } = &resolved.source
+        {
+            diagnostics.push(backend_fallback_diagnostic(provider_id, env_var));
+        }
+        let auth = Arc::new(CredentialAuthResolver {
+            resolver: resolver.clone(),
+            provider_id: provider_id.to_owned(),
+            env_name: profile.api_key_env.clone(),
+            scheme: profile.auth_scheme,
+        });
+        return Ok(ProviderBuildOutcome {
+            provider: Box::new(build_custom_provider(profile, auth)?),
+            diagnostics,
+        });
+    }
     let pre_resolved = if let Some(env_name) = api_key_env_name(config, provider_id) {
         resolver
             .resolve_api_key(provider_id, &env_name)
@@ -854,28 +1254,32 @@ async fn build_anthropic_live_auth(
         client,
     );
     let mut diagnostics = Vec::new();
-    match resolver
-        .resolve_api_key("anthropic", &config.providers.anthropic.api_key_env)
-        .await
-    {
-        Ok(Some(resolved)) => {
-            if let ApiKeySource::Env {
-                env_var,
-                backend_unavailable: true,
-            } = resolved.source
-            {
-                diagnostics.push(backend_fallback_diagnostic("anthropic", &env_var));
+    let higher_priority_oauth = resolver.has_oauth_credential("anthropic").await?
+        || resolver.env_value("ANTHROPIC_OAUTH_TOKEN").is_some();
+    if !higher_priority_oauth {
+        match resolver
+            .resolve_api_key("anthropic", &config.providers.anthropic.api_key_env)
+            .await
+        {
+            Ok(Some(resolved)) => {
+                if let ApiKeySource::Env {
+                    env_var,
+                    backend_unavailable: true,
+                } = resolved.source
+                {
+                    diagnostics.push(backend_fallback_diagnostic("anthropic", &env_var));
+                }
             }
-        }
-        Ok(None)
-        | Err(opi_ai::CredentialStoreError::UnexpectedCredentialKind {
-            actual: "oauth_token",
-            ..
-        }) => {}
-        Err(error) => {
-            return Err(ProviderBuildError::Provider(ProviderError::Config(
-                format!("credential store error: {error}"),
-            )));
+            Ok(None)
+            | Err(opi_ai::CredentialStoreError::UnexpectedCredentialKind {
+                actual: "oauth_token",
+                ..
+            }) => {}
+            Err(error) => {
+                return Err(ProviderBuildError::Provider(ProviderError::Config(
+                    format!("credential store error: {error}"),
+                )));
+            }
         }
     }
     Ok(ProviderBuildOutcome {
@@ -931,6 +1335,7 @@ async fn build_copilot_oauth(
                     Arc::clone(&client),
                     false,
                 )
+                .with_auth_invalid_policy(AuthInvalidPolicy::CredentialManaged)
                 .with_copilot_headers(),
             ),
             WireApi::OpenAiCompletions => Box::new(
@@ -942,6 +1347,7 @@ async fn build_copilot_oauth(
                     models,
                     Arc::clone(&client),
                 )
+                .with_auth_invalid_policy(AuthInvalidPolicy::CredentialManaged)
                 .with_copilot_initiator(),
             ),
             WireApi::OpenAiResponses => Box::new(
@@ -953,6 +1359,7 @@ async fn build_copilot_oauth(
                     models,
                     Arc::clone(&client),
                 )
+                .with_auth_invalid_policy(AuthInvalidPolicy::CredentialManaged)
                 .with_copilot_headers(),
             ),
             _ => unreachable!("GitHub Copilot catalog uses three reviewed wires"),
@@ -1401,7 +1808,12 @@ fn build_runtime_provider(
         "vertex" => (build_vertex(config, pre_resolved)?, WireApi::GoogleVertex),
         other => {
             if let Some(profile) = config.providers.custom.get(other) {
-                let provider = build_custom_provider(profile, pre_resolved)?;
+                let auth = Arc::new(EnvAuthResolver {
+                    provider_id: profile.id.clone(),
+                    env_name: profile.api_key_env.clone(),
+                    scheme: profile.auth_scheme,
+                });
+                let provider = build_custom_provider(profile, auth)?;
                 return Ok(Box::new(provider));
             } else if let Some(profile) = config.providers.openai_compatible.get(other) {
                 let provider = build_runtime_openai_compatible_profile(profile)?;
@@ -1510,19 +1922,6 @@ pub fn auth_descriptor_for(config: &OpiConfig, provider_id: &str) -> Option<Auth
     }
 }
 
-fn resolved_auth_descriptor_for(config: &OpiConfig, provider_id: &str) -> AuthDescriptor {
-    let source = if provider_id == "bedrock" {
-        "aws credential chain".to_string()
-    } else if let Some(AuthDescriptor::EnvApiKey { env_var }) =
-        auth_descriptor_for(config, provider_id)
-    {
-        format!("env {env_var}")
-    } else {
-        "configured".to_string()
-    };
-    AuthDescriptor::Resolved { source }
-}
-
 /// Derive the auth descriptor for a user-declared openai_compatible profile.
 pub fn auth_descriptor_for_profile(profile: &OpenAiCompatibleProviderConfig) -> AuthDescriptor {
     let default = profile_api_key_env_default(&profile.id);
@@ -1575,25 +1974,44 @@ pub fn build_collection_for_listing(
     config: &OpiConfig,
     store_probe: &std::collections::HashMap<String, opi_ai::CredentialSource>,
 ) -> Result<ProviderCollection, ListModelsError> {
+    let store_probe = metadata_probes_from_sources(store_probe);
+    build_collection_for_listing_with_probes(config, &store_probe)
+}
+
+fn build_collection_for_listing_with_probes(
+    config: &OpiConfig,
+    store_probe: &std::collections::HashMap<
+        String,
+        crate::credential_store::CredentialMetadataProbe,
+    >,
+) -> Result<ProviderCollection, ListModelsError> {
     let mut collection = ProviderCollection::new();
     for provider_id in BUILT_IN_PROVIDER_IDS {
-        let auth_available = if matches!(*provider_id, "github-copilot" | "openai-codex") {
-            true
-        } else if *provider_id == "bedrock" {
-            bedrock_auth_presence(config, &|name| std::env::var(name).ok()).is_present()
-        } else {
-            let env_name = api_key_env_name(config, provider_id);
-            listing_auth_available(env_name.as_deref(), store_probe.get(*provider_id))
-        };
-        if !auth_available {
+        let availability = provider_availability(
+            config,
+            provider_id,
+            &|name| std::env::var(name).ok(),
+            store_probe,
+        )
+        .expect("built-in provider has availability policy");
+        if !availability.listing_available() {
             continue;
         }
         let provider = build_list_models_metadata(config, provider_id)?;
-        // Preserve the legacy Resolved descriptor for env-backed providers;
-        // only keychain-backend providers carry the redacted store descriptor.
-        let auth = match auth_descriptor_for(config, provider_id) {
-            Some(store_auth @ AuthDescriptor::StoreCredential { .. }) => store_auth,
-            _ => resolved_auth_descriptor_for(config, provider_id),
+        // Preserve the store descriptor only when the live source selection
+        // actually chose a compatible stored credential.
+        let auth = match (
+            availability.source_is_keychain(),
+            auth_descriptor_for(config, provider_id),
+        ) {
+            (true, Some(store_auth @ AuthDescriptor::StoreCredential { .. })) => store_auth,
+            _ => AuthDescriptor::Resolved {
+                source: if *provider_id == "bedrock" {
+                    "aws credential chain".to_owned()
+                } else {
+                    availability.label.clone()
+                },
+            },
         };
         let compat = compat_metadata_for(provider_id);
         if let Err(e) = collection.register(Box::new(provider), auth.clone(), compat) {
@@ -1604,7 +2022,7 @@ pub fn build_collection_for_listing(
         if matches!(auth, AuthDescriptor::StoreCredential { .. }) {
             let source = store_probe
                 .get(*provider_id)
-                .cloned()
+                .map(|probe| probe.source.clone())
                 .unwrap_or(opi_ai::CredentialSource::Absent);
             collection.set_probe(provider_id, source);
         }
@@ -1627,13 +2045,20 @@ pub fn build_collection_for_listing(
         }
     }
     for profile in config.providers.custom.values() {
-        if !listing_auth_available(Some(&profile.api_key_env), None) {
+        let availability = provider_availability(
+            config,
+            &profile.id,
+            &|name| std::env::var(name).ok(),
+            store_probe,
+        )
+        .expect("configured custom provider has availability policy");
+        if !availability.listing_available() {
             continue;
         }
         let _ = build_proxied_client_for_listing(profile.proxy.as_ref())?;
         let provider = MetadataProvider::new(profile.id.clone(), profile.models.clone());
         let auth = AuthDescriptor::Resolved {
-            source: format!("env {}", profile.api_key_env),
+            source: availability.label,
         };
         if let Err(error) = collection.register(Box::new(provider), auth, CompatMetadata::default())
         {
@@ -1648,14 +2073,15 @@ pub fn build_collection_for_listing(
 /// Probe stored credential presence, then build a metadata-only listing collection.
 pub async fn build_collection_for_listing_with_store(
     config: &OpiConfig,
-    store: &dyn opi_ai::credential::CredentialStore,
+    store: &dyn crate::credential_store::CredentialMetadataStore,
 ) -> Result<ProviderCollection, ListModelsError> {
     let provider_ids = BUILT_IN_PROVIDER_IDS
         .iter()
         .filter(|provider_id| !matches!(**provider_id, "github-copilot" | "openai-codex"))
-        .map(|provider_id| (*provider_id).to_owned());
+        .map(|provider_id| (*provider_id).to_owned())
+        .chain(config.providers.custom.keys().cloned());
     let probes = crate::credential_store::collect_credential_probes(store, provider_ids).await;
-    build_collection_for_listing(config, &probes)
+    build_collection_for_listing_with_probes(config, &probes)
 }
 
 /// Production model-listing command core: create the backend inside the

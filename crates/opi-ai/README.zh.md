@@ -101,9 +101,9 @@ assistant text 和最后一个 tool definition 上发出 `cache_control`。Long 
 
 `Request` 新增 `timeout`、`extra_headers`、`CacheRetention` 和 `session_id`。前三项是
 公开的 request-to-wire 基底；本阶段只有 `session_id` 在 coding harness 中具有生产生成方。
-OpenAI family 只通过审查过的兼容标志映射该 id，Anthropic 则使用模型能力门控的 cache
-marker。`ModelInfo` 包含现有的嵌套 `ModelCapabilities`；未知/自定义模型默认关闭 cache
-支持。
+session-affinity 行为在直连 Responses 与自定义/proxy route 之间不同，详见下文；
+Anthropic 则使用模型能力门控的 cache marker。`ModelInfo` 包含现有的嵌套
+`ModelCapabilities`；未知/自定义模型默认关闭 cache 支持。
 
 `Usage::cache_write_1h_tokens` 与 `Usage::reasoning_tokens` 是可选 `u64` 子集，
 可区分缺失与显式上报的零。`CostBreakdown` 只有四行：`input_cost`、`output_cost`、
@@ -145,8 +145,8 @@ LLM 可见内容和 provider 专用失败信号。
 | Family | Thinking/reasoning | 图片输入 | Cache tokens（用量侧） | Response ID |
 |--------|--------------------|----------|------------------------|-------------|
 | `anthropic` | thinking blocks | PNG/JPEG/GIF/WebP | `cache_read` / `cache_creation` | `message.id` |
-| `openai_chat` | 经 compat profile 的 `reasoning_effort` | PNG/JPEG/GIF/WebP | `cached_tokens` | `chatcmpl-*`（`id`） |
-| `openai_responses` | `reasoning_effort`（`ResponsesConfig`） | PNG/JPEG/GIF/WebP | `cached_tokens` | `resp_*`（`id`） |
+| `openai_chat` | `request.thinking` + 所选 `ModelInfo::thinking_level_map` | PNG/JPEG/GIF/WebP | `cached_tokens` | `chatcmpl-*`（`id`） |
+| `openai_responses` | `request.thinking` + 所选 `ModelInfo::thinking_level_map` | PNG/JPEG/GIF/WebP | `cached_tokens` | `resp_*`（`id`） |
 | `openrouter` | inherited | PNG/JPEG/GIF/WebP | inherited | `chatcmpl-*` |
 | `mistral` | inherited | PNG/JPEG/GIF/WebP | inherited | `chatcmpl-*` |
 | `gemini` | thinking | PNG/JPEG/GIF/WebP | `cached_content` | — |
@@ -174,7 +174,7 @@ LLM 可见内容和 provider 专用失败信号。
 | `tool_result_name_field` | 在工具结果消息上回显工具名。 |
 | `usage_in_stream` | 请求 `stream_options.include_usage`，并保留来自任意流式 chunk 的 usage 更新。 |
 | `strict_tool_schema` | 发出 strict JSON-schema 工具定义。 |
-| `reasoning_effort` | 为支持该能力的模型发送 reasoning-effort 提示。 |
+| `reasoning_effort` | 仅保留为遗留兼容性/profile 元数据；wire reasoning 由 `request.thinking` 与所选 `ModelInfo::thinking_level_map` 决定。 |
 | `cache_key` | 发送 provider 的 prompt-cache key（cache-affinity 提示）。 |
 | `send_session_affinity_headers` | 把请求 `session_id` 映射为兼容的 `session_id`、`x-client-request-id` 与 `x-session-affinity` header；默认关闭。 |
 | `require_assistant_after_tool_result` | 面向遗留端点的纯兼容性元数据标记；opi 不会在共享适配器中合成或强制额外的 assistant 轮次。 |
@@ -185,8 +185,10 @@ LLM 可见内容和 provider 专用失败信号。
 （`extra_headers`，用于会话亲和 / 路由）是独立的 profile 配置字段，经
 `OpenAiChatProvider` 构造传入，不是 `CompatConfig` 标志。
 
-OpenAI Responses 原生语义（`ResponsesConfig`）：`store`、`reasoning_effort` 和
-`strict_tools` 已实现。`previous_response_id` 刻意缺省——Responses 请求按
+OpenAI Responses 原生语义（`ResponsesConfig`）：`store` 和 `strict_tools`
+已实现。静态 `reasoning_effort` 仅保留为遗留兼容性元数据；`request.thinking`
+与所选 `ModelInfo::thinking_level_map` 是 Chat 和 Responses wire 输出的权威来源。
+`previous_response_id` 刻意缺省——Responses 请求按
 Chat-Completions 类比构造，因此服务端响应链未被接入。
 
 ## 缓存、Response ID 与会话亲和
@@ -203,8 +205,11 @@ Provider response ID 被捕获并回写到 `AssistantMessage::response_id`（Ant
 OpenAI Chat 会从任何携带 `id` 的 chunk 捕获 response ID，而不只是在 role chunk 中
 捕获；其它 family 保持为 `None`。
 
-会话亲和刻意受限：`previous_response_id` 被推迟（见 OpenAI-Compatible Profile），
-兼容 profile 可携带静态 `extra_headers` 用于路由/会话钉扎。不存在服务端会话链。
+会话亲和刻意受限。存在有效 session 时，直连 OpenAI Responses 会自动派生
+`prompt_cache_key` 和新的 `x-client-request-id`；`send_session_id_header` 只门控
+`session_id`。自定义/proxy affinity 默认关闭，必须显式 opt-in。
+`previous_response_id` 被推迟（见 OpenAI-Compatible Profile），兼容 profile 可携带静态
+`extra_headers` 用于路由/会话钉扎。不存在服务端会话链。
 
 ## 代理
 

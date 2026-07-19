@@ -339,7 +339,7 @@ impl Default for OpenAiResponsesCompat {
             reasoning_effort: None,
             strict_tools: false,
             responses_path: "/v1/responses".into(),
-            send_session_id_header: true,
+            send_session_id_header: false,
         }
     }
 }
@@ -536,6 +536,18 @@ impl ModelInfo {
     }
 
     pub fn validate(&self) -> Result<(), ModelInfoError> {
+        if self.capabilities.context_window == 0 {
+            return Err(ModelInfoError::InvalidCapabilities {
+                model_id: self.id.clone(),
+                field: "context_window",
+            });
+        }
+        if self.capabilities.max_output_tokens == 0 {
+            return Err(ModelInfoError::InvalidCapabilities {
+                model_id: self.id.clone(),
+                field: "max_output_tokens",
+            });
+        }
         let compat_wire = self.compat.wire_api();
         if compat_wire != self.wire_api {
             return Err(ModelInfoError::WireCompatMismatch {
@@ -554,6 +566,11 @@ impl ModelInfo {
 #[derive(Clone, Debug, PartialEq, thiserror::Error)]
 #[non_exhaustive]
 pub enum ModelInfoError {
+    #[error("model '{model_id}' capability {field} must be greater than zero")]
+    InvalidCapabilities {
+        model_id: String,
+        field: &'static str,
+    },
     #[error("model '{model_id}' wire {wire_api} does not match compatibility wire {compat_wire}")]
     WireCompatMismatch {
         model_id: String,

@@ -380,16 +380,27 @@ async fn json_mode_credential_needed_emits_typed_remediation_without_prompt() {
     assert_eq!(result.exit_code, ExitCode::AuthFailure as i32);
     let lines = parse_ndjson(&result.stdout);
     assert_eq!(lines[0]["schema_version"], NDJSON_SCHEMA_VERSION);
-    let raw_remediation = result
+    let raw_remediations: Vec<_> = result
         .stdout
         .lines()
-        .find(|line| line.contains("\"type\":\"CredentialNeeded\""))
-        .expect("raw CredentialNeeded remediation line");
-    println!("{raw_remediation}");
-    let remediation = lines
+        .filter(|line| line.contains("\"type\":\"CredentialNeeded\""))
+        .collect();
+    assert_eq!(
+        raw_remediations.len(),
+        1,
+        "expected exactly one raw CredentialNeeded remediation line"
+    );
+    println!("{}", raw_remediations[0]);
+    let remediation_events: Vec<_> = lines
         .iter()
-        .find(|line| line["type"] == "CredentialNeeded")
-        .expect("typed CredentialNeeded remediation record");
+        .filter(|line| line["type"] == "CredentialNeeded")
+        .collect();
+    assert_eq!(
+        remediation_events.len(),
+        1,
+        "expected exactly one typed CredentialNeeded remediation record"
+    );
+    let remediation = remediation_events[0];
     let typed: AgentSessionEvent = serde_json::from_value(remediation.clone())
         .expect("credential remediation remains inside AgentSessionEvent");
     match typed {

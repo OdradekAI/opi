@@ -1402,6 +1402,9 @@ Phase 13 交接：会话工作可以依赖经由共享 `opi-ai` 类型传递的 
 规范 OAuth provider 与 keychain account id 是 `anthropic`、`github-copilot` 和
 `openai-codex`。开发期 id `copilot` 与 `codex` 没有 runtime alias、config alias 或
 keychain migration；持有这些开发期条目的用户必须使用规范 id 显式重新登录。
+`doctor` 与凭据门控的模型列表路径使用无 secret availability/credential-kind probe；这些
+probe 遵循实时凭据优先级，并在操作错误或 marker 损坏时失败关闭。GitHub Copilot 与 OpenAI
+Codex subscription catalog 保持为无条件静态 catalog，列表时不执行凭据 probe。
 
 每个 `ModelInfo` 声明一个精确 `WireApi`、匹配且带 tag 的 compatibility 值、capabilities、
 thinking-level map 与可选 pricing。pricing tier 是确定性的：只有 input token 严格大于
@@ -1409,6 +1412,9 @@ thinking-level map 与可选 pricing。pricing tier 是确定性的：只有 inp
 catalog，为每个 catalog wire 校验精确一个具体 route，并在网络 IO 前拒绝未知 model、
 缺少 route 与 wire/compatibility 不匹配。一个 mapped provider 的所有 route 共享一个
 惰性 `AuthResolver`。
+OpenAI Chat 与 Responses 仅在 `request.thinking` 启用且所选
+`ModelInfo::thinking_level_map` 能解析请求级别时发出 reasoning wire 字段；静态
+`reasoning_effort` 字段只是遗留 compatibility/profile metadata，不能覆盖该选择。
 
 GitHub Copilot 使用规范 `github-copilot` identity，以及一个经审计的静态 pi-0.80.6
 catalog；该 catalog 覆盖 `anthropic-messages`、`openai-completions` 与
@@ -1420,6 +1426,9 @@ OpenAI Codex 使用规范 `openai-codex` identity，以及
 `https://chatgpt.com/backend-api/codex/responses` 上的专用
 `openai-codex-responses` provider。它不是带 compatibility flag 的标准 Responses。
 Codex 要求已持久化的 account id，并发出专用 body、header、session affinity 与 SSE mapping。
+存在有效 session 时，内置直连 Responses 在每次请求中发出 `prompt_cache_key` 和新的
+`x-client-request-id`；`send_session_id_header` 只门控 `session_id`。自定义/proxy
+profile 默认关闭全部 affinity；显式 opt-in 会启用经审查的完整映射。
 
 `[providers.custom.<id>]` 向 TOML 暴露 mapped-provider 契约。一个 provider 拥有一个共享
 `api_key_env`、auth scheme、默认 `base_url`、proxy 与 header 集合。provider `api` 是
@@ -1431,6 +1440,11 @@ model 可以声明 base pricing 与严格递增的 threshold tier。未知/disab
 缺少 API/route/base URL、compatibility 字段不匹配、非法 pricing 与 Provider 管理的鉴权
 header 都会在 config load 时失败。旧 `[providers.openai_compatible]` table 保持为单 wire
 Completions shorthand，并降低到同一 mapped 构造路径。
+`AuthInvalidPolicy` 由构造完成的 Anthropic、OpenAI Chat 与 OpenAI Responses
+route（包括 mapped static profile）显式指定，绝不从 Bearer 语法推断。在这些 route 内，规范
+credential-managed profile 可以返回 `CredentialRevoked`，而静态 custom、OpenRouter 与
+Mistral profile 返回固定且无 body 的 `AuthFailed`；该 body 抑制声明不扩展到
+Azure、Bedrock、Gemini 或 Vertex diagnostics。
 
 Anthropic 与 OpenAI Codex Browser 登录使用带 loopback callback 和
 manual-code/redirect-URL fallback 的 Browser PKCE。GitHub Copilot Device Code 与
@@ -1438,6 +1452,10 @@ OpenAI Codex Device Code 调用 `present_device_code`，轮询 device endpoint�
 `await_manual_code`。`/login openai-codex` 以 Browser 为默认项，以 Device Code 为
 headless 选项。`/login` 与 `/logout` 贯穿生产 dispatcher、具体 provider registry、
 带锁 store 和 RAII 终端暂停/恢复。
+一个绝对 OAuth flow deadline 覆盖所有 send、response body decode、wait/poll 与 exchange。
+所有 flow 只在获取一次性 code/token 前接受取消，并产生类型化 `LoginCancelled`、一条固定取消通知、不持久化任何凭据且恢复终端；获取 code/token 后忽略取消，但原 deadline 继续生效。
+手动输入使用一个串行化、可取消的 cooked-line 子进程；手动输入的 authorization code
+经由继承的 stdin 与捕获的 stdout 传递，绝不注入 argv 或新增环境变量，并在 retry 前回收子进程。
 
 在输出开始前收到 `CredentialNeeded` 后，只有同一 provider 的显式登录成功，outer
 `run_interactive_tui` 状态机才会对同一待处理轮次精确重试一次，且不追加重复 user message。
@@ -1451,8 +1469,9 @@ headless 选项。`/login` 与 `/logout` 贯穿生产 dispatcher、具体 provid
 `refresh_models` trait 基底。`cache_write_1h_tokens` 是 cache write 的子集，
 `reasoning_tokens` 是 output 的子集；二者都是可选 `u64` 子字段，因此能区分缺失与显式
 上报的零。四行 `CostBreakdown` 把加权的一小时 write 折算进 `cache_write_cost`，
-把 reasoning 保留在 `output_cost`，每个父 bucket 只计一次。前三个 Request 参数在
-第十四阶段不增加 config/harness 生产端；只有 `session_id` 贯穿真实 harness/agent 路径。
+把 reasoning 保留在 `output_cost`，每个父 bucket 只计一次。累计 `Usage` 的每个公开
+`u32` 字段都在 `u32::MAX` 饱和；子集保持不超过父项，公开形状不拓宽。前三个 Request
+参数在第十四阶段不增加 config/harness 生产端；只有 `session_id` 贯穿真实 harness/agent 路径。
 动态 refresh 只有 mock collection 覆盖，第十四阶段不增加生产触发点，也不以它关闭产品验收路径。
 
 第十四阶段明确保留八条边界：不创建 opi 管理的明文凭据文件；不在 stream 中途自动重新登录；不允许按调用覆盖凭据（`apiKey`/`env`）或 Provider 管理的鉴权 header（`Request::extra_headers` 只可附加非保留 transport header）；不增加 `onPayload`/`onResponse` 流式钩子；不在 `Request` 上增加 `maxRetries`/`maxRetryDelay`；不进行贯穿 Provider 构造的端到端 `SecretString` 迁移；不增加 Anthropic、GitHub Copilot 与 OpenAI Codex 之外的 OAuth Provider；不修改 session schema 或 context reconstruction。TUI 改动仅限审查过的 `/login`、`/logout`、`CredentialNeeded` presenter，以及登录期间暂停 raw/alternate-screen。

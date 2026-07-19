@@ -12,7 +12,7 @@ use secrecy::{ExposeSecret, SecretString};
 use serde::Deserialize;
 use tokio_util::sync::CancellationToken;
 
-use crate::auth::{AuthResolver, AuthScheme, ResolvedAuth, StaticAuthResolver};
+use crate::auth::{AuthInvalidPolicy, AuthResolver, AuthScheme, ResolvedAuth, StaticAuthResolver};
 use crate::http::HttpClient;
 use crate::message::{
     AssistantContent, AssistantMessage, OutputContent, TOOL_ERROR_MARKER, ToolCall,
@@ -741,7 +741,8 @@ fn empty_assistant_message(api: crate::ApiKind, provider: &str) -> AssistantMess
 /// - `tool_result_name_field`: whether tool results carry a "name" field
 /// - `usage_in_stream`: whether usage appears in every chunk vs only the last
 /// - `strict_tool_schema`: emit `"strict": true` on function tool definitions
-/// - `reasoning_effort`: emit top-level `reasoning_effort` for reasoning models
+/// - `reasoning_effort`: legacy profile metadata; request/model thinking maps
+///   are authoritative for wire output
 /// - `cache_key`: emit `prompt_cache_key` for OpenAI prompt-cache affinity
 /// - `send_session_affinity_headers`: emit compatible session-affinity headers
 /// - `require_assistant_after_tool_result`: compatibility-metadata flag (see below)
@@ -782,6 +783,7 @@ pub struct OpenAiChatProvider {
     headers: ProviderHeaders,
     route_headers: Vec<(String, String)>,
     catalog_compat: bool,
+    auth_invalid_policy: AuthInvalidPolicy,
     direct_prompt_cache_key: bool,
     copilot_initiator: bool,
     client: Arc<HttpClient>,
@@ -849,6 +851,7 @@ impl OpenAiChatProvider {
             vec![],
             Arc::new(HttpClient::new()),
         )
+        .with_auth_invalid_policy(AuthInvalidPolicy::Static)
     }
 
     /// Create with a shared HTTP client.
@@ -871,6 +874,7 @@ impl OpenAiChatProvider {
             extra_headers,
             client,
         )
+        .with_auth_invalid_policy(AuthInvalidPolicy::Static)
     }
 
     /// Build with an injected per-request auth resolver (Phase 14.2). The
@@ -899,6 +903,7 @@ impl OpenAiChatProvider {
             headers: ProviderHeaders::default(),
             route_headers: extra_headers,
             catalog_compat: false,
+            auth_invalid_policy: AuthInvalidPolicy::CredentialManaged,
             direct_prompt_cache_key,
             copilot_initiator: false,
             client,
@@ -928,6 +933,7 @@ impl OpenAiChatProvider {
             headers: ProviderHeaders::default(),
             route_headers: extra_headers,
             catalog_compat: false,
+            auth_invalid_policy: AuthInvalidPolicy::Static,
             direct_prompt_cache_key: false,
             copilot_initiator: false,
             client: Arc::new(HttpClient::new()),
@@ -953,10 +959,17 @@ impl OpenAiChatProvider {
             headers,
             route_headers: Vec::new(),
             catalog_compat: true,
+            auth_invalid_policy: AuthInvalidPolicy::Static,
             direct_prompt_cache_key: false,
             copilot_initiator: false,
             client,
         }
+    }
+
+    /// Override how this route classifies provider 401/403 responses.
+    pub fn with_auth_invalid_policy(mut self, policy: AuthInvalidPolicy) -> Self {
+        self.auth_invalid_policy = policy;
+        self
     }
 
     /// Enable the GitHub Copilot `X-Initiator` request header. The value is
@@ -1071,10 +1084,11 @@ impl OpenAiChatProvider {
                     .collect(),
             );
         }
-        if let Some(effort) = compat.reasoning_effort.as_ref()
-            && !effort.is_empty()
+        if request.thinking.enabled
+            && let Some(model) = self.models.iter().find(|model| model.id == model_id)
+            && let Ok(Some(effort)) = model.thinking_level_map.resolve(request.thinking.level)
         {
-            body["reasoning_effort"] = serde_json::Value::String(effort.clone());
+            body["reasoning_effort"] = serde_json::Value::String(effort);
         }
         if request.cache_retention != CacheRetention::Disabled {
             if let Some(cache_key) = compat.cache_key.as_ref()
@@ -1127,6 +1141,7 @@ impl OpenAiChatProvider {
         resolved: ResolvedAuth,
         base_url: String,
         provider_id: String,
+        auth_invalid_policy: AuthInvalidPolicy,
         chat_completions_path: String,
         extra_headers: Vec<(String, String)>,
         body: &serde_json::Value,
@@ -1171,7 +1186,7 @@ impl OpenAiChatProvider {
                 status,
                 &error_body,
                 &headers,
-                resolved.scheme,
+                auth_invalid_policy,
                 &provider_id,
             ));
         }
@@ -1264,24 +1279,13 @@ fn map_http_status(
     status: reqwest::StatusCode,
     body: &str,
     headers: &reqwest::header::HeaderMap,
-    scheme: AuthScheme,
+    policy: AuthInvalidPolicy,
     provider_id: &str,
 ) -> ProviderError {
     match status.as_u16() {
-        // A 401 on a Bearer (OAuth) credential — e.g. Copilot — is typed
-        // non-retryable CredentialRevoked with the body dropped (the body may
-        // echo the submitted token). API-key profiles keep AuthFailed.
-        401 | 403 if scheme == AuthScheme::Bearer => ProviderError::CredentialRevoked {
-            provider_id: provider_id.to_owned(),
-        },
-        401 => ProviderError::AuthFailed(format!(
-            "authentication failed: {}",
-            crate::http::safe_excerpt(body)
-        )),
-        403 => ProviderError::AuthFailed(format!(
-            "access denied: {}",
-            crate::http::safe_excerpt(body)
-        )),
+        // Auth-invalid classification comes from route construction policy,
+        // never from the syntax used for the Authorization header.
+        401 | 403 => policy.error(provider_id),
         429 => ProviderError::RateLimited {
             retry_after_ms: crate::retry::parse_retry_after(headers),
         },
@@ -1437,6 +1441,7 @@ impl Provider for OpenAiChatProvider {
         let auth = self.auth.clone();
         let default_base_url = self.base_url.clone();
         let provider_id = self.provider_id.clone();
+        let auth_invalid_policy = self.auth_invalid_policy;
         let model_id = request
             .model
             .split_once(':')
@@ -1514,6 +1519,7 @@ impl Provider for OpenAiChatProvider {
                 resolved,
                 base_url,
                 provider_id,
+                auth_invalid_policy,
                 chat_completions_path,
                 extra_headers,
                 &body,

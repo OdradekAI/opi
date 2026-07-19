@@ -598,3 +598,394 @@ max_output_tokens = 8192
         }
     }
 }
+
+#[tokio::test]
+#[allow(clippy::await_holding_lock)] // Serializes process-env mutation; awaited local HTTP work never re-acquires this lock.
+async fn production_custom_provider_reloads_store_then_env_auth_for_each_stream() {
+    use futures_util::StreamExt;
+    use opi_ai::credential::Credential;
+    use opi_ai::provider::{CacheRetention, Request, ThinkingConfig};
+    use opi_coding_agent::credential_store::{
+        FakeKeyringBackend, KEYCHAIN_PRESENCE_SERVICE, KEYCHAIN_SERVICE, KeyringBackend,
+    };
+    use opi_coding_agent::provider_factory::build_provider_bundle;
+    use secrecy::SecretString;
+    use tokio_util::sync::CancellationToken;
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let _env_guard = ENV_MUTEX.lock().expect("env lock");
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/event-stream")
+                .set_body_string(
+                    "data: {\"id\":\"c\",\"model\":\"chat\",\"choices\":[{\"delta\":{\"role\":\"assistant\"}}]}\n\n\
+                     data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":1,\"completion_tokens\":1}}\n\n\
+                     data: [DONE]\n\n",
+                ),
+        )
+        .expect(2)
+        .mount(&server)
+        .await;
+
+    let env_name = "OPI_TEST_CUSTOM_ROTATING_SOURCE_1416";
+    let original = std::env::var_os(env_name);
+    // SAFETY: this test serializes and restores its task-unique environment variable.
+    unsafe { std::env::set_var(env_name, "env-token-after-rotation") };
+
+    let backend = FakeKeyringBackend::new();
+    backend.seed_raw(KEYCHAIN_PRESENCE_SERVICE, "acme", "api_key");
+    backend.seed_credential(
+        KEYCHAIN_SERVICE,
+        "acme",
+        &Credential::ApiKey(SecretString::new("stored-token-at-build".into())),
+    );
+    let injected_backend = backend.clone();
+    let root = tempfile::tempdir().unwrap();
+    let path = write_config(
+        root.path(),
+        "config.toml",
+        &format!(
+            r#"
+[defaults]
+model = "acme:chat"
+
+[providers.custom.acme]
+base_url = "{base}"
+api_key_env = "{env_name}"
+auth_scheme = "bearer"
+
+[[providers.custom.acme.models]]
+id = "chat"
+api = "openai-completions"
+context_window = 128000
+max_output_tokens = 8192
+"#,
+            base = server.uri()
+        ),
+    );
+    let config = load_config_file(&path).unwrap();
+    let bundle = build_provider_bundle(
+        &config,
+        root.path().to_path_buf(),
+        Box::new(move || Box::new(injected_backend)),
+    )
+    .await
+    .expect("custom provider builds with the stored credential present");
+
+    let request = || Request {
+        model: "acme:chat".into(),
+        system: None,
+        messages: vec![],
+        tools: vec![],
+        max_tokens: None,
+        temperature: None,
+        thinking: ThinkingConfig::default(),
+        stop_sequences: vec![],
+        metadata: None,
+        cancel: CancellationToken::new(),
+        timeout: None,
+        extra_headers: vec![],
+        cache_retention: CacheRetention::None,
+        session_id: None,
+    };
+    let mut first = bundle.provider.stream(request());
+    while let Some(event) = first.next().await {
+        event.unwrap();
+    }
+
+    KeyringBackend::delete(&backend, KEYCHAIN_SERVICE, "acme").unwrap();
+    KeyringBackend::delete(&backend, KEYCHAIN_PRESENCE_SERVICE, "acme").unwrap();
+    let mut second = bundle.provider.stream(request());
+    while let Some(event) = second.next().await {
+        event.unwrap();
+    }
+
+    let requests = server.received_requests().await.unwrap();
+    assert_eq!(requests.len(), 2);
+    assert_eq!(
+        requests[0]
+            .headers
+            .get("authorization")
+            .and_then(|value| value.to_str().ok()),
+        Some("Bearer stored-token-at-build")
+    );
+    assert_eq!(
+        requests[1]
+            .headers
+            .get("authorization")
+            .and_then(|value| value.to_str().ok()),
+        Some("Bearer env-token-after-rotation")
+    );
+
+    match original {
+        Some(value) => {
+            // SAFETY: restoring the task-unique environment variable.
+            unsafe { std::env::set_var(env_name, value) };
+        }
+        None => {
+            // SAFETY: restoring the task-unique environment variable.
+            unsafe { std::env::remove_var(env_name) };
+        }
+    }
+}
+
+#[tokio::test]
+#[allow(clippy::await_holding_lock)] // Serializes process-env mutation; awaited local HTTP work never re-acquires this lock.
+async fn production_custom_provider_redacts_401_and_403_for_all_three_wires() {
+    use futures_util::StreamExt;
+    use opi_ai::provider::{CacheRetention, ProviderError, Request, ThinkingConfig};
+    use opi_coding_agent::credential_store::FakeKeyringBackend;
+    use opi_coding_agent::provider_factory::build_provider_bundle;
+    use tokio_util::sync::CancellationToken;
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let _env_guard = ENV_MUTEX.lock().expect("env lock");
+    let env_name = "OPI_TEST_CUSTOM_AUTH_FAILURE_1416";
+    let original = std::env::var_os(env_name);
+    // SAFETY: this test serializes and restores its task-unique environment variable.
+    unsafe { std::env::set_var(env_name, "factory-auth-token-DO-NOT-LEAK") };
+
+    for status in [401, 403] {
+        for (api, model, route) in [
+            ("anthropic-messages", "claude", "/v1/messages"),
+            ("openai-completions", "chat", "/v1/chat/completions"),
+            ("openai-responses", "responses", "/v1/responses"),
+        ] {
+            let server = MockServer::start().await;
+            let response_canary = format!("echo-canary-{status}-{model}-DO-NOT-LEAK");
+            Mock::given(method("POST"))
+                .and(path(route))
+                .respond_with(
+                    ResponseTemplate::new(status).set_body_string(response_canary.clone()),
+                )
+                .expect(1)
+                .mount(&server)
+                .await;
+
+            let root = tempfile::tempdir().unwrap();
+            let config_path = write_config(
+                root.path(),
+                "config.toml",
+                &format!(
+                    r#"
+[defaults]
+model = "acme:{model}"
+
+[providers.custom.acme]
+base_url = "{base}"
+api_key_env = "{env_name}"
+auth_scheme = "bearer"
+
+[[providers.custom.acme.models]]
+id = "{model}"
+api = "{api}"
+context_window = 128000
+max_output_tokens = 8192
+"#,
+                    base = server.uri()
+                ),
+            );
+            let config = load_config_file(&config_path).unwrap();
+            let bundle = build_provider_bundle(
+                &config,
+                root.path().to_path_buf(),
+                Box::new(|| Box::new(FakeKeyringBackend::new())),
+            )
+            .await
+            .expect("production custom provider bundle");
+            let request = Request {
+                model: format!("acme:{model}"),
+                system: None,
+                messages: vec![],
+                tools: vec![],
+                max_tokens: None,
+                temperature: None,
+                thinking: ThinkingConfig::default(),
+                stop_sequences: vec![],
+                metadata: None,
+                cancel: CancellationToken::new(),
+                timeout: None,
+                extra_headers: vec![],
+                cache_retention: CacheRetention::None,
+                session_id: None,
+            };
+
+            let error = bundle
+                .provider
+                .stream(request)
+                .next()
+                .await
+                .expect("auth failure stream item")
+                .expect_err("401/403 must fail");
+            assert!(
+                matches!(
+                    error,
+                    ProviderError::AuthFailed(ref reason) if reason == "authentication failed"
+                ),
+                "{api} {status} must be a bodyless static-auth failure: {error:?}"
+            );
+            assert!(
+                !error.is_retryable(),
+                "{api} {status} auth failure must not be retryable"
+            );
+            let rendered = format!("{error:?} {error}");
+            assert!(
+                !rendered.contains(&response_canary),
+                "{api} {status} leaked echoed response body: {rendered}"
+            );
+            assert!(
+                !rendered.contains("factory-auth-token-DO-NOT-LEAK"),
+                "{api} {status} leaked credential: {rendered}"
+            );
+        }
+    }
+
+    match original {
+        Some(value) => {
+            // SAFETY: restoring the task-unique environment variable.
+            unsafe { std::env::set_var(env_name, value) };
+        }
+        None => {
+            // SAFETY: restoring the task-unique environment variable.
+            unsafe { std::env::remove_var(env_name) };
+        }
+    }
+}
+
+#[tokio::test]
+#[allow(clippy::await_holding_lock)] // Serializes process-env mutation; awaited local HTTP work never re-acquires this lock.
+async fn custom_responses_affinity_requires_explicit_true_compat() {
+    use futures_util::StreamExt;
+    use opi_ai::provider::{CacheRetention, Request, ThinkingConfig};
+    use opi_coding_agent::provider_factory::build_provider;
+    use tokio_util::sync::CancellationToken;
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let _env_guard = ENV_MUTEX.lock().expect("env lock");
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/responses"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/event-stream")
+                .set_body_string(
+                    "event: response.created\ndata: {\"type\":\"response.created\",\"response\":{\"id\":\"r\",\"model\":\"responses\"}}\n\n\
+                     event: response.completed\ndata: {\"type\":\"response.completed\",\"response\":{\"id\":\"r\",\"model\":\"responses\",\"output\":[],\"usage\":{\"input_tokens\":1,\"output_tokens\":1}}}\n\n",
+                ),
+        )
+        .expect(2)
+        .mount(&server)
+        .await;
+
+    let env_name = "OPI_TEST_CUSTOM_RESPONSES_AFFINITY_1416";
+    let original = std::env::var_os(env_name);
+    // SAFETY: this test serializes and restores its task-unique environment variable.
+    unsafe { std::env::set_var(env_name, "custom-responses-token") };
+    let root = tempfile::tempdir().unwrap();
+    let path = write_config(
+        root.path(),
+        "config.toml",
+        &format!(
+            r#"
+[defaults]
+model = "acme:omitted"
+
+[providers.custom.acme]
+base_url = "{base}"
+api_key_env = "{env_name}"
+auth_scheme = "bearer"
+
+[[providers.custom.acme.models]]
+id = "omitted"
+api = "openai-responses"
+context_window = 128000
+max_output_tokens = 8192
+
+[[providers.custom.acme.models]]
+id = "enabled"
+api = "openai-responses"
+context_window = 128000
+max_output_tokens = 8192
+
+[providers.custom.acme.models.compat]
+send_session_id_header = true
+"#,
+            base = server.uri()
+        ),
+    );
+    let config = load_config_file(&path).unwrap();
+    let provider = build_provider(&config).unwrap();
+
+    for (model, session_id) in [
+        ("omitted", "session-custom-omitted"),
+        ("enabled", "session-custom-enabled"),
+    ] {
+        let request = Request {
+            model: format!("acme:{model}"),
+            system: None,
+            messages: vec![],
+            tools: vec![],
+            max_tokens: None,
+            temperature: None,
+            thinking: ThinkingConfig::default(),
+            stop_sequences: vec![],
+            metadata: None,
+            cancel: CancellationToken::new(),
+            timeout: None,
+            extra_headers: vec![],
+            cache_retention: CacheRetention::None,
+            session_id: Some(session_id.into()),
+        };
+        let mut stream = provider.stream(request);
+        while let Some(event) = stream.next().await {
+            event.unwrap();
+        }
+    }
+
+    let requests = server.received_requests().await.unwrap();
+    assert_eq!(requests.len(), 2);
+    let omitted_body: serde_json::Value = serde_json::from_slice(&requests[0].body).unwrap();
+    assert!(omitted_body.get("prompt_cache_key").is_none());
+    for name in ["session_id", "x-client-request-id"] {
+        assert!(
+            requests[0].headers.get(name).is_none(),
+            "omitted compat must not emit {name}"
+        );
+    }
+
+    let enabled_body: serde_json::Value = serde_json::from_slice(&requests[1].body).unwrap();
+    assert_eq!(
+        enabled_body["prompt_cache_key"],
+        serde_json::Value::String("session-custom-enabled".into())
+    );
+    assert_eq!(
+        requests[1]
+            .headers
+            .get("session_id")
+            .and_then(|value| value.to_str().ok()),
+        Some("session-custom-enabled")
+    );
+    let request_id = requests[1]
+        .headers
+        .get("x-client-request-id")
+        .and_then(|value| value.to_str().ok())
+        .expect("explicit opt-in request id");
+    assert_ne!(request_id, "session-custom-enabled");
+
+    match original {
+        Some(value) => {
+            // SAFETY: restoring the task-unique environment variable.
+            unsafe { std::env::set_var(env_name, value) };
+        }
+        None => {
+            // SAFETY: restoring the task-unique environment variable.
+            unsafe { std::env::remove_var(env_name) };
+        }
+    }
+}

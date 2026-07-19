@@ -1093,14 +1093,14 @@ fn build_request_body_strict_tool_schema_off_by_default() {
 }
 
 #[test]
-fn build_request_body_reasoning_effort_emits_field() {
+fn static_compat_reasoning_effort_does_not_drive_wire_output() {
     let config = CompatConfig {
         reasoning_effort: Some("high".into()),
         ..Default::default()
     };
     let provider = OpenAiChatProvider::new_with_compat("test-key".into(), None, config);
     let body = provider.build_request_body(&make_test_request());
-    assert_eq!(body["reasoning_effort"], "high");
+    assert!(body.get("reasoning_effort").is_none());
 }
 
 #[test]
@@ -1108,6 +1108,100 @@ fn build_request_body_reasoning_effort_absent_by_default() {
     let provider = OpenAiChatProvider::new("test-key".into(), None);
     let body = provider.build_request_body(&make_test_request());
     assert!(body.get("reasoning_effort").is_none());
+}
+
+#[test]
+fn chat_reasoning_effort_uses_request_thinking_and_model_map() {
+    use opi_ai::{ThinkingLevel, ThinkingLevelMap, ThinkingLevelMapping};
+
+    let provider = OpenAiChatProvider::new("test-key".into(), None);
+    let mut identity = make_test_request();
+    identity.model = "openai:o3".into();
+    identity.thinking = ThinkingConfig {
+        enabled: true,
+        budget_tokens: None,
+        level: ThinkingLevel::High,
+    };
+    assert_eq!(
+        provider.build_request_body(&identity)["reasoning_effort"],
+        "high"
+    );
+
+    let mapped_model = ModelInfo::new(
+        "mapped",
+        "Mapped",
+        opi_ai::WireApi::OpenAiCompletions,
+        ModelCapabilities::new(128_000, 16_384)
+            .with_streaming(true)
+            .with_thinking(true),
+    )
+    .with_thinking_level_map(ThinkingLevelMap::reasoning_default().with_mapping(
+        ThinkingLevel::High,
+        ThinkingLevelMapping::Mapped("provider-high".into()),
+    ));
+    let mapped_provider = OpenAiChatProvider::new_for_profile(
+        "key".into(),
+        "https://example.test".into(),
+        "mapped".into(),
+        CompatConfig {
+            reasoning_effort: Some("static-must-not-win".into()),
+            ..Default::default()
+        },
+        vec![],
+        vec![mapped_model],
+    );
+    let mut remapped = identity;
+    remapped.model = "mapped:mapped".into();
+    assert_eq!(
+        mapped_provider.build_request_body(&remapped)["reasoning_effort"],
+        "provider-high"
+    );
+
+    let mut disabled = remapped;
+    disabled.thinking.enabled = false;
+    assert!(
+        mapped_provider
+            .build_request_body(&disabled)
+            .get("reasoning_effort")
+            .is_none()
+    );
+
+    let mut off = disabled;
+    off.thinking.enabled = true;
+    off.thinking.level = ThinkingLevel::None;
+    assert!(
+        mapped_provider
+            .build_request_body(&off)
+            .get("reasoning_effort")
+            .is_none()
+    );
+
+    let unsupported_model = ModelInfo::new(
+        "unsupported",
+        "Unsupported",
+        opi_ai::WireApi::OpenAiCompletions,
+        ModelCapabilities::new(128_000, 16_384)
+            .with_streaming(true)
+            .with_thinking(true),
+    )
+    .with_thinking_level_map(ThinkingLevelMap::disabled());
+    let unsupported_provider = OpenAiChatProvider::new_for_profile(
+        "key".into(),
+        "https://example.test".into(),
+        "unsupported".into(),
+        Default::default(),
+        vec![],
+        vec![unsupported_model],
+    );
+    let mut unsupported = off;
+    unsupported.model = "unsupported:unsupported".into();
+    unsupported.thinking.level = ThinkingLevel::High;
+    assert!(
+        unsupported_provider
+            .build_request_body(&unsupported)
+            .get("reasoning_effort")
+            .is_none()
+    );
 }
 
 #[test]

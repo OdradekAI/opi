@@ -271,9 +271,15 @@ fn present_provider_error(error: &ProviderError) -> String {
         }
         ProviderError::StreamError(_) => "authentication stream failed",
         ProviderError::AuthFailed(_) => "authentication failed",
-        ProviderError::CredentialNeeded { .. } => "credential is still required",
-        ProviderError::CredentialRevoked { .. } => "credential was denied or expired",
-        ProviderError::AccountIdMissing { .. } => "credential is missing its account id",
+        ProviderError::CredentialNeeded { provider_id } => {
+            return format!("credential is still required for provider '{provider_id}'");
+        }
+        ProviderError::CredentialRevoked { provider_id } => {
+            return format!("credential was denied or expired for provider '{provider_id}'");
+        }
+        ProviderError::AccountIdMissing { provider_id } => {
+            return format!("credential for provider '{provider_id}' is missing its account id");
+        }
         ProviderError::Network(_) => "authentication network request failed",
         ProviderError::Config(message) if message.starts_with("credential store") => {
             "credential store operation failed"
@@ -283,8 +289,9 @@ fn present_provider_error(error: &ProviderError) -> String {
         | ProviderError::WireCompatMismatch { .. } => "authentication configuration failed",
         ProviderError::ProviderSide(_) => "authentication provider failed",
         ProviderError::UnsupportedCapability(_) => "authentication is not supported",
-        ProviderError::Cancelled | ProviderError::LoginCancelled { .. } => {
-            "authentication cancelled"
+        ProviderError::Cancelled => "authentication cancelled",
+        ProviderError::LoginCancelled { provider_id } => {
+            return format!("authentication cancelled for provider '{provider_id}'");
         }
     }
     .to_owned()
@@ -312,14 +319,52 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn oauth_login_restores_terminal_after_flow_failure() {
+    async fn login_terminal_guard_suspends_then_resumes_once() {
         let mut terminal = RecordingTerminal::default();
         let guard = LoginTerminalGuard::new(&mut terminal).unwrap();
-        let flow_result = Err::<(), _>(ProviderError::Network("redacted".into()));
         let resume_result = guard.resume();
 
-        assert!(flow_result.is_err());
         assert!(resume_result.is_ok());
         assert_eq!(terminal.transitions, ["suspend", "resume"]);
+    }
+
+    #[test]
+    fn provider_auth_errors_name_the_canonical_provider_without_secrets() {
+        const ENV_CANARY: &str = "OPI_AUTH_ERROR_ENV_CANARY";
+        const SECRET_CANARY: &str = "auth-error-secret-canary";
+
+        let cases = [
+            (
+                ProviderError::CredentialNeeded {
+                    provider_id: "anthropic".into(),
+                },
+                "credential is still required for provider 'anthropic'",
+            ),
+            (
+                ProviderError::CredentialRevoked {
+                    provider_id: "openai-codex".into(),
+                },
+                "credential was denied or expired for provider 'openai-codex'",
+            ),
+            (
+                ProviderError::AccountIdMissing {
+                    provider_id: "github-copilot".into(),
+                },
+                "credential for provider 'github-copilot' is missing its account id",
+            ),
+            (
+                ProviderError::LoginCancelled {
+                    provider_id: "openai-codex".into(),
+                },
+                "authentication cancelled for provider 'openai-codex'",
+            ),
+        ];
+
+        for (error, expected) in cases {
+            let message = present_provider_error(&error);
+            assert_eq!(message, expected);
+            assert!(!message.contains(ENV_CANARY), "{message}");
+            assert!(!message.contains(SECRET_CANARY), "{message}");
+        }
     }
 }

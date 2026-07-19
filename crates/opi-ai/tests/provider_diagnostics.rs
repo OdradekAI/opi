@@ -357,12 +357,9 @@ fn validate_allows_image_on_image_capable_model() {
 }
 
 #[test]
-fn validate_rejects_thinking_on_non_thinking_model_as_capability() {
-    // Thinking capability is handled at the harness/config layer, which clamps
-    // thinking off for non-thinking models (spec: "reject or clamp where
-    // possible"). The opi-ai preflight therefore does NOT reject thinking, so a
-    // text-only model receiving a thinking request passes preflight here and is
-    // clamped downstream. This pins that division of labor.
+fn validate_allows_unsupported_thinking_on_chat_wire_for_serializer_omission() {
+    // Chat and Responses serializers omit reasoning when the selected thinking
+    // level is unsupported, so their shared preflight must allow the request.
     let provider =
         MockProvider::new_with_models("mock", vec![text_only_model("text-only")], vec![]);
     let mut request = image_request("mock:text-only");
@@ -377,10 +374,8 @@ fn validate_rejects_thinking_on_non_thinking_model_as_capability() {
         }],
         timestamp_ms: 0,
     })];
-    assert!(matches!(
-        validate_request_capabilities(&provider, &request),
-        Err(ProviderError::UnsupportedCapability(_))
-    ));
+    validate_request_capabilities(&provider, &request)
+        .expect("Chat serializer owns unsupported reasoning omission");
 }
 
 #[test]

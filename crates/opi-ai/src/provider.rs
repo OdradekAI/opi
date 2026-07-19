@@ -1,8 +1,10 @@
 //! LLM provider abstraction (S8.1).
 
 use std::pin::Pin;
+use std::str::FromStr;
 
 use futures_core::Stream;
+use reqwest::header::{HeaderName, HeaderValue};
 use tokio_util::sync::CancellationToken;
 
 use crate::credential::BoxAuthFuture;
@@ -171,7 +173,7 @@ pub fn validate_extra_headers(headers: &[(String, String)]) -> Result<(), Provid
         "content-type",
     ];
 
-    for (name, _value) in headers {
+    for (name, value) in headers {
         if name.is_empty() {
             return Err(ProviderError::RequestFailed(
                 "extra_headers contains an empty header name".into(),
@@ -182,6 +184,16 @@ pub fn validate_extra_headers(headers: &[(String, String)]) -> Result<(), Provid
                 "extra_headers name contains invalid characters: {name:?}"
             )));
         }
+        HeaderName::from_str(name).map_err(|_| {
+            ProviderError::RequestFailed(format!(
+                "extra_headers name contains invalid characters: {name:?}"
+            ))
+        })?;
+        HeaderValue::from_str(value).map_err(|_| {
+            ProviderError::RequestFailed(format!(
+                "extra_headers contains an invalid value for header '{name}'"
+            ))
+        })?;
         let lower = name.to_ascii_lowercase();
         if RESERVED.contains(&lower.as_str()) {
             return Err(ProviderError::RequestFailed(format!(
@@ -215,10 +227,9 @@ impl Default for ThinkingConfig {
 /// Returns `Err(UnsupportedCapability)` for a known text-only model receiving
 /// image input, before any network call is attempted. Unknown model IDs are
 /// left to the provider implementation so configured custom deployments can
-/// still work (no preflight). Thinking and tool capability are handled at the
-/// harness/config layer (`CodingHarness` clamps thinking off for non-thinking
-/// models per the spec's "reject or clamp where possible"), so they are not
-/// re-preflighted here.
+/// still work (no preflight). Unsupported thinking levels remain preflight
+/// errors for strict wires. OpenAI Chat and Responses defer them to their
+/// serializers, which omit the unsupported reasoning field.
 pub fn validate_request_capabilities(
     provider: &dyn Provider,
     request: &Request,
@@ -262,10 +273,15 @@ pub fn validate_request_capabilities(
             },
             other => ProviderError::Config(other.to_string()),
         })?;
-        model
-            .thinking_level_map
-            .resolve(request.thinking.level)
-            .map_err(|error| ProviderError::UnsupportedCapability(error.to_string()))?;
+        if !matches!(
+            model.wire_api,
+            WireApi::OpenAiCompletions | WireApi::OpenAiResponses
+        ) {
+            model
+                .thinking_level_map
+                .resolve(request.thinking.level)
+                .map_err(|error| ProviderError::UnsupportedCapability(error.to_string()))?;
+        }
     }
 
     Ok(())

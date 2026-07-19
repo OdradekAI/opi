@@ -70,6 +70,8 @@ struct ConcretePresenter {
     manual_calls: AtomicUsize,
     success_count: AtomicUsize,
     events: Arc<Mutex<Vec<&'static str>>>,
+    failure_reasons: Mutex<Vec<String>>,
+    cancel_on_auth_url: bool,
     cancel_on_device_present: bool,
     cancel_login: tokio::sync::Notify,
 }
@@ -85,6 +87,8 @@ impl ConcretePresenter {
             manual_calls: AtomicUsize::new(0),
             success_count: AtomicUsize::new(0),
             events,
+            failure_reasons: Mutex::new(Vec::new()),
+            cancel_on_auth_url: false,
             cancel_on_device_present: false,
             cancel_login: tokio::sync::Notify::new(),
         }
@@ -100,6 +104,8 @@ impl ConcretePresenter {
             manual_calls: AtomicUsize::new(0),
             success_count: AtomicUsize::new(0),
             events,
+            failure_reasons: Mutex::new(Vec::new()),
+            cancel_on_auth_url: false,
             cancel_on_device_present: false,
             cancel_login: tokio::sync::Notify::new(),
         }
@@ -123,6 +129,9 @@ impl LoginPresenter for ConcretePresenter {
         url: &'a str,
     ) -> BoxAuthFuture<'a, Result<(), ProviderError>> {
         self.captured_urls.lock().unwrap().push(url.to_owned());
+        if self.cancel_on_auth_url {
+            self.cancel_login.notify_one();
+        }
         let fail = self.fail_auth_url;
         Box::pin(async move {
             if fail {
@@ -171,7 +180,9 @@ impl LoginPresenter for ConcretePresenter {
         self.success_count.fetch_add(1, Ordering::SeqCst);
     }
 
-    fn notify_failure(&self, _reason: &str) {}
+    fn notify_failure(&self, reason: &str) {
+        self.failure_reasons.lock().unwrap().push(reason.to_owned());
+    }
 }
 
 fn concrete_store(
@@ -812,7 +823,7 @@ async fn dispatcher_restores_terminal_once_on_every_concrete_exit() {
         )
         .await,
         AuthCommandOutcome::Failed {
-            message: "authentication cancelled".to_owned(),
+            message: "authentication cancelled for provider 'openai-codex'".to_owned(),
         }
     );
     assert_one_terminal_cycle(&terminal);
@@ -843,7 +854,7 @@ async fn dispatcher_restores_terminal_once_on_every_concrete_exit() {
         )
         .await,
         AuthCommandOutcome::Failed {
-            message: "authentication cancelled".to_owned(),
+            message: "authentication cancelled for provider 'openai-codex'".to_owned(),
         }
     );
     let requests = server.received_requests().await.unwrap();
@@ -987,6 +998,92 @@ async fn dispatcher_restores_terminal_once_on_every_concrete_exit() {
             .is_err()
     );
     drop(login);
+    assert_one_terminal_cycle(&terminal);
+}
+
+#[tokio::test]
+async fn browser_and_copilot_cancellation_restore_terminal_without_persistence() {
+    for provider_id in ["anthropic", "openai-codex"] {
+        let server = MockServer::start().await;
+        let root = tempfile::tempdir().unwrap();
+        let (store, _backend, events) = concrete_store(root.path());
+        let presenter = ConcretePresenter {
+            cancel_on_auth_url: true,
+            manual_code: None,
+            ..ConcretePresenter::browser("unused", events)
+        };
+        let mut terminal = RecordingTerminal::default();
+
+        let outcome = dispatch_auth_command(
+            &format!("/login {provider_id}"),
+            &mut terminal,
+            concrete_services(&store, &presenter, &server),
+        )
+        .await;
+
+        assert_eq!(
+            outcome,
+            AuthCommandOutcome::Failed {
+                message: format!("authentication cancelled for provider '{provider_id}'"),
+            }
+        );
+        assert_eq!(
+            presenter.failure_reasons.lock().unwrap().as_slice(),
+            &["login cancelled"]
+        );
+        assert!(store.read(provider_id).await.unwrap().is_none());
+        assert!(
+            server.received_requests().await.unwrap().is_empty(),
+            "{provider_id} exchanged a code after cancellation"
+        );
+        assert_one_terminal_cycle(&terminal);
+    }
+
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/copilot/device/code"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "device_code": "copilot-device",
+            "user_code": "COPILOT-CODE",
+            "verification_uri": "https://example.invalid/device",
+            "interval": 60
+        })))
+        .mount(&server)
+        .await;
+    let root = tempfile::tempdir().unwrap();
+    let (store, _backend, events) = concrete_store(root.path());
+    let presenter = ConcretePresenter {
+        cancel_on_device_present: true,
+        ..ConcretePresenter::device(events)
+    };
+    let mut terminal = RecordingTerminal::default();
+
+    let outcome = dispatch_auth_command(
+        "/login github-copilot",
+        &mut terminal,
+        concrete_services(&store, &presenter, &server),
+    )
+    .await;
+
+    assert_eq!(
+        outcome,
+        AuthCommandOutcome::Failed {
+            message: "authentication cancelled for provider 'github-copilot'".to_owned(),
+        }
+    );
+    assert_eq!(
+        presenter.failure_reasons.lock().unwrap().as_slice(),
+        &["login cancelled"]
+    );
+    assert!(store.read("github-copilot").await.unwrap().is_none());
+    assert!(
+        server
+            .received_requests()
+            .await
+            .unwrap()
+            .iter()
+            .all(|request| request.url.path() != "/copilot/token")
+    );
     assert_one_terminal_cycle(&terminal);
 }
 
@@ -1316,18 +1413,20 @@ async fn interactive_auth_help_is_discoverable_through_dispatcher() {
     let rpc = run_rpc_stdio_capture("phase14_rpc_run_stdio_child");
 
     assert_eq!(json["exit_code"], ExitCode::AuthFailure as i32);
-    assert!(
-        json["stdout"]
-            .as_str()
-            .unwrap()
-            .contains("\"type\":\"CredentialNeeded\"")
+    let json_remediations: Vec<_> = json["stdout"]
+        .as_str()
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+        .filter(|line| line["type"] == "CredentialNeeded")
+        .collect();
+    assert_eq!(
+        json_remediations.len(),
+        1,
+        "NDJSON must emit exactly one CredentialNeeded event"
     );
-    assert!(
-        json["stdout"]
-            .as_str()
-            .unwrap()
-            .contains("/login anthropic")
-    );
+    assert_eq!(json_remediations[0]["provider_id"], "anthropic");
+    assert_eq!(json_remediations[0]["remediation"], "/login anthropic");
     assert_eq!(text["exit_code"], ExitCode::AuthFailure as i32);
     assert!(text["stderr"].as_str().unwrap().contains("anthropic"));
     assert!(
@@ -1336,10 +1435,16 @@ async fn interactive_auth_help_is_discoverable_through_dispatcher() {
             .unwrap()
             .contains("/login anthropic")
     );
-    let remediation = rpc
+    let rpc_remediations: Vec<_> = rpc
         .iter()
-        .find(|line| line["type"] == "CredentialNeeded")
-        .expect("RpcRunner::run emits typed credential remediation");
+        .filter(|line| line["type"] == "CredentialNeeded")
+        .collect();
+    assert_eq!(
+        rpc_remediations.len(),
+        1,
+        "RPC must emit exactly one CredentialNeeded event"
+    );
+    let remediation = rpc_remediations[0];
     assert_eq!(remediation["provider_id"], "anthropic");
     assert_eq!(remediation["remediation"], "/login anthropic");
 

@@ -76,6 +76,42 @@ struct DoctorPresenceBackend {
     presence_calls: Arc<AtomicUsize>,
 }
 
+struct DoctorOperationalProbeBackend;
+
+impl opi_coding_agent::credential_store::KeyringBackend for DoctorOperationalProbeBackend {
+    fn get(
+        &self,
+        service: &str,
+        _provider_id: &str,
+    ) -> Result<Option<String>, opi_coding_agent::credential_store::BackendError> {
+        assert_eq!(service, "opi.presence");
+        Err(opi_coding_agent::credential_store::BackendError::Other(
+            "credential service access denied".to_owned(),
+        ))
+    }
+
+    fn set(
+        &self,
+        _service: &str,
+        _provider_id: &str,
+        _value: &str,
+    ) -> Result<(), opi_coding_agent::credential_store::BackendError> {
+        Err(opi_coding_agent::credential_store::BackendError::Other(
+            "unused set".to_owned(),
+        ))
+    }
+
+    fn delete(
+        &self,
+        _service: &str,
+        _provider_id: &str,
+    ) -> Result<(), opi_coding_agent::credential_store::BackendError> {
+        Err(opi_coding_agent::credential_store::BackendError::Other(
+            "unused delete".to_owned(),
+        ))
+    }
+}
+
 impl opi_coding_agent::credential_store::KeyringBackend for DoctorPresenceBackend {
     fn get(
         &self,
@@ -399,6 +435,229 @@ fn provider_scope_credential_absent_is_warning() {
     // Missing credentials is a warning, not an error -> still exit 0.
     assert!(!report.has_errors());
     assert_eq!(report.exit_code(), 0);
+}
+
+#[test]
+fn provider_scope_uses_live_oauth_subscription_and_custom_availability() {
+    use opi_ai::{AuthScheme, CredentialSource};
+    use opi_coding_agent::config::CustomProviderConfig;
+
+    let dir = tempfile::tempdir().unwrap();
+    let mut custom_config = test_config("acme:model");
+    custom_config.providers.custom.insert(
+        "acme".into(),
+        CustomProviderConfig {
+            id: "acme".into(),
+            name: "Acme".into(),
+            base_url: Some("https://api.acme.example".into()),
+            api_key_env: "ACME_API_KEY".into(),
+            auth_scheme: AuthScheme::Bearer,
+            proxy: None,
+            headers: Vec::new(),
+            models: Vec::new(),
+        },
+    );
+
+    let cases = [
+        (
+            test_config("anthropic:claude-test-model"),
+            HashMap::from([(
+                "ANTHROPIC_OAUTH_TOKEN",
+                "oauth-env-canary-DO-NOT-LEAK".to_owned(),
+            )]),
+            HashMap::new(),
+            "env ANTHROPIC_OAUTH_TOKEN",
+        ),
+        (
+            test_config("github-copilot:gpt-4.1"),
+            HashMap::new(),
+            HashMap::new(),
+            "keychain opi:github-copilot",
+        ),
+        (
+            test_config("openai-codex:gpt-5.6-sol"),
+            HashMap::new(),
+            HashMap::new(),
+            "keychain opi:openai-codex",
+        ),
+        (
+            custom_config.clone(),
+            HashMap::from([("ACME_API_KEY", "custom-env-canary-DO-NOT-LEAK".to_owned())]),
+            HashMap::new(),
+            "env ACME_API_KEY",
+        ),
+        (
+            custom_config,
+            HashMap::new(),
+            HashMap::from([(
+                "acme".to_owned(),
+                CredentialSource::Present {
+                    label: "fake custom store".into(),
+                },
+            )]),
+            "keychain opi:acme",
+        ),
+    ];
+
+    for (config, env_values, store_probe, expected_probe) in cases {
+        let env = |name: &str| env_values.get(name).cloned();
+        let report = run_doctor(
+            &[DoctorScope::Provider],
+            &DoctorContext {
+                store_probe: &store_probe,
+                ..ctx(&config, dir.path(), &env)
+            },
+        );
+        assert!(
+            !report
+                .entries
+                .iter()
+                .any(|entry| entry.diagnostic.code == "doctor_provider_unknown"),
+            "{} was classified as unknown: {:?}",
+            config.defaults.model,
+            report.entries
+        );
+        let credential = report
+            .entries
+            .iter()
+            .find(|entry| {
+                matches!(
+                    entry.diagnostic.code,
+                    "doctor_provider_credentials" | "doctor_provider_credential_backend"
+                )
+            })
+            .unwrap_or_else(|| panic!("{} has no credential diagnostic", config.defaults.model));
+        assert_eq!(
+            credential
+                .diagnostic
+                .details
+                .as_ref()
+                .and_then(|details| details["credential_probe"].as_str()),
+            Some(expected_probe),
+            "{}",
+            config.defaults.model
+        );
+        let rendered = format!("{}{}", format_text(&report), format_json(&report));
+        for secret in [
+            "oauth-env-canary-DO-NOT-LEAK",
+            "custom-env-canary-DO-NOT-LEAK",
+        ] {
+            assert!(!rendered.contains(secret), "secret leaked: {rendered}");
+        }
+    }
+}
+
+#[tokio::test]
+async fn provider_scope_uses_stored_kind_for_precedence_and_wrong_kind_rejection() {
+    use opi_ai::credential::{Credential, CredentialStore};
+    use opi_ai::{AuthScheme, ModelCapabilities, ModelInfo, WireApi};
+    use opi_coding_agent::config::CustomProviderConfig;
+    use opi_coding_agent::credential_store::{FakeKeyringBackend, KeychainCredentialStore};
+    use secrecy::SecretString;
+
+    fn secret(value: &str) -> SecretString {
+        SecretString::new(value.to_owned().into_boxed_str())
+    }
+
+    let mut custom_config = test_config("acme:model");
+    custom_config.providers.custom.insert(
+        "acme".into(),
+        CustomProviderConfig {
+            id: "acme".into(),
+            name: "Acme".into(),
+            base_url: Some("https://api.acme.example".into()),
+            api_key_env: "ACME_API_KEY".into(),
+            auth_scheme: AuthScheme::Bearer,
+            proxy: None,
+            headers: Vec::new(),
+            models: vec![ModelInfo::new(
+                "model",
+                "Model",
+                WireApi::OpenAiCompletions,
+                ModelCapabilities::new(8_192, 1_024),
+            )],
+        },
+    );
+
+    let dir = tempfile::tempdir().unwrap();
+    let store = KeychainCredentialStore::new(
+        Box::new(FakeKeyringBackend::new()),
+        dir.path().to_path_buf(),
+    );
+    store
+        .write("anthropic", &Credential::ApiKey(secret("stored-api-key")))
+        .await
+        .unwrap();
+    let anthropic_env = |name: &str| {
+        (name == "ANTHROPIC_OAUTH_TOKEN").then(|| "oauth-env-canary-DO-NOT-LEAK".to_owned())
+    };
+    let anthropic_report = run_doctor_with_store(
+        &[DoctorScope::Provider],
+        &ctx(
+            &test_config("anthropic:claude-test-model"),
+            dir.path(),
+            &anthropic_env,
+        ),
+        &store,
+    )
+    .await;
+    let anthropic_details = anthropic_report
+        .entries
+        .iter()
+        .find_map(|entry| entry.diagnostic.details.as_ref())
+        .expect("Anthropic credential details");
+    assert_eq!(
+        anthropic_details["credential_probe"], "env ANTHROPIC_OAUTH_TOKEN",
+        "stored API key must not mask the higher-precedence OAuth environment source"
+    );
+
+    store
+        .write(
+            "acme",
+            &Credential::OAuthToken {
+                access: secret("custom-oauth-access"),
+                refresh: secret("custom-oauth-refresh"),
+                expires_at: None,
+                base_url: None,
+                account_id: None,
+            },
+        )
+        .await
+        .unwrap();
+    let custom_env =
+        |name: &str| (name == "ACME_API_KEY").then(|| "custom-api-canary-DO-NOT-LEAK".to_owned());
+    let custom_report = run_doctor_with_store(
+        &[DoctorScope::Provider],
+        &ctx(&custom_config, dir.path(), &custom_env),
+        &store,
+    )
+    .await;
+    let custom_details = custom_report
+        .entries
+        .iter()
+        .find_map(|entry| entry.diagnostic.details.as_ref())
+        .expect("custom credential details");
+    assert_eq!(custom_details["credentials_present"], false);
+    assert_eq!(
+        custom_details["credential_probe"],
+        "keychain opi:acme contains oauth_token; expected api_key"
+    );
+
+    let rendered = format!(
+        "{}{}{}{}",
+        format_text(&anthropic_report),
+        format_json(&anthropic_report),
+        format_text(&custom_report),
+        format_json(&custom_report)
+    );
+    for canary in [
+        "oauth-env-canary-DO-NOT-LEAK",
+        "custom-api-canary-DO-NOT-LEAK",
+        "custom-oauth-access",
+        "custom-oauth-refresh",
+    ] {
+        assert!(!rendered.contains(canary), "secret leaked: {rendered}");
+    }
 }
 
 #[test]
@@ -1259,6 +1518,56 @@ async fn doctor_presence_probe_never_reads_secret() {
     assert!(format_text(&report).contains("credentials present"));
     assert_eq!(secret_get_calls.load(Ordering::SeqCst), 0);
     assert!(presence_calls.load(Ordering::SeqCst) > 0);
+}
+
+#[tokio::test]
+async fn doctor_fails_closed_on_operational_and_corrupt_store_probes_with_env_present() {
+    use opi_coding_agent::credential_store::{
+        FakeKeyringBackend, KEYCHAIN_PRESENCE_SERVICE, KeychainCredentialStore, KeyringBackend,
+    };
+
+    let env_canary = "doctor-fail-closed-env-canary-DO-NOT-LEAK";
+    let env_probe = |name: &str| (name == ANTHROPIC_ENV).then(|| env_canary.to_owned());
+    let config = test_config("anthropic:claude-test-model");
+
+    let corrupt = FakeKeyringBackend::new();
+    corrupt.seed_raw(KEYCHAIN_PRESENCE_SERVICE, "anthropic", "corrupt-marker");
+    let cases: [(&str, Box<dyn KeyringBackend>); 2] = [
+        ("operational", Box::new(DoctorOperationalProbeBackend)),
+        ("corrupt", Box::new(corrupt)),
+    ];
+
+    for (name, backend) in cases {
+        let dir = tempfile::tempdir().unwrap();
+        let store = KeychainCredentialStore::new(backend, dir.path().to_path_buf());
+        let report = run_doctor_with_store(
+            &[DoctorScope::Provider],
+            &ctx(&config, dir.path(), &env_probe),
+            &store,
+        )
+        .await;
+        let credential = report
+            .entries
+            .iter()
+            .find(|entry| {
+                matches!(
+                    entry.diagnostic.code,
+                    "doctor_provider_credentials" | "doctor_provider_credential_backend"
+                )
+            })
+            .unwrap_or_else(|| panic!("{name}: missing credential diagnostic"));
+        assert_eq!(
+            credential
+                .diagnostic
+                .details
+                .as_ref()
+                .expect("credential details")["credentials_present"],
+            false,
+            "{name}: fail-closed store probe must not use API-key env fallback"
+        );
+        let rendered = format!("{}{}", format_text(&report), format_json(&report));
+        assert!(!rendered.contains(env_canary), "{name}: {rendered}");
+    }
 }
 
 /// BackendUnavailable must be a *distinct* diagnostic from Absent (spec SC1:

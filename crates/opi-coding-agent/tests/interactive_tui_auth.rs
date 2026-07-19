@@ -454,9 +454,9 @@ async fn outer_tui_login_selection_cancel_does_not_retry() {
     assert_negative(&result);
     assert_last_system_message(
         &result,
-        "[authentication command failed: authentication cancelled]",
+        "[authentication command failed: authentication cancelled for provider 'openai-codex']",
     );
-    assert_eq!(presenter_counts(&evidence), (1, 0, 0, 0, 0));
+    assert_eq!(presenter_counts(&evidence), (1, 0, 0, 0, 1));
     assert_eq!(result.capture.terminal_transitions, ["suspend", "resume"]);
     assert!(server.received_requests().await.unwrap().is_empty());
     assert_eq!(result.store_writes, 0);
@@ -547,13 +547,46 @@ async fn outer_tui_store_failure_does_not_retry() {
         &result,
         "[authentication command failed: credential store operation failed]",
     );
-    assert_eq!(presenter_counts(&evidence), (0, 1, 1, 0, 0));
+    assert_eq!(presenter_counts(&evidence), (0, 1, 1, 0, 1));
     assert_eq!(result.capture.terminal_transitions, ["suspend", "resume"]);
     let requests = server.received_requests().await.unwrap();
     assert_eq!(requests.len(), 1);
     assert_eq!(requests[0].url.path(), "/anthropic/token");
     assert_eq!(result.store_writes, 0);
     assert!(!result.stored_anthropic);
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn outer_tui_terminal_suspension_failure_stops_before_oauth_or_store_work() {
+    let _lock = test_lock().await;
+    let server = MockServer::start().await;
+    let presenter = TestPresenter::browser("must-not-be-used");
+    let evidence = presenter.evidence();
+    let auth = auth_services(presenter, &server)
+        .with_terminal_failure(InteractiveTuiTestTerminalFailure::Suspend);
+    let result = run_outer(
+        credential_needed_then_success(),
+        &["normal prompt", "/login anthropic", "exit"],
+        auth,
+        false,
+    )
+    .await;
+
+    result
+        .result
+        .as_ref()
+        .expect("terminal suspension failure returns to the TUI");
+    assert_negative(&result);
+    assert_last_system_message(
+        &result,
+        "[authentication command failed: terminal suspension failed]",
+    );
+    assert_eq!(presenter_counts(&evidence), (0, 0, 0, 0, 0));
+    assert_eq!(result.capture.terminal_transitions, ["suspend", "resume"]);
+    assert!(server.received_requests().await.unwrap().is_empty());
+    assert_eq!(result.store_writes, 0);
+    assert!(!result.stored_anthropic);
+    assert!(!result.stored_codex);
 }
 
 #[tokio::test(flavor = "current_thread")]

@@ -269,6 +269,53 @@ async fn dedicated_codex_generates_fresh_uuid_v7_headers_without_session_id() {
 }
 
 #[tokio::test]
+async fn dedicated_codex_disabled_affinity_omits_user_session_everywhere() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/codex/responses"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string(
+                    "event: response.completed\ndata: {\"type\":\"response.completed\",\"response\":{\"id\":\"response-1\",\"model\":\"gpt-5.4\",\"output\":[],\"usage\":{\"input_tokens\":1,\"output_tokens\":1}}}\n\n",
+                )
+                .insert_header("content-type", "text/event-stream"),
+        )
+        .mount(&server)
+        .await;
+    let provider = OpenAiCodexResponsesProvider::new(
+        Arc::new(FixedAuth {
+            secret: SecretString::from("sentinel-access"),
+            base_url: Some(server.uri()),
+            account_id: Some("account-fixed".into()),
+        }),
+        None,
+        vec![model(None)],
+        Arc::new(HttpClient::new()),
+    );
+    let mut disabled = request();
+    disabled.cache_retention = CacheRetention::Disabled;
+    disabled.session_id = Some("user-session-must-not-leak".into());
+
+    assert!(drain(&provider, disabled).await.is_none());
+
+    let captured = server.received_requests().await.unwrap().remove(0);
+    let body: serde_json::Value = serde_json::from_slice(&captured.body).unwrap();
+    assert!(body.get("prompt_cache_key").is_none());
+    let session_id = captured.headers["session-id"].to_str().unwrap();
+    let request_id = captured.headers["x-client-request-id"].to_str().unwrap();
+    for generated in [session_id, request_id] {
+        assert_eq!(
+            uuid::Uuid::parse_str(generated).unwrap().get_version_num(),
+            7
+        );
+        assert_ne!(generated, "user-session-must-not-leak");
+    }
+    assert_ne!(session_id, request_id);
+    let rendered_headers = format!("{:?}", captured.headers);
+    assert!(!rendered_headers.contains("user-session-must-not-leak"));
+}
+
+#[tokio::test]
 async fn dedicated_codex_malformed_sse_never_surfaces_upstream_data() {
     const SENTINEL: &str = "sentinel-malformed-sse-secret";
     let server = MockServer::start().await;
@@ -415,6 +462,36 @@ async fn dedicated_codex_rejects_managed_header_overrides_before_http() {
             ),
             "{name}"
         );
+    }
+    assert!(server.received_requests().await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn dedicated_codex_rejects_invalid_header_names_and_values_before_http() {
+    let server = MockServer::start().await;
+    for (name, value) in [
+        ("bad header", "value"),
+        ("x-extra", "bad\nvalue"),
+        ("x-extra", "bad\rvalue"),
+        ("x-extra", "bad\0value"),
+    ] {
+        let provider = OpenAiCodexResponsesProvider::new(
+            Arc::new(FixedAuth {
+                secret: SecretString::from("sentinel-access"),
+                base_url: Some(server.uri()),
+                account_id: Some("account-fixed".into()),
+            }),
+            None,
+            vec![model(None)],
+            Arc::new(HttpClient::new()),
+        );
+        let mut request = request();
+        request.extra_headers.push((name.into(), value.into()));
+        let error = drain(&provider, request)
+            .await
+            .expect("invalid header must fail");
+        assert!(matches!(error, ProviderError::RequestFailed(_)));
+        assert!(!error.is_retryable());
     }
     assert!(server.received_requests().await.unwrap().is_empty());
 }

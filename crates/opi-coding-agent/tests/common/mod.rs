@@ -56,6 +56,7 @@ pub struct MockLoginPresenter {
     pub captured_urls: Arc<Mutex<Vec<String>>>,
     pub captured_device_codes: Arc<Mutex<Vec<(String, String)>>>,
     manual_code_rx: Arc<Mutex<Option<tokio::sync::oneshot::Receiver<String>>>>,
+    login_cancelled_rx: Arc<Mutex<Option<tokio::sync::oneshot::Receiver<()>>>>,
     pub notify_success_count: Arc<AtomicUsize>,
     pub notify_failure_reasons: Arc<Mutex<Vec<String>>>,
     /// Number of times `await_manual_code` was polled (so a test can prove a
@@ -63,6 +64,7 @@ pub struct MockLoginPresenter {
     /// calls it).
     pub manual_code_calls: Arc<AtomicUsize>,
     auth_url_notify: Arc<tokio::sync::Notify>,
+    device_code_notify: Arc<tokio::sync::Notify>,
 }
 
 impl MockLoginPresenter {
@@ -71,24 +73,45 @@ impl MockLoginPresenter {
             captured_urls: Arc::new(Mutex::new(Vec::new())),
             captured_device_codes: Arc::new(Mutex::new(Vec::new())),
             manual_code_rx: Arc::new(Mutex::new(None)),
+            login_cancelled_rx: Arc::new(Mutex::new(None)),
             notify_success_count: Arc::new(AtomicUsize::new(0)),
             notify_failure_reasons: Arc::new(Mutex::new(Vec::new())),
             manual_code_calls: Arc::new(AtomicUsize::new(0)),
             auth_url_notify: Arc::new(tokio::sync::Notify::new()),
+            device_code_notify: Arc::new(tokio::sync::Notify::new()),
         }
     }
 
     /// Install a manual code that `await_manual_code` resolves with. If never
     /// called, `await_manual_code` stays pending (callback/timeout win).
     pub fn supply_manual_code(&self, code: impl Into<String>) {
+        let tx = self.manual_code_sender();
+        let _ = tx.send(code.into());
+    }
+
+    /// Prepare a manual-code receiver and return its sender so a test can
+    /// derive the pasted value from the dynamically generated authorize URL.
+    pub fn manual_code_sender(&self) -> tokio::sync::oneshot::Sender<String> {
         let (tx, rx) = tokio::sync::oneshot::channel();
         *self.manual_code_rx.lock().unwrap() = Some(rx);
-        let _ = tx.send(code.into());
+        tx
+    }
+
+    /// Prepare a cancellation receiver and return its sender.
+    pub fn login_cancelled_sender(&self) -> tokio::sync::oneshot::Sender<()> {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        *self.login_cancelled_rx.lock().unwrap() = Some(rx);
+        tx
     }
 
     /// Wait until `present_auth_url` has been called at least once.
     pub async fn wait_for_auth_url(&self) {
         self.auth_url_notify.notified().await;
+    }
+
+    /// Wait until `present_device_code` has been called at least once.
+    pub async fn wait_for_device_code(&self) {
+        self.device_code_notify.notified().await;
     }
 
     /// First captured authorize URL, if any.
@@ -124,11 +147,26 @@ impl LoginPresenter for MockLoginPresenter {
         verification_uri: &'a str,
     ) -> BoxAuthFuture<'a, Result<(), ProviderError>> {
         let codes = self.captured_device_codes.clone();
+        let notify = self.device_code_notify.clone();
         let user_code = user_code.to_owned();
         let uri = verification_uri.to_owned();
         Box::pin(async move {
             codes.lock().unwrap().push((user_code, uri));
+            notify.notify_one();
             Ok(())
+        })
+    }
+
+    fn await_login_cancelled<'a>(&'a self) -> BoxAuthFuture<'a, Result<(), ProviderError>> {
+        let slot = self.login_cancelled_rx.clone();
+        Box::pin(async move {
+            let rx = slot.lock().unwrap().take();
+            match rx {
+                Some(rx) => rx
+                    .await
+                    .map_err(|_| ProviderError::Config("login cancellation sender dropped".into())),
+                None => std::future::pending::<Result<(), ProviderError>>().await,
+            }
         })
     }
 

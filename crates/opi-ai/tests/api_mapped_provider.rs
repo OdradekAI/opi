@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 use futures_util::StreamExt;
 use opi_ai::auth::{AuthResolver, AuthScheme, ResolvedAuth};
 use opi_ai::credential::BoxAuthFuture;
-use opi_ai::model_info::{ModelCapabilities, WireApi, WireCompat};
+use opi_ai::model_info::{ModelCapabilities, ModelInfoError, WireApi, WireCompat};
 use opi_ai::provider::{
     CacheRetention, EventStream, ModelInfo, Provider, ProviderError, Request, ThinkingConfig,
 };
@@ -257,7 +257,58 @@ fn wire_compat_mismatch_fails_at_construction() {
     let mut mismatched = model("chat", WireApi::OpenAiCompletions);
     mismatched.compat = WireCompat::AnthropicMessages(Default::default());
     let error = ApiMappedProvider::try_new("acme", vec![mismatched], BTreeMap::new()).unwrap_err();
-    assert!(error.to_string().contains("compatibility"));
+    assert!(matches!(
+        error,
+        opi_ai::ApiMapError::InvalidModel {
+            provider_id,
+            model_id,
+            source: ModelInfoError::WireCompatMismatch { .. },
+        } if provider_id == "acme" && model_id == "chat"
+    ));
+}
+
+#[test]
+fn zero_model_token_limits_fail_at_construction() {
+    let cases = [
+        (
+            "context_window",
+            ModelCapabilities::new(0, 16_384).with_streaming(true),
+        ),
+        (
+            "max_output_tokens",
+            ModelCapabilities::new(128_000, 0).with_streaming(true),
+        ),
+    ];
+
+    for (field, capabilities) in cases {
+        let invalid = ModelInfo::new(
+            format!("zero-{field}"),
+            "Invalid",
+            WireApi::OpenAiCompletions,
+            capabilities,
+        );
+        let error = ApiMappedProvider::try_new("acme", vec![invalid], BTreeMap::new()).unwrap_err();
+        assert!(matches!(
+            error,
+            opi_ai::ApiMapError::InvalidModel {
+                provider_id,
+                model_id,
+                source: ModelInfoError::InvalidCapabilities {
+                    field: invalid_field,
+                    ..
+                },
+            } if provider_id == "acme"
+                && model_id == format!("zero-{field}")
+                && invalid_field == field
+        ));
+    }
+}
+
+#[test]
+fn detached_default_model_capabilities_remain_constructible() {
+    let capabilities = ModelCapabilities::default();
+    assert_eq!(capabilities.context_window, 0);
+    assert_eq!(capabilities.max_output_tokens, 0);
 }
 
 #[tokio::test]
@@ -322,7 +373,88 @@ fn mapped_provider_rejects_duplicate_models_routes_and_route_id_mismatch() {
 }
 
 #[test]
-fn provider_headers_separate_configured_and_request_values() {
+fn mapped_provider_rejects_route_model_with_different_capabilities() {
+    let catalog_model = model("chat", WireApi::OpenAiCompletions);
+    let route_model = ModelInfo::new(
+        "chat",
+        "chat",
+        WireApi::OpenAiCompletions,
+        ModelCapabilities::new(64_000, 8_192).with_streaming(true),
+    );
+    let routes = [(
+        WireApi::OpenAiCompletions,
+        Box::new(RecordingRoute::new(
+            "acme",
+            vec![route_model],
+            Arc::new(CountingResolver::default()),
+            Arc::new(Mutex::new(Vec::new())),
+        )) as Box<dyn Provider>,
+    )];
+
+    let error = ApiMappedProvider::try_new("acme", vec![catalog_model], routes).unwrap_err();
+    assert!(matches!(
+        error,
+        opi_ai::ApiMapError::RouteCatalogMismatch {
+            provider_id,
+            wire_api: WireApi::OpenAiCompletions,
+        } if provider_id == "acme"
+    ));
+}
+
+#[test]
+fn mapped_provider_rejects_route_catalog_subsets_and_supersets() {
+    let catalog = vec![
+        model("chat-a", WireApi::OpenAiCompletions),
+        model("chat-b", WireApi::OpenAiCompletions),
+    ];
+    let route_catalogs = [
+        vec![catalog[0].clone()],
+        vec![
+            catalog[0].clone(),
+            catalog[1].clone(),
+            model("chat-extra", WireApi::OpenAiCompletions),
+        ],
+    ];
+
+    for route_catalog in route_catalogs {
+        let routes = [(
+            WireApi::OpenAiCompletions,
+            Box::new(RecordingRoute::new(
+                "acme",
+                route_catalog,
+                Arc::new(CountingResolver::default()),
+                Arc::new(Mutex::new(Vec::new())),
+            )) as Box<dyn Provider>,
+        )];
+        let error = ApiMappedProvider::try_new("acme", catalog.clone(), routes).unwrap_err();
+        assert!(matches!(
+            error,
+            opi_ai::ApiMapError::RouteCatalogMismatch {
+                provider_id,
+                wire_api: WireApi::OpenAiCompletions,
+            } if provider_id == "acme"
+        ));
+    }
+}
+
+#[test]
+fn provider_headers_reject_all_reserved_configured_and_request_names() {
+    const RESERVED_NAMES: [&str; 13] = [
+        "authorization",
+        "x-api-key",
+        "api-key",
+        "anthropic-version",
+        "anthropic-beta",
+        "content-type",
+        "chatgpt-account-id",
+        "openai-beta",
+        "session-id",
+        "session_id",
+        "x-client-request-id",
+        "x-session-affinity",
+        "x-initiator",
+    ];
+
     let headers = ProviderHeaders::try_new(vec![("X-Acme".into(), "opi".into())]).unwrap();
     let merged = headers
         .merge_request(
@@ -332,14 +464,7 @@ fn provider_headers_separate_configured_and_request_values() {
         .unwrap();
     assert_eq!(merged.len(), 3);
 
-    for reserved in [
-        "authorization",
-        "x-api-key",
-        "api-key",
-        "anthropic-version",
-        "content-type",
-        "chatgpt-account-id",
-    ] {
+    for reserved in RESERVED_NAMES {
         assert!(ProviderHeaders::try_new(vec![(reserved.into(), "x".into())]).is_err());
         assert!(
             headers
@@ -352,7 +477,7 @@ fn provider_headers_separate_configured_and_request_values() {
 }
 
 #[tokio::test]
-async fn concrete_route_uses_auth_model_provider_base_precedence_and_revocation_typing() {
+async fn concrete_custom_route_uses_auth_model_provider_base_precedence_and_static_auth_typing() {
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -380,7 +505,9 @@ async fn concrete_route_uses_auth_model_provider_base_precedence_and_revocation_
     let default_server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/v1/messages"))
-        .respond_with(ResponseTemplate::new(403).set_body_string("must-not-surface"))
+        .respond_with(
+            ResponseTemplate::new(403).set_body_string("echoed-key-canary-must-not-surface"),
+        )
         .mount(&auth_server)
         .await;
     let calls = Arc::new(AtomicUsize::new(0));
@@ -409,10 +536,9 @@ async fn concrete_route_uses_auth_model_provider_base_precedence_and_revocation_
         .await
         .unwrap()
         .unwrap_err();
-    assert!(matches!(
-        error,
-        ProviderError::CredentialRevoked { ref provider_id } if provider_id == "acme"
-    ));
+    assert!(matches!(error, ProviderError::AuthFailed(_)));
+    let rendered = format!("{error:?} {error}");
+    assert!(!rendered.contains("echoed-key-canary-must-not-surface"));
     assert_eq!(calls.load(Ordering::SeqCst), 1);
     let requests = auth_server.received_requests().await.unwrap();
     assert_eq!(requests.len(), 1);

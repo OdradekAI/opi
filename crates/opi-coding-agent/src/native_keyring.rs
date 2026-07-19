@@ -52,17 +52,19 @@ pub fn install_native_keyring() -> Result<NativeKeyringGuard, BackendError> {
 fn install_native_keyring_with(
     constructor: PlatformStoreConstructor,
 ) -> Result<NativeKeyringGuard, BackendError> {
-    {
-        let mut state = lock_install_state();
-        if state.leases > 0 {
-            state.leases += 1;
-            return Ok(NativeKeyringGuard { leased: true });
-        }
+    let mut state = lock_install_state();
+    if state.leases > 0 {
+        state.leases += 1;
+        return Ok(NativeKeyringGuard { leased: true });
     }
     let store = platform_store_with(constructor)?;
-    install_store(store)
+    keyring_core::set_default_store(Arc::clone(&store));
+    state.store = Some(store);
+    state.leases = 1;
+    Ok(NativeKeyringGuard { leased: true })
 }
 
+#[cfg(test)]
 pub(crate) fn install_store(
     store: Arc<keyring_core::CredentialStore>,
 ) -> Result<NativeKeyringGuard, BackendError> {
@@ -133,6 +135,8 @@ mod tests {
     };
 
     static PLATFORM_STORE_CONSTRUCTOR_CALLS: AtomicUsize = AtomicUsize::new(0);
+    static SLOW_STORE_CONSTRUCTOR_CALLS: AtomicUsize = AtomicUsize::new(0);
+    static RETRY_STORE_CONSTRUCTOR_CALLS: AtomicUsize = AtomicUsize::new(0);
 
     fn mock_platform_store_constructor() -> Result<Arc<keyring_core::CredentialStore>, String> {
         PLATFORM_STORE_CONSTRUCTOR_CALLS.fetch_add(1, Ordering::SeqCst);
@@ -149,6 +153,21 @@ mod tests {
     fn operational_platform_store_constructor() -> Result<Arc<keyring_core::CredentialStore>, String>
     {
         Err("permission denied".to_owned())
+    }
+
+    fn slow_platform_store_constructor() -> Result<Arc<keyring_core::CredentialStore>, String> {
+        SLOW_STORE_CONSTRUCTOR_CALLS.fetch_add(1, Ordering::SeqCst);
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        mock_platform_store_constructor()
+    }
+
+    fn fail_once_platform_store_constructor() -> Result<Arc<keyring_core::CredentialStore>, String>
+    {
+        if RETRY_STORE_CONSTRUCTOR_CALLS.fetch_add(1, Ordering::SeqCst) == 0 {
+            Err("first construction failed".to_owned())
+        } else {
+            mock_platform_store_constructor()
+        }
     }
 
     #[test]
@@ -223,6 +242,67 @@ mod tests {
         drop(first_guard);
         assert!(keyring_core::get_default_store().is_some());
         drop(second_guard);
+        assert!(keyring_core::get_default_store().is_none());
+    }
+
+    #[test]
+    fn concurrent_first_callers_construct_and_install_one_shared_store() {
+        let _serial = super::KEYRING_TEST_LOCK.lock().expect("keyring test lock");
+        keyring_core::unset_default_store();
+        SLOW_STORE_CONSTRUCTOR_CALLS.store(0, Ordering::SeqCst);
+        PLATFORM_STORE_CONSTRUCTOR_CALLS.store(0, Ordering::SeqCst);
+        let start = Arc::new(std::sync::Barrier::new(3));
+
+        let callers = (0..2)
+            .map(|_| {
+                let start = Arc::clone(&start);
+                std::thread::spawn(move || {
+                    start.wait();
+                    let guard = super::install_native_keyring_with(slow_platform_store_constructor)
+                        .expect("concurrent native install");
+                    let store_id = keyring_core::get_default_store()
+                        .expect("default store installed")
+                        .id();
+                    (guard, store_id)
+                })
+            })
+            .collect::<Vec<_>>();
+        start.wait();
+
+        let mut installed = callers
+            .into_iter()
+            .map(|caller| caller.join().expect("native install caller"))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            SLOW_STORE_CONSTRUCTOR_CALLS.load(Ordering::SeqCst),
+            1,
+            "initial store construction must be single-flight"
+        );
+        assert_eq!(installed[0].1, installed[1].1);
+        drop(installed.pop());
+        assert!(keyring_core::get_default_store().is_some());
+        drop(installed.pop());
+        assert!(keyring_core::get_default_store().is_none());
+    }
+
+    #[test]
+    fn failed_initial_construction_leaves_install_retryable() {
+        let _serial = super::KEYRING_TEST_LOCK.lock().expect("keyring test lock");
+        keyring_core::unset_default_store();
+        RETRY_STORE_CONSTRUCTOR_CALLS.store(0, Ordering::SeqCst);
+        PLATFORM_STORE_CONSTRUCTOR_CALLS.store(0, Ordering::SeqCst);
+
+        assert!(matches!(
+            super::install_native_keyring_with(fail_once_platform_store_constructor),
+            Err(super::BackendError::Other(reason)) if reason == "first construction failed"
+        ));
+        assert!(keyring_core::get_default_store().is_none());
+
+        let guard = super::install_native_keyring_with(fail_once_platform_store_constructor)
+            .expect("second construction retries");
+        assert_eq!(RETRY_STORE_CONSTRUCTOR_CALLS.load(Ordering::SeqCst), 2);
+        assert!(keyring_core::get_default_store().is_some());
+        drop(guard);
         assert!(keyring_core::get_default_store().is_none());
     }
 

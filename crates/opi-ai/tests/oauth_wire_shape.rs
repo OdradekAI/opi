@@ -8,10 +8,9 @@
 //! - Anthropic OAuth selects `authorization: Bearer` AND the required
 //!   `anthropic-beta: claude-code-20250219,oauth-2025-04-20` header, while API-key construction
 //!   keeps `x-api-key` and emits neither `authorization` nor the beta header.
-//! - A 401 on a Bearer (OAuth) credential maps to typed non-retryable
-//!   `ProviderError::CredentialRevoked`, dropping the body so an enterprise
-//!   proxy echoing the submitted Bearer cannot leak it; API-key 401 stays
-//!   `AuthFailed`.
+//! - A 401/403 on credential-managed routes maps to typed non-retryable
+//!   `ProviderError::CredentialRevoked`; static routes use bodyless
+//!   `AuthFailed`, independent of the header scheme.
 //!
 //! opi-ai tests use `StaticAuthResolver` (opi-ai cannot depend on
 //! opi-coding-agent's `AuthSource`); the factory + `AuthSource` + fake-store
@@ -25,10 +24,13 @@ use opi_ai::auth::{AuthResolver, AuthScheme, ResolvedAuth, StaticAuthResolver};
 use opi_ai::credential::BoxAuthFuture;
 use opi_ai::http::HttpClient;
 use opi_ai::message::{InputContent, Message, UserMessage};
+use opi_ai::mistral::mistral_provider;
 use opi_ai::openai_chat::OpenAiChatProvider;
 use opi_ai::openai_codex_responses::OpenAiCodexResponsesProvider;
+use opi_ai::openai_responses::OpenAiResponsesProvider;
+use opi_ai::openrouter::openrouter_provider;
 use opi_ai::provider::{CacheRetention, Provider, ProviderError, Request, ThinkingConfig};
-use opi_ai::{ModelCapabilities, ModelInfo, WireApi};
+use opi_ai::{ModelCapabilities, ModelInfo, ProviderHeaders, WireApi};
 use secrecy::SecretString;
 use tokio_util::sync::CancellationToken;
 use wiremock::matchers::method;
@@ -178,7 +180,7 @@ async fn anthropic_api_key_path_sends_xapi_key_no_bearer_no_beta() {
     );
 }
 
-// --- Revocation: Bearer 401 -> typed CredentialRevoked; ApiKey 401 unchanged ---
+// --- Explicit auth-invalid policy, independent of the credential scheme ---
 
 #[tokio::test]
 async fn anthropic_oauth_401_maps_to_credential_revoked() {
@@ -211,7 +213,7 @@ async fn anthropic_oauth_401_maps_to_credential_revoked() {
 }
 
 #[tokio::test]
-async fn anthropic_api_key_401_stays_authfailed() {
+async fn injected_anthropic_api_key_uses_managed_revocation_policy() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .respond_with(ResponseTemplate::new(401).set_body_string("auth error"))
@@ -230,10 +232,10 @@ async fn anthropic_api_key_401_stays_authfailed() {
         .await
         .expect("an event")
         .expect_err("401 yields an error");
-    assert!(
-        matches!(err, ProviderError::AuthFailed(_)),
-        "API-key 401 must stay AuthFailed, got {err:?}"
-    );
+    assert!(matches!(
+        err,
+        ProviderError::CredentialRevoked { ref provider_id } if provider_id == "anthropic"
+    ));
 }
 
 #[tokio::test]
@@ -273,8 +275,7 @@ async fn anthropic_oauth_forged_401_body_does_not_leak_into_display() {
     );
 }
 
-// --- Copilot (OpenAiChatProvider, Bearer) 401 -> CredentialRevoked ---
-// API-key OpenAI profiles keep AuthFailed (scheme==ApiKey).
+// --- Copilot (OpenAiChatProvider, managed credentials) 401 -> CredentialRevoked ---
 
 #[tokio::test]
 async fn copilot_chat_401_maps_to_credential_revoked() {
@@ -311,7 +312,7 @@ async fn copilot_chat_401_maps_to_credential_revoked() {
 }
 
 #[tokio::test]
-async fn openai_chat_api_key_401_stays_authfailed() {
+async fn injected_openai_chat_api_key_uses_managed_revocation_policy() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .respond_with(ResponseTemplate::new(401).set_body_string("unauthorized"))
@@ -336,10 +337,230 @@ async fn openai_chat_api_key_401_stays_authfailed() {
         .await
         .expect("an event")
         .expect_err("401 yields an error");
-    assert!(
-        matches!(err, ProviderError::AuthFailed(_)),
-        "API-key OpenAI 401 must stay AuthFailed, got {err:?}"
-    );
+    assert!(matches!(
+        err,
+        ProviderError::CredentialRevoked { ref provider_id } if provider_id == "openai"
+    ));
+}
+
+#[derive(Clone, Copy, Debug)]
+enum ReusableRoute {
+    Anthropic,
+    OpenAiChat,
+    OpenAiResponses,
+}
+
+fn reusable_route(
+    route: ReusableRoute,
+    credential_managed: bool,
+    server_uri: String,
+) -> (Box<dyn Provider>, String) {
+    let auth: Arc<dyn AuthResolver> = Arc::new(StaticAuthResolver::new(
+        AuthScheme::Bearer,
+        SecretString::from("bearer-auth-policy-token"),
+    ));
+    let client = Arc::new(HttpClient::new());
+    match (route, credential_managed) {
+        (ReusableRoute::Anthropic, true) => (
+            Box::new(AnthropicProvider::with_auth(auth, Some(server_uri), client)),
+            "anthropic:claude-sonnet-4-5-20250514".into(),
+        ),
+        (ReusableRoute::Anthropic, false) => {
+            let model = ModelInfo::new(
+                "model",
+                "Model",
+                WireApi::AnthropicMessages,
+                ModelCapabilities::new(8_192, 1_024).with_streaming(true),
+            );
+            (
+                Box::new(AnthropicProvider::for_route(
+                    auth,
+                    "custom-anthropic".into(),
+                    vec![model],
+                    Some(server_uri),
+                    ProviderHeaders::default(),
+                    client,
+                    false,
+                )),
+                "custom-anthropic:model".into(),
+            )
+        }
+        (ReusableRoute::OpenAiChat, true) => (
+            Box::new(OpenAiChatProvider::with_auth(
+                auth,
+                Some(server_uri),
+                Default::default(),
+                "openai".into(),
+                vec![],
+                client,
+            )),
+            "openai:gpt-4o".into(),
+        ),
+        (ReusableRoute::OpenAiChat, false) => {
+            let model = ModelInfo::new(
+                "model",
+                "Model",
+                WireApi::OpenAiCompletions,
+                ModelCapabilities::new(8_192, 1_024).with_streaming(true),
+            );
+            (
+                Box::new(OpenAiChatProvider::for_route(
+                    auth,
+                    Some(server_uri),
+                    "custom-chat".into(),
+                    ProviderHeaders::default(),
+                    vec![model],
+                    client,
+                )),
+                "custom-chat:model".into(),
+            )
+        }
+        (ReusableRoute::OpenAiResponses, true) => (
+            Box::new(OpenAiResponsesProvider::with_auth(
+                auth,
+                Some(server_uri),
+                Default::default(),
+                client,
+            )),
+            "openai-responses:gpt-4o".into(),
+        ),
+        (ReusableRoute::OpenAiResponses, false) => {
+            let model = ModelInfo::new(
+                "model",
+                "Model",
+                WireApi::OpenAiResponses,
+                ModelCapabilities::new(8_192, 1_024).with_streaming(true),
+            );
+            (
+                Box::new(OpenAiResponsesProvider::for_route(
+                    auth,
+                    Some(server_uri),
+                    "custom-responses".into(),
+                    ProviderHeaders::default(),
+                    vec![model],
+                    client,
+                )),
+                "custom-responses:model".into(),
+            )
+        }
+    }
+}
+
+#[tokio::test]
+async fn reusable_route_auth_invalid_policy_matrix_is_scheme_independent_and_bodyless() {
+    const CANARY: &str = "echoed-key-canary-must-not-surface";
+    for route in [
+        ReusableRoute::Anthropic,
+        ReusableRoute::OpenAiChat,
+        ReusableRoute::OpenAiResponses,
+    ] {
+        for credential_managed in [true, false] {
+            for status in [401, 403] {
+                let server = MockServer::start().await;
+                Mock::given(method("POST"))
+                    .respond_with(ResponseTemplate::new(status).set_body_string(CANARY))
+                    .mount(&server)
+                    .await;
+                let (provider, model) = reusable_route(route, credential_managed, server.uri());
+                let error = provider
+                    .stream(sample_request(&model))
+                    .next()
+                    .await
+                    .expect("auth-invalid error")
+                    .expect_err("401/403 must fail");
+
+                if credential_managed {
+                    assert!(
+                        matches!(error, ProviderError::CredentialRevoked { .. }),
+                        "{route:?} HTTP {status}: {error:?}"
+                    );
+                } else {
+                    assert!(
+                        matches!(error, ProviderError::AuthFailed(_)),
+                        "{route:?} HTTP {status}: {error:?}"
+                    );
+                }
+                let rendered = format!("{error:?} {error}");
+                assert!(
+                    !rendered.contains(CANARY),
+                    "{route:?} HTTP {status} leaked the response body: {rendered}"
+                );
+                assert!(!error.is_retryable());
+            }
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+enum StaticRoute {
+    Anthropic,
+    OpenAiChat,
+    OpenAiResponses,
+    OpenRouter,
+    Mistral,
+}
+
+fn static_route(route: StaticRoute, server_uri: String) -> (Box<dyn Provider>, &'static str) {
+    match route {
+        StaticRoute::Anthropic => (
+            Box::new(AnthropicProvider::new("key".into(), Some(server_uri))),
+            "anthropic:claude-sonnet-4-5-20250514",
+        ),
+        StaticRoute::OpenAiChat => (
+            Box::new(OpenAiChatProvider::new("key".into(), Some(server_uri))),
+            "openai:gpt-4o",
+        ),
+        StaticRoute::OpenAiResponses => (
+            Box::new(OpenAiResponsesProvider::new("key".into(), Some(server_uri))),
+            "openai-responses:gpt-4o",
+        ),
+        StaticRoute::OpenRouter => (
+            Box::new(openrouter_provider("key".into(), Some(server_uri))),
+            "openrouter:openai/gpt-4o",
+        ),
+        StaticRoute::Mistral => (
+            Box::new(mistral_provider("key".into(), Some(server_uri))),
+            "mistral:mistral-large-latest",
+        ),
+    }
+}
+
+#[tokio::test]
+async fn static_route_auth_errors_are_bodyless_for_all_profiles_and_schemes() {
+    const CANARY: &str = "static-auth-response-canary-must-not-surface";
+    for route in [
+        StaticRoute::Anthropic,
+        StaticRoute::OpenAiChat,
+        StaticRoute::OpenAiResponses,
+        StaticRoute::OpenRouter,
+        StaticRoute::Mistral,
+    ] {
+        for status in [401, 403] {
+            let server = MockServer::start().await;
+            Mock::given(method("POST"))
+                .respond_with(ResponseTemplate::new(status).set_body_string(CANARY))
+                .mount(&server)
+                .await;
+            let (provider, model) = static_route(route, server.uri());
+            let error = provider
+                .stream(sample_request(model))
+                .next()
+                .await
+                .expect("auth-invalid error")
+                .expect_err("401/403 must fail");
+
+            assert!(
+                matches!(&error, ProviderError::AuthFailed(message) if message == "authentication failed"),
+                "{route:?} HTTP {status}: {error:?}"
+            );
+            let rendered = format!("{error:?} {error}");
+            assert!(
+                !rendered.contains(CANARY),
+                "{route:?} HTTP {status} leaked the response body: {rendered}"
+            );
+            assert!(!error.is_retryable());
+        }
+    }
 }
 
 // --- Dedicated Codex Responses wire shape ---

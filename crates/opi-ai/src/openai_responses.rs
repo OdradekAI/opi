@@ -9,7 +9,7 @@ use futures_util::{StreamExt, stream};
 use secrecy::{ExposeSecret, SecretString};
 use tokio_util::sync::CancellationToken;
 
-use crate::auth::{AuthResolver, AuthScheme, ResolvedAuth, StaticAuthResolver};
+use crate::auth::{AuthInvalidPolicy, AuthResolver, AuthScheme, ResolvedAuth, StaticAuthResolver};
 use crate::http::HttpClient;
 use crate::model_info::WireApi;
 use crate::openai_responses_shared::{
@@ -32,11 +32,13 @@ const DEFAULT_RESPONSES_PATH: &str = "/v1/responses";
 pub struct ResponsesConfig {
     /// Emit the top-level `store` field.
     pub store: Option<bool>,
-    /// Emit `{"reasoning":{"effort": ...}}`.
+    /// Legacy profile metadata. Request/model thinking maps are authoritative
+    /// for wire output.
     pub reasoning_effort: Option<String>,
     /// Emit `"strict": true` on function tool definitions.
     pub strict_tools: bool,
-    /// Emit the standard `session_id` and `x-client-request-id` headers.
+    /// Emit the `session_id` header when the selected affinity policy is active.
+    /// Direct-route prompt cache keys and request IDs are independent of this.
     pub send_session_id_header: bool,
 }
 
@@ -51,6 +53,17 @@ impl Default for ResponsesConfig {
     }
 }
 
+/// Construction-time session-affinity policy for the reusable Responses wire.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ResponsesAffinityPolicy {
+    /// Built-in direct Responses: cache key and request id are automatic.
+    Direct,
+    /// Custom/proxy Responses without the reviewed affinity opt-in.
+    CustomDisabled,
+    /// Custom/proxy Responses with the reviewed full affinity mapping enabled.
+    CustomOptIn,
+}
+
 /// Standard OpenAI Responses provider, also used as a route by mapped
 /// providers whose model metadata declares the standard Responses wire.
 pub struct OpenAiResponsesProvider {
@@ -62,6 +75,8 @@ pub struct OpenAiResponsesProvider {
     headers: ProviderHeaders,
     route_headers: Vec<(String, String)>,
     catalog_compat: bool,
+    auth_invalid_policy: AuthInvalidPolicy,
+    affinity_policy: ResponsesAffinityPolicy,
     copilot_headers: bool,
     client: Arc<HttpClient>,
 }
@@ -118,6 +133,7 @@ impl OpenAiResponsesProvider {
             SecretString::from(api_key),
         ));
         Self::with_auth(auth, base_url, ResponsesConfig::default(), client)
+            .with_auth_invalid_policy(AuthInvalidPolicy::Static)
     }
 
     /// Create with native Responses request flags.
@@ -131,6 +147,7 @@ impl OpenAiResponsesProvider {
             SecretString::from(api_key),
         ));
         Self::with_auth(auth, base_url, config, Arc::new(HttpClient::new()))
+            .with_auth_invalid_policy(AuthInvalidPolicy::Static)
     }
 
     /// Build with an injected per-request auth resolver.
@@ -148,6 +165,8 @@ impl OpenAiResponsesProvider {
             Vec::new(),
             client,
         )
+        .with_auth_invalid_policy(AuthInvalidPolicy::CredentialManaged)
+        .with_affinity_policy(ResponsesAffinityPolicy::Direct)
     }
 
     /// Build with an injected auth resolver, provider id, and route headers.
@@ -168,6 +187,8 @@ impl OpenAiResponsesProvider {
             headers: ProviderHeaders::default(),
             route_headers: extra_headers,
             catalog_compat: false,
+            auth_invalid_policy: AuthInvalidPolicy::Static,
+            affinity_policy: ResponsesAffinityPolicy::CustomDisabled,
             copilot_headers: false,
             client,
         }
@@ -191,9 +212,23 @@ impl OpenAiResponsesProvider {
             headers,
             route_headers: Vec::new(),
             catalog_compat: true,
+            auth_invalid_policy: AuthInvalidPolicy::Static,
+            affinity_policy: ResponsesAffinityPolicy::CustomOptIn,
             copilot_headers: false,
             client,
         }
+    }
+
+    /// Override how this route classifies provider 401/403 responses.
+    pub fn with_auth_invalid_policy(mut self, policy: AuthInvalidPolicy) -> Self {
+        self.auth_invalid_policy = policy;
+        self
+    }
+
+    /// Override direct-versus-custom session-affinity behavior.
+    pub fn with_affinity_policy(mut self, policy: ResponsesAffinityPolicy) -> Self {
+        self.affinity_policy = policy;
+        self
     }
 
     /// Enable GitHub Copilot's request-dependent route headers.
@@ -283,8 +318,9 @@ impl OpenAiResponsesProvider {
         if let Some(store) = config.store {
             body["store"] = serde_json::Value::Bool(store);
         }
-        if let Some(effort) = config.reasoning_effort.as_ref()
-            && !effort.is_empty()
+        if request.thinking.enabled
+            && let Some(model) = self.models.iter().find(|model| model.id == model_id)
+            && let Ok(Some(effort)) = model.thinking_level_map.resolve(request.thinking.level)
         {
             body["reasoning"] = serde_json::json!({"effort": effort});
         }
@@ -319,12 +355,14 @@ impl OpenAiResponsesProvider {
         base_url: String,
         route_path: String,
         config: ResponsesConfig,
+        auth_invalid_policy: AuthInvalidPolicy,
         extra_headers: Vec<(String, String)>,
         provider_id: String,
         body: serde_json::Value,
         cancel: CancellationToken,
         timeout: Option<std::time::Duration>,
         session_id: Option<String>,
+        request_id: Option<String>,
         tx: tokio::sync::mpsc::Sender<Result<AssistantStreamEvent, ProviderError>>,
     ) -> Result<(), ProviderError> {
         let url = crate::endpoint::join_endpoint(&base_url, &route_path);
@@ -341,12 +379,13 @@ impl OpenAiResponsesProvider {
         for (name, value) in extra_headers {
             request = request.header(name, value);
         }
+        if let Some(request_id) = request_id {
+            request = request.header("x-client-request-id", request_id);
+        }
         if config.send_session_id_header
             && let Some(session_id) = session_id
         {
-            request = request
-                .header("session_id", &session_id)
-                .header("x-client-request-id", session_id);
+            request = request.header("session_id", session_id);
         }
         let response = request
             .body(serde_json::to_string(&body).unwrap_or_default())
@@ -367,7 +406,7 @@ impl OpenAiResponsesProvider {
                 status,
                 &body,
                 &headers,
-                resolved.scheme,
+                auth_invalid_policy,
                 &provider_id,
             ));
         }
@@ -417,21 +456,11 @@ fn map_http_status(
     status: reqwest::StatusCode,
     body: &str,
     headers: &reqwest::header::HeaderMap,
-    scheme: AuthScheme,
+    policy: AuthInvalidPolicy,
     provider_id: &str,
 ) -> ProviderError {
     match status.as_u16() {
-        401 | 403 if scheme == AuthScheme::Bearer => ProviderError::CredentialRevoked {
-            provider_id: provider_id.to_owned(),
-        },
-        401 => ProviderError::AuthFailed(format!(
-            "authentication failed: {}",
-            crate::http::safe_excerpt(body)
-        )),
-        403 => ProviderError::AuthFailed(format!(
-            "access denied: {}",
-            crate::http::safe_excerpt(body)
-        )),
+        401 | 403 => policy.error(provider_id),
         429 => ProviderError::RateLimited {
             retry_after_ms: crate::retry::parse_retry_after(headers),
         },
@@ -455,6 +484,8 @@ impl Provider for OpenAiResponsesProvider {
         let auth = self.auth.clone();
         let default_base_url = self.base_url.clone();
         let provider_id = self.provider_id.clone();
+        let auth_invalid_policy = self.auth_invalid_policy;
+        let affinity_policy = self.affinity_policy;
         let model_id = request
             .model
             .split_once(':')
@@ -492,10 +523,15 @@ impl Provider for OpenAiResponsesProvider {
         } else {
             None
         };
+        let affinity_enabled = session_id.is_some()
+            && match affinity_policy {
+                ResponsesAffinityPolicy::Direct => true,
+                ResponsesAffinityPolicy::CustomDisabled => false,
+                ResponsesAffinityPolicy::CustomOptIn => config.send_session_id_header,
+            };
+        let request_id = affinity_enabled.then(|| uuid::Uuid::now_v7().to_string());
         let mut body = self.build_request_body(&request);
-        if config.send_session_id_header
-            && let Some(session_id) = session_id.as_deref()
-        {
+        if affinity_enabled && let Some(session_id) = session_id.as_deref() {
             body["prompt_cache_key"] =
                 serde_json::Value::String(session_id.chars().take(64).collect());
         }
@@ -530,12 +566,14 @@ impl Provider for OpenAiResponsesProvider {
                 base_url,
                 route_path,
                 config,
+                auth_invalid_policy,
                 extra_headers,
                 provider_id,
                 body,
                 cancel,
                 timeout,
-                session_id,
+                affinity_enabled.then_some(session_id).flatten(),
+                request_id,
                 tx.clone(),
             )
             .await

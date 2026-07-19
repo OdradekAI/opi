@@ -220,7 +220,7 @@ fn responses_request_body_store_absent_by_default() {
 }
 
 #[test]
-fn responses_request_body_reasoning_effort_emitted_when_configured() {
+fn responses_static_reasoning_effort_does_not_drive_wire_output() {
     let provider = OpenAiResponsesProvider::new_with_config(
         "key".into(),
         None,
@@ -230,10 +230,7 @@ fn responses_request_body_reasoning_effort_emitted_when_configured() {
         },
     );
     let body = provider.build_request_body(&responses_tool_request());
-    assert_eq!(
-        body["reasoning"]["effort"], "high",
-        "reasoning.effort must be emitted when configured"
-    );
+    assert!(body.get("reasoning").is_none());
 }
 
 #[test]
@@ -243,6 +240,111 @@ fn responses_request_body_reasoning_effort_absent_by_default() {
     assert!(
         body.get("reasoning").is_none(),
         "reasoning must be absent by default"
+    );
+}
+
+#[test]
+fn responses_reasoning_effort_uses_request_thinking_and_model_map() {
+    use std::sync::Arc;
+
+    use opi_ai::auth::{AuthScheme, StaticAuthResolver};
+    use opi_ai::http::HttpClient;
+    use opi_ai::{
+        ModelCapabilities, ModelInfo, ThinkingLevel, ThinkingLevelMap, ThinkingLevelMapping,
+        WireApi,
+    };
+    use secrecy::SecretString;
+
+    let provider = responses_provider("key");
+    let mut identity = responses_tool_request();
+    identity.model = "openai-responses:o3".into();
+    identity.thinking = ThinkingConfig {
+        enabled: true,
+        budget_tokens: None,
+        level: ThinkingLevel::High,
+    };
+    assert_eq!(
+        provider.build_request_body(&identity)["reasoning"]["effort"],
+        "high"
+    );
+
+    let mapped_model = ModelInfo::new(
+        "mapped",
+        "Mapped",
+        WireApi::OpenAiResponses,
+        ModelCapabilities::new(128_000, 16_384)
+            .with_streaming(true)
+            .with_thinking(true),
+    )
+    .with_thinking_level_map(ThinkingLevelMap::reasoning_default().with_mapping(
+        ThinkingLevel::High,
+        ThinkingLevelMapping::Mapped("provider-high".into()),
+    ));
+    let mapped_provider = OpenAiResponsesProvider::for_route(
+        Arc::new(StaticAuthResolver::new(
+            AuthScheme::ApiKey,
+            SecretString::from("key"),
+        )),
+        Some("https://example.test".into()),
+        "mapped".into(),
+        Default::default(),
+        vec![mapped_model],
+        Arc::new(HttpClient::new()),
+    );
+    let mut remapped = identity;
+    remapped.model = "mapped:mapped".into();
+    assert_eq!(
+        mapped_provider.build_request_body(&remapped)["reasoning"]["effort"],
+        "provider-high"
+    );
+
+    let mut disabled = remapped;
+    disabled.thinking.enabled = false;
+    assert!(
+        mapped_provider
+            .build_request_body(&disabled)
+            .get("reasoning")
+            .is_none()
+    );
+
+    let mut off = disabled;
+    off.thinking.enabled = true;
+    off.thinking.level = ThinkingLevel::None;
+    assert!(
+        mapped_provider
+            .build_request_body(&off)
+            .get("reasoning")
+            .is_none()
+    );
+
+    let unsupported_model = ModelInfo::new(
+        "unsupported",
+        "Unsupported",
+        WireApi::OpenAiResponses,
+        ModelCapabilities::new(128_000, 16_384)
+            .with_streaming(true)
+            .with_thinking(true),
+    )
+    .with_thinking_level_map(ThinkingLevelMap::disabled());
+    let unsupported_provider = OpenAiResponsesProvider::for_route(
+        Arc::new(StaticAuthResolver::new(
+            AuthScheme::ApiKey,
+            SecretString::from("key"),
+        )),
+        Some("https://example.test".into()),
+        "unsupported".into(),
+        Default::default(),
+        vec![unsupported_model],
+        Arc::new(HttpClient::new()),
+    );
+    let mut unsupported = off;
+    unsupported.model = "unsupported:unsupported".into();
+    unsupported.thinking.level = ThinkingLevel::High;
+    assert!(
+        unsupported_provider
+            .build_request_body(&unsupported)
+            .get("reasoning")
+            .is_none()
     );
 }
 

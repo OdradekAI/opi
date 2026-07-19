@@ -168,8 +168,10 @@ subscription-only `openai-codex-responses` wire 不能由自定义 TOML 选择�
 `AuthResolver` 契约。本 crate 拥有 `KeychainCredentialStore`、
 `CredentialResolver`、环境变量查找、跨进程 `credential.lock` 与 Provider HTTP
 refresh。持久化 API key 和 OAuth envelope 使用 OS keychain；backend 不可用时 API key
-可回退到对应 env source。不会创建 opi 自行管理的明文凭据文件。`opi doctor` 与
-`--list-models` 等待 probe，并只格式化已脱敏的 present/absent/backend-unavailable 状态。
+可回退到对应 env source。不会创建 opi 自行管理的明文凭据文件。`opi doctor` 与凭据门控的
+`--list-models` 路径等待无 secret probe，并只格式化已脱敏的
+present/absent/backend-unavailable 状态；无条件静态 GitHub Copilot 与 OpenAI Codex
+subscription catalog 在列表时不执行凭据 probe。
 
 生产启动会在任何凭据感知路径构造 entry 前，先在 Windows 上安装 Windows
 Credential Manager、在 macOS 上安装 macOS Keychain Services，或在 Linux 上安装
@@ -452,8 +454,9 @@ metadata 和启动诊断。
   `send_session_affinity_headers`、
   `require_assistant_after_tool_result`、`chat_completions_path`；外加用于静态请求 header 的按 profile
   `extra_headers`，它是 profile 配置字段，不是 `CompatConfig` 标志）、OpenAI Responses
-  原生语义（`store` / `reasoning_effort` / `strict_tools` 已实现；
-  `previous_response_id` 推迟），以及缓存 / response-ID / 会话亲和行为。具体来说，
+  原生语义（`store` / `strict_tools` 已实现；静态 `reasoning_effort` 仅为遗留兼容性/profile
+  元数据；`request.thinking` 与所选 `ModelInfo::thinking_level_map` 控制 Chat/Responses
+  wire 输出；`previous_response_id` 推迟），以及缓存 / response-ID / 会话亲和行为。具体来说，
   `usage_in_stream` 会请求 `stream_options.include_usage`，OpenAI Chat 会从任何携带 `id` 的 chunk
   捕获 response ID，`require_assistant_after_tool_result` 在共享适配器中保持为纯元数据，而当任一轮
   usage 未知或定价未知时，会话费用汇总会被省略。

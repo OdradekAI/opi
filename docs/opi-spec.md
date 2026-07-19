@@ -1683,6 +1683,11 @@ The canonical OAuth provider and keychain account ids are `anthropic`,
 `github-copilot`, and `openai-codex`. The development ids `copilot` and
 `codex` have no runtime alias, config alias, or keychain migration; users with
 those development entries must explicitly log in again with the canonical id.
+Doctor and credential-gated model-listing paths use secret-free availability
+and credential-kind probes that mirror live credential precedence and fail
+closed on operational errors or corrupt markers. GitHub Copilot and OpenAI
+Codex subscription catalogs remain unconditional static catalogs and perform
+no credential probe during listing.
 
 Every `ModelInfo` declares one exact `WireApi`, a matching tagged
 compatibility value, capabilities, a thinking-level map, and optional pricing.
@@ -1692,6 +1697,11 @@ one provider id and catalog, validates exactly one concrete route for each
 catalog wire, and rejects unknown models, missing routes, and wire/compatibility
 mismatches before network IO. All routes for one mapped provider share one
 lazy `AuthResolver`.
+OpenAI Chat and Responses emit reasoning wire fields only when
+`request.thinking` is enabled and the selected
+`ModelInfo::thinking_level_map` resolves the requested level; static
+`reasoning_effort` fields are legacy compatibility/profile metadata and do not
+override that selection.
 
 GitHub Copilot uses the canonical `github-copilot` identity and one audited
 static pi-0.80.6 catalog spanning `anthropic-messages`,
@@ -1706,6 +1716,10 @@ OpenAI Codex uses the canonical `openai-codex` identity and the dedicated
 `https://chatgpt.com/backend-api/codex/responses`. It is not standard
 Responses with compatibility flags. Codex requires the persisted account id
 and emits its dedicated body, headers, session affinity, and SSE mapping.
+With an effective session, built-in direct Responses emits
+`prompt_cache_key` and a fresh `x-client-request-id` on every request;
+`send_session_id_header` gates only `session_id`. Custom/proxy profiles default
+all affinity off, and explicit opt-in enables the reviewed full mapping.
 
 `[providers.custom.<id>]` exposes the mapped-provider contract to TOML. One
 provider owns one shared `api_key_env`, auth scheme, default `base_url`, proxy,
@@ -1720,6 +1734,12 @@ missing APIs/routes/base URLs, mismatched compatibility fields, invalid
 pricing, and provider-managed authentication headers fail during config load.
 The older `[providers.openai_compatible]` table remains a single-wire
 Completions shorthand and lowers into the same mapped construction path.
+`AuthInvalidPolicy` is explicit on constructed Anthropic, OpenAI Chat, and
+OpenAI Responses routes, including mapped static profiles, and is never
+inferred from Bearer syntax. Within those routes, canonical credential-managed
+profiles may return `CredentialRevoked`, while static custom, OpenRouter, and
+Mistral profiles return fixed bodyless `AuthFailed`; this body-suppression
+claim does not extend to Azure, Bedrock, Gemini, or Vertex diagnostics.
 
 Anthropic and OpenAI Codex Browser login use Browser PKCE with a loopback
 callback and manual-code/redirect-URL fallback. GitHub Copilot Device Code and
@@ -1728,6 +1748,15 @@ and never call `await_manual_code`. `/login openai-codex` offers Browser as the
 default and Device Code as the headless option. `/login` and `/logout` run
 through the production dispatcher, concrete provider registry, locked store,
 and RAII terminal suspension/restoration.
+One absolute OAuth flow deadline covers every send, response-body decode,
+wait/poll, and exchange. Cancellation is accepted only before one-use
+code/token acquisition for every flow, producing typed `LoginCancelled`, one
+fixed cancellation notification, no persistence, and terminal restoration;
+after code/token acquisition cancellation is ignored while the original
+deadline remains in force. Manual input uses one serialized, cancellable
+cooked-line child process; the manually entered authorization code travels
+through its inherited stdin and captured stdout, is never injected into argv
+or a new environment variable, and the child is reaped before retry.
 
 After a pre-output `CredentialNeeded`, a successful explicit login for the
 same provider makes the outer `run_interactive_tui` state machine retry the
@@ -1747,7 +1776,9 @@ of cache writes and `reasoning_tokens` is a subset of output; both are optional
 `u64` children so absent and explicitly reported zero remain distinct. The
 four-line `CostBreakdown` folds weighted one-hour writes into
 `cache_write_cost` and reasoning into `output_cost`, so parent buckets are
-counted once. The first three Request knobs have no Phase 14 config/harness
+counted once. Cumulative `Usage` saturates each public `u32` field at
+`u32::MAX`; child subsets remain bounded by their parents, and the public shape
+is not widened. The first three Request knobs have no Phase 14 config/harness
 producer; only `session_id` traverses the production harness/agent path.
 Dynamic refresh has mock collection coverage but no Phase 14 production
 trigger and therefore closes no product acceptance path.

@@ -419,7 +419,7 @@ async fn session_affinity_wire_mappings() {
     let responses_server = MockServer::start().await;
     Mock::given(method("POST"))
         .respond_with(ResponseTemplate::new(200).set_body_string("data: [DONE]\n\n"))
-        .expect(3)
+        .expect(5)
         .mount(&responses_server)
         .await;
     let standard = opi_ai::openai_responses::OpenAiResponsesProvider::new(
@@ -431,49 +431,130 @@ async fn session_affinity_wire_mappings() {
         "session-standard",
     )))
     .await;
+    let direct_with_session_header =
+        opi_ai::openai_responses::OpenAiResponsesProvider::new_with_config(
+            "test-key".into(),
+            Some(responses_server.uri()),
+            opi_ai::openai_responses::ResponsesConfig {
+                send_session_id_header: false,
+                ..Default::default()
+            },
+        );
+    drain(
+        direct_with_session_header.stream(make_openai_responses_request(
+            "openai-responses:model",
+            "session-direct-header",
+        )),
+    )
+    .await;
     let mut disabled = make_openai_responses_request("openai-responses:model", "session-disabled");
     disabled.cache_retention = CacheRetention::Disabled;
     drain(standard.stream(disabled)).await;
-    let custom = opi_ai::openai_responses::OpenAiResponsesProvider::with_auth_extra(
+    let custom_model = ModelInfo::new(
+        "model",
+        "Model",
+        opi_ai::WireApi::OpenAiResponses,
+        ModelCapabilities::new(128_000, 16_384).with_streaming(true),
+    );
+    let custom_default = opi_ai::openai_responses::OpenAiResponsesProvider::for_route(
         Arc::new(StaticAuthResolver::new(
             AuthScheme::Bearer,
             SecretString::from("test-token"),
         )),
         Some(responses_server.uri()),
-        opi_ai::openai_responses::ResponsesConfig {
-            send_session_id_header: false,
-            ..Default::default()
-        },
         "custom-responses".into(),
-        vec![],
+        opi_ai::ProviderHeaders::default(),
+        vec![custom_model.clone()],
         Arc::new(HttpClient::new()),
     );
-    drain(custom.stream(make_openai_responses_request(
+    drain(custom_default.stream(make_openai_responses_request(
         "custom-responses:model",
-        "session-custom",
+        "session-custom-default",
+    )))
+    .await;
+    let custom_opt_in_model = custom_model
+        .with_compat(opi_ai::WireCompat::OpenAiResponses(
+            opi_ai::model_info::OpenAiResponsesCompat {
+                send_session_id_header: true,
+                ..Default::default()
+            },
+        ))
+        .unwrap();
+    let custom_opt_in = opi_ai::openai_responses::OpenAiResponsesProvider::for_route(
+        Arc::new(StaticAuthResolver::new(
+            AuthScheme::Bearer,
+            SecretString::from("test-token"),
+        )),
+        Some(responses_server.uri()),
+        "custom-responses".into(),
+        opi_ai::ProviderHeaders::default(),
+        vec![custom_opt_in_model],
+        Arc::new(HttpClient::new()),
+    );
+    drain(custom_opt_in.stream(make_openai_responses_request(
+        "custom-responses:model",
+        "session-custom-opt-in",
     )))
     .await;
 
     let response_requests = responses_server.received_requests().await.unwrap();
-    assert_eq!(response_requests.len(), 3);
+    assert_eq!(response_requests.len(), 5);
     assert_eq!(
         request_body_json(&response_requests[0])["prompt_cache_key"],
         "session-standard"
     );
+    let standard_request_id = header_value(&response_requests[0], "x-client-request-id")
+        .expect("direct Responses request id");
     assert_eq!(
-        header_value(&response_requests[0], "x-client-request-id"),
-        Some("session-standard")
+        uuid::Uuid::parse_str(standard_request_id)
+            .unwrap()
+            .get_version_num(),
+        7
     );
+    assert_ne!(standard_request_id, "session-standard");
     assert_eq!(
         header_value(&response_requests[0], "session_id"),
         Some("session-standard")
     );
-    for request in &response_requests[1..] {
+
+    assert_eq!(
+        request_body_json(&response_requests[1])["prompt_cache_key"],
+        "session-direct-header"
+    );
+    let direct_request_id = header_value(&response_requests[1], "x-client-request-id")
+        .expect("direct Responses request id");
+    assert_eq!(
+        uuid::Uuid::parse_str(direct_request_id)
+            .unwrap()
+            .get_version_num(),
+        7
+    );
+    assert_ne!(direct_request_id, standard_request_id);
+    assert_eq!(header_value(&response_requests[1], "session_id"), None);
+
+    for request in &response_requests[2..4] {
         assert!(request_body_json(request).get("prompt_cache_key").is_none());
         for name in ["session_id", "session-id", "x-client-request-id"] {
             assert_eq!(header_value(request, name), None);
         }
     }
+    assert_eq!(
+        request_body_json(&response_requests[4])["prompt_cache_key"],
+        "session-custom-opt-in"
+    );
+    assert_eq!(
+        header_value(&response_requests[4], "session_id"),
+        Some("session-custom-opt-in")
+    );
+    let custom_request_id = header_value(&response_requests[4], "x-client-request-id")
+        .expect("custom opt-in request id");
+    assert_eq!(
+        uuid::Uuid::parse_str(custom_request_id)
+            .unwrap()
+            .get_version_num(),
+        7
+    );
+    assert_ne!(custom_request_id, "session-custom-opt-in");
 
     let anthropic_server = MockServer::start().await;
     Mock::given(method("POST"))

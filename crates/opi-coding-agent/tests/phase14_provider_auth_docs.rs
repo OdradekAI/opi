@@ -253,6 +253,89 @@ fn localized_docs_pin_exact_phase14_claims_and_acceptance_rows() {
 }
 
 #[test]
+fn localized_specs_pin_final_phase14_runtime_semantics() {
+    let spec = read_repo_file("docs/opi-spec.md");
+    let spec_zh = read_repo_file("docs/opi-spec.zh.md");
+    let ai = read_repo_file("crates/opi-ai/README.md");
+    let ai_zh = read_repo_file("crates/opi-ai/README.zh.md");
+    let coding = read_repo_file("crates/opi-coding-agent/README.md");
+    let coding_zh = read_repo_file("crates/opi-coding-agent/README.zh.md");
+
+    assert_claims(
+        "docs/opi-spec.md",
+        &spec,
+        &[
+            "OpenAI Chat and Responses emit reasoning wire fields only when `request.thinking` is enabled and the selected `ModelInfo::thinking_level_map` resolves the requested level; static `reasoning_effort` fields are legacy compatibility/profile metadata and do not override that selection.",
+            "With an effective session, built-in direct Responses emits `prompt_cache_key` and a fresh `x-client-request-id` on every request; `send_session_id_header` gates only `session_id`. Custom/proxy profiles default all affinity off, and explicit opt-in enables the reviewed full mapping.",
+            "`AuthInvalidPolicy` is explicit on constructed Anthropic, OpenAI Chat, and OpenAI Responses routes, including mapped static profiles, and is never inferred from Bearer syntax.",
+            "Within those routes, canonical credential-managed profiles may return `CredentialRevoked`, while static custom, OpenRouter, and Mistral profiles return fixed bodyless `AuthFailed`; this body-suppression claim does not extend to Azure, Bedrock, Gemini, or Vertex diagnostics.",
+            "One absolute OAuth flow deadline covers every send, response-body decode, wait/poll, and exchange.",
+            "Cancellation is accepted only before one-use code/token acquisition for every flow, producing typed `LoginCancelled`, one fixed cancellation notification, no persistence, and terminal restoration; after code/token acquisition cancellation is ignored while the original deadline remains in force.",
+            "Manual input uses one serialized, cancellable cooked-line child process; the manually entered authorization code travels through its inherited stdin and captured stdout, is never injected into argv or a new environment variable, and the child is reaped before retry.",
+            "Cumulative `Usage` saturates each public `u32` field at `u32::MAX`; child subsets remain bounded by their parents, and the public shape is not widened.",
+            "Doctor and credential-gated model-listing paths use secret-free availability and credential-kind probes that mirror live credential precedence and fail closed on operational errors or corrupt markers.",
+            "GitHub Copilot and OpenAI Codex subscription catalogs remain unconditional static catalogs and perform no credential probe during listing.",
+        ],
+    );
+    assert_claims(
+        "docs/opi-spec.zh.md",
+        &spec_zh,
+        &[
+            "OpenAI Chat 与 Responses 仅在 `request.thinking` 启用且所选 `ModelInfo::thinking_level_map` 能解析请求级别时发出 reasoning wire 字段；静态 `reasoning_effort` 字段只是遗留 compatibility/profile metadata，不能覆盖该选择。",
+            "存在有效 session 时，内置直连 Responses 在每次请求中发出 `prompt_cache_key` 和新的 `x-client-request-id`；`send_session_id_header` 只门控 `session_id`。自定义/proxy profile 默认关闭全部 affinity；显式 opt-in 会启用经审查的完整映射。",
+            "`AuthInvalidPolicy` 由构造完成的 Anthropic、OpenAI Chat 与 OpenAI Responses route（包括 mapped static profile）显式指定，绝不从 Bearer 语法推断。",
+            "在这些 route 内，规范 credential-managed profile 可以返回 `CredentialRevoked`，而静态 custom、OpenRouter 与 Mistral profile 返回固定且无 body 的 `AuthFailed`；该 body 抑制声明不扩展到 Azure、Bedrock、Gemini 或 Vertex diagnostics。",
+            "一个绝对 OAuth flow deadline 覆盖所有 send、response body decode、wait/poll 与 exchange。",
+            "所有 flow 只在获取一次性 code/token 前接受取消，并产生类型化 `LoginCancelled`、一条固定取消通知、不持久化任何凭据且恢复终端；获取 code/token 后忽略取消，但原 deadline 继续生效。",
+            "手动输入使用一个串行化、可取消的 cooked-line 子进程；手动输入的 authorization code 经由继承的 stdin 与捕获的 stdout 传递，绝不注入 argv 或新增环境变量，并在 retry 前回收子进程。",
+            "累计 `Usage` 的每个公开 `u32` 字段都在 `u32::MAX` 饱和；子集保持不超过父项，公开形状不拓宽。",
+            "`doctor` 与凭据门控的模型列表路径使用无 secret availability/credential-kind probe；这些 probe 遵循实时凭据优先级，并在操作错误或 marker 损坏时失败关闭。",
+            "GitHub Copilot 与 OpenAI Codex subscription catalog 保持为无条件静态 catalog，列表时不执行凭据 probe。",
+        ],
+    );
+    assert_claims(
+        "crates/opi-ai/README.md",
+        &ai,
+        &[
+            "For an effective session, direct OpenAI Responses automatically derives `prompt_cache_key` and a fresh `x-client-request-id`; `send_session_id_header` gates only `session_id`. Custom/proxy affinity remains disabled by default and requires explicit opt-in.",
+        ],
+    );
+    assert_claims(
+        "crates/opi-ai/README.zh.md",
+        &ai_zh,
+        &[
+            "存在有效 session 时，直连 OpenAI Responses 会自动派生 `prompt_cache_key` 和新的 `x-client-request-id`；`send_session_id_header` 只门控 `session_id`。自定义/proxy affinity 默认关闭，必须显式 opt-in。",
+        ],
+    );
+    assert_claims(
+        "crates/opi-coding-agent/README.md",
+        &coding,
+        &[
+            "`opi doctor` and credential-gated `--list-models` paths await secret-free probes and format only redacted present/absent/backend-unavailable state; the unconditional static GitHub Copilot and OpenAI Codex subscription catalogs perform no credential probe during listing.",
+        ],
+    );
+    assert_claims(
+        "crates/opi-coding-agent/README.zh.md",
+        &coding_zh,
+        &[
+            "`opi doctor` 与凭据门控的 `--list-models` 路径等待无 secret probe，并只格式化已脱敏的 present/absent/backend-unavailable 状态；无条件静态 GitHub Copilot 与 OpenAI Codex subscription catalog 在列表时不执行凭据 probe。",
+        ],
+    );
+    assert_absent(
+        "final Phase 14 docs",
+        &format!("{spec}\n{spec_zh}\n{ai}\n{ai_zh}\n{coding}\n{coding_zh}"),
+        &[
+            "401/403 response bodies are never surfaced",
+            "401/403 response body 绝不对外暴露",
+            "map that id only through reviewed compatibility flags",
+            "只通过审查过的兼容标志映射该 id",
+            "`opi doctor` and `--list-models` await a probe",
+            "`opi doctor` 与 `--list-models` 等待 probe",
+        ],
+    );
+}
+
+#[test]
 fn final_phase14_contracts_native_targets_and_api_map_are_truthful() {
     let spec = read_repo_file("docs/opi-spec.md");
     let spec_zh = read_repo_file("docs/opi-spec.zh.md");

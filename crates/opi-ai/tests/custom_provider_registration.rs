@@ -9,7 +9,7 @@ use opi_ai::provider::{CacheRetention, ModelInfo, Provider};
 use opi_ai::registry::ModelCapabilities;
 use opi_ai::registry::ProviderRegistry;
 use opi_ai::test_support::{MockProvider, text_response};
-use opi_ai::{RegistrationError, RegistryError, WireApi};
+use opi_ai::{ModelInfoError, RegistrationError, RegistryError, WireApi};
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -147,6 +147,38 @@ fn register_model_empty_id_rejected() {
     );
     let err = registry.register_model("prov", model).unwrap_err();
     assert!(matches!(err, RegistrationError::EmptyModelId { .. }));
+}
+
+#[test]
+fn register_model_rejects_zero_token_limits() {
+    let cases = [
+        ("context_window", ModelCapabilities::new(0, 2_048)),
+        ("max_output_tokens", ModelCapabilities::new(50_000, 0)),
+    ];
+
+    for (field, capabilities) in cases {
+        let mut registry = ProviderRegistry::new();
+        let model = ModelInfo::new(
+            format!("zero-{field}"),
+            "Invalid",
+            WireApi::OpenAiCompletions,
+            capabilities,
+        );
+        let error = registry.register_model("prov", model).unwrap_err();
+        assert!(matches!(
+            error,
+            RegistrationError::InvalidModel {
+                provider,
+                model,
+                source: ModelInfoError::InvalidCapabilities {
+                    field: invalid_field,
+                    ..
+                },
+            } if provider == "prov"
+                && model == format!("zero-{field}")
+                && invalid_field == field
+        ));
+    }
 }
 
 #[test]

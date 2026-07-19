@@ -1,25 +1,32 @@
 use std::str::FromStr;
+use std::sync::Arc;
 
-use futures_util::stream;
+use futures_util::StreamExt;
+use opi_ai::ProviderHeaders;
 use opi_ai::anthropic;
+use opi_ai::auth::{AuthScheme, StaticAuthResolver};
 use opi_ai::azure_openai::AzureOpenAIProvider;
 use opi_ai::bedrock;
 use opi_ai::gemini;
+use opi_ai::http::HttpClient;
 use opi_ai::mistral;
 use opi_ai::model_info::{
-    AnthropicMessagesCompat, ModelInfo, ModelPricing, PricingTier, ThinkingLevel,
+    AnthropicMessagesCompat, ModelInfo, ModelPricing, PricingTier, ThinkingLevel, ThinkingLevelMap,
     ThinkingLevelMapping, WireApi, WireCompat,
 };
 use opi_ai::openai_chat;
 use opi_ai::openai_responses;
 use opi_ai::openrouter;
 use opi_ai::provider::{
-    EventStream, Provider, ProviderError, Request, ThinkingConfig, validate_request_capabilities,
+    Provider, ProviderError, Request, ThinkingConfig, validate_request_capabilities,
 };
 use opi_ai::registry::ModelCapabilities;
 use opi_ai::stream::Pricing;
 use opi_ai::vertex;
+use secrecy::SecretString;
 use tokio_util::sync::CancellationToken;
+use wiremock::matchers::{method, path};
+use wiremock::{Mock, MockServer, ResponseTemplate};
 
 fn pricing(input: f64) -> Pricing {
     Pricing {
@@ -145,41 +152,24 @@ fn pricing_rejects_non_finite_negative_duplicate_and_unsorted_tiers() {
     );
 }
 
-struct ThinkingProvider {
-    models: Vec<ModelInfo>,
+fn unsupported_thinking_model(id: &str, wire_api: WireApi) -> ModelInfo {
+    ModelInfo::new(
+        id,
+        id,
+        wire_api,
+        ModelCapabilities::new(100_000, 10_000)
+            .with_streaming(true)
+            .with_thinking(true),
+    )
+    .with_thinking_level_map(
+        ThinkingLevelMap::reasoning_default()
+            .with_mapping(ThinkingLevel::Max, ThinkingLevelMapping::Unsupported),
+    )
 }
 
-impl Provider for ThinkingProvider {
-    fn id(&self) -> &str {
-        "thinking"
-    }
-
-    fn models(&self) -> &[ModelInfo] {
-        &self.models
-    }
-
-    fn stream(&self, _request: Request) -> EventStream {
-        Box::pin(stream::empty())
-    }
-}
-
-#[test]
-fn unsupported_thinking_level_is_rejected_before_request_build() {
-    let map = opi_ai::model_info::ThinkingLevelMap::reasoning_default()
-        .with_mapping(ThinkingLevel::Max, ThinkingLevelMapping::Unsupported);
-    let provider = ThinkingProvider {
-        models: vec![
-            ModelInfo::new(
-                "reasoner",
-                "Reasoner",
-                WireApi::OpenAiResponses,
-                ModelCapabilities::new(100_000, 10_000).with_thinking(true),
-            )
-            .with_thinking_level_map(map),
-        ],
-    };
-    let request = Request {
-        model: "thinking:reasoner".into(),
+fn unsupported_thinking_request(provider_id: &str, model_id: &str) -> Request {
+    Request {
+        model: format!("{provider_id}:{model_id}"),
         system: None,
         messages: Vec::new(),
         tools: Vec::new(),
@@ -197,12 +187,125 @@ fn unsupported_thinking_level_is_rejected_before_request_build() {
         extra_headers: Vec::new(),
         cache_retention: Default::default(),
         session_id: None,
-    };
+    }
+}
 
-    assert!(matches!(
-        validate_request_capabilities(&provider, &request),
-        Err(ProviderError::UnsupportedCapability(_))
-    ));
+fn test_auth() -> Arc<dyn opi_ai::AuthResolver> {
+    Arc::new(StaticAuthResolver::new(
+        AuthScheme::Bearer,
+        SecretString::from("test-token"),
+    ))
+}
+
+async fn run_production_request(
+    provider: &dyn Provider,
+    request: Request,
+) -> Result<(), ProviderError> {
+    validate_request_capabilities(provider, &request)?;
+    let mut stream = provider.stream(request);
+    while let Some(event) = stream.next().await {
+        event?;
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn chat_unsupported_thinking_level_reaches_http_without_reasoning() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/event-stream")
+                .set_body_string(
+                    "data: {\"id\":\"chatcmpl-1\",\"model\":\"model\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\"},\"finish_reason\":null}]}\n\n\
+                     data: {\"id\":\"chatcmpl-1\",\"model\":\"model\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":1,\"completion_tokens\":1}}\n\n\
+                     data: [DONE]\n\n",
+                ),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+    let provider = openai_chat::OpenAiChatProvider::for_route(
+        test_auth(),
+        Some(server.uri()),
+        "chat".into(),
+        ProviderHeaders::default(),
+        vec![unsupported_thinking_model(
+            "model",
+            WireApi::OpenAiCompletions,
+        )],
+        Arc::new(HttpClient::new()),
+    );
+
+    run_production_request(&provider, unsupported_thinking_request("chat", "model"))
+        .await
+        .expect("unsupported Chat reasoning is omitted");
+    let requests = server.received_requests().await.unwrap();
+    let body: serde_json::Value = serde_json::from_slice(&requests[0].body).unwrap();
+    assert!(body.get("reasoning_effort").is_none());
+}
+
+#[tokio::test]
+async fn responses_unsupported_thinking_level_reaches_http_without_reasoning() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/responses"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/event-stream")
+                .set_body_string(
+                    "event: response.created\ndata: {\"type\":\"response.created\",\"response\":{\"id\":\"r\",\"model\":\"model\"}}\n\n\
+                     event: response.completed\ndata: {\"type\":\"response.completed\",\"response\":{\"id\":\"r\",\"model\":\"model\",\"output\":[],\"usage\":{\"input_tokens\":1,\"output_tokens\":1}}}\n\n",
+                ),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+    let provider = openai_responses::OpenAiResponsesProvider::for_route(
+        test_auth(),
+        Some(server.uri()),
+        "responses".into(),
+        ProviderHeaders::default(),
+        vec![unsupported_thinking_model(
+            "model",
+            WireApi::OpenAiResponses,
+        )],
+        Arc::new(HttpClient::new()),
+    );
+
+    run_production_request(
+        &provider,
+        unsupported_thinking_request("responses", "model"),
+    )
+    .await
+    .expect("unsupported Responses reasoning is omitted");
+    let requests = server.received_requests().await.unwrap();
+    let body: serde_json::Value = serde_json::from_slice(&requests[0].body).unwrap();
+    assert!(body.get("reasoning").is_none());
+}
+
+#[tokio::test]
+async fn strict_wire_unsupported_thinking_level_is_rejected_before_http() {
+    let server = MockServer::start().await;
+    let provider = anthropic::AnthropicProvider::for_route(
+        test_auth(),
+        "strict".into(),
+        vec![unsupported_thinking_model(
+            "model",
+            WireApi::AnthropicMessages,
+        )],
+        Some(server.uri()),
+        ProviderHeaders::default(),
+        Arc::new(HttpClient::new()),
+        false,
+    );
+
+    let error = run_production_request(&provider, unsupported_thinking_request("strict", "model"))
+        .await
+        .expect_err("strict wire rejection");
+    assert!(matches!(error, ProviderError::UnsupportedCapability(_)));
+    assert!(server.received_requests().await.unwrap().is_empty());
 }
 
 #[test]
