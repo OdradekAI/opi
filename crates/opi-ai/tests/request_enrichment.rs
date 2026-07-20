@@ -112,6 +112,12 @@ fn extra_headers_reject_auth_header_names() {
         "AUTHORIZATION",
         "x-api-key",
         "X-Api-Key",
+        "api-key",
+        "Api-Key",
+        "anthropic-version",
+        "Anthropic-Version",
+        "content-type",
+        "Content-Type",
     ];
     for name in &auth_names {
         let headers = vec![(name.to_string(), "secret".into())];

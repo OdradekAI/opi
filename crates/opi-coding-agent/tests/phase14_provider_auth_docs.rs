@@ -265,7 +265,7 @@ fn localized_specs_pin_final_phase14_runtime_semantics() {
         "docs/opi-spec.md",
         &spec,
         &[
-            "OpenAI Chat and Responses emit reasoning wire fields only when `request.thinking` is enabled and the selected `ModelInfo::thinking_level_map` resolves the requested level; static `reasoning_effort` fields are legacy compatibility/profile metadata and do not override that selection.",
+            "Unsupported thinking levels are rejected before request construction on every wire: when `request.thinking.enabled` and the selected `ModelInfo::thinking_level_map` cannot resolve `request.thinking.level`, the provider returns `ProviderError::UnsupportedCapability` without network I/O. Static `reasoning_effort` fields are legacy compatibility/profile metadata and do not override that selection.",
             "With an effective session, built-in direct Responses emits `prompt_cache_key` and a fresh `x-client-request-id` on every request; `send_session_id_header` gates only `session_id`. Custom/proxy profiles default all affinity off, and explicit opt-in enables the reviewed full mapping.",
             "`AuthInvalidPolicy` is explicit on constructed Anthropic, OpenAI Chat, and OpenAI Responses routes, including mapped static profiles, and is never inferred from Bearer syntax.",
             "Within those routes, canonical credential-managed profiles may return `CredentialRevoked`, while static custom, OpenRouter, and Mistral profiles return fixed bodyless `AuthFailed`; this body-suppression claim does not extend to Azure, Bedrock, Gemini, or Vertex diagnostics.",
@@ -281,7 +281,7 @@ fn localized_specs_pin_final_phase14_runtime_semantics() {
         "docs/opi-spec.zh.md",
         &spec_zh,
         &[
-            "OpenAI Chat 与 Responses 仅在 `request.thinking` 启用且所选 `ModelInfo::thinking_level_map` 能解析请求级别时发出 reasoning wire 字段；静态 `reasoning_effort` 字段只是遗留 compatibility/profile metadata，不能覆盖该选择。",
+            "在所有 wire 上，不支持的 thinking 级别在请求构造之前被拒绝：当 `request.thinking.enabled` 且所选 `ModelInfo::thinking_level_map` 无法解析 `request.thinking.level` 时，provider 返回 `ProviderError::UnsupportedCapability` 且不进行任何网络 I/O。静态 `reasoning_effort` 字段只是遗留 compatibility/profile metadata，不能覆盖该选择。",
             "存在有效 session 时，内置直连 Responses 在每次请求中发出 `prompt_cache_key` 和新的 `x-client-request-id`；`send_session_id_header` 只门控 `session_id`。自定义/proxy profile 默认关闭全部 affinity；显式 opt-in 会启用经审查的完整映射。",
             "`AuthInvalidPolicy` 由构造完成的 Anthropic、OpenAI Chat 与 OpenAI Responses route（包括 mapped static profile）显式指定，绝不从 Bearer 语法推断。",
             "在这些 route 内，规范 credential-managed profile 可以返回 `CredentialRevoked`，而静态 custom、OpenRouter 与 Mistral profile 返回固定且无 body 的 `AuthFailed`；该 body 抑制声明不扩展到 Azure、Bedrock、Gemini 或 Vertex diagnostics。",

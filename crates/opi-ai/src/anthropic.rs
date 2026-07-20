@@ -588,10 +588,13 @@ impl AnthropicMapper {
                     message: self.partial.clone(),
                 }]
             }
-            AnthropicEvent::Error { message } => {
+            AnthropicEvent::Error { message: _ } => {
                 self.saw_done = true;
                 let mut err_msg = self.partial.clone();
-                err_msg.error_message = message;
+                // Substitute a bounded, provider-neutral message: the raw
+                // upstream `error.message` may echo credential material and is
+                // never persisted or exposed publicly.
+                err_msg.error_message = Some(ANTHROPIC_STREAM_ERROR.to_owned());
                 vec![AssistantStreamEvent::Error {
                     reason: StopReason::Error,
                     message: err_msg,
@@ -640,6 +643,12 @@ fn empty_assistant_message(provider_id: &str) -> AssistantMessage {
 /// so no extra-headers field or flag is needed. Values are pinned to the
 /// reviewed pi 0.80.6 Anthropic OAuth profile.
 const ANTHROPIC_OAUTH_BETA_HEADER: &str = "claude-code-20250219,oauth-2025-04-20";
+
+/// Neutral public text substituted for the raw upstream Anthropic
+/// `error.message`. A proxy may echo credential material or request fragments
+/// in an error frame, so the raw value is never placed in a persisted session
+/// or a public event. Mirrors the dedicated Codex path.
+const ANTHROPIC_STREAM_ERROR: &str = "anthropic stream error";
 
 /// Built-in Anthropic model metadata without credentials or HTTP construction.
 pub fn model_catalog() -> Vec<ModelInfo> {
@@ -893,11 +902,9 @@ impl AnthropicProvider {
                     stream_events.push(Err(error));
                     break;
                 }
-                ParsedEvent::Malformed {
-                    event_type, error, ..
-                } => {
+                ParsedEvent::Malformed { event_type, .. } => {
                     stream_events.push(Err(ProviderError::StreamError(format!(
-                        "malformed SSE event '{event_type}': {error}"
+                        "malformed Anthropic SSE event '{event_type}'"
                     ))));
                 }
             }
@@ -973,7 +980,7 @@ impl AnthropicProvider {
         loop {
             let chunk = tokio::select! {
                 _ = cancel.cancelled() => {
-                    return Ok(());
+                    return Err(ProviderError::Cancelled);
                 }
                 chunk = byte_stream.next() => {
                     match chunk {
@@ -983,7 +990,15 @@ impl AnthropicProvider {
                 }
             };
 
-            let chunk = chunk.map_err(|e| ProviderError::StreamError(e.to_string()))?;
+            let chunk = chunk.map_err(|e| {
+                if e.is_timeout() {
+                    ProviderError::Timeout
+                } else if e.is_connect() {
+                    ProviderError::Network(e.to_string())
+                } else {
+                    ProviderError::StreamError(e.to_string())
+                }
+            })?;
             buffer.push_str(&String::from_utf8_lossy(&chunk));
 
             for parsed in drain_sse_events(&mut buffer) {
@@ -996,11 +1011,9 @@ impl AnthropicProvider {
                         }
                     }
                     ParsedEvent::UsageError(error) => return Err(error),
-                    ParsedEvent::Malformed {
-                        event_type, error, ..
-                    } => {
+                    ParsedEvent::Malformed { event_type, .. } => {
                         let err = ProviderError::StreamError(format!(
-                            "malformed SSE event '{event_type}': {error}"
+                            "malformed Anthropic SSE event '{event_type}'"
                         ));
                         if tx.send(Err(err)).await.is_err() {
                             return Ok(());
@@ -1274,44 +1287,56 @@ impl Provider for AnthropicProvider {
         let http_client = self.client.client().clone();
 
         let (tx, rx) = tokio::sync::mpsc::channel(64);
+        // Clone the sender so the spawned task can observe receiver drop and
+        // abort credential resolution / HTTP the moment the caller drops the
+        // stream, instead of running detached until its next send attempt.
+        let tx_closed = tx.clone();
 
         tokio::spawn(async move {
-            // Validate extra headers before any network call.
-            let extra_headers = match extra_headers {
-                Ok(headers) => headers,
-                Err(error) => {
-                    let _ = tx.send(Err(error)).await;
-                    return;
-                }
-            };
-            let resolved = match auth.resolve().await {
-                Ok(resolved) => resolved,
-                Err(e) => {
+            let work = async {
+                // Validate extra headers before any network call.
+                let extra_headers = match extra_headers {
+                    Ok(headers) => headers,
+                    Err(error) => {
+                        let _ = tx.send(Err(error)).await;
+                        return;
+                    }
+                };
+                let resolved = match auth.resolve().await {
+                    Ok(resolved) => resolved,
+                    Err(e) => {
+                        let _ = tx.send(Err(e)).await;
+                        return;
+                    }
+                };
+                let base_url = resolved
+                    .base_url
+                    .clone()
+                    .or(model_base_url)
+                    .unwrap_or(default_base_url);
+                if let Err(e) = Self::stream_http(
+                    http_client,
+                    resolved,
+                    base_url,
+                    provider_id,
+                    auth_invalid_policy,
+                    direct_oauth_beta,
+                    &body,
+                    cancel,
+                    timeout,
+                    extra_headers,
+                    &tx,
+                )
+                .await
+                {
                     let _ = tx.send(Err(e)).await;
-                    return;
                 }
             };
-            let base_url = resolved
-                .base_url
-                .clone()
-                .or(model_base_url)
-                .unwrap_or(default_base_url);
-            if let Err(e) = Self::stream_http(
-                http_client,
-                resolved,
-                base_url,
-                provider_id,
-                auth_invalid_policy,
-                direct_oauth_beta,
-                &body,
-                cancel,
-                timeout,
-                extra_headers,
-                &tx,
-            )
-            .await
-            {
-                let _ = tx.send(Err(e)).await;
+
+            tokio::select! {
+                biased;
+                _ = tx_closed.closed() => (),
+                _ = work => {},
             }
         });
 

@@ -452,6 +452,29 @@ impl ProviderCollection {
             };
             match provider.refresh_models().await {
                 Ok(Some(models)) => {
+                    // Validate the candidate before it can replace the live
+                    // catalog: a malformed or duplicate refresh must preserve
+                    // the last-known catalog (mirrors register_model checks).
+                    let mut seen = std::collections::HashSet::new();
+                    for model in &models {
+                        if model.id.is_empty() {
+                            return Err(CollectionError::Provider(ProviderError::Config(format!(
+                                "dynamic catalog for provider '{id}' contains a model with an empty id"
+                            ))));
+                        }
+                        if !seen.insert(model.id.as_str()) {
+                            return Err(CollectionError::Provider(ProviderError::Config(format!(
+                                "dynamic catalog for provider '{id}' has duplicate model id '{}'",
+                                model.id
+                            ))));
+                        }
+                        if let Err(source) = model.validate() {
+                            return Err(CollectionError::Provider(ProviderError::Config(format!(
+                                "dynamic catalog for provider '{id}' has invalid model '{}': {source}",
+                                model.id
+                            ))));
+                        }
+                    }
                     new_catalogs.insert(id.clone(), models);
                 }
                 Ok(None) => {

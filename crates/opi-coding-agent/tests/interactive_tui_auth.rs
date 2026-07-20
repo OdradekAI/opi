@@ -660,7 +660,10 @@ async fn outer_tui_second_normal_prompt_invalidates_pending_credential_turn() {
             .iter()
             .filter(|message| matches!(message, Message::User(_)))
             .count(),
-        2
+        // C5: the failed "first prompt" turn is rewound before the second
+        // prompt is submitted, so the second provider call carries only the
+        // new prompt (not the abandoned credential-needed user message).
+        1
     );
     assert_last_system_message(&result, "[/login: anthropic succeeded]");
     assert_eq!(presenter_counts(&evidence), (0, 1, 1, 1, 0));

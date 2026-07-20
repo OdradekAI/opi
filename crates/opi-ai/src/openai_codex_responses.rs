@@ -145,8 +145,8 @@ impl OpenAiCodexResponsesProvider {
         body: serde_json::Value,
         cancel: CancellationToken,
         timeout: Option<std::time::Duration>,
-        session_id: String,
-        request_id: String,
+        session_id: Option<String>,
+        request_id: Option<String>,
         tx: tokio::sync::mpsc::Sender<Result<AssistantStreamEvent, ProviderError>>,
     ) -> Result<(), ProviderError> {
         let account_id = resolved
@@ -167,9 +167,18 @@ impl OpenAiCodexResponsesProvider {
             .header("originator", "opi")
             .header("OpenAI-Beta", "responses=experimental")
             .header("accept", "text/event-stream")
-            .header("content-type", "application/json")
-            .header("session-id", session_id)
-            .header("x-client-request-id", request_id);
+            .header("content-type", "application/json");
+        // C7: omit affinity headers when CacheRetention::Disabled.
+        // C11: validate session-id before sending.
+        if let Some(value) = session_id {
+            let header_value = reqwest::header::HeaderValue::from_str(&value).map_err(|_| {
+                ProviderError::RequestFailed("invalid session-id header value".into())
+            })?;
+            request = request.header("session-id", header_value);
+        }
+        if let Some(value) = request_id {
+            request = request.header("x-client-request-id", value);
+        }
         if let Some(timeout) = timeout {
             request = request.timeout(timeout);
         }
@@ -199,13 +208,21 @@ impl OpenAiCodexResponsesProvider {
         let mut mapper = ResponsesMapper::new(PROVIDER_ID);
         loop {
             let chunk = tokio::select! {
-                _ = cancel.cancelled() => return Ok(()),
+                _ = cancel.cancelled() => return Err(ProviderError::Cancelled),
                 chunk = bytes.next() => match chunk {
                     Some(chunk) => chunk,
                     None => break,
                 },
             };
-            let chunk = chunk.map_err(|error| ProviderError::StreamError(error.to_string()))?;
+            let chunk = chunk.map_err(|error| {
+                if error.is_timeout() {
+                    ProviderError::Timeout
+                } else if error.is_connect() {
+                    ProviderError::Network(error.to_string())
+                } else {
+                    ProviderError::StreamError(error.to_string())
+                }
+            })?;
             buffer.push_str(&String::from_utf8_lossy(&chunk));
             for frame in drain_sse_frames(&mut buffer) {
                 match ResponsesEvent::try_from_frame(&frame) {
@@ -253,11 +270,13 @@ impl Provider for OpenAiCodexResponsesProvider {
     fn stream(&self, request: Request) -> EventStream {
         let auth = self.auth.clone();
         let default_base_url = self.base_url.clone();
-        let model_id = request
-            .model
-            .split_once(':')
-            .map(|(_, id)| id)
-            .unwrap_or(&request.model);
+        // C9: strip ONLY the openai-codex: prefix; do not strip arbitrary prefixes.
+        let model_id_owned = match request.model.strip_prefix("openai-codex:") {
+            Some(rest) => rest.to_owned(),
+            None => request.model.clone(),
+        };
+        let model_id = model_id_owned.as_str();
+        let model_known = self.models.iter().any(|model| model.id == model_id);
         let model_base_url = self
             .models
             .iter()
@@ -266,52 +285,91 @@ impl Provider for OpenAiCodexResponsesProvider {
         let extra_headers = validate_headers(&request.extra_headers);
         let body = self.build_request_body(&request);
         let timeout = request.timeout;
-        let session_id = if request.cache_retention != CacheRetention::Disabled {
-            request.session_id.clone().filter(|id| !id.is_empty())
+        // C7: derive affinity headers as None when caching is disabled; do not
+        // synthesize UUID fallbacks for the Disabled case.
+        let session_id: Option<String> = if request.cache_retention != CacheRetention::Disabled {
+            Some(
+                request
+                    .session_id
+                    .clone()
+                    .filter(|id| !id.is_empty())
+                    .unwrap_or_else(|| uuid::Uuid::now_v7().to_string()),
+            )
         } else {
             None
-        }
-        .unwrap_or_else(|| uuid::Uuid::now_v7().to_string());
-        let request_id = uuid::Uuid::now_v7().to_string();
+        };
+        let request_id: Option<String> = if request.cache_retention != CacheRetention::Disabled {
+            Some(uuid::Uuid::now_v7().to_string())
+        } else {
+            None
+        };
         let cancel = request.cancel.clone();
         let client = self.client.client().clone();
         let (tx, rx) = tokio::sync::mpsc::channel(64);
 
+        // C9: UnknownModel pre-I/O guard. Surfaces the error through a tiny
+        // spawned task (mirrors how other validation errors are surfaced via
+        // the channel), and guarantees ZERO auth-resolver calls and ZERO HTTP
+        // for unknown or cross-provider models.
+        if !model_known {
+            let provider_id: String = PROVIDER_ID.into();
+            tokio::spawn(async move {
+                let _ = tx
+                    .send(Err(ProviderError::UnknownModel {
+                        provider_id,
+                        model_id: model_id_owned,
+                    }))
+                    .await;
+            });
+            return Box::pin(ReceiverStream { rx });
+        }
+
+        // C1: observe receiver drop and abort credential resolution / HTTP
+        // instead of running detached until the next send attempt.
+        let tx_closed = tx.clone();
         tokio::spawn(async move {
-            let extra_headers = match extra_headers {
-                Ok(headers) => headers,
-                Err(error) => {
+            let work = async {
+                let extra_headers = match extra_headers {
+                    Ok(headers) => headers,
+                    Err(error) => {
+                        let _ = tx.send(Err(error)).await;
+                        return;
+                    }
+                };
+                let resolved = match auth.resolve().await {
+                    Ok(resolved) => resolved,
+                    Err(error) => {
+                        let _ = tx.send(Err(error)).await;
+                        return;
+                    }
+                };
+                let base_url = resolved
+                    .base_url
+                    .clone()
+                    .or(model_base_url)
+                    .unwrap_or(default_base_url);
+                if let Err(error) = Self::stream_http(
+                    client,
+                    resolved,
+                    base_url,
+                    extra_headers,
+                    body,
+                    cancel,
+                    timeout,
+                    session_id,
+                    request_id,
+                    tx.clone(),
+                )
+                .await
+                {
                     let _ = tx.send(Err(error)).await;
-                    return;
                 }
             };
-            let resolved = match auth.resolve().await {
-                Ok(resolved) => resolved,
-                Err(error) => {
-                    let _ = tx.send(Err(error)).await;
-                    return;
-                }
-            };
-            let base_url = resolved
-                .base_url
-                .clone()
-                .or(model_base_url)
-                .unwrap_or(default_base_url);
-            if let Err(error) = Self::stream_http(
-                client,
-                resolved,
-                base_url,
-                extra_headers,
-                body,
-                cancel,
-                timeout,
-                session_id,
-                request_id,
-                tx.clone(),
-            )
-            .await
-            {
-                let _ = tx.send(Err(error)).await;
+
+            tokio::select! {
+                biased;
+                _ = tx_closed.closed() => (),
+                _ = work => {},
             }
         });
         Box::pin(ReceiverStream { rx })

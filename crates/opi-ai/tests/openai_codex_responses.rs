@@ -301,16 +301,16 @@ async fn dedicated_codex_disabled_affinity_omits_user_session_everywhere() {
     let captured = server.received_requests().await.unwrap().remove(0);
     let body: serde_json::Value = serde_json::from_slice(&captured.body).unwrap();
     assert!(body.get("prompt_cache_key").is_none());
-    let session_id = captured.headers["session-id"].to_str().unwrap();
-    let request_id = captured.headers["x-client-request-id"].to_str().unwrap();
-    for generated in [session_id, request_id] {
-        assert_eq!(
-            uuid::Uuid::parse_str(generated).unwrap().get_version_num(),
-            7
-        );
-        assert_ne!(generated, "user-session-must-not-leak");
-    }
-    assert_ne!(session_id, request_id);
+    // C7: CacheRetention::Disabled suppresses BOTH session-affinity headers,
+    // not just the user-provided session id.
+    assert!(
+        !captured.headers.contains_key("session-id"),
+        "session-id header must be omitted when cache retention is Disabled"
+    );
+    assert!(
+        !captured.headers.contains_key("x-client-request-id"),
+        "x-client-request-id header must be omitted when cache retention is Disabled"
+    );
     let rendered_headers = format!("{:?}", captured.headers);
     assert!(!rendered_headers.contains("user-session-must-not-leak"));
 }
@@ -394,7 +394,7 @@ async fn dedicated_codex_valid_error_sse_never_surfaces_message_or_event_name() 
         assert_eq!(errors, 0);
         let rendered = captures.join("\n");
         assert!(
-            rendered.contains("OpenAI Codex returned a streaming error"),
+            rendered.contains("openai responses stream error"),
             "{rendered}"
         );
         assert!(!rendered.contains(sentinel), "{rendered}");
@@ -527,6 +527,13 @@ async fn dedicated_codex_401_and_403_are_revoked_and_redacted() {
         assert!(!rendered.contains("sentinel-access"));
         assert!(!rendered.contains("sentinel-envelope"));
         assert!(!error.is_retryable());
+        // C18: revocation ends the turn with exactly one request — no
+        // follow-up call, no auto-refresh attempt.
+        assert_eq!(
+            server.received_requests().await.unwrap().len(),
+            1,
+            "revocation must issue exactly one HTTP request"
+        );
     }
 }
 

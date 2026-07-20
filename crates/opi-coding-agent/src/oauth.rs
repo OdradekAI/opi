@@ -1078,20 +1078,32 @@ async fn poll_codex_device_token(
         return Ok(CodexDevicePoll::Complete(token));
     }
     let body = budget.wait(response.text()).await?.unwrap_or_default();
+    // Classify the structured OAuth error code FIRST. A terminal code
+    // (`access_denied`/`expired_token`) delivered on HTTP 403/404 must surface
+    // as `Denied`/`Expired` instead of falling through to the status-based
+    // `Pending` fallback below (which would otherwise hang ~15 min until the
+    // outer device-flow timeout fires).
+    match codex_device_error_code(&body).as_deref() {
+        Some("deviceauth_authorization_pending") | Some("authorization_pending") => {
+            return Ok(CodexDevicePoll::Pending);
+        }
+        Some("slow_down") => return Ok(CodexDevicePoll::SlowDown),
+        Some("access_denied") | Some("deviceauth_access_denied") => {
+            return Ok(CodexDevicePoll::Denied);
+        }
+        Some("expired_token") | Some("deviceauth_expired") => {
+            return Ok(CodexDevicePoll::Expired);
+        }
+        _ => {}
+    }
+    // No recognized error code: apply the status-based OpenAI-quirk fallback
+    // for pending-shape 403/404 bodies.
     if status == reqwest::StatusCode::FORBIDDEN || status == reqwest::StatusCode::NOT_FOUND {
         return Ok(CodexDevicePoll::Pending);
     }
-    match codex_device_error_code(&body).as_deref() {
-        Some("deviceauth_authorization_pending") | Some("authorization_pending") => {
-            Ok(CodexDevicePoll::Pending)
-        }
-        Some("slow_down") => Ok(CodexDevicePoll::SlowDown),
-        Some("access_denied") | Some("deviceauth_access_denied") => Ok(CodexDevicePoll::Denied),
-        Some("expired_token") | Some("deviceauth_expired") => Ok(CodexDevicePoll::Expired),
-        _ => Err(ProviderError::AuthFailed(format!(
-            "device authorization failed ({status})"
-        ))),
-    }
+    Err(ProviderError::AuthFailed(format!(
+        "device authorization failed ({status})"
+    )))
 }
 
 async fn run_codex_device_login_flow(

@@ -1465,6 +1465,11 @@ impl CodingHarness {
     pub async fn prompt(&mut self, text: &str) -> Result<Vec<AgentMessage>, AgentError> {
         self.restore_pending_extension_state().await;
         self.prepare_trace_run()?;
+        // C5: discard any unpersisted failed-turn user message before starting
+        // a fresh turn so it is not absorbed into this turn's persistence slice.
+        // (retry_last_prompt intentionally does NOT rewind — it reuses the
+        // failed-turn user message after an interactive login.)
+        self.agent.rewind_to(self.turn_offset);
         let offset = self.turn_offset;
         let messages = match self.agent.prompt(text).await {
             Ok(m) => m,
@@ -1489,6 +1494,9 @@ impl CodingHarness {
     ) -> Result<Vec<AgentMessage>, AgentError> {
         self.restore_pending_extension_state().await;
         self.prepare_trace_run()?;
+        // C5: discard any unpersisted failed-turn user message before starting a
+        // fresh turn (see `prompt`).
+        self.agent.rewind_to(self.turn_offset);
         let offset = self.turn_offset;
         let messages = match self.agent.prompt_with_content(content).await {
             Ok(m) => m,

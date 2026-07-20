@@ -4,7 +4,9 @@ use opi_ai::credential::CredentialSource;
 use opi_ai::provider::{ProviderError, ProviderErrorCategory};
 use opi_coding_agent::config::OpiConfig;
 use opi_coding_agent::oauth::OAuthProviderRegistry;
-use opi_coding_agent::provider_factory::{build_collection_for_listing, built_in_provider_ids};
+use opi_coding_agent::provider_factory::{
+    ProviderBuildError, build_collection_for_listing, build_provider, built_in_provider_ids,
+};
 
 #[test]
 fn canonical_oauth_provider_ids_are_exact() {
@@ -44,6 +46,35 @@ fn development_provider_ids_are_rejected_without_alias_or_migration() {
     assert!(registry.lookup("codex").is_none());
     assert!(!built_in_provider_ids().contains(&"copilot"));
     assert!(!built_in_provider_ids().contains(&"codex"));
+
+    // The deprecated dev-only ids must surface a rename hint rather than the
+    // generic "unknown provider" fallthrough.
+    for (deprecated, canonical) in [("copilot", "github-copilot"), ("codex", "openai-codex")] {
+        let mut config = OpiConfig::default();
+        config.defaults.model = format!("{deprecated}:gpt-4o");
+        // Match instead of `.expect_err(..)`: the Ok variant is a
+        // `Box<dyn Provider>`, which is not `Debug`, so `expect_err` would not
+        // compile.
+        let error = match build_provider(&config) {
+            Err(e) => e,
+            Ok(_) => panic!("deprecated id '{deprecated}' must error, but the provider built"),
+        };
+        match error {
+            ProviderBuildError::Config(message) => {
+                assert!(
+                    message.contains(canonical),
+                    "expected '{canonical}' rename hint for '{deprecated}', got: {message}"
+                );
+                assert!(
+                    !message.contains("unknown provider"),
+                    "rename hint must win over the generic fallthrough for '{deprecated}'"
+                );
+            }
+            other => {
+                panic!("expected ProviderBuildError::Config for '{deprecated}', got {other:?}")
+            }
+        }
+    }
 }
 
 #[test]

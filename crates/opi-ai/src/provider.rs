@@ -227,9 +227,10 @@ impl Default for ThinkingConfig {
 /// Returns `Err(UnsupportedCapability)` for a known text-only model receiving
 /// image input, before any network call is attempted. Unknown model IDs are
 /// left to the provider implementation so configured custom deployments can
-/// still work (no preflight). Unsupported thinking levels remain preflight
-/// errors for strict wires. OpenAI Chat and Responses defer them to their
-/// serializers, which omit the unsupported reasoning field.
+/// still work (no preflight). Unsupported thinking levels are preflight errors
+/// on every wire: if thinking is enabled and the model's
+/// `thinking_level_map` cannot resolve the requested level, the request is
+/// rejected with `UnsupportedCapability` before any network call.
 pub fn validate_request_capabilities(
     provider: &dyn Provider,
     request: &Request,
@@ -273,15 +274,10 @@ pub fn validate_request_capabilities(
             },
             other => ProviderError::Config(other.to_string()),
         })?;
-        if !matches!(
-            model.wire_api,
-            WireApi::OpenAiCompletions | WireApi::OpenAiResponses
-        ) {
-            model
-                .thinking_level_map
-                .resolve(request.thinking.level)
-                .map_err(|error| ProviderError::UnsupportedCapability(error.to_string()))?;
-        }
+        model
+            .thinking_level_map
+            .resolve(request.thinking.level)
+            .map_err(|error| ProviderError::UnsupportedCapability(error.to_string()))?;
     }
 
     Ok(())

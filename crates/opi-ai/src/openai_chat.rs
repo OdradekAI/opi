@@ -687,10 +687,13 @@ impl OpenAiChatMapper {
                 }
                 events
             }
-            OpenAiChatEvent::Error { message } => {
+            OpenAiChatEvent::Error { message: _ } => {
                 self.saw_done = true;
                 let mut err_msg = self.partial.clone();
-                err_msg.error_message = message;
+                // Substitute a bounded, provider-neutral message: the raw
+                // upstream `error.message` may echo credential material and is
+                // never persisted or exposed publicly.
+                err_msg.error_message = Some(OPENAI_CHAT_STREAM_ERROR.to_owned());
                 vec![AssistantStreamEvent::Error {
                     reason: StopReason::Error,
                     message: err_msg,
@@ -728,6 +731,12 @@ fn empty_assistant_message(api: crate::ApiKind, provider: &str) -> AssistantMess
         timestamp_ms: crate::time::now_ms(),
     }
 }
+
+/// Neutral public text substituted for the raw upstream OpenAI Chat
+/// `error.message`. A proxy may echo credential material or request fragments
+/// in an error frame, so the raw value is never placed in a persisted session
+/// or a public event. Mirrors the Anthropic path.
+const OPENAI_CHAT_STREAM_ERROR: &str = "openai chat stream error";
 
 // ---------------------------------------------------------------------------
 // CompatConfig  - configuration points for OpenAI-compatible profiles
@@ -1118,10 +1127,10 @@ impl OpenAiChatProvider {
                         stream_events.extend(mapper.process(event).into_iter().map(Ok));
                     }
                 }
-                ParsedEvent::Malformed { data, error } => {
-                    stream_events.push(Err(ProviderError::StreamError(format!(
-                        "malformed SSE data: {error} (data: {data:.80})"
-                    ))));
+                ParsedEvent::Malformed { .. } => {
+                    stream_events.push(Err(ProviderError::StreamError(
+                        "malformed OpenAI Chat SSE frame".to_owned(),
+                    )));
                     break;
                 }
             }
@@ -1198,7 +1207,7 @@ impl OpenAiChatProvider {
         loop {
             let chunk = tokio::select! {
                 _ = cancel.cancelled() => {
-                    return Ok(());
+                    return Err(ProviderError::Cancelled);
                 }
                 chunk = byte_stream.next() => {
                     match chunk {
@@ -1208,7 +1217,15 @@ impl OpenAiChatProvider {
                 }
             };
 
-            let chunk = chunk.map_err(|e| ProviderError::StreamError(e.to_string()))?;
+            let chunk = chunk.map_err(|e| {
+                if e.is_timeout() {
+                    ProviderError::Timeout
+                } else if e.is_connect() {
+                    ProviderError::Network(e.to_string())
+                } else {
+                    ProviderError::StreamError(e.to_string())
+                }
+            })?;
             buffer.push_str(&String::from_utf8_lossy(&chunk));
 
             for parsed in drain_sse_events(&mut buffer) {
@@ -1222,10 +1239,10 @@ impl OpenAiChatProvider {
                             }
                         }
                     }
-                    ParsedEvent::Malformed { data, error } => {
-                        return Err(ProviderError::StreamError(format!(
-                            "malformed SSE data: {error} (data: {data:.80})"
-                        )));
+                    ParsedEvent::Malformed { .. } => {
+                        return Err(ProviderError::StreamError(
+                            "malformed OpenAI Chat SSE frame".to_owned(),
+                        ));
                     }
                 }
             }
@@ -1493,43 +1510,55 @@ impl Provider for OpenAiChatProvider {
         let http_client = self.client.client().clone();
 
         let (tx, rx) = tokio::sync::mpsc::channel(64);
+        // Clone the sender so the spawned task can observe receiver drop and
+        // abort credential resolution / HTTP the moment the caller drops the
+        // stream, instead of running detached until its next send attempt.
+        let tx_closed = tx.clone();
 
         tokio::spawn(async move {
-            let extra_headers = match extra_headers {
-                Ok(headers) => headers,
-                Err(error) => {
-                    let _ = tx.send(Err(error)).await;
-                    return;
-                }
-            };
-            let resolved = match auth.resolve().await {
-                Ok(resolved) => resolved,
-                Err(e) => {
+            let work = async {
+                let extra_headers = match extra_headers {
+                    Ok(headers) => headers,
+                    Err(error) => {
+                        let _ = tx.send(Err(error)).await;
+                        return;
+                    }
+                };
+                let resolved = match auth.resolve().await {
+                    Ok(resolved) => resolved,
+                    Err(e) => {
+                        let _ = tx.send(Err(e)).await;
+                        return;
+                    }
+                };
+                let base_url = resolved
+                    .base_url
+                    .clone()
+                    .or(model_base_url)
+                    .unwrap_or(default_base_url);
+                if let Err(e) = Self::stream_http(
+                    http_client,
+                    resolved,
+                    base_url,
+                    provider_id,
+                    auth_invalid_policy,
+                    chat_completions_path,
+                    extra_headers,
+                    &body,
+                    cancel,
+                    timeout,
+                    &tx,
+                )
+                .await
+                {
                     let _ = tx.send(Err(e)).await;
-                    return;
                 }
             };
-            let base_url = resolved
-                .base_url
-                .clone()
-                .or(model_base_url)
-                .unwrap_or(default_base_url);
-            if let Err(e) = Self::stream_http(
-                http_client,
-                resolved,
-                base_url,
-                provider_id,
-                auth_invalid_policy,
-                chat_completions_path,
-                extra_headers,
-                &body,
-                cancel,
-                timeout,
-                &tx,
-            )
-            .await
-            {
-                let _ = tx.send(Err(e)).await;
+
+            tokio::select! {
+                biased;
+                _ = tx_closed.closed() => (),
+                _ = work => {},
             }
         });
 

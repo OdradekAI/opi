@@ -1,4 +1,4 @@
-e'x# Opi 技术规范
+# Opi 技术规范
 
 > Opi 是 [pi](https://github.com/earendil-works/pi) AI 代理工具包的 Rust 重新实现。它保留了 pi 的运行时语义，同时采用 Rust 原生的 API、存储格式和发布实践。
 
@@ -1340,7 +1340,7 @@ Typed hook result composition 由契约测试覆盖：扩展钩子在 base 钩�
 
 第十二阶段通过 fixture-backed lifecycle、error、auth、image-input、thinking、usage、retry、rate-limit 和 compatibility 测试加固现有 provider families 与 OpenAI-compatible profiles，全部经第十阶段的 provider collection/auth 缝合点路由。这不是 provider 宽度阶段。
 
-已交付的 provider 正确性面：九个内置 family（anthropic、openai chat、openai-responses、openrouter、mistral、gemini、bedrock、azure、vertex）加上 config-driven 的 OpenAI-compatible profile 承载按 family 的 request/streaming/tool-call/thinking/image/usage fixture；九类 provider 错误分类（auth、config、request、network、rate_limit、provider、stream、capability、cancelled）映射到安全诊断；OpenAI-compatible 的 `CompatConfig` 标志（`system_role_override`、`max_tokens_field`、`tool_result_name_field`、`usage_in_stream`、`strict_tool_schema`、`reasoning_effort`、`cache_key`、`require_assistant_after_tool_result`）和模型级 override 遵守 model-over-provider 优先级；其中 `require_assistant_after_tool_result` 仅表示面向遗留端点的兼容性元数据，不是由共享适配器在运行时强制执行的行为；`usage_in_stream` 会请求 `stream_options.include_usage`，并保留来自任意流式 chunk 的 usage 更新；按 profile 的静态请求 header（`extra_headers`）是独立的 profile 配置字段，不是 `CompatConfig` 标志；用量侧 cache token 和 provider response ID（Anthropic `message.id`、OpenAI Chat `chatcmpl-*`、Responses `resp_*`）回写到 `AssistantMessage::response_id`，其中 OpenAI Chat 会从任何携带 `id` 的 chunk 捕获 response ID，而不只是在 role chunk 中捕获；retry、partial-output no-retry、按 family 的取消和按 provider 的代理配置在无实时调用情况下覆盖；provider 构造在构建时校验凭据，并发出带安全补救的 auth/config 诊断。
+已交付的 provider 正确性面：九个内置 family（anthropic、openai chat、openai-responses、openrouter、mistral、gemini、bedrock、azure、vertex）加上 config-driven 的 OpenAI-compatible profile 承载按 family 的 request/streaming/tool-call/thinking/image/usage fixture；九类 provider 错误分类（auth、config、request、network、rate_limit、provider、stream、capability、cancelled）映射到安全诊断；OpenAI-compatible 的 `CompatConfig` 标志（`system_role_override`、`max_tokens_field`、`tool_result_name_field`、`usage_in_stream`、`strict_tool_schema`、`reasoning_effort`、`cache_key`、`require_assistant_after_tool_result`）和模型级 override 遵守 model-over-provider 优先级；其中 `require_assistant_after_tool_result` 仅表示面向遗留端点的兼容性元数据，不是由共享适配器在运行时强制执行的行为；`usage_in_stream` 会请求 `stream_options.include_usage`，并保留来自任意流式 chunk 的 usage 更新；按 profile 的静态请求 header（`extra_headers`）是独立的 profile 配置字段，不是 `CompatConfig` 标志；用量侧 cache token 和 provider response ID（Anthropic `message.id`、OpenAI Chat `chatcmpl-*`、Responses `resp_*`）回写到 `AssistantMessage::response_id`，其中 OpenAI Chat 会从任何携带 `id` 的 chunk 捕获 response ID，而不只是在 role chunk 中捕获；retry、partial-output no-retry、按 family 的取消和按 provider 的代理配置在无实时调用情况下覆盖；provider 构造执行结构与 provider-profile 校验并发出带安全补救的 auth/config 诊断，而托管凭据按 stream 解析，使 login、logout 和 refresh 无需重建 provider 即可生效。
 
 明确推迟：OpenAI Responses 的 `previous_response_id` 和服务端会话链（Responses 请求按 Chat-Completions 类比构造）；请求侧 prompt-caching 断点（`cache_key` profile 标志是可用的 cache-affinity 提示）；超出既有 per-model metadata 的图片数量/大小限制；广泛的 provider catalog 扩张。
 
@@ -1412,9 +1412,11 @@ thinking-level map 与可选 pricing。pricing tier 是确定性的：只有 inp
 catalog，为每个 catalog wire 校验精确一个具体 route，并在网络 IO 前拒绝未知 model、
 缺少 route 与 wire/compatibility 不匹配。一个 mapped provider 的所有 route 共享一个
 惰性 `AuthResolver`。
-OpenAI Chat 与 Responses 仅在 `request.thinking` 启用且所选
-`ModelInfo::thinking_level_map` 能解析请求级别时发出 reasoning wire 字段；静态
-`reasoning_effort` 字段只是遗留 compatibility/profile metadata，不能覆盖该选择。
+在所有 wire 上，不支持的 thinking 级别在请求构造之前被拒绝：当
+`request.thinking.enabled` 且所选 `ModelInfo::thinking_level_map` 无法解析
+`request.thinking.level` 时，provider 返回 `ProviderError::UnsupportedCapability`
+且不进行任何网络 I/O。静态 `reasoning_effort` 字段只是遗留
+compatibility/profile metadata，不能覆盖该选择。
 
 GitHub Copilot 使用规范 `github-copilot` identity，以及一个经审计的静态 pi-0.80.6
 catalog；该 catalog 覆盖 `anthropic-messages`、`openai-completions` 与

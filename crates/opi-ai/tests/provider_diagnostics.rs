@@ -357,9 +357,10 @@ fn validate_allows_image_on_image_capable_model() {
 }
 
 #[test]
-fn validate_allows_unsupported_thinking_on_chat_wire_for_serializer_omission() {
-    // Chat and Responses serializers omit reasoning when the selected thinking
-    // level is unsupported, so their shared preflight must allow the request.
+fn validate_rejects_unsupported_thinking_on_chat_wire_before_request() {
+    // C8: unsupported thinking levels are rejected before request construction
+    // on every wire (including OpenAI Chat/Responses), so the request never
+    // reaches a serializer that would silently omit the reasoning field.
     let provider =
         MockProvider::new_with_models("mock", vec![text_only_model("text-only")], vec![]);
     let mut request = image_request("mock:text-only");
@@ -374,8 +375,12 @@ fn validate_allows_unsupported_thinking_on_chat_wire_for_serializer_omission() {
         }],
         timestamp_ms: 0,
     })];
-    validate_request_capabilities(&provider, &request)
-        .expect("Chat serializer owns unsupported reasoning omission");
+    let err = validate_request_capabilities(&provider, &request)
+        .expect_err("unsupported thinking must be rejected before request construction");
+    assert!(
+        matches!(err, ProviderError::UnsupportedCapability(_)),
+        "got {err:?}"
+    );
 }
 
 #[test]

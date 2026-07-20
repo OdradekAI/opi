@@ -8,6 +8,12 @@ use crate::message::{
 use crate::provider::Request;
 use crate::stream::{AssistantStreamEvent, StopReason, Usage};
 
+/// Neutral public text substituted for the raw upstream Responses
+/// `error.message`. A proxy may echo credential material or request fragments
+/// in an error frame, so the raw value is never placed in a persisted session
+/// or a public event. Mirrors the dedicated Anthropic path.
+const OPENAI_RESPONSES_STREAM_ERROR: &str = "openai responses stream error";
+
 /// One parsed Server-Sent Events frame.
 pub(crate) struct SseFrame {
     pub(crate) event: String,
@@ -17,7 +23,15 @@ pub(crate) struct SseFrame {
 /// Result of decoding one Responses frame.
 pub(crate) enum ParsedEvent {
     Valid(ResponsesEvent),
-    Malformed { data: String, error: String },
+    Malformed {
+        // Raw upstream frame/error detail is captured only to detect the
+        // malformed condition; it is deliberately never propagated into a
+        // public or persisted error message (C6 redaction).
+        #[expect(dead_code)]
+        data: String,
+        #[expect(dead_code)]
+        error: String,
+    },
 }
 
 /// Parse complete SSE text into frames.
@@ -155,6 +169,9 @@ pub(crate) enum ResponsesEvent {
         output: Vec<RawOutputItemOwned>,
     },
     Error {
+        // Raw upstream error text is captured only to classify the event; it
+        // is deliberately never propagated (C6 redaction).
+        #[expect(dead_code)]
         message: String,
     },
 }
@@ -509,10 +526,13 @@ impl ResponsesMapper {
                 });
                 events
             }
-            ResponsesEvent::Error { message } => {
+            ResponsesEvent::Error { message: _ } => {
                 self.saw_done = true;
                 let mut error_message = self.partial.clone();
-                error_message.error_message = Some(message);
+                // Substitute a bounded, provider-neutral message: the raw
+                // upstream `error.message` may echo credential material and is
+                // never persisted or exposed publicly.
+                error_message.error_message = Some(OPENAI_RESPONSES_STREAM_ERROR.to_owned());
                 vec![AssistantStreamEvent::Error {
                     reason: StopReason::Error,
                     message: error_message,

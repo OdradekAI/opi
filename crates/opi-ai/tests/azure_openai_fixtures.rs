@@ -383,12 +383,14 @@ async fn error_from_fixture() {
         .find(|e| matches!(e, AssistantStreamEvent::Error { .. }));
     assert!(error_event.is_some());
     if let Some(AssistantStreamEvent::Error { message, .. }) = error_event {
+        let err = message.error_message.as_deref().unwrap_or("");
         assert!(
-            message
-                .error_message
-                .as_deref()
-                .unwrap_or("")
-                .contains("Deployment not found")
+            err.contains("openai chat stream error"),
+            "error_message must be the neutral literal, got: {err}"
+        );
+        assert!(
+            !err.contains("Deployment not found"),
+            "raw upstream error text must not leak into the public error_message: {err}"
         );
     }
 }

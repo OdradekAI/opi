@@ -1578,8 +1578,10 @@ Responses `resp_*`) round-trip into `AssistantMessage::response_id`, and
 OpenAI Chat captures the ID from any chunk carrying `id`, not only role
 chunks; retry, partial-output no-retry, per-family cancellation, and
 per-provider proxy config are covered without live calls; provider
-construction validates credentials at build time and emits auth/config
-diagnostics with safe remediation.
+construction performs structural and provider-profile validation and emits
+auth/config diagnostics with safe remediation, while managed credentials are
+resolved per stream so login, logout, and refresh take effect without
+rebuilding the provider.
 
 Explicitly deferred: OpenAI Responses `previous_response_id` and server-side
 session chaining (Responses requests are Chat-Completions analogues);
@@ -1697,11 +1699,12 @@ one provider id and catalog, validates exactly one concrete route for each
 catalog wire, and rejects unknown models, missing routes, and wire/compatibility
 mismatches before network IO. All routes for one mapped provider share one
 lazy `AuthResolver`.
-OpenAI Chat and Responses emit reasoning wire fields only when
-`request.thinking` is enabled and the selected
-`ModelInfo::thinking_level_map` resolves the requested level; static
-`reasoning_effort` fields are legacy compatibility/profile metadata and do not
-override that selection.
+Unsupported thinking levels are rejected before request construction on every
+wire: when `request.thinking.enabled` and the selected
+`ModelInfo::thinking_level_map` cannot resolve `request.thinking.level`, the
+provider returns `ProviderError::UnsupportedCapability` without network I/O.
+Static `reasoning_effort` fields are legacy compatibility/profile metadata and
+do not override that selection.
 
 GitHub Copilot uses the canonical `github-copilot` identity and one audited
 static pi-0.80.6 catalog spanning `anthropic-messages`,

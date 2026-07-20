@@ -336,10 +336,10 @@ impl OpenAiResponsesProvider {
                 ParsedEvent::Valid(event) => {
                     events.extend(mapper.process(event).into_iter().map(Ok));
                 }
-                ParsedEvent::Malformed { data, error } => {
-                    events.push(Err(ProviderError::StreamError(format!(
-                        "malformed SSE data: {error} (data: {data:.80})"
-                    ))));
+                ParsedEvent::Malformed { .. } => {
+                    events.push(Err(ProviderError::StreamError(
+                        "malformed OpenAI Responses SSE frame".to_owned(),
+                    )));
                     break;
                 }
             }
@@ -385,7 +385,11 @@ impl OpenAiResponsesProvider {
         if config.send_session_id_header
             && let Some(session_id) = session_id
         {
-            request = request.header("session_id", session_id);
+            let header_value =
+                reqwest::header::HeaderValue::from_str(&session_id).map_err(|_| {
+                    ProviderError::RequestFailed("invalid session-id header value".into())
+                })?;
+            request = request.header("session_id", header_value);
         }
         let response = request
             .body(serde_json::to_string(&body).unwrap_or_default())
@@ -416,13 +420,21 @@ impl OpenAiResponsesProvider {
         let mut mapper = ResponsesMapper::new(&provider_id);
         loop {
             let chunk = tokio::select! {
-                _ = cancel.cancelled() => return Ok(()),
+                _ = cancel.cancelled() => return Err(ProviderError::Cancelled),
                 chunk = bytes.next() => match chunk {
                     Some(chunk) => chunk,
                     None => break,
                 },
             };
-            let chunk = chunk.map_err(|error| ProviderError::StreamError(error.to_string()))?;
+            let chunk = chunk.map_err(|error| {
+                if error.is_timeout() {
+                    ProviderError::Timeout
+                } else if error.is_connect() {
+                    ProviderError::Network(error.to_string())
+                } else {
+                    ProviderError::StreamError(error.to_string())
+                }
+            })?;
             buffer.push_str(&String::from_utf8_lossy(&chunk));
             for frame in drain_sse_frames(&mut buffer) {
                 match ResponsesEvent::try_from_frame(&frame) {
@@ -433,10 +445,10 @@ impl OpenAiResponsesProvider {
                             }
                         }
                     }
-                    ParsedEvent::Malformed { data, error } => {
-                        return Err(ProviderError::StreamError(format!(
-                            "malformed SSE data: {error} (data: {data:.80})"
-                        )));
+                    ParsedEvent::Malformed { .. } => {
+                        return Err(ProviderError::StreamError(
+                            "malformed OpenAI Responses SSE frame".to_owned(),
+                        ));
                     }
                 }
             }
@@ -539,46 +551,58 @@ impl Provider for OpenAiResponsesProvider {
         let timeout = request.timeout;
         let client = self.client.client().clone();
         let (tx, rx) = tokio::sync::mpsc::channel(64);
+        // Clone the sender so the spawned task can observe receiver drop and
+        // abort credential resolution / HTTP the moment the caller drops the
+        // stream, instead of running detached until its next send attempt.
+        let tx_closed = tx.clone();
 
         tokio::spawn(async move {
-            let extra_headers = match extra_headers {
-                Ok(headers) => headers,
-                Err(error) => {
+            let work = async {
+                let extra_headers = match extra_headers {
+                    Ok(headers) => headers,
+                    Err(error) => {
+                        let _ = tx.send(Err(error)).await;
+                        return;
+                    }
+                };
+                let resolved = match auth.resolve().await {
+                    Ok(resolved) => resolved,
+                    Err(error) => {
+                        let _ = tx.send(Err(error)).await;
+                        return;
+                    }
+                };
+                let base_url = resolved
+                    .base_url
+                    .clone()
+                    .or(model_base_url)
+                    .unwrap_or(default_base_url);
+                if let Err(error) = Self::stream_http(
+                    client,
+                    resolved,
+                    base_url,
+                    route_path,
+                    config,
+                    auth_invalid_policy,
+                    extra_headers,
+                    provider_id,
+                    body,
+                    cancel,
+                    timeout,
+                    affinity_enabled.then_some(session_id).flatten(),
+                    request_id,
+                    tx.clone(),
+                )
+                .await
+                {
                     let _ = tx.send(Err(error)).await;
-                    return;
                 }
             };
-            let resolved = match auth.resolve().await {
-                Ok(resolved) => resolved,
-                Err(error) => {
-                    let _ = tx.send(Err(error)).await;
-                    return;
-                }
-            };
-            let base_url = resolved
-                .base_url
-                .clone()
-                .or(model_base_url)
-                .unwrap_or(default_base_url);
-            if let Err(error) = Self::stream_http(
-                client,
-                resolved,
-                base_url,
-                route_path,
-                config,
-                auth_invalid_policy,
-                extra_headers,
-                provider_id,
-                body,
-                cancel,
-                timeout,
-                affinity_enabled.then_some(session_id).flatten(),
-                request_id,
-                tx.clone(),
-            )
-            .await
-            {
-                let _ = tx.send(Err(error)).await;
+
+            tokio::select! {
+                biased;
+                _ = tx_closed.closed() => (),
+                _ = work => {},
             }
         });
         Box::pin(ReceiverStream { rx })

@@ -398,6 +398,9 @@ async fn github_copilot_headers_match_reviewed_static_contract() {
         factory_provider("gpt-4.1", "copilot-header-token", server.uri()).await;
     for name in [
         "User-Agent",
+        "Editor-Version",
+        "Editor-Plugin-Version",
+        "Copilot-Integration-Id",
         "X-Initiator",
         "Openai-Intent",
         "Copilot-Vision-Request",
@@ -534,6 +537,37 @@ async fn github_copilot_vision_header_covers_user_and_tool_result_images() {
             .unwrap(),
         "true"
     );
+
+    let anthropic_server = MockServer::start().await;
+    mount_stream(&anthropic_server, "/v1/messages", 200).await;
+    let (_dir, _store, anthropic_provider) = factory_provider(
+        "claude-sonnet-4.5",
+        "copilot-vision-token",
+        anthropic_server.uri(),
+    )
+    .await;
+    let mut anthropic_user_image = request("claude-sonnet-4.5");
+    anthropic_user_image.messages = vec![Message::User(UserMessage {
+        content: vec![InputContent::Image {
+            source: ImageSource::Base64 {
+                data: "AA==".into(),
+            },
+            media_type: MediaType::Png,
+        }],
+        timestamp_ms: 0,
+    })];
+    let _ = drain(&*anthropic_provider, anthropic_user_image).await;
+    let anthropic_requests = anthropic_server.received_requests().await.unwrap();
+    assert_eq!(anthropic_requests.len(), 1);
+    assert_eq!(
+        anthropic_requests[0]
+            .headers
+            .get("Copilot-Vision-Request")
+            .unwrap()
+            .to_str()
+            .unwrap(),
+        "true"
+    );
 }
 
 #[tokio::test]
@@ -602,6 +636,11 @@ async fn github_copilot_401_and_403_are_revoked_on_every_wire() {
                 "{model} status {status}: {error:?}"
             );
             assert!(!error.is_retryable());
+            assert_eq!(
+                server.received_requests().await.unwrap().len(),
+                1,
+                "{model} status {status}: no follow-up request should fire"
+            );
         }
     }
 }

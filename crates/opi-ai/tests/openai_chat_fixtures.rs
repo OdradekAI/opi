@@ -635,12 +635,14 @@ fn error_event_maps_to_stream_error() {
     } = &stream_events[0]
     {
         assert_eq!(*reason, StopReason::Error);
+        let err = message.error_message.as_ref().unwrap();
         assert!(
-            message
-                .error_message
-                .as_ref()
-                .unwrap()
-                .contains("Rate limit")
+            err.contains("openai chat stream error"),
+            "error_message must be the neutral literal, got: {err}"
+        );
+        assert!(
+            !err.contains("Rate limit"),
+            "raw upstream error text must not leak into the public error_message: {err}"
         );
     } else {
         panic!("expected Error stream event");
@@ -1671,9 +1673,11 @@ async fn stream_cancellation_aborts_before_completion() {
 
     let next = tokio::time::timeout(std::time::Duration::from_millis(200), stream.next())
         .await
-        .expect("stream must close before the delayed terminal fixture completes");
-    assert!(
-        next.is_none(),
-        "stream should end on cancellation before the terminal SSE chunk arrives"
-    );
+        .expect("stream must surface cancellation before the delayed terminal fixture completes");
+    match next {
+        Some(Err(ProviderError::Cancelled)) => { /* typed cancellation, as contracted */ }
+        other => {
+            panic!("expected Err(ProviderError::Cancelled) on cancellation, got: {other:?}")
+        }
+    }
 }

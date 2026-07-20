@@ -1806,6 +1806,18 @@ fn build_runtime_provider(
             WireApi::AzureOpenAiCompletions,
         ),
         "vertex" => (build_vertex(config, pre_resolved)?, WireApi::GoogleVertex),
+        "copilot" => {
+            return Err(ProviderBuildError::Config(
+                "'copilot' has been renamed; use provider id 'github-copilot' (login: /login github-copilot)"
+                    .into(),
+            ));
+        }
+        "codex" => {
+            return Err(ProviderBuildError::Config(
+                "'codex' has been renamed; use provider id 'openai-codex' (login: /login openai-codex)"
+                    .into(),
+            ));
+        }
         other => {
             if let Some(profile) = config.providers.custom.get(other) {
                 let auth = Arc::new(EnvAuthResolver {

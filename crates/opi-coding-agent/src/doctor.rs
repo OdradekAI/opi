@@ -713,8 +713,14 @@ fn provider_proxy_url<'a>(config: &'a OpiConfig, provider: &str) -> Option<&'a s
         "azure" => providers.azure.proxy.as_ref().map(|p| p.url.as_str()),
         "vertex" => providers.vertex.proxy.as_ref().map(|p| p.url.as_str()),
         other => providers
-            .openai_compatible
+            .custom
             .get(other)
-            .and_then(|profile| profile.proxy.as_ref().map(|p| p.url.as_str())),
+            .and_then(|p| p.proxy.as_ref().map(|p| p.url.as_str()))
+            .or_else(|| {
+                providers
+                    .openai_compatible
+                    .get(other)
+                    .and_then(|profile| profile.proxy.as_ref().map(|p| p.url.as_str()))
+            }),
     }
 }

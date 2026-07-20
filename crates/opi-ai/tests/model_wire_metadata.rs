@@ -25,8 +25,7 @@ use opi_ai::stream::Pricing;
 use opi_ai::vertex;
 use secrecy::SecretString;
 use tokio_util::sync::CancellationToken;
-use wiremock::matchers::{method, path};
-use wiremock::{Mock, MockServer, ResponseTemplate};
+use wiremock::MockServer;
 
 fn pricing(input: f64) -> Pricing {
     Pricing {
@@ -210,22 +209,8 @@ async fn run_production_request(
 }
 
 #[tokio::test]
-async fn chat_unsupported_thinking_level_reaches_http_without_reasoning() {
+async fn chat_unsupported_thinking_level_is_rejected_before_http() {
     let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/v1/chat/completions"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .insert_header("content-type", "text/event-stream")
-                .set_body_string(
-                    "data: {\"id\":\"chatcmpl-1\",\"model\":\"model\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\"},\"finish_reason\":null}]}\n\n\
-                     data: {\"id\":\"chatcmpl-1\",\"model\":\"model\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":1,\"completion_tokens\":1}}\n\n\
-                     data: [DONE]\n\n",
-                ),
-        )
-        .expect(1)
-        .mount(&server)
-        .await;
     let provider = openai_chat::OpenAiChatProvider::for_route(
         test_auth(),
         Some(server.uri()),
@@ -238,30 +223,22 @@ async fn chat_unsupported_thinking_level_reaches_http_without_reasoning() {
         Arc::new(HttpClient::new()),
     );
 
-    run_production_request(&provider, unsupported_thinking_request("chat", "model"))
+    let error = run_production_request(&provider, unsupported_thinking_request("chat", "model"))
         .await
-        .expect("unsupported Chat reasoning is omitted");
-    let requests = server.received_requests().await.unwrap();
-    let body: serde_json::Value = serde_json::from_slice(&requests[0].body).unwrap();
-    assert!(body.get("reasoning_effort").is_none());
+        .expect_err("unsupported Chat thinking is rejected before HTTP");
+    assert!(
+        matches!(error, ProviderError::UnsupportedCapability(_)),
+        "got {error:?}"
+    );
+    assert!(
+        server.received_requests().await.unwrap().is_empty(),
+        "no HTTP request should be issued for an unsupported thinking level"
+    );
 }
 
 #[tokio::test]
-async fn responses_unsupported_thinking_level_reaches_http_without_reasoning() {
+async fn responses_unsupported_thinking_level_is_rejected_before_http() {
     let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/v1/responses"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .insert_header("content-type", "text/event-stream")
-                .set_body_string(
-                    "event: response.created\ndata: {\"type\":\"response.created\",\"response\":{\"id\":\"r\",\"model\":\"model\"}}\n\n\
-                     event: response.completed\ndata: {\"type\":\"response.completed\",\"response\":{\"id\":\"r\",\"model\":\"model\",\"output\":[],\"usage\":{\"input_tokens\":1,\"output_tokens\":1}}}\n\n",
-                ),
-        )
-        .expect(1)
-        .mount(&server)
-        .await;
     let provider = openai_responses::OpenAiResponsesProvider::for_route(
         test_auth(),
         Some(server.uri()),
@@ -274,15 +251,20 @@ async fn responses_unsupported_thinking_level_reaches_http_without_reasoning() {
         Arc::new(HttpClient::new()),
     );
 
-    run_production_request(
+    let error = run_production_request(
         &provider,
         unsupported_thinking_request("responses", "model"),
     )
     .await
-    .expect("unsupported Responses reasoning is omitted");
-    let requests = server.received_requests().await.unwrap();
-    let body: serde_json::Value = serde_json::from_slice(&requests[0].body).unwrap();
-    assert!(body.get("reasoning").is_none());
+    .expect_err("unsupported Responses thinking is rejected before HTTP");
+    assert!(
+        matches!(error, ProviderError::UnsupportedCapability(_)),
+        "got {error:?}"
+    );
+    assert!(
+        server.received_requests().await.unwrap().is_empty(),
+        "no HTTP request should be issued for an unsupported thinking level"
+    );
 }
 
 #[tokio::test]

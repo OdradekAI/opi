@@ -2784,12 +2784,12 @@ async fn openai_codex_device_code_slow_down_increases_poll_delay() {
     );
 }
 
-async fn codex_device_terminal_error(error_code: &str) -> AiProviderError {
+async fn codex_device_terminal_error(error_code: &str, status: u16) -> AiProviderError {
     let server = MockServer::start().await;
     mount_codex_device_start(&server, "device-auth-sentinel", "PUBLIC-CODE", 0).await;
     mount_codex_device_poll(
         &server,
-        400,
+        status,
         json!({"error":{"code":error_code},"echo":"device-verifier-sentinel"}),
         None,
     )
@@ -2804,28 +2804,58 @@ async fn codex_device_terminal_error(error_code: &str) -> AiProviderError {
 
 #[tokio::test]
 async fn openai_codex_device_code_denial_is_typed_and_redacted() {
-    let error = codex_device_terminal_error("access_denied").await;
-    assert!(matches!(
-        error,
-        AiProviderError::CredentialRevoked { ref provider_id }
-            if provider_id == "openai-codex"
-    ));
-    let rendered = format!("{error:?} {error}");
-    assert!(!rendered.contains("device-auth-sentinel"));
-    assert!(!rendered.contains("device-verifier-sentinel"));
+    // The structured `access_denied` code must classify as `Denied` regardless
+    // of HTTP status. A terminal code delivered on 403/404 must NOT fall
+    // through to the status-based `Pending` branch (which hangs ~15 min until
+    // the outer device-flow timeout fires).
+    for status in [400u16, 403, 404] {
+        let error = codex_device_terminal_error("access_denied", status).await;
+        assert!(
+            matches!(
+                error,
+                AiProviderError::CredentialRevoked { ref provider_id }
+                    if provider_id == "openai-codex"
+            ),
+            "status {status}: {error:?}"
+        );
+        let rendered = format!("{error:?} {error}");
+        assert!(
+            !rendered.contains("device-auth-sentinel"),
+            "status {status}"
+        );
+        assert!(
+            !rendered.contains("device-verifier-sentinel"),
+            "status {status}"
+        );
+    }
 }
 
 #[tokio::test]
 async fn openai_codex_device_code_expiry_is_typed_and_redacted() {
-    let error = codex_device_terminal_error("expired_token").await;
-    assert!(matches!(
-        error,
-        AiProviderError::CredentialRevoked { ref provider_id }
-            if provider_id == "openai-codex"
-    ));
-    let rendered = format!("{error:?} {error}");
-    assert!(!rendered.contains("device-auth-sentinel"));
-    assert!(!rendered.contains("device-verifier-sentinel"));
+    // The structured `expired_token` code must classify as `Expired` regardless
+    // of HTTP status. A terminal code delivered on 403/404 must NOT fall
+    // through to the status-based `Pending` branch (which hangs ~15 min until
+    // the outer device-flow timeout fires).
+    for status in [400u16, 403, 404] {
+        let error = codex_device_terminal_error("expired_token", status).await;
+        assert!(
+            matches!(
+                error,
+                AiProviderError::CredentialRevoked { ref provider_id }
+                    if provider_id == "openai-codex"
+            ),
+            "status {status}: {error:?}"
+        );
+        let rendered = format!("{error:?} {error}");
+        assert!(
+            !rendered.contains("device-auth-sentinel"),
+            "status {status}"
+        );
+        assert!(
+            !rendered.contains("device-verifier-sentinel"),
+            "status {status}"
+        );
+    }
 }
 
 #[tokio::test(start_paused = true)]
@@ -4394,13 +4424,13 @@ async fn factory_routes_codex_to_codex_responses_with_oauth_wire_shape() {
     let registry = OAuthProviderRegistry::registry_with_builtins();
 
     let mut config = OpiConfig::default();
-    config.defaults.model = "openai-codex:gpt-5".into();
+    config.defaults.model = "openai-codex:gpt-5.4".into();
 
     let provider = build_provider_with_oauth(&config, &resolver, &registry)
         .await
         .expect("codex OAuth provider builds");
     assert_eq!(provider.id(), "openai-codex");
-    let mut stream = provider.stream(factory_request("openai-codex:gpt-5"));
+    let mut stream = provider.stream(factory_request("openai-codex:gpt-5.4"));
     drain_stream(&mut stream).await;
 
     let requests = server.received_requests().await.unwrap();
@@ -5092,7 +5122,7 @@ async fn factory_built_approved_profiles_resolve_auth_inside_each_stream() {
     for (provider_id, model) in [
         ("anthropic", "claude-sonnet-4-5-20250514"),
         ("github-copilot", "gpt-4.1"),
-        ("openai-codex", "gpt-5"),
+        ("openai-codex", "gpt-5.4"),
     ] {
         let server = MockServer::start().await;
         let (_dir, store, _backend) = store_with(FakeKeyringBackend::new());
@@ -5175,7 +5205,7 @@ async fn factory_stream_reresolves_after_store_change() {
     for (provider_id, model, request_path) in [
         ("anthropic", "claude-sonnet-4-5-20250514", "/v1/messages"),
         ("github-copilot", "gpt-4.1", "/chat/completions"),
-        ("openai-codex", "gpt-5", "/codex/responses"),
+        ("openai-codex", "gpt-5.4", "/codex/responses"),
     ] {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
@@ -5356,7 +5386,7 @@ async fn factory_built_approved_profiles_map_revocation_without_retry() {
     for (provider_id, model, request_path) in [
         ("anthropic", "claude-sonnet-4-5-20250514", "/v1/messages"),
         ("github-copilot", "gpt-4.1", "/chat/completions"),
-        ("openai-codex", "gpt-5", "/codex/responses"),
+        ("openai-codex", "gpt-5.4", "/codex/responses"),
     ] {
         let server = MockServer::start().await;
         Mock::given(method("POST"))

@@ -226,6 +226,18 @@ impl Agent {
         self.run_with_token(token).await
     }
 
+    /// Drop trailing in-memory messages beyond `len`.
+    ///
+    /// Used by the harness to discard an abandoned failed-turn user message
+    /// (for example after `CredentialNeeded`) before a fresh
+    /// [`Agent::prompt`]/[`Agent::prompt_with_content`] call, so the
+    /// unpersisted message is not absorbed into the next successful persistence
+    /// slice. [`Agent::retry_last_turn`] is unaffected because it does not push
+    /// a new user message.
+    pub fn rewind_to(&mut self, len: usize) {
+        self.messages.truncate(len);
+    }
+
     /// Cancel the current operation.
     ///
     /// Equivalent to the first Ctrl+C. The running `prompt` or `continue_`

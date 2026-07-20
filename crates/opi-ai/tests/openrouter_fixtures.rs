@@ -6,7 +6,9 @@
 use futures_util::StreamExt;
 use opi_ai::message::{InputContent, Message, ToolDef, UserMessage};
 use opi_ai::openai_chat::{CompatConfig, OpenAiChatProvider};
-use opi_ai::provider::{CacheRetention, EventStream, Provider, Request, ThinkingConfig};
+use opi_ai::provider::{
+    CacheRetention, EventStream, Provider, ProviderError, Request, ThinkingConfig,
+};
 use opi_ai::registry::ProviderRegistry;
 use opi_ai::stream::AssistantStreamEvent;
 use tokio_util::sync::CancellationToken;
@@ -491,9 +493,9 @@ async fn stream_cancellation_aborts_before_completion() {
 
     let next = tokio::time::timeout(std::time::Duration::from_millis(200), stream.next())
         .await
-        .expect("stream must close before the delayed terminal fixture completes");
-    assert!(
-        next.is_none(),
-        "stream should end on cancellation before the terminal SSE chunk arrives"
-    );
+        .expect("stream must surface cancellation before the delayed terminal fixture completes");
+    match next {
+        Some(Err(ProviderError::Cancelled)) => { /* typed cancellation, as contracted */ }
+        other => panic!("expected Err(ProviderError::Cancelled) on cancellation, got: {other:?}"),
+    }
 }

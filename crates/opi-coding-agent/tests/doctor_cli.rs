@@ -310,6 +310,50 @@ fn config_scope_reports_resolved_model() {
 }
 
 #[test]
+fn config_scope_reports_proxy_for_custom_provider() {
+    use opi_ai::AuthScheme;
+    use opi_coding_agent::config::{CustomProviderConfig, ProviderProxyConfig};
+
+    let dir = tempfile::tempdir().unwrap();
+    let mut config = test_config("acme:foo");
+    config.providers.custom.insert(
+        "acme".into(),
+        CustomProviderConfig {
+            id: "acme".into(),
+            name: "Acme".into(),
+            base_url: Some("https://api.acme.example".into()),
+            api_key_env: "ACME_API_KEY".into(),
+            auth_scheme: AuthScheme::Bearer,
+            proxy: Some(ProviderProxyConfig {
+                url: "http://proxy.internal:3128".into(),
+                no_proxy: None,
+            }),
+            headers: Vec::new(),
+            models: Vec::new(),
+        },
+    );
+
+    let report = run_doctor(&[DoctorScope::Config], &ctx(&config, dir.path(), &no_env));
+    let proxy = report
+        .entries
+        .iter()
+        .find(|entry| entry.diagnostic.code == "doctor_config_proxy")
+        .unwrap_or_else(|| panic!("no doctor_config_proxy diagnostic: {:?}", report.entries));
+    assert_eq!(proxy.diagnostic.severity, Severity::Info);
+    assert!(
+        format_text(&report).contains("proxy configured for selected provider \"acme\""),
+        "expected custom-provider proxy message, got: {}",
+        format_text(&report)
+    );
+    assert!(
+        !format_text(&report)
+            .contains("no explicit proxy configured for selected provider \"acme\""),
+        "custom provider proxy should not be reported as absent, got: {}",
+        format_text(&report)
+    );
+}
+
+#[test]
 fn config_scope_surfaces_config_error_as_error_severity() {
     // A config read failure must surface as an Error-severity shared diagnostic
     // (exit code 2), not an internal doctor failure (exit code 1).

@@ -247,7 +247,10 @@ fn redact_assistant_message(
         response_id: message.response_id.clone(),
         usage: message.usage.clone(),
         stop_reason: message.stop_reason,
-        error_message: message.error_message.clone(),
+        error_message: message
+            .error_message
+            .as_ref()
+            .map(|error| redact_text(error, RedactionMode::Summary)),
         timestamp_ms: message.timestamp_ms,
     }
 }

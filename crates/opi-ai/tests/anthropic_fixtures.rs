@@ -513,10 +513,23 @@ fn error_event_maps_to_stream_error() {
     let stream_events = map_fixture(error_fixture());
 
     assert_eq!(stream_events.len(), 1);
-    assert!(matches!(
-        &stream_events[0],
-        AssistantStreamEvent::Error { reason, .. } if *reason == StopReason::Error
-    ));
+    if let AssistantStreamEvent::Error {
+        reason, message, ..
+    } = &stream_events[0]
+    {
+        assert_eq!(*reason, StopReason::Error);
+        let err = message.error_message.as_ref().unwrap();
+        assert!(
+            err.contains("anthropic stream error"),
+            "error_message must be the neutral literal, got: {err}"
+        );
+        assert!(
+            !err.contains("Overloaded"),
+            "raw upstream error text must not leak into the public error_message: {err}"
+        );
+    } else {
+        panic!("expected Error stream event");
+    }
 }
 
 // --- Stop Reason Mapping Tests ---
