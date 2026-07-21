@@ -354,17 +354,22 @@ async fn dedicated_codex_malformed_sse_never_surfaces_upstream_data() {
 }
 
 #[tokio::test]
-async fn dedicated_codex_valid_error_sse_never_surfaces_message_or_event_name() {
-    for (event_name, data, sentinel) in [
+async fn dedicated_codex_valid_error_sse_never_surfaces_message() {
+    // Canonical Codex SSE is data-only: the type lives in the JSON payload.
+    // Genuine `error` and `response.failed` types must terminate the stream
+    // with a redacted, provider-neutral error and never echo the upstream
+    // message. Unknown event types are ignored (not errors) -- covered by
+    // `dedicated_codex_data_only_frames_stream_to_completion`.
+    for (label, data, sentinel) in [
         (
             "error",
-            r#"{"message":"sentinel-valid-error-message"}"#,
+            r#"{"type":"error","message":"sentinel-valid-error-message"}"#,
             "sentinel-valid-error-message",
         ),
         (
-            "sentinel-unknown-event-name",
-            r#"{"message":"benign"}"#,
-            "sentinel-unknown-event-name",
+            "response.failed",
+            r#"{"type":"response.failed","error":{"message":"sentinel-failed-detail"}}"#,
+            "sentinel-failed-detail",
         ),
     ] {
         let server = MockServer::start().await;
@@ -372,7 +377,7 @@ async fn dedicated_codex_valid_error_sse_never_surfaces_message_or_event_name() 
             .and(path("/codex/responses"))
             .respond_with(
                 ResponseTemplate::new(200)
-                    .set_body_string(format!("event: {event_name}\ndata: {data}\n\n"))
+                    .set_body_string(format!("data: {data}\n\n"))
                     .insert_header("content-type", "text/event-stream"),
             )
             .mount(&server)
@@ -390,15 +395,107 @@ async fn dedicated_codex_valid_error_sse_never_surfaces_message_or_event_name() 
 
         let (captures, events, errors) = capture_stream(&provider, request()).await;
 
-        assert_eq!(events, 1);
-        assert_eq!(errors, 0);
+        assert_eq!(events, 1, "{label}");
+        assert_eq!(errors, 0, "{label}");
         let rendered = captures.join("\n");
         assert!(
             rendered.contains("openai responses stream error"),
-            "{rendered}"
+            "{label}: {rendered}"
         );
-        assert!(!rendered.contains(sentinel), "{rendered}");
+        assert!(!rendered.contains(sentinel), "{label}: {rendered}");
     }
+}
+
+#[tokio::test]
+async fn dedicated_codex_data_only_frames_stream_to_completion() {
+    // Reproduces the canonical pi-0.80.6 Codex capture: every frame is
+    // data-only (no `event:` line, type in the JSON payload) and the stream
+    // terminates with the `data: [DONE]` sentinel. Before the JSON-type
+    // dispatch fix this terminated on the first frame; it must now stream to a
+    // typed Done.
+    let sse = [
+        r#"data: {"type":"response.output_item.added","item":{"type":"message","id":"msg_1","role":"assistant","status":"in_progress","content":[]}}"#,
+        r#"data: {"type":"response.content_part.added","part":{"type":"output_text","text":""}}"#,
+        r#"data: {"type":"response.output_text.delta","delta":"Hello"}"#,
+        r#"data: {"type":"response.output_item.done","item":{"type":"message","id":"msg_1","role":"assistant","status":"completed","content":[{"type":"output_text","text":"Hello"}]}}"#,
+        r#"data: {"type":"response.completed","response":{"status":"completed","usage":{"input_tokens":5,"output_tokens":3,"input_tokens_details":{"cached_tokens":0}}}}"#,
+        "data: [DONE]",
+    ]
+    .join("\n\n");
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/codex/responses"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string(format!("{sse}\n\n"))
+                .insert_header("content-type", "text/event-stream"),
+        )
+        .mount(&server)
+        .await;
+    let provider = OpenAiCodexResponsesProvider::new(
+        Arc::new(FixedAuth {
+            secret: SecretString::from("sentinel-access"),
+            base_url: Some(server.uri()),
+            account_id: Some("account-fixed".into()),
+        }),
+        None,
+        vec![model(None)],
+        Arc::new(HttpClient::new()),
+    );
+
+    let (captures, events, errors) = capture_stream(&provider, request()).await;
+
+    assert_eq!(errors, 0, "{captures:?}");
+    assert!(events > 1, "expected stream events: {captures:?}");
+    let rendered = captures.join("\n");
+    assert!(rendered.contains("Hello"), "text delta missing: {rendered}");
+    assert!(
+        rendered.contains(r#""type":"done""#),
+        "no terminal done: {rendered}"
+    );
+}
+
+#[tokio::test]
+async fn dedicated_codex_incomplete_terminal_is_length_not_error() {
+    // `response.incomplete` (max_output_tokens) must terminate as a typed Done
+    // with a length stop reason, not a stream error.
+    let sse = [
+        r#"data: {"type":"response.output_item.added","item":{"type":"message","id":"msg_1","role":"assistant","status":"in_progress","content":[]}}"#,
+        r#"data: {"type":"response.content_part.added","part":{"type":"output_text","text":""}}"#,
+        r#"data: {"type":"response.output_text.delta","delta":"Hel"}"#,
+        r#"data: {"type":"response.incomplete","response":{"status":"incomplete","incomplete_details":{"reason":"max_output_tokens"},"usage":{"input_tokens":5,"output_tokens":3,"input_tokens_details":{"cached_tokens":0}}}}"#,
+    ]
+    .join("\n\n");
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/codex/responses"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string(format!("{sse}\n\n"))
+                .insert_header("content-type", "text/event-stream"),
+        )
+        .mount(&server)
+        .await;
+    let provider = OpenAiCodexResponsesProvider::new(
+        Arc::new(FixedAuth {
+            secret: SecretString::from("sentinel-access"),
+            base_url: Some(server.uri()),
+            account_id: Some("account-fixed".into()),
+        }),
+        None,
+        vec![model(None)],
+        Arc::new(HttpClient::new()),
+    );
+
+    let (captures, events, errors) = capture_stream(&provider, request()).await;
+
+    assert_eq!(errors, 0, "incomplete must not error: {captures:?}");
+    assert!(events > 0, "{captures:?}");
+    let rendered = captures.join("\n");
+    assert!(
+        rendered.contains(r#""reason":"length""#),
+        "expected length stop: {rendered}"
+    );
 }
 
 #[tokio::test]

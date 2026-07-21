@@ -42,6 +42,7 @@ futures-util = { workspace = true }
 sha2 = { workspace = true }
 rand = { workspace = true }
 secrecy = { workspace = true }
+zeroize = { workspace = true }
 fs4 = { workspace = true }
 keyring-core = { workspace = true }
 time = { workspace = true }

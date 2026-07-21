@@ -699,6 +699,15 @@ fn append_credential_remediation(output: &Arc<Mutex<String>>, error: &AgentError
             remediation: format!("/login {provider_id}"),
             diagnostic: Diagnostic::from(error).redacted_payload(RedactionMode::Summary),
         },
+        // AccountIdMissing is an auth-category failure resolved by re-login.
+        // Surface it as a CredentialNeeded remediation event (carrying the
+        // AccountIdMissing diagnostic) so JSON/text embedders drive the same
+        // /login <provider> re-auth path. Kept distinct from CredentialRevoked.
+        AgentError::AccountIdMissing { provider_id } => AgentSessionEvent::CredentialNeeded {
+            provider_id: provider_id.clone(),
+            remediation: format!("/login {provider_id}"),
+            diagnostic: Diagnostic::from(error).redacted_payload(RedactionMode::Summary),
+        },
         _ => return,
     };
     if let Ok(json) = serde_json::to_string(&event)
@@ -727,7 +736,8 @@ fn exit_code_for_agent_error(error: &AgentError) -> i32 {
         AgentError::Cancelled => ExitCode::Interrupted as i32,
         AgentError::AuthFailed(_)
         | AgentError::CredentialNeeded { .. }
-        | AgentError::CredentialRevoked { .. } => ExitCode::AuthFailure as i32,
+        | AgentError::CredentialRevoked { .. }
+        | AgentError::AccountIdMissing { .. } => ExitCode::AuthFailure as i32,
         AgentError::Provider(_) => ExitCode::ProviderFailure as i32,
         AgentError::Tool(_) => ExitCode::ToolFailure as i32,
         AgentError::Hook(_) | AgentError::MaxTurnsExceeded(_) | AgentError::TraceSetup(_) => {

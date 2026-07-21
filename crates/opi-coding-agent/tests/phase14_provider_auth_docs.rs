@@ -523,13 +523,24 @@ fn every_phase14_non_goal_has_documented_and_structural_evidence() {
     }
     for required in [
         "pub extra_headers: Vec<(String, String)>",
-        "\"authorization\"",
-        "\"x-api-key\"",
         "reserved for provider-managed auth",
     ] {
         assert!(
             provider.contains(required),
             "provider guard missing `{required}`"
+        );
+    }
+    // The canonical reserved-header list lives in provider_headers.rs (Phase 14
+    // remediation G-3.3 unified validate_extra_headers onto the single list).
+    let provider_headers = read_repo_file("crates/opi-ai/src/provider_headers.rs");
+    for required in [
+        "RESERVED_PROVIDER_HEADERS",
+        "\"authorization\"",
+        "\"x-api-key\"",
+    ] {
+        assert!(
+            provider_headers.contains(required),
+            "canonical reserved-header guard missing `{required}` in provider_headers.rs"
         );
     }
 

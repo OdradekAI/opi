@@ -418,6 +418,72 @@ async fn json_mode_credential_needed_emits_typed_remediation_without_prompt() {
     assert_eq!(call_log.lock().unwrap().len(), 1, "no automatic retry");
 }
 
+#[tokio::test]
+async fn json_mode_account_id_missing_emits_typed_remediation_without_prompt() {
+    // C-3.2: an AccountIdMissing auth failure (e.g. a Codex token lacking
+    // chatgpt_account_id) must surface in JSON mode as a typed /login
+    // remediation with an AuthFailure exit code, not a generic provider error.
+    let provider = MockProvider::new_with_errors(
+        "openai-codex",
+        vec![MockResponse::Error(ProviderError::AccountIdMissing {
+            provider_id: "openai-codex".into(),
+        })],
+    );
+    let call_log = provider.call_log_handle();
+    let mut runner = NonInteractiveRunner::new(
+        Box::new(provider),
+        "openai-codex:gpt-5.4".into(),
+        OpiConfig::default(),
+        std::env::current_dir().unwrap(),
+        false,
+        None,
+        Vec::new(),
+    );
+
+    let result = tokio::time::timeout(std::time::Duration::from_secs(2), runner.run_json("hello"))
+        .await
+        .expect("JSON account-id-missing remediation must not prompt or block");
+
+    assert_eq!(result.exit_code, ExitCode::AuthFailure as i32);
+    let lines = parse_ndjson(&result.stdout);
+    assert_eq!(lines[0]["schema_version"], NDJSON_SCHEMA_VERSION);
+    let raw_remediations: Vec<_> = result
+        .stdout
+        .lines()
+        .filter(|line| line.contains("\"type\":\"CredentialNeeded\""))
+        .collect();
+    assert_eq!(
+        raw_remediations.len(),
+        1,
+        "expected exactly one raw CredentialNeeded remediation line"
+    );
+    let remediation_events: Vec<_> = lines
+        .iter()
+        .filter(|line| line["type"] == "CredentialNeeded")
+        .collect();
+    assert_eq!(
+        remediation_events.len(),
+        1,
+        "expected exactly one typed CredentialNeeded remediation record"
+    );
+    let remediation = remediation_events[0];
+    let typed: AgentSessionEvent = serde_json::from_value(remediation.clone())
+        .expect("credential remediation remains inside AgentSessionEvent");
+    match typed {
+        AgentSessionEvent::CredentialNeeded {
+            provider_id,
+            remediation,
+            diagnostic,
+        } => {
+            assert_eq!(provider_id, "openai-codex");
+            assert_eq!(remediation, "/login openai-codex");
+            assert_eq!(diagnostic.code, "provider_auth_failed");
+        }
+        other => panic!("unexpected remediation event: {other:?}"),
+    }
+    assert_eq!(call_log.lock().unwrap().len(), 1, "no automatic retry");
+}
+
 /// Phase 12 task 12.2 — provider errors visible through the non-interactive
 /// NDJSON public surface must not leak credentials. A retryable `Network`
 /// error carrying a secret triggers an `AutoRetryStart` event whose

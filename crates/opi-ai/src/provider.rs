@@ -157,21 +157,13 @@ pub(crate) fn github_copilot_initiator(request: &Request) -> &'static str {
 /// Validate extra headers supplied on a [`Request`].
 ///
 /// Rejects header names that are empty, contain control characters, or match
-/// the provider-managed auth header set. Auth header rejection is
-/// case-insensitive and non-exhaustive: it covers the headers the built-in
-/// providers manage (`authorization`, `x-api-key`, `api-key`, `anthropic-version`,
-/// `content-type`), not every possible header a custom profile might set.
+/// the provider-managed auth header set. Reserved-name rejection reuses the
+/// single canonical `RESERVED_PROVIDER_HEADERS` list in `provider_headers`
+/// shared with `ProviderHeaders`, so every wire enforces the same gate.
 ///
 /// Returns `Err(ProviderError::RequestFailed(...))` on the first invalid header.
 pub fn validate_extra_headers(headers: &[(String, String)]) -> Result<(), ProviderError> {
-    /// Headers managed by built-in providers that extra_headers must not override.
-    const RESERVED: &[&str] = &[
-        "authorization",
-        "x-api-key",
-        "api-key",
-        "anthropic-version",
-        "content-type",
-    ];
+    use crate::provider_headers::RESERVED_PROVIDER_HEADERS;
 
     for (name, value) in headers {
         if name.is_empty() {
@@ -195,7 +187,7 @@ pub fn validate_extra_headers(headers: &[(String, String)]) -> Result<(), Provid
             ))
         })?;
         let lower = name.to_ascii_lowercase();
-        if RESERVED.contains(&lower.as_str()) {
+        if RESERVED_PROVIDER_HEADERS.contains(&lower.as_str()) {
             return Err(ProviderError::RequestFailed(format!(
                 "extra_headers name '{name}' is reserved for provider-managed auth"
             )));
@@ -274,10 +266,14 @@ pub fn validate_request_capabilities(
             },
             other => ProviderError::Config(other.to_string()),
         })?;
-        model
-            .thinking_level_map
-            .resolve(request.thinking.level)
-            .map_err(|error| ProviderError::UnsupportedCapability(error.to_string()))?;
+        // Resolve the level only when thinking is enabled: a disabled request
+        // with a stale level must not be rejected (the level is unused).
+        if request.thinking.enabled {
+            model
+                .thinking_level_map
+                .resolve(request.thinking.level)
+                .map_err(|error| ProviderError::UnsupportedCapability(error.to_string()))?;
+        }
     }
 
     Ok(())

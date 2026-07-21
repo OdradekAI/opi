@@ -7,7 +7,11 @@ use reqwest::header::{HeaderName, HeaderValue};
 
 use crate::provider::ProviderError;
 
-const RESERVED_PROVIDER_HEADERS: &[&str] = &[
+/// Canonical reserved provider-managed header names shared by every wire.
+/// `ProviderHeaders::try_new` and `validate_extra_headers` both gate on this
+/// single list so a future provider cannot accidentally inherit a narrower
+/// gate.
+pub(crate) const RESERVED_PROVIDER_HEADERS: &[&str] = &[
     "authorization",
     "x-api-key",
     "api-key",

@@ -423,13 +423,16 @@ impl PromptAuthStateMachine {
         let completion = match result {
             Ok(Ok(_)) => PromptCompletion::Success,
             Ok(Err(AgentError::Cancelled)) => PromptCompletion::Cancelled,
-            Ok(Err(AgentError::CredentialNeeded { provider_id }))
-                if pending.may_arm_retry && !output_began =>
-            {
+            Ok(Err(
+                AgentError::CredentialNeeded { provider_id }
+                | AgentError::AccountIdMissing { provider_id },
+            )) if pending.may_arm_retry && !output_began => {
                 self.pending_auth_provider = Some(provider_id.clone());
                 PromptCompletion::CredentialNeeded { provider_id }
             }
-            Ok(Err(error @ AgentError::CredentialNeeded { .. })) => {
+            Ok(Err(
+                error @ (AgentError::CredentialNeeded { .. } | AgentError::AccountIdMissing { .. }),
+            )) => {
                 self.pending_auth_provider = None;
                 PromptCompletion::Error(error.to_string())
             }

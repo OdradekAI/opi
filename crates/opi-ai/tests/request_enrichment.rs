@@ -154,7 +154,7 @@ fn extra_headers_accept_valid_names() {
     let headers = vec![
         ("X-Custom".to_string(), "val".into()),
         ("x-request-id".to_string(), "abc123".into()),
-        ("OpenAI-Beta".to_string(), "v1".into()),
+        ("X-Trace-Id".to_string(), "t-1".into()),
     ];
     validate_extra_headers(&headers).unwrap();
 }

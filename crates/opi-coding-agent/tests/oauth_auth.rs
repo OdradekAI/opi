@@ -1348,13 +1348,20 @@ async fn pkce_loopback_callback_rejections_are_fixed_and_redacted_for_both_provi
                 };
                 reqwest::get(format!("http://127.0.0.1:{port}/?{query}"))
                     .await
-                    .expect("callback GET");
+                    .expect("callback GET")
+                    .status()
+                    .as_u16()
             };
-            let (result, ()) = tokio::time::timeout(Duration::from_secs(2), async {
+            let (result, status) = tokio::time::timeout(Duration::from_secs(2), async {
                 tokio::join!(login, callback)
             })
             .await
             .expect("callback login must not hang");
+
+            assert_eq!(
+                status, 400,
+                "{provider_kind:?} {case}: invalid callback must receive a 400 response, not a success page (C-4.1)"
+            );
 
             let error = result.expect_err("invalid callback must fail");
             let (expected_error, expected_notification) = match case {

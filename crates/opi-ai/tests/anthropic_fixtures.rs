@@ -71,6 +71,48 @@ fn sse_parse_skips_unknown_event_types() {
     assert!(events.is_empty());
 }
 
+#[test]
+fn anthropic_delta_before_block_start_is_dropped_not_panicked() {
+    // C-2.2: a content_block_delta arriving before any content_block_start
+    // must not underflow `blocks.len() - 1`. The orphan delta is dropped.
+    let input = r#"event: message_start
+data: {"type":"message_start","message":{"id":"msg_1","type":"message","role":"assistant","content":[],"model":"claude-sonnet-4-5-20250514","stop_reason":null,"usage":{"input_tokens":10,"output_tokens":0}}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"orphan"}}
+
+"#;
+    let events = map_fixture(input);
+    let text_deltas = events
+        .iter()
+        .filter(|e| matches!(e, AssistantStreamEvent::TextDelta { .. }))
+        .count();
+    assert_eq!(
+        text_deltas, 0,
+        "orphan delta before block start must be dropped, not panicked on"
+    );
+}
+
+#[test]
+fn anthropic_stop_before_block_start_is_dropped_not_panicked() {
+    // C-2.2: a content_block_stop for a block that was never started must not
+    // underflow. It produces no end event.
+    let input = r#"event: message_start
+data: {"type":"message_start","message":{"id":"msg_1","type":"message","role":"assistant","content":[],"model":"claude-sonnet-4-5-20250514","stop_reason":null,"usage":{"input_tokens":10,"output_tokens":0}}}
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":0}
+
+"#;
+    let events = map_fixture(input);
+    assert!(
+        events
+            .iter()
+            .all(|e| matches!(e, AssistantStreamEvent::Start { .. })),
+        "stop before start must not emit a block-end event"
+    );
+}
+
 // --- Text Fixture ---
 
 fn text_fixture() -> &'static str {

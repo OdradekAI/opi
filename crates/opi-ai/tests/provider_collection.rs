@@ -1131,6 +1131,14 @@ async fn refresh_models_deterministic_ordering() {
 
     collection.refresh().await.unwrap();
 
+    // Provider ids are exposed in deterministic sorted order regardless of
+    // registration order, so a regression to insertion order would be caught.
+    assert_eq!(
+        collection.provider_ids(),
+        vec!["alpha", "mike", "zulu"],
+        "provider ids must be sorted regardless of registration order"
+    );
+
     // All refreshed models are present.
     assert!(collection.resolve("alpha:alpha-refreshed").is_ok());
     assert!(collection.resolve("mike:mike-refreshed").is_ok());

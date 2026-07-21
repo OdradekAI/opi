@@ -1057,6 +1057,16 @@ impl CodingHarness {
                 thinking.level = persisted_level;
                 if let Some(model) = self.active_model_info() {
                     validate_thinking_budget_for_model(&model, budget_tokens, max_tokens)?;
+                    // After the broad capability + budget check passes, also
+                    // reject levels the model's thinking_level_map cannot
+                    // resolve, so a persisted setting does not deterministically
+                    // fail the next prompt's preflight (C-3.1).
+                    if model.thinking_level_map.resolve(persisted_level).is_err() {
+                        return Err(format!(
+                            "thinking level '{level}' is not supported by model '{}'",
+                            model.id
+                        ));
+                    }
                 }
                 (Some(thinking), Some(max_tokens))
             }

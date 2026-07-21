@@ -823,6 +823,16 @@ impl From<&crate::loop_types::AgentError> for Diagnostic {
             )
             .details(serde_json::json!({ "credential_revoked_for": provider_id }))
             .action(format!("run /login {provider_id} to re-authenticate")),
+            AgentError::AccountIdMissing { provider_id } => Diagnostic::new(
+                Severity::Error,
+                code::CODE_PROVIDER_AUTH_FAILED,
+                SOURCE_PROVIDER,
+                format!(
+                    "credential for '{provider_id}' is missing its account id — run /login {provider_id}"
+                ),
+            )
+            .details(serde_json::json!({ "provider_id": provider_id }))
+            .action(format!("run /login {provider_id} to re-authenticate")),
             AgentError::Tool(message) => Diagnostic::new(
                 Severity::Error,
                 code::CODE_TOOL_FAILED,

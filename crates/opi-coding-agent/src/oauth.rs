@@ -430,7 +430,13 @@ async fn exchange_authorization_code(
     Ok(OAuthCredential {
         access: SecretString::new(token.access_token.into_boxed_str()),
         refresh: SecretString::new(refresh.into_boxed_str()),
-        expires_at: Some(OffsetDateTime::now_utc() + time::Duration::seconds(expires_in)),
+        expires_at: Some(
+            OffsetDateTime::now_utc()
+                .checked_add(time::Duration::seconds(expires_in))
+                .ok_or_else(|| {
+                    ProviderError::Config("token response expires_in out of range".into())
+                })?,
+        ),
         base_url: None,
         account_id: None,
     })
@@ -460,11 +466,31 @@ async fn accept_one_callback(
             return Err(CallbackFail::Input(PkceInputError::MalformedUrl));
         }
     }
-    // Minimal 200 response with no secret. Written and flushed before resolving
-    // so a racing manual-code-wins cancellation leaves a clean response.
-    let body = "Login complete, you may close this window.";
+    // Parse and validate the request before telling the browser the login
+    // succeeded (C-4.1). A valid callback gets 200 + "Login complete"; an
+    // invalid or state-mismatched callback gets a fixed secret-free 400. A
+    // response is written and flushed before resolving on this path so a racing
+    // manual-code-wins cancellation leaves a clean response. (An earlier read
+    // error or an oversize request aborts without a response.)
+    let req =
+        std::str::from_utf8(&buf).map_err(|_| CallbackFail::Input(PkceInputError::InvalidUtf8))?;
+    let target = req
+        .split(' ')
+        .nth(1)
+        .ok_or(CallbackFail::Input(PkceInputError::MalformedUrl))?;
+    let code_result = normalize_pkce_input(target, expected_state, PkceInputKind::Callback);
+    let (status_line, body) = match &code_result {
+        Ok(_) => (
+            "HTTP/1.1 200 OK",
+            "Login complete, you may close this window.",
+        ),
+        Err(_) => (
+            "HTTP/1.1 400 Bad Request",
+            "Login failed, return to the terminal.",
+        ),
+    };
     let resp = format!(
-        "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+        "{status_line}\r\nContent-Type: text/plain\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
         body.len(),
         body
     );
@@ -473,15 +499,7 @@ async fn accept_one_callback(
         .await
         .map_err(CallbackFail::Io)?;
     stream.flush().await.map_err(CallbackFail::Io)?;
-
-    let req =
-        std::str::from_utf8(&buf).map_err(|_| CallbackFail::Input(PkceInputError::InvalidUtf8))?;
-    let target = req
-        .split(' ')
-        .nth(1)
-        .ok_or(CallbackFail::Input(PkceInputError::MalformedUrl))?;
-    normalize_pkce_input(target, expected_state, PkceInputKind::Callback)
-        .map_err(CallbackFail::Input)
+    code_result.map_err(CallbackFail::Input)
 }
 
 /// Refresh an OAuth credential by exchanging its refresh token. Used by the
@@ -533,7 +551,12 @@ async fn refresh_oauth_token(
         .unwrap_or_else(|| cred.refresh.clone());
     let expires_at = token
         .expires_in
-        .map(|secs| OffsetDateTime::now_utc() + time::Duration::seconds(secs));
+        .map(|secs| {
+            OffsetDateTime::now_utc()
+                .checked_add(time::Duration::seconds(secs))
+                .ok_or_else(|| ProviderError::Config("refresh expires_in out of range".into()))
+        })
+        .transpose()?;
     Ok(OAuthCredential {
         access: SecretString::new(token.access_token.into_boxed_str()),
         refresh,
@@ -1025,12 +1048,21 @@ impl CodexOAuthProvider {
     }
 }
 
+/// Upper bound for OAuth 2.0 device-authorization polling intervals. RFC 8628
+/// recommends 5-60s; a malformed or hostile response supplying an extreme
+/// value (e.g. `u64::MAX`) must not overflow `tokio::time::sleep` or a later
+/// slow-down increment (C-2.3).
+const MAX_DEVICE_INTERVAL: Duration = Duration::from_secs(600);
+
 fn codex_device_interval(value: &serde_json::Value) -> Option<Duration> {
     let seconds = match value {
         serde_json::Value::Number(number) => number.as_u64(),
         serde_json::Value::String(text) => text.trim().parse::<u64>().ok(),
         _ => None,
     }?;
+    if seconds > MAX_DEVICE_INTERVAL.as_secs() {
+        return None;
+    }
     Some(Duration::from_secs(seconds))
 }
 
@@ -1237,7 +1269,9 @@ async fn run_codex_device_login_flow(
                 }
             }
             Ok(CodexDevicePoll::SlowDown) => {
-                interval += Duration::from_secs(5);
+                interval = interval
+                    .saturating_add(Duration::from_secs(5))
+                    .min(MAX_DEVICE_INTERVAL);
                 tokio::select! {
                     biased;
                     cancelled = cancellation.as_mut() => {
@@ -1716,6 +1750,7 @@ impl OAuthProvider for CopilotOAuthProvider {
             let verification_uri = da.verification_uri;
             let mut interval = da
                 .interval
+                .filter(|secs| *secs <= MAX_DEVICE_INTERVAL.as_secs())
                 .map(Duration::from_secs)
                 .unwrap_or_else(|| Duration::from_secs(5));
 
@@ -1764,7 +1799,9 @@ impl OAuthProvider for CopilotOAuthProvider {
                         if matches!(outcome, DevicePollOutcome::SlowDown) {
                             // RFC 8628 §3.5: increase by exactly 5 seconds,
                             // persistently (not reset on the next pending).
-                            interval += Duration::from_secs(5);
+                            interval = interval
+                                .saturating_add(Duration::from_secs(5))
+                                .min(MAX_DEVICE_INTERVAL);
                         }
                         tokio::select! {
                             biased;
@@ -1893,25 +1930,44 @@ struct ChildManualLineProcess {
 impl ManualLineProcess for ChildManualLineProcess {
     fn wait_for_line<'a>(&'a mut self) -> ManualIoFuture<'a, String> {
         Box::pin(async move {
-            let status = self
-                .child
-                .wait()
-                .await
-                .map_err(ManualProcessError::Unreaped)?;
+            let mut stdout = self.stdout.take().ok_or_else(|| {
+                ManualProcessError::Io(io::Error::other("manual input stdout unavailable"))
+            })?;
+            // Drain stdout concurrently with awaiting the child so a line
+            // larger than the pipe capacity cannot deadlock the child on write
+            // against the parent blocked on exit (C-4.2). A strict cap rejects
+            // oversized input before the pipe fills.
+            const MAX_MANUAL_LINE: usize = 8 * 1024;
+            let mut line = Vec::with_capacity(512);
+            let mut buf = [0u8; 1024];
+            let drain = async move {
+                loop {
+                    let n = stdout
+                        .read(&mut buf)
+                        .await
+                        .map_err(ManualProcessError::Io)?;
+                    if n == 0 {
+                        break;
+                    }
+                    line.extend_from_slice(&buf[..n]);
+                    if line.len() > MAX_MANUAL_LINE {
+                        return Err(ManualProcessError::Io(io::Error::other(
+                            "manual input exceeds maximum length",
+                        )));
+                    }
+                }
+                String::from_utf8(line).map_err(|_| {
+                    ManualProcessError::Io(io::Error::other("manual input was not valid UTF-8"))
+                })
+            };
+            let (status, line_result) = tokio::join!(self.child.wait(), drain);
+            let status = status.map_err(ManualProcessError::Unreaped)?;
             if !status.success() {
                 return Err(ManualProcessError::Io(io::Error::other(
                     "manual input process failed",
                 )));
             }
-            let mut stdout = self.stdout.take().ok_or_else(|| {
-                ManualProcessError::Io(io::Error::other("manual input stdout unavailable"))
-            })?;
-            let mut line = String::new();
-            stdout
-                .read_to_string(&mut line)
-                .await
-                .map_err(ManualProcessError::Io)?;
-            Ok(line)
+            line_result
         })
     }
 

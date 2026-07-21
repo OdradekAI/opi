@@ -33,6 +33,7 @@ use opi_ai::credential::{
 };
 use opi_ai::provider::ProviderError;
 use secrecy::{ExposeSecret, SecretString};
+use zeroize::{Zeroize, Zeroizing};
 
 /// Non-secret stored credential kind discovered from the presence marker.
 #[doc(hidden)]
@@ -471,7 +472,12 @@ fn secret_string(value: impl Into<String>) -> SecretString {
 }
 
 /// Encode a [`Credential`] as the v1 JSON envelope.
-fn encode_credential(cred: &Credential) -> String {
+///
+/// The serialized envelope contains live access/refresh tokens, so it is
+/// returned in a [`Zeroizing`] buffer that wipes its bytes on drop
+/// (defense-in-depth: the `secrecy::SecretString` fields on [`Credential`]
+/// already zeroize, but this derived JSON `String` otherwise would not).
+fn encode_credential(cred: &Credential) -> Zeroizing<String> {
     let (kind, mut fields) = match cred {
         Credential::ApiKey(key) => (
             "api_key",
@@ -499,12 +505,19 @@ fn encode_credential(cred: &Credential) -> String {
         ),
     };
     let _ = &mut fields;
-    let envelope = Envelope {
+    let mut envelope = Envelope {
         version: ENVELOPE_VERSION,
         kind: kind.to_owned(),
         fields,
     };
-    serde_json::to_string(&envelope).expect("credential envelope serializes")
+    let serialized =
+        Zeroizing::new(serde_json::to_string(&envelope).expect("credential envelope serializes"));
+    // Zeroize the intermediate secret-bearing field strings now that
+    // serialization is complete (the serialized buffer is already Zeroizing).
+    envelope.fields.api_key.zeroize();
+    envelope.fields.access.zeroize();
+    envelope.fields.refresh.zeroize();
+    serialized
 }
 
 /// Decode a v1 JSON envelope into a [`Credential`].

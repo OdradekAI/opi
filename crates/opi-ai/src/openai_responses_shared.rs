@@ -93,6 +93,9 @@ pub(crate) fn parse_sse_frames(input: &str) -> impl Iterator<Item = SseFrame> + 
 
 #[derive(Debug, Deserialize)]
 struct RawResponseEvent {
+    // Canonical Responses/Codex SSE is data-only: the frame type lives in the
+    // JSON `type` field rather than the SSE `event:` line.
+    r#type: Option<String>,
     response: Option<RawResponse>,
     output_index: Option<usize>,
     content_index: Option<usize>,
@@ -168,6 +171,13 @@ pub(crate) enum ResponsesEvent {
         id: Option<String>,
         output: Vec<RawOutputItemOwned>,
     },
+    Incomplete {
+        usage: Option<Usage>,
+    },
+    /// A benign or unrecognized frame that must not advance or terminate the
+    /// stream: lifecycle events, reasoning events, function-call finalization,
+    /// the `[DONE]` sentinel, and future protocol extensions.
+    Ignore,
     Error {
         // Raw upstream error text is captured only to classify the event; it
         // is deliberately never propagated (C6 redaction).
@@ -197,6 +207,13 @@ fn owned_item(item: RawOutputItem) -> RawOutputItemOwned {
 
 impl ResponsesEvent {
     pub(crate) fn try_from_frame(frame: &SseFrame) -> ParsedEvent {
+        // Real Responses/Codex streams terminate with the `data: [DONE]`
+        // sentinel, which carries no JSON payload and is redundant with the
+        // `response.completed`/`response.incomplete` terminal frame. Treat it
+        // as a no-op rather than a malformed frame.
+        if frame.data.trim() == "[DONE]" {
+            return ParsedEvent::Valid(Self::Ignore);
+        }
         let data: RawResponseEvent = match serde_json::from_str(&frame.data) {
             Ok(data) => data,
             Err(error) => {
@@ -206,7 +223,17 @@ impl ResponsesEvent {
                 };
             }
         };
-        match frame.event.as_str() {
+        // Canonical Responses/Codex SSE is data-only (the event type lives in
+        // the JSON `type` field). Prefer it and fall back to the SSE `event:`
+        // name only when the server emits one. The parser defaults an absent
+        // name to "message", which is never a real Responses event, so a
+        // typeless data-only frame falls through to the ignore arm below.
+        let event_name: &str = data
+            .r#type
+            .as_deref()
+            .filter(|name| !name.is_empty())
+            .unwrap_or(frame.event.as_str());
+        match event_name {
             "response.created" => ParsedEvent::Valid(Self::Created {
                 model: data
                     .response
@@ -258,46 +285,15 @@ impl ResponsesEvent {
                 }),
             }),
             "response.completed" => {
-                if let Some(usage) = data
-                    .response
-                    .as_ref()
-                    .and_then(|response| response.usage.as_ref())
-                {
-                    let output = u64::from(usage.output_tokens.unwrap_or(0));
-                    if let Some(reasoning) = usage
-                        .output_tokens_details
-                        .as_ref()
-                        .and_then(|details| details.reasoning_tokens)
-                        && reasoning > output
-                    {
+                let usage = match Self::parse_response_usage(&data) {
+                    Ok(usage) => usage,
+                    Err(error) => {
                         return ParsedEvent::Malformed {
                             data: frame.data.clone(),
-                            error: format!(
-                                "reasoning_tokens ({reasoning}) exceeds output_tokens ({output})"
-                            ),
+                            error,
                         };
                     }
-                }
-                let usage = data.response.as_ref().and_then(|response| {
-                    response.usage.as_ref().map(|usage| {
-                        let cached = usage
-                            .input_tokens_details
-                            .as_ref()
-                            .and_then(|details| details.cached_tokens)
-                            .unwrap_or(0);
-                        Usage::reported(
-                            usage.input_tokens.unwrap_or(0),
-                            usage.output_tokens.unwrap_or(0),
-                            cached,
-                            0,
-                            None,
-                            usage
-                                .output_tokens_details
-                                .as_ref()
-                                .and_then(|details| details.reasoning_tokens),
-                        )
-                    })
-                });
+                };
                 let model = data
                     .response
                     .as_ref()
@@ -320,13 +316,72 @@ impl ResponsesEvent {
                     output,
                 })
             }
+            "response.incomplete" => {
+                let usage = match Self::parse_response_usage(&data) {
+                    Ok(usage) => usage,
+                    Err(error) => {
+                        return ParsedEvent::Malformed {
+                            data: frame.data.clone(),
+                            error,
+                        };
+                    }
+                };
+                ParsedEvent::Valid(Self::Incomplete { usage })
+            }
+            "response.failed" => ParsedEvent::Valid(Self::Error {
+                message: "response.failed".into(),
+            }),
             "error" => ParsedEvent::Valid(Self::Error {
                 message: data.message.unwrap_or_else(|| "unknown error".into()),
             }),
-            _ => ParsedEvent::Valid(Self::Error {
-                message: format!("unknown event type: {}", frame.event),
-            }),
+            // Benign lifecycle, reasoning, function-call-finalization, and any
+            // future protocol-extension events must NOT terminate the stream.
+            // Genuine errors arrive only via the `error` and `response.failed`
+            // types above; an SSE `event:` name is never trusted as an error
+            // signal on its own.
+            _ => ParsedEvent::Valid(Self::Ignore),
         }
+    }
+
+    /// Extract and subset-validate `response.usage`. Returns `Err` with a
+    /// redaction-safe literal message when the reasoning-token subset
+    /// invariant trips, so the caller surfaces a `Malformed` frame without
+    /// echoing upstream data.
+    fn parse_response_usage(data: &RawResponseEvent) -> Result<Option<Usage>, String> {
+        let Some(usage) = data
+            .response
+            .as_ref()
+            .and_then(|response| response.usage.as_ref())
+        else {
+            return Ok(None);
+        };
+        let output = u64::from(usage.output_tokens.unwrap_or(0));
+        if let Some(reasoning) = usage
+            .output_tokens_details
+            .as_ref()
+            .and_then(|details| details.reasoning_tokens)
+            && reasoning > output
+        {
+            return Err(format!(
+                "reasoning_tokens ({reasoning}) exceeds output_tokens ({output})"
+            ));
+        }
+        let cached = usage
+            .input_tokens_details
+            .as_ref()
+            .and_then(|details| details.cached_tokens)
+            .unwrap_or(0);
+        Ok(Some(Usage::reported(
+            usage.input_tokens.unwrap_or(0),
+            usage.output_tokens.unwrap_or(0),
+            cached,
+            0,
+            None,
+            usage
+                .output_tokens_details
+                .as_ref()
+                .and_then(|details| details.reasoning_tokens),
+        )))
     }
 }
 
@@ -409,7 +464,9 @@ impl ResponsesMapper {
                 });
                 events
             }
-            ResponsesEvent::ContentPartAdded | ResponsesEvent::TextDone => Vec::new(),
+            ResponsesEvent::ContentPartAdded
+            | ResponsesEvent::TextDone
+            | ResponsesEvent::Ignore => Vec::new(),
             ResponsesEvent::TextDelta { delta } => {
                 if delta.is_empty() {
                     return Vec::new();
@@ -476,6 +533,19 @@ impl ResponsesMapper {
                 }
                 self.update_tool_call(output_index, &item);
                 self.finish_tool_call(output_index).into_iter().collect()
+            }
+            ResponsesEvent::Incomplete { usage } => {
+                let mut events = self.end_text();
+                if let Some(usage) = usage {
+                    self.partial.usage = usage;
+                }
+                self.partial.stop_reason = StopReason::Length;
+                self.saw_done = true;
+                events.push(AssistantStreamEvent::Done {
+                    reason: StopReason::Length,
+                    message: self.partial.clone(),
+                });
+                events
             }
             ResponsesEvent::Completed {
                 usage,

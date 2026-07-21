@@ -465,15 +465,23 @@ impl AnthropicMapper {
                     }
                 }
             }
-            AnthropicEvent::ContentBlockDelta { index: _, delta } => {
-                let content_index = self.blocks.len() - 1;
+            AnthropicEvent::ContentBlockDelta { index, delta } => {
+                // Address the block by its upstream index with safe `get_mut`
+                // instead of `blocks.len() - 1`, which underflows when a delta
+                // arrives before any block start and mutates the wrong block on
+                // out-of-order or interleaved indices. A delta for a block that
+                // was never started is ignored rather than panicked on.
+                if self.blocks.get(index).is_none() {
+                    return Vec::new();
+                }
+                let content_index = index;
                 match delta {
                     DeltaData::Text { text } => {
-                        if let Some(BlockState::Text { text: acc }) = self.blocks.last_mut() {
+                        if let Some(BlockState::Text { text: acc }) = self.blocks.get_mut(index) {
                             acc.push_str(&text);
                         }
                         if let Some(AssistantContent::Text { text: acc }) =
-                            self.partial.content.last_mut()
+                            self.partial.content.get_mut(index)
                         {
                             acc.push_str(&text);
                         }
@@ -486,7 +494,7 @@ impl AnthropicMapper {
                     DeltaData::InputJson { partial_json } => {
                         if let Some(BlockState::ToolUse {
                             partial_json: acc, ..
-                        }) = self.blocks.last_mut()
+                        }) = self.blocks.get_mut(index)
                         {
                             acc.push_str(&partial_json);
                         }
@@ -497,12 +505,13 @@ impl AnthropicMapper {
                         }]
                     }
                     DeltaData::Thinking { thinking } => {
-                        if let Some(BlockState::Thinking { thinking: acc }) = self.blocks.last_mut()
+                        if let Some(BlockState::Thinking { thinking: acc }) =
+                            self.blocks.get_mut(index)
                         {
                             acc.push_str(&thinking);
                         }
                         if let Some(AssistantContent::Thinking { thinking: acc }) =
-                            self.partial.content.last_mut()
+                            self.partial.content.get_mut(index)
                         {
                             acc.push_str(&thinking);
                         }
@@ -514,9 +523,9 @@ impl AnthropicMapper {
                     }
                 }
             }
-            AnthropicEvent::ContentBlockStop { index: _ } => {
-                let content_index = self.blocks.len() - 1;
-                match self.blocks.last() {
+            AnthropicEvent::ContentBlockStop { index } => {
+                let content_index = index;
+                match self.blocks.get(index) {
                     Some(BlockState::Text { text }) => {
                         let content = text.clone();
                         vec![AssistantStreamEvent::TextEnd {
@@ -537,7 +546,7 @@ impl AnthropicMapper {
                         };
                         // Update the partial message's tool call with final arguments
                         if let Some(AssistantContent::ToolCall { tool_call: tc }) =
-                            self.partial.content.last_mut()
+                            self.partial.content.get_mut(index)
                         {
                             tc.arguments = partial_json.clone();
                         }

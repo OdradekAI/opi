@@ -20,6 +20,13 @@ pub enum AgentError {
     CredentialNeeded { provider_id: String },
     #[error("credential revoked for '{provider_id}': login required")]
     CredentialRevoked { provider_id: String },
+    /// The provider requires an account id that the stored credential does not
+    /// carry (e.g. an OpenAI Codex token missing `chatgpt_account_id`). Kept
+    /// distinct from [`AgentError::CredentialRevoked`] per the exit-remediation
+    /// typed-failure contract: JSON/RPC/text modes emit the canonical provider
+    /// id and a `/login <provider>` remediation.
+    #[error("account id missing for '{provider_id}': run /login {provider_id}")]
+    AccountIdMissing { provider_id: String },
     #[error("tool error: {0}")]
     Tool(String),
     #[error("hook error: {0}")]

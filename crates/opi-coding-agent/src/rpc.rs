@@ -1028,6 +1028,18 @@ impl RpcRunner {
                     "diagnostic": diagnostic.redacted_payload(RedactionMode::Summary),
                 }))
             }
+            Err(AgentError::AccountIdMissing { provider_id }) => {
+                let error = AgentError::AccountIdMissing {
+                    provider_id: provider_id.clone(),
+                };
+                let diagnostic: Diagnostic = (&error).into();
+                emit(&serde_json::json!({
+                    "type": "CredentialNeeded",
+                    "provider_id": provider_id,
+                    "remediation": format!("/login {provider_id}"),
+                    "diagnostic": diagnostic.redacted_payload(RedactionMode::Summary),
+                }))
+            }
             Err(_) => true,
         }
     }

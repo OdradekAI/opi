@@ -1914,6 +1914,7 @@ dependencies = [
  "windows-native-keyring-store",
  "wiremock",
  "zbus-secret-service-keyring-store",
+ "zeroize",
 ]
 
 [[package]]

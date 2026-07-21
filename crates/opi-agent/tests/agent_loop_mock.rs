@@ -186,6 +186,53 @@ async fn no_tool_turn_emits_lifecycle_events() {
 }
 
 // ---------------------------------------------------------------------------
+// Test: provider AccountIdMissing maps to a typed AgentError (C-3.2)
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn account_id_missing_provider_error_maps_to_typed_agent_error() {
+    use opi_ai::provider::ProviderError;
+    use opi_ai::test_support::MockResponse;
+
+    let provider = MockProvider::new_with_errors(
+        "openai-codex",
+        vec![MockResponse::Error(ProviderError::AccountIdMissing {
+            provider_id: "openai-codex".into(),
+        })],
+    );
+
+    let context = AgentLoopContext {
+        provider: Box::new(provider),
+        tools: vec![],
+        messages: vec![AgentMessage::Llm(Message::User(UserMessage {
+            content: vec![InputContent::Text { text: "Hi".into() }],
+            timestamp_ms: 0,
+        }))],
+        model: "mock-model".into(),
+        system: None,
+        steering_queue: None,
+        follow_up_queue: None,
+        diagnostic_sink: None,
+        trace: None,
+        session_id: None,
+    };
+    let config = AgentLoopConfig {
+        max_turns: 10,
+        ..Default::default()
+    };
+    let sink: AgentEventSink = Box::new(|_| {});
+    let err = opi_agent::agent_loop(context, config, &TestHooks, sink, CancellationToken::new())
+        .await
+        .expect_err("AccountIdMissing must surface as a typed AgentError, not Ok");
+    match err {
+        AgentError::AccountIdMissing { provider_id } => {
+            assert_eq!(provider_id, "openai-codex");
+        }
+        other => panic!("expected AgentError::AccountIdMissing, got {other:?}"),
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Test: tool-use turn
 // ---------------------------------------------------------------------------
 

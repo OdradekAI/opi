@@ -520,6 +520,11 @@ pub async fn agent_loop(
                                     provider_id: provider_id.clone(),
                                 }
                             }
+                            opi_ai::provider::ProviderError::AccountIdMissing { provider_id } => {
+                                AgentError::AccountIdMissing {
+                                    provider_id: provider_id.clone(),
+                                }
+                            }
                             opi_ai::provider::ProviderError::Cancelled => AgentError::Cancelled,
                             _ => AgentError::Provider(e.to_string()),
                         });
