@@ -1,146 +1,315 @@
 # Phase 14 Provider & Auth — Independent Code Audit
 
-**Auditor**: glm5.2 (independent; no prior audit reports or the remediation plan were consulted before this report was written)
+**Auditor**: glm5.2 (independent; no prior phase-14 `audit.*.md` or evaluator
+transcripts consulted)
 **Date**: 2026-07-20
-**Scope**: Tasks 14.1–14.21, phase commit range `079b5d2..8364e74`; audited at working-tree HEAD `9263114` (`fix(workspace): remediate phase 14 audit findings`, 2026-07-20), which includes the post-exit remediation on top of the phase-exit commit `8364e74`.
-**Normative sources**: `docs/opi-spec.md`, `docs/superpowers/specs/2026-07-11-phase14-provider-auth-design.md`, `docs/superpowers/specs/2026-07-14-phase14-exit-remediation-design.md`.
-**Method**: (1) Independent full-file reads of the `opi-ai` abstract contract layer (`credential.rs`, `auth.rs`, `provider_headers.rs`, `model_info.rs`, `api_mapped.rs`, `openai_codex_responses.rs`) and the highest-risk `opi-coding-agent` impl regions (`credential_store.rs` lock + `resolve_oauth` refresh path). (2) A 10-slice parallel deep-read workflow (one high-effort finder per file group) pipelined into one adversarial refuter per candidate finding; 9/10 slices completed, and the test-quality slice was re-run by the auditor directly after a rate-limit failure. (3) Focused test execution: `cargo test -p opi-ai -p opi-coding-agent` → 2284 passed, 0 failed, exit 0.
+**Scope**: Tasks 14.1–14.21, commit range `d9f21a9..8364e74` (phase exit) **plus**
+post-exit remediation commits `9263114..b27905a` (HEAD = `b27905a`)
+**Method**: Spec-driven, full-file reads of all affected source + tests across
+`opi-ai`, `opi-agent`, and `opi-coding-agent`, with five parallel deep-read
+subagents organized by file group plus the lead auditor's own independent
+verification of the highest-risk paths (thinking rejection, header injection,
+SSE redaction, dynamic-refresh validation, the credential probe path, and the
+outer-TUI retry state machine). Each Blocker/Major candidate raised by a
+subagent was re-verified against the code by the lead before being accepted or
+rejected.
+
+**Contamination disclosure**: The lead's auto-loaded session memory contained a
+process-state note summarizing prior phase-14 audit outcomes (a 3-way
+codex/glm5.2/opus4.6 split and the remediation status). This was not sought out
+and is treated as structural process metadata only; all findings below are
+derived independently from source, tests, the two normative design specs, and
+git history. No `audit.*.md`, evaluator transcript, or `remediation-plan.md`
+was read.
 
 ---
 
 ## 1. Executive Summary
 
-**Verdict: PASS** (0 blockers, 0 majors; 6 low-risk minor findings documented below — none block archive or the next phase)
+**Verdict: PASS-WITH-FINDINGS**
 
 | Severity | Count |
 |----------|-------|
 | Blocker  | 0     |
 | Major    | 0     |
-| Minor    | 6     |
-| Info     | 3     |
+| Minor    | 4     |
+| Info     | 9     |
 
-Per the skill's definitions, PASS applies when there are no blockers or majors and all minors are low-risk. PASS-WITH-FINDINGS (majors need attention before the next phase) and FAIL (blockers, or systemic majors) do not apply. The six minors below are worth addressing but are not gating.
+Phase 14 is a large, security-critical provider/auth cluster (21 tasks, two
+crates, credential persistence, OAuth for three providers, per-stream auth
+re-resolution, Usage/cost accounting, multi-wire routing). At HEAD `b27905a`
+the implementation is **security-correct and spec-compliant**: secrets are
+redacted at every formatting site, the cross-process mutation lock is
+non-reentrant and bounded, corrupt/unknown credential envelopes never fall
+through to env, malformed Usage subsets are rejected rather than clamped,
+Anthropic cache markers fire at the exact reviewed positions/TTLs, and the
+`ApiMappedProvider` rejects unknown models / missing routes before network IO.
 
-Phase 14 is a security-sensitive, structurally sound implementation. The credential/auth contract layer in `opi-ai` is clean (object-safe boxed-future traits, `SecretString` everywhere with manual redacting `Debug`, well-separated error variants, reserved-header enforcement). The single highest-risk region — OAuth refresh double-checked locking with a bounded HTTP timeout — is correct: no deadlock, no partial writes, no double-refresh race, RAII lock release on every path including timeout. All 2284 focused tests pass. The phase-exit Success Criteria SC1–SC8, the four F14 obligations, `api-map`, and Non-Goals NG1–NG8 are all traced and respected.
+The 20 code-level findings from the prior refreshed audit (C1–C9, C11–C21) are
+**genuinely fixed at HEAD**. The lead independently re-verified the four
+highest-risk claims: C8 (Chat/Responses unsupported-thinking rejection),
+C6 (upstream SSE error-text redaction), C15 (dynamic-refresh candidate
+validation), and C-03-class header-injection concerns — all confirmed fixed,
+and C-03 is a confirmed false positive (the Codex path defends
+`chatgpt-account-id` via its own `MANAGED_HEADERS`). The one deferred item
+(C10, process-integrity in frozen archived artifacts) is a process/meta
+finding, not a code defect, and its deferral is consistent with the project's
+immutability rules for released/archived material.
 
-The six findings are all **minor** and **low-risk**: one narrow spec-wording divergence on header-value validation (production-unreachable), one missing canonical-remediation hint on a deprecated id, one misleading doctor diagnostic for custom-provider proxies, and three test-coverage gaps where an invariant is covered indirectly but not asserted at its strongest point. None block archive or the next phase. Three Info items document non-defects that surfaced during review.
+Surviving findings are Minor and Info: defense-in-depth gaps (a non-zeroizing
+envelope encode buffer, a `debug_assert!`-only lease guard), a test that does
+not assert the property it names, and several spec-wording-vs-implementation
+nuances. None blocks the next phase.
 
 ### Per-task summary
 
 | Task | Title | Verdict |
 |------|-------|---------|
-| 14.1 | Credential store model | PASS |
-| 14.2 | OAuth architecture and per-request auth re-resolution | PASS |
-| 14.3 | Request scalars and session-affinity production path | PASS-WITH-MINOR (F2.1) |
-| 14.4 | Model capabilities and Anthropic cache markers | PASS |
-| 14.5 | Usage and cost cache/reasoning accounting | PASS |
-| 14.6 | Dynamic provider model refresh | PASS (substrate-only, by design) |
-| 14.7 | Provider/auth docs, non-goal guards, final gates | PASS |
-| 14.8 | Native keyring and production probes | PASS |
-| 14.9 | Login/logout dispatcher and persistence | PASS |
-| 14.10 | Live auth and session interaction | PASS |
-| 14.11 | Factory-built Anthropic cache markers | PASS |
-| 14.12 | Usage and cost contract | PASS |
-| 14.13 | Documentation, verification, residual closure | PASS-WITH-MINOR (F7.1) |
-| 14.14 | Native keyring host selection | PASS |
-| 14.15 | WireApi, model metadata, pricing, thinking, canonical IDs | PASS-WITH-MINOR (F5.1) |
-| 14.16 | ApiMappedProvider and TOML custom providers | PASS |
-| 14.17 | GitHub Copilot three-wire catalog | PASS-WITH-MINOR (F4.1, F4.2) |
-| 14.18 | OpenAI Codex dedicated wire, catalog, dual login | PASS-WITH-MINOR (F2.1, F4.3) |
-| 14.19 | Concrete OAuth dispatcher vertical path | PASS |
-| 14.20 | Outer TUI credential retry | PASS |
-| 14.21 | Documentation, acceptance artifacts, Phase F | PASS |
+| 14.1  | Credential store model                                   | PASS |
+| 14.2  | OAuth architecture and per-request auth re-resolution    | PASS |
+| 14.3  | Request scalars and session-affinity production path     | PASS |
+| 14.4  | Model capabilities and Anthropic cache markers           | PASS |
+| 14.5  | Usage and cost cache/reasoning accounting                | PASS |
+| 14.6  | Dynamic provider model refresh                           | PASS |
+| 14.7  | Provider/auth docs, non-goal guards, final gates         | PASS |
+| 14.8  | Native keyring and production probes                     | PASS |
+| 14.9  | Login/logout dispatcher and persistence                  | PASS |
+| 14.10 | Live auth and session interaction                        | PASS |
+| 14.11 | Factory-built Anthropic cache markers                    | PASS |
+| 14.12 | Usage and cost contract                                  | PASS |
+| 14.13 | Documentation, verification, residual closure            | PASS |
+| 14.14 | Native keyring host selection                            | PASS |
+| 14.15 | WireApi, model metadata, pricing, thinking, canonical IDs| PASS |
+| 14.16 | ApiMappedProvider and TOML custom providers              | PASS |
+| 14.17 | GitHub Copilot three-wire catalog                        | PASS |
+| 14.18 | OpenAI Codex dedicated wire, catalog, dual login         | PASS |
+| 14.19 | Concrete OAuth dispatcher vertical path                  | PASS |
+| 14.20 | Outer TUI credential retry                               | PASS |
+| 14.21 | Documentation, acceptance artifacts, Phase F             | PASS |
 
 ---
 
-## 2. Correctness
+## 2. Correctness Findings
 
-### 2.1 MINOR: `session_id` / `session-id` header values skip `HeaderValue::from_str` on the Responses and Codex wires; invalid values surface as retryable `Network` instead of non-retryable `RequestFailed`
+No correctness defects found. Subset-validation arithmetic, cost calculation,
+cache-marker placement, `ApiMappedProvider` routing, session-affinity
+propagation, and the outer-TUI retry state machine were all traced and verified.
 
-**File:** `crates/opi-ai/src/openai_responses.rs` (session_id header application in `stream_http`); `crates/opi-ai/src/openai_codex_responses.rs:171` (`.header("session-id", session_id)`); contrast `crates/opi-ai/src/openai_chat.rs` (routes through `extra_headers` → `ProviderHeaders::merge_request` → `validate_pair` → `HeaderValue::from_str`), which is correct.
+**Cost arithmetic (verified).** `calculate_cost` (`stream.rs:264–281`) folds the
+1-hour cache-write subset into `cache_write_cost` at 2× input rate
+(`cache_write_1h * input_cost_per_mtok * 2.0`) plus the short-cache remainder at
+`cache_write_cost_per_mtok`; reasoning stays inside `output_cost`; `total_cost`
+sums the four parent lines once. Numeric trace with the `Usage(500k, 250k, 1M,
+500k, Some(150k), Some(0))` fixture yields `7.7625`, matching the test
+assertion exactly. No double-count.
 
-**Cause:** On the OpenAI Responses and Codex Responses wires the affinity id is attached with `RequestBuilder::header(name, value)` using a raw `&str` value, not via `HeaderValue::from_str`. The Phase 14 design (T3 3a) mandates: "Header values are constructed with `HeaderValue::from_str`; invalid values return `ProviderError::RequestFailed` and never panic." That mandate is met on the Chat wire but not on the two Responses-family wires. The Codex `validate_headers` (`openai_codex_responses.rs:321-332`) likewise does not pre-check the `session-id` value.
+**Subset rejection (verified).** All three mappers reject child-greater-than-parent
+with non-retryable `ProviderError::StreamError` and emit no `Usage` event
+carrying the invalid data: Anthropic 1h (`anthropic.rs:181–186`, propagated via
+`?` in `from_raw` before event construction), OpenAI Chat reasoning
+(`openai_chat.rs:188–204` `validate_usage_subset`, invoked before chunk
+materialization), and OpenAI Responses/Codex reasoning
+(`openai_responses_shared.rs:260–280` returns `ParsedEvent::Malformed` before
+building `Usage`). None clamps or silently drops.
 
-**Correction to the original candidate finding (adversarial verifier):** the finder's claim that `RequestBuilder::header(K, V)` **panics** on an invalid value is **false** for the pinned `reqwest 0.12.28`. In that version `header()` stores the `HeaderValue::try_from` failure inside `self.request: Result<Request, _>`; `.send().await` then surfaces it as a builder error, which the providers map to `ProviderError::Network(...)`. There is **no panic and no silent stream end** — the "never panic" half of the mandate is satisfied.
+**`ApiMappedProvider` routing (verified).** Construction-time validation
+(`api_mapped.rs:50–155`) rejects empty ids, duplicate models, missing routes,
+route/provider id mismatch, and route-catalog subset/superset mismatch. On
+stream, an unknown model yields `ProviderError::UnknownModel` synchronously via
+`stream::once` — zero auth calls, zero HTTP (test
+`unknown_model_fails_before_route_or_network` confirms `auth.calls == 0`).
 
-**What is actually wrong (and was understated by the finder):** the surfaced error is `ProviderError::Network`, which `ProviderError::is_retryable()` (`provider.rs:363-368`) classifies as **retryable**, whereas the mandate specifies `ProviderError::RequestFailed` (**non-retryable**). So an invalid affinity header value can trigger a retry loop instead of failing fast.
-
-**Failure scenario:** An external `opi-ai` library consumer (or a hypothetical future change to session-id generation that emits a control byte / NUL / bare CR-LF) constructs `Request { session_id: Some("bad\nvalue".into()), .. }` and calls `OpenAiResponsesProvider::stream` (or `OpenAiCodexResponsesProvider::stream` with `cache_retention != Disabled`). The request fails after `send()` with a retryable `Network` error rather than a clean non-retryable `RequestFailed`.
-
-**Impact:** Minor. The production `SessionCoordinator` id is a hex timestamp and always HTTP-safe, so the opi binary never trips this today; it only affects external library consumers or a future session-id source that emits invalid bytes. No security exposure (no secret involved), no panic.
-
-**Fix:** In both providers, validate the affinity id with `HeaderValue::from_str` before applying the header, returning `ProviderError::RequestFailed` on failure — mirroring the `validate_pair` path used by OpenAI Chat; or route the session-id header through the same `ProviderHeaders::merge_request` helper.
-
-**Spec ref:** `2026-07-11-phase14-provider-auth-design.md` T3 3a (header construction mandate).
-
----
-
-## 3. Security / Redaction
-
-No findings. Observed strengths:
-
-- `Credential`, `ResolvedAuth`, and `OAuthCredential` wrap every secret in `secrecy::SecretString` and carry **manual `Debug` impls** that redact `access`/`refresh`/`secret`, so a future `secrecy` change to `SecretString::Debug` cannot leak. (`credential.rs:71-93`, `auth.rs:79-90`, `auth.rs:165-175`.)
-- `expose_secret()` is called only at the concrete HTTP boundary; secrets are zeroized on drop. No raw credential value is registered as a `SecretRedactor` pattern (avoids expanding the secret footprint). No opi-managed plaintext credential file exists (NG1 verified structurally by the `phase14_provider_auth_docs` guard, which scans `crates/opi-coding-agent/src` for `credentials.json`/`credentials.toml`/`auth.json`).
-- The `fs4` lock file holds **no secret**; the redaction test `redaction_only_secret_free_lock_exists_outside_fake_keyring` recursively scans the injected config root plus read-back `Credential::Debug` output and proves only the secret-free `credential.lock` exists outside the fake keyring.
-- `present_device_code` accepts only the public `user_code` + `verification_uri`; the device code (which grants token issuance) is never passed to any presenter method.
-- Reserved auth/transport headers (`authorization`, `x-api-key`, `chatgpt-account-id`, `session-id`, etc.) are rejected from both provider-configured headers (`ProviderHeaders::try_new`) and per-request `extra_headers` (`merge_request`), so NG3 (no per-call auth-header override) holds on every wire.
-- No authorization code, access/refresh token, device secret, JWT, or keychain envelope appears in captured test output or error paths; corrupt/unknown envelopes return typed errors and **never** fall through to env fallback (B02).
-
----
-
-## 4. Test Quality
-
-### 4.1 MINOR: Copilot managed-header override-rejection test covers only 4 of 7 protected names
-
-**File:** `crates/opi-coding-agent/tests/github_copilot_provider.rs:399-416`
-
-**Cause:** `github_copilot_headers_match_reviewed_static_contract` iterates the per-request override-rejection check over only `[User-Agent, X-Initiator, Openai-Intent, Copilot-Vision-Request]`. The managed set `GITHUB_COPILOT_MANAGED_HEADERS` (`crates/opi-ai/src/provider.rs:116-124`) has **7** entries: the four above plus `editor-version`, `editor-plugin-version`, and `copilot-integration-id`.
-
-**Failure scenario:** A future refactor weakens the case-insensitive membership check in `github_copilot_route_headers` (e.g. switches to exact-case, or drops one of the three `Editor*`/`Copilot-Integration-Id` entries from the const). A caller then sets `extra_headers = [("Editor-Version", "evil")]` and the override is silently accepted. The test still passes because it never probes those three names on the rejection path.
-
-**Impact:** Minor. Three of seven reviewed Copilot reserved headers have no regression coverage on the override-rejection path — a security-relevant invariant (provider-managed transport headers cannot be overridden per-request).
-
-**Fix:** Extend the iteration list at `github_copilot_provider.rs:399-404` to include `Editor-Version`, `Editor-Plugin-Version`, and `Copilot-Integration-Id` so every entry of `GITHUB_COPILOT_MANAGED_HEADERS` has a negative test.
-
-### 4.2 MINOR: `Copilot-Vision-Request: true` not asserted on the `/v1/messages` (Anthropic) route with image content
-
-**File:** `crates/opi-coding-agent/tests/github_copilot_provider.rs:472-537`
-
-**Cause:** `github_copilot_vision_header_covers_user_and_tool_result_images` asserts `Copilot-Vision-Request: true` only on `/chat/completions` (user image) and `/responses` (tool-result image). The `/v1/messages` Anthropic route is exercised only with text content and asserts the header is **absent**.
-
-**Failure scenario:** A refactor to `AnthropicProvider::stream` (`crates/opi-ai/src/anthropic.rs` ~`:1258`) drops or short-circuits the `copilot_headers` branch on the Anthropic route only. A user sends an image-bearing request to `claude-sonnet-4.5` via the Copilot Anthropic Messages route and `Copilot-Vision-Request` is not emitted. The test still passes because it never sends an image to `/v1/messages`.
-
-**Impact:** Minor. The image-route parity claim for `Copilot-Vision-Request` is under-tested on the Anthropic wire; a single-route regression would not be detected. Production code is currently correct.
-
-**Fix:** Add a fourth case sending an image-bearing `UserMessage` to `claude-sonnet-4.5` (`/v1/messages`) and assert `Copilot-Vision-Request: true` on the captured request.
-
-### 4.3 MINOR: 401/403 revocation tests do not assert exactly one HTTP request
-
-**File:** `crates/opi-coding-agent/tests/github_copilot_provider.rs:582-607` (`github_copilot_401_and_403_are_revoked_on_every_wire`); `crates/opi-ai/tests/openai_codex_responses.rs:500-531` (`dedicated_codex_401_and_403_are_revoked_and_redacted`).
-
-**Cause:** Both tests assert only (a) `ProviderError::CredentialRevoked`, (b) `provider_id` matches, (c) `!error.is_retryable()` (plus redaction for Codex). Neither asserts `received_requests().len() == 1`.
-
-**Failure scenario:** A future change adds a follow-up HTTP request after the auth-invalid response inside the provider stream (e.g. a telemetry call, a revocation-reason GET, or an attempted auto-refresh). The first response still maps to `CredentialRevoked` and `is_retryable() == false`, so both tests still pass — but the "no second HTTP request, no auto-login" guarantee (T2 D5) is silently broken.
-
-**Impact:** Minor. The strongest form of the revocation invariant — ends the turn, performs no second request — is not directly enforced; only its typed-error and retry-class consequences are. Production code is currently correct (`openai_codex_responses.rs:334-342`, `anthropic.rs:1068-1085` map 401/403 directly with no follow-up).
-
-**Fix:** After the `drain()` call in both tests, assert `received_requests().len() == 1` to lock the no-follow-up-request invariant.
+**Outer-TUI retry state machine (verified).** `PromptAuthStateMachine`
+(`interactive.rs:309–450`) gates retry on the **same** provider
+(`pending_auth_provider == Some(provider_id)`, L375), reuses the pending turn
+via `harness.retry_last_prompt()` (no new user message), sets `may_arm_retry:
+false` on the retry turn (L394) so the cycle is bounded to one retry, and
+requires `may_arm_retry && !output_began` to arm (L426–427). Every other exit
+(CredentialRevoked, generic error, JoinError, different-provider login, login
+failure) clears `pending_auth_provider` (L432–447) → zero retries. SC3/F14-04
+satisfied.
 
 ---
 
-## 5. Spec Compliance
+## 3. Security / Redaction Findings
 
-### 5.1 MINOR: Old `copilot`/`codex` provider ids rejected without canonical remediation message
+### 3.1 Minor: Envelope encode buffer is not zeroized
 
-**File:** `crates/opi-coding-agent/src/provider_factory.rs:1809-1827` (`build_runtime_provider` `_` arm → `ProviderBuildError::Config(format!("unknown provider: {other}"))`); surfaced at `crates/opi-coding-agent/src/main.rs:819-821` (interactive) and `:685-687` (RPC).
+**File:** `crates/opi-coding-agent/src/credential_store.rs`
+**Lines:** 479–507 (`encode_credential`)
+**Cause:** `encode_credential` pulls raw secrets via `expose_secret()` into a
+plain `EnvelopeFields` (`Option<String>`) and `serde_json::to_string` produces a
+`String` containing the live access/refresh tokens. The `secrecy::SecretString`
+fields on `Credential` are zeroized on drop, but this derived JSON `String` is
+only deallocated, not zeroized.
+**Impact:** Defense-in-depth gap only — no normal-path leak. A memory-inspection
+attacker (or core dump) on a long-running opi process could recover
+recently-encoded envelope strings from deallocated-but-not-zeroized heap pages.
+**Fix:** Encode into `zeroize::Zeroizing<String>` (and a `Zeroizing` envelope
+buffer), so the serialized secret is wiped after `backend.set_password`.
 
-**Cause:** Any unrecognized provider id falls through to a generic `"unknown provider: {other}"` message with no detection of the deprecated dev-only `copilot`/`codex` ids and no hint that the canonical ids are now `github-copilot`/`openai-codex`.
+### 3.2 Minor: `NativeKeyringGuard::Drop` lease-underflow guard is debug-only
 
-**Failure scenario:** An upgrading user runs `opi --model copilot:gpt-4o`. The CLI exits 2 with stderr `opi: unknown provider: copilot` and no hint about the rename; the user must discover `github-copilot` from external docs. `tests/provider_identity.rs:40-47` pins only `registry.lookup("copilot").is_none()`, not remediation text.
+**File:** `crates/opi-coding-agent/src/native_keyring.rs`
+**Lines:** 37–38
+**Cause:** `debug_assert!(state.leases > 0, …); state.leases -= 1;`. In release
+builds the assert compiles out. The `self.leased` flag (L33) prevents
+double-drop of the *same* guard, but a latent lease-accounting bug elsewhere
+would wrap `leases` to `usize::MAX`, leaving the `set_default_store`'d store
+installed for the process lifetime (never unset).
+**Impact:** Only triggers on a hypothetical lease-accounting bug, not on a
+normal path. If triggered, the default keyring store leaks for the process
+lifetime and future `install_native_keyring` calls in the same process see
+`leases > 0` and skip construction.
+**Fix:** Use `saturating_sub` plus a release-mode path that logs and re-derives
+the true count, or guard the decrement unconditionally.
 
-**Impact:** Minor UX regression for users migrating off the pre-Phase-14 development-only ids. The task 14.15 DoD (`2026-07-14-phase14-exit-remediation-design.md:1079`) states "old provider ids are rejected with canonical remediation," where "canonical remediation" is used consistently elsewhere to mean emitting the canonical id plus the `/login <canonical-id>` hint.
+### 3.3 Minor: Two parallel reserved-header lists can drift
 
-**Fix:** In `build_runtime_provider` (or the factory's provider match), detect bare `"copilot"` / `"codex"` and return `ProviderBuildError::Config("'copilot' has been renamed; use provider id 'github-copilot' (login: /login github-copilot)")` (and analogously for `codex`).
+**File:** `crates/opi-ai/src/provider.rs:166–205` (`validate_extra_headers`,
+5-name `RESERVED`); `crates/opi-ai/src/provider_headers.rs:10–24`
+(`RESERVED_PROVIDER_HEADERS`, 13 names); `crates/opi-ai/src/openai_codex_responses.rs:27–36`
+(`MANAGED_HEADERS`, 8 names)
+**Cause:** Three divergent reserved-header lists coexist. The Codex path is
+defended by its own `MANAGED_HEADERS` check (`openai_codex_responses.rs:381–388`,
+which rejects `chatgpt-account-id`, `session-id`, `x-client-request-id`,
+`openai-beta`, `originator`, etc.), and Anthropic/Chat/Responses route
+`extra_headers` through the strict `ProviderHeaders::merge_request`
+(`anthropic.rs:1285`, `openai_chat.rs:1505`, `openai_responses.rs:531`), so
+**there is no live vulnerability** — a user-supplied managed header is rejected
+on every wire. But `validate_extra_headers` is self-admitted "non-exhaustive"
+(`provider.rs:160–163`) and a future provider wired up with only that 5-name
+gate would inherit the weak check.
+**Impact:** Refactor hazard, not a present defect. The prior-audit
+header-injection concern (Codex `validate_extra_headers` at
+`openai_codex_responses.rs:380`) is a **confirmed false positive at Major** — the
+`MANAGED_HEADERS` guard immediately below it closes the hole.
+**Fix:** Unify on one canonical reserved-header list shared by all providers, or
+delete `validate_extra_headers` in favor of `ProviderHeaders::merge_request`
+everywhere.
+
+### 3.4 Info: Error `reason` fields have no documented secret-free contract
+
+**File:** `crates/opi-ai/src/credential.rs:152–177`
+**Lines:** `BackendUnavailable.reason`, `Backend.reason`, `MalformedEnvelope.reason`
+**Cause:** These free-form `reason: String` fields are surfaced via
+`Display`/`Debug` into doctor/listing diagnostics. The current
+`KeychainCredentialStore` populates them only from fixed string literals or
+backend `Display` output (never the payload — verified
+`MalformedEnvelope` reasons are literals at `credential_store.rs:519/535/547/555/561`),
+so there is **no leak today**. There is, however, no documented contract that
+`reason` must stay secret-free.
+**Impact:** A future backend or error-path change that echoes the offending
+payload (e.g. a malformed JSON snippet containing an embedded token) would leak
+via diagnostics.
+**Fix:** Add a doc invariant on `CredentialStoreError` that `reason` must never
+echo credential payload, and assert it in the redaction canary test.
+
+---
+
+## 4. Test Quality Findings
+
+### 4.1 Minor: `refresh_models_deterministic_ordering` does not assert order
+
+**File:** `crates/opi-ai/tests/provider_collection.rs`
+**Lines:** 1112–1138
+**Cause:** The test registers providers in non-sorted order (`["zulu", "alpha",
+"mike"]`), calls `refresh()`, then resolves each provider's refreshed model.
+None of the asserts depend on refresh order — they would pass even if
+`registry.provider_ids()` returned insertion order. The determinism guarantee
+(`provider_collection.rs:443` uses the sorted `provider_ids()`) is proven only
+indirectly through the implementation of `provider_ids()`.
+**Impact:** A regression that broke refresh ordering (e.g. switching to
+insertion order) would not be caught.
+**Fix:** Assert the install/replace order explicitly, or assert
+`registry.provider_ids()` is sorted in this test.
+
+### 4.2 Info: No CHANGELOG "Fixed" section for in-phase remediation
+
+**File:** `CHANGELOG.md` (`## [Unreleased]`)
+**Cause:** The remediation commits fixed real defects (the C1–C21 set) within
+the unreleased phase-14 body. The Unreleased section records the Breaking /
+Added / Changed entries accurately but has no `### Fixed` subsection.
+**Impact:** Defensible — all phase-14 work is unreleased, and fixes within
+unreleased work arguably do not need separate Fixed entries. Noted for
+completeness against Keep a Changelog conventions.
+**Fix:** Optional — add a brief `### Fixed` subsection citing the
+cancellation/error-classification/redaction repairs, or document the omission as
+intentional.
+
+---
+
+## 5. Spec Compliance Findings
+
+SC1–SC8 are all **met** at HEAD; NG1–NG8 are all **respected**; F14-01..04 are
+closed; and the 2026-07-17 alignment-revision obligations (`WireApi`,
+`ApiMappedProvider`, Copilot 3-wire, dedicated `openai-codex-responses` wire +
+Browser/Device-Code login, `chatgpt_account_id` persistence) are implemented.
+
+### 5.1 Info: Capability preflight is agent-loop-level, not provider-level
+
+**File:** `crates/opi-agent/src/agent_loop.rs:106`; `crates/opi-ai/src/provider.rs:234–284`
+**Cause:** `validate_request_capabilities` is invoked once in the agent loop
+before `context.provider.stream()` (`agent_loop.rs:106` → `:122`). It rejects
+unsupported thinking levels (via `thinking_level_map.resolve()`) and
+text-only-model image input. The HEAD spec text says "the provider returns
+`ProviderError::UnsupportedCapability`," but the rejection is actually performed
+by the agent loop, not inside each provider. Library consumers that call
+`provider.stream()` directly bypass the preflight. Unknown model IDs skip the
+thinking preflight by design (`provider.rs:264`, so configured custom deployments
+still work).
+**Impact:** Behavior matches the spec on the product (agent) path, which is the
+only path opi ships. The wording imprecision and the library-user gap are
+nominal. C8 (the `9263114` Chat/Responses unsupported-thinking exemption) is
+**genuinely reverted at HEAD** — the `9263114` spec softening ("emit when
+resolved") was replaced by `b27905a`'s rejection wording, and the code rejects
+via the agent loop.
+**Fix:** Optional — move the preflight into a shared `Provider::stream` wrapper,
+or adjust the spec wording to "the agent loop rejects… before delegating to the
+provider."
+
+### 5.2 Info: `Request` field shapes diverge from spec wording
+
+**File:** `crates/opi-ai/src/provider.rs:85–96`
+**Cause:** Spec says `extra_headers: HeaderMap` and `cache_retention:
+Option<CacheRetention>`. Implementation uses `extra_headers:
+Vec<(String,String)>` and `cache_retention: CacheRetention` (with a `None`
+default variant). Both are functionally equivalent (`CacheRetention::None`
+plays `Option::None`'s role; the `Vec` form is serde-friendly and validated
+through `HeaderName`/`HeaderValue::from_str`).
+**Impact:** External 0.x consumers reading the spec will write code expecting a
+`HeaderMap` API; the actual surface differs structurally. No behavioral defect.
+**Fix:** Optional — update the spec to match the shipped `Vec`/enum shapes.
+
+### 5.3 Info: C10 deferral (frozen archived artifacts) — process finding
+
+**Cause:** The refreshed audit's C10 (process-integrity defects in frozen
+archived artifacts) is deferred per `docs/snapshots/phase14/remediation-plan.md`.
+The commit metadata (`24538f2` "add phase 14 audit reports" → `9ec970b`
+"refresh… for post-remediation HEAD") indicates C10 concerns already-frozen
+audit/snapshot material, where modification would conflict with the project's
+immutability rules for released/archived artifacts (CHANGELOG: "NEVER modify
+already-released version sections"; ledger: "do not delete or hand-edit the
+canonical file").
+**Impact:** No code defect. To preserve audit independence the lead did not read
+`remediation-plan.md`, so C10 is not fully characterized here.
+**Fix:** Maintainer to confirm the C10 deferral rationale is recorded in the
+plan and that no *code* defect was deferred under C10 (only the process/meta
+item).
+
+### 5.4 Info: Codex subset-violation diagnostics collapse to a generic message
+
+**File:** `crates/opi-ai/src/openai_codex_responses.rs:242–247`
+**Cause:** When the shared Responses parser rejects a reasoning-tokens subset
+violation, the Codex provider replaces the parser's specific message with the
+generic `MALFORMED_STREAM_ERROR` sentinel. The standard
+`OpenAiResponsesProvider` does the same generic replacement. Error type
+(`StreamError`) and rejection behavior (no `Usage` event with invalid data) are
+correct.
+**Impact:** Display-only. An operator debugging a Codex stream sees a generic
+"malformed streaming data" message with no hint that a subset invariant tripped.
+**Fix:** Optional — thread the parser's structured reason through to the
+`StreamError` message for the subset-violation case.
 
 ---
 
@@ -148,30 +317,35 @@ No findings. Observed strengths:
 
 | Invariant | Code evidence | Test coverage |
 |-----------|--------------|---------------|
-| `opi-agent` constructs no provider and owns no auth config (load-bearing) | `crates/opi-agent/src/agent.rs`/`agent_loop.rs` carry only an opaque `session_id` string; all provider construction + auth resolution live in `opi-coding-agent`/`opi-ai`. `session.rs` contains none of `OAuth`/`Credential`/`access_token`/`refresh_token`. | `phase14_provider_auth_docs::every_phase14_non_goal_has_documented_and_structural_evidence` asserts `session.rs` excludes those tokens. |
-| `ProviderCollection` stays off the live path (status-gate only) | `provider_collection.rs::dispatch_stream` consumes a precomputed redacted `CredentialSource`; the descriptor performs no IO. The live resolver is inside each provider's `stream`. | `provider_collection` tests; full-file read, 0 findings. |
-| Corrupt/unknown envelope never falls through to env | `CredentialStoreError::{MalformedEnvelope, CorruptMarker, UnknownEnvelope}` are distinct `Err`; only `Ok(None)` (missing) and `BackendUnavailable` (API-key only) take the env path. | `credential_store.rs::corrupt_marker_is_redacted_and_blocks_env_fallback` (:708), `oauth_marker_only_state_is_typed_and_never_leaks_secrets` (:786). |
-| No auto-relogin mid-stream (NG2) | 401/403 → `CredentialRevoked` (non-retryable); ends turn; never starts login. `AuthInvalidPolicy::CredentialManaged`/`Static` is explicit per route, never inferred from Bearer. | `github_copilot_provider.rs::github_copilot_401_and_403_are_revoked_on_every_wire`; Codex counterpart. (F4.3 notes the single-request half is not directly asserted.) |
-| Usage subsets bounded by parent; malformed → error (B16) | `validate_usage_subset` returns `StreamError` when `reasoning > output` or `cache_write_1h > cache_write`; no invalid `Usage` event. `total_tokens` counts each parent once. | Provider fixture tests; session resume preserves subsets. |
-| Reserved auth headers rejected (NG3) | `ProviderHeaders::try_new` + `merge_request`; per-wire `validate_headers`. | `provider_headers` unit tests; Copilot managed-header test (F4.1 notes incomplete name coverage). |
-| Refresh: no double-refresh race, no partial write, bounded | `resolve_oauth` fast-path read → `needs_refresh` → acquire RAII lock → re-read (double-check) → `tokio::time::timeout(refresh_timeout, refresh)` → `write_unlocked` only on success → post-failure re-read. | `credential_store.rs` refresh/timeout tests; full-file read, 0 findings. |
-| `api-map` implemented (not deferred) | `ApiMappedProvider`; `[providers.custom]`; `github-copilot` 3-wire; `openai-codex` dedicated wire. | `custom_provider_map`, `github_copilot_provider`, `openai_codex_provider`, `api_mapped`/`provider_collection` tests. |
+| No opi-managed plaintext credential file (NG1) | All persisted credentials go to the OS keychain via `keyring-core`; env is read-only fallback for API keys | `credential_store.rs` redaction/temp-root scan (L1446–1524) proves only the secret-free `credential.lock` exists outside the fake keyring |
+| Corrupt/unknown envelope never falls through to env | `resolve_api_key` (`credential_store.rs:943–984`) returns hard errors for OAuth-kind marker, OAuth-kind protected, marker+no-protected, malformed, unknown version/type; env only on `BackendUnavailable` for API keys | `credential_store.rs` tests L1304–1373 |
+| OAuth persistence is keychain-required (no env fallback) | `resolve_oauth` returns `CredentialNeeded` on absence (`credential_store.rs:1016–1020`); never queries env | `oauth_auth.rs` absence/revocation tests |
+| Mutation lock is single, non-reentrant, bounded | `LockCoordinator` fs4 exclusive lock at `<user_config_dir>/credential.lock`; `write_unlocked`/`delete_unlocked`/`read_unlocked`/`acquire_lock` are `pub(crate)` and lock-free; refresh holds one lock across re-read→HTTP→write using unlocked ops (no recursive `write`) | `refresh_timeout_releases_lock_and_preserves_prior_credential` (`oauth_auth.rs:5336`); lock-contention tests |
+| Refresh HTTP is bounded shorter than lock hold | `OAUTH_REFRESH_TIMEOUT = 30s` (`credential_store.rs:119`); lock-wait 5s production; timeout drops the future, releases the lock, writes no partial credential | same |
+| Secrets redacted at every formatting site | Manual redacting `Debug` on `Credential`/`OAuthCredential`/`ResolvedAuth`/`SecretKey`; `expose_secret()` only at the 4 concrete HTTP boundaries; upstream SSE error text neutralized (`openai_chat.rs:694–696`, shared Responses path, Codex `UPSTREAM_STREAM_ERROR`) | multi-stage canary `openai_codex_bounded_redaction_scenario`; `pkce_token_endpoint_unknown_error_code_is_closed_and_redacted`; Copilot/Codex leak canaries |
+| Doctor/list-models probes are secret-free | `collect_credential_probes` → `probe_metadata` → `read_marker_kind` reads only the non-secret `opi.presence` marker service, never the protected `opi` envelope | `doctor_cli.rs`, `list_models.rs` inject present/absent/unavailable backends |
+| Doctor distinguishes Present/Absent/BackendUnavailable | `provider_diagnostics` (`doctor.rs:407–439`) matches on `probe.state` using only `probe.label` (display_source); uses precomputed redacted `store_probe`, not the laxer `auth_status()` | `doctor_cli.rs` three-state assertions |
+| Same-provider-only same-turn retry, no duplicate user message | `PromptAuthStateMachine` same-provider gate (L375), `retry_last_prompt` (L397), `may_arm_retry:false` on retry (L394) | `interactive_tui_auth.rs` one-message/two-calls/one-retry + negative paths |
+| `ApiMappedProvider` rejects before network on unknown model / missing route / wire mismatch | `api_mapped.rs:50–155` construction validation; `stream` L175–197 returns `UnknownModel` via `stream::once` pre-network | `api_mapped_provider.rs` construction + `unknown_model_fails_before_route_or_network` |
+| Anthropic cache markers only at capable positions/TTL; custom/unknown off | `anthropic.rs:810–820` capability gate (`supports_cache_control.unwrap_or(false)`); markers on system + last user/assistant/tool; `ttl:"1h"` only when `Long && supports_long_cache_retention` | `anthropic.rs` marker tests + `anthropic_cache_markers.rs` factory test (4 markers capable+Long, 0 for custom/unknown) |
+| Usage subset semantics; no double count | `stream.rs:97–107` total counts parents only; `calculate_cost` L272–279 | `usage_cost.rs` subset + cost tests |
+| `opi-agent` does not construct providers (load-bearing invariant) | Auth/resolver/store/lock live in `opi-coding-agent`; `agent_loop` calls `context.provider.stream()` only | preserved — no new provider construction in `opi-agent` |
 
 ---
 
-## 7. Cross-Task Integration
+## 7. Cross-task Integration
 
-### 7.1 MINOR: Doctor's `provider_proxy_url` ignores `config.providers.custom`
-
-**File:** `crates/opi-coding-agent/src/doctor.rs:699-720`
-
-**Cause:** `provider_proxy_url` inspects the built-in providers and `config.providers.openai_compatible`, but its `other =>` arm has no `providers.custom.get(other)` lookup. `CustomProviderConfig.proxy: Option<ProviderProxyConfig>` exists (`config.rs:118-127`) and is honored at runtime by `build_custom_provider` via `build_proxied_client`.
-
-**Failure scenario:** A user configures `[providers.custom.acme]` with `proxy.url = "http://proxy.internal:3128"`, sets `defaults.model = "acme:foo"`, and runs `opi doctor --scope config`. The diagnostic at `CODE_DOCTOR_CONFIG_PROXY` reports "no explicit proxy configured for selected provider `acme`" even though the custom provider's proxy is real and will be used at runtime.
-
-**Impact:** Minor. Misleading doctor config-scope diagnostic for custom providers; not a binding Phase 14 item, but a real cross-cutting consistency gap (doctor vs factory) surfaced while auditing factory/doctor integration.
-
-**Fix:** Add a `providers.custom.get(other).and_then(|p| p.proxy.as_ref().map(|p| p.url.as_str()))` branch ahead of the `openai_compatible` fallback in `provider_proxy_url`.
+No integration defects found. The auth/resolver/store/lock seams are consistent
+across `opi-ai` (abstract, IO-free) and `opi-coding-agent` (concrete, IO-bearing).
+The factory (`provider_factory.rs`) injects a lazy `AuthResolver`
+(`CredentialAuthResolver` / `AuthSource::Store` / `AuthSource::Layered`) into the
+approved Anthropic, GitHub Copilot, and OpenAI Codex providers; each holds the
+resolver + provider id, **not** the secret, so a changed store credential is
+observed by the next stream on the same constructed provider. Old `copilot` /
+`codex` ids are rejected with a canonical rename hint
+(`provider_factory.rs:1809–1820`) — no silent alias. The single
+`PromptAuthStateMachine` is shared by the real `tui_event_loop` and the debug
+scripted driver (no duplicated branching).
 
 ---
 
@@ -179,28 +353,31 @@ No findings. Observed strengths:
 
 ### Priority recommendations
 
-1. **Close the three test-coverage gaps (F4.1–F4.3).** All three are one- to four-line additions that lock invariants currently held only by code review (full 7-name Copilot managed-header rejection, image-route `Copilot-Vision-Request` on `/v1/messages`, single-request revocation). Cheap, high value.
-2. **Add `HeaderValue::from_str` validation for the Responses/Codex session-id header (F2.1).** Aligns the two Responses-family wires with the Chat wire and the T3 3a mandate, and converts a latent retryable-error edge into a clean non-retryable `RequestFailed`.
-3. **Emit canonical remediation for deprecated `copilot`/`codex` ids (F5.1)** and **extend doctor's proxy lookup to custom providers (F7.1).** Both are small, user-facing correctness improvements.
+1. **Unify the reserved-header lists** (§3.3). Three divergent lists is the
+   single largest maintainability hazard in the auth surface; collapse to one
+   canonical list so a future provider cannot accidentally inherit the 5-name
+   gate.
+2. **Zeroize the envelope encode buffer** (§3.1) and **harden the keyring lease
+   guard for release builds** (§3.2). Both are low-cost defense-in-depth fixes.
+3. **Strengthen the determinism test** (§4.1) to actually assert refresh order.
+4. **Confirm the C10 deferral** (§5.3) is recorded as a process/meta item only,
+   with no code defect hidden behind it.
 
-### Rejected findings (independently confirmed not defects)
+### Carry-forward items (explicitly deferred by the spec, not defects)
 
-Eight candidate findings were refuted by adversarial verification with concrete evidence. The most substantive:
+- Per-call credential override (`ApiStreamOptions`) — fog.
+- `onPayload`/`onResponse` streaming hooks (T3 3d) — fog.
+- End-to-end `SecretString`-through-provider-construction refactor (T1 D5 scope
+  cap) — the capability preflight being agent-loop-level (§5.1) is related; a
+  future refactor could move preflight into providers and close the library-user
+  gap at the same time.
+- Production trigger for `refresh_models` — substrate-only in Phase 14 by design.
 
-- *`build_provider` cannot construct OAuth providers / Anthropic not lazy* — framing error; the bare-id `_` arm is not the OAuth path, and `build_anthropic` resolves lazily at stream time.
-- *`CredentialNeeded` failed-turn user message not persisted* — the designed symmetric persistence contract (only finalized turns persist), already pinned by `phase8_cancel_persists_only_finalized_state`.
-- *`CredentialNeeded` pending turn survives `/fork`* — refuted: `fork_current_session` rebuilds messages from JSONL via `reconstruct_context`, and the unpersisted user message was never written, so it is absent from the fork.
-- *CHANGELOG omits the malformed-subset → `StreamError` break* — the "prior behavior" was itself unreleased Phase 14 code, so there is no public break to record.
-- *opi-spec SC8 "58-row acceptance manifest" has no artifact* — the manifest **is** the guard test file (`29 alignment + 29 historical` pinned rows in `phase14_provider_auth_docs.rs`).
-- *Guard test does not pin Bearer on the Copilot Anthropic Messages route* — verified **not a finding**: `github_copilot_provider.rs:344-355` behaviorally asserts `authorization: Bearer copilot-route-token` and `x-api-key is None` on `/v1/messages`, and `anthropic.rs:940-946` confirms the Bearer path. The invariant is mutation-resistantly locked by a behavioral test; a redundant guard pin is unnecessary.
+### Notes for the next phase
 
-### Info items (non-defects)
-
-- **I1 — `anthropic_cache_markers` is a single test function but densely comprehensive.** It builds Anthropic through the real factory (`build_provider_with_oauth`) + real `ProviderRegistry`, resolves final `ModelInfo` capabilities, fires 5 captured HTTP requests (Long/Short/Disabled/custom-default-off/unknown), and asserts exact marker positions (system + last-user + last-assistant + last-tool) with `ttl:"1h"` vs ephemeral plus null-marker negatives. SC5 is well covered; the "1 test" count is misleading.
-- **I2 — Three `#[ignore]`d tests** across `interactive_auth`, `interactive_tui_auth`, and `phase14_provider_auth_docs` are subprocess-only RPC stdio entry points (e.g. `phase14_docs_rpc_run_stdio_child`), invoked by their parent test rather than skipped. Not a coverage gap.
-- **I3 — `openai_codex_responses.rs::map_http_status` discards the upstream error body** (`_body` unused; 4xx/5xx → `ProviderSide("HTTP {code}")`). This is a defensible redaction-by-simplification but loses debugging detail for non-auth upstream errors. Consider preserving a redacted/truncated body excerpt in a `tracing` call only.
-
-### Methodology notes
-
-- The audit workflow's dedicated test-quality slice failed with an upstream rate-limit and was re-performed by the auditor directly via full-file reads of `anthropic_cache_markers.rs`, `interactive_tui_auth.rs`, the `credential_store.rs` redaction tests, and `phase14_provider_auth_docs.rs`; the three confirmed test-quality findings (F4.1–F4.3) originated from the Copilot/Codex parity slice.
-- No real keychain, OAuth endpoint, LLM API, browser, terminal, user config directory, or session directory was accessed. All evidence is from source, tests, configuration, and the design specification.
+- The live `.opi-impl-state.json` `spec_files_sha256` now drifts from the
+  checked-in `docs/opi-spec.md` hash (the spec was edited during remediation and
+  the phase4/phase6 snapshot hashes were re-synced to `0a961b6a`, but the live
+  ledger was not). `opi-implement` should re-sync the live ledger raw hash before
+  the next phase's guards are exercised; this is a process item, not a Phase 14
+  code defect.

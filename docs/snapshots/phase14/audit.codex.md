@@ -1,14 +1,11 @@
-# Phase 14 Provider Authentication, Wire Routing, and Usage Accounting -- Independent Code Audit
+# Phase 14 Provider & Auth -- Independent Code Audit
 
-**Auditor**: gpt5 (independent, no prior audit reports consulted)
-
+**Auditor**: codex (independent, no prior audit reports consulted)
 **Date**: 2026-07-20
+**Scope**: Tasks 14.1--14.21; task commits `d9f21a9` through `8364e74`; current implementation assessed at `b27905a`
+**Method**: Full read of the Phase 14 ledger, all three normative specifications, affected source/tests/docs, and checked-in pi-0.80.6 fixtures; task/criterion/invariant tracing; three independent file-group reviews; fresh workspace and focused verification.
 
-**Scope**: Tasks 14.1--14.21, commits `d9f21a97d0d93a57c1a84e248b9254ece2ea2bb8..8364e74a9077a194cb4a7fd68db2e3c4b420111a`
-
-**Audited baseline**: `9263114731b0cdd3706769a001fedbe227da6109`
-
-**Method**: Full reads of the Phase 14 task ledger, both registered Phase 14 design specifications, the current technical specifications, and the affected provider/auth/runtime/test/documentation surfaces; task-DoD and invariant tracing; targeted negative-path analysis; acceptance-manifest inspection; and full workspace build, format, lint, test, doctest, and documentation gates.
+No `docs/snapshots/phase14/audit.*.md`, remediation plan, evaluator report, or review transcript was consulted. The ledger's short `phase_exit.evaluator_summary` was used only as structural metadata.
 
 ---
 
@@ -19,268 +16,249 @@
 | Severity | Count |
 |----------|------:|
 | Blocker  | 0 |
-| Major    | 10 |
-| Minor    | 4 |
+| Major    | 7 |
+| Minor    | 2 |
 | Info     | 0 |
 
-The current baseline passes every ordinary workspace gate, and the credential-store, native-keyring, dispatcher, cache-marker, and most catalog/routing paths are well covered. It nevertheless has systemic contract failures at the provider-stream boundary, multiple dedicated Codex edge-case failures, a live-versus-resumed usage-accounting divergence, an upstream-error redaction gap, and acceptance artifacts that silently execute zero tests while claiming Phase 14 closure.
-
-The phase is not ready to be treated as closed. The highest-priority work is to restore the lazy/cancellable/typed stream contract, prevent raw provider payloads from becoming public/session error text, fix Codex terminal OAuth and disabled-affinity behavior, and replace the documentary acceptance manifest with an executable gate that rejects zero-test selections.
+Phase 14 has substantial, well-tested substrate, and the full workspace gates are green. However, seven Major findings affect normal Responses/Codex streaming, panic safety for untrusted provider data, cancellation, thinking enforcement, mixed-model cost accounting, and typed Codex authentication remediation. These span several core Phase 14 success criteria, so the phase should not be treated as closed despite the absence of a direct credential disclosure.
 
 ### Per-task summary
 
 | Task | Title | Verdict |
 |------|-------|---------|
 | 14.1 | Credential store model | PASS |
-| 14.2 | OAuth architecture and per-request auth re-resolution | FAIL |
-| 14.3 | Request scalars and session-affinity production path | FAIL |
-| 14.4 | Model capabilities and Anthropic cache markers | PASS |
-| 14.5 | Usage and cost cache/reasoning accounting | FAIL |
-| 14.6 | Dynamic provider model refresh | PASS-WITH-FINDINGS |
-| 14.7 | Provider/auth docs, non-goal guards, and final Phase 14 gates | FAIL |
+| 14.2 | OAuth architecture and per-request auth re-resolution | MAJOR findings 2.3, 3.3 |
+| 14.3 | Request scalars and session-affinity production path | PASS |
+| 14.4 | Model capabilities and Anthropic cache markers | MAJOR findings 2.2, 3.1 |
+| 14.5 | Usage and cost cache/reasoning accounting | MAJOR finding 2.4 |
+| 14.6 | Dynamic provider model refresh | PASS |
+| 14.7 | Provider/auth docs, non-goal guards, and final gates | PASS with test-quality gaps |
 | 14.8 | Native keyring and production probes | PASS |
-| 14.9 | Login/logout dispatcher and persistence | PASS |
-| 14.10 | Live auth and session interaction | FAIL |
-| 14.11 | Factory-built Anthropic cache markers | PASS |
-| 14.12 | Usage and cost contract | FAIL |
-| 14.13 | Documentation, verification, and residual closure | FAIL |
+| 14.9 | Login/logout dispatcher and persistence | MAJOR/MINOR findings 2.3, 3.3, 4.1, 4.2 |
+| 14.10 | Live auth and session interaction | MAJOR findings 3.2, 3.3 |
+| 14.11 | Factory-built Anthropic cache markers | MAJOR finding 2.2 |
+| 14.12 | Usage and cost contract | MAJOR finding 2.4 |
+| 14.13 | Documentation, verification, and residual closure | PASS with test-quality gaps |
 | 14.14 | Native keyring host selection | PASS |
-| 14.15 | WireApi, model metadata, pricing, thinking, and canonical IDs | FAIL |
-| 14.16 | ApiMappedProvider and TOML custom providers | PASS-WITH-FINDINGS |
-| 14.17 | GitHub Copilot three-wire catalog | FAIL |
-| 14.18 | OpenAI Codex dedicated wire, catalog, and dual login | FAIL |
-| 14.19 | Concrete OAuth dispatcher vertical path | FAIL |
-| 14.20 | Outer TUI credential retry | PASS |
-| 14.21 | Documentation, acceptance artifacts, and Phase F | FAIL |
-
-### Verification executed
-
-The following gates passed on the audited baseline:
-
-```text
-cargo fmt --check --all
-cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace --all-targets
-cargo test --workspace --doc
-RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
-cargo test -p opi-ai --all-targets
-cargo test -p opi-coding-agent --test interactive_tui_auth outer_tui_same_provider_login_retries_pending_turn_once
-```
-
-Passing these gates does not contradict the findings below: several failures are untested, two current acceptance commands select zero tests, and some existing tests explicitly assert the incorrect behavior.
+| 14.15 | WireApi, model metadata, pricing, thinking, canonical IDs | MAJOR findings 2.4, 3.1 |
+| 14.16 | ApiMappedProvider and TOML custom providers | MAJOR finding 3.1 |
+| 14.17 | GitHub Copilot three-wire catalog | MAJOR findings 2.1, 3.1, 3.3 |
+| 14.18 | OpenAI Codex dedicated wire, catalog, dual login | MAJOR findings 2.1, 2.3, 3.1--3.3 |
+| 14.19 | Concrete OAuth dispatcher vertical path | MAJOR/MINOR findings 2.3, 3.3, 4.1, 4.2 |
+| 14.20 | Outer TUI credential retry | MAJOR finding 3.2 |
+| 14.21 | Documentation, acceptance artifacts, Phase F | Acceptance did not expose the Major findings |
 
 ---
 
-## 2. Correctness and Provider-Lifecycle Findings
+## 2. Correctness and Protocol Findings
 
-### 2.1 MAJOR: Provider streams perform auth resolution and network I/O before first poll
+### 2.1 MAJOR: Responses/Codex normal SSE frames become terminal errors
 
-**Files:** `crates/opi-ai/src/anthropic.rs`, `crates/opi-ai/src/openai_chat.rs`, `crates/opi-ai/src/openai_responses.rs`, `crates/opi-ai/src/openai_codex_responses.rs`
-**Lines:** `anthropic.rs:1276--1299`; `openai_chat.rs:1495--1517`; `openai_responses.rs:541--563`; `openai_codex_responses.rs:278--300`
-**Spec refs:** `docs/superpowers/specs/2026-07-14-phase14-exit-remediation-design.md:229,814`; task 14.10 first-poll DoD
-**Cause:** Each `Provider::stream` implementation creates a channel and immediately calls `tokio::spawn`. The spawned future resolves credentials and can begin the HTTP request before the returned event stream is polled. Dropping that stream only drops the receiver; it does not cancel the detached task.
-**Impact:** Merely constructing and dropping a stream can refresh credentials and transmit user content. The implementation also requires a Tokio runtime at stream construction and can panic outside one, despite the contract defining work as lazy on first poll.
-**Fix:** Return a stream that owns and polls the request future. Tie cancellation and drop to that owned future rather than a detached task. Add tests that construct and drop an unpolled stream and assert zero credential-resolver calls and zero HTTP requests.
+**Files:** `crates/opi-ai/src/openai_responses_shared.rs`, `crates/opi-ai/src/openai_responses.rs`, `crates/opi-ai/src/openai_codex_responses.rs`
+**Lines:** shared `49--53`, `199--209`, `326--328`, `529--539`; Responses `439--459`; Codex `227--253`
+**Spec refs:** Tasks 14.17--14.18; Phase 14 pi-0.80.6 wire alignment
 
-### 2.2 MAJOR: Request cancellation terminates direct provider streams as clean EOF
+**Cause:** `ResponsesEvent::try_from_frame` dispatches exclusively on the SSE `event:` field. A data-only frame therefore defaults to event type `message`, and every unrecognized type becomes `ResponsesEvent::Error`, which immediately marks the mapper terminal. Canonical Codex SSE is data-only and carries the actual type in JSON (`{"type":"response.output_item.added", ...}`), as demonstrated by `.repo/pi-0.80.6/packages/ai/test/openai-codex-stream.test.ts:48--86`.
 
-**Files:** `crates/opi-ai/src/provider.rs`, `crates/opi-ai/src/anthropic.rs`, `crates/opi-ai/src/openai_chat.rs`, `crates/opi-ai/src/openai_responses.rs`, `crates/opi-ai/src/openai_codex_responses.rs`
-**Lines:** `provider.rs:82--84`; `anthropic.rs:973--977`; `openai_chat.rs:1198--1202`; `openai_responses.rs:417--425`; `openai_codex_responses.rs:200--208`
-**Cause:** The stream contract says cancellation yields `ProviderError::Cancelled`, but the HTTP loops return `Ok(())` when the request cancellation token fires. Their spawned wrappers forward only `Err`, so the sender is dropped and the consumer observes clean EOF. `openai_chat_fixtures.rs:1631--1677` currently enshrines this behavior.
-**Impact:** Direct `opi-ai` consumers cannot distinguish cancellation from a provider that ended without a terminal event. The coding-agent loop has an independent cancellation select that masks part of the issue, but the public provider contract remains broken.
-**Fix:** Emit or return `ProviderError::Cancelled` on the cancellation branch and add direct-provider tests for all four implementations. The tests must assert the typed error, not only stream termination.
+Even when a server supplies `event:`, the decoder treats normal protocol events such as `response.in_progress`, `response.content_part.done`, `response.function_call_arguments.done`, reasoning summary/text events, `response.incomplete`, and Codex `response.done` as errors. The checked-in pi handler parses JSON `type`, handles reasoning and function-call completion, normalizes terminal variants, and ignores benign lifecycle extensions.
 
-### 2.3 MAJOR: Timeouts after response headers are downgraded to non-retryable stream errors
+**Impact:** A normal Codex response can fail on its first frame. Standard Responses/Copilot routes can terminate on ordinary lifecycle events, lose reasoning or final tool arguments, and map incomplete/length termination to an error.
 
-**Files:** `crates/opi-ai/src/anthropic.rs`, `crates/opi-ai/src/openai_chat.rs`, `crates/opi-ai/src/openai_responses.rs`, `crates/opi-ai/src/openai_codex_responses.rs`, `crates/opi-ai/src/provider.rs`
-**Lines:** `anthropic.rs:986`; `openai_chat.rs:1211`; `openai_responses.rs:425`; `openai_codex_responses.rs:208`; `provider.rs:363--367`
-**Cause:** Once response headers have arrived, every body-stream error is mapped to `StreamError`. Reqwest's per-request timeout remains active while the response body is read, so a body timeout arrives through this branch but loses its `Timeout` classification. `StreamError` is non-retryable while `Timeout` is retryable.
-**Impact:** A stalled SSE body is not retried even though an equivalent pre-header timeout is retried. Provider behavior depends on the exact point at which the same timeout occurs.
-**Fix:** Classify body errors with the same timeout/connect/request mapping used for initial request errors. Add fixtures that send headers and then stall the body for each provider family.
+**Fix:** Decode the JSON `type` field, using the SSE event name only as a validated fallback. Explicitly handle function-call completion, reasoning, incomplete/failed, and Codex terminal forms; ignore unknown non-error extensions. Add data-only, realistic full-sequence fixtures for both HTTP paths.
 
-### 2.4 MAJOR: Codex device polling treats terminal 403/404 OAuth responses as pending
+### 2.2 MAJOR: Anthropic block events can underflow and panic
+
+**File:** `crates/opi-ai/src/anthropic.rs`
+**Lines:** `468--469`, `517--518`
+
+**Cause:** `ContentBlockDelta` and `ContentBlockStop` compute `self.blocks.len() - 1`. A syntactically valid event delivered before any block start underflows `usize`. Both arms also discard the upstream `index` and mutate the last block, so out-of-order/interleaved indices can update the wrong content.
+
+**Impact:** Malformed or reordered upstream input can panic a direct mapper caller. In the HTTP task it can terminate the producer without a typed terminal error, violating the provider failure-in-band contract.
+
+**Fix:** Use the event index with safe `get`/`get_mut`; return a non-retryable `StreamError` for missing, out-of-range, or type-mismatched blocks. Add delta-before-start, stop-before-start, wrong-index, and interleaved-index tests.
+
+### 2.3 MAJOR: Provider-controlled OAuth duration fields can panic
 
 **File:** `crates/opi-coding-agent/src/oauth.rs`
-**Lines:** `1080--1090`; tests at `crates/opi-coding-agent/tests/oauth_auth.rs:2715--2730,2787--2829`
-**Cause:** The Codex Device Code poller maps every HTTP 403 or 404 to `Pending` before parsing a structured OAuth error code. The denial/expiry tests cover terminal codes only with HTTP 400, while a 403 fixture explicitly asserts pending.
-**Impact:** A valid `access_denied` or expiration response delivered with 403/404 waits until the maximum polling timeout, potentially about fifteen minutes, and is then reported as a timeout instead of the real terminal outcome.
-**Fix:** Parse recognized terminal OAuth codes before applying status-based fallback. Treat 403/404 as pending only when the payload does not contain a recognized terminal code. Add 403 and 404 denial/expiry tests.
+**Lines:** `427--433`, `534--536`, `1028--1035`, `1179--1240`, `1717--1720`, `1763--1767`
+**Spec refs:** `docs/opi-spec.md:61`, `1754--1758`; exit-remediation design `946--948`
 
-### 2.5 MAJOR: A failed credential turn followed by a different prompt changes usage totals after resume
+**Cause:** Server-controlled `expires_in: i64` is added to `OffsetDateTime` with the panicking `Add` implementation. The locked `time 0.3.47` implementation uses `checked_add(...).expect(...)`. Device endpoints can also supply `u64::MAX` as the polling interval; a later `slow_down` performs unchecked `interval += 5s` (and an enormous interval may already overflow timer construction).
 
-**Files:** `crates/opi-agent/src/agent.rs`, `crates/opi-coding-agent/src/harness.rs`, `crates/opi-coding-agent/src/session_coordinator.rs`, `crates/opi-ai/src/stream.rs`
-**Lines:** `agent.rs:166--177`; `harness.rs:1468--1480`; `session_coordinator.rs:154--158,191--198,244--253,295--303`; `stream.rs:189--215`
-**Spec ref:** `docs/superpowers/specs/2026-07-14-phase14-exit-remediation-design.md:333--340`
-**Cause:** The agent appends the first user prompt before provider execution. On a credential failure, the harness returns without persisting that turn or advancing its persistence offset. If the user submits a different prompt, the next successful persistence slice contains two user messages but `on_turn_end` calls `CumulativeUsage::accumulate` only once. Replay reconstructs `turn_count` by counting both persisted user messages.
-**Impact:** The live process reports one turn while the resumed session reports two for the same persisted history. Cost totals and any behavior keyed to cumulative turn count can diverge across restart.
-**Fix:** Give abandoned failed turns an explicit persistence/accounting boundary before accepting a fresh prompt, while preserving the existing no-duplicate behavior for `retry_last_turn`. Add an outer-TUI session test that fails auth, submits a different prompt, persists, resumes, and compares the complete cumulative usage structure.
+**Impact:** A malformed or malicious OAuth response can crash the process instead of returning a typed, redacted provider error. This affects login, refresh, GitHub Copilot Device Code, and OpenAI Codex Device Code paths.
 
----
+**Fix:** Validate duration bounds and use checked date/duration arithmetic. Reject unrepresentable values with fixed typed errors. Add adversarial `i64::{MIN,MAX}` and `u64::MAX` login/refresh/device tests.
 
-## 3. Security, Redaction, and Session-Affinity Findings
+### 2.4 MAJOR: Session cost reprices historical usage with the current model
 
-### 3.1 MAJOR: Raw upstream SSE errors can be persisted and exposed without redaction
+**Files:** `crates/opi-coding-agent/src/harness.rs`, `crates/opi-coding-agent/src/session_coordinator.rs`, `crates/opi-coding-agent/tests/session_runtime.rs`
+**Lines:** harness `1173--1178`; coordinator `609--624`, `646--650`; test `1280--1295`, `1371--1428`
+**Spec refs:** Tasks 14.5, 14.12, 14.15; SC6
 
-**Files:** `crates/opi-ai/src/anthropic.rs`, `crates/opi-ai/src/openai_chat.rs`, `crates/opi-ai/src/openai_responses.rs`, `crates/opi-ai/src/openai_responses_shared.rs`, `crates/opi-agent/src/event.rs`, `crates/opi-agent/src/agent_loop.rs`
-**Lines:** `anthropic.rs:591--598`; `openai_chat.rs:690--697,1121--1124,1225--1228`; `openai_responses.rs:340--342,436--439`; `openai_responses_shared.rs:512--519`; `event.rs:234--251`; `agent_loop.rs:674--675`
-**Cause:** Managed Anthropic, OpenAI Chat/Copilot, and Responses paths copy raw upstream error messages or malformed SSE frame data into assistant stream errors. Public-event redaction clones `error_message` unchanged, and the agent loop promotes that value to final assistant error text. The dedicated Codex path already uses a safer generic mapping, demonstrating that raw payload inclusion is not required.
-**Impact:** An upstream proxy or provider that echoes authorization material, request fragments, or user content can place it in terminal output, JSON events, traces, or persisted session content.
-**Fix:** Convert provider payloads to bounded, provider-neutral public error messages. Retain sensitive detail only in an explicitly redacted diagnostic channel. Add sentinel-secret tests covering structured upstream errors and malformed SSE data for every provider family.
+**Cause:** `sync_session_cost_model` replaces one session-wide model/pricing value. `cost_summary` then applies that current price to all cumulative usage. It also selects a pricing tier using cumulative session input tokens, although a model threshold applies to each request.
 
-### 3.2 MAJOR: Disabled cache retention still emits generated Codex affinity identifiers
+The lifecycle test encodes the defect: after recording $18 of Sonnet usage, selecting Opus performs no request but changes the asserted total to $42. The test named `embedded_model_pricing_updates_on_model_switch_and_resume` switches before recording any usage and therefore never tests mixed-model history.
 
-**File:** `crates/opi-ai/src/openai_codex_responses.rs`
-**Lines:** `171--172,269--275`; tests at `211--315`
-**Spec ref:** `docs/superpowers/specs/2026-07-11-phase14-provider-auth-design.md:490--492,521`
-**Cause:** When `CacheRetention::Disabled` suppresses the derived session affinity, the Codex route falls back to a new UUID and still emits both `session-id` and `x-client-request-id`. Existing tests assert the generated identifiers instead of the specified omission.
-**Impact:** An explicit request to disable cache/session affinity is ignored for the dedicated Codex wire, and every request still carries correlation identifiers.
-**Fix:** Keep both identifiers optional and omit them when retention is disabled or the mapping is empty. Update the tests to assert header absence.
+**Impact:** Model selection retroactively changes already-incurred cost. Mixed-model resume/fork summaries are wrong, and several individually below-threshold calls can cumulatively cross a tier and reprice the entire session.
+
+**Fix:** Compute and accumulate cost per completed turn using that turn's model and input-token tier. For resume/fork, replay usage against initial-model/model-change segments or persist an additive non-authoritative priced-usage breakdown consistent with the session compatibility constraints. Replace the retroactive assertions with invariance tests.
 
 ---
 
-## 4. Model, Wire, and Spec-Compliance Findings
+## 3. Contract and Cross-Task Integration Findings
 
-### 4.1 MAJOR: OpenAI Chat and Responses silently omit unsupported thinking levels
+### 3.1 MAJOR: Thinking-level enforcement is optional and inconsistent
 
-**Files:** `crates/opi-ai/src/provider.rs`, `crates/opi-ai/src/openai_chat.rs`, `crates/opi-ai/src/openai_responses.rs`
-**Lines:** `provider.rs:276--284`; `openai_chat.rs:1087--1092`; `openai_responses.rs:321--326`; tests at `crates/opi-ai/tests/model_wire_metadata.rs:213--285`
-**Spec ref:** task 14.15 DoD and `docs/superpowers/specs/2026-07-14-phase14-exit-remediation-design.md:1078`
-**Cause:** Shared validation exempts OpenAI Chat and Responses from unsupported-thinking rejection. The request builders then omit the unresolved level and continue to HTTP. The wire-metadata tests explicitly assert that the request reaches the server. This follows `docs/opi-spec.md:1700--1704`, but contradicts the registered corrective design and task DoD that require rejection before request construction.
-**Impact:** Phase completion claims and production behavior disagree, and a user receives a successful request with silently changed reasoning semantics.
-**Fix:** Resolve the normative conflict explicitly. To satisfy the recorded task DoD, reject unsupported levels with a typed pre-I/O error and update the tests. If silent omission is intended product behavior, amend the corrective design and ledger claim rather than leaving contradictory normative sources.
+**Files:** `crates/opi-ai/src/provider.rs`, `crates/opi-ai/src/openai_chat.rs`, `crates/opi-ai/src/openai_responses.rs`, `crates/opi-ai/src/openai_codex_responses.rs`, `crates/opi-coding-agent/src/harness.rs`
+**Lines:** provider `225--284`; Chat `1096--1101`; Responses `321--326`; Codex `111--125`; harness `1016--1078`, `1189--1199`
+**Spec refs:** exit-remediation design `1055--1081`; `docs/opi-spec.md:1702--1706`
 
-### 4.2 MAJOR: The dedicated Codex provider sends unknown or cross-provider model IDs
+**Cause:** Unsupported-level validation lives in a standalone helper that public `Provider::stream`, `ApiMappedProvider`, and `ProviderCollection` do not enforce. Chat/Responses silently omit reasoning after a mapping error, and Codex falls back to the raw level name. The tests' `run_production_request` helper manually calls the validator first, masking the public stream behavior.
 
-**Files:** `crates/opi-coding-agent/src/provider_factory.rs`, `crates/opi-coding-agent/src/harness.rs`, `crates/opi-ai/src/openai_codex_responses.rs`, `crates/opi-ai/src/api_mapped.rs`
-**Lines:** `provider_factory.rs:1375--1394`; `harness.rs:454--469,988--1000`; `openai_codex_responses.rs:256--265`; `api_mapped.rs:172--193`
-**Cause:** The factory constructs the dedicated Codex route directly, initial harness construction does not run the model reconfiguration validator, and the route strips any provider prefix before sending. Its catalog lookup only helps choose a base URL and does not reject an unknown model. `ApiMappedProvider` correctly performs typed catalog/wire validation, but the dedicated route bypasses it.
-**Impact:** Typos and cross-provider model specs can cause credential resolution and network I/O before failing remotely, violating the pre-I/O unknown-model invariant and potentially sending a request to the wrong wire.
-**Fix:** Put the dedicated route behind the same catalog/wire validation boundary or add equivalent validation inside it. Cover unknown bare IDs and cross-provider prefixes with zero-resolver/zero-HTTP tests.
+The helper also resolves the level when `thinking.enabled == false`, contrary to its own contract. Conversely, `CodingHarness::set_thinking_level` checks only broad thinking capability and token budget, not `thinking_level_map`, so it can accept and persist `xhigh`/`max` for a model that will reject the next prompt.
 
----
+**Impact:** Direct provider/mapped-provider callers can perform HTTP instead of receiving the required pre-network `UnsupportedCapability`. The coding-agent can report a successful, persisted setting that deterministically fails later, while a disabled request with a stale level can be rejected unnecessarily.
 
-## 5. Test-Quality and Documentation Findings
+**Fix:** Introduce one checked dispatch seam used by every public stream/collection path. Resolve a model's level only when thinking is enabled. Reuse the same map validation in harness set/model-switch/resume paths. Test `Provider::stream` directly and assert zero auth/HTTP calls.
 
-### 5.1 MAJOR: Phase acceptance artifacts claim coverage while selected commands run zero tests
+### 3.2 MAJOR: `AccountIdMissing` loses its typed authentication semantics
 
-**Files:** `docs/superpowers/plans/2026-07-17-phase14-pi-0806-alignment.md`, `docs/snapshots/phase14/opi-impl-state.json`, `crates/opi-coding-agent/tests/phase14_provider_auth_docs.rs`
-**Lines:** plan `1331,1341,1380`; snapshot `110,401,701,875--876,1010,2086,2298,2363`; docs guard `191--209`
-**Cause:** The final plan correctly states that zero selected tests are a failure, but two of its own 58 mandatory commands select zero tests:
+**Files:** `crates/opi-ai/src/openai_codex_responses.rs`, `crates/opi-ai/src/provider.rs`, `crates/opi-agent/src/agent_loop.rs`, `crates/opi-coding-agent/src/runner.rs`, `crates/opi-coding-agent/src/rpc.rs`
+**Lines:** Codex `151--158`; provider `317--320`, `372--377`; agent loop `508--524`; runner `690--703`, `725--735`; RPC `1000--1032`
+**Spec ref:** exit-remediation design `1002--1022`
 
-```text
-cargo test -p opi-ai --test model_wire_metadata unsupported_thinking_level_is_rejected_before_request_build
-cargo test -p opi-coding-agent --lib oauth_login_restores_terminal_after_flow_failure
-```
+**Cause:** Codex correctly returns `ProviderError::AccountIdMissing` before HTTP, and `opi-ai` classifies it as authentication. `agent_loop` has no matching `AgentError` mapping, so the catch-all converts it to generic `AgentError::Provider`.
 
-The snapshot also carries a third zero-selection filter:
+**Impact:** Text/JSON exits with `ProviderFailure` instead of `AuthFailure`; typed `/login openai-codex` remediation is lost; RPC emits no authentication event; interactive handling takes the generic failure path.
 
-```text
-cargo test -p opi-coding-agent --test interactive_auth interactive_explicit_login_retries_pending_turn_once
-```
+**Fix:** Preserve a typed agent error (or deliberately normalize to a typed reauthentication error) through diagnostics, interactive mode, runner events/exit codes, JSON, and RPC. Add provider-to-mode integration tests, not only provider-local tests.
 
-The replacements have different names, including `strict_wire_unsupported_thinking_level_is_rejected_before_http`, `dispatcher_restores_terminal_once_on_every_concrete_exit`, and `outer_tui_same_provider_login_retries_pending_turn_once`. Five snapshot `behavioral_tests` paths do not exist: `doctor.rs`, `request_enrichment_wiring.rs`, `anthropic.rs`, `model_capabilities_wiring.rs`, and `usage_cost_wiring.rs`. The docs guard verifies only the literal phrase `"58-row acceptance manifest"`; it neither parses nor executes the manifest.
-**Impact:** Phase-exit evidence can remain green while mandatory acceptance rows execute no tests. The artifact cannot reliably prove task completion or detect renamed/deleted coverage.
-**Fix:** Replace prose-only command rows with a machine-readable executable manifest. For every filtered Cargo command, enumerate first and fail unless at least one test matches; also validate every declared test path. Make the documentation test invoke this validator.
+### 3.3 MAJOR: Cancellation is not observed across the full Phase 14 operation
 
-### 5.2 Minor: The localized technical specification begins with corrupt preamble bytes
+**Files:** `crates/opi-coding-agent/src/oauth.rs`, `crates/opi-ai/src/anthropic.rs`, `crates/opi-ai/src/openai_chat.rs`, `crates/opi-ai/src/openai_responses.rs`, `crates/opi-ai/src/openai_codex_responses.rs`
+**Lines:** OAuth `219--271`; Anthropic auth `1305` vs cancellation `982`; Chat auth `1527` vs cancellation `1209`; Responses auth `568` vs cancellation `423`; Codex auth `339` vs cancellation `211`
+**Spec refs:** `docs/opi-spec.md:1754--1758`; provider contract `crates/opi-ai/src/provider.rs:29--32`, `80--84`
 
-**File:** `docs/opi-spec.zh.md`
-**Lines:** `1`
-**Cause:** The file begins with the literal characters `e'x#` before the intended title, so it has no valid leading H1.
-**Impact:** The rendered localized specification has a malformed title and signals that the localized artifact was not structurally validated.
-**Fix:** Remove the stray prefix and add a lightweight Markdown structure check for both technical-spec variants.
+**Cause:** PKCE cancellation is first created/polled only after loopback bind and `present_auth_url`; a pre-cancelled or blocked-presenter flow therefore ignores cancellation until the absolute deadline. Separately, provider stream tasks resolve lazy credentials and await HTTP response headers before their byte-loop selects `Request::cancel`.
 
-### 5.3 Minor: Technical specifications still describe provider credentials as build-time validation
+The main agent path is partly protected because it drops the stream on cancellation and the receiver-drop branch aborts the task. A direct public `Provider`/collection caller that retains and polls the stream is not protected and can refresh credentials or initiate HTTP after cancellation.
 
-**Files:** `docs/opi-spec.md`, `docs/opi-spec.zh.md`
-**Lines:** `docs/opi-spec.md:1580--1582`; `docs/opi-spec.zh.md:1341--1344`
-**Cause:** Both documents state that provider construction validates credentials at build time. Phase 14 moved managed credentials to per-stream resolution so login/logout/refresh can take effect without rebuilding the provider.
-**Impact:** Embedders can implement the old lifecycle and misunderstand when missing credentials are reported.
-**Fix:** Describe construction as structural/provider-profile validation and credential resolution as a per-stream operation. Keep the localized text synchronized.
+**Impact:** Ctrl-C can be unresponsive during pre-code PKCE stages. Public provider consumers can wait indefinitely when no request timeout is set, and cancellation can fail to prevent credential/network work.
+
+**Fix:** Create one cancellation future before PKCE bind and select it through every pre-code stage. In provider implementations, select cancellation and receiver closure around the complete auth-plus-send-plus-body operation, returning exactly one typed `Cancelled` terminal outcome. Add ready-before-start, pending-presenter, pending-resolver, and pending-header tests.
 
 ---
 
-## 6. Cross-Task Invariant Findings
+## 4. Minor Findings
 
-### 6.1 Minor: `ApiMappedProvider` cannot enforce the shared-auth-resolver invariant
+### 4.1 Minor: Invalid PKCE callbacks receive a success page
 
-**File:** `crates/opi-ai/src/api_mapped.rs`
-**Lines:** `24--28,47--53`
-**Cause:** `ApiMappedProvider::try_new` accepts already-built boxed route providers. Its documentation says callers `"should"` share one resolver, but the type and constructor cannot verify or establish that invariant.
-**Impact:** Current production construction shares the resolver correctly, but embedders can create one logical provider whose wires observe different login/logout state.
-**Fix:** Construct routes from a shared resolver inside the mapped provider, or make the resolver identity part of route construction and validate it in `try_new`.
+**File:** `crates/opi-coding-agent/src/oauth.rs`
+**Lines:** `439--484`
 
-### 6.2 Minor: Dynamic refresh installs model catalogs without validating IDs or duplicates
+**Cause:** The loopback handler writes and flushes HTTP 200 with “Login complete” before parsing the request or validating the CSRF state.
 
-**Files:** `crates/opi-ai/src/provider_collection.rs`, `crates/opi-ai/src/registry.rs`
-**Lines:** `provider_collection.rs:442--468`; `registry.rs:339--352`
-**Cause:** Initial configured model overrides are validated, but refreshed `ModelInfo` values replace the registry catalog directly without equivalent identifier and duplicate checks.
-**Impact:** A malformed dynamic catalog can create ambiguous or unreachable models until the next successful refresh. The atomic replacement behavior is sound, but the candidate catalog is not validated before commit.
-**Fix:** Apply the same canonical-ID and uniqueness validation to the complete refresh candidate before replacing the active catalog. Preserve the previous catalog on validation failure and add malformed/duplicate refresh fixtures.
+**Impact:** A malformed or state-mismatched callback correctly fails credential acquisition, but the browser has already told the user that login succeeded.
+
+**Fix:** Parse and validate first. Return a fixed secret-free 400 response for invalid input and 200 only after valid state/code extraction.
+
+### 4.2 Minor: Large manual input can block the child/parent pipe
+
+**File:** `crates/opi-coding-agent/src/oauth.rs`
+**Lines:** `1893--1915`
+**Spec ref:** `docs/opi-spec.md:1759--1762`
+
+**Cause:** The parent waits for the cooked-line child to exit before draining piped stdout. A line larger than the pipe capacity blocks the child on write while the parent blocks on exit.
+
+**Impact:** Manual fallback stalls until the OAuth deadline/cancellation path kills and reaps the child. Normal short codes are unaffected.
+
+**Fix:** Drain stdout concurrently with a strict maximum line length, then await/reap the child.
+
+---
+
+## 5. Test Quality Assessment
+
+All fresh workspace gates pass, but several green tests normalize or omit the failing behavior:
+
+- Responses/Codex fixtures add explicit `event:` fields and omit canonical data-only/lifecycle/reasoning/function-done sequences.
+- Thinking “production” tests call `validate_request_capabilities` outside `Provider::stream`; body-builder tests explicitly accept silent omission of unsupported reasoning.
+- The recorded 14.15 filter `embedded_model_pricing_` excludes the actual harness switch/resume/fork lifecycle test.
+- The included pricing test switches before any usage; the excluded lifecycle test asserts the incorrect $18-to-$42 retroactive reprice.
+- Account-id tests stop at the provider boundary and never exercise agent/text/JSON/RPC classification.
+- OAuth tests do not inject extreme duration values or cancellation before bind/presentation.
+- `thinking_integration.rs` checks enabled/budget but does not assert that the selected level reaches the request.
+- Several Non-Goal guards are exact substring/source-shape checks. No actual Non-Goal violation was found, but these guards are weaker than behavioral or compiled API checks.
+
+### Fresh verification
+
+| Command | Result |
+|---------|--------|
+| `cargo test --workspace --all-targets` | PASS |
+| `cargo test --workspace --doc` | PASS |
+| `cargo fmt --check --all` | PASS |
+| `cargo clippy --workspace --all-targets -- -D warnings` | PASS |
+| `RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps` | PASS |
+| Focused opi-ai auth/wire/Responses/Codex/model tests | PASS |
+| Focused coding-agent credential/OAuth/TUI/provider tests | 253 passed, 2 subprocess-only ignored |
+| Exact mixed-model lifecycle test | PASS, while asserting the incorrect retroactive reprice |
+
+---
+
+## 6. Success Criteria and Non-Goals
+
+| Criterion | Assessment | Independent evidence |
+|-----------|------------|----------------------|
+| SC1 credential storage/probes | MET | Native selector, marker-only probes, fail-closed resolver, locking, and no-plaintext checks are substantive. |
+| SC2 OAuth product flows | NOT MET | Normal flows exist, but provider-controlled durations can panic and PKCE cancellation omits pre-code stages. |
+| SC3 live auth/session interaction | NOT MET | Lazy auth exists; public cancellation and `AccountIdMissing` mode propagation are incomplete. |
+| SC4 request/session affinity | MET | New/resume/fork session IDs reach requests and reviewed wire mappings. |
+| SC5 capabilities/cache markers | PARTIAL | Cache/capability placement is strong; thinking-map enforcement is not part of every public dispatch path. |
+| SC6 usage/metadata/cost | NOT MET | Strict usage subsets pass, but mixed-model and cumulative-tier cost summaries are incorrect. |
+| SC7 refresh/api-map substrate | PARTIAL | Atomic refresh and routing pass; mapped/public dispatch does not guarantee thinking preflight. |
+| SC8 docs/guards | PARTIAL | English/Chinese claims are aligned, but final acceptance fixtures/filters miss core normal-path failures. |
+
+All eight binding Non-Goals remain respected:
+
+1. no opi-managed plaintext credential file;
+2. no automatic mid-stream re-login;
+3. no per-call credential or provider-managed auth-header override;
+4. no `onPayload`/`onResponse` core hooks;
+5. no `maxRetries`/`maxRetryDelay` fields on `Request`;
+6. no end-to-end `SecretString` provider-construction migration;
+7. no OAuth providers beyond Anthropic, GitHub Copilot, and OpenAI Codex;
+8. no session-schema/context-reconstruction redesign.
 
 ---
 
 ## 7. Invariant Verification
 
-| Invariant | Code evidence | Test coverage / assessment |
-|-----------|---------------|----------------------------|
-| Plaintext credential material is not persisted | Credential records store handles/metadata; native secret material remains behind `CredentialStore` | Strong positive and negative coverage; PASS |
-| Corrupt credential data fails closed | Credential parsing rejects malformed records rather than guessing | Covered; PASS |
-| Native keyring host selection is explicit and deterministic | Platform/native host selection is centralized | Production probes and host-selection tests pass; PASS |
-| Doctor/model listing remain secret-free | Diagnostic projections expose availability/state, not secret values | Covered; PASS |
-| Login/logout persistence and terminal restoration are centralized | Concrete dispatcher owns persistence and presenter lifecycle | Concrete-exit tests pass; PASS |
-| Managed auth is resolved on first stream poll | Provider `stream` methods immediately spawn resolver/request futures | Missing unpolled-drop tests; FAIL (2.1) |
-| Request cancellation is a typed `Cancelled` error | Provider contract declares it; HTTP loops return clean success | Existing Chat fixture asserts EOF; FAIL (2.2) |
-| Request timeout remains typed and retryable across the whole body | Initial request errors are classified; body errors are flattened | Only pre-header timeout coverage; FAIL (2.3) |
-| Provider/public errors do not expose upstream payload secrets | Dedicated Codex genericizes errors; other routes copy raw payloads | No sentinel coverage for SSE error payloads; FAIL (3.1) |
-| Disabled retention omits session-affinity identifiers | General affinity mapping can return `None`; Codex generates UUID fallback | Tests assert the wrong fallback; FAIL (3.2) |
-| Unknown/cross-provider models fail before auth or HTTP | `ApiMappedProvider` validates the catalog/wire mapping | Dedicated Codex bypasses the boundary; FAIL (4.2) |
-| Unsupported thinking levels obey one explicit policy | Some routes reject; Chat/Responses silently omit | Tests and normative specs conflict; FAIL (4.1) |
-| Live cumulative usage equals replayed cumulative usage | Coordinator persists turn slices and reconstructs from user entries | Failed-turn/new-prompt path is uncovered; FAIL (2.5) |
-| Dynamic refresh is atomic and preserves the old catalog on fetch failure | Candidate fetch completes before registry replacement | Atomicity covered; candidate validation missing; PARTIAL (6.2) |
-| All wires of one logical provider share auth state | Production factory passes one resolver | Public mapped-provider constructor cannot enforce it; PARTIAL (6.1) |
-| Every acceptance filter executes at least one test | Plan states this invariant | Three stale filters execute zero tests; FAIL (5.1) |
-| English and localized technical specifications remain synchronized and valid | Documentation guards compare selected snippets | Structural corruption and stale lifecycle text remain; FAIL (5.2, 5.3) |
+| Invariant | Code evidence | Test coverage / result |
+|-----------|---------------|------------------------|
+| Credentials are not stored in opi plaintext files | Native keyring backend plus non-secret lock/marker | Strong fake-backend/temp-root/redaction coverage; MET |
+| Missing/backend/corrupt credential states remain distinct | Marker and protected-envelope resolver paths fail closed | Strong positive and negative tests; MET |
+| Refresh is locked, double-checked, bounded, and preserves the prior credential on failure | `CredentialResolver` lock/re-read/timeout flow | Strong concurrency/failure tests; MET |
+| OAuth invalid responses fail in-band, not by panic | OAuth duration arithmetic | No extreme-value tests; NOT MET |
+| Cancellation is accepted throughout pre-code login and public request work | Cancellation starts after PKCE presentation and after stream auth/send | Existing tests begin too late; NOT MET |
+| Provider streams yield one meaningful terminal outcome | Responses unknown normal events become Error and transport loops do not terminate at protocol completion | Fixtures are non-realistic; NOT MET |
+| Unsupported thinking is rejected before network on every public wire | Standalone helper only | Tests manually compose helper; NOT MET |
+| Reserved provider/auth headers cannot be overridden | Shared provider-header validation | Strong negative coverage; MET |
+| Session affinity is stable across new/resume/fork | Agent/session coordinator propagation | Production-path tests; MET |
+| Usage children never exceed parents | Provider mappers and `Usage::validate` | Absence/zero/equality/malformed fixtures; MET |
+| Historical cost is invariant under later model selection | One mutable session price over cumulative usage | Test asserts repricing; NOT MET |
+| Dynamic catalog replacement is deterministic and atomic | Collection gathers all snapshots before install | Rollback/order tests; MET |
+| No automatic re-login after revocation | Typed `CredentialRevoked` ends the turn | Product-mode negative tests; MET |
 
 ---
 
-## 8. Success-Criterion Assessment
-
-| Capability area | Assessment | Evidence |
-|-----------------|------------|----------|
-| Credential store model and secret-free diagnostics | PASS | Store/keyring/doctor tests and code paths agree with the design |
-| OAuth architecture and concrete dispatcher | FAIL | Codex 403/404 terminal codes are classified as pending |
-| Per-request auth and stream lifecycle | FAIL | Work begins before first poll; cancellation and body timeout lose typed semantics |
-| Request scalars and affinity | FAIL | Dedicated Codex ignores disabled retention |
-| Model capabilities and Anthropic cache markers | PASS | Factory-built capability/cache-marker paths are wired and covered |
-| Usage and cost accounting | FAIL | Failed-auth/new-prompt history changes `turn_count` after resume |
-| Dynamic provider catalogs and wire routing | PARTIAL | Core mapping/atomic refresh work, but Codex pre-I/O validation and refresh validation are incomplete |
-| Documentation and Phase F acceptance closure | FAIL | Zero-selection commands, nonexistent ledger paths, malformed/stale localized documentation |
-
-The Phase 14 non-goals remain respected: the implementation does not turn MCP, production subagents, permission gates, or plan/todo workflows into new built-in core workflows.
-
----
-
-## 9. Residuals and Recommendations
+## 8. Residuals and Recommendations
 
 ### Priority recommendations
 
-1. Rework all four managed stream implementations around one owned lazy future, with shared typed cancellation, timeout, and sanitized-error classification.
-2. Fix the dedicated Codex route: parse terminal device-flow codes before status fallback, omit affinity IDs when disabled, and validate model/wire mapping before auth or I/O.
-3. Define one normative unsupported-thinking policy, then align the corrective design, technical spec, implementation, and tests.
-4. Add the failed-auth/different-prompt persistence boundary and prove that live and resumed cumulative usage are identical.
-5. Replace the documentary 58-row acceptance list with an executable manifest that fails on missing files and zero-test filters.
-6. Repair and synchronize both technical specifications, then add structural Markdown and lifecycle-statement guards.
+1. Repair the Responses/Codex decoder against data-only, complete pi-0.80.6 event sequences before relying on those providers.
+2. Eliminate both untrusted-input panic families and add adversarial mapper/OAuth fixtures.
+3. Preserve cancellation and typed authentication semantics across every crate and run mode.
+4. Replace session-wide repricing with per-turn/per-model cost accounting, including per-request tier selection and mixed-model resume/fork tests.
+5. Centralize thinking validation in the public dispatch contract and reuse it in coding-agent model/thinking lifecycle commands.
+6. Correct the two PKCE/manual-input edge cases and strengthen acceptance filters/fixtures so they exercise the actual product boundary.
 
-### Exit condition for a follow-up audit
-
-A follow-up should require all fourteen findings to be resolved or explicitly accepted in the normative design, plus:
-
-- all ordinary workspace gates listed in section 1;
-- direct tests for unpolled stream drop, typed cancellation, and post-header timeout on every affected provider family;
-- sentinel-secret upstream SSE tests;
-- 403/404 terminal Codex OAuth tests;
-- disabled-retention header-absence tests;
-- zero-I/O unknown/cross-provider Codex model tests;
-- a live-versus-resume failed-auth/new-prompt usage test; and
-- an acceptance-manifest validator demonstrating that every declared command selects at least one test.
+No source, test, specification, or product documentation was changed by this audit. The only audit-owned write is this report. The pre-existing deletion of `docs/snapshots/phase14/remediation-plan.md` was preserved.
