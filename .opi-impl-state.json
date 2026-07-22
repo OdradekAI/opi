@@ -6,11 +6,11 @@
     "docs/superpowers/specs/2026-07-14-phase14-exit-remediation-design.md"
   ],
   "spec_files_sha256": {
-    "docs/opi-spec.md": "22ba587d4110e455902bcfe312245b1e453d14ca215cedbdad4a451cb4ef3c42",
-    "docs/superpowers/specs/2026-07-11-phase14-provider-auth-design.md": "2af6b21fed97dff563d089d872cc9faed713bfdc83b83ef0628602d1d1e66ff4",
+    "docs/opi-spec.md": "286b07e0e3b335a0ec11260be9ba619853db2f65deaac150403b7f0a7d2eb4a4",
+    "docs/superpowers/specs/2026-07-11-phase14-provider-auth-design.md": "304e80c9135136f6c2c01d9db1e4799dc2bbb3546c08289ff88f19530e7ad8c3",
     "docs/superpowers/specs/2026-07-14-phase14-exit-remediation-design.md": "fe4c63c6de1a480c6d0d62623a2f5328b97cbb9b6a7e9cdf7e886059753b7896"
   },
-  "task_graph_confirmed_at": "2026-07-18T06:04:18.855Z",
+  "task_graph_confirmed_at": "2026-07-22T12:08:02.3483123Z",
   "current_phase": 15,
   "tasks": [],
   "phase_exit": {
@@ -1276,7 +1276,8 @@
     "opi-implement: recovered encoding-corrupted ledger at 2026-07-16T02:57:58.0747110Z; corrupt source deleted at user request on 2026-07-16; prior archive .opi-impl-state.corrupt-20260716-4ef12a4f.json had SHA-256 4ef12a4f75c79df157eda6f6ac20be723f74d8425ceed6e1cea598f01ad8e021.",
     "opi-implement: reconciled reviewed Phase 14 pi-0.80.6 alignment graph at 2026-07-18T06:04:18.855Z; preserved passing 14.1-14.13 history and prior failed phase-exit evidence, added failing tasks 14.14-14.21, refreshed registered spec hashes, folded five independently confirmed plan-audit corrections, and preserved the existing user-approved trigger=null SecretString residual on Task 14.1.",
     "opi-implement: Phase 14 commit-bound phase exit passed at 2026-07-19T00:52:40.192Z for 8364e74a9077a194cb4a7fd68db2e3c4b420111a; SC1-SC8, F14-01 through F14-04, api-map, and all Non-Goals are met after repairing four exact-trace findings. No snapshot or archive commit was created because archive remains a separate user gate.",
-    "opi-implement: archived Phase 14 to docs/snapshots/phase14/ at 2026-07-19T04:09:27.215Z; all 21 tasks moved to phase_exit[14].task_summary; current_phase advanced to 15 (Phase 15 tasks require --reinit to load)."
+    "opi-implement: archived Phase 14 to docs/snapshots/phase14/ at 2026-07-19T04:09:27.215Z; all 21 tasks moved to phase_exit[14].task_summary; current_phase advanced to 15 (Phase 15 tasks require --reinit to load).",
+    "opi-implement: guarded Phase 14 archive reconciliation after remediation commit 54e52da81fd261824b1d68216efe40b7ac2bf36a at 2026-07-22T12:08:02.3483123Z repaired Task 14.5 acceptance metadata, replaced stale behavioral-test paths for Tasks 14.1/14.3/14.4, normalized the Task 14.6 substrate scenario status without adding a production claim, and verified each repaired exact command selected one passing test."
   ],
   "verify_runs": [
     {
@@ -1556,6 +1557,16 @@
       "flagged_count": 0,
       "rejected_count": 4,
       "ran_at": "2026-07-19T00:52:40.192Z",
+      "task_id": null,
+      "criterion_id": null
+    },
+    {
+      "stage": "plan",
+      "wf_ref": null,
+      "folded_count": 1,
+      "flagged_count": 3,
+      "rejected_count": 0,
+      "ran_at": "2026-07-22T11:56:33.5086802Z",
       "task_id": null,
       "criterion_id": null
     }

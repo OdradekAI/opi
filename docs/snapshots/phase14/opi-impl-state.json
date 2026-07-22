@@ -6,11 +6,23 @@
     "docs/superpowers/specs/2026-07-14-phase14-exit-remediation-design.md"
   ],
   "spec_files_sha256": {
-    "docs/opi-spec.md": "22ba587d4110e455902bcfe312245b1e453d14ca215cedbdad4a451cb4ef3c42",
-    "docs/superpowers/specs/2026-07-11-phase14-provider-auth-design.md": "2af6b21fed97dff563d089d872cc9faed713bfdc83b83ef0628602d1d1e66ff4",
+    "docs/opi-spec.md": "286b07e0e3b335a0ec11260be9ba619853db2f65deaac150403b7f0a7d2eb4a4",
+    "docs/superpowers/specs/2026-07-11-phase14-provider-auth-design.md": "304e80c9135136f6c2c01d9db1e4799dc2bbb3546c08289ff88f19530e7ad8c3",
     "docs/superpowers/specs/2026-07-14-phase14-exit-remediation-design.md": "fe4c63c6de1a480c6d0d62623a2f5328b97cbb9b6a7e9cdf7e886059753b7896"
   },
-  "task_graph_confirmed_at": "2026-07-18T06:04:18.855Z",
+  "task_graph_confirmed_at": "2026-07-22T12:08:02.3483123Z",
+  "verify_runs": [
+    {
+      "stage": "plan",
+      "wf_ref": null,
+      "folded_count": 1,
+      "flagged_count": 3,
+      "rejected_count": 0,
+      "ran_at": "2026-07-22T11:56:33.5086802Z",
+      "task_id": null,
+      "criterion_id": null
+    }
+  ],
   "current_phase": 14,
   "tasks": [
     {
@@ -89,6 +101,11 @@
           "field": "acceptance_scenarios",
           "reason": "Reviewed reinit replaced nonexistent and zero-selection historical commands with the validated Appendix A matrix while preserving scenario meaning and runtime history.",
           "source": "docs/superpowers/plans/2026-07-14-phase14-exit-remediation.md#Appendix A: Corrected Historical 29-Command Matrix"
+        },
+        {
+          "field": "verification",
+          "reason": "User-confirmed 2026-07-22 reconciliation replaces the nonexistent doctor target/path with the exact doctor_cli credential-probe test.",
+          "source": "docs/superpowers/specs/2026-07-14-phase14-exit-remediation-design.md#Acceptance-command repair"
         }
       ],
       "tier": "workspace",
@@ -99,7 +116,7 @@
         "library_gates": [
           "cargo test -p opi-ai",
           "cargo test -p opi-coding-agent --test credential_store",
-          "cargo test -p opi-coding-agent --test doctor",
+          "cargo test -p opi-coding-agent --test doctor_cli stored_credential_probe_is_redacted -- --exact",
           "cargo test -p opi-coding-agent --test list_models",
           "cargo clippy --workspace --all-targets -- -D warnings",
           "$env:RUSTDOCFLAGS=\"-D warnings\"; cargo doc --workspace --no-deps"
@@ -107,7 +124,7 @@
         "behavioral_tests": [
           "crates/opi-ai/tests/provider_collection.rs",
           "crates/opi-coding-agent/tests/credential_store.rs",
-          "crates/opi-coding-agent/tests/doctor.rs",
+          "crates/opi-coding-agent/tests/doctor_cli.rs",
           "crates/opi-coding-agent/tests/list_models.rs"
         ],
         "snapshot_tests": [],
@@ -336,6 +353,11 @@
           "field": "acceptance_scenarios",
           "reason": "Reviewed reinit replaced nonexistent and zero-selection historical commands with the validated Appendix A matrix while preserving scenario meaning and runtime history.",
           "source": "docs/superpowers/plans/2026-07-14-phase14-exit-remediation.md#Appendix A: Corrected Historical 29-Command Matrix"
+        },
+        {
+          "field": "verification",
+          "reason": "User-confirmed 2026-07-22 reconciliation replaces the nonexistent request_enrichment_wiring target/path with the exact provider_factory production-wiring test.",
+          "source": "docs/superpowers/specs/2026-07-14-phase14-exit-remediation-design.md#Acceptance-command repair"
         }
       ],
       "tier": "workspace",
@@ -690,7 +712,7 @@
           "cargo test -p opi-ai --test request_enrichment",
           "cargo test -p opi-agent --test agent_loop_mock",
           "cargo test -p opi-coding-agent --test session_runtime",
-          "cargo test -p opi-coding-agent --test request_enrichment_wiring",
+          "cargo test -p opi-coding-agent --test provider_factory build_provider_wires_each_builtin_provider_family -- --exact",
           "cargo clippy --workspace --all-targets -- -D warnings",
           "$env:RUSTDOCFLAGS=\"-D warnings\"; cargo doc --workspace --no-deps"
         ],
@@ -698,7 +720,7 @@
           "crates/opi-ai/tests/request_enrichment.rs",
           "crates/opi-agent/tests/agent_loop_mock.rs",
           "crates/opi-coding-agent/tests/session_runtime.rs",
-          "crates/opi-coding-agent/tests/request_enrichment_wiring.rs"
+          "crates/opi-coding-agent/tests/provider_factory.rs"
         ],
         "snapshot_tests": [],
         "smoke_addendum": "Preserve mock-provider and HTTP captures for session propagation, exact affinity mappings, timeout, headers, cache-disabled behavior, clamping, and invalid-header errors."
@@ -854,6 +876,11 @@
           "field": "acceptance_scenarios",
           "reason": "Reviewed reinit replaced nonexistent and zero-selection historical commands with the validated Appendix A matrix while preserving scenario meaning and runtime history.",
           "source": "docs/superpowers/plans/2026-07-14-phase14-exit-remediation.md#Appendix A: Corrected Historical 29-Command Matrix"
+        },
+        {
+          "field": "verification",
+          "reason": "User-confirmed 2026-07-22 reconciliation replaces nonexistent Anthropic and model-capabilities targets/paths with the exact inline cache-marker and model-capabilities migration tests.",
+          "source": "docs/superpowers/specs/2026-07-14-phase14-exit-remediation-design.md#Acceptance-command repair"
         }
       ],
       "tier": "workspace",
@@ -864,16 +891,16 @@
         "library_gates": [
           "cargo test -p opi-ai --test provider_trait",
           "cargo test -p opi-ai --test registry",
-          "cargo test -p opi-ai --test anthropic prompt_cache_markers_follow_model_capabilities",
-          "cargo test -p opi-coding-agent --test model_capabilities_wiring",
+          "cargo test -p opi-ai --lib anthropic::tests::cache_control_long_ttl_emits_all_markers -- --exact",
+          "cargo test -p opi-ai --test model_capabilities_migration anthropic_builtin_models_have_cache_capabilities -- --exact",
           "cargo clippy --workspace --all-targets -- -D warnings",
           "$env:RUSTDOCFLAGS=\"-D warnings\"; cargo doc --workspace --no-deps"
         ],
         "behavioral_tests": [
           "crates/opi-ai/tests/provider_trait.rs",
           "crates/opi-ai/tests/registry.rs",
-          "crates/opi-ai/tests/anthropic.rs",
-          "crates/opi-coding-agent/tests/model_capabilities_wiring.rs"
+          "crates/opi-ai/src/anthropic.rs",
+          "crates/opi-ai/tests/model_capabilities_migration.rs"
         ],
         "snapshot_tests": [],
         "smoke_addendum": "Preserve Anthropic request captures for exact cache marker positions, TTL selection, and capability-off cases."
@@ -985,6 +1012,11 @@
           "field": "acceptance_scenarios",
           "reason": "Reviewed reinit replaced nonexistent and zero-selection historical commands with the validated Appendix A matrix while preserving scenario meaning and runtime history.",
           "source": "docs/superpowers/plans/2026-07-14-phase14-exit-remediation.md#Appendix A: Corrected Historical 29-Command Matrix"
+        },
+        {
+          "field": "verification",
+          "reason": "Guarded 2026-07-22 reconciliation removes the nonexistent usage_cost_wiring target and replaces the zero-selection resume filter with the exact production session test; the repaired command selected one test and passed.",
+          "source": "docs/superpowers/specs/2026-07-14-phase14-exit-remediation-design.md#Acceptance-command repair"
         }
       ],
       "tier": "workspace",
@@ -997,8 +1029,7 @@
           "cargo test -p opi-ai --test anthropic_fixtures",
           "cargo test -p opi-ai --test openai_chat_fixtures",
           "cargo test -p opi-ai --test openai_responses_fixtures",
-          "cargo test -p opi-coding-agent --test usage_cost_wiring",
-          "cargo test -p opi-coding-agent --test session_runtime phase14_usage_breakdowns_survive_resume",
+          "cargo test -p opi-coding-agent --test session_runtime phase14_usage_subsets_survive_session_resume -- --exact",
           "cargo clippy --workspace --all-targets -- -D warnings",
           "$env:RUSTDOCFLAGS=\"-D warnings\"; cargo doc --workspace --no-deps"
         ],
@@ -1007,7 +1038,6 @@
           "crates/opi-ai/tests/anthropic_fixtures.rs",
           "crates/opi-ai/tests/openai_chat_fixtures.rs",
           "crates/opi-ai/tests/openai_responses_fixtures.rs",
-          "crates/opi-coding-agent/tests/usage_cost_wiring.rs",
           "crates/opi-coding-agent/tests/session_runtime.rs"
         ],
         "snapshot_tests": [],
@@ -1020,7 +1050,7 @@
           "scenario": "A provider built through provider_factory streams Anthropic 1h cache-write and OpenAI Chat/Responses reasoning breakdowns; real mappers populate subset fields, CumulativeUsage/resume preserve the 1h subset, and calculate_cost/session cost_summary produce correct totals without duplicate token or cost lines or message-stored cost.",
           "verification": [
             "cargo test -p opi-ai --test anthropic_fixtures cache_1h_tokens_parsed_as_subset_of_cache_write",
-            "cargo test -p opi-coding-agent --test session_runtime open_existing_replays_usage_from_assistant_messages",
+            "cargo test -p opi-coding-agent --test session_runtime phase14_usage_subsets_survive_session_resume -- --exact",
             "cargo test -p opi-ai --test usage_cost calculate_cost_all_cache_writes_are_1h"
           ],
           "production_call_sites": [
@@ -1036,7 +1066,7 @@
             "opi_coding_agent::session_coordinator::SessionCoordinator::cost_summary",
             "opi_ai::calculate_cost"
           ],
-          "status": "open"
+          "status": "met"
         }
       ],
       "production_call_sites": [
@@ -1069,7 +1099,7 @@
       "verified_at_commit": "d0caa6295512e70f4bf547e9796a18a6851d5ca0",
       "evidence": {
         "commit": "d0caa6295512e70f4bf547e9796a18a6851d5ca0",
-        "verification": "cargo test -p opi-ai -p opi-agent green; cargo clippy --workspace --all-targets -D warnings clean; cargo fmt --check --all",
+        "verification": "original task gates passed at d0caa6295512e70f4bf547e9796a18a6851d5ca0; remediation commit 54e52da81fd261824b1d68216efe40b7ac2bf36a; guarded 2026-07-22 reconciliation ran the corrected opi-ai fixture gates, exact session-runtime resume test (1 selected), workspace clippy, warning-denied rustdoc, and Windows smoke successfully",
         "evaluator": "not-required",
         "acceptance_scenarios": [
           "phase14-usage-cost-reasoning-cache"
@@ -1080,6 +1110,10 @@
         {
           "at": "2026-07-14",
           "note": "Task 14.5 committed @ d0caa62. Usage + CumulativeUsage + CostBreakdown + calculate_cost all updated. Anthropic parses cache_creation_input_tokens_1h; OpenAI Chat/Responses parse reasoning_tokens. Malformed subsets rejected (Anthropic -> unknown usage; OpenAI -> clamped to zero). Session persistence paths (open_existing, aggregate_turn_usage) accumulate new fields. 6 new provider wire tests + 6 new usage/cost tests + 23 total usage/cost tests. All opi-ai + opi-agent tests green. Clippy + fmt clean."
+        },
+        {
+          "at": "2026-07-22",
+          "note": "Guarded reinit after remediation commit 54e52da81fd261824b1d68216efe40b7ac2bf36a repaired Task 14.5 verification metadata: removed the nonexistent usage_cost_wiring target/file, replaced the zero-selection filter with phase14_usage_subsets_survive_session_resume -- --exact, observed 1 selected test, and marked the already-satisfied usage/cost acceptance scenario met without changing implementation history."
         }
       ]
     },
@@ -1134,6 +1168,11 @@
           "field": "acceptance_scenarios",
           "reason": "Reviewed reinit replaced nonexistent and zero-selection historical commands with the validated Appendix A matrix while preserving scenario meaning and runtime history.",
           "source": "docs/superpowers/plans/2026-07-14-phase14-exit-remediation.md#Appendix A: Corrected Historical 29-Command Matrix"
+        },
+        {
+          "field": "acceptance_scenarios",
+          "reason": "The 2026-07-22 guarded schema reconciliation normalizes the legacy verified-substrate status to met while preserving substrate_only=true and the explicit absence of production call sites.",
+          "source": "docs/superpowers/specs/2026-07-11-phase14-provider-auth-design.md#Success and Exit Criteria"
         }
       ],
       "tier": "library",
@@ -1163,7 +1202,7 @@
             "cargo test -p opi-ai --test provider_collection refresh_models_is_atomic_substrate"
           ],
           "production_call_sites": [],
-          "status": "verified-substrate"
+          "status": "met"
         }
       ],
       "production_call_sites": [],
