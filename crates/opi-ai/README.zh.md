@@ -242,7 +242,7 @@ OpenAI Chat 会从任何携带 `id` 的 chunk 捕获 response ID，而不只是�
 - 大范围新增 first-class provider 列表（兼容 provider 保持为 config-driven
   profile）。
 - 图像生成（图片支持仅为输入侧）。
-- 浏览器使用。
+- 已获批的 Anthropic 与 OpenAI Codex OAuth 登录流程之外的浏览器自动化。
 - 面向 package 的 provider 流式 adapter 协议。
 - 默认测试中的付费实时 provider 调用（实时测试保持 `#[ignore]` 门控）。
 - 复制 pi 的 provider 专用配置文件格式。

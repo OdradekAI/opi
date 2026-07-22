@@ -179,7 +179,10 @@ const PHASE12_NON_GOALS: &[(&str, &str)] = &[
         "first-class provider 列表",
     ),
     ("Image generation", "图像生成"),
-    ("Browser usage", "浏览器使用"),
+    (
+        "Browser automation outside the approved Anthropic and OpenAI Codex OAuth login flows",
+        "已获批的 Anthropic 与 OpenAI Codex OAuth 登录流程之外的浏览器自动化",
+    ),
     ("streaming-adapter protocol", "流式 adapter 协议"),
     ("Paid live provider calls", "付费实时 provider 调用"),
     (

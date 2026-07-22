@@ -36,6 +36,11 @@ pub trait Provider: Send + Sync {
     /// Mapped providers use this construction-time hook to materialize
     /// extension model additions and overrides into their concrete routes.
     /// Providers that cannot safely replace their catalog reject the update.
+    /// Replace the effective model catalog.
+    ///
+    /// Implementations that support replacement must leave their current
+    /// catalog unchanged when returning `Err`, so collection and mapped-route
+    /// callers can preserve atomic replacement semantics.
     fn replace_model_catalog(&mut self, _models: Vec<ModelInfo>) -> Result<(), ProviderError> {
         Err(ProviderError::Config(format!(
             "provider '{}' does not support effective model catalogs",

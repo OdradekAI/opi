@@ -5,7 +5,7 @@
     "docs/superpowers/specs/2026-06-15-phase6-alignment-hardening-design.md"
   ],
   "spec_files_sha256": {
-    "docs/opi-spec.md": "6a03117617dbfc39e428a71e7ca8a7c7bd8d078091fddd6beda898e84c18da44",
+    "docs/opi-spec.md": "bc4e4546f4530521e798639f7f2c2f5cca81996e75802d3fc32f19ab8bf9258e",
     "docs/superpowers/specs/2026-06-15-phase6-alignment-hardening-design.md": "a3e818f8dcbc465e8ae8e77eb36ac824823c623b24df8a42af6c0d02a7c0dde5"
   },
   "task_graph_confirmed_at": "2026-06-16T02:37:57Z",

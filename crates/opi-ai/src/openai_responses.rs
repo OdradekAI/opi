@@ -336,6 +336,10 @@ impl OpenAiResponsesProvider {
                 ParsedEvent::Valid(event) => {
                     events.extend(mapper.process(event).into_iter().map(Ok));
                 }
+                ParsedEvent::UsageError(error) => {
+                    events.push(Err(ProviderError::StreamError(error)));
+                    break;
+                }
                 ParsedEvent::Malformed { .. } => {
                     events.push(Err(ProviderError::StreamError(
                         "malformed OpenAI Responses SSE frame".to_owned(),
@@ -444,6 +448,9 @@ impl OpenAiResponsesProvider {
                                 return Ok(());
                             }
                         }
+                    }
+                    ParsedEvent::UsageError(error) => {
+                        return Err(ProviderError::StreamError(error));
                     }
                     ParsedEvent::Malformed { .. } => {
                         return Err(ProviderError::StreamError(

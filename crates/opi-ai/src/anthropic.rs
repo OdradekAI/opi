@@ -1295,6 +1295,7 @@ impl Provider for AnthropicProvider {
         let provider_id = self.provider_id.clone();
         let auth_invalid_policy = self.auth_invalid_policy;
         let direct_oauth_beta = self.direct_oauth_beta;
+        let credential_base_url_enabled = self.copilot_headers;
         let model_id = request
             .model
             .split_once(':')
@@ -1349,9 +1350,9 @@ impl Provider for AnthropicProvider {
                         return;
                     }
                 };
-                let base_url = resolved
-                    .base_url
-                    .clone()
+                let base_url = credential_base_url_enabled
+                    .then(|| resolved.base_url.clone())
+                    .flatten()
                     .or(model_base_url)
                     .unwrap_or(default_base_url);
                 if let Err(e) = Self::stream_http(

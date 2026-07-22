@@ -566,6 +566,7 @@ async fn delete_removes_entry() {
 #[tokio::test]
 async fn malformed_envelope_surfaces_distinct_error() {
     let backend = FakeKeyringBackend::new();
+    backend.seed_raw(KEYCHAIN_PRESENCE_SERVICE, "anthropic", "api_key");
     backend.seed_raw(KEYCHAIN_SERVICE, "anthropic", "{ this is not json");
     let (_dir, store) = store_with(backend);
 
@@ -582,6 +583,7 @@ async fn unknown_envelope_version_surfaces_distinct_error() {
     // version 2 envelope: valid JSON + valid kind, but unknown version.
     let payload = r#"{"version":2,"kind":"api_key","api_key":"x"}"#;
     let backend = FakeKeyringBackend::new();
+    backend.seed_raw(KEYCHAIN_PRESENCE_SERVICE, "anthropic", "api_key");
     backend.seed_raw(KEYCHAIN_SERVICE, "anthropic", payload);
     let (_dir, store) = store_with(backend);
 
@@ -600,6 +602,7 @@ async fn unknown_envelope_kind_surfaces_distinct_error() {
     // version 1 but unknown kind.
     let payload = r#"{"version":1,"kind":"bogus","api_key":"x"}"#;
     let backend = FakeKeyringBackend::new();
+    backend.seed_raw(KEYCHAIN_PRESENCE_SERVICE, "anthropic", "api_key");
     backend.seed_raw(KEYCHAIN_SERVICE, "anthropic", payload);
     let (_dir, store) = store_with(backend);
 
@@ -755,6 +758,7 @@ async fn protected_entry_without_marker_is_absent_and_never_read_for_kind() {
     );
 
     assert_eq!(store.probe("anthropic").await, CredentialSource::Absent);
+    assert!(store.read("anthropic").await.unwrap().is_none());
     assert_eq!(protected_get_calls.load(Ordering::SeqCst), 0);
 }
 
@@ -836,6 +840,10 @@ async fn marker_only_state_is_typed_and_never_falls_back_to_env() {
     let inner = FakeKeyringBackend::new();
     inner.seed_raw(KEYCHAIN_PRESENCE_SERVICE, "anthropic", "api_key");
     let (_dir, store) = store_with(inner);
+    assert!(matches!(
+        store.read("anthropic").await,
+        Err(CredentialStoreError::CorruptMarker { .. })
+    ));
     let fallback_calls = Arc::new(AtomicUsize::new(0));
     let observed_calls = Arc::clone(&fallback_calls);
     let resolver = CredentialResolver::new(
@@ -853,6 +861,33 @@ async fn marker_only_state_is_typed_and_never_falls_back_to_env() {
         Err(CredentialStoreError::CorruptMarker { .. })
     ));
     assert_eq!(fallback_calls.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn public_read_rejects_marker_and_envelope_kind_mismatches() {
+    for (marker, credential, expected, actual) in [
+        ("api_key", oauth_credential(), "api_key", "oauth_token"),
+        (
+            "oauth_token",
+            api_key_credential(),
+            "oauth_token",
+            "api_key",
+        ),
+    ] {
+        let backend = FakeKeyringBackend::new();
+        backend.seed_raw(KEYCHAIN_PRESENCE_SERVICE, "anthropic", marker);
+        backend.seed_credential(KEYCHAIN_SERVICE, "anthropic", &credential);
+        let (_dir, store) = store_with(backend);
+
+        assert!(matches!(
+            store.read("anthropic").await,
+            Err(CredentialStoreError::UnexpectedCredentialKind {
+                expected: found_expected,
+                actual: found_actual,
+                ..
+            }) if found_expected == expected && found_actual == actual
+        ));
+    }
 }
 
 #[tokio::test]
@@ -946,6 +981,8 @@ async fn kind_change_is_fail_closed_between_marker_and_protected_writes() {
         tokio::spawn(async move { writer_store.write("anthropic", &oauth_credential()).await });
     marker_written.notified().await;
 
+    let public_read = observer_store.read("anthropic").await;
+
     let resolver = CredentialResolver::new(
         observer_store,
         Arc::new(|_name: &str| Some(API_KEY.to_owned())),
@@ -954,14 +991,23 @@ async fn kind_change_is_fail_closed_between_marker_and_protected_writes() {
         .read_oauth_base_url("anthropic")
         .await
         .expect_err("mixed marker/envelope state must fail closed");
+
+    backend.release();
+    writer.await.unwrap().unwrap();
+    assert!(matches!(
+        public_read,
+        Err(CredentialStoreError::UnexpectedCredentialKind {
+            expected: "oauth_token",
+            actual: "api_key",
+            ..
+        })
+    ));
     assert!(
         matches!(transitional, ProviderError::Config(ref reason)
             if reason.contains("expected oauth_token, found api_key")),
         "unexpected transitional error: {transitional:?}"
     );
 
-    backend.release();
-    writer.await.unwrap().unwrap();
     assert_eq!(
         resolver.read_oauth_base_url("anthropic").await.unwrap(),
         Some(COPILOT_BASE_URL.to_owned())
@@ -1638,6 +1684,7 @@ async fn redaction_only_secret_free_lock_exists_outside_fake_keyring() {
     // formatted-error redaction check below is non-vacuous (a regression that
     // echoed the raw payload into the error would leak it).
     let malformed_with_secret = format!(r#"{{ "version": 1, "api_key": "{API_KEY}" "#);
+    backend.seed_raw(KEYCHAIN_PRESENCE_SERVICE, "malformed-provider", "api_key");
     backend.seed_raw(
         KEYCHAIN_SERVICE,
         "malformed-provider",

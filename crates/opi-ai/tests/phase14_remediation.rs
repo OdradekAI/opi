@@ -176,6 +176,7 @@ fn initial_chat_tool_call_arguments_are_emitted_after_start() {
         .expect("one frame")
     {
         opi_ai::openai_chat::ParsedEvent::Valid(events) => events,
+        opi_ai::openai_chat::ParsedEvent::UsageError(error) => panic!("{error}"),
         opi_ai::openai_chat::ParsedEvent::Malformed { error, .. } => panic!("{error}"),
     };
 

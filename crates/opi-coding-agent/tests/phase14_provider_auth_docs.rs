@@ -71,6 +71,76 @@ fn rust_sources_under(relative: &str) -> String {
 }
 
 #[test]
+fn browser_non_goals_are_scoped_around_the_approved_oauth_flows() {
+    let ai = read_repo_file("crates/opi-ai/README.md");
+    let ai_zh = read_repo_file("crates/opi-ai/README.zh.md");
+    let coding = read_repo_file("crates/opi-coding-agent/README.md");
+    let coding_zh = read_repo_file("crates/opi-coding-agent/README.zh.md");
+    let spec = read_repo_file("docs/opi-spec.md");
+    let spec_zh = read_repo_file("docs/opi-spec.zh.md");
+
+    assert!(ai.contains(
+        "Browser automation outside the approved Anthropic and OpenAI Codex OAuth login flows."
+    ));
+    assert_claims(
+        "crates/opi-coding-agent/README.md",
+        &coding,
+        &["browser automation outside the approved Anthropic and OpenAI Codex OAuth login flows"],
+    );
+    assert!(
+        ai_zh.contains("已获批的 Anthropic 与 OpenAI Codex OAuth 登录流程之外的浏览器自动化。")
+    );
+    assert_claims(
+        "crates/opi-coding-agent/README.zh.md",
+        &coding_zh,
+        &["已获批的 Anthropic 与 OpenAI Codex OAuth 登录流程之外的浏览器自动化"],
+    );
+    assert!(spec.contains(
+        "At Phase 12, the following were non-goals; this historical list does not override later approved phases"
+    ));
+    assert!(
+        spec_zh.contains(
+            "在第十二阶段，下列项目当时属于非目标；这份历史列表不覆盖后续阶段已批准的能力"
+        )
+    );
+
+    for (path, content, stale) in [
+        ("crates/opi-ai/README.md", &ai, "- Browser usage."),
+        ("crates/opi-ai/README.zh.md", &ai_zh, "- 浏览器使用。"),
+        (
+            "crates/opi-coding-agent/README.md",
+            &coding,
+            "(image support is input-only), browser usage,",
+        ),
+        (
+            "crates/opi-coding-agent/README.zh.md",
+            &coding_zh,
+            "（图片支持仅为输入侧）、浏览器使用、",
+        ),
+    ] {
+        assert!(!content.contains(stale), "{path} retains `{stale}`");
+    }
+}
+
+#[test]
+fn credential_lock_docs_scope_acquire_then_reread_to_oauth_refresh() {
+    let contract = read_repo_file("crates/opi-ai/src/credential.rs");
+    let implementation = read_repo_file("crates/opi-coding-agent/src/credential_store.rs");
+    let design =
+        read_repo_file("docs/superpowers/specs/2026-07-11-phase14-provider-auth-design.md");
+
+    assert!(contract.contains("`write`/`delete` are unconditional last-writer-wins mutations"));
+    assert!(implementation.contains("Public writes are unconditional last-writer-wins mutations"));
+    assert!(design.contains(
+        "Public `write` and `delete` are serialized,\nunconditional last-writer-wins operations. Acquire-then-re-read applies to the\nOAuth refresh read-modify-write transaction"
+    ));
+    assert!(!contract.contains("shared cross-process lock (acquire-then-re-read)"));
+    assert!(
+        !implementation.contains("Acquire-then-re-read: hold the exclusive lock across the write")
+    );
+}
+
+#[test]
 fn localized_docs_pin_exact_phase14_claims_and_acceptance_rows() {
     let root = read_repo_file("README.md");
     let root_zh = read_repo_file("README.zh.md");

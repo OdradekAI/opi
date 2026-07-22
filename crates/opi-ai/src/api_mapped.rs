@@ -226,7 +226,8 @@ impl Provider for ApiMappedProvider {
                 )));
             }
         }
-        for (wire, route) in &mut self.routes {
+        let mut replacements = Vec::with_capacity(self.routes.len());
+        for (wire, route) in &self.routes {
             let subset = models
                 .iter()
                 .filter(|model| model.wire_api == *wire)
@@ -238,7 +239,37 @@ impl Provider for ApiMappedProvider {
                     self.id
                 )));
             }
-            route.replace_model_catalog(subset)?;
+            replacements.push((*wire, subset, route.models().to_vec()));
+        }
+
+        for (index, (wire, subset, _)) in replacements.iter().enumerate() {
+            if let Err(error) = self
+                .routes
+                .get_mut(wire)
+                .expect("validated mapped route")
+                .replace_model_catalog(subset.clone())
+            {
+                let mut rollback_failure = None;
+                for (rollback_wire, _, old_catalog) in replacements[..index].iter().rev() {
+                    if let Err(rollback_error) = self
+                        .routes
+                        .get_mut(rollback_wire)
+                        .expect("validated mapped route")
+                        .replace_model_catalog(old_catalog.clone())
+                    {
+                        rollback_failure = Some(format!(
+                            "route {rollback_wire} rollback failed: {rollback_error}"
+                        ));
+                    }
+                }
+                if let Some(rollback_failure) = rollback_failure {
+                    return Err(ProviderError::Config(format!(
+                        "mapped provider '{}' catalog replacement failed ({error}); {rollback_failure}",
+                        self.id
+                    )));
+                }
+                return Err(error);
+            }
         }
         self.models = models;
         Ok(())

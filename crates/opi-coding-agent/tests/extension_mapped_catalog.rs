@@ -1,4 +1,4 @@
-use std::sync::{Arc, atomic::AtomicUsize};
+use std::sync::{Arc, Mutex, atomic::AtomicUsize};
 
 use opi_agent::extension::{Extension, ExtensionRegistry};
 use opi_ai::provider::{
@@ -47,9 +47,54 @@ impl Extension for WireOverrideExtension {
     }
 }
 
+struct EmptyLaterRouteExtension;
+
+impl Extension for EmptyLaterRouteExtension {
+    fn name(&self) -> &str {
+        "mapped-empty-later-route-extension"
+    }
+
+    fn model_overrides(&self) -> Vec<(String, ModelInfo)> {
+        vec![(
+            "mapped".into(),
+            ModelInfo::new(
+                "chat",
+                "Chat moved to Anthropic",
+                WireApi::AnthropicMessages,
+                ModelCapabilities::new(3000, 300),
+            ),
+        )]
+    }
+}
+
 struct Route {
     models: Vec<ModelInfo>,
     calls: Arc<AtomicUsize>,
+}
+
+struct ObservedRoute {
+    models: Vec<ModelInfo>,
+    observed_ids: Arc<Mutex<Vec<String>>>,
+}
+
+impl Provider for ObservedRoute {
+    fn id(&self) -> &str {
+        "mapped"
+    }
+
+    fn models(&self) -> &[ModelInfo] {
+        &self.models
+    }
+
+    fn stream(&self, _request: Request) -> EventStream {
+        Box::pin(futures_util::stream::empty())
+    }
+
+    fn replace_model_catalog(&mut self, models: Vec<ModelInfo>) -> Result<(), ProviderError> {
+        *self.observed_ids.lock().unwrap() = models.iter().map(|model| model.id.clone()).collect();
+        self.models = models;
+        Ok(())
+    }
 }
 
 impl Provider for Route {
@@ -171,5 +216,70 @@ fn harness_collection_rejects_an_override_whose_wire_has_no_concrete_route() {
             .unwrap()
             .wire_api,
         WireApi::OpenAiCompletions
+    );
+}
+
+#[test]
+fn harness_collection_keeps_all_mapped_routes_unchanged_when_a_later_route_would_be_empty() {
+    let anthropic = ModelInfo::new(
+        "anthropic",
+        "Anthropic",
+        WireApi::AnthropicMessages,
+        ModelCapabilities::new(1000, 100),
+    );
+    let chat = ModelInfo::new(
+        "chat",
+        "Chat",
+        WireApi::OpenAiCompletions,
+        ModelCapabilities::new(1000, 100),
+    );
+    let anthropic_ids = Arc::new(Mutex::new(vec!["anthropic".to_owned()]));
+    let chat_ids = Arc::new(Mutex::new(vec!["chat".to_owned()]));
+    let mut provider = ApiMappedProvider::try_new(
+        "mapped",
+        vec![anthropic.clone(), chat.clone()],
+        [
+            (
+                WireApi::AnthropicMessages,
+                Box::new(ObservedRoute {
+                    models: vec![anthropic],
+                    observed_ids: Arc::clone(&anthropic_ids),
+                }) as Box<dyn Provider>,
+            ),
+            (
+                WireApi::OpenAiCompletions,
+                Box::new(ObservedRoute {
+                    models: vec![chat],
+                    observed_ids: Arc::clone(&chat_ids),
+                }) as Box<dyn Provider>,
+            ),
+        ],
+    )
+    .unwrap();
+    let mut extensions = ExtensionRegistry::new();
+    extensions
+        .register(Box::new(EmptyLaterRouteExtension))
+        .unwrap();
+
+    let (collection, diagnostics) = opi_coding_agent::provider_factory::assemble_harness_collection(
+        &mut provider,
+        Some(&extensions),
+    );
+
+    assert_eq!(diagnostics.len(), 1);
+    assert!(collection.resolve("mapped:anthropic").is_ok());
+    assert!(collection.resolve("mapped:chat").is_ok());
+    assert_eq!(anthropic_ids.lock().unwrap().as_slice(), &["anthropic"]);
+    assert_eq!(chat_ids.lock().unwrap().as_slice(), &["chat"]);
+    assert_eq!(
+        provider
+            .models()
+            .iter()
+            .map(|model| (model.id.as_str(), model.wire_api))
+            .collect::<Vec<_>>(),
+        [
+            ("anthropic", WireApi::AnthropicMessages),
+            ("chat", WireApi::OpenAiCompletions),
+        ]
     );
 }

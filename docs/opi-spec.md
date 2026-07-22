@@ -1590,7 +1590,7 @@ request-side prompt-caching breakpoints (the `cache_key` profile flag is the
 available cache-affinity hint); image count/size limits beyond the existing
 per-model metadata; broad provider catalog expansion.
 
-Phase 12 non-goals (must not appear as current core behavior): OAuth login
+At Phase 12, the following were non-goals; this historical list does not override later approved phases: OAuth login
 flows; Anthropic, OpenAI Codex, and GitHub Copilot subscription auth; a broad
 new first-class provider list; image generation; browser usage; a provider
 streaming-adapter protocol for packages; paid live provider calls in default

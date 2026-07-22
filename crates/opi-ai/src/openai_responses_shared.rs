@@ -23,6 +23,7 @@ pub(crate) struct SseFrame {
 /// Result of decoding one Responses frame.
 pub(crate) enum ParsedEvent {
     Valid(ResponsesEvent),
+    UsageError(String),
     Malformed {
         // Raw upstream frame/error detail is captured only to detect the
         // malformed condition; it is deliberately never propagated into a
@@ -288,10 +289,7 @@ impl ResponsesEvent {
                 let usage = match Self::parse_response_usage(&data) {
                     Ok(usage) => usage,
                     Err(error) => {
-                        return ParsedEvent::Malformed {
-                            data: frame.data.clone(),
-                            error,
-                        };
+                        return ParsedEvent::UsageError(error);
                     }
                 };
                 let model = data
@@ -320,10 +318,7 @@ impl ResponsesEvent {
                 let usage = match Self::parse_response_usage(&data) {
                     Ok(usage) => usage,
                     Err(error) => {
-                        return ParsedEvent::Malformed {
-                            data: frame.data.clone(),
-                            error,
-                        };
+                        return ParsedEvent::UsageError(error);
                     }
                 };
                 ParsedEvent::Valid(Self::Incomplete { usage })
@@ -345,8 +340,8 @@ impl ResponsesEvent {
 
     /// Extract and subset-validate `response.usage`. Returns `Err` with a
     /// redaction-safe literal message when the reasoning-token subset
-    /// invariant trips, so the caller surfaces a `Malformed` frame without
-    /// echoing upstream data.
+    /// invariant trips, so the caller can surface the safe validation detail
+    /// without treating it as malformed upstream data.
     fn parse_response_usage(data: &RawResponseEvent) -> Result<Option<Usage>, String> {
         let Some(usage) = data
             .response
@@ -808,4 +803,27 @@ pub(crate) fn drain_sse_frames(buffer: &mut String) -> Vec<SseFrame> {
         frames.extend(parse_sse_frames(&chunk));
     }
     frames
+}
+
+#[cfg(test)]
+mod tests {
+    use super::drain_sse_frames;
+
+    #[test]
+    fn split_sse_frame_is_retained_until_the_blank_line_arrives() {
+        let mut buffer =
+            "data: {\"type\":\"response.output_text.delta\",\"delta\":\"Hel".to_owned();
+        assert!(drain_sse_frames(&mut buffer).is_empty());
+        assert!(!buffer.is_empty());
+
+        buffer.push_str("lo\"}\n\n");
+        let frames = drain_sse_frames(&mut buffer);
+
+        assert_eq!(frames.len(), 1);
+        assert_eq!(
+            frames[0].data,
+            r#"{"type":"response.output_text.delta","delta":"Hello"}"#
+        );
+        assert!(buffer.is_empty());
+    }
 }

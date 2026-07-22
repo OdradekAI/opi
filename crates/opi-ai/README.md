@@ -271,7 +271,7 @@ behavior:
 - A broad new first-class provider list (compatible providers stay
   config-driven profiles).
 - Image generation (image support is input-only).
-- Browser usage.
+- Browser automation outside the approved Anthropic and OpenAI Codex OAuth login flows.
 - Provider streaming-adapter protocol for packages.
 - Paid live provider calls in default tests (live tests stay `#[ignore]`-gated).
 - Copying pi's provider-specific config file format.

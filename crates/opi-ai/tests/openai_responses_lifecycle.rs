@@ -131,6 +131,44 @@ async fn stream_success() {
     }
 }
 
+#[tokio::test]
+async fn stream_accepts_canonical_data_only_responses_frames() {
+    let server = MockServer::start().await;
+    let fixture = [
+        r#"data: {"type":"response.created","response":{"id":"resp_1","status":"in_progress","model":"gpt-4o","output":[]}}"#,
+        r#"data: {"type":"response.output_text.delta","output_index":0,"content_index":0,"delta":"Hello"}"#,
+        r#"data: {"type":"response.completed","response":{"id":"resp_1","status":"completed","model":"gpt-4o","output":[],"usage":{"input_tokens":10,"output_tokens":5}}}"#,
+        "data: [DONE]",
+    ]
+    .join("\n\n");
+    Mock::given(method("POST"))
+        .and(path("/v1/responses"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string(format!("{fixture}\n\n"))
+                .insert_header("content-type", "text/event-stream"),
+        )
+        .mount(&server)
+        .await;
+
+    let provider = OpenAiResponsesProvider::new("test-key".into(), Some(server.uri()));
+    let results: Vec<_> = provider
+        .stream(make_request(CancellationToken::new()))
+        .collect()
+        .await;
+
+    assert!(results.iter().all(Result::is_ok), "{results:?}");
+    assert!(results.iter().any(|result| matches!(
+        result,
+        Ok(AssistantStreamEvent::TextDelta { delta, .. }) if delta == "Hello"
+    )));
+    assert!(
+        results
+            .iter()
+            .any(|result| matches!(result, Ok(AssistantStreamEvent::Done { .. })))
+    );
+}
+
 // ---------------------------------------------------------------------------
 // HTTP error mapping: 401 -> AuthFailed
 // ---------------------------------------------------------------------------

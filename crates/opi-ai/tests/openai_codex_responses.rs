@@ -7,7 +7,7 @@ use opi_ai::http::HttpClient;
 use opi_ai::message::{InputContent, Message, ToolDef, UserMessage};
 use opi_ai::openai_codex_responses::OpenAiCodexResponsesProvider;
 use opi_ai::provider::{CacheRetention, Provider, ProviderError, Request, ThinkingConfig};
-use opi_ai::{ModelCapabilities, ModelInfo, ThinkingLevel, WireApi};
+use opi_ai::{ModelCapabilities, ModelInfo, ThinkingLevel, ThinkingLevelMap, WireApi};
 use secrecy::SecretString;
 use tokio_util::sync::CancellationToken;
 use wiremock::matchers::{method, path};
@@ -132,7 +132,7 @@ async fn dedicated_codex_request_uses_exact_base_path_body_and_headers() {
                 )
                 .insert_header("content-type", "text/event-stream"),
         )
-        .mount(&auth_server)
+        .mount(&model_server)
         .await;
 
     let provider = OpenAiCodexResponsesProvider::new(
@@ -148,8 +148,8 @@ async fn dedicated_codex_request_uses_exact_base_path_body_and_headers() {
     assert_eq!(provider.id(), "openai-codex");
     assert!(drain(&provider, request()).await.is_none());
     assert!(default_server.received_requests().await.unwrap().is_empty());
-    assert!(model_server.received_requests().await.unwrap().is_empty());
-    let requests = auth_server.received_requests().await.unwrap();
+    assert!(auth_server.received_requests().await.unwrap().is_empty());
+    let requests = model_server.received_requests().await.unwrap();
     assert_eq!(requests.len(), 1);
     let captured = &requests[0];
     assert_eq!(captured.url.path(), "/codex/responses");
@@ -207,6 +207,49 @@ async fn dedicated_codex_request_uses_exact_base_path_body_and_headers() {
     assert_eq!(body["temperature"], 0.2);
 }
 
+#[test]
+fn dedicated_codex_only_strips_its_own_model_prefix() {
+    let provider = OpenAiCodexResponsesProvider::new(
+        Arc::new(FixedAuth {
+            secret: SecretString::from("unused"),
+            base_url: None,
+            account_id: Some("account-fixed".into()),
+        }),
+        None,
+        vec![model(None)],
+        Arc::new(HttpClient::new()),
+    );
+    let mut foreign = request();
+    foreign.model = "foreign:gpt-5.4".into();
+
+    assert_eq!(
+        provider.build_request_body(&foreign)["model"],
+        "foreign:gpt-5.4"
+    );
+}
+
+#[test]
+fn dedicated_codex_does_not_fallback_for_unsupported_thinking_level() {
+    let unsupported = model(None).with_thinking_level_map(ThinkingLevelMap::disabled());
+    let provider = OpenAiCodexResponsesProvider::new(
+        Arc::new(FixedAuth {
+            secret: SecretString::from("unused"),
+            base_url: None,
+            account_id: Some("account-fixed".into()),
+        }),
+        None,
+        vec![unsupported],
+        Arc::new(HttpClient::new()),
+    );
+
+    assert!(
+        provider
+            .build_request_body(&request())
+            .get("reasoning")
+            .is_none()
+    );
+}
+
 #[tokio::test]
 async fn dedicated_codex_generates_fresh_uuid_v7_headers_without_session_id() {
     let server = MockServer::start().await;
@@ -227,7 +270,7 @@ async fn dedicated_codex_generates_fresh_uuid_v7_headers_without_session_id() {
             base_url: Some(server.uri()),
             account_id: Some("account-fixed".into()),
         }),
-        None,
+        Some(server.uri()),
         vec![model(None)],
         Arc::new(HttpClient::new()),
     );
@@ -288,7 +331,7 @@ async fn dedicated_codex_disabled_affinity_omits_user_session_everywhere() {
             base_url: Some(server.uri()),
             account_id: Some("account-fixed".into()),
         }),
-        None,
+        Some(server.uri()),
         vec![model(None)],
         Arc::new(HttpClient::new()),
     );
@@ -336,7 +379,7 @@ async fn dedicated_codex_malformed_sse_never_surfaces_upstream_data() {
             base_url: Some(server.uri()),
             account_id: Some("account-fixed".into()),
         }),
-        None,
+        Some(server.uri()),
         vec![model(None)],
         Arc::new(HttpClient::new()),
     );
@@ -388,7 +431,7 @@ async fn dedicated_codex_valid_error_sse_never_surfaces_message() {
                 base_url: Some(server.uri()),
                 account_id: Some("account-fixed".into()),
             }),
-            None,
+            Some(server.uri()),
             vec![model(None)],
             Arc::new(HttpClient::new()),
         );
@@ -438,7 +481,7 @@ async fn dedicated_codex_data_only_frames_stream_to_completion() {
             base_url: Some(server.uri()),
             account_id: Some("account-fixed".into()),
         }),
-        None,
+        Some(server.uri()),
         vec![model(None)],
         Arc::new(HttpClient::new()),
     );
@@ -482,7 +525,7 @@ async fn dedicated_codex_incomplete_terminal_is_length_not_error() {
             base_url: Some(server.uri()),
             account_id: Some("account-fixed".into()),
         }),
-        None,
+        Some(server.uri()),
         vec![model(None)],
         Arc::new(HttpClient::new()),
     );
@@ -508,7 +551,7 @@ async fn dedicated_codex_requires_non_empty_account_id_before_http() {
                 base_url: Some(server.uri()),
                 account_id,
             }),
-            None,
+            Some(server.uri()),
             vec![model(None)],
             Arc::new(HttpClient::new()),
         );
@@ -546,7 +589,7 @@ async fn dedicated_codex_rejects_managed_header_overrides_before_http() {
                 base_url: Some(server.uri()),
                 account_id: Some("account-fixed".into()),
             }),
-            None,
+            Some(server.uri()),
             vec![model(None)],
             Arc::new(HttpClient::new()),
         );
@@ -578,7 +621,7 @@ async fn dedicated_codex_rejects_invalid_header_names_and_values_before_http() {
                 base_url: Some(server.uri()),
                 account_id: Some("account-fixed".into()),
             }),
-            None,
+            Some(server.uri()),
             vec![model(None)],
             Arc::new(HttpClient::new()),
         );
@@ -610,7 +653,7 @@ async fn dedicated_codex_401_and_403_are_revoked_and_redacted() {
                 base_url: Some(server.uri()),
                 account_id: Some("account-fixed".into()),
             }),
-            None,
+            Some(server.uri()),
             vec![model(None)],
             Arc::new(HttpClient::new()),
         );
@@ -652,7 +695,7 @@ async fn dedicated_codex_provider_failures_are_typed_and_redacted() {
             base_url: Some(server.uri()),
             account_id: Some("sentinel-account".into()),
         }),
-        None,
+        Some(server.uri()),
         vec![model(None)],
         Arc::new(HttpClient::new()),
     );

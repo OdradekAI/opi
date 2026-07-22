@@ -93,6 +93,56 @@ impl Provider for RecordingRoute {
     }
 }
 
+struct CatalogRoute {
+    id: String,
+    models: Vec<ModelInfo>,
+    observed_ids: Arc<Mutex<Vec<String>>>,
+    reject_id: Option<String>,
+}
+
+impl CatalogRoute {
+    fn new(
+        models: Vec<ModelInfo>,
+        observed_ids: Arc<Mutex<Vec<String>>>,
+        reject_id: Option<&str>,
+    ) -> Self {
+        *observed_ids.lock().unwrap() = models.iter().map(|model| model.id.clone()).collect();
+        Self {
+            id: "acme".into(),
+            models,
+            observed_ids,
+            reject_id: reject_id.map(str::to_owned),
+        }
+    }
+}
+
+impl Provider for CatalogRoute {
+    fn id(&self) -> &str {
+        &self.id
+    }
+
+    fn models(&self) -> &[ModelInfo] {
+        &self.models
+    }
+
+    fn stream(&self, _request: Request) -> EventStream {
+        Box::pin(futures_util::stream::empty())
+    }
+
+    fn replace_model_catalog(&mut self, models: Vec<ModelInfo>) -> Result<(), ProviderError> {
+        if self
+            .reject_id
+            .as_ref()
+            .is_some_and(|reject_id| models.iter().any(|model| model.id == *reject_id))
+        {
+            return Err(ProviderError::Config("route rejected catalog".into()));
+        }
+        *self.observed_ids.lock().unwrap() = models.iter().map(|model| model.id.clone()).collect();
+        self.models = models;
+        Ok(())
+    }
+}
+
 fn model(id: &str, wire: WireApi) -> ModelInfo {
     ModelInfo::new(
         id,
@@ -438,6 +488,91 @@ fn mapped_provider_rejects_route_catalog_subsets_and_supersets() {
 }
 
 #[test]
+fn mapped_catalog_replacement_preflights_empty_route_before_mutating_any_route() {
+    let first_ids = Arc::new(Mutex::new(Vec::new()));
+    let second_ids = Arc::new(Mutex::new(Vec::new()));
+    let old_catalog = vec![
+        model("anthropic-old", WireApi::AnthropicMessages),
+        model("chat-old", WireApi::OpenAiCompletions),
+    ];
+    let routes = [
+        (
+            WireApi::AnthropicMessages,
+            Box::new(CatalogRoute::new(
+                vec![old_catalog[0].clone()],
+                Arc::clone(&first_ids),
+                None,
+            )) as Box<dyn Provider>,
+        ),
+        (
+            WireApi::OpenAiCompletions,
+            Box::new(CatalogRoute::new(
+                vec![old_catalog[1].clone()],
+                Arc::clone(&second_ids),
+                None,
+            )) as Box<dyn Provider>,
+        ),
+    ];
+    let mut provider = ApiMappedProvider::try_new("acme", old_catalog, routes).unwrap();
+
+    let error = provider
+        .replace_model_catalog(vec![model("anthropic-new", WireApi::AnthropicMessages)])
+        .unwrap_err();
+
+    assert!(error.to_string().contains("would leave route"));
+    assert_eq!(first_ids.lock().unwrap().as_slice(), &["anthropic-old"]);
+    assert_eq!(second_ids.lock().unwrap().as_slice(), &["chat-old"]);
+    assert_eq!(provider.models()[0].id, "anthropic-old");
+}
+
+#[test]
+fn mapped_catalog_replacement_rolls_back_routes_after_late_rejection() {
+    let first_ids = Arc::new(Mutex::new(Vec::new()));
+    let second_ids = Arc::new(Mutex::new(Vec::new()));
+    let old_catalog = vec![
+        model("anthropic-old", WireApi::AnthropicMessages),
+        model("chat-old", WireApi::OpenAiCompletions),
+    ];
+    let routes = [
+        (
+            WireApi::AnthropicMessages,
+            Box::new(CatalogRoute::new(
+                vec![old_catalog[0].clone()],
+                Arc::clone(&first_ids),
+                None,
+            )) as Box<dyn Provider>,
+        ),
+        (
+            WireApi::OpenAiCompletions,
+            Box::new(CatalogRoute::new(
+                vec![old_catalog[1].clone()],
+                Arc::clone(&second_ids),
+                Some("chat-rejected"),
+            )) as Box<dyn Provider>,
+        ),
+    ];
+    let mut provider = ApiMappedProvider::try_new("acme", old_catalog, routes).unwrap();
+    let replacement = vec![
+        model("anthropic-new", WireApi::AnthropicMessages),
+        model("chat-rejected", WireApi::OpenAiCompletions),
+    ];
+
+    let error = provider.replace_model_catalog(replacement).unwrap_err();
+
+    assert!(error.to_string().contains("route rejected catalog"));
+    assert_eq!(first_ids.lock().unwrap().as_slice(), &["anthropic-old"]);
+    assert_eq!(second_ids.lock().unwrap().as_slice(), &["chat-old"]);
+    assert_eq!(
+        provider
+            .models()
+            .iter()
+            .map(|model| model.id.as_str())
+            .collect::<Vec<_>>(),
+        ["anthropic-old", "chat-old"]
+    );
+}
+
+#[test]
 fn provider_headers_reject_all_reserved_configured_and_request_names() {
     const RESERVED_NAMES: [&str; 13] = [
         "authorization",
@@ -477,7 +612,7 @@ fn provider_headers_reject_all_reserved_configured_and_request_names() {
 }
 
 #[tokio::test]
-async fn concrete_custom_route_uses_auth_model_provider_base_precedence_and_static_auth_typing() {
+async fn concrete_custom_route_ignores_credential_base_url_and_uses_model_base_url() {
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -508,7 +643,7 @@ async fn concrete_custom_route_uses_auth_model_provider_base_precedence_and_stat
         .respond_with(
             ResponseTemplate::new(403).set_body_string("echoed-key-canary-must-not-surface"),
         )
-        .mount(&auth_server)
+        .mount(&model_server)
         .await;
     let calls = Arc::new(AtomicUsize::new(0));
     let auth: Arc<dyn AuthResolver> = Arc::new(BaseUrlResolver {
@@ -540,7 +675,8 @@ async fn concrete_custom_route_uses_auth_model_provider_base_precedence_and_stat
     let rendered = format!("{error:?} {error}");
     assert!(!rendered.contains("echoed-key-canary-must-not-surface"));
     assert_eq!(calls.load(Ordering::SeqCst), 1);
-    let requests = auth_server.received_requests().await.unwrap();
+    assert!(auth_server.received_requests().await.unwrap().is_empty());
+    let requests = model_server.received_requests().await.unwrap();
     assert_eq!(requests.len(), 1);
     assert_eq!(
         requests[0]
@@ -550,6 +686,5 @@ async fn concrete_custom_route_uses_auth_model_provider_base_precedence_and_stat
         Some("opi")
     );
     assert!(requests[0].headers.get("anthropic-beta").is_none());
-    assert!(model_server.received_requests().await.unwrap().is_empty());
     assert!(default_server.received_requests().await.unwrap().is_empty());
 }

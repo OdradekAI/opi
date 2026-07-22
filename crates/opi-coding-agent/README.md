@@ -491,7 +491,8 @@ Common methods include `prompt`, `prompt_with_content`, `queue_images`,
   audited static pi-0.80.6 Copilot/Codex snapshots, a broad new first-class
   provider list (compatible providers stay
   config-driven OpenAI-compatible profiles), image generation
-  (image support is input-only), browser usage, a provider streaming-adapter
+  (image support is input-only), browser automation outside the approved
+  Anthropic and OpenAI Codex OAuth login flows, a provider streaming-adapter
   protocol for packages, paid live provider calls in default tests, and copying
   pi's provider-specific config file format. Per-provider proxy config
   (`proxy.url` / `proxy.no_proxy`, env `HTTPS_PROXY` > `HTTP_PROXY` > `NO_PROXY`)

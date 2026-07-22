@@ -147,7 +147,7 @@ single nested value. It does not create a second same-named type.
 | P0 | `CredentialStore` trait + `Credential` type | `opi-ai` | Abstract `read`/`write`/`delete`/`probe`; no IO or env access. |
 | P0 | `CredentialSource` three-state enum | `opi-ai` | `Present(label)` / `Absent` / `BackendUnavailable(reason)` so doctor distinguishes "missing entry" from "no keychain daemon". |
 | P0 | `AuthDescriptor::StoreCredential` variant | `opi-ai` | Additive `{ key, display_source }`; cheap, `Clone`, no secret. New match arms in `doctor`, `dispatch_stream`, `--list-models`. |
-| P0 | `KeychainCredentialStore` + `EnvCredentialSource` + `CredentialResolver` + `fs4` global lock | `opi-coding-agent` | `keyring-core` primary; env fallback; single `<user_config_dir>/opi/credential.lock`; acquire-then-re-read. |
+| P0 | `KeychainCredentialStore` + `EnvCredentialSource` + `CredentialResolver` + `fs4` global lock | `opi-coding-agent` | `keyring-core` primary; env fallback; single `<user_config_dir>/opi/credential.lock`; serialized public mutations and acquire-then-re-read for OAuth refresh. |
 | P0 | `OAuthProvider` trait + `OAuthCredential` | `opi-ai` | `id()` / boxed-future `login(presenter)` / boxed-future `refresh(refresh)`; flow-agnostic and object-safe for the heterogeneous registry. |
 | P0 | Three OAuth impls + `OAuthProviderRegistry` | `opi-coding-agent` | Anthropic (PKCE + `127.0.0.1` callback), Copilot (device-code), Codex (Browser PKCE + Device Code selector); register `anthropic`, `github-copilot`, and `openai-codex`. |
 | P0 | object-safe auth-resolution seam | `opi-ai` / `opi-coding-agent` | `AuthResolver` + `ResolvedAuth` are abstract in `opi-ai`; the concrete `AuthSource` (`Baked` / `Store` / `EnvOAuthToken`) lives in `opi-coding-agent`, implements the boxed-future seam, and is resolved per `stream()`. |
@@ -260,9 +260,11 @@ resolver.
 `<user_config_dir>/opi/credential.lock` (the lock file holds no secret — it is
 pure coordination, because the OS keychain has no cross-"read → refresh → write"
 transaction). The exclusive lock wraps every store mutation (`write`, `delete`,
-and OAuth refresh in T2), applied uniformly with acquire-then-re-read (pi's
-`auth-storage.ts:505-516` pattern: concurrent opi instances share one op), plus
-a short timeout and diagnostic on contention rather than an infinite block.
+and OAuth refresh in T2). Public `write` and `delete` are serialized,
+unconditional last-writer-wins operations. Acquire-then-re-read applies to the
+OAuth refresh read-modify-write transaction (pi's `auth-storage.ts:505-516`
+pattern: concurrent opi instances share one op). Contention has a short timeout
+and diagnostic rather than an infinite block.
 The coding-agent lock coordinator also exposes package-private unlocked backend
 operations so OAuth refresh can hold one lock across read, HTTP refresh, and
 write without recursively acquiring the public `write` lock. Login, logout,

@@ -441,6 +441,20 @@ struct EnvelopeFields {
     account_id: Option<String>,
 }
 
+impl Zeroize for EnvelopeFields {
+    fn zeroize(&mut self) {
+        self.api_key.zeroize();
+        self.access.zeroize();
+        self.refresh.zeroize();
+    }
+}
+
+impl Drop for EnvelopeFields {
+    fn drop(&mut self) {
+        self.zeroize();
+    }
+}
+
 #[derive(serde::Deserialize)]
 struct EnvelopeHeader {
     version: u32,
@@ -455,6 +469,18 @@ struct ApiKeyEnvelopeV1 {
     api_key: String,
 }
 
+impl Zeroize for ApiKeyEnvelopeV1 {
+    fn zeroize(&mut self) {
+        self.api_key.zeroize();
+    }
+}
+
+impl Drop for ApiKeyEnvelopeV1 {
+    fn drop(&mut self) {
+        self.zeroize();
+    }
+}
+
 #[derive(serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 struct OAuthEnvelopeV1 {
@@ -465,6 +491,19 @@ struct OAuthEnvelopeV1 {
     expires_at: Option<i64>,
     base_url: Option<String>,
     account_id: Option<String>,
+}
+
+impl Zeroize for OAuthEnvelopeV1 {
+    fn zeroize(&mut self) {
+        self.access.zeroize();
+        self.refresh.zeroize();
+    }
+}
+
+impl Drop for OAuthEnvelopeV1 {
+    fn drop(&mut self) {
+        self.zeroize();
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -520,12 +559,16 @@ fn secret_string(value: impl Into<String>) -> SecretString {
 /// (defense-in-depth: the `secrecy::SecretString` fields on [`Credential`]
 /// already zeroize, but this derived JSON `String` otherwise would not).
 fn encode_credential(cred: &Credential) -> Zeroizing<String> {
-    let (kind, mut fields) = match cred {
+    let (kind, fields) = match cred {
         Credential::ApiKey(key) => (
             "api_key",
             EnvelopeFields {
                 api_key: Some(key.expose_secret().to_owned()),
-                ..Default::default()
+                access: None,
+                refresh: None,
+                expires_at: None,
+                base_url: None,
+                account_id: None,
             },
         ),
         Credential::OAuthToken {
@@ -537,29 +580,21 @@ fn encode_credential(cred: &Credential) -> Zeroizing<String> {
         } => (
             "oauth",
             EnvelopeFields {
+                api_key: None,
                 access: Some(access.expose_secret().to_owned()),
                 refresh: Some(refresh.expose_secret().to_owned()),
                 expires_at: expires_at.map(|t| t.unix_timestamp()),
                 base_url: base_url.clone(),
                 account_id: account_id.clone(),
-                ..Default::default()
             },
         ),
     };
-    let _ = &mut fields;
-    let mut envelope = Envelope {
+    let envelope = Envelope {
         version: ENVELOPE_VERSION,
         kind: kind.to_owned(),
         fields,
     };
-    let serialized =
-        Zeroizing::new(serde_json::to_string(&envelope).expect("credential envelope serializes"));
-    // Zeroize the intermediate secret-bearing field strings now that
-    // serialization is complete (the serialized buffer is already Zeroizing).
-    envelope.fields.api_key.zeroize();
-    envelope.fields.access.zeroize();
-    envelope.fields.refresh.zeroize();
-    serialized
+    Zeroizing::new(serde_json::to_string(&envelope).expect("credential envelope serializes"))
 }
 
 /// Decode a v1 JSON envelope into a [`Credential`].
@@ -582,7 +617,7 @@ fn decode_credential(raw: &str, provider_id: &str) -> Result<Credential, Credent
     }
     match header.kind.as_str() {
         "api_key" => {
-            let envelope: ApiKeyEnvelopeV1 =
+            let mut envelope: ApiKeyEnvelopeV1 =
                 serde_json::from_str(raw).map_err(|_| CredentialStoreError::MalformedEnvelope {
                     provider: provider_id.to_owned(),
                     reason: "api_key credential envelope does not match the expected schema"
@@ -590,10 +625,11 @@ fn decode_credential(raw: &str, provider_id: &str) -> Result<Credential, Credent
                 })?;
             debug_assert_eq!(envelope.version, ENVELOPE_VERSION);
             debug_assert_eq!(envelope.kind, "api_key");
-            Ok(Credential::ApiKey(secret_string(envelope.api_key)))
+            let api_key = std::mem::take(&mut envelope.api_key);
+            Ok(Credential::ApiKey(secret_string(api_key)))
         }
         "oauth" => {
-            let envelope: OAuthEnvelopeV1 =
+            let mut envelope: OAuthEnvelopeV1 =
                 serde_json::from_str(raw).map_err(|_| CredentialStoreError::MalformedEnvelope {
                     provider: provider_id.to_owned(),
                     reason: "oauth credential envelope does not match the expected schema"
@@ -610,12 +646,16 @@ fn decode_credential(raw: &str, provider_id: &str) -> Result<Credential, Credent
                 )?),
                 None => None,
             };
+            let access = std::mem::take(&mut envelope.access);
+            let refresh = std::mem::take(&mut envelope.refresh);
+            let base_url = envelope.base_url.take();
+            let account_id = envelope.account_id.take();
             Ok(Credential::OAuthToken {
-                access: secret_string(envelope.access),
-                refresh: secret_string(envelope.refresh),
+                access: secret_string(access),
+                refresh: secret_string(refresh),
                 expires_at,
-                base_url: envelope.base_url,
-                account_id: envelope.account_id,
+                base_url,
+                account_id,
             })
         }
         _ => Err(CredentialStoreError::UnknownEnvelope {
@@ -784,6 +824,32 @@ impl KeychainCredentialStore {
         }
     }
 
+    /// Read marker then protected entry and require both entries to describe
+    /// the same credential kind. Marker absence is authoritative absence;
+    /// marker-only and mixed-kind transitions fail closed.
+    async fn read_consistent_unlocked(
+        &self,
+        provider_id: &str,
+    ) -> Result<Option<Credential>, CredentialStoreError> {
+        let Some(expected_kind) = self.read_marker_kind(provider_id)? else {
+            return Ok(None);
+        };
+        let Some(credential) = self.read_unlocked(provider_id).await? else {
+            return Err(CredentialStoreError::CorruptMarker {
+                provider: provider_id.to_owned(),
+            });
+        };
+        let actual_kind = CredentialKind::for_credential(&credential);
+        if actual_kind != expected_kind {
+            return Err(CredentialStoreError::UnexpectedCredentialKind {
+                provider: provider_id.to_owned(),
+                expected: expected_kind.marker(),
+                actual: actual_kind.marker(),
+            });
+        }
+        Ok(Some(credential))
+    }
+
     /// Write without acquiring the mutation lock. Package-private so T2 OAuth
     /// refresh can hold one external lock across read/HTTP/write without
     /// recursively acquiring the public locked `write`.
@@ -837,7 +903,7 @@ impl CredentialStore for KeychainCredentialStore {
         &'a self,
         provider_id: &'a str,
     ) -> BoxAuthFuture<'a, Result<Option<Credential>, CredentialStoreError>> {
-        Box::pin(async move { self.read_unlocked(provider_id).await })
+        Box::pin(async move { self.read_consistent_unlocked(provider_id).await })
     }
 
     fn write<'a>(
@@ -846,9 +912,9 @@ impl CredentialStore for KeychainCredentialStore {
         cred: &'a Credential,
     ) -> BoxAuthFuture<'a, Result<(), CredentialStoreError>> {
         Box::pin(async move {
-            // Acquire-then-re-read: hold the exclusive lock across the write.
-            // T2 refresh reuses write_unlocked under one external lock so it
-            // never recursively enters this locked path.
+            // Public writes are unconditional last-writer-wins mutations. The
+            // lock serializes them; only T2's refresh read-modify-write path
+            // re-reads state after acquiring its external lock.
             let _guard = self.lock.acquire().await?;
             self.write_unlocked(provider_id, cred).await
         })
@@ -992,23 +1058,7 @@ impl CredentialResolver {
         provider_id: &str,
         env_var: &str,
     ) -> Result<Option<ResolvedApiKey>, CredentialStoreError> {
-        let kind = match self.store.read_marker_kind(provider_id) {
-            Ok(Some(kind)) => kind,
-            Ok(None) => return Ok(self.env_fallback(env_var, false)),
-            Err(CredentialStoreError::BackendUnavailable { .. }) => {
-                return Ok(self.env_fallback(env_var, true));
-            }
-            Err(error) => return Err(error),
-        };
-        if kind == CredentialKind::OAuthToken {
-            return Err(CredentialStoreError::UnexpectedCredentialKind {
-                provider: provider_id.to_owned(),
-                expected: "api_key",
-                actual: "oauth_token",
-            });
-        }
-
-        match self.store.read_unlocked(provider_id).await {
+        match self.store.read_consistent_unlocked(provider_id).await {
             Ok(Some(Credential::ApiKey(value))) => Ok(Some(ResolvedApiKey {
                 value,
                 source: ApiKeySource::Store,
@@ -1020,9 +1070,7 @@ impl CredentialResolver {
                     actual: "oauth_token",
                 })
             }
-            Ok(None) => Err(CredentialStoreError::CorruptMarker {
-                provider: provider_id.to_owned(),
-            }),
+            Ok(None) => Ok(self.env_fallback(env_var, false)),
             Err(CredentialStoreError::BackendUnavailable { .. }) => {
                 Ok(self.env_fallback(env_var, true))
             }
@@ -1145,19 +1193,7 @@ impl CredentialResolver {
         &self,
         provider_id: &str,
     ) -> Result<Option<OAuthCredential>, CredentialStoreError> {
-        match self.store.read_marker_kind(provider_id)? {
-            None => return Ok(None),
-            Some(CredentialKind::ApiKey) => {
-                return Err(CredentialStoreError::UnexpectedCredentialKind {
-                    provider: provider_id.to_owned(),
-                    expected: "oauth_token",
-                    actual: "api_key",
-                });
-            }
-            Some(CredentialKind::OAuthToken) => {}
-        }
-
-        match self.store.read_unlocked(provider_id).await {
+        match self.store.read_consistent_unlocked(provider_id).await {
             Ok(Some(Credential::OAuthToken {
                 access,
                 refresh,
@@ -1178,9 +1214,7 @@ impl CredentialResolver {
                     actual: "api_key",
                 })
             }
-            Ok(None) => Err(CredentialStoreError::CorruptMarker {
-                provider: provider_id.to_owned(),
-            }),
+            Ok(None) => Ok(None),
             Err(error) => Err(error),
         }
     }
@@ -1361,6 +1395,15 @@ impl AuthResolver for AuthSource {
 #[cfg(test)]
 mod tests {
     struct FixedErrorBackend(super::BackendError);
+
+    #[test]
+    fn secret_envelope_intermediates_implement_zeroize_for_raii_cleanup() {
+        fn assert_zeroize<T: zeroize::Zeroize>() {}
+
+        assert_zeroize::<super::EnvelopeFields>();
+        assert_zeroize::<super::ApiKeyEnvelopeV1>();
+        assert_zeroize::<super::OAuthEnvelopeV1>();
+    }
 
     #[test]
     fn credential_envelopes_reject_cross_kind_and_unknown_fields_without_leaks() {

@@ -210,8 +210,10 @@ pub type BoxAuthFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 ///   failure — the two are never collapsed.
 /// * `probe` returns a redacted [`CredentialSource`] without reading the
 ///   secret, for doctor / `--list-models`.
-/// * `write`/`delete` are mutations; concrete implementations wrap them in the
-///   shared cross-process lock (acquire-then-re-read).
+/// * `write`/`delete` are unconditional last-writer-wins mutations; concrete
+///   implementations serialize them with the shared cross-process lock.
+///   Acquire-then-re-read applies to read-modify-write operations such as
+///   OAuth refresh, not to these unconditional methods.
 pub trait CredentialStore: Send + Sync {
     /// Read the credential for `provider_id`, if present.
     fn read<'a>(

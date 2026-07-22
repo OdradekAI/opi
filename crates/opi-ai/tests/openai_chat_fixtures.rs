@@ -23,6 +23,7 @@ fn map_fixture(input: &str) -> Vec<AssistantStreamEvent> {
     let events: Vec<OpenAiChatEvent> = parse_sse_events(input)
         .flat_map(|p| match p {
             ParsedEvent::Valid(evts) => evts,
+            ParsedEvent::UsageError(_) => Vec::new(),
             ParsedEvent::Malformed { .. } => Vec::new(),
         })
         .collect();
@@ -40,6 +41,7 @@ fn map_fixture_as(input: &str, api: opi_ai::ApiKind, provider: &str) -> Vec<Assi
     let events: Vec<OpenAiChatEvent> = parse_sse_events(input)
         .flat_map(|p| match p {
             ParsedEvent::Valid(evts) => evts,
+            ParsedEvent::UsageError(_) => Vec::new(),
             ParsedEvent::Malformed { .. } => Vec::new(),
         })
         .collect();
@@ -56,6 +58,7 @@ fn collect_valid_events(input: &str) -> Vec<OpenAiChatEvent> {
     parse_sse_events(input)
         .flat_map(|p| match p {
             ParsedEvent::Valid(evts) => evts,
+            ParsedEvent::UsageError(_) => Vec::new(),
             ParsedEvent::Malformed { .. } => Vec::new(),
         })
         .collect()
@@ -531,6 +534,10 @@ async fn reasoning_malformed_subset_stops_production_stream_with_non_retryable_e
         .collect();
     assert_eq!(errors.len(), 1, "invalid usage must emit one error");
     assert!(matches!(errors[0], ProviderError::StreamError(_)));
+    assert_eq!(
+        errors[0].to_string(),
+        "stream error: reasoning_tokens (800) exceeds completion_tokens (500)"
+    );
     assert!(!errors[0].is_retryable());
     assert!(matches!(
         results.last(),

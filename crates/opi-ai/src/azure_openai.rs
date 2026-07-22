@@ -180,6 +180,7 @@ impl AzureOpenAIProvider {
                         stream_events.extend(mapper.process(event).into_iter().map(Ok));
                     }
                 }
+                ParsedEvent::UsageError(error) => stream_events.push(Err(error)),
                 ParsedEvent::Malformed { data, error } => {
                     stream_events.push(Err(ProviderError::StreamError(format!(
                         "malformed SSE data: {error} (data: {data:.80})"
@@ -321,6 +322,11 @@ async fn stream_azure_http(
                                 saw_done = true;
                             }
                         }
+                    }
+                }
+                ParsedEvent::UsageError(error) => {
+                    if tx.send(Err(error)).await.is_err() {
+                        return Ok(());
                     }
                 }
                 ParsedEvent::Malformed { data, error } => {

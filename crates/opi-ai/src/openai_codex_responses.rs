@@ -67,8 +67,7 @@ impl OpenAiCodexResponsesProvider {
     pub fn build_request_body(&self, request: &Request) -> serde_json::Value {
         let model_id = request
             .model
-            .split_once(':')
-            .map(|(_, id)| id)
+            .strip_prefix("openai-codex:")
             .unwrap_or(&request.model);
         let input = convert_messages(request);
         let session_id = if request.cache_retention != CacheRetention::Disabled {
@@ -119,8 +118,7 @@ impl OpenAiCodexResponsesProvider {
                         .resolve(request.thinking.level)
                         .ok()
                 })
-                .flatten()
-                .or_else(|| request.thinking.level.wire_name().map(str::to_owned));
+                .flatten();
             if let Some(effort) = effort {
                 body["reasoning"] = serde_json::json!({
                     "effort": effort,
@@ -239,6 +237,9 @@ impl OpenAiCodexResponsesProvider {
                             }
                         }
                     }
+                    ParsedEvent::UsageError(error) => {
+                        return Err(ProviderError::StreamError(error));
+                    }
                     ParsedEvent::Malformed { .. } => {
                         return Err(ProviderError::StreamError(
                             MALFORMED_STREAM_ERROR.to_owned(),
@@ -346,11 +347,7 @@ impl Provider for OpenAiCodexResponsesProvider {
                         return;
                     }
                 };
-                let base_url = resolved
-                    .base_url
-                    .clone()
-                    .or(model_base_url)
-                    .unwrap_or(default_base_url);
+                let base_url = model_base_url.unwrap_or(default_base_url);
                 if let Err(error) = Self::stream_http(
                     client,
                     resolved,

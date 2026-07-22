@@ -448,7 +448,7 @@ metadata 和启动诊断。
   产品决策包括经审计的静态 pi-0.80.6 Copilot/Codex snapshot 之外的 provider catalog、
   大范围新增 first-class provider 列表（兼容
   provider 保持为 config-driven 的 OpenAI-compatible profile）、图像生成（图片支持仅为输入侧）、
-  浏览器使用、面向 package 的 provider 流式 adapter 协议、默认测试中的付费实时
+  已获批的 Anthropic 与 OpenAI Codex OAuth 登录流程之外的浏览器自动化、面向 package 的 provider 流式 adapter 协议、默认测试中的付费实时
   provider 调用，以及复制 pi 的 provider 专用配置文件格式。按 provider 的代理配置
   （`proxy.url` / `proxy.no_proxy`，环境变量 `HTTPS_PROXY` > `HTTP_PROXY` >
   `NO_PROXY`）和尽力而为的费用（显式未知值优先于虚假置信）已实现。详见 `opi-ai`

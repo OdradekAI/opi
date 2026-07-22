@@ -4399,22 +4399,9 @@ async fn factory_routes_github_copilot_models_by_declared_wire() {
 }
 
 #[tokio::test]
-async fn factory_routes_codex_to_codex_responses_with_oauth_wire_shape() {
-    let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/codex/responses"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .set_body_string("")
-                .insert_header("content-type", "text/event-stream"),
-        )
-        .mount(&server)
-        .await;
-
+async fn factory_builds_codex_without_promoting_credential_base_url_into_its_catalog() {
     let backend = FakeKeyringBackend::new();
     let (_dir, store, _b) = store_with(backend);
-    // Production Codex browser PKCE carries no base_url (the default wins);
-    // the stored base_url here is a test seam redirecting dispatch to the mock.
     store
         .write(
             "openai-codex",
@@ -4422,7 +4409,7 @@ async fn factory_routes_codex_to_codex_responses_with_oauth_wire_shape() {
                 "openai-codex",
                 "codex-access-fake",
                 "codex-refresh-fake",
-                Some(server.uri()),
+                Some("https://stale-credential-host.invalid".into()),
             ),
         )
         .await
@@ -4437,27 +4424,9 @@ async fn factory_routes_codex_to_codex_responses_with_oauth_wire_shape() {
         .await
         .expect("codex OAuth provider builds");
     assert_eq!(provider.id(), "openai-codex");
-    let mut stream = provider.stream(factory_request("openai-codex:gpt-5.4"));
-    drain_stream(&mut stream).await;
-
-    let requests = server.received_requests().await.unwrap();
-    assert_eq!(requests.len(), 1, "exactly one Codex Responses request");
-    let req = &requests[0];
-    assert_eq!(req.url.path(), "/codex/responses");
-    assert_eq!(
-        req.headers
-            .get("authorization")
-            .map(|v| v.to_str().unwrap()),
-        Some("Bearer codex-access-fake")
-    );
-    assert_eq!(
-        req.headers.get("OpenAI-Beta").map(|v| v.to_str().unwrap()),
-        Some("responses=experimental")
-    );
-    assert_eq!(
-        req.headers.get("originator").map(|v| v.to_str().unwrap()),
-        Some("opi")
-    );
+    assert!(provider.models().iter().all(|model| {
+        model.base_url.as_deref() != Some("https://stale-credential-host.invalid")
+    }));
 }
 
 #[tokio::test]
@@ -5158,7 +5127,7 @@ async fn factory_built_approved_profiles_resolve_auth_inside_each_stream() {
             } => assert_eq!(actual, provider_id),
             other => panic!("{provider_id} expected CredentialNeeded, got {other:?}"),
         }
-        if provider_id == "anthropic" {
+        if provider_id != "github-copilot" {
             assert!(
                 server.received_requests().await.unwrap().is_empty(),
                 "{provider_id} must resolve auth before any HTTP request"
@@ -5166,9 +5135,9 @@ async fn factory_built_approved_profiles_resolve_auth_inside_each_stream() {
             continue;
         }
 
-        // Copilot and Codex derive their API base URL from the stored OAuth
-        // profile during construction. Seed that route, construct, then remove
-        // the credential so the first stream proves auth fails before HTTP.
+        // Copilot alone owns credential-supplied enterprise routing metadata.
+        // Seed that route, construct, then remove the credential so the first
+        // stream proves auth fails before HTTP.
         let (_routed_dir, routed_store, _routed_backend) = store_with(FakeKeyringBackend::new());
         routed_store
             .write(
@@ -5212,7 +5181,6 @@ async fn factory_stream_reresolves_after_store_change() {
     for (provider_id, model, request_path) in [
         ("anthropic", "claude-sonnet-4-5-20250514", "/v1/messages"),
         ("github-copilot", "gpt-4.1", "/chat/completions"),
-        ("openai-codex", "gpt-5.4", "/codex/responses"),
     ] {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
@@ -5393,7 +5361,6 @@ async fn factory_built_approved_profiles_map_revocation_without_retry() {
     for (provider_id, model, request_path) in [
         ("anthropic", "claude-sonnet-4-5-20250514", "/v1/messages"),
         ("github-copilot", "gpt-4.1", "/chat/completions"),
-        ("openai-codex", "gpt-5.4", "/codex/responses"),
     ] {
         let server = MockServer::start().await;
         Mock::given(method("POST"))

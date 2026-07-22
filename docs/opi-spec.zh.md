@@ -1345,7 +1345,7 @@ Typed hook result composition 由契约测试覆盖：扩展钩子在 base 钩�
 
 明确推迟：OpenAI Responses 的 `previous_response_id` 和服务端会话链（Responses 请求按 Chat-Completions 类比构造）；请求侧 prompt-caching 断点（`cache_key` profile 标志是可用的 cache-affinity 提示）；超出既有 per-model metadata 的图片数量/大小限制；广泛的 provider catalog 扩张。
 
-Phase 12 非目标（不得作为当前核心行为出现）：OAuth 登录流程；Anthropic、OpenAI Codex 和 GitHub Copilot 订阅鉴权；大范围新增 first-class provider 列表；图像生成；浏览器使用；面向 package 的 provider 流式 adapter 协议；默认测试中的付费实时 provider 调用；复制 pi 的 provider 专用配置文件格式。尽力而为（best-effort）的费用映射保留显式未知值，而非推断虚假置信：缺失 usage 会被明确跟踪为未知，而当任一轮 usage 未知或定价未知时，会话费用汇总会被省略。
+在第十二阶段，下列项目当时属于非目标；这份历史列表不覆盖后续阶段已批准的能力：OAuth 登录流程；Anthropic、OpenAI Codex 和 GitHub Copilot 订阅鉴权；大范围新增 first-class provider 列表；图像生成；浏览器使用；面向 package 的 provider 流式 adapter 协议；默认测试中的付费实时 provider 调用；复制 pi 的 provider 专用配置文件格式。尽力而为（best-effort）的费用映射保留显式未知值，而非推断虚假置信：缺失 usage 会被明确跟踪为未知，而当任一轮 usage 未知或定价未知时，会话费用汇总会被省略。
 
 ### 第十三阶段 - 会话树与上下文重建
 

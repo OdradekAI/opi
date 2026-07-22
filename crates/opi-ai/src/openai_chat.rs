@@ -38,6 +38,7 @@ struct SseFrame {
 /// Parsed result for a single SSE frame.
 pub enum ParsedEvent {
     Valid(Vec<OpenAiChatEvent>),
+    UsageError(ProviderError),
     Malformed { data: String, error: String },
 }
 
@@ -51,10 +52,7 @@ pub fn parse_sse_events(input: &str) -> impl Iterator<Item = ParsedEvent> + '_ {
         match serde_json::from_str::<OpenAiRawChunk>(&frame.data) {
             Ok(raw) => Some(match validate_usage_subset(&raw) {
                 Ok(()) => ParsedEvent::Valid(OpenAiChatEvent::from_raw_vec(raw)),
-                Err(error) => ParsedEvent::Malformed {
-                    data: frame.data.clone(),
-                    error: error.to_string(),
-                },
+                Err(error) => ParsedEvent::UsageError(error),
             }),
             Err(e) => Some(ParsedEvent::Malformed {
                 data: frame.data.clone(),
@@ -1138,6 +1136,10 @@ impl OpenAiChatProvider {
                         stream_events.extend(mapper.process(event).into_iter().map(Ok));
                     }
                 }
+                ParsedEvent::UsageError(error) => {
+                    stream_events.push(Err(error));
+                    break;
+                }
                 ParsedEvent::Malformed { .. } => {
                     stream_events.push(Err(ProviderError::StreamError(
                         "malformed OpenAI Chat SSE frame".to_owned(),
@@ -1250,6 +1252,7 @@ impl OpenAiChatProvider {
                             }
                         }
                     }
+                    ParsedEvent::UsageError(error) => return Err(error),
                     ParsedEvent::Malformed { .. } => {
                         return Err(ProviderError::StreamError(
                             "malformed OpenAI Chat SSE frame".to_owned(),
