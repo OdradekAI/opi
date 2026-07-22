@@ -31,6 +31,18 @@ pub trait Provider: Send + Sync {
     /// cancels via `Request::cancel`.
     fn stream(&self, request: Request) -> EventStream;
 
+    /// Replace this provider's effective model catalog before it is shared.
+    ///
+    /// Mapped providers use this construction-time hook to materialize
+    /// extension model additions and overrides into their concrete routes.
+    /// Providers that cannot safely replace their catalog reject the update.
+    fn replace_model_catalog(&mut self, _models: Vec<ModelInfo>) -> Result<(), ProviderError> {
+        Err(ProviderError::Config(format!(
+            "provider '{}' does not support effective model catalogs",
+            self.id()
+        )))
+    }
+
     /// Refresh this provider's model catalog at runtime.
     ///
     /// Static providers return `Ok(None)`. Dynamic providers return
@@ -240,7 +252,19 @@ pub fn validate_request_capabilities(
         .unwrap_or(request.model.as_str());
 
     let model = provider.models().iter().find(|m| m.id == model_id);
+    validate_request_for_model(provider.id(), model, request)
+}
 
+/// Validate a request against already-resolved model metadata.
+///
+/// Dispatchers that resolve through a registry must use this entry point so
+/// extension overrides and dynamic catalogs are checked instead of the
+/// provider's construction-time catalog.
+pub fn validate_request_for_model(
+    provider_id: &str,
+    model: Option<&ModelInfo>,
+    request: &Request,
+) -> Result<(), ProviderError> {
     // Image preflight: a known text-only model rejects image input before the call.
     if request.contains_image_content()
         && let Some(model) = model
@@ -248,8 +272,7 @@ pub fn validate_request_capabilities(
     {
         return Err(ProviderError::UnsupportedCapability(format!(
             "model '{}' for provider '{}' does not support image input",
-            model.id,
-            provider.id()
+            model.id, provider_id
         )));
     }
 

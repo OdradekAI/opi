@@ -9,11 +9,13 @@ pub struct NativeKeyringGuard {
 
 struct InstallState {
     store: Option<Arc<keyring_core::CredentialStore>>,
+    prior_store: Option<Arc<keyring_core::CredentialStore>>,
     leases: usize,
 }
 
 static INSTALL_STATE: Mutex<InstallState> = Mutex::new(InstallState {
     store: None,
+    prior_store: None,
     leases: 0,
 });
 
@@ -37,8 +39,20 @@ impl Drop for NativeKeyringGuard {
         debug_assert!(state.leases > 0, "native keyring lease underflow");
         state.leases -= 1;
         if state.leases == 0 {
-            keyring_core::unset_default_store();
+            let still_owned = state
+                .store
+                .as_ref()
+                .zip(keyring_core::get_default_store())
+                .is_some_and(|(installed, current)| installed.id() == current.id());
+            if still_owned {
+                if let Some(prior) = state.prior_store.take() {
+                    keyring_core::set_default_store(prior);
+                } else {
+                    keyring_core::unset_default_store();
+                }
+            }
             state.store = None;
+            state.prior_store = None;
         }
         self.leased = false;
     }
@@ -58,6 +72,7 @@ fn install_native_keyring_with(
         return Ok(NativeKeyringGuard { leased: true });
     }
     let store = platform_store_with(constructor)?;
+    state.prior_store = keyring_core::get_default_store();
     keyring_core::set_default_store(Arc::clone(&store));
     state.store = Some(store);
     state.leases = 1;
@@ -70,6 +85,7 @@ pub(crate) fn install_store(
 ) -> Result<NativeKeyringGuard, BackendError> {
     let mut state = lock_install_state();
     if state.leases == 0 {
+        state.prior_store = keyring_core::get_default_store();
         keyring_core::set_default_store(Arc::clone(&store));
         state.store = Some(store);
     }
@@ -334,6 +350,53 @@ mod tests {
             keyring_core::get_default_store().is_none(),
             "only the 1->0 lease transition may unset the default store"
         );
+    }
+
+    #[test]
+    fn last_lease_restores_preexisting_foreign_default_store() {
+        let _serial = super::KEYRING_TEST_LOCK.lock().expect("keyring test lock");
+        keyring_core::unset_default_store();
+        let foreign: Arc<keyring_core::CredentialStore> =
+            keyring_core::mock::Store::new().expect("foreign mock store");
+        let foreign_id = foreign.id();
+        keyring_core::set_default_store(foreign);
+        let opi: Arc<keyring_core::CredentialStore> =
+            keyring_core::mock::Store::new().expect("opi mock store");
+
+        let first = super::install_store(opi).expect("first lease");
+        let second =
+            super::install_store(keyring_core::mock::Store::new().expect("ignored nested store"))
+                .expect("second lease");
+        drop(first);
+        assert_ne!(keyring_core::get_default_store().unwrap().id(), foreign_id);
+        drop(second);
+
+        assert_eq!(keyring_core::get_default_store().unwrap().id(), foreign_id);
+        keyring_core::unset_default_store();
+    }
+
+    #[test]
+    fn last_lease_does_not_clobber_newer_external_replacement() {
+        let _serial = super::KEYRING_TEST_LOCK.lock().expect("keyring test lock");
+        keyring_core::unset_default_store();
+        let foreign: Arc<keyring_core::CredentialStore> =
+            keyring_core::mock::Store::new().expect("foreign mock store");
+        keyring_core::set_default_store(foreign);
+        let opi: Arc<keyring_core::CredentialStore> =
+            keyring_core::mock::Store::new().expect("opi mock store");
+        let guard = super::install_store(opi).expect("opi lease");
+        let replacement: Arc<keyring_core::CredentialStore> =
+            keyring_core::mock::Store::new().expect("replacement mock store");
+        let replacement_id = replacement.id();
+        keyring_core::set_default_store(replacement);
+
+        drop(guard);
+
+        assert_eq!(
+            keyring_core::get_default_store().unwrap().id(),
+            replacement_id
+        );
+        keyring_core::unset_default_store();
     }
 
     #[test]

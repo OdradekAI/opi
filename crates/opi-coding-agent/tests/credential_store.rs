@@ -201,6 +201,41 @@ impl OAuthProvider for FailingRefreshProvider {
     }
 }
 
+struct BlockingRefreshProvider {
+    started: Arc<tokio::sync::Notify>,
+    release: Arc<tokio::sync::Notify>,
+}
+
+impl OAuthProvider for BlockingRefreshProvider {
+    fn id(&self) -> &str {
+        "scripted-oauth"
+    }
+
+    fn login<'a>(
+        &'a self,
+        _presenter: &'a dyn LoginPresenter,
+    ) -> BoxAuthFuture<'a, Result<OAuthCredential, ProviderError>> {
+        Box::pin(async { Err(ProviderError::Config("unused login".to_owned())) })
+    }
+
+    fn refresh<'a>(
+        &'a self,
+        _cred: &'a OAuthCredential,
+    ) -> BoxAuthFuture<'a, Result<OAuthCredential, ProviderError>> {
+        Box::pin(async move {
+            self.started.notify_one();
+            self.release.notified().await;
+            Ok(OAuthCredential {
+                access: secret("refreshed-access"),
+                refresh: secret("refreshed-refresh"),
+                expires_at: Some(time::OffsetDateTime::now_utc() + time::Duration::seconds(3600)),
+                base_url: None,
+                account_id: None,
+            })
+        })
+    }
+}
+
 /// Native-adapter-shaped boundary: metadata reads are allowed, while any
 /// attempt to inspect the protected entry fails loudly.
 struct MarkerOnlyBackend {
@@ -234,6 +269,44 @@ struct StepFailureBackend {
     inner: FakeKeyringBackend,
     fail_set: Arc<Mutex<VecDeque<&'static str>>>,
     fail_delete: Arc<Mutex<VecDeque<&'static str>>>,
+}
+
+#[derive(Clone)]
+struct PauseAfterMarkerBackend {
+    inner: FakeKeyringBackend,
+    marker_written: Arc<tokio::sync::Notify>,
+    release: Arc<(Mutex<bool>, std::sync::Condvar)>,
+}
+
+impl PauseAfterMarkerBackend {
+    fn release(&self) {
+        let (released, wake) = &*self.release;
+        *released.lock().expect("release state") = true;
+        wake.notify_one();
+    }
+}
+
+impl KeyringBackend for PauseAfterMarkerBackend {
+    fn get(&self, service: &str, provider_id: &str) -> Result<Option<String>, BackendError> {
+        self.inner.get(service, provider_id)
+    }
+
+    fn set(&self, service: &str, provider_id: &str, value: &str) -> Result<(), BackendError> {
+        self.inner.set(service, provider_id, value)?;
+        if service == KEYCHAIN_PRESENCE_SERVICE {
+            self.marker_written.notify_one();
+            let (released, wake) = &*self.release;
+            let mut released = released.lock().expect("release state");
+            while !*released {
+                released = wake.wait(released).expect("release wait");
+            }
+        }
+        Ok(())
+    }
+
+    fn delete(&self, service: &str, provider_id: &str) -> Result<(), BackendError> {
+        self.inner.delete(service, provider_id)
+    }
 }
 
 struct UnusedOAuthProvider;
@@ -846,6 +919,55 @@ async fn protected_write_failure_leaves_marker_and_blocks_env_fallback() {
     assert_eq!(fallback_calls.load(Ordering::SeqCst), 0);
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn kind_change_is_fail_closed_between_marker_and_protected_writes() {
+    let dir = TempDir::new().unwrap();
+    let inner = FakeKeyringBackend::new();
+    let seed_store =
+        KeychainCredentialStore::new(Box::new(inner.clone()), dir.path().to_path_buf());
+    seed_store
+        .write("anthropic", &api_key_credential())
+        .await
+        .unwrap();
+
+    let backend = PauseAfterMarkerBackend {
+        inner: inner.clone(),
+        marker_written: Arc::new(tokio::sync::Notify::new()),
+        release: Arc::new((Mutex::new(false), std::sync::Condvar::new())),
+    };
+    let writer_store =
+        KeychainCredentialStore::new(Box::new(backend.clone()), dir.path().to_path_buf());
+    let observer_store = Arc::new(KeychainCredentialStore::new(
+        Box::new(inner),
+        dir.path().to_path_buf(),
+    ));
+    let marker_written = Arc::clone(&backend.marker_written);
+    let writer =
+        tokio::spawn(async move { writer_store.write("anthropic", &oauth_credential()).await });
+    marker_written.notified().await;
+
+    let resolver = CredentialResolver::new(
+        observer_store,
+        Arc::new(|_name: &str| Some(API_KEY.to_owned())),
+    );
+    let transitional = resolver
+        .read_oauth_base_url("anthropic")
+        .await
+        .expect_err("mixed marker/envelope state must fail closed");
+    assert!(
+        matches!(transitional, ProviderError::Config(ref reason)
+            if reason.contains("expected oauth_token, found api_key")),
+        "unexpected transitional error: {transitional:?}"
+    );
+
+    backend.release();
+    writer.await.unwrap().unwrap();
+    assert_eq!(
+        resolver.read_oauth_base_url("anthropic").await.unwrap(),
+        Some(COPILOT_BASE_URL.to_owned())
+    );
+}
+
 #[tokio::test]
 async fn protected_delete_failure_preserves_both_entries() {
     let inner = FakeKeyringBackend::new();
@@ -1004,6 +1126,68 @@ async fn mutation_lock_serializes_concurrent_writers() {
     } else {
         assert!(!persisted.contains(API_KEY));
     }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn oauth_refresh_serializes_against_public_write_on_the_same_lock_path() {
+    let dir = TempDir::new().unwrap();
+    let backend = FakeKeyringBackend::new();
+    let refresh_store = Arc::new(KeychainCredentialStore::with_lock_timeout(
+        Box::new(backend.clone()),
+        dir.path().to_path_buf(),
+        Duration::from_secs(2),
+    ));
+    let writer_store = KeychainCredentialStore::with_lock_timeout(
+        Box::new(backend),
+        dir.path().to_path_buf(),
+        Duration::from_secs(2),
+    );
+    refresh_store
+        .write(
+            "scripted-oauth",
+            &Credential::OAuthToken {
+                access: secret("expired-access"),
+                refresh: secret("expired-refresh"),
+                expires_at: Some(time::OffsetDateTime::now_utc() + time::Duration::seconds(60)),
+                base_url: None,
+                account_id: None,
+            },
+        )
+        .await
+        .unwrap();
+
+    let started = Arc::new(tokio::sync::Notify::new());
+    let release = Arc::new(tokio::sync::Notify::new());
+    let resolver = CredentialResolver::new(refresh_store, Arc::new(|_: &str| None));
+    let refresh_provider = BlockingRefreshProvider {
+        started: Arc::clone(&started),
+        release: Arc::clone(&release),
+    };
+    let refresh = tokio::spawn(async move {
+        resolver
+            .resolve_oauth("scripted-oauth", &refresh_provider)
+            .await
+    });
+    started.notified().await;
+
+    let mut writer = tokio::spawn(async move {
+        writer_store
+            .write(
+                "scripted-oauth",
+                &Credential::ApiKey(secret("replacement-api-key")),
+            )
+            .await
+    });
+    assert!(
+        tokio::time::timeout(Duration::from_millis(50), &mut writer)
+            .await
+            .is_err(),
+        "public write completed while refresh held the shared mutation lock"
+    );
+
+    release.notify_one();
+    refresh.await.unwrap().unwrap();
+    writer.await.unwrap().unwrap();
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

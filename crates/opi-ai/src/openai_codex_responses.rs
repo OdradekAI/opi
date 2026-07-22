@@ -7,7 +7,7 @@
 
 use std::sync::Arc;
 
-use futures_util::StreamExt;
+use futures_util::{StreamExt, stream};
 use secrecy::ExposeSecret;
 use tokio_util::sync::CancellationToken;
 
@@ -268,6 +268,9 @@ impl Provider for OpenAiCodexResponsesProvider {
     }
 
     fn stream(&self, request: Request) -> EventStream {
+        if let Err(error) = crate::provider::validate_request_capabilities(self, &request) {
+            return Box::pin(stream::once(async move { Err(error) }));
+        }
         let auth = self.auth.clone();
         let default_base_url = self.base_url.clone();
         // C9: strip ONLY the openai-codex: prefix; do not strip arbitrary prefixes.

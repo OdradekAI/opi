@@ -253,6 +253,64 @@ fn localized_docs_pin_exact_phase14_claims_and_acceptance_rows() {
 }
 
 #[test]
+fn localized_docs_cover_account_id_and_persistence_boundaries() {
+    for path in [
+        "README.md",
+        "README.zh.md",
+        "crates/opi-ai/README.md",
+        "crates/opi-ai/README.zh.md",
+        "crates/opi-agent/README.md",
+        "crates/opi-agent/README.zh.md",
+        "crates/opi-coding-agent/README.md",
+        "crates/opi-coding-agent/README.zh.md",
+        "docs/opi-spec.md",
+        "docs/opi-spec.zh.md",
+    ] {
+        let content = read_repo_file(path);
+        assert!(
+            content.contains("AccountIdMissing { provider_id }"),
+            "{path} must document the complete typed auth taxonomy"
+        );
+        assert!(
+            content.contains("/login <provider>"),
+            "{path} must document canonical account-id remediation"
+        );
+    }
+
+    let credential = read_repo_file("crates/opi-ai/src/credential.rs");
+    assert_claims(
+        "credential rustdoc",
+        &credential,
+        &[
+            "Raw values are exposed only at the concrete provider HTTP boundary",
+            "protected keychain-serialization boundary owned by",
+            "intermediate buffers are zeroized there",
+        ],
+    );
+    let store = read_repo_file("crates/opi-coding-agent/src/credential_store.rs");
+    assert_claims(
+        "credential-store rustdoc",
+        &store,
+        &[
+            "These are two keychain entries, not an atomic",
+            "the marker-only state remains fail-closed",
+            "The JSON string and intermediate envelope",
+            "fields are zeroized after the backend call.",
+        ],
+    );
+    let design =
+        read_repo_file("docs/superpowers/specs/2026-07-11-phase14-provider-auth-design.md");
+    assert_claims(
+        "registered Phase 14 design",
+        &design,
+        &[
+            "this is a fail-closed, retry-recoverable protocol, not an atomic transaction",
+            "The only bridges to legacy strings are concrete provider HTTP construction and protected keychain serialization.",
+        ],
+    );
+}
+
+#[test]
 fn localized_specs_pin_final_phase14_runtime_semantics() {
     let spec = read_repo_file("docs/opi-spec.md");
     let spec_zh = read_repo_file("docs/opi-spec.zh.md");
@@ -367,6 +425,7 @@ fn final_phase14_contracts_native_targets_and_api_map_are_truthful() {
                     fn models(&self) -> &[ModelInfo];
                     fn stream(&self, request: Request) -> EventStream;
                     fn refresh_models(&self) -> BoxAuthFuture<'_, Result<Option<Vec<ModelInfo>>, ProviderError>>;
+                    fn replace_model_catalog(&mut self, models: Vec<ModelInfo>) -> Result<(), ProviderError>;
                 }"#,
                 r#"pub struct Request {
                     pub model: String,
@@ -589,9 +648,11 @@ fn every_phase14_non_goal_has_documented_and_structural_evidence() {
             production_oauth_client(),
         )"#],
     );
-    assert!(oauth.contains("#[cfg(debug_assertions)]\n    pub(crate) fn with_test_base_url("));
+    assert!(oauth.contains("pub(crate) fn with_test_base_url("));
+    assert!(!oauth.contains("#[cfg(debug_assertions)]\n    pub(crate) fn with_test_base_url("));
+    assert!(interactive_auth.contains("#[doc(hidden)]\n    pub fn with_test_services("));
     assert!(
-        interactive_auth.contains(
+        !interactive_auth.contains(
             "#[cfg(debug_assertions)]\n    #[doc(hidden)]\n    pub fn with_test_services("
         )
     );

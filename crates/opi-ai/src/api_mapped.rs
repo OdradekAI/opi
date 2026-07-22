@@ -193,7 +193,55 @@ impl Provider for ApiMappedProvider {
                 })
             }));
         };
+        if let Err(error) =
+            crate::provider::validate_request_for_model(&self.id, Some(model), &request)
+        {
+            return Box::pin(stream::once(async move { Err(error) }));
+        }
         self.routes[&model.wire_api].stream(request)
+    }
+
+    fn replace_model_catalog(&mut self, models: Vec<ModelInfo>) -> Result<(), ProviderError> {
+        if models.is_empty() {
+            return Err(ProviderError::Config(format!(
+                "mapped provider '{}' requires at least one model",
+                self.id
+            )));
+        }
+        let mut ids = BTreeSet::new();
+        for model in &models {
+            if model.id.trim().is_empty() || !ids.insert(model.id.as_str()) {
+                return Err(ProviderError::Config(format!(
+                    "mapped provider '{}' has an invalid or duplicate model id",
+                    self.id
+                )));
+            }
+            model
+                .validate()
+                .map_err(|error| ProviderError::Config(error.to_string()))?;
+            if !self.routes.contains_key(&model.wire_api) {
+                return Err(ProviderError::Config(format!(
+                    "mapped provider '{}' has no route for {}",
+                    self.id, model.wire_api
+                )));
+            }
+        }
+        for (wire, route) in &mut self.routes {
+            let subset = models
+                .iter()
+                .filter(|model| model.wire_api == *wire)
+                .cloned()
+                .collect::<Vec<_>>();
+            if subset.is_empty() {
+                return Err(ProviderError::Config(format!(
+                    "mapped provider '{}' would leave route {wire} empty",
+                    self.id
+                )));
+            }
+            route.replace_model_catalog(subset)?;
+        }
+        self.models = models;
+        Ok(())
     }
 
     fn refresh_models(&self) -> BoxAuthFuture<'_, Result<Option<Vec<ModelInfo>>, ProviderError>> {

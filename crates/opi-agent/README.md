@@ -46,9 +46,11 @@ It depends on `opi-ai` for provider and message types. It does not implement the
 
 `opi-agent` does not perform credential IO or construct OAuth providers. It
 does preserve typed auth outcomes across the live loop: non-retryable
-`ProviderError::CredentialNeeded` and `ProviderError::CredentialRevoked` map
-to matching `AgentError` variants and redacted diagnostics without string
-matching. The outer interactive product may retry one pre-output pending turn exactly
+`ProviderError::CredentialNeeded`, `ProviderError::CredentialRevoked`, and
+`ProviderError::AccountIdMissing { provider_id }` map to matching `AgentError`
+variants and redacted diagnostics without string matching. Account-id absence
+is non-retryable and distinct from revocation; product layers use the canonical
+`/login <provider>` remediation. The outer interactive product may retry one pre-output pending turn exactly
 once after a successful explicit login for the same provider; non-interactive
 products never prompt, and revoked credentials never trigger automatic
 re-login. `opi-agent` only preserves the typed outcomes and existing message

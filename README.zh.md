@@ -200,6 +200,10 @@ Device Code 调用 `present_device_code`，绝不调用 `await_manual_code`。
 非交互文本、JSON 与 RPC 模式会输出规范 provider 修复提示并失败，绝不构造 `LoginPresenter`、打开浏览器或等待输入。
 `CredentialRevoked` 不可重试；
 opi 不会在流中自动重新登录。
+`AccountIdMissing { provider_id }` 是另一种不可重试的鉴权失败：凭据存在，但缺少所选
+wire 要求的 account identity。若它在输出开始前发生，outer TUI 会保留该轮次，执行
+`/login <provider>` 后可修复并重试；文本模式以鉴权失败退出码结束，JSON 与 RPC 则发出
+带 `AccountIdMissing` 诊断的 `CredentialNeeded` 修复事件。
 
 `Request` 现在携带 `timeout`、`extra_headers`、`CacheRetention` 和 `session_id`。
 本阶段只有 `session_id` 具有生产 harness 生成方；provider 按审查过的 prompt-cache /

@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Breaking Changes
 
 - Raised the workspace Minimum Supported Rust Version (MSRV) from 1.85 to 1.97 (`rust-version` in `[workspace.package]`, inherited by all crates). Builds now require Rust 1.97 or newer; the workspace remains on edition 2024.
-- `opi-ai` 0.x API: `Request` adds `timeout`, `extra_headers`, `cache_retention`, and `session_id`; `Provider` adds the object-safe `refresh_models` method; `ModelInfo` replaces flattened capability fields with one nested `ModelCapabilities` and adds exact `WireApi`, thinking-map, wire-compatibility, and pricing metadata; `Usage.cache_write_1h_tokens` and `Usage.reasoning_tokens` are corrected from `u32` to `Option<u64>` so absent and explicit zero remain distinct; and `CostBreakdown` removes the separate `cache_write_1h_cost` field. Downstream struct literals and custom provider implementations must be updated.
+- `opi-ai` 0.x API: `Request` adds `timeout`, `extra_headers`, `cache_retention`, and `session_id`; `Provider` adds the object-safe `refresh_models` and `replace_model_catalog` methods; `ModelInfo` replaces flattened capability fields with one nested `ModelCapabilities` and adds exact `WireApi`, thinking-map, wire-compatibility, and pricing metadata; `Usage.cache_write_1h_tokens` and `Usage.reasoning_tokens` are corrected from `u32` to `Option<u64>` so absent and explicit zero remain distinct; and `CostBreakdown` removes the separate `cache_write_1h_cost` field. Downstream struct literals and custom provider implementations must be updated.
 - The development OAuth provider ids `copilot` and `codex` are replaced by canonical `github-copilot` and `openai-codex`. There is intentionally no config alias or keychain credential migration; affected users must log in again with the canonical id.
 - `opi-agent` 0.x API: `AgentError` gains an `AccountIdMissing { provider_id }` variant for provider credentials that are present but lack a required account id (e.g. an OpenAI Codex token without `chatgpt_account_id`). The enum is exhaustive, so downstream exhaustive matches on `AgentError` must add the arm. JSON, RPC, and text modes surface it as a typed `/login <provider>` remediation with an AuthFailure exit code, distinct from `CredentialRevoked`.
 
@@ -27,6 +27,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Concrete Anthropic, all three GitHub Copilot routes, and dedicated OpenAI Codex Responses re-resolve authentication inside every returned stream. TUI `/help` discovers `/login` and `/logout` through the production dispatcher; after a pre-output `CredentialNeeded`, only a successful explicit login for the same provider retries the same pending turn, exactly once and without a duplicate user message. Missing or revoked credentials never auto-login.
 - `CostBreakdown` remains separate and `Copy` with four public lines (`input_cost`, `output_cost`, `cache_read_cost`, and `cache_write_cost`): the weighted one-hour cache-write subset is folded into `cache_write_cost`, reasoning stays inside `output_cost`, and neither subset is counted twice.
+
+### Fixed
+
+- `opi-ai`: enforce selected-model capability preflight on every public dispatch path, collect complete atomic refresh batches, apply Anthropic compatibility metadata, preserve initial Chat tool arguments, materialize mapped-provider catalog overrides, and calculate cumulative cost from exact `u64` totals.
+- `opi-coding-agent`: reject ambiguous provider identities, preserve foreign process-default keyring ownership, strictly decode credential envelopes, serialize OAuth refresh against public writes, and exercise the production TUI event dispatcher in debug and release test profiles.
 
 ## [0.7.0] - 2026-07-09
 

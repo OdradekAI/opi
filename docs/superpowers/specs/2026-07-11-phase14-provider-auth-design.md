@@ -271,8 +271,10 @@ it.
 
 **In-memory and redaction.** `secrecy::SecretString` wraps every `Credential`
 field; `expose_secret()` is called only at the narrow concrete-provider HTTP
-boundary and the value is zeroized on drop. Secrets are never formatted into
-loggable strings; `doctor` and `--list-models` show only `display_source`. Raw
+boundary and the protected keychain-serialization boundary. Serialized JSON
+and intermediate envelope fields are zeroized after the backend call, and
+secret values are zeroized on drop. Secrets are never formatted into loggable
+strings; `doctor` and `--list-models` show only `display_source`. Raw
 credential values are not registered as `SecretRedactor` patterns (avoids
 expanding the secret's in-memory footprint; Phase 7 redaction handles
 transport-level redaction). This scope covers the store/resolver boundary only;
@@ -282,9 +284,17 @@ deferred follow-up, not Phase 14.
 The existing `provider_collection::SecretKey` remains the redacted wrapper for
 legacy `AuthDescriptor::StaticApiKey`; Phase 14 does not replace it.
 `Credential` uses `SecretString`; T2's `OAuthCredential` and `ResolvedAuth` do
-the same. The only bridge to legacy strings is at a concrete provider's HTTP
-boundary. This explicit coexistence is the scope cap, not an intermediate
-end-to-end secret refactor.
+the same. The only bridges to legacy strings are concrete provider HTTP
+construction and protected keychain serialization. This explicit coexistence
+is the scope cap, not an intermediate end-to-end secret refactor.
+
+**Two-entry persistence.** The non-secret credential-kind marker and protected
+credential envelope are separate keychain entries. Writes update the marker
+first and the envelope second; this is a fail-closed, retry-recoverable
+protocol, not an atomic transaction. A reader during a kind-change transition
+receives a typed wrong-kind/corrupt-store error without env fallback. A
+second-step failure may leave a marker-only state with the same fail-closed
+behavior, and a later successful write repairs it by rewriting both entries.
 
 Redaction evidence is mechanical: under an injected temporary user-config
 root, only the secret-free `opi/credential.lock` may appear outside the fake

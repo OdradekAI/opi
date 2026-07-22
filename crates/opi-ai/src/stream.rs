@@ -268,13 +268,44 @@ impl CostBreakdown {
 /// price. `reasoning_tokens` is a subset of `output_tokens` and is already
 /// accounted for in `output_cost` — no separate line is produced.
 pub fn calculate_cost(usage: &Usage, pricing: &Pricing) -> CostBreakdown {
+    calculate_cost_totals(
+        u64::from(usage.input_tokens),
+        u64::from(usage.output_tokens),
+        u64::from(usage.cache_read_tokens),
+        u64::from(usage.cache_write_tokens),
+        usage.cache_write_1h_tokens,
+        pricing,
+    )
+}
+
+/// Calculate cost from exact cumulative totals without projecting parent
+/// buckets through the public `u32` [`Usage`] representation.
+pub fn calculate_cumulative_cost(usage: &CumulativeUsage, pricing: &Pricing) -> CostBreakdown {
+    calculate_cost_totals(
+        usage.input_tokens,
+        usage.output_tokens,
+        usage.cache_read_tokens,
+        usage.cache_write_tokens,
+        usage.cache_write_1h_tokens,
+        pricing,
+    )
+}
+
+fn calculate_cost_totals(
+    input_tokens: u64,
+    output_tokens: u64,
+    cache_read_tokens: u64,
+    cache_write_tokens: u64,
+    cache_write_1h_tokens: Option<u64>,
+    pricing: &Pricing,
+) -> CostBreakdown {
     let per_tok = |cost_per_mtok: f64| cost_per_mtok / 1_000_000.0;
-    let cache_write_1h = usage.cache_write_1h_tokens.unwrap_or(0);
-    let short_cache_write = u64::from(usage.cache_write_tokens).saturating_sub(cache_write_1h);
+    let cache_write_1h = cache_write_1h_tokens.unwrap_or(0).min(cache_write_tokens);
+    let short_cache_write = cache_write_tokens.saturating_sub(cache_write_1h);
     CostBreakdown {
-        input_cost: usage.input_tokens as f64 * per_tok(pricing.input_cost_per_mtok),
-        output_cost: usage.output_tokens as f64 * per_tok(pricing.output_cost_per_mtok),
-        cache_read_cost: usage.cache_read_tokens as f64 * per_tok(pricing.cache_read_cost_per_mtok),
+        input_cost: input_tokens as f64 * per_tok(pricing.input_cost_per_mtok),
+        output_cost: output_tokens as f64 * per_tok(pricing.output_cost_per_mtok),
+        cache_read_cost: cache_read_tokens as f64 * per_tok(pricing.cache_read_cost_per_mtok),
         cache_write_cost: short_cache_write as f64 * per_tok(pricing.cache_write_cost_per_mtok)
             + cache_write_1h as f64 * per_tok(pricing.input_cost_per_mtok) * 2.0,
     }

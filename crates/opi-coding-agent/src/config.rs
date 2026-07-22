@@ -918,6 +918,54 @@ fn validate_custom_providers(
         .collect()
 }
 
+/// Validate the final merged provider-id namespace used by both listing and
+/// runtime model-spec dispatch.
+pub fn validate_provider_namespace(config: &OpiConfig) -> Result<(), ConfigError> {
+    const DEPRECATED_PROVIDER_IDS: &[&str] = &["copilot", "codex"];
+
+    let mut configured = BTreeMap::<String, &'static str>::new();
+    let validate = |id: &str,
+                    source: &'static str,
+                    configured: &mut BTreeMap<String, &'static str>|
+     -> Result<(), ConfigError> {
+        if id.trim().is_empty() {
+            return Err(ConfigError::InvalidProviderNamespace {
+                provider: id.to_owned(),
+                message: "provider id must not be empty".into(),
+            });
+        }
+        if id.contains(':') {
+            return Err(ConfigError::InvalidProviderNamespace {
+                provider: id.to_owned(),
+                message: "provider id must not contain ':'".into(),
+            });
+        }
+        if crate::provider_factory::built_in_provider_ids().contains(&id)
+            || DEPRECATED_PROVIDER_IDS.contains(&id)
+        {
+            return Err(ConfigError::InvalidProviderNamespace {
+                provider: id.to_owned(),
+                message: "provider id is reserved".into(),
+            });
+        }
+        if let Some(previous) = configured.insert(id.to_owned(), source) {
+            return Err(ConfigError::InvalidProviderNamespace {
+                provider: id.to_owned(),
+                message: format!("provider id is configured in both {previous} and {source}"),
+            });
+        }
+        Ok(())
+    };
+
+    for id in config.providers.openai_compatible.keys() {
+        validate(id, "providers.openai_compatible", &mut configured)?;
+    }
+    for id in config.providers.custom.keys() {
+        validate(id, "providers.custom", &mut configured)?;
+    }
+    Ok(())
+}
+
 fn validate_custom_provider(
     id: &str,
     raw: TomlCustomProvider,
@@ -1375,6 +1423,8 @@ pub enum ConfigError {
         field: &'static str,
         message: String,
     },
+    #[error("invalid provider id '{provider}': {message}")]
+    InvalidProviderNamespace { provider: String, message: String },
 }
 
 // ---------------------------------------------------------------------------
@@ -1403,6 +1453,7 @@ fn parse_toml(contents: &str, path: &Path) -> Result<OpiConfig, ConfigError> {
     let mut custom = BTreeMap::new();
     raw.merge_into(&mut config, &mut custom);
     config.providers.custom = validate_custom_providers(custom)?;
+    validate_provider_namespace(&config)?;
     Ok(config)
 }
 
@@ -1464,6 +1515,7 @@ pub fn resolve_config(source: ConfigSource) -> Result<OpiConfig, ConfigError> {
     }
 
     config.providers.custom = validate_custom_providers(custom)?;
+    validate_provider_namespace(&config)?;
     Ok(config)
 }
 

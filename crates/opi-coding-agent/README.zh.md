@@ -193,6 +193,10 @@ Device Code 调用 `present_device_code`，轮询 provider endpoint，绝不调�
 才会对同一待处理轮次精确重试一次，且不追加重复 user message。
 非交互、JSON 与 RPC 模式既不提示也不构造 presenter：它们报告规范 provider 与 `/login <provider>` 修复提示后失败。
 `CredentialRevoked` 不可重试，绝不会造成自动重新登录。
+`AccountIdMissing { provider_id }` 同样不可重试，但与撤销不同：已存储凭据缺少所选 wire
+要求的 account identity。若在输出开始前发生，交互模式会保留待处理轮次，等待显式
+`/login <provider>` 修复；文本模式以 `AuthFailure` 退出，JSON/RPC 发出带
+`AccountIdMissing` 诊断的 `CredentialNeeded` 事件。
 
 第十四阶段还把活跃 `session_id` 从 `CodingHarness` 经 Agent 主循环带入审查过的 Provider
 cache-affinity 映射。其它新 `Request` 标量（`timeout`、`extra_headers`、

@@ -502,6 +502,7 @@ pub trait Provider: Send + Sync {
     fn models(&self) -> &[ModelInfo];
     fn stream(&self, request: Request) -> EventStream;
     fn refresh_models(&self) -> BoxAuthFuture<'_, Result<Option<Vec<ModelInfo>>, ProviderError>>;
+    fn replace_model_catalog(&mut self, models: Vec<ModelInfo>) -> Result<(), ProviderError>;
 }
 
 pub type EventStream =
@@ -1464,6 +1465,12 @@ headless 选项。`/login` 与 `/logout` 贯穿生产 dispatcher、具体 provid
 不同 provider 登录、取消、presenter/OAuth/store/terminal 失败以及流中
 `CredentialRevoked` 都不重试。JSON、RPC 与文本模式报告规范 `provider_id` 与
 `/login <provider>` 修复提示后失败，不构造 presenter、不打开浏览器，也不等待输入。
+
+`AccountIdMissing { provider_id }` 是独立且不可重试的鉴权结果：凭据存在，但缺少所选
+wire 要求的 account identity。若在输出开始前发生，交互模式会保留待处理轮次，并允许
+采用同样的显式登录重试策略。文本模式以 `AuthFailure` 退出；JSON 与 RPC 发出
+`CredentialNeeded` 修复事件，并携带已脱敏的 `AccountIdMissing` 诊断。它绝不会被归类为
+`CredentialRevoked`。
 
 第十四阶段还增加 `opi_ai::Request` 扩充（`timeout`、`extra_headers`、
 `cache_retention`、`session_id`）、严格的 `Usage`/`CostBreakdown` cache/reasoning

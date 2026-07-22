@@ -94,6 +94,10 @@ GitHub Copilot 把一个静态 catalog 路由到 Anthropic Messages、OpenAI Com
 `ProviderError::CredentialNeeded` 和 `ProviderError::CredentialRevoked`。
 按调用凭据仍不在范围内：`extra_headers` 会拒绝 Provider 管理的鉴权 header。
 
+`ProviderError::AccountIdMissing { provider_id }` 是独立且不可重试的情形：凭据存在，
+但缺少所选 wire 要求的 account identity。产品层通过显式 `/login <provider>` 修复；
+它不表示凭据已撤销。
+
 具备能力的 Anthropic 内置模型会在 system prompt、最后一段 user text、最后一段
 assistant text 和最后一个 tool definition 上发出 `cache_control`。Long retention
 会增加 `ttl: "1h"`；short/default ephemeral retention 不带 TTL，显式禁用以及

@@ -801,7 +801,6 @@ impl OAuthEndpointConfig {
         }
     }
 
-    #[cfg(debug_assertions)]
     pub(crate) fn with_test_base_url(
         base_url: String,
         login_timeout: Duration,

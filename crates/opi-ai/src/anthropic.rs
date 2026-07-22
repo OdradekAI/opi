@@ -10,7 +10,7 @@ use tokio_util::sync::CancellationToken;
 use crate::auth::{AuthInvalidPolicy, AuthResolver, AuthScheme, ResolvedAuth, StaticAuthResolver};
 use crate::http::HttpClient;
 use crate::message::{AssistantContent, AssistantMessage, ToolCall};
-use crate::model_info::WireApi;
+use crate::model_info::{AnthropicMessagesCompat, WireApi, WireCompat};
 use crate::provider::{
     CacheRetention, EventStream, ModelInfo, Provider, ProviderError, Request,
     github_copilot_initiator, github_copilot_route_headers,
@@ -696,6 +696,17 @@ pub fn model_catalog() -> Vec<ModelInfo> {
                 .with_long_cache_retention(true),
         ),
     ]
+    .into_iter()
+    .map(|model| {
+        model
+            .with_compat(WireCompat::AnthropicMessages(AnthropicMessagesCompat {
+                supports_eager_tool_input_streaming: false,
+                force_adaptive_thinking: false,
+                supports_temperature: true,
+            }))
+            .expect("built-in Anthropic compatibility uses the matching wire")
+    })
+    .collect()
 }
 
 /// Concrete Anthropic Messages API provider.
@@ -818,6 +829,17 @@ impl AnthropicProvider {
         // Resolve cache-control policy for this model+request combination.
         let cache_enabled = request.cache_retention != CacheRetention::Disabled;
         let model_caps = self.models.iter().find(|m| m.id == model_id);
+        let compat = model_caps
+            .and_then(|model| match &model.compat {
+                WireCompat::AnthropicMessages(compat) => Some(compat),
+                _ => None,
+            })
+            .cloned()
+            .unwrap_or(AnthropicMessagesCompat {
+                supports_eager_tool_input_streaming: false,
+                force_adaptive_thinking: false,
+                supports_temperature: true,
+            });
         let supports_cache = model_caps
             .map(|m| m.capabilities.supports_cache_control)
             .unwrap_or(false);
@@ -858,7 +880,9 @@ impl AnthropicProvider {
         } else {
             body["max_tokens"] = serde_json::Value::Number(8192.into());
         }
-        if let Some(temp) = request.temperature {
+        if compat.supports_temperature
+            && let Some(temp) = request.temperature
+        {
             body["temperature"] = serde_json::Number::from_f64(temp)
                 .map(serde_json::Value::Number)
                 .unwrap_or(serde_json::Value::Null);
@@ -890,10 +914,14 @@ impl AnthropicProvider {
             );
         }
         if request.thinking.enabled {
-            body["thinking"] = serde_json::json!({
-                "type": "enabled",
-                "budget_tokens": request.thinking.budget_tokens.unwrap_or(10000),
-            });
+            body["thinking"] = if compat.force_adaptive_thinking {
+                serde_json::json!({"type": "adaptive"})
+            } else {
+                serde_json::json!({
+                    "type": "enabled",
+                    "budget_tokens": request.thinking.budget_tokens.unwrap_or(10000),
+                })
+            };
         }
         body
     }
@@ -1259,6 +1287,9 @@ fn mark_last_role_text(
 
 impl Provider for AnthropicProvider {
     fn stream(&self, request: Request) -> EventStream {
+        if let Err(error) = crate::provider::validate_request_capabilities(self, &request) {
+            return Box::pin(stream::once(async move { Err(error) }));
+        }
         let auth = self.auth.clone();
         let default_base_url = self.default_base_url.clone();
         let provider_id = self.provider_id.clone();
@@ -1358,6 +1389,11 @@ impl Provider for AnthropicProvider {
 
     fn models(&self) -> &[ModelInfo] {
         &self.models
+    }
+
+    fn replace_model_catalog(&mut self, models: Vec<ModelInfo>) -> Result<(), ProviderError> {
+        self.models = models;
+        Ok(())
     }
 }
 

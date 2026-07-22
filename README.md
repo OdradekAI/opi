@@ -210,6 +210,11 @@ duplicate user message. Non-interactive text, JSON, and RPC modes emit
 canonical provider remediation and fail without constructing a
 `LoginPresenter`, opening a browser, or waiting for input.
 `CredentialRevoked` is non-retryable; opi does not auto-relogin mid-stream.
+`AccountIdMissing { provider_id }` is a distinct non-retryable auth failure:
+the credential exists but lacks the account identity required by the selected
+wire. Before output, the outer TUI retains the turn and `/login <provider>` can
+repair and retry it; text mode exits with the auth-failure code, while JSON and
+RPC emit `CredentialNeeded` remediation with an `AccountIdMissing` diagnostic.
 
 `Request` now carries `timeout`, `extra_headers`, `CacheRetention`, and
 `session_id`. Only `session_id` has a production harness producer in this

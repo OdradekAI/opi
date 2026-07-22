@@ -567,6 +567,7 @@ pub trait Provider: Send + Sync {
     fn models(&self) -> &[ModelInfo];
     fn stream(&self, request: Request) -> EventStream;
     fn refresh_models(&self) -> BoxAuthFuture<'_, Result<Option<Vec<ModelInfo>>, ProviderError>>;
+    fn replace_model_catalog(&mut self, models: Vec<ModelInfo>) -> Result<(), ProviderError>;
 }
 
 pub type EventStream =
@@ -1769,6 +1770,14 @@ failure, and mid-stream `CredentialRevoked` perform no retry. JSON, RPC, and
 text modes report the canonical `provider_id` plus `/login <provider>`
 remediation and fail without constructing a presenter, opening a browser, or
 waiting for input.
+
+`AccountIdMissing { provider_id }` is a distinct non-retryable auth outcome:
+the credential exists, but lacks account identity required by the selected
+wire. Pre-output interactive handling retains the pending turn and permits the
+same explicit-login retry policy. Text mode exits with `AuthFailure`; JSON and
+RPC emit `CredentialNeeded` remediation carrying the redacted
+`AccountIdMissing` diagnostic. It is never classified as
+`CredentialRevoked`.
 
 Phase 14 also adds `opi_ai::Request` enrichment (`timeout`,
 `extra_headers`, `cache_retention`, `session_id`), strict

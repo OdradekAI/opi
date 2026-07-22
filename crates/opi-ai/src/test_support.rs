@@ -233,4 +233,9 @@ impl Provider for MockProvider {
             }
         }
     }
+
+    fn replace_model_catalog(&mut self, models: Vec<ModelInfo>) -> Result<(), ProviderError> {
+        self.models = models;
+        Ok(())
+    }
 }

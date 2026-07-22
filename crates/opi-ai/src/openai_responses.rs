@@ -493,6 +493,9 @@ impl Provider for OpenAiResponsesProvider {
     }
 
     fn stream(&self, request: Request) -> EventStream {
+        if let Err(error) = crate::provider::validate_request_capabilities(self, &request) {
+            return Box::pin(stream::once(async move { Err(error) }));
+        }
         let auth = self.auth.clone();
         let default_base_url = self.base_url.clone();
         let provider_id = self.provider_id.clone();
@@ -606,6 +609,11 @@ impl Provider for OpenAiResponsesProvider {
             }
         });
         Box::pin(ReceiverStream { rx })
+    }
+
+    fn replace_model_catalog(&mut self, models: Vec<ModelInfo>) -> Result<(), ProviderError> {
+        self.models = models;
+        Ok(())
     }
 }
 

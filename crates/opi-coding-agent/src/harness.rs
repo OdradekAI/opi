@@ -726,7 +726,7 @@ impl CodingHarness {
 
     #[allow(clippy::too_many_arguments)]
     fn new_with_build_options(
-        provider: Box<dyn Provider>,
+        mut provider: Box<dyn Provider>,
         model: String,
         config: OpiConfig,
         workspace_root: PathBuf,
@@ -753,7 +753,7 @@ impl CodingHarness {
             .unwrap_or_default();
         let (model_registry, model_registry_diagnostics) =
             crate::provider_factory::assemble_harness_collection(
-                provider.as_ref(),
+                provider.as_mut(),
                 extension_registry.as_ref(),
             );
         if let Some(registry) = extension_registry.as_ref() {

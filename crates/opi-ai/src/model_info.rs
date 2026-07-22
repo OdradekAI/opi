@@ -548,6 +548,25 @@ impl ModelInfo {
                 field: "max_output_tokens",
             });
         }
+        if !self.capabilities.supports_thinking
+            && ThinkingLevel::ALL
+                .into_iter()
+                .filter(|level| *level != ThinkingLevel::None)
+                .any(|level| self.thinking_level_map.resolve(level).is_ok())
+        {
+            return Err(ModelInfoError::IncoherentCapabilities {
+                model_id: self.id.clone(),
+                detail: "thinking levels are enabled while supports_thinking is false",
+            });
+        }
+        if self.capabilities.supports_long_cache_retention
+            && !self.capabilities.supports_cache_control
+        {
+            return Err(ModelInfoError::IncoherentCapabilities {
+                model_id: self.id.clone(),
+                detail: "long cache retention requires cache-control support",
+            });
+        }
         let compat_wire = self.compat.wire_api();
         if compat_wire != self.wire_api {
             return Err(ModelInfoError::WireCompatMismatch {
@@ -570,6 +589,11 @@ pub enum ModelInfoError {
     InvalidCapabilities {
         model_id: String,
         field: &'static str,
+    },
+    #[error("model '{model_id}' has incoherent capabilities: {detail}")]
+    IncoherentCapabilities {
+        model_id: String,
+        detail: &'static str,
     },
     #[error("model '{model_id}' wire {wire_api} does not match compatibility wire {compat_wire}")]
     WireCompatMismatch {

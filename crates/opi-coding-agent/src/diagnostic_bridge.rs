@@ -254,5 +254,13 @@ pub fn diagnostic_from_config(err: &ConfigError) -> Diagnostic {
             "field": field,
         }))
         .action("fix the custom provider contract before starting opi"),
+        ConfigError::InvalidProviderNamespace { provider, .. } => Diagnostic::new(
+            Severity::Error,
+            CODE_CONFIG_PARSE_FAILED,
+            SOURCE_CONFIG,
+            "invalid provider namespace",
+        )
+        .details(serde_json::json!({ "provider": provider }))
+        .action("rename the configured provider before starting opi"),
     }
 }

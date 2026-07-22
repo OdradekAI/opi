@@ -1239,8 +1239,8 @@ api_key_env = "{env_var}"
 async fn metadata_only_provider_dispatch_returns_explicit_error() {
     use opi_coding_agent::provider_factory::assemble_harness_collection;
 
-    let provider = MockProvider::new("metadata-provider", vec![]);
-    let (collection, diagnostics) = assemble_harness_collection(&provider, None);
+    let mut provider = MockProvider::new("metadata-provider", vec![]);
+    let (collection, diagnostics) = assemble_harness_collection(&mut provider, None);
     assert!(diagnostics.is_empty());
 
     let error = collection
@@ -2066,8 +2066,8 @@ max_output_tokens = 4096
 fn assemble_harness_collection_uses_from_registry_seam() {
     use opi_coding_agent::provider_factory::assemble_harness_collection;
 
-    let provider = MockProvider::new("mock-active", vec![]);
-    let (collection, diagnostics) = assemble_harness_collection(&provider, None);
+    let mut provider = MockProvider::new("mock-active", vec![]);
+    let (collection, diagnostics) = assemble_harness_collection(&mut provider, None);
     assert!(diagnostics.is_empty());
 
     // from_registry path: the active provider contributes metadata but NO

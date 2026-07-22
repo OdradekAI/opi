@@ -39,9 +39,11 @@ provider 上下文，但分支摘要会通过 `session_context::reconstruct_cont
 ## 第十四阶段鉴权与会话亲和边界
 
 `opi-agent` 不执行凭据 IO，也不构造 OAuth provider。它会在真实主循环中保留类型化鉴权
-结果：不可重试的 `ProviderError::CredentialNeeded` 与
-`ProviderError::CredentialRevoked` 无需字符串匹配即可映射为对应 `AgentError` 变体和
-已脱敏诊断。outer 交互产品只能在同一 provider 的显式登录成功后，对一个输出前的待处理轮次精确重试一次；非交互产品绝不提示，撤销凭据也绝不会触发自动重新登录。
+结果：不可重试的 `ProviderError::CredentialNeeded`、
+`ProviderError::CredentialRevoked` 与 `ProviderError::AccountIdMissing { provider_id }`
+无需字符串匹配即可映射为对应 `AgentError` 变体和已脱敏诊断。缺少 account id 与凭据撤销
+是不同情况，产品层使用规范 `/login <provider>` 修复。outer 交互产品只能在同一 provider
+的显式登录成功后，对一个输出前的待处理轮次精确重试一次；非交互产品绝不提示，撤销凭据也绝不会触发自动重新登录。
 `opi-agent` 只保留类型化
 结果与现有 message buffer；coding-agent outer TUI 拥有登录和重试策略。
 

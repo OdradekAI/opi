@@ -103,6 +103,11 @@ HTTP. Missing and revoked credentials surface as explicit, non-retryable
 variants. Per-call credentials remain out of scope: `extra_headers` rejects
 provider-managed auth headers.
 
+`ProviderError::AccountIdMissing { provider_id }` is the separate,
+non-retryable case where a credential exists but the selected wire requires
+account identity absent from it. Product layers remediate it with an explicit
+`/login <provider>`; it is not credential revocation.
+
 Capable built-in Anthropic models emit `cache_control` on the system prompt,
 final user text, final assistant text, and final tool definition. Long
 retention adds `ttl: "1h"`; short/default ephemeral retention omits the TTL,

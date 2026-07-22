@@ -38,8 +38,10 @@ use time::OffsetDateTime;
 
 /// A persisted credential. Both API keys and OAuth tokens live in the OS
 /// keychain envelope. Every secret field uses [`SecretString`], which zeroizes
-/// on drop; the only place the raw value is exposed is the concrete provider's
-/// HTTP boundary (see [`secrecy::ExposeSecret`]).
+/// on drop. Raw values are exposed only at the concrete provider HTTP boundary
+/// and at the protected keychain-serialization boundary owned by
+/// `opi-coding-agent` (see [`secrecy::ExposeSecret`]); serialized and
+/// intermediate buffers are zeroized there.
 ///
 /// Secret material never appears in [`Debug`](std::fmt::Debug) output: the
 /// manual impl redacts every secret field, mirroring the legacy

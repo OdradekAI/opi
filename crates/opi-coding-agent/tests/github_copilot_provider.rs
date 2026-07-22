@@ -356,6 +356,53 @@ async fn github_copilot_anthropic_model_posts_v1_messages_with_bearer() {
 }
 
 #[tokio::test]
+async fn factory_built_copilot_anthropic_models_apply_catalog_compatibility() {
+    for model in ["claude-opus-4.7", "claude-opus-4.8"] {
+        let server = MockServer::start().await;
+        mount_stream(&server, "/v1/messages", 200).await;
+        let (_dir, _store, provider) =
+            factory_provider(model, "copilot-compat-token", server.uri()).await;
+        let mut captured = request(model);
+        captured.temperature = Some(0.3);
+        captured.thinking = ThinkingConfig {
+            enabled: true,
+            budget_tokens: Some(4096),
+            level: ThinkingLevel::Medium,
+        };
+        let _ = drain(&*provider, captured).await;
+
+        let requests = server.received_requests().await.unwrap();
+        assert_eq!(requests.len(), 1, "{model}");
+        let body: serde_json::Value = serde_json::from_slice(&requests[0].body).unwrap();
+        assert_eq!(body["thinking"], serde_json::json!({ "type": "adaptive" }));
+        assert!(
+            body.get("temperature").is_none(),
+            "{model} must omit unsupported temperature"
+        );
+    }
+
+    let server = MockServer::start().await;
+    mount_stream(&server, "/v1/messages", 200).await;
+    let model = "claude-sonnet-4.5";
+    let (_dir, _store, provider) =
+        factory_provider(model, "copilot-compat-token", server.uri()).await;
+    let mut captured = request(model);
+    captured.temperature = Some(0.3);
+    captured.thinking = ThinkingConfig {
+        enabled: true,
+        budget_tokens: Some(4096),
+        level: ThinkingLevel::Medium,
+    };
+    let _ = drain(&*provider, captured).await;
+
+    let requests = server.received_requests().await.unwrap();
+    let body: serde_json::Value = serde_json::from_slice(&requests[0].body).unwrap();
+    assert_eq!(body["thinking"]["type"], "enabled");
+    assert_eq!(body["thinking"]["budget_tokens"], 4096);
+    assert_eq!(body["temperature"], 0.3);
+}
+
+#[tokio::test]
 async fn github_copilot_chat_model_posts_chat_completions() {
     assert_route("gpt-4.1", "/chat/completions").await;
 }

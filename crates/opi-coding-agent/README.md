@@ -214,6 +214,11 @@ it does not append a duplicate user message. Non-interactive, JSON, and RPC
 modes do not prompt or construct a presenter: they report the canonical
 provider and `/login <provider>` remediation, then fail. `CredentialRevoked`
 is non-retryable and never causes automatic re-login.
+`AccountIdMissing { provider_id }` is also non-retryable but is distinct from
+revocation: a stored credential lacks the account identity required by the
+selected wire. Pre-output interactive handling retains the pending turn for an
+explicit `/login <provider>` repair; text mode exits with `AuthFailure`, and
+JSON/RPC emit `CredentialNeeded` with an `AccountIdMissing` diagnostic.
 
 Phase 14 also carries the active `session_id` through `CodingHarness` and the
 agent loop into reviewed provider cache-affinity mappings. The other new

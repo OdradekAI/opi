@@ -4,10 +4,9 @@
 //! continues to poll crossterm events and redraw at ~20 fps. Agent callbacks
 //! update shared `TuiState`, which the render loop reads each frame.
 
+use std::collections::VecDeque;
 use std::io;
-#[cfg(debug_assertions)]
 use std::sync::OnceLock;
-#[cfg(debug_assertions)]
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -16,6 +15,7 @@ use crossterm::{
     event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
     terminal::{self, EnterAlternateScreen, LeaveAlternateScreen},
 };
+use ratatui::backend::TestBackend;
 use ratatui::prelude::*;
 
 use opi_agent::event::AgentEvent;
@@ -33,7 +33,6 @@ use opi_tui::{
 use opi_tui::{ImageData, ImagePayload, MediaType as TuiMediaType};
 
 use crate::harness::{CodingHarness, SessionMetadata};
-#[cfg(debug_assertions)]
 use crate::interactive_auth::auth_command_requires_presenter;
 use crate::interactive_auth::{
     AuthCommandOutcome, AuthCommandServices, LoginTerminalControl, dispatch_auth_command,
@@ -94,12 +93,10 @@ enum SessionForkCommand {
     Clone,
 }
 
-/// Capture produced by the debug-only, headless interactive entry-point driver.
+/// Capture produced by the hidden, headless interactive entry-point driver.
 ///
 /// The driver is an integration-test seam: it cannot be selected by terminal
-/// input, configuration, or environment variables, and it is absent from
-/// release builds.
-#[cfg(debug_assertions)]
+/// input, configuration, or environment variables.
 #[doc(hidden)]
 #[derive(Clone, Debug, Default, serde::Serialize)]
 pub struct InteractiveTuiTestCapture {
@@ -111,16 +108,15 @@ pub struct InteractiveTuiTestCapture {
     pub terminal_transitions: Vec<String>,
 }
 
-#[cfg(debug_assertions)]
 #[derive(Default)]
 struct InteractiveTuiTestObserver {
     user_messages: AtomicU64,
     provider_calls: AtomicU64,
     retries: AtomicU64,
+    presenter_constructions: AtomicU64,
 }
 
-/// Debug-only login dependencies for a scripted outer-TUI test.
-#[cfg(debug_assertions)]
+/// Hidden login dependencies for a scripted outer-TUI test.
 #[doc(hidden)]
 #[derive(Clone)]
 pub struct InteractiveTuiTestAuthServices {
@@ -132,7 +128,6 @@ pub struct InteractiveTuiTestAuthServices {
     terminal_failure: InteractiveTuiTestTerminalFailure,
 }
 
-#[cfg(debug_assertions)]
 impl InteractiveTuiTestAuthServices {
     #[doc(hidden)]
     pub fn new(
@@ -159,8 +154,7 @@ impl InteractiveTuiTestAuthServices {
     }
 }
 
-/// Debug-only terminal failure injected into the scripted outer-TUI adapter.
-#[cfg(debug_assertions)]
+/// Terminal failure injected into the hidden scripted outer-TUI adapter.
 #[doc(hidden)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum InteractiveTuiTestTerminalFailure {
@@ -170,7 +164,6 @@ pub enum InteractiveTuiTestTerminalFailure {
     Resume,
 }
 
-#[cfg(debug_assertions)]
 #[derive(Clone)]
 struct InteractiveTuiTestDriver {
     id: u64,
@@ -179,28 +172,22 @@ struct InteractiveTuiTestDriver {
     auth: Option<InteractiveTuiTestAuthServices>,
 }
 
-#[cfg(debug_assertions)]
 static INTERACTIVE_TUI_TEST_DRIVER: OnceLock<Mutex<Option<InteractiveTuiTestDriver>>> =
     OnceLock::new();
-#[cfg(debug_assertions)]
 static NEXT_INTERACTIVE_TUI_TEST_DRIVER_ID: AtomicU64 = AtomicU64::new(1);
-#[cfg(debug_assertions)]
 static TUI_LOGIN_PRESENTER_CONSTRUCTIONS: AtomicU64 = AtomicU64::new(0);
 
-#[cfg(debug_assertions)]
 fn interactive_tui_test_driver_slot() -> &'static Mutex<Option<InteractiveTuiTestDriver>> {
     INTERACTIVE_TUI_TEST_DRIVER.get_or_init(|| Mutex::new(None))
 }
 
-/// RAII guard for the debug-only headless TUI driver.
-#[cfg(debug_assertions)]
+/// RAII guard for the hidden headless TUI driver.
 #[doc(hidden)]
 pub struct InteractiveTuiTestDriverGuard {
     id: u64,
     capture: Arc<Mutex<InteractiveTuiTestCapture>>,
 }
 
-#[cfg(debug_assertions)]
 impl InteractiveTuiTestDriverGuard {
     #[doc(hidden)]
     pub fn capture(&self) -> InteractiveTuiTestCapture {
@@ -211,7 +198,6 @@ impl InteractiveTuiTestDriverGuard {
     }
 }
 
-#[cfg(debug_assertions)]
 impl Drop for InteractiveTuiTestDriverGuard {
     fn drop(&mut self) {
         let mut slot = interactive_tui_test_driver_slot()
@@ -224,7 +210,6 @@ impl Drop for InteractiveTuiTestDriverGuard {
 }
 
 /// Install one RAII-scoped, race-safe headless script for `run_interactive_tui`.
-#[cfg(debug_assertions)]
 #[doc(hidden)]
 pub fn install_interactive_tui_test_driver<I, S>(
     inputs: I,
@@ -237,7 +222,6 @@ where
 }
 
 /// Install a scripted outer-TUI driver with injected login dependencies.
-#[cfg(debug_assertions)]
 #[doc(hidden)]
 pub fn install_interactive_tui_test_driver_with_auth<I, S>(
     inputs: I,
@@ -250,7 +234,6 @@ where
     install_interactive_tui_test_driver_inner(inputs, Some(auth))
 }
 
-#[cfg(debug_assertions)]
 fn install_interactive_tui_test_driver_inner<I, S>(
     inputs: I,
     auth: Option<InteractiveTuiTestAuthServices>,
@@ -279,7 +262,6 @@ where
     Ok(InteractiveTuiTestDriverGuard { id, capture })
 }
 
-#[cfg(debug_assertions)]
 fn active_interactive_tui_test_driver() -> Option<InteractiveTuiTestDriver> {
     interactive_tui_test_driver_slot()
         .lock()
@@ -287,15 +269,13 @@ fn active_interactive_tui_test_driver() -> Option<InteractiveTuiTestDriver> {
         .clone()
 }
 
-/// Reset the debug-only production-presenter construction probe.
-#[cfg(debug_assertions)]
+/// Reset the hidden production-presenter construction probe.
 #[doc(hidden)]
 pub fn reset_interactive_tui_presenter_construction_count() {
     TUI_LOGIN_PRESENTER_CONSTRUCTIONS.store(0, Ordering::SeqCst);
 }
 
-/// Read the debug-only production-presenter construction probe.
-#[cfg(debug_assertions)]
+/// Read the hidden production-presenter construction probe.
 #[doc(hidden)]
 pub fn interactive_tui_presenter_construction_count() -> usize {
     TUI_LOGIN_PRESENTER_CONSTRUCTIONS.load(Ordering::SeqCst) as usize
@@ -310,7 +290,6 @@ struct PromptAuthStateMachine {
     pending: Option<PendingPrompt>,
     pending_auth_provider: Option<String>,
     output_began: Arc<AtomicBool>,
-    #[cfg(debug_assertions)]
     test_observer: Option<Arc<InteractiveTuiTestObserver>>,
 }
 
@@ -327,12 +306,10 @@ impl PromptAuthStateMachine {
             pending: None,
             pending_auth_provider: None,
             output_began,
-            #[cfg(debug_assertions)]
             test_observer: None,
         }
     }
 
-    #[cfg(debug_assertions)]
     fn with_test_observer(mut self, observer: Arc<InteractiveTuiTestObserver>) -> Self {
         self.test_observer = Some(observer);
         self
@@ -345,7 +322,6 @@ impl PromptAuthStateMachine {
     fn submit_prompt(&mut self, input: String, harness: Arc<tokio::sync::Mutex<CodingHarness>>) {
         self.pending_auth_provider = None;
         self.output_began.store(false, Ordering::SeqCst);
-        #[cfg(debug_assertions)]
         if let Some(observer) = &self.test_observer {
             observer.user_messages.fetch_add(1, Ordering::SeqCst);
         }
@@ -386,7 +362,6 @@ impl PromptAuthStateMachine {
         if retry_provider.is_some() {
             self.pending_auth_provider = None;
             self.output_began.store(false, Ordering::SeqCst);
-            #[cfg(debug_assertions)]
             if let Some(observer) = &self.test_observer {
                 observer.retries.fetch_add(1, Ordering::SeqCst);
             }
@@ -451,21 +426,6 @@ impl PromptAuthStateMachine {
         };
         Some(completion)
     }
-
-    #[cfg(debug_assertions)]
-    fn write_counts(&self, capture: &Arc<Mutex<InteractiveTuiTestCapture>>) -> io::Result<()> {
-        let mut capture = capture
-            .lock()
-            .map_err(|_| io::Error::other("headless TUI capture lock poisoned"))?;
-        let observer = self
-            .test_observer
-            .as_ref()
-            .ok_or_else(|| io::Error::other("headless TUI test observer is not installed"))?;
-        capture.user_messages = observer.user_messages.load(Ordering::SeqCst) as usize;
-        capture.provider_calls = observer.provider_calls.load(Ordering::SeqCst) as usize;
-        capture.retries = observer.retries.load(Ordering::SeqCst) as usize;
-        Ok(())
-    }
 }
 
 impl SessionForkCommand {
@@ -483,6 +443,48 @@ enum PickerAction {
     SelectSession(String),
     SelectBranch(String),
     Cancel,
+}
+
+enum TuiEventPoll {
+    Event(Event),
+    Pending,
+    Exhausted,
+}
+
+trait TuiEventSource {
+    fn poll_event(
+        &mut self,
+        timeout: std::time::Duration,
+        input_enabled: bool,
+    ) -> io::Result<TuiEventPoll>;
+}
+
+struct CrosstermEventSource;
+
+impl TuiEventSource for CrosstermEventSource {
+    fn poll_event(
+        &mut self,
+        timeout: std::time::Duration,
+        _input_enabled: bool,
+    ) -> io::Result<TuiEventPoll> {
+        if event::poll(timeout)? {
+            Ok(TuiEventPoll::Event(event::read()?))
+        } else {
+            Ok(TuiEventPoll::Pending)
+        }
+    }
+}
+
+trait TuiTerminal: LoginTerminalControl {
+    fn draw_state(&mut self, state: &TuiState) -> io::Result<()>;
+}
+
+impl TuiTerminal for Terminal<CrosstermBackend<io::Stdout>> {
+    fn draw_state(&mut self, state: &TuiState) -> io::Result<()> {
+        let shell = build_shell(state);
+        self.draw(|frame| frame.render_widget(shell, frame.area()))?;
+        Ok(())
+    }
 }
 
 /// Run the outer interactive TUI and its prompt/auth state machine.
@@ -526,13 +528,10 @@ pub async fn run_interactive_tui(
     // Wire agent events into shared state before wrapping harness.
     let output_began = Arc::new(AtomicBool::new(false));
     let callback_output_began = output_began.clone();
-    #[cfg(debug_assertions)]
     let test_driver = active_interactive_tui_test_driver();
-    #[cfg(debug_assertions)]
     let test_observer = test_driver
         .as_ref()
         .map(|_| Arc::new(InteractiveTuiTestObserver::default()));
-    #[cfg(debug_assertions)]
     let callback_test_observer = test_observer.clone();
     let state_clone = state.clone();
     let mut harness = harness;
@@ -683,7 +682,6 @@ pub async fn run_interactive_tui(
                 s.active_tool = None;
             }
             AgentEvent::TurnStart => {
-                #[cfg(debug_assertions)]
                 if let Some(observer) = &callback_test_observer {
                     observer.provider_calls.fetch_add(1, Ordering::SeqCst);
                 }
@@ -739,11 +737,11 @@ pub async fn run_interactive_tui(
 
     let harness = Arc::new(tokio::sync::Mutex::new(harness));
 
-    #[cfg(debug_assertions)]
     if let Some(driver) = test_driver {
         return run_headless_interactive_tui_driver(
             driver,
             &harness,
+            &state,
             credential_store,
             oauth,
             output_began,
@@ -758,15 +756,21 @@ pub async fn run_interactive_tui(
     crossterm::execute!(stdout, EnterAlternateScreen)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
+    let mut events = CrosstermEventSource;
 
     // Main TUI loop
     let result = tui_event_loop(
         &mut terminal,
+        &mut events,
         &harness,
         &state,
-        credential_store,
-        oauth,
-        output_began,
+        TuiLoopRuntime {
+            credential_store,
+            oauth,
+            output_began,
+            test_auth: None,
+            test_observer: None,
+        },
     )
     .await;
 
@@ -778,23 +782,40 @@ pub async fn run_interactive_tui(
     result
 }
 
-async fn tui_event_loop(
-    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
-    harness: &Arc<tokio::sync::Mutex<CodingHarness>>,
-    state: &Arc<Mutex<TuiState>>,
+struct TuiLoopRuntime<'a> {
     credential_store: Arc<crate::credential_store::KeychainCredentialStore>,
     oauth: OAuthDispatchRuntime,
     output_began: Arc<AtomicBool>,
+    test_auth: Option<&'a InteractiveTuiTestAuthServices>,
+    test_observer: Option<Arc<InteractiveTuiTestObserver>>,
+}
+
+async fn tui_event_loop<T: TuiTerminal, E: TuiEventSource>(
+    terminal: &mut T,
+    events: &mut E,
+    harness: &Arc<tokio::sync::Mutex<CodingHarness>>,
+    state: &Arc<Mutex<TuiState>>,
+    runtime: TuiLoopRuntime<'_>,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let TuiLoopRuntime {
+        credential_store,
+        oauth,
+        output_began,
+        test_auth,
+        test_observer,
+    } = runtime;
     let mut interaction = PromptAuthStateMachine::new(output_began);
+    let test_presenter_observer = test_observer.clone();
+    if let Some(observer) = test_observer {
+        interaction = interaction.with_test_observer(observer);
+    }
     let mut cancel_token = harness.lock().await.cancel_token();
 
     loop {
         // Render current state
         {
             let s = state.lock().unwrap();
-            let shell = build_shell(&s);
-            terminal.draw(|frame| frame.render_widget(shell, frame.area()))?;
+            terminal.draw_state(&s)?;
         }
 
         // Check if the shared prompt/auth state machine finished a turn.
@@ -818,9 +839,17 @@ async fn tui_event_loop(
         }
 
         // Poll for terminal events (non-blocking with timeout)
-        if event::poll(std::time::Duration::from_millis(50))?
-            && let Event::Key(key) = event::read()?
-        {
+        let polled = events.poll_event(
+            std::time::Duration::from_millis(50),
+            !interaction.is_running(),
+        )?;
+        if matches!(polled, TuiEventPoll::Exhausted) {
+            return Err(io::Error::other("scripted TUI input ended without exit").into());
+        }
+        if matches!(polled, TuiEventPoll::Pending) {
+            tokio::task::yield_now().await;
+        }
+        if let TuiEventPoll::Event(Event::Key(key)) = polled {
             if key.kind != KeyEventKind::Press {
                 continue;
             }
@@ -1061,15 +1090,39 @@ async fn tui_event_loop(
                 }
 
                 if is_auth_command(&input) {
-                    let presenter = new_tui_login_presenter();
-                    let outcome = dispatch_interactive_auth_input(
-                        &input,
-                        terminal,
-                        credential_store.as_ref(),
-                        &oauth,
-                        &presenter,
-                    )
-                    .await;
+                    let outcome = if let Some(auth) = test_auth {
+                        if auth_command_requires_presenter(&input) {
+                            record_tui_login_presenter_construction();
+                            if let Some(observer) = &test_presenter_observer {
+                                observer
+                                    .presenter_constructions
+                                    .fetch_add(1, Ordering::SeqCst);
+                            }
+                        }
+                        dispatch_auth_command(
+                            &input,
+                            terminal,
+                            AuthCommandServices::with_test_services(
+                                credential_store.as_ref(),
+                                auth.presenter.as_ref(),
+                                auth.client.clone(),
+                                auth.endpoint_base_url.clone(),
+                                auth.login_timeout,
+                                auth.codex_device_timeout,
+                            ),
+                        )
+                        .await
+                    } else {
+                        let presenter = new_tui_login_presenter();
+                        dispatch_interactive_auth_input(
+                            &input,
+                            terminal,
+                            credential_store.as_ref(),
+                            &oauth,
+                            &presenter,
+                        )
+                        .await
+                    };
                     let routed = interaction
                         .route_auth_outcome(outcome, harness.clone())?
                         .expect("classified auth command must be routed");
@@ -1171,7 +1224,6 @@ fn new_tui_login_presenter() -> TuiLoginPresenter {
 }
 
 fn record_tui_login_presenter_construction() {
-    #[cfg(debug_assertions)]
     TUI_LOGIN_PRESENTER_CONSTRUCTIONS.fetch_add(1, Ordering::SeqCst);
 }
 
@@ -1201,14 +1253,26 @@ async fn dispatch_interactive_auth_input<T: LoginTerminalControl>(
     .await
 }
 
-#[cfg(debug_assertions)]
-struct HeadlessLoginTerminal {
+struct HeadlessTuiTerminal {
+    terminal: Terminal<TestBackend>,
     capture: Arc<Mutex<InteractiveTuiTestCapture>>,
     failure: InteractiveTuiTestTerminalFailure,
 }
 
-#[cfg(debug_assertions)]
-impl LoginTerminalControl for HeadlessLoginTerminal {
+impl TuiTerminal for HeadlessTuiTerminal {
+    fn draw_state(&mut self, state: &TuiState) -> io::Result<()> {
+        let shell = build_shell(state);
+        match self
+            .terminal
+            .draw(|frame| frame.render_widget(shell, frame.area()))
+        {
+            Ok(_) => Ok(()),
+            Err(error) => match error {},
+        }
+    }
+}
+
+impl LoginTerminalControl for HeadlessTuiTerminal {
     fn suspend_for_login(&mut self) -> io::Result<()> {
         self.capture
             .lock()
@@ -1238,10 +1302,49 @@ impl LoginTerminalControl for HeadlessLoginTerminal {
     }
 }
 
-#[cfg(debug_assertions)]
+struct ScriptedTuiEventSource {
+    events: VecDeque<Event>,
+}
+
+impl ScriptedTuiEventSource {
+    fn new(inputs: Vec<String>) -> Self {
+        let mut events = VecDeque::new();
+        for input in inputs {
+            events.extend(input.chars().map(|character| {
+                Event::Key(crossterm::event::KeyEvent::new(
+                    KeyCode::Char(character),
+                    KeyModifiers::NONE,
+                ))
+            }));
+            events.push_back(Event::Key(crossterm::event::KeyEvent::new(
+                KeyCode::Enter,
+                KeyModifiers::NONE,
+            )));
+        }
+        Self { events }
+    }
+}
+
+impl TuiEventSource for ScriptedTuiEventSource {
+    fn poll_event(
+        &mut self,
+        _timeout: std::time::Duration,
+        input_enabled: bool,
+    ) -> io::Result<TuiEventPoll> {
+        if !input_enabled {
+            return Ok(TuiEventPoll::Pending);
+        }
+        Ok(self
+            .events
+            .pop_front()
+            .map_or(TuiEventPoll::Exhausted, TuiEventPoll::Event))
+    }
+}
+
 async fn run_headless_interactive_tui_driver(
     driver: InteractiveTuiTestDriver,
     harness: &Arc<tokio::sync::Mutex<CodingHarness>>,
+    state: &Arc<Mutex<TuiState>>,
     credential_store: Arc<crate::credential_store::KeychainCredentialStore>,
     oauth: OAuthDispatchRuntime,
     output_began: Arc<AtomicBool>,
@@ -1253,7 +1356,8 @@ async fn run_headless_interactive_tui_driver(
         auth,
         ..
     } = driver;
-    let mut terminal = HeadlessLoginTerminal {
+    let mut terminal = HeadlessTuiTerminal {
+        terminal: Terminal::new(TestBackend::new(100, 30))?,
         capture: capture.clone(),
         failure: auth
             .as_ref()
@@ -1261,97 +1365,41 @@ async fn run_headless_interactive_tui_driver(
                 auth.terminal_failure
             }),
     };
-    let mut interaction =
-        PromptAuthStateMachine::new(output_began).with_test_observer(test_observer);
+    let mut events = ScriptedTuiEventSource::new(inputs);
+    let result = tui_event_loop(
+        &mut terminal,
+        &mut events,
+        harness,
+        state,
+        TuiLoopRuntime {
+            credential_store,
+            oauth,
+            output_began,
+            test_auth: auth.as_ref(),
+            test_observer: Some(test_observer.clone()),
+        },
+    )
+    .await;
 
-    for input in inputs {
-        if input == "exit" || input == "quit" {
-            return Ok(());
-        }
-
-        if is_auth_command(&input) {
-            if auth_command_requires_presenter(&input) {
-                record_tui_login_presenter_construction();
-                capture
-                    .lock()
-                    .map_err(|_| io::Error::other("headless TUI capture lock poisoned"))?
-                    .presenter_constructions += 1;
-            }
-            let outcome = if let Some(auth) = &auth {
-                dispatch_auth_command(
-                    &input,
-                    &mut terminal,
-                    AuthCommandServices::with_test_services(
-                        credential_store.as_ref(),
-                        auth.presenter.as_ref(),
-                        auth.client.clone(),
-                        auth.endpoint_base_url.clone(),
-                        auth.login_timeout,
-                        auth.codex_device_timeout,
-                    ),
-                )
-                .await
-            } else {
-                let presenter = TuiLoginPresenter::new();
-                dispatch_interactive_auth_input(
-                    &input,
-                    &mut terminal,
-                    credential_store.as_ref(),
-                    &oauth,
-                    &presenter,
-                )
-                .await
-            };
-            let routed = interaction.route_auth_outcome(outcome, harness.clone());
-            interaction.write_counts(&capture)?;
-            let message = routed?.expect("classified auth command must be routed");
-            capture
-                .lock()
-                .map_err(|_| io::Error::other("headless TUI capture lock poisoned"))?
-                .system_messages
-                .push(message);
-            if interaction.is_running()
-                && let Some(completion) = interaction.await_completion().await
-            {
-                record_headless_prompt_completion(completion, &capture)?;
-                interaction.write_counts(&capture)?;
-            }
-            continue;
-        }
-
-        interaction.submit_prompt(input, harness.clone());
-        interaction.write_counts(&capture)?;
-        let completion = interaction
-            .await_completion()
-            .await
-            .expect("submitted prompt has one pending completion");
-        record_headless_prompt_completion(completion, &capture)?;
-        interaction.write_counts(&capture)?;
-    }
-
-    Err(io::Error::other("headless TUI script ended without exit").into())
-}
-
-#[cfg(debug_assertions)]
-fn record_headless_prompt_completion(
-    completion: PromptCompletion,
-    capture: &Arc<Mutex<InteractiveTuiTestCapture>>,
-) -> io::Result<()> {
-    let message = match completion {
-        PromptCompletion::Success | PromptCompletion::Cancelled => None,
-        PromptCompletion::CredentialNeeded { provider_id } => Some(format!(
-            "[credential needed for '{provider_id}': run /login {provider_id}]"
-        )),
-        PromptCompletion::Error(error) => Some(format!("error: {error}")),
-    };
-    if let Some(message) = message {
-        capture
-            .lock()
-            .map_err(|_| io::Error::other("headless TUI capture lock poisoned"))?
-            .system_messages
-            .push(message);
-    }
-    Ok(())
+    let system_messages = state
+        .lock()
+        .map_err(|_| io::Error::other("TUI state lock poisoned"))?
+        .messages
+        .iter()
+        .filter(|message| message.role == TuiRole::System)
+        .map(|message| message.content.clone())
+        .collect();
+    let mut capture = capture
+        .lock()
+        .map_err(|_| io::Error::other("headless TUI capture lock poisoned"))?;
+    capture.user_messages = test_observer.user_messages.load(Ordering::SeqCst) as usize;
+    capture.provider_calls = test_observer.provider_calls.load(Ordering::SeqCst) as usize;
+    capture.retries = test_observer.retries.load(Ordering::SeqCst) as usize;
+    capture.presenter_constructions =
+        test_observer.presenter_constructions.load(Ordering::SeqCst) as usize;
+    capture.system_messages = system_messages;
+    drop(capture);
+    result
 }
 
 fn build_shell(s: &TuiState) -> Shell {

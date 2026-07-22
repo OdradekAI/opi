@@ -618,8 +618,8 @@ impl SessionCoordinator {
             .as_ref()
             .map(|pricing| pricing.effective(self.usage.total_input_tokens()))
             .or_else(|| lookup_pricing(&self.model))?;
-        Some(opi_ai::stream::calculate_cost(
-            &self.usage.as_usage(),
+        Some(opi_ai::stream::calculate_cumulative_cost(
+            &self.usage,
             &pricing,
         ))
     }
@@ -842,4 +842,37 @@ fn days_to_ymd(mut days: u64) -> (u64, u64, u64) {
 
 fn is_leap(y: u64) -> bool {
     (y.is_multiple_of(4) && !y.is_multiple_of(100)) || y.is_multiple_of(400)
+}
+
+#[cfg(test)]
+mod tests {
+    use opi_ai::stream::{Pricing, Usage};
+
+    #[test]
+    fn cost_summary_uses_exact_cumulative_totals_above_u32_max() {
+        let dir = tempfile::tempdir().expect("session dir");
+        let mut coordinator = super::SessionCoordinator::new(
+            dir.path(),
+            ".",
+            opi_agent::compaction::CompactionConfig::default(),
+            "test:model",
+        )
+        .expect("coordinator");
+        let pricing = Pricing {
+            input_cost_per_mtok: 1.0,
+            ..Pricing::default()
+        };
+        coordinator.set_cost_model(
+            "test:model",
+            Some(opi_ai::ModelPricing::try_new(pricing, Vec::new()).unwrap()),
+        );
+        let turn = Usage::reported(u32::MAX, 0, 0, 0, None, None);
+        coordinator.on_turn_end(&[], &turn, 0).expect("first turn");
+        coordinator.on_turn_end(&[], &turn, 0).expect("second turn");
+
+        let summary = coordinator.cost_summary().expect("known cost");
+
+        let expected = (u64::from(u32::MAX) * 2) as f64 / 1_000_000.0;
+        assert!((summary.input_cost - expected).abs() < 1e-9);
+    }
 }

@@ -391,7 +391,8 @@ impl ProviderCollection {
         spec: &str,
         request: Request,
     ) -> Result<EventStream, CollectionError> {
-        let (provider, _) = self.registry.resolve(spec)?;
+        let (provider, model) = self.registry.resolve(spec)?;
+        crate::provider::validate_request_for_model(provider.id(), Some(model), &request)?;
         let id = provider.id();
         if let Some(AuthDescriptor::StoreCredential { display_source, .. }) = self.auth.get(id) {
             // Secret-free descriptor: consult the injected probe, not resolve().
@@ -445,6 +446,7 @@ impl ProviderCollection {
 
         // Collect all results first (no mutation until every provider succeeds).
         let mut new_catalogs: HashMap<String, Vec<ModelInfo>> = HashMap::new();
+        let mut first_error = None;
         for id in &ids {
             let provider = match self.registry.get_provider(id) {
                 Some(p) => p,
@@ -456,7 +458,7 @@ impl ProviderCollection {
                     // catalog: a malformed or duplicate refresh must preserve
                     // the last-known catalog (mirrors register_model checks).
                     let mut seen = std::collections::HashSet::new();
-                    for model in &models {
+                    let validation = models.iter().try_for_each(|model| {
                         if model.id.is_empty() {
                             return Err(CollectionError::Provider(ProviderError::Config(format!(
                                 "dynamic catalog for provider '{id}' contains a model with an empty id"
@@ -474,17 +476,28 @@ impl ProviderCollection {
                                 model.id
                             ))));
                         }
+                        Ok(())
+                    });
+                    match validation {
+                        Ok(()) => {
+                            new_catalogs.insert(id.clone(), models);
+                        }
+                        Err(error) => {
+                            first_error.get_or_insert(error);
+                        }
                     }
-                    new_catalogs.insert(id.clone(), models);
                 }
                 Ok(None) => {
                     // No dynamic snapshot for this provider in the replacement.
                 }
                 Err(err) => {
-                    // Atomic rollback: leave last-known catalogs unchanged.
-                    return Err(CollectionError::Provider(err));
+                    first_error.get_or_insert(CollectionError::Provider(err));
                 }
             }
+        }
+
+        if let Some(error) = first_error {
+            return Err(error);
         }
 
         // All succeeded — atomically replace.

@@ -2119,11 +2119,38 @@ pub async fn build_collection_for_listing_command(
 /// [`ProviderCollection::from_registry`] with no auth descriptors, preserving
 /// the existing non-gated dispatch behavior.
 pub fn assemble_harness_collection(
-    provider: &dyn Provider,
+    provider: &mut dyn Provider,
     extension_registry: Option<&ExtensionRegistry>,
 ) -> (ProviderCollection, Vec<Diagnostic>) {
     let mut registry = ProviderRegistry::new();
     let mut diagnostics = Vec::new();
+    let overrides = extension_registry
+        .map(ExtensionRegistry::collect_model_overrides)
+        .unwrap_or_default();
+    let active_provider_id = provider.id().to_owned();
+    let active_overrides = overrides
+        .iter()
+        .filter(|(provider_id, _)| provider_id == &active_provider_id)
+        .map(|(_, model)| model.clone())
+        .collect::<Vec<_>>();
+    if !active_overrides.is_empty() {
+        let mut effective = provider.models().to_vec();
+        for model in active_overrides {
+            if let Some(existing) = effective
+                .iter_mut()
+                .find(|existing| existing.id == model.id)
+            {
+                *existing = model;
+            } else {
+                effective.push(model);
+            }
+        }
+        if let Err(error) = provider.replace_model_catalog(effective) {
+            diagnostics.push(diagnostic_for_model_registry_error(format!(
+                "active provider model override materialization failed: {error}"
+            )));
+        }
+    }
 
     if let Some(extension_registry) = extension_registry {
         for provider in extension_registry.collect_providers() {
@@ -2142,13 +2169,16 @@ pub fn assemble_harness_collection(
         )));
     }
 
-    if let Some(extension_registry) = extension_registry {
-        for (provider_id, model) in extension_registry.collect_model_overrides() {
-            if let Err(e) = registry.register_model(&provider_id, model) {
-                diagnostics.push(diagnostic_for_model_registry_error(format!(
-                    "extension model override registration failed: {e}"
-                )));
-            }
+    for (provider_id, model) in overrides {
+        if provider_id == active_provider_id {
+            // Do not advertise an active-provider model that the runtime
+            // provider rejected; selection must remain dispatchable.
+            continue;
+        }
+        if let Err(e) = registry.register_model(&provider_id, model) {
+            diagnostics.push(diagnostic_for_model_registry_error(format!(
+                "extension model override registration failed: {e}"
+            )));
         }
     }
 

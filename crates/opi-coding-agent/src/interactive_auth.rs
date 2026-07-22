@@ -70,7 +70,6 @@ impl<'a> AuthCommandServices<'a> {
         }
     }
 
-    #[cfg(debug_assertions)]
     #[doc(hidden)]
     pub fn with_test_services(
         store: &'a KeychainCredentialStore,
@@ -191,7 +190,6 @@ pub(crate) fn is_auth_command(input: &str) -> bool {
     !matches!(parse_auth_command(input), ParsedAuthCommand::NotHandled)
 }
 
-#[cfg(debug_assertions)]
 pub(crate) fn auth_command_requires_presenter(input: &str) -> bool {
     matches!(parse_auth_command(input), ParsedAuthCommand::Login(_))
 }

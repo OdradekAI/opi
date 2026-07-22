@@ -347,6 +347,17 @@ impl OpenAiChatEvent {
                             model: model.clone(),
                             usage: usage.clone(),
                         });
+                        if let Some(arguments) = func.arguments
+                            && !arguments.is_empty()
+                        {
+                            events.push(OpenAiChatEvent::ToolCallDelta {
+                                index: tc.index,
+                                arguments,
+                                id: response_id.clone(),
+                                model: model.clone(),
+                                usage: usage.clone(),
+                            });
+                        }
                     } else {
                         let arguments = func.arguments.unwrap_or_default();
                         if !arguments.is_empty() {
@@ -1455,6 +1466,9 @@ fn serialize_messages(
 
 impl Provider for OpenAiChatProvider {
     fn stream(&self, request: Request) -> EventStream {
+        if let Err(error) = crate::provider::validate_request_capabilities(self, &request) {
+            return Box::pin(stream::once(async move { Err(error) }));
+        }
         let auth = self.auth.clone();
         let default_base_url = self.base_url.clone();
         let provider_id = self.provider_id.clone();
@@ -1571,5 +1585,10 @@ impl Provider for OpenAiChatProvider {
 
     fn models(&self) -> &[ModelInfo] {
         &self.models
+    }
+
+    fn replace_model_catalog(&mut self, models: Vec<ModelInfo>) -> Result<(), ProviderError> {
+        self.models = models;
+        Ok(())
     }
 }

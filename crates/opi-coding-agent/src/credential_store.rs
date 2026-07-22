@@ -17,6 +17,22 @@
 //! package-private unlocked backend operations, so the public locked `write`
 //! is never re-entered.
 //!
+//! # Persistence protocol
+//!
+//! A credential write updates the non-secret kind marker first and the
+//! protected envelope second. These are two keychain entries, not an atomic
+//! transaction. A reader observing a kind-change transition receives a typed
+//! wrong-kind/corrupt-store error and never falls back to the environment. If
+//! the protected write fails, the marker-only state remains fail-closed; a
+//! later successful write retries both steps and recovers it.
+//!
+//! # Secret exposure
+//!
+//! Encoding necessarily exposes `SecretString` values at this protected
+//! keychain-serialization boundary. The JSON string and intermediate envelope
+//! fields are zeroized after the backend call. The other intentional exposure
+//! boundary is concrete provider HTTP request construction.
+//!
 //! Tests inject a [`FakeKeyringBackend`] (or any `KeyringBackend`) and never
 //! touch the user keychain.
 
@@ -400,7 +416,7 @@ impl KeyringBackend for FakeKeyringBackend {
 // Versioned envelope codec
 // ---------------------------------------------------------------------------
 
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(serde::Serialize)]
 struct Envelope {
     version: u32,
     kind: String,
@@ -408,7 +424,7 @@ struct Envelope {
     fields: EnvelopeFields,
 }
 
-#[derive(serde::Serialize, serde::Deserialize, Default)]
+#[derive(serde::Serialize, Default)]
 struct EnvelopeFields {
     #[serde(skip_serializing_if = "Option::is_none")]
     api_key: Option<String>,
@@ -422,6 +438,32 @@ struct EnvelopeFields {
     #[serde(skip_serializing_if = "Option::is_none")]
     base_url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    account_id: Option<String>,
+}
+
+#[derive(serde::Deserialize)]
+struct EnvelopeHeader {
+    version: u32,
+    kind: String,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ApiKeyEnvelopeV1 {
+    version: u32,
+    kind: String,
+    api_key: String,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct OAuthEnvelopeV1 {
+    version: u32,
+    kind: String,
+    access: String,
+    refresh: String,
+    expires_at: Option<i64>,
+    base_url: Option<String>,
     account_id: Option<String>,
 }
 
@@ -526,48 +568,40 @@ fn encode_credential(cred: &Credential) -> Zeroizing<String> {
 /// [`CredentialStoreError`] and are never collapsed into absence or env
 /// fallback.
 fn decode_credential(raw: &str, provider_id: &str) -> Result<Credential, CredentialStoreError> {
-    let envelope: Envelope =
+    let header: EnvelopeHeader =
         serde_json::from_str(raw).map_err(|_| CredentialStoreError::MalformedEnvelope {
             provider: provider_id.to_owned(),
             reason: "credential envelope does not match the expected schema".to_owned(),
         })?;
-    if envelope.version != ENVELOPE_VERSION {
+    if header.version != ENVELOPE_VERSION {
         return Err(CredentialStoreError::UnknownEnvelope {
             provider: provider_id.to_owned(),
-            version: Some(envelope.version),
+            version: Some(header.version),
             field: UnknownEnvelopeField::Version,
         });
     }
-    match envelope.kind.as_str() {
+    match header.kind.as_str() {
         "api_key" => {
-            let api_key =
-                envelope
-                    .fields
-                    .api_key
-                    .ok_or_else(|| CredentialStoreError::MalformedEnvelope {
-                        provider: provider_id.to_owned(),
-                        reason: "api_key envelope missing api_key field".to_owned(),
-                    })?;
-            Ok(Credential::ApiKey(secret_string(api_key)))
+            let envelope: ApiKeyEnvelopeV1 =
+                serde_json::from_str(raw).map_err(|_| CredentialStoreError::MalformedEnvelope {
+                    provider: provider_id.to_owned(),
+                    reason: "api_key credential envelope does not match the expected schema"
+                        .to_owned(),
+                })?;
+            debug_assert_eq!(envelope.version, ENVELOPE_VERSION);
+            debug_assert_eq!(envelope.kind, "api_key");
+            Ok(Credential::ApiKey(secret_string(envelope.api_key)))
         }
         "oauth" => {
-            let access =
-                envelope
-                    .fields
-                    .access
-                    .ok_or_else(|| CredentialStoreError::MalformedEnvelope {
-                        provider: provider_id.to_owned(),
-                        reason: "oauth envelope missing access field".to_owned(),
-                    })?;
-            let refresh =
-                envelope
-                    .fields
-                    .refresh
-                    .ok_or_else(|| CredentialStoreError::MalformedEnvelope {
-                        provider: provider_id.to_owned(),
-                        reason: "oauth envelope missing refresh field".to_owned(),
-                    })?;
-            let expires_at = match envelope.fields.expires_at {
+            let envelope: OAuthEnvelopeV1 =
+                serde_json::from_str(raw).map_err(|_| CredentialStoreError::MalformedEnvelope {
+                    provider: provider_id.to_owned(),
+                    reason: "oauth credential envelope does not match the expected schema"
+                        .to_owned(),
+                })?;
+            debug_assert_eq!(envelope.version, ENVELOPE_VERSION);
+            debug_assert_eq!(envelope.kind, "oauth");
+            let expires_at = match envelope.expires_at {
                 Some(secs) => Some(time::OffsetDateTime::from_unix_timestamp(secs).map_err(
                     |error| CredentialStoreError::MalformedEnvelope {
                         provider: provider_id.to_owned(),
@@ -577,16 +611,16 @@ fn decode_credential(raw: &str, provider_id: &str) -> Result<Credential, Credent
                 None => None,
             };
             Ok(Credential::OAuthToken {
-                access: secret_string(access),
-                refresh: secret_string(refresh),
+                access: secret_string(envelope.access),
+                refresh: secret_string(envelope.refresh),
                 expires_at,
-                base_url: envelope.fields.base_url,
-                account_id: envelope.fields.account_id,
+                base_url: envelope.base_url,
+                account_id: envelope.account_id,
             })
         }
         _ => Err(CredentialStoreError::UnknownEnvelope {
             provider: provider_id.to_owned(),
-            version: Some(envelope.version),
+            version: Some(header.version),
             field: UnknownEnvelopeField::Kind,
         }),
     }
@@ -1327,6 +1361,34 @@ impl AuthResolver for AuthSource {
 #[cfg(test)]
 mod tests {
     struct FixedErrorBackend(super::BackendError);
+
+    #[test]
+    fn credential_envelopes_reject_cross_kind_and_unknown_fields_without_leaks() {
+        use opi_ai::credential::CredentialStoreError;
+
+        const ACCESS: &str = "oauth-access-canary-must-not-leak";
+        const REFRESH: &str = "oauth-refresh-canary-must-not-leak";
+        for raw in [
+            format!(r#"{{"version":1,"kind":"api_key","api_key":"key","access":"{ACCESS}"}}"#),
+            format!(
+                r#"{{"version":1,"kind":"oauth","access":"{ACCESS}","refresh":"{REFRESH}","api_key":"key"}}"#
+            ),
+            format!(
+                r#"{{"version":1,"kind":"oauth","access":"{ACCESS}","refresh":"{REFRESH}","future_field":true}}"#
+            ),
+        ] {
+            let error = super::decode_credential(&raw, "provider")
+                .expect_err("mixed-kind and unknown fields must fail closed");
+            assert!(matches!(
+                error,
+                CredentialStoreError::MalformedEnvelope { .. }
+            ));
+            for rendered in [format!("{error}"), format!("{error:?}")] {
+                assert!(!rendered.contains(ACCESS));
+                assert!(!rendered.contains(REFRESH));
+            }
+        }
+    }
 
     impl super::KeyringBackend for FixedErrorBackend {
         fn get(
