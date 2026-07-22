@@ -1,11 +1,11 @@
 # Phase 14 Provider & Auth -- Independent Code Audit
 
-**Auditor**: codex (independent, no prior audit reports consulted)
-**Date**: 2026-07-20
-**Scope**: Tasks 14.1--14.21; task commits `d9f21a9` through `8364e74`; current implementation assessed at `b27905a`
-**Method**: Full read of the Phase 14 ledger, all three normative specifications, affected source/tests/docs, and checked-in pi-0.80.6 fixtures; task/criterion/invariant tracing; three independent file-group reviews; fresh workspace and focused verification.
+**Auditor**: codex (independent; no prior audit findings were consulted)
+**Date**: 2026-07-22
+**Scope**: Tasks 14.1--14.21; implementation commits `d9f21a9..8364e74`; current source at `8d6e6ca` (including later source remediations)
+**Method**: Full specification and task-ledger read, grouped full-file source/test review, cross-crate tracing, invariant and negative-path analysis, documentation parity review, and fresh workspace verification.
 
-No `docs/snapshots/phase14/audit.*.md`, remediation plan, evaluator report, or review transcript was consulted. The ledger's short `phase_exit.evaluator_summary` was used only as structural metadata.
+**Independence note**: Audit context contaminated (isolated): one auxiliary provider-wire sub-pass reported accidental exposure to forbidden report snippets during a broad lookup. That sub-pass was discarded in full before returning findings. A fresh zero-context replacement re-read the source; only the clean pass and independently verified source evidence are used below. The primary auditor did not receive the snippets.
 
 ---
 
@@ -15,250 +15,207 @@ No `docs/snapshots/phase14/audit.*.md`, remediation plan, evaluator report, or r
 
 | Severity | Count |
 |----------|------:|
-| Blocker  | 0 |
-| Major    | 7 |
-| Minor    | 2 |
-| Info     | 0 |
+| Blocker | 0 |
+| Major | 7 |
+| Minor | 4 |
+| Info | 0 |
 
-Phase 14 has substantial, well-tested substrate, and the full workspace gates are green. However, seven Major findings affect normal Responses/Codex streaming, panic safety for untrusted provider data, cancellation, thinking enforcement, mixed-model cost accounting, and typed Codex authentication remediation. These span several core Phase 14 success criteria, so the phase should not be treated as closed despite the absence of a direct credential disclosure.
+Phase 14 has unusually strong automated coverage: all workspace targets, Clippy, doctests, and warning-denied rustdoc pass. Credential redaction, OAuth deadline/cancellation behavior, static catalog fixtures, per-stream auth resolution, and outer-TUI retry semantics are well covered.
+
+The phase nevertheless does not meet its exit contract. The current implementation can advertise a custom provider but execute a built-in route, advertise extension model overrides that a mapped provider cannot dispatch, drop valid OpenAI tool-call argument bytes, ignore audited Copilot Anthropic compatibility metadata, and bypass the required unsupported-thinking preflight on public provider/collection paths. Together with the incomplete refresh batch contract and process-global keyring ownership bug, these are systemic cross-task failures rather than isolated polish issues.
 
 ### Per-task summary
 
 | Task | Title | Verdict |
 |------|-------|---------|
-| 14.1 | Credential store model | PASS |
-| 14.2 | OAuth architecture and per-request auth re-resolution | MAJOR findings 2.3, 3.3 |
-| 14.3 | Request scalars and session-affinity production path | PASS |
-| 14.4 | Model capabilities and Anthropic cache markers | MAJOR findings 2.2, 3.1 |
-| 14.5 | Usage and cost cache/reasoning accounting | MAJOR finding 2.4 |
-| 14.6 | Dynamic provider model refresh | PASS |
-| 14.7 | Provider/auth docs, non-goal guards, and final gates | PASS with test-quality gaps |
-| 14.8 | Native keyring and production probes | PASS |
-| 14.9 | Login/logout dispatcher and persistence | MAJOR/MINOR findings 2.3, 3.3, 4.1, 4.2 |
-| 14.10 | Live auth and session interaction | MAJOR findings 3.2, 3.3 |
-| 14.11 | Factory-built Anthropic cache markers | MAJOR finding 2.2 |
-| 14.12 | Usage and cost contract | MAJOR finding 2.4 |
-| 14.13 | Documentation, verification, and residual closure | PASS with test-quality gaps |
-| 14.14 | Native keyring host selection | PASS |
-| 14.15 | WireApi, model metadata, pricing, thinking, canonical IDs | MAJOR findings 2.4, 3.1 |
-| 14.16 | ApiMappedProvider and TOML custom providers | MAJOR finding 3.1 |
-| 14.17 | GitHub Copilot three-wire catalog | MAJOR findings 2.1, 3.1, 3.3 |
-| 14.18 | OpenAI Codex dedicated wire, catalog, dual login | MAJOR findings 2.1, 2.3, 3.1--3.3 |
-| 14.19 | Concrete OAuth dispatcher vertical path | MAJOR/MINOR findings 2.3, 3.3, 4.1, 4.2 |
-| 14.20 | Outer TUI credential retry | MAJOR finding 3.2 |
-| 14.21 | Documentation, acceptance artifacts, Phase F | Acceptance did not expose the Major findings |
+| 14.1 | Credential store model | Pass with Minor |
+| 14.2 | OAuth architecture and per-request auth re-resolution | Pass |
+| 14.3 | Request scalars and session-affinity production path | Pass |
+| 14.4 | Model capabilities and Anthropic cache markers | Pass |
+| 14.5 | Usage and cost cache/reasoning accounting | Pass with Minor |
+| 14.6 | Dynamic provider model refresh | Fail -- Major |
+| 14.7 | Provider/auth docs, non-goal guards, and final Phase 14 gates | Pass with Minor |
+| 14.8 | Native keyring and production probes | Pass |
+| 14.9 | Login/logout dispatcher and persistence | Pass |
+| 14.10 | Live auth and session interaction | Pass |
+| 14.11 | Factory-built Anthropic cache markers | Pass |
+| 14.12 | Usage and cost contract | Pass with Minor |
+| 14.13 | Documentation, verification, and residual closure | Pass with Minor |
+| 14.14 | Native keyring host selection | Fail -- Major |
+| 14.15 | WireApi, model metadata, pricing, thinking, and canonical IDs | Fail -- Major |
+| 14.16 | ApiMappedProvider and TOML custom providers | Fail -- Major |
+| 14.17 | GitHub Copilot three-wire catalog | Fail -- Major |
+| 14.18 | OpenAI Codex dedicated wire, catalog, and dual login | Fail -- Major |
+| 14.19 | Concrete OAuth dispatcher vertical path | Pass |
+| 14.20 | Outer TUI credential retry | Pass |
+| 14.21 | Documentation, acceptance artifacts, and Phase F | Pass with Minor |
 
 ---
 
-## 2. Correctness and Protocol Findings
+## 2. Correctness and Cross-Task Integration Findings
 
-### 2.1 MAJOR: Responses/Codex normal SSE frames become terminal errors
+### 2.1 MAJOR: Custom provider IDs can collide with built-in routing and send a request through the wrong provider
 
-**Files:** `crates/opi-ai/src/openai_responses_shared.rs`, `crates/opi-ai/src/openai_responses.rs`, `crates/opi-ai/src/openai_codex_responses.rs`
-**Lines:** shared `49--53`, `199--209`, `326--328`, `529--539`; Responses `439--459`; Codex `227--253`
-**Spec refs:** Tasks 14.17--14.18; Phase 14 pi-0.80.6 wire alignment
+**Files:** `crates/opi-coding-agent/src/config.rs`, `crates/opi-coding-agent/src/provider_factory.rs`, `crates/opi-ai/src/provider_collection.rs`
+**Lines:** `config.rs:910--927`; `provider_factory.rs:1773--1829, 2059--2079`; `provider_collection.rs:299--316`
+**Cause:** Custom-provider validation rejects only an empty ID. Runtime construction matches built-in and deprecated IDs before consulting `providers.custom`, while model listing registers custom providers after built-ins and `ProviderCollection::register` replaces an equal ID. A configuration such as `[providers.custom.anthropic]` can therefore expose custom metadata in listing/pickers but construct the built-in Anthropic provider at execution time. Quoted IDs containing `:` are also accepted even though `provider:model` parsing makes them unroutable. A custom ID can additionally collide with an `openai_compatible` profile; listing and runtime availability then disagree depending on which credential is present.
+**Impact:** A validly parsed configuration can list one endpoint/catalog and execute another. When a model ID overlaps, prompts may be sent to an unintended external service with a different credential; otherwise a listed model fails as unknown at runtime.
+**Fix:** Validate provider IDs once across built-ins, deprecated IDs, custom providers, and `openai_compatible` profiles. Reject reserved IDs, cross-table duplicates, `:`, and IDs that cannot round-trip through `provider:model`. Add a product-path test that compares listing and captured runtime endpoint for collision cases.
 
-**Cause:** `ResponsesEvent::try_from_frame` dispatches exclusively on the SSE `event:` field. A data-only frame therefore defaults to event type `message`, and every unrecognized type becomes `ResponsesEvent::Error`, which immediately marks the mapper terminal. Canonical Codex SSE is data-only and carries the actual type in JSON (`{"type":"response.output_item.added", ...}`), as demonstrated by `.repo/pi-0.80.6/packages/ai/test/openai-codex-stream.test.ts:48--86`.
+### 2.2 MAJOR: Extension model overrides are advertised but cannot be dispatched by `ApiMappedProvider`
 
-Even when a server supplies `event:`, the decoder treats normal protocol events such as `response.in_progress`, `response.content_part.done`, `response.function_call_arguments.done`, reasoning summary/text events, `response.incomplete`, and Codex `response.done` as errors. The checked-in pi handler parses JSON `type`, handles reasoning and function-call completion, normalizes terminal variants, and ignores benign lifecycle extensions.
+**Files:** `crates/opi-ai/src/registry.rs`, `crates/opi-ai/src/api_mapped.rs`, `crates/opi-coding-agent/src/provider_factory.rs`, `crates/opi-coding-agent/src/harness.rs`
+**Lines:** `registry.rs:224--241`; `api_mapped.rs:175--196`; `provider_factory.rs:2145--2152`; `harness.rs:951--957, 1191--1196`
+**Cause:** `ProviderRegistry::resolve` gives extension overrides precedence and returns the original provider with override metadata. The harness uses that registry for picker entries and model validation. `ApiMappedProvider::stream`, however, looks up the model only in its private construction-time catalog. An extension-added model therefore resolves in the registry and is selectable, then fails with `UnknownModel`; a same-ID override is accepted as metadata but cannot change the route/compatibility actually used by the mapped provider.
+**Impact:** The extension model-override contract is false for custom mapped providers, GitHub Copilot, and any other mapped provider. Users can select/persist a model that deterministically fails on the next provider call.
+**Fix:** Apply overrides to the mapped catalog/route graph before provider construction, or reject overrides that the active provider cannot dispatch. Add an integration test that selects an extension-added mapped model and captures the concrete route.
 
-**Impact:** A normal Codex response can fail on its first frame. Standard Responses/Copilot routes can terminate on ordinary lifecycle events, lose reasoning or final tool arguments, and map incomplete/length termination to an error.
+### 2.3 MAJOR: Refresh returns on the first failure instead of collecting every provider result
 
-**Fix:** Decode the JSON `type` field, using the SSE event name only as a validated fallback. Explicitly handle function-call completion, reasoning, incomplete/failed, and Codex terminal forms; ignore unknown non-error extensions. Add data-only, realistic full-sequence fixtures for both HTTP paths.
+**File:** `crates/opi-ai/src/provider_collection.rs`
+**Lines:** `430--491`
+**Spec ref:** Phase 14 design, T3e; task 14.6 DoD.
+**Cause:** The method documentation and design require every provider to be called in sorted order, all results to be collected, and registry mutation to occur only if the entire batch succeeds. The loop returns immediately on a provider error or invalid candidate model, so later providers are never called.
+**Impact:** The collection does preserve the prior registry atomically, but it does not implement the promised batch operation. Later providers cannot refresh or report their outcome after an earlier failure, and call order/coverage depends on the first error.
+**Fix:** Collect every raw result first in sorted order, validate all successful candidates without mutating live catalogs, retain the first sorted error, and replace catalogs only when no result or validation error exists.
+**Test gap:** `refresh_models_deterministic_ordering` checks sorted `provider_ids`, not recorded refresh invocation order; no test proves later providers are called after an earlier failure.
 
-### 2.2 MAJOR: Anthropic block events can underflow and panic
+### 2.4 MAJOR: GitHub Copilot Anthropic compatibility metadata is stored but never applied to the wire
 
-**File:** `crates/opi-ai/src/anthropic.rs`
-**Lines:** `468--469`, `517--518`
+**Files:** `crates/opi-coding-agent/src/github_copilot.rs`, `crates/opi-coding-agent/src/provider_factory.rs`, `crates/opi-ai/src/anthropic.rs`
+**Lines:** `github_copilot.rs:75--94, 146--166, 422--431`; `provider_factory.rs:1311--1339`; `anthropic.rs:820--898`
+**Cause:** The audited Copilot catalog records `force_adaptive_thinking` and `supports_temperature`, including Opus 4.7/4.8 entries that require adaptive thinking and prohibit temperature. Factory construction passes those models to the concrete Anthropic route, but `AnthropicProvider::build_request_body` never reads `AnthropicMessagesCompat`: it always emits a requested `temperature` and always serializes enabled thinking as fixed budget-based `{type: "enabled", budget_tokens: ...}`.
+**Impact:** Requests for audited Copilot Anthropic models can violate their declared wire contract and be rejected or behave differently from the selected model metadata. The full-catalog fixture proves metadata equality, not that the production route consumes it.
+**Fix:** Resolve `WireCompat::AnthropicMessages` for the selected model in request construction. Suppress temperature when unsupported and emit the required adaptive-thinking shape when forced. Add captured factory-wire tests for Opus 4.7/4.8 and a non-adaptive control model.
 
-**Cause:** `ContentBlockDelta` and `ContentBlockStop` compute `self.blocks.len() - 1`. A syntactically valid event delivered before any block start underflows `usize`. Both arms also discard the upstream `index` and mutate the last block, so out-of-order/interleaved indices can update the wrong content.
+### 2.5 MAJOR: OpenAI Chat drops arguments included in the initial tool-call chunk
 
-**Impact:** Malformed or reordered upstream input can panic a direct mapper caller. In the HTTP task it can terminate the producer without a typed terminal error, violating the provider failure-in-band contract.
+**File:** `crates/opi-ai/src/openai_chat.rs`
+**Lines:** `332--361`
+**Test:** `crates/opi-ai/tests/openai_chat_fixtures.rs:240--246`
+**Cause:** When a tool-call delta includes `id`, `name`, and non-empty `function.arguments`, the mapper emits only `ToolCallStart`. It reads and emits `arguments` only in the `else` branch where `id` is absent. Existing fixtures make the initial arguments string empty and therefore mask the loss.
+**Impact:** A legal OpenAI-compatible stream can lose the first argument fragment. The resulting tool JSON is truncated or invalid, causing the wrong tool input or a downstream validation failure. This affects direct OpenAI Chat and the Phase 14 custom/Copilot Chat routes.
+**Fix:** Seed the accumulator from initial arguments or emit `ToolCallStart` followed by `ToolCallDelta` when both are present. Add single- and multi-tool fixtures whose initial chunk contains non-empty arguments.
 
-**Fix:** Use the event index with safe `get`/`get_mut`; return a non-retryable `StreamError` for missing, out-of-range, or type-mismatched blocks. Add delta-before-start, stop-before-start, wrong-index, and interleaved-index tests.
+### 2.6 MAJOR: Public provider and collection dispatch bypass the required unsupported-thinking preflight
 
-### 2.3 MAJOR: Provider-controlled OAuth duration fields can panic
+**Files:** `crates/opi-ai/src/provider.rs`, `crates/opi-ai/src/provider_collection.rs`, `crates/opi-ai/src/api_mapped.rs`, `crates/opi-ai/src/openai_chat.rs`, `crates/opi-ai/src/openai_responses.rs`, `crates/opi-ai/src/openai_codex_responses.rs`
+**Lines:** `provider.rs:217--275`; `provider_collection.rs:389--411`; `api_mapped.rs:175--196`; `openai_chat.rs:1096--1101`; `openai_responses.rs:321--326`; `openai_codex_responses.rs:111--123`
+**Cause:** The public validator correctly maps an unresolvable thinking level to `UnsupportedCapability`, and the `opi-agent` loop calls it. `ProviderCollection::dispatch_stream` and `ApiMappedProvider::stream` do not. Chat and Responses silently ignore `ThinkingLevelMap::resolve` errors; Codex falls back to the raw level name. The public library paths therefore do not uphold the documented provider contract.
+**Impact:** Direct Rust consumers and collection dispatch can perform network I/O with a reasoning value that model metadata explicitly marks unsupported. The same request is rejected in the agent loop, so behavior diverges by entry point.
+**Fix:** Put capability preflight at the provider/collection dispatch boundary used by all public paths and propagate mapping errors instead of swallowing them. Add zero-auth/zero-HTTP negative tests for Anthropic, Chat, Responses, Codex, and `ApiMappedProvider`.
+**Related gap:** `ModelInfo::validate` also accepts `supports_thinking = false` with an enabled thinking map, and `supports_long_cache_retention = true` with cache control disabled. Enforce coherence while validating model metadata.
 
-**File:** `crates/opi-coding-agent/src/oauth.rs`
-**Lines:** `427--433`, `534--536`, `1028--1035`, `1179--1240`, `1717--1720`, `1763--1767`
-**Spec refs:** `docs/opi-spec.md:61`, `1754--1758`; exit-remediation design `946--948`
+### 2.7 MAJOR: Native keyring leasing destroys a pre-existing process default store
 
-**Cause:** Server-controlled `expires_in: i64` is added to `OffsetDateTime` with the panicking `Add` implementation. The locked `time 0.3.47` implementation uses `checked_add(...).expect(...)`. Device endpoints can also supply `u64::MAX` as the polling interval; a later `slow_down` performs unchecked `interval += 5s` (and an enormous interval may already overflow timer construction).
-
-**Impact:** A malformed or malicious OAuth response can crash the process instead of returning a typed, redacted provider error. This affects login, refresh, GitHub Copilot Device Code, and OpenAI Codex Device Code paths.
-
-**Fix:** Validate duration bounds and use checked date/duration arithmetic. Reject unrepresentable values with fixed typed errors. Add adversarial `i64::{MIN,MAX}` and `u64::MAX` login/refresh/device tests.
-
-### 2.4 MAJOR: Session cost reprices historical usage with the current model
-
-**Files:** `crates/opi-coding-agent/src/harness.rs`, `crates/opi-coding-agent/src/session_coordinator.rs`, `crates/opi-coding-agent/tests/session_runtime.rs`
-**Lines:** harness `1173--1178`; coordinator `609--624`, `646--650`; test `1280--1295`, `1371--1428`
-**Spec refs:** Tasks 14.5, 14.12, 14.15; SC6
-
-**Cause:** `sync_session_cost_model` replaces one session-wide model/pricing value. `cost_summary` then applies that current price to all cumulative usage. It also selects a pricing tier using cumulative session input tokens, although a model threshold applies to each request.
-
-The lifecycle test encodes the defect: after recording $18 of Sonnet usage, selecting Opus performs no request but changes the asserted total to $42. The test named `embedded_model_pricing_updates_on_model_switch_and_resume` switches before recording any usage and therefore never tests mixed-model history.
-
-**Impact:** Model selection retroactively changes already-incurred cost. Mixed-model resume/fork summaries are wrong, and several individually below-threshold calls can cumulatively cross a tier and reprice the entire session.
-
-**Fix:** Compute and accumulate cost per completed turn using that turn's model and input-token tier. For resume/fork, replay usage against initial-model/model-change segments or persist an additive non-authoritative priced-usage breakdown consistent with the session compatibility constraints. Replace the retroactive assertions with invariance tests.
-
----
-
-## 3. Contract and Cross-Task Integration Findings
-
-### 3.1 MAJOR: Thinking-level enforcement is optional and inconsistent
-
-**Files:** `crates/opi-ai/src/provider.rs`, `crates/opi-ai/src/openai_chat.rs`, `crates/opi-ai/src/openai_responses.rs`, `crates/opi-ai/src/openai_codex_responses.rs`, `crates/opi-coding-agent/src/harness.rs`
-**Lines:** provider `225--284`; Chat `1096--1101`; Responses `321--326`; Codex `111--125`; harness `1016--1078`, `1189--1199`
-**Spec refs:** exit-remediation design `1055--1081`; `docs/opi-spec.md:1702--1706`
-
-**Cause:** Unsupported-level validation lives in a standalone helper that public `Provider::stream`, `ApiMappedProvider`, and `ProviderCollection` do not enforce. Chat/Responses silently omit reasoning after a mapping error, and Codex falls back to the raw level name. The tests' `run_production_request` helper manually calls the validator first, masking the public stream behavior.
-
-The helper also resolves the level when `thinking.enabled == false`, contrary to its own contract. Conversely, `CodingHarness::set_thinking_level` checks only broad thinking capability and token budget, not `thinking_level_map`, so it can accept and persist `xhigh`/`max` for a model that will reject the next prompt.
-
-**Impact:** Direct provider/mapped-provider callers can perform HTTP instead of receiving the required pre-network `UnsupportedCapability`. The coding-agent can report a successful, persisted setting that deterministically fails later, while a disabled request with a stale level can be rejected unnecessarily.
-
-**Fix:** Introduce one checked dispatch seam used by every public stream/collection path. Resolve a model's level only when thinking is enabled. Reuse the same map validation in harness set/model-switch/resume paths. Test `Provider::stream` directly and assert zero auth/HTTP calls.
-
-### 3.2 MAJOR: `AccountIdMissing` loses its typed authentication semantics
-
-**Files:** `crates/opi-ai/src/openai_codex_responses.rs`, `crates/opi-ai/src/provider.rs`, `crates/opi-agent/src/agent_loop.rs`, `crates/opi-coding-agent/src/runner.rs`, `crates/opi-coding-agent/src/rpc.rs`
-**Lines:** Codex `151--158`; provider `317--320`, `372--377`; agent loop `508--524`; runner `690--703`, `725--735`; RPC `1000--1032`
-**Spec ref:** exit-remediation design `1002--1022`
-
-**Cause:** Codex correctly returns `ProviderError::AccountIdMissing` before HTTP, and `opi-ai` classifies it as authentication. `agent_loop` has no matching `AgentError` mapping, so the catch-all converts it to generic `AgentError::Provider`.
-
-**Impact:** Text/JSON exits with `ProviderFailure` instead of `AuthFailure`; typed `/login openai-codex` remediation is lost; RPC emits no authentication event; interactive handling takes the generic failure path.
-
-**Fix:** Preserve a typed agent error (or deliberately normalize to a typed reauthentication error) through diagnostics, interactive mode, runner events/exit codes, JSON, and RPC. Add provider-to-mode integration tests, not only provider-local tests.
-
-### 3.3 MAJOR: Cancellation is not observed across the full Phase 14 operation
-
-**Files:** `crates/opi-coding-agent/src/oauth.rs`, `crates/opi-ai/src/anthropic.rs`, `crates/opi-ai/src/openai_chat.rs`, `crates/opi-ai/src/openai_responses.rs`, `crates/opi-ai/src/openai_codex_responses.rs`
-**Lines:** OAuth `219--271`; Anthropic auth `1305` vs cancellation `982`; Chat auth `1527` vs cancellation `1209`; Responses auth `568` vs cancellation `423`; Codex auth `339` vs cancellation `211`
-**Spec refs:** `docs/opi-spec.md:1754--1758`; provider contract `crates/opi-ai/src/provider.rs:29--32`, `80--84`
-
-**Cause:** PKCE cancellation is first created/polled only after loopback bind and `present_auth_url`; a pre-cancelled or blocked-presenter flow therefore ignores cancellation until the absolute deadline. Separately, provider stream tasks resolve lazy credentials and await HTTP response headers before their byte-loop selects `Request::cancel`.
-
-The main agent path is partly protected because it drops the stream on cancellation and the receiver-drop branch aborts the task. A direct public `Provider`/collection caller that retains and polls the stream is not protected and can refresh credentials or initiate HTTP after cancellation.
-
-**Impact:** Ctrl-C can be unresponsive during pre-code PKCE stages. Public provider consumers can wait indefinitely when no request timeout is set, and cancellation can fail to prevent credential/network work.
-
-**Fix:** Create one cancellation future before PKCE bind and select it through every pre-code stage. In provider implementations, select cancellation and receiver closure around the complete auth-plus-send-plus-body operation, returning exactly one typed `Cancelled` terminal outcome. Add ready-before-start, pending-presenter, pending-resolver, and pending-header tests.
+**Files:** `crates/opi-coding-agent/src/native_keyring.rs`, `crates/opi-coding-agent/src/credential_store.rs`
+**Lines:** `native_keyring.rs:31--42, 52--64`; `credential_store.rs:168--187`
+**Cause:** The first OPI lease unconditionally replaces `keyring-core`'s process-global default store. Dropping the last lease unconditionally calls `unset_default_store` instead of restoring the prior store. `KeyringCoreBackend::new` performs this installation automatically, including in an embedding process.
+**Impact:** An application embedding `opi-coding-agent` can lose the credential store installed by another component while OPI is alive and end with no default store after OPI shuts down. This is cross-component global-state corruption on a valid library path.
+**Fix:** Capture `keyring_core::get_default_store()` before the first OPI installation and restore it on the last guard drop. Alternatively, reject installation when a non-OPI store is already installed and expose an explicit injection path. Add a pre-installed-store lifecycle test.
 
 ---
 
-## 4. Minor Findings
+## 3. Security, Redaction, and Storage Finding
 
-### 4.1 Minor: Invalid PKCE callbacks receive a success page
+### 3.1 MINOR: The versioned credential envelope accepts mixed-kind and unknown fields
 
-**File:** `crates/opi-coding-agent/src/oauth.rs`
-**Lines:** `439--484`
+**File:** `crates/opi-coding-agent/src/credential_store.rs`
+**Lines:** `403--426, 523--592`
+**Cause:** One flattened `EnvelopeFields` struct contains both API-key and OAuth fields. Deserialization ignores unknown fields, and decoding reads only the fields required by `kind`. A v1 `api_key` envelope containing `access`/`refresh`, or an OAuth envelope containing `api_key`, is silently accepted rather than classified as malformed.
+**Impact:** The protected store remains secret, so this is not a direct disclosure. It weakens fail-closed corruption detection and can hide format drift or a buggy writer, making credential-kind invariants harder to trust.
+**Fix:** Decode a strict tagged v1 enum with variant-specific fields and `deny_unknown_fields`, or explicitly reject fields that do not belong to the selected kind. Add mixed-kind and unknown-field tests.
 
-**Cause:** The loopback handler writes and flushes HTTP 200 with “Login complete” before parsing the request or validating the CSRF state.
-
-**Impact:** A malformed or state-mismatched callback correctly fails credential acquisition, but the browser has already told the user that login succeeded.
-
-**Fix:** Parse and validate first. Return a fixed secret-free 400 response for invalid input and 200 only after valid state/code extraction.
-
-### 4.2 Minor: Large manual input can block the child/parent pipe
-
-**File:** `crates/opi-coding-agent/src/oauth.rs`
-**Lines:** `1893--1915`
-**Spec ref:** `docs/opi-spec.md:1759--1762`
-
-**Cause:** The parent waits for the cooked-line child to exit before draining piped stdout. A line larger than the pipe capacity blocks the child on write while the parent blocks on exit.
-
-**Impact:** Manual fallback stalls until the OAuth deadline/cancellation path kills and reaps the child. Normal short codes are unaffected.
-
-**Fix:** Drain stdout concurrently with a strict maximum line length, then await/reap the child.
+The remaining credential/OAuth review found no secret leakage or unsafe fallback: malformed/unknown persisted state blocks environment fallback, Linux daemon absence is narrowly classified, refresh is lock-coalesced, OAuth errors are redacted, one absolute deadline bounds all stages, and cancellation is honored only before one-use token acquisition.
 
 ---
 
-## 5. Test Quality Assessment
+## 4. Usage and Documentation Findings
 
-All fresh workspace gates pass, but several green tests normalize or omit the failing behavior:
+### 4.1 MINOR: Session cost undercounts after a cumulative bucket exceeds `u32::MAX`
 
-- Responses/Codex fixtures add explicit `event:` fields and omit canonical data-only/lifecycle/reasoning/function-done sequences.
-- Thinking “production” tests call `validate_request_capabilities` outside `Provider::stream`; body-builder tests explicitly accept silent omission of unsupported reasoning.
-- The recorded 14.15 filter `embedded_model_pricing_` excludes the actual harness switch/resume/fork lifecycle test.
-- The included pricing test switches before any usage; the excluded lifecycle test asserts the incorrect $18-to-$42 retroactive reprice.
-- Account-id tests stop at the provider boundary and never exercise agent/text/JSON/RPC classification.
-- OAuth tests do not inject extreme duration values or cancellation before bind/presentation.
-- `thinking_integration.rs` checks enabled/budget but does not assert that the selected level reaches the request.
-- Several Non-Goal guards are exact substring/source-shape checks. No actual Non-Goal violation was found, but these guards are weaker than behavioral or compiled API checks.
+**Files:** `crates/opi-ai/src/stream.rs`, `crates/opi-coding-agent/src/session_coordinator.rs`
+**Lines:** `stream.rs:157--179, 189--233`; `session_coordinator.rs:609--624`
+**Cause:** `CumulativeUsage` correctly retains `u64` totals, but `SessionCoordinator::cost_summary` converts through `as_usage()`, which saturates parent buckets at `u32::MAX`, before calling `calculate_cost`.
+**Impact:** Public cumulative `Usage` saturation matches the spec, but aggregate cost stops increasing after the cap, contradicting the separate requirement that cumulative cost remain correct. This requires an extremely large session, so practical risk is low.
+**Fix:** Calculate cumulative cost directly from the internal `u64` totals (including optional child subsets) while keeping the public `Usage` projection saturated. Strengthen the saturation test to assert the exact expected cost, not only finite/non-negative values.
 
-### Fresh verification
+### 4.2 MINOR: Phase 14 documentation omits the typed `AccountIdMissing` outcome
+
+**Files:** `README.md`, `README.zh.md`, `crates/opi-agent/README.md`, `crates/opi-agent/README.zh.md`, `crates/opi-ai/README.md`, `crates/opi-ai/README.zh.md`, `crates/opi-coding-agent/README.md`, `crates/opi-coding-agent/README.zh.md`, `docs/opi-spec.md`, `docs/opi-spec.zh.md`
+**Lines:** Representative omissions at `README.md:204--212`, `crates/opi-agent/README.md:45--55`, `crates/opi-ai/README.md:97--104`, `crates/opi-coding-agent/README.md:211--216, 371--381`, `docs/opi-spec.md:1717--1721, 1764--1770`, `docs/opi-spec.zh.md:1462--1466`
+**Cause:** The changelog records `AgentError::AccountIdMissing { provider_id }` and its distinct `/login <provider>`/AuthFailure behavior, but the public auth taxonomy and non-interactive sections enumerate only `CredentialNeeded` and `CredentialRevoked`. English and Chinese are consistently incomplete rather than drifting from each other.
+**Impact:** Embedders with exhaustive `AgentError` matches and users diagnosing an OpenAI Codex credential without `chatgpt_account_id` do not get the full documented contract.
+**Fix:** Document `AccountIdMissing` across all EN/ZH pairs and the normative specs, including its distinction from revoked credentials and its non-interactive exit/remediation behavior.
+
+---
+
+## 5. Test Quality Finding
+
+### 5.1 MINOR: Product custom-header negative tests fail before reaching header validation
+
+**Files:** `crates/opi-coding-agent/tests/custom_provider_map.rs`, `crates/opi-coding-agent/src/config.rs`
+**Lines:** `custom_provider_map.rs:289--312, 328--337`; `config.rs:1045--1060`
+**Cause:** The `reserved header` and `invalid header name` cases omit every required `base_url`. Config validation therefore rejects them at the earlier base-URL gate, and the assertions check only that the provider ID appears and a canary does not leak. They never prove the intended header rejection.
+**Impact:** Product TOML wiring for the reserved/invalid-header invariant can regress while these named tests remain green. Lower-level header tests do not close the config-order gap.
+**Fix:** Supply a valid base URL, assert the specific header error class/message, and add an auth-header case with a syntactically valid non-secret value.
+
+### Coverage assessment
+
+| Area | Positive coverage | Negative/edge coverage | Assessment |
+|------|-------------------|------------------------|------------|
+| Credential store/probes | Round-trip, lock, native backend, listing/doctor | corruption, unavailable daemon, partial two-step mutation, env fallback | Strong; missing strict envelope and pre-existing global-store cases |
+| OAuth | Three concrete providers, refresh, persistence, presenter/terminal | state mismatch, denial, timeout, cancellation cutover, secret canaries | Strong |
+| Outer TUI / non-interactive | same-provider one-shot retry; text/JSON/RPC remediation | cancellation, different provider, store/presenter/terminal failure, mid-stream revocation | Strong |
+| Model/wire metadata | exact catalog fixtures, route completeness, endpoint capture | unknown model, missing route, wire mismatch | Metadata strong; compatibility consumption and public preflight missing |
+| OpenAI streaming | text, usage, tool calls, malformed arguments | multi-tool and chunked arguments | Initial coalesced tool arguments missing |
+| Custom mapped providers | three wires, shared lazy auth, base precedence, invalid schemas | missing routes, reserved headers, invalid compat | Collision, extension-dispatch, and product header assertions missing |
+| Dynamic refresh | replacement, clearing, rollback | invalid/duplicate catalogs and provider errors | Atomic state strong; all-provider invocation contract untested |
+| Usage/cost | optional subsets, equality/absence, weighted cost, resume | malformed subsets and saturation | Exact cost above public saturation cap untested |
+| Documentation | source guards and EN/ZH pairs | non-goal phrase guards | Auth taxonomy completeness missing |
+
+---
+
+## 6. Invariant Verification
+
+| Invariant | Code evidence | Test coverage | Result |
+|-----------|---------------|---------------|--------|
+| Probes do not read protected credential contents | Marker-only `probe_metadata`; async doctor/listing consume redacted probes | credential-store, doctor, listing secret-read counters | Pass |
+| Corrupt/unknown persisted state never falls through to env | Resolver returns typed store error when marker/envelope is present but invalid | corrupt marker/envelope/version/kind tests | Pass |
+| Every credential mutation and refresh uses one coordinator lock | public write/delete plus refresh unlocked operations under held coordinator | contention, concurrent refresh, timeout, retry tests | Pass |
+| OAuth flows use one absolute deadline and bounded body reads | shared deadline propagated through method selection, send, body, poll, exchange | paused-time deadline/body tests for PKCE, Copilot, Codex device | Pass |
+| Cancellation is accepted only before one-use code/token acquisition | biased pre-acquisition select; post-acquisition exchange ignores cancel under original deadline | all three flow families | Pass |
+| Credentials are re-resolved inside every returned managed stream | concrete route auth resolution occurs in stream future | changed token/base URL and same-turn retry tests | Pass |
+| Missing/revoked credentials never auto-login; only same-provider explicit success retries once before output | outer TUI pending-turn state machine | comprehensive `interactive_tui_auth` matrix | Pass |
+| Unsupported thinking levels fail before network I/O on every public wire path | Validator exists, but collection/mapped/concrete public dispatch bypasses or swallows it | agent-loop tests only | **Fail (2.6)** |
+| Mapped-provider listing/selection and dispatch use one coherent catalog | private mapped catalog differs from registry override layer | registry-only override tests | **Fail (2.2)** |
+| Custom provider identity maps to the same listing and runtime route | listing can replace built-in metadata; runtime matches built-ins first | no collision test | **Fail (2.1)** |
+| GitHub Copilot requests honor audited per-model compatibility metadata | metadata is constructed but Anthropic request builder ignores it | catalog equality only | **Fail (2.4)** |
+| Refresh calls all providers, then atomically replaces only on full success | registry mutation is deferred, but loop returns on first failure | rollback covered; later-call behavior absent | **Partial (2.3)** |
+| Usage child fields stay within parents and do not double-count | provider validation plus weighted four-line cost calculation | provider and persistence/resume tests | Pass for normal range; cumulative cost overflow fails 4.1 |
+| GitHub Copilot and OpenAI Codex listing is static and secret-free | listing path excludes credential probes for both catalogs | zero-read listing tests | Pass |
+| EN/ZH counterparts remain synchronized | full paired read | documentation guards | Pass with shared omission 4.2 |
+
+---
+
+## 7. Verification Results
 
 | Command | Result |
 |---------|--------|
-| `cargo test --workspace --all-targets` | PASS |
-| `cargo test --workspace --doc` | PASS |
-| `cargo fmt --check --all` | PASS |
-| `cargo clippy --workspace --all-targets -- -D warnings` | PASS |
-| `RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps` | PASS |
-| Focused opi-ai auth/wire/Responses/Codex/model tests | PASS |
-| Focused coding-agent credential/OAuth/TUI/provider tests | 253 passed, 2 subprocess-only ignored |
-| Exact mixed-model lifecycle test | PASS, while asserting the incorrect retroactive reprice |
+| `cargo fmt --check --all` | Pass |
+| `git diff --check` | Pass |
+| `cargo test --workspace --all-targets` | Pass (alternate `CARGO_TARGET_DIR` on `E:`) |
+| `cargo clippy --workspace --all-targets -- -D warnings` | Pass |
+| `cargo test --workspace --doc` | Pass |
+| `RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps` | Pass |
+
+The first all-targets invocation using the existing `D:` target failed during linking because the volume had zero free space; it did not reach a test assertion. The complete command was rerun from scratch with `CARGO_TARGET_DIR=E:\codex-opi-phase14-audit-full` and exited successfully. No live provider calls or user keychain access were used.
 
 ---
 
-## 6. Success Criteria and Non-Goals
+## 8. Priority Recommendations
 
-| Criterion | Assessment | Independent evidence |
-|-----------|------------|----------------------|
-| SC1 credential storage/probes | MET | Native selector, marker-only probes, fail-closed resolver, locking, and no-plaintext checks are substantive. |
-| SC2 OAuth product flows | NOT MET | Normal flows exist, but provider-controlled durations can panic and PKCE cancellation omits pre-code stages. |
-| SC3 live auth/session interaction | NOT MET | Lazy auth exists; public cancellation and `AccountIdMissing` mode propagation are incomplete. |
-| SC4 request/session affinity | MET | New/resume/fork session IDs reach requests and reviewed wire mappings. |
-| SC5 capabilities/cache markers | PARTIAL | Cache/capability placement is strong; thinking-map enforcement is not part of every public dispatch path. |
-| SC6 usage/metadata/cost | NOT MET | Strict usage subsets pass, but mixed-model and cumulative-tier cost summaries are incorrect. |
-| SC7 refresh/api-map substrate | PARTIAL | Atomic refresh and routing pass; mapped/public dispatch does not guarantee thinking preflight. |
-| SC8 docs/guards | PARTIAL | English/Chinese claims are aligned, but final acceptance fixtures/filters miss core normal-path failures. |
-
-All eight binding Non-Goals remain respected:
-
-1. no opi-managed plaintext credential file;
-2. no automatic mid-stream re-login;
-3. no per-call credential or provider-managed auth-header override;
-4. no `onPayload`/`onResponse` core hooks;
-5. no `maxRetries`/`maxRetryDelay` fields on `Request`;
-6. no end-to-end `SecretString` provider-construction migration;
-7. no OAuth providers beyond Anthropic, GitHub Copilot, and OpenAI Codex;
-8. no session-schema/context-reconstruction redesign.
-
----
-
-## 7. Invariant Verification
-
-| Invariant | Code evidence | Test coverage / result |
-|-----------|---------------|------------------------|
-| Credentials are not stored in opi plaintext files | Native keyring backend plus non-secret lock/marker | Strong fake-backend/temp-root/redaction coverage; MET |
-| Missing/backend/corrupt credential states remain distinct | Marker and protected-envelope resolver paths fail closed | Strong positive and negative tests; MET |
-| Refresh is locked, double-checked, bounded, and preserves the prior credential on failure | `CredentialResolver` lock/re-read/timeout flow | Strong concurrency/failure tests; MET |
-| OAuth invalid responses fail in-band, not by panic | OAuth duration arithmetic | No extreme-value tests; NOT MET |
-| Cancellation is accepted throughout pre-code login and public request work | Cancellation starts after PKCE presentation and after stream auth/send | Existing tests begin too late; NOT MET |
-| Provider streams yield one meaningful terminal outcome | Responses unknown normal events become Error and transport loops do not terminate at protocol completion | Fixtures are non-realistic; NOT MET |
-| Unsupported thinking is rejected before network on every public wire | Standalone helper only | Tests manually compose helper; NOT MET |
-| Reserved provider/auth headers cannot be overridden | Shared provider-header validation | Strong negative coverage; MET |
-| Session affinity is stable across new/resume/fork | Agent/session coordinator propagation | Production-path tests; MET |
-| Usage children never exceed parents | Provider mappers and `Usage::validate` | Absence/zero/equality/malformed fixtures; MET |
-| Historical cost is invariant under later model selection | One mutable session price over cumulative usage | Test asserts repricing; NOT MET |
-| Dynamic catalog replacement is deterministic and atomic | Collection gathers all snapshots before install | Rollback/order tests; MET |
-| No automatic re-login after revocation | Typed `CredentialRevoked` ends the turn | Product-mode negative tests; MET |
-
----
-
-## 8. Residuals and Recommendations
-
-### Priority recommendations
-
-1. Repair the Responses/Codex decoder against data-only, complete pi-0.80.6 event sequences before relying on those providers.
-2. Eliminate both untrusted-input panic families and add adversarial mapper/OAuth fixtures.
-3. Preserve cancellation and typed authentication semantics across every crate and run mode.
-4. Replace session-wide repricing with per-turn/per-model cost accounting, including per-request tier selection and mixed-model resume/fork tests.
-5. Centralize thinking validation in the public dispatch contract and reuse it in coding-agent model/thinking lifecycle commands.
-6. Correct the two PKCE/manual-input edge cases and strengthen acceptance filters/fixtures so they exercise the actual product boundary.
-
-No source, test, specification, or product documentation was changed by this audit. The only audit-owned write is this report. The pre-existing deletion of `docs/snapshots/phase14/remediation-plan.md` was preserved.
+1. Fix public provider preflight, Copilot Anthropic compatibility consumption, and the initial OpenAI tool-argument loss first; these are direct request/response correctness defects.
+2. Make provider identity and model override layers coherent before listing or dispatch: reject all ID collisions and ensure every advertised override is executable.
+3. Correct refresh all-results behavior and native keyring ownership, with tests that observe later-provider calls and restoration of a pre-installed store.
+4. Close the smaller contract gaps: strict credential envelope decoding, exact cumulative cost beyond the public saturation cap, `AccountIdMissing` docs, and assertion-strong product header tests.
