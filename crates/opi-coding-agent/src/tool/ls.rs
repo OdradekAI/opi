@@ -133,6 +133,13 @@ impl Tool for LsTool {
             let mut omitted = 0usize;
             let mut search_terminated_early = false;
             let mut cancelled = false;
+            // Canonicalize the workspace root once so walked entry paths strip
+            // correctly on macOS, where the tempdir lives under /var (a symlink
+            // to /private/var): the walker is rooted at the canonical target, so
+            // entries are canonical and would not strip against the raw root. The
+            // raw-root fallback keeps it a no-op where raw and canonical coincide.
+            let canonical_root =
+                std::fs::canonicalize(&workspace_root).unwrap_or_else(|_| workspace_root.clone());
             for entry in walker.flatten() {
                 // Honor the cancellation token mid-walk (sync poll; blocking
                 // iterator). Cooperative: return partial results on cancel.
@@ -150,7 +157,10 @@ impl Tool for LsTool {
                     continue;
                 }
                 let path = entry.path();
-                let relative_os = path.strip_prefix(&workspace_root).unwrap_or(path);
+                let relative_os = path
+                    .strip_prefix(&canonical_root)
+                    .or_else(|_| path.strip_prefix(&workspace_root))
+                    .unwrap_or(path);
                 let Some(relative) = relative_os.to_str() else {
                     // Non-UTF-8 entry name (Unix-only in practice): skip and
                     // report via an UnsupportedEncoding diagnostic instead of
@@ -203,8 +213,14 @@ impl Tool for LsTool {
                 lines.join("\n")
             };
 
+            let workspace_root_display: std::borrow::Cow<'_, str> =
+                if matches!(workspace_relation, result::WorkspaceRelation::Inside) {
+                    std::borrow::Cow::Borrowed(".")
+                } else {
+                    workspace_root.to_string_lossy()
+                };
             let details = serde_json::json!({
-                "workspace_root": workspace_root.to_string_lossy(),
+                "workspace_root": workspace_root_display,
                 "path": path_arg,
                 "entry_count": entries.len(),
                 "total_entries": total_entries,

@@ -123,6 +123,13 @@ impl Tool for FindTool {
             let mut cancelled = false;
             let walker = super::nav_walk_builder(&search_root).build();
 
+            // Canonicalize the workspace root once so walked entry paths strip
+            // correctly on macOS (/var -> /private/var): scoped searches walk
+            // the canonical resolved root while unscoped searches walk the raw
+            // root, so try the canonical prefix first and fall back to the raw
+            // root per entry. No-op where raw and canonical coincide.
+            let canonical_root =
+                std::fs::canonicalize(&workspace_root).unwrap_or_else(|_| workspace_root.clone());
             for entry in walker.flatten() {
                 // Honor the cancellation token mid-walk (sync poll; blocking
                 // iterator). Cooperative: return partial results on cancel.
@@ -139,7 +146,10 @@ impl Tool for FindTool {
                     continue;
                 }
                 let path = entry.path();
-                let relative = path.strip_prefix(&workspace_root).unwrap_or(path);
+                let relative = path
+                    .strip_prefix(&canonical_root)
+                    .or_else(|_| path.strip_prefix(&workspace_root))
+                    .unwrap_or(path);
                 // Match against both the relative and absolute forms so scoped
                 // and absolute-style patterns still work; emit the RELATIVE form
                 // for consistency with grep/ls (Phase 11.7).
@@ -182,8 +192,14 @@ impl Tool for FindTool {
                 matched.join("\n")
             };
 
+            let workspace_root_display: std::borrow::Cow<'_, str> =
+                if matches!(workspace_relation, WorkspaceRelation::Inside) {
+                    std::borrow::Cow::Borrowed(".")
+                } else {
+                    workspace_root.to_string_lossy()
+                };
             let details = serde_json::json!({
-                "workspace_root": workspace_root.to_string_lossy(),
+                "workspace_root": workspace_root_display,
                 "pattern": pattern,
                 "match_count": total,
                 "workspace_relation": workspace_relation,

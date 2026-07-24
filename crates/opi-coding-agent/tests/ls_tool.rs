@@ -636,6 +636,34 @@ async fn ls_tool_permission_denied_target_is_classified() {
     );
 }
 
+#[tokio::test]
+async fn ls_tool_does_not_leak_workspace_root_in_text() {
+    // Guards the macOS /var -> /private/var canonicalization fix: on macOS the
+    // tempdir lives under /var (symlinked to /private/var), so without
+    // canonicalizing the workspace root before strip_prefix the leaked entry
+    // path /private/var/.../file.txt still CONTAINS the raw /var/... root as a
+    // substring and this assertion fails. Inert on Linux/Windows.
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(dir.path().join("file.txt"), "x").unwrap();
+    let ls = LsTool::new(dir.path().to_path_buf());
+    let result = ls
+        .execute(
+            "no-leak",
+            json!({ "path": "." }),
+            CancellationToken::new(),
+            None,
+        )
+        .await
+        .unwrap();
+    assert!(!result.is_error, "{}", tool_result_text(&result));
+    let text = tool_result_text(&result);
+    let root = dir.path().display().to_string();
+    assert!(
+        !text.contains(&root),
+        "ls text leaked absolute workspace root: {text:?}"
+    );
+}
+
 // --- Non-UTF-8 entry names (Phase 11.2) ---
 // macOS rejects non-UTF-8 filenames at creation (errno EILSEQ), so this path
 // is gated to non-macOS Unix, whose byte-oriented filesystems allow such names.

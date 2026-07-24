@@ -292,6 +292,61 @@ async fn find_tool_includes_details_metadata() {
     );
 }
 
+#[tokio::test]
+async fn find_tool_scoped_search_does_not_leak_workspace_root_in_text() {
+    // Guards the macOS /var -> /private/var canonicalization fix on the scoped
+    // branch (the leak path): without canonicalizing the workspace root before
+    // strip_prefix, the canonical entry /private/var/.../sub/a.rs still CONTAINS
+    // the raw /var/... root as a substring and this assertion fails. Inert on
+    // Linux/Windows.
+    let dir = tempfile::tempdir().unwrap();
+    fs::create_dir_all(dir.path().join("sub")).unwrap();
+    fs::write(dir.path().join("sub/a.rs"), "x").unwrap();
+    let find = FindTool::new(dir.path().to_path_buf());
+    let result = find
+        .execute(
+            "no-leak-scope",
+            json!({ "pattern": "*.rs", "path": "sub" }),
+            CancellationToken::new(),
+            None,
+        )
+        .await
+        .unwrap();
+    assert!(!result.is_error, "{}", tool_result_text(&result));
+    let text = tool_result_text(&result);
+    let root = dir.path().display().to_string();
+    assert!(
+        !text.contains(&root),
+        "scoped find text leaked absolute workspace root: {text:?}"
+    );
+}
+
+#[tokio::test]
+async fn find_tool_unscoped_search_does_not_leak_workspace_root_in_text() {
+    // Unscoped find walks the RAW workspace_root, so it does not leak today.
+    // This guard locks that in: if the raw-root fallback in the try-both strip
+    // is ever dropped, this fails on macOS. Inert on Linux/Windows.
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(dir.path().join("a.rs"), "x").unwrap();
+    let find = FindTool::new(dir.path().to_path_buf());
+    let result = find
+        .execute(
+            "no-leak-unscoped",
+            json!({ "pattern": "*.rs" }),
+            CancellationToken::new(),
+            None,
+        )
+        .await
+        .unwrap();
+    assert!(!result.is_error, "{}", tool_result_text(&result));
+    let text = tool_result_text(&result);
+    let root = dir.path().display().to_string();
+    assert!(
+        !text.contains(&root),
+        "unscoped find text leaked absolute workspace root: {text:?}"
+    );
+}
+
 // --- Non-UTF-8 entry names (Phase 11.2) ---
 // macOS rejects non-UTF-8 filenames at creation (errno EILSEQ), so this path
 // is gated to non-macOS Unix, whose byte-oriented filesystems allow such names.

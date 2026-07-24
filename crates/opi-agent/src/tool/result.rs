@@ -47,18 +47,40 @@ pub fn err(content: Vec<OutputContent>) -> ToolResult {
 /// edit) when a concrete path applies.
 ///
 /// Shape: `{ workspace_root, path (user-facing), resolved_path, workspace_relation }`.
+///
+/// For inside-workspace results the absolute root is relativized away so it
+/// does not leak to the model or into public NDJSON `details`: `workspace_root`
+/// collapses to `"."` and `resolved_path` is stripped to its workspace-relative
+/// form. `resolved` arrives already canonicalized (from `resolve_tool_path`),
+/// so the root is canonicalized before stripping — on macOS the tempdir lives
+/// under `/var` (a symlink to `/private/var`), and the raw and canonical
+/// prefixes otherwise diverge so `strip_prefix` would fail and the absolute
+/// path would leak. On Linux/Windows without such a symlink this is a no-op.
 pub fn path_metadata(
     workspace_root: &Path,
     user_path: &str,
     resolved: &Path,
     relation: WorkspaceRelation,
 ) -> Value {
-    json!({
-        "workspace_root": workspace_root.to_string_lossy(),
+    let mut value = json!({
         "path": user_path,
         "resolved_path": resolved.to_string_lossy(),
         "workspace_relation": relation,
-    })
+    });
+    match relation {
+        WorkspaceRelation::Inside => {
+            value["workspace_root"] = json!(".");
+            let root_for_strip = std::fs::canonicalize(workspace_root)
+                .unwrap_or_else(|_| workspace_root.to_path_buf());
+            if let Ok(rel) = resolved.strip_prefix(&root_for_strip) {
+                value["resolved_path"] = json!(rel.display().to_string());
+            }
+        }
+        _ => {
+            value["workspace_root"] = json!(workspace_root.to_string_lossy());
+        }
+    }
+    value
 }
 
 /// Bash operation-metadata block. One stable key set across the success,

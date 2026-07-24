@@ -252,34 +252,6 @@ impl Tool for ReadTool {
                 details["truncation_reason"] = json!(reason);
             }
 
-            // Relativize the structured details for inside-workspace reads so the
-            // resolved absolute workspace root does not leak via public NDJSON
-            // `ToolExecutionEnd` events (the `details` block is carried verbatim).
-            if matches!(workspace_relation, result::WorkspaceRelation::Inside) {
-                if details.get("workspace_root").is_some() {
-                    details["workspace_root"] = json!(".");
-                }
-                if let Some(resolved) = details
-                    .get("resolved_path")
-                    .and_then(|v| v.as_str())
-                    .map(str::to_owned)
-                {
-                    // Canonicalize the workspace root before stripping: on macOS
-                    // the tempdir lives under /var (a symlink to /private/var), so
-                    // the canonicalized resolved_path diverges from the raw
-                    // workspace_root and strip_prefix would otherwise fail,
-                    // leaking the absolute root through public details. On
-                    // Linux/Windows without such a symlink this is a no-op.
-                    let root_for_strip = std::fs::canonicalize(&workspace_root)
-                        .unwrap_or_else(|_| workspace_root.clone());
-                    if let Ok(rel) =
-                        std::path::Path::new(&resolved).strip_prefix(&root_for_strip)
-                    {
-                        details["resolved_path"] = json!(rel.display().to_string());
-                    }
-                }
-            }
-
             let display_path =
                 display_path_for_tool_result(&workspace_root, &file_path, &path_for_display);
             let text = format!("{display_path}\n{body}");
