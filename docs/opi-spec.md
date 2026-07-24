@@ -11,7 +11,7 @@
 | Last updated | 2026-07-14 |
 | Repository | `https://github.com/OdradekAI/opi` |
 | Upstream studied | `pi` 0.80.2 at `.repo/pi-0.80.2/`; alignment is assessed by fresh `opi-realign` audits under [`docs/realign/`](realign/) |
-| Current implementation | `opi` 0.7.0 workspace with Phases 1-14 implemented; Phase 14 provider/auth product paths are present, while dynamic model refresh remains substrate-only |
+| Current implementation | `opi` 0.7.1 workspace with Phases 1-14 implemented; Phase 14 provider/auth product paths are present, while dynamic model refresh remains substrate-only |
 | Next milestone | Phase 15 safety/sandbox implementation |
 
 This document is normative for the current design. Changes that alter public APIs, event protocols, session storage, release behavior, or phase boundaries SHOULD update this file in the same change.
@@ -171,12 +171,12 @@ sub-agents, plan mode, todos, permission popups, and background bash.
 
 ## 4. Current Baseline
 
-### 4.1 Version 0.7.0
+### 4.1 Version 0.7.1
 
 | Area | Current state |
 |---|---|
 | Workspace | four crates under one Cargo workspace |
-| Versioning | lockstep `0.7.0` |
+| Versioning | lockstep `0.7.1` |
 | Edition | Rust 2024 |
 | Internal dependencies | `opi-agent -> opi-ai`, `opi-coding-agent -> opi-ai + opi-agent + opi-tui` |
 | External dependencies | Rust-native async, HTTP/SSE, schema, config, TUI, search, tracing, and test stacks from workspace dependencies |
@@ -1256,6 +1256,7 @@ All crates share one workspace version.
 | 0.6.4 workspace | Phase 12 provider correctness: provider error taxonomy and safe diagnostics, OpenAI-compatible profile compatibility flags, fixture-backed provider wire coverage across all built-in families, and provider-correctness documentation guards | GitHub + crates.io for publishable crates |
 | 0.6.5 workspace | Phase 13 session tree and context reconstruction: typed forward-compatible session entries, reusable context reconstruction across resume/fork/list/export, interactive session metadata commands, local redacted session export, and RPC/TUI session handoff metadata | GitHub + crates.io for publishable crates |
 | 0.7.0 workspace | Interim release on top of Phase 13: NDJSON linear text deltas via `--json-compact`, provider turn counts in session summaries, the opi-document documentation skill with Artifact Truthfulness Gate and opi-eval evaluation skill, and fixes for custom chat-completions endpoint paths, runtime message timestamps, and read-tool workspace-path redaction | GitHub + crates.io for publishable crates |
+| 0.7.1 workspace | Phase 14 provider/auth: OS-keychain credential persistence (Windows Credential Manager, macOS Keychain Services, Freedesktop Secret Service) with env API-key fallback and interactive `/login` / `/logout` for Anthropic Browser PKCE, GitHub Copilot Device Code, and OpenAI Codex Browser/Device Code; per-request auth re-resolution and typed credential failures; audited GitHub Copilot and dedicated OpenAI Codex provider catalogs; public `ApiMappedProvider` and `[providers.custom.<id>]` multi-wire routing; wire-aware model metadata, pricing, and cache/reasoning usage accounting; request scalars and session-affinity; plus fixes that make the Unix keychain backends compile and complete tool path-relativization across read/write/edit/ls/find | GitHub + crates.io for publishable crates |
 
 The first crates.io publish is gated by quality, not by the version number alone.
 It MAY happen at 0.2.0 if all published crates expose real, documented behavior
@@ -1385,7 +1386,7 @@ Exit criteria: enterprise providers work, image and terminal-image flows work, p
 
 ### Phase 4 - Extensibility Substrate
 
-Status: substrate implemented in the current `0.7.0` workspace.
+Status: substrate implemented in the current `0.7.1` workspace.
 
 Phase 4 is ordered so the reusable substrate lands before workflow-heavy
 features. Later tasks may depend on earlier tasks, but examples must not become
@@ -1408,7 +1409,7 @@ Exit criteria: third parties can compose and extend opi through RPC, SDK, extens
 
 ### Phase 5 - Rust-Native Package and Process-Adapter MVP
 
-Status: implemented in the current `0.7.0` workspace.
+Status: implemented in the current `0.7.1` workspace.
 
 Phase 5 adds package management and executable adapter hosting so that external packages can provide tools, commands, hooks, and events through child process adapters without patching core crates. It deliberately does not claim parity with pi's npm package ecosystem, TypeScript extension runtime, hot reload behavior, marketplace conventions, provider streaming adapters, custom TUI adapters, or package permission enforcement.
 
@@ -1428,7 +1429,7 @@ Exit criteria: `opi package add/remove/list/doctor` works for local and git pack
 
 ### Phase 6 - Alignment and Reliability Hardening
 
-Status: complete in the current `0.7.0` workspace.
+Status: complete in the current `0.7.1` workspace.
 
 Phase 6 tightened documentation, package/runtime integration, provider
 configuration behavior, and reliability around the Phase 4-5 surfaces. It did
@@ -1437,7 +1438,7 @@ substrate-level extension paths, not built-in product workflows.
 
 ### Phase 7 - Reliability and Observability Hardening
 
-Status: complete in the current `0.7.0` workspace.
+Status: complete in the current `0.7.1` workspace.
 
 Phase 7 added shared diagnostics, redaction, provider/runtime error
 classification, opt-in local trace envelopes, and `opi doctor`. Observability
@@ -1446,7 +1447,7 @@ session sharing, or a stable 1.0 trace protocol.
 
 ### Phase 8 - Runtime Stabilization
 
-Status: complete in the current `0.7.0` workspace.
+Status: complete in the current `0.7.1` workspace.
 
 Phase 8 documented and tested runtime event order, hook semantics, tool
 scheduling/termination, cancellation, SDK/RPC command state, diagnostics/trace
@@ -1552,7 +1553,7 @@ persistent background shells or broad permission-popup systems.
 
 ### Phase 12 - Provider Correctness
 
-Status: implemented in the current `0.7.0` workspace.
+Status: implemented in the current `0.7.1` workspace.
 
 Phase 12 hardens the existing provider families and OpenAI-compatible profiles
 through fixture-backed lifecycle, error, auth, image-input, thinking, usage,
