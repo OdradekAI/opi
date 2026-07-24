@@ -292,9 +292,11 @@ async fn find_tool_includes_details_metadata() {
     );
 }
 
-// --- Non-UTF-8 entry names (Phase 11.2, Unix-only) ---
+// --- Non-UTF-8 entry names (Phase 11.2) ---
+// macOS rejects non-UTF-8 filenames at creation (errno EILSEQ), so this path
+// is gated to non-macOS Unix, whose byte-oriented filesystems allow such names.
 
-#[cfg(unix)]
+#[cfg(all(unix, not(target_os = "macos")))]
 #[tokio::test]
 async fn find_tool_reports_unsupported_encoding_for_non_utf8_names() {
     use opi_agent::diagnostic::code;
