@@ -263,9 +263,20 @@ impl Tool for ReadTool {
                     .get("resolved_path")
                     .and_then(|v| v.as_str())
                     .map(str::to_owned)
-                    && let Ok(rel) = std::path::Path::new(&resolved).strip_prefix(&workspace_root)
                 {
-                    details["resolved_path"] = json!(rel.display().to_string());
+                    // Canonicalize the workspace root before stripping: on macOS
+                    // the tempdir lives under /var (a symlink to /private/var), so
+                    // the canonicalized resolved_path diverges from the raw
+                    // workspace_root and strip_prefix would otherwise fail,
+                    // leaking the absolute root through public details. On
+                    // Linux/Windows without such a symlink this is a no-op.
+                    let root_for_strip = std::fs::canonicalize(&workspace_root)
+                        .unwrap_or_else(|_| workspace_root.clone());
+                    if let Ok(rel) =
+                        std::path::Path::new(&resolved).strip_prefix(&root_for_strip)
+                    {
+                        details["resolved_path"] = json!(rel.display().to_string());
+                    }
                 }
             }
 
