@@ -2,17 +2,1941 @@
   "schema_version": 2,
   "spec_files": [
     "docs/opi-spec.md",
-    "docs/superpowers/specs/2026-07-11-phase14-provider-auth-design.md",
-    "docs/superpowers/specs/2026-07-14-phase14-exit-remediation-design.md"
+    "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md"
   ],
   "spec_files_sha256": {
     "docs/opi-spec.md": "92074b2a335019c861504f5b1b6f3a058fc0f1507179428d9cdb38101ef90ec6",
-    "docs/superpowers/specs/2026-07-11-phase14-provider-auth-design.md": "ff77025775956b5698a37eac2a7572f676028480c7186b751a69b393d43ff56b",
-    "docs/superpowers/specs/2026-07-14-phase14-exit-remediation-design.md": "48d38716531bc944b0488a0e9ddaeee2d31258e7cfd0701905bea4da4f3c53f4"
+    "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md": "39d75e602952683e4a8e3ddf27642786ce3065abee96f85cc29d80297ea5c620"
   },
-  "task_graph_confirmed_at": "2026-07-22T12:08:02.3483123Z",
+  "task_graph_confirmed_at": "2026-07-24T17:56:28.144Z",
   "current_phase": 15,
-  "tasks": [],
+  "tasks": [
+    {
+      "id": "15.1",
+      "phase": 15,
+      "title": "Operations contracts and local file backend",
+      "crate": "opi-coding-agent",
+      "parent_spec_row": null,
+      "definition_of_done": "`opi-coding-agent::tool::operations` defines object-safe async `FileOperations` and `BashOperations` traits plus `FsOpError`, `BashOpError`, `OpMetadata`, `AccessMode`, `ToolDiagnostic`, `BashRequest`, and `BashResult`. `LocalFileOperations` implements read, write, recursive/non-recursive mkdir, metadata, and access against already-resolved paths; write replacement uses a same-directory temporary file followed by rename so a failed replacement leaves the previous file intact. Operations performs neither path expansion nor workspace confinement. Constructor-level mock tests prove the contracts preserve bytes, metadata, command cwd/env/timeout/cancellation fields, operation/path/error identity, and malformed or denied backend results without touching the real filesystem outside a temp root.",
+      "definition_source": "inferred",
+      "replaces": null,
+      "status": "failing",
+      "depends_on": [],
+      "inference_notes": [
+        {
+          "field": "definition_of_done",
+          "reason": "Extracted the two grouped traits, concrete request/result/error types, local file backend, and atomic-write assertions from T5.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#T5 — Per-tool Operations seam"
+        },
+        {
+          "field": "tier",
+          "reason": "The contracts and local file backend are coding-agent-local library substrate; opi-agent's Tool trait remains unchanged.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Load-bearing invariant"
+        },
+        {
+          "field": "substrate_only",
+          "reason": "The abstract contracts and local file backend do not close the product Operations path until tool constructors and CodingHarness::build_tools consume them in 15.2.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Implementation Priority and Crate Boundaries"
+        },
+        {
+          "field": "forbidden_scope",
+          "reason": "Do not add SSH/container/remote implementations; Phase 15 ships local implementations only.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Non-Goals"
+        },
+        {
+          "field": "forbidden_scope",
+          "reason": "Do not add Operations interfaces for grep/find/ls/glob.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Non-Goals"
+        },
+        {
+          "field": "forbidden_scope",
+          "reason": "Do not put Operations, PathPolicy, sandbox, or trust types in opi-agent.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Load-bearing invariant"
+        },
+        {
+          "field": "residual",
+          "reason": "re-sharpen: trigger=a concrete large-file read-windowing or streaming-read requirement appears",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Residuals / follow-ups"
+        }
+      ],
+      "tier": "library",
+      "commit_type": "feat",
+      "parallelize": [],
+      "evaluator_required": false,
+      "verification": {
+        "library_gates": [
+          "cargo test -p opi-coding-agent --test tool_operations operations_contracts_and_local_file_backend",
+          "cargo clippy -p opi-coding-agent --all-targets -- -D warnings",
+          "$env:RUSTDOCFLAGS=\"-D warnings\"; cargo doc -p opi-coding-agent --no-deps"
+        ],
+        "behavioral_tests": [
+          "crates/opi-coding-agent/tests/tool_operations.rs"
+        ],
+        "snapshot_tests": [],
+        "smoke_addendum": "Use temp roots and injected mock operations only; assert failed atomic replacement preserves the prior file."
+      },
+      "acceptance_scenarios": [],
+      "production_call_sites": [],
+      "substrate_only": true,
+      "iteration_count": 0,
+      "max_iterations": 5,
+      "start_commit": null,
+      "baseline_dirty_files": [],
+      "task_owned_paths": [
+        "crates/opi-coding-agent/src/tool/operations.rs",
+        "crates/opi-coding-agent/src/tool/mod.rs",
+        "crates/opi-coding-agent/tests/tool_operations.rs"
+      ],
+      "last_attempt": null,
+      "verified_at_commit": null,
+      "evidence": null,
+      "blocker": null,
+      "session_notes": []
+    },
+    {
+      "id": "15.2",
+      "phase": 15,
+      "title": "Operations injection and local bash execution path",
+      "crate": "opi-coding-agent",
+      "parent_spec_row": null,
+      "definition_of_done": "`ReadTool`, `WriteTool`, and `EditTool` receive a shared `Arc<dyn FileOperations>` and execute `PathPolicy` expansion, canonicalization, symlink-escape, and workspace-containment before invoking the backend with the resolved path. `BashTool` receives `Arc<dyn BashOperations>` and delegates command, cwd, timeout, cancellation token, and environment; command construction, spawn, bounded stream capture, timeout/cancellation race, exit/signal extraction, and diagnostics move into `LocalBashOperations::exec`. `CodingHarness::build_tools` constructs the local defaults for exactly read/write/edit/bash, while grep/find/ls/glob constructors remain unchanged. Mock-backend tests prove policy rejection occurs before backend invocation, permitted paths and bash requests reach the injected backend exactly once, local defaults preserve existing tool output/truncation/error behavior, and the production `build_tools` path constructs all eight tools.",
+      "definition_source": "inferred",
+      "replaces": null,
+      "status": "failing",
+      "depends_on": [
+        "15.1"
+      ],
+      "inference_notes": [
+        {
+          "field": "definition_of_done",
+          "reason": "Expanded T5 constructor injection and sandbox attach-point requirements into observable tool and build_tools behavior.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#T5 — Per-tool Operations seam"
+        },
+        {
+          "field": "depends_on",
+          "reason": "Consumes the traits and local file backend from 15.1.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Sequencing"
+        },
+        {
+          "field": "forbidden_scope",
+          "reason": "FileOperations remains unsandboxed; read/write/edit stay PathPolicy-guarded.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Non-Goals"
+        },
+        {
+          "field": "forbidden_scope",
+          "reason": "Do not widen grep/find/ls/glob constructors or add remote backends.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Non-Goals"
+        }
+      ],
+      "tier": "cli-runtime",
+      "commit_type": "feat",
+      "parallelize": [],
+      "evaluator_required": true,
+      "verification": {
+        "library_gates": [
+          "cargo test -p opi-coding-agent --test tool_operations operations_injection_reaches_tool_execution",
+          "cargo test -p opi-coding-agent --test tools_read_write_edit_bash",
+          "cargo test -p opi-coding-agent --test tool_selection",
+          "cargo clippy -p opi-coding-agent --all-targets -- -D warnings",
+          "$env:RUSTDOCFLAGS=\"-D warnings\"; cargo doc -p opi-coding-agent --no-deps"
+        ],
+        "behavioral_tests": [
+          "crates/opi-coding-agent/tests/tool_operations.rs",
+          "crates/opi-coding-agent/tests/tools_read_write_edit_bash.rs",
+          "crates/opi-coding-agent/tests/tool_selection.rs"
+        ],
+        "snapshot_tests": [],
+        "smoke_addendum": "Preserve mock backend call captures and a local-default subprocess capture for cwd, env, exit code, timeout, cancellation, and truncation."
+      },
+      "acceptance_scenarios": [
+        {
+          "id": "phase15-operations-production-path",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Goals",
+          "scenario": "Production tool construction creates local FileOperations and BashOperations, injects them into read/write/edit/bash, preserves PathPolicy before file backend calls, moves the bash spawn wholly into LocalBashOperations::exec, and leaves the four navigation tools unchanged.",
+          "verification": [
+            "cargo test -p opi-coding-agent --test tool_operations operations_injection_reaches_tool_execution",
+            "cargo test -p opi-coding-agent --test tool_selection build_tools_constructs_expected_default_set"
+          ],
+          "production_call_sites": [
+            "crates/opi-coding-agent/src/harness.rs::CodingHarness::build_tools",
+            "crates/opi-coding-agent/src/tool/read.rs::ReadTool::execute",
+            "crates/opi-coding-agent/src/tool/write.rs::WriteTool::execute",
+            "crates/opi-coding-agent/src/tool/edit.rs::EditTool::execute",
+            "crates/opi-coding-agent/src/tool/bash.rs::BashTool::execute",
+            "crates/opi-coding-agent/src/tool/operations.rs::LocalBashOperations::exec"
+          ],
+          "status": "open"
+        }
+      ],
+      "production_call_sites": [
+        "crates/opi-coding-agent/src/harness.rs::CodingHarness::build_tools",
+        "crates/opi-coding-agent/src/tool/read.rs::ReadTool::execute",
+        "crates/opi-coding-agent/src/tool/write.rs::WriteTool::execute",
+        "crates/opi-coding-agent/src/tool/edit.rs::EditTool::execute",
+        "crates/opi-coding-agent/src/tool/bash.rs::BashTool::execute",
+        "crates/opi-coding-agent/src/tool/operations.rs::LocalFileOperations",
+        "crates/opi-coding-agent/src/tool/operations.rs::LocalBashOperations::exec"
+      ],
+      "substrate_only": false,
+      "iteration_count": 0,
+      "max_iterations": 5,
+      "start_commit": null,
+      "baseline_dirty_files": [],
+      "task_owned_paths": [
+        "crates/opi-coding-agent/src/harness.rs",
+        "crates/opi-coding-agent/src/tool/**",
+        "crates/opi-coding-agent/tests/tool_operations.rs",
+        "crates/opi-coding-agent/tests/tools_read_write_edit_bash.rs",
+        "crates/opi-coding-agent/tests/tool_selection.rs"
+      ],
+      "last_attempt": null,
+      "verified_at_commit": null,
+      "evidence": null,
+      "blocker": null,
+      "session_notes": []
+    },
+    {
+      "id": "15.3",
+      "phase": 15,
+      "title": "Sandbox configuration and fallback diagnostic contract",
+      "crate": "opi-coding-agent",
+      "parent_spec_row": null,
+      "definition_of_done": "`SandboxConfig` and `SandboxMode::{Off, Strict}` deserialize `[sandbox] mode`, `require`, and optional `fs`, `network`, and `syscalls` toggles with `mode = off` and `require = false` defaults. `Cli::try_parse_from` accepts `--sandbox off|strict` plus `--sandbox-require`, and the config resolver deterministically applies the CLI values over layered TOML; invalid TOML and CLI values return named parser/resolver errors. `CODE_SANDBOX_DEGRADED`, `CODE_SANDBOX_UNAVAILABLE`, and `SOURCE_SANDBOX` remain stable string literals, and diagnostic constructors emit redacted `{layer, reason}` details. Direct parser, resolver, and capability-injected tests cover each default/precedence/error/diagnostic branch and distinguish temporary layer degradation from permanent platform unavailability. This task defines config and diagnostic substrate only; 15.5.1 proves production mode dispatch and 15.5.6 closes cross-platform bash acceptance.",
+      "definition_source": "inferred",
+      "replaces": null,
+      "status": "failing",
+      "depends_on": [
+        "15.2"
+      ],
+      "inference_notes": [
+        {
+          "field": "definition_of_done",
+          "reason": "Extracted the sandbox config, CLI override, diagnostic code, structured-detail, and negative parsing requirements from T4.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#T4 — OS-native subprocess sandbox"
+        },
+        {
+          "field": "substrate_only",
+          "reason": "Config and diagnostics cannot close a sandbox acceptance scenario until 15.5.1 consumes them inside LocalBashOperations::exec and 15.5.6 closes the platform matrix.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Cross-ticket interactions"
+        },
+        {
+          "field": "definition_of_done",
+          "reason": "Plan-verify A2 narrows this task to direct parser/resolver assertions; Task 15.5.1 owns default/TOML/CLI startup propagation; Task 15.5.6 owns final runtime matrix acceptance.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Implementation Priority and Crate Boundaries"
+        },
+        {
+          "field": "forbidden_scope",
+          "reason": "Do not describe strict mode as a security boundary or confine the opi process.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Non-Goals"
+        },
+        {
+          "field": "forbidden_scope",
+          "reason": "Do not add sandbox configuration to opi-agent or change the shared Diagnostic struct.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Load-bearing invariant"
+        }
+      ],
+      "tier": "cli-runtime",
+      "commit_type": "feat",
+      "parallelize": [],
+      "evaluator_required": true,
+      "verification": {
+        "library_gates": [
+          "cargo test -p opi-coding-agent --test sandbox_config",
+          "cargo test -p opi-coding-agent --test config_tests sandbox",
+          "cargo clippy -p opi-coding-agent --all-targets -- -D warnings",
+          "$env:RUSTDOCFLAGS=\"-D warnings\"; cargo doc -p opi-coding-agent --no-deps"
+        ],
+        "behavioral_tests": [
+          "crates/opi-coding-agent/tests/sandbox_config.rs",
+          "crates/opi-coding-agent/tests/config_tests.rs"
+        ],
+        "snapshot_tests": [],
+        "smoke_addendum": "Capture CLI/TOML precedence, invalid-value stderr/exit code, and redacted structured diagnostic details."
+      },
+      "acceptance_scenarios": [],
+      "production_call_sites": [],
+      "substrate_only": true,
+      "iteration_count": 0,
+      "max_iterations": 5,
+      "start_commit": null,
+      "baseline_dirty_files": [],
+      "task_owned_paths": [
+        "crates/opi-coding-agent/src/cli.rs",
+        "crates/opi-coding-agent/src/config.rs",
+        "crates/opi-coding-agent/src/diagnostics.rs",
+        "crates/opi-coding-agent/src/lib.rs",
+        "crates/opi-coding-agent/src/sandbox.rs",
+        "crates/opi-coding-agent/tests/config_tests.rs",
+        "crates/opi-coding-agent/tests/sandbox_config.rs"
+      ],
+      "last_attempt": null,
+      "verified_at_commit": null,
+      "evidence": null,
+      "blocker": null,
+      "session_notes": []
+    },
+    {
+      "id": "15.4",
+      "phase": 15,
+      "title": "Always-on L0 subprocess-tree lifecycle",
+      "crate": "opi-coding-agent",
+      "parent_spec_row": null,
+      "definition_of_done": "`LocalBashOperations::exec` assigns every Unix bash child to a new process group before spawn and terminates the entire group on timeout, cancellation, and dropped execution; Windows bash children enter a Job Object configured with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` and no breakaway permission. Windows adapter children receive the same Job-Object L0 assignment, while the existing Unix adapter `process_group(0)` path remains intact. L0 executes for sandbox mode off and strict. Assignment or termination failures emit a stable sandbox diagnostic without panicking. Tests launch marker grandchildren to prove timeout, cancellation, and dropping an in-flight exec future remove the subprocess tree; injected process-group/Job-Object assignment and termination failures assert exact diagnostic code/details; cfg-specific fake Job-Object tests prove bash and adapter assignment, no-breakaway flags, and kill-on-close without elevated privileges.",
+      "definition_source": "inferred",
+      "replaces": null,
+      "status": "failing",
+      "depends_on": [
+        "15.2",
+        "15.3"
+      ],
+      "inference_notes": [
+        {
+          "field": "definition_of_done",
+          "reason": "Separated the always-on L0 correctness fix from optional strict confinement and pinned bash plus Windows adapter behavior.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#T4 — OS-native subprocess sandbox"
+        },
+        {
+          "field": "verification",
+          "reason": "Plan-verify O adds dropped-execution and injected assignment/termination failure coverage for existing DoD branches.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#T4 — OS-native subprocess sandbox"
+        },
+        {
+          "field": "depends_on",
+          "reason": "The process attach point is LocalBashOperations::exec created by 15.2, and assignment/termination failures use the diagnostic contract from 15.3.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Sequencing"
+        },
+        {
+          "field": "depends_on",
+          "reason": "Plan-verify B adds 15.3 because this task emits the stable sandbox diagnostics defined there.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#T4 — OS-native subprocess sandbox"
+        },
+        {
+          "field": "forbidden_scope",
+          "reason": "Adapters receive L0 lifecycle confinement only; do not add strict adapter confinement or capability declarations.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Non-Goals"
+        },
+        {
+          "field": "forbidden_scope",
+          "reason": "Do not add Job-Object CPU/memory caps or reimplement process creation with CreateProcessW.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Out of scope (cross-ref map)"
+        },
+        {
+          "field": "residual",
+          "reason": "deferred follow-up: trigger=the product must provide a hard Windows no-escape security boundary or the post-spawn Job-Object assignment race is demonstrated exploitable",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Residuals / follow-ups"
+        }
+      ],
+      "tier": "cli-runtime",
+      "commit_type": "feat",
+      "parallelize": [],
+      "evaluator_required": true,
+      "verification": {
+        "library_gates": [
+          "cargo test -p opi-coding-agent --test sandbox_l0",
+          "cargo test -p opi-coding-agent --test sandbox_l0 dropped_exec_and_injected_failures",
+          "cargo test -p opi-coding-agent --test adapter_host_mock",
+          "cargo test -p opi-coding-agent --test tools_read_write_edit_bash bash_timeout",
+          "cargo clippy -p opi-coding-agent --all-targets -- -D warnings",
+          "$env:RUSTDOCFLAGS=\"-D warnings\"; cargo doc -p opi-coding-agent --no-deps"
+        ],
+        "behavioral_tests": [
+          "crates/opi-coding-agent/tests/sandbox_l0.rs",
+          "crates/opi-coding-agent/tests/adapter_host_mock.rs",
+          "crates/opi-coding-agent/tests/tools_read_write_edit_bash.rs"
+        ],
+        "snapshot_tests": [],
+        "smoke_addendum": "Use marker grandchildren under temp roots; preserve timeout/cancellation/drop output, post-termination process-tree checks, and injected assignment/termination failure diagnostics."
+      },
+      "acceptance_scenarios": [
+        {
+          "id": "phase15-l0-bash-tree-lifecycle",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Goals",
+          "scenario": "With sandbox mode off, a bash command that creates a grandchild is cancelled or times out; the production LocalBashOperations path terminates the entire subprocess tree and returns the existing timeout/cancellation result without leaving the marker child alive.",
+          "verification": [
+            "cargo test -p opi-coding-agent --test sandbox_l0 bash_l0_kills_process_tree_in_off_mode"
+          ],
+          "production_call_sites": [
+            "crates/opi-coding-agent/src/harness.rs::CodingHarness::build_tools",
+            "crates/opi-coding-agent/src/tool/operations.rs::LocalBashOperations::exec"
+          ],
+          "status": "open"
+        },
+        {
+          "id": "phase15-l0-windows-adapter-assignment",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Goals",
+          "scenario": "On Windows, production bash and process-JSONL adapter spawn paths assign children to kill-on-close, no-breakaway Job Objects; closing the owner removes the tree, while Unix adapter behavior retains its existing process group.",
+          "verification": [
+            "cargo test -p opi-coding-agent --test sandbox_l0 windows_bash_and_adapter_use_kill_on_close_job",
+            "cargo test -p opi-coding-agent --test adapter_host_mock adapter_process_group_contract"
+          ],
+          "production_call_sites": [
+            "crates/opi-coding-agent/src/tool/operations.rs::LocalBashOperations::exec",
+            "crates/opi-coding-agent/src/adapter_host.rs::AdapterHost::start"
+          ],
+          "status": "open"
+        }
+      ],
+      "production_call_sites": [
+        "crates/opi-coding-agent/src/harness.rs::CodingHarness::build_tools",
+        "crates/opi-coding-agent/src/tool/operations.rs::LocalBashOperations::exec",
+        "crates/opi-coding-agent/src/adapter_host.rs::AdapterHost::start"
+      ],
+      "substrate_only": false,
+      "iteration_count": 0,
+      "max_iterations": 5,
+      "start_commit": null,
+      "baseline_dirty_files": [],
+      "task_owned_paths": [
+        "Cargo.toml",
+        "Cargo.lock",
+        "crates/opi-coding-agent/Cargo.toml",
+        "crates/opi-coding-agent/src/adapter_host.rs",
+        "crates/opi-coding-agent/src/tool/**",
+        "crates/opi-coding-agent/tests/adapter_host_mock.rs",
+        "crates/opi-coding-agent/tests/sandbox_l0.rs",
+        "crates/opi-coding-agent/tests/tools_read_write_edit_bash.rs"
+      ],
+      "last_attempt": null,
+      "verified_at_commit": null,
+      "evidence": null,
+      "blocker": null,
+      "session_notes": []
+    },
+    {
+      "id": "15.5.1",
+      "phase": 15,
+      "title": "Strict sandbox policy and production dispatch",
+      "crate": "opi-coding-agent",
+      "parent_spec_row": "15.5",
+      "definition_of_done": "`LocalBashOperations::exec` consumes the resolved sandbox config before spawn, preserves L0 for `mode = off`, and dispatches `mode = strict` through a capability-injected platform backend selected by `sandbox::prepare`. Interactive, non-interactive, and RPC startup resolve the default/TOML/CLI values before provider or command construction and pass the result through `CodingHarness::build_tools`. The shared policy distinguishes temporary layer degradation from permanent platform unavailability, emits one redacted structured startup diagnostic for permanent gaps, runs at the strongest engaged baseline when `require = false`, and returns a named error before command side effects when `require = true`. Tests exercise production mode dispatch, CLI-over-TOML precedence, invalid-value early exit, every capability/fallback branch, diagnostic de-duplication, and command non-execution without depending on a host kernel feature.",
+      "definition_source": "inferred",
+      "replaces": null,
+      "status": "failing",
+      "depends_on": [
+        "15.3",
+        "15.4"
+      ],
+      "inference_notes": [
+        {
+          "field": "split",
+          "reason": "split: trigger=human-confirmed platform decomposition on 2026-07-24; this task owns only cross-platform policy and production dispatch",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#T4 — OS-native subprocess sandbox"
+        },
+        {
+          "field": "definition_of_done",
+          "reason": "Separates shared config propagation, strict dispatch, require behavior, and diagnostic de-duplication from the three OS backends.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Implementation Priority and Crate Boundaries"
+        },
+        {
+          "field": "depends_on",
+          "reason": "Consumes the sandbox config/diagnostic contract from 15.3 and the always-on L0 baseline from 15.4.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Sequencing"
+        },
+        {
+          "field": "evaluator_required",
+          "reason": "Fail-open/fail-closed behavior and proof that require=true prevents command execution are security-sensitive.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Goals"
+        },
+        {
+          "field": "forbidden_scope",
+          "reason": "Do not confine opi itself, in-process file tools, adapters beyond L0, bedrock credential_process, or unrelated subprocess sites.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Non-Goals"
+        },
+        {
+          "field": "forbidden_scope",
+          "reason": "Do not describe strict mode as a security boundary; untrusted code belongs in a container or VM.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#T4 — OS-native subprocess sandbox"
+        }
+      ],
+      "tier": "cli-runtime",
+      "commit_type": "feat",
+      "parallelize": [],
+      "evaluator_required": true,
+      "verification": {
+        "library_gates": [
+          "cargo test -p opi-coding-agent --test sandbox_config",
+          "cargo test -p opi-coding-agent --test sandbox_strict sandbox_config_reaches_all_production_modes",
+          "cargo test -p opi-coding-agent --test sandbox_strict unavailable_layer_fail_open_and_fail_closed",
+          "cargo test -p opi-coding-agent --test sandbox_strict permanent_gap_diagnostic_is_once_per_startup",
+          "cargo test -p opi-coding-agent --test tool_operations",
+          "cargo clippy -p opi-coding-agent --all-targets -- -D warnings",
+          "$env:RUSTDOCFLAGS=\"-D warnings\"; cargo doc -p opi-coding-agent --no-deps"
+        ],
+        "behavioral_tests": [
+          "crates/opi-coding-agent/tests/sandbox_config.rs",
+          "crates/opi-coding-agent/tests/sandbox_strict.rs",
+          "crates/opi-coding-agent/tests/tool_operations.rs"
+        ],
+        "snapshot_tests": [],
+        "smoke_addendum": "Preserve mode/config captures, backend capability calls, stdout/stderr/exit, redacted diagnostics, diagnostic count, and require=true non-execution evidence."
+      },
+      "acceptance_scenarios": [
+        {
+          "id": "phase15-sandbox-config-production-path",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Implementation Priority and Crate Boundaries",
+          "scenario": "With no override, each production mode resolves sandbox off while preserving L0; layered TOML selects strict, `--sandbox` overrides TOML, `--sandbox-require` reaches fail-closed execution, and invalid values exit before provider or command construction. Captures prove the resolved config reaches CodingHarness::build_tools and LocalBashOperations::exec in interactive, non-interactive, and RPC dispatch.",
+          "verification": [
+            "cargo test -p opi-coding-agent --test sandbox_strict sandbox_config_reaches_all_production_modes",
+            "cargo test -p opi-coding-agent --test sandbox_config invalid_sandbox_config_exits_before_provider_construction"
+          ],
+          "production_call_sites": [
+            "crates/opi-coding-agent/src/main.rs::main",
+            "crates/opi-coding-agent/src/main.rs::run_non_interactive",
+            "crates/opi-coding-agent/src/main.rs::run_rpc",
+            "crates/opi-coding-agent/src/main.rs::run_interactive",
+            "crates/opi-coding-agent/src/config.rs::resolve_config",
+            "crates/opi-coding-agent/src/harness.rs::CodingHarness::build_tools",
+            "crates/opi-coding-agent/src/tool/operations.rs::LocalBashOperations::exec"
+          ],
+          "status": "open"
+        },
+        {
+          "id": "phase15-sandbox-fallback-policy",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Goals",
+          "scenario": "When a requested layer is unavailable, require=false runs the command at the engaged baseline with one redacted structured diagnostic, while require=true returns an error before any command side effect; permanent platform gaps emit one startup diagnostic rather than one per command.",
+          "verification": [
+            "cargo test -p opi-coding-agent --test sandbox_strict unavailable_layer_fail_open_and_fail_closed",
+            "cargo test -p opi-coding-agent --test sandbox_strict permanent_gap_diagnostic_is_once_per_startup"
+          ],
+          "production_call_sites": [
+            "crates/opi-coding-agent/src/main.rs::main",
+            "crates/opi-coding-agent/src/main.rs::run_non_interactive",
+            "crates/opi-coding-agent/src/main.rs::run_rpc",
+            "crates/opi-coding-agent/src/main.rs::run_interactive",
+            "crates/opi-coding-agent/src/config.rs::resolve_config",
+            "crates/opi-coding-agent/src/harness.rs::CodingHarness::build_tools",
+            "crates/opi-coding-agent/src/tool/operations.rs::LocalBashOperations::exec"
+          ],
+          "status": "open"
+        }
+      ],
+      "production_call_sites": [
+        "crates/opi-coding-agent/src/main.rs::main",
+        "crates/opi-coding-agent/src/main.rs::run_non_interactive",
+        "crates/opi-coding-agent/src/main.rs::run_rpc",
+        "crates/opi-coding-agent/src/main.rs::run_interactive",
+        "crates/opi-coding-agent/src/config.rs::resolve_config",
+        "crates/opi-coding-agent/src/harness.rs::CodingHarness::build_tools",
+        "crates/opi-coding-agent/src/tool/operations.rs::LocalBashOperations::exec",
+        "crates/opi-coding-agent/src/sandbox.rs::prepare"
+      ],
+      "substrate_only": false,
+      "iteration_count": 0,
+      "max_iterations": 5,
+      "start_commit": null,
+      "baseline_dirty_files": [],
+      "task_owned_paths": [
+        "crates/opi-coding-agent/src/cli.rs",
+        "crates/opi-coding-agent/src/config.rs",
+        "crates/opi-coding-agent/src/diagnostics.rs",
+        "crates/opi-coding-agent/src/harness.rs",
+        "crates/opi-coding-agent/src/main.rs",
+        "crates/opi-coding-agent/src/sandbox.rs",
+        "crates/opi-coding-agent/src/tool/operations.rs",
+        "crates/opi-coding-agent/tests/sandbox_config.rs",
+        "crates/opi-coding-agent/tests/sandbox_strict.rs",
+        "crates/opi-coding-agent/tests/tool_operations.rs"
+      ],
+      "last_attempt": null,
+      "verified_at_commit": null,
+      "evidence": null,
+      "blocker": null,
+      "session_notes": []
+    },
+    {
+      "id": "15.5.2",
+      "phase": 15,
+      "title": "Linux seccomp backend feasibility and dual-architecture contract",
+      "crate": "opi-coding-agent",
+      "parent_spec_row": "15.5",
+      "definition_of_done": "Select and pin through `[workspace.dependencies]` both `landlock` 0.4.5 and a Linux seccomp backend that expresses a default-allow/match-deny filter, filters scalar `socket(domain, ...)` arguments, builds the filter representation in the parent, applies only the audited raw filter in the child, and compiles for both `x86_64-unknown-linux-gnu` and `aarch64-unknown-linux-gnu` without an `unsafe` block in opi source. `extrasafe` 0.5.1 is rejected because its public policy is a default-deny allowlist, its apply path does not expose the required parent-build/child-apply split, and it does not cover Linux ARM64; direct use of a verified deny-capable backend is required. `landlock` remains a separate capability layer whose 0.4.5 filesystem rights and ABI-4 TCP bind/connect-by-port model are captured in pure capability tests; Linux 6.7 is mainline orientation rather than a runtime release-string gate. Pure backend tests pin the exact danger-blocklist syscalls, prove `clone` and `unshare` remain allowed, prove AF_INET/AF_INET6/AF_NETLINK socket-creation rules preserve AF_UNIX rules, exercise build/apply error translation without spawning a real command, and preserve both target-check outputs. This task is substrate only: it does not claim that the production bash path is confined.",
+      "definition_source": "inferred",
+      "replaces": null,
+      "status": "failing",
+      "depends_on": [
+        "15.5.1"
+      ],
+      "inference_notes": [
+        {
+          "field": "split",
+          "reason": "split: trigger=human-confirmed Linux backend-feasibility/runtime decomposition on 2026-07-25; this task owns dependency selection, policy shape, parent/child apply feasibility, and Linux x86-64/ARM64 compilation only",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Linux mechanism"
+        },
+        {
+          "field": "definition_of_done",
+          "reason": "Primary-source research showed extrasafe 0.5.1 cannot implement the reviewed default-allow danger blocklist, parent-build/child-apply contract, or Linux ARM64 target; the human approved a directly verified deny-capable backend.",
+          "source": "docs/research/2026-07-24-phase15-linux-l2-feasibility.md#Exact `extrasafe` 0.5.1 capability"
+        },
+        {
+          "field": "depends_on",
+          "reason": "Consumes the shared strict policy/capability/error contract from 15.5.1 but intentionally precedes production Linux runtime wiring in 15.5.3.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Sequencing"
+        },
+        {
+          "field": "substrate_only",
+          "reason": "Backend selection, policy construction, and cross-target compilation do not close the Linux product scenario until 15.5.3 attaches the result to LocalBashOperations::exec.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Implementation Priority and Crate Boundaries"
+        },
+        {
+          "field": "evaluator_required",
+          "reason": "Seccomp filter semantics, child-apply safety, architecture coverage, and a security-sensitive dependency choice require adversarial review.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Goals"
+        },
+        {
+          "field": "forbidden_scope",
+          "reason": "Do not add a custom unsafe pre-exec implementation, seccomp user-notification supervisor, helper binary, network namespace launcher, or external bwrap dependency.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Linux mechanism"
+        },
+        {
+          "field": "forbidden_scope",
+          "reason": "Do not claim production confinement from backend unit tests or cross-compilation alone.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Implementation Priority and Crate Boundaries"
+        },
+        {
+          "field": "definition_of_done",
+          "reason": "Post-decision L2 verification requires the manifest-owning backend task to pin and verify landlock 0.4.5; the later runtime task owns no Cargo manifests.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#T4 — OS-native subprocess sandbox"
+        }
+      ],
+      "tier": "library",
+      "commit_type": "feat",
+      "parallelize": [],
+      "evaluator_required": true,
+      "verification": {
+        "library_gates": [
+          "cargo test -p opi-coding-agent --test sandbox_linux_backend",
+          "cargo check --target x86_64-unknown-linux-gnu -p opi-coding-agent --all-targets",
+          "cargo check --target aarch64-unknown-linux-gnu -p opi-coding-agent --all-targets",
+          "cargo clippy -p opi-coding-agent --all-targets -- -D warnings",
+          "$env:RUSTDOCFLAGS=\"-D warnings\"; cargo doc -p opi-coding-agent --no-deps"
+        ],
+        "behavioral_tests": [
+          "crates/opi-coding-agent/tests/sandbox_linux_backend.rs"
+        ],
+        "snapshot_tests": [],
+        "smoke_addendum": "Preserve the selected crate/version/API evidence, exact filter-rule capture, parent-build/child-apply trace, stable error translation, and successful Linux x86-64 plus ARM64 target checks. Missing target support leaves this task failing."
+      },
+      "acceptance_scenarios": [],
+      "production_call_sites": [],
+      "substrate_only": true,
+      "iteration_count": 0,
+      "max_iterations": 5,
+      "start_commit": null,
+      "baseline_dirty_files": [],
+      "task_owned_paths": [
+        "Cargo.toml",
+        "Cargo.lock",
+        "crates/opi-coding-agent/Cargo.toml",
+        "crates/opi-coding-agent/src/sandbox/linux.rs",
+        "crates/opi-coding-agent/tests/sandbox_linux_backend.rs"
+      ],
+      "last_attempt": null,
+      "verified_at_commit": null,
+      "evidence": null,
+      "blocker": null,
+      "session_notes": []
+    },
+    {
+      "id": "15.5.3",
+      "phase": 15,
+      "title": "Linux strict runtime and L2/L3 policy",
+      "crate": "opi-coding-agent",
+      "parent_spec_row": "15.5",
+      "definition_of_done": "The Linux strict backend attaches the 15.5.2 deny-capable seccomp filter and `landlock` policy to the production `CodingHarness::build_tools` → `LocalBashOperations::exec` → `sandbox::prepare` path without an `unsafe` block in opi source. L1 permits only configured workspace/temp writes. L2 is explicitly defense-in-depth: seccomp returns a stable errno for new `socket(AF_INET, ...)`, `socket(AF_INET6, ...)`, and `socket(AF_NETLINK, ...)` while AF_UNIX stream/datagram create-bind-connect-send-receive remains functional; An observed Landlock ABI query—not a kernel release-string comparison—authoritatively enables ABI 4 TCP bind/connect with no allow-port rules; Linux 6.7 is documented only as the mainline ABI-4 orientation, and injected tests cover release/ABI mismatches and report the observed ABI. Capability reports distinguish `seccomp_socket_creation` from `landlock_tcp_bind_connect`; kernels or architectures lacking a layer return exact layer/reason evidence to the shared 15.5.1 fail-open/fail-closed policy. L3 denies exactly `open_by_handle_at`, `bpf`, `perf_event_open`, `ptrace`, `kexec_load`, `kexec_file_load`, `reboot`, `init_module`, `finit_module`, `delete_module`, `swapon`, `swapoff`, `iopl`, `ioperm`, `acct`, and `settimeofday`, while `clone` and `unshare` remain allowed. Tests prove every fs/network/syscalls toggle, AF_UNIX preservation, the three socket-domain denials, engaged Landlock TCP denial, L3 rule shape, degradation diagnostics, and require=true command non-execution. A capable native Linux runner must report at least one passed engaged product test, zero failures, and zero ignored/skipped tests. An alternate-surface audit enumerates `socketpair` plus io_uring socket/connect/accept operations and classifies each as blocked with a stable error, mechanically irrelevant to creation of the three denied families on both supported architectures, or an explicit uncovered residual; evidence must not claim full new-socket coverage while any path remains uncovered. The acceptance claim explicitly excludes already-open/inherited network descriptors, non-TCP Landlock policy, address-range filtering, uncovered alternate dispatch surfaces, and complete network-boundary semantics.",
+      "definition_source": "inferred",
+      "replaces": null,
+      "status": "failing",
+      "depends_on": [
+        "15.5.2"
+      ],
+      "inference_notes": [
+        {
+          "field": "split",
+          "reason": "split: trigger=human-confirmed Linux backend-feasibility/runtime decomposition on 2026-07-25; this task owns the production Linux attach path and observable L1/L2/L3 behavior",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#T4 — OS-native subprocess sandbox"
+        },
+        {
+          "field": "source_override",
+          "reason": "Human confirmation on 2026-07-25 replaced the impossible six-operation seccomp domain-filter wording with a scalar socket-creation deny overlay plus Landlock ABI 4 TCP bind/connect.",
+          "source": "docs/research/2026-07-24-phase15-linux-l2-feasibility.md#Recommended implementable contract"
+        },
+        {
+          "field": "depends_on",
+          "reason": "Consumes the selected dual-architecture backend and pure policy contract from 15.5.2.",
+          "source": "docs/research/2026-07-24-phase15-linux-l2-feasibility.md#Task-graph/design corrections"
+        },
+        {
+          "field": "evaluator_required",
+          "reason": "Native confinement, degradation truthfulness, inherited-fd residuals, and require=true non-execution are security-sensitive.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Goals"
+        },
+        {
+          "field": "residual",
+          "reason": "deferred follow-up: trigger=a complete external-network boundary is required beyond new-socket reduction and TCP bind/connect",
+          "source": "docs/research/2026-07-24-phase15-linux-l2-feasibility.md#Residuals that must remain explicit"
+        },
+        {
+          "field": "forbidden_scope",
+          "reason": "Do not claim filtering of sockaddr-pointer operations, inherited descriptors, UDP/raw traffic via Landlock, address ranges, or complete network isolation.",
+          "source": "docs/research/2026-07-24-phase15-linux-l2-feasibility.md#Residuals that must remain explicit"
+        },
+        {
+          "field": "forbidden_scope",
+          "reason": "Do not describe strict mode as a security boundary or expand confinement beyond the bash subprocess tree.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Non-Goals"
+        },
+        {
+          "field": "definition_of_done",
+          "reason": "Post-decision L1 verification makes the queried Landlock ABI authoritative and tests kernel-release/ABI mismatches so backports or disabled features cannot be misreported.",
+          "source": "docs/research/2026-07-24-phase15-linux-l2-feasibility.md#Exact Landlock network capability"
+        },
+        {
+          "field": "residual",
+          "reason": "Post-decision L1 verification requires a socketpair/io_uring alternate-surface audit; every uncovered dispatch path remains an explicit residual rather than being hidden by the new-socket wording.",
+          "source": "docs/research/2026-07-24-phase15-linux-l2-feasibility.md#Residuals that must remain explicit"
+        }
+      ],
+      "tier": "cli-runtime",
+      "commit_type": "feat",
+      "parallelize": [],
+      "evaluator_required": true,
+      "verification": {
+        "library_gates": [
+          "cargo test -p opi-coding-agent --test sandbox_linux_backend",
+          "cargo test -p opi-coding-agent --test sandbox_strict linux_strict_backend_capability_matrix",
+          "cargo test -p opi-coding-agent --test sandbox_strict linux_af_unix_survives_socket_creation_gate",
+          "cargo test -p opi-coding-agent --test sandbox_strict linux_new_inet_inet6_netlink_sockets_are_denied",
+          "cargo test -p opi-coding-agent --test sandbox_strict linux_landlock_abi4_denies_tcp_bind_connect",
+          "cargo test -p opi-coding-agent --test sandbox_strict linux_engaged_subprocess_denies_requested_access",
+          "cargo clippy -p opi-coding-agent --all-targets -- -D warnings",
+          "$env:RUSTDOCFLAGS=\"-D warnings\"; cargo doc -p opi-coding-agent --no-deps",
+          "cargo test -p opi-coding-agent --test sandbox_linux_backend linux_landlock_capability_uses_observed_abi",
+          "cargo test -p opi-coding-agent --test sandbox_linux_backend linux_alternate_network_surface_audit"
+        ],
+        "behavioral_tests": [
+          "crates/opi-coding-agent/tests/sandbox_linux_backend.rs",
+          "crates/opi-coding-agent/tests/sandbox_strict.rs"
+        ],
+        "snapshot_tests": [],
+        "smoke_addendum": "Preserve exact capability/diagnostic traces, AF_UNIX stream+datagram success, stable errno for new AF_INET/AF_INET6/AF_NETLINK sockets, engaged ABI-4 TCP denial, and the danger-blocklist capture. Native Linux confinement evidence must show >=1 passed, 0 failed, and 0 ignored/skipped engaged tests; unavailable-only evidence keeps confinement open. Preserve injected kernel-release/observed-ABI mismatches and the socketpair/io_uring audit classification; uncovered paths remain explicit residuals and prohibit a complete-new-socket claim."
+      },
+      "acceptance_scenarios": [
+        {
+          "id": "phase15-linux-strict-backend",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Goals",
+          "scenario": "A factory-built BashTool on capable native Linux applies Landlock filesystem rules, the seccomp new-socket creation gate, optional Landlock ABI-4 TCP bind/connect denial, and the exact danger blocklist to only its subprocess tree; AF_UNIX IPC remains usable, unsupported layers flow through the shared fallback policy, and the artifact states the inherited-fd/non-TCP residuals. Runtime capability is keyed by the observed Landlock ABI, and the artifact classifies socketpair/io_uring alternate surfaces without upgrading uncovered paths into a complete network-isolation claim.",
+          "verification": [
+            "cargo test -p opi-coding-agent --test sandbox_strict linux_af_unix_survives_socket_creation_gate",
+            "cargo test -p opi-coding-agent --test sandbox_strict linux_new_inet_inet6_netlink_sockets_are_denied",
+            "cargo test -p opi-coding-agent --test sandbox_strict linux_landlock_abi4_denies_tcp_bind_connect",
+            "cargo test -p opi-coding-agent --test sandbox_strict linux_engaged_subprocess_denies_requested_access",
+            "cargo test -p opi-coding-agent --test sandbox_linux_backend linux_landlock_capability_uses_observed_abi",
+            "cargo test -p opi-coding-agent --test sandbox_linux_backend linux_alternate_network_surface_audit"
+          ],
+          "production_call_sites": [
+            "crates/opi-coding-agent/src/harness.rs::CodingHarness::build_tools",
+            "crates/opi-coding-agent/src/tool/operations.rs::LocalBashOperations::exec",
+            "crates/opi-coding-agent/src/sandbox.rs::prepare",
+            "crates/opi-coding-agent/src/sandbox/linux.rs::prepare (planned)"
+          ],
+          "status": "open"
+        }
+      ],
+      "production_call_sites": [
+        "crates/opi-coding-agent/src/harness.rs::CodingHarness::build_tools",
+        "crates/opi-coding-agent/src/tool/operations.rs::LocalBashOperations::exec",
+        "crates/opi-coding-agent/src/sandbox.rs::prepare",
+        "crates/opi-coding-agent/src/sandbox/linux.rs::prepare (planned)"
+      ],
+      "substrate_only": false,
+      "iteration_count": 0,
+      "max_iterations": 5,
+      "start_commit": null,
+      "baseline_dirty_files": [],
+      "task_owned_paths": [
+        "crates/opi-coding-agent/src/sandbox.rs",
+        "crates/opi-coding-agent/src/sandbox/linux.rs",
+        "crates/opi-coding-agent/src/tool/operations.rs",
+        "crates/opi-coding-agent/tests/sandbox_linux_backend.rs",
+        "crates/opi-coding-agent/tests/sandbox_strict.rs"
+      ],
+      "last_attempt": null,
+      "verified_at_commit": null,
+      "evidence": null,
+      "blocker": null,
+      "session_notes": []
+    },
+    {
+      "id": "15.5.4",
+      "phase": 15,
+      "title": "macOS sandbox-exec strict backend",
+      "crate": "opi-coding-agent",
+      "parent_spec_row": "15.5",
+      "definition_of_done": "The macOS strict backend renders a deterministic, escaped deny-overlay profile and wraps the requested bash command with `sandbox-exec -p`; the profile permits configured workspace/temp writes, preserves required process behavior, and optionally denies network. L3/syscall confinement is reported unavailable, and a missing or unusable `sandbox-exec` returns exact layer/reason failures to the shared 15.5.1 policy. Profile tests cover path escaping, fs/network toggles, unavailable-tool behavior, and argv preservation without requiring elevated privileges; on an engaged native macOS host, separate factory-built BashTool tests through the production dispatcher prove an outside-allowlist write is denied, a network side effect is denied, and configured workspace plus temporary writes remain allowed. A native macOS runner must execute all three platform product assertions with at least one passed test per assertion, zero failures, and zero ignored/skipped tests; a wrong-host zero-test or skipped result is not acceptance evidence.",
+      "definition_source": "inferred",
+      "replaces": null,
+      "status": "failing",
+      "depends_on": [
+        "15.5.1"
+      ],
+      "inference_notes": [
+        {
+          "field": "split",
+          "reason": "split: trigger=human-confirmed platform decomposition on 2026-07-24; macOS sandbox-exec strict backend owns one OS backend",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#T4 — OS-native subprocess sandbox"
+        },
+        {
+          "field": "depends_on",
+          "reason": "Consumes the shared strict dispatch, capability seam, require policy, and diagnostics from 15.5.1.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Sequencing"
+        },
+        {
+          "field": "evaluator_required",
+          "reason": "OS confinement and degradation claims require platform-specific adversarial review.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Goals"
+        },
+        {
+          "field": "definition_of_done",
+          "reason": "Extracted the macOS sandbox-exec deny-overlay, profile escaping, optional network denial, L3 gap, and unavailable-tool requirements.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#T4 — OS-native subprocess sandbox"
+        },
+        {
+          "field": "forbidden_scope",
+          "reason": "Do not claim strict mode is a security boundary or expand confinement beyond the bash subprocess tree.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Non-Goals"
+        },
+        {
+          "field": "verification",
+          "reason": "Post-split L6 verification forbids treating a cfg-filtered zero-test or truthful skip on a non-macOS host as product evidence.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Implementation Priority and Crate Boundaries"
+        },
+        {
+          "field": "definition_of_done",
+          "reason": "Post-decision L1 verification requires independent native evidence for the macOS filesystem deny, network deny, and workspace/temp allow contracts.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#T4 — OS-native subprocess sandbox"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Post-decision L6 verification grants the macOS product task ownership of sandbox.rs so it must register the backend in the production dispatcher rather than pass module-only tests.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Implementation Priority and Crate Boundaries"
+        }
+      ],
+      "tier": "cli-runtime",
+      "commit_type": "feat",
+      "parallelize": [],
+      "evaluator_required": true,
+      "verification": {
+        "library_gates": [
+          "cargo test -p opi-coding-agent --test sandbox_strict macos_profile_and_capability_matrix",
+          "cargo clippy -p opi-coding-agent --all-targets -- -D warnings",
+          "$env:RUSTDOCFLAGS=\"-D warnings\"; cargo doc -p opi-coding-agent --no-deps",
+          "cargo test -p opi-coding-agent --test sandbox_strict macos_engaged_subprocess_denies_outside_write",
+          "cargo test -p opi-coding-agent --test sandbox_strict macos_engaged_subprocess_denies_network",
+          "cargo test -p opi-coding-agent --test sandbox_strict macos_engaged_subprocess_allows_workspace_and_temp_writes"
+        ],
+        "behavioral_tests": [
+          "crates/opi-coding-agent/tests/sandbox_strict.rs"
+        ],
+        "snapshot_tests": [],
+        "smoke_addendum": "Preserve escaped profile/argv captures and separate native artifacts for outside-write denial, network denial, and allowed workspace/temp writes. Each filter must report >=1 passed, 0 failed, and 0 ignored/skipped tests; wrong-host zero tests leave the task failing."
+      },
+      "acceptance_scenarios": [
+        {
+          "id": "phase15-macos-strict-backend",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Goals",
+          "scenario": "A factory-built BashTool on native macOS is selected by the production sandbox dispatcher and executes through an escaped sandbox-exec deny overlay: an outside-allowlist write and a network side effect are separately denied, configured workspace/temp writes remain allowed, and absent sandbox-exec plus unsupported L3 flow through the shared fallback policy.",
+          "verification": [
+            "cargo test -p opi-coding-agent --test sandbox_strict macos_profile_and_capability_matrix",
+            "cargo test -p opi-coding-agent --test sandbox_strict macos_engaged_subprocess_denies_outside_write",
+            "cargo test -p opi-coding-agent --test sandbox_strict macos_engaged_subprocess_denies_network",
+            "cargo test -p opi-coding-agent --test sandbox_strict macos_engaged_subprocess_allows_workspace_and_temp_writes"
+          ],
+          "production_call_sites": [
+            "crates/opi-coding-agent/src/harness.rs::CodingHarness::build_tools",
+            "crates/opi-coding-agent/src/tool/operations.rs::LocalBashOperations::exec",
+            "crates/opi-coding-agent/src/sandbox.rs::prepare",
+            "crates/opi-coding-agent/src/sandbox/macos.rs::prepare (planned)"
+          ],
+          "status": "open"
+        }
+      ],
+      "production_call_sites": [
+        "crates/opi-coding-agent/src/harness.rs::CodingHarness::build_tools",
+        "crates/opi-coding-agent/src/tool/operations.rs::LocalBashOperations::exec",
+        "crates/opi-coding-agent/src/sandbox.rs::prepare",
+        "crates/opi-coding-agent/src/sandbox/macos.rs::prepare (planned)"
+      ],
+      "substrate_only": false,
+      "iteration_count": 0,
+      "max_iterations": 5,
+      "start_commit": null,
+      "baseline_dirty_files": [],
+      "task_owned_paths": [
+        "crates/opi-coding-agent/src/sandbox/macos.rs",
+        "crates/opi-coding-agent/tests/sandbox_strict.rs",
+        "crates/opi-coding-agent/src/sandbox.rs"
+      ],
+      "last_attempt": null,
+      "verified_at_commit": null,
+      "evidence": null,
+      "blocker": null,
+      "session_notes": []
+    },
+    {
+      "id": "15.5.5",
+      "phase": 15,
+      "title": "Windows strict capability fallback",
+      "crate": "opi-coding-agent",
+      "parent_spec_row": "15.5",
+      "definition_of_done": "Windows keeps the always-on L0 Job-Object lifecycle from 15.4 and advertises L1-L3 as unavailable rather than pretending to confine the bash child. A strict request produces exactly one redacted startup unavailability diagnostic; `require = false` executes at L0 and `require = true` returns before process creation. Capability-injected Windows tests plus a factory-built BashTool selected by the production `sandbox::prepare` dispatcher prove the diagnostic code/details, once-per-startup behavior, fail-open baseline, fail-closed non-execution, and unchanged kill-on-close/no-breakaway properties without elevated privileges. A native Windows runner must execute the platform product test with at least one passed test, zero failures, and zero ignored/skipped tests; a wrong-host zero-test or skipped result is not acceptance evidence.",
+      "definition_source": "inferred",
+      "replaces": null,
+      "status": "failing",
+      "depends_on": [
+        "15.5.1"
+      ],
+      "inference_notes": [
+        {
+          "field": "split",
+          "reason": "split: trigger=human-confirmed platform decomposition on 2026-07-24; Windows strict capability fallback owns one OS backend",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#T4 — OS-native subprocess sandbox"
+        },
+        {
+          "field": "depends_on",
+          "reason": "Consumes the shared strict dispatch, capability seam, require policy, and diagnostics from 15.5.1.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Sequencing"
+        },
+        {
+          "field": "evaluator_required",
+          "reason": "OS confinement and degradation claims require platform-specific adversarial review.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Goals"
+        },
+        {
+          "field": "definition_of_done",
+          "reason": "Extracted the Windows L0-only truthfulness, startup unavailability diagnostic, and require behavior.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#T4 — OS-native subprocess sandbox"
+        },
+        {
+          "field": "forbidden_scope",
+          "reason": "Do not invent Windows L1-L3 confinement, Job-Object resource caps, breakaway permission, or direct CreateProcessW ownership.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Non-Goals"
+        },
+        {
+          "field": "forbidden_scope",
+          "reason": "Do not claim strict mode is a security boundary or expand confinement beyond the bash subprocess tree.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Non-Goals"
+        },
+        {
+          "field": "verification",
+          "reason": "Post-split L6 verification forbids treating a cfg-filtered zero-test or truthful skip on a non-Windows host as product evidence.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Implementation Priority and Crate Boundaries"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Post-decision L6 verification grants the Windows product task ownership of sandbox.rs so it must register the backend in the production dispatcher rather than pass module-only tests.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Implementation Priority and Crate Boundaries"
+        }
+      ],
+      "tier": "cli-runtime",
+      "commit_type": "feat",
+      "parallelize": [],
+      "evaluator_required": true,
+      "verification": {
+        "library_gates": [
+          "cargo test -p opi-coding-agent --test sandbox_strict windows_strict_reports_l0_only",
+          "cargo test -p opi-coding-agent --test sandbox_l0 windows_bash_and_adapter_use_kill_on_close_job",
+          "cargo clippy -p opi-coding-agent --all-targets -- -D warnings",
+          "$env:RUSTDOCFLAGS=\"-D warnings\"; cargo doc -p opi-coding-agent --no-deps",
+          "cargo test -p opi-coding-agent --test sandbox_strict windows_strict_production_dispatch_reports_l0_only"
+        ],
+        "behavioral_tests": [
+          "crates/opi-coding-agent/tests/sandbox_strict.rs",
+          "crates/opi-coding-agent/tests/sandbox_l0.rs"
+        ],
+        "snapshot_tests": [],
+        "smoke_addendum": "Preserve injected capability traces and an engaged native subprocess result when running on the owned platform; tests must skip truthfully rather than claim an unavailable host layer. Native Windows evidence is mandatory: `windows_strict_reports_l0_only` must report at least one passed test, zero failures, and zero ignored/skipped tests; a wrong-host zero-test run leaves the task failing."
+      },
+      "acceptance_scenarios": [
+        {
+          "id": "phase15-windows-strict-fallback",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Goals",
+          "scenario": "A strict request on Windows truthfully remains at the L0 Job-Object baseline: require=false runs with one startup unavailability diagnostic, while require=true prevents process creation.",
+          "verification": [
+            "cargo test -p opi-coding-agent --test sandbox_strict windows_strict_reports_l0_only",
+            "cargo test -p opi-coding-agent --test sandbox_l0 windows_bash_and_adapter_use_kill_on_close_job",
+            "cargo test -p opi-coding-agent --test sandbox_strict windows_strict_production_dispatch_reports_l0_only"
+          ],
+          "production_call_sites": [
+            "crates/opi-coding-agent/src/harness.rs::CodingHarness::build_tools",
+            "crates/opi-coding-agent/src/tool/operations.rs::LocalBashOperations::exec",
+            "crates/opi-coding-agent/src/sandbox.rs::prepare",
+            "crates/opi-coding-agent/src/sandbox/windows.rs::prepare (planned)"
+          ],
+          "status": "open"
+        }
+      ],
+      "production_call_sites": [
+        "crates/opi-coding-agent/src/harness.rs::CodingHarness::build_tools",
+        "crates/opi-coding-agent/src/tool/operations.rs::LocalBashOperations::exec",
+        "crates/opi-coding-agent/src/sandbox.rs::prepare",
+        "crates/opi-coding-agent/src/sandbox/windows.rs::prepare (planned)"
+      ],
+      "substrate_only": false,
+      "iteration_count": 0,
+      "max_iterations": 5,
+      "start_commit": null,
+      "baseline_dirty_files": [],
+      "task_owned_paths": [
+        "crates/opi-coding-agent/src/sandbox/windows.rs",
+        "crates/opi-coding-agent/tests/sandbox_strict.rs",
+        "crates/opi-coding-agent/tests/sandbox_l0.rs",
+        "crates/opi-coding-agent/src/sandbox.rs"
+      ],
+      "last_attempt": null,
+      "verified_at_commit": null,
+      "evidence": null,
+      "blocker": null,
+      "session_notes": []
+    },
+    {
+      "id": "15.5.6",
+      "phase": 15,
+      "title": "Strict sandbox matrix integration and acceptance",
+      "crate": "opi-coding-agent",
+      "parent_spec_row": "15.5",
+      "definition_of_done": "The shared dispatcher and all three platform backends are integrated through the production `CodingHarness::build_tools` → `LocalBashOperations::exec` → `sandbox::prepare` path with cfg-correct selection. `sandbox.rs` (including its child modules) and `tool/operations.rs` forbid unsafe code at the module boundary; pre-existing test-only unsafe environment mutation elsewhere in the crate is outside this Phase 15 claim. The complete capability matrix proves Linux Landlock filesystem policy, an observed-ABI-gated seccomp new-socket reduction, optional ABI-4 TCP bind/connect, the socketpair/io_uring audit, explicit inherited-fd/non-TCP/alternate-surface residuals, and the exact L3 danger blocklist, macOS deny-overlay and L3/tool gaps, Windows truthful L0-only behavior, every fs/network/syscalls toggle, `require` fail-open/fail-closed semantics, one-time diagnostics, and unchanged L0 lifecycle. The existing native `ubuntu-latest`, `macos-latest`, and `windows-latest` CI coverage is strengthened with explicit sandbox product filters; each job must execute at least one passed platform test with zero failures and zero ignored/skipped tests and retain its log/artifact. A CI target-check matrix must compile `opi-coding-agent --all-targets` for all six supported release triples: x86_64/aarch64 Linux GNU, x86_64/aarch64 Apple Darwin, and x86_64/aarch64 Windows MSVC. A zero-test, skipped platform test, missing target result, or unavailable-only result keeps the relevant confinement criterion open; the Linux artifact must describe L2 as defense-in-depth rather than complete network isolation. The task records the three native execution results, six target-check results, and production call-site evidence for Phase 15 exit review; CI runtime claims remain unverified until a pushed commit produces those results.",
+      "definition_source": "inferred",
+      "replaces": null,
+      "status": "failing",
+      "depends_on": [
+        "15.5.3",
+        "15.5.4",
+        "15.5.5"
+      ],
+      "inference_notes": [
+        {
+          "field": "split",
+          "reason": "split: trigger=human-confirmed platform decomposition on 2026-07-24; this final task owns cross-platform integration and acceptance",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#T4 — OS-native subprocess sandbox"
+        },
+        {
+          "field": "depends_on",
+          "reason": "Closes the product matrix only after the Linux, macOS, and Windows backend tasks pass.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Sequencing"
+        },
+        {
+          "field": "evaluator_required",
+          "reason": "Cross-platform confinement, fallback truthfulness, no-unsafe, and production-path claims require independent evaluation.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Goals"
+        },
+        {
+          "field": "forbidden_scope",
+          "reason": "Do not close a platform criterion from mock-only evidence when an engaged host is available, and never describe an unavailable layer as engaged.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Goals"
+        },
+        {
+          "field": "forbidden_scope",
+          "reason": "Do not confine opi itself, file/navigation tools, adapters beyond L0, or unrelated subprocess sites.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Non-Goals"
+        },
+        {
+          "field": "residual",
+          "reason": "deferred follow-up: trigger=a per-adapter capability-declaration schema exists and T5/T6 have landed",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Residuals / follow-ups"
+        },
+        {
+          "field": "verification",
+          "reason": "Post-split L1/L6 verification requires native non-vacuous evidence on all three OS families and compile evidence for every supported release target; current-host cfg mocks alone cannot close the matrix.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Implementation Priority and Crate Boundaries"
+        },
+        {
+          "field": "definition_of_done",
+          "reason": "Post-split L2/L6 verification scopes the no-unsafe claim to Phase 15 production modules because existing unrelated inline tests intentionally use Rust-2024 unsafe environment mutation.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Goals"
+        },
+        {
+          "field": "source_override",
+          "reason": "Human confirmation on 2026-07-25 narrowed Linux L2 acceptance to a new-socket reduction plus ABI-4 TCP bind/connect and required explicit inherited-fd/non-TCP residuals.",
+          "source": "docs/research/2026-07-24-phase15-linux-l2-feasibility.md#Recommended implementable contract"
+        }
+      ],
+      "tier": "cli-runtime",
+      "commit_type": "test",
+      "parallelize": [],
+      "evaluator_required": true,
+      "verification": {
+        "library_gates": [
+          "cargo test -p opi-coding-agent --test sandbox_strict",
+          "cargo test -p opi-coding-agent --test sandbox_config",
+          "cargo test -p opi-coding-agent --test sandbox_l0",
+          "cargo test -p opi-coding-agent --test tool_operations",
+          "cargo check --target x86_64-unknown-linux-gnu -p opi-coding-agent --all-targets",
+          "cargo check --target aarch64-unknown-linux-gnu -p opi-coding-agent --all-targets",
+          "cargo check --target x86_64-apple-darwin -p opi-coding-agent --all-targets",
+          "cargo check --target aarch64-apple-darwin -p opi-coding-agent --all-targets",
+          "cargo check --target x86_64-pc-windows-msvc -p opi-coding-agent --all-targets",
+          "cargo check --target aarch64-pc-windows-msvc -p opi-coding-agent --all-targets",
+          "cargo clippy --workspace --all-targets -- -D warnings",
+          "$env:RUSTDOCFLAGS=\"-D warnings\"; cargo doc --workspace --no-deps",
+          "$files = @(\"crates/opi-coding-agent/src/sandbox.rs\", \"crates/opi-coding-agent/src/tool/operations.rs\"); foreach ($file in $files) { rg -n \"^#!\\[forbid\\(unsafe_code\\)\\]$\" $file; if ($LASTEXITCODE -ne 0) { exit 1 } }"
+        ],
+        "behavioral_tests": [
+          "crates/opi-coding-agent/tests/sandbox_strict.rs",
+          "crates/opi-coding-agent/tests/sandbox_config.rs",
+          "crates/opi-coding-agent/tests/sandbox_l0.rs",
+          "crates/opi-coding-agent/tests/tool_operations.rs"
+        ],
+        "snapshot_tests": [],
+        "smoke_addendum": "Retain CI run URLs/logs showing >=1 passed and 0 ignored/skipped platform-product tests on native Linux, macOS, and Windows runners plus successful cargo-check results for all six release triples. Verify module-level forbid(unsafe_code) in sandbox.rs and tool/operations.rs; do not scan unrelated existing test modules."
+      },
+      "acceptance_scenarios": [
+        {
+          "id": "phase15-strict-bash-platform-matrix",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Goals",
+          "scenario": "A factory-built BashTool in strict mode confines only its subprocess tree: native Linux applies Landlock filesystem policy, seccomp new-socket reduction, observed-ABI-gated optional TCP bind/connect, and the danger blocklist while recording inherited-fd/non-TCP/socketpair/io_uring audit residuals; native macOS applies the selected sandbox-exec deny overlay; native Windows remains at L0 with an explicit unavailability diagnostic. Each native job executes at least one passed platform test with zero failures and zero ignored/skipped tests, and all six supported release triples compile the production selection path.",
+          "verification": [
+            "cargo test -p opi-coding-agent --test sandbox_strict linux_engaged_subprocess_denies_requested_access",
+            "cargo test -p opi-coding-agent --test sandbox_linux_backend linux_alternate_network_surface_audit",
+            "cargo test -p opi-coding-agent --test sandbox_strict macos_engaged_subprocess_denies_outside_write",
+            "cargo test -p opi-coding-agent --test sandbox_strict macos_engaged_subprocess_denies_network",
+            "cargo test -p opi-coding-agent --test sandbox_strict macos_engaged_subprocess_allows_workspace_and_temp_writes",
+            "cargo test -p opi-coding-agent --test sandbox_strict windows_strict_production_dispatch_reports_l0_only",
+            "cargo check --target x86_64-unknown-linux-gnu -p opi-coding-agent --all-targets",
+            "cargo check --target aarch64-unknown-linux-gnu -p opi-coding-agent --all-targets",
+            "cargo check --target x86_64-apple-darwin -p opi-coding-agent --all-targets",
+            "cargo check --target aarch64-apple-darwin -p opi-coding-agent --all-targets",
+            "cargo check --target x86_64-pc-windows-msvc -p opi-coding-agent --all-targets",
+            "cargo check --target aarch64-pc-windows-msvc -p opi-coding-agent --all-targets"
+          ],
+          "production_call_sites": [
+            "crates/opi-coding-agent/src/main.rs::main",
+            "crates/opi-coding-agent/src/main.rs::run_non_interactive",
+            "crates/opi-coding-agent/src/main.rs::run_rpc",
+            "crates/opi-coding-agent/src/main.rs::run_interactive",
+            "crates/opi-coding-agent/src/config.rs::resolve_config",
+            "crates/opi-coding-agent/src/harness.rs::CodingHarness::build_tools",
+            "crates/opi-coding-agent/src/tool/operations.rs::LocalBashOperations::exec",
+            "crates/opi-coding-agent/src/sandbox.rs::prepare"
+          ],
+          "status": "open"
+        },
+        {
+          "id": "phase15-sandbox-no-opi-unsafe",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Goals",
+          "scenario": "The Phase 15 production sandbox module tree and Operations backend compile with module-level `forbid(unsafe_code)`; any irreducible child setup is contained by audited dependency APIs. Existing unrelated test-only unsafe environment mutation is not part of this scoped claim.",
+          "verification": [
+            "$files = @(\"crates/opi-coding-agent/src/sandbox.rs\", \"crates/opi-coding-agent/src/tool/operations.rs\"); foreach ($file in $files) { rg -n \"^#!\\[forbid\\(unsafe_code\\)\\]$\" $file; if ($LASTEXITCODE -ne 0) { exit 1 } }",
+            "cargo clippy --workspace --all-targets -- -D warnings"
+          ],
+          "production_call_sites": [
+            "crates/opi-coding-agent/src/tool/operations.rs::LocalBashOperations::exec",
+            "crates/opi-coding-agent/src/sandbox.rs::prepare"
+          ],
+          "status": "open"
+        }
+      ],
+      "production_call_sites": [
+        "crates/opi-coding-agent/src/main.rs::main",
+        "crates/opi-coding-agent/src/main.rs::run_non_interactive",
+        "crates/opi-coding-agent/src/main.rs::run_rpc",
+        "crates/opi-coding-agent/src/main.rs::run_interactive",
+        "crates/opi-coding-agent/src/config.rs::resolve_config",
+        "crates/opi-coding-agent/src/harness.rs::CodingHarness::build_tools",
+        "crates/opi-coding-agent/src/tool/operations.rs::LocalBashOperations::exec",
+        "crates/opi-coding-agent/src/sandbox.rs::prepare"
+      ],
+      "substrate_only": false,
+      "iteration_count": 0,
+      "max_iterations": 5,
+      "start_commit": null,
+      "baseline_dirty_files": [],
+      "task_owned_paths": [
+        "Cargo.toml",
+        "Cargo.lock",
+        "crates/opi-coding-agent/Cargo.toml",
+        "crates/opi-coding-agent/src/harness.rs",
+        "crates/opi-coding-agent/src/sandbox.rs",
+        "crates/opi-coding-agent/src/sandbox/**",
+        "crates/opi-coding-agent/src/tool/operations.rs",
+        "crates/opi-coding-agent/tests/sandbox_config.rs",
+        "crates/opi-coding-agent/tests/sandbox_l0.rs",
+        "crates/opi-coding-agent/tests/sandbox_strict.rs",
+        "crates/opi-coding-agent/tests/tool_operations.rs",
+        ".github/workflows/ci.yml"
+      ],
+      "last_attempt": null,
+      "verified_at_commit": null,
+      "evidence": null,
+      "blocker": null,
+      "session_notes": []
+    },
+    {
+      "id": "15.6",
+      "phase": 15,
+      "title": "Project trust store and resolver substrate",
+      "crate": "opi-coding-agent",
+      "parent_spec_row": null,
+      "definition_of_done": "`opi-coding-agent` defines `TrustDecision`, `TrustVote`, `TrustContext`, `TrustResource`, `ProjectTrustStore`, `ProjectTrustResolver`, `ProjectTrustResolverRegistry`, `PreTrustUiError::Unavailable`, and minimal `PreTrustUi` contracts without changing opi-agent; the TUI-owned `TrustChoice` type and its coding-agent translation belong to 15.8.2. `ProjectTrustStore::load(user_config_dir)` reads exactly `user_config_dir.join(\"trust.json\")`—`%APPDATA%\\opi\\trust.json` on Windows and `~/.config/opi/trust.json` on Unix defaults—as a flat canonical-path-to-bool JSON map; `decide` canonicalizes the project path and returns the nearest ancestor decision, and `record` acquires `trust.json.lock`, re-reads after locking, updates one canonical key, and atomically replaces the file without schema metadata. The resolver registry accepts deterministic-order registrations only through an explicit public embedder/startup API before resolution; a newly constructed/default registry is empty, late registration is rejected, and the registry contains no metadata discovery or native-code loading path. Resolution applies CLI override, explicitly registered resolver votes, store, global-only default, then ask; first Trust/Deny wins and Undecided falls through. Resource detection names the exact project files/directories that require consent and returns an empty set for a bare `.opi` directory. Temp-root and fake-resolver tests prove alias canonicalization, nearest-ancestor precedence, concurrent writers, malformed JSON errors, no-decision behavior, deterministic explicit registration, an empty default registry, no late/project self-registration, and no-resource no-op.",
+      "definition_source": "inferred",
+      "replaces": null,
+      "status": "failing",
+      "depends_on": [],
+      "inference_notes": [
+        {
+          "field": "definition_of_done",
+          "reason": "Extracted T6 store shape, canonical ancestor lookup, lock protocol, resolver types, precedence, and trust-requiring resource detection.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#T6 — Project-trust gate"
+        },
+        {
+          "field": "substrate_only",
+          "reason": "Store and resolver contracts do not close the product trust gate until 15.7 filters project layers, 15.8.1 wires startup policy, and 15.8.2 connects interactive UX.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Implementation Priority and Crate Boundaries"
+        },
+        {
+          "field": "definition_of_done",
+          "reason": "Plan-verify I moves TrustChoice to opi-tui in 15.8.2 so the existing opi-coding-agent -> opi-tui dependency does not invert.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#T6 — Project-trust gate"
+        },
+        {
+          "field": "forbidden_scope",
+          "reason": "Do not add schema version, metadata, environment-variable override, provider/auth changes, or session-schema changes.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Non-Goals"
+        },
+        {
+          "field": "forbidden_scope",
+          "reason": "Project extensions cannot register a resolver before their project is trusted.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#T6 — Project-trust gate"
+        },
+        {
+          "field": "residual",
+          "reason": "deferred follow-up: trigger=project trust decisions require fields beyond a canonical-path boolean or a persisted-format migration/compatibility requirement appears",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Residuals / follow-ups"
+        },
+        {
+          "field": "source_override",
+          "reason": "Human confirmation on 2026-07-25 fixed the store at user_config_dir.join(\"trust.json\") because user_config_dir already denotes opi's configuration root.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#T6 — Project-trust gate"
+        },
+        {
+          "field": "source_override",
+          "reason": "Human confirmation on 2026-07-25 narrowed resolver eligibility to instances explicitly registered by an embedder/startup caller before resolution; the standard CLI registry is empty and Phase 15 adds no CLI -e or native loader.",
+          "source": "crates/opi-coding-agent/src/cli.rs; crates/opi-coding-agent/src/harness.rs; docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#T6 — Project-trust gate"
+        },
+        {
+          "field": "forbidden_scope",
+          "reason": "Do not add a CLI -e option, dynamic native extension loader, metadata-to-code loader, or project-extension self-registration path.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Non-Goals"
+        },
+        {
+          "field": "definition_of_done",
+          "reason": "Post-decision L2 verification confines this substrate task to the registry's empty default and deterministic ordering; standard CLI wiring remains a 15.8.1 product assertion.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Implementation Priority and Crate Boundaries"
+        }
+      ],
+      "tier": "library",
+      "commit_type": "feat",
+      "parallelize": [],
+      "evaluator_required": true,
+      "verification": {
+        "library_gates": [
+          "cargo test -p opi-coding-agent --test project_trust_store",
+          "cargo clippy -p opi-coding-agent --all-targets -- -D warnings",
+          "$env:RUSTDOCFLAGS=\"-D warnings\"; cargo doc -p opi-coding-agent --no-deps",
+          "cargo test -p opi-coding-agent --test project_trust_store explicit_registry_is_ordered_and_default_is_empty"
+        ],
+        "behavioral_tests": [
+          "crates/opi-coding-agent/tests/project_trust_store.rs"
+        ],
+        "snapshot_tests": [],
+        "smoke_addendum": "Use an injected temp user-config root and fake resolver/UI; preserve concurrent-write and malformed-store errors."
+      },
+      "acceptance_scenarios": [],
+      "production_call_sites": [],
+      "substrate_only": true,
+      "iteration_count": 0,
+      "max_iterations": 5,
+      "start_commit": null,
+      "baseline_dirty_files": [],
+      "task_owned_paths": [
+        "crates/opi-coding-agent/src/lib.rs",
+        "crates/opi-coding-agent/src/project_trust.rs",
+        "crates/opi-coding-agent/tests/project_trust_store.rs"
+      ],
+      "last_attempt": null,
+      "verified_at_commit": null,
+      "evidence": null,
+      "blocker": null,
+      "session_notes": []
+    },
+    {
+      "id": "15.7",
+      "phase": 15,
+      "title": "Trust-gated project resource discovery",
+      "crate": "opi-coding-agent",
+      "parent_spec_row": null,
+      "definition_of_done": "Session startup executes a two-stage configuration path: parse CLI and load only built-in, user-global, and explicit trusted configuration required to obtain the trust default; detect trust-requiring resources and resolve `TrustDecision`; conditionally merge project `.opi/config.toml`; only then construct providers, installed-package runtime, adapters, and `CodingHarnessBuilder`. The decision passes through `BuildOptions` into `CodingHarness::discover_resources`. For `Untrusted`, the project config loader is never invoked and startup skips project skills/fragments/themes/extensions, project `.opi/packages.toml`, and project `AGENTS.md`/`CLAUDE.md`; user-global resources plus the existing explicitly supplied `--config` and `--system-prompt` inputs remain available, tool execution remains unchanged, and the context files remain readable through `read`. For `Trusted`, the existing project layers are consumed. Project extension declarations are unavailable during trust resolution, and an untrusted adapter declaration test uses a marker executable to prove no child starts. Integration tests exercise trusted, untrusted, and no-resource startup through exact config/resource/package/context call sites, including the negative Bedrock-profile selector case and Phase-16 `/skill:`/`/fragment:` discovery inputs.",
+      "definition_source": "inferred",
+      "replaces": null,
+      "status": "failing",
+      "depends_on": [
+        "15.6"
+      ],
+      "inference_notes": [
+        {
+          "field": "definition_of_done",
+          "reason": "Expanded T6's gated/not-gated lists, declaration-load adapter boundary, context-file deviation, and pre-discovery ordering into production assertions.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#T6 — Project-trust gate"
+        },
+        {
+          "field": "definition_of_done",
+          "reason": "Plan-verify J pins two-stage config resolution and proves the project config loader is never invoked for an untrusted project.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#T6 — Project-trust gate"
+        },
+        {
+          "field": "depends_on",
+          "reason": "Consumes TrustDecision, store, resource detection, and resolver substrate from 15.6.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Sequencing"
+        },
+        {
+          "field": "evaluator_required",
+          "reason": "Startup ordering must prove project extensions/adapters cannot execute before consent and project config is skipped rather than filtered after load.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Goals"
+        },
+        {
+          "field": "forbidden_scope",
+          "reason": "Do not gate read/write/edit/bash/grep/find/ls/glob execution.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Non-Goals"
+        },
+        {
+          "field": "forbidden_scope",
+          "reason": "Do not auto-inject untrusted project AGENTS.md or CLAUDE.md; leave them readable through read.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Non-Goals"
+        },
+        {
+          "field": "forbidden_scope",
+          "reason": "Do not gate user-global resources or existing explicit `--config`/`--system-prompt` inputs; Phase 15 adds no CLI `-e` or native extension loader.",
+          "source": "docs/research/2026-07-24-project-trust-semantics-pi-claude-code-codex-cli.md#对 Opi Phase 15 的建议"
+        },
+        {
+          "field": "cross_ticket",
+          "reason": "Plan-verify D preserves the corrected Bedrock boundary: the gate blocks project selection of providers.bedrock.profile but does not gate credential_process in user-controlled AWS files.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Cross-ticket interactions"
+        },
+        {
+          "field": "production_call_sites",
+          "reason": "Plan-verify L replaces nonexistent anchors with exact current startup, harness, package, adapter, and prompt symbols plus planned two-stage trust functions.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#T6 — Project-trust gate"
+        },
+        {
+          "field": "source_override",
+          "reason": "Post-decision L3 verification removes the stale nonexistent CLI -e surface and names the actual retained explicit CLI inputs.",
+          "source": "docs/research/2026-07-24-project-trust-semantics-pi-claude-code-codex-cli.md#对 Opi Phase 15 的建议"
+        }
+      ],
+      "tier": "cli-runtime",
+      "commit_type": "feat",
+      "parallelize": [],
+      "evaluator_required": true,
+      "verification": {
+        "library_gates": [
+          "cargo test -p opi-coding-agent --test trust_resource_gating",
+          "cargo test -p opi-coding-agent --test harness_resource_integration",
+          "cargo test -p opi-coding-agent --test package_discovery",
+          "cargo test -p opi-coding-agent --test agents_md_context",
+          "cargo clippy -p opi-coding-agent --all-targets -- -D warnings",
+          "$env:RUSTDOCFLAGS=\"-D warnings\"; cargo doc -p opi-coding-agent --no-deps"
+        ],
+        "behavioral_tests": [
+          "crates/opi-coding-agent/tests/trust_resource_gating.rs",
+          "crates/opi-coding-agent/tests/harness_resource_integration.rs",
+          "crates/opi-coding-agent/tests/package_discovery.rs",
+          "crates/opi-coding-agent/tests/agents_md_context.rs"
+        ],
+        "snapshot_tests": [],
+        "smoke_addendum": "Use temp project/user roots and marker adapters; preserve discovered-resource manifests, system prompt, adapter marker absence, and read-tool access evidence."
+      },
+      "acceptance_scenarios": [
+        {
+          "id": "phase15-untrusted-project-resource-gate",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Goals",
+          "scenario": "Starting opi in an untrusted project skips the entire project config layer plus project skills, fragments, themes, extensions, packages, and context injection before any declaration executes, while retaining user-global resources and existing explicit `--config`/`--system-prompt` inputs and unchanged tool execution.",
+          "verification": [
+            "cargo test -p opi-coding-agent --test trust_resource_gating untrusted_project_skips_every_gated_layer"
+          ],
+          "production_call_sites": [
+            "crates/opi-coding-agent/src/main.rs::main",
+            "crates/opi-coding-agent/src/config.rs::resolve_pre_trust_config (planned)",
+            "crates/opi-coding-agent/src/config.rs::merge_project_config (planned)",
+            "crates/opi-coding-agent/src/harness.rs::CodingHarnessBuilder::build",
+            "crates/opi-coding-agent/src/harness.rs::CodingHarness::discover_resources",
+            "crates/opi-coding-agent/src/runtime_packages.rs::start_installed_package_runtime",
+            "crates/opi-coding-agent/src/context_files.rs::discover_context_files"
+          ],
+          "status": "open"
+        },
+        {
+          "id": "phase15-untrusted-adapter-does-not-start",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Cross-ticket interactions",
+          "scenario": "An untrusted project's `.opi/packages.toml` names a marker process-JSONL adapter, but production startup omits the project declaration before adapter construction and the marker child never starts; a user-global adapter still starts.",
+          "verification": [
+            "cargo test -p opi-coding-agent --test trust_resource_gating untrusted_project_adapter_declaration_never_spawns"
+          ],
+          "production_call_sites": [
+            "crates/opi-coding-agent/src/runtime_packages.rs::start_installed_package_runtime",
+            "crates/opi-coding-agent/src/adapter_extension.rs::start_adapters_from_packages",
+            "crates/opi-coding-agent/src/adapter_host.rs::AdapterHost::start"
+          ],
+          "status": "open"
+        },
+        {
+          "id": "phase15-untrusted-context-is-not-injected",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Goals",
+          "scenario": "An untrusted project's AGENTS.md and CLAUDE.md do not enter the generated system prompt, user-global context still enters it, and an explicitly selected read tool can read the project files.",
+          "verification": [
+            "cargo test -p opi-coding-agent --test trust_resource_gating untrusted_context_files_are_readable_but_not_injected"
+          ],
+          "production_call_sites": [
+            "crates/opi-coding-agent/src/context_files.rs::discover_context_files",
+            "crates/opi-coding-agent/src/prompt.rs::SystemPromptBuilder::build",
+            "crates/opi-coding-agent/src/tool/read.rs::ReadTool::execute"
+          ],
+          "status": "open"
+        },
+        {
+          "id": "phase15-trusted-project-retains-resource-path",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Goals",
+          "scenario": "A trusted project follows the existing production project-resource path, including config, skills/fragments/themes/extensions, package declarations, and context files, with no regression in user-global layering precedence.",
+          "verification": [
+            "cargo test -p opi-coding-agent --test trust_resource_gating trusted_project_retains_existing_resource_layers"
+          ],
+          "production_call_sites": [
+            "crates/opi-coding-agent/src/config.rs::merge_project_config (planned)",
+            "crates/opi-coding-agent/src/harness.rs::CodingHarness::discover_resources",
+            "crates/opi-coding-agent/src/runtime_packages.rs::start_installed_package_runtime",
+            "crates/opi-coding-agent/src/context_files.rs::discover_context_files"
+          ],
+          "status": "open"
+        }
+      ],
+      "production_call_sites": [
+        "crates/opi-coding-agent/src/main.rs::main",
+        "crates/opi-coding-agent/src/config.rs::resolve_pre_trust_config (planned)",
+        "crates/opi-coding-agent/src/config.rs::merge_project_config (planned)",
+        "crates/opi-coding-agent/src/harness.rs::CodingHarnessBuilder::build",
+        "crates/opi-coding-agent/src/harness.rs::CodingHarness::discover_resources",
+        "crates/opi-coding-agent/src/runtime_packages.rs::start_installed_package_runtime",
+        "crates/opi-coding-agent/src/adapter_extension.rs::start_adapters_from_packages",
+        "crates/opi-coding-agent/src/adapter_host.rs::AdapterHost::start",
+        "crates/opi-coding-agent/src/context_files.rs::discover_context_files",
+        "crates/opi-coding-agent/src/prompt.rs::SystemPromptBuilder::build",
+        "crates/opi-coding-agent/src/tool/read.rs::ReadTool::execute"
+      ],
+      "substrate_only": false,
+      "iteration_count": 0,
+      "max_iterations": 5,
+      "start_commit": null,
+      "baseline_dirty_files": [],
+      "task_owned_paths": [
+        "crates/opi-coding-agent/src/adapter_extension.rs",
+        "crates/opi-coding-agent/src/config.rs",
+        "crates/opi-coding-agent/src/context_files.rs",
+        "crates/opi-coding-agent/src/harness.rs",
+        "crates/opi-coding-agent/src/main.rs",
+        "crates/opi-coding-agent/src/project_trust.rs",
+        "crates/opi-coding-agent/src/prompt.rs",
+        "crates/opi-coding-agent/src/runtime_packages.rs",
+        "crates/opi-coding-agent/src/tool/read.rs",
+        "crates/opi-coding-agent/tests/agents_md_context.rs",
+        "crates/opi-coding-agent/tests/harness_resource_integration.rs",
+        "crates/opi-coding-agent/tests/package_discovery.rs",
+        "crates/opi-coding-agent/tests/trust_resource_gating.rs"
+      ],
+      "last_attempt": null,
+      "verified_at_commit": null,
+      "evidence": null,
+      "blocker": null,
+      "session_notes": []
+    },
+    {
+      "id": "15.8.1",
+      "phase": 15,
+      "title": "Project trust startup policy and headless resolution",
+      "crate": "opi-coding-agent",
+      "parent_spec_row": "15.8",
+      "definition_of_done": "`--trust` and `--no-trust` are mutually exclusive startup overrides; global-only `[defaults] default_project_trust = ask|always|never` defaults to ask. Public `prepare_project_startup` is the sole preflight entry used by the standard CLI and embedders: it accepts an explicit `ProjectTrustResolverRegistry`, parses and validates CLI flags, detects trust-requiring resources, and returns the no-resource startup plan before resolver invocation, trust-store loading, global-default evaluation, or `PreTrustUi` calls when the resource set is empty. When resources exist, it applies CLI, registered resolver votes, nearest stored decision, global default, then ask; first Trust/Deny wins and Undecided falls through. Its `ProjectStartupPlan` is consumed by the 15.7 config/resource gate before project config/resource merge, provider construction, installed-package or adapter startup, and `CodingHarnessBuilder::build`. The standard opi CLI calls the same entry with an empty registry, while embedders may register resolvers before preflight; Phase 15 adds no CLI `-e`, native extension loader, metadata-to-code loader, or project-extension self-registration path. Non-interactive and RPC startup never prompt and resolve an otherwise unanswered ask to untrusted. Their `PreTrustUi` implementations make `select`, `confirm`, and `input` return `PreTrustUiError::Unavailable` immediately; `notify` is a tested no-op; no method emits an RPC UI request. Explicit trusted decisions enter the 15.7 resource path, no-resource projects invoke neither resolvers nor UI, and registered resolvers receive no surface beyond `PreTrustUi`. opi-agent remains unchanged, and Phase 15 adds no built-in `/trust` or mid-session reload path. Integration tests cover config/CLI errors, every precedence branch, an injected embedder resolver vote flowing through `prepare_project_startup` into both trusted and untrusted 15.7 paths, the standard CLI's empty registry, rejection of late/project self-registration, all four headless UI methods, both headless modes, no-resource side-effect absence, persisted-store use, preflight ordering, and zero RPC UI requests.",
+      "definition_source": "inferred",
+      "replaces": null,
+      "status": "failing",
+      "depends_on": [
+        "15.6",
+        "15.7"
+      ],
+      "inference_notes": [
+        {
+          "field": "split",
+          "reason": "split: trigger=human-confirmed UX decomposition on 2026-07-24; this task owns startup policy, resolver production wiring, and headless behavior",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#T6 — Project-trust gate"
+        },
+        {
+          "field": "definition_of_done",
+          "reason": "Separates mode-independent precedence and headless behavior from the opi-tui interactive prompt.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#T6 — Project-trust gate"
+        },
+        {
+          "field": "source_conflict",
+          "reason": "The design sketches RPC UiRequest/ui_response and later states RPC cannot ask; human confirmation on 2026-07-24 selected no RPC prompt and ask-to-untrusted.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#T6 — Project-trust gate"
+        },
+        {
+          "field": "source_override",
+          "reason": "Human confirmation on 2026-07-24 removed live `/trust`; trust is fixed before project-resource discovery.",
+          "source": "docs/research/2026-07-24-project-trust-semantics-pi-claude-code-codex-cli.md#对-Opi-Phase-15-的建议"
+        },
+        {
+          "field": "evaluator_required",
+          "reason": "Resolver precedence and proof that project extensions cannot self-authorize are security-sensitive.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Goals"
+        },
+        {
+          "field": "forbidden_scope",
+          "reason": "Do not add trust-gated tool execution, project extension self-approval, an environment override, RPC trust UI, or opi-agent trust types.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Non-Goals"
+        },
+        {
+          "field": "definition_of_done",
+          "reason": "Post-split L2 verification requires the trust decision to be a true preflight: project config/resources, provider construction, installed packages/adapters, and harness construction must not execute first.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#T6 — Project-trust gate"
+        },
+        {
+          "field": "source_override",
+          "reason": "Human confirmation on 2026-07-25 selected an explicit public embedder/startup resolver registry; the standard CLI passes an empty registry and no CLI -e/native loader is introduced.",
+          "source": "crates/opi-coding-agent/src/cli.rs; crates/opi-coding-agent/src/harness.rs; docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#T6 — Project-trust gate"
+        },
+        {
+          "field": "forbidden_scope",
+          "reason": "Do not add CLI -e, a native dynamic loader, metadata-to-code execution, or user/project package self-authorization to satisfy resolver registration.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Non-Goals"
+        },
+        {
+          "field": "production_call_sites",
+          "reason": "Post-decision L6 verification adds the public embedder/CLI preflight entry and an end-to-end registered-vote path into 15.7; a registry method definition alone is substrate evidence.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#T6 — Project-trust gate"
+        },
+        {
+          "field": "definition_of_done",
+          "reason": "Post-decision L5 verification orders no-resource detection before resolver/store/default/UI side effects while retaining CLI parse/validation first.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#T6 — Project-trust gate"
+        },
+        {
+          "field": "definition_of_done",
+          "reason": "Post-decision L1 verification makes headless PreTrustUi nonblocking and prompt-free: select/confirm/input return Unavailable, notify is a no-op, and RPC emits no UI request.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#T6 — Project-trust gate"
+        }
+      ],
+      "tier": "cli-runtime",
+      "commit_type": "feat",
+      "parallelize": [],
+      "evaluator_required": true,
+      "verification": {
+        "library_gates": [
+          "cargo test -p opi-coding-agent --test non_interactive_trust",
+          "cargo test -p opi-coding-agent --test rpc_trust",
+          "cargo test -p opi-coding-agent --test project_trust_store explicit_embedder_resolver_precedence_and_cli_empty_registry",
+          "cargo clippy -p opi-coding-agent --all-targets -- -D warnings",
+          "$env:RUSTDOCFLAGS=\"-D warnings\"; cargo doc -p opi-coding-agent --no-deps",
+          "cargo test -p opi-coding-agent --test project_trust_startup trust_preflight_precedes_project_and_runtime_construction",
+          "cargo test -p opi-coding-agent --test project_trust_startup explicit_embedder_resolver_reaches_resource_path",
+          "cargo test -p opi-coding-agent --test project_trust_startup standard_cli_passes_empty_resolver_registry",
+          "cargo test -p opi-coding-agent --test project_trust_startup no_resource_bypass_invokes_no_resolver_store_or_ui",
+          "cargo test -p opi-coding-agent --test non_interactive_trust headless_pre_trust_ui_is_immediately_unavailable",
+          "cargo test -p opi-coding-agent --test rpc_trust headless_pre_trust_ui_emits_no_rpc_ui_request"
+        ],
+        "behavioral_tests": [
+          "crates/opi-coding-agent/tests/non_interactive_trust.rs",
+          "crates/opi-coding-agent/tests/rpc_trust.rs",
+          "crates/opi-coding-agent/tests/project_trust_store.rs",
+          "crates/opi-coding-agent/tests/project_trust_startup.rs"
+        ],
+        "snapshot_tests": [],
+        "smoke_addendum": "Preserve CLI/config diagnostics, explicit embedder resolver order and empty standard-CLI registry, headless stdout/stderr/exit, trust.json lookup, no-resource bypass, and proof that RPC emits no trust UI request. Preserve ordered startup markers proving project config/resource merge, provider construction, package/adapter startup, and harness build do not run before the trust result. Preserve a negative compile/runtime guard that no CLI -e or metadata/native loader path was added. Preserve an end-to-end injected-registry vote through prepare_project_startup and the 15.7 resource path, a standard-CLI empty-registry capture, no-resource zero-call markers for resolver/store/UI, and fake-resolver calls showing headless select/confirm/input return Unavailable while notify is a no-op."
+      },
+      "acceptance_scenarios": [
+        {
+          "id": "phase15-headless-trust-resolution",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#T6 — Project-trust gate",
+          "scenario": "Non-interactive and RPC startup call public prepare_project_startup and never ask: after CLI validation, an empty trust-resource set returns before resolver/store/default/UI side effects; otherwise precedence is CLI, explicitly registered resolver, store, global default, then ask-to-untrusted. Headless select/confirm/input immediately return PreTrustUiError::Unavailable, notify is a no-op, no RPC UiRequest is emitted, explicit trusted decisions enter the trusted 15.7 resource path, and the standard CLI supplies an empty registry.",
+          "verification": [
+            "cargo test -p opi-coding-agent --test non_interactive_trust headless_ask_defaults_untrusted_with_overrides",
+            "cargo test -p opi-coding-agent --test rpc_trust rpc_never_emits_trust_prompt",
+            "cargo test -p opi-coding-agent --test project_trust_startup no_resource_bypass_invokes_no_resolver_store_or_ui",
+            "cargo test -p opi-coding-agent --test non_interactive_trust headless_pre_trust_ui_is_immediately_unavailable",
+            "cargo test -p opi-coding-agent --test rpc_trust headless_pre_trust_ui_emits_no_rpc_ui_request"
+          ],
+          "production_call_sites": [
+            "crates/opi-coding-agent/src/main.rs::run_non_interactive",
+            "crates/opi-coding-agent/src/main.rs::run_rpc",
+            "crates/opi-coding-agent/src/runner.rs::NonInteractiveRunner::run",
+            "crates/opi-coding-agent/src/rpc.rs::RpcRunner::run",
+            "crates/opi-coding-agent/src/project_trust.rs::resolve_project_trust",
+            "crates/opi-coding-agent/src/config.rs::resolve_config",
+            "crates/opi-coding-agent/src/provider_factory.rs::build_provider_bundle",
+            "crates/opi-coding-agent/src/runtime_packages.rs::start_installed_package_runtime",
+            "crates/opi-coding-agent/src/adapter_extension.rs::start_adapters_from_packages",
+            "crates/opi-coding-agent/src/harness.rs::CodingHarnessBuilder::build",
+            "crates/opi-coding-agent/src/project_trust.rs::prepare_project_startup (planned)"
+          ],
+          "status": "open"
+        },
+        {
+          "id": "phase15-project-trust-resolver-precedence",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#T6 — Project-trust gate",
+          "scenario": "Only resolvers explicitly registered through the public embedder/startup registry before preflight may vote; the standard opi CLI registry is empty, CLI trust flags remain authoritative, first Trust/Deny wins, Undecided falls through to store/default/ask, late registration is rejected, and a project extension cannot influence its own decision. No CLI -e or native loader exists in Phase 15. Public prepare_project_startup accepts the registry and its ProjectStartupPlan is consumed by the trusted/untrusted 15.7 resource path.",
+          "verification": [
+            "cargo test -p opi-coding-agent --test project_trust_store explicit_embedder_resolver_precedence_and_cli_empty_registry",
+            "cargo test -p opi-coding-agent --test project_trust_startup explicit_embedder_resolver_reaches_resource_path",
+            "cargo test -p opi-coding-agent --test project_trust_startup standard_cli_passes_empty_resolver_registry"
+          ],
+          "production_call_sites": [
+            "crates/opi-coding-agent/src/main.rs::main",
+            "crates/opi-coding-agent/src/project_trust.rs::ProjectTrustResolverRegistry::register (planned)",
+            "crates/opi-coding-agent/src/project_trust.rs::resolve_project_trust",
+            "crates/opi-coding-agent/src/harness.rs::CodingHarness::discover_resources",
+            "crates/opi-coding-agent/src/project_trust.rs::prepare_project_startup (planned)",
+            "crates/opi-coding-agent/src/config.rs::merge_project_config (planned)"
+          ],
+          "status": "open"
+        }
+      ],
+      "production_call_sites": [
+        "crates/opi-coding-agent/src/main.rs::main",
+        "crates/opi-coding-agent/src/main.rs::run_non_interactive",
+        "crates/opi-coding-agent/src/main.rs::run_rpc",
+        "crates/opi-coding-agent/src/runner.rs::NonInteractiveRunner::run",
+        "crates/opi-coding-agent/src/rpc.rs::RpcRunner::run",
+        "crates/opi-coding-agent/src/project_trust.rs::resolve_project_trust",
+        "crates/opi-coding-agent/src/harness.rs::CodingHarness::discover_resources",
+        "crates/opi-coding-agent/src/config.rs::resolve_config",
+        "crates/opi-coding-agent/src/provider_factory.rs::build_provider_bundle",
+        "crates/opi-coding-agent/src/runtime_packages.rs::start_installed_package_runtime",
+        "crates/opi-coding-agent/src/adapter_extension.rs::start_adapters_from_packages",
+        "crates/opi-coding-agent/src/harness.rs::CodingHarnessBuilder::build",
+        "crates/opi-coding-agent/src/project_trust.rs::ProjectTrustResolverRegistry::register (planned)",
+        "crates/opi-coding-agent/src/project_trust.rs::prepare_project_startup (planned)",
+        "crates/opi-coding-agent/src/config.rs::merge_project_config (planned)"
+      ],
+      "substrate_only": false,
+      "iteration_count": 0,
+      "max_iterations": 5,
+      "start_commit": null,
+      "baseline_dirty_files": [],
+      "task_owned_paths": [
+        "crates/opi-coding-agent/src/cli.rs",
+        "crates/opi-coding-agent/src/config.rs",
+        "crates/opi-coding-agent/src/harness.rs",
+        "crates/opi-coding-agent/src/main.rs",
+        "crates/opi-coding-agent/src/project_trust.rs",
+        "crates/opi-coding-agent/src/rpc.rs",
+        "crates/opi-coding-agent/src/runner.rs",
+        "crates/opi-coding-agent/tests/non_interactive_trust.rs",
+        "crates/opi-coding-agent/tests/project_trust_store.rs",
+        "crates/opi-coding-agent/tests/rpc_trust.rs",
+        "crates/opi-coding-agent/src/adapter_extension.rs",
+        "crates/opi-coding-agent/src/provider_factory.rs",
+        "crates/opi-coding-agent/src/runtime_packages.rs",
+        "crates/opi-coding-agent/tests/project_trust_startup.rs"
+      ],
+      "last_attempt": null,
+      "verified_at_commit": null,
+      "evidence": null,
+      "blocker": null,
+      "session_notes": []
+    },
+    {
+      "id": "15.8.2",
+      "phase": 15,
+      "title": "Interactive project trust prompt and state transition",
+      "crate": "workspace",
+      "parent_spec_row": "15.8",
+      "definition_of_done": "Interactive startup with trust-requiring resources and no prior decision enters `AppState::AwaitingTrust` before project config/resource merge, provider construction, installed-package or adapter startup, and `CodingHarnessBuilder::build`; renders a TUI-owned `TrustChoice::{Trust, TrustParent, TrustSession, Deny, DenySession}` surface; awaits exactly one oneshot response; translates the UI choice into coding-agent-local trust state; persists only current-project/parent durable choices through `ProjectTrustStore::record`; and then continues through the trusted or untrusted 15.7 path. Ordered marker tests prove none of the guarded startup operations execute before the oneshot result and cancel/closed-response behavior resolves safely without loading project resources. CLI, an explicitly registered embedder resolver routed through `prepare_project_startup`, stored, and global-default Trust/Deny decisions bypass `AwaitingTrust` and enter the corresponding 15.7 path; a project with no triggering resources also never renders the prompt. No trust types enter opi-agent. Phase 15 exposes no `/trust` command: session-only choices exist only in this startup prompt, and durable choices affect later starts rather than triggering live unload/reload. TUI render/state tests and coding-agent integration tests cover all five choices, parent-key persistence, session-only non-persistence, cancellation, every pre-decided bypass source, no-resource bypass, and one-response state transitions.",
+      "definition_source": "inferred",
+      "replaces": null,
+      "status": "failing",
+      "depends_on": [
+        "15.8.1"
+      ],
+      "inference_notes": [
+        {
+          "field": "split",
+          "reason": "split: trigger=human-confirmed UX decomposition on 2026-07-24; this task owns only the interactive opi-tui prompt and coding-agent state transition",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#T6 — Project-trust gate"
+        },
+        {
+          "field": "crate",
+          "reason": "TrustChoice and rendering live in opi-tui; coding-agent translates the UI choice, preserving dependency direction.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#T6 — Project-trust gate"
+        },
+        {
+          "field": "depends_on",
+          "reason": "Consumes the fully wired startup resolver/headless policy from 15.8.1 and supplies only the interactive ask result.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Sequencing"
+        },
+        {
+          "field": "source_override",
+          "reason": "Human confirmation on 2026-07-24 removed `/trust`; session-only choices remain startup-only and no live reload is introduced.",
+          "source": "docs/research/2026-07-24-project-trust-semantics-pi-claude-code-codex-cli.md#对-Opi-Phase-15-的建议"
+        },
+        {
+          "field": "evaluator_required",
+          "reason": "The consent UI, persistence boundary, cancellation behavior, and resource-load transition are security-sensitive.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Goals"
+        },
+        {
+          "field": "forbidden_scope",
+          "reason": "Do not add a slash command, mid-session resource reload, trust-gated tool execution, project self-approval, or opi-agent UI/trust types.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Non-Goals"
+        },
+        {
+          "field": "verification",
+          "reason": "Post-split L2/L6 verification adds ordered preflight markers and interactive coverage for every already-decided precedence source; headless-only precedence tests cannot prove the TUI bypass.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#T6 — Project-trust gate"
+        }
+      ],
+      "tier": "workspace",
+      "commit_type": "feat",
+      "parallelize": [],
+      "evaluator_required": true,
+      "verification": {
+        "library_gates": [
+          "cargo test -p opi-tui trust_prompt",
+          "cargo test -p opi-coding-agent --test interactive_trust",
+          "cargo clippy --workspace --all-targets -- -D warnings",
+          "$env:RUSTDOCFLAGS=\"-D warnings\"; cargo doc --workspace --no-deps",
+          "cargo test -p opi-coding-agent --test interactive_trust interactive_prompt_precedes_project_startup_side_effects",
+          "cargo test -p opi-coding-agent --test interactive_trust interactive_predecided_paths_bypass_prompt"
+        ],
+        "behavioral_tests": [
+          "crates/opi-tui/src/trust_prompt.rs",
+          "crates/opi-coding-agent/tests/interactive_trust.rs"
+        ],
+        "snapshot_tests": [],
+        "smoke_addendum": "Preserve all five rendered choices, oneshot/state traces, selected trust result, temp-root trust.json contents, cancellation outcome, and no-resource no-prompt evidence. Ordered markers must show project config/resources, provider, package/adapter runtime, and harness construction remain untouched before the prompt result; CLI/resolver/store/default decisions must emit no prompt and must reach the matching 15.7 path."
+      },
+      "acceptance_scenarios": [
+        {
+          "id": "phase15-interactive-trust-ask",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Goals",
+          "scenario": "Interactive startup in a project with trust-requiring resources and no prior decision renders the five-choice trust prompt before project config/resources, provider, packages/adapters, or harness construction; waits for the oneshot response; persists only durable choices; and only then executes the trusted or untrusted resource path.",
+          "verification": [
+            "cargo test -p opi-coding-agent --test interactive_trust interactive_startup_resolves_five_choice_prompt",
+            "cargo test -p opi-tui trust_prompt",
+            "cargo test -p opi-coding-agent --test interactive_trust interactive_prompt_precedes_project_startup_side_effects"
+          ],
+          "production_call_sites": [
+            "crates/opi-coding-agent/src/main.rs::main",
+            "crates/opi-coding-agent/src/main.rs::run_interactive",
+            "crates/opi-coding-agent/src/interactive.rs::run_interactive_tui",
+            "crates/opi-tui/src/lib.rs::AppState::AwaitingTrust",
+            "crates/opi-tui/src/trust_prompt.rs::TrustChoice",
+            "crates/opi-tui/src/trust_prompt.rs::render",
+            "crates/opi-coding-agent/src/project_trust.rs::apply_ui_choice (planned)",
+            "crates/opi-coding-agent/src/harness.rs::CodingHarnessBuilder::build",
+            "crates/opi-coding-agent/src/config.rs::resolve_config",
+            "crates/opi-coding-agent/src/provider_factory.rs::build_provider_bundle",
+            "crates/opi-coding-agent/src/runtime_packages.rs::start_installed_package_runtime",
+            "crates/opi-coding-agent/src/adapter_extension.rs::start_adapters_from_packages"
+          ],
+          "status": "open"
+        },
+        {
+          "id": "phase15-interactive-trust-predecided-bypass",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#T6 — Project-trust gate",
+          "scenario": "Interactive startup with a CLI override, explicitly registered embedder resolver vote, nearest stored decision, or global always/never default bypasses AwaitingTrust and enters the corresponding trusted/untrusted 15.7 path; Undecided alone falls through to the prompt. The resolver branch uses the same public prepare_project_startup entry and ProjectStartupPlan consumed by 15.7.",
+          "verification": [
+            "cargo test -p opi-coding-agent --test interactive_trust interactive_predecided_paths_bypass_prompt",
+            "cargo test -p opi-coding-agent --test project_trust_startup explicit_embedder_resolver_reaches_resource_path"
+          ],
+          "production_call_sites": [
+            "crates/opi-coding-agent/src/main.rs::main",
+            "crates/opi-coding-agent/src/main.rs::run_interactive",
+            "crates/opi-coding-agent/src/project_trust.rs::resolve_project_trust",
+            "crates/opi-coding-agent/src/interactive.rs::run_interactive_tui",
+            "crates/opi-coding-agent/src/harness.rs::CodingHarnessBuilder::build",
+            "crates/opi-coding-agent/src/project_trust.rs::prepare_project_startup (planned)"
+          ],
+          "status": "open"
+        }
+      ],
+      "production_call_sites": [
+        "crates/opi-coding-agent/src/main.rs::main",
+        "crates/opi-coding-agent/src/main.rs::run_interactive",
+        "crates/opi-coding-agent/src/interactive.rs::run_interactive_tui",
+        "crates/opi-coding-agent/src/project_trust.rs::ProjectTrustStore::record",
+        "crates/opi-coding-agent/src/project_trust.rs::apply_ui_choice (planned)",
+        "crates/opi-coding-agent/src/harness.rs::CodingHarnessBuilder::build",
+        "crates/opi-tui/src/lib.rs::AppState::AwaitingTrust",
+        "crates/opi-tui/src/trust_prompt.rs::TrustChoice",
+        "crates/opi-tui/src/trust_prompt.rs::render",
+        "crates/opi-coding-agent/src/config.rs::resolve_config",
+        "crates/opi-coding-agent/src/provider_factory.rs::build_provider_bundle",
+        "crates/opi-coding-agent/src/runtime_packages.rs::start_installed_package_runtime",
+        "crates/opi-coding-agent/src/adapter_extension.rs::start_adapters_from_packages",
+        "crates/opi-coding-agent/src/project_trust.rs::prepare_project_startup (planned)"
+      ],
+      "substrate_only": false,
+      "iteration_count": 0,
+      "max_iterations": 5,
+      "start_commit": null,
+      "baseline_dirty_files": [],
+      "task_owned_paths": [
+        "crates/opi-coding-agent/src/interactive.rs",
+        "crates/opi-coding-agent/src/main.rs",
+        "crates/opi-coding-agent/src/project_trust.rs",
+        "crates/opi-coding-agent/tests/interactive_trust.rs",
+        "crates/opi-tui/src/**",
+        "crates/opi-tui/tests/**",
+        "crates/opi-coding-agent/src/adapter_extension.rs",
+        "crates/opi-coding-agent/src/config.rs",
+        "crates/opi-coding-agent/src/harness.rs",
+        "crates/opi-coding-agent/src/provider_factory.rs",
+        "crates/opi-coding-agent/src/runtime_packages.rs"
+      ],
+      "last_attempt": null,
+      "verified_at_commit": null,
+      "evidence": null,
+      "blocker": null,
+      "session_notes": []
+    },
+    {
+      "id": "15.9",
+      "phase": 15,
+      "title": "Safety and trust documentation, guards, and phase acceptance",
+      "crate": "workspace",
+      "parent_spec_row": null,
+      "definition_of_done": "README.md/README.zh.md and docs/opi-spec.md/docs/opi-spec.zh.md describe the shipped L0 baseline, opt-in strict layers and platform degradation, `require` behavior, Operations layering, project trust precedence/gated resources, startup/headless control surfaces, the exact `user_config_dir/trust.json` location, the explicit embedder-only resolver registry with an empty standard-CLI registry, the absence of CLI `-e`, native resolver loading, and live mid-session trust mutation, and the defense-in-depth—not-security-boundary posture with synchronized wording. Linux documentation names the seccomp new-socket AF_INET/AF_INET6/AF_NETLINK reduction, AF_UNIX preservation, observed Landlock ABI 4 capability with Linux 6.7 as mainline orientation and TCP-only scope, exact L3 danger blocklist, supported architectures, socketpair/io_uring audit results, and inherited-fd/non-TCP/alternate-surface residuals without claiming complete network isolation. `CHANGELOG.md` records Phase 15 additions under Unreleased. A Phase 15 guard test rejects claims of opi-self confinement, strict adapter confinement, sandboxed file/nav tools, remote Operations backends, trust-gated tool execution, untrusted project context auto-injection, a built-in `/trust`, live project-resource reload, CLI `-e`/native resolver loading, trust schema metadata, complete Linux network isolation, or provider/session changes. The task reruns every Phase 15 acceptance command, preserves a command/stdout/stderr/exit-code/call-site audit under `target/opi-artifacts/phase15-phase-exit`, runs the artifact audit, and passes fmt, clippy, workspace all-target tests, doctests, warning-free docs, and the opi-implement smoke script without modifying runtime source.",
+      "definition_source": "inferred",
+      "replaces": null,
+      "status": "failing",
+      "depends_on": [
+        "15.1",
+        "15.2",
+        "15.3",
+        "15.4",
+        "15.5.1",
+        "15.5.2",
+        "15.5.3",
+        "15.5.4",
+        "15.5.5",
+        "15.5.6",
+        "15.6",
+        "15.7",
+        "15.8.1",
+        "15.8.2"
+      ],
+      "inference_notes": [
+        {
+          "field": "definition_of_done",
+          "reason": "Adds the final product-loop documentation, non-goal guards, acceptance artifact, and cross-cutting gates required to close all Phase 15 goals truthfully.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Overview"
+        },
+        {
+          "field": "tier",
+          "reason": "This is not documentation-only: it creates executable guard tests and runs workspace acceptance/artifact gates.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Goals"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "The reviewed documentation/alignment DoD explicitly owns both normative spec locales and their README counterparts.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Residuals / follow-ups"
+        },
+        {
+          "field": "forbidden_scope",
+          "reason": "Documentation must preserve every Phase 15 Non-Goal and must not close product scenarios from helper-only evidence.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Non-Goals"
+        },
+        {
+          "field": "verification",
+          "reason": "Plan-verify P replaces a nonexistent skill-local artifact-audit path with the repository script and pins workspace-root plus JSON output.",
+          "source": ".claude/skills/opi-implement/skill.md#Six Phases Per Invocation"
+        },
+        {
+          "field": "source_override",
+          "reason": "Human confirmation on 2026-07-24 requires the documentation and non-goal guard to describe startup-only trust and reject a built-in `/trust` or live reload path.",
+          "source": "docs/research/2026-07-24-project-trust-semantics-pi-claude-code-codex-cli.md#对-Opi-Phase-15-的建议"
+        },
+        {
+          "field": "depends_on",
+          "reason": "Human-confirmed graph surgery on 2026-07-24 replaces composite 15.5 and 15.8 with all platform/policy/UI sub-tasks; final documentation and acceptance depend on every split task.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Sequencing"
+        },
+        {
+          "field": "source_override",
+          "reason": "Human confirmation on 2026-07-25 requires docs and guards to state the narrowed Linux L2 mechanism/residuals, exact trust.json location, and explicit embedder-only resolver registration with no CLI -e/native loader.",
+          "source": "docs/research/2026-07-24-phase15-linux-l2-feasibility.md#Recommended implementable contract"
+        }
+      ],
+      "tier": "workspace",
+      "commit_type": "docs",
+      "parallelize": [],
+      "evaluator_required": true,
+      "verification": {
+        "library_gates": [
+          "cargo test -p opi-coding-agent --test phase15_safety_sandbox_docs",
+          "cargo test --workspace --all-targets",
+          "cargo test --workspace --doc",
+          "cargo fmt --check --all",
+          "cargo clippy --workspace --all-targets -- -D warnings",
+          "$env:RUSTDOCFLAGS=\"-D warnings\"; cargo doc --workspace --no-deps",
+          "& '.\\scripts\\opi-impl-smoke.ps1'",
+          "python scripts/opi-artifact-audit.py target/opi-artifacts/phase15-phase-exit --workspace-root . --json"
+        ],
+        "behavioral_tests": [
+          "crates/opi-coding-agent/tests/phase15_safety_sandbox_docs.rs"
+        ],
+        "snapshot_tests": [],
+        "smoke_addendum": "Preserve the complete Phase 15 acceptance matrix and production call-site trace, then audit the artifact directory before Phase F."
+      },
+      "acceptance_scenarios": [
+        {
+          "id": "phase15-documentation-and-nongoal-truthfulness",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Non-Goals",
+          "scenario": "English and Chinese product docs describe the exact shipped sandbox, Operations, and trust behavior and reject every listed Phase 15 Non-Goal; the acceptance audit classifies runtime claims as verified only when a production call site and exercising command are preserved.",
+          "verification": [
+            "cargo test -p opi-coding-agent --test phase15_safety_sandbox_docs",
+            "python scripts/opi-artifact-audit.py target/opi-artifacts/phase15-phase-exit --workspace-root . --json"
+          ],
+          "production_call_sites": [
+            "README.md and README.zh.md",
+            "docs/opi-spec.md and docs/opi-spec.zh.md",
+            "crates/opi-coding-agent/tests/phase15_safety_sandbox_docs.rs"
+          ],
+          "status": "open"
+        }
+      ],
+      "production_call_sites": [
+        "README.md and README.zh.md",
+        "docs/opi-spec.md and docs/opi-spec.zh.md",
+        "crates/opi-coding-agent/tests/phase15_safety_sandbox_docs.rs"
+      ],
+      "substrate_only": false,
+      "iteration_count": 0,
+      "max_iterations": 5,
+      "start_commit": null,
+      "baseline_dirty_files": [],
+      "task_owned_paths": [
+        "CHANGELOG.md",
+        "README.md",
+        "README.zh.md",
+        "docs/opi-spec.md",
+        "docs/opi-spec.zh.md",
+        "crates/opi-coding-agent/tests/phase15_safety_sandbox_docs.rs"
+      ],
+      "last_attempt": null,
+      "verified_at_commit": null,
+      "evidence": null,
+      "blocker": null,
+      "session_notes": []
+    }
+  ],
   "phase_exit": {
     "1": {
       "completed_at": "2026-05-22T12:00:00Z",
@@ -1277,7 +3201,14 @@
     "opi-implement: reconciled reviewed Phase 14 pi-0.80.6 alignment graph at 2026-07-18T06:04:18.855Z; preserved passing 14.1-14.13 history and prior failed phase-exit evidence, added failing tasks 14.14-14.21, refreshed registered spec hashes, folded five independently confirmed plan-audit corrections, and preserved the existing user-approved trigger=null SecretString residual on Task 14.1.",
     "opi-implement: Phase 14 commit-bound phase exit passed at 2026-07-19T00:52:40.192Z for 8364e74a9077a194cb4a7fd68db2e3c4b420111a; SC1-SC8, F14-01 through F14-04, api-map, and all Non-Goals are met after repairing four exact-trace findings. No snapshot or archive commit was created because archive remains a separate user gate.",
     "opi-implement: archived Phase 14 to docs/snapshots/phase14/ at 2026-07-19T04:09:27.215Z; all 21 tasks moved to phase_exit[14].task_summary; current_phase advanced to 15 (Phase 15 tasks require --reinit to load).",
-    "opi-implement: guarded Phase 14 archive reconciliation after remediation commit 54e52da81fd261824b1d68216efe40b7ac2bf36a at 2026-07-22T12:08:02.3483123Z repaired Task 14.5 acceptance metadata, replaced stale behavioral-test paths for Tasks 14.1/14.3/14.4, normalized the Task 14.6 substrate scenario status without adding a production claim, and verified each repaired exact command selected one passing test."
+    "opi-implement: guarded Phase 14 archive reconciliation after remediation commit 54e52da81fd261824b1d68216efe40b7ac2bf36a at 2026-07-22T12:08:02.3483123Z repaired Task 14.5 acceptance metadata, replaced stale behavioral-test paths for Tasks 14.1/14.3/14.4, normalized the Task 14.6 substrate scenario status without adding a production claim, and verified each repaired exact command selected one passing test.",
+    "opi-implement: Phase 15 first-init draft extracted from the registered safety/sandbox design, deep-audited across L1-L6, and paused at A.init.3 for whole-graph confirmation.",
+    "opi-implement: A.init.3 human-approved graph surgery on 2026-07-24 split composite Task 15.5 into shared policy, Linux, macOS, Windows, and matrix-acceptance tasks, and split Task 15.8 into startup/headless policy and interactive TUI tasks; awaiting post-split six-lens verification and whole-graph confirmation.",
+    "opi-implement: post-split Phase 15 L1-L6 verification at 2026-07-24T10:17:11.556Z pinned the Linux danger-blocklist contract, made native platform evidence non-vacuous, added a six-target compile matrix, scoped no-unsafe to Phase 15 production modules, repaired interactive trust preflight/bypass coverage and stale task references, and flagged both the inconsistent Linux L2 mechanism and absent CLI -e resolver loader for human resolution.",
+    "opi-implement: A.init.3 human decisions applied at 2026-07-24T17:34:40.428Z: split Linux sandbox work into backend-feasibility and runtime slices, replaced the impossible extrasafe/six-operation L2 design with a direct deny-capable seccomp new-socket reduction plus Landlock ABI-4 TCP policy and explicit residuals, fixed trust storage at user_config_dir/trust.json, and narrowed resolver registration to an explicit embedder/startup registry with no CLI -e/native loader; awaiting post-surgery six-lens verification and whole-graph confirmation.",
+    "opi-implement: post-human-surgery L1-L6 verification at 2026-07-24T17:47:44.569Z folded 11 independently verified field corrections: landlock ownership/ABI detection, alternate Linux network-surface residuals, non-vacuous macOS L1/L2 evidence, macOS/Windows dispatcher ownership, substrate/runtime registry separation, exact retained CLI inputs, a production-reachable public trust preflight entry, no-resource ordering, and prompt-free headless PreTrustUi behavior.",
+    "opi-implement: A.init.3 human confirmation at 2026-07-24T17:51:31.961Z supplied the remaining residual triggers: revisit direct CreateProcessW when a hard Windows no-escape boundary or exploitable assignment race is required, and revisit trust.json schema metadata when boolean decisions are insufficient or persisted-format migration/compatibility appears; awaiting whole-graph confirm-all.",
+    "opi-implement: Phase 15 task graph confirm-all accepted at 2026-07-24T17:56:28.144Z; canonical ledger initialized with 15 tasks and 19 acceptance scenarios."
   ],
   "verify_runs": [
     {
@@ -1567,6 +3498,36 @@
       "flagged_count": 3,
       "rejected_count": 0,
       "ran_at": "2026-07-22T11:56:33.5086802Z",
+      "task_id": null,
+      "criterion_id": null
+    },
+    {
+      "stage": "plan",
+      "wf_ref": "codex-collaboration:phase15-first-init-l1-l6-20260724",
+      "folded_count": 11,
+      "flagged_count": 7,
+      "rejected_count": 3,
+      "ran_at": "2026-07-24T09:24:52.837Z",
+      "task_id": null,
+      "criterion_id": null
+    },
+    {
+      "stage": "plan",
+      "wf_ref": "codex-collaboration:phase15-post-split-l1-l6-20260724",
+      "folded_count": 7,
+      "flagged_count": 2,
+      "rejected_count": 0,
+      "ran_at": "2026-07-24T10:17:11.555Z",
+      "task_id": null,
+      "criterion_id": null
+    },
+    {
+      "stage": "plan",
+      "wf_ref": "codex-collaboration:phase15-post-human-surgery-l1-l6-20260725",
+      "folded_count": 11,
+      "flagged_count": 0,
+      "rejected_count": 0,
+      "ran_at": "2026-07-24T17:47:44.569Z",
       "task_id": null,
       "criterion_id": null
     }
