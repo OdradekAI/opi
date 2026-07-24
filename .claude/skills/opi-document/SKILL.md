@@ -128,9 +128,11 @@ touched — the phase4 specification-hash ledger is re-synced.
 - No commits, pushes, PRs, or releases.
 - No authoring of `docs/opi-spec.md` normative content (Phase 1, or an
   `opi-implement` doc task, owns that). It may edit `opi-spec.md` only as a
-  doc-sync, and then it **must** re-sync the phase4 ledger
-  (`crates/opi-coding-agent/tests/phase4_ledger.rs`) — any byte change there
-  breaks that SHA256 guard.
+  doc-sync, and then it **must** re-sync the live ledger spec-hash
+  (`crates/opi-coding-agent/tests/spec_ledger.rs` pins
+  `.opi-impl-state.json`) — any byte change there breaks that SHA256 guard.
+  Phase-exit snapshots under `docs/snapshots/phaseN/` are historical; do NOT
+  re-sync them.
 - No weakening, disabling, or rewriting of guard-test files to "make docs
   cleaner". If a guard blocks a desired change, the guard wins; escalate.
 - No free-regeneration of Chinese docs.
@@ -140,9 +142,10 @@ touched — the phase4 specification-hash ledger is re-synced.
 - **Reads:** the affected `README*.md` / `docs/*.md`, `CHANGELOG.md`,
   `CLAUDE.md` / `AGENTS.md`, crate `src/`, the guard-test files under
   `crates/*/tests/`, and `.baoyu-skills/baoyu-translate/EXTEND.md`.
-- **Writes:** the affected docs (EN + ZH). On an `opi-spec.md` edit, also
-  `docs/snapshots/phase4/opi-impl-state.json` and the repo-root
-  `.opi-impl-state.json` spec-hash.
+- **Writes:** the affected docs (EN + ZH). On an `opi-spec.md` edit, also the
+  repo-root `.opi-impl-state.json` spec-hash (CRLF-normalized), pinned by
+  `crates/opi-coding-agent/tests/spec_ledger.rs`. Phase-exit snapshots under
+  `docs/snapshots/phaseN/` are historical and are NOT re-synced.
 
 ## In the workflow
 

@@ -6,9 +6,9 @@
     "docs/superpowers/specs/2026-07-14-phase14-exit-remediation-design.md"
   ],
   "spec_files_sha256": {
-    "docs/opi-spec.md": "286b07e0e3b335a0ec11260be9ba619853db2f65deaac150403b7f0a7d2eb4a4",
-    "docs/superpowers/specs/2026-07-11-phase14-provider-auth-design.md": "304e80c9135136f6c2c01d9db1e4799dc2bbb3546c08289ff88f19530e7ad8c3",
-    "docs/superpowers/specs/2026-07-14-phase14-exit-remediation-design.md": "fe4c63c6de1a480c6d0d62623a2f5328b97cbb9b6a7e9cdf7e886059753b7896"
+    "docs/opi-spec.md": "6b789c426ea1c76674c3964bf9e1aed435a2998da760d46d53c0fdaeb6ff1f6e",
+    "docs/superpowers/specs/2026-07-11-phase14-provider-auth-design.md": "ff77025775956b5698a37eac2a7572f676028480c7186b751a69b393d43ff56b",
+    "docs/superpowers/specs/2026-07-14-phase14-exit-remediation-design.md": "48d38716531bc944b0488a0e9ddaeee2d31258e7cfd0701905bea4da4f3c53f4"
   },
   "task_graph_confirmed_at": "2026-07-22T12:08:02.3483123Z",
   "current_phase": 15,

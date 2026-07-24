@@ -45,7 +45,8 @@ design registry in `skill.md`. Do not scan arbitrary `docs/superpowers/specs/` f
 For each active phase:
 
 - Include `docs/opi-spec.md` and the phase's registered source in `spec_files`.
-- Hash both files in `spec_files_sha256`.
+- Hash both files in `spec_files_sha256` using the CRLF-normalized SHA-256
+  (replace `\r\n` with `\n` before hashing; see `skill.md`).
 - Derive task IDs as `<phase>.<N>` in source order unless the reviewed source
   already names a stricter sequence.
 - Convert success criteria into `acceptance_scenarios` before graph review.
@@ -237,8 +238,8 @@ When drift is detected against an existing ledger:
      or demote-to-failing (substantive)
    - **depends_on/tier/commit_type/evaluator_required/acceptance_scenarios/production_call_sites/substrate_only/forbidden-scope inference_notes changed:** re-run
      task-graph review gate with row-level diff, require confirmation
-4. Update every entry in `spec_files_sha256` to the freshly recomputed hash
-   after confirmation.
+4. Update every entry in `spec_files_sha256` to the freshly recomputed
+   CRLF-normalized hash after confirmation.
 5. Commit the reconciled canonical ledger and any changed harness files
    (`.gitignore`, smoke) with
    `chore: reconcile opi-implement harness files with opi-spec.md changes`

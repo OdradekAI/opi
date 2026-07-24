@@ -15,8 +15,8 @@ evidence, failure recovery, and escalation. It does NOT edit `opi-spec.md`,
 push commits, publish crates, or make network calls to providers.
 
 **Spec alignment rule:** Before executing any task whose `phase >= current_phase`,
-compare each entry in the ledger `spec_files_sha256` map with the current hash
-of the corresponding file in `spec_files`. If any entry differs, auto-enter the
+compare each entry in the ledger `spec_files_sha256` map with the current
+CRLF-normalized hash of the corresponding file in `spec_files`. If any entry differs, auto-enter the
 plan path's drift branch (Reinit Reconciliation + `A.init.2e/2f` verify-and-fold
 + the `A.init.3` gate) per `references/initializer.md` and spec §5.3; do not
 auto-pick or run a task until the human confirms the reconciled graph. Only
@@ -355,7 +355,7 @@ Commit scope is the crate name. Example: `feat(opi-agent): implement agent_loop`
 - Windows native PowerShell: run `scripts/opi-impl-smoke.ps1`
 - Windows bash (Git Bash/MSYS/WSL): run `scripts/opi-impl-smoke.sh` with
   forward-slash paths
-- SHA-256: use `sha256sum`, PowerShell `Get-FileHash`, Python, or Rust helper
+- SHA-256: use `sha256sum`, PowerShell `Get-FileHash`, Python, or Rust helper. For `spec_files_sha256` entries (the spec-alignment guard) normalize CRLF→LF before hashing (replace the two-byte `\r\n` with `\n`); the `crates/opi-coding-agent/tests/spec_ledger.rs` CI guard and the live `.opi-impl-state.json` use this same convention. Phase-exit snapshots under `docs/snapshots/phaseN/` are historical and must NOT be re-synced to the current hash.
 - JSON manipulation: `jq` when present; fallback to PowerShell/Python
 - Windows ledger validation/install:
   `.claude/skills/opi-implement/scripts/ledger-guard.ps1`

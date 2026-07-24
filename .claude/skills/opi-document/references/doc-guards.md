@@ -142,10 +142,11 @@ transport-stub phrases.
   doctests; `cargo doc` / `cargo test --doc` are unaffected by README edits.
   Re-check this if a crate gains `doc = include_str!("../README.md")`.
 - **`docs/opi-spec.md` carries a separate SHA256 pin**
-  (`crates/opi-coding-agent/tests/phase4_ledger.rs`), not a keyword guard. Any
-  byte change to `opi-spec.md` requires re-syncing the phase4 snapshot
-  (`docs/snapshots/phase4/opi-impl-state.json`) and the live repo-root
-  `.opi-impl-state.json` spec-hash.
+  (`crates/opi-coding-agent/tests/spec_ledger.rs`), not a keyword guard. It
+  pins the CRLF-normalized spec hash in the live repo-root
+  `.opi-impl-state.json`. Any byte change to `opi-spec.md` requires re-syncing
+  that one live spec-hash; phase-exit snapshots under
+  `docs/snapshots/phaseN/` are historical and must NOT be re-synced.
 - **Version-bearing lines move in lockstep** on any version bump: root README +
   `AGENTS.md` + `CLAUDE.md` + the four crate READMEs, EN + ZH. The exact
   phrasings above are match-targets.
