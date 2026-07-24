@@ -162,7 +162,7 @@ Pi 是行为参考。以下行为应被视为继承的设计，而非偶然的�
 | 内部依赖 | `opi-agent -> opi-ai`、`opi-coding-agent -> opi-ai + opi-agent + opi-tui` |
 | 外部依赖 | 来自工作区依赖的 Rust 原生异步、HTTP/SSE、schema、配置、TUI、搜索、追踪和测试技术栈 |
 | 二进制 | `opi` 支持交互式 TUI、非交互文本模式、`--json`、`--rpc`、会话命令、`--version` 和 `--help` |
-| CI | `fmt`、`clippy`、`test`、`doc` |
+| CI | `fmt`、`clippy`、`test`、`doctest`、`doc` |
 | 发布 CI | 六平台二进制工作流 |
 | 可扩展性 | RPC JSONL、SDK 类型、extension API、资源/package 发现、自定义 provider/model registry、分支选择、streaming proxy、process-JSONL adapter 托管（`opi-extension-jsonl-v1`）和 package CLI（`add/remove/list/doctor`）已经作为不稳定 0.x API 实现 |
 | crates.io | 可发布 crate 受质量门控 |
@@ -390,6 +390,15 @@ pub struct ToolResultMessage {
 
 停止原因应当与 pi 保持接近：`stop`、`length`、`tool_use`、`error`、`aborted`。
 
+图片内容在 opi 协议边界上是结构化的。`InputContent::Image` 只转发给元数据声明支持
+图片的模型；已知的纯文本模型必须在 provider 网络调用之前失败。CLI 图片附件必须在
+读取整个文件之前强制执行配置的字节上限。
+
+`OutputContent::Image` 作为结构化数据在 tool 结果、会话 JSONL 与 JSON 模式之间往返。
+Provider 请求体可以把图片 tool 结果强制转换为文本占位符，例如 `[image: image/png]`，
+因为当前 provider 的 tool-result 角色并不一致地接受二进制图片负载。这种强制转换是
+provider 协议限制，不得被描述为会话存储或 JSON 模式中的丢失。
+
 ### 7.2 代理消息
 
 ```rust
@@ -585,6 +594,15 @@ OAuth 保持为单独产品决策。Anthropic OAuth、OpenAI Codex OAuth 和 Git
 2. 供应商特定的环境变量；
 3. 已实现时的本地认证存储；
 4. 环境云凭据链。
+
+Bedrock 凭据解析是本地/离线的：显式配置、AWS 环境变量、`AWS_PROFILE`、
+`AWS_SHARED_CREDENTIALS_FILE`、`AWS_CONFIG_FILE`、共享凭据/配置 profile、region
+配置以及 `credential_process`。它不执行 IMDS、ECS task metadata、SSO 或 web-identity
+网络流程。
+
+Vertex 凭据解析被有意限定为通过所配置环境变量提供的静态 OAuth access token，加上
+project 和 location 配置。Service-account JSON 解析与 Application Default Credentials
+token minting 超出当前第三阶段契约范围。
 
 密钥禁止被日志记录、持久化到会话或包含在诊断信息中。
 
@@ -1060,6 +1078,7 @@ opi 的可观测性是**本地且显式**的。共享诊断、本地 trace envel
 - `cargo fmt --all --check`；
 - `cargo clippy --workspace --all-targets`；
 - `cargo test --workspace --all-targets`；
+- `cargo test --workspace --doc`；
 - `RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps`。
 
 ## 13. 安全和风险

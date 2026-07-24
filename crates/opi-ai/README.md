@@ -115,7 +115,7 @@ while explicit disablement and unknown/custom models emit no markers.
 
 `Request` adds `timeout`, `extra_headers`, `CacheRetention`, and `session_id`.
 The first three are public request-to-wire substrate; only `session_id` has a
-Phase 14 production producer in the coding harness. Session-affinity behavior
+production producer in the coding harness. Session-affinity behavior
 differs between direct Responses and custom/proxy routes as detailed below,
 while Anthropic uses model-gated cache markers. `ModelInfo` contains the
 existing nested `ModelCapabilities`; unknown/custom models default cache
@@ -325,7 +325,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 ## Modules
 
 `provider`, `message`, `stream`, `model_info`, `api_mapped`, `registry`,
-`provider_collection`, `auth`, `credential`, `http`, `retry`, `model`,
+`provider_collection`, `provider_headers`, `auth`, `credential`, `http`, `retry`, `model`,
 `anthropic`, `openai_chat`, `openai_responses`, `openai_codex_responses`,
 `openrouter`, `mistral`, `gemini`, `bedrock`, `azure_openai`, `vertex`,
 `config`, `time`, and `test_support`.

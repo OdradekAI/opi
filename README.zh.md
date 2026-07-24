@@ -206,7 +206,7 @@ wire 要求的 account identity。若它在输出开始前发生，outer TUI 会
 带 `AccountIdMissing` 诊断的 `CredentialNeeded` 修复事件。
 
 `Request` 现在携带 `timeout`、`extra_headers`、`CacheRetention` 和 `session_id`。
-本阶段只有 `session_id` 具有生产 harness 生成方；provider 按审查过的 prompt-cache /
+只有 `session_id` 具有生产 harness 生成方；provider 按审查过的 prompt-cache /
 会话亲和规则映射它。`ModelInfo` 使用唯一的嵌套 `ModelCapabilities` 值，其中包括
 Anthropic cache-control 能力。`cache_write_1h_tokens` 是 cache write 的子集，
 `reasoning_tokens` 是 output 的子集，因此 token 总数与费用不会重复计算。

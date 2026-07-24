@@ -42,7 +42,7 @@ It depends on `opi-ai` for provider and message types. It does not implement the
 `opi` CLI, terminal UI, or built-in filesystem/shell tools; those live in
 `opi-coding-agent` and `opi-tui`.
 
-## Phase 14 Auth and Session-Affinity Boundary
+## Auth and Session-Affinity Boundary
 
 `opi-agent` does not perform credential IO or construct OAuth providers. It
 does preserve typed auth outcomes across the live loop: non-retryable

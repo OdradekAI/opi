@@ -220,8 +220,8 @@ selected wire. Pre-output interactive handling retains the pending turn for an
 explicit `/login <provider>` repair; text mode exits with `AuthFailure`, and
 JSON/RPC emit `CredentialNeeded` with an `AccountIdMissing` diagnostic.
 
-Phase 14 also carries the active `session_id` through `CodingHarness` and the
-agent loop into reviewed provider cache-affinity mappings. The other new
+The active `session_id` is carried through `CodingHarness` and the agent
+loop into reviewed provider cache-affinity mappings. The other new
 `Request` scalars (`timeout`, `extra_headers`, `CacheRetention`) remain direct
 `opi-ai` request substrate. `cache_write_1h_tokens` and `reasoning_tokens` keep
 subset accounting through session cost summaries. `refresh_models` remains

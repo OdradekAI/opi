@@ -104,7 +104,7 @@ assistant text 和最后一个 tool definition 上发出 `cache_control`。Long 
 未知/自定义模型不发出 marker。
 
 `Request` 新增 `timeout`、`extra_headers`、`CacheRetention` 和 `session_id`。前三项是
-公开的 request-to-wire 基底；本阶段只有 `session_id` 在 coding harness 中具有生产生成方。
+公开的 request-to-wire 基底；只有 `session_id` 在 coding harness 中具有生产生成方。
 session-affinity 行为在直连 Responses 与自定义/proxy route 之间不同，详见下文；
 Anthropic 则使用模型能力门控的 cache marker。`ModelInfo` 包含现有的嵌套
 `ModelCapabilities`；未知/自定义模型默认关闭 cache 支持。
@@ -296,7 +296,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 ## 模块
 
 `provider`、`message`、`stream`、`model_info`、`api_mapped`、`registry`、
-`provider_collection`、`auth`、`credential`、`http`、`retry`、`model`、
+`provider_collection`、`provider_headers`、`auth`、`credential`、`http`、`retry`、`model`、
 `anthropic`、`openai_chat`、`openai_responses`、`openai_codex_responses`、
 `openrouter`、`mistral`、`gemini`、`bedrock`、`azure_openai`、`vertex`、
 `config`、`time` 和 `test_support`。

@@ -181,7 +181,7 @@ sub-agents, plan mode, todos, permission popups, and background bash.
 | Internal dependencies | `opi-agent -> opi-ai`, `opi-coding-agent -> opi-ai + opi-agent + opi-tui` |
 | External dependencies | Rust-native async, HTTP/SSE, schema, config, TUI, search, tracing, and test stacks from workspace dependencies |
 | Binary | `opi` supports interactive TUI, non-interactive text mode, `--json`, `--rpc`, session commands, `--version`, and `--help` |
-| CI | `fmt`, `clippy`, `test`, `doc` |
+| CI | `fmt`, `clippy`, `test`, `doctest`, `doc` |
 | Release CI | six platform binary workflow |
 | Extensibility | RPC JSONL, SDK types, extension API, resource/package discovery, custom provider/model registry, branch selection, streaming proxy, process-JSONL adapter hosting (`opi-extension-jsonl-v1`), and package CLI (`add/remove/list/doctor`) are implemented as unstable 0.x APIs |
 | crates.io | publishable crates are quality-gated |
@@ -1197,6 +1197,7 @@ Current CI gates:
 - `cargo fmt --all --check`;
 - `cargo clippy --workspace --all-targets`;
 - `cargo test --workspace --all-targets`;
+- `cargo test --workspace --doc`;
 - `RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps`.
 
 ## 13. Security and Risk

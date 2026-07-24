@@ -25,8 +25,10 @@ The current implementation includes:
   `--no-builtin-tools`, and `--allow-mutating`.
 - Image attachments through `--image` and the TUI `/image` command.
 - Multi-provider streaming through Anthropic, OpenAI Chat Completions, OpenAI
-  Responses, OpenRouter, Mistral, Gemini, AWS Bedrock, Azure OpenAI, and Google
-  Vertex AI.
+  Responses, OpenRouter, Mistral, Gemini, AWS Bedrock, Azure OpenAI, Google
+  Vertex AI, GitHub Copilot (one static catalog routed across Anthropic Messages
+  and OpenAI Completions/Chat/Responses wires), and OpenAI Codex (dedicated
+  Responses wire).
 - Config-driven OpenAI-compatible provider profiles and custom provider/model
   registration through the provider registry.
 - TOML config with layered precedence, per-provider proxy config, image limits,
@@ -215,6 +217,11 @@ Provider implementations live in `opi-ai`:
 - `bedrock:` uses AWS Bedrock Converse streaming with SigV4 signing.
 - `azure:` uses Azure OpenAI Chat Completions deployments.
 - `vertex:` uses Google Vertex AI Gemini streaming.
+- `github-copilot:` one audited static catalog routed through Anthropic Messages,
+  OpenAI Completions/Chat, and OpenAI Responses; OS keychain via `/login
+  github-copilot`.
+- `openai-codex:` dedicated OpenAI Codex Responses wire; OS keychain via `/login
+  openai-codex` (Browser default or Device Code).
 
 Config resolution for model selection:
 
@@ -238,7 +245,13 @@ not loaded.
 Provider credentials are configurable per provider. Defaults include
 `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY`, `MISTRAL_API_KEY`,
 `GEMINI_API_KEY`, `AZURE_OPENAI_API_KEY`, and `VERTEX_ACCESS_TOKEN`; Bedrock
-uses AWS SigV4 credentials from env/config/profile sources. `main()` calls
+uses AWS SigV4 credentials from env/config/profile sources. GitHub Copilot and
+OpenAI Codex persist OAuth tokens in the native OS keychain (Windows Credential
+Manager, macOS Keychain Services, Freedesktop Secret Service) through the
+interactive TUI `/login <provider>` and `/logout <provider>` commands, with env
+API-key fallback for the first-class providers; their canonical ids are
+`github-copilot` and `openai-codex` (the development ids `copilot` and `codex`
+have no alias or migration). `main()` calls
 `dotenvy::dotenv()` at startup, so a local `.env` may change provider behavior.
 Both `.env` and `.opi/config.toml` are gitignored and may carry live keys or a
 non-default `base_url`.

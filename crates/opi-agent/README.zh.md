@@ -36,7 +36,7 @@ provider 上下文，但分支摘要会通过 `session_context::reconstruct_cont
 它依赖 `opi-ai` 的 Provider 和消息类型。它不实现 `opi` CLI、终端 UI 或具体的
 文件/ shell 内置工具；这些能力分别位于 `opi-coding-agent` 和 `opi-tui`。
 
-## 第十四阶段鉴权与会话亲和边界
+## 鉴权与会话亲和边界
 
 `opi-agent` 不执行凭据 IO，也不构造 OAuth provider。它会在真实主循环中保留类型化鉴权
 结果：不可重试的 `ProviderError::CredentialNeeded`、

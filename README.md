@@ -217,8 +217,8 @@ repair and retry it; text mode exits with the auth-failure code, while JSON and
 RPC emit `CredentialNeeded` remediation with an `AccountIdMissing` diagnostic.
 
 `Request` now carries `timeout`, `extra_headers`, `CacheRetention`, and
-`session_id`. Only `session_id` has a production harness producer in this
-phase; providers map it through their reviewed prompt-cache/session-affinity
+`session_id`. Only `session_id` has a production harness producer;
+providers map it through their reviewed prompt-cache/session-affinity
 rules. `ModelInfo` uses the single nested `ModelCapabilities` value, including
 Anthropic cache-control capabilities. `cache_write_1h_tokens` remains a subset
 of cache writes and `reasoning_tokens` a subset of output, so totals and costs

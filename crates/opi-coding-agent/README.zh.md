@@ -198,7 +198,7 @@ Device Code 调用 `present_device_code`，轮询 provider endpoint，绝不调�
 `/login <provider>` 修复；文本模式以 `AuthFailure` 退出，JSON/RPC 发出带
 `AccountIdMissing` 诊断的 `CredentialNeeded` 事件。
 
-第十四阶段还把活跃 `session_id` 从 `CodingHarness` 经 Agent 主循环带入审查过的 Provider
+活跃 `session_id` 从 `CodingHarness` 经 Agent 主循环带入审查过的 Provider
 cache-affinity 映射。其它新 `Request` 标量（`timeout`、`extra_headers`、
 `CacheRetention`）仍是直接 `opi-ai` request 基底。`cache_write_1h_tokens` 与
 `reasoning_tokens` 在会话费用摘要中保持子集记账。`refresh_models` 仍仅为基底、无生产触发；
