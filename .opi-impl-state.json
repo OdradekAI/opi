@@ -2154,7 +2154,7 @@
       "definition_of_done": "`--trust` and `--no-trust` are mutually exclusive startup overrides; global-only `[defaults] default_project_trust = ask|always|never` defaults to ask. Public `prepare_project_startup` is the sole preflight entry used by the standard CLI and embedders: it accepts an explicit `ProjectTrustResolverRegistry`, parses and validates CLI flags, detects trust-requiring resources, and returns the no-resource startup plan before resolver invocation, trust-store loading, global-default evaluation, or `PreTrustUi` calls when the resource set is empty. When resources exist, it applies CLI, registered resolver votes, nearest stored decision, global default, then ask; first Trust/Deny wins and Undecided falls through. Its `ProjectStartupPlan` is consumed by the 15.7 config/resource gate before project config/resource merge, provider construction, installed-package or adapter startup, and `CodingHarnessBuilder::build`. The standard opi CLI calls the same entry with an empty registry, while embedders may register resolvers before preflight; Phase 15 adds no CLI `-e`, native extension loader, metadata-to-code loader, or project-extension self-registration path. Non-interactive and RPC startup never prompt and resolve an otherwise unanswered ask to untrusted. Their `PreTrustUi` implementations make `select`, `confirm`, and `input` return `PreTrustUiError::Unavailable` immediately; `notify` is a tested no-op; no method emits an RPC UI request. Explicit trusted decisions enter the 15.7 resource path, no-resource projects invoke neither resolvers nor UI, and registered resolvers receive no surface beyond `PreTrustUi`. opi-agent remains unchanged, and Phase 15 adds no built-in `/trust` or mid-session reload path. Integration tests cover config/CLI errors, every precedence branch, an injected embedder resolver vote flowing through `prepare_project_startup` into both trusted and untrusted 15.7 paths, the standard CLI's empty registry, rejection of late/project self-registration, all four headless UI methods, both headless modes, no-resource side-effect absence, persisted-store use, preflight ordering, and zero RPC UI requests.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "15.6",
         "15.7"
@@ -2219,6 +2219,11 @@
           "field": "definition_of_done",
           "reason": "Post-decision L1 verification makes headless PreTrustUi nonblocking and prompt-free: select/confirm/input return Unavailable, notify is a no-op, and RPC emits no UI request.",
           "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#T6 — Project-trust gate"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "RuntimePackageStartup gained a trust_decision field (the vehicle that carries the headless decision into NonInteractiveRunner/RpcRunner without a constructor signature change); existing struct-literal fixtures in json_mode.rs (+3) and rpc_jsonl.rs (+11) needed a trust_decision entry to compile. Late append recorded in the E.2 checkpoint.",
+          "source": "crates/opi-coding-agent/src/runtime_packages.rs::RuntimePackageStartup"
         }
       ],
       "tier": "cli-runtime",
@@ -2273,7 +2278,7 @@
             "crates/opi-coding-agent/src/harness.rs::CodingHarnessBuilder::build",
             "crates/opi-coding-agent/src/project_trust.rs::prepare_project_startup (planned)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "phase15-project-trust-resolver-precedence",
@@ -2292,7 +2297,7 @@
             "crates/opi-coding-agent/src/project_trust.rs::prepare_project_startup (planned)",
             "crates/opi-coding-agent/src/config.rs::merge_project_config (planned)"
           ],
-          "status": "open"
+          "status": "met"
         }
       ],
       "production_call_sites": [
@@ -2315,7 +2320,7 @@
       "substrate_only": false,
       "iteration_count": 0,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "6a57e922f76c43e18b720128a673df449f442593",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "crates/opi-coding-agent/src/cli.rs",
@@ -2331,13 +2336,102 @@
         "crates/opi-coding-agent/src/adapter_extension.rs",
         "crates/opi-coding-agent/src/provider_factory.rs",
         "crates/opi-coding-agent/src/runtime_packages.rs",
-        "crates/opi-coding-agent/tests/project_trust_startup.rs"
+        "crates/opi-coding-agent/tests/project_trust_startup.rs",
+        "crates/opi-coding-agent/tests/json_mode.rs",
+        "crates/opi-coding-agent/tests/rpc_jsonl.rs"
       ],
-      "last_attempt": null,
-      "verified_at_commit": null,
-      "evidence": null,
+      "last_attempt": {
+        "attempt": 1,
+        "started_at": "2026-07-25T17:53:03.000Z",
+        "ended_at": "2026-07-25T18:28:51.000Z",
+        "outcome": "passing",
+        "failing_gate": null,
+        "touched_files": [
+          "crates/opi-coding-agent/src/cli.rs",
+          "crates/opi-coding-agent/src/config.rs",
+          "crates/opi-coding-agent/src/main.rs",
+          "crates/opi-coding-agent/src/project_trust.rs",
+          "crates/opi-coding-agent/src/rpc.rs",
+          "crates/opi-coding-agent/src/runner.rs",
+          "crates/opi-coding-agent/src/runtime_packages.rs",
+          "crates/opi-coding-agent/tests/json_mode.rs",
+          "crates/opi-coding-agent/tests/non_interactive_trust.rs",
+          "crates/opi-coding-agent/tests/project_trust_startup.rs",
+          "crates/opi-coding-agent/tests/project_trust_store.rs",
+          "crates/opi-coding-agent/tests/rpc_jsonl.rs",
+          "crates/opi-coding-agent/tests/rpc_trust.rs"
+        ]
+      },
+      "verified_at_commit": "341433e7bc5d9270a765b615e4373f9455eee87d",
+      "evidence": {
+        "task": "15.8.1",
+        "dod_sha256": "5c857e43035786f8c5072ed9d48acebc8292686267e2fc9af2d80eeb84ecc40d",
+        "verification": "cli-runtime; crate-scoped per-target gates green on Windows (project_trust_startup 7, non_interactive_trust 2, rpc_trust 2, project_trust_store 26, bin opi 23, json_mode 28, rpc_jsonl 82, non_interactive 14, non_interactive_policy 10, safety_hooks 10, oauth_auth 122, interactive_tui_auth 8, lib 82, config_tests 50, trust_resource_gating 11, agents_md_context 18, package_discovery 41, sandbox_strict 7, sandbox_config 24, tool_selection 30, tools_read_write_edit_bash 95); clippy --all-targets -D warnings clean; rustdoc -D warnings clean; fmt --check --all clean. Full-workspace smoke skipped (disk-fill risk on this host per standing memory). D.2 deep exec verify (6-lens wf_2245b1e7-b02 over pre-amend commit db74f72) clean: 0 must-fix, 0 rejected-as-valid (1 medium L-D2 finding rejected by the adjudicator: it falsely claimed the private-by-design resolve_headless_trust_config was untested and ignored the 9 inline run_*_core bin tests plus the defense-in-depth coverage). 1 low flagged-for-human (L-D2: headless_pre_trust_ui_emits_no_rpc_ui_request asserted its no-RPC-UI-request claim only by comment) RESOLVED before the footer flip by wrapping the headless UI in a RecordingHeadlessUi that counts select/confirm/input calls (select/input never called; ask confirm returns Unavailable); amended commit db74f72 to 341433e with the strengthening and Opi-Evaluator: passed.",
+        "evaluator": "passed",
+        "commit": "341433e7bc5d9270a765b615e4373f9455eee87d",
+        "acceptance": "phase15-headless-trust-resolution, phase15-project-trust-resolver-precedence; driven by cargo test --test project_trust_startup (7 tests incl no_resource_bypass, trust_preflight_precedes_project_and_runtime_construction, explicit_embedder_resolver_reaches_resource_path, standard_cli_passes_empty_resolver_registry, prepare_project_startup_precedence_cli_store_default_ask, cli_trust_override validation, project_trust_default mapping), --test non_interactive_trust (2: headless_ask_defaults_untrusted_with_overrides, headless_pre_trust_ui_is_immediately_unavailable), --test rpc_trust (2: headless_pre_trust_ui_emits_no_rpc_ui_request, rpc_never_emits_trust_prompt), plus project_trust_store explicit_embedder_resolver_precedence_and_cli_empty_registry."
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-07-25T17:53:03.000Z",
+          "attempt": 1,
+          "summary": "Phase B confirmed at start_commit 6a57e92 (15.7 ledger checkpoint). User authorized Run 15.8.1 (project trust startup policy + headless resolution) via the host-verifiability gate: auto-pick 15.5.2 (Linux seccomp) and 15.5.4 (macOS sandbox-exec) compile out + run 0 tests on this Windows host, so the user overrode to the next fully-Windows-verifiable failing task now that both its deps (15.6, 15.7) pass. Fully verifiable on Windows: cli-runtime pure-Rust preflight + headless UI + two-stage config (no platform kernel features, no FFI). Crate-scoped per-target gates for opi-coding-agent (full-workspace smoke skipped: disk-fill risk on this host per standing memory). evaluator_required=true so D.2 runs the full 6-lens deep exec verify. 15.8.1 wires non-interactive + RPC through public prepare_project_startup (no-resource bypass; CLI->resolver->store->global->ask; headless ask->untrusted), adds --trust/--no-trust + [defaults] default_project_trust, threads trust_decision into NonInteractiveRunner/RpcRunner + start_installed_package_runtime_with_trust. Interactive stays on the 15.7 permissive path; 15.8.2 owns the TUI prompt (AppState::AwaitingTrust/TrustChoice) and migrates interactive onto prepare_project_startup. Owns 2 acceptance scenarios.",
+          "gate_results": []
+        },
+        {
+          "timestamp": "2026-07-25T18:28:51.000Z",
+          "attempt": 1,
+          "summary": "Phase D passed at commit 341433e (amended from db74f72 to bundle the L-D2 test strengthening and flip Opi-Evaluator pending to passed). Crate-scoped per-target mechanical gates green on Windows (21 test binaries; clippy/rustdoc/fmt clean). TDD: 12 new tests written first (RED on missing API), implemented fresh (GREEN); fixed one test-side precedence bug (store beats global-default: reordered the global-default assertions before polluting the store). D.2 deep exec verify (6-lens wf_2245b1e7-b02) clean: 0 must-fix, 0 rejected-as-valid (the 1 medium finding was rejected by the adjudicator: false claims about the private-by-design resolve_headless_trust_config plus it ignored the 9 inline run_*_core bin tests and the defense-in-depth coverage); 1 low flagged-for-human (L-D2 test-vacuity on headless_pre_trust_ui_emits_no_rpc_ui_request) resolved via a RecordingHeadlessUi adapter that observes select/input never called and the ask confirm returns Unavailable. Design: prepare_project_startup owns the preflight (no-resource bypass skips store load; CLI then resolver then store then global-default then ask; registry sealed at preflight); HeadlessPreTrustUi for both headless modes; RuntimePackageStartup.trust_decision carries the decision into the runner ctors (zero signature change); main.rs resolve_headless_trust_config wires non-interactive and RPC two-stage. Interactive stays on the 15.7 permissive path; 15.8.2 owns AppState::AwaitingTrust and TrustChoice and migrates interactive onto prepare_project_startup. Fully Windows-verifiable (pure Rust, no FFI, no kernel).",
+          "gate_results": [
+            {
+              "gate": "cargo test --test project_trust_startup",
+              "passed": true,
+              "detail": "7 passed"
+            },
+            {
+              "gate": "cargo test --test non_interactive_trust",
+              "passed": true,
+              "detail": "2 passed"
+            },
+            {
+              "gate": "cargo test --test rpc_trust",
+              "passed": true,
+              "detail": "2 passed (incl recording-adapter strengthening)"
+            },
+            {
+              "gate": "cargo test --test project_trust_store",
+              "passed": true,
+              "detail": "26 passed (incl explicit_embedder_resolver_precedence_and_cli_empty_registry)"
+            },
+            {
+              "gate": "cargo test bin opi / lib / 16 other integration targets",
+              "passed": true,
+              "detail": "all green (bin 23, lib 82, json_mode 28, rpc_jsonl 82, oauth_auth 122, etc.)"
+            },
+            {
+              "gate": "clippy --all-targets -D warnings",
+              "passed": true,
+              "detail": "clean"
+            },
+            {
+              "gate": "rustdoc -D warnings",
+              "passed": true,
+              "detail": "clean"
+            },
+            {
+              "gate": "fmt --check",
+              "passed": true,
+              "detail": "clean"
+            },
+            {
+              "gate": "D.2 deep exec verify (6-lens wf_2245b1e7-b02)",
+              "passed": true,
+              "detail": "clean: 0 must-fix, 0 rejected-as-valid, 1 low flagged (resolved in amend)"
+            }
+          ]
+        }
+      ]
     },
     {
       "id": "15.8.2",
@@ -3689,6 +3783,11 @@
       "timestamp": "2026-07-25T17:38:44.000Z",
       "attempt": 1,
       "summary": "Task 15.7 passing @06cb0bb (trust-gated project resource discovery: two-stage config resolve_pre_trust_config + merge_project_config, CodingHarnessBuilder::trust_decision gating discover_resources + discover_context_files_with_trust + start_installed_package_runtime_with_trust filtering project-scope adapter declarations; interactive main.rs path resolve_interactive_trust_config threads the decision; read tool ungated; 11 trust_resource_gating tests incl. 4 acceptance scenarios; 15 crate binaries green, clippy/rustdoc/fmt clean). D.2 clean (wf_f0486bef-1ae, 0 must-fix/flagged/rejected, non-vacuous). Ships the gate MECHANISM with permissive Undecided->Trusted default; non-interactive/RPC wiring + --trust/default_project_trust/headless-ask policy deferred to 15.8.1."
+    },
+    {
+      "timestamp": "2026-07-25T18:28:51.000Z",
+      "phase": 15,
+      "summary": "Task 15.8.1 PASSING at commit 341433e (amended from db74f72). Phase 15 now 9/15 passing (15.1, 15.2, 15.3, 15.4, 15.5.1, 15.5.5, 15.6, 15.7, 15.8.1). Remaining failing: 15.5.2 (Linux seccomp substrate), 15.5.3 (Linux strict runtime, blocked on .2), 15.5.4 (macOS sandbox-exec), 15.5.6 (matrix, blocked on .3/.4), 15.8.2 (interactive TUI prompt, deps [15.8.1] now met), 15.9 (docs+guards, blocked on all). Next fully-Windows-verifiable: 15.8.2 (deps now satisfied) but workspace tier (opi-tui AppState::AwaitingTrust/TrustChoice); auto-pick by lowest id is 15.5.2 (Linux, compiles out on Windows)."
     }
   ],
   "verify_runs": [
@@ -3821,6 +3920,16 @@
       "ran_at": "2026-07-25T17:38:44.000Z",
       "task_id": "15.7",
       "criterion_id": null
+    },
+    {
+      "run_id": "wf_2245b1e7-b02",
+      "task": "15.8.1",
+      "timestamp": "2026-07-25T18:28:51.000Z",
+      "stage": "exec",
+      "must_fix": 0,
+      "flagged_for_human": 1,
+      "rejected": 0,
+      "summary": "6-lens deep exec verify over db74f72. 0 must-fix, 0 rejected-as-valid (1 medium rejected by adjudicator), 1 low flagged-for-human (L-D2 headless_pre_trust_ui_emits_no_rpc_ui_request test-vacuity) resolved in the amend to 341433e."
     }
   ]
 }
