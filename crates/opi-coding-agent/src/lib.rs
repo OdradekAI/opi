@@ -24,6 +24,7 @@ pub mod package_store;
 pub mod picker;
 pub mod policy;
 pub mod pricing;
+pub mod project_trust;
 pub mod prompt;
 pub mod prompt_fragment;
 pub mod provider_factory;
