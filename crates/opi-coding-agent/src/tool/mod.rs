@@ -4,6 +4,7 @@ mod find;
 mod glob;
 mod grep;
 mod ls;
+mod operations;
 mod read;
 mod write;
 
@@ -13,6 +14,10 @@ pub use find::FindTool;
 pub use glob::GlobTool;
 pub use grep::GrepTool;
 pub use ls::LsTool;
+pub use operations::{
+    AccessMode, BashOpError, BashOperations, BashRequest, BashResult, FileOperations, FsOpError,
+    LocalFileOperations, OpMetadata, ToolDiagnostic,
+};
 pub use read::{MAX_READ_OUTPUT_BYTES, ReadTool};
 pub use write::WriteTool;
 
