@@ -187,10 +187,82 @@ fn main() {
                 std::process::exit(1);
             }
         };
+        // Phase 15.7: two-stage trust-gated config for the interactive path.
+        let interactive_config = resolve_interactive_trust_config(
+            &cli,
+            resume_info
+                .as_ref()
+                .map(|info| info.original_cwd.clone())
+                .or_else(|| std::env::current_dir().ok()),
+        );
         rt.block_on(async {
-            run_interactive(&cli, &config, resumed_messages, resume_info, tool_selection).await
+            run_interactive(
+                &cli,
+                &interactive_config,
+                resumed_messages,
+                resume_info,
+                tool_selection,
+            )
+            .await
         });
     }
+}
+
+/// Phase 15.7 interactive two-stage trust-gated config resolution.
+///
+/// Stage 1 (`resolve_pre_trust_config`) resolves every layer except the
+/// project `.opi/config.toml`; the trust decision (resource detection + the
+/// `trust.json` store) gates whether stage 2 (`merge_project_config`) merges
+/// it back. An untrusted project's config layer is skipped entirely (not
+/// loaded-then-filtered), closing the `providers.bedrock.profile` vector. Exits
+/// with code 2 on config error, matching `resolve_config`. CLI sandbox
+/// overrides are re-applied to the two-stage result. Non-interactive/RPC
+/// two-stage wiring lands with the headless policy in task 15.8.1.
+fn resolve_interactive_trust_config(
+    cli: &Cli,
+    project_dir: Option<std::path::PathBuf>,
+) -> opi_coding_agent::config::OpiConfig {
+    use opi_coding_agent::config::{ConfigSource, merge_project_config, resolve_pre_trust_config};
+    use opi_coding_agent::project_trust::{
+        ProjectTrustStore, TrustDecision, resolve_project_trust_decision,
+    };
+
+    let source = ConfigSource {
+        cli_model: cli.model.clone(),
+        config_path: cli.config.clone(),
+        env_model: std::env::var("OPI_MODEL").ok(),
+        project_dir: project_dir.clone(),
+        user_config_path: None,
+    };
+    let pre = match resolve_pre_trust_config(source) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("opi: config error: {e}");
+            std::process::exit(2);
+        }
+    };
+    let user_config_dir = opi_coding_agent::config::user_config_dir();
+    let project_root = project_dir
+        .as_deref()
+        .unwrap_or_else(|| std::path::Path::new("."));
+    let trust_decision = match ProjectTrustStore::load(&user_config_dir) {
+        Ok(store) => resolve_project_trust_decision(&store, project_root),
+        // Fail-open (load) when the store is unreadable; task 15.8.1 tightens.
+        Err(_) => TrustDecision::Trusted,
+    };
+    let mut config = if matches!(trust_decision, TrustDecision::Untrusted) {
+        pre
+    } else {
+        match merge_project_config(pre, project_root) {
+            Ok(c) => c,
+            Err(e) => {
+                eprintln!("opi: config error: {e}");
+                std::process::exit(2);
+            }
+        }
+    };
+    config.apply_sandbox_overrides(cli.sandbox, cli.sandbox_require.then_some(true));
+    config
 }
 
 /// Run `--export-session` and return the exit code (Phase 13.5).
@@ -845,11 +917,26 @@ async fn run_interactive_core<Launch, LaunchFuture>(
 
     let hooks = Box::new(InteractiveCodingHooks::new(true));
     let initial_messages = resumed_messages.unwrap_or_default();
-    let mut runtime_startup = opi_coding_agent::runtime_packages::start_installed_package_runtime(
-        &workspace_root,
-        &user_config_dir,
-    )
-    .await;
+    // Phase 15.7: resolve the trust decision (resource detection + trust.json
+    // store) for package-adapter and resource gating. Computed locally so this
+    // helper needs no signature change for its test callers; it is idempotent
+    // over the same store + project root that `resolve_interactive_trust_config`
+    // used for the two-stage config.
+    let trust_decision =
+        match opi_coding_agent::project_trust::ProjectTrustStore::load(&user_config_dir) {
+            Ok(store) => opi_coding_agent::project_trust::resolve_project_trust_decision(
+                &store,
+                &workspace_root,
+            ),
+            Err(_) => opi_coding_agent::project_trust::TrustDecision::Trusted,
+        };
+    let mut runtime_startup =
+        opi_coding_agent::runtime_packages::start_installed_package_runtime_with_trust(
+            &workspace_root,
+            &user_config_dir,
+            trust_decision,
+        )
+        .await;
     merge_provider_diagnostics(&mut runtime_startup, provider_diagnostics);
 
     let tool_config =
@@ -867,7 +954,8 @@ async fn run_interactive_core<Launch, LaunchFuture>(
     .tool_config(tool_config)
     .extension_registry(runtime_startup.extension_registry)
     .installed_packages(runtime_startup.installed_packages)
-    .startup_diagnostics(runtime_startup.diagnostics);
+    .startup_diagnostics(runtime_startup.diagnostics)
+    .trust_decision(trust_decision);
     if let Some(prompt) = user_system_prompt {
         builder = builder.user_system_prompt(prompt);
     }

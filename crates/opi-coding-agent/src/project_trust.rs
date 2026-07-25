@@ -465,6 +465,30 @@ pub async fn resolve_trust(
     }
 }
 
+/// Resolve the project trust decision for production startup (task 15.7).
+///
+/// Detects trust-requiring resources under `project_root`; an empty set yields
+/// [`TrustDecision::Trusted`] (no gate fires in any mode). Otherwise the store's
+/// nearest-ancestor decision is authoritative. In this phase an
+/// [`TrustDecision::Undecided`] result (no prior stored decision) is mapped to
+/// [`TrustDecision::Trusted`] so existing single-layer projects keep loading
+/// unchanged; task 15.8.1 replaces this with `prepare_project_startup`, which
+/// adds `--trust`/`--no-trust`, `[defaults] default_project_trust`, and the
+/// headless ask policy and tightens the undecided case.
+pub fn resolve_project_trust_decision(
+    store: &ProjectTrustStore,
+    project_root: &Path,
+) -> TrustDecision {
+    if ProjectTrustStore::detect_resources(project_root).is_empty() {
+        return TrustDecision::Trusted;
+    }
+    match store.decide(project_root) {
+        TrustDecision::Untrusted => TrustDecision::Untrusted,
+        TrustDecision::Trusted => TrustDecision::Trusted,
+        TrustDecision::Undecided => TrustDecision::Trusted,
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Private helpers
 // ---------------------------------------------------------------------------

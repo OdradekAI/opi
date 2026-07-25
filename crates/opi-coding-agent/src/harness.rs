@@ -58,6 +58,7 @@ use crate::diagnostic_bridge::{
 use crate::oauth::{OAuthEndpointConfig, OAuthProviderRegistry};
 use crate::package_discovery::PackageResource;
 use crate::policy::{RunMode, ToolRuntimeConfig, ToolSelection};
+use crate::project_trust::TrustDecision;
 use crate::prompt::SystemPromptBuilder;
 use crate::resource::{ExplicitResourcePaths, ResourceDiscoveryLayers, standard_discovery_layers};
 use crate::sandbox::PreparedSandbox;
@@ -347,6 +348,7 @@ pub struct CodingHarnessBuilder {
     startup_diagnostics: Vec<Diagnostic>,
     record_diagnostics: bool,
     trace: Option<TraceConfig>,
+    trust_decision: TrustDecision,
 }
 
 impl CodingHarnessBuilder {
@@ -375,6 +377,7 @@ impl CodingHarnessBuilder {
             startup_diagnostics: Vec::new(),
             record_diagnostics: false,
             trace: None,
+            trust_decision: TrustDecision::Trusted,
         }
     }
 
@@ -455,6 +458,17 @@ impl CodingHarnessBuilder {
         self
     }
 
+    /// Set the resolved project-trust decision (task 15.7). When
+    /// [`TrustDecision::Untrusted`], `discover_resources` skips the project
+    /// resource layer and context-file discovery skips project `AGENTS.md`/
+    /// `CLAUDE.md`. Defaults to [`TrustDecision::Trusted`] (load everything),
+    /// preserving the pre-trust behavior for embedders and runners that do not
+    /// yet thread a decision (non-interactive/RPC wiring lands in task 15.8.1).
+    pub fn trust_decision(mut self, decision: TrustDecision) -> Self {
+        self.trust_decision = decision;
+        self
+    }
+
     pub fn build(self) -> CodingHarness {
         let tool_selection = self.tool_selection;
         let tool_config = self.tool_config.unwrap_or_else(|| {
@@ -481,6 +495,7 @@ impl CodingHarnessBuilder {
                 tool_selection,
                 record_diagnostics: self.record_diagnostics,
                 trace: self.trace,
+                trust_decision: self.trust_decision,
             },
         )
     }
@@ -495,6 +510,7 @@ struct HarnessBuildOptions {
     tool_selection: ToolSelection,
     record_diagnostics: bool,
     trace: Option<TraceConfig>,
+    trust_decision: TrustDecision,
 }
 
 impl Default for HarnessBuildOptions {
@@ -508,6 +524,7 @@ impl Default for HarnessBuildOptions {
             tool_selection: ToolSelection::Default,
             record_diagnostics: false,
             trace: None,
+            trust_decision: TrustDecision::Trusted,
         }
     }
 }
@@ -798,6 +815,7 @@ impl CodingHarness {
                 Some(resolved_global_dir.as_path()),
                 build_options.resource_layers,
                 build_options.installed_packages,
+                build_options.trust_decision,
             ),
         };
         resources
@@ -817,9 +835,11 @@ impl CodingHarness {
             resources.metadata.add_extension_name(name);
         }
 
-        let context = context_files::discover_context_files(
+        let project_trusted = !matches!(build_options.trust_decision, TrustDecision::Untrusted);
+        let context = context_files::discover_context_files_with_trust(
             &workspace_root,
             Some(resolved_global_dir.as_path()),
+            project_trusted,
         );
         let resource_prompt = resources.metadata.format_for_system_prompt();
         let mut context_content = context.content;
@@ -2127,6 +2147,7 @@ impl CodingHarness {
         user_config_dir: Option<&Path>,
         resource_layers: Option<ResourceDiscoveryLayers>,
         installed_packages: Option<Vec<PackageResource>>,
+        trust_decision: TrustDecision,
     ) -> HarnessResources {
         let explicit = ExplicitResourcePaths {
             extensions: config.extensions.paths.clone(),
@@ -2136,6 +2157,27 @@ impl CodingHarness {
         let mut layers = resource_layers.unwrap_or_else(|| {
             standard_discovery_layers(workspace_root, user_config_dir, explicit)
         });
+        // T6 gate (task 15.7): an untrusted project skips its project layer
+        // (skills/fragments/themes/extensions/packages) so project-local
+        // resources cannot resolve. User-global and explicit layers remain; this
+        // same seam is the Phase 16 `/skill:`/`/fragment:` filter point.
+        if matches!(trust_decision, TrustDecision::Untrusted) {
+            for kind_layers in [
+                &mut layers.extensions,
+                &mut layers.packages,
+                &mut layers.skills,
+                &mut layers.fragments,
+                &mut layers.themes,
+            ] {
+                kind_layers.retain(|layer| {
+                    !(layer.root == workspace_root
+                        && layer
+                            .subdirectory
+                            .as_deref()
+                            .is_some_and(|s| s.starts_with(".opi")))
+                });
+            }
+        }
         let mut metadata = DiscoveredResourceMetadata::default();
 
         let packages = match crate::package_discovery::discover_packages(&layers.packages) {
@@ -2160,11 +2202,19 @@ impl CodingHarness {
                         metadata
                             .diagnostics
                             .extend(resolution.diagnostics.iter().map(diagnostic_from_package));
+                        let project_trusted = !matches!(trust_decision, TrustDecision::Untrusted);
                         merge_package_resources(
                             &mut packages,
                             resolution
                                 .packages
                                 .into_iter()
+                                .filter(|pkg| {
+                                    project_trusted
+                                        || !matches!(
+                                            pkg.scope,
+                                            crate::package_resolver::InstalledPackageScope::Project
+                                        )
+                                })
                                 .map(|package| package.package)
                                 .collect(),
                         );

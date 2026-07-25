@@ -26,22 +26,40 @@ pub struct ContextFiles {
 ///
 /// Walks from `cwd` upward to the git root (detected by `.git` presence) or
 /// filesystem root, then checks `global_config_dir` if provided. Returns
-/// concatenated content with per-file headings.
+/// concatenated content with per-file headings. Equivalent to
+/// [`discover_context_files_with_trust`] with `include_project = true`.
 pub fn discover_context_files(cwd: &Path, global_config_dir: Option<&Path>) -> ContextFiles {
+    discover_context_files_with_trust(cwd, global_config_dir, true)
+}
+
+/// Trust-aware context discovery (task 15.7).
+///
+/// When `include_project` is `false` (an untrusted project), the workspace
+/// ancestor walk is skipped and only the user-global `global_config_dir` is
+/// consulted, so an untrusted project's `AGENTS.md`/`CLAUDE.md` are not
+/// auto-injected into the system prompt (a prompt-injection channel). The files
+/// remain readable via the `read` tool, which is ungated.
+pub fn discover_context_files_with_trust(
+    cwd: &Path,
+    global_config_dir: Option<&Path>,
+    include_project: bool,
+) -> ContextFiles {
     let stop_at = find_git_root(cwd);
     let mut parts: Vec<String> = Vec::new();
 
-    // Walk from cwd upward to git root (inclusive) or filesystem root
-    let mut current: Option<&Path> = Some(cwd);
-    while let Some(dir) = current {
-        load_dir_context(dir, &mut parts);
-        if stop_at.as_deref() == Some(dir) {
-            break;
+    // Walk from cwd upward to git root (inclusive) or filesystem root.
+    if include_project {
+        let mut current: Option<&Path> = Some(cwd);
+        while let Some(dir) = current {
+            load_dir_context(dir, &mut parts);
+            if stop_at.as_deref() == Some(dir) {
+                break;
+            }
+            current = dir.parent();
         }
-        current = dir.parent();
     }
 
-    // Check global config dir last
+    // Check global config dir last.
     if let Some(global_dir) = global_config_dir {
         load_dir_context(global_dir, &mut parts);
     }

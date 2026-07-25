@@ -1557,12 +1557,47 @@ pub struct ConfigSource {
 /// Resolve configuration from all sources with correct precedence:
 /// CLI > env > project config > user config > built-in defaults.
 pub fn resolve_config(source: ConfigSource) -> Result<OpiConfig, ConfigError> {
+    resolve_config_inner(source, /* merge_project */ true)
+}
+
+/// Stage 1 of two-stage trust-gated resolution (task 15.7): resolve every layer
+/// except the project `.opi/config.toml`. This is the config used to obtain
+/// trust inputs and the config applied when the project is untrusted.
+pub fn resolve_pre_trust_config(source: ConfigSource) -> Result<OpiConfig, ConfigError> {
+    resolve_config_inner(source, /* merge_project */ false)
+}
+
+/// Stage 2: merge the project `.opi/config.toml` layer onto a pre-trust config
+/// for a trusted project. Regular fields, `[providers.openai_compatible]`, and
+/// `[providers.custom]` entries are merged and the combined provider namespace
+/// is re-validated. Equivalent in result to a full `resolve_config` that
+/// includes the project layer, but expressed as an incremental stage so the
+/// trust boundary is explicit at the call site.
+pub fn merge_project_config(
+    mut config: OpiConfig,
+    project_dir: &Path,
+) -> Result<OpiConfig, ConfigError> {
+    let project_config_path = project_dir.join(".opi").join("config.toml");
+    let project_raw = load_raw_config(&project_config_path)?;
+    let mut project_custom = BTreeMap::new();
+    project_raw.merge_into(&mut config, &mut project_custom);
+    for (id, provider) in validate_custom_providers(project_custom)? {
+        config.providers.custom.insert(id, provider);
+    }
+    validate_provider_namespace(&config)?;
+    Ok(config)
+}
+
+fn resolve_config_inner(
+    source: ConfigSource,
+    merge_project: bool,
+) -> Result<OpiConfig, ConfigError> {
     let user_path = source.user_config_path.unwrap_or_else(user_config_path);
     let mut config = OpiConfig::default();
     let mut custom = BTreeMap::new();
     load_raw_config(&user_path)?.merge_into(&mut config, &mut custom);
 
-    if let Some(project_dir) = &source.project_dir {
+    if merge_project && let Some(project_dir) = &source.project_dir {
         let project_config_path = project_dir.join(".opi").join("config.toml");
         let project_raw = load_raw_config(&project_config_path)?;
         project_raw.merge_into(&mut config, &mut custom);
