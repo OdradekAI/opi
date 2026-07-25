@@ -1740,7 +1740,7 @@
       "definition_of_done": "`opi-coding-agent` defines `TrustDecision`, `TrustVote`, `TrustContext`, `TrustResource`, `ProjectTrustStore`, `ProjectTrustResolver`, `ProjectTrustResolverRegistry`, `PreTrustUiError::Unavailable`, and minimal `PreTrustUi` contracts without changing opi-agent; the TUI-owned `TrustChoice` type and its coding-agent translation belong to 15.8.2. `ProjectTrustStore::load(user_config_dir)` reads exactly `user_config_dir.join(\"trust.json\")`—`%APPDATA%\\opi\\trust.json` on Windows and `~/.config/opi/trust.json` on Unix defaults—as a flat canonical-path-to-bool JSON map; `decide` canonicalizes the project path and returns the nearest ancestor decision, and `record` acquires `trust.json.lock`, re-reads after locking, updates one canonical key, and atomically replaces the file without schema metadata. The resolver registry accepts deterministic-order registrations only through an explicit public embedder/startup API before resolution; a newly constructed/default registry is empty, late registration is rejected, and the registry contains no metadata discovery or native-code loading path. Resolution applies CLI override, explicitly registered resolver votes, store, global-only default, then ask; first Trust/Deny wins and Undecided falls through. Resource detection names the exact project files/directories that require consent and returns an empty set for a bare `.opi` directory. Temp-root and fake-resolver tests prove alias canonicalization, nearest-ancestor precedence, concurrent writers, malformed JSON errors, no-decision behavior, deterministic explicit registration, an empty default registry, no late/project self-registration, and no-resource no-op.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [],
       "inference_notes": [
         {
@@ -1816,18 +1816,74 @@
       "substrate_only": true,
       "iteration_count": 0,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "b334e64bf84ce1a80e76c3717073c7eb32e742c7",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "crates/opi-coding-agent/src/lib.rs",
         "crates/opi-coding-agent/src/project_trust.rs",
         "crates/opi-coding-agent/tests/project_trust_store.rs"
       ],
-      "last_attempt": null,
-      "verified_at_commit": null,
-      "evidence": null,
+      "last_attempt": {
+        "attempt": 1,
+        "started_at": "2026-07-25T15:42:29.460Z",
+        "ended_at": "2026-07-25T16:57:31.517Z",
+        "outcome": "passing",
+        "failing_gate": null,
+        "touched_files": [
+          "crates/opi-coding-agent/src/lib.rs",
+          "crates/opi-coding-agent/src/project_trust.rs",
+          "crates/opi-coding-agent/tests/project_trust_store.rs"
+        ]
+      },
+      "verified_at_commit": "d6ecc30c6d05c6e191396acf537d376a261e88f6",
+      "evidence": {
+        "task": "15.6",
+        "dod_sha256": "7793aa95d557f5852945f5aedba170ffc71da3b79cd3b4e069abc77896957d51",
+        "verification": "library; crate-scoped gates green on Windows (project_trust_store 25 passed, clippy --all-targets -D warnings clean, rustdoc -D warnings clean, fmt --check clean). Full-workspace smoke skipped (disk-fill risk on this host per standing memory). D.2 deep exec verify (6-lens wf_298651b6-d5b over the task tree at d6ecc30) clean: 0 must-fix, 0 flagged, 0 rejected. All 6 lenses returned schema-compliant findings:[] (verified via journal.jsonl, lines 7-12) and inspected the correct commit + files (token-grep across lens transcripts: 5e90ea1 x52, project_trust x196, ProjectTrustStore x155, trust.json x181; each lens referenced 5e90ea1 4-13 times). Synthesizer summary narrative confused the task identity (named 15.5.5/7381bce/wf_e838066c-614 = the PRIOR task's run; the synthesizer agent a2c6f55421d6e9347 referenced 7381bce=6 and 5e90ea1=0), but the structured arrays are all empty — the documented exec-verify synthesis-confusion pattern. Substrate-only: no acceptance_scenarios; 15.7 wires the resource gate, 15.8.1 prepare_project_startup, 15.8.2 the interactive TUI prompt.",
+        "evaluator": "passed",
+        "commit": "d6ecc30c6d05c6e191396acf537d376a261e88f6"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-07-25T15:42:29.460Z",
+          "attempt": 1,
+          "summary": "Phase B confirmed at start_commit b334e64 (15.5.5 ledger checkpoint). User authorized Run 15.6 (project trust store + resolver substrate) after the host-verifiability gate: auto-pick 15.5.2 (Linux seccomp/landlock substrate) and 15.5.4 (macOS sandbox-exec) both compile out + run 0 tests on this Windows host (seccompiler+landlock and sandbox-exec are platform-only), so the user overrode to the next fully-Windows-verifiable failing task. Fully verifiable on Windows: pure-Rust library substrate (temp roots + fake resolver/UI), no FFI, no opi-agent change, #![forbid(unsafe_code)]. Crate-scoped gates for opi-coding-agent (full-workspace smoke skipped: disk-fill risk on this host per standing memory). evaluator_required=true -> D.2 runs the full 6-lens deep exec verify. Substrate-only: defines trust types + ProjectTrustStore + ProjectTrustResolverRegistry + resource detection + resolution precedence (CLI -> resolvers -> store -> global default -> ask); 15.7 wires the resource gate, 15.8.1 prepare_project_startup, 15.8.2 the interactive TUI prompt.",
+          "gate_results": []
+        },
+        {
+          "timestamp": "2026-07-25T16:57:31.517Z",
+          "attempt": 1,
+          "summary": "Phase D passed at commit d6ecc30 (amended from 5e90ea1 to flip Opi-Evaluator pending -> passed after D.2 clean). Crate-scoped mechanical gates green on Windows (project_trust_store 25, clippy --all-targets -D warnings clean, rustdoc -D warnings clean, fmt --check clean). TDD: 26 tests written first, observed RED on todo!() stubs, implemented fresh, GREEN; 3 detect_resources fixture bugs fixed (wrote into .opi/ before creating the dir — strengthened, not weakened). Gate fixes en route: fs4 1.1 sync API is fs4::FileExt::lock (not lock_exclusive, not fs_std); clippy suspicious_open_options -> explicit .truncate(false); removed a dead path() helper and a private intra-doc link (rustdoc private_intra_doc_links). Hand-rolled Pin<Box<Future>> async traits (no async-trait dep) matching opi-agent Tool/AgentHooks house style; #![forbid(unsafe_code)], no FFI, no opi-agent change. D.2 deep exec verify (6-lens wf_298651b6-d5b) clean: 0 must-fix/flagged/rejected; 6 lenses returned findings:[] and inspected d6ecc30/project_trust. Synthesizer summary confused the task identity (15.5.5/7381bce = prior run; agent a2c6 referenced 7381bce=6, 5e90ea1=0); structured verdict unaffected (all arrays empty). Substrate-only, fully Windows-verifiable.",
+          "gate_results": [
+            {
+              "gate": "cargo test --test project_trust_store",
+              "passed": true,
+              "detail": "25 passed"
+            },
+            {
+              "gate": "clippy --all-targets -D warnings",
+              "passed": true,
+              "detail": "clean"
+            },
+            {
+              "gate": "rustdoc -D warnings",
+              "passed": true,
+              "detail": "clean"
+            },
+            {
+              "gate": "fmt --check",
+              "passed": true,
+              "detail": "clean"
+            },
+            {
+              "gate": "D.2 deep exec verify (6-lens wf_298651b6-d5b)",
+              "passed": true,
+              "detail": "clean: 0 must-fix, 0 flagged, 0 rejected; synthesizer summary had task-identity confusion, structured verdict clean"
+            }
+          ]
+        }
+      ]
     },
     {
       "id": "15.7",
@@ -3551,6 +3607,12 @@
       "attempt": 1,
       "summary": "Task 15.5.5 passing @7381bce (Windows strict L0-only backend module on the production dispatch path + two native cfg(windows) product tests). D.2 clean (wf_e838066c-614, 0 must-fix). Phase 15 now 6/15 passing (15.1-15.5.1, 15.5.5). Next unblocked on this Windows host: none of the remaining phase-15 tasks are fully verifiable here (15.5.2 Linux + 15.5.4 macOS compile out; 15.5.3/15.5.6 blocked).",
       "gate_results": []
+    },
+    {
+      "timestamp": "2026-07-25T16:57:31.517Z",
+      "attempt": 1,
+      "summary": "Task 15.6 passing @d6ecc30 (project trust store + resolver substrate: TrustDecision/Vote/Context/Resource, ProjectTrustStore load/decide/record/detect_resources with fs4 trust.json.lock sidecar + canonical nearest-ancestor + atomic replace, ProjectTrustResolverRegistry empty-default + explicit deterministic register + seal-rejects-late, PreTrustUi/PreTrustUiError::Unavailable, resolve_trust CLI->resolvers->store->default->ask; 25 tests; #![forbid(unsafe_code)], no FFI, no opi-agent change). D.2 clean (wf_298651b6-d5b, 0 must-fix; synthesizer summary had task-identity confusion naming 15.5.5/7381bce, structured verdict clean; verified via journal.jsonl + lens-transcript token-grep). Phase 15 now 7/15 passing (15.1, 15.2, 15.3, 15.4, 15.5.1, 15.5.5, 15.6). Next unblocked: 15.5.2/15.5.4 still compile out on this Windows host (Linux/macOS); 15.7 (trust-gated resource discovery, deps [15.6] now met) is Windows-verifiable cli-runtime.",
+      "gate_results": []
     }
   ],
   "verify_runs": [
@@ -3662,6 +3724,16 @@
       "rejected_count": 0,
       "ran_at": "2026-07-25T15:30:59.630Z",
       "task_id": "15.5.5",
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": "wf_298651b6-d5b",
+      "folded_count": 0,
+      "flagged_count": 0,
+      "rejected_count": 0,
+      "ran_at": "2026-07-25T16:57:31.517Z",
+      "task_id": "15.6",
       "criterion_id": null
     }
   ]
