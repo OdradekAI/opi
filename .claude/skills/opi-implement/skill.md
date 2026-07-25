@@ -123,9 +123,18 @@ until `--clear-blocker`.
 Root `phase_exit[*].task_summary` entries are the durable dependency/status
 index. Do not replace them with snapshot pointers unless the dependency
 resolver is changed to load phase archives on demand.
-Keep root `phase_exit[*]` compact: store short exit metadata, `snapshot_path`,
-and `task_summary` there. Put long evaluator traces, expanded evidence tables,
-and audit narratives in the phase-local snapshot or sibling audit markdown.
+Keep root `phase_exit[*]` compact. An archived root entry contains only
+`completed_at`, `exit_criteria_met`, an `evaluator_summary` of at most 256
+characters, `snapshot_path`, and `task_summary`. Put `criteria_trace`,
+`audit_notes`, report/artifact paths, expanded evidence tables, and audit
+narratives that remain durable outside Git history in the phase-local snapshot
+or a purpose-specific audit artifact.
+
+Root `session_notes` and `verify_runs` are active-phase working history, not an
+ever-growing global journal. Before archive compaction, require a durable
+pre-archive ledger checkpoint; then clear both arrays before advancing to the
+next phase. Their prior values remain recoverable from that Git checkpoint and
+must not be duplicated into a generic root-history artifact.
 
 **User-override rule:** Refuse if any `depends_on` is not satisfied by the
 active tasks or archived phase summaries; print which dep is missing.
@@ -221,12 +230,14 @@ E is the only phase that mutates git **during normal task execution**.
      - F.4b If confirmed: write a phase-local snapshot containing the top-level
        schema/spec metadata, only the completed tasks for phase `<N>`, and only
        `phase_exit[<N>]` (including any detailed `criteria_trace`; do not copy
-       prior phases' `phase_exit` records into the snapshot). Then mutate the
-       root ledger via atomic protocol: move completed tasks into
-       `phase_exit[<N>].task_summary`, set `phase_exit[<N>].snapshot_path`,
-       keep only compact phase-exit metadata in the root entry, and remove
-       those tasks from the active `tasks` array. Commit ONLY the new snapshot
-       and canonical ledger with message
+       prior phases' `phase_exit` records into the snapshot). Refuse pruning
+       unless the full pre-archive ledger state is already present in a durable
+       checkpoint commit. Then mutate the root ledger via atomic protocol:
+       move completed tasks into `phase_exit[<N>].task_summary`, set
+       `phase_exit[<N>].snapshot_path`, keep only the five compact phase-exit
+       fields, clear the root `session_notes` and `verify_runs` arrays, and
+       remove those tasks from the active `tasks` array. Commit ONLY the new
+       snapshot and canonical ledger with message
        `chore: archive opi-implement phase <N> ledger snapshot`.
      - F.4c If declined: leave tasks array intact; no snapshot written.
 

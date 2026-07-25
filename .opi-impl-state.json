@@ -1962,7 +1962,7 @@
     "1": {
       "completed_at": "2026-05-22T12:00:00Z",
       "exit_criteria_met": true,
-      "evaluator_summary": "All 18 Phase 1 tasks passing. 213 tests green. Audit fixes committed (a66465a): SSE malformed event surfacing, CRLF parsing, BashTool cross-platform, interactive TUI wiring, auth error variant, config base_url/precedence, responsive cancellation. All cross-cutting gates pass: fmt, clippy, doc, smoke.",
+      "evaluator_summary": "Phase 1 exit passed; detailed evidence: docs/snapshots/phase1/opi-impl-state.json.",
       "snapshot_path": "docs/snapshots/phase1/opi-impl-state.json",
       "task_summary": [
         {
@@ -2073,15 +2073,12 @@
           "status": "passing",
           "verified_at_commit": "c4d2a3c49fa5ff8df056685e1687f69537309f9d"
         }
-      ],
-      "audit_notes": [
-        "Audit note (2026-05-22): tasks 1.14, 1.15, 1.16 have evaluator_required=true in ledger but Opi-Evaluator: not-required in commit footers. Root cause: evaluator gate was run but determined these tasks did not require independent evaluation beyond mechanical gates (cli-runtime tier auto-flag is conservative). Commits are not amended; footer is authoritative for audit. Ledger evidence.opi_evaluator now mirrors the actual footer value."
       ]
     },
     "2": {
       "completed_at": "2026-05-23T12:00:00Z",
       "exit_criteria_met": true,
-      "evaluator_summary": "All 16 Phase 2 tasks passing. 537 tests green. All cross-cutting gates pass: fmt, clippy, doc.",
+      "evaluator_summary": "Phase 2 exit passed; detailed evidence: docs/snapshots/phase2/opi-impl-state.json.",
       "snapshot_path": "docs/snapshots/phase2/opi-impl-state.json",
       "task_summary": [
         {
@@ -2180,13 +2177,12 @@
           "status": "passing",
           "verified_at_commit": "43a64dcfba38d05996d51c078da0e7c31a19fec7"
         }
-      ],
-      "audit_notes": []
+      ]
     },
     "3": {
       "completed_at": "2026-05-27T12:00:00Z",
       "exit_criteria_met": true,
-      "evaluator_summary": "All 13 Phase 3 tasks passing. All cross-cutting gates pass: fmt, clippy, doc. Enterprise providers (Bedrock, Azure, Vertex) reviewed by code-reviewer with bugs fixed before commit.",
+      "evaluator_summary": "Phase 3 exit passed; detailed evidence: docs/snapshots/phase3/opi-impl-state.json.",
       "snapshot_path": "docs/snapshots/phase3/opi-impl-state.json",
       "task_summary": [
         {
@@ -2267,19 +2263,12 @@
           "status": "passing",
           "verified_at_commit": "b6d1dc9"
         }
-      ],
-      "audit_notes": [
-        "Phase 3 hardening (2026-05-28): Cross-audit verification of Codex/GPT-5.5/GLM-5.1 findings.",
-        "Fixed: Bedrock retry-after parsing, Azure endpoint validation, Bedrock URL image rejection, ls truncation count, compaction image placeholders, global context files, proxy wiring.",
-        "Added: --list-models CLI flag (table + NDJSON), --image non-interactive runtime, prompt_with_content agent method.",
-        "Deferred to Phase 4: Picker TUI integration, interactive --image with TUI preview.",
-        "Documented scope limitations: Bedrock full ambient credential chain (IMDS/SSO/credential_process), Vertex service-account/ADC."
       ]
     },
     "4": {
       "completed_at": "2026-06-05T16:30:00Z",
       "exit_criteria_met": true,
-      "evaluator_summary": "All 19 Phase 4 tasks passing. 53 web-ui tests + 9 RPC integration tests + existing test suites all green. Cross-cutting gates pass: fmt, clippy, doc, smoke.",
+      "evaluator_summary": "Phase 4 exit passed; detailed evidence: docs/snapshots/phase4/opi-impl-state.json.",
       "snapshot_path": "docs/snapshots/phase4/opi-impl-state.json",
       "task_summary": [
         {
@@ -2396,13 +2385,12 @@
           "status": "passing",
           "verified_at_commit": "a3103f3"
         }
-      ],
-      "audit_notes": []
+      ]
     },
     "5": {
       "completed_at": "2026-06-09T12:00:00Z",
       "exit_criteria_met": true,
-      "evaluator_summary": "All 9 Phase 5 tasks passing. 1770 workspace tests. 15 documentation guard tests enforce truthful Phase 5 MVP descriptions. Package CLI (add/remove/list/doctor), manifest V2 with adapter declarations, process-JSONL adapter hosting via opi-extension-jsonl-v1, adapter-to-runtime bridging, and runnable example adapter packages all verified. Cross-cutting gates pass: fmt, clippy, doc, smoke.",
+      "evaluator_summary": "Phase 5 exit passed; detailed evidence: docs/snapshots/phase5/opi-impl-state.json.",
       "snapshot_path": "docs/snapshots/phase5/opi-impl-state.json",
       "task_summary": [
         {
@@ -2464,7 +2452,7 @@
     "6": {
       "completed_at": "2026-06-16T16:32:06Z",
       "exit_criteria_met": true,
-      "evaluator_summary": "All 6 Phase 6 tasks passing. Independent phase-exit evaluator (did not read the ledger) traced the design's 10 Success Criteria to code/tests: all met. (1) docs identify workspace as 0.5.1 with historical rows preserved; (2) EN/ZH docs synchronized; (3) Phase 6 baseline audit reconciles Phase 5 findings; (4) package startup success + degraded-path tests; (5) adapter protocol lifecycle/failure/cancellation/state/shutdown tests; (6) session/RPC extension-state persistence + startup-diagnostics tests; (7) documentation guards prevent overclaiming; (8) Future Ecosystem backlog exists and is non-committal; (9) no npm/marketplace/OAuth-parity/pi-web-ui-parity/permission-enforcement/TS-extension-compat/new-shared-types-crate added (all 13 non-goals confirmed-absent); (10) final gates pass (fmt, clippy -D warnings, doc -D warnings, test --workspace --all-targets 0 failures, smoke). Cross-cutting gates: fmt, clippy, doc, smoke all green.",
+      "evaluator_summary": "Phase 6 exit passed; detailed evidence: docs/snapshots/phase6/opi-impl-state.json.",
       "snapshot_path": "docs/snapshots/phase6/opi-impl-state.json",
       "task_summary": [
         {
@@ -2503,13 +2491,12 @@
           "status": "passing",
           "verified_at_commit": "d78c28fc1a627c658437ff299d675191005919dc"
         }
-      ],
-      "audit_notes": []
+      ]
     },
     "7": {
       "completed_at": "2026-06-19T07:35:00Z",
       "exit_criteria_met": true,
-      "evaluator_summary": "All 6 Phase 7 tasks passing (7.1 @ 4812c94, 7.2 @ d10ba5d, 7.3 @ fcbcd4c, 7.4 @ e272881, 7.5 @ b32c289, 7.6 @ 42969ad). Independent phase-exit evaluator (did not read the ledger) traced the design's 8 Success Criteria + 9 Non-Goals from docs/superpowers/specs/2026-06-15-phase7-reliability-observability-design.md to code/tests: all met, zero not-met, zero deferred-by-updated-design. SC1 judged satisfied by the additive structured-boundaries scoping (7.5 aggregate rollups kept as 0.x wire per spec 'JSON and RPC Exposure'). Cross-cutting gates: fmt clean, clippy -D warnings clean, doc -D warnings clean, full workspace test 0 failures (134 binaries), smoke 64 passed. Residuals (non-blocking, future phases): (1) SC5 harness startup surfaces adapter degradation as metadata strings, not typed Diagnostic+observe(); (2) aggregate rollups remain pre-0.x wire shapes pending Phase 8 stabilization; (3) schema versions stay unstable-0.x (TRACE_SCHEMA_VERSION=1, SDK_SCHEMA_VERSION=2) pending Phase 8 runtime-contract stabilization.",
+      "evaluator_summary": "Phase 7 exit passed; detailed evidence: docs/snapshots/phase7/opi-impl-state.json.",
       "snapshot_path": "docs/snapshots/phase7/opi-impl-state.json",
       "task_summary": [
         {
@@ -2553,8 +2540,8 @@
     "8": {
       "completed_at": "2026-06-23T00:00:00Z",
       "exit_criteria_met": true,
-      "evaluator_summary": "All 7 Phase 8 tasks passing (8.1 @ 8816d32, 8.2 @ 07ffca5, 8.3 @ 169b7ce, 8.4 @ 93cab3f, 8.5 @ b0a6a8c, 8.6 @ dfcba73, 8.7 @ 1f270b8). Independent phase-exit evaluator (did not read the ledger) traced the design's Goals (6), Non-Goals (8), and all 8 Success Criteria plus the Error Handling taxonomy, Testing Strategy, and Phase 9 Handoff note to code/tests/docs: 25/25 criteria met, 0 deferred, 0 not-met. Runtime event order, hook semantics, tool scheduling/termination, cancellation, SDK/RPC command-state, diagnostics/trace wire, and the public API surface classification (supported 0.x / unstable internal / candidate removal) are documented and contract-tested. No stable 1.0 API, TypeScript extension API, package ecosystem expansion, new adapter kind, web UI, provider OAuth, in-core workflow runtime, MCP runtime, shared opi-types crate, or whole-loop rewrite was added. Cross-cutting gates: fmt, clippy -D warnings, doc -D warnings, test --workspace --all-targets (2005 passed, 0 failed), smoke all green.",
-      "snapshot_path": "docs/snapshots/phase8\\opi-impl-state.json",
+      "evaluator_summary": "Phase 8 exit passed; detailed evidence: docs/snapshots/phase8/opi-impl-state.json.",
+      "snapshot_path": "docs/snapshots/phase8/opi-impl-state.json",
       "task_summary": [
         {
           "id": "8.1",
@@ -2603,64 +2590,8 @@
     "9": {
       "completed_at": "2026-06-25T06:05:28Z",
       "exit_criteria_met": true,
-      "evaluator_summary": "Independent phase-exit evaluator (did not read the ledger) rebuilt SC1-9 and the 11 non-goals from docs/superpowers/specs/2026-06-24-phase9-pi-0-80-2-baseline-realignment-design.md and traced each to current docs/tests: 9/9 met, 0 deferred, 0 not-met. All 11 non-goals confirmed not implemented. git diff 6c43ba6..HEAD shows only the docs-guard test file changed across the whole phase (no src/manifest/scripts/opi-types). 6 new Phase 9 guard tests pass (mutation-verified non-vacuous); Phase 5-8 regression guards intact. Verdict ARCHIVE-READY.",
+      "evaluator_summary": "Phase 9 exit passed; detailed evidence: docs/snapshots/phase9/opi-impl-state.json.",
       "snapshot_path": "docs/snapshots/phase9/opi-impl-state.json",
-      "criteria_trace": [
-        {
-          "source": "docs/superpowers/specs/2026-06-24-phase9-pi-0-80-2-baseline-realignment-design.md#Phase 9 Success Criteria 1",
-          "criterion": "docs/pi-alignment-matrix.md includes architecture analysis, evidence anchors, and the three-layer alignment dashboard.",
-          "status": "met",
-          "evidence": "docs/pi-alignment-matrix.md Document Control L15-24, Pi Architecture L53-119 (4 packages), Evidence Index L140-159 (.repo/pi-0.80.2 anchors), Alignment Dashboard L171-177 (core/product/ecosystem); guard phase9_alignment_matrix_evidence_baseline passes"
-        },
-        {
-          "source": "...#Phase 9 Success Criteria 2",
-          "criterion": "docs/opi-spec*.md and docs/pi-alignment-matrix*.md no longer describe .repo/pi-0.75.3 as the current studied upstream baseline.",
-          "status": "met",
-          "evidence": "grep of 4 normative docs: every pi-0.75.3 occurrence is historical (matrix.md:124,144; matrix.zh.md:61,81); Document Control rows name .repo/pi-0.80.2; guard phase9_current_baseline_is_pi_0_80_2 passes"
-        },
-        {
-          "source": "...#Phase 9 Success Criteria 3",
-          "criterion": "English and Chinese normative docs are synchronized.",
-          "status": "met",
-          "evidence": "guard phase9_localized_docs_stay_in_sync verifies EN/ZH pairs (Phase 9 headings, dashboard layers, opi-agent Partial, upstream path, npm/gallery + web/share non-goal framing)"
-        },
-        {
-          "source": "...#Phase 9 Success Criteria 4",
-          "criterion": "Phase 9-14 roadmap is documented consistently.",
-          "status": "met",
-          "evidence": "guard phase9_roadmap_numbering_consistent verifies 6 EN+6 ZH spec headings + matrix rows |9|-|14| in both languages; 5 phase10-14 design docs present under docs/superpowers/specs/"
-        },
-        {
-          "source": "...#Phase 9 Success Criteria 5",
-          "criterion": "opi-agent package alignment reflects the generic harness gap honestly.",
-          "status": "met",
-          "evidence": "docs/pi-alignment-matrix.md:184 marks opi-agent Partial until the generic AgentHarness gap closes"
-        },
-        {
-          "source": "...#Phase 9 Success Criteria 6",
-          "criterion": "Models/Auth and AgentHarness are named as Phase 10 deepening targets.",
-          "status": "met",
-          "evidence": "matrix.md:250 Phase 10 row + spec.md:1392-1393 Phase 10 workstream table name Models/Auth (opi-ai) and generic AgentHarness (opi-agent); ZH counterparts verified"
-        },
-        {
-          "source": "...#Phase 9 Success Criteria 7",
-          "criterion": "Future ecosystem candidates are documented with entry conditions.",
-          "status": "met",
-          "evidence": "guard phase9_future_ecosystem_candidates_have_entry_conditions verifies spec Future Ecosystem Candidates section + Entry condition column + 7 candidates + non-committal framing"
-        },
-        {
-          "source": "...#Phase 9 Success Criteria 8",
-          "criterion": "Documentation guards reject overclaims for OAuth parity, custom UI parity, npm/gallery, image generation, web/share, and pi session compatibility.",
-          "status": "met",
-          "evidence": "guard phase9_forbidden_current_scope_claims_rejected (parity/compat needles) + existing Phase 5/6 guards (npm, marketplace, update/enable/disable, TS extension API, pi session v3); cargo test phase9 -> 6 passed 0 failed"
-        },
-        {
-          "source": "...#Phase 9 Success Criteria 9",
-          "criterion": "No runtime behavior changes occur.",
-          "status": "met",
-          "evidence": "git diff --name-only 6c43ba6..HEAD = only crates/opi-coding-agent/tests/productized_packages_docs.rs (test file, allowed); no crates/*/src, no Cargo.toml/Cargo.lock, no scripts/; crates/opi-types absent"
-        }
-      ],
       "task_summary": [
         {
           "id": "9.1",
@@ -2691,7 +2622,7 @@
     "10": {
       "completed_at": "2026-06-26T12:00:00Z",
       "exit_criteria_met": true,
-      "evaluator_summary": "All 7 Phase 10 tasks passing (10.1-10.7 @ 4a9916b..d16c364). F.1a phase-exit trace from independent source inspection (workflow wbx4z69j3, 8 SC inspectors + direct SC8 source scan): SC1 met (provider_collection.rs ProviderCollection/AuthDescriptor, 9 tests); SC2 met (provider_factory.rs routes through ProviderCollection, provider_policy_is_centralized 33-token pin); SC3 met (harness.rs Phase/HarnessSnapshot/SavePoint/PendingWriteQueue, 2 contract tests); SC4 met (CodingHarness product-wrapper rustdoc + 2 boundary tests); SC5 met (SessionRepo/SessionFacade + D1-D4 decisions, 7 session_facade tests); SC6 met (opi-spec Runtime hook boundaries 6-surface model + AgentHooks narrow trait + 2 guards); SC7 met (8 named regression suites); SC8 met (all 11 non-goals source-verified not-implemented + guard corpus). All 4 workstream goals met (10.1/10.2/10.3/10.4). No not-met; no deferred-by-updated-design.",
+      "evaluator_summary": "Phase 10 exit passed; detailed evidence: docs/snapshots/phase10/opi-impl-state.json.",
       "snapshot_path": "docs/snapshots/phase10/opi-impl-state.json",
       "task_summary": [
         {
@@ -2736,215 +2667,148 @@
           "status": "passing",
           "verified_at_commit": "d16c364367370a2bf53e77fd207a96d79ece1036"
         }
-      ],
-      "audit_notes": [
-        "Residual (non-blocking, original design intent, not deferred-by-updated-design): SC2 runtime dispatch path (assemble_harness_collection -> ProviderCollection::from_registry) does not auth-gate the active provider; only --list-models attaches AuthDescriptors. Documented intent (provider_factory.rs:11-25); becomes load-bearing if Phase 11/12 needs runtime auth enforcement.",
-        "Residual (non-blocking): SC3 begin_turn/begin_compaction are state-machine guards only; the agent loop is not yet routed through AgentHarness (deferred to task 10.4+/Phase 11 per harness.rs:30-36). Branch-summary durable entry representation deferred (task 10.5 D2, harness.rs:706-709).",
-        "Residual (non-blocking): SC5 Phase 13 richer entry variants (branch_summary durable, extension-message context injection, unfinished-operation replay) deferred per D2/D3/D4 (harness.rs:705-719); additive-v1 non_exhaustive SessionEntry + forward-compatible reader is the boundary contract. Consistent with SC5 wording.",
-        "Residual (non-blocking): SC8 OAuth grep hits are all doc-comment deferrals or upstream bearer-token passthrough (provider_collection.rs:25-29 'Future OAuth not implemented'; vertex.rs:6 / config.rs:161 Vertex OAuth2 bearer token user-supplied via VERTEX_ACCESS_TOKEN; streaming_proxy.rs:337 GitHub token-type passthrough; bedrock/credentials.rs:143 'no SSO browser/device flow'). No opi OAuth login / subscription auth / image generation / browser-web / npm-marketplace / pi-TS-compat / pi-session-compat / opi-types-crate / whole-loop-rewrite implemented.",
-        "Dual hash convention applied at 10.6 + 10.7 (spec edits): phase4 snapshot CRLF-normalized (phase4_ledger pins it); live ledger raw sha256sum. phase6 snapshot carries spec_files_sha256 but NO test consumes it (memory 'phase6 empty' was stale; corrected post-task)."
       ]
     },
     "11": {
       "completed_at": "2026-06-30T16:27:26+08:00",
       "exit_criteria_met": true,
-      "evaluator_summary": "Phase 11 phase-exit evaluator: 10/10 criteria met (independently verified against code/tests, not ledger status). SC1 tool-result contract; SC2 edit CRLF/conflict; SC3 write create/overwrite+no-partial; SC4 bash timeout/cancel/cwd/env/exit/trunc; SC5 nav consistency; SC6 diagnostics->traces; SC7 Phase 8 scheduling; SC8 + 9 non-goals absent from core; 7 documentation bullets across README/README.zh/spec 8.4/CLI help; product-loop reachability via main.rs->resolve_tool_selection->ToolRuntimeConfig::resolve->harness.build_tools. Full per-criterion evidence in docs/snapshots/phase11/audit.exit-eval.md.",
+      "evaluator_summary": "Phase 11 exit passed; detailed evidence: docs/snapshots/phase11/opi-impl-state.json.",
       "snapshot_path": "docs/snapshots/phase11/opi-impl-state.json",
       "task_summary": [
         {
           "id": "11.1",
-          "status": "passing",
           "title": "Tool result contract and path-metadata normalization",
+          "status": "passing",
           "verified_at_commit": "8816e7ad51db9243320222541ce3304909478adb"
         },
         {
           "id": "11.2",
-          "status": "passing",
           "title": "Filesystem error taxonomy and per-cause diagnostic codes",
+          "status": "passing",
           "verified_at_commit": "5272f83ddd1a430117145681c909396f8ed5cd49"
         },
         {
           "id": "11.3",
-          "status": "passing",
           "title": "read tool hardening",
+          "status": "passing",
           "verified_at_commit": "4bbb4b919471e5542834261313e0a94168435139"
         },
         {
           "id": "11.4",
-          "status": "passing",
           "title": "write tool hardening",
+          "status": "passing",
           "verified_at_commit": "3ad20212dc72b1abdbc829c0e9eb953aa6b10bdb"
         },
         {
           "id": "11.5",
-          "status": "passing",
           "title": "edit tool hardening",
+          "status": "passing",
           "verified_at_commit": "4e7e4c926bf1b95f7b49dafb11c7efea6cfd324e"
         },
         {
           "id": "11.6",
-          "status": "passing",
           "title": "bash tool hardening",
+          "status": "passing",
           "verified_at_commit": "f06e76b9ee0f7229eef15a0789233c4f8d426e79"
         },
         {
           "id": "11.7",
-          "status": "passing",
           "title": "Read-only navigation tools (grep/find/ls/glob) consistency",
+          "status": "passing",
           "verified_at_commit": "58a7b63e6334e107f9bb56ddd211d1076ce8af71"
         },
         {
           "id": "11.8",
-          "status": "passing",
           "title": "Agent diagnostics/trace integration, JSON/RPC shape, and Phase 8 termination",
+          "status": "passing",
           "verified_at_commit": "80d99b05de96bcc66ab8c4fdebb8e63917452db5"
         },
         {
           "id": "11.9",
-          "status": "passing",
           "title": "Provider tool-result error propagation",
+          "status": "passing",
           "verified_at_commit": "a6208208558d965ef2fa7d51374461adba658f59"
         },
         {
           "id": "11.10",
-          "status": "passing",
           "title": "Tooling policy documentation updates",
+          "status": "passing",
           "verified_at_commit": "ad715b8dfcddb405c01b4c937e2977b3979828c8"
         },
         {
           "id": "11.11",
-          "status": "passing",
           "title": "CLI help, docs guards, SC8 non-goal guards, and final Phase 11 gates",
+          "status": "passing",
           "verified_at_commit": "3ae3d405f5effb3cf5e9706aecc228aa2669cab5"
         }
-      ],
-      "audit_notes": "Independent workflow evaluation (10 verifiers; SC2 + SC6 re-run after a transient 429). Zero not-met, zero deferred. Audit written to docs/snapshots/phase11/audit.exit-eval.md."
+      ]
     },
     "12": {
       "completed_at": "2026-07-03T15:00:00Z",
       "exit_criteria_met": true,
-      "evaluator_summary": "Independent phase-exit evaluator (3 parallel verifiers, did not read the ledger) rebuilt SC1-9 + non-goals + docs + Phase 13 handoff from docs/superpowers/specs/2026-06-24-phase12-provider-correctness-design.md and traced each to current code/tests. Result: 11/12 fully met + SC3 met via the accepted 12.4 inheritance design (azure/openrouter/mistral share the openai_chat wire; gemini call-IDs N/A); 0 not-met; 0 deferred-by-updated-design. All 10 non-goals documented EN+ZH and structurally absent from core (no forbidden crates/modules; first-class set == 9). Documentation Updates delivered across root/opi-ai/opi-coding-agent READMEs (EN+ZH) + opi-spec Phase 12/13 sections + alignment-matrix. Phase 13 handoff preserved. Verdict ARCHIVE-READY.",
+      "evaluator_summary": "Phase 12 exit passed; detailed evidence: docs/snapshots/phase12/opi-impl-state.json.",
       "snapshot_path": "docs/snapshots/phase12/opi-impl-state.json",
       "task_summary": [
         {
           "id": "12.1",
           "title": "Existing-provider request and streaming lifecycle fixtures",
           "status": "passing",
-          "verified_at_commit": "f76ccc03330069e42386df7180ccd2839631036e",
-          "commit_type": "test"
+          "verified_at_commit": "f76ccc03330069e42386df7180ccd2839631036e"
         },
         {
           "id": "12.2",
           "title": "Provider error taxonomy and safe diagnostics",
           "status": "passing",
-          "verified_at_commit": "0dce9ac9f97767f710e7fcebb4799fd8bcd07bba",
-          "commit_type": "feat"
+          "verified_at_commit": "0dce9ac9f97767f710e7fcebb4799fd8bcd07bba"
         },
         {
           "id": "12.3",
           "title": "OpenAI-compatible profile compatibility flags",
           "status": "passing",
-          "verified_at_commit": "3602331d2f44314ee8a07dafb764c147dfe6c2ad",
-          "commit_type": "feat"
+          "verified_at_commit": "3602331d2f44314ee8a07dafb764c147dfe6c2ad"
         },
         {
           "id": "12.4",
           "title": "Tool-call and tool-result provider conversion",
           "status": "passing",
-          "verified_at_commit": "c4b062d0e4104ae99de62f836bee7fbd337aa7c5",
-          "commit_type": "test"
+          "verified_at_commit": "c4b062d0e4104ae99de62f836bee7fbd337aa7c5"
         },
         {
           "id": "12.5",
           "title": "Thinking/reasoning and image capability checks",
           "status": "passing",
-          "verified_at_commit": "0ef7bb7d231cf6a34f8d9c1f99b155ce84f0f1ab",
-          "commit_type": "test"
+          "verified_at_commit": "0ef7bb7d231cf6a34f8d9c1f99b155ce84f0f1ab"
         },
         {
           "id": "12.6",
           "title": "Usage, cost, response, cache, and session metadata normalization",
           "status": "passing",
-          "verified_at_commit": "75e57ad9de36e7d15fddf1ca929ce634ea628ca0",
-          "commit_type": "feat"
+          "verified_at_commit": "75e57ad9de36e7d15fddf1ca929ce634ea628ca0"
         },
         {
           "id": "12.7",
           "title": "Retry, rate-limit, proxy, and cancellation behavior",
           "status": "passing",
-          "verified_at_commit": "5227f0704ac081ad253094de43ac8c0647be31f7",
-          "commit_type": "test"
+          "verified_at_commit": "5227f0704ac081ad253094de43ac8c0647be31f7"
         },
         {
           "id": "12.8",
           "title": "Provider collection/factory wiring and auth endpoint diagnostics",
           "status": "passing",
-          "verified_at_commit": "f5393c0989f5e24485deb67040b7c1171885597f",
-          "commit_type": "feat"
+          "verified_at_commit": "f5393c0989f5e24485deb67040b7c1171885597f"
         },
         {
           "id": "12.9",
           "title": "Provider docs, non-goal guards, and final Phase 12 gates",
           "status": "passing",
-          "verified_at_commit": "9c94b47d992956a33ff463ae157e764256004277",
-          "commit_type": "test"
-        }
-      ],
-      "criteria_trace": [
-        {
-          "id": "SC1",
-          "verdict": "met"
-        },
-        {
-          "id": "SC2",
-          "verdict": "met"
-        },
-        {
-          "id": "SC3",
-          "verdict": "met"
-        },
-        {
-          "id": "SC4",
-          "verdict": "met"
-        },
-        {
-          "id": "SC5",
-          "verdict": "met"
-        },
-        {
-          "id": "SC6",
-          "verdict": "met"
-        },
-        {
-          "id": "SC7",
-          "verdict": "met"
-        },
-        {
-          "id": "SC8",
-          "verdict": "met"
-        },
-        {
-          "id": "SC9",
-          "verdict": "met"
-        },
-        {
-          "id": "non-goals",
-          "verdict": "met"
-        },
-        {
-          "id": "docs",
-          "verdict": "met"
-        },
-        {
-          "id": "handoff",
-          "verdict": "met"
+          "verified_at_commit": "9c94b47d992956a33ff463ae157e764256004277"
         }
       ]
     },
     "13": {
       "completed_at": "2026-07-06T00:14:00Z",
       "exit_criteria_met": true,
-      "evaluator_summary": "Phase-exit PASS (feature-dev:code-reviewer). All 9 SC met or source-cited-deferred; all 10 non-goals confirmed deferred via structural positives (Cargo.toml + lib.rs scans) and focused forbidden-phrase scans across owned doc surfaces. 0 blocking. 5 Phase 14 carry-overs: BranchSummaryMessage parent_session_id/entry_count placeholders + fork verbatim-copy; select_ordered_entries duplicates SessionTree; seed_metadata_from_entries vs reconstruct_context collect_metadata drift risk; no positive test for known-type+malformed-payload -> corrupt bucket; export AgentMessage::Custom arm unreachable.",
+      "evaluator_summary": "Phase 13 exit passed; detailed evidence: docs/snapshots/phase13/opi-impl-state.json.",
       "snapshot_path": "docs/snapshots/phase13/opi-impl-state.json",
       "task_summary": [
         {
@@ -2989,95 +2853,12 @@
           "status": "passing",
           "verified_at_commit": "93dd1bf13c6cabe7bb1eed18692a4753f7495399"
         }
-      ],
-      "criteria_trace": {
-        "success_criteria": {
-          "SC1": {
-            "status": "met",
-            "citation": "session.rs:135-208 typed entries; session_coordinator.rs:495-549 appenders; harness.rs:951-1087 callers"
-          },
-          "SC2": {
-            "status": "met",
-            "citation": "session_context.rs:110 reconstruct_context; session_cli.rs:153,426 + harness.rs:1154,1271,1334 + main.rs:93 callers; session_context.rs:496 determinism test"
-          },
-          "SC3": {
-            "status": "met",
-            "citation": "session.rs:412-507 read_with_recovery splits unknown vs corrupt; session_storage.rs:814,854 tests; FORMAT_VERSION=1 at session.rs:53"
-          },
-          "SC4": {
-            "status": "met",
-            "citation": "docs/opi-spec.md:906-933,1554-1631 + zh mirror"
-          },
-          "SC5": {
-            "status": "deferred-by-updated-design",
-            "citation": "branch_summary substrate at session_context.rs:185-235; generation-UX deferred opi-spec.md:1582-1586; custom_message deferred opi-spec.md:1586-1589 + session.rs:33-38 module doc"
-          },
-          "SC6": {
-            "status": "met",
-            "citation": "main.rs:46-59,194-230 dispatch; session_cli.rs:417-440 read-only export; cli.rs:127-152 flags; session_cli.rs:870 e2e source-preservation test"
-          },
-          "SC7": {
-            "status": "met",
-            "citation": "rpc.rs:780,840-865 session_info metadata; rpc_jsonl.rs:1827 + picker_integration.rs:308 tests; opi-tui untouched (no Phase 13 source changes)"
-          },
-          "SC8": {
-            "status": "met",
-            "citation": "docs/opi-spec.md:946,1166 + zh:1037 sensitivity"
-          },
-          "SC9": {
-            "status": "met",
-            "citation": "Cargo.toml:17-88 no forbidden crates; provider_collection.rs OAuth explicitly not implemented; SESSION_FORMAT_POLICY session.rs:58-61"
-          }
-        },
-        "non_goals": {
-          "NG1": {
-            "status": "deferred",
-            "citation": "no vector DB crate in Cargo.toml"
-          },
-          "NG2": {
-            "status": "deferred",
-            "citation": "no memory module in opi-agent; session.rs:33-42 bounds context to session files"
-          },
-          "NG3": {
-            "status": "deferred",
-            "citation": "no profile module; opi-spec.md:1595-1631 non-goals section"
-          },
-          "NG4": {
-            "status": "deferred",
-            "citation": "session_context.rs:42-47 metadata only applies within current session"
-          },
-          "NG5": {
-            "status": "deferred",
-            "citation": "session.rs:58-61 SESSION_FORMAT_POLICY + opi-spec.md:67-72"
-          },
-          "NG6": {
-            "status": "deferred",
-            "citation": "export_session writes local file only (session_cli.rs:437)"
-          },
-          "NG7": {
-            "status": "deferred",
-            "citation": "session_cli.rs:437 std::fs::write local only"
-          },
-          "NG8": {
-            "status": "deferred",
-            "citation": "opi-tui has no web rendering; no Phase 13 grep matches in opi-tui"
-          },
-          "NG9": {
-            "status": "deferred",
-            "citation": "no new packages; only existing workspace deps"
-          },
-          "NG10": {
-            "status": "deferred",
-            "citation": "provider_collection.rs OAuth not implemented; Phase 13 records model_change as session data only"
-          }
-        }
-      }
+      ]
     },
     "14": {
-      "attempted_at": "2026-07-19T00:52:40.192Z",
       "completed_at": "2026-07-19T00:52:40.192Z",
       "exit_criteria_met": true,
-      "evaluator_summary": "Commit-bound five-lens Phase F evaluation and independent adversarial verification passed for 8364e74a9077a194cb4a7fd68db2e3c4b420111a; four initial SC1/SC3/SC5/SC6 trace-completeness findings were repaired, all criteria and Non-Goals are met, and 4 final attacks were rejected. Archive remains a separate user gate and was not performed.",
+      "evaluator_summary": "Phase 14 exit passed; detailed evidence: docs/snapshots/phase14/opi-impl-state.json.",
       "snapshot_path": "docs/snapshots/phase14/opi-impl-state.json",
       "task_summary": [
         {
@@ -3206,23 +2987,10 @@
           "status": "passing",
           "verified_at_commit": "8364e74a9077a194cb4a7fd68db2e3c4b420111a"
         }
-      ],
-      "report_path": "target/opi-artifacts/phase14-phase-exit/PHASE_EXIT_REPORT.md",
-      "scenario_audit_path": "target/opi-artifacts/phase14-phase-exit/PHASE_EXIT_SCENARIO_AUDIT.md"
+      ]
     }
   },
   "session_notes": [
-    "opi-implement: archived Phase 13 to docs/snapshots/phase13/ at 2026-07-06T00:14:00Z; all 7 tasks moved to phase_exit[13].task_summary; current_phase advanced to 14 (Phase 14 tasks require --reinit to load).",
-    "opi-implement: A.init.3 recommended Phase 14 edits applied; 14.3 split into 14.3-14.6, OAuth wire mappings and missing runtime acceptance traces pinned; awaiting re-render confirmation.",
-    "opi-implement: Phase 14 task graph confirm-all accepted at 2026-07-12T14:39:19.7686068Z; formal ledger initialized with tasks 14.1-14.6.",
-    "opi-implement: Phase 14 graph repair applied at 2026-07-12T15:44:15.0833879Z; retained tasks 14.1-14.6, corrected DoDs/dependencies/ownership/substrate classification, and added final docs/guards task 14.7 per the user-approved combined review.",
-    "opi-implement: Phase 14 repair plan-verify folded 16 unique L1-L6 findings and rejected one proposed 14.2 split as redundant graph expansion; T2 remains one reviewed vertical auth slice.",
-    "opi-implement: Phase 14 phase-exit attempted at 2026-07-14T07:33:01.3684127+00:00; F.1b refused archive after 20 adversarially verified not-met findings (SC1/2/3/5/6/8 plus residual-api-map). No snapshot or archive commit was created.",
-    "opi-implement: recovered encoding-corrupted ledger at 2026-07-16T02:57:58.0747110Z; corrupt source deleted at user request on 2026-07-16; prior archive .opi-impl-state.corrupt-20260716-4ef12a4f.json had SHA-256 4ef12a4f75c79df157eda6f6ac20be723f74d8425ceed6e1cea598f01ad8e021.",
-    "opi-implement: reconciled reviewed Phase 14 pi-0.80.6 alignment graph at 2026-07-18T06:04:18.855Z; preserved passing 14.1-14.13 history and prior failed phase-exit evidence, added failing tasks 14.14-14.21, refreshed registered spec hashes, folded five independently confirmed plan-audit corrections, and preserved the existing user-approved trigger=null SecretString residual on Task 14.1.",
-    "opi-implement: Phase 14 commit-bound phase exit passed at 2026-07-19T00:52:40.192Z for 8364e74a9077a194cb4a7fd68db2e3c4b420111a; SC1-SC8, F14-01 through F14-04, api-map, and all Non-Goals are met after repairing four exact-trace findings. No snapshot or archive commit was created because archive remains a separate user gate.",
-    "opi-implement: archived Phase 14 to docs/snapshots/phase14/ at 2026-07-19T04:09:27.215Z; all 21 tasks moved to phase_exit[14].task_summary; current_phase advanced to 15 (Phase 15 tasks require --reinit to load).",
-    "opi-implement: guarded Phase 14 archive reconciliation after remediation commit 54e52da81fd261824b1d68216efe40b7ac2bf36a at 2026-07-22T12:08:02.3483123Z repaired Task 14.5 acceptance metadata, replaced stale behavioral-test paths for Tasks 14.1/14.3/14.4, normalized the Task 14.6 substrate scenario status without adding a production claim, and verified each repaired exact command selected one passing test.",
     "opi-implement: Phase 15 first-init draft extracted from the registered safety/sandbox design, deep-audited across L1-L6, and paused at A.init.3 for whole-graph confirmation.",
     "opi-implement: A.init.3 human-approved graph surgery on 2026-07-24 split composite Task 15.5 into shared policy, Linux, macOS, Windows, and matrix-acceptance tasks, and split Task 15.8 into startup/headless policy and interactive TUI tasks; awaiting post-split six-lens verification and whole-graph confirmation.",
     "opi-implement: post-split Phase 15 L1-L6 verification at 2026-07-24T10:17:11.556Z pinned the Linux danger-blocklist contract, made native platform evidence non-vacuous, added a six-target compile matrix, scoped no-unsafe to Phase 15 production modules, repaired interactive trust preflight/bypass coverage and stale task references, and flagged both the inconsistent Linux L2 mechanism and absent CLI -e resolver loader for human resolution.",
@@ -3233,296 +3001,6 @@
     "opi-implement: A.init.3 human-confirmed Phase 15 graph repair at 2026-07-25T01:11:14.478Z removed 15.5.2 host-dependent Linux target gates in favor of 15.5.6 CI ownership, corrected the 15.5.3 unsafe scope, changed 15.5.6 commit_type to feat, and removed the spurious 15.3 -> 15.2 edge; focused L1-L6 review found no additional surviving issue."
   ],
   "verify_runs": [
-    {
-      "stage": "plan",
-      "wf_ref": "codex-collaboration:phase14-l1-l6-20260712",
-      "folded_count": 10,
-      "flagged_count": 5,
-      "rejected_count": 4,
-      "ran_at": "2026-07-12T14:11:45.3318680Z",
-      "task_id": null,
-      "criterion_id": null
-    },
-    {
-      "stage": "plan",
-      "wf_ref": "codex-collaboration:phase14-graph-repair-l1-l6-20260712",
-      "folded_count": 16,
-      "flagged_count": 0,
-      "rejected_count": 1,
-      "ran_at": "2026-07-12T15:44:15.0833879Z",
-      "task_id": null,
-      "criterion_id": null
-    },
-    {
-      "stage": "exec",
-      "wf_ref": null,
-      "folded_count": 10,
-      "flagged_count": 0,
-      "rejected_count": 0,
-      "ran_at": "2026-07-14T03:33:31.8666088+00:00",
-      "task_id": "14.7",
-      "criterion_id": null
-    },
-    {
-      "stage": "phase-exit",
-      "wf_ref": "codex-collaboration:phase14-exit-5-lens-20260714",
-      "folded_count": 20,
-      "flagged_count": 0,
-      "rejected_count": 6,
-      "ran_at": "2026-07-14T07:33:01.3684127+00:00",
-      "task_id": null,
-      "criterion_id": null
-    },
-    {
-      "stage": "plan",
-      "wf_ref": null,
-      "folded_count": 8,
-      "flagged_count": 1,
-      "rejected_count": 6,
-      "ran_at": "2026-07-14T09:35:45.1829688Z",
-      "task_id": null,
-      "criterion_id": null
-    },
-    {
-      "stage": "exec",
-      "wf_ref": null,
-      "folded_count": 6,
-      "flagged_count": 0,
-      "rejected_count": 0,
-      "ran_at": "2026-07-14T19:08:33.0962729Z",
-      "task_id": "14.8",
-      "criterion_id": null
-    },
-    {
-      "stage": "exec",
-      "wf_ref": null,
-      "folded_count": 8,
-      "flagged_count": 0,
-      "rejected_count": 6,
-      "ran_at": "2026-07-14T21:04:58.4833810Z",
-      "task_id": "14.8",
-      "criterion_id": null
-    },
-    {
-      "stage": "exec",
-      "wf_ref": null,
-      "folded_count": 3,
-      "flagged_count": 3,
-      "rejected_count": 8,
-      "ran_at": "2026-07-14T23:30:33.9436708Z",
-      "task_id": "14.8",
-      "criterion_id": null
-    },
-    {
-      "stage": "exec",
-      "wf_ref": "codex-collaboration:task14.8-final-6-lens-20260715",
-      "folded_count": 0,
-      "flagged_count": 0,
-      "rejected_count": 0,
-      "ran_at": "2026-07-15T02:33:50.1305480+00:00",
-      "task_id": "14.8",
-      "criterion_id": null
-    },
-    {
-      "stage": "exec",
-      "wf_ref": "codex-collaboration:task14.9-final-6-lens-20260715",
-      "folded_count": 0,
-      "flagged_count": 0,
-      "rejected_count": 0,
-      "ran_at": "2026-07-15T07:32:13.0373467Z",
-      "task_id": "14.9",
-      "criterion_id": null
-    },
-    {
-      "stage": "exec",
-      "wf_ref": "codex-collaboration:task14.10-six-lens-iteration2-20260715",
-      "folded_count": 4,
-      "flagged_count": 0,
-      "rejected_count": 0,
-      "ran_at": "2026-07-15T09:17:54.1477293+00:00",
-      "task_id": "14.10",
-      "criterion_id": null
-    },
-    {
-      "stage": "exec",
-      "wf_ref": "codex-collaboration:task14.10-six-lens-iteration3-20260715",
-      "folded_count": 0,
-      "flagged_count": 0,
-      "rejected_count": 0,
-      "ran_at": "2026-07-15T15:28:25.9118013+00:00",
-      "task_id": "14.10",
-      "criterion_id": null
-    },
-    {
-      "stage": "exec",
-      "wf_ref": "codex-collaboration:task14.11-six-lens-iteration1-20260715",
-      "folded_count": 0,
-      "flagged_count": 0,
-      "rejected_count": 0,
-      "ran_at": "2026-07-15T16:13:03.6167783Z",
-      "task_id": "14.11",
-      "criterion_id": null
-    },
-    {
-      "stage": "exec",
-      "wf_ref": "codex-collaboration:task14.12-six-lens-iteration1-20260715",
-      "folded_count": 1,
-      "flagged_count": 0,
-      "rejected_count": 0,
-      "ran_at": "2026-07-15T17:31:00+00:00",
-      "task_id": "14.12",
-      "criterion_id": null
-    },
-    {
-      "stage": "exec",
-      "wf_ref": "codex-collaboration:task14.12-six-lens-iteration2-post-artifact-20260715",
-      "folded_count": 1,
-      "flagged_count": 0,
-      "rejected_count": 0,
-      "ran_at": "2026-07-15T17:52:30+00:00",
-      "task_id": "14.12",
-      "criterion_id": null
-    },
-    {
-      "stage": "exec",
-      "wf_ref": "codex-collaboration:task14.12-six-lens-iteration3-20260715",
-      "folded_count": 0,
-      "flagged_count": 0,
-      "rejected_count": 0,
-      "ran_at": "2026-07-15T17:55:03.9085391+00:00",
-      "task_id": "14.12",
-      "criterion_id": null
-    },
-    {
-      "stage": "exec",
-      "wf_ref": "codex-collaboration:task14.13-six-lens-iteration1-20260716",
-      "folded_count": 4,
-      "flagged_count": 0,
-      "rejected_count": 0,
-      "ran_at": "2026-07-16T16:58:08.410687Z",
-      "task_id": "14.13",
-      "criterion_id": null
-    },
-    {
-      "stage": "exec",
-      "wf_ref": "codex-collaboration:task14.13-six-lens-iteration2-20260716",
-      "folded_count": 2,
-      "flagged_count": 0,
-      "rejected_count": 0,
-      "ran_at": "2026-07-16T19:17:13.908Z",
-      "task_id": "14.13",
-      "criterion_id": null
-    },
-    {
-      "stage": "phase-exit",
-      "wf_ref": "codex-collaboration:phase14-five-lens-20260716",
-      "folded_count": 4,
-      "flagged_count": 0,
-      "rejected_count": 0,
-      "ran_at": "2026-07-16T19:51:58.565Z",
-      "task_id": null,
-      "criterion_id": null
-    },
-    {
-      "stage": "plan",
-      "wf_ref": "codex-collaboration:phase14-pi-0806-plan-audit-20260718",
-      "folded_count": 5,
-      "flagged_count": 0,
-      "rejected_count": 5,
-      "ran_at": "2026-07-18T06:04:18.855Z",
-      "task_id": null,
-      "criterion_id": null
-    },
-    {
-      "stage": "exec",
-      "wf_ref": "codex-collaboration:task14.14-six-lens-20260718",
-      "folded_count": 0,
-      "flagged_count": 0,
-      "rejected_count": 6,
-      "ran_at": "2026-07-18T06:38:15.326Z",
-      "task_id": "14.14",
-      "criterion_id": null
-    },
-    {
-      "stage": "exec",
-      "wf_ref": "codex-collaboration:task14.15-six-lens-20260718",
-      "folded_count": 4,
-      "flagged_count": 0,
-      "rejected_count": 8,
-      "ran_at": "2026-07-18T10:30:44.514Z",
-      "task_id": "14.15",
-      "criterion_id": null
-    },
-    {
-      "stage": "exec",
-      "wf_ref": "codex-collaboration:task14.16-six-lens-20260718",
-      "folded_count": 6,
-      "flagged_count": 0,
-      "rejected_count": 5,
-      "ran_at": "2026-07-18T13:02:39.218Z",
-      "task_id": "14.16",
-      "criterion_id": null
-    },
-    {
-      "stage": "exec",
-      "wf_ref": "codex-collaboration:task14.18-six-lens-20260718",
-      "folded_count": 3,
-      "flagged_count": 1,
-      "rejected_count": 1,
-      "ran_at": "2026-07-18T19:11:06.964Z",
-      "task_id": "14.18",
-      "criterion_id": null
-    },
-    {
-      "stage": "exec",
-      "wf_ref": "codex-collaboration:task14.19-six-lens-20260718",
-      "folded_count": 4,
-      "flagged_count": 0,
-      "rejected_count": 1,
-      "ran_at": "2026-07-18T20:48:47.993Z",
-      "task_id": "14.19",
-      "criterion_id": null
-    },
-    {
-      "stage": "exec",
-      "wf_ref": "codex-collaboration:task14.20-six-lens-20260718",
-      "folded_count": 0,
-      "flagged_count": 0,
-      "rejected_count": 7,
-      "ran_at": "2026-07-18T22:17:02.959Z",
-      "task_id": "14.20",
-      "criterion_id": null
-    },
-    {
-      "stage": "exec",
-      "wf_ref": "codex-collaboration:task14.21-six-lens-20260719",
-      "folded_count": 1,
-      "flagged_count": 0,
-      "rejected_count": 8,
-      "ran_at": "2026-07-19T00:52:40.192Z",
-      "task_id": "14.21",
-      "criterion_id": null
-    },
-    {
-      "stage": "phase-exit",
-      "wf_ref": "codex-collaboration:phase14-five-lens-20260719",
-      "folded_count": 4,
-      "flagged_count": 0,
-      "rejected_count": 4,
-      "ran_at": "2026-07-19T00:52:40.192Z",
-      "task_id": null,
-      "criterion_id": null
-    },
-    {
-      "stage": "plan",
-      "wf_ref": null,
-      "folded_count": 1,
-      "flagged_count": 3,
-      "rejected_count": 0,
-      "ran_at": "2026-07-22T11:56:33.5086802Z",
-      "task_id": null,
-      "criterion_id": null
-    },
     {
       "stage": "plan",
       "wf_ref": "codex-collaboration:phase15-first-init-l1-l6-20260724",

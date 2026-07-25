@@ -96,7 +96,8 @@ Atomic writes use an ignored `.opi-impl-state.json.tmp` plus rename.
 | `spec_files` | array | const-on-init, reinit-editable | Normative spec file paths whose drift triggers the plan path's drift branch. Default `["docs/opi-spec.md"]`. Supplemental phases MUST include only the reviewed source files registered in `skill.md` for the active phase, plus `docs/opi-spec.md`. Adding or removing a path requires a plan-path sync. |
 | `spec_files_sha256` | object | reinit-only | Map of file path → its CRLF-normalized SHA-256 (replace `\r\n` with `\n` before hashing) at last init/reinit. The live root `.opi-impl-state.json` is pinned to the current spec by `crates/opi-coding-agent/tests/spec_ledger.rs`; phase-exit snapshots under `docs/snapshots/phaseN/` are historical and are NOT re-synced. Each entry is checked independently; any mismatch triggers the spec-alignment guard. |
 | `task_graph_confirmed_at` | string/null | init/reinit | ISO-8601 confirmation time |
-| `verify_runs` | array/null | plan+exec+phase-exit | Written by the verify engine at each stage it runs. Each entry: `{ stage ("plan"|"exec"|"phase-exit"), wf_ref (string/null — null when the run used the single-agent path), folded_count, flagged_count, rejected_count, ran_at, task_id (string for exec; null for plan/phase-exit), criterion_id (string for phase-exit; null for plan/exec) }`. Additive/optional; absent on older ledgers, populated as stages run. Does NOT affect `schema_version`. |
+| `verify_runs` | array/null | plan+exec+phase-exit | Active-phase verify history. Each entry: `{ stage ("plan"|"exec"|"phase-exit"), wf_ref (string/null — null when the run used the single-agent path), folded_count, flagged_count, rejected_count, ran_at, task_id (string for exec; null for plan/phase-exit), criterion_id (string for phase-exit; null for plan/exec) }`. Additive/optional within a phase; after a durable pre-archive ledger checkpoint, archive compaction resets it to `[]`. The checkpoint remains the recovery source; do not duplicate the array into a generic history artifact. Does NOT affect `schema_version`. |
+| `session_notes` | array/null | plan+runtime+archive | Active-phase root coordination notes. This is distinct from per-task `tasks[].session_notes`. After a durable pre-archive ledger checkpoint, archive compaction resets it to `[]`; archived-phase notes do not accumulate in the live root ledger and remain recoverable from the checkpoint. |
 | `current_phase` | int | auto | Lowest phase with non-`passing` task |
 | `tasks[].id` | string | const | Matches a row in `opi-spec.md` §15 OR a sub-task expansion. Pattern: `^\d+\.\d+(\.\d+)?$`. Sub-task IDs carry a third component (e.g. `4.6.1`) and MUST also set `parent_spec_row`. |
 | `tasks[].phase` | int | const | From row's phase grouping |
@@ -127,18 +128,20 @@ Atomic writes use an ignored `.opi-impl-state.json.tmp` plus rename.
 | `tasks[].evidence` | object/null | runtime | Mirror of `Opi-*` commit footers |
 | `tasks[].blocker` | string | runtime | Populated when `status = blocked` |
 | `tasks[].session_notes` | array | runtime | Append-only `{timestamp, attempt, summary, gate_results}` |
-| `phase_exit[N]` | object | runtime | `completed_at` + `exit_criteria_met` + evaluator summary |
+| `phase_exit[N]` | object | runtime | Before archive it may carry evaluator working detail. After archive the root entry contains only `completed_at`, `exit_criteria_met`, `evaluator_summary`, `snapshot_path`, and `task_summary`; `evaluator_summary` is at most 256 characters and points to the snapshot for detail. |
 | `phase_exit[N].snapshot_path` | string/null | runtime | Path to a committed phase-local snapshot at the moment phase `N` exited. `null` while the phase is incomplete. Written under `docs/snapshots/phase<N>/`. |
-| `phase_exit[N].criteria_trace` | array | runtime/archive | Phase-exit evaluator's independent trace from current source-spec success/exit criteria to evidence. Every item uses `status = met`, `deferred-by-updated-design`, or `not-met`. Phase archive is refused if any item is `not-met` or if a deferral lacks an exact current-spec citation. Keep detailed traces in the phase-local snapshot or sibling audit markdown; root ledger entries should omit or summarize them to avoid growth. |
+| `phase_exit[N].criteria_trace` | array | runtime/archive | Phase-exit evaluator's independent trace from current source-spec success/exit criteria to evidence. Every item uses `status = met`, `deferred-by-updated-design`, or `not-met`. Phase archive is refused if any item is `not-met` or if a deferral lacks an exact current-spec citation. Preserve the detailed trace in the phase-local snapshot; remove it from the root entry during archive compaction. |
 | `phase_exit[N].task_summary` | array | runtime | `[{id, title, status, verified_at_commit}]` for every task that belonged to phase `N` at exit time. Lets `--status` report completed phases without reading the snapshot file. |
 
 Archive snapshots are intentionally phase-local: they include top-level
 schema/spec metadata, the archived phase's completed `tasks`, and only that
 phase's `phase_exit[N]` record. Do not copy older `phase_exit` records into new
-snapshots. The root ledger remains the compact index for dependency checks and
-status reporting through `phase_exit[*].task_summary`; it should hold short
-exit metadata, `snapshot_path`, and `task_summary`, not expanded evidence
-tables.
+snapshots or create a generic root-history artifact. The full pre-archive
+ledger checkpoint is the recovery source for pruned coordination journals. The
+root ledger remains the compact index for dependency checks and status
+reporting through `phase_exit[*].task_summary`; it holds only the five compact
+exit fields and active-phase working history, not expanded evidence tables or
+prior-phase journals.
 
 Validation rule: every path listed in `tasks[].verification.behavioral_tests` MUST be matched by at least one `task_owned_paths` glob before the task graph is confirmed. This prevents Phase C from needing an immediate ownership expansion just to create the task's declared tests.
 
@@ -241,7 +244,9 @@ normal checkpoint writes use the guard's transient replacement backup.
   `chore(opi-implement): checkpoint task <id> ledger`.
 - Blocked handoffs, phase-exit updates, reviewed graph reconciliation, and
   phase archival are durable boundaries and must checkpoint the canonical
-  ledger.
+  ledger. A durable pre-archive checkpoint is required before pruning;
+  phase archival then checkpoints the phase snapshot together with the
+  compacted canonical ledger.
 - Temporary, draft, candidate, backup, and corrupt ledger files are never
   tracked.
 
