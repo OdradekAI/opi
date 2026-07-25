@@ -6,6 +6,7 @@ pub mod config;
 pub mod context_files;
 pub mod credential_store;
 pub mod diagnostic_bridge;
+pub mod diagnostics;
 pub mod doctor;
 pub mod github_copilot;
 pub mod harness;

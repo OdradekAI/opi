@@ -4,6 +4,8 @@ use std::path::PathBuf;
 
 use clap::{Parser, Subcommand, ValueEnum};
 
+use crate::config::SandboxMode;
+
 /// Supported shells for completion generation.
 #[derive(Debug, Clone, Copy, ValueEnum)]
 pub enum ShellName {
@@ -74,6 +76,11 @@ Bash policy:
   Combined stdout/stderr are capped at 64 KiB. Larger output sets truncated and may write the complete output path in details.full_output.
   This is a tool-selection check, not a permission popup or sandbox subsystem.
 
+Sandbox policy:
+  --sandbox off|strict selects the bash subprocess-tree sandbox; default off.
+  --sandbox-require fails closed when a configured layer is unavailable.
+  Strict is opt-in defense-in-depth, not a security boundary; untrusted code belongs in a container or VM.
+
 Interactive authentication:
   /login <provider> starts login for Anthropic, GitHub Copilot, or OpenAI Codex.
   /logout <provider> deletes that provider's stored credential.
@@ -100,6 +107,17 @@ pub struct Cli {
     /// Allow mutating tools (write, edit, bash) in non-interactive mode.
     #[arg(long)]
     pub allow_mutating: bool,
+
+    /// Sandbox mode override for the bash subprocess tree: `off` or `strict`.
+    /// Strict is opt-in defense-in-depth, not a security boundary. Overrides
+    /// `[sandbox] mode` from layered TOML.
+    #[arg(long, value_enum)]
+    pub sandbox: Option<SandboxMode>,
+
+    /// Require the configured sandbox layers (fail-closed) instead of the
+    /// default fail-open-with-diagnostic policy. Overrides `[sandbox] require`.
+    #[arg(long)]
+    pub sandbox_require: bool,
 
     /// Output NDJSON events to stdout (non-interactive mode).
     #[arg(long)]

@@ -29,6 +29,7 @@ pub struct OpiConfig {
     pub compaction: CompactionConfigSection,
     pub extensions: ExtensionsConfig,
     pub packages: PackagesConfig,
+    pub sandbox: SandboxConfig,
 }
 
 /// `[defaults]` section.
@@ -71,6 +72,57 @@ impl Default for DefaultsConfig {
             theme: "default".into(),
             allow_mutating_tools: false,
             credential_backend: None,
+        }
+    }
+}
+
+/// Sandbox mode for the bash subprocess-tree sandbox (Phase 15 T4).
+///
+/// `Off` (default) ships the always-on L0 process-tree lifecycle only.
+/// `Strict` engages the OS-native L1/L2/L3 layers. Strict mode is opt-in
+/// defense-in-depth, explicitly NOT a security boundary. The variant is the
+/// shared type for the `[sandbox] mode` TOML field and the `--sandbox` CLI
+/// flag.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Deserialize, clap::ValueEnum)]
+#[serde(rename_all = "lowercase")]
+pub enum SandboxMode {
+    #[default]
+    #[value(name = "off")]
+    Off,
+    #[value(name = "strict")]
+    Strict,
+}
+
+/// `[sandbox]` section (Phase 15 T4).
+///
+/// `mode` defaults to `Off` and `require` to `false`. `fs`, `network`, and
+/// `syscalls` are optional per-layer toggles; `None` means "leave the layer
+/// at its platform default" so the dispatcher can distinguish an explicit
+/// opt-out from an unset value.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct SandboxConfig {
+    pub mode: SandboxMode,
+    pub require: bool,
+    pub fs: Option<bool>,
+    pub network: Option<bool>,
+    pub syscalls: Option<bool>,
+}
+
+impl OpiConfig {
+    /// Apply CLI sandbox overrides on top of the layered TOML configuration.
+    ///
+    /// Mirrors the `cli_model` CLI-over-config precedence: each `Some`
+    /// argument replaces the TOML-resolved value, while `None` leaves it. The
+    /// interactive/non-interactive/RPC startup wiring (15.5.1) calls this with
+    /// the parsed `--sandbox` / `--sandbox-require` values after
+    /// `resolve_config`; this method is the deterministic resolution hook the
+    /// resolver exposes for direct testing.
+    pub fn apply_sandbox_overrides(&mut self, mode: Option<SandboxMode>, require: Option<bool>) {
+        if let Some(mode) = mode {
+            self.sandbox.mode = mode;
+        }
+        if let Some(require) = require {
+            self.sandbox.require = require;
         }
     }
 }
@@ -334,6 +386,7 @@ struct TomlConfig {
     compaction: TomlCompaction,
     extensions: TomlResourcePaths,
     packages: TomlResourcePaths,
+    sandbox: TomlSandbox,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -574,6 +627,16 @@ struct TomlCompaction {
 #[serde(default)]
 struct TomlResourcePaths {
     paths: Option<Vec<PathBuf>>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(default)]
+struct TomlSandbox {
+    mode: Option<SandboxMode>,
+    require: Option<bool>,
+    fs: Option<bool>,
+    network: Option<bool>,
+    syscalls: Option<bool>,
 }
 
 impl TomlConfig {
@@ -870,6 +933,21 @@ impl TomlConfig {
         }
         if let Some(paths) = self.packages.paths {
             config.packages.paths.extend(paths);
+        }
+        if let Some(v) = self.sandbox.mode {
+            config.sandbox.mode = v;
+        }
+        if let Some(v) = self.sandbox.require {
+            config.sandbox.require = v;
+        }
+        if let Some(v) = self.sandbox.fs {
+            config.sandbox.fs = Some(v);
+        }
+        if let Some(v) = self.sandbox.network {
+            config.sandbox.network = Some(v);
+        }
+        if let Some(v) = self.sandbox.syscalls {
+            config.sandbox.syscalls = Some(v);
         }
     }
 }
