@@ -343,7 +343,7 @@
       "definition_of_done": "`SandboxConfig` and `SandboxMode::{Off, Strict}` deserialize `[sandbox] mode`, `require`, and optional `fs`, `network`, and `syscalls` toggles with `mode = off` and `require = false` defaults. `Cli::try_parse_from` accepts `--sandbox off|strict` plus `--sandbox-require`, and the config resolver deterministically applies the CLI values over layered TOML; invalid TOML and CLI values return named parser/resolver errors. `CODE_SANDBOX_DEGRADED`, `CODE_SANDBOX_UNAVAILABLE`, and `SOURCE_SANDBOX` remain stable string literals, and diagnostic constructors emit redacted `{layer, reason}` details. Direct parser, resolver, and capability-injected tests cover each default/precedence/error/diagnostic branch and distinguish temporary layer degradation from permanent platform unavailability. This task defines config and diagnostic substrate only; 15.5.1 proves production mode dispatch and 15.5.6 closes cross-platform bash acceptance.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [],
       "inference_notes": [
         {
@@ -375,6 +375,11 @@
           "field": "depends_on",
           "reason": "Human-confirmed graph repair on 2026-07-25 removed the spurious 15.2 edge: the config/CLI/diagnostic substrate consumes no Operations symbol; the T5-before-T4 attach-point ordering begins at 15.5.1.",
           "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Sequencing"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "15.2 (T5 Operations injection) moved the bash foreground-wait from bash.rs into operations.rs::LocalBashOperations::exec; the SC8 non-goal guard sc8_non_goals_not_in_core still greps bash.rs for status = child.wait(), so 15.3 full-suite D-gate surfaced the stale target. Relocating the assertion to operations.rs preserves the foreground-await property (faithful guard maintenance 15.2 omitted because phase11_tooling_quality_docs was outside its gate set). Bundled into 15.3 with user approval (fix-and-bundle).",
+          "source": "crates/opi-coding-agent/tests/phase11_tooling_quality_docs.rs::sc8_non_goals_not_in_core (c)"
         }
       ],
       "tier": "cli-runtime",
@@ -400,7 +405,7 @@
       "substrate_only": true,
       "iteration_count": 0,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "2f4de20",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "crates/opi-coding-agent/src/cli.rs",
@@ -409,13 +414,89 @@
         "crates/opi-coding-agent/src/lib.rs",
         "crates/opi-coding-agent/src/sandbox.rs",
         "crates/opi-coding-agent/tests/config_tests.rs",
-        "crates/opi-coding-agent/tests/sandbox_config.rs"
+        "crates/opi-coding-agent/tests/sandbox_config.rs",
+        "crates/opi-coding-agent/tests/phase11_tooling_quality_docs.rs"
       ],
-      "last_attempt": null,
-      "verified_at_commit": null,
-      "evidence": null,
+      "last_attempt": {
+        "attempt": 1,
+        "started_at": "2026-07-25T10:00:33.321Z",
+        "ended_at": "2026-07-25T10:39:02.227Z",
+        "outcome": "passing",
+        "failing_gate": null,
+        "touched_files": [
+          "crates/opi-coding-agent/src/cli.rs",
+          "crates/opi-coding-agent/src/config.rs",
+          "crates/opi-coding-agent/src/diagnostics.rs",
+          "crates/opi-coding-agent/src/lib.rs",
+          "crates/opi-coding-agent/tests/config_tests.rs",
+          "crates/opi-coding-agent/tests/sandbox_config.rs",
+          "crates/opi-coding-agent/tests/phase11_tooling_quality_docs.rs"
+        ]
+      },
+      "verified_at_commit": "41438a884bb762d680e1832b0bfa7699d9c64c40",
+      "evidence": {
+        "task": "15.3",
+        "dod_sha256": "eb72ace2b0da89811ec6fbdabcab5ae18d60a0416c96fc3f72843d1365e24e15",
+        "verification": "cli-runtime; crate-scoped gates green (sandbox_config 23, config_tests sandbox 2 of 50, lib 67); clippy --all-targets -D warnings clean; rustdoc -D warnings clean; fmt --check clean; phase11_tooling_quality_docs 2 passed (sc8c foreground-await guard relocated bash.rs -> operations.rs, a 15.2 carry-over bundled via C.1a with user approval); full-workspace smoke skipped (disk-fill risk, host deviation per standing memory). D.2 deep exec verify (6-lens wf_982ef709-41d over commit 41438a8) clean: 0 must-fix, 0 flagged, 0 rejected; lenses verified to inspect the sandbox changes via transcript tokens (SandboxConfig/CODE_SANDBOX_DEGRADED/apply_sandbox_overrides + 3f042f6 references). The synthesis narrative carried a 15.2 task-identity text error; structured verdict (driven by the lenses) unaffected. oauth openai_codex_device_code_timeout flaked under parallel load, passes in isolation (pre-existing, not 15.3).",
+        "evaluator": "passed",
+        "commit": "41438a884bb762d680e1832b0bfa7699d9c64c40"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-07-25T10:00:33.321Z",
+          "attempt": 1,
+          "summary": "Phase B confirmed at start_commit 2f4de20. Crate-scoped gates for opi-coding-agent (full-workspace smoke skipped: disk-fill risk on this host per standing memory). evaluator_required=true -> D.2 runs the full 6-lens deep exec verify. Substrate-only: no main.rs/ConfigSource wiring (15.5.1 owns CLI startup propagation); CLI-over-TOML via OpiConfig::apply_sandbox_overrides; sandbox diagnostics in new diagnostics.rs (opi-agent Diagnostic struct unchanged).",
+          "gate_results": []
+        },
+        {
+          "timestamp": "2026-07-25T10:39:02.227Z",
+          "attempt": 1,
+          "summary": "Phase D passed at commit 41438a8. Crate-scoped mechanical gates green; D.2 deep exec verify (6-lens wf_982ef709-41d) clean: 0 must-fix/flagged/rejected; lenses verified (via transcript tokens) to inspect the sandbox changes. Synthesis narrative carried a 15.2 task-identity text error; structured verdict (lens-driven) unaffected. SC8(c) foreground-await guard relocated bash.rs -> operations.rs (15.2 carry-over, bundled via C.1a with user approval: fix-and-bundle). Substrate-only: 15.5.1 owns main.rs startup wiring + production dispatch.",
+          "gate_results": [
+            {
+              "gate": "cargo test --test sandbox_config",
+              "passed": true,
+              "detail": "23 passed"
+            },
+            {
+              "gate": "cargo test --test config_tests (sandbox filter)",
+              "passed": true,
+              "detail": "2 passed (50 full)"
+            },
+            {
+              "gate": "cargo test --lib",
+              "passed": true,
+              "detail": "67 passed"
+            },
+            {
+              "gate": "clippy --all-targets -D warnings",
+              "passed": true,
+              "detail": "clean"
+            },
+            {
+              "gate": "rustdoc -D warnings",
+              "passed": true,
+              "detail": "clean"
+            },
+            {
+              "gate": "fmt --check",
+              "passed": true,
+              "detail": "clean"
+            },
+            {
+              "gate": "phase11_tooling_quality_docs",
+              "passed": true,
+              "detail": "2 passed (sc8c relocated to operations.rs)"
+            },
+            {
+              "gate": "D.2 deep exec verify (6-lens wf_982ef709-41d)",
+              "passed": true,
+              "detail": "clean; 0 must-fix/flagged/rejected; synthesis narrative had 15.2 task-identity text error, structured verdict unaffected"
+            }
+          ]
+        }
+      ]
     },
     {
       "id": "15.4",
@@ -3188,6 +3269,16 @@
       "rejected_count": 0,
       "ran_at": "2026-07-25T09:14:05.321Z",
       "task_id": "15.2",
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": "wf_982ef709-41d",
+      "folded_count": 0,
+      "flagged_count": 0,
+      "rejected_count": 0,
+      "ran_at": "2026-07-25T10:39:02.227Z",
+      "task_id": "15.3",
       "criterion_id": null
     }
   ]
