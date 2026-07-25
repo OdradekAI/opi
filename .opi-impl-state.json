@@ -507,7 +507,7 @@
       "definition_of_done": "`LocalBashOperations::exec` assigns every Unix bash child to a new process group before spawn and terminates the entire group on timeout, cancellation, and dropped execution; Windows bash children enter a Job Object configured with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` and no breakaway permission. Windows adapter children receive the same Job-Object L0 assignment, while the existing Unix adapter `process_group(0)` path remains intact. L0 executes for sandbox mode off and strict. Assignment or termination failures emit a stable sandbox diagnostic without panicking. Tests launch marker grandchildren to prove timeout, cancellation, and dropping an in-flight exec future remove the subprocess tree; injected process-group/Job-Object assignment and termination failures assert exact diagnostic code/details; cfg-specific fake Job-Object tests prove bash and adapter assignment, no-breakaway flags, and kill-on-close without elevated privileges.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "15.2",
         "15.3"
@@ -547,6 +547,11 @@
           "field": "residual",
           "reason": "deferred follow-up: trigger=the product must provide a hard Windows no-escape security boundary or the post-spawn Job-Object assignment race is demonstrated exploitable",
           "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Residuals / follow-ups"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "D.2 exec-verify (wf_a846cab9-ce4) found the Windows adapter L0 half was covered only by source-text greps (tests-of-source-text, L-D3/L-D2 must-fix). Added a behavioral adapter L0 test in tests/adapter_host.rs (the canonical AdapterHost test home with the mock-locator helper + mock-build precondition) that exercises AdapterHost::start and proves the adapter subprocess tree is reaped on host drop. sandbox_l0.rs cannot host it: CARGO_BIN_EXE_adapter_host_mock is not injected for [[test]] targets and sandbox_l0 cannot guarantee the mock binary is built.",
+          "source": "D.2 exec.workflow.js wf_a846cab9-ce4 (lenses L-D3 production-call-site-proven, L-D2 tests-non-vacuous)"
         }
       ],
       "tier": "cli-runtime",
@@ -582,7 +587,7 @@
             "crates/opi-coding-agent/src/harness.rs::CodingHarness::build_tools",
             "crates/opi-coding-agent/src/tool/operations.rs::LocalBashOperations::exec"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "phase15-l0-windows-adapter-assignment",
@@ -596,7 +601,7 @@
             "crates/opi-coding-agent/src/tool/operations.rs::LocalBashOperations::exec",
             "crates/opi-coding-agent/src/adapter_host.rs::AdapterHost::start"
           ],
-          "status": "open"
+          "status": "met"
         }
       ],
       "production_call_sites": [
@@ -605,9 +610,9 @@
         "crates/opi-coding-agent/src/adapter_host.rs::AdapterHost::start"
       ],
       "substrate_only": false,
-      "iteration_count": 0,
+      "iteration_count": 2,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "3bc7dcf",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "Cargo.toml",
@@ -617,13 +622,103 @@
         "crates/opi-coding-agent/src/tool/**",
         "crates/opi-coding-agent/tests/adapter_host_mock.rs",
         "crates/opi-coding-agent/tests/sandbox_l0.rs",
-        "crates/opi-coding-agent/tests/tools_read_write_edit_bash.rs"
+        "crates/opi-coding-agent/tests/tools_read_write_edit_bash.rs",
+        "crates/opi-coding-agent/tests/adapter_host.rs"
       ],
-      "last_attempt": null,
-      "verified_at_commit": null,
-      "evidence": null,
+      "last_attempt": {
+        "attempt": 2,
+        "started_at": "2026-07-25T11:19:20.078Z",
+        "ended_at": "2026-07-25T12:35:14.480Z",
+        "outcome": "passing",
+        "failing_gate": null,
+        "touched_files": [
+          "Cargo.toml",
+          "Cargo.lock",
+          "crates/opi-coding-agent/Cargo.toml",
+          "crates/opi-coding-agent/src/adapter_host.rs",
+          "crates/opi-coding-agent/src/tool/mod.rs",
+          "crates/opi-coding-agent/src/tool/operations.rs",
+          "crates/opi-coding-agent/src/tool/process_tree.rs",
+          "crates/opi-coding-agent/tests/adapter_host.rs",
+          "crates/opi-coding-agent/tests/adapter_host_mock.rs",
+          "crates/opi-coding-agent/tests/sandbox_l0.rs",
+          "crates/opi-coding-agent/tests/tools_read_write_edit_bash.rs"
+        ]
+      },
+      "verified_at_commit": "309cd27b4ee958fe23b3bd8302a4a9eff5db8371",
+      "evidence": {
+        "task": "15.4",
+        "dod_sha256": "d9c4bc9c23177c492045f18d0e92744cdeea4cd08db8289ea694946680dbffb5",
+        "verification": "cli-runtime; crate-scoped gates green on Windows: sandbox_l0 5, adapter_host 19 (incl. adapter_l0_kills_subprocess_tree_on_host_drop), tools_read_write_edit_bash 95 (incl. bash_timeout_contract_under_l0), lib 70, tool_operations 21, tool_selection 30; clippy --all-targets -D warnings clean; rustdoc -D warnings clean; fmt --check clean. clippy lints Windows cfg only (Unix cfg compiles out here). D.2 deep exec verify (6-lens wf_7a0a1c01-00c over 309cd27) clean: 0 must-fix, 0 rejected, 1 low flagged-for-human (adapter_process_group_contract structural grep -> honest stopgap annotation; behavioral Unix mirror deferred to 15.5.6). First D.2 (wf_a846cab9-ce4) found 4 must-fix (adapter L0 grep-only) -> resolved by adding behavioral AdapterHost::start test (iteration 2). Both production call sites proven behaviorally on Windows; Unix process-group half #[cfg(unix)] CI-pending (15.5.6 matrix). Full-workspace smoke skipped (disk-fill risk on this host per standing memory).",
+        "evaluator": "passed",
+        "commit": "309cd27b4ee958fe23b3bd8302a4a9eff5db8371"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-07-25T11:19:20.078Z",
+          "attempt": 1,
+          "summary": "Phase B confirmed at start_commit 3bc7dcf (15.3 ledger checkpoint). Option A (user-approved): implement both Unix+Windows L0 halves; verify the Windows Job-Object path locally with real marker-grandchild evidence; record the Unix process-group half honestly as implemented-but-CI-pending (cfg(unix) compiles out on this Windows host; Linux CI / 15.5.6 matrix must verify green). Crate-scoped gates for opi-coding-agent (full-workspace smoke skipped: disk-fill risk on this host per standing memory). evaluator_required=true -> D.2 runs the full 6-lens deep exec verify. New tool/process_tree.rs owns the L0 FFI (libc::kill on unix, windows-sys Job Object on windows); operations.rs stays #![forbid(unsafe_code)] and calls only the safe API.",
+          "gate_results": []
+        },
+        {
+          "timestamp": "2026-07-25T12:35:14.480Z",
+          "attempt": 2,
+          "summary": "Phase D passed at commit 309cd27. Crate-scoped mechanical gates green on Windows; D.2 deep exec verify (6-lens wf_7a0a1c01-00c) clean: 0 must-fix/0 rejected/1 low flagged. Iteration 2: the first D.2 (wf_a846cab9-ce4) found 4 must-fix (adapter L0 covered only by source-text greps, lenses L-D3/L-D2); resolved by adding adapter_l0_kills_subprocess_tree_on_host_drop (behavioral AdapterHost::start test using the mock l0_grandchild mode), tightening windows_bash_and_adapter_use_kill_on_close_job to a behavioral kill-on-close assertion, and dropping the degenerate TreeGuard::attach wiring greps (kept the flag greps). C.1a task_owned_paths appended tests/adapter_host.rs. The low flag (adapter_process_group_contract structural Unix pin) is addressed via an honest stopgap doc-comment; its behavioral Unix mirror is deferred to 15.5.6 (it would assert the Unix adapter does NOT tree-kill, matching the DoD scoping). Windows L0 verified behaviorally (bash + adapter marker-grandchild tree-kill on timeout/cancel/drop/host-drop); Unix process-group half #[cfg(unix)] CI-pending (15.5.6 matrix).",
+          "gate_results": [
+            {
+              "gate": "cargo test --test sandbox_l0",
+              "passed": true,
+              "detail": "5 passed"
+            },
+            {
+              "gate": "cargo test --test adapter_host",
+              "passed": true,
+              "detail": "19 passed (incl. adapter_l0_kills_subprocess_tree_on_host_drop)"
+            },
+            {
+              "gate": "cargo test --test tools_read_write_edit_bash bash_timeout",
+              "passed": true,
+              "detail": "1 passed (bash_timeout_contract_under_l0)"
+            },
+            {
+              "gate": "cargo test --lib",
+              "passed": true,
+              "detail": "70 passed (incl. 3 process_tree inline)"
+            },
+            {
+              "gate": "cargo test --test tool_operations",
+              "passed": true,
+              "detail": "21 passed"
+            },
+            {
+              "gate": "cargo test --test tool_selection",
+              "passed": true,
+              "detail": "30 passed"
+            },
+            {
+              "gate": "clippy --all-targets -D warnings",
+              "passed": true,
+              "detail": "clean (Windows cfg)"
+            },
+            {
+              "gate": "rustdoc -D warnings",
+              "passed": true,
+              "detail": "clean"
+            },
+            {
+              "gate": "fmt --check",
+              "passed": true,
+              "detail": "clean"
+            },
+            {
+              "gate": "D.2 deep exec verify (6-lens wf_7a0a1c01-00c)",
+              "passed": true,
+              "detail": "clean: 0 must-fix, 0 rejected, 1 low flagged (addressed)"
+            }
+          ]
+        }
+      ]
     },
     {
       "id": "15.5.1",
@@ -3218,7 +3313,8 @@
     "opi-implement: post-human-surgery L1-L6 verification at 2026-07-24T17:47:44.569Z folded 11 independently verified field corrections: landlock ownership/ABI detection, alternate Linux network-surface residuals, non-vacuous macOS L1/L2 evidence, macOS/Windows dispatcher ownership, substrate/runtime registry separation, exact retained CLI inputs, a production-reachable public trust preflight entry, no-resource ordering, and prompt-free headless PreTrustUi behavior.",
     "opi-implement: A.init.3 human confirmation at 2026-07-24T17:51:31.961Z supplied the remaining residual triggers: revisit direct CreateProcessW when a hard Windows no-escape boundary or exploitable assignment race is required, and revisit trust.json schema metadata when boolean decisions are insufficient or persisted-format migration/compatibility appears; awaiting whole-graph confirm-all.",
     "opi-implement: Phase 15 task graph confirm-all accepted at 2026-07-24T17:56:28.144Z; canonical ledger initialized with 15 tasks and 19 acceptance scenarios.",
-    "opi-implement: A.init.3 human-confirmed Phase 15 graph repair at 2026-07-25T01:11:14.478Z removed 15.5.2 host-dependent Linux target gates in favor of 15.5.6 CI ownership, corrected the 15.5.3 unsafe scope, changed 15.5.6 commit_type to feat, and removed the spurious 15.3 -> 15.2 edge; focused L1-L6 review found no additional surviving issue."
+    "opi-implement: A.init.3 human-confirmed Phase 15 graph repair at 2026-07-25T01:11:14.478Z removed 15.5.2 host-dependent Linux target gates in favor of 15.5.6 CI ownership, corrected the 15.5.3 unsafe scope, changed 15.5.6 commit_type to feat, and removed the spurious 15.3 -> 15.2 edge; focused L1-L6 review found no additional surviving issue.",
+    "opi-implement: task 15.4 (Always-on L0 subprocess-tree lifecycle) passed at commit 309cd27 (2026-07-25). Windows L0 verified behaviorally (bash marker-grandchild tree-kill on timeout/cancel/drop via LocalBashOperations::exec + adapter marker-grandchild tree-kill on host-drop via AdapterHost::start; kill-on-close Job Object, no elevation; no-breakaway). Unix process-group half #[cfg(unix)] CI-pending (15.5.6 matrix); Unix adapter keeps process_group(0) by DoD. D.2 wf_a846cab9-ce4 (4 must-fix) -> wf_7a0a1c01-00c (0 must-fix) over iteration 2."
   ],
   "verify_runs": [
     {
@@ -3279,6 +3375,26 @@
       "rejected_count": 0,
       "ran_at": "2026-07-25T10:39:02.227Z",
       "task_id": "15.3",
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": "wf_a846cab9-ce4",
+      "folded_count": 4,
+      "flagged_count": 1,
+      "rejected_count": 0,
+      "ran_at": "2026-07-25T11:19:20.078Z",
+      "task_id": "15.4",
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": "wf_7a0a1c01-00c",
+      "folded_count": 0,
+      "flagged_count": 1,
+      "rejected_count": 0,
+      "ran_at": "2026-07-25T12:35:14.480Z",
+      "task_id": "15.4",
       "criterion_id": null
     }
   ]
