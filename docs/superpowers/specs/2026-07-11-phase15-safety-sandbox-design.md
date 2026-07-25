@@ -45,8 +45,10 @@ breaks this doc into tasks; it is not itself a task list.
   full ask UX.
 - Fallback diagnostics that default to fail-open-with-diagnostic, with opt-in
   `require = true` for fail-closed behavior in CI/untrusted contexts.
-- No `unsafe` block in opi code: the only unsafe is the irreducible std
-  `pre_exec` *contract*, delegated to audited libraries.
+- Opi-side `unsafe` is limited to one audited helper that wraps the irreducible
+  std `pre_exec` contract; seccomp and Landlock applications are delegated to
+  library APIs. The production-path `sandbox.rs` and `tool/operations.rs`
+  modules retain `forbid(unsafe_code)`.
 
 ## Non-Goals
 
@@ -194,11 +196,13 @@ wrappers inside the crate). Both crate MSRVs sit below the workspace floor of
 path on older kernels. Applied in the child's `pre_exec` on the bash spawn.
 The **parent** pre-builds the ruleset/BPF; the **child** runs only the raw apply
 syscalls (`landlock_restrict_self`, `seccomp(SECCOMP_SET_FILTER)`) — both
-async-signal-safe, satisfying the `pre_exec` contract. There is no `unsafe`
-block in opi code: the only unsafe is the irreducible std `pre_exec` *contract*,
-delegated to audited libs. Rejected alternatives: a helper binary (ships a
-second artifact across six release targets) and `bwrap` (external runtime dep,
-violates the Rust-native posture).
+async-signal-safe, satisfying the `pre_exec` contract. Opi-side `unsafe` is
+limited to one audited child-setup helper that wraps std `pre_exec`; the helper
+delegates seccomp and Landlock applications to library APIs. The production-path
+`sandbox.rs` and `tool/operations.rs` modules retain `forbid(unsafe_code)`.
+Rejected alternatives: a helper binary (ships a second artifact across six
+release targets) and `bwrap` (external runtime dep, violates the Rust-native
+posture).
 
 **macOS mechanism.** L1/L2 via direct `sandbox-exec -p <templated profile>`
 (inherently child-only — `sandbox-exec` IS the helper, so no `pre_exec`/`unsafe`

@@ -6,9 +6,9 @@
   ],
   "spec_files_sha256": {
     "docs/opi-spec.md": "92074b2a335019c861504f5b1b6f3a058fc0f1507179428d9cdb38101ef90ec6",
-    "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md": "39d75e602952683e4a8e3ddf27642786ce3065abee96f85cc29d80297ea5c620"
+    "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md": "5d5b42a6997c6e0de8234ac1c6fe5b3e6b849fc35af988dbf09fb2729c979885"
   },
-  "task_graph_confirmed_at": "2026-07-24T17:56:28.144Z",
+  "task_graph_confirmed_at": "2026-07-25T01:11:14.478Z",
   "current_phase": 15,
   "tasks": [
     {
@@ -205,9 +205,7 @@
       "definition_source": "inferred",
       "replaces": null,
       "status": "failing",
-      "depends_on": [
-        "15.2"
-      ],
+      "depends_on": [],
       "inference_notes": [
         {
           "field": "definition_of_done",
@@ -233,6 +231,11 @@
           "field": "forbidden_scope",
           "reason": "Do not add sandbox configuration to opi-agent or change the shared Diagnostic struct.",
           "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Load-bearing invariant"
+        },
+        {
+          "field": "depends_on",
+          "reason": "Human-confirmed graph repair on 2026-07-25 removed the spurious 15.2 edge: the config/CLI/diagnostic substrate consumes no Operations symbol; the T5-before-T4 attach-point ordering begins at 15.5.1.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Sequencing"
         }
       ],
       "tier": "cli-runtime",
@@ -546,10 +549,10 @@
     {
       "id": "15.5.2",
       "phase": 15,
-      "title": "Linux seccomp backend feasibility and dual-architecture contract",
+      "title": "Linux seccomp backend feasibility and policy contract",
       "crate": "opi-coding-agent",
       "parent_spec_row": "15.5",
-      "definition_of_done": "Select and pin through `[workspace.dependencies]` both `landlock` 0.4.5 and a Linux seccomp backend that expresses a default-allow/match-deny filter, filters scalar `socket(domain, ...)` arguments, builds the filter representation in the parent, applies only the audited raw filter in the child, and compiles for both `x86_64-unknown-linux-gnu` and `aarch64-unknown-linux-gnu` without an `unsafe` block in opi source. `extrasafe` 0.5.1 is rejected because its public policy is a default-deny allowlist, its apply path does not expose the required parent-build/child-apply split, and it does not cover Linux ARM64; direct use of a verified deny-capable backend is required. `landlock` remains a separate capability layer whose 0.4.5 filesystem rights and ABI-4 TCP bind/connect-by-port model are captured in pure capability tests; Linux 6.7 is mainline orientation rather than a runtime release-string gate. Pure backend tests pin the exact danger-blocklist syscalls, prove `clone` and `unshare` remain allowed, prove AF_INET/AF_INET6/AF_NETLINK socket-creation rules preserve AF_UNIX rules, exercise build/apply error translation without spawning a real command, and preserve both target-check outputs. This task is substrate only: it does not claim that the production bash path is confined.",
+      "definition_of_done": "Select and pin through `[workspace.dependencies]` both `landlock` 0.4.5 and a Linux seccomp backend that expresses a default-allow/match-deny filter, filters scalar `socket(domain, ...)` arguments, builds the filter representation in the parent, applies only the audited raw filter in the child without adding a custom unsafe pre-exec helper in this substrate task. `extrasafe` 0.5.1 is rejected because its public policy is a default-deny allowlist, its apply path does not expose the required parent-build/child-apply split, and it does not cover Linux ARM64; direct use of a verified deny-capable backend is required. `landlock` remains a separate capability layer whose 0.4.5 filesystem rights and ABI-4 TCP bind/connect-by-port model are captured in pure capability tests; Linux 6.7 is mainline orientation rather than a runtime release-string gate. Pure backend tests pin the exact danger-blocklist syscalls, prove `clone` and `unshare` remain allowed, prove AF_INET/AF_INET6/AF_NETLINK socket-creation rules preserve AF_UNIX rules, exercise build/apply error translation without spawning a real command. This task is substrate only: it does not claim that the production bash path is confined.",
       "definition_source": "inferred",
       "replaces": null,
       "status": "failing",
@@ -559,7 +562,7 @@
       "inference_notes": [
         {
           "field": "split",
-          "reason": "split: trigger=human-confirmed Linux backend-feasibility/runtime decomposition on 2026-07-25; this task owns dependency selection, policy shape, parent/child apply feasibility, and Linux x86-64/ARM64 compilation only",
+          "reason": "split: trigger=human-confirmed Linux backend-feasibility/runtime decomposition on 2026-07-25; this task owns dependency selection, policy shape, and parent/child apply feasibility only; 15.5.6 owns the six-release-target compile matrix",
           "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Linux mechanism"
         },
         {
@@ -574,12 +577,12 @@
         },
         {
           "field": "substrate_only",
-          "reason": "Backend selection, policy construction, and cross-target compilation do not close the Linux product scenario until 15.5.3 attaches the result to LocalBashOperations::exec.",
+          "reason": "Backend selection and policy construction do not close the Linux product scenario until 15.5.3 attaches the result to LocalBashOperations::exec and 15.5.6 proves the release-target matrix.",
           "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Implementation Priority and Crate Boundaries"
         },
         {
           "field": "evaluator_required",
-          "reason": "Seccomp filter semantics, child-apply safety, architecture coverage, and a security-sensitive dependency choice require adversarial review.",
+          "reason": "Seccomp filter semantics, child-apply safety, and a security-sensitive dependency choice require adversarial review.",
           "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Goals"
         },
         {
@@ -596,6 +599,16 @@
           "field": "definition_of_done",
           "reason": "Post-decision L2 verification requires the manifest-owning backend task to pin and verify landlock 0.4.5; the later runtime task owns no Cargo manifests.",
           "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#T4 — OS-native subprocess sandbox"
+        },
+        {
+          "field": "verification",
+          "reason": "Human-confirmed graph repair on 2026-07-25 moved Linux cross-target cargo checks out of the substrate task; 15.5.6 owns ci.yml and the complete six-target matrix.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Implementation Priority and Crate Boundaries"
+        },
+        {
+          "field": "title",
+          "reason": "Human-confirmed graph repair on 2026-07-25 removed dual-architecture ownership from this substrate task; 15.5.6 owns the complete release-target matrix.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Implementation Priority and Crate Boundaries"
         }
       ],
       "tier": "library",
@@ -605,8 +618,6 @@
       "verification": {
         "library_gates": [
           "cargo test -p opi-coding-agent --test sandbox_linux_backend",
-          "cargo check --target x86_64-unknown-linux-gnu -p opi-coding-agent --all-targets",
-          "cargo check --target aarch64-unknown-linux-gnu -p opi-coding-agent --all-targets",
           "cargo clippy -p opi-coding-agent --all-targets -- -D warnings",
           "$env:RUSTDOCFLAGS=\"-D warnings\"; cargo doc -p opi-coding-agent --no-deps"
         ],
@@ -614,7 +625,7 @@
           "crates/opi-coding-agent/tests/sandbox_linux_backend.rs"
         ],
         "snapshot_tests": [],
-        "smoke_addendum": "Preserve the selected crate/version/API evidence, exact filter-rule capture, parent-build/child-apply trace, stable error translation, and successful Linux x86-64 plus ARM64 target checks. Missing target support leaves this task failing."
+        "smoke_addendum": "Preserve the selected crate/version/API evidence, exact filter-rule capture, parent-build/child-apply trace, and stable error translation. Task 15.5.6 owns the six-release-target cargo-check matrix in CI."
       },
       "acceptance_scenarios": [],
       "production_call_sites": [],
@@ -642,7 +653,7 @@
       "title": "Linux strict runtime and L2/L3 policy",
       "crate": "opi-coding-agent",
       "parent_spec_row": "15.5",
-      "definition_of_done": "The Linux strict backend attaches the 15.5.2 deny-capable seccomp filter and `landlock` policy to the production `CodingHarness::build_tools` → `LocalBashOperations::exec` → `sandbox::prepare` path without an `unsafe` block in opi source. L1 permits only configured workspace/temp writes. L2 is explicitly defense-in-depth: seccomp returns a stable errno for new `socket(AF_INET, ...)`, `socket(AF_INET6, ...)`, and `socket(AF_NETLINK, ...)` while AF_UNIX stream/datagram create-bind-connect-send-receive remains functional; An observed Landlock ABI query—not a kernel release-string comparison—authoritatively enables ABI 4 TCP bind/connect with no allow-port rules; Linux 6.7 is documented only as the mainline ABI-4 orientation, and injected tests cover release/ABI mismatches and report the observed ABI. Capability reports distinguish `seccomp_socket_creation` from `landlock_tcp_bind_connect`; kernels or architectures lacking a layer return exact layer/reason evidence to the shared 15.5.1 fail-open/fail-closed policy. L3 denies exactly `open_by_handle_at`, `bpf`, `perf_event_open`, `ptrace`, `kexec_load`, `kexec_file_load`, `reboot`, `init_module`, `finit_module`, `delete_module`, `swapon`, `swapoff`, `iopl`, `ioperm`, `acct`, and `settimeofday`, while `clone` and `unshare` remain allowed. Tests prove every fs/network/syscalls toggle, AF_UNIX preservation, the three socket-domain denials, engaged Landlock TCP denial, L3 rule shape, degradation diagnostics, and require=true command non-execution. A capable native Linux runner must report at least one passed engaged product test, zero failures, and zero ignored/skipped tests. An alternate-surface audit enumerates `socketpair` plus io_uring socket/connect/accept operations and classifies each as blocked with a stable error, mechanically irrelevant to creation of the three denied families on both supported architectures, or an explicit uncovered residual; evidence must not claim full new-socket coverage while any path remains uncovered. The acceptance claim explicitly excludes already-open/inherited network descriptors, non-TCP Landlock policy, address-range filtering, uncovered alternate dispatch surfaces, and complete network-boundary semantics.",
+      "definition_of_done": "The Linux strict backend attaches the 15.5.2 deny-capable seccomp filter and `landlock` policy to the production `CodingHarness::build_tools` → `LocalBashOperations::exec` → `sandbox::prepare` path through one audited Opi-side child-setup helper that wraps std `pre_exec`; seccomp and Landlock applications are delegated to library APIs, while the production-path `sandbox.rs` and `tool/operations.rs` modules retain `forbid(unsafe_code)`. L1 permits only configured workspace/temp writes. L2 is explicitly defense-in-depth: seccomp returns a stable errno for new `socket(AF_INET, ...)`, `socket(AF_INET6, ...)`, and `socket(AF_NETLINK, ...)` while AF_UNIX stream/datagram create-bind-connect-send-receive remains functional; An observed Landlock ABI query—not a kernel release-string comparison—authoritatively enables ABI 4 TCP bind/connect with no allow-port rules; Linux 6.7 is documented only as the mainline ABI-4 orientation, and injected tests cover release/ABI mismatches and report the observed ABI. Capability reports distinguish `seccomp_socket_creation` from `landlock_tcp_bind_connect`; kernels or architectures lacking a layer return exact layer/reason evidence to the shared 15.5.1 fail-open/fail-closed policy. L3 denies exactly `open_by_handle_at`, `bpf`, `perf_event_open`, `ptrace`, `kexec_load`, `kexec_file_load`, `reboot`, `init_module`, `finit_module`, `delete_module`, `swapon`, `swapoff`, `iopl`, `ioperm`, `acct`, and `settimeofday`, while `clone` and `unshare` remain allowed. Tests prove every fs/network/syscalls toggle, AF_UNIX preservation, the three socket-domain denials, engaged Landlock TCP denial, L3 rule shape, degradation diagnostics, and require=true command non-execution. A capable native Linux runner must report at least one passed engaged product test, zero failures, and zero ignored/skipped tests. An alternate-surface audit enumerates `socketpair` plus io_uring socket/connect/accept operations and classifies each as blocked with a stable error, mechanically irrelevant to creation of the three denied families on both supported architectures, or an explicit uncovered residual; evidence must not claim full new-socket coverage while any path remains uncovered. The acceptance claim explicitly excludes already-open/inherited network descriptors, non-TCP Landlock policy, address-range filtering, uncovered alternate dispatch surfaces, and complete network-boundary semantics.",
       "definition_source": "inferred",
       "replaces": null,
       "status": "failing",
@@ -662,7 +673,7 @@
         },
         {
           "field": "depends_on",
-          "reason": "Consumes the selected dual-architecture backend and pure policy contract from 15.5.2.",
+          "reason": "Consumes the selected deny-capable backend and pure policy contract from 15.5.2; release-target compilation remains a 15.5.6 acceptance concern.",
           "source": "docs/research/2026-07-24-phase15-linux-l2-feasibility.md#Task-graph/design corrections"
         },
         {
@@ -694,6 +705,11 @@
           "field": "residual",
           "reason": "Post-decision L1 verification requires a socketpair/io_uring alternate-surface audit; every uncovered dispatch path remains an explicit residual rather than being hidden by the new-socket wording.",
           "source": "docs/research/2026-07-24-phase15-linux-l2-feasibility.md#Residuals that must remain explicit"
+        },
+        {
+          "field": "definition_of_done",
+          "reason": "Human-confirmed wording repair on 2026-07-25 makes the irreducible std pre_exec unsafe explicit and limits it to one audited helper; library APIs own seccomp/Landlock application and the surrounding production modules remain unsafe-forbidden.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Linux mechanism"
         }
       ],
       "tier": "cli-runtime",
@@ -1004,7 +1020,7 @@
       "title": "Strict sandbox matrix integration and acceptance",
       "crate": "opi-coding-agent",
       "parent_spec_row": "15.5",
-      "definition_of_done": "The shared dispatcher and all three platform backends are integrated through the production `CodingHarness::build_tools` → `LocalBashOperations::exec` → `sandbox::prepare` path with cfg-correct selection. `sandbox.rs` (including its child modules) and `tool/operations.rs` forbid unsafe code at the module boundary; pre-existing test-only unsafe environment mutation elsewhere in the crate is outside this Phase 15 claim. The complete capability matrix proves Linux Landlock filesystem policy, an observed-ABI-gated seccomp new-socket reduction, optional ABI-4 TCP bind/connect, the socketpair/io_uring audit, explicit inherited-fd/non-TCP/alternate-surface residuals, and the exact L3 danger blocklist, macOS deny-overlay and L3/tool gaps, Windows truthful L0-only behavior, every fs/network/syscalls toggle, `require` fail-open/fail-closed semantics, one-time diagnostics, and unchanged L0 lifecycle. The existing native `ubuntu-latest`, `macos-latest`, and `windows-latest` CI coverage is strengthened with explicit sandbox product filters; each job must execute at least one passed platform test with zero failures and zero ignored/skipped tests and retain its log/artifact. A CI target-check matrix must compile `opi-coding-agent --all-targets` for all six supported release triples: x86_64/aarch64 Linux GNU, x86_64/aarch64 Apple Darwin, and x86_64/aarch64 Windows MSVC. A zero-test, skipped platform test, missing target result, or unavailable-only result keeps the relevant confinement criterion open; the Linux artifact must describe L2 as defense-in-depth rather than complete network isolation. The task records the three native execution results, six target-check results, and production call-site evidence for Phase 15 exit review; CI runtime claims remain unverified until a pushed commit produces those results.",
+      "definition_of_done": "The shared dispatcher and all three platform backends are integrated through the production `CodingHarness::build_tools` → `LocalBashOperations::exec` → `sandbox::prepare` path with cfg-correct selection. `sandbox.rs` and `tool/operations.rs` retain file-level `#![forbid(unsafe_code)]`; the single audited Linux child-setup helper that wraps std `pre_exec` is the only Opi-side exception, and pre-existing test-only unsafe environment mutation elsewhere in the crate is outside this Phase 15 claim. The complete capability matrix proves Linux Landlock filesystem policy, an observed-ABI-gated seccomp new-socket reduction, optional ABI-4 TCP bind/connect, the socketpair/io_uring audit, explicit inherited-fd/non-TCP/alternate-surface residuals, and the exact L3 danger blocklist, macOS deny-overlay and L3/tool gaps, Windows truthful L0-only behavior, every fs/network/syscalls toggle, `require` fail-open/fail-closed semantics, one-time diagnostics, and unchanged L0 lifecycle. The existing native `ubuntu-latest`, `macos-latest`, and `windows-latest` CI coverage is strengthened with explicit sandbox product filters; each job must execute at least one passed platform test with zero failures and zero ignored/skipped tests and retain its log/artifact. A CI target-check matrix must compile `opi-coding-agent --all-targets` for all six supported release triples: x86_64/aarch64 Linux GNU, x86_64/aarch64 Apple Darwin, and x86_64/aarch64 Windows MSVC. A zero-test, skipped platform test, missing target result, or unavailable-only result keeps the relevant confinement criterion open; the Linux artifact must describe L2 as defense-in-depth rather than complete network isolation. The task records the three native execution results, six target-check results, and production call-site evidence for Phase 15 exit review; CI runtime claims remain unverified until a pushed commit produces those results.",
       "definition_source": "inferred",
       "replaces": null,
       "status": "failing",
@@ -1058,10 +1074,15 @@
           "field": "source_override",
           "reason": "Human confirmation on 2026-07-25 narrowed Linux L2 acceptance to a new-socket reduction plus ABI-4 TCP bind/connect and required explicit inherited-fd/non-TCP residuals.",
           "source": "docs/research/2026-07-24-phase15-linux-l2-feasibility.md#Recommended implementable contract"
+        },
+        {
+          "field": "commit_type",
+          "reason": "Human-confirmed graph repair on 2026-07-25 classifies production sandbox integration and the release CI matrix as a user-visible feature rather than test-only work.",
+          "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Implementation Priority and Crate Boundaries"
         }
       ],
       "tier": "cli-runtime",
-      "commit_type": "test",
+      "commit_type": "feat",
       "parallelize": [],
       "evaluator_required": true,
       "verification": {
@@ -3208,7 +3229,8 @@
     "opi-implement: A.init.3 human decisions applied at 2026-07-24T17:34:40.428Z: split Linux sandbox work into backend-feasibility and runtime slices, replaced the impossible extrasafe/six-operation L2 design with a direct deny-capable seccomp new-socket reduction plus Landlock ABI-4 TCP policy and explicit residuals, fixed trust storage at user_config_dir/trust.json, and narrowed resolver registration to an explicit embedder/startup registry with no CLI -e/native loader; awaiting post-surgery six-lens verification and whole-graph confirmation.",
     "opi-implement: post-human-surgery L1-L6 verification at 2026-07-24T17:47:44.569Z folded 11 independently verified field corrections: landlock ownership/ABI detection, alternate Linux network-surface residuals, non-vacuous macOS L1/L2 evidence, macOS/Windows dispatcher ownership, substrate/runtime registry separation, exact retained CLI inputs, a production-reachable public trust preflight entry, no-resource ordering, and prompt-free headless PreTrustUi behavior.",
     "opi-implement: A.init.3 human confirmation at 2026-07-24T17:51:31.961Z supplied the remaining residual triggers: revisit direct CreateProcessW when a hard Windows no-escape boundary or exploitable assignment race is required, and revisit trust.json schema metadata when boolean decisions are insufficient or persisted-format migration/compatibility appears; awaiting whole-graph confirm-all.",
-    "opi-implement: Phase 15 task graph confirm-all accepted at 2026-07-24T17:56:28.144Z; canonical ledger initialized with 15 tasks and 19 acceptance scenarios."
+    "opi-implement: Phase 15 task graph confirm-all accepted at 2026-07-24T17:56:28.144Z; canonical ledger initialized with 15 tasks and 19 acceptance scenarios.",
+    "opi-implement: A.init.3 human-confirmed Phase 15 graph repair at 2026-07-25T01:11:14.478Z removed 15.5.2 host-dependent Linux target gates in favor of 15.5.6 CI ownership, corrected the 15.5.3 unsafe scope, changed 15.5.6 commit_type to feat, and removed the spurious 15.3 -> 15.2 edge; focused L1-L6 review found no additional surviving issue."
   ],
   "verify_runs": [
     {
@@ -3528,6 +3550,16 @@
       "flagged_count": 0,
       "rejected_count": 0,
       "ran_at": "2026-07-24T17:47:44.569Z",
+      "task_id": null,
+      "criterion_id": null
+    },
+    {
+      "stage": "plan",
+      "wf_ref": null,
+      "folded_count": 4,
+      "flagged_count": 0,
+      "rejected_count": 0,
+      "ran_at": "2026-07-25T01:11:14.478Z",
       "task_id": null,
       "criterion_id": null
     }
