@@ -1870,6 +1870,50 @@ async fn bash_tool_timeout() {
     );
 }
 
+/// Phase 15.4 regression guard (gate `bash_timeout`): the L0 wiring inside
+/// `LocalBashOperations::exec` (process group / Job Object) must not change the
+/// production `BashTool` timeout result contract — `timed_out=true`,
+/// `cancelled=false`, `exit_code=null`. The tree-kill behavior itself is proven
+/// end-to-end in `sandbox_l0.rs`; this asserts the tool-path result mapping is
+/// unchanged.
+#[tokio::test]
+async fn bash_timeout_contract_under_l0() {
+    let dir = tempfile::tempdir().unwrap();
+    let tool = BashTool::new(dir.path().to_path_buf());
+    let cmd = if cfg!(windows) {
+        "ping -n 30 127.0.0.1 >nul"
+    } else {
+        "sleep 30"
+    };
+    let result = tool
+        .execute(
+            "l0-timeout",
+            json!({ "command": cmd, "timeout_secs": 1 }),
+            CancellationToken::new(),
+            None,
+        )
+        .await
+        .unwrap();
+
+    assert!(result.is_error, "timeout should produce an error result");
+    let details = result.details.expect("timeout details must be present");
+    assert_eq!(
+        details.get("timed_out").and_then(|v| v.as_bool()),
+        Some(true),
+        "timed_out must be true under L0 wiring"
+    );
+    assert_eq!(
+        details.get("cancelled").and_then(|v| v.as_bool()),
+        Some(false),
+        "cancelled must be false on a pure timeout"
+    );
+    assert_eq!(
+        details.get("exit_code"),
+        Some(&serde_json::Value::Null),
+        "exit_code must be null on timeout"
+    );
+}
+
 #[tokio::test]
 async fn bash_tool_cancellation() {
     let dir = tempfile::tempdir().unwrap();

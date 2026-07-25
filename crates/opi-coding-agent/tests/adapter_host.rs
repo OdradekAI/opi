@@ -570,3 +570,86 @@ async fn host_sends_correct_protocol_version_in_initialize() {
     // If initialization succeeded, the host sent the correct protocol version
     let _ = host.shutdown("test_end").await;
 }
+
+// ---------------------------------------------------------------------------
+// Phase 15.4: adapter L0 subprocess-tree lifecycle (behavioral)
+// ---------------------------------------------------------------------------
+
+/// Read a pidfile once the grandchild has recorded its pid (Windows helper).
+#[cfg(windows)]
+async fn read_pid_file(path: &std::path::Path, timeout: Duration) -> Option<u32> {
+    let start = std::time::Instant::now();
+    loop {
+        if let Ok(s) = std::fs::read_to_string(path)
+            && let Ok(pid) = s.trim().parse::<u32>()
+        {
+            return Some(pid);
+        }
+        if start.elapsed() >= timeout {
+            return None;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+}
+
+/// Poll `tasklist` until the pid is gone (Windows helper).
+#[cfg(windows)]
+async fn wait_for_process_dead(pid: u32, timeout: Duration) -> bool {
+    let start = std::time::Instant::now();
+    loop {
+        let alive = match std::process::Command::new("tasklist")
+            .args(["/FI", &format!("PID eq {pid}"), "/NH"])
+            .output()
+        {
+            Ok(o) => {
+                let s = String::from_utf8_lossy(&o.stdout);
+                s.contains(&pid.to_string()) && !s.contains("No tasks")
+            }
+            Err(_) => false,
+        };
+        if !alive {
+            return true;
+        }
+        if start.elapsed() >= timeout {
+            return false;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+}
+
+/// Phase 15.4 — scenario `phase15-l0-windows-adapter-assignment`, behavioral
+/// production-call-site proof. A real `AdapterHost::start` assigns the adapter
+/// child to a kill-on-close Job Object (Windows); dropping the host tears the
+/// whole adapter subprocess tree down, including a marker grandchild the adapter
+/// spawned via its `l0_grandchild` mock mode. Windows-only: the Unix adapter
+/// keeps its `process_group(0)` path by DoD (structurally pinned in
+/// `sandbox_l0.rs::adapter_process_group_contract`) and is not claimed to
+/// tree-kill.
+#[cfg(windows)]
+#[tokio::test]
+async fn adapter_l0_kills_subprocess_tree_on_host_drop() {
+    let dir = tempfile::tempdir().unwrap();
+    let pidfile = dir.path().join("adapter_gc_pid.txt");
+    let config = config_for_mode_with_env(
+        "l0_grandchild",
+        vec![(
+            "OPI_L0_GC_PIDFILE".to_string(),
+            pidfile.to_string_lossy().into_owned(),
+        )],
+    );
+    let host = AdapterHost::start("l0-adapter", config, Duration::from_secs(5))
+        .await
+        .expect("adapter handshake should complete");
+
+    let pid = read_pid_file(&pidfile, Duration::from_secs(4))
+        .await
+        .expect("adapter grandchild should record its pid");
+    // Drop runs Drop::drop (start_kill the adapter child) then drops the
+    // l0_guard field, whose kill-on-close reaps the whole tree.
+    drop(host);
+    let dead = wait_for_process_dead(pid, Duration::from_secs(6)).await;
+    assert!(
+        dead,
+        "adapter L0 should reap marker grandchild pid {pid} on host drop"
+    );
+}

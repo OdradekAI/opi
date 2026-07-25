@@ -39,6 +39,7 @@ use crate::adapter_protocol::{
     AdapterToolCapability, PROTOCOL_VERSION,
 };
 use crate::diagnostic_bridge::diagnostic_for_adapter_host_message;
+use crate::tool::TreeGuard;
 
 // ---------------------------------------------------------------------------
 // Error types
@@ -136,6 +137,11 @@ pub struct AdapterHost {
     child: Option<Child>,
     reader_handle: Option<tokio::task::JoinHandle<()>>,
     id_counter: AtomicU64,
+    /// Phase 15.4 L0 tree guard. On Windows this owns the kill-on-close Job
+    /// Object that tears the adapter subprocess tree down on shutdown/drop. On
+    /// Unix it is `None` (the adapter keeps its existing `process_group(0)`
+    /// path unchanged). Best-effort: a failed assignment leaves this `None`.
+    l0_guard: Option<TreeGuard>,
 }
 
 impl std::fmt::Debug for AdapterHost {
@@ -189,6 +195,20 @@ impl AdapterHost {
             reason: e.to_string(),
         })?;
 
+        // Phase 15.4 L0: on Windows, assign the adapter child to a kill-on-close
+        // Job Object so the whole adapter subprocess tree is torn down on
+        // shutdown/drop. The Unix adapter keeps its existing process_group(0)
+        // path unchanged (DoD: "remains intact"). Best-effort: a failed
+        // assignment leaves the host without L0 tree-kill but does not block start.
+        #[cfg(windows)]
+        let l0_guard = TreeGuard::attach(child.id().unwrap_or(0)).ok();
+        #[cfg(not(windows))]
+        let l0_guard: Option<TreeGuard> = {
+            // No adapter L0 change on Unix (process_group(0) path remains intact).
+            let _ = &mut child;
+            None
+        };
+
         let stdin = child.stdin.take().expect("stdin should be piped");
         let stdout = child.stdout.take().expect("stdout should be piped");
         let stderr = child.stderr.take().expect("stderr should be piped");
@@ -233,6 +253,7 @@ impl AdapterHost {
             child: Some(child),
             reader_handle: Some(reader_handle),
             id_counter: AtomicU64::new(1),
+            l0_guard,
         };
 
         // Perform the initialize handshake
@@ -479,6 +500,12 @@ impl AdapterHost {
             match tokio::time::timeout(Duration::from_secs(5), child.wait()).await {
                 Ok(_) => {}
                 Err(_) => {
+                    // Phase 15.4 L0: the graceful wait timed out, so tear down
+                    // the whole adapter subprocess tree (kill-on-close on
+                    // Windows) before reaping the direct child. On the graceful
+                    // path the guard is dropped later when the host is dropped,
+                    // cleaning up any orphaned grandchildren.
+                    self.l0_guard.take();
                     let _ = child.kill().await;
                     let _ = child.wait().await;
                 }

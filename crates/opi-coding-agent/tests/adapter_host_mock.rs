@@ -34,6 +34,7 @@ fn main() {
         "event_backpressure" => run_event_backpressure(&mut reader, &mut writer),
         "shutdown_marker" => run_shutdown_marker(&mut reader, &mut writer),
         "cancel_tool" => run_cancel_tool(&mut reader, &mut writer),
+        "l0_grandchild" => run_l0_grandchild(&mut reader, &mut writer),
         _ => std::process::exit(1),
     }
 }
@@ -52,6 +53,61 @@ fn write_msg(writer: &mut impl Write, value: &serde_json::Value) {
     writer.write_all(json.as_bytes()).unwrap();
     writer.write_all(b"\n").unwrap();
     writer.flush().unwrap();
+}
+
+/// Phase 15.4 adapter L0 marker mode: complete the initialize handshake, then
+/// spawn a marker GRANDCHILD that records its pid and sleeps. The AdapterHost
+/// assigns THIS process to a kill-on-close Job Object (Windows) / process group
+/// (Unix); the grandchild inherits that containment. When the host is dropped or
+/// shut down the whole tree — this process plus the grandchild — must be reaped,
+/// which the sandbox_l0 adapter test observes via the pidfile.
+fn run_l0_grandchild(reader: &mut impl BufRead, writer: &mut impl Write) {
+    if let Some(line) = read_line(reader) {
+        let msg: serde_json::Value = match serde_json::from_str(&line) {
+            Ok(m) => m,
+            Err(_) => return,
+        };
+        if msg["type"].as_str() != Some("initialize") {
+            return;
+        }
+        let id = msg["id"].as_str().unwrap_or("1");
+        write_msg(
+            writer,
+            &serde_json::json!({
+                "type": "capabilities",
+                "id": id,
+                "tools": [],
+                "commands": [],
+                "hooks": [],
+                "model_overrides": []
+            }),
+        );
+    }
+
+    // Spawn the marker grandchild (a child of this mock process). Its pid is
+    // recorded so the test can observe whether the host's L0 teardown reaped it.
+    let pidfile = std::env::var("OPI_L0_GC_PIDFILE").unwrap_or_default();
+    if !pidfile.is_empty() {
+        #[cfg(windows)]
+        {
+            let script = format!(
+                "$PID | Out-File -FilePath '{}' -NoNewline -Encoding ASCII\nStart-Sleep -Seconds 60\n",
+                pidfile
+            );
+            let _ = std::process::Command::new("powershell")
+                .args(["-NoProfile", "-Command", &script])
+                .spawn();
+        }
+        #[cfg(unix)]
+        {
+            let _ = std::process::Command::new("sh")
+                .args(["-c", &format!("echo $$ > '{}'; sleep 60", pidfile)])
+                .spawn();
+        }
+    }
+
+    // Stay alive until the host closes stdin / tears the tree down.
+    while read_line(reader).is_some() {}
 }
 
 fn run_capabilities(reader: &mut impl BufRead, writer: &mut impl Write) {

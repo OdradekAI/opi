@@ -44,6 +44,8 @@ use serde::{Deserialize, Serialize};
 use tokio::io::AsyncReadExt;
 use tokio_util::sync::CancellationToken;
 
+use super::process_tree::{TerminationOutcome, TreeGuard};
+
 // =========================================================================
 // Error types (house thiserror style; see policy.rs and credential_store.rs)
 // =========================================================================
@@ -513,11 +515,23 @@ impl BashOperations for LocalBashOperations {
             } = request;
             let shell = if cfg!(windows) { "cmd" } else { "sh" };
             let flag = if cfg!(windows) { "/C" } else { "-c" };
+            // L0 degraded-diagnostics accumulator (Phase 15.4): attach/terminate
+            // failures append one `CODE_SANDBOX_DEGRADED` ToolDiagnostic each;
+            // the result arms fold them in alongside the operation-context diag.
+            let mut degraded_diagnostics: Vec<ToolDiagnostic> = Vec::new();
+
             let mut cmd = tokio::process::Command::new(shell);
             cmd.arg(flag)
                 .arg(&command)
                 .current_dir(&cwd)
                 .kill_on_drop(true);
+            // Phase 15.4 L0: put the child in a tree-containment scope so the
+            // whole subprocess tree (not just the direct child) is torn down on
+            // timeout, cancellation, or a dropped exec future. Pre-spawn the
+            // child enters a new process group (Unix); the Windows Job Object is
+            // attached just after spawn. All FFI lives in `super::process_tree`;
+            // this module stays #![forbid(unsafe_code)].
+            super::process_tree::configure_tree(&mut cmd);
             // env augments the inherited environment on top of what the child
             // already receives; empty in current usage.
             for (key, value) in &env {
@@ -529,6 +543,17 @@ impl BashOperations for LocalBashOperations {
                     return Err(BashOpError::SpawnFailed {
                         message: e.to_string(),
                     });
+                }
+            };
+
+            // Attach L0 to the spawned child. Fail-open: on failure we keep a
+            // disabled guard (the direct child is still killed via kill_on_drop
+            // + child.kill on timeout/cancel) and record one degraded diagnostic.
+            let mut l0_tree = match TreeGuard::attach(child.id().unwrap_or(0)) {
+                Ok(guard) => guard,
+                Err(e) => {
+                    degraded_diagnostics.push(l0_degraded_diagnostic(&e));
+                    TreeGuard::disabled()
                 }
             };
 
@@ -574,20 +599,44 @@ impl BashOperations for LocalBashOperations {
                     biased;
                     _ = &mut cancel_future => {
                         let kill_error = child.kill().await.err().map(|e| e.to_string());
-                        Control::Cancelled { kill_error }
+                        // L0: terminate the whole tree; surface a degrade if it
+                        // fails (the direct-child kill above already ran).
+                        let term_diag = match l0_tree.terminate() {
+                            TerminationOutcome::Failed(e) => Some(l0_degraded_diagnostic(&e)),
+                            _ => None,
+                        };
+                        (Control::Cancelled { kill_error }, term_diag)
                     }
                     _ = &mut timeout_future => {
                         let kill_error = child.kill().await.err().map(|e| e.to_string());
-                        Control::TimedOut { kill_error }
+                        let term_diag = match l0_tree.terminate() {
+                            TerminationOutcome::Failed(e) => Some(l0_degraded_diagnostic(&e)),
+                            _ => None,
+                        };
+                        (Control::TimedOut { kill_error }, term_diag)
                     }
                     status = child.wait() => match status {
-                        Ok(s) => Control::Done(s),
-                        Err(_) => Control::WaitFailed,
+                        Ok(s) => {
+                            // Clean exit: disarm L0 so the tree is NOT torn down
+                            // (matches pre-15.4 behavior for backgrounded survivors).
+                            l0_tree.disarm();
+                            (Control::Done(s), None)
+                        }
+                        Err(_) => {
+                            let term_diag = match l0_tree.terminate() {
+                                TerminationOutcome::Failed(e) => Some(l0_degraded_diagnostic(&e)),
+                                _ => None,
+                            };
+                            (Control::WaitFailed, term_diag)
+                        }
                     },
                 }
             };
 
-            let (_, _, ctrl) = tokio::join!(drain_out, drain_err, control);
+            let (_, _, (ctrl, term_diag)) = tokio::join!(drain_out, drain_err, control);
+            if let Some(d) = term_diag {
+                degraded_diagnostics.push(d);
+            }
 
             match ctrl {
                 Control::Cancelled { kill_error } => {
@@ -606,7 +655,10 @@ impl BashOperations for LocalBashOperations {
                         stderr: Vec::new(),
                         exit_code: None,
                         signal: None,
-                        diagnostics: vec![diag],
+                        diagnostics: vec![diag]
+                            .into_iter()
+                            .chain(degraded_diagnostics.iter().cloned())
+                            .collect(),
                     })
                 }
                 Control::TimedOut { kill_error } => {
@@ -625,7 +677,10 @@ impl BashOperations for LocalBashOperations {
                         stderr: Vec::new(),
                         exit_code: None,
                         signal: None,
-                        diagnostics: vec![diag],
+                        diagnostics: vec![diag]
+                            .into_iter()
+                            .chain(degraded_diagnostics.iter().cloned())
+                            .collect(),
                     })
                 }
                 Control::WaitFailed => Err(BashOpError::WaitFailed {
@@ -669,7 +724,10 @@ impl BashOperations for LocalBashOperations {
                         stderr,
                         exit_code,
                         signal: signal_num,
-                        diagnostics: vec![diag],
+                        diagnostics: vec![diag]
+                            .into_iter()
+                            .chain(degraded_diagnostics.iter().cloned())
+                            .collect(),
                     })
                 }
             }
@@ -725,6 +783,22 @@ fn bash_operation_context_diagnostic(
         code: LOCAL_BASH_OPERATION_DIAGNOSTIC.to_string(),
         message: message.to_string(),
         details: Some(details),
+    }
+}
+
+/// Build the L0 degraded [`ToolDiagnostic`] (local type) from an
+/// [`super::process_tree::AttachError`]. Reuses the stable
+/// `CODE_SANDBOX_DEGRADED` literal from [`crate::diagnostics`] so embedders can
+/// match it by string, and restricts `details` to the redacted `{layer, reason}`
+/// pair — no command text, paths, env, or secrets.
+fn l0_degraded_diagnostic(err: &super::process_tree::AttachError) -> ToolDiagnostic {
+    ToolDiagnostic {
+        code: crate::diagnostics::CODE_SANDBOX_DEGRADED.to_string(),
+        message: "subprocess tree lifecycle degraded".to_string(),
+        details: Some(serde_json::json!({
+            "layer": err.layer,
+            "reason": err.reason,
+        })),
     }
 }
 

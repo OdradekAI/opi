@@ -5,6 +5,7 @@ mod glob;
 mod grep;
 mod ls;
 mod operations;
+mod process_tree;
 mod read;
 mod write;
 
@@ -19,6 +20,7 @@ pub use operations::{
     LOCAL_BASH_OPERATION_DIAGNOSTIC, LocalBashOperations, LocalFileOperations,
     MAX_BASH_OUTPUT_BYTES, OpMetadata, ToolDiagnostic,
 };
+pub use process_tree::{AttachError, TerminationOutcome, TreeGuard, configure_tree};
 pub use read::{MAX_READ_OUTPUT_BYTES, ReadTool};
 pub use write::WriteTool;
 
