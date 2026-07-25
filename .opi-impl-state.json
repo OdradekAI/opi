@@ -1351,7 +1351,7 @@
       "definition_of_done": "Windows keeps the always-on L0 Job-Object lifecycle from 15.4 and advertises L1-L3 as unavailable rather than pretending to confine the bash child. A strict request produces exactly one redacted startup unavailability diagnostic; `require = false` executes at L0 and `require = true` returns before process creation. Capability-injected Windows tests plus a factory-built BashTool selected by the production `sandbox::prepare` dispatcher prove the diagnostic code/details, once-per-startup behavior, fail-open baseline, fail-closed non-execution, and unchanged kill-on-close/no-breakaway properties without elevated privileges. A native Windows runner must execute the platform product test with at least one passed test, zero failures, and zero ignored/skipped tests; a wrong-host zero-test or skipped result is not acceptance evidence.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "15.5.1"
       ],
@@ -1432,7 +1432,7 @@
             "crates/opi-coding-agent/src/sandbox.rs::prepare",
             "crates/opi-coding-agent/src/sandbox/windows.rs::prepare (planned)"
           ],
-          "status": "open"
+          "status": "met"
         }
       ],
       "production_call_sites": [
@@ -1444,7 +1444,7 @@
       "substrate_only": false,
       "iteration_count": 0,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "733031d63c1007d982adcc08dd15984c6b018455",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "crates/opi-coding-agent/src/sandbox/windows.rs",
@@ -1452,11 +1452,107 @@
         "crates/opi-coding-agent/tests/sandbox_l0.rs",
         "crates/opi-coding-agent/src/sandbox.rs"
       ],
-      "last_attempt": null,
-      "verified_at_commit": null,
-      "evidence": null,
+      "last_attempt": {
+        "attempt": 1,
+        "started_at": "2026-07-25T15:09:16.250Z",
+        "ended_at": "2026-07-25T15:30:59.630Z",
+        "outcome": "passing",
+        "failing_gate": null,
+        "touched_files": [
+          "crates/opi-coding-agent/src/sandbox.rs",
+          "crates/opi-coding-agent/src/sandbox/windows.rs",
+          "crates/opi-coding-agent/tests/sandbox_strict.rs"
+        ]
+      },
+      "verified_at_commit": "7381bce7f56f5f2e34f8498dbe6851a47b6a11a3",
+      "evidence": {
+        "task": "15.5.5",
+        "dod_sha256": "41a9b0e21f5c935f8475de259db0cd323508050cf5c41c3d7bb6b98e8187e767",
+        "verification": "cli-runtime; crate-scoped gates green on Windows (lib 82, bin 23, sandbox_strict 7 incl. windows_strict_reports_l0_only + windows_strict_production_dispatch_reports_l0_only, sandbox_l0 5 incl. windows_bash_and_adapter_use_kill_on_close_job, sandbox_config 24, tool_operations 21, tools_read_write_edit_bash 95, tool_selection 30, config_tests 50); clippy --all-targets -D warnings clean; rustdoc -D warnings clean; fmt --check clean. Full-workspace smoke skipped (disk-fill risk on this host per standing memory). D.2 deep exec verify (6-lens wf_e838066c-614 over the task tree) clean on first run: 0 must-fix, 0 flagged, 0 rejected; all 6 lenses inspected the diff, 5 ran cargo incl. L-D3 production-call-site-proven + L-D4 evidence-truthfulness.",
+        "evaluator": "passed",
+        "commit": "7381bce7f56f5f2e34f8498dbe6851a47b6a11a3"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-07-25T15:09:16.250Z",
+          "attempt": 1,
+          "summary": "Phase B confirmed at start_commit 733031d (15.5.1 ledger checkpoint). User authorized Run 15.5.5 (Windows strict capability fallback) after the host-verifiability gate: auto-pick 15.5.2 (Linux seccomp substrate) and 15.5.4 (macOS) both compile out + run 0 tests on this Windows host, so the user overrode to the one fully-verifiable failing task. Fully verifiable on Windows: cfg(windows) product tests on a native runner. Crate-scoped gates for opi-coding-agent (full-workspace smoke skipped: disk-fill risk on this host per standing memory). evaluator_required=true -> D.2 runs the full 6-lens deep exec verify. 15.5.1 already shipped the inline WindowsL0OnlyBackend + fail-open/fail-closed + once-per-startup diagnostic; 15.5.5 extracts the Windows backend into sandbox/windows.rs on the production dispatch path (prepare_production routes through windows::prepare on Windows; production_sandbox_backend delegates to windows::L0OnlyBackend) and adds the two native Windows product tests (windows_strict_reports_l0_only, windows_strict_production_dispatch_reports_l0_only). sandbox/windows.rs keeps #![forbid(unsafe_code)] (no FFI; L0 Job-Object code stays in tool/process_tree.rs). windows_bash_and_adapter_use_kill_on_close_job (sandbox_l0.rs, from 15.4) already proves the unchanged kill-on-close / no-breakaway L0 properties.",
+          "gate_results": []
+        },
+        {
+          "timestamp": "2026-07-25T15:30:59.630Z",
+          "attempt": 1,
+          "summary": "Phase D passed at commit 7381bce (amended from ad4f702 to flip Opi-Evaluator pending -> passed). Crate-scoped mechanical gates green on Windows (lib 82, bin 23, sandbox_strict 7 incl. windows_strict_*, sandbox_l0 5 incl. windows_bash_and_adapter_use_kill_on_close_job, sandbox_config 24, tool_operations 21, tools_read_write_edit_bash 95, tool_selection 30, config_tests 50; clippy/rustdoc/fmt clean). D.2 deep exec verify (6-lens wf_e838066c-614) clean on first run: 0 must-fix/flagged/rejected; all 6 lenses inspected the diff (5 ran cargo incl. L-D3 production-call-site + L-D4 evidence-truthfulness). 15.5.5 extracts the Windows L0-only backend into sandbox/windows.rs on the production dispatch path (prepare_production -> windows::prepare on Windows; production_sandbox_backend -> windows::L0OnlyBackend) and adds the two native cfg(windows) product tests; behavior was characterized green vs 15.5.1 pre-refactor and stayed green after (behavior-preserving). Disk incident mid-Phase-D: a single 'cargo test -p opi-coding-agent' (all ~40 binaries at once) filled D: to 0.0GB and failed every link; resolved by 'cargo clean -p opi-coding-agent' (reclaimed 78GiB) + per-binary crate-scoped gates. Fully verifiable on Windows (native runner; cfg(windows) product tests).",
+          "gate_results": [
+            {
+              "gate": "cargo test --lib",
+              "passed": true,
+              "detail": "82 passed"
+            },
+            {
+              "gate": "cargo test --bin opi",
+              "passed": true,
+              "detail": "23 passed"
+            },
+            {
+              "gate": "cargo test --test sandbox_strict",
+              "passed": true,
+              "detail": "7 passed (incl. windows_strict_reports_l0_only + windows_strict_production_dispatch_reports_l0_only)"
+            },
+            {
+              "gate": "cargo test --test sandbox_l0",
+              "passed": true,
+              "detail": "5 passed (incl. windows_bash_and_adapter_use_kill_on_close_job)"
+            },
+            {
+              "gate": "cargo test --test sandbox_config",
+              "passed": true,
+              "detail": "24 passed"
+            },
+            {
+              "gate": "cargo test --test tool_operations",
+              "passed": true,
+              "detail": "21 passed"
+            },
+            {
+              "gate": "cargo test --test tools_read_write_edit_bash",
+              "passed": true,
+              "detail": "95 passed"
+            },
+            {
+              "gate": "cargo test --test tool_selection",
+              "passed": true,
+              "detail": "30 passed"
+            },
+            {
+              "gate": "cargo test --test config_tests",
+              "passed": true,
+              "detail": "50 passed"
+            },
+            {
+              "gate": "clippy --all-targets -D warnings",
+              "passed": true,
+              "detail": "clean"
+            },
+            {
+              "gate": "rustdoc -D warnings",
+              "passed": true,
+              "detail": "clean"
+            },
+            {
+              "gate": "fmt --check",
+              "passed": true,
+              "detail": "clean"
+            },
+            {
+              "gate": "D.2 deep exec verify (6-lens wf_e838066c-614)",
+              "passed": true,
+              "detail": "clean: 0 must-fix, 0 flagged, 0 rejected; all 6 lenses inspected diff (5 ran cargo)"
+            }
+          ]
+        }
+      ]
     },
     {
       "id": "15.5.6",
@@ -3449,6 +3545,12 @@
       "attempt": 2,
       "summary": "Task 15.5.1 passing @9057b78 (strict sandbox policy resolver + production dispatch). D.2 clean (wf_2118004d-394). Phase 15 now 5/15 passing (15.1-15.5.1). Next unblocked: 15.5.2 (Linux seccomp backend feasibility; deps [15.5.1]) and 15.6 (project trust store; deps []). Lowest = 15.5.2.",
       "gate_results": []
+    },
+    {
+      "timestamp": "2026-07-25T15:30:59.630Z",
+      "attempt": 1,
+      "summary": "Task 15.5.5 passing @7381bce (Windows strict L0-only backend module on the production dispatch path + two native cfg(windows) product tests). D.2 clean (wf_e838066c-614, 0 must-fix). Phase 15 now 6/15 passing (15.1-15.5.1, 15.5.5). Next unblocked on this Windows host: none of the remaining phase-15 tasks are fully verifiable here (15.5.2 Linux + 15.5.4 macOS compile out; 15.5.3/15.5.6 blocked).",
+      "gate_results": []
     }
   ],
   "verify_runs": [
@@ -3550,6 +3652,16 @@
       "rejected_count": 0,
       "ran_at": "2026-07-25T13:52:36.521Z",
       "task_id": "15.5.1",
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": "wf_e838066c-614",
+      "folded_count": 0,
+      "flagged_count": 0,
+      "rejected_count": 0,
+      "ran_at": "2026-07-25T15:30:59.630Z",
+      "task_id": "15.5.5",
       "criterion_id": null
     }
   ]
