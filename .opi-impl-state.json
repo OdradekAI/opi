@@ -20,7 +20,7 @@
       "definition_of_done": "`opi-coding-agent::tool::operations` defines object-safe async `FileOperations` and `BashOperations` traits plus `FsOpError`, `BashOpError`, `OpMetadata`, `AccessMode`, `ToolDiagnostic`, `BashRequest`, and `BashResult`. `LocalFileOperations` implements read, write, recursive/non-recursive mkdir, metadata, and access against already-resolved paths; write replacement uses a same-directory temporary file followed by rename so a failed replacement leaves the previous file intact. Operations performs neither path expansion nor workspace confinement. Constructor-level mock tests prove the contracts preserve bytes, metadata, command cwd/env/timeout/cancellation fields, operation/path/error identity, and malformed or denied backend results without touching the real filesystem outside a temp root.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [],
       "inference_notes": [
         {
@@ -80,18 +80,79 @@
       "substrate_only": true,
       "iteration_count": 0,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "f0f0609",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "crates/opi-coding-agent/src/tool/operations.rs",
         "crates/opi-coding-agent/src/tool/mod.rs",
         "crates/opi-coding-agent/tests/tool_operations.rs"
       ],
-      "last_attempt": null,
-      "verified_at_commit": null,
-      "evidence": null,
+      "last_attempt": {
+        "attempt": 1,
+        "started_at": "2026-07-25T02:40:07.703Z",
+        "ended_at": "2026-07-25T03:40:55.898Z",
+        "outcome": "passing",
+        "failing_gate": null,
+        "touched_files": [
+          "crates/opi-coding-agent/src/tool/operations.rs",
+          "crates/opi-coding-agent/src/tool/mod.rs",
+          "crates/opi-coding-agent/tests/tool_operations.rs"
+        ]
+      },
+      "verified_at_commit": "11d4c28e8d3d4d0f85ff0d53f2bdf9795c95cf4c",
+      "evidence": {
+        "task": "15.1",
+        "dod_sha256": "2eac8621974dcc177f7703615a3cbd4151efa9533af2aa42f6e12679232f5b55",
+        "verification": "library; cargo test -p opi-coding-agent --test tool_operations (20 passed) + lib inline tool::operations (3 passed); clippy --all-targets -D warnings clean; RUSTDOCFLAGS=-D warnings cargo doc clean; fmt --check --all clean; L-D1+L-D5 exec verify clean",
+        "evaluator": "not-required",
+        "commit": "11d4c28e8d3d4d0f85ff0d53f2bdf9795c95cf4c"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-07-25T02:40:07.703Z",
+          "attempt": 1,
+          "summary": "Phase B confirmed at start_commit f0f0609. Skipped full-workspace A.3 smoke on this host (disk-fill risk per standing memory); Phase D will run crate-scoped library gates for opi-coding-agent.",
+          "gate_results": []
+        },
+        {
+          "timestamp": "2026-07-25T03:40:55.898Z",
+          "attempt": 1,
+          "summary": "Phase D passed; task verified passing at commit 11d4c28. Mechanical gates: test 23/23, clippy/doc/fmt clean. Exec verify (L-D1+L-D5 light path): clean, no must-fix. Skipped full-workspace smoke (disk-fill risk); crate-scoped gates substitute.",
+          "gate_results": [
+            {
+              "gate": "cargo test --test tool_operations",
+              "passed": true,
+              "detail": "20 passed"
+            },
+            {
+              "gate": "cargo test --lib tool::operations",
+              "passed": true,
+              "detail": "3 passed"
+            },
+            {
+              "gate": "clippy --all-targets -D warnings",
+              "passed": true,
+              "detail": "clean"
+            },
+            {
+              "gate": "rustdoc -D warnings",
+              "passed": true,
+              "detail": "clean"
+            },
+            {
+              "gate": "fmt --check --all",
+              "passed": true,
+              "detail": "clean"
+            },
+            {
+              "gate": "L-D1+L-D5 exec verify",
+              "passed": true,
+              "detail": "clean, no must-fix"
+            }
+          ]
+        }
+      ]
     },
     {
       "id": "15.2",
