@@ -61,7 +61,10 @@ use crate::policy::{RunMode, ToolRuntimeConfig, ToolSelection};
 use crate::prompt::SystemPromptBuilder;
 use crate::resource::{ExplicitResourcePaths, ResourceDiscoveryLayers, standard_discovery_layers};
 use crate::session_coordinator::{SessionCoordinator, to_wire_result};
-use crate::tool::{BashTool, EditTool, FindTool, GlobTool, GrepTool, LsTool, ReadTool, WriteTool};
+use crate::tool::{
+    BashOperations, BashTool, EditTool, FileOperations, FindTool, GlobTool, GrepTool,
+    LocalBashOperations, LocalFileOperations, LsTool, ReadTool, WriteTool,
+};
 
 /// Optional pre-existing session the harness can adopt instead of creating
 /// a new JSONL file. Produced by `--resume` flows.
@@ -2013,31 +2016,54 @@ impl CodingHarness {
             .map(|(result, _)| result)
     }
 
-    fn build_tools(workspace_root: &Path, tool_config: &ToolRuntimeConfig) -> Vec<Box<dyn Tool>> {
+    /// Construct the eight built-in tools, filtered to the active selection.
+    ///
+    /// Phase 15 T5: `build_tools` constructs the local Operations defaults
+    /// (`LocalFileOperations` / `LocalBashOperations`) and injects them into
+    /// exactly `read`/`write`/`edit`/`bash`. The four navigation tools
+    /// (`grep`/`find`/`ls`/`glob`) keep their local-walk constructors unchanged
+    /// — their `ignore`-crate walker cannot be cleanly redirected to a backend.
+    pub fn build_tools(
+        workspace_root: &Path,
+        tool_config: &ToolRuntimeConfig,
+    ) -> Vec<Box<dyn Tool>> {
         let read_policy = match tool_config.run_mode {
             RunMode::Interactive => crate::tool::PathPolicy::AllowOutsideWorkspace,
             RunMode::NonInteractive => crate::tool::PathPolicy::WorkspaceOnly,
         };
 
+        let file_ops: Arc<dyn FileOperations> = Arc::new(LocalFileOperations::new());
+        let bash_ops: Arc<dyn BashOperations> = Arc::new(LocalBashOperations::new());
+
         let mut tools: Vec<(&str, Box<dyn Tool>)> = vec![
             (
                 "read",
-                Box::new(ReadTool::new_with_policy(
+                Box::new(ReadTool::new_with_ops(
                     workspace_root.to_path_buf(),
                     read_policy,
+                    file_ops.clone(),
                 )),
             ),
             (
                 "write",
-                Box::new(WriteTool::new(workspace_root.to_path_buf())),
+                Box::new(WriteTool::new_with_ops(
+                    workspace_root.to_path_buf(),
+                    file_ops.clone(),
+                )),
             ),
             (
                 "edit",
-                Box::new(EditTool::new(workspace_root.to_path_buf())),
+                Box::new(EditTool::new_with_ops(
+                    workspace_root.to_path_buf(),
+                    file_ops.clone(),
+                )),
             ),
             (
                 "bash",
-                Box::new(BashTool::new(workspace_root.to_path_buf())),
+                Box::new(BashTool::new_with_ops(
+                    workspace_root.to_path_buf(),
+                    bash_ops.clone(),
+                )),
             ),
             (
                 "grep",

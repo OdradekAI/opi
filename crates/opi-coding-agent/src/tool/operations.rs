@@ -31,12 +31,17 @@
 
 #![forbid(unsafe_code)]
 
+use std::fs::{File, OpenOptions};
 use std::future::Future;
+use std::io::{self, Write as IoWrite};
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
+use std::process::Stdio;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, SystemTime};
 
 use serde::{Deserialize, Serialize};
+use tokio::io::AsyncReadExt;
 use tokio_util::sync::CancellationToken;
 
 // =========================================================================
@@ -458,6 +463,406 @@ async fn atomic_write_bytes(
 }
 
 // =========================================================================
+// LocalBashOperations (DoD-required local impl) + moved bash machinery
+// =========================================================================
+
+/// Maximum number of bytes of merged stdout+stderr the local bash backend
+/// retains inline (per stream) and reports through [`BashResult::stdout`] /
+/// [`BashResult::stderr`]. Output beyond the cap is truncated: the
+/// operation-context diagnostic carries `truncated = true` and the COMPLETE
+/// merged output is spilled to a temp file whose path is reported as
+/// `full_output`. Mirrors the Phase 11.1 bash cap; moved here from `bash.rs`
+// in 15.2 so the bounded capture lives inside `LocalBashOperations::exec`.
+pub const MAX_BASH_OUTPUT_BYTES: usize = 64 * 1024; // 64 KiB
+
+/// Local diagnostic code carried in [`BashResult::diagnostics`] to surface the
+/// operation-context flags the 15.2 `BashTool` wrapper lifts into the agent
+/// `ToolResult`. Distinct from `opi_agent` diagnostic codes: the Operations
+/// contract is self-contained (it does not pull in opi-agent tool-result
+/// types), and the wrapper remaps this to `CODE_TOOL_EXECUTION_FAILED`. Exactly
+/// one such diagnostic is emitted on every in-band [`BashResult`] (Done,
+/// TimedOut, Cancelled); spawn/wait failures route through `Err(BashOpError)`.
+pub const LOCAL_BASH_OPERATION_DIAGNOSTIC: &str = "opi.operations.bash.operation_context";
+
+/// Local [`BashOperations`] backend. Owns the bash spawn path the Phase 15 T4
+/// sandbox will attach to (T4 lives INSIDE this impl, not as a wrapper). The
+/// bounded `StreamCapture`, timeout/cancel/`wait` race, and exit/signal
+/// extraction all live here; `BashTool::execute` is a thin caller that maps the
+/// [`BashResult`] into the agent `ToolResult`. Stateless today.
+#[derive(Debug, Default)]
+pub struct LocalBashOperations;
+
+impl LocalBashOperations {
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl BashOperations for LocalBashOperations {
+    fn exec(
+        &self,
+        request: BashRequest,
+    ) -> Pin<Box<dyn Future<Output = Result<BashResult, BashOpError>> + Send>> {
+        Box::pin(async move {
+            let BashRequest {
+                command,
+                cwd,
+                timeout,
+                signal,
+                env,
+            } = request;
+            let shell = if cfg!(windows) { "cmd" } else { "sh" };
+            let flag = if cfg!(windows) { "/C" } else { "-c" };
+            let mut cmd = tokio::process::Command::new(shell);
+            cmd.arg(flag)
+                .arg(&command)
+                .current_dir(&cwd)
+                .kill_on_drop(true);
+            // env augments the inherited environment on top of what the child
+            // already receives; empty in current usage.
+            for (key, value) in &env {
+                cmd.env(key, value);
+            }
+            let mut child = match cmd.stdout(Stdio::piped()).stderr(Stdio::piped()).spawn() {
+                Ok(c) => c,
+                Err(e) => {
+                    return Err(BashOpError::SpawnFailed {
+                        message: e.to_string(),
+                    });
+                }
+            };
+
+            let stdout = child.stdout.take();
+            let stderr = child.stderr.take();
+
+            let timeout_future = tokio::time::sleep(timeout);
+            let cancel_future = signal.cancelled();
+            tokio::pin!(timeout_future);
+            tokio::pin!(cancel_future);
+
+            let mut out_cap = StreamCapture::new(MAX_BASH_OUTPUT_BYTES);
+            let mut err_cap = StreamCapture::new(MAX_BASH_OUTPUT_BYTES);
+
+            // Drain stdout/stderr concurrently with the wait/timeout/cancel race
+            // to avoid the stdout-then-stderr pipe deadlock. On timeout/cancel
+            // the child is killed, pipes hit EOF, drains finish, and captures
+            // are discarded (with spill files cleaned up).
+            let drain_out = async {
+                if let Some(mut s) = stdout {
+                    let mut buf = [0u8; 8192];
+                    loop {
+                        match s.read(&mut buf).await {
+                            Ok(0) | Err(_) => break,
+                            Ok(n) => out_cap.append(&buf[..n]),
+                        }
+                    }
+                }
+            };
+            let drain_err = async {
+                if let Some(mut s) = stderr {
+                    let mut buf = [0u8; 8192];
+                    loop {
+                        match s.read(&mut buf).await {
+                            Ok(0) | Err(_) => break,
+                            Ok(n) => err_cap.append(&buf[..n]),
+                        }
+                    }
+                }
+            };
+            let control = async {
+                tokio::select! {
+                    biased;
+                    _ = &mut cancel_future => {
+                        let kill_error = child.kill().await.err().map(|e| e.to_string());
+                        Control::Cancelled { kill_error }
+                    }
+                    _ = &mut timeout_future => {
+                        let kill_error = child.kill().await.err().map(|e| e.to_string());
+                        Control::TimedOut { kill_error }
+                    }
+                    status = child.wait() => match status {
+                        Ok(s) => Control::Done(s),
+                        Err(_) => Control::WaitFailed,
+                    },
+                }
+            };
+
+            let (_, _, ctrl) = tokio::join!(drain_out, drain_err, control);
+
+            match ctrl {
+                Control::Cancelled { kill_error } => {
+                    cleanup_spill(&mut out_cap);
+                    cleanup_spill(&mut err_cap);
+                    let diag = bash_operation_context_diagnostic(
+                        None,
+                        true,
+                        false,
+                        false,
+                        None,
+                        kill_error.as_deref(),
+                    );
+                    Ok(BashResult {
+                        stdout: Vec::new(),
+                        stderr: Vec::new(),
+                        exit_code: None,
+                        signal: None,
+                        diagnostics: vec![diag],
+                    })
+                }
+                Control::TimedOut { kill_error } => {
+                    cleanup_spill(&mut out_cap);
+                    cleanup_spill(&mut err_cap);
+                    let diag = bash_operation_context_diagnostic(
+                        None,
+                        false,
+                        true,
+                        false,
+                        None,
+                        kill_error.as_deref(),
+                    );
+                    Ok(BashResult {
+                        stdout: Vec::new(),
+                        stderr: Vec::new(),
+                        exit_code: None,
+                        signal: None,
+                        diagnostics: vec![diag],
+                    })
+                }
+                Control::WaitFailed => Err(BashOpError::WaitFailed {
+                    message: "failed to wait for process".to_string(),
+                }),
+                Control::Done(status) => {
+                    let exit_code = status.code();
+                    #[cfg(unix)]
+                    let signal_num = {
+                        use std::os::unix::process::ExitStatusExt;
+                        status.signal()
+                    };
+                    #[cfg(not(unix))]
+                    let signal_num: Option<i32> = None;
+
+                    let total = out_cap.total.saturating_add(err_cap.total);
+                    let truncated = total > MAX_BASH_OUTPUT_BYTES as u64;
+                    // On truncation, spill the COMPLETE merged output (stdout
+                    // then stderr) to one temp file and report its path; the
+                    // per-stream spill files are then removed.
+                    let full_output = if truncated {
+                        write_merged_full_output(&out_cap, &err_cap)
+                    } else {
+                        None
+                    };
+                    cleanup_spill(&mut out_cap);
+                    cleanup_spill(&mut err_cap);
+
+                    let stdout = out_cap.preview;
+                    let stderr = err_cap.preview;
+                    let diag = bash_operation_context_diagnostic(
+                        exit_code,
+                        false,
+                        false,
+                        truncated,
+                        full_output.as_deref(),
+                        None,
+                    );
+                    Ok(BashResult {
+                        stdout,
+                        stderr,
+                        exit_code,
+                        signal: signal_num,
+                        diagnostics: vec![diag],
+                    })
+                }
+            }
+        })
+    }
+}
+
+/// Which control branch won the wait/timeout/cancel race.
+enum Control {
+    Done(std::process::ExitStatus),
+    TimedOut { kill_error: Option<String> },
+    Cancelled { kill_error: Option<String> },
+    WaitFailed,
+}
+
+/// Build the in-band operation-context [`ToolDiagnostic`] (local type) that
+/// carries the flags the `BashTool` wrapper needs to reconstruct the agent
+/// `ToolResult`: `exit_code`, `cancelled`, `timed_out`, `truncated`,
+/// `full_output`, and `kill_error`. `command_included` is always `false`
+/// (commands may contain secrets). The wrapper remaps this diagnostic's code to
+/// `CODE_TOOL_EXECUTION_FAILED` and pushes it only on an error result, matching
+/// the pre-15.2 bash behavior.
+#[allow(clippy::too_many_arguments)]
+fn bash_operation_context_diagnostic(
+    exit_code: Option<i32>,
+    cancelled: bool,
+    timed_out: bool,
+    truncated: bool,
+    full_output: Option<&str>,
+    kill_error: Option<&str>,
+) -> ToolDiagnostic {
+    let message = if cancelled {
+        "command cancelled"
+    } else if timed_out {
+        "command timed out"
+    } else {
+        "command executed"
+    };
+    let mut details = serde_json::json!({
+        "exit_code": exit_code,
+        "cancelled": cancelled,
+        "timed_out": timed_out,
+        "truncated": truncated,
+        "command_included": false,
+    });
+    if let Some(full) = full_output {
+        details["full_output"] = serde_json::json!(full);
+    }
+    if let Some(kill) = kill_error {
+        details["kill_error"] = serde_json::json!(kill);
+    }
+    ToolDiagnostic {
+        code: LOCAL_BASH_OPERATION_DIAGNOSTIC.to_string(),
+        message: message.to_string(),
+        details: Some(details),
+    }
+}
+
+/// Bounded capture of one output stream (stdout or stderr). Holds the first
+/// `cap` bytes in memory as `preview` and, once the stream exceeds `cap`,
+/// spills the COMPLETE stream to a temp file. Memory is bounded to ~`cap` bytes
+/// regardless of total output; the spill file is byte-for-byte complete so it
+/// can serve as the `full_output` reference.
+///
+/// The append logic enforces a single-cursor invariant: every input byte routes
+/// to exactly one sink (see the moved-from-`bash.rs` stream-capture tests at the
+/// bottom of this module).
+struct StreamCapture {
+    preview: Vec<u8>,
+    spill: Option<File>,
+    spill_path: Option<PathBuf>,
+    spill_failed: bool,
+    total: u64,
+    cap: usize,
+}
+
+impl StreamCapture {
+    fn new(cap: usize) -> Self {
+        Self {
+            preview: Vec::new(),
+            spill: None,
+            spill_path: None,
+            spill_failed: false,
+            total: 0,
+            cap,
+        }
+    }
+
+    /// Append one read chunk. Single-cursor invariant.
+    fn append(&mut self, chunk: &[u8]) {
+        self.total = self.total.saturating_add(chunk.len() as u64);
+        if self.spill_failed {
+            return;
+        }
+
+        if self.preview.len() < self.cap {
+            let room = self.cap - self.preview.len();
+            let take = chunk.len().min(room);
+            self.preview.extend_from_slice(&chunk[..take]);
+            let rest = &chunk[take..];
+            if !rest.is_empty() && self.write_to_spill(rest).is_err() {
+                self.mark_spill_failed();
+            }
+        } else if self.write_to_spill(chunk).is_err() {
+            self.mark_spill_failed();
+        }
+    }
+
+    fn write_to_spill(&mut self, bytes: &[u8]) -> io::Result<()> {
+        self.ensure_spill()?;
+        self.spill.as_mut().expect("spill ensured").write_all(bytes)
+    }
+
+    fn mark_spill_failed(&mut self) {
+        self.spill_failed = true;
+        cleanup_spill(self);
+    }
+
+    /// Lazily create the spill file the first time output overflows. Seeded with
+    /// the frozen `cap`-byte preview so the file is the COMPLETE stream.
+    fn ensure_spill(&mut self) -> io::Result<()> {
+        if self.spill.is_none() {
+            let path = bash_output_temp_path();
+            let mut file = create_private_temp_file(&path)?;
+            file.write_all(&self.preview)?;
+            self.spill = Some(file);
+            self.spill_path = Some(path);
+        }
+        Ok(())
+    }
+
+    /// The complete stream bytes: spill file contents if it overflowed, else the
+    /// in-memory preview (which holds the whole stream because `total <= cap`).
+    fn complete_bytes(&self) -> io::Result<Vec<u8>> {
+        if self.spill_failed {
+            return Err(io::Error::other("bash output spill failed"));
+        }
+        match &self.spill_path {
+            Some(path) => std::fs::read(path),
+            None => Ok(self.preview.clone()),
+        }
+    }
+}
+
+/// Drop the spill file handle (if any) and best-effort remove the temp file.
+fn cleanup_spill(cap: &mut StreamCapture) {
+    cap.spill.take();
+    if let Some(path) = cap.spill_path.take() {
+        let _ = std::fs::remove_file(path);
+    }
+}
+
+/// Write the COMPLETE merged output (stdout-then-stderr) to one temp file and
+/// return its path. Returns `None` only if the file cannot be created/written.
+fn write_merged_full_output(out: &StreamCapture, err: &StreamCapture) -> Option<String> {
+    let out_bytes = out.complete_bytes().ok()?;
+    let err_bytes = err.complete_bytes().ok()?;
+    let path = bash_output_temp_path();
+    let mut file = create_private_temp_file(&path).ok()?;
+    file.write_all(&out_bytes).ok()?;
+    file.write_all(&err_bytes).ok()?;
+    let _ = file.sync_all();
+    drop(file);
+    Some(path.to_string_lossy().into_owned())
+}
+
+/// Create a private spill file at a caller-chosen temp path.
+fn create_private_temp_file(path: &Path) -> io::Result<File> {
+    let mut options = OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    options.open(path)
+}
+
+static BASH_OUTPUT_TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+/// A unique OS-temp path for a bash full-output spill file. Lives outside the
+/// workspace so it never appears in `git status` and is reaped by the OS.
+fn bash_output_temp_path() -> PathBuf {
+    let pid = std::process::id();
+    let nanos = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let counter = BASH_OUTPUT_TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
+    std::env::temp_dir().join(format!("opi-bash-output-{pid}-{nanos}-{counter}.log"))
+}
+
+// =========================================================================
 // Test-only failure-injection seam
 // =========================================================================
 
@@ -556,5 +961,81 @@ mod tests {
             .filter(|n| n.contains("opi-ops-tmp"))
             .collect();
         assert!(residue.is_empty(), "temp residue left behind: {residue:?}");
+    }
+
+    // ---- StreamCapture single-cursor invariant (moved here from bash.rs in
+    //      15.2 when the bounded capture relocated into LocalBashOperations). --
+
+    #[test]
+    fn stream_capture_holds_small_stream_in_preview() {
+        let mut c = StreamCapture::new(8);
+        c.append(b"abc");
+        c.append(b"de");
+        assert_eq!(c.total, 5);
+        assert_eq!(c.preview, b"abcde");
+        assert!(c.spill.is_none());
+        assert_eq!(c.complete_bytes().unwrap(), b"abcde");
+    }
+
+    #[test]
+    fn stream_capture_spills_complete_stream_on_overflow() {
+        let mut c = StreamCapture::new(4);
+        // Single huge chunk (6 bytes, cap 4): preview freezes at 4, spill holds all 6.
+        c.append(b"abcdef");
+        assert_eq!(c.total, 6);
+        assert_eq!(c.preview, b"abcd");
+        assert!(c.spill.is_some());
+        assert_eq!(c.complete_bytes().unwrap(), b"abcdef");
+    }
+
+    #[test]
+    fn stream_capture_mid_chunk_overflow_is_byte_complete() {
+        let mut c = StreamCapture::new(4);
+        c.append(b"ab"); // preview=2, no spill
+        c.append(b"cdefgh"); // fills preview to 4 (cd), spills complete (abcdefgh)
+        assert_eq!(c.total, 8);
+        assert_eq!(c.preview, b"abcd");
+        assert_eq!(c.complete_bytes().unwrap(), b"abcdefgh");
+    }
+
+    #[test]
+    fn stream_capture_exact_boundary_does_not_spill() {
+        let mut c = StreamCapture::new(4);
+        c.append(b"abcd"); // exactly cap, not overflow
+        assert_eq!(c.total, 4);
+        assert_eq!(c.preview, b"abcd");
+        assert!(c.spill.is_none());
+    }
+
+    #[test]
+    fn stream_capture_cap_plus_one_overflows() {
+        let mut c = StreamCapture::new(4);
+        c.append(b"abcde"); // cap+1 -> overflow
+        assert_eq!(c.total, 5);
+        assert_eq!(c.complete_bytes().unwrap(), b"abcde");
+    }
+
+    /// Regression: preview frozen at EXACTLY cap by an earlier fitting chunk (no
+    /// crossing remainder), then a LATER chunk overflows. The spill must be
+    /// seeded with the frozen preview so complete_bytes() is the full stream.
+    #[test]
+    fn stream_capture_exact_fit_then_overflow_is_byte_complete() {
+        let mut c = StreamCapture::new(4);
+        c.append(b"abcd"); // freezes preview at exactly cap, no spill
+        c.append(b"e"); // ELSE branch -> first overflow
+        assert_eq!(c.total, 5);
+        assert_eq!(c.complete_bytes().unwrap(), b"abcde");
+    }
+
+    /// Regression (many small chunks): preview reaches cap across several chunks
+    /// with no crossing remainder, then a later chunk overflows.
+    #[test]
+    fn stream_capture_many_small_exact_fit_then_overflow_is_byte_complete() {
+        let mut c = StreamCapture::new(4);
+        c.append(b"ab");
+        c.append(b"cd"); // freezes preview at exactly cap, no spill
+        c.append(b"efg"); // ELSE branch -> first overflow
+        assert_eq!(c.total, 7);
+        assert_eq!(c.complete_bytes().unwrap(), b"abcdefg");
     }
 }

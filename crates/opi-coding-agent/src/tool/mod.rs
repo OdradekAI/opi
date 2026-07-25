@@ -8,7 +8,7 @@ mod operations;
 mod read;
 mod write;
 
-pub use bash::{BashTool, MAX_BASH_OUTPUT_BYTES};
+pub use bash::BashTool;
 pub use edit::EditTool;
 pub use find::FindTool;
 pub use glob::GlobTool;
@@ -16,7 +16,8 @@ pub use grep::GrepTool;
 pub use ls::LsTool;
 pub use operations::{
     AccessMode, BashOpError, BashOperations, BashRequest, BashResult, FileOperations, FsOpError,
-    LocalFileOperations, OpMetadata, ToolDiagnostic,
+    LOCAL_BASH_OPERATION_DIAGNOSTIC, LocalBashOperations, LocalFileOperations,
+    MAX_BASH_OUTPUT_BYTES, OpMetadata, ToolDiagnostic,
 };
 pub use read::{MAX_READ_OUTPUT_BYTES, ReadTool};
 pub use write::WriteTool;

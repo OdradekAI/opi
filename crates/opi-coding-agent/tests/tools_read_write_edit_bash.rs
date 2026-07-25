@@ -1205,26 +1205,33 @@ async fn edit_truncates_before_after_for_large_file() {
     );
 }
 
-/// Phase 11.5 structural guard: EditTool applies edits via a sibling temp file
-/// and a rename into place (atomic, no partial writes), matching the 11.4 write
-/// standard, never a direct overwrite of the destination.
+/// Phase 11.5 structural guard: EditTool applies edits atomically (sibling temp
+/// file + rename, no partial writes), matching the 11.4 write standard. Phase
+/// 15.2 moved the atomic-write recipe into the local `FileOperations` backend
+/// (`operations.rs::atomic_write_bytes`); edit.rs now delegates read+write to
+/// the injected backend, so the guard verifies the delegation plus the backend's
+/// temp+rename mechanism.
 #[test]
 fn edit_uses_temp_and_rename_guard() {
     let root = phase11_workspace_root();
-    let src = std::fs::read_to_string(root.join("crates/opi-coding-agent/src/tool/edit.rs"))
+    let edit_src = std::fs::read_to_string(root.join("crates/opi-coding-agent/src/tool/edit.rs"))
         .expect("read edit.rs");
-    let s = phase11_strip_comments(&src);
+    let ops_src =
+        std::fs::read_to_string(root.join("crates/opi-coding-agent/src/tool/operations.rs"))
+            .expect("read operations.rs");
+    let edit = phase11_strip_comments(&edit_src);
+    let ops = phase11_strip_comments(&ops_src);
     assert!(
-        s.contains("rename"),
-        "edit.rs must rename a sibling temp file into place (atomic write)"
+        edit.contains("ops.read_file") && edit.contains("ops.write_file"),
+        "edit.rs must read and write through the injected FileOperations backend"
     );
     assert!(
-        s.contains(".opi-edit-tmp"),
-        "edit.rs must use the sibling temp marker (.opi-edit-tmp)"
+        ops.contains("rename"),
+        "operations.rs must rename a sibling temp file into place (atomic write)"
     );
     assert!(
-        !s.contains("fs::write(&file_path"),
-        "edit.rs must not write the destination directly; temp+rename"
+        !edit.contains("fs::write(&file_path"),
+        "edit.rs must not write the destination directly; the backend temp+renames"
     );
 }
 
@@ -2677,12 +2684,20 @@ fn bash_tool_is_mutating_and_sequential() {
 
 /// Phase 11.6: bash must remain a single-shot command tool. Regression lock
 /// against re-introducing persistent background shells / ptys / session pools.
+/// Phase 15.2 moved the spawn into `LocalBashOperations::exec` (operations.rs),
+/// so both the bash tool and the local backend are scanned for the forbidden
+/// symbols, and the single-shot `tokio::process::Command` positive control now
+/// lives in operations.rs.
 #[test]
 fn bash_tool_no_background_shell_symbols_guard() {
     let root = phase11_workspace_root();
-    let src = std::fs::read_to_string(root.join("crates/opi-coding-agent/src/tool/bash.rs"))
+    let bash_src = std::fs::read_to_string(root.join("crates/opi-coding-agent/src/tool/bash.rs"))
         .expect("read bash.rs");
-    let s = phase11_strip_comments(&src);
+    let ops_src =
+        std::fs::read_to_string(root.join("crates/opi-coding-agent/src/tool/operations.rs"))
+            .expect("read operations.rs");
+    let bash = phase11_strip_comments(&bash_src);
+    let ops = phase11_strip_comments(&ops_src);
     for needle in [
         "portable_pty",
         "portable-pty",
@@ -2698,15 +2713,15 @@ fn bash_tool_no_background_shell_symbols_guard() {
         "tokio::spawn",
     ] {
         assert!(
-            !s.contains(needle),
-            "bash.rs must not use a background-shell / persistence symbol '{needle}'"
+            !bash.contains(needle) && !ops.contains(needle),
+            "bash must not use a background-shell / persistence symbol '{needle}'"
         );
     }
     // Positive control: the legitimate single-shot command primitive is present
-    // (proves the guard is not vacuously passing an empty/rewritten file).
+    // in the local backend (proves the guard is not vacuously passing).
     assert!(
-        s.contains("tokio::process::Command"),
-        "bash.rs must use tokio::process::Command for single-shot execution"
+        ops.contains("tokio::process::Command"),
+        "operations.rs (LocalBashOperations) must use tokio::process::Command for single-shot execution"
     );
 }
 
@@ -2934,7 +2949,11 @@ fn tool_result_details_use_shared_builders_guard() {
     let tool_dir = root.join("crates/opi-coding-agent/src/tool");
     for entry in std::fs::read_dir(&tool_dir).expect("tool dir") {
         let p = entry.unwrap().path();
-        if p.extension().is_some_and(|e| e == "rs") {
+        // Phase 15.2: operations.rs defines a DISTINCT local ToolDiagnostic type
+        // (details: Option<Value>) carried in BashResult; it is not the agent
+        // ToolResult.details field this guard polices, so exclude it.
+        let is_operations = p.file_name().is_some_and(|n| n == "operations.rs");
+        if p.extension().is_some_and(|e| e == "rs") && !is_operations {
             scanned.push(p);
         }
     }
@@ -2975,28 +2994,33 @@ fn tool_result_details_use_shared_builders_guard() {
     }
 }
 
-/// Phase 11.4 structural guard: WriteTool must persist via a sibling temp file
-/// and a rename into place (atomic, no partial writes), never a direct
-/// overwrite of the destination. Behavioral no-partial/no-leak tests cannot by
-/// themselves prove the mechanism clause in the DoD ("writes to a sibling temp
-/// file and renames into place"), so this locks the implementation shape.
+/// Phase 11.4 structural guard: WriteTool must persist atomically (sibling temp
+/// file + rename, no partial writes), never a direct overwrite. Phase 15.2 moved
+/// the atomic-write recipe into the local `FileOperations` backend
+/// (`operations.rs::atomic_write_bytes`); write.rs delegates to the injected
+/// backend, so the guard verifies the delegation plus the backend's temp+rename
+/// mechanism. Behavioral no-partial/no-leak tests prove the end-to-end effect.
 #[test]
 fn write_uses_temp_and_rename_guard() {
     let root = phase11_workspace_root();
-    let src = std::fs::read_to_string(root.join("crates/opi-coding-agent/src/tool/write.rs"))
+    let write_src = std::fs::read_to_string(root.join("crates/opi-coding-agent/src/tool/write.rs"))
         .expect("read write.rs");
-    let s = phase11_strip_comments(&src);
+    let ops_src =
+        std::fs::read_to_string(root.join("crates/opi-coding-agent/src/tool/operations.rs"))
+            .expect("read operations.rs");
+    let write = phase11_strip_comments(&write_src);
+    let ops = phase11_strip_comments(&ops_src);
     assert!(
-        s.contains("rename"),
-        "write.rs must rename a sibling temp file into place (atomic write)"
+        write.contains("ops.write_file"),
+        "write.rs must delegate writing to the injected FileOperations backend"
     );
     assert!(
-        s.contains(".opi-write-tmp"),
-        "write.rs must use the sibling temp marker (.opi-write-tmp)"
+        ops.contains("rename"),
+        "operations.rs must rename a sibling temp file into place (atomic write)"
     );
     assert!(
-        !s.contains("fs::write(&file_path"),
-        "write.rs must not write the final destination directly; it must temp+rename"
+        !write.contains("fs::write(&file_path"),
+        "write.rs must not write the final destination directly; the backend temp+renames"
     );
 }
 
@@ -3019,56 +3043,61 @@ fn write_and_edit_temp_files_have_drop_cleanup_guard() {
         "TempFileGuard::drop must use sync remove_file because Drop cannot await"
     );
 
-    for (relative, marker) in [
-        (
-            "crates/opi-coding-agent/src/tool/write.rs",
-            ".opi-write-tmp",
-        ),
-        ("crates/opi-coding-agent/src/tool/edit.rs", ".opi-edit-tmp"),
-    ] {
-        let src = std::fs::read_to_string(root.join(relative))
-            .unwrap_or_else(|e| panic!("read {relative}: {e}"));
-        let s = phase11_strip_comments(&src);
-        assert!(
-            s.contains(marker),
-            "{relative} must retain temp marker {marker}"
-        );
-        assert!(
-            s.contains("TempFileGuard::new"),
-            "{relative} must arm the temp-file cleanup guard before writing"
-        );
-        assert!(
-            s.contains("temp_guard.path()"),
-            "{relative} must route temp write/rename through the guard path"
-        );
-        assert!(
-            s.contains("temp_guard.cleanup().await"),
-            "{relative} must eagerly clean up known error paths"
-        );
-        assert!(
-            s.contains("temp_guard.disarm()"),
-            "{relative} must disarm the guard after successful rename"
-        );
-    }
+    // Phase 15.2: the atomic-write recipe (TempFileGuard + rename) moved from
+    // the individual file tools into LocalFileOperations::atomic_write_bytes
+    // (operations.rs). The shared guard (mod.rs) is unchanged; the backend is
+    // where it is now armed, routed, cleaned up, and disarmed.
+    let ops_src =
+        std::fs::read_to_string(root.join("crates/opi-coding-agent/src/tool/operations.rs"))
+            .expect("read operations.rs");
+    let ops = phase11_strip_comments(&ops_src);
+    assert!(
+        ops.contains("TempFileGuard::new"),
+        "operations.rs must arm the temp-file cleanup guard before writing"
+    );
+    assert!(
+        ops.contains("guard.path()"),
+        "operations.rs must route temp write/rename through the guard path"
+    );
+    assert!(
+        ops.contains("guard.cleanup().await"),
+        "operations.rs must eagerly clean up known error paths"
+    );
+    assert!(
+        ops.contains("guard.disarm()"),
+        "operations.rs must disarm the guard after successful rename"
+    );
 }
 
 // ---------------------------------------------------------------------------
 // Read tool hardening (Phase 11.3)
 // ---------------------------------------------------------------------------
 
+/// Phase 11.3 + 15.2 structural guard. Originally pinned that read.rs streamed
+/// file bytes through a bounded read buffer. Phase 15.2 routes read through the
+/// injected `FileOperations` backend (`ops.read_file`) and applies the line
+/// window + byte cap on the assembled body at the tool layer. The local backend
+/// reads the file fully (streaming reads are a deferred 15.1 residual); the tool
+/// still caps OUTPUT at `MAX_READ_OUTPUT_BYTES`, so this guard now locks the
+/// backend-delegation + output-cap contract rather than the in-tool streaming
+/// loop.
 #[test]
-fn read_tool_streams_file_instead_of_buffering_entire_input() {
+fn read_tool_routes_through_backend_and_caps_body() {
     let root = phase11_workspace_root();
     let src = std::fs::read_to_string(root.join("crates/opi-coding-agent/src/tool/read.rs"))
         .expect("read read.rs");
     let s = phase11_strip_comments(&src);
     assert!(
-        !s.contains("tokio::fs::read(&file_path"),
-        "read.rs must not buffer the entire input file before applying output caps"
+        s.contains("ops.read_file"),
+        "read.rs must read through the injected FileOperations backend"
     );
     assert!(
-        s.contains("tokio::fs::File::open") && s.contains("read(&mut buffer)"),
-        "read.rs must stream file bytes through a bounded read buffer"
+        s.contains("MAX_READ_OUTPUT_BYTES"),
+        "read.rs must cap the assembled body at MAX_READ_OUTPUT_BYTES"
+    );
+    assert!(
+        !s.contains("tokio::fs::read(&file_path"),
+        "read.rs must not buffer the file directly via tokio::fs; it goes through the backend"
     );
 }
 

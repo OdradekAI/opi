@@ -19,10 +19,13 @@ use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use opi_agent::tool::Tool;
 use opi_coding_agent::tool::{
-    AccessMode, BashOpError, BashOperations, BashRequest, BashResult, FileOperations, FsOpError,
-    LocalFileOperations, OpMetadata, ToolDiagnostic,
+    AccessMode, BashOpError, BashOperations, BashRequest, BashResult, BashTool, EditTool,
+    FileOperations, FsOpError, LocalFileOperations, OpMetadata, PathPolicy, ReadTool,
+    ToolDiagnostic, WriteTool,
 };
+use serde_json::json;
 use tokio_util::sync::CancellationToken;
 
 // =========================================================================
@@ -676,5 +679,329 @@ impl BashOperations for MockBashOperations {
     ) -> Pin<Box<dyn Future<Output = Result<BashResult, BashOpError>> + Send>> {
         let result = self.next_exec.lock().unwrap().clone();
         Box::pin(async move { result })
+    }
+}
+
+// =========================================================================
+// Phase 15.2: Operations injection reaches tool execution (task 15.2)
+//
+// DoD: "Mock-backend tests prove policy rejection occurs before backend
+// invocation, permitted paths and bash requests reach the injected backend
+// exactly once, local defaults preserve existing tool output/truncation/error
+// behavior, and the production build_tools path constructs all eight tools."
+//
+// The keystone is an orchestrator over focused helpers so one regression
+// cannot block the whole gate. Local-default OUTPUT behavior is pinned by the
+// existing tools_read_write_edit_bash suite (now driven through the injected
+// LocalFileOperations / LocalBashOperations); eight-tool construction is pinned
+// by tool_selection::build_tools_constructs_expected_default_set.
+// =========================================================================
+
+#[tokio::test]
+async fn operations_injection_reaches_tool_execution() {
+    read_injected_ops_receive_resolved_path_once().await;
+    read_workspace_policy_rejects_outside_path_before_backend().await;
+    write_injected_ops_receive_resolved_path_and_bytes_once().await;
+    edit_injected_ops_read_then_write_through_backend().await;
+    bash_injected_ops_receive_request_fields_once().await;
+}
+
+async fn read_injected_ops_receive_resolved_path_once() {
+    let workspace = tempfile::tempdir().unwrap();
+    let resolved = workspace.path().join("inside.txt");
+    std::fs::write(&resolved, "hello").unwrap();
+    let recording = Arc::new(RecordingFileOps::default());
+    let tool = ReadTool::new_with_ops(
+        workspace.path().to_path_buf(),
+        PathPolicy::WorkspaceOnly,
+        recording.clone(),
+    );
+    let result = tool
+        .execute(
+            "c",
+            json!({ "path": "inside.txt" }),
+            CancellationToken::new(),
+            None,
+        )
+        .await
+        .expect("read execute");
+    assert!(!result.is_error, "permitted read must not be an error");
+
+    let reads = recording.reads.lock().unwrap().clone();
+    assert_eq!(
+        reads.len(),
+        1,
+        "read_file must reach the backend exactly once"
+    );
+    assert_eq!(reads[0], resolved, "backend must receive the resolved path");
+}
+
+async fn read_workspace_policy_rejects_outside_path_before_backend() {
+    let workspace = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    let outside_file = outside.path().join("escape.txt");
+    std::fs::write(&outside_file, "x").unwrap();
+
+    let recording = Arc::new(RecordingFileOps::default());
+    let tool = ReadTool::new_with_ops(
+        workspace.path().to_path_buf(),
+        PathPolicy::WorkspaceOnly,
+        recording.clone(),
+    );
+    let result = tool
+        .execute(
+            "c",
+            json!({ "path": outside_file.to_string_lossy() }),
+            CancellationToken::new(),
+            None,
+        )
+        .await
+        .expect("read execute");
+    assert!(result.is_error, "outside-workspace read must be rejected");
+
+    let reads = recording.reads.lock().unwrap().clone();
+    assert!(
+        reads.is_empty(),
+        "PathPolicy rejection must occur BEFORE any backend invocation: {reads:?}"
+    );
+}
+
+async fn write_injected_ops_receive_resolved_path_and_bytes_once() {
+    let workspace = tempfile::tempdir().unwrap();
+    let resolved = workspace.path().join("out.txt");
+    // cfg.meta = None => metadata NotFound => classified as a create.
+    let recording = Arc::new(RecordingFileOps::default());
+    let tool = WriteTool::new_with_ops(workspace.path().to_path_buf(), recording.clone());
+    let result = tool
+        .execute(
+            "c",
+            json!({ "path": "out.txt", "content": "data" }),
+            CancellationToken::new(),
+            None,
+        )
+        .await
+        .expect("write execute");
+    assert!(!result.is_error, "permitted write must not be an error");
+
+    let writes = recording.writes.lock().unwrap().clone();
+    assert_eq!(
+        writes.len(),
+        1,
+        "write_file must reach the backend exactly once"
+    );
+    assert_eq!(
+        writes[0].0, resolved,
+        "backend must receive the resolved path"
+    );
+    assert_eq!(
+        writes[0].1, b"data",
+        "backend must receive the verbatim content bytes"
+    );
+}
+
+async fn edit_injected_ops_read_then_write_through_backend() {
+    let workspace = tempfile::tempdir().unwrap();
+    let resolved = workspace.path().join("e.txt");
+    // cfg.meta = Some(true) (regular file); read returns content with one "old".
+    let recording = Arc::new(RecordingFileOps {
+        cfg: FileOpsConfig {
+            read_bytes: b"old content".to_vec(),
+            meta: Some(true),
+        },
+        ..Default::default()
+    });
+    let tool = EditTool::new_with_ops(workspace.path().to_path_buf(), recording.clone());
+    let result = tool
+        .execute(
+            "c",
+            json!({ "path": "e.txt", "old_string": "old", "new_string": "new" }),
+            CancellationToken::new(),
+            None,
+        )
+        .await
+        .expect("edit execute");
+    assert!(!result.is_error, "permitted edit must not be an error");
+
+    let reads = recording.reads.lock().unwrap().clone();
+    let writes = recording.writes.lock().unwrap().clone();
+    assert_eq!(reads.len(), 1, "edit reads through the backend once");
+    assert_eq!(writes.len(), 1, "edit writes through the backend once");
+    assert_eq!(writes[0].0, resolved);
+    assert_eq!(
+        writes[0].1, b"new content",
+        "backend must receive the replaced content"
+    );
+}
+
+async fn bash_injected_ops_receive_request_fields_once() {
+    let workspace = tempfile::tempdir().unwrap();
+    let recording = Arc::new(RecordingBashOps::exit_zero(b"out\n".to_vec()));
+    let tool = BashTool::new_with_ops(workspace.path().to_path_buf(), recording.clone());
+    let result = tool
+        .execute(
+            "c",
+            json!({ "command": "echo hi", "timeout_secs": 42 }),
+            CancellationToken::new(),
+            None,
+        )
+        .await
+        .expect("bash execute");
+    assert!(!result.is_error, "exit-0 bash must not be an error");
+
+    let execs = recording.execs.lock().unwrap().clone();
+    assert_eq!(execs.len(), 1, "exec must reach the backend exactly once");
+    let req = &execs[0];
+    assert_eq!(req.command, "echo hi", "command threads through");
+    assert_eq!(
+        req.cwd,
+        workspace.path().to_path_buf(),
+        "cwd threads through"
+    );
+    assert_eq!(
+        req.timeout,
+        Duration::from_secs(42),
+        "timeout threads through"
+    );
+    assert!(req.env.is_empty(), "env is empty in current usage");
+}
+
+// =========================================================================
+// Recording mock backends (Phase 15.2 injection tests)
+// =========================================================================
+
+#[derive(Clone, Default)]
+struct FileOpsConfig {
+    /// Bytes returned by `read_file`.
+    read_bytes: Vec<u8>,
+    /// `None` => metadata returns NotFound; `Some(true)` => regular file;
+    /// `Some(false)` => directory.
+    meta: Option<bool>,
+}
+
+/// Recorded `(resolved_path, bytes)` for one `write_file` call.
+type WriteRecord = (PathBuf, Vec<u8>);
+
+#[derive(Default)]
+struct RecordingFileOps {
+    cfg: FileOpsConfig,
+    reads: Arc<Mutex<Vec<PathBuf>>>,
+    writes: Arc<Mutex<Vec<WriteRecord>>>,
+    metas: Arc<Mutex<Vec<PathBuf>>>,
+    mkdirs: Arc<Mutex<Vec<PathBuf>>>,
+}
+
+impl FileOperations for RecordingFileOps {
+    fn read_file(
+        &self,
+        path: &Path,
+    ) -> Pin<Box<dyn Future<Output = Result<Vec<u8>, FsOpError>> + Send>> {
+        let path = path.to_path_buf();
+        let bytes = self.cfg.read_bytes.clone();
+        let reads = self.reads.clone();
+        Box::pin(async move {
+            reads.lock().unwrap().push(path);
+            Ok(bytes)
+        })
+    }
+
+    fn write_file(
+        &self,
+        path: &Path,
+        data: &[u8],
+    ) -> Pin<Box<dyn Future<Output = Result<(), FsOpError>> + Send>> {
+        let path = path.to_path_buf();
+        let data = data.to_vec();
+        let writes = self.writes.clone();
+        Box::pin(async move {
+            writes.lock().unwrap().push((path, data));
+            Ok(())
+        })
+    }
+
+    fn mkdir(
+        &self,
+        path: &Path,
+        _recursive: bool,
+    ) -> Pin<Box<dyn Future<Output = Result<(), FsOpError>> + Send>> {
+        let path = path.to_path_buf();
+        let mkdirs = self.mkdirs.clone();
+        Box::pin(async move {
+            mkdirs.lock().unwrap().push(path);
+            Ok(())
+        })
+    }
+
+    fn metadata(
+        &self,
+        path: &Path,
+    ) -> Pin<Box<dyn Future<Output = Result<OpMetadata, FsOpError>> + Send>> {
+        let recorded = path.to_path_buf();
+        let meta_opt = self.cfg.meta;
+        let len = self.cfg.read_bytes.len() as u64;
+        let metas = self.metas.clone();
+        Box::pin(async move {
+            metas.lock().unwrap().push(recorded);
+            match meta_opt {
+                None => Err(FsOpError::NotFound {
+                    path: PathBuf::from("/"),
+                }),
+                Some(true) => Ok(OpMetadata {
+                    len,
+                    is_dir: false,
+                    is_file: true,
+                    readonly: false,
+                    modified: None,
+                }),
+                Some(false) => Ok(OpMetadata {
+                    len: 0,
+                    is_dir: true,
+                    is_file: false,
+                    readonly: false,
+                    modified: None,
+                }),
+            }
+        })
+    }
+
+    fn access(
+        &self,
+        _path: &Path,
+        _mode: AccessMode,
+    ) -> Pin<Box<dyn Future<Output = Result<(), FsOpError>> + Send>> {
+        Box::pin(async move { Ok(()) })
+    }
+}
+
+struct RecordingBashOps {
+    execs: Arc<Mutex<Vec<BashRequest>>>,
+    result: BashResult,
+}
+
+impl RecordingBashOps {
+    fn exit_zero(stdout: Vec<u8>) -> Self {
+        Self {
+            execs: Arc::new(Mutex::new(Vec::new())),
+            result: BashResult {
+                stdout,
+                stderr: Vec::new(),
+                exit_code: Some(0),
+                signal: None,
+                diagnostics: Vec::new(),
+            },
+        }
+    }
+}
+
+impl BashOperations for RecordingBashOps {
+    fn exec(
+        &self,
+        request: BashRequest,
+    ) -> Pin<Box<dyn Future<Output = Result<BashResult, BashOpError>> + Send>> {
+        let result = self.result.clone();
+        let execs = self.execs.clone();
+        Box::pin(async move {
+            execs.lock().unwrap().push(request);
+            Ok(result)
+        })
     }
 }

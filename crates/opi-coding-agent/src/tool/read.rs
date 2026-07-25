@@ -1,6 +1,7 @@
 use std::future::Future;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::pin::Pin;
+use std::sync::Arc;
 
 use opi_agent::diagnostic::{FsToolError, code};
 use opi_agent::tool::ToolDiagnostic;
@@ -9,10 +10,9 @@ use opi_ai::message::{OutputContent, ToolDef};
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::json;
-use tokio::io::AsyncReadExt;
 use tokio_util::sync::CancellationToken;
 
-use super::PathPolicy;
+use super::{FileOperations, FsOpError, LocalFileOperations, PathPolicy};
 
 /// Default number of lines returned when the caller omits `limit`.
 ///
@@ -26,7 +26,6 @@ const DEFAULT_READ_LINES: usize = 2000;
 pub const MAX_READ_OUTPUT_BYTES: usize = 64 * 1024;
 
 const READ_BYTE_CAP_MARKER: &str = "... output truncated by byte cap";
-const READ_CHUNK_BYTES: usize = 8 * 1024;
 const READ_BODY_BUFFER_BYTES: usize = MAX_READ_OUTPUT_BYTES + READ_BYTE_CAP_MARKER.len() + 8;
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -49,19 +48,38 @@ pub struct ReadArgs {
 pub struct ReadTool {
     workspace_root: PathBuf,
     path_policy: PathPolicy,
+    ops: Arc<dyn FileOperations>,
     schema: serde_json::Value,
 }
 
 impl ReadTool {
+    /// Convenience constructor: workspace-confined policy with the local
+    /// filesystem backend. Production wiring injects via [`Self::new_with_ops`].
     pub fn new(workspace_root: PathBuf) -> Self {
         Self::new_with_policy(workspace_root, PathPolicy::WorkspaceOnly)
     }
 
     pub fn new_with_policy(workspace_root: PathBuf, path_policy: PathPolicy) -> Self {
+        Self::new_with_ops(
+            workspace_root,
+            path_policy,
+            Arc::new(LocalFileOperations::new()),
+        )
+    }
+
+    /// Primary constructor with an explicit [`FileOperations`] backend (Phase 15
+    /// T5 Operations seam). PathPolicy runs first; the backend receives the
+    /// already-resolved path.
+    pub fn new_with_ops(
+        workspace_root: PathBuf,
+        path_policy: PathPolicy,
+        ops: Arc<dyn FileOperations>,
+    ) -> Self {
         let schema = schemars::schema_for!(ReadArgs);
         Self {
             workspace_root,
             path_policy,
+            ops,
             schema: serde_json::to_value(&schema).unwrap_or_default(),
         }
     }
@@ -121,39 +139,42 @@ impl Tool for ReadTool {
         let file_path = resolved_path.path;
         let workspace_root = self.workspace_root.clone();
         let path_for_display = args.path.clone();
+        let ops = self.ops.clone();
         Box::pin(async move {
-            // Directories are rejected before any byte read so the NotAFile cause
-            // is reported instead of a binary/encoding error from reading a dir.
-            if file_path.is_dir() {
-                return Ok(super::fs_error_result(FsToolError::NotAFile {
-                    path: file_path.clone(),
-                }));
-            }
+            // The backend classifies NotFound / NotAFile (directory) /
+            // PermissionDenied on the resolved path; the tool layer adds binary
+            // detection, line-windowing, and the byte cap on the returned bytes.
+            let bytes = match ops.read_file(&file_path).await {
+                Ok(b) => b,
+                Err(FsOpError::NotFound { .. }) => {
+                    return Ok(super::fs_error_result(FsToolError::NotFound {
+                        user_path: path_for_display.clone(),
+                        resolved_path: Some(file_path.clone()),
+                    }));
+                }
+                Err(FsOpError::NotAFile { .. }) => {
+                    return Ok(super::fs_error_result(FsToolError::NotAFile {
+                        path: file_path.clone(),
+                    }));
+                }
+                Err(FsOpError::PermissionDenied { .. }) => {
+                    return Ok(super::fs_error_result(FsToolError::PermissionDenied {
+                        path: file_path.clone(),
+                    }));
+                }
+                Err(other) => {
+                    return Ok(result::err(vec![OutputContent::Text {
+                        text: format!("failed to read {}: {other}", file_path.display()),
+                    }]));
+                }
+            };
 
             // offset is 1-based; values below 1 floor to 1 so the reported
             // offset always matches the effective start line.
             let offset_1 = args.offset.unwrap_or(1).max(1);
             let take_n = args.limit.unwrap_or(DEFAULT_READ_LINES);
-            let scan = match stream_read_window(&file_path, offset_1, take_n).await {
+            let scan = match window_bytes(&bytes, offset_1, take_n) {
                 Ok(scan) => scan,
-                Err(ReadFileError::Io(e)) => match e.kind() {
-                    std::io::ErrorKind::NotFound => {
-                        return Ok(super::fs_error_result(FsToolError::NotFound {
-                            user_path: path_for_display.clone(),
-                            resolved_path: Some(file_path.clone()),
-                        }));
-                    }
-                    std::io::ErrorKind::PermissionDenied => {
-                        return Ok(super::fs_error_result(FsToolError::PermissionDenied {
-                            path: file_path.clone(),
-                        }));
-                    }
-                    _ => {
-                        return Ok(result::err(vec![OutputContent::Text {
-                            text: format!("failed to read {}: {e}", file_path.display()),
-                        }]));
-                    }
-                },
                 Err(ReadFileError::BinaryFile) => {
                     return Ok(super::fs_error_result(FsToolError::BinaryFile {
                         path: file_path.clone(),
@@ -273,44 +294,31 @@ struct StreamRead {
 }
 
 enum ReadFileError {
-    Io(std::io::Error),
     BinaryFile,
     UnsupportedEncoding { byte_offset: usize },
 }
 
-async fn stream_read_window(
-    path: &Path,
-    offset_1: usize,
-    take_n: usize,
-) -> Result<StreamRead, ReadFileError> {
-    let mut file = tokio::fs::File::open(path)
-        .await
-        .map_err(ReadFileError::Io)?;
-    let mut buffer = [0u8; READ_CHUNK_BYTES];
-    let mut accumulator = ReadAccumulator::new(offset_1, take_n);
-    let mut utf8 = Utf8StreamValidator::default();
-    let mut saw_nul = false;
-
-    loop {
-        let n = file.read(&mut buffer).await.map_err(ReadFileError::Io)?;
-        if n == 0 {
-            break;
-        }
-        let chunk = &buffer[..n];
-        if chunk.contains(&0u8) {
-            saw_nul = true;
-        }
-        utf8.push(chunk);
-        accumulator.push_chunk(chunk);
-    }
-
-    accumulator.finish();
-    if saw_nul {
+/// Apply the read-tool's binary detection, UTF-8 validation, line-windowing,
+/// and line-ending detection to an already-read byte slice. The file is read in
+/// full by the injected [`FileOperations`] backend; this owns the tool layer's
+/// content shaping (binary detect, line window, byte cap on the assembled body).
+/// Streaming reads are a deferred 15.1 residual (the prior `stream_read_window`
+/// avoided buffering the whole file; the seam trades that for backend delegation).
+fn window_bytes(bytes: &[u8], offset_1: usize, take_n: usize) -> Result<StreamRead, ReadFileError> {
+    // NUL bytes are the binary-content heuristic; checked before UTF-8 so a file
+    // that is both NUL-bearing and invalid UTF-8 reports as binary.
+    if bytes.contains(&0u8) {
         return Err(ReadFileError::BinaryFile);
     }
+    let mut utf8 = Utf8StreamValidator::default();
+    utf8.push(bytes);
     if let Some(byte_offset) = utf8.finish() {
         return Err(ReadFileError::UnsupportedEncoding { byte_offset });
     }
+
+    let mut accumulator = ReadAccumulator::new(offset_1, take_n);
+    accumulator.push_chunk(bytes);
+    accumulator.finish();
 
     let line_ending = accumulator.line_ending();
     let mut body = accumulator.selected;

@@ -427,3 +427,47 @@ fn non_interactive_mutating_tools_not_advertised_without_allow_mutating() {
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// Phase 15.2: build_tools constructs all eight built-in tools (T5 injection)
+// ---------------------------------------------------------------------------
+
+/// `CodingHarness::build_tools` constructs the local Operations defaults and
+/// injects them into read/write/edit/bash while leaving grep/find/ls/glob on
+/// their local-walk constructors. An Allowlist of all eight in Interactive mode
+/// activates every tool so the filtered output is the full canonical set, in
+/// canonical order (the production path the harness wires through build_tools).
+#[test]
+fn build_tools_constructs_expected_default_set() {
+    let workspace = create_temp_workspace();
+    let all_eight = vec![
+        "read".into(),
+        "write".into(),
+        "edit".into(),
+        "bash".into(),
+        "grep".into(),
+        "find".into(),
+        "ls".into(),
+        "glob".into(),
+    ];
+    let config = ToolRuntimeConfig::resolve(
+        RunMode::Interactive,
+        false,
+        ToolSelection::Allowlist(all_eight),
+    )
+    .expect("interactive allowlist of all eight resolves");
+
+    let tools = CodingHarness::build_tools(workspace.path(), &config);
+    let names: Vec<String> = tools
+        .iter()
+        .map(|t| t.definition().name.to_string())
+        .collect();
+
+    assert_eq!(
+        names,
+        vec![
+            "read", "write", "edit", "bash", "grep", "find", "ls", "glob"
+        ],
+        "build_tools must construct all eight built-in tools in canonical order"
+    );
+}

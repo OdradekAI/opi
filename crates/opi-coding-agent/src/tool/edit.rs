@@ -1,6 +1,7 @@
 use std::future::Future;
 use std::path::PathBuf;
 use std::pin::Pin;
+use std::sync::Arc;
 
 use opi_agent::diagnostic::{FsToolError, code};
 use opi_agent::tool::{ExecutionMode, Tool, ToolDiagnostic, ToolError, ToolResult, result};
@@ -9,6 +10,8 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
+
+use super::{FileOperations, FsOpError, LocalFileOperations};
 
 /// Maximum byte size of a file edit will read and rewrite. Files larger than
 /// this are rejected with a guardrail reason so the tool never buffers a
@@ -54,14 +57,25 @@ pub struct EditArgs {
 
 pub struct EditTool {
     workspace_root: PathBuf,
+    ops: Arc<dyn FileOperations>,
     schema: serde_json::Value,
 }
 
 impl EditTool {
+    /// Convenience constructor with the local filesystem backend. Production
+    /// wiring injects via [`Self::new_with_ops`].
     pub fn new(workspace_root: PathBuf) -> Self {
+        Self::new_with_ops(workspace_root, Arc::new(LocalFileOperations::new()))
+    }
+
+    /// Primary constructor with an explicit [`FileOperations`] backend (Phase 15
+    /// T5 Operations seam). PathPolicy runs first; the backend receives the
+    /// already-resolved path for stat, read, and the atomic temp+rename write.
+    pub fn new_with_ops(workspace_root: PathBuf, ops: Arc<dyn FileOperations>) -> Self {
         let schema = schemars::schema_for!(EditArgs);
         Self {
             workspace_root,
+            ops,
             schema: serde_json::to_value(&schema).unwrap_or_default(),
         }
     }
@@ -110,6 +124,7 @@ impl Tool for EditTool {
         let file_path = resolved_path.path;
         let workspace_root = self.workspace_root.clone();
         let path_for_display = args.path.clone();
+        let ops = self.ops.clone();
         Box::pin(async move {
             // 1. Argument validations BEFORE any filesystem side effect, so a
             //    rejected edit touches no file. Empty old_string would make
@@ -143,33 +158,31 @@ impl Tool for EditTool {
             //    oversized guardrail rejects a huge file BEFORE it is buffered
             //    into memory, and so a directory is classified as NotAFile
             //    rather than read as bytes. Then NUL (binary) then UTF-8.
-            let metadata = match tokio::fs::metadata(&file_path).await {
+            let metadata = match ops.metadata(&file_path).await {
                 Ok(m) => m,
+                Err(FsOpError::NotFound { .. }) => {
+                    return Ok(super::fs_error_result(FsToolError::NotFound {
+                        user_path: path_for_display.clone(),
+                        resolved_path: Some(file_path.clone()),
+                    }));
+                }
+                Err(FsOpError::PermissionDenied { .. }) => {
+                    return Ok(super::fs_error_result(FsToolError::PermissionDenied {
+                        path: file_path.clone(),
+                    }));
+                }
                 Err(e) => {
-                    return Ok(match e.kind() {
-                        std::io::ErrorKind::NotFound => {
-                            super::fs_error_result(FsToolError::NotFound {
-                                user_path: path_for_display.clone(),
-                                resolved_path: Some(file_path.clone()),
-                            })
-                        }
-                        std::io::ErrorKind::PermissionDenied => {
-                            super::fs_error_result(FsToolError::PermissionDenied {
-                                path: file_path.clone(),
-                            })
-                        }
-                        _ => result::err(vec![OutputContent::Text {
-                            text: format!("failed to stat {}: {e}", file_path.display()),
-                        }]),
-                    });
+                    return Ok(result::err(vec![OutputContent::Text {
+                        text: format!("failed to stat {}: {e}", file_path.display()),
+                    }]));
                 }
             };
-            if metadata.is_dir() {
+            if metadata.is_dir {
                 return Ok(super::fs_error_result(FsToolError::NotAFile {
                     path: file_path.clone(),
                 }));
             }
-            let file_bytes = metadata.len();
+            let file_bytes = metadata.len;
             if file_bytes > MAX_EDIT_FILE_BYTES {
                 let context = json!({
                     "path": path_for_display,
@@ -184,25 +197,28 @@ impl Tool for EditTool {
                 ));
             }
 
-            let bytes = match tokio::fs::read(&file_path).await {
+            let bytes = match ops.read_file(&file_path).await {
                 Ok(b) => b,
+                Err(FsOpError::NotFound { .. }) => {
+                    return Ok(super::fs_error_result(FsToolError::NotFound {
+                        user_path: path_for_display.clone(),
+                        resolved_path: Some(file_path.clone()),
+                    }));
+                }
+                Err(FsOpError::PermissionDenied { .. }) => {
+                    return Ok(super::fs_error_result(FsToolError::PermissionDenied {
+                        path: file_path.clone(),
+                    }));
+                }
+                Err(FsOpError::NotAFile { .. }) => {
+                    return Ok(super::fs_error_result(FsToolError::NotAFile {
+                        path: file_path.clone(),
+                    }));
+                }
                 Err(e) => {
-                    return Ok(match e.kind() {
-                        std::io::ErrorKind::NotFound => {
-                            super::fs_error_result(FsToolError::NotFound {
-                                user_path: path_for_display.clone(),
-                                resolved_path: Some(file_path.clone()),
-                            })
-                        }
-                        std::io::ErrorKind::PermissionDenied => {
-                            super::fs_error_result(FsToolError::PermissionDenied {
-                                path: file_path.clone(),
-                            })
-                        }
-                        _ => result::err(vec![OutputContent::Text {
-                            text: format!("failed to read {}: {e}", file_path.display()),
-                        }]),
-                    });
+                    return Ok(result::err(vec![OutputContent::Text {
+                        text: format!("failed to read {}: {e}", file_path.display()),
+                    }]));
                 }
             };
 
@@ -289,41 +305,16 @@ impl Tool for EditTool {
             let before = content.clone();
             let new_content = content.replacen(&args.old_string, &args.new_string, 1);
 
-            // 5. Atomic write: stage the full new content in a sibling temp
-            //    file in the target directory, then rename into place. rename
-            //    is atomic on the same filesystem and replaces the target, so
-            //    an interrupted edit leaves either the full new content or the
-            //    prior content (never a partial/truncated mix). Every error
-            //    path best-effort removes the temp file, with a Drop guard as a
-            //    cancellation backstop. Matches the 11.4 write tool standard;
-            //    edit overwrites an existing file just as write does, so the
-            //    same partial-write hazard applies.
-            let parent_dir = file_path.parent().unwrap_or(file_path.as_path());
-            let file_name = file_path
-                .file_name()
-                .map(|n| n.to_string_lossy().into_owned())
-                .unwrap_or_else(|| "file".to_string());
-            let pid = std::process::id();
-            let nanos = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_nanos())
-                .unwrap_or(0);
-            let temp_path = parent_dir.join(format!(".{file_name}.opi-edit-tmp-{pid}-{nanos}"));
-            let mut temp_guard = super::TempFileGuard::new(temp_path);
-
-            if let Err(e) = tokio::fs::write(temp_guard.path(), new_content.as_bytes()).await {
-                temp_guard.cleanup().await;
+            // 5. Atomic write via the backend. `LocalFileOperations` stages the
+            //    new content in a sibling temp file then renames it into place,
+            //    so an interrupted edit leaves either the full new content or the
+            //    prior content (never a partial/truncated mix) — the same recipe
+            //    the tool used to inline with `super::TempFileGuard`.
+            if let Err(e) = ops.write_file(&file_path, new_content.as_bytes()).await {
                 return Ok(result::err(vec![OutputContent::Text {
                     text: format!("failed to write {}: {e}", file_path.display()),
                 }]));
             }
-            if let Err(e) = tokio::fs::rename(temp_guard.path(), &file_path).await {
-                temp_guard.cleanup().await;
-                return Ok(result::err(vec![OutputContent::Text {
-                    text: format!("failed to write {}: {e}", file_path.display()),
-                }]));
-            }
-            temp_guard.disarm();
 
             // 6. Diff-preview metadata. before/after stay STRING-valued because
             //    interactive.rs reads them as strings to render the ratatui
