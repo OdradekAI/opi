@@ -163,7 +163,7 @@
       "definition_of_done": "`ReadTool`, `WriteTool`, and `EditTool` receive a shared `Arc<dyn FileOperations>` and execute `PathPolicy` expansion, canonicalization, symlink-escape, and workspace-containment before invoking the backend with the resolved path. `BashTool` receives `Arc<dyn BashOperations>` and delegates command, cwd, timeout, cancellation token, and environment; command construction, spawn, bounded stream capture, timeout/cancellation race, exit/signal extraction, and diagnostics move into `LocalBashOperations::exec`. `CodingHarness::build_tools` constructs the local defaults for exactly read/write/edit/bash, while grep/find/ls/glob constructors remain unchanged. Mock-backend tests prove policy rejection occurs before backend invocation, permitted paths and bash requests reach the injected backend exactly once, local defaults preserve existing tool output/truncation/error behavior, and the production `build_tools` path constructs all eight tools.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "15.1"
       ],
@@ -226,7 +226,7 @@
             "crates/opi-coding-agent/src/tool/bash.rs::BashTool::execute",
             "crates/opi-coding-agent/src/tool/operations.rs::LocalBashOperations::exec"
           ],
-          "status": "open"
+          "status": "met"
         }
       ],
       "production_call_sites": [
@@ -239,9 +239,9 @@
         "crates/opi-coding-agent/src/tool/operations.rs::LocalBashOperations::exec"
       ],
       "substrate_only": false,
-      "iteration_count": 0,
+      "iteration_count": 1,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "e26b063",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "crates/opi-coding-agent/src/harness.rs",
@@ -250,11 +250,89 @@
         "crates/opi-coding-agent/tests/tools_read_write_edit_bash.rs",
         "crates/opi-coding-agent/tests/tool_selection.rs"
       ],
-      "last_attempt": null,
-      "verified_at_commit": null,
-      "evidence": null,
+      "last_attempt": {
+        "attempt": 1,
+        "started_at": "2026-07-25T08:11:59.140Z",
+        "ended_at": "2026-07-25T09:14:05.321Z",
+        "outcome": "passing",
+        "failing_gate": null,
+        "touched_files": [
+          "crates/opi-coding-agent/src/harness.rs",
+          "crates/opi-coding-agent/src/tool/bash.rs",
+          "crates/opi-coding-agent/src/tool/edit.rs",
+          "crates/opi-coding-agent/src/tool/mod.rs",
+          "crates/opi-coding-agent/src/tool/operations.rs",
+          "crates/opi-coding-agent/src/tool/read.rs",
+          "crates/opi-coding-agent/src/tool/write.rs",
+          "crates/opi-coding-agent/tests/tool_operations.rs",
+          "crates/opi-coding-agent/tests/tool_selection.rs",
+          "crates/opi-coding-agent/tests/tools_read_write_edit_bash.rs"
+        ]
+      },
+      "verified_at_commit": "a212fa600f099c5d10936a6b5c95a1d78c7df627",
+      "evidence": {
+        "task": "15.2",
+        "dod_sha256": "8a91c19381e27c5d617b9ac7e5776cb3b69217efdca576b34ef671fadda744a8",
+        "verification": "cli-runtime; crate-scoped gates green (tool_operations 21, tools_read_write_edit_bash 94, tool_selection 30, lib 67); clippy --all-targets -D warnings clean; rustdoc -D warnings clean; fmt --check clean; full-workspace smoke skipped (disk-fill risk, host deviation per standing memory). D.2 deep exec verify (6-lens, wf_fcddfb6a-4de) clean: 1 medium evidence-truthfulness finding (initial task commit 8c8e326 framed Phase-D closed while Opi-Evaluator was pending and the ledger lagged) resolved by amending the footer to Opi-Evaluator: passed (commit -> a212fa6) and advancing the ledger.",
+        "evaluator": "passed",
+        "commit": "a212fa600f099c5d10936a6b5c95a1d78c7df627"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-07-25T08:11:59.140Z",
+          "attempt": 1,
+          "summary": "Phase B confirmed at start_commit e26b063. Crate-scoped gates for opi-coding-agent (full-workspace smoke skipped: disk-fill risk on this host per standing memory). evaluator_required=true -> D.2 runs the full 6-lens deep exec verify.",
+          "gate_results": []
+        },
+        {
+          "timestamp": "2026-07-25T09:14:05.321Z",
+          "attempt": 1,
+          "summary": "Phase D passed at commit a212fa6. Mechanical gates green; D.2 deep exec verify (6-lens) clean. The exec verify surfaced one medium evidence-truthfulness finding: the initial task commit (8c8e326) framed Phase-D as closed while Opi-Evaluator was still pending and the ledger had not advanced. Resolved by amending the commit footer to Opi-Evaluator: passed (8c8e326 -> a212fa6) and completing this ledger checkpoint. No code defect: the lens independently reproduced every gate count and the DoD-SHA. iteration_count=1 reflects the one D.2 cycle. Bash wrapper timeout/cancel text bug + 6 relocated structural guards were fixed during Phase C/D.",
+          "gate_results": [
+            {
+              "gate": "cargo test --test tool_operations",
+              "passed": true,
+              "detail": "21 passed (incl. operations_injection_reaches_tool_execution)"
+            },
+            {
+              "gate": "cargo test --test tools_read_write_edit_bash",
+              "passed": true,
+              "detail": "94 passed"
+            },
+            {
+              "gate": "cargo test --test tool_selection",
+              "passed": true,
+              "detail": "30 passed (incl. build_tools_constructs_expected_default_set)"
+            },
+            {
+              "gate": "cargo test --lib",
+              "passed": true,
+              "detail": "67 passed (3 atomic-write + 7 relocated StreamCapture)"
+            },
+            {
+              "gate": "clippy --all-targets -D warnings",
+              "passed": true,
+              "detail": "clean"
+            },
+            {
+              "gate": "rustdoc -D warnings",
+              "passed": true,
+              "detail": "clean"
+            },
+            {
+              "gate": "fmt --check",
+              "passed": true,
+              "detail": "clean"
+            },
+            {
+              "gate": "D.2 deep exec verify (6-lens, wf_fcddfb6a-4de)",
+              "passed": true,
+              "detail": "clean; 1 medium evidence-truthfulness finding resolved by footer amend + ledger checkpoint"
+            }
+          ]
+        }
+      ]
     },
     {
       "id": "15.3",
@@ -3100,6 +3178,16 @@
       "rejected_count": 0,
       "ran_at": "2026-07-25T01:11:14.478Z",
       "task_id": null,
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": "wf_fcddfb6a-4de",
+      "folded_count": 1,
+      "flagged_count": 0,
+      "rejected_count": 0,
+      "ran_at": "2026-07-25T09:14:05.321Z",
+      "task_id": "15.2",
       "criterion_id": null
     }
   ]
