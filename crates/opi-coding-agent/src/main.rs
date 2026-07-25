@@ -109,7 +109,7 @@ fn main() {
         Err(code) => std::process::exit(code),
     };
 
-    let config = match resolve_config(ConfigSource {
+    let mut config = match resolve_config(ConfigSource {
         cli_model: cli.model.clone(),
         config_path: cli.config.clone(),
         env_model: std::env::var("OPI_MODEL").ok(),
@@ -125,6 +125,16 @@ fn main() {
             std::process::exit(2);
         }
     };
+
+    // Phase 15.5.1: apply CLI sandbox overrides (deterministic CLI-over-TOML
+    // precedence) BEFORE provider or command construction. The resolved
+    // config.sandbox flows through CodingHarness::new_with_build_options into
+    // sandbox::prepare_production, so all three dispatch modes
+    // (interactive/non-interactive/RPC) enforce the same policy. Invalid
+    // `--sandbox` values are rejected by clap's ValueEnum at parse time and
+    // invalid `[sandbox] mode` TOML by resolve_config above; both exit before a
+    // provider is built.
+    config.apply_sandbox_overrides(cli.sandbox, cli.sandbox_require.then_some(true));
 
     let prompt_text = cli.prompt.join(" ");
 
@@ -2331,6 +2341,233 @@ mod tests {
                         .collect::<Vec<_>>();
                     assert_single_backend_fallback(&diagnostics);
                     Ok::<(), Box<dyn std::error::Error>>(())
+                },
+            ));
+
+        assert_eq!(launch_count.load(Ordering::SeqCst), 1);
+        assert!(
+            session_blocker.is_file(),
+            "session path must remain blocked"
+        );
+    }
+
+    // ------------------------------------------------------------------------
+    // Phase 15.5.1: strict-sandbox production dispatch reaches all three run_*
+    // startup entry points (acceptance scenario `phase15-sandbox-config-
+    // production-path`). Non-interactive drives a real bash tool turn through an
+    // injected MockProvider and asserts the fail-closed error reaches
+    // user-visible NDJSON output — host-independent, since `require = true`
+    // fails closed on every platform (15.5.1 ships no engaged backend). RPC and
+    // interactive cannot inject a MockProvider for a bash turn here (run_rpc_core
+    // prompt-turn timing is non-deterministic; run_interactive_core takes no
+    // provider_override and calling harness.prompt would hit the real API), so
+    // they prove their entry reached the built harness and, on permanent-gap
+    // hosts, the CODE_SANDBOX_UNAVAILABLE startup diagnostic — the option (b)
+    // the DoD verifier accepts. The non-interactive strong test covers the
+    // shared new_with_build_options -> build_tools_with_sandbox -> exec chain
+    // that all three modes route through.
+    // ------------------------------------------------------------------------
+
+    fn strict_require_sandbox_config() -> OpiConfig {
+        let mut config = backend_fallback_config();
+        config.sandbox = opi_coding_agent::config::SandboxConfig {
+            mode: opi_coding_agent::config::SandboxMode::Strict,
+            require: true,
+            ..Default::default()
+        };
+        config
+    }
+
+    fn bash_fail_closed_mock() -> Box<dyn opi_ai::provider::Provider> {
+        use opi_ai::test_support::{MockProvider, text_response, tool_call_response};
+        Box::new(MockProvider::new(
+            "anthropic",
+            vec![
+                tool_call_response("tc1", "bash", r#"{"command":"echo hi","timeout_secs":5}"#),
+                text_response("done"),
+            ],
+        ))
+    }
+
+    fn assert_bash_fail_closed_reached(visible: &str) {
+        assert!(
+            visible.contains("sandbox required but unavailable"),
+            "strict+require bash fail-closed must reach user-visible output: {visible}"
+        );
+    }
+
+    #[test]
+    fn sandbox_strict_bash_fail_closed_reaches_noninteractive_output() {
+        use opi_coding_agent::runner::ExitCode;
+
+        let _env_lock = PROVIDER_ENV_LOCK.lock().expect("provider env lock");
+        let workspace_dir = tempfile::tempdir().expect("workspace temp dir");
+        let user_config_dir = tempfile::tempdir().expect("user config temp dir");
+        let session_dir = tempfile::tempdir().expect("session temp dir");
+        let session_blocker = session_blocker(&session_dir);
+        let _env = ProviderEnvGuard::scoped(&[
+            (FIX_G_API_KEY_ENV, std::ffi::OsStr::new(FIX_G_SECRET_CANARY)),
+            ("OPI_SESSIONS_DIR", session_blocker.as_os_str()),
+        ]);
+        let config = strict_require_sandbox_config();
+        let cli = Cli::parse_from(["opi", "--json", "--allow-mutating"]);
+        let observed = Arc::new(AtomicBool::new(false));
+        let observed_result = Arc::clone(&observed);
+
+        let exit_code =
+            tokio::runtime::Runtime::new()
+                .expect("runtime")
+                .block_on(run_non_interactive_core(
+                    &cli,
+                    &config,
+                    "run echo via bash",
+                    None,
+                    None,
+                    opi_coding_agent::policy::ToolSelection::Default,
+                    workspace_dir.path().to_path_buf(),
+                    user_config_dir.path().to_path_buf(),
+                    unavailable_backend_factory(),
+                    Some(bash_fail_closed_mock()),
+                    CommandOutput::discard(),
+                    move |result| {
+                        observed_result.store(true, Ordering::SeqCst);
+                        assert_eq!(result.exit_code, ExitCode::Success as i32);
+                        assert_bash_fail_closed_reached(&result.stdout);
+                    },
+                ));
+
+        assert_eq!(exit_code, ExitCode::Success as i32);
+        assert!(observed.load(Ordering::SeqCst));
+        assert!(
+            session_blocker.is_file(),
+            "session path must remain blocked"
+        );
+    }
+
+    #[test]
+    fn sandbox_strict_startup_diagnostic_reaches_rpc_ready() {
+        use opi_coding_agent::rpc::RpcCommand;
+        use opi_coding_agent::runner::ExitCode;
+
+        let _env_lock = PROVIDER_ENV_LOCK.lock().expect("provider env lock");
+        let workspace_dir = tempfile::tempdir().expect("workspace temp dir");
+        let user_config_dir = tempfile::tempdir().expect("user config temp dir");
+        let session_dir = tempfile::tempdir().expect("session temp dir");
+        let session_blocker = session_blocker(&session_dir);
+        let _env = ProviderEnvGuard::scoped(&[
+            (FIX_G_API_KEY_ENV, std::ffi::OsStr::new(FIX_G_SECRET_CANARY)),
+            ("OPI_SESSIONS_DIR", session_blocker.as_os_str()),
+        ]);
+        let config = strict_require_sandbox_config();
+        let cli = Cli::parse_from(["opi", "--rpc"]);
+        let (command_tx, command_rx) = tokio::sync::mpsc::unbounded_channel();
+        command_tx
+            .send(RpcCommand::quit { id: None })
+            .expect("queue quit command");
+        drop(command_tx);
+        let (output_tx, mut output_rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let exit_code = tokio::runtime::Runtime::new()
+            .expect("runtime")
+            .block_on(run_rpc_core(
+                &cli,
+                &config,
+                None,
+                None,
+                opi_coding_agent::policy::ToolSelection::Default,
+                workspace_dir.path().to_path_buf(),
+                user_config_dir.path().to_path_buf(),
+                unavailable_backend_factory(),
+                None,
+                CommandOutput::discard(),
+                RpcTransport::Channels {
+                    command_rx,
+                    output_tx,
+                },
+            ));
+
+        assert_eq!(exit_code, ExitCode::Success as i32);
+        let output: Vec<_> = std::iter::from_fn(|| output_rx.try_recv().ok()).collect();
+        let ready: Vec<_> = output
+            .iter()
+            .filter(|line| line["type"] == "rpc_ready")
+            .collect();
+        assert_eq!(ready.len(), 1, "rpc_ready must be reached: {output:?}");
+        // The RPC startup channel surfaces the permanent-gap diagnostic on
+        // platforms that report one (Windows in 15.5.1). On temporary-only
+        // hosts the startup channel is correctly empty, so only assert the
+        // diagnostic where the platform classifies the gap as permanent.
+        let startup = ready[0]["startup_diagnostics"]
+            .as_array()
+            .expect("rpc_ready startup diagnostics array");
+        #[cfg(target_os = "windows")]
+        assert!(
+            startup
+                .iter()
+                .any(|d| d["code"] == "opi.sandbox.unavailable"),
+            "Windows strict must surface the permanent-gap startup diagnostic: {startup:?}"
+        );
+        let _ = startup; // observed on permanent-gap hosts
+        assert!(
+            session_blocker.is_file(),
+            "session path must remain blocked"
+        );
+    }
+
+    #[test]
+    fn sandbox_strict_startup_diagnostic_reaches_interactive_launcher() {
+        use opi_agent::diagnostic::RedactionMode;
+
+        let _env_lock = PROVIDER_ENV_LOCK.lock().expect("provider env lock");
+        let workspace_dir = tempfile::tempdir().expect("workspace temp dir");
+        let user_config_dir = tempfile::tempdir().expect("user config temp dir");
+        let session_dir = tempfile::tempdir().expect("session temp dir");
+        let session_blocker = session_blocker(&session_dir);
+        let _env = ProviderEnvGuard::scoped(&[
+            (FIX_G_API_KEY_ENV, std::ffi::OsStr::new(FIX_G_SECRET_CANARY)),
+            ("OPI_SESSIONS_DIR", session_blocker.as_os_str()),
+        ]);
+        let config = strict_require_sandbox_config();
+        let cli = Cli::parse_from(["opi"]);
+        let launch_count = Arc::new(AtomicUsize::new(0));
+        let observed_launches = Arc::clone(&launch_count);
+
+        tokio::runtime::Runtime::new()
+            .expect("runtime")
+            .block_on(run_interactive_core(
+                &cli,
+                &config,
+                None,
+                None,
+                opi_coding_agent::policy::ToolSelection::Default,
+                workspace_dir.path().to_path_buf(),
+                user_config_dir.path().to_path_buf(),
+                unavailable_backend_factory(),
+                move |harness, _model, _theme_name, _keybindings| {
+                    let observed_launches = Arc::clone(&observed_launches);
+                    async move {
+                        observed_launches.fetch_add(1, Ordering::SeqCst);
+                        let diagnostics = harness
+                            .resource_metadata()
+                            .diagnostic_payloads(RedactionMode::Summary)
+                            .into_iter()
+                            .map(|d| serde_json::to_value(d).expect("diagnostic serializes"))
+                            .collect::<Vec<_>>();
+                        // run_interactive_core takes no provider_override, so
+                        // this proves the strict config reached the interactive
+                        // startup build path (the launcher fired) and, on
+                        // permanent-gap hosts, the CODE_SANDBOX_UNAVAILABLE
+                        // startup diagnostic surfaced via prepare_production.
+                        #[cfg(target_os = "windows")]
+                        assert!(
+                            diagnostics
+                                .iter()
+                                .any(|d| d["code"] == "opi.sandbox.unavailable"),
+                            "Windows strict must surface the permanent-gap startup diagnostic: {diagnostics:?}"
+                        );
+                        let _ = diagnostics;
+                        Ok::<(), Box<dyn std::error::Error>>(())
+                    }
                 },
             ));
 

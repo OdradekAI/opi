@@ -95,6 +95,37 @@ fn sandbox_defaults_to_off_require_false_toggles_absent() {
     assert!(config.sandbox.syscalls.is_none());
 }
 
+/// DoD `phase15-sandbox-config-production-path` (15.5.1): invalid sandbox
+/// configuration exits before provider or command construction. An invalid
+/// `[sandbox] mode` in TOML is rejected by `resolve_config` (a named `ConfigError`,
+/// returned before any provider is built); an invalid `--sandbox` CLI value is
+/// rejected by clap's `ValueEnum` at parse time (companion to
+/// `cli_sandbox_invalid_value_is_named_parser_error`). The harness never starts
+/// in either case.
+#[test]
+fn invalid_sandbox_config_exits_before_provider_construction() {
+    // Invalid TOML mode -> resolve_config error, no provider built.
+    let dir = tempfile::tempdir().unwrap();
+    let path = write_temp_config(dir.path(), "[sandbox]\nmode = \"garbage\"\n");
+    let result = resolve_config(ConfigSource {
+        cli_model: None,
+        config_path: Some(path),
+        env_model: None,
+        project_dir: None,
+        user_config_path: None,
+    });
+    let err = result.expect_err("invalid [sandbox] mode must error before provider construction");
+    let msg = err.to_string().to_lowercase();
+    assert!(
+        msg.contains("sandbox") || msg.contains("mode") || msg.contains("garbage"),
+        "resolver error should name the sandbox problem: {msg}"
+    );
+
+    // Invalid CLI value -> clap rejects at parse, before any provider construction.
+    Cli::try_parse_from(["opi", "--sandbox", "nope"])
+        .expect_err("invalid --sandbox value must be rejected at parse");
+}
+
 #[test]
 fn opiconfig_default_sandbox_is_off() {
     let config = OpiConfig::default();

@@ -105,6 +105,14 @@ impl Tool for BashTool {
                 Err(BashOpError::WaitFailed { .. }) => {
                     return Ok(wait_failed_result(&workspace_root, &command, &cwd, shell));
                 }
+                Err(BashOpError::SandboxUnavailable { message }) => {
+                    // Phase 15.5.1 fail-closed: require=true + an unavailable
+                    // layer. The backend refused to spawn, so surface the redacted
+                    // layer summary (no command/env/paths) as an error result.
+                    return Ok(result::err(vec![OutputContent::Text {
+                        text: format!("sandbox required but unavailable: {message}"),
+                    }]));
+                }
                 Err(BashOpError::Other { message }) => {
                     return Ok(result::err(vec![OutputContent::Text {
                         text: format!("bash backend error: {message}"),

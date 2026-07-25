@@ -45,6 +45,7 @@ use tokio::io::AsyncReadExt;
 use tokio_util::sync::CancellationToken;
 
 use super::process_tree::{TerminationOutcome, TreeGuard};
+use crate::sandbox::{PreparedSandbox, StrictOutcome, TemporaryGap};
 
 // =========================================================================
 // Error types (house thiserror style; see policy.rs and credential_store.rs)
@@ -89,6 +90,13 @@ pub enum BashOpError {
 
     #[error("failed to wait for process: {message}")]
     WaitFailed { message: String },
+
+    /// `--sandbox strict` with `require = true` (or `[sandbox] require = true`)
+    /// could not engage a requested layer, so the command is refused BEFORE any
+    /// spawn side effect (Phase 15.5.1 fail-closed path). The message is the
+    /// redacted layer summary from [`crate::sandbox`] — no command/env/paths.
+    #[error("sandbox required but unavailable: {message}")]
+    SandboxUnavailable { message: String },
 
     #[error("bash backend error: {message}")]
     Other { message: String },
@@ -487,16 +495,30 @@ pub const MAX_BASH_OUTPUT_BYTES: usize = 64 * 1024; // 64 KiB
 pub const LOCAL_BASH_OPERATION_DIAGNOSTIC: &str = "opi.operations.bash.operation_context";
 
 /// Local [`BashOperations`] backend. Owns the bash spawn path the Phase 15 T4
-/// sandbox will attach to (T4 lives INSIDE this impl, not as a wrapper). The
+/// sandbox attaches to (T4 lives INSIDE this impl, not as a wrapper). The
 /// bounded `StreamCapture`, timeout/cancel/`wait` race, and exit/signal
 /// extraction all live here; `BashTool::execute` is a thin caller that maps the
-/// [`BashResult`] into the agent `ToolResult`. Stateless today.
+/// [`BashResult`] into the agent `ToolResult`. Carries the resolved sandbox
+/// policy (Phase 15.5.1); the default [`PreparedSandbox::Off`] runs the L0-only
+/// baseline used by every pre-15.5.1 caller.
 #[derive(Debug, Default)]
-pub struct LocalBashOperations;
+pub struct LocalBashOperations {
+    prepared: PreparedSandbox,
+}
 
 impl LocalBashOperations {
     pub fn new() -> Self {
-        Self
+        Self::default()
+    }
+
+    /// Construct with a resolved sandbox policy (Phase 15.5.1). Used by
+    /// [`crate::harness::CodingHarness::build_tools`], which resolves the policy
+    /// once at startup via [`crate::sandbox::prepare_production`] so per-command
+    /// exec enforces the decision and the permanent startup diagnostics surface
+    /// once. `new()` keeps the [`PreparedSandbox::Off`] default for direct/test
+    /// callers.
+    pub fn with_prepared(prepared: PreparedSandbox) -> Self {
+        Self { prepared }
     }
 }
 
@@ -505,6 +527,7 @@ impl BashOperations for LocalBashOperations {
         &self,
         request: BashRequest,
     ) -> Pin<Box<dyn Future<Output = Result<BashResult, BashOpError>> + Send>> {
+        let prepared = self.prepared.clone();
         Box::pin(async move {
             let BashRequest {
                 command,
@@ -519,6 +542,31 @@ impl BashOperations for LocalBashOperations {
             // failures append one `CODE_SANDBOX_DEGRADED` ToolDiagnostic each;
             // the result arms fold them in alongside the operation-context diag.
             let mut degraded_diagnostics: Vec<ToolDiagnostic> = Vec::new();
+
+            // Phase 15.5.1: enforce the resolved sandbox policy BEFORE any spawn
+            // side effect. FailClosed returns a named error here (require=true +
+            // an unavailable layer); FailOpen records one per-command degraded
+            // diagnostic per TEMPORARY gap (permanent gaps were already emitted
+            // once at startup and are deliberately not repeated per command);
+            // Off/Engaged proceed to the L0 spawn below.
+            match &prepared {
+                PreparedSandbox::Off => {}
+                PreparedSandbox::Strict(decision) => match &decision.outcome {
+                    StrictOutcome::Engaged => {}
+                    StrictOutcome::FailOpen {
+                        per_command_temporary,
+                    } => {
+                        for gap in per_command_temporary {
+                            degraded_diagnostics.push(temporary_gap_diagnostic(gap));
+                        }
+                    }
+                    StrictOutcome::FailClosed { reason } => {
+                        return Err(BashOpError::SandboxUnavailable {
+                            message: reason.clone(),
+                        });
+                    }
+                },
+            }
 
             let mut cmd = tokio::process::Command::new(shell);
             cmd.arg(flag)
@@ -798,6 +846,23 @@ fn l0_degraded_diagnostic(err: &super::process_tree::AttachError) -> ToolDiagnos
         details: Some(serde_json::json!({
             "layer": err.layer,
             "reason": err.reason,
+        })),
+    }
+}
+
+/// Build a per-command strict-sandbox degraded [`ToolDiagnostic`] (local type)
+/// for a Phase 15.5.1 fail-open temporary gap. Reuses the stable
+/// `CODE_SANDBOX_DEGRADED` literal so embedders match it by string, and
+/// restricts `details` to the redacted `{ layer, reason }` pair. Permanent gaps
+/// do NOT use this path: they surface once at startup via the builder's
+/// `startup_diagnostics` channel as `CODE_SANDBOX_UNAVAILABLE`.
+fn temporary_gap_diagnostic(gap: &TemporaryGap) -> ToolDiagnostic {
+    ToolDiagnostic {
+        code: crate::diagnostics::CODE_SANDBOX_DEGRADED.to_string(),
+        message: "sandbox layer degraded".to_string(),
+        details: Some(serde_json::json!({
+            "layer": gap.layer.as_str(),
+            "reason": gap.reason,
         })),
     }
 }

@@ -60,6 +60,7 @@ use crate::package_discovery::PackageResource;
 use crate::policy::{RunMode, ToolRuntimeConfig, ToolSelection};
 use crate::prompt::SystemPromptBuilder;
 use crate::resource::{ExplicitResourcePaths, ResourceDiscoveryLayers, standard_discovery_layers};
+use crate::sandbox::PreparedSandbox;
 use crate::session_coordinator::{SessionCoordinator, to_wire_result};
 use crate::tool::{
     BashOperations, BashTool, EditTool, FileOperations, FindTool, GlobTool, GrepTool,
@@ -771,7 +772,14 @@ impl CodingHarness {
             hooks = registry.wrap_hooks(hooks);
         }
 
-        let mut tools = Self::build_tools(&workspace_root, &tool_config);
+        // Phase 15.5.1: resolve the sandbox policy once from the resolved
+        // config.sandbox. The permanent platform-gap diagnostics surface through
+        // the harness startup channel (merged into resources.metadata.diagnostics
+        // below); the decision is enforced per-command inside
+        // LocalBashOperations::exec.
+        let prepared = crate::sandbox::prepare_production(&config.sandbox);
+        let (mut tools, sandbox_startup_diagnostics) =
+            Self::build_tools_with_sandbox(&workspace_root, &tool_config, prepared);
         tools.extend(extension_tools);
         let tool_defs: Vec<_> = tools.iter().map(|t| t.definition()).collect();
         let mut builder = SystemPromptBuilder::new().tools(tool_defs);
@@ -800,6 +808,10 @@ impl CodingHarness {
             .metadata
             .diagnostics
             .extend(build_options.startup_diagnostics);
+        resources
+            .metadata
+            .diagnostics
+            .extend(sandbox_startup_diagnostics);
         resources.metadata.diagnostics.extend(resume_diagnostics);
         for name in injected_extension_names {
             resources.metadata.add_extension_name(name);
@@ -2027,13 +2039,29 @@ impl CodingHarness {
         workspace_root: &Path,
         tool_config: &ToolRuntimeConfig,
     ) -> Vec<Box<dyn Tool>> {
+        Self::build_tools_with_sandbox(workspace_root, tool_config, PreparedSandbox::default()).0
+    }
+
+    /// Phase 15.5.1: like [`Self::build_tools`] but constructs `LocalBashOperations`
+    /// with the resolved sandbox policy and returns the once-per-startup
+    /// permanent-gap diagnostics alongside the tools. The startup caller
+    /// resolves the policy once via [`crate::sandbox::prepare_production`] and
+    /// merges the returned diagnostics into the harness startup channel so they
+    /// surface in interactive, non-interactive, and RPC modes.
+    pub fn build_tools_with_sandbox(
+        workspace_root: &Path,
+        tool_config: &ToolRuntimeConfig,
+        prepared: PreparedSandbox,
+    ) -> (Vec<Box<dyn Tool>>, Vec<Diagnostic>) {
         let read_policy = match tool_config.run_mode {
             RunMode::Interactive => crate::tool::PathPolicy::AllowOutsideWorkspace,
             RunMode::NonInteractive => crate::tool::PathPolicy::WorkspaceOnly,
         };
 
+        let startup_diagnostics = prepared.startup_diagnostics();
         let file_ops: Arc<dyn FileOperations> = Arc::new(LocalFileOperations::new());
-        let bash_ops: Arc<dyn BashOperations> = Arc::new(LocalBashOperations::new());
+        let bash_ops: Arc<dyn BashOperations> =
+            Arc::new(LocalBashOperations::with_prepared(prepared));
 
         let mut tools: Vec<(&str, Box<dyn Tool>)> = vec![
             (
@@ -2080,7 +2108,7 @@ impl CodingHarness {
             ),
         ];
 
-        tools
+        let tools = tools
             .drain(..)
             .filter(|(name, _)| {
                 tool_config
@@ -2089,7 +2117,8 @@ impl CodingHarness {
                     .any(|active| active == name)
             })
             .map(|(_, tool)| tool)
-            .collect()
+            .collect();
+        (tools, startup_diagnostics)
     }
 
     fn discover_resources(
