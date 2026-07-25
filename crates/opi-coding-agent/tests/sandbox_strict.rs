@@ -293,3 +293,190 @@ async fn production_off_mode_runs_command_without_sandbox_diagnostic() {
         "off-mode command must run and produce output, got: {text}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Phase 15 task 15.5.5: Windows strict capability fallback (native product tests)
+// ---------------------------------------------------------------------------
+//
+// These are the mandatory native Windows product tests. They are `#[cfg(windows)]`
+// and exercise the REAL production Windows backend (L0-only) through the public
+// dispatch surface. On a Windows runner they MUST report at least one passed
+// test with zero failures and zero ignored/skipped tests; on any other host they
+// compile out (a wrong-host zero-test run is NOT acceptance evidence and leaves
+// the task failing there). 15.5.1 shipped the inline Windows backend and the
+// fail-open / fail-closed / once-per-startup policy; 15.5.5 extracts that backend
+// into `sandbox/windows.rs` on the production dispatch path — these tests pin the
+// observable Windows behavior across that behavior-preserving refactor and prove
+// the production dispatcher reaches it.
+
+/// DoD gate `windows_strict_reports_l0_only` (15.5.5): on a native Windows
+/// runner, the production Windows backend classifies every strict layer as a
+/// PERMANENT gap, surfaces exactly one redacted `CODE_SANDBOX_UNAVAILABLE`
+/// diagnostic per layer ONCE at startup (never per command), runs the command at
+/// the L0 baseline under `require = false`, and returns `SandboxUnavailable`
+/// before spawn under `require = true`.
+#[cfg(windows)]
+#[tokio::test]
+async fn windows_strict_reports_l0_only() {
+    let dir = tempfile::tempdir().unwrap();
+
+    // require=false: fail-open at L0; three permanent startup diagnostics.
+    let prepared = prepare_production(&strict_config(false));
+    let startup = prepared.startup_diagnostics();
+    assert_eq!(
+        startup.len(),
+        3,
+        "one permanent CODE_SANDBOX_UNAVAILABLE per strict layer at startup"
+    );
+    assert!(
+        startup.iter().all(|d| d.code == CODE_SANDBOX_UNAVAILABLE),
+        "Windows permanent gaps use CODE_SANDBOX_UNAVAILABLE"
+    );
+    // Redacted details: exactly {layer, reason}, nothing else leaks.
+    for d in &startup {
+        let obj = d
+            .details
+            .as_ref()
+            .and_then(|v| v.as_object())
+            .expect("startup diagnostic carries structured details");
+        assert_eq!(obj.len(), 2, "details must carry only layer and reason");
+        assert!(obj.contains_key("layer"));
+        assert!(obj.contains_key("reason"));
+    }
+
+    // Fail-open runs the command at the L0 baseline; the permanent gaps are NOT
+    // re-emitted per command (they were already emitted once at startup above).
+    let ops = LocalBashOperations::with_prepared(prepared.clone());
+    let result = ops.exec(bash_request(dir.path())).await.unwrap();
+    assert!(
+        result.exit_code.is_some(),
+        "require=false must execute at the L0 baseline, got exit {:?}",
+        result.exit_code
+    );
+    let per_command: Vec<_> = result
+        .diagnostics
+        .iter()
+        .filter(|d| d.code == CODE_SANDBOX_UNAVAILABLE || d.code == CODE_SANDBOX_DEGRADED)
+        .collect();
+    assert!(
+        per_command.is_empty(),
+        "permanent gaps must not be re-emitted per command, got {per_command:?}"
+    );
+
+    // require=true: fail-closed BEFORE process creation, but the permanent gaps
+    // still surface once at startup.
+    let prepared_req = prepare_production(&strict_config(true));
+    assert_eq!(
+        prepared_req.startup_diagnostics().len(),
+        3,
+        "require=true still surfaces the permanent gaps once at startup"
+    );
+    let ops_req = LocalBashOperations::with_prepared(prepared_req);
+    let err = ops_req.exec(bash_request(dir.path())).await.unwrap_err();
+    match err {
+        BashOpError::SandboxUnavailable { message } => {
+            assert!(
+                message.contains("fs")
+                    && message.contains("network")
+                    && message.contains("syscalls"),
+                "fail-closed reason must name all three strict layers, got: {message}"
+            );
+        }
+        other => panic!("require=true must fail closed with SandboxUnavailable, got {other:?}"),
+    }
+}
+
+/// DoD gate `windows_strict_production_dispatch_reports_l0_only` (15.5.5): a
+/// factory-built `BashTool` resolved through the production dispatcher
+/// (`CodingHarness::build_tools_with_sandbox` with `prepare_production`, which on
+/// Windows routes through `sandbox::windows::prepare`) surfaces the Windows
+/// L0-only truth end-to-end — the permanent gaps reach the harness startup
+/// channel, `require = true` fail-closes the bash tool, and `require = false`
+/// still runs the command at L0.
+#[cfg(windows)]
+#[tokio::test]
+async fn windows_strict_production_dispatch_reports_l0_only() {
+    use opi_coding_agent::harness::CodingHarness;
+    use opi_coding_agent::policy::{RunMode, ToolRuntimeConfig, ToolSelection};
+
+    let ws = tempfile::tempdir().unwrap();
+    let tool_config =
+        ToolRuntimeConfig::resolve(RunMode::Interactive, true, ToolSelection::Default)
+            .expect("interactive tool config");
+
+    // require=true through the production dispatcher: the harness startup channel
+    // carries the three Windows permanent gaps and the bash tool fail-closes.
+    let prepared_req = prepare_production(&strict_config(true));
+    assert_eq!(
+        prepared_req.startup_diagnostics().len(),
+        3,
+        "production dispatch surfaces all three Windows permanent gaps at startup"
+    );
+    let (mut tools, startup_diagnostics) =
+        CodingHarness::build_tools_with_sandbox(ws.path(), &tool_config, prepared_req);
+    assert_eq!(
+        startup_diagnostics.len(),
+        3,
+        "harness startup channel receives the three CODE_SANDBOX_UNAVAILABLE diagnostics"
+    );
+    assert!(
+        startup_diagnostics
+            .iter()
+            .all(|d| d.code == CODE_SANDBOX_UNAVAILABLE),
+    );
+    let bash = tools
+        .iter_mut()
+        .find(|t| t.definition().name == "bash")
+        .expect("build_tools constructs the bash tool");
+    let result = bash
+        .execute(
+            "test-call",
+            serde_json::json!({"command": "echo hi", "timeout_secs": 5}),
+            CancellationToken::new(),
+            None,
+        )
+        .await
+        .expect("bash tool executes");
+    assert!(
+        result.is_error,
+        "require=true bash must fail-closed through the production dispatcher"
+    );
+    let text = serde_json::to_string(&result.content).expect("outputs serialize");
+    assert!(
+        text.contains("sandbox required but unavailable"),
+        "fail-closed error must reach the tool result, got: {text}"
+    );
+
+    // require=false through the production dispatcher: startup channel still
+    // carries the three gaps, but the bash tool runs at the L0 baseline.
+    let prepared_open = prepare_production(&strict_config(false));
+    let (mut tools2, startup2) =
+        CodingHarness::build_tools_with_sandbox(ws.path(), &tool_config, prepared_open);
+    assert_eq!(
+        startup2.len(),
+        3,
+        "require=false still reports the gaps at startup"
+    );
+    let bash2 = tools2
+        .iter_mut()
+        .find(|t| t.definition().name == "bash")
+        .expect("bash tool present");
+    let result2 = bash2
+        .execute(
+            "test-call",
+            serde_json::json!({"command": "echo hello-odradek", "timeout_secs": 5}),
+            CancellationToken::new(),
+            None,
+        )
+        .await
+        .expect("bash tool executes");
+    assert!(
+        !result2.is_error,
+        "require=false bash must run at the L0 baseline"
+    );
+    let text2 = serde_json::to_string(&result2.content).expect("outputs serialize");
+    assert!(
+        text2.contains("hello-odradek"),
+        "require=false command must produce output, got: {text2}"
+    );
+}

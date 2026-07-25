@@ -4,12 +4,13 @@
 //! resolved [`crate::config::SandboxConfig`] plus a capability-injected platform
 //! backend into a [`PreparedSandbox`] decision. It does NOT implement any OS
 //! confinement: the per-platform L1/L2/L3 backends (Landlock+seccomp on Linux,
-//! `sandbox-exec` on macOS, L0-only on Windows) are tasks 15.5.2-15.5.5 and plug
-//! in by implementing [`StrictBackend`]. Until they land, the production backend
-//! selected by [`prepare_production`] truthfully reports every strict layer as
-//! unavailable (permanently on platforms that will never have it, temporarily on
-//! platforms whose backend ships in a later task), so `strict` mode flows through
-//! the shared fail-open / fail-closed policy here.
+//! `sandbox-exec` on macOS, L0-only on Windows) plug in by implementing
+//! [`StrictBackend`]. Task 15.5.5 has landed the Windows L0-only backend in
+//! `sandbox/windows.rs` (a permanent platform gap); Linux and macOS remain
+//! not-yet-wired stubs until 15.5.3 / 15.5.4, so on those targets the production
+//! backend selected by [`prepare_production`] truthfully reports every strict
+//! layer as temporarily unavailable and `strict` mode flows through the shared
+//! fail-open / fail-closed policy here.
 //!
 //! The resolver is pure and host-independent: every policy branch is covered by
 //! inline tests that inject a fake [`StrictBackend`], so verification needs no
@@ -39,6 +40,10 @@ use opi_agent::diagnostic::Diagnostic;
 
 use crate::config::SandboxConfig;
 use crate::diagnostics::sandbox_unavailable_diagnostic;
+
+/// Windows strict backend (L0-only); landed in task 15.5.5.
+#[cfg(target_os = "windows")]
+mod windows;
 
 /// One strict-sandbox layer. The names match the `[sandbox]` TOML toggles
 /// (`fs`/`network`/`syscalls`) so diagnostics carry the same identifier a user
@@ -237,16 +242,27 @@ fn summarize_gaps(
 /// [`crate::harness::CodingHarness::build_tools`]. It selects the platform
 /// backend via [`production_sandbox_backend`] and dispatches through [`prepare`].
 pub fn prepare_production(config: &SandboxConfig) -> PreparedSandbox {
-    let backend = production_sandbox_backend();
-    prepare(config, backend.as_ref())
+    // Platform backend modules own their strict resolution. 15.5.5 wires the
+    // Windows L0-only backend (`sandbox::windows::prepare`); Linux and macOS
+    // stay on the 15.5.1 not-yet-wired stub until 15.5.3 / 15.5.4 land their own
+    // backend modules.
+    #[cfg(target_os = "windows")]
+    {
+        crate::sandbox::windows::prepare(config)
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let backend = production_sandbox_backend();
+        prepare(config, backend.as_ref())
+    }
 }
 
 /// Select the production strict backend for the current platform.
 ///
-/// 15.5.1 ships no engaged backend; each platform truthfully reports its strict
-/// layers as unavailable. Windows L1-L3 is a *permanent* platform gap (the OS
-/// provides no Landlock/seccomp/sandbox-exec equivalent in scope, confirmed by
-/// the T4 matrix — 15.5.5 keeps the L0-only truth). Linux and macOS layers are
+/// Each platform truthfully reports its strict layers as unavailable. Windows
+/// L1-L3 is a *permanent* platform gap (the OS provides no Landlock/seccomp/
+/// sandbox-exec equivalent in scope, confirmed by the T4 matrix); 15.5.5 owns
+/// that L0-only truth in `sandbox/windows.rs`. Linux and macOS layers are
 /// *temporarily* unavailable until 15.5.3 / 15.5.4 wire the real backends, so a
 /// user who opts into `strict` during that window sees an honest degraded
 /// diagnostic rather than a silent miss. Any other target is permanently
@@ -268,7 +284,7 @@ pub fn production_sandbox_backend() -> Box<dyn StrictBackend> {
     }
     #[cfg(target_os = "windows")]
     {
-        Box::new(WindowsL0OnlyBackend)
+        Box::new(crate::sandbox::windows::L0OnlyBackend)
     }
     #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
     {
@@ -297,21 +313,6 @@ impl StrictBackend for NotYetWiredBackend {
                 platform = self.platform,
                 phase = self.phase
             ),
-        }
-    }
-}
-
-/// Windows production backend: L0 Job-Object only, no L1-L3. The T4 matrix fixes
-/// this as a permanent platform gap; 15.5.5 owns and refines this same truth.
-/// Defined only on Windows.
-#[cfg(target_os = "windows")]
-struct WindowsL0OnlyBackend;
-
-#[cfg(target_os = "windows")]
-impl StrictBackend for WindowsL0OnlyBackend {
-    fn availability(&self, _layer: SandboxLayer) -> LayerAvailability {
-        LayerAvailability::PermanentlyUnavailable {
-            reason: "windows provides no L1-L3 strict confinement (L0 Job-Object only)".to_string(),
         }
     }
 }
