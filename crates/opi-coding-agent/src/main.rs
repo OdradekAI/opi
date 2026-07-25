@@ -109,32 +109,11 @@ fn main() {
         Err(code) => std::process::exit(code),
     };
 
-    let mut config = match resolve_config(ConfigSource {
-        cli_model: cli.model.clone(),
-        config_path: cli.config.clone(),
-        env_model: std::env::var("OPI_MODEL").ok(),
-        project_dir: resume_info
-            .as_ref()
-            .map(|info| info.original_cwd.clone())
-            .or_else(|| std::env::current_dir().ok()),
-        user_config_path: None,
-    }) {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("opi: config error: {e}");
-            std::process::exit(2);
-        }
-    };
-
-    // Phase 15.5.1: apply CLI sandbox overrides (deterministic CLI-over-TOML
-    // precedence) BEFORE provider or command construction. The resolved
-    // config.sandbox flows through CodingHarness::new_with_build_options into
-    // sandbox::prepare_production, so all three dispatch modes
-    // (interactive/non-interactive/RPC) enforce the same policy. Invalid
-    // `--sandbox` values are rejected by clap's ValueEnum at parse time and
-    // invalid `[sandbox] mode` TOML by resolve_config above; both exit before a
-    // provider is built.
-    config.apply_sandbox_overrides(cli.sandbox, cli.sandbox_require.then_some(true));
+    let project_dir = resume_info
+        .as_ref()
+        .map(|info| info.original_cwd.clone())
+        .or_else(|| std::env::current_dir().ok());
+    let user_config_dir = opi_coding_agent::config::user_config_dir();
 
     let prompt_text = cli.prompt.join(" ");
 
@@ -154,7 +133,20 @@ fn main() {
             }
         };
         let exit_code = rt.block_on(async {
-            run_rpc(&cli, &config, resumed_messages, resume_info, tool_selection).await
+            // Phase 15.8.1: two-stage headless trust preflight (project config
+            // skipped when untrusted) before provider/runner construction.
+            let (config, trust_decision) =
+                resolve_headless_trust_config(&cli, project_dir.clone(), user_config_dir.clone())
+                    .await;
+            run_rpc(
+                &cli,
+                &config,
+                resumed_messages,
+                resume_info,
+                tool_selection,
+                trust_decision,
+            )
+            .await
         });
         std::process::exit(exit_code);
     } else if cli.non_interactive || cli.json || !prompt_text.is_empty() {
@@ -167,6 +159,11 @@ fn main() {
         };
 
         let exit_code = rt.block_on(async {
+            // Phase 15.8.1: two-stage headless trust preflight before
+            // provider/runner construction.
+            let (config, trust_decision) =
+                resolve_headless_trust_config(&cli, project_dir.clone(), user_config_dir.clone())
+                    .await;
             run_non_interactive(
                 &cli,
                 &config,
@@ -174,6 +171,7 @@ fn main() {
                 resumed_messages,
                 resume_info,
                 tool_selection,
+                trust_decision,
             )
             .await
         });
@@ -188,13 +186,9 @@ fn main() {
             }
         };
         // Phase 15.7: two-stage trust-gated config for the interactive path.
-        let interactive_config = resolve_interactive_trust_config(
-            &cli,
-            resume_info
-                .as_ref()
-                .map(|info| info.original_cwd.clone())
-                .or_else(|| std::env::current_dir().ok()),
-        );
+        // Task 15.8.2 migrates interactive onto `prepare_project_startup` + the
+        // TUI prompt; until then interactive keeps the permissive default.
+        let interactive_config = resolve_interactive_trust_config(&cli, project_dir.clone());
         rt.block_on(async {
             run_interactive(
                 &cli,
@@ -206,6 +200,89 @@ fn main() {
             .await
         });
     }
+}
+
+/// Phase 15.8.1 headless two-stage trust-gated config resolution for
+/// non-interactive and RPC startup.
+///
+/// Mirrors [`resolve_interactive_trust_config`] but resolves trust through the
+/// public `prepare_project_startup` preflight with the `HeadlessPreTrustUi`,
+/// maps an unresolved ask to `Untrusted` (headless modes never prompt), and
+/// returns both the merged config and the decision. The decision feeds
+/// `start_installed_package_runtime_with_trust` and the runner harness builder.
+/// `global_default` is read from the **pre-trust** config so a project cannot
+/// self-authorize via its own `[defaults] default_project_trust`. Exits with
+/// code 2 on config/trust error, matching `resolve_interactive_trust_config`.
+async fn resolve_headless_trust_config(
+    cli: &Cli,
+    project_dir: Option<std::path::PathBuf>,
+    user_config_dir: std::path::PathBuf,
+) -> (
+    opi_coding_agent::config::OpiConfig,
+    opi_coding_agent::project_trust::TrustDecision,
+) {
+    use opi_coding_agent::config::{ConfigSource, merge_project_config, resolve_pre_trust_config};
+    use opi_coding_agent::project_trust::{
+        HeadlessPreTrustUi, ProjectTrustCli, ProjectTrustResolverRegistry, TrustDecision,
+        prepare_project_startup,
+    };
+
+    let source = ConfigSource {
+        cli_model: cli.model.clone(),
+        config_path: cli.config.clone(),
+        env_model: std::env::var("OPI_MODEL").ok(),
+        project_dir: project_dir.clone(),
+        user_config_path: None,
+    };
+    let pre = match resolve_pre_trust_config(source) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("opi: config error: {e}");
+            std::process::exit(2);
+        }
+    };
+    // global_default comes from the global (pre-trust) config only, so a project
+    // cannot self-authorize by setting its own [defaults] default_project_trust.
+    let global_default = pre.defaults.default_project_trust.to_decision();
+    let project_root = project_dir
+        .as_deref()
+        .unwrap_or_else(|| std::path::Path::new("."));
+    // Standard CLI: empty resolver registry (no -e / native loader in Phase 15).
+    let mut registry = ProjectTrustResolverRegistry::new();
+    let plan = match prepare_project_startup(
+        ProjectTrustCli {
+            trust: cli.trust,
+            no_trust: cli.no_trust,
+        },
+        &mut registry,
+        &user_config_dir,
+        project_root,
+        global_default,
+        &HeadlessPreTrustUi,
+    )
+    .await
+    {
+        Ok(plan) => plan,
+        Err(e) => {
+            eprintln!("opi: trust error: {e}");
+            std::process::exit(2);
+        }
+    };
+    // Headless ask-to-untrusted: an unresolved ask denies project resources.
+    let decision = plan.headless_decision();
+    let mut config = if matches!(decision, TrustDecision::Untrusted) {
+        pre
+    } else {
+        match merge_project_config(pre, project_root) {
+            Ok(c) => c,
+            Err(e) => {
+                eprintln!("opi: config error: {e}");
+                std::process::exit(2);
+            }
+        }
+    };
+    config.apply_sandbox_overrides(cli.sandbox, cli.sandbox_require.then_some(true));
+    (config, decision)
 }
 
 /// Phase 15.7 interactive two-stage trust-gated config resolution.
@@ -536,6 +613,7 @@ async fn run_non_interactive(
     resumed_messages: Option<Vec<opi_agent::message::AgentMessage>>,
     resume_info: Option<ResumeInfo>,
     tool_selection: ToolSelection,
+    trust_decision: opi_coding_agent::project_trust::TrustDecision,
 ) -> i32 {
     let workspace_root = resume_info
         .as_ref()
@@ -548,6 +626,7 @@ async fn run_non_interactive(
         resumed_messages,
         resume_info,
         tool_selection,
+        trust_decision,
         workspace_root,
         opi_coding_agent::config::user_config_dir(),
         opi_coding_agent::credential_store::native_keyring_backend_factory(),
@@ -566,6 +645,7 @@ async fn run_non_interactive_core<Observe>(
     resumed_messages: Option<Vec<opi_agent::message::AgentMessage>>,
     resume_info: Option<ResumeInfo>,
     tool_selection: ToolSelection,
+    trust_decision: opi_coding_agent::project_trust::TrustDecision,
     workspace_root: std::path::PathBuf,
     user_config_dir: std::path::PathBuf,
     backend_factory: opi_coding_agent::credential_store::KeyringBackendFactory,
@@ -624,11 +704,13 @@ where
                 }
             });
 
-    let runtime_startup = opi_coding_agent::runtime_packages::start_installed_package_runtime(
-        &workspace_root,
-        &user_config_dir,
-    )
-    .await;
+    let runtime_startup =
+        opi_coding_agent::runtime_packages::start_installed_package_runtime_with_trust(
+            &workspace_root,
+            &user_config_dir,
+            trust_decision,
+        )
+        .await;
 
     with_provider_bundle(bundle, move |provider, provider_diagnostics| async move {
         let mut runtime_startup = runtime_startup;
@@ -714,6 +796,7 @@ async fn run_rpc(
     resumed_messages: Option<Vec<opi_agent::message::AgentMessage>>,
     resume_info: Option<ResumeInfo>,
     tool_selection: ToolSelection,
+    trust_decision: opi_coding_agent::project_trust::TrustDecision,
 ) -> i32 {
     let workspace_root = resume_info
         .as_ref()
@@ -725,6 +808,7 @@ async fn run_rpc(
         resumed_messages,
         resume_info,
         tool_selection,
+        trust_decision,
         workspace_root,
         opi_coding_agent::config::user_config_dir(),
         opi_coding_agent::credential_store::native_keyring_backend_factory(),
@@ -742,6 +826,7 @@ async fn run_rpc_core(
     resumed_messages: Option<Vec<opi_agent::message::AgentMessage>>,
     resume_info: Option<ResumeInfo>,
     tool_selection: ToolSelection,
+    trust_decision: opi_coding_agent::project_trust::TrustDecision,
     workspace_root: std::path::PathBuf,
     user_config_dir: std::path::PathBuf,
     backend_factory: opi_coding_agent::credential_store::KeyringBackendFactory,
@@ -793,11 +878,13 @@ async fn run_rpc_core(
                 }
             });
 
-    let runtime_startup = opi_coding_agent::runtime_packages::start_installed_package_runtime(
-        &workspace_root,
-        &user_config_dir,
-    )
-    .await;
+    let runtime_startup =
+        opi_coding_agent::runtime_packages::start_installed_package_runtime_with_trust(
+            &workspace_root,
+            &user_config_dir,
+            trust_decision,
+        )
+        .await;
 
     with_provider_bundle(bundle, move |provider, provider_diagnostics| async move {
         let mut runtime_startup = runtime_startup;
@@ -1918,6 +2005,7 @@ mod tests {
                     None,
                     None,
                     opi_coding_agent::policy::ToolSelection::Default,
+                    opi_coding_agent::project_trust::TrustDecision::Trusted,
                     workspace_dir.path().to_path_buf(),
                     user_config_dir.path().to_path_buf(),
                     empty_backend_factory(),
@@ -1988,6 +2076,7 @@ mod tests {
                         None,
                         None,
                         opi_coding_agent::policy::ToolSelection::Default,
+                        opi_coding_agent::project_trust::TrustDecision::Trusted,
                         workspace_dir.path().to_path_buf(),
                         user_config_dir.path().to_path_buf(),
                         empty_backend_factory(),
@@ -2090,6 +2179,7 @@ mod tests {
                     None,
                     None,
                     opi_coding_agent::policy::ToolSelection::Default,
+                    opi_coding_agent::project_trust::TrustDecision::Trusted,
                     workspace_dir.path().to_path_buf(),
                     user_config_dir.path().to_path_buf(),
                     malformed_backend_factory(),
@@ -2128,6 +2218,7 @@ mod tests {
                 None,
                 None,
                 opi_coding_agent::policy::ToolSelection::Default,
+                opi_coding_agent::project_trust::TrustDecision::Trusted,
                 workspace_dir.path().to_path_buf(),
                 user_config_dir.path().to_path_buf(),
                 malformed_backend_factory(),
@@ -2226,6 +2317,7 @@ mod tests {
                 None,
                 None,
                 opi_coding_agent::policy::ToolSelection::Default,
+                opi_coding_agent::project_trust::TrustDecision::Trusted,
                 workspace_dir.path().to_path_buf(),
                 user_config_dir.path().to_path_buf(),
                 configured_backend_factory(),
@@ -2291,6 +2383,7 @@ mod tests {
                     None,
                     None,
                     opi_coding_agent::policy::ToolSelection::Default,
+                    opi_coding_agent::project_trust::TrustDecision::Trusted,
                     workspace_dir.path().to_path_buf(),
                     user_config_dir.path().to_path_buf(),
                     unavailable_backend_factory(),
@@ -2359,6 +2452,7 @@ mod tests {
                 None,
                 None,
                 opi_coding_agent::policy::ToolSelection::Default,
+                opi_coding_agent::project_trust::TrustDecision::Trusted,
                 workspace_dir.path().to_path_buf(),
                 user_config_dir.path().to_path_buf(),
                 unavailable_backend_factory(),
@@ -2512,6 +2606,7 @@ mod tests {
                     None,
                     None,
                     opi_coding_agent::policy::ToolSelection::Default,
+                    opi_coding_agent::project_trust::TrustDecision::Trusted,
                     workspace_dir.path().to_path_buf(),
                     user_config_dir.path().to_path_buf(),
                     unavailable_backend_factory(),
@@ -2563,6 +2658,7 @@ mod tests {
                 None,
                 None,
                 opi_coding_agent::policy::ToolSelection::Default,
+                opi_coding_agent::project_trust::TrustDecision::Trusted,
                 workspace_dir.path().to_path_buf(),
                 user_config_dir.path().to_path_buf(),
                 unavailable_backend_factory(),

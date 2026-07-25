@@ -108,6 +108,19 @@ pub struct Cli {
     #[arg(long)]
     pub allow_mutating: bool,
 
+    /// Trust this project and load its project resources (`.opi/config.toml`,
+    /// project skills/fragments/themes/extensions, project packages, and project
+    /// `AGENTS.md`/`CLAUDE.md`). Mutually exclusive with `--no-trust`.
+    /// Overrides `[defaults] default_project_trust` and the trust store.
+    #[arg(long, conflicts_with = "no_trust")]
+    pub trust: bool,
+
+    /// Do not trust this project; skip its project resources (user-global
+    /// resources and explicit `--config`/`--system-prompt` still apply, tools are
+    /// unchanged). Mutually exclusive with `--trust`.
+    #[arg(long, conflicts_with = "trust")]
+    pub no_trust: bool,
+
     /// Sandbox mode override for the bash subprocess tree: `off` or `strict`.
     /// Strict is opt-in defense-in-depth, not a security boundary. Overrides
     /// `[sandbox] mode` from layered TOML.

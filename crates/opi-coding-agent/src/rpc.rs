@@ -82,6 +82,7 @@ use opi_ai::provider::Provider;
 use crate::config::OpiConfig;
 use crate::harness::{CodingHarness, ResumeInfo, TraceConfig};
 use crate::policy::{RunMode, ToolSelection};
+use crate::project_trust::TrustDecision;
 use crate::runner::ExitCode;
 use crate::runtime_packages::RuntimePackageStartup;
 
@@ -150,6 +151,7 @@ impl RpcRunner {
             None,
             Vec::new(),
             None,
+            TrustDecision::Trusted,
         )
     }
 
@@ -183,6 +185,7 @@ impl RpcRunner {
             None,
             Vec::new(),
             trace_sink,
+            TrustDecision::Trusted,
         )
     }
 
@@ -213,6 +216,7 @@ impl RpcRunner {
             None,
             Vec::new(),
             None,
+            TrustDecision::Trusted,
         )
     }
 
@@ -234,6 +238,7 @@ impl RpcRunner {
             extension_registry,
             installed_packages,
             diagnostics,
+            trust_decision,
         } = runtime_startup;
         Self::new_with_optional_extension_registry(
             provider,
@@ -249,6 +254,7 @@ impl RpcRunner {
             Some(installed_packages),
             diagnostics,
             Some(Arc::new(RecordingTraceSink::new())),
+            trust_decision,
         )
     }
 
@@ -267,6 +273,7 @@ impl RpcRunner {
         installed_packages: Option<Vec<crate::package_discovery::PackageResource>>,
         startup_diagnostics: Vec<Diagnostic>,
         trace_sink: Option<Arc<RecordingTraceSink>>,
+        trust_decision: TrustDecision,
     ) -> Result<Self, crate::policy::ToolPolicyError> {
         let tool_config = crate::policy::ToolRuntimeConfig::resolve(
             RunMode::NonInteractive,
@@ -282,7 +289,10 @@ impl RpcRunner {
             .startup_diagnostics(startup_diagnostics)
             // Record runtime diagnostics so run summaries can carry structured
             // severity counts (Phase 7 task 7.5).
-            .record_diagnostics(true);
+            .record_diagnostics(true)
+            // Phase 15.8.1: apply the headless trust decision to project
+            // resource discovery gating.
+            .trust_decision(trust_decision);
         if let Some(installed_packages) = installed_packages {
             builder = builder.installed_packages(installed_packages);
         }

@@ -53,6 +53,8 @@ use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::Arc;
 
+use serde::Deserialize;
+
 // ---------------------------------------------------------------------------
 // Errors
 // ---------------------------------------------------------------------------
@@ -75,6 +77,9 @@ pub enum TrustError {
     /// A resolver was registered after the registry was sealed for resolution.
     #[error("resolver registry is sealed; late registration rejected")]
     RegistrySealed,
+    /// `--trust` and `--no-trust` were both set (mutually exclusive).
+    #[error("--trust and --no-trust are mutually exclusive")]
+    ConflictingCliFlags,
 }
 
 /// Errors a [`PreTrustUi`] implementation can surface. The substrate defines
@@ -487,6 +492,183 @@ pub fn resolve_project_trust_decision(
         TrustDecision::Trusted => TrustDecision::Trusted,
         TrustDecision::Undecided => TrustDecision::Trusted,
     }
+}
+
+// ---------------------------------------------------------------------------
+// Task 15.8.1: startup policy, preflight entry, headless UI
+// ---------------------------------------------------------------------------
+
+/// `[defaults] default_project_trust` policy (task 15.8.1).
+///
+/// `Ask` (default) falls through to the prompt/headless resolution;
+/// `Always` authorizes every project; `Never` denies every project. The value
+/// is read from the **pre-trust** (global) config so a project cannot
+/// self-authorize by setting its own `[defaults] default_project_trust`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ProjectTrustDefault {
+    #[default]
+    Ask,
+    Always,
+    Never,
+}
+
+impl ProjectTrustDefault {
+    /// Map the policy to the decision it implies at precedence position 4.
+    /// `Ask` yields [`TrustDecision::Undecided`] ("keep asking"); `Always`/`Never`
+    /// are decisive.
+    pub fn to_decision(self) -> TrustDecision {
+        match self {
+            ProjectTrustDefault::Ask => TrustDecision::Undecided,
+            ProjectTrustDefault::Always => TrustDecision::Trusted,
+            ProjectTrustDefault::Never => TrustDecision::Untrusted,
+        }
+    }
+}
+
+/// Parsed `--trust` / `--no-trust` CLI input (task 15.8.1). The two flags are
+/// mutually exclusive; [`cli_trust_override`] validates that and maps the pair
+/// to an override decision.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ProjectTrustCli {
+    /// `--trust` was set on the command line.
+    pub trust: bool,
+    /// `--no-trust` was set on the command line.
+    pub no_trust: bool,
+}
+
+/// Validate `--trust`/`--no-trust` and map them to a CLI override decision.
+/// `Err(TrustError::ConflictingCliFlags)` if both are set; `Ok(Some(..))` when
+/// exactly one is set; `Ok(None)` when neither is set (fall through).
+pub fn cli_trust_override(cli: ProjectTrustCli) -> Result<Option<TrustDecision>, TrustError> {
+    match (cli.trust, cli.no_trust) {
+        (true, true) => Err(TrustError::ConflictingCliFlags),
+        (true, false) => Ok(Some(TrustDecision::Trusted)),
+        (false, true) => Ok(Some(TrustDecision::Untrusted)),
+        (false, false) => Ok(None),
+    }
+}
+
+/// The resolved startup plan returned by [`prepare_project_startup`].
+///
+/// `decision` may be [`TrustDecision::Undecided`] when every layer abstained
+/// and the ask could not resolve (headless UI). Headless callers apply
+/// [`Self::headless_decision`] to map that to [`TrustDecision::Untrusted`];
+/// interactive callers (15.8.2) render the prompt instead.
+#[derive(Debug, Clone)]
+pub struct ProjectStartupPlan {
+    /// The raw resolved decision (may be `Undecided`).
+    pub decision: TrustDecision,
+    /// The trust-requiring resources detected in the project (empty => no gate).
+    pub resources: Vec<TrustResource>,
+    /// The validated CLI override (`--trust`/`--no-trust`), if any.
+    pub cli_override: Option<TrustDecision>,
+}
+
+impl ProjectStartupPlan {
+    /// The resolved decision with the headless ask policy applied: an
+    /// unresolved ask denies project resources (non-interactive/RPC never
+    /// prompt).
+    pub fn headless_decision(&self) -> TrustDecision {
+        match self.decision {
+            TrustDecision::Undecided => TrustDecision::Untrusted,
+            decided => decided,
+        }
+    }
+}
+
+/// Headless [`PreTrustUi`] for non-interactive and RPC startup (task 15.8.1).
+///
+/// `select`/`confirm`/`input` immediately return [`PreTrustUiError::Unavailable`]
+/// and `notify` is a no-op. Neither headless mode can prompt, so an unresolved
+/// ask yields a terminal [`TrustDecision::Undecided`] that the caller maps to
+/// `Untrusted`. RPC emits no UI request because trust resolves in `main` before
+/// the RPC runner (and its wire) exists; this type has no request surface.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct HeadlessPreTrustUi;
+
+impl PreTrustUi for HeadlessPreTrustUi {
+    fn select(
+        &self,
+        _prompt: &str,
+        _options: &[&str],
+    ) -> Pin<Box<dyn Future<Output = Result<usize, PreTrustUiError>> + Send + '_>> {
+        Box::pin(async { Err(PreTrustUiError::Unavailable) })
+    }
+    fn confirm(
+        &self,
+        _prompt: &str,
+    ) -> Pin<Box<dyn Future<Output = Result<bool, PreTrustUiError>> + Send + '_>> {
+        Box::pin(async { Err(PreTrustUiError::Unavailable) })
+    }
+    fn input(
+        &self,
+        _prompt: &str,
+    ) -> Pin<Box<dyn Future<Output = Result<String, PreTrustUiError>> + Send + '_>> {
+        Box::pin(async { Err(PreTrustUiError::Unavailable) })
+    }
+    fn notify(&self, _msg: &str) -> Pin<Box<dyn Future<Output = ()> + Send + '_>> {
+        Box::pin(async {})
+    }
+}
+
+/// The sole preflight entry used by the standard CLI and embedders (task
+/// 15.8.1).
+///
+/// Validates the CLI trust flags, detects trust-requiring resources, and returns
+/// a no-resource [`ProjectStartupPlan`] with decision [`TrustDecision::Trusted`]
+/// **before** resolver invocation, trust-store loading, global-default
+/// evaluation, or [`PreTrustUi`] calls. When resources exist, it seals
+/// `registry` (rejecting late registration), loads `trust.json` from
+/// `user_config_dir`, then runs [`resolve_trust`]: CLI override, registered
+/// resolver votes, nearest stored decision, `global_default`, then ask. The
+/// first `Trust`/`Deny` wins; `Undecided` falls through.
+///
+/// `global_default` must be the **global** (pre-trust) `[defaults]
+/// default_project_trust` value so a project cannot self-authorize via its own
+/// config. The returned plan's [`ProjectStartupPlan::decision`] is raw (possibly
+/// `Undecided`); headless callers apply [`ProjectStartupPlan::headless_decision`].
+pub async fn prepare_project_startup(
+    cli: ProjectTrustCli,
+    registry: &mut ProjectTrustResolverRegistry,
+    user_config_dir: &Path,
+    project_root: &Path,
+    global_default: TrustDecision,
+    ui: &dyn PreTrustUi,
+) -> Result<ProjectStartupPlan, TrustError> {
+    // 1. Validate CLI flags before any resource/store work.
+    let cli_override = cli_trust_override(cli)?;
+
+    // 2. Detect trust-requiring resources. An empty set short-circuits to a
+    //    trusted plan with NO resolver, store, default, or UI side effects.
+    let resources = ProjectTrustStore::detect_resources(project_root);
+    if resources.is_empty() {
+        return Ok(ProjectStartupPlan {
+            decision: TrustDecision::Trusted,
+            resources,
+            cli_override,
+        });
+    }
+
+    // 3. Seal the registry so late registration (project-extension
+    //    self-authorization) is impossible once resolution has begun.
+    registry.seal();
+
+    // 4. Load the store only now (the no-resource path never touches it).
+    let store = ProjectTrustStore::load(user_config_dir)?;
+    let ctx = TrustContext {
+        project_path: project_root.to_path_buf(),
+        triggering_resources: resources.clone(),
+    };
+
+    // 5. Full precedence: CLI -> resolvers -> store -> global default -> ask.
+    let decision = resolve_trust(cli_override, registry, &store, &ctx, global_default, ui).await;
+
+    Ok(ProjectStartupPlan {
+        decision,
+        resources,
+        cli_override,
+    })
 }
 
 // ---------------------------------------------------------------------------

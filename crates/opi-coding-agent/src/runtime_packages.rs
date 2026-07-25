@@ -12,10 +12,16 @@ use crate::package_resolver::{InstalledPackageScope, resolve_installed_packages}
 use crate::project_trust::TrustDecision;
 
 /// Installed packages and adapter registry prepared before harness startup.
+///
+/// `trust_decision` (task 15.8.1) is the decision that filtered project-scope
+/// packages; it rides along into the runner constructors so they can apply the
+/// same decision to `CodingHarnessBuilder::trust_decision` (resource-discovery
+/// gating) without a constructor signature change.
 pub struct RuntimePackageStartup {
     pub extension_registry: ExtensionRegistry,
     pub installed_packages: Vec<PackageResource>,
     pub diagnostics: Vec<Diagnostic>,
+    pub trust_decision: TrustDecision,
 }
 
 /// Resolve installed package declarations and start package adapters.
@@ -61,6 +67,7 @@ pub async fn start_installed_package_runtime_with_trust(
                 extension_registry: registry,
                 installed_packages: Vec::new(),
                 diagnostics,
+                trust_decision,
             };
         }
     };
@@ -81,5 +88,6 @@ pub async fn start_installed_package_runtime_with_trust(
         extension_registry,
         installed_packages,
         diagnostics,
+        trust_decision,
     }
 }

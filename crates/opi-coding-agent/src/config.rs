@@ -14,6 +14,8 @@ use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
+use crate::project_trust::ProjectTrustDefault;
+
 // ---------------------------------------------------------------------------
 // Resolved config (public API — all fields present)
 // ---------------------------------------------------------------------------
@@ -46,6 +48,10 @@ pub struct DefaultsConfig {
     /// `--list-models` probe the OS keychain (keychain-first, env fallback).
     /// Defaults to `None` (env), preserving pre-Phase-14 behavior.
     pub credential_backend: Option<CredentialBackendSource>,
+    /// Phase 15.8.1 `[defaults] default_project_trust` policy (`ask` default).
+    /// Read from the **pre-trust** (global) config so a project cannot
+    /// self-authorize via its own `[defaults]` block.
+    pub default_project_trust: ProjectTrustDefault,
 }
 
 /// Where an API-key built-in provider sources its credential.
@@ -72,6 +78,7 @@ impl Default for DefaultsConfig {
             theme: "default".into(),
             allow_mutating_tools: false,
             credential_backend: None,
+            default_project_trust: ProjectTrustDefault::Ask,
         }
     }
 }
@@ -399,6 +406,7 @@ struct TomlDefaults {
     theme: Option<String>,
     allow_mutating_tools: Option<bool>,
     credential_backend: Option<CredentialBackendSource>,
+    default_project_trust: Option<ProjectTrustDefault>,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -666,6 +674,9 @@ impl TomlConfig {
         }
         if let Some(v) = self.defaults.credential_backend {
             config.defaults.credential_backend = Some(v);
+        }
+        if let Some(v) = self.defaults.default_project_trust {
+            config.defaults.default_project_trust = v;
         }
         if let Some(v) = self.thinking.enabled {
             config.thinking.enabled = v;

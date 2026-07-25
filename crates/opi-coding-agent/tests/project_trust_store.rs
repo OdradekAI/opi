@@ -714,3 +714,69 @@ fn trust_decision_is_decided_predicate() {
     assert!(TrustDecision::Untrusted.is_decided());
     assert!(!TrustDecision::Undecided.is_decided());
 }
+
+/// Phase 15 task 15.8.1 acceptance: the resolver path is the explicit embedder
+/// API only. The standard opi CLI registry is empty (Phase 15 adds no CLI `-e`
+/// or native loader), a registered embedder resolver's first `Trust`/`Deny`
+/// wins in registration order over the store and over later resolvers,
+/// `Undecided` falls through, and registration after the registry is sealed
+/// (e.g. a project extension attempting self-authorization once preflight has
+/// run) is rejected.
+#[tokio::test]
+async fn explicit_embedder_resolver_precedence_and_cli_empty_registry() {
+    let user_dir = tempfile::tempdir().unwrap();
+    let store = ProjectTrustStore::load(user_dir.path()).unwrap();
+    let project = tempfile::tempdir().unwrap();
+    let context = ctx(project.path());
+
+    // The standard CLI registry is empty.
+    let standard = ProjectTrustResolverRegistry::new();
+    assert!(
+        standard.is_empty(),
+        "standard CLI registry is empty (no -e / native loader)"
+    );
+
+    let ui = FakeUi::headless();
+
+    // First Trust/Deny wins in registration order over a later resolver and
+    // over the (absent) store.
+    let log: Log = Arc::new(Mutex::new(Vec::new()));
+    let mut reg = ProjectTrustResolverRegistry::new();
+    reg.register(Arc::new(fake(TrustVote::Trust, 1, &log)))
+        .unwrap();
+    reg.register(Arc::new(fake(TrustVote::Deny, 2, &log)))
+        .unwrap(); // shadowed, must not decide
+    reg.seal();
+    let decision = resolve_trust(None, &reg, &store, &context, TrustDecision::Undecided, &ui).await;
+    assert_eq!(
+        decision,
+        TrustDecision::Trusted,
+        "first resolver Trust wins"
+    );
+    assert_eq!(
+        *log.lock().unwrap(),
+        vec![1],
+        "only the deciding resolver ran"
+    );
+
+    // Undecided falls through to the next layer (store/default/ask).
+    let mut reg2 = ProjectTrustResolverRegistry::new();
+    reg2.register(Arc::new(fake(TrustVote::Undecided, 1, &log)))
+        .unwrap();
+    reg2.seal();
+    let decision =
+        resolve_trust(None, &reg2, &store, &context, TrustDecision::Undecided, &ui).await;
+    assert_eq!(
+        decision,
+        TrustDecision::Undecided,
+        "Undecided resolver vote falls through to the headless ask"
+    );
+
+    // Late registration after seal is rejected.
+    let mut reg3 = ProjectTrustResolverRegistry::new();
+    reg3.seal();
+    assert!(matches!(
+        reg3.register(Arc::new(fake(TrustVote::Trust, 9, &log))),
+        Err(TrustError::RegistrySealed)
+    ));
+}

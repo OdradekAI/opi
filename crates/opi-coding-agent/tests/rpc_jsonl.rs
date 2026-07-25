@@ -1239,6 +1239,7 @@ async fn phase13_rpc_session_info_returns_metadata() {
             extension_registry: ExtensionRegistry::new(),
             installed_packages: Vec::new(),
             diagnostics: Vec::new(),
+            trust_decision: opi_coding_agent::project_trust::TrustDecision::Trusted,
         },
         Some(resume_info),
     )
@@ -1425,6 +1426,7 @@ async fn phase13_rpc_session_metadata_shape() {
             extension_registry: ExtensionRegistry::new(),
             installed_packages: Vec::new(),
             diagnostics: Vec::new(),
+            trust_decision: opi_coding_agent::project_trust::TrustDecision::Trusted,
         },
         Some(resume_info),
     )
@@ -1606,6 +1608,7 @@ async fn phase13_rpc_session_info_reports_tree_recovery_diagnostics() {
             extension_registry: ExtensionRegistry::new(),
             installed_packages: Vec::new(),
             diagnostics: Vec::new(),
+            trust_decision: opi_coding_agent::project_trust::TrustDecision::Trusted,
         },
         Some(resume_info),
     )
@@ -1706,6 +1709,7 @@ async fn phase13_rpc_session_info_reports_tree_read_error() {
             extension_registry: ExtensionRegistry::new(),
             installed_packages: Vec::new(),
             diagnostics: Vec::new(),
+            trust_decision: opi_coding_agent::project_trust::TrustDecision::Trusted,
         },
         Some(resume_info),
     )
@@ -3878,6 +3882,7 @@ where
         extension_registry: registry,
         installed_packages: Vec::new(),
         diagnostics,
+        trust_decision: opi_coding_agent::project_trust::TrustDecision::Trusted,
     };
     let runner = RpcRunner::new_with_runtime_packages(
         Box::new(provider),
@@ -4121,6 +4126,7 @@ mod phase7 {
                 SOURCE_PACKAGE,
                 "phase7 rpc startup",
             )],
+            trust_decision: opi_coding_agent::project_trust::TrustDecision::Trusted,
         };
         let workspace = tempfile::tempdir().expect("workspace tempdir");
         let mut runner = RpcRunner::new_with_runtime_packages(
@@ -4224,6 +4230,7 @@ mod phase7 {
                 extension_registry: ExtensionRegistry::new(),
                 installed_packages: Vec::new(),
                 diagnostics: Vec::new(),
+                trust_decision: opi_coding_agent::project_trust::TrustDecision::Trusted,
             },
             Some(resume_info),
         )
@@ -4359,6 +4366,7 @@ mod phase7 {
             extension_registry: ExtensionRegistry::new(),
             installed_packages: Vec::new(),
             diagnostics: Vec::new(),
+            trust_decision: opi_coding_agent::project_trust::TrustDecision::Trusted,
         };
         let workspace = tempfile::tempdir().expect("workspace tempdir");
         let mut runner = RpcRunner::new_with_runtime_packages(
@@ -4418,6 +4426,7 @@ mod phase7 {
             extension_registry: ExtensionRegistry::new(),
             installed_packages: Vec::new(),
             diagnostics: Vec::new(),
+            trust_decision: opi_coding_agent::project_trust::TrustDecision::Trusted,
         };
         let workspace = tempfile::tempdir().expect("workspace tempdir");
         let resume_info = empty_resume_info(&workspace, "compact-manual");
@@ -4483,6 +4492,7 @@ mod phase7 {
             extension_registry: ExtensionRegistry::new(),
             installed_packages: Vec::new(),
             diagnostics: Vec::new(),
+            trust_decision: opi_coding_agent::project_trust::TrustDecision::Trusted,
         };
         let workspace = tempfile::tempdir().expect("workspace tempdir");
         let resume_info = empty_resume_info(&workspace, "compact-empty");
@@ -5107,6 +5117,7 @@ mod phase7 {
             extension_registry: ExtensionRegistry::new(),
             installed_packages: Vec::new(),
             diagnostics: Vec::new(),
+            trust_decision: opi_coding_agent::project_trust::TrustDecision::Trusted,
         };
         let workspace = tempfile::tempdir().expect("workspace tempdir");
         // PRODUCTION constructor used by run_rpc (NOT the test-only new_with_trace).

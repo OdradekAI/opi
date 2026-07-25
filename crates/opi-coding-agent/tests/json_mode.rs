@@ -767,6 +767,7 @@ mod phase7 {
                 extension_registry: ExtensionRegistry::new(),
                 installed_packages: Vec::new(),
                 diagnostics,
+                trust_decision: opi_coding_agent::project_trust::TrustDecision::Trusted,
             }),
             trace_path,
         )
@@ -845,6 +846,7 @@ mod phase7 {
                 extension_registry: ExtensionRegistry::new(),
                 installed_packages: Vec::new(),
                 diagnostics: Vec::new(),
+                trust_decision: opi_coding_agent::project_trust::TrustDecision::Trusted,
             }),
             None,
         )
@@ -954,6 +956,7 @@ mod phase7 {
                 extension_registry: ExtensionRegistry::new(),
                 installed_packages: Vec::new(),
                 diagnostics: Vec::new(),
+                trust_decision: opi_coding_agent::project_trust::TrustDecision::Trusted,
             }),
         );
         let result = runner.run_json("hello").await;

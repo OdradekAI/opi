@@ -23,6 +23,7 @@ use opi_ai::stream::AssistantStreamEvent;
 use crate::config::OpiConfig;
 use crate::harness::{CodingHarness, ResumeInfo, TraceConfig};
 use crate::policy::{RunMode, ToolPolicyError, ToolRuntimeConfig, ToolSelection, is_mutating_tool};
+use crate::project_trust::TrustDecision;
 use crate::runtime_packages::RuntimePackageStartup;
 
 /// NDJSON output schema version.
@@ -184,6 +185,12 @@ impl NonInteractiveRunner {
             tool_selection.clone(),
         )?;
         let hooks = Box::new(NonInteractiveHooks { allow_mutating });
+        // Phase 15.8.1: the headless trust decision rides on RuntimePackageStartup
+        // (it filtered those packages); default to Trusted when no startup is
+        // supplied (embedder/test path).
+        let trust_decision = runtime_startup
+            .as_ref()
+            .map_or(TrustDecision::Trusted, |startup| startup.trust_decision);
         let mut builder = CodingHarness::builder(provider, model, config, workspace_root)
             .hooks(hooks)
             .initial_messages(initial_messages)
@@ -191,7 +198,8 @@ impl NonInteractiveRunner {
             .tool_config(tool_config)
             // Record runtime diagnostics so the JSON run summary can carry
             // structured severity counts (Phase 7 task 7.5).
-            .record_diagnostics(true);
+            .record_diagnostics(true)
+            .trust_decision(trust_decision);
         if let Some(prompt) = user_system_prompt {
             builder = builder.user_system_prompt(prompt);
         }
