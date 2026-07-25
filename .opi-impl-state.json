@@ -729,7 +729,7 @@
       "definition_of_done": "`LocalBashOperations::exec` consumes the resolved sandbox config before spawn, preserves L0 for `mode = off`, and dispatches `mode = strict` through a capability-injected platform backend selected by `sandbox::prepare`. Interactive, non-interactive, and RPC startup resolve the default/TOML/CLI values before provider or command construction and pass the result through `CodingHarness::build_tools`. The shared policy distinguishes temporary layer degradation from permanent platform unavailability, emits one redacted structured startup diagnostic for permanent gaps, runs at the strongest engaged baseline when `require = false`, and returns a named error before command side effects when `require = true`. Tests exercise production mode dispatch, CLI-over-TOML precedence, invalid-value early exit, every capability/fallback branch, diagnostic de-duplication, and command non-execution without depending on a host kernel feature.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "15.3",
         "15.4"
@@ -764,6 +764,21 @@
           "field": "forbidden_scope",
           "reason": "Do not describe strict mode as a security boundary; untrusted code belongs in a container or VM.",
           "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#T4 — OS-native subprocess sandbox"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Added `pub mod sandbox;` to lib.rs to register the new sandbox module (15.5.1). C.1a append recorded in the E.2 ledger checkpoint (late: the edit landed in task commit 9057b78 before the ledger append was captured; ownership is legitimate module-registration work, recorded transparently here rather than silently expanded).",
+          "source": "crates/opi-coding-agent/src/lib.rs"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Added the BashOpError::SandboxUnavailable match arm to BashTool::execute so the fail-closed path surfaces as an error tool result (15.5.1). C.1a append recorded in the E.2 ledger checkpoint (late: recorded after the task commit; ownership is the bash error mapping for the new BashOpError variant).",
+          "source": "crates/opi-coding-agent/src/tool/bash.rs"
+        },
+        {
+          "field": "verification.library_gates",
+          "reason": "Reconciled the draft DoD gate `--test sandbox_strict sandbox_config_reaches_all_production_modes` (a draft test name renamed during implementation) to the real tests that drive production dispatch: the three run_*_core entry tests in main.rs plus the build_tools_with_sandbox choke-point test. DoD branches unchanged; only test identifiers aligned to what shipped.",
+          "source": "D.2 exec.workflow.js wf_2118004d-394 (L-D3 production-call-site-proven); acceptance scenario phase15-sandbox-config-production-path"
         }
       ],
       "tier": "cli-runtime",
@@ -773,7 +788,10 @@
       "verification": {
         "library_gates": [
           "cargo test -p opi-coding-agent --test sandbox_config",
-          "cargo test -p opi-coding-agent --test sandbox_strict sandbox_config_reaches_all_production_modes",
+          "cargo test -p opi-coding-agent --bin opi sandbox_strict_bash_fail_closed_reaches_noninteractive_output",
+          "cargo test -p opi-coding-agent --bin opi sandbox_strict_startup_diagnostic_reaches_rpc_ready",
+          "cargo test -p opi-coding-agent --bin opi sandbox_strict_startup_diagnostic_reaches_interactive_launcher",
+          "cargo test -p opi-coding-agent --test sandbox_strict production_build_tools_wires_strict_policy_into_bash",
           "cargo test -p opi-coding-agent --test sandbox_strict unavailable_layer_fail_open_and_fail_closed",
           "cargo test -p opi-coding-agent --test sandbox_strict permanent_gap_diagnostic_is_once_per_startup",
           "cargo test -p opi-coding-agent --test tool_operations",
@@ -794,7 +812,10 @@
           "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Implementation Priority and Crate Boundaries",
           "scenario": "With no override, each production mode resolves sandbox off while preserving L0; layered TOML selects strict, `--sandbox` overrides TOML, `--sandbox-require` reaches fail-closed execution, and invalid values exit before provider or command construction. Captures prove the resolved config reaches CodingHarness::build_tools and LocalBashOperations::exec in interactive, non-interactive, and RPC dispatch.",
           "verification": [
-            "cargo test -p opi-coding-agent --test sandbox_strict sandbox_config_reaches_all_production_modes",
+            "cargo test -p opi-coding-agent --bin opi sandbox_strict_bash_fail_closed_reaches_noninteractive_output",
+            "cargo test -p opi-coding-agent --bin opi sandbox_strict_startup_diagnostic_reaches_rpc_ready",
+            "cargo test -p opi-coding-agent --bin opi sandbox_strict_startup_diagnostic_reaches_interactive_launcher",
+            "cargo test -p opi-coding-agent --test sandbox_strict production_build_tools_wires_strict_policy_into_bash",
             "cargo test -p opi-coding-agent --test sandbox_config invalid_sandbox_config_exits_before_provider_construction"
           ],
           "production_call_sites": [
@@ -806,7 +827,7 @@
             "crates/opi-coding-agent/src/harness.rs::CodingHarness::build_tools",
             "crates/opi-coding-agent/src/tool/operations.rs::LocalBashOperations::exec"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "phase15-sandbox-fallback-policy",
@@ -825,7 +846,7 @@
             "crates/opi-coding-agent/src/harness.rs::CodingHarness::build_tools",
             "crates/opi-coding-agent/src/tool/operations.rs::LocalBashOperations::exec"
           ],
-          "status": "open"
+          "status": "met"
         }
       ],
       "production_call_sites": [
@@ -839,9 +860,9 @@
         "crates/opi-coding-agent/src/sandbox.rs::prepare"
       ],
       "substrate_only": false,
-      "iteration_count": 0,
+      "iteration_count": 2,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "79a82d2f46cbccc51642d7b07d9b7b85d86e90d6",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "crates/opi-coding-agent/src/cli.rs",
@@ -853,13 +874,121 @@
         "crates/opi-coding-agent/src/tool/operations.rs",
         "crates/opi-coding-agent/tests/sandbox_config.rs",
         "crates/opi-coding-agent/tests/sandbox_strict.rs",
-        "crates/opi-coding-agent/tests/tool_operations.rs"
+        "crates/opi-coding-agent/tests/tool_operations.rs",
+        "crates/opi-coding-agent/src/lib.rs",
+        "crates/opi-coding-agent/src/tool/bash.rs"
       ],
-      "last_attempt": null,
-      "verified_at_commit": null,
-      "evidence": null,
+      "last_attempt": {
+        "attempt": 2,
+        "started_at": "2026-07-25T12:47:31.187Z",
+        "ended_at": "2026-07-25T13:52:36.521Z",
+        "outcome": "passing",
+        "failing_gate": null,
+        "touched_files": [
+          "crates/opi-coding-agent/src/harness.rs",
+          "crates/opi-coding-agent/src/lib.rs",
+          "crates/opi-coding-agent/src/main.rs",
+          "crates/opi-coding-agent/src/sandbox.rs",
+          "crates/opi-coding-agent/src/tool/bash.rs",
+          "crates/opi-coding-agent/src/tool/operations.rs",
+          "crates/opi-coding-agent/tests/sandbox_config.rs",
+          "crates/opi-coding-agent/tests/sandbox_strict.rs"
+        ]
+      },
+      "verified_at_commit": "9057b78a1d41d5514cb3f8b639bf55c8747969e8",
+      "evidence": {
+        "task": "15.5.1",
+        "dod_sha256": "2d81182e7c280bf6de685edc1adb3b8d2e5ff5e35d64acd2ad6c8c1a9035948c",
+        "verification": "cli-runtime; crate-scoped gates green on Windows: lib 82, bin 23 (incl. 3 sandbox_strict run_*_core dispatch tests), tool_operations 21, tools_read_write_edit_bash 95, tool_selection 30, sandbox_l0 5, adapter_host 19, sandbox_strict 5, sandbox_config 24, config_tests 50; clippy --all-targets -D warnings clean; rustdoc -D warnings clean; fmt --check clean. Full-workspace smoke skipped (disk-fill risk on this host per standing memory). D.2 deep exec verify (6-lens wf_2118004d-394 over 9057b78) clean: 0 must-fix, 0 rejected, 1 low evidence-truthfulness flag addressed (sandbox_strict footer count 6 -> 5).",
+        "evaluator": "passed",
+        "commit": "9057b78a1d41d5514cb3f8b639bf55c8747969e8"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-07-25T12:47:31.187Z",
+          "attempt": 1,
+          "summary": "Phase B confirmed at start_commit 79a82d2 (15.4 ledger checkpoint). User authorized Run 15.5.1 now. Fully verifiable on Windows: capability-injected dispatch (DoD: tests without a host kernel feature). Crate-scoped gates for opi-coding-agent (full-workspace smoke skipped: disk-fill risk on this host per standing memory). evaluator_required=true -> D.2 runs the full 6-lens deep exec verify. New sandbox.rs owns the policy resolver + StrictBackend capability seam (production backends are 15.5.2-15.5.5); sandbox.rs and tool/operations.rs keep #![forbid(unsafe_code)]; any FFI stays in tool/process_tree.rs.",
+          "gate_results": []
+        },
+        {
+          "timestamp": "2026-07-25T13:52:36.521Z",
+          "attempt": 2,
+          "summary": "Phase D passed at commit 9057b78. Crate-scoped mechanical gates green on Windows (lib 82, bin 23, tool_operations 21, tools_read_write_edit_bash 95, tool_selection 30, sandbox_l0 5, adapter_host 19, sandbox_strict 5, sandbox_config 24, config_tests 50; clippy/rustdoc/fmt clean). D.2 deep exec verify (6-lens wf_2118004d-394) clean: 0 must-fix, 0 rejected, 1 low evidence-truthfulness flag (sandbox_strict footer count 6->5, addressed). Iteration 2: the first D.2 (wf_2bd0d042-2f4) found 1 medium L-D3 must-fix (the production-dispatch test drove build_tools_with_sandbox directly + hand-mirrored prepare_production, skipping the run_*_core entry chain); resolved by adding three run_*_core entry tests in main.rs (non-interactive drives a real bash tool turn via MockProvider -> fail-closed in NDJSON, host-independent; RPC + interactive prove their entry reached + the permanent-gap startup diagnostic). C.1a late-appended lib.rs (pub mod sandbox) + tool/bash.rs (SandboxUnavailable arm). verification.library_gates + acceptance scenario 1 verification reconciled to the real test names. Fully verifiable on Windows (capability-injected; no host kernel feature); platform L1-L3 backends are 15.5.2-15.5.5.",
+          "gate_results": [
+            {
+              "gate": "cargo test --lib",
+              "passed": true,
+              "detail": "82 passed"
+            },
+            {
+              "gate": "cargo test --bin opi",
+              "passed": true,
+              "detail": "23 passed (incl. 3 sandbox_strict run_*_core dispatch)"
+            },
+            {
+              "gate": "cargo test --test tool_operations",
+              "passed": true,
+              "detail": "21 passed"
+            },
+            {
+              "gate": "cargo test --test tools_read_write_edit_bash",
+              "passed": true,
+              "detail": "95 passed"
+            },
+            {
+              "gate": "cargo test --test tool_selection",
+              "passed": true,
+              "detail": "30 passed"
+            },
+            {
+              "gate": "cargo test --test sandbox_l0",
+              "passed": true,
+              "detail": "5 passed"
+            },
+            {
+              "gate": "cargo test --test adapter_host",
+              "passed": true,
+              "detail": "19 passed"
+            },
+            {
+              "gate": "cargo test --test sandbox_strict",
+              "passed": true,
+              "detail": "5 passed"
+            },
+            {
+              "gate": "cargo test --test sandbox_config",
+              "passed": true,
+              "detail": "24 passed"
+            },
+            {
+              "gate": "cargo test --test config_tests",
+              "passed": true,
+              "detail": "50 passed"
+            },
+            {
+              "gate": "clippy --all-targets -D warnings",
+              "passed": true,
+              "detail": "clean"
+            },
+            {
+              "gate": "rustdoc -D warnings",
+              "passed": true,
+              "detail": "clean"
+            },
+            {
+              "gate": "fmt --check",
+              "passed": true,
+              "detail": "clean"
+            },
+            {
+              "gate": "D.2 deep exec verify (6-lens wf_2118004d-394)",
+              "passed": true,
+              "detail": "clean: 0 must-fix, 0 rejected, 1 low flag addressed"
+            }
+          ]
+        }
+      ]
     },
     {
       "id": "15.5.2",
@@ -3314,7 +3443,13 @@
     "opi-implement: A.init.3 human confirmation at 2026-07-24T17:51:31.961Z supplied the remaining residual triggers: revisit direct CreateProcessW when a hard Windows no-escape boundary or exploitable assignment race is required, and revisit trust.json schema metadata when boolean decisions are insufficient or persisted-format migration/compatibility appears; awaiting whole-graph confirm-all.",
     "opi-implement: Phase 15 task graph confirm-all accepted at 2026-07-24T17:56:28.144Z; canonical ledger initialized with 15 tasks and 19 acceptance scenarios.",
     "opi-implement: A.init.3 human-confirmed Phase 15 graph repair at 2026-07-25T01:11:14.478Z removed 15.5.2 host-dependent Linux target gates in favor of 15.5.6 CI ownership, corrected the 15.5.3 unsafe scope, changed 15.5.6 commit_type to feat, and removed the spurious 15.3 -> 15.2 edge; focused L1-L6 review found no additional surviving issue.",
-    "opi-implement: task 15.4 (Always-on L0 subprocess-tree lifecycle) passed at commit 309cd27 (2026-07-25). Windows L0 verified behaviorally (bash marker-grandchild tree-kill on timeout/cancel/drop via LocalBashOperations::exec + adapter marker-grandchild tree-kill on host-drop via AdapterHost::start; kill-on-close Job Object, no elevation; no-breakaway). Unix process-group half #[cfg(unix)] CI-pending (15.5.6 matrix); Unix adapter keeps process_group(0) by DoD. D.2 wf_a846cab9-ce4 (4 must-fix) -> wf_7a0a1c01-00c (0 must-fix) over iteration 2."
+    "opi-implement: task 15.4 (Always-on L0 subprocess-tree lifecycle) passed at commit 309cd27 (2026-07-25). Windows L0 verified behaviorally (bash marker-grandchild tree-kill on timeout/cancel/drop via LocalBashOperations::exec + adapter marker-grandchild tree-kill on host-drop via AdapterHost::start; kill-on-close Job Object, no elevation; no-breakaway). Unix process-group half #[cfg(unix)] CI-pending (15.5.6 matrix); Unix adapter keeps process_group(0) by DoD. D.2 wf_a846cab9-ce4 (4 must-fix) -> wf_7a0a1c01-00c (0 must-fix) over iteration 2.",
+    {
+      "timestamp": "2026-07-25T13:52:36.521Z",
+      "attempt": 2,
+      "summary": "Task 15.5.1 passing @9057b78 (strict sandbox policy resolver + production dispatch). D.2 clean (wf_2118004d-394). Phase 15 now 5/15 passing (15.1-15.5.1). Next unblocked: 15.5.2 (Linux seccomp backend feasibility; deps [15.5.1]) and 15.6 (project trust store; deps []). Lowest = 15.5.2.",
+      "gate_results": []
+    }
   ],
   "verify_runs": [
     {
@@ -3395,6 +3530,26 @@
       "rejected_count": 0,
       "ran_at": "2026-07-25T12:35:14.480Z",
       "task_id": "15.4",
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": "wf_2bd0d042-2f4",
+      "folded_count": 1,
+      "flagged_count": 0,
+      "rejected_count": 0,
+      "ran_at": "2026-07-25T13:10:00.000Z",
+      "task_id": "15.5.1",
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": "wf_2118004d-394",
+      "folded_count": 0,
+      "flagged_count": 1,
+      "rejected_count": 0,
+      "ran_at": "2026-07-25T13:52:36.521Z",
+      "task_id": "15.5.1",
       "criterion_id": null
     }
   ]
