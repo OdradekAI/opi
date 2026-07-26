@@ -589,13 +589,40 @@ impl BashOperations for LocalBashOperations {
             // Landlock `pre_exec` hook) when the decision engaged. Safe call: the
             // confinement closure registers the audited `pre_exec` helper; the
             // `unsafe` lives inside `sandbox/linux.rs`, not here.
-            if let Some(confinement) = confinement {
+            if let Some(confinement) = &confinement {
                 confinement.apply(&mut cmd);
             }
             // env augments the inherited environment on top of what the child
             // already receives; empty in current usage.
             for (key, value) in &env {
                 cmd.env(key, value);
+            }
+            // Phase 15.5.4: macOS launcher confinement. `sandbox-exec` IS the
+            // helper, so it must be the spawn program with its prefix args
+            // (`-p <profile>`) before the original shell invocation. A `pre_exec`
+            // hook cannot change the program, so when the confinement carries a
+            // launcher we rebuild the Command from scratch and re-apply the same
+            // L0 process_group(0) + kill_on_drop + cwd + env configured above.
+            // `apply` is a no-op for a launcher plan, so the Linux pre_exec path
+            // (which returns `None` from `launcher_prefix`) is untouched.
+            if let Some(confinement) = &confinement
+                && let Some((launcher, prefix_args)) = confinement.launcher_prefix()
+            {
+                let mut restarted = tokio::process::Command::new(launcher);
+                for a in prefix_args {
+                    restarted.arg(a);
+                }
+                restarted
+                    .arg(shell)
+                    .arg(flag)
+                    .arg(&command)
+                    .current_dir(&cwd)
+                    .kill_on_drop(true);
+                super::process_tree::configure_tree(&mut restarted);
+                for (key, value) in &env {
+                    restarted.env(key, value);
+                }
+                cmd = restarted;
             }
             let mut child = match cmd.stdout(Stdio::piped()).stderr(Stdio::piped()).spawn() {
                 Ok(c) => c,

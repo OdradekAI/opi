@@ -8,13 +8,12 @@
 //! [`StrictBackend`]. Task 15.5.5 has landed the Windows L0-only backend in
 //! `sandbox/windows.rs` (a permanent platform gap); task 15.5.3 has landed the
 //! Linux backend (`sandbox/linux.rs`, seccomp + Landlock, selected by
-//! [`prepare_production`] on Linux). The macOS backend's host-independent
-//! substrate (profile/capability/argv model) lives in `sandbox/macos.rs` (task
-//! 15.5.4); its runtime (sandbox-exec probe, Confinement launcher, dispatcher
-//! wiring) is deferred to a native macOS runner, so on macOS the production
-//! backend selected by [`prepare_production`] is still the not-yet-wired stub
-//! that truthfully reports every strict layer as temporarily unavailable and
-//! `strict` mode flows through the shared fail-open / fail-closed policy here.
+//! [`prepare_production`] on Linux); task 15.5.4 has landed the macOS backend
+//! (`sandbox/macos.rs`, `sandbox-exec` L1/L2 deny-overlay with a permanent L3
+//! gap, selected by [`prepare_production`] on macOS and attached as a
+//! [`Confinement::launcher`] plan when every requested layer engages). `strict`
+//! mode flows through the shared fail-open / fail-closed policy here on every
+//! platform.
 //!
 //! The resolver is pure and host-independent: every policy branch is covered by
 //! inline tests that inject a fake [`StrictBackend`], so verification needs no
@@ -95,37 +94,95 @@ pub enum LayerAvailability {
     PermanentlyUnavailable { reason: String },
 }
 
-/// A parent-built, child-applied confinement plan: a closure that registers the
-/// platform's `pre_exec` hook(s) on a `tokio::process::Command`. The cross-platform
-/// resolver carries an `Option<Confinement>` on an `Engaged` strict decision;
+/// A parent-built, child-applied confinement plan. The cross-platform resolver
+/// carries an `Option<Confinement>` on an `Engaged` strict decision;
 /// `LocalBashOperations::exec` applies it to the spawn `Command` between the L0
-/// tree setup and `spawn()`. `Confinement` is `Clone` (cheap — the closure is
+/// tree setup and `spawn()`. `Confinement` is `Clone` (cheap — the inner state is
 /// shared behind an `Arc`) so a resolved `PreparedSandbox` can be reused across
 /// commands; each `apply` rebuilds any per-fork state (the Linux backend rebuilds
 /// its Landlock ruleset per spawn, since `restrict_self` consumes it).
+///
+/// Two plans, one per confinement mechanism:
+/// - [`Confinement::new`] wraps a `pre_exec` child-setup closure (**Linux**:
+///   seccomp + Landlock). `apply` registers it on the child `Command`.
+/// - [`Confinement::launcher`] describes a re-launch under a helper that IS the
+///   subprocess launcher (**macOS**: `sandbox-exec -p <profile> sh -c …`). The
+///   helper must *prepend* itself to the spawn argv, which a `pre_exec` hook
+///   cannot do (it cannot change the program), so `apply` is a no-op for a
+///   launcher plan and the spawn site (`tool::operations::exec`) rebuilds the
+///   `Command` from [`Confinement::launcher_prefix`], re-applying the L0
+///   `process_group(0)` + `kill_on_drop` + `current_dir` + `env`.
 #[derive(Clone)]
-pub struct Confinement(Arc<dyn Fn(&mut tokio::process::Command) + Send + Sync>);
+pub struct Confinement(ConfinementKind);
+
+#[derive(Clone)]
+enum ConfinementKind {
+    /// Register a `pre_exec` child-setup hook on the child `Command` (Linux
+    /// seccomp + Landlock). `apply` runs it.
+    PreExec(Arc<dyn Fn(&mut tokio::process::Command) + Send + Sync>),
+    /// Re-launch the child under `program` followed by `prefix_args`, then the
+    /// original (program, args). macOS `sandbox-exec -p <profile>`.
+    Launcher {
+        program: Arc<str>,
+        prefix_args: Arc<[String]>,
+    },
+}
 
 impl std::fmt::Debug for Confinement {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Confinement")
-            .field("hook", &"<closure>")
-            .finish()
+        match &self.0 {
+            ConfinementKind::PreExec(_) => f
+                .debug_struct("Confinement")
+                .field("kind", &"pre_exec")
+                .finish(),
+            ConfinementKind::Launcher { program, .. } => f
+                .debug_struct("Confinement")
+                .field("kind", &"launcher")
+                .field("program", program)
+                .finish(),
+        }
     }
 }
 
 impl Confinement {
-    /// Wrap a confinement-installing closure.
+    /// Wrap a `pre_exec` child-setup closure (Linux). The signature is unchanged
+    /// since 15.5.3 so `sandbox/linux.rs` needs no edit.
     pub fn new<F>(hook: F) -> Self
     where
         F: Fn(&mut tokio::process::Command) + Send + Sync + 'static,
     {
-        Self(Arc::new(hook))
+        Self(ConfinementKind::PreExec(Arc::new(hook)))
     }
 
-    /// Apply the confinement hook to `cmd` (register the `pre_exec` child setup).
+    /// Build a launcher confinement (macOS `sandbox-exec`). The spawn site runs
+    /// `program prefix_args... <original program> <original args>...`.
+    pub fn launcher(program: &str, prefix_args: Vec<String>) -> Self {
+        Self(ConfinementKind::Launcher {
+            program: Arc::from(program),
+            prefix_args: Arc::from(prefix_args),
+        })
+    }
+
+    /// Apply the `pre_exec` hook to `cmd` (Linux). A no-op for a launcher plan:
+    /// the spawn site handles the launcher rebuild because `apply` cannot change
+    /// the `Command`'s program/args.
     pub fn apply(&self, cmd: &mut tokio::process::Command) {
-        (self.0)(cmd);
+        if let ConfinementKind::PreExec(hook) = &self.0 {
+            hook(cmd);
+        }
+    }
+
+    /// If this is a launcher plan, the launcher program and prefix args the
+    /// spawn site must prepend before the original program/args. `None` for a
+    /// `pre_exec` plan.
+    pub fn launcher_prefix(&self) -> Option<(&str, &[String])> {
+        match &self.0 {
+            ConfinementKind::Launcher {
+                program,
+                prefix_args,
+            } => Some((program, prefix_args)),
+            ConfinementKind::PreExec(_) => None,
+        }
     }
 }
 
@@ -328,8 +385,9 @@ pub fn prepare_production(config: &SandboxConfig, workspace: &std::path::Path) -
         // Attach the parent-built confinement plan only when every requested
         // layer engaged; `LocalBashOperations::exec` applies it to the spawn
         // Command. The Linux backend (15.5.3) builds the seccomp+Landlock plan;
-        // the macOS not-yet-wired stub reports temporary gaps, never `Engaged`,
-        // so it builds no confinement.
+        // the macOS backend (15.5.4) builds a `sandbox-exec` launcher plan when
+        // every requested layer engages (syscalls must be opted out — macOS is
+        // L1/L2-only and cannot engage L3).
         if let PreparedSandbox::Strict(decision) = &mut prepared
             && matches!(decision.outcome, StrictOutcome::Engaged)
         {
@@ -344,10 +402,12 @@ pub fn prepare_production(config: &SandboxConfig, workspace: &std::path::Path) -
 /// - **Linux (15.5.3)**: `LinuxStrictBackend` queries the observed Landlock ABI
 ///   and reports per-layer engagement; it builds the seccomp+Landlock confinement
 ///   plan from `workspace` when every requested layer is available.
-/// - **macOS (15.5.4)**: substrate landed (`sandbox/macos.rs` profile/capability/
-///   argv model, host-independent); runtime not yet wired — `NotYetWiredBackend`
-///   reports every strict layer as temporarily unavailable, so strict fails open
-///   honestly until the macOS-runner follow-up attaches `MacosStrictBackend`.
+/// - **macOS (15.5.4)**: `MacosStrictBackend` probes `sandbox-exec` on `PATH` and
+///   reports L1 fs + L2 network as engaged when the helper is usable (L3/syscalls
+///   is a permanent platform gap). It builds a [`Confinement::launcher`] plan
+///   (`sandbox-exec -p <profile>`) when every *requested* layer engages — since
+///   macOS can never engage L3, syscalls must be opted out (`syscalls = false`)
+///   or strict fail-opens/closes on the permanent syscalls gap.
 /// - **Windows (15.5.5)**: `L0OnlyBackend` — every strict layer is a permanent
 ///   platform gap.
 /// - Any other target is permanently unsupported.
@@ -360,11 +420,9 @@ pub fn production_sandbox_backend(workspace: &std::path::Path) -> Box<dyn Strict
     }
     #[cfg(target_os = "macos")]
     {
-        let _ = workspace;
-        Box::new(NotYetWiredBackend {
-            platform: "macos",
-            phase: "15.5.4",
-        })
+        Box::new(crate::sandbox::macos::MacosStrictBackend::new(Arc::from(
+            workspace,
+        )))
     }
     #[cfg(target_os = "windows")]
     {
@@ -375,31 +433,6 @@ pub fn production_sandbox_backend(workspace: &std::path::Path) -> Box<dyn Strict
     {
         let _ = workspace;
         Box::new(UnsupportedPlatformBackend)
-    }
-}
-
-/// Linux/macOS production backend for 15.5.1: strict layers exist on the platform
-/// but are not wired into this build yet. Reported as TEMPORARY so fail-open
-/// emits a per-command degraded diagnostic (honest: strict did not engage) until
-/// 15.5.3 / 15.5.4 replace this stub with a real engaged/temporary/permanent
-/// backend. Defined only where it is selected (avoids dead code on other
-/// targets).
-#[cfg(target_os = "macos")]
-struct NotYetWiredBackend {
-    platform: &'static str,
-    phase: &'static str,
-}
-
-#[cfg(target_os = "macos")]
-impl StrictBackend for NotYetWiredBackend {
-    fn availability(&self, _layer: SandboxLayer) -> LayerAvailability {
-        LayerAvailability::TemporarilyUnavailable {
-            reason: format!(
-                "{platform} strict backend not yet implemented (phase {phase})",
-                platform = self.platform,
-                phase = self.phase
-            ),
-        }
     }
 }
 
@@ -654,21 +687,20 @@ mod tests {
     #[test]
     fn production_backend_classifies_current_platform_truthfully() {
         // 15.5.3 wires the Linux backend (seccomp + Landlock), which MAY report
-        // Engaged on a capable kernel (observed Landlock ABI >= 4); Windows
-        // (L0-only) and macOS (not-yet-wired) must not claim engagement.
+        // Engaged on a capable kernel (observed Landlock ABI >= 4). 15.5.4 wires
+        // the macOS backend (sandbox-exec L1/L2), which MAY report fs/network
+        // Engaged when the helper is usable. The durable cross-platform
+        // invariant is syscalls: macOS (L1/L2-only) and Windows (L0-only) can
+        // NEVER engage L3, so the syscall layer must not claim engagement off
+        // Linux.
         let backend = production_sandbox_backend(std::path::Path::new("."));
-        for layer in [
-            SandboxLayer::Fs,
-            SandboxLayer::Network,
-            SandboxLayer::Syscalls,
-        ] {
-            let avail = backend.availability(layer);
-            #[cfg(not(target_os = "linux"))]
+        #[cfg(not(target_os = "linux"))]
+        {
+            let syscalls = backend.availability(SandboxLayer::Syscalls);
             assert!(
-                !matches!(avail, LayerAvailability::Engaged),
-                "non-Linux platforms must not claim engagement: {avail:?}"
+                !matches!(syscalls, LayerAvailability::Engaged),
+                "non-Linux platforms must not claim syscall engagement: {syscalls:?}"
             );
-            let _ = avail;
         }
         #[cfg(target_os = "linux")]
         {

@@ -29,10 +29,11 @@ use opi_coding_agent::sandbox::{
     prepare_production,
 };
 use opi_coding_agent::tool::{BashOpError, BashOperations, BashRequest, LocalBashOperations};
-// BashResult is referenced only by the Linux engaged-product test helper
+// BashResult is referenced only by the Linux/macOS engaged-product test helper
 // (`assert_probe_exit`), so the import is gated to match its cfg-gated use;
-// importing it unguarded trips `unused_imports` (and `-D warnings`) on non-Linux.
-#[cfg(target_os = "linux")]
+// importing it unguarded trips `unused_imports` (and `-D warnings`) on hosts
+// that compile out the engaged tests.
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 use opi_coding_agent::tool::BashResult;
 use tokio_util::sync::CancellationToken;
 
@@ -939,7 +940,7 @@ int main(int argc, char** argv) {
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn assert_probe_exit(result: &BashResult, expected: i32, ctx: &str) {
     assert_eq!(
         result.exit_code,
@@ -1074,4 +1075,217 @@ async fn linux_engaged_subprocess_denies_requested_access() {
         .await
         .expect("exec runs");
     assert_probe_exit(&result, 0, "write-workspace");
+}
+
+// ---------------------------------------------------------------------------
+// Phase 15 task 15.5.4 — macOS engaged product tests (real sandbox-exec on a
+// native macOS runner). A tiny C probe is compiled at test time with `cc`
+// (clang on macOS) and run confined through the production `prepare_production`
+// -> `LocalBashOperations::exec` path under a `sandbox-exec -p <profile>`
+// launcher. The three DoD contracts: outside-write deny, network deny,
+// workspace+temp write allow. These are `#[cfg(target_os = "macos")]`; a
+// wrong-host run compiles them out and is NOT acceptance evidence.
+// ---------------------------------------------------------------------------
+
+#[cfg(target_os = "macos")]
+mod macos_engaged {
+    use super::{
+        BashRequest, CancellationToken, Duration, LayerAvailability, LocalBashOperations,
+        SandboxConfig, SandboxLayer, SandboxMode, prepare_production,
+    };
+    use opi_coding_agent::sandbox::macos::MacosStrictBackend;
+    use std::path::{Path, PathBuf};
+    use std::process::Command;
+    use std::sync::Arc;
+
+    /// Minimal probe: each op performs one confined operation and exits 0
+    /// (allowed) or 1 (denied with an errno report). POSIX-only headers so it
+    /// compiles with macOS clang.
+    const PROBE_SRC: &str = r#"
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <unistd.h>
+#include <string.h>
+#include <stdio.h>
+#include <errno.h>
+#include <fcntl.h>
+
+int main(int argc, char** argv) {
+    if (argc < 2) { fprintf(stderr, "usage: probe <op> [arg]\n"); return 2; }
+    const char* op = argv[1];
+    int s;
+    if (!strcmp(op, "inet")) {
+        s = socket(AF_INET, SOCK_STREAM, 0);
+        if (s < 0) { fprintf(stderr, "inet DENIED errno=%d\n", errno); return 1; }
+        close(s); fprintf(stderr, "inet OK\n"); return 0;
+    }
+    if (!strcmp(op, "write-file")) {
+        if (argc < 3) return 2;
+        int fd = open(argv[2], O_WRONLY|O_CREAT|O_TRUNC, 0644);
+        if (fd < 0) { fprintf(stderr, "write DENIED errno=%d\n", errno); return 1; }
+        write(fd, "x", 1); close(fd); fprintf(stderr, "write OK\n"); return 0;
+    }
+    fprintf(stderr, "unknown op: %s\n", op);
+    return 2;
+}
+"#;
+
+    /// Compile the probe into `workspace` and return its binary path.
+    pub fn build_probe(workspace: &Path) -> PathBuf {
+        let src = workspace.join("macos_sandbox_probe.c");
+        std::fs::write(&src, PROBE_SRC).expect("write probe source");
+        let bin = workspace.join("macos_sandbox_probe");
+        let out = Command::new("cc")
+            .arg("-o")
+            .arg(&bin)
+            .arg(&src)
+            .arg("-Wall")
+            .arg("-O2")
+            .output()
+            .expect("cc runs (clang is required to build opi on macOS)");
+        assert!(
+            out.status.success(),
+            "cc failed to compile the probe: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        bin
+    }
+
+    /// A BashRequest that runs the probe with `args` under the confined
+    /// production path, cwd = workspace.
+    pub fn probe_request(workspace: &Path, probe: &Path, args: &str) -> BashRequest {
+        BashRequest {
+            command: format!("{} {}", probe.display(), args),
+            cwd: workspace.to_path_buf(),
+            timeout: Duration::from_secs(15),
+            signal: CancellationToken::new(),
+            env: vec![],
+        }
+    }
+
+    /// macOS can never engage L3 (syscalls); to let L1 fs + L2 network engage
+    /// (outcome `Engaged`, which attaches the sandbox-exec launcher) the syscalls
+    /// layer must be explicitly opted out, otherwise strict fail-opens on the
+    /// permanent syscalls gap and no confinement attaches.
+    pub fn engaged_config() -> SandboxConfig {
+        SandboxConfig {
+            mode: SandboxMode::Strict,
+            require: false,
+            fs: None,
+            network: None,
+            syscalls: Some(false),
+        }
+    }
+
+    /// Build the engaged strict decision for `workspace` and wrap it in the ops.
+    pub fn engaged_ops(workspace: &Path) -> LocalBashOperations {
+        LocalBashOperations::with_prepared(prepare_production(&engaged_config(), workspace))
+    }
+
+    /// Capability guard: the engaged tests require sandbox-exec to be usable so
+    /// fs+network engage. Panics with the probe status if it did not, so a GHA
+    /// failure (MDM block, missing helper) is debuggable instead of a mystery
+    /// exit code from the probe.
+    pub fn assert_fs_network_engaged(workspace: &Path) {
+        let backend = MacosStrictBackend::new(Arc::from(workspace));
+        assert!(
+            matches!(
+                backend.availability(SandboxLayer::Fs),
+                LayerAvailability::Engaged
+            ),
+            "macOS fs must engage (sandbox-exec usable); probe status: {:?}",
+            backend.status()
+        );
+        assert!(
+            matches!(
+                backend.availability(SandboxLayer::Network),
+                LayerAvailability::Engaged
+            ),
+            "macOS network must engage (sandbox-exec usable); probe status: {:?}",
+            backend.status()
+        );
+    }
+}
+
+/// sandbox-exec L1 fs: a write OUTSIDE the configured workspace/temp paths is
+/// denied by the seatbelt deny-overlay (`(deny file-write* (subpath "/"))` with
+/// workspace+temp exceptions). `/var/tmp` is outside `$TMPDIR` (macOS temp_dir)
+/// and outside the workspace, so it is denied.
+#[cfg(target_os = "macos")]
+#[tokio::test]
+async fn macos_engaged_subprocess_denies_outside_write() {
+    let workspace = tempfile::tempdir().unwrap();
+    macos_engaged::assert_fs_network_engaged(workspace.path());
+    let probe = macos_engaged::build_probe(workspace.path());
+    let ops = macos_engaged::engaged_ops(workspace.path());
+    let outside = tempfile::Builder::new()
+        .prefix("opi-outside-")
+        .tempdir_in("/var/tmp")
+        .expect("/var/tmp must exist for the outside-write denial test");
+    let target = outside.path().join("denied.txt");
+    let result = ops
+        .exec(macos_engaged::probe_request(
+            workspace.path(),
+            &probe,
+            &format!("write-file {}", target.display()),
+        ))
+        .await
+        .expect("exec runs");
+    assert_probe_exit(&result, 1, "write-outside");
+}
+
+/// sandbox-exec L2 network: a fresh `socket(AF_INET)` is denied by
+/// `(deny network*)`.
+#[cfg(target_os = "macos")]
+#[tokio::test]
+async fn macos_engaged_subprocess_denies_network() {
+    let workspace = tempfile::tempdir().unwrap();
+    macos_engaged::assert_fs_network_engaged(workspace.path());
+    let probe = macos_engaged::build_probe(workspace.path());
+    let ops = macos_engaged::engaged_ops(workspace.path());
+    let result = ops
+        .exec(macos_engaged::probe_request(
+            workspace.path(),
+            &probe,
+            "inet",
+        ))
+        .await
+        .expect("exec runs");
+    assert_probe_exit(&result, 1, "inet");
+}
+
+/// sandbox-exec L1 fs: writes INSIDE the configured workspace and temp dir are
+/// allowed by the deny-overlay exceptions.
+#[cfg(target_os = "macos")]
+#[tokio::test]
+async fn macos_engaged_subprocess_allows_workspace_and_temp_writes() {
+    let workspace = tempfile::tempdir().unwrap();
+    macos_engaged::assert_fs_network_engaged(workspace.path());
+    let probe = macos_engaged::build_probe(workspace.path());
+    let ops = macos_engaged::engaged_ops(workspace.path());
+
+    // Workspace write -> allowed (exit 0).
+    let ws_target = workspace.path().join("allowed.txt");
+    let r1 = ops
+        .exec(macos_engaged::probe_request(
+            workspace.path(),
+            &probe,
+            &format!("write-file {}", ws_target.display()),
+        ))
+        .await
+        .expect("exec runs");
+    assert_probe_exit(&r1, 0, "write-workspace");
+
+    // Temp ($TMPDIR) write -> allowed (exit 0).
+    let tmp_target = std::env::temp_dir().join("opi_macos_temp_allowed.txt");
+    let r2 = ops
+        .exec(macos_engaged::probe_request(
+            workspace.path(),
+            &probe,
+            &format!("write-file {}", tmp_target.display()),
+        ))
+        .await
+        .expect("exec runs");
+    assert_probe_exit(&r2, 0, "write-temp");
+    let _ = std::fs::remove_file(&tmp_target);
 }

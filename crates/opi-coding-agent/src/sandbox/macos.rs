@@ -212,6 +212,143 @@ pub fn build_wrapped_argv(profile: &str, program: &str, args: &[String]) -> Vec<
     argv
 }
 
+// ---------------------------------------------------------------------------
+// Phase 15 task 15.5.4 — production runtime (cfg(target_os = "macos")).
+//
+// Probes `sandbox-exec` on PATH, reports per-layer capability via the substrate
+// [`macos_strict_capability`] matrix, and builds a [`super::Confinement::launcher`]
+// plan (`sandbox-exec -p <profile>`) when every requested layer engages. The
+// launcher — not a `pre_exec` hook — is the macOS mechanism: `sandbox-exec` IS
+// the helper, so it must prepend itself to the spawn argv, which the spawn site
+// (`crate::tool::operations::exec`) does via [`super::Confinement::launcher_prefix`].
+// Compiled only on macOS; the engaged product assertions run on a native runner.
+// ---------------------------------------------------------------------------
+
+#[cfg(target_os = "macos")]
+use std::path::{Path, PathBuf};
+#[cfg(target_os = "macos")]
+use std::sync::Arc;
+
+/// Resolve `program` on `PATH`. Equivalent to a `which` lookup; returns the
+/// first matching regular file.
+#[cfg(target_os = "macos")]
+fn find_on_path(program: &str) -> Option<PathBuf> {
+    let path = std::env::var_os("PATH")?;
+    for dir in std::env::split_paths(&path) {
+        let candidate = dir.join(program);
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
+/// Probe `sandbox-exec`: PATH lookup, then launch `/usr/bin/true` under a no-op
+/// profile. A usable helper exits 0; an MDM-blocked or broken install exits
+/// non-zero or fails to spawn. The probe detail is capped to keep the reason
+/// short for the shared fail-open / fail-closed diagnostic.
+#[cfg(target_os = "macos")]
+fn probe_sandbox_exec() -> SandboxExecStatus {
+    let bin = match find_on_path("sandbox-exec") {
+        Some(p) => p,
+        None => return SandboxExecStatus::Missing,
+    };
+    let profile = "(version 1)\n";
+    match std::process::Command::new(&bin)
+        .arg("-p")
+        .arg(profile)
+        .arg("/usr/bin/true")
+        .output()
+    {
+        Ok(o) if o.status.success() => SandboxExecStatus::Available,
+        Ok(o) => {
+            let code = o
+                .status
+                .code()
+                .map(|c| format!("exit {c}"))
+                .unwrap_or_else(|| "signaled".to_string());
+            let stderr = String::from_utf8_lossy(&o.stderr).trim().to_string();
+            let suffix = if stderr.is_empty() {
+                String::new()
+            } else {
+                format!(": {stderr}")
+            };
+            let detail: String = format!("probe {code}{suffix}").chars().take(160).collect();
+            SandboxExecStatus::Unusable(detail)
+        }
+        Err(e) => SandboxExecStatus::Unusable(format!("spawn failed: {e}")),
+    }
+}
+
+/// Build the macOS confinement plan: a `sandbox-exec` launcher carrying the
+/// rendered deny-overlay profile (fs + network engaged; workspace + temp
+/// write-through exceptions). Returns `None` unless the helper probed usable.
+#[cfg(target_os = "macos")]
+pub fn build_macos_confinement(
+    workspace: &Path,
+    status: &SandboxExecStatus,
+) -> Option<super::Confinement> {
+    if !status.is_available() {
+        return None;
+    }
+    let ws = workspace.to_string_lossy().into_owned();
+    let tmp = std::env::temp_dir().to_string_lossy().into_owned();
+    let profile = render_profile(&ws, &tmp, true, true);
+    Some(super::Confinement::launcher(
+        "sandbox-exec",
+        vec!["-p".to_string(), profile],
+    ))
+}
+
+/// Production macOS strict backend. Probes `sandbox-exec` at construction and
+/// reports per-layer availability via the substrate capability matrix: L3/
+/// syscalls permanently unavailable; L1 fs + L2 network engaged iff the helper
+/// probed usable. Builds a [`super::Confinement::launcher`] plan when every
+/// requested layer engages.
+#[cfg(target_os = "macos")]
+pub struct MacosStrictBackend {
+    status: SandboxExecStatus,
+    workspace: Arc<Path>,
+}
+
+#[cfg(target_os = "macos")]
+impl MacosStrictBackend {
+    /// Production constructor: probe `sandbox-exec` on PATH.
+    pub fn new(workspace: Arc<Path>) -> Self {
+        Self {
+            status: probe_sandbox_exec(),
+            workspace,
+        }
+    }
+
+    /// Inject the probe status instead of probing (capability-matrix coverage of
+    /// the available / missing / unusable branches without a real helper).
+    pub fn with_status(workspace: Arc<Path>, status: SandboxExecStatus) -> Self {
+        Self { status, workspace }
+    }
+
+    /// The probed `sandbox-exec` status.
+    pub fn status(&self) -> &SandboxExecStatus {
+        &self.status
+    }
+}
+
+#[cfg(target_os = "macos")]
+impl super::StrictBackend for MacosStrictBackend {
+    fn availability(&self, layer: super::SandboxLayer) -> super::LayerAvailability {
+        let cap = macos_strict_capability(&self.status);
+        match layer {
+            super::SandboxLayer::Fs => cap.fs,
+            super::SandboxLayer::Network => cap.network,
+            super::SandboxLayer::Syscalls => cap.syscalls,
+        }
+    }
+
+    fn build_confinement(&self, _workspace: &Path) -> Option<super::Confinement> {
+        build_macos_confinement(&self.workspace, &self.status)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
