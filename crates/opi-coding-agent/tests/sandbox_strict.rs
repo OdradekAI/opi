@@ -1091,7 +1091,7 @@ async fn linux_engaged_subprocess_denies_requested_access() {
 mod macos_engaged {
     use super::{
         BashRequest, CancellationToken, Duration, LayerAvailability, LocalBashOperations,
-        SandboxConfig, SandboxLayer, SandboxMode, prepare_production,
+        SandboxConfig, SandboxLayer, SandboxMode, StrictBackend, prepare_production,
     };
     use opi_coding_agent::sandbox::macos::MacosStrictBackend;
     use std::path::{Path, PathBuf};
