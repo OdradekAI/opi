@@ -999,7 +999,7 @@
       "definition_of_done": "Select and pin through `[workspace.dependencies]` both `landlock` 0.4.5 and a Linux seccomp backend that expresses a default-allow/match-deny filter, filters scalar `socket(domain, ...)` arguments, builds the filter representation in the parent, applies only the audited raw filter in the child without adding a custom unsafe pre-exec helper in this substrate task. `extrasafe` 0.5.1 is rejected because its public policy is a default-deny allowlist, its apply path does not expose the required parent-build/child-apply split, and it does not cover Linux ARM64; direct use of a verified deny-capable backend is required. `landlock` remains a separate capability layer whose 0.4.5 filesystem rights and ABI-4 TCP bind/connect-by-port model are captured in pure capability tests; Linux 6.7 is mainline orientation rather than a runtime release-string gate. Pure backend tests pin the exact danger-blocklist syscalls, prove `clone` and `unshare` remain allowed, prove AF_INET/AF_INET6/AF_NETLINK socket-creation rules preserve AF_UNIX rules, exercise build/apply error translation without spawning a real command. This task is substrate only: it does not claim that the production bash path is confined.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "15.5.1"
       ],
@@ -1074,9 +1074,9 @@
       "acceptance_scenarios": [],
       "production_call_sites": [],
       "substrate_only": true,
-      "iteration_count": 0,
+      "iteration_count": 3,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "f6d9a767db7b3fef22bada18ef52637d0a965923",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "Cargo.toml",
@@ -1085,11 +1085,69 @@
         "crates/opi-coding-agent/src/sandbox/linux.rs",
         "crates/opi-coding-agent/tests/sandbox_linux_backend.rs"
       ],
-      "last_attempt": null,
-      "verified_at_commit": null,
-      "evidence": null,
+      "last_attempt": {
+        "attempt": 3,
+        "started_at": "2026-07-26T03:59:22.822Z",
+        "ended_at": "2026-07-26T04:55:34.802Z",
+        "outcome": "passing",
+        "failing_gate": null,
+        "touched_files": [
+          "Cargo.toml",
+          "Cargo.lock",
+          "crates/opi-coding-agent/Cargo.toml",
+          "crates/opi-coding-agent/src/sandbox/linux.rs",
+          "crates/opi-coding-agent/tests/sandbox_linux_backend.rs"
+        ]
+      },
+      "verified_at_commit": "f5b058debf2de577a4ec629bb01b5cdaaad2fc93",
+      "evidence": {
+        "task": "15.5.2",
+        "dod_sha256": "aa7ec8c00fc5cf414e74e9d545abea1c70050cb23fc641cd095444f973740cfe",
+        "verification": "library; crate-scoped gates green on Linux/WSL2 (kernel 6.18.33.2-microsoft-standard-WSL2 => real seccomp + Landlock): cargo test --test sandbox_linux_backend (6 passed), clippy -p opi-coding-agent --all-targets -D warnings clean, RUSTDOCFLAGS=-D warnings cargo doc -p opi-coding-agent --no-deps clean, cargo fmt --check --all clean. Full-workspace smoke skipped (disk-fill risk on the Windows host); Linux verification via WSL2. D.2 deep exec verify (6-lens): iter1 wf_dc1fec0b found a vacuous-tests must-fix (seccomp_filter_compiles asserted only !is_empty; socket_gate asserted only the input constant) + a low flag (landlock fs-rights DoD sub-assertion unmet); iter2 wf_10b8b71a found the landlock_fs test tautological (assert_eq restated from_all(V4)) -- fixed with an independent make_bitflags! subset + IoctlDev(ABI 5) exclusion; iter2 also surfaced 2 cross-task 15.5.5 findings (production_sandbox_backend Windows branch has no production caller; 7381bce footer overclaimed '5 ran cargo') because an exec.workflow.js args-stringification bug let lenses free-range -- root cause fixed (parse string-or-object args), and the 15.5.5 debt is recorded for separate remediation, not blocking 15.5.2; iter3 wf_41ef698a PASS (0 must-fix, 1 low flagged: commit-body blocklist count off-by-one, fixed in the f5b058d amend). Substrate-only (no acceptance scenarios).",
+        "evaluator": "passed",
+        "commit": "f5b058debf2de577a4ec629bb01b5cdaaad2fc93"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-07-26T03:59:22.822Z",
+          "attempt": 1,
+          "summary": "Phase B confirmed at start_commit f6d9a76 (prereq cfg-gate fix for tests/sandbox_l0.rs, committed separately: 15.4 Linux-compile carry-over uncovered by WSL verification). Host-verifiability fork resolved: user authorized WSL2 as the Linux runner (kernel 6.18.33.2-microsoft-standard-WSL2 => real seccomp + Landlock ABI 4 evidence, not simulation). Rust stable + build-essential installed in WSL Ubuntu; CARGO_TARGET_DIR on C: (949G free), D: untouched. Full workspace builds clean on Linux with -D warnings. Substrate-only: linux.rs included by its test via #[path]; NO production wiring (15.5.3 owns prepare_production dispatch + mod linux registration). Backend = seccompiler (deny-capable, parent-build BpfProgram / child raw apply_program) + landlock 0.4.5 (observed-ABI TCP gate); both pure-Rust, no C lib. evaluator_required=true => D.2 runs full 6-lens exec verify.",
+          "gate_results": []
+        },
+        {
+          "timestamp": "2026-07-26T04:55:34.802Z",
+          "attempt": 3,
+          "summary": "Phase D passed at commit f5b058d. Crate-scoped gates green on Linux/WSL2 (test 6, clippy/rustdoc/fmt clean). D.2 deep exec verify took 3 iterations: iter1 found vacuous substrate tests (fixed by driving the BUILT filter: rule-map structure + Allow/Errno(EPERM) actions + compiled-BPF domain-immediates); iter2 found the landlock_fs test tautological (fixed with an independent make_bitflags! subset + IoctlDev exclusion) AND surfaced an exec.workflow.js args-stringification bug (runtime handed args as a JSON string -> lens prompts showed undefined task/commit -> lenses free-ranged into 15.5.5); root cause fixed (parse string-or-object args at the script top); iter3 (bound) PASS, 0 must-fix, 1 low flagged (commit-body blocklist count off-by-one, fixed in the f5b058d amend). Cross-task 15.5.5 findings from iter2 (production_sandbox_backend Windows branch lacks a production caller; 7381bce footer '5 ran cargo' overclaim) are real 15.5.5 debt, recorded for separate remediation -- not 15.5.2 scope. Substrate-only: 15.5.3 owns the runtime attach + raw ABI query + inherited-fd residuals.",
+          "gate_results": [
+            {
+              "gate": "cargo test --test sandbox_linux_backend (Linux/WSL2)",
+              "passed": true,
+              "detail": "6 passed"
+            },
+            {
+              "gate": "clippy -p opi-coding-agent --all-targets -D warnings",
+              "passed": true,
+              "detail": "clean"
+            },
+            {
+              "gate": "rustdoc -D warnings",
+              "passed": true,
+              "detail": "clean"
+            },
+            {
+              "gate": "fmt --check --all",
+              "passed": true,
+              "detail": "clean"
+            },
+            {
+              "gate": "D.2 exec verify iter3 (wf_41ef698a, args-parse fix applied)",
+              "passed": true,
+              "detail": "0 must-fix, 0 rejected, 1 low flagged (blocklist count, amended)"
+            }
+          ]
+        }
+      ]
     },
     {
       "id": "15.5.3",
@@ -3992,6 +4050,36 @@
       "flagged_for_human": 1,
       "rejected": 1,
       "summary": "6-lens deep exec verify over 2054c1c (after iter2 footer fix). PASS: 0 must-fix. 1 low flagged (AppState::AwaitingTrust production call site is seam-substituted, listed as test-driven) resolved by reclassifying it in the passing amend to 21fd724. 1 rejected (production-call-site: prompt-precedes-build composition - infeasible fix + ordering already proven via data dependency + run_interactive_core bin tests + sequential block_on semantics)."
+    },
+    {
+      "run_id": "wf_dc1fec0b-fa5",
+      "task": "15.5.2",
+      "timestamp": "2026-07-26T04:29:01.000Z",
+      "stage": "exec",
+      "must_fix": 1,
+      "flagged_for_human": 1,
+      "rejected": 0,
+      "summary": "iter1 over f7eed2b (6-lens; args unbound -> lenses free-ranged). must-fix: vacuous substrate tests (seccomp_filter_compiles_to_bpf asserted only !bpf.is_empty; socket_creation_gate asserted only the DENIED_SOCKET_DOMAINS constant, never build_seccomp_filter). flagged: landlock fs-rights DoD sub-assertion unmet (only TCP half captured). Root cause of unbound args not yet diagnosed."
+    },
+    {
+      "run_id": "wf_10b8b71a-87a",
+      "task": "15.5.2",
+      "timestamp": "2026-07-26T04:44:21.000Z",
+      "stage": "exec",
+      "must_fix": 3,
+      "flagged_for_human": 0,
+      "rejected": 0,
+      "summary": "iter2 over f6ed378 (args still unbound). 3 must-fix surfaced: (1) 15.5.2 landlock_fs test tautological (assert_eq! restated AccessFs::from_all(ABI::V4), the impl body); (2) 15.5.5 production_sandbox_backend Windows branch has no production caller (only a unit test); (3) 15.5.5 7381bce footer overclaimed '5 ran cargo' (only L-D4 ran cargo). (2),(3) are cross-task, correctly attributed task_id=15.5.5, surfaced because lenses free-ranged. Diagnosed root cause: exec.workflow.js received args as a JSON string (Workflow runtime), so args.task/args.commit were undefined in lens prompts."
+    },
+    {
+      "run_id": "wf_41ef698a-1cf",
+      "task": "15.5.2",
+      "timestamp": "2026-07-26T04:54:18.000Z",
+      "stage": "exec",
+      "must_fix": 0,
+      "flagged_for_human": 1,
+      "rejected": 0,
+      "summary": "iter3 over 8c90537 (exec.workflow.js args-parse fix applied; lenses bound to commit + task object). PASS: 0 must-fix, 0 rejected, 1 low flagged (commit-body '15-entry' danger blocklist is 16 on x86_64; arch-dependent -- reworded in the f5b058d amend). Structured Opi-* footers all accurate."
     }
   ]
 }
