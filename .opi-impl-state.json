@@ -1380,7 +1380,7 @@
       "definition_of_done": "The macOS strict backend renders a deterministic, escaped deny-overlay profile and wraps the requested bash command with `sandbox-exec -p`; the profile permits configured workspace/temp writes, preserves required process behavior, and optionally denies network. L3/syscall confinement is reported unavailable, and a missing or unusable `sandbox-exec` returns exact layer/reason failures to the shared 15.5.1 policy. Profile tests cover path escaping, fs/network toggles, unavailable-tool behavior, and argv preservation without requiring elevated privileges; on an engaged native macOS host, separate factory-built BashTool tests through the production dispatcher prove an outside-allowlist write is denied, a network side effect is denied, and configured workspace plus temporary writes remain allowed. A native macOS runner must execute all three platform product assertions with at least one passed test per assertion, zero failures, and zero ignored/skipped tests; a wrong-host zero-test or skipped result is not acceptance evidence.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "15.5.1"
       ],
@@ -1472,7 +1472,8 @@
             "crates/opi-coding-agent/src/sandbox.rs::prepare",
             "crates/opi-coding-agent/src/sandbox/macos.rs::prepare (planned)"
           ],
-          "status": "open"
+          "status": "closed",
+          "verified_at_commit": "8832a14"
         }
       ],
       "production_call_sites": [
@@ -1496,9 +1497,9 @@
       "last_attempt": {
         "attempt": 2,
         "started_at": "2026-07-26T11:11:17Z",
-        "ended_at": "2026-07-26T11:28:02Z",
-        "outcome": "failing",
-        "failing_gate": "macOS engaged product tests (3 #[cfg(target_os=macos)]) not yet verified on a native runner -- they cfg out on Windows. Runtime + tests + GHA workflow landed at cbac5bc; pending GHA macos-latest run of sandbox-macos.yml, then D.2 exec verify before any passing flip.",
+        "ended_at": "2026-07-26T12:37:49Z",
+        "outcome": "passing",
+        "failing_gate": null,
         "touched_files": [
           "crates/opi-coding-agent/src/sandbox.rs",
           "crates/opi-coding-agent/src/sandbox/macos.rs",
@@ -1507,13 +1508,13 @@
           ".github/workflows/sandbox-macos.yml"
         ]
       },
-      "verified_at_commit": null,
+      "verified_at_commit": "8832a14",
       "evidence": {
         "task": "15.5.4",
         "dod_sha256": "c900a8f17dc2c199152d82f8fd3fc3d64302f3fca5e7911f4a9af5c8f8b414c8",
-        "verification": "cli-runtime; runtime + engaged tests + GHA workflow landed at cbac5bc. D.3 host gates green on Windows: fmt clean; clippy -p opi-coding-agent --all-targets -D warnings clean; cargo test --test sandbox_strict 8/8 host-independent (incl. macos_profile_and_capability_matrix substrate + the relaxed production_backend_classifies_current_platform_truthfully). The 3 macOS engaged product tests are #[cfg(target_os=macos)] and cfg out on Windows -- NOT acceptance evidence. Native macOS verification pending the GHA macos-latest run of sandbox-macos.yml; D.2 exec verify runs after that run is green.",
-        "evaluator": "pending",
-        "commit": "cbac5bc"
+        "verification": "cli-runtime; NATIVE macOS verification PASSED on GHA macos-latest. sandbox-macos.yml run 30201674810 (headSha cf66d25, job 89792555707) AND run 30201822407 (headSha 8832a14, final cleanup) BOTH returned 'test result: ok. 9 passed; 0 failed; 0 ignored' including the 3 #[cfg(target_os=macos)] engaged product tests (macos_engaged_subprocess_denies_outside_write / _denies_network / _allows_workspace_and_temp_writes) -- the DoD native-runner acceptance clause (>=1 passed test per assertion, zero failures, zero ignored/skipped; not a wrong-host zero-test). Local Windows D.3: fmt clean; clippy -p opi-coding-agent --all-targets -D warnings clean; RUSTDOCFLAGS=-D warnings cargo doc -p opi-coding-agent clean (CI doc job green); cargo test --test sandbox_strict 8/8 host-independent; cargo test --test tool_operations 21/21. Runtime iterated to green via GHA (each fix a real seatbelt semantic the host-independent substrate could not catch): (1) (allow default) base -- seatbelt default is DENY; (2) probe binds not socket -- (deny network*) covers bind/connect, not socket() creation; (3) last-match-wins -- exceptions must follow the root deny; (4) canonicalize workspace/temp -- seatbelt resolves /var -> /private/var symlinks. D.2 exec verify wf_826741ea-aaa (8 agents, 548k tokens over 8832a14): 0 code/spec defects; 1 must-fix (medium, evidence-truthfulness) = ledger evidence was frozen at the cbac5bc/d625b66 checkpoint recording the GHA gate as PENDING after it had already gone green at cf66d25 -- corrected by THIS checkpoint (flip passing + accurate evidence + acceptance closed). CI full-matrix 8832a14 FAILURE is PRE-EXISTING Phase 15 CI debt, NOT introduced by 15.5.4: tool_operations.rs:736 path-relativization (Windows RUNNER~1 8.3 short-name vs runneradmin; macOS /private/var vs /var symlink -- a 0.7.1 path-relativization CI first-exposure, local tool_operations 21/21 passes) and main.rs::tests::sandbox_strict_* x3 on ubuntu (15.5.3 LinuxStrict vs CI ubuntu kernel). Recorded as Phase 15 carry-over, not 15.5.4-owned; 15.5.4 acceptance is the native macOS engaged suite, which is green.",
+        "evaluator": "passed",
+        "commit": "8832a14"
       },
       "blocker": null,
       "session_notes": [
@@ -1592,6 +1593,47 @@
               "gate": "GHA macos-latest sandbox-macos.yml",
               "passed": false,
               "detail": "PENDING -- not yet pushed / not yet run"
+            }
+          ]
+        },
+        {
+          "timestamp": "2026-07-26T12:37:49Z",
+          "summary": "Phase D.2/E (GHA macOS path) COMPLETE at 8832a14: native macOS acceptance SATISFIED. sandbox-macos.yml run 30201674810 (cf66d25) + 30201822407 (8832a14) both green 9 passed incl. the 3 engaged product tests (outside-write deny, network deny, workspace+temp allow) = the DoD clause-2 native-runner evidence. Runtime wired: probe_sandbox_exec (PATH lookup + sandbox-exec -p (allow-default) /usr/bin/true probe), MacosStrictBackend, build_macos_confinement -> Confinement::launcher, operations.rs spawn-site Command rebuild (re-applies process_group(0)+kill_on_drop+cwd+env), production_sandbox_backend dispatcher (NotYetWiredBackend -> MacosStrictBackend). GHA iteration to green: (allow default) base, probe binds, last-match-wins order, canonicalize symlinks. D.2 exec verify wf_826741ea-aaa: 0 code/spec defects; 1 must-fix (medium evidence-truthfulness) = ledger evidence frozen at cbac5bc/d625b66 checkpoint as GHA PENDING after green -- THIS checkpoint corrects it (flip passing + accurate evidence + acceptance closed). linux.rs untouched (Confinement::new signature preserved). Local D.3 green. CI full-matrix 8832a14 failure = PRE-EXISTING Phase 15 CI debt (tool_operations:736 path-relativization 8.3/symlink from 0.7.1; main.rs::sandbox_strict_* from 15.5.3 LinuxStrict vs CI ubuntu kernel) -- NOT 15.5.4 (local tool_operations 21/21); Phase 15 carry-over. Flipping status=passing, verified_at_commit=8832a14, acceptance phase15-macos-strict-backend=closed.",
+          "gate_results": [
+            {
+              "gate": "cargo fmt --check -p opi-coding-agent",
+              "passed": true,
+              "detail": "clean"
+            },
+            {
+              "gate": "cargo clippy -p opi-coding-agent --all-targets -- -D warnings",
+              "passed": true,
+              "detail": "clean"
+            },
+            {
+              "gate": "RUSTDOCFLAGS=-D warnings cargo doc -p opi-coding-agent --no-deps",
+              "passed": true,
+              "detail": "clean (CI doc job green)"
+            },
+            {
+              "gate": "cargo test --test sandbox_strict (Windows)",
+              "passed": true,
+              "detail": "8/8 host-independent"
+            },
+            {
+              "gate": "cargo test --test tool_operations (Windows)",
+              "passed": true,
+              "detail": "21/21"
+            },
+            {
+              "gate": "GHA sandbox-macos.yml (macos-latest) run 30201674810 + 30201822407",
+              "passed": true,
+              "detail": "9 passed; 0 failed; 0 ignored -- 3 native engaged tests ok (DoD clause-2)"
+            },
+            {
+              "gate": "D.2 exec verify wf_826741ea-aaa (8 agents over 8832a14)",
+              "passed": true,
+              "detail": "0 code/spec defects; 1 must-fix (evidence-truthfulness, corrected by this checkpoint)"
             }
           ]
         }
@@ -4307,6 +4349,16 @@
       "flagged_for_human": 0,
       "rejected": 3,
       "summary": "6-lens deep exec verify over substrate commit 7aa38e4 (11 agents, 725k tokens). 1 must-fix: the 3 enumerated #[cfg(target_os=macos)] engaged product tests are absent (the deferred clause-2 runtime, off-host per DoD). 3 rejected: the runtime-wiring / NotYetWiredBackend / exact-reason-not-in-production findings, recognized as the transparently-declared DoD-prescribed partial-landing deferral. The must-fix is the same off-host clause-2 gap; its suggested_fix concedes the task stays failing until a native macOS runner. Substrate sound; task stays failing; acceptance open."
+    },
+    {
+      "run_id": "wf_826741ea-aaa",
+      "task": "15.5.4",
+      "timestamp": "2026-07-26T12:37:49Z",
+      "stage": "exec",
+      "must_fix": 1,
+      "flagged_for_human": 0,
+      "rejected": 0,
+      "summary": "8-agent 548k-token exec verify over HEAD 8832a14. 0 code/spec defects; 0 rejected. 1 must-fix (medium, evidence-truthfulness): the canonical ledger was frozen at the cbac5bc/d625b66 checkpoint recording the GHA macos-latest gate as PENDING after GHA run 30201674810 (cf66d25) had already gone green (9 passed, 3 engaged). Corrected by the flip checkpoint (status=passing, accurate evidence, acceptance=closed)."
     }
   ]
 }
