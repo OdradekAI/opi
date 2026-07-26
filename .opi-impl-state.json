@@ -4231,6 +4231,339 @@
           "verified_at_commit": "8364e74a9077a194cb4a7fd68db2e3c4b420111a"
         }
       ]
+    },
+    "15": {
+      "completed_at": "2026-07-26T17:22:18.404Z",
+      "exit_criteria_met": true,
+      "evaluator_summary": "Phase 15 exit met: 11/11 criteria traced to production code/tests; 0 not-met, 1 citation-only flag, 5 findings rejected. See criteria_trace and Phase 15 artifacts.",
+      "snapshot_path": null,
+      "task_summary": [
+        {
+          "id": "15.1",
+          "title": "Operations contracts and local file backend",
+          "status": "passing",
+          "verified_at_commit": "11d4c28e8d3d4d0f85ff0d53f2bdf9795c95cf4c"
+        },
+        {
+          "id": "15.2",
+          "title": "Operations injection and local bash execution path",
+          "status": "passing",
+          "verified_at_commit": "a212fa600f099c5d10936a6b5c95a1d78c7df627"
+        },
+        {
+          "id": "15.3",
+          "title": "Sandbox configuration and fallback diagnostic contract",
+          "status": "passing",
+          "verified_at_commit": "41438a884bb762d680e1832b0bfa7699d9c64c40"
+        },
+        {
+          "id": "15.4",
+          "title": "Always-on L0 subprocess-tree lifecycle",
+          "status": "passing",
+          "verified_at_commit": "309cd27b4ee958fe23b3bd8302a4a9eff5db8371"
+        },
+        {
+          "id": "15.5.1",
+          "title": "Strict sandbox policy and production dispatch",
+          "status": "passing",
+          "verified_at_commit": "9057b78a1d41d5514cb3f8b639bf55c8747969e8"
+        },
+        {
+          "id": "15.5.2",
+          "title": "Linux seccomp backend feasibility and policy contract",
+          "status": "passing",
+          "verified_at_commit": "f5b058debf2de577a4ec629bb01b5cdaaad2fc93"
+        },
+        {
+          "id": "15.5.3",
+          "title": "Linux strict runtime and L2/L3 policy",
+          "status": "passing",
+          "verified_at_commit": "483fd22f2af292f4109c74b35971d1f722b4c5f6"
+        },
+        {
+          "id": "15.5.4",
+          "title": "macOS sandbox-exec strict backend",
+          "status": "passing",
+          "verified_at_commit": "8832a14"
+        },
+        {
+          "id": "15.5.5",
+          "title": "Windows strict capability fallback",
+          "status": "passing",
+          "verified_at_commit": "7381bce7f56f5f2e34f8498dbe6851a47b6a11a3"
+        },
+        {
+          "id": "15.5.6",
+          "title": "Strict sandbox matrix integration and acceptance",
+          "status": "passing",
+          "verified_at_commit": "2b683cb67ad2e80af265bb1f0a3a194816398c1b"
+        },
+        {
+          "id": "15.6",
+          "title": "Project trust store and resolver substrate",
+          "status": "passing",
+          "verified_at_commit": "d6ecc30c6d05c6e191396acf537d376a261e88f6"
+        },
+        {
+          "id": "15.7",
+          "title": "Trust-gated project resource discovery",
+          "status": "passing",
+          "verified_at_commit": "06cb0bb2f51dfaffd6e9f9570097dd1716c10e03"
+        },
+        {
+          "id": "15.8.1",
+          "title": "Project trust startup policy and headless resolution",
+          "status": "passing",
+          "verified_at_commit": "341433e7bc5d9270a765b615e4373f9455eee87d"
+        },
+        {
+          "id": "15.8.2",
+          "title": "Interactive project trust prompt and state transition",
+          "status": "passing",
+          "verified_at_commit": "21fd724"
+        },
+        {
+          "id": "15.9",
+          "title": "Safety and trust documentation, guards, and phase acceptance",
+          "status": "passing",
+          "verified_at_commit": "d88980f8eb703ceb0ce22a39bad25f42fd21c80c"
+        }
+      ],
+      "criteria_trace": [
+        {
+          "id": "SC1",
+          "criterion": "L0 bash tree lifecycle plus Windows adapter assignment",
+          "source": "docs/opi-spec.md#Phase 15 - Safety & Sandbox",
+          "status": "met",
+          "code_trace": [
+            "tool/process_tree.rs configures, attaches, terminates, and drops Unix process groups and Windows kill-on-close/no-breakaway Job Objects.",
+            "tool/operations.rs applies L0 to bash; adapter_host.rs applies the same lifecycle to process-JSONL adapters."
+          ],
+          "test_trace": [
+            "cargo test -p opi-coding-agent --test sandbox_l0: 5 passed, 0 failed.",
+            "adapter_host::adapter_l0_kills_subprocess_tree_on_host_drop exercises the production AdapterHost lifecycle."
+          ],
+          "artifact_trace": [
+            "target/opi-artifacts/phase15-phase-exit/test-all-targets.log",
+            "target/opi-artifacts/phase15-phase-exit/RUN_SUMMARY.md"
+          ],
+          "non_goal_check": "Adapters receive L0 only; strict adapter confinement and direct CreateProcessW no-escape are not claimed.",
+          "notes": "Low-severity citation flag: docs names adapter_host_mock::adapter_process_group_contract, but that structural test lives in sandbox_l0.rs; implementation status is unaffected."
+        },
+        {
+          "id": "SC2",
+          "criterion": "Sandbox configuration production path and fallback policy",
+          "source": "docs/opi-spec.md#Phase 15 - Safety & Sandbox",
+          "status": "met",
+          "code_trace": [
+            "cli.rs/config.rs resolve --sandbox and --sandbox-require; main.rs applies overrides before harness construction.",
+            "harness.rs calls sandbox::prepare_production and injects PreparedSandbox into LocalBashOperations.",
+            "sandbox.rs and operations.rs implement one-time permanent diagnostics plus require=false fail-open and require=true pre-spawn fail-closed behavior."
+          ],
+          "test_trace": [
+            "sandbox_config::invalid_sandbox_config_exits_before_provider_construction passed.",
+            "sandbox_strict production-dispatch and fallback tests passed on current HEAD."
+          ],
+          "artifact_trace": [
+            "target/opi-artifacts/phase15-phase-exit/test-all-targets.log",
+            "target/opi-artifacts/phase15-phase-exit/RUN_SUMMARY.md"
+          ],
+          "non_goal_check": "Configuration confines bash subprocesses only; it does not confine opi, file/nav tools, or trust-gate tool execution.",
+          "notes": null
+        },
+        {
+          "id": "SC3",
+          "criterion": "Linux strict backend with narrowed L2 and L3",
+          "source": "docs/opi-spec.md#Phase 15 - Safety & Sandbox",
+          "status": "met",
+          "code_trace": [
+            "sandbox/linux.rs builds the EPERM new-socket gate for AF_INET/AF_INET6/AF_NETLINK, preserves AF_UNIX, and installs the exact danger blocklist.",
+            "Observed Landlock ABI controls filesystem and BindTcp|ConnectTcp rights; sandbox.rs/process_tree.rs/operations.rs connect the backend to the production bash spawn."
+          ],
+          "test_trace": [
+            "sandbox_linux_backend pins filter/ruleset shape, observed-ABI capability, and io_uring/socketpair residuals.",
+            "Native Linux sandbox-product CI at run 30207584078 exercised engaged denial and residual audit; current Windows host did not treat cfg(Linux) zero-test output as acceptance."
+          ],
+          "artifact_trace": [
+            "target/opi-artifacts/phase15-phase-exit/RUN_SUMMARY.md",
+            "GitHub Actions run 30207584078, Linux sandbox-product job 89808233495"
+          ],
+          "non_goal_check": "The claim remains defense-in-depth, not complete network isolation; inherited descriptors, non-TCP traffic, and io_uring residuals remain explicit.",
+          "notes": "Adversarial finding about bind-only product probing was rejected: production+structural evidence covers BindTcp and ConnectTcp, while the native probe proves the ruleset engages."
+        },
+        {
+          "id": "SC4",
+          "criterion": "macOS strict backend",
+          "source": "docs/opi-spec.md#Phase 15 - Safety & Sandbox",
+          "status": "met",
+          "code_trace": [
+            "sandbox/macos.rs builds and probes the escaped sandbox-exec deny overlay and returns Confinement::launcher.",
+            "sandbox.rs selects it in production and operations.rs rebuilds the command through the launcher while retaining cwd/env/L0."
+          ],
+          "test_trace": [
+            "Host-independent profile/capability checks pass on current HEAD.",
+            "Native macOS CI run 30207584078 exercised outside-write denial, network denial, and workspace/temp allowance with zero failures/ignored tests."
+          ],
+          "artifact_trace": [
+            "target/opi-artifacts/phase15-phase-exit/RUN_SUMMARY.md",
+            "GitHub Actions run 30207584078, macOS sandbox-product job 89808233465"
+          ],
+          "non_goal_check": "macOS L3 remains unavailable; only bash subprocesses are confined.",
+          "notes": null
+        },
+        {
+          "id": "SC5",
+          "criterion": "Windows strict fallback",
+          "source": "docs/opi-spec.md#Phase 15 - Safety & Sandbox",
+          "status": "met",
+          "code_trace": [
+            "sandbox/windows.rs truthfully reports L1-L3 as permanently unavailable and retains the L0 Job-Object baseline.",
+            "sandbox.rs/harness.rs/operations.rs propagate one-time diagnostics, fail-open execution, and require=true pre-spawn refusal."
+          ],
+          "test_trace": [
+            "windows_strict_reports_l0_only and windows_strict_production_dispatch_reports_l0_only pass on current HEAD."
+          ],
+          "artifact_trace": [
+            "target/opi-artifacts/phase15-phase-exit/test-all-targets.log",
+            "target/opi-artifacts/phase15-phase-exit/RUN_SUMMARY.md"
+          ],
+          "non_goal_check": "No Windows L1-L3 or resource-cap claim is invented.",
+          "notes": null
+        },
+        {
+          "id": "SC6",
+          "criterion": "Strict bash platform matrix with audited unsafe isolation",
+          "source": "docs/opi-spec.md#Phase 15 - Safety & Sandbox",
+          "status": "met",
+          "code_trace": [
+            "Production sandbox dispatch reaches Linux, macOS, and Windows backends through LocalBashOperations.",
+            "sandbox.rs, tool/operations.rs, and sandbox/windows.rs forbid unsafe code; irreducible audited helpers remain isolated in tool/process_tree.rs.",
+            "ci.yml owns the three-OS sandbox-product matrix and six release-triple target-check matrix."
+          ],
+          "test_trace": [
+            "GitHub Actions run 30207584078: all three sandbox-product jobs and all six target-check jobs passed.",
+            "phase15_safety_sandbox_docs structurally pins the file-level forbid attributes."
+          ],
+          "artifact_trace": [
+            "target/opi-artifacts/phase15-phase-exit/RUN_SUMMARY.md",
+            "GitHub Actions run 30207584078, 9/9 SC6-owned jobs green"
+          ],
+          "non_goal_check": "The matrix does not claim opi-self confinement, adapter strict confinement, sandboxed file/nav tools, or complete Linux network isolation.",
+          "notes": "Adversarial label-precision finding was rejected because the surrounding normative text and evidence explicitly define the narrower unsafe invariant."
+        },
+        {
+          "id": "SC7",
+          "criterion": "Operations production path",
+          "source": "docs/opi-spec.md#Phase 15 - Safety & Sandbox",
+          "status": "met",
+          "code_trace": [
+            "CodingHarness::build invokes build_tools_with_sandbox, which injects Arc<dyn FileOperations> into read/write/edit and Arc<dyn BashOperations> into bash.",
+            "PathPolicy resolves before FileOperations calls; BashTool delegates spawn ownership to LocalBashOperations; nav tools remain unchanged."
+          ],
+          "test_trace": [
+            "tool_operations::operations_injection_reaches_tool_execution and tool_selection::build_tools_constructs_expected_default_set pass on current HEAD."
+          ],
+          "artifact_trace": [
+            "target/opi-artifacts/phase15-phase-exit/test-all-targets.log",
+            "target/opi-artifacts/phase15-phase-exit/smoke.log"
+          ],
+          "non_goal_check": "Operations stays in opi-coding-agent, ships local backends only, and does not extend to nav tools.",
+          "notes": null
+        },
+        {
+          "id": "SC8",
+          "criterion": "Untrusted project resource gate",
+          "source": "docs/opi-spec.md#Phase 15 - Safety & Sandbox",
+          "status": "met",
+          "code_trace": [
+            "main/config perform pre-trust resolution before project config merge.",
+            "harness/runtime_packages/context_files remove project config, resources, packages/adapters, and context files for Untrusted while retaining global scope.",
+            "runtime_packages passes the filtered package vector directly to the sole adapter spawn path."
+          ],
+          "test_trace": [
+            "trust_resource_gating passes 11/11 on current HEAD, including untrusted resource removal, trusted retention, context readability/non-injection, and adapter declaration filtering."
+          ],
+          "artifact_trace": [
+            "target/opi-artifacts/phase15-phase-exit/test-all-targets.log",
+            "target/opi-artifacts/phase15-phase-exit/RUN_SUMMARY.md"
+          ],
+          "non_goal_check": "Trust gates resource loading, not tool execution; project context is not auto-injected when untrusted.",
+          "notes": "Adversarial marker-adapter finding was rejected: declaration filtering is exercised in the production function before the exact vector reaches the only spawn call."
+        },
+        {
+          "id": "SC9",
+          "criterion": "Headless trust resolution and resolver precedence",
+          "source": "docs/opi-spec.md#Phase 15 - Safety & Sandbox",
+          "status": "met",
+          "code_trace": [
+            "project_trust.rs implements CLI -> explicit embedder resolver registry -> store -> global default -> ask, seals the registry, and maps unresolved headless ask to Untrusted.",
+            "main constructs an empty standard-CLI registry and resolves trust before provider/package/runner/RPC construction."
+          ],
+          "test_trace": [
+            "non_interactive_trust, rpc_trust, project_trust_startup, and project_trust_store pass and exercise prompt-free headless behavior and resolver precedence."
+          ],
+          "artifact_trace": [
+            "target/opi-artifacts/phase15-phase-exit/test-all-targets.log",
+            "target/opi-artifacts/phase15-phase-exit/RUN_SUMMARY.md"
+          ],
+          "non_goal_check": "There is no CLI -e/native resolver loader and RPC emits no trust UI request.",
+          "notes": null
+        },
+        {
+          "id": "SC10",
+          "criterion": "Interactive trust ask",
+          "source": "docs/opi-spec.md#Phase 15 - Safety & Sandbox",
+          "status": "met",
+          "code_trace": [
+            "main resolves interactive trust before provider/package/harness construction.",
+            "interactive.rs and opi-tui trust_prompt.rs implement the one-shot AwaitingTrust state, five choices, persistence boundary, cancellation fallback, and predecided bypass."
+          ],
+          "test_trace": [
+            "interactive_trust passes 3/3 and opi-tui trust_prompt passes 11/11 on current HEAD."
+          ],
+          "artifact_trace": [
+            "target/opi-artifacts/phase15-phase-exit/test-all-targets.log",
+            "target/opi-artifacts/phase15-phase-exit/RUN_SUMMARY.md"
+          ],
+          "non_goal_check": "There is no built-in /trust command or live project-resource reload; choices apply at startup only.",
+          "notes": null
+        },
+        {
+          "id": "SC11",
+          "criterion": "Documentation and non-goal guards",
+          "source": "docs/opi-spec.md#Phase 15 - Safety & Sandbox",
+          "status": "met",
+          "code_trace": [
+            "README/spec English and Chinese pairs describe the shipped sandbox, Operations, trust paths, reviewed correctives, residuals, and retained boundaries.",
+            "phase15_safety_sandbox_docs pins paired wording and structural non-goal evidence."
+          ],
+          "test_trace": [
+            "phase15_safety_sandbox_docs passes 4/4 on current HEAD.",
+            "Current opi-implement smoke passes; preserved workspace all-target, doctest, fmt, clippy, and rustdoc logs are green."
+          ],
+          "artifact_trace": [
+            "target/opi-artifacts/phase15-phase-exit/RUN_SUMMARY.md",
+            "target/opi-artifacts/phase15-phase-exit/artifact-audit.json (ok=true, issues=[])",
+            "GitHub Actions run 30207584078 native sandbox-product and target-check artifacts"
+          ],
+          "non_goal_check": "Source/tests preserve all Phase 15 exclusions; no provider/session-schema or opi-agent trust surface was introduced.",
+          "notes": "Adversarial non-goal and artifact-wording findings were rejected. RUN_SUMMARY.md has a one-character start_commit provenance typo; commands/results remain preserved and resolvable."
+        }
+      ],
+      "audit_notes": [
+        {
+          "kind": "flagged-for-human",
+          "criterion_id": "SC1",
+          "severity": "low",
+          "summary": "Correct docs test identifier from adapter_host_mock::adapter_process_group_contract to sandbox_l0::adapter_process_group_contract; no criterion status change."
+        },
+        {
+          "kind": "artifact-note",
+          "criterion_id": "SC11",
+          "severity": "low",
+          "summary": "RUN_SUMMARY.md start_commit has a one-character typo; preserved commands/results and resolvable commit evidence remain valid."
+        }
+      ]
     }
   },
   "session_notes": [
@@ -4270,6 +4603,11 @@
       "timestamp": "2026-07-25T18:28:51.000Z",
       "phase": 15,
       "summary": "Task 15.8.1 PASSING at commit 341433e (amended from db74f72). Phase 15 now 9/15 passing (15.1, 15.2, 15.3, 15.4, 15.5.1, 15.5.5, 15.6, 15.7, 15.8.1). Remaining failing: 15.5.2 (Linux seccomp substrate), 15.5.3 (Linux strict runtime, blocked on .2), 15.5.4 (macOS sandbox-exec), 15.5.6 (matrix, blocked on .3/.4), 15.8.2 (interactive TUI prompt, deps [15.8.1] now met), 15.9 (docs+guards, blocked on all). Next fully-Windows-verifiable: 15.8.2 (deps now satisfied) but workspace tier (opi-tui AppState::AwaitingTrust/TrustChoice); auto-pick by lowest id is 15.5.2 (Linux, compiles out on Windows)."
+    },
+    {
+      "timestamp": "2026-07-26T17:22:18.404Z",
+      "phase": 15,
+      "summary": "Phase-exit evaluation passed: SC1-SC11 met; 0 not-met, 1 low citation-only flag, and 5 foldable findings rejected by independent adversarial review. Current focused Phase 15 tests, TUI trust tests, artifact audit, and opi-implement smoke are green."
     }
   ],
   "verify_runs": [
@@ -4532,6 +4870,16 @@
       "flagged_for_human": 0,
       "rejected": 0,
       "summary": "7-agent 499k-token exec verify over the single task commit d88980f (docs-only + guard test, no runtime source). 6 lenses (implementation-matches-dod, tests-non-vacuous, production-call-site-proven, evidence-truthfulness, non-goal-leak, workspace-deps-honored) + synthesis. 0 must-fix; 0 flagged-for-human; 0 rejected. Clean pass; synthesis advanced Opi-Evaluator pending -> passed. The guard test doc/source-text assertions are the intended deliverable for a docs task (phase14 pattern), not degenerate tests-of-impl."
+    },
+    {
+      "stage": "phase-exit",
+      "wf_ref": "codex-collaboration:phase15-exit-lf1-lf5-20260727",
+      "folded_count": 0,
+      "flagged_count": 1,
+      "rejected_count": 5,
+      "ran_at": "2026-07-26T17:22:18.404Z",
+      "task_id": null,
+      "criterion_id": null
     }
   ]
 }
