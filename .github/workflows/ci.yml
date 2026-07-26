@@ -105,12 +105,21 @@ jobs:
         run: |
           set -uo pipefail
           mkdir -p logs
+          LOG="logs/sandbox-product-${{ matrix.os }}.log"
+          : > "$LOG"
           status=0
-          cargo test -p opi-coding-agent --test sandbox_strict --no-fail-fast ${{ matrix.tests }} \
-            2>&1 | tee "logs/sandbox-product-${{ matrix.os }}.log" || status=$?
+          # matrix.tests is a space-separated list of exact test names; cargo
+          # test takes a single TESTNAME filter, so run each in its own
+          # invocation and aggregate the exit status. No #[ignore] in these
+          # binaries -> a green run is zero-failures zero-ignored by
+          # construction.
+          for t in ${{ matrix.tests }}; do
+            cargo test -p opi-coding-agent --test sandbox_strict --no-fail-fast "$t" \
+              2>&1 | tee -a "$LOG" || status=$?
+          done
           if [ -n "${{ matrix.extra }}" ]; then
             cargo test -p opi-coding-agent --no-fail-fast ${{ matrix.extra }} \
-              2>&1 | tee -a "logs/sandbox-product-${{ matrix.os }}.log" || status=$?
+              2>&1 | tee -a "$LOG" || status=$?
           fi
           exit $status
       - name: Upload sandbox-product log
@@ -121,27 +130,49 @@ jobs:
           path: logs/
 
   # Phase 15 task 15.5.6: compile-check the production sandbox selection path
-  # for all six supported release triples. `cargo check` (no link) + the
-  # rustup-supplied target std is sufficient to prove the cfg-selected
-  # opi-coding-agent backends compile for every release target. RUSTFLAGS=-D
-  # warnings (workflow env) denies warnings across all targets.
+  # for all six supported release triples. The runner OS is matched to the
+  # target family (mirrors release.yml) so the host C toolchain matches:
+  # linux-gnu -> ubuntu, apple-darwin -> macos (Apple clang -arch handles the
+  # other arch natively), windows-msvc -> windows. aarch64-unknown-linux-gnu
+  # additionally needs a cross C compiler because `cargo check` still runs
+  # build scripts (ring's build.rs compiles C with cc-rs), so install
+  # gcc-aarch64-linux-gnu and point cc-rs at it. RUSTFLAGS=-D warnings
+  # (workflow env) denies warnings across all targets.
   target_check:
     name: Target check (${{ matrix.target }})
     strategy:
       fail-fast: false
       matrix:
-        target:
-          - x86_64-unknown-linux-gnu
-          - aarch64-unknown-linux-gnu
-          - x86_64-apple-darwin
-          - aarch64-apple-darwin
-          - x86_64-pc-windows-msvc
-          - aarch64-pc-windows-msvc
-    runs-on: ubuntu-latest
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            cross_gcc: aarch64-linux-gnu
+          - target: x86_64-apple-darwin
+            os: macos-latest
+          - target: aarch64-apple-darwin
+            os: macos-latest
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+          - target: aarch64-pc-windows-msvc
+            os: windows-latest
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
       - uses: Swatinem/rust-cache@v2
-      - run: cargo check --target ${{ matrix.target }} -p opi-coding-agent --all-targets
+        with:
+          key: ${{ matrix.target }}
+      - name: Install cross C toolchain (aarch64-linux only)
+        if: matrix.cross_gcc
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+      - name: cargo check opi-coding-agent for ${{ matrix.target }}
+        env:
+          CC_aarch64_unknown_linux_gnu: aarch64-linux-gnu-gcc
+        shell: bash
+        run: cargo check --target ${{ matrix.target }} -p opi-coding-agent --all-targets
