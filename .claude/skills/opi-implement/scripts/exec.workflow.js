@@ -8,9 +8,12 @@ export const meta = {
   ],
 }
 
-const task = args.task
-const sourcePath = args.sourceDesignPath
-const commit = args.commit
+// The Workflow runtime may hand `args` as a JSON string rather than a parsed
+// object; normalize before reading so lens prompts get the bound task/commit.
+const _args = typeof args === 'string' ? JSON.parse(args) : args
+const task = _args.task
+const sourcePath = _args.sourceDesignPath
+const commit = _args.commit
 
 const FINDINGS_SCHEMA = {
   type: 'object',
