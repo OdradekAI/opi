@@ -961,10 +961,8 @@ fn assert_probe_exit(result: &BashResult, expected: i32, ctx: &str) {
     assert_eq!(
         result.exit_code,
         Some(expected),
-        "{ctx}: expected probe exit {expected}, got {:?}\n--- probe stdout ---\n{}\n--- probe stderr ---\n{}",
-        result.exit_code,
-        String::from_utf8_lossy(&result.stdout),
-        String::from_utf8_lossy(&result.stderr),
+        "{ctx}: expected probe exit {expected}, got {:?}",
+        result.exit_code
     );
 }
 
@@ -1289,51 +1287,6 @@ async fn macos_engaged_subprocess_denies_network() {
 async fn macos_engaged_subprocess_allows_workspace_and_temp_writes() {
     let workspace = tempfile::tempdir().unwrap();
     macos_engaged::assert_fs_network_engaged(workspace.path());
-    eprintln!(
-        "DIAG workspace={:?} canon={:?}",
-        workspace.path(),
-        std::fs::canonicalize(workspace.path())
-    );
-    eprintln!(
-        "DIAG temp_dir={:?} canon={:?}",
-        std::env::temp_dir(),
-        std::fs::canonicalize(std::env::temp_dir())
-    );
-    {
-        use opi_coding_agent::sandbox::macos;
-        let ws_canon = std::fs::canonicalize(workspace.path())
-            .map(|c| c.to_string_lossy().into_owned())
-            .unwrap_or_else(|_| workspace.path().to_string_lossy().into_owned());
-        let tmp_canon = std::fs::canonicalize(std::env::temp_dir())
-            .map(|c| c.to_string_lossy().into_owned())
-            .unwrap_or_else(|_| std::env::temp_dir().to_string_lossy().into_owned());
-        let profile = macos::render_profile(&ws_canon, &tmp_canon, true, true);
-        eprintln!("DIAG PROFILE:\n{}", profile);
-        // Decisive: bypass ops.exec and run sandbox-exec directly with this
-        // profile to write the workspace. Isolates seatbelt/profile behavior
-        // from the launcher-rebuild spawn path.
-        let direct_tgt = workspace.path().join("direct_test.txt");
-        let script = format!(
-            "echo x > '{}' && echo DIRECT_OK || echo DIRECT_DENY",
-            direct_tgt.display()
-        );
-        let direct = std::process::Command::new("sandbox-exec")
-            .arg("-p")
-            .arg(&profile)
-            .arg("sh")
-            .arg("-c")
-            .arg(&script)
-            .output();
-        match direct {
-            Ok(o) => eprintln!(
-                "DIAG DIRECT exit={} stdout=[{}] stderr=[{}]",
-                o.status.code().unwrap_or(-1),
-                String::from_utf8_lossy(&o.stdout).trim(),
-                String::from_utf8_lossy(&o.stderr).trim()
-            ),
-            Err(e) => eprintln!("DIAG DIRECT spawn err: {}", e),
-        }
-    }
     let probe = macos_engaged::build_probe(workspace.path());
     let ops = macos_engaged::engaged_ops(workspace.path());
 
