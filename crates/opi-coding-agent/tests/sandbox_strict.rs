@@ -613,6 +613,10 @@ fn macos_profile_and_capability_matrix() {
         "profile has the seatbelt version header"
     );
     assert!(
+        p_both.contains("(allow default)"),
+        "profile must carry an (allow default) base — seatbelt's default is DENY, so without it the confined child cannot exec or read system files"
+    );
+    assert!(
         p_both.contains("(deny file-write* (subpath \"/\"))"),
         "deny-overlay root must be present when fs engaged"
     );

@@ -36,6 +36,7 @@
 //!
 //! ```text
 //! (version 1)
+//! (allow default)                              ; seatbelt default is DENY; allow-all base
 //! (deny file-write* (subpath "/"))             ; fs engaged only
 //! (allow file-write* (subpath "<workspace>"))  ; fs engaged only
 //! (allow file-write* (subpath "<temp>"))       ; fs engaged only
@@ -167,10 +168,16 @@ fn escape_path(path: &str) -> String {
 
 /// Render the macOS seatbelt deny-overlay profile string.
 ///
-/// Deterministic and escaped (DoD). `fs_enabled` emits the file-write deny
-/// overlay on `/` with workspace + temp exceptions; `network_enabled` emits
-/// `(deny network*)`. With both disabled the profile is the no-op version header
-/// (the runtime would not engage `sandbox-exec` for it). Pure: produces a string,
+/// Deterministic and escaped (DoD). The profile is a deny-overlay on a seatbelt
+/// allow-default base: `(allow default)` makes every unmatched operation
+/// (process-exec, file-read, signals, …) permitted so the confined child can
+/// still exec its shell and read system libraries; `fs_enabled` then denies
+/// every file-write under `/` and punches workspace + temp exceptions back
+/// through; `network_enabled` denies `network*`. Seatbelt is last-match-wins, so
+/// the deny-root must precede the workspace/temp allow exceptions (it does),
+/// and both follow `(allow default)` so they override the allow-all base. With
+/// both disabled the profile is just the version + allow-default header (the
+/// runtime would not engage `sandbox-exec` for it). Pure: produces a string,
 /// never invokes `sandbox-exec`.
 pub fn render_profile(
     workspace: &str,
@@ -179,6 +186,10 @@ pub fn render_profile(
     network_enabled: bool,
 ) -> String {
     let mut out = String::from("(version 1)\n");
+    // seatbelt's default decision is DENY; an explicit allow-default base is
+    // load-bearing — without it the confined bash cannot exec or read system
+    // files, and even the sandbox-exec probe's own helper exec is rejected.
+    out.push_str("(allow default)\n");
     if fs_enabled {
         out.push_str("(deny file-write* (subpath \"/\"))\n");
         out.push_str(&format!(
@@ -253,7 +264,7 @@ fn probe_sandbox_exec() -> SandboxExecStatus {
         Some(p) => p,
         None => return SandboxExecStatus::Missing,
     };
-    let profile = "(version 1)\n";
+    let profile = "(version 1)\n(allow default)\n";
     match std::process::Command::new(&bin)
         .arg("-p")
         .arg(profile)
