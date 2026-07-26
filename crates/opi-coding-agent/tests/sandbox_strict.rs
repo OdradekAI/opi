@@ -625,8 +625,8 @@ fn macos_profile_and_capability_matrix() {
         .find("(deny file-write* (subpath \"/\"))")
         .expect("root deny present");
     assert!(
-        ws_idx < deny_idx,
-        "workspace exception must precede the root deny (first-match-wins)"
+        deny_idx < ws_idx,
+        "root deny must precede the workspace exception (seatbelt is last-match-wins)"
     );
     assert!(
         p_both.contains("(deny file-write* (subpath \"/\"))"),
