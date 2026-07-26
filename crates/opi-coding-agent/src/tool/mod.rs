@@ -5,7 +5,7 @@ mod glob;
 mod grep;
 mod ls;
 mod operations;
-mod process_tree;
+pub(crate) mod process_tree;
 mod read;
 mod write;
 

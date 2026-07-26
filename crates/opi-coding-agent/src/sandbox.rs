@@ -36,6 +36,8 @@
 
 #![forbid(unsafe_code)]
 
+use std::sync::Arc;
+
 use opi_agent::diagnostic::Diagnostic;
 
 use crate::config::SandboxConfig;
@@ -44,6 +46,10 @@ use crate::diagnostics::sandbox_unavailable_diagnostic;
 /// Windows strict backend (L0-only); landed in task 15.5.5.
 #[cfg(target_os = "windows")]
 mod windows;
+
+/// Linux strict backend (seccomp deny-overlay + Landlock); landed in task 15.5.3.
+#[cfg(target_os = "linux")]
+pub mod linux;
 
 /// One strict-sandbox layer. The names match the `[sandbox]` TOML toggles
 /// (`fs`/`network`/`syscalls`) so diagnostics carry the same identifier a user
@@ -79,16 +85,57 @@ pub enum LayerAvailability {
     PermanentlyUnavailable { reason: String },
 }
 
+/// A parent-built, child-applied confinement plan: a closure that registers the
+/// platform's `pre_exec` hook(s) on a `tokio::process::Command`. The cross-platform
+/// resolver carries an `Option<Confinement>` on an `Engaged` strict decision;
+/// `LocalBashOperations::exec` applies it to the spawn `Command` between the L0
+/// tree setup and `spawn()`. `Confinement` is `Clone` (cheap — the closure is
+/// shared behind an `Arc`) so a resolved `PreparedSandbox` can be reused across
+/// commands; each `apply` rebuilds any per-fork state (the Linux backend rebuilds
+/// its Landlock ruleset per spawn, since `restrict_self` consumes it).
+#[derive(Clone)]
+pub struct Confinement(Arc<dyn Fn(&mut tokio::process::Command) + Send + Sync>);
+
+impl std::fmt::Debug for Confinement {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Confinement")
+            .field("hook", &"<closure>")
+            .finish()
+    }
+}
+
+impl Confinement {
+    /// Wrap a confinement-installing closure.
+    pub fn new<F>(hook: F) -> Self
+    where
+        F: Fn(&mut tokio::process::Command) + Send + Sync + 'static,
+    {
+        Self(Arc::new(hook))
+    }
+
+    /// Apply the confinement hook to `cmd` (register the `pre_exec` child setup).
+    pub fn apply(&self, cmd: &mut tokio::process::Command) {
+        (self.0)(cmd);
+    }
+}
+
 /// Capability-injected platform backend.
 ///
-/// Production backends (15.5.2-15.5.5) implement this to report what their
-/// platform can engage; tests inject a fake implementation to drive every policy
-/// branch without a host kernel feature. Task 15.5.1 needs only the availability
-/// query — the actual confinement `engage` seam (e.g. a `pre_exec` hook) is added
-/// by the per-platform runtime tasks, not by this cross-platform policy task.
+/// Production backends implement this to report what their platform can engage
+/// and, when it can, build the parent-side [`Confinement`] plan that
+/// [`prepare_production`] attaches to an `Engaged` decision. Tests inject a fake
+/// implementation to drive every policy branch without a host kernel feature.
 pub trait StrictBackend: Send + Sync {
     /// Report the availability of `layer` on this platform/backend.
     fn availability(&self, layer: SandboxLayer) -> LayerAvailability;
+
+    /// Build the confinement plan (parent side) the backend can engage. Returns
+    /// `None` for backends that report engagement but apply no Opi-side `pre_exec`
+    /// hook (e.g. the L0-only Windows backend), and for capability-injected fakes.
+    /// The default is `None`; the Linux backend (15.5.3) overrides it.
+    fn build_confinement(&self, _workspace: &std::path::Path) -> Option<Confinement> {
+        None
+    }
 }
 
 /// A temporary gap carried alongside a fail-open decision so
@@ -124,11 +171,25 @@ pub enum StrictOutcome {
 }
 
 /// A fully resolved strict-mode decision plus its once-per-startup permanent-gap
-/// diagnostics. Not `Eq`: [`Diagnostic`] carries a `serde_json::Value` payload.
-#[derive(Debug, Clone, PartialEq)]
+/// diagnostics. Not `Eq`: [`Diagnostic`] carries a `serde_json::Value` payload,
+/// and [`PartialEq`] deliberately ignores [`Self::confinement`] (a closure has no
+/// identity comparison).
+#[derive(Debug, Clone)]
 pub struct StrictDecision {
     pub outcome: StrictOutcome,
     permanent_diagnostics: Vec<Diagnostic>,
+    /// Parent-built confinement plan attached by [`prepare_production`] when every
+    /// requested layer engaged. `None` for `Off`, fail-open, fail-closed, and the
+    /// pure [`prepare`] path (capability-injected fakes build no confinement).
+    pub confinement: Option<Confinement>,
+}
+
+impl PartialEq for StrictDecision {
+    fn eq(&self, other: &Self) -> bool {
+        // Compare only the observable policy decision. `confinement` holds an
+        // opaque closure and is intentionally excluded from equality.
+        self.outcome == other.outcome && self.permanent_diagnostics == other.permanent_diagnostics
+    }
 }
 
 /// The result of [`prepare`] / [`prepare_production`]. `Off` runs the always-on
@@ -214,6 +275,7 @@ pub fn prepare(config: &SandboxConfig, backend: &dyn StrictBackend) -> PreparedS
     PreparedSandbox::Strict(StrictDecision {
         outcome,
         permanent_diagnostics,
+        confinement: None,
     })
 }
 
@@ -241,42 +303,52 @@ fn summarize_gaps(
 /// This is the production entry point used by
 /// [`crate::harness::CodingHarness::build_tools`]. It selects the platform
 /// backend via [`production_sandbox_backend`] and dispatches through [`prepare`].
-pub fn prepare_production(config: &SandboxConfig) -> PreparedSandbox {
-    // Platform backend modules own their strict resolution. 15.5.5 wires the
-    // Windows L0-only backend (`sandbox::windows::prepare`); Linux and macOS
-    // stay on the 15.5.1 not-yet-wired stub until 15.5.3 / 15.5.4 land their own
-    // backend modules.
+/// `workspace` is the harness workspace root; the Linux L1 fs layer grants
+/// workspace+temp writes against it (Windows/macOS backends ignore it).
+pub fn prepare_production(config: &SandboxConfig, workspace: &std::path::Path) -> PreparedSandbox {
     #[cfg(target_os = "windows")]
     {
+        let _ = workspace;
         crate::sandbox::windows::prepare(config)
     }
     #[cfg(not(target_os = "windows"))]
     {
-        let backend = production_sandbox_backend();
-        prepare(config, backend.as_ref())
+        let backend = production_sandbox_backend(workspace);
+        let mut prepared = prepare(config, backend.as_ref());
+        // Attach the parent-built confinement plan only when every requested
+        // layer engaged; `LocalBashOperations::exec` applies it to the spawn
+        // Command. The Linux backend (15.5.3) builds the seccomp+Landlock plan;
+        // the macOS not-yet-wired stub reports temporary gaps, never `Engaged`,
+        // so it builds no confinement.
+        if let PreparedSandbox::Strict(decision) = &mut prepared
+            && matches!(decision.outcome, StrictOutcome::Engaged)
+        {
+            decision.confinement = backend.build_confinement(workspace);
+        }
+        prepared
     }
 }
 
 /// Select the production strict backend for the current platform.
 ///
-/// Each platform truthfully reports its strict layers as unavailable. Windows
-/// L1-L3 is a *permanent* platform gap (the OS provides no Landlock/seccomp/
-/// sandbox-exec equivalent in scope, confirmed by the T4 matrix); 15.5.5 owns
-/// that L0-only truth in `sandbox/windows.rs`. Linux and macOS layers are
-/// *temporarily* unavailable until 15.5.3 / 15.5.4 wire the real backends, so a
-/// user who opts into `strict` during that window sees an honest degraded
-/// diagnostic rather than a silent miss. Any other target is permanently
-/// unsupported.
-pub fn production_sandbox_backend() -> Box<dyn StrictBackend> {
+/// - **Linux (15.5.3)**: `LinuxStrictBackend` queries the observed Landlock ABI
+///   and reports per-layer engagement; it builds the seccomp+Landlock confinement
+///   plan from `workspace` when every requested layer is available.
+/// - **macOS (15.5.4)**: not yet wired — `NotYetWiredBackend` reports every strict
+///   layer as temporarily unavailable, so strict fails open honestly.
+/// - **Windows (15.5.5)**: `L0OnlyBackend` — every strict layer is a permanent
+///   platform gap.
+/// - Any other target is permanently unsupported.
+pub fn production_sandbox_backend(workspace: &std::path::Path) -> Box<dyn StrictBackend> {
     #[cfg(target_os = "linux")]
     {
-        Box::new(NotYetWiredBackend {
-            platform: "linux",
-            phase: "15.5.3",
-        })
+        Box::new(crate::sandbox::linux::LinuxStrictBackend::new(Arc::from(
+            workspace,
+        )))
     }
     #[cfg(target_os = "macos")]
     {
+        let _ = workspace;
         Box::new(NotYetWiredBackend {
             platform: "macos",
             phase: "15.5.4",
@@ -284,10 +356,12 @@ pub fn production_sandbox_backend() -> Box<dyn StrictBackend> {
     }
     #[cfg(target_os = "windows")]
     {
+        let _ = workspace;
         Box::new(crate::sandbox::windows::L0OnlyBackend)
     }
     #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
     {
+        let _ = workspace;
         Box::new(UnsupportedPlatformBackend)
     }
 }
@@ -298,13 +372,13 @@ pub fn production_sandbox_backend() -> Box<dyn StrictBackend> {
 /// 15.5.3 / 15.5.4 replace this stub with a real engaged/temporary/permanent
 /// backend. Defined only where it is selected (avoids dead code on other
 /// targets).
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg(target_os = "macos")]
 struct NotYetWiredBackend {
     platform: &'static str,
     phase: &'static str,
 }
 
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg(target_os = "macos")]
 impl StrictBackend for NotYetWiredBackend {
     fn availability(&self, _layer: SandboxLayer) -> LayerAvailability {
         LayerAvailability::TemporarilyUnavailable {
@@ -567,43 +641,65 @@ mod tests {
 
     #[test]
     fn production_backend_classifies_current_platform_truthfully() {
-        // This test runs on the host platform; assert the production backend
-        // returns the expected availability family for THIS target. It must not
-        // claim engagement (no backend is wired in 15.5.1).
-        let backend = production_sandbox_backend();
+        // 15.5.3 wires the Linux backend (seccomp + Landlock), which MAY report
+        // Engaged on a capable kernel (observed Landlock ABI >= 4); Windows
+        // (L0-only) and macOS (not-yet-wired) must not claim engagement.
+        let backend = production_sandbox_backend(std::path::Path::new("."));
         for layer in [
             SandboxLayer::Fs,
             SandboxLayer::Network,
             SandboxLayer::Syscalls,
         ] {
-            match backend.availability(layer) {
-                LayerAvailability::Engaged => panic!("no production backend is wired in 15.5.1"),
-                LayerAvailability::TemporarilyUnavailable { .. } => {}
-                LayerAvailability::PermanentlyUnavailable { .. } => {}
-            }
+            let avail = backend.availability(layer);
+            #[cfg(not(target_os = "linux"))]
+            assert!(
+                !matches!(avail, LayerAvailability::Engaged),
+                "non-Linux platforms must not claim engagement: {avail:?}"
+            );
+            let _ = avail;
+        }
+        #[cfg(target_os = "linux")]
+        {
+            // The seccomp L3 danger blocklist is ABI-independent; it always engages.
+            let syscalls = backend.availability(SandboxLayer::Syscalls);
+            assert!(
+                matches!(syscalls, LayerAvailability::Engaged),
+                "Linux syscalls layer must engage (seccomp is ABI-independent): {syscalls:?}"
+            );
         }
     }
 
     #[test]
     fn production_prepare_off_has_no_diagnostics() {
-        let prepared = prepare_production(&off_config());
+        let prepared = prepare_production(&off_config(), std::path::Path::new("."));
         assert_eq!(prepared, PreparedSandbox::Off);
         assert!(prepared.startup_diagnostics().is_empty());
     }
 
     #[test]
-    fn production_prepare_strict_never_claims_engaged() {
-        // On every supported platform the 15.5.1 production backend reports all
-        // strict layers unavailable, so a strict request must fail open or
-        // closed — never claim engagement it cannot deliver.
-        let prepared = prepare_production(&strict_config(false));
+    fn production_prepare_strict_truthful_on_current_platform() {
+        // 15.5.3: a capable Linux kernel CAN engage strict (it is no longer forced
+        // to fail-open as in 15.5.1). require=false must therefore either Engage
+        // (capable Linux) or FailOpen (old kernel / Windows L0-only / macOS stub),
+        // and an engaged Linux decision must carry a real confinement plan.
+        let prepared = prepare_production(&strict_config(false), std::path::Path::new("."));
         match prepared {
             PreparedSandbox::Strict(decision) => {
                 assert!(
-                    matches!(decision.outcome, StrictOutcome::FailOpen { .. }),
-                    "15.5.1 production strict must fail open, got {:?}",
+                    matches!(
+                        decision.outcome,
+                        StrictOutcome::Engaged | StrictOutcome::FailOpen { .. }
+                    ),
+                    "strict require=false must engage or fail open, got {:?}",
                     decision.outcome
                 );
+                #[cfg(target_os = "linux")]
+                if matches!(decision.outcome, StrictOutcome::Engaged) {
+                    assert!(
+                        decision.confinement.is_some(),
+                        "an engaged Linux decision must carry a confinement plan"
+                    );
+                }
             }
             _ => panic!("expected Strict"),
         }

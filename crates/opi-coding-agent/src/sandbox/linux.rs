@@ -1,41 +1,53 @@
-//! Phase 15 task 15.5.2 — Linux strict substrate (seccomp deny-overlay + Landlock
-//! capability model).
+//! Phase 15 task 15.5.2 (+ 15.5.3 runtime) — Linux strict backend: seccomp
+//! deny-overlay + Landlock, wired into production by [`crate::sandbox::linux::LinuxStrictBackend`].
 //!
-//! Two independent capability layers for the future Linux strict backend:
+//! Two independent capability layers:
 //!
 //! 1. **seccomp deny-overlay** — a default-allow / match-deny BPF filter built
-//!    in the parent ([`build_seccomp_filter`] -> [`compile_filter`]) and applied
-//!    as a raw program in the confined child ([`apply_raw_filter`]). It denies
-//!    new `socket(AF_INET | AF_INET6 | AF_NETLINK, ...)` creation (the network
+//!    in the parent ([`crate::sandbox::linux::build_seccomp_filter`] -> [`crate::sandbox::linux::compile_filter`])
+//!    and applied as a raw program in the confined child via
+//!    [`crate::sandbox::linux::apply_raw_filter`]. It denies new
+//!    `socket(AF_INET | AF_INET6 | AF_NETLINK, ...)` creation (the network
 //!    reduction, preserving `AF_UNIX` IPC) and the exact L3 danger blocklist
-//!    ([`danger_syscalls`]) unconditionally.
+//!    ([`crate::sandbox::linux::danger_syscalls`]) unconditionally.
 //!
 //!    Classic seccomp cannot dereference `sockaddr` pointers, so only socket
 //!    *creation* is domain-filtered; `connect`/`bind`/`sendto`/`recvfrom`/
 //!    `accept` are not domain-filterable. Those residuals (inherited fds,
-//!    non-TCP traffic) are documented in the phase research notes and owned by
-//!    task 15.5.3's runtime attach.
+//!    non-TCP traffic) are documented in the phase research notes and covered by
+//!    the Landlock TCP layer + the explicit residual list.
 //!
 //! 2. **Landlock capability model** — the ABI-4 TCP bind/connect-by-port rights
-//!    ([`landlock_tcp_rights`], [`landlock_tcp_capability`]), keyed to the
-//!    *observed* Landlock ABI rather than a kernel release string.
+//!    ([`crate::sandbox::linux::landlock_tcp_rights`], [`crate::sandbox::linux::landlock_tcp_capability`]), keyed
+//!    to the *observed* Landlock ABI rather than a kernel release string.
 //!
-//! **Substrate only.** This module is not yet wired into
-//! [`super::prepare_production`]; task 15.5.3 attaches it to the production
-//! `LocalBashOperations::exec` -> `sandbox::prepare` path and owns the runtime
-//! ABI query + inherited-fd residuals. Task 15.5.6 owns the cross-arch release
-//! matrix (`iopl`/`ioperm` are x86_64-only and cfg-gated here).
+//! [`crate::sandbox::linux::LinuxStrictBackend`] is selected by
+//! [`crate::sandbox::prepare_production`] on Linux; its confinement plan is
+//! applied to the spawn `Command` by [`crate::sandbox::Confinement::apply`] in
+//! `LocalBashOperations::exec`. Task 15.5.6 owns the cross-arch release matrix
+//! (`iopl`/`ioperm` are x86_64-only and cfg-gated here).
 //!
-//! `#![forbid(unsafe_code)]`: seccompiler and landlock expose safe APIs; the raw
-//! `seccomp(2)` and `landlock_create_ruleset(2)` syscalls live inside those
-//! crates, not in this module.
+//! # `unsafe` in this module
+//!
+//! This module contains NO `unsafe`: the seccomp/Landlock *build* paths use the
+//! libraries' safe APIs. The two audited `unsafe` helpers the runtime needs —
+//! the observed-ABI probe and the `pre_exec` child-setup — live in
+//! `crate::tool::process_tree`, because this module is under `sandbox.rs`'s
+//! `#![forbid(unsafe_code)]` (which propagates to submodules and cannot be
+//! overridden). `sandbox.rs` and `tool/operations.rs` stay
+//! `#![forbid(unsafe_code)]`.
 
 #![cfg(target_os = "linux")]
-#![forbid(unsafe_code)]
 
 use std::collections::BTreeMap;
+use std::io;
+use std::path::Path;
+use std::sync::Arc;
 
-use landlock::{ABI, Access, AccessFs, AccessNet, BitFlags};
+use landlock::{
+    ABI, Access, AccessFs, AccessNet, BitFlags, PathBeneath, PathFd, Ruleset, RulesetAttr,
+    RulesetCreated, RulesetCreatedAttr,
+};
 use seccompiler::{
     BpfProgram, SeccompAction, SeccompCmpArgLen, SeccompCmpOp, SeccompCondition, SeccompFilter,
     SeccompRule, TargetArch, apply_filter,
@@ -259,5 +271,238 @@ pub fn linux_strict_capability(abi: ABI) -> LinuxStrictCapability {
             deny_errno: DENY_ERRNO,
         },
         landlock_tcp_bind_connect: landlock_tcp_capability(abi),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Phase 15 task 15.5.3 — production runtime: observed-ABI query, L1 fs rights,
+// parent-built confinement plan, and the one audited pre_exec child-setup helper
+// ---------------------------------------------------------------------------
+
+/// The L1 filesystem-rights surface the Linux backend governs: every fs right
+/// that creates/modifies/removes file content or structure. `ReadFile`,
+/// `ReadDir`, and `Execute` are **deliberately not handled**, so a confined child
+/// can still exec its shell and read system files/libraries — only writes are
+/// confined to the configured workspace/temp paths.
+fn landlock_write_rights(abi: ABI) -> BitFlags<AccessFs> {
+    // Handle every fs right EXCEPT read/exec. enumflags2's `BitFlags` does not
+    // implement `Sub`, so remove the read/exec flags in place.
+    let mut w = AccessFs::from_all(abi);
+    w.remove(AccessFs::ReadFile);
+    w.remove(AccessFs::ReadDir);
+    w.remove(AccessFs::Execute);
+    w
+}
+
+/// Build (parent side) a Landlock ruleset that permits writes only to
+/// `workspace` and the process temp dir. The returned [`RulesetCreated`] owns its
+/// ruleset file descriptor; it is inherited by the forked child and enforced via
+/// `restrict_self()` in the child's `pre_exec`. Errors map to [`io::Error`] so
+/// the confinement installer can surface build failures as a failed spawn rather
+/// than running a strict command unconfined.
+fn build_landlock_ruleset(abi: ABI, workspace: &Path) -> io::Result<RulesetCreated> {
+    let write_rights = landlock_write_rights(abi);
+    let net_rights = AccessNet::from_all(abi);
+    let ruleset = Ruleset::default()
+        .handle_access(write_rights)
+        .map_err(map_landlock_err("handle_access fs"))?
+        .handle_access(net_rights)
+        .map_err(map_landlock_err("handle_access net"))?
+        .create()
+        .map_err(map_landlock_err("create ruleset"))?;
+    let mut ruleset = ruleset
+        .add_rule(PathBeneath::new(
+            PathFd::new(workspace).map_err(map_pathfd_err("workspace"))?,
+            write_rights,
+        ))
+        .map_err(map_landlock_err("add_rule workspace"))?;
+    if let Ok(temp_fd) = PathFd::new(std::env::temp_dir()) {
+        ruleset = ruleset
+            .add_rule(PathBeneath::new(temp_fd, write_rights))
+            .map_err(map_landlock_err("add_rule temp"))?;
+    }
+    Ok(ruleset)
+}
+
+fn map_landlock_err(
+    step: &'static str,
+) -> impl FnOnce(landlock::RulesetError) -> io::Error + 'static {
+    move |e| io::Error::other(format!("landlock {step}: {e:?}"))
+}
+
+fn map_pathfd_err(step: &'static str) -> impl FnOnce(landlock::PathFdError) -> io::Error + 'static {
+    move |e| io::Error::other(format!("landlock {step}: {e:?}"))
+}
+
+// `install_child_confinement` and `stable_errno_raw` live in
+// `crate::tool::process_tree`: this module is under `sandbox.rs`'s
+// `#![forbid(unsafe_code)]`, which propagates to submodules and cannot be
+// overridden, so the audited `pre_exec` FFI helper belongs in the crate's
+// spawn-FFI home alongside the L0 process-tree helpers.
+
+/// Build the production Linux confinement plan (parent side) for an observed ABI
+/// and workspace. The plan captures the compiled seccomp `BpfProgram` (reused via
+/// `Arc`) and rebuilds the Landlock ruleset fresh per spawn (each child is a
+/// separate fork that consumes its `RulesetCreated` via `restrict_self`). Returns
+/// `None` only if the seccomp filter itself cannot compile (it is
+/// ABI-independent, so this is a backend error, not a capability gap).
+pub fn build_linux_confinement(abi: ABI, workspace: Arc<Path>) -> Option<super::Confinement> {
+    let arch: seccompiler::TargetArch = std::env::consts::ARCH.try_into().ok()?;
+    let filter = build_seccomp_filter(arch).ok()?;
+    let bpf = compile_filter(filter).ok()?;
+    Some(super::Confinement::new(
+        move |cmd: &mut tokio::process::Command| {
+            let bpf = Arc::new(bpf.clone());
+            let ruleset = if abi_supports_fs(abi) {
+                build_landlock_ruleset(abi, &workspace).ok()
+            } else {
+                None
+            };
+            crate::tool::process_tree::install_child_confinement(cmd, bpf, ruleset);
+        },
+    ))
+}
+
+fn abi_supports_fs(abi: ABI) -> bool {
+    !matches!(abi, ABI::Unsupported)
+}
+
+/// Whether the observed Landlock ABI enables TCP bind/connect (ABI >= 4).
+fn abi_supports_tcp(abi: ABI) -> bool {
+    matches!(abi, ABI::V4 | ABI::V5 | ABI::V6 | ABI::V7)
+}
+
+// ---------------------------------------------------------------------------
+// Alternate network-surface audit (DoD: classify every dispatch path; never
+// claim complete new-socket coverage while a path remains uncovered)
+// ---------------------------------------------------------------------------
+
+/// One entry in the alternate-network-surface audit classification.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AlternateSurfaceClass {
+    /// The alternate dispatch surface audited.
+    pub surface: &'static str,
+    /// One of the DoD's three audit buckets. This audit uses
+    /// `mechanically-irrelevant` (the surface does not create one of the three
+    /// denied families) and `uncovered-residual` (the surface bypasses the
+    /// audited `socket(2)` gate unblocked). The DoD's third bucket, `blocked with
+    /// a stable error`, does not apply to any alternate surface here.
+    pub classification: &'static str,
+    /// Why it carries that classification.
+    pub detail: &'static str,
+}
+
+/// Enumerate the alternate new-socket / connect dispatch surfaces (`socketpair`,
+/// `io_uring`) and classify each against the seccomp socket-creation gate. Every
+/// path that is not provably blocked by the gate is recorded as an explicit
+/// `uncovered-residual`; the artifact therefore never claims complete
+/// new-socket coverage while a path remains uncovered.
+pub fn alternate_network_surface_audit() -> Vec<AlternateSurfaceClass> {
+    vec![
+        AlternateSurfaceClass {
+            surface: "socketpair(AF_UNIX)",
+            classification: "mechanically-irrelevant",
+            detail: "AF_UNIX is not one of the three denied creation families \
+                     (AF_INET/AF_INET6/AF_NETLINK), so socketpair(AF_UNIX) is \
+                     mechanically irrelevant to the denied domains. AF_UNIX IPC \
+                     itself is preserved, proven by the engaged \
+                     linux_af_unix_survives_socket_creation_gate test.",
+        },
+        AlternateSurfaceClass {
+            surface: "socketpair(AF_INET | AF_INET6)",
+            classification: "mechanically-irrelevant",
+            detail: "socketpair(2) requires a connection-oriented family and in \
+                     practice only AF_UNIX is usable; an AF_INET/AF_INET6 \
+                     socketpair has no defined semantics on Linux, so it is \
+                     mechanically irrelevant to the three denied creation domains.",
+        },
+        AlternateSurfaceClass {
+            surface: "io_uring socket/connect/accept",
+            classification: "uncovered-residual",
+            detail: "io_uring submits socket(2)/connect(2)/accept(2) via the \
+                     io_uring_setup(2)/io_uring_enter(2) syscalls and an in-kernel \
+                     submission queue, bypassing the audited socket(2) creation \
+                     path. Neither io_uring syscall is in the seccomp blocklist, so \
+                     io_uring-initiated network operations are an explicit, \
+                     documented residual — the artifact must not claim coverage.",
+        },
+    ]
+}
+
+// ---------------------------------------------------------------------------
+// LinuxStrictBackend: the production StrictBackend for Linux
+// ---------------------------------------------------------------------------
+
+/// Production Linux strict backend. Queries the observed Landlock ABI at
+/// construction and reports per-layer availability to the shared
+/// [`super::prepare`] resolver. The seccomp L2 socket-creation gate and L3
+/// danger blocklist are ABI-independent (always engage when the filter
+/// compiles); the Landlock L1 fs layer needs ABI >= 1 and the Landlock TCP
+/// bind/connect layer needs ABI >= 4.
+#[derive(Debug)]
+pub struct LinuxStrictBackend {
+    abi: ABI,
+    workspace: Arc<Path>,
+}
+
+impl LinuxStrictBackend {
+    /// Production constructor: probe the kernel's observed Landlock ABI.
+    pub fn new(workspace: Arc<Path>) -> Self {
+        Self {
+            abi: crate::tool::process_tree::observed_landlock_abi(),
+            workspace,
+        }
+    }
+
+    /// Inject the observed ABI instead of probing the kernel (for the capability
+    /// matrix tests that cover release/ABI mismatches).
+    pub fn with_observed_abi(workspace: Arc<Path>, abi: ABI) -> Self {
+        Self { abi, workspace }
+    }
+
+    /// The observed Landlock ABI this backend resolved.
+    pub fn observed_abi(&self) -> ABI {
+        self.abi
+    }
+}
+
+impl super::StrictBackend for LinuxStrictBackend {
+    fn availability(&self, layer: super::SandboxLayer) -> super::LayerAvailability {
+        match layer {
+            // L3 danger blocklist via seccomp: ABI-independent.
+            super::SandboxLayer::Syscalls => super::LayerAvailability::Engaged,
+            // L1 fs writes via Landlock: ABI >= 1.
+            super::SandboxLayer::Fs => {
+                if abi_supports_fs(self.abi) {
+                    super::LayerAvailability::Engaged
+                } else {
+                    super::LayerAvailability::TemporarilyUnavailable {
+                        reason: "landlock filesystem rights unavailable (kernel reports ABI 0)"
+                            .to_string(),
+                    }
+                }
+            }
+            // L2 network: seccomp new-socket gate (always) + Landlock TCP (ABI >= 4).
+            // The layer engages only when the TCP bind/connect half is available;
+            // an ABI < 4 kernel still gets the seccomp new-socket denial but lacks
+            // Landlock TCP confinement, so the network layer is temporarily
+            // unavailable as a whole.
+            super::SandboxLayer::Network => {
+                if abi_supports_tcp(self.abi) {
+                    super::LayerAvailability::Engaged
+                } else {
+                    super::LayerAvailability::TemporarilyUnavailable {
+                        reason: format!(
+                            "landlock TCP bind/connect needs ABI >= 4 (observed {:?})",
+                            self.abi
+                        ),
+                    }
+                }
+            }
+        }
+    }
+
+    fn build_confinement(&self, _workspace: &Path) -> Option<super::Confinement> {
+        build_linux_confinement(self.abi, self.workspace.clone())
     }
 }

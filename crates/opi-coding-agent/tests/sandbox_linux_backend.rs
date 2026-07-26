@@ -10,8 +10,10 @@
 
 #![cfg(target_os = "linux")]
 
-#[path = "../src/sandbox/linux.rs"]
-mod linux;
+// 15.5.3: linux.rs now references its parent sandbox module (`super::StrictBackend`,
+// `super::Confinement`, ...), so it can no longer be #[path]-included here. Use
+// the real public module instead — every item exercised below is `pub`.
+use opi_coding_agent::sandbox::linux;
 
 use landlock::{ABI, AccessFs, AccessNet, make_bitflags};
 
@@ -223,5 +225,60 @@ fn landlock_capability_uses_observed_abi_and_distinguishes_layers() {
     assert_eq!(
         cap.seccomp_socket_creation, cap_v3.seccomp_socket_creation,
         "seccomp socket-creation layer is independent of the landlock ABI"
+    );
+}
+
+/// The alternate-network-surface audit classifies every non-`socket(2)` dispatch
+/// path (`socketpair`, io_uring) and never claims complete new-socket coverage
+/// while a path remains uncovered (Phase 15 task 15.5.3 DoD).
+#[test]
+fn linux_alternate_network_surface_audit() {
+    let audit = linux::alternate_network_surface_audit();
+    assert!(!audit.is_empty(), "audit must enumerate alternate surfaces");
+
+    // Every classification is one of the DoD audit buckets this task uses.
+    for c in &audit {
+        assert!(
+            matches!(
+                c.classification,
+                "mechanically-irrelevant" | "uncovered-residual"
+            ),
+            "unexpected classification `{}` for {}",
+            c.classification,
+            c.surface
+        );
+        assert!(!c.detail.is_empty(), "audit entry needs a detail");
+    }
+
+    // socketpair(AF_UNIX) is mechanically irrelevant: AF_UNIX is not one of the
+    // three denied creation families (it is preserved, but irrelevant to the
+    // denied domains).
+    let unix = audit
+        .iter()
+        .find(|c| c.surface.contains("socketpair(AF_UNIX)"))
+        .expect("audit must cover socketpair(AF_UNIX)");
+    assert_eq!(
+        unix.classification, "mechanically-irrelevant",
+        "socketpair(AF_UNIX) is mechanically irrelevant to the denied families"
+    );
+
+    // io_uring socket/connect/accept is an EXPLICIT uncovered residual: the
+    // artifact must not claim full new-socket coverage while it stands.
+    let io_uring = audit
+        .iter()
+        .find(|c| c.surface.contains("io_uring"))
+        .expect("audit must cover io_uring");
+    assert_eq!(
+        io_uring.classification, "uncovered-residual",
+        "io_uring-initiated network ops are an explicit residual, not covered"
+    );
+
+    // The audit as a whole carries at least one uncovered residual (no
+    // completeness claim).
+    assert!(
+        audit
+            .iter()
+            .any(|c| c.classification == "uncovered-residual"),
+        "the audit must keep at least one explicit uncovered residual"
     );
 }

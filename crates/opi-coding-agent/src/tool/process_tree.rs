@@ -383,6 +383,104 @@ impl Drop for JobGuard {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Phase 15 task 15.5.3 — Linux strict confinement FFI
+// ---------------------------------------------------------------------------
+//
+// `sandbox.rs` is `#![forbid(unsafe_code)]` and that forbid propagates to its
+// `linux` submodule, so the two audited `unsafe` helpers required by the Linux
+// strict backend live HERE. `process_tree` is the documented home for
+// spawn-path FFI (its module doc: "every FFI call lives HERE behind a safe
+// wrapper"); `sandbox::linux` builds the confinement plan on the parent side
+// (safe landlock/seccomp APIs) and calls these helpers to perform the kernel
+// calls. `sandbox.rs` and `tool/operations.rs` stay `#![forbid(unsafe_code)]`.
+
+#[cfg(target_os = "linux")]
+use std::sync::Arc;
+
+#[cfg(target_os = "linux")]
+use landlock::{ABI, RulesetCreated};
+
+#[cfg(target_os = "linux")]
+use seccompiler::BpfProgram;
+
+/// Query the kernel's **observed** Landlock ABI (read-only; no confinement).
+/// Replicates landlock 0.4.5's private `LandlockStatus::current()` probe — the
+/// crate deliberately does not expose it, but the policy resolver must report
+/// per-layer availability before spawn. `landlock_create_ruleset(NULL, 0,
+/// LANDLOCK_CREATE_RULESET_VERSION)` returns the supported ABI (1..=7) or a
+/// negative errno when Landlock is absent/disabled.
+#[cfg(target_os = "linux")]
+pub fn observed_landlock_abi() -> ABI {
+    const LANDLOCK_CREATE_RULESET_VERSION: u32 = 1;
+    // SAFETY: read-only capability query. A null attribute pointer, size 0, and
+    // the VERSION flag direct the kernel to return the supported ABI integer
+    // without creating a ruleset or mutating state. No fd is produced. The
+    // landlock crate performs the identical call internally.
+    let v = unsafe {
+        libc::syscall(
+            libc::SYS_landlock_create_ruleset,
+            std::ptr::null::<libc::c_void>(),
+            0usize,
+            LANDLOCK_CREATE_RULESET_VERSION,
+        )
+    };
+    if v < 0 {
+        ABI::Unsupported
+    } else {
+        ABI::from(v as i32)
+    }
+}
+
+/// Map a `StableErrno` to its raw errno value for `io::Error::from_raw_os_error`.
+#[cfg(target_os = "linux")]
+fn stable_errno_raw(e: crate::sandbox::linux::StableErrno) -> i32 {
+    use crate::sandbox::linux::StableErrno;
+    match e {
+        StableErrno::Prctl(x) | StableErrno::Seccomp(x) => x,
+        StableErrno::EmptyFilter | StableErrno::Backend => libc::EINVAL,
+    }
+}
+
+/// The one audited child-setup helper: register a `pre_exec` hook on `cmd`
+/// (built in the parent) that installs the seccomp deny-overlay and restricts
+/// the child via Landlock. Only the std `pre_exec` registration itself is
+/// `unsafe`; seccomp and Landlock application are delegated to library APIs.
+#[cfg(target_os = "linux")]
+pub fn install_child_confinement(
+    cmd: &mut tokio::process::Command,
+    bpf: Arc<BpfProgram>,
+    ruleset: Option<RulesetCreated>,
+) {
+    use std::os::unix::process::CommandExt;
+    let mut ruleset = ruleset;
+    // SAFETY: `pre_exec` runs the supplied closure in the child process after
+    // fork but before execve, in an async-signal-safe context. The closure calls
+    // only async-signal-safe operations: seccomp filter installation (prctl +
+    // the seccomp syscall, inside seccompiler::apply_filter) and Landlock
+    // `restrict_self` (the landlock_restrict_self syscall, inside the landlock
+    // crate). No locking and no heap allocation occur on the success path; the
+    // error path may format a message, which is acceptable because the command
+    // is already failing. `bpf` (`Arc<Vec<sock_filter>>`) and `ruleset`
+    // (fd-bearing `RulesetCreated`) are both `Send + Sync + 'static`, satisfying
+    // `pre_exec`'s closure bounds.
+    let _ = unsafe {
+        cmd.as_std_mut().pre_exec(move || {
+            if let Err(e) = crate::sandbox::linux::apply_raw_filter(bpf.as_ref()) {
+                return Err(std::io::Error::from_raw_os_error(stable_errno_raw(e)));
+            }
+            if let Some(rs) = ruleset.take()
+                && let Err(e) = rs.restrict_self()
+            {
+                return Err(std::io::Error::other(format!(
+                    "landlock restrict_self: {e:?}"
+                )));
+            }
+            Ok(())
+        })
+    };
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

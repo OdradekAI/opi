@@ -549,16 +549,21 @@ impl BashOperations for LocalBashOperations {
             // diagnostic per TEMPORARY gap (permanent gaps were already emitted
             // once at startup and are deliberately not repeated per command);
             // Off/Engaged proceed to the L0 spawn below.
-            match &prepared {
-                PreparedSandbox::Off => {}
+            //
+            // Phase 15.5.3: an Engaged Linux decision carries a parent-built
+            // confinement plan; it is applied to the spawn `Command` between the
+            // L0 tree setup and `spawn()`.
+            let confinement: Option<&crate::sandbox::Confinement> = match &prepared {
+                PreparedSandbox::Off => None,
                 PreparedSandbox::Strict(decision) => match &decision.outcome {
-                    StrictOutcome::Engaged => {}
+                    StrictOutcome::Engaged => decision.confinement.as_ref(),
                     StrictOutcome::FailOpen {
                         per_command_temporary,
                     } => {
                         for gap in per_command_temporary {
                             degraded_diagnostics.push(temporary_gap_diagnostic(gap));
                         }
+                        None
                     }
                     StrictOutcome::FailClosed { reason } => {
                         return Err(BashOpError::SandboxUnavailable {
@@ -566,7 +571,7 @@ impl BashOperations for LocalBashOperations {
                         });
                     }
                 },
-            }
+            };
 
             let mut cmd = tokio::process::Command::new(shell);
             cmd.arg(flag)
@@ -580,6 +585,13 @@ impl BashOperations for LocalBashOperations {
             // attached just after spawn. All FFI lives in `super::process_tree`;
             // this module stays #![forbid(unsafe_code)].
             super::process_tree::configure_tree(&mut cmd);
+            // Phase 15.5.3: apply the strict confinement plan (Linux seccomp +
+            // Landlock `pre_exec` hook) when the decision engaged. Safe call: the
+            // confinement closure registers the audited `pre_exec` helper; the
+            // `unsafe` lives inside `sandbox/linux.rs`, not here.
+            if let Some(confinement) = confinement {
+                confinement.apply(&mut cmd);
+            }
             // env augments the inherited environment on top of what the child
             // already receives; empty in current usage.
             for (key, value) in &env {

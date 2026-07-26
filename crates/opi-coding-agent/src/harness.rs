@@ -794,7 +794,7 @@ impl CodingHarness {
         // the harness startup channel (merged into resources.metadata.diagnostics
         // below); the decision is enforced per-command inside
         // LocalBashOperations::exec.
-        let prepared = crate::sandbox::prepare_production(&config.sandbox);
+        let prepared = crate::sandbox::prepare_production(&config.sandbox, &workspace_root);
         let (mut tools, sandbox_startup_diagnostics) =
             Self::build_tools_with_sandbox(&workspace_root, &tool_config, prepared);
         tools.extend(extension_tools);
