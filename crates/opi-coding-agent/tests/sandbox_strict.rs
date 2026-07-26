@@ -1301,9 +1301,13 @@ async fn macos_engaged_subprocess_allows_workspace_and_temp_writes() {
     );
     {
         use opi_coding_agent::sandbox::macos;
-        let ws_str = workspace.path().to_string_lossy().into_owned();
-        let tmp_str = std::env::temp_dir().to_string_lossy().into_owned();
-        let profile = macos::render_profile(&ws_str, &tmp_str, true, true);
+        let ws_canon = std::fs::canonicalize(workspace.path())
+            .map(|c| c.to_string_lossy().into_owned())
+            .unwrap_or_else(|_| workspace.path().to_string_lossy().into_owned());
+        let tmp_canon = std::fs::canonicalize(std::env::temp_dir())
+            .map(|c| c.to_string_lossy().into_owned())
+            .unwrap_or_else(|_| std::env::temp_dir().to_string_lossy().into_owned());
+        let profile = macos::render_profile(&ws_canon, &tmp_canon, true, true);
         eprintln!("DIAG PROFILE:\n{}", profile);
         // Decisive: bypass ops.exec and run sandbox-exec directly with this
         // profile to write the workspace. Isolates seatbelt/profile behavior
