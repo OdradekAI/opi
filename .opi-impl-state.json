@@ -1472,20 +1472,76 @@
         "crates/opi-coding-agent/src/sandbox/macos.rs::prepare (planned)"
       ],
       "substrate_only": false,
-      "iteration_count": 0,
+      "iteration_count": 1,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "eccb528db5295cab55ef6d0dcf6111ab306ba37b",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "crates/opi-coding-agent/src/sandbox/macos.rs",
         "crates/opi-coding-agent/tests/sandbox_strict.rs",
         "crates/opi-coding-agent/src/sandbox.rs"
       ],
-      "last_attempt": null,
+      "last_attempt": {
+        "attempt": 1,
+        "started_at": "2026-07-26T10:04:04.212.000Z",
+        "ended_at": "2026-07-26T10:35:07.396.000Z",
+        "outcome": "failing",
+        "failing_gate": "D.2 exec verify (wf_942c915d, 6-lens over 7aa38e4): 1 must-fix -- the 3 #[cfg(target_os=macos)] engaged product tests (macos_engaged_subprocess_denies_outside_write / _denies_network / _allows_workspace_and_temp_writes) are absent. This is the deferred clause-2 runtime gap (off-host: needs a native macOS runner per DoD + the unresolved sandbox-exec prepend-to-Command exec integration); task substrate-only this invocation per the user host-verifiability choice.",
+        "touched_files": [
+          "crates/opi-coding-agent/src/sandbox/macos.rs",
+          "crates/opi-coding-agent/src/sandbox.rs",
+          "crates/opi-coding-agent/tests/sandbox_strict.rs"
+        ]
+      },
       "verified_at_commit": null,
-      "evidence": null,
+      "evidence": {
+        "task": "15.5.4",
+        "dod_sha256": "c900a8f17dc2c199152d82f8fd3fc3d64302f3fca5e7911f4a9af5c8f8b414c8",
+        "verification": "cli-runtime; SUBSTRATE-ONLY delivery (user host-verifiability choice: implement macOS substrate now, leave failing). D.3 crate gates green on Windows: fmt clean; clippy -p opi-coding-agent --all-targets -D warnings clean; RUSTDOCFLAGS=-D warnings cargo doc -p opi-coding-agent clean; cargo test --test sandbox_strict 8/8 incl. the new host-independent macos_profile_and_capability_matrix. D.2 exec verify wf_942c915d-bc9 (6-lens deep, 11 agents, 725k tokens over commit 7aa38e4): 1 must-fix (3 native macOS engaged product tests absent -- the deferred clause-2 runtime, off-host per DoD), 0 flagged_for_human, 3 rejected (the runtime-wiring / NotYetWiredBackend / exact-reason-not-in-production findings, correctly recognized by the synthesizer as the transparently-declared, DoD-prescribed partial-landing deferral, not hidden defects). Substrate (profile renderer + escaping + toggles, argv wrapper, capability matrix, exact missing/unusable reasons) is sound; the must-fix is the same off-host clause-2 gap as the rejected findings (its own suggested_fix concedes the task stays failing until a native macOS runner). NOT D.2-clean -> footer stays Opi-Evaluator: pending, no passing flip. Acceptance phase15-macos-strict-backend OPEN. Native macOS product assertions + runtime wiring deferred to a macOS runner.",
+        "evaluator": "pending",
+        "commit": "7aa38e4"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-07-26T10:04:04.212.000Z",
+          "attempt": 1,
+          "summary": "Phase B: user chose implement-macOS-substrate-now at the host-verifiability fork. Scope this invocation = host-independent pure substrate only (sandbox/macos.rs: SandboxExecStatus + exact reasons, render_profile deny-overlay + escaping + fs/network toggles, build_wrapped_argv argv-preservation, MacosStrictCapability + macos_strict_capability with L3 permanent + fs/network gated on sandbox-exec) + the macos_profile_and_capability_matrix test (runs on ALL hosts). The macOS RUNTIME (MacosStrictBackend, sandbox-exec probe, Confinement launcher integration, dispatcher wiring, 3 native engaged product assertions) is DEFERRED to a native macOS runner: only x86_64-pc-windows-msvc is installed here (no macOS target, cannot compile-check cfg(target_os=macos)), and the macOS sandbox-exec launcher must PREPEND to the spawn Command -- std::process::Command has no program setter / arg insert, and mem::replace loses the L0 process-group + kill_on_drop config set before confinement.apply. Resolving that exec integration needs macOS iteration. Task stays failing; acceptance phase15-macos-strict-backend stays open. Skipped full-workspace A.3 smoke (disk-fill risk).",
+          "gate_results": []
+        },
+        {
+          "timestamp": "2026-07-26T10:35:07.396.000Z",
+          "attempt": 1,
+          "summary": "Phase D/E: substrate delivered at commit 7aa38e4 (3 files: sandbox/macos.rs pure substrate -- seatbelt deny-overlay profile renderer with deterministic escaping + fs/network toggles, sandbox-exec wrapper argv with preservation, per-layer capability matrix [L3/syscalls permanently unavailable; fs/network gated on sandbox-exec with exact SANDBOX_EXEC_MISSING_REASON / SANDBOX_EXEC_UNUSABLE_PREFIX reasons], plus the macos_profile_and_capability_matrix integration test that runs on every host; sandbox.rs pub-mod declaration + accurate doc updates; tests/sandbox_strict.rs substrate test + cfg-gate fix for the pre-existing 15.5.3 BashResult import). D.3 crate gates green on Windows (fmt/clippy --all-targets -D warnings/rustdoc -D warnings/sandbox_strict 8/8). D.2 exec verify wf_942c915d-bc9 (6-lens, 11 agents over 7aa38e4): 1 must-fix -- the 3 enumerated #[cfg(target_os=macos)] engaged product tests are absent; 0 flagged; 3 rejected -- the runtime-wiring findings (build_wrapped_argv zero production callers, NotYetWiredBackend still selected, exact reasons not reaching production) were correctly recognized as the transparently-declared DoD-prescribed partial-landing deferral. ANALYSIS: the kept must-fix IS the same off-host clause-2 gap as the 3 rejected findings -- the 3 engaged tests cannot exist without the deferred runtime (which has the unresolved sandbox-exec prepend-to-Command exec-integration question: std::process::Command has no program setter / arg insert, and mem::replace drops the L0 process_group(0) + kill_on_drop state applied before Confinement::apply) plus a native macOS runner; the must-fix suggested_fix itself concedes the task stays failing until macOS. Writing the tests/runtime blind would violate anti-patterns #1 (no weakened/ignored tests) and #6 (no stubs) and the DoD wrong-host-zero-test prohibition. RESOLUTION: per the user B.2 host-verifiability choice, this invocation is substrate-only; Phase C iteration on the must-fix was NOT pursued (off-host-impossible). Task stays failing (not passing); acceptance phase15-macos-strict-backend OPEN; verified_at_commit null; commit footer Opi-Evaluator: pending (NOT D.2-clean). The substrate is banked; the macOS-runner follow-up owns: MacosStrictBackend + sandbox-exec probe + Confinement launcher + the exec-integration refactor + dispatcher wiring + the 3 native engaged tests.",
+          "gate_results": [
+            {
+              "gate": "cargo fmt --check -p opi-coding-agent",
+              "passed": true,
+              "detail": "clean"
+            },
+            {
+              "gate": "cargo clippy -p opi-coding-agent --all-targets -- -D warnings",
+              "passed": true,
+              "detail": "clean"
+            },
+            {
+              "gate": "RUSTDOCFLAGS=-D warnings cargo doc -p opi-coding-agent --no-deps",
+              "passed": true,
+              "detail": "clean"
+            },
+            {
+              "gate": "cargo test --test sandbox_strict (Windows)",
+              "passed": true,
+              "detail": "8 passed incl. macos_profile_and_capability_matrix"
+            },
+            {
+              "gate": "D.2 exec verify wf_942c915d-bc9 (6-lens)",
+              "passed": false,
+              "detail": "1 must-fix (3 macOS engaged tests absent -- off-host clause-2 deferral), 0 flagged, 3 rejected (deferred-runtime findings)"
+            }
+          ]
+        }
+      ]
     },
     {
       "id": "15.5.5",
@@ -4187,6 +4243,16 @@
       "flagged_for_human": 2,
       "rejected": 0,
       "summary": "iter2 over 77b82b8 (corrected verification[4] -> linux_strict_backend_capability_matrix + 5-exclusion footer + probe/audit fixes). PASS: 0 must-fix, 2 flagged (medium/low-confidence toggle-blind build_confinement [advisory]; low/high-confidence AF_UNIX connect overclaim [closed by connect(2) probe in 483fd22 amend])."
+    },
+    {
+      "run_id": "wf_942c915d-bc9",
+      "task": "15.5.4",
+      "timestamp": "2026-07-26T10:35:07.396.000Z",
+      "stage": "exec",
+      "must_fix": 1,
+      "flagged_for_human": 0,
+      "rejected": 3,
+      "summary": "6-lens deep exec verify over substrate commit 7aa38e4 (11 agents, 725k tokens). 1 must-fix: the 3 enumerated #[cfg(target_os=macos)] engaged product tests are absent (the deferred clause-2 runtime, off-host per DoD). 3 rejected: the runtime-wiring / NotYetWiredBackend / exact-reason-not-in-production findings, recognized as the transparently-declared DoD-prescribed partial-landing deferral. The must-fix is the same off-host clause-2 gap; its suggested_fix concedes the task stays failing until a native macOS runner. Substrate sound; task stays failing; acceptance open."
     }
   ]
 }
