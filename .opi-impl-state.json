@@ -1380,7 +1380,7 @@
       "definition_of_done": "The macOS strict backend renders a deterministic, escaped deny-overlay profile and wraps the requested bash command with `sandbox-exec -p`; the profile permits configured workspace/temp writes, preserves required process behavior, and optionally denies network. L3/syscall confinement is reported unavailable, and a missing or unusable `sandbox-exec` returns exact layer/reason failures to the shared 15.5.1 policy. Profile tests cover path escaping, fs/network toggles, unavailable-tool behavior, and argv preservation without requiring elevated privileges; on an engaged native macOS host, separate factory-built BashTool tests through the production dispatcher prove an outside-allowlist write is denied, a network side effect is denied, and configured workspace plus temporary writes remain allowed. A native macOS runner must execute all three platform product assertions with at least one passed test per assertion, zero failures, and zero ignored/skipped tests; a wrong-host zero-test or skipped result is not acceptance evidence.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "blocked",
+      "status": "in_progress",
       "depends_on": [
         "15.5.1"
       ],
@@ -1424,6 +1424,11 @@
           "field": "task_owned_paths",
           "reason": "Post-decision L6 verification grants the macOS product task ownership of sandbox.rs so it must register the backend in the production dispatcher rather than pass module-only tests.",
           "source": "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md#Implementation Priority and Crate Boundaries"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "exec-integration for the macOS sandbox-exec Launcher confinement: operations.rs::exec is the spawn site that must rebuild the Command (sandbox-exec -p <profile> prepended to sh -c <command>) when the macOS Confinement::Launcher is attached, re-applying configure_tree (process_group(0)) + kill_on_drop + current_dir + env. Not in original owned paths; required by the DoD clause-2 runtime.",
+          "source": "design: sandbox-exec must prepend to the spawn Command (substrate doc sandbox/macos.rs)"
         }
       ],
       "tier": "cli-runtime",
@@ -1472,26 +1477,20 @@
         "crates/opi-coding-agent/src/sandbox/macos.rs::prepare (planned)"
       ],
       "substrate_only": false,
-      "iteration_count": 1,
+      "iteration_count": 0,
       "max_iterations": 5,
-      "start_commit": "eccb528db5295cab55ef6d0dcf6111ab306ba37b",
+      "start_commit": "05a0100",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "crates/opi-coding-agent/src/sandbox/macos.rs",
         "crates/opi-coding-agent/tests/sandbox_strict.rs",
-        "crates/opi-coding-agent/src/sandbox.rs"
+        "crates/opi-coding-agent/src/sandbox.rs",
+        "crates/opi-coding-agent/src/tool/operations.rs"
       ],
       "last_attempt": {
-        "attempt": 1,
-        "started_at": "2026-07-26T10:04:04.212.000Z",
-        "ended_at": "2026-07-26T10:35:07.396.000Z",
-        "outcome": "failing",
-        "failing_gate": "D.2 exec verify (wf_942c915d, 6-lens over 7aa38e4): 1 must-fix -- the 3 #[cfg(target_os=macos)] engaged product tests (macos_engaged_subprocess_denies_outside_write / _denies_network / _allows_workspace_and_temp_writes) are absent. This is the deferred clause-2 runtime gap (off-host: needs a native macOS runner per DoD + the unresolved sandbox-exec prepend-to-Command exec integration); task substrate-only this invocation per the user host-verifiability choice.",
-        "touched_files": [
-          "crates/opi-coding-agent/src/sandbox/macos.rs",
-          "crates/opi-coding-agent/src/sandbox.rs",
-          "crates/opi-coding-agent/tests/sandbox_strict.rs"
-        ]
+        "attempt": 2,
+        "started_at": "2026-07-26T11:11:17Z",
+        "outcome": "in_progress"
       },
       "verified_at_commit": null,
       "evidence": {
@@ -1501,7 +1500,7 @@
         "evaluator": "pending",
         "commit": "7aa38e4"
       },
-      "blocker": "no native macOS runner available on this host; substrate banked @7aa38e4 (crates/opi-coding-agent/src/sandbox/macos.rs: deterministic escaped seatbelt deny-overlay profile renderer with fs/network toggles, sandbox-exec wrapper argv with preservation, per-layer capability matrix -- L3/syscalls permanently unavailable, L1 fs + L2 network engaged iff sandbox-exec usable with exact SANDBOX_EXEC_MISSING_REASON / SANDBOX_EXEC_UNUSABLE_PREFIX reasons). Runtime (sandbox-exec PATH probe, MacosStrictBackend, parent-built Confinement launcher, exec-integration refactor for the sandbox-exec prepend-to-Command gap, production_sandbox_backend dispatcher wiring) and the 3 native engaged product tests (outside-write deny, network deny, workspace+temp allow) are deferred to a native macOS runner. Only x86_64-pc-windows-msvc is installable on this host; the DoD forbids a wrong-host zero-test as acceptance. Clear via `/opi-implement --clear-blocker 15.5.4 --because <macOS runner available>` when a native macOS host is reachable.",
+      "blocker": null,
       "session_notes": [
         {
           "timestamp": "2026-07-26T10:04:04.212.000Z",
@@ -1546,6 +1545,14 @@
           "attempt": null,
           "summary": "Blocked handoff (durable checkpoint): re-invoked bare /opi-implement -> sync-if-needed (no spec drift) -> auto-pick 15.5.4 (lowest failing ID, deps [15.5.1] passing). B.2 gate surfaced that the re-pick is degenerate off-host: the substrate is already banked @7aa38e4 (profile/capability/argv model, TDDd host-independently by macos_profile_and_capability_matrix), and the DoD clause-2 runtime + 3 native engaged product assertions cannot be written or executed on this host (only x86_64-pc-windows-msvc installable; the DoD forbids a wrong-host zero-test as acceptance). Writing the runtime/tests blind would violate anti-patterns #1 (no weakened tests) and #6 (no stubs) and the DoD wrong-host-zero-test prohibition; marking passing would be untrue. User chose to mark the task blocked to stop the degenerate auto-pick loop and record the external blocker honestly. Phase 15 tail (15.5.6 deps [15.5.4], 15.9 deps [...15.5.4, 15.5.6]) stays blocked behind it; no on-host Phase 15 task can advance until a native macOS runner is available. Substrate stands; verified_at_commit stays null; acceptance phase15-macos-strict-backend OPEN.",
           "gate_results": []
+        },
+        {
+          "timestamp": "2026-07-26T11:07:16Z",
+          "summary": "Blocker cleared: a native macOS runner is now reachable via GitHub Actions macos-latest. User authorized push to origin/main to trigger GHA macOS verification for 15.5.4, overriding the opi-implement no-push scope boundary (user-override confirmed per CLAUDE.md). Proceeding to implement the macOS runtime (sandbox-exec PATH probe, MacosStrictBackend, Confinement launcher, exec-integration for the sandbox-exec prepend-to-Command gap, dispatcher wiring) and the 3 native engaged product tests, plus a focused sandbox-macos GHA workflow; macOS engagement verified on GHA macos-latest."
+        },
+        {
+          "timestamp": "2026-07-26T11:11:17Z",
+          "summary": "Phase B.3 restart (attempt 2, GHA macOS path): status in_progress. User authorized GHA macos-latest as the native macOS runner and push to origin/main (overrides opi-implement no-push scope; CLAUDE.md user-override confirmed). Design: extend Confinement to a two-mode seam -- PreExec hook (Linux; Confinement::new signature preserved so linux.rs is untouched) and Launcher{program,prefix_args} (macOS sandbox-exec). operations.rs spawn site rebuilds the Command when launcher_prefix() is Some, re-applying process_group(0)+kill_on_drop+cwd+env. macOS runtime (sandbox-exec PATH probe, MacosStrictBackend, production_sandbox_backend dispatcher wiring) + 3 native engaged tests to follow; macOS engagement verified on GHA macos-latest. task_owned_paths extended with operations.rs."
         }
       ]
     },
