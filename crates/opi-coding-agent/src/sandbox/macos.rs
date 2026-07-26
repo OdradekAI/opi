@@ -313,13 +313,29 @@ pub fn build_macos_confinement(
     if !status.is_available() {
         return None;
     }
-    let ws = workspace.to_string_lossy().into_owned();
-    let tmp = std::env::temp_dir().to_string_lossy().into_owned();
+    // Canonicalize so the subpath exceptions match the resolved path seatbelt
+    // evaluates: on macOS `/var` and `/tmp` are symlinks into `/private/...`, and
+    // a non-canonical workspace exception (e.g. `/var/folders/...`) is matched
+    // against seatbelt's resolved `/private/var/folders/...` and silently denied.
+    let ws = canonicalize_for_profile(workspace);
+    let tmp = canonicalize_for_profile(&std::env::temp_dir());
     let profile = render_profile(&ws, &tmp, true, true);
     Some(super::Confinement::launcher(
         "sandbox-exec",
         vec!["-p".to_string(), profile],
     ))
+}
+
+/// Canonicalize a path for a seatbelt subpath rule (resolve symlinks like
+/// `/var` -> `/private/var`). Falls back to the verbatim path if the target does
+/// not exist (`canonicalize` requires existence); seatbelt then evaluates it
+/// verbatim.
+#[cfg(target_os = "macos")]
+fn canonicalize_for_profile(p: &Path) -> String {
+    match std::fs::canonicalize(p) {
+        Ok(c) => c.to_string_lossy().into_owned(),
+        Err(_) => p.to_string_lossy().into_owned(),
+    }
 }
 
 /// Production macOS strict backend. Probes `sandbox-exec` at construction and
