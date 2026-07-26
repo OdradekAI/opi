@@ -1529,9 +1529,53 @@ catalog 通过 checked 具体 wire 路由，并共享一个惰性凭据 source�
 
 ### 第十五阶段 - Safety & Sandbox
 
-状态：已设计；实现待定。设计：`docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md`。
+状态：已实现；pi-0.80.6 posture 对齐完成。历史设计：`docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md`。已交付机制经两份经审查的研究修正相比该设计有所收窄——`docs/research/2026-07-24-phase15-linux-l2-feasibility.md` 与 `docs/research/2026-07-24-project-trust-semantics-pi-claude-code-codex-cli.md`——在二者与 2026-07-11 设计分歧时，以这两份研究为权威来源。
 
-第十五阶段把 Safety/Sandbox 集群与按工具 Operations 缝合点提升为正式阶段。它为 `bash` 增加 OS 原生子进程树沙箱（Linux seccomp + Landlock、macOS `sandbox-exec`、Windows Job Object）作为 opt-in defense-in-depth——明确不是安全边界——带始终开启的 L0 tree-kill 基线；一个按工具的 `Operations` 缝合点（`FileOperations`/`BashOperations` 在 `opi-coding-agent`）分层位于 `PathPolicy` 之下，为沙箱在 local `BashOperations::exec` 内提供结构上正确的归宿；以及一个项目信任门（`ProjectTrustStore`、`--trust`/`--no-trust`、`AppState::AwaitingTrust`），门控项目本地资源（含适配器声明）的加载，关闭原生子进程爆炸半径缺口。opi 偏离 pi：不对未信任项目自动注入项目 `AGENTS.md`/`CLAUDE.md`。非目标：opi 自身 confinement、适配器 strict-confinement、远端后端，以及 nav-tool Operations。
+第十五阶段把 Safety/Sandbox 集群提升为正式阶段。它交付一个始终开启的 L0 子进程树 tree-kill 基线，外加 `bash` 的 opt-in `strict` 沙箱；一个为沙箱提供结构上正确归宿的按工具 `Operations` 缝合点；以及一个通过门控项目本地资源（含项目本地适配器声明）的*加载*来关闭原生子进程爆炸半径缺口的项目信任门。三个子系统均为 Rust 原生、位于 `opi-coding-agent`，并保持 construction-ownership 不变量：`opi-agent` 不获得任何沙箱、信任、UI 或 Operations 代码。该集群定位为 opt-in defense-in-depth——明确不是安全边界；不可信代码应放在容器或 VM 中（pi `security.md` 对齐）。
+
+沙箱只 confine `bash` 子进程树。L0 始终开启：Unix 上 `process_group(0)`、Windows 上 Job Object，二者均为 kill-on-close，因此脱离的子进程无法比 agent 存活更久。L1（文件系统）、L2（网络）与 L3（syscall）为 `[sandbox] mode = "strict"`（默认 `off`）下的 opt-in，`require = false`（fail-open-with-diagnostic）；`require = true` 为 CI/不可信场景 fail-closed。CLI 覆盖镜像 `--allow-mutating`：`--sandbox off|strict` 与 `--sandbox-require`。`off` 仍交付 L0 作为始终开启的正确性基线；`strict` 是按层 degrade 策略，不是 opi 自身 confinement。适配器只获得 L0；按适配器的能力声明是后续 follow-up。
+
+| 平台 | L0 | L1（FS） | L2（net） | L3（syscall） |
+|---|---|---|---|---|
+| Linux（x86_64、aarch64） | process group | Landlock（ABI 1 / 5.13+） | seccomp 新建 socket 门 + Landlock TCP（ABI 4 / 6.7+） | seccomp 危险 blocklist |
+| macOS | process group | `sandbox-exec` | `sandbox-exec` | 无 |
+| Windows | Job Object（`windows-sys` FFI） | 无 | 无 | 无 |
+
+Linux L2 是收窄的新建 socket 创建门，而非 2026-07-11 设计描述的六 syscall domain-filter：经典 seccomp 无法解引用 `sockaddr` 指针，因此只有 `socket()` 创建可按 domain 过滤。seccomp deny-overlay 对 `socket(AF_INET, ...)`、`socket(AF_INET6, ...)` 与 `socket(AF_NETLINK, ...)` 返回稳定的 `EPERM` errno，而 `socket(AF_UNIX, ...)` 与 Unix-domain IPC 所需的通用 socket 操作保持允许。在 Landlock ABI 4（Linux 6.7+；运行时经 `landlock_create_ruleset` 探测，绝不从内核版本推断）上，该层额外通过处理 `AccessNet::{BindTcp, ConnectTcp}` 且不设 allow-port 规则来拒绝 TCP `bind`/`connect`。即便 seccomp socket-creation 拒绝始终生效，网络*层*在 ABI < 4 时仍报告 `TemporarilyUnavailable`，因此 ABI-3 内核上 strict 的 `network` 请求会 fail-open（或在 `require = true` 下 fail-closed），而不是声称已拒绝。Landlock 文件系统（L1）在 ABI 1+ 生效，并为 workspace 与 temp 目录 carve write 例外。
+
+L3 是危险 blocklist，而非严格 allowlist。它拒绝 `open_by_handle_at`、`bpf`、`perf_event_open`、`ptrace`、`kexec_load`、`kexec_file_load`、`reboot`、`init_module`、`finit_module`、`delete_module`、`swapon`、`swapoff`、`acct` 与 `settimeofday`；在 x86_64 上额外拒绝 `iopl` 与 `ioperm`（aarch64/riscv64 上不存在）。`clone` 与 `unshare` 保持允许，因为 user-namespace unshare 是额外的 confinement，而非逃逸。seccompiler `TargetArch` 在运行时解析，任何没有已验证后端的架构都会跳过 strict confinement，因此只有 x86_64 与 aarch64 Linux 声称 L2/L3 生效。
+
+Linux L2 不声称完整的网络隔离。已记录的残留：已打开或继承的 INET/INET6/NETLINK fd 仍可使用（含经 `read`/`write`、`sendmsg`、`recvmsg`）；UDP、raw socket、NETLINK、地址范围以及已连接 socket 上的流量在 Landlock 的 TCP-only 策略之外；且 `io_uring` 发起的 socket/connect/accept 操作绕过已审计的 `socket(2)` 路径，是显式的未覆盖残留（`socketpair` 机械上无关——只有 `AF_UNIX` socket pair 有定义语义，而 `AF_UNIX` 不是被拒绝的 family）。一个真正的无外部网络边界需要 sanitized-fd launcher 加 network namespace，仍是 follow-up。
+
+macOS 经直接的 `sandbox-exec -p <templated profile>` deny-overlay 应用 L1/L2——`(allow default)`，随后 `(deny file-write* (subpath "/"))` 加 workspace 与 temp 写例外，以及 `(deny network*)`——经 `Confinement::launcher` 缝合点重新启动（`sandbox-exec` 即 helper，因此 opi 在此路径上不持有 `pre_exec`/`unsafe`）。macOS 上 L3 不可用。`sandbox-exec` 自 Sierra 2016 起被 soft-deprecate，但仍可用；strict 在不可用时 degrade 到 L0 并给出启动 diagnostic。
+
+Windows 仅 L0。Job Object 经直接的 `windows-sys` FFI 实现（`CreateJobObjectW` / `SetInformationJobObject` / `AssignProcessToJobObject` / `TerminateJobObject`），而非 wrapper crate；它设置 `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` 并有意省略 breakaway-OK 标志，使子进程无法经 `CREATE_BREAKAWAY_FROM_JOB` 逃逸。Windows 上没有 Landlock、seccomp 或 `sandbox-exec` 等价物；`strict` degrade 到 L0 并给出一次性启动 diagnostic。`CreateProcess-suspended -> Assign -> Resume` 竞态被接受并作为残留记录。
+
+Diagnostic 是增量 `&'static str` code——source `sandbox` 下的 `opi.sandbox.degraded`（`CODE_SANDBOX_DEGRADED`）与 `opi.sandbox.unavailable`（`CODE_SANDBOX_UNAVAILABLE`）——携带脱敏的 `{ layer, reason }` payload（绝不放入 command、env var、绝对路径或凭据）。临时缺口发出按命令的 `degraded` diagnostic 并按已生效基线继续；永久平台缺口在启动时发出一次 `unavailable` diagnostic，绝不按命令发出。
+
+`Operations` 缝合点是分层位于 `PathPolicy` 之下的纯 FS/exec 后端。`PathPolicy` 先运行（expand -> canonicalize -> verbatim-strip -> symlink-escape -> workspace-containment），并把已解析的路径交给 Operations；`FileOperations` 与 `BashOperations` 既不做路径解析也不做 confinement。两个分组 trait 位于 `opi-coding-agent`：`FileOperations`（read+write+edit：`read_file`/`write_file`/`mkdir`/`metadata`/`access`）与 `BashOperations`（`exec`）。`build_tools_with_sandbox` 经构造注入把 `Arc<dyn FileOperations>` 注入 read/write/edit，把 `Arc<dyn BashOperations>` 注入 bash；T4 沙箱位于 local `LocalBashOperations::exec` 内，由已 prepare 的 confinement 驱动，`BashTool::execute` 是不直接 `Command` spawn 的薄调用方。Nav 工具（`grep`/`find`/`ls`/`glob`）不接受 Operations 句柄：其 `ignore`-crate `WalkBuilder` 无法在不丢失 gitignore 语义的前提下干净地重定向到远端后端。`FileOperations` 不被沙箱——文件工具保持 `PathPolicy` 守卫，因为第十五阶段只 confine bash 子进程树。该缝合点仅交付 local 实现；SSH/container 远端后端属未来/示例（pi 对齐）。opi 侧 `unsafe` 仅限于 `tool/process_tree.rs` 中已审计的 `pre_exec`/Job-Object helper；生产路径 `sandbox.rs`、`tool/operations.rs` 与 `sandbox/windows.rs` 模块保持 `#![forbid(unsafe_code)]`。
+
+项目信任门门控的是项目本地资源的*加载*，而非工具执行。`ProjectTrustStore` 是扁平 `Map<canonical_path, bool>`，带 ancestor walk、`fs4` sidecar 锁与 acquire-then-reread，存储于 `{user_config_dir}/trust.json`——即 Windows 上 `%APPDATA%\opi\trust.json`、Unix 上 `~/.config/opi/trust.json`，与 `config.toml` 并列——无 schema 版本或元数据。它在会话启动时经 `prepare_project_startup` 恰好查询一次，发生在 `discover_resources` 消费任何项目层之前；不存在 live mid-session trust mutation，不存在内置 `/trust` 命令，不存在 project-resource reload。当一个项目解析为 `Untrusted` 时，项目 `.opi/config.toml` 被整体跳过（不是加载后过滤），项目 `.opi/{skills,fragments,themes,extensions}` 与项目级 `.opi/packages.toml` 适配器声明不加载（因此不可信项目的原生适配器子进程绝不启动，关闭爆炸半径缺口），项目 `AGENTS.md`/`CLAUDE.md` 不被自动注入 system prompt（有意偏离 pi——它们仍可经 `read` 工具读取，这是不受门控的工具执行）。用户全局资源、用户全局适配器与所有工具执行均不受门控。交互式 TUI 仅在首次进入含需信任资源的项目时弹出 `AppState::AwaitingTrust` 提示（Trust / Trust-parent / Trust-session / Deny / Deny-session）；非交互与 RPC 模式无法询问，除非 `--trust` 或 `default_project_trust = "always"`，否则默认 untrusted。优先级为 CLI（`--trust`/`--no-trust`）-> `project_trust` resolver hook -> store -> `[defaults] default_project_trust`（默认 `ask`，仅全局）-> ask。
+
+信任 resolver 经显式的 embedder-only API `ProjectTrustResolverRegistry::register` 注册；该 registry 仅通过该公开启动 API 接受确定顺序的注册，标准 CLI 交付空 registry（不注册任何 resolver），不存在 CLI `-e` 扩展标志，不存在原生 resolver 自动加载，且该 registry 在解析时被 seal，因此项目扩展（仅在信任解析后加载）无法影响其自身的信任决策。该 hook 暴露最小化的 pre-trust UI 表面（`select`/`confirm`/`input`/`notify`），且无法在同意前提升权限。
+
+第十五阶段显式保留以下边界：不 confine opi 自身（不可信代码应放在容器或 VM 中）；不对适配器做 strict-confinement（仅 L0）；不 confine 进程内文件工具（read/write/edit 保持 `PathPolicy` 守卫）或 nav 工具；不引入 SSH/container 远端 Operations 后端；不对工具执行做信任门控（信任决定项目资源*加载*什么，而非工具*做*什么）；不对未信任项目自动注入项目 `AGENTS.md`/`CLAUDE.md`；不引入内置 `/trust` slash 命令，不存在 live project-resource reload；不引入 CLI `-e` 标志，不存在原生 resolver 加载；不为 `trust.json` 引入 schema 版本或元数据；不声称完整的 Linux 网络隔离（inherited-fd、non-TCP 与 `io_uring` 残留保持显式）；以及不修改 provider 或 session schema。
+
+第十五阶段验收 trace：
+
+| 标准 | 负责任务 | 生产/证据 trace |
+|---|---:|---|
+| SC1 L0 bash tree 生命周期 + Windows 适配器赋值 | 15.4 | `sandbox_l0::bash_l0_kills_process_tree_in_off_mode` 证明 `off` 下 L0 tree-kill；`sandbox_l0::windows_bash_and_adapter_use_kill_on_close_job` 与 `adapter_host_mock::adapter_process_group_contract` 固定 `windows-sys` Job-Object L0。 |
+| SC2 沙箱配置生产路径 + fallback 策略 | 15.5.1 | `sandbox_strict` bin + `sandbox_config::invalid_sandbox_config_exits_before_provider_construction` 证明 `main -> resolve_config -> build_tools -> LocalBashOperations::exec`；`unavailable_layer_fail_open_and_fail_closed` 与 `permanent_gap_diagnostic_is_once_per_startup` 固定 `require` degrade 策略。 |
+| SC3 Linux strict 后端（收窄 L2 + L3） | 15.5.3 | `linux_af_unix_survives_socket_creation_gate`、`linux_new_inet_inet6_netlink_sockets_are_denied`、`linux_landlock_abi4_denies_tcp_bind_connect`、`linux_strict_backend_capability_matrix` 与 `sandbox_linux_backend::linux_alternate_network_surface_audit` 固定 seccomp socket 门、Landlock TCP 与 `io_uring`/`socketpair` 残留。 |
+| SC4 macOS strict 后端 | 15.5.4 | `macos_profile_and_capability_matrix` 与三个 `macos_engaged_subprocess_*` 测试经 `Confinement::launcher` 缝合点固定 `sandbox-exec` profile deny-overlay。 |
+| SC5 Windows strict fallback | 15.5.5 | `windows_strict_reports_l0_only` 与 `windows_strict_production_dispatch_reports_l0_only` 固定 strict->L0 degrade。 |
+| SC6 strict bash 平台矩阵 + 无 opi unsafe | 15.5.6 | 原生 CI 在 ubuntu/macos/windows 运行具名平台测试，并交叉编译全部六个 release triple；`#![forbid(unsafe_code)]` 在 `sandbox.rs` + `tool/operations.rs` 上断言。 |
+| SC7 Operations 生产路径 | 15.2, 15.3 | `tool_operations::operations_injection_reaches_tool_execution` 与 `tool_selection::build_tools_constructs_expected_default_set` 证明 `Arc<dyn>` 注入到达工具执行；`tool_operations` 覆盖 trait object-safety、mock dispatch 与 `PathPolicy`-before-backend 顺序。 |
+| SC8 未信任项目资源门 | 15.6, 15.7 | `trust_resource_gating` 证明未信任项目跳过每个受门控层（config、skills/fragments/themes/extensions、项目级适配器声明、项目 context 文件），而信任项目保留它们；`untrusted_project_adapter_declaration_never_spawns` 关闭原生子进程缺口。 |
+| SC9 headless 信任解析 + resolver 优先级 | 15.8.1 | `non_interactive_trust`、`rpc_trust`、`project_trust_startup` 与 `project_trust_store` 证明 headless 带覆盖默认 untrusted、RPC 绝不发信任提示，且标准 CLI 交付空 resolver registry，而显式 embedder resolver 赢得优先级。 |
+| SC10 交互式信任询问 | 15.8.2 | `opi-tui::trust_prompt` 与 `interactive_trust` 证明 `AppState::AwaitingTrust` 提示应用每个选择并先于项目启动副作用，且 predecided 路径绕过提示。 |
+| SC11 文档与非目标 guard | 15.9 | `phase15_safety_sandbox_docs` 在成对 EN/ZH 文档中固定当前沙箱/Operations/信任真相，并拒绝每个列出的非目标；phase-exit artifact audit 重跑第十五阶段验收矩阵并保留 command/stdout/stderr/exit-code 证据。 |
 
 ### 第十六阶段 - Agent Intelligence
 

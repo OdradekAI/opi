@@ -150,6 +150,9 @@ Common mode and session flags:
 | `--no-tools` | Disable all tools. |
 | `--no-builtin-tools` | Drop built-in tools while leaving extension/custom tools available. |
 | `--allow-mutating` | Allow `write`, `edit`, and `bash` in non-interactive/RPC runs. |
+| `--sandbox off\|strict` | Select the `bash` subprocess-tree sandbox; default `off` ships the always-on L0 tree-kill baseline. |
+| `--sandbox-require` | Fail closed when a configured `strict` layer is unavailable, instead of the default fail-open-with-diagnostic policy. |
+| `--trust` / `--no-trust` | One-shot project-trust override for the session; mutually exclusive. |
 | `--trace <PATH>` | Write an opt-in, redacted local trace envelope for a non-interactive or JSON run. |
 
 ## Providers
@@ -316,6 +319,46 @@ tools the agent can call; they are not an operating-system sandbox.
   default tests; and copying pi's provider-specific config file format remain
   deferred.
 - Dynamic Rust plugin loading from arbitrary extension paths is not supported.
+
+### Sandbox and project trust
+
+Phase 15 adds an opt-in `bash` subprocess-tree sandbox and a startup project-
+trust gate. Both are defense-in-depth, explicitly not a security boundary;
+untrusted code belongs in a container or VM.
+
+- The sandbox confines only the `bash` subprocess tree, not `opi` itself. An
+  always-on L0 baseline (`process_group(0)` on Unix, a kill-on-close Job Object
+  on Windows) ships in every mode. `[sandbox] mode = "strict"` (default `off`)
+  opts into L1/L2/L3 layers; `require = true` (default `false`) fails closed
+  when a layer cannot engage, otherwise `opi` proceeds at the engaged baseline
+  with a `opi.sandbox.degraded` diagnostic. CLI: `--sandbox off|strict`,
+  `--sandbox-require`.
+- Linux `strict` L2 is a narrowed new-socket creation gate: seccomp denies
+  `socket(AF_INET)`, `socket(AF_INET6)`, and `socket(AF_NETLINK)` while
+  preserving `socket(AF_UNIX)`, and Landlock ABI 4 (Linux 6.7+) additionally
+  denies TCP `bind`/`connect`. It does not claim complete network isolation:
+  inherited fds, non-TCP traffic, and `io_uring` remain documented residuals.
+  L3 denies a fixed kernel-handle danger blocklist (`clone`/`unshare` stay
+  allowed). macOS uses a `sandbox-exec` deny-overlay (L1/L2; L3 is n/a);
+  Windows is L0-only and `strict` degrades to L0 with a diagnostic.
+- File tools (`read`/`write`/`edit`) and nav tools (`grep`/`find`/`ls`/`glob`)
+  are not sandboxed; they stay `PathPolicy`-guarded. The sandbox lives inside
+  local `BashOperations::exec` behind the per-tool `Operations` seam, which
+  ships local impls only (no SSH/container remote backends).
+- Project trust is resolved once at startup, before any project resource
+  loads. The store is a flat `Map<canonical_path, bool>` at
+  `{user_config_dir}/trust.json` (`%APPDATA%\opi\trust.json` on Windows,
+  `~/.config/opi/trust.json` on Unix), with no schema version. When a project
+  is untrusted, its `.opi/config.toml`, `.opi/{skills,fragments,themes,
+  extensions}`, project-scope `.opi/packages.toml` adapter declarations, and
+  project `AGENTS.md`/`CLAUDE.md` do not load (the context files remain
+  readable via the `read` tool). Trust gates resource *loading*, not tool
+  execution. CLI: `--trust` / `--no-trust`; `[defaults]
+  default_project_trust = "ask"|"always"|"never"` (default `ask`, global-only).
+- There is no built-in `/trust` command, no live mid-session trust mutation,
+  and no project-resource reload. Trust resolvers are registered through an
+  explicit embedder-only API; the standard CLI ships an empty resolver
+  registry, exposes no CLI `-e` flag, and performs no native resolver loading.
 
 If you need stronger isolation, run `opi` inside a container, VM, or external
 sandbox appropriate for the tools and credentials you expose to it.
