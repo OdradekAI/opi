@@ -91,10 +91,28 @@ pub fn danger_syscalls() -> Vec<(&'static str, i64)> {
         ("acct", libc::SYS_acct),
         ("settimeofday", libc::SYS_settimeofday),
     ];
-    // x86-only IO-port syscalls; absent on aarch64/riscv64.
-    #[cfg(target_arch = "x86_64")]
-    v.extend_from_slice(&[("iopl", libc::SYS_iopl), ("ioperm", libc::SYS_ioperm)]);
+    // x86-only IO-port syscalls; absent on aarch64/riscv64. Always extend
+    // (with an empty slice on non-x86_64) so `v` stays mutably used on every
+    // arch -- a conditional `#[cfg(target_arch = "x86_64")]` mutation would
+    // leave `mut` unused on aarch64 and fail the build under `-D warnings`
+    // (the 15.5.6 cross-arch target-check matrix).
+    v.extend_from_slice(x86_io_port_syscalls());
     v
+}
+
+/// The x86 IO-port syscalls (`iopl`/`ioperm`) appended to the danger blocklist
+/// on `x86_64`; empty on every other supported Linux arch (aarch64/riscv64 omit
+/// them). Trampolined through a cfg-selected helper so [`danger_syscalls`]
+/// always mutates its vec and stays warning-clean under `-D warnings` on every
+/// target rather than gating the mutation itself.
+#[cfg(target_arch = "x86_64")]
+fn x86_io_port_syscalls() -> &'static [(&'static str, i64)] {
+    &[("iopl", libc::SYS_iopl), ("ioperm", libc::SYS_ioperm)]
+}
+
+#[cfg(not(target_arch = "x86_64"))]
+fn x86_io_port_syscalls() -> &'static [(&'static str, i64)] {
+    &[]
 }
 
 /// Mismatch action (no rule matches a syscall): allow. The filter is
