@@ -1860,7 +1860,7 @@
       "definition_of_done": "The shared dispatcher and all three platform backends are integrated through the production `CodingHarness::build_tools` → `LocalBashOperations::exec` → `sandbox::prepare` path with cfg-correct selection. `sandbox.rs` and `tool/operations.rs` retain file-level `#![forbid(unsafe_code)]`; the single audited Linux child-setup helper that wraps std `pre_exec` is the only Opi-side exception, and pre-existing test-only unsafe environment mutation elsewhere in the crate is outside this Phase 15 claim. The complete capability matrix proves Linux Landlock filesystem policy, an observed-ABI-gated seccomp new-socket reduction, optional ABI-4 TCP bind/connect, the socketpair/io_uring audit, explicit inherited-fd/non-TCP/alternate-surface residuals, and the exact L3 danger blocklist, macOS deny-overlay and L3/tool gaps, Windows truthful L0-only behavior, every fs/network/syscalls toggle, `require` fail-open/fail-closed semantics, one-time diagnostics, and unchanged L0 lifecycle. The existing native `ubuntu-latest`, `macos-latest`, and `windows-latest` CI coverage is strengthened with explicit sandbox product filters; each job must execute at least one passed platform test with zero failures and zero ignored/skipped tests and retain its log/artifact. A CI target-check matrix must compile `opi-coding-agent --all-targets` for all six supported release triples: x86_64/aarch64 Linux GNU, x86_64/aarch64 Apple Darwin, and x86_64/aarch64 Windows MSVC. A zero-test, skipped platform test, missing target result, or unavailable-only result keeps the relevant confinement criterion open; the Linux artifact must describe L2 as defense-in-depth rather than complete network isolation. The task records the three native execution results, six target-check results, and production call-site evidence for Phase 15 exit review; CI runtime claims remain unverified until a pushed commit produces those results.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "15.5.3",
         "15.5.4",
@@ -1976,7 +1976,8 @@
             "crates/opi-coding-agent/src/tool/operations.rs::LocalBashOperations::exec",
             "crates/opi-coding-agent/src/sandbox.rs::prepare"
           ],
-          "status": "open"
+          "status": "closed",
+          "verified_at_commit": "2b683cb67ad2e80af265bb1f0a3a194816398c1b"
         },
         {
           "id": "phase15-sandbox-no-opi-unsafe",
@@ -1990,7 +1991,8 @@
             "crates/opi-coding-agent/src/tool/operations.rs::LocalBashOperations::exec",
             "crates/opi-coding-agent/src/sandbox.rs::prepare"
           ],
-          "status": "open"
+          "status": "closed",
+          "verified_at_commit": "2b683cb67ad2e80af265bb1f0a3a194816398c1b"
         }
       ],
       "production_call_sites": [
@@ -2004,9 +2006,9 @@
         "crates/opi-coding-agent/src/sandbox.rs::prepare"
       ],
       "substrate_only": false,
-      "iteration_count": 0,
+      "iteration_count": 1,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "7701d5c69cae9d6cd2e4100faba82b87bb3bccba",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "Cargo.toml",
@@ -2022,11 +2024,79 @@
         "crates/opi-coding-agent/tests/tool_operations.rs",
         ".github/workflows/ci.yml"
       ],
-      "last_attempt": null,
-      "verified_at_commit": null,
-      "evidence": null,
+      "last_attempt": {
+        "attempt": 1,
+        "started_at": "2026-07-26T15:28:17Z",
+        "ended_at": "2026-07-26T15:28:17Z",
+        "outcome": "passing",
+        "failing_gate": null,
+        "touched_files": [
+          ".github/workflows/ci.yml",
+          "crates/opi-coding-agent/src/sandbox/linux.rs"
+        ]
+      },
+      "verified_at_commit": "2b683cb67ad2e80af265bb1f0a3a194816398c1b",
+      "evidence": {
+        "task": "15.5.6",
+        "dod_sha256": "0f866f5c3dbe76c77f56159e3c11708aa179f92119fb1026c2e2880e00f9eeed",
+        "verification": "cli-runtime; NATIVE CI acceptance PASSED on GHA (ci.yml run 30207584078, headSha 2b683cb, completed). OWNED JOBS 9/9 GREEN: Sandbox product (ubuntu-latest) linux_engaged_subprocess_denies_requested_access '1 passed; 0 failed; 0 ignored' + sandbox_linux_backend linux_alternate_network_surface_audit '1 passed; 0 failed; 0 ignored'; Sandbox product (macos-latest) 3x macos_engaged_subprocess_denies_outside_write / _denies_network / _allows_workspace_and_temp_writes, each '1 passed; 0 failed; 0 ignored'; Sandbox product (windows-latest) windows_strict_production_dispatch_reports_l0_only '1 passed; 0 failed; 0 ignored'; Target check 6/6 green (x86_64- and aarch64- unknown-linux-gnu / apple-darwin / pc-windows-msvc). clippy 3/3 OS green; doc + doctest + fmt green. Each native job proves >=1 passed platform test with zero failures and zero ignored/skipped (DoD clause; logs retained as sandbox-product-<os> artifacts). The 6-triple target-check matrix compiles opi-coding-agent --all-targets for every supported release triple. NON-OWNED test(os) failures are pre-existing debt in files OUTSIDE 15.5.6 task_owned_paths (Phase 14+15 carry-over, scoped-decision): ubuntu = src/main.rs sandbox_strict_* inline tests (15.5.3-owned, LinuxStrict vs CI ubuntu kernel); windows = tests/tool_operations.rs path-relativization (0.7.1, Windows 8.3 short-name); macos = src/native_keyring.rs keychain tests (4 tests, Phase 14 Provider/Auth carry-over). None owned by 15.5.6. Cross-arch defect surfaced+fixed by the matrix: danger_syscalls() in sandbox/linux.rs had a cfg(target_arch=x86_64)-gated mutation leaving `mut` unused on aarch64 -> -D warnings hard-error on aarch64-unknown-linux-gnu; fixed via always-extend x86_io_port_syscalls() cfg-selected helper (mut consumed on every arch, no #[allow]). Local Windows host gates green: forbid(unsafe_code) grep on sandbox.rs+operations.rs; cargo fmt --check --all; cargo clippy -p opi-coding-agent --all-targets -D warnings; RUSTDOCFLAGS=-D warnings cargo doc -p opi-coding-agent --no-deps; windows_strict test 1 passed 0 ignored. Production integration (DoD clause 1) already wired by 15.5.1-15.5.5: harness.rs:797 prepare_production -> build_tools_with_sandbox; operations.rs:592 pre_exec (Linux) + :608 launcher rebuild (macOS); sandbox.rs:40 + operations.rs:32 #![forbid(unsafe_code)]. D.2 exec verify wf_25f388f8-52a (7 agents, 432k tok over 2b683cb cumulative diff 7701d5c..2b683cb): 0 must-fix, 0 rejected, 1 low-severity flagged-for-human (evidence-truthfulness) = the prior NON-OWNED attribution prose mis-attributed the macOS test(os) failure to sandbox_strict_*/tool_operations when it is actually native_keyring.rs (Phase 14); CORRECTED in this evidence. The verified conclusion (NOT 15.5.6-owned) was already correct.",
+        "evaluator": "passed",
+        "commit": "2b683cb67ad2e80af265bb1f0a3a194816398c1b"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-07-26T14:38:36Z",
+          "summary": "Phase B.2 CONFIRMED for 15.5.6 (strict sandbox matrix integration and acceptance). Two user decisions recorded: (1) PUSH OVERRIDE -- user authorized push to origin/main to drive GHA native CI evidence on all 3 OS families + the 6-triple target-check matrix (mirrors the 15.5.4 GHA path; CLAUDE.md user-override rule; opi-implement no-push scope overridden for this task). (2) CI scope = SCOPED sandbox-product job -- add a new CI job that runs ONLY the named sandbox acceptance tests per platform, sidestepping any pre-existing full-workspace test-matrix debt; existing test matrix left as-is; any surfaced debt recorded as Phase 15 carry-over, NOT fixed under 15.5.6 (touches only owned path ci.yml + sandbox/tests). Code investigation: the production integration the DoD names is ALREADY wired by component tasks 15.5.1-15.5.5 -- harness.rs:797 prepare_production -> build_tools_with_sandbox; operations.rs:32 #![forbid(unsafe_code)] + :592 pre_exec (Linux) + :608 launcher rebuild (macOS); sandbox.rs:40 #![forbid(unsafe_code)] + production_sandbox_backend cfg-selects Linux/macOS/Windows. All 6 named acceptance tests exist. So the remaining body is ACCEPTANCE only: (a) scoped sandbox-product CI job [ubuntu/macos/windows] with >=1 passed platform test, zero failures, zero ignored/skipped, log artifact; (b) 6-triple target-check matrix (cargo check --target <triple> -p opi-coding-agent --all-targets); (c) record 3 native + 6 target-check results + production call-site evidence. start_commit=7701d5c; baseline_dirty_files=[] (clean tree).",
+          "gate_results": []
+        },
+        {
+          "timestamp": "2026-07-26T15:28:17Z",
+          "summary": "Phase D/E COMPLETE at 2b683cb: native CI acceptance SATISFIED for all three OS families + the 6-triple target-check matrix. ci.yml run 30207584078 owned jobs 9/9 green (sandbox_product ubuntu/macos/windows + target_check 6/6); each native platform job shows >=1 passed, 0 failed, 0 ignored. Deliverable: two additive ci.yml jobs -- sandbox_product (3-OS matrix, named cfg-gated acceptance tests per platform + linux alternate-surface audit, log artifact) and target_check (6-triple matrix, runner-family-matched + cross-gcc for aarch64-linux). Plus a cross-arch fix in sandbox/linux.rs (danger_syscalls always-extend helper) the matrix surfaced. Production integration already wired by 15.5.1-15.5.5. D.2 exec verify wf_25f388f8-52a: 0 must-fix, 1 low-flagged (evidence-truthfulness -- macOS test(os) failure is native_keyring.rs Phase 14 carry-over, not sandbox_strict_*/tool_operations as the prior prose claimed; corrected here; conclusion NOT-15.5.6-owned was already correct). Push override (mirrors 15.5.4) recorded in B.3 note. NON-OWNED test(os) failures = Phase 14+15 carry-over (ubuntu main.rs sandbox_strict_* 15.5.3; windows tool_operations 0.7.1; macos native_keyring Phase 14). Flipping status=passing, verified_at_commit=2b6838c, both acceptance scenarios closed.",
+          "gate_results": [
+            {
+              "gate": "forbid(unsafe_code) sandbox.rs + operations.rs",
+              "passed": true,
+              "detail": "module-level forbid present"
+            },
+            {
+              "gate": "cargo fmt --check --all",
+              "passed": true,
+              "detail": "clean"
+            },
+            {
+              "gate": "cargo clippy -p opi-coding-agent --all-targets -D warnings (Windows)",
+              "passed": true,
+              "detail": "clean"
+            },
+            {
+              "gate": "RUSTDOCFLAGS=-D warnings cargo doc -p opi-coding-agent --no-deps",
+              "passed": true,
+              "detail": "clean"
+            },
+            {
+              "gate": "GHA sandbox_product (ubuntu/macos/windows) run 30207584078",
+              "passed": true,
+              "detail": "each >=1 passed; 0 failed; 0 ignored (named acceptance tests)"
+            },
+            {
+              "gate": "GHA target_check 6 triples run 30207584078",
+              "passed": true,
+              "detail": "6/6 green (x86_64/aarch64 linux-gnu/apple-darwin/windows-msvc)"
+            },
+            {
+              "gate": "GHA clippy 3/3 OS + doc + doctest + fmt",
+              "passed": true,
+              "detail": "green"
+            },
+            {
+              "gate": "D.2 exec verify wf_25f388f8-52a (7 agents over 7701d5c..2b683cb)",
+              "passed": true,
+              "detail": "0 must-fix; 0 rejected; 1 low-flagged (evidence-truthfulness, corrected)"
+            }
+          ]
+        }
+      ]
     },
     {
       "id": "15.6",
@@ -4359,6 +4429,16 @@
       "flagged_for_human": 0,
       "rejected": 0,
       "summary": "8-agent 548k-token exec verify over HEAD 8832a14. 0 code/spec defects; 0 rejected. 1 must-fix (medium, evidence-truthfulness): the canonical ledger was frozen at the cbac5bc/d625b66 checkpoint recording the GHA macos-latest gate as PENDING after GHA run 30201674810 (cf66d25) had already gone green (9 passed, 3 engaged). Corrected by the flip checkpoint (status=passing, accurate evidence, acceptance=closed)."
+    },
+    {
+      "run_id": "wf_25f388f8-52a",
+      "task": "15.5.6",
+      "timestamp": "2026-07-26T15:28:17Z",
+      "stage": "exec",
+      "must_fix": 0,
+      "flagged_for_human": 1,
+      "rejected": 0,
+      "summary": "7-agent 432k-token exec verify over the cumulative task diff 7701d5c..2b683cb (3 commits: ci.yml sandbox_product+target_check, ci.yml fixes, sandbox/linux.rs cross-arch fix). 0 must-fix; 0 rejected. 1 low-severity flagged-for-human (evidence-truthfulness): the NON-OWNED attribution prose mis-attributed the macOS test(os) failure to sandbox_strict_*/tool_operations when it is actually native_keyring.rs (Phase 14 Provider/Auth keychain carry-over, 4 tests). The verified conclusion (NOT 15.5.6-owned -- native_keyring.rs is outside task_owned_paths) was already correct; the prose was corrected in the E.2 evidence."
     }
   ]
 }
