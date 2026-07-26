@@ -70,3 +70,78 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo doc --workspace --no-deps
+
+  # Phase 15 task 15.5.6: scoped strict-sandbox product acceptance on the three
+  # native release OSes. Runs ONLY the named cfg-gated acceptance tests per
+  # platform (plus the Linux alternate-network-surface audit) so the job's
+  # pass signal maps directly to the DoD clause "each native job executes >=1
+  # passed platform test with zero failures and zero ignored/skipped". These
+  # binaries have no `#[ignore]` tests, so a green run is zero-ignored by
+  # construction. Log artifact retained per DoD. The full-workspace `test`
+  # matrix above remains unchanged; any pre-existing workspace-test debt is
+  # Phase 15 carry-over, not owned by 15.5.6.
+  sandbox_product:
+    name: Sandbox product (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            tests: linux_engaged_subprocess_denies_requested_access
+            extra: --test sandbox_linux_backend linux_alternate_network_surface_audit
+          - os: macos-latest
+            tests: macos_engaged_subprocess_denies_outside_write macos_engaged_subprocess_denies_network macos_engaged_subprocess_allows_workspace_and_temp_writes
+            extra: ""
+          - os: windows-latest
+            tests: windows_strict_production_dispatch_reports_l0_only
+            extra: ""
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Scoped sandbox acceptance tests
+        shell: bash
+        run: |
+          set -uo pipefail
+          mkdir -p logs
+          status=0
+          cargo test -p opi-coding-agent --test sandbox_strict --no-fail-fast ${{ matrix.tests }} \
+            2>&1 | tee "logs/sandbox-product-${{ matrix.os }}.log" || status=$?
+          if [ -n "${{ matrix.extra }}" ]; then
+            cargo test -p opi-coding-agent --no-fail-fast ${{ matrix.extra }} \
+              2>&1 | tee -a "logs/sandbox-product-${{ matrix.os }}.log" || status=$?
+          fi
+          exit $status
+      - name: Upload sandbox-product log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sandbox-product-${{ matrix.os }}
+          path: logs/
+
+  # Phase 15 task 15.5.6: compile-check the production sandbox selection path
+  # for all six supported release triples. `cargo check` (no link) + the
+  # rustup-supplied target std is sufficient to prove the cfg-selected
+  # opi-coding-agent backends compile for every release target. RUSTFLAGS=-D
+  # warnings (workflow env) denies warnings across all targets.
+  target_check:
+    name: Target check (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - x86_64-unknown-linux-gnu
+          - aarch64-unknown-linux-gnu
+          - x86_64-apple-darwin
+          - aarch64-apple-darwin
+          - x86_64-pc-windows-msvc
+          - aarch64-pc-windows-msvc
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo check --target ${{ matrix.target }} -p opi-coding-agent --all-targets
