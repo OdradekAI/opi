@@ -109,6 +109,7 @@ fn process_alive(pid: u32) -> bool {
     }
 }
 
+#[cfg(windows)]
 async fn await_process_dead_windows(pid: u32, timeout_ms: u64) -> bool {
     let start = std::time::Instant::now();
     loop {
