@@ -6,11 +6,15 @@
 //! confinement: the per-platform L1/L2/L3 backends (Landlock+seccomp on Linux,
 //! `sandbox-exec` on macOS, L0-only on Windows) plug in by implementing
 //! [`StrictBackend`]. Task 15.5.5 has landed the Windows L0-only backend in
-//! `sandbox/windows.rs` (a permanent platform gap); Linux and macOS remain
-//! not-yet-wired stubs until 15.5.3 / 15.5.4, so on those targets the production
-//! backend selected by [`prepare_production`] truthfully reports every strict
-//! layer as temporarily unavailable and `strict` mode flows through the shared
-//! fail-open / fail-closed policy here.
+//! `sandbox/windows.rs` (a permanent platform gap); task 15.5.3 has landed the
+//! Linux backend (`sandbox/linux.rs`, seccomp + Landlock, selected by
+//! [`prepare_production`] on Linux). The macOS backend's host-independent
+//! substrate (profile/capability/argv model) lives in `sandbox/macos.rs` (task
+//! 15.5.4); its runtime (sandbox-exec probe, Confinement launcher, dispatcher
+//! wiring) is deferred to a native macOS runner, so on macOS the production
+//! backend selected by [`prepare_production`] is still the not-yet-wired stub
+//! that truthfully reports every strict layer as temporarily unavailable and
+//! `strict` mode flows through the shared fail-open / fail-closed policy here.
 //!
 //! The resolver is pure and host-independent: every policy branch is covered by
 //! inline tests that inject a fake [`StrictBackend`], so verification needs no
@@ -50,6 +54,12 @@ mod windows;
 /// Linux strict backend (seccomp deny-overlay + Landlock); landed in task 15.5.3.
 #[cfg(target_os = "linux")]
 pub mod linux;
+
+/// macOS strict backend substrate (profile/capability/argv model); landed in task
+/// 15.5.4. Host-independent pure Rust — no cfg gate — so the profile/capability
+/// invariants are TDD'd on any host. The macOS *runtime* (sandbox-exec probe,
+/// Confinement launcher, dispatcher wiring) is deferred to a native macOS runner.
+pub mod macos;
 
 /// One strict-sandbox layer. The names match the `[sandbox]` TOML toggles
 /// (`fs`/`network`/`syscalls`) so diagnostics carry the same identifier a user
@@ -334,8 +344,10 @@ pub fn prepare_production(config: &SandboxConfig, workspace: &std::path::Path) -
 /// - **Linux (15.5.3)**: `LinuxStrictBackend` queries the observed Landlock ABI
 ///   and reports per-layer engagement; it builds the seccomp+Landlock confinement
 ///   plan from `workspace` when every requested layer is available.
-/// - **macOS (15.5.4)**: not yet wired — `NotYetWiredBackend` reports every strict
-///   layer as temporarily unavailable, so strict fails open honestly.
+/// - **macOS (15.5.4)**: substrate landed (`sandbox/macos.rs` profile/capability/
+///   argv model, host-independent); runtime not yet wired — `NotYetWiredBackend`
+///   reports every strict layer as temporarily unavailable, so strict fails open
+///   honestly until the macOS-runner follow-up attaches `MacosStrictBackend`.
 /// - **Windows (15.5.5)**: `L0OnlyBackend` — every strict layer is a permanent
 ///   platform gap.
 /// - Any other target is permanently unsupported.

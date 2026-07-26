@@ -28,9 +28,12 @@ use opi_coding_agent::sandbox::{
     LayerAvailability, PreparedSandbox, SandboxLayer, StrictBackend, StrictOutcome, prepare,
     prepare_production,
 };
-use opi_coding_agent::tool::{
-    BashOpError, BashOperations, BashRequest, BashResult, LocalBashOperations,
-};
+use opi_coding_agent::tool::{BashOpError, BashOperations, BashRequest, LocalBashOperations};
+// BashResult is referenced only by the Linux engaged-product test helper
+// (`assert_probe_exit`), so the import is gated to match its cfg-gated use;
+// importing it unguarded trips `unused_imports` (and `-D warnings`) on non-Linux.
+#[cfg(target_os = "linux")]
+use opi_coding_agent::tool::BashResult;
 use tokio_util::sync::CancellationToken;
 
 // ---------------------------------------------------------------------------
@@ -513,6 +516,179 @@ async fn windows_strict_production_dispatch_reports_l0_only() {
     assert!(
         text2.contains("hello-odradek"),
         "require=false command must produce output, got: {text2}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Phase 15 task 15.5.4 — macOS sandbox-exec strict backend (host-independent
+// substrate). The profile/capability/argv model is pure Rust (no macOS kernel,
+// no elevated privileges); the runtime (sandbox-exec probe, Confinement launcher
+// integration, dispatcher wiring) plus the three native engaged product
+// assertions run on a macOS runner only. This test proves the substrate
+// invariants on every host.
+// ---------------------------------------------------------------------------
+
+/// The macOS strict substrate: the seatbelt deny-overlay profile (deterministic
+/// and escaped, with fs/network toggles), argv preservation under the sandbox-exec
+/// wrapper, and the per-layer capability matrix (L3/syscalls permanently
+/// unavailable; L1 fs and L2 network engaged when `sandbox-exec` is usable, with
+/// exact missing/unusable reasons). Pure host-independent coverage of the DoD
+/// profile tests: path escaping, fs/network toggles, unavailable-tool behavior,
+/// and argv preservation.
+#[test]
+fn macos_profile_and_capability_matrix() {
+    use opi_coding_agent::sandbox::LayerAvailability;
+    use opi_coding_agent::sandbox::macos;
+
+    // --- capability matrix ---
+    // sandbox-exec available -> fs + network engage; syscalls ALWAYS permanently
+    // unavailable (sandbox-exec is L1/L2 only).
+    let cap_avail = macos::macos_strict_capability(&macos::SandboxExecStatus::Available);
+    assert_eq!(
+        cap_avail.fs,
+        LayerAvailability::Engaged,
+        "fs engages when sandbox-exec is available"
+    );
+    assert_eq!(
+        cap_avail.network,
+        LayerAvailability::Engaged,
+        "network engages when sandbox-exec is available"
+    );
+    match &cap_avail.syscalls {
+        LayerAvailability::PermanentlyUnavailable { reason } => {
+            assert!(
+                reason.contains("L1/L2"),
+                "L3 reason must state macOS is L1/L2-only, got: {reason}"
+            );
+        }
+        other => panic!("syscalls must be PermanentlyUnavailable on macOS, got {other:?}"),
+    }
+
+    // sandbox-exec missing -> fs + network temporarily unavailable with the
+    // EXACT missing reason; syscalls still permanently unavailable (independent
+    // of the helper).
+    let cap_miss = macos::macos_strict_capability(&macos::SandboxExecStatus::Missing);
+    match &cap_miss.fs {
+        LayerAvailability::TemporarilyUnavailable { reason } => {
+            assert_eq!(reason, macos::SANDBOX_EXEC_MISSING_REASON);
+        }
+        other => panic!("missing helper: fs must be TemporarilyUnavailable, got {other:?}"),
+    }
+    match &cap_miss.network {
+        LayerAvailability::TemporarilyUnavailable { reason } => {
+            assert_eq!(reason, macos::SANDBOX_EXEC_MISSING_REASON);
+        }
+        other => panic!("missing helper: network must be TemporarilyUnavailable, got {other:?}"),
+    }
+    assert!(
+        matches!(
+            cap_miss.syscalls,
+            LayerAvailability::PermanentlyUnavailable { .. }
+        ),
+        "syscalls stays permanently unavailable regardless of sandbox-exec"
+    );
+
+    // sandbox-exec unusable -> exact unusable reason.
+    let cap_unus = macos::macos_strict_capability(&macos::SandboxExecStatus::Unusable(
+        "probe exited 1".to_string(),
+    ));
+    match &cap_unus.fs {
+        LayerAvailability::TemporarilyUnavailable { reason } => {
+            assert!(
+                reason.starts_with(macos::SANDBOX_EXEC_UNUSABLE_PREFIX),
+                "unusable reason must use the stable prefix, got: {reason}"
+            );
+            assert!(reason.contains("probe exited 1"));
+        }
+        other => panic!("unusable helper: fs must be TemporarilyUnavailable, got {other:?}"),
+    }
+
+    // --- profile rendering: deny-overlay + toggles ---
+    // Both layers on -> full deny-overlay (root deny + workspace/temp exceptions)
+    // plus the network deny.
+    let p_both = macos::render_profile("/Users/a/ws", "/tmp", true, true);
+    assert!(
+        p_both.contains("(version 1)"),
+        "profile has the seatbelt version header"
+    );
+    assert!(
+        p_both.contains("(deny file-write* (subpath \"/\"))"),
+        "deny-overlay root must be present when fs engaged"
+    );
+    assert!(
+        p_both.contains("(allow file-write* (subpath \"/Users/a/ws\"))"),
+        "workspace write exception must be present"
+    );
+    assert!(
+        p_both.contains("(allow file-write* (subpath \"/tmp\"))"),
+        "temp write exception must be present"
+    );
+    assert!(
+        p_both.contains("(deny network*)"),
+        "network deny must be present when network engaged"
+    );
+
+    // fs disabled -> no file-write deny overlay (network still denied).
+    let p_no_fs = macos::render_profile("/Users/a/ws", "/tmp", false, true);
+    assert!(
+        !p_no_fs.contains("file-write*"),
+        "fs disabled must omit the write overlay"
+    );
+    assert!(
+        p_no_fs.contains("(deny network*)"),
+        "network independent of fs"
+    );
+
+    // network disabled -> no network deny (fs overlay still present).
+    let p_no_net = macos::render_profile("/Users/a/ws", "/tmp", true, false);
+    assert!(
+        p_no_net.contains("file-write*"),
+        "fs overlay independent of network"
+    );
+    assert!(
+        !p_no_net.contains("network*"),
+        "network disabled must omit the network deny"
+    );
+
+    // --- profile rendering: escaping ---
+    // Special chars in the workspace path are backslash-escaped so the raw path
+    // never appears verbatim and seatbelt `${var}` expansion is neutralized.
+    let nasty = "/Users/a/we\"rd$\\${EVIL}";
+    let p_escaped = macos::render_profile(nasty, "/tmp", true, false);
+    assert!(
+        !p_escaped.contains(nasty),
+        "raw special-char workspace must not appear verbatim (escaping applied)"
+    );
+    assert!(
+        p_escaped.contains("\\\""),
+        "double-quote must be backslash-escaped"
+    );
+    assert!(
+        p_escaped.contains("\\\\"),
+        "backslash must be backslash-escaped"
+    );
+    assert!(
+        p_escaped.contains("\\$"),
+        "dollar must be backslash-escaped (neutralizes seatbelt ${{var}} expansion)"
+    );
+
+    // --- argv preservation ---
+    // The wrapper prepends `sandbox-exec -p <profile>` and preserves the original
+    // program + args verbatim in the tail.
+    let profile = "(version 1)\n(deny network*)\n";
+    let argv =
+        macos::build_wrapped_argv(profile, "bash", &["-c".to_string(), "echo hi".to_string()]);
+    assert_eq!(
+        argv,
+        vec![
+            "sandbox-exec".to_string(),
+            "-p".to_string(),
+            profile.to_string(),
+            "bash".to_string(),
+            "-c".to_string(),
+            "echo hi".to_string(),
+        ],
+        "wrapper argv must be sandbox-exec -p <profile> followed by the verbatim program+args"
     );
 }
 
