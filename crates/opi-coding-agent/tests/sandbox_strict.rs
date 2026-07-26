@@ -961,8 +961,10 @@ fn assert_probe_exit(result: &BashResult, expected: i32, ctx: &str) {
     assert_eq!(
         result.exit_code,
         Some(expected),
-        "{ctx}: expected probe exit {expected}, got {:?}",
-        result.exit_code
+        "{ctx}: expected probe exit {expected}, got {:?}\n--- probe stdout ---\n{}\n--- probe stderr ---\n{}",
+        result.exit_code,
+        String::from_utf8_lossy(&result.stdout),
+        String::from_utf8_lossy(&result.stderr),
     );
 }
 
@@ -1287,6 +1289,16 @@ async fn macos_engaged_subprocess_denies_network() {
 async fn macos_engaged_subprocess_allows_workspace_and_temp_writes() {
     let workspace = tempfile::tempdir().unwrap();
     macos_engaged::assert_fs_network_engaged(workspace.path());
+    eprintln!(
+        "DIAG workspace={:?} canon={:?}",
+        workspace.path(),
+        std::fs::canonicalize(workspace.path())
+    );
+    eprintln!(
+        "DIAG temp_dir={:?} canon={:?}",
+        std::env::temp_dir(),
+        std::fs::canonicalize(std::env::temp_dir())
+    );
     let probe = macos_engaged::build_probe(workspace.path());
     let ops = macos_engaged::engaged_ops(workspace.path());
 
