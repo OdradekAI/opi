@@ -1380,7 +1380,7 @@
       "definition_of_done": "The macOS strict backend renders a deterministic, escaped deny-overlay profile and wraps the requested bash command with `sandbox-exec -p`; the profile permits configured workspace/temp writes, preserves required process behavior, and optionally denies network. L3/syscall confinement is reported unavailable, and a missing or unusable `sandbox-exec` returns exact layer/reason failures to the shared 15.5.1 policy. Profile tests cover path escaping, fs/network toggles, unavailable-tool behavior, and argv preservation without requiring elevated privileges; on an engaged native macOS host, separate factory-built BashTool tests through the production dispatcher prove an outside-allowlist write is denied, a network side effect is denied, and configured workspace plus temporary writes remain allowed. A native macOS runner must execute all three platform product assertions with at least one passed test per assertion, zero failures, and zero ignored/skipped tests; a wrong-host zero-test or skipped result is not acceptance evidence.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "in_progress",
+      "status": "failing",
       "depends_on": [
         "15.5.1"
       ],
@@ -1429,6 +1429,11 @@
           "field": "task_owned_paths",
           "reason": "exec-integration for the macOS sandbox-exec Launcher confinement: operations.rs::exec is the spawn site that must rebuild the Command (sandbox-exec -p <profile> prepended to sh -c <command>) when the macOS Confinement::Launcher is attached, re-applying configure_tree (process_group(0)) + kill_on_drop + current_dir + env. Not in original owned paths; required by the DoD clause-2 runtime.",
           "source": "design: sandbox-exec must prepend to the spawn Command (substrate doc sandbox/macos.rs)"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Focused GHA workflow added as a task deliverable: it runs the native macOS engaged product tests on macos-latest (the DoD-mandated native runner for this task). Written alongside the runtime+tests; owned so the commit gate can stage it with the implementation.",
+          "source": "user-authorized GHA macos-latest verification path (CLAUDE.md user-override)"
         }
       ],
       "tier": "cli-runtime",
@@ -1477,7 +1482,7 @@
         "crates/opi-coding-agent/src/sandbox/macos.rs::prepare (planned)"
       ],
       "substrate_only": false,
-      "iteration_count": 0,
+      "iteration_count": 1,
       "max_iterations": 5,
       "start_commit": "05a0100",
       "baseline_dirty_files": [],
@@ -1485,20 +1490,30 @@
         "crates/opi-coding-agent/src/sandbox/macos.rs",
         "crates/opi-coding-agent/tests/sandbox_strict.rs",
         "crates/opi-coding-agent/src/sandbox.rs",
-        "crates/opi-coding-agent/src/tool/operations.rs"
+        "crates/opi-coding-agent/src/tool/operations.rs",
+        ".github/workflows/sandbox-macos.yml"
       ],
       "last_attempt": {
         "attempt": 2,
         "started_at": "2026-07-26T11:11:17Z",
-        "outcome": "in_progress"
+        "ended_at": "2026-07-26T11:28:02Z",
+        "outcome": "failing",
+        "failing_gate": "macOS engaged product tests (3 #[cfg(target_os=macos)]) not yet verified on a native runner -- they cfg out on Windows. Runtime + tests + GHA workflow landed at cbac5bc; pending GHA macos-latest run of sandbox-macos.yml, then D.2 exec verify before any passing flip.",
+        "touched_files": [
+          "crates/opi-coding-agent/src/sandbox.rs",
+          "crates/opi-coding-agent/src/sandbox/macos.rs",
+          "crates/opi-coding-agent/src/tool/operations.rs",
+          "crates/opi-coding-agent/tests/sandbox_strict.rs",
+          ".github/workflows/sandbox-macos.yml"
+        ]
       },
       "verified_at_commit": null,
       "evidence": {
         "task": "15.5.4",
         "dod_sha256": "c900a8f17dc2c199152d82f8fd3fc3d64302f3fca5e7911f4a9af5c8f8b414c8",
-        "verification": "cli-runtime; SUBSTRATE-ONLY delivery (user host-verifiability choice: implement macOS substrate now, leave failing). D.3 crate gates green on Windows: fmt clean; clippy -p opi-coding-agent --all-targets -D warnings clean; RUSTDOCFLAGS=-D warnings cargo doc -p opi-coding-agent clean; cargo test --test sandbox_strict 8/8 incl. the new host-independent macos_profile_and_capability_matrix. D.2 exec verify wf_942c915d-bc9 (6-lens deep, 11 agents, 725k tokens over commit 7aa38e4): 1 must-fix (3 native macOS engaged product tests absent -- the deferred clause-2 runtime, off-host per DoD), 0 flagged_for_human, 3 rejected (the runtime-wiring / NotYetWiredBackend / exact-reason-not-in-production findings, correctly recognized by the synthesizer as the transparently-declared, DoD-prescribed partial-landing deferral, not hidden defects). Substrate (profile renderer + escaping + toggles, argv wrapper, capability matrix, exact missing/unusable reasons) is sound; the must-fix is the same off-host clause-2 gap as the rejected findings (its own suggested_fix concedes the task stays failing until a native macOS runner). NOT D.2-clean -> footer stays Opi-Evaluator: pending, no passing flip. Acceptance phase15-macos-strict-backend OPEN. Native macOS product assertions + runtime wiring deferred to a macOS runner.",
+        "verification": "cli-runtime; runtime + engaged tests + GHA workflow landed at cbac5bc. D.3 host gates green on Windows: fmt clean; clippy -p opi-coding-agent --all-targets -D warnings clean; cargo test --test sandbox_strict 8/8 host-independent (incl. macos_profile_and_capability_matrix substrate + the relaxed production_backend_classifies_current_platform_truthfully). The 3 macOS engaged product tests are #[cfg(target_os=macos)] and cfg out on Windows -- NOT acceptance evidence. Native macOS verification pending the GHA macos-latest run of sandbox-macos.yml; D.2 exec verify runs after that run is green.",
         "evaluator": "pending",
-        "commit": "7aa38e4"
+        "commit": "cbac5bc"
       },
       "blocker": null,
       "session_notes": [
@@ -1553,6 +1568,32 @@
         {
           "timestamp": "2026-07-26T11:11:17Z",
           "summary": "Phase B.3 restart (attempt 2, GHA macOS path): status in_progress. User authorized GHA macos-latest as the native macOS runner and push to origin/main (overrides opi-implement no-push scope; CLAUDE.md user-override confirmed). Design: extend Confinement to a two-mode seam -- PreExec hook (Linux; Confinement::new signature preserved so linux.rs is untouched) and Launcher{program,prefix_args} (macOS sandbox-exec). operations.rs spawn site rebuilds the Command when launcher_prefix() is Some, re-applying process_group(0)+kill_on_drop+cwd+env. macOS runtime (sandbox-exec PATH probe, MacosStrictBackend, production_sandbox_backend dispatcher wiring) + 3 native engaged tests to follow; macOS engagement verified on GHA macos-latest. task_owned_paths extended with operations.rs."
+        },
+        {
+          "timestamp": "2026-07-26T11:28:02Z",
+          "summary": "Phase C/D/E (attempt 2, GHA macOS path) at commit cbac5bc: implemented the macOS runtime (probe_sandbox_exec PATH+probe, MacosStrictBackend, build_macos_confinement -> Confinement::launcher), widened the Confinement seam to two-mode (PreExec for Linux unchanged, Launcher for macOS), wired the spawn-site Command rebuild in tool/operations.rs (re-applies process_group(0)+kill_on_drop+cwd+env), replaced the macOS NotYetWiredBackend with MacosStrictBackend in production_sandbox_backend, relaxed the inline engagement test to syscall-only, and wrote 3 #[cfg(target_os=macos)] engaged product tests (denies_outside_write / denies_network / allows_workspace_and_temp_writes) plus the focused sandbox-macos.yml GHA workflow. D.3 host gates green on Windows (fmt/clippy -D warnings/sandbox_strict 8/8). macOS engaged tests cfg out on Windows -> NOT acceptance evidence; native verification is PENDING the GHA macos-latest run. linux.rs untouched (Confinement::new preserved). Task stays failing; acceptance phase15-macos-strict-backend OPEN; verified_at_commit null; Opi-Evaluator pending. Next: push (user-authorized) -> GHA macos-latest -> read logs -> if green, D.2 exec verify -> flip passing; if red, iterate the runtime on macOS.",
+          "gate_results": [
+            {
+              "gate": "cargo fmt --check -p opi-coding-agent",
+              "passed": true,
+              "detail": "clean"
+            },
+            {
+              "gate": "cargo clippy -p opi-coding-agent --all-targets -- -D warnings",
+              "passed": true,
+              "detail": "clean"
+            },
+            {
+              "gate": "cargo test --test sandbox_strict (Windows)",
+              "passed": true,
+              "detail": "8/8 host-independent (macOS engaged cfg out)"
+            },
+            {
+              "gate": "GHA macos-latest sandbox-macos.yml",
+              "passed": false,
+              "detail": "PENDING -- not yet pushed / not yet run"
+            }
+          ]
         }
       ]
     },
