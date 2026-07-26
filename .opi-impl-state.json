@@ -5,7 +5,7 @@
     "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md"
   ],
   "spec_files_sha256": {
-    "docs/opi-spec.md": "92074b2a335019c861504f5b1b6f3a058fc0f1507179428d9cdb38101ef90ec6",
+    "docs/opi-spec.md": "9e0cf1cecf1cdce88e0038ecc2bd44b7fda4887dcf69cf1bd45df5d25b860810",
     "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md": "5d5b42a6997c6e0de8234ac1c6fe5b3e6b849fc35af988dbf09fb2729c979885"
   },
   "task_graph_confirmed_at": "2026-07-25T01:11:14.478Z",
@@ -2996,7 +2996,7 @@
       "definition_of_done": "README.md/README.zh.md and docs/opi-spec.md/docs/opi-spec.zh.md describe the shipped L0 baseline, opt-in strict layers and platform degradation, `require` behavior, Operations layering, project trust precedence/gated resources, startup/headless control surfaces, the exact `user_config_dir/trust.json` location, the explicit embedder-only resolver registry with an empty standard-CLI registry, the absence of CLI `-e`, native resolver loading, and live mid-session trust mutation, and the defense-in-depth—not-security-boundary posture with synchronized wording. Linux documentation names the seccomp new-socket AF_INET/AF_INET6/AF_NETLINK reduction, AF_UNIX preservation, observed Landlock ABI 4 capability with Linux 6.7 as mainline orientation and TCP-only scope, exact L3 danger blocklist, supported architectures, socketpair/io_uring audit results, and inherited-fd/non-TCP/alternate-surface residuals without claiming complete network isolation. `CHANGELOG.md` records Phase 15 additions under Unreleased. A Phase 15 guard test rejects claims of opi-self confinement, strict adapter confinement, sandboxed file/nav tools, remote Operations backends, trust-gated tool execution, untrusted project context auto-injection, a built-in `/trust`, live project-resource reload, CLI `-e`/native resolver loading, trust schema metadata, complete Linux network isolation, or provider/session changes. The task reruns every Phase 15 acceptance command, preserves a command/stdout/stderr/exit-code/call-site audit under `target/opi-artifacts/phase15-phase-exit`, runs the artifact audit, and passes fmt, clippy, workspace all-target tests, doctests, warning-free docs, and the opi-implement smoke script without modifying runtime source.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "15.1",
         "15.2",
@@ -3090,7 +3090,8 @@
             "docs/opi-spec.md and docs/opi-spec.zh.md",
             "crates/opi-coding-agent/tests/phase15_safety_sandbox_docs.rs"
           ],
-          "status": "open"
+          "status": "closed",
+          "verified_at_commit": "d88980f8eb703ceb0ce22a39bad25f42fd21c80c"
         }
       ],
       "production_call_sites": [
@@ -3099,9 +3100,9 @@
         "crates/opi-coding-agent/tests/phase15_safety_sandbox_docs.rs"
       ],
       "substrate_only": false,
-      "iteration_count": 0,
+      "iteration_count": 1,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "9b607783af14a7e24aed2c259fc1741e14d21a4b",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "CHANGELOG.md",
@@ -3111,11 +3112,93 @@
         "docs/opi-spec.zh.md",
         "crates/opi-coding-agent/tests/phase15_safety_sandbox_docs.rs"
       ],
-      "last_attempt": null,
-      "verified_at_commit": null,
-      "evidence": null,
+      "last_attempt": {
+        "attempt": 1,
+        "started_at": "2026-07-26T16:35:24Z",
+        "ended_at": "2026-07-26T16:35:24Z",
+        "outcome": "passing",
+        "failing_gate": null,
+        "touched_files": [
+          "docs/opi-spec.md",
+          "docs/opi-spec.zh.md",
+          "README.md",
+          "README.zh.md",
+          "CHANGELOG.md",
+          "crates/opi-coding-agent/tests/phase15_safety_sandbox_docs.rs"
+        ]
+      },
+      "verified_at_commit": "d88980f8eb703ceb0ce22a39bad25f42fd21c80c",
+      "evidence": {
+        "task": "15.9",
+        "dod_sha256": "42b4661a9d55032ac316e8682e9c390f1c14997616943f77e5917c62594ea576",
+        "verification": "workspace tier; Phase 15 capstone documentation + non-goal guard + phase-exit acceptance matrix. ALL 8 LIBRARY GATES GREEN on the Windows host: (1) phase15_safety_sandbox_docs 4/4 (localized doc claims EN+ZH, non-goal rejection, structural invariants, changelog); (2) cargo test --workspace --all-targets 168 binaries 0 failed (incl. spec_ledger live_ledger_spec_hash_matches_current_spec after the spec-hash re-sync); (3) cargo test --workspace --doc; (4) cargo fmt --check --all; (5) cargo clippy --workspace --all-targets -D warnings; (6) RUSTDOCFLAGS=-D warnings cargo doc --workspace --no-deps; (7) bash scripts/opi-impl-smoke.sh (smoke PASSED); (8) python scripts/opi-artifact-audit.py target/opi-artifacts/phase15-phase-exit ok=true 0 issues. Gate logs + RUN_SUMMARY.md manifest (sibling-scenario -> test -> call-site -> host/GHA verification location) preserved under target/opi-artifacts/phase15-phase-exit (gitignored). cfg(unix) Linux/macOS platform acceptance + the 6 cross-compile triples covered by 15.5.6 native CI (GHA ci.yml run 30207584078, 9/9 owned jobs green), referenced not re-run (host is Windows). DELIVERABLES: rewrote the stale docs/opi-spec.md section 15 block (Status: designed; implementation pending -> Status: implemented) + docs/opi-spec.zh.md mirror into shipped-truth (L0+strict, narrowed Linux L2 seccomp socket(AF_INET/INET6/NETLINK) deny + AF_UNIX preserve + Landlock ABI 4 TCP bind/connect NOT six-syscall filter + ABI<4 layer degrade, exact L3 danger blocklist 14+iopl/ioperm(x86_64) clone/unshare allowed, supported arches, inherited-fd/non-TCP/io_uring/socketpair residuals no complete-isolation claim, macOS sandbox-exec profile + L3 n/a, Windows Job Object via windows-sys FFI NOT win32job L0-only strict->L0 degrade, Operations seam, startup-only project trust at %APPDATA%/opi/trust.json | ~/.config/opi/trust.json embedder-only resolver registry empty in CLI no -e no /trust no live reload); root README EN+ZH flag table (--sandbox/--sandbox-require/--trust/--no-trust) + Sandbox/project-trust subsection; CHANGELOG [Unreleased] Phase 15 entries (AwaitingTrust Breaking + sandbox/Operations/trust Added); new phase15_safety_sandbox_docs guard test (phase14 idiom: doc claims + non-goal rejection + source invariants forbid(unsafe_code) sandbox.rs:40+operations.rs:32+windows.rs:19, no /trust in interactive.rs, no -e in cli.rs, no impl ProjectTrustResolver in src/, empty ProjectTrustResolverRegistry::new() in main.rs, narrowed L2/L3 source, diagnostics opi.sandbox.degraded/unavailable/source=sandbox). No runtime source changes (DoD clause). Spec-hash re-synced in the LIVE ledger after the owned docs/opi-spec.md edit (snapshots historical per 2026-07-24 fix). TWO EVIDENCE-DETERMINED INTERPRETATION CALLS (user-confirmed at B.2): startup-only trust + no live mutation (converges with both source_overrides + research doc Option 1); windows-sys not win32job (shipped reality vs 2026-07-11 design).",
+        "evaluator": "passed",
+        "commit": "d88980f8eb703ceb0ce22a39bad25f42fd21c80c"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-07-26T15:58:04Z",
+          "summary": "Phase B.2 CONFIRMED for 15.9 (Safety and trust documentation, guards, and phase acceptance -- Phase 15 capstone; crate=workspace, tier=workspace, commit_type=docs, evaluator_required=true). Working tree clean; start_commit=9b60778; baseline_dirty_files=[]. SCOPE: docs-only + one new guard test (no runtime source changes per DoD). Deliverables in task_owned_paths: rewrite docs/opi-spec.md section 15 block (currently stale 'Status: designed; implementation pending' + old-design narrative) into shipped-truth; mirror docs/opi-spec.zh.md; add --sandbox/--sandbox-require/--trust/--no-trust to root README.md flag table + a Phase 15 subsection; mirror README.zh.md; add Phase 15 entries to CHANGELOG.md [Unreleased]; create crates/opi-coding-agent/tests/phase15_safety_sandbox_docs.rs (mirrors the phase14_provider_auth_docs.rs idiom: assert_claims for shipped behavior EN+ZH, assert_absent for the 12+ non-goal claims, plus source-level invariants). Ground truth gathered via 4 parallel investigation agents + both 2026-07-24 research docs + the registered 2026-07-11 design spec. TWO EVIDENCE-DETERMINED INTERPRETATION CALLS (user-confirmed at B.2): (1) DoD clause-1 'native resolver loading' + 'live mid-session trust mutation' are satisfied by truthfully describing the STARTUP-ONLY model: explicit embedder-only ProjectTrustResolverRegistry::register API with an EMPTY standard-CLI registry (main.rs:255/:341 use ::new() with no .register()), NO CLI -e flag, NO native resolver auto-loader, trust resolved once at startup in prepare_project_startup (project_trust.rs:631) with the registry sealed at resolution time (:655); there is NO live mid-session trust mutation, NO built-in /trust command, NO project-resource reload. This converges with both source_override notes (2026-07-24 startup-only/reject-live-reload; 2026-07-25 embedder-only resolver + no CLI -e/native loader) and research doc 2026-07-24 Option 1. The guard test rejects any claim of CLI -e/native loading/live reload/built-in /trust. (2) win32job -> windows-sys correction: the registered 2026-07-11 design spec says 'win32job 2.0.3' but the shipped Windows Job Object uses direct windows-sys FFI (CreateJobObjectW/SetInformationJobObject/AssignProcessToJobObject at tool/process_tree.rs:281-367; dep Cargo.toml:55); docs describe shipped reality (windows-sys, not win32job). Shipped Linux L2 is the NARROWED contract (not the spec's six-syscall domain filter): seccomp denies socket(AF_INET/AF_INET6/AF_NETLINK) preserving AF_UNIX (linux.rs:65-69 DENIED_SOCKET_DOMAINS), Landlock ABI 4/Linux 6.7+ TCP bind/connect only (V4-V7), with the network LAYER reporting TemporarilyUnavailable on ABI<4 even though seccomp always engages. L3 danger blocklist = 14 syscalls + iopl/ioperm (x86_64 only), clone/unshare allowed. Residuals: inherited-fd, non-TCP, io_uring (uncovered-residual), socketpair (mechanically-irrelevant) per alternate_network_surface_audit. macOS sandbox-exec profile (allow default)+(deny file-write*)+(deny network*)+workspace/temp exceptions, L3 n/a. Diagnostics opi.sandbox.degraded/opi.sandbox.unavailable/source=sandbox (diagnostics.rs:21/24/27). forbid(unsafe_code) at sandbox.rs:40 + operations.rs:32 + windows.rs:19. ACCEPTANCE: rerun the 8 library_gates preserving command/stdout/stderr/exit-code under target/opi-artifacts/phase15-phase-exit + sibling-scenario manifest + artifact audit; cfg(unix) + 6 cross-compile target-checks covered by 15.5.6 GHA matrix run 30207584078 (green), not host-rerunnable on Windows. D.2 = full 6-lens exec.workflow.js. NOTE: editing docs/opi-spec.md changes its CRLF-normalized hash -> E.2 must re-sync the LIVE ledger spec_files_sha256[docs/opi-spec.md] (snapshots historical per 2026-07-24 fix; tests/spec_ledger.rs pins this).",
+          "gate_results": []
+        },
+        {
+          "timestamp": "2026-07-26T16:16:44Z",
+          "summary": "Re-synced the LIVE ledger spec_files_sha256[docs/opi-spec.md] after the task-owned docs/opi-spec.md section-15 rewrite (92074b2a3350.. -> 9e0cf1cecf1c.., CRLF-normalized). This is the standard spec-edit re-sync pinned by tests/spec_ledger.rs (phase4/phase6 snapshots remain historical per the 2026-07-24 fix). Required so the workspace test-all-target gate (live_ledger_spec_hash_matches_current_spec) passes; the phase15-safety-sandbox-design.md hash is unchanged (not edited).",
+          "gate_results": []
+        },
+        {
+          "timestamp": "2026-07-26T16:35:24Z",
+          "summary": "Phase D/E COMPLETE at d88980f. All 8 library gates green on the Windows host (guard 4/4, test all-target 168 bin, doctest, fmt, clippy, doc, smoke PASSED, artifact audit ok=true). D.2 exec.workflow.js wf_bfc5fc81-ea4 (7 agents, 499k tok over commit d88980f): 0 must-fix, 0 flagged, 0 rejected (clean pass; synthesis advanced Opi-Evaluator pending -> passed). Deliverables: docs/opi-spec.md section 15 rewrite + ZH mirror (shipped-truth, narrowed from the 2026-07-11 design per the two research correctives + two source_overrides); root README EN+ZH flag table + Sandbox/project-trust subsection; CHANGELOG [Unreleased] Phase 15 entries; new phase15_safety_sandbox_docs guard test. Spec-hash re-synced in the live ledger. cfg(unix) + cross-compile acceptance covered by 15.5.6 native CI (GHA 30207584078). E.1 commit amended pending->passed after D.2 clean (3ce4fe5 -> d88980f, same tree). Flipping status=passing, verified_at_commit=d88980f, acceptance scenario closed.",
+          "gate_results": [
+            {
+              "gate": "phase15_safety_sandbox_docs guard (4 tests)",
+              "passed": true,
+              "detail": "doc claims EN+ZH + non-goal rejection + structural invariants + changelog"
+            },
+            {
+              "gate": "cargo test --workspace --all-targets",
+              "passed": true,
+              "detail": "168 binaries, 0 failed (incl. spec_ledger post re-sync)"
+            },
+            {
+              "gate": "cargo test --workspace --doc",
+              "passed": true,
+              "detail": "doctest green"
+            },
+            {
+              "gate": "cargo fmt --check --all",
+              "passed": true,
+              "detail": "clean"
+            },
+            {
+              "gate": "cargo clippy --workspace --all-targets -D warnings",
+              "passed": true,
+              "detail": "clean"
+            },
+            {
+              "gate": "RUSTDOCFLAGS=-D warnings cargo doc --workspace --no-deps",
+              "passed": true,
+              "detail": "clean"
+            },
+            {
+              "gate": "bash scripts/opi-impl-smoke.sh",
+              "passed": true,
+              "detail": "smoke PASSED"
+            },
+            {
+              "gate": "artifact audit target/opi-artifacts/phase15-phase-exit",
+              "passed": true,
+              "detail": "ok=true, 0 issues"
+            },
+            {
+              "gate": "D.2 exec.workflow.js wf_bfc5fc81-ea4 (7 agents over d88980f)",
+              "passed": true,
+              "detail": "0 must-fix; 0 flagged; 0 rejected"
+            }
+          ]
+        }
+      ]
     }
   ],
   "phase_exit": {
@@ -4439,6 +4522,16 @@
       "flagged_for_human": 1,
       "rejected": 0,
       "summary": "7-agent 432k-token exec verify over the cumulative task diff 7701d5c..2b683cb (3 commits: ci.yml sandbox_product+target_check, ci.yml fixes, sandbox/linux.rs cross-arch fix). 0 must-fix; 0 rejected. 1 low-severity flagged-for-human (evidence-truthfulness): the NON-OWNED attribution prose mis-attributed the macOS test(os) failure to sandbox_strict_*/tool_operations when it is actually native_keyring.rs (Phase 14 Provider/Auth keychain carry-over, 4 tests). The verified conclusion (NOT 15.5.6-owned -- native_keyring.rs is outside task_owned_paths) was already correct; the prose was corrected in the E.2 evidence."
+    },
+    {
+      "run_id": "wf_bfc5fc81-ea4",
+      "task": "15.9",
+      "timestamp": "2026-07-26T16:35:24Z",
+      "stage": "exec",
+      "must_fix": 0,
+      "flagged_for_human": 0,
+      "rejected": 0,
+      "summary": "7-agent 499k-token exec verify over the single task commit d88980f (docs-only + guard test, no runtime source). 6 lenses (implementation-matches-dod, tests-non-vacuous, production-call-site-proven, evidence-truthfulness, non-goal-leak, workspace-deps-honored) + synthesis. 0 must-fix; 0 flagged-for-human; 0 rejected. Clean pass; synthesis advanced Opi-Evaluator pending -> passed. The guard test doc/source-text assertions are the intended deliverable for a docs task (phase14 pattern), not degenerate tests-of-impl."
     }
   ]
 }
