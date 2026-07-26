@@ -616,6 +616,18 @@ fn macos_profile_and_capability_matrix() {
         p_both.contains("(allow default)"),
         "profile must carry an (allow default) base — seatbelt's default is DENY, so without it the confined child cannot exec or read system files"
     );
+    // Seatbelt is first-match-wins: the workspace/temp exceptions MUST precede
+    // the root deny or the deny shadows them and rejects workspace writes too.
+    let ws_idx = p_both
+        .find("(allow file-write* (subpath \"/Users/a/ws\"))")
+        .expect("workspace exception present");
+    let deny_idx = p_both
+        .find("(deny file-write* (subpath \"/\"))")
+        .expect("root deny present");
+    assert!(
+        ws_idx < deny_idx,
+        "workspace exception must precede the root deny (first-match-wins)"
+    );
     assert!(
         p_both.contains("(deny file-write* (subpath \"/\"))"),
         "deny-overlay root must be present when fs engaged"
@@ -1120,7 +1132,17 @@ int main(int argc, char** argv) {
     int s;
     if (!strcmp(op, "inet")) {
         s = socket(AF_INET, SOCK_STREAM, 0);
-        if (s < 0) { fprintf(stderr, "inet DENIED errno=%d\n", errno); return 1; }
+        if (s < 0) { fprintf(stderr, "inet-socket DENIED errno=%d\n", errno); return 1; }
+        struct sockaddr_in addr;
+        memset(&addr, 0, sizeof(addr));
+        addr.sin_family = AF_INET;
+        addr.sin_port = 0;
+        addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        /* sandbox-exec (deny network*) blocks bind/connect, not socket() itself,
+           so the probe binds: under the profile bind is denied (EPERM). */
+        if (bind(s, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
+            fprintf(stderr, "inet-bind DENIED errno=%d\n", errno); close(s); return 1;
+        }
         close(s); fprintf(stderr, "inet OK\n"); return 0;
     }
     if (!strcmp(op, "write-file")) {

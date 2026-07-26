@@ -30,16 +30,19 @@
 //! workspace + temp exceptions back through; when `network` is engaged it denies
 //! `network*`. Reads, process execution, and signals stay at the allow-all
 //! default so required child behavior (exec the shell, read system libraries) is
-//! preserved. In seatbelt the more-specific `subpath` allow wins over the
-//! root deny, so the workspace/temp exceptions punch through regardless of rule
-//! order; the deny-root is emitted first for readability.
+//! preserved. Seatbelt is first-match-wins, so the workspace/temp allow
+//! exceptions MUST precede the root write deny (the runtime emits them in that
+//! order); a root deny emitted first would shadow the exceptions and reject
+//! workspace writes too. `(deny network*)` blocks bind/connect/inbound/outbound
+//! but not `socket()` creation itself, so the engaged network assertion
+//! exercises `bind`.
 //!
 //! ```text
 //! (version 1)
 //! (allow default)                              ; seatbelt default is DENY; allow-all base
-//! (deny file-write* (subpath "/"))             ; fs engaged only
-//! (allow file-write* (subpath "<workspace>"))  ; fs engaged only
+//! (allow file-write* (subpath "<workspace>"))  ; fs engaged only (exceptions first)
 //! (allow file-write* (subpath "<temp>"))       ; fs engaged only
+//! (deny file-write* (subpath "/"))             ; fs engaged only (then deny the rest)
 //! (deny network*)                               ; network engaged only
 //! ```
 
@@ -169,16 +172,21 @@ fn escape_path(path: &str) -> String {
 /// Render the macOS seatbelt deny-overlay profile string.
 ///
 /// Deterministic and escaped (DoD). The profile is a deny-overlay on a seatbelt
-/// allow-default base: `(allow default)` makes every unmatched operation
-/// (process-exec, file-read, signals, …) permitted so the confined child can
-/// still exec its shell and read system libraries; `fs_enabled` then denies
-/// every file-write under `/` and punches workspace + temp exceptions back
-/// through; `network_enabled` denies `network*`. Seatbelt is last-match-wins, so
-/// the deny-root must precede the workspace/temp allow exceptions (it does),
-/// and both follow `(allow default)` so they override the allow-all base. With
-/// both disabled the profile is just the version + allow-default header (the
-/// runtime would not engage `sandbox-exec` for it). Pure: produces a string,
-/// never invokes `sandbox-exec`.
+/// allow-default base: `(allow default)` is the fallback for every operation no
+/// explicit rule matches, so the confined child can still exec its shell and
+/// read system libraries. `fs_enabled` denies every file-write under `/` with
+/// workspace + temp exceptions; `network_enabled` denies `network*` (bind /
+/// connect / inbound / outbound — note `socket()` creation itself is NOT a
+/// `network*` operation, so the engaged network test exercises `bind`).
+///
+/// **Seatbelt is first-match-wins:** the first explicit rule that matches an
+/// operation decides it. The workspace/temp allow exceptions therefore MUST
+/// precede the root write deny, or the deny would shadow them and reject
+/// workspace writes too. Order: `(allow default)` base, then workspace/temp
+/// write exceptions, then the root write deny, then the network deny. With both
+/// disabled the profile is just the version + allow-default header (the runtime
+/// would not engage `sandbox-exec` for it). Pure: produces a string, never
+/// invokes `sandbox-exec`.
 pub fn render_profile(
     workspace: &str,
     temp_dir: &str,
@@ -191,7 +199,9 @@ pub fn render_profile(
     // files, and even the sandbox-exec probe's own helper exec is rejected.
     out.push_str("(allow default)\n");
     if fs_enabled {
-        out.push_str("(deny file-write* (subpath \"/\"))\n");
+        // First-match-wins: emit the workspace/temp write exceptions BEFORE the
+        // root deny so they take precedence; the root deny then rejects every
+        // other write under /.
         out.push_str(&format!(
             "(allow file-write* (subpath \"{}\"))\n",
             escape_path(workspace)
@@ -200,6 +210,7 @@ pub fn render_profile(
             "(allow file-write* (subpath \"{}\"))\n",
             escape_path(temp_dir)
         ));
+        out.push_str("(deny file-write* (subpath \"/\"))\n");
     }
     if network_enabled {
         out.push_str("(deny network*)\n");
