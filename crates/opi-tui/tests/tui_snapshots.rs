@@ -3,7 +3,7 @@
 //! DoD: "fixed-size render snapshots"
 
 use opi_tui::{
-    AppState, InputEditor, Message, MessageList, Role, Shell, StatusBar, ToolCallStatus,
+    AppStatus, InputEditor, Message, MessageList, Role, Shell, StatusBar, ToolCallStatus,
     ToolCallView,
 };
 use ratatui::{Terminal, backend::TestBackend, widgets::Widget};
@@ -84,7 +84,7 @@ fn input_editor_empty() {
 
 #[test]
 fn status_bar_idle() {
-    let bar = StatusBar::new("claude-sonnet-4-5-20250514".into(), AppState::Idle, None);
+    let bar = StatusBar::new("claude-sonnet-4-5-20250514".into(), AppStatus::Idle, None);
     insta::assert_snapshot!("status_bar_idle_80x1", render(bar, 80, 1));
 }
 
@@ -92,7 +92,7 @@ fn status_bar_idle() {
 fn status_bar_thinking_with_tokens() {
     let bar = StatusBar::new(
         "claude-sonnet-4-5-20250514".into(),
-        AppState::Thinking,
+        AppStatus::Thinking,
         Some(150),
     );
     insta::assert_snapshot!("status_bar_thinking_80x1", render(bar, 80, 1));
@@ -102,7 +102,7 @@ fn status_bar_thinking_with_tokens() {
 fn status_bar_tool_executing() {
     let bar = StatusBar::new(
         "claude-sonnet-4-5-20250514".into(),
-        AppState::ToolExecuting,
+        AppStatus::ToolExecuting,
         Some(350),
     );
     insta::assert_snapshot!("status_bar_tool_executing_80x1", render(bar, 80, 1));
@@ -168,7 +168,7 @@ fn shell_idle_with_messages_80x24() {
 #[test]
 fn shell_thinking_with_tool_80x24() {
     let shell = Shell::new("claude-sonnet-4-5-20250514".into())
-        .state(AppState::Thinking)
+        .state(AppStatus::Thinking)
         .token_count(250)
         .messages(vec![Message::new(
             Role::User,
@@ -185,7 +185,7 @@ fn shell_thinking_with_tool_80x24() {
 #[test]
 fn shell_with_conversation_120x40() {
     let shell = Shell::new("claude-sonnet-4-5-20250514".into())
-        .state(AppState::Idle)
+        .state(AppStatus::Idle)
         .token_count(520)
         .messages(vec![
             Message::new(Role::User, "Hello!"),

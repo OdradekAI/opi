@@ -672,6 +672,57 @@ pub async fn prepare_project_startup(
 }
 
 // ---------------------------------------------------------------------------
+// Task 15.8.2: translate the interactive TrustChoice into state + persistence
+// ---------------------------------------------------------------------------
+
+/// Translate an interactive [`opi_tui::TrustChoice`] into the in-session
+/// [`TrustDecision`] and persist the durable choices (Phase 15 task 15.8.2).
+///
+/// `Trust`/`Deny` persist a durable decision for the current project directory;
+/// `TrustParent` persists a durable allow for the project's **parent** directory
+/// (so sibling projects under the same root inherit it via the ancestor walk);
+/// the `*Session` variants are session-only and never persist. The returned
+/// decision is the in-session state fed to the 15.7 two-stage config + resource
+/// gate.
+///
+/// Persistence is best-effort: a failed `record` (e.g. the parent path cannot
+/// be canonicalized) does not change the in-session decision, which still
+/// applies for this run; the next start re-asks. [`ProjectTrustStore::record`]
+/// canonicalizes the path.
+pub fn apply_ui_choice(
+    choice: opi_tui::TrustChoice,
+    store: &ProjectTrustStore,
+    project_root: &Path,
+) -> TrustDecision {
+    let decision = trust_choice_to_decision(choice);
+    let persist: Option<(&Path, bool)> = match choice {
+        opi_tui::TrustChoice::Trust => Some((project_root, true)),
+        opi_tui::TrustChoice::TrustParent => project_root.parent().map(|p| (p, true)),
+        opi_tui::TrustChoice::Deny => Some((project_root, false)),
+        opi_tui::TrustChoice::TrustSession | opi_tui::TrustChoice::DenySession => None,
+    };
+    if let Some((path, trusted)) = persist {
+        let _ = store.record(path, trusted);
+    }
+    decision
+}
+
+/// The in-session [`TrustDecision`] a [`opi_tui::TrustChoice`] implies, with no
+/// persistence (Phase 15 task 15.8.2).
+///
+/// `Trust`/`TrustParent`/`TrustSession` authorize the session; `Deny`/
+/// `DenySession` deny it. [`apply_ui_choice`] layers durable persistence on top
+/// of this pure mapping.
+pub fn trust_choice_to_decision(choice: opi_tui::TrustChoice) -> TrustDecision {
+    match choice {
+        opi_tui::TrustChoice::Trust
+        | opi_tui::TrustChoice::TrustParent
+        | opi_tui::TrustChoice::TrustSession => TrustDecision::Trusted,
+        opi_tui::TrustChoice::Deny | opi_tui::TrustChoice::DenySession => TrustDecision::Untrusted,
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Private helpers
 // ---------------------------------------------------------------------------
 
@@ -699,4 +750,82 @@ fn write_json_atomic(path: &Path, map: &BTreeMap<String, bool>) -> Result<(), Tr
     std::fs::write(&stage, &bytes)?;
     std::fs::rename(&stage, path)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod apply_ui_choice_tests {
+    use super::*;
+    use opi_tui::TrustChoice;
+
+    fn store_in(user_config: &std::path::Path) -> ProjectTrustStore {
+        ProjectTrustStore::load(user_config).unwrap()
+    }
+
+    #[test]
+    fn trust_persists_true_for_current_project() {
+        let user_config = tempfile::tempdir().unwrap();
+        let project = tempfile::tempdir().unwrap();
+        let store = store_in(user_config.path());
+        let decision = apply_ui_choice(TrustChoice::Trust, &store, project.path());
+        assert_eq!(decision, TrustDecision::Trusted);
+        assert_eq!(store.decide(project.path()), TrustDecision::Trusted);
+    }
+
+    #[test]
+    fn trust_parent_persists_true_for_parent_and_covers_sibling() {
+        let user_config = tempfile::tempdir().unwrap();
+        // A real parent dir with two project children, so canonicalization +
+        // ancestor-walk both succeed.
+        let parent = tempfile::tempdir().unwrap();
+        let proj_a = parent.path().join("proj-a");
+        let proj_b = parent.path().join("proj-b");
+        std::fs::create_dir_all(&proj_a).unwrap();
+        std::fs::create_dir_all(&proj_b).unwrap();
+
+        let store = store_in(user_config.path());
+        let decision = apply_ui_choice(TrustChoice::TrustParent, &store, &proj_a);
+        assert_eq!(decision, TrustDecision::Trusted);
+        // The project under the recorded parent is trusted...
+        assert_eq!(store.decide(&proj_a), TrustDecision::Trusted);
+        // ...and so is a sibling, because the parent key covers it.
+        assert_eq!(store.decide(&proj_b), TrustDecision::Trusted);
+    }
+
+    #[test]
+    fn deny_persists_false_for_current_project() {
+        let user_config = tempfile::tempdir().unwrap();
+        let project = tempfile::tempdir().unwrap();
+        let store = store_in(user_config.path());
+        let decision = apply_ui_choice(TrustChoice::Deny, &store, project.path());
+        assert_eq!(decision, TrustDecision::Untrusted);
+        assert_eq!(store.decide(project.path()), TrustDecision::Untrusted);
+    }
+
+    #[test]
+    fn trust_session_does_not_persist() {
+        let user_config = tempfile::tempdir().unwrap();
+        let project = tempfile::tempdir().unwrap();
+        let store = store_in(user_config.path());
+        let decision = apply_ui_choice(TrustChoice::TrustSession, &store, project.path());
+        assert_eq!(decision, TrustDecision::Trusted);
+        assert_eq!(
+            store.decide(project.path()),
+            TrustDecision::Undecided,
+            "session-only trust must not persist"
+        );
+    }
+
+    #[test]
+    fn deny_session_does_not_persist() {
+        let user_config = tempfile::tempdir().unwrap();
+        let project = tempfile::tempdir().unwrap();
+        let store = store_in(user_config.path());
+        let decision = apply_ui_choice(TrustChoice::DenySession, &store, project.path());
+        assert_eq!(decision, TrustDecision::Untrusted);
+        assert_eq!(
+            store.decide(project.path()),
+            TrustDecision::Undecided,
+            "session-only deny must not persist"
+        );
+    }
 }

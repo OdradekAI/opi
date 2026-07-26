@@ -5,7 +5,10 @@
 //! update shared `TuiState`, which the render loop reads each frame.
 
 use std::collections::VecDeque;
+use std::future::Future;
 use std::io;
+use std::path::Path;
+use std::pin::Pin;
 use std::sync::OnceLock;
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -28,8 +31,9 @@ use opi_tui::terminal_image::{
 };
 use opi_tui::{
     AppState, Key, KeyCombo, Keybindings, Message as TuiMessage, Role as TuiRole, SelectListState,
-    Shell, Theme, ToolCallStatus, resolve_theme,
+    Shell, StatusBar, Theme, ToolCallStatus, resolve_theme,
 };
+use opi_tui::{AwaitingTrustState, TrustChoice, TrustPrompt};
 use opi_tui::{ImageData, ImagePayload, MediaType as TuiMediaType};
 
 use crate::harness::{CodingHarness, SessionMetadata};
@@ -39,6 +43,164 @@ use crate::interactive_auth::{
     is_auth_command, is_terminal_restore_failure,
 };
 use crate::oauth::{OAuthEndpointConfig, TuiLoginPresenter};
+use crate::project_trust::{
+    ProjectStartupPlan, ProjectTrustStore, TrustDecision, apply_ui_choice, trust_choice_to_decision,
+};
+
+// ---------------------------------------------------------------------------
+// Phase 15 task 15.8.2: interactive project-trust prompt + decision resolution
+// ---------------------------------------------------------------------------
+
+/// Source of an interactive project-trust prompt (Phase 15 task 15.8.2).
+///
+/// The production implementation drives the real TUI (see [`run_trust_prompt`]);
+/// tests inject a canned/recording implementation. [`Self::ask`] renders the
+/// five-way [`TrustChoice`] prompt and resolves to the user's choice, or `None`
+/// when the prompt is cancelled/closed (which resolves to
+/// [`TrustDecision::Untrusted`] without loading project resources).
+pub trait InteractiveTrustPrompt: Send {
+    /// Render the prompt for `project_path` and await exactly one choice.
+    fn ask(
+        &mut self,
+        project_path: &Path,
+    ) -> Pin<Box<dyn Future<Output = Option<TrustChoice>> + Send + '_>>;
+}
+
+/// Resolve the interactive trust decision from a startup plan (task 15.8.2).
+///
+/// A pre-decided plan (CLI override, embedder resolver vote, stored entry, or
+/// global default) **bypasses** the prompt entirely. An undecided plan with
+/// trust-requiring resources renders the prompt via `prompt`; the choice is
+/// translated + persisted by [`apply_ui_choice`]. A cancelled/closed prompt
+/// (`None`) resolves to [`TrustDecision::Untrusted`] so no project resources
+/// load. The returned decision feeds the 15.7 two-stage config + resource gate
+/// and `CodingHarnessBuilder::trust_decision`, and provably precedes provider
+/// construction, installed-package/adapter startup, and harness build (the
+/// caller acts on the returned decision before any of those run).
+pub async fn resolve_interactive_trust_decision(
+    plan: &ProjectStartupPlan,
+    user_config_dir: &Path,
+    project_root: &Path,
+    prompt: &mut dyn InteractiveTrustPrompt,
+) -> TrustDecision {
+    match plan.decision {
+        // Bypass: a decisive earlier layer (CLI/resolver/store/default) wins.
+        TrustDecision::Trusted | TrustDecision::Untrusted => plan.decision,
+        TrustDecision::Undecided => match prompt.ask(project_root).await {
+            Some(choice) => match ProjectTrustStore::load(user_config_dir) {
+                // The store already loaded successfully inside prepare_project_startup
+                // before the ask; persist the durable choice and return the decision.
+                Ok(store) => apply_ui_choice(choice, &store, project_root),
+                // Defensive: a re-load failure is treated as best-effort (apply the
+                // in-session decision without persistence).
+                Err(_) => trust_choice_to_decision(choice),
+            },
+            // Cancelled/closed prompt -> safe deny; no project resources load.
+            None => TrustDecision::Untrusted,
+        },
+    }
+}
+
+/// Render the five-way trust prompt on the real terminal and await one choice
+/// (Phase 15 task 15.8.2). Returns `None` if the user cancels (Esc) or the
+/// terminal closes before a choice. `Err` only on terminal I/O.
+///
+/// The blocking crossterm loop runs in `spawn_blocking` and sends the choice
+/// through a oneshot; awaiting the receiver is the DoD's "exactly one oneshot
+/// response" contract, and a dropped sender (Esc/cancel) yields `None`.
+pub async fn run_trust_prompt(project_path: &Path) -> io::Result<Option<TrustChoice>> {
+    let (response_tx, response_rx) = tokio::sync::oneshot::channel::<TrustChoice>();
+    let path = project_path.to_path_buf();
+    let join = tokio::task::spawn_blocking(move || run_trust_prompt_terminal(&path, response_tx));
+    match join.await {
+        Ok(Ok(())) => Ok(response_rx.await.ok()),
+        Ok(Err(e)) => Err(e),
+        Err(panic) => Err(io::Error::other(format!("trust prompt panicked: {panic}"))),
+    }
+}
+
+/// Blocking terminal prompt loop: drives [`AppState::AwaitingTrust`] (exercising
+/// the production variant + its [`AppStatus`] projection in the status bar) and
+/// the [`TrustPrompt`] widget, sending the chosen [`TrustChoice`] through
+/// `response_tx`. On Esc the sender is dropped (the receiver yields `None`).
+fn run_trust_prompt_terminal(
+    project_path: &Path,
+    response_tx: tokio::sync::oneshot::Sender<TrustChoice>,
+) -> io::Result<()> {
+    // Construct the AwaitingTrust payload (the oneshot is the transport, not
+    // cosmetic state) and project its status for the status bar.
+    let app_state = AppState::AwaitingTrust(AwaitingTrustState {
+        project_path: project_path.to_path_buf(),
+        response_tx,
+    });
+    let status = app_state.status();
+    let AppState::AwaitingTrust(awaiting) = app_state else {
+        return Ok(());
+    };
+    let mut response_tx = Some(awaiting.response_tx);
+    let project_display = project_path.to_string_lossy().to_string();
+    let mut prompt = TrustPrompt::new();
+    let mut stdout = io::stdout();
+    terminal::enable_raw_mode()?;
+    crossterm::execute!(stdout, EnterAlternateScreen)?;
+    let backend = ratatui::backend::CrosstermBackend::new(stdout);
+    let mut terminal = ratatui::Terminal::new(backend)?;
+    let result: io::Result<()> = loop {
+        terminal.draw(|f| {
+            let chunks =
+                Layout::vertical([Constraint::Length(1), Constraint::Min(1)]).split(f.area());
+            f.render_widget(
+                StatusBar::new(project_display.clone(), status, None),
+                chunks[0],
+            );
+            f.render_widget(prompt.clone(), chunks[1]);
+        })?;
+        if !event::poll(std::time::Duration::from_millis(50))? {
+            continue;
+        }
+        if let Event::Key(key) = event::read()? {
+            if key.kind != KeyEventKind::Press {
+                continue;
+            }
+            match key.code {
+                KeyCode::Down | KeyCode::Char('j') => prompt.move_next(),
+                KeyCode::Up | KeyCode::Char('k') => prompt.move_prev(),
+                KeyCode::Enter => {
+                    if let Some(tx) = response_tx.take() {
+                        let _ = tx.send(prompt.selected());
+                    }
+                    break Ok(());
+                }
+                KeyCode::Esc => break Ok(()), // drop sender -> receiver yields None (cancel)
+                KeyCode::Char(c @ '1'..='5') => {
+                    if let Some(tc) = TrustChoice::from_index((c as u8 - b'1') as usize) {
+                        if let Some(tx) = response_tx.take() {
+                            let _ = tx.send(tc);
+                        }
+                        break Ok(());
+                    }
+                }
+                _ => {}
+            }
+        }
+    };
+    crossterm::execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
+    terminal::disable_raw_mode()?;
+    result
+}
+
+/// Production [`InteractiveTrustPrompt`] backed by [`run_trust_prompt`].
+pub struct TuiTrustPrompt;
+
+impl InteractiveTrustPrompt for TuiTrustPrompt {
+    fn ask(
+        &mut self,
+        project_path: &Path,
+    ) -> Pin<Box<dyn Future<Output = Option<TrustChoice>> + Send + '_>> {
+        let path = project_path.to_path_buf();
+        Box::pin(async move { run_trust_prompt(&path).await.ok().flatten() })
+    }
+}
 
 /// Shared state mutated by the agent callback and read by the TUI render loop.
 struct TuiState {
@@ -1405,7 +1567,7 @@ async fn run_headless_interactive_tui_driver(
 fn build_shell(s: &TuiState) -> Shell {
     let mut shell = Shell::new(s.model.clone())
         .input_text(s.input_text.clone())
-        .state(s.app_state)
+        .state(s.app_state.status())
         .theme(s.theme.clone());
 
     if s.total_tokens > 0 {

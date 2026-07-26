@@ -17,6 +17,7 @@ pub mod status_bar;
 pub mod terminal_image;
 pub mod theme;
 pub mod tool_call;
+pub mod trust_prompt;
 
 pub use branch_picker::{BranchItem, BranchPicker, BranchPickerOutcome, BranchPickerState};
 pub use diff_view::DiffView;
@@ -33,6 +34,7 @@ pub use terminal_image::{
 };
 pub use theme::{ColorParseError, THEME_TOKENS, Theme, is_valid_token, parse_color, resolve_theme};
 pub use tool_call::ToolCallView;
+pub use trust_prompt::{AwaitingTrustState, TrustChoice, TrustPrompt};
 
 use std::fmt;
 
@@ -133,22 +135,62 @@ impl Message {
     }
 }
 
-/// Application state shown in the status bar.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Application state shown in the status bar / driving the trust-prompt phase.
+///
+/// The [`Self::AwaitingTrust`] variant carries the interactive trust-prompt
+/// payload (project path + oneshot responder). Because that payload owns a
+/// `oneshot::Sender`, `AppState` is **not** `Copy`/`Clone`/`PartialEq`/`Eq`.
+/// Renderers that only need a display label use the [`AppStatus`] projection
+/// returned by [`Self::status`].
+#[derive(Debug)]
 pub enum AppState {
     Idle,
     Thinking,
     Streaming,
     ToolExecuting,
+    AwaitingTrust(AwaitingTrustState),
+}
+
+impl AppState {
+    /// Render-safe, `Copy` projection of this state for status bars / shells
+    /// that must not own the `AwaitingTrust` oneshot payload.
+    pub fn status(&self) -> AppStatus {
+        match self {
+            Self::Idle => AppStatus::Idle,
+            Self::Thinking => AppStatus::Thinking,
+            Self::Streaming => AppStatus::Streaming,
+            Self::ToolExecuting => AppStatus::ToolExecuting,
+            Self::AwaitingTrust(_) => AppStatus::AwaitingTrust,
+        }
+    }
 }
 
 impl fmt::Display for AppState {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.status())
+    }
+}
+
+/// Copyable status label projected from [`AppState`] for renderers (status bar,
+/// shell) that must not own the `AwaitingTrust` oneshot payload.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum AppStatus {
+    #[default]
+    Idle,
+    Thinking,
+    Streaming,
+    ToolExecuting,
+    AwaitingTrust,
+}
+
+impl fmt::Display for AppStatus {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Idle => write!(f, "idle"),
             Self::Thinking => write!(f, "thinking..."),
             Self::Streaming => write!(f, "streaming..."),
             Self::ToolExecuting => write!(f, "executing tool..."),
+            Self::AwaitingTrust => write!(f, "awaiting trust..."),
         }
     }
 }

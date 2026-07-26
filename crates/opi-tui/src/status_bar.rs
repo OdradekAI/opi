@@ -8,19 +8,19 @@ use ratatui::{
     widgets::{Block, Widget},
 };
 
-use crate::{AppState, theme::Theme};
+use crate::{AppStatus, theme::Theme};
 
 /// Single-line status bar.
 pub struct StatusBar {
     model: String,
-    state: AppState,
+    state: AppStatus,
     token_count: Option<u64>,
     cost_usd: Option<f64>,
     theme: Theme,
 }
 
 impl StatusBar {
-    pub fn new(model: String, state: AppState, token_count: Option<u64>) -> Self {
+    pub fn new(model: String, state: AppStatus, token_count: Option<u64>) -> Self {
         Self {
             model,
             state,
@@ -50,10 +50,11 @@ impl Widget for StatusBar {
             .render(area, buf);
 
         let state_style = match self.state {
-            AppState::Idle => Style::default().fg(t.status_idle),
-            AppState::Thinking => Style::default().fg(t.status_thinking),
-            AppState::Streaming => Style::default().fg(t.status_streaming),
-            AppState::ToolExecuting => Style::default().fg(t.status_tool),
+            AppStatus::Idle => Style::default().fg(t.status_idle),
+            AppStatus::Thinking => Style::default().fg(t.status_thinking),
+            AppStatus::Streaming => Style::default().fg(t.status_streaming),
+            AppStatus::ToolExecuting => Style::default().fg(t.status_tool),
+            AppStatus::AwaitingTrust => Style::default().fg(t.status_idle),
         };
 
         let mut spans = vec![

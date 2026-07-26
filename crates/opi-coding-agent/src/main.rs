@@ -185,14 +185,18 @@ fn main() {
                 std::process::exit(1);
             }
         };
-        // Phase 15.7: two-stage trust-gated config for the interactive path.
-        // Task 15.8.2 migrates interactive onto `prepare_project_startup` + the
-        // TUI prompt; until then interactive keeps the permissive default.
-        let interactive_config = resolve_interactive_trust_config(&cli, project_dir.clone());
+        // Phase 15.8.2: two-stage trust-gated config + the interactive TUI
+        // prompt. `resolve_interactive_trust_config` runs `prepare_project_startup`
+        // and renders the `TrustChoice` prompt for an undecided project with
+        // trust-requiring resources BEFORE this returns, so `run_interactive`
+        // (provider/package/harness build) provably follows the prompt.
+        let (interactive_config, trust_decision) =
+            rt.block_on(resolve_interactive_trust_config(&cli, project_dir.clone()));
         rt.block_on(async {
             run_interactive(
                 &cli,
                 &interactive_config,
+                trust_decision,
                 resumed_messages,
                 resume_info,
                 tool_selection,
@@ -285,23 +289,32 @@ async fn resolve_headless_trust_config(
     (config, decision)
 }
 
-/// Phase 15.7 interactive two-stage trust-gated config resolution.
+/// Phase 15.8.2 interactive two-stage trust-gated config + TUI prompt.
 ///
-/// Stage 1 (`resolve_pre_trust_config`) resolves every layer except the
-/// project `.opi/config.toml`; the trust decision (resource detection + the
-/// `trust.json` store) gates whether stage 2 (`merge_project_config`) merges
-/// it back. An untrusted project's config layer is skipped entirely (not
-/// loaded-then-filtered), closing the `providers.bedrock.profile` vector. Exits
-/// with code 2 on config error, matching `resolve_config`. CLI sandbox
-/// overrides are re-applied to the two-stage result. Non-interactive/RPC
-/// two-stage wiring lands with the headless policy in task 15.8.1.
-fn resolve_interactive_trust_config(
+/// Stage 1 (`resolve_pre_trust_config`) resolves every layer except the project
+/// `.opi/config.toml`. `prepare_project_startup` runs the full precedence chain
+/// (CLI -> resolvers -> store -> global default -> ask); an undecided ask with
+/// trust-requiring resources renders the TUI `TrustChoice` prompt via
+/// `resolve_interactive_trust_decision` (persisting + mapping the choice), while
+/// a pre-decided plan bypasses the prompt. The decision gates stage 2
+/// (`merge_project_config`): an untrusted project's config layer is skipped
+/// entirely (not loaded-then-filtered), closing the `providers.bedrock.profile`
+/// vector. Because the prompt resolves BEFORE this returns, `run_interactive`
+/// (provider/package/harness build) provably follows it. Returns the merged
+/// config and the decision. Exits 2 on config/trust error. CLI sandbox
+/// overrides are re-applied to the two-stage result.
+async fn resolve_interactive_trust_config(
     cli: &Cli,
     project_dir: Option<std::path::PathBuf>,
-) -> opi_coding_agent::config::OpiConfig {
+) -> (
+    opi_coding_agent::config::OpiConfig,
+    opi_coding_agent::project_trust::TrustDecision,
+) {
     use opi_coding_agent::config::{ConfigSource, merge_project_config, resolve_pre_trust_config};
+    use opi_coding_agent::interactive::{TuiTrustPrompt, resolve_interactive_trust_decision};
     use opi_coding_agent::project_trust::{
-        ProjectTrustStore, TrustDecision, resolve_project_trust_decision,
+        HeadlessPreTrustUi, ProjectTrustCli, ProjectTrustResolverRegistry, TrustDecision,
+        prepare_project_startup,
     };
 
     let source = ConfigSource {
@@ -322,12 +335,34 @@ fn resolve_interactive_trust_config(
     let project_root = project_dir
         .as_deref()
         .unwrap_or_else(|| std::path::Path::new("."));
-    let trust_decision = match ProjectTrustStore::load(&user_config_dir) {
-        Ok(store) => resolve_project_trust_decision(&store, project_root),
-        // Fail-open (load) when the store is unreadable; task 15.8.1 tightens.
-        Err(_) => TrustDecision::Trusted,
+    // global_default comes from the global (pre-trust) config so a project
+    // cannot self-authorize via its own [defaults] default_project_trust.
+    let global_default = pre.defaults.default_project_trust.to_decision();
+    let mut registry = ProjectTrustResolverRegistry::new();
+    let plan = match prepare_project_startup(
+        ProjectTrustCli {
+            trust: cli.trust,
+            no_trust: cli.no_trust,
+        },
+        &mut registry,
+        &user_config_dir,
+        project_root,
+        global_default,
+        &HeadlessPreTrustUi,
+    )
+    .await
+    {
+        Ok(plan) => plan,
+        Err(e) => {
+            eprintln!("opi: trust error: {e}");
+            std::process::exit(2);
+        }
     };
-    let mut config = if matches!(trust_decision, TrustDecision::Untrusted) {
+    let mut prompt = TuiTrustPrompt;
+    let decision =
+        resolve_interactive_trust_decision(&plan, &user_config_dir, project_root, &mut prompt)
+            .await;
+    let mut config = if matches!(decision, TrustDecision::Untrusted) {
         pre
     } else {
         match merge_project_config(pre, project_root) {
@@ -339,7 +374,7 @@ fn resolve_interactive_trust_config(
         }
     };
     config.apply_sandbox_overrides(cli.sandbox, cli.sandbox_require.then_some(true));
-    config
+    (config, decision)
 }
 
 /// Run `--export-session` and return the exit code (Phase 13.5).
@@ -923,6 +958,7 @@ async fn run_rpc_core(
 async fn run_interactive(
     cli: &Cli,
     config: &opi_coding_agent::config::OpiConfig,
+    trust_decision: opi_coding_agent::project_trust::TrustDecision,
     resumed_messages: Option<Vec<opi_agent::message::AgentMessage>>,
     resume_info: Option<ResumeInfo>,
     tool_selection: ToolSelection,
@@ -936,6 +972,7 @@ async fn run_interactive(
     run_interactive_core(
         cli,
         config,
+        trust_decision,
         resumed_messages,
         resume_info,
         tool_selection,
@@ -955,6 +992,7 @@ async fn run_interactive(
 async fn run_interactive_core<Launch, LaunchFuture>(
     cli: &Cli,
     config: &opi_coding_agent::config::OpiConfig,
+    trust_decision: opi_coding_agent::project_trust::TrustDecision,
     resumed_messages: Option<Vec<opi_agent::message::AgentMessage>>,
     resume_info: Option<ResumeInfo>,
     tool_selection: ToolSelection,
@@ -1004,19 +1042,9 @@ async fn run_interactive_core<Launch, LaunchFuture>(
 
     let hooks = Box::new(InteractiveCodingHooks::new(true));
     let initial_messages = resumed_messages.unwrap_or_default();
-    // Phase 15.7: resolve the trust decision (resource detection + trust.json
-    // store) for package-adapter and resource gating. Computed locally so this
-    // helper needs no signature change for its test callers; it is idempotent
-    // over the same store + project root that `resolve_interactive_trust_config`
-    // used for the two-stage config.
-    let trust_decision =
-        match opi_coding_agent::project_trust::ProjectTrustStore::load(&user_config_dir) {
-            Ok(store) => opi_coding_agent::project_trust::resolve_project_trust_decision(
-                &store,
-                &workspace_root,
-            ),
-            Err(_) => opi_coding_agent::project_trust::TrustDecision::Trusted,
-        };
+    // Phase 15.8.2: trust_decision was resolved (with the TUI prompt when
+    // needed) BEFORE run_interactive_core was entered, so provider/package/
+    // harness construction below provably follows trust resolution.
     let mut runtime_startup =
         opi_coding_agent::runtime_packages::start_installed_package_runtime_with_trust(
             &workspace_root,
@@ -1726,6 +1754,7 @@ mod tests {
         run_interactive_core(
             &cli,
             &config,
+            opi_coding_agent::project_trust::TrustDecision::Trusted,
             None,
             None,
             opi_coding_agent::policy::ToolSelection::Default,
@@ -2505,6 +2534,7 @@ mod tests {
             .block_on(run_interactive_core(
                 &cli,
                 &config,
+                opi_coding_agent::project_trust::TrustDecision::Trusted,
                 None,
                 None,
                 opi_coding_agent::policy::ToolSelection::Default,
@@ -2721,6 +2751,7 @@ mod tests {
             .block_on(run_interactive_core(
                 &cli,
                 &config,
+                opi_coding_agent::project_trust::TrustDecision::Trusted,
                 None,
                 None,
                 opi_coding_agent::policy::ToolSelection::Default,

@@ -4,7 +4,7 @@
 //!       theme loading wired from [defaults].theme config in opi-coding-agent,
 //!       snapshot tests at 80x24 and 120x40"
 
-use opi_tui::{AppState, Message, Role, Shell, StatusBar, Theme};
+use opi_tui::{AppStatus, Message, Role, Shell, StatusBar, Theme};
 use ratatui::style::Color;
 use ratatui::{Terminal, backend::TestBackend, widgets::Widget};
 
@@ -170,7 +170,7 @@ fn theme_default_shell_80x24() {
     let theme = Theme::default();
     let shell = Shell::new("test-model".into())
         .theme(theme)
-        .state(AppState::Idle)
+        .state(AppStatus::Idle)
         .messages(vec![
             Message::new(Role::User, "Hello!"),
             Message::new(Role::Assistant, "Hi there!"),
@@ -183,7 +183,7 @@ fn theme_default_shell_120x40() {
     let theme = Theme::default();
     let shell = Shell::new("test-model".into())
         .theme(theme)
-        .state(AppState::Streaming)
+        .state(AppStatus::Streaming)
         .token_count(420)
         .messages(vec![
             Message::new(Role::User, "What is the capital of France?"),
@@ -197,7 +197,7 @@ fn theme_monokai_shell_80x24() {
     let theme = Theme::monokai();
     let shell = Shell::new("test-model".into())
         .theme(theme)
-        .state(AppState::Thinking)
+        .state(AppStatus::Thinking)
         .messages(vec![
             Message::new(Role::User, "Hello!"),
             Message::new(Role::Assistant, "Hi there!"),
@@ -210,7 +210,7 @@ fn theme_monokai_shell_120x40() {
     let theme = Theme::monokai();
     let shell = Shell::new("test-model".into())
         .theme(theme)
-        .state(AppState::Idle)
+        .state(AppStatus::Idle)
         .token_count(99)
         .messages(vec![
             Message::new(Role::User, "Explain recursion."),
@@ -238,7 +238,7 @@ fn render_buf<W: Widget>(widget: W, w: u16, h: u16) -> ratatui::buffer::Buffer {
 
 #[test]
 fn status_bar_applies_default_theme_colors() {
-    let bar = StatusBar::new("model".into(), AppState::Idle, None);
+    let bar = StatusBar::new("model".into(), AppStatus::Idle, None);
     let buf = render_buf(bar, 80, 1);
     // Status bar background should be DarkGray (default theme)
     assert_eq!(buf.cell((0, 0)).unwrap().bg, Color::DarkGray);
@@ -247,7 +247,7 @@ fn status_bar_applies_default_theme_colors() {
 #[test]
 fn status_bar_applies_monokai_theme_colors() {
     let monokai = Theme::monokai();
-    let bar = StatusBar::new("model".into(), AppState::Idle, None).theme(monokai);
+    let bar = StatusBar::new("model".into(), AppStatus::Idle, None).theme(monokai);
     let buf = render_buf(bar, 80, 1);
     // Status bar background should be the monokai dark bg color
     assert_eq!(buf.cell((0, 0)).unwrap().bg, Color::Rgb(39, 40, 34));
@@ -274,10 +274,10 @@ fn shell_default_vs_monokai_produces_different_colors() {
 
     let shell_default = Shell::new("m".into())
         .theme(default_theme.clone())
-        .state(AppState::Idle);
+        .state(AppStatus::Idle);
     let shell_monokai = Shell::new("m".into())
         .theme(monokai_theme.clone())
-        .state(AppState::Idle);
+        .state(AppStatus::Idle);
 
     let buf_default = render_buf(shell_default, 80, 24);
     let buf_monokai = render_buf(shell_monokai, 80, 24);

@@ -7,7 +7,7 @@ use ratatui::{
 };
 
 use crate::{
-    AppState, InputEditor, Message, MessageList, SelectList, SelectListState, StatusBar,
+    AppStatus, InputEditor, Message, MessageList, SelectList, SelectListState, StatusBar,
     ToolCallStatus, ToolCallView, theme::Theme,
 };
 
@@ -16,7 +16,7 @@ pub struct Shell {
     messages: Vec<Message>,
     input_text: String,
     model: String,
-    state: AppState,
+    state: AppStatus,
     token_count: Option<u64>,
     cost_usd: Option<f64>,
     active_tool: Option<ToolCallViewData>,
@@ -41,7 +41,7 @@ impl Shell {
             messages: Vec::new(),
             input_text: String::new(),
             model,
-            state: AppState::Idle,
+            state: AppStatus::Idle,
             token_count: None,
             cost_usd: None,
             active_tool: None,
@@ -60,7 +60,7 @@ impl Shell {
         self
     }
 
-    pub fn state(mut self, state: AppState) -> Self {
+    pub fn state(mut self, state: AppStatus) -> Self {
         self.state = state;
         self
     }
