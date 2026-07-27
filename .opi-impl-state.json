@@ -5,10 +5,10 @@
     "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md"
   ],
   "spec_files_sha256": {
-    "docs/opi-spec.md": "9e0cf1cecf1cdce88e0038ecc2bd44b7fda4887dcf69cf1bd45df5d25b860810",
+    "docs/opi-spec.md": "3d5947e1cddc0934f9c2df29d11ca6797bb4988780d4dc32947bfc600c9435ca",
     "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md": "5d5b42a6997c6e0de8234ac1c6fe5b3e6b849fc35af988dbf09fb2729c979885"
   },
-  "task_graph_confirmed_at": "2026-07-25T01:11:14.478Z",
+  "task_graph_confirmed_at": "2026-07-27T14:03:22.331Z",
   "current_phase": 16,
   "tasks": [],
   "phase_exit": {
@@ -1142,5 +1142,16 @@
     }
   },
   "session_notes": [],
-  "verify_runs": []
+  "verify_runs": [
+    {
+      "stage": "plan",
+      "wf_ref": null,
+      "folded_count": 0,
+      "flagged_count": 0,
+      "rejected_count": 0,
+      "ran_at": "2026-07-27T13:48:53.138Z",
+      "task_id": null,
+      "criterion_id": null
+    }
+  ]
 }
