@@ -1,27 +1,21 @@
-//! Phase 15 task 15.5.4 — macOS `sandbox-exec` strict backend (substrate).
+//! Phase 15 task 15.5.4 — macOS `sandbox-exec` strict backend.
 //!
-//! This module owns the **host-independent** half of the macOS T4 sandbox: the
-//! seatbelt deny-overlay *profile model*, the `sandbox-exec` wrapper *argv* model,
+//! This module owns the macOS T4 sandbox: the host-independent seatbelt
+//! deny-overlay *profile model*, the `sandbox-exec` launcher model,
 //! the per-layer *capability matrix*, and the exact missing/unusable-helper
 //! reasons. It is pure Rust — no macOS kernel, no `unsafe`, no elevated
-//! privileges — and compiles on every target so the profile/capability/argv
+//! privileges — and compiles on every target so the profile/capability/launcher
 //! invariants are TDD'd by `macos_profile_and_capability_matrix` on any host.
 //!
-//! The macOS *runtime* — the `sandbox-exec` PATH probe, the parent-built
+//! The macOS runtime — the `sandbox-exec` PATH probe, the parent-built
 //! [`crate::sandbox::Confinement`] that launches bash under `sandbox-exec -p
 //! <profile>`, the `MacosStrictBackend` selected by
 //! [`crate::sandbox::production_sandbox_backend`], and the three native engaged
 //! product assertions (outside-write deny, network deny, workspace+temp allow) —
 //! is `cfg(target_os = "macos")` and is verified on a native macOS runner. It is
-//! not compiled here: only `x86_64-pc-windows-msvc` is installable on this host,
-//! and the macOS mechanism (`sandbox-exec` as the subprocess launcher) must
-//! *prepend* to the spawn `Command`, which `std::process::Command` cannot do (no
-//! program setter / arg insert; a `mem::replace` rebuild would drop the L0
-//! `process_group(0)` + `kill_on_drop` state applied before
-//! [`crate::sandbox::Confinement::apply`]). Resolving that exec integration point
-//! needs macOS iteration, so the runtime + dispatcher wiring are deferred to the
-//! macOS-runner follow-up and the acceptance scenario
-//! `phase15-macos-strict-backend` stays open.
+//! shipped behind `cfg(target_os = "macos")` and verified on a native macOS
+//! runner. The shared spawn composer prepends the launcher before applying the
+//! common L0 process-tree, cwd, environment, and kill-on-drop configuration.
 //!
 //! # Profile shape (DoD: deterministic, escaped deny-overlay)
 //!
@@ -49,6 +43,8 @@
 /// Exact reason returned when `sandbox-exec` is not on `PATH`. Surfaced as the
 /// `TemporarilyUnavailable` reason for the fs and network layers (the shared
 /// 15.5.1 fail-open / fail-closed policy consumes it verbatim).
+use std::path::Path;
+
 pub const SANDBOX_EXEC_MISSING_REASON: &str = "sandbox-exec not found on PATH";
 
 /// Stable prefix for the reason returned when `sandbox-exec` is present but
@@ -64,16 +60,16 @@ pub const MACOS_L3_UNAVAILABLE_REASON: &str =
 
 /// Status of the `sandbox-exec` helper as discovered by the runtime probe.
 ///
-/// Pure data carried by the (deferred) runtime; the capability model below is
-/// computed from it so the matrix is testable without invoking `sandbox-exec`.
+/// Pure probe status; the capability model remains testable without invoking
+/// `sandbox-exec`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SandboxExecStatus {
     /// `sandbox-exec` is on `PATH` and answered the probe; L1/L2 can engage.
     Available,
     /// `sandbox-exec` was not found on `PATH`.
     Missing,
-    /// `sandbox-exec` is present but the probe rejected it (e.g. MDM-blocked,
-    /// non-zero exit). Carries the probe detail for the reason string.
+    /// `sandbox-exec` is present but the probe rejected it. The detail is never
+    /// exposed in diagnostics.
     Unusable(String),
 }
 
@@ -83,20 +79,19 @@ impl SandboxExecStatus {
         matches!(self, Self::Available)
     }
 
-    /// The exact reason the helper cannot engage, or `None` when available.
-    /// Consumed verbatim by the shared fail-open / fail-closed policy.
+    /// A static redacted reason, or `None` when available.
     pub fn unavailability_reason(&self) -> Option<String> {
         match self {
             Self::Available => None,
             Self::Missing => Some(SANDBOX_EXEC_MISSING_REASON.to_string()),
-            Self::Unusable(detail) => Some(format!("{SANDBOX_EXEC_UNUSABLE_PREFIX} {detail}")),
+            Self::Unusable(_) => Some(SANDBOX_EXEC_UNUSABLE_PREFIX.to_string()),
         }
     }
 }
 
 /// Per-layer macOS strict capability, computed from the `sandbox-exec` status.
-/// Pure: each field is a [`crate::sandbox::LayerAvailability`] the deferred
-/// runtime hands to [`crate::sandbox::prepare`].
+/// Pure: each field is a [`crate::sandbox::LayerAvailability`] the runtime hands
+/// to [`crate::sandbox::prepare`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MacosStrictCapability {
     /// L1 filesystem writes via the seatbelt deny-overlay.
@@ -129,8 +124,8 @@ pub fn macos_strict_capability(sandbox_exec: &SandboxExecStatus) -> MacosStrictC
                 super::LayerAvailability::TemporarilyUnavailable { reason },
             )
         }
-        SandboxExecStatus::Unusable(detail) => {
-            let reason = format!("{SANDBOX_EXEC_UNUSABLE_PREFIX} {detail}");
+        SandboxExecStatus::Unusable(_) => {
+            let reason = SANDBOX_EXEC_UNUSABLE_PREFIX.to_string();
             (
                 super::LayerAvailability::TemporarilyUnavailable {
                     reason: reason.clone(),
@@ -218,28 +213,12 @@ pub fn render_profile(
     out
 }
 
-/// Build the `sandbox-exec` wrapper argv (DoD: argv preservation).
-///
-/// Returns `["sandbox-exec", "-p", <profile>, <program>, <args...>]`: the wrapper
-/// prepends `sandbox-exec -p <profile>` and preserves the original program and
-/// args verbatim in the tail. Pure: produces the argv vector, never spawns. The
-/// deferred runtime uses this to launch bash under the rendered profile.
-pub fn build_wrapped_argv(profile: &str, program: &str, args: &[String]) -> Vec<String> {
-    let mut argv = Vec::with_capacity(3 + 1 + args.len());
-    argv.push("sandbox-exec".to_string());
-    argv.push("-p".to_string());
-    argv.push(profile.to_string());
-    argv.push(program.to_string());
-    argv.extend(args.iter().cloned());
-    argv
-}
-
 // ---------------------------------------------------------------------------
 // Phase 15 task 15.5.4 — production runtime (cfg(target_os = "macos")).
 //
-// Probes `sandbox-exec` on PATH, reports per-layer capability via the substrate
+// Probes `sandbox-exec` on PATH, reports per-layer capability via the
 // [`macos_strict_capability`] matrix, and builds a [`super::Confinement::launcher`]
-// plan (`sandbox-exec -p <profile>`) when every requested layer engages. The
+// plan (`sandbox-exec -p <profile>`) for the independently engaged L1/L2 subset.
 // launcher — not a `pre_exec` hook — is the macOS mechanism: `sandbox-exec` IS
 // the helper, so it must prepend itself to the spawn argv, which the spawn site
 // (`crate::tool::operations::exec`) does via [`super::Confinement::launcher_prefix`].
@@ -247,7 +226,7 @@ pub fn build_wrapped_argv(profile: &str, program: &str, args: &[String]) -> Vec<
 // ---------------------------------------------------------------------------
 
 #[cfg(target_os = "macos")]
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 #[cfg(target_os = "macos")]
 use std::sync::Arc;
 
@@ -267,8 +246,8 @@ fn find_on_path(program: &str) -> Option<PathBuf> {
 
 /// Probe `sandbox-exec`: PATH lookup, then launch `/usr/bin/true` under a no-op
 /// profile. A usable helper exits 0; an MDM-blocked or broken install exits
-/// non-zero or fails to spawn. The probe detail is capped to keep the reason
-/// short for the shared fail-open / fail-closed diagnostic.
+/// non-zero or fails to spawn. Diagnostics use only a static failure class;
+/// raw stderr and `io::Error` display are deliberately discarded.
 #[cfg(target_os = "macos")]
 fn probe_sandbox_exec() -> SandboxExecStatus {
     let bin = match find_on_path("sandbox-exec") {
@@ -283,34 +262,28 @@ fn probe_sandbox_exec() -> SandboxExecStatus {
         .output()
     {
         Ok(o) if o.status.success() => SandboxExecStatus::Available,
-        Ok(o) => {
-            let code = o
-                .status
-                .code()
-                .map(|c| format!("exit {c}"))
-                .unwrap_or_else(|| "signaled".to_string());
-            let stderr = String::from_utf8_lossy(&o.stderr).trim().to_string();
-            let suffix = if stderr.is_empty() {
-                String::new()
-            } else {
-                format!(": {stderr}")
-            };
-            let detail: String = format!("probe {code}{suffix}").chars().take(160).collect();
-            SandboxExecStatus::Unusable(detail)
+        Ok(o) if o.status.code().is_some() => {
+            SandboxExecStatus::Unusable("probe returned non-zero status".to_string())
         }
-        Err(e) => SandboxExecStatus::Unusable(format!("spawn failed: {e}")),
+        Ok(_) => SandboxExecStatus::Unusable("probe terminated by signal".to_string()),
+        Err(_) => SandboxExecStatus::Unusable("probe could not start".to_string()),
     }
 }
 
 /// Build the macOS confinement plan: a `sandbox-exec` launcher carrying the
-/// rendered deny-overlay profile (fs + network engaged; workspace + temp
-/// write-through exceptions). Returns `None` unless the helper probed usable.
-#[cfg(target_os = "macos")]
+/// rendered deny-overlay profile for the engaged fs/network subset. Returns
+/// `None` unless the helper probed usable and at least one L1/L2 layer engaged.
 pub fn build_macos_confinement(
     workspace: &Path,
     status: &SandboxExecStatus,
+    engaged_layers: &[super::SandboxLayer],
 ) -> Option<super::Confinement> {
     if !status.is_available() {
+        return None;
+    }
+    let fs_enabled = engaged_layers.contains(&super::SandboxLayer::Fs);
+    let network_enabled = engaged_layers.contains(&super::SandboxLayer::Network);
+    if !fs_enabled && !network_enabled {
         return None;
     }
     // Canonicalize: seatbelt resolves symlinks in the path the child opens, so
@@ -319,7 +292,7 @@ pub fn build_macos_confinement(
     // form, so canonicalize before rendering.
     let ws = canonicalize_for_profile(workspace);
     let tmp = canonicalize_for_profile(&std::env::temp_dir());
-    let profile = render_profile(&ws, &tmp, true, true);
+    let profile = render_profile(&ws, &tmp, fs_enabled, network_enabled);
     Some(super::Confinement::launcher(
         "sandbox-exec",
         vec!["-p".to_string(), profile],
@@ -329,7 +302,6 @@ pub fn build_macos_confinement(
 /// Canonicalize a path for a seatbelt subpath rule (resolve symlinks like
 /// `/var` -> `/private/var`). Falls back to the verbatim path if the target
 /// does not exist (`canonicalize` requires existence).
-#[cfg(target_os = "macos")]
 fn canonicalize_for_profile(p: &Path) -> String {
     match std::fs::canonicalize(p) {
         Ok(c) => c.to_string_lossy().into_owned(),
@@ -338,10 +310,10 @@ fn canonicalize_for_profile(p: &Path) -> String {
 }
 
 /// Production macOS strict backend. Probes `sandbox-exec` at construction and
-/// reports per-layer availability via the substrate capability matrix: L3/
+/// reports per-layer availability via the capability matrix: L3/
 /// syscalls permanently unavailable; L1 fs + L2 network engaged iff the helper
-/// probed usable. Builds a [`super::Confinement::launcher`] plan when every
-/// requested layer engages.
+/// probed usable. Builds a [`super::Confinement::launcher`] for the engaged L1/L2
+/// subset.
 #[cfg(target_os = "macos")]
 pub struct MacosStrictBackend {
     status: SandboxExecStatus,
@@ -381,8 +353,15 @@ impl super::StrictBackend for MacosStrictBackend {
         }
     }
 
-    fn build_confinement(&self, _workspace: &Path) -> Option<super::Confinement> {
-        build_macos_confinement(&self.workspace, &self.status)
+    fn build_confinement(
+        &self,
+        _workspace: &Path,
+        engaged_layers: &[super::SandboxLayer],
+    ) -> super::ConfinementBuild {
+        super::ConfinementBuild {
+            confinement: build_macos_confinement(&self.workspace, &self.status, engaged_layers),
+            gaps: Vec::new(),
+        }
     }
 }
 

@@ -13,7 +13,11 @@ fn python_command() -> &'static str {
     if cfg!(windows) { "python" } else { "python3" }
 }
 
-fn run_audit(dir: &std::path::Path) -> (bool, String, String) {
+fn run_audit_with_args(
+    dir: &std::path::Path,
+    workspace: &std::path::Path,
+    json: bool,
+) -> (bool, String, String) {
     let out = Command::new(python_command())
         .arg(
             workspace_root()
@@ -22,7 +26,8 @@ fn run_audit(dir: &std::path::Path) -> (bool, String, String) {
         )
         .arg(dir)
         .arg("--workspace-root")
-        .arg(dir)
+        .arg(workspace)
+        .args(json.then_some("--json"))
         .output()
         .expect("run artifact audit");
     (
@@ -30,6 +35,10 @@ fn run_audit(dir: &std::path::Path) -> (bool, String, String) {
         String::from_utf8_lossy(&out.stdout).into_owned(),
         String::from_utf8_lossy(&out.stderr).into_owned(),
     )
+}
+
+fn run_audit(dir: &std::path::Path) -> (bool, String, String) {
+    run_audit_with_args(dir, dir, false)
 }
 
 #[test]
@@ -117,5 +126,82 @@ fn artifact_audit_detects_zero_timestamps_turn_mismatch_and_duplicate_partials()
     assert!(
         stdout.contains("provider_turn_mismatch"),
         "missing provider-turn mismatch finding: {stdout}"
+    );
+}
+
+#[test]
+fn artifact_audit_rejects_every_missing_declared_commit_reference() {
+    let dir = tempfile::tempdir().expect("artifact tempdir");
+    let missing_summary_commit = "9b607783af14a7e24aed2c259fc1741e14d21a4a";
+    let missing_metadata_commit = "ffffffffffffffffffffffffffffffffffffffff";
+    std::fs::write(
+        dir.path().join("RUN_SUMMARY.md"),
+        format!("Head commit at authoring: {missing_summary_commit} (start_commit)\n"),
+    )
+    .unwrap();
+    std::fs::write(
+        dir.path().join("metadata.json"),
+        format!("{{\"releaseCommit\":\"{missing_metadata_commit}\"}}\n"),
+    )
+    .unwrap();
+
+    let (ok, stdout, stderr) = run_audit_with_args(dir.path(), &workspace_root(), true);
+    assert!(
+        !ok,
+        "audit must reject missing commit objects: stdout={stdout} stderr={stderr}"
+    );
+    let report: serde_json::Value =
+        serde_json::from_str(&stdout).expect("artifact audit emits JSON on failure");
+    let issues = report["issues"]
+        .as_array()
+        .expect("artifact audit issues are an array");
+    let missing = issues
+        .iter()
+        .filter(|issue| issue["code"] == "missing_commit_reference")
+        .collect::<Vec<_>>();
+    assert_eq!(
+        missing.len(),
+        2,
+        "every declared missing commit must be reported: {stdout}"
+    );
+    assert!(
+        missing
+            .iter()
+            .any(|issue| issue["reference"] == missing_summary_commit),
+        "summary commit typo must be attributable: {stdout}"
+    );
+    assert!(
+        missing
+            .iter()
+            .any(|issue| issue["reference"] == missing_metadata_commit),
+        "metadata commit must be attributable: {stdout}"
+    );
+}
+
+#[test]
+fn artifact_audit_accepts_real_declared_commit_objects() {
+    let dir = tempfile::tempdir().expect("artifact tempdir");
+    let real_commit = "9b607783af14a7e24aed2c259fc1741e14d21a4b";
+    std::fs::write(
+        dir.path().join("RUN_SUMMARY.md"),
+        format!("Head commit at authoring: {real_commit} (start_commit)\n"),
+    )
+    .unwrap();
+    std::fs::write(
+        dir.path().join("metadata.json"),
+        format!("{{\"releaseCommit\":\"{real_commit}\"}}\n"),
+    )
+    .unwrap();
+
+    let (ok, stdout, stderr) = run_audit_with_args(dir.path(), &workspace_root(), true);
+    assert!(
+        ok,
+        "audit must accept real commit objects: stdout={stdout} stderr={stderr}"
+    );
+    let report: serde_json::Value =
+        serde_json::from_str(&stdout).expect("artifact audit emits JSON on success");
+    assert_eq!(
+        report["commit_references"].as_array().map(Vec::len),
+        Some(2)
     );
 }

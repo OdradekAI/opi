@@ -8,6 +8,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
+use opi_agent::extension::ExtensionRegistry;
 use opi_ai::anthropic::AnthropicProvider;
 use opi_ai::auth::{AuthResolver, ResolvedAuth};
 use opi_ai::credential::BoxAuthFuture;
@@ -17,8 +18,11 @@ use opi_ai::test_support::{self, MockProvider};
 use opi_coding_agent::config::OpiConfig;
 use opi_coding_agent::package_resolver::local_lock_entry;
 use opi_coding_agent::package_store::{PackageDeclaration, PackageStore};
+use opi_coding_agent::project_trust::TrustDecision;
 use opi_coding_agent::runner::{ExitCode, NonInteractiveRunner};
-use opi_coding_agent::runtime_packages::start_installed_package_runtime;
+use opi_coding_agent::runtime_packages::{
+    RuntimePackageStartup, start_installed_package_runtime_with_trust,
+};
 
 fn test_binary(name: &str) -> PathBuf {
     let current = std::env::current_exe().expect("current exe path");
@@ -91,6 +95,55 @@ fn install_adapter_package(workspace: &Path, name: &str, command: &Path, args: &
         .unwrap();
 }
 
+#[tokio::test]
+async fn runtime_startup_is_the_single_source_of_runner_trust_in_all_builds() {
+    let workspace = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(workspace.path().join(".git")).unwrap();
+    std::fs::write(
+        workspace.path().join("AGENTS.md"),
+        "RUNTIME STARTUP TRUST MARKER",
+    )
+    .unwrap();
+
+    for (decision, should_load_project_context) in [
+        (TrustDecision::Trusted, true),
+        (TrustDecision::Untrusted, false),
+    ] {
+        let provider = MockProvider::new("mock", vec![test_support::text_response("done")]);
+        let call_log = provider.call_log_handle();
+        let startup = RuntimePackageStartup {
+            extension_registry: ExtensionRegistry::new(),
+            installed_packages: Vec::new(),
+            diagnostics: Vec::new(),
+            trust_decision: decision,
+        };
+        let mut runner = NonInteractiveRunner::new_with_resume_and_runtime_packages(
+            Box::new(provider),
+            "mock-model".into(),
+            OpiConfig::default(),
+            workspace.path().to_path_buf(),
+            false,
+            None,
+            Vec::new(),
+            None,
+            opi_coding_agent::policy::ToolSelection::Default,
+            startup,
+            None,
+        )
+        .unwrap();
+
+        let result = runner.run("check trust").await;
+        assert_eq!(result.exit_code, ExitCode::Success as i32);
+        let requests = call_log.lock().unwrap();
+        let system = requests[0].system.as_deref().unwrap();
+        assert_eq!(
+            system.contains("RUNTIME STARTUP TRUST MARKER"),
+            should_load_project_context,
+            "runner trust must be derived from RuntimePackageStartup"
+        );
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Test 1: text prompt produces stdout output with exit code 0
 // ---------------------------------------------------------------------------
@@ -108,6 +161,7 @@ async fn runner_text_prompt_stdout_exit0() {
         false,
         None,
         Vec::new(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     );
 
     let result = runner.run("Hi there").await;
@@ -143,6 +197,7 @@ async fn runner_readonly_tool_succeeds() {
         false,
         None,
         Vec::new(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     );
 
     let result = runner.run("Read the Cargo.toml").await;
@@ -165,7 +220,12 @@ async fn runner_installed_adapter_tool_succeeds() {
         &test_binary("adapter_host_mock"),
         &[],
     );
-    let runtime_startup = start_installed_package_runtime(workspace.path(), user.path()).await;
+    let runtime_startup = start_installed_package_runtime_with_trust(
+        workspace.path(),
+        user.path(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
+    )
+    .await;
 
     let first = test_support::tool_call_response("adapter-1", "test_tool", r#"{"input":"hello"}"#);
     let second = test_support::text_response("adapter tool finished.");
@@ -181,7 +241,7 @@ async fn runner_installed_adapter_tool_succeeds() {
         Vec::new(),
         None,
         opi_coding_agent::policy::ToolSelection::Default,
-        Some(runtime_startup),
+        runtime_startup,
         None,
     )
     .unwrap();
@@ -206,7 +266,12 @@ async fn runner_installed_adapter_hook_blocks_mutating_tool() {
         &test_binary("package_adapter_example"),
         &["permission-gate"],
     );
-    let runtime_startup = start_installed_package_runtime(workspace.path(), user.path()).await;
+    let runtime_startup = start_installed_package_runtime_with_trust(
+        workspace.path(),
+        user.path(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
+    )
+    .await;
 
     let first = test_support::tool_call_response(
         "blocked-1",
@@ -227,7 +292,7 @@ async fn runner_installed_adapter_hook_blocks_mutating_tool() {
         Vec::new(),
         None,
         opi_coding_agent::policy::ToolSelection::Default,
-        Some(runtime_startup),
+        runtime_startup,
         None,
     )
     .unwrap();
@@ -279,6 +344,7 @@ async fn runner_provider_error_stderr_exit4() {
         false,
         None,
         Vec::new(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     );
 
     let result = runner.run("Do something").await;
@@ -329,6 +395,7 @@ async fn runner_resume_forwards_compaction_summary_to_provider() {
         false,
         None,
         initial_messages,
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     );
 
     let result = runner.run("continue please").await;
@@ -383,6 +450,7 @@ async fn runner_resume_forwards_branch_summary_to_provider() {
         false,
         None,
         initial_messages,
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     );
 
     let result = runner.run("continue please").await;
@@ -533,6 +601,7 @@ async fn credential_needed_fails_without_prompt() {
         false,
         None,
         Vec::new(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     );
 
     let result = runner.run("hello").await;

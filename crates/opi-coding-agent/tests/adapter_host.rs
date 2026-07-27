@@ -575,8 +575,7 @@ async fn host_sends_correct_protocol_version_in_initialize() {
 // Phase 15.4: adapter L0 subprocess-tree lifecycle (behavioral)
 // ---------------------------------------------------------------------------
 
-/// Read a pidfile once the grandchild has recorded its pid (Windows helper).
-#[cfg(windows)]
+/// Read a pidfile once the grandchild has recorded its pid.
 async fn read_pid_file(path: &std::path::Path, timeout: Duration) -> Option<u32> {
     let start = std::time::Instant::now();
     loop {
@@ -589,6 +588,25 @@ async fn read_pid_file(path: &std::path::Path, timeout: Duration) -> Option<u32>
             return None;
         }
         tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+}
+
+#[cfg(unix)]
+async fn wait_for_process_dead(pid: u32, timeout: Duration) -> bool {
+    let start = std::time::Instant::now();
+    loop {
+        let alive = std::process::Command::new("kill")
+            .args(["-0", &pid.to_string()])
+            .status()
+            .map(|status| status.success())
+            .unwrap_or(false);
+        if !alive {
+            return true;
+        }
+        if start.elapsed() >= timeout {
+            return false;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
     }
 }
 
@@ -617,15 +635,9 @@ async fn wait_for_process_dead(pid: u32, timeout: Duration) -> bool {
     }
 }
 
-/// Phase 15.4 — scenario `phase15-l0-windows-adapter-assignment`, behavioral
-/// production-call-site proof. A real `AdapterHost::start` assigns the adapter
-/// child to a kill-on-close Job Object (Windows); dropping the host tears the
-/// whole adapter subprocess tree down, including a marker grandchild the adapter
-/// spawned via its `l0_grandchild` mock mode. Windows-only: the Unix adapter
-/// keeps its `process_group(0)` path by DoD (structurally pinned in
-/// `sandbox_l0.rs::adapter_process_group_contract`) and is not claimed to
-/// tree-kill.
-#[cfg(windows)]
+/// Cross-host production-call-site proof. A real `AdapterHost::start` retains
+/// the adapter TreeGuard (a Job Object on Windows, a process-group guard on
+/// Unix); dropping the host tears down a marker grandchild on both platforms.
 #[tokio::test]
 async fn adapter_l0_kills_subprocess_tree_on_host_drop() {
     let dir = tempfile::tempdir().unwrap();
@@ -645,7 +657,7 @@ async fn adapter_l0_kills_subprocess_tree_on_host_drop() {
         .await
         .expect("adapter grandchild should record its pid");
     // Drop runs Drop::drop (start_kill the adapter child) then drops the
-    // l0_guard field, whose kill-on-close reaps the whole tree.
+    // l0_guard field, whose Job Object/process-group teardown reaps the tree.
     drop(host);
     let dead = wait_for_process_dead(pid, Duration::from_secs(6)).await;
     assert!(

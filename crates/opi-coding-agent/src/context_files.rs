@@ -44,18 +44,12 @@ pub fn discover_context_files_with_trust(
     global_config_dir: Option<&Path>,
     include_project: bool,
 ) -> ContextFiles {
-    let stop_at = find_git_root(cwd);
     let mut parts: Vec<String> = Vec::new();
 
     // Walk from cwd upward to git root (inclusive) or filesystem root.
     if include_project {
-        let mut current: Option<&Path> = Some(cwd);
-        while let Some(dir) = current {
-            load_dir_context(dir, &mut parts);
-            if stop_at.as_deref() == Some(dir) {
-                break;
-            }
-            current = dir.parent();
+        for dir in project_candidate_directories(cwd) {
+            load_dir_context(&dir, &mut parts);
         }
     }
 
@@ -75,6 +69,26 @@ pub fn discover_context_files_with_trust(
         content: parts.join("\n\n"),
         files_loaded: parts.len(),
     }
+}
+
+/// Return the exact ordered project directories consulted for local context.
+///
+/// The walk starts at `cwd`, stops after the nearest ancestor containing a
+/// `.git` marker, and otherwise reaches the filesystem root. Project trust
+/// detection uses this same list so every context file eligible for prompt
+/// injection is represented in the pre-trust resource check.
+pub(crate) fn project_candidate_directories(cwd: &Path) -> Vec<PathBuf> {
+    let stop_at = find_git_root(cwd);
+    let mut candidates = Vec::new();
+    let mut current = Some(cwd);
+    while let Some(dir) = current {
+        candidates.push(dir.to_path_buf());
+        if stop_at.as_deref() == Some(dir) {
+            break;
+        }
+        current = dir.parent();
+    }
+    candidates
 }
 
 fn load_dir_context(dir: &Path, parts: &mut Vec<String>) {

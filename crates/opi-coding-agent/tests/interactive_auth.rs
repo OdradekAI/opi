@@ -1368,6 +1368,7 @@ async fn interactive_auth_help_is_discoverable_through_dispatcher() {
         "mock:mock-model".into(),
         OpiConfig::default(),
         workspace.path().to_path_buf(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     )
     .tool_selection(ToolSelection::Disabled)
     .build();

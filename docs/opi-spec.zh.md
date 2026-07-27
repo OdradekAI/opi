@@ -1565,7 +1565,7 @@ Diagnostic 是增量 `&'static str` code——source `sandbox` 下的 `opi.sandb
 
 | 标准 | 负责任务 | 生产/证据 trace |
 |---|---:|---|
-| SC1 L0 bash tree 生命周期 + Windows 适配器赋值 | 15.4 | `sandbox_l0::bash_l0_kills_process_tree_in_off_mode` 证明 `off` 下 L0 tree-kill；`sandbox_l0::windows_bash_and_adapter_use_kill_on_close_job` 与 `adapter_host_mock::adapter_process_group_contract` 固定 `windows-sys` Job-Object L0。 |
+| SC1 L0 bash tree 生命周期 + Windows 适配器赋值 | 15.4 | `sandbox_l0::bash_l0_kills_process_tree_in_off_mode` 证明 `off` 下 L0 tree-kill；`sandbox_l0::windows_bash_and_adapter_use_kill_on_close_job` 与 `sandbox_l0::adapter_process_group_contract` 固定 `windows-sys` Job-Object L0。 |
 | SC2 沙箱配置生产路径 + fallback 策略 | 15.5.1 | `sandbox_strict` bin + `sandbox_config::invalid_sandbox_config_exits_before_provider_construction` 证明 `main -> resolve_config -> build_tools -> LocalBashOperations::exec`；`unavailable_layer_fail_open_and_fail_closed` 与 `permanent_gap_diagnostic_is_once_per_startup` 固定 `require` degrade 策略。 |
 | SC3 Linux strict 后端（收窄 L2 + L3） | 15.5.3 | `linux_af_unix_survives_socket_creation_gate`、`linux_new_inet_inet6_netlink_sockets_are_denied`、`linux_landlock_abi4_denies_tcp_bind_connect`、`linux_strict_backend_capability_matrix` 与 `sandbox_linux_backend::linux_alternate_network_surface_audit` 固定 seccomp socket 门、Landlock TCP 与 `io_uring`/`socketpair` 残留。 |
 | SC4 macOS strict 后端 | 15.5.4 | `macos_profile_and_capability_matrix` 与三个 `macos_engaged_subprocess_*` 测试经 `Confinement::launcher` 缝合点固定 `sandbox-exec` profile deny-overlay。 |

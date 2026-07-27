@@ -27,8 +27,9 @@ use std::sync::{Arc, Barrier, Mutex};
 use opi_coding_agent::project_trust::{
     PreTrustUi, PreTrustUiError, ProjectTrustResolver, ProjectTrustResolverRegistry,
     ProjectTrustStore, TrustContext, TrustDecision, TrustError, TrustResource, TrustVote,
-    resolve_trust,
+    apply_ui_choice, resolve_trust,
 };
+use opi_tui::TrustChoice;
 
 // ---------------------------------------------------------------------------
 // Fakes
@@ -181,6 +182,69 @@ async fn record_persists_canonical_decision_and_reload_observes_it() {
     assert_eq!(reloaded2.decide(project_b.path()), TrustDecision::Untrusted);
 }
 
+/// Durable interactive choices create a missing user-config root on demand,
+/// persist there, and remain observable after a fresh store load. Merely
+/// loading the store must not create that root.
+#[test]
+fn durable_choices_create_missing_config_root_and_reload() {
+    for choice in [
+        TrustChoice::Trust,
+        TrustChoice::Deny,
+        TrustChoice::TrustParent,
+    ] {
+        let temp = tempfile::tempdir().unwrap();
+        let user_config = temp.path().join(format!("missing-{choice:?}"));
+        let parent = tempfile::tempdir().unwrap();
+        let project = parent.path().join("project");
+        std::fs::create_dir_all(&project).unwrap();
+
+        let store = ProjectTrustStore::load(&user_config).unwrap();
+        assert!(
+            !user_config.exists(),
+            "loading an empty store must not create the config root"
+        );
+
+        let decision = apply_ui_choice(choice, &store, &project).unwrap();
+        let expected = match choice {
+            TrustChoice::Deny => TrustDecision::Untrusted,
+            TrustChoice::Trust | TrustChoice::TrustParent => TrustDecision::Trusted,
+            TrustChoice::TrustSession | TrustChoice::DenySession => unreachable!(),
+        };
+        assert_eq!(decision, expected);
+        assert!(user_config.is_dir(), "durable choice creates config root");
+
+        let reloaded = ProjectTrustStore::load(&user_config).unwrap();
+        assert_eq!(reloaded.decide(&project), expected);
+    }
+}
+
+/// A canonical path that cannot be represented losslessly in JSON is rejected
+/// with a named error and does not create a lossy trust-store entry.
+#[cfg(unix)]
+#[test]
+fn non_utf8_path_is_named_error_and_is_not_serialized_lossily() {
+    use std::os::unix::ffi::OsStringExt;
+
+    let user_dir = tempfile::tempdir().unwrap();
+    let project_parent = tempfile::tempdir().unwrap();
+    let project = project_parent
+        .path()
+        .join(std::ffi::OsString::from_vec(b"project-\xff".to_vec()));
+    std::fs::create_dir(&project).unwrap();
+    let store = ProjectTrustStore::load(user_dir.path()).unwrap();
+
+    let error = store.record(&project, true).unwrap_err();
+
+    assert!(
+        matches!(error, TrustError::NonUtf8Path(path) if path == std::fs::canonicalize(&project).unwrap()),
+        "expected named non-UTF-8 path error, got {error:?}"
+    );
+    assert!(
+        !user_dir.path().join("trust.json").exists(),
+        "invalid path must not create an unusable trust entry"
+    );
+}
+
 /// Alias canonicalization: a non-canonical path (a real child dir joined with
 /// `..`) resolves to the same realpath key as the stored project.
 #[tokio::test]
@@ -325,6 +389,7 @@ async fn concurrent_writers_do_not_lose_updates() {
 #[tokio::test]
 async fn bare_opi_directory_has_no_resources() {
     let project = tempfile::tempdir().unwrap();
+    std::fs::create_dir(project.path().join(".git")).unwrap();
     std::fs::create_dir_all(project.path().join(".opi")).unwrap();
     let resources = ProjectTrustStore::detect_resources(project.path());
     assert!(
@@ -367,6 +432,7 @@ async fn detect_resources_names_exact_gated_set() {
 #[tokio::test]
 async fn detect_resources_reports_only_present_set() {
     let project = tempfile::tempdir().unwrap();
+    std::fs::create_dir(project.path().join(".git")).unwrap();
     std::fs::create_dir_all(project.path().join(".opi")).unwrap();
     std::fs::write(project.path().join(".opi").join("config.toml"), b"").unwrap();
     std::fs::write(project.path().join("CLAUDE.md"), b"").unwrap();
@@ -679,6 +745,7 @@ async fn resolver_context_carries_triggering_resources() {
 
     let user_dir = tempfile::tempdir().unwrap();
     let project = tempfile::tempdir().unwrap();
+    std::fs::create_dir(project.path().join(".git")).unwrap();
     std::fs::create_dir_all(project.path().join(".opi")).unwrap();
     std::fs::write(project.path().join(".opi").join("config.toml"), b"").unwrap();
     let resources = ProjectTrustStore::detect_resources(project.path());

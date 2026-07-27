@@ -21,8 +21,8 @@ use opi_coding_agent::harness::CodingHarness;
 use opi_coding_agent::interactive::{InteractiveTrustPrompt, resolve_interactive_trust_decision};
 use opi_coding_agent::project_trust::{
     HeadlessPreTrustUi, PreTrustUi, PreTrustUiError, ProjectTrustCli, ProjectTrustResolver,
-    ProjectTrustResolverRegistry, ProjectTrustStore, TrustContext, TrustDecision, TrustVote,
-    prepare_project_startup,
+    ProjectTrustResolverRegistry, ProjectTrustStore, TrustContext, TrustDecision, TrustError,
+    TrustVote, prepare_project_startup,
 };
 use opi_coding_agent::runtime_packages::start_installed_package_runtime_with_trust;
 use opi_tui::TrustChoice;
@@ -139,7 +139,8 @@ async fn interactive_predecided_paths_bypass_prompt() {
             workspace.path(),
             &mut prompt,
         )
-        .await;
+        .await
+        .unwrap();
         assert_eq!(decision, TrustDecision::Trusted);
     }
 
@@ -165,7 +166,8 @@ async fn interactive_predecided_paths_bypass_prompt() {
             workspace.path(),
             &mut prompt,
         )
-        .await;
+        .await
+        .unwrap();
         assert_eq!(decision, TrustDecision::Untrusted);
     }
 
@@ -197,7 +199,8 @@ async fn interactive_predecided_paths_bypass_prompt() {
             workspace.path(),
             &mut prompt,
         )
-        .await;
+        .await
+        .unwrap();
         assert_eq!(decision, TrustDecision::Trusted);
     }
 
@@ -229,7 +232,8 @@ async fn interactive_predecided_paths_bypass_prompt() {
             workspace.path(),
             &mut prompt,
         )
-        .await;
+        .await
+        .unwrap();
         assert_eq!(decision, TrustDecision::Untrusted);
     }
 
@@ -256,7 +260,8 @@ async fn interactive_predecided_paths_bypass_prompt() {
             workspace.path(),
             &mut prompt,
         )
-        .await;
+        .await
+        .unwrap();
         assert_eq!(decision, TrustDecision::Trusted);
     }
 
@@ -283,7 +288,8 @@ async fn interactive_predecided_paths_bypass_prompt() {
             workspace.path(),
             &mut prompt,
         )
-        .await;
+        .await
+        .unwrap();
         assert_eq!(decision, TrustDecision::Untrusted);
     }
 
@@ -306,7 +312,8 @@ async fn interactive_predecided_paths_bypass_prompt() {
             workspace.path(),
             &mut prompt,
         )
-        .await;
+        .await
+        .unwrap();
         assert_eq!(decision, TrustDecision::Trusted);
     }
 
@@ -329,7 +336,8 @@ async fn interactive_predecided_paths_bypass_prompt() {
             workspace.path(),
             &mut prompt,
         )
-        .await;
+        .await
+        .unwrap();
         assert_eq!(decision, TrustDecision::Untrusted);
     }
 
@@ -352,7 +360,8 @@ async fn interactive_predecided_paths_bypass_prompt() {
             workspace.path(),
             &mut prompt,
         )
-        .await;
+        .await
+        .unwrap();
         assert_eq!(decision, TrustDecision::Trusted);
     }
 }
@@ -413,7 +422,8 @@ async fn interactive_prompt_precedes_project_startup_side_effects() {
         let mut p = prompt;
         let decision =
             resolve_interactive_trust_decision(&plan, &user_config_dir, &workspace_root, &mut p)
-                .await;
+                .await
+                .unwrap();
         // --- REAL trust-gated build operations (after the oneshot) ---
         let config = if matches!(decision, TrustDecision::Untrusted) {
             pre_config
@@ -428,11 +438,11 @@ async fn interactive_prompt_precedes_project_startup_side_effects() {
             "mock:mock-model".into(),
             config,
             workspace_root,
+            decision,
         )
         .extension_registry(runtime.extension_registry)
         .installed_packages(runtime.installed_packages)
         .startup_diagnostics(runtime.diagnostics)
-        .trust_decision(decision)
         .build();
         let project_skill_loaded = harness.system_prompt().contains("proj-skill");
         *built_task.lock().unwrap() = Some((decision, project_skill_loaded));
@@ -487,7 +497,8 @@ async fn interactive_prompt_precedes_project_startup_side_effects() {
         workspace2.path(),
         &mut prompt2,
     )
-    .await;
+    .await
+    .unwrap();
     assert_eq!(
         decision2,
         TrustDecision::Untrusted,
@@ -510,8 +521,8 @@ async fn interactive_prompt_precedes_project_startup_side_effects() {
         "mock:mock-model".into(),
         OpiConfig::default(),
         workspace2.path().to_path_buf(),
+        TrustDecision::Untrusted,
     )
-    .trust_decision(TrustDecision::Untrusted)
     .build();
     assert!(
         !harness.system_prompt().contains("proj-skill"),
@@ -555,7 +566,7 @@ async fn interactive_ask_applies_each_choice() {
         // Let the resolver reach the prompt's await before sending.
         tokio::time::sleep(std::time::Duration::from_millis(40)).await;
         tx.send(choice).unwrap();
-        let decision = resolver.await.unwrap();
+        let decision = resolver.await.unwrap().unwrap();
 
         let expected = match choice {
             TrustChoice::Trust | TrustChoice::TrustParent | TrustChoice::TrustSession => {
@@ -586,4 +597,46 @@ async fn interactive_ask_applies_each_choice() {
             }
         }
     }
+}
+
+/// A durable prompt choice must not silently degrade to session-only trust
+/// when the trust store cannot be written.
+#[tokio::test]
+async fn interactive_durable_choice_surfaces_persistence_failure() {
+    let user_config = tempfile::tempdir().unwrap();
+    let workspace = tempfile::tempdir().unwrap();
+    init_git(workspace.path());
+    write_project_skill(workspace.path());
+    let plan = plan_with_empty_registry(
+        ProjectTrustCli::default(),
+        user_config.path(),
+        workspace.path(),
+        TrustDecision::Undecided,
+    )
+    .await;
+
+    // The store can still be loaded, but record cannot create/open its lock
+    // sidecar because a directory occupies that exact path.
+    std::fs::create_dir(user_config.path().join("trust.json.lock")).unwrap();
+    let (tx, rx) = oneshot::channel();
+    tx.send(TrustChoice::Trust).unwrap();
+    let mut prompt = FakePrompt { rx: Some(rx) };
+
+    let error = resolve_interactive_trust_decision(
+        &plan,
+        user_config.path(),
+        workspace.path(),
+        &mut prompt,
+    )
+    .await
+    .unwrap_err();
+
+    assert!(
+        matches!(error, TrustError::Io(_)),
+        "persistence failure must remain visible, got {error:?}"
+    );
+    assert!(
+        !user_config.path().join("trust.json").exists(),
+        "failed durable choice must not create a store entry"
+    );
 }

@@ -128,8 +128,23 @@ impl ExtensionManifest {
 /// precedence value.
 ///
 /// Higher precedence values override lower ones for duplicate extension names.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DiscoveryLayerKind {
+    /// User-global configuration resources.
+    User,
+    /// Resources owned by the current project and therefore trust-gated.
+    Project,
+    /// Explicit paths supplied by the user or embedder.
+    Explicit,
+    /// Resources composed from an already-authorized package.
+    Package,
+}
+
+/// A single discovery layer with a structural origin.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DiscoveryLayer {
+    /// Structural origin used by project-trust filtering.
+    pub kind: DiscoveryLayerKind,
     /// Root directory for this discovery layer.
     pub root: PathBuf,
     /// Optional subdirectory to append to root (e.g. `.opi/extensions`).
@@ -231,17 +246,20 @@ fn standard_layers_for_kind(
     let mut layers = Vec::new();
     if let Some(user_config_dir) = user_config_dir {
         layers.push(DiscoveryLayer {
+            kind: DiscoveryLayerKind::User,
             root: user_config_dir.to_path_buf(),
             subdirectory: Some(user_subdir.to_owned()),
             precedence: USER_LAYER_PRECEDENCE,
         });
     }
     layers.push(DiscoveryLayer {
+        kind: DiscoveryLayerKind::Project,
         root: workspace_root.to_path_buf(),
         subdirectory: Some(project_subdir.to_owned()),
         precedence: PROJECT_LAYER_PRECEDENCE,
     });
     layers.extend(explicit_paths.iter().map(|path| DiscoveryLayer {
+        kind: DiscoveryLayerKind::Explicit,
         root: resolve_explicit_path(workspace_root, path),
         subdirectory: None,
         precedence: EXPLICIT_LAYER_PRECEDENCE,

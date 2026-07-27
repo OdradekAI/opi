@@ -83,7 +83,28 @@ pub fn resolve_installed_packages(
     workspace_root: &Path,
     user_config_dir: &Path,
 ) -> Result<InstalledPackageResolution, PackageResolverError> {
-    let all = resolve_declared_installed_packages(workspace_root, user_config_dir)?;
+    resolve_installed_packages_for_scopes(
+        workspace_root,
+        user_config_dir,
+        &[
+            InstalledPackageScope::Global,
+            InstalledPackageScope::Project,
+        ],
+    )
+}
+
+/// Resolve only the requested package stores.
+///
+/// Callers that have not authorized project resources pass only
+/// [`InstalledPackageScope::Global`]. Excluded stores are never opened or
+/// parsed, so their errors and name precedence cannot affect global packages.
+pub fn resolve_installed_packages_for_scopes(
+    workspace_root: &Path,
+    user_config_dir: &Path,
+    scopes: &[InstalledPackageScope],
+) -> Result<InstalledPackageResolution, PackageResolverError> {
+    let all =
+        resolve_declared_installed_packages_for_scopes(workspace_root, user_config_dir, scopes)?;
     let mut by_name: HashMap<String, ResolvedInstalledPackage> = HashMap::new();
     let mut diagnostics = all.diagnostics;
     for package in all.packages {
@@ -134,25 +155,44 @@ pub fn resolve_declared_installed_packages(
     workspace_root: &Path,
     user_config_dir: &Path,
 ) -> Result<InstalledPackageResolution, PackageResolverError> {
+    resolve_declared_installed_packages_for_scopes(
+        workspace_root,
+        user_config_dir,
+        &[
+            InstalledPackageScope::Global,
+            InstalledPackageScope::Project,
+        ],
+    )
+}
+
+pub fn resolve_declared_installed_packages_for_scopes(
+    workspace_root: &Path,
+    user_config_dir: &Path,
+    scopes: &[InstalledPackageScope],
+) -> Result<InstalledPackageResolution, PackageResolverError> {
     let mut resolved = Vec::new();
     let mut diagnostics = Vec::new();
 
-    resolve_scope(
-        InstalledPackageScope::Global,
-        &PackageStore::global(user_config_dir.to_path_buf()),
-        user_config_dir,
-        0,
-        &mut resolved,
-        &mut diagnostics,
-    )?;
-    resolve_scope(
-        InstalledPackageScope::Project,
-        &PackageStore::project(workspace_root.to_path_buf()),
-        workspace_root,
-        1,
-        &mut resolved,
-        &mut diagnostics,
-    )?;
+    if scopes.contains(&InstalledPackageScope::Global) {
+        resolve_scope(
+            InstalledPackageScope::Global,
+            &PackageStore::global(user_config_dir.to_path_buf()),
+            user_config_dir,
+            0,
+            &mut resolved,
+            &mut diagnostics,
+        )?;
+    }
+    if scopes.contains(&InstalledPackageScope::Project) {
+        resolve_scope(
+            InstalledPackageScope::Project,
+            &PackageStore::project(workspace_root.to_path_buf()),
+            workspace_root,
+            1,
+            &mut resolved,
+            &mut diagnostics,
+        )?;
+    }
 
     resolved.sort_by(|a, b| {
         scope_precedence(a.scope)

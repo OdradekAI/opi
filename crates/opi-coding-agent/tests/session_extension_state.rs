@@ -216,6 +216,7 @@ async fn extension_state_persists_to_session_jsonl_after_mutating_turn() {
         "mock:mock-model".into(),
         OpiConfig::default(),
         dir.path().to_path_buf(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     )
     .resume(resume)
     .extension_registry(registry)
@@ -279,6 +280,7 @@ async fn command_only_extension_state_persists_to_session_jsonl() {
         "mock:mock-model".into(),
         OpiConfig::default(),
         dir.path().to_path_buf(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     )
     .resume(resume)
     .extension_registry(registry)
@@ -357,6 +359,7 @@ async fn command_only_extension_command_restores_pending_session_state() {
         "mock:mock-model".into(),
         OpiConfig::default(),
         dir.path().to_path_buf(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     )
     .resume(resume)
     .extension_registry(registry)
@@ -421,6 +424,7 @@ async fn resumed_extension_state_is_restored_before_adapter_command() {
         "mock:mock-model".into(),
         OpiConfig::default(),
         dir.path().to_path_buf(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     )
     .resume(resume)
     .extension_registry(registry)

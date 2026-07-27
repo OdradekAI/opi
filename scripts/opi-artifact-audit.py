@@ -9,6 +9,7 @@ Analyzes saved local artifacts only (no network). Detects:
   - O(n^2) text_delta lines that carry a redundant cumulative `partial`;
   - report mentions of provider failures with no preserved raw artifact
     and no explicit disclosure phrase.
+  - declared commit references that do not resolve to local Git commit objects.
 
 Known limitations (documented, not blocking):
   - Failure-word matching is a deliberately conservative trip-wire; it
@@ -22,6 +23,7 @@ import json
 import os
 import pathlib
 import re
+import subprocess
 import sys
 from collections import Counter
 
@@ -34,6 +36,24 @@ DISCLOSURE_PHRASES = [
     "observed live",
     "did not preserve",
 ]
+COMMIT_HEX_RE = re.compile(r"^[0-9a-fA-F]{7,40}$")
+TEXT_COMMIT_RE = re.compile(
+    r"(?ix)"
+    r"\b(?P<label>"
+    r"head[ _-]+commit(?:[ _-]+at[ _-]+authoring)?|"
+    r"head[ _-]*sha|start[ _-]+commit|verified[ _-]+at[ _-]+commit|"
+    r"commit(?:[ _-]+(?:sha|id))?"
+    r")\b"
+    r"(?:[ \t:=`*()\-]|\r?\n){0,80}"
+    r"(?P<reference>[0-9a-f]{7,40})\b"
+)
+TEXT_COMMIT_RANGE_RE = re.compile(
+    r"(?ix)"
+    r"\b(?P<label>commit[ _-]+range)\b"
+    r"(?:[ \t:=`*()\-]|\r?\n){0,80}"
+    r"(?P<start>[0-9a-f]{7,40})\s*\.\.\s*"
+    r"(?P<end>[0-9a-f]{7,40})\b"
+)
 
 
 def read_text(path):
@@ -226,6 +246,116 @@ def analyze_failure_evidence(artifact_dir):
     }
 
 
+def _snake_case(value):
+    return re.sub(r"(?<!^)(?=[A-Z])", "_", value).lower().replace("-", "_")
+
+
+def _is_commit_metadata_key(key):
+    normalized = _snake_case(key)
+    return (
+        normalized in {"commit", "commit_sha", "head_sha", "commits"}
+        or normalized.endswith("_commit")
+        or normalized.endswith("_commit_sha")
+        or normalized.endswith("_commits")
+    )
+
+
+def _json_commit_references(value, path, pointer="$"):
+    references = []
+    if isinstance(value, dict):
+        for key, child in value.items():
+            child_pointer = f"{pointer}.{key}"
+            if (
+                _is_commit_metadata_key(key)
+                and isinstance(child, str)
+                and COMMIT_HEX_RE.fullmatch(child)
+            ):
+                references.append({
+                    "file": str(path),
+                    "declaration": child_pointer,
+                    "reference": child,
+                })
+            elif _is_commit_metadata_key(key) and isinstance(child, list):
+                for index, item in enumerate(child):
+                    if isinstance(item, str) and COMMIT_HEX_RE.fullmatch(item):
+                        references.append({
+                            "file": str(path),
+                            "declaration": f"{child_pointer}[{index}]",
+                            "reference": item,
+                        })
+            references.extend(_json_commit_references(child, path, child_pointer))
+    elif isinstance(value, list):
+        for index, child in enumerate(value):
+            references.extend(
+                _json_commit_references(child, path, f"{pointer}[{index}]")
+            )
+    return references
+
+
+def _text_commit_references(text, path):
+    references = []
+    occupied = []
+    for match in TEXT_COMMIT_RANGE_RE.finditer(text):
+        occupied.append(match.span())
+        for group in ["start", "end"]:
+            references.append({
+                "file": str(path),
+                "line": text.count("\n", 0, match.start(group)) + 1,
+                "declaration": match.group("label"),
+                "reference": match.group(group),
+            })
+    for match in TEXT_COMMIT_RE.finditer(text):
+        if any(start <= match.start() < end for start, end in occupied):
+            continue
+        references.append({
+            "file": str(path),
+            "line": text.count("\n", 0, match.start("reference")) + 1,
+            "declaration": match.group("label"),
+            "reference": match.group("reference"),
+        })
+    return references
+
+
+def collect_commit_references(artifact_dir):
+    references = []
+    for path in sorted(p for p in artifact_dir.rglob("*") if p.is_file()):
+        text = read_text(path)
+        if path.suffix.lower() == ".json":
+            try:
+                value = json.loads(text)
+            except json.JSONDecodeError:
+                value = None
+            if value is not None:
+                references.extend(_json_commit_references(value, path))
+        references.extend(_text_commit_references(text, path))
+    return references
+
+
+def analyze_commit_references(artifact_dir, workspace_root):
+    references = collect_commit_references(artifact_dir)
+    issues = []
+    for reference in references:
+        commit = reference["reference"]
+        lookup = subprocess.run(
+            ["git", "-C", str(workspace_root), "cat-file", "-t", commit],
+            capture_output=True,
+            check=False,
+            encoding="utf-8",
+            errors="replace",
+        )
+        if lookup.returncode != 0 or lookup.stdout.strip() != "commit":
+            issue = {
+                "code": "missing_commit_reference",
+                **reference,
+                "message": (
+                    f"declared commit reference {commit} does not resolve to "
+                    "a local Git commit object"
+                ),
+            }
+            issues.append(issue)
+    return references, issues
+
+
 def _session_files(artifact_dir):
     # Broad glob: top-level sessions/, sibling attempts, and nested shapes.
     seen = set()
@@ -244,6 +374,11 @@ def main():
     args = parser.parse_args()
 
     artifact_dir = pathlib.Path(args.artifact_dir)
+    workspace_root = (
+        pathlib.Path(args.workspace_root)
+        if args.workspace_root
+        else pathlib.Path.cwd()
+    )
     root_forms_norm = _root_forms(args.workspace_root)
 
     ndjson_reports = [
@@ -252,6 +387,9 @@ def main():
     ]
     session_reports = [analyze_session(path, root_forms_norm) for path in _session_files(artifact_dir)]
     failure_report = analyze_failure_evidence(artifact_dir)
+    commit_references, commit_issues = analyze_commit_references(
+        artifact_dir, workspace_root
+    )
 
     issues = []
     for report in ndjson_reports:
@@ -259,6 +397,7 @@ def main():
     for report in session_reports:
         issues.extend(report["issues"])
     issues.extend(failure_report["issues"])
+    issues.extend(commit_issues)
 
     report = {
         "artifact_dir": str(artifact_dir),
@@ -270,6 +409,7 @@ def main():
         "ndjson": ndjson_reports,
         "sessions": session_reports,
         "failure_evidence": failure_report,
+        "commit_references": commit_references,
         "issues": issues,
         "ok": not issues,
     }

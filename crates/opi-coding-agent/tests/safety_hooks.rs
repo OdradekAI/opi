@@ -121,6 +121,7 @@ async fn non_interactive_denies_mutating_by_default() {
             false, // allow_mutating = false
             None,
             vec![],
+            opi_coding_agent::project_trust::TrustDecision::Trusted,
         );
 
         let result = runner.run("test prompt").await;
@@ -160,6 +161,7 @@ async fn non_interactive_allows_mutating_when_flag_set() {
             true, // allow_mutating = true
             None,
             vec![],
+            opi_coding_agent::project_trust::TrustDecision::Trusted,
         );
 
         let result = runner.run("test prompt").await;
@@ -192,6 +194,7 @@ async fn e2e_json_mode_tool_denial() {
             false, // allow_mutating = false -> bash denied
             None,
             vec![],
+            opi_coding_agent::project_trust::TrustDecision::Trusted,
         );
 
         let result = runner.run_json("test prompt").await;
@@ -230,6 +233,7 @@ async fn session_audit_tool_denial() {
             false, // deny mutating
             None,
             vec![],
+            opi_coding_agent::project_trust::TrustDecision::Trusted,
         );
 
         let result = runner.run("test prompt").await;
@@ -278,6 +282,7 @@ async fn tool_selection_allowlist_includes_mutating_tool_interactively() {
         OpiConfig::default(),
         workspace.path().to_path_buf(),
         ToolSelection::Allowlist(vec!["write".into(), "read".into()]),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     );
 
     // The system prompt should contain write (allowlisted)

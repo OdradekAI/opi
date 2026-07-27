@@ -170,6 +170,7 @@ async fn rpc_never_emits_trust_prompt() {
         ToolSelection::Disabled,
         None,
         Vec::new(),
+        TrustDecision::Untrusted,
     )
     .expect("rpc runner should construct");
 

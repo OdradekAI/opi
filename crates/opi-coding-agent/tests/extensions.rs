@@ -24,6 +24,7 @@ use opi_ai::test_support::{MockProvider, text_response, tool_call_response};
 use opi_coding_agent::config::OpiConfig;
 use opi_coding_agent::harness::CodingHarness;
 use opi_coding_agent::policy::{RunMode, ToolRuntimeConfig, ToolSelection};
+use opi_coding_agent::project_trust::TrustDecision;
 use tokio_util::sync::CancellationToken;
 
 // ---------------------------------------------------------------------------
@@ -541,6 +542,7 @@ async fn harness_builder_wraps_extension_registry_hooks_and_tools() {
         "mock:mock-model".into(),
         OpiConfig::default(),
         workspace.path().to_path_buf(),
+        TrustDecision::Trusted,
     )
     .extension_registry(registry)
     .tool_config(ToolRuntimeConfig {
@@ -604,6 +606,7 @@ async fn harness_builder_extension_observes_agent_events() {
         "mock:mock-model".into(),
         OpiConfig::default(),
         workspace.path().to_path_buf(),
+        TrustDecision::Trusted,
     )
     .extension_registry(registry)
     .tool_selection(ToolSelection::Disabled)
@@ -672,6 +675,7 @@ async fn harness_builder_dispatches_extension_commands() {
         "mock:mock-model".into(),
         OpiConfig::default(),
         workspace.path().to_path_buf(),
+        TrustDecision::Trusted,
     )
     .extension_registry(registry)
     .tool_selection(ToolSelection::Disabled)
@@ -715,6 +719,7 @@ async fn harness_builder_tool_selection_disabled_filters_extension_tools() {
         "mock:mock-model".into(),
         OpiConfig::default(),
         workspace.path().to_path_buf(),
+        TrustDecision::Trusted,
     )
     .extension_registry(registry)
     .tool_selection(ToolSelection::Disabled)
@@ -737,6 +742,7 @@ async fn harness_builder_tool_selection_allowlist_filters_extension_tools_by_nam
         "mock:mock-model".into(),
         OpiConfig::default(),
         workspace.path().to_path_buf(),
+        TrustDecision::Trusted,
     )
     .extension_registry(registry)
     .tool_selection(ToolSelection::Allowlist(vec!["ext_echo".to_owned()]))
@@ -760,6 +766,7 @@ async fn harness_builder_tool_selection_allowlist_excludes_unlisted_extension_to
         "mock:mock-model".into(),
         OpiConfig::default(),
         workspace.path().to_path_buf(),
+        TrustDecision::Trusted,
     )
     .extension_registry(registry)
     .tool_selection(ToolSelection::Allowlist(vec!["read".to_owned()]))
@@ -801,6 +808,7 @@ fn harness_builder_model_picker_includes_current_provider_extension_overrides() 
         "mock:mock-model".into(),
         OpiConfig::default(),
         workspace.path().to_path_buf(),
+        TrustDecision::Trusted,
     )
     .extension_registry(registry)
     .build();
@@ -847,6 +855,7 @@ fn harness_builder_set_model_validated_accepts_current_provider_extension_overri
         "mock:mock-model".into(),
         OpiConfig::default(),
         workspace.path().to_path_buf(),
+        TrustDecision::Trusted,
     )
     .extension_registry(registry)
     .build();

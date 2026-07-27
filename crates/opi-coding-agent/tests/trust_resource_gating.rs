@@ -11,6 +11,7 @@
 
 use std::fs;
 use std::path::Path;
+use std::process::Command;
 
 use opi_agent::tool::{Tool, ToolResult};
 use opi_ai::test_support::MockProvider;
@@ -24,6 +25,7 @@ use opi_coding_agent::package_store::{PackageDeclaration, PackageStore};
 use opi_coding_agent::project_trust::{
     ProjectTrustStore, TrustDecision, resolve_project_trust_decision,
 };
+use opi_coding_agent::resource::{DiscoveryLayer, DiscoveryLayerKind, ResourceDiscoveryLayers};
 use opi_coding_agent::runtime_packages::start_installed_package_runtime_with_trust;
 use opi_coding_agent::tool::ReadTool;
 use serde_json::json;
@@ -66,6 +68,27 @@ fn write_project_resources(workspace: &Path) {
     )
     .expect("write proj frag");
 
+    // Project theme.
+    let theme_dir = workspace.join(".opi").join("themes").join("proj-theme");
+    fs::create_dir_all(&theme_dir).expect("create proj theme dir");
+    fs::write(
+        theme_dir.join("theme.toml"),
+        "name = \"proj-theme\"\ndescription = \"Project-only theme.\"\n",
+    )
+    .expect("write proj theme");
+
+    // Project extension.
+    let extension_dir = workspace
+        .join(".opi")
+        .join("extensions")
+        .join("proj-extension");
+    fs::create_dir_all(&extension_dir).expect("create proj extension dir");
+    fs::write(
+        extension_dir.join("extension.toml"),
+        "[extension]\nname = \"proj-extension\"\nversion = \"0.1.0\"\ndescription = \"Project-only extension.\"\n",
+    )
+    .expect("write proj extension");
+
     // Project context files (prompt-injection channel for an untrusted project).
     fs::write(workspace.join("AGENTS.md"), "PROJECT AGENTS INSTRUCTIONS")
         .expect("write project AGENTS.md");
@@ -83,6 +106,24 @@ fn write_global_resources(global: &Path) {
     )
     .expect("write global skill");
 
+    // Global theme.
+    let theme_dir = global.join("themes").join("global-theme");
+    fs::create_dir_all(&theme_dir).expect("create global theme dir");
+    fs::write(
+        theme_dir.join("theme.toml"),
+        "name = \"global-theme\"\ndescription = \"User-global theme.\"\n",
+    )
+    .expect("write global theme");
+
+    // Global extension.
+    let extension_dir = global.join("extensions").join("global-extension");
+    fs::create_dir_all(&extension_dir).expect("create global extension dir");
+    fs::write(
+        extension_dir.join("extension.toml"),
+        "[extension]\nname = \"global-extension\"\nversion = \"0.1.0\"\ndescription = \"User-global extension.\"\n",
+    )
+    .expect("write global extension");
+
     // Global context file.
     fs::write(global.join("AGENTS.md"), "GLOBAL AGENTS INSTRUCTIONS")
         .expect("write global AGENTS.md");
@@ -95,6 +136,65 @@ fn write_package(pkg_dir: &Path, name: &str) {
         format!("\nname = \"{name}\"\ndescription = \"{name} package.\"\nversion = \"0.1.0\"\n"),
     )
     .expect("write package.toml");
+}
+
+fn compile_marker_adapter(base: &Path) -> std::path::PathBuf {
+    let source = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("support")
+        .join("marker_adapter_fixture.rs");
+    let binary = base.join(if cfg!(windows) {
+        "marker-adapter-fixture.exe"
+    } else {
+        "marker-adapter-fixture"
+    });
+    let rustc = std::env::var_os("RUSTC").unwrap_or_else(|| "rustc".into());
+    let status = Command::new(rustc)
+        .arg("--edition=2024")
+        .arg(source)
+        .arg("-o")
+        .arg(&binary)
+        .status()
+        .expect("run rustc for marker adapter fixture");
+    assert!(status.success(), "compile marker adapter fixture");
+    binary
+}
+
+fn install_marker_adapter(
+    store: &PackageStore,
+    base: &Path,
+    package_name: &str,
+    marker: &Path,
+    command: &Path,
+) {
+    let package_dir = base.join("vendor").join(package_name);
+    fs::create_dir_all(&package_dir).unwrap();
+    let command = command.display().to_string().replace('\\', "\\\\");
+    let marker = marker.display().to_string().replace('\\', "\\\\");
+    fs::write(
+        package_dir.join("package.toml"),
+        format!(
+            "name = \"{package_name}\"\n\
+             description = \"Marker adapter.\"\n\
+             version = \"0.1.0\"\n\
+             [adapter]\n\
+             kind = \"process-jsonl\"\n\
+             command = \"{command}\"\n\
+             args = [\"startup_marker\", \"{marker}\"]\n\
+             protocol = \"opi-extension-jsonl-v1\"\n"
+        ),
+    )
+    .unwrap();
+    let source = format!("./vendor/{package_name}");
+    store
+        .write_declarations(&[PackageDeclaration {
+            source: source.clone(),
+            filters: Default::default(),
+        }])
+        .unwrap();
+    store
+        .write_lock(&[local_lock_entry(source, &package_dir).unwrap()])
+        .unwrap();
 }
 
 fn tool_result_text(result: &ToolResult) -> String {
@@ -137,8 +237,7 @@ fn no_resource_project_is_trusted() {
 }
 
 #[test]
-fn resource_project_with_no_store_entry_defaults_trusted_in_15_7() {
-    // 15.7 permissive default: Undecided -> Trusted (load). 15.8.1 tightens this.
+fn resource_project_with_no_store_entry_is_fail_closed() {
     let user_config = tempfile::tempdir().unwrap();
     let workspace = tempfile::tempdir().unwrap();
     init_git(workspace.path());
@@ -146,7 +245,7 @@ fn resource_project_with_no_store_entry_defaults_trusted_in_15_7() {
     let store = ProjectTrustStore::load(user_config.path()).expect("load store");
     assert_eq!(
         resolve_project_trust_decision(&store, workspace.path()),
-        TrustDecision::Trusted
+        TrustDecision::Untrusted
     );
 }
 
@@ -281,9 +380,9 @@ fn untrusted_project_skips_every_gated_layer() {
         "mock:mock-model".into(),
         OpiConfig::default(),
         workspace.path().to_path_buf(),
+        TrustDecision::Untrusted,
     )
     .global_config_dir(global.path().to_path_buf())
-    .trust_decision(TrustDecision::Untrusted)
     .build();
 
     let prompt = harness.system_prompt();
@@ -330,6 +429,34 @@ fn untrusted_project_skips_every_gated_layer() {
         !metadata.fragments.iter().any(|f| f.name == "proj-frag"),
         "project fragment must not be discovered"
     );
+    assert!(
+        !metadata
+            .themes
+            .iter()
+            .any(|theme| theme.name == "proj-theme"),
+        "project theme must not be discovered"
+    );
+    assert!(
+        !metadata
+            .extensions
+            .iter()
+            .any(|extension| extension.name == "proj-extension"),
+        "project extension must not be discovered"
+    );
+    assert!(
+        metadata
+            .themes
+            .iter()
+            .any(|theme| theme.name == "global-theme"),
+        "global theme must still be discovered"
+    );
+    assert!(
+        metadata
+            .extensions
+            .iter()
+            .any(|extension| extension.name == "global-extension"),
+        "global extension must still be discovered"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -350,9 +477,9 @@ fn trusted_project_retains_existing_resource_layers() {
         "mock:mock-model".into(),
         OpiConfig::default(),
         workspace.path().to_path_buf(),
+        TrustDecision::Trusted,
     )
     .global_config_dir(global.path().to_path_buf())
-    .trust_decision(TrustDecision::Trusted)
     .build();
 
     let prompt = harness.system_prompt();
@@ -370,6 +497,131 @@ fn trusted_project_retains_existing_resource_layers() {
     assert!(metadata.skills.iter().any(|s| s.name == "proj-skill"));
     assert!(metadata.skills.iter().any(|s| s.name == "global-skill"));
     assert!(metadata.fragments.iter().any(|f| f.name == "proj-frag"));
+    assert!(
+        metadata
+            .themes
+            .iter()
+            .any(|theme| theme.name == "proj-theme")
+    );
+    assert!(
+        metadata
+            .themes
+            .iter()
+            .any(|theme| theme.name == "global-theme")
+    );
+    assert!(
+        metadata
+            .extensions
+            .iter()
+            .any(|extension| extension.name == "proj-extension")
+    );
+    assert!(
+        metadata
+            .extensions
+            .iter()
+            .any(|extension| extension.name == "global-extension")
+    );
+}
+
+#[test]
+fn undecided_public_harness_state_is_fail_closed() {
+    let workspace = tempfile::tempdir().unwrap();
+    init_git(workspace.path());
+    write_project_resources(workspace.path());
+    let global = tempfile::tempdir().unwrap();
+    write_global_resources(global.path());
+
+    let harness = CodingHarness::builder(
+        Box::new(MockProvider::new("mock", Vec::new())),
+        "mock:mock-model".into(),
+        OpiConfig::default(),
+        workspace.path().to_path_buf(),
+        TrustDecision::Undecided,
+    )
+    .global_config_dir(global.path().to_path_buf())
+    .build();
+
+    let prompt = harness.system_prompt();
+    assert!(
+        !prompt.contains("proj-skill"),
+        "undecided leaked project skill"
+    );
+    assert!(
+        !prompt.contains("PROJECT AGENTS INSTRUCTIONS"),
+        "undecided leaked project context"
+    );
+    assert!(prompt.contains("global-skill"));
+    assert!(prompt.contains("GLOBAL AGENTS INSTRUCTIONS"));
+}
+
+#[test]
+fn untrusted_filter_uses_structural_layer_kind() {
+    let workspace = tempfile::tempdir().unwrap();
+    init_git(workspace.path());
+    let global = tempfile::tempdir().unwrap();
+
+    let custom_project = workspace.path().join("custom-project-skills");
+    let project_skill = custom_project.join("project-custom");
+    fs::create_dir_all(&project_skill).unwrap();
+    fs::write(
+        project_skill.join("SKILL.md"),
+        "---\nname: project-custom\ndescription: project custom.\n---\nbody\n",
+    )
+    .unwrap();
+
+    let lookalike = workspace.path().join(".opi-backup").join("skills");
+    let explicit_skill = lookalike.join("explicit-lookalike");
+    fs::create_dir_all(&explicit_skill).unwrap();
+    fs::write(
+        explicit_skill.join("SKILL.md"),
+        "---\nname: explicit-lookalike\ndescription: explicit lookalike.\n---\nbody\n",
+    )
+    .unwrap();
+
+    let layers = ResourceDiscoveryLayers {
+        skills: vec![
+            DiscoveryLayer {
+                kind: DiscoveryLayerKind::Project,
+                root: custom_project,
+                subdirectory: None,
+                precedence: 1,
+            },
+            DiscoveryLayer {
+                kind: DiscoveryLayerKind::Explicit,
+                root: lookalike,
+                subdirectory: None,
+                precedence: 2,
+            },
+        ],
+        ..Default::default()
+    };
+    let harness = CodingHarness::builder(
+        Box::new(MockProvider::new("mock", Vec::new())),
+        "mock:mock-model".into(),
+        OpiConfig::default(),
+        workspace.path().to_path_buf(),
+        TrustDecision::Untrusted,
+    )
+    .global_config_dir(global.path().to_path_buf())
+    .resource_layers(layers)
+    .build();
+
+    assert!(
+        !harness
+            .resource_metadata()
+            .skills
+            .iter()
+            .any(|skill| skill.name == "project-custom"),
+        "a structurally project-owned custom layer must be trust-gated"
+    );
+    assert!(
+        harness
+            .resource_metadata()
+            .skills
+            .iter()
+            .any(|skill| skill.name == "explicit-lookalike"),
+        "an explicit .opi-backup lookalike must not be filtered by its name"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -390,9 +642,9 @@ async fn untrusted_context_files_are_readable_but_not_injected() {
         "mock:mock-model".into(),
         OpiConfig::default(),
         workspace.path().to_path_buf(),
+        TrustDecision::Untrusted,
     )
     .global_config_dir(global.path().to_path_buf())
-    .trust_decision(TrustDecision::Untrusted)
     .build();
 
     let prompt = harness.system_prompt();
@@ -514,5 +766,180 @@ async fn untrusted_project_adapter_declaration_never_spawns() {
             .iter()
             .any(|p| p.manifest.name == "global-pkg"),
         "global adapter declaration should load"
+    );
+}
+
+#[tokio::test]
+async fn untrusted_package_runtime_never_reads_project_store() {
+    let workspace = tempfile::tempdir().unwrap();
+    init_git(workspace.path());
+    let global = tempfile::tempdir().unwrap();
+
+    let global_pkg = global.path().join("vendor").join("shared");
+    write_package(&global_pkg, "shared");
+    let global_store = PackageStore::global(global.path().to_path_buf());
+    global_store
+        .write_declarations(&[PackageDeclaration {
+            source: "./vendor/shared".into(),
+            filters: Default::default(),
+        }])
+        .unwrap();
+    global_store
+        .write_lock(&[local_lock_entry("./vendor/shared".into(), &global_pkg).unwrap()])
+        .unwrap();
+
+    let project_store_dir = workspace.path().join(".opi");
+    fs::create_dir_all(&project_store_dir).unwrap();
+    fs::write(
+        project_store_dir.join("packages.toml"),
+        "not valid toml = [",
+    )
+    .unwrap();
+
+    let startup = start_installed_package_runtime_with_trust(
+        workspace.path(),
+        global.path(),
+        TrustDecision::Untrusted,
+    )
+    .await;
+
+    assert_eq!(startup.installed_packages.len(), 1);
+    assert_eq!(startup.installed_packages[0].manifest.name, "shared");
+    assert!(
+        startup
+            .diagnostics
+            .iter()
+            .all(|diagnostic| !diagnostic.message.contains("Project package declarations")),
+        "untrusted startup must not parse or diagnose the project store"
+    );
+
+    let harness = CodingHarness::builder(
+        Box::new(MockProvider::new("mock", Vec::new())),
+        "mock:mock-model".into(),
+        OpiConfig::default(),
+        workspace.path().to_path_buf(),
+        TrustDecision::Untrusted,
+    )
+    .global_config_dir(global.path().to_path_buf())
+    .build();
+    assert!(
+        harness
+            .resource_metadata()
+            .packages
+            .iter()
+            .any(|package| package.name == "shared"),
+        "harness fallback must retain the valid global package"
+    );
+}
+
+#[tokio::test]
+async fn untrusted_same_name_project_package_cannot_suppress_global_package() {
+    let workspace = tempfile::tempdir().unwrap();
+    init_git(workspace.path());
+    let global = tempfile::tempdir().unwrap();
+    let global_pkg = global.path().join("vendor").join("global-shared");
+    let project_pkg = workspace.path().join("vendor").join("project-shared");
+    write_package(&global_pkg, "shared");
+    write_package(&project_pkg, "shared");
+
+    let global_store = PackageStore::global(global.path().to_path_buf());
+    global_store
+        .write_declarations(&[PackageDeclaration {
+            source: "./vendor/global-shared".into(),
+            filters: Default::default(),
+        }])
+        .unwrap();
+    global_store
+        .write_lock(&[local_lock_entry("./vendor/global-shared".into(), &global_pkg).unwrap()])
+        .unwrap();
+
+    let project_store = PackageStore::project(workspace.path().to_path_buf());
+    project_store
+        .write_declarations(&[PackageDeclaration {
+            source: "./vendor/project-shared".into(),
+            filters: Default::default(),
+        }])
+        .unwrap();
+    project_store
+        .write_lock(&[local_lock_entry("./vendor/project-shared".into(), &project_pkg).unwrap()])
+        .unwrap();
+
+    let startup = start_installed_package_runtime_with_trust(
+        workspace.path(),
+        global.path(),
+        TrustDecision::Untrusted,
+    )
+    .await;
+    assert_eq!(startup.installed_packages.len(), 1);
+    assert_eq!(
+        startup.installed_packages[0].path,
+        global_pkg.canonicalize().unwrap()
+    );
+}
+
+#[tokio::test]
+async fn untrusted_runtime_starts_global_marker_adapter_but_not_project_marker_adapter() {
+    let workspace = tempfile::tempdir().unwrap();
+    init_git(workspace.path());
+    let global = tempfile::tempdir().unwrap();
+    let project_marker = workspace.path().join("project-started.marker");
+    let global_marker = global.path().join("global-started.marker");
+    let marker_adapter = compile_marker_adapter(global.path());
+
+    install_marker_adapter(
+        &PackageStore::project(workspace.path().to_path_buf()),
+        workspace.path(),
+        "project-marker",
+        &project_marker,
+        &marker_adapter,
+    );
+    install_marker_adapter(
+        &PackageStore::global(global.path().to_path_buf()),
+        global.path(),
+        "global-marker",
+        &global_marker,
+        &marker_adapter,
+    );
+
+    let startup = start_installed_package_runtime_with_trust(
+        workspace.path(),
+        global.path(),
+        TrustDecision::Untrusted,
+    )
+    .await;
+
+    assert!(
+        global_marker.is_file(),
+        "the authorized global adapter must actually start"
+    );
+    assert!(
+        !project_marker.exists(),
+        "the untrusted project adapter must not execute any side effect"
+    );
+    assert_eq!(startup.installed_packages.len(), 1);
+    assert_eq!(startup.installed_packages[0].manifest.name, "global-marker");
+
+    let harness = CodingHarness::builder(
+        Box::new(MockProvider::new("mock", Vec::new())),
+        "mock:mock-model".into(),
+        OpiConfig::default(),
+        workspace.path().to_path_buf(),
+        TrustDecision::Untrusted,
+    )
+    .global_config_dir(global.path().to_path_buf())
+    .build();
+    assert!(
+        harness
+            .resource_metadata()
+            .packages
+            .iter()
+            .any(|package| package.name == "global-marker")
+    );
+    assert!(
+        harness
+            .resource_metadata()
+            .packages
+            .iter()
+            .all(|package| package.name != "project-marker")
     );
 }

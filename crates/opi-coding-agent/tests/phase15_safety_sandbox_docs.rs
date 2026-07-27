@@ -67,6 +67,101 @@ fn rust_sources_under(relative: &str) -> String {
     output
 }
 
+fn rust_source_files_under(relative: &str) -> Vec<(String, String)> {
+    fn visit(root: &Path, path: &Path, output: &mut Vec<(String, String)>) {
+        for entry in std::fs::read_dir(path)
+            .unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()))
+        {
+            let path = entry.expect("source directory entry").path();
+            if path.is_dir() {
+                visit(root, &path, output);
+            } else if path.extension().is_some_and(|extension| extension == "rs") {
+                let relative = path
+                    .strip_prefix(root)
+                    .expect("source remains below crate root")
+                    .to_string_lossy()
+                    .replace('\\', "/");
+                let source = std::fs::read_to_string(&path)
+                    .unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()));
+                output.push((relative, source));
+            }
+        }
+    }
+
+    let root = repo_root().join(relative);
+    let mut output = Vec::new();
+    visit(&root, &root, &mut output);
+    output.sort_by(|left, right| left.0.cmp(&right.0));
+    output
+}
+
+const PHASE15_OWNED_MODULE_PATHS: &[&str] = &[
+    "sandbox.rs",
+    "sandbox/",
+    "project_trust.rs",
+    "project_trust/",
+    "trust_prompt.rs",
+    "trust_prompt/",
+    "tool/operations.rs",
+];
+
+const PHASE15_OWNED_SURFACE: &[&str] = &[
+    "::sandbox::",
+    "SandboxConfig",
+    "SandboxMode",
+    "PreparedSandbox",
+    "StrictBackend",
+    "SandboxLayer",
+    "StrictOutcome",
+    "ConfinementBuild",
+    "LayerAvailability",
+    "ProjectTrust",
+    "TrustDecision",
+    "ProjectStartupPlan",
+    "TrustChoice",
+    "PreTrustUi",
+    "HeadlessPreTrustUi",
+    "AwaitingTrust",
+    "InteractiveTrustPrompt",
+    "TrustPrompt",
+    "TrustVote",
+    "TrustContext",
+    "TrustError",
+    "TrustResource",
+    "ProjectTrustResolverRegistry",
+    "ProjectTrustStore",
+    "prepare_project_startup",
+    "apply_ui_choice",
+    "resolve_interactive_trust_decision",
+    "resolve_project_trust_decision",
+    "cli_trust_override",
+    "project_trust",
+    "trust_prompt",
+    "default_project_trust",
+    "prepared_sandbox",
+    "trust_decision",
+    "FileOperations",
+    "BashOperations",
+    "LocalFileOperations",
+    "LocalBashOperations",
+];
+
+fn phase15_construction_ownership_violations(path: &str, source: &str) -> Vec<String> {
+    let normalized_path = path.replace('\\', "/");
+    let mut violations = PHASE15_OWNED_MODULE_PATHS
+        .iter()
+        .filter(|segment| normalized_path.ends_with(*segment) || normalized_path.contains(*segment))
+        .map(|segment| format!("module path `{segment}`"))
+        .collect::<Vec<_>>();
+    violations.extend(
+        PHASE15_OWNED_SURFACE
+            .iter()
+            .filter(|marker| source.contains(*marker))
+            .map(|marker| format!("surface marker `{marker}`")),
+    );
+    violations
+}
+
 #[test]
 fn localized_docs_pin_exact_phase15_claims() {
     let spec = read_repo_file("docs/opi-spec.md");
@@ -108,9 +203,25 @@ fn localized_docs_pin_exact_phase15_claims() {
         &spec_zh,
         &[
             "状态：已实现；pi-0.80.6 posture 对齐完成。",
+            "沙箱只 confine `bash` 子进程树。",
             "Linux L2 是收窄的新建 socket 创建门，而非 2026-07-11 设计描述的六 syscall domain-filter",
+            "seccomp deny-overlay 对 `socket(AF_INET, ...)`、`socket(AF_INET6, ...)` 与 `socket(AF_NETLINK, ...)` 返回稳定的 `EPERM` errno",
+            "而 `socket(AF_UNIX, ...)` 与 Unix-domain IPC 所需的通用 socket 操作保持允许",
+            "运行时经 `landlock_create_ruleset` 探测，绝不从内核版本推断",
+            "网络*层*在 ABI < 4 时仍报告 `TemporarilyUnavailable`",
+            "L3 是危险 blocklist，而非严格 allowlist。",
+            "它拒绝 `open_by_handle_at`、`bpf`、`perf_event_open`、`ptrace`、`kexec_load`、`kexec_file_load`、`reboot`、`init_module`、`finit_module`、`delete_module`、`swapon`、`swapoff`、`acct` 与 `settimeofday`",
+            "`clone` 与 `unshare` 保持允许",
+            "Linux L2 不声称完整的网络隔离。",
+            "`io_uring` 发起的 socket/connect/accept 操作绕过已审计的 `socket(2)` 路径，是显式的未覆盖残留",
             "Job Object 经直接的 `windows-sys` FFI 实现",
+            "`Operations` 缝合点是分层位于 `PathPolicy` 之下的纯 FS/exec 后端。",
+            "`FileOperations` 不被沙箱——文件工具保持 `PathPolicy` 守卫，因为第十五阶段只 confine bash 子进程树。",
+            "生产路径 `sandbox.rs`、`tool/operations.rs` 与 `sandbox/windows.rs` 模块保持 `#![forbid(unsafe_code)]`。",
+            "项目信任门门控的是项目本地资源的*加载*，而非工具执行。",
+            "存储于 `{user_config_dir}/trust.json`——即 Windows 上 `%APPDATA%\\opi\\trust.json`、Unix 上 `~/.config/opi/trust.json`，与 `config.toml` 并列",
             "不存在 live mid-session trust mutation，不存在内置 `/trust` 命令，不存在 project-resource reload。",
+            "信任 resolver 经显式的 embedder-only API `ProjectTrustResolverRegistry::register` 注册",
             "标准 CLI 交付空 registry（不注册任何 resolver），不存在 CLI `-e` 扩展标志，不存在原生 resolver 自动加载",
             "不修改 provider 或 session schema。",
         ],
@@ -132,6 +243,7 @@ fn localized_docs_pin_exact_phase15_claims() {
         &[
             "### 沙箱与项目信任",
             "沙箱只 confine `bash` 子进程树，不 confine `opi` 自身。",
+            "Linux `strict` L2 是收窄的新建 socket 创建门：seccomp 拒绝 `socket(AF_INET)`、 `socket(AF_INET6)` 与 `socket(AF_NETLINK)`，同时保留 `socket(AF_UNIX)`",
             "不存在内置 `/trust` 命令，不存在 live mid-session trust mutation",
             "标准 CLI 交付空 resolver registry，不暴露 CLI `-e` 标志，也不进行原生 resolver 加载。",
         ],
@@ -313,32 +425,97 @@ fn phase15_nongoals_have_structural_evidence() {
         );
     }
 
-    // Construction-ownership invariant: Phase 15 sandbox/trust code lives only
-    // in opi-coding-agent; opi-ai and opi-agent gain no sandbox/trust surface.
-    let ai_sources = rust_sources_under("crates/opi-ai/src");
-    for forbidden in [
-        "ProjectTrust",
-        "SandboxConfig",
-        "prepared_sandbox",
-        "trust_decision",
-    ] {
+    // Construction-ownership invariant: Phase 15 sandbox/trust/Operations code
+    // lives only in opi-coding-agent. Check each lower-crate source path and
+    // source body independently so a new module or one unchecked PascalCase API
+    // cannot hide in an aggregate string.
+    for crate_path in ["crates/opi-ai/src", "crates/opi-agent/src"] {
+        for (path, source) in rust_source_files_under(crate_path) {
+            let violations = phase15_construction_ownership_violations(&path, &source);
+            assert!(
+                violations.is_empty(),
+                "{crate_path}/{path} must not gain Phase 15 construction-owned surface: {}",
+                violations.join(", ")
+            );
+        }
+    }
+}
+
+#[test]
+fn construction_ownership_guard_rejects_mutated_module_and_api_fixtures() {
+    for module_path in PHASE15_OWNED_MODULE_PATHS {
+        let fixture_path = format!("src/{module_path}");
         assert!(
-            !ai_sources.contains(forbidden),
-            "opi-ai must not gain Phase 15 sandbox/trust surface `{forbidden}`"
+            !phase15_construction_ownership_violations(&fixture_path, "").is_empty(),
+            "module-path mutation `{fixture_path}` must trip the ownership guard"
         );
     }
-    let agent_sources = rust_sources_under("crates/opi-agent/src");
-    for forbidden in [
-        "ProjectTrust",
-        "SandboxConfig",
-        "prepared_sandbox",
-        "trust_decision",
-    ] {
+
+    for marker in PHASE15_OWNED_SURFACE {
+        let fixture = format!("mod mutation {{ /* {marker} */ }}");
         assert!(
-            !agent_sources.contains(forbidden),
-            "opi-agent must not gain Phase 15 sandbox/trust surface `{forbidden}`"
+            !phase15_construction_ownership_violations("src/mutation.rs", &fixture).is_empty(),
+            "surface mutation `{marker}` must trip the ownership guard"
         );
     }
+
+    assert!(
+        phase15_construction_ownership_violations(
+            "src/ordinary.rs",
+            "pub struct OrdinaryAgentSurface;"
+        )
+        .is_empty(),
+        "unrelated lower-crate code must not be rejected"
+    );
+}
+
+#[test]
+fn sandbox_product_ci_retains_each_native_product_filter_and_complete_log() {
+    let workflow = read_repo_file(".github/workflows/ci.yml");
+    for filter in [
+        "linux_engaged_subprocess_denies_requested_access",
+        "linux_new_inet_inet6_netlink_sockets_are_denied",
+        "linux_af_unix_survives_socket_creation_gate",
+        "linux_landlock_abi4_denies_tcp_bind_connect",
+        "linux_alternate_network_surface_audit",
+        "macos_engaged_subprocess_denies_outside_write",
+        "macos_engaged_subprocess_denies_network",
+        "macos_engaged_subprocess_allows_workspace_and_temp_writes",
+        "windows_strict_production_dispatch_reports_l0_only",
+    ] {
+        assert!(
+            workflow.contains(filter),
+            "sandbox_product must retain native product filter `{filter}`"
+        );
+    }
+    for evidence_guard in [
+        "-- --exact",
+        "0 failed; 0 ignored",
+        "Upload sandbox-product log",
+        "if: always()",
+    ] {
+        assert!(
+            workflow.contains(evidence_guard),
+            "sandbox_product must retain complete-log guard `{evidence_guard}`"
+        );
+    }
+}
+
+#[test]
+fn workspace_test_ci_fetches_git_history_for_artifact_audit() {
+    let workflow = read_repo_file(".github/workflows/ci.yml");
+    let test_job = workflow
+        .split_once("\n  test:\n")
+        .expect("ci.yml retains the workspace test job")
+        .1
+        .split_once("\n  doctest:\n")
+        .expect("workspace test job precedes doctest")
+        .0;
+
+    assert!(
+        test_job.contains("- uses: actions/checkout@v4\n        with:\n          fetch-depth: 0"),
+        "the workspace test job runs artifact_audit_script and must fetch full Git history"
+    );
 }
 
 #[test]
@@ -366,4 +543,28 @@ fn changelog_unreleased_records_phase15_additions() {
     // The user-facing changelog names the Job Object, not a wrapper crate; the
     // superseded `win32job` name must not leak in.
     assert_absent("CHANGELOG.md [Unreleased]", unreleased, &["win32job"]);
+}
+
+#[test]
+fn paired_specs_cite_the_adapter_contract_from_its_actual_test_binary() {
+    for path in ["docs/opi-spec.md", "docs/opi-spec.zh.md"] {
+        let content = read_repo_file(path);
+        assert!(
+            content.contains("sandbox_l0::adapter_process_group_contract"),
+            "{path} must cite the adapter process-group contract from sandbox_l0"
+        );
+        assert!(
+            !content.contains("adapter_host_mock::adapter_process_group_contract"),
+            "{path} must not cite the adapter contract under the wrong test binary"
+        );
+    }
+}
+
+#[test]
+fn phase15_test_fixtures_are_not_registered_as_installable_binaries() {
+    let cargo_toml = read_repo_file("crates/opi-coding-agent/Cargo.toml");
+    assert!(
+        !cargo_toml.contains("name = \"phase15-adapter-host-mock\""),
+        "Phase 15 adapter fixtures must remain test-only and must not be shipped by `cargo install`"
+    );
 }

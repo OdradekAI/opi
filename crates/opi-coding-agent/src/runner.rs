@@ -110,6 +110,7 @@ fn compact_ndjson_line(session_event: &AgentSessionEvent) -> Option<String> {
 
 impl NonInteractiveRunner {
     /// Create a new non-interactive runner.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         provider: Box<dyn Provider>,
         model: String,
@@ -118,6 +119,7 @@ impl NonInteractiveRunner {
         allow_mutating: bool,
         user_system_prompt: Option<String>,
         initial_messages: Vec<AgentMessage>,
+        trust_decision: TrustDecision,
     ) -> Self {
         Self::new_with_resume(
             provider,
@@ -129,6 +131,7 @@ impl NonInteractiveRunner {
             initial_messages,
             None,
             ToolSelection::Default,
+            trust_decision,
         )
         .expect("default non-interactive tool policy should be valid")
     }
@@ -146,8 +149,9 @@ impl NonInteractiveRunner {
         initial_messages: Vec<AgentMessage>,
         resume_info: Option<ResumeInfo>,
         tool_selection: ToolSelection,
+        trust_decision: TrustDecision,
     ) -> Result<Self, ToolPolicyError> {
-        Self::new_with_resume_and_runtime_packages(
+        Self::build(
             provider,
             model,
             config,
@@ -159,12 +163,15 @@ impl NonInteractiveRunner {
             tool_selection,
             None,
             None,
+            trust_decision,
         )
     }
 
     /// Create a non-interactive runner with installed package adapters already
-    /// started by runtime startup. `trace_path`, when set, writes a versioned
-    /// redacted trace envelope to that file for the run (Phase 7 task 7.5).
+    /// started by runtime startup. The startup's trust decision is the single
+    /// source of truth for both package and harness resource loading.
+    /// `trace_path`, when set, writes a versioned redacted trace envelope to
+    /// that file for the run (Phase 7 task 7.5).
     #[allow(clippy::too_many_arguments)]
     pub fn new_with_resume_and_runtime_packages(
         provider: Box<dyn Provider>,
@@ -176,8 +183,40 @@ impl NonInteractiveRunner {
         initial_messages: Vec<AgentMessage>,
         resume_info: Option<ResumeInfo>,
         tool_selection: ToolSelection,
+        runtime_startup: RuntimePackageStartup,
+        trace_path: Option<PathBuf>,
+    ) -> Result<Self, ToolPolicyError> {
+        let trust_decision = runtime_startup.trust_decision;
+        Self::build(
+            provider,
+            model,
+            config,
+            workspace_root,
+            allow_mutating,
+            user_system_prompt,
+            initial_messages,
+            resume_info,
+            tool_selection,
+            Some(runtime_startup),
+            trace_path,
+            trust_decision,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn build(
+        provider: Box<dyn Provider>,
+        model: String,
+        config: OpiConfig,
+        workspace_root: PathBuf,
+        allow_mutating: bool,
+        user_system_prompt: Option<String>,
+        initial_messages: Vec<AgentMessage>,
+        resume_info: Option<ResumeInfo>,
+        tool_selection: ToolSelection,
         runtime_startup: Option<RuntimePackageStartup>,
         trace_path: Option<PathBuf>,
+        trust_decision: TrustDecision,
     ) -> Result<Self, ToolPolicyError> {
         let tool_config = ToolRuntimeConfig::resolve(
             RunMode::NonInteractive,
@@ -185,21 +224,15 @@ impl NonInteractiveRunner {
             tool_selection.clone(),
         )?;
         let hooks = Box::new(NonInteractiveHooks { allow_mutating });
-        // Phase 15.8.1: the headless trust decision rides on RuntimePackageStartup
-        // (it filtered those packages); default to Trusted when no startup is
-        // supplied (embedder/test path).
-        let trust_decision = runtime_startup
-            .as_ref()
-            .map_or(TrustDecision::Trusted, |startup| startup.trust_decision);
-        let mut builder = CodingHarness::builder(provider, model, config, workspace_root)
-            .hooks(hooks)
-            .initial_messages(initial_messages)
-            .tool_selection(tool_selection)
-            .tool_config(tool_config)
-            // Record runtime diagnostics so the JSON run summary can carry
-            // structured severity counts (Phase 7 task 7.5).
-            .record_diagnostics(true)
-            .trust_decision(trust_decision);
+        let mut builder =
+            CodingHarness::builder(provider, model, config, workspace_root, trust_decision)
+                .hooks(hooks)
+                .initial_messages(initial_messages)
+                .tool_selection(tool_selection)
+                .tool_config(tool_config)
+                // Record runtime diagnostics so the JSON run summary can carry
+                // structured severity counts (Phase 7 task 7.5).
+                .record_diagnostics(true);
         if let Some(prompt) = user_system_prompt {
             builder = builder.user_system_prompt(prompt);
         }

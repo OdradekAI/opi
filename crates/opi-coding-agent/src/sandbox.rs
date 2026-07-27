@@ -10,10 +10,8 @@
 //! Linux backend (`sandbox/linux.rs`, seccomp + Landlock, selected by
 //! [`prepare_production`] on Linux); task 15.5.4 has landed the macOS backend
 //! (`sandbox/macos.rs`, `sandbox-exec` L1/L2 deny-overlay with a permanent L3
-//! gap, selected by [`prepare_production`] on macOS and attached as a
-//! [`Confinement::launcher`] plan when every requested layer engages). `strict`
-//! mode flows through the shared fail-open / fail-closed policy here on every
-//! platform.
+//! gap, selected by [`prepare_production`] on macOS). `strict` mode flows
+//! through the shared fail-open / fail-closed policy here on every platform.
 //!
 //! The resolver is pure and host-independent: every policy branch is covered by
 //! inline tests that inject a fake [`StrictBackend`], so verification needs no
@@ -54,10 +52,7 @@ mod windows;
 #[cfg(target_os = "linux")]
 pub mod linux;
 
-/// macOS strict backend substrate (profile/capability/argv model); landed in task
-/// 15.5.4. Host-independent pure Rust — no cfg gate — so the profile/capability
-/// invariants are TDD'd on any host. The macOS *runtime* (sandbox-exec probe,
-/// Confinement launcher, dispatcher wiring) is deferred to a native macOS runner.
+/// macOS strict backend and host-independent profile/capability model.
 pub mod macos;
 
 /// One strict-sandbox layer. The names match the `[sandbox]` TOML toggles
@@ -115,11 +110,13 @@ pub enum LayerAvailability {
 #[derive(Clone)]
 pub struct Confinement(ConfinementKind);
 
+type PreExecHook = dyn Fn(&mut tokio::process::Command) -> Vec<TemporaryGap> + Send + Sync;
+
 #[derive(Clone)]
 enum ConfinementKind {
     /// Register a `pre_exec` child-setup hook on the child `Command` (Linux
     /// seccomp + Landlock). `apply` runs it.
-    PreExec(Arc<dyn Fn(&mut tokio::process::Command) + Send + Sync>),
+    PreExec(Arc<PreExecHook>),
     /// Re-launch the child under `program` followed by `prefix_args`, then the
     /// original (program, args). macOS `sandbox-exec -p <profile>`.
     Launcher {
@@ -145,11 +142,11 @@ impl std::fmt::Debug for Confinement {
 }
 
 impl Confinement {
-    /// Wrap a `pre_exec` child-setup closure (Linux). The signature is unchanged
-    /// since 15.5.3 so `sandbox/linux.rs` needs no edit.
+    /// Wrap a parent-side Linux setup closure. Returned gaps are resolved before
+    /// spawn; the closure may also register the allocation-free child hook.
     pub fn new<F>(hook: F) -> Self
     where
-        F: Fn(&mut tokio::process::Command) + Send + Sync + 'static,
+        F: Fn(&mut tokio::process::Command) -> Vec<TemporaryGap> + Send + Sync + 'static,
     {
         Self(ConfinementKind::PreExec(Arc::new(hook)))
     }
@@ -166,9 +163,11 @@ impl Confinement {
     /// Apply the `pre_exec` hook to `cmd` (Linux). A no-op for a launcher plan:
     /// the spawn site handles the launcher rebuild because `apply` cannot change
     /// the `Command`'s program/args.
-    pub fn apply(&self, cmd: &mut tokio::process::Command) {
+    pub fn apply(&self, cmd: &mut tokio::process::Command) -> Vec<TemporaryGap> {
         if let ConfinementKind::PreExec(hook) = &self.0 {
-            hook(cmd);
+            hook(cmd)
+        } else {
+            Vec::new()
         }
     }
 
@@ -189,18 +188,25 @@ impl Confinement {
 /// Capability-injected platform backend.
 ///
 /// Production backends implement this to report what their platform can engage
-/// and, when it can, build the parent-side [`Confinement`] plan that
-/// [`prepare_production`] attaches to an `Engaged` decision. Tests inject a fake
-/// implementation to drive every policy branch without a host kernel feature.
+/// and build a parent-side [`Confinement`] for the independently engaged subset.
 pub trait StrictBackend: Send + Sync {
     /// Report the availability of `layer` on this platform/backend.
     fn availability(&self, layer: SandboxLayer) -> LayerAvailability;
 
-    /// Build the confinement plan (parent side) the backend can engage. Returns
-    /// `None` for backends that report engagement but apply no Opi-side `pre_exec`
-    /// hook (e.g. the L0-only Windows backend), and for capability-injected fakes.
-    /// The default is `None`; the Linux backend (15.5.3) overrides it.
-    fn build_confinement(&self, _workspace: &std::path::Path) -> Option<Confinement> {
+    /// Build the confinement plan for `engaged_layers`. Construction failures
+    /// are returned as per-layer gaps and pass through the common require policy.
+    fn build_confinement(
+        &self,
+        _workspace: &std::path::Path,
+        _engaged_layers: &[SandboxLayer],
+    ) -> ConfinementBuild {
+        ConfinementBuild::default()
+    }
+
+    /// Optional aggregate diagnostic for a platform whose strict layers are
+    /// one capability boundary rather than three independently actionable
+    /// facilities. Windows uses this to report its L0-only posture once.
+    fn aggregate_permanent_gap(&self) -> Option<(&'static str, &'static str)> {
         None
     }
 }
@@ -215,19 +221,20 @@ pub struct TemporaryGap {
     pub reason: String,
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct ConfinementBuild {
+    pub confinement: Option<Confinement>,
+    pub gaps: Vec<TemporaryGap>,
+}
+
 /// The per-exec decision for a strict request. [`PreparedSandbox`] carries this
 /// plus the once-per-startup permanent diagnostics.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StrictOutcome {
-    /// Every requested layer engaged. (In 15.5.1 this is reachable only via an
-    /// injected fake backend reporting engagement — no production backend is
-    /// wired yet. It carries no confinement action until 15.5.3/15.5.4 attach a
-    /// real backend, so exec still runs the L0 baseline.)
+    /// Every requested layer engaged.
     Engaged,
-    /// `require = false` and at least one requested layer was unavailable:
-    /// proceed at the L0 baseline. `per_command_temporary` are the TEMPORARY
-    /// gaps emitted as degraded diagnostics each command; permanent gaps were
-    /// already reported once at startup.
+    /// `require = false` and at least one requested layer was unavailable.
+    /// Independently engaged layers remain active.
     FailOpen {
         per_command_temporary: Vec<TemporaryGap>,
     },
@@ -244,10 +251,17 @@ pub enum StrictOutcome {
 #[derive(Debug, Clone)]
 pub struct StrictDecision {
     pub outcome: StrictOutcome,
+    /// Whether any construction-time gap must fail closed before spawn.
+    pub require: bool,
+    /// Strict layers selected by configuration, in stable fs/network/syscalls
+    /// order. Explicit `false` toggles are omitted.
+    pub requested_layers: Vec<SandboxLayer>,
+    /// Requested layers the backend reported as engaged. This remains populated
+    /// on fail-open decisions so production can retain partial confinement.
+    pub engaged_layers: Vec<SandboxLayer>,
     permanent_diagnostics: Vec<Diagnostic>,
-    /// Parent-built confinement plan attached by [`prepare_production`] when every
-    /// requested layer engaged. `None` for `Off`, fail-open, fail-closed, and the
-    /// pure [`prepare`] path (capability-injected fakes build no confinement).
+    /// Parent-built plan for the engaged subset. The pure [`prepare`] resolver
+    /// leaves this empty; [`prepare_production`] builds it.
     pub confinement: Option<Confinement>,
 }
 
@@ -255,7 +269,11 @@ impl PartialEq for StrictDecision {
     fn eq(&self, other: &Self) -> bool {
         // Compare only the observable policy decision. `confinement` holds an
         // opaque closure and is intentionally excluded from equality.
-        self.outcome == other.outcome && self.permanent_diagnostics == other.permanent_diagnostics
+        self.outcome == other.outcome
+            && self.require == other.require
+            && self.requested_layers == other.requested_layers
+            && self.engaged_layers == other.engaged_layers
+            && self.permanent_diagnostics == other.permanent_diagnostics
     }
 }
 
@@ -298,17 +316,20 @@ pub fn prepare(config: &SandboxConfig, backend: &dyn StrictBackend) -> PreparedS
         (SandboxLayer::Syscalls, config.syscalls),
     ];
 
+    let mut requested = Vec::new();
+    let mut engaged = Vec::new();
     let mut permanent: Vec<(SandboxLayer, String)> = Vec::new();
-    let mut temporary: Vec<(SandboxLayer, String)> = Vec::new();
+    let mut temporary = Vec::new();
     for (layer, toggle) in requested_layers {
         // Some(false) = explicit opt-out: do not query, do not diagnose.
         if toggle == Some(false) {
             continue;
         }
+        requested.push(layer);
         match backend.availability(layer) {
-            LayerAvailability::Engaged => {}
+            LayerAvailability::Engaged => engaged.push(layer),
             LayerAvailability::TemporarilyUnavailable { reason } => {
-                temporary.push((layer, reason));
+                temporary.push(TemporaryGap { layer, reason });
             }
             LayerAvailability::PermanentlyUnavailable { reason } => {
                 permanent.push((layer, reason));
@@ -316,31 +337,39 @@ pub fn prepare(config: &SandboxConfig, backend: &dyn StrictBackend) -> PreparedS
         }
     }
 
-    let permanent_diagnostics = permanent
-        .iter()
-        .map(|(layer, reason)| sandbox_unavailable_diagnostic(layer.as_str(), reason.clone()))
-        .collect::<Vec<_>>();
+    let permanent_diagnostics = if permanent.is_empty() {
+        Vec::new()
+    } else if let Some((layer, reason)) = backend.aggregate_permanent_gap() {
+        vec![sandbox_unavailable_diagnostic(layer, reason)]
+    } else {
+        permanent
+            .iter()
+            .map(|(layer, reason)| sandbox_unavailable_diagnostic(layer.as_str(), reason.clone()))
+            .collect::<Vec<_>>()
+    };
 
     let outcome = if temporary.is_empty() && permanent.is_empty() {
         StrictOutcome::Engaged
     } else if config.require {
         StrictOutcome::FailClosed {
-            reason: summarize_gaps(&permanent, &temporary),
+            reason: summarize_layers(
+                permanent
+                    .iter()
+                    .map(|(layer, _)| *layer)
+                    .chain(temporary.iter().map(|gap| gap.layer)),
+            ),
         }
     } else {
         StrictOutcome::FailOpen {
-            per_command_temporary: temporary
-                .iter()
-                .map(|(layer, reason)| TemporaryGap {
-                    layer: *layer,
-                    reason: reason.clone(),
-                })
-                .collect(),
+            per_command_temporary: temporary,
         }
     };
 
     PreparedSandbox::Strict(StrictDecision {
         outcome,
+        require: config.require,
+        requested_layers: requested,
+        engaged_layers: engaged,
         permanent_diagnostics,
         confinement: None,
     })
@@ -348,15 +377,8 @@ pub fn prepare(config: &SandboxConfig, backend: &dyn StrictBackend) -> PreparedS
 
 /// Build a short, redacted reason summarizing which layers were unavailable, for
 /// the fail-closed error message. Layer names only — no command/env/paths.
-fn summarize_gaps(
-    permanent: &[(SandboxLayer, String)],
-    temporary: &[(SandboxLayer, String)],
-) -> String {
-    let mut names: Vec<&str> = permanent
-        .iter()
-        .chain(temporary.iter())
-        .map(|(layer, _)| layer.as_str())
-        .collect();
+fn summarize_layers(layers: impl IntoIterator<Item = SandboxLayer>) -> String {
+    let mut names: Vec<&str> = layers.into_iter().map(SandboxLayer::as_str).collect();
     names.sort_unstable();
     names.dedup();
     format!(
@@ -372,42 +394,64 @@ fn summarize_gaps(
 /// backend via [`production_sandbox_backend`] and dispatches through [`prepare`].
 /// `workspace` is the harness workspace root; the Linux L1 fs layer grants
 /// workspace+temp writes against it (Windows/macOS backends ignore it).
+fn prepare_with_backend(
+    config: &SandboxConfig,
+    workspace: &std::path::Path,
+    backend: &dyn StrictBackend,
+) -> PreparedSandbox {
+    let mut prepared = prepare(config, backend);
+    if let PreparedSandbox::Strict(decision) = &mut prepared
+        && !matches!(decision.outcome, StrictOutcome::FailClosed { .. })
+        && !decision.engaged_layers.is_empty()
+    {
+        let build = backend.build_confinement(workspace, decision.engaged_layers.as_slice());
+        decision.confinement = build.confinement;
+        if !build.gaps.is_empty() {
+            let build_gaps = build.gaps;
+            decision
+                .engaged_layers
+                .retain(|layer| !build_gaps.iter().any(|gap| gap.layer == *layer));
+            if decision.require {
+                decision.outcome = StrictOutcome::FailClosed {
+                    reason: summarize_layers(build_gaps.iter().map(|gap| gap.layer)),
+                };
+            } else {
+                match &mut decision.outcome {
+                    StrictOutcome::FailOpen {
+                        per_command_temporary,
+                    } => per_command_temporary.extend(build_gaps),
+                    StrictOutcome::Engaged => {
+                        decision.outcome = StrictOutcome::FailOpen {
+                            per_command_temporary: build_gaps,
+                        };
+                    }
+                    StrictOutcome::FailClosed { .. } => unreachable!(),
+                }
+            }
+        }
+    }
+    prepared
+}
+
 pub fn prepare_production(config: &SandboxConfig, workspace: &std::path::Path) -> PreparedSandbox {
     #[cfg(target_os = "windows")]
     {
-        let _ = workspace;
-        crate::sandbox::windows::prepare(config)
+        crate::sandbox::windows::prepare(config, workspace)
     }
     #[cfg(not(target_os = "windows"))]
     {
         let backend = production_sandbox_backend(workspace);
-        let mut prepared = prepare(config, backend.as_ref());
-        // Attach the parent-built confinement plan only when every requested
-        // layer engaged; `LocalBashOperations::exec` applies it to the spawn
-        // Command. The Linux backend (15.5.3) builds the seccomp+Landlock plan;
-        // the macOS backend (15.5.4) builds a `sandbox-exec` launcher plan when
-        // every requested layer engages (syscalls must be opted out — macOS is
-        // L1/L2-only and cannot engage L3).
-        if let PreparedSandbox::Strict(decision) = &mut prepared
-            && matches!(decision.outcome, StrictOutcome::Engaged)
-        {
-            decision.confinement = backend.build_confinement(workspace);
-        }
-        prepared
+        prepare_with_backend(config, workspace, backend.as_ref())
     }
 }
 
 /// Select the production strict backend for the current platform.
 ///
 /// - **Linux (15.5.3)**: `LinuxStrictBackend` queries the observed Landlock ABI
-///   and reports per-layer engagement; it builds the seccomp+Landlock confinement
-///   plan from `workspace` when every requested layer is available.
+///   and builds seccomp+Landlock for the engaged subset.
 /// - **macOS (15.5.4)**: `MacosStrictBackend` probes `sandbox-exec` on `PATH` and
 ///   reports L1 fs + L2 network as engaged when the helper is usable (L3/syscalls
-///   is a permanent platform gap). It builds a [`Confinement::launcher`] plan
-///   (`sandbox-exec -p <profile>`) when every *requested* layer engages — since
-///   macOS can never engage L3, syscalls must be opted out (`syscalls = false`)
-///   or strict fail-opens/closes on the permanent syscalls gap.
+///   is a permanent platform gap). It keeps L1/L2 active under fail-open.
 /// - **Windows (15.5.5)**: `L0OnlyBackend` — every strict layer is a permanent
 ///   platform gap.
 /// - Any other target is permanently unsupported.
@@ -454,6 +498,11 @@ impl StrictBackend for UnsupportedPlatformBackend {
 mod tests {
     use super::*;
     use crate::config::{SandboxConfig, SandboxMode};
+    use crate::tool::{BashOperations, BashRequest, LocalBashOperations};
+    use std::sync::Mutex;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::time::Duration;
+    use tokio_util::sync::CancellationToken;
 
     /// Fake backend backed by a closure, for policy tests.
     struct FakeBackend<F: Fn(SandboxLayer) -> LayerAvailability + Send + Sync>(F);
@@ -505,6 +554,15 @@ mod tests {
         match prepared {
             PreparedSandbox::Strict(decision) => {
                 assert_eq!(decision.outcome, StrictOutcome::Engaged);
+                assert_eq!(
+                    decision.requested_layers,
+                    vec![
+                        SandboxLayer::Fs,
+                        SandboxLayer::Network,
+                        SandboxLayer::Syscalls
+                    ]
+                );
+                assert_eq!(decision.engaged_layers, decision.requested_layers);
                 assert!(decision.permanent_diagnostics.is_empty());
             }
             _ => panic!("expected Strict"),
@@ -632,6 +690,11 @@ mod tests {
         let startup = prepared.startup_diagnostics();
         match prepared {
             PreparedSandbox::Strict(decision) => {
+                assert_eq!(
+                    decision.engaged_layers,
+                    vec![SandboxLayer::Syscalls],
+                    "fail-open must retain every independently engaged layer"
+                );
                 if let StrictOutcome::FailOpen {
                     per_command_temporary,
                 } = decision.outcome
@@ -647,6 +710,188 @@ mod tests {
             _ => panic!("expected Strict"),
         }
         assert_eq!(startup.len(), 1);
+    }
+
+    #[test]
+    fn strict_all_layers_disabled_requests_and_engages_nothing() {
+        let config = SandboxConfig {
+            mode: SandboxMode::Strict,
+            require: true,
+            fs: Some(false),
+            network: Some(false),
+            syscalls: Some(false),
+        };
+        let backend = fake(|layer| panic!("disabled layer was queried: {layer:?}"));
+        let prepared = prepare(&config, backend.as_ref());
+        match prepared {
+            PreparedSandbox::Strict(decision) => {
+                assert_eq!(decision.outcome, StrictOutcome::Engaged);
+                assert!(decision.requested_layers.is_empty());
+                assert!(decision.engaged_layers.is_empty());
+                assert!(decision.confinement.is_none());
+            }
+            PreparedSandbox::Off => panic!("strict with no enabled layers is still strict"),
+        }
+    }
+
+    #[test]
+    fn strict_single_enabled_layer_matrix() {
+        for selected in [
+            SandboxLayer::Fs,
+            SandboxLayer::Network,
+            SandboxLayer::Syscalls,
+        ] {
+            let config = SandboxConfig {
+                mode: SandboxMode::Strict,
+                require: false,
+                fs: Some(selected == SandboxLayer::Fs),
+                network: Some(selected == SandboxLayer::Network),
+                syscalls: Some(selected == SandboxLayer::Syscalls),
+            };
+            let PreparedSandbox::Strict(decision) =
+                prepare(&config, fake(|_| LayerAvailability::Engaged).as_ref())
+            else {
+                panic!("expected strict decision");
+            };
+            assert_eq!(decision.requested_layers, vec![selected]);
+            assert_eq!(decision.engaged_layers, vec![selected]);
+            assert_eq!(decision.outcome, StrictOutcome::Engaged);
+        }
+    }
+
+    struct RecordingBackend {
+        unavailable: SandboxLayer,
+        permanent: bool,
+        built_for: Mutex<Vec<SandboxLayer>>,
+        applied: Option<Arc<AtomicUsize>>,
+    }
+
+    impl StrictBackend for RecordingBackend {
+        fn availability(&self, layer: SandboxLayer) -> LayerAvailability {
+            if layer != self.unavailable {
+                LayerAvailability::Engaged
+            } else if self.permanent {
+                LayerAvailability::PermanentlyUnavailable {
+                    reason: "permanent gap".to_string(),
+                }
+            } else {
+                LayerAvailability::TemporarilyUnavailable {
+                    reason: "temporary gap".to_string(),
+                }
+            }
+        }
+
+        fn build_confinement(
+            &self,
+            _workspace: &std::path::Path,
+            engaged_layers: &[SandboxLayer],
+        ) -> ConfinementBuild {
+            *self.built_for.lock().unwrap() = engaged_layers.to_vec();
+            let confinement = self.applied.as_ref().map_or_else(
+                || Confinement::launcher("launcher", Vec::new()),
+                |applied| {
+                    let applied = Arc::clone(applied);
+                    Confinement::new(move |_| {
+                        applied.fetch_add(1, Ordering::SeqCst);
+                        Vec::new()
+                    })
+                },
+            );
+            ConfinementBuild {
+                confinement: Some(confinement),
+                gaps: Vec::new(),
+            }
+        }
+    }
+
+    #[test]
+    fn fail_open_builds_confinement_for_the_engaged_subset() {
+        let backend = RecordingBackend {
+            unavailable: SandboxLayer::Network,
+            permanent: false,
+            built_for: Mutex::new(Vec::new()),
+            applied: None,
+        };
+        let prepared =
+            prepare_with_backend(&strict_config(false), std::path::Path::new("."), &backend);
+        let PreparedSandbox::Strict(decision) = prepared else {
+            panic!("expected strict decision");
+        };
+        assert!(matches!(decision.outcome, StrictOutcome::FailOpen { .. }));
+        assert!(decision.confinement.is_some());
+        assert_eq!(
+            *backend.built_for.lock().unwrap(),
+            vec![SandboxLayer::Fs, SandboxLayer::Syscalls]
+        );
+    }
+
+    #[test]
+    fn confinement_apply_reports_parent_side_layer_construction_gaps() {
+        let confinement = Confinement::new(|_command| {
+            vec![TemporaryGap {
+                layer: SandboxLayer::Fs,
+                reason: "landlock construction failed".to_string(),
+            }]
+        });
+        let mut command = tokio::process::Command::new("unused");
+        let gaps = confinement.apply(&mut command);
+        assert_eq!(gaps.len(), 1);
+        assert_eq!(gaps[0].layer, SandboxLayer::Fs);
+    }
+
+    #[test]
+    fn default_macos_capability_shape_retains_l1_l2_while_reporting_l3() {
+        let backend = RecordingBackend {
+            unavailable: SandboxLayer::Syscalls,
+            permanent: true,
+            built_for: Mutex::new(Vec::new()),
+            applied: None,
+        };
+        let prepared =
+            prepare_with_backend(&strict_config(false), std::path::Path::new("."), &backend);
+        let PreparedSandbox::Strict(decision) = prepared else {
+            panic!("expected strict decision");
+        };
+        assert!(matches!(decision.outcome, StrictOutcome::FailOpen { .. }));
+        assert_eq!(
+            decision.engaged_layers,
+            vec![SandboxLayer::Fs, SandboxLayer::Network]
+        );
+        assert!(decision.confinement.is_some());
+        assert_eq!(
+            *backend.built_for.lock().unwrap(),
+            vec![SandboxLayer::Fs, SandboxLayer::Network]
+        );
+        assert_eq!(decision.permanent_diagnostics.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn default_fail_open_exec_applies_the_engaged_confinement() {
+        let applied = Arc::new(AtomicUsize::new(0));
+        let backend = RecordingBackend {
+            unavailable: SandboxLayer::Syscalls,
+            permanent: true,
+            built_for: Mutex::new(Vec::new()),
+            applied: Some(Arc::clone(&applied)),
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let prepared = prepare_with_backend(&strict_config(false), dir.path(), &backend);
+        let PreparedSandbox::Strict(decision) = &prepared else {
+            panic!("expected strict decision");
+        };
+        assert!(matches!(decision.outcome, StrictOutcome::FailOpen { .. }));
+
+        LocalBashOperations::with_prepared(prepared)
+            .exec(BashRequest {
+                command: "printf partial".to_string(),
+                cwd: dir.path().to_path_buf(),
+                timeout: Duration::from_secs(5),
+                signal: CancellationToken::new(),
+                env: Vec::new(),
+            })
+            .await
+            .expect("default fail-open execution succeeds");
+        assert_eq!(applied.load(Ordering::SeqCst), 1);
     }
 
     #[test]

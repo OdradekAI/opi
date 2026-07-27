@@ -14,6 +14,7 @@ fn image_slash_command_queues_for_next_prompt() {
         "mock:test".into(),
         config,
         std::env::current_dir().unwrap(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     );
 
     // Create a minimal valid PNG file.

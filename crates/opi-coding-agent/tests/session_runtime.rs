@@ -714,6 +714,7 @@ async fn harness_creates_session_file_on_prompt() {
         "mock-model".into(),
         OpiConfig::default(),
         std::env::current_dir().unwrap(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     );
 
     let result = harness.prompt("Hi").await.unwrap();
@@ -888,6 +889,7 @@ async fn full_lifecycle_write_read_verify() {
         "mock-model".into(),
         OpiConfig::default(),
         std::env::current_dir().unwrap(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     );
 
     let _result = harness.prompt("Who are you?").await.unwrap();
@@ -933,6 +935,7 @@ async fn multi_turn_session_persistence() {
         "mock-model".into(),
         OpiConfig::default(),
         std::env::current_dir().unwrap(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     );
 
     let result1 = harness.prompt("Hello").await.unwrap();
@@ -975,6 +978,7 @@ async fn harness_forks_current_session_into_new_parented_session() {
         "mock-model".into(),
         OpiConfig::default(),
         std::env::current_dir().unwrap(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     );
 
     let _ = harness.prompt("Hello").await.unwrap();
@@ -1038,6 +1042,7 @@ async fn phase14_session_affinity_tracks_new_resume_and_fork() {
         "mock:mock-model".into(),
         OpiConfig::default(),
         workspace.path().to_path_buf(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     )
     .build();
 
@@ -1275,6 +1280,7 @@ async fn harness_unprefixed_embedded_pricing_survives_switch_resume_and_fork() {
         "claude-sonnet-4".into(),
         OpiConfig::default(),
         workspace.path().to_path_buf(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     );
 
     assert_total_cost(&harness, 0.0, "new construction");
@@ -1497,6 +1503,7 @@ async fn harness_emits_compaction_events_on_threshold() {
         "mock-model".into(),
         config,
         std::env::current_dir().unwrap(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     );
 
     let starts = Arc::new(std::sync::Mutex::new(0u32));
@@ -1540,6 +1547,7 @@ async fn threshold_compaction_is_counted_in_diagnostics() {
         "mock-model".into(),
         config,
         std::env::current_dir().unwrap(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     )
     .record_diagnostics(true)
     .build();
@@ -1573,6 +1581,7 @@ async fn manual_compaction_is_counted_in_diagnostics() {
         "mock-model".into(),
         config,
         std::env::current_dir().unwrap(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     )
     .record_diagnostics(true)
     .build();
@@ -1773,6 +1782,7 @@ fn resume_session_id_surfaces_recovery_diagnostics_in_resource_metadata() {
         "mock-model".into(),
         OpiConfig::default(),
         std::env::current_dir().unwrap(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     );
 
     let message_count = harness
@@ -1902,6 +1912,7 @@ async fn multi_assistant_turn_accumulates_all_assistant_usages() {
         "mock-model".into(),
         OpiConfig::default(),
         std::env::current_dir().unwrap(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     );
     harness.add_tool(Box::new(NoopTool));
 
@@ -2648,6 +2659,7 @@ fn phase14_usage_subsets_survive_session_resume() {
         "anthropic:claude-sonnet-4".into(),
         OpiConfig::default(),
         dir.path().to_path_buf(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     )
     .initial_messages(reconstructed.messages)
     .resume(ResumeInfo {
@@ -2853,6 +2865,7 @@ fn phase8_session_recovery_diagnostics_reach_in_process_sink() {
         "mock-model".into(),
         OpiConfig::default(),
         std::env::current_dir().unwrap(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     )
     .record_diagnostics(true)
     .build();
@@ -2967,6 +2980,7 @@ async fn phase8_cancel_persists_only_finalized_state() {
         "mock-model".into(),
         OpiConfig::default(),
         std::env::current_dir().unwrap(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     );
     let token = harness.cancel_token();
 
@@ -3107,6 +3121,7 @@ fn build_phase13_harness_with_model(workspace: &std::path::Path, model: &str) ->
         model.into(),
         OpiConfig::default(),
         workspace.to_path_buf(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     )
     .extension_registry(registry)
     .build()
@@ -3297,6 +3312,7 @@ async fn phase13_labels_and_session_name_do_not_enter_provider_context() {
         "mock:mock-model".into(),
         OpiConfig::default(),
         workspace.path().to_path_buf(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     )
     .build();
 
@@ -3628,6 +3644,7 @@ fn phase13_builder_resume_applies_recorded_model_cli_path() {
         "mock:mock-model".into(),
         OpiConfig::default(),
         workspace.path().to_path_buf(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     )
     .extension_registry(registry)
     .resume(ResumeInfo {
@@ -3680,6 +3697,7 @@ async fn phase13_resume_emits_diagnostic_for_incompatible_recorded_model() {
         "mock:mock-model".into(),
         OpiConfig::default(),
         workspace.path().to_path_buf(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     )
     .record_diagnostics(true)
     .build();

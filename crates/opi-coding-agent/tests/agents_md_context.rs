@@ -336,6 +336,7 @@ async fn e2e_context_in_system_prompt() {
         "mock:mock-model".into(),
         OpiConfig::default(),
         cwd.to_path_buf(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     );
 
     let _ = harness.prompt("test prompt").await;
@@ -401,6 +402,7 @@ async fn e2e_resume_context_from_original_workspace() {
         vec![],
         Some(resume_info),
         opi_coding_agent::policy::ToolSelection::Default,
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     );
 
     let system = harness.system_prompt();
@@ -438,6 +440,7 @@ async fn e2e_global_context_in_system_prompt() {
         None,
         opi_coding_agent::policy::ToolSelection::Default,
         Some(global_dir.path().to_path_buf()),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     );
 
     let _ = harness.prompt("test prompt").await;

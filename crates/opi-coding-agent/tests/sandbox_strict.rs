@@ -351,7 +351,8 @@ async fn production_off_mode_runs_command_without_sandbox_diagnostic() {
 /// DoD gate `windows_strict_reports_l0_only` (15.5.5): on a native Windows
 /// runner, the production Windows backend classifies every strict layer as a
 /// PERMANENT gap, surfaces exactly one redacted `CODE_SANDBOX_UNAVAILABLE`
-/// diagnostic per layer ONCE at startup (never per command), runs the command at
+/// diagnostic for the aggregate L1-L3 platform gap ONCE at startup (never per
+/// command), runs the command at
 /// the L0 baseline under `require = false`, and returns `SandboxUnavailable`
 /// before spawn under `require = true`.
 #[cfg(windows)]
@@ -359,13 +360,13 @@ async fn production_off_mode_runs_command_without_sandbox_diagnostic() {
 async fn windows_strict_reports_l0_only() {
     let dir = tempfile::tempdir().unwrap();
 
-    // require=false: fail-open at L0; three permanent startup diagnostics.
+    // require=false: fail-open at L0; one aggregate permanent diagnostic.
     let prepared = prepare_production(&strict_config(false), dir.path());
     let startup = prepared.startup_diagnostics();
     assert_eq!(
         startup.len(),
-        3,
-        "one permanent CODE_SANDBOX_UNAVAILABLE per strict layer at startup"
+        1,
+        "Windows L1-L3 must be one permanent platform capability gap"
     );
     assert!(
         startup.iter().all(|d| d.code == CODE_SANDBOX_UNAVAILABLE),
@@ -407,8 +408,8 @@ async fn windows_strict_reports_l0_only() {
     let prepared_req = prepare_production(&strict_config(true), dir.path());
     assert_eq!(
         prepared_req.startup_diagnostics().len(),
-        3,
-        "require=true still surfaces the permanent gaps once at startup"
+        1,
+        "require=true still surfaces the aggregate permanent gap once"
     );
     let ops_req = LocalBashOperations::with_prepared(prepared_req);
     let err = ops_req.exec(bash_request(dir.path())).await.unwrap_err();
@@ -448,15 +449,15 @@ async fn windows_strict_production_dispatch_reports_l0_only() {
     let prepared_req = prepare_production(&strict_config(true), ws.path());
     assert_eq!(
         prepared_req.startup_diagnostics().len(),
-        3,
-        "production dispatch surfaces all three Windows permanent gaps at startup"
+        1,
+        "production dispatch surfaces one aggregate Windows permanent gap"
     );
     let (mut tools, startup_diagnostics) =
         CodingHarness::build_tools_with_sandbox(ws.path(), &tool_config, prepared_req);
     assert_eq!(
         startup_diagnostics.len(),
-        3,
-        "harness startup channel receives the three CODE_SANDBOX_UNAVAILABLE diagnostics"
+        1,
+        "harness startup channel receives one CODE_SANDBOX_UNAVAILABLE diagnostic"
     );
     assert!(
         startup_diagnostics
@@ -493,8 +494,8 @@ async fn windows_strict_production_dispatch_reports_l0_only() {
         CodingHarness::build_tools_with_sandbox(ws.path(), &tool_config, prepared_open);
     assert_eq!(
         startup2.len(),
-        3,
-        "require=false still reports the gaps at startup"
+        1,
+        "require=false still reports the aggregate gap at startup"
     );
     let bash2 = tools2
         .iter_mut()
@@ -530,12 +531,12 @@ async fn windows_strict_production_dispatch_reports_l0_only() {
 // ---------------------------------------------------------------------------
 
 /// The macOS strict substrate: the seatbelt deny-overlay profile (deterministic
-/// and escaped, with fs/network toggles), argv preservation under the sandbox-exec
-/// wrapper, and the per-layer capability matrix (L3/syscalls permanently
+/// and escaped, with fs/network toggles), the production launcher confinement,
+/// and the per-layer capability matrix (L3/syscalls permanently
 /// unavailable; L1 fs and L2 network engaged when `sandbox-exec` is usable, with
 /// exact missing/unusable reasons). Pure host-independent coverage of the DoD
 /// profile tests: path escaping, fs/network toggles, unavailable-tool behavior,
-/// and argv preservation.
+/// and launcher construction.
 #[test]
 fn macos_profile_and_capability_matrix() {
     use opi_coding_agent::sandbox::LayerAvailability;
@@ -589,17 +590,23 @@ fn macos_profile_and_capability_matrix() {
         "syscalls stays permanently unavailable regardless of sandbox-exec"
     );
 
-    // sandbox-exec unusable -> exact unusable reason.
-    let cap_unus = macos::macos_strict_capability(&macos::SandboxExecStatus::Unusable(
-        "probe exited 1".to_string(),
-    ));
+    // sandbox-exec unusable -> stable redacted reason. Probe stderr and I/O
+    // display may carry paths/secrets and must never enter diagnostics.
+    let canary = "token=TOP-SECRET path=/Users/private/project";
+    let cap_unus =
+        macos::macos_strict_capability(&macos::SandboxExecStatus::Unusable(canary.to_string()));
     match &cap_unus.fs {
         LayerAvailability::TemporarilyUnavailable { reason } => {
             assert!(
                 reason.starts_with(macos::SANDBOX_EXEC_UNUSABLE_PREFIX),
                 "unusable reason must use the stable prefix, got: {reason}"
             );
-            assert!(reason.contains("probe exited 1"));
+            assert!(
+                !reason.contains(canary)
+                    && !reason.contains("TOP-SECRET")
+                    && !reason.contains("/Users/private"),
+                "probe failure details must be sanitized, got: {reason}"
+            );
         }
         other => panic!("unusable helper: fs must be TemporarilyUnavailable, got {other:?}"),
     }
@@ -616,8 +623,8 @@ fn macos_profile_and_capability_matrix() {
         p_both.contains("(allow default)"),
         "profile must carry an (allow default) base — seatbelt's default is DENY, so without it the confined child cannot exec or read system files"
     );
-    // Seatbelt is first-match-wins: the workspace/temp exceptions MUST precede
-    // the root deny or the deny shadows them and rejects workspace writes too.
+    // Seatbelt is last-match-wins: the root deny MUST precede the
+    // workspace/temp exceptions so the later, narrower allows punch through.
     let ws_idx = p_both
         .find("(allow file-write* (subpath \"/Users/a/ws\"))")
         .expect("workspace exception present");
@@ -689,23 +696,52 @@ fn macos_profile_and_capability_matrix() {
         "dollar must be backslash-escaped (neutralizes seatbelt ${{var}} expansion)"
     );
 
-    // --- argv preservation ---
-    // The wrapper prepends `sandbox-exec -p <profile>` and preserves the original
-    // program + args verbatim in the tail.
-    let profile = "(version 1)\n(deny network*)\n";
-    let argv =
-        macos::build_wrapped_argv(profile, "bash", &["-c".to_string(), "echo hi".to_string()]);
-    assert_eq!(
-        argv,
-        vec![
-            "sandbox-exec".to_string(),
-            "-p".to_string(),
-            profile.to_string(),
-            "bash".to_string(),
-            "-c".to_string(),
-            "echo hi".to_string(),
-        ],
-        "wrapper argv must be sandbox-exec -p <profile> followed by the verbatim program+args"
+    // --- launcher plan ---
+    // Test the actual Confinement representation consumed by the production
+    // spawn composer rather than a dead wrapper-argv model.
+    let confinement = macos::build_macos_confinement(
+        std::path::Path::new("/Users/a/ws"),
+        &macos::SandboxExecStatus::Available,
+        &[SandboxLayer::Fs, SandboxLayer::Network],
+    )
+    .expect("available helper with enabled layers builds a launcher");
+    let (program, prefix) = confinement
+        .launcher_prefix()
+        .expect("macOS confinement is a launcher");
+    assert_eq!(program, "sandbox-exec");
+    assert_eq!(prefix.first().map(String::as_str), Some("-p"));
+    let profile = prefix.get(1).expect("profile follows -p");
+    assert!(profile.contains("file-write*"));
+    assert!(profile.contains("(deny network*)"));
+
+    let fs_only = macos::build_macos_confinement(
+        std::path::Path::new("/Users/a/ws"),
+        &macos::SandboxExecStatus::Available,
+        &[SandboxLayer::Fs],
+    )
+    .expect("fs-only launcher");
+    let fs_profile = &fs_only.launcher_prefix().unwrap().1[1];
+    assert!(fs_profile.contains("file-write*"));
+    assert!(!fs_profile.contains("network*"));
+
+    let network_only = macos::build_macos_confinement(
+        std::path::Path::new("/Users/a/ws"),
+        &macos::SandboxExecStatus::Available,
+        &[SandboxLayer::Network],
+    )
+    .expect("network-only launcher");
+    let network_profile = &network_only.launcher_prefix().unwrap().1[1];
+    assert!(!network_profile.contains("file-write*"));
+    assert!(network_profile.contains("(deny network*)"));
+
+    assert!(
+        macos::build_macos_confinement(
+            std::path::Path::new("/Users/a/ws"),
+            &macos::SandboxExecStatus::Available,
+            &[],
+        )
+        .is_none(),
+        "no enabled L1/L2 layer must not launch sandbox-exec"
     );
 }
 
@@ -1103,11 +1139,29 @@ async fn linux_engaged_subprocess_denies_requested_access() {
 // wrong-host run compiles them out and is NOT acceptance evidence.
 // ---------------------------------------------------------------------------
 
+fn default_macos_strict_config() -> SandboxConfig {
+    SandboxConfig {
+        mode: SandboxMode::Strict,
+        ..SandboxConfig::default()
+    }
+}
+
+#[test]
+fn default_macos_acceptance_config_keeps_all_layer_defaults() {
+    let config = default_macos_strict_config();
+    assert_eq!(config.mode, SandboxMode::Strict);
+    assert!(!config.require);
+    assert_eq!(
+        (config.fs, config.network, config.syscalls),
+        (None, None, None)
+    );
+}
+
 #[cfg(target_os = "macos")]
 mod macos_engaged {
     use super::{
         BashRequest, CancellationToken, Duration, LayerAvailability, LocalBashOperations,
-        SandboxConfig, SandboxLayer, SandboxMode, StrictBackend, prepare_production,
+        SandboxLayer, StrictBackend, default_macos_strict_config, prepare_production,
     };
     use opi_coding_agent::sandbox::macos::MacosStrictBackend;
     use std::path::{Path, PathBuf};
@@ -1189,23 +1243,13 @@ int main(int argc, char** argv) {
         }
     }
 
-    /// macOS can never engage L3 (syscalls); to let L1 fs + L2 network engage
-    /// (outcome `Engaged`, which attaches the sandbox-exec launcher) the syscalls
-    /// layer must be explicitly opted out, otherwise strict fail-opens on the
-    /// permanent syscalls gap and no confinement attaches.
-    pub fn engaged_config() -> SandboxConfig {
-        SandboxConfig {
-            mode: SandboxMode::Strict,
-            require: false,
-            fs: None,
-            network: None,
-            syscalls: Some(false),
-        }
-    }
-
-    /// Build the engaged strict decision for `workspace` and wrap it in the ops.
-    pub fn engaged_ops(workspace: &Path) -> LocalBashOperations {
-        LocalBashOperations::with_prepared(prepare_production(&engaged_config(), workspace))
+    /// Default macOS strict reports the permanent L3 gap as fail-open while
+    /// retaining and applying the independently engaged L1/L2 launcher.
+    pub fn default_strict_ops(workspace: &Path) -> LocalBashOperations {
+        LocalBashOperations::with_prepared(prepare_production(
+            &default_macos_strict_config(),
+            workspace,
+        ))
     }
 
     /// Capability guard: the engaged tests require sandbox-exec to be usable so
@@ -1243,7 +1287,7 @@ async fn macos_engaged_subprocess_denies_outside_write() {
     let workspace = tempfile::tempdir().unwrap();
     macos_engaged::assert_fs_network_engaged(workspace.path());
     let probe = macos_engaged::build_probe(workspace.path());
-    let ops = macos_engaged::engaged_ops(workspace.path());
+    let ops = macos_engaged::default_strict_ops(workspace.path());
     let outside = tempfile::Builder::new()
         .prefix("opi-outside-")
         .tempdir_in("/var/tmp")
@@ -1260,15 +1304,15 @@ async fn macos_engaged_subprocess_denies_outside_write() {
     assert_probe_exit(&result, 1, "write-outside");
 }
 
-/// sandbox-exec L2 network: a fresh `socket(AF_INET)` is denied by
-/// `(deny network*)`.
+/// sandbox-exec L2 network: `socket(AF_INET)` may be created, but `bind(2)` is
+/// denied by `(deny network*)`.
 #[cfg(target_os = "macos")]
 #[tokio::test]
 async fn macos_engaged_subprocess_denies_network() {
     let workspace = tempfile::tempdir().unwrap();
     macos_engaged::assert_fs_network_engaged(workspace.path());
     let probe = macos_engaged::build_probe(workspace.path());
-    let ops = macos_engaged::engaged_ops(workspace.path());
+    let ops = macos_engaged::default_strict_ops(workspace.path());
     let result = ops
         .exec(macos_engaged::probe_request(
             workspace.path(),
@@ -1288,7 +1332,7 @@ async fn macos_engaged_subprocess_allows_workspace_and_temp_writes() {
     let workspace = tempfile::tempdir().unwrap();
     macos_engaged::assert_fs_network_engaged(workspace.path());
     let probe = macos_engaged::build_probe(workspace.path());
-    let ops = macos_engaged::engaged_ops(workspace.path());
+    let ops = macos_engaged::default_strict_ops(workspace.path());
 
     // Workspace write -> allowed (exit 0).
     let ws_target = workspace.path().join("allowed.txt");

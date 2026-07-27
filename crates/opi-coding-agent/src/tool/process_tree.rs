@@ -23,16 +23,6 @@
 //! the engaged baseline — the direct child is still killed via the Operations
 //! backend. [`TreeGuard`] and every function in this module are panic-free.
 //!
-//! # Test fault injection
-//!
-//! Two environment variables force L0 failures so the Operations exec path can
-//! be exercised at its diagnostic branches without depending on a real OS
-//! fault: `OPI_TEST_L0_ATTACH_FAIL=1` makes [`TreeGuard::attach`] return
-//! [`AttachError`]; `OPI_TEST_L0_TERMINATE_FAIL=1` makes
-//! [`TreeGuard::terminate`] return [`TerminationOutcome::Failed`]. They are
-//! read live (not cached) so a test can scope them under a serializing lock.
-//! Never set in production.
-
 use std::io;
 use tokio::process::Command;
 
@@ -45,13 +35,6 @@ const LAYER: &str = "windows-job";
 
 #[cfg(not(any(unix, windows)))]
 const LAYER: &str = "unsupported";
-
-const ENV_ATTACH_FAIL: &str = "OPI_TEST_L0_ATTACH_FAIL";
-const ENV_TERMINATE_FAIL: &str = "OPI_TEST_L0_TERMINATE_FAIL";
-
-fn env_flag(name: &str) -> bool {
-    std::env::var(name).as_deref() == Ok("1")
-}
 
 /// Configure a [`Command`] for tree containment BEFORE spawn.
 ///
@@ -88,6 +71,10 @@ impl AttachError {
             reason: reason.into(),
         }
     }
+
+    fn missing_pid() -> Self {
+        Self::new(LAYER, "missing child process id")
+    }
 }
 
 impl std::fmt::Display for AttachError {
@@ -123,6 +110,32 @@ pub enum TerminationOutcome {
 #[derive(Debug)]
 pub struct TreeGuard {
     inner: TreeGuardInner,
+    #[cfg(test)]
+    fail_terminate_once: bool,
+}
+
+#[cfg(test)]
+#[derive(Debug, Clone, Copy, Default)]
+pub(crate) struct TestTreeFaults {
+    attach: bool,
+    terminate: bool,
+}
+
+#[cfg(test)]
+impl TestTreeFaults {
+    pub(crate) fn attach() -> Self {
+        Self {
+            attach: true,
+            terminate: false,
+        }
+    }
+
+    pub(crate) fn terminate() -> Self {
+        Self {
+            attach: false,
+            terminate: true,
+        }
+    }
 }
 
 #[cfg(unix)]
@@ -157,15 +170,15 @@ impl TreeGuard {
     pub fn disabled() -> Self {
         Self {
             inner: TreeGuardInner::Disabled,
+            #[cfg(test)]
+            fail_terminate_once: false,
         }
     }
 
     /// Consume the L0 containment so the next [`terminate`] / `Drop` is a
-    /// no-op. Called on a clean child exit: the command finished and the tree
-    /// must NOT be torn down, matching pre-15.4 behavior for backgrounded
-    /// survivors. (On a clean exit the group leader is already gone, so leaving
-    /// the guard armed would only ever be a redundant ESRCH no-op anyway; this
-    /// keeps the intent explicit.)
+    /// no-op. Reserved for callers that deliberately transfer tree ownership;
+    /// normal command and adapter lifecycles keep the guard armed even after a
+    /// clean direct-child exit so backgrounded descendants are terminated.
     ///
     /// [`terminate`]: TreeGuard::terminate
     pub fn disarm(&mut self) {
@@ -175,11 +188,40 @@ impl TreeGuard {
     /// Attach L0 to an already-spawned child identified by `child_pid`.
     ///
     /// On the Unix group mechanism the pid IS the group id (the child was made
-    /// a leader by [`configure_tree`]), so no kernel call is needed here and
-    /// this only fails under test injection. On Windows this creates the
-    /// kill-on-close Job Object and assigns the child to it.
+    /// a leader by [`configure_tree`]), so no kernel call is needed here. On
+    /// Windows this creates the kill-on-close Job Object and assigns the child
+    /// to it. PID zero is always rejected before any OS call.
     pub fn attach(child_pid: u32) -> Result<Self, AttachError> {
-        if env_flag(ENV_ATTACH_FAIL) {
+        Self::attach_inner(child_pid, false, false)
+    }
+
+    /// Attach from the optional PID returned by `tokio::process::Child::id`.
+    /// A reaped or otherwise unavailable child PID is a named, redacted attach
+    /// failure and never falls back to the sentinel PID zero.
+    pub fn attach_child(child_pid: Option<u32>) -> Result<Self, AttachError> {
+        match child_pid {
+            Some(pid) => Self::attach(pid),
+            None => Err(AttachError::missing_pid()),
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn attach_with_faults(
+        child_pid: u32,
+        faults: TestTreeFaults,
+    ) -> Result<Self, AttachError> {
+        Self::attach_inner(child_pid, faults.attach, faults.terminate)
+    }
+
+    fn attach_inner(
+        child_pid: u32,
+        inject_attach_failure: bool,
+        _inject_terminate_failure: bool,
+    ) -> Result<Self, AttachError> {
+        if child_pid == 0 {
+            return Err(AttachError::missing_pid());
+        }
+        if inject_attach_failure {
             return Err(AttachError::new(LAYER, "injected attach failure"));
         }
         #[cfg(unix)]
@@ -189,6 +231,8 @@ impl TreeGuard {
                     pgid: child_pid as i32,
                     terminated: false,
                 },
+                #[cfg(test)]
+                fail_terminate_once: _inject_terminate_failure,
             })
         }
         #[cfg(windows)]
@@ -197,11 +241,13 @@ impl TreeGuard {
             job.assign(child_pid)?;
             Ok(Self {
                 inner: TreeGuardInner::Job(Some(job)),
+                #[cfg(test)]
+                fail_terminate_once: _inject_terminate_failure,
             })
         }
         #[cfg(not(any(unix, windows)))]
         {
-            let _ = child_pid;
+            let _ = (child_pid, _inject_terminate_failure);
             Ok(Self::disabled())
         }
     }
@@ -209,6 +255,13 @@ impl TreeGuard {
     /// Terminate the whole tree. Idempotent and panic-free. The caller surfaces
     /// the returned [`TerminationOutcome`] as a diagnostic when it is `Failed`.
     pub fn terminate(&mut self) -> TerminationOutcome {
+        #[cfg(test)]
+        if std::mem::take(&mut self.fail_terminate_once) {
+            return TerminationOutcome::Failed(AttachError::new(
+                LAYER,
+                "injected terminate failure",
+            ));
+        }
         #[cfg(unix)]
         {
             match &mut self.inner {
@@ -216,17 +269,11 @@ impl TreeGuard {
                     if *terminated {
                         return TerminationOutcome::AlreadyTerminated;
                     }
-                    *terminated = true;
-                    if env_flag(ENV_TERMINATE_FAIL) {
-                        return TerminationOutcome::Failed(AttachError::new(
-                            LAYER,
-                            "injected terminate failure",
-                        ));
-                    }
                     // SIGKILL the whole group (negative pid). ESRCH (already
                     // gone) is a successful no-op; anything else is a degrade.
                     let rc = unsafe { libc::kill(-*pgid, libc::SIGKILL) };
                     if rc == 0 || io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH) {
+                        *terminated = true;
                         TerminationOutcome::Terminated
                     } else {
                         TerminationOutcome::Failed(AttachError::new(
@@ -241,23 +288,9 @@ impl TreeGuard {
         #[cfg(windows)]
         {
             match &mut self.inner {
-                TreeGuardInner::Job(job_slot) => match job_slot.take() {
-                    Some(mut job) => {
-                        if env_flag(ENV_TERMINATE_FAIL) {
-                            // Keep the handle alive so Drop still closes it
-                            // (kill-on-close) even though we report failure.
-                            *job_slot = Some(job);
-                            return TerminationOutcome::Failed(AttachError::new(
-                                LAYER,
-                                "injected terminate failure",
-                            ));
-                        }
-                        job.terminate();
-                        // Drop closes the handle and fires KILL_ON_JOB_CLOSE.
-                        TerminationOutcome::Terminated
-                    }
-                    None => TerminationOutcome::AlreadyTerminated,
-                },
+                TreeGuardInner::Job(job_slot) => {
+                    terminate_job_slot_with(job_slot, JobGuard::terminate)
+                }
                 TreeGuardInner::Disabled => TerminationOutcome::AlreadyTerminated,
             }
         }
@@ -282,6 +315,28 @@ impl Drop for TreeGuard {
 #[derive(Debug)]
 struct JobGuard {
     handle: usize, // 0 == taken/disabled
+}
+
+#[cfg(windows)]
+fn terminate_job_slot_with<F>(job_slot: &mut Option<JobGuard>, terminate: F) -> TerminationOutcome
+where
+    F: FnOnce(&mut JobGuard) -> Result<(), AttachError>,
+{
+    let Some(mut job) = job_slot.take() else {
+        return TerminationOutcome::AlreadyTerminated;
+    };
+    match terminate(&mut job) {
+        Ok(()) => {
+            // Drop closes the handle and fires KILL_ON_JOB_CLOSE.
+            TerminationOutcome::Terminated
+        }
+        Err(error) => {
+            // Keep the job armed so TreeGuard::drop retries termination and
+            // JobGuard::drop still enforces kill-on-close.
+            *job_slot = Some(job);
+            TerminationOutcome::Failed(error)
+        }
+    }
 }
 
 #[cfg(windows)]
@@ -360,12 +415,35 @@ impl JobGuard {
         Ok(())
     }
 
-    fn terminate(&mut self) {
+    fn terminate(&mut self) -> Result<(), AttachError> {
         use windows_sys::Win32::System::JobObjects::TerminateJobObject;
-        if self.handle != 0 {
-            // TerminateJobObject kills every process in the job immediately.
-            unsafe { TerminateJobObject(self.handle as *mut _, 1) };
+        self.terminate_with(
+            |handle, exit_code| unsafe { TerminateJobObject(handle as *mut _, exit_code) },
+            io::Error::last_os_error,
+        )
+    }
+
+    fn terminate_with<T, E>(
+        &mut self,
+        terminate_job_object: T,
+        last_os_error: E,
+    ) -> Result<(), AttachError>
+    where
+        T: FnOnce(usize, u32) -> i32,
+        E: FnOnce() -> io::Error,
+    {
+        if self.handle == 0 {
+            return Ok(());
         }
+        if terminate_job_object(self.handle, 1) == 0 {
+            let error = last_os_error();
+            let reason = match error.raw_os_error() {
+                Some(code) => format!("TerminateJobObject failed (os error {code})"),
+                None => "TerminateJobObject failed".to_string(),
+            };
+            return Err(AttachError::new(LAYER, reason));
+        }
+        Ok(())
     }
 }
 
@@ -432,16 +510,6 @@ pub fn observed_landlock_abi() -> ABI {
     }
 }
 
-/// Map a `StableErrno` to its raw errno value for `io::Error::from_raw_os_error`.
-#[cfg(target_os = "linux")]
-fn stable_errno_raw(e: crate::sandbox::linux::StableErrno) -> i32 {
-    use crate::sandbox::linux::StableErrno;
-    match e {
-        StableErrno::Prctl(x) | StableErrno::Seccomp(x) => x,
-        StableErrno::EmptyFilter | StableErrno::Backend => libc::EINVAL,
-    }
-}
-
 /// The one audited child-setup helper: register a `pre_exec` hook on `cmd`
 /// (built in the parent) that installs the seccomp deny-overlay and restricts
 /// the child via Landlock. Only the std `pre_exec` registration itself is
@@ -449,32 +517,38 @@ fn stable_errno_raw(e: crate::sandbox::linux::StableErrno) -> i32 {
 #[cfg(target_os = "linux")]
 pub fn install_child_confinement(
     cmd: &mut tokio::process::Command,
-    bpf: Arc<BpfProgram>,
-    ruleset: Option<RulesetCreated>,
+    bpf: Option<Arc<BpfProgram>>,
+    fs_ruleset: Option<RulesetCreated>,
+    network_ruleset: Option<RulesetCreated>,
 ) {
     use std::os::unix::process::CommandExt;
-    let mut ruleset = ruleset;
     // SAFETY: `pre_exec` runs the supplied closure in the child process after
     // fork but before execve, in an async-signal-safe context. The closure calls
     // only async-signal-safe operations: seccomp filter installation (prctl +
     // the seccomp syscall, inside seccompiler::apply_filter) and Landlock
     // `restrict_self` (the landlock_restrict_self syscall, inside the landlock
     // crate). No locking and no heap allocation occur on the success path; the
-    // error path may format a message, which is acceptable because the command
-    // is already failing. `bpf` (`Arc<Vec<sock_filter>>`) and `ruleset`
-    // (fd-bearing `RulesetCreated`) are both `Send + Sync + 'static`, satisfying
-    // `pre_exec`'s closure bounds.
+    // error paths return only errno-backed `io::Error` values: no allocator,
+    // formatting machinery, or locks are touched after fork. `bpf`
+    // (`Arc<Vec<sock_filter>>`) and the fd-bearing rulesets are all
+    // `Send + Sync + 'static`, satisfying `pre_exec`'s closure bounds.
+    let mut fs_ruleset = fs_ruleset;
+    let mut network_ruleset = network_ruleset;
     let _ = unsafe {
         cmd.as_std_mut().pre_exec(move || {
-            if let Err(e) = crate::sandbox::linux::apply_raw_filter(bpf.as_ref()) {
-                return Err(std::io::Error::from_raw_os_error(stable_errno_raw(e)));
-            }
-            if let Some(rs) = ruleset.take()
-                && let Err(e) = rs.restrict_self()
+            if let Some(program) = &bpf
+                && let Err(error) = crate::sandbox::linux::apply_raw_filter(program.as_ref())
             {
-                return Err(std::io::Error::other(format!(
-                    "landlock restrict_self: {e:?}"
-                )));
+                return Err(std::io::Error::from_raw_os_error(error.raw_os_error()));
+            }
+            for ruleset in [&mut fs_ruleset, &mut network_ruleset] {
+                if let Some(rs) = ruleset.take()
+                    && let Err(error) = rs.restrict_self()
+                {
+                    return Err(std::io::Error::from_raw_os_error(*landlock::Errno::from(
+                        error,
+                    )));
+                }
             }
             Ok(())
         })
@@ -506,16 +580,69 @@ mod tests {
         assert!(err.to_string().contains("boom"));
     }
 
-    /// Test injection: with the env flag set, attach reports a failure carrying
-    /// the active layer. Serialized by the test process; the flag is cleared so
-    /// it cannot leak to sibling tests in this binary.
     #[test]
-    fn attach_failure_injection_via_env() {
-        // Edition 2024: env mutation is unsafe (not thread-safe).
-        unsafe { std::env::set_var(ENV_ATTACH_FAIL, "1") };
-        let err = TreeGuard::attach(424242).expect_err("env flag must force attach failure");
-        unsafe { std::env::remove_var(ENV_ATTACH_FAIL) };
+    fn injected_attach_fault_is_explicit_and_redacted() {
+        let err = TreeGuard::attach_with_faults(424242, TestTreeFaults::attach())
+            .expect_err("injected strategy must force attach failure");
         assert_eq!(err.layer, LAYER);
         assert!(err.reason.contains("injected"));
+    }
+
+    #[test]
+    fn zero_or_missing_pid_is_a_named_attach_failure() {
+        for result in [TreeGuard::attach(0), TreeGuard::attach_child(None)] {
+            let err = result.expect_err("PID 0/missing PID must not attach");
+            assert_eq!(err.layer, LAYER);
+            assert_eq!(err.reason, "missing child process id");
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn failed_job_termination_is_reported_and_keeps_kill_on_close_armed() {
+        let mut job_slot = Some(JobGuard { handle: 1 });
+        let outcome = terminate_job_slot_with(&mut job_slot, |job| {
+            job.terminate_with(|_handle, _exit_code| 0, || io::Error::from_raw_os_error(5))
+        });
+
+        match outcome {
+            TerminationOutcome::Failed(error) => {
+                assert_eq!(error.layer, "windows-job");
+                assert_eq!(error.reason, "TerminateJobObject failed (os error 5)");
+            }
+            other => panic!("expected failed termination, got {other:?}"),
+        }
+        assert_eq!(
+            job_slot.as_ref().map(|job| job.handle),
+            Some(1),
+            "failed termination must retain the job for kill-on-close Drop"
+        );
+
+        // The injected handle is not a real kernel handle; disarm it before
+        // test cleanup so JobGuard::drop does not call CloseHandle(1).
+        job_slot.as_mut().unwrap().handle = 0;
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn empty_seccomp_filter_fails_spawn_before_command_side_effects() {
+        let dir = tempfile::tempdir().unwrap();
+        let marker = dir.path().join("must-not-exist");
+        let mut command = tokio::process::Command::new("sh");
+        command
+            .arg("-c")
+            .arg(format!("touch {}", marker.display()))
+            .current_dir(dir.path());
+        let empty = Arc::new(seccompiler::BpfProgram::new());
+        install_child_confinement(&mut command, Some(empty), None, None);
+
+        let error = command
+            .spawn()
+            .expect_err("empty filter must reject the child before exec");
+        assert_eq!(error.raw_os_error(), Some(libc::EINVAL));
+        assert!(
+            !marker.exists(),
+            "a failed pre_exec hook must prevent command side effects"
+        );
     }
 }

@@ -2730,8 +2730,8 @@ fn bash_tool_is_mutating_and_sequential() {
 /// against re-introducing persistent background shells / ptys / session pools.
 /// Phase 15.2 moved the spawn into `LocalBashOperations::exec` (operations.rs),
 /// so both the bash tool and the local backend are scanned for the forbidden
-/// symbols, and the single-shot `tokio::process::Command` positive control now
-/// lives in operations.rs.
+/// symbols. Phase 15.6 permits only the two owned, bounded pipe-drain tasks;
+/// their JoinHandles must be awaited and aborted when the drain grace expires.
 #[test]
 fn bash_tool_no_background_shell_symbols_guard() {
     let root = phase11_workspace_root();
@@ -2754,11 +2754,34 @@ fn bash_tool_no_background_shell_symbols_guard() {
         "Lazy<",
         "OnceCell<",
         "static mut",
-        "tokio::spawn",
     ] {
         assert!(
             !bash.contains(needle) && !ops.contains(needle),
             "bash must not use a background-shell / persistence symbol '{needle}'"
+        );
+    }
+    assert!(
+        !bash.contains("tokio::spawn"),
+        "BashTool must not spawn detached tasks"
+    );
+    assert_eq!(
+        ops.matches("tokio::spawn").count(),
+        1,
+        "operations.rs may spawn only through the owned pipe-drain helper"
+    );
+    for required in [
+        "let drain_out = spawn_stream_capture(stdout);",
+        "let drain_err = spawn_stream_capture(stderr);",
+        "tokio::task::JoinHandle<StreamCapture>",
+        "finish_stream_capture(drain_out)",
+        "finish_stream_capture(drain_err)",
+        "tokio::time::timeout(TERMINATED_PIPE_DRAIN_GRACE, &mut handle)",
+        "handle.abort()",
+        "let _ = handle.await",
+    ] {
+        assert!(
+            ops.contains(required),
+            "pipe-drain tasks must remain owned, bounded, and abortable; missing '{required}'"
         );
     }
     // Positive control: the legitimate single-shot command primitive is present

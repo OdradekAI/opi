@@ -39,7 +39,7 @@ use crate::adapter_protocol::{
     AdapterToolCapability, PROTOCOL_VERSION,
 };
 use crate::diagnostic_bridge::diagnostic_for_adapter_host_message;
-use crate::tool::TreeGuard;
+use crate::tool::{AttachError, TreeGuard};
 
 // ---------------------------------------------------------------------------
 // Error types
@@ -137,10 +137,10 @@ pub struct AdapterHost {
     child: Option<Child>,
     reader_handle: Option<tokio::task::JoinHandle<()>>,
     id_counter: AtomicU64,
-    /// Phase 15.4 L0 tree guard. On Windows this owns the kill-on-close Job
-    /// Object that tears the adapter subprocess tree down on shutdown/drop. On
-    /// Unix it is `None` (the adapter keeps its existing `process_group(0)`
-    /// path unchanged). Best-effort: a failed assignment leaves this `None`.
+    /// Phase 15.4 L0 tree guard retained for the complete host lifetime. On
+    /// Windows this owns the kill-on-close Job Object; on Unix it owns the
+    /// configured process group. Best-effort attach failures leave this `None`
+    /// after recording one redacted degradation diagnostic.
     l0_guard: Option<TreeGuard>,
 }
 
@@ -166,6 +166,18 @@ impl AdapterHost {
         config: AdapterProcessConfig,
         timeout: Duration,
     ) -> Result<Self, AdapterHostError> {
+        Self::start_with_tree_attach(package_name, config, timeout, TreeGuard::attach).await
+    }
+
+    async fn start_with_tree_attach<F>(
+        package_name: impl Into<String>,
+        config: AdapterProcessConfig,
+        timeout: Duration,
+        tree_attach: F,
+    ) -> Result<Self, AdapterHostError>
+    where
+        F: FnOnce(u32) -> Result<TreeGuard, AttachError>,
+    {
         let package_name = package_name.into();
 
         // Spawn the child process
@@ -195,18 +207,16 @@ impl AdapterHost {
             reason: e.to_string(),
         })?;
 
-        // Phase 15.4 L0: on Windows, assign the adapter child to a kill-on-close
-        // Job Object so the whole adapter subprocess tree is torn down on
-        // shutdown/drop. The Unix adapter keeps its existing process_group(0)
-        // path unchanged (DoD: "remains intact"). Best-effort: a failed
-        // assignment leaves the host without L0 tree-kill but does not block start.
-        #[cfg(windows)]
-        let l0_guard = TreeGuard::attach(child.id().unwrap_or(0)).ok();
-        #[cfg(not(windows))]
-        let l0_guard: Option<TreeGuard> = {
-            // No adapter L0 change on Unix (process_group(0) path remains intact).
-            let _ = &mut child;
-            None
+        // Retain the L0 guard on every supported host. Missing PID and OS
+        // assignment errors are fail-open, but the exact redacted AttachError
+        // survives until diagnostics storage exists below.
+        let l0_attach = match child.id() {
+            Some(pid) if pid != 0 => tree_attach(pid),
+            _ => TreeGuard::attach_child(None),
+        };
+        let (l0_guard, l0_attach_error) = match l0_attach {
+            Ok(guard) => (Some(guard), None),
+            Err(error) => (None, Some(error)),
         };
 
         let stdin = child.stdin.take().expect("stdin should be piped");
@@ -255,6 +265,15 @@ impl AdapterHost {
             id_counter: AtomicU64::new(1),
             l0_guard,
         };
+        if let Some(error) = l0_attach_error {
+            host.diagnostics
+                .lock()
+                .unwrap()
+                .push(crate::diagnostics::sandbox_degraded_diagnostic(
+                    error.layer,
+                    error.reason,
+                ));
+        }
 
         // Perform the initialize handshake
         let init_id = host.next_id();
@@ -341,8 +360,8 @@ impl AdapterHost {
     }
 
     /// Returns the child process ID.
-    pub fn child_pid(&self) -> u32 {
-        self.child.as_ref().and_then(|c| c.id()).unwrap_or(0)
+    pub fn child_pid(&self) -> Option<u32> {
+        self.child.as_ref().and_then(|child| child.id())
     }
 
     pub fn take_diagnostics(&self) -> Vec<Diagnostic> {
@@ -633,5 +652,68 @@ fn other_type(msg: &AdapterProcessMessage) -> &'static str {
         AdapterProcessMessage::HookResult { .. } => "hook_result",
         AdapterProcessMessage::StateResult { .. } => "state_result",
         AdapterProcessMessage::Error { .. } => "error",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::diagnostics::CODE_SANDBOX_DEGRADED;
+
+    fn one_handshake_adapter() -> AdapterProcessConfig {
+        let response = r#"{"type":"capabilities","id":"1","tools":[],"commands":[],"hooks":[],"model_overrides":[]}"#;
+        #[cfg(windows)]
+        {
+            AdapterProcessConfig {
+                command: PathBuf::from("powershell"),
+                args: vec![
+                    "-NoProfile".to_string(),
+                    "-Command".to_string(),
+                    format!(
+                        "$null = [Console]::In.ReadLine(); [Console]::Out.WriteLine('{response}'); [Console]::Out.Flush(); $null = [Console]::In.ReadLine()"
+                    ),
+                ],
+                working_dir: std::env::current_dir().unwrap(),
+                env: vec![],
+            }
+        }
+        #[cfg(unix)]
+        {
+            AdapterProcessConfig {
+                command: PathBuf::from("sh"),
+                args: vec![
+                    "-c".to_string(),
+                    format!("read init; printf '%s\\n' '{response}'; read shutdown"),
+                ],
+                working_dir: std::env::current_dir().unwrap(),
+                env: vec![],
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn attach_failure_records_one_redacted_diagnostic_and_continues() {
+        let host = AdapterHost::start_with_tree_attach(
+            "faulted-adapter",
+            one_handshake_adapter(),
+            Duration::from_secs(5),
+            |_pid| TreeGuard::attach(0),
+        )
+        .await
+        .expect("L0 attach failure is fail-open");
+
+        let diagnostics = host.take_diagnostics();
+        assert_eq!(diagnostics.len(), 1);
+        let diagnostic = &diagnostics[0];
+        assert_eq!(diagnostic.code, CODE_SANDBOX_DEGRADED);
+        assert_eq!(
+            diagnostic.details,
+            Some(serde_json::json!({
+                "layer": if cfg!(windows) { "windows-job" } else { "unix-pgroup" },
+                "reason": "missing child process id",
+            }))
+        );
+
+        host.shutdown("test_end").await.unwrap();
     }
 }

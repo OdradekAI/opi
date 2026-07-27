@@ -97,26 +97,14 @@ impl Tool for BashTool {
             };
             let backend = match ops.exec(request).await {
                 Ok(r) => r,
-                Err(BashOpError::SpawnFailed { message }) => {
-                    return Ok(result::err(vec![OutputContent::Text {
-                        text: format!("failed to spawn command: {message}"),
-                    }]));
-                }
-                Err(BashOpError::WaitFailed { .. }) => {
-                    return Ok(wait_failed_result(&workspace_root, &command, &cwd, shell));
-                }
-                Err(BashOpError::SandboxUnavailable { message }) => {
-                    // Phase 15.5.1 fail-closed: require=true + an unavailable
-                    // layer. The backend refused to spawn, so surface the redacted
-                    // layer summary (no command/env/paths) as an error result.
-                    return Ok(result::err(vec![OutputContent::Text {
-                        text: format!("sandbox required but unavailable: {message}"),
-                    }]));
-                }
-                Err(BashOpError::Other { message }) => {
-                    return Ok(result::err(vec![OutputContent::Text {
-                        text: format!("bash backend error: {message}"),
-                    }]));
+                Err(error) => {
+                    return Ok(backend_error_result(
+                        &workspace_root,
+                        &command,
+                        &cwd,
+                        shell,
+                        &error,
+                    ));
                 }
             };
 
@@ -154,7 +142,7 @@ impl Tool for BashTool {
                 full_output,
             ));
             let is_error = exit_code != Some(0);
-            Ok(bash_result(
+            let mut result = bash_result(
                 vec![OutputContent::Text { text }],
                 details,
                 is_error,
@@ -163,7 +151,9 @@ impl Tool for BashTool {
                 cancelled,
                 timed_out,
                 kill_error,
-            ))
+            );
+            append_backend_diagnostics(&mut result, &backend.diagnostics);
+            Ok(result)
         })
     }
 
@@ -196,6 +186,54 @@ fn lift_operation_context(result: &BashResult) -> (bool, bool, bool, Option<&str
         opt_str("full_output"),
         opt_str("kill_error"),
     )
+}
+
+/// Preserve every backend diagnostic except the private operation-context
+/// carrier, which this wrapper consumes when rebuilding the stable bash
+/// details and execution-failure diagnostic.
+fn append_backend_diagnostics(
+    result: &mut ToolResult,
+    diagnostics: &[super::operations::ToolDiagnostic],
+) {
+    result.diagnostics.extend(
+        diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.code != LOCAL_BASH_OPERATION_DIAGNOSTIC)
+            .map(|diagnostic| ToolDiagnostic {
+                code: diagnostic.code.clone(),
+                message: diagnostic.message.clone(),
+                context: diagnostic.details.clone().unwrap_or_else(|| json!({})),
+            }),
+    );
+}
+
+fn backend_error_result(
+    workspace_root: &Path,
+    command: &str,
+    cwd: &Path,
+    shell: &str,
+    error: &BashOpError,
+) -> ToolResult {
+    let mut result = match error.root_cause() {
+        BashOpError::SpawnFailed { message } => result::err(vec![OutputContent::Text {
+            text: format!("failed to spawn command: {message}"),
+        }]),
+        BashOpError::WaitFailed { .. } => wait_failed_result(workspace_root, command, cwd, shell),
+        BashOpError::SandboxUnavailable { message } => {
+            // Phase 15.5.1 fail-closed: require=true + an unavailable layer.
+            // The backend refused to spawn, so surface only the redacted layer
+            // summary (no command/env/paths).
+            result::err(vec![OutputContent::Text {
+                text: format!("sandbox required but unavailable: {message}"),
+            }])
+        }
+        BashOpError::Other { message } => result::err(vec![OutputContent::Text {
+            text: format!("bash backend error: {message}"),
+        }]),
+        BashOpError::BackendFailure { .. } => unreachable!("root_cause removes wrappers"),
+    };
+    append_backend_diagnostics(&mut result, error.diagnostics());
+    result
 }
 
 /// Assemble a bash tool result from the shared success builder, then override

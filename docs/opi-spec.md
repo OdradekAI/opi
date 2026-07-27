@@ -2008,7 +2008,7 @@ Phase 15 acceptance trace:
 
 | Criterion | Owner | Production/evidence trace |
 |---|---:|---|
-| SC1 L0 bash tree lifecycle + Windows adapter assignment | 15.4 | `sandbox_l0::bash_l0_kills_process_tree_in_off_mode` proves L0 tree-kill in `off`; `sandbox_l0::windows_bash_and_adapter_use_kill_on_close_job` and `adapter_host_mock::adapter_process_group_contract` pin the `windows-sys` Job-Object L0. |
+| SC1 L0 bash tree lifecycle + Windows adapter assignment | 15.4 | `sandbox_l0::bash_l0_kills_process_tree_in_off_mode` proves L0 tree-kill in `off`; `sandbox_l0::windows_bash_and_adapter_use_kill_on_close_job` and `sandbox_l0::adapter_process_group_contract` pin the `windows-sys` Job-Object L0. |
 | SC2 sandbox config production path + fallback policy | 15.5.1 | `sandbox_strict` bin + `sandbox_config::invalid_sandbox_config_exits_before_provider_construction` prove `main -> resolve_config -> build_tools -> LocalBashOperations::exec`; `unavailable_layer_fail_open_and_fail_closed` and `permanent_gap_diagnostic_is_once_per_startup` pin the `require` degrade policy. |
 | SC3 Linux strict backend (narrowed L2 + L3) | 15.5.3 | `linux_af_unix_survives_socket_creation_gate`, `linux_new_inet_inet6_netlink_sockets_are_denied`, `linux_landlock_abi4_denies_tcp_bind_connect`, `linux_strict_backend_capability_matrix`, and `sandbox_linux_backend::linux_alternate_network_surface_audit` pin the seccomp socket gate, Landlock TCP, and the `io_uring`/`socketpair` residuals. |
 | SC4 macOS strict backend | 15.5.4 | `macos_profile_and_capability_matrix` and the three `macos_engaged_subprocess_*` tests pin the `sandbox-exec` profile deny-overlay via the `Confinement::launcher` seam. |
