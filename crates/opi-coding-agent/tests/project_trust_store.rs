@@ -236,7 +236,7 @@ fn non_utf8_path_is_named_error_and_is_not_serialized_lossily() {
     let error = store.record(&project, true).unwrap_err();
 
     assert!(
-        matches!(error, TrustError::NonUtf8Path(path) if path == std::fs::canonicalize(&project).unwrap()),
+        matches!(error, TrustError::NonUtf8Path(ref path) if path == &std::fs::canonicalize(&project).unwrap()),
         "expected named non-UTF-8 path error, got {error:?}"
     );
     assert!(
