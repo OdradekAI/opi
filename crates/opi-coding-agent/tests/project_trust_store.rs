@@ -220,7 +220,8 @@ fn durable_choices_create_missing_config_root_and_reload() {
 
 /// A canonical path that cannot be represented losslessly in JSON is rejected
 /// with a named error and does not create a lossy trust-store entry.
-#[cfg(unix)]
+/// macOS rejects such filenames at creation with `EILSEQ`.
+#[cfg(all(unix, not(target_os = "macos")))]
 #[test]
 fn non_utf8_path_is_named_error_and_is_not_serialized_lossily() {
     use std::os::unix::ffi::OsStringExt;
