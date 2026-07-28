@@ -161,8 +161,8 @@ criterion is intentionally deferred, the scenario must be assigned to a
 documentation/alignment task that updates the source spec or records an exact
 current-spec citation for the deferral.
 
-Validation rule: for phases 5-14, `spec_files` MUST include the registered
-supplemental source file(s) for the active phase as listed in `skill.md`.
+Validation rule: for every supplemental phase registered in `skill.md`,
+`spec_files` MUST include the registered source file(s) for the active phase.
 Unregistered design docs, snapshot files, skill source files, `AGENTS.md`, and
 `CLAUDE.md` MUST NOT be added to `spec_files`.
 

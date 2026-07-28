@@ -1,5 +1,12 @@
 # Wayfinder Map — opi Phase-Roadmap Redesign (pi-0.80.6 realignment)
 
+Status: superseded as an active roadmap on 2026-07-28. This file preserves the
+2026-07-10 decision history. Current phase placement is normative in
+`docs/opi-spec.md`: Phase 16 is Pluggable Extensions and Command Execution,
+Phase 17 is reserved for post-Phase-16 benchmark specification, Phase 18 is
+Agent Intelligence, Phase 19 is Extension Architecture Completion, and Phase
+20 is UI Productization.
+
 Created 2026-07-10. This is a **wayfinder decision-map**: the planning layer that
 produces opi's redesigned phase roadmap. Each ticket is one design decision sized
 to a single agent session, to be resolved (with `/grilling` + `/domain-modeling`)

@@ -3,8 +3,7 @@
 Historical note: under the 2026-07-10 roadmap redesign
 (`docs/superpowers/plans/2026-07-10-phase-roadmap-redesign-map.md`), Phase 15 is
 **Safety & Sandbox** (cluster K, with the cluster L Operations seam folded in).
-The prior Phase 14 (TUI product polish,
-`2026-06-24-phase14-tui-product-polish-design.md`) is renumbered to Phase 17.
+The prior Phase 14 TUI product-polish work was later deferred to Phase 20.
 This doc synthesizes tickets T4 (OS-native sandbox), T5 (per-tool Operations
 seam), and T6 (project-trust gate), all resolved 2026-07-11. Phase 15 is fully
 resolved: T4 + T5 + T6 are the only tickets.
@@ -468,7 +467,7 @@ before `discover_resources` consumes project layers; a new
 resolver at session-start. When `Untrusted`, `Self::discover_resources` skips
 the project layer (the `config.rs:288` project-TomlDefaults merge,
 `runtime_packages.rs:21-54` project `.opi/packages.toml`, `harness.rs:2041/2057`
-project skills/fragments). This same seam is the Phase-16 T7 dependency: T6's
+project skills/fragments). This same seam is the Phase-18 T7 dependency: T6's
 trust gate must filter `layers.skills`/`layers.fragments` at
 `discover_resources` time so an untrusted project's skills/fragments cannot
 resolve via `/skill:`/`/fragment:`.
@@ -653,8 +652,8 @@ structurally correct attach point. T4 therefore follows T5 (or the two land
 together with T5's `BashOperations` trait and T4's sandbox wrapping in the same
 implementation step). T6 is independent of T4 and T5 — it gates resource
 *loading* at session-start, not tool execution — and can proceed in parallel.
-Phase 15 has no hard dependency on Phase 14 (auth) or Phase 16 (agent
-intelligence). Phase 16 T7 (skills/templates runtime) depends on T6: T6's trust
+Phase 15 has no hard dependency on Phase 14 (auth) or Phase 18 (agent
+intelligence). Phase 18 T7 (skills/templates runtime) depends on T6: T6's trust
 gate must filter `layers.skills`/`layers.fragments` at `discover_resources` time
 (`harness.rs:775/1949/2041/2057`) so an untrusted project's skills/fragments
 cannot resolve via `/skill:`/`/fragment:`.
@@ -702,7 +701,9 @@ cannot resolve via `/skill:`/`/fragment:`.
   contract names the base signatures, and impls extend with windowing as needed.
 - **`trust.json` schema version / metadata** — deferred; the v1 flat
   `Map<canonical_path, bool>` is sufficient.
-- **§15 roadmap rewrite.** Batched with the Phase 16 design doc landing. Editing
+- **Roadmap rewrite.** The active roadmap now assigns Phase 16 to pluggable
+  command execution, reserves Phase 17 for benchmark discussion, and moves
+  Agent Intelligence to Phase 18. Editing
   `opi-spec.md` triggers the phase4 + phase6 specification-hash ledger re-sync
   plus the live-ledger raw-hash re-sync (per project convention; see memory
   `spec-edit-breaks-phase4-ledger`). This is a separate, guard-affecting step,
@@ -717,5 +718,6 @@ cannot resolve via `/skill:`/`/fragment:`.
 - Resource caps on Windows Job Objects (CPU/memory limits) — not in Phase 15.
 - Full `seccomp` strict-allowlist (T4 L3 is a danger-blocklist only).
 - Process-config auto-install gating (opi has no auto-install; simpler than pi).
-- Provider/auth changes (Phase 14), agent intelligence changes (Phase 16),
-  extension-surface changes (Phase 17).
+- Provider/auth changes (Phase 14), pluggable command execution (Phase 16),
+  benchmark design (Phase 17), Agent Intelligence (Phase 18), broader
+  extension work (Phase 19), and UI productization (Phase 20).

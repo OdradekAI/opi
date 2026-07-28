@@ -3,7 +3,7 @@
 Historical note: under the 2026-07-10 roadmap redesign
 (`docs/superpowers/plans/2026-07-10-phase-roadmap-redesign-map.md`), Phase 14 is
 **Provider & Auth**. The prior Phase 14 (TUI product polish,
-`2026-06-24-phase14-tui-product-polish-design.md`) is renumbered to Phase 17.
+`2026-06-24-phase14-tui-product-polish-design.md`) is now deferred to Phase 20.
 This doc synthesizes tickets T1 (credential store), T2 (OAuth + per-request
 auth), and T3 (opi-ai Request enrichment), all resolved 2026-07-11.
 
@@ -62,7 +62,7 @@ breaks this doc into tasks; it is not itself a task list.
   override (pi `ApiStreamOptions`). `Request::extra_headers` remains additive
   for non-reserved transport headers; reserved auth headers are rejected.
 - No `onPayload` / `onResponse` streaming hooks (T3 3d) — deferred to fog;
-  distinct from Phase 17 T14's turn-level provider hook.
+  distinct from a future Phase 19 extension-level provider hook.
 - No `maxRetries` / `maxRetryDelay` on `Request` — retry policy is `opi-agent`'s
   `agent_loop`, not opi-ai wire.
 - No end-to-end `SecretString`-through-provider-construction refactor (T1 D5
@@ -71,7 +71,7 @@ breaks this doc into tasks; it is not itself a task list.
 - No session-schema or context-reconstruction changes. TUI changes are limited
   to the reviewed `/login`, `/logout`, `CredentialNeeded` presenter, and
   raw/alternate-screen suspension around login; unrelated TUI product changes
-  remain in Phases 13 and 17.
+  remain in Phase 13 and the deferred Phase 20.
 
 ## Relationship to pi
 
@@ -632,7 +632,7 @@ real dynamic provider and user/API trigger before claiming runtime refresh.
 
 **3d — onPayload/onResponse streaming hooks — deferred.** Per-chunk streaming
 interception needs a separate Rust-native design (closures cannot live on a
-serde-derived `Request`), and is distinct from Phase 17 T14's turn-level
+serde-derived `Request`), and is distinct from a future Phase 19 extension-level
 provider hook. Deferred to fog.
 
 ## 2026-07-17 pi-0.80.6 Alignment Revision
@@ -721,9 +721,9 @@ independent, but its Codex-specific session mapping follows the dedicated
 Codex provider/wire work in the corrective source. T3 3b follows 3a because cache markers
 consume `CacheRetention`; 3c usage/cost accounting and the 3e refresh substrate are
 independent and may land before 3a. The final documentation/guard task follows
-all six implementation tasks. Phase 14 has no hard dependency on Phase 15 or 16;
-Phase 16 T9 (read-tool inline image) assumes the 14 -> 15 -> 16 sequence for its
-`FileOperations` substrate but does not depend on auth.
+all six implementation tasks. Phase 14 has no hard dependency on later phases;
+Phase 18 T9 (read-tool inline image) assumes the 14 -> 15 -> 16 -> 17 -> 18
+sequence for its `FileOperations` substrate but does not depend on auth.
 
 ## Success and Exit Criteria
 
@@ -782,14 +782,13 @@ provider network, or user runtime directory is accessed.
 - **Per-call credential override** (pi `ApiStreamOptions`) — fog; re-sharpen
   when a multi-tenant or extension driver appears.
 - **onPayload/onResponse streaming hooks** (T3 3d) — fog; re-sharpen when a
-  streaming-observation driver appears. Distinct from Phase 17 T14's turn-level
-  `before_provider_request` hook.
+  streaming-observation driver appears. Distinct from a future Phase 19
+  extension-level `before_provider_request` hook.
 - **End-to-end `SecretString` through concrete-provider construction** —
   deferred follow-up (T1 D5 scope cap), not Phase 14.
-- **§15 roadmap rewrite.** Batched with the Phase 15 and 16 design docs landing.
-  Editing `opi-spec.md` triggers the phase4 + phase6 specification-hash ledger
-  re-sync plus the live-ledger raw-hash re-sync (per project convention). This
-  is a separate, guard-affecting step, not part of authoring this design doc.
+- **§15 roadmap rewrite.** Completed with the Phase 15 and Phase 16 design
+  alignment. The remaining live-ledger hash and task-graph reconciliation must
+  run through the guarded `opi-implement plan` flow.
 
 ## Out of scope (cross-ref map)
 

@@ -6,7 +6,7 @@ description: Use when executing opi-spec.md tasks or reviewed supplemental opi p
 # opi-implement
 
 Long-running-agent harness that drives `docs/opi-spec.md` implementation, plus
-reviewed supplemental Phase 14-16 product-hardening specs listed in this skill,
+reviewed supplemental phase specs listed in this skill,
 one task at a time with TDD for code tasks, documentation guard verification
 for docs-only tasks, tiered verification, and JSON-ledger checkpointing.
 
@@ -33,13 +33,15 @@ registry. Do not auto-parse arbitrary files from `docs/superpowers/specs/`.
 | 14 | `docs/superpowers/specs/2026-07-11-phase14-provider-auth-design.md` |
 | 14 | `docs/superpowers/specs/2026-07-14-phase14-exit-remediation-design.md` |
 | 15 | `docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md` |
-| 16 | `docs/superpowers/specs/2026-07-11-phase16-agent-intelligence-design.md` |
+| 16 | `docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md` |
+| 18 | `docs/superpowers/specs/2026-07-11-phase18-agent-intelligence-design.md` |
 
 When a ledger is initialized or reconciled for a supplemental phase, the
 phase's registered source files MUST be included in `spec_files` and hashed in
-`spec_files_sha256` alongside `docs/opi-spec.md`. Phases 14-16 derive draft
-task rows from the registered design's goals, per-ticket design sections,
-sequencing, and residuals, then require task-graph review before execution.
+`spec_files_sha256` alongside `docs/opi-spec.md`. Registered supplemental
+phases derive draft task rows from the registered design's goals, per-ticket
+design sections, sequencing, and residuals, then require task-graph review
+before execution.
 
 **Product-loop integrity rule:** A phase is not complete merely because every
 component task is green. When a source spec contains goals, success criteria,
@@ -448,8 +450,9 @@ Print a summary table of all tasks:
 
 Full design rationale: `docs/superpowers/specs/2026-05-20-opi-implement-skill-design.md`
 
-Supplemental Phase 14-16 designs:
+Registered supplemental phase designs:
 - `docs/superpowers/specs/2026-07-11-phase14-provider-auth-design.md`
 - `docs/superpowers/specs/2026-07-14-phase14-exit-remediation-design.md`
 - `docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md`
-- `docs/superpowers/specs/2026-07-11-phase16-agent-intelligence-design.md`
+- `docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md`
+- `docs/superpowers/specs/2026-07-11-phase18-agent-intelligence-design.md`

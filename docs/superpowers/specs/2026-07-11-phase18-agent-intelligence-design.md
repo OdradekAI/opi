@@ -1,16 +1,26 @@
-# Phase 16 Agent Intelligence Design
+# Phase 18 Agent Intelligence Design
 
-Historical note: under the 2026-07-10 roadmap redesign
-(`docs/superpowers/plans/2026-07-10-phase-roadmap-redesign-map.md`), Phase 16 is
-**Agent Intelligence** (clusters D + E). The prior Phase 14 (TUI product polish,
-`2026-06-24-phase14-tui-product-polish-design.md`) is renumbered to Phase 17.
-This doc synthesizes tickets T7 (skills/templates runtime), T8 (LLM compaction +
-branch-summary generation), and T9 (read-tool inline image), all resolved
-2026-07-11. Phase 16 is fully resolved: T7 + T8 + T9 are the only tickets.
+Roadmap note: this design was originally numbered Phase 16 by the 2026-07-10
+roadmap. On 2026-07-28, Phase 16 was reassigned to Pluggable Extensions and
+Command Execution, Phase 17 was reserved for benchmark and regression
+evaluation, and Agent Intelligence moved to Phase 18. TUI and graphical
+productization moved to Phase 20.
+
+This document still synthesizes tickets T7 (skills/templates runtime), T8 (LLM
+compaction + branch-summary generation), and T9 (read-tool inline image), all
+resolved on 2026-07-11. The technical decisions remain intact; only roadmap
+placement and downstream phase references changed.
+
+Entry conditions:
+
+- Phase 16 has completed its extension/command-execution exit criteria.
+- Phase 17 has an approved benchmark specification and a preserved baseline.
+- Phase 18 task ordering is reconciled against that baseline before
+  implementation begins.
 
 ## Overview
 
-Phase 16 closes the agent-intelligence cluster (clusters D + E) identified by
+Phase 18 closes the agent-intelligence cluster (clusters D + E) identified by
 the pi-0.80.6 realignment under posture B (strategic gap-closing). It introduces
 three Rust-native agent-capability lifts: a production skills/fragments runtime
 that finally wires the existing-but-bypassed `disable_model_invocation` /
@@ -78,11 +88,13 @@ breaks this doc into tasks; it is not itself a task list.
   `/fragment:translate` is deferred — needs a session-command-precedence rule to
   avoid colliding with `/model`, `/session`, `/name`, `/branch`, `/tree`,
   `/image`).
-- No dedicated RPC `SdkCommand::Skill`/`Fragment` (T7 D6 residual; pulls T11
-  forward into Phase 17; RPC gets text-level expansion only in Phase 16).
+- No dedicated RPC `SdkCommand::Skill`/`Fragment` (T7 D6 residual; reserved
+  for the Phase 19 extension surface; RPC gets text-level expansion only in
+  Phase 18).
 - No `readFiles`/`modifiedFiles` file-operation tracking on `CompactionEntry`
-  (T8 D1 scope cut; deferred to Phase 17 — full additive-entry ritual with no
-  Phase-16 consumer; see P1 guard-awareness row: no new entry type is added, so
+  (T8 D1 scope cut; deferred to a separately reviewed follow-up — full
+  additive-entry ritual with no Phase-18 consumer; see P1 guard-awareness row:
+  no new entry type is added, so
   the `KNOWN_ENTRY_TYPES` guards at
   `crates/opi-coding-agent/tests/phase13_session_context_docs.rs:143-163` and
   `crates/opi-agent/tests/session_storage.rs:810` continue to pass).
@@ -102,8 +114,9 @@ breaks this doc into tasks; it is not itself a task list.
 - No EXIF re-orientation (T9 Q8 residual; the `image` crate default does not
   apply orientation; JPEGs with Orientation ≠ 1 reach the model
   rotated/mirrored).
-- No changes to provider/auth (Phase 14), sandbox/trust (Phase 15), or
-  extension-surface/TUI engine (Phase 17).
+- No changes to provider/auth (Phase 14), sandbox/trust (Phase 15), pluggable
+  command execution (Phase 16), benchmark design (Phase 17), broader extension
+  work (Phase 19), or UI productization (Phase 20).
 
 ## Relationship to pi
 
@@ -166,7 +179,7 @@ tool-result content).
 The construction-ownership invariant (Phase 14: `opi-agent` must not construct
 providers or own provider/auth configuration; `opi-agent` calls
 `provider.stream` at `agent_loop.rs:118` but builds nothing) extends to Phase
-16's new surfaces: **`opi-agent` must not gain skill, UI, or
+18's new surfaces: **`opi-agent` must not gain skill, UI, or
 image-decode/resize code.** All skill/fragment logic, all image decode/resize,
 and the provider-backed hook impl live in `opi-coding-agent`. The widened
 `CompactionHooks` trait, the boxed-future cascade, and the new
@@ -225,7 +238,7 @@ This matches the T5/T6 deciding principle: a trait (or method) lives in
 | P0 | `SessionCoordinator::with_hooks` builder + `Arc<dyn CompactionHooks>` field | `opi-coding-agent` | `SessionCoordinator` holds `Arc<dyn CompactionHooks>` via `.with_hooks()` builder; constructor arity unchanged so ~30 test constructions are untouched. |
 | P0 | `ProviderCompactionHooks` impl + `[compaction] summary_model` config (two-struct) | `opi-coding-agent` | New `crates/opi-coding-agent/src/compaction_hooks.rs`; struct `{ provider: Arc<dyn Provider>, summary_model: String, thinking: Option<ThinkingConfig> }`. Additive config in **both** `CompactionConfig` (`compaction.rs:13-16`) and the user-facing `CompactionConfigSection` (`config.rs:255-258`); TOML key `[compaction] summary_model` parsed as `Option<String>` (None → resolved chat model). `CodingHarness::build` reads `config.compaction.summary_model`; if `None`, defaults to the resolved chat-model spec at `harness.rs` ~813; parses via the same `provider:model` path as `--model`; constructs `ProviderCompactionHooks { provider: agent.provider_arc(), summary_model, thinking }` and passes it to `SessionCoordinator::with_hooks`. `DefaultCompactionHooks` stays the providerless-test fallback. |
 | P0 | Rewrite `find_split_point` to token-budget + user-turn snap | `opi-agent` | Walk back from tip accumulating `chars/4` estimate; when `keep_recent_tokens` (default **20000**, pi parity, spec-reserved at `opi-spec.md:869`) exceeded, snap forward to next User-message cut; always keep last complete User-turn; no split-mid-turn. Add `keep_recent_tokens: u64` to **both** `CompactionConfig` (`compaction.rs:13-16`) AND `CompactionConfigSection` (`config.rs:255-258`) plus the `Default` impl (default 20000) and the `config.rs → CompactionConfig` conversion site; TOML key `[compaction] keep_recent_tokens = 20000`. Separate from trigger `threshold_tokens` (100_000). ~9-11 test rewrites (approximate; grep `split_point` in compaction.rs test block to pin). |
-| P0 | `SessionCoordinator::move_to(entry_id, summary)` + `CodingHarness::generate_branch_summary` + `/move` parse site | `opi-coding-agent` | Idempotent re-move to current tip = no-op; `/move <entry_id>` parsed in `interactive.rs` session-command parser (parallel to the existing `/branch`, `/session`, `/name`, `/label` commands per Phase 13.4 residual memory) that resolves `<entry_id>` against the active branch and calls `harness.move_to` / `SessionCoordinator.move_to`; RPC `SdkCommand::Move` parallels it. `BranchSummaryMessage.entry_count` populated from abandoned-tail length (was the Phase-13.2 placeholder `0` at `session_context.rs:217`). Persisted `BranchSummary.parent_id == Some(entry_id)`; exactly one `Leaf` per move; total usage NOT reset. Picker UX deferred to Phase 17. |
+| P0 | `SessionCoordinator::move_to(entry_id, summary)` + `CodingHarness::generate_branch_summary` + `/move` parse site | `opi-coding-agent` | Idempotent re-move to current tip = no-op; `/move <entry_id>` parsed in `interactive.rs` session-command parser (parallel to the existing `/branch`, `/session`, `/name`, `/label` commands per Phase 13.4 residual memory) that resolves `<entry_id>` against the active branch and calls `harness.move_to` / `SessionCoordinator.move_to`; RPC `SdkCommand::Move` parallels it. `BranchSummaryMessage.entry_count` populated from abandoned-tail length (was the Phase-13.2 placeholder `0` at `session_context.rs:217`). Persisted `BranchSummary.parent_id == Some(entry_id)`; exactly one `Leaf` per move; total usage NOT reset. Picker UX deferred to Phase 20. |
 | P0 | `fork_session` `ForkTarget` enum | `opi-coding-agent` | `ForkTarget { ActiveTip, At{entry_id}, Before{user_msg_id} }`; current `fork_session` (`session_cli.rs:210`) takes `(dir, session_id)` and returns `Result<ResumedSession, SessionCliError>` with no `entry_id` — T8(d) is a **new primitive**, not a pure refactor. New signature `fork_session(dir, session_id, target: ForkTarget) -> Result<ResumedSession, SessionCliError>` (reuses existing `ResumedSession`/`SessionCliError`; no new public types). |
 | P0 | `image` crate workspace dependency | root `Cargo.toml` | `image = "<version>"` under `[workspace.dependencies]`; referenced as `image = { workspace = true }` in `opi-coding-agent/Cargo.toml`. Pure-Rust, no C deps. |
 | P0 | Read-tool inline-image early branch + decode/resize | `opi-coding-agent` | Early branch in `ReadTool::execute` before `stream_read_window`; `ImageReader::open().with_guessed_format()` magic-byte detection; long side ≤1568px, output ≤5 MiB (iterative downscale), preserve `media_type`; GIF → first-frame PNG; reuse `defaults.max_image_bytes` (20 MiB) as pre-decode input guard. offset/limit ignored for images. |
@@ -235,7 +248,7 @@ This matches the T5/T6 deciding principle: a trait (or method) lives in
 | P0 | `ReadFileError::ImageDecode` + `FsToolError::ImageDecode` variant + diagnostic code | `opi-coding-agent` + `opi-agent` | New additive `ReadFileError::ImageDecode(image::ImageError)` at `read.rs:292` (surfaces the `image` error inside `opi-coding-agent`). New `FsToolError::ImageDecode { path: PathBuf, message: String }` in `opi-agent` at `crates/opi-agent/src/diagnostic.rs:313` (extract `image::ImageError.to_string()` rather than threading the error across the crate boundary — `opi-agent` must not depend on the `image` crate per the invariant). New diagnostic code `CODE_TOOL_IMAGE_DECODE` in `crates/opi-agent/src/diagnostic.rs` alongside `CODE_TOOL_BINARY_FILE` (mirrors the `BinaryFile { path: PathBuf }` arm at `:327`). The private `ReadFileError` alone does not reach the model — the `FsToolError` variant is the model-facing surface. |
 | P1 | `phase13_session_context_docs.rs` + `session_storage.rs` guard awareness | `opi-coding-agent` + `opi-agent` | The additive-entry/`KNOWN_ENTRY_TYPES` policy is enforced by TWO guards: docs-level name-presence at `crates/opi-coding-agent/tests/phase13_session_context_docs.rs:143-163` and source-level round-trip at `crates/opi-agent/tests/session_storage.rs:810` (`known_entry_types_match_session_entry_serde_tags`). T8 does **not** add a new entry type, but D7's `move_to` populates `BranchSummaryMessage.entry_count` from the abandoned-tail length — both guards continue to pass. |
 
-Phase 16 must not satisfy acceptance with the abstract traits alone. Each P0
+Phase 18 must not satisfy acceptance with the abstract traits alone. Each P0
 item needs a production path: T7 from config through `SystemPromptBuilder` /
 dispatch into the model context, exercised by skill/fragment dispatch tests;
 T8 from `[compaction] summary_model` through `SessionCoordinator.with_hooks` /
@@ -448,8 +461,8 @@ pub fn expand_text_command(
 }
 ```
 
-RPC gets **text-level expansion only** in Phase 16. A dedicated
-`SdkCommand::Skill`/`Fragment` would pull T11 forward; defer to Phase 17.
+RPC gets **text-level expansion only** in Phase 18. A dedicated
+`SdkCommand::Skill`/`Fragment` is deferred to the Phase 19 extension surface.
 
 **Failure handling (D7 — deliberate opi divergence).** Mode-sensitive:
 
@@ -472,7 +485,7 @@ RPC gets **text-level expansion only** in Phase 16. A dedicated
 **T6 precondition.** T7 depends on Phase 15 T6: the trust gate must filter
 `layers.skills`/`layers.fragments` at `discover_resources` time
 (`harness.rs:775/2041/2057`) so an untrusted project's skills/fragments cannot
-resolve via `/skill:`/`/fragment:`. Phase 14 → 15 → 16 → 17 sequencing already
+resolve via `/skill:`/`/fragment:`. Phase 14 → 15 → 16 → 17 → 18 sequencing
 places T6 ahead of T7.
 
 **Scope boundary.** T7 delivers skill/fragment dispatch, expansion, recursive
@@ -482,13 +495,13 @@ wired, mode-sensitive failure handling, and steer/follow-up wiring.
 ### T8 — LLM compaction + branch-summary generation
 
 **Scope (D1).** (a) async LLM-summary hook + (b) token-budget split + (d)
-`move_to` + branch-summary generation are IN Phase 16. (c)
+`move_to` + branch-summary generation are IN Phase 18. (c)
 `readFiles`/`modifiedFiles` on `CompactionEntry` and (e) new `SessionEntry`
-variants (`active_tools_change`/`custom`) are DEFERRED to Phase 17 (see P1
+variants (`active_tools_change`/`custom`) remain future follow-ups (see P1
 guard-awareness row: no new entry type is added, so the `KNOWN_ENTRY_TYPES`
 guards at `phase13_session_context_docs.rs:143-163` and
 `session_storage.rs:810` continue to pass; full additive-entry ritual reserved
-for the Phase-17 revival) — no Phase-16 consumer, and both are additive-on-v1
+for a separately reviewed revival) — no Phase-18 consumer, and both are additive-on-v1
 so future revival reads old JSONL cleanly.
 
 **Signature (D2).** The current sync signature at `compaction.rs:98-101`:
@@ -743,7 +756,7 @@ pub fn fork_session(
 `begin_branch_summary`/`end_branch_summary`) is left dormant — variant stays
 `pub` (removing it is a breaking API change; only the production call site is
 removed/never added). Doc comment reads
-`// Superseded by SessionCoordinator::move_to (Phase 16 T8 D7); retained for API compatibility.`
+`// Superseded by SessionCoordinator::move_to (Phase 18 T8 D7); retained for API compatibility.`
 `BranchSummaryMessage` (`crates/opi-agent/src/message.rs:34`) is reused — no
 new entry type (§9.5 additive-on-v1 policy honored).
 
@@ -754,7 +767,7 @@ session-command parser (parallel to the existing `/branch`, `/session`, `/name`,
 `/label` commands per Phase 13.4 residual memory); the parser resolves
 `<entry_id>` against the active branch and calls
 `harness.move_to`/`SessionCoordinator.move_to`. RPC `SdkCommand::Move` lands in
-Phase 16; the picker UX is deferred to Phase 17 (TUI polish).
+Phase 18; the picker UX is deferred to Phase 20 (UI productization).
 `BranchSummaryMessage.entry_count` is populated from the abandoned-tail length
 (was the Phase-13.2 placeholder `0` at `session_context.rs:217`).
 
@@ -765,13 +778,14 @@ Invariants:
 - `reconstruct_context == new_agent_messages` (buffer alignment).
 - Total usage NOT reset.
 
-**Spec retarget (D9).** Retarget `opi-spec.md:1595-1598` (branch_summary
-*generation*) → Phase 16; keep `:1603-1604` (`/export`) → Phase 17 TUI-polish
-(terminal command-surface, not Agent Intelligence). §15 inserts Phase 14/15/16
-entries and renumbers TUI-polish → Phase 17. **This is batched with the Phase 16
-design doc landing** and triggers the phase4 + phase6 snapshot + live-ledger
-raw-hash re-sync (per memory `spec-edit-breaks-phase4-ledger`); it is a
-**deferred separate step**, not part of authoring this design doc.
+**Completed spec retarget (D9).** The paired roadmap now assigns
+`branch_summary` generation to Phase 18 and keeps interactive `/export` in
+Phase 20 UI productization (terminal command-surface, not Agent Intelligence).
+It lists the Phase 16 extension foundation, the deferred Phase 17 benchmark,
+this Phase 18 design, the Phase 19 extension follow-up, and Phase 20 UI work.
+The documentation and filename retarget is complete. Its spec-hash drift is
+reconciled later through the guarded `opi-implement plan` path; the ledger is
+not hand-edited while authoring this design.
 
 Binding spec mandates the design honors:
 
@@ -823,8 +837,8 @@ T8 does **not** add a new entry type, but the design honors both guard layers.
 **Scope boundary.** T8 delivers the async `CompactionHooks` widen,
 `Agent::provider_arc`, `SessionCoordinator.with_hooks` + `ProviderCompactionHooks`,
 the token-budget `find_split_point`, `SessionCoordinator.move_to` +
-`CodingHarness.generate_branch_summary` + `ForkTarget`, and the §15 retarget
-(deferred separate step).
+`CodingHarness.generate_branch_summary` + `ForkTarget`, and the completed
+roadmap retarget.
 
 ### T9 — Read-tool inline image
 
@@ -925,11 +939,10 @@ async fn try_read_image(
 `offset`/`limit` are ignored for images. Processing is a **tool-layer** helper;
 FS bytes flow through the T5 `FileOperations` backend.
 
-**T5 dependency / sequencing.** `FileOperations` is a Phase-15 (T5) substrate
-**not yet implemented** (verified: zero `trait FileOperations` hits in the tree
-today). T9 assumes the 14 → 15 → 16 sequence. If T9 lands before T5, it uses
-the existing direct `tokio::fs` path at `read.rs:303` and migrates when T5
-ships. State this dependency/sequencing clearly in the implementation plan.
+**T5 dependency / sequencing.** Phase 15 T5 has shipped the `FileOperations`
+substrate. T9 must use that existing injected filesystem seam for image bytes;
+it must not reintroduce a direct `tokio::fs` fallback. Phase 15 therefore
+remains a completed prerequisite rather than a conditional migration.
 
 **Wire fix (Q5).** Fix **3 wire-fix sites covering 4 providers** by reusing the
 existing base64 inline encoder:
@@ -1058,7 +1071,7 @@ fallthrough).
 `InputContent::Image` (`:227-229`) and `OutputContent::Image` (`:248-250`) to
 `[image: {}]` text — this is a 6th degrade *consumer* but **not** a 6th
 provider wire file, so the map's "5 provider files / 3 wire patterns" framing
-(provider-wire-layer scoped) remains accurate. If the Phase 16
+(provider-wire-layer scoped) remains accurate. If the Phase 18
 image-content-block fix is applied to the 5 provider sites, the compaction
 text-render path should be revisited for parity: today it would still emit
 `[image: ...]` text even after the provider fix, since it produces compacted
@@ -1072,13 +1085,13 @@ and the new error variants.
 ## Sequencing
 
 T9 is the substrate-independent leaf: the `image` crate dep, the read-tool
-early branch, and the wire fixes are all self-contained. If T9 lands before
-T5, it uses the existing direct `tokio::fs` path (`read.rs:303`) and migrates
-when T5 ships.
+early branch, and the wire fixes are all self-contained. It reads through the
+shipped Phase 15 `FileOperations` seam; direct `tokio::fs` fallback is not
+permitted.
 
 T7 and T8 both depend on Phase 15 T6 (the project-trust gate filtering
 `layers.skills`/`layers.fragments` at `discover_resources` time), already
-sequenced ahead by the 14 → 15 → 16 → 17 ordering.
+sequenced ahead by the 14 → 15 → 16 → 17 → 18 ordering.
 
 T8 is internally sequenced: D2 (signature widen) + D5 (async cascade) land
 together (one atomic migration of the 20 sync tests + the 2 public-API
@@ -1093,9 +1106,9 @@ next; D2/D3 (skill body-wrap + fragment `{{name}}` expansion) land together
 (the dispatch helpers); D6 (steer/follow-up wiring) + D7 (mode-sensitive
 failure handling) land last.
 
-Phase 16 has no hard dependency on Phase 17 (extension surface / TUI engine).
-Phase 17 T13 (Extension UI overlay/dialog) may eventually want a
-`/skill:<name>` picker widget, but Phase 16 ships typed-id `/skill:<name>`
+Phase 18 depends on the Phase 17 benchmark baseline as an entry gate, but has no
+hard dependency on Phase 20 UI productization. Phase 20 may eventually want a
+`/skill:<name>` picker widget, but Phase 18 ships typed-id `/skill:<name>`
 dispatch only.
 
 ## Cross-ticket interactions
@@ -1106,10 +1119,9 @@ dispatch only.
   cannot resolve via `/skill:`/`/fragment:`. T7's `discover_skills`
   (`skill.rs:329-372`) consumes the trust-filtered layers and does not
   re-implement trust resolution itself.
-- **T9 depends on Phase 15 T5 `FileOperations`.** If T9 lands before T5, it
-  uses the existing direct `tokio::fs` path at `read.rs:303` and migrates when
-  T5 ships. State this dependency/sequencing clearly in the implementation
-  plan.
+- **T9 uses the shipped Phase 15 T5 `FileOperations`.** Image reads traverse
+  the existing injected filesystem seam; no direct `tokio::fs` fallback or
+  later migration is permitted.
 - **T8 is the FIRST provider-backed hook impl in the workspace.**
   `CodingAgentHooks`/`InteractiveCodingHooks` (`harness.rs:2258-2282`) override
   only `convert_to_llm` today. T8's `ProviderCompactionHooks` is the first
@@ -1128,11 +1140,11 @@ dispatch only.
   `opi-agent` `SessionFacade`** (test-only, no compaction buffer). The
   deciding principle (a method lives in `opi-agent` only if `opi-agent`'s
   runtime invokes it) is the same principle T5/T6 established for traits.
-- **T8 §15 spec retarget.** `branch_summary` generation
-  (`opi-spec.md:1595-1598`) → Phase 16; `/export` (`:1603-1604`) stays Phase
-  17. Batched with this design doc landing. **Triggers phase4 + phase6 ledger
-  snapshot + live-ledger raw-hash re-sync — state as DEFERRED SEPARATE STEP,
-  do not perform.**
+- **T8 roadmap retarget.** `branch_summary` generation is assigned to Phase
+  18, while interactive `/export` stays in Phase 20. The paired documentation
+  and design filename are already retargeted. Reconcile the resulting
+  spec-hash drift only through `opi-implement plan`; do not hand-edit the
+  ledger.
 - **T9 + T8 compaction parity.** T9 fixes 3 wire-fix sites (4 providers) +
   2 degrade-fix sites (5 OpenAI-compat providers) = 5 provider wire sites
   total in `opi-ai`; the `opi-agent` `compaction.rs` `extract_text`
@@ -1149,24 +1161,24 @@ dispatch only.
 
 ## Residuals / follow-ups
 
-- **Dedicated RPC `SdkCommand::Skill`/`Fragment`** (T7 D6) — deferred to T11 /
-  Phase 17; RPC gets text-level expansion only in Phase 16.
+- **Dedicated RPC `SdkCommand::Skill`/`Fragment`** (T7 D6) — deferred to the
+  Phase 19 extension surface; RPC gets text-level expansion only in Phase 18.
 - **Bare-name fragment dispatch** (T7 D6, `/translate` instead of
   `/fragment:translate`) — fog; needs a session-command-precedence rule.
 - **Skill name-validation strictness** (T7 D4) — opi's looser `[a-z0-9-]` rule
   stays; pi's `name == dirname` not adopted.
 - **`/help` + RPC `list-fragments` enumeration** (T7 D5) — verify both code
   paths exist; if either is missing, add as a P1 row.
-- **(c) `readFiles`/`modifiedFiles` on `CompactionEntry`** (T8 D1) — deferred
-  to Phase 17; not substrate for a/b/d; full additive-entry ritual with no
-  Phase-16 consumer.
+- **(c) `readFiles`/`modifiedFiles` on `CompactionEntry`** (T8 D1) — future;
+  not substrate for a/b/d; full additive-entry ritual with no Phase-18
+  consumer.
 - **(e) `active_tools_change` + `custom` `SessionEntry` variants** (T8 D1) —
-  deferred to Phase 17; no producer for `active_tools_change`; `custom` would
+  future; no producer for `active_tools_change`; `custom` would
   duplicate `ExtensionStateEntry`; `custom_message` is spec-deferred at
   `:1599-1602`.
 - **Full pi split-mid-turn** (T8 D6, two LLM calls,
   `TURN_PREFIX_SUMMARIZATION_PROMPT`) — fog; deliberate D6 simplification.
-- **`/move` picker UX** (T8 D8) — Phase 17 TUI-polish; D8 ships typed-id +
+- **`/move` picker UX** (T8 D8) — Phase 20 UI productization; D8 ships typed-id +
   RPC only.
 - **`ForkTarget::Before { user_msg_id }` at root user message** — rejected
   (returns `EntryNotFound`) so callers handle root explicitly rather than
@@ -1179,7 +1191,7 @@ dispatch only.
   first-frame PNG).
 - **EXIF orientation** (T9 Q8) — the `image` crate default does not apply
   orientation; JPEGs with Orientation ≠ 1 reach the model rotated/mirrored.
-  Accept in Phase 16 or add EXIF re-orientation (via `kamadak-exif`) as a
+  Accept in Phase 18 or add EXIF re-orientation (via `kamadak-exif`) as a
   follow-up.
 - **Bedrock `toolResult` image is model-gated** (Amazon Nova + Claude 3/4
   only, per AWS `ToolResultContentBlock`) — non-Nova/Claude Bedrock models
@@ -1191,26 +1203,23 @@ dispatch only.
 - **`compaction.rs` `extract_text` image-render parity** (lines `:227-229`
   InputContent::Image + `:248-250` OutputContent::Image) — revisit after T9
   lands.
-- **§15 roadmap rewrite.** Batched with the Phase 16 design doc landing.
-  Editing `opi-spec.md` triggers the phase4 + phase6 specification-hash
-  ledger snapshot re-sync plus the live-ledger raw-hash re-sync (per project
-  convention; see memory `spec-edit-breaks-phase4-ledger`). This is a
-  separate, guard-affecting step, not part of authoring this design doc. The
-  known §15 drift (Phase 14 TUI polish, `opi-spec.md:1595-1604`, defers
-  branch-summary to "Phase 14") is reconciled by that rewrite, not by this
-  doc.
+- **Roadmap rewrite.** Completed with the Phase 18 design filename update.
+  The guarded `opi-implement plan` reconciliation remains a separate
+  pre-implementation action because `opi-spec.md` and the registered source
+  hashes changed.
 
 ## Out of scope (cross-ref map)
 
 - Skill-body argument substitution (pi-template mechanism; rejected in T7 D2).
 - Provider/auth changes (Phase 14), sandbox/trust changes (Phase 15),
-  extension-surface/TUI engine changes (Phase 17).
-- New `SessionEntry` variants `active_tools_change`/`custom` (Phase 17; no
-  Phase-16 producer).
-- `readFiles`/`modifiedFiles` tracking on `CompactionEntry` (Phase 17; not
-  substrate for the a/b/d Phase-16 surface).
+  pluggable command execution (Phase 16), benchmark design (Phase 17),
+  broader extension work (Phase 19), and UI productization (Phase 20).
+- New `SessionEntry` variants `active_tools_change`/`custom` (future; no
+  Phase-18 producer).
+- `readFiles`/`modifiedFiles` tracking on `CompactionEntry` (future; not
+  substrate for the a/b/d Phase-18 surface).
 - Split-mid-turn compaction (deliberate T8 D6 divergence).
 - `supports_image_input` capability gating (T9 Q7; fog).
 - EXIF re-orientation, APNG/animated-WebP multi-frame extraction (T9 Q8; fog).
 - Bare-name fragment dispatch, dedicated RPC `SdkCommand::Skill`/`Fragment`
-  (T7 D6; Phase 17 / T11).
+  (T7 D6; Phase 19 / T11).

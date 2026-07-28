@@ -31,16 +31,18 @@ Parse `opi-spec.md` §15 roadmap tables. For each task row extract:
   - The task remains non-executable until the task-graph review gate confirms
     the inferred DoD.
 
-### A.init.2d Reviewed Phase 14-16 Task Sources
+### A.init.2d Reviewed Supplemental Task Sources
 
-Supplemental phases (currently 14-16) are sourced only from the reviewed
+Supplemental phases are sourced only from the reviewed
 design registry in `skill.md`. Do not scan arbitrary `docs/superpowers/specs/` files.
 
 | Phase | Registered source | Draft task extraction |
 |---:|---|---|
 | 14 | `docs/superpowers/specs/2026-07-11-phase14-provider-auth-design.md` | Goals, Non-Goals, T1 Credential store, T2 OAuth + per-request auth, T3 Request enrichment, Sequencing, Residuals |
+| 14 | `docs/superpowers/specs/2026-07-14-phase14-exit-remediation-design.md` | Phase-exit remediation criteria and residuals |
 | 15 | `docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md` | Goals, Non-Goals, T4 OS-native sandbox, T5 Operations seam, T6 Project-trust gate, Sequencing, Cross-ticket interactions, Residuals |
-| 16 | `docs/superpowers/specs/2026-07-11-phase16-agent-intelligence-design.md` | Goals, Non-Goals, T7 Skills/templates runtime, T8 LLM compaction + branch-summary, T9 Read-tool inline image, Sequencing, Cross-ticket interactions, Residuals |
+| 16 | `docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md` | Goals, Non-Goals, Product Contract, Configuration and Routing, Executable Package Lifecycle, Protocol, standalone SDK/CLI, Testing and Acceptance, Phase Integration |
+| 18 | `docs/superpowers/specs/2026-07-11-phase18-agent-intelligence-design.md` | Goals, Non-Goals, T7 Skills/templates runtime, T8 LLM compaction + branch-summary, T9 Read-tool inline image, Sequencing, Cross-ticket interactions, Residuals |
 
 For each active phase:
 

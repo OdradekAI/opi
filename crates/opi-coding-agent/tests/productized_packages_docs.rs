@@ -1130,7 +1130,7 @@ fn phase9_localized_docs_stay_in_sync() {
 
 #[test]
 fn phase9_roadmap_numbering_consistent() {
-    // SC 4 + 6 + Revised Roadmap: the roadmap consistently lists Phase 9-17
+    // SC 4 + 6 + Revised Roadmap: the roadmap consistently lists Phase 9-20
     // with the revised names, and Models/Auth + AgentHarness are named as the
     // Phase 10 deepening targets.
     let spec_en = read_repo_file("docs/opi-spec.md");
@@ -1144,8 +1144,11 @@ fn phase9_roadmap_numbering_consistent() {
         "### Phase 13 - Session Tree and Context Reconstruction",
         "### Phase 14 - Provider & Auth",
         "### Phase 15 - Safety & Sandbox",
-        "### Phase 16 - Agent Intelligence",
-        "### Phase 17 - TUI Engine, Extension Surface, and Product Polish",
+        "### Phase 16 - Pluggable Extensions and Command Execution",
+        "### Phase 17 - Benchmark and Regression Evaluation",
+        "### Phase 18 - Agent Intelligence",
+        "### Phase 19 - Extension Architecture Completion",
+        "### Phase 20 - UI Productization",
     ];
     let zh_headings = [
         "### 第九阶段 - pi 0.80.2 基线重校准",
@@ -1155,8 +1158,11 @@ fn phase9_roadmap_numbering_consistent() {
         "### 第十三阶段 - 会话树与上下文重建",
         "### 第十四阶段 - Provider & Auth",
         "### 第十五阶段 - Safety & Sandbox",
-        "### 第十六阶段 - Agent Intelligence",
-        "### 第十七阶段 - TUI 引擎、扩展表面与产品打磨",
+        "### 第十六阶段 - 可插拔扩展与命令执行",
+        "### 第十七阶段 - Benchmark 与回归评估",
+        "### 第十八阶段 - Agent Intelligence",
+        "### 第十九阶段 - 扩展架构完善",
+        "### 第二十阶段 - 界面产品化",
     ];
     for heading in en_headings {
         assert!(
@@ -1168,6 +1174,69 @@ fn phase9_roadmap_numbering_consistent() {
         assert!(
             spec_zh.contains(heading),
             "opi-spec.zh must include roadmap heading `{heading}`"
+        );
+    }
+
+    let specs_dir = repo_root().join("docs/superpowers/specs");
+    let phase16_path =
+        specs_dir.join("2026-07-28-phase16-pluggable-extension-command-execution-design.md");
+    let phase16 = std::fs::read_to_string(&phase16_path)
+        .expect("read canonical Phase 16 pluggable-extension spec");
+    let implement_skill = read_repo_file(".claude/skills/opi-implement/skill.md");
+    assert!(
+        phase16_path.is_file(),
+        "canonical Phase 16 spec must exist at its registered path"
+    );
+    assert!(
+        !specs_dir
+            .join("2026-07-11-phase16-agent-intelligence-design.md")
+            .exists(),
+        "old Phase 16 Agent Intelligence filename must be removed"
+    );
+    assert!(
+        implement_skill.contains(
+            "| 16 | `docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md` |"
+        ),
+        "opi-implement registry must bind the canonical Phase 16 source"
+    );
+    assert!(
+        implement_skill.contains(
+            "| 18 | `docs/superpowers/specs/2026-07-11-phase18-agent-intelligence-design.md` |"
+        ),
+        "opi-implement registry must bind the renamed Phase 18 source"
+    );
+    assert!(
+        !implement_skill.contains("2026-07-11-phase16-agent-intelligence-design.md"),
+        "opi-implement registry must not retain the old Phase 16 source name"
+    );
+    let premature_phase17_specs: Vec<_> = std::fs::read_dir(&specs_dir)
+        .expect("read specs directory")
+        .map(|entry| entry.expect("read spec entry").file_name())
+        .filter(|name| {
+            let name = name.to_string_lossy().to_ascii_lowercase();
+            name.contains("phase17") || name.contains("benchmark")
+        })
+        .collect();
+    assert!(
+        premature_phase17_specs.is_empty(),
+        "Phase 17 spec must wait for Phase 16 exit: {premature_phase17_specs:?}"
+    );
+    for contract in [
+        "**Installed**",
+        "**Trusted**",
+        "**Enabled**",
+        "**Selected**",
+        "**Permitted**",
+        "Minimal Runtime",
+        "No router, permission, or protocol task is created.",
+        "No selected external failure retries through `local`.",
+        "The standalone CLI smoke suite described above is mandatory.",
+        "Independent new-tool contributions remain a Phase 19 design topic.",
+        "specification will be discussed only after Phase 16 exits",
+    ] {
+        assert!(
+            phase16.contains(contract),
+            "canonical Phase 16 spec must retain `{contract}`"
         );
     }
 
@@ -1311,15 +1380,15 @@ fn phase9_forbidden_current_scope_claims_rejected() {
         "opi-spec.zh must list image generation and web/share flows as not supported (ZH)"
     );
 
-    // Custom extension UI parity is explicitly excluded from Phase 17 scope, not
+    // Custom extension UI parity is explicitly excluded from Phase 20 scope, not
     // claimed as a current capability.
     assert!(
         spec_en.contains("does not promise web UI parity"),
-        "opi-spec Phase 17 must disclaim web UI / custom extension UI parity (EN)"
+        "opi-spec Phase 20 must disclaim web UI / custom extension UI parity (EN)"
     );
     assert!(
         spec_zh.contains("不声明 web UI parity"),
-        "opi-spec.zh Phase 17 must disclaim web UI / custom extension UI parity (ZH)"
+        "opi-spec.zh Phase 20 must disclaim web UI / custom extension UI parity (ZH)"
     );
 }
 
@@ -1475,7 +1544,7 @@ fn phase10_runtime_hook_boundaries() {
     );
     assert!(
         spec_en.contains("Custom extension UI / message renderer")
-            && spec_en.contains("Phase 17 built-in TUI is stable"),
+            && spec_en.contains("Phase 20 built-in TUI is stable"),
         "opi-spec must document the custom UI/message renderer deferral prerequisite (EN)"
     );
 

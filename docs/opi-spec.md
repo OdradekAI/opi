@@ -1527,7 +1527,7 @@ explicit prerequisites (see Future Ecosystem Candidates below).
 | Coding-agent extension registry | `opi-coding-agent` / bridge to `opi-agent` | Product-specific commands, resources, and packages compose through `ExtensionRegistry`. |
 | Process adapter protocol | `opi-coding-agent` | Owns `opi-extension-jsonl-v1` parsing and child-process hosting; the process adapter protocol does not migrate into `opi-agent` unless a non-CLI host needs it. |
 | Provider request/response hooks | Future candidate | Deferred; prerequisites now met in design (Phase 12 correctness + Phase 7 redaction + Phase 14 Request enrichment); consumer pending. |
-| Custom TUI UI / message renderer | Future candidate | Deferred until the Phase 17 built-in TUI is stable and a UI/RPC subprotocol is designed. |
+| Custom TUI UI / message renderer | Future candidate | Deferred until the Phase 20 built-in TUI is stable and a UI/RPC subprotocol is designed. |
 
 Typed hook result composition is covered by contract tests: extension hooks run
 after the base hook in registration order, a `Block`/`Deny` short-circuits the
@@ -1634,13 +1634,13 @@ Explicit decisions and deferrals (each cited to the Phase 13 design):
 
 - `branch_summary` is implemented as a context-reconstruction and provider-
   conversion substrate. Its generation UX triggers — branch switch, fork,
-  manual command, extension hook — are deferred to Phase 16 Agent Intelligence;
+  manual command, extension hook — are deferred to Phase 18 Agent Intelligence;
   Phase 13 does not auto-generate branch summaries on these triggers.
 - `custom_message` provider-context semantics are deferred: provider conversion
   and transcript rules for extension-provided context messages are not specified
   yet, so Phase 13 ships no `custom_message` writer and treats unknown
   `custom_message` entries like other unknown future entries on read.
-- Interactive `/export` is deferred to Phase 17 TUI product polish; Phase 13
+- Interactive `/export` is deferred to Phase 20 UI productization; Phase 13
   ships the local `--export-session` CLI only.
 
 Phase 13 handoff: session work may rely on provider-correct usage, model,
@@ -2020,43 +2020,73 @@ Phase 15 acceptance trace:
 | SC10 interactive trust ask | 15.8.2 | `opi-tui::trust_prompt` and `interactive_trust` prove the `AppState::AwaitingTrust` prompt applies each choice and precedes project-startup side effects, with predecided paths bypassing the prompt. |
 | SC11 documentation and non-goal guards | 15.9 | `phase15_safety_sandbox_docs` pins current sandbox/Operations/trust truth in paired EN/ZH docs and rejects every listed non-goal; the phase-exit artifact audit reruns the Phase 15 acceptance matrix and preserves command/stdout/stderr/exit-code evidence. |
 
-### Phase 16 - Agent Intelligence
+### Phase 16 - Pluggable Extensions and Command Execution
 
-Status: designed; implementation pending. Design:
-`docs/superpowers/specs/2026-07-11-phase16-agent-intelligence-design.md`.
+Status: approved; implementation pending. Canonical design:
+`docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md`.
 
-Phase 16 promotes the Agent Intelligence cluster. It adds a production
+Phase 16 keeps the default `opi` process in the Minimal Runtime on a direct
+local execution path while
+allowing `command.execute` to select an installed adapter. The first adapters
+are built-in `local` and external `opi-sandbox`; the latter remains independently
+usable through its SDK, human CLI, and `command-execution-jsonl-v1` protocol.
+Package installation does not imply Package Trust or activation: Installed, Trusted,
+Enabled, Selected, and Permitted are separate gates. Routing supports `fixed`,
+deterministic `rules`, and model recommendation under user policy, with
+`deny`/`ask`/`allow` permission outcomes. The Opi binary does not link
+`opi-sandbox`; with no enabled extension, it runs locally without extension
+processes or package-store scans. Once an external adapter is selected, failure
+is fail-closed and never falls back to local execution. `opi-protocol` initially
+owns only the versioned execution protocol.
+
+### Phase 17 - Benchmark and Regression Evaluation
+
+Status: reserved. Its specification will be discussed and written only after
+Phase 16 satisfies its exit criteria.
+
+Phase 17 will establish the benchmark and regression baseline needed to compare
+subsequent architecture and intelligence work. Corpus, metrics, provider matrix,
+and release gates are intentionally not predetermined here; they require
+evidence from the completed Phase 16 implementation.
+
+### Phase 18 - Agent Intelligence
+
+Status: designed; implementation deferred until the Phase 17 baseline exists.
+Design:
+`docs/superpowers/specs/2026-07-11-phase18-agent-intelligence-design.md`.
+
+Phase 18 promotes the Agent Intelligence cluster. It adds a production
 skills/fragments runtime (`/skill:`/`/fragment:` dispatch, a pi-style
 `<available_skills>` system-prompt section, recursive `ignore`-based skill
 discovery, and wiring the existing `disable_model_invocation`/
-`expand_fragment_body` mechanisms); LLM-driven compaction and branch-summary
-(widening `CompactionHooks::generate_summary` to an async boxed `Result` future
-with the first provider-backed hook impl in `opi-coding-agent`, a token-budget
-`find_split_point` with `keep_recent_tokens = 20000`, and
-`SessionCoordinator::move_to` plus a `ForkTarget` enum); and read-tool
-inline-image (decode/resize via the `image` crate, a companion
-`OutputContent::Text` label, and the `tool_result` image wire fix across
-Anthropic/Gemini/Vertex/Bedrock). `opi-agent` stays skill-free; the T8 trait
-widen lives in `opi-agent`, the provider-backed impl in `opi-coding-agent`.
-Non-goals: skill-body argument substitution, a dedicated RPC
-`SdkCommand::Skill`, `readFiles`/`modifiedFiles` entries, split-mid-turn
-compaction, and EXIF re-orientation.
+`expand_fragment_body` mechanisms); LLM-driven compaction and branch-summary;
+and read-tool inline images with the required provider wire fixes. `opi-agent`
+stays skill-free; provider-backed implementations remain in
+`opi-coding-agent`.
 
-### Phase 17 - TUI Engine, Extension Surface, and Product Polish
+### Phase 19 - Extension Architecture Completion
 
-Status: planned; recast from the previous Phase 14 (TUI Product Polish) and
-broadened to include the TUI engine and extension surface; design in progress
-via the wayfinder map.
+Status: roadmap placeholder; design follows benchmark and Agent Intelligence
+evidence.
 
-Phase 17 lands the event-driven TUI engine (`OverlayStack`, streaming-redraw
-throttle) and polishes the built-in terminal product on top of it:
-model/session/branch pickers, transcript rendering, command discovery,
-status/error feedback, accessibility, terminal compatibility, and image/diff
-presentation. It also introduces the extension UI surface (inline renderers,
-overlay/dialog, provider request/response hooks) as deferred-with-pinned-designs,
-re-triggered by concrete consumers. It does not promise web UI parity, custom
-extension UI, message renderer parity, or a general TUI framework. Interactive
-`/export` deferred from Phase 13 lands here.
+Phase 19 broadens the Phase 16 capability/adapter model to additional
+contribution types and execution adapters such as Docker, SSH, VM, remote
+execution, and independently contributed tools. It will define only the
+surfaces justified by real consumers and Phase 17 regression evidence.
+
+### Phase 20 - UI Productization
+
+Status: deferred until the core, benchmark, intelligence, and extension
+foundations are stable.
+
+Phase 20 lands the event-driven TUI engine (`OverlayStack`, streaming-redraw
+throttle) and polishes the built-in terminal product: model/session/branch
+pickers, transcript rendering, command discovery, status/error feedback,
+accessibility, terminal compatibility, and image/diff presentation. It also
+revisits extension UI surfaces when concrete consumers exist.
+It does not promise web UI parity, custom extension UI, message renderer parity,
+or a general TUI framework. Interactive `/export` deferred from Phase 13 lands
+here.
 
 ### Future Ecosystem Candidates
 
@@ -2068,7 +2098,7 @@ their entry conditions are met.
 | OAuth/subscription auth beyond Phase 14 | Phase 14 lands OAuth for Anthropic, GitHub Copilot, and OpenAI Codex (credential store, redaction, doctor, session interaction, login UX, refresh, revocation); additional OAuth/subscription providers remain future pending user demand. |
 | Broad provider catalog | Phase 12 provider correctness is stable; OpenAI-compatible profile quirks have a documented compatibility model. |
 | Image generation | Chat-side provider collection, auth, model metadata, cost, and error semantics are stable. |
-| Custom extension UI / message renderer | Phase 17 built-in TUI is stable; a separate RPC/UI subprotocol is designed. |
+| Custom extension UI / message renderer | Phase 20 built-in TUI is stable; a separate RPC/UI subprotocol is designed. |
 | npm/gallery/update/enable/disable | Package adapter lifecycle, trust/source model, diagnostics, and lock/update policy are stable. |
 | Web/share/session publishing | Phase 13 export, redaction, and session sensitivity rules are stable. |
 | Provider request/response adapter hooks | Core provider seam, hook ordering, redaction, and trace semantics are stable; prerequisites met in design (Phase 12 + Phase 7 + Phase 14), consumer pending. |
@@ -2080,7 +2110,7 @@ their entry conditions are met.
 |---|---|---|---|
 | ADR-001 | Workspace shape | four crates mirroring pi packages | preserves conceptual boundaries |
 | ADR-002 | Versioning | lockstep workspace version | simplifies compatibility and release order |
-| ADR-003 | No shared types crate | types live with semantic owner | avoids hub dependency |
+| ADR-003 | No shared domain-types crate | domain types live with their semantic owner; versioned wire contracts may live in `opi-protocol` | avoids a hub dependency without coupling independent adapters to product crates |
 | ADR-004 | pi compatibility | semantic alignment, not API/file compatibility | Rust-native implementation |
 | ADR-005 | MVP provider | Anthropic only | first release remains testable |
 | ADR-006 | Provider SDKs | direct HTTP adapters | streaming control and fewer unstable deps |
@@ -2095,7 +2125,7 @@ their entry conditions are met.
 | ADR-015 | Extension strategy | RPC/SDK and extension API before protocol adapters | matches pi's composition model; MCP is an extension/package candidate, not a core Phase 3 feature |
 | ADR-017 | Transport stub | removed from public API | avoids undocumented public surface |
 | ADR-018 | crates.io timing | quality-gated first publish | publish only after placeholder APIs are hidden or replaced and release gates pass |
-| ADR-019 | Tool safety | allowlists, visibility, and hooks over core permission profiles | pi explicitly avoids built-in permission popups; environment-specific gates belong in extensions/packages or external sandboxes |
+| ADR-019 | Tool safety | allowlists, visibility, and hooks over general core permission profiles | pi explicitly avoids a general built-in per-tool permission-popup subsystem; Phase 16 Capability Permission is a narrow external-adapter invocation gate, while other environment-specific gates belong in extensions/packages or external sandboxes |
 | ADR-020 | Context files | `AGENTS.md` / `CLAUDE.md` before `OPI.md` | preserves pi behavior and ecosystem convention |
 | ADR-021 | Current upstream baseline | `.repo/pi-0.80.2` | `pi` architecture moved materially around `Models/Auth`, `AgentHarness`, sessions, and extension UI surfaces after the earlier baseline |
 

@@ -1343,7 +1343,7 @@ Opi 以用户权限运行本地工具。主要风险是危险的本地命令、�
 | Coding-agent 扩展注册表 | `opi-coding-agent` / 桥接到 `opi-agent` | product 专属 commands、resources 与 packages 通过 `ExtensionRegistry` 组合。 |
 | 进程适配器协议 | `opi-coding-agent` | 拥有 `opi-extension-jsonl-v1` 解析与子进程托管；除非非 CLI host 需要，进程适配器协议不迁移进 `opi-agent`。 |
 | Provider 请求/响应钩子 | 未来候选 | 推迟；前提已在设计中满足（第十二阶段 correctness + 第七阶段 redaction + 第十四阶段 Request enrichment），消费者待定。 |
-| 自定义 TUI UI / 消息渲染器 | 未来候选 | 推迟至第十七阶段内置 TUI 稳定且设计了 UI/RPC 子协议。 |
+| 自定义 TUI UI / 消息渲染器 | 未来候选 | 推迟至第二十阶段内置 TUI 稳定且设计了 UI/RPC 子协议。 |
 
 Typed hook result composition 由契约测试覆盖：扩展钩子在 base 钩子之后按注册顺序运行，`Block`/`Deny` 短路链条，coding-agent 进程适配器通过同一个 `ExtensionRegistry::wrap_hooks` 组合桥接（无绕过）。扩展 API 文档不声明 `pi` TypeScript 扩展 API 兼容为当前 `opi` 范围。
 
@@ -1381,9 +1381,9 @@ Typed hook result composition 由契约测试覆盖：扩展钩子在 base 钩�
 
 显式决策与推迟（每条均引用第 13 阶段设计）：
 
-- `branch_summary` 作为上下文重建和 provider 转换基底实现。其生成 UX 触发器——分支切换、fork、手动命令、扩展钩子——推迟到第十六阶段 Agent Intelligence；第 13 阶段不在这些触发器上自动生成分支摘要。
+- `branch_summary` 作为上下文重建和 provider 转换基底实现。其生成 UX 触发器——分支切换、fork、手动命令、扩展钩子——推迟到第十八阶段 Agent Intelligence；第 13 阶段不在这些触发器上自动生成分支摘要。
 - `custom_message` 的 provider-context 语义被推迟：扩展提供的上下文消息的 provider 转换与 transcript 规则尚未规定，因此第 13 阶段不提供 `custom_message` 写入器，并在读取时把未知 `custom_message` 条目当作其他未知未来条目处理。
-- 交互式 `/export` 推迟到第十七阶段 TUI 产品打磨；第 13 阶段仅提供本地 `--export-session` CLI。
+- 交互式 `/export` 推迟到第二十阶段界面产品化；第 13 阶段仅提供本地 `--export-session` CLI。
 
 Phase 13 交接：会话工作可以依赖经由共享 `opi-ai` 类型传递的 provider-correct usage、model、thinking 和 error 数据，而无需依赖 provider 专用内部实现。
 
@@ -1577,17 +1577,37 @@ Diagnostic 是增量 `&'static str` code——source `sandbox` 下的 `opi.sandb
 | SC10 交互式信任询问 | 15.8.2 | `opi-tui::trust_prompt` 与 `interactive_trust` 证明 `AppState::AwaitingTrust` 提示应用每个选择并先于项目启动副作用，且 predecided 路径绕过提示。 |
 | SC11 文档与非目标 guard | 15.9 | `phase15_safety_sandbox_docs` 在成对 EN/ZH 文档中固定当前沙箱/Operations/信任真相，并拒绝每个列出的非目标；phase-exit artifact audit 重跑第十五阶段验收矩阵并保留 command/stdout/stderr/exit-code 证据。 |
 
-### 第十六阶段 - Agent Intelligence
+### 第十六阶段 - 可插拔扩展与命令执行
 
-状态：已设计；实现待定。设计：`docs/superpowers/specs/2026-07-11-phase16-agent-intelligence-design.md`。
+状态：已批准；实现待定。规范设计：
+`docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md`。
 
-第十六阶段把 Agent Intelligence 集群提升为正式阶段。它增加生产级 skills/fragments 运行时（`/skill:`/`/fragment:` 分发、pi 风格的 `<available_skills>` 系统提示词段、基于 `ignore` 的递归 skill 发现，以及接线既有的 `disable_model_invocation`/`expand_fragment_body` 机制）；LLM 驱动的压缩与分支摘要（把 `CompactionHooks::generate_summary` 拓宽为 async boxed `Result` future，首个 provider-backed hook 实现位于 `opi-coding-agent`，token-budget `find_split_point`（`keep_recent_tokens = 20000`），以及 `SessionCoordinator::move_to` 加 `ForkTarget` enum）；以及 read-tool 内联图像（经 `image` crate 解码/缩放、配套 `OutputContent::Text` 标签，以及跨 Anthropic/Gemini/Vertex/Bedrock 的 `tool_result` 图像 wire 修复）。`opi-agent` 保持 skill-free；T8 trait 拓宽在 `opi-agent`，provider-backed 实现在 `opi-coding-agent`。非目标：skill-body 参数替换、专用 RPC `SdkCommand::Skill`、`readFiles`/`modifiedFiles` 条目、split-mid-turn 压缩，以及 EXIF re-orientation。
+第十六阶段让默认 `opi` 进程保持最小运行时（Minimal Runtime）的直接本地执行路径，同时允许 `command.execute` 选择已安装的 adapter。首批 adapter 是内置 `local` 与外部 `opi-sandbox`；后者还可通过 SDK、面向用户的 CLI 和 `command-execution-jsonl-v1` 协议独立使用。Package 安装不等于包信任（Package Trust）或激活：Installed、Trusted、Enabled、Selected、Permitted 是五个独立门。路由支持 `fixed`、确定性的 `rules` 与受用户策略约束的模型建议，权限结果为 `deny`/`ask`/`allow`。Opi 二进制不链接 `opi-sandbox`；没有启用扩展时，本地运行且不启动扩展进程、不扫描 package store。外部 adapter 一旦被选择，失败即 fail-closed，绝不回退到本地执行。`opi-protocol` 初始只承载版本化的执行协议。
 
-### 第十七阶段 - TUI 引擎、扩展表面与产品打磨
+### 第十七阶段 - Benchmark 与回归评估
 
-状态：计划中；由原第十四阶段（TUI 产品打磨）重排而来并拓宽至 TUI 引擎与扩展表面；设计经由 wayfinder map 进行中。
+状态：已预留。仅在第十六阶段达到退出标准后，才讨论并编写本阶段 spec。
 
-第十七阶段落地事件驱动 TUI 引擎（`OverlayStack`、streaming-redraw throttle）并在此基础上打磨内置终端产品：model/session/branch pickers、transcript rendering、命令发现、status/error 反馈、accessibility、terminal compatibility，以及 image/diff 呈现。它还引入扩展 UI 表面（内联渲染器、overlay/dialog、provider 请求/响应钩子）作为 deferred-with-pinned-designs，由具体消费者重新触发。它不声明 web UI parity、custom extension UI、message renderer parity 或通用 TUI framework。从第十三阶段推迟的交互式 `/export` 在此落地。
+第十七阶段将建立后续架构与智能能力工作所需的 benchmark 和回归基线。语料、指标、provider matrix 与发布门禁在此不预设；它们应基于第十六阶段完成后的实现证据确定。
+
+### 第十八阶段 - Agent Intelligence
+
+状态：已设计；实现推迟至第十七阶段基线建立后。设计：
+`docs/superpowers/specs/2026-07-11-phase18-agent-intelligence-design.md`。
+
+第十八阶段把 Agent Intelligence 集群提升为正式阶段。它增加生产级 skills/fragments 运行时（`/skill:`/`/fragment:` 分发、pi 风格的 `<available_skills>` 系统提示词段、基于 `ignore` 的递归 skill 发现，以及接线既有的 `disable_model_invocation`/`expand_fragment_body` 机制）、LLM 驱动的压缩与分支摘要，以及带所需 provider wire 修复的 read-tool 内联图像。`opi-agent` 保持 skill-free；provider-backed 实现留在 `opi-coding-agent`。
+
+### 第十九阶段 - 扩展架构完善
+
+状态：roadmap 占位；在 benchmark 与 Agent Intelligence 证据形成后再设计。
+
+第十九阶段把第十六阶段的 capability/adapter 模型扩展到更多贡献类型与执行 adapter，例如 Docker、SSH、VM、远程执行和独立贡献的工具。只定义真实消费者与第十七阶段回归证据能够证明必要的表面。
+
+### 第二十阶段 - 界面产品化
+
+状态：推迟至核心、benchmark、智能能力与扩展基础稳定后。
+
+第二十阶段落地事件驱动 TUI 引擎（`OverlayStack`、streaming-redraw throttle）并打磨内置终端产品：model/session/branch pickers、transcript rendering、命令发现、status/error 反馈、accessibility、terminal compatibility，以及 image/diff 呈现。当具体消费者出现时，也会重新评估扩展 UI 表面。它不声明 web UI parity、custom extension UI、message renderer parity 或通用 TUI framework。从第十三阶段推迟的交互式 `/export` 在此落地。
 
 ### 未来生态候选
 
@@ -1598,7 +1618,7 @@ Diagnostic 是增量 `&'static str` code——source `sandbox` 下的 `opi.sandb
 | 第十四阶段之外的 OAuth/subscription auth | 第十四阶段为 Anthropic、GitHub Copilot 与 OpenAI Codex 落地 OAuth（credential store、redaction、doctor、session interaction、login UX、refresh、revocation）；额外 OAuth/subscription provider 在用户需求出现前仍属未来。 |
 | 广泛 provider catalog | 第十二阶段 provider correctness 稳定；OpenAI-compatible profile quirks 有文档化兼容模型。 |
 | 图像生成 | 聊天侧 provider collection、auth、model metadata、cost 和 error semantics 稳定。 |
-| Custom extension UI / message renderer | 第十七阶段内置 TUI 稳定；单独的 RPC/UI 子协议已设计。 |
+| Custom extension UI / message renderer | 第二十阶段内置 TUI 稳定；单独的 RPC/UI 子协议已设计。 |
 | npm/gallery/update/enable/disable | Package adapter lifecycle、trust/source model、diagnostics 和 lock/update policy 稳定。 |
 | Web/share/session publishing | 第十三阶段 export、redaction 和 session sensitivity 规则稳定。 |
 | Provider request/response adapter hooks | Core provider seam、hook ordering、redaction 和 trace semantics 稳定；前提已在设计中满足（第十二阶段 + 第七阶段 + 第十四阶段），消费者待定。 |
@@ -1610,7 +1630,7 @@ Diagnostic 是增量 `&'static str` code——source `sandbox` 下的 `opi.sandb
 |---|---|---|---|
 | ADR-001 | 工作区形状 | 四个 crate 映射 pi 包 | 保留概念边界 |
 | ADR-002 | 版本控制 | 锁步工作区版本 | 简化兼容性和发布顺序 |
-| ADR-003 | 无共享类型 crate | 类型归属语义拥有者 | 避免枢纽依赖 |
+| ADR-003 | 无共享领域类型 crate | 领域类型归属其语义拥有者；版本化 wire contract 可归属 `opi-protocol` | 避免枢纽依赖，同时不让独立 adapter 耦合产品 crate |
 | ADR-004 | pi 兼容性 | 语义对等，非 API/文件对等 | Rust 原生实现 |
 | ADR-005 | MVP 供应商 | 仅 Anthropic | 首次发布保持可测试 |
 | ADR-006 | 供应商 SDK | 直接 HTTP 适配器 | 流控制和更少的不稳定依赖 |
@@ -1625,7 +1645,7 @@ Diagnostic 是增量 `&'static str` code——source `sandbox` 下的 `opi.sandb
 | ADR-015 | 扩展策略 | RPC/SDK 和扩展 API 先于协议适配器 | 匹配 pi 的组合模型；MCP 是扩展/包候选，不是第 3 阶段核心功能 |
 | ADR-017 | Transport 存根 | 已从公共 API 移除 | 避免未文档化的公共表面 |
 | ADR-018 | crates.io 时机 | 质量门控的首次发布 | 仅在占位 API 被隐藏或替换且发布门控通过后发布 |
-| ADR-019 | 工具安全 | allowlist、可见性和钩子优先于核心权限配置文件 | pi 明确避免内置权限弹窗；环境特定门禁属于扩展/包或外部沙箱 |
+| ADR-019 | 工具安全 | allowlist、可见性和钩子优先于通用核心权限配置文件 | pi 明确避免通用的内置逐工具权限弹窗子系统；第十六阶段 Capability Permission 是面向外部 adapter 调用的窄门禁，其他环境特定门禁属于扩展/包或外部沙箱 |
 | ADR-020 | 上下文文件 | `AGENTS.md` / `CLAUDE.md` 先于 `OPI.md` | 保留 pi 行为和生态约定 |
 | ADR-021 | 当前上游基线 | `.repo/pi-0.80.2` | 较早基线之后，`pi` 架构在 `Models/Auth`、`AgentHarness`、sessions 和 extension UI surfaces 周围发生了实质变化 |
 
