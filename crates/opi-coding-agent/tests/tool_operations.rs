@@ -24,7 +24,7 @@ use opi_agent::tool::Tool;
 use opi_coding_agent::tool::{
     AccessMode, BashOpError, BashOperations, BashRequest, BashResult, BashTool, EditTool,
     FileOperations, FsOpError, LocalFileOperations, OpMetadata, PathPolicy, ReadTool,
-    ToolDiagnostic, WriteTool,
+    ToolDiagnostic, WriteTool, validate_workspace_path,
 };
 use serde_json::json;
 use tokio_util::sync::CancellationToken;
@@ -709,7 +709,7 @@ async fn operations_injection_reaches_tool_execution() {
 
 async fn read_injected_ops_receive_resolved_path_once() {
     let workspace = tempfile::tempdir().unwrap();
-    let resolved = workspace.path().join("inside.txt");
+    let resolved = validate_workspace_path(workspace.path(), "inside.txt").unwrap();
     std::fs::write(&resolved, "hello").unwrap();
     let recording = Arc::new(RecordingFileOps::default());
     let tool = ReadTool::new_with_ops(
@@ -769,7 +769,7 @@ async fn read_workspace_policy_rejects_outside_path_before_backend() {
 
 async fn write_injected_ops_receive_resolved_path_and_bytes_once() {
     let workspace = tempfile::tempdir().unwrap();
-    let resolved = workspace.path().join("out.txt");
+    let resolved = validate_workspace_path(workspace.path(), "out.txt").unwrap();
     // cfg.meta = None => metadata NotFound => classified as a create.
     let recording = Arc::new(RecordingFileOps::default());
     let tool = WriteTool::new_with_ops(workspace.path().to_path_buf(), recording.clone());
@@ -803,8 +803,9 @@ async fn write_injected_ops_receive_resolved_path_and_bytes_once() {
 #[tokio::test]
 async fn write_ancestor_classification_uses_injected_metadata_only() {
     let workspace = tempfile::tempdir().unwrap();
-    let target = workspace.path().join("virtual-file/child/out.txt");
-    let virtual_file = workspace.path().join("virtual-file");
+    let canonical_workspace = validate_workspace_path(workspace.path(), ".").unwrap();
+    let target = canonical_workspace.join("virtual-file/child/out.txt");
+    let virtual_file = canonical_workspace.join("virtual-file");
     assert!(
         !virtual_file.exists(),
         "host filesystem must disagree with the injected backend"
@@ -946,7 +947,7 @@ async fn write_metadata_io_error_fails_closed_before_mkdir_or_write() {
 
 async fn edit_injected_ops_read_then_write_through_backend() {
     let workspace = tempfile::tempdir().unwrap();
-    let resolved = workspace.path().join("e.txt");
+    let resolved = validate_workspace_path(workspace.path(), "e.txt").unwrap();
     // cfg.meta = Some(true) (regular file); read returns content with one "old".
     let recording = Arc::new(RecordingFileOps {
         cfg: FileOpsConfig {
