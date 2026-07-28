@@ -261,6 +261,7 @@ async fn harness_default_includes_interactive_coding_tools() {
         "mock:mock-model".into(),
         OpiConfig::default(),
         workspace.path().to_path_buf(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     );
 
     let system = harness.system_prompt();
@@ -292,6 +293,7 @@ async fn harness_non_interactive_default_includes_read_only_tools() {
         OpiConfig::default(),
         workspace.path().to_path_buf(),
         tool_config,
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     );
 
     let system = harness.system_prompt();
@@ -320,6 +322,7 @@ async fn harness_disabled_removes_all_tools() {
         OpiConfig::default(),
         workspace.path().to_path_buf(),
         ToolSelection::Disabled,
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     );
 
     let system = harness.system_prompt();
@@ -340,6 +343,7 @@ async fn harness_no_builtin_removes_all_tools_phase3() {
         OpiConfig::default(),
         workspace.path().to_path_buf(),
         ToolSelection::NoBuiltin,
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     );
 
     let system = harness.system_prompt();
@@ -360,6 +364,7 @@ async fn harness_allowlist_filters_tools() {
         OpiConfig::default(),
         workspace.path().to_path_buf(),
         ToolSelection::Allowlist(vec!["read".into(), "glob".into()]),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     );
 
     let system = harness.system_prompt();

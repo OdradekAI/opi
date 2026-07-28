@@ -124,6 +124,7 @@ async fn harness_text_prompt_with_mock() {
         "mock-model".into(),
         OpiConfig::default(),
         std::env::current_dir().unwrap(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     );
 
     let events: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
@@ -187,6 +188,7 @@ async fn harness_tool_call_with_mock() {
         "mock-model".into(),
         OpiConfig::default(),
         std::env::current_dir().unwrap(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     );
 
     // Add the record tool alongside built-in tools
@@ -223,6 +225,7 @@ async fn harness_system_prompt_includes_tools() {
         "mock-model".into(),
         OpiConfig::default(),
         std::env::current_dir().unwrap(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     );
 
     // Use the system_prompt() accessor to verify tool descriptions
@@ -259,6 +262,7 @@ async fn harness_multi_turn_with_mock() {
         "mock-model".into(),
         OpiConfig::default(),
         std::env::current_dir().unwrap(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     );
 
     let result1 = harness.prompt("Hello").await.unwrap();
@@ -292,6 +296,7 @@ async fn harness_respects_max_iterations_config() {
         "mock-model".into(),
         config,
         std::env::current_dir().unwrap(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     );
 
     // Harness should be created without error even with low max_iterations
@@ -361,6 +366,7 @@ async fn phase8_interactive_abort_shutdown_contract() {
         "mock-model".into(),
         OpiConfig::default(),
         std::env::current_dir().unwrap(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     );
     let token = harness.cancel_token();
 
@@ -536,6 +542,7 @@ async fn phase13_name_label_and_session_info_commands_persist_typed_entries() {
         "mock:mock-model".into(),
         OpiConfig::default(),
         workspace.path().to_path_buf(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     )
     .build();
     harness.prompt("seed turn").await.unwrap();

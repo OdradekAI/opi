@@ -535,6 +535,7 @@ async fn rpc_credential_needed_fails_without_blocking() {
         ToolSelection::Disabled,
         None,
         Vec::new(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     )
     .unwrap();
     let (command_tx, command_rx) = tokio::sync::mpsc::unbounded_channel();
@@ -5393,6 +5394,7 @@ async fn factory_built_approved_profiles_map_revocation_without_retry() {
             config.defaults.model.clone(),
             config,
             workspace.path().to_path_buf(),
+            opi_coding_agent::project_trust::TrustDecision::Trusted,
         )
         .tool_selection(ToolSelection::Disabled)
         .build();

@@ -74,6 +74,9 @@ pub enum TrustError {
     /// A path passed to `record` could not be canonicalized (it must exist).
     #[error("could not canonicalize path: {0}")]
     Canonicalize(PathBuf),
+    /// A canonical path cannot be represented losslessly as a JSON map key.
+    #[error("canonical trust path is not valid UTF-8: {0:?}")]
+    NonUtf8Path(PathBuf),
     /// A resolver was registered after the registry was sealed for resolution.
     #[error("resolver registry is sealed; late registration rejected")]
     RegistrySealed,
@@ -380,6 +383,16 @@ impl ProjectTrustStore {
     pub fn record(&self, path: &Path, trusted: bool) -> Result<(), TrustError> {
         let key = std::fs::canonicalize(path)
             .map_err(|_| TrustError::Canonicalize(path.to_path_buf()))?;
+        let key = key
+            .to_str()
+            .ok_or_else(|| TrustError::NonUtf8Path(key.clone()))?
+            .to_owned();
+
+        // Loading a missing store is read-only. Create its parent only when a
+        // caller records a durable decision.
+        if let Some(directory) = self.path.parent() {
+            std::fs::create_dir_all(directory)?;
+        }
 
         // Create (if absent) and exclusively lock the sidecar lock file. The
         // lock file holds no data; it is pure cross-process coordination.
@@ -392,26 +405,46 @@ impl ProjectTrustStore {
         fs4::FileExt::lock(&lock_file).map_err(|e| TrustError::Lock(e.to_string()))?;
 
         let outcome = self.record_locked(&key, trusted);
-        // Always release the lock, even on failure.
-        let _ = fs4::FileExt::unlock(&lock_file);
-        outcome
+        complete_record_with_unlock(outcome, || {
+            fs4::FileExt::unlock(&lock_file).map_err(|e| TrustError::Lock(e.to_string()))
+        })
     }
 
-    fn record_locked(&self, key: &Path, trusted: bool) -> Result<(), TrustError> {
+    fn record_locked(&self, key: &str, trusted: bool) -> Result<(), TrustError> {
         let mut map = read_map(&self.path)?.unwrap_or_default();
-        map.insert(key.to_string_lossy().into_owned(), trusted);
+        map.insert(key.to_owned(), trusted);
         write_json_atomic(&self.path, &map)
     }
 
-    /// Detect the trust-requiring resources present under `project_root`. A
-    /// bare `.opi` directory (present but containing none of the gated
-    /// files/directories) yields an empty set.
+    /// Detect the trust-requiring resources that startup can load for
+    /// `project_root`. Project `.opi` resources are checked only at that exact
+    /// root; `AGENTS.md` and `CLAUDE.md` follow the same ancestor walk as
+    /// context loading. A bare `.opi` directory yields an empty set.
     pub fn detect_resources(project_root: &Path) -> Vec<TrustResource> {
+        let context_candidates = crate::context_files::project_candidate_directories(project_root);
         TrustResource::all()
             .iter()
             .copied()
-            .filter(|r| project_root.join(r.rel_path()).exists())
+            .filter(|resource| match resource {
+                TrustResource::AgentsMd | TrustResource::ClaudeMd => context_candidates
+                    .iter()
+                    .any(|candidate| candidate.join(resource.rel_path()).exists()),
+                _ => project_root.join(resource.rel_path()).exists(),
+            })
             .collect()
+    }
+}
+
+fn complete_record_with_unlock(
+    persistence: Result<(), TrustError>,
+    unlock: impl FnOnce() -> Result<(), TrustError>,
+) -> Result<(), TrustError> {
+    // Always attempt unlock. Preserve a persistence failure as the primary
+    // error; otherwise make an unlock failure visible to the caller.
+    let unlock = unlock();
+    match persistence {
+        Err(primary) => Err(primary),
+        Ok(()) => unlock,
     }
 }
 
@@ -474,12 +507,9 @@ pub async fn resolve_trust(
 ///
 /// Detects trust-requiring resources under `project_root`; an empty set yields
 /// [`TrustDecision::Trusted`] (no gate fires in any mode). Otherwise the store's
-/// nearest-ancestor decision is authoritative. In this phase an
-/// [`TrustDecision::Undecided`] result (no prior stored decision) is mapped to
-/// [`TrustDecision::Trusted`] so existing single-layer projects keep loading
-/// unchanged; task 15.8.1 replaces this with `prepare_project_startup`, which
-/// adds `--trust`/`--no-trust`, `[defaults] default_project_trust`, and the
-/// headless ask policy and tightens the undecided case.
+/// nearest-ancestor decision is authoritative. An undecided result fails
+/// closed to [`TrustDecision::Untrusted`]. New startup code should prefer
+/// [`prepare_project_startup`], which also applies CLI/default/UI precedence.
 pub fn resolve_project_trust_decision(
     store: &ProjectTrustStore,
     project_root: &Path,
@@ -490,7 +520,7 @@ pub fn resolve_project_trust_decision(
     match store.decide(project_root) {
         TrustDecision::Untrusted => TrustDecision::Untrusted,
         TrustDecision::Trusted => TrustDecision::Trusted,
-        TrustDecision::Undecided => TrustDecision::Trusted,
+        TrustDecision::Undecided => TrustDecision::Untrusted,
     }
 }
 
@@ -685,15 +715,15 @@ pub async fn prepare_project_startup(
 /// decision is the in-session state fed to the 15.7 two-stage config + resource
 /// gate.
 ///
-/// Persistence is best-effort: a failed `record` (e.g. the parent path cannot
-/// be canonicalized) does not change the in-session decision, which still
-/// applies for this run; the next start re-asks. [`ProjectTrustStore::record`]
-/// canonicalizes the path.
+/// Persistence failures are returned to startup instead of silently degrading
+/// a durable choice to session-only state. [`ProjectTrustStore::record`]
+/// canonicalizes the path and creates a missing user-config directory only
+/// when one of these durable choices is recorded.
 pub fn apply_ui_choice(
     choice: opi_tui::TrustChoice,
     store: &ProjectTrustStore,
     project_root: &Path,
-) -> TrustDecision {
+) -> Result<TrustDecision, TrustError> {
     let decision = trust_choice_to_decision(choice);
     let persist: Option<(&Path, bool)> = match choice {
         opi_tui::TrustChoice::Trust => Some((project_root, true)),
@@ -702,9 +732,9 @@ pub fn apply_ui_choice(
         opi_tui::TrustChoice::TrustSession | opi_tui::TrustChoice::DenySession => None,
     };
     if let Some((path, trusted)) = persist {
-        let _ = store.record(path, trusted);
+        store.record(path, trusted)?;
     }
-    decision
+    Ok(decision)
 }
 
 /// The in-session [`TrustDecision`] a [`opi_tui::TrustChoice`] implies, with no
@@ -762,11 +792,43 @@ mod apply_ui_choice_tests {
     }
 
     #[test]
+    fn unlock_failure_is_visible_only_when_persistence_succeeded() {
+        let mut unlock_attempts = 0;
+        let unlock_error = || {
+            unlock_attempts += 1;
+            Err(TrustError::Lock("injected unlock failure".into()))
+        };
+
+        let error = complete_record_with_unlock(Ok(()), unlock_error).unwrap_err();
+        assert!(matches!(error, TrustError::Lock(message) if message == "injected unlock failure"));
+        assert_eq!(unlock_attempts, 1, "unlock must always be attempted");
+
+        let error = complete_record_with_unlock(
+            Err(TrustError::MalformedJson(
+                "primary persistence error".into(),
+            )),
+            || {
+                unlock_attempts += 1;
+                Err(TrustError::Lock("secondary unlock failure".into()))
+            },
+        )
+        .unwrap_err();
+        assert!(
+            matches!(error, TrustError::MalformedJson(ref message) if message == "primary persistence error"),
+            "the persistence failure must remain primary, got {error:?}"
+        );
+        assert_eq!(
+            unlock_attempts, 2,
+            "unlock must still be attempted after persistence failure"
+        );
+    }
+
+    #[test]
     fn trust_persists_true_for_current_project() {
         let user_config = tempfile::tempdir().unwrap();
         let project = tempfile::tempdir().unwrap();
         let store = store_in(user_config.path());
-        let decision = apply_ui_choice(TrustChoice::Trust, &store, project.path());
+        let decision = apply_ui_choice(TrustChoice::Trust, &store, project.path()).unwrap();
         assert_eq!(decision, TrustDecision::Trusted);
         assert_eq!(store.decide(project.path()), TrustDecision::Trusted);
     }
@@ -783,7 +845,7 @@ mod apply_ui_choice_tests {
         std::fs::create_dir_all(&proj_b).unwrap();
 
         let store = store_in(user_config.path());
-        let decision = apply_ui_choice(TrustChoice::TrustParent, &store, &proj_a);
+        let decision = apply_ui_choice(TrustChoice::TrustParent, &store, &proj_a).unwrap();
         assert_eq!(decision, TrustDecision::Trusted);
         // The project under the recorded parent is trusted...
         assert_eq!(store.decide(&proj_a), TrustDecision::Trusted);
@@ -796,7 +858,7 @@ mod apply_ui_choice_tests {
         let user_config = tempfile::tempdir().unwrap();
         let project = tempfile::tempdir().unwrap();
         let store = store_in(user_config.path());
-        let decision = apply_ui_choice(TrustChoice::Deny, &store, project.path());
+        let decision = apply_ui_choice(TrustChoice::Deny, &store, project.path()).unwrap();
         assert_eq!(decision, TrustDecision::Untrusted);
         assert_eq!(store.decide(project.path()), TrustDecision::Untrusted);
     }
@@ -806,7 +868,7 @@ mod apply_ui_choice_tests {
         let user_config = tempfile::tempdir().unwrap();
         let project = tempfile::tempdir().unwrap();
         let store = store_in(user_config.path());
-        let decision = apply_ui_choice(TrustChoice::TrustSession, &store, project.path());
+        let decision = apply_ui_choice(TrustChoice::TrustSession, &store, project.path()).unwrap();
         assert_eq!(decision, TrustDecision::Trusted);
         assert_eq!(
             store.decide(project.path()),
@@ -820,7 +882,7 @@ mod apply_ui_choice_tests {
         let user_config = tempfile::tempdir().unwrap();
         let project = tempfile::tempdir().unwrap();
         let store = store_in(user_config.path());
-        let decision = apply_ui_choice(TrustChoice::DenySession, &store, project.path());
+        let decision = apply_ui_choice(TrustChoice::DenySession, &store, project.path()).unwrap();
         assert_eq!(decision, TrustDecision::Untrusted);
         assert_eq!(
             store.decide(project.path()),

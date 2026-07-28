@@ -11,8 +11,8 @@ use opi_coding_agent::package_discovery::{
     package_composed_resource_layers,
 };
 use opi_coding_agent::prompt_fragment::discover_fragments;
-use opi_coding_agent::resource::DiscoveryLayer;
 use opi_coding_agent::resource::discover_extension_resources;
+use opi_coding_agent::resource::{DiscoveryLayer, DiscoveryLayerKind};
 use opi_coding_agent::skill::discover_skills;
 use opi_coding_agent::theme_discovery::discover_themes;
 
@@ -22,6 +22,7 @@ use opi_coding_agent::theme_discovery::discover_themes;
 
 fn layer(root: &Path, subdirectory: Option<&str>, precedence: u32) -> DiscoveryLayer {
     DiscoveryLayer {
+        kind: DiscoveryLayerKind::Explicit,
         root: root.to_path_buf(),
         subdirectory: subdirectory.map(String::from),
         precedence,

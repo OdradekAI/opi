@@ -232,6 +232,7 @@ async fn run_outer(
         "mock:mock-model".into(),
         OpiConfig::default(),
         workspace.path().to_path_buf(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     )
     .tool_selection(ToolSelection::Disabled)
     .build();
@@ -341,6 +342,7 @@ fn tracked_credential_runner(
             false,
             None,
             Vec::new(),
+            opi_coding_agent::project_trust::TrustDecision::Trusted,
         ),
         calls,
     )
@@ -812,6 +814,7 @@ async fn outer_tui_midstream_revocation_never_opens_login_or_retries() {
         "mock:mock-model".into(),
         OpiConfig::default(),
         workspace.path().to_path_buf(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     )
     .tool_selection(ToolSelection::Disabled)
     .build();
@@ -885,6 +888,7 @@ async fn phase14_outer_tui_rpc_credential_child() {
         ToolSelection::Disabled,
         None,
         Vec::new(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     )
     .expect("construct RPC runner");
     assert_eq!(runner.run().await, 0);

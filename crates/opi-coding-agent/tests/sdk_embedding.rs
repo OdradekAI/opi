@@ -118,6 +118,7 @@ fn mock_harness() -> CodingHarness {
         "mock:mock-model".into(),
         OpiConfig::default(),
         std::env::current_dir().expect("cwd"),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     )
 }
 

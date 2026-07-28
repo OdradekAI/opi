@@ -221,6 +221,7 @@ max_output_tokens = 8192
         config.defaults.model.clone(),
         config,
         root.path().to_path_buf(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     )
     .global_config_dir(root.path().join("global"))
     .build();

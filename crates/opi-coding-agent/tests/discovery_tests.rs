@@ -7,7 +7,7 @@ use std::fs;
 use std::path::Path;
 
 use opi_coding_agent::resource::{
-    DiscoveryLayer, ResourceDiscoveryError, discover_extension_resources,
+    DiscoveryLayer, DiscoveryLayerKind, ResourceDiscoveryError, discover_extension_resources,
 };
 use opi_coding_agent::skill::{SkillDiscoveryError, SkillManifest, SkillRegistry, discover_skills};
 use opi_coding_agent::theme_discovery::{
@@ -29,6 +29,7 @@ fn write_theme(dir: &Path, name: &str, toml_content: &str) -> std::path::PathBuf
 
 fn layer(root: &Path, subdirectory: Option<&str>, precedence: u32) -> DiscoveryLayer {
     DiscoveryLayer {
+        kind: DiscoveryLayerKind::Explicit,
         root: root.to_path_buf(),
         subdirectory: subdirectory.map(String::from),
         precedence,
@@ -730,6 +731,7 @@ fn write_skill(parent: &std::path::Path, dir_name: &str, frontmatter: &str, body
 /// Build a single discovery layer at `root/subdirectory` with given precedence.
 fn skill_layer(root: &std::path::Path, subdirectory: &str, precedence: u32) -> DiscoveryLayer {
     DiscoveryLayer {
+        kind: DiscoveryLayerKind::Explicit,
         root: root.to_path_buf(),
         subdirectory: Some(subdirectory.to_string()),
         precedence,
@@ -1357,6 +1359,7 @@ fn discover_from_project_dir() {
     );
 
     let resources = discover_extension_resources(&[DiscoveryLayer {
+        kind: DiscoveryLayerKind::Project,
         root: tmp.path().to_path_buf(),
         subdirectory: Some(".opi/extensions".into()),
         precedence: 0,
@@ -1385,6 +1388,7 @@ fn discover_from_user_dir() {
     );
 
     let resources = discover_extension_resources(&[DiscoveryLayer {
+        kind: DiscoveryLayerKind::User,
         root: tmp.path().to_path_buf(),
         subdirectory: Some("extensions".into()),
         precedence: 0,
@@ -1407,6 +1411,7 @@ fn discover_from_explicit_path() {
     );
 
     let resources = discover_extension_resources(&[DiscoveryLayer {
+        kind: DiscoveryLayerKind::Explicit,
         root: ext_dir,
         subdirectory: None,
         precedence: 0,
@@ -1426,6 +1431,7 @@ fn discover_multiple_extensions_in_single_layer() {
     write_manifest(&ext_dir.join("ext-c"), "ext-c", "1.0.0", "C");
 
     let resources = discover_extension_resources(&[DiscoveryLayer {
+        kind: DiscoveryLayerKind::Project,
         root: tmp.path().to_path_buf(),
         subdirectory: Some(".opi/extensions".into()),
         precedence: 0,
@@ -1447,6 +1453,7 @@ fn duplicate_name_in_same_layer_returns_error() {
     write_manifest(&ext_dir.join("second"), "shared", "1.0.0", "Second");
 
     let err = discover_extension_resources(&[DiscoveryLayer {
+        kind: DiscoveryLayerKind::Project,
         root: tmp.path().to_path_buf(),
         subdirectory: Some(".opi/extensions".into()),
         precedence: 0,
@@ -1475,6 +1482,7 @@ fn symlinked_extension_directory_is_canonicalized() {
     }
 
     let resources = discover_extension_resources(&[DiscoveryLayer {
+        kind: DiscoveryLayerKind::Project,
         root: tmp.path().to_path_buf(),
         subdirectory: Some(".opi/extensions".into()),
         precedence: 0,
@@ -1514,11 +1522,13 @@ fn higher_precedence_overrides_lower() {
 
     let resources = discover_extension_resources(&[
         DiscoveryLayer {
+            kind: DiscoveryLayerKind::User,
             root: user_tmp.path().to_path_buf(),
             subdirectory: Some("extensions".into()),
             precedence: 0, // lower
         },
         DiscoveryLayer {
+            kind: DiscoveryLayerKind::Project,
             root: project_tmp.path().to_path_buf(),
             subdirectory: Some(".opi/extensions".into()),
             precedence: 1, // higher
@@ -1554,16 +1564,19 @@ fn explicit_path_has_highest_precedence() {
 
     let resources = discover_extension_resources(&[
         DiscoveryLayer {
+            kind: DiscoveryLayerKind::User,
             root: user_tmp.path().to_path_buf(),
             subdirectory: Some("extensions".into()),
             precedence: 0,
         },
         DiscoveryLayer {
+            kind: DiscoveryLayerKind::Project,
             root: project_tmp.path().to_path_buf(),
             subdirectory: Some(".opi/extensions".into()),
             precedence: 1,
         },
         DiscoveryLayer {
+            kind: DiscoveryLayerKind::Explicit,
             root: explicit_dir,
             subdirectory: None,
             precedence: 2,
@@ -1589,6 +1602,7 @@ fn missing_directory_returns_empty() {
     let nonexistent = tmp.path().join("does-not-exist");
 
     let resources = discover_extension_resources(&[DiscoveryLayer {
+        kind: DiscoveryLayerKind::Explicit,
         root: nonexistent,
         subdirectory: Some("extensions".into()),
         precedence: 0,
@@ -1605,6 +1619,7 @@ fn empty_directory_returns_empty() {
     fs::create_dir_all(&ext_dir).unwrap();
 
     let resources = discover_extension_resources(&[DiscoveryLayer {
+        kind: DiscoveryLayerKind::User,
         root: tmp.path().to_path_buf(),
         subdirectory: Some("extensions".into()),
         precedence: 0,
@@ -1624,6 +1639,7 @@ fn directory_without_manifest_is_skipped() {
     write_manifest(&ext_dir.join("valid"), "valid", "1.0.0", "Valid");
 
     let resources = discover_extension_resources(&[DiscoveryLayer {
+        kind: DiscoveryLayerKind::Project,
         root: tmp.path().to_path_buf(),
         subdirectory: Some(".opi/extensions".into()),
         precedence: 0,
@@ -1645,6 +1661,7 @@ fn invalid_toml_returns_error() {
     write_invalid_manifest(&ext_dir.join("bad-ext"));
 
     let result = discover_extension_resources(&[DiscoveryLayer {
+        kind: DiscoveryLayerKind::User,
         root: tmp.path().to_path_buf(),
         subdirectory: Some("extensions".into()),
         precedence: 0,
@@ -1666,6 +1683,7 @@ fn manifest_missing_name_returns_error() {
     write_manifest_missing_name(&ext_dir.join("nameless"));
 
     let result = discover_extension_resources(&[DiscoveryLayer {
+        kind: DiscoveryLayerKind::User,
         root: tmp.path().to_path_buf(),
         subdirectory: Some("extensions".into()),
         precedence: 0,
@@ -1692,6 +1710,7 @@ fn paths_are_normalized_to_canonical() {
     write_manifest(&ext_dir.join("norm-ext"), "norm-ext", "1.0.0", "Normalized");
 
     let resources = discover_extension_resources(&[DiscoveryLayer {
+        kind: DiscoveryLayerKind::Project,
         root: tmp.path().to_path_buf(),
         subdirectory: Some(".opi/extensions".into()),
         precedence: 0,
@@ -1717,6 +1736,7 @@ name = ""
     .unwrap();
 
     let result = discover_extension_resources(&[DiscoveryLayer {
+        kind: DiscoveryLayerKind::User,
         root: tmp.path().to_path_buf(),
         subdirectory: Some("extensions".into()),
         precedence: 0,
@@ -1742,6 +1762,7 @@ fn minimal_manifest_with_only_name_is_valid() {
     write_minimal_manifest(&ext_dir.join("minimal"), "minimal");
 
     let resources = discover_extension_resources(&[DiscoveryLayer {
+        kind: DiscoveryLayerKind::User,
         root: tmp.path().to_path_buf(),
         subdirectory: Some("extensions".into()),
         precedence: 0,
@@ -1765,6 +1786,7 @@ fn resource_tracks_source_path_and_precedence() {
     write_manifest(&ext_dir.join("tracked"), "tracked", "1.0.0", "Tracked");
 
     let resources = discover_extension_resources(&[DiscoveryLayer {
+        kind: DiscoveryLayerKind::Explicit,
         root: ext_dir,
         subdirectory: None,
         precedence: 42,
@@ -1796,6 +1818,7 @@ description = "A fully specified extension"
     .unwrap();
 
     let resources = discover_extension_resources(&[DiscoveryLayer {
+        kind: DiscoveryLayerKind::Explicit,
         root: ext_dir,
         subdirectory: None,
         precedence: 0,
@@ -1837,6 +1860,7 @@ fn non_directory_entries_are_skipped() {
     write_manifest(&ext_dir.join("real-ext"), "real-ext", "1.0.0", "Real");
 
     let resources = discover_extension_resources(&[DiscoveryLayer {
+        kind: DiscoveryLayerKind::User,
         root: tmp.path().to_path_buf(),
         subdirectory: Some("extensions".into()),
         precedence: 0,

@@ -1,7 +1,8 @@
-//! Mock adapter binary for adapter_host tests.
+//! Mock adapter implementation for adapter_host tests.
 //!
-//! This is a `harness = false` test binary that acts as a child process
-//! adapter. Controlled via the `OPI_ADAPTER_TEST_MODE` environment variable.
+//! This backs the existing `harness = false` test binary and the explicit
+//! test-support binary that Cargo exposes to integration tests. Controlled via
+//! the `OPI_ADAPTER_TEST_MODE` environment variable.
 //!
 //! Modes:
 //! - `capabilities` — full adapter: responds to initialize, tool_call,
@@ -15,8 +16,12 @@
 
 use std::io::{BufRead, Write};
 
-fn main() {
-    let mode = std::env::var("OPI_ADAPTER_TEST_MODE").unwrap_or_else(|_| "capabilities".into());
+pub(crate) fn main() {
+    let mut args = std::env::args().skip(1);
+    let mode = std::env::var("OPI_ADAPTER_TEST_MODE")
+        .ok()
+        .or_else(|| args.next())
+        .unwrap_or_else(|| "capabilities".into());
     let stdin = std::io::stdin();
     let stdout = std::io::stdout();
     let mut reader = std::io::BufReader::new(stdin.lock());
@@ -33,6 +38,7 @@ fn main() {
         "transform" => run_transform(&mut reader, &mut writer),
         "event_backpressure" => run_event_backpressure(&mut reader, &mut writer),
         "shutdown_marker" => run_shutdown_marker(&mut reader, &mut writer),
+        "startup_marker" => run_startup_marker(&mut reader, &mut writer, args.next()),
         "cancel_tool" => run_cancel_tool(&mut reader, &mut writer),
         "l0_grandchild" => run_l0_grandchild(&mut reader, &mut writer),
         _ => std::process::exit(1),
@@ -431,6 +437,44 @@ fn run_shutdown_marker(reader: &mut impl BufRead, writer: &mut impl Write) {
             if let Ok(path) = std::env::var("OPI_ADAPTER_SHUTDOWN_MARKER") {
                 let _ = std::fs::write(path, "shutdown observed");
             }
+            return;
+        }
+    }
+}
+
+fn run_startup_marker(reader: &mut impl BufRead, writer: &mut impl Write, marker: Option<String>) {
+    if let Some(line) = read_line(reader) {
+        let msg: serde_json::Value = match serde_json::from_str(&line) {
+            Ok(m) => m,
+            Err(_) => return,
+        };
+        if msg["type"].as_str() != Some("initialize") {
+            return;
+        }
+        let Some(marker) = marker else {
+            return;
+        };
+        std::fs::write(marker, "startup observed").unwrap();
+        let id = msg["id"].as_str().unwrap_or("1");
+        write_msg(
+            writer,
+            &serde_json::json!({
+                "type": "capabilities",
+                "id": id,
+                "tools": [],
+                "commands": [],
+                "hooks": [],
+                "model_overrides": []
+            }),
+        );
+    }
+
+    while let Some(line) = read_line(reader) {
+        let msg: serde_json::Value = match serde_json::from_str(&line) {
+            Ok(m) => m,
+            Err(_) => continue,
+        };
+        if msg["type"].as_str() == Some("shutdown") {
             return;
         }
     }

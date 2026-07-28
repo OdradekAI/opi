@@ -147,6 +147,9 @@ opi package list
 | `--no-tools` | 禁用所有工具。 |
 | `--no-builtin-tools` | 关闭内置工具，同时保留 extension/custom 工具可用。 |
 | `--allow-mutating` | 在非交互/RPC 运行中允许 `write`、`edit` 和 `bash`。 |
+| `--sandbox off\|strict` | 选择 `bash` 子进程树沙箱；默认 `off` 交付始终开启的 L0 tree-kill 基线。 |
+| `--sandbox-require` | 当已配置的 `strict` 层不可用时 fail-closed，而不是默认的 fail-open-with-diagnostic 策略。 |
+| `--trust` / `--no-trust` | 针对本次会话的一次性项目信任覆盖；二者互斥。 |
 | `--trace <PATH>` | 为非交互或 JSON 运行写入可选、已脱敏的本地 trace envelope。 |
 
 ## Provider
@@ -293,6 +296,37 @@ RPC 命令包括 `prompt`、`continue`、`steer`、`follow_up`、`abort`、`set_
   的 provider 流式 adapter 协议、
   默认测试中的付费实时 provider 调用，以及复制 pi 的 provider 专用配置文件格式仍被推迟。
 - 不支持从任意 extension 路径动态加载 Rust 插件。
+
+### 沙箱与项目信任
+
+第十五阶段增加 opt-in 的 `bash` 子进程树沙箱，以及一个启动期项目信任门。二者均为
+defense-in-depth，明确不是安全边界；不可信代码应放在容器或 VM 中。
+
+- 沙箱只 confine `bash` 子进程树，不 confine `opi` 自身。每个模式都交付始终开启的 L0
+  基线（Unix 上 `process_group(0)`、Windows 上 kill-on-close Job Object）。
+  `[sandbox] mode = "strict"`（默认 `off`）opt-in L1/L2/L3 层；`require = true`
+  （默认 `false`）在层无法生效时 fail-closed，否则 `opi` 按已生效基线继续并给出
+  `opi.sandbox.degraded` diagnostic。CLI：`--sandbox off|strict`、`--sandbox-require`。
+- Linux `strict` L2 是收窄的新建 socket 创建门：seccomp 拒绝 `socket(AF_INET)`、
+  `socket(AF_INET6)` 与 `socket(AF_NETLINK)`，同时保留 `socket(AF_UNIX)`；Landlock
+  ABI 4（Linux 6.7+）额外拒绝 TCP `bind`/`connect`。它不声称完整网络隔离：继承的 fd、
+  non-TCP 流量与 `io_uring` 仍是已记录的残留。L3 拒绝固定的内核句柄危险 blocklist
+  （`clone`/`unshare` 保持允许）。macOS 使用 `sandbox-exec` deny-overlay（L1/L2；L3
+  不可用）；Windows 仅 L0，`strict` degrade 到 L0 并给出 diagnostic。
+- 文件工具（`read`/`write`/`edit`）与 nav 工具（`grep`/`find`/`ls`/`glob`）不被沙箱；
+  它们保持 `PathPolicy` 守卫。沙箱位于按工具的 `Operations` 缝合点之后的 local
+  `BashOperations::exec` 内，该缝合点仅交付 local 实现（无 SSH/container 远端后端）。
+- 项目信任在启动时恰好解析一次，先于任何项目资源加载。store 是扁平
+  `Map<canonical_path, bool>`，位于 `{user_config_dir}/trust.json`（Windows 上
+  `%APPDATA%\opi\trust.json`、Unix 上 `~/.config/opi/trust.json`），无 schema 版本。当
+  项目未受信任时，其 `.opi/config.toml`、`.opi/{skills,fragments,themes,extensions}`、
+  项目级 `.opi/packages.toml` 适配器声明以及项目 `AGENTS.md`/`CLAUDE.md` 不会加载
+  （context 文件仍可经 `read` 工具读取）。信任门控的是资源*加载*，而非工具执行。CLI：
+  `--trust` / `--no-trust`；`[defaults] default_project_trust = "ask"|"always"|"never"`
+  （默认 `ask`，仅全局）。
+- 不存在内置 `/trust` 命令，不存在 live mid-session trust mutation，不存在 project-
+  resource reload。信任 resolver 经显式的 embedder-only API 注册；标准 CLI 交付空
+  resolver registry，不暴露 CLI `-e` 标志，也不进行原生 resolver 加载。
 
 如果需要更强隔离，请在容器、虚拟机或外部 sandbox 中运行 `opi`，并按暴露给它的工具和
 凭据选择合适的边界。

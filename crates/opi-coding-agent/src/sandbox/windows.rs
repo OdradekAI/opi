@@ -8,8 +8,9 @@
 //!
 //! With this backend the shared policy in the parent module resolves a strict
 //! request as:
-//! - `require = false` -> fail-open at the L0 baseline; the three permanent gaps
-//!   surface ONCE at startup via `CODE_SANDBOX_UNAVAILABLE`, never per command.
+//! - `require = false` -> fail-open at the L0 baseline; one aggregate permanent
+//!   gap surfaces ONCE at startup via `CODE_SANDBOX_UNAVAILABLE`, never per
+//!   command.
 //! - `require = true` -> fail-closed: `LocalBashOperations` returns
 //!   `BashOpError::SandboxUnavailable` before any process is created.
 //!
@@ -18,10 +19,12 @@
 
 #![forbid(unsafe_code)]
 
-use super::{
-    LayerAvailability, PreparedSandbox, SandboxLayer, StrictBackend, prepare as resolve_policy,
-};
+use super::{LayerAvailability, PreparedSandbox, SandboxLayer, StrictBackend};
 use crate::config::SandboxConfig;
+
+const WINDOWS_STRICT_GAP_LAYER: &str = "strict";
+const WINDOWS_STRICT_GAP_REASON: &str =
+    "windows provides no L1-L3 strict confinement (L0 Job-Object only)";
 
 /// Windows L0-only strict backend: every strict layer is a permanent platform
 /// gap. On Windows, `prepare_production` routes through [`prepare`] (which feeds
@@ -33,14 +36,18 @@ pub(crate) struct L0OnlyBackend;
 impl StrictBackend for L0OnlyBackend {
     fn availability(&self, _layer: SandboxLayer) -> LayerAvailability {
         LayerAvailability::PermanentlyUnavailable {
-            reason: "windows provides no L1-L3 strict confinement (L0 Job-Object only)".to_string(),
+            reason: WINDOWS_STRICT_GAP_REASON.to_string(),
         }
+    }
+
+    fn aggregate_permanent_gap(&self) -> Option<(&'static str, &'static str)> {
+        Some((WINDOWS_STRICT_GAP_LAYER, WINDOWS_STRICT_GAP_REASON))
     }
 }
 
 /// Resolve the Windows strict policy against the L0-only backend. This is the
 /// Windows entry point on the production dispatch path: `prepare_production`
 /// calls it on `target_os = "windows"`.
-pub(crate) fn prepare(config: &SandboxConfig) -> PreparedSandbox {
-    resolve_policy(config, &L0OnlyBackend)
+pub(crate) fn prepare(config: &SandboxConfig, workspace: &std::path::Path) -> PreparedSandbox {
+    super::prepare_with_backend(config, workspace, &L0OnlyBackend)
 }

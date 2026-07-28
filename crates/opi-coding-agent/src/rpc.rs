@@ -136,6 +136,7 @@ impl RpcRunner {
         tool_selection: ToolSelection,
         user_system_prompt: Option<String>,
         initial_messages: Vec<AgentMessage>,
+        trust_decision: TrustDecision,
     ) -> Result<Self, crate::policy::ToolPolicyError> {
         Self::new_with_optional_extension_registry(
             provider,
@@ -151,7 +152,7 @@ impl RpcRunner {
             None,
             Vec::new(),
             None,
-            TrustDecision::Trusted,
+            trust_decision,
         )
     }
 
@@ -170,6 +171,7 @@ impl RpcRunner {
         user_system_prompt: Option<String>,
         initial_messages: Vec<AgentMessage>,
         trace_sink: Option<Arc<RecordingTraceSink>>,
+        trust_decision: TrustDecision,
     ) -> Result<Self, crate::policy::ToolPolicyError> {
         Self::new_with_optional_extension_registry(
             provider,
@@ -185,7 +187,7 @@ impl RpcRunner {
             None,
             Vec::new(),
             trace_sink,
-            TrustDecision::Trusted,
+            trust_decision,
         )
     }
 
@@ -201,6 +203,7 @@ impl RpcRunner {
         user_system_prompt: Option<String>,
         initial_messages: Vec<AgentMessage>,
         extension_registry: ExtensionRegistry,
+        trust_decision: TrustDecision,
     ) -> Result<Self, crate::policy::ToolPolicyError> {
         Self::new_with_optional_extension_registry(
             provider,
@@ -216,7 +219,7 @@ impl RpcRunner {
             None,
             Vec::new(),
             None,
-            TrustDecision::Trusted,
+            trust_decision,
         )
     }
 
@@ -281,18 +284,16 @@ impl RpcRunner {
             tool_selection.clone(),
         )?;
         let hooks = Box::new(crate::runner::NonInteractiveHooks::new(allow_mutating));
-        let mut builder = CodingHarness::builder(provider, model, config, workspace_root)
-            .hooks(hooks)
-            .initial_messages(initial_messages)
-            .tool_selection(tool_selection)
-            .tool_config(tool_config)
-            .startup_diagnostics(startup_diagnostics)
-            // Record runtime diagnostics so run summaries can carry structured
-            // severity counts (Phase 7 task 7.5).
-            .record_diagnostics(true)
-            // Phase 15.8.1: apply the headless trust decision to project
-            // resource discovery gating.
-            .trust_decision(trust_decision);
+        let mut builder =
+            CodingHarness::builder(provider, model, config, workspace_root, trust_decision)
+                .hooks(hooks)
+                .initial_messages(initial_messages)
+                .tool_selection(tool_selection)
+                .tool_config(tool_config)
+                .startup_diagnostics(startup_diagnostics)
+                // Record runtime diagnostics so run summaries can carry structured
+                // severity counts (Phase 7 task 7.5).
+                .record_diagnostics(true);
         if let Some(installed_packages) = installed_packages {
             builder = builder.installed_packages(installed_packages);
         }

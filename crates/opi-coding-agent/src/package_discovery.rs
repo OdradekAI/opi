@@ -877,6 +877,7 @@ pub fn discover_package_root(
     layer_precedence: u32,
 ) -> Result<PackageResource, PackageDiscoveryError> {
     let layer = crate::resource::DiscoveryLayer {
+        kind: crate::resource::DiscoveryLayerKind::Package,
         root: path.to_path_buf(),
         subdirectory: None,
         precedence: layer_precedence,
@@ -958,6 +959,7 @@ pub fn package_composed_resource_layers(
         });
         for resource in resources {
             let layer = crate::resource::DiscoveryLayer {
+                kind: crate::resource::DiscoveryLayerKind::Package,
                 root: resource.path,
                 subdirectory: None,
                 precedence: package.layer_precedence,

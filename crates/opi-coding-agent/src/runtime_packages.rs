@@ -8,7 +8,7 @@ use opi_agent::extension::ExtensionRegistry;
 use crate::adapter_extension::start_adapters_from_packages;
 use crate::diagnostic_bridge::{diagnostic_from_package, diagnostic_from_package_resolution_error};
 use crate::package_discovery::PackageResource;
-use crate::package_resolver::{InstalledPackageScope, resolve_installed_packages};
+use crate::package_resolver::resolve_installed_packages_for_scopes;
 use crate::project_trust::TrustDecision;
 
 /// Installed packages and adapter registry prepared before harness startup.
@@ -16,7 +16,7 @@ use crate::project_trust::TrustDecision;
 /// `trust_decision` (task 15.8.1) is the decision that filtered project-scope
 /// packages; it rides along into the runner constructors so they can apply the
 /// same decision to `CodingHarnessBuilder::trust_decision` (resource-discovery
-/// gating) without a constructor signature change.
+/// gating).
 pub struct RuntimePackageStartup {
     pub extension_registry: ExtensionRegistry,
     pub installed_packages: Vec<PackageResource>,
@@ -24,29 +24,11 @@ pub struct RuntimePackageStartup {
     pub trust_decision: TrustDecision,
 }
 
-/// Resolve installed package declarations and start package adapters.
-///
-/// Trust-permissive: equivalent to
-/// [`start_installed_package_runtime_with_trust`] with [`TrustDecision::Trusted`]
-/// (every project loads). The interactive trust-gated path (task 15.7) and the
-/// headless policy (task 15.8.1) use the trust-aware entry.
-pub async fn start_installed_package_runtime(
-    workspace_root: &Path,
-    user_config_dir: &Path,
-) -> RuntimePackageStartup {
-    start_installed_package_runtime_with_trust(
-        workspace_root,
-        user_config_dir,
-        TrustDecision::Trusted,
-    )
-    .await
-}
-
 /// Resolve installed package declarations and start package adapters, gating
 /// project-scope declarations on `trust_decision` (task 15.7, T6).
 ///
-/// When `trust_decision` is [`TrustDecision::Untrusted`], project-scope
-/// (`.opi/packages.toml`) declarations are filtered out before
+/// Unless `trust_decision` is [`TrustDecision::Trusted`], project-scope
+/// (`.opi/packages.toml`) stores are excluded before
 /// [`start_adapters_from_packages`] -> [`crate::adapter_host::AdapterHost::start`]
 /// (the only child-spawn site), so an untrusted project's adapter native
 /// children do not start. User-global declarations (`scope == Global`) are
@@ -59,25 +41,32 @@ pub async fn start_installed_package_runtime_with_trust(
 ) -> RuntimePackageStartup {
     let registry = ExtensionRegistry::new();
     let mut diagnostics = Vec::new();
-    let resolution = match resolve_installed_packages(workspace_root, user_config_dir) {
-        Ok(resolution) => resolution,
-        Err(e) => {
-            diagnostics.push(diagnostic_from_package_resolution_error(e));
-            return RuntimePackageStartup {
-                extension_registry: registry,
-                installed_packages: Vec::new(),
-                diagnostics,
-                trust_decision,
-            };
-        }
+    let scopes = if matches!(trust_decision, TrustDecision::Trusted) {
+        &[
+            crate::package_resolver::InstalledPackageScope::Global,
+            crate::package_resolver::InstalledPackageScope::Project,
+        ][..]
+    } else {
+        &[crate::package_resolver::InstalledPackageScope::Global][..]
     };
+    let resolution =
+        match resolve_installed_packages_for_scopes(workspace_root, user_config_dir, scopes) {
+            Ok(resolution) => resolution,
+            Err(e) => {
+                diagnostics.push(diagnostic_from_package_resolution_error(e));
+                return RuntimePackageStartup {
+                    extension_registry: registry,
+                    installed_packages: Vec::new(),
+                    diagnostics,
+                    trust_decision,
+                };
+            }
+        };
 
     diagnostics.extend(resolution.diagnostics.iter().map(diagnostic_from_package));
-    let project_trusted = !matches!(trust_decision, TrustDecision::Untrusted);
     let installed_packages = resolution
         .packages
         .into_iter()
-        .filter(|pkg| project_trusted || matches!(pkg.scope, InstalledPackageScope::Global))
         .map(|package| package.package)
         .collect::<Vec<_>>();
     let (extension_registry, adapter_diagnostics) =

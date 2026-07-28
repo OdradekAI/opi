@@ -44,7 +44,7 @@ use crate::interactive_auth::{
 };
 use crate::oauth::{OAuthEndpointConfig, TuiLoginPresenter};
 use crate::project_trust::{
-    ProjectStartupPlan, ProjectTrustStore, TrustDecision, apply_ui_choice, trust_choice_to_decision,
+    ProjectStartupPlan, ProjectTrustStore, TrustDecision, TrustError, apply_ui_choice,
 };
 
 // ---------------------------------------------------------------------------
@@ -73,30 +73,29 @@ pub trait InteractiveTrustPrompt: Send {
 /// trust-requiring resources renders the prompt via `prompt`; the choice is
 /// translated + persisted by [`apply_ui_choice`]. A cancelled/closed prompt
 /// (`None`) resolves to [`TrustDecision::Untrusted`] so no project resources
-/// load. The returned decision feeds the 15.7 two-stage config + resource gate
-/// and `CodingHarnessBuilder::trust_decision`, and provably precedes provider
-/// construction, installed-package/adapter startup, and harness build (the
-/// caller acts on the returned decision before any of those run).
+/// load. Persistence and store reload failures are returned so startup cannot
+/// silently treat a durable choice as session-only. The returned decision feeds
+/// the 15.7 two-stage config + resource gate and
+/// `CodingHarnessBuilder::trust_decision`, and provably precedes provider
+/// construction, installed-package/adapter startup, and harness build.
 pub async fn resolve_interactive_trust_decision(
     plan: &ProjectStartupPlan,
     user_config_dir: &Path,
     project_root: &Path,
     prompt: &mut dyn InteractiveTrustPrompt,
-) -> TrustDecision {
+) -> Result<TrustDecision, TrustError> {
     match plan.decision {
         // Bypass: a decisive earlier layer (CLI/resolver/store/default) wins.
-        TrustDecision::Trusted | TrustDecision::Untrusted => plan.decision,
+        TrustDecision::Trusted | TrustDecision::Untrusted => Ok(plan.decision),
         TrustDecision::Undecided => match prompt.ask(project_root).await {
-            Some(choice) => match ProjectTrustStore::load(user_config_dir) {
-                // The store already loaded successfully inside prepare_project_startup
-                // before the ask; persist the durable choice and return the decision.
-                Ok(store) => apply_ui_choice(choice, &store, project_root),
-                // Defensive: a re-load failure is treated as best-effort (apply the
-                // in-session decision without persistence).
-                Err(_) => trust_choice_to_decision(choice),
-            },
+            Some(choice) => {
+                // The store loaded during preflight, but reload here because
+                // another process may have changed it while the prompt waited.
+                let store = ProjectTrustStore::load(user_config_dir)?;
+                apply_ui_choice(choice, &store, project_root)
+            }
             // Cancelled/closed prompt -> safe deny; no project resources load.
-            None => TrustDecision::Untrusted,
+            None => Ok(TrustDecision::Untrusted),
         },
     }
 }
@@ -127,6 +126,119 @@ fn run_trust_prompt_terminal(
     project_path: &Path,
     response_tx: tokio::sync::oneshot::Sender<TrustChoice>,
 ) -> io::Result<()> {
+    let mut ops = CrosstermTrustPromptTerminalOps::default();
+    run_trust_prompt_terminal_with_ops(project_path, response_tx, &mut ops)
+}
+
+struct TrustPromptRender<'a> {
+    project_display: &'a str,
+    status: opi_tui::AppStatus,
+    prompt: &'a TrustPrompt,
+}
+
+trait TrustPromptTerminalOps {
+    fn enable_raw_mode(&mut self) -> io::Result<()>;
+    fn enter_alternate_screen(&mut self) -> io::Result<()>;
+    fn construct_terminal(&mut self) -> io::Result<()>;
+    fn draw(&mut self, render: &TrustPromptRender<'_>) -> io::Result<()>;
+    fn poll(&mut self, timeout: std::time::Duration) -> io::Result<bool>;
+    fn read(&mut self) -> io::Result<Event>;
+    fn leave_alternate_screen(&mut self) -> io::Result<()>;
+    fn disable_raw_mode(&mut self) -> io::Result<()>;
+}
+
+#[derive(Default)]
+struct CrosstermTrustPromptTerminalOps {
+    terminal: Option<Terminal<CrosstermBackend<io::Stdout>>>,
+}
+
+impl TrustPromptTerminalOps for CrosstermTrustPromptTerminalOps {
+    fn enable_raw_mode(&mut self) -> io::Result<()> {
+        terminal::enable_raw_mode()
+    }
+
+    fn enter_alternate_screen(&mut self) -> io::Result<()> {
+        crossterm::execute!(io::stdout(), EnterAlternateScreen)
+    }
+
+    fn construct_terminal(&mut self) -> io::Result<()> {
+        let backend = CrosstermBackend::new(io::stdout());
+        self.terminal = Some(Terminal::new(backend)?);
+        Ok(())
+    }
+
+    fn draw(&mut self, render: &TrustPromptRender<'_>) -> io::Result<()> {
+        let terminal = self
+            .terminal
+            .as_mut()
+            .ok_or_else(|| io::Error::other("trust-prompt terminal is not constructed"))?;
+        terminal.draw(|f| {
+            let chunks =
+                Layout::vertical([Constraint::Length(1), Constraint::Min(1)]).split(f.area());
+            f.render_widget(
+                StatusBar::new(render.project_display.to_owned(), render.status, None),
+                chunks[0],
+            );
+            f.render_widget(render.prompt.clone(), chunks[1]);
+        })?;
+        Ok(())
+    }
+
+    fn poll(&mut self, timeout: std::time::Duration) -> io::Result<bool> {
+        event::poll(timeout)
+    }
+
+    fn read(&mut self) -> io::Result<Event> {
+        event::read()
+    }
+
+    fn leave_alternate_screen(&mut self) -> io::Result<()> {
+        crossterm::execute!(io::stdout(), LeaveAlternateScreen)
+    }
+
+    fn disable_raw_mode(&mut self) -> io::Result<()> {
+        terminal::disable_raw_mode()
+    }
+}
+
+struct TrustPromptTerminalGuard<'a, O: TrustPromptTerminalOps> {
+    ops: &'a mut O,
+    raw_mode_enabled: bool,
+    alternate_screen_entered: bool,
+}
+
+impl<'a, O: TrustPromptTerminalOps> TrustPromptTerminalGuard<'a, O> {
+    fn enter(ops: &'a mut O) -> io::Result<Self> {
+        let mut guard = Self {
+            ops,
+            raw_mode_enabled: false,
+            alternate_screen_entered: false,
+        };
+        guard.ops.enable_raw_mode()?;
+        guard.raw_mode_enabled = true;
+        guard.ops.enter_alternate_screen()?;
+        guard.alternate_screen_entered = true;
+        guard.ops.construct_terminal()?;
+        Ok(guard)
+    }
+}
+
+impl<O: TrustPromptTerminalOps> Drop for TrustPromptTerminalGuard<'_, O> {
+    fn drop(&mut self) {
+        if self.alternate_screen_entered {
+            let _ = self.ops.leave_alternate_screen();
+        }
+        if self.raw_mode_enabled {
+            let _ = self.ops.disable_raw_mode();
+        }
+    }
+}
+
+fn run_trust_prompt_terminal_with_ops<O: TrustPromptTerminalOps>(
+    project_path: &Path,
+    response_tx: tokio::sync::oneshot::Sender<TrustChoice>,
+    ops: &mut O,
+) -> io::Result<()> {
     // Construct the AwaitingTrust payload (the oneshot is the transport, not
     // cosmetic state) and project its status for the status bar.
     let app_state = AppState::AwaitingTrust(AwaitingTrustState {
@@ -140,25 +252,17 @@ fn run_trust_prompt_terminal(
     let mut response_tx = Some(awaiting.response_tx);
     let project_display = project_path.to_string_lossy().to_string();
     let mut prompt = TrustPrompt::new();
-    let mut stdout = io::stdout();
-    terminal::enable_raw_mode()?;
-    crossterm::execute!(stdout, EnterAlternateScreen)?;
-    let backend = ratatui::backend::CrosstermBackend::new(stdout);
-    let mut terminal = ratatui::Terminal::new(backend)?;
-    let result: io::Result<()> = loop {
-        terminal.draw(|f| {
-            let chunks =
-                Layout::vertical([Constraint::Length(1), Constraint::Min(1)]).split(f.area());
-            f.render_widget(
-                StatusBar::new(project_display.clone(), status, None),
-                chunks[0],
-            );
-            f.render_widget(prompt.clone(), chunks[1]);
+    let terminal = TrustPromptTerminalGuard::enter(ops)?;
+    loop {
+        terminal.ops.draw(&TrustPromptRender {
+            project_display: &project_display,
+            status,
+            prompt: &prompt,
         })?;
-        if !event::poll(std::time::Duration::from_millis(50))? {
+        if !terminal.ops.poll(std::time::Duration::from_millis(50))? {
             continue;
         }
-        if let Event::Key(key) = event::read()? {
+        if let Event::Key(key) = terminal.ops.read()? {
             if key.kind != KeyEventKind::Press {
                 continue;
             }
@@ -183,10 +287,7 @@ fn run_trust_prompt_terminal(
                 _ => {}
             }
         }
-    };
-    crossterm::execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
-    terminal::disable_raw_mode()?;
-    result
+    }
 }
 
 /// Production [`InteractiveTrustPrompt`] backed by [`run_trust_prompt`].
@@ -1803,6 +1904,118 @@ mod tests {
     use opi_ai::test_support::MockProvider;
     use opi_tui::SelectItem;
 
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    enum TrustPromptFailure {
+        EnterAlternateScreen,
+        ConstructTerminal,
+        Draw,
+        Poll,
+        Read,
+    }
+
+    struct RecordingTrustPromptTerminalOps {
+        failure: TrustPromptFailure,
+        cleanup: Vec<&'static str>,
+    }
+
+    impl TrustPromptTerminalOps for RecordingTrustPromptTerminalOps {
+        fn enable_raw_mode(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+
+        fn enter_alternate_screen(&mut self) -> io::Result<()> {
+            if self.failure == TrustPromptFailure::EnterAlternateScreen {
+                Err(io::Error::other("injected alternate-screen failure"))
+            } else {
+                Ok(())
+            }
+        }
+
+        fn construct_terminal(&mut self) -> io::Result<()> {
+            if self.failure == TrustPromptFailure::ConstructTerminal {
+                Err(io::Error::other("injected terminal construction failure"))
+            } else {
+                Ok(())
+            }
+        }
+
+        fn draw(&mut self, _render: &TrustPromptRender<'_>) -> io::Result<()> {
+            if self.failure == TrustPromptFailure::Draw {
+                Err(io::Error::other("injected draw failure"))
+            } else {
+                Ok(())
+            }
+        }
+
+        fn poll(&mut self, _timeout: std::time::Duration) -> io::Result<bool> {
+            if self.failure == TrustPromptFailure::Poll {
+                Err(io::Error::other("injected poll failure"))
+            } else {
+                Ok(true)
+            }
+        }
+
+        fn read(&mut self) -> io::Result<Event> {
+            if self.failure == TrustPromptFailure::Read {
+                Err(io::Error::other("injected read failure"))
+            } else {
+                Ok(Event::Key(crossterm::event::KeyEvent::new(
+                    KeyCode::Esc,
+                    KeyModifiers::NONE,
+                )))
+            }
+        }
+
+        fn leave_alternate_screen(&mut self) -> io::Result<()> {
+            self.cleanup.push("leave_alternate_screen");
+            Ok(())
+        }
+
+        fn disable_raw_mode(&mut self) -> io::Result<()> {
+            self.cleanup.push("disable_raw_mode");
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn trust_prompt_cleanup_matches_successfully_entered_terminal_states() {
+        let cases = [
+            (
+                TrustPromptFailure::EnterAlternateScreen,
+                vec!["disable_raw_mode"],
+            ),
+            (
+                TrustPromptFailure::ConstructTerminal,
+                vec!["leave_alternate_screen", "disable_raw_mode"],
+            ),
+            (
+                TrustPromptFailure::Draw,
+                vec!["leave_alternate_screen", "disable_raw_mode"],
+            ),
+            (
+                TrustPromptFailure::Poll,
+                vec!["leave_alternate_screen", "disable_raw_mode"],
+            ),
+            (
+                TrustPromptFailure::Read,
+                vec!["leave_alternate_screen", "disable_raw_mode"],
+            ),
+        ];
+
+        for (failure, expected_cleanup) in cases {
+            let (tx, _rx) = tokio::sync::oneshot::channel();
+            let mut ops = RecordingTrustPromptTerminalOps {
+                failure,
+                cleanup: Vec::new(),
+            };
+
+            run_trust_prompt_terminal_with_ops(Path::new("project"), tx, &mut ops)
+                .expect_err("each case injects one terminal failure");
+
+            assert_eq!(ops.cleanup, expected_cleanup, "failure: {failure:?}");
+        }
+    }
+
     #[test]
     fn auth_outcome_routing_makes_only_terminal_restore_failure_fatal() {
         let ordinary = route_auth_outcome(AuthCommandOutcome::Failed {
@@ -1925,9 +2138,11 @@ status_bg = "#1a1a2e"
             "mock:mock-model".into(),
             OpiConfig::default(),
             tmp.path().to_path_buf(),
+            crate::project_trust::TrustDecision::Trusted,
         )
         .resource_layers(ResourceDiscoveryLayers {
             themes: vec![DiscoveryLayer {
+                kind: crate::resource::DiscoveryLayerKind::Explicit,
                 root: theme_dir,
                 subdirectory: None,
                 precedence: 2,

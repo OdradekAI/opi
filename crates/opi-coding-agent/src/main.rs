@@ -359,9 +359,20 @@ async fn resolve_interactive_trust_config(
         }
     };
     let mut prompt = TuiTrustPrompt;
-    let decision =
-        resolve_interactive_trust_decision(&plan, &user_config_dir, project_root, &mut prompt)
-            .await;
+    let decision = match resolve_interactive_trust_decision(
+        &plan,
+        &user_config_dir,
+        project_root,
+        &mut prompt,
+    )
+    .await
+    {
+        Ok(decision) => decision,
+        Err(e) => {
+            eprintln!("opi: trust error: {e}");
+            std::process::exit(2);
+        }
+    };
     let mut config = if matches!(decision, TrustDecision::Untrusted) {
         pre
     } else {
@@ -760,7 +771,7 @@ where
             resumed_messages.unwrap_or_default(),
             resume_info,
             tool_selection,
-            Some(runtime_startup),
+            runtime_startup,
             cli.trace.clone(),
         ) {
             Ok(runner) => runner,
@@ -1062,6 +1073,7 @@ async fn run_interactive_core<Launch, LaunchFuture>(
         config.defaults.model.clone(),
         config.clone(),
         workspace_root,
+        trust_decision,
     )
     .hooks(hooks)
     .initial_messages(initial_messages)
@@ -2567,9 +2579,9 @@ mod tests {
     // Phase 15.5.1: strict-sandbox production dispatch reaches all three run_*
     // startup entry points (acceptance scenario `phase15-sandbox-config-
     // production-path`). Non-interactive drives a real bash tool turn through an
-    // injected MockProvider and asserts the fail-closed error reaches
-    // user-visible NDJSON output — host-independent, since `require = true`
-    // fails closed on every platform (15.5.1 ships no engaged backend). RPC and
+    // injected MockProvider and independently inspects the production
+    // capability outcome before asserting either confined execution or a
+    // fail-closed error in user-visible NDJSON output. RPC and
     // interactive cannot inject a MockProvider for a bash turn here (run_rpc_core
     // prompt-turn timing is non-deterministic; run_interactive_core takes no
     // provider_override and calling harness.prompt would hit the real API), so
@@ -2590,12 +2602,16 @@ mod tests {
         config
     }
 
-    fn bash_fail_closed_mock() -> Box<dyn opi_ai::provider::Provider> {
+    fn bash_strict_marker_mock() -> Box<dyn opi_ai::provider::Provider> {
         use opi_ai::test_support::{MockProvider, text_response, tool_call_response};
         Box::new(MockProvider::new(
             "anthropic",
             vec![
-                tool_call_response("tc1", "bash", r#"{"command":"echo hi","timeout_secs":5}"#),
+                tool_call_response(
+                    "tc1",
+                    "bash",
+                    r#"{"command":"echo engaged > phase15-strict-engaged.marker","timeout_secs":5}"#,
+                ),
                 text_response("done"),
             ],
         ))
@@ -2609,7 +2625,7 @@ mod tests {
     }
 
     #[test]
-    fn sandbox_strict_bash_fail_closed_reaches_noninteractive_output() {
+    fn sandbox_strict_bash_production_outcome_reaches_noninteractive_output() {
         use opi_coding_agent::runner::ExitCode;
 
         let _env_lock = PROVIDER_ENV_LOCK.lock().expect("provider env lock");
@@ -2622,32 +2638,72 @@ mod tests {
             ("OPI_SESSIONS_DIR", session_blocker.as_os_str()),
         ]);
         let config = strict_require_sandbox_config();
+        let production_outcome =
+            opi_coding_agent::sandbox::prepare_production(&config.sandbox, workspace_dir.path());
+        let expect_fail_closed = match production_outcome {
+            opi_coding_agent::sandbox::PreparedSandbox::Strict(decision) => {
+                match decision.outcome {
+                    opi_coding_agent::sandbox::StrictOutcome::Engaged => false,
+                    opi_coding_agent::sandbox::StrictOutcome::FailClosed { .. } => true,
+                    opi_coding_agent::sandbox::StrictOutcome::FailOpen { .. } => {
+                        panic!("strict+require must never resolve to fail-open")
+                    }
+                }
+            }
+            opi_coding_agent::sandbox::PreparedSandbox::Off => {
+                panic!("strict config must resolve to a strict production outcome")
+            }
+        };
+        let marker = workspace_dir.path().join("phase15-strict-engaged.marker");
+        assert!(!marker.exists(), "marker starts absent");
         let cli = Cli::parse_from(["opi", "--json", "--allow-mutating"]);
         let observed = Arc::new(AtomicBool::new(false));
         let observed_result = Arc::clone(&observed);
 
-        let exit_code =
-            tokio::runtime::Runtime::new()
-                .expect("runtime")
-                .block_on(run_non_interactive_core(
-                    &cli,
-                    &config,
-                    "run echo via bash",
-                    None,
-                    None,
-                    opi_coding_agent::policy::ToolSelection::Default,
-                    opi_coding_agent::project_trust::TrustDecision::Trusted,
-                    workspace_dir.path().to_path_buf(),
-                    user_config_dir.path().to_path_buf(),
-                    unavailable_backend_factory(),
-                    Some(bash_fail_closed_mock()),
-                    CommandOutput::discard(),
-                    move |result| {
-                        observed_result.store(true, Ordering::SeqCst);
-                        assert_eq!(result.exit_code, ExitCode::Success as i32);
+        let exit_code = tokio::runtime::Runtime::new().expect("runtime").block_on(
+            run_non_interactive_core(
+                &cli,
+                &config,
+                "run echo via bash",
+                None,
+                None,
+                opi_coding_agent::policy::ToolSelection::Default,
+                opi_coding_agent::project_trust::TrustDecision::Trusted,
+                workspace_dir.path().to_path_buf(),
+                user_config_dir.path().to_path_buf(),
+                unavailable_backend_factory(),
+                Some(bash_strict_marker_mock()),
+                CommandOutput::discard(),
+                move |result| {
+                    observed_result.store(true, Ordering::SeqCst);
+                    assert_eq!(result.exit_code, ExitCode::Success as i32);
+                    if expect_fail_closed {
                         assert_bash_fail_closed_reached(&result.stdout);
-                    },
-                ));
+                        assert!(
+                            !marker.exists(),
+                            "fail-closed strict must reject before spawning the marker command"
+                        );
+                    } else {
+                        assert!(
+                            result.stdout.contains("done"),
+                            "engaged strict+require bash turn must complete: {}",
+                            result.stdout
+                        );
+                        assert!(
+                            !result.stdout.contains("sandbox required but unavailable"),
+                            "an independently engaged strict outcome must not fail closed"
+                        );
+                        assert_eq!(
+                            std::fs::read_to_string(&marker)
+                                .expect("engaged strict executes workspace marker command")
+                                .trim(),
+                            "engaged",
+                            "engaged production confinement must execute the real bash side effect"
+                        );
+                    }
+                },
+            ),
+        );
 
         assert_eq!(exit_code, ExitCode::Success as i32);
         assert!(observed.load(Ordering::SeqCst));

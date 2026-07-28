@@ -1,9 +1,10 @@
 //! L0 subprocess-tree lifecycle tests for Phase 15 task 15.4.
 //!
-//! These prove `LocalBashOperations::exec` (and the adapter host on Windows)
-//! terminate the WHOLE subprocess tree — not just the direct child — on
-//! timeout, cancellation, and a dropped exec future, and that assignment /
-//! termination failures emit a stable `CODE_SANDBOX_DEGRADED` diagnostic.
+//! These prove `LocalBashOperations::exec` and the adapter host terminate the
+//! WHOLE subprocess tree — not just the direct child — on
+//! timeout, cancellation, a clean shell exit, and a dropped exec future. Fault
+//! branches are covered through an injected unit-test strategy; legacy
+//! environment-variable names are inert in production code.
 //!
 //! # Platform split
 //!
@@ -26,22 +27,12 @@ use opi_coding_agent::diagnostics::CODE_SANDBOX_DEGRADED;
 use opi_coding_agent::tool::{BashOperations, BashRequest, LocalBashOperations};
 use tokio_util::sync::CancellationToken;
 
-// Env vars that force L0 failures inside `process_tree` (read live). The
-// injected-failure tests set them; the marker tests require them CLEAR, so all
-// L0-touching tests in this binary are serialized under `L0_LOCK`.
 const ENV_ATTACH_FAIL: &str = "OPI_TEST_L0_ATTACH_FAIL";
 const ENV_TERMINATE_FAIL: &str = "OPI_TEST_L0_TERMINATE_FAIL";
 
 static L0_LOCK_CELL: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
 fn l0_lock() -> &'static tokio::sync::Mutex<()> {
     L0_LOCK_CELL.get_or_init(|| tokio::sync::Mutex::new(()))
-}
-
-fn clear_l0_env() {
-    unsafe {
-        std::env::remove_var(ENV_ATTACH_FAIL);
-        std::env::remove_var(ENV_TERMINATE_FAIL);
-    }
 }
 
 /// Read a repo file relative to the package root (matches the phase-11 doc-guard convention).
@@ -123,23 +114,11 @@ async fn await_process_dead_windows(pid: u32, timeout_ms: u64) -> bool {
     }
 }
 
-#[cfg(windows)]
 fn quick_request(cwd: &Path) -> BashRequest {
     BashRequest {
         command: "echo hi".to_string(),
         cwd: cwd.to_path_buf(),
         timeout: Duration::from_secs(5),
-        signal: CancellationToken::new(),
-        env: vec![],
-    }
-}
-
-#[cfg(windows)]
-fn long_request(cwd: &Path) -> BashRequest {
-    BashRequest {
-        command: "ping -n 30 127.0.0.1 >nul".to_string(),
-        cwd: cwd.to_path_buf(),
-        timeout: Duration::from_millis(800),
         signal: CancellationToken::new(),
         env: vec![],
     }
@@ -152,7 +131,6 @@ fn long_request(cwd: &Path) -> BashRequest {
 #[tokio::test]
 async fn bash_l0_kills_process_tree_in_off_mode() {
     let _g = l0_lock().lock().await;
-    clear_l0_env();
     let dir = tempfile::tempdir().unwrap();
     let script = dir.path().join("gc.ps1");
     let pidfile = dir.path().join("pid.txt");
@@ -184,7 +162,6 @@ async fn bash_l0_kills_process_tree_in_off_mode() {
 #[tokio::test]
 async fn bash_l0_kills_process_tree_on_cancel() {
     let _g = l0_lock().lock().await;
-    clear_l0_env();
     let dir = tempfile::tempdir().unwrap();
     let script = dir.path().join("gc.ps1");
     let pidfile = dir.path().join("pid.txt");
@@ -216,19 +193,13 @@ async fn bash_l0_kills_process_tree_on_cancel() {
     assert!(dead, "L0 should kill grandchild pid {pid} on cancellation");
 }
 
-/// DoD gate `dropped_exec_and_injected_failures`: (A) dropping an in-flight
-/// exec future removes the tree; (B) an injected attach failure emits a
-/// `CODE_SANDBOX_DEGRADED` diagnostic with the redacted `{layer, reason}`;
-/// (C) an injected termination failure on timeout does the same.
 #[cfg(windows)]
 #[tokio::test]
-async fn dropped_exec_and_injected_failures() {
+async fn dropped_exec_future_kills_process_tree() {
     let _g = l0_lock().lock().await;
 
     let dir = tempfile::tempdir().unwrap();
 
-    // --- (A) dropped exec future tears down the tree ----------------------
-    clear_l0_env();
     let script = dir.path().join("gc.ps1");
     let pidfile = dir.path().join("pid.txt");
     write_grandchild_script(&script, &pidfile);
@@ -255,57 +226,6 @@ async fn dropped_exec_and_injected_failures() {
     assert!(
         dead,
         "dropping the exec future must kill grandchild pid {pid}"
-    );
-
-    // --- (B) injected attach failure -> degraded diagnostic ---------------
-    clear_l0_env();
-    unsafe {
-        std::env::set_var(ENV_ATTACH_FAIL, "1");
-    }
-    let res = LocalBashOperations::new()
-        .exec(quick_request(dir.path()))
-        .await
-        .unwrap();
-    unsafe {
-        std::env::remove_var(ENV_ATTACH_FAIL);
-    }
-    let diag = res
-        .diagnostics
-        .iter()
-        .find(|d| d.code == CODE_SANDBOX_DEGRADED)
-        .expect("attach failure must emit CODE_SANDBOX_DEGRADED");
-    let layer = diag
-        .details
-        .as_ref()
-        .and_then(|v| v.get("layer"))
-        .and_then(|v| v.as_str());
-    let reason = diag
-        .details
-        .as_ref()
-        .and_then(|v| v.get("reason"))
-        .and_then(|v| v.as_str())
-        .unwrap_or_default();
-    assert_eq!(layer, Some("windows-job"), "degraded diagnostic layer");
-    assert!(reason.contains("injected"), "degraded reason: {reason}");
-
-    // --- (C) injected terminate failure on timeout -> degraded diagnostic -
-    clear_l0_env();
-    unsafe {
-        std::env::set_var(ENV_TERMINATE_FAIL, "1");
-    }
-    let res = LocalBashOperations::new()
-        .exec(long_request(dir.path()))
-        .await
-        .unwrap();
-    unsafe {
-        std::env::remove_var(ENV_TERMINATE_FAIL);
-    }
-    assert!(res.exit_code.is_none(), "long request should time out");
-    assert!(
-        res.diagnostics
-            .iter()
-            .any(|d| d.code == CODE_SANDBOX_DEGRADED),
-        "terminate failure must emit CODE_SANDBOX_DEGRADED"
     );
 }
 
@@ -384,7 +304,6 @@ fn unix_grandchild_command(pidfile: &Path) -> String {
 #[tokio::test]
 async fn bash_l0_kills_process_tree_in_off_mode() {
     let _g = l0_lock().lock().await;
-    clear_l0_env();
     let dir = tempfile::tempdir().unwrap();
     let pidfile = dir.path().join("pid.txt");
     let ops = LocalBashOperations::new();
@@ -408,7 +327,6 @@ async fn bash_l0_kills_process_tree_in_off_mode() {
 #[tokio::test]
 async fn bash_l0_kills_process_tree_on_cancel() {
     let _g = l0_lock().lock().await;
-    clear_l0_env();
     let dir = tempfile::tempdir().unwrap();
     let pidfile = dir.path().join("pid.txt");
     let token = CancellationToken::new();
@@ -440,12 +358,10 @@ async fn bash_l0_kills_process_tree_on_cancel() {
 
 #[cfg(unix)]
 #[tokio::test]
-async fn dropped_exec_and_injected_failures() {
+async fn dropped_exec_future_kills_process_tree() {
     let _g = l0_lock().lock().await;
     let dir = tempfile::tempdir().unwrap();
 
-    // (A) dropped exec future tears down the tree.
-    clear_l0_env();
     let pidfile = dir.path().join("pid.txt");
     let ops = LocalBashOperations::new();
     let req = BashRequest {
@@ -468,59 +384,58 @@ async fn dropped_exec_and_injected_failures() {
         dead,
         "dropping the exec future must kill unix grandchild pid {pid}"
     );
+}
 
-    // (B) injected attach failure -> degraded diagnostic.
-    clear_l0_env();
+#[tokio::test]
+async fn legacy_fault_environment_names_are_inert() {
+    let _g = l0_lock().lock().await;
     unsafe {
         std::env::set_var(ENV_ATTACH_FAIL, "1");
+        std::env::set_var(ENV_TERMINATE_FAIL, "1");
     }
-    let res = LocalBashOperations::new()
-        .exec(BashRequest {
-            command: "echo hi".to_string(),
-            cwd: dir.path().to_path_buf(),
-            timeout: Duration::from_secs(5),
-            signal: CancellationToken::new(),
-            env: vec![],
-        })
+    struct ClearLegacyFaultEnv;
+    impl Drop for ClearLegacyFaultEnv {
+        fn drop(&mut self) {
+            unsafe {
+                std::env::remove_var(ENV_ATTACH_FAIL);
+                std::env::remove_var(ENV_TERMINATE_FAIL);
+            }
+        }
+    }
+    let _clear = ClearLegacyFaultEnv;
+    let dir = tempfile::tempdir().unwrap();
+
+    let result = LocalBashOperations::new()
+        .exec(quick_request(dir.path()))
         .await
         .unwrap();
-    unsafe {
-        std::env::remove_var(ENV_ATTACH_FAIL);
-    }
-    let diag = res
-        .diagnostics
-        .iter()
-        .find(|d| d.code == CODE_SANDBOX_DEGRADED)
-        .expect("attach failure must emit CODE_SANDBOX_DEGRADED");
-    let layer = diag
-        .details
-        .as_ref()
-        .and_then(|v| v.get("layer"))
-        .and_then(|v| v.as_str());
-    assert_eq!(layer, Some("unix-pgroup"));
+
+    assert_eq!(result.exit_code, Some(0));
+    assert!(
+        result
+            .diagnostics
+            .iter()
+            .all(|diagnostic| diagnostic.code != CODE_SANDBOX_DEGRADED),
+        "legacy environment names must not activate L0 fault injection"
+    );
 }
 
 // =========================================================================
 // Adapter process-group contract (cross-platform structural proof)
 // =========================================================================
 
-/// Scenario `phase15-l0-windows-adapter-assignment` (STRUCTURAL Unix pin, NOT a
-/// behavioral proof). The DoD deliberately does NOT add L0 tree-kill to the
-/// Unix adapter ("the existing Unix adapter process_group(0) path remains
-/// intact"), so this asserts only that the Unix spawn path is still wired the
-/// same way. The Windows adapter's L0 Job-Object assignment is proven
-/// behaviorally by `adapter_l0_kills_subprocess_tree_on_host_drop`
-/// (adapter_host.rs), so it is not re-asserted here. A behavioral Unix mirror
-/// is deferred to 15.5.6 (Linux CI): it would assert the Unix adapter does NOT
-/// reap a marker grandchild on host-drop (the grandchild survives) — the
-/// opposite of the Windows-only kill-on-close behavior — matching the DoD
-/// scoping. Read this green check as "Unix adapter path unchanged," not as
-/// evidence that the Unix adapter tree-kills.
+/// Structural pin for the adapter's Unix process-group setup. The cross-host
+/// behavioral proof that the retained TreeGuard reaps a marker grandchild
+/// lives in `adapter_host.rs::adapter_l0_kills_subprocess_tree_on_host_drop`.
 #[test]
 fn adapter_process_group_contract() {
     let adapter_src = read_repo_file("crates/opi-coding-agent/src/adapter_host.rs");
     assert!(
         adapter_src.contains("cmd.process_group(0)"),
         "Unix adapter must keep its process_group(0) path intact (DoD: unchanged)"
+    );
+    assert!(
+        adapter_src.contains("tree_attach(pid)"),
+        "adapter must attach and retain a TreeGuard after process-group setup"
     );
 }

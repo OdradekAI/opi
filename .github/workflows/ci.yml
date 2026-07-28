@@ -49,6 +49,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --workspace --all-targets
@@ -87,14 +89,14 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            tests: linux_engaged_subprocess_denies_requested_access
-            extra: --test sandbox_linux_backend linux_alternate_network_surface_audit
+            strict_tests: linux_engaged_subprocess_denies_requested_access linux_new_inet_inet6_netlink_sockets_are_denied linux_af_unix_survives_socket_creation_gate linux_landlock_abi4_denies_tcp_bind_connect
+            backend_tests: linux_alternate_network_surface_audit
           - os: macos-latest
-            tests: macos_engaged_subprocess_denies_outside_write macos_engaged_subprocess_denies_network macos_engaged_subprocess_allows_workspace_and_temp_writes
-            extra: ""
+            strict_tests: macos_engaged_subprocess_denies_outside_write macos_engaged_subprocess_denies_network macos_engaged_subprocess_allows_workspace_and_temp_writes
+            backend_tests: ""
           - os: windows-latest
-            tests: windows_strict_production_dispatch_reports_l0_only
-            extra: ""
+            strict_tests: windows_strict_production_dispatch_reports_l0_only
+            backend_tests: ""
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -108,19 +110,41 @@ jobs:
           LOG="logs/sandbox-product-${{ matrix.os }}.log"
           : > "$LOG"
           status=0
-          # matrix.tests is a space-separated list of exact test names; cargo
-          # test takes a single TESTNAME filter, so run each in its own
-          # invocation and aggregate the exit status. No #[ignore] in these
-          # binaries -> a green run is zero-failures zero-ignored by
-          # construction.
-          for t in ${{ matrix.tests }}; do
-            cargo test -p opi-coding-agent --test sandbox_strict --no-fail-fast "$t" \
-              2>&1 | tee -a "$LOG" || status=$?
+
+          run_product_filter() {
+            binary="$1"
+            filter="$2"
+            FILTER_LOG="logs/${binary}-${filter}.log"
+            {
+              echo
+              echo "==> cargo test --test ${binary} ${filter} -- --exact"
+            } | tee -a "$LOG"
+
+            CARGO_TERM_COLOR=never \
+              cargo test -p opi-coding-agent --test "$binary" --no-fail-fast "$filter" -- --exact \
+                2>&1 | tee "$FILTER_LOG"
+            command_status=${PIPESTATUS[0]}
+            cat "$FILTER_LOG" >> "$LOG"
+
+            if [ "$command_status" -ne 0 ]; then
+              status="$command_status"
+            fi
+            if ! grep -Eq 'test result: ok\. [1-9][0-9]* passed; 0 failed; 0 ignored;' "$FILTER_LOG"; then
+              echo "evidence validation failed: ${binary}::${filter} must execute >=1 test with 0 failed; 0 ignored" \
+                | tee -a "$LOG"
+              status=1
+            fi
+          }
+
+          # Each matrix field is a space-separated list of exact product tests.
+          # Run every filter independently, retain its raw output plus the
+          # complete aggregate log, and reject typoed zero-test filters.
+          for t in ${{ matrix.strict_tests }}; do
+            run_product_filter sandbox_strict "$t"
           done
-          if [ -n "${{ matrix.extra }}" ]; then
-            cargo test -p opi-coding-agent --no-fail-fast ${{ matrix.extra }} \
-              2>&1 | tee -a "$LOG" || status=$?
-          fi
+          for t in ${{ matrix.backend_tests }}; do
+            run_product_filter sandbox_linux_backend "$t"
+          done
           exit $status
       - name: Upload sandbox-product log
         if: always()

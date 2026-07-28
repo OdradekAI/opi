@@ -60,7 +60,9 @@ use crate::package_discovery::PackageResource;
 use crate::policy::{RunMode, ToolRuntimeConfig, ToolSelection};
 use crate::project_trust::TrustDecision;
 use crate::prompt::SystemPromptBuilder;
-use crate::resource::{ExplicitResourcePaths, ResourceDiscoveryLayers, standard_discovery_layers};
+use crate::resource::{
+    DiscoveryLayerKind, ExplicitResourcePaths, ResourceDiscoveryLayers, standard_discovery_layers,
+};
 use crate::sandbox::PreparedSandbox;
 use crate::session_coordinator::{SessionCoordinator, to_wire_result};
 use crate::tool::{
@@ -357,6 +359,7 @@ impl CodingHarnessBuilder {
         model: String,
         config: OpiConfig,
         workspace_root: PathBuf,
+        trust_decision: TrustDecision,
     ) -> Self {
         Self {
             provider,
@@ -377,7 +380,7 @@ impl CodingHarnessBuilder {
             startup_diagnostics: Vec::new(),
             record_diagnostics: false,
             trace: None,
-            trust_decision: TrustDecision::Trusted,
+            trust_decision,
         }
     }
 
@@ -461,9 +464,8 @@ impl CodingHarnessBuilder {
     /// Set the resolved project-trust decision (task 15.7). When
     /// [`TrustDecision::Untrusted`], `discover_resources` skips the project
     /// resource layer and context-file discovery skips project `AGENTS.md`/
-    /// `CLAUDE.md`. Defaults to [`TrustDecision::Trusted`] (load everything),
-    /// preserving the pre-trust behavior for embedders and runners that do not
-    /// yet thread a decision (non-interactive/RPC wiring lands in task 15.8.1).
+    /// `CLAUDE.md`. Only [`TrustDecision::Trusted`] loads project resources;
+    /// `Untrusted` and `Undecided` both fail closed.
     pub fn trust_decision(mut self, decision: TrustDecision) -> Self {
         self.trust_decision = decision;
         self
@@ -524,7 +526,7 @@ impl Default for HarnessBuildOptions {
             tool_selection: ToolSelection::Default,
             record_diagnostics: false,
             trace: None,
-            trust_decision: TrustDecision::Trusted,
+            trust_decision: TrustDecision::Undecided,
         }
     }
 }
@@ -536,8 +538,9 @@ impl CodingHarness {
         model: String,
         config: OpiConfig,
         workspace_root: PathBuf,
+        trust_decision: TrustDecision,
     ) -> CodingHarnessBuilder {
-        CodingHarnessBuilder::new(provider, model, config, workspace_root)
+        CodingHarnessBuilder::new(provider, model, config, workspace_root, trust_decision)
     }
 
     /// Create a new harness with the given provider, model, config, and workspace root.
@@ -546,6 +549,7 @@ impl CodingHarness {
         model: String,
         config: OpiConfig,
         workspace_root: PathBuf,
+        trust_decision: TrustDecision,
     ) -> Self {
         Self::new_with_hooks(
             provider,
@@ -556,6 +560,7 @@ impl CodingHarness {
             None,
             Vec::new(),
             ToolSelection::Default,
+            trust_decision,
         )
     }
 
@@ -566,6 +571,7 @@ impl CodingHarness {
         config: OpiConfig,
         workspace_root: PathBuf,
         tool_selection: ToolSelection,
+        trust_decision: TrustDecision,
     ) -> Self {
         Self::new_with_hooks(
             provider,
@@ -576,6 +582,7 @@ impl CodingHarness {
             None,
             Vec::new(),
             tool_selection,
+            trust_decision,
         )
     }
 
@@ -586,6 +593,7 @@ impl CodingHarness {
         config: OpiConfig,
         workspace_root: PathBuf,
         tool_config: ToolRuntimeConfig,
+        trust_decision: TrustDecision,
     ) -> Self {
         Self::new_with_hooks_and_resume_tool_config(
             provider,
@@ -597,6 +605,7 @@ impl CodingHarness {
             Vec::new(),
             None,
             tool_config,
+            trust_decision,
         )
     }
 
@@ -611,6 +620,7 @@ impl CodingHarness {
         user_system_prompt: Option<String>,
         initial_messages: Vec<AgentMessage>,
         tool_selection: ToolSelection,
+        trust_decision: TrustDecision,
     ) -> Self {
         Self::new_with_hooks_and_resume(
             provider,
@@ -622,6 +632,7 @@ impl CodingHarness {
             initial_messages,
             None,
             tool_selection,
+            trust_decision,
         )
     }
 
@@ -637,6 +648,7 @@ impl CodingHarness {
         initial_messages: Vec<AgentMessage>,
         resume: Option<ResumeInfo>,
         tool_selection: ToolSelection,
+        trust_decision: TrustDecision,
     ) -> Self {
         let tool_config = ToolRuntimeConfig::resolve(RunMode::Interactive, true, tool_selection)
             .expect("interactive tool config should be valid");
@@ -650,6 +662,7 @@ impl CodingHarness {
             initial_messages,
             resume,
             tool_config,
+            trust_decision,
         )
     }
 
@@ -666,6 +679,7 @@ impl CodingHarness {
         initial_messages: Vec<AgentMessage>,
         resume: Option<ResumeInfo>,
         tool_config: ToolRuntimeConfig,
+        trust_decision: TrustDecision,
     ) -> Self {
         Self::new_with_global_config_dir_tool_config(
             provider,
@@ -678,6 +692,7 @@ impl CodingHarness {
             resume,
             tool_config,
             None,
+            trust_decision,
         )
     }
 
@@ -698,6 +713,7 @@ impl CodingHarness {
         resume: Option<ResumeInfo>,
         tool_selection: ToolSelection,
         global_config_dir: Option<PathBuf>,
+        trust_decision: TrustDecision,
     ) -> Self {
         let tool_config = ToolRuntimeConfig::resolve(RunMode::Interactive, true, tool_selection)
             .expect("interactive tool config should be valid");
@@ -712,6 +728,7 @@ impl CodingHarness {
             resume,
             tool_config,
             global_config_dir,
+            trust_decision,
         )
     }
 
@@ -729,6 +746,7 @@ impl CodingHarness {
         resume: Option<ResumeInfo>,
         tool_config: ToolRuntimeConfig,
         global_config_dir: Option<PathBuf>,
+        trust_decision: TrustDecision,
     ) -> Self {
         Self::new_with_build_options(
             provider,
@@ -741,7 +759,10 @@ impl CodingHarness {
             resume,
             tool_config,
             global_config_dir,
-            HarnessBuildOptions::default(),
+            HarnessBuildOptions {
+                trust_decision,
+                ..HarnessBuildOptions::default()
+            },
         )
     }
 
@@ -835,7 +856,7 @@ impl CodingHarness {
             resources.metadata.add_extension_name(name);
         }
 
-        let project_trusted = !matches!(build_options.trust_decision, TrustDecision::Untrusted);
+        let project_trusted = matches!(build_options.trust_decision, TrustDecision::Trusted);
         let context = context_files::discover_context_files_with_trust(
             &workspace_root,
             Some(resolved_global_dir.as_path()),
@@ -2161,7 +2182,7 @@ impl CodingHarness {
         // (skills/fragments/themes/extensions/packages) so project-local
         // resources cannot resolve. User-global and explicit layers remain; this
         // same seam is the Phase 16 `/skill:`/`/fragment:` filter point.
-        if matches!(trust_decision, TrustDecision::Untrusted) {
+        if !matches!(trust_decision, TrustDecision::Trusted) {
             for kind_layers in [
                 &mut layers.extensions,
                 &mut layers.packages,
@@ -2169,13 +2190,7 @@ impl CodingHarness {
                 &mut layers.fragments,
                 &mut layers.themes,
             ] {
-                kind_layers.retain(|layer| {
-                    !(layer.root == workspace_root
-                        && layer
-                            .subdirectory
-                            .as_deref()
-                            .is_some_and(|s| s.starts_with(".opi")))
-                });
+                kind_layers.retain(|layer| layer.kind != DiscoveryLayerKind::Project);
             }
         }
         let mut metadata = DiscoveredResourceMetadata::default();
@@ -2194,27 +2209,28 @@ impl CodingHarness {
             Some(installed_packages) => merge_package_resources(&mut packages, installed_packages),
             None if user_config_dir.is_some() => {
                 let user_config_dir = user_config_dir.expect("checked Some");
-                match crate::package_resolver::resolve_installed_packages(
+                let package_scopes = if matches!(trust_decision, TrustDecision::Trusted) {
+                    &[
+                        crate::package_resolver::InstalledPackageScope::Global,
+                        crate::package_resolver::InstalledPackageScope::Project,
+                    ][..]
+                } else {
+                    &[crate::package_resolver::InstalledPackageScope::Global][..]
+                };
+                match crate::package_resolver::resolve_installed_packages_for_scopes(
                     workspace_root,
                     user_config_dir,
+                    package_scopes,
                 ) {
                     Ok(resolution) => {
                         metadata
                             .diagnostics
                             .extend(resolution.diagnostics.iter().map(diagnostic_from_package));
-                        let project_trusted = !matches!(trust_decision, TrustDecision::Untrusted);
                         merge_package_resources(
                             &mut packages,
                             resolution
                                 .packages
                                 .into_iter()
-                                .filter(|pkg| {
-                                    project_trusted
-                                        || !matches!(
-                                            pkg.scope,
-                                            crate::package_resolver::InstalledPackageScope::Project
-                                        )
-                                })
                                 .map(|package| package.package)
                                 .collect(),
                         );

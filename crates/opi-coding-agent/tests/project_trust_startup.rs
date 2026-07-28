@@ -17,7 +17,8 @@ use opi_coding_agent::harness::CodingHarness;
 use opi_coding_agent::project_trust::{
     HeadlessPreTrustUi, PreTrustUi, PreTrustUiError, ProjectTrustCli, ProjectTrustDefault,
     ProjectTrustResolver, ProjectTrustResolverRegistry, ProjectTrustStore, TrustContext,
-    TrustDecision, TrustError, TrustVote, cli_trust_override, prepare_project_startup,
+    TrustDecision, TrustError, TrustResource, TrustVote, cli_trust_override,
+    prepare_project_startup,
 };
 
 // ---------------------------------------------------------------------------
@@ -100,6 +101,90 @@ fn write_global_skill(global: &std::path::Path) {
     .expect("write global skill");
 }
 
+#[test]
+fn trust_detection_uses_the_same_git_bounded_ancestor_walk_as_context_loading() {
+    let workspace = tempfile::tempdir().unwrap();
+    init_git(workspace.path());
+    std::fs::write(workspace.path().join("AGENTS.md"), "ROOT CONTEXT").unwrap();
+    let nested = workspace.path().join("nested").join("deeper");
+    std::fs::create_dir_all(&nested).unwrap();
+
+    let context = opi_coding_agent::context_files::discover_context_files(&nested, None);
+    let resources = ProjectTrustStore::detect_resources(&nested);
+
+    assert!(context.content.contains("ROOT CONTEXT"));
+    assert_eq!(
+        resources,
+        vec![opi_coding_agent::project_trust::TrustResource::AgentsMd],
+        "every project context file that can be injected must trigger trust"
+    );
+}
+
+#[test]
+fn trust_detection_uses_the_same_filesystem_root_walk_without_git() {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::write(root.path().join("CLAUDE.md"), "ANCESTOR CONTEXT").unwrap();
+    let nested = root.path().join("nested").join("deeper");
+    std::fs::create_dir_all(&nested).unwrap();
+
+    let context = opi_coding_agent::context_files::discover_context_files(&nested, None);
+    let resources = ProjectTrustStore::detect_resources(&nested);
+
+    assert!(context.content.contains("ANCESTOR CONTEXT"));
+    assert!(
+        resources.contains(&opi_coding_agent::project_trust::TrustResource::ClaudeMd),
+        "no-git ancestor context must not bypass trust detection"
+    );
+}
+
+#[tokio::test]
+async fn ancestor_non_context_resources_do_not_trigger_a_trust_prompt() {
+    let workspace = tempfile::tempdir().unwrap();
+    init_git(workspace.path());
+    let opi_dir = workspace.path().join(".opi");
+    std::fs::create_dir_all(opi_dir.join("skills")).unwrap();
+    std::fs::create_dir_all(opi_dir.join("fragments")).unwrap();
+    std::fs::create_dir_all(opi_dir.join("themes")).unwrap();
+    std::fs::create_dir_all(opi_dir.join("extensions")).unwrap();
+    std::fs::write(opi_dir.join("config.toml"), "").unwrap();
+    std::fs::write(opi_dir.join("packages.toml"), "").unwrap();
+    assert_eq!(
+        ProjectTrustStore::detect_resources(workspace.path()),
+        vec![
+            TrustResource::ProjectConfig,
+            TrustResource::Skills,
+            TrustResource::Fragments,
+            TrustResource::Themes,
+            TrustResource::Extensions,
+            TrustResource::Packages,
+        ],
+        "non-context resources must still be detected at the exact project root"
+    );
+
+    let nested = workspace.path().join("nested").join("deeper");
+    std::fs::create_dir_all(&nested).unwrap();
+    let user_config = tempfile::tempdir().unwrap();
+    let mut registry = ProjectTrustResolverRegistry::new();
+
+    let plan = prepare_project_startup(
+        ProjectTrustCli::default(),
+        &mut registry,
+        user_config.path(),
+        &nested,
+        TrustDecision::Undecided,
+        &PanicUi,
+    )
+    .await
+    .expect("ancestor non-context resources must bypass the trust gate");
+
+    assert_eq!(plan.decision, TrustDecision::Trusted);
+    assert!(plan.resources.is_empty());
+    assert!(
+        !registry.is_sealed(),
+        "the no-resource bypass must not enter trust resolution"
+    );
+}
+
 /// Build a harness for `workspace` with `global` as the user-config root and a
 /// forced trust decision, mirroring the 15.7 resource-gate assertion shape.
 fn harness_with_trust(
@@ -113,9 +198,9 @@ fn harness_with_trust(
         "mock:mock-model".into(),
         OpiConfig::default(),
         workspace.to_path_buf(),
+        decision,
     )
     .global_config_dir(global.to_path_buf())
-    .trust_decision(decision)
     .build()
 }
 
@@ -160,6 +245,54 @@ fn cli_trust_override_validates_mutual_exclusion_and_maps_flags() {
         }),
         Err(TrustError::ConflictingCliFlags)
     ));
+}
+
+#[tokio::test]
+async fn conflicting_cli_flags_fail_before_registry_store_or_ui_side_effects() {
+    let user_config = tempfile::tempdir().unwrap();
+    let malformed_store = user_config.path().join("trust.json");
+    std::fs::write(&malformed_store, "{ not valid json").unwrap();
+    let workspace = tempfile::tempdir().unwrap();
+    init_git(workspace.path());
+
+    let resolver_log: Arc<Mutex<Vec<&'static str>>> = Arc::new(Mutex::new(Vec::new()));
+    let mut registry = ProjectTrustResolverRegistry::new();
+    registry
+        .register(Arc::new(FakeResolver {
+            vote: TrustVote::Trust,
+            name: "must-not-run",
+            log: resolver_log.clone(),
+        }))
+        .unwrap();
+
+    let error = prepare_project_startup(
+        ProjectTrustCli {
+            trust: true,
+            no_trust: true,
+        },
+        &mut registry,
+        user_config.path(),
+        workspace.path(),
+        TrustDecision::Undecided,
+        &PanicUi,
+    )
+    .await
+    .expect_err("conflicting flags must fail at the public preflight boundary");
+
+    assert!(matches!(error, TrustError::ConflictingCliFlags));
+    assert!(
+        !registry.is_sealed(),
+        "CLI validation must precede resolver-registry sealing"
+    );
+    assert!(
+        resolver_log.lock().unwrap().is_empty(),
+        "CLI validation must precede resolver execution"
+    );
+    assert_eq!(
+        std::fs::read_to_string(malformed_store).unwrap(),
+        "{ not valid json",
+        "CLI validation must precede trust-store loading or mutation"
+    );
 }
 
 #[test]

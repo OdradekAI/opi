@@ -106,6 +106,7 @@ fn harness_system_prompt_includes_configured_package_resource_metadata_only() {
             active_tool_names: Vec::new(),
         },
         Some(global_config.path().to_path_buf()),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     );
 
     let prompt = harness.system_prompt();
@@ -142,6 +143,7 @@ fn harness_system_prompt_redacts_startup_diagnostics() {
         "mock:mock-model".into(),
         OpiConfig::default(),
         workspace.path().to_path_buf(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     )
     .startup_diagnostics(vec![
         Diagnostic::new(
@@ -211,6 +213,7 @@ fn harness_system_prompt_includes_installed_project_package_without_config_paths
             active_tool_names: Vec::new(),
         },
         Some(global_config.path().to_path_buf()),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     );
 
     let prompt = harness.system_prompt();
@@ -338,9 +341,10 @@ async fn runtime_startup_starts_installed_project_package_adapter() {
         .write_lock(&[local_lock_entry("./vendor/adapter-suite".into(), &package_dir).unwrap()])
         .unwrap();
 
-    let startup = opi_coding_agent::runtime_packages::start_installed_package_runtime(
+    let startup = opi_coding_agent::runtime_packages::start_installed_package_runtime_with_trust(
         workspace.path(),
         global_config.path(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     )
     .await;
 
@@ -414,9 +418,10 @@ async fn resumed_installed_adapter_state_restores_on_current_thread_runtime() {
     drop(writer);
     let entries = vec![user, state];
 
-    let startup = opi_coding_agent::runtime_packages::start_installed_package_runtime(
+    let startup = opi_coding_agent::runtime_packages::start_installed_package_runtime_with_trust(
         workspace.path(),
         global_config.path(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     )
     .await;
     assert!(
@@ -444,6 +449,7 @@ async fn resumed_installed_adapter_state_restores_on_current_thread_runtime() {
         "mock:mock-model".into(),
         OpiConfig::default(),
         workspace.path().to_path_buf(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     )
     .initial_messages(initial_messages)
     .resume(resume)
@@ -698,6 +704,7 @@ async fn harness_includes_adapter_tools_alongside_builtins() {
         "claude-sonnet-4-5-20250514".to_string(),
         adapter_test_config(),
         dir.path().to_path_buf(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     )
     .extension_registry(registry)
     .resource_metadata(metadata)
@@ -738,6 +745,7 @@ async fn tool_selection_disabled_filters_adapter_tools() {
         "claude-sonnet-4-5-20250514".to_string(),
         adapter_test_config(),
         dir.path().to_path_buf(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     )
     .extension_registry(registry)
     .resource_metadata(metadata)
@@ -779,6 +787,7 @@ async fn tool_selection_no_builtin_keeps_adapter_tools() {
         "claude-sonnet-4-5-20250514".to_string(),
         adapter_test_config(),
         dir.path().to_path_buf(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     )
     .extension_registry(registry)
     .resource_metadata(metadata)
@@ -946,6 +955,7 @@ async fn harness_metadata_includes_adapter_extensions() {
         "claude-sonnet-4-5-20250514".to_string(),
         adapter_test_config(),
         dir.path().to_path_buf(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     )
     .extension_registry(registry)
     .resource_metadata(metadata)
@@ -1120,6 +1130,7 @@ async fn coding_harness_composes_generic_opi_agent_seams() {
         "mock:mock-model".into(),
         OpiConfig::default(),
         workspace.path().to_path_buf(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     )
     .hooks(Box::new(opi_coding_agent::harness::CodingAgentHooks))
     .global_config_dir(global_config.path().to_path_buf())

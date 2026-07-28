@@ -19,11 +19,12 @@ use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use opi_agent::diagnostic::code;
 use opi_agent::tool::Tool;
 use opi_coding_agent::tool::{
     AccessMode, BashOpError, BashOperations, BashRequest, BashResult, BashTool, EditTool,
     FileOperations, FsOpError, LocalFileOperations, OpMetadata, PathPolicy, ReadTool,
-    ToolDiagnostic, WriteTool,
+    ToolDiagnostic, WriteTool, validate_workspace_path,
 };
 use serde_json::json;
 use tokio_util::sync::CancellationToken;
@@ -708,7 +709,7 @@ async fn operations_injection_reaches_tool_execution() {
 
 async fn read_injected_ops_receive_resolved_path_once() {
     let workspace = tempfile::tempdir().unwrap();
-    let resolved = workspace.path().join("inside.txt");
+    let resolved = validate_workspace_path(workspace.path(), "inside.txt").unwrap();
     std::fs::write(&resolved, "hello").unwrap();
     let recording = Arc::new(RecordingFileOps::default());
     let tool = ReadTool::new_with_ops(
@@ -768,7 +769,7 @@ async fn read_workspace_policy_rejects_outside_path_before_backend() {
 
 async fn write_injected_ops_receive_resolved_path_and_bytes_once() {
     let workspace = tempfile::tempdir().unwrap();
-    let resolved = workspace.path().join("out.txt");
+    let resolved = validate_workspace_path(workspace.path(), "out.txt").unwrap();
     // cfg.meta = None => metadata NotFound => classified as a create.
     let recording = Arc::new(RecordingFileOps::default());
     let tool = WriteTool::new_with_ops(workspace.path().to_path_buf(), recording.clone());
@@ -799,9 +800,154 @@ async fn write_injected_ops_receive_resolved_path_and_bytes_once() {
     );
 }
 
+#[tokio::test]
+async fn write_ancestor_classification_uses_injected_metadata_only() {
+    let workspace = tempfile::tempdir().unwrap();
+    let canonical_workspace = validate_workspace_path(workspace.path(), ".").unwrap();
+    let target = canonical_workspace.join("virtual-file/child/out.txt");
+    let virtual_file = canonical_workspace.join("virtual-file");
+    assert!(
+        !virtual_file.exists(),
+        "host filesystem must disagree with the injected backend"
+    );
+
+    let ops = Arc::new(VirtualAncestorFileOps {
+        target,
+        virtual_file: virtual_file.clone(),
+        ..Default::default()
+    });
+    let tool = WriteTool::new_with_ops(workspace.path().to_path_buf(), ops.clone());
+    let result = tool
+        .execute(
+            "c",
+            json!({ "path": "virtual-file/child/out.txt", "content": "data" }),
+            CancellationToken::new(),
+            None,
+        )
+        .await
+        .expect("write execute");
+
+    assert!(result.is_error);
+    assert!(
+        result
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == code::CODE_TOOL_NOT_A_DIRECTORY),
+        "virtual file ancestor must produce a typed NotADirectory diagnostic; got codes {:?}",
+        result
+            .diagnostics
+            .iter()
+            .map(|diagnostic| diagnostic.code.as_str())
+            .collect::<Vec<_>>()
+    );
+    let metadata_calls = ops.metadata_calls.lock().unwrap().clone();
+    assert!(
+        metadata_calls.contains(&virtual_file),
+        "ancestor metadata must be queried through the injected backend: {metadata_calls:?}"
+    );
+    assert_eq!(
+        *ops.write_calls.lock().unwrap(),
+        0,
+        "classification failure must precede write_file"
+    );
+}
+
+#[tokio::test]
+async fn write_maps_injected_backend_errors_portably() {
+    let cases = [
+        (
+            FsOpError::NotFound {
+                path: PathBuf::from("injected-missing"),
+            },
+            code::CODE_TOOL_PATH_NOT_FOUND,
+        ),
+        (
+            FsOpError::PermissionDenied {
+                path: PathBuf::from("injected-denied"),
+            },
+            code::CODE_TOOL_PERMISSION_DENIED,
+        ),
+        (
+            FsOpError::NotADirectory {
+                path: PathBuf::from("injected-file-parent"),
+            },
+            code::CODE_TOOL_NOT_A_DIRECTORY,
+        ),
+    ];
+
+    for (error, expected_code) in cases {
+        let workspace = tempfile::tempdir().unwrap();
+        let ops = Arc::new(WriteFailureFileOps {
+            metadata_error: FsOpError::NotFound {
+                path: workspace.path().join("out.txt"),
+            },
+            write_error: Some(error),
+            ..Default::default()
+        });
+        let tool = WriteTool::new_with_ops(workspace.path().to_path_buf(), ops);
+        let result = tool
+            .execute(
+                "c",
+                json!({ "path": "out.txt", "content": "data" }),
+                CancellationToken::new(),
+                None,
+            )
+            .await
+            .expect("write execute");
+
+        assert!(result.is_error);
+        assert!(
+            result
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.code == expected_code),
+            "injected {expected_code} error must retain its typed diagnostic; got codes {:?}",
+            result
+                .diagnostics
+                .iter()
+                .map(|diagnostic| diagnostic.code.as_str())
+                .collect::<Vec<_>>()
+        );
+    }
+}
+
+#[tokio::test]
+async fn write_metadata_io_error_fails_closed_before_mkdir_or_write() {
+    let workspace = tempfile::tempdir().unwrap();
+    let ops = Arc::new(WriteFailureFileOps {
+        metadata_error: FsOpError::Io {
+            path: workspace.path().join("out.txt"),
+            message: "injected metadata failure".to_string(),
+        },
+        write_error: None,
+        ..Default::default()
+    });
+    let tool = WriteTool::new_with_ops(workspace.path().to_path_buf(), ops.clone());
+    let result = tool
+        .execute(
+            "c",
+            json!({ "path": "out.txt", "content": "data" }),
+            CancellationToken::new(),
+            None,
+        )
+        .await
+        .expect("write execute");
+
+    assert!(result.is_error);
+    assert!(
+        result
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == code::CODE_TOOL_EXECUTION_FAILED),
+        "metadata I/O failure must carry a typed diagnostic"
+    );
+    assert_eq!(*ops.mkdir_calls.lock().unwrap(), 0);
+    assert_eq!(*ops.write_calls.lock().unwrap(), 0);
+}
+
 async fn edit_injected_ops_read_then_write_through_backend() {
     let workspace = tempfile::tempdir().unwrap();
-    let resolved = workspace.path().join("e.txt");
+    let resolved = validate_workspace_path(workspace.path(), "e.txt").unwrap();
     // cfg.meta = Some(true) (regular file); read returns content with one "old".
     let recording = Arc::new(RecordingFileOps {
         cfg: FileOpsConfig {
@@ -888,6 +1034,162 @@ struct RecordingFileOps {
     writes: Arc<Mutex<Vec<WriteRecord>>>,
     metas: Arc<Mutex<Vec<PathBuf>>>,
     mkdirs: Arc<Mutex<Vec<PathBuf>>>,
+}
+
+#[derive(Default)]
+struct VirtualAncestorFileOps {
+    target: PathBuf,
+    virtual_file: PathBuf,
+    metadata_calls: Arc<Mutex<Vec<PathBuf>>>,
+    write_calls: Arc<Mutex<usize>>,
+}
+
+impl FileOperations for VirtualAncestorFileOps {
+    fn read_file(
+        &self,
+        _path: &Path,
+    ) -> Pin<Box<dyn Future<Output = Result<Vec<u8>, FsOpError>> + Send>> {
+        Box::pin(async {
+            Err(FsOpError::Io {
+                path: PathBuf::new(),
+                message: "unexpected read".to_string(),
+            })
+        })
+    }
+
+    fn write_file(
+        &self,
+        _path: &Path,
+        _data: &[u8],
+    ) -> Pin<Box<dyn Future<Output = Result<(), FsOpError>> + Send>> {
+        let calls = self.write_calls.clone();
+        Box::pin(async move {
+            *calls.lock().unwrap() += 1;
+            Ok(())
+        })
+    }
+
+    fn mkdir(
+        &self,
+        path: &Path,
+        _recursive: bool,
+    ) -> Pin<Box<dyn Future<Output = Result<(), FsOpError>> + Send>> {
+        let path = path.to_path_buf();
+        Box::pin(async move {
+            Err(FsOpError::Io {
+                path,
+                message: "virtual parent is not a directory".to_string(),
+            })
+        })
+    }
+
+    fn metadata(
+        &self,
+        path: &Path,
+    ) -> Pin<Box<dyn Future<Output = Result<OpMetadata, FsOpError>> + Send>> {
+        let path = path.to_path_buf();
+        let target = self.target.clone();
+        let virtual_file = self.virtual_file.clone();
+        let calls = self.metadata_calls.clone();
+        Box::pin(async move {
+            calls.lock().unwrap().push(path.clone());
+            if path == virtual_file {
+                Ok(OpMetadata {
+                    len: 0,
+                    is_dir: false,
+                    is_file: true,
+                    readonly: false,
+                    modified: None,
+                })
+            } else {
+                debug_assert!(path == target || path.starts_with(&virtual_file));
+                Err(FsOpError::NotFound { path })
+            }
+        })
+    }
+
+    fn access(
+        &self,
+        _path: &Path,
+        _mode: AccessMode,
+    ) -> Pin<Box<dyn Future<Output = Result<(), FsOpError>> + Send>> {
+        Box::pin(async { Ok(()) })
+    }
+}
+
+struct WriteFailureFileOps {
+    metadata_error: FsOpError,
+    write_error: Option<FsOpError>,
+    mkdir_calls: Arc<Mutex<usize>>,
+    write_calls: Arc<Mutex<usize>>,
+}
+
+impl Default for WriteFailureFileOps {
+    fn default() -> Self {
+        Self {
+            metadata_error: FsOpError::NotFound {
+                path: PathBuf::new(),
+            },
+            write_error: None,
+            mkdir_calls: Arc::new(Mutex::new(0)),
+            write_calls: Arc::new(Mutex::new(0)),
+        }
+    }
+}
+
+impl FileOperations for WriteFailureFileOps {
+    fn read_file(
+        &self,
+        _path: &Path,
+    ) -> Pin<Box<dyn Future<Output = Result<Vec<u8>, FsOpError>> + Send>> {
+        Box::pin(async {
+            Err(FsOpError::Io {
+                path: PathBuf::new(),
+                message: "unexpected read".to_string(),
+            })
+        })
+    }
+
+    fn write_file(
+        &self,
+        _path: &Path,
+        _data: &[u8],
+    ) -> Pin<Box<dyn Future<Output = Result<(), FsOpError>> + Send>> {
+        let error = self.write_error.clone();
+        let calls = self.write_calls.clone();
+        Box::pin(async move {
+            *calls.lock().unwrap() += 1;
+            error.map_or(Ok(()), Err)
+        })
+    }
+
+    fn mkdir(
+        &self,
+        _path: &Path,
+        _recursive: bool,
+    ) -> Pin<Box<dyn Future<Output = Result<(), FsOpError>> + Send>> {
+        let calls = self.mkdir_calls.clone();
+        Box::pin(async move {
+            *calls.lock().unwrap() += 1;
+            Ok(())
+        })
+    }
+
+    fn metadata(
+        &self,
+        _path: &Path,
+    ) -> Pin<Box<dyn Future<Output = Result<OpMetadata, FsOpError>> + Send>> {
+        let error = self.metadata_error.clone();
+        Box::pin(async move { Err(error) })
+    }
+
+    fn access(
+        &self,
+        _path: &Path,
+        _mode: AccessMode,
+    ) -> Pin<Box<dyn Future<Output = Result<(), FsOpError>> + Send>> {
+        Box::pin(async { Ok(()) })
+    }
 }
 
 impl FileOperations for RecordingFileOps {

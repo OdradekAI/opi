@@ -252,6 +252,62 @@ fn apply_sandbox_overrides_constructs_strict_require() {
     assert!(config.sandbox.require);
 }
 
+#[test]
+fn sandbox_precedence_is_cli_then_explicit_then_project_then_user() {
+    let root = tempfile::tempdir().unwrap();
+    let user_dir = root.path().join("user");
+    let project_dir = root.path().join("project");
+    let explicit_dir = root.path().join("explicit");
+    std::fs::create_dir_all(&user_dir).unwrap();
+    std::fs::create_dir_all(project_dir.join(".opi")).unwrap();
+    std::fs::create_dir_all(&explicit_dir).unwrap();
+
+    let user_config = user_dir.join("config.toml");
+    std::fs::write(
+        &user_config,
+        "[sandbox]\nmode = \"strict\"\nrequire = false\nfs = false\nnetwork = false\nsyscalls = false\n",
+    )
+    .unwrap();
+    std::fs::write(
+        project_dir.join(".opi").join("config.toml"),
+        "[sandbox]\nrequire = true\nfs = true\nnetwork = true\n",
+    )
+    .unwrap();
+    let explicit_config = explicit_dir.join("config.toml");
+    std::fs::write(
+        &explicit_config,
+        "[sandbox]\nmode = \"off\"\nrequire = false\nfs = false\n",
+    )
+    .unwrap();
+
+    let mut config = resolve_config(ConfigSource {
+        cli_model: None,
+        config_path: Some(explicit_config),
+        env_model: None,
+        project_dir: Some(project_dir),
+        user_config_path: Some(user_config),
+    })
+    .unwrap();
+    let cli = Cli::parse_from(["opi", "--sandbox", "strict", "--sandbox-require"]);
+    config.apply_sandbox_overrides(cli.sandbox, cli.sandbox_require.then_some(true));
+
+    assert_eq!(
+        config.sandbox,
+        SandboxConfig {
+            // CLI beats explicit `off`.
+            mode: SandboxMode::Strict,
+            // The real one-way CLI flag beats explicit `false`.
+            require: true,
+            // Explicit config beats the project value.
+            fs: Some(false),
+            // Project config beats the user value.
+            network: Some(true),
+            // The untouched user value survives every higher layer.
+            syscalls: Some(false),
+        }
+    );
+}
+
 // ---------------------------------------------------------------------------
 // Fallback diagnostics
 // ---------------------------------------------------------------------------

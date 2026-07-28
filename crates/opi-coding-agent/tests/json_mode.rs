@@ -52,19 +52,33 @@ fn runner_with_isolated_session(
         recorded_thinking: None,
     };
 
-    NonInteractiveRunner::new_with_resume_and_runtime_packages(
-        provider,
-        model.into(),
-        OpiConfig::default(),
-        workspace,
-        false,
-        None,
-        Vec::new(),
-        Some(resume),
-        ToolSelection::Default,
-        runtime_startup,
-        None,
-    )
+    match runtime_startup {
+        Some(startup) => NonInteractiveRunner::new_with_resume_and_runtime_packages(
+            provider,
+            model.into(),
+            OpiConfig::default(),
+            workspace,
+            false,
+            None,
+            Vec::new(),
+            Some(resume),
+            ToolSelection::Default,
+            startup,
+            None,
+        ),
+        None => NonInteractiveRunner::new_with_resume(
+            provider,
+            model.into(),
+            OpiConfig::default(),
+            workspace,
+            false,
+            None,
+            Vec::new(),
+            Some(resume),
+            ToolSelection::Default,
+            opi_coding_agent::project_trust::TrustDecision::Trusted,
+        ),
+    }
     .expect("isolated non-interactive runner")
 }
 
@@ -138,6 +152,7 @@ async fn json_mode_schema_version_header() {
         false,
         None,
         Vec::new(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     );
 
     let result = runner.run_json("hello").await;
@@ -167,6 +182,7 @@ async fn json_mode_each_line_valid_json_with_type() {
         false,
         None,
         Vec::new(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     );
 
     let result = runner.run_json("test").await;
@@ -199,6 +215,7 @@ async fn json_mode_agent_events_emitted() {
         false,
         None,
         Vec::new(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     );
 
     let result = runner.run_json("prompt").await;
@@ -230,6 +247,7 @@ async fn json_mode_events_deserialize_as_session_events() {
         false,
         None,
         Vec::new(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     );
 
     let result = runner.run_json("test").await;
@@ -267,6 +285,7 @@ async fn json_mode_no_blank_lines() {
         false,
         None,
         Vec::new(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     );
 
     let result = runner.run_json("test").await;
@@ -295,6 +314,7 @@ async fn json_mode_provider_error_exit_code() {
         false,
         None,
         Vec::new(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     );
 
     let result = runner.run_json("test").await;
@@ -332,6 +352,7 @@ async fn json_mode_provider_error_stderr_is_redacted() {
         false,
         None,
         Vec::new(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     );
 
     let result = runner.run_json("test").await;
@@ -371,6 +392,7 @@ async fn json_mode_credential_needed_emits_typed_remediation_without_prompt() {
         false,
         None,
         Vec::new(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     );
 
     let result = tokio::time::timeout(std::time::Duration::from_secs(2), runner.run_json("hello"))
@@ -438,6 +460,7 @@ async fn json_mode_account_id_missing_emits_typed_remediation_without_prompt() {
         false,
         None,
         Vec::new(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     );
 
     let result = tokio::time::timeout(std::time::Duration::from_secs(2), runner.run_json("hello"))
@@ -518,6 +541,7 @@ async fn provider_errors_are_redacted() {
         false,
         None,
         Vec::new(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     );
 
     let result = runner.run_json("test").await;
@@ -557,6 +581,7 @@ async fn json_mode_tool_call_events() {
         false,
         None,
         Vec::new(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     );
 
     let result = runner.run_json("Read Cargo.toml").await;
@@ -600,6 +625,7 @@ async fn write_tool_result_carries_write_audit_details() {
         true, // allow_mutating: write must be executable
         None,
         Vec::new(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     );
 
     let result = runner.run_json("Write out.txt").await;
@@ -641,6 +667,7 @@ async fn json_mode_stdout_is_only_ndjson() {
         false,
         None,
         Vec::new(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     );
 
     let result = runner.run_json("test").await;
@@ -763,12 +790,12 @@ mod phase7 {
             Vec::new(),
             None,
             ToolSelection::Default,
-            Some(RuntimePackageStartup {
+            RuntimePackageStartup {
                 extension_registry: ExtensionRegistry::new(),
                 installed_packages: Vec::new(),
                 diagnostics,
                 trust_decision: opi_coding_agent::project_trust::TrustDecision::Trusted,
-            }),
+            },
             trace_path,
         )
         .expect("non-interactive tool policy should be valid")
@@ -842,12 +869,12 @@ mod phase7 {
             Vec::new(),
             Some(resume_info),
             ToolSelection::Default,
-            Some(RuntimePackageStartup {
+            RuntimePackageStartup {
                 extension_registry: ExtensionRegistry::new(),
                 installed_packages: Vec::new(),
                 diagnostics: Vec::new(),
                 trust_decision: opi_coding_agent::project_trust::TrustDecision::Trusted,
-            }),
+            },
             None,
         )
         .expect("non-interactive runner");
@@ -895,6 +922,7 @@ mod phase7 {
             true, // allow_mutating so bash is an active built-in
             None,
             Vec::new(),
+            opi_coding_agent::project_trust::TrustDecision::Trusted,
         );
         let result = runner.run_json("run it").await;
         assert_eq!(
@@ -1201,6 +1229,7 @@ async fn json_mode_read_tool_result_does_not_leak_workspace_root() {
         false,
         None,
         Vec::new(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     );
 
     let result = runner.run_json("read safe.txt").await;
@@ -1228,6 +1257,7 @@ async fn json_mode_runtime_messages_have_nonzero_timestamps() {
         false,
         None,
         Vec::new(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     );
 
     let result = runner.run_json("hello").await;
@@ -1331,6 +1361,7 @@ async fn json_mode_compact_text_deltas_are_constant_size() {
         false,
         None,
         Vec::new(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     )
     .with_compact_ndjson(true);
 
@@ -1393,6 +1424,7 @@ async fn json_mode_default_output_still_carries_partial() {
         false,
         None,
         Vec::new(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     ); // no with_compact_ndjson -> default mode
 
     let result = runner.run_json("stream").await;

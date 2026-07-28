@@ -198,6 +198,7 @@ fn pending_images_injected_into_first_prompt() {
         "mock:test".into(),
         config,
         std::env::current_dir().unwrap(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     );
 
     // Queue a synthetic image content.
@@ -287,6 +288,7 @@ async fn harness_prompt_with_content_sends_image() {
         "test:model".into(),
         OpiConfig::default(),
         dir.path().to_path_buf(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     );
 
     let messages = harness.prompt_with_content(content).await.unwrap();

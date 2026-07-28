@@ -28,6 +28,7 @@ pub fn credential_runner(workspace: &Path) -> NonInteractiveRunner {
         false,
         None,
         Vec::new(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     )
 }
 
@@ -72,6 +73,7 @@ pub async fn run_rpc_stdio_child() {
         ToolSelection::Disabled,
         None,
         Vec::new(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     )
     .expect("construct RPC runner");
     assert_eq!(runner.run().await, 0);

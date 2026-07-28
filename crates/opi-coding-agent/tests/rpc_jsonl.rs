@@ -1087,6 +1087,7 @@ fn rpc_tool_selection_respects_no_tools() {
         ToolSelection::Disabled,
         None,
         Vec::new(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     )
     .expect("rpc runner should construct");
 
@@ -1127,6 +1128,7 @@ Body should remain undisclosed.
         ToolSelection::Disabled,
         None,
         Vec::new(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     )
     .expect("rpc runner should construct");
 
@@ -2088,6 +2090,7 @@ fn blocking_cleanup_runner(
         ToolSelection::Disabled,
         None,
         Vec::new(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     )
     .expect("rpc runner should construct");
 
@@ -2163,6 +2166,7 @@ where
         ToolSelection::Disabled,
         None,
         Vec::new(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     )
     .expect("rpc runner should construct");
 
@@ -2387,6 +2391,7 @@ fn rpc_test_runner(
         ToolSelection::Disabled,
         None,
         Vec::new(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     )
     .expect("rpc runner should construct");
 
@@ -2421,6 +2426,7 @@ where
         None,
         Vec::new(),
         registry,
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     )
     .expect("rpc runner should construct");
 
@@ -2460,6 +2466,7 @@ async fn write_tool_result_carries_write_audit_details() {
         ToolSelection::Allowlist(vec!["write".into()]),
         None,
         Vec::new(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     )
     .expect("rpc runner with write tool");
 
@@ -2610,6 +2617,7 @@ async fn edit_tool_result_carries_diff_preview_details() {
         ToolSelection::Allowlist(vec!["edit".into()]),
         None,
         Vec::new(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     )
     .expect("rpc runner with edit tool");
 
@@ -2695,6 +2703,7 @@ async fn tool_failure_trace_carries_tool_details() {
         ToolSelection::Allowlist(vec!["read".into()]),
         None,
         Vec::new(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     )
     .expect("rpc runner with read tool");
 
@@ -2769,6 +2778,7 @@ async fn tool_result_details_diagnostics_and_truncated_shape() {
         ToolSelection::Allowlist(vec!["bash".into()]),
         None,
         Vec::new(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     )
     .expect("rpc runner with bash tool");
 
@@ -2854,6 +2864,7 @@ async fn rpc_tool_events_redact_bash_command_canary() {
         ToolSelection::Allowlist(vec!["bash".into()]),
         None,
         Vec::new(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     )
     .expect("rpc runner with bash tool");
 
@@ -2944,6 +2955,7 @@ async fn bash_tool_result_carries_truncation_details() {
         ToolSelection::Allowlist(vec!["bash".into()]),
         None,
         Vec::new(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     )
     .expect("rpc runner with bash tool");
 
@@ -4276,6 +4288,7 @@ mod phase7 {
             None,
             Vec::new(),
             Some(trace_sink.clone()),
+            opi_coding_agent::project_trust::TrustDecision::Trusted,
         )
         .expect("rpc runner with trace");
 
@@ -4334,6 +4347,7 @@ mod phase7 {
             None,
             Vec::new(),
             None,
+            opi_coding_agent::project_trust::TrustDecision::Trusted,
         )
         .expect("rpc runner without trace");
 
@@ -4562,6 +4576,7 @@ mod phase7 {
             None,
             Vec::new(),
             Some(trace_sink),
+            opi_coding_agent::project_trust::TrustDecision::Trusted,
         )
         .expect("rpc runner with trace");
 
@@ -4635,6 +4650,7 @@ mod phase7 {
             None,
             Vec::new(),
             Some(trace_sink.clone()),
+            opi_coding_agent::project_trust::TrustDecision::Trusted,
         )
         .expect("rpc runner with trace");
 
@@ -4705,6 +4721,7 @@ mod phase7 {
             None,
             Vec::new(),
             Some(trace_sink.clone()),
+            opi_coding_agent::project_trust::TrustDecision::Trusted,
         )
         .expect("rpc runner with trace");
 
@@ -4797,6 +4814,7 @@ mod phase7 {
             ToolSelection::Disabled,
             None,
             Vec::new(),
+            opi_coding_agent::project_trust::TrustDecision::Trusted,
         )
         .expect("rpc runner");
         let (command_tx, command_rx) = unbounded_channel();
@@ -5024,6 +5042,7 @@ mod phase7 {
             None,
             Vec::new(),
             Some(trace_sink.clone()),
+            opi_coding_agent::project_trust::TrustDecision::Trusted,
         )
         .expect("rpc runner with trace and read tool");
 

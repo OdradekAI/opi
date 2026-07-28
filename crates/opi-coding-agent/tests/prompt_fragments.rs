@@ -10,7 +10,7 @@ use opi_coding_agent::prompt_fragment::{
     FragmentArgument, FragmentDiscoveryError, FragmentManifest, FragmentRegistry,
     discover_fragments, expand_fragment_body,
 };
-use opi_coding_agent::resource::DiscoveryLayer;
+use opi_coding_agent::resource::{DiscoveryLayer, DiscoveryLayerKind};
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -27,6 +27,7 @@ fn write_fragment(parent: &std::path::Path, dir_name: &str, frontmatter: &str, b
 /// Build a single discovery layer at `root/subdirectory` with given precedence.
 fn layer(root: &std::path::Path, subdirectory: &str, precedence: u32) -> DiscoveryLayer {
     DiscoveryLayer {
+        kind: DiscoveryLayerKind::Explicit,
         root: root.to_path_buf(),
         subdirectory: Some(subdirectory.to_string()),
         precedence,

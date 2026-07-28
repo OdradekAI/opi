@@ -78,7 +78,7 @@ Bash policy:
 
 Sandbox policy:
   --sandbox off|strict selects the bash subprocess-tree sandbox; default off.
-  --sandbox-require fails closed when a configured layer is unavailable.
+  --sandbox-require is one-way: it enables fail-closed behavior and cannot clear a true config value.
   Strict is opt-in defense-in-depth, not a security boundary; untrusted code belongs in a container or VM.
 
 Interactive authentication:
@@ -127,8 +127,8 @@ pub struct Cli {
     #[arg(long, value_enum)]
     pub sandbox: Option<SandboxMode>,
 
-    /// Require the configured sandbox layers (fail-closed) instead of the
-    /// default fail-open-with-diagnostic policy. Overrides `[sandbox] require`.
+    /// Require configured sandbox layers (fail closed). This one-way bool flag
+    /// enables `require`; it cannot clear a true `[sandbox] require` value.
     #[arg(long)]
     pub sandbox_require: bool,
 

@@ -128,12 +128,14 @@ impl Tool for WriteTool {
             let existing_meta = match ops.metadata(&file_path).await {
                 Ok(meta) => Some(meta),
                 Err(FsOpError::NotFound { .. }) => None,
-                Err(FsOpError::PermissionDenied { .. }) => {
-                    return Ok(super::fs_error_result(FsToolError::PermissionDenied {
-                        path: file_path.clone(),
-                    }));
+                Err(error) => {
+                    return Ok(fs_op_error_result(
+                        error,
+                        &path_for_display,
+                        &file_path,
+                        "failed to inspect",
+                    ));
                 }
-                Err(_) => None,
             };
             if existing_meta.as_ref().is_some_and(|meta| meta.is_dir) {
                 return Ok(super::fs_error_result(FsToolError::NotAFile {
@@ -150,22 +152,28 @@ impl Tool for WriteTool {
             if let Some(parent) = file_path.parent()
                 && let Err(e) = ops.mkdir(parent, true).await
             {
-                if let Some(file_ancestor) = first_file_ancestor(parent) {
-                    return Ok(super::fs_error_result(FsToolError::NotADirectory {
-                        path: file_ancestor,
-                    }));
+                match first_non_directory_ancestor(ops.as_ref(), parent).await {
+                    Ok(Some(file_ancestor)) => {
+                        return Ok(super::fs_error_result(FsToolError::NotADirectory {
+                            path: file_ancestor,
+                        }));
+                    }
+                    Ok(None) => {}
+                    Err(probe_error) => {
+                        return Ok(fs_op_error_result(
+                            probe_error,
+                            &path_for_display,
+                            parent,
+                            "failed to inspect parent directories",
+                        ));
+                    }
                 }
-                if matches!(e, FsOpError::PermissionDenied { .. }) {
-                    return Ok(super::fs_error_result(FsToolError::PermissionDenied {
-                        path: parent.to_path_buf(),
-                    }));
-                }
-                return Ok(result::err(vec![OutputContent::Text {
-                    text: format!(
-                        "failed to create directories for {}: {e}",
-                        file_path.display()
-                    ),
-                }]));
+                return Ok(fs_op_error_result(
+                    e,
+                    &path_for_display,
+                    parent,
+                    "failed to create parent directories",
+                ));
             }
 
             // 4. Atomic write via the backend. `LocalFileOperations` stages the
@@ -174,9 +182,12 @@ impl Tool for WriteTool {
             //    prior content (never a partial/truncated mix) — the same recipe
             //    the tool used to inline with `super::TempFileGuard`.
             if let Err(e) = ops.write_file(&file_path, args.content.as_bytes()).await {
-                return Ok(result::err(vec![OutputContent::Text {
-                    text: format!("failed to write {}: {e}", file_path.display()),
-                }]));
+                return Ok(fs_op_error_result(
+                    e,
+                    &path_for_display,
+                    &file_path,
+                    "failed to write",
+                ));
             }
 
             // 5. Audit details: action + bytes_written (always); before/after
@@ -215,20 +226,62 @@ impl Tool for WriteTool {
     }
 }
 
-/// Walk from `start` upward, returning the first existing component (including
-/// `start` itself) that is a regular file. This lets a parent-component-is-a-
-/// file condition be classified as `NotADirectory` deterministically,
-/// independent of the platform-specific `ErrorKind` that `create_dir_all`
-/// surfaces (ENOTDIR on Linux, ERROR_DIRECTORY on Windows). Stops at the first
-/// existing directory; returns `None` when only directories or missing
-/// components are found.
-fn first_file_ancestor(start: &Path) -> Option<PathBuf> {
+fn fs_op_error_result(
+    error: FsOpError,
+    user_path: &str,
+    fallback_path: &Path,
+    operation: &str,
+) -> ToolResult {
+    let fs_error = match error {
+        FsOpError::NotFound { path } => FsToolError::NotFound {
+            user_path: user_path.to_string(),
+            resolved_path: Some(path),
+        },
+        FsOpError::PermissionDenied { path } => FsToolError::PermissionDenied { path },
+        FsOpError::NotAFile { path } => FsToolError::NotAFile { path },
+        FsOpError::NotADirectory { path } => FsToolError::NotADirectory { path },
+        FsOpError::Io { path, message } => {
+            let message = format!("{operation} {}: {message}", fallback_path.display());
+            let mut error_result = result::err(vec![OutputContent::Text {
+                text: message.clone(),
+            }]);
+            error_result.diagnostics.push(ToolDiagnostic {
+                code: code::CODE_TOOL_EXECUTION_FAILED.to_string(),
+                message,
+                context: json!({
+                    "operation": operation,
+                    "path": path.display().to_string(),
+                }),
+            });
+            return error_result;
+        }
+    };
+    super::fs_error_result(fs_error)
+}
+
+/// Walk from `start` upward through the injected backend, returning the first
+/// existing component (including `start` itself) that is not a directory.
+/// `NotFound`, `NotADirectory`, and unclassified metadata errors continue
+/// upward because platform backends can report any of them for a descendant of
+/// the actual file component. Typed permission failures remain visible.
+async fn first_non_directory_ancestor(
+    ops: &dyn FileOperations,
+    start: &Path,
+) -> Result<Option<PathBuf>, FsOpError> {
     let mut current = start;
     loop {
-        match std::fs::metadata(current) {
-            Ok(meta) if meta.is_file() => return Some(current.to_path_buf()),
-            Ok(_) => return None, // existing dir (or symlink-to-dir): ancestors are dirs
-            Err(_) => current = current.parent()?,
+        match ops.metadata(current).await {
+            Ok(meta) if meta.is_dir => return Ok(None),
+            Ok(_) => return Ok(Some(current.to_path_buf())),
+            Err(
+                FsOpError::NotFound { .. } | FsOpError::NotADirectory { .. } | FsOpError::Io { .. },
+            ) => {
+                let Some(parent) = current.parent() else {
+                    return Ok(None);
+                };
+                current = parent;
+            }
+            Err(error) => return Err(error),
         }
     }
 }

@@ -40,8 +40,9 @@ use std::process::Stdio;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, SystemTime};
 
+use rand::RngCore;
 use serde::{Deserialize, Serialize};
-use tokio::io::AsyncReadExt;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio_util::sync::CancellationToken;
 
 use super::process_tree::{TerminationOutcome, TreeGuard};
@@ -83,7 +84,7 @@ pub enum FsOpError {
 /// properly-executed command results and stay IN-BAND in [`BashResult`].
 /// The command text is intentionally NOT carried (preserves the no-leak
 /// invariant that excludes raw command text from diagnostics).
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum BashOpError {
     #[error("failed to spawn command: {message}")]
     SpawnFailed { message: String },
@@ -100,6 +101,55 @@ pub enum BashOpError {
 
     #[error("bash backend error: {message}")]
     Other { message: String },
+
+    /// A backend failure accompanied by non-fatal diagnostics observed before
+    /// the terminal error. The source preserves the existing typed cause while
+    /// the wrapper lets callers surface lifecycle/sandbox degradation instead
+    /// of dropping it on spawn/wait/custom-backend error paths.
+    #[error("{source}")]
+    BackendFailure {
+        source: Box<BashOpError>,
+        diagnostics: Vec<ToolDiagnostic>,
+    },
+}
+
+impl BashOpError {
+    pub fn with_diagnostics(self, diagnostics: Vec<ToolDiagnostic>) -> Self {
+        if diagnostics.is_empty() {
+            self
+        } else {
+            match self {
+                Self::BackendFailure {
+                    source,
+                    diagnostics: mut existing,
+                } => {
+                    existing.extend(diagnostics);
+                    Self::BackendFailure {
+                        source,
+                        diagnostics: existing,
+                    }
+                }
+                source => Self::BackendFailure {
+                    source: Box::new(source),
+                    diagnostics,
+                },
+            }
+        }
+    }
+
+    pub fn root_cause(&self) -> &Self {
+        match self {
+            Self::BackendFailure { source, .. } => source.root_cause(),
+            other => other,
+        }
+    }
+
+    pub fn diagnostics(&self) -> &[ToolDiagnostic] {
+        match self {
+            Self::BackendFailure { diagnostics, .. } => diagnostics,
+            _ => &[],
+        }
+    }
 }
 
 // =========================================================================
@@ -316,9 +366,9 @@ impl FileOperations for LocalFileOperations {
             } else {
                 tokio::fs::create_dir(&path).await
             };
-            // NotADirectory classification (first_file_ancestor probe) stays at
-            // the 15.2 tool layer; the impl is a thin backend that surfaces
-            // raw create_dir failures as FsOpError::Io.
+            // The shared mapper retains NotADirectory across platform-specific
+            // create-dir failures; the tool layer walks ancestors through this
+            // same injected metadata backend to identify the file component.
             result.map_err(|e| io_to_fs_error(&path, e))
         })
     }
@@ -382,6 +432,9 @@ fn io_to_fs_error(path: &Path, e: std::io::Error) -> FsOpError {
         std::io::ErrorKind::PermissionDenied => FsOpError::PermissionDenied {
             path: path.to_path_buf(),
         },
+        std::io::ErrorKind::NotADirectory => FsOpError::NotADirectory {
+            path: path.to_path_buf(),
+        },
         _ => FsOpError::Io {
             path: path.to_path_buf(),
             message: e.to_string(),
@@ -405,43 +458,97 @@ enum AtomicWriteFailPoint {
     AtRename,
 }
 
-/// Atomic-write recipe: stage `data` in a sibling dotfile temp in
-/// `target.parent()`, then rename over `target`. On any failure the temp is
-/// cleaned up via `super::TempFileGuard` and the prior target (if any) is
+const MAX_ATOMIC_TEMP_ATTEMPTS: usize = 16;
+
+/// Atomic-write recipe: exclusively create a strongly-named sibling temp in
+/// `target.parent()`, stage `data`, then rename over `target`. `create_new`
+/// prevents following or overwriting a colliding regular file or symlink.
+/// On any failure the temp is cleaned up and the prior target (if any) is
 /// left intact — `tokio::fs::rename` is atomic on the same filesystem, so an
 /// interrupted replacement leaves either the full new content or the prior
-/// content (never a partial/truncated mix). Does NOT classify
-/// `NotADirectory` (the 15.2 tool wrapper probes via `metadata()`); any
-/// `create_dir_all` failure surfaces as [`FsOpError::Io`].
+/// content (never a partial/truncated mix).
 async fn atomic_write_bytes(
     target: &Path,
     tag: &str,
     data: &[u8],
     fail_at: AtomicWriteFailPoint,
 ) -> Result<(), FsOpError> {
+    atomic_write_bytes_with_temp_path(target, data, fail_at, || {
+        strong_atomic_temp_path(target, tag)
+    })
+    .await
+}
+
+fn strong_atomic_temp_path(target: &Path, tag: &str) -> Result<PathBuf, FsOpError> {
     let parent_dir = target.parent().unwrap_or(target);
-    if let Err(e) = tokio::fs::create_dir_all(parent_dir).await {
-        return Err(io_to_fs_error(parent_dir, e));
-    }
     let file_name = target
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_else(|| "file".to_string());
-    let pid = std::process::id();
-    let nanos = SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
-    let temp_path = parent_dir.join(format!(".{file_name}.{tag}-{pid}-{nanos}"));
-    let mut guard = super::TempFileGuard::new(temp_path);
-
-    if let Err(e) = tokio::fs::write(guard.path(), data).await {
-        guard.cleanup().await;
-        return Err(FsOpError::Io {
+    let mut random = [0u8; 16];
+    rand::rngs::OsRng
+        .try_fill_bytes(&mut random)
+        .map_err(|error| FsOpError::Io {
             path: target.to_path_buf(),
-            message: e.to_string(),
-        });
+            message: format!("failed to generate atomic staging name: {error}"),
+        })?;
+    let suffix = u128::from_le_bytes(random);
+    Ok(parent_dir.join(format!(".{file_name}.{tag}-{suffix:032x}")))
+}
+
+async fn atomic_write_bytes_with_temp_path<F>(
+    target: &Path,
+    data: &[u8],
+    fail_at: AtomicWriteFailPoint,
+    mut next_temp_path: F,
+) -> Result<(), FsOpError>
+where
+    F: FnMut() -> Result<PathBuf, FsOpError> + Send,
+{
+    let parent_dir = target.parent().unwrap_or(target);
+    if let Err(e) = tokio::fs::create_dir_all(parent_dir).await {
+        return Err(io_to_fs_error(parent_dir, e));
     }
+
+    let mut allocated = None;
+    for _ in 0..MAX_ATOMIC_TEMP_ATTEMPTS {
+        let candidate = next_temp_path()?;
+        match tokio::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&candidate)
+            .await
+        {
+            Ok(file) => {
+                allocated = Some((candidate, file));
+                break;
+            }
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(io_to_fs_error(target, error)),
+        }
+    }
+    let (temp_path, opened_temp_file) = allocated.ok_or_else(|| FsOpError::Io {
+        path: target.to_path_buf(),
+        message: format!(
+            "failed to allocate atomic staging file after {MAX_ATOMIC_TEMP_ATTEMPTS} collisions"
+        ),
+    })?;
+    let mut guard = super::TempFileGuard::new(temp_path);
+    // Declare the open handle after the guard so cancellation drops the handle
+    // first, allowing the guard's synchronous Windows cleanup to succeed.
+    let mut temp_file = opened_temp_file;
+
+    if let Err(e) = temp_file.write_all(data).await {
+        drop(temp_file);
+        guard.cleanup().await;
+        return Err(io_to_fs_error(target, e));
+    }
+    if let Err(e) = temp_file.flush().await {
+        drop(temp_file);
+        guard.cleanup().await;
+        return Err(io_to_fs_error(target, e));
+    }
+    drop(temp_file);
 
     if fail_at == AtomicWriteFailPoint::AfterTempStage {
         guard.cleanup().await;
@@ -463,10 +570,7 @@ async fn atomic_write_bytes(
 
     if let Err(e) = tokio::fs::rename(guard.path(), target).await {
         guard.cleanup().await;
-        return Err(FsOpError::Io {
-            path: target.to_path_buf(),
-            message: e.to_string(),
-        });
+        return Err(io_to_fs_error(target, e));
     }
     guard.disarm();
     Ok(())
@@ -504,6 +608,8 @@ pub const LOCAL_BASH_OPERATION_DIAGNOSTIC: &str = "opi.operations.bash.operation
 #[derive(Debug, Default)]
 pub struct LocalBashOperations {
     prepared: PreparedSandbox,
+    #[cfg(test)]
+    test_tree_faults: super::process_tree::TestTreeFaults,
 }
 
 impl LocalBashOperations {
@@ -518,8 +624,52 @@ impl LocalBashOperations {
     /// once. `new()` keeps the [`PreparedSandbox::Off`] default for direct/test
     /// callers.
     pub fn with_prepared(prepared: PreparedSandbox) -> Self {
-        Self { prepared }
+        Self {
+            prepared,
+            #[cfg(test)]
+            test_tree_faults: super::process_tree::TestTreeFaults::default(),
+        }
     }
+
+    #[cfg(test)]
+    fn with_test_tree_faults(test_tree_faults: super::process_tree::TestTreeFaults) -> Self {
+        Self {
+            prepared: PreparedSandbox::Off,
+            test_tree_faults,
+        }
+    }
+}
+
+/// Compose the exact command used by the production bash spawn path.
+///
+/// A launcher confinement prepends its program and prefix arguments while the
+/// original shell/flag/command tail remains verbatim. Common cwd, environment,
+/// kill-on-drop, and L0 tree configuration are applied once to the final
+/// command.
+fn build_bash_command(
+    shell: &str,
+    flag: &str,
+    command: &str,
+    cwd: &Path,
+    env: &[(String, String)],
+    confinement: Option<&crate::sandbox::Confinement>,
+) -> tokio::process::Command {
+    let mut cmd = if let Some((launcher, prefix_args)) =
+        confinement.and_then(crate::sandbox::Confinement::launcher_prefix)
+    {
+        let mut launcher_command = tokio::process::Command::new(launcher);
+        launcher_command.args(prefix_args);
+        launcher_command.arg(shell).arg(flag).arg(command);
+        launcher_command
+    } else {
+        let mut shell_command = tokio::process::Command::new(shell);
+        shell_command.arg(flag).arg(command);
+        shell_command
+    };
+    cmd.current_dir(cwd).kill_on_drop(true);
+    super::process_tree::configure_tree(&mut cmd);
+    cmd.envs(env.iter().map(|(key, value)| (key, value)));
+    cmd
 }
 
 impl BashOperations for LocalBashOperations {
@@ -528,6 +678,8 @@ impl BashOperations for LocalBashOperations {
         request: BashRequest,
     ) -> Pin<Box<dyn Future<Output = Result<BashResult, BashOpError>> + Send>> {
         let prepared = self.prepared.clone();
+        #[cfg(test)]
+        let test_tree_faults = self.test_tree_faults;
         Box::pin(async move {
             let BashRequest {
                 command,
@@ -553,6 +705,10 @@ impl BashOperations for LocalBashOperations {
             // Phase 15.5.3: an Engaged Linux decision carries a parent-built
             // confinement plan; it is applied to the spawn `Command` between the
             // L0 tree setup and `spawn()`.
+            let sandbox_require = matches!(
+                &prepared,
+                PreparedSandbox::Strict(decision) if decision.require
+            );
             let confinement: Option<&crate::sandbox::Confinement> = match &prepared {
                 PreparedSandbox::Off => None,
                 PreparedSandbox::Strict(decision) => match &decision.outcome {
@@ -563,7 +719,7 @@ impl BashOperations for LocalBashOperations {
                         for gap in per_command_temporary {
                             degraded_diagnostics.push(temporary_gap_diagnostic(gap));
                         }
-                        None
+                        decision.confinement.as_ref()
                     }
                     StrictOutcome::FailClosed { reason } => {
                         return Err(BashOpError::SandboxUnavailable {
@@ -573,70 +729,44 @@ impl BashOperations for LocalBashOperations {
                 },
             };
 
-            let mut cmd = tokio::process::Command::new(shell);
-            cmd.arg(flag)
-                .arg(&command)
-                .current_dir(&cwd)
-                .kill_on_drop(true);
-            // Phase 15.4 L0: put the child in a tree-containment scope so the
-            // whole subprocess tree (not just the direct child) is torn down on
-            // timeout, cancellation, or a dropped exec future. Pre-spawn the
-            // child enters a new process group (Unix); the Windows Job Object is
-            // attached just after spawn. All FFI lives in `super::process_tree`;
-            // this module stays #![forbid(unsafe_code)].
-            super::process_tree::configure_tree(&mut cmd);
+            let mut cmd = build_bash_command(shell, flag, &command, &cwd, &env, confinement);
             // Phase 15.5.3: apply the strict confinement plan (Linux seccomp +
             // Landlock `pre_exec` hook) when the decision engaged. Safe call: the
             // confinement closure registers the audited `pre_exec` helper; the
-            // `unsafe` lives inside `sandbox/linux.rs`, not here.
+            // `unsafe` lives inside `tool/process_tree.rs`, not here.
             if let Some(confinement) = &confinement {
-                confinement.apply(&mut cmd);
-            }
-            // env augments the inherited environment on top of what the child
-            // already receives; empty in current usage.
-            for (key, value) in &env {
-                cmd.env(key, value);
-            }
-            // Phase 15.5.4: macOS launcher confinement. `sandbox-exec` IS the
-            // helper, so it must be the spawn program with its prefix args
-            // (`-p <profile>`) before the original shell invocation. A `pre_exec`
-            // hook cannot change the program, so when the confinement carries a
-            // launcher we rebuild the Command from scratch and re-apply the same
-            // L0 process_group(0) + kill_on_drop + cwd + env configured above.
-            // `apply` is a no-op for a launcher plan, so the Linux pre_exec path
-            // (which returns `None` from `launcher_prefix`) is untouched.
-            if let Some(confinement) = &confinement
-                && let Some((launcher, prefix_args)) = confinement.launcher_prefix()
-            {
-                let mut restarted = tokio::process::Command::new(launcher);
-                for a in prefix_args {
-                    restarted.arg(a);
+                let construction_gaps = confinement.apply(&mut cmd);
+                if !construction_gaps.is_empty() {
+                    if sandbox_require {
+                        return Err(BashOpError::SandboxUnavailable {
+                            message: summarize_gap_layers(&construction_gaps),
+                        });
+                    }
+                    degraded_diagnostics
+                        .extend(construction_gaps.iter().map(temporary_gap_diagnostic));
                 }
-                restarted
-                    .arg(shell)
-                    .arg(flag)
-                    .arg(&command)
-                    .current_dir(&cwd)
-                    .kill_on_drop(true);
-                super::process_tree::configure_tree(&mut restarted);
-                for (key, value) in &env {
-                    restarted.env(key, value);
-                }
-                cmd = restarted;
             }
             let mut child = match cmd.stdout(Stdio::piped()).stderr(Stdio::piped()).spawn() {
                 Ok(c) => c,
                 Err(e) => {
                     return Err(BashOpError::SpawnFailed {
                         message: e.to_string(),
-                    });
+                    }
+                    .with_diagnostics(degraded_diagnostics));
                 }
             };
 
             // Attach L0 to the spawned child. Fail-open: on failure we keep a
             // disabled guard (the direct child is still killed via kill_on_drop
             // + child.kill on timeout/cancel) and record one degraded diagnostic.
-            let mut l0_tree = match TreeGuard::attach(child.id().unwrap_or(0)) {
+            #[cfg(test)]
+            let l0_attach = match child.id() {
+                Some(pid) => TreeGuard::attach_with_faults(pid, test_tree_faults),
+                None => TreeGuard::attach_child(None),
+            };
+            #[cfg(not(test))]
+            let l0_attach = TreeGuard::attach_child(child.id());
+            let mut l0_tree = match l0_attach {
                 Ok(guard) => guard,
                 Err(e) => {
                     degraded_diagnostics.push(l0_degraded_diagnostic(&e));
@@ -652,35 +782,12 @@ impl BashOperations for LocalBashOperations {
             tokio::pin!(timeout_future);
             tokio::pin!(cancel_future);
 
-            let mut out_cap = StreamCapture::new(MAX_BASH_OUTPUT_BYTES);
-            let mut err_cap = StreamCapture::new(MAX_BASH_OUTPUT_BYTES);
-
             // Drain stdout/stderr concurrently with the wait/timeout/cancel race
-            // to avoid the stdout-then-stderr pipe deadlock. On timeout/cancel
-            // the child is killed, pipes hit EOF, drains finish, and captures
-            // are discarded (with spill files cleaned up).
-            let drain_out = async {
-                if let Some(mut s) = stdout {
-                    let mut buf = [0u8; 8192];
-                    loop {
-                        match s.read(&mut buf).await {
-                            Ok(0) | Err(_) => break,
-                            Ok(n) => out_cap.append(&buf[..n]),
-                        }
-                    }
-                }
-            };
-            let drain_err = async {
-                if let Some(mut s) = stderr {
-                    let mut buf = [0u8; 8192];
-                    loop {
-                        match s.read(&mut buf).await {
-                            Ok(0) | Err(_) => break,
-                            Ok(n) => err_cap.append(&buf[..n]),
-                        }
-                    }
-                }
-            };
+            // to avoid the stdout-then-stderr pipe deadlock. They are owned
+            // tasks so a descendant that retained either pipe cannot keep this
+            // operation pending forever after tree termination.
+            let drain_out = spawn_stream_capture(stdout);
+            let drain_err = spawn_stream_capture(stderr);
             let control = async {
                 tokio::select! {
                     biased;
@@ -704,10 +811,15 @@ impl BashOperations for LocalBashOperations {
                     }
                     status = child.wait() => match status {
                         Ok(s) => {
-                            // Clean exit: disarm L0 so the tree is NOT torn down
-                            // (matches pre-15.4 behavior for backgrounded survivors).
-                            l0_tree.disarm();
-                            (Control::Done(s), None)
+                            // The direct shell may exit while backgrounded
+                            // descendants still own pipes. The approved L0
+                            // policy terminates the remaining tree while
+                            // preserving this direct-child status.
+                            let term_diag = match l0_tree.terminate() {
+                                TerminationOutcome::Failed(e) => Some(l0_degraded_diagnostic(&e)),
+                                _ => None,
+                            };
+                            (Control::Done(s), term_diag)
                         }
                         Err(_) => {
                             let term_diag = match l0_tree.terminate() {
@@ -720,7 +832,11 @@ impl BashOperations for LocalBashOperations {
                 }
             };
 
-            let (_, _, (ctrl, term_diag)) = tokio::join!(drain_out, drain_err, control);
+            let (ctrl, term_diag) = control.await;
+            let (mut out_cap, mut err_cap) = tokio::join!(
+                finish_stream_capture(drain_out),
+                finish_stream_capture(drain_err)
+            );
             if let Some(d) = term_diag {
                 degraded_diagnostics.push(d);
             }
@@ -772,7 +888,8 @@ impl BashOperations for LocalBashOperations {
                 }
                 Control::WaitFailed => Err(BashOpError::WaitFailed {
                     message: "failed to wait for process".to_string(),
-                }),
+                }
+                .with_diagnostics(degraded_diagnostics)),
                 Control::Done(status) => {
                     let exit_code = status.code();
                     #[cfg(unix)]
@@ -828,6 +945,41 @@ enum Control {
     TimedOut { kill_error: Option<String> },
     Cancelled { kill_error: Option<String> },
     WaitFailed,
+}
+
+const TERMINATED_PIPE_DRAIN_GRACE: Duration = Duration::from_millis(500);
+
+fn spawn_stream_capture<R>(stream: Option<R>) -> tokio::task::JoinHandle<StreamCapture>
+where
+    R: tokio::io::AsyncRead + Unpin + Send + 'static,
+{
+    tokio::spawn(async move {
+        let mut capture = StreamCapture::new(MAX_BASH_OUTPUT_BYTES);
+        if let Some(mut stream) = stream {
+            let mut buffer = [0u8; 8192];
+            loop {
+                match stream.read(&mut buffer).await {
+                    Ok(0) | Err(_) => break,
+                    Ok(read) => capture.append(&buffer[..read]),
+                }
+            }
+        }
+        capture
+    })
+}
+
+async fn finish_stream_capture(
+    mut handle: tokio::task::JoinHandle<StreamCapture>,
+) -> StreamCapture {
+    match tokio::time::timeout(TERMINATED_PIPE_DRAIN_GRACE, &mut handle).await {
+        Ok(Ok(capture)) => capture,
+        Ok(Err(_)) => StreamCapture::new(MAX_BASH_OUTPUT_BYTES),
+        Err(_) => {
+            handle.abort();
+            let _ = handle.await;
+            StreamCapture::new(MAX_BASH_OUTPUT_BYTES)
+        }
+    }
 }
 
 /// Build the in-band operation-context [`ToolDiagnostic`] (local type) that
@@ -904,6 +1056,19 @@ fn temporary_gap_diagnostic(gap: &TemporaryGap) -> ToolDiagnostic {
             "reason": gap.reason,
         })),
     }
+}
+
+fn summarize_gap_layers(gaps: &[TemporaryGap]) -> String {
+    let mut names = gaps
+        .iter()
+        .map(|gap| gap.layer.as_str())
+        .collect::<Vec<_>>();
+    names.sort_unstable();
+    names.dedup();
+    format!(
+        "strict sandbox unavailable for layer(s): {}",
+        names.join(", ")
+    )
 }
 
 /// Bounded capture of one output stream (stdout or stderr). Holds the first
@@ -1063,7 +1228,196 @@ impl LocalFileOperations {
 
 #[cfg(test)]
 mod tests {
+    use super::super::process_tree::TestTreeFaults;
     use super::*;
+
+    fn pipe_holding_descendant_command(dir: &Path, pidfile: &Path) -> String {
+        #[cfg(windows)]
+        {
+            let script = dir.join("spawn-pipe-holder.ps1");
+            let body = format!(
+                "$p = Start-Process powershell -ArgumentList '-NoProfile','-Command','Start-Sleep -Seconds 60' -NoNewWindow -PassThru\n$p.Id | Set-Content -NoNewline '{}'\nexit 0\n",
+                pidfile.to_string_lossy()
+            );
+            std::fs::write(&script, body).unwrap();
+            format!(
+                "powershell -NoProfile -ExecutionPolicy Bypass -File {}",
+                script.to_string_lossy()
+            )
+        }
+        #[cfg(unix)]
+        {
+            let _ = dir;
+            format!(
+                "sh -c 'echo $$ > \"{}\"; sleep 60' & while [ ! -s \"{}\" ]; do sleep 0.01; done; exit 0",
+                pidfile.to_string_lossy(),
+                pidfile.to_string_lossy()
+            )
+        }
+    }
+
+    async fn read_test_pid(path: &Path) -> u32 {
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(3);
+        loop {
+            if let Ok(value) = std::fs::read_to_string(path)
+                && let Ok(pid) = value.trim().parse()
+            {
+                return pid;
+            }
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "descendant did not record its PID"
+            );
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+    }
+
+    fn test_process_alive(pid: u32) -> bool {
+        #[cfg(windows)]
+        {
+            std::process::Command::new("tasklist")
+                .args(["/FI", &format!("PID eq {pid}"), "/NH"])
+                .output()
+                .map(|output| {
+                    let text = String::from_utf8_lossy(&output.stdout);
+                    text.contains(&pid.to_string()) && !text.contains("No tasks")
+                })
+                .unwrap_or(false)
+        }
+        #[cfg(unix)]
+        {
+            std::process::Command::new("kill")
+                .args(["-0", &pid.to_string()])
+                .status()
+                .map(|status| status.success())
+                .unwrap_or(false)
+        }
+    }
+
+    fn cleanup_test_process(pid: u32) {
+        #[cfg(windows)]
+        {
+            let _ = std::process::Command::new("taskkill")
+                .args(["/PID", &pid.to_string(), "/T", "/F"])
+                .output();
+        }
+        #[cfg(unix)]
+        {
+            let _ = std::process::Command::new("kill")
+                .args(["-KILL", &pid.to_string()])
+                .output();
+        }
+    }
+
+    async fn run_pipe_holder_with_fault(faults: TestTreeFaults) -> BashResult {
+        let dir = tempfile::tempdir().unwrap();
+        let pidfile = dir.path().join("descendant.pid");
+        let request = BashRequest {
+            command: pipe_holding_descendant_command(dir.path(), &pidfile),
+            cwd: dir.path().to_path_buf(),
+            timeout: Duration::from_secs(10),
+            signal: CancellationToken::new(),
+            env: vec![],
+        };
+        let result = tokio::time::timeout(
+            Duration::from_secs(3),
+            LocalBashOperations::with_test_tree_faults(faults).exec(request),
+        )
+        .await
+        .expect("pipe drains must be bounded after tree termination")
+        .expect("fault injection is fail-open");
+        let pid = read_test_pid(&pidfile).await;
+        cleanup_test_process(pid);
+        result
+    }
+
+    #[tokio::test]
+    async fn injected_attach_failure_cannot_hang_on_descendant_held_pipes() {
+        let result = run_pipe_holder_with_fault(TestTreeFaults::attach()).await;
+        assert_eq!(result.exit_code, Some(0));
+        assert!(result.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == crate::diagnostics::CODE_SANDBOX_DEGRADED
+                && diagnostic
+                    .details
+                    .as_ref()
+                    .and_then(|details| details.get("reason"))
+                    .and_then(serde_json::Value::as_str)
+                    == Some("injected attach failure")
+        }));
+    }
+
+    #[tokio::test]
+    async fn injected_terminate_failure_cannot_hang_on_descendant_held_pipes() {
+        let result = run_pipe_holder_with_fault(TestTreeFaults::terminate()).await;
+        assert_eq!(result.exit_code, Some(0));
+        assert!(result.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == crate::diagnostics::CODE_SANDBOX_DEGRADED
+                && diagnostic
+                    .details
+                    .as_ref()
+                    .and_then(|details| details.get("reason"))
+                    .and_then(serde_json::Value::as_str)
+                    == Some("injected terminate failure")
+        }));
+    }
+
+    #[tokio::test]
+    async fn clean_shell_exit_kills_remaining_tree_and_preserves_zero_status() {
+        let dir = tempfile::tempdir().unwrap();
+        let pidfile = dir.path().join("descendant.pid");
+        let result = LocalBashOperations::new()
+            .exec(BashRequest {
+                command: pipe_holding_descendant_command(dir.path(), &pidfile),
+                cwd: dir.path().to_path_buf(),
+                timeout: Duration::from_secs(10),
+                signal: CancellationToken::new(),
+                env: vec![],
+            })
+            .await
+            .unwrap();
+        let pid = read_test_pid(&pidfile).await;
+
+        assert_eq!(result.exit_code, Some(0));
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(3);
+        while test_process_alive(pid) && tokio::time::Instant::now() < deadline {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        if test_process_alive(pid) {
+            cleanup_test_process(pid);
+            panic!("clean shell exit left descendant PID {pid} alive");
+        }
+    }
+
+    #[test]
+    fn default_macos_launcher_composition_preserves_shell_arguments() {
+        let confinement = crate::sandbox::macos::build_macos_confinement(
+            Path::new("."),
+            &crate::sandbox::macos::SandboxExecStatus::Available,
+            &[
+                crate::sandbox::SandboxLayer::Fs,
+                crate::sandbox::SandboxLayer::Network,
+            ],
+        )
+        .expect("default macOS L1/L2 layers build a launcher");
+        let command = build_bash_command(
+            "sh",
+            "-c",
+            "printf '%s' 'verbatim value'",
+            Path::new("."),
+            &[("CANARY".to_string(), "value".to_string())],
+            Some(&confinement),
+        );
+        assert_eq!(command.as_std().get_program(), "sandbox-exec");
+        let args = command
+            .as_std()
+            .get_args()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+        assert_eq!(args.first().map(String::as_str), Some("-p"));
+        assert!(args[1].contains("(deny network*)"));
+        assert!(args[1].contains("file-write*"));
+        assert_eq!(&args[2..], &["sh", "-c", "printf '%s' 'verbatim value'"]);
+    }
 
     #[tokio::test]
     async fn local_file_operations_write_then_read_roundtrips() {
@@ -1073,6 +1427,29 @@ mod tests {
         ops.write_file(&target, b"hello").await.unwrap();
         let read = ops.read_file(&target).await.unwrap();
         assert_eq!(read, b"hello");
+    }
+
+    #[test]
+    fn io_mapper_classifies_portable_error_kinds() {
+        let path = PathBuf::from("injected");
+        let cases = [
+            (
+                io::ErrorKind::NotFound,
+                FsOpError::NotFound { path: path.clone() },
+            ),
+            (
+                io::ErrorKind::PermissionDenied,
+                FsOpError::PermissionDenied { path: path.clone() },
+            ),
+            (
+                io::ErrorKind::NotADirectory,
+                FsOpError::NotADirectory { path: path.clone() },
+            ),
+        ];
+
+        for (kind, expected) in cases {
+            assert_eq!(io_to_fs_error(&path, io::Error::from(kind)), expected);
+        }
     }
 
     /// Smoke-addendum (DoD): a failed atomic replacement preserves the prior
@@ -1139,6 +1516,127 @@ mod tests {
             .filter(|n| n.contains("opi-ops-tmp"))
             .collect();
         assert!(residue.is_empty(), "temp residue left behind: {residue:?}");
+    }
+
+    #[tokio::test]
+    async fn atomic_write_retries_without_overwriting_regular_file_collision() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("target.txt");
+        let collision = dir.path().join(".target.txt.collision");
+        let available = dir.path().join(".target.txt.available");
+        std::fs::write(&collision, "sentinel").unwrap();
+        let mut candidates = [collision.clone(), available].into_iter();
+
+        atomic_write_bytes_with_temp_path(
+            &target,
+            b"replacement",
+            AtomicWriteFailPoint::None,
+            || {
+                Ok(candidates
+                    .next()
+                    .expect("atomic write requested too many candidates"))
+            },
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), "replacement");
+        assert_eq!(
+            std::fs::read_to_string(&collision).unwrap(),
+            "sentinel",
+            "create_new staging must not overwrite a colliding regular file"
+        );
+    }
+
+    async fn assert_atomic_write_does_not_follow_symlink_collision(
+        dir: &Path,
+        sentinel: &Path,
+        collision: &Path,
+    ) {
+        let target = dir.join("target.txt");
+        let available = dir.join(".target.txt.available");
+        let mut candidates = [collision.to_path_buf(), available].into_iter();
+
+        atomic_write_bytes_with_temp_path(
+            &target,
+            b"replacement",
+            AtomicWriteFailPoint::None,
+            || {
+                Ok(candidates
+                    .next()
+                    .expect("atomic write requested too many candidates"))
+            },
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), "replacement");
+        assert_eq!(
+            std::fs::read_to_string(sentinel).unwrap(),
+            "sentinel",
+            "create_new staging must not follow a colliding symlink"
+        );
+        assert!(
+            std::fs::symlink_metadata(collision)
+                .unwrap()
+                .file_type()
+                .is_symlink(),
+            "colliding symlink must remain in place"
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn atomic_write_retries_without_following_symlink_collision() {
+        let dir = tempfile::tempdir().unwrap();
+        let sentinel = dir.path().join("sentinel.txt");
+        let collision = dir.path().join(".target.txt.collision-link");
+        std::fs::write(&sentinel, "sentinel").unwrap();
+        std::os::unix::fs::symlink(&sentinel, &collision).unwrap();
+
+        assert_atomic_write_does_not_follow_symlink_collision(dir.path(), &sentinel, &collision)
+            .await;
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    #[ignore = "requires Windows symbolic-link privilege; Unix CI exercises this behavior"]
+    async fn atomic_write_retries_without_following_symlink_collision_windows_privileged() {
+        let dir = tempfile::tempdir().unwrap();
+        let sentinel = dir.path().join("sentinel.txt");
+        let collision = dir.path().join(".target.txt.collision-link");
+        std::fs::write(&sentinel, "sentinel").unwrap();
+        std::os::windows::fs::symlink_file(&sentinel, &collision)
+            .expect("run ignored test with Windows symbolic-link privilege");
+
+        assert_atomic_write_does_not_follow_symlink_collision(dir.path(), &sentinel, &collision)
+            .await;
+    }
+
+    #[tokio::test]
+    async fn atomic_write_bounds_collision_retries() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("target.txt");
+        let collision = dir.path().join(".target.txt.collision");
+        std::fs::write(&collision, "sentinel").unwrap();
+        let mut attempts = 0;
+
+        let error = atomic_write_bytes_with_temp_path(
+            &target,
+            b"replacement",
+            AtomicWriteFailPoint::None,
+            || {
+                attempts += 1;
+                Ok(collision.clone())
+            },
+        )
+        .await
+        .unwrap_err();
+
+        assert_eq!(attempts, MAX_ATOMIC_TEMP_ATTEMPTS);
+        assert!(matches!(error, FsOpError::Io { .. }));
+        assert!(!target.exists());
+        assert_eq!(std::fs::read_to_string(collision).unwrap(), "sentinel");
     }
 
     // ---- StreamCapture single-cursor invariant (moved here from bash.rs in

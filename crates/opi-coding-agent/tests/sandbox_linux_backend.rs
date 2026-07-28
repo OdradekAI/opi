@@ -148,6 +148,29 @@ fn built_filter_encodes_socket_gate_danger_blocklist_and_actions() {
     }
 }
 
+#[test]
+fn layer_specific_filters_do_not_apply_disabled_mechanisms() {
+    let network_only =
+        linux::build_seccomp_rules_for_layers(true, false).expect("network rules build");
+    assert!(network_only.contains_key(&libc::SYS_socket));
+    for (_, syscall) in linux::danger_syscalls() {
+        assert!(
+            !network_only.contains_key(&syscall),
+            "network-only filter must not deny syscall layer entry {syscall}"
+        );
+    }
+
+    let syscalls_only =
+        linux::build_seccomp_rules_for_layers(false, true).expect("syscall rules build");
+    assert!(!syscalls_only.contains_key(&libc::SYS_socket));
+    for (_, syscall) in linux::danger_syscalls() {
+        assert!(
+            syscalls_only.contains_key(&syscall),
+            "syscall-only filter must include danger entry {syscall}"
+        );
+    }
+}
+
 /// The Landlock ABI-4 filesystem-rights model is captured (the L1
 /// workspace-write layer's capability surface). The expected value is built
 /// independently of `from_all(ABI::V4)` (named rights via `make_bitflags!`), so
@@ -184,6 +207,96 @@ fn apply_empty_filter_translates_to_stable_error_without_spawning_command() {
     let empty: seccompiler::BpfProgram = Vec::new();
     let err = linux::apply_raw_filter(&empty).unwrap_err();
     assert_eq!(err, linux::StableErrno::EmptyFilter);
+}
+
+#[test]
+fn unsupported_target_arch_is_a_typed_pre_engagement_failure() {
+    let error = linux::build_seccomp_program_for_arch("mips64")
+        .expect_err("unsupported target must fail before engagement");
+    assert_eq!(error, linux::LinuxBuildError::UnsupportedArchitecture);
+}
+
+#[test]
+fn stable_errno_mapping_covers_every_child_setup_error_family() {
+    use linux::StableErrno;
+
+    assert_eq!(StableErrno::Prctl(libc::EPERM).raw_os_error(), libc::EPERM);
+    assert_eq!(
+        StableErrno::Seccomp(libc::EACCES).raw_os_error(),
+        libc::EACCES
+    );
+    assert_eq!(StableErrno::ThreadSync.raw_os_error(), libc::EBUSY);
+    assert_eq!(StableErrno::Backend.raw_os_error(), libc::EINVAL);
+    assert_eq!(StableErrno::EmptyFilter.raw_os_error(), libc::EINVAL);
+
+    assert_eq!(
+        StableErrno::from(seccompiler::Error::Prctl(
+            std::io::Error::from_raw_os_error(libc::EPERM)
+        )),
+        StableErrno::Prctl(libc::EPERM)
+    );
+    assert_eq!(
+        StableErrno::from(seccompiler::Error::Seccomp(
+            std::io::Error::from_raw_os_error(libc::EACCES)
+        )),
+        StableErrno::Seccomp(libc::EACCES)
+    );
+    assert_eq!(
+        StableErrno::from(seccompiler::Error::Prctl(std::io::Error::other(
+            "no raw errno"
+        ))),
+        StableErrno::Prctl(libc::EINVAL)
+    );
+    assert_eq!(
+        StableErrno::from(seccompiler::Error::Seccomp(std::io::Error::other(
+            "no raw errno"
+        ))),
+        StableErrno::Seccomp(libc::EINVAL)
+    );
+    assert_eq!(
+        StableErrno::from(seccompiler::Error::ThreadSync(42)),
+        StableErrno::ThreadSync
+    );
+    assert_eq!(
+        StableErrno::from(seccompiler::Error::Backend(
+            seccompiler::BackendError::IdenticalActions
+        )),
+        StableErrno::Backend
+    );
+    assert_eq!(
+        StableErrno::from(seccompiler::Error::EmptyFilter),
+        StableErrno::EmptyFilter
+    );
+}
+
+/// Lexical guard only: this catches explicit formatting/allocation constructs
+/// written directly in the `pre_exec` closure. Errno and spawn regressions cover
+/// called-helper behavior separately.
+#[test]
+fn lexical_pre_exec_closure_has_no_explicit_formatting_or_heap_construction() {
+    let source = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/tool/process_tree.rs"),
+    )
+    .expect("process-tree source is readable");
+    let closure = source
+        .split_once("cmd.as_std_mut().pre_exec")
+        .expect("pre_exec closure exists")
+        .1
+        .split_once("\n        })")
+        .expect("pre_exec closure terminator")
+        .0;
+    for forbidden in [
+        "format!(",
+        "Error::other(",
+        "to_string(",
+        "Arc::new(",
+        "Vec::",
+    ] {
+        assert!(
+            !closure.contains(forbidden),
+            "lexical pre_exec closure contains `{forbidden}`"
+        );
+    }
 }
 
 /// The Landlock TCP capability follows the observed ABI (>= V4 / Linux 6.7),
