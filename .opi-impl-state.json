@@ -2,15 +2,1544 @@
   "schema_version": 2,
   "spec_files": [
     "docs/opi-spec.md",
-    "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md"
+    "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md"
   ],
   "spec_files_sha256": {
-    "docs/opi-spec.md": "3d5947e1cddc0934f9c2df29d11ca6797bb4988780d4dc32947bfc600c9435ca",
-    "docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md": "5d5b42a6997c6e0de8234ac1c6fe5b3e6b849fc35af988dbf09fb2729c979885"
+    "docs/opi-spec.md": "6ec2f61a4e4bb2b4a1c315790e845ed8778fb14088abbcaf5f50dc6a313031ae",
+    "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md": "d1a5c4403908fa7981da8e741ade49d00b25972d17360371d55799b08ca7be9e"
   },
-  "task_graph_confirmed_at": "2026-07-27T14:03:22.331Z",
+  "task_graph_confirmed_at": "2026-07-28T08:04:22.0204172Z",
   "current_phase": 16,
-  "tasks": [],
+  "tasks": [
+    {
+      "id": "16.1",
+      "phase": 16,
+      "title": "Verify the canonical source and reconcile the ledger",
+      "crate": "opi-coding-agent",
+      "parent_spec_row": null,
+      "definition_of_done": "The Phase 16 documentation guard binds the canonical Phase 16 and renamed Phase 18 sources, rejects the old Phase 16 filename and premature Phase 17 benchmark specs, and pins Minimal Runtime, five lifecycle gates, no fallback, standalone CLI acceptance, and Phase 19/20 deferrals.",
+      "definition_source": "draft-reviewed",
+      "replaces": null,
+      "status": "failing",
+      "depends_on": [],
+      "inference_notes": [
+        {
+          "field": "definition_of_done",
+          "reason": "Derived from the approved Phase 16 implementation plan task and its observable checkpoint.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md"
+        },
+        {
+          "field": "depends_on",
+          "reason": "Derived from the approved Candidate Task Graph sequencing.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Copied from the task's explicit Files list; shared files remain serialized.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md"
+        },
+        {
+          "field": "forbidden_scope",
+          "reason": "Keep the Opi core usable without executable extensions; do not add Docker/Gondolin/SSH adapters, project-level executable contributions, arbitrary new tools, or a Phase 17 benchmark design.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md"
+        }
+      ],
+      "tier": "documentation",
+      "commit_type": "test",
+      "parallelize": [],
+      "evaluator_required": false,
+      "verification": {
+        "library_gates": [
+          "cargo test -p opi-coding-agent --test phase16_extension_docs -- --nocapture"
+        ],
+        "behavioral_tests": [
+          "crates/opi-coding-agent/tests/phase16_extension_docs.rs"
+        ],
+        "snapshot_tests": [],
+        "smoke_addendum": null
+      },
+      "acceptance_scenarios": [],
+      "production_call_sites": [],
+      "substrate_only": true,
+      "iteration_count": 0,
+      "max_iterations": 5,
+      "start_commit": null,
+      "baseline_dirty_files": [],
+      "task_owned_paths": [
+        "crates/opi-coding-agent/tests/phase16_extension_docs.rs"
+      ],
+      "last_attempt": null,
+      "verified_at_commit": null,
+      "evidence": null,
+      "blocker": null,
+      "session_notes": []
+    },
+    {
+      "id": "16.2",
+      "phase": 16,
+      "title": "Pin L0 supervision and separate it from sandbox policy",
+      "crate": "opi-coding-agent",
+      "parent_spec_row": null,
+      "definition_of_done": "Policy-neutral TreeGuard supervision terminates descendants for clean exit, timeout, cancellation, dropped futures, and wait failure; adapter-host cleanup uses the same primitive and redacted execution diagnostics.",
+      "definition_source": "draft-reviewed",
+      "replaces": null,
+      "status": "failing",
+      "depends_on": [
+        "16.1"
+      ],
+      "inference_notes": [
+        {
+          "field": "definition_of_done",
+          "reason": "Derived from the approved Phase 16 implementation plan task and its observable checkpoint.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md"
+        },
+        {
+          "field": "depends_on",
+          "reason": "Derived from the approved Candidate Task Graph sequencing.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Copied from the task's explicit Files list; shared files remain serialized.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md"
+        },
+        {
+          "field": "forbidden_scope",
+          "reason": "Keep the Opi core usable without executable extensions; do not add Docker/Gondolin/SSH adapters, project-level executable contributions, arbitrary new tools, or a Phase 17 benchmark design.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md"
+        }
+      ],
+      "tier": "library",
+      "commit_type": "refactor",
+      "parallelize": [],
+      "evaluator_required": true,
+      "verification": {
+        "library_gates": [
+          "cargo test -p opi-coding-agent --test sandbox_l0 -- --nocapture",
+          "cargo test -p opi-coding-agent --test adapter_host -- --nocapture",
+          "cargo test -p opi-coding-agent --test bash_backend_diagnostics -- --nocapture"
+        ],
+        "behavioral_tests": [
+          "crates/opi-coding-agent/tests/sandbox_l0.rs",
+          "crates/opi-coding-agent/tests/adapter_host.rs",
+          "crates/opi-coding-agent/tests/bash_backend_diagnostics.rs"
+        ],
+        "snapshot_tests": [],
+        "smoke_addendum": null
+      },
+      "acceptance_scenarios": [
+        {
+          "id": "SC16-02",
+          "source": "Testing and Acceptance#L0 supervision",
+          "scenario": "Local clean exit, timeout, cancellation, dropped futures, and wait failures converge on bounded process-tree cleanup.",
+          "verification": [
+            "cargo test -p opi-coding-agent --test sandbox_l0 -- --nocapture"
+          ],
+          "production_call_sites": [
+            "TreeGuard::attach_child",
+            "TreeGuard::terminate",
+            "LocalBashOperations::execute"
+          ],
+          "status": "open"
+        }
+      ],
+      "production_call_sites": [
+        "TreeGuard::attach_child",
+        "TreeGuard::terminate",
+        "LocalBashOperations::execute"
+      ],
+      "substrate_only": false,
+      "iteration_count": 0,
+      "max_iterations": 5,
+      "start_commit": null,
+      "baseline_dirty_files": [],
+      "task_owned_paths": [
+        "crates/opi-coding-agent/src/tool/process_tree.rs",
+        "crates/opi-coding-agent/src/tool/operations.rs",
+        "crates/opi-coding-agent/src/adapter_host.rs",
+        "crates/opi-coding-agent/src/diagnostics.rs",
+        "crates/opi-coding-agent/tests/sandbox_l0.rs",
+        "crates/opi-coding-agent/tests/adapter_host.rs",
+        "crates/opi-coding-agent/tests/bash_backend_diagnostics.rs"
+      ],
+      "last_attempt": null,
+      "verified_at_commit": null,
+      "evidence": null,
+      "blocker": null,
+      "session_notes": []
+    },
+    {
+      "id": "16.3",
+      "phase": 16,
+      "title": "Add opi-protocol::execution::v1",
+      "crate": "opi-protocol",
+      "parent_spec_row": null,
+      "definition_of_done": "A dependency-neutral opi-protocol crate exposes closed command-execution-jsonl-v1 frames, lossless native strings, bounded JSONL codecs, deterministic schema generation, and valid/invalid fixtures without agent, process, or sandbox dependencies.",
+      "definition_source": "draft-reviewed",
+      "replaces": null,
+      "status": "failing",
+      "depends_on": [
+        "16.1"
+      ],
+      "inference_notes": [
+        {
+          "field": "definition_of_done",
+          "reason": "Derived from the approved Phase 16 implementation plan task and its observable checkpoint.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md"
+        },
+        {
+          "field": "depends_on",
+          "reason": "Derived from the approved Candidate Task Graph sequencing.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Copied from the task's explicit Files list; shared files remain serialized.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md"
+        },
+        {
+          "field": "forbidden_scope",
+          "reason": "Keep the Opi core usable without executable extensions; do not add Docker/Gondolin/SSH adapters, project-level executable contributions, arbitrary new tools, or a Phase 17 benchmark design.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md"
+        }
+      ],
+      "tier": "library",
+      "commit_type": "feat",
+      "parallelize": [],
+      "evaluator_required": true,
+      "verification": {
+        "library_gates": [
+          "cargo test -p opi-protocol --all-targets",
+          "cargo tree -p opi-protocol"
+        ],
+        "behavioral_tests": [
+          "crates/opi-protocol/tests/execution_v1_contract.rs",
+          "crates/opi-protocol/tests/execution_v1_schema.rs"
+        ],
+        "snapshot_tests": [],
+        "smoke_addendum": null
+      },
+      "acceptance_scenarios": [],
+      "production_call_sites": [],
+      "substrate_only": true,
+      "iteration_count": 0,
+      "max_iterations": 5,
+      "start_commit": null,
+      "baseline_dirty_files": [],
+      "task_owned_paths": [
+        "Cargo.toml",
+        "Cargo.lock",
+        "crates/opi-protocol/Cargo.toml",
+        "crates/opi-protocol/src/lib.rs",
+        "crates/opi-protocol/src/execution/mod.rs",
+        "crates/opi-protocol/src/execution/v1/mod.rs",
+        "crates/opi-protocol/src/execution/v1/codec.rs",
+        "crates/opi-protocol/src/execution/v1/frames.rs",
+        "crates/opi-protocol/src/execution/v1/schema.rs",
+        "crates/opi-protocol/schemas/command-execution-jsonl-v1.schema.json",
+        "crates/opi-protocol/fixtures/valid/normal.jsonl",
+        "crates/opi-protocol/fixtures/invalid/out-of-order.jsonl",
+        "crates/opi-protocol/fixtures/invalid/oversized.jsonl",
+        "crates/opi-protocol/tests/execution_v1_contract.rs",
+        "crates/opi-protocol/tests/execution_v1_schema.rs"
+      ],
+      "last_attempt": null,
+      "verified_at_commit": null,
+      "evidence": null,
+      "blocker": null,
+      "session_notes": []
+    },
+    {
+      "id": "16.4",
+      "phase": 16,
+      "title": "Parse and hard-gate executable contributions",
+      "crate": "opi-coding-agent",
+      "parent_spec_row": null,
+      "definition_of_done": "Global package manifests parse closed declarative command.execute contributions, reject project-level executable contributions and malformed or conflicting metadata before process start, and register metadata without executing it.",
+      "definition_source": "draft-reviewed",
+      "replaces": null,
+      "status": "failing",
+      "depends_on": [
+        "16.3"
+      ],
+      "inference_notes": [
+        {
+          "field": "definition_of_done",
+          "reason": "Derived from the approved Phase 16 implementation plan task and its observable checkpoint.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md"
+        },
+        {
+          "field": "depends_on",
+          "reason": "Derived from the approved Candidate Task Graph sequencing.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Copied from the task's explicit Files list; shared files remain serialized.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md"
+        },
+        {
+          "field": "forbidden_scope",
+          "reason": "Keep the Opi core usable without executable extensions; do not add Docker/Gondolin/SSH adapters, project-level executable contributions, arbitrary new tools, or a Phase 17 benchmark design.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md"
+        }
+      ],
+      "tier": "library",
+      "commit_type": "feat",
+      "parallelize": [],
+      "evaluator_required": true,
+      "verification": {
+        "library_gates": [
+          "cargo test -p opi-coding-agent --test execution_package_lifecycle -- --nocapture"
+        ],
+        "behavioral_tests": [
+          "crates/opi-coding-agent/tests/execution_package_lifecycle.rs"
+        ],
+        "snapshot_tests": [],
+        "smoke_addendum": null
+      },
+      "acceptance_scenarios": [],
+      "production_call_sites": [],
+      "substrate_only": true,
+      "iteration_count": 0,
+      "max_iterations": 5,
+      "start_commit": null,
+      "baseline_dirty_files": [],
+      "task_owned_paths": [
+        "crates/opi-coding-agent/Cargo.toml",
+        "crates/opi-coding-agent/src/package_discovery.rs",
+        "crates/opi-coding-agent/src/package_store.rs",
+        "crates/opi-coding-agent/src/package_resolver.rs",
+        "crates/opi-coding-agent/src/execution/mod.rs",
+        "crates/opi-coding-agent/src/execution/registry.rs",
+        "crates/opi-coding-agent/tests/execution_package_lifecycle.rs"
+      ],
+      "last_attempt": null,
+      "verified_at_commit": null,
+      "evidence": null,
+      "blocker": null,
+      "session_notes": []
+    },
+    {
+      "id": "16.5",
+      "phase": 16,
+      "title": "Add Package Trust and enable/disable lifecycle",
+      "crate": "opi-coding-agent",
+      "parent_spec_row": null,
+      "definition_of_done": "The package CLI and startup activation store independently persist installed, trusted, and enabled state; trust binds exact material, hash drift invalidates it, disable/remove prevent activation, and non-interactive commands cannot grant trust.",
+      "definition_source": "draft-reviewed",
+      "replaces": null,
+      "status": "failing",
+      "depends_on": [
+        "16.4"
+      ],
+      "inference_notes": [
+        {
+          "field": "definition_of_done",
+          "reason": "Derived from the approved Phase 16 implementation plan task and its observable checkpoint.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md"
+        },
+        {
+          "field": "depends_on",
+          "reason": "Derived from the approved Candidate Task Graph sequencing.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Copied from the task's explicit Files list; shared files remain serialized.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md"
+        },
+        {
+          "field": "forbidden_scope",
+          "reason": "Keep the Opi core usable without executable extensions; do not add Docker/Gondolin/SSH adapters, project-level executable contributions, arbitrary new tools, or a Phase 17 benchmark design.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md"
+        }
+      ],
+      "tier": "cli-runtime",
+      "commit_type": "feat",
+      "parallelize": [],
+      "evaluator_required": true,
+      "verification": {
+        "library_gates": [
+          "cargo test -p opi-coding-agent --test execution_package_lifecycle -- --nocapture",
+          "cargo test -p opi-coding-agent --test package_cli -- --nocapture"
+        ],
+        "behavioral_tests": [
+          "crates/opi-coding-agent/tests/execution_package_lifecycle.rs",
+          "crates/opi-coding-agent/tests/package_cli.rs",
+          "crates/opi-coding-agent/tests/harness_resource_integration.rs"
+        ],
+        "snapshot_tests": [],
+        "smoke_addendum": null
+      },
+      "acceptance_scenarios": [
+        {
+          "id": "SC16-03",
+          "source": "Testing and Acceptance#Package state and trust",
+          "scenario": "Package add, trust, enable, disable, remove, list, doctor, hash-drift invalidation, and startup activation enforce independent lifecycle gates.",
+          "verification": [
+            "cargo test -p opi-coding-agent --test execution_package_lifecycle -- --nocapture"
+          ],
+          "production_call_sites": [
+            "package CLI dispatch",
+            "PackageActivationStore",
+            "runtime package activation"
+          ],
+          "status": "open"
+        }
+      ],
+      "production_call_sites": [
+        "package CLI dispatch",
+        "PackageActivationStore",
+        "runtime package activation"
+      ],
+      "substrate_only": false,
+      "iteration_count": 0,
+      "max_iterations": 5,
+      "start_commit": null,
+      "baseline_dirty_files": [],
+      "task_owned_paths": [
+        "crates/opi-coding-agent/src/lib.rs",
+        "crates/opi-coding-agent/src/cli.rs",
+        "crates/opi-coding-agent/src/package_cli.rs",
+        "crates/opi-coding-agent/src/package_store.rs",
+        "crates/opi-coding-agent/src/package_resolver.rs",
+        "crates/opi-coding-agent/src/runtime_packages.rs",
+        "crates/opi-coding-agent/src/package_activation.rs",
+        "crates/opi-coding-agent/tests/execution_package_lifecycle.rs",
+        "crates/opi-coding-agent/tests/package_cli.rs",
+        "crates/opi-coding-agent/tests/harness_resource_integration.rs"
+      ],
+      "last_attempt": null,
+      "verified_at_commit": null,
+      "evidence": null,
+      "blocker": null,
+      "session_notes": []
+    },
+    {
+      "id": "16.6",
+      "phase": 16,
+      "title": "Add execution configuration, failures, routing, and permission policy",
+      "crate": "opi-coding-agent",
+      "parent_spec_row": null,
+      "definition_of_done": "Layered execution routing resolves fixed, rules, and model strategies deterministically; CLI backend/strategy overrides cannot grant trust or permission; only user config persists capability permissions; project permission sections are rejected; stable failures are redacted and actionable.",
+      "definition_source": "draft-reviewed",
+      "replaces": null,
+      "status": "failing",
+      "depends_on": [
+        "16.5"
+      ],
+      "inference_notes": [
+        {
+          "field": "definition_of_done",
+          "reason": "Derived from the approved Phase 16 implementation plan task and its observable checkpoint.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md"
+        },
+        {
+          "field": "depends_on",
+          "reason": "Derived from the approved Candidate Task Graph sequencing.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Copied from the task's explicit Files list; shared files remain serialized.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md"
+        },
+        {
+          "field": "forbidden_scope",
+          "reason": "Keep the Opi core usable without executable extensions; do not add Docker/Gondolin/SSH adapters, project-level executable contributions, arbitrary new tools, or a Phase 17 benchmark design.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md"
+        }
+      ],
+      "tier": "library",
+      "commit_type": "feat",
+      "parallelize": [],
+      "evaluator_required": true,
+      "verification": {
+        "library_gates": [
+          "cargo test -p opi-coding-agent --test execution_config -- --nocapture",
+          "cargo test -p opi-coding-agent --test execution_failures -- --nocapture",
+          "cargo test -p opi-coding-agent --test execution_permission -- --nocapture",
+          "cargo test -p opi-coding-agent --test execution_routing -- --nocapture"
+        ],
+        "behavioral_tests": [
+          "crates/opi-coding-agent/tests/execution_config.rs",
+          "crates/opi-coding-agent/tests/execution_failures.rs",
+          "crates/opi-coding-agent/tests/execution_permission.rs",
+          "crates/opi-coding-agent/tests/execution_routing.rs"
+        ],
+        "snapshot_tests": [],
+        "smoke_addendum": null
+      },
+      "acceptance_scenarios": [],
+      "production_call_sites": [],
+      "substrate_only": true,
+      "iteration_count": 0,
+      "max_iterations": 5,
+      "start_commit": null,
+      "baseline_dirty_files": [],
+      "task_owned_paths": [
+        "crates/opi-coding-agent/src/config.rs",
+        "crates/opi-coding-agent/src/cli.rs",
+        "crates/opi-coding-agent/src/execution/mod.rs",
+        "crates/opi-coding-agent/src/execution/failure.rs",
+        "crates/opi-coding-agent/src/execution/permission.rs",
+        "crates/opi-coding-agent/src/execution/router.rs",
+        "crates/opi-coding-agent/tests/execution_config.rs",
+        "crates/opi-coding-agent/tests/execution_failures.rs",
+        "crates/opi-coding-agent/tests/execution_permission.rs",
+        "crates/opi-coding-agent/tests/execution_routing.rs"
+      ],
+      "last_attempt": null,
+      "verified_at_commit": null,
+      "evidence": null,
+      "blocker": null,
+      "session_notes": []
+    },
+    {
+      "id": "16.7",
+      "phase": 16,
+      "title": "Implement the one-shot execution protocol host",
+      "crate": "opi-coding-agent",
+      "parent_spec_row": null,
+      "definition_of_done": "The production protocol host launches one adapter per request, enforces ready/accepted/started/output/terminal ordering and frame limits, propagates cancellation and deadlines, cleans the process tree, and returns stable failures without retrying locally.",
+      "definition_source": "draft-reviewed",
+      "replaces": null,
+      "status": "failing",
+      "depends_on": [
+        "16.2",
+        "16.3",
+        "16.6"
+      ],
+      "inference_notes": [
+        {
+          "field": "definition_of_done",
+          "reason": "Derived from the approved Phase 16 implementation plan task and its observable checkpoint.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md"
+        },
+        {
+          "field": "depends_on",
+          "reason": "Derived from the approved Candidate Task Graph sequencing.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Copied from the task's explicit Files list; shared files remain serialized.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md"
+        },
+        {
+          "field": "forbidden_scope",
+          "reason": "Keep the Opi core usable without executable extensions; do not add Docker/Gondolin/SSH adapters, project-level executable contributions, arbitrary new tools, or a Phase 17 benchmark design.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md"
+        }
+      ],
+      "tier": "cli-runtime",
+      "commit_type": "feat",
+      "parallelize": [],
+      "evaluator_required": true,
+      "verification": {
+        "library_gates": [
+          "cargo test -p opi-coding-agent --features execution-backend-test-fixture --test execution_protocol_host -- --nocapture"
+        ],
+        "behavioral_tests": [
+          "crates/opi-coding-agent/tests/execution_protocol_host.rs",
+          "crates/opi-coding-agent/tests/fixtures/execution_backend_mock.rs"
+        ],
+        "snapshot_tests": [],
+        "smoke_addendum": null
+      },
+      "acceptance_scenarios": [
+        {
+          "id": "SC16-06",
+          "source": "Testing and Acceptance#Protocol contract",
+          "scenario": "The neutral v1 fixtures, real host, mock process, and non-Rust fixture client exercise one-shot initialize, execute, output, terminal, cancel, and cleanup ordering.",
+          "verification": [
+            "cargo test -p opi-coding-agent --features execution-backend-test-fixture --test execution_protocol_host -- --nocapture",
+            "cargo test -p opi-sandbox --test protocol_conformance -- --nocapture"
+          ],
+          "production_call_sites": [
+            "ExecutionProtocolHost::execute",
+            "opi_sandbox protocol backend"
+          ],
+          "status": "open"
+        }
+      ],
+      "production_call_sites": [
+        "ExecutionProtocolHost::execute",
+        "opi_sandbox protocol backend"
+      ],
+      "substrate_only": false,
+      "iteration_count": 0,
+      "max_iterations": 5,
+      "start_commit": null,
+      "baseline_dirty_files": [],
+      "task_owned_paths": [
+        "crates/opi-coding-agent/Cargo.toml",
+        "crates/opi-coding-agent/src/execution/mod.rs",
+        "crates/opi-coding-agent/src/execution/protocol_host.rs",
+        "crates/opi-coding-agent/tests/execution_protocol_host.rs",
+        "crates/opi-coding-agent/tests/fixtures/execution_backend_mock.rs"
+      ],
+      "last_attempt": null,
+      "verified_at_commit": null,
+      "evidence": null,
+      "blocker": null,
+      "session_notes": []
+    },
+    {
+      "id": "16.8",
+      "phase": 16,
+      "title": "Build routed operations and the Minimal Runtime split",
+      "crate": "opi-coding-agent",
+      "parent_spec_row": null,
+      "definition_of_done": "With no enabled executable extension, startup constructs the direct local operations fast path without package discovery, routing, permission, or protocol work; enabled extensions build the routed runtime and preserve the existing bash result contract.",
+      "definition_source": "draft-reviewed",
+      "replaces": null,
+      "status": "failing",
+      "depends_on": [
+        "16.5",
+        "16.6",
+        "16.7"
+      ],
+      "inference_notes": [
+        {
+          "field": "definition_of_done",
+          "reason": "Derived from the approved Phase 16 implementation plan task and its observable checkpoint.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md"
+        },
+        {
+          "field": "depends_on",
+          "reason": "Derived from the approved Candidate Task Graph sequencing.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Copied from the task's explicit Files list; shared files remain serialized.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md"
+        },
+        {
+          "field": "forbidden_scope",
+          "reason": "Keep the Opi core usable without executable extensions; do not add Docker/Gondolin/SSH adapters, project-level executable contributions, arbitrary new tools, or a Phase 17 benchmark design.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md"
+        }
+      ],
+      "tier": "cli-runtime",
+      "commit_type": "feat",
+      "parallelize": [],
+      "evaluator_required": true,
+      "verification": {
+        "library_gates": [
+          "cargo test -p opi-coding-agent --test execution_minimal_runtime -- --nocapture",
+          "cargo test -p opi-coding-agent --features execution-backend-test-fixture --test execution_product -- --nocapture"
+        ],
+        "behavioral_tests": [
+          "crates/opi-coding-agent/tests/execution_minimal_runtime.rs",
+          "crates/opi-coding-agent/tests/execution_product.rs"
+        ],
+        "snapshot_tests": [],
+        "smoke_addendum": null
+      },
+      "acceptance_scenarios": [
+        {
+          "id": "SC16-01",
+          "source": "Testing and Acceptance#Minimal Runtime",
+          "scenario": "Starting Opi without enabled executable extensions ignores an invalid package store and preserves the local bash schema and result contract.",
+          "verification": [
+            "cargo test -p opi-coding-agent --test execution_minimal_runtime -- --nocapture"
+          ],
+          "production_call_sites": [
+            "ExecutionRuntime::build",
+            "BashTool::execute"
+          ],
+          "status": "open"
+        }
+      ],
+      "production_call_sites": [
+        "ExecutionRuntime::build",
+        "BashTool::execute"
+      ],
+      "substrate_only": false,
+      "iteration_count": 0,
+      "max_iterations": 5,
+      "start_commit": null,
+      "baseline_dirty_files": [],
+      "task_owned_paths": [
+        "crates/opi-coding-agent/src/lib.rs",
+        "crates/opi-coding-agent/src/main.rs",
+        "crates/opi-coding-agent/src/harness.rs",
+        "crates/opi-coding-agent/src/runner.rs",
+        "crates/opi-coding-agent/src/rpc.rs",
+        "crates/opi-coding-agent/src/runtime_packages.rs",
+        "crates/opi-coding-agent/src/tool/operations.rs",
+        "crates/opi-coding-agent/src/execution/runtime.rs",
+        "crates/opi-coding-agent/src/execution/router.rs",
+        "crates/opi-coding-agent/tests/execution_minimal_runtime.rs",
+        "crates/opi-coding-agent/tests/execution_product.rs"
+      ],
+      "last_attempt": null,
+      "verified_at_commit": null,
+      "evidence": null,
+      "blocker": null,
+      "session_notes": []
+    },
+    {
+      "id": "16.9",
+      "phase": 16,
+      "title": "Wire the dynamic bash schema and headless surfaces",
+      "crate": "opi-coding-agent",
+      "parent_spec_row": null,
+      "definition_of_done": "The production bash schema exposes only eligible model-selectable backends; fixed/rules/model selection reaches BashTool execution; selected external failures never fall back; text, NDJSON, RPC, and doctor return stable structured routing and permission failures.",
+      "definition_source": "draft-reviewed",
+      "replaces": null,
+      "status": "failing",
+      "depends_on": [
+        "16.8"
+      ],
+      "inference_notes": [
+        {
+          "field": "definition_of_done",
+          "reason": "Derived from the approved Phase 16 implementation plan task and its observable checkpoint.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md"
+        },
+        {
+          "field": "depends_on",
+          "reason": "Derived from the approved Candidate Task Graph sequencing.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Copied from the task's explicit Files list; shared files remain serialized.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md"
+        },
+        {
+          "field": "forbidden_scope",
+          "reason": "Keep the Opi core usable without executable extensions; do not add Docker/Gondolin/SSH adapters, project-level executable contributions, arbitrary new tools, or a Phase 17 benchmark design.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md"
+        }
+      ],
+      "tier": "cli-runtime",
+      "commit_type": "feat",
+      "parallelize": [],
+      "evaluator_required": true,
+      "verification": {
+        "library_gates": [
+          "cargo test -p opi-coding-agent --test execution_routing -- --nocapture",
+          "cargo test -p opi-coding-agent --test non_interactive -- --nocapture",
+          "cargo test -p opi-coding-agent --test json_mode -- --nocapture",
+          "cargo test -p opi-coding-agent --test rpc_jsonl -- --nocapture",
+          "cargo test -p opi-coding-agent --test doctor_cli -- --nocapture"
+        ],
+        "behavioral_tests": [
+          "crates/opi-coding-agent/tests/tools_read_write_edit_bash.rs",
+          "crates/opi-coding-agent/tests/non_interactive.rs",
+          "crates/opi-coding-agent/tests/json_mode.rs",
+          "crates/opi-coding-agent/tests/rpc_jsonl.rs",
+          "crates/opi-coding-agent/tests/doctor_cli.rs",
+          "crates/opi-coding-agent/tests/execution_product.rs"
+        ],
+        "snapshot_tests": [],
+        "smoke_addendum": null
+      },
+      "acceptance_scenarios": [
+        {
+          "id": "SC16-04",
+          "source": "Testing and Acceptance#Routing and permission",
+          "scenario": "Fixed, rules, and model routing select only eligible adapters and expose the selected backend through the production bash definition.",
+          "verification": [
+            "cargo test -p opi-coding-agent --test execution_routing -- --nocapture"
+          ],
+          "production_call_sites": [
+            "CommandExecutionRouter::select",
+            "BashTool::definition"
+          ],
+          "status": "open"
+        },
+        {
+          "id": "SC16-07",
+          "source": "Testing and Acceptance#Routing and permission",
+          "scenario": "After an external backend is selected, crash, protocol, setup, execution, timeout, cancellation, and cleanup failures return stable failures without local fallback.",
+          "verification": [
+            "cargo test -p opi-coding-agent --features execution-backend-test-fixture --test execution_product -- --nocapture"
+          ],
+          "production_call_sites": [
+            "CommandExecutionRouter::select",
+            "ExecutionProtocolHost::execute",
+            "BashTool::execute"
+          ],
+          "status": "open"
+        }
+      ],
+      "production_call_sites": [
+        "CommandExecutionRouter::select",
+        "ExecutionProtocolHost::execute",
+        "BashTool::definition",
+        "BashTool::execute"
+      ],
+      "substrate_only": false,
+      "iteration_count": 0,
+      "max_iterations": 5,
+      "start_commit": null,
+      "baseline_dirty_files": [],
+      "task_owned_paths": [
+        "crates/opi-coding-agent/src/tool/bash.rs",
+        "crates/opi-coding-agent/src/tool/operations.rs",
+        "crates/opi-coding-agent/src/harness.rs",
+        "crates/opi-coding-agent/src/main.rs",
+        "crates/opi-coding-agent/src/runner.rs",
+        "crates/opi-coding-agent/src/rpc.rs",
+        "crates/opi-coding-agent/tests/tools_read_write_edit_bash.rs",
+        "crates/opi-coding-agent/tests/non_interactive.rs",
+        "crates/opi-coding-agent/tests/json_mode.rs",
+        "crates/opi-coding-agent/tests/rpc_jsonl.rs",
+        "crates/opi-coding-agent/tests/doctor_cli.rs",
+        "crates/opi-coding-agent/tests/execution_product.rs"
+      ],
+      "last_attempt": null,
+      "verified_at_commit": null,
+      "evidence": null,
+      "blocker": null,
+      "session_notes": []
+    },
+    {
+      "id": "16.10",
+      "phase": 16,
+      "title": "Add the interactive permission broker and TUI prompt",
+      "crate": "workspace",
+      "parent_spec_row": null,
+      "definition_of_done": "Interactive ask pauses execution and offers allow once, allow for the current in-memory harness session, or deny; headless ask returns permission_required; decisions do not survive restart, resume, fork, or process exit.",
+      "definition_source": "draft-reviewed",
+      "replaces": null,
+      "status": "failing",
+      "depends_on": [
+        "16.9"
+      ],
+      "inference_notes": [
+        {
+          "field": "definition_of_done",
+          "reason": "Derived from the approved Phase 16 implementation plan task and its observable checkpoint.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md"
+        },
+        {
+          "field": "depends_on",
+          "reason": "Derived from the approved Candidate Task Graph sequencing.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Copied from the task's explicit Files list; shared files remain serialized.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md"
+        },
+        {
+          "field": "forbidden_scope",
+          "reason": "Keep the Opi core usable without executable extensions; do not add Docker/Gondolin/SSH adapters, project-level executable contributions, arbitrary new tools, or a Phase 17 benchmark design.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md"
+        }
+      ],
+      "tier": "tui",
+      "commit_type": "feat",
+      "parallelize": [],
+      "evaluator_required": true,
+      "verification": {
+        "library_gates": [
+          "cargo test -p opi-coding-agent --test interactive_permission -- --nocapture",
+          "cargo test -p opi-coding-agent --test interactive_mock -- --nocapture",
+          "cargo test -p opi-tui --all-targets"
+        ],
+        "behavioral_tests": [
+          "crates/opi-coding-agent/tests/interactive_permission.rs",
+          "crates/opi-coding-agent/tests/interactive_mock.rs"
+        ],
+        "snapshot_tests": [],
+        "smoke_addendum": null
+      },
+      "acceptance_scenarios": [
+        {
+          "id": "SC16-05",
+          "source": "Testing and Acceptance#Routing and permission",
+          "scenario": "Deny, ask, and allow produce allow-once, allow-session, deny, or headless permission_required outcomes without persistent CLI grants.",
+          "verification": [
+            "cargo test -p opi-coding-agent --test interactive_permission -- --nocapture"
+          ],
+          "production_call_sites": [
+            "PermissionManager",
+            "InteractivePermissionBroker",
+            "interactive TUI loop"
+          ],
+          "status": "open"
+        }
+      ],
+      "production_call_sites": [
+        "PermissionManager",
+        "InteractivePermissionBroker",
+        "interactive TUI loop"
+      ],
+      "substrate_only": false,
+      "iteration_count": 0,
+      "max_iterations": 5,
+      "start_commit": null,
+      "baseline_dirty_files": [],
+      "task_owned_paths": [
+        "crates/opi-tui/src/lib.rs",
+        "crates/opi-tui/src/status_bar.rs",
+        "crates/opi-tui/src/permission_prompt.rs",
+        "crates/opi-coding-agent/src/execution/permission.rs",
+        "crates/opi-coding-agent/src/execution/runtime.rs",
+        "crates/opi-coding-agent/src/harness.rs",
+        "crates/opi-coding-agent/src/interactive.rs",
+        "crates/opi-coding-agent/src/main.rs",
+        "crates/opi-coding-agent/tests/interactive_permission.rs",
+        "crates/opi-coding-agent/tests/interactive_mock.rs"
+      ],
+      "last_attempt": null,
+      "verified_at_commit": null,
+      "evidence": null,
+      "blocker": null,
+      "session_notes": []
+    },
+    {
+      "id": "16.11",
+      "phase": 16,
+      "title": "Build the standalone opi-sandbox SDK, CLI, and smoke scripts",
+      "crate": "opi-sandbox",
+      "parent_spec_row": null,
+      "definition_of_done": "The independent opi-sandbox crate exposes a stateless reusable SDK and human CLI for run and doctor; direct repeated calls preserve output and cleanup semantics without Opi configuration, sessions, or product dependencies.",
+      "definition_source": "draft-reviewed",
+      "replaces": null,
+      "status": "failing",
+      "depends_on": [
+        "16.2",
+        "16.3"
+      ],
+      "inference_notes": [
+        {
+          "field": "definition_of_done",
+          "reason": "Derived from the approved Phase 16 implementation plan task and its observable checkpoint.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md"
+        },
+        {
+          "field": "depends_on",
+          "reason": "Derived from the approved Candidate Task Graph sequencing.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Copied from the task's explicit Files list; shared files remain serialized.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md"
+        },
+        {
+          "field": "forbidden_scope",
+          "reason": "Keep the Opi core usable without executable extensions; do not add Docker/Gondolin/SSH adapters, project-level executable contributions, arbitrary new tools, or a Phase 17 benchmark design.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md"
+        }
+      ],
+      "tier": "cli-tool",
+      "commit_type": "feat",
+      "parallelize": [],
+      "evaluator_required": true,
+      "verification": {
+        "library_gates": [
+          "cargo test -p opi-sandbox --all-targets -- --nocapture"
+        ],
+        "behavioral_tests": [
+          "crates/opi-sandbox/tests/sdk_contract.rs",
+          "crates/opi-sandbox/tests/cli_contract.rs"
+        ],
+        "snapshot_tests": [],
+        "smoke_addendum": null
+      },
+      "acceptance_scenarios": [
+        {
+          "id": "SC16-08",
+          "source": "Testing and Acceptance#SDK and direct CLI",
+          "scenario": "Repeated direct SDK calls run independently of Opi and leave no descendants after success, timeout, cancellation, or dropped futures.",
+          "verification": [
+            "cargo test -p opi-sandbox --test sdk_contract -- --nocapture"
+          ],
+          "production_call_sites": [
+            "opi_sandbox::Sandbox::run"
+          ],
+          "status": "open"
+        }
+      ],
+      "production_call_sites": [
+        "opi_sandbox::Sandbox::run",
+        "opi_sandbox::cli::run"
+      ],
+      "substrate_only": false,
+      "iteration_count": 0,
+      "max_iterations": 5,
+      "start_commit": null,
+      "baseline_dirty_files": [],
+      "task_owned_paths": [
+        "Cargo.toml",
+        "Cargo.lock",
+        "crates/opi-sandbox/Cargo.toml",
+        "crates/opi-sandbox/src/lib.rs",
+        "crates/opi-sandbox/src/cli.rs",
+        "crates/opi-sandbox/src/main.rs",
+        "crates/opi-sandbox/src/platform/mod.rs",
+        "crates/opi-sandbox/src/platform/windows.rs",
+        "crates/opi-sandbox/src/policy.rs",
+        "crates/opi-sandbox/src/process_tree.rs",
+        "crates/opi-sandbox/src/runner.rs",
+        "crates/opi-sandbox/tests/sdk_contract.rs",
+        "crates/opi-sandbox/tests/cli_contract.rs",
+        "scripts/opi-sandbox-smoke.sh",
+        "scripts/opi-sandbox-smoke.ps1"
+      ],
+      "last_attempt": null,
+      "verified_at_commit": null,
+      "evidence": null,
+      "blocker": null,
+      "session_notes": []
+    },
+    {
+      "id": "16.12",
+      "phase": 16,
+      "title": "Add the atomic helper gate and protocol backend",
+      "crate": "opi-sandbox",
+      "parent_spec_row": null,
+      "definition_of_done": "The protocol backend does not start the target until helper setup succeeds and started is emitted; setup, protocol, timeout, cancellation, drop, and cleanup failures are bounded, terminal, and redacted.",
+      "definition_source": "draft-reviewed",
+      "replaces": null,
+      "status": "failing",
+      "depends_on": [
+        "16.11"
+      ],
+      "inference_notes": [
+        {
+          "field": "definition_of_done",
+          "reason": "Derived from the approved Phase 16 implementation plan task and its observable checkpoint.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md"
+        },
+        {
+          "field": "depends_on",
+          "reason": "Derived from the approved Candidate Task Graph sequencing.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Copied from the task's explicit Files list; shared files remain serialized.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md"
+        },
+        {
+          "field": "forbidden_scope",
+          "reason": "Keep the Opi core usable without executable extensions; do not add Docker/Gondolin/SSH adapters, project-level executable contributions, arbitrary new tools, or a Phase 17 benchmark design.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md"
+        }
+      ],
+      "tier": "library",
+      "commit_type": "feat",
+      "parallelize": [],
+      "evaluator_required": true,
+      "verification": {
+        "library_gates": [
+          "cargo test -p opi-sandbox --test protocol_conformance -- --nocapture",
+          "cargo test -p opi-sandbox --test sdk_contract -- --nocapture"
+        ],
+        "behavioral_tests": [
+          "crates/opi-sandbox/tests/protocol_conformance.rs",
+          "crates/opi-sandbox/tests/sdk_contract.rs",
+          "crates/opi-sandbox/tests/fixtures/protocol_client.py"
+        ],
+        "snapshot_tests": [],
+        "smoke_addendum": null
+      },
+      "acceptance_scenarios": [],
+      "production_call_sites": [],
+      "substrate_only": true,
+      "iteration_count": 0,
+      "max_iterations": 5,
+      "start_commit": null,
+      "baseline_dirty_files": [],
+      "task_owned_paths": [
+        "crates/opi-sandbox/src/backend.rs",
+        "crates/opi-sandbox/src/helper.rs",
+        "crates/opi-sandbox/src/cli.rs",
+        "crates/opi-sandbox/src/lib.rs",
+        "crates/opi-sandbox/src/main.rs",
+        "crates/opi-sandbox/src/platform/mod.rs",
+        "crates/opi-sandbox/src/runner.rs",
+        "crates/opi-sandbox/tests/protocol_conformance.rs",
+        "crates/opi-sandbox/tests/fixtures/protocol_client.py",
+        "crates/opi-sandbox/tests/sdk_contract.rs",
+        "scripts/opi-sandbox-smoke.sh",
+        "scripts/opi-sandbox-smoke.ps1"
+      ],
+      "last_attempt": null,
+      "verified_at_commit": null,
+      "evidence": null,
+      "blocker": null,
+      "session_notes": []
+    },
+    {
+      "id": "16.13",
+      "phase": 16,
+      "title": "Port the Linux native restriction contract",
+      "crate": "opi-sandbox",
+      "parent_spec_row": null,
+      "definition_of_done": "On supported Linux, the direct CLI installs the documented native filesystem and network restrictions before target start, reports effective policy and limitations, and passes positive and negative sentinels in CI.",
+      "definition_source": "draft-reviewed",
+      "replaces": null,
+      "status": "failing",
+      "depends_on": [
+        "16.12"
+      ],
+      "inference_notes": [
+        {
+          "field": "definition_of_done",
+          "reason": "Derived from the approved Phase 16 implementation plan task and its observable checkpoint.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md"
+        },
+        {
+          "field": "depends_on",
+          "reason": "Derived from the approved Candidate Task Graph sequencing.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Copied from the task's explicit Files list; shared files remain serialized.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md"
+        },
+        {
+          "field": "forbidden_scope",
+          "reason": "Keep the Opi core usable without executable extensions; do not add Docker/Gondolin/SSH adapters, project-level executable contributions, arbitrary new tools, or a Phase 17 benchmark design.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md"
+        }
+      ],
+      "tier": "cli-tool",
+      "commit_type": "feat",
+      "parallelize": [],
+      "evaluator_required": true,
+      "verification": {
+        "library_gates": [
+          "cargo test -p opi-sandbox --test linux_policy -- --nocapture"
+        ],
+        "behavioral_tests": [
+          "crates/opi-sandbox/tests/linux_policy.rs"
+        ],
+        "snapshot_tests": [],
+        "smoke_addendum": null
+      },
+      "acceptance_scenarios": [
+        {
+          "id": "SC16-10",
+          "source": "Testing and Acceptance#Native platform contract",
+          "scenario": "The Linux CLI enforces the documented filesystem and network sentinels and reports its effective restricted contract.",
+          "verification": [
+            "cargo test -p opi-sandbox --test linux_policy -- --nocapture"
+          ],
+          "production_call_sites": [
+            "opi_sandbox::platform::linux",
+            "opi-sandbox CLI"
+          ],
+          "status": "open"
+        }
+      ],
+      "production_call_sites": [
+        "opi_sandbox::platform::linux",
+        "opi-sandbox CLI"
+      ],
+      "substrate_only": false,
+      "iteration_count": 0,
+      "max_iterations": 5,
+      "start_commit": null,
+      "baseline_dirty_files": [],
+      "task_owned_paths": [
+        "crates/opi-sandbox/Cargo.toml",
+        "crates/opi-sandbox/src/platform/linux.rs",
+        "crates/opi-sandbox/src/platform/mod.rs",
+        "crates/opi-sandbox/src/helper.rs",
+        "crates/opi-sandbox/src/runner.rs",
+        "crates/opi-sandbox/tests/linux_policy.rs",
+        "scripts/opi-sandbox-smoke.sh",
+        ".github/workflows/ci.yml"
+      ],
+      "last_attempt": null,
+      "verified_at_commit": null,
+      "evidence": null,
+      "blocker": null,
+      "session_notes": []
+    },
+    {
+      "id": "16.14",
+      "phase": 16,
+      "title": "Port macOS restriction and pin the Windows posture",
+      "crate": "opi-sandbox",
+      "parent_spec_row": null,
+      "definition_of_done": "The macOS direct CLI applies the documented sandbox profile before target start and passes filesystem/network sentinels; Windows doctor reports unsupported and run refuses before start, with no false restricted guarantee.",
+      "definition_source": "draft-reviewed",
+      "replaces": null,
+      "status": "failing",
+      "depends_on": [
+        "16.13"
+      ],
+      "inference_notes": [
+        {
+          "field": "definition_of_done",
+          "reason": "Derived from the approved Phase 16 implementation plan task and its observable checkpoint.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md"
+        },
+        {
+          "field": "depends_on",
+          "reason": "Derived from the approved Candidate Task Graph sequencing.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Copied from the task's explicit Files list; shared files remain serialized.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md"
+        },
+        {
+          "field": "forbidden_scope",
+          "reason": "Keep the Opi core usable without executable extensions; do not add Docker/Gondolin/SSH adapters, project-level executable contributions, arbitrary new tools, or a Phase 17 benchmark design.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md"
+        }
+      ],
+      "tier": "cli-tool",
+      "commit_type": "feat",
+      "parallelize": [],
+      "evaluator_required": true,
+      "verification": {
+        "library_gates": [
+          "cargo test -p opi-sandbox --test macos_policy -- --nocapture",
+          "cargo test -p opi-sandbox --test cli_contract -- --nocapture"
+        ],
+        "behavioral_tests": [
+          "crates/opi-sandbox/tests/macos_policy.rs",
+          "crates/opi-sandbox/tests/cli_contract.rs"
+        ],
+        "snapshot_tests": [],
+        "smoke_addendum": null
+      },
+      "acceptance_scenarios": [
+        {
+          "id": "SC16-11",
+          "source": "Testing and Acceptance#Native platform contract",
+          "scenario": "The macOS CLI enforces the documented filesystem and network sentinels and reports limitations truthfully.",
+          "verification": [
+            "cargo test -p opi-sandbox --test macos_policy -- --nocapture"
+          ],
+          "production_call_sites": [
+            "opi_sandbox::platform::macos",
+            "opi-sandbox CLI"
+          ],
+          "status": "open"
+        },
+        {
+          "id": "SC16-12",
+          "source": "Testing and Acceptance#Native platform contract",
+          "scenario": "Windows doctor reports unsupported, run refuses before target start, and release packaging emits no Windows artifact.",
+          "verification": [
+            "cargo test -p opi-sandbox --test cli_contract -- --nocapture"
+          ],
+          "production_call_sites": [
+            "opi_sandbox::platform::windows",
+            "opi-sandbox CLI"
+          ],
+          "status": "open"
+        }
+      ],
+      "production_call_sites": [
+        "opi_sandbox::platform::macos",
+        "opi_sandbox::platform::windows",
+        "opi-sandbox CLI"
+      ],
+      "substrate_only": false,
+      "iteration_count": 0,
+      "max_iterations": 5,
+      "start_commit": null,
+      "baseline_dirty_files": [],
+      "task_owned_paths": [
+        "crates/opi-sandbox/src/platform/macos.rs",
+        "crates/opi-sandbox/src/platform/mod.rs",
+        "crates/opi-sandbox/src/platform/windows.rs",
+        "crates/opi-sandbox/src/helper.rs",
+        "crates/opi-sandbox/tests/macos_policy.rs",
+        "crates/opi-sandbox/tests/cli_contract.rs",
+        "scripts/opi-sandbox-smoke.sh",
+        "scripts/opi-sandbox-smoke.ps1",
+        ".github/workflows/ci.yml"
+      ],
+      "last_attempt": null,
+      "verified_at_commit": null,
+      "evidence": null,
+      "blocker": null,
+      "session_notes": []
+    },
+    {
+      "id": "16.15",
+      "phase": 16,
+      "title": "Package release artifacts and smoke the extracted archives",
+      "crate": "workspace",
+      "parent_spec_row": null,
+      "definition_of_done": "Release packaging creates installable Linux and macOS opi-sandbox archives with package metadata, excludes Windows, and runs doctor plus direct extracted-binary smoke without Opi present.",
+      "definition_source": "draft-reviewed",
+      "replaces": null,
+      "status": "failing",
+      "depends_on": [
+        "16.5",
+        "16.13",
+        "16.14"
+      ],
+      "inference_notes": [
+        {
+          "field": "definition_of_done",
+          "reason": "Derived from the approved Phase 16 implementation plan task and its observable checkpoint.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md"
+        },
+        {
+          "field": "depends_on",
+          "reason": "Derived from the approved Candidate Task Graph sequencing.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Copied from the task's explicit Files list; shared files remain serialized.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md"
+        },
+        {
+          "field": "forbidden_scope",
+          "reason": "Keep the Opi core usable without executable extensions; do not add Docker/Gondolin/SSH adapters, project-level executable contributions, arbitrary new tools, or a Phase 17 benchmark design.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md"
+        }
+      ],
+      "tier": "workspace",
+      "commit_type": "feat",
+      "parallelize": [],
+      "evaluator_required": true,
+      "verification": {
+        "library_gates": [
+          "cargo test -p opi-coding-agent --test opi_sandbox_package -- --nocapture"
+        ],
+        "behavioral_tests": [
+          "crates/opi-coding-agent/tests/opi_sandbox_package.rs"
+        ],
+        "snapshot_tests": [],
+        "smoke_addendum": null
+      },
+      "acceptance_scenarios": [
+        {
+          "id": "SC16-09",
+          "source": "Testing and Acceptance#SDK and direct CLI",
+          "scenario": "An extracted opi-sandbox archive runs doctor and direct CLI smoke without an Opi binary or Opi configuration.",
+          "verification": [
+            "cargo test -p opi-coding-agent --test opi_sandbox_package -- --nocapture"
+          ],
+          "production_call_sites": [
+            "opi-sandbox CLI",
+            "package-opi-sandbox scripts"
+          ],
+          "status": "open"
+        }
+      ],
+      "production_call_sites": [
+        "opi-sandbox CLI",
+        "package-opi-sandbox scripts",
+        "release workflow"
+      ],
+      "substrate_only": false,
+      "iteration_count": 0,
+      "max_iterations": 5,
+      "start_commit": null,
+      "baseline_dirty_files": [],
+      "task_owned_paths": [
+        "packaging/opi-sandbox/package.toml.template",
+        "scripts/package-opi-sandbox.sh",
+        "scripts/package-opi-sandbox.ps1",
+        "scripts/opi-sandbox-smoke.sh",
+        "scripts/opi-sandbox-smoke.ps1",
+        ".github/workflows/release.yml",
+        "crates/opi-coding-agent/tests/opi_sandbox_package.rs"
+      ],
+      "last_attempt": null,
+      "verified_at_commit": null,
+      "evidence": null,
+      "blocker": null,
+      "session_notes": []
+    },
+    {
+      "id": "16.16",
+      "phase": 16,
+      "title": "Remove core native sandbox and prove the complete product",
+      "crate": "workspace",
+      "parent_spec_row": null,
+      "definition_of_done": "Opi removes built-in native sandbox policy and dependencies while retaining L0 supervision; migration errors point to execution backends; complete package-to-bash vertical slices, no-fallback behavior, public diagnostics, independent CLI smoke, crate-boundary guards, paired docs, and Phase 16 exit gates pass.",
+      "definition_source": "draft-reviewed",
+      "replaces": null,
+      "status": "failing",
+      "depends_on": [
+        "16.2",
+        "16.3",
+        "16.4",
+        "16.5",
+        "16.6",
+        "16.7",
+        "16.8",
+        "16.9",
+        "16.10",
+        "16.11",
+        "16.12",
+        "16.13",
+        "16.14",
+        "16.15"
+      ],
+      "inference_notes": [
+        {
+          "field": "definition_of_done",
+          "reason": "Derived from the approved Phase 16 implementation plan task and its observable checkpoint.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md"
+        },
+        {
+          "field": "depends_on",
+          "reason": "Derived from the approved Candidate Task Graph sequencing.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Copied from the task's explicit Files list; shared files remain serialized.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md"
+        },
+        {
+          "field": "forbidden_scope",
+          "reason": "Keep the Opi core usable without executable extensions; do not add Docker/Gondolin/SSH adapters, project-level executable contributions, arbitrary new tools, or a Phase 17 benchmark design.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md"
+        }
+      ],
+      "tier": "workspace",
+      "commit_type": "refactor",
+      "parallelize": [],
+      "evaluator_required": true,
+      "verification": {
+        "library_gates": [
+          "cargo test -p opi-protocol --all-targets -- --nocapture",
+          "cargo test -p opi-sandbox --all-targets -- --nocapture",
+          "cargo test -p opi-coding-agent --test phase16_extension_docs -- --nocapture",
+          "cargo test -p opi-coding-agent --features execution-backend-test-fixture --test execution_product -- --nocapture",
+          "cargo test --workspace --all-targets"
+        ],
+        "behavioral_tests": [
+          "crates/opi-coding-agent/tests/phase15_safety_sandbox_docs.rs",
+          "crates/opi-coding-agent/tests/phase16_extension_docs.rs",
+          "crates/opi-coding-agent/tests/execution_product.rs",
+          "crates/opi-coding-agent/tests/non_interactive.rs",
+          "crates/opi-coding-agent/tests/json_mode.rs",
+          "crates/opi-coding-agent/tests/rpc_jsonl.rs",
+          "crates/opi-coding-agent/tests/interactive_permission.rs",
+          "crates/opi-coding-agent/tests/doctor_cli.rs"
+        ],
+        "snapshot_tests": [],
+        "smoke_addendum": null
+      },
+      "acceptance_scenarios": [
+        {
+          "id": "SC16-13",
+          "source": "Testing and Acceptance#Repository gates",
+          "scenario": "A packaged archive can be added, explicitly trusted and enabled, selected, permitted, and used by a real bash tool turn.",
+          "verification": [
+            "cargo test -p opi-coding-agent --features execution-backend-test-fixture --test execution_product -- --nocapture"
+          ],
+          "production_call_sites": [
+            "package CLI dispatch",
+            "PackageActivationStore",
+            "ExecutionRuntime::build",
+            "CommandExecutionRouter::select",
+            "PermissionManager",
+            "ExecutionProtocolHost::execute",
+            "BashTool::execute"
+          ],
+          "status": "open"
+        },
+        {
+          "id": "SC16-14",
+          "source": "Failure and Diagnostics",
+          "scenario": "Text, NDJSON, RPC, and interactive surfaces carry the same stable redacted execution failure code and actionable remediation.",
+          "verification": [
+            "cargo test -p opi-coding-agent --features execution-backend-test-fixture --test execution_product -- --nocapture"
+          ],
+          "production_call_sites": [
+            "ExecutionFailure",
+            "non-interactive runner",
+            "RPC server",
+            "interactive TUI loop"
+          ],
+          "status": "open"
+        },
+        {
+          "id": "SC16-15",
+          "source": "Testing and Acceptance#Repository gates",
+          "scenario": "The Opi binary no longer owns native sandbox policy or dependencies; opi-sandbox depends only on opi-protocol and standalone dependencies; paired specs, README/changelog, artifact truth, six release targets, workspace tests, and workspace docs remain guarded.",
+          "verification": [
+            "cargo test -p opi-coding-agent --test phase16_extension_docs -- --nocapture",
+            "cargo test --workspace --all-targets",
+            "='-D warnings'; cargo doc --workspace --no-deps"
+          ],
+          "production_call_sites": [
+            "workspace Cargo graph",
+            "opi-coding-agent startup",
+            "opi-sandbox CLI",
+            "release workflow",
+            "paired product documentation"
+          ],
+          "status": "open"
+        }
+      ],
+      "production_call_sites": [
+        "package CLI dispatch",
+        "PackageActivationStore",
+        "ExecutionRuntime::build",
+        "CommandExecutionRouter::select",
+        "PermissionManager",
+        "ExecutionProtocolHost::execute",
+        "BashTool::execute"
+      ],
+      "substrate_only": false,
+      "iteration_count": 0,
+      "max_iterations": 5,
+      "start_commit": null,
+      "baseline_dirty_files": [],
+      "task_owned_paths": [
+        "Cargo.toml",
+        "Cargo.lock",
+        "crates/opi-coding-agent/Cargo.toml",
+        "crates/opi-coding-agent/src/lib.rs",
+        "crates/opi-coding-agent/src/config.rs",
+        "crates/opi-coding-agent/src/cli.rs",
+        "crates/opi-coding-agent/src/main.rs",
+        "crates/opi-coding-agent/src/harness.rs",
+        "crates/opi-coding-agent/src/tool/operations.rs",
+        "crates/opi-coding-agent/src/tool/process_tree.rs",
+        "crates/opi-coding-agent/src/sandbox.rs",
+        "crates/opi-coding-agent/src/sandbox/linux.rs",
+        "crates/opi-coding-agent/src/sandbox/macos.rs",
+        "crates/opi-coding-agent/src/sandbox/windows.rs",
+        "crates/opi-coding-agent/tests/sandbox_config.rs",
+        "crates/opi-coding-agent/tests/sandbox_strict.rs",
+        "crates/opi-coding-agent/tests/sandbox_linux_backend.rs",
+        "crates/opi-coding-agent/tests/sandbox_l0.rs",
+        "crates/opi-coding-agent/tests/phase15_safety_sandbox_docs.rs",
+        "crates/opi-coding-agent/tests/phase16_extension_docs.rs",
+        "crates/opi-coding-agent/tests/execution_product.rs",
+        "crates/opi-coding-agent/tests/non_interactive.rs",
+        "crates/opi-coding-agent/tests/json_mode.rs",
+        "crates/opi-coding-agent/tests/rpc_jsonl.rs",
+        "crates/opi-coding-agent/tests/interactive_permission.rs",
+        "crates/opi-coding-agent/tests/doctor_cli.rs",
+        "README.md",
+        "README.zh.md",
+        "docs/opi-spec.md",
+        "docs/opi-spec.zh.md",
+        "AGENTS.md",
+        "CLAUDE.md",
+        "CHANGELOG.md"
+      ],
+      "last_attempt": null,
+      "verified_at_commit": null,
+      "evidence": null,
+      "blocker": null,
+      "session_notes": []
+    }
+  ],
   "phase_exit": {
     "1": {
       "completed_at": "2026-05-22T12:00:00Z",
@@ -1141,7 +2670,12 @@
       ]
     }
   },
-  "session_notes": [],
+  "session_notes": [
+    {
+      "timestamp": "2026-07-28T08:04:22.0204172Z",
+      "summary": "Confirmed the reviewed Phase 16 graph: tasks 16.1-16.16 and SC16-01-SC16-15; Phase 17 benchmark specification remains gated on Phase 16 exit."
+    }
+  ],
   "verify_runs": [
     {
       "stage": "plan",
@@ -1149,7 +2683,7 @@
       "folded_count": 0,
       "flagged_count": 0,
       "rejected_count": 0,
-      "ran_at": "2026-07-27T13:48:53.138Z",
+      "ran_at": "2026-07-28T08:04:22.0204172Z",
       "task_id": null,
       "criterion_id": null
     }
