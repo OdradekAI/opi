@@ -28,6 +28,7 @@
 
 # Codex/agent local-only state
 .agents/
+/.scratch/
 
 # Local third-party skill packs (e.g. baoyu-translate), not tracked
 .baoyu-skills/
