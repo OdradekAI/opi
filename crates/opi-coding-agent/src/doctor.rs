@@ -289,7 +289,8 @@ pub async fn run_doctor_command(
     backend_factory: crate::credential_store::KeyringBackendFactory,
 ) -> DoctorReport {
     let store =
-        crate::credential_store::keychain_store_from_factory(user_config_dir, backend_factory);
+        crate::credential_store::keychain_store_from_factory(user_config_dir, backend_factory)
+            .await;
     run_doctor_with_store(scopes, ctx, &store).await
 }
 

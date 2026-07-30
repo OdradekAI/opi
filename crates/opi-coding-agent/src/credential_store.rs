@@ -891,11 +891,23 @@ impl KeychainCredentialStore {
     }
 }
 
-pub(crate) fn keychain_store_from_factory(
+pub(crate) async fn keychain_store_from_factory(
     user_config_dir: PathBuf,
     backend_factory: KeyringBackendFactory,
 ) -> KeychainCredentialStore {
-    KeychainCredentialStore::new(backend_factory(), user_config_dir)
+    // The native keyring backend eagerly connects to the platform secret store.
+    // On Linux that is the Secret Service via zbus, whose blocking adapter
+    // (`zbus::utils::block_on`) spins up a nested tokio runtime to drive the
+    // D-Bus connection. Constructing it from a runtime worker would nest
+    // runtimes and panic ("Cannot start a runtime from within a runtime"), so
+    // build the store on a `spawn_blocking` thread, which carries no runtime
+    // context. The blocking-pool thread is the established tokio pattern for a
+    // sync backend that itself owns a runtime.
+    tokio::task::spawn_blocking(move || {
+        KeychainCredentialStore::new(backend_factory(), user_config_dir)
+    })
+    .await
+    .expect("keyring store construction thread")
 }
 
 impl CredentialStore for KeychainCredentialStore {

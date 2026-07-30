@@ -1448,10 +1448,10 @@ pub async fn build_provider_bundle(
     user_config_dir: std::path::PathBuf,
     backend_factory: crate::credential_store::KeyringBackendFactory,
 ) -> Result<ProviderBundle, ProviderBuildError> {
-    let store = Arc::new(crate::credential_store::keychain_store_from_factory(
-        user_config_dir,
-        backend_factory,
-    ));
+    let store = Arc::new(
+        crate::credential_store::keychain_store_from_factory(user_config_dir, backend_factory)
+            .await,
+    );
     let resolver = crate::credential_store::CredentialResolver::production(store.clone());
     let registry = crate::oauth::OAuthProviderRegistry::registry_with_builtins();
     let outcome = build_provider_with_oauth_outcome(config, &resolver, &registry).await?;
@@ -2105,7 +2105,8 @@ pub async fn build_collection_for_listing_command(
     backend_factory: crate::credential_store::KeyringBackendFactory,
 ) -> Result<ProviderCollection, ListModelsError> {
     let store =
-        crate::credential_store::keychain_store_from_factory(user_config_dir, backend_factory);
+        crate::credential_store::keychain_store_from_factory(user_config_dir, backend_factory)
+            .await;
     build_collection_for_listing_with_store(config, &store).await
 }
 
