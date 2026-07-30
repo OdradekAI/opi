@@ -345,17 +345,6 @@ async fn resolve_headless_trust_config_core(
     let decision = plan.headless_decision();
     let mut config = staged.finalize_with_project(!matches!(decision, TrustDecision::Untrusted))?;
     config.apply_sandbox_overrides(sandbox, sandbox_require.then_some(true));
-    if std::env::var("OPI_DEBUG_TRUST").is_ok() {
-        let pcp = project_dir.as_ref().map(|d| d.join(".opi").join("config.toml"));
-        eprintln!(
-            "[OPI_DEBUG_TRUST] cwd={:?} project_dir={:?} decision_trusted={} pcp={:?} pcp_exists={}",
-            std::env::current_dir().ok(),
-            project_dir,
-            matches!(decision, TrustDecision::Trusted),
-            pcp,
-            pcp.as_ref().map(|p| p.exists()).unwrap_or(false),
-        );
-    }
     Ok((config, decision))
 }
 

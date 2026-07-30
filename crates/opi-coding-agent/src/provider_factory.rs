@@ -495,6 +495,12 @@ impl ProviderAvailability {
             .get(provider_id)
             .and_then(|probe| Self::fail_closed_probe(provider_id, probe, false))
         {
+            // An operational keychain failure (e.g. an inaccessible macOS
+            // keychain in CI) must not hide a provider that has an env API key;
+            // only fail closed when there is no env credential to fall back to.
+            if env_value_present(env_var, env_name) {
+                return Self::present(format!("env {env_name}"));
+            }
             return failure;
         }
         let backend_unavailable = match store_probe.get(provider_id) {
