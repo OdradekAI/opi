@@ -22,6 +22,7 @@ fn isolated_command(root: &Path, args: &[&str]) -> Output {
         .env_remove("OPI_MODEL")
         .env_remove("OPI_TRUST")
         .env_remove("OPI_CONFIG")
+        .env("OPI_DEBUG_TRUST", "1")
         .output()
         .unwrap()
 }
