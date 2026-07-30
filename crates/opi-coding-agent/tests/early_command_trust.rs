@@ -141,7 +141,19 @@ fn list_models_trust_preflight_gates_project_and_preserves_user_config() {
     );
 
     let user_marker = "user-config-marker";
-    let user_config = root.path().join("app-data").join("opi").join("config.toml");
+    // `config::user_config_dir` reads the global user config from `%APPDATA%\opi\`
+    // on Windows and `$HOME/.config/opi/` on Unix. `isolated_command` sets APPDATA
+    // and HOME to per-test dirs, so write the marker into the platform-correct one
+    // (the Windows path leaks the marker on Unix and vice-versa).
+    let user_config = if cfg!(windows) {
+        root.path().join("app-data").join("opi").join("config.toml")
+    } else {
+        root.path()
+            .join("user-home")
+            .join(".config")
+            .join("opi")
+            .join("config.toml")
+    };
     std::fs::create_dir_all(user_config.parent().unwrap()).unwrap();
     std::fs::write(&user_config, custom_provider_config(user_marker)).unwrap();
     let user = isolated_command(root.path(), &["--no-trust", "--list-models", "--json"]);
