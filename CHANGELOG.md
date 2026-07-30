@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.2] - 2026-07-31
+
 ### Breaking Changes
 
 - `opi-tui` 0.x API: `AppState` gains the `AwaitingTrust(AwaitingTrustState)` variant for the Phase 15 interactive project-trust prompt. The enum remains exhaustive, so downstream exhaustive matches on `AppState` must add the arm. Because `AwaitingTrustState` owns a oneshot sender, `AppState` no longer implements `Copy`, `Clone`, `PartialEq`, or `Eq`; use the copyable `AppStatus` projection when only display state is needed.

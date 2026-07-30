@@ -9,7 +9,7 @@ this repository.
 [earendil-works/pi](https://github.com/earendil-works/pi), organized as an AI
 agent toolkit and terminal-first coding agent.
 
-Current workspace version: `0.7.1`. The repository may contain unreleased
+Current workspace version: `0.7.2`. The repository may contain unreleased
 changes on top of that version; check `CHANGELOG.md` before making release or
 documentation claims.
 

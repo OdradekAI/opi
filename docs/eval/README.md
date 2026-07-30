@@ -17,7 +17,7 @@ Each line is a self-contained JSON object:
 
 ```json
 {
-  "version": "0.7.1",
+  "version": "0.7.2",
   "commit": "abc1234",
   "date": "2026-07-07",
   "model": "anthropic:claude-sonnet-4-5-20250514",

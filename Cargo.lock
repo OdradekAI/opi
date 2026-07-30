@@ -1991,7 +1991,7 @@ checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
 
 [[package]]
 name = "opi-agent"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "futures-util",
  "jsonschema",
@@ -2012,7 +2012,7 @@ dependencies = [
 
 [[package]]
 name = "opi-ai"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "async-trait",
  "base64",
@@ -2038,7 +2038,7 @@ dependencies = [
 
 [[package]]
 name = "opi-coding-agent"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "anyhow",
  "apple-native-keyring-store",
@@ -2085,7 +2085,7 @@ dependencies = [
 
 [[package]]
 name = "opi-tui"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "base64",
  "crossterm",
