@@ -33,13 +33,16 @@
 
 use std::fs::{File, OpenOptions};
 use std::future::Future;
-use std::io::{self, Write as IoWrite};
+use std::io::{self, Read as IoRead, Write as IoWrite};
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::process::Stdio;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, SystemTime};
 
+use cap_std::ambient_authority;
+use cap_std::fs::{Dir, OpenOptions as CapOpenOptions};
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -310,16 +313,51 @@ pub trait BashOperations: Send + Sync {
 // LocalFileOperations (DoD-required local impl)
 // =========================================================================
 
-/// Local [`FileOperations`] backend. Plain `tokio::fs::*` wrapper with NO
-/// sandbox. Stateless today. Atomic write reuses `super::TempFileGuard` so
-/// cancellation/Drop discipline matches the existing `write.rs`/`edit.rs`
-/// tools byte-for-byte.
-#[derive(Debug, Default)]
-pub struct LocalFileOperations;
+/// Local [`FileOperations`] backend.
+///
+/// Paths inside `workspace_root` are resolved beneath a held directory
+/// capability, so an ancestor symlink/junction swap after `PathPolicy` cannot
+/// redirect an operation outside the workspace. Explicitly allowed external
+/// reads retain ambient-path behavior. Atomic workspace writes stage and rename
+/// through a held parent-directory capability.
+#[derive(Debug)]
+pub struct LocalFileOperations {
+    workspace_root: PathBuf,
+    workspace: Result<Arc<Dir>, FsOpError>,
+}
 
 impl LocalFileOperations {
-    pub fn new() -> Self {
-        Self
+    pub fn new(workspace_root: PathBuf) -> Self {
+        match std::fs::canonicalize(&workspace_root) {
+            Ok(canonical) => {
+                let canonical = super::strip_verbatim_prefix(&canonical);
+                let workspace = Dir::open_ambient_dir(&canonical, ambient_authority())
+                    .map(Arc::new)
+                    .map_err(|error| io_to_fs_error(&canonical, error));
+                Self {
+                    workspace_root: canonical,
+                    workspace,
+                }
+            }
+            Err(error) => Self {
+                workspace_root: workspace_root.clone(),
+                workspace: Err(io_to_fs_error(&workspace_root, error)),
+            },
+        }
+    }
+
+    fn workspace_target(&self, path: &Path) -> Option<Result<(Arc<Dir>, PathBuf), FsOpError>> {
+        let relative = path.strip_prefix(&self.workspace_root).ok()?;
+        let relative = if relative.as_os_str().is_empty() {
+            PathBuf::from(".")
+        } else {
+            relative.to_path_buf()
+        };
+        Some(
+            self.workspace
+                .clone()
+                .map(|workspace| (workspace, relative)),
+        )
     }
 }
 
@@ -329,6 +367,27 @@ impl FileOperations for LocalFileOperations {
         path: &Path,
     ) -> Pin<Box<dyn Future<Output = Result<Vec<u8>, FsOpError>> + Send>> {
         let path = path.to_path_buf();
+        if let Some(target) = self.workspace_target(&path) {
+            return Box::pin(async move {
+                let (workspace, relative) = target?;
+                run_blocking_fs(path.clone(), move || {
+                    let metadata = workspace
+                        .metadata(&relative)
+                        .map_err(|error| io_to_fs_error(&path, error))?;
+                    if metadata.is_dir() {
+                        return Err(FsOpError::NotAFile { path });
+                    }
+                    let mut file = workspace
+                        .open(&relative)
+                        .map_err(|error| io_to_fs_error(&path, error))?;
+                    let mut bytes = Vec::new();
+                    file.read_to_end(&mut bytes)
+                        .map_err(|error| io_to_fs_error(&path, error))?;
+                    Ok(bytes)
+                })
+                .await
+            });
+        }
         Box::pin(async move {
             // Probe directory first (mirrors read.rs NotAFile check).
             match tokio::fs::metadata(&path).await {
@@ -349,6 +408,15 @@ impl FileOperations for LocalFileOperations {
     ) -> Pin<Box<dyn Future<Output = Result<(), FsOpError>> + Send>> {
         let path = path.to_path_buf();
         let data = data.to_vec();
+        if let Some(target) = self.workspace_target(&path) {
+            return Box::pin(async move {
+                let (workspace, relative) = target?;
+                run_blocking_fs(path.clone(), move || {
+                    cap_atomic_write_bytes(&workspace, &relative, &path, &data)
+                })
+                .await
+            });
+        }
         Box::pin(async move {
             atomic_write_bytes(&path, "opi-ops-tmp", &data, AtomicWriteFailPoint::None).await
         })
@@ -360,6 +428,20 @@ impl FileOperations for LocalFileOperations {
         recursive: bool,
     ) -> Pin<Box<dyn Future<Output = Result<(), FsOpError>> + Send>> {
         let path = path.to_path_buf();
+        if let Some(target) = self.workspace_target(&path) {
+            return Box::pin(async move {
+                let (workspace, relative) = target?;
+                run_blocking_fs(path.clone(), move || {
+                    let result = if recursive {
+                        workspace.create_dir_all(&relative)
+                    } else {
+                        workspace.create_dir(&relative)
+                    };
+                    result.map_err(|error| io_to_fs_error(&path, error))
+                })
+                .await
+            });
+        }
         Box::pin(async move {
             let result = if recursive {
                 tokio::fs::create_dir_all(&path).await
@@ -378,6 +460,24 @@ impl FileOperations for LocalFileOperations {
         path: &Path,
     ) -> Pin<Box<dyn Future<Output = Result<OpMetadata, FsOpError>> + Send>> {
         let path = path.to_path_buf();
+        if let Some(target) = self.workspace_target(&path) {
+            return Box::pin(async move {
+                let (workspace, relative) = target?;
+                run_blocking_fs(path.clone(), move || {
+                    let meta = workspace
+                        .metadata(&relative)
+                        .map_err(|error| io_to_fs_error(&path, error))?;
+                    Ok(OpMetadata {
+                        len: meta.len(),
+                        is_dir: meta.is_dir(),
+                        is_file: meta.is_file(),
+                        readonly: meta.permissions().readonly(),
+                        modified: meta.modified().ok().map(|time| time.into_std()),
+                    })
+                })
+                .await
+            });
+        }
         Box::pin(async move {
             let meta = tokio::fs::metadata(&path)
                 .await
@@ -398,6 +498,24 @@ impl FileOperations for LocalFileOperations {
         mode: AccessMode,
     ) -> Pin<Box<dyn Future<Output = Result<(), FsOpError>> + Send>> {
         let path = path.to_path_buf();
+        if let Some(target) = self.workspace_target(&path) {
+            return Box::pin(async move {
+                let (workspace, relative) = target?;
+                run_blocking_fs(path.clone(), move || {
+                    let result = match mode {
+                        AccessMode::Exists => workspace.metadata(&relative).map(|_| ()),
+                        AccessMode::Readable => workspace.open(&relative).map(|_| ()),
+                        AccessMode::Writable => {
+                            let mut options = CapOpenOptions::new();
+                            options.write(true);
+                            workspace.open_with(&relative, &options).map(|_| ())
+                        }
+                    };
+                    result.map_err(|error| io_to_fs_error(&path, error))
+                })
+                .await
+            });
+        }
         Box::pin(async move {
             match mode {
                 AccessMode::Exists => tokio::fs::metadata(&path)
@@ -422,6 +540,105 @@ impl FileOperations for LocalFileOperations {
 // =========================================================================
 // Internal helpers
 // =========================================================================
+
+async fn run_blocking_fs<T, F>(path: PathBuf, operation: F) -> Result<T, FsOpError>
+where
+    T: Send + 'static,
+    F: FnOnce() -> Result<T, FsOpError> + Send + 'static,
+{
+    tokio::task::spawn_blocking(operation)
+        .await
+        .map_err(|error| FsOpError::Io {
+            path,
+            message: format!("filesystem worker failed: {error}"),
+        })?
+}
+
+fn cap_atomic_write_bytes(
+    workspace: &Dir,
+    relative: &Path,
+    display_path: &Path,
+    data: &[u8],
+) -> Result<(), FsOpError> {
+    let parent = relative
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    workspace
+        .create_dir_all(parent)
+        .map_err(|error| io_to_fs_error(display_path, error))?;
+    let parent_dir = workspace
+        .open_dir(parent)
+        .map_err(|error| io_to_fs_error(display_path, error))?;
+    let file_name = relative.file_name().ok_or_else(|| FsOpError::NotAFile {
+        path: display_path.to_path_buf(),
+    })?;
+
+    let mut allocated = None;
+    for _ in 0..MAX_ATOMIC_TEMP_ATTEMPTS {
+        let candidate = strong_atomic_temp_name(file_name, "opi-ops-tmp", display_path)?;
+        let mut options = CapOpenOptions::new();
+        options.write(true).create_new(true);
+        match parent_dir.open_with(&candidate, &options) {
+            Ok(file) => {
+                allocated = Some((candidate, file));
+                break;
+            }
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(io_to_fs_error(display_path, error)),
+        }
+    }
+    let (temp_name, mut temp_file) = allocated.ok_or_else(|| FsOpError::Io {
+        path: display_path.to_path_buf(),
+        message: format!(
+            "failed to allocate atomic staging file after {MAX_ATOMIC_TEMP_ATTEMPTS} collisions"
+        ),
+    })?;
+    let mut guard = CapTempFileGuard::new(parent_dir, temp_name);
+
+    temp_file
+        .write_all(data)
+        .map_err(|error| io_to_fs_error(display_path, error))?;
+    temp_file
+        .flush()
+        .map_err(|error| io_to_fs_error(display_path, error))?;
+    drop(temp_file);
+    guard
+        .rename_to(file_name)
+        .map_err(|error| io_to_fs_error(display_path, error))?;
+    Ok(())
+}
+
+struct CapTempFileGuard {
+    parent: Dir,
+    name: PathBuf,
+    armed: bool,
+}
+
+impl CapTempFileGuard {
+    fn new(parent: Dir, name: PathBuf) -> Self {
+        Self {
+            parent,
+            name,
+            armed: true,
+        }
+    }
+
+    fn rename_to(&mut self, target: &std::ffi::OsStr) -> io::Result<()> {
+        self.parent
+            .rename(&self.name, &self.parent, Path::new(target))?;
+        self.armed = false;
+        Ok(())
+    }
+}
+
+impl Drop for CapTempFileGuard {
+    fn drop(&mut self) {
+        if self.armed {
+            let _ = self.parent.remove_file(&self.name);
+        }
+    }
+}
 
 /// Map a `std::io::Error` to the appropriate `FsOpError` variant.
 fn io_to_fs_error(path: &Path, e: std::io::Error) -> FsOpError {
@@ -459,6 +676,26 @@ enum AtomicWriteFailPoint {
 }
 
 const MAX_ATOMIC_TEMP_ATTEMPTS: usize = 16;
+
+fn strong_atomic_temp_name(
+    file_name: &std::ffi::OsStr,
+    tag: &str,
+    display_path: &Path,
+) -> Result<PathBuf, FsOpError> {
+    let mut random = [0u8; 16];
+    rand::rngs::OsRng
+        .try_fill_bytes(&mut random)
+        .map_err(|error| FsOpError::Io {
+            path: display_path.to_path_buf(),
+            message: format!("failed to generate atomic staging name: {error}"),
+        })?;
+    let suffix = u128::from_le_bytes(random);
+    Ok(PathBuf::from(format!(
+        ".{}.{}-{suffix:032x}",
+        file_name.to_string_lossy(),
+        tag
+    )))
+}
 
 /// Atomic-write recipe: exclusively create a strongly-named sibling temp in
 /// `target.parent()`, stage `data`, then rename over `target`. `create_new`
@@ -786,8 +1023,8 @@ impl BashOperations for LocalBashOperations {
             // to avoid the stdout-then-stderr pipe deadlock. They are owned
             // tasks so a descendant that retained either pipe cannot keep this
             // operation pending forever after tree termination.
-            let drain_out = spawn_stream_capture(stdout);
-            let drain_err = spawn_stream_capture(stderr);
+            let drain_out = OwnedCaptureTask::new(spawn_stream_capture(stdout));
+            let drain_err = OwnedCaptureTask::new(spawn_stream_capture(stderr));
             let control = async {
                 tokio::select! {
                     biased;
@@ -833,10 +1070,7 @@ impl BashOperations for LocalBashOperations {
             };
 
             let (ctrl, term_diag) = control.await;
-            let (mut out_cap, mut err_cap) = tokio::join!(
-                finish_stream_capture(drain_out),
-                finish_stream_capture(drain_err)
-            );
+            let (mut out_cap, mut err_cap) = tokio::join!(drain_out.finish(), drain_err.finish());
             if let Some(d) = term_diag {
                 degraded_diagnostics.push(d);
             }
@@ -913,8 +1147,8 @@ impl BashOperations for LocalBashOperations {
                     cleanup_spill(&mut out_cap);
                     cleanup_spill(&mut err_cap);
 
-                    let stdout = out_cap.preview;
-                    let stderr = err_cap.preview;
+                    let stdout = std::mem::take(&mut out_cap.preview);
+                    let stderr = std::mem::take(&mut err_cap.preview);
                     let diag = bash_operation_context_diagnostic(
                         exit_code,
                         false,
@@ -968,16 +1202,42 @@ where
     })
 }
 
-async fn finish_stream_capture(
-    mut handle: tokio::task::JoinHandle<StreamCapture>,
-) -> StreamCapture {
-    match tokio::time::timeout(TERMINATED_PIPE_DRAIN_GRACE, &mut handle).await {
-        Ok(Ok(capture)) => capture,
-        Ok(Err(_)) => StreamCapture::new(MAX_BASH_OUTPUT_BYTES),
-        Err(_) => {
+struct OwnedCaptureTask {
+    handle: Option<tokio::task::JoinHandle<StreamCapture>>,
+}
+
+impl OwnedCaptureTask {
+    fn new(handle: tokio::task::JoinHandle<StreamCapture>) -> Self {
+        Self {
+            handle: Some(handle),
+        }
+    }
+
+    async fn finish(mut self) -> StreamCapture {
+        let handle = self.handle.as_mut().expect("capture task is owned");
+        match tokio::time::timeout(TERMINATED_PIPE_DRAIN_GRACE, handle).await {
+            Ok(Ok(capture)) => {
+                self.handle.take();
+                capture
+            }
+            Ok(Err(_)) => {
+                self.handle.take();
+                StreamCapture::new(MAX_BASH_OUTPUT_BYTES)
+            }
+            Err(_) => {
+                let handle = self.handle.take().expect("capture task is owned");
+                handle.abort();
+                let _ = handle.await;
+                StreamCapture::new(MAX_BASH_OUTPUT_BYTES)
+            }
+        }
+    }
+}
+
+impl Drop for OwnedCaptureTask {
+    fn drop(&mut self) {
+        if let Some(handle) = self.handle.take() {
             handle.abort();
-            let _ = handle.await;
-            StreamCapture::new(MAX_BASH_OUTPUT_BYTES)
         }
     }
 }
@@ -1036,7 +1296,7 @@ fn l0_degraded_diagnostic(err: &super::process_tree::AttachError) -> ToolDiagnos
         message: "subprocess tree lifecycle degraded".to_string(),
         details: Some(serde_json::json!({
             "layer": err.layer,
-            "reason": err.reason,
+            "reason": err.reason.as_str(),
         })),
     }
 }
@@ -1053,7 +1313,7 @@ fn temporary_gap_diagnostic(gap: &TemporaryGap) -> ToolDiagnostic {
         message: "sandbox layer degraded".to_string(),
         details: Some(serde_json::json!({
             "layer": gap.layer.as_str(),
-            "reason": gap.reason,
+            "reason": gap.reason.as_str(),
         })),
     }
 }
@@ -1154,6 +1414,12 @@ impl StreamCapture {
             Some(path) => std::fs::read(path),
             None => Ok(self.preview.clone()),
         }
+    }
+}
+
+impl Drop for StreamCapture {
+    fn drop(&mut self) {
+        cleanup_spill(self);
     }
 }
 
@@ -1342,7 +1608,7 @@ mod tests {
                     .as_ref()
                     .and_then(|details| details.get("reason"))
                     .and_then(serde_json::Value::as_str)
-                    == Some("injected attach failure")
+                    == Some(crate::diagnostics::SandboxReason::ProcessTreeAttachFailed.as_str())
         }));
     }
 
@@ -1357,7 +1623,9 @@ mod tests {
                     .as_ref()
                     .and_then(|details| details.get("reason"))
                     .and_then(serde_json::Value::as_str)
-                    == Some("injected terminate failure")
+                    == Some(
+                        crate::diagnostics::SandboxReason::ProcessTreeTerminationFailed.as_str(),
+                    )
         }));
     }
 
@@ -1392,7 +1660,9 @@ mod tests {
     fn default_macos_launcher_composition_preserves_shell_arguments() {
         let confinement = crate::sandbox::macos::build_macos_confinement(
             Path::new("."),
-            &crate::sandbox::macos::SandboxExecStatus::Available,
+            &crate::sandbox::macos::SandboxExecStatus::Available(PathBuf::from(
+                crate::sandbox::macos::SANDBOX_EXEC_PATH,
+            )),
             &[
                 crate::sandbox::SandboxLayer::Fs,
                 crate::sandbox::SandboxLayer::Network,
@@ -1407,7 +1677,10 @@ mod tests {
             &[("CANARY".to_string(), "value".to_string())],
             Some(&confinement),
         );
-        assert_eq!(command.as_std().get_program(), "sandbox-exec");
+        assert_eq!(
+            command.as_std().get_program(),
+            std::ffi::OsStr::new(crate::sandbox::macos::SANDBOX_EXEC_PATH)
+        );
         let args = command
             .as_std()
             .get_args()
@@ -1423,7 +1696,7 @@ mod tests {
     async fn local_file_operations_write_then_read_roundtrips() {
         let dir = tempfile::tempdir().unwrap();
         let target = dir.path().join("f.txt");
-        let ops = LocalFileOperations::new();
+        let ops = LocalFileOperations::new(dir.path().to_path_buf());
         ops.write_file(&target, b"hello").await.unwrap();
         let read = ops.read_file(&target).await.unwrap();
         assert_eq!(read, b"hello");
@@ -1463,7 +1736,7 @@ mod tests {
         let target = dir.path().join("target.txt");
         std::fs::write(&target, "original").unwrap();
 
-        let ops = LocalFileOperations::new();
+        let ops = LocalFileOperations::new(dir.path().to_path_buf());
         let result = ops
             .write_file_with_failure(&target, b"replacement", AtomicWriteFailPoint::AtRename)
             .await;
@@ -1490,7 +1763,7 @@ mod tests {
         let target = dir.path().join("target.txt");
         std::fs::write(&target, "original").unwrap();
 
-        let ops = LocalFileOperations::new();
+        let ops = LocalFileOperations::new(dir.path().to_path_buf());
         let result = ops
             .write_file_with_failure(
                 &target,
@@ -1516,6 +1789,21 @@ mod tests {
             .filter(|n| n.contains("opi-ops-tmp"))
             .collect();
         assert!(residue.is_empty(), "temp residue left behind: {residue:?}");
+    }
+
+    #[test]
+    fn capability_temp_guard_drop_removes_cancelled_stage() {
+        let dir = tempfile::tempdir().unwrap();
+        let name = PathBuf::from(".target.txt.opi-ops-tmp-cancelled");
+        let parent = Dir::open_ambient_dir(dir.path(), ambient_authority()).unwrap();
+        parent.create(&name).unwrap();
+
+        drop(CapTempFileGuard::new(parent, name.clone()));
+
+        assert!(
+            !dir.path().join(name).exists(),
+            "dropping an in-flight atomic stage must leave no production-tagged residue"
+        );
     }
 
     #[tokio::test]
@@ -1713,5 +2001,45 @@ mod tests {
         c.append(b"efg"); // ELSE branch -> first overflow
         assert_eq!(c.total, 7);
         assert_eq!(c.complete_bytes().unwrap(), b"abcdefg");
+    }
+
+    #[test]
+    fn stream_capture_drop_removes_spill_file() {
+        let mut capture = StreamCapture::new(4);
+        capture.append(b"overflow");
+        let spill = capture.spill_path.clone().expect("spill path");
+        assert!(spill.is_file());
+
+        drop(capture);
+
+        assert!(!spill.exists(), "dropping a capture must remove its spill");
+    }
+
+    #[tokio::test]
+    async fn owned_capture_task_drop_aborts_task_and_removes_spill() {
+        let (spill_tx, spill_rx) = tokio::sync::oneshot::channel();
+        let handle = tokio::spawn(async move {
+            let mut capture = StreamCapture::new(4);
+            capture.append(b"overflow");
+            spill_tx
+                .send(capture.spill_path.clone().expect("spill path"))
+                .expect("report spill");
+            std::future::pending::<()>().await;
+            capture
+        });
+        let task = OwnedCaptureTask::new(handle);
+        let spill = spill_rx.await.expect("capture created spill");
+        assert!(spill.is_file());
+
+        drop(task);
+
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
+        while spill.exists() && tokio::time::Instant::now() < deadline {
+            tokio::task::yield_now().await;
+        }
+        assert!(
+            !spill.exists(),
+            "aborting an owned capture task must remove its spill"
+        );
     }
 }

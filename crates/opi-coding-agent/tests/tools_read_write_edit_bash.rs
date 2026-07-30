@@ -37,6 +37,17 @@ fn details_string<'a>(details: &'a serde_json::Value, key: &str) -> &'a str {
         .unwrap_or_else(|| panic!("details should include string key '{key}'"))
 }
 
+fn production_atomic_temp_entries(
+    directory: &std::path::Path,
+) -> std::collections::BTreeSet<String> {
+    std::fs::read_dir(directory)
+        .unwrap()
+        .filter_map(Result::ok)
+        .map(|entry| entry.file_name().to_string_lossy().into_owned())
+        .filter(|name| name.contains("opi-ops-tmp"))
+        .collect()
+}
+
 // ---------------------------------------------------------------------------
 // ReadTool tests
 // ---------------------------------------------------------------------------
@@ -543,6 +554,7 @@ async fn write_tool_atomic_no_partial_write() {
     let dir = tempfile::tempdir().unwrap();
     let tool = WriteTool::new(dir.path().to_path_buf());
     let target = dir.path().join("atomic.txt");
+    let before = production_atomic_temp_entries(dir.path());
 
     // Success path: after a large overwrite, no temp sibling leaks and the
     // target holds the full new content (never a truncated mix).
@@ -559,14 +571,10 @@ async fn write_tool_atomic_no_partial_write() {
         .unwrap();
     assert!(!r.is_error);
     assert_eq!(std::fs::read(&target).unwrap(), big.as_bytes());
-    let leaked: Vec<_> = std::fs::read_dir(dir.path())
-        .unwrap()
-        .filter_map(|e| e.ok())
-        .filter(|e| e.file_name().to_string_lossy().contains(".opi-write-tmp"))
-        .collect();
-    assert!(
-        leaked.is_empty(),
-        "temp file leaked after successful write: {leaked:?}"
+    assert_eq!(
+        production_atomic_temp_entries(dir.path()),
+        before,
+        "successful write left new production-tagged temp residue"
     );
 
     // Error path: an overwrite whose new content is rejected (NUL) must leave
@@ -585,6 +593,11 @@ async fn write_tool_atomic_no_partial_write() {
         std::fs::read(&target).unwrap(),
         big.as_bytes(),
         "prior content must be intact after rejected overwrite"
+    );
+    assert_eq!(
+        production_atomic_temp_entries(dir.path()),
+        before,
+        "rejected write left new production-tagged temp residue"
     );
 }
 
@@ -2742,6 +2755,10 @@ fn bash_tool_no_background_shell_symbols_guard() {
             .expect("read operations.rs");
     let bash = phase11_strip_comments(&bash_src);
     let ops = phase11_strip_comments(&ops_src);
+    let ops = ops
+        .split("mod tests {")
+        .next()
+        .expect("production operations source");
     for needle in [
         "portable_pty",
         "portable-pty",
@@ -2770,12 +2787,13 @@ fn bash_tool_no_background_shell_symbols_guard() {
         "operations.rs may spawn only through the owned pipe-drain helper"
     );
     for required in [
-        "let drain_out = spawn_stream_capture(stdout);",
-        "let drain_err = spawn_stream_capture(stderr);",
-        "tokio::task::JoinHandle<StreamCapture>",
-        "finish_stream_capture(drain_out)",
-        "finish_stream_capture(drain_err)",
-        "tokio::time::timeout(TERMINATED_PIPE_DRAIN_GRACE, &mut handle)",
+        "let drain_out = OwnedCaptureTask::new(spawn_stream_capture(stdout));",
+        "let drain_err = OwnedCaptureTask::new(spawn_stream_capture(stderr));",
+        "struct OwnedCaptureTask",
+        "impl Drop for OwnedCaptureTask",
+        "drain_out.finish()",
+        "drain_err.finish()",
+        "tokio::time::timeout(TERMINATED_PIPE_DRAIN_GRACE, handle)",
         "handle.abort()",
         "let _ = handle.await",
     ] {
@@ -3094,45 +3112,29 @@ fn write_uses_temp_and_rename_guard() {
 #[test]
 fn write_and_edit_temp_files_have_drop_cleanup_guard() {
     let root = phase11_workspace_root();
-    let helper = std::fs::read_to_string(root.join("crates/opi-coding-agent/src/tool/mod.rs"))
-        .expect("read tool/mod.rs");
-    let helper = phase11_strip_comments(&helper);
-    assert!(
-        helper.contains("struct TempFileGuard"),
-        "tool/mod.rs must define a shared temp-file cleanup guard"
-    );
-    assert!(
-        helper.contains("impl Drop for TempFileGuard"),
-        "TempFileGuard must clean up on drop as a future-cancellation backstop"
-    );
-    assert!(
-        helper.contains("std::fs::remove_file"),
-        "TempFileGuard::drop must use sync remove_file because Drop cannot await"
-    );
-
-    // Phase 15.2: the atomic-write recipe (TempFileGuard + rename) moved from
-    // the individual file tools into LocalFileOperations::atomic_write_bytes
-    // (operations.rs). The shared guard (mod.rs) is unchanged; the backend is
-    // where it is now armed, routed, cleaned up, and disarmed.
     let ops_src =
         std::fs::read_to_string(root.join("crates/opi-coding-agent/src/tool/operations.rs"))
             .expect("read operations.rs");
     let ops = phase11_strip_comments(&ops_src);
+    let ops = ops
+        .split("mod tests {")
+        .next()
+        .expect("production operations source");
     assert!(
-        ops.contains("TempFileGuard::new"),
-        "operations.rs must arm the temp-file cleanup guard before writing"
+        ops.contains("struct CapTempFileGuard"),
+        "operations.rs must define a capability-relative temp-file guard"
     );
     assert!(
-        ops.contains("guard.path()"),
-        "operations.rs must route temp write/rename through the guard path"
+        ops.contains("impl Drop for CapTempFileGuard"),
+        "CapTempFileGuard must clean up on drop as a cancellation backstop"
     );
     assert!(
-        ops.contains("guard.cleanup().await"),
-        "operations.rs must eagerly clean up known error paths"
+        ops.contains("self.parent.remove_file(&self.name)"),
+        "CapTempFileGuard::drop must remove through the held parent capability"
     );
     assert!(
-        ops.contains("guard.disarm()"),
-        "operations.rs must disarm the guard after successful rename"
+        ops.contains("self.armed = false"),
+        "the guard must disarm only after successful same-parent replacement"
     );
 }
 

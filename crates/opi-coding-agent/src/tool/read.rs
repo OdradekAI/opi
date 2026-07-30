@@ -60,11 +60,8 @@ impl ReadTool {
     }
 
     pub fn new_with_policy(workspace_root: PathBuf, path_policy: PathPolicy) -> Self {
-        Self::new_with_ops(
-            workspace_root,
-            path_policy,
-            Arc::new(LocalFileOperations::new()),
-        )
+        let ops = Arc::new(LocalFileOperations::new(workspace_root.clone()));
+        Self::new_with_ops(workspace_root, path_policy, ops)
     }
 
     /// Primary constructor with an explicit [`FileOperations`] backend (Phase 15

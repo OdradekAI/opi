@@ -16,6 +16,9 @@
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
+#[cfg(windows)]
+use std::process::Command;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -47,7 +50,7 @@ async fn operations_contracts_and_local_file_backend() {
 async fn file_ops_roundtrip_preserves_bytes() {
     let dir = tempfile::tempdir().unwrap();
     let target = dir.path().join("round.bin");
-    let ops = LocalFileOperations::new();
+    let ops = LocalFileOperations::new(dir.path().to_path_buf());
     ops.write_file(&target, b"line1\nline2\n").await.unwrap();
     let bytes = ops.read_file(&target).await.unwrap();
     assert_eq!(bytes, b"line1\nline2\n", "round-trip must preserve bytes");
@@ -57,7 +60,7 @@ async fn file_ops_metadata_reports_std_fields() {
     let dir = tempfile::tempdir().unwrap();
     let file = dir.path().join("meta.txt");
     std::fs::write(&file, "12345").unwrap();
-    let ops = LocalFileOperations::new();
+    let ops = LocalFileOperations::new(dir.path().to_path_buf());
     let meta = ops.metadata(&file).await.unwrap();
     assert_eq!(meta.len, 5);
     assert!(meta.is_file);
@@ -70,7 +73,7 @@ async fn file_ops_metadata_reports_std_fields() {
 
 async fn file_ops_mkdir_recursive_vs_non_recursive() {
     let dir = tempfile::tempdir().unwrap();
-    let ops = LocalFileOperations::new();
+    let ops = LocalFileOperations::new(dir.path().to_path_buf());
 
     let nested = dir.path().join("a/b/c");
     ops.mkdir(&nested, true).await.unwrap();
@@ -92,7 +95,7 @@ async fn file_ops_access_modes_basic() {
     let dir = tempfile::tempdir().unwrap();
     let file = dir.path().join("accessible.txt");
     std::fs::write(&file, "x").unwrap();
-    let ops = LocalFileOperations::new();
+    let ops = LocalFileOperations::new(dir.path().to_path_buf());
 
     ops.access(&file, AccessMode::Exists).await.unwrap();
     ops.access(&file, AccessMode::Readable).await.unwrap();
@@ -109,7 +112,7 @@ async fn file_ops_access_modes_basic() {
 async fn file_ops_errors_carry_path_identity() {
     let dir = tempfile::tempdir().unwrap();
     let missing = dir.path().join("identity-missing.txt");
-    let ops = LocalFileOperations::new();
+    let ops = LocalFileOperations::new(dir.path().to_path_buf());
 
     let err = ops.read_file(&missing).await.unwrap_err();
     match err {
@@ -134,7 +137,7 @@ async fn file_ops_do_not_escape_temp_root() {
     let primary = tempfile::tempdir().unwrap();
     let sibling = tempfile::tempdir().unwrap();
 
-    let ops = LocalFileOperations::new();
+    let ops = LocalFileOperations::new(primary.path().to_path_buf());
     let file = primary.path().join("inside.txt");
     ops.write_file(&file, b"confined").await.unwrap();
     ops.read_file(&file).await.unwrap();
@@ -172,13 +175,238 @@ async fn file_ops_do_not_escape_temp_root() {
     );
 }
 
+fn create_directory_link(link: &Path, target: &Path) -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(target, link)
+    }
+    #[cfg(windows)]
+    {
+        let status = Command::new("cmd")
+            .args([
+                "/C",
+                "mklink",
+                "/J",
+                &link.to_string_lossy(),
+                &target.to_string_lossy(),
+            ])
+            .status()?;
+        status
+            .success()
+            .then_some(())
+            .ok_or_else(|| std::io::Error::other("mklink /J failed"))
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        let _ = (link, target);
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "directory links unsupported",
+        ))
+    }
+}
+
+fn remove_directory_link(link: &Path) {
+    #[cfg(unix)]
+    let _ = std::fs::remove_file(link);
+    #[cfg(windows)]
+    let _ = std::fs::remove_dir(link);
+}
+
+#[tokio::test]
+async fn local_file_operations_reject_checked_ancestor_swap() {
+    let workspace = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    let ancestor = workspace.path().join("ancestor");
+    std::fs::create_dir(&ancestor).unwrap();
+    std::fs::write(ancestor.join("sentinel.txt"), "inside").unwrap();
+    let outside_sentinel = outside.path().join("sentinel.txt");
+    std::fs::write(&outside_sentinel, "outside").unwrap();
+
+    let checked = validate_workspace_path(workspace.path(), "ancestor/sentinel.txt").unwrap();
+    let ops = LocalFileOperations::new(workspace.path().to_path_buf());
+    let parked = workspace.path().join("parked");
+    std::fs::rename(&ancestor, &parked).unwrap();
+    if let Err(error) = create_directory_link(&ancestor, outside.path()) {
+        eprintln!("skipping ancestor-swap test; link creation failed: {error}");
+        return;
+    }
+
+    let read = ops.read_file(&checked).await;
+    assert!(
+        read.is_err(),
+        "swapped ancestor must not be followed for read"
+    );
+    let write = ops.write_file(&checked, b"compromised").await;
+    assert!(
+        write.is_err(),
+        "swapped ancestor must not be followed for atomic write"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&outside_sentinel).unwrap(),
+        "outside",
+        "outside sentinel must remain untouched"
+    );
+
+    remove_directory_link(&ancestor);
+}
+
+struct SwapBeforeBackendOps {
+    inner: Arc<LocalFileOperations>,
+    ancestor: PathBuf,
+    parked: PathBuf,
+    outside: PathBuf,
+    swapped: AtomicBool,
+}
+
+impl SwapBeforeBackendOps {
+    fn new(workspace: &Path, ancestor: PathBuf, outside: PathBuf) -> Self {
+        Self {
+            inner: Arc::new(LocalFileOperations::new(workspace.to_path_buf())),
+            parked: workspace.join("parked"),
+            ancestor,
+            outside,
+            swapped: AtomicBool::new(false),
+        }
+    }
+
+    fn swap_once(&self) {
+        if !self.swapped.swap(true, Ordering::SeqCst) {
+            std::fs::rename(&self.ancestor, &self.parked).expect("park checked ancestor");
+            create_directory_link(&self.ancestor, &self.outside).expect("create escape link");
+        }
+    }
+}
+
+impl Drop for SwapBeforeBackendOps {
+    fn drop(&mut self) {
+        if self.swapped.load(Ordering::SeqCst) {
+            remove_directory_link(&self.ancestor);
+        }
+    }
+}
+
+impl FileOperations for SwapBeforeBackendOps {
+    fn read_file(
+        &self,
+        path: &Path,
+    ) -> Pin<Box<dyn Future<Output = Result<Vec<u8>, FsOpError>> + Send>> {
+        self.swap_once();
+        self.inner.read_file(path)
+    }
+
+    fn write_file(
+        &self,
+        path: &Path,
+        data: &[u8],
+    ) -> Pin<Box<dyn Future<Output = Result<(), FsOpError>> + Send>> {
+        self.swap_once();
+        self.inner.write_file(path, data)
+    }
+
+    fn mkdir(
+        &self,
+        path: &Path,
+        recursive: bool,
+    ) -> Pin<Box<dyn Future<Output = Result<(), FsOpError>> + Send>> {
+        self.swap_once();
+        self.inner.mkdir(path, recursive)
+    }
+
+    fn metadata(
+        &self,
+        path: &Path,
+    ) -> Pin<Box<dyn Future<Output = Result<OpMetadata, FsOpError>> + Send>> {
+        self.swap_once();
+        self.inner.metadata(path)
+    }
+
+    fn access(
+        &self,
+        path: &Path,
+        mode: AccessMode,
+    ) -> Pin<Box<dyn Future<Output = Result<(), FsOpError>> + Send>> {
+        self.swap_once();
+        self.inner.access(path, mode)
+    }
+}
+
+#[tokio::test]
+async fn write_tool_rejects_ancestor_swap_after_path_policy() {
+    let workspace = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    let ancestor = workspace.path().join("ancestor");
+    std::fs::create_dir(&ancestor).unwrap();
+    std::fs::write(ancestor.join("sentinel.txt"), "inside").unwrap();
+    let outside_sentinel = outside.path().join("sentinel.txt");
+    std::fs::write(&outside_sentinel, "outside").unwrap();
+    let ops = Arc::new(SwapBeforeBackendOps::new(
+        workspace.path(),
+        ancestor,
+        outside.path().to_path_buf(),
+    ));
+    let tool = WriteTool::new_with_ops(workspace.path().to_path_buf(), ops);
+
+    let result = tool
+        .execute(
+            "c",
+            json!({ "path": "ancestor/sentinel.txt", "content": "compromised" }),
+            CancellationToken::new(),
+            None,
+        )
+        .await
+        .expect("write executes");
+
+    assert!(result.is_error);
+    assert_eq!(
+        std::fs::read_to_string(outside_sentinel).unwrap(),
+        "outside"
+    );
+}
+
+#[tokio::test]
+async fn edit_tool_rejects_ancestor_swap_after_path_policy() {
+    let workspace = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    let ancestor = workspace.path().join("ancestor");
+    std::fs::create_dir(&ancestor).unwrap();
+    std::fs::write(ancestor.join("sentinel.txt"), "old inside").unwrap();
+    let outside_sentinel = outside.path().join("sentinel.txt");
+    std::fs::write(&outside_sentinel, "old outside").unwrap();
+    let ops = Arc::new(SwapBeforeBackendOps::new(
+        workspace.path(),
+        ancestor,
+        outside.path().to_path_buf(),
+    ));
+    let tool = EditTool::new_with_ops(workspace.path().to_path_buf(), ops);
+
+    let result = tool
+        .execute(
+            "c",
+            json!({
+                "path": "ancestor/sentinel.txt",
+                "old_string": "old",
+                "new_string": "new"
+            }),
+            CancellationToken::new(),
+            None,
+        )
+        .await
+        .expect("edit executes");
+
+    assert!(result.is_error);
+    assert_eq!(
+        std::fs::read_to_string(outside_sentinel).unwrap(),
+        "old outside"
+    );
+}
+
 // =========================================================================
 // Bytes preservation (DoD clause: "preserve bytes")
 // =========================================================================
 
 #[tokio::test]
 async fn file_operations_read_preserves_bytes_exactly() {
-    let ops = LocalFileOperations::new();
     let fixtures: &[(&str, &[u8])] = &[
         ("empty", b""),
         ("single-byte", b"x"),
@@ -193,6 +421,7 @@ async fn file_operations_read_preserves_bytes_exactly() {
 
     for (name, fixture) in fixtures {
         let dir = tempfile::tempdir().unwrap();
+        let ops = LocalFileOperations::new(dir.path().to_path_buf());
         let target = dir.path().join("fixture.bin");
         std::fs::write(&target, fixture).unwrap();
         let read = ops.read_file(&target).await.unwrap();
@@ -204,7 +433,7 @@ async fn file_operations_read_preserves_bytes_exactly() {
 async fn file_operations_write_then_read_roundtrips_binary() {
     let dir = tempfile::tempdir().unwrap();
     let target = dir.path().join("rw.bin");
-    let ops = LocalFileOperations::new();
+    let ops = LocalFileOperations::new(dir.path().to_path_buf());
     let payload: Vec<u8> = (0..=255).cycle().take(1024).collect();
     ops.write_file(&target, &payload).await.unwrap();
     let read = ops.read_file(&target).await.unwrap();
@@ -218,7 +447,7 @@ async fn file_operations_write_then_read_roundtrips_binary() {
 #[tokio::test]
 async fn file_operations_metadata_reports_std_fields_across_types() {
     let dir = tempfile::tempdir().unwrap();
-    let ops = LocalFileOperations::new();
+    let ops = LocalFileOperations::new(dir.path().to_path_buf());
 
     let file = dir.path().join("regular.txt");
     std::fs::write(&file, "0123456789").unwrap();
@@ -252,7 +481,7 @@ async fn file_operations_metadata_reports_std_fields_across_types() {
 #[tokio::test]
 async fn file_operations_mkdir_recursive_creates_intermediate_dirs() {
     let dir = tempfile::tempdir().unwrap();
-    let ops = LocalFileOperations::new();
+    let ops = LocalFileOperations::new(dir.path().to_path_buf());
     let deep = dir.path().join("a/b/c/d");
     ops.mkdir(&deep, true).await.unwrap();
     assert!(deep.is_dir());
@@ -264,7 +493,7 @@ async fn file_operations_mkdir_recursive_creates_intermediate_dirs() {
 #[tokio::test]
 async fn file_operations_mkdir_non_recursive_fails_on_missing_parent() {
     let dir = tempfile::tempdir().unwrap();
-    let ops = LocalFileOperations::new();
+    let ops = LocalFileOperations::new(dir.path().to_path_buf());
     let fresh = dir.path().join("fresh");
     let deep = fresh.join("deep");
     let result = ops.mkdir(&deep, false).await;
@@ -283,7 +512,7 @@ async fn file_operations_access_modes_distinguish_exists_readable_writable() {
     let dir = tempfile::tempdir().unwrap();
     let file = dir.path().join("accessible.txt");
     std::fs::write(&file, "data").unwrap();
-    let ops = LocalFileOperations::new();
+    let ops = LocalFileOperations::new(dir.path().to_path_buf());
 
     ops.access(&file, AccessMode::Exists)
         .await
@@ -314,7 +543,7 @@ async fn file_operations_access_denied_on_unix() {
     std::fs::write(&file, "secret").unwrap();
     std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o000)).unwrap();
 
-    let ops = LocalFileOperations::new();
+    let ops = LocalFileOperations::new(dir.path().to_path_buf());
     let err = ops
         .access(&file, AccessMode::Readable)
         .await
@@ -339,7 +568,7 @@ async fn file_operations_access_denied_on_unix() {
 async fn file_operations_returns_not_found_for_missing_path() {
     let dir = tempfile::tempdir().unwrap();
     let missing = dir.path().join("no-such-file.txt");
-    let ops = LocalFileOperations::new();
+    let ops = LocalFileOperations::new(dir.path().to_path_buf());
 
     let err = ops.read_file(&missing).await.unwrap_err();
     assert_eq!(
@@ -364,7 +593,7 @@ async fn file_operations_returns_not_found_for_missing_path() {
 #[tokio::test]
 async fn file_operations_returns_not_a_file_for_directory_read() {
     let dir = tempfile::tempdir().unwrap();
-    let ops = LocalFileOperations::new();
+    let ops = LocalFileOperations::new(dir.path().to_path_buf());
     let err = ops.read_file(dir.path()).await.unwrap_err();
     assert_eq!(
         err,
@@ -385,7 +614,7 @@ async fn file_operations_errors_do_not_escape_temp_root() {
     let sentinel = tempfile::tempdir().unwrap();
     let pid = std::process::id();
 
-    let ops = LocalFileOperations::new();
+    let ops = LocalFileOperations::new(primary.path().to_path_buf());
     // Exercise every method (success and failure) inside primary.
     let file = primary.path().join("escape.txt");
     ops.write_file(&file, b"x").await.unwrap();
@@ -426,13 +655,15 @@ async fn file_operations_errors_do_not_escape_temp_root() {
 
 #[test]
 fn file_operations_trait_is_object_safe_via_arc_dyn() {
-    let _: Arc<dyn FileOperations> = Arc::new(LocalFileOperations::new());
+    let dir = tempfile::tempdir().unwrap();
+    let _: Arc<dyn FileOperations> = Arc::new(LocalFileOperations::new(dir.path().to_path_buf()));
 }
 
 #[tokio::test]
 async fn file_operations_dyn_dispatch_executes() {
-    let dyn_ops: Arc<dyn FileOperations> = Arc::new(LocalFileOperations::new());
     let dir = tempfile::tempdir().unwrap();
+    let dyn_ops: Arc<dyn FileOperations> =
+        Arc::new(LocalFileOperations::new(dir.path().to_path_buf()));
     let target = dir.path().join("dyn.txt");
     dyn_ops.write_file(&target, b"via-dyn").await.unwrap();
     let bytes = dyn_ops.read_file(&target).await.unwrap();
@@ -703,7 +934,9 @@ async fn operations_injection_reaches_tool_execution() {
     read_injected_ops_receive_resolved_path_once().await;
     read_workspace_policy_rejects_outside_path_before_backend().await;
     write_injected_ops_receive_resolved_path_and_bytes_once().await;
+    write_workspace_policy_rejects_outside_path_before_backend().await;
     edit_injected_ops_read_then_write_through_backend().await;
+    edit_workspace_policy_rejects_outside_path_before_backend().await;
     bash_injected_ops_receive_request_fields_once().await;
 }
 
@@ -798,6 +1031,33 @@ async fn write_injected_ops_receive_resolved_path_and_bytes_once() {
         writes[0].1, b"data",
         "backend must receive the verbatim content bytes"
     );
+}
+
+async fn write_workspace_policy_rejects_outside_path_before_backend() {
+    let workspace = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    let outside_file = outside.path().join("escape.txt");
+    let recording = Arc::new(RecordingFileOps::default());
+    let tool = WriteTool::new_with_ops(workspace.path().to_path_buf(), recording.clone());
+
+    let result = tool
+        .execute(
+            "c",
+            json!({ "path": outside_file, "content": "blocked" }),
+            CancellationToken::new(),
+            None,
+        )
+        .await
+        .expect("write execute");
+
+    assert!(result.is_error);
+    assert!(
+        result
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == code::CODE_TOOL_OUTSIDE_WORKSPACE)
+    );
+    assert_file_backend_not_called(&recording);
 }
 
 #[tokio::test]
@@ -979,6 +1239,45 @@ async fn edit_injected_ops_read_then_write_through_backend() {
     );
 }
 
+async fn edit_workspace_policy_rejects_outside_path_before_backend() {
+    let workspace = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    let outside_file = outside.path().join("escape.txt");
+    std::fs::write(&outside_file, "before").unwrap();
+    let recording = Arc::new(RecordingFileOps {
+        cfg: FileOpsConfig {
+            read_bytes: b"before".to_vec(),
+            meta: Some(true),
+        },
+        ..Default::default()
+    });
+    let tool = EditTool::new_with_ops(workspace.path().to_path_buf(), recording.clone());
+
+    let result = tool
+        .execute(
+            "c",
+            json!({
+                "path": outside_file,
+                "old_string": "before",
+                "new_string": "after"
+            }),
+            CancellationToken::new(),
+            None,
+        )
+        .await
+        .expect("edit execute");
+
+    assert!(result.is_error);
+    assert!(
+        result
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == code::CODE_TOOL_OUTSIDE_WORKSPACE)
+    );
+    assert_file_backend_not_called(&recording);
+    assert_eq!(std::fs::read_to_string(outside_file).unwrap(), "before");
+}
+
 async fn bash_injected_ops_receive_request_fields_once() {
     let workspace = tempfile::tempdir().unwrap();
     let recording = Arc::new(RecordingBashOps::exit_zero(b"out\n".to_vec()));
@@ -1034,6 +1333,25 @@ struct RecordingFileOps {
     writes: Arc<Mutex<Vec<WriteRecord>>>,
     metas: Arc<Mutex<Vec<PathBuf>>>,
     mkdirs: Arc<Mutex<Vec<PathBuf>>>,
+}
+
+fn assert_file_backend_not_called(recording: &RecordingFileOps) {
+    assert!(
+        recording.reads.lock().unwrap().is_empty(),
+        "unexpected read"
+    );
+    assert!(
+        recording.writes.lock().unwrap().is_empty(),
+        "unexpected write"
+    );
+    assert!(
+        recording.metas.lock().unwrap().is_empty(),
+        "unexpected metadata"
+    );
+    assert!(
+        recording.mkdirs.lock().unwrap().is_empty(),
+        "unexpected mkdir"
+    );
 }
 
 #[derive(Default)]

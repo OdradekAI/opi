@@ -37,16 +37,25 @@ pub enum TrustChoice {
     DenySession,
 }
 
+const ALL_TRUST_CHOICES: [TrustChoice; 5] = [
+    TrustChoice::Trust,
+    TrustChoice::TrustParent,
+    TrustChoice::TrustSession,
+    TrustChoice::Deny,
+    TrustChoice::DenySession,
+];
+
+const ROOT_TRUST_CHOICES: [TrustChoice; 4] = [
+    TrustChoice::Trust,
+    TrustChoice::TrustSession,
+    TrustChoice::Deny,
+    TrustChoice::DenySession,
+];
+
 impl TrustChoice {
     /// The five choices in stable render/navigation order.
     pub fn all() -> [TrustChoice; 5] {
-        [
-            TrustChoice::Trust,
-            TrustChoice::TrustParent,
-            TrustChoice::TrustSession,
-            TrustChoice::Deny,
-            TrustChoice::DenySession,
-        ]
+        ALL_TRUST_CHOICES
     }
 
     /// Human-readable label rendered in the prompt widget.
@@ -88,36 +97,54 @@ impl std::fmt::Debug for AwaitingTrustState {
     }
 }
 
-/// Ratatui selection widget over the five [`TrustChoice`] options.
+/// Ratatui selection widget over the available [`TrustChoice`] options.
 ///
 /// The cursor starts on [`TrustChoice::Trust`]; `move_next`/`move_prev` advance
 /// and clamp at the ends (no wrap). The selected row is prefixed with `> `.
 pub struct TrustPrompt {
     cursor: usize,
+    choices: &'static [TrustChoice],
 }
 
 impl Clone for TrustPrompt {
     fn clone(&self) -> Self {
         Self {
             cursor: self.cursor,
+            choices: self.choices,
         }
     }
 }
 
 impl TrustPrompt {
-    /// Create a prompt with the cursor on [`TrustChoice::Trust`].
+    /// Create the ordinary five-choice prompt.
     pub fn new() -> Self {
-        Self { cursor: 0 }
+        Self {
+            cursor: 0,
+            choices: &ALL_TRUST_CHOICES,
+        }
+    }
+
+    /// Create a prompt for a filesystem root, where no parent can be trusted.
+    pub fn without_parent() -> Self {
+        Self {
+            cursor: 0,
+            choices: &ROOT_TRUST_CHOICES,
+        }
+    }
+
+    /// Return the available choice at `index`.
+    pub fn choice_at(&self, index: usize) -> Option<TrustChoice> {
+        self.choices.get(index).copied()
     }
 
     /// The currently selected choice.
     pub fn selected(&self) -> TrustChoice {
-        TrustChoice::from_index(self.cursor).unwrap_or(TrustChoice::Trust)
+        self.choice_at(self.cursor).unwrap_or(TrustChoice::Trust)
     }
 
     /// Advance the cursor to the next choice; clamp at the last.
     pub fn move_next(&mut self) {
-        if self.cursor < TrustChoice::all().len() - 1 {
+        if self.cursor < self.choices.len() - 1 {
             self.cursor += 1;
         }
     }
@@ -146,19 +173,16 @@ impl Widget for TrustPrompt {
         block.render(area, buf);
 
         let selected_style = Style::default().add_modifier(Modifier::BOLD);
-        let lines = TrustChoice::all()
-            .into_iter()
-            .enumerate()
-            .map(|(i, choice)| {
-                if i == self.cursor {
-                    Line::from(vec![
-                        Span::styled("> ", selected_style),
-                        Span::styled(choice.label(), selected_style),
-                    ])
-                } else {
-                    Line::from(format!("  {}", choice.label()))
-                }
-            });
+        let lines = self.choices.iter().copied().enumerate().map(|(i, choice)| {
+            if i == self.cursor {
+                Line::from(vec![
+                    Span::styled("> ", selected_style),
+                    Span::styled(choice.label(), selected_style),
+                ])
+            } else {
+                Line::from(format!("  {}", choice.label()))
+            }
+        });
         Paragraph::new(lines.collect::<Vec<_>>()).render(inner, buf);
     }
 }
@@ -287,6 +311,36 @@ mod tests {
             "marker should follow cursor to TrustSession: {}",
             marker_lines[0]
         );
+    }
+
+    #[test]
+    fn trust_prompt_without_parent_omits_parent_and_reindexes_choices() {
+        let mut prompt = TrustPrompt::without_parent();
+        assert_eq!(prompt.selected(), TrustChoice::Trust);
+        assert_eq!(prompt.choice_at(1), Some(TrustChoice::TrustSession));
+
+        prompt.move_next();
+        assert_eq!(prompt.selected(), TrustChoice::TrustSession);
+
+        let text = render(prompt, 48, 8);
+        assert!(
+            !text.contains("Trust parent"),
+            "parent choice leaked: {text}"
+        );
+        assert!(
+            text.contains("Trust for session"),
+            "session choice missing: {text}"
+        );
+    }
+
+    #[test]
+    fn trust_prompt_without_parent_clamps_at_fourth_choice() {
+        let mut prompt = TrustPrompt::without_parent();
+        for _ in 0..TrustChoice::all().len() + 3 {
+            prompt.move_next();
+        }
+        assert_eq!(prompt.selected(), TrustChoice::DenySession);
+        assert_eq!(prompt.choice_at(4), None);
     }
 
     #[test]

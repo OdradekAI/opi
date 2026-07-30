@@ -20,8 +20,8 @@ use opi_coding_agent::config::{
     resolve_config,
 };
 use opi_coding_agent::diagnostics::{
-    CODE_SANDBOX_DEGRADED, CODE_SANDBOX_UNAVAILABLE, SOURCE_SANDBOX, sandbox_degraded_diagnostic,
-    sandbox_unavailable_diagnostic,
+    CODE_SANDBOX_DEGRADED, CODE_SANDBOX_UNAVAILABLE, SOURCE_SANDBOX, SandboxReason,
+    sandbox_degraded_diagnostic, sandbox_unavailable_diagnostic,
 };
 use serde_json::json;
 
@@ -314,7 +314,7 @@ fn sandbox_precedence_is_cli_then_explicit_then_project_then_user() {
 
 #[test]
 fn degraded_diagnostic_has_stable_code_source_redacted_details() {
-    let d = sandbox_degraded_diagnostic("landlock", "kernel < 5.13");
+    let d = sandbox_degraded_diagnostic("landlock", SandboxReason::LandlockTcpUnavailable);
     assert_eq!(d.code, CODE_SANDBOX_DEGRADED);
     assert_eq!(d.source, SOURCE_SANDBOX);
     assert_eq!(d.severity, Severity::Warning);
@@ -326,12 +326,18 @@ fn degraded_diagnostic_has_stable_code_source_redacted_details() {
     // Redacted: only layer + reason, never command/env/path/secrets.
     assert_eq!(obj.len(), 2, "details must carry only layer and reason");
     assert_eq!(obj.get("layer"), Some(&json!("landlock")));
-    assert_eq!(obj.get("reason"), Some(&json!("kernel < 5.13")));
+    assert_eq!(
+        obj.get("reason"),
+        Some(&json!("landlock TCP bind/connect unavailable below ABI 4"))
+    );
 }
 
 #[test]
 fn unavailable_diagnostic_has_stable_code_source_redacted_details() {
-    let d = sandbox_unavailable_diagnostic("windows-l3", "no syscall confinement on Windows");
+    let d = sandbox_unavailable_diagnostic(
+        "windows-l3",
+        SandboxReason::WindowsStrictConfinementUnavailable,
+    );
     assert_eq!(d.code, CODE_SANDBOX_UNAVAILABLE);
     assert_eq!(d.source, SOURCE_SANDBOX);
     assert_eq!(d.severity, Severity::Warning);
@@ -344,7 +350,9 @@ fn unavailable_diagnostic_has_stable_code_source_redacted_details() {
     assert_eq!(obj.get("layer"), Some(&json!("windows-l3")));
     assert_eq!(
         obj.get("reason"),
-        Some(&json!("no syscall confinement on Windows"))
+        Some(&json!(
+            "windows provides no L1-L3 strict confinement (L0 Job-Object only)"
+        ))
     );
 }
 
@@ -364,10 +372,8 @@ fn sandbox_diagnostic_constants_are_stable_literals() {
 }
 
 #[test]
-fn sandbox_degraded_redacts_untrusted_reason_text() {
-    // A reason string that happens to carry a secret-shaped value must still
-    // appear only under the redacted "reason" key; no additional fields leak.
-    let d = sandbox_degraded_diagnostic("seccomp", "token=AKIAEXAMPLE/secret path=/home/u");
+fn sandbox_diagnostic_reason_is_closed_and_redaction_safe() {
+    let d = sandbox_degraded_diagnostic("seccomp", SandboxReason::SeccompFilterBuildFailed);
     let obj = d
         .details
         .as_ref()
@@ -377,6 +383,13 @@ fn sandbox_degraded_redacts_untrusted_reason_text() {
     let mut keys: Vec<&String> = obj.keys().collect();
     keys.sort();
     assert_eq!(keys, vec!["layer", "reason"]);
+    let serialized = serde_json::to_string(&d).unwrap();
+    for canary in ["AKIAEXAMPLE", "secret", "/home/u", "command="] {
+        assert!(
+            !serialized.contains(canary),
+            "closed reason leaked canary {canary}: {serialized}"
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------

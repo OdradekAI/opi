@@ -23,7 +23,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use opi_coding_agent::config::{SandboxConfig, SandboxMode};
-use opi_coding_agent::diagnostics::{CODE_SANDBOX_DEGRADED, CODE_SANDBOX_UNAVAILABLE};
+use opi_coding_agent::diagnostics::{
+    CODE_SANDBOX_DEGRADED, CODE_SANDBOX_UNAVAILABLE, SandboxReason,
+};
 use opi_coding_agent::sandbox::{
     LayerAvailability, PreparedSandbox, SandboxLayer, StrictBackend, StrictOutcome, prepare,
     prepare_production,
@@ -93,7 +95,7 @@ async fn unavailable_layer_fail_open_and_fail_closed() {
 
     // Fail-open (require=false) on a TEMPORARY gap: command runs, degraded diag.
     let backend = fake_backend(|_| LayerAvailability::TemporarilyUnavailable {
-        reason: "fake temporary".to_string(),
+        reason: SandboxReason::LandlockTcpUnavailable,
     });
     let prepared = prepare(&strict_config(false), backend.as_ref());
     let ops = LocalBashOperations::with_prepared(prepared);
@@ -113,7 +115,7 @@ async fn unavailable_layer_fail_open_and_fail_closed() {
 
     // Fail-closed (require=true) on a PERMANENT gap: SandboxUnavailable, no spawn.
     let backend = fake_backend(|_| LayerAvailability::PermanentlyUnavailable {
-        reason: "fake permanent".to_string(),
+        reason: SandboxReason::WindowsStrictConfinementUnavailable,
     });
     let prepared = prepare(&strict_config(true), backend.as_ref());
     let ops = LocalBashOperations::with_prepared(prepared);
@@ -145,7 +147,7 @@ async fn permanent_gap_diagnostic_is_once_per_startup() {
     let dir = tempfile::tempdir().unwrap();
 
     let backend = fake_backend(|_| LayerAvailability::PermanentlyUnavailable {
-        reason: "fake permanent".to_string(),
+        reason: SandboxReason::WindowsStrictConfinementUnavailable,
     });
     let prepared = prepare(&strict_config(false), backend.as_ref());
 
@@ -541,11 +543,13 @@ async fn windows_strict_production_dispatch_reports_l0_only() {
 fn macos_profile_and_capability_matrix() {
     use opi_coding_agent::sandbox::LayerAvailability;
     use opi_coding_agent::sandbox::macos;
+    let available =
+        macos::SandboxExecStatus::Available(std::path::PathBuf::from(macos::SANDBOX_EXEC_PATH));
 
     // --- capability matrix ---
     // sandbox-exec available -> fs + network engage; syscalls ALWAYS permanently
     // unavailable (sandbox-exec is L1/L2 only).
-    let cap_avail = macos::macos_strict_capability(&macos::SandboxExecStatus::Available);
+    let cap_avail = macos::macos_strict_capability(&available);
     assert_eq!(
         cap_avail.fs,
         LayerAvailability::Engaged,
@@ -558,10 +562,7 @@ fn macos_profile_and_capability_matrix() {
     );
     match &cap_avail.syscalls {
         LayerAvailability::PermanentlyUnavailable { reason } => {
-            assert!(
-                reason.contains("L1/L2"),
-                "L3 reason must state macOS is L1/L2-only, got: {reason}"
-            );
+            assert_eq!(*reason, SandboxReason::MacosSyscallConfinementUnavailable);
         }
         other => panic!("syscalls must be PermanentlyUnavailable on macOS, got {other:?}"),
     }
@@ -572,13 +573,13 @@ fn macos_profile_and_capability_matrix() {
     let cap_miss = macos::macos_strict_capability(&macos::SandboxExecStatus::Missing);
     match &cap_miss.fs {
         LayerAvailability::TemporarilyUnavailable { reason } => {
-            assert_eq!(reason, macos::SANDBOX_EXEC_MISSING_REASON);
+            assert_eq!(*reason, SandboxReason::MacosSandboxExecMissing);
         }
         other => panic!("missing helper: fs must be TemporarilyUnavailable, got {other:?}"),
     }
     match &cap_miss.network {
         LayerAvailability::TemporarilyUnavailable { reason } => {
-            assert_eq!(reason, macos::SANDBOX_EXEC_MISSING_REASON);
+            assert_eq!(*reason, SandboxReason::MacosSandboxExecMissing);
         }
         other => panic!("missing helper: network must be TemporarilyUnavailable, got {other:?}"),
     }
@@ -597,10 +598,8 @@ fn macos_profile_and_capability_matrix() {
         macos::macos_strict_capability(&macos::SandboxExecStatus::Unusable(canary.to_string()));
     match &cap_unus.fs {
         LayerAvailability::TemporarilyUnavailable { reason } => {
-            assert!(
-                reason.starts_with(macos::SANDBOX_EXEC_UNUSABLE_PREFIX),
-                "unusable reason must use the stable prefix, got: {reason}"
-            );
+            assert_eq!(*reason, SandboxReason::MacosSandboxExecUnusable);
+            let reason = reason.as_str();
             assert!(
                 !reason.contains(canary)
                     && !reason.contains("TOP-SECRET")
@@ -701,14 +700,14 @@ fn macos_profile_and_capability_matrix() {
     // spawn composer rather than a dead wrapper-argv model.
     let confinement = macos::build_macos_confinement(
         std::path::Path::new("/Users/a/ws"),
-        &macos::SandboxExecStatus::Available,
+        &available,
         &[SandboxLayer::Fs, SandboxLayer::Network],
     )
     .expect("available helper with enabled layers builds a launcher");
     let (program, prefix) = confinement
         .launcher_prefix()
         .expect("macOS confinement is a launcher");
-    assert_eq!(program, "sandbox-exec");
+    assert_eq!(program, macos::SANDBOX_EXEC_PATH);
     assert_eq!(prefix.first().map(String::as_str), Some("-p"));
     let profile = prefix.get(1).expect("profile follows -p");
     assert!(profile.contains("file-write*"));
@@ -716,7 +715,7 @@ fn macos_profile_and_capability_matrix() {
 
     let fs_only = macos::build_macos_confinement(
         std::path::Path::new("/Users/a/ws"),
-        &macos::SandboxExecStatus::Available,
+        &available,
         &[SandboxLayer::Fs],
     )
     .expect("fs-only launcher");
@@ -726,7 +725,7 @@ fn macos_profile_and_capability_matrix() {
 
     let network_only = macos::build_macos_confinement(
         std::path::Path::new("/Users/a/ws"),
-        &macos::SandboxExecStatus::Available,
+        &available,
         &[SandboxLayer::Network],
     )
     .expect("network-only launcher");
@@ -735,12 +734,8 @@ fn macos_profile_and_capability_matrix() {
     assert!(network_profile.contains("(deny network*)"));
 
     assert!(
-        macos::build_macos_confinement(
-            std::path::Path::new("/Users/a/ws"),
-            &macos::SandboxExecStatus::Available,
-            &[],
-        )
-        .is_none(),
+        macos::build_macos_confinement(std::path::Path::new("/Users/a/ws"), &available, &[],)
+            .is_none(),
         "no enabled L1/L2 layer must not launch sandbox-exec"
     );
 }
@@ -778,7 +773,9 @@ fn linux_strict_backend_capability_matrix() {
         );
     }
 
-    // ABI V3 (Linux 6.2, pre-network): fs + syscalls engage, network does not.
+    // ABI V3 (Linux 6.2, pre-Landlock-network): fs + syscalls and the
+    // independent seccomp socket gate engage. The preparation path reports the
+    // missing TCP half as a partial degradation.
     let v3 = LinuxStrictBackend::with_observed_abi(ws.clone(), landlock::ABI::V3);
     assert!(matches!(
         v3.availability(SandboxLayer::Fs),
@@ -788,18 +785,13 @@ fn linux_strict_backend_capability_matrix() {
         v3.availability(SandboxLayer::Syscalls),
         LayerAvailability::Engaged
     ));
-    match v3.availability(SandboxLayer::Network) {
-        LayerAvailability::TemporarilyUnavailable { reason } => {
-            assert!(
-                reason.contains("ABI"),
-                "V3 network gap should reference the ABI, got: {reason}"
-            );
-        }
-        other => panic!("ABI V3 network must be temporarily unavailable, got {other:?}"),
-    }
+    assert!(matches!(
+        v3.availability(SandboxLayer::Network),
+        LayerAvailability::Engaged
+    ));
 
-    // ABI Unsupported: fs + network temp-unavailable; syscalls still engages
-    // (seccomp is ABI-independent of Landlock).
+    // ABI Unsupported: fs is unavailable; syscalls and the seccomp socket gate
+    // remain ABI-independent.
     let none = LinuxStrictBackend::with_observed_abi(ws, landlock::ABI::Unsupported);
     assert!(matches!(
         none.availability(SandboxLayer::Syscalls),
@@ -811,7 +803,7 @@ fn linux_strict_backend_capability_matrix() {
     ));
     assert!(matches!(
         none.availability(SandboxLayer::Network),
-        LayerAvailability::TemporarilyUnavailable { .. }
+        LayerAvailability::Engaged
     ));
 
     // The capability report distinguishes the seccomp socket-creation layer
@@ -855,6 +847,7 @@ mod linux_engaged {
 #include <errno.h>
 #include <fcntl.h>
 #include <stdlib.h>
+#include <sys/ptrace.h>
 
 static int denied(const char* what, int e) { fprintf(stderr, "%s DENIED errno=%d\n", what, e); return 1; }
 static int allowed(const char* what) { fprintf(stderr, "%s ALLOWED\n", what); return 0; }
@@ -932,6 +925,37 @@ int main(int argc, char** argv) {
         close(acc);
         return allowed("unix");
     }
+    if (!strcmp(op, "unix-dgram")) {
+        if (argc < 3) return denied("unix-dgram-needs-path", ENOENT);
+        int srv = socket(AF_UNIX, SOCK_DGRAM, 0);
+        if (srv < 0) return denied("unix-dgram-server-create", errno);
+        int cli = socket(AF_UNIX, SOCK_DGRAM, 0);
+        if (cli < 0) {
+            close(srv);
+            return denied("unix-dgram-client-create", errno);
+        }
+        struct sockaddr_un addr;
+        memset(&addr, 0, sizeof(addr));
+        addr.sun_family = AF_UNIX;
+        snprintf(addr.sun_path, sizeof(addr.sun_path), "%s", argv[2]);
+        unlink(addr.sun_path);
+        if (bind(srv, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
+            close(srv); close(cli);
+            return denied("unix-dgram-bind", errno);
+        }
+        const char sent = 'd';
+        char received = 0;
+        if (sendto(cli, &sent, 1, 0, (struct sockaddr*)&addr, sizeof(addr)) != 1) {
+            close(srv); close(cli);
+            return denied("unix-dgram-send", errno);
+        }
+        if (recvfrom(srv, &received, 1, 0, NULL, NULL) != 1 || received != sent) {
+            close(srv); close(cli);
+            return denied("unix-dgram-recv", errno);
+        }
+        close(srv); close(cli);
+        return allowed("unix-dgram");
+    }
     if (!strcmp(op, "tcp-bind-fd")) {
         if (argc < 3) return 2;
         int fd = atoi(argv[2]);
@@ -941,6 +965,26 @@ int main(int argc, char** argv) {
         addr.sin_addr.s_addr = htonl(0x7f000001); /* 127.0.0.1 */
         if (bind(fd, (struct sockaddr*)&addr, sizeof(addr)) < 0) return denied("tcp-bind-fd", errno);
         return allowed("tcp-bind-fd");
+    }
+    if (!strcmp(op, "tcp-connect-fd")) {
+        if (argc < 4) return 2;
+        int fd = atoi(argv[2]);
+        int port = atoi(argv[3]);
+        struct sockaddr_in addr; memset(&addr, 0, sizeof(addr));
+        addr.sin_family = AF_INET;
+        addr.sin_port = htons((unsigned short)port);
+        addr.sin_addr.s_addr = htonl(0x7f000001); /* 127.0.0.1 */
+        if (connect(fd, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
+            return denied("tcp-connect-fd", errno);
+        }
+        return allowed("tcp-connect-fd");
+    }
+    if (!strcmp(op, "ptrace-traceme")) {
+        errno = 0;
+        if (ptrace(PTRACE_TRACEME, 0, NULL, NULL) < 0) {
+            return denied("ptrace-traceme", errno);
+        }
+        return allowed("ptrace-traceme");
     }
     if (!strcmp(op, "write-file")) {
         if (argc < 3) return 2;
@@ -1039,6 +1083,26 @@ async fn linux_af_unix_survives_socket_creation_gate() {
     assert_probe_exit(&result, 0, "unix");
 }
 
+/// AF_UNIX datagram create, bind, send, and receive also survive the socket
+/// gate. This complements the stream round-trip above.
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn linux_af_unix_datagram_round_trip_survives_socket_creation_gate() {
+    let workspace = tempfile::tempdir().unwrap();
+    let probe = linux_engaged::build_probe(workspace.path());
+    let ops = linux_engaged::engaged_ops(workspace.path());
+    let sock_path = workspace.path().join("unix-dgram.sock");
+    let result = ops
+        .exec(linux_engaged::probe_request(
+            workspace.path(),
+            &probe,
+            &format!("unix-dgram {}", sock_path.display()),
+        ))
+        .await
+        .expect("exec runs");
+    assert_probe_exit(&result, 0, "unix-dgram");
+}
+
 /// Landlock ABI-4 TCP bind is denied. seccomp denies fresh `socket(AF_INET)`
 /// first, so this is exercised through an INHERITED TCP descriptor opened in the
 /// (unconfined) parent and passed to the confined child: the child's `bind()` is
@@ -1085,11 +1149,30 @@ async fn linux_landlock_abi4_denies_tcp_bind_connect() {
     unsafe { libc::close(fd) };
     // Landlock denies the TCP bind -> probe exits 1.
     assert_probe_exit(&result, 1, "tcp-bind-fd");
+
+    // A distinct inherited TCP socket attempts to connect to a reachable
+    // loopback listener. Landlock ConnectTcp must reject it before the
+    // listener can accept it.
+    let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let connect_fd = unsafe { libc::socket(libc::AF_INET, libc::SOCK_STREAM, 0) };
+    assert!(connect_fd >= 0, "parent client socket creation failed");
+    unsafe { libc::fcntl(connect_fd, libc::F_SETFD, 0) };
+    let result = ops
+        .exec(linux_engaged::probe_request(
+            workspace.path(),
+            &probe,
+            &format!("tcp-connect-fd {connect_fd} {port}"),
+        ))
+        .await
+        .expect("exec runs");
+    unsafe { libc::close(connect_fd) };
+    drop(listener);
+    assert_probe_exit(&result, 1, "tcp-connect-fd");
 }
 
 /// Landlock L1 fs: a write OUTSIDE the configured workspace/temp paths is denied,
-/// while a write INSIDE the workspace is allowed. ("Permits only configured
-/// workspace/temp writes.")
+/// while writes INSIDE the workspace and configured temp directory are allowed.
 #[cfg(target_os = "linux")]
 #[tokio::test]
 async fn linux_engaged_subprocess_denies_requested_access() {
@@ -1127,6 +1210,74 @@ async fn linux_engaged_subprocess_denies_requested_access() {
         .await
         .expect("exec runs");
     assert_probe_exit(&result, 0, "write-workspace");
+
+    // Configured temp-directory write -> allowed (exit 0).
+    let temp_target =
+        std::env::temp_dir().join(format!("opi-linux-temp-allowed-{}.txt", std::process::id()));
+    let result = ops
+        .exec(linux_engaged::probe_request(
+            workspace.path(),
+            &probe,
+            &format!("write-file {}", temp_target.display()),
+        ))
+        .await
+        .expect("exec runs");
+    assert_probe_exit(&result, 0, "write-temp");
+    let _ = std::fs::remove_file(temp_target);
+}
+
+/// The L3 ptrace block is behavioral, not only structural. First prove the
+/// safe PTRACE_TRACEME probe succeeds unconfined and with L3 explicitly
+/// disabled, then require strict L3 to return EPERM.
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn linux_l3_ptrace_is_denied_only_when_syscall_layer_is_enabled() {
+    let workspace = tempfile::tempdir().unwrap();
+    let probe = linux_engaged::build_probe(workspace.path());
+
+    let baseline = std::process::Command::new(&probe)
+        .arg("ptrace-traceme")
+        .output()
+        .expect("unconfined ptrace baseline runs");
+    assert!(
+        baseline.status.success(),
+        "unconfined PTRACE_TRACEME baseline must succeed: {}",
+        String::from_utf8_lossy(&baseline.stderr)
+    );
+
+    let l3_disabled = SandboxConfig {
+        mode: SandboxMode::Strict,
+        require: false,
+        fs: Some(false),
+        network: Some(false),
+        syscalls: Some(false),
+    };
+    let disabled_ops =
+        LocalBashOperations::with_prepared(prepare_production(&l3_disabled, workspace.path()));
+    let disabled = disabled_ops
+        .exec(linux_engaged::probe_request(
+            workspace.path(),
+            &probe,
+            "ptrace-traceme",
+        ))
+        .await
+        .expect("L3-disabled probe runs");
+    assert_probe_exit(&disabled, 0, "ptrace-l3-disabled");
+
+    let enabled = linux_engaged::engaged_ops(workspace.path())
+        .exec(linux_engaged::probe_request(
+            workspace.path(),
+            &probe,
+            "ptrace-traceme",
+        ))
+        .await
+        .expect("L3-enabled probe runs");
+    assert_probe_exit(&enabled, 1, "ptrace-l3-enabled");
+    assert!(
+        String::from_utf8_lossy(&enabled.stderr).contains(&format!("errno={}", libc::EPERM)),
+        "L3 denial must carry stable EPERM: {}",
+        String::from_utf8_lossy(&enabled.stderr)
+    );
 }
 
 // ---------------------------------------------------------------------------

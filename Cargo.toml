@@ -63,6 +63,7 @@ uuid = { version = "1", features = ["v7"] }
 time = { version = "0.3", features = ["serde", "formatting", "parsing"] }
 
 # file search
+cap-std = "4.0.2"
 ignore = "0.4"
 globset = "0.4"
 regex = "1"

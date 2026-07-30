@@ -83,6 +83,9 @@ pub enum TrustError {
     /// `--trust` and `--no-trust` were both set (mutually exclusive).
     #[error("--trust and --no-trust are mutually exclusive")]
     ConflictingCliFlags,
+    /// `TrustParent` was selected for a canonical filesystem root.
+    #[error("cannot trust parent of filesystem root: {project_root}")]
+    TrustParentUnavailable { project_root: PathBuf },
 }
 
 /// Errors a [`PreTrustUi`] implementation can surface. The substrate defines
@@ -725,14 +728,23 @@ pub fn apply_ui_choice(
     project_root: &Path,
 ) -> Result<TrustDecision, TrustError> {
     let decision = trust_choice_to_decision(choice);
-    let persist: Option<(&Path, bool)> = match choice {
-        opi_tui::TrustChoice::Trust => Some((project_root, true)),
-        opi_tui::TrustChoice::TrustParent => project_root.parent().map(|p| (p, true)),
-        opi_tui::TrustChoice::Deny => Some((project_root, false)),
+    let persist: Option<(PathBuf, bool)> = match choice {
+        opi_tui::TrustChoice::Trust => Some((project_root.to_path_buf(), true)),
+        opi_tui::TrustChoice::TrustParent => {
+            let canonical = std::fs::canonicalize(project_root)
+                .map_err(|_| TrustError::Canonicalize(project_root.to_path_buf()))?;
+            let parent = canonical
+                .parent()
+                .ok_or_else(|| TrustError::TrustParentUnavailable {
+                    project_root: canonical.clone(),
+                })?;
+            Some((parent.to_path_buf(), true))
+        }
+        opi_tui::TrustChoice::Deny => Some((project_root.to_path_buf(), false)),
         opi_tui::TrustChoice::TrustSession | opi_tui::TrustChoice::DenySession => None,
     };
     if let Some((path, trusted)) = persist {
-        store.record(path, trusted)?;
+        store.record(&path, trusted)?;
     }
     Ok(decision)
 }
@@ -851,6 +863,23 @@ mod apply_ui_choice_tests {
         assert_eq!(store.decide(&proj_a), TrustDecision::Trusted);
         // ...and so is a sibling, because the parent key covers it.
         assert_eq!(store.decide(&proj_b), TrustDecision::Trusted);
+    }
+
+    #[test]
+    fn trust_parent_rejects_filesystem_root() {
+        let user_config = tempfile::tempdir().unwrap();
+        let project = tempfile::tempdir().unwrap();
+        let canonical = std::fs::canonicalize(project.path()).unwrap();
+        let root = canonical.ancestors().last().expect("filesystem root");
+        let store = store_in(user_config.path());
+
+        let error = apply_ui_choice(TrustChoice::TrustParent, &store, root)
+            .expect_err("filesystem root has no parent to persist");
+
+        assert!(matches!(
+            error,
+            TrustError::TrustParentUnavailable { project_root } if project_root == root
+        ));
     }
 
     #[test]

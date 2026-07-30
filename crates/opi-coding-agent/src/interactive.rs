@@ -251,7 +251,14 @@ fn run_trust_prompt_terminal_with_ops<O: TrustPromptTerminalOps>(
     };
     let mut response_tx = Some(awaiting.response_tx);
     let project_display = project_path.to_string_lossy().to_string();
-    let mut prompt = TrustPrompt::new();
+    let has_parent = std::fs::canonicalize(project_path)
+        .ok()
+        .is_some_and(|canonical| canonical.parent().is_some());
+    let mut prompt = if has_parent {
+        TrustPrompt::new()
+    } else {
+        TrustPrompt::without_parent()
+    };
     let terminal = TrustPromptTerminalGuard::enter(ops)?;
     loop {
         terminal.ops.draw(&TrustPromptRender {
@@ -277,7 +284,7 @@ fn run_trust_prompt_terminal_with_ops<O: TrustPromptTerminalOps>(
                 }
                 KeyCode::Esc => break Ok(()), // drop sender -> receiver yields None (cancel)
                 KeyCode::Char(c @ '1'..='5') => {
-                    if let Some(tc) = TrustChoice::from_index((c as u8 - b'1') as usize) {
+                    if let Some(tc) = prompt.choice_at((c as u8 - b'1') as usize) {
                         if let Some(tx) = response_tx.take() {
                             let _ = tx.send(tc);
                         }
@@ -1918,6 +1925,47 @@ mod tests {
         cleanup: Vec<&'static str>,
     }
 
+    struct SuccessfulTrustPromptTerminalOps {
+        key: KeyCode,
+    }
+
+    impl TrustPromptTerminalOps for SuccessfulTrustPromptTerminalOps {
+        fn enable_raw_mode(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+
+        fn enter_alternate_screen(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+
+        fn construct_terminal(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+
+        fn draw(&mut self, _render: &TrustPromptRender<'_>) -> io::Result<()> {
+            Ok(())
+        }
+
+        fn poll(&mut self, _timeout: std::time::Duration) -> io::Result<bool> {
+            Ok(true)
+        }
+
+        fn read(&mut self) -> io::Result<Event> {
+            Ok(Event::Key(crossterm::event::KeyEvent::new(
+                self.key,
+                KeyModifiers::NONE,
+            )))
+        }
+
+        fn leave_alternate_screen(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+
+        fn disable_raw_mode(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
     impl TrustPromptTerminalOps for RecordingTrustPromptTerminalOps {
         fn enable_raw_mode(&mut self) -> io::Result<()> {
             Ok(())
@@ -2014,6 +2062,20 @@ mod tests {
 
             assert_eq!(ops.cleanup, expected_cleanup, "failure: {failure:?}");
         }
+    }
+
+    #[test]
+    fn trust_prompt_at_filesystem_root_omits_parent_choice() {
+        let canonical = std::fs::canonicalize(".").unwrap();
+        let filesystem_root = canonical.ancestors().last().unwrap();
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let mut ops = SuccessfulTrustPromptTerminalOps {
+            key: KeyCode::Char('2'),
+        };
+
+        run_trust_prompt_terminal_with_ops(filesystem_root, tx, &mut ops).unwrap();
+
+        assert_eq!(rx.blocking_recv().unwrap(), TrustChoice::TrustSession);
     }
 
     #[test]

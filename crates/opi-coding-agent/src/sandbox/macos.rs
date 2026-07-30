@@ -40,23 +40,25 @@
 //! (deny network*)                               ; network engaged only
 //! ```
 
+use crate::diagnostics::SandboxReason;
 /// Exact reason returned when `sandbox-exec` is not on `PATH`. Surfaced as the
 /// `TemporarilyUnavailable` reason for the fs and network layers (the shared
 /// 15.5.1 fail-open / fail-closed policy consumes it verbatim).
 use std::path::Path;
 
-pub const SANDBOX_EXEC_MISSING_REASON: &str = "sandbox-exec not found on PATH";
+pub const SANDBOX_EXEC_PATH: &str = "/usr/bin/sandbox-exec";
+pub const SANDBOX_EXEC_MISSING_REASON: &str = SandboxReason::MacosSandboxExecMissing.as_str();
 
 /// Stable prefix for the reason returned when `sandbox-exec` is present but
 /// failed the runtime probe. The probe detail is appended after this prefix.
-pub const SANDBOX_EXEC_UNUSABLE_PREFIX: &str = "sandbox-exec unusable:";
+pub const SANDBOX_EXEC_UNUSABLE_PREFIX: &str = SandboxReason::MacosSandboxExecUnusable.as_str();
 
 /// Exact reason macOS L3 (syscall) confinement is permanently unavailable.
 /// `sandbox-exec` exposes L1 (filesystem) and L2 (network) only; there is no
 /// syscall-level surface, so this layer is a permanent platform gap (one-time
 /// startup diagnostic, never per-command).
 pub const MACOS_L3_UNAVAILABLE_REASON: &str =
-    "macOS sandbox-exec provides L1/L2 confinement only; no syscall-level (L3) confinement";
+    SandboxReason::MacosSyscallConfinementUnavailable.as_str();
 
 /// Status of the `sandbox-exec` helper as discovered by the runtime probe.
 ///
@@ -65,7 +67,7 @@ pub const MACOS_L3_UNAVAILABLE_REASON: &str =
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SandboxExecStatus {
     /// `sandbox-exec` is on `PATH` and answered the probe; L1/L2 can engage.
-    Available,
+    Available(std::path::PathBuf),
     /// `sandbox-exec` was not found on `PATH`.
     Missing,
     /// `sandbox-exec` is present but the probe rejected it. The detail is never
@@ -76,15 +78,15 @@ pub enum SandboxExecStatus {
 impl SandboxExecStatus {
     /// Whether the helper is usable (L1/L2 can engage).
     pub fn is_available(&self) -> bool {
-        matches!(self, Self::Available)
+        matches!(self, Self::Available(_))
     }
 
     /// A static redacted reason, or `None` when available.
-    pub fn unavailability_reason(&self) -> Option<String> {
+    pub fn unavailability_reason(&self) -> Option<SandboxReason> {
         match self {
-            Self::Available => None,
-            Self::Missing => Some(SANDBOX_EXEC_MISSING_REASON.to_string()),
-            Self::Unusable(_) => Some(SANDBOX_EXEC_UNUSABLE_PREFIX.to_string()),
+            Self::Available(_) => None,
+            Self::Missing => Some(SandboxReason::MacosSandboxExecMissing),
+            Self::Unusable(_) => Some(SandboxReason::MacosSandboxExecUnusable),
         }
     }
 }
@@ -111,25 +113,21 @@ pub struct MacosStrictCapability {
 ///   (missing vs. unusable).
 pub fn macos_strict_capability(sandbox_exec: &SandboxExecStatus) -> MacosStrictCapability {
     let (fs, network) = match sandbox_exec {
-        SandboxExecStatus::Available => (
+        SandboxExecStatus::Available(_) => (
             super::LayerAvailability::Engaged,
             super::LayerAvailability::Engaged,
         ),
         SandboxExecStatus::Missing => {
-            let reason = SANDBOX_EXEC_MISSING_REASON.to_string();
+            let reason = SandboxReason::MacosSandboxExecMissing;
             (
-                super::LayerAvailability::TemporarilyUnavailable {
-                    reason: reason.clone(),
-                },
+                super::LayerAvailability::TemporarilyUnavailable { reason },
                 super::LayerAvailability::TemporarilyUnavailable { reason },
             )
         }
         SandboxExecStatus::Unusable(_) => {
-            let reason = SANDBOX_EXEC_UNUSABLE_PREFIX.to_string();
+            let reason = SandboxReason::MacosSandboxExecUnusable;
             (
-                super::LayerAvailability::TemporarilyUnavailable {
-                    reason: reason.clone(),
-                },
+                super::LayerAvailability::TemporarilyUnavailable { reason },
                 super::LayerAvailability::TemporarilyUnavailable { reason },
             )
         }
@@ -138,7 +136,7 @@ pub fn macos_strict_capability(sandbox_exec: &SandboxExecStatus) -> MacosStrictC
         fs,
         network,
         syscalls: super::LayerAvailability::PermanentlyUnavailable {
-            reason: MACOS_L3_UNAVAILABLE_REASON.to_string(),
+            reason: SandboxReason::MacosSyscallConfinementUnavailable,
         },
     }
 }
@@ -230,30 +228,16 @@ use std::path::PathBuf;
 #[cfg(target_os = "macos")]
 use std::sync::Arc;
 
-/// Resolve `program` on `PATH`. Equivalent to a `which` lookup; returns the
-/// first matching regular file.
-#[cfg(target_os = "macos")]
-fn find_on_path(program: &str) -> Option<PathBuf> {
-    let path = std::env::var_os("PATH")?;
-    for dir in std::env::split_paths(&path) {
-        let candidate = dir.join(program);
-        if candidate.is_file() {
-            return Some(candidate);
-        }
-    }
-    None
-}
-
-/// Probe `sandbox-exec`: PATH lookup, then launch `/usr/bin/true` under a no-op
+/// Probe the canonical `sandbox-exec`, then launch `/usr/bin/true` under a no-op
 /// profile. A usable helper exits 0; an MDM-blocked or broken install exits
 /// non-zero or fails to spawn. Diagnostics use only a static failure class;
 /// raw stderr and `io::Error` display are deliberately discarded.
 #[cfg(target_os = "macos")]
 fn probe_sandbox_exec() -> SandboxExecStatus {
-    let bin = match find_on_path("sandbox-exec") {
-        Some(p) => p,
-        None => return SandboxExecStatus::Missing,
-    };
+    let bin = PathBuf::from(SANDBOX_EXEC_PATH);
+    if !bin.is_file() {
+        return SandboxExecStatus::Missing;
+    }
     let profile = "(version 1)\n(allow default)\n";
     match std::process::Command::new(&bin)
         .arg("-p")
@@ -261,7 +245,7 @@ fn probe_sandbox_exec() -> SandboxExecStatus {
         .arg("/usr/bin/true")
         .output()
     {
-        Ok(o) if o.status.success() => SandboxExecStatus::Available,
+        Ok(o) if o.status.success() => SandboxExecStatus::Available(bin),
         Ok(o) if o.status.code().is_some() => {
             SandboxExecStatus::Unusable("probe returned non-zero status".to_string())
         }
@@ -293,8 +277,11 @@ pub fn build_macos_confinement(
     let ws = canonicalize_for_profile(workspace);
     let tmp = canonicalize_for_profile(&std::env::temp_dir());
     let profile = render_profile(&ws, &tmp, fs_enabled, network_enabled);
+    let SandboxExecStatus::Available(program) = status else {
+        return None;
+    };
     Some(super::Confinement::launcher(
-        "sandbox-exec",
+        &program.to_string_lossy(),
         vec!["-p".to_string(), profile],
     ))
 }
@@ -361,6 +348,7 @@ impl super::StrictBackend for MacosStrictBackend {
         super::ConfinementBuild {
             confinement: build_macos_confinement(&self.workspace, &self.status, engaged_layers),
             gaps: Vec::new(),
+            degraded: Vec::new(),
         }
     }
 }

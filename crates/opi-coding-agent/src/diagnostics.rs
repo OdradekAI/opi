@@ -17,6 +17,68 @@
 
 use opi_agent::diagnostic::{Diagnostic, Severity};
 
+/// Closed, redaction-safe sandbox diagnostic reason.
+///
+/// Every variant serializes to curator-controlled static text. Raw OS,
+/// subprocess, probe, command, environment, credential, and path data cannot
+/// cross the public diagnostic-construction boundary.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SandboxReason {
+    MissingChildProcessId,
+    ProcessTreeAttachFailed,
+    ProcessTreeTerminationFailed,
+    SeccompUnsupportedArchitecture,
+    SeccompFilterBuildFailed,
+    SeccompFilterCompileFailed,
+    LandlockFilesystemUnavailable,
+    LandlockTcpUnavailable,
+    LandlockFilesystemConstructionFailed,
+    LandlockNetworkConstructionFailed,
+    MacosSandboxExecMissing,
+    MacosSandboxExecUnusable,
+    MacosSyscallConfinementUnavailable,
+    WindowsStrictConfinementUnavailable,
+    StrictConfinementUnsupportedPlatform,
+}
+
+impl SandboxReason {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::MissingChildProcessId => "missing child process id",
+            Self::ProcessTreeAttachFailed => "process-tree containment attach failed",
+            Self::ProcessTreeTerminationFailed => "process-tree containment termination failed",
+            Self::SeccompUnsupportedArchitecture => {
+                "seccomp target architecture is not in the verified release matrix"
+            }
+            Self::SeccompFilterBuildFailed => "seccomp filter construction failed",
+            Self::SeccompFilterCompileFailed => "seccomp filter compilation failed",
+            Self::LandlockFilesystemUnavailable => {
+                "landlock filesystem rights unavailable (kernel reports ABI 0)"
+            }
+            Self::LandlockTcpUnavailable => "landlock TCP bind/connect unavailable below ABI 4",
+            Self::LandlockFilesystemConstructionFailed => "landlock filesystem construction failed",
+            Self::LandlockNetworkConstructionFailed => "landlock network construction failed",
+            Self::MacosSandboxExecMissing => "sandbox-exec not found at /usr/bin/sandbox-exec",
+            Self::MacosSandboxExecUnusable => "sandbox-exec unusable",
+            Self::MacosSyscallConfinementUnavailable => {
+                "macOS sandbox-exec provides L1/L2 confinement only; no syscall-level (L3) confinement"
+            }
+            Self::WindowsStrictConfinementUnavailable => {
+                "windows provides no L1-L3 strict confinement (L0 Job-Object only)"
+            }
+            Self::StrictConfinementUnsupportedPlatform => {
+                "strict sandbox unsupported on this platform"
+            }
+        }
+    }
+}
+
+impl std::fmt::Display for SandboxReason {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
 /// Stable code for a temporary sandbox layer degradation (fail-open baseline).
 pub const CODE_SANDBOX_DEGRADED: &str = "opi.sandbox.degraded";
 
@@ -32,7 +94,7 @@ pub const SOURCE_SANDBOX: &str = "sandbox";
 /// curator-controlled explanation (e.g. `"kernel < 5.13"`). The payload is
 /// restricted to `{ layer, reason }` and never carries command text, env
 /// vars, paths, or secrets.
-pub fn sandbox_degraded_diagnostic(layer: &'static str, reason: impl Into<String>) -> Diagnostic {
+pub fn sandbox_degraded_diagnostic(layer: &'static str, reason: SandboxReason) -> Diagnostic {
     Diagnostic::new(
         Severity::Warning,
         CODE_SANDBOX_DEGRADED,
@@ -41,7 +103,7 @@ pub fn sandbox_degraded_diagnostic(layer: &'static str, reason: impl Into<String
     )
     .details(serde_json::json!({
         "layer": layer,
-        "reason": reason.into(),
+        "reason": reason.as_str(),
     }))
 }
 
@@ -50,10 +112,7 @@ pub fn sandbox_degraded_diagnostic(layer: &'static str, reason: impl Into<String
 /// Semantics mirror [`sandbox_degraded_diagnostic`] but identify a permanent
 /// platform gap rather than a temporary degradation; callers should emit it at
 /// most once per startup.
-pub fn sandbox_unavailable_diagnostic(
-    layer: &'static str,
-    reason: impl Into<String>,
-) -> Diagnostic {
+pub fn sandbox_unavailable_diagnostic(layer: &'static str, reason: SandboxReason) -> Diagnostic {
     Diagnostic::new(
         Severity::Warning,
         CODE_SANDBOX_UNAVAILABLE,
@@ -62,6 +121,6 @@ pub fn sandbox_unavailable_diagnostic(
     )
     .details(serde_json::json!({
         "layer": layer,
-        "reason": reason.into(),
+        "reason": reason.as_str(),
     }))
 }

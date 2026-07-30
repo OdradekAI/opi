@@ -61,19 +61,19 @@ pub fn configure_tree(cmd: &mut Command) {
 #[derive(Debug, Clone)]
 pub struct AttachError {
     pub layer: &'static str,
-    pub reason: String,
+    pub reason: crate::diagnostics::SandboxReason,
 }
 
 impl AttachError {
-    fn new(layer: &'static str, reason: impl Into<String>) -> Self {
-        Self {
-            layer,
-            reason: reason.into(),
-        }
+    fn new(layer: &'static str, reason: crate::diagnostics::SandboxReason) -> Self {
+        Self { layer, reason }
     }
 
     fn missing_pid() -> Self {
-        Self::new(LAYER, "missing child process id")
+        Self::new(
+            LAYER,
+            crate::diagnostics::SandboxReason::MissingChildProcessId,
+        )
     }
 }
 
@@ -222,7 +222,10 @@ impl TreeGuard {
             return Err(AttachError::missing_pid());
         }
         if inject_attach_failure {
-            return Err(AttachError::new(LAYER, "injected attach failure"));
+            return Err(AttachError::new(
+                LAYER,
+                crate::diagnostics::SandboxReason::ProcessTreeAttachFailed,
+            ));
         }
         #[cfg(unix)]
         {
@@ -259,7 +262,7 @@ impl TreeGuard {
         if std::mem::take(&mut self.fail_terminate_once) {
             return TerminationOutcome::Failed(AttachError::new(
                 LAYER,
-                "injected terminate failure",
+                crate::diagnostics::SandboxReason::ProcessTreeTerminationFailed,
             ));
         }
         #[cfg(unix)]
@@ -278,7 +281,7 @@ impl TreeGuard {
                     } else {
                         TerminationOutcome::Failed(AttachError::new(
                             LAYER,
-                            format!("kill process group failed: {}", io::Error::last_os_error()),
+                            crate::diagnostics::SandboxReason::ProcessTreeTerminationFailed,
                         ))
                     }
                 }
@@ -354,7 +357,7 @@ impl JobGuard {
         if handle.is_null() {
             return Err(AttachError::new(
                 LAYER,
-                format!("CreateJobObjectW failed: {}", io::Error::last_os_error()),
+                crate::diagnostics::SandboxReason::ProcessTreeAttachFailed,
             ));
         }
         // Configure kill-on-close. We deliberately omit the breakaway-OK flag
@@ -373,11 +376,10 @@ impl JobGuard {
             )
         };
         if ok == 0 {
-            let err = io::Error::last_os_error();
             unsafe { CloseHandle(handle) };
             return Err(AttachError::new(
                 LAYER,
-                format!("SetInformationJobObject failed: {err}"),
+                crate::diagnostics::SandboxReason::ProcessTreeAttachFailed,
             ));
         }
         Ok(Self {
@@ -398,7 +400,7 @@ impl JobGuard {
         if proc.is_null() {
             return Err(AttachError::new(
                 LAYER,
-                format!("OpenProcess({pid}) failed: {}", io::Error::last_os_error()),
+                crate::diagnostics::SandboxReason::ProcessTreeAttachFailed,
             ));
         }
         let ok = unsafe { AssignProcessToJobObject(self.handle as *mut _, proc) };
@@ -406,10 +408,7 @@ impl JobGuard {
         if ok == 0 {
             return Err(AttachError::new(
                 LAYER,
-                format!(
-                    "AssignProcessToJobObject failed: {}",
-                    io::Error::last_os_error()
-                ),
+                crate::diagnostics::SandboxReason::ProcessTreeAttachFailed,
             ));
         }
         Ok(())
@@ -437,11 +436,11 @@ impl JobGuard {
         }
         if terminate_job_object(self.handle, 1) == 0 {
             let error = last_os_error();
-            let reason = match error.raw_os_error() {
-                Some(code) => format!("TerminateJobObject failed (os error {code})"),
-                None => "TerminateJobObject failed".to_string(),
-            };
-            return Err(AttachError::new(LAYER, reason));
+            let _ = error;
+            return Err(AttachError::new(
+                LAYER,
+                crate::diagnostics::SandboxReason::ProcessTreeTerminationFailed,
+            ));
         }
         Ok(())
     }
@@ -573,11 +572,17 @@ mod tests {
     /// AttachError carries only the redacted layer/reason pair.
     #[test]
     fn attach_error_redacts_to_layer_and_reason() {
-        let err = AttachError::new("windows-job", "boom");
+        let err = AttachError::new(
+            "windows-job",
+            crate::diagnostics::SandboxReason::ProcessTreeAttachFailed,
+        );
         assert_eq!(err.layer, "windows-job");
-        assert_eq!(err.reason, "boom");
+        assert_eq!(
+            err.reason,
+            crate::diagnostics::SandboxReason::ProcessTreeAttachFailed
+        );
         assert!(err.to_string().contains("windows-job"));
-        assert!(err.to_string().contains("boom"));
+        assert!(err.to_string().contains("containment attach failed"));
     }
 
     #[test]
@@ -585,7 +590,10 @@ mod tests {
         let err = TreeGuard::attach_with_faults(424242, TestTreeFaults::attach())
             .expect_err("injected strategy must force attach failure");
         assert_eq!(err.layer, LAYER);
-        assert!(err.reason.contains("injected"));
+        assert_eq!(
+            err.reason,
+            crate::diagnostics::SandboxReason::ProcessTreeAttachFailed
+        );
     }
 
     #[test]
@@ -593,7 +601,10 @@ mod tests {
         for result in [TreeGuard::attach(0), TreeGuard::attach_child(None)] {
             let err = result.expect_err("PID 0/missing PID must not attach");
             assert_eq!(err.layer, LAYER);
-            assert_eq!(err.reason, "missing child process id");
+            assert_eq!(
+                err.reason,
+                crate::diagnostics::SandboxReason::MissingChildProcessId
+            );
         }
     }
 
@@ -608,7 +619,10 @@ mod tests {
         match outcome {
             TerminationOutcome::Failed(error) => {
                 assert_eq!(error.layer, "windows-job");
-                assert_eq!(error.reason, "TerminateJobObject failed (os error 5)");
+                assert_eq!(
+                    error.reason,
+                    crate::diagnostics::SandboxReason::ProcessTreeTerminationFailed
+                );
             }
             other => panic!("expected failed termination, got {other:?}"),
         }

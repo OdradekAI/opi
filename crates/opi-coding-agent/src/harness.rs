@@ -2100,7 +2100,8 @@ impl CodingHarness {
         };
 
         let startup_diagnostics = prepared.startup_diagnostics();
-        let file_ops: Arc<dyn FileOperations> = Arc::new(LocalFileOperations::new());
+        let file_ops: Arc<dyn FileOperations> =
+            Arc::new(LocalFileOperations::new(workspace_root.to_path_buf()));
         let bash_ops: Arc<dyn BashOperations> =
             Arc::new(LocalBashOperations::with_prepared(prepared));
 

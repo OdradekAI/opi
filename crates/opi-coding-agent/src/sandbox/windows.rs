@@ -21,10 +21,9 @@
 
 use super::{LayerAvailability, PreparedSandbox, SandboxLayer, StrictBackend};
 use crate::config::SandboxConfig;
+use crate::diagnostics::SandboxReason;
 
 const WINDOWS_STRICT_GAP_LAYER: &str = "strict";
-const WINDOWS_STRICT_GAP_REASON: &str =
-    "windows provides no L1-L3 strict confinement (L0 Job-Object only)";
 
 /// Windows L0-only strict backend: every strict layer is a permanent platform
 /// gap. On Windows, `prepare_production` routes through [`prepare`] (which feeds
@@ -36,12 +35,15 @@ pub(crate) struct L0OnlyBackend;
 impl StrictBackend for L0OnlyBackend {
     fn availability(&self, _layer: SandboxLayer) -> LayerAvailability {
         LayerAvailability::PermanentlyUnavailable {
-            reason: WINDOWS_STRICT_GAP_REASON.to_string(),
+            reason: SandboxReason::WindowsStrictConfinementUnavailable,
         }
     }
 
-    fn aggregate_permanent_gap(&self) -> Option<(&'static str, &'static str)> {
-        Some((WINDOWS_STRICT_GAP_LAYER, WINDOWS_STRICT_GAP_REASON))
+    fn aggregate_permanent_gap(&self) -> Option<(&'static str, SandboxReason)> {
+        Some((
+            WINDOWS_STRICT_GAP_LAYER,
+            SandboxReason::WindowsStrictConfinementUnavailable,
+        ))
     }
 }
 

@@ -8,11 +8,11 @@
 |---|---|
 | Status | Draft |
 | Spec version | 0.6-draft |
-| Last updated | 2026-07-14 |
+| Last updated | 2026-07-29 |
 | Repository | `https://github.com/OdradekAI/opi` |
 | Upstream studied | `pi` 0.80.2 at `.repo/pi-0.80.2/`; alignment is assessed by fresh `opi-realign` audits under [`docs/realign/`](realign/) |
-| Current implementation | `opi` 0.7.1 workspace with Phases 1-14 implemented; Phase 14 provider/auth product paths are present, while dynamic model refresh remains substrate-only |
-| Next milestone | Phase 15 safety/sandbox implementation |
+| Current implementation | `opi` 0.7.1 workspace with Phases 1-15 implemented; Phase 15 safety/sandbox and project-trust product paths are present |
+| Next milestone | Phase 16 pluggable extension command execution |
 
 This document is normative for the current design. Changes that alter public APIs, event protocols, session storage, release behavior, or phase boundaries SHOULD update this file in the same change.
 
@@ -35,7 +35,7 @@ Opi mirrors pi's package structure with four Rust crates:
 - `opi-tui`: terminal UI components.
 - `opi-coding-agent`: the `opi` CLI binary.
 
-The repository has completed Phases 1-14. In addition to the terminal agent,
+The repository has completed Phases 1-15. In addition to the terminal agent,
 runtime, package, provider-correctness, tooling, and session-context work,
 Phase 14 now supplies OS-keychain credential storage, OAuth for Anthropic,
 GitHub Copilot, and OpenAI Codex, per-stream auth resolution, request/session
@@ -1884,12 +1884,12 @@ domain-filterable. The seccomp deny-overlay returns a stable `EPERM` errno for
 for Unix-domain IPC remain allowed. On Landlock ABI 4 (Linux 6.7+; runtime
 probed via `landlock_create_ruleset`, never inferred from the kernel release),
 the layer additionally denies TCP `bind`/`connect` by handling `AccessNet::
-{BindTcp, ConnectTcp}` with no allow-port rules. The network *layer* reports
-`TemporarilyUnavailable` on ABI < 4 even though the seccomp socket-creation
-denial is always engaged, so a strict `network`-requested config on an ABI-3
-kernel fails open (or closed under `require = true`) rather than claiming
-denial. Landlock filesystem (L1) engages on ABI 1+ and carves write exceptions
-for the workspace and temp dir.
+{BindTcp, ConnectTcp}` with no allow-port rules. On Landlock ABI 1-3, the
+independent seccomp socket-creation gate remains engaged while the missing TCP
+bind/connect sub-capability is reported as a degraded gap. Fail-open continues
+at that partial baseline; `require = true` fails closed before spawning.
+Landlock filesystem (L1) engages on ABI 1+ and carves write exceptions for the
+workspace and temp dir.
 
 L3 is a danger-blocklist, not a strict allowlist. It denies `open_by_handle_at`,
 `bpf`, `perf_event_open`, `ptrace`, `kexec_load`, `kexec_file_load`, `reboot`,
@@ -1912,13 +1912,16 @@ defined semantics, and `AF_UNIX` is not a denied family). A true no-external-
 network boundary needs a sanitized-fd launcher plus network namespaces and
 remains a follow-up.
 
-macOS applies L1/L2 through a direct `sandbox-exec -p <templated profile>`
+macOS applies L1/L2 through the probed absolute
+`/usr/bin/sandbox-exec -p <templated profile>`
 deny-overlay — `(allow default)`, then `(deny file-write* (subpath "/"))` with
 workspace and temp write exceptions, and `(deny network*)` — relaunched through
-the `Confinement::launcher` seam (`sandbox-exec` is the helper, so opi holds no
-`pre_exec`/`unsafe` on this path). L3 is unavailable on macOS. `sandbox-exec`
-has been soft-deprecated since Sierra 2016 but remains functional, and strict
-degrades to L0 with a startup diagnostic when unavailable.
+the `Confinement::launcher` seam. The probed helper identity is retained and
+the same absolute path is launched, so a PATH shim or later PATH change cannot
+substitute a different program and opi holds no `pre_exec`/`unsafe` on this
+path. L3 is unavailable on macOS. `sandbox-exec` has been soft-deprecated since
+Sierra 2016 but remains functional, and strict degrades to L0 with a startup
+diagnostic when unavailable.
 
 Windows is L0-only. The Job Object is implemented via direct `windows-sys` FFI
 (`CreateJobObjectW` / `SetInformationJobObject` /
@@ -1932,16 +1935,17 @@ Resume` race is accepted and documented as a residual.
 Diagnostics are additive `&'static str` codes — `opi.sandbox.degraded`
 (`CODE_SANDBOX_DEGRADED`) and `opi.sandbox.unavailable`
 (`CODE_SANDBOX_UNAVAILABLE`) under source `sandbox` — carrying a redacted
-`{ layer, reason }` payload (no command, env var, absolute path, or credential
-ever placed in the payload). Temporary gaps emit a per-command `degraded`
-diagnostic and proceed at the engaged baseline; permanent platform gaps emit a
-single `unavailable` diagnostic at startup, never per command.
+`{ layer, reason }` payload. `reason` comes from the closed `SandboxReason`
+enum and serializes only curated static text; raw OS/probe errors are mapped
+before diagnostic construction, so no command, env var, absolute path, or
+credential can enter the payload. Temporary gaps emit a per-command
+`degraded` diagnostic and proceed at the engaged baseline; permanent platform
+gaps emit a single `unavailable` diagnostic at startup, never per command.
 
 The `Operations` seam is a pure FS/exec backend layered below `PathPolicy`.
 `PathPolicy` runs first (expand -> canonicalize -> verbatim-strip ->
-symlink-escape -> workspace-containment) and hands Operations an already-
-resolved path; `FileOperations` and `BashOperations` perform no path resolution
-and no confinement. Two grouped traits live in `opi-coding-agent`:
+symlink-escape -> workspace-containment) and hands Operations an authorized
+path. Two grouped traits live in `opi-coding-agent`:
 `FileOperations` (read+write+edit: `read_file`/`write_file`/`mkdir`/
 `metadata`/`access`) and `BashOperations` (`exec`). `build_tools_with_sandbox`
 constructor-injects `Arc<dyn FileOperations>` into read/write/edit and
@@ -1950,10 +1954,15 @@ constructor-injects `Arc<dyn FileOperations>` into read/write/edit and
 `BashTool::execute` is a thin caller with no direct `Command` spawn. Nav tools
 (`grep`/`find`/`ls`/`glob`) take no Operations handle: their `ignore`-crate
 `WalkBuilder` cannot be cleanly redirected to a remote backend without losing
-gitignore semantics. `FileOperations` is unsandboxed — file tools stay
-`PathPolicy`-guarded, since Phase 15 confines only the bash subprocess tree.
-The seam ships local impls only; SSH/container remote backends are future/
-examples (pi parity). Opi-side `unsafe` is limited to the audited
+gitignore semantics. File tools are not process-sandboxed: they stay
+`PathPolicy`-guarded because Phase 15 confines only the bash subprocess tree.
+The shipped `LocalFileOperations` additionally resolves workspace paths
+relative to a held canonical workspace-root capability, including metadata,
+directory creation, reads, and same-parent atomic staging/rename. This closes
+ancestor symlink/junction swap races after `PathPolicy`; explicitly authorized
+external interactive reads retain ambient-path behavior. The seam ships local
+impls only; SSH/container remote backends are future/examples (pi parity).
+Opi-side `unsafe` is limited to the audited
 `pre_exec`/Job-Object helpers in `tool/process_tree.rs`; the production-path
 `sandbox.rs`, `tool/operations.rs`, and `sandbox/windows.rs` modules retain
 `#![forbid(unsafe_code)]`.
@@ -1977,6 +1986,8 @@ ungated tool execution). User-global resources, user-global adapters, and all
 tool execution are ungated. The interactive TUI surfaces an `AppState::
 AwaitingTrust` prompt (Trust / Trust-parent / Trust-session / Deny / Deny-
 session) only on first entry into a project with trust-requiring resources;
+the Trust-parent choice is omitted at a filesystem root and a forged root-level
+selection is rejected with a named error;
 non-interactive and RPC modes cannot ask and default untrusted unless `--trust`
 or `default_project_trust = "always"`. Precedence is CLI (`--trust`/
 `--no-trust`) -> `project_trust` resolver hook -> store ->
@@ -1994,8 +2005,9 @@ before consent.
 
 Phase 15 explicitly retains these boundaries: no confinement of opi itself
 (untrusted code belongs in a container or VM); no strict-confinement of
-adapters (L0 only); no confinement of in-process file tools (read/write/edit
-stay `PathPolicy`-guarded) or nav tools; no SSH/container remote Operations
+adapters (L0 only); no process sandbox for in-process file tools or nav tools
+(read/write/edit stay `PathPolicy`-guarded and the local workspace backend is
+capability-relative); no SSH/container remote Operations
 backends; no trust-gating of tool execution (trust decides what project
 resources *load*, not what tools *do*); no auto-injection of project
 `AGENTS.md`/`CLAUDE.md` for untrusted projects; no built-in `/trust` slash
@@ -2010,13 +2022,13 @@ Phase 15 acceptance trace:
 |---|---:|---|
 | SC1 L0 bash tree lifecycle + Windows adapter assignment | 15.4 | `sandbox_l0::bash_l0_kills_process_tree_in_off_mode` proves L0 tree-kill in `off`; `sandbox_l0::windows_bash_and_adapter_use_kill_on_close_job` and `sandbox_l0::adapter_process_group_contract` pin the `windows-sys` Job-Object L0. |
 | SC2 sandbox config production path + fallback policy | 15.5.1 | `sandbox_strict` bin + `sandbox_config::invalid_sandbox_config_exits_before_provider_construction` prove `main -> resolve_config -> build_tools -> LocalBashOperations::exec`; `unavailable_layer_fail_open_and_fail_closed` and `permanent_gap_diagnostic_is_once_per_startup` pin the `require` degrade policy. |
-| SC3 Linux strict backend (narrowed L2 + L3) | 15.5.3 | `linux_af_unix_survives_socket_creation_gate`, `linux_new_inet_inet6_netlink_sockets_are_denied`, `linux_landlock_abi4_denies_tcp_bind_connect`, `linux_strict_backend_capability_matrix`, and `sandbox_linux_backend::linux_alternate_network_surface_audit` pin the seccomp socket gate, Landlock TCP, and the `io_uring`/`socketpair` residuals. |
+| SC3 Linux strict backend (narrowed L2 + L3) | 15.5.3 | `linux_af_unix_survives_socket_creation_gate`, `linux_af_unix_datagram_round_trip_survives_socket_creation_gate`, `linux_new_inet_inet6_netlink_sockets_are_denied`, `linux_landlock_abi4_denies_tcp_bind_connect`, `linux_l3_ptrace_is_denied_only_when_syscall_layer_is_enabled`, `linux_strict_backend_capability_matrix`, and `sandbox_linux_backend::linux_alternate_network_surface_audit` pin the retained seccomp socket gate, Unix stream/datagram survival, Landlock TCP bind/connect, runtime L3 denial, and the `io_uring`/`socketpair` residuals. |
 | SC4 macOS strict backend | 15.5.4 | `macos_profile_and_capability_matrix` and the three `macos_engaged_subprocess_*` tests pin the `sandbox-exec` profile deny-overlay via the `Confinement::launcher` seam. |
 | SC5 Windows strict fallback | 15.5.5 | `windows_strict_reports_l0_only` and `windows_strict_production_dispatch_reports_l0_only` pin strict->L0 degrade. |
 | SC6 strict bash platform matrix + no opi unsafe | 15.5.6 | Native CI runs the named platform tests on ubuntu/macos/windows and cross-compiles all six release triples; `#![forbid(unsafe_code)]` is asserted on `sandbox.rs` + `tool/operations.rs`. |
-| SC7 Operations production path | 15.2, 15.3 | `tool_operations::operations_injection_reaches_tool_execution` and `tool_selection::build_tools_constructs_expected_default_set` prove `Arc<dyn>` injection reaches tool execution; `tool_operations` covers trait object-safety, mock dispatch, and `PathPolicy`-before-backend ordering. |
+| SC7 Operations production path | 15.2, 15.3 | `tool_operations::operations_injection_reaches_tool_execution` and `tool_selection::build_tools_constructs_expected_default_set` prove `Arc<dyn>` injection reaches tool execution; `tool_operations` covers trait object-safety, mock dispatch, `PathPolicy`-before-backend ordering, and deterministic ancestor symlink/junction swaps without outside access. |
 | SC8 untrusted project resource gate | 15.6, 15.7 | `trust_resource_gating` proves an untrusted project skips every gated layer (config, skills/fragments/themes/extensions, project-scope adapter declarations, project context files) while a trusted project retains them; `untrusted_project_adapter_declaration_never_spawns` closes the native-child-process gap. |
-| SC9 headless trust resolution + resolver precedence | 15.8.1 | `non_interactive_trust`, `rpc_trust`, `project_trust_startup`, and `project_trust_store` prove headless defaults untrusted with overrides, RPC never emits a trust prompt, and the standard CLI passes an empty resolver registry while an explicit embedder resolver wins precedence. |
+| SC9 headless trust resolution + resolver precedence | 15.8.1 | `non_interactive_trust`, `rpc_trust`, `early_command_trust`, `project_trust_startup`, and `project_trust_store` prove headless defaults untrusted with overrides, `doctor`/`--list-models` gate project config before parsing, RPC never emits a trust prompt, and the standard CLI passes an empty resolver registry while an explicit embedder resolver wins precedence. |
 | SC10 interactive trust ask | 15.8.2 | `opi-tui::trust_prompt` and `interactive_trust` prove the `AppState::AwaitingTrust` prompt applies each choice and precedes project-startup side effects, with predecided paths bypassing the prompt. |
 | SC11 documentation and non-goal guards | 15.9 | `phase15_safety_sandbox_docs` pins current sandbox/Operations/trust truth in paired EN/ZH docs and rejects every listed non-goal; the phase-exit artifact audit reruns the Phase 15 acceptance matrix and preserves command/stdout/stderr/exit-code evidence. |
 

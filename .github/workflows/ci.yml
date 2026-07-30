@@ -89,7 +89,7 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            strict_tests: linux_engaged_subprocess_denies_requested_access linux_new_inet_inet6_netlink_sockets_are_denied linux_af_unix_survives_socket_creation_gate linux_landlock_abi4_denies_tcp_bind_connect
+            strict_tests: linux_engaged_subprocess_denies_requested_access linux_new_inet_inet6_netlink_sockets_are_denied linux_af_unix_survives_socket_creation_gate linux_af_unix_datagram_round_trip_survives_socket_creation_gate linux_landlock_abi4_denies_tcp_bind_connect linux_l3_ptrace_is_denied_only_when_syscall_layer_is_enabled
             backend_tests: linux_alternate_network_surface_audit
           - os: macos-latest
             strict_tests: macos_engaged_subprocess_denies_outside_write macos_engaged_subprocess_denies_network macos_engaged_subprocess_allows_workspace_and_temp_writes

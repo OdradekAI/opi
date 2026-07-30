@@ -1,7 +1,7 @@
 use clap::Parser;
 
 use opi_coding_agent::cli::Cli;
-use opi_coding_agent::config::{ConfigSource, resolve_config};
+use opi_coding_agent::config::ConfigSource;
 use opi_coding_agent::harness::ResumeInfo;
 use opi_coding_agent::policy::{
     RunMode, ToolFlags, ToolRuntimeConfig, ToolSelection, resolve_tool_selection,
@@ -39,7 +39,17 @@ fn main() {
     // Handle the top-level `opi doctor` command before provider construction.
     // Doctor is network-free and must not require credentials or a provider.
     if let Some(opi_coding_agent::cli::Command::Doctor { json, scope }) = &cli.command {
-        let exit_code = run_doctor_cli(&cli, scope.as_deref(), *json);
+        let (config, config_error) = match resolve_headless_trust_config_blocking(&cli) {
+            Ok((config, _)) => (config, None),
+            Err(StartupTrustConfigError::Config(error)) => {
+                (opi_coding_agent::config::OpiConfig::default(), Some(error))
+            }
+            Err(error) => {
+                eprintln!("opi: {error}");
+                std::process::exit(error.exit_code());
+            }
+        };
+        let exit_code = run_doctor_cli(scope.as_deref(), *json, config, config_error);
         std::process::exit(exit_code);
     }
 
@@ -60,17 +70,11 @@ fn main() {
 
     // Handle --list-models early -- needs config but not a full provider session.
     if cli.list_models {
-        let config = match resolve_config(ConfigSource {
-            cli_model: cli.model.clone(),
-            config_path: cli.config.clone(),
-            env_model: std::env::var("OPI_MODEL").ok(),
-            project_dir: std::env::current_dir().ok(),
-            user_config_path: None,
-        }) {
-            Ok(c) => c,
-            Err(e) => {
-                eprintln!("opi: config error: {e}");
-                std::process::exit(2);
+        let config = match resolve_headless_trust_config_blocking(&cli) {
+            Ok((config, _)) => config,
+            Err(error) => {
+                eprintln!("opi: {error}");
+                std::process::exit(error.exit_code());
             }
         };
         let exit_code = list_models(&config, cli.json);
@@ -206,6 +210,56 @@ fn main() {
     }
 }
 
+#[derive(Debug, thiserror::Error)]
+enum StartupTrustConfigError {
+    #[error("config error: {0}")]
+    Config(#[from] opi_coding_agent::config::ConfigError),
+    #[error("trust error: {0}")]
+    Trust(#[from] opi_coding_agent::project_trust::TrustError),
+    #[error("runtime error: {0}")]
+    Runtime(#[from] std::io::Error),
+}
+
+impl StartupTrustConfigError {
+    fn exit_code(&self) -> i32 {
+        match self {
+            Self::Runtime(_) => 1,
+            Self::Config(_) | Self::Trust(_) => 2,
+        }
+    }
+}
+
+fn resolve_headless_trust_config_blocking(
+    cli: &Cli,
+) -> Result<
+    (
+        opi_coding_agent::config::OpiConfig,
+        opi_coding_agent::project_trust::TrustDecision,
+    ),
+    StartupTrustConfigError,
+> {
+    let project_dir = std::env::current_dir().ok();
+    let user_config_dir = opi_coding_agent::config::user_config_dir();
+    let runtime = tokio::runtime::Runtime::new()?;
+    runtime.block_on(resolve_headless_trust_config_core(
+        ConfigSource {
+            cli_model: cli.model.clone(),
+            config_path: cli.config.clone(),
+            env_model: std::env::var("OPI_MODEL").ok(),
+            project_dir: project_dir.clone(),
+            user_config_path: None,
+        },
+        project_dir,
+        user_config_dir,
+        opi_coding_agent::project_trust::ProjectTrustCli {
+            trust: cli.trust,
+            no_trust: cli.no_trust,
+        },
+        cli.sandbox,
+        cli.sandbox_require,
+    ))
+}
+
 /// Phase 15.8.1 headless two-stage trust-gated config resolution for
 /// non-interactive and RPC startup.
 ///
@@ -225,68 +279,73 @@ async fn resolve_headless_trust_config(
     opi_coding_agent::config::OpiConfig,
     opi_coding_agent::project_trust::TrustDecision,
 ) {
-    use opi_coding_agent::config::{ConfigSource, merge_project_config, resolve_pre_trust_config};
+    let result = resolve_headless_trust_config_core(
+        ConfigSource {
+            cli_model: cli.model.clone(),
+            config_path: cli.config.clone(),
+            env_model: std::env::var("OPI_MODEL").ok(),
+            project_dir: project_dir.clone(),
+            user_config_path: None,
+        },
+        project_dir,
+        user_config_dir,
+        opi_coding_agent::project_trust::ProjectTrustCli {
+            trust: cli.trust,
+            no_trust: cli.no_trust,
+        },
+        cli.sandbox,
+        cli.sandbox_require,
+    )
+    .await;
+    match result {
+        Ok(resolved) => resolved,
+        Err(error) => {
+            eprintln!("opi: {error}");
+            std::process::exit(error.exit_code());
+        }
+    }
+}
+
+async fn resolve_headless_trust_config_core(
+    source: ConfigSource,
+    project_dir: Option<std::path::PathBuf>,
+    user_config_dir: std::path::PathBuf,
+    trust_cli: opi_coding_agent::project_trust::ProjectTrustCli,
+    sandbox: Option<opi_coding_agent::config::SandboxMode>,
+    sandbox_require: bool,
+) -> Result<
+    (
+        opi_coding_agent::config::OpiConfig,
+        opi_coding_agent::project_trust::TrustDecision,
+    ),
+    StartupTrustConfigError,
+> {
+    use opi_coding_agent::config::stage_config;
     use opi_coding_agent::project_trust::{
-        HeadlessPreTrustUi, ProjectTrustCli, ProjectTrustResolverRegistry, TrustDecision,
-        prepare_project_startup,
+        HeadlessPreTrustUi, ProjectTrustResolverRegistry, TrustDecision, prepare_project_startup,
     };
 
-    let source = ConfigSource {
-        cli_model: cli.model.clone(),
-        config_path: cli.config.clone(),
-        env_model: std::env::var("OPI_MODEL").ok(),
-        project_dir: project_dir.clone(),
-        user_config_path: None,
-    };
-    let pre = match resolve_pre_trust_config(source) {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("opi: config error: {e}");
-            std::process::exit(2);
-        }
-    };
-    // global_default comes from the global (pre-trust) config only, so a project
-    // cannot self-authorize by setting its own [defaults] default_project_trust.
-    let global_default = pre.defaults.default_project_trust.to_decision();
+    let staged = stage_config(source)?;
+    let global_default = staged.global_default_project_trust().to_decision();
     let project_root = project_dir
         .as_deref()
         .unwrap_or_else(|| std::path::Path::new("."));
     // Standard CLI: empty resolver registry (no -e / native loader in Phase 15).
     let mut registry = ProjectTrustResolverRegistry::new();
-    let plan = match prepare_project_startup(
-        ProjectTrustCli {
-            trust: cli.trust,
-            no_trust: cli.no_trust,
-        },
+    let plan = prepare_project_startup(
+        trust_cli,
         &mut registry,
         &user_config_dir,
         project_root,
         global_default,
         &HeadlessPreTrustUi,
     )
-    .await
-    {
-        Ok(plan) => plan,
-        Err(e) => {
-            eprintln!("opi: trust error: {e}");
-            std::process::exit(2);
-        }
-    };
+    .await?;
     // Headless ask-to-untrusted: an unresolved ask denies project resources.
     let decision = plan.headless_decision();
-    let mut config = if matches!(decision, TrustDecision::Untrusted) {
-        pre
-    } else {
-        match merge_project_config(pre, project_root) {
-            Ok(c) => c,
-            Err(e) => {
-                eprintln!("opi: config error: {e}");
-                std::process::exit(2);
-            }
-        }
-    };
-    config.apply_sandbox_overrides(cli.sandbox, cli.sandbox_require.then_some(true));
-    (config, decision)
+    let mut config = staged.finalize_with_project(!matches!(decision, TrustDecision::Untrusted))?;
+    config.apply_sandbox_overrides(sandbox, sandbox_require.then_some(true));
+    Ok((config, decision))
 }
 
 /// Phase 15.8.2 interactive two-stage trust-gated config + TUI prompt.
@@ -310,7 +369,7 @@ async fn resolve_interactive_trust_config(
     opi_coding_agent::config::OpiConfig,
     opi_coding_agent::project_trust::TrustDecision,
 ) {
-    use opi_coding_agent::config::{ConfigSource, merge_project_config, resolve_pre_trust_config};
+    use opi_coding_agent::config::{ConfigSource, stage_config};
     use opi_coding_agent::interactive::{TuiTrustPrompt, resolve_interactive_trust_decision};
     use opi_coding_agent::project_trust::{
         HeadlessPreTrustUi, ProjectTrustCli, ProjectTrustResolverRegistry, TrustDecision,
@@ -324,8 +383,8 @@ async fn resolve_interactive_trust_config(
         project_dir: project_dir.clone(),
         user_config_path: None,
     };
-    let pre = match resolve_pre_trust_config(source) {
-        Ok(c) => c,
+    let staged = match stage_config(source) {
+        Ok(staged) => staged,
         Err(e) => {
             eprintln!("opi: config error: {e}");
             std::process::exit(2);
@@ -337,7 +396,7 @@ async fn resolve_interactive_trust_config(
         .unwrap_or_else(|| std::path::Path::new("."));
     // global_default comes from the global (pre-trust) config so a project
     // cannot self-authorize via its own [defaults] default_project_trust.
-    let global_default = pre.defaults.default_project_trust.to_decision();
+    let global_default = staged.global_default_project_trust().to_decision();
     let mut registry = ProjectTrustResolverRegistry::new();
     let plan = match prepare_project_startup(
         ProjectTrustCli {
@@ -373,17 +432,14 @@ async fn resolve_interactive_trust_config(
             std::process::exit(2);
         }
     };
-    let mut config = if matches!(decision, TrustDecision::Untrusted) {
-        pre
-    } else {
-        match merge_project_config(pre, project_root) {
-            Ok(c) => c,
+    let mut config =
+        match staged.finalize_with_project(!matches!(decision, TrustDecision::Untrusted)) {
+            Ok(config) => config,
             Err(e) => {
                 eprintln!("opi: config error: {e}");
                 std::process::exit(2);
             }
-        }
-    };
+        };
     config.apply_sandbox_overrides(cli.sandbox, cli.sandbox_require.then_some(true));
     (config, decision)
 }
@@ -530,8 +586,12 @@ fn emit_command_outcome(outcome: &CommandOutcome) -> i32 {
 /// Network-free: config is resolved best-effort so a broken config surfaces as
 /// a config-scope error diagnostic (exit 2) rather than an internal failure
 /// (exit 1). An unparseable `--scope` list is an internal failure (exit 1).
-fn run_doctor_cli(cli: &Cli, scope: Option<&str>, json: bool) -> i32 {
-    use opi_coding_agent::config::OpiConfig;
+fn run_doctor_cli(
+    scope: Option<&str>,
+    json: bool,
+    config: opi_coding_agent::config::OpiConfig,
+    config_error: Option<opi_coding_agent::config::ConfigError>,
+) -> i32 {
     use opi_coding_agent::doctor::{DoctorContext, DoctorScope};
 
     let scopes = match scope {
@@ -543,20 +603,6 @@ fn run_doctor_cli(cli: &Cli, scope: Option<&str>, json: bool) -> i32 {
             }
         },
         None => Vec::new(),
-    };
-
-    // Resolve config best-effort: a config failure is reported as a diagnostic
-    // (exit 2) rather than aborting the command (exit 1).
-    let config_source = ConfigSource {
-        cli_model: cli.model.clone(),
-        config_path: cli.config.clone(),
-        env_model: std::env::var("OPI_MODEL").ok(),
-        project_dir: std::env::current_dir().ok(),
-        user_config_path: None,
-    };
-    let (config, config_error) = match resolve_config(config_source) {
-        Ok(config) => (config, None),
-        Err(err) => (OpiConfig::default(), Some(err)),
     };
 
     let workspace_root = std::env::current_dir().unwrap_or_default();
@@ -1267,9 +1313,9 @@ mod tests {
     use clap::Parser;
 
     use super::{
-        CommandOutcome, CommandOutput, RpcTransport, run_doctor_command_core, run_interactive_core,
-        run_list_models_command_core, run_non_interactive_core, run_rpc_core, with_provider_bundle,
-        write_command_outcome,
+        CommandOutcome, CommandOutput, RpcTransport, resolve_headless_trust_config_core,
+        run_doctor_command_core, run_interactive_core, run_list_models_command_core,
+        run_non_interactive_core, run_rpc_core, with_provider_bundle, write_command_outcome,
     };
     use opi_coding_agent::cli::Cli;
     use opi_coding_agent::config::{CredentialBackendSource, OpiConfig, ProviderProxyConfig};
@@ -1455,6 +1501,50 @@ mod tests {
             env_var: &|_| None,
             store_probe: &EMPTY_PROBES,
         }
+    }
+
+    #[test]
+    fn headless_trust_core_skips_untrusted_project_config() {
+        let workspace = tempfile::tempdir().expect("workspace");
+        std::fs::create_dir_all(workspace.path().join(".opi")).expect("project config dir");
+        std::fs::write(
+            workspace.path().join(".opi").join("config.toml"),
+            "[defaults]\nmodel = \"project:model\"\n",
+        )
+        .expect("project config");
+        let user = tempfile::tempdir().expect("user config");
+        std::fs::write(
+            user.path().join("config.toml"),
+            "[defaults]\nmodel = \"user:model\"\ndefault_project_trust = \"never\"\n",
+        )
+        .expect("user config");
+
+        let (config, decision) = tokio::runtime::Runtime::new()
+            .expect("runtime")
+            .block_on(resolve_headless_trust_config_core(
+                opi_coding_agent::config::ConfigSource {
+                    cli_model: None,
+                    config_path: None,
+                    env_model: None,
+                    project_dir: Some(workspace.path().to_path_buf()),
+                    user_config_path: Some(user.path().join("config.toml")),
+                },
+                Some(workspace.path().to_path_buf()),
+                user.path().to_path_buf(),
+                opi_coding_agent::project_trust::ProjectTrustCli {
+                    trust: false,
+                    no_trust: false,
+                },
+                None,
+                false,
+            ))
+            .expect("headless trust resolution");
+
+        assert_eq!(
+            decision,
+            opi_coding_agent::project_trust::TrustDecision::Untrusted
+        );
+        assert_eq!(config.defaults.model, "user:model");
     }
 
     #[test]
@@ -2852,6 +2942,7 @@ mod tests {
     fn is_pre_provider_subprocess(file: &str, context: &str) -> bool {
         match file {
             "doctor_cli.rs" => context.contains(".args([\"doctor\", \"--scope\", \"bogus\"])"),
+            "early_command_trust.rs" => context.contains(".args(args)"),
             "oauth_auth.rs" => context.contains(".arg(\"--help\")"),
             "package_cli.rs" => {
                 context.starts_with("opi_command(opi:") || context.contains(".args([\"package\",")
@@ -2895,6 +2986,14 @@ mod tests {
                 "fn opi_bin()",
                 1usize,
                 1usize,
+            ),
+            (
+                "early_command_trust.rs",
+                "Command::new(env!(\"CARGO_BIN_EXE_opi\"))",
+                1,
+                "CARGO_BIN_EXE_opi",
+                1,
+                1,
             ),
             (
                 "oauth_auth.rs",

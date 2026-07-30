@@ -42,7 +42,7 @@ use std::sync::Arc;
 use opi_agent::diagnostic::Diagnostic;
 
 use crate::config::SandboxConfig;
-use crate::diagnostics::sandbox_unavailable_diagnostic;
+use crate::diagnostics::{SandboxReason, sandbox_unavailable_diagnostic};
 
 /// Windows strict backend (L0-only); landed in task 15.5.5.
 #[cfg(target_os = "windows")]
@@ -84,9 +84,9 @@ pub enum LayerAvailability {
     Engaged,
     /// The layer cannot engage on this host right now but is not a permanent
     /// platform gap (old kernel, missing tool, or not-yet-wired backend).
-    TemporarilyUnavailable { reason: String },
+    TemporarilyUnavailable { reason: SandboxReason },
     /// The platform will never provide this layer.
-    PermanentlyUnavailable { reason: String },
+    PermanentlyUnavailable { reason: SandboxReason },
 }
 
 /// A parent-built, child-applied confinement plan. The cross-platform resolver
@@ -206,7 +206,7 @@ pub trait StrictBackend: Send + Sync {
     /// Optional aggregate diagnostic for a platform whose strict layers are
     /// one capability boundary rather than three independently actionable
     /// facilities. Windows uses this to report its L0-only posture once.
-    fn aggregate_permanent_gap(&self) -> Option<(&'static str, &'static str)> {
+    fn aggregate_permanent_gap(&self) -> Option<(&'static str, SandboxReason)> {
         None
     }
 }
@@ -218,13 +218,19 @@ pub trait StrictBackend: Send + Sync {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TemporaryGap {
     pub layer: SandboxLayer,
-    pub reason: String,
+    pub reason: SandboxReason,
 }
 
 #[derive(Debug, Clone, Default)]
 pub struct ConfinementBuild {
     pub confinement: Option<Confinement>,
+    /// Complete layer construction failures. The named layers are removed from
+    /// the engaged set.
     pub gaps: Vec<TemporaryGap>,
+    /// Partial capability gaps where the strongest available sub-capability
+    /// remains engaged (for example Linux's seccomp socket gate below Landlock
+    /// ABI 4).
+    pub degraded: Vec<TemporaryGap>,
 }
 
 /// The per-exec decision for a strict request. [`PreparedSandbox`] carries this
@@ -318,7 +324,7 @@ pub fn prepare(config: &SandboxConfig, backend: &dyn StrictBackend) -> PreparedS
 
     let mut requested = Vec::new();
     let mut engaged = Vec::new();
-    let mut permanent: Vec<(SandboxLayer, String)> = Vec::new();
+    let mut permanent: Vec<(SandboxLayer, SandboxReason)> = Vec::new();
     let mut temporary = Vec::new();
     for (layer, toggle) in requested_layers {
         // Some(false) = explicit opt-out: do not query, do not diagnose.
@@ -344,7 +350,7 @@ pub fn prepare(config: &SandboxConfig, backend: &dyn StrictBackend) -> PreparedS
     } else {
         permanent
             .iter()
-            .map(|(layer, reason)| sandbox_unavailable_diagnostic(layer.as_str(), reason.clone()))
+            .map(|(layer, reason)| sandbox_unavailable_diagnostic(layer.as_str(), *reason))
             .collect::<Vec<_>>()
     };
 
@@ -406,6 +412,25 @@ fn prepare_with_backend(
     {
         let build = backend.build_confinement(workspace, decision.engaged_layers.as_slice());
         decision.confinement = build.confinement;
+        if !build.degraded.is_empty() {
+            if decision.require {
+                decision.outcome = StrictOutcome::FailClosed {
+                    reason: summarize_layers(build.degraded.iter().map(|gap| gap.layer)),
+                };
+            } else {
+                match &mut decision.outcome {
+                    StrictOutcome::FailOpen {
+                        per_command_temporary,
+                    } => per_command_temporary.extend(build.degraded),
+                    StrictOutcome::Engaged => {
+                        decision.outcome = StrictOutcome::FailOpen {
+                            per_command_temporary: build.degraded,
+                        };
+                    }
+                    StrictOutcome::FailClosed { .. } => unreachable!(),
+                }
+            }
+        }
         if !build.gaps.is_empty() {
             let build_gaps = build.gaps;
             decision
@@ -489,7 +514,7 @@ struct UnsupportedPlatformBackend;
 impl StrictBackend for UnsupportedPlatformBackend {
     fn availability(&self, _layer: SandboxLayer) -> LayerAvailability {
         LayerAvailability::PermanentlyUnavailable {
-            reason: "strict sandbox unsupported on this platform".to_string(),
+            reason: SandboxReason::StrictConfinementUnsupportedPlatform,
         }
     }
 }
@@ -574,7 +599,7 @@ mod tests {
     fn strict_temporary_gap_fail_open_emits_per_command_not_startup() {
         let backend = fake(|layer| match layer {
             SandboxLayer::Network => LayerAvailability::TemporarilyUnavailable {
-                reason: "kernel < 5.13".to_string(),
+                reason: SandboxReason::LandlockTcpUnavailable,
             },
             _ => LayerAvailability::Engaged,
         });
@@ -588,7 +613,10 @@ mod tests {
                     } => {
                         assert_eq!(per_command_temporary.len(), 1);
                         assert_eq!(per_command_temporary[0].layer, SandboxLayer::Network);
-                        assert!(per_command_temporary[0].reason.contains("kernel < 5.13"));
+                        assert_eq!(
+                            per_command_temporary[0].reason,
+                            SandboxReason::LandlockTcpUnavailable
+                        );
                     }
                     other => panic!("expected FailOpen, got {other:?}"),
                 }
@@ -603,7 +631,7 @@ mod tests {
     #[test]
     fn strict_permanent_gap_fail_open_emits_one_startup_diagnostic() {
         let backend = fake(|_| LayerAvailability::PermanentlyUnavailable {
-            reason: "windows L0-only".to_string(),
+            reason: SandboxReason::WindowsStrictConfinementUnavailable,
         });
         let prepared = prepare(&strict_config(false), backend.as_ref());
         let startup = prepared.startup_diagnostics();
@@ -638,7 +666,7 @@ mod tests {
     #[test]
     fn strict_permanent_gap_require_true_is_fail_closed() {
         let backend = fake(|_| LayerAvailability::PermanentlyUnavailable {
-            reason: "windows L0-only".to_string(),
+            reason: SandboxReason::WindowsStrictConfinementUnavailable,
         });
         let prepared = prepare(&strict_config(true), backend.as_ref());
         let startup = prepared.startup_diagnostics();
@@ -660,7 +688,7 @@ mod tests {
     #[test]
     fn strict_temporary_gap_require_true_is_fail_closed() {
         let backend = fake(|_| LayerAvailability::TemporarilyUnavailable {
-            reason: "not wired".to_string(),
+            reason: SandboxReason::SeccompFilterBuildFailed,
         });
         let prepared = prepare(&strict_config(true), backend.as_ref());
         let startup = prepared.startup_diagnostics();
@@ -679,10 +707,10 @@ mod tests {
     fn strict_mixed_gaps_fail_open_carries_temporary_and_startup_permanent() {
         let backend = fake(|layer| match layer {
             SandboxLayer::Fs => LayerAvailability::PermanentlyUnavailable {
-                reason: "windows L0-only".to_string(),
+                reason: SandboxReason::WindowsStrictConfinementUnavailable,
             },
             SandboxLayer::Network => LayerAvailability::TemporarilyUnavailable {
-                reason: "kernel too old".to_string(),
+                reason: SandboxReason::LandlockTcpUnavailable,
             },
             SandboxLayer::Syscalls => LayerAvailability::Engaged,
         });
@@ -772,11 +800,11 @@ mod tests {
                 LayerAvailability::Engaged
             } else if self.permanent {
                 LayerAvailability::PermanentlyUnavailable {
-                    reason: "permanent gap".to_string(),
+                    reason: SandboxReason::WindowsStrictConfinementUnavailable,
                 }
             } else {
                 LayerAvailability::TemporarilyUnavailable {
-                    reason: "temporary gap".to_string(),
+                    reason: SandboxReason::LandlockTcpUnavailable,
                 }
             }
         }
@@ -800,6 +828,7 @@ mod tests {
             ConfinementBuild {
                 confinement: Some(confinement),
                 gaps: Vec::new(),
+                degraded: Vec::new(),
             }
         }
     }
@@ -830,7 +859,7 @@ mod tests {
         let confinement = Confinement::new(|_command| {
             vec![TemporaryGap {
                 layer: SandboxLayer::Fs,
-                reason: "landlock construction failed".to_string(),
+                reason: SandboxReason::LandlockFilesystemConstructionFailed,
             }]
         });
         let mut command = tokio::process::Command::new("unused");
@@ -918,7 +947,7 @@ mod tests {
         let mut config = strict_config(false);
         config.fs = Some(true);
         let backend = fake(|_| LayerAvailability::TemporarilyUnavailable {
-            reason: "x".to_string(),
+            reason: SandboxReason::SeccompFilterBuildFailed,
         });
         let prepared = prepare(&config, backend.as_ref());
         match prepared {

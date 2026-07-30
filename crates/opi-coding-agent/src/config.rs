@@ -1565,17 +1565,105 @@ pub struct ConfigSource {
     pub user_config_path: Option<PathBuf>,
 }
 
+/// Raw global and explicit configuration layers staged before project trust is
+/// resolved.
+///
+/// Staging parses only user-authorized inputs. The project layer is not read
+/// until [`Self::finalize_with_project`] is called with `true`, and all raw
+/// layers are then merged and validated exactly once in normal precedence
+/// order.
+#[derive(Debug, Clone)]
+pub struct StagedConfig {
+    user: TomlConfig,
+    explicit: Option<TomlConfig>,
+    cli_model: Option<String>,
+    env_model: Option<String>,
+    project_dir: Option<PathBuf>,
+}
+
+impl StagedConfig {
+    /// Return the project-trust default from global/user-authorized layers
+    /// only. A project cannot influence this value through `.opi/config.toml`.
+    pub fn global_default_project_trust(&self) -> ProjectTrustDefault {
+        self.explicit
+            .as_ref()
+            .and_then(|config| config.defaults.default_project_trust)
+            .or(self.user.defaults.default_project_trust)
+            .unwrap_or(ProjectTrustDefault::Ask)
+    }
+
+    /// Finalize the staged layers, optionally reading and merging the project
+    /// layer between user config and the explicit `--config` layer.
+    pub fn finalize_with_project(self, include_project: bool) -> Result<OpiConfig, ConfigError> {
+        let mut config = OpiConfig::default();
+        let mut custom = BTreeMap::new();
+        self.user.merge_into(&mut config, &mut custom);
+
+        if include_project && let Some(project_dir) = &self.project_dir {
+            let project_config_path = project_dir.join(".opi").join("config.toml");
+            load_raw_config(&project_config_path)?.merge_into(&mut config, &mut custom);
+        }
+
+        let has_explicit = self.explicit.is_some();
+        if let Some(explicit) = self.explicit {
+            explicit.merge_into(&mut config, &mut custom);
+        }
+
+        // Env model only applies when --config was NOT explicitly provided,
+        // so that an explicit config file's model takes precedence over env.
+        if !has_explicit && let Some(env_model) = self.env_model {
+            config.defaults.model = env_model;
+        }
+        if let Some(cli_model) = self.cli_model {
+            config.defaults.model = cli_model;
+        }
+
+        config.providers.custom = validate_custom_providers(custom)?;
+        validate_provider_namespace(&config)?;
+        Ok(config)
+    }
+}
+
+/// Parse the global and explicit config layers without reading project config
+/// or validating the combined provider namespace.
+pub fn stage_config(source: ConfigSource) -> Result<StagedConfig, ConfigError> {
+    let user_path = source.user_config_path.unwrap_or_else(user_config_path);
+    let user = load_raw_config(&user_path)?;
+    let explicit = match source.config_path {
+        Some(config_path) => {
+            if !config_path.exists() {
+                return Err(ConfigError::Read {
+                    path: config_path,
+                    source: std::io::Error::new(
+                        std::io::ErrorKind::NotFound,
+                        "config file not found",
+                    ),
+                });
+            }
+            Some(load_raw_config(&config_path)?)
+        }
+        None => None,
+    };
+    Ok(StagedConfig {
+        user,
+        explicit,
+        cli_model: source.cli_model,
+        env_model: source.env_model,
+        project_dir: source.project_dir,
+    })
+}
+
 /// Resolve configuration from all sources with correct precedence:
 /// CLI > env > project config > user config > built-in defaults.
 pub fn resolve_config(source: ConfigSource) -> Result<OpiConfig, ConfigError> {
-    resolve_config_inner(source, /* merge_project */ true)
+    stage_config(source)?.finalize_with_project(true)
 }
 
 /// Stage 1 of two-stage trust-gated resolution (task 15.7): resolve every layer
 /// except the project `.opi/config.toml`. This is the config used to obtain
 /// trust inputs and the config applied when the project is untrusted.
 pub fn resolve_pre_trust_config(source: ConfigSource) -> Result<OpiConfig, ConfigError> {
-    resolve_config_inner(source, /* merge_project */ false)
+    stage_config(source)?.finalize_with_project(false)
 }
 
 /// Stage 2: merge the project `.opi/config.toml` layer onto a pre-trust config
@@ -1595,50 +1683,6 @@ pub fn merge_project_config(
     for (id, provider) in validate_custom_providers(project_custom)? {
         config.providers.custom.insert(id, provider);
     }
-    validate_provider_namespace(&config)?;
-    Ok(config)
-}
-
-fn resolve_config_inner(
-    source: ConfigSource,
-    merge_project: bool,
-) -> Result<OpiConfig, ConfigError> {
-    let user_path = source.user_config_path.unwrap_or_else(user_config_path);
-    let mut config = OpiConfig::default();
-    let mut custom = BTreeMap::new();
-    load_raw_config(&user_path)?.merge_into(&mut config, &mut custom);
-
-    if merge_project && let Some(project_dir) = &source.project_dir {
-        let project_config_path = project_dir.join(".opi").join("config.toml");
-        let project_raw = load_raw_config(&project_config_path)?;
-        project_raw.merge_into(&mut config, &mut custom);
-    }
-
-    // --config file overrides project and user config
-    if let Some(config_path) = &source.config_path {
-        if !config_path.exists() {
-            return Err(ConfigError::Read {
-                path: config_path.clone(),
-                source: std::io::Error::new(std::io::ErrorKind::NotFound, "config file not found"),
-            });
-        }
-        let cli_raw = load_raw_config(config_path)?;
-        cli_raw.merge_into(&mut config, &mut custom);
-    }
-
-    // Env model only applies when --config was NOT explicitly provided,
-    // so that an explicit config file's model takes precedence over env.
-    if source.config_path.is_none()
-        && let Some(env_model) = &source.env_model
-    {
-        config.defaults.model = env_model.clone();
-    }
-
-    if let Some(cli_model) = &source.cli_model {
-        config.defaults.model = cli_model.clone();
-    }
-
-    config.providers.custom = validate_custom_providers(custom)?;
     validate_provider_namespace(&config)?;
     Ok(config)
 }

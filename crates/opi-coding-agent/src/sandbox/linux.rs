@@ -44,6 +44,7 @@ use std::io;
 use std::path::Path;
 use std::sync::Arc;
 
+use crate::diagnostics::SandboxReason;
 use landlock::{
     ABI, Access, AccessFs, AccessNet, BitFlags, PathBeneath, PathFd, Ruleset, RulesetAttr,
     RulesetCreated, RulesetCreatedAttr,
@@ -215,11 +216,11 @@ pub enum LinuxBuildError {
 }
 
 impl LinuxBuildError {
-    fn reason(self) -> &'static str {
+    fn reason(self) -> SandboxReason {
         match self {
-            Self::UnsupportedArchitecture => "seccomp target architecture unsupported",
-            Self::FilterBuild => "seccomp filter construction failed",
-            Self::FilterCompile => "seccomp filter compilation failed",
+            Self::UnsupportedArchitecture => SandboxReason::SeccompUnsupportedArchitecture,
+            Self::FilterBuild => SandboxReason::SeccompFilterBuildFailed,
+            Self::FilterCompile => SandboxReason::SeccompFilterCompileFailed,
         }
     }
 }
@@ -236,6 +237,9 @@ fn compile_seccomp_program(
 }
 
 fn target_arch(arch_name: &str) -> Result<TargetArch, LinuxBuildError> {
+    if !matches!(arch_name, "x86_64" | "aarch64") {
+        return Err(LinuxBuildError::UnsupportedArchitecture);
+    }
     arch_name
         .try_into()
         .map_err(|_| LinuxBuildError::UnsupportedArchitecture)
@@ -446,7 +450,7 @@ fn resolve_landlock_layers<T, E>(
             None,
             Some(super::TemporaryGap {
                 layer: super::SandboxLayer::Fs,
-                reason: "landlock filesystem construction failed".to_string(),
+                reason: SandboxReason::LandlockFilesystemConstructionFailed,
             }),
         ),
         None => (None, None),
@@ -457,7 +461,7 @@ fn resolve_landlock_layers<T, E>(
             None,
             Some(super::TemporaryGap {
                 layer: super::SandboxLayer::Network,
-                reason: "landlock network construction failed".to_string(),
+                reason: SandboxReason::LandlockNetworkConstructionFailed,
             }),
         ),
         None => (None, None),
@@ -509,7 +513,7 @@ pub fn build_linux_confinement(
     super::Confinement::new(move |cmd: &mut tokio::process::Command| {
         let landlock = resolve_landlock_layers(
             fs_enabled.then(|| build_landlock_fs_ruleset(abi, &workspace)),
-            network_enabled.then(|| build_landlock_network_ruleset(abi)),
+            (network_enabled && abi_supports_tcp(abi)).then(|| build_landlock_network_ruleset(abi)),
         );
         crate::tool::process_tree::install_child_confinement(
             cmd,
@@ -676,8 +680,8 @@ impl super::StrictBackend for LinuxStrictBackend {
             // architecture validation and filter compilation succeeded.
             super::SandboxLayer::Syscalls => match &self.seccomp_arch {
                 Ok(_) => super::LayerAvailability::Engaged,
-                Err(error) => super::LayerAvailability::TemporarilyUnavailable {
-                    reason: error.reason().to_string(),
+                Err(error) => super::LayerAvailability::PermanentlyUnavailable {
+                    reason: error.reason(),
                 },
             },
             // L1 fs writes via Landlock: ABI >= 1.
@@ -686,30 +690,21 @@ impl super::StrictBackend for LinuxStrictBackend {
                     super::LayerAvailability::Engaged
                 } else {
                     super::LayerAvailability::TemporarilyUnavailable {
-                        reason: "landlock filesystem rights unavailable (kernel reports ABI 0)"
-                            .to_string(),
+                        reason: SandboxReason::LandlockFilesystemUnavailable,
                     }
                 }
             }
-            // L2 network: seccomp new-socket gate (always) + Landlock TCP (ABI >= 4).
-            // The layer engages only when the TCP bind/connect half is available;
-            // an ABI < 4 kernel still gets the seccomp new-socket denial but lacks
-            // Landlock TCP confinement, so the network layer is temporarily
-            // unavailable as a whole.
+            // L2 network has two independent sub-capabilities. Architecture-
+            // verified seccomp socket creation remains engaged even when the
+            // ABI-gated Landlock TCP half is unavailable; build_confinement
+            // reports that partial gap without dropping the socket gate.
             super::SandboxLayer::Network => {
                 if let Err(error) = &self.seccomp_arch {
-                    super::LayerAvailability::TemporarilyUnavailable {
-                        reason: error.reason().to_string(),
+                    super::LayerAvailability::PermanentlyUnavailable {
+                        reason: error.reason(),
                     }
-                } else if abi_supports_tcp(self.abi) {
-                    super::LayerAvailability::Engaged
                 } else {
-                    super::LayerAvailability::TemporarilyUnavailable {
-                        reason: format!(
-                            "landlock TCP bind/connect needs ABI >= 4 (observed {:?})",
-                            self.abi
-                        ),
-                    }
+                    super::LayerAvailability::Engaged
                 }
             }
         }
@@ -737,7 +732,7 @@ impl super::StrictBackend for LinuxStrictBackend {
                         })
                         .map(|layer| super::TemporaryGap {
                             layer,
-                            reason: error.reason().to_string(),
+                            reason: error.reason(),
                         })
                         .collect();
                     let retained = engaged_layers
@@ -755,6 +750,7 @@ impl super::StrictBackend for LinuxStrictBackend {
                             )
                         }),
                         gaps,
+                        degraded: Vec::new(),
                     };
                 }
             }
@@ -769,6 +765,13 @@ impl super::StrictBackend for LinuxStrictBackend {
                 seccomp_program,
             )),
             gaps: Vec::new(),
+            degraded: (network_enabled && !abi_supports_tcp(self.abi))
+                .then_some(super::TemporaryGap {
+                    layer: super::SandboxLayer::Network,
+                    reason: SandboxReason::LandlockTcpUnavailable,
+                })
+                .into_iter()
+                .collect(),
         }
     }
 }
@@ -868,7 +871,7 @@ mod tests {
     }
 
     #[test]
-    fn abi_v1_v3_fail_open_retain_filesystem_and_syscall_layers() {
+    fn abi_v1_v3_fail_open_retain_seccomp_socket_gate_and_report_tcp_gap() {
         for abi in [ABI::V1, ABI::V3] {
             let dir = tempfile::tempdir().unwrap();
             let backend = LinuxStrictBackend::with_observed_abi(Arc::from(dir.path()), abi);
@@ -881,8 +884,22 @@ mod tests {
                 decision.engaged_layers,
                 vec![
                     super::super::SandboxLayer::Fs,
+                    super::super::SandboxLayer::Network,
                     super::super::SandboxLayer::Syscalls
                 ]
+            );
+            let StrictOutcome::FailOpen {
+                per_command_temporary,
+            } = &decision.outcome
+            else {
+                panic!("expected partial network degradation");
+            };
+            assert_eq!(
+                per_command_temporary,
+                &[super::super::TemporaryGap {
+                    layer: super::super::SandboxLayer::Network,
+                    reason: SandboxReason::LandlockTcpUnavailable,
+                }]
             );
             let mut command = tokio::process::Command::new("true");
             assert!(
@@ -891,7 +908,43 @@ mod tests {
                     .expect("partial plan retained")
                     .apply(&mut command)
                     .is_empty(),
-                "{abi:?} filesystem-only Landlock construction must skip network rights"
+                "{abi:?} partial plan must build without Landlock TCP rights"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn abi_v1_v3_require_true_prevents_spawn_for_tcp_gap() {
+        for abi in [ABI::V1, ABI::V3] {
+            let cwd = tempfile::tempdir().unwrap();
+            let marker = cwd.path().join("must-not-exist");
+            let backend = LinuxStrictBackend::with_observed_abi(Arc::from(cwd.path()), abi);
+            let prepared = super::super::prepare_with_backend(&strict(true), cwd.path(), &backend);
+            let result = LocalBashOperations::with_prepared(prepared)
+                .exec(BashRequest {
+                    command: format!("touch {}", marker.display()),
+                    cwd: cwd.path().to_path_buf(),
+                    timeout: Duration::from_secs(5),
+                    signal: CancellationToken::new(),
+                    env: Vec::new(),
+                })
+                .await;
+            assert!(matches!(
+                result,
+                Err(crate::tool::BashOpError::SandboxUnavailable { .. })
+            ));
+            assert!(!marker.exists(), "{abi:?} must fail before spawn");
+        }
+    }
+
+    #[test]
+    fn target_arch_accepts_only_verified_release_architectures() {
+        assert!(target_arch("x86_64").is_ok());
+        assert!(target_arch("aarch64").is_ok());
+        for unsupported in ["riscv64", "mips64", "unknown"] {
+            assert_eq!(
+                target_arch(unsupported),
+                Err(LinuxBuildError::UnsupportedArchitecture)
             );
         }
     }

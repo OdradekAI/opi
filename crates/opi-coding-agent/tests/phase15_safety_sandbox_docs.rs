@@ -24,6 +24,25 @@ fn normalize_whitespace(value: &str) -> String {
     value.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
+fn heading_slice<'a>(
+    path: &str,
+    content: &'a str,
+    start_heading: &str,
+    next_heading: &str,
+) -> &'a str {
+    let start = content
+        .find(start_heading)
+        .unwrap_or_else(|| panic!("{path} is missing heading `{start_heading}`"));
+    let after_start = start + start_heading.len();
+    let end = content[after_start..]
+        .find(next_heading)
+        .map(|offset| after_start + offset)
+        .unwrap_or_else(|| {
+            panic!("{path} heading `{start_heading}` is missing boundary `{next_heading}`")
+        });
+    &content[start..end]
+}
+
 fn assert_claims(path: &str, content: &str, claims: &[&str]) {
     let normalized = normalize_whitespace(content);
     for claim in claims {
@@ -168,10 +187,29 @@ fn localized_docs_pin_exact_phase15_claims() {
     let spec_zh = read_repo_file("docs/opi-spec.zh.md");
     let readme = read_repo_file("README.md");
     let readme_zh = read_repo_file("README.zh.md");
+    let spec = heading_slice(
+        "docs/opi-spec.md",
+        &spec,
+        "### Phase 15 - Safety & Sandbox",
+        "### Phase 16 - Pluggable Extensions and Command Execution",
+    );
+    let spec_zh = heading_slice(
+        "docs/opi-spec.zh.md",
+        &spec_zh,
+        "### 第十五阶段 - Safety & Sandbox",
+        "### 第十六阶段 - 可插拔扩展与命令执行",
+    );
+    let readme = heading_slice(
+        "README.md",
+        &readme,
+        "### Sandbox and project trust",
+        "## Development",
+    );
+    let readme_zh = heading_slice("README.zh.md", &readme_zh, "### 沙箱与项目信任", "## 开发");
 
     assert_claims(
         "docs/opi-spec.md",
-        &spec,
+        spec,
         &[
             "Status: implemented; pi-0.80.6 posture parity complete.",
             "The sandbox confines only the `bash` subprocess tree.",
@@ -179,16 +217,21 @@ fn localized_docs_pin_exact_phase15_claims() {
             "returns a stable `EPERM` errno for `socket(AF_INET, ...)`, `socket(AF_INET6, ...)`, and `socket(AF_NETLINK, ...)`",
             "while `socket(AF_UNIX, ...)` and the generic socket operations needed for Unix-domain IPC remain allowed",
             "On Landlock ABI 4 (Linux 6.7+; runtime probed via `landlock_create_ruleset`, never inferred from the kernel release)",
-            "The network *layer* reports `TemporarilyUnavailable` on ABI < 4 even though the seccomp socket-creation denial is always engaged",
+            "On Landlock ABI 1-3, the independent seccomp socket-creation gate remains engaged while the missing TCP bind/connect sub-capability is reported as a degraded gap.",
+            "Fail-open continues at that partial baseline; `require = true` fails closed before spawning.",
             "L3 is a danger-blocklist, not a strict allowlist.",
             "It denies `open_by_handle_at`, `bpf`, `perf_event_open`, `ptrace`, `kexec_load`, `kexec_file_load`, `reboot`, `init_module`, `finit_module`, `delete_module`, `swapon`, `swapoff`, `acct`, and `settimeofday`; on x86_64 it additionally denies `iopl` and `ioperm`",
             "`clone` and `unshare` remain allowed",
             "Linux L2 does not claim complete network isolation.",
             "and `io_uring`-initiated socket/connect/accept operations bypass the audited `socket(2)` path and are an explicit uncovered residual",
+            "`/usr/bin/sandbox-exec -p <templated profile>`",
+            "The probed helper identity is retained and the same absolute path is launched",
             "The Job Object is implemented via direct `windows-sys` FFI (`CreateJobObjectW` / `SetInformationJobObject` / `AssignProcessToJobObject` / `TerminateJobObject`), not a wrapper crate",
             "Diagnostics are additive `&'static str` codes — `opi.sandbox.degraded` (`CODE_SANDBOX_DEGRADED`) and `opi.sandbox.unavailable` (`CODE_SANDBOX_UNAVAILABLE`) under source `sandbox`",
+            "`reason` comes from the closed `SandboxReason` enum and serializes only curated static text",
             "The `Operations` seam is a pure FS/exec backend layered below `PathPolicy`.",
-            "`FileOperations` is unsandboxed — file tools stay `PathPolicy`-guarded, since Phase 15 confines only the bash subprocess tree.",
+            "The shipped `LocalFileOperations` additionally resolves workspace paths relative to a held canonical workspace-root capability",
+            "explicitly authorized external interactive reads retain ambient-path behavior.",
             "the production-path `sandbox.rs`, `tool/operations.rs`, and `sandbox/windows.rs` modules retain `#![forbid(unsafe_code)]`.",
             "The project-trust gate gates *loading* of project-local resources, not tool execution.",
             "stored at `{user_config_dir}/trust.json` — i.e. `%APPDATA%\\opi\\trust.json` on Windows and `~/.config/opi/trust.json` on Unix, alongside `config.toml`",
@@ -200,7 +243,7 @@ fn localized_docs_pin_exact_phase15_claims() {
     );
     assert_claims(
         "docs/opi-spec.zh.md",
-        &spec_zh,
+        spec_zh,
         &[
             "状态：已实现；pi-0.80.6 posture 对齐完成。",
             "沙箱只 confine `bash` 子进程树。",
@@ -208,15 +251,20 @@ fn localized_docs_pin_exact_phase15_claims() {
             "seccomp deny-overlay 对 `socket(AF_INET, ...)`、`socket(AF_INET6, ...)` 与 `socket(AF_NETLINK, ...)` 返回稳定的 `EPERM` errno",
             "而 `socket(AF_UNIX, ...)` 与 Unix-domain IPC 所需的通用 socket 操作保持允许",
             "运行时经 `landlock_create_ruleset` 探测，绝不从内核版本推断",
-            "网络*层*在 ABI < 4 时仍报告 `TemporarilyUnavailable`",
+            "在 Landlock ABI 1-3 上，独立的 seccomp socket-creation 门保持生效",
+            "fail-open 会按该部分基线继续；`require = true` 会在 spawn 前 fail-closed。",
             "L3 是危险 blocklist，而非严格 allowlist。",
             "它拒绝 `open_by_handle_at`、`bpf`、`perf_event_open`、`ptrace`、`kexec_load`、`kexec_file_load`、`reboot`、`init_module`、`finit_module`、`delete_module`、`swapon`、`swapoff`、`acct` 与 `settimeofday`",
             "`clone` 与 `unshare` 保持允许",
             "Linux L2 不声称完整的网络隔离。",
             "`io_uring` 发起的 socket/connect/accept 操作绕过已审计的 `socket(2)` 路径，是显式的未覆盖残留",
+            "`/usr/bin/sandbox-exec -p <templated profile>`",
+            "探测到的 helper identity 会被保留，并启动同一绝对路径",
             "Job Object 经直接的 `windows-sys` FFI 实现",
+            "`reason` 来自封闭的 `SandboxReason` 枚举，只序列化经审查的静态文本",
             "`Operations` 缝合点是分层位于 `PathPolicy` 之下的纯 FS/exec 后端。",
-            "`FileOperations` 不被沙箱——文件工具保持 `PathPolicy` 守卫，因为第十五阶段只 confine bash 子进程树。",
+            "已交付的 `LocalFileOperations` 还会相对已持有且 canonical 的 workspace-root capability 解析 workspace 路径",
+            "显式授权的外部交互式读取仍保留 ambient-path 行为。",
             "生产路径 `sandbox.rs`、`tool/operations.rs` 与 `sandbox/windows.rs` 模块保持 `#![forbid(unsafe_code)]`。",
             "项目信任门门控的是项目本地资源的*加载*，而非工具执行。",
             "存储于 `{user_config_dir}/trust.json`——即 Windows 上 `%APPDATA%\\opi\\trust.json`、Unix 上 `~/.config/opi/trust.json`，与 `config.toml` 并列",
@@ -228,22 +276,28 @@ fn localized_docs_pin_exact_phase15_claims() {
     );
     assert_claims(
         "README.md",
-        &readme,
+        readme,
         &[
             "### Sandbox and project trust",
             "The sandbox confines only the `bash` subprocess tree, not `opi` itself.",
             "Linux `strict` L2 is a narrowed new-socket creation gate: seccomp denies `socket(AF_INET)`, `socket(AF_INET6)`, and `socket(AF_NETLINK)` while preserving `socket(AF_UNIX)`",
+            "On Landlock ABI 1-3, fail-open retains the seccomp new-socket gate",
+            "`require = true` fails closed before spawning.",
+            "the shipped local file backend performs workspace operations relative to a held root capability",
             "There is no built-in `/trust` command, no live mid-session trust mutation, and no project-resource reload.",
             "the standard CLI ships an empty resolver registry, exposes no CLI `-e` flag, and performs no native resolver loading.",
         ],
     );
     assert_claims(
         "README.zh.md",
-        &readme_zh,
+        readme_zh,
         &[
             "### 沙箱与项目信任",
             "沙箱只 confine `bash` 子进程树，不 confine `opi` 自身。",
             "Linux `strict` L2 是收窄的新建 socket 创建门：seccomp 拒绝 `socket(AF_INET)`、 `socket(AF_INET6)` 与 `socket(AF_NETLINK)`，同时保留 `socket(AF_UNIX)`",
+            "在 Landlock ABI 1-3 上， fail-open 会保留 seccomp 新建 socket 门",
+            "`require = true` 会在 spawn 前 fail-closed。",
+            "已交付的 local 文件后端相对已持有的 root capability 执行 workspace 操作",
             "不存在内置 `/trust` 命令，不存在 live mid-session trust mutation",
             "标准 CLI 交付空 resolver registry，不暴露 CLI `-e` 标志，也不进行原生 resolver 加载。",
         ],
@@ -252,8 +306,8 @@ fn localized_docs_pin_exact_phase15_claims() {
     // The Phase 15 section in particular must no longer open with the stale
     // designed/pending status (other designed phases legitimately retain it,
     // so this is a scoped heading+status check, not a whole-file absence).
-    let spec_norm = normalize_whitespace(&spec);
-    let spec_zh_norm = normalize_whitespace(&spec_zh);
+    let spec_norm = normalize_whitespace(spec);
+    let spec_zh_norm = normalize_whitespace(spec_zh);
     assert!(
         !spec_norm.contains("Phase 15 - Safety & Sandbox Status: designed; implementation pending"),
         "docs/opi-spec.md Phase 15 section must not retain the stale designed/pending status"
@@ -270,12 +324,31 @@ fn phase15_docs_reject_superseded_design_and_nongoal_claims() {
     let spec_zh = read_repo_file("docs/opi-spec.zh.md");
     let readme = read_repo_file("README.md");
     let readme_zh = read_repo_file("README.zh.md");
+    let spec = heading_slice(
+        "docs/opi-spec.md",
+        &spec,
+        "### Phase 15 - Safety & Sandbox",
+        "### Phase 16 - Pluggable Extensions and Command Execution",
+    );
+    let spec_zh = heading_slice(
+        "docs/opi-spec.zh.md",
+        &spec_zh,
+        "### 第十五阶段 - Safety & Sandbox",
+        "### 第十六阶段 - 可插拔扩展与命令执行",
+    );
+    let readme = heading_slice(
+        "README.md",
+        &readme,
+        "### Sandbox and project trust",
+        "## Development",
+    );
+    let readme_zh = heading_slice("README.zh.md", &readme_zh, "### 沙箱与项目信任", "## 开发");
 
     for (path, content) in [
-        ("docs/opi-spec.md", &spec),
-        ("docs/opi-spec.zh.md", &spec_zh),
-        ("README.md", &readme),
-        ("README.zh.md", &readme_zh),
+        ("docs/opi-spec.md", spec),
+        ("docs/opi-spec.zh.md", spec_zh),
+        ("README.md", readme),
+        ("README.zh.md", readme_zh),
     ] {
         // The shipped Windows Job Object uses `windows-sys` FFI, not a wrapper
         // crate; the 2026-07-11 design named `win32job` and must not leak back.
@@ -286,10 +359,55 @@ fn phase15_docs_reject_superseded_design_and_nongoal_claims() {
     // shipped section rewords it and expands the list).
     assert_absent(
         "docs/opi-spec.md",
-        &spec,
+        spec,
         &[
             "Non-goals: opi-self confinement, adapter strict-confinement, remote backends, and nav-tool Operations.",
+            "The network *layer* reports `TemporarilyUnavailable` on ABI < 4",
+            "`FileOperations` is unsandboxed",
         ],
+    );
+    assert_absent(
+        "docs/opi-spec.zh.md",
+        spec_zh,
+        &[
+            "网络*层*在 ABI < 4 时仍报告 `TemporarilyUnavailable`",
+            "`FileOperations` 不被沙箱",
+        ],
+    );
+}
+
+#[test]
+fn heading_slices_reject_markers_moved_outside_the_target_section() {
+    let en = "### Other\nrequired marker\n### Phase 15 - Safety & Sandbox\nbody\n### Phase 16 - Pluggable Extensions and Command Execution\nrequired marker\n";
+    let en_phase = heading_slice(
+        "fixture-en",
+        en,
+        "### Phase 15 - Safety & Sandbox",
+        "### Phase 16 - Pluggable Extensions and Command Execution",
+    );
+    assert!(!en_phase.contains("required marker"));
+
+    let zh = "### 其他\nrequired marker\n### 第十五阶段 - Safety & Sandbox\n正文\n### 第十六阶段 - 可插拔扩展与命令执行\nrequired marker\n";
+    let zh_phase = heading_slice(
+        "fixture-zh",
+        zh,
+        "### 第十五阶段 - Safety & Sandbox",
+        "### 第十六阶段 - 可插拔扩展与命令执行",
+    );
+    assert!(!zh_phase.contains("required marker"));
+
+    let readme =
+        "### Sandbox and project trust\nrequired marker\n## Development\nrequired marker\n";
+    assert_eq!(
+        heading_slice(
+            "fixture-readme",
+            readme,
+            "### Sandbox and project trust",
+            "## Development",
+        )
+        .matches("required marker")
+        .count(),
+        1
     );
 }
 
@@ -369,12 +487,19 @@ fn phase15_nongoals_have_structural_evidence() {
         );
     }
 
-    // File tools are unsandboxed (FileOperations has no PreparedSandbox).
+    // File tools are capability-relative within the workspace, while process
+    // sandboxing remains exclusive to BashOperations.
     let operations = read_repo_file("crates/opi-coding-agent/src/tool/operations.rs");
     let operations_doc = normalize_whitespace(&operations.replace("///", ""));
     assert!(
-        operations_doc.contains("Plain `tokio::fs::*` wrapper with NO sandbox"),
-        "LocalFileOperations must document itself as an unsandboxed tokio::fs wrapper"
+        operations_doc.contains(
+            "Paths inside `workspace_root` are resolved beneath a held directory capability"
+        ),
+        "LocalFileOperations must document its held workspace capability"
+    );
+    assert!(
+        operations_doc.contains("Explicitly allowed external reads retain ambient-path behavior"),
+        "LocalFileOperations must document the deliberately ambient external-read path"
     );
 
     // The narrowed Linux L2/L3 mechanism is pinned in source.
@@ -476,7 +601,9 @@ fn sandbox_product_ci_retains_each_native_product_filter_and_complete_log() {
         "linux_engaged_subprocess_denies_requested_access",
         "linux_new_inet_inet6_netlink_sockets_are_denied",
         "linux_af_unix_survives_socket_creation_gate",
+        "linux_af_unix_datagram_round_trip_survives_socket_creation_gate",
         "linux_landlock_abi4_denies_tcp_bind_connect",
+        "linux_l3_ptrace_is_denied_only_when_syscall_layer_is_enabled",
         "linux_alternate_network_surface_audit",
         "macos_engaged_subprocess_denies_outside_write",
         "macos_engaged_subprocess_denies_network",
@@ -534,6 +661,7 @@ fn changelog_unreleased_records_phase15_additions() {
         "--sandbox",
         "--trust",
         "forbid(unsafe_code)",
+        "`AppState` no longer implements `Copy`, `Clone`, `PartialEq`, or `Eq`",
     ] {
         assert!(
             unreleased.contains(marker),
@@ -547,8 +675,20 @@ fn changelog_unreleased_records_phase15_additions() {
 
 #[test]
 fn paired_specs_cite_the_adapter_contract_from_its_actual_test_binary() {
-    for path in ["docs/opi-spec.md", "docs/opi-spec.zh.md"] {
+    for (path, start, end) in [
+        (
+            "docs/opi-spec.md",
+            "### Phase 15 - Safety & Sandbox",
+            "### Phase 16 - Pluggable Extensions and Command Execution",
+        ),
+        (
+            "docs/opi-spec.zh.md",
+            "### 第十五阶段 - Safety & Sandbox",
+            "### 第十六阶段 - 可插拔扩展与命令执行",
+        ),
+    ] {
         let content = read_repo_file(path);
+        let content = heading_slice(path, &content, start, end);
         assert!(
             content.contains("sandbox_l0::adapter_process_group_contract"),
             "{path} must cite the adapter process-group contract from sandbox_l0"

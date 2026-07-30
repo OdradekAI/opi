@@ -239,10 +239,14 @@ Available built-in tools are `read`, `write`, `edit`, `bash`, `grep`, `find`,
 | Non-interactive / RPC | `read`, `grep`, `find`, `ls`, `glob` |
 | Non-interactive / RPC with mutating opt-in | `read`, `write`, `edit`, `bash` |
 
-File writes and edits are scoped to the harness workspace root. Interactive
-`read` can inspect absolute paths and paths outside the workspace. `bash`
-starts in the workspace root but is not path-confined. These are tool policy
-checks, not an operating-system sandbox.
+File writes and edits are scoped to the harness workspace root. After
+`PathPolicy` accepts a workspace path, the local file backend resolves it
+relative to a held workspace-root capability so an ancestor symlink or
+junction swap cannot redirect the operation outside the workspace.
+Interactive `read` can inspect explicitly allowed absolute paths outside the
+workspace through the ambient filesystem. `bash` starts in the workspace root
+but is not path-confined. These are tool-policy and file-operation hardening
+measures, not an operating-system sandbox.
 
 Tool results carry LLM-visible `content`, optional structured `details`,
 `is_error`, `terminate`, `truncated`, and optional diagnostics. `read` returns
@@ -252,8 +256,9 @@ may spill complete output to `details.full_output`.
 
 ## Config and Sessions
 
-Config layers merge user config, project config, and an explicit `--config`
-file. Model precedence is:
+Config layers merge user config, an authorized project config, and an explicit
+`--config` file. Project config is not read until startup trust resolution
+allows it; an explicit `--config` remains user-authorized. Model precedence is:
 
 1. `--model`
 2. `OPI_MODEL` when `--config` was not passed
@@ -336,17 +341,25 @@ untrusted code belongs in a container or VM.
 - Linux `strict` L2 is a narrowed new-socket creation gate: seccomp denies
   `socket(AF_INET)`, `socket(AF_INET6)`, and `socket(AF_NETLINK)` while
   preserving `socket(AF_UNIX)`, and Landlock ABI 4 (Linux 6.7+) additionally
-  denies TCP `bind`/`connect`. It does not claim complete network isolation:
-  inherited fds, non-TCP traffic, and `io_uring` remain documented residuals.
-  L3 denies a fixed kernel-handle danger blocklist (`clone`/`unshare` stay
-  allowed). macOS uses a `sandbox-exec` deny-overlay (L1/L2; L3 is n/a);
-  Windows is L0-only and `strict` degrades to L0 with a diagnostic.
+  denies TCP `bind`/`connect`. On Landlock ABI 1-3, fail-open retains the
+  seccomp new-socket gate, reports the missing TCP bind/connect capability with
+  `opi.sandbox.degraded`, and continues at that partial baseline;
+  `require = true` fails closed before spawning. It does not claim complete
+  network isolation: inherited fds, non-TCP traffic, and `io_uring` remain
+  documented residuals. L3 denies a fixed kernel-handle danger blocklist
+  (`clone`/`unshare` stay allowed). macOS probes and launches the same absolute
+  `/usr/bin/sandbox-exec` deny-overlay helper (L1/L2; L3 is n/a); Windows is
+  L0-only and `strict` degrades to L0 with a diagnostic.
 - File tools (`read`/`write`/`edit`) and nav tools (`grep`/`find`/`ls`/`glob`)
-  are not sandboxed; they stay `PathPolicy`-guarded. The sandbox lives inside
-  local `BashOperations::exec` behind the per-tool `Operations` seam, which
-  ships local impls only (no SSH/container remote backends).
-- Project trust is resolved once at startup, before any project resource
-  loads. The store is a flat `Map<canonical_path, bool>` at
+  are not process-sandboxed. File tools stay `PathPolicy`-guarded, and the
+  shipped local file backend performs workspace operations relative to a held
+  root capability; explicitly allowed external reads remain ambient. The
+  subprocess sandbox lives inside local `BashOperations::exec` behind the
+  per-tool `Operations` seam, which ships local impls only (no SSH/container
+  remote backends).
+- Project trust is resolved once at startup, before any project resource or
+  project config consumer (including `doctor` and `--list-models`) runs. The
+  store is a flat `Map<canonical_path, bool>` at
   `{user_config_dir}/trust.json` (`%APPDATA%\opi\trust.json` on Windows,
   `~/.config/opi/trust.json` on Unix), with no schema version. When a project
   is untrusted, its `.opi/config.toml`, `.opi/{skills,fragments,themes,

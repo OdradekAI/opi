@@ -226,9 +226,11 @@ Anthropic cache-control 能力。`cache_write_1h_tokens` 是 cache write 的子�
 | 非交互 / RPC | `read`、`grep`、`find`、`ls`、`glob` |
 | 非交互 / RPC 且显式允许修改 | `read`、`write`、`edit`、`bash` |
 
-文件写入和编辑限制在 harness workspace 根目录内。交互式 `read` 可以检查绝对路径和
-workspace 外路径。`bash` 从 workspace 根目录启动，但不限制在工作区内。这些都是工具
-策略校验，不是操作系统级 sandbox。
+文件写入和编辑限制在 harness workspace 根目录内。`PathPolicy` 接受 workspace 路径后，
+local 文件后端会相对一个已持有的 workspace-root capability 解析该路径，因此祖先
+symlink 或 junction 交换无法把操作重定向到 workspace 外。交互式 `read` 可以通过 ambient
+文件系统读取显式允许的 workspace 外绝对路径。`bash` 从 workspace 根目录启动，但不限制
+在工作区内。这些是工具策略与文件操作加固，不是操作系统级 sandbox。
 
 工具结果携带 LLM 可见的 `content`、可选结构化 `details`、`is_error`、`terminate`、
 `truncated` 和可选 diagnostics。`read` 返回行号/路径元数据，默认预览上限为 2000 行，
@@ -237,7 +239,8 @@ workspace 外路径。`bash` 从 workspace 根目录启动，但不限制在工�
 
 ## 配置与会话
 
-配置会合并用户配置、项目配置和显式 `--config` 文件。模型选择优先级如下：
+配置会合并用户配置、已授权的项目配置和显式 `--config` 文件。项目信任解析允许之前不会
+读取项目配置；显式 `--config` 始终视为用户授权。模型选择优先级如下：
 
 1. `--model`
 2. 未传入 `--config` 时的 `OPI_MODEL`
@@ -309,14 +312,20 @@ defense-in-depth，明确不是安全边界；不可信代码应放在容器或 
   `opi.sandbox.degraded` diagnostic。CLI：`--sandbox off|strict`、`--sandbox-require`。
 - Linux `strict` L2 是收窄的新建 socket 创建门：seccomp 拒绝 `socket(AF_INET)`、
   `socket(AF_INET6)` 与 `socket(AF_NETLINK)`，同时保留 `socket(AF_UNIX)`；Landlock
-  ABI 4（Linux 6.7+）额外拒绝 TCP `bind`/`connect`。它不声称完整网络隔离：继承的 fd、
-  non-TCP 流量与 `io_uring` 仍是已记录的残留。L3 拒绝固定的内核句柄危险 blocklist
-  （`clone`/`unshare` 保持允许）。macOS 使用 `sandbox-exec` deny-overlay（L1/L2；L3
-  不可用）；Windows 仅 L0，`strict` degrade 到 L0 并给出 diagnostic。
+  ABI 4（Linux 6.7+）额外拒绝 TCP `bind`/`connect`。在 Landlock ABI 1-3 上，
+  fail-open 会保留 seccomp 新建 socket 门，使用 `opi.sandbox.degraded` 报告缺失的 TCP
+  bind/connect 能力，并按该部分基线继续；`require = true` 会在 spawn 前 fail-closed。
+  它不声称完整网络隔离：继承的 fd、non-TCP 流量与 `io_uring` 仍是已记录的残留。L3
+  拒绝固定的内核句柄危险 blocklist（`clone`/`unshare` 保持允许）。macOS 探测并启动同一个
+  绝对路径 `/usr/bin/sandbox-exec` deny-overlay helper（L1/L2；L3 不可用）；Windows 仅
+  L0，`strict` degrade 到 L0 并给出 diagnostic。
 - 文件工具（`read`/`write`/`edit`）与 nav 工具（`grep`/`find`/`ls`/`glob`）不被沙箱；
-  它们保持 `PathPolicy` 守卫。沙箱位于按工具的 `Operations` 缝合点之后的 local
-  `BashOperations::exec` 内，该缝合点仅交付 local 实现（无 SSH/container 远端后端）。
-- 项目信任在启动时恰好解析一次，先于任何项目资源加载。store 是扁平
+  文件工具保持 `PathPolicy` 守卫，且已交付的 local 文件后端相对已持有的 root capability
+  执行 workspace 操作；显式允许的外部读取仍使用 ambient 路径。子进程沙箱位于按工具的
+  `Operations` 缝合点之后的 local `BashOperations::exec` 内，该缝合点仅交付 local 实现
+  （无 SSH/container 远端后端）。
+- 项目信任在启动时恰好解析一次，先于任何项目资源或项目配置消费者（包括 `doctor` 与
+  `--list-models`）运行。store 是扁平
   `Map<canonical_path, bool>`，位于 `{user_config_dir}/trust.json`（Windows 上
   `%APPDATA%\opi\trust.json`、Unix 上 `~/.config/opi/trust.json`），无 schema 版本。当
   项目未受信任时，其 `.opi/config.toml`、`.opi/{skills,fragments,themes,extensions}`、

@@ -65,7 +65,8 @@ impl EditTool {
     /// Convenience constructor with the local filesystem backend. Production
     /// wiring injects via [`Self::new_with_ops`].
     pub fn new(workspace_root: PathBuf) -> Self {
-        Self::new_with_ops(workspace_root, Arc::new(LocalFileOperations::new()))
+        let ops = Arc::new(LocalFileOperations::new(workspace_root.clone()));
+        Self::new_with_ops(workspace_root, ops)
     }
 
     /// Primary constructor with an explicit [`FileOperations`] backend (Phase 15

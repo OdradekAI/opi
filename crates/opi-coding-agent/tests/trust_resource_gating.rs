@@ -16,7 +16,7 @@ use std::process::Command;
 use opi_agent::tool::{Tool, ToolResult};
 use opi_ai::test_support::MockProvider;
 use opi_coding_agent::config::{
-    ConfigSource, OpiConfig, merge_project_config, resolve_pre_trust_config,
+    ConfigSource, OpiConfig, merge_project_config, resolve_pre_trust_config, stage_config,
 };
 use opi_coding_agent::context_files;
 use opi_coding_agent::harness::CodingHarness;
@@ -280,6 +280,120 @@ fn resource_project_with_allow_store_entry_is_trusted() {
 // ---------------------------------------------------------------------------
 // Two-stage config: resolve_pre_trust_config + merge_project_config
 // ---------------------------------------------------------------------------
+
+#[test]
+fn staged_config_finalizes_layers_once_in_precedence_order() {
+    let global = tempfile::tempdir().unwrap();
+    fs::write(
+        global.path().join("config.toml"),
+        r#"
+[defaults]
+model = "global:model"
+default_project_trust = "always"
+
+[providers.custom.acme]
+api = "openai-completions"
+api_key_env = "ACME_API_KEY"
+
+[extensions]
+paths = ["global-extension"]
+"#,
+    )
+    .expect("global config");
+
+    let workspace = tempfile::tempdir().unwrap();
+    init_git(workspace.path());
+    fs::create_dir_all(workspace.path().join(".opi")).expect("create .opi");
+    fs::write(
+        workspace.path().join(".opi").join("config.toml"),
+        r#"
+[defaults]
+model = "project:model"
+default_project_trust = "never"
+
+[providers.custom.acme]
+base_url = "https://project.example/v1"
+models = [
+  { id = "project-model", context_window = 8192, max_output_tokens = 1024 }
+]
+
+[extensions]
+paths = ["project-extension"]
+"#,
+    )
+    .expect("project config");
+
+    let explicit = workspace.path().join("explicit.toml");
+    fs::write(
+        &explicit,
+        r#"
+[defaults]
+model = "explicit:model"
+
+[providers.custom.acme]
+name = "Explicit Acme"
+
+[extensions]
+paths = ["explicit-extension"]
+"#,
+    )
+    .expect("explicit config");
+
+    let staged = stage_config(ConfigSource {
+        cli_model: Some("cli:model".into()),
+        config_path: Some(explicit),
+        env_model: Some("env:model".into()),
+        project_dir: Some(workspace.path().to_path_buf()),
+        user_config_path: Some(global.path().join("config.toml")),
+    })
+    .expect("raw layers stage without validating an incomplete global provider");
+
+    assert_eq!(
+        staged.global_default_project_trust(),
+        opi_coding_agent::project_trust::ProjectTrustDefault::Always,
+        "the project layer must not influence its own trust decision"
+    );
+
+    let config = staged
+        .finalize_with_project(true)
+        .expect("trusted layers finalize together");
+    assert_eq!(config.defaults.model, "cli:model");
+    assert_eq!(
+        config.extensions.paths,
+        [
+            Path::new("global-extension").to_path_buf(),
+            Path::new("project-extension").to_path_buf(),
+            Path::new("explicit-extension").to_path_buf(),
+        ]
+    );
+    let provider = &config.providers.custom["acme"];
+    assert_eq!(provider.name, "Explicit Acme");
+    assert_eq!(
+        provider.base_url.as_deref(),
+        Some("https://project.example/v1")
+    );
+    assert_eq!(provider.models[0].id, "project-model");
+}
+
+#[test]
+fn staged_config_does_not_read_project_config_when_untrusted() {
+    let global = tempfile::tempdir().unwrap();
+    fs::write(global.path().join("config.toml"), "").expect("empty global config");
+    let workspace = tempfile::tempdir().unwrap();
+    init_git(workspace.path());
+    fs::create_dir_all(workspace.path().join(".opi")).expect("create .opi");
+    fs::write(
+        workspace.path().join(".opi").join("config.toml"),
+        "this is not valid TOML = [",
+    )
+    .expect("malformed project config");
+
+    let staged = stage_config(config_source(workspace.path(), global.path()))
+        .expect("staging must not read project config");
+    staged
+        .finalize_with_project(false)
+        .expect("untrusted finalization must not read project config");
+}
 
 #[test]
 fn pre_trust_config_omits_project_bedrock_profile() {
