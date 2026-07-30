@@ -100,6 +100,9 @@ Run `opi --help` for the exact current surface. Important commands and flags:
 | `--json-compact` | Compact `--json`: streamed `text_delta` updates omit the redundant cumulative snapshot (~linear bytes). |
 | `--rpc` | Start bidirectional JSONL command/event mode over stdin/stdout. |
 | `--allow-mutating` | Allow `write`, `edit`, and `bash` outside interactive mode. |
+| `--sandbox off\|strict` | Select the `bash` subprocess-tree sandbox; default `off` ships the always-on L0 tree-kill baseline. |
+| `--sandbox-require` | Fail closed when a configured `strict` layer is unavailable, instead of the default fail-open-with-diagnostic policy. |
+| `--trust` / `--no-trust` | One-shot project-trust override for the session; mutually exclusive. |
 | `--tools <TOOLS>` | Comma-separated built-in tool allowlist. |
 | `--no-tools` | Disable all tools. |
 | `--no-builtin-tools` | Disable built-in tools while leaving extension/custom tools available. |
@@ -345,9 +348,49 @@ product boundaries are listed under [Boundaries](#boundaries)):
 - automatic formatting on `write` / `edit`
 - package ecosystem expansion
 - workflow tools such as todo, plan mode, or sub-agents
-- sandbox implementation
+- a complete or security-grade sandbox (the opt-in `bash` sandbox is defense-in-depth only, not a security boundary)
 
 Mutating-tool safety is a tool-selection check, not a permission or sandbox subsystem.
+
+## Sandbox and Project Trust
+
+`opi-coding-agent` ships an opt-in `bash` subprocess-tree sandbox and a startup
+project-trust gate. Both are defense-in-depth and explicitly not a security
+boundary; untrusted code belongs in a container or VM. The mutating-tool policy
+above is unchanged and remains a tool-selection check.
+
+- The sandbox confines only the `bash` subprocess tree, not `opi` itself. An
+  always-on L0 baseline (`process_group(0)` on Unix, a kill-on-close Job Object
+  on Windows) ships in every mode. `[sandbox] mode = "strict"` (default `off`)
+  opts into L1/L2/L3 layers; `require = true` (default `false`) fails closed
+  when a layer cannot engage, otherwise `opi` proceeds at the engaged baseline
+  with an `opi.sandbox.degraded` diagnostic. CLI: `--sandbox off|strict`,
+  `--sandbox-require`.
+- Linux `strict` L2 narrows new-socket creation: seccomp denies
+  `socket(AF_INET)`, `socket(AF_INET6)`, and `socket(AF_NETLINK)` while
+  preserving `socket(AF_UNIX)`, and Landlock ABI 4 (Linux 6.7+) additionally
+  denies TCP `bind`/`connect`. It does not claim complete network isolation:
+  inherited fds, non-TCP traffic, and `io_uring` are documented residuals.
+  macOS probes and launches `/usr/bin/sandbox-exec`; Windows is L0-only and
+  `strict` degrades to L0 with a diagnostic.
+- The sandbox lives inside local `BashOperations::exec` behind the per-tool
+  `Operations` seam — `FileOperations` and `BashOperations` traits with
+  `Arc<dyn>` constructor injection into `read`/`write`/`edit`/`bash`, layered
+  below `PathPolicy`. The seam ships local impls only (no SSH/container remote
+  backends). Nav tools (`grep`/`find`/`ls`/`glob`) take no `Operations` handle
+  and are not process-sandboxed.
+- Project trust is resolved once at startup, before any project resource or
+  project config consumer (including `doctor` and `--list-models`) runs. The
+  store is a flat `Map<canonical_path, bool>` at `{user_config_dir}/trust.json`
+  (`%APPDATA%\opi\trust.json` on Windows, `~/.config/opi/trust.json` on Unix).
+  When a project is untrusted, its `.opi/config.toml`,
+  `.opi/{skills,fragments,themes,extensions}`, project-scope `.opi/packages.toml`
+  adapter declarations, and project `AGENTS.md`/`CLAUDE.md` do not load; the
+  context files remain readable via the `read` tool. Trust gates resource
+  *loading*, not tool execution. CLI: `--trust` / `--no-trust`;
+  `[defaults] default_project_trust = "ask"|"always"|"never"` (default `ask`,
+  global-only). There is no built-in `/trust` command, no live mid-session trust
+  mutation, and no project-resource reload.
 
 ## Modes
 

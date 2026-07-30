@@ -78,6 +78,21 @@ cargo add opi-tui
 `Theme::from_color_map` 组成的主题发现 API 加载。这些类型属于**不稳定的 0.x 扩展
 API**，可能在次版本间发生破坏性变更。
 
+## 应用状态与信任提示
+
+`AppState` 是调用方传给 `StatusBar` 和 `Shell` 的应用状态枚举：`Idle`、`Thinking`、
+`Streaming`、`ToolExecuting` 和 `AwaitingTrust(AwaitingTrustState)`。`AwaitingTrust` 变体
+携带交互式项目信任 payload，包括一个 `oneshot::Sender<TrustChoice>`；由于它持有该 sender，
+`AppState` 仅为 `Debug`，且不是 `Copy`/`Clone`/`PartialEq`/`Eq`。只需显示标签的渲染方应使用
+由 `AppState::status` 返回的 `Copy` 投影 `AppStatus`（相同变体但去掉 payload）。`AppState` 是
+穷举的，因此新增 `AwaitingTrust` 对下游穷举 match 是一次破坏性的 0.x 变更。
+
+`TrustPrompt` 是当 `AppState` 处于 `AwaitingTrust` 时渲染的 ratatui 选择 widget。
+`TrustChoice` 是五选一的用户选择——`Trust`、`TrustParent`、`TrustSession`、`Deny` 和
+`DenySession`。持久的 `Trust`/`TrustParent`/`Deny` 决策由 `opi-coding-agent` 持久化；
+`*Session` 变体仅对当前会话生效，不会被持久化。`TrustPrompt::without_parent()` 在文件系统
+根目录处省略 `TrustParent`。
+
 ## 集成模式
 
 `opi` 二进制在 `crates/opi-coding-agent/src/interactive.rs` 中使用本 crate：
@@ -92,7 +107,7 @@ API**，可能在次版本间发生破坏性变更。
 
 `branch_picker`、`diff_view`、`editor`、`keybindings`、`markdown`、
 `message_list`、`render`、`select_list`、`status_bar`、`terminal_image`、
-`theme` 和 `tool_call`。
+`theme`、`tool_call` 和 `trust_prompt`。
 
 ## 许可证
 

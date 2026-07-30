@@ -85,6 +85,25 @@ For custom themes, `parse_color`, `THEME_TOKENS`, `is_valid_token`, and
 `Theme::from_color_map` form the theme-discovery API. These types are an
 **unstable 0.x extension API** and may break between minor versions.
 
+## Application State and Trust Prompt
+
+`AppState` is the application-state enum callers feed to `StatusBar` and
+`Shell`: `Idle`, `Thinking`, `Streaming`, `ToolExecuting`, and
+`AwaitingTrust(AwaitingTrustState)`. The `AwaitingTrust` variant carries the
+interactive project-trust payload, including a `oneshot::Sender<TrustChoice>`;
+because it owns that sender, `AppState` is `Debug`-only and is not
+`Copy`/`Clone`/`PartialEq`/`Eq`. Renderers that need only a display label use
+the `Copy` projection `AppStatus` (the same variants minus the payload)
+returned by `AppState::status`. `AppState` is exhaustive, so adding
+`AwaitingTrust` is a breaking 0.x change for downstream exhaustive matches.
+
+`TrustPrompt` is the ratatui selection widget rendered while `AppState` is
+`AwaitingTrust`. `TrustChoice` is the five-way user choice — `Trust`,
+`TrustParent`, `TrustSession`, `Deny`, and `DenySession`. The durable
+`Trust`/`TrustParent`/`Deny` decisions are persisted by `opi-coding-agent`;
+the `*Session` variants are session-only and never persisted.
+`TrustPrompt::without_parent()` omits `TrustParent` at a filesystem root.
+
 ## Integration Pattern
 
 The `opi` binary uses this crate from `crates/opi-coding-agent/src/interactive.rs`:
@@ -99,7 +118,7 @@ The `opi` binary uses this crate from `crates/opi-coding-agent/src/interactive.r
 
 `branch_picker`, `diff_view`, `editor`, `keybindings`, `markdown`,
 `message_list`, `render`, `select_list`, `status_bar`, `terminal_image`,
-`theme`, and `tool_call`.
+`theme`, `tool_call`, and `trust_prompt`.
 
 ## License
 

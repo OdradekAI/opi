@@ -93,6 +93,9 @@ opi --allow-mutating "更新 README。"
 | `--json-compact` | 紧凑 `--json`：流式 `text_delta` 更新省略冗余累积快照（~线性字节）。 |
 | `--rpc` | 通过 stdin/stdout 启动双向 JSONL 命令/事件模式。 |
 | `--allow-mutating` | 在交互模式之外允许 `write`、`edit` 和 `bash`。 |
+| `--sandbox off\|strict` | 选择 `bash` 子进程树 sandbox；默认 `off` 仍提供常开的 L0 树级终止基线。 |
+| `--sandbox-require` | 当某个 `strict` 层不可用时直接失败关闭，而非默认的失败打开并附诊断的策略。 |
+| `--trust` / `--no-trust` | 针对本次会话的一次性项目信任覆盖；二者互斥。 |
 | `--tools <TOOLS>` | 逗号分隔的内置工具 allowlist。 |
 | `--no-tools` | 禁用所有工具。 |
 | `--no-builtin-tools` | 禁用内置工具，同时保留 extension/custom 工具可用性。 |
@@ -314,9 +317,40 @@ inline 结果；四个导航工具都会在访问 10,000 个条目后停止遍�
 - `write` / `edit` 时自动格式化
 - package 生态扩展
 - todo、plan mode 或 sub-agents 等工作流工具
-- sandbox 实现
+- 完整或安全级别的 sandbox（可选的 `bash` sandbox 仅为纵深防御，不是安全边界）
 
 修改性工具安全是工具选择校验，不是权限或 sandbox 子系统。
+
+## sandbox 与项目信任
+
+`opi-coding-agent` 提供可选的 `bash` 子进程树 sandbox 与启动期项目信任门。二者均为
+纵深防御，且明确不是安全边界；不可信代码应放在容器或 VM 中运行。上方的修改性工具策略保持
+不变，仍为工具选择校验。
+
+- sandbox 仅约束 `bash` 子进程树，不约束 `opi` 本身。一个常开的 L0 基线（Unix 上的
+  `process_group(0)`、Windows 上的 kill-on-close Job Object）在所有模式下都生效。
+  `[sandbox] mode = "strict"`（默认 `off`）开启 L1/L2/L3 层；`require = true`（默认
+  `false`）在某个层无法启用时直接失败关闭，否则 `opi` 以已启用的基线继续，并附带
+  `opi.sandbox.degraded` 诊断。CLI：`--sandbox off|strict`、`--sandbox-require`。
+- Linux `strict` L2 收窄新建 socket 的能力：seccomp 拒绝 `socket(AF_INET)`、
+  `socket(AF_INET6)` 与 `socket(AF_NETLINK)`，但保留 `socket(AF_UNIX)`；Landlock ABI 4
+  （Linux 6.7+）进一步拒绝 TCP `bind`/`connect`。它不声称完整的网络隔离：继承的 fd、非 TCP
+  流量和 `io_uring` 都是已记录的残留项。macOS 探测并启动 `/usr/bin/sandbox-exec`；Windows
+  仅支持 L0，`strict` 会带诊断降级为 L0。
+- sandbox 位于本地 `BashOperations::exec` 内部，处于按工具的 `Operations` seam
+  （`FileOperations` 与 `BashOperations` trait，通过 `Arc<dyn>` 构造注入到
+  `read`/`write`/`edit`/`bash`）之后，并位于 `PathPolicy` 之下。该 seam 仅提供本地实现
+  （没有 SSH/容器远端 backend）。导航工具（`grep`/`find`/`ls`/`glob`）不持有 `Operations`
+  句柄，也不受进程级 sandbox 约束。
+- 项目信任在启动期解析一次，先于任何项目资源或项目配置消费者（包括 `doctor` 与
+  `--list-models`）运行。该 store 是位于 `{user_config_dir}/trust.json`（Windows 为
+  `%APPDATA%\opi\trust.json`，Unix 为 `~/.config/opi/trust.json`）的扁平
+  `Map<canonical_path, bool>`。当项目不受信任时，其 `.opi/config.toml`、
+  `.opi/{skills,fragments,themes,extensions}`、项目级 `.opi/packages.toml` adapter 声明，
+  以及项目 `AGENTS.md`/`CLAUDE.md` 都不会加载；这些上下文文件仍可通过 `read` 工具读取。
+  信任门控的是资源*加载*，而非工具执行。CLI：`--trust` / `--no-trust`；
+  `[defaults] default_project_trust = "ask"|"always"|"never"`（默认 `ask`，仅全局生效）。
+  没有内置 `/trust` 命令，没有会话进行中的实时信任变更，也没有项目资源重新加载。
 
 ## 运行模式
 
