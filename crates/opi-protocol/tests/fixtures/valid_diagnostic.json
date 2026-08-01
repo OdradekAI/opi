@@ -1,0 +1,7 @@
+{
+  "type": "diagnostic",
+  "payload": {
+    "request_id": "r1",
+    "message": "setup complete"
+  }
+}

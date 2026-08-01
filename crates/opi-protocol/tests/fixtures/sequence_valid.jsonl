@@ -1,0 +1,6 @@
+{"type":"initialize","payload":{"request_id":"r1","deadline_ms":30000,"adapter_config":{"profile":"strict"},"supported_protocols":["command-execution-jsonl-v1"]}}
+{"type":"ready","payload":{"request_id":"r1","selected_protocol":"command-execution-jsonl-v1","implementation_version":"opi-sandbox 0.1.0","target":"linux-x86_64"}}
+{"type":"accepted","payload":{"request_id":"r1"}}
+{"type":"started","payload":{"request_id":"r1","placement":"landlock","guarantee":"confined","policy":"network=deny","limitations":[]}}
+{"type":"stdout","payload":{"request_id":"r1","data":"aGVsbG8K"}}
+{"type":"completed","payload":{"request_id":"r1","exit":0,"signal":null,"timed_out":false,"cancelled":false,"cleanup":"confirmed","diagnostics":[]}}

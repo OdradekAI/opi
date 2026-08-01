@@ -1,0 +1,13 @@
+{
+  "type": "execute",
+  "payload": {
+    "request_id": "r1",
+    "program": "/bin/sh",
+    "args": ["-c", "echo hi"],
+    "workspace": "/workspace",
+    "cwd": "/workspace",
+    "timeout_ms": 10000,
+    "env_inherit": "inherit",
+    "env_additions": { "PATH": "/usr/bin" }
+  }
+}

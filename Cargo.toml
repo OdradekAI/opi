@@ -3,6 +3,7 @@ members = [
     "crates/opi-ai",
     "crates/opi-agent",
     "crates/opi-coding-agent",
+    "crates/opi-protocol",
     "crates/opi-tui",
 ]
 resolver = "2"
@@ -19,6 +20,7 @@ authors = ["OdradekAI"]
 opi-ai = { path = "crates/opi-ai", version = "0.7.2" }
 opi-agent = { path = "crates/opi-agent", version = "0.7.2" }
 opi-coding-agent = { path = "crates/opi-coding-agent", version = "0.7.2" }
+opi-protocol = { path = "crates/opi-protocol", version = "0.7.2" }
 opi-tui = { path = "crates/opi-tui", version = "0.7.2" }
 
 # async runtime
@@ -55,7 +57,10 @@ crossterm = "0.29"
 unicode-width = "0.2"
 
 # schema
-schemars = "1"
+# Pinned to a minor so the opi-protocol schema snapshot (the normative
+# command-execution-jsonl-v1 JSON Schema) cannot silently drift on a schemars
+# minor bump; bumping requires re-reviewing that snapshot.
+schemars = "1.2"
 jsonschema = "0.28"
 
 # IDs/time

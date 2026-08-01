@@ -1,0 +1,15 @@
+# Companion expected-bytes for valid_execute_nonutf8.json
+#
+# The execute payload's args[0] is a NativeString carrying a single non-UTF-8
+# byte. On the wire it is the two-scalar escape U+E000 U+00FF (JSON:
+# "ÿ"). Per the opi-protocol NativeString algorithm:
+#   U+E000 introducer + U+00FF data scalar  ->  byte 0xFF
+#
+# Independent (non-Rust) clients can verify args[0] decodes to exactly these
+# bytes:
+#
+#   args[0] = [0xFF]   (1 byte)
+#
+# args[1] is the plain ASCII string "ok":
+#
+#   args[1] = [0x6F, 0x6B]   (2 bytes, "ok")

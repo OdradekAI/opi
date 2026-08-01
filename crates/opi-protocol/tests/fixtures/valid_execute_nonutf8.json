@@ -1,0 +1,16 @@
+{
+  "type": "execute",
+  "payload": {
+    "request_id": "r1",
+    "program": "/bin/echo",
+    "args": [
+      "\ue000\u00ff",
+      "ok"
+    ],
+    "workspace": "/workspace",
+    "cwd": "/workspace",
+    "timeout_ms": 10000,
+    "env_inherit": "clear",
+    "env_additions": {}
+  }
+}

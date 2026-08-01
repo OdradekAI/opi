@@ -2084,6 +2084,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "opi-protocol"
+version = "0.7.2"
+dependencies = [
+ "base64",
+ "insta",
+ "jsonschema",
+ "proptest",
+ "schemars",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "opi-tui"
 version = "0.7.2"
 dependencies = [

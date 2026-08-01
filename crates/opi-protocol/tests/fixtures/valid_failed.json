@@ -1,0 +1,10 @@
+{
+  "type": "failed",
+  "payload": {
+    "request_id": "r1",
+    "code": "protocol_incompatible",
+    "phase": "handshake",
+    "message": null,
+    "diagnostics": []
+  }
+}

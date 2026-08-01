@@ -1,0 +1,687 @@
+---
+source: crates/opi-protocol/tests/execution_v1_schema.rs
+assertion_line: 23
+expression: pretty
+---
+{
+  "$comment": "wire identity: command-execution-jsonl-v1",
+  "$defs": {
+    "AcceptedPayload": {
+      "additionalProperties": false,
+      "properties": {
+        "request_id": {
+          "$ref": "#/$defs/RequestId"
+        }
+      },
+      "required": [
+        "request_id"
+      ],
+      "type": "object"
+    },
+    "BackendToHost": {
+      "description": "A frame sent from the backend to the host over stdout.",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "description": "Selects one protocol and reports implementation identity, version, and\ntarget.",
+          "properties": {
+            "payload": {
+              "$ref": "#/$defs/ReadyPayload"
+            },
+            "type": {
+              "const": "ready",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "payload"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "The request is valid and the target has not started.",
+          "properties": {
+            "payload": {
+              "$ref": "#/$defs/AcceptedPayload"
+            },
+            "type": {
+              "const": "accepted",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "payload"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Setup established the reported placement, guarantee, policy, and\nlimitations at the atomic target-start gate.",
+          "properties": {
+            "payload": {
+              "$ref": "#/$defs/StartedPayload"
+            },
+            "type": {
+              "const": "started",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "payload"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "A base64-encoded stdout chunk.",
+          "properties": {
+            "payload": {
+              "$ref": "#/$defs/StdoutPayload"
+            },
+            "type": {
+              "const": "stdout",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "payload"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "A base64-encoded stderr chunk.",
+          "properties": {
+            "payload": {
+              "$ref": "#/$defs/StderrPayload"
+            },
+            "type": {
+              "const": "stderr",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "payload"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "One diagnostic event.",
+          "properties": {
+            "payload": {
+              "$ref": "#/$defs/DiagnosticPayload"
+            },
+            "type": {
+              "const": "diagnostic",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "payload"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Terminal success (or nonzero exit/signal as an in-band result).",
+          "properties": {
+            "payload": {
+              "$ref": "#/$defs/CompletedPayload"
+            },
+            "type": {
+              "const": "completed",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "payload"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Terminal distress. Used for pre-started termination (no exit/signal) and\nfor post-started protocol/cleanup failures with no target exit.",
+          "properties": {
+            "payload": {
+              "$ref": "#/$defs/FailedPayload"
+            },
+            "type": {
+              "const": "failed",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "payload"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "Base64Bytes": {
+      "contentEncoding": "base64",
+      "description": "Raw bytes encoded as standard (padded) base64. Carries command stdout/stderr chunk payloads.",
+      "type": "string"
+    },
+    "CancelPayload": {
+      "additionalProperties": false,
+      "properties": {
+        "reason": {
+          "$ref": "#/$defs/CancelReason"
+        },
+        "request_id": {
+          "$ref": "#/$defs/RequestId"
+        }
+      },
+      "required": [
+        "request_id",
+        "reason"
+      ],
+      "type": "object"
+    },
+    "CancelReason": {
+      "description": "Reason the host is canceling the request.",
+      "oneOf": [
+        {
+          "const": "deadline",
+          "description": "The request deadline elapsed.",
+          "type": "string"
+        },
+        {
+          "const": "canceled",
+          "description": "The host canceled the request (user-initiated).",
+          "type": "string"
+        }
+      ]
+    },
+    "CleanupState": {
+      "description": "Destination cleanup state reported on `completed`.",
+      "oneOf": [
+        {
+          "const": "confirmed",
+          "description": "Destination cleanup confirmed within the bounded grace.",
+          "type": "string"
+        },
+        {
+          "const": "unconfirmed",
+          "description": "Destination cleanup did not confirm within the bounded grace.",
+          "type": "string"
+        }
+      ]
+    },
+    "CompletedPayload": {
+      "additionalProperties": false,
+      "properties": {
+        "cancelled": {
+          "description": "True if the request was canceled.",
+          "type": "boolean"
+        },
+        "cleanup": {
+          "$ref": "#/$defs/CleanupState",
+          "description": "Destination cleanup state."
+        },
+        "diagnostics": {
+          "description": "Final diagnostics.",
+          "items": {
+            "$ref": "#/$defs/Diagnostic"
+          },
+          "type": "array"
+        },
+        "exit": {
+          "description": "Process exit code, when the target exited normally.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "request_id": {
+          "$ref": "#/$defs/RequestId"
+        },
+        "signal": {
+          "description": "Signal number, when the target was terminated by a signal.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "timed_out": {
+          "description": "True if the request deadline elapsed.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "request_id",
+        "timed_out",
+        "cancelled",
+        "cleanup",
+        "diagnostics"
+      ],
+      "type": "object"
+    },
+    "Diagnostic": {
+      "description": "One diagnostic entry (used in the `diagnostics` lists on `completed`/`failed`).",
+      "properties": {
+        "message": {
+          "description": "Redacted diagnostic message.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "message"
+      ],
+      "type": "object"
+    },
+    "DiagnosticPayload": {
+      "additionalProperties": false,
+      "properties": {
+        "message": {
+          "description": "Redacted diagnostic message (redaction is the backend's responsibility).",
+          "type": "string"
+        },
+        "request_id": {
+          "$ref": "#/$defs/RequestId"
+        }
+      },
+      "required": [
+        "request_id",
+        "message"
+      ],
+      "type": "object"
+    },
+    "EnvInherit": {
+      "description": "Environment-inheritance policy for `execute`.",
+      "oneOf": [
+        {
+          "const": "inherit",
+          "description": "Inherit the host process environment, then apply `env_additions`.",
+          "type": "string"
+        },
+        {
+          "const": "clear",
+          "description": "Start from an empty environment; only `env_additions` apply.",
+          "type": "string"
+        }
+      ]
+    },
+    "ExecutePayload": {
+      "additionalProperties": false,
+      "properties": {
+        "args": {
+          "description": "Explicit argument vector.",
+          "items": {
+            "$ref": "#/$defs/NativeString"
+          },
+          "type": "array"
+        },
+        "cwd": {
+          "$ref": "#/$defs/NativeString",
+          "description": "Working directory inside the workspace."
+        },
+        "env_additions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/NativeString"
+          },
+          "description": "Bounded environment additions (keys and values are native strings).",
+          "type": "object"
+        },
+        "env_inherit": {
+          "$ref": "#/$defs/EnvInherit",
+          "description": "Environment-inheritance policy."
+        },
+        "program": {
+          "$ref": "#/$defs/NativeString",
+          "description": "Explicit program (the host maps a `bash` shell string to a platform\nshell program before sending)."
+        },
+        "request_id": {
+          "$ref": "#/$defs/RequestId"
+        },
+        "timeout_ms": {
+          "description": "Execution timeout, in milliseconds.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "workspace": {
+          "$ref": "#/$defs/NativeString",
+          "description": "Canonical workspace root."
+        }
+      },
+      "required": [
+        "request_id",
+        "program",
+        "args",
+        "workspace",
+        "cwd",
+        "timeout_ms",
+        "env_inherit",
+        "env_additions"
+      ],
+      "type": "object"
+    },
+    "FailedPayload": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/FailureCode",
+          "description": "Closed wire-level failure code."
+        },
+        "diagnostics": {
+          "description": "Diagnostics.",
+          "items": {
+            "$ref": "#/$defs/Diagnostic"
+          },
+          "type": "array"
+        },
+        "message": {
+          "description": "Optional redacted message.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "phase": {
+          "$ref": "#/$defs/FailurePhase",
+          "description": "Where in the lifecycle the failure occurred."
+        },
+        "request_id": {
+          "$ref": "#/$defs/RequestId"
+        }
+      },
+      "required": [
+        "request_id",
+        "code",
+        "phase",
+        "diagnostics"
+      ],
+      "type": "object"
+    },
+    "FailureCode": {
+      "description": "Closed wire-level failure code (the codes the `v1` state machine can emit on\nthe wire). The wider architecture-level `ExtensionFailure` envelope (package,\ntrust, permission, policy codes) is a host-side concern and is intentionally\nnot modeled here.",
+      "oneOf": [
+        {
+          "const": "unavailable",
+          "description": "Backend unavailable before the target started.",
+          "type": "string"
+        },
+        {
+          "const": "failed",
+          "description": "Generic pre-started failure.",
+          "type": "string"
+        },
+        {
+          "const": "protocol_incompatible",
+          "description": "No supported protocol in common.",
+          "type": "string"
+        },
+        {
+          "const": "protocol_violation",
+          "description": "A frame violated the protocol (malformed, oversized, unknown, out of\norder).",
+          "type": "string"
+        },
+        {
+          "const": "execution_failed",
+          "description": "Execution failed after the target started.",
+          "type": "string"
+        },
+        {
+          "const": "execution_timed_out",
+          "description": "The execution timeout elapsed.",
+          "type": "string"
+        },
+        {
+          "const": "cleanup_unconfirmed",
+          "description": "Terminal cleanup failure (cleanup did not confirm).",
+          "type": "string"
+        }
+      ]
+    },
+    "FailurePhase": {
+      "description": "Where in the lifecycle a failure occurred.",
+      "oneOf": [
+        {
+          "const": "handshake",
+          "description": "Before the target started (handshake/setup).",
+          "type": "string"
+        },
+        {
+          "const": "execution",
+          "description": "After the target started.",
+          "type": "string"
+        },
+        {
+          "const": "cleanup",
+          "description": "During cleanup.",
+          "type": "string"
+        }
+      ]
+    },
+    "HostToBackend": {
+      "description": "A frame sent from the host to the backend over stdin.",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "description": "First frame; carries the deadline, bounded adapter configuration, and the\nhost's ordered supported-protocol list.",
+          "properties": {
+            "payload": {
+              "$ref": "#/$defs/InitializePayload"
+            },
+            "type": {
+              "const": "initialize",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "payload"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Carries the explicit program and arguments, canonical workspace, working\ndirectory, timeout, environment-inheritance policy, and bounded additions.",
+          "properties": {
+            "payload": {
+              "$ref": "#/$defs/ExecutePayload"
+            },
+            "type": {
+              "const": "execute",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "payload"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Cancels the in-flight request. May be sent more than once.",
+          "properties": {
+            "payload": {
+              "$ref": "#/$defs/CancelPayload"
+            },
+            "type": {
+              "const": "cancel",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "payload"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "InitializePayload": {
+      "additionalProperties": false,
+      "properties": {
+        "adapter_config": {
+          "description": "Bounded adapter configuration (opaque JSON; sized by the codec)."
+        },
+        "deadline_ms": {
+          "description": "Request deadline, in milliseconds from the start of the execution.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "request_id": {
+          "$ref": "#/$defs/RequestId"
+        },
+        "supported_protocols": {
+          "description": "The host's ordered supported-protocol list. Order is preference order.",
+          "items": {
+            "$ref": "#/$defs/ProtocolId"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "request_id",
+        "deadline_ms",
+        "adapter_config",
+        "supported_protocols"
+      ],
+      "type": "object"
+    },
+    "NativeString": {
+      "description": "Native string: arbitrary bytes carried reversibly over UTF-8 via a U+E000 escape introducer. Valid UTF-8 passes through (literal U+E000 is doubled); each invalid byte xx is encoded as U+E000 U+00xx. See the opi-protocol rustdoc for the full algorithm and the per-platform OsString->bytes domain. Not base64.",
+      "type": "string"
+    },
+    "ProtocolId": {
+      "description": "A wire-protocol identity. The version is baked into the identity string\n(`command-execution-jsonl-v1`); there is no separate numeric version.",
+      "type": "string"
+    },
+    "ReadyPayload": {
+      "additionalProperties": false,
+      "properties": {
+        "implementation_version": {
+          "description": "Backend implementation version (diagnostics only; never a negotiation\ninput).",
+          "type": "string"
+        },
+        "request_id": {
+          "$ref": "#/$defs/RequestId"
+        },
+        "selected_protocol": {
+          "$ref": "#/$defs/ProtocolId",
+          "description": "The single selected protocol (negotiation result)."
+        },
+        "target": {
+          "$ref": "#/$defs/TargetId",
+          "description": "Execution target/platform."
+        }
+      },
+      "required": [
+        "request_id",
+        "selected_protocol",
+        "implementation_version",
+        "target"
+      ],
+      "type": "object"
+    },
+    "RequestId": {
+      "description": "Host-generated opaque request id carried by every frame in one execution.\n\nEmpty ids are rejected at the type boundary: construction ([`RequestId::new`])\nand deserialization both reject `\"\"`, and the generated JSON Schema carries\n`minLength: 1`. Backend frames echo the host id; this type does not validate\nechoing by construction  --  the [`Session`](super::Session) checker detects a\ncross-request id, and the runtime (host/backend) is responsible for actually\nechoing.",
+      "minLength": 1,
+      "type": "string"
+    },
+    "StartedPayload": {
+      "additionalProperties": false,
+      "properties": {
+        "guarantee": {
+          "description": "Reported confinement guarantee (adapter-defined vocabulary).",
+          "type": "string"
+        },
+        "limitations": {
+          "description": "Reported limitations.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "placement": {
+          "description": "Reported placement (adapter-defined vocabulary).",
+          "type": "string"
+        },
+        "policy": {
+          "description": "Reported policy (adapter-defined vocabulary).",
+          "type": "string"
+        },
+        "request_id": {
+          "$ref": "#/$defs/RequestId"
+        }
+      },
+      "required": [
+        "request_id",
+        "placement",
+        "guarantee",
+        "policy",
+        "limitations"
+      ],
+      "type": "object"
+    },
+    "StderrPayload": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/Base64Bytes",
+          "description": "Base64-encoded stderr bytes."
+        },
+        "request_id": {
+          "$ref": "#/$defs/RequestId"
+        }
+      },
+      "required": [
+        "request_id",
+        "data"
+      ],
+      "type": "object"
+    },
+    "StdoutPayload": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/Base64Bytes",
+          "description": "Base64-encoded stdout bytes."
+        },
+        "request_id": {
+          "$ref": "#/$defs/RequestId"
+        }
+      },
+      "required": [
+        "request_id",
+        "data"
+      ],
+      "type": "object"
+    },
+    "TargetId": {
+      "description": "Execution target/platform identifier.",
+      "type": "string"
+    }
+  },
+  "$id": "https://odradek.ai/schemas/command-execution-jsonl-v1.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "JSON Schema for command-execution-jsonl-v1 wire frames (host-to-backend and backend-to-host).",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/HostToBackend"
+    },
+    {
+      "$ref": "#/$defs/BackendToHost"
+    }
+  ],
+  "title": "SchemaRoot"
+}

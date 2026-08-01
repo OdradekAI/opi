@@ -1,0 +1,12 @@
+{
+  "type": "completed",
+  "payload": {
+    "request_id": "r1",
+    "exit": 0,
+    "signal": null,
+    "timed_out": false,
+    "cancelled": false,
+    "cleanup": "confirmed",
+    "diagnostics": []
+  }
+}

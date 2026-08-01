@@ -1,0 +1,10 @@
+{
+  "type": "started",
+  "payload": {
+    "request_id": "r1",
+    "placement": "landlock+seccomp",
+    "guarantee": "confined",
+    "policy": "network=deny",
+    "limitations": ["no ptrace", "workspace-only writes"]
+  }
+}
