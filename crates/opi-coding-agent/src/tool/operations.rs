@@ -45,10 +45,9 @@ use cap_std::ambient_authority;
 use cap_std::fs::{Dir, OpenOptions as CapOpenOptions};
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::AsyncWriteExt;
 use tokio_util::sync::CancellationToken;
 
-use super::process_tree::{TerminationOutcome, TreeGuard};
 use crate::sandbox::{PreparedSandbox, StrictOutcome, TemporaryGap};
 
 // =========================================================================
@@ -993,90 +992,40 @@ impl BashOperations for LocalBashOperations {
                 }
             };
 
-            // Attach L0 to the spawned child. Fail-open: on failure we keep a
-            // disabled guard (the direct child is still killed via kill_on_drop
-            // + child.kill on timeout/cancel) and record one degraded diagnostic.
+            // Policy-neutral L0 supervision (Phase 16 task 16.2): attach the
+            // process tree, race wait/timeout/cancel, terminate the whole tree
+            // on every branch, and boundedly drain stdout/stderr. Sandbox policy
+            // stays in this method (above); the supervision seam is policy
+            // neutral and carries only redacted `{layer, reason}` degradations.
             #[cfg(test)]
-            let l0_attach = match child.id() {
-                Some(pid) => TreeGuard::attach_with_faults(pid, test_tree_faults),
-                None => TreeGuard::attach_child(None),
-            };
+            let outcome = super::supervision::supervise_with_faults(
+                &mut child,
+                timeout,
+                signal,
+                MAX_BASH_OUTPUT_BYTES,
+                test_tree_faults,
+                false,
+            )
+            .await;
             #[cfg(not(test))]
-            let l0_attach = TreeGuard::attach_child(child.id());
-            let mut l0_tree = match l0_attach {
-                Ok(guard) => guard,
-                Err(e) => {
-                    degraded_diagnostics.push(l0_degraded_diagnostic(&e));
-                    TreeGuard::disabled()
-                }
-            };
+            let outcome =
+                super::supervision::supervise(&mut child, timeout, signal, MAX_BASH_OUTPUT_BYTES)
+                    .await;
 
-            let stdout = child.stdout.take();
-            let stderr = child.stderr.take();
+            let super::supervision::SupervisionOutcome {
+                kind,
+                out: mut out_cap,
+                err: mut err_cap,
+                degradations,
+            } = outcome;
 
-            let timeout_future = tokio::time::sleep(timeout);
-            let cancel_future = signal.cancelled();
-            tokio::pin!(timeout_future);
-            tokio::pin!(cancel_future);
+            // Map the redacted supervision degradations into the local
+            // CODE_SANDBOX_DEGRADED diagnostics, appended after the pre-spawn
+            // sandbox-gap diagnostics already accumulated above.
+            degraded_diagnostics.extend(degradations.iter().map(l0_degraded_diagnostic));
 
-            // Drain stdout/stderr concurrently with the wait/timeout/cancel race
-            // to avoid the stdout-then-stderr pipe deadlock. They are owned
-            // tasks so a descendant that retained either pipe cannot keep this
-            // operation pending forever after tree termination.
-            let drain_out = OwnedCaptureTask::new(spawn_stream_capture(stdout));
-            let drain_err = OwnedCaptureTask::new(spawn_stream_capture(stderr));
-            let control = async {
-                tokio::select! {
-                    biased;
-                    _ = &mut cancel_future => {
-                        let kill_error = child.kill().await.err().map(|e| e.to_string());
-                        // L0: terminate the whole tree; surface a degrade if it
-                        // fails (the direct-child kill above already ran).
-                        let term_diag = match l0_tree.terminate() {
-                            TerminationOutcome::Failed(e) => Some(l0_degraded_diagnostic(&e)),
-                            _ => None,
-                        };
-                        (Control::Cancelled { kill_error }, term_diag)
-                    }
-                    _ = &mut timeout_future => {
-                        let kill_error = child.kill().await.err().map(|e| e.to_string());
-                        let term_diag = match l0_tree.terminate() {
-                            TerminationOutcome::Failed(e) => Some(l0_degraded_diagnostic(&e)),
-                            _ => None,
-                        };
-                        (Control::TimedOut { kill_error }, term_diag)
-                    }
-                    status = child.wait() => match status {
-                        Ok(s) => {
-                            // The direct shell may exit while backgrounded
-                            // descendants still own pipes. The approved L0
-                            // policy terminates the remaining tree while
-                            // preserving this direct-child status.
-                            let term_diag = match l0_tree.terminate() {
-                                TerminationOutcome::Failed(e) => Some(l0_degraded_diagnostic(&e)),
-                                _ => None,
-                            };
-                            (Control::Done(s), term_diag)
-                        }
-                        Err(_) => {
-                            let term_diag = match l0_tree.terminate() {
-                                TerminationOutcome::Failed(e) => Some(l0_degraded_diagnostic(&e)),
-                                _ => None,
-                            };
-                            (Control::WaitFailed, term_diag)
-                        }
-                    },
-                }
-            };
-
-            let (ctrl, term_diag) = control.await;
-            let (mut out_cap, mut err_cap) = tokio::join!(drain_out.finish(), drain_err.finish());
-            if let Some(d) = term_diag {
-                degraded_diagnostics.push(d);
-            }
-
-            match ctrl {
-                Control::Cancelled { kill_error } => {
+            match kind {
+                super::supervision::SupervisionKind::Cancelled { kill_error } => {
                     cleanup_spill(&mut out_cap);
                     cleanup_spill(&mut err_cap);
                     let diag = bash_operation_context_diagnostic(
@@ -1085,7 +1034,7 @@ impl BashOperations for LocalBashOperations {
                         false,
                         false,
                         None,
-                        kill_error.as_deref(),
+                        kill_error.as_ref().map(|e| e.to_string()).as_deref(),
                     );
                     Ok(BashResult {
                         stdout: Vec::new(),
@@ -1098,7 +1047,7 @@ impl BashOperations for LocalBashOperations {
                             .collect(),
                     })
                 }
-                Control::TimedOut { kill_error } => {
+                super::supervision::SupervisionKind::TimedOut { kill_error } => {
                     cleanup_spill(&mut out_cap);
                     cleanup_spill(&mut err_cap);
                     let diag = bash_operation_context_diagnostic(
@@ -1107,7 +1056,7 @@ impl BashOperations for LocalBashOperations {
                         true,
                         false,
                         None,
-                        kill_error.as_deref(),
+                        kill_error.as_ref().map(|e| e.to_string()).as_deref(),
                     );
                     Ok(BashResult {
                         stdout: Vec::new(),
@@ -1120,11 +1069,11 @@ impl BashOperations for LocalBashOperations {
                             .collect(),
                     })
                 }
-                Control::WaitFailed => Err(BashOpError::WaitFailed {
+                super::supervision::SupervisionKind::WaitFailed => Err(BashOpError::WaitFailed {
                     message: "failed to wait for process".to_string(),
                 }
                 .with_diagnostics(degraded_diagnostics)),
-                Control::Done(status) => {
+                super::supervision::SupervisionKind::Done(status) => {
                     let exit_code = status.code();
                     #[cfg(unix)]
                     let signal_num = {
@@ -1173,74 +1122,11 @@ impl BashOperations for LocalBashOperations {
     }
 }
 
-/// Which control branch won the wait/timeout/cancel race.
-enum Control {
-    Done(std::process::ExitStatus),
-    TimedOut { kill_error: Option<String> },
-    Cancelled { kill_error: Option<String> },
-    WaitFailed,
-}
-
-const TERMINATED_PIPE_DRAIN_GRACE: Duration = Duration::from_millis(500);
-
-fn spawn_stream_capture<R>(stream: Option<R>) -> tokio::task::JoinHandle<StreamCapture>
-where
-    R: tokio::io::AsyncRead + Unpin + Send + 'static,
-{
-    tokio::spawn(async move {
-        let mut capture = StreamCapture::new(MAX_BASH_OUTPUT_BYTES);
-        if let Some(mut stream) = stream {
-            let mut buffer = [0u8; 8192];
-            loop {
-                match stream.read(&mut buffer).await {
-                    Ok(0) | Err(_) => break,
-                    Ok(read) => capture.append(&buffer[..read]),
-                }
-            }
-        }
-        capture
-    })
-}
-
-struct OwnedCaptureTask {
-    handle: Option<tokio::task::JoinHandle<StreamCapture>>,
-}
-
-impl OwnedCaptureTask {
-    fn new(handle: tokio::task::JoinHandle<StreamCapture>) -> Self {
-        Self {
-            handle: Some(handle),
-        }
-    }
-
-    async fn finish(mut self) -> StreamCapture {
-        let handle = self.handle.as_mut().expect("capture task is owned");
-        match tokio::time::timeout(TERMINATED_PIPE_DRAIN_GRACE, handle).await {
-            Ok(Ok(capture)) => {
-                self.handle.take();
-                capture
-            }
-            Ok(Err(_)) => {
-                self.handle.take();
-                StreamCapture::new(MAX_BASH_OUTPUT_BYTES)
-            }
-            Err(_) => {
-                let handle = self.handle.take().expect("capture task is owned");
-                handle.abort();
-                let _ = handle.await;
-                StreamCapture::new(MAX_BASH_OUTPUT_BYTES)
-            }
-        }
-    }
-}
-
-impl Drop for OwnedCaptureTask {
-    fn drop(&mut self) {
-        if let Some(handle) = self.handle.take() {
-            handle.abort();
-        }
-    }
-}
+// The wait/timeout/cancel race (`Control`), the bounded-drain grace
+// (`TERMINATED_PIPE_DRAIN_GRACE`), and the drain glue (`spawn_stream_capture`,
+// `OwnedCaptureTask`) moved to the policy-neutral `super::supervision` seam in
+// Phase 16 task 16.2. The redacted-attach/terminate-to-diagnostic mapper stays
+// here alongside the other bash diagnostics.
 
 /// Build the in-band operation-context [`ToolDiagnostic`] (local type) that
 /// carries the flags the `BashTool` wrapper needs to reconstruct the agent
@@ -1340,7 +1226,7 @@ fn summarize_gap_layers(gaps: &[TemporaryGap]) -> String {
 /// The append logic enforces a single-cursor invariant: every input byte routes
 /// to exactly one sink (see the moved-from-`bash.rs` stream-capture tests at the
 /// bottom of this module).
-struct StreamCapture {
+pub(crate) struct StreamCapture {
     preview: Vec<u8>,
     spill: Option<File>,
     spill_path: Option<PathBuf>,
@@ -1350,7 +1236,7 @@ struct StreamCapture {
 }
 
 impl StreamCapture {
-    fn new(cap: usize) -> Self {
+    pub(crate) fn new(cap: usize) -> Self {
         Self {
             preview: Vec::new(),
             spill: None,
@@ -1362,7 +1248,7 @@ impl StreamCapture {
     }
 
     /// Append one read chunk. Single-cursor invariant.
-    fn append(&mut self, chunk: &[u8]) {
+    pub(crate) fn append(&mut self, chunk: &[u8]) {
         self.total = self.total.saturating_add(chunk.len() as u64);
         if self.spill_failed {
             return;
@@ -2017,6 +1903,7 @@ mod tests {
 
     #[tokio::test]
     async fn owned_capture_task_drop_aborts_task_and_removes_spill() {
+        use super::super::supervision::OwnedCaptureTask;
         let (spill_tx, spill_rx) = tokio::sync::oneshot::channel();
         let handle = tokio::spawn(async move {
             let mut capture = StreamCapture::new(4);
@@ -2027,7 +1914,7 @@ mod tests {
             std::future::pending::<()>().await;
             capture
         });
-        let task = OwnedCaptureTask::new(handle);
+        let task = OwnedCaptureTask::new(handle, 4);
         let spill = spill_rx.await.expect("capture created spill");
         assert!(spill.is_file());
 

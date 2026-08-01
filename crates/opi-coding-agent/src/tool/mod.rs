@@ -7,6 +7,7 @@ mod ls;
 mod operations;
 pub(crate) mod process_tree;
 mod read;
+pub(crate) mod supervision;
 mod write;
 
 pub use bash::BashTool;

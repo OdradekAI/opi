@@ -1,21 +1,31 @@
-//! L0 subprocess-tree lifecycle tests for Phase 15 task 15.4.
+//! L0 subprocess-tree lifecycle acceptance for the bash `command.execute` path
+//! (Phase 15 task 15.4; re-framed for the Phase 16 policy-neutral supervision
+//! seam in task 16.2).
 //!
-//! These prove `LocalBashOperations::exec` and the adapter host terminate the
-//! WHOLE subprocess tree — not just the direct child — on
-//! timeout, cancellation, a clean shell exit, and a dropped exec future. Fault
-//! branches are covered through an injected unit-test strategy; legacy
-//! environment-variable names are inert in production code.
+//! These prove `LocalBashOperations::exec` — which routes through the
+//! policy-neutral `tool::supervision` module — and the adapter host terminate
+//! the WHOLE subprocess tree, not just the direct child, on timeout,
+//! cancellation, a clean shell exit, and a dropped exec future. Phase 16 task
+//! 16.2 adds two acceptance behaviors: a clean direct-child exit kills
+//! surviving background descendants, and a pipe-holding descendant cannot keep
+//! exec pending beyond the bounded drain. The terminate-FAULT degrade paths
+//! and the bounded-drain behavior are covered by the operations-inline
+//! fault-seam unit tests (the exact grace value is an internal bound, not
+//! regression-pinned); legacy environment-variable fault names are inert in
+//! production code.
 //!
 //! # Platform split
 //!
 //! The marker-grandchild tests are platform-specific. The Windows variants use
-//! a PowerShell grandchild that records its PID and sleep; the Unix variants
+//! a PowerShell grandchild that records its PID and sleeps; the Unix variants
 //! background a `sleep`. On a Windows host only the Windows variants compile
 //! and run; the Unix variants are `#[cfg(unix)]` and are verified by Linux CI
-//! (ubuntu-latest; the six-target compile matrix is owned by 15.5.6).
+//! (ubuntu-latest; the six-target compile matrix is owned by 15.5.6). macOS
+//! executes the identical Unix process-group path and is covered transitively
+//! by the Linux runs.
 //!
-//! The injected-failure and structural Job-Object-flag tests are exercised on
-//! every supported host.
+//! The structural Job-Object-flag and supervision-wiring tests run on every
+//! supported host.
 
 #![cfg(any(windows, unix))]
 
@@ -386,6 +396,171 @@ async fn dropped_exec_future_kills_process_tree() {
     );
 }
 
+// =========================================================================
+// Phase 16 L0 supervision seam (task 16.2)
+// =========================================================================
+//
+// The policy-neutral `tool::supervision` module owns attach + the
+// wait/timeout/cancel race + per-branch termination + bounded drain. These
+// production-path tests prove the two NEW L0 behaviors through
+// `LocalBashOperations::exec` (which routes through the seam): a clean
+// direct-child exit kills surviving background descendants, and a
+// pipe-holding descendant cannot keep exec pending beyond the bounded drain.
+// The terminate-FAULT degrade path and the bounded-drain behavior are covered
+// by the operations-inline fault-seam unit tests; the exact grace value is an
+// internal bound, not regression-pinned.
+
+#[cfg(windows)]
+fn write_clean_exit_spawner(spawner: &Path, pidfile: &Path) {
+    // The spawner backgrounds a long sleeper (the marker grandchild, which
+    // inherits the stdout pipe), records its pid, and exits 0.
+    let body = format!(
+        "$p = Start-Process powershell -ArgumentList '-NoProfile','-Command','Start-Sleep -Seconds 60' -NoNewWindow -PassThru\n$p.Id | Set-Content -NoNewline '{}'\nexit 0\n",
+        pidfile.to_string_lossy()
+    );
+    std::fs::write(spawner, body).unwrap();
+}
+
+#[cfg(unix)]
+fn unix_clean_exit_command(pidfile: &Path) -> String {
+    // Background a long sleeper (inherits the stdout pipe), record its pid, exit.
+    format!(
+        "sleep 60 & echo $! > '{}'; exit 0",
+        pidfile.to_string_lossy()
+    )
+}
+
+/// Phase 16 L0 acceptance: a clean direct-child exit terminates surviving
+/// background descendants. The shell backgrounds a long-lived grandchild and
+/// exits 0; the supervision seam must still reap the grandchild.
+#[cfg(windows)]
+#[tokio::test]
+async fn clean_exit_kills_surviving_background_descendants() {
+    let _g = l0_lock().lock().await;
+    let dir = tempfile::tempdir().unwrap();
+    let spawner = dir.path().join("spawn.ps1");
+    let pidfile = dir.path().join("pid.txt");
+    write_clean_exit_spawner(&spawner, &pidfile);
+    let ops = LocalBashOperations::new();
+    let req = BashRequest {
+        command: format!(
+            "powershell -NoProfile -ExecutionPolicy Bypass -File {}",
+            spawner.to_string_lossy()
+        ),
+        cwd: dir.path().to_path_buf(),
+        timeout: Duration::from_secs(10),
+        signal: CancellationToken::new(),
+        env: vec![],
+    };
+    let result = ops.exec(req).await.unwrap();
+    assert_eq!(
+        result.exit_code,
+        Some(0),
+        "direct child should exit cleanly"
+    );
+    let pid = read_pid(&pidfile, 3000)
+        .await
+        .expect("grandchild should record its pid");
+    let dead = await_process_dead_windows(pid, 4000).await;
+    assert!(
+        dead,
+        "clean exit must terminate surviving descendant pid {pid}"
+    );
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn clean_exit_kills_surviving_background_descendants() {
+    let _g = l0_lock().lock().await;
+    let dir = tempfile::tempdir().unwrap();
+    let pidfile = dir.path().join("pid.txt");
+    let ops = LocalBashOperations::new();
+    let req = BashRequest {
+        command: unix_clean_exit_command(&pidfile),
+        cwd: dir.path().to_path_buf(),
+        timeout: Duration::from_secs(10),
+        signal: CancellationToken::new(),
+        env: vec![],
+    };
+    let result = ops.exec(req).await.unwrap();
+    assert_eq!(
+        result.exit_code,
+        Some(0),
+        "direct child should exit cleanly"
+    );
+    let pid = read_pid(&pidfile, 3000)
+        .await
+        .expect("grandchild should record its pid");
+    let dead = await_process_dead_unix(pid, 4000).await;
+    assert!(
+        dead,
+        "clean exit must terminate surviving descendant pid {pid}"
+    );
+}
+
+/// Phase 16 L0 acceptance: a descendant holding an output pipe cannot keep
+/// exec pending beyond the bounded drain. The grandchild holds the pipe for
+/// ~60 s naturally; exec returns in well under that once the seam terminates
+/// the tree. The bounded-drain behavior is proven under a terminate fault by
+/// the operations-inline fault-seam unit tests; the exact grace value is an
+/// internal bound, not pinned to 500 ms.
+#[cfg(windows)]
+#[tokio::test]
+async fn pipe_holding_descendant_drains_within_bounded_grace() {
+    let _g = l0_lock().lock().await;
+    let dir = tempfile::tempdir().unwrap();
+    let spawner = dir.path().join("spawn.ps1");
+    let pidfile = dir.path().join("pid.txt");
+    write_clean_exit_spawner(&spawner, &pidfile);
+    let ops = LocalBashOperations::new();
+    let req = BashRequest {
+        command: format!(
+            "powershell -NoProfile -ExecutionPolicy Bypass -File {}",
+            spawner.to_string_lossy()
+        ),
+        cwd: dir.path().to_path_buf(),
+        timeout: Duration::from_secs(10),
+        signal: CancellationToken::new(),
+        env: vec![],
+    };
+    let start = std::time::Instant::now();
+    let result = ops.exec(req).await.unwrap();
+    let elapsed = start.elapsed();
+    assert_eq!(result.exit_code, Some(0));
+    assert!(
+        elapsed < Duration::from_secs(3),
+        "exec must return within the bounded drain, took {elapsed:?}"
+    );
+    let pid = read_pid(&pidfile, 3000).await.expect("grandchild pid");
+    let _ = await_process_dead_windows(pid, 4000).await;
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn pipe_holding_descendant_drains_within_bounded_grace() {
+    let _g = l0_lock().lock().await;
+    let dir = tempfile::tempdir().unwrap();
+    let pidfile = dir.path().join("pid.txt");
+    let ops = LocalBashOperations::new();
+    let req = BashRequest {
+        command: unix_clean_exit_command(&pidfile),
+        cwd: dir.path().to_path_buf(),
+        timeout: Duration::from_secs(10),
+        signal: CancellationToken::new(),
+        env: vec![],
+    };
+    let start = std::time::Instant::now();
+    let result = ops.exec(req).await.unwrap();
+    let elapsed = start.elapsed();
+    assert_eq!(result.exit_code, Some(0));
+    assert!(
+        elapsed < Duration::from_secs(3),
+        "exec must return within the bounded drain, took {elapsed:?}"
+    );
+    let pid = read_pid(&pidfile, 3000).await.expect("grandchild pid");
+    let _ = await_process_dead_unix(pid, 4000).await;
+}
+
 #[tokio::test]
 async fn legacy_fault_environment_names_are_inert() {
     let _g = l0_lock().lock().await;
@@ -437,5 +612,17 @@ fn adapter_process_group_contract() {
     assert!(
         adapter_src.contains("tree_attach(pid)"),
         "adapter must attach and retain a TreeGuard after process-group setup"
+    );
+}
+
+/// Phase 16 structural pin: `LocalBashOperations::exec` delegates to the
+/// policy-neutral `supervision` seam rather than an inlined wait/timeout/cancel
+/// race. A future refactor cannot silently bypass it without breaking this.
+#[test]
+fn exec_routes_through_the_policy_neutral_supervision_seam() {
+    let operations = read_repo_file("crates/opi-coding-agent/src/tool/operations.rs");
+    assert!(
+        operations.contains("super::supervision::supervise"),
+        "LocalBashOperations::exec must delegate to the policy-neutral supervision seam"
     );
 }

@@ -2753,12 +2753,20 @@ fn bash_tool_no_background_shell_symbols_guard() {
     let ops_src =
         std::fs::read_to_string(root.join("crates/opi-coding-agent/src/tool/operations.rs"))
             .expect("read operations.rs");
+    let sup_src =
+        std::fs::read_to_string(root.join("crates/opi-coding-agent/src/tool/supervision.rs"))
+            .expect("read supervision.rs");
     let bash = phase11_strip_comments(&bash_src);
     let ops = phase11_strip_comments(&ops_src);
+    let sup = phase11_strip_comments(&sup_src);
     let ops = ops
         .split("mod tests {")
         .next()
         .expect("production operations source");
+    let sup = sup
+        .split("mod tests {")
+        .next()
+        .expect("production supervision source");
     for needle in [
         "portable_pty",
         "portable-pty",
@@ -2773,7 +2781,7 @@ fn bash_tool_no_background_shell_symbols_guard() {
         "static mut",
     ] {
         assert!(
-            !bash.contains(needle) && !ops.contains(needle),
+            !bash.contains(needle) && !ops.contains(needle) && !sup.contains(needle),
             "bash must not use a background-shell / persistence symbol '{needle}'"
         );
     }
@@ -2781,14 +2789,23 @@ fn bash_tool_no_background_shell_symbols_guard() {
         !bash.contains("tokio::spawn"),
         "BashTool must not spawn detached tasks"
     );
+    // Phase 16 task 16.2 extracted the owned, bounded pipe-drain into the
+    // policy-neutral `supervision` seam. operations.rs now delegates the
+    // bounded lifecycle and spawns nothing directly; the single legitimate
+    // `tokio::spawn` is the drain capture task, now in supervision.rs.
     assert_eq!(
         ops.matches("tokio::spawn").count(),
+        0,
+        "operations.rs must not spawn directly; it delegates to supervision"
+    );
+    assert_eq!(
+        sup.matches("tokio::spawn").count(),
         1,
-        "operations.rs may spawn only through the owned pipe-drain helper"
+        "supervision.rs may spawn only the owned pipe-drain capture task"
     );
     for required in [
-        "let drain_out = OwnedCaptureTask::new(spawn_stream_capture(stdout));",
-        "let drain_err = OwnedCaptureTask::new(spawn_stream_capture(stderr));",
+        "OwnedCaptureTask::new(spawn_stream_capture(stdout, cap), cap)",
+        "OwnedCaptureTask::new(spawn_stream_capture(stderr, cap), cap)",
         "struct OwnedCaptureTask",
         "impl Drop for OwnedCaptureTask",
         "drain_out.finish()",
@@ -2798,15 +2815,17 @@ fn bash_tool_no_background_shell_symbols_guard() {
         "let _ = handle.await",
     ] {
         assert!(
-            ops.contains(required),
+            sup.contains(required),
             "pipe-drain tasks must remain owned, bounded, and abortable; missing '{required}'"
         );
     }
-    // Positive control: the legitimate single-shot command primitive is present
-    // in the local backend (proves the guard is not vacuously passing).
     assert!(
         ops.contains("tokio::process::Command"),
         "operations.rs (LocalBashOperations) must use tokio::process::Command for single-shot execution"
+    );
+    assert!(
+        ops.contains("super::supervision::supervise"),
+        "operations.rs must delegate the bounded lifecycle to the supervision seam"
     );
 }
 
