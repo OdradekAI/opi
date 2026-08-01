@@ -111,7 +111,7 @@
       "definition_of_done": "Policy-neutral Supervision is a deep module used by LocalBashOperations::exec; its implementation owns child attachment, clean-exit/timeout/cancellation/dropped-future/wait-failure termination, bounded stdout/stderr drain, and redacted attach or cleanup degradation while TreeGuard retains OS process-tree details. The task introduces no command-restriction policy, leaves the Phase 15 native restriction implementation in place for removal by 16.16.1, and does not change opi-extension-jsonl-v1.",
       "definition_source": "draft-reviewed",
       "replaces": "Pin L0 supervision and separate it from sandbox policy",
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "16.1"
       ],
@@ -165,6 +165,11 @@
           "field": "task_owned_paths",
           "reason": "Added the policy-neutral Supervision module and module registration required by the reviewed deep-module seam.",
           "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Core Architecture"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Phase 11 bash-tool source guard (bash_tool_no_background_shell_symbols_guard) spans operations.rs; the 16.2 supervision extraction moved the owned/bounded/abortable pipe-drain machinery to supervision.rs, so the guard source-text assertions must scan supervision.rs and assert operations.rs delegates. Invariant intent (owned/bounded/abortable drain; no background shells) is preserved.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Core Architecture"
         }
       ],
       "tier": "library",
@@ -187,7 +192,8 @@
           "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#L0 supervision",
           "scenario": "The production LocalBashOperations path invokes the policy-neutral Supervision module, which terminates the direct child and descendants after clean direct-child exit, timeout, cancellation, dropped future, and wait failure; descendants retaining stdout/stderr pipes cannot exceed bounded drain grace, and attach or cleanup degradation is redacted without applying command-restriction policy.",
           "verification": [
-            "cargo test -p opi-coding-agent --test sandbox_l0 -- --nocapture"
+            "cargo test -p opi-coding-agent --test sandbox_l0 -- --nocapture",
+            "cargo test -p opi-coding-agent --lib wait_failure_runs_terminate_and_surfaces_wait_failed"
           ],
           "production_call_sites": [
             "LocalBashOperations::exec",
@@ -195,7 +201,7 @@
             "TreeGuard::attach_child",
             "TreeGuard::terminate"
           ],
-          "status": "open"
+          "status": "met"
         }
       ],
       "production_call_sites": [
@@ -205,22 +211,88 @@
         "TreeGuard::terminate"
       ],
       "substrate_only": false,
-      "iteration_count": 0,
+      "iteration_count": 1,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "2411934a2019c2ae4656ff6892499cc65a2548a3",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "crates/opi-coding-agent/src/tool/mod.rs",
         "crates/opi-coding-agent/src/tool/process_tree.rs",
         "crates/opi-coding-agent/src/tool/supervision.rs",
         "crates/opi-coding-agent/src/tool/operations.rs",
-        "crates/opi-coding-agent/tests/sandbox_l0.rs"
+        "crates/opi-coding-agent/tests/sandbox_l0.rs",
+        "crates/opi-coding-agent/tests/tools_read_write_edit_bash.rs"
       ],
-      "last_attempt": null,
-      "verified_at_commit": null,
-      "evidence": null,
+      "last_attempt": {
+        "commit": "ba6a439f77089c76d970b024d46ddaf3c09f0fc7",
+        "outcome": "passed",
+        "iteration": 1
+      },
+      "verified_at_commit": "ba6a439f77089c76d970b024d46ddaf3c09f0fc7",
+      "evidence": {
+        "commit": "ba6a439f77089c76d970b024d46ddaf3c09f0fc7",
+        "commit_subject": "refactor(opi-coding-agent): extract policy-neutral L0 supervision seam",
+        "verification_tier": "library",
+        "gates": {
+          "test_targets": [
+            {
+              "target": "--test sandbox_l0",
+              "passed": 9,
+              "failed": 0
+            },
+            {
+              "target": "--lib",
+              "passed": 112,
+              "failed": 0
+            },
+            {
+              "target": "--test tools_read_write_edit_bash",
+              "passed": 95,
+              "failed": 0
+            },
+            {
+              "target": "--test bash_backend_diagnostics",
+              "passed": 3,
+              "failed": 0
+            },
+            {
+              "target": "--test sandbox_config",
+              "passed": 25,
+              "failed": 0
+            },
+            {
+              "target": "--test tool_operations",
+              "passed": 27,
+              "failed": 0
+            },
+            {
+              "target": "--test sandbox_strict",
+              "passed": 9,
+              "failed": 0
+            }
+          ],
+          "fmt": "clean",
+          "clippy": "clean (--lib --test sandbox_l0 --test tools_read_write_edit_bash -- -D warnings)"
+        },
+        "design_audit": {
+          "workflow": "wf_2df09ad1-02f",
+          "lenses": 5,
+          "must_fix": 11,
+          "verdict": "all lenses adjust-then-ship or ship-as-is; seam boundary sound, 3 neutrality leaks + capture-split + fault-seam + wait-failure + drop-contract refinements applied"
+        },
+        "d2_evaluator": {
+          "workflow": "wf_659f8846-01e",
+          "must_fix": 0,
+          "flagged_for_human": 2,
+          "rejected": 0,
+          "verdict": "pass",
+          "flags": "two low evidence-truthfulness flags addressed: (1) wait-failure routing corrected in commit footer + ledger SC16-02 verification (test-seam + transitivity, not production-call-site); (2) sandbox_l0 doc comments softened - bounded-drain behavior (<3s) pinned, not the literal 500ms constant"
+        }
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        "Task 16.2: extracted policy-neutral tool::supervision deep module (child attach + wait/timeout/cancel race + per-branch termination + bounded stdout/stderr drain + redacted attach/cleanup degradation) from LocalBashOperations::exec; TreeGuard retained in process_tree.rs as OS-detail primitive the seam composes. Rewrote tests/sandbox_l0.rs with the two Phase 16 L0 behaviors (clean-exit kills surviving bg descendants; pipe-holding descendant drains within bounded grace) plus a supervision-wiring structural pin, preserving all Phase 15 carry-forward coverage. Updated the Phase 11 bash-tool source guard to scan supervision.rs for the relocated owned/bounded/abortable drain. Wait-failure termination proven via supervision unit test (test-only wait-fault seam + terminate-fault degradation; the synthetic branch and the real production Err(_) arm call the same push_terminate, so descendant cleanup follows by transitivity) - not production-call-site-proven because a real child.wait()->Err is infeasible to force. Pre-impl 5-lens design audit (wf_2df09ad1) refined the seam before code. D.2 deep verify (wf_659f8846) 0 must-fix, 2 low flags addressed. 280 tests green, 0 regressions."
+      ]
     },
     {
       "id": "16.3",
@@ -3574,7 +3646,8 @@
     {
       "timestamp": "2026-08-01T17:17:14.456901+00:00",
       "summary": "Task 16.1 (Pin the Phase 16 documentation contract) passed @1021842. Next unblocked: 16.2 (depends_on 16.1) and 16.3 (depends_on 16.1)."
-    }
+    },
+    "Task 16.2 PASSED @ba6a439f77089c76d970b024d46ddaf3c09f0fc7 (verified, D.2 clean). Phase 16: 2/21 passing (16.1 docs, 16.2 supervision seam). 16.2 passing did not newly unblock a task (16.2 dependents - 16.7 - also need 16.3 and 16.6); the only failing task with all deps passing remains 16.3 (dep [16.1]). Next auto-pick: 16.3."
   ],
   "verify_runs": [
     {
@@ -3626,6 +3699,16 @@
       "ran_at": "2026-08-01T17:17:14.456901+00:00",
       "task_id": "16.1",
       "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "task_id": "16.2",
+      "commit": "ba6a439f77089c76d970b024d46ddaf3c09f0fc7",
+      "workflow": "wf_659f8846-01e",
+      "must_fix": 0,
+      "flagged_for_human": 2,
+      "rejected": 0,
+      "verdict": "pass"
     }
   ]
 }
