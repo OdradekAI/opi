@@ -303,7 +303,7 @@
       "definition_of_done": "A dependency-neutral opi-protocol crate exposes closed command-execution-jsonl-v1 frames, lossless native strings, bounded JSONL codecs, deterministic schema generation, and valid/invalid fixtures without agent, process, or sandbox dependencies; public rustdoc documents the state machine, frame and cumulative bounds, wire identity, version negotiation, compatibility rules, and the requirement that every frame carry the same host-generated request id; fixtures reject missing, mismatched, or cross-request ids.",
       "definition_source": "draft-reviewed",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "16.1"
       ],
@@ -363,20 +363,60 @@
       "acceptance_scenarios": [],
       "production_call_sites": [],
       "substrate_only": true,
-      "iteration_count": 0,
+      "iteration_count": 2,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "fa20d55493c61eb87236bafa54f49561ec7579ff",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "Cargo.toml",
         "Cargo.lock",
         "crates/opi-protocol/**"
       ],
-      "last_attempt": null,
-      "verified_at_commit": null,
-      "evidence": null,
+      "last_attempt": {
+        "commit": "b6fd906ef3c376d720d842a1433dd9b6ff49e951",
+        "outcome": "passed",
+        "iteration": 2
+      },
+      "verified_at_commit": "b6fd906ef3c376d720d842a1433dd9b6ff49e951",
+      "evidence": {
+        "commit": "b6fd906ef3c376d720d842a1433dd9b6ff49e951",
+        "commit_subject": "feat(opi-protocol): add execution::v1 protocol crate",
+        "verification_tier": "library",
+        "substrate_only": true,
+        "gates": {
+          "test_targets": [
+            {
+              "target": "--all-targets",
+              "passed": 44,
+              "failed": 0
+            }
+          ],
+          "test_breakdown": "25 lib + 11 contract + 8 schema",
+          "fmt": "clean (cargo fmt --check --all)",
+          "clippy": "clean (--all-targets -- -D warnings)",
+          "doc": "clean (RUSTDOCFLAGS=-D warnings cargo doc --no-deps)",
+          "dependency_neutrality": "cargo tree -p opi-protocol --no-dev-dependencies clean: only serde/serde_json/schemars/base64/thiserror (+ proc-macros); no tokio, no internal opi crate"
+        },
+        "design_audit": {
+          "workflow": "wf_95faabd1-272",
+          "lenses": 7,
+          "must_fix": 16,
+          "flagged": 23,
+          "verdict": "ship-with-fixes; all 16 must-fix folded before code (terminal Failed frame + closed wire FailureCode, base64 contentEncoding, manual NativeString JsonSchema, stateful Session, ProtocolId first-match host-ordered, empty-id reject, capped-read decoder)"
+        },
+        "d2_evaluator": {
+          "workflow": "wf_acd53f75-b05",
+          "must_fix": 0,
+          "flagged_for_human": 0,
+          "rejected": 0,
+          "verdict": "pass",
+          "note": "First D.2 run (wf_36821970, commit cad1f7c) flagged 1 medium must-fix (config/diagnostics bounds documented in the # Bounds table were not exercised; Session::feed_*_line did not route through validate_*) + 2 low flags (dead DiagnosticPayload test fragment; inaccurate commit narrative about a never-committed ns_probe removal). Fixed: routed feed_*_line through validate_host/validate_backend so all five documented codec bounds enforce on the documented path, added 2 bound-enforcement tests, removed the dead fragment, corrected the commit message. Re-run on amended commit 2e12ad9 -> b6fd906 returned 0/0/0."
+        }
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        "Task 16.3: added dependency-neutral opi-protocol crate (execution::v1). Closed command-execution-jsonl-v1 frame set (adjacently tagged, deny_unknown_fields) including a terminal Failed frame + closed wire-level FailureCode (7 codes; the 14 architecture envelope codes stay host-side); lossless NativeString (U+E000 PUA escape, collision-free, manual JsonSchema = string) for command inputs; base64 Base64Bytes (contentEncoding in schema) for stdout/stderr; capped JSONL codec (byte-counted reader, not read_until/from_reader); stateful Session enforcing cumulative output + cross-request id + duplicate, routed through the per-frame validators so all 5 documented bounds enforce on the documented path; ProtocolId opaque string newtype + select() first-match host-ordered; RequestId rejects empty (minLength:1 in schema); deterministic Draft 2020-12 JSON Schema (reviewed insta snapshot). Pre-impl 7-lens design audit (wf_95faabd1) folded 16 must-fix. D.2 deep verify (wf_acd53f75) clean 0/0/0 after one rework iteration. Substrate only - no process launch/supervision/handshake (16.7 owns those); runtime deps limited to serde/serde_json/schemars/thiserror/base64. Host-repair: removed a stray never-committed target/ns_probe working-tree member that blocked the workspace (user-authorized)."
+      ]
     },
     {
       "id": "16.4",
@@ -3647,7 +3687,8 @@
       "timestamp": "2026-08-01T17:17:14.456901+00:00",
       "summary": "Task 16.1 (Pin the Phase 16 documentation contract) passed @1021842. Next unblocked: 16.2 (depends_on 16.1) and 16.3 (depends_on 16.1)."
     },
-    "Task 16.2 PASSED @ba6a439f77089c76d970b024d46ddaf3c09f0fc7 (verified, D.2 clean). Phase 16: 2/21 passing (16.1 docs, 16.2 supervision seam). 16.2 passing did not newly unblock a task (16.2 dependents - 16.7 - also need 16.3 and 16.6); the only failing task with all deps passing remains 16.3 (dep [16.1]). Next auto-pick: 16.3."
+    "Task 16.2 PASSED @ba6a439f77089c76d970b024d46ddaf3c09f0fc7 (verified, D.2 clean). Phase 16: 2/21 passing (16.1 docs, 16.2 supervision seam). 16.2 passing did not newly unblock a task (16.2 dependents - 16.7 - also need 16.3 and 16.6); the only failing task with all deps passing remains 16.3 (dep [16.1]). Next auto-pick: 16.3.",
+    "Task 16.3 PASSED @b6fd906ef3c376d720d842a1433dd9b6ff49e951 (D.2 clean 0/0/0 after 1 rework iteration; pre-impl design audit wf_95faabd1 folded 16 must-fix). Phase 16: 3/21 passing (16.1 docs, 16.2 supervision seam, 16.3 protocol crate). 16.3 passing unblocks 16.4 (contribution manifest, dep [16.3]) and advances 16.7 (still needs 16.6); the next failing task with all deps passing is 16.4."
   ],
   "verify_runs": [
     {
@@ -3707,6 +3748,16 @@
       "workflow": "wf_659f8846-01e",
       "must_fix": 0,
       "flagged_for_human": 2,
+      "rejected": 0,
+      "verdict": "pass"
+    },
+    {
+      "stage": "exec",
+      "task_id": "16.3",
+      "commit": "b6fd906ef3c376d720d842a1433dd9b6ff49e951",
+      "workflow": "wf_acd53f75-b05",
+      "must_fix": 0,
+      "flagged_for_human": 0,
       "rejected": 0,
       "verdict": "pass"
     }
