@@ -8,7 +8,7 @@
     "docs/opi-spec.md": "1285c28c9c77188de58b319ce6519fb156aac76e23d6401c9dd1a1dd0208b55b",
     "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md": "d1a5c4403908fa7981da8e741ade49d00b25972d17360371d55799b08ca7be9e"
   },
-  "task_graph_confirmed_at": "2026-08-01T09:33:51.454Z",
+  "task_graph_confirmed_at": "2026-08-01T11:05:48.577Z",
   "current_phase": 16,
   "tasks": [
     {
@@ -42,12 +42,22 @@
           "field": "forbidden_scope",
           "reason": "Phase 16 is limited to command.execute with built-in local and external opi-sandbox adapters: do not add Docker/VM/SSH/Gondolin/remote or composed adapters; route other tools or allow tool shadowing; define a universal extension protocol or migrate opi-extension-jsonl-v1, RPC, NDJSON, or trace wires; dynamically load native libraries; claim host-read/environment confidentiality or sandbox the extension process; authenticate publishers; accept project-local executable contributions; implement Windows AppContainer/restricted-token restriction; preserve Phase 15 sandbox aliases; or pull Phase 17-20 work forward.",
           "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Non-Goals"
+        },
+        {
+          "field": "tier",
+          "reason": "Promoted because the task creates and maintains a Rust integration-test guard.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Phase Integration"
+        },
+        {
+          "field": "evaluator_required",
+          "reason": "The guard enforces public phase boundaries and documented Non-Goals.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Non-Goals"
         }
       ],
-      "tier": "documentation",
+      "tier": "library",
       "commit_type": "test",
       "parallelize": [],
-      "evaluator_required": false,
+      "evaluator_required": true,
       "verification": {
         "library_gates": [
           "cargo test -p opi-coding-agent --test phase16_extension_docs -- --nocapture"
@@ -80,7 +90,7 @@
       "title": "Pin L0 supervision and separate it from sandbox policy",
       "crate": "opi-coding-agent",
       "parent_spec_row": null,
-      "definition_of_done": "Policy-neutral TreeGuard supervision terminates descendants after clean direct-child exit, timeout, cancellation, dropped futures, and wait failure; bounded drain grace prevents surviving descendants that hold stdout/stderr pipes from hanging cleanup; adapter-host cleanup uses the same primitive and emits redacted execution diagnostics.",
+      "definition_of_done": "Policy-neutral TreeGuard supervision terminates local command descendants after clean direct-child exit, timeout, cancellation, dropped futures, and wait failure; bounded drain grace prevents descendants that retain stdout/stderr pipes from hanging cleanup; attach or termination degradation is redacted without introducing command-restriction policy or changing opi-extension-jsonl-v1.",
       "definition_source": "draft-reviewed",
       "replaces": null,
       "status": "failing",
@@ -112,6 +122,16 @@
           "field": "definition_of_done",
           "reason": "Expanded the L0 checkpoint to include clean-exit background descendants and bounded pipe-holder drain grace.",
           "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#L0 supervision"
+        },
+        {
+          "field": "definition_of_done",
+          "reason": "The new external execution host proves its L0 behavior in 16.7.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#L0 supervision"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Legacy AdapterHost is read-only regression context, not Phase 16 protocol work.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Non-Goals"
         }
       ],
       "tier": "library",
@@ -120,14 +140,10 @@
       "evaluator_required": true,
       "verification": {
         "library_gates": [
-          "cargo test -p opi-coding-agent --test sandbox_l0 -- --nocapture",
-          "cargo test -p opi-coding-agent --test adapter_host -- --nocapture",
-          "cargo test -p opi-coding-agent --test bash_backend_diagnostics -- --nocapture"
+          "cargo test -p opi-coding-agent --test sandbox_l0 -- --nocapture"
         ],
         "behavioral_tests": [
-          "crates/opi-coding-agent/tests/sandbox_l0.rs",
-          "crates/opi-coding-agent/tests/adapter_host.rs",
-          "crates/opi-coding-agent/tests/bash_backend_diagnostics.rs"
+          "crates/opi-coding-agent/tests/sandbox_l0.rs"
         ],
         "snapshot_tests": [],
         "smoke_addendum": null
@@ -136,7 +152,7 @@
         {
           "id": "SC16-02",
           "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#L0 supervision",
-          "scenario": "Local clean exit, timeout, cancellation, dropped futures, wait failures, surviving background descendants, and descendants holding output pipes converge on bounded process-tree cleanup and drain grace.",
+          "scenario": "Local clean exit, timeout, cancellation, dropped futures, wait failures, surviving background descendants, and descendants holding output pipes converge on bounded process-tree cleanup and drain grace without activating command-restriction policy.",
           "verification": [
             "cargo test -p opi-coding-agent --test sandbox_l0 -- --nocapture"
           ],
@@ -161,11 +177,7 @@
       "task_owned_paths": [
         "crates/opi-coding-agent/src/tool/process_tree.rs",
         "crates/opi-coding-agent/src/tool/operations.rs",
-        "crates/opi-coding-agent/src/adapter_host.rs",
-        "crates/opi-coding-agent/src/diagnostics.rs",
-        "crates/opi-coding-agent/tests/sandbox_l0.rs",
-        "crates/opi-coding-agent/tests/adapter_host.rs",
-        "crates/opi-coding-agent/tests/bash_backend_diagnostics.rs"
+        "crates/opi-coding-agent/tests/sandbox_l0.rs"
       ],
       "last_attempt": null,
       "verified_at_commit": null,
@@ -179,7 +191,7 @@
       "title": "Add opi-protocol::execution::v1",
       "crate": "opi-protocol",
       "parent_spec_row": null,
-      "definition_of_done": "A dependency-neutral opi-protocol crate exposes closed command-execution-jsonl-v1 frames, lossless native strings, bounded JSONL codecs, deterministic schema generation, and valid/invalid fixtures without agent, process, or sandbox dependencies.",
+      "definition_of_done": "A dependency-neutral opi-protocol crate exposes closed command-execution-jsonl-v1 frames, lossless native strings, bounded JSONL codecs, deterministic schema generation, and valid/invalid fixtures without agent, process, or sandbox dependencies; public rustdoc documents the state machine, frame and cumulative bounds, wire identity, version negotiation, compatibility rules, and the requirement that every frame carry the same host-generated request id; fixtures reject missing, mismatched, or cross-request ids.",
       "definition_source": "draft-reviewed",
       "replaces": null,
       "status": "failing",
@@ -206,6 +218,16 @@
           "field": "forbidden_scope",
           "reason": "Phase 16 is limited to command.execute with built-in local and external opi-sandbox adapters: do not add Docker/VM/SSH/Gondolin/remote or composed adapters; route other tools or allow tool shadowing; define a universal extension protocol or migrate opi-extension-jsonl-v1, RPC, NDJSON, or trace wires; dynamically load native libraries; claim host-read/environment confidentiality or sandbox the extension process; authenticate publishers; accept project-local executable contributions; implement Windows AppContainer/restricted-token restriction; preserve Phase 15 sandbox aliases; or pull Phase 17-20 work forward.",
           "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Non-Goals"
+        },
+        {
+          "field": "definition_of_done",
+          "reason": "Added the required public protocol documentation contract.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#opi-protocol"
+        },
+        {
+          "field": "definition_of_done",
+          "reason": "Pinned request-id correlation as a schema and fixture invariant.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Process and transport"
         }
       ],
       "tier": "library",
@@ -260,7 +282,7 @@
       "title": "Parse and hard-gate executable contributions",
       "crate": "opi-coding-agent",
       "parent_spec_row": null,
-      "definition_of_done": "Global package manifests parse closed declarative command.execute contributions, reject project-level executable contributions and malformed or conflicting metadata before process start, and register metadata without executing it.",
+      "definition_of_done": "Global package manifests parse a closed command.execute contribution containing capability, adapter id, process-jsonl transport, fixed relative command and arguments, protocol, target, compatibility versions, SHA-256, bounded handshake timeout, and bounded adapter configuration; absolute, bare-PATH, drive-relative, traversal, symlink-escape, non-regular/non-executable, project-local, reserved, colliding, malformed, or incompatible contributions fail before process start, and validation never executes package code.",
       "definition_source": "draft-reviewed",
       "replaces": null,
       "status": "failing",
@@ -287,6 +309,11 @@
           "field": "forbidden_scope",
           "reason": "Phase 16 is limited to command.execute with built-in local and external opi-sandbox adapters: do not add Docker/VM/SSH/Gondolin/remote or composed adapters; route other tools or allow tool shadowing; define a universal extension protocol or migrate opi-extension-jsonl-v1, RPC, NDJSON, or trace wires; dynamically load native libraries; claim host-read/environment confidentiality or sandbox the extension process; authenticate publishers; accept project-local executable contributions; implement Windows AppContainer/restricted-token restriction; preserve Phase 15 sandbox aliases; or pull Phase 17-20 work forward.",
           "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Non-Goals"
+        },
+        {
+          "field": "definition_of_done",
+          "reason": "Expanded every manifest, compatibility, timeout, and configuration rejection.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Contribution manifest"
         }
       ],
       "tier": "library",
@@ -331,7 +358,7 @@
       "title": "Add Package Trust and enable/disable lifecycle",
       "crate": "opi-coding-agent",
       "parent_spec_row": null,
-      "definition_of_done": "The package CLI and startup activation store independently persist installed, trusted, and enabled state; trust binds exact material, hash drift invalidates it, disable/remove prevent activation, and non-interactive commands cannot grant trust.",
+      "definition_of_done": "The package CLI and startup activation store independently persist installed, trusted, and enabled state; trust binds exact locked material, disable/remove prevent activation, and non-interactive commands cannot grant trust. Runtime resolves only the selected named package and revalidates manifest, lock, executable hash, target, version, protocol, and trust immediately before every process start. Package list and both doctor surfaces report lifecycle and lock status without starting package code.",
       "definition_source": "draft-reviewed",
       "replaces": null,
       "status": "failing",
@@ -363,6 +390,21 @@
           "field": "acceptance_scenarios",
           "reason": "Expanded SC16-03 so the non-substrate package lifecycle closes every manifest, compatibility, containment, protocol, identity, hash, and project-scope fail-closed gate implemented by 16.4.",
           "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Package state and trust"
+        },
+        {
+          "field": "acceptance_scenarios",
+          "reason": "Made consent and every locked-artifact validation gate explicit in SC16-03.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Package state and trust"
+        },
+        {
+          "field": "definition_of_done",
+          "reason": "Added named-package pre-spawn revalidation and no-execution discovery diagnostics.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Discovery"
+        },
+        {
+          "field": "verification",
+          "reason": "Added the already-owned resource-integration behavioral gate.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Install, trust, and enable"
         }
       ],
       "tier": "cli-runtime",
@@ -372,12 +414,15 @@
       "verification": {
         "library_gates": [
           "cargo test -p opi-coding-agent --test execution_package_lifecycle -- --nocapture",
-          "cargo test -p opi-coding-agent --test package_cli -- --nocapture"
+          "cargo test -p opi-coding-agent --test package_cli -- --nocapture",
+          "cargo test -p opi-coding-agent --test harness_resource_integration -- --nocapture",
+          "cargo test -p opi-coding-agent --test doctor_cli -- --nocapture"
         ],
         "behavioral_tests": [
           "crates/opi-coding-agent/tests/execution_package_lifecycle.rs",
           "crates/opi-coding-agent/tests/package_cli.rs",
-          "crates/opi-coding-agent/tests/harness_resource_integration.rs"
+          "crates/opi-coding-agent/tests/harness_resource_integration.rs",
+          "crates/opi-coding-agent/tests/doctor_cli.rs"
         ],
         "snapshot_tests": [],
         "smoke_addendum": null
@@ -386,7 +431,7 @@
         {
           "id": "SC16-03",
           "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Package state and trust",
-          "scenario": "Package add, explicit trust, enable, disable, remove, list, doctor, hash-drift invalidation, and startup activation keep Installed/Trusted/Enabled/Selected/Permitted independent; reserved or colliding identities, target or Opi-version mismatch, escaping/non-executable paths, protocol mismatch, hash mismatch, and project-local executable contributions fail closed before process start with stable codes.",
+          "scenario": "Package add installs disabled; first interactive enable displays identity, version, locked executable hash, and contributions before explicit trust; non-TTY enable refuses with remediation; trust, enablement, selection, and permission remain independent; disable/remove prevent activation; manifest, lock, executable, target, version, protocol, path-containment, argument, handshake-timeout, configuration-bound, identity, or hash drift between selection and spawn fails closed with stable codes; list, package doctor, and top-level doctor report installed/trusted/enabled, identity, target, compatibility, protocol, and lock/hash state without triggering an adapter-start sentinel.",
           "verification": [
             "cargo test -p opi-coding-agent --test execution_package_lifecycle -- --nocapture",
             "cargo test -p opi-coding-agent --test package_cli -- --nocapture"
@@ -395,7 +440,10 @@
             "package CLI dispatch",
             "package contribution validation",
             "PackageActivationStore",
-            "runtime package activation"
+            "runtime package activation",
+            "package list",
+            "package doctor",
+            "top-level doctor"
           ],
           "status": "open"
         }
@@ -404,7 +452,10 @@
         "package CLI dispatch",
         "package contribution validation",
         "PackageActivationStore",
-        "runtime package activation"
+        "runtime package activation",
+        "package list",
+        "package doctor",
+        "top-level doctor"
       ],
       "substrate_only": false,
       "iteration_count": 0,
@@ -421,7 +472,10 @@
         "crates/opi-coding-agent/src/package_activation.rs",
         "crates/opi-coding-agent/tests/execution_package_lifecycle.rs",
         "crates/opi-coding-agent/tests/package_cli.rs",
-        "crates/opi-coding-agent/tests/harness_resource_integration.rs"
+        "crates/opi-coding-agent/tests/harness_resource_integration.rs",
+        "crates/opi-coding-agent/src/doctor.rs",
+        "crates/opi-coding-agent/src/diagnostics.rs",
+        "crates/opi-coding-agent/tests/doctor_cli.rs"
       ],
       "last_attempt": null,
       "verified_at_commit": null,
@@ -435,7 +489,7 @@
       "title": "Add execution configuration, failures, routing, and permission policy",
       "crate": "opi-coding-agent",
       "parent_spec_row": null,
-      "definition_of_done": "Layered execution routing resolves fixed, rules, and model strategies deterministically; CLI backend/strategy overrides cannot grant trust or permission; only user config persists capability permissions; project permission sections are rejected; stable failures are redacted and actionable.",
+      "definition_of_done": "Layered execution configuration resolves fixed, rules, and model strategies deterministically; rules accept only interactive/non-interactive/rpc modes, require exactly one final catch-all, preserve declaration order, and never fall through after selection; CLI backend/strategy overrides cannot grant trust or permission; only user configuration persists capability permission, project permission sections are rejected even when trusted, project strategy/backend requests require the existing project-trust gate, and model arguments cannot mutate install, trust, enablement, policy, or grants; --allow-mutating controls bash tool availability independently from adapter permission; stable failures use the specified redacted code and actionable remediation fields.",
       "definition_source": "draft-reviewed",
       "replaces": null,
       "status": "failing",
@@ -462,6 +516,16 @@
           "field": "forbidden_scope",
           "reason": "Phase 16 is limited to command.execute with built-in local and external opi-sandbox adapters: do not add Docker/VM/SSH/Gondolin/remote or composed adapters; route other tools or allow tool shadowing; define a universal extension protocol or migrate opi-extension-jsonl-v1, RPC, NDJSON, or trace wires; dynamically load native libraries; claim host-read/environment confidentiality or sandbox the extension process; authenticate publishers; accept project-local executable contributions; implement Windows AppContainer/restricted-token restriction; preserve Phase 15 sandbox aliases; or pull Phase 17-20 work forward.",
           "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Non-Goals"
+        },
+        {
+          "field": "definition_of_done",
+          "reason": "Expanded rules, no-fallthrough, config ownership, and model non-authority.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Routing and permission"
+        },
+        {
+          "field": "definition_of_done",
+          "reason": "Added project-trust and mutating-tool/adapter-permission independence.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#User Policy and permission"
         }
       ],
       "tier": "library",
@@ -515,7 +579,7 @@
       "title": "Implement the one-shot execution protocol host",
       "crate": "opi-coding-agent",
       "parent_spec_row": null,
-      "definition_of_done": "The production protocol host launches one adapter per request, enforces ready/accepted/started/output/terminal ordering and frame limits, propagates cancellation and deadlines, cleans the process tree, and returns stable failures without retrying locally.",
+      "definition_of_done": "The production ExecutionProtocolHost launches one supervised backend process per request, maps a bash shell string to an explicit platform shell program and argument vector, sends canonical workspace/cwd, one deadline, environment inheritance policy, and bounded environment additions only after ready validates; every frame carries one host-generated request id, command/configuration never travel in process arguments, and backend stderr is bounded crash evidence only. It enforces ready/accepted/flushed-started/output/terminal ordering and frame/cumulative-output bounds; the single deadline covers startup through cleanup; cancel, deadline, and dropped-future cleanup propagate through TreeGuard; cleanup_unconfirmed remains observable; failures are redacted and never invoke local or opi-extension-jsonl-v1.",
       "definition_source": "draft-reviewed",
       "replaces": null,
       "status": "failing",
@@ -549,6 +613,16 @@
           "field": "acceptance_scenarios",
           "reason": "Split SC16-06 so the host-side scenario is independently runnable before the opi-sandbox crate and backend exist.",
           "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Protocol contract"
+        },
+        {
+          "field": "definition_of_done",
+          "reason": "Assigned request mapping, external L0, and cleanup truthfulness to the new host.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Process and transport"
+        },
+        {
+          "field": "definition_of_done",
+          "reason": "Added request correlation, reserved stdio/argv channels, and end-to-end deadline coverage.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Process and transport"
         }
       ],
       "tier": "cli-runtime",
@@ -569,18 +643,24 @@
         {
           "id": "SC16-06a",
           "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Protocol contract",
-          "scenario": "The production ExecutionProtocolHost and its mock adapter process exercise one-shot initialize/ready/execute/accepted/started/output/terminal ordering, with readiness before command disclosure, bounded invalid-frame handling, cancellation, deadline, dropped-future cleanup, redaction, and no local fallback.",
+          "scenario": "The production ExecutionProtocolHost and mock adapter exercise one-shot initialize/ready/execute/accepted/flushed-started/output/terminal ordering; command disclosure follows validated ready; the request contains explicit shell program/arguments, canonical workspace/cwd, one end-to-end deadline, environment inheritance and bounded additions; every frame echoes the host request id, while missing, mismatched, or cross-request ids, malformed, oversized, duplicate, unknown-required, out-of-order, contaminated-stdout, EOF, crash, mismatch, timeout, cancellation, dropped-future, and cleanup-unconfirmed paths are bounded, redacted, tree-cleaned, and never fall back locally; command/configuration argv and unbounded backend stderr are rejected.",
           "verification": [
             "cargo test -p opi-coding-agent --features execution-backend-test-fixture --test execution_protocol_host -- --nocapture"
           ],
           "production_call_sites": [
-            "ExecutionProtocolHost::execute"
+            "ExecutionProtocolHost::execute",
+            "execution shell request mapping",
+            "TreeGuard::attach_child",
+            "TreeGuard::terminate"
           ],
           "status": "open"
         }
       ],
       "production_call_sites": [
-        "ExecutionProtocolHost::execute"
+        "ExecutionProtocolHost::execute",
+        "execution shell request mapping",
+        "TreeGuard::attach_child",
+        "TreeGuard::terminate"
       ],
       "substrate_only": false,
       "iteration_count": 0,
@@ -591,6 +671,7 @@
         "crates/opi-coding-agent/Cargo.toml",
         "crates/opi-coding-agent/src/execution/mod.rs",
         "crates/opi-coding-agent/src/execution/protocol_host.rs",
+        "crates/opi-coding-agent/src/tool/operations.rs",
         "crates/opi-coding-agent/tests/execution_protocol_host.rs",
         "crates/opi-coding-agent/tests/fixtures/execution_backend_mock.rs"
       ],
@@ -707,7 +788,7 @@
       "title": "Wire the dynamic bash schema and headless surfaces",
       "crate": "opi-coding-agent",
       "parent_spec_row": null,
-      "definition_of_done": "The production bash definition keeps the default, fixed, and rules schemas byte-for-byte equal to the pre-extension schema and exposes a required backend enum only for model routing, containing only eligible non-denied adapters; fixed/rules/model selection reaches BashTool execution, selected external failures never fall back, and text, NDJSON, RPC, and doctor preserve stable redacted routing and permission codes with remediation.",
+      "definition_of_done": "The production bash definition keeps default, fixed, and rules schemas byte-for-byte equal to the pre-extension schema and exposes a required backend enum only for model routing, containing only eligible non-denied adapters; ask candidates remain visible with an interactive-approval description. Project routing waits for project trust, tool mutability and adapter permission remain independent, fixed/rules/model selection reaches BashTool, and selected external failures never fall back. Only bash uses command.execute: file/navigation tools retain their path policies and backend network policy never enters provider configuration or requests. Text, NDJSON, RPC, and doctor preserve stable redacted routing/permission codes with remediation.",
       "definition_source": "draft-reviewed",
       "replaces": null,
       "status": "failing",
@@ -739,6 +820,16 @@
           "field": "task_owned_paths",
           "reason": "Added the top-level doctor and diagnostic bridge because this task's DoD claims production doctor and cross-surface diagnostic behavior.",
           "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Failure and Diagnostics"
+        },
+        {
+          "field": "acceptance_scenarios",
+          "reason": "Expanded eligibility, rule validation, no-fallthrough, and model non-authority.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Routing and permission"
+        },
+        {
+          "field": "acceptance_scenarios",
+          "reason": "Added ask visibility, project trust, permission independence, and non-bash/provider scope regressions.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Scope"
         }
       ],
       "tier": "cli-runtime",
@@ -770,7 +861,7 @@
         {
           "id": "SC16-04",
           "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Routing and permission",
-          "scenario": "Fixed and ordered-rules routing keep the pre-extension bash schema byte-for-byte unchanged; model routing adds one required bounded backend enum containing only eligible non-denied adapters, and each strategy's selected backend reaches the production BashTool definition and execution path.",
+          "scenario": "Fixed and ordered-rules routing validate allowed modes, declaration order, and one final catch-all while keeping the pre-extension bash schema byte-for-byte unchanged; selected-rule failure never falls through; model routing adds one required backend enum containing only installed or built-in, trusted where applicable, enabled, target/version-compatible, policy-non-denied adapters; ask candidates state that interactive approval is required; model arguments cannot mutate package state, policy, or grants; project routing requires project trust, and --allow-mutating is independent from adapter permission. Each strategy reaches the production BashTool path, while write/edit/read/grep/find/ls/glob bypass routing and provider networking remains unaffected.",
           "verification": [
             "cargo test -p opi-coding-agent --test execution_routing -- --nocapture",
             "cargo test -p opi-coding-agent --test execution_minimal_runtime -- --nocapture",
@@ -778,7 +869,10 @@
           ],
           "production_call_sites": [
             "CommandExecutionRouter::select",
-            "BashTool::definition"
+            "BashTool::definition",
+            "BashTool::execute",
+            "tool selection and path-policy operations",
+            "provider construction and request path"
           ],
           "status": "open"
         },
@@ -801,7 +895,9 @@
         "CommandExecutionRouter::select",
         "ExecutionProtocolHost::execute",
         "BashTool::definition",
-        "BashTool::execute"
+        "BashTool::execute",
+        "tool selection and path-policy operations",
+        "provider construction and request path"
       ],
       "substrate_only": false,
       "iteration_count": 0,
@@ -838,7 +934,7 @@
       "title": "Add the interactive permission broker and TUI prompt",
       "crate": "workspace",
       "parent_spec_row": null,
-      "definition_of_done": "Interactive ask pauses execution and offers allow once, allow for the current in-memory harness session, or deny; headless ask returns permission_required; decisions do not survive restart, resume, fork, or process exit.",
+      "definition_of_done": "Interactive ask pauses execution and offers allow once, allow for the current in-memory harness session, or deny; headless ask returns permission_required; decisions do not survive restart, resume, fork, or process exit. The permission prompt and status presentation have deterministic 80x24 and 120x40 snapshots that require explicit human review before acceptance.",
       "definition_source": "draft-reviewed",
       "replaces": null,
       "status": "failing",
@@ -865,6 +961,11 @@
           "field": "forbidden_scope",
           "reason": "Phase 16 is limited to command.execute with built-in local and external opi-sandbox adapters: do not add Docker/VM/SSH/Gondolin/remote or composed adapters; route other tools or allow tool shadowing; define a universal extension protocol or migrate opi-extension-jsonl-v1, RPC, NDJSON, or trace wires; dynamically load native libraries; claim host-read/environment confidentiality or sandbox the extension process; authenticate publishers; accept project-local executable contributions; implement Windows AppContainer/restricted-token restriction; preserve Phase 15 sandbox aliases; or pull Phase 17-20 work forward.",
           "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Non-Goals"
+        },
+        {
+          "field": "verification",
+          "reason": "Added fixed-size TUI snapshots with explicit human acceptance.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#User Policy and permission"
         }
       ],
       "tier": "tui",
@@ -875,13 +976,18 @@
         "library_gates": [
           "cargo test -p opi-coding-agent --test interactive_permission -- --nocapture",
           "cargo test -p opi-coding-agent --test interactive_mock -- --nocapture",
-          "cargo test -p opi-tui --all-targets"
+          "cargo test -p opi-tui --all-targets",
+          "cargo test -p opi-tui --test permission_prompt_snapshots -- --nocapture"
         ],
         "behavioral_tests": [
           "crates/opi-coding-agent/tests/interactive_permission.rs",
-          "crates/opi-coding-agent/tests/interactive_mock.rs"
+          "crates/opi-coding-agent/tests/interactive_mock.rs",
+          "crates/opi-tui/tests/permission_prompt_snapshots.rs"
         ],
-        "snapshot_tests": [],
+        "snapshot_tests": [
+          "crates/opi-tui/tests/snapshots/permission_prompt_snapshots__permission_prompt_80x24.snap",
+          "crates/opi-tui/tests/snapshots/permission_prompt_snapshots__permission_prompt_120x40.snap"
+        ],
         "smoke_addendum": null
       },
       "acceptance_scenarios": [
@@ -920,7 +1026,10 @@
         "crates/opi-coding-agent/src/interactive.rs",
         "crates/opi-coding-agent/src/main.rs",
         "crates/opi-coding-agent/tests/interactive_permission.rs",
-        "crates/opi-coding-agent/tests/interactive_mock.rs"
+        "crates/opi-coding-agent/tests/interactive_mock.rs",
+        "crates/opi-tui/tests/permission_prompt_snapshots.rs",
+        "crates/opi-tui/tests/snapshots/permission_prompt_snapshots__permission_prompt_80x24.snap",
+        "crates/opi-tui/tests/snapshots/permission_prompt_snapshots__permission_prompt_120x40.snap"
       ],
       "last_attempt": null,
       "verified_at_commit": null,
@@ -929,12 +1038,12 @@
       "session_notes": []
     },
     {
-      "id": "16.11",
+      "id": "16.11.1",
       "phase": 16,
-      "title": "Build the standalone opi-sandbox SDK, CLI, and smoke scripts",
+      "title": "Build the standalone opi-sandbox SDK and runner",
       "crate": "opi-sandbox",
-      "parent_spec_row": null,
-      "definition_of_done": "The independent opi-sandbox crate exposes a stateless SandboxRunner SDK and thin human CLI for run and doctor --json, with backend --stdio parsing reserved for 16.12; repeated direct calls preserve byte I/O, exit mapping, cleanup, and L0 semantics without Opi configuration, sessions, package storage, opi-agent, or opi-coding-agent dependencies; doctor emits schema_version/supported/target/mechanisms/profiles/limitations and help/version complete without Opi.",
+      "parent_spec_row": "16.11",
+      "definition_of_done": "The dependency-neutral opi-sandbox library exposes documented SandboxPolicy, SandboxRequest, SandboxRunner, SandboxEvent, and SandboxResult APIs over explicit inputs; sequential calls share no invocation state, every call owns and removes its temporary root and child tree on success, timeout, cancellation, error, or guard drop, and the crate does not read Opi configuration, sessions, package storage, or depend on opi-agent or opi-coding-agent.",
       "definition_source": "draft-reviewed",
       "replaces": null,
       "status": "failing",
@@ -944,57 +1053,38 @@
       ],
       "inference_notes": [
         {
-          "field": "definition_of_done",
-          "reason": "Derived during the reviewed Phase 16 graph reconciliation from the canonical design goals, named product contracts, and observable acceptance checkpoints.",
-          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Testing and Acceptance"
-        },
-        {
-          "field": "depends_on",
-          "reason": "Derived from the canonical Phase Integration order plus serialization of shared task-owned paths.",
-          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Phase Integration"
-        },
-        {
-          "field": "task_owned_paths",
-          "reason": "Derived from the canonical crate boundaries and the current repository modules required by this task's observable assertions.",
-          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Core Architecture"
-        },
-        {
           "field": "forbidden_scope",
           "reason": "Phase 16 is limited to command.execute with built-in local and external opi-sandbox adapters: do not add Docker/VM/SSH/Gondolin/remote or composed adapters; route other tools or allow tool shadowing; define a universal extension protocol or migrate opi-extension-jsonl-v1, RPC, NDJSON, or trace wires; dynamically load native libraries; claim host-read/environment confidentiality or sandbox the extension process; authenticate publishers; accept project-local executable contributions; implement Windows AppContainer/restricted-token restriction; preserve Phase 15 sandbox aliases; or pull Phase 17-20 work forward.",
           "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Non-Goals"
         },
         {
-          "field": "verification",
-          "reason": "Restored the implementation plan's direct binary build/tree/smoke gates and added a fail-able crate-boundary test for dependency neutrality.",
-          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Standalone CLI acceptance"
+          "field": "split",
+          "reason": "split: trigger=the public SDK and human CLI have independent acceptance surfaces",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#SDK and direct CLI"
         }
       ],
-      "tier": "cli-tool",
+      "tier": "library",
       "commit_type": "feat",
       "parallelize": [],
       "evaluator_required": true,
       "verification": {
         "library_gates": [
-          "cargo test -p opi-sandbox --all-targets -- --nocapture",
+          "cargo test -p opi-sandbox --test sdk_contract -- --nocapture",
           "cargo test -p opi-sandbox --test crate_boundaries -- --nocapture",
-          "cargo test -p opi-sandbox --test standalone_smoke -- --nocapture",
-          "cargo tree -p opi-sandbox",
-          "cargo build -p opi-sandbox --bin opi-sandbox"
+          "cargo tree -p opi-sandbox"
         ],
         "behavioral_tests": [
           "crates/opi-sandbox/tests/sdk_contract.rs",
-          "crates/opi-sandbox/tests/cli_contract.rs",
-          "crates/opi-sandbox/tests/crate_boundaries.rs",
-          "crates/opi-sandbox/tests/standalone_smoke.rs"
+          "crates/opi-sandbox/tests/crate_boundaries.rs"
         ],
         "snapshot_tests": [],
-        "smoke_addendum": "Run the host-native standalone binary directly: on Windows, powershell -ExecutionPolicy Bypass -File scripts/opi-sandbox-smoke.ps1 -BinaryPath target/debug/opi-sandbox.exe; on Linux/macOS, ./scripts/opi-sandbox-smoke.sh ./target/debug/opi-sandbox. The smoke PATH must contain no opi binary and Opi config/session/package sentinels must be ignored."
+        "smoke_addendum": null
       },
       "acceptance_scenarios": [
         {
           "id": "SC16-08",
           "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#SDK and direct CLI",
-          "scenario": "Repeated direct SDK calls run independently of Opi and leave no descendants after success, timeout, cancellation, or dropped futures.",
+          "scenario": "Repeated direct SDK calls use explicit inputs, require no Opi process or state, share no cross-invocation state, and remove temporary resources and descendants after success, timeout, cancellation, error, or dropped futures.",
           "verification": [
             "cargo test -p opi-sandbox --test sdk_contract -- --nocapture"
           ],
@@ -1002,27 +1092,10 @@
             "opi_sandbox::SandboxRunner::run"
           ],
           "status": "open"
-        },
-        {
-          "id": "SC16-09a",
-          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#SDK and direct CLI",
-          "scenario": "A directly built isolated opi-sandbox executable runs --help, --version, doctor --json with its stable six fields, and the available direct run contract without an Opi binary or Opi configuration/session/package access and without durable cross-invocation state; backend --stdio execution remains owned by SC16-06b in 16.12.",
-          "verification": [
-            "cargo build -p opi-sandbox --bin opi-sandbox",
-            "cargo test -p opi-sandbox --test cli_contract -- --nocapture",
-            "cargo test -p opi-sandbox --test standalone_smoke -- --nocapture"
-          ],
-          "production_call_sites": [
-            "opi-sandbox CLI dispatch",
-            "opi_sandbox::cli::run",
-            "opi_sandbox::doctor"
-          ],
-          "status": "open"
         }
       ],
       "production_call_sites": [
-        "opi_sandbox::SandboxRunner::run",
-        "opi-sandbox CLI dispatch"
+        "opi_sandbox::SandboxRunner::run"
       ],
       "substrate_only": false,
       "iteration_count": 0,
@@ -1034,19 +1107,104 @@
         "Cargo.lock",
         "crates/opi-sandbox/Cargo.toml",
         "crates/opi-sandbox/src/lib.rs",
-        "crates/opi-sandbox/src/cli.rs",
-        "crates/opi-sandbox/src/main.rs",
-        "crates/opi-sandbox/src/platform/mod.rs",
-        "crates/opi-sandbox/src/platform/windows.rs",
         "crates/opi-sandbox/src/policy.rs",
         "crates/opi-sandbox/src/process_tree.rs",
         "crates/opi-sandbox/src/runner.rs",
         "crates/opi-sandbox/tests/sdk_contract.rs",
+        "crates/opi-sandbox/tests/crate_boundaries.rs"
+      ],
+      "last_attempt": null,
+      "verified_at_commit": null,
+      "evidence": null,
+      "blocker": null,
+      "session_notes": []
+    },
+    {
+      "id": "16.11.2",
+      "phase": 16,
+      "title": "Build the human opi-sandbox CLI and direct smoke",
+      "crate": "opi-sandbox",
+      "parent_spec_row": "16.11",
+      "definition_of_done": "The thin opi-sandbox CLI exposes --help, --version, doctor --json, and exact `run --workspace PATH --profile workspace-write --network deny|allow -- PROGRAM ARGS` parsing over the shared SandboxRunner. Portable tests with an injected runner preserve arguments, terminal stdin, byte stdout/stderr, normal target status, and Unix 128+signal; after target start, target exits 2/124/125/130 remain verbatim, while those codes denote CLI usage, timeout, pre-start failure, or cancellation only on control paths. Doctor returns the stable object, returns zero for completed unsupported diagnostics and nonzero for malformed/internal failure. The isolated built binary proves help/version/doctor, unsupported pre-start behavior where applicable, no Opi access, and no durable state; successful native run is closed by 16.13/16.14.1 and backend --stdio by 16.12.",
+      "definition_source": "draft-reviewed",
+      "replaces": null,
+      "status": "failing",
+      "depends_on": [
+        "16.11.1"
+      ],
+      "inference_notes": [
+        {
+          "field": "forbidden_scope",
+          "reason": "Phase 16 is limited to command.execute with built-in local and external opi-sandbox adapters: do not add Docker/VM/SSH/Gondolin/remote or composed adapters; route other tools or allow tool shadowing; define a universal extension protocol or migrate opi-extension-jsonl-v1, RPC, NDJSON, or trace wires; dynamically load native libraries; claim host-read/environment confidentiality or sandbox the extension process; authenticate publishers; accept project-local executable contributions; implement Windows AppContainer/restricted-token restriction; preserve Phase 15 sandbox aliases; or pull Phase 17-20 work forward.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Non-Goals"
+        },
+        {
+          "field": "split",
+          "reason": "split: trigger=the human CLI can close after the SDK without the protocol backend",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Standalone CLI acceptance"
+        },
+        {
+          "field": "definition_of_done",
+          "reason": "Separated portable CLI semantics from host-native success and disambiguated reserved target exits.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Human CLI"
+        }
+      ],
+      "tier": "cli-tool",
+      "commit_type": "feat",
+      "parallelize": [],
+      "evaluator_required": true,
+      "verification": {
+        "library_gates": [
+          "cargo build -p opi-sandbox --bin opi-sandbox",
+          "cargo test -p opi-sandbox --test cli_contract -- --nocapture",
+          "cargo test -p opi-sandbox --test standalone_smoke -- --nocapture"
+        ],
+        "behavioral_tests": [
+          "crates/opi-sandbox/tests/cli_contract.rs",
+          "crates/opi-sandbox/tests/standalone_smoke.rs"
+        ],
+        "snapshot_tests": [],
+        "smoke_addendum": "Run portable CLI semantics against the injected runner, then run the isolated built binary with no opi on PATH and invalid Opi sentinels for help/version/doctor plus the host's supported success or unsupported pre-start posture; preserve outputs, exit mapping and filesystem evidence under target/opi-artifacts/phase16-cli."
+      },
+      "acceptance_scenarios": [
+        {
+          "id": "SC16-09a",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Standalone CLI acceptance",
+          "scenario": "Portable CLI tests pin `run --workspace PATH --profile workspace-write --network deny|allow -- PROGRAM ARGS`, target arguments, terminal stdin, byte stdout/stderr, normal/signal mapping, verbatim post-start target exits 2/124/125/130, and reserved control-path exits; doctor malformed/internal failures are nonzero. An isolated built executable proves help/version/doctor, unsupported pre-start behavior where applicable, no Opi state, and no durable state; supported native run and backend success remain owned by SC16-09b-linux/macos and SC16-06b.",
+          "verification": [
+            "cargo build -p opi-sandbox --bin opi-sandbox",
+            "cargo test -p opi-sandbox --test cli_contract -- --nocapture",
+            "cargo test -p opi-sandbox --test standalone_smoke -- --nocapture"
+          ],
+          "production_call_sites": [
+            "opi-sandbox CLI dispatch",
+            "opi_sandbox::cli::run",
+            "opi_sandbox::doctor",
+            "opi_sandbox::SandboxRunner::run"
+          ],
+          "status": "open"
+        }
+      ],
+      "production_call_sites": [
+        "opi-sandbox CLI dispatch",
+        "opi_sandbox::cli::run",
+        "opi_sandbox::doctor",
+        "opi_sandbox::SandboxRunner::run"
+      ],
+      "substrate_only": false,
+      "iteration_count": 0,
+      "max_iterations": 5,
+      "start_commit": null,
+      "baseline_dirty_files": [],
+      "task_owned_paths": [
+        "crates/opi-sandbox/src/cli.rs",
+        "crates/opi-sandbox/src/main.rs",
+        "crates/opi-sandbox/src/platform/mod.rs",
+        "crates/opi-sandbox/src/platform/windows.rs",
         "crates/opi-sandbox/tests/cli_contract.rs",
+        "crates/opi-sandbox/tests/standalone_smoke.rs",
         "scripts/opi-sandbox-smoke.sh",
-        "scripts/opi-sandbox-smoke.ps1",
-        "crates/opi-sandbox/tests/crate_boundaries.rs",
-        "crates/opi-sandbox/tests/standalone_smoke.rs"
+        "scripts/opi-sandbox-smoke.ps1"
       ],
       "last_attempt": null,
       "verified_at_commit": null,
@@ -1060,12 +1218,12 @@
       "title": "Add the atomic helper gate and protocol backend",
       "crate": "opi-sandbox",
       "parent_spec_row": null,
-      "definition_of_done": "The production opi-sandbox backend --stdio entry point and non-Rust fixture client use the shared v1 codec and SandboxRunner; the target cannot start until helper setup succeeds and the started frame is flushed, while setup, malformed/out-of-order protocol, timeout, cancellation, drop, cleanup, and redaction failures are bounded and terminal.",
+      "definition_of_done": "The production opi-sandbox backend --stdio entry point and product-neutral non-Rust fixture client use the shared v1 codec, cfg-gated platform dispatcher, and SandboxRunner. Portable conformance uses an injected runner for the success state machine; the real executable proves negotiation plus structured unsupported/pre-start behavior until 16.13/16.14.1 close native success. Every frame carries one host request id; protocol stdin is reserved and never inherited by the target; target start waits for helper setup and flushed started. Missing or mismatched ids, setup, malformed, oversized, duplicate, unknown-required, out-of-order, contaminated-stdout, EOF, timeout, cancellation, drop, cleanup, and redaction failures are bounded and terminal, with no second execution.",
       "definition_source": "draft-reviewed",
       "replaces": null,
       "status": "failing",
       "depends_on": [
-        "16.11"
+        "16.11.2"
       ],
       "inference_notes": [
         {
@@ -1097,9 +1255,29 @@
           "field": "acceptance_scenarios",
           "reason": "Added the backend half of the split SC16-06 contract, including the only non-Rust fixture client.",
           "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Protocol contract"
+        },
+        {
+          "field": "tier",
+          "reason": "Promoted because backend --stdio is a first-class executable CLI/protocol surface.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Reuse outside Opi"
+        },
+        {
+          "field": "definition_of_done",
+          "reason": "Added protocol-stdin isolation and the complete invalid-frame contract.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Process and transport"
+        },
+        {
+          "field": "definition_of_done",
+          "reason": "Kept pre-native tasks host-feasible through an injected runner and cfg-gated platform seam.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Standalone CLI acceptance"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "The cfg-gated dispatcher is established once here; native tasks add leaf modules without shared-path edits.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Core Architecture"
         }
       ],
-      "tier": "library",
+      "tier": "cli-tool",
       "commit_type": "feat",
       "parallelize": [],
       "evaluator_required": true,
@@ -1119,7 +1297,7 @@
         {
           "id": "SC16-06b",
           "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Protocol contract",
-          "scenario": "The real opi-sandbox backend --stdio process and a product-neutral non-Rust fixture client exercise one-shot protocol negotiation, helper setup before flushed started, binary output, terminal status, invalid-frame rejection, cancellation, deadline, cleanup, and redacted diagnostics without importing Opi representations.",
+          "scenario": "The production backend --stdio entry point and product-neutral non-Rust client exercise one-shot negotiation and structured unsupported/pre-start results; an injected platform runner proves helper setup before flushed started, binary output, terminal status, cancellation, deadline, and cleanup. All frames share the host request id; missing, mismatched, or cross-request ids and other invalid frames fail. Protocol stdin never reaches the target, no second execution is accepted, no Opi representation is imported, and native real-process success is closed by the Linux and macOS archive tasks.",
           "verification": [
             "cargo test -p opi-sandbox --test protocol_conformance -- --nocapture"
           ],
@@ -1169,11 +1347,337 @@
       "title": "Port the Linux native restriction contract",
       "crate": "opi-sandbox",
       "parent_spec_row": null,
-      "definition_of_done": "On supported Linux, the direct opi-sandbox CLI ports the audited Phase 15 Landlock ABI 4 filesystem/TCP behavior, fixed seccomp danger and socket/io_uring restrictions, AF_UNIX preservation, start gate, path relativization, and documented limitations before target start, then passes positive and negative filesystem/network sentinels in native CI without weakening the prior seatbelts.",
+      "definition_of_done": "On native supported Linux, the direct and extracted-archive opi-sandbox binaries enforce the audited Phase 15 Landlock ABI 4 filesystem/TCP behavior, fixed seccomp danger and socket/io_uring restrictions, closure of inherited nonessential descriptors, AF_UNIX/required-stdio preservation, start gate, path relativization, and documented limitations before target start; direct run and backend --stdio positive/negative filesystem/network sentinels pass, package target/protocol/hash match extracted bytes, and no Opi binary or state is required.",
       "definition_source": "draft-reviewed",
       "replaces": null,
       "status": "failing",
       "depends_on": [
+        "16.12",
+        "16.15"
+      ],
+      "inference_notes": [
+        {
+          "field": "definition_of_done",
+          "reason": "Derived during the reviewed Phase 16 graph reconciliation from the canonical design goals, named product contracts, and observable acceptance checkpoints.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Testing and Acceptance"
+        },
+        {
+          "field": "depends_on",
+          "reason": "Derived from the canonical Phase Integration order plus serialization of shared task-owned paths.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Phase Integration"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Derived from the canonical crate boundaries and the current repository modules required by this task's observable assertions.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Core Architecture"
+        },
+        {
+          "field": "forbidden_scope",
+          "reason": "Phase 16 is limited to command.execute with built-in local and external opi-sandbox adapters: do not add Docker/VM/SSH/Gondolin/remote or composed adapters; route other tools or allow tool shadowing; define a universal extension protocol or migrate opi-extension-jsonl-v1, RPC, NDJSON, or trace wires; dynamically load native libraries; claim host-read/environment confidentiality or sandbox the extension process; authenticate publishers; accept project-local executable contributions; implement Windows AppContainer/restricted-token restriction; preserve Phase 15 sandbox aliases; or pull Phase 17-20 work forward.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Non-Goals"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Removed read-only Phase 15 sources; deletion remains in 16.16.1.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Migration from Phase 15"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "The cfg-gated dispatcher is already owned by 16.12, so this host task changes only its native leaf, runner integration, and tests.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Core Architecture"
+        },
+        {
+          "field": "acceptance_scenarios",
+          "reason": "Moved Linux archive acceptance to the native Linux task.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Standalone CLI acceptance"
+        },
+        {
+          "field": "acceptance_scenarios",
+          "reason": "Added inherited-descriptor denial while preserving required stdio and AF_UNIX.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Linux"
+        }
+      ],
+      "tier": "cli-tool",
+      "commit_type": "feat",
+      "parallelize": [],
+      "evaluator_required": true,
+      "verification": {
+        "library_gates": [
+          "cargo test -p opi-sandbox --test linux_policy -- --nocapture",
+          "cargo build --release -p opi-sandbox --bin opi-sandbox"
+        ],
+        "behavioral_tests": [
+          "crates/opi-sandbox/tests/linux_policy.rs"
+        ],
+        "snapshot_tests": [],
+        "smoke_addendum": "On native Linux, package and extract target/release/opi-sandbox, run the standalone smoke against the extracted binary, and preserve archive, doctor, output, exit and policy sentinels under target/opi-artifacts/phase16-linux."
+      },
+      "acceptance_scenarios": [
+        {
+          "id": "SC16-10",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Native platform contract",
+          "scenario": "The native Linux CLI enforces workspace/temp writes, outside-write denial, outside-read allowance, Landlock/seccomp setup, network deny/allow, closure of inherited nonessential INET descriptors, denial of new INET/INET6/NETLINK and io_uring setup, required stdio and AF_UNIX preservation, and reported limitations without silent mechanism loss.",
+          "verification": [
+            "cargo test -p opi-sandbox --test linux_policy -- --nocapture"
+          ],
+          "production_call_sites": [
+            "opi_sandbox::platform::linux",
+            "opi-sandbox CLI"
+          ],
+          "status": "open"
+        },
+        {
+          "id": "SC16-09b-linux",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Standalone CLI acceptance",
+          "scenario": "A native Linux archive is built, packaged, extracted into a clean directory, and runs standalone doctor, run, and backend smoke without opi or Opi state; manifest target/protocol/hash match extracted bytes.",
+          "verification": [
+            "native Linux scripts/package-opi-sandbox.sh followed by scripts/opi-sandbox-smoke.sh against the extracted binary"
+          ],
+          "production_call_sites": [
+            "opi-sandbox CLI",
+            "package-opi-sandbox scripts",
+            "Linux package CI job"
+          ],
+          "status": "open"
+        }
+      ],
+      "production_call_sites": [
+        "opi_sandbox::platform::linux",
+        "opi-sandbox CLI",
+        "package-opi-sandbox scripts",
+        "Linux package CI job"
+      ],
+      "substrate_only": false,
+      "iteration_count": 0,
+      "max_iterations": 5,
+      "start_commit": null,
+      "baseline_dirty_files": [],
+      "task_owned_paths": [
+        "crates/opi-sandbox/Cargo.toml",
+        "crates/opi-sandbox/src/platform/linux.rs",
+        "crates/opi-sandbox/src/runner.rs",
+        "crates/opi-sandbox/tests/linux_policy.rs"
+      ],
+      "last_attempt": null,
+      "verified_at_commit": null,
+      "evidence": null,
+      "blocker": null,
+      "session_notes": []
+    },
+    {
+      "id": "16.14.1",
+      "phase": 16,
+      "title": "Port the macOS native restriction contract",
+      "crate": "opi-sandbox",
+      "parent_spec_row": "16.14",
+      "definition_of_done": "On native supported macOS, workspace and extracted-archive opi-sandbox direct run and backend --stdio use the audited Phase 15 sandbox-exec profile and in-profile start gate, enforce workspace/temp writes, outside-write denial, outside-read allowance, and network deny/allow, fail before target start when sandbox-exec is missing or rejected, report legacy/experimental limitations, and run standalone smoke without Opi state with package target/protocol/hash matching extracted bytes.",
+      "definition_source": "draft-reviewed",
+      "replaces": null,
+      "status": "failing",
+      "depends_on": [
+        "16.12",
+        "16.15"
+      ],
+      "inference_notes": [
+        {
+          "field": "forbidden_scope",
+          "reason": "Phase 16 is limited to command.execute with built-in local and external opi-sandbox adapters: do not add Docker/VM/SSH/Gondolin/remote or composed adapters; route other tools or allow tool shadowing; define a universal extension protocol or migrate opi-extension-jsonl-v1, RPC, NDJSON, or trace wires; dynamically load native libraries; claim host-read/environment confidentiality or sandbox the extension process; authenticate publishers; accept project-local executable contributions; implement Windows AppContainer/restricted-token restriction; preserve Phase 15 sandbox aliases; or pull Phase 17-20 work forward.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Non-Goals"
+        },
+        {
+          "field": "split",
+          "reason": "split: trigger=macOS and Windows require mutually exclusive execution hosts",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Native platform contract"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Phase 15 macOS source is read-only; deletion remains in 16.16.1.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Migration from Phase 15"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "The cfg-gated dispatcher is already owned by 16.12, so this host task changes only its native leaf and tests.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Core Architecture"
+        }
+      ],
+      "tier": "cli-tool",
+      "commit_type": "feat",
+      "parallelize": [],
+      "evaluator_required": true,
+      "verification": {
+        "library_gates": [
+          "cargo test -p opi-sandbox --test macos_policy -- --nocapture",
+          "cargo build --release -p opi-sandbox --bin opi-sandbox"
+        ],
+        "behavioral_tests": [
+          "crates/opi-sandbox/tests/macos_policy.rs"
+        ],
+        "snapshot_tests": [],
+        "smoke_addendum": "On native macOS, package and extract the release binary, run standalone smoke, and preserve archive, doctor, output, exit, policy and missing/rejected-sandbox-exec evidence under target/opi-artifacts/phase16-macos."
+      },
+      "acceptance_scenarios": [
+        {
+          "id": "SC16-11",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Native platform contract",
+          "scenario": "The native macOS CLI establishes the in-profile start gate, enforces filesystem/network policy, reports limitations truthfully, and fails before target start when sandbox-exec is missing or rejected.",
+          "verification": [
+            "cargo test -p opi-sandbox --test macos_policy -- --nocapture"
+          ],
+          "production_call_sites": [
+            "opi_sandbox::platform::macos",
+            "opi-sandbox CLI"
+          ],
+          "status": "open"
+        },
+        {
+          "id": "SC16-09b-macos",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Standalone CLI acceptance",
+          "scenario": "A native macOS archive is built, packaged, extracted into a clean directory, and runs standalone doctor, run, and backend smoke without opi or Opi state; manifest target/protocol/hash match extracted bytes.",
+          "verification": [
+            "native macOS scripts/package-opi-sandbox.sh followed by scripts/opi-sandbox-smoke.sh against the extracted binary"
+          ],
+          "production_call_sites": [
+            "opi-sandbox CLI",
+            "package-opi-sandbox scripts",
+            "macOS package CI job"
+          ],
+          "status": "open"
+        }
+      ],
+      "production_call_sites": [
+        "opi_sandbox::platform::macos",
+        "opi-sandbox CLI",
+        "package-opi-sandbox scripts",
+        "macOS package CI job"
+      ],
+      "substrate_only": false,
+      "iteration_count": 0,
+      "max_iterations": 5,
+      "start_commit": null,
+      "baseline_dirty_files": [],
+      "task_owned_paths": [
+        "crates/opi-sandbox/src/platform/macos.rs",
+        "crates/opi-sandbox/tests/macos_policy.rs"
+      ],
+      "last_attempt": null,
+      "verified_at_commit": null,
+      "evidence": null,
+      "blocker": null,
+      "session_notes": []
+    },
+    {
+      "id": "16.14.2",
+      "phase": 16,
+      "title": "Pin the Windows unsupported and release posture",
+      "crate": "workspace",
+      "parent_spec_row": "16.14",
+      "definition_of_done": "On Windows, opi-sandbox --help and --version succeed, doctor --json reports the stable unsupported restriction contract, direct run returns pre-start failure before a target marker can start, and built-in local Opi execution reports supervised rather than restricted; package/release guards emit no Windows opi-sandbox artifact while preserving both ordinary Opi Windows targets and the complete six-target Opi matrix.",
+      "definition_source": "draft-reviewed",
+      "replaces": null,
+      "status": "failing",
+      "depends_on": [
+        "16.8",
+        "16.12",
+        "16.15"
+      ],
+      "inference_notes": [
+        {
+          "field": "forbidden_scope",
+          "reason": "Phase 16 is limited to command.execute with built-in local and external opi-sandbox adapters: do not add Docker/VM/SSH/Gondolin/remote or composed adapters; route other tools or allow tool shadowing; define a universal extension protocol or migrate opi-extension-jsonl-v1, RPC, NDJSON, or trace wires; dynamically load native libraries; claim host-read/environment confidentiality or sandbox the extension process; authenticate publishers; accept project-local executable contributions; implement Windows AppContainer/restricted-token restriction; preserve Phase 15 sandbox aliases; or pull Phase 17-20 work forward.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Non-Goals"
+        },
+        {
+          "field": "split",
+          "reason": "split: trigger=Windows posture must be verified independently of macOS restriction",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Native platform contract"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Phase 15 Windows source is read-only; deletion remains in 16.16.1.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Migration from Phase 15"
+        }
+      ],
+      "tier": "workspace",
+      "commit_type": "feat",
+      "parallelize": [],
+      "evaluator_required": true,
+      "verification": {
+        "library_gates": [
+          "cargo test -p opi-sandbox --test cli_contract -- --nocapture",
+          "cargo test -p opi-coding-agent --test opi_sandbox_package -- --nocapture"
+        ],
+        "behavioral_tests": [
+          "crates/opi-sandbox/tests/cli_contract.rs",
+          "crates/opi-coding-agent/tests/opi_sandbox_package.rs"
+        ],
+        "snapshot_tests": [],
+        "smoke_addendum": "On Windows, preserve help/version, unsupported doctor, pre-start refusal and marker absence, local supervised-only output, and release-matrix guard evidence under target/opi-artifacts/phase16-windows."
+      },
+      "acceptance_scenarios": [
+        {
+          "id": "SC16-12a",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Native platform contract",
+          "scenario": "Windows doctor reports unsupported, direct run refuses before target start, and built-in local execution reports supervised rather than restricted.",
+          "verification": [
+            "cargo test -p opi-sandbox --test cli_contract -- --nocapture",
+            "cargo test -p opi-coding-agent --test opi_sandbox_package -- --nocapture"
+          ],
+          "production_call_sites": [
+            "opi_sandbox::platform::windows",
+            "opi-sandbox CLI",
+            "LocalBashOperations::exec"
+          ],
+          "status": "open"
+        },
+        {
+          "id": "SC16-12b",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Native platform contract",
+          "scenario": "Release packaging defines Linux and macOS opi-sandbox archives but no Windows opi-sandbox artifact, while ordinary Opi retains x86_64/aarch64 Linux, macOS, and Windows targets.",
+          "verification": [
+            "cargo test -p opi-coding-agent --test opi_sandbox_package -- --nocapture"
+          ],
+          "production_call_sites": [
+            "package-opi-sandbox scripts",
+            "release workflow"
+          ],
+          "status": "open"
+        }
+      ],
+      "production_call_sites": [
+        "opi_sandbox::platform::windows",
+        "opi-sandbox CLI",
+        "LocalBashOperations::exec",
+        "package-opi-sandbox scripts",
+        "release workflow"
+      ],
+      "substrate_only": false,
+      "iteration_count": 0,
+      "max_iterations": 5,
+      "start_commit": null,
+      "baseline_dirty_files": [],
+      "task_owned_paths": [
+        "crates/opi-sandbox/src/platform/windows.rs",
+        "crates/opi-sandbox/tests/cli_contract.rs",
+        "crates/opi-coding-agent/tests/opi_sandbox_package.rs"
+      ],
+      "last_attempt": null,
+      "verified_at_commit": null,
+      "evidence": null,
+      "blocker": null,
+      "session_notes": []
+    },
+    {
+      "id": "16.15",
+      "phase": 16,
+      "title": "Add host-neutral opi-sandbox packaging and CI topology",
+      "crate": "workspace",
+      "parent_spec_row": null,
+      "definition_of_done": "Host-neutral packaging scripts accept an explicit built opi-sandbox binary, create the documented package layout, compute locked target/protocol/executable metadata and SHA-256 from packaged bytes, and reject incomplete or mismatched layouts; CI/release configuration defines Linux and macOS opi-sandbox package jobs, defines no Windows opi-sandbox artifact, preserves the ordinary six-target Opi matrix, and contains no stale Phase 15 sandbox jobs or deleted test/source references. The artifact auditor validates Phase 16 native target identity, archive layout, extracted-binary provenance, and complete non-skipped/non-zero-test Linux/macOS/Windows evidence. Native extracted-binary execution is closed separately by 16.13, 16.14.1, and 16.14.2.",
+      "definition_source": "draft-reviewed",
+      "replaces": null,
+      "status": "failing",
+      "depends_on": [
+        "16.5",
         "16.12"
       ],
       "inference_notes": [
@@ -1198,224 +1702,24 @@
           "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Non-Goals"
         },
         {
-          "field": "task_owned_paths",
-          "reason": "Added the audited Phase 15 Linux implementation as an explicit migration source; this task ports from it but leaves deletion to 16.16.1.",
-          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Migration from Phase 15"
-        }
-      ],
-      "tier": "cli-tool",
-      "commit_type": "feat",
-      "parallelize": [],
-      "evaluator_required": true,
-      "verification": {
-        "library_gates": [
-          "cargo test -p opi-sandbox --test linux_policy -- --nocapture"
-        ],
-        "behavioral_tests": [
-          "crates/opi-sandbox/tests/linux_policy.rs"
-        ],
-        "snapshot_tests": [],
-        "smoke_addendum": null
-      },
-      "acceptance_scenarios": [
-        {
-          "id": "SC16-10",
-          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Native platform contract",
-          "scenario": "The Linux CLI enforces the documented filesystem and network sentinels and reports its effective restricted contract.",
-          "verification": [
-            "cargo test -p opi-sandbox --test linux_policy -- --nocapture"
-          ],
-          "production_call_sites": [
-            "opi_sandbox::platform::linux",
-            "opi-sandbox CLI"
-          ],
-          "status": "open"
-        }
-      ],
-      "production_call_sites": [
-        "opi_sandbox::platform::linux",
-        "opi-sandbox CLI"
-      ],
-      "substrate_only": false,
-      "iteration_count": 0,
-      "max_iterations": 5,
-      "start_commit": null,
-      "baseline_dirty_files": [],
-      "task_owned_paths": [
-        "crates/opi-sandbox/Cargo.toml",
-        "crates/opi-sandbox/src/platform/linux.rs",
-        "crates/opi-sandbox/src/platform/mod.rs",
-        "crates/opi-sandbox/src/helper.rs",
-        "crates/opi-sandbox/src/runner.rs",
-        "crates/opi-sandbox/tests/linux_policy.rs",
-        "scripts/opi-sandbox-smoke.sh",
-        ".github/workflows/ci.yml",
-        "crates/opi-coding-agent/src/sandbox.rs",
-        "crates/opi-coding-agent/src/sandbox/linux.rs"
-      ],
-      "last_attempt": null,
-      "verified_at_commit": null,
-      "evidence": null,
-      "blocker": null,
-      "session_notes": []
-    },
-    {
-      "id": "16.14",
-      "phase": 16,
-      "title": "Port macOS restriction and pin the Windows posture",
-      "crate": "opi-sandbox",
-      "parent_spec_row": null,
-      "definition_of_done": "The macOS direct opi-sandbox CLI ports the audited Phase 15 sandbox-exec profile and in-profile start gate before target execution and passes filesystem/network sentinels; Windows doctor reports the stable unsupported contract, run refuses before a target marker starts, and built-in local execution reports supervised only, with no false restricted guarantee.",
-      "definition_source": "draft-reviewed",
-      "replaces": null,
-      "status": "failing",
-      "depends_on": [
-        "16.13"
-      ],
-      "inference_notes": [
-        {
-          "field": "definition_of_done",
-          "reason": "Derived during the reviewed Phase 16 graph reconciliation from the canonical design goals, named product contracts, and observable acceptance checkpoints.",
-          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Testing and Acceptance"
+          "field": "substrate_only",
+          "reason": "Packaging source is substrate until a native task executes an extracted archive.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Standalone CLI acceptance"
         },
         {
           "field": "depends_on",
-          "reason": "Derived from the canonical Phase Integration order plus serialization of shared task-owned paths.",
+          "reason": "Moved packaging scaffolding before native acceptance so each host can execute its archive.",
           "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Phase Integration"
         },
         {
-          "field": "task_owned_paths",
-          "reason": "Derived from the canonical crate boundaries and the current repository modules required by this task's observable assertions.",
-          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Core Architecture"
+          "field": "title",
+          "reason": "Removed the stale extracted-archive smoke claim; native tasks own execution acceptance.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Standalone CLI acceptance"
         },
-        {
-          "field": "forbidden_scope",
-          "reason": "Phase 16 is limited to command.execute with built-in local and external opi-sandbox adapters: do not add Docker/VM/SSH/Gondolin/remote or composed adapters; route other tools or allow tool shadowing; define a universal extension protocol or migrate opi-extension-jsonl-v1, RPC, NDJSON, or trace wires; dynamically load native libraries; claim host-read/environment confidentiality or sandbox the extension process; authenticate publishers; accept project-local executable contributions; implement Windows AppContainer/restricted-token restriction; preserve Phase 15 sandbox aliases; or pull Phase 17-20 work forward.",
-          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Non-Goals"
-        },
-        {
-          "field": "task_owned_paths",
-          "reason": "Added the audited Phase 15 macOS and Windows implementations as explicit migration sources; this task ports from them but leaves deletion to 16.16.1.",
-          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Migration from Phase 15"
-        }
-      ],
-      "tier": "cli-tool",
-      "commit_type": "feat",
-      "parallelize": [],
-      "evaluator_required": true,
-      "verification": {
-        "library_gates": [
-          "cargo test -p opi-sandbox --test macos_policy -- --nocapture",
-          "cargo test -p opi-sandbox --test cli_contract -- --nocapture"
-        ],
-        "behavioral_tests": [
-          "crates/opi-sandbox/tests/macos_policy.rs",
-          "crates/opi-sandbox/tests/cli_contract.rs"
-        ],
-        "snapshot_tests": [],
-        "smoke_addendum": null
-      },
-      "acceptance_scenarios": [
-        {
-          "id": "SC16-11",
-          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Native platform contract",
-          "scenario": "The macOS CLI enforces the documented filesystem and network sentinels and reports limitations truthfully.",
-          "verification": [
-            "cargo test -p opi-sandbox --test macos_policy -- --nocapture"
-          ],
-          "production_call_sites": [
-            "opi_sandbox::platform::macos",
-            "opi-sandbox CLI"
-          ],
-          "status": "open"
-        },
-        {
-          "id": "SC16-12a",
-          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Native platform contract",
-          "scenario": "Windows doctor reports the stable unsupported opi-sandbox contract, direct run refuses before target start, and built-in local command execution reports only supervised rather than restricted.",
-          "verification": [
-            "cargo test -p opi-sandbox --test cli_contract -- --nocapture",
-            "cargo test -p opi-coding-agent --test execution_minimal_runtime -- --nocapture"
-          ],
-          "production_call_sites": [
-            "opi_sandbox::platform::windows",
-            "opi-sandbox CLI",
-            "LocalBashOperations::exec"
-          ],
-          "status": "open"
-        }
-      ],
-      "production_call_sites": [
-        "opi_sandbox::platform::macos",
-        "opi_sandbox::platform::windows",
-        "opi-sandbox CLI",
-        "LocalBashOperations::exec"
-      ],
-      "substrate_only": false,
-      "iteration_count": 0,
-      "max_iterations": 5,
-      "start_commit": null,
-      "baseline_dirty_files": [],
-      "task_owned_paths": [
-        "crates/opi-sandbox/src/platform/macos.rs",
-        "crates/opi-sandbox/src/platform/mod.rs",
-        "crates/opi-sandbox/src/platform/windows.rs",
-        "crates/opi-sandbox/src/helper.rs",
-        "crates/opi-sandbox/tests/macos_policy.rs",
-        "crates/opi-sandbox/tests/cli_contract.rs",
-        "scripts/opi-sandbox-smoke.sh",
-        "scripts/opi-sandbox-smoke.ps1",
-        ".github/workflows/ci.yml",
-        "crates/opi-coding-agent/src/sandbox.rs",
-        "crates/opi-coding-agent/src/sandbox/macos.rs",
-        "crates/opi-coding-agent/src/sandbox/windows.rs"
-      ],
-      "last_attempt": null,
-      "verified_at_commit": null,
-      "evidence": null,
-      "blocker": null,
-      "session_notes": []
-    },
-    {
-      "id": "16.15",
-      "phase": 16,
-      "title": "Package release artifacts and smoke the extracted archives",
-      "crate": "workspace",
-      "parent_spec_row": null,
-      "definition_of_done": "Release packaging creates installable Linux and macOS opi-sandbox archives with exact package metadata, emits no Windows opi-sandbox artifact while preserving ordinary Opi Windows releases, extracts each supported archive, and runs doctor plus the same standalone direct-binary smoke without Opi present.",
-      "definition_source": "draft-reviewed",
-      "replaces": null,
-      "status": "failing",
-      "depends_on": [
-        "16.5",
-        "16.13",
-        "16.14"
-      ],
-      "inference_notes": [
         {
           "field": "definition_of_done",
-          "reason": "Derived during the reviewed Phase 16 graph reconciliation from the canonical design goals, named product contracts, and observable acceptance checkpoints.",
-          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Testing and Acceptance"
-        },
-        {
-          "field": "depends_on",
-          "reason": "Derived from the canonical Phase Integration order plus serialization of shared task-owned paths.",
-          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Phase Integration"
-        },
-        {
-          "field": "task_owned_paths",
-          "reason": "Derived from the canonical crate boundaries and the current repository modules required by this task's observable assertions.",
-          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Core Architecture"
-        },
-        {
-          "field": "forbidden_scope",
-          "reason": "Phase 16 is limited to command.execute with built-in local and external opi-sandbox adapters: do not add Docker/VM/SSH/Gondolin/remote or composed adapters; route other tools or allow tool shadowing; define a universal extension protocol or migrate opi-extension-jsonl-v1, RPC, NDJSON, or trace wires; dynamically load native libraries; claim host-read/environment confidentiality or sandbox the extension process; authenticate publishers; accept project-local executable contributions; implement Windows AppContainer/restricted-token restriction; preserve Phase 15 sandbox aliases; or pull Phase 17-20 work forward.",
-          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Non-Goals"
-        },
-        {
-          "field": "acceptance_scenarios",
-          "reason": "Split Windows runtime truthfulness from release-artifact omission so each assertion is owned only after its production files exist.",
-          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Native platform contract"
+          "reason": "Added stale Phase 15 workflow rejection and a Phase 16-specific native artifact evidence schema.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Repository gates"
         }
       ],
       "tier": "workspace",
@@ -1425,49 +1729,18 @@
       "verification": {
         "library_gates": [
           "cargo test -p opi-coding-agent --test opi_sandbox_package -- --nocapture",
-          "cargo build --release -p opi-sandbox --bin opi-sandbox"
+          "cargo test -p opi-coding-agent --test artifact_audit_script -- --nocapture"
         ],
         "behavioral_tests": [
-          "crates/opi-coding-agent/tests/opi_sandbox_package.rs"
+          "crates/opi-coding-agent/tests/opi_sandbox_package.rs",
+          "crates/opi-coding-agent/tests/artifact_audit_script.rs"
         ],
         "snapshot_tests": [],
-        "smoke_addendum": "On each supported native Unix target, run scripts/package-opi-sandbox.sh against target/release/opi-sandbox, extract the generated archive into a fresh directory, and run scripts/opi-sandbox-smoke.sh against the extracted binary. Preserve packaging command, archive SHA-256/tree, doctor JSON, stdout/stderr, exit code, and native sentinel evidence; Windows runs only the no-Windows-artifact guard."
+        "smoke_addendum": null
       },
-      "acceptance_scenarios": [
-        {
-          "id": "SC16-09b",
-          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#SDK and direct CLI",
-          "scenario": "An extracted Linux or macOS opi-sandbox archive runs the same standalone doctor, run, and backend smoke without an Opi binary or Opi configuration/session/package access, and its manifest target/protocol/hash match the extracted bytes.",
-          "verification": [
-            "cargo test -p opi-coding-agent --test opi_sandbox_package -- --nocapture",
-            "supported-native scripts/package-opi-sandbox.sh followed by scripts/opi-sandbox-smoke.sh against the extracted archive binary"
-          ],
-          "production_call_sites": [
-            "opi-sandbox CLI",
-            "package-opi-sandbox scripts"
-          ],
-          "status": "open"
-        },
-        {
-          "id": "SC16-12b",
-          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Native platform contract",
-          "scenario": "Release packaging emits Linux and macOS opi-sandbox archives but no Windows opi-sandbox artifact, while the ordinary Opi release matrix retains its Windows binaries.",
-          "verification": [
-            "cargo test -p opi-coding-agent --test opi_sandbox_package -- --nocapture"
-          ],
-          "production_call_sites": [
-            "package-opi-sandbox scripts",
-            "release workflow"
-          ],
-          "status": "open"
-        }
-      ],
-      "production_call_sites": [
-        "opi-sandbox CLI",
-        "package-opi-sandbox scripts",
-        "release workflow"
-      ],
-      "substrate_only": false,
+      "acceptance_scenarios": [],
+      "production_call_sites": [],
+      "substrate_only": true,
       "iteration_count": 0,
       "max_iterations": 5,
       "start_commit": null,
@@ -1476,10 +1749,11 @@
         "packaging/opi-sandbox/package.toml.template",
         "scripts/package-opi-sandbox.sh",
         "scripts/package-opi-sandbox.ps1",
-        "scripts/opi-sandbox-smoke.sh",
-        "scripts/opi-sandbox-smoke.ps1",
+        ".github/workflows/ci.yml",
         ".github/workflows/release.yml",
-        "crates/opi-coding-agent/tests/opi_sandbox_package.rs"
+        "scripts/opi-artifact-audit.py",
+        "crates/opi-coding-agent/tests/opi_sandbox_package.rs",
+        "crates/opi-coding-agent/tests/artifact_audit_script.rs"
       ],
       "last_attempt": null,
       "verified_at_commit": null,
@@ -1499,7 +1773,9 @@
       "status": "failing",
       "depends_on": [
         "16.10",
-        "16.15"
+        "16.13",
+        "16.14.1",
+        "16.14.2"
       ],
       "inference_notes": [
         {
@@ -1526,6 +1802,11 @@
           "field": "forbidden_scope",
           "reason": "Phase 16 is limited to command.execute with built-in local and external opi-sandbox adapters: do not add Docker/VM/SSH/Gondolin/remote or composed adapters; route other tools or allow tool shadowing; define a universal extension protocol or migrate opi-extension-jsonl-v1, RPC, NDJSON, or trace wires; dynamically load native libraries; claim host-read/environment confidentiality or sandbox the extension process; authenticate publishers; accept project-local executable contributions; implement Windows AppContainer/restricted-token restriction; preserve Phase 15 sandbox aliases; or pull Phase 17-20 work forward.",
           "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Non-Goals"
+        },
+        {
+          "field": "depends_on",
+          "reason": "Remove core policy only after all native postures and both routing lanes pass.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Migration from Phase 15"
         }
       ],
       "tier": "workspace",
@@ -1651,6 +1932,11 @@
           "field": "forbidden_scope",
           "reason": "Phase 16 is limited to command.execute with built-in local and external opi-sandbox adapters: do not add Docker/VM/SSH/Gondolin/remote or composed adapters; route other tools or allow tool shadowing; define a universal extension protocol or migrate opi-extension-jsonl-v1, RPC, NDJSON, or trace wires; dynamically load native libraries; claim host-read/environment confidentiality or sandbox the extension process; authenticate publishers; accept project-local executable contributions; implement Windows AppContainer/restricted-token restriction; preserve Phase 15 sandbox aliases; or pull Phase 17-20 work forward.",
           "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Non-Goals"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Narrowed to E2E tests; production fixes require one exact C.1a ownership append.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Testing and Acceptance"
         }
       ],
       "tier": "workspace",
@@ -1737,24 +2023,6 @@
       "start_commit": null,
       "baseline_dirty_files": [],
       "task_owned_paths": [
-        "crates/opi-coding-agent/src/main.rs",
-        "crates/opi-coding-agent/src/harness.rs",
-        "crates/opi-coding-agent/src/runner.rs",
-        "crates/opi-coding-agent/src/rpc.rs",
-        "crates/opi-coding-agent/src/interactive.rs",
-        "crates/opi-coding-agent/src/doctor.rs",
-        "crates/opi-coding-agent/src/diagnostics.rs",
-        "crates/opi-coding-agent/src/diagnostic_bridge.rs",
-        "crates/opi-coding-agent/src/package_cli.rs",
-        "crates/opi-coding-agent/src/package_activation.rs",
-        "crates/opi-coding-agent/src/runtime_packages.rs",
-        "crates/opi-coding-agent/src/execution/failure.rs",
-        "crates/opi-coding-agent/src/execution/permission.rs",
-        "crates/opi-coding-agent/src/execution/protocol_host.rs",
-        "crates/opi-coding-agent/src/execution/router.rs",
-        "crates/opi-coding-agent/src/execution/runtime.rs",
-        "crates/opi-coding-agent/src/tool/bash.rs",
-        "crates/opi-coding-agent/src/tool/operations.rs",
         "crates/opi-coding-agent/tests/execution_product.rs",
         "crates/opi-coding-agent/tests/non_interactive.rs",
         "crates/opi-coding-agent/tests/json_mode.rs",
@@ -1774,7 +2042,7 @@
       "title": "Synchronize documentation and close Phase 16 repository gates",
       "crate": "workspace",
       "parent_spec_row": "16.16",
-      "definition_of_done": "English and Chinese specs, README, AGENTS/CLAUDE guidance, and the Unreleased changelog describe the shipped Minimal Runtime, five gates, routing/permission, no-fallback, independent opi-sandbox CLI/SDK, native guarantees, Windows posture, migration, and non-goals in lockstep; documentation guards, independent crate boundaries, direct and extracted smoke evidence, six target checks, fmt, clippy, workspace tests/doctests, warning-free docs, and artifact audit all pass without rewriting Phase 15 history.",
+      "definition_of_done": "English and Chinese specs, README, AGENTS/CLAUDE guidance, and the Unreleased changelog describe the shipped Minimal Runtime, five gates, routing/permission, no-fallback, independent opi-sandbox CLI/SDK, native guarantees, Windows posture, migration, and Non-Goals in lockstep; documentation guards pass, and the final artifact audit verifies preserved Linux/macOS/Windows native smoke, extracted archives, six-target CI, crate-boundary, workspace test/doctest, format, clippy, and warning-free documentation evidence without rewriting Phase 15 history.",
       "definition_source": "draft-reviewed",
       "replaces": null,
       "status": "failing",
@@ -1812,6 +2080,16 @@
           "field": "acceptance_scenarios",
           "reason": "Renamed repository-gate scenario SC16-15 to SC16-15b to pair consistently with migration scenario SC16-15a; ownership, source criterion, verification, and semantics are unchanged.",
           "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Repository gates"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Removed packaging, workflow, native, and boundary files owned by earlier tasks.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Repository gates"
+        },
+        {
+          "field": "verification",
+          "reason": "Aggregate preserved per-platform evidence instead of claiming one host ran every native contract.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Repository gates"
         }
       ],
       "tier": "workspace",
@@ -1820,10 +2098,6 @@
       "evaluator_required": true,
       "verification": {
         "library_gates": [
-          "cargo build -p opi-sandbox --bin opi-sandbox",
-          "cargo test -p opi-protocol --all-targets -- --nocapture",
-          "cargo test -p opi-sandbox --all-targets -- --nocapture",
-          "cargo test -p opi-sandbox --test standalone_smoke -- --nocapture",
           "cargo test -p opi-coding-agent --test phase16_extension_docs -- --nocapture",
           "cargo test -p opi-coding-agent --test phase15_safety_sandbox_docs -- --nocapture",
           "cargo test -p opi-coding-agent --test phase16_crate_boundaries -- --nocapture",
@@ -1833,33 +2107,20 @@
           "cargo test --workspace --all-targets",
           "cargo test --workspace --doc",
           "RUSTDOCFLAGS=\"-D warnings\" cargo doc --workspace --no-deps",
-          "cargo check --target x86_64-unknown-linux-gnu -p opi-coding-agent --all-targets",
-          "cargo check --target aarch64-unknown-linux-gnu -p opi-coding-agent --all-targets",
-          "cargo check --target x86_64-apple-darwin -p opi-coding-agent --all-targets",
-          "cargo check --target aarch64-apple-darwin -p opi-coding-agent --all-targets",
-          "cargo check --target x86_64-pc-windows-msvc -p opi-coding-agent --all-targets",
-          "cargo check --target aarch64-pc-windows-msvc -p opi-coding-agent --all-targets",
           "python scripts/opi-artifact-audit.py target/opi-artifacts/phase16-phase-exit --workspace-root . --json"
         ],
         "behavioral_tests": [
-          "crates/opi-coding-agent/tests/phase16_extension_docs.rs",
-          "crates/opi-coding-agent/tests/phase15_safety_sandbox_docs.rs",
-          "crates/opi-coding-agent/tests/phase16_crate_boundaries.rs",
-          "crates/opi-coding-agent/tests/opi_sandbox_package.rs"
+          "crates/opi-coding-agent/tests/phase16_extension_docs.rs"
         ],
         "snapshot_tests": [],
-        "smoke_addendum": "Run the host-native direct binary smoke and, on each supported Linux/macOS release job, the extracted-archive smoke. Preserve six-target CI logs, four native opi-sandbox archive logs, archive hashes/trees, doctor JSON, stdout/stderr/exit codes, native sentinel results, and the artifact-audit JSON under target/opi-artifacts/phase16-phase-exit."
+        "smoke_addendum": "Import preserved native artifacts from 16.13, 16.14.1, and 16.14.2 plus six-target CI logs into target/opi-artifacts/phase16-phase-exit; reject missing, skipped, zero-test, wrong-target, or workspace-only evidence."
       },
       "acceptance_scenarios": [
         {
           "id": "SC16-15b",
           "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Repository gates",
-          "scenario": "The Opi binary owns no native restriction or opi-sandbox dependency; opi-sandbox depends only on opi-protocol plus standalone dependencies; paired product docs and Unreleased changelog match direct/extracted artifacts; ordinary Opi retains six release targets while opi-sandbox publishes only Linux/macOS; all test, doctest, format, clippy, warning-free documentation, smoke, crate-boundary, and artifact-truth gates pass with Phase 15 history unchanged.",
+          "scenario": "The Opi binary owns no native restriction or opi-sandbox dependency; opi-sandbox depends only on opi-protocol plus standalone dependencies; paired docs and changelog match preserved direct/extracted artifacts; ordinary Opi retains six targets while opi-sandbox publishes only Linux/macOS; workspace gates, documentation guards, crate boundaries, native smoke, and artifact audit pass with Phase 15 history unchanged.",
           "verification": [
-            "cargo build -p opi-sandbox --bin opi-sandbox",
-            "cargo test -p opi-protocol --all-targets -- --nocapture",
-            "cargo test -p opi-sandbox --all-targets -- --nocapture",
-            "cargo test -p opi-sandbox --test standalone_smoke -- --nocapture",
             "cargo test -p opi-coding-agent --test phase16_extension_docs -- --nocapture",
             "cargo test -p opi-coding-agent --test phase15_safety_sandbox_docs -- --nocapture",
             "cargo test -p opi-coding-agent --test phase16_crate_boundaries -- --nocapture",
@@ -1869,12 +2130,6 @@
             "cargo test --workspace --all-targets",
             "cargo test --workspace --doc",
             "RUSTDOCFLAGS=\"-D warnings\" cargo doc --workspace --no-deps",
-            "cargo check --target x86_64-unknown-linux-gnu -p opi-coding-agent --all-targets",
-            "cargo check --target aarch64-unknown-linux-gnu -p opi-coding-agent --all-targets",
-            "cargo check --target x86_64-apple-darwin -p opi-coding-agent --all-targets",
-            "cargo check --target aarch64-apple-darwin -p opi-coding-agent --all-targets",
-            "cargo check --target x86_64-pc-windows-msvc -p opi-coding-agent --all-targets",
-            "cargo check --target aarch64-pc-windows-msvc -p opi-coding-agent --all-targets",
             "python scripts/opi-artifact-audit.py target/opi-artifacts/phase16-phase-exit --workspace-root . --json"
           ],
           "production_call_sites": [
@@ -1903,16 +2158,6 @@
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "crates/opi-coding-agent/tests/phase16_extension_docs.rs",
-        "crates/opi-coding-agent/tests/phase15_safety_sandbox_docs.rs",
-        "crates/opi-coding-agent/tests/phase16_crate_boundaries.rs",
-        "crates/opi-coding-agent/tests/opi_sandbox_package.rs",
-        "crates/opi-sandbox/tests/standalone_smoke.rs",
-        "scripts/opi-sandbox-smoke.sh",
-        "scripts/opi-sandbox-smoke.ps1",
-        "scripts/package-opi-sandbox.sh",
-        "scripts/package-opi-sandbox.ps1",
-        ".github/workflows/ci.yml",
-        ".github/workflows/release.yml",
         "README.md",
         "README.zh.md",
         "docs/opi-spec.md",
@@ -3070,6 +3315,10 @@
     {
       "timestamp": "2026-08-01T09:33:51.454Z",
       "summary": "User-approved non-blocking Phase 16 cleanup: renamed repository-gate SC16-15 to SC16-15b to pair with migration SC16-15a; retained serialized hot-file ownership across 16.9/16.16.1/16.16.2 with task-scoped review; retained empty parallelize fields, with manual 16.11 selection required when cross-track concurrency is desired."
+    },
+    {
+      "timestamp": "2026-08-01T11:05:48.577Z",
+      "summary": "User-authorized Phase 16 task-graph repair: expanded to 20 host-feasible tasks and 20 unique scenarios; split SDK/CLI and macOS/Windows acceptance, made packaging a substrate, moved native/archive proof to host tasks, narrowed capstone ownership, and closed lifecycle, routing, protocol, CLI, scope, TUI, CI, and artifact-audit gaps. Six-lens adversarial review used collaboration agents because the Workflow tool was unavailable; wf_ref remains null rather than fabricating provenance. Native evidence must be produced on Linux/macOS/Windows as applicable and aggregated by 16.16.3."
     }
   ],
   "verify_runs": [
@@ -3090,6 +3339,16 @@
       "flagged_count": 0,
       "rejected_count": 0,
       "ran_at": "2026-08-01T08:54:14.417Z",
+      "task_id": null,
+      "criterion_id": null
+    },
+    {
+      "stage": "plan",
+      "wf_ref": null,
+      "folded_count": 13,
+      "flagged_count": 0,
+      "rejected_count": 1,
+      "ran_at": "2026-08-01T11:05:48.577Z",
       "task_id": null,
       "criterion_id": null
     }
