@@ -20,7 +20,7 @@
       "definition_of_done": "The Phase 16 documentation guard binds the canonical Phase 16 and renamed Phase 18 sources, rejects the old Phase 16 filename and premature Phase 17 benchmark specs, and pins Minimal Runtime, five lifecycle gates, no fallback, standalone CLI acceptance, and Phase 19/20 deferrals.",
       "definition_source": "draft-reviewed",
       "replaces": "Verify the canonical source and reconcile the ledger",
-      "status": "failing",
+      "status": "passing",
       "depends_on": [],
       "inference_notes": [
         {
@@ -76,18 +76,31 @@
       "acceptance_scenarios": [],
       "production_call_sites": [],
       "substrate_only": true,
-      "iteration_count": 0,
+      "iteration_count": 1,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "6f51761b6cde3eb309fca63935229412cccef209",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "crates/opi-coding-agent/tests/phase16_extension_docs.rs"
       ],
       "last_attempt": null,
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "1021842c937653de545cd335450df985f822bd06",
+      "evidence": "phase16_extension_docs.rs substrate docs guard: 6/6 tests pass (EN+ZH). Gates: cargo test --test phase16_extension_docs 6/6; cargo fmt --check --all clean; cargo clippy -p opi-coding-agent --test phase16_extension_docs -- -D warnings clean. Claim-fidelity audit (5-lens workflow wf_862691eb): 0 must-fix. D.2 exec-verify (workflow wf_728c9c82, commit 8aa0e64, tree-identical to amended 1021842): 0 must_fix / 0 flagged / 0 rejected; lens transcripts confirmed inspection of 8aa0e64 and the test file.",
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-08-01T17:17:14.456901+00:00",
+          "attempt": 1,
+          "summary": "Task 16.1 passed. Created phase16_extension_docs.rs (6 tests, EN+ZH) pinning the Phase 16 documentation contract: canonical Phase 16 + renamed Phase 18 source binding, old architecture filename rejection, premature Phase 17 benchmark rejection, and Minimal Runtime / five lifecycle gates / no-fallback / standalone CLI / Phase 19-20 deferral pins. One iteration: initial run failed the architecture-doc subordination assertion (used full path where the doc defers by basename); fixed to CANONICAL_PHASE16_DESIGN_BASENAME, re-ran 6/6 green.",
+          "gate_results": {
+            "test": "6/6 pass",
+            "fmt": "clean",
+            "clippy": "clean (test target, -D warnings)",
+            "claim_fidelity_audit": "0 must-fix (wf_862691eb)",
+            "d2_exec_verify": "0 must_fix/flagged/rejected (wf_728c9c82)"
+          }
+        }
+      ]
     },
     {
       "id": "16.2",
@@ -3557,6 +3570,10 @@
     {
       "timestamp": "2026-08-01T12:43:54.975Z",
       "summary": "User-confirmed Phase 16 architecture reconciliation: split 16.15 into packaging substrate and post-native CI/release topology; introduced a deep policy-neutral Supervision seam; separated static executable-contribution validation from lifecycle persistence; made Execution Runtime assembly substrate with production startup acceptance in 16.9; added exact CLI, trust-state, protocol effective-contract, failure-code, and native archive assertions. The confirmed graph has 21 tasks and 20 unique acceptance scenarios; wf_ref is null because the Workflow tool is unavailable."
+    },
+    {
+      "timestamp": "2026-08-01T17:17:14.456901+00:00",
+      "summary": "Task 16.1 (Pin the Phase 16 documentation contract) passed @1021842. Next unblocked: 16.2 (depends_on 16.1) and 16.3 (depends_on 16.1)."
     }
   ],
   "verify_runs": [
@@ -3598,6 +3615,16 @@
       "rejected_count": 0,
       "ran_at": "2026-08-01T12:43:54.975Z",
       "task_id": null,
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": "wf_728c9c82-0bd",
+      "folded_count": 0,
+      "flagged_count": 0,
+      "rejected_count": 0,
+      "ran_at": "2026-08-01T17:17:14.456901+00:00",
+      "task_id": "16.1",
       "criterion_id": null
     }
   ]
