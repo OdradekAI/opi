@@ -586,6 +586,7 @@ fn make_gated_package(
             fragments: None,
             themes: None,
             disabled: vec![],
+            adapter_contributions: vec![],
         },
         path: package_dir,
         package_toml_path: toml_path,

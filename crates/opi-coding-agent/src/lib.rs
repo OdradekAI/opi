@@ -8,6 +8,7 @@ pub mod credential_store;
 pub mod diagnostic_bridge;
 pub mod diagnostics;
 pub mod doctor;
+pub mod execution;
 pub mod github_copilot;
 pub mod harness;
 pub mod image;

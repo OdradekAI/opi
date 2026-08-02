@@ -84,6 +84,7 @@ fn make_example_package(name: &str, mode: &str, precedence: u32) -> PackageResou
             fragments: None,
             themes: None,
             disabled: vec![],
+            adapter_contributions: vec![],
         },
         path: dir_path,
         package_toml_path: toml_path,

@@ -146,6 +146,19 @@ struct TomlPackageFile {
     themes: Option<Vec<String>>,
     disabled: Option<Vec<String>>,
     adapter: Option<TomlAdapterTable>,
+    contributions: Option<TomlContributions>,
+}
+
+/// TOML structure for the `[contributions]` section.
+///
+/// `[[contributions.adapters]]` is an array of raw tables. Validation
+/// (closed-field check + hard gates) is owned by
+/// [`crate::execution::contribution`]; discovery only passes the raw tables
+/// through so it stays free of execution semantics.
+#[derive(Debug, Clone, Deserialize)]
+struct TomlContributions {
+    #[serde(default)]
+    adapters: Vec<toml::Value>,
 }
 
 /// TOML structure for the `[adapter]` table.
@@ -179,6 +192,10 @@ pub struct PackageManifest {
     pub opi_version: Option<String>,
     /// Adapter configuration for process-based extensions. Optional.
     pub adapter: Option<AdapterManifest>,
+    /// Raw `[[contributions.adapters]]` tables (Phase 16 `command.execute`
+    /// executable contributions), unvalidated. Empty when absent. Static
+    /// validation is performed by [`crate::execution::contribution`].
+    pub adapter_contributions: Vec<toml::Value>,
     /// Explicit list of extension names to include. When `None`, all
     /// discovered extensions in the `extensions/` subdirectory are included.
     pub extensions: Option<Vec<String>>,
@@ -451,6 +468,7 @@ impl PackageManifest {
             version: file.version,
             opi_version: file.opi_version,
             adapter,
+            adapter_contributions: file.contributions.map(|c| c.adapters).unwrap_or_default(),
             extensions: file.extensions,
             skills: file.skills,
             fragments: file.fragments,
