@@ -987,7 +987,7 @@
       "definition_of_done": "The production ExecutionProtocolHost launches one supervised backend process per request. Initialize carries one deadline, bounded adapter configuration, and the ordered supported protocol list; ready must select a compatible protocol and report implementation identity, version, and target before the host discloses a command. The host maps a bash shell string to an explicit platform shell program and argument vector and sends canonical workspace/cwd, timeout, environment inheritance policy, and bounded additions. Every frame carries one host-generated request id; command/configuration never travel in process arguments; backend stderr is bounded crash evidence only. Accepted precedes flushed started; started reports effective placement, guarantee, policy, and limitations before target release; completed reports exit/signal, timeout/cancellation, cleanup state, and final diagnostics. After completed the host closes protocol stdin and requires a successful backend exit. The single deadline covers startup through cleanup; cancel, deadline, and dropped-future cleanup use policy-neutral Supervision, cleanup_unconfirmed remains observable, failures are redacted, no degraded success exists, and neither local nor opi-extension-jsonl-v1 is invoked.",
       "definition_source": "draft-reviewed",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "16.2",
         "16.3",
@@ -1069,7 +1069,7 @@
             "TreeGuard::attach_child",
             "TreeGuard::terminate"
           ],
-          "status": "open"
+          "status": "met"
         }
       ],
       "production_call_sites": [
@@ -1080,10 +1080,13 @@
         "TreeGuard::terminate"
       ],
       "substrate_only": false,
-      "iteration_count": 0,
+      "iteration_count": 2,
       "max_iterations": 5,
-      "start_commit": null,
-      "baseline_dirty_files": [],
+      "start_commit": "0ab0d1015e43a7bbcfae6ca767b75ad8ddf84da4",
+      "baseline_dirty_files": [
+        ".claude/skills/opi-implement/scripts/phase16-5-design-brief.md",
+        ".claude/skills/opi-implement/scripts/phase16-6-design-brief.md"
+      ],
       "task_owned_paths": [
         "crates/opi-coding-agent/Cargo.toml",
         "crates/opi-coding-agent/src/execution/mod.rs",
@@ -1091,11 +1094,68 @@
         "crates/opi-coding-agent/tests/execution_protocol_host.rs",
         "crates/opi-coding-agent/tests/fixtures/execution_backend_mock.rs"
       ],
-      "last_attempt": null,
-      "verified_at_commit": null,
-      "evidence": null,
+      "last_attempt": {
+        "commit": "6d027417b25b4656bf828a76187ee6074d0a6b7b",
+        "outcome": "passed",
+        "iteration": 2
+      },
+      "verified_at_commit": "6d027417b25b4656bf828a76187ee6074d0a6b7b",
+      "evidence": {
+        "commit": "6d027417b25b4656bf828a76187ee6074d0a6b7b",
+        "commit_subject": "feat(opi-coding-agent): add the one-shot execution protocol host",
+        "verification_tier": "cli-runtime",
+        "substrate_only": false,
+        "gates": {
+          "test_targets": [
+            {
+              "target": "--lib",
+              "passed": 140,
+              "failed": 0
+            },
+            {
+              "target": "--test execution_protocol_host (feature)",
+              "passed": 29,
+              "failed": 0
+            },
+            {
+              "target": "--test execution_backend_mock (harness=false peer, --no-run)",
+              "passed": 0,
+              "failed": 0,
+              "note": "build-only peer"
+            }
+          ],
+          "fmt": "clean (cargo fmt -p opi-coding-agent --check)",
+          "clippy": "clean (--features lib+execution_protocol_host+execution_backend_mock -- -D warnings)",
+          "doc": "clean (RUSTDOCFLAGS=-D warnings cargo doc -p opi-coding-agent --no-deps)"
+        },
+        "design_audit": {
+          "workflow": "wf_c152afa7-f0e",
+          "lenses": 7,
+          "must_fix_folded_pre_impl": 16,
+          "folded_into": "F1-F13: fixture reverted to [[test]] deps-scan precedent; cleanup_unconfirmed pinned Err; CancellationToken; deadline-vs-grace; concurrency model; stderr+post-completed drain; redaction; host state machine + request-id anchoring via Session seeding; attach fail-closed; failure mapping all 7 wire codes; map_shell_command sh/cmd; mock modes; structural-vs-runtime"
+        },
+        "d2": {
+          "workflow": "wf_b3398adb-ea3 (iter2 on 3f9dbe64; final 6d027417 differs only by the flag-2 vacuous-assertion delete)",
+          "iteration": 2,
+          "must_fix": 0,
+          "flagged": 2,
+          "rejected": 0,
+          "verdict": "pass",
+          "flags": "(1 medium implementation-matches-dod handshake-timeout: addressed by design - ledger DoD specifies ONE deadline + bounded adapter_config; handshake_timeout_ms is a manifest field in opaque adapter_config the backend enforces; host-side parsing would violate the product-neutral adapter-config contract; a handshake hang fails closed as cleanup_unconfirmed. (2 low tests-non-vacuous: deleted the X==X codes-array half of no_local_fallback_exists; kept the legitimate include_str! source guard; no-Local-variant property rests on 16.6 code_values_are_the_14_stable_literals."
+        },
+        "d2_iteration1": {
+          "workflow": "wf_cf9afb89-b11 (commit 48f9105)",
+          "must_fix": 1,
+          "flagged": 1,
+          "resolved": "must-fix: execution_failed/execution_timed_out lacked production-call-site tests -> typed Failed-frame mock modes (one per wire FailureCode) + 7 subprocess tests covering every map_failure_code branch on the real execute() path. flag (Opi-Acceptance footer overclaim) corrected to 28 subprocess + 1 structural."
+        },
+        "substrate_classification": "ExecutionProtocolHost::execute production-proven (28 subprocess tests vs the real execution_backend_mock peer). map_shell_command production-proven (cfg(unix/windows) unit + transitive). TreeGuard::attach_child/terminate + 16.2 Supervision production-proven transitively via execute cancel/timeout/tree-kill (cancel/terminate test reaps the grandchild). NO deferred seam at 16.7: host fully driven; 16.8 wires routing, 16.9 startup.",
+        "acceptance": "SC16-06a met: full ordering, request-id correlation + cross-id rejection, binary stdout round-trip, in-band nonzero exit + signal, ten protocol-violation surfaces, protocol_incompatible, deadline + cancel + unconfirmed-cleanup -> cleanup_unconfirmed, seven Failed-frame distress codes, redaction, tree-kill."
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        "Task 16.7 PASSED @6d027417 (iter2): ExecutionProtocolHost - one-shot command-execution-jsonl-v1 protocol host launching one supervised backend process per request. Composes 16.2 TreeGuard (long-lived-child kill path) + 16.3 codec; produces 5 ExecutionFailure codes (protocol_incompatible/violation, execution_failed/timed_out, cleanup_unconfirmed). Host-side transition-ordering state machine (Session enforces only cross-id/dup/cumulative); request id anchored to the host-generated id (Session seeded via observe_host on initialize/execute); one end-to-end deadline (cancel at deadline - CLEANUP_REPORT_GRACE); timeout-bounded stdin writes; concurrent bounded stderr drain (crash evidence only, never surfaced into the payload-free envelope); host-local capped async line reader (cap-before-materialize, mirrors LineReader); map_shell_command (sh -c / cmd /C). Feature-gated execution_backend_mock [[test]] harness=false peer + deps-dir scan (NOT a feature-gated [[bin]] - the 7-lens audit reverted to the repo precedent; the ledger --features mandate is satisfied by a no-op [features] table gating only the test file via whole-file cfg). 29 tests (28 subprocess-driven + 1 structural no-local-fallback source guard). Pre-impl audit wf_c152afa7 folded F1-F13. D.2 iter1 (wf_cf9afb89) must-fixed the 2 host codes lacking production-call-site tests (typed Failed-frame modes covering every map_failure_code branch); iter2 (wf_b3398adb) 0 must-fix / 2 flagged (handshake-timeout addressed-by-design - opaque adapter_config the backend enforces; tautology fixed). Phase 16 = 7/21 passing; 16.7 unblocks 16.8 (deps [16.5,16.6,16.7])."
+      ]
     },
     {
       "id": "16.8",
@@ -3936,7 +3996,8 @@
     "Task 16.3 PASSED @b6fd906ef3c376d720d842a1433dd9b6ff49e951 (D.2 clean 0/0/0 after 1 rework iteration; pre-impl design audit wf_95faabd1 folded 16 must-fix). Phase 16: 3/21 passing (16.1 docs, 16.2 supervision seam, 16.3 protocol crate). 16.3 passing unblocks 16.4 (contribution manifest, dep [16.3]) and advances 16.7 (still needs 16.6); the next failing task with all deps passing is 16.4.",
     "Task 16.4 PASSED @6b24fe1 (verified, iter 1). Static executable-contribution validation seam: parse [[contributions.adapters]] (additive; legacy opi-extension-jsonl-v1 untouched) + hard-gate to ValidatedExecutableContribution + 8-field LockMaterial, pure validate() (no spawn). 17 design-audit must-fix folded pre-code; D.2 clean 0/0/0. Substrate only (16.5 owns runtime).",
     "16.5 PASSED @00e1ec6 (iter4): Package Trust + enable/disable lifecycle; activate() test-driven seam (spawn=16.7); D.2 wf_bc066f49 0 must-fix/1 flagged(resolved-as-evidence).",
-    "16.6 PASSED @e865a9e (iter2): execution config/failures/routing/permission substrate; resolve_selection/PermissionPolicy/ExecutionFailure seams (wired 16.7-16.9); pre-impl 7-lens audit folded 13 must-fix into D1-D9; D.2 wf_dd4c4524 0/0/0 (iter1: 1 vacuous-test must-fix + 2 actionable flags, all fixed; 1 substrate production-call-site flag accepted per 16.5 precedent)."
+    "16.6 PASSED @e865a9e (iter2): execution config/failures/routing/permission substrate; resolve_selection/PermissionPolicy/ExecutionFailure seams (wired 16.7-16.9); pre-impl 7-lens audit folded 13 must-fix into D1-D9; D.2 wf_dd4c4524 0/0/0 (iter1: 1 vacuous-test must-fix + 2 actionable flags, all fixed; 1 substrate production-call-site flag accepted per 16.5 precedent).",
+    "16.7 PASSED @6d027417 (iter2): ExecutionProtocolHost (one-shot command-execution-jsonl-v1 host; 5 ExecutionFailure codes; capped async reader; host state machine; one deadline + cancel/grace; map_shell_command). 29 tests. Pre-impl wf_c152afa7 F1-F13; D.2 iter1 wf_cf9afb89 (1 must-fix Failed-frame coverage) -> iter2 wf_b3398adb 0 must-fix/2 flagged (handshake addressed-by-design; tautology fixed). Phase 16 = 7/21."
   ],
   "verify_runs": [
     {
@@ -4035,6 +4096,17 @@
       "flagged": 0,
       "rejected": 0,
       "verdict": "pass"
+    },
+    {
+      "task": "16.7",
+      "workflow": "wf_b3398adb-ea3",
+      "stage": "D.2 exec",
+      "commit": "3f9dbe64",
+      "must_fix": 0,
+      "flagged": 2,
+      "rejected": 0,
+      "verdict": "pass",
+      "note": "iter2; final 6d027417 differs only by flag-2 vacuous-assertion delete. iter1 wf_cf9afb89-b11 had 1 must-fix (Failed-frame production coverage) + 1 flag, both fixed."
     }
   ]
 }
