@@ -54,8 +54,13 @@ use crate::tool::{
     ToolDiagnostic,
 };
 
+use opi_tui::{PermissionChoice, PermissionSummary};
+
 use super::failure::{ExecutionFailure, UnavailableDetail};
-use super::permission::{LOCAL_ADAPTER_ID, PermissionPolicy};
+use super::permission::{
+    InteractivePermissionBroker, LOCAL_ADAPTER_ID, PermissionManager, PermissionPolicy,
+    run_mode_label,
+};
 use super::router::{Eligibility, EligibleAdapter, resolve_selection};
 // The protocol-host entry types are re-exported by the parent `execution` module
 // (16.7). `BackendLaunch`/`ExecutionRequest` carry borrowed lifetimes; the
@@ -178,6 +183,8 @@ impl ExecutionRuntime {
         workspace_root: &Path,
         host_target: &str,
         host_opi_version: &str,
+        manager: Arc<PermissionManager>,
+        broker: Option<Arc<dyn InteractivePermissionBroker>>,
     ) -> Result<Arc<dyn BashOperations>, ExecutionFailure> {
         // --- Branch 1: Minimal Runtime ---
         // Default-local routing with no enabled external identity returns the
@@ -224,6 +231,8 @@ impl ExecutionRuntime {
             eligibility,
             local_ops,
             adapters,
+            manager,
+            broker,
         };
         routed.assert_invariants();
         Ok(Arc::new(routed))
@@ -262,6 +271,13 @@ pub struct RoutedBashOperations {
     eligibility: Eligibility,
     local_ops: Arc<dyn BashOperations>,
     adapters: HashMap<String, ProcessCommandAdapter>,
+    /// In-memory session grants shared with the harness (reset on in-process
+    /// session switches). Checked before prompting and updated on allow-session.
+    manager: Arc<PermissionManager>,
+    /// Interactive `ask`-prompt seam. `None` is fail-closed: an interactive
+    /// `ask` surfaces `permission_required` rather than dispatching or falling
+    /// back to `local`. Headless modes install no broker.
+    broker: Option<Arc<dyn InteractivePermissionBroker>>,
 }
 
 impl RoutedBashOperations {
@@ -300,6 +316,33 @@ impl BashOperations for RoutedBashOperations {
         ) {
             Ok(sel) => sel,
             Err(failure) => {
+                // Phase 16.10 broker interception: a routed PermissionRequired
+                // in Interactive mode with a broker installed is the ask-prompt
+                // trigger. Grant dispatches DIRECTLY to the selected adapter —
+                // never re-runs resolve_selection (the static policy is still
+                // `ask`; the in-memory grant is the only escalation path, which
+                // the pure router cannot observe — re-running it would re-fail
+                // forever). Headless/no-broker permission_required and every
+                // other failure pass through unchanged.
+                if let ExecutionFailure::PermissionRequired {
+                    ref adapter_id,
+                    mode,
+                } = failure
+                    && mode == ExecutionRunMode::Interactive
+                    && let Some(broker) = self.broker.clone()
+                {
+                    let manager = Arc::clone(&self.manager);
+                    let adapters = self.adapters.clone();
+                    let local_ops = Arc::clone(&self.local_ops);
+                    let adapter_id = adapter_id.clone();
+                    let mode = self.mode;
+                    return Box::pin(async move {
+                        resolve_ask_and_dispatch(
+                            &manager, broker, adapters, local_ops, adapter_id, mode, request,
+                        )
+                        .await
+                    });
+                }
                 let err = exec_failure_to_bash_op_error(failure);
                 return Box::pin(async move { Err(err) });
             }
@@ -323,6 +366,90 @@ impl BashOperations for RoutedBashOperations {
                 })
             }),
         }
+    }
+}
+
+// =========================================================================
+// Phase 16.10: interactive ask resolution + direct dispatch helpers
+// =========================================================================
+
+/// Resolve an interactive `ask` through the broker and dispatch directly to the
+/// selected adapter. The static policy is still `ask`; the in-memory session
+/// grant (or a fresh broker choice) is the ONLY escalation path, so this NEVER
+/// re-runs `resolve_selection` (which would re-fail on the static ask policy).
+async fn resolve_ask_and_dispatch(
+    manager: &PermissionManager,
+    broker: Arc<dyn InteractivePermissionBroker>,
+    adapters: HashMap<String, ProcessCommandAdapter>,
+    local_ops: Arc<dyn BashOperations>,
+    adapter_id: String,
+    mode: ExecutionRunMode,
+    request: BashRequest,
+) -> Result<BashResult, BashOpError> {
+    // Session-grant short-circuit: an allow-for-session choice earlier this
+    // session suppresses re-prompting. (BashTool runs Sequentially, so there is
+    // no concurrent double-prompt on the same adapter.)
+    if !manager.has_session_grant(&adapter_id) {
+        let summary = permission_summary(&adapter_id, &adapters, mode);
+        match broker.resolve_ask(summary).await {
+            PermissionChoice::AllowSession => manager.grant_session(&adapter_id),
+            // AllowOnce authorizes exactly this invocation; consumed at decision
+            // time, independent of dispatch outcome (a crashed dispatch neither
+            // burns nor double-spends it).
+            PermissionChoice::AllowOnce => {}
+            PermissionChoice::Deny => {
+                return Err(exec_failure_to_bash_op_error(
+                    ExecutionFailure::PermissionDenied { adapter_id },
+                ));
+            }
+        }
+    }
+    dispatch_direct(&adapters, local_ops, &adapter_id, request).await
+}
+
+/// Build the redaction-safe [`PermissionSummary`] for a prompt. Carries ONLY
+/// adapter id + package name + run-mode label — never command text, env, or
+/// paths (the Phase 16 redaction invariant).
+fn permission_summary(
+    adapter_id: &str,
+    adapters: &HashMap<String, ProcessCommandAdapter>,
+    mode: ExecutionRunMode,
+) -> PermissionSummary {
+    let package_name = if adapter_id == LOCAL_ADAPTER_ID {
+        String::new()
+    } else {
+        adapters
+            .get(adapter_id)
+            .map(|a| a.package_name.clone())
+            .unwrap_or_default()
+    };
+    PermissionSummary {
+        adapter_id: adapter_id.to_string(),
+        package_name,
+        run_mode_label: run_mode_label(mode).to_string(),
+    }
+}
+
+/// Dispatch directly to the already-selected adapter (local or external). This
+/// is the post-grant path: `resolve_selection` already picked `adapter_id`, so
+/// re-running it is both unnecessary and wrong (it would re-fail on the static
+/// ask policy). Mirrors the normal Ok-dispatch minus the router call.
+async fn dispatch_direct(
+    adapters: &HashMap<String, ProcessCommandAdapter>,
+    local_ops: Arc<dyn BashOperations>,
+    adapter_id: &str,
+    request: BashRequest,
+) -> Result<BashResult, BashOpError> {
+    if adapter_id == LOCAL_ADAPTER_ID {
+        return local_ops.exec(request).await;
+    }
+    match adapters.get(adapter_id).cloned() {
+        Some(adapter) => adapter.exec(request).await,
+        None => Err(BashOpError::Other {
+            message: format!(
+                "selected backend {adapter_id:?} has no adapter (invariant violation)"
+            ),
+        }),
     }
 }
 
@@ -658,6 +785,8 @@ mod tests {
             Path::new("."),
             "x86_64-pc-windows-msvc",
             "0.8.0",
+            Arc::new(PermissionManager::new()),
+            None,
         ) {
             Err(e) => e,
             Ok(_) => panic!("expected policy_denied, but build returned Ok"),

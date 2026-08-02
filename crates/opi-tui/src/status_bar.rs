@@ -55,6 +55,7 @@ impl Widget for StatusBar {
             AppStatus::Streaming => Style::default().fg(t.status_streaming),
             AppStatus::ToolExecuting => Style::default().fg(t.status_tool),
             AppStatus::AwaitingTrust => Style::default().fg(t.status_idle),
+            AppStatus::AwaitingPermission => Style::default().fg(t.status_tool),
         };
 
         let mut spans = vec![

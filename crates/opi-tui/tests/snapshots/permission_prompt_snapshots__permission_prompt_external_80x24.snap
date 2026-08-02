@@ -1,0 +1,29 @@
+---
+source: crates/opi-tui/tests/permission_prompt_snapshots.rs
+assertion_line: 45
+expression: "render(p, 80, 24)"
+---
+┌ Allow opi-sandbox? ──────────────────────────────────────────────────────────┐
+│adapter: opi-sandbox                                                          │
+│package: mock-pkg · mode: interactive                                         │
+│Esc cancels (= deny).                                                         │
+│                                                                              │
+│> Allow once                                                                  │
+│  Allow for session                                                           │
+│  Deny                                                                        │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘

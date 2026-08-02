@@ -25,8 +25,14 @@
 //! does not survive restart/resume/fork (owned by 16.7/16.8 runtime, not here).
 
 use std::collections::BTreeMap;
+use std::collections::HashSet;
+use std::future::Future;
+use std::pin::Pin;
+use std::sync::{Arc, Mutex};
 
-use crate::config::PermissionDecision;
+use opi_tui::{PermissionChoice, PermissionSummary};
+
+use crate::config::{ExecutionRunMode, PermissionDecision};
 
 /// The reserved adapter id of the built-in host backend.
 pub const LOCAL_ADAPTER_ID: &str = "local";
@@ -67,6 +73,126 @@ impl PermissionPolicy {
     /// the user explicitly denies it).
     pub fn is_denied(&self, adapter_id: &str) -> bool {
         self.decision_for(adapter_id) == PermissionDecision::Deny
+    }
+}
+
+// =========================================================================
+// PermissionManager — in-memory session grants (Phase 16 task 16.10)
+// =========================================================================
+
+/// In-memory store of interactive `ask` grants for the current harness session.
+///
+/// Holds session grants only (`allow-for-session` choices). It is **memory-only**:
+/// it has no `Serialize`/`Deserialize`, is never registered with the
+/// `ExtensionRegistry`, is never passed to the session writer, and never touches
+/// `trust.json` / `ProjectTrustStore`. A grant therefore cannot survive process
+/// restart, session resume, fork, or branch — those either start a fresh process
+/// (fresh harness → fresh manager) or, for the in-process interactive switchers,
+/// call [`Self::reset_grants`] at the top of the switch.
+///
+/// Shared by reference (`Arc<PermissionManager>`) between the routed bash backend
+/// (which checks + records grants during `exec`) and the harness (which resets
+/// them on in-process session switches), so a reset is immediately visible to the
+/// next tool call. One fresh manager is constructed per harness in
+/// `crate::harness::execution_wiring`.
+#[derive(Debug, Default)]
+pub struct PermissionManager {
+    session_grants: Mutex<HashSet<String>>,
+}
+
+impl PermissionManager {
+    /// A fresh, grant-less manager.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// True iff `adapter_id` has a live session grant (an `allow-for-session`
+    /// choice recorded earlier this session). Checked by the routed backend
+    /// before prompting, so a session grant suppresses re-prompts.
+    pub fn has_session_grant(&self, adapter_id: &str) -> bool {
+        self.session_grants
+            .lock()
+            .expect("permission grant set poisoned")
+            .contains(adapter_id)
+    }
+
+    /// Record an `allow-for-session` grant for `adapter_id`. The grant is
+    /// memory-only and lives until [`Self::reset_grants`] or process exit.
+    pub fn grant_session(&self, adapter_id: &str) {
+        self.session_grants
+            .lock()
+            .expect("permission grant set poisoned")
+            .insert(adapter_id.to_string());
+    }
+
+    /// Drop every session grant. Called by the harness on in-process session
+    /// switches (resume / fork / branch) so an `allow-for-session` choice made
+    /// in one session does not authorize an adapter in another.
+    pub fn reset_grants(&self) {
+        self.session_grants
+            .lock()
+            .expect("permission grant set poisoned")
+            .clear();
+    }
+}
+
+/// A short, redaction-safe run-mode label for a [`PermissionSummary`].
+pub(crate) fn run_mode_label(mode: ExecutionRunMode) -> &'static str {
+    match mode {
+        ExecutionRunMode::Interactive => "interactive",
+        ExecutionRunMode::NonInteractive => "non-interactive",
+        ExecutionRunMode::Rpc => "rpc",
+    }
+}
+
+// =========================================================================
+// InteractivePermissionBroker — the ask-prompt seam (Phase 16 task 16.10)
+// =========================================================================
+
+/// The interactive `ask`-prompt seam.
+///
+/// Consulted by `RoutedBashOperations::exec` **only** in
+/// [`ExecutionRunMode::Interactive`] when an adapter's resolved permission is
+/// `ask` and no session grant covers it. Headless modes (`NonInteractive`,
+/// `Rpc`) never invoke this — the pure router gate returns `permission_required`
+/// unchanged, surfacing the DoD-mandated `permission_required` code.
+///
+/// `None` (no broker installed) is the fail-closed default: an interactive `ask`
+/// surfaces `permission_required` rather than silently dispatching or falling
+/// back to `local`.
+///
+/// Implementations MUST be cancellation- and drop-safe: a cancelled future or a
+/// dropped responder (terminal close) resolves to [`PermissionChoice::Deny`],
+/// never a panic or hang, so the tool call surfaces a stable `permission_denied`.
+pub trait InteractivePermissionBroker: Send + Sync {
+    /// Render the prompt for `summary` and resolve to the user's choice. The
+    /// summary is redaction-safe (adapter id, package name, run-mode label);
+    /// implementations MUST NOT receive or render command text, env, or paths.
+    fn resolve_ask(
+        &self,
+        summary: PermissionSummary,
+    ) -> Pin<Box<dyn Future<Output = PermissionChoice> + Send + '_>>;
+}
+
+/// Wrap a fixed [`PermissionChoice`] as a broker (test/substrate seam). Production
+/// uses the TUI-backed broker; headless installs no broker at all.
+pub struct FixedChoiceBroker {
+    choice: PermissionChoice,
+}
+
+impl FixedChoiceBroker {
+    pub fn new(choice: PermissionChoice) -> Arc<Self> {
+        Arc::new(Self { choice })
+    }
+}
+
+impl InteractivePermissionBroker for FixedChoiceBroker {
+    fn resolve_ask(
+        &self,
+        _summary: PermissionSummary,
+    ) -> Pin<Box<dyn Future<Output = PermissionChoice> + Send + '_>> {
+        let choice = self.choice;
+        Box::pin(async move { choice })
     }
 }
 

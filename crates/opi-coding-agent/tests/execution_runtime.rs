@@ -27,7 +27,7 @@ use opi_coding_agent::config::{
 };
 use opi_coding_agent::execution::permission::PermissionPolicy;
 use opi_coding_agent::execution::{
-    EnabledIdentity, ExecutionRuntime, IdentitySource, LOCAL_ADAPTER_ID,
+    EnabledIdentity, ExecutionRuntime, IdentitySource, LOCAL_ADAPTER_ID, PermissionManager,
 };
 use opi_coding_agent::package_activation::{ActivatedContribution, ActivationError};
 use opi_coding_agent::tool::{BashOpError, BashOperations, BashRequest, BashResult, BashTool};
@@ -198,6 +198,8 @@ fn build(
         Path::new("."),
         HOST_TARGET,
         HOST_OPI_VERSION,
+        Arc::new(PermissionManager::new()),
+        None,
     )
     .expect("build succeeds for these inputs")
 }
@@ -263,6 +265,8 @@ fn minimal_runtime_local_ask_is_permission_required() {
         Path::new("."),
         HOST_TARGET,
         HOST_OPI_VERSION,
+        Arc::new(PermissionManager::new()),
+        None,
     ) {
         Err(e) => e,
         Ok(_) => panic!("local ask must fail, but build returned Ok"),

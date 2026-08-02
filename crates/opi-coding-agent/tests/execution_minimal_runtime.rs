@@ -19,7 +19,7 @@ use std::sync::Arc;
 
 use opi_coding_agent::config::{ExecutionConfig, ExecutionRunMode, SandboxConfig};
 use opi_coding_agent::execution::permission::PermissionPolicy;
-use opi_coding_agent::execution::{IdentitySource, LockMaterial};
+use opi_coding_agent::execution::{IdentitySource, LockMaterial, PermissionManager};
 use opi_coding_agent::harness::{CodingHarness, ExecutionWiring};
 use opi_coding_agent::package_activation::{
     ActivatedContribution, ActivationError, ActivationRecord, PackageActivationStore,
@@ -54,6 +54,8 @@ fn minimal_wiring(mode: ExecutionRunMode) -> ExecutionWiring {
         mode,
         host_target: opi_coding_agent::package_activation::host_target_triple().to_string(),
         host_opi_version: opi_coding_agent::package_activation::host_opi_version().to_string(),
+        manager: Arc::new(PermissionManager::new()),
+        broker: None,
     }
 }
 

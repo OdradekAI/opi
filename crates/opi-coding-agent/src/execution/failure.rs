@@ -18,11 +18,11 @@
 //!
 //! # Phase split
 //!
-//! Eight codes are produced by this task's pure router + permission + activation
-//! surface. Six codes (`permission_denied`, the four `protocol_*`/`execution_*`
-//! codes, and `cleanup_unconfirmed`) are declared here as the stable contract but
-//! are produced only by the 16.7 protocol host / interactive grant layer; they are
-//! `#[allow(dead_code)]` until then.
+//! `permission_denied` is produced by the Phase 16.10 interactive grant layer
+//! (a user denies / cancels an `ask` prompt). The four `protocol_*`/`execution_*`
+//! codes and `cleanup_unconfirmed` are declared here as the stable contract and
+//! are produced by the 16.7 protocol host; they remain `#[allow(dead_code)]`
+//! until a production caller drives that host end-to-end.
 
 use crate::config::{ExecutionRunMode, ExecutionStrategy};
 use crate::package_activation::ActivationError;
@@ -50,8 +50,10 @@ pub enum ExecutionFailure {
     },
 
     /// Produced by the interactive grant layer when the user rejects an `ask`
-    /// prompt (Phase 16.7/16.8). Declared here as the stable contract.
-    #[allow(dead_code)] // produced by 16.7 interactive grant layer
+    /// prompt (Phase 16.10), or when a prompt is cancelled/aborted/dropped
+    /// (Esc / abort / terminal close all resolve to deny). Distinct from
+    /// [`Self::PermissionRequired`] (headless `ask`, not-yet-granted) and
+    /// [`Self::PolicyDenied`] (pre-policy `deny`).
     #[error("adapter {adapter_id:?} was not approved for this invocation")]
     PermissionDenied { adapter_id: String },
 

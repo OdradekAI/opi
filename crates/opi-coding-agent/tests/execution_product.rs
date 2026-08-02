@@ -23,7 +23,9 @@ use opi_coding_agent::config::{
 };
 use opi_coding_agent::execution::ValidatedExecutableContribution;
 use opi_coding_agent::execution::permission::PermissionPolicy;
-use opi_coding_agent::execution::{EnabledIdentity, IdentitySource, LockMaterial};
+use opi_coding_agent::execution::{
+    EnabledIdentity, IdentitySource, LockMaterial, PermissionManager,
+};
 use opi_coding_agent::harness::{CodingHarness, ExecutionWiring};
 use opi_coding_agent::package_activation::{
     ActivatedContribution, ActivationError, host_opi_version, host_target_triple,
@@ -159,6 +161,8 @@ fn routed_wiring(contribution: ActivatedContribution) -> ExecutionWiring {
         mode: ExecutionRunMode::Interactive,
         host_target: host_target_triple().to_string(),
         host_opi_version: host_opi_version().to_string(),
+        manager: Arc::new(PermissionManager::new()),
+        broker: None,
     }
 }
 
@@ -249,6 +253,8 @@ async fn activation_failure_survives_into_tool_result_via_production_path() {
         mode: ExecutionRunMode::Interactive,
         host_target: host_target_triple().to_string(),
         host_opi_version: host_opi_version().to_string(),
+        manager: Arc::new(PermissionManager::new()),
+        broker: None,
     };
     let tool_config =
         ToolRuntimeConfig::resolve(RunMode::Interactive, true, ToolSelection::Default)
@@ -312,6 +318,8 @@ async fn model_supplied_backend_selects_named_adapter_through_execute() {
         mode: ExecutionRunMode::Interactive,
         host_target: host_target_triple().to_string(),
         host_opi_version: host_opi_version().to_string(),
+        manager: Arc::new(PermissionManager::new()),
+        broker: None,
     };
     let tool_config =
         ToolRuntimeConfig::resolve(RunMode::Interactive, true, ToolSelection::Default)
@@ -400,6 +408,8 @@ fn cli_execution_overrides_reach_bash_tool() {
         mode: ExecutionRunMode::Interactive,
         host_target: host_target_triple().to_string(),
         host_opi_version: host_opi_version().to_string(),
+        manager: Arc::new(PermissionManager::new()),
+        broker: None,
     };
     let tool_config =
         ToolRuntimeConfig::resolve(RunMode::Interactive, true, ToolSelection::Default)

@@ -20,7 +20,9 @@ pub use contribution::{
     validate_executable_contributions,
 };
 pub use failure::{ExecutionFailure, UnavailableDetail};
-pub use permission::{LOCAL_ADAPTER_ID, PermissionPolicy};
+pub use permission::{
+    InteractivePermissionBroker, LOCAL_ADAPTER_ID, PermissionManager, PermissionPolicy,
+};
 pub use protocol_host::{
     BackendLaunch, CompletedOutcome, ExecutionProtocolHost, ExecutionRequest, ReadyReport,
     StartedReport,

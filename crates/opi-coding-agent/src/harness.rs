@@ -57,7 +57,9 @@ use crate::diagnostic_bridge::{
     diagnostic_for_resource_layer_message, diagnostic_from_execution_failure,
     diagnostic_from_package, diagnostic_from_package_resolution_error,
 };
-use crate::execution::permission::PermissionPolicy;
+use crate::execution::permission::{
+    InteractivePermissionBroker, PermissionManager, PermissionPolicy,
+};
 use crate::execution::{Eligibility, EnabledIdentity, ExecutionRuntime, IdentitySource};
 use crate::oauth::{OAuthEndpointConfig, OAuthProviderRegistry};
 use crate::package_activation::{
@@ -78,6 +80,7 @@ use crate::tool::{
     LocalBashOperations, LocalFileOperations, LsTool, ReadTool, WriteTool, default_bash_schema,
     with_model_backend_enum,
 };
+use tokio::sync::mpsc;
 
 /// Phase 16.9: the resolved execution-context inputs threaded into
 /// [`ExecutionRuntime::build`] at startup. Production (`new_with_build_options`)
@@ -100,6 +103,14 @@ pub struct ExecutionWiring {
     pub mode: ExecutionRunMode,
     pub host_target: String,
     pub host_opi_version: String,
+    /// In-memory session-grant store, shared with the routed bash backend and
+    /// reset on in-process session switches. One fresh manager per harness.
+    pub manager: Arc<PermissionManager>,
+    /// Interactive `ask`-prompt broker. `None` is the fail-closed default: an
+    /// interactive `ask` surfaces `permission_required` rather than dispatching
+    /// or falling back to `local`. Headless modes install no broker; the
+    /// interactive startup path installs the TUI-backed broker (Phase 16.10).
+    pub broker: Option<Arc<dyn InteractivePermissionBroker>>,
 }
 
 /// Resolve the dynamic bash input schema for the current execution config.
@@ -156,6 +167,11 @@ fn execution_wiring(
         mode,
         host_target: host_target_triple().to_string(),
         host_opi_version: host_opi_version().to_string(),
+        // Fresh per-harness manager (memory-only grants). The broker defaults to
+        // None (fail-closed); the interactive startup path installs the
+        // TUI-backed broker (Phase 16.10 interactive wiring).
+        manager: Arc::new(PermissionManager::new()),
+        broker: None,
     }
 }
 
@@ -190,6 +206,8 @@ pub fn minimal_runtime_wiring(mode: ExecutionRunMode) -> ExecutionWiring {
         mode,
         host_target: host_target_triple().to_string(),
         host_opi_version: host_opi_version().to_string(),
+        manager: Arc::new(PermissionManager::new()),
+        broker: None,
     }
 }
 
@@ -270,6 +288,15 @@ pub struct CodingHarness {
     pub oauth_registry: Option<OAuthProviderRegistry>,
     pub(crate) oauth_endpoints: OAuthEndpointConfig,
     pub(crate) oauth_http_client: reqwest::Client,
+    /// In-memory capability-permission grants (Phase 16.10). Shared with the
+    /// routed bash backend; reset on in-process session switches so an
+    /// `allow-for-session` choice does not survive resume/fork/branch.
+    pub(crate) permission_manager: Arc<PermissionManager>,
+    /// The interactive permission-prompt channel receiver (Phase 16.10).
+    /// `Some` only in interactive mode (the TUI broker is installed); taken by
+    /// `run_interactive_tui` to drain prompt requests. Headless modes use `None`.
+    pub(crate) permission_prompt_rx:
+        Option<mpsc::Receiver<crate::interactive::PermissionPromptRequest>>,
 }
 
 pub struct RuntimeThinkingState {
@@ -966,8 +993,21 @@ impl CodingHarness {
         // the global package-activation store + the resolved permission policy +
         // the run mode) and thread it through `ExecutionRuntime::build` inside
         // `build_tools_with_sandbox`.
-        let execution =
+        let mut execution =
             execution_wiring(&config, &resolved_global_dir, build_options.execution_mode);
+        // Phase 16.10: interactive mode installs the TUI permission broker. The
+        // broker talks to the event loop over a channel; the receiver is stored
+        // on the harness for `run_interactive_tui` to drain. Headless modes
+        // install no broker (the routed backend surfaces `permission_required`).
+        let permission_manager = Arc::clone(&execution.manager);
+        let permission_prompt_rx = if build_options.execution_mode == ExecutionRunMode::Interactive
+        {
+            let (tx, rx) = mpsc::channel::<crate::interactive::PermissionPromptRequest>(8);
+            execution.broker = Some(Arc::new(crate::interactive::TuiPermissionBroker::new(tx)));
+            Some(rx)
+        } else {
+            None
+        };
         let (mut tools, sandbox_startup_diagnostics) =
             Self::build_tools_with_sandbox(&workspace_root, &tool_config, prepared, &execution);
         tools.extend(extension_tools);
@@ -1126,6 +1166,8 @@ impl CodingHarness {
             oauth_registry: None,
             oauth_endpoints: OAuthEndpointConfig::production(),
             oauth_http_client: crate::oauth::production_oauth_client(),
+            permission_manager,
+            permission_prompt_rx,
         };
 
         // Phase 13.3: re-apply recorded model/thinking on the CLI --resume path
@@ -1425,6 +1467,9 @@ impl CodingHarness {
     /// they are not. Missing-parent warnings from the context builder are
     /// surfaced alongside the load-time recovery diagnostics.
     pub fn resume_session_id(&mut self, session_id: &str) -> Result<usize, String> {
+        // Phase 16.10: an allow-for-session grant must not survive a session
+        // switch. Reset on the boundary (re-prompt is the safe failure mode).
+        self.permission_manager.reset_grants();
         let dir = crate::session_cli::session_dir();
         let session =
             crate::session_cli::resume_session(&dir, session_id).map_err(|e| e.to_string())?;
@@ -1532,6 +1577,8 @@ impl CodingHarness {
 
     /// Fork the active session into a new parented session and switch to it.
     pub fn fork_current_session(&mut self) -> Result<(String, usize), String> {
+        // Phase 16.10: grants do not survive a fork boundary.
+        self.permission_manager.reset_grants();
         let (dir, source_session_id) = {
             let session = self
                 .session
@@ -1627,6 +1674,8 @@ impl CodingHarness {
 
     /// Switch the current session to the branch ending at `tip_id`.
     pub fn resume_session_branch_tip(&mut self, tip_id: &str) -> Result<usize, String> {
+        // Phase 16.10: grants do not survive a branch switch.
+        self.permission_manager.reset_grants();
         let (path, session_id) = {
             let session = self
                 .session
@@ -2354,6 +2403,8 @@ impl CodingHarness {
             workspace_root,
             &execution.host_target,
             &execution.host_opi_version,
+            Arc::clone(&execution.manager),
+            execution.broker.clone(),
         ) {
             Ok(ops) => {
                 let schema =
@@ -2729,5 +2780,93 @@ impl InteractiveCodingHooks {
 impl AgentHooks for InteractiveCodingHooks {
     fn convert_to_llm(&self, messages: &[AgentMessage]) -> Result<Vec<Message>, AgentError> {
         Ok(agent_messages_to_llm(messages))
+    }
+}
+
+#[cfg(test)]
+mod permission_boundary_tests {
+    use super::*;
+    use std::sync::Mutex;
+
+    static SESSION_MUTEX: Mutex<()> = Mutex::new(());
+
+    fn build_interactive_harness(workspace: &Path, global: &Path) -> CodingHarness {
+        let provider = opi_ai::test_support::MockProvider::new(
+            "mock",
+            vec![opi_ai::test_support::text_response("ok")],
+        );
+        CodingHarness::builder(
+            Box::new(provider),
+            "mock:mock-model".to_string(),
+            OpiConfig::default(),
+            workspace.to_path_buf(),
+            crate::project_trust::TrustDecision::Trusted,
+        )
+        .global_config_dir(global.to_path_buf())
+        .execution_mode(ExecutionRunMode::Interactive)
+        .build()
+    }
+
+    fn set_sessions_dir(dir: &Path) {
+        // SAFETY: test-only env mutation; SESSION_MUTEX serializes it.
+        unsafe {
+            std::env::set_var("OPI_SESSIONS_DIR", dir);
+        }
+    }
+    fn clear_sessions_dir() {
+        // SAFETY: test-only env mutation; SESSION_MUTEX serializes it.
+        unsafe {
+            std::env::remove_var("OPI_SESSIONS_DIR");
+        }
+    }
+
+    /// Phase 16.10 D.2 must-fix: the production harness session-switch methods
+    /// (resume_session_id / fork_current_session / resume_session_branch_tip)
+    /// reset permission grants at the boundary. A regression deleting any of the
+    /// three `reset_grants()` calls would leak an allow-for-session grant across
+    /// a session switch; this test drives the production call sites (not the
+    /// manager helper) and fails then. It also proves the production constructor
+    /// installs the TUI broker for Interactive mode (`permission_prompt_rx` Some).
+    #[test]
+    fn session_switches_reset_permission_grants_at_production_call_sites() {
+        let _lock = SESSION_MUTEX.lock().unwrap();
+        let ws = tempfile::tempdir().unwrap();
+        let global = tempfile::tempdir().unwrap();
+        let sessions = tempfile::tempdir().unwrap();
+        set_sessions_dir(sessions.path());
+        let mut harness = build_interactive_harness(ws.path(), global.path());
+
+        // The production constructor installs the TUI broker for Interactive mode
+        // (permission_prompt_rx Some); headless modes leave it None (fail-closed).
+        assert!(
+            harness.permission_prompt_rx.is_some(),
+            "interactive harness installs the permission broker"
+        );
+
+        // resume_session_id errors (session not found) but its first action is
+        // reset_grants, so the grant is cleared at the production call site.
+        harness.permission_manager.grant_session("opi-sandbox");
+        assert!(harness.permission_manager.has_session_grant("opi-sandbox"));
+        let _ = harness.resume_session_id("ghost");
+        assert!(
+            !harness.permission_manager.has_session_grant("opi-sandbox"),
+            "resume_session_id must reset permission grants at the boundary"
+        );
+
+        harness.permission_manager.grant_session("opi-sandbox");
+        let _ = harness.fork_current_session();
+        assert!(
+            !harness.permission_manager.has_session_grant("opi-sandbox"),
+            "fork_current_session must reset permission grants at the boundary"
+        );
+
+        harness.permission_manager.grant_session("opi-sandbox");
+        let _ = harness.resume_session_branch_tip("ghost");
+        assert!(
+            !harness.permission_manager.has_session_grant("opi-sandbox"),
+            "resume_session_branch_tip must reset permission grants at the boundary"
+        );
+
+        clear_sessions_dir();
     }
 }

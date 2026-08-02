@@ -30,12 +30,15 @@ use opi_tui::terminal_image::{
     CapabilitySource, TerminalGraphicsProtocol, detect_graphics_protocol,
 };
 use opi_tui::{
-    AppState, Key, KeyCombo, Keybindings, Message as TuiMessage, Role as TuiRole, SelectListState,
-    Shell, StatusBar, Theme, ToolCallStatus, resolve_theme,
+    AppState, AppStatus, Key, KeyCombo, Keybindings, Message as TuiMessage, Role as TuiRole,
+    SelectListState, Shell, StatusBar, Theme, ToolCallStatus, resolve_theme,
 };
 use opi_tui::{AwaitingTrustState, TrustChoice, TrustPrompt};
 use opi_tui::{ImageData, ImagePayload, MediaType as TuiMediaType};
+use opi_tui::{PermissionChoice, PermissionPrompt, PermissionSummary};
+use tokio::sync::{mpsc, oneshot};
 
+use crate::execution::InteractivePermissionBroker;
 use crate::harness::{CodingHarness, SessionMetadata};
 use crate::interactive_auth::auth_command_requires_presenter;
 use crate::interactive_auth::{
@@ -310,6 +313,72 @@ impl InteractiveTrustPrompt for TuiTrustPrompt {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Phase 16 task 16.10: interactive capability-permission broker + prompt link
+// ---------------------------------------------------------------------------
+
+/// One prompt request flowing from the routed bash backend (agent task) to the
+/// interactive event loop: the redaction-safe identity summary and the oneshot
+/// responder that receives the user's [`PermissionChoice`].
+pub struct PermissionPromptRequest {
+    pub summary: PermissionSummary,
+    pub responder: oneshot::Sender<PermissionChoice>,
+}
+
+/// A pending permission prompt held in [`TuiState`]: the selection widget (with
+/// its cursor) and the oneshot responder that carries the user's choice back to
+/// the broker (and thus to the waiting tool call).
+struct PendingPermission {
+    prompt: PermissionPrompt,
+    responder: oneshot::Sender<PermissionChoice>,
+}
+
+/// Production [`InteractivePermissionBroker`] backed by the interactive TUI.
+///
+/// The broker does NOT hold `TuiState` directly (it is constructed before the
+/// state exists). It talks to the event loop over an mpsc channel: each
+/// `resolve_ask` sends a [`PermissionPromptRequest`] (carrying its own oneshot
+/// responder) and awaits the choice. The event loop receives the request, sets
+/// `TuiState::pending_permission`, renders the [`PermissionPrompt`] widget, and
+/// relays the user's choice through the responder.
+///
+/// Cancellation/drop safety (Phase 16 redaction + no-hang contract): a closed
+/// loop (terminal close) drops the receiver so `send` fails →
+/// [`PermissionChoice::Deny`]; a dropped responder likewise resolves the await
+/// to `Deny` via `unwrap_or`. The tool call therefore always surfaces a stable
+/// `permission_denied` (or proceeds on allow); it never panics or hangs on a
+/// closed/cancelled prompt. A run cancellation drops the in-flight tool future
+/// (standard task drop), so abort does not strand the broker either.
+pub struct TuiPermissionBroker {
+    tx: mpsc::Sender<PermissionPromptRequest>,
+}
+
+impl TuiPermissionBroker {
+    pub fn new(tx: mpsc::Sender<PermissionPromptRequest>) -> Self {
+        Self { tx }
+    }
+}
+
+impl InteractivePermissionBroker for TuiPermissionBroker {
+    fn resolve_ask(
+        &self,
+        summary: PermissionSummary,
+    ) -> Pin<Box<dyn Future<Output = PermissionChoice> + Send + '_>> {
+        let tx = self.tx.clone();
+        Box::pin(async move {
+            let (responder, response) = oneshot::channel();
+            let request = PermissionPromptRequest { summary, responder };
+            // A closed loop (terminal close / shutdown) drops the receiver; treat
+            // that as Deny so the tool call fails closed with permission_denied.
+            if tx.send(request).await.is_err() {
+                return PermissionChoice::Deny;
+            }
+            // A dropped responder (loop accepted the request then closed) -> Deny.
+            response.await.unwrap_or(PermissionChoice::Deny)
+        })
+    }
+}
+
 /// Shared state mutated by the agent callback and read by the TUI render loop.
 struct TuiState {
     messages: Vec<TuiMessage>,
@@ -326,6 +395,10 @@ struct TuiState {
     cost_usd: Option<f64>,
     graphics_protocol: TerminalGraphicsProtocol,
     picker: Option<PickerOverlay>,
+    /// A pending mid-execution capability-permission prompt (Phase 16.10). When
+    /// `Some`, the event loop renders the [`PermissionPrompt`] overlay and
+    /// captures the user's choice; `None` otherwise.
+    pending_permission: Option<PendingPermission>,
 }
 
 #[derive(Clone)]
@@ -752,7 +825,16 @@ trait TuiTerminal: LoginTerminalControl {
 impl TuiTerminal for Terminal<CrosstermBackend<io::Stdout>> {
     fn draw_state(&mut self, state: &TuiState) -> io::Result<()> {
         let shell = build_shell(state);
-        self.draw(|frame| frame.render_widget(shell, frame.area()))?;
+        self.draw(|frame| {
+            frame.render_widget(shell, frame.area());
+            // Phase 16.10: render the modal permission prompt as a centered
+            // overlay on top of the shell when a prompt is pending.
+            if let Some(pending) = &state.pending_permission {
+                let area = centered_rect(70, 50, frame.area());
+                frame.render_widget(ratatui::widgets::Clear, area);
+                frame.render_widget(pending.prompt.clone(), area);
+            }
+        })?;
         Ok(())
     }
 }
@@ -793,6 +875,7 @@ pub async fn run_interactive_tui(
         cost_usd: None,
         graphics_protocol,
         picker: None,
+        pending_permission: None,
     }));
 
     // Wire agent events into shared state before wrapping harness.
@@ -1005,6 +1088,10 @@ pub async fn run_interactive_tui(
         client: harness.oauth_http_client.clone(),
     };
 
+    // Phase 16.10: take the permission-prompt channel receiver out of the
+    // harness before it is shared, so the event loop can drain it each frame.
+    let mut permission_prompt_rx = harness.permission_prompt_rx.take();
+
     let harness = Arc::new(tokio::sync::Mutex::new(harness));
 
     if let Some(driver) = test_driver {
@@ -1016,6 +1103,7 @@ pub async fn run_interactive_tui(
             oauth,
             output_began,
             test_observer.expect("headless TUI driver has an observer"),
+            &mut permission_prompt_rx,
         )
         .await;
     }
@@ -1034,6 +1122,7 @@ pub async fn run_interactive_tui(
         &mut events,
         &harness,
         &state,
+        &mut permission_prompt_rx,
         TuiLoopRuntime {
             credential_store,
             oauth,
@@ -1065,6 +1154,7 @@ async fn tui_event_loop<T: TuiTerminal, E: TuiEventSource>(
     events: &mut E,
     harness: &Arc<tokio::sync::Mutex<CodingHarness>>,
     state: &Arc<Mutex<TuiState>>,
+    permission_prompt_rx: &mut Option<mpsc::Receiver<PermissionPromptRequest>>,
     runtime: TuiLoopRuntime<'_>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let TuiLoopRuntime {
@@ -1082,6 +1172,19 @@ async fn tui_event_loop<T: TuiTerminal, E: TuiEventSource>(
     let mut cancel_token = harness.lock().await.cancel_token();
 
     loop {
+        // Phase 16.10: drain any pending capability-permission prompt from the
+        // routed bash backend (agent task) into the TUI state. At most one is
+        // pending at a time (BashTool is Sequential), so the last request wins.
+        if let Some(rx) = permission_prompt_rx.as_mut() {
+            while let Ok(req) = rx.try_recv() {
+                let mut s = state.lock().unwrap();
+                s.pending_permission = Some(PendingPermission {
+                    prompt: PermissionPrompt::new(req.summary),
+                    responder: req.responder,
+                });
+            }
+        }
+
         // Render current state
         {
             let s = state.lock().unwrap();
@@ -1108,10 +1211,13 @@ async fn tui_event_loop<T: TuiTerminal, E: TuiEventSource>(
             cancel_token = harness.lock().await.cancel_token();
         }
 
-        // Poll for terminal events (non-blocking with timeout)
+        // Poll for terminal events (non-blocking with timeout). A pending
+        // permission prompt is modal and must receive keys even while a turn is
+        // running, so deliver events when the agent is idle OR a prompt awaits.
+        let permission_pending = state.lock().unwrap().pending_permission.is_some();
         let polled = events.poll_event(
             std::time::Duration::from_millis(50),
-            !interaction.is_running(),
+            !interaction.is_running() || permission_pending,
         )?;
         if matches!(polled, TuiEventPoll::Exhausted) {
             return Err(io::Error::other("scripted TUI input ended without exit").into());
@@ -1187,6 +1293,23 @@ async fn tui_event_loop<T: TuiTerminal, E: TuiEventSource>(
                     }
                     PickerAction::Cancel => {}
                 }
+                continue;
+            }
+
+            // Phase 16.10: a pending capability-permission prompt is modal — it
+            // captures all keys (arrows/enter/esc resolve it; others are
+            // ignored) and never falls through to submit/abort/text input. Esc
+            // resolves to Deny (NOT the run-abort path).
+            let permission_consumed = {
+                let mut s = state.lock().unwrap();
+                if s.pending_permission.is_some() {
+                    handle_permission_key(&mut s, key.code);
+                    true
+                } else {
+                    false
+                }
+            };
+            if permission_consumed {
                 continue;
             }
 
@@ -1611,6 +1734,7 @@ impl TuiEventSource for ScriptedTuiEventSource {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn run_headless_interactive_tui_driver(
     driver: InteractiveTuiTestDriver,
     harness: &Arc<tokio::sync::Mutex<CodingHarness>>,
@@ -1619,6 +1743,7 @@ async fn run_headless_interactive_tui_driver(
     oauth: OAuthDispatchRuntime,
     output_began: Arc<AtomicBool>,
     test_observer: Arc<InteractiveTuiTestObserver>,
+    permission_prompt_rx: &mut Option<mpsc::Receiver<PermissionPromptRequest>>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let InteractiveTuiTestDriver {
         inputs,
@@ -1641,6 +1766,7 @@ async fn run_headless_interactive_tui_driver(
         &mut events,
         harness,
         state,
+        permission_prompt_rx,
         TuiLoopRuntime {
             credential_store,
             oauth,
@@ -1675,7 +1801,11 @@ async fn run_headless_interactive_tui_driver(
 fn build_shell(s: &TuiState) -> Shell {
     let mut shell = Shell::new(s.model.clone())
         .input_text(s.input_text.clone())
-        .state(s.app_state.status())
+        .state(if s.pending_permission.is_some() {
+            AppStatus::AwaitingPermission
+        } else {
+            s.app_state.status()
+        })
         .theme(s.theme.clone());
 
     if s.total_tokens > 0 {
@@ -1884,6 +2014,55 @@ fn handle_picker_key(s: &mut TuiState, code: KeyCode) -> Option<PickerAction> {
         }
         _ => None,
     }
+}
+
+/// Resolve a pending capability-permission prompt from a key press (Phase
+/// 16.10). The prompt is modal: `Esc` denies, `Enter` confirms the highlighted
+/// choice, `Up`/`Down` move the cursor; any other key is ignored. On `Esc`/
+/// `Enter` the user's [`PermissionChoice`] is sent through the responder and
+/// the prompt is cleared; the broker then resumes the waiting tool call (allow
+/// dispatches, deny surfaces `permission_denied`). A dropped responder (broker
+/// gone) is silently ignored — the broker already resolved to `Deny`.
+fn handle_permission_key(s: &mut TuiState, code: KeyCode) {
+    let choice = match s.pending_permission.as_mut() {
+        Some(pending) => match code {
+            KeyCode::Esc => Some(PermissionChoice::Deny),
+            KeyCode::Enter => Some(pending.prompt.selected()),
+            KeyCode::Down => {
+                pending.prompt.move_next();
+                None
+            }
+            KeyCode::Up => {
+                pending.prompt.move_prev();
+                None
+            }
+            _ => None,
+        },
+        None => None,
+    };
+    if let Some(choice) = choice
+        && let Some(pending) = s.pending_permission.take()
+    {
+        let _ = pending.responder.send(choice);
+    }
+}
+
+/// Centered overlay rect (standard ratatui helper) for modal widgets.
+fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
+    let popup = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Percentage(percent_y),
+            Constraint::Percentage(100 - percent_y),
+        ])
+        .split(area);
+    Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage(percent_x),
+            Constraint::Percentage(100 - percent_x),
+        ])
+        .split(popup[0])[0]
 }
 
 fn matches_key_combo(code: KeyCode, modifiers: KeyModifiers, combo: &KeyCombo) -> bool {
@@ -2119,7 +2298,223 @@ mod tests {
                     metadata: "mock".into(),
                 }]),
             }),
+            pending_permission: None,
         }
+    }
+
+    /// A `TuiState` with a pending capability-permission prompt whose responder
+    /// is wired to `rx` (Phase 16.10). Returns the state and the receiver.
+    fn state_with_pending_permission(
+        choice_seed: PermissionChoice,
+    ) -> (TuiState, oneshot::Receiver<PermissionChoice>) {
+        let (tx, rx) = oneshot::channel();
+        let mut state = state_with_picker(PickerKind::Model);
+        state.picker = None;
+        let mut prompt = PermissionPrompt::new(PermissionSummary {
+            adapter_id: "opi-sandbox".to_string(),
+            package_name: "mock-pkg".to_string(),
+            run_mode_label: "interactive".to_string(),
+        });
+        // Start the cursor on the seeded choice so Enter confirms it.
+        while prompt.selected() != choice_seed {
+            prompt.move_next();
+        }
+        state.pending_permission = Some(PendingPermission {
+            prompt,
+            responder: tx,
+        });
+        (state, rx)
+    }
+
+    #[test]
+    fn permission_prompt_esc_resolves_to_deny_and_clears() {
+        let (mut state, rx) = state_with_pending_permission(PermissionChoice::AllowOnce);
+        handle_permission_key(&mut state, KeyCode::Esc);
+        assert!(state.pending_permission.is_none(), "Esc clears the prompt");
+        assert_eq!(rx.blocking_recv(), Ok(PermissionChoice::Deny));
+    }
+
+    #[test]
+    fn permission_prompt_enter_confirms_highlighted_choice() {
+        let (mut state, rx) = state_with_pending_permission(PermissionChoice::AllowSession);
+        handle_permission_key(&mut state, KeyCode::Enter);
+        assert!(state.pending_permission.is_none());
+        assert_eq!(rx.blocking_recv(), Ok(PermissionChoice::AllowSession));
+    }
+
+    #[test]
+    fn permission_prompt_arrows_move_without_resolving() {
+        let (mut state, mut rx) = state_with_pending_permission(PermissionChoice::AllowOnce);
+        handle_permission_key(&mut state, KeyCode::Down);
+        handle_permission_key(&mut state, KeyCode::Down);
+        assert!(
+            state.pending_permission.is_some(),
+            "arrows move the cursor without resolving"
+        );
+        // Cursor advanced AllowOnce -> AllowSession -> Deny (clamped).
+        let selected = state
+            .pending_permission
+            .as_ref()
+            .expect("prompt still pending")
+            .prompt
+            .selected();
+        assert_eq!(selected, PermissionChoice::Deny);
+        // Nothing sent yet.
+        assert!(rx.try_recv().is_err(), "no choice sent on arrow keys");
+    }
+
+    #[test]
+    fn permission_prompt_ignores_unrelated_keys() {
+        let (mut state, mut rx) = state_with_pending_permission(PermissionChoice::AllowOnce);
+        handle_permission_key(&mut state, KeyCode::Char('x'));
+        assert!(
+            state.pending_permission.is_some(),
+            "unrelated key is ignored"
+        );
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[test]
+    fn permission_prompt_is_absent_does_nothing() {
+        // No pending prompt: handle_permission_key is a no-op (never panics).
+        let (mut state, _rx) = state_with_pending_permission(PermissionChoice::AllowOnce);
+        state.pending_permission = None;
+        handle_permission_key(&mut state, KeyCode::Enter);
+        assert!(state.pending_permission.is_none());
+    }
+
+    /// A no-op keyring backend so tests can construct a `KeychainCredentialStore`
+    /// (required by `TuiLoopRuntime`) without a real OS keyring. The credential
+    /// store is only used for `/login`; the permission path never touches it.
+    struct NoopKeyringBackend;
+    impl crate::credential_store::KeyringBackend for NoopKeyringBackend {
+        fn get(
+            &self,
+            _: &str,
+            _: &str,
+        ) -> Result<Option<String>, crate::credential_store::BackendError> {
+            Ok(None)
+        }
+        fn set(
+            &self,
+            _: &str,
+            _: &str,
+            _: &str,
+        ) -> Result<(), crate::credential_store::BackendError> {
+            Ok(())
+        }
+        fn delete(&self, _: &str, _: &str) -> Result<(), crate::credential_store::BackendError> {
+            Ok(())
+        }
+    }
+
+    /// Phase 16.10 D.2 iter3 must-fix: drive the PRODUCTION `tui_event_loop` with
+    /// a pending capability-permission prompt and scripted keys, proving the
+    /// loop-internal production blocks: (1) the broker-channel drain populates
+    /// `pending_permission`; (2) the modal key guard consumes the Enter and
+    /// relays the highlighted choice through the responder (instead of submitting
+    /// an empty prompt); (3) the frame redraws while the prompt is pending. The
+    /// components (`handle_permission_key`, `TuiPermissionBroker`) are tested in
+    /// isolation elsewhere; this proves their loop wiring.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn production_loop_drains_permission_prompt_and_relays_choice() {
+        let workspace = tempfile::tempdir().unwrap();
+        let provider = opi_ai::test_support::MockProvider::new(
+            "mock",
+            vec![opi_ai::test_support::text_response("ok")],
+        );
+        let harness = CodingHarness::builder(
+            Box::new(provider),
+            "mock:mock-model".to_string(),
+            OpiConfig::default(),
+            workspace.path().to_path_buf(),
+            crate::project_trust::TrustDecision::Trusted,
+        )
+        .build();
+        let harness = Arc::new(tokio::sync::Mutex::new(harness));
+
+        // Pre-load a permission-prompt request on a channel (the broker sends one
+        // when the bash tool hits an `ask` during a run). This receiver is the
+        // loop's `permission_prompt_rx`.
+        let (tx, rx) = mpsc::channel::<PermissionPromptRequest>(8);
+        let (resp_tx, resp_rx) = oneshot::channel::<PermissionChoice>();
+        tx.send(PermissionPromptRequest {
+            summary: PermissionSummary {
+                adapter_id: "opi-sandbox".to_string(),
+                package_name: "mock-pkg".to_string(),
+                run_mode_label: "interactive".to_string(),
+            },
+            responder: resp_tx,
+        })
+        .await
+        .unwrap();
+        let mut permission_prompt_rx = Some(rx);
+
+        let capture = Arc::new(Mutex::new(InteractiveTuiTestCapture::default()));
+        let mut terminal = HeadlessTuiTerminal {
+            terminal: Terminal::new(TestBackend::new(80, 24)).unwrap(),
+            capture: capture.clone(),
+            failure: InteractiveTuiTestTerminalFailure::None,
+        };
+        // Scripted keys: "" -> a single Enter event. While the prompt is pending
+        // the modal guard captures it (confirming AllowOnce) rather than letting
+        // it submit an empty prompt; then "exit" terminates the loop.
+        let mut events = ScriptedTuiEventSource::new(vec![String::new(), "exit".to_string()]);
+        let state = Arc::new(Mutex::new(TuiState {
+            messages: Vec::new(),
+            input_text: String::new(),
+            app_state: AppState::Idle,
+            model: "mock:mock-model".to_string(),
+            active_tool: None,
+            streaming_started: false,
+            theme: Theme::default(),
+            keybindings: Keybindings::default(),
+            total_tokens: 0,
+            cost_usd: None,
+            graphics_protocol: TerminalGraphicsProtocol::Fallback,
+            picker: None,
+            pending_permission: None,
+        }));
+
+        let credential_store = Arc::new(crate::credential_store::KeychainCredentialStore::new(
+            Box::new(NoopKeyringBackend),
+            workspace.path().to_path_buf(),
+        ));
+        let runtime = TuiLoopRuntime {
+            credential_store,
+            oauth: OAuthDispatchRuntime {
+                endpoints: OAuthEndpointConfig::production(),
+                client: reqwest::Client::new(),
+            },
+            output_began: Arc::new(AtomicBool::new(false)),
+            test_auth: None,
+            test_observer: None,
+        };
+
+        // The loop runs until "exit" (Ok) or scripted-input exhaustion (Err);
+        // either way the prompt must have been drained + resolved first.
+        let _ = tui_event_loop(
+            &mut terminal,
+            &mut events,
+            &harness,
+            &state,
+            &mut permission_prompt_rx,
+            runtime,
+        )
+        .await;
+
+        // The drain populated pending_permission, the modal guard captured the
+        // Enter and confirmed the highlighted AllowOnce, and the choice was
+        // relayed through the responder (the broker's waiting tool call resumes).
+        assert_eq!(
+            resp_rx.await,
+            Ok(PermissionChoice::AllowOnce),
+            "the production loop must drain the prompt and relay the choice"
+        );
+        assert!(
+            state.lock().unwrap().pending_permission.is_none(),
+            "pending permission cleared after the choice"
+        );
     }
 
     #[test]

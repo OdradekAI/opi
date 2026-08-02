@@ -275,7 +275,7 @@ use std::sync::Arc;
 use opi_agent::diagnostic::Severity;
 use opi_coding_agent::config::{OpiConfig, SandboxConfig};
 use opi_coding_agent::execution::permission::PermissionPolicy;
-use opi_coding_agent::execution::{EnabledIdentity, IdentitySource};
+use opi_coding_agent::execution::{EnabledIdentity, IdentitySource, PermissionManager};
 use opi_coding_agent::harness::{CodingHarness, ExecutionWiring};
 use opi_coding_agent::package_activation::{
     ActivatedContribution, ActivationError, host_opi_version, host_target_triple,
@@ -330,6 +330,8 @@ fn wiring(
         mode: ExecutionRunMode::Interactive,
         host_target: host_target_triple().to_string(),
         host_opi_version: host_opi_version().to_string(),
+        manager: Arc::new(PermissionManager::new()),
+        broker: None,
     }
 }
 

@@ -11,6 +11,7 @@ pub mod editor;
 pub mod keybindings;
 pub mod markdown;
 pub mod message_list;
+pub mod permission_prompt;
 pub mod render;
 pub mod select_list;
 pub mod status_bar;
@@ -25,6 +26,9 @@ pub use editor::InputEditor;
 pub use keybindings::{Key, KeyCombo, KeyComboParseError, Keybindings, Modifiers};
 pub use markdown::{CodeBlock, MarkdownView};
 pub use message_list::MessageList;
+pub use permission_prompt::{
+    AwaitingPermissionState, PermissionChoice, PermissionPrompt, PermissionSummary,
+};
 pub use render::Shell;
 pub use select_list::{SelectItem, SelectList, SelectListState, fuzzy_match};
 pub use status_bar::StatusBar;
@@ -135,13 +139,16 @@ impl Message {
     }
 }
 
-/// Application state shown in the status bar / driving the trust-prompt phase.
+/// Application state shown in the status bar / driving the trust-prompt and
+/// permission-prompt phases.
 ///
-/// The [`Self::AwaitingTrust`] variant carries the interactive trust-prompt
-/// payload (project path + oneshot responder). Because that payload owns a
-/// `oneshot::Sender`, `AppState` is **not** `Copy`/`Clone`/`PartialEq`/`Eq`.
-/// Renderers that only need a display label use the [`AppStatus`] projection
-/// returned by [`Self::status`].
+/// The [`Self::AwaitingTrust`] variant carries the interactive project-trust
+/// payload (project path + oneshot responder); [`Self::AwaitingPermission`]
+/// carries the mid-execution capability-permission payload (redaction-safe
+/// summary + oneshot responder). Because both own a `oneshot::Sender`,
+/// `AppState` is **not** `Copy`/`Clone`/`PartialEq`/`Eq`. Renderers that only
+/// need a display label use the [`AppStatus`] projection returned by
+/// [`Self::status`].
 #[derive(Debug)]
 pub enum AppState {
     Idle,
@@ -149,11 +156,13 @@ pub enum AppState {
     Streaming,
     ToolExecuting,
     AwaitingTrust(AwaitingTrustState),
+    AwaitingPermission(AwaitingPermissionState),
 }
 
 impl AppState {
     /// Render-safe, `Copy` projection of this state for status bars / shells
-    /// that must not own the `AwaitingTrust` oneshot payload.
+    /// that must not own the `AwaitingTrust` / `AwaitingPermission` oneshot
+    /// payloads.
     pub fn status(&self) -> AppStatus {
         match self {
             Self::Idle => AppStatus::Idle,
@@ -161,6 +170,7 @@ impl AppState {
             Self::Streaming => AppStatus::Streaming,
             Self::ToolExecuting => AppStatus::ToolExecuting,
             Self::AwaitingTrust(_) => AppStatus::AwaitingTrust,
+            Self::AwaitingPermission(_) => AppStatus::AwaitingPermission,
         }
     }
 }
@@ -172,7 +182,8 @@ impl fmt::Display for AppState {
 }
 
 /// Copyable status label projected from [`AppState`] for renderers (status bar,
-/// shell) that must not own the `AwaitingTrust` oneshot payload.
+/// shell) that must not own the `AwaitingTrust` / `AwaitingPermission` oneshot
+/// payloads.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum AppStatus {
     #[default]
@@ -181,6 +192,7 @@ pub enum AppStatus {
     Streaming,
     ToolExecuting,
     AwaitingTrust,
+    AwaitingPermission,
 }
 
 impl fmt::Display for AppStatus {
@@ -191,6 +203,7 @@ impl fmt::Display for AppStatus {
             Self::Streaming => write!(f, "streaming..."),
             Self::ToolExecuting => write!(f, "executing tool..."),
             Self::AwaitingTrust => write!(f, "awaiting trust..."),
+            Self::AwaitingPermission => write!(f, "awaiting permission..."),
         }
     }
 }
