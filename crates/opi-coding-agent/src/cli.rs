@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use clap::{Parser, Subcommand, ValueEnum};
 
-use crate::config::SandboxMode;
+use crate::config::{ExecutionStrategy, SandboxMode};
 
 /// Supported shells for completion generation.
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -81,6 +81,13 @@ Sandbox policy:
   --sandbox-require is one-way: it enables fail-closed behavior and cannot clear a true config value.
   Strict is opt-in defense-in-depth, not a security boundary; untrusted code belongs in a container or VM.
 
+Execution policy:
+  --execution-backend local|<adapter-id> selects the fixed command.execute backend.
+  --execution-strategy fixed|rules|model selects the routing strategy.
+  Both are routing overrides only: they cannot grant package trust or adapter permission.
+  Capability permission ([execution.permissions]) is read from the USER config only; project permission sections are rejected.
+  --allow-mutating gates bash tool availability independently from adapter permission.
+
 Interactive authentication:
   /login <provider> starts login for Anthropic, GitHub Copilot, or OpenAI Codex.
   /logout <provider> deletes that provider's stored credential.
@@ -131,6 +138,19 @@ pub struct Cli {
     /// enables `require`; it cannot clear a true `[sandbox] require` value.
     #[arg(long)]
     pub sandbox_require: bool,
+
+    /// Execution backend override for `command.execute`: `local` (built-in) or an
+    /// installed adapter id. Selects the `fixed` strategy. This is a routing
+    /// override only — it cannot grant trust or permission. Overrides
+    /// `[execution] backend` from layered TOML.
+    #[arg(long, value_name = "BACKEND")]
+    pub execution_backend: Option<String>,
+
+    /// Execution routing strategy override: `fixed`, `rules`, or `model`. This is
+    /// a routing override only — it cannot grant trust or permission. Overrides
+    /// `[execution] strategy` from layered TOML.
+    #[arg(long, value_enum, value_name = "STRATEGY")]
+    pub execution_strategy: Option<ExecutionStrategy>,
 
     /// Output NDJSON events to stdout (non-interactive mode).
     #[arg(long)]

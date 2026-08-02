@@ -262,5 +262,13 @@ pub fn diagnostic_from_config(err: &ConfigError) -> Diagnostic {
         )
         .details(serde_json::json!({ "provider": provider }))
         .action("rename the configured provider before starting opi"),
+        ConfigError::InvalidExecutionConfig { field, message } => Diagnostic::new(
+            Severity::Error,
+            CODE_CONFIG_PARSE_FAILED,
+            SOURCE_CONFIG,
+            "invalid execution configuration",
+        )
+        .details(serde_json::json!({ "field": field, "message": message }))
+        .action("fix the [execution] section before starting opi"),
     }
 }

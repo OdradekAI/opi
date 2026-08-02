@@ -32,6 +32,7 @@ pub struct OpiConfig {
     pub extensions: ExtensionsConfig,
     pub packages: PackagesConfig,
     pub sandbox: SandboxConfig,
+    pub execution: ExecutionConfig,
 }
 
 /// `[defaults]` section.
@@ -115,6 +116,93 @@ pub struct SandboxConfig {
     pub syscalls: Option<bool>,
 }
 
+/// Run mode matched by deterministic execution rules (Phase 16). This is a
+/// distinct three-variant enum from `policy::RunMode` (which has no `Rpc`
+/// variant): the router and rule set reason about all three invocation kinds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ExecutionRunMode {
+    Interactive,
+    NonInteractive,
+    Rpc,
+}
+
+impl std::fmt::Display for ExecutionRunMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Interactive => f.write_str("interactive"),
+            Self::NonInteractive => f.write_str("non-interactive"),
+            Self::Rpc => f.write_str("rpc"),
+        }
+    }
+}
+
+/// `command.execute` routing strategy (Phase 16). Default [`ExecutionStrategy::Fixed`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Deserialize, clap::ValueEnum)]
+#[serde(rename_all = "lowercase")]
+pub enum ExecutionStrategy {
+    #[default]
+    Fixed,
+    Rules,
+    Model,
+}
+
+impl std::fmt::Display for ExecutionStrategy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Fixed => f.write_str("fixed"),
+            Self::Rules => f.write_str("rules"),
+            Self::Model => f.write_str("model"),
+        }
+    }
+}
+
+/// One capability-permission decision for an adapter id (Phase 16).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PermissionDecision {
+    /// Ineligible and model-invisible.
+    Deny,
+    /// Selectable but requires an interactive grant.
+    Ask,
+    /// Persistent user authorization.
+    Allow,
+}
+
+/// One `[[execution.rules]]` entry. `modes: None` is the catch-all rule (matches
+/// every mode); `modes: Some([])` is rejected at config time as malformed.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+pub struct ExecutionRule {
+    #[serde(default)]
+    pub modes: Option<Vec<ExecutionRunMode>>,
+    pub backend: String,
+}
+
+/// `[execution]` section (Phase 16). Layered TOML resolves `strategy`, `backend`,
+/// and `rules` in precedence order; `permissions` is resolved from user-authorized
+/// layers only (project `[execution.permissions]` is rejected even when trusted).
+/// `rules` and `permissions` use REPLACE-if-present overlay semantics across
+/// layers (intentionally NOT accumulating like `extensions.paths`).
+#[derive(Debug, Clone, PartialEq)]
+pub struct ExecutionConfig {
+    pub strategy: ExecutionStrategy,
+    pub backend: String,
+    pub rules: Vec<ExecutionRule>,
+    pub permissions: BTreeMap<String, PermissionDecision>,
+}
+
+impl Default for ExecutionConfig {
+    fn default() -> Self {
+        // The spec default is `[execution] strategy = "fixed", backend = "local"`.
+        Self {
+            strategy: ExecutionStrategy::Fixed,
+            backend: "local".to_string(),
+            rules: Vec::new(),
+            permissions: BTreeMap::new(),
+        }
+    }
+}
+
 impl OpiConfig {
     /// Apply CLI sandbox overrides on top of the layered TOML configuration.
     ///
@@ -130,6 +218,31 @@ impl OpiConfig {
         }
         if let Some(require) = require {
             self.sandbox.require = require;
+        }
+    }
+
+    /// Apply `--execution-backend` / `--execution-strategy` CLI overrides on top
+    /// of the layered TOML configuration.
+    ///
+    /// `--execution-backend <id>` selects the `fixed` strategy with that backend
+    /// (per the design: it "selects the fixed strategy"). `--execution-strategy`
+    /// sets the strategy. **Both touch only `strategy`/`backend` — they never
+    /// grant trust or permission** (the `permissions` map and trust records are
+    /// byte-identical before and after). If both are supplied, `--execution-backend`
+    /// sets the backend and `fixed`, then `--execution-strategy` may override the
+    /// strategy while keeping the backend. This is the deterministic resolution
+    /// hook the runtime (16.7) calls after `resolve_config`; it is direct-testable.
+    pub fn apply_execution_overrides(
+        &mut self,
+        backend: Option<&str>,
+        strategy: Option<ExecutionStrategy>,
+    ) {
+        if let Some(backend) = backend {
+            self.execution.backend = backend.to_string();
+            self.execution.strategy = ExecutionStrategy::Fixed;
+        }
+        if let Some(strategy) = strategy {
+            self.execution.strategy = strategy;
         }
     }
 }
@@ -394,6 +507,7 @@ struct TomlConfig {
     extensions: TomlResourcePaths,
     packages: TomlResourcePaths,
     sandbox: TomlSandbox,
+    execution: TomlExecution,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -645,6 +759,18 @@ struct TomlSandbox {
     fs: Option<bool>,
     network: Option<bool>,
     syscalls: Option<bool>,
+}
+
+/// Shadow TOML for `[execution]`. `permissions` is present-marker for the
+/// project-layer rejection check; it is only ever merged from user/explicit
+/// layers (a project `[execution.permissions]` is rejected upstream).
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(default)]
+struct TomlExecution {
+    strategy: Option<ExecutionStrategy>,
+    backend: Option<String>,
+    rules: Option<Vec<ExecutionRule>>,
+    permissions: Option<BTreeMap<String, PermissionDecision>>,
 }
 
 impl TomlConfig {
@@ -960,6 +1086,23 @@ impl TomlConfig {
         if let Some(v) = self.sandbox.syscalls {
             config.sandbox.syscalls = Some(v);
         }
+        // `[execution]`: strategy/backend/rules use REPLACE-if-present overlay
+        // (NOT accumulating like extensions.paths/packages.paths). `permissions`
+        // is replace-the-whole-map too; it must arrive only from user/explicit
+        // layers — project `[execution.permissions]` is rejected upstream by
+        // `reject_project_execution_permissions` before any merge_into call.
+        if let Some(v) = self.execution.strategy {
+            config.execution.strategy = v;
+        }
+        if let Some(v) = self.execution.backend {
+            config.execution.backend = v;
+        }
+        if let Some(v) = self.execution.rules {
+            config.execution.rules = v;
+        }
+        if let Some(v) = self.execution.permissions {
+            config.execution.permissions = v;
+        }
     }
 }
 
@@ -1053,6 +1196,93 @@ pub fn validate_provider_namespace(config: &OpiConfig) -> Result<(), ConfigError
         validate(id, "providers.custom", &mut configured)?;
     }
     Ok(())
+}
+
+/// Validate the `[execution]` section structure. Rule-mode charset (only
+/// `interactive`/`non-interactive`/`rpc`) is enforced by the `ExecutionRunMode`
+/// serde enum; this checks catch-all presence/position and the strategy=rules
+/// requirement. Called at every site that produces a final `OpiConfig`.
+pub fn validate_execution_config(config: &OpiConfig) -> Result<(), ConfigError> {
+    validate_rules(&config.execution)
+}
+
+fn validate_rules(exec: &ExecutionConfig) -> Result<(), ConfigError> {
+    let mut catch_all_count = 0usize;
+    let mut seen_catch_all = false;
+    for rule in &exec.rules {
+        match &rule.modes {
+            // `modes = []` (explicit empty) is malformed: a catch-all must OMIT
+            // the key, not pass an empty array.
+            Some(modes) if modes.is_empty() => {
+                return Err(invalid_exec(
+                    "rules.modes",
+                    "empty modes array; omit `modes` for a catch-all rule",
+                ));
+            }
+            Some(_) => {
+                if seen_catch_all {
+                    return Err(invalid_exec(
+                        "rules",
+                        "a catch-all rule (no `modes`) must be last",
+                    ));
+                }
+            }
+            None => {
+                seen_catch_all = true;
+                catch_all_count += 1;
+                if catch_all_count > 1 {
+                    return Err(invalid_exec(
+                        "rules",
+                        "at most one catch-all rule (no `modes`) is allowed",
+                    ));
+                }
+            }
+        }
+    }
+    if exec.strategy == ExecutionStrategy::Rules {
+        if exec.rules.is_empty() {
+            return Err(invalid_exec(
+                "strategy",
+                "rules strategy requires at least one rule with a final catch-all",
+            ));
+        }
+        if catch_all_count != 1 {
+            return Err(invalid_exec(
+                "rules",
+                "rules strategy requires exactly one final catch-all rule (no `modes`)",
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Reject a project layer that sets `[execution.permissions]`. Persistent
+/// capability permission is user-owned: a project may request a strategy or
+/// backend (after the existing project-trust gate) but cannot create persistent
+/// `allow`. Called at BOTH project-merge sites (`finalize_with_project` and
+/// `merge_project_config`) BEFORE `merge_into`, because `merge_into` is
+/// layer-blind and cannot enforce this itself.
+fn reject_project_execution_permissions(project_raw: &TomlConfig) -> Result<(), ConfigError> {
+    if project_raw
+        .execution
+        .permissions
+        .as_ref()
+        .is_some_and(|m| !m.is_empty())
+    {
+        return Err(invalid_exec(
+            "permissions",
+            "project layer may not set [execution.permissions]; persistent \
+             permission is user-owned",
+        ));
+    }
+    Ok(())
+}
+
+fn invalid_exec(field: &'static str, message: &str) -> ConfigError {
+    ConfigError::InvalidExecutionConfig {
+        field: field.to_string(),
+        message: message.to_string(),
+    }
 }
 
 fn validate_custom_provider(
@@ -1514,6 +1744,8 @@ pub enum ConfigError {
     },
     #[error("invalid provider id '{provider}': {message}")]
     InvalidProviderNamespace { provider: String, message: String },
+    #[error("invalid execution config field '{field}': {message}")]
+    InvalidExecutionConfig { field: String, message: String },
 }
 
 // ---------------------------------------------------------------------------
@@ -1543,6 +1775,7 @@ fn parse_toml(contents: &str, path: &Path) -> Result<OpiConfig, ConfigError> {
     raw.merge_into(&mut config, &mut custom);
     config.providers.custom = validate_custom_providers(custom)?;
     validate_provider_namespace(&config)?;
+    validate_execution_config(&config)?;
     Ok(config)
 }
 
@@ -1601,7 +1834,11 @@ impl StagedConfig {
 
         if include_project && let Some(project_dir) = &self.project_dir {
             let project_config_path = project_dir.join(".opi").join("config.toml");
-            load_raw_config(&project_config_path)?.merge_into(&mut config, &mut custom);
+            let project_raw = load_raw_config(&project_config_path)?;
+            // Persistent capability permission is user-owned: reject a project
+            // `[execution.permissions]` BEFORE merging (merge_into is layer-blind).
+            reject_project_execution_permissions(&project_raw)?;
+            project_raw.merge_into(&mut config, &mut custom);
         }
 
         let has_explicit = self.explicit.is_some();
@@ -1620,6 +1857,7 @@ impl StagedConfig {
 
         config.providers.custom = validate_custom_providers(custom)?;
         validate_provider_namespace(&config)?;
+        validate_execution_config(&config)?;
         Ok(config)
     }
 }
@@ -1678,12 +1916,16 @@ pub fn merge_project_config(
 ) -> Result<OpiConfig, ConfigError> {
     let project_config_path = project_dir.join(".opi").join("config.toml");
     let project_raw = load_raw_config(&project_config_path)?;
+    // Persistent capability permission is user-owned: reject a project
+    // `[execution.permissions]` BEFORE merging (merge_into is layer-blind).
+    reject_project_execution_permissions(&project_raw)?;
     let mut project_custom = BTreeMap::new();
     project_raw.merge_into(&mut config, &mut project_custom);
     for (id, provider) in validate_custom_providers(project_custom)? {
         config.providers.custom.insert(id, provider);
     }
     validate_provider_namespace(&config)?;
+    validate_execution_config(&config)?;
     Ok(config)
 }
 
