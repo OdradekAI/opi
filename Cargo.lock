@@ -2100,6 +2100,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "opi-sandbox"
+version = "0.7.2"
+dependencies = [
+ "futures-core",
+ "futures-util",
+ "libc",
+ "opi-protocol",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-util",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "opi-tui"
 version = "0.7.2"
 dependencies = [

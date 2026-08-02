@@ -1,0 +1,26 @@
+[package]
+name = "opi-sandbox"
+description = "Standalone dependency-neutral command-execution sandbox SDK: L0 process-tree supervision and a platform-neutral restriction seam"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+opi-protocol = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+futures-core = { workspace = true }
+thiserror = { workspace = true }
+tempfile = { workspace = true }
+
+[target.'cfg(unix)'.dependencies]
+libc = { workspace = true }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true }
+
+[dev-dependencies]
+futures-util = { workspace = true }
