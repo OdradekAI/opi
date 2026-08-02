@@ -19,6 +19,7 @@ use opi_protocol::execution::v1::EnvInherit;
 use opi_sandbox::{
     CleanupState, ContractStatus, Mechanism, NoRestriction, SandboxEvent, SandboxOutcome,
     SandboxPolicy, SandboxRequest, SandboxResult, SandboxRun, SandboxRunner, SetupFailureReason,
+    StdinPolicy,
 };
 use tokio_util::sync::CancellationToken;
 
@@ -43,6 +44,7 @@ fn make_request(
         timeout,
         env_inherit: EnvInherit::Inherit,
         env_additions: BTreeMap::new(),
+        stdin: StdinPolicy::Null,
         cancel: None,
     };
     (request, workspace)
@@ -285,6 +287,7 @@ async fn explicit_env_additions_reach_the_target() {
             );
             m
         },
+        stdin: StdinPolicy::Null,
         cancel: None,
     };
     let result = drive_to_completion(runner().run(req).expect("run starts")).await;

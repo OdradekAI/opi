@@ -1,0 +1,102 @@
+//! Standalone smoke: drive the platform smoke script against the isolated built
+//! binary, then read back the persisted artifacts and re-assert (Phase 16 task
+//! 16.11.2, SC16-09a).
+//!
+//! The script (not this test) owns the isolation — PATH scrub, Opi sentinel env,
+//! and the canary — so CI/release jobs that invoke the script directly get the
+//! same no-Opi-access / no-durable-state proof this test asserts. This test runs
+//! `scripts/opi-sandbox-smoke.sh` on unix and `scripts/opi-sandbox-smoke.ps1` on
+//! Windows (the cfg(unix) arm compiles out on a Windows host; verified via
+//! WSL2/GHA Linux per the Phase 16 task 16.11.2 audit fold).
+
+#![cfg(test)]
+
+use std::path::PathBuf;
+use std::process::Command;
+
+fn manifest_dir() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+}
+
+/// `crates/opi-sandbox` is two levels below the repo root.
+fn repo_root() -> PathBuf {
+    manifest_dir()
+        .ancestors()
+        .nth(2)
+        .expect("manifest is under crates/opi-sandbox")
+        .to_path_buf()
+}
+
+fn read_artifact(dir: &std::path::Path, name: &str) -> String {
+    std::fs::read_to_string(dir.join(name)).unwrap_or_else(|_| String::new())
+}
+
+/// Re-assert the persisted artifacts so a script that touched the files but
+/// wrote empty or stale content still fails the test.
+fn assert_artifacts(dir: &std::path::Path) {
+    let version = read_artifact(dir, "version.txt");
+    assert!(
+        version.contains("opi-sandbox"),
+        "version artifact missing opi-sandbox: {version:?}"
+    );
+    let help = read_artifact(dir, "help.txt");
+    assert!(
+        help.contains("run") && help.contains("doctor"),
+        "help artifact: {help:?}"
+    );
+    let doctor = read_artifact(dir, "doctor.json");
+    assert!(
+        doctor.contains("\"supported\":false"),
+        "doctor must report supported=false in 16.11.2: {doctor:?}"
+    );
+    assert!(
+        doctor.contains("\"mechanisms\":[]"),
+        "doctor mechanisms must be empty in 16.11.2: {doctor:?}"
+    );
+    let run_exit = read_artifact(dir, "run-exit.txt");
+    assert_eq!(
+        run_exit.trim(),
+        "125",
+        "run must refuse pre-start (125) in 16.11.2: {run_exit:?}"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn standalone_smoke_script_unix() {
+    let bin = env!("CARGO_BIN_EXE_opi-sandbox");
+    let artifact_dir = tempfile::tempdir().expect("artifact temp dir");
+    let status = Command::new("bash")
+        .arg(repo_root().join("scripts").join("opi-sandbox-smoke.sh"))
+        .args(["--binary", bin])
+        .args([
+            "--artifact-dir",
+            artifact_dir.path().to_str().expect("utf8 artifact dir"),
+        ])
+        .status()
+        .expect("run bash smoke script");
+    assert!(status.success(), "smoke script failed: {status}");
+    assert_artifacts(artifact_dir.path());
+}
+
+#[cfg(windows)]
+#[test]
+fn standalone_smoke_script_windows() {
+    let bin = env!("CARGO_BIN_EXE_opi-sandbox");
+    let artifact_dir = tempfile::tempdir().expect("artifact temp dir");
+    let artifact_str = artifact_dir.path().to_str().expect("utf8 artifact dir");
+    let script = repo_root()
+        .join("scripts")
+        .join("opi-sandbox-smoke.ps1")
+        .to_str()
+        .expect("utf8 script path")
+        .to_string();
+    let status = Command::new("powershell.exe")
+        .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", &script])
+        .args(["-BinaryPath", bin])
+        .args(["-ArtifactDir", artifact_str])
+        .status()
+        .expect("run powershell smoke script");
+    assert!(status.success(), "smoke script failed: {status}");
+    assert_artifacts(artifact_dir.path());
+}

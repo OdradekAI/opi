@@ -42,35 +42,46 @@ fn depends_only_on_neutral_crates_not_opi_agent_or_coding_agent() {
     }
 }
 
-/// Static tripwire: the library source calls no host-environment-read API
-/// (`std::env::*`, `dotenvy`). This is NOT the load-bearing proof — the
-/// structural proof that the crate reads no Opi configuration is
+/// Static tripwire: NO source file under `src/` (library OR binary) calls a
+/// runtime host-environment-VAR-read API. The forbidden needles are
+/// `env::var`, `env::vars`, `var_os`, `vars_os`, and `dotenvy` — the APIs that
+/// read host configuration/state. `env::args`, `env::args_os` (CLI argument
+/// plumbing) and `env::consts` (compile-time constants such as `consts::OS`)
+/// are PERMITTED and intentionally absent from the needle set.
+///
+/// This is NOT the load-bearing proof that the crate reads no Opi configuration
+/// — the structural proof is
 /// `depends_only_on_neutral_crates_not_opi_agent_or_coding_agent` (no
 /// `opi-agent`/`opi-coding-agent` dependency; the sole opi-internal dep is the
-/// pure-types `opi-protocol`). This tripwire catches a future direct env read
-/// in the library source; it would not catch an indirect read inside a
-/// dependency (the dependency boundary does).
+/// pure-types `opi-protocol`). This tripwire catches a DIRECT env-var read
+/// (e.g. a future `env::var("OPI_SESSIONS_DIR")`) that the dependency graph
+/// cannot see; it walks `src/` recursively so `src/platform/*` is covered
+/// (Phase 16 task 16.11.2 audit fold: narrow the needle, not the scope).
 #[test]
-fn lib_source_calls_no_host_environment_read_api() {
+fn source_calls_no_host_environment_var_read_api() {
     let src = manifest_dir().join("src");
     let mut hits = String::new();
-    for entry in std::fs::read_dir(&src).expect("read src dir") {
-        let path = entry.expect("dir entry").path();
-        if path.is_dir() {
-            continue;
-        }
-        if path.extension().and_then(|e| e.to_str()) != Some("rs") {
-            continue;
-        }
-        let content = std::fs::read_to_string(&path).unwrap_or_default();
-        for needle in ["env::", "dotenvy"] {
-            if content.contains(needle) {
-                hits.push_str(&format!("{}: `{needle}`\n", path.display()));
+    let mut stack = vec![src];
+    while let Some(dir) = stack.pop() {
+        for entry in std::fs::read_dir(&dir).expect("read src dir") {
+            let path = entry.expect("dir entry").path();
+            if path.is_dir() {
+                stack.push(path);
+                continue;
+            }
+            if path.extension().and_then(|e| e.to_str()) != Some("rs") {
+                continue;
+            }
+            let content = std::fs::read_to_string(&path).unwrap_or_default();
+            for needle in ["env::var", "env::vars", "var_os", "vars_os", "dotenvy"] {
+                if content.contains(needle) {
+                    hits.push_str(&format!("{}: `{needle}`\n", path.display()));
+                }
             }
         }
     }
     assert!(
         hits.is_empty(),
-        "host-environment-read API found in library source:\n{hits}"
+        "runtime host-environment-VAR-read API found in source:\n{hits}"
     );
 }

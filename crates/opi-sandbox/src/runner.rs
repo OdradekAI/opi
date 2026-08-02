@@ -45,11 +45,37 @@ const OUTPUT_CAP: usize = 1024 * 1024;
 /// (mirrors the Phase 16 task 16.2 `TERMINATED_PIPE_DRAIN_GRACE` invariant).
 const PIPE_DRAIN_GRACE: Duration = Duration::from_millis(500);
 
+/// Target standard-input policy for one sandboxed run. This is a LOCAL
+/// invocation concern, not a protocol field: the `opi-protocol` `ExecutePayload`
+/// carries no stdin (a protocol backend's own stdin is the host-to-backend JSONL
+/// frame stream), so the SDK caller supplies this field — [`StdinPolicy::Null`]
+/// for the protocol backend (16.12) and [`StdinPolicy::Inherit`] for the human
+/// direct CLI (spec `### Human CLI`: "Direct `run` inherits terminal stdin by
+/// default").
+///
+/// [`StdinPolicy::Null`] is the safe default: a backend that inherited its own
+/// stdin would leak protocol frames to the target. There is deliberately NO
+/// `Default` impl so a future caller cannot silently regress to dropping stdin
+/// (Phase 16 task 16.11.2 audit fold: stdin-sdk-seam-c1a).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StdinPolicy {
+    /// The target's stdin is `/dev/null` (immediate EOF). The safe default and
+    /// the protocol backend's policy.
+    Null,
+    /// The target inherits the caller process's stdin. The human direct-CLI
+    /// policy.
+    Inherit,
+}
+
 /// Explicit inputs for one sandboxed run. Mirrors the `opi-protocol`
-/// `ExecutePayload` explicit-input set as ergonomic Rust types. There is NO
-/// shell-string field and NO target-stdin field: callers pass an explicit
-/// program and argument vector (design `### State model`, `#Reuse outside Opi`;
-/// Phase 16 task 16.11.1 audit fold #2).
+/// `ExecutePayload` explicit-input set as ergonomic Rust types for the seven
+/// ExecutePayload-aligned fields (program, args, workspace, cwd, timeout,
+/// environment-inheritance policy, environment additions). There is NO
+/// shell-string field: callers pass an explicit program and argument vector
+/// (design `### State model`, `#Reuse outside Opi`; Phase 16 task 16.11.1 audit
+/// fold #2). Two fields are LOCAL invocation concerns not carried by
+/// `ExecutePayload`: [`StdinPolicy`] (the `stdin` field) and the cooperative
+/// `cancel` token. The `stdin` field was added by task 16.11.2.
 #[derive(Debug, Clone)]
 pub struct SandboxRequest {
     /// The explicit program to execute (resolved by the caller; not a shell
@@ -69,6 +95,9 @@ pub struct SandboxRequest {
     pub env_inherit: EnvInherit,
     /// Bounded environment additions applied after the inheritance policy.
     pub env_additions: BTreeMap<String, String>,
+    /// Target standard-input policy. A LOCAL invocation concern (the protocol
+    /// `ExecutePayload` carries no stdin); see [`StdinPolicy`].
+    pub stdin: StdinPolicy,
     /// Optional cooperative cancellation token. When present, firing it resolves
     /// the run to [`SandboxOutcome::Cancelled`]. When absent, cancellation is
     /// exclusively future-drop (which observes no result).
@@ -271,7 +300,10 @@ impl SandboxRunner {
         let mut cmd = Command::new(&request.program);
         cmd.args(&request.args)
             .current_dir(&request.cwd)
-            .stdin(Stdio::null())
+            .stdin(match request.stdin {
+                StdinPolicy::Null => Stdio::null(),
+                StdinPolicy::Inherit => Stdio::inherit(),
+            })
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .kill_on_drop(true);

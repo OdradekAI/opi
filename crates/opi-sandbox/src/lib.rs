@@ -41,9 +41,12 @@
 
 #![deny(missing_docs)]
 
+pub mod cli;
 pub mod policy;
 pub mod process_tree;
 pub mod runner;
+
+pub(crate) mod platform;
 
 pub use policy::{
     AppliedRestriction, ContractStatus, Mechanism, NetworkPolicy, NoRestriction, Profile,
@@ -52,5 +55,5 @@ pub use policy::{
 pub use process_tree::{AttachError, TerminationOutcome, TreeGuard, TreeReason};
 pub use runner::{
     CleanupState, OutputStream, SandboxEvent, SandboxOutcome, SandboxRequest, SandboxResult,
-    SandboxRun, SandboxRunner, SetupFailed, SetupFailureReason,
+    SandboxRun, SandboxRunner, SetupFailed, SetupFailureReason, StdinPolicy,
 };
