@@ -10,6 +10,15 @@ repository.workspace = true
 authors.workspace = true
 exclude = [".opi"]
 
+# Opt-in feature (task 16.7): gates the execution-protocol-host integration test
+# (`tests/execution_protocol_host.rs`), which drives the production
+# `ExecutionProtocolHost` against the `execution_backend_mock` stdio peer. The
+# mock itself is a `harness = false` [[test]] target (built under `--all-targets`
+# regardless) so it stays linted; the feature only gates the heavy subprocess
+# suite. Empty (no cfg-gated crate code); not intended for downstream use.
+[features]
+execution-backend-test-fixture = []
+
 [[bin]]
 name = "opi"
 path = "src/main.rs"
@@ -81,4 +90,14 @@ harness = false
 [[test]]
 name = "package_adapter_example"
 path = "tests/package_adapter_example.rs"
+harness = false
+
+# Task 16.7: the command-execution-jsonl-v1 backend mock. A `harness = false`
+# stdio peer spawned by `tests/execution_protocol_host.rs` (located via the
+# deps-dir scan, like `adapter_host_mock`). Mode selected by the
+# `OPI_PROTOCOL_MOCK_MODE` env var. Built under `--all-targets` (feature on or
+# off) so clippy covers it; the consuming test file is feature-gated.
+[[test]]
+name = "execution_backend_mock"
+path = "tests/fixtures/execution_backend_mock.rs"
 harness = false
