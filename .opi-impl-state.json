@@ -1166,7 +1166,7 @@
       "definition_of_done": "ExecutionRuntime::build is the sole assembly module for resolved execution configuration, enabled named-package identities, Routing Strategy, User Policy, protocol hosting, and BashOperations selection. Given default local routing with no enabled executable identity, it returns direct LocalBashOperations without calling the package resolver/store or constructing router, permission, or protocol state; given an eligible enabled identity, it returns routed operations with no fallback. Injected sentinels prove both branches. This substrate task does not claim public startup integration; 16.9 closes Minimal Runtime and public-surface acceptance through production call sites.",
       "definition_source": "draft-reviewed",
       "replaces": "Build routed operations and the Minimal Runtime split",
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "16.5",
         "16.6",
@@ -1212,6 +1212,11 @@
           "field": "task_owned_paths",
           "reason": "Concentrated execution assembly in the deep runtime module and removed public startup hot files from this task.",
           "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Core Architecture"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Pre-impl 7-lens audit (wf_4e169b61): registering execution/mod.rs — the new `execution::runtime` submodule requires `pub mod runtime;` plus assembly re-exports in mod.rs (mirrors 16.7 owning mod.rs for protocol_host).",
+          "source": "audit must-fix MF5"
         }
       ],
       "tier": "cli-runtime",
@@ -1231,23 +1236,30 @@
       "acceptance_scenarios": [],
       "production_call_sites": [],
       "substrate_only": true,
-      "iteration_count": 0,
+      "iteration_count": 2,
       "max_iterations": 5,
-      "start_commit": null,
-      "baseline_dirty_files": [],
+      "start_commit": "bb6c8087cc407f22baa69ace0a2327acf552f132",
+      "baseline_dirty_files": [
+        ".claude/skills/opi-implement/scripts/phase16-5-design-brief.md",
+        ".claude/skills/opi-implement/scripts/phase16-6-design-brief.md",
+        ".claude/skills/opi-implement/scripts/phase16-7-design-brief.md"
+      ],
       "task_owned_paths": [
         "crates/opi-coding-agent/src/lib.rs",
         "crates/opi-coding-agent/src/runtime_packages.rs",
         "crates/opi-coding-agent/src/tool/operations.rs",
         "crates/opi-coding-agent/src/execution/runtime.rs",
         "crates/opi-coding-agent/src/execution/router.rs",
-        "crates/opi-coding-agent/tests/execution_runtime.rs"
+        "crates/opi-coding-agent/tests/execution_runtime.rs",
+        "crates/opi-coding-agent/src/execution/mod.rs"
       ],
       "last_attempt": null,
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "88a6d62bc482de0af61998caf4fdbdcb436affd4",
+      "evidence": "ExecutionRuntime::build assembly substrate. Branch 1 (Minimal Runtime: default-local + no enabled identity) returns the local backend by pointer-identity (Arc::ptr_eq) without touching the package store (panic-on-call IdentitySource sentinel) or constructing router/eligibility/permission/protocol/adapter state; consults the borrowed policy so explicit local deny/ask is honored. Branch 2 constructs RoutedBashOperations (router-resolved dispatch, no local fallback) with one ProcessCommandAdapter per enabled external identity (per-invocation activate() via spawn_blocking; drives 16.7 ExecutionProtocolHost; maps CompletedOutcome->BashResult with LOCAL_BASH_OPERATION_DIAGNOSTIC; ExecutionFailure->BashOpError::BackendFailure carrying the stable code). Gates: D.1 lib 4 (incl. host_deadline helper driven by test) + execution_runtime 14 (11 feature-free branch/routing/no-fallback/FL7 BashTool ToolResult-lift + 3 mock-peer fixture happy/nonzero/protocol_violation); D.3 fmt/clippy[lib+test x2 configs+mock, -D warnings]/doc clean. Pre-impl design audit wf_4e169b61 (7 lenses): 5 must-fix + 28 flagged folded (MF1 sentinel provability; MF2 branch-1 policy consult; MF3 spawn_blocking activate; MF4 workspace_root param; MF5 mod.rs C.1a). D.2 exec-verify: iter1 wf_dff8cb89 1 must-fix (tautological deadline test -> host_deadline helper); iter2 wf_dac52bfb 0 must-fix/flagged/rejected. Substrate classification: ExecutionRuntime/RoutedBashOperations/ProcessCommandAdapter are zero-production-caller seams (16.9 wires startup); model-strategy invocation deferred to 16.9 (adapter_not_selected).",
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        "Task 16.8 PASSED @88a6d617 (iter2): ExecutionRuntime::build - sole command.execute assembly. Branch 1 (Minimal Runtime) returns local_ops by pointer-identity (panic-on-call IdentitySource sentinel) and honors explicit local deny/ask; branch 2 constructs RoutedBashOperations (router dispatch, no local fallback) with one ProcessCommandAdapter per enabled external identity (per-invocation activate() via spawn_blocking -> 16.7 host -> CompletedOutcome->BashResult; ExecutionFailure->BashOpError::BackendFailure with the stable code). IdentitySource trait (PackageActivationStore impl) is the injectable activation seam. Pre-impl audit wf_4e169b61 folded 5 must-fix (MF1 sentinel provability via ptr_eq+panic-store; MF2 branch-1 policy consult; MF3 spawn_blocking activate; MF4 workspace_root param; MF5 mod.rs C.1a register). D.2 iter1 wf_dff8cb89 1 must-fix: tautological deadline_is_timeout_plus_cleanup_grace arithmetic test -> extracted host_deadline helper driven across 0s/5s/30s (asserts cancel_at==command_timeout); iter2 wf_dac52bfb clean. Model-strategy invocation deferred to 16.9 (adapter_not_selected until bash-schema backend field)."
+      ]
     },
     {
       "id": "16.9",
@@ -3997,7 +4009,8 @@
     "Task 16.4 PASSED @6b24fe1 (verified, iter 1). Static executable-contribution validation seam: parse [[contributions.adapters]] (additive; legacy opi-extension-jsonl-v1 untouched) + hard-gate to ValidatedExecutableContribution + 8-field LockMaterial, pure validate() (no spawn). 17 design-audit must-fix folded pre-code; D.2 clean 0/0/0. Substrate only (16.5 owns runtime).",
     "16.5 PASSED @00e1ec6 (iter4): Package Trust + enable/disable lifecycle; activate() test-driven seam (spawn=16.7); D.2 wf_bc066f49 0 must-fix/1 flagged(resolved-as-evidence).",
     "16.6 PASSED @e865a9e (iter2): execution config/failures/routing/permission substrate; resolve_selection/PermissionPolicy/ExecutionFailure seams (wired 16.7-16.9); pre-impl 7-lens audit folded 13 must-fix into D1-D9; D.2 wf_dd4c4524 0/0/0 (iter1: 1 vacuous-test must-fix + 2 actionable flags, all fixed; 1 substrate production-call-site flag accepted per 16.5 precedent).",
-    "16.7 PASSED @6d027417 (iter2): ExecutionProtocolHost (one-shot command-execution-jsonl-v1 host; 5 ExecutionFailure codes; capped async reader; host state machine; one deadline + cancel/grace; map_shell_command). 29 tests. Pre-impl wf_c152afa7 F1-F13; D.2 iter1 wf_cf9afb89 (1 must-fix Failed-frame coverage) -> iter2 wf_b3398adb 0 must-fix/2 flagged (handshake addressed-by-design; tautology fixed). Phase 16 = 7/21."
+    "16.7 PASSED @6d027417 (iter2): ExecutionProtocolHost (one-shot command-execution-jsonl-v1 host; 5 ExecutionFailure codes; capped async reader; host state machine; one deadline + cancel/grace; map_shell_command). 29 tests. Pre-impl wf_c152afa7 F1-F13; D.2 iter1 wf_cf9afb89 (1 must-fix Failed-frame coverage) -> iter2 wf_b3398adb 0 must-fix/2 flagged (handshake addressed-by-design; tautology fixed). Phase 16 = 7/21.",
+    "16.8 PASSED @88a6d617 (iter2): ExecutionRuntime::build deep assembly (RoutedBashOperations + ProcessCommandAdapter + IdentitySource seam); branch 1 Minimal Runtime returns local_ops by ptr-identity (no store/router/protocol state), branch 2 routed with no local fallback. 14 integration + 4 inline tests. Pre-impl wf_4e169b61 folded 5 must-fix; D.2 iter1 wf_dff8cb89 1 must-fix (host_deadline helper) -> iter2 wf_dac52bfb clean. Phase 16 = 8/21."
   ],
   "verify_runs": [
     {
@@ -4107,6 +4120,28 @@
       "rejected": 0,
       "verdict": "pass",
       "note": "iter2; final 6d027417 differs only by flag-2 vacuous-assertion delete. iter1 wf_cf9afb89-b11 had 1 must-fix (Failed-frame production coverage) + 1 flag, both fixed."
+    },
+    {
+      "task": "16.8",
+      "workflow": "wf_dff8cb89-bdb",
+      "stage": "D.2 exec",
+      "commit": "306f489",
+      "must_fix": 1,
+      "flagged": 0,
+      "rejected": 0,
+      "verdict": "must-fix",
+      "note": "iter1; tests-non-vacuous: tautological deadline arithmetic test -> extracted host_deadline helper. Fixed; tree re-verified."
+    },
+    {
+      "task": "16.8",
+      "workflow": "wf_dac52bfb-005",
+      "stage": "D.2 exec",
+      "commit": "9026345",
+      "must_fix": 0,
+      "flagged": 0,
+      "rejected": 0,
+      "verdict": "pass",
+      "note": "iter2; final 88a6d617 is tree-identical to 9026345 (only Opi-Evaluator footer pending->passed)."
     }
   ]
 }
