@@ -1616,7 +1616,7 @@
       "definition_of_done": "The dependency-neutral opi-sandbox library exposes documented SandboxPolicy, SandboxRequest, SandboxRunner, SandboxEvent, and SandboxResult APIs over explicit inputs; sequential calls share no invocation state, every call owns and removes its temporary root and child tree on success, timeout, cancellation, error, or guard drop, and the crate does not read Opi configuration, sessions, package storage, or depend on opi-agent or opi-coding-agent.",
       "definition_source": "draft-reviewed",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "16.2",
         "16.3"
@@ -1661,17 +1661,22 @@
           "production_call_sites": [
             "opi_sandbox::SandboxRunner::run"
           ],
-          "status": "open"
+          "status": "met"
         }
       ],
       "production_call_sites": [
         "opi_sandbox::SandboxRunner::run"
       ],
       "substrate_only": false,
-      "iteration_count": 0,
+      "iteration_count": 1,
       "max_iterations": 5,
-      "start_commit": null,
-      "baseline_dirty_files": [],
+      "start_commit": "6e605284779a1dd1f3e3e3bf430f7a18aef6242e",
+      "baseline_dirty_files": [
+        ".claude/skills/opi-implement/scripts/phase16-5-design-brief.md",
+        ".claude/skills/opi-implement/scripts/phase16-6-design-brief.md",
+        ".claude/skills/opi-implement/scripts/phase16-7-design-brief.md",
+        ".claude/skills/opi-implement/scripts/phase16-8-design-brief.md"
+      ],
       "task_owned_paths": [
         "Cargo.toml",
         "Cargo.lock",
@@ -1683,11 +1688,17 @@
         "crates/opi-sandbox/tests/sdk_contract.rs",
         "crates/opi-sandbox/tests/crate_boundaries.rs"
       ],
-      "last_attempt": null,
-      "verified_at_commit": null,
-      "evidence": null,
+      "last_attempt": {
+        "commit": "8d71f317965851f63baeef57cd907c39aafa2fc4",
+        "outcome": "passed",
+        "iteration": 1
+      },
+      "verified_at_commit": "8d71f317965851f63baeef57cd907c39aafa2fc4",
+      "evidence": "D.1 per-target gates green (fmt/clippy(-D warnings)/doc(-D warnings)/workspace-check; sdk_contract 13/13 + crate_boundaries 2/2 incl cargo tree dep-neutral); pre-impl 7-lens design audit wf_ab69555b-710 folded 10 must-fix before code; D.2 exec.workflow.js wf_b948b8ac-7e8e 0 must-fix, 2 low flags addressed (tautological single-variant-enum assert_eq! -> compile-time type pin with honest doc; env-read source guard broadened to env::/dotenvy tripwire naming cargo-tree structural proof as load-bearing). Commit 8d71f317.",
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        "Task 16.11.1: added standalone dependency-neutral opi-sandbox library crate (SandboxPolicy/SandboxRequest/SandboxRunner/SandboxEvent/SandboxResult over explicit inputs). Synchronous run() spawns under an owned TreeGuard (own process_tree.rs: Unix process-group SIGKILL + Windows kill-on-close Job Object; no await between spawn and guard = dropped-future-safe). SandboxRun: futures_core::Stream whose first item is Started{temp_root,child_pid,mechanism,contract} and whose Drop drops the owned supervision future -> child kill_on_drop + TreeGuard terminate + TempDir removal on EVERY terminal path (success/timeout/cancel/error/drop). Single Completed terminal (no split handle, no detached task). SandboxResult{outcome: Exited/Signaled/TimedOut/Cancelled, cleanup: CleanupState, stdout/stderr, temp_root} - NO CleanupUnconfirmed outcome variant (orthogonal cleanup field; protocol concern 16.11.2). Platform-neutral Restriction::prepare(&mut Command) seam (NoRestriction -> mechanism=none/Unrestricted); native confinement deferred to 16.13/14.1/14.2; public strings use supervised/unrestricted only. Reuses opi-protocol::EnvInherit; no opi-agent/opi-coding-agent. Deps: opi-protocol+tokio+tokio-util+futures-core+thiserror+tempfile+libc(unix)/windows-sys(windows). Pre-impl 7-lens design audit (wf_ab69555b-710) folded 10 must-fix. D.2 (wf_b948b8ac-7e8e) 0 must-fix, 2 low flags addressed. 15 tests green (13 sdk_contract driving real run() across all 5 terminal paths incl grandchild-descendant kill observed on Windows + 2 crate_boundaries). Closes SC16-08 (explicit inputs/statelessness/cleanup); confinement (SC16-10/11/12) stays 16.13/14.1/14.2."
+      ]
     },
     {
       "id": "16.11.2",
@@ -4281,6 +4292,16 @@
       "rejected_count": 0,
       "ran_at": "2026-08-02T15:22:08Z",
       "task_id": "16.10",
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": "wf_b948b8ac-7e8e",
+      "folded_count": 0,
+      "flagged_count": 2,
+      "rejected_count": 0,
+      "ran_at": "2026-08-02T17:00:33Z",
+      "task_id": "16.11.1",
       "criterion_id": null
     }
   ]
