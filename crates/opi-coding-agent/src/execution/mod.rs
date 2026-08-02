@@ -13,6 +13,7 @@ pub mod failure;
 pub mod permission;
 pub mod protocol_host;
 pub mod router;
+pub mod runtime;
 
 pub use contribution::{
     ContributionValidationError, LockMaterial, PackageSource, ValidatedExecutableContribution,
@@ -25,3 +26,8 @@ pub use protocol_host::{
     StartedReport,
 };
 pub use router::{Eligibility, EligibleAdapter, Selection, resolve_selection};
+// 16.8 re-exports only the 16.9-facing assembly surfaces. The concrete routed
+// backend (`RoutedBashOperations`) and external adapter (`ProcessCommandAdapter`)
+// stay pub-in-module: `build` returns `Arc<dyn BashOperations>`, so callers and
+// tests drive them opaquely.
+pub use runtime::{EnabledIdentity, ExecutionRuntime, IdentitySource};
