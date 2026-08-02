@@ -10,7 +10,7 @@ mod read;
 pub(crate) mod supervision;
 mod write;
 
-pub use bash::BashTool;
+pub use bash::{BashTool, default_bash_schema, with_model_backend_enum};
 pub use edit::EditTool;
 pub use find::FindTool;
 pub use glob::GlobTool;

@@ -291,6 +291,10 @@ impl RpcRunner {
                 .tool_selection(tool_selection)
                 .tool_config(tool_config)
                 .startup_diagnostics(startup_diagnostics)
+                // Phase 16.9: RPC run mode threaded into ExecutionRuntime::build
+                // (cannot be derived from tool_config.run_mode, which collapses
+                // RPC into NonInteractive).
+                .execution_mode(crate::config::ExecutionRunMode::Rpc)
                 // Record runtime diagnostics so run summaries can carry structured
                 // severity counts (Phase 7 task 7.5).
                 .record_diagnostics(true);

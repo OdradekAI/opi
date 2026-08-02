@@ -131,6 +131,7 @@ fn quick_request(cwd: &Path) -> BashRequest {
         timeout: Duration::from_secs(5),
         signal: CancellationToken::new(),
         env: vec![],
+        backend: None,
     }
 }
 
@@ -153,6 +154,7 @@ async fn bash_l0_kills_process_tree_in_off_mode() {
         timeout: Duration::from_millis(1500),
         signal: CancellationToken::new(),
         env: vec![],
+        backend: None,
     };
     let result = ops.exec(req).await.unwrap();
     assert!(
@@ -185,6 +187,7 @@ async fn bash_l0_kills_process_tree_on_cancel() {
         timeout: Duration::from_secs(60),
         signal: token.clone(),
         env: vec![],
+        backend: None,
     };
     let handle = tokio::spawn(async move { ops.exec(req).await });
     // Let the grandchild spawn, then cancel.
@@ -220,6 +223,7 @@ async fn dropped_exec_future_kills_process_tree() {
         timeout: Duration::from_secs(60),
         signal: CancellationToken::new(),
         env: vec![],
+        backend: None,
     };
     let outcome = tokio::select! {
         _ = tokio::time::sleep(Duration::from_millis(1500)) => "dropped",
@@ -323,6 +327,7 @@ async fn bash_l0_kills_process_tree_in_off_mode() {
         timeout: Duration::from_millis(1500),
         signal: CancellationToken::new(),
         env: vec![],
+        backend: None,
     };
     let result = ops.exec(req).await.unwrap();
     assert!(result.exit_code.is_none(), "exec should time out");
@@ -347,6 +352,7 @@ async fn bash_l0_kills_process_tree_on_cancel() {
         timeout: Duration::from_secs(60),
         signal: token.clone(),
         env: vec![],
+        backend: None,
     };
     let handle = tokio::spawn(async move { ops.exec(req).await });
     tokio::time::sleep(Duration::from_millis(1200)).await;
@@ -380,6 +386,7 @@ async fn dropped_exec_future_kills_process_tree() {
         timeout: Duration::from_secs(60),
         signal: CancellationToken::new(),
         env: vec![],
+        backend: None,
     };
     let outcome = tokio::select! {
         _ = tokio::time::sleep(Duration::from_millis(1500)) => "dropped",
@@ -451,6 +458,7 @@ async fn clean_exit_kills_surviving_background_descendants() {
         timeout: Duration::from_secs(10),
         signal: CancellationToken::new(),
         env: vec![],
+        backend: None,
     };
     let result = ops.exec(req).await.unwrap();
     assert_eq!(
@@ -481,6 +489,7 @@ async fn clean_exit_kills_surviving_background_descendants() {
         timeout: Duration::from_secs(10),
         signal: CancellationToken::new(),
         env: vec![],
+        backend: None,
     };
     let result = ops.exec(req).await.unwrap();
     assert_eq!(
@@ -522,6 +531,7 @@ async fn pipe_holding_descendant_drains_within_bounded_grace() {
         timeout: Duration::from_secs(10),
         signal: CancellationToken::new(),
         env: vec![],
+        backend: None,
     };
     let start = std::time::Instant::now();
     let result = ops.exec(req).await.unwrap();
@@ -548,6 +558,7 @@ async fn pipe_holding_descendant_drains_within_bounded_grace() {
         timeout: Duration::from_secs(10),
         signal: CancellationToken::new(),
         env: vec![],
+        backend: None,
     };
     let start = std::time::Instant::now();
     let result = ops.exec(req).await.unwrap();

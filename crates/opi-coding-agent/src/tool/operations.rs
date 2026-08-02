@@ -214,6 +214,11 @@ pub struct ToolDiagnostic {
 /// `CancellationToken` so cancellation propagates through the trait.
 /// `CancellationToken` is not `Eq`, so `BashRequest` derives only `Debug +
 /// Clone`.
+///
+/// `backend` carries the model-supplied backend id under the `model` execution
+/// strategy (Phase 16.9). It is `None` for the local backend and for
+/// `fixed`/`rules` strategies, where the router ignores it; only
+/// `RoutedBashOperations::exec` forwards it to `resolve_selection`.
 #[derive(Debug, Clone)]
 pub struct BashRequest {
     pub command: String,
@@ -221,6 +226,7 @@ pub struct BashRequest {
     pub timeout: Duration,
     pub signal: CancellationToken,
     pub env: Vec<(String, String)>,
+    pub backend: Option<String>,
 }
 
 /// Bash exec result. Exit-nonzero, timeout, and cancellation are represented
@@ -923,6 +929,9 @@ impl BashOperations for LocalBashOperations {
                 timeout,
                 signal,
                 env,
+                // `backend` is model-strategy routing only; the local backend
+                // is always `local`, so drop it here.
+                ..
             } = request;
             let shell = if cfg!(windows) { "cmd" } else { "sh" };
             let flag = if cfg!(windows) { "/C" } else { "-c" };
@@ -1470,6 +1479,7 @@ mod tests {
             timeout: Duration::from_secs(10),
             signal: CancellationToken::new(),
             env: vec![],
+            backend: None,
         };
         let result = tokio::time::timeout(
             Duration::from_secs(3),
@@ -1526,6 +1536,7 @@ mod tests {
                 timeout: Duration::from_secs(10),
                 signal: CancellationToken::new(),
                 env: vec![],
+                backend: None,
             })
             .await
             .unwrap();

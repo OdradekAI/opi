@@ -47,15 +47,23 @@ use opi_ai::message::Message;
 use opi_ai::provider::{ModelInfo, Provider, ThinkingConfig};
 use serde::Serialize;
 
-use crate::config::OpiConfig;
+use crate::config::{
+    ExecutionConfig, ExecutionRunMode, ExecutionStrategy, OpiConfig, PermissionDecision,
+};
 use crate::context_files;
 use crate::credential_store::KeychainCredentialStore;
 use crate::diagnostic_bridge::{
     diagnostic_for_package_discovery_error, diagnostic_for_resource_discovery_error,
-    diagnostic_for_resource_layer_message, diagnostic_from_package,
-    diagnostic_from_package_resolution_error,
+    diagnostic_for_resource_layer_message, diagnostic_from_execution_failure,
+    diagnostic_from_package, diagnostic_from_package_resolution_error,
 };
+use crate::execution::permission::PermissionPolicy;
+use crate::execution::{Eligibility, EnabledIdentity, ExecutionRuntime, IdentitySource};
 use crate::oauth::{OAuthEndpointConfig, OAuthProviderRegistry};
+use crate::package_activation::{
+    ActivatedContribution, ActivationError, PackageActivationStore, host_opi_version,
+    host_target_triple,
+};
 use crate::package_discovery::PackageResource;
 use crate::policy::{RunMode, ToolRuntimeConfig, ToolSelection};
 use crate::project_trust::TrustDecision;
@@ -67,8 +75,123 @@ use crate::sandbox::PreparedSandbox;
 use crate::session_coordinator::{SessionCoordinator, to_wire_result};
 use crate::tool::{
     BashOperations, BashTool, EditTool, FileOperations, FindTool, GlobTool, GrepTool,
-    LocalBashOperations, LocalFileOperations, LsTool, ReadTool, WriteTool,
+    LocalBashOperations, LocalFileOperations, LsTool, ReadTool, WriteTool, default_bash_schema,
+    with_model_backend_enum,
 };
+
+/// Phase 16.9: the resolved execution-context inputs threaded into
+/// [`ExecutionRuntime::build`] at startup. Production (`new_with_build_options`)
+/// constructs this from the layered config plus the global package-activation
+/// store; tests inject Minimal-Runtime fixtures (an empty enabled slice plus a
+/// panic-on-call [`IdentitySource`] sentinel) to drive the production
+/// [`CodingHarness::build_tools_with_sandbox`] chokepoint.
+///
+/// `policy` is the resolved [`PermissionPolicy`] derived from
+/// `config.execution.permissions` (NOT [`PermissionPolicy::empty`], which would
+/// silently drop an explicit user `local = "deny"`/`ask`); `store` is the live
+/// package-activation store used both to enumerate enabled identities at startup
+/// and to revalidate per-invocation inside the routed backend.
+#[derive(Clone)]
+pub struct ExecutionWiring {
+    pub config: ExecutionConfig,
+    pub enabled: Vec<EnabledIdentity>,
+    pub policy: PermissionPolicy,
+    pub store: Arc<dyn IdentitySource>,
+    pub mode: ExecutionRunMode,
+    pub host_target: String,
+    pub host_opi_version: String,
+}
+
+/// Resolve the dynamic bash input schema for the current execution config.
+///
+/// The default (`fixed`/`rules`/default-local) schema is [`default_bash_schema`]
+/// byte-for-byte. Under `strategy = "model"` the required bounded `backend` enum
+/// is added (listing only model-visible, non-denied adapters) so the model can
+/// name a backend the router will accept; `fixed`/`rules` never carry the field.
+fn bash_input_schema(
+    config: &ExecutionConfig,
+    enabled: &[EnabledIdentity],
+    policy: &PermissionPolicy,
+) -> serde_json::Value {
+    let base = default_bash_schema();
+    match config.strategy {
+        ExecutionStrategy::Model => {
+            // Build the model-visible candidates (available && !deny) annotated
+            // with whether each requires interactive approval (ask), so the
+            // schema's per-candidate description can flag ask adapters per the
+            // design (§Model routing: "An ask candidate is visible with a
+            // description that it requires interactive approval. A deny candidate
+            // is absent.").
+            let eligibility = Eligibility::from_enabled(enabled, policy);
+            let candidates: Vec<(&str, bool)> = eligibility
+                .0
+                .iter()
+                .filter(|a| a.available && a.permission != PermissionDecision::Deny)
+                .map(|a| (a.id.as_str(), a.permission == PermissionDecision::Ask))
+                .collect();
+            with_model_backend_enum(base, &candidates)
+        }
+        _ => base,
+    }
+}
+
+/// Build the production [`ExecutionWiring`] from the layered config and the
+/// global package-activation store. The enabled identities come from
+/// [`PackageActivationStore::enabled_identities`] (tolerant of a corrupt trust
+/// file); the policy is [`PermissionPolicy::from_map`] over the resolved
+/// permissions so explicit user deny/ask/allow for `local` and externals is
+/// honored exactly by both the Minimal-Runtime and routed branches.
+fn execution_wiring(
+    config: &OpiConfig,
+    global_config_dir: &Path,
+    mode: ExecutionRunMode,
+) -> ExecutionWiring {
+    let store = PackageActivationStore::global(global_config_dir.to_path_buf());
+    let enabled = store.enabled_identities();
+    ExecutionWiring {
+        config: config.execution.clone(),
+        enabled,
+        policy: PermissionPolicy::from_map(config.execution.permissions.clone()),
+        store: Arc::new(store),
+        mode,
+        host_target: host_target_triple().to_string(),
+        host_opi_version: host_opi_version().to_string(),
+    }
+}
+
+/// A no-state [`IdentitySource`] that panics if activated. The Minimal-Runtime
+/// branch of [`ExecutionRuntime::build`] never activates any package, so this is
+/// the correct store for the default-local / no-enabled-extensions shape and
+/// reifies the SC16-01 invariant: an invalid package-store sentinel is never
+/// touched. Used by the [`CodingHarness::build_tools`] test convenience.
+struct PanicIdentitySource;
+impl IdentitySource for PanicIdentitySource {
+    fn activate(
+        &self,
+        _: &str,
+        _: &str,
+        _: &str,
+    ) -> Result<ActivatedContribution, ActivationError> {
+        panic!("Minimal Runtime must not activate any package");
+    }
+}
+
+/// The default-local / no-enabled-extensions execution context. Used by the
+/// [`CodingHarness::build_tools`] convenience, by tests that drive
+/// [`CodingHarness::build_tools_with_sandbox`] for non-execution concerns (the
+/// sandbox suites), and identical to the shape the production path reduces to
+/// when no executable extension is enabled.
+pub fn minimal_runtime_wiring(mode: ExecutionRunMode) -> ExecutionWiring {
+    ExecutionWiring {
+        config: ExecutionConfig::default(),
+        enabled: Vec::new(),
+        policy: PermissionPolicy::empty(),
+        store: Arc::new(PanicIdentitySource),
+        mode,
+        host_target: host_target_triple().to_string(),
+        host_opi_version: host_opi_version().to_string(),
+    }
+}
 
 /// Optional pre-existing session the harness can adopt instead of creating
 /// a new JSONL file. Produced by `--resume` flows.
@@ -351,6 +474,7 @@ pub struct CodingHarnessBuilder {
     record_diagnostics: bool,
     trace: Option<TraceConfig>,
     trust_decision: TrustDecision,
+    execution_mode: ExecutionRunMode,
 }
 
 impl CodingHarnessBuilder {
@@ -381,6 +505,7 @@ impl CodingHarnessBuilder {
             record_diagnostics: false,
             trace: None,
             trust_decision,
+            execution_mode: ExecutionRunMode::Interactive,
         }
     }
 
@@ -471,6 +596,16 @@ impl CodingHarnessBuilder {
         self
     }
 
+    /// Phase 16.9: set the execution run mode threaded into
+    /// `ExecutionRuntime::build`. Defaults to [`ExecutionRunMode::Interactive`];
+    /// headless startup paths set this to `NonInteractive` (runner/text/NDJSON)
+    /// or `Rpc` (RPC). It cannot be derived from `tool_config.run_mode`, which
+    /// collapses RPC into `NonInteractive`.
+    pub fn execution_mode(mut self, mode: ExecutionRunMode) -> Self {
+        self.execution_mode = mode;
+        self
+    }
+
     pub fn build(self) -> CodingHarness {
         let tool_selection = self.tool_selection;
         let tool_config = self.tool_config.unwrap_or_else(|| {
@@ -498,6 +633,7 @@ impl CodingHarnessBuilder {
                 record_diagnostics: self.record_diagnostics,
                 trace: self.trace,
                 trust_decision: self.trust_decision,
+                execution_mode: self.execution_mode,
             },
         )
     }
@@ -513,6 +649,10 @@ struct HarnessBuildOptions {
     record_diagnostics: bool,
     trace: Option<TraceConfig>,
     trust_decision: TrustDecision,
+    /// Phase 16.9: the run mode threaded into `ExecutionRuntime::build`. Cannot
+    /// be derived from `tool_config.run_mode` (which collapses RPC into
+    /// `NonInteractive`); each startup path sets it explicitly.
+    execution_mode: ExecutionRunMode,
 }
 
 impl Default for HarnessBuildOptions {
@@ -527,6 +667,7 @@ impl Default for HarnessBuildOptions {
             record_diagnostics: false,
             trace: None,
             trust_decision: TrustDecision::Undecided,
+            execution_mode: ExecutionRunMode::Interactive,
         }
     }
 }
@@ -810,21 +951,31 @@ impl CodingHarness {
             hooks = registry.wrap_hooks(hooks);
         }
 
+        // Resolve the global config dir once: the Phase 16.9 execution runtime
+        // needs it to build the package-activation store, and resource discovery
+        // reuses the same dir below.
+        let resolved_global_dir = global_config_dir.unwrap_or_else(crate::config::user_config_dir);
+
         // Phase 15.5.1: resolve the sandbox policy once from the resolved
         // config.sandbox. The permanent platform-gap diagnostics surface through
         // the harness startup channel (merged into resources.metadata.diagnostics
         // below); the decision is enforced per-command inside
         // LocalBashOperations::exec.
         let prepared = crate::sandbox::prepare_production(&config.sandbox, &workspace_root);
+        // Phase 16.9: resolve the execution wiring once (enabled identities from
+        // the global package-activation store + the resolved permission policy +
+        // the run mode) and thread it through `ExecutionRuntime::build` inside
+        // `build_tools_with_sandbox`.
+        let execution =
+            execution_wiring(&config, &resolved_global_dir, build_options.execution_mode);
         let (mut tools, sandbox_startup_diagnostics) =
-            Self::build_tools_with_sandbox(&workspace_root, &tool_config, prepared);
+            Self::build_tools_with_sandbox(&workspace_root, &tool_config, prepared, &execution);
         tools.extend(extension_tools);
         let tool_defs: Vec<_> = tools.iter().map(|t| t.definition()).collect();
         let mut builder = SystemPromptBuilder::new().tools(tool_defs);
         if let Some(content) = user_system_prompt {
             builder = builder.user_system(content);
         }
-        let resolved_global_dir = global_config_dir.unwrap_or_else(crate::config::user_config_dir);
         let mut resources = match build_options.resource_metadata {
             Some(metadata) => HarnessResources {
                 metadata,
@@ -2080,75 +2231,93 @@ impl CodingHarness {
         workspace_root: &Path,
         tool_config: &ToolRuntimeConfig,
     ) -> Vec<Box<dyn Tool>> {
-        Self::build_tools_with_sandbox(workspace_root, tool_config, PreparedSandbox::default()).0
+        Self::build_tools_with_sandbox(
+            workspace_root,
+            tool_config,
+            PreparedSandbox::default(),
+            &minimal_runtime_wiring(ExecutionRunMode::Interactive),
+        )
+        .0
     }
 
-    /// Phase 15.5.1: like [`Self::build_tools`] but constructs `LocalBashOperations`
-    /// with the resolved sandbox policy and returns the once-per-startup
-    /// permanent-gap diagnostics alongside the tools. The startup caller
-    /// resolves the policy once via [`crate::sandbox::prepare_production`] and
-    /// merges the returned diagnostics into the harness startup channel so they
-    /// surface in interactive, non-interactive, and RPC modes.
+    /// Phase 15.5.1 + 16.9: like [`Self::build_tools`] but constructs
+    /// `LocalBashOperations` with the resolved sandbox policy, then threads the
+    /// resolved execution context through [`ExecutionRuntime::build`] and injects
+    /// its selected [`BashOperations`] plus the dynamic bash schema into the
+    /// production `BashTool`. Returns the once-per-startup permanent-gap
+    /// diagnostics (Phase 15) alongside any execution-startup diagnostics
+    /// (Phase 16.9) so both surface in interactive, non-interactive, and RPC
+    /// modes.
     pub fn build_tools_with_sandbox(
         workspace_root: &Path,
         tool_config: &ToolRuntimeConfig,
         prepared: PreparedSandbox,
+        execution: &ExecutionWiring,
     ) -> (Vec<Box<dyn Tool>>, Vec<Diagnostic>) {
         let read_policy = match tool_config.run_mode {
             RunMode::Interactive => crate::tool::PathPolicy::AllowOutsideWorkspace,
             RunMode::NonInteractive => crate::tool::PathPolicy::WorkspaceOnly,
         };
 
-        let startup_diagnostics = prepared.startup_diagnostics();
+        let mut startup_diagnostics = prepared.startup_diagnostics();
         let file_ops: Arc<dyn FileOperations> =
             Arc::new(LocalFileOperations::new(workspace_root.to_path_buf()));
-        let bash_ops: Arc<dyn BashOperations> =
+        // 16.9: the prepared `LocalBashOperations` is the `local_ops` fed to
+        // `ExecutionRuntime::build`. The Minimal-Runtime branch returns this same
+        // Arc by pointer-identity, so the Phase 15 sandbox confinement reaches
+        // spawn unchanged (no fresh `LocalBashOperations` with a default/Off
+        // `PreparedSandbox`).
+        let local_ops: Arc<dyn BashOperations> =
             Arc::new(LocalBashOperations::with_prepared(prepared));
 
-        let mut tools: Vec<(&str, Box<dyn Tool>)> = vec![
-            (
-                "read",
-                Box::new(ReadTool::new_with_ops(
-                    workspace_root.to_path_buf(),
-                    read_policy,
-                    file_ops.clone(),
-                )),
-            ),
-            (
-                "write",
-                Box::new(WriteTool::new_with_ops(
-                    workspace_root.to_path_buf(),
-                    file_ops.clone(),
-                )),
-            ),
-            (
-                "edit",
-                Box::new(EditTool::new_with_ops(
-                    workspace_root.to_path_buf(),
-                    file_ops.clone(),
-                )),
-            ),
-            (
-                "bash",
-                Box::new(BashTool::new_with_ops(
-                    workspace_root.to_path_buf(),
-                    bash_ops.clone(),
-                )),
-            ),
-            (
-                "grep",
-                Box::new(GrepTool::new(workspace_root.to_path_buf())),
-            ),
-            (
-                "find",
-                Box::new(FindTool::new(workspace_root.to_path_buf())),
-            ),
-            ("ls", Box::new(LsTool::new(workspace_root.to_path_buf()))),
-            (
-                "glob",
-                Box::new(GlobTool::new(workspace_root.to_path_buf())),
-            ),
-        ];
+        let (bash_tool, exec_diagnostics) =
+            Self::build_bash_tool(workspace_root, local_ops, execution);
+        startup_diagnostics.extend(exec_diagnostics);
+
+        let mut tools: Vec<(&str, Box<dyn Tool>)> = Vec::with_capacity(8);
+        tools.push((
+            "read",
+            Box::new(ReadTool::new_with_ops(
+                workspace_root.to_path_buf(),
+                read_policy,
+                file_ops.clone(),
+            )),
+        ));
+        tools.push((
+            "write",
+            Box::new(WriteTool::new_with_ops(
+                workspace_root.to_path_buf(),
+                file_ops.clone(),
+            )),
+        ));
+        tools.push((
+            "edit",
+            Box::new(EditTool::new_with_ops(
+                workspace_root.to_path_buf(),
+                file_ops.clone(),
+            )),
+        ));
+        // `bash` is present only when `ExecutionRuntime::build` produced a usable
+        // backend. A startup build failure (e.g. an explicit `local = "deny"`
+        // under Minimal Runtime) OMITS the tool rather than substituting a
+        // fallback backend (no-fallback); the stable code surfaces via
+        // `startup_diagnostics` across text/NDJSON/RPC.
+        if let Some(bash) = bash_tool {
+            tools.push(("bash", bash));
+        }
+        tools.push((
+            "grep",
+            Box::new(GrepTool::new(workspace_root.to_path_buf())),
+        ));
+        tools.push((
+            "find",
+            Box::new(FindTool::new(workspace_root.to_path_buf())),
+        ));
+        tools.push(("ls", Box::new(LsTool::new(workspace_root.to_path_buf()))));
+        tools.push((
+            "glob",
+            Box::new(GlobTool::new(workspace_root.to_path_buf())),
+        ));
 
         let tools = tools
             .drain(..)
@@ -2161,6 +2330,45 @@ impl CodingHarness {
             .map(|(_, tool)| tool)
             .collect();
         (tools, startup_diagnostics)
+    }
+
+    /// Phase 16.9: assemble the production `BashTool` via [`ExecutionRuntime::build`].
+    ///
+    /// On success, returns the tool with the resolved dynamic schema (the default
+    /// byte-stable schema, or that schema plus the model `backend` enum under
+    /// `strategy = "model"`). On a startup build failure, returns `None` plus a
+    /// startup diagnostic carrying the stable code — the `bash` tool is omitted
+    /// (NEVER substituted with a fallback backend; no-fallback, SC16-07).
+    fn build_bash_tool(
+        workspace_root: &Path,
+        local_ops: Arc<dyn BashOperations>,
+        execution: &ExecutionWiring,
+    ) -> (Option<Box<dyn Tool>>, Vec<Diagnostic>) {
+        match ExecutionRuntime::build(
+            &execution.config,
+            execution.mode,
+            &execution.enabled,
+            &execution.policy,
+            Arc::clone(&execution.store),
+            local_ops,
+            workspace_root,
+            &execution.host_target,
+            &execution.host_opi_version,
+        ) {
+            Ok(ops) => {
+                let schema =
+                    bash_input_schema(&execution.config, &execution.enabled, &execution.policy);
+                (
+                    Some(Box::new(BashTool::new_with_ops_and_schema(
+                        workspace_root.to_path_buf(),
+                        ops,
+                        schema,
+                    ))),
+                    Vec::new(),
+                )
+            }
+            Err(failure) => (None, vec![diagnostic_from_execution_failure(&failure)]),
+        }
     }
 
     fn discover_resources(

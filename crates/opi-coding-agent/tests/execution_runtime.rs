@@ -209,6 +209,7 @@ fn request(command: &str) -> BashRequest {
         timeout: Duration::from_secs(5),
         signal: CancellationToken::new(),
         env: Vec::new(),
+        backend: None,
     }
 }
 

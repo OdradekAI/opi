@@ -15,12 +15,35 @@ use tokio_util::sync::CancellationToken;
 use super::{BashOpError, BashOperations, BashRequest, BashResult};
 use super::{LOCAL_BASH_OPERATION_DIAGNOSTIC, LocalBashOperations, MAX_BASH_OUTPUT_BYTES};
 
+/// The schema source for the `bash` tool input. This is the byte-stable
+/// pre-extension contract: `schemars::schema_for!(BashArgs)` produces the
+/// default schema, which Phase 16.9 keeps identical whether or not model routing
+/// is configured. The model-routing `backend` enum is added to a COPY of this
+/// schema by the harness when `strategy = "model"` — never by altering this
+/// type — so `fixed`/`rules`/default schemas never carry the field.
+///
+/// Only the derived `JsonSchema` is consumed (by `default_bash_schema`); the
+/// fields are never instantiated because deserialization goes through
+/// `BashCallArgs`. The dead-code allow is intentional for that schema-only role.
+#[allow(dead_code)]
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct BashArgs {
     /// Command to execute.
     pub command: String,
     /// Timeout in seconds (optional, defaults to 30).
     pub timeout_secs: Option<u64>,
+}
+
+/// The deserialization target for a `bash` invocation. Carries the optional
+/// model-supplied `backend` (Phase 16.9) that `BashArgs` intentionally omits
+/// so the default schema stays byte-stable. `backend` reaches the router only
+/// under `strategy = "model"`; `fixed`/`rules` ignore it.
+#[derive(Debug, Deserialize)]
+pub struct BashCallArgs {
+    pub command: String,
+    pub timeout_secs: Option<u64>,
+    #[serde(default)]
+    pub backend: Option<String>,
 }
 
 /// Bash tool. A thin caller over the injected [`BashOperations`] backend
@@ -43,16 +66,85 @@ impl BashTool {
         Self::new_with_ops(workspace_root, Arc::new(LocalBashOperations::new()))
     }
 
-    /// Primary constructor: inject an explicit [`BashOperations`] backend so a
-    /// mock (or a future remote/T4-sandbox backend) can be wired in.
+    /// Primary constructor: inject an explicit [`BashOperations`] backend and
+    /// derive the default byte-stable schema from `BashArgs`.
     pub fn new_with_ops(workspace_root: PathBuf, ops: Arc<dyn BashOperations>) -> Self {
-        let schema = schemars::schema_for!(BashArgs);
+        Self::new_with_ops_and_schema(workspace_root, ops, default_bash_schema())
+    }
+
+    /// Phase 16.9: inject an explicit backend AND a precomputed input schema.
+    /// Production (`CodingHarness::build_tools_with_sandbox`) passes the
+    /// resolved dynamic schema (the default, or the default plus the
+    /// model-routing `backend` enum under `strategy = "model"`); tests pass
+    /// [`default_bash_schema`].
+    pub fn new_with_ops_and_schema(
+        workspace_root: PathBuf,
+        ops: Arc<dyn BashOperations>,
+        schema: serde_json::Value,
+    ) -> Self {
         Self {
             workspace_root,
             ops,
-            schema: serde_json::to_value(&schema).unwrap_or_default(),
+            schema,
         }
     }
+}
+
+/// The byte-stable default `bash` input schema, computed fresh from `BashArgs`.
+/// The Minimal-Runtime / `fixed` / `rules` schemas are this value byte-for-byte;
+/// the byte-equality acceptance check compares a tool's injected schema against a
+/// fresh call here so a regression (a schemars bump, an accidental `BashArgs`
+/// edit, or a wrong-strategy injection) fails loud.
+pub fn default_bash_schema() -> serde_json::Value {
+    let schema = schemars::schema_for!(BashArgs);
+    serde_json::to_value(&schema).unwrap_or_default()
+}
+
+/// Add the required bounded `backend` field to a copy of the default bash schema
+/// for `strategy = "model"` (Phase 16.9). Each candidate is a `oneOf` variant
+/// `{const, title, description}` so it carries its own approval hint: an `ask`
+/// candidate is visible with a description that it requires interactive
+/// approval, and a `deny` candidate is absent (filtered upstream). `oneOf` (not a
+/// flat `enum`) is required because JSON-Schema enums cannot attach per-value
+/// descriptions, which the design mandates (§Model routing). The field is
+/// required and `additionalProperties = false` keeps it bounded. This is the
+/// ONLY divergence from `default_bash_schema`; `fixed`/`rules`/default schemas
+/// never carry the field.
+pub fn with_model_backend_enum(
+    mut schema: serde_json::Value,
+    candidates: &[(&str, bool)],
+) -> serde_json::Value {
+    let one_of: Vec<serde_json::Value> = candidates
+        .iter()
+        .map(|(id, requires_approval)| {
+            let description = if *requires_approval {
+                "Execution adapter; selecting it requires interactive approval before it runs."
+            } else {
+                "Execution adapter."
+            };
+            serde_json::json!({
+                "const": id,
+                "title": id,
+                "description": description,
+            })
+        })
+        .collect();
+    if let Some(obj) = schema.as_object_mut() {
+        if let Some(properties) = obj.get_mut("properties").and_then(|p| p.as_object_mut()) {
+            properties.insert(
+                "backend".to_string(),
+                serde_json::json!({
+                    "oneOf": one_of,
+                    "description": "Backend adapter for this command. One of the eligible, non-denied execution adapters; required under the model strategy."
+                }),
+            );
+        }
+        if let Some(required) = obj.get_mut("required").and_then(|r| r.as_array_mut()) {
+            required.push(serde_json::json!("backend"));
+        }
+        obj.insert("additionalProperties".to_string(), serde_json::json!(false));
+    }
+    schema
 }
 
 impl Tool for BashTool {
@@ -71,7 +163,7 @@ impl Tool for BashTool {
         signal: CancellationToken,
         _on_update: Option<opi_agent::tool::UpdateCallback>,
     ) -> Pin<Box<dyn Future<Output = Result<ToolResult, ToolError>> + Send>> {
-        let args: BashArgs = match serde_json::from_value(arguments) {
+        let args: BashCallArgs = match serde_json::from_value(arguments) {
             Ok(a) => a,
             Err(e) => {
                 return Box::pin(async move {
@@ -83,6 +175,7 @@ impl Tool for BashTool {
         };
         let timeout = Duration::from_secs(args.timeout_secs.unwrap_or(30));
         let command = args.command;
+        let backend = args.backend;
         let cwd = self.workspace_root.clone();
         let workspace_root = self.workspace_root.clone();
         let ops = self.ops.clone();
@@ -94,6 +187,7 @@ impl Tool for BashTool {
                 timeout,
                 signal,
                 env: Vec::new(),
+                backend,
             };
             let backend = match ops.exec(request).await {
                 Ok(r) => r,

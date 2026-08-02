@@ -917,6 +917,7 @@ mod tests {
                 timeout: Duration::from_secs(5),
                 signal: CancellationToken::new(),
                 env: Vec::new(),
+                backend: None,
             })
             .await
             .expect("default fail-open execution succeeds");

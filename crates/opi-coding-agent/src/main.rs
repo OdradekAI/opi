@@ -257,6 +257,8 @@ fn resolve_headless_trust_config_blocking(
         },
         cli.sandbox,
         cli.sandbox_require,
+        cli.execution_backend.as_deref(),
+        cli.execution_strategy,
     ))
 }
 
@@ -295,6 +297,8 @@ async fn resolve_headless_trust_config(
         },
         cli.sandbox,
         cli.sandbox_require,
+        cli.execution_backend.as_deref(),
+        cli.execution_strategy,
     )
     .await;
     match result {
@@ -306,6 +310,7 @@ async fn resolve_headless_trust_config(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn resolve_headless_trust_config_core(
     source: ConfigSource,
     project_dir: Option<std::path::PathBuf>,
@@ -313,6 +318,8 @@ async fn resolve_headless_trust_config_core(
     trust_cli: opi_coding_agent::project_trust::ProjectTrustCli,
     sandbox: Option<opi_coding_agent::config::SandboxMode>,
     sandbox_require: bool,
+    execution_backend: Option<&str>,
+    execution_strategy: Option<opi_coding_agent::config::ExecutionStrategy>,
 ) -> Result<
     (
         opi_coding_agent::config::OpiConfig,
@@ -345,6 +352,11 @@ async fn resolve_headless_trust_config_core(
     let decision = plan.headless_decision();
     let mut config = staged.finalize_with_project(!matches!(decision, TrustDecision::Untrusted))?;
     config.apply_sandbox_overrides(sandbox, sandbox_require.then_some(true));
+    // Phase 16.9: apply --execution-backend / --execution-strategy. These touch
+    // only strategy/backend and never grant trust or permission (the resolved
+    // permissions map is byte-identical before and after), mirroring the sandbox
+    // override precedence.
+    config.apply_execution_overrides(execution_backend, execution_strategy);
     Ok((config, decision))
 }
 
@@ -372,8 +384,7 @@ async fn resolve_interactive_trust_config(
     use opi_coding_agent::config::{ConfigSource, stage_config};
     use opi_coding_agent::interactive::{TuiTrustPrompt, resolve_interactive_trust_decision};
     use opi_coding_agent::project_trust::{
-        HeadlessPreTrustUi, ProjectTrustCli, ProjectTrustResolverRegistry, TrustDecision,
-        prepare_project_startup,
+        HeadlessPreTrustUi, ProjectTrustCli, ProjectTrustResolverRegistry, prepare_project_startup,
     };
 
     let source = ConfigSource {
@@ -432,16 +443,46 @@ async fn resolve_interactive_trust_config(
             std::process::exit(2);
         }
     };
-    let mut config =
-        match staged.finalize_with_project(!matches!(decision, TrustDecision::Untrusted)) {
-            Ok(config) => config,
-            Err(e) => {
-                eprintln!("opi: config error: {e}");
-                std::process::exit(2);
-            }
-        };
-    config.apply_sandbox_overrides(cli.sandbox, cli.sandbox_require.then_some(true));
+    let config = match resolve_interactive_trust_config_core(
+        staged,
+        decision,
+        cli.sandbox,
+        cli.sandbox_require,
+        cli.execution_backend.as_deref(),
+        cli.execution_strategy,
+    ) {
+        Ok(config) => config,
+        Err(e) => {
+            eprintln!("opi: config error: {e}");
+            std::process::exit(2);
+        }
+    };
     (config, decision)
+}
+
+/// Phase 16.9: the prompt-independent tail of [`resolve_interactive_trust_config`]
+/// — `finalize_with_project` plus the CLI sandbox/execution overrides. Extracted
+/// so the interactive execution-override call site is testable without the
+/// `TuiTrustPrompt` coupling (mirrors [`resolve_headless_trust_config_core`]):
+/// it takes the already-resolved trust `decision` and the staged config, then
+/// applies the same override precedence as the headless path. `--execution-backend`
+/// / `--execution-strategy` touch only strategy/backend — never trust or
+/// permission.
+fn resolve_interactive_trust_config_core(
+    staged: opi_coding_agent::config::StagedConfig,
+    decision: opi_coding_agent::project_trust::TrustDecision,
+    sandbox: Option<opi_coding_agent::config::SandboxMode>,
+    sandbox_require: bool,
+    execution_backend: Option<&str>,
+    execution_strategy: Option<opi_coding_agent::config::ExecutionStrategy>,
+) -> Result<opi_coding_agent::config::OpiConfig, opi_coding_agent::config::ConfigError> {
+    let mut config = staged.finalize_with_project(!matches!(
+        decision,
+        opi_coding_agent::project_trust::TrustDecision::Untrusted
+    ))?;
+    config.apply_sandbox_overrides(sandbox, sandbox_require.then_some(true));
+    config.apply_execution_overrides(execution_backend, execution_strategy);
+    Ok(config)
 }
 
 /// Run `--export-session` and return the exit code (Phase 13.5).
@@ -1314,8 +1355,9 @@ mod tests {
 
     use super::{
         CommandOutcome, CommandOutput, RpcTransport, resolve_headless_trust_config_core,
-        run_doctor_command_core, run_interactive_core, run_list_models_command_core,
-        run_non_interactive_core, run_rpc_core, with_provider_bundle, write_command_outcome,
+        resolve_interactive_trust_config_core, run_doctor_command_core, run_interactive_core,
+        run_list_models_command_core, run_non_interactive_core, run_rpc_core, with_provider_bundle,
+        write_command_outcome,
     };
     use opi_coding_agent::cli::Cli;
     use opi_coding_agent::config::{CredentialBackendSource, OpiConfig, ProviderProxyConfig};
@@ -1537,6 +1579,8 @@ mod tests {
                 },
                 None,
                 false,
+                None,
+                None,
             ))
             .expect("headless trust resolution");
 
@@ -1545,6 +1589,99 @@ mod tests {
             opi_coding_agent::project_trust::TrustDecision::Untrusted
         );
         assert_eq!(config.defaults.model, "user:model");
+    }
+
+    #[test]
+    fn headless_trust_core_applies_execution_overrides_from_cli_flags() {
+        // D.2 flagged (L-D3): `apply_execution_overrides` is covered as a direct
+        // method call elsewhere; this drives the PRODUCTION resolver call site
+        // (resolve_headless_trust_config_core -> config.apply_execution_overrides)
+        // with non-None execution arguments so deleting that call would fail.
+        let workspace = tempfile::tempdir().expect("workspace");
+        std::fs::create_dir_all(workspace.path().join(".opi")).expect("project config dir");
+        let user = tempfile::tempdir().expect("user config");
+        std::fs::write(
+            user.path().join("config.toml"),
+            "[defaults]\ndefault_project_trust = \"never\"\n",
+        )
+        .expect("user config");
+
+        let (config, _decision) = tokio::runtime::Runtime::new()
+            .expect("runtime")
+            .block_on(resolve_headless_trust_config_core(
+                opi_coding_agent::config::ConfigSource {
+                    cli_model: None,
+                    config_path: None,
+                    env_model: None,
+                    project_dir: Some(workspace.path().to_path_buf()),
+                    user_config_path: Some(user.path().join("config.toml")),
+                },
+                Some(workspace.path().to_path_buf()),
+                user.path().to_path_buf(),
+                opi_coding_agent::project_trust::ProjectTrustCli {
+                    trust: false,
+                    no_trust: false,
+                },
+                None,
+                false,
+                // --execution-backend opi-sandbox --execution-strategy model
+                Some("opi-sandbox"),
+                Some(opi_coding_agent::config::ExecutionStrategy::Model),
+            ))
+            .expect("headless trust resolution");
+
+        // The CLI overrides reached config.execution via apply_execution_overrides
+        // (backend sets Fixed, then strategy overrides to Model, keeping backend).
+        assert_eq!(config.execution.backend, "opi-sandbox");
+        assert_eq!(
+            config.execution.strategy,
+            opi_coding_agent::config::ExecutionStrategy::Model
+        );
+        // apply_execution_overrides touches only strategy/backend; the resolved
+        // permissions map is unaffected (default-empty here).
+        assert!(config.execution.permissions.is_empty());
+    }
+
+    #[test]
+    fn interactive_trust_core_applies_execution_overrides_from_cli_flags() {
+        // D.2 must-fix (L-D3): the interactive resolver's `apply_execution_overrides`
+        // call site lives in the prompt-independent `resolve_interactive_trust_config_core`
+        // (the tail of `resolve_interactive_trust_config`, extracted so it is testable
+        // without the TuiTrustPrompt coupling). Deleting that call fails this test,
+        // closing the gap the headless path already closed.
+        let workspace = tempfile::tempdir().expect("workspace");
+        std::fs::create_dir_all(workspace.path().join(".opi")).expect("project config dir");
+        let user = tempfile::tempdir().expect("user config");
+        std::fs::write(
+            user.path().join("config.toml"),
+            "[defaults]\ndefault_project_trust = \"never\"\n",
+        )
+        .expect("user config");
+        let staged =
+            opi_coding_agent::config::stage_config(opi_coding_agent::config::ConfigSource {
+                cli_model: None,
+                config_path: None,
+                env_model: None,
+                project_dir: Some(workspace.path().to_path_buf()),
+                user_config_path: Some(user.path().join("config.toml")),
+            })
+            .expect("stage config");
+        let config = resolve_interactive_trust_config_core(
+            staged,
+            opi_coding_agent::project_trust::TrustDecision::Trusted,
+            None,
+            false,
+            // --execution-backend opi-sandbox --execution-strategy model
+            Some("opi-sandbox"),
+            Some(opi_coding_agent::config::ExecutionStrategy::Model),
+        )
+        .expect("interactive trust core resolves");
+        assert_eq!(config.execution.backend, "opi-sandbox");
+        assert_eq!(
+            config.execution.strategy,
+            opi_coding_agent::config::ExecutionStrategy::Model
+        );
+        assert!(config.execution.permissions.is_empty());
     }
 
     #[test]

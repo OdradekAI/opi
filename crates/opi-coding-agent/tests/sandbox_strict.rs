@@ -22,10 +22,11 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use opi_coding_agent::config::{SandboxConfig, SandboxMode};
+use opi_coding_agent::config::{ExecutionRunMode, SandboxConfig, SandboxMode};
 use opi_coding_agent::diagnostics::{
     CODE_SANDBOX_DEGRADED, CODE_SANDBOX_UNAVAILABLE, SandboxReason,
 };
+use opi_coding_agent::harness::minimal_runtime_wiring;
 use opi_coding_agent::sandbox::{
     LayerAvailability, PreparedSandbox, SandboxLayer, StrictBackend, StrictOutcome, prepare,
     prepare_production,
@@ -78,6 +79,7 @@ fn bash_request(cwd: &std::path::Path) -> BashRequest {
         timeout: Duration::from_secs(5),
         signal: CancellationToken::new(),
         env: vec![],
+        backend: None,
     }
 }
 
@@ -247,8 +249,12 @@ async fn production_build_tools_wires_strict_policy_into_bash() {
     // The production path resolves prepare_production(&config.sandbox) inside
     // new_with_build_options; mirror that exactly here.
     let prepared = prepare_production(&strict_config(true), ws.path());
-    let (mut tools, _startup_diagnostics) =
-        CodingHarness::build_tools_with_sandbox(ws.path(), &tool_config, prepared);
+    let (mut tools, _startup_diagnostics) = CodingHarness::build_tools_with_sandbox(
+        ws.path(),
+        &tool_config,
+        prepared,
+        &minimal_runtime_wiring(ExecutionRunMode::Interactive),
+    );
     let bash = tools
         .iter_mut()
         .find(|t| t.definition().name == "bash")
@@ -308,8 +314,12 @@ async fn production_off_mode_runs_command_without_sandbox_diagnostic() {
             .expect("interactive tool config");
     let off_config = SandboxConfig::default();
     let prepared = prepare_production(&off_config, ws.path());
-    let (mut tools, startup_diagnostics) =
-        CodingHarness::build_tools_with_sandbox(ws.path(), &tool_config, prepared);
+    let (mut tools, startup_diagnostics) = CodingHarness::build_tools_with_sandbox(
+        ws.path(),
+        &tool_config,
+        prepared,
+        &minimal_runtime_wiring(ExecutionRunMode::Interactive),
+    );
     assert!(
         startup_diagnostics.is_empty(),
         "off mode must produce no startup diagnostics"
@@ -454,8 +464,12 @@ async fn windows_strict_production_dispatch_reports_l0_only() {
         1,
         "production dispatch surfaces one aggregate Windows permanent gap"
     );
-    let (mut tools, startup_diagnostics) =
-        CodingHarness::build_tools_with_sandbox(ws.path(), &tool_config, prepared_req);
+    let (mut tools, startup_diagnostics) = CodingHarness::build_tools_with_sandbox(
+        ws.path(),
+        &tool_config,
+        prepared_req,
+        &minimal_runtime_wiring(ExecutionRunMode::Interactive),
+    );
     assert_eq!(
         startup_diagnostics.len(),
         1,
@@ -492,8 +506,12 @@ async fn windows_strict_production_dispatch_reports_l0_only() {
     // require=false through the production dispatcher: startup channel still
     // carries the three gaps, but the bash tool runs at the L0 baseline.
     let prepared_open = prepare_production(&strict_config(false), ws.path());
-    let (mut tools2, startup2) =
-        CodingHarness::build_tools_with_sandbox(ws.path(), &tool_config, prepared_open);
+    let (mut tools2, startup2) = CodingHarness::build_tools_with_sandbox(
+        ws.path(),
+        &tool_config,
+        prepared_open,
+        &minimal_runtime_wiring(ExecutionRunMode::Interactive),
+    );
     assert_eq!(
         startup2.len(),
         1,
@@ -1027,6 +1045,7 @@ int main(int argc, char** argv) {
             timeout: Duration::from_secs(15),
             signal: CancellationToken::new(),
             env: vec![],
+            backend: None,
         }
     }
 
@@ -1391,6 +1410,7 @@ int main(int argc, char** argv) {
             timeout: Duration::from_secs(15),
             signal: CancellationToken::new(),
             env: vec![],
+            backend: None,
         }
     }
 

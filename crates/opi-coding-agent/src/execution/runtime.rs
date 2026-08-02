@@ -129,6 +129,33 @@ pub struct EnabledIdentity {
     pub package_name: String,
 }
 
+impl Eligibility {
+    /// Build the eligible-adapter set from the resolved enabled identities and
+    /// permission policy. `local` is always a member (the built-in host
+    /// backend); each enabled identity contributes one entry. This is the pure
+    /// eligibility construction shared by [`ExecutionRuntime::build`] (Branch 2)
+    /// and the 16.9 harness model-schema builder. It never queries the package
+    /// store or spawns; `available` is true for every entry because
+    /// per-invocation [`IdentitySource::activate`] is the authoritative
+    /// availability gate.
+    pub fn from_enabled(enabled: &[EnabledIdentity], policy: &PermissionPolicy) -> Self {
+        let mut adapters = Vec::with_capacity(enabled.len() + 1);
+        adapters.push(EligibleAdapter {
+            id: LOCAL_ADAPTER_ID.to_string(),
+            available: true,
+            permission: policy.decision_for(LOCAL_ADAPTER_ID),
+        });
+        for identity in enabled {
+            adapters.push(EligibleAdapter {
+                id: identity.adapter_id.clone(),
+                available: true,
+                permission: policy.decision_for(&identity.adapter_id),
+            });
+        }
+        Eligibility(adapters)
+    }
+}
+
 // =========================================================================
 // ExecutionRuntime — the sole assembly
 // =========================================================================
@@ -171,15 +198,12 @@ impl ExecutionRuntime {
         }
 
         // --- Branch 2: routed assembly ---
+        // Eligibility (local + each enabled identity) is built by the shared
+        // pure constructor that the 16.9 harness model-schema builder also
+        // calls; `available` is true for every entry (per-invocation activation
+        // is the authoritative availability gate).
+        let eligibility = Eligibility::from_enabled(enabled, policy);
         let mut adapters: HashMap<String, ProcessCommandAdapter> = HashMap::new();
-        let mut eligible: Vec<EligibleAdapter> = Vec::new();
-        // `local` (the built-in host backend) is always a member of eligibility;
-        // a `local` selection dispatches to the held local backend under L0.
-        eligible.push(EligibleAdapter {
-            id: LOCAL_ADAPTER_ID.to_string(),
-            available: true,
-            permission: policy.decision_for(LOCAL_ADAPTER_ID),
-        });
         for identity in enabled {
             // Adapter-id uniqueness within eligibility: contribution validation
             // rejects reserved/colliding ids, so an enabled external never
@@ -192,17 +216,12 @@ impl ExecutionRuntime {
                 host_target: host_target.to_string(),
                 host_opi_version: host_opi_version.to_string(),
             };
-            eligible.push(EligibleAdapter {
-                id: identity.adapter_id.clone(),
-                available: true,
-                permission: policy.decision_for(&identity.adapter_id),
-            });
             adapters.insert(identity.adapter_id.clone(), adapter);
         }
         let routed = RoutedBashOperations {
             config: config.clone(),
             mode,
-            eligibility: Eligibility(eligible),
+            eligibility,
             local_ops,
             adapters,
         };
@@ -270,7 +289,15 @@ impl BashOperations for RoutedBashOperations {
     ) -> Pin<Box<dyn Future<Output = Result<BashResult, BashOpError>> + Send>> {
         // resolve_selection is pure and cheap; run it directly (no await), then
         // dispatch. The returned future borrows neither `&self` nor the inputs.
-        let selection = match resolve_selection(&self.config, self.mode, &self.eligibility, None) {
+        // The model-supplied `backend` reaches the router here (Phase 16.9); it is
+        // `None` under `fixed`/`rules` (where the router ignores it) and for the
+        // local backend, and is only consulted under `strategy = "model"`.
+        let selection = match resolve_selection(
+            &self.config,
+            self.mode,
+            &self.eligibility,
+            request.backend.as_deref(),
+        ) {
             Ok(sel) => sel,
             Err(failure) => {
                 let err = exec_failure_to_bash_op_error(failure);

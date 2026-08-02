@@ -230,6 +230,9 @@ impl NonInteractiveRunner {
                 .initial_messages(initial_messages)
                 .tool_selection(tool_selection)
                 .tool_config(tool_config)
+                // Phase 16.9: non-interactive run mode threaded into
+                // ExecutionRuntime::build.
+                .execution_mode(crate::config::ExecutionRunMode::NonInteractive)
                 // Record runtime diagnostics so the JSON run summary can carry
                 // structured severity counts (Phase 7 task 7.5).
                 .record_diagnostics(true);

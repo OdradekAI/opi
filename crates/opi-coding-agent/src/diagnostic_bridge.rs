@@ -15,6 +15,7 @@ use opi_agent::diagnostic::code::*;
 use opi_agent::diagnostic::{Diagnostic, SOURCE_ADAPTER, SOURCE_CONFIG, SOURCE_PACKAGE, Severity};
 
 use crate::config::ConfigError;
+use crate::execution::ExecutionFailure;
 use crate::package_resolver::{
     InstalledPackageScope, PackageDiagnostic, PackageDiagnosticSeverity,
 };
@@ -271,4 +272,32 @@ pub fn diagnostic_from_config(err: &ConfigError) -> Diagnostic {
         .details(serde_json::json!({ "field": field, "message": message }))
         .action("fix the [execution] section before starting opi"),
     }
+}
+
+/// Map a startup [`ExecutionFailure`] from `ExecutionRuntime::build` into a
+/// startup [`Diagnostic`].
+///
+/// The configured execution policy made the `bash` tool unusable at startup —
+/// an explicit `local = "deny"|"ask"` under Minimal Runtime, or
+/// `no_eligible_adapter`/`policy_denied`/`permission_required`/`adapter_unavailable`
+/// under a routed config. The bash tool is omitted rather than substituted
+/// (no-fallback: the backend is never silently swapped for `local`); this
+/// diagnostic is the cross-surface startup surfacing across text, NDJSON, and
+/// RPC, carrying the stable execution-failure code in `details` and the
+/// remediation text in `action` (the redaction contract holds per the
+/// `failure.rs` module docs).
+pub fn diagnostic_from_execution_failure(failure: &ExecutionFailure) -> Diagnostic {
+    let code = failure.code();
+    let remediation = failure.remediation();
+    Diagnostic::new(
+        Severity::Error,
+        CODE_ADAPTER_STARTUP_FAILED,
+        SOURCE_ADAPTER,
+        "execution backend unavailable at startup",
+    )
+    .details(serde_json::json!({
+        "code": code,
+        "remediation": &remediation,
+    }))
+    .action(remediation.as_str())
 }

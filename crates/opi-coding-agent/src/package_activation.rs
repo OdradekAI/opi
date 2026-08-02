@@ -33,7 +33,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::execution::{
-    ContributionValidationError, LockMaterial, ValidatedExecutableContribution,
+    ContributionValidationError, EnabledIdentity, LockMaterial, ValidatedExecutableContribution,
     validate_executable_contributions,
 };
 // The contribution validator's scope enum is named `PackageSource`, which
@@ -303,6 +303,32 @@ impl PackageActivationStore {
         let content = std::fs::read_to_string(&path)?;
         let file: TrustFile = toml::from_str(&content)?;
         Ok(file.records)
+    }
+
+    /// The enabled named-package identities resolvable at startup (Phase 16.9).
+    ///
+    /// Reads the machine `package-trust.toml`, keeps `trusted && enabled`
+    /// records, and expands each to one [`EnabledIdentity`] per locked adapter
+    /// id. A corrupt or unreadable trust file yields an empty set (mirrors the
+    /// tolerant `doctor` read pattern) so an invalid package-store sentinel
+    /// never blocks Minimal Runtime startup. The heavier per-package
+    /// revalidation (target/version/hash/drift) stays at [`Self::activate`]
+    /// time, immediately before every spawn.
+    pub fn enabled_identities(&self) -> Vec<EnabledIdentity> {
+        let records = self.read_records().unwrap_or_default();
+        let mut out = Vec::new();
+        for record in records.iter().filter(|r| r.trusted && r.enabled) {
+            for adapter_id in self
+                .installed_adapter_ids(&record.source)
+                .unwrap_or_default()
+            {
+                out.push(EnabledIdentity {
+                    adapter_id,
+                    package_name: record.name.clone(),
+                });
+            }
+        }
+        out
     }
 
     /// Write all trust/enablement records, creating parent directories.
