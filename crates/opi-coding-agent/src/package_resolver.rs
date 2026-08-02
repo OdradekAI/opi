@@ -229,6 +229,7 @@ pub fn local_lock_entry(
         package_root: canonical,
         cache_path: None,
         git_commit: None,
+        contributions: Vec::new(),
     })
 }
 
@@ -253,6 +254,7 @@ pub fn git_lock_entry(
         package_root: canonical_root,
         cache_path: Some(canonical_cache),
         git_commit: Some(git_commit),
+        contributions: Vec::new(),
     })
 }
 

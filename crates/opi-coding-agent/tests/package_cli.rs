@@ -1232,3 +1232,147 @@ fn package_cli_subprocess_remove() {
         String::from_utf8_lossy(&output.stderr),
     );
 }
+
+#[test]
+fn package_cli_subprocess_list_and_doctor_json_report_execution_lifecycle() {
+    // Proves the `package list --json` and `package doctor --json` lifecycle
+    // branches (trusted/enabled/contributions/drifted_adapters) through the
+    // production `opi` binary against a globally-installed execution package.
+    use sha2::{Digest, Sha256};
+
+    let workspace = tempfile::tempdir().expect("workspace tempdir");
+    let user_config = tempfile::tempdir().expect("user config tempdir");
+    let opi = opi_binary();
+
+    let pkg = workspace.path().join("exec-pkg");
+    std::fs::create_dir_all(pkg.join("bin")).unwrap();
+    let exe_content: &[u8] = b"#!/bin/sh\necho hi\n";
+    let exe = pkg.join("bin").join("opi-sandbox");
+    std::fs::write(&exe, exe_content).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&exe, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let sha = format!("{:x}", Sha256::digest(exe_content));
+    let target = opi_coding_agent::package_activation::host_target_triple();
+    std::fs::write(
+        pkg.join("package.toml"),
+        format!(
+            "version = \"0.8.0\"\n\
+             opi_version = \">=0.7,<0.8\"\n\
+             name = \"opi-sandbox\"\n\
+             description = \"execution backend\"\n\
+             \n\
+             [[contributions.adapters]]\n\
+             capability = \"command.execute\"\n\
+             id = \"opi-sandbox\"\n\
+             transport = \"process-jsonl\"\n\
+             command = \"bin/opi-sandbox\"\n\
+             args = [\"backend\", \"--stdio\"]\n\
+             protocol = \"command-execution-jsonl-v1\"\n\
+             target = \"{target}\"\n\
+             sha256 = \"{sha}\"\n\
+             handshake_timeout_ms = 5000\n\
+             adapter_config = {{}}\n"
+        ),
+    )
+    .unwrap();
+
+    let add = opi_command(&opi, workspace.path(), user_config.path())
+        .args(["package", "add"])
+        .arg(&pkg)
+        .output()
+        .expect("run opi package add");
+    assert!(
+        add.status.success(),
+        "add should succeed: stdout={}, stderr={}",
+        String::from_utf8_lossy(&add.stdout),
+        String::from_utf8_lossy(&add.stderr)
+    );
+
+    // list --json: row carries trusted/enabled/contributions[*].
+    let list = opi_command(&opi, workspace.path(), user_config.path())
+        .args(["package", "list", "--json"])
+        .output()
+        .expect("run opi package list --json");
+    assert!(
+        list.status.success(),
+        "list --json should succeed: stderr={}",
+        String::from_utf8_lossy(&list.stderr)
+    );
+    let list_row: serde_json::Value = serde_json::from_str(
+        String::from_utf8_lossy(&list.stdout)
+            .lines()
+            .next()
+            .expect("one NDJSON row"),
+    )
+    .unwrap();
+    assert_eq!(list_row["name"], "opi-sandbox");
+    assert_eq!(
+        list_row["trusted"], false,
+        "freshly added package is untrusted"
+    );
+    assert_eq!(
+        list_row["enabled"], false,
+        "freshly added package is disabled"
+    );
+    let contributions = list_row["contributions"]
+        .as_array()
+        .expect("contributions array present for execution package");
+    assert_eq!(contributions.len(), 1);
+    assert_eq!(contributions[0]["adapter_id"], "opi-sandbox");
+    assert_eq!(contributions[0]["target"], target);
+    assert_eq!(contributions[0]["protocol"], "command-execution-jsonl-v1");
+    assert!(contributions[0]["executable_sha256"].is_string());
+
+    // doctor --json: row carries trusted/enabled/drifted_adapters.
+    let doc = opi_command(&opi, workspace.path(), user_config.path())
+        .args(["package", "doctor", "--json"])
+        .output()
+        .expect("run opi package doctor --json");
+    let doc_rows: serde_json::Value = serde_json::from_str(
+        String::from_utf8_lossy(&doc.stdout)
+            .lines()
+            .next()
+            .expect("one JSON array row"),
+    )
+    .unwrap();
+    let doc_row = &doc_rows.as_array().unwrap()[0];
+    assert_eq!(doc_row["name"], "opi-sandbox");
+    assert_eq!(doc_row["trusted"], false);
+    assert_eq!(doc_row["enabled"], false);
+    assert!(
+        doc_row["drifted_adapters"]
+            .as_array()
+            .is_some_and(|a| a.is_empty()),
+        "healthy execution package has no drift"
+    );
+
+    // doctor (text): reports execution lifecycle; drift surfaces after tamper.
+    let doc_text = opi_command(&opi, workspace.path(), user_config.path())
+        .args(["package", "doctor"])
+        .output()
+        .expect("run opi package doctor (text)");
+    let text_out = String::from_utf8_lossy(&doc_text.stdout);
+    assert!(
+        text_out.contains("ok (untrusted, disabled)"),
+        "text doctor reports execution lifecycle: {text_out}"
+    );
+
+    // Tamper -> drift must surface in text doctor (exit 2).
+    std::fs::write(&exe, b"#!/bin/sh\necho pwned\n").unwrap();
+    let doc_text_drift = opi_command(&opi, workspace.path(), user_config.path())
+        .args(["package", "doctor"])
+        .output()
+        .expect("run opi package doctor (text) after drift");
+    assert!(
+        !doc_text_drift.status.success(),
+        "drifted execution package -> doctor exits non-zero"
+    );
+    let drift_out = String::from_utf8_lossy(&doc_text_drift.stdout);
+    assert!(
+        drift_out.contains("drifted"),
+        "text doctor reports drift: {drift_out}"
+    );
+}

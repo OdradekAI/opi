@@ -92,6 +92,7 @@ fn resolver_reads_project_package_declaration_as_package_resource() {
                 &package_root.join("package.toml"),
             )
             .unwrap(),
+            contributions: Vec::new(),
         }])
         .unwrap();
 
@@ -149,6 +150,7 @@ fn resolver_rejects_non_local_lock_entry_for_local_package_source() {
             cache_path: None,
             git_commit: Some("abc123".to_string()),
             manifest_sha256: manifest_sha256(&package_root.join("package.toml")).unwrap(),
+            contributions: Vec::new(),
         }])
         .unwrap();
 
@@ -182,6 +184,7 @@ fn resolver_rejects_git_lock_source_that_does_not_match_ref_pinned_declaration()
             cache_path: Some(package_root.canonicalize().unwrap()),
             git_commit: Some("sha2".to_string()),
             manifest_sha256: manifest_sha256(&package_root.join("package.toml")).unwrap(),
+            contributions: Vec::new(),
         }])
         .unwrap();
 
@@ -398,6 +401,7 @@ fn resolver_reports_lock_drift_with_expected_and_actual_hash_and_disabled_state(
             cache_path: None,
             git_commit: None,
             manifest_sha256: "0".repeat(64), // intentionally wrong
+            contributions: Vec::new(),
         }])
         .unwrap();
 

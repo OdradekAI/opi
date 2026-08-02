@@ -226,6 +226,23 @@ impl PackageStoreScope {
             }
         }
     }
+
+    /// Path to the machine-owned `package-trust.toml` file (Phase 16.5).
+    ///
+    /// Holds Package Trust + enablement records for executable
+    /// `command.execute` contributions. Execution packages are global-only, so
+    /// only the Global path is used in practice; the Project path exists for
+    /// symmetry. This file is never user-edited (unlike `packages.toml`).
+    pub fn trust_path(&self) -> PathBuf {
+        match self {
+            PackageStoreScope::Global { user_config_dir } => {
+                user_config_dir.join("package-trust.toml")
+            }
+            PackageStoreScope::Project { workspace_root } => {
+                workspace_root.join(".opi").join("package-trust.toml")
+            }
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -289,6 +306,11 @@ pub struct PackageLockEntry {
     pub git_commit: Option<String>,
     /// SHA-256 hash of the package manifest (`package.toml`).
     pub manifest_sha256: String,
+    /// Phase 16: validated executable `command.execute` contributions locked
+    /// for this package. Empty for non-execution packages (extensions, themes,
+    /// fragments). `#[serde(default)]` keeps pre-Phase-16 lock files parsing.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub contributions: Vec<crate::execution::LockMaterial>,
 }
 
 /// A cache replacement that can be committed after package metadata is written.
@@ -421,6 +443,12 @@ impl PackageStore {
     /// Return the cache directory path for this store's scope.
     pub fn cache_dir(&self) -> PathBuf {
         self.scope.cache_dir()
+    }
+
+    /// Return the machine-owned `package-trust.toml` path for this store's
+    /// scope (Phase 16.5).
+    pub fn trust_path(&self) -> PathBuf {
+        self.scope.trust_path()
     }
 
     /// Clone a git repository and check out a specific commit.

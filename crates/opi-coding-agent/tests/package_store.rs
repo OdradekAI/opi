@@ -210,12 +210,41 @@ fn writes_and_reads_lock_entries() {
         cache_path: None,
         git_commit: None,
         manifest_sha256: "abc123".into(),
+        contributions: Vec::new(),
     };
     store.write_lock(&[entry]).expect("write lock");
     let loaded = store.read_lock().expect("read lock");
     assert_eq!(loaded.len(), 1);
     assert_eq!(loaded[0].manifest_sha256, "abc123");
     assert!(loaded[0].git_commit.is_none());
+}
+
+#[test]
+fn pre_phase16_lock_file_parses_with_empty_contributions() {
+    // A pre-Phase-16 lock file has no `contributions` key; it must still parse
+    // (forward compatibility for existing non-execution packages).
+    let dir = tempfile::tempdir().expect("tempdir");
+    let store = PackageStore::new(PackageStoreScope::Project {
+        workspace_root: dir.path().to_path_buf(),
+    });
+    let lock_path = dir.path().join(".opi").join("package-lock.toml");
+    std::fs::create_dir_all(lock_path.parent().unwrap()).unwrap();
+    std::fs::write(
+        &lock_path,
+        "[[lock]]\n\
+         identity_kind = \"local\"\n\
+         identity_value = \"/abs/pkg\"\n\
+         source = \"./pkg\"\n\
+         package_root = \"/abs/pkg\"\n\
+         manifest_sha256 = \"abc\"\n",
+    )
+    .unwrap();
+    let loaded = store.read_lock().expect("read lock");
+    assert_eq!(loaded.len(), 1);
+    assert!(
+        loaded[0].contributions.is_empty(),
+        "pre-Phase-16 lock parses with empty contributions"
+    );
 }
 
 #[test]
@@ -232,6 +261,7 @@ fn lock_entry_with_git_commit_round_trips() {
         cache_path: Some(dir.path().join("cache")),
         git_commit: Some("a1b2c3d4e5f6".into()),
         manifest_sha256: "deadbeef".into(),
+        contributions: Vec::new(),
     };
     store.write_lock(&[entry]).expect("write lock");
     let loaded = store.read_lock().expect("read lock");

@@ -289,4 +289,17 @@ pub enum PackageCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Grant Package Trust and enable an executable contribution package
+    /// (Phase 16.5). First enablement requires interactive confirmation and
+    /// refuses in a non-TTY/machine-facing invocation.
+    Enable {
+        /// Package name to enable.
+        name: String,
+    },
+    /// Disable an enabled contribution package without removing its trust
+    /// record (Phase 16.5).
+    Disable {
+        /// Package name to disable.
+        name: String,
+    },
 }

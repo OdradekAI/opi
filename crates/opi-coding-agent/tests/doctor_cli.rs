@@ -1690,3 +1690,117 @@ fn stored_credential_backend_unavailable_is_distinct_from_absent() {
     assert_ne!(absent_code, unavail_code);
     assert_eq!(unavail_code, "doctor_provider_credential_backend");
 }
+
+// ---------------------------------------------------------------------------
+// Package scope — Phase 16.5 execution-package lifecycle + drift
+// ---------------------------------------------------------------------------
+
+#[test]
+fn package_scope_reports_execution_lifecycle_and_drift_at_top_level() {
+    // SC16-03: the TOP-LEVEL `opi doctor` (not just `opi package doctor`) must
+    // report execution-package trusted/enabled state and lock/executable-hash
+    // drift without starting package code.
+    use opi_coding_agent::cli::PackageCommand;
+    use opi_coding_agent::package_activation;
+    use opi_coding_agent::package_cli;
+    use sha2::{Digest, Sha256};
+
+    let user = tempfile::tempdir().unwrap();
+    let workspace = tempfile::tempdir().unwrap();
+    let sessions = tempfile::tempdir().unwrap();
+
+    // Execution-package fixture targeting the running host.
+    let pkg = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(pkg.path().join("bin")).unwrap();
+    let exe_content: &[u8] = b"#!/bin/sh\necho hi\n";
+    let exe = pkg.path().join("bin").join("opi-sandbox");
+    std::fs::write(&exe, exe_content).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&exe, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let sha = format!("{:x}", Sha256::digest(exe_content));
+    let target = package_activation::host_target_triple();
+    let toml = format!(
+        "version = \"0.8.0\"\n\
+         opi_version = \">=0.7,<0.8\"\n\
+         name = \"opi-sandbox\"\n\
+         description = \"doctor fixture\"\n\
+         \n\
+         [[contributions.adapters]]\n\
+         capability = \"command.execute\"\n\
+         id = \"opi-sandbox\"\n\
+         transport = \"process-jsonl\"\n\
+         command = \"bin/opi-sandbox\"\n\
+         args = [\"backend\", \"--stdio\"]\n\
+         protocol = \"command-execution-jsonl-v1\"\n\
+         target = \"{target}\"\n\
+         sha256 = \"{sha}\"\n\
+         handshake_timeout_ms = 5000\n\
+         adapter_config = {{}}\n"
+    );
+    std::fs::write(pkg.path().join("package.toml"), toml).unwrap();
+
+    // Install globally: writes lock.contributions + untrusted/disabled record.
+    let exit = package_cli::handle_package_command(
+        &PackageCommand::Add {
+            source: pkg.path().to_str().unwrap().into(),
+            local: false,
+        },
+        workspace.path().to_path_buf(),
+        user.path().to_path_buf(),
+    );
+    assert_eq!(exit, 0);
+
+    let config = test_config("anthropic:claude-test-model");
+    let context = DoctorContext {
+        config: &config,
+        config_error: None,
+        workspace_root: workspace.path(),
+        user_config_dir: user.path(),
+        sessions_dir: sessions.path(),
+        term: None,
+        term_program: None,
+        term_features: None,
+        no_color: false,
+        colorterm: None,
+        env_var: &no_env,
+        store_probe: &EMPTY_STORE_PROBE,
+    };
+
+    // Healthy (untrusted+disabled) execution package: lifecycle is reported,
+    // and it is not itself an error.
+    let report = run_doctor(&[DoctorScope::Package], &context);
+    let text = format_text(&report);
+    assert!(
+        text.contains("execution package"),
+        "lifecycle reported: {text}"
+    );
+    assert!(
+        text.contains("trusted=false"),
+        "untrusted state reported: {text}"
+    );
+    assert!(
+        report
+            .entries
+            .iter()
+            .any(|e| e.diagnostic.source == "package"),
+        "package-scope entries present"
+    );
+
+    // Tamper with the executable: drift must surface as an error at the
+    // top-level doctor, and no adapter process is started.
+    std::fs::write(&exe, b"#!/bin/sh\necho pwned\n").unwrap();
+    let report2 = run_doctor(&[DoctorScope::Package], &context);
+    let text2 = format_text(&report2);
+    assert!(
+        text2.contains("drift"),
+        "drift reported at top level: {text2}"
+    );
+    assert_eq!(
+        report2.exit_code(),
+        2,
+        "drifted execution package is an error"
+    );
+}

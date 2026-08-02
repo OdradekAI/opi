@@ -48,6 +48,8 @@ use opi_ai::credential::CredentialSource;
 
 use crate::config::{ConfigError, OpiConfig};
 use crate::diagnostic_bridge::{diagnostic_from_config, diagnostic_from_package};
+use crate::package_activation;
+use crate::package_cli;
 use crate::package_resolver::resolve_installed_packages;
 use crate::provider_factory;
 use crate::rpc::RPC_SCHEMA_VERSION;
@@ -206,6 +208,8 @@ const CODE_DOCTOR_PROVIDER_ENDPOINT: &str = "doctor_provider_endpoint";
 const CODE_DOCTOR_PROVIDER_UNKNOWN: &str = "doctor_provider_unknown";
 const CODE_DOCTOR_PACKAGE_SUMMARY: &str = "doctor_package_summary";
 const CODE_DOCTOR_PACKAGE_RESOLVE: &str = "doctor_package_resolve_failed";
+const CODE_DOCTOR_PACKAGE_EXEC_LIFECYCLE: &str = "doctor_package_exec_lifecycle";
+const CODE_DOCTOR_PACKAGE_DRIFT: &str = "doctor_package_exec_drift";
 const CODE_DOCTOR_SESSION_DIR: &str = "doctor_session_dir";
 const CODE_DOCTOR_TUI_CAPABILITY: &str = "doctor_tui_capability";
 const CODE_DOCTOR_RPC_SCHEMA: &str = "doctor_rpc_schema";
@@ -508,6 +512,70 @@ fn package_diagnostics(workspace_root: &Path, user_config_dir: &Path) -> Vec<Dia
         Ok(resolution) => {
             for pd in &resolution.diagnostics {
                 out.push(diagnostic_from_package(pd));
+            }
+            // Phase 16.5: execution-package lifecycle + lock/hash drift for the
+            // top-level `opi doctor` surface (SC16-03). Reads the activation
+            // records and recomputes the executable SHA-256; never starts
+            // package code (no spawn).
+            let records =
+                package_activation::PackageActivationStore::global(user_config_dir.to_path_buf())
+                    .read_records()
+                    .unwrap_or_default();
+            for package in &resolution.packages {
+                let contributions = package
+                    .lock
+                    .as_ref()
+                    .map(|l| l.contributions.as_slice())
+                    .unwrap_or(&[]);
+                if contributions.is_empty() {
+                    continue;
+                }
+                let record = records
+                    .iter()
+                    .find(|r| r.source == package.declaration.source);
+                let trusted = record.map(|r| r.trusted).unwrap_or(false);
+                let enabled = record.map(|r| r.enabled).unwrap_or(false);
+                let drifted = package_cli::executable_drifted_adapters(package);
+                let adapter_ids = contributions
+                    .iter()
+                    .map(|c| c.adapter_id.as_str())
+                    .collect::<Vec<_>>()
+                    .join(",");
+                out.push(
+                    Diagnostic::new(
+                        Severity::Info,
+                        CODE_DOCTOR_PACKAGE_EXEC_LIFECYCLE,
+                        SOURCE_PACKAGE,
+                        format!(
+                            "execution package {} ({}): trusted={} enabled={}",
+                            package.package.manifest.name, adapter_ids, trusted, enabled
+                        ),
+                    )
+                    .details(serde_json::json!({
+                        "name": package.package.manifest.name,
+                        "trusted": trusted,
+                        "enabled": enabled,
+                        "contributions": contributions.iter().map(|c| serde_json::json!({
+                            "adapter_id": c.adapter_id,
+                            "target": c.target,
+                            "protocol": c.protocol,
+                            "executable_sha256": c.executable_sha256,
+                        })).collect::<Vec<_>>(),
+                        "drifted_adapters": drifted,
+                    })),
+                );
+                for id in &drifted {
+                    out.push(Diagnostic::new(
+                        Severity::Error,
+                        CODE_DOCTOR_PACKAGE_DRIFT,
+                        SOURCE_PACKAGE,
+                        format!(
+                            "execution package {}: executable hash drift for adapter {} \
+                             (Package Trust invalidated)",
+                            package.package.manifest.name, id
+                        ),
+                    ));
+                }
             }
             // Always emit a summary so the scope appears in output even when
             // there are zero packages and zero findings.

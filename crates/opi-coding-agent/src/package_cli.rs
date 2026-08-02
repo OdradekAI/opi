@@ -12,6 +12,8 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use crate::cli::PackageCommand;
+use crate::execution::PackageSource as ContributionScope;
+use crate::package_activation::{self, ActivationRecord, StdinTrustConfirmer};
 use crate::package_discovery::{PackageManifest, resolve_adapter_command_checked};
 use crate::package_resolver::{
     InstalledPackageResolution, InstalledPackageScope, PackageDiagnostic,
@@ -60,9 +62,12 @@ fn resolve_scope(
         PackageCommand::Add { .. } | PackageCommand::Remove { .. } => {
             PackageStoreScope::Global { user_config_dir }
         }
-        PackageCommand::List { .. } | PackageCommand::Doctor { .. } => {
-            PackageStoreScope::Project { workspace_root }
-        }
+        // Enable/Disable operate on the global Package Trust store (execution
+        // packages are global-only). List/Doctor read both scopes themselves.
+        PackageCommand::Enable { .. }
+        | PackageCommand::Disable { .. }
+        | PackageCommand::List { .. }
+        | PackageCommand::Doctor { .. } => PackageStoreScope::Project { workspace_root },
     }
 }
 
@@ -74,22 +79,29 @@ fn run_command(
     user_config_dir: &Path,
 ) -> Result<(), PackageStoreError> {
     match command {
-        PackageCommand::Add { source, .. } => cmd_add(store, scope, source),
-        PackageCommand::Remove { name_or_source, .. } => cmd_remove(store, scope, name_or_source),
+        PackageCommand::Add { source, .. } => cmd_add(store, scope, user_config_dir, source),
+        PackageCommand::Remove { name_or_source, .. } => {
+            cmd_remove(store, scope, user_config_dir, name_or_source)
+        }
         PackageCommand::List { json } => cmd_list(workspace_root, user_config_dir, *json),
         PackageCommand::Doctor { json } => cmd_doctor(workspace_root, user_config_dir, *json),
+        PackageCommand::Enable { name } => cmd_enable(user_config_dir, name),
+        PackageCommand::Disable { name } => cmd_disable(user_config_dir, name),
     }
 }
 
 fn cmd_add(
     store: &PackageStore,
     scope: &PackageStoreScope,
+    user_config_dir: &Path,
     source: &str,
 ) -> Result<(), PackageStoreError> {
     match PackageSource::parse(source)? {
-        PackageSource::Local { path } => install_local_package(store, scope, source, path),
+        PackageSource::Local { path } => {
+            install_local_package(store, scope, user_config_dir, source, path)
+        }
         PackageSource::Git { url, refspec } => {
-            install_git_package(store, scope, source, url, refspec)
+            install_git_package(store, scope, user_config_dir, source, url, refspec)
         }
     }
 }
@@ -97,6 +109,7 @@ fn cmd_add(
 fn install_local_package(
     store: &PackageStore,
     scope: &PackageStoreScope,
+    user_config_dir: &Path,
     source: &str,
     path: PathBuf,
 ) -> Result<(), PackageStoreError> {
@@ -117,12 +130,30 @@ fn install_local_package(
         )));
     }
 
-    let manifest = read_package_manifest(&manifest_path)?;
-    let lock_entry = local_lock_entry(source.to_string(), &canonical_root)
+    let (manifest, raw_bytes) = read_manifest_and_bytes(&manifest_path)?;
+    let mut lock_entry = local_lock_entry(source.to_string(), &canonical_root)
         .map_err(|e| PackageStoreError::Package(e.to_string()))?;
+
+    // Phase 16.5: validate executable contributions (first production caller of
+    // validate_executable_contributions). Project-local packages with
+    // contributions are rejected here; global packages persist the lock material
+    // and an untrusted+disabled activation record.
+    let contribution_scope = contribution_scope_for(scope);
+    let adapter_ids = apply_contributions(
+        &mut lock_entry,
+        &manifest,
+        &raw_bytes,
+        &canonical_root,
+        contribution_scope,
+    )?;
 
     write_declaration_if_missing(store, scope, source, &lock_entry)?;
     write_or_replace_lock(store, lock_entry)?;
+    if !adapter_ids.is_empty() && contribution_scope == ContributionScope::Global {
+        package_activation::PackageActivationStore::global(user_config_dir.to_path_buf())
+            .install(&manifest.name, source, &adapter_ids)
+            .map_err(|e| PackageStoreError::Package(e.to_string()))?;
+    }
     println!(
         "Installed {} {} from {} ({})",
         manifest.name,
@@ -136,6 +167,7 @@ fn install_local_package(
 fn install_git_package(
     store: &PackageStore,
     scope: &PackageStoreScope,
+    user_config_dir: &Path,
     source: &str,
     url: String,
     refspec: Option<String>,
@@ -152,12 +184,12 @@ fn install_git_package(
                 staging_dir.display()
             )));
         }
-        let manifest = read_package_manifest(&manifest_path)?;
+        let (manifest, raw_bytes) = read_manifest_and_bytes(&manifest_path)?;
         let git_commit = store.git_rev_parse_head(&staging_dir)?;
-        Ok((manifest, git_commit))
+        Ok((manifest, raw_bytes, git_commit))
     })();
 
-    let (manifest, git_commit) = match validated {
+    let (manifest, raw_bytes, git_commit) = match validated {
         Ok(validated) => validated,
         Err(e) => {
             let _ = std::fs::remove_dir_all(&staging_dir);
@@ -176,7 +208,7 @@ fn install_git_package(
         ));
     }
 
-    let lock_entry =
+    let mut lock_entry =
         match git_lock_entry(source.to_string(), url, &cache_dir, &cache_dir, git_commit) {
             Ok(entry) => entry,
             Err(e) => {
@@ -186,6 +218,22 @@ fn install_git_package(
                 ));
             }
         };
+
+    // Validate contributions against the materialized cache BEFORE committing
+    // the cache replacement (F2); rollback on validation failure.
+    let contribution_scope = contribution_scope_for(scope);
+    let adapter_ids = match apply_contributions(
+        &mut lock_entry,
+        &manifest,
+        &raw_bytes,
+        &cache_dir,
+        contribution_scope,
+    ) {
+        Ok(ids) => ids,
+        Err(e) => {
+            return Err(rollback_cache_on_error(replacement, e));
+        }
+    };
 
     let declarations =
         declarations_with_package(metadata.declarations.clone(), scope, source, &lock_entry);
@@ -197,6 +245,11 @@ fn install_git_package(
     }
 
     replacement.commit();
+    if !adapter_ids.is_empty() && contribution_scope == ContributionScope::Global {
+        package_activation::PackageActivationStore::global(user_config_dir.to_path_buf())
+            .install(&manifest.name, source, &adapter_ids)
+            .map_err(|e| PackageStoreError::Package(e.to_string()))?;
+    }
     println!(
         "Installed {} {} from {} ({})",
         manifest.name,
@@ -210,36 +263,80 @@ fn install_git_package(
 fn cmd_remove(
     store: &PackageStore,
     scope: &PackageStoreScope,
+    user_config_dir: &Path,
     name_or_source: &str,
 ) -> Result<(), PackageStoreError> {
     let mut decls = store.read_declarations()?;
-    if let Some(index) = decls.iter().position(|d| d.source == name_or_source) {
+    let removed_source = if let Some(index) = decls.iter().position(|d| d.source == name_or_source)
+    {
         let removed = decls.remove(index);
         store.write_declarations(&decls)?;
         remove_locks_for_declaration(store, scope, &removed)?;
-        return Ok(());
-    }
+        Some(removed.source)
+    } else {
+        let matches = declarations_matching_manifest_name(store, scope, &decls, name_or_source)?;
+        match matches.as_slice() {
+            [] => {
+                eprintln!("opi package: no declaration matching '{name_or_source}'");
+                None
+            }
+            [matched] => {
+                let removed = decls.remove(matched.index);
+                store.write_declarations(&decls)?;
+                remove_locks_for_declaration(store, scope, &removed)?;
+                Some(removed.source)
+            }
+            _ => {
+                return Err(PackageStoreError::Package(format!(
+                    "ambiguous package '{name_or_source}'; matches: {}",
+                    matches
+                        .iter()
+                        .map(|m| {
+                            format!("{} source={} name={}", scope_label(scope), m.source, m.name)
+                        })
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )));
+            }
+        }
+    };
 
-    let matches = declarations_matching_manifest_name(store, scope, &decls, name_or_source)?;
-    match matches.as_slice() {
-        [] => {
-            eprintln!("opi package: no declaration matching '{name_or_source}'");
-            Ok(())
+    // Phase 16.5: also delete the Package Trust + enablement record (global).
+    // Best-effort: removing a package with no trust record is a no-op.
+    if let Some(source) = removed_source {
+        let activation =
+            package_activation::PackageActivationStore::global(user_config_dir.to_path_buf());
+        if let Err(e) = activation.remove(&source) {
+            return Err(PackageStoreError::Package(e.to_string()));
         }
-        [matched] => {
-            let removed = decls.remove(matched.index);
-            store.write_declarations(&decls)?;
-            remove_locks_for_declaration(store, scope, &removed)
-        }
-        _ => Err(PackageStoreError::Package(format!(
-            "ambiguous package '{name_or_source}'; matches: {}",
-            matches
-                .iter()
-                .map(|m| format!("{} source={} name={}", scope_label(scope), m.source, m.name))
-                .collect::<Vec<_>>()
-                .join(", ")
-        ))),
     }
+    Ok(())
+}
+
+/// Grant Package Trust and enable a contribution package (interactive).
+fn cmd_enable(user_config_dir: &Path, name: &str) -> Result<(), PackageStoreError> {
+    let store = package_activation::PackageActivationStore::global(user_config_dir.to_path_buf());
+    let mut confirmer = StdinTrustConfirmer;
+    store
+        .enable(
+            name,
+            package_activation::host_target_triple(),
+            package_activation::host_opi_version(),
+            &mut confirmer,
+        )
+        .map_err(|e| PackageStoreError::Package(e.to_string()))?;
+    println!("Enabled {name}.");
+    Ok(())
+}
+
+/// Disable a contribution package, preserving its Package Trust record.
+fn cmd_disable(user_config_dir: &Path, name: &str) -> Result<(), PackageStoreError> {
+    let store = package_activation::PackageActivationStore::global(user_config_dir.to_path_buf());
+    store
+        .disable(name)
+        .map_err(|e| PackageStoreError::Package(e.to_string()))?;
+    println!("Disabled {name}.");
+    Ok(())
 }
 
 fn cmd_list(
@@ -249,12 +346,14 @@ fn cmd_list(
 ) -> Result<(), PackageStoreError> {
     let resolution = resolve_installed_packages(workspace_root, user_config_dir)
         .map_err(|e| PackageStoreError::Package(e.to_string()))?;
+    let records = read_activation_records(user_config_dir);
     let stdout = std::io::stdout();
     let mut out = stdout.lock();
 
     if json {
         for package in &resolution.packages {
-            writeln!(out, "{}", list_package_json(package, &[])).map_err(PackageStoreError::Io)?;
+            writeln!(out, "{}", list_package_json(package, &records, &[]))
+                .map_err(PackageStoreError::Io)?;
         }
         for diagnostic in &resolution.diagnostics {
             writeln!(out, "{}", list_diagnostic_json(diagnostic)).map_err(PackageStoreError::Io)?;
@@ -266,11 +365,12 @@ fn cmd_list(
         for package in &resolution.packages {
             writeln!(
                 out,
-                "{}\t{}\t{}\t{}\tok",
+                "{}\t{}\t{}\t{}\t{}",
                 installed_scope_label(package.scope),
                 package.package.manifest.name,
                 display_version(package.package.manifest.version.as_deref()),
-                package.declaration.source
+                package.declaration.source,
+                lifecycle_status_tag(package, &records),
             )
             .map_err(PackageStoreError::Io)?;
         }
@@ -295,10 +395,23 @@ fn cmd_doctor(
 ) -> Result<(), PackageStoreError> {
     let resolution = resolve_installed_packages(workspace_root, user_config_dir)
         .map_err(|e| PackageStoreError::Package(e.to_string()))?;
+    let records = read_activation_records(user_config_dir);
+
+    // Drift detection for execution packages: recompute the executable SHA-256
+    // (a read; no spawn) and flag any mismatch. This does not start package code.
+    let mut drift_errors: Vec<(String, Vec<String>)> = Vec::new();
+    for package in &resolution.packages {
+        let drifted = executable_drifted_adapters(package);
+        if !drifted.is_empty() {
+            drift_errors.push((package.package.manifest.name.clone(), drifted));
+        }
+    }
+    let has_drift = !drift_errors.is_empty();
     let has_errors = resolution
         .diagnostics
         .iter()
-        .any(|d| d.severity == PackageDiagnosticSeverity::Error);
+        .any(|d| d.severity == PackageDiagnosticSeverity::Error)
+        || has_drift;
 
     if json {
         let stdout = std::io::stdout();
@@ -306,10 +419,10 @@ fn cmd_doctor(
         writeln!(
             out,
             "{}",
-            serde_json::Value::Array(doctor_rows(&resolution))
+            serde_json::Value::Array(doctor_rows(&resolution, &records))
         )
         .map_err(PackageStoreError::Io)?;
-    } else if resolution.diagnostics.is_empty() {
+    } else if resolution.diagnostics.is_empty() && !has_drift {
         let stdout = std::io::stdout();
         let mut out = stdout.lock();
         if resolution.packages.is_empty() {
@@ -318,6 +431,9 @@ fn cmd_doctor(
             writeln!(out, "All {} package(s) OK.", resolution.packages.len())
                 .map_err(PackageStoreError::Io)?;
         }
+        // Report execution-package lifecycle (trusted/enabled) in text mode too.
+        write_execution_lifecycle_lines(&mut out, &resolution, &records)
+            .map_err(PackageStoreError::Io)?;
     } else {
         for diagnostic in &resolution.diagnostics {
             eprintln!(
@@ -325,12 +441,22 @@ fn cmd_doctor(
                 diagnostic.source, diagnostic.code, diagnostic.message
             );
         }
+        for (name, adapters) in &drift_errors {
+            eprintln!(
+                "{name}: executable hash drift for adapter(s) {} (Package Trust invalidated)",
+                adapters.join(", ")
+            );
+        }
+        let stdout = std::io::stdout();
+        let mut out = stdout.lock();
+        write_execution_lifecycle_lines(&mut out, &resolution, &records)
+            .map_err(PackageStoreError::Io)?;
     }
 
     if has_errors {
         return Err(PackageStoreError::Package(format!(
             "{} diagnostic(s) found",
-            resolution.diagnostics.len()
+            resolution.diagnostics.len() + drift_errors.len()
         )));
     }
 
@@ -507,17 +633,55 @@ fn lock_matches_entry(lock: &PackageLockEntry, entry: &PackageLockEntry) -> bool
 }
 
 fn read_package_manifest(path: &Path) -> Result<PackageManifest, PackageStoreError> {
-    let content = std::fs::read_to_string(path)?;
-    PackageManifest::from_toml(&content, path)
-        .map_err(|e| PackageStoreError::Package(e.to_string()))
+    Ok(read_manifest_and_bytes(path)?.0)
+}
+
+/// Read a package manifest and its raw bytes (the bytes are threaded into the
+/// contribution validator so the manifest hash is computed over the exact
+/// parsed content, with no re-read TOCTOU).
+fn read_manifest_and_bytes(path: &Path) -> Result<(PackageManifest, Vec<u8>), PackageStoreError> {
+    let bytes = std::fs::read(path)?;
+    let manifest = PackageManifest::from_toml(&String::from_utf8_lossy(&bytes), path)
+        .map_err(|e| PackageStoreError::Package(e.to_string()))?;
+    Ok((manifest, bytes))
+}
+
+/// Map a write scope to the contribution validator's install-scope enum.
+fn contribution_scope_for(scope: &PackageStoreScope) -> ContributionScope {
+    match scope {
+        PackageStoreScope::Global { .. } => ContributionScope::Global,
+        PackageStoreScope::Project { .. } => ContributionScope::ProjectLocal,
+    }
+}
+
+/// Validate a package's executable contributions and attach the resulting lock
+/// material to `lock_entry`. Returns the contribution adapter ids (empty for
+/// non-execution packages). A project-local package with contributions fails
+/// here (`ProjectLocalExecutableContribution`), rejecting the install.
+fn apply_contributions(
+    lock_entry: &mut PackageLockEntry,
+    manifest: &PackageManifest,
+    raw_bytes: &[u8],
+    package_root: &Path,
+    scope: ContributionScope,
+) -> Result<Vec<String>, PackageStoreError> {
+    if manifest.adapter_contributions.is_empty() {
+        return Ok(Vec::new());
+    }
+    let locks = package_activation::validate_for_install(manifest, raw_bytes, package_root, scope)
+        .map_err(|e| PackageStoreError::Package(e.to_string()))?;
+    let adapter_ids = locks.iter().map(|l| l.adapter_id.clone()).collect();
+    lock_entry.contributions = locks;
+    Ok(adapter_ids)
 }
 
 fn list_package_json(
     package: &ResolvedInstalledPackage,
+    records: &[ActivationRecord],
     diagnostics: &[PackageDiagnostic],
 ) -> serde_json::Value {
     let adapter = package.package.manifest.adapter.as_ref();
-    serde_json::json!({
+    let mut row = serde_json::json!({
         "scope": installed_scope_label(package.scope),
         "name": package.package.manifest.name.as_str(),
         "version": package.package.manifest.version.as_deref(),
@@ -529,7 +693,47 @@ fn list_package_json(
             .and_then(|adapter| resolve_adapter_command_checked(adapter, &package.package.path).ok())
             .map(|path| path.display().to_string()),
         "diagnostics": diagnostics.iter().map(diagnostic_json).collect::<Vec<_>>(),
-    })
+    });
+    // Phase 16.5: lifecycle + lock state for execution packages.
+    let contributions: &[crate::execution::LockMaterial] = package
+        .lock
+        .as_ref()
+        .map(|l| l.contributions.as_slice())
+        .unwrap_or(&[]);
+    if !contributions.is_empty() {
+        let record = records
+            .iter()
+            .find(|r| r.source == package.declaration.source);
+        if let Some(obj) = row.as_object_mut() {
+            obj.insert(
+                "trusted".into(),
+                serde_json::json!(record.map(|r| r.trusted).unwrap_or(false)),
+            );
+            obj.insert(
+                "enabled".into(),
+                serde_json::json!(record.map(|r| r.enabled).unwrap_or(false)),
+            );
+            obj.insert(
+                "contributions".into(),
+                serde_json::Value::Array(
+                    contributions
+                        .iter()
+                        .map(|c| {
+                            serde_json::json!({
+                                "adapter_id": c.adapter_id,
+                                "target": c.target,
+                                "protocol": c.protocol,
+                                "package_version": c.package_version,
+                                "executable_rel_path": c.executable_rel_path,
+                                "executable_sha256": c.executable_sha256,
+                            })
+                        })
+                        .collect(),
+                ),
+            );
+        }
+    }
+    row
 }
 
 fn list_diagnostic_json(diagnostic: &PackageDiagnostic) -> serde_json::Value {
@@ -546,16 +750,43 @@ fn list_diagnostic_json(diagnostic: &PackageDiagnostic) -> serde_json::Value {
     })
 }
 
-fn doctor_rows(resolution: &InstalledPackageResolution) -> Vec<serde_json::Value> {
+fn doctor_rows(
+    resolution: &InstalledPackageResolution,
+    records: &[ActivationRecord],
+) -> Vec<serde_json::Value> {
     let mut rows = Vec::new();
     for package in &resolution.packages {
-        rows.push(serde_json::json!({
+        let drifted = executable_drifted_adapters(package);
+        let status = if drifted.is_empty() { "ok" } else { "drifted" };
+        let mut row = serde_json::json!({
             "scope": installed_scope_label(package.scope),
             "source": package.declaration.source.as_str(),
             "name": package.package.manifest.name.as_str(),
-            "status": "ok",
+            "status": status,
             "diagnostics": [],
-        }));
+        });
+        let contributions: &[crate::execution::LockMaterial] = package
+            .lock
+            .as_ref()
+            .map(|l| l.contributions.as_slice())
+            .unwrap_or(&[]);
+        if !contributions.is_empty() {
+            let record = records
+                .iter()
+                .find(|r| r.source == package.declaration.source);
+            if let Some(obj) = row.as_object_mut() {
+                obj.insert(
+                    "trusted".into(),
+                    serde_json::json!(record.map(|r| r.trusted).unwrap_or(false)),
+                );
+                obj.insert(
+                    "enabled".into(),
+                    serde_json::json!(record.map(|r| r.enabled).unwrap_or(false)),
+                );
+                obj.insert("drifted_adapters".into(), serde_json::json!(drifted));
+            }
+        }
+        rows.push(row);
     }
     for diagnostic in &resolution.diagnostics {
         rows.push(serde_json::json!({
@@ -567,6 +798,88 @@ fn doctor_rows(resolution: &InstalledPackageResolution) -> Vec<serde_json::Value
         }));
     }
     rows
+}
+
+/// Read the global Package Trust records (best-effort; empty on absence/error).
+fn read_activation_records(user_config_dir: &Path) -> Vec<ActivationRecord> {
+    package_activation::PackageActivationStore::global(user_config_dir.to_path_buf())
+        .read_records()
+        .unwrap_or_default()
+}
+
+/// A human-readable lifecycle status tag for the text table.
+fn lifecycle_status_tag(
+    package: &ResolvedInstalledPackage,
+    records: &[ActivationRecord],
+) -> String {
+    let contributions: &[crate::execution::LockMaterial] = package
+        .lock
+        .as_ref()
+        .map(|l| l.contributions.as_slice())
+        .unwrap_or(&[]);
+    if contributions.is_empty() {
+        return "ok".to_string();
+    }
+    let drifted = executable_drifted_adapters(package);
+    if !drifted.is_empty() {
+        return format!("drifted[{}]", drifted.join(","));
+    }
+    let record = records
+        .iter()
+        .find(|r| r.source == package.declaration.source);
+    let trusted = record.map(|r| r.trusted).unwrap_or(false);
+    let enabled = record.map(|r| r.enabled).unwrap_or(false);
+    match (trusted, enabled) {
+        (true, true) => "ok (trusted, enabled)".to_string(),
+        (true, false) => "ok (trusted, disabled)".to_string(),
+        (false, _) => "ok (untrusted, disabled)".to_string(),
+    }
+}
+
+/// Write one lifecycle status line per execution package (text mode).
+fn write_execution_lifecycle_lines(
+    out: &mut impl Write,
+    resolution: &InstalledPackageResolution,
+    records: &[ActivationRecord],
+) -> std::io::Result<()> {
+    for package in &resolution.packages {
+        let contributions: &[crate::execution::LockMaterial] = package
+            .lock
+            .as_ref()
+            .map(|l| l.contributions.as_slice())
+            .unwrap_or(&[]);
+        if contributions.is_empty() {
+            continue;
+        }
+        writeln!(
+            out,
+            "{}: {}",
+            package.package.manifest.name,
+            lifecycle_status_tag(package, records)
+        )?;
+    }
+    Ok(())
+}
+
+/// Adapter ids whose locked executable SHA-256 no longer matches the file
+/// (executable deleted or altered). A read; never spawns package code.
+pub(crate) fn executable_drifted_adapters(package: &ResolvedInstalledPackage) -> Vec<String> {
+    use sha2::Digest as _;
+    let mut drifted = Vec::new();
+    let Some(lock) = &package.lock else {
+        return drifted;
+    };
+    for c in &lock.contributions {
+        let exe = package.package.path.join(&c.executable_rel_path);
+        let matches = match std::fs::read(&exe) {
+            Ok(bytes) => format!("{:x}", sha2::Sha256::digest(&bytes)) == c.executable_sha256,
+            Err(_) => false,
+        };
+        if !matches {
+            drifted.push(c.adapter_id.clone());
+        }
+    }
+    drifted
 }
 
 fn diagnostic_json(diagnostic: &PackageDiagnostic) -> serde_json::Value {

@@ -82,7 +82,10 @@ pub enum PackageSource {
 /// Exact material recorded in the package lock for one validated contribution.
 ///
 /// The stored hash detects drift but does not authenticate the publisher.
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// `Serialize`/`Deserialize` are derived so the lock material can be persisted
+/// in `package-lock.toml` (Phase 16.5), per the design's lock contract.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct LockMaterial {
     /// SHA-256 over the LF-normalized `package.toml` bytes that were parsed.
     pub manifest_hash: String,
