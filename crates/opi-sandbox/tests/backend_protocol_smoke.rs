@@ -1,8 +1,10 @@
 //! Drives `tests/fixtures/protocol_client.py` against the REAL `opi-sandbox`
-//! binary (Phase 16 task 16.12): proves protocol negotiation (initialize ->
-//! ready) and the structured pre-start refusal (execute -> accepted ->
-//! failed{unavailable, handshake}) on the production `backend --stdio`
-//! executable, then a clean backend exit.
+//! binary: proves protocol negotiation (initialize -> ready) and the structured
+//! execute contract on the production `backend --stdio` executable, then a clean
+//! backend exit. The fixture is OS-aware: on supported Linux (16.13) it asserts
+//! the confined successful run (started{supervised, restricted} -> completed);
+//! off-Linux it asserts the Phase 16.12 pre-start refusal
+//! (failed{unavailable, handshake}).
 //!
 //! This mirrors the repo precedent (`opi-coding-agent/tests/artifact_audit_script.rs`)
 //! of a dedicated Rust test invoking a Python fixture directly, so the
@@ -18,7 +20,7 @@ fn python_command() -> &'static str {
 }
 
 #[test]
-fn backend_negotiation_and_pre_start_refusal() {
+fn backend_negotiation_and_execute_contract() {
     let binary = env!("CARGO_BIN_EXE_opi-sandbox");
     let script = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests")

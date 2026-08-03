@@ -140,10 +140,11 @@ pub(crate) fn map_setup_failure(reason: SetupFailureReason) -> FailureCode {
 }
 
 /// Build the `started` frame from the effective mechanism/contract and the
-/// platform limitations. The 16.12 vocabulary is honest: only `Mechanism::None`
-/// is attainable, so the guarantee is `supervised` (L0 only) and the policy is
-/// `unrestricted` — NEVER `restricted` / `isolated` (those land with the native
-/// mechanisms in 16.13 / 16.14.1; crate vocabulary contract, `lib.rs`).
+/// platform limitations. `Mechanism::None` (L0 supervision only, the 16.12
+/// backend under `NoRestriction`) reports `supervised` / `unrestricted`; a
+/// native mechanism (`Landlock`/`Seccomp` on supported Linux, 16.13) reports
+/// `supervised` / `restricted` — NEVER `isolated` (crate vocabulary contract,
+/// `lib.rs`; design `### Common profile`: the package reports `restricted`).
 pub(crate) fn started_payload(
     request_id: &RequestId,
     mechanism: Mechanism,
@@ -151,8 +152,12 @@ pub(crate) fn started_payload(
     limitations: &[String],
 ) -> StartedPayload {
     let (guarantee, policy) = match mechanism {
-        // The only mechanism this crate produces in 16.12.
+        // L0 supervision only (NoRestriction, the protocol backend).
         Mechanism::None => ("supervised", "unrestricted"),
+        // A native mechanism installed a confinement contract. Seccomp is
+        // always installed alongside Landlock on Linux, so both report the same
+        // honest vocabulary; the run is supervised AND restricted.
+        Mechanism::Landlock | Mechanism::Seccomp => ("supervised", "restricted"),
     };
     StartedPayload {
         request_id: request_id.clone(),
@@ -278,6 +283,26 @@ mod tests {
                     && !frame.placement.contains(word),
                 "16.12 started vocabulary must not claim `{word}`"
             );
+        }
+    }
+
+    /// A native mechanism (16.13 Landlock/Seccomp) reports the honest
+    /// `supervised` / `restricted` vocabulary, never `isolated`/`enforced`.
+    #[test]
+    fn started_payload_native_reports_restricted() {
+        for mechanism in [Mechanism::Landlock, Mechanism::Seccomp] {
+            let frame = started_payload(&rid(), mechanism, ContractStatus::Restricted, &[]);
+            assert_eq!(frame.placement, "host");
+            assert_eq!(frame.guarantee, "supervised");
+            assert_eq!(frame.policy, "restricted");
+            for word in ["isolated", "enforced"] {
+                assert!(
+                    !frame.guarantee.contains(word)
+                        && !frame.policy.contains(word)
+                        && !frame.placement.contains(word),
+                    "native started vocabulary must not claim `{word}`"
+                );
+            }
         }
     }
 

@@ -350,3 +350,188 @@ impl Drop for JobGuard {
         }
     }
 }
+
+// =========================================================================
+// Phase 16 task 16.13 — Linux native confinement FFI
+// =========================================================================
+//
+// `platform/mod.rs` (and therefore `platform/linux.rs`) is
+// `#![forbid(unsafe_code)]`, which propagates to submodules and cannot be
+// overridden — the Phase 15 trap (opi-coding-agent `sandbox/linux.rs:36-38`).
+// `process_tree` is the crate's documented FFI home ("every FFI call lives HERE
+// behind a safe wrapper"), so the two audited `unsafe` helpers the Linux native
+// leaf needs — the observed-ABI probe and the `pre_exec` child-setup — live
+// here. `platform/linux.rs` builds the confinement plan from the safe
+// `landlock`/`seccompiler` APIs and calls these helpers to perform the kernel
+// calls. Compiled only on Linux.
+
+#[cfg(target_os = "linux")]
+use std::sync::Arc;
+
+#[cfg(target_os = "linux")]
+use landlock::{ABI, RulesetCreated};
+
+#[cfg(target_os = "linux")]
+use seccompiler::BpfProgram;
+
+/// Query the kernel's **observed** Landlock ABI (read-only; no confinement).
+/// `landlock_create_ruleset(NULL, 0, LANDLOCK_CREATE_RULESET_VERSION)` returns
+/// the supported ABI (1..) or a negative errno when Landlock is absent/disabled.
+/// Replicates the landlock crate's private probe, which it does not expose, so
+/// the posture resolver can report per-layer availability before spawn.
+#[cfg(target_os = "linux")]
+pub(crate) fn observed_landlock_abi() -> ABI {
+    const LANDLOCK_CREATE_RULESET_VERSION: u32 = 1;
+    // SAFETY: read-only capability query. A null attribute pointer, size 0, and
+    // the VERSION flag direct the kernel to return the supported ABI integer
+    // without creating a ruleset or mutating state. No fd is produced. The
+    // landlock crate performs the identical call internally.
+    let v = unsafe {
+        libc::syscall(
+            libc::SYS_landlock_create_ruleset,
+            std::ptr::null::<libc::c_void>(),
+            0usize,
+            LANDLOCK_CREATE_RULESET_VERSION,
+        )
+    };
+    if v < 0 {
+        ABI::Unsupported
+    } else {
+        ABI::from(v as i32)
+    }
+}
+
+/// Map a `seccompiler::Error` to a stable raw errno without allocating (the
+/// `pre_exec` context is async-signal-safe).
+#[cfg(target_os = "linux")]
+fn seccomp_errno(err: &seccompiler::Error) -> i32 {
+    match err {
+        seccompiler::Error::EmptyFilter | seccompiler::Error::Backend(_) => libc::EINVAL,
+        seccompiler::Error::Prctl(e) | seccompiler::Error::Seccomp(e) => {
+            e.raw_os_error().unwrap_or(libc::EINVAL)
+        }
+        seccompiler::Error::ThreadSync(_) => libc::EBUSY,
+    }
+}
+
+/// The one audited child-setup helper: register a `pre_exec` hook on `cmd` that
+/// installs confinement BEFORE execve, in the order the audit (wf_e03e0e6e-c84)
+/// fixed as load-bearing for fd lifetimes:
+///   1. apply the seccomp deny-overlay (`prctl` PR_SET_NO_NEW_PRIVS + `seccomp`);
+///   2. Landlock `restrict_self` for the fs then network rulesets — this
+///      CONSUMES the ruleset fds (they close when the moved `RulesetCreated`
+///      values drop), so it MUST precede the fd closure (closing them first
+///      would make restrict_self fail with EBADF on every run);
+///   3. close inherited nonessential descriptors (preserve stdio 0/1/2 and
+///      AF_UNIX sockets), closing any inherited INET/INET6/NETLINK socket the
+///      seccomp socket-creation gate could not have prevented.
+///
+/// Only the std `pre_exec` registration is `unsafe`. A failure at any step
+/// returns an `Err(io::Error)` so `execve` is never reached: the spawn fails and
+/// the target is never released (fail-closed; the runner maps the spawn failure
+/// to `SetupFailureReason::SpawnFailed`). The closure performs only
+/// async-signal-safe operations on every path (syscalls + errno-backed
+/// `io::Error`s; no allocation, locking, or stdio after fork).
+#[cfg(target_os = "linux")]
+pub(crate) fn install_child_confinement(
+    cmd: &mut tokio::process::Command,
+    bpf: Arc<BpfProgram>,
+    fs_ruleset: Option<RulesetCreated>,
+    network_ruleset: Option<RulesetCreated>,
+    close_inherited: bool,
+) {
+    use std::os::unix::process::CommandExt;
+    let mut fs_ruleset = fs_ruleset;
+    let mut network_ruleset = network_ruleset;
+    // SAFETY: `pre_exec` runs the closure in the child after fork, before
+    // execve, in an async-signal-safe context. The closure captures `bpf`
+    // (`Arc<BpfProgram>`), `fs_ruleset`, and `network_ruleset`
+    // (`Option<RulesetCreated>`), all `Send + Sync + 'static`. On the success
+    // path it calls only syscalls (seccomp apply, landlock restrict_self,
+    // getdtablesize/getsockopt/close). Error paths return only errno-backed
+    // `io::Error` values — no allocator, formatting, or locks touched after
+    // fork.
+    let _ = unsafe {
+        cmd.as_std_mut().pre_exec(move || {
+            // (1) seccomp deny-overlay.
+            if let Err(error) = seccompiler::apply_filter(bpf.as_ref()) {
+                return Err(std::io::Error::from_raw_os_error(seccomp_errno(&error)));
+            }
+            // (2) Landlock restrict_self (fs then network). The moved
+            // `RulesetCreated` values drop at the end of their `if let` scope,
+            // closing the ruleset fds; this MUST happen before (3) so the fd
+            // closure never closes a fd restrict_self still needs.
+            for ruleset in [&mut fs_ruleset, &mut network_ruleset] {
+                if let Some(rs) = ruleset.take()
+                    && let Err(error) = rs.restrict_self()
+                {
+                    return Err(std::io::Error::from_raw_os_error(*landlock::Errno::from(
+                        error,
+                    )));
+                }
+            }
+            // (3) close inherited nonessential descriptors (last). Only for
+            // network = deny (design `### Linux` groups descriptor closure
+            // under the network-deny clause).
+            if close_inherited {
+                close_nonessential_inherited_fds();
+            }
+            Ok(())
+        })
+    };
+}
+
+/// Close every inherited descriptor `>= 3` that is not an AF_UNIX socket,
+/// preserving stdio (0/1/2) and AF_UNIX sockets (ordinary local IPC). Runs AFTER
+/// Landlock restrict_self, so the consumed ruleset fds are already closed.
+/// Best-effort: a `close` error (EBADF = already closed) is ignored. This closes
+/// the documented inherited-fd residual — an inherited INET/INET6/NETLINK socket
+/// the seccomp socket-creation gate cannot have blocked (it only gates
+/// `socket()` CREATION, not inherited fds). Cooperating descriptor transfer
+/// remains outside the non-malicious-command threat model (design `### Linux`).
+#[cfg(target_os = "linux")]
+fn close_nonessential_inherited_fds() {
+    let max = fd_table_size();
+    let mut fd: i32 = 3;
+    while fd < max {
+        if !is_af_unix_socket(fd) {
+            // SAFETY: close(2) on a valid or already-closed fd; EBADF is
+            // ignored. No allocation.
+            let _ = unsafe { libc::close(fd) };
+        }
+        fd += 1;
+    }
+}
+
+/// The upper bound for fd iteration: the process soft `RLIMIT_NOFILE`
+/// (`getdtablesize`), which bounds the loop to the actually-usable fds.
+#[cfg(target_os = "linux")]
+fn fd_table_size() -> i32 {
+    // SAFETY: getdtablesize is a read-only glibc query returning the soft
+    // RLIMIT_NOFILE; no side effects.
+    let max = unsafe { libc::getdtablesize() };
+    if max <= 3 { 3 } else { max }
+}
+
+/// Whether `fd` is an AF_UNIX socket, queried via `getsockopt(SO_DOMAIN)`. A
+/// non-socket fd returns `false` (getsockopt fails with ENOTSOCK). `getsockopt`
+/// is a Linux syscall; like the seccomp/landlock syscalls already used in this
+/// `pre_exec` context, it performs no userspace locking or allocation, so it is
+/// safe in the async-signal-safe child-setup path.
+#[cfg(target_os = "linux")]
+fn is_af_unix_socket(fd: i32) -> bool {
+    let mut domain: libc::c_int = 0;
+    let mut len = std::mem::size_of::<libc::c_int>() as libc::socklen_t;
+    // SAFETY: read-only getsockopt query. `domain` is a valid i32 outparam of
+    // the size `len` advertises; the fd is not consumed.
+    let rc = unsafe {
+        libc::getsockopt(
+            fd,
+            libc::SOL_SOCKET,
+            libc::SO_DOMAIN,
+            &mut domain as *mut _ as *mut libc::c_void,
+            &mut len,
+        )
+    };
+    rc == 0 && domain == libc::AF_UNIX
+}

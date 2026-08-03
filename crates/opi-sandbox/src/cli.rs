@@ -13,10 +13,12 @@
 //! check, which is the seam the portable `cli_contract` tests drive directly
 //! with an injected [`NoRestriction`](crate::NoRestriction) runner.
 //!
-//! In 16.11.2 `platform::current` returns `supported == false` on EVERY
-//! platform, so production `run` refuses before target start (exit 125); the
-//! `Supported` arm is dead in production this phase and is exercised only by the
-//! injected-runner tests. Successful native run is owned by 16.13/16.14.1.
+//! `platform::current` reports the host posture. On Windows (and on macOS until
+//! 16.14.1) `supported == false`, so production `run` refuses before target
+//! start (exit 125); on supported Linux (16.13) `supported == true` and `run`
+//! executes the target under Landlock + seccomp. The unsupported refusal is
+//! exercised directly here; the native Linux run is exercised by
+//! `tests/linux_policy`.
 //!
 //! # Exit mapping (spec `### Human CLI`)
 //!
@@ -335,6 +337,8 @@ pub fn doctor_report() -> DoctorReport {
 fn mechanism_name(mechanism: &Mechanism) -> String {
     match mechanism {
         Mechanism::None => "none".to_string(),
+        Mechanism::Landlock => "landlock".to_string(),
+        Mechanism::Seccomp => "seccomp".to_string(),
     }
 }
 
@@ -521,14 +525,17 @@ fn print_help() {
     println!("  opi-sandbox --help | --version");
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_os = "linux")))]
 mod tests {
     use super::*;
 
-    /// The doctor report is unsupported everywhere in 16.11.2 with an empty
-    /// mechanism list and the host OS as target (independently sourced).
+    /// On non-Linux hosts (Windows; macOS until 16.14.1) the doctor report is
+    /// unsupported with an empty mechanism list and the host OS as target
+    /// (independently sourced). On supported Linux (16.13) doctor reports
+    /// supported + landlock/seccomp, asserted in `tests/linux_policy`.
+    #[cfg(not(target_os = "linux"))]
     #[test]
-    fn doctor_report_is_unsupported_in_16_11_2() {
+    fn doctor_report_is_unsupported_off_linux() {
         let report = doctor_report();
         assert_eq!(report.schema_version, 1);
         assert!(
@@ -547,8 +554,9 @@ mod tests {
         );
     }
 
-    /// The hand-rolled JSON is valid for the unsupported 16.11.2 report (no
+    /// The hand-rolled JSON is valid for the unsupported non-Linux report (no
     /// mechanism/profile/limitation string breaks the fixed schema).
+    #[cfg(not(target_os = "linux"))]
     #[test]
     fn doctor_json_is_well_formed() {
         let report = doctor_report();

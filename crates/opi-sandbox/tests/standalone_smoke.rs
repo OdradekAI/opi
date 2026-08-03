@@ -32,7 +32,10 @@ fn read_artifact(dir: &std::path::Path, name: &str) -> String {
 }
 
 /// Re-assert the persisted artifacts so a script that touched the files but
-/// wrote empty or stale content still fails the test.
+/// wrote empty or stale content still fails the test. The supported posture is
+/// OS-dependent: on supported Linux (16.13) the binary reports supported=true +
+/// landlock/seccomp and `run` succeeds; off-Linux it stays unsupported (16.11.2
+/// posture) and `run` refuses pre-start (125).
 fn assert_artifacts(dir: &std::path::Path) {
     let version = read_artifact(dir, "version.txt");
     assert!(
@@ -45,20 +48,36 @@ fn assert_artifacts(dir: &std::path::Path) {
         "help artifact: {help:?}"
     );
     let doctor = read_artifact(dir, "doctor.json");
-    assert!(
-        doctor.contains("\"supported\":false"),
-        "doctor must report supported=false in 16.11.2: {doctor:?}"
-    );
-    assert!(
-        doctor.contains("\"mechanisms\":[]"),
-        "doctor mechanisms must be empty in 16.11.2: {doctor:?}"
-    );
     let run_exit = read_artifact(dir, "run-exit.txt");
-    assert_eq!(
-        run_exit.trim(),
-        "125",
-        "run must refuse pre-start (125) in 16.11.2: {run_exit:?}"
-    );
+    if cfg!(target_os = "linux") {
+        assert!(
+            doctor.contains("\"supported\":true"),
+            "Linux doctor must report supported=true: {doctor:?}"
+        );
+        assert!(
+            doctor.contains("\"landlock\"") && doctor.contains("\"seccomp\""),
+            "Linux doctor must list landlock + seccomp: {doctor:?}"
+        );
+        assert_eq!(
+            run_exit.trim(),
+            "0",
+            "run succeeds (exit 0) on supported Linux: {run_exit:?}"
+        );
+    } else {
+        assert!(
+            doctor.contains("\"supported\":false"),
+            "non-Linux doctor must report supported=false: {doctor:?}"
+        );
+        assert!(
+            doctor.contains("\"mechanisms\":[]"),
+            "non-Linux doctor mechanisms must be empty: {doctor:?}"
+        );
+        assert_eq!(
+            run_exit.trim(),
+            "125",
+            "run must refuse pre-start (125) off-Linux: {run_exit:?}"
+        );
+    }
 }
 
 #[cfg(unix)]

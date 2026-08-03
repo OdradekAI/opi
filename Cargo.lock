@@ -2105,8 +2105,10 @@ version = "0.7.2"
 dependencies = [
  "futures-core",
  "futures-util",
+ "landlock",
  "libc",
  "opi-protocol",
+ "seccompiler",
  "tempfile",
  "thiserror 2.0.18",
  "tokio",

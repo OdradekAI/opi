@@ -7,7 +7,8 @@
 //! targets, so the CLI plumbing — argument preservation, byte stdout/stderr
 //! pass-through, exit-code mapping, and verbatim reserved-code handling — is
 //! proven without depending on native confinement (production `run` refuses
-//! pre-start on every platform in 16.11.2; native success is 16.13/16.14.1).
+//! pre-start off-Linux — Windows, and macOS until 16.14.1; on supported Linux
+//! (16.13) it runs the target confined).
 //!
 //! The platform gate lives OUTSIDE [`execute`], so these tests call `execute`
 //! directly and never hit the unsupported-platform refusal.
@@ -537,9 +538,10 @@ async fn run_dispatch_no_args_returns_2() {
 }
 
 #[tokio::test]
-async fn run_dispatch_valid_argv_refuses_pre_start_125() {
-    // A VALID `run` argv reaches the platform gate (Unsupported everywhere in
-    // 16.11.2) and refuses pre-start -> 125, without constructing a runner.
+async fn run_dispatch_valid_argv_runs_or_refuses_by_platform() {
+    // A VALID `run` argv reaches the platform gate. On supported Linux (16.13)
+    // the target runs confined (echo -> exit 0); off-Linux (Windows; macOS until
+    // 16.14.1) the gate refuses pre-start -> 125 without constructing a runner.
     let workspace = tempfile::tempdir().expect("workspace temp dir");
     let code = opi_sandbox::cli::run(argv(&[
         "opi-sandbox",
@@ -554,7 +556,14 @@ async fn run_dispatch_valid_argv_refuses_pre_start_125() {
         "echo",
     ]))
     .await;
-    assert_eq!(code, 125);
+    if cfg!(target_os = "linux") {
+        assert_eq!(
+            code, 0,
+            "supported Linux runs the confined echo target (exit 0)"
+        );
+    } else {
+        assert_eq!(code, 125, "off-Linux refuses pre-start (125)");
+    }
 }
 
 #[tokio::test]
@@ -599,7 +608,7 @@ async fn execute_signal_termination_maps_to_128_plus_signal_unix_only() {
     let mut err = Vec::new();
     assert_eq!(
         execute(&runner(), req, &mut out, &mut err).await,
-        128 + libc_signal::SIGTERM as i32
+        128 + libc_signal::SIGTERM
     );
 }
 

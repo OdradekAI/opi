@@ -34,7 +34,7 @@ use opi_protocol::execution::v1::EnvInherit;
 use tokio::process::{Child, Command};
 use tokio_util::sync::CancellationToken;
 
-use crate::policy::{ContractStatus, Mechanism, Restriction, SandboxPolicy};
+use crate::policy::{ContractStatus, Mechanism, Restriction, RestrictionCtx, SandboxPolicy};
 use crate::process_tree::{TreeGuard, configure_tree};
 
 /// Bounded per-stream output capture (1 MiB). Output beyond this cap is dropped
@@ -309,9 +309,13 @@ impl SandboxRunner {
             .kill_on_drop(true);
         apply_env(&mut cmd, request.env_inherit, &request.env_additions);
 
+        let ctx = RestrictionCtx {
+            workspace: &request.workspace,
+            network: self.policy.network,
+        };
         let applied = self
             .restriction
-            .prepare(&mut cmd)
+            .prepare(&mut cmd, &ctx)
             .map_err(|_| SetupFailed {
                 reason: SetupFailureReason::RestrictionSetup,
             })?;

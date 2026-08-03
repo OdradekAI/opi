@@ -61,18 +61,27 @@ grep -q "doctor" "$ARTIFACT_DIR/help.txt"
 "$BINARY" --version >"$ARTIFACT_DIR/version.txt" 2>&1
 grep -q "opi-sandbox" "$ARTIFACT_DIR/version.txt"
 
-# 3. doctor --json (stable object; supported=false everywhere in 16.11.2)
+# 3. doctor --json (stable object). The supported posture is OS-dependent: on
+#    supported Linux (16.13) doctor reports supported=true + landlock/seccomp;
+#    on macOS/other Unix it stays unsupported (16.11.2 posture) until 16.14.1.
+TARGET_OS="$(uname -s | tr 'A-Z' 'a-z')"
 "$BINARY" doctor --json >"$ARTIFACT_DIR/doctor.json" 2>&1
 grep -q '"schema_version":1' "$ARTIFACT_DIR/doctor.json"
-grep -q '"supported":false' "$ARTIFACT_DIR/doctor.json"
-TARGET_OS="$(uname -s | tr 'A-Z' 'a-z')"
 grep -q "\"target\":\"$TARGET_OS\"" "$ARTIFACT_DIR/doctor.json"
-grep -q '"mechanisms":\[\]' "$ARTIFACT_DIR/doctor.json"
 grep -q '"workspace-write"' "$ARTIFACT_DIR/doctor.json"
+if [ "$TARGET_OS" = "linux" ]; then
+    grep -q '"supported":true' "$ARTIFACT_DIR/doctor.json"
+    grep -q '"landlock"' "$ARTIFACT_DIR/doctor.json"
+    grep -q '"seccomp"' "$ARTIFACT_DIR/doctor.json"
+    EXPECTED_RUN_CODE=0
+else
+    grep -q '"supported":false' "$ARTIFACT_DIR/doctor.json"
+    grep -q '"mechanisms":\[\]' "$ARTIFACT_DIR/doctor.json"
+    EXPECTED_RUN_CODE=125
+fi
 
-# 4. run with a VALID argv -> pre-start platform refusal (125) in 16.11.2.
-#    16.13 (Linux) / 16.14.1 (macOS) flip this to a successful native run; that
-#    flip is a visible change here, not a silent pass.
+# 4. run with a VALID argv. On supported Linux (16.13) the target runs confined
+#    (exit 0); off-Linux the platform still refuses pre-start (125).
 WORKSPACE="$ARTIFACT_DIR/ws"
 mkdir -p "$WORKSPACE"
 set +e
@@ -81,8 +90,8 @@ set +e
 RUN_CODE=$?
 set -e
 echo "$RUN_CODE" >"$ARTIFACT_DIR/run-exit.txt"
-[ "$RUN_CODE" -eq 125 ] || {
-    echo "opi-sandbox-smoke: expected run exit 125 (pre-start refusal), got $RUN_CODE" >&2
+[ "$RUN_CODE" -eq "$EXPECTED_RUN_CODE" ] || {
+    echo "opi-sandbox-smoke: expected run exit $EXPECTED_RUN_CODE on $TARGET_OS, got $RUN_CODE" >&2
     exit 1
 }
 
