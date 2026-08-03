@@ -1144,6 +1144,14 @@ impl BashOperations for LocalBashOperations {
 /// (commands may contain secrets). The wrapper remaps this diagnostic's code to
 /// `CODE_TOOL_EXECUTION_FAILED` and pushes it only on an error result, matching
 /// the pre-15.2 bash behavior.
+///
+/// It also carries the local execution-backend report (`guarantee="supervised"`,
+/// `placement="host"`) mandated by the Phase 16 Execution Backend contract (spec
+/// table line 146). Unlike the flags above, the wrapper does NOT lift these: the
+/// local path cannot initialize protocol state (spec lines 195-197), so its
+/// report stays in `BashResult::diagnostics` (the routed twin in
+/// `execution/runtime.rs` reports its guarantee via the wire `started` frame
+/// instead).
 #[allow(clippy::too_many_arguments)]
 fn bash_operation_context_diagnostic(
     exit_code: Option<i32>,
@@ -1166,6 +1174,20 @@ fn bash_operation_context_diagnostic(
         "timed_out": timed_out,
         "truncated": truncated,
         "command_included": false,
+        // Execution-backend guarantee for the LOCAL identity (Phase 16 task
+        // 16.14.2). A compile-time CONSTANT, never sourced from the prepared
+        // sandbox state: spec table line 146 assigns `local -> supervised`
+        // (placement `host`), and the execution-backend guarantee axis is
+        // distinct from the Phase 15 host-sandbox restriction axis (reported via
+        // `CODE_SANDBOX_DEGRADED`, not here). The literals mirror the opi-sandbox
+        // wire vocabulary origin (`crates/opi-sandbox/src/helper.rs:154-161`) so
+        // the two cannot drift; `restricted` belongs to the `opi-sandbox`
+        // adapter identity (line 147), never the local path. Local reports only
+        // placement+guarantee (no `policy`/`limitations`): a constant
+        // `policy="unrestricted"` would be dishonest on Linux-Engaged, where the
+        // Phase 15 host sandbox restricts.
+        "guarantee": "supervised",
+        "placement": "host",
     });
     if let Some(full) = full_output {
         details["full_output"] = serde_json::json!(full);

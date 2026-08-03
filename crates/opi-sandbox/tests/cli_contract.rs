@@ -566,6 +566,64 @@ async fn run_dispatch_valid_argv_runs_or_refuses_by_platform() {
     }
 }
 
+/// A valid `run` whose target WOULD write a marker file is refused pre-start on
+/// an unsupported platform BEFORE the target starts, so the marker is never
+/// written. Strengthens `run_dispatch_valid_argv_runs_or_refuses_by_platform`:
+/// it proves the target never started, not just that the dispatcher returned
+/// 125. On supported Linux (16.13) the confined target runs and may write the
+/// marker (the Landlock temp-dir grant); off-Linux the platform gate refuses
+/// (exit 125) and the marker stays absent. cfg-branched + marker-WRITING target
+/// per the Phase 16 task 16.14.2 design-audit (MF-2): an unconditional absence
+/// assertion would break the Linux leg, and an echo-style (write-nothing) target
+/// would make the assertion vacuously true off-Linux.
+#[tokio::test]
+async fn run_dispatch_refuses_before_target_marker_starts_off_linux() {
+    let workspace = tempfile::tempdir().expect("workspace temp dir");
+    // Dedicated marker dir at an absolute path, independent of the run workspace
+    // and the target cwd, so marker absence is unambiguous off-Linux.
+    let marker_dir = tempfile::tempdir().expect("marker temp dir");
+    let marker_path = marker_dir.path().join("started.marker");
+    let marker_str = marker_path.to_string_lossy().into_owned();
+
+    // A target that WOULD write the marker if it ran.
+    #[cfg(unix)]
+    let (program, args): (PathBuf, Vec<String>) = (
+        PathBuf::from("sh"),
+        vec!["-c".to_string(), format!("printf x > {marker_str}")],
+    );
+    #[cfg(windows)]
+    let (program, args): (PathBuf, Vec<String>) = (
+        PathBuf::from("cmd"),
+        vec!["/C".to_string(), format!("echo x> {marker_str}")],
+    );
+
+    let mut full: Vec<String> = vec![
+        "opi-sandbox".to_string(),
+        "run".to_string(),
+        "--workspace".to_string(),
+        workspace.path().to_string_lossy().into_owned(),
+        "--profile".to_string(),
+        "workspace-write".to_string(),
+        "--network".to_string(),
+        "deny".to_string(),
+        "--".to_string(),
+        program.to_string_lossy().into_owned(),
+    ];
+    full.extend(args);
+
+    let code = opi_sandbox::cli::run(full).await;
+    if cfg!(target_os = "linux") {
+        assert_eq!(code, 0, "supported Linux runs the confined target (exit 0)");
+        // The marker MAY exist (the Landlock temp-dir grant); not asserted here.
+    } else {
+        assert_eq!(code, 125, "off-Linux refuses pre-start (125)");
+        assert!(
+            !marker_path.exists(),
+            "the target never started, so the marker was never written"
+        );
+    }
+}
+
 #[tokio::test]
 async fn run_dispatch_help_and_version_return_0() {
     assert_eq!(
