@@ -271,53 +271,39 @@ fn run_maps_target_exit_code() {
     assert_eq!(out.status.code(), Some(0), "target exit 0 maps verbatim");
 }
 
-/// L0 tree-kill: a dropped `run` reaps the target even when it is wrapped in
-/// the `sandbox-exec` launcher (the launcher must keep the target in its
-/// process group so the tree guard's group kill reaches it). The target writes
-/// its PID to a file then sleeps; the run is dropped without polling to
-/// completion; the target must be reaped shortly after.
+/// L0 tree-kill through the launcher: when the target forks a surviving
+/// grandchild and then exits, opi-sandbox's `supervise` calls `tree.terminate`
+/// (a process-GROUP kill) on completion, which must reach the grandchild even
+/// though the target ran under the `sandbox-exec` launcher. (`sandbox-exec`
+/// `execv`s the target rather than forking a separate process, so the target
+/// inherits `configure_tree`'s `process_group(0)` and its descendants share the
+/// group the guard kills.) This is the empirical seal the design-audit's
+/// tree-kill flag asked for; it deliberately does NOT SIGKILL the CLI parent
+/// (that bypasses `Drop`/`kill_on_drop`, so it is not an opi-sandbox path).
 #[test]
-fn dropped_run_reaps_launcher_wrapped_target() {
+fn completion_reaps_launcher_wrapped_grandchild() {
     let ws = tempfile::tempdir().expect("workspace tempdir");
-    let pidfile = ws.path().join("child.pid");
+    let pidfile = ws.path().join("grandchild.pid");
     let pidfile_str = pidfile.to_string_lossy().into_owned();
-    // Target: write the child shell's PID, then sleep well past the test. The
-    // child is run under `sandbox-exec` (the launcher); if sandbox-exec kept the
-    // target in a different process group, kill(-pgid) would miss it.
-    let target = format!("echo $$ > {pidfile_str}; sleep 60");
-    let mut cmd = Command::new(binary());
-    cmd.arg("run")
-        .arg("--workspace")
-        .arg(ws.path())
-        .arg("--profile")
-        .arg("workspace-write")
-        .arg("--network")
-        .arg("deny")
-        .arg("--")
-        .arg("/bin/sh")
-        .arg("-c")
-        .arg(&target)
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null());
-    let mut child = cmd.spawn().expect("spawn opi-sandbox run");
-    // Wait for the pidfile to appear (the target started under the launcher).
-    let mut started = false;
-    for _ in 0..200 {
-        if pidfile.is_file() {
-            started = true;
-            break;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(50));
-    }
-    assert!(started, "target never wrote its pidfile");
-    let pid_str = fs::read_to_string(&pidfile).unwrap();
-    let pid: i32 = pid_str.trim().parse().expect("pid parses");
-    // Drop the run (kill_on_drop + tree guard terminate the whole group).
-    let _ = child.kill();
-    let _ = child.wait();
-    // The target must be reaped within a short grace.
+    // Fork a surviving grandchild in the background, capture its PID, then exit.
+    // opi-sandbox completes (target exited) -> supervise -> tree.terminate
+    // (group kill) must reap the still-running background sleep.
+    let target = format!("sleep 60 & echo $! > {pidfile_str}");
+    let out = run_sh(ws.path(), "deny", &target);
+    assert!(
+        out.status.success(),
+        "target must exit 0 (fork grandchild then return)\nstderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let pid: i32 = fs::read_to_string(&pidfile)
+        .expect("grandchild pidfile")
+        .trim()
+        .parse()
+        .expect("pid parses");
+    // tree.terminate ran inside supervise before run_sh returned, so the
+    // grandchild must already be reaped. A short grace covers scheduling.
     let mut reaped = false;
-    for _ in 0..200 {
+    for _ in 0..20 {
         let alive = Command::new("/bin/sh")
             .arg("-c")
             .arg(format!("kill -0 {pid} 2>/dev/null"))
@@ -328,7 +314,10 @@ fn dropped_run_reaps_launcher_wrapped_target() {
             reaped = true;
             break;
         }
-        std::thread::sleep(std::time::Duration::from_millis(50));
+        std::thread::sleep(std::time::Duration::from_millis(100));
     }
-    assert!(reaped, "dropped run must reap the launcher-wrapped target");
+    assert!(
+        reaped,
+        "the surviving grandchild must be reaped by the group kill on completion"
+    );
 }
