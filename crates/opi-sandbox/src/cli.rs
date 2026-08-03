@@ -456,6 +456,19 @@ pub async fn run(args: Vec<String>) -> i32 {
             };
             doctor(json)
         }
+        // The backend subcommand speaks command-execution-jsonl-v1 over stdio
+        // (stdin = host->backend frames, stdout = backend->host frames). It runs
+        // exactly one execution and exits 0 after the terminal frame; the
+        // target's exit is in-band in `completed`. Phase 16 task 16.12.
+        "backend" => {
+            if rest.len() == 1 && rest[0] == "--stdio" {
+                crate::backend::run().await
+            } else {
+                eprintln!("opi-sandbox: backend requires the `--stdio` flag");
+                print_usage();
+                2
+            }
+        }
         "run" => match parse_run(&rest) {
             Ok(cmd) => {
                 // Platform gate OUTSIDE execute: refuse pre-start on an
@@ -490,7 +503,7 @@ pub async fn run(args: Vec<String>) -> i32 {
 }
 
 fn print_usage() {
-    eprintln!("usage: opi-sandbox <run|doctor> [options]");
+    eprintln!("usage: opi-sandbox <run|backend|doctor> [options]");
     eprintln!("       opi-sandbox --help | --version");
 }
 
@@ -503,6 +516,7 @@ fn print_help() {
     println!("usage:");
     println!("  opi-sandbox run --workspace <PATH> --profile workspace-write \\");
     println!("    --network <deny|allow> -- <PROGRAM> [ARGUMENTS...]");
+    println!("  opi-sandbox backend --stdio   (command-execution-jsonl-v1 over stdio)");
     println!("  opi-sandbox doctor [--json]");
     println!("  opi-sandbox --help | --version");
 }

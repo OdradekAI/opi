@@ -569,6 +569,20 @@ async fn run_dispatch_help_and_version_return_0() {
     );
 }
 
+#[tokio::test]
+async fn run_dispatch_backend_without_stdio_returns_2() {
+    // `backend` requires the `--stdio` flag; without it -> usage error 2.
+    let code = opi_sandbox::cli::run(argv(&["opi-sandbox", "backend"])).await;
+    assert_eq!(code, 2);
+}
+
+#[tokio::test]
+async fn run_dispatch_backend_bogus_flag_returns_2() {
+    // An unknown `backend` flag -> usage error 2.
+    let code = opi_sandbox::cli::run(argv(&["opi-sandbox", "backend", "--bogus"])).await;
+    assert_eq!(code, 2);
+}
+
 // =========================================================================
 // cfg(unix): 128+signal mapping (compiles out on the Windows host; verified via
 // WSL2/GHA Linux per the Phase 16 task 16.11.2 audit fold).

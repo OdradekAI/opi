@@ -41,11 +41,13 @@
 
 #![deny(missing_docs)]
 
+pub mod backend;
 pub mod cli;
 pub mod policy;
 pub mod process_tree;
 pub mod runner;
 
+pub(crate) mod helper;
 pub(crate) mod platform;
 
 pub use policy::{
