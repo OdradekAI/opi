@@ -87,12 +87,11 @@ fn doctor_json() -> String {
 /// fails).
 fn outside_grant_dir() -> Option<PathBuf> {
     let temp = std::env::temp_dir();
-    for candidate in [PathBuf::from("/tmp"), PathBuf::from("/var/tmp")] {
-        if candidate.is_dir() && !candidate.starts_with(&temp) && !temp.starts_with(&candidate) {
-            return Some(candidate);
-        }
-    }
-    None
+    [PathBuf::from("/tmp"), PathBuf::from("/var/tmp")]
+        .into_iter()
+        .find(|candidate| {
+            candidate.is_dir() && !candidate.starts_with(&temp) && !temp.starts_with(candidate)
+        })
 }
 
 /// The doctor reports a supported macOS posture with the seatbelt mechanism and
