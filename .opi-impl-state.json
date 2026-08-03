@@ -2537,7 +2537,7 @@
       "definition_of_done": "After Linux, macOS, and Windows platform posture tasks pass, CI and release jobs build Linux/macOS opi-sandbox archives, invoke the standalone smoke script against each extracted binary, define no Windows opi-sandbox artifact, preserve the ordinary six-target Opi matrix, and contain no stale Phase 15 sandbox jobs or deleted references. The artifact auditor validates native target identity, archive layout, extracted-binary provenance, direct/backend smoke evidence, and complete non-skipped/non-zero-test Linux/macOS/Windows evidence, rejecting absent, wrong-target, workspace-only, skipped, or zero-test artifacts.",
       "definition_source": "draft-reviewed",
       "replaces": "Add host-neutral opi-sandbox packaging and CI topology",
-      "status": "failing",
+      "status": "in_progress",
       "depends_on": [
         "16.13",
         "16.14.1",
@@ -2577,6 +2577,11 @@
         {
           "field": "evaluator_required",
           "reason": "Cross-platform release topology and artifact truthfulness require deep review.",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Repository gates"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "16.15.2 removes the two superseded standalone sandbox workflows (Phase 15 sandbox-macos.yml triggers on sandbox_strict.rs and runs --test sandbox_strict, which 16.16.1 deletes; sandbox-macos-phase16.yml was the 16.14.1 temp verifier). Their coverage folds into the new ci.yml opi-sandbox job. Phase 15 archived history (docs/snapshots/phase15/) is untouched.",
           "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Repository gates"
         }
       ],
@@ -2621,14 +2626,16 @@
       "substrate_only": false,
       "iteration_count": 0,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "9cb52db",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         ".github/workflows/ci.yml",
         ".github/workflows/release.yml",
         "scripts/opi-artifact-audit.py",
         "crates/opi-coding-agent/tests/opi_sandbox_release_topology.rs",
-        "crates/opi-coding-agent/tests/artifact_audit_script.rs"
+        "crates/opi-coding-agent/tests/artifact_audit_script.rs",
+        ".github/workflows/sandbox-macos.yml",
+        ".github/workflows/sandbox-macos-phase16.yml"
       ],
       "last_attempt": null,
       "verified_at_commit": null,
@@ -4242,7 +4249,8 @@
     "Task 16.14.2 Windows unsupported execution posture PASSED @f4e1c33 (iter1; D.2 wf_fef0c172-577 0/0/0). Clause 4: local exec reports guarantee=supervised as a constant in the operation_context diagnostic (report surface is BashResult.diagnostics, NOT the agent ToolResult). Clauses 3+5 test pins (marker-absence pre-start refusal; absent/target-mismatched package fail-fast, no local fallback). 16/21 Phase 16 tasks passing; next unblocked 16.14.1 (macOS, needs GHA macOS).",
     "Task 16.14.1 pre-impl 7-lens design audit wf_bda2df90-e2f folded 8 must-fix / 22 flagged. Keystone: Option A (Restriction::launcher() default method; runner builds launcher cmd before applying cwd/stdio/env/tree) is REQUIRED by the DoD (not optional) -- macOS prepare() is a no-op-on-cmd reporting Seatbelt/Restricted; the launcher installs sandbox-exec. Fold reframes the owned surface: (a) pure-profile invariants go INLINE in macos.rs (platform is pub(crate); integration test cannot reach them), NOT in macos_policy.rs; (b) NO file-level cfg on macos.rs -- mirror the 15.5.4 substrate (runtime items individually cfg(target_os=macos), pure model uncfg'd), NOT linux.rs's file-level cfg (would silently 0-test on Windows); (c) network-deny sentinel must BIND not socket() ((deny network*) blocks bind/connect not socket creation); (d) flipping macOS to supported=true breaks FOUR ci.yml-macOS tests (standalone_smoke.rs assert_artifacts, cli_contract.rs run_dispatch_valid_argv + run_dispatch_refuses_before_target_marker, protocol_client.py SUPPORTED) -- C.1a-appended in the substrate commit (16.13 pattern); (e) BOTH cli.rs doctor tests gate to not(any(linux,macos)); (f) drop the stale 'lands in 16.14.1' default_unix_posture arm + narrow its cfg; (g) mechanism wire name pinned 'seatbelt'; (h) limitations() must include soft-deprecation + L3-unavailable + host-reads-unrestricted. Host-verifiable (Windows): pure-model inline tests + Seatbelt dispatch/launcher/helper compile + fmt/clippy/doc. macOS-deferred (focused GHA macos-latest, widened to opi-sandbox --all-targets + SC16-09b archive steps): cfg(target_os=macos) behavioral sentinels + standalone archive.",
     "Task 16.14.1 substrate committed fa345f9 (NEUTRAL, Opi-Evaluator: pending): opi-sandbox macOS sandbox-exec/Seatbelt port. Keystone seam = Restriction::launcher() default (runner builds cmd around the launcher; macOS prepare no-op-reports Seatbelt/Restricted); pure profile model inline-tested on every host (cfg(any(macos,test))), runtime cfg(macos). Pre-impl audit wf_bda2df90-e2f folded 8/22; D.2 wf_637ec584-50c 0 must-fix / 3 low flagged (folded: default_unix_posture cfg-narrow+macOS-arm drop [a macOS -D-warnings dead-code break invisible on Windows], macos_policy coverage-comment two-link correction, footer test-count 7->8). HOST gates green on Windows (fmt/clippy --all-targets/doc -D warnings; 82 tests incl 8 macos pure-model). BLOCKED on the macOS runtime half + SC16-09b-macos: cfg(macos) macos_policy sentinels + standalone archive run ONLY on a macOS kernel, verified via focused GHA macos-latest (sandbox-macos-phase16.yml) which requires a USER-AUTHORIZED PUSH (origin SSH). After GHA green: amend fa345f9 to Opi-Evaluator: passed + flip ledger 16.14.1 to passing + checkpoint.",
-    "Task 16.14.1 PASSED @7b3171f on GHA macOS (sandbox-macos-phase16 run 30826305050, all steps green in 1m28s): SC16-11 native contract verified -- macos_policy 10/10 sentinels on macOS (doctor seatbelt, workspace+temp/outside-write/outside-read, network-deny-BIND / network-allow / AF_UNIX-preserve, exit-map, completion-path grandchild tree-kill through the sandbox-exec launcher); SC16-09b-macos verified -- release build + package-opi-sandbox.sh + opi-sandbox-smoke.sh against the extracted archive. 3 GHA iterations: (1) 30825455746 failed clippy::manual_find in macos_policy outside_grant_dir (cfg-gated, Windows-invisible; fixed f09a250 to iterator find); (2) 30825890183 failed the dropped_run tree-kill test -- it SIGKILL'd the opi-sandbox CLI parent (correctly bypasses Drop/kill_on_drop) -- corrected 7b3171f to the completion-path grandchild-reap invariant (sandbox-exec execv's the target, so it inherits configure_tree's process_group(0); supervise's tree.terminate group-kills the grandchild on completion); (3) 30826305050 GREEN. Host (Windows) half was green throughout (82 tests incl 8 macos pure-model). Pre-impl audit wf_bda2df90-e2f folded 8/22; D.2 wf_637ec584-50c 0 must-fix/3 low flagged (folded). NOTE: 3 commits pushed (fa345f9 substrate + 2 fixes) -- could not amend the pushed substrate (force-push forbidden); the ledger is the canonical passed record (verified_at_commit=7b3171f), matching the 15.5.4 precedent. 17/21 Phase 16 tasks passing; next unblocked 16.15.2 (deps 16.13/16.14.1/16.14.2 all passing now)."
+    "Task 16.14.1 PASSED @7b3171f on GHA macOS (sandbox-macos-phase16 run 30826305050, all steps green in 1m28s): SC16-11 native contract verified -- macos_policy 10/10 sentinels on macOS (doctor seatbelt, workspace+temp/outside-write/outside-read, network-deny-BIND / network-allow / AF_UNIX-preserve, exit-map, completion-path grandchild tree-kill through the sandbox-exec launcher); SC16-09b-macos verified -- release build + package-opi-sandbox.sh + opi-sandbox-smoke.sh against the extracted archive. 3 GHA iterations: (1) 30825455746 failed clippy::manual_find in macos_policy outside_grant_dir (cfg-gated, Windows-invisible; fixed f09a250 to iterator find); (2) 30825890183 failed the dropped_run tree-kill test -- it SIGKILL'd the opi-sandbox CLI parent (correctly bypasses Drop/kill_on_drop) -- corrected 7b3171f to the completion-path grandchild-reap invariant (sandbox-exec execv's the target, so it inherits configure_tree's process_group(0); supervise's tree.terminate group-kills the grandchild on completion); (3) 30826305050 GREEN. Host (Windows) half was green throughout (82 tests incl 8 macos pure-model). Pre-impl audit wf_bda2df90-e2f folded 8/22; D.2 wf_637ec584-50c 0 must-fix/3 low flagged (folded). NOTE: 3 commits pushed (fa345f9 substrate + 2 fixes) -- could not amend the pushed substrate (force-push forbidden); the ledger is the canonical passed record (verified_at_commit=7b3171f), matching the 15.5.4 precedent. 17/21 Phase 16 tasks passing; next unblocked 16.15.2 (deps 16.13/16.14.1/16.14.2 all passing now).",
+    "16.15.2: substrate committed at 54df88c (Opi-Evaluator: passed after D.2 exec-verify clean — 0 must-fix/0 flagged/0 rejected, wf_614e29a4-b2f). Host gates green (fmt/clippy/doc -D warnings; opi_sandbox_release_topology 9/9; artifact_audit_script 13/13). ci.yml sandbox_package + release.yml sandbox_archive (Linux+macOS only, no Windows opi-sandbox artifact); stale Phase 15 sandbox_product + the two standalone sandbox workflows removed; target_check retained+reframed as the six-target compile gate. opi-artifact-audit.py --release mode validates native target identity/layout/provenance/smoke + non-skipped/non-zero-test, rejecting absent/wrong-target/workspace-only/skipped/zero-test. Runtime archive builds on Linux+macOS runners are GHA-gated; cross-arch packaging deferred (16.15.1 packager detects host triple). Status remains in_progress until GHA confirms the new archive jobs execute green."
   ],
   "verify_runs": [
     {
@@ -4637,6 +4645,16 @@
       "rejected_count": 0,
       "ran_at": "2026-08-03T15:14:50Z",
       "task_id": "16.14.1",
+      "criterion_id": null
+    },
+    {
+      "stage": "D.2",
+      "wf_ref": "wf_614e29a4-b2f (exec.workflow.js)",
+      "folded_count": 0,
+      "flagged_count": 0,
+      "rejected_count": 0,
+      "ran_at": "2026-08-03T18:15:00Z",
+      "task_id": "16.15.2",
       "criterion_id": null
     }
   ]
