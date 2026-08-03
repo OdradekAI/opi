@@ -63,16 +63,26 @@ grep -q "opi-sandbox" "$ARTIFACT_DIR/version.txt"
 
 # 3. doctor --json (stable object). The supported posture is OS-dependent: on
 #    supported Linux (16.13) doctor reports supported=true + landlock/seccomp;
-#    on macOS/other Unix it stays unsupported (16.11.2 posture) until 16.14.1.
+#    on supported macOS (16.14.1) supported=true + seatbelt; off-native
+#    (Windows, other Unix) it stays unsupported and `run` refuses pre-start.
 TARGET_OS="$(uname -s | tr 'A-Z' 'a-z')"
+# std::env::consts::OS (the doctor `target` field) names macOS "macos", not
+# "darwin" (uname -s). Map the uname value to the Rust OS family so the
+# target-field grep matches on macOS.
+RUST_OS="$TARGET_OS"
+[ "$RUST_OS" = "darwin" ] && RUST_OS="macos"
 "$BINARY" doctor --json >"$ARTIFACT_DIR/doctor.json" 2>&1
 grep -q '"schema_version":1' "$ARTIFACT_DIR/doctor.json"
-grep -q "\"target\":\"$TARGET_OS\"" "$ARTIFACT_DIR/doctor.json"
+grep -q "\"target\":\"$RUST_OS\"" "$ARTIFACT_DIR/doctor.json"
 grep -q '"workspace-write"' "$ARTIFACT_DIR/doctor.json"
 if [ "$TARGET_OS" = "linux" ]; then
     grep -q '"supported":true' "$ARTIFACT_DIR/doctor.json"
     grep -q '"landlock"' "$ARTIFACT_DIR/doctor.json"
     grep -q '"seccomp"' "$ARTIFACT_DIR/doctor.json"
+    EXPECTED_RUN_CODE=0
+elif [ "$TARGET_OS" = "darwin" ]; then
+    grep -q '"supported":true' "$ARTIFACT_DIR/doctor.json"
+    grep -q '"seatbelt"' "$ARTIFACT_DIR/doctor.json"
     EXPECTED_RUN_CODE=0
 else
     grep -q '"supported":false' "$ARTIFACT_DIR/doctor.json"
@@ -80,8 +90,9 @@ else
     EXPECTED_RUN_CODE=125
 fi
 
-# 4. run with a VALID argv. On supported Linux (16.13) the target runs confined
-#    (exit 0); off-Linux the platform still refuses pre-start (125).
+# 4. run with a VALID argv. On a supported native platform (Linux 16.13,
+#    macOS 16.14.1) the target runs confined (exit 0); off-native the platform
+#    still refuses pre-start (125).
 WORKSPACE="$ARTIFACT_DIR/ws"
 mkdir -p "$WORKSPACE"
 set +e

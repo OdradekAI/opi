@@ -34,8 +34,9 @@ fn read_artifact(dir: &std::path::Path, name: &str) -> String {
 /// Re-assert the persisted artifacts so a script that touched the files but
 /// wrote empty or stale content still fails the test. The supported posture is
 /// OS-dependent: on supported Linux (16.13) the binary reports supported=true +
-/// landlock/seccomp and `run` succeeds; off-Linux it stays unsupported (16.11.2
-/// posture) and `run` refuses pre-start (125).
+/// landlock/seccomp and `run` succeeds; on supported macOS (16.14.1) it reports
+/// supported=true + seatbelt and `run` succeeds; off-native (Windows, other
+/// Unix) it stays unsupported and `run` refuses pre-start (125).
 fn assert_artifacts(dir: &std::path::Path) {
     let version = read_artifact(dir, "version.txt");
     assert!(
@@ -63,19 +64,33 @@ fn assert_artifacts(dir: &std::path::Path) {
             "0",
             "run succeeds (exit 0) on supported Linux: {run_exit:?}"
         );
+    } else if cfg!(target_os = "macos") {
+        assert!(
+            doctor.contains("\"supported\":true"),
+            "macOS doctor must report supported=true: {doctor:?}"
+        );
+        assert!(
+            doctor.contains("\"seatbelt\""),
+            "macOS doctor must list seatbelt: {doctor:?}"
+        );
+        assert_eq!(
+            run_exit.trim(),
+            "0",
+            "run succeeds (exit 0) on supported macOS: {run_exit:?}"
+        );
     } else {
         assert!(
             doctor.contains("\"supported\":false"),
-            "non-Linux doctor must report supported=false: {doctor:?}"
+            "off-native doctor must report supported=false: {doctor:?}"
         );
         assert!(
             doctor.contains("\"mechanisms\":[]"),
-            "non-Linux doctor mechanisms must be empty: {doctor:?}"
+            "off-native doctor mechanisms must be empty: {doctor:?}"
         );
         assert_eq!(
             run_exit.trim(),
             "125",
-            "run must refuse pre-start (125) off-Linux: {run_exit:?}"
+            "run must refuse pre-start (125) off-native: {run_exit:?}"
         );
     }
 }

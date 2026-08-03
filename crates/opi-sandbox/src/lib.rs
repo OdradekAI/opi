@@ -21,14 +21,13 @@
 //!
 //! This library ships a platform-neutral [`policy::Restriction`] SEAM whose
 //! default ([`policy::NoRestriction`]) applies NO kernel confinement and reports
-//! `Mechanism::None` / `ContractStatus::Unrestricted`. Native restriction
-//! (Landlock/seccomp on Linux, `sandbox-exec` on macOS, and the Windows
-//! unsupported posture) is implemented by later tasks (16.13 / 16.14.1 / 16.14.2).
-//! Accordingly this crate's public strings use ONLY `supervised` (L0-only) and
-//! `unrestricted` / `mechanism=none`; the words `restricted` and `isolated` and
-//! the phrase `workspace-write enforced` do NOT appear here — that confinement
-//! contract lands alongside 16.13 / 16.14.1 (design `### Common profile`,
-//! `### Windows`).
+//! `Mechanism::None` / `ContractStatus::Unrestricted`. Native restriction is
+//! implemented for Linux (Landlock + seccomp, task 16.13) and for macOS
+//! (`sandbox-exec`/Seatbelt, task 16.14.1); Windows publishes no confinement
+//! artifact in Phase 16 (the unsupported posture, task 16.14.2). A native run
+//! therefore reports [`Mechanism::Landlock`]/[`Mechanism::Seccomp`] (Linux) or
+//! [`Mechanism::Seatbelt`] (macOS) with [`ContractStatus::Restricted`] — never
+//! `isolated` (design `### Common profile`: the package reports `restricted`).
 //!
 //! # L0 supervision
 //!

@@ -39,6 +39,16 @@ mod windows;
 #[cfg(target_os = "linux")]
 mod linux;
 
+// The native macOS leaf (Seatbelt/sandbox-exec). Unlike `linux`, this module is
+// declared UNGATED: its pure profile model compiles on every target so the
+// host-independent profile invariants are tested on any host, while only the
+// runtime items (probe/`MacosRestriction`/`posture`) are individually
+// `cfg(target_os = "macos")`. A file-level cfg would compile the pure model out
+// on Windows and silently report 0 tests (Phase 16 task 16.14.1 design-audit
+// fold). Inherits the forbid(unsafe_code); macOS confinement is a launcher, so
+// it contains NO `unsafe` and wires NO `process_tree` FFI.
+mod macos;
+
 /// The platform's restriction posture. [`current`] returns this for the host;
 /// the CLI consumes `supported` to gate `run` and `doctor` serializes the rest.
 #[derive(Clone)]
@@ -59,49 +69,47 @@ pub(crate) struct Posture {
 }
 
 /// The current host's restriction posture. Linux (16.13) reports `Supported`
-/// (Landlock + seccomp when the observed ABI/seccomp arch allow it); macOS and
-/// other Unix report `Unsupported` (sandbox-exec lands in 16.14.1); Windows
-/// reports its permanent `Unsupported` posture.
+/// (Landlock + seccomp when the observed ABI/seccomp arch allow it); macOS
+/// (16.14.1) reports `Supported` (Seatbelt/sandbox-exec when the helper probes
+/// usable); other Unix report `Unsupported`; Windows reports its permanent
+/// `Unsupported` posture.
 pub(crate) fn current() -> Posture {
     #[cfg(target_os = "linux")]
     {
         linux::posture()
     }
-    // macOS and any other Unix that is not Linux.
-    #[cfg(all(unix, not(target_os = "linux")))]
+    // macOS (16.14.1): the Seatbelt/sandbox-exec deny-overlay.
+    #[cfg(target_os = "macos")]
+    {
+        macos::posture()
+    }
+    // Any other Unix that is neither Linux nor macOS: unsupported.
+    #[cfg(all(unix, not(any(target_os = "linux", target_os = "macos"))))]
     {
         default_unix_posture()
     }
     // Windows (and any non-Unix target with a windows posture).
-    #[cfg(not(any(target_os = "linux", unix)))]
+    #[cfg(not(any(target_os = "linux", target_os = "macos", unix)))]
     {
         windows::posture()
     }
 }
 
-/// The non-Linux Unix-family posture (macOS/other). `Unsupported` — the native
-/// mechanisms are not wired in this build (`sandbox-exec` lands in 16.14.1).
-/// `std::env::consts::OS` is a compile-time constant used only to choose the
-/// honest limitation string; it is not a host-configuration read. Compiled only
-/// on Unix-that-is-not-Linux so it is not dead code on Linux (the Linux arm of
-/// [`current`] dispatches to `linux::posture` instead).
-#[cfg(all(unix, not(target_os = "linux")))]
+/// The non-Linux non-macOS Unix-family posture (FreeBSD/other). `Unsupported` —
+/// no native confinement is wired for this build. Compiled only on Unix that is
+/// neither Linux nor macOS (matching its only call site in [`current`]), so it
+/// is not dead code on Linux/macOS — those dispatch to their native `posture`
+/// instead.
+#[cfg(all(unix, not(any(target_os = "linux", target_os = "macos"))))]
 fn default_unix_posture() -> Posture {
-    let limitation = match std::env::consts::OS {
-        "macos" => {
-            "native filesystem/network confinement is not yet wired \
-                    (sandbox-exec lands in task 16.14.1); runs are unrestricted \
-                    under L0 supervision only"
-        }
-        _ => {
-            "native confinement is not supported on this platform; runs are \
-              unrestricted under L0 supervision only"
-        }
-    };
     Posture {
         supported: false,
         mechanisms: Vec::new(),
-        limitations: vec![limitation.to_string()],
+        limitations: vec![
+            "native confinement is not supported on this platform; runs are \
+              unrestricted under L0 supervision only"
+                .to_string(),
+        ],
         restriction: None,
     }
 }

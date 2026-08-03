@@ -20,7 +20,7 @@
 
 #![forbid(unsafe_code)]
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use tokio::process::Command;
 
 /// The requested sandbox profile. Only [`Profile::WorkspaceWrite`] is defined
@@ -71,7 +71,8 @@ impl SandboxPolicy {
 /// The mechanism a [`Restriction`] actually installed. [`Mechanism::None`] is
 /// the default (no confinement); [`Mechanism::Landlock`] and
 /// [`Mechanism::Seccomp`] are produced together on supported Linux by task
-/// 16.13. macOS (`sandbox-exec`) lands in 16.14.1.
+/// 16.13; [`Mechanism::Seatbelt`] is produced on supported macOS by task
+/// 16.14.1 (the Apple `sandbox-exec`/Seatbelt deny-overlay).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mechanism {
     /// No kernel confinement was applied (the default restriction).
@@ -83,6 +84,14 @@ pub enum Mechanism {
     /// setup denial, and (for `network = deny`) the AF_INET/AF_INET6/AF_NETLINK
     /// socket-creation gate (task 16.13).
     Seccomp,
+    /// The macOS Seatbelt deny-overlay installed via `sandbox-exec` (task
+    /// 16.14.1): a last-match-wins deny-overlay on a seatbelt allow-default
+    /// base, denying file-writes outside the workspace + invocation temp root
+    /// and (for `network = deny`) all `network*` operations. Installed by a
+    /// [`Restriction::launcher`] parent program, not a `pre_exec` hook. Labeled
+    /// legacy/experimental (Apple soft-deprecated `sandbox-exec`); see the
+    /// macOS limitations reported by `doctor`.
+    Seatbelt,
 }
 
 /// The effective contract status a [`Restriction`] reports after `prepare`.
@@ -144,19 +153,72 @@ pub struct RestrictionCtx<'a> {
     pub network: NetworkPolicy,
 }
 
-/// Platform-neutral restriction seam. The runner calls [`Restriction::prepare`]
-/// exactly once, BEFORE spawn, handing over the command and a [`RestrictionCtx`]
-/// so an implementation can install confinement (e.g. register a `pre_exec`
-/// hook or rewrite the argv). The returned [`AppliedRestriction`] is reported on
-/// the `started` event so the effective contract is always honest.
+/// A parent-program prefix a [`Restriction`] can ask the runner to wrap the
+/// target in BEFORE the command is built (task 16.14.1). The only current use is
+/// the macOS Seatbelt confinement, where `sandbox-exec` must be the parent
+/// process that applies the rendered profile to its child (the target). The
+/// runner builds `Command::new(spec.program).args(spec.prefix).arg(target).args(target_args)`
+/// and then applies `current_dir`/stdio/env/process-tree configuration
+/// IDENTICALLY to the bare-program path, so the launcher inherits the target's
+/// cwd/env/stdio.
+///
+/// `std::process::Command` exposes no getter for stdio/kill_on_drop/env_clear
+/// and no prepend/reprogram API, so a launcher cannot be installed later inside
+/// [`Restriction::prepare`] (a rebuild would drop the runner's piped stdio and
+/// env policy). Computing the launcher spec up front — before the command is
+/// built — is the only faithful way to wrap the target, which is why this is a
+/// separate seam entry point rather than a `prepare` side effect.
+#[derive(Debug, Clone)]
+pub struct LauncherSpec {
+    /// The parent program to spawn (e.g. `/usr/bin/sandbox-exec`).
+    pub program: PathBuf,
+    /// The prefix arguments inserted before the target program (e.g.
+    /// `["-p", "<profile>"]`).
+    pub prefix: Vec<String>,
+}
+
+/// Platform-neutral restriction seam. The runner drives a restriction in two
+/// cooperative steps, both BEFORE spawn:
+///
+/// 1. [`Restriction::launcher`] — ask whether the target should be wrapped in a
+///    parent program (returns `None` for the default and for in-place
+///    `pre_exec`-style confinement such as Linux Landlock/seccomp; `Some` for
+///    macOS Seatbelt, which needs `sandbox-exec` as the parent).
+/// 2. [`Restriction::prepare`] — install any in-place confinement on the built
+///    command and report the effective mechanism/contract.
+///
+/// These two are COOPERATIVE, not independent: an implementation that returns
+/// `Some(launcher)` MUST make [`Restriction::prepare`] a no-op-on-`cmd` that
+/// only reports the mechanism/contract (the launcher already installed the
+/// confinement); an implementation that returns `None` from
+/// [`Restriction::launcher`] does its confinement work in
+/// [`Restriction::prepare`] (e.g. a `pre_exec` hook). The reported
+/// mechanism/contract MUST agree with whether [`Restriction::launcher`] wrapped
+/// the command. The returned [`AppliedRestriction`] is reported on the `started`
+/// event so the effective contract is always honest.
 ///
 /// The default implementation [`NoRestriction`] applies nothing and reports
 /// `Mechanism::None` / `ContractStatus::Unrestricted`.
 pub trait Restriction: Send + Sync {
-    /// Install confinement on `cmd` before it is spawned, using the per-request
-    /// `ctx` (workspace + network policy), returning the effective
-    /// mechanism/contract. Called once, pre-spawn, from the runner. An `Err`
-    /// fails closed before the target is released.
+    /// Ask whether the runner should wrap the target in a parent program before
+    /// the command is built. The default returns `None` (no launcher; the
+    /// default and the Linux `pre_exec`-style paths). An implementation returns
+    /// `Some` only when confinement requires a parent process (macOS Seatbelt).
+    /// Infallible on a supported host: once a platform posture reports
+    /// `supported == true` with this restriction, [`Restriction::launcher`] and
+    /// [`Restriction::prepare`] agree (a `Some` launcher implies the reported
+    /// mechanism).
+    fn launcher(&self, _ctx: &RestrictionCtx<'_>) -> Option<LauncherSpec> {
+        None
+    }
+
+    /// Install in-place confinement on `cmd` before it is spawned, using the
+    /// per-request `ctx` (workspace + network policy), returning the effective
+    /// mechanism/contract. Called once, pre-spawn, from the runner, AFTER the
+    /// launcher (if any) has been applied. A launcher-based implementation
+    /// (macOS) makes this a no-op-on-`cmd` that only reports the
+    /// mechanism/contract; a `pre_exec`-style implementation (Linux) does its
+    /// work here. An `Err` fails closed before the target is released.
     fn prepare(
         &self,
         cmd: &mut Command,

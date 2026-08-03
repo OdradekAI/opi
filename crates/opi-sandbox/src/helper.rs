@@ -142,9 +142,10 @@ pub(crate) fn map_setup_failure(reason: SetupFailureReason) -> FailureCode {
 /// Build the `started` frame from the effective mechanism/contract and the
 /// platform limitations. `Mechanism::None` (L0 supervision only, the 16.12
 /// backend under `NoRestriction`) reports `supervised` / `unrestricted`; a
-/// native mechanism (`Landlock`/`Seccomp` on supported Linux, 16.13) reports
-/// `supervised` / `restricted` — NEVER `isolated` (crate vocabulary contract,
-/// `lib.rs`; design `### Common profile`: the package reports `restricted`).
+/// native mechanism (`Landlock`/`Seccomp` on supported Linux 16.13, `Seatbelt`
+/// on supported macOS 16.14.1) reports `supervised` / `restricted` — NEVER
+/// `isolated` (crate vocabulary contract, `lib.rs`; design `### Common profile`:
+/// the package reports `restricted`).
 pub(crate) fn started_payload(
     request_id: &RequestId,
     mechanism: Mechanism,
@@ -155,9 +156,13 @@ pub(crate) fn started_payload(
         // L0 supervision only (NoRestriction, the protocol backend).
         Mechanism::None => ("supervised", "unrestricted"),
         // A native mechanism installed a confinement contract. Seccomp is
-        // always installed alongside Landlock on Linux, so both report the same
-        // honest vocabulary; the run is supervised AND restricted.
-        Mechanism::Landlock | Mechanism::Seccomp => ("supervised", "restricted"),
+        // always installed alongside Landlock on Linux (16.13); Seatbelt is the
+        // macOS sandbox-exec deny-overlay (16.14.1). All three report the same
+        // honest vocabulary: the run is supervised AND restricted, never
+        // `isolated` (design `### Common profile`).
+        Mechanism::Landlock | Mechanism::Seccomp | Mechanism::Seatbelt => {
+            ("supervised", "restricted")
+        }
     };
     StartedPayload {
         request_id: request_id.clone(),
@@ -286,11 +291,12 @@ mod tests {
         }
     }
 
-    /// A native mechanism (16.13 Landlock/Seccomp) reports the honest
-    /// `supervised` / `restricted` vocabulary, never `isolated`/`enforced`.
+    /// A native mechanism (16.13 Landlock/Seccomp, 16.14.1 Seatbelt) reports
+    /// the honest `supervised` / `restricted` vocabulary, never
+    /// `isolated`/`enforced`.
     #[test]
     fn started_payload_native_reports_restricted() {
-        for mechanism in [Mechanism::Landlock, Mechanism::Seccomp] {
+        for mechanism in [Mechanism::Landlock, Mechanism::Seccomp, Mechanism::Seatbelt] {
             let frame = started_payload(&rid(), mechanism, ContractStatus::Restricted, &[]);
             assert_eq!(frame.placement, "host");
             assert_eq!(frame.guarantee, "supervised");

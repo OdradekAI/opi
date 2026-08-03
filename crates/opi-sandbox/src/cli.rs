@@ -333,12 +333,15 @@ pub fn doctor_report() -> DoctorReport {
     }
 }
 
-/// The stable wire name of a mechanism.
+/// The stable wire name of a mechanism. Each names the KERNEL MECHANISM (not a
+/// user-invoked tool), so the macOS sandbox kext is `seatbelt`, not
+/// `sandbox-exec` (the helper); this mirrors the `landlock`/`seccomp` convention.
 fn mechanism_name(mechanism: &Mechanism) -> String {
     match mechanism {
         Mechanism::None => "none".to_string(),
         Mechanism::Landlock => "landlock".to_string(),
         Mechanism::Seccomp => "seccomp".to_string(),
+        Mechanism::Seatbelt => "seatbelt".to_string(),
     }
 }
 
@@ -525,17 +528,18 @@ fn print_help() {
     println!("  opi-sandbox --help | --version");
 }
 
-#[cfg(all(test, not(target_os = "linux")))]
+#[cfg(all(test, not(any(target_os = "linux", target_os = "macos"))))]
 mod tests {
     use super::*;
 
-    /// On non-Linux hosts (Windows; macOS until 16.14.1) the doctor report is
-    /// unsupported with an empty mechanism list and the host OS as target
-    /// (independently sourced). On supported Linux (16.13) doctor reports
-    /// supported + landlock/seccomp, asserted in `tests/linux_policy`.
-    #[cfg(not(target_os = "linux"))]
+    /// On hosts without a native confinement posture (Windows; other Unix that
+    /// is neither Linux nor macOS) the doctor report is unsupported with an
+    /// empty mechanism list and the host OS as target (independently sourced).
+    /// Supported Linux (16.13) and macOS (16.14.1) doctor contracts are
+    /// asserted in `tests/linux_policy` and `tests/macos_policy`.
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
     #[test]
-    fn doctor_report_is_unsupported_off_linux() {
+    fn doctor_report_is_unsupported_off_native() {
         let report = doctor_report();
         assert_eq!(report.schema_version, 1);
         assert!(
@@ -554,9 +558,9 @@ mod tests {
         );
     }
 
-    /// The hand-rolled JSON is valid for the unsupported non-Linux report (no
+    /// The hand-rolled JSON is valid for the unsupported off-native report (no
     /// mechanism/profile/limitation string breaks the fixed schema).
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
     #[test]
     fn doctor_json_is_well_formed() {
         let report = doctor_report();

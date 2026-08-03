@@ -297,9 +297,36 @@ impl SandboxRunner {
         })?;
         let temp_root = temp.path().to_path_buf();
 
-        let mut cmd = Command::new(&request.program);
-        cmd.args(&request.args)
-            .current_dir(&request.cwd)
+        let ctx = RestrictionCtx {
+            workspace: &request.workspace,
+            network: self.policy.network,
+        };
+
+        // Ask the restriction whether the target should be wrapped in a parent
+        // program (macOS Seatbelt: `sandbox-exec -p <profile>`). The runner
+        // builds the command AROUND the launcher so cwd/stdio/env/process-tree
+        // config is then applied IDENTICALLY to the bare-program path.
+        // std::process::Command exposes no stdio/kill_on_drop/env_clear getters
+        // and no reprogram API, so a launcher cannot be installed later inside
+        // `prepare` (a rebuild would drop the runner's piped stdio and env
+        // policy) — the launcher spec must be computed before the command is
+        // built. `NoRestriction`/Linux return `None` (default) and take the
+        // bare path with a `prepare`-driven `pre_exec` hook unchanged.
+        let mut cmd = match self.restriction.launcher(&ctx) {
+            Some(spec) => {
+                let mut launcher = Command::new(&spec.program);
+                launcher.args(&spec.prefix);
+                launcher.arg(&request.program);
+                launcher.args(&request.args);
+                launcher
+            }
+            None => {
+                let mut bare = Command::new(&request.program);
+                bare.args(&request.args);
+                bare
+            }
+        };
+        cmd.current_dir(&request.cwd)
             .stdin(match request.stdin {
                 StdinPolicy::Null => Stdio::null(),
                 StdinPolicy::Inherit => Stdio::inherit(),
@@ -309,10 +336,6 @@ impl SandboxRunner {
             .kill_on_drop(true);
         apply_env(&mut cmd, request.env_inherit, &request.env_additions);
 
-        let ctx = RestrictionCtx {
-            workspace: &request.workspace,
-            network: self.policy.network,
-        };
         let applied = self
             .restriction
             .prepare(&mut cmd, &ctx)

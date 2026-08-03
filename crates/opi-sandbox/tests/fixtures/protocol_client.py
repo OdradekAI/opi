@@ -27,9 +27,10 @@ import sys
 import tempfile
 
 WIRE = "command-execution-jsonl-v1"
-# The platform is supported (Landlock + seccomp) on Linux as of task 16.13;
-# macOS lands in 16.14.1; Windows publishes no confinement artifact in Phase 16.
-SUPPORTED = platform.system() == "Linux"
+# The platform is supported natively on Linux (Landlock + seccomp, task 16.13)
+# and macOS (sandbox-exec/Seatbelt, task 16.14.1); Windows publishes no
+# confinement artifact in Phase 16.
+SUPPORTED = platform.system() in ("Linux", "Darwin")
 
 
 def _send(proc, frame):

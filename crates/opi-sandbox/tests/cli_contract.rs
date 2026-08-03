@@ -539,9 +539,10 @@ async fn run_dispatch_no_args_returns_2() {
 
 #[tokio::test]
 async fn run_dispatch_valid_argv_runs_or_refuses_by_platform() {
-    // A VALID `run` argv reaches the platform gate. On supported Linux (16.13)
-    // the target runs confined (echo -> exit 0); off-Linux (Windows; macOS until
-    // 16.14.1) the gate refuses pre-start -> 125 without constructing a runner.
+    // A VALID `run` argv reaches the platform gate. On a supported native
+    // platform (Linux 16.13, macOS 16.14.1) the target runs confined
+    // (echo -> exit 0); off-native (Windows, other Unix) the gate refuses
+    // pre-start -> 125 without constructing a runner.
     let workspace = tempfile::tempdir().expect("workspace temp dir");
     let code = opi_sandbox::cli::run(argv(&[
         "opi-sandbox",
@@ -561,8 +562,13 @@ async fn run_dispatch_valid_argv_runs_or_refuses_by_platform() {
             code, 0,
             "supported Linux runs the confined echo target (exit 0)"
         );
+    } else if cfg!(target_os = "macos") {
+        assert_eq!(
+            code, 0,
+            "supported macOS runs the confined echo target (exit 0)"
+        );
     } else {
-        assert_eq!(code, 125, "off-Linux refuses pre-start (125)");
+        assert_eq!(code, 125, "off-native refuses pre-start (125)");
     }
 }
 
@@ -570,12 +576,13 @@ async fn run_dispatch_valid_argv_runs_or_refuses_by_platform() {
 /// an unsupported platform BEFORE the target starts, so the marker is never
 /// written. Strengthens `run_dispatch_valid_argv_runs_or_refuses_by_platform`:
 /// it proves the target never started, not just that the dispatcher returned
-/// 125. On supported Linux (16.13) the confined target runs and may write the
-/// marker (the Landlock temp-dir grant); off-Linux the platform gate refuses
-/// (exit 125) and the marker stays absent. cfg-branched + marker-WRITING target
-/// per the Phase 16 task 16.14.2 design-audit (MF-2): an unconditional absence
-/// assertion would break the Linux leg, and an echo-style (write-nothing) target
-/// would make the assertion vacuously true off-Linux.
+/// 125. On a supported native platform (Linux 16.13, macOS 16.14.1) the confined
+/// target runs and may write the marker (the temp-dir grant); off-native the
+/// platform gate refuses (exit 125) and the marker stays absent. cfg-branched +
+/// marker-WRITING target per the Phase 16 task 16.14.2 design-audit (MF-2): an
+/// unconditional absence assertion would break the native legs, and an
+/// echo-style (write-nothing) target would make the assertion vacuously true
+/// off-native.
 #[tokio::test]
 async fn run_dispatch_refuses_before_target_marker_starts_off_linux() {
     let workspace = tempfile::tempdir().expect("workspace temp dir");
@@ -615,8 +622,11 @@ async fn run_dispatch_refuses_before_target_marker_starts_off_linux() {
     if cfg!(target_os = "linux") {
         assert_eq!(code, 0, "supported Linux runs the confined target (exit 0)");
         // The marker MAY exist (the Landlock temp-dir grant); not asserted here.
+    } else if cfg!(target_os = "macos") {
+        assert_eq!(code, 0, "supported macOS runs the confined target (exit 0)");
+        // The marker MAY exist (the seatbelt temp-dir grant); not asserted here.
     } else {
-        assert_eq!(code, 125, "off-Linux refuses pre-start (125)");
+        assert_eq!(code, 125, "off-native refuses pre-start (125)");
         assert!(
             !marker_path.exists(),
             "the target never started, so the marker was never written"
