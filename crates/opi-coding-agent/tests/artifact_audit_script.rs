@@ -205,3 +205,414 @@ fn artifact_audit_accepts_real_declared_commit_objects() {
         Some(2)
     );
 }
+
+// ============================================================================
+// Phase 16 task 16.15.2: release-archive audit mode (`--release`).
+//
+// The release audit validates the published native opi-sandbox topology per
+// SC16-12b: native target identity, archive layout, extracted-binary
+// provenance, direct/backend smoke evidence, and complete non-skipped /
+// non-zero-test Linux/macOS/Windows evidence. It rejects absent, wrong-target,
+// workspace-only, skipped, or zero-test evidence. These tests drive the audit
+// script on synthetic per-platform evidence bundles (good + each defect class).
+// ============================================================================
+
+use sha2::{Digest, Sha256};
+
+fn sha256_hex_local(bytes: &[u8]) -> String {
+    hex::encode(Sha256::digest(bytes))
+}
+
+/// Run the artifact audit in RELEASE mode on `dir`.
+fn run_release_audit(dir: &std::path::Path, json: bool) -> (bool, String, String) {
+    let out = Command::new(python_command())
+        .arg(
+            workspace_root()
+                .join("scripts")
+                .join("opi-artifact-audit.py"),
+        )
+        .arg(dir)
+        .arg("--release")
+        .args(json.then_some("--json"))
+        .output()
+        .expect("run release audit");
+    (
+        out.status.success(),
+        String::from_utf8_lossy(&out.stdout).into_owned(),
+        String::from_utf8_lossy(&out.stderr).into_owned(),
+    )
+}
+
+const LINUX_TARGET: &str = "x86_64-unknown-linux-gnu";
+const MACOS_TARGET: &str = "aarch64-apple-darwin";
+const BINARY_BYTES: &[u8] = b"opi-sandbox extracted release binary payload\n";
+
+fn good_smoke_log() -> &'static str {
+    // Real smoke-script marker (opi-sandbox-smoke.sh writes smoke-result.txt).
+    // Direct smoke only; backend --stdio is deferred per the script header.
+    "opi-sandbox-smoke: OK\n"
+}
+
+fn good_windows_log() -> &'static str {
+    // Windows unsupported-posture evidence: doctor reports supported=false, and
+    // the unsupported-posture cargo tests pass (non-skipped, non-zero-test).
+    "doctor: {\"supported\":false,\"mechanisms\":[]}\n\
+     run: refused pre-start (exit 125)\n\
+     test result: ok. 3 passed; 0 failed; 0 ignored\n"
+}
+
+/// Write a native (linux/macos) evidence bundle under `<root>/<platform>/`.
+/// `binary_bytes` is the extracted opi-sandbox binary; its sha256 is written
+/// into the lock so provenance passes by default. `mismatch_sha` corrupts the
+/// locked sha for the provenance-mismatch case; `omit_extracted` drops the
+/// extracted tree (workspace-only binary).
+fn write_native_bundle(
+    root: &std::path::Path,
+    platform: &str,
+    target: &str,
+    binary_bytes: &[u8],
+    smoke_log: &str,
+    mismatch_sha: bool,
+    omit_extracted: bool,
+) {
+    let dir = root.join(platform);
+    std::fs::create_dir_all(dir.join("extracted").join("bin")).unwrap();
+    std::fs::write(dir.join("target"), target).unwrap();
+    let exe_sha = if mismatch_sha {
+        "0".repeat(64)
+    } else {
+        sha256_hex_local(binary_bytes)
+    };
+    std::fs::write(
+        dir.join("package-lock.toml"),
+        format!(
+            "manifest_hash = \"abc123\"\n\
+             executable_rel_path = \"bin/opi-sandbox\"\n\
+             executable_sha256 = \"{exe_sha}\"\n\
+             package_version = \"0.8.0\"\n\
+             target = \"{target}\"\n\
+             opi_range = \">=0.8,<0.9\"\n\
+             protocol = \"command-execution-jsonl-v1\"\n\
+             adapter_id = \"opi-sandbox\"\n"
+        ),
+    )
+    .unwrap();
+    if !omit_extracted {
+        std::fs::write(
+            dir.join("extracted").join("bin").join("opi-sandbox"),
+            binary_bytes,
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("extracted").join("package.toml"),
+            "# rendered manifest\n",
+        )
+        .unwrap();
+    }
+    std::fs::write(dir.join("smoke.log"), smoke_log).unwrap();
+}
+
+fn write_windows_bundle(root: &std::path::Path, log: &str, with_archive: bool) {
+    let dir = root.join("windows");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("unsupported.log"), log).unwrap();
+    if with_archive {
+        // A Windows opi-sandbox archive must NOT exist (16.14.2 unsupported).
+        std::fs::create_dir_all(dir.join("extracted").join("bin")).unwrap();
+        std::fs::write(
+            dir.join("extracted").join("bin").join("opi-sandbox"),
+            b"must not exist",
+        )
+        .unwrap();
+    }
+}
+
+/// A complete, correct evidence tree: native linux + macos bundles + a windows
+/// unsupported-posture bundle. Audit must PASS.
+fn write_complete_good_evidence(root: &std::path::Path) {
+    write_native_bundle(
+        root,
+        "linux",
+        LINUX_TARGET,
+        BINARY_BYTES,
+        good_smoke_log(),
+        false,
+        false,
+    );
+    write_native_bundle(
+        root,
+        "macos",
+        MACOS_TARGET,
+        BINARY_BYTES,
+        good_smoke_log(),
+        false,
+        false,
+    );
+    write_windows_bundle(root, good_windows_log(), false);
+}
+
+#[test]
+fn release_audit_passes_complete_native_evidence() {
+    let dir = tempfile::tempdir().expect("release evidence tempdir");
+    write_complete_good_evidence(dir.path());
+    let (ok, stdout, stderr) = run_release_audit(dir.path(), true);
+    assert!(
+        ok,
+        "complete native evidence must pass: stdout={stdout} stderr={stderr}"
+    );
+}
+
+#[test]
+fn release_audit_rejects_missing_platform() {
+    let dir = tempfile::tempdir().expect("release evidence tempdir");
+    // Omit macos entirely.
+    write_native_bundle(
+        dir.path(),
+        "linux",
+        LINUX_TARGET,
+        BINARY_BYTES,
+        good_smoke_log(),
+        false,
+        false,
+    );
+    write_windows_bundle(dir.path(), good_windows_log(), false);
+    let (ok, stdout, stderr) = run_release_audit(dir.path(), true);
+    assert!(
+        !ok,
+        "missing platform must fail: stdout={stdout} stderr={stderr}"
+    );
+    let report: serde_json::Value =
+        serde_json::from_str(&stdout).expect("release audit emits JSON on failure");
+    assert!(
+        report["issues"]
+            .as_array()
+            .map(|v| v.iter().any(|i| i["code"] == "missing_platform_evidence"))
+            .unwrap_or(false),
+        "expected missing_platform_evidence: {stdout}"
+    );
+}
+
+#[test]
+fn release_audit_rejects_wrong_target_identity() {
+    let dir = tempfile::tempdir().expect("release evidence tempdir");
+    // linux bundle carrying a darwin target triple -> wrong target identity.
+    write_native_bundle(
+        dir.path(),
+        "linux",
+        MACOS_TARGET,
+        BINARY_BYTES,
+        good_smoke_log(),
+        false,
+        false,
+    );
+    write_native_bundle(
+        dir.path(),
+        "macos",
+        MACOS_TARGET,
+        BINARY_BYTES,
+        good_smoke_log(),
+        false,
+        false,
+    );
+    write_windows_bundle(dir.path(), good_windows_log(), false);
+    let (ok, stdout, stderr) = run_release_audit(dir.path(), true);
+    assert!(
+        !ok,
+        "wrong target must fail: stdout={stdout} stderr={stderr}"
+    );
+    assert!(
+        stdout.contains("wrong_target_identity"),
+        "expected wrong_target_identity: {stdout}"
+    );
+}
+
+#[test]
+fn release_audit_rejects_windows_opi_sandbox_archive() {
+    let dir = tempfile::tempdir().expect("release evidence tempdir");
+    write_complete_good_evidence(dir.path());
+    // Add a Windows opi-sandbox archive (forbidden: no Windows artifact).
+    write_windows_bundle(dir.path(), good_windows_log(), true);
+    let (ok, stdout, stderr) = run_release_audit(dir.path(), true);
+    assert!(
+        !ok,
+        "a Windows opi-sandbox archive must fail: stdout={stdout} stderr={stderr}"
+    );
+    assert!(
+        stdout.contains("wrong_target_identity"),
+        "Windows archive is a wrong-target defect: {stdout}"
+    );
+}
+
+#[test]
+fn release_audit_rejects_workspace_only_binary() {
+    let dir = tempfile::tempdir().expect("release evidence tempdir");
+    // linux bundle with no extracted tree (smoke ran against a workspace
+    // target/ binary, not an extracted archive).
+    write_native_bundle(
+        dir.path(),
+        "linux",
+        LINUX_TARGET,
+        BINARY_BYTES,
+        good_smoke_log(),
+        false,
+        true,
+    );
+    write_native_bundle(
+        dir.path(),
+        "macos",
+        MACOS_TARGET,
+        BINARY_BYTES,
+        good_smoke_log(),
+        false,
+        false,
+    );
+    write_windows_bundle(dir.path(), good_windows_log(), false);
+    let (ok, stdout, stderr) = run_release_audit(dir.path(), true);
+    assert!(
+        !ok,
+        "workspace-only binary must fail: stdout={stdout} stderr={stderr}"
+    );
+    assert!(
+        stdout.contains("workspace_only_binary"),
+        "expected workspace_only_binary: {stdout}"
+    );
+}
+
+#[test]
+fn release_audit_rejects_provenance_mismatch() {
+    let dir = tempfile::tempdir().expect("release evidence tempdir");
+    // linux extracted binary sha != locked executable_sha256.
+    write_native_bundle(
+        dir.path(),
+        "linux",
+        LINUX_TARGET,
+        BINARY_BYTES,
+        good_smoke_log(),
+        true,
+        false,
+    );
+    write_native_bundle(
+        dir.path(),
+        "macos",
+        MACOS_TARGET,
+        BINARY_BYTES,
+        good_smoke_log(),
+        false,
+        false,
+    );
+    write_windows_bundle(dir.path(), good_windows_log(), false);
+    let (ok, stdout, stderr) = run_release_audit(dir.path(), true);
+    assert!(
+        !ok,
+        "provenance mismatch must fail: stdout={stdout} stderr={stderr}"
+    );
+    assert!(
+        stdout.contains("provenance_mismatch"),
+        "expected provenance_mismatch: {stdout}"
+    );
+}
+
+#[test]
+fn release_audit_rejects_skipped_evidence() {
+    let dir = tempfile::tempdir().expect("release evidence tempdir");
+    // smoke evidence shows ignored tests (skipped evidence).
+    let skipped = "test result: ok. 8 passed; 0 failed; 2 ignored\n";
+    write_native_bundle(
+        dir.path(),
+        "linux",
+        LINUX_TARGET,
+        BINARY_BYTES,
+        skipped,
+        false,
+        false,
+    );
+    write_native_bundle(
+        dir.path(),
+        "macos",
+        MACOS_TARGET,
+        BINARY_BYTES,
+        good_smoke_log(),
+        false,
+        false,
+    );
+    write_windows_bundle(dir.path(), good_windows_log(), false);
+    let (ok, stdout, stderr) = run_release_audit(dir.path(), true);
+    assert!(
+        !ok,
+        "skipped evidence must fail: stdout={stdout} stderr={stderr}"
+    );
+    assert!(
+        stdout.contains("skipped_evidence"),
+        "expected skipped_evidence: {stdout}"
+    );
+}
+
+#[test]
+fn release_audit_rejects_zero_test_evidence() {
+    let dir = tempfile::tempdir().expect("release evidence tempdir");
+    // smoke evidence shows 0 passed (zero-test evidence).
+    let zero = "test result: ok. 0 passed; 0 failed; 0 ignored\n";
+    write_native_bundle(
+        dir.path(),
+        "linux",
+        LINUX_TARGET,
+        BINARY_BYTES,
+        zero,
+        false,
+        false,
+    );
+    write_native_bundle(
+        dir.path(),
+        "macos",
+        MACOS_TARGET,
+        BINARY_BYTES,
+        good_smoke_log(),
+        false,
+        false,
+    );
+    write_windows_bundle(dir.path(), good_windows_log(), false);
+    let (ok, stdout, stderr) = run_release_audit(dir.path(), true);
+    assert!(
+        !ok,
+        "zero-test evidence must fail: stdout={stdout} stderr={stderr}"
+    );
+    assert!(
+        stdout.contains("zero_test_evidence"),
+        "expected zero_test_evidence: {stdout}"
+    );
+}
+
+#[test]
+fn release_audit_rejects_windows_unsupported_without_pass_evidence() {
+    let dir = tempfile::tempdir().expect("release evidence tempdir");
+    write_native_bundle(
+        dir.path(),
+        "linux",
+        LINUX_TARGET,
+        BINARY_BYTES,
+        good_smoke_log(),
+        false,
+        false,
+    );
+    write_native_bundle(
+        dir.path(),
+        "macos",
+        MACOS_TARGET,
+        BINARY_BYTES,
+        good_smoke_log(),
+        false,
+        false,
+    );
+    // Windows unsupported log with no passing test evidence (zero-test).
+    let no_pass = "doctor: {\"supported\":false,\"mechanisms\":[]}\nrun: refused pre-start\n";
+    write_windows_bundle(dir.path(), no_pass, false);
+    let (ok, stdout, stderr) = run_release_audit(dir.path(), true);
+    assert!(
+        !ok,
+        "windows evidence without a pass must fail: stdout={stdout} stderr={stderr}"
+    );
+    assert!(
+        stdout.contains("zero_test_evidence"),
+        "windows zero-test evidence must be flagged: {stdout}"
+    );
+}

@@ -110,8 +110,54 @@ jobs:
           name: ${{ matrix.artifact }}
           path: ${{ matrix.artifact }}.${{ matrix.ext }}
 
+  # Phase 16 task 16.15.2: opi-sandbox release archives for the native Linux +
+  # macOS triples ONLY. Windows has no native opi-sandbox confinement (16.14.2
+  # unsupported posture), so no Windows opi-sandbox artifact is produced. Only
+  # native-runner triples are packaged (the 16.15.1 packager detects the HOST
+  # triple; cross-arch packaging is a 16.15.1 follow-up). The ordinary six-target
+  # Opi `build` matrix above is preserved unchanged. Smoke runs against the
+  # EXTRACTED archive binary. The `release` job's `opi-*` glob + SHA256SUMS pick
+  # these archives up alongside the Opi binaries.
+  sandbox_archive:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build opi-sandbox release binary
+        run: cargo build --release -p opi-sandbox --bin opi-sandbox
+
+      - name: Package native archive
+        shell: bash
+        run: |
+          bash scripts/package-opi-sandbox.sh \
+            --binary target/release/opi-sandbox \
+            --artifact-dir target/opi-artifacts/release-${{ matrix.os }}
+
+      - name: Standalone smoke (extracted archive, no opi on PATH)
+        shell: bash
+        run: |
+          bash scripts/opi-sandbox-smoke.sh \
+            --binary target/opi-artifacts/release-${{ matrix.os }}/extracted/bin/opi-sandbox \
+            --artifact-dir target/opi-artifacts/release-${{ matrix.os }}/smoke
+
+      - name: Upload opi-sandbox archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: opi-sandbox-archive-${{ matrix.os }}
+          path: target/opi-artifacts/release-${{ matrix.os }}/opi-sandbox-*.tar.gz
+
   release:
-    needs: build
+    needs: [build, sandbox_archive]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

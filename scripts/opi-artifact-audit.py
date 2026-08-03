@@ -19,6 +19,7 @@ Known limitations (documented, not blocking):
     custom dir layout for other shapes.
 """
 import argparse
+import hashlib
 import json
 import os
 import pathlib
@@ -366,11 +367,193 @@ def _session_files(artifact_dir):
     return sorted(seen)
 
 
+# ---------------------------------------------------------------------------
+# Phase 16 task 16.15.2: release-archive audit mode (--release).
+#
+# Validates the published native opi-sandbox topology (SC16-12b): native target
+# identity, archive layout, extracted-binary provenance, smoke evidence, and
+# complete non-skipped / non-zero-test Linux/macOS/Windows evidence. Rejects
+# absent, wrong-target, workspace-only, skipped, or zero-test evidence.
+#
+# Evidence directory layout (one bundle per platform):
+#   <dir>/linux/   target, package-lock.toml, extracted/{bin/opi-sandbox,
+#                 package.toml}, and a *.txt/*.log smoke evidence file carrying
+#                 the `opi-sandbox-smoke: OK` marker.
+#   <dir>/macos/   same shape; target is an apple-darwin triple.
+#   <dir>/windows/ a *.txt/*.log evidence file reporting doctor supported=false
+#                 plus a passing unsupported-posture test result; NO extracted
+#                 archive (16.14.2 unsupported posture).
+# ---------------------------------------------------------------------------
+
+# Native opi-sandbox target families that ship an archive, keyed by the evidence
+# platform dir. Windows is absent: no native opi-sandbox confinement, so no
+# archive is produced.
+NATIVE_ARCHIVE_PLATFORMS = {
+    "linux": "-unknown-linux-gnu",
+    "macos": "-apple-darwin",
+}
+SMOKE_OK_RE = re.compile(r"opi-sandbox-smoke:\s*OK")
+CARGO_PASS_RE = re.compile(r"test result: ok\. ([1-9][0-9]*) passed; 0 failed; 0 ignored")
+CARGO_SKIPPED_RE = re.compile(r"test result: ok\. \d+ passed; 0 failed; ([1-9][0-9]*) ignored")
+CARGO_ZERO_RE = re.compile(r"test result: ok\. 0 passed; 0 failed; 0 ignored")
+
+
+def sha256_file(path):
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(65536), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _lock_value(lock_text, key):
+    match = re.search(
+        r'^%s = "([^"]*)"' % re.escape(key), lock_text, re.MULTILINE
+    )
+    return match.group(1) if match else None
+
+
+def _bundle_evidence_text(bundle):
+    """Concatenate every *.txt / *.log file directly in the bundle dir (not the
+    extracted/ subtree) so the pass/skip/zero markers are scanned regardless of
+    the exact evidence filename the producer chose."""
+    parts = []
+    for entry in sorted(bundle.iterdir()):
+        if entry.is_file() and entry.suffix.lower() in {".txt", ".log"}:
+            parts.append(read_text(entry))
+    return "\n".join(parts)
+
+
+def _classify_evidence(text, platform, issues):
+    """Classify smoke/test evidence as pass / skipped / zero-test."""
+    if SMOKE_OK_RE.search(text) or CARGO_PASS_RE.search(text):
+        return  # passing direct smoke or a non-zero cargo pass.
+    if CARGO_SKIPPED_RE.search(text):
+        issues.append({
+            "code": "skipped_evidence",
+            "platform": platform,
+            "message": f"{platform} evidence has ignored/skipped tests",
+        })
+        return
+    # No passing marker: zero-test (an explicit 0-passed line) or absent/blank.
+    issues.append({
+        "code": "zero_test_evidence",
+        "platform": platform,
+        "message": f"{platform} evidence has no passing smoke/test marker",
+    })
+
+
+def _audit_native_bundle(root, platform, target_suffix, issues):
+    bundle = root / platform
+    if not bundle.is_dir():
+        issues.append({
+            "code": "missing_platform_evidence",
+            "platform": platform,
+            "message": f"missing native evidence bundle for {platform}",
+        })
+        return
+    target = read_text(bundle / "target").strip()
+    if not target:
+        issues.append({
+            "code": "missing_platform_evidence",
+            "platform": platform,
+            "message": f"{platform} bundle missing target file",
+        })
+        return
+    if "windows" in target or "pc-windows" in target or not target.endswith(target_suffix):
+        issues.append({
+            "code": "wrong_target_identity",
+            "platform": platform,
+            "message": f"{platform} target {target} is not a native {platform} triple",
+        })
+    extracted_bin = bundle / "extracted" / "bin" / "opi-sandbox"
+    extracted_manifest = bundle / "extracted" / "package.toml"
+    if not extracted_bin.is_file():
+        issues.append({
+            "code": "workspace_only_binary",
+            "platform": platform,
+            "message": f"{platform} has no extracted archive binary (workspace-only smoke)",
+        })
+        return
+    if not extracted_manifest.is_file():
+        issues.append({
+            "code": "workspace_only_binary",
+            "platform": platform,
+            "message": f"{platform} extracted tree missing package.toml (layout)",
+        })
+    locked_sha = _lock_value(read_text(bundle / "package-lock.toml"), "executable_sha256")
+    actual_sha = sha256_file(extracted_bin)
+    if not locked_sha:
+        issues.append({
+            "code": "provenance_mismatch",
+            "platform": platform,
+            "message": f"{platform} package-lock.toml missing executable_sha256",
+        })
+    elif actual_sha != locked_sha:
+        issues.append({
+            "code": "provenance_mismatch",
+            "platform": platform,
+            "message": f"{platform} extracted binary sha {actual_sha} != locked {locked_sha}",
+        })
+    _classify_evidence(_bundle_evidence_text(bundle), platform, issues)
+
+
+def _audit_windows_bundle(root, issues):
+    bundle = root / "windows"
+    if not bundle.is_dir():
+        issues.append({
+            "code": "missing_platform_evidence",
+            "platform": "windows",
+            "message": "missing windows unsupported-posture evidence bundle",
+        })
+        return
+    if (bundle / "extracted" / "bin" / "opi-sandbox").is_file():
+        issues.append({
+            "code": "wrong_target_identity",
+            "platform": "windows",
+            "message": "Windows must not ship an opi-sandbox archive",
+        })
+    text = _bundle_evidence_text(bundle)
+    lower = text.lower()
+    if 'supported":false' not in text and "supported = false" not in text and "unsupported" not in lower:
+        issues.append({
+            "code": "wrong_target_identity",
+            "platform": "windows",
+            "message": "Windows evidence does not report the unsupported posture",
+        })
+    _classify_evidence(text, "windows", issues)
+
+
+def audit_release_evidence(artifact_dir):
+    issues = []
+    for platform, target_suffix in NATIVE_ARCHIVE_PLATFORMS.items():
+        _audit_native_bundle(artifact_dir, platform, target_suffix, issues)
+    _audit_windows_bundle(artifact_dir, issues)
+    platforms = (
+        sorted(p.name for p in artifact_dir.iterdir() if p.is_dir())
+        if artifact_dir.is_dir()
+        else []
+    )
+    return {
+        "artifact_dir": str(artifact_dir),
+        "mode": "release",
+        "platforms": platforms,
+        "issues": issues,
+        "ok": not issues,
+    }
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("artifact_dir")
     parser.add_argument("--workspace-root", default="")
     parser.add_argument("--json", action="store_true")
+    parser.add_argument(
+        "--release",
+        action="store_true",
+        help="audit native opi-sandbox release-archive evidence (SC16-12b) "
+        "instead of dogfood run artifacts",
+    )
     args = parser.parse_args()
 
     artifact_dir = pathlib.Path(args.artifact_dir)
@@ -381,38 +564,42 @@ def main():
     )
     root_forms_norm = _root_forms(args.workspace_root)
 
-    ndjson_reports = [
-        analyze_ndjson(path, root_forms_norm)
-        for path in sorted(artifact_dir.glob("run*.ndjson"))
-    ]
-    session_reports = [analyze_session(path, root_forms_norm) for path in _session_files(artifact_dir)]
-    failure_report = analyze_failure_evidence(artifact_dir)
-    commit_references, commit_issues = analyze_commit_references(
-        artifact_dir, workspace_root
-    )
+    if args.release:
+        report = audit_release_evidence(artifact_dir)
+        issues = report["issues"]
+    else:
+        ndjson_reports = [
+            analyze_ndjson(path, root_forms_norm)
+            for path in sorted(artifact_dir.glob("run*.ndjson"))
+        ]
+        session_reports = [analyze_session(path, root_forms_norm) for path in _session_files(artifact_dir)]
+        failure_report = analyze_failure_evidence(artifact_dir)
+        commit_references, commit_issues = analyze_commit_references(
+            artifact_dir, workspace_root
+        )
 
-    issues = []
-    for report in ndjson_reports:
-        issues.extend(report["issues"])
-    for report in session_reports:
-        issues.extend(report["issues"])
-    issues.extend(failure_report["issues"])
-    issues.extend(commit_issues)
+        issues = []
+        for report in ndjson_reports:
+            issues.extend(report["issues"])
+        for report in session_reports:
+            issues.extend(report["issues"])
+        issues.extend(failure_report["issues"])
+        issues.extend(commit_issues)
 
-    report = {
-        "artifact_dir": str(artifact_dir),
-        "files": sorted(
-            str(path.relative_to(artifact_dir))
-            for path in artifact_dir.rglob("*")
-            if path.is_file()
-        ),
-        "ndjson": ndjson_reports,
-        "sessions": session_reports,
-        "failure_evidence": failure_report,
-        "commit_references": commit_references,
-        "issues": issues,
-        "ok": not issues,
-    }
+        report = {
+            "artifact_dir": str(artifact_dir),
+            "files": sorted(
+                str(path.relative_to(artifact_dir))
+                for path in artifact_dir.rglob("*")
+                if path.is_file()
+            ),
+            "ndjson": ndjson_reports,
+            "sessions": session_reports,
+            "failure_evidence": failure_report,
+            "commit_references": commit_references,
+            "issues": issues,
+            "ok": not issues,
+        }
 
     if args.json:
         print(json.dumps(report, indent=2, ensure_ascii=False))
@@ -420,7 +607,7 @@ def main():
         status = "PASS" if report["ok"] else "FAIL"
         print(f"artifact audit: {status}")
         for issue in issues:
-            location = issue.get("file", "<artifact>")
+            location = issue.get("file") or issue.get("platform") or "<artifact>"
             line = issue.get("line")
             suffix = f":{line}" if line else ""
             print(f"- {issue['code']} {location}{suffix}: {issue['message']}")
