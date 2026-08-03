@@ -2351,7 +2351,7 @@
       "definition_of_done": "Host-neutral `scripts/package-opi-sandbox.sh --binary PATH --artifact-dir PATH` and `scripts/package-opi-sandbox.ps1 -BinaryPath PATH -ArtifactDir PATH` accept an explicit built opi-sandbox binary, create the documented package layout plus an extracted staging tree under the artifact directory, compute locked manifest/target/protocol/executable metadata and SHA-256 from packaged bytes, and reject incomplete or mismatched layouts. The scripts do not run opi or claim native restriction success; 16.13 and 16.14.1 invoke the standalone smoke scripts against the extracted binary.",
       "definition_source": "draft-reviewed",
       "replaces": "Add host-neutral opi-sandbox packaging and CI topology",
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "16.5",
         "16.12"
@@ -2410,9 +2410,9 @@
       "acceptance_scenarios": [],
       "production_call_sites": [],
       "substrate_only": true,
-      "iteration_count": 0,
+      "iteration_count": 1,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "7542117e8daa8b10dbd24c78c1ca04ef1289401b",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "packaging/opi-sandbox/package.toml.template",
@@ -2420,11 +2420,17 @@
         "scripts/package-opi-sandbox.ps1",
         "crates/opi-coding-agent/tests/opi_sandbox_packaging.rs"
       ],
-      "last_attempt": null,
-      "verified_at_commit": null,
-      "evidence": null,
+      "last_attempt": {
+        "commit": "7a6f84868684fbf86984f3e362497593a57d5e17",
+        "outcome": "passed",
+        "iteration": 1
+      },
+      "verified_at_commit": "7a6f84868684fbf86984f3e362497593a57d5e17",
+      "evidence": "Host-neutral opi-sandbox packaging. scripts/package-opi-sandbox.{sh,ps1}: rustc host-triple detect + lowercase SHA-256 of the binary, render package.toml.template (target+sha256 tokens, incl. required adapter_config={}), produce package/{package.toml,bin/opi-sandbox}, archive (tar.gz Unix / zip Windows) with package contents at root, extract a clean staging tree, emit build-time package-lock.toml (8 LockMaterial fields, advisory - 16.5 recomputes via 16.4). --verify recomputes manifest_hash (LF-normalized) + both trees' executable sha256; rejects tampered manifest / extracted binary / missing layout (exit 1) and missing/empty binary / rustc-missing / target-undetected (exit 2). Lowercase hex enforced (.ps1 Get-FileHash.ToLowerInvariant; .sh sha256sum/shasum); LF-only writes via [IO.File]::WriteAllBytes UTF8NoBOM (.ps1) and tr -d \r (.sh). Packager is bytes-only (no binary execution; native run is 16.13/16.14.1), never invokes opi or claims native restriction success. Layout scoped to {package.toml,bin/opi-sandbox}: statically-linked binary embeds the protocol schema; workspace LICENSE + release schema bundles ship with the 16.15.2 release topology. Gates: D.1 7/7 opi_sandbox_packaging (cfg!windows -> .ps1 path) + .sh git-bash smoke (pack/verify/missing-binary); fmt --check --all, clippy --test opi_sandbox_packaging -D warnings, doc -p opi-coding-agent -D warnings all clean. Pre-impl 7-lens design audit wf_f314631d-070 folded 10 must-fix / 19 flagged before code. D.2 exec.workflow.js wf_532c923d-7b7 clean: 0 must-fix / 0 flagged / 0 rejected (6 lenses, journal-confirmed). cfg(unix) .sh test path defers to Linux/macOS CI (16.13/16.14.1 run the .sh natively).",
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        "Task 16.15.1 PASSED @7a6f848 (iter1): host-neutral opi-sandbox packaging. scripts/package-opi-sandbox.{sh,ps1} render package.toml.template (target+sha256 tokens, adapter_config={} included), build package/{package.toml,bin/opi-sandbox}, archive (tar.gz Unix / zip Windows, contents at root), extract a clean staging tree, emit build-time package-lock.toml (8 LockMaterial fields, advisory - 16.5 recomputes via 16.4). --verify recomputes manifest_hash (LF-normalized) + both trees' executable sha256; rejects tampered manifest / extracted binary / missing layout (exit 1) and missing/empty binary / rustc-missing / target-undetected (exit 2). Lowercase hex everywhere; LF-only byte-exact writes. Packager bytes-only, no opi, no restriction claim. opi_sandbox_packaging.rs (7 tests) drives the native script, round-trips the rendered manifest through validate_executable_contributions (exercising the required adapter_config table), and asserts the emitted lock matches the canonical LockMaterial. Pre-impl 7-lens audit wf_f314631d-070 folded 10 must-fix (adapter_config required; archive-root convention pinned; --verify manifest_hash recompute; .ps1 lowercase+LF byte-exact; .sh shasum portability; target-detect failure mode; layout scope decision). D.2 wf_532c923d-7b7 clean 0/0/0 (journal: 6 lenses x 0 findings). Phase 16 = 14/21 passing; 16.15.1 unblocks 16.13 / 16.14.1 / 16.14.2 (each needed 16.15.1)."
+      ]
     },
     {
       "id": "16.15.2",
@@ -4134,7 +4140,8 @@
     "16.9 PASSED @92885f6 (iter4): wire ExecutionRuntime::build through CodingHarness::build_tools_with_sandbox (interactive/text/NDJSON/RPC all funnel through it). BashRequest.backend + BashCallArgs(serde)/BashArgs(JsonSchema) split keeps the default schema byte-identical; Eligibility::from_enabled builds the model oneOf backend enum with per-candidate ask-approval descriptions; enabled_identities tolerant resolver; startup build() Err -> diagnostic_from_execution_failure + bash OMITTED (no local fallback); apply_execution_overrides in headless+interactive resolver cores; execution_mode for RPC/NonInteractive. SC16-01/04/07 closed via production-path tests. D.2 exec.workflow.js: pre-impl wf_0a0edff5 (7-lens, ship-with-fixes); iter1 wf_a05ae498 1 must-fix (enabled_identities non-discriminating) +1 flagged (headless resolver) +1 rejected (.execution_mode); iter2 wf_26ba3e0e 1 must-fix (interactive resolver call site) +2 flagged (ask-description, vacuous command); iter3 wf_eaeb44f6 1 must-fix (model backend-value runtime path: bash.rs lift + runtime.rs forwarding untested through BashTool::execute); iter4 wf_1d55daba RATE-LIMITED 429 (6/7 agents failed, resets 20:00) -> INCOMPLETE, not a clean pass. All 3 must-fixes were distinct production-call-site coverage gaps (code correct from Phase 1, D.1-green throughout); each resolved by the demanded test. Verdict rests on iter1-3 clean resolution + verifiable iter3 fix (model_supplied_backend_selects_named_adapter_through_execute passes, backend value controls adapter via mock peer) + all D.1/D.3 gates green. Full iter4 re-verify available after 20:00 reset. Phase 16 = 9/21 tasks passing (16.1-16.9).",
     "16.10 PASSED @44c4140 (iter3): interactive permission broker + TUI prompt. opi-tui PermissionPrompt (3-way allow-once/session/deny) + AwaitingPermission AppState/AppStatus + redaction-safe PermissionSummary + insta snapshots (80x24/120x40 external + 80x24 local). PermissionManager (in-memory session grants, no Serialize/persistence) + InteractivePermissionBroker trait + TuiPermissionBroker (mpsc link, dropped rx/tx -> Deny). Keystone exec interception in RoutedBashOperations: on routed PermissionRequired+Interactive+broker, dispatch DIRECTLY (never re-runs resolve_selection); headless/no-broker -> permission_required (fail-closed). permission_denied un-dead-coded. Harness: broker installed for Interactive only, Arc<PermissionManager> shared, reset_grants at resume/fork/branch. Interactive loop: channel drain, modal key handling (Esc->Deny not abort), poll-gate relaxation, overlay render. Pre-impl 7-lens audit wf_9928510c (43 findings, 7 must-fix) shaped the design. SC16-05 closed. D.2 exec.workflow.js: iter1 wf_5f27e002 1 must-fix (no-persistence only at helper) + 3 flags; iter2 wf_638629c4 resolved -> deeper L-D3 must-fix (loop integration) + 1 flag; iter3 wf_2cfc57fe resolved -> ZERO must-fix (Phase D cleared). 3 advisory flags remain (non-blocking): 1 degenerate opi-tui test kept as regression guard; poll-gate || permission_pending relaxation running+pending state not synthetically driven (idle+pending path IS driven by production_loop_drains_permission_prompt; full end-to-end package-infra-blocked). Snapshots human-reviewed + accepted. Phase 16 = 10/21 tasks passing (16.1-16.10).",
     "16.11.2 pre-impl 7-lens design audit (wf_0fd0517a-561) RECOVERED FROM JOURNAL after a synthesis bug in the workflow script returned an empty summary (stage-2 returned a bare array vs {lens,verified} object, dropping everything). The journal held all 7 lenses / 51 findings / 32 verify verdicts; 5 verify agents 429'd. Architecture VALIDATED by the rejections: production pre-start refusal on all platforms is correct; doctor Option A (supported=false everywhere in 16.11.2) is spec-faithful; the StdinPolicy C.1a is necessary (no smaller CLI-only approach); the SetupFailed{125} vs Exited{125} collision is unambiguous at the impl layer (lossy only at the shell, per spec L598-599). FOLDS APPLIED (confirmed must_fix + flagged): (1) tripwire narrows the NEEDLE not the scope -> scan src/**/*.rs recursively for [env::var,env::vars,var_os,vars_os,dotenvy], permitting env::args/args_os/consts (strictly stronger than 16.11.1; no brittle allowlist); (2) execute() takes injectable AsyncWrite sinks so byte-exact non-UTF8 stdout/stderr + exit mapping are testable without process-stdout capture; (3) pure build_request(&RunCommand)->SandboxRequest seam gives a structural stdin==Inherit proof (OS-stdin byte-flow is infeasible in-process + production refuses); (4) Posture carries doctor metadata (supported/mechanisms/limitations + optional restriction) so doctor is a pure serializer (no split brain, forward-compatible with 16.13/14.1); (5) hand-roll stream polling via std::future::poll_fn + hand-roll doctor JSON -> NO new deps, NO Cargo.toml change (bin auto-discovers from main.rs); (6) hand-rolled parser edge matrix (missing --, empty PROGRAM, unknown profile/network, dup/unknown flags, -- terminates) each -> exit 2; (7) parse validates timeout>0 + workspace -> exit 2 (usage) so runner InvalidRequest is unreachable; SetupFailed{ProgramNotFound|RestrictionSetup|SpawnFailed|UnsupportedPlatform}->125; (8) scripts do their OWN isolation (PATH scrub + sentinel env HOME/APPDATA/XDG_CONFIG_HOME/OPI_* + canary), pin run-exit==125, parse doctor JSON (supported=false/empty mechanisms), persist artifacts the test reads back, wrap expected-125 run against set -e; (9) --workspace/--profile/--network REQUIRED (spec grammar unbracketed); fixed default timeout (large finite, documented); doctor --unknown/extra->2, internal->1; (10) per-platform pinned limitations strings; target=std::env::consts::OS. C.1a appends (4 files, 16.11.1-owned, with inference_notes): runner.rs (StdinPolicy), sdk_contract.rs (literal fallout), crate_boundaries.rs (narrowed-needle tripwire), lib.rs (StdinPolicy re-export + doc). lib.rs doc 'mirrors ExecutePayload' narrowed: stdin is a local concern (ExecutePayload has no stdin).",
-    "16.12 PASSED iter 1 @70f23a1 (protocol backend --stdio + atomic helper gate). Pre-impl audit wf_971f3d06 (14 mf/36 fl); D.2 wf_a0cf920a 1 fmt must-fix (fixed) -> wf_a3a90cee clean. SC16-06b substrate met. 2026-08-03T03:07:41Z"
+    "16.12 PASSED iter 1 @70f23a1 (protocol backend --stdio + atomic helper gate). Pre-impl audit wf_971f3d06 (14 mf/36 fl); D.2 wf_a0cf920a 1 fmt must-fix (fixed) -> wf_a3a90cee clean. SC16-06b substrate met. 2026-08-03T03:07:41Z",
+    "Task 16.15.1 host-neutral opi-sandbox packaging PASSED @7a6f848 (iter1; D.2 wf_532c923d clean). Unblocks 16.13/16.14.1/16.14.2."
   ],
   "verify_runs": [
     {
@@ -4419,6 +4426,26 @@
       "rejected_count": 1,
       "ran_at": "2026-08-03T03:07:41Z",
       "task_id": "16.12",
+      "criterion_id": null
+    },
+    {
+      "stage": "plan",
+      "wf_ref": "wf_f314631d-070",
+      "folded_count": 10,
+      "flagged_count": 19,
+      "rejected_count": 0,
+      "ran_at": "2026-08-03T11:50:00Z",
+      "task_id": "16.15.1",
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": "wf_532c923d-7b7",
+      "folded_count": 0,
+      "flagged_count": 0,
+      "rejected_count": 0,
+      "ran_at": "2026-08-03T12:35:00Z",
+      "task_id": "16.15.1",
       "criterion_id": null
     }
   ]
