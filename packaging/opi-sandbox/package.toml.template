@@ -1,0 +1,31 @@
+# opi-sandbox executable package manifest template (Phase 16 task 16.15.1).
+#
+# The packager (scripts/package-opi-sandbox.{sh,ps1}) renders this template by
+# substituting the host target triple (rustc -vV, assumed to match the supplied
+# --binary build target) and the lowercase SHA-256 of the packaged
+# bin/opi-sandbox bytes into the two placeholder fields below before writing
+# package.toml.
+#
+# Documented opi-sandbox package layout = { package.toml, bin/opi-sandbox }. The
+# binary is statically linked and self-contained: it embeds the
+# command-execution-jsonl-v1 protocol schema at compile time and has no external
+# runtime-asset dependency. The workspace LICENSE and release-level schema
+# bundles ship with the release archive topology (16.15.2); they are not
+# duplicated into each per-target archive. --verify enforces exactly this
+# two-element layout.
+name = "opi-sandbox"
+description = "Official host-native command restriction backend."
+version = "0.8.0"
+opi_version = ">=0.8,<0.9"
+
+[[contributions.adapters]]
+capability = "command.execute"
+id = "opi-sandbox"
+transport = "process-jsonl"
+command = "bin/opi-sandbox"
+args = ["backend", "--stdio"]
+protocol = "command-execution-jsonl-v1"
+target = "__TARGET__"
+sha256 = "__SHA256__"
+handshake_timeout_ms = 5000
+adapter_config = {}
