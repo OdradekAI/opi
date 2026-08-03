@@ -1843,7 +1843,7 @@
       "definition_of_done": "The production opi-sandbox backend --stdio entry point and product-neutral non-Rust fixture client use the shared v1 codec, cfg-gated platform dispatcher, and SandboxRunner. Initialize preserves the ordered supported protocol list; ready reports implementation identity/version/target; accepted precedes a flushed started frame that reports effective placement/guarantee/policy/limitations; completed preserves exit/signal, timeout/cancellation, cleanup state, and final diagnostics; protocol stdin then closes and the backend exits cleanly. Portable conformance uses an injected runner for the success state machine; the real executable proves negotiation plus structured unsupported/pre-start behavior until 16.13/16.14.1 close native success. Every frame carries one host request id; protocol stdin is reserved and never inherited by the target; target start waits for helper setup and flushed started. Missing/mismatched ids, setup, malformed, oversized, duplicate, unknown-required, out-of-order, contaminated-stdout, EOF, timeout, cancellation, drop, cleanup, redaction, and pre/post-start phase errors are bounded and terminal, with no second execution and no degraded success.",
       "definition_source": "draft-reviewed",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "16.11.2"
       ],
@@ -1902,6 +1902,11 @@
           "field": "definition_of_done",
           "reason": "Expanded backend conformance to the complete effective-contract and terminal lifecycle defined by execution::v1.",
           "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#State machine"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "The pre-impl design audit (cli-python-smoke-contract lens, wf_971f3d06-a1b) recommended a dedicated Rust test that invokes the product-neutral Python fixture client (tests/fixtures/protocol_client.py) against the REAL opi-sandbox binary, mirroring the repo precedent (crates/opi-coding-agent/tests/artifact_audit_script.rs), so the Python-free isolation smoke (scripts/opi-sandbox-smoke.{sh,ps1}) stays pure. tests/backend_protocol_smoke.rs is that dedicated test; the isolation smoke scripts are intentionally NOT extended.",
+          "source": "audit lens cli-python-smoke-contract (wf_971f3d06-a1b) + crates/opi-coding-agent/tests/artifact_audit_script.rs"
         }
       ],
       "tier": "cli-tool",
@@ -1934,7 +1939,7 @@
             "opi_sandbox::helper start gate",
             "opi_sandbox::SandboxRunner::run"
           ],
-          "status": "open"
+          "status": "met"
         }
       ],
       "production_call_sites": [
@@ -1944,10 +1949,17 @@
         "opi_sandbox::SandboxRunner::run"
       ],
       "substrate_only": false,
-      "iteration_count": 0,
+      "iteration_count": 1,
       "max_iterations": 5,
-      "start_commit": null,
-      "baseline_dirty_files": [],
+      "start_commit": "af27308f2dc78e5563496ab61d1a1c6be9d095ae",
+      "baseline_dirty_files": [
+        ".claude/skills/opi-implement/scripts/phase16-5-design-brief.md",
+        ".claude/skills/opi-implement/scripts/phase16-6-design-brief.md",
+        ".claude/skills/opi-implement/scripts/phase16-7-design-brief.md",
+        ".claude/skills/opi-implement/scripts/phase16-8-design-brief.md",
+        "rust_out.exe",
+        "rust_out.pdb"
+      ],
       "task_owned_paths": [
         "crates/opi-sandbox/src/backend.rs",
         "crates/opi-sandbox/src/helper.rs",
@@ -1960,13 +1972,20 @@
         "crates/opi-sandbox/tests/fixtures/protocol_client.py",
         "crates/opi-sandbox/tests/sdk_contract.rs",
         "scripts/opi-sandbox-smoke.sh",
-        "scripts/opi-sandbox-smoke.ps1"
+        "scripts/opi-sandbox-smoke.ps1",
+        "crates/opi-sandbox/tests/backend_protocol_smoke.rs"
       ],
-      "last_attempt": null,
-      "verified_at_commit": null,
-      "evidence": null,
+      "last_attempt": {
+        "commit": "70f23a185e894dd996ab6dcda0d90cb49ba6b6a4",
+        "outcome": "passed",
+        "iteration": 1
+      },
+      "verified_at_commit": "70f23a185e894dd996ab6dcda0d90cb49ba6b6a4",
+      "evidence": "feat 70f23a1 (8 files: src/{backend,helper,lib,cli}.rs + tests/{protocol_conformance,backend_protocol_smoke,cli_contract}.rs + tests/fixtures/protocol_client.py). Backend --stdio = mirror of the 16.7 host over command-execution-jsonl-v1. async drive(stdin,stdout,bounds,supported,limitations,runner) runs initialize->ready(select first-match)->execute->accepted->helper::start[atomic gate]->started(flushed before output release)->drain(select cancel-frame vs run-poll)->Stdout/Stderr base64 chunks->completed(exit/signal/timed_out/cancelled/cleanup=Confirmed); setup Err or unsupported platform->failed{Handshake}, no target release. Target output is forwarded ONLY as Stdout/Stderr frames (CompletedPayload carries none). Cancel/timeout via a CancellationToken wired into SandboxRequest.cancel, watched through a blocking stdin reader bridged (spawn_blocking+mpsc) to the async drain; mid-drain stdin close is benign (run completes under its own timeout). Every frame echoes the host request id; protocol stdin never reaches the target (StdinPolicy::Null); stdout is pure encode_backend lines (contaminated-stdout asserted by frame-parsing every emitted line). FailureCode table: posture-unsupported/UnsupportedPlatform->Unavailable, InvalidRequest->ProtocolViolation, ProgramNotFound/RestrictionSetup/SpawnFailed->Failed (all Handshake). started vocabulary honest 16.12: placement=host, guarantee=supervised, policy=unrestricted (NEVER restricted/isolated). Real binary negotiates then refuses failed{unavailable,handshake} - proven by backend_protocol_smoke driving the Python fixture client; native success owned by 16.13/16.14.1. Gates: cargo fmt --check --all clean; 72 tests (lib 7, protocol_conformance 13, backend_protocol_smoke 1, sdk_contract 13, crate_boundaries 2, cli_contract 35, standalone_smoke 1); clippy -p opi-sandbox --all-targets -D warnings clean; RUSTDOCFLAGS=-D warnings cargo doc clean; cfg(unix) tests compile out on Windows host, deferred to CI Linux. Pre-impl 7-lens design audit wf_971f3d06-a1b folded 14 must-fix/36 flagged before code. D.2 exec.workflow.js: wf_a0cf920a-176 found 1 must-fix (fmt not re-run after a clippy edit; fixed + mechanically re-verified), wf_a3a90cee-da5 0 must-fix/2 low-flagged (addressed: backend-arm cli::run dispatcher tests + oversized-line test + Opi-Acceptance footer narrowing)/1 rejected (stdin-isolation L-D3 false-positive vs cli_contract execute_stdin_null_target_receives_eof).",
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        "Task 16.12 (atomic helper gate + protocol backend) PASSED iter 1 @70f23a1. Built the BACKEND half of command-execution-jsonl-v1 (mirror of the 16.7 host): backend.rs (async drive/run state machine + blocking-stdin->mpsc bridge + drain select(cancel vs run) + chunked Stdout/Stderr->Completed), helper.rs (atomic start gate + StdinPolicy::Null pin + SetupFailureReason->FailureCode table + honest started vocabulary), cli.rs backend --stdio arm. 12->13 protocol_conformance tests (full ordering + every bounded terminal path at the backend seam incl. oversized), backend_protocol_smoke drives the real binary via a stdlib Python fixture client (negotiation + pre-start failed{unavailable,handshake}), cli_contract +2 backend dispatcher tests. Pre-impl audit wf_971f3d06 folded 14 must-fix. D.2 took 1 iteration: wf_a0cf920a flagged a real fmt-not-rerun evidence-truthfulness must-fix (fixed), wf_a3a90cee clean. SC16-06b met (substrate: native success deferred to 16.13/16.14.1)."
+      ]
     },
     {
       "id": "16.13",
@@ -4114,7 +4133,8 @@
     "16.8 PASSED @88a6d617 (iter2): ExecutionRuntime::build deep assembly (RoutedBashOperations + ProcessCommandAdapter + IdentitySource seam); branch 1 Minimal Runtime returns local_ops by ptr-identity (no store/router/protocol state), branch 2 routed with no local fallback. 14 integration + 4 inline tests. Pre-impl wf_4e169b61 folded 5 must-fix; D.2 iter1 wf_dff8cb89 1 must-fix (host_deadline helper) -> iter2 wf_dac52bfb clean. Phase 16 = 8/21.",
     "16.9 PASSED @92885f6 (iter4): wire ExecutionRuntime::build through CodingHarness::build_tools_with_sandbox (interactive/text/NDJSON/RPC all funnel through it). BashRequest.backend + BashCallArgs(serde)/BashArgs(JsonSchema) split keeps the default schema byte-identical; Eligibility::from_enabled builds the model oneOf backend enum with per-candidate ask-approval descriptions; enabled_identities tolerant resolver; startup build() Err -> diagnostic_from_execution_failure + bash OMITTED (no local fallback); apply_execution_overrides in headless+interactive resolver cores; execution_mode for RPC/NonInteractive. SC16-01/04/07 closed via production-path tests. D.2 exec.workflow.js: pre-impl wf_0a0edff5 (7-lens, ship-with-fixes); iter1 wf_a05ae498 1 must-fix (enabled_identities non-discriminating) +1 flagged (headless resolver) +1 rejected (.execution_mode); iter2 wf_26ba3e0e 1 must-fix (interactive resolver call site) +2 flagged (ask-description, vacuous command); iter3 wf_eaeb44f6 1 must-fix (model backend-value runtime path: bash.rs lift + runtime.rs forwarding untested through BashTool::execute); iter4 wf_1d55daba RATE-LIMITED 429 (6/7 agents failed, resets 20:00) -> INCOMPLETE, not a clean pass. All 3 must-fixes were distinct production-call-site coverage gaps (code correct from Phase 1, D.1-green throughout); each resolved by the demanded test. Verdict rests on iter1-3 clean resolution + verifiable iter3 fix (model_supplied_backend_selects_named_adapter_through_execute passes, backend value controls adapter via mock peer) + all D.1/D.3 gates green. Full iter4 re-verify available after 20:00 reset. Phase 16 = 9/21 tasks passing (16.1-16.9).",
     "16.10 PASSED @44c4140 (iter3): interactive permission broker + TUI prompt. opi-tui PermissionPrompt (3-way allow-once/session/deny) + AwaitingPermission AppState/AppStatus + redaction-safe PermissionSummary + insta snapshots (80x24/120x40 external + 80x24 local). PermissionManager (in-memory session grants, no Serialize/persistence) + InteractivePermissionBroker trait + TuiPermissionBroker (mpsc link, dropped rx/tx -> Deny). Keystone exec interception in RoutedBashOperations: on routed PermissionRequired+Interactive+broker, dispatch DIRECTLY (never re-runs resolve_selection); headless/no-broker -> permission_required (fail-closed). permission_denied un-dead-coded. Harness: broker installed for Interactive only, Arc<PermissionManager> shared, reset_grants at resume/fork/branch. Interactive loop: channel drain, modal key handling (Esc->Deny not abort), poll-gate relaxation, overlay render. Pre-impl 7-lens audit wf_9928510c (43 findings, 7 must-fix) shaped the design. SC16-05 closed. D.2 exec.workflow.js: iter1 wf_5f27e002 1 must-fix (no-persistence only at helper) + 3 flags; iter2 wf_638629c4 resolved -> deeper L-D3 must-fix (loop integration) + 1 flag; iter3 wf_2cfc57fe resolved -> ZERO must-fix (Phase D cleared). 3 advisory flags remain (non-blocking): 1 degenerate opi-tui test kept as regression guard; poll-gate || permission_pending relaxation running+pending state not synthetically driven (idle+pending path IS driven by production_loop_drains_permission_prompt; full end-to-end package-infra-blocked). Snapshots human-reviewed + accepted. Phase 16 = 10/21 tasks passing (16.1-16.10).",
-    "16.11.2 pre-impl 7-lens design audit (wf_0fd0517a-561) RECOVERED FROM JOURNAL after a synthesis bug in the workflow script returned an empty summary (stage-2 returned a bare array vs {lens,verified} object, dropping everything). The journal held all 7 lenses / 51 findings / 32 verify verdicts; 5 verify agents 429'd. Architecture VALIDATED by the rejections: production pre-start refusal on all platforms is correct; doctor Option A (supported=false everywhere in 16.11.2) is spec-faithful; the StdinPolicy C.1a is necessary (no smaller CLI-only approach); the SetupFailed{125} vs Exited{125} collision is unambiguous at the impl layer (lossy only at the shell, per spec L598-599). FOLDS APPLIED (confirmed must_fix + flagged): (1) tripwire narrows the NEEDLE not the scope -> scan src/**/*.rs recursively for [env::var,env::vars,var_os,vars_os,dotenvy], permitting env::args/args_os/consts (strictly stronger than 16.11.1; no brittle allowlist); (2) execute() takes injectable AsyncWrite sinks so byte-exact non-UTF8 stdout/stderr + exit mapping are testable without process-stdout capture; (3) pure build_request(&RunCommand)->SandboxRequest seam gives a structural stdin==Inherit proof (OS-stdin byte-flow is infeasible in-process + production refuses); (4) Posture carries doctor metadata (supported/mechanisms/limitations + optional restriction) so doctor is a pure serializer (no split brain, forward-compatible with 16.13/14.1); (5) hand-roll stream polling via std::future::poll_fn + hand-roll doctor JSON -> NO new deps, NO Cargo.toml change (bin auto-discovers from main.rs); (6) hand-rolled parser edge matrix (missing --, empty PROGRAM, unknown profile/network, dup/unknown flags, -- terminates) each -> exit 2; (7) parse validates timeout>0 + workspace -> exit 2 (usage) so runner InvalidRequest is unreachable; SetupFailed{ProgramNotFound|RestrictionSetup|SpawnFailed|UnsupportedPlatform}->125; (8) scripts do their OWN isolation (PATH scrub + sentinel env HOME/APPDATA/XDG_CONFIG_HOME/OPI_* + canary), pin run-exit==125, parse doctor JSON (supported=false/empty mechanisms), persist artifacts the test reads back, wrap expected-125 run against set -e; (9) --workspace/--profile/--network REQUIRED (spec grammar unbracketed); fixed default timeout (large finite, documented); doctor --unknown/extra->2, internal->1; (10) per-platform pinned limitations strings; target=std::env::consts::OS. C.1a appends (4 files, 16.11.1-owned, with inference_notes): runner.rs (StdinPolicy), sdk_contract.rs (literal fallout), crate_boundaries.rs (narrowed-needle tripwire), lib.rs (StdinPolicy re-export + doc). lib.rs doc 'mirrors ExecutePayload' narrowed: stdin is a local concern (ExecutePayload has no stdin)."
+    "16.11.2 pre-impl 7-lens design audit (wf_0fd0517a-561) RECOVERED FROM JOURNAL after a synthesis bug in the workflow script returned an empty summary (stage-2 returned a bare array vs {lens,verified} object, dropping everything). The journal held all 7 lenses / 51 findings / 32 verify verdicts; 5 verify agents 429'd. Architecture VALIDATED by the rejections: production pre-start refusal on all platforms is correct; doctor Option A (supported=false everywhere in 16.11.2) is spec-faithful; the StdinPolicy C.1a is necessary (no smaller CLI-only approach); the SetupFailed{125} vs Exited{125} collision is unambiguous at the impl layer (lossy only at the shell, per spec L598-599). FOLDS APPLIED (confirmed must_fix + flagged): (1) tripwire narrows the NEEDLE not the scope -> scan src/**/*.rs recursively for [env::var,env::vars,var_os,vars_os,dotenvy], permitting env::args/args_os/consts (strictly stronger than 16.11.1; no brittle allowlist); (2) execute() takes injectable AsyncWrite sinks so byte-exact non-UTF8 stdout/stderr + exit mapping are testable without process-stdout capture; (3) pure build_request(&RunCommand)->SandboxRequest seam gives a structural stdin==Inherit proof (OS-stdin byte-flow is infeasible in-process + production refuses); (4) Posture carries doctor metadata (supported/mechanisms/limitations + optional restriction) so doctor is a pure serializer (no split brain, forward-compatible with 16.13/14.1); (5) hand-roll stream polling via std::future::poll_fn + hand-roll doctor JSON -> NO new deps, NO Cargo.toml change (bin auto-discovers from main.rs); (6) hand-rolled parser edge matrix (missing --, empty PROGRAM, unknown profile/network, dup/unknown flags, -- terminates) each -> exit 2; (7) parse validates timeout>0 + workspace -> exit 2 (usage) so runner InvalidRequest is unreachable; SetupFailed{ProgramNotFound|RestrictionSetup|SpawnFailed|UnsupportedPlatform}->125; (8) scripts do their OWN isolation (PATH scrub + sentinel env HOME/APPDATA/XDG_CONFIG_HOME/OPI_* + canary), pin run-exit==125, parse doctor JSON (supported=false/empty mechanisms), persist artifacts the test reads back, wrap expected-125 run against set -e; (9) --workspace/--profile/--network REQUIRED (spec grammar unbracketed); fixed default timeout (large finite, documented); doctor --unknown/extra->2, internal->1; (10) per-platform pinned limitations strings; target=std::env::consts::OS. C.1a appends (4 files, 16.11.1-owned, with inference_notes): runner.rs (StdinPolicy), sdk_contract.rs (literal fallout), crate_boundaries.rs (narrowed-needle tripwire), lib.rs (StdinPolicy re-export + doc). lib.rs doc 'mirrors ExecutePayload' narrowed: stdin is a local concern (ExecutePayload has no stdin).",
+    "16.12 PASSED iter 1 @70f23a1 (protocol backend --stdio + atomic helper gate). Pre-impl audit wf_971f3d06 (14 mf/36 fl); D.2 wf_a0cf920a 1 fmt must-fix (fixed) -> wf_a3a90cee clean. SC16-06b substrate met. 2026-08-03T03:07:41Z"
   ],
   "verify_runs": [
     {
@@ -4369,6 +4389,36 @@
       "rejected_count": 0,
       "ran_at": "2026-08-02T19:10:27Z",
       "task_id": "16.11.2",
+      "criterion_id": null
+    },
+    {
+      "stage": "plan",
+      "wf_ref": "wf_971f3d06-a1b",
+      "folded_count": 14,
+      "flagged_count": 36,
+      "rejected_count": 0,
+      "ran_at": "2026-08-03T03:07:41Z",
+      "task_id": "16.12",
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": "wf_a0cf920a-176",
+      "folded_count": 1,
+      "flagged_count": 0,
+      "rejected_count": 0,
+      "ran_at": "2026-08-03T03:07:41Z",
+      "task_id": "16.12",
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": "wf_a3a90cee-da5",
+      "folded_count": 0,
+      "flagged_count": 2,
+      "rejected_count": 1,
+      "ran_at": "2026-08-03T03:07:41Z",
+      "task_id": "16.12",
       "criterion_id": null
     }
   ]
