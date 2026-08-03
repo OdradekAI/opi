@@ -2314,7 +2314,7 @@
       "definition_of_done": "On Windows, opi-sandbox --help and --version succeed, doctor --json reports the stable unsupported restriction contract, direct run returns pre-start failure before a target marker can start, and built-in local Opi execution reports supervised rather than restricted. Selecting an absent or target-mismatched opi-sandbox package fails before command execution. Official artifact topology and the preserved six-target Opi matrix are closed by 16.15.2.",
       "definition_source": "draft-reviewed",
       "replaces": "Pin the Windows unsupported and release posture",
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "16.9",
         "16.12",
@@ -2350,6 +2350,10 @@
           "field": "replaces",
           "reason": "Release-artifact topology moved to 16.15.2, so this task title now names only the Windows executable posture it owns.",
           "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Native platform contract"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "C.1a (16.14.2 clause-4): add the constant local execution-backend guarantee/placement report (guarantee=supervised, placement=host) to bash_operation_context_diagnostic, the local path in-band report medium (the diagnostic is filtered from the agent ToolResult at bash.rs:295, which is spec-correct: local cannot init protocol state per spec lines 195-197). Folded from design-audit MF-1 (option a mandated; option b rejected: crosses opi-agent crate boundary, shared local+routed would overclaim supervised on the restricted path)."
         }
       ],
       "tier": "workspace",
@@ -2393,20 +2397,27 @@
         "LocalBashOperations::exec"
       ],
       "substrate_only": false,
-      "iteration_count": 0,
+      "iteration_count": 1,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "8519c10e3155a9bef642609f3024f7298936996a",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "crates/opi-sandbox/src/platform/windows.rs",
         "crates/opi-sandbox/tests/cli_contract.rs",
-        "crates/opi-coding-agent/tests/windows_execution_posture.rs"
+        "crates/opi-coding-agent/tests/windows_execution_posture.rs",
+        "crates/opi-coding-agent/src/tool/operations.rs"
       ],
-      "last_attempt": null,
-      "verified_at_commit": null,
-      "evidence": null,
+      "last_attempt": {
+        "commit": "f4e1c332390eefad2f69b3647af460485fbcd987",
+        "outcome": "passed",
+        "iteration": 1
+      },
+      "verified_at_commit": "f4e1c332390eefad2f69b3647af460485fbcd987",
+      "evidence": "feat f4e1c33 (3 files: opi-coding-agent/src/tool/operations.rs + tests/windows_execution_posture.rs (NEW) + opi-sandbox/tests/cli_contract.rs). Windows unsupported execution posture pinned. Clause 4 (production change): built-in local exec reports guarantee=supervised/placement=host as a compile-time CONSTANT in the operation_context diagnostic (option a; option b rejected: crosses opi-agent boundary + shared local+routed would overclaim supervised on the restricted path). The report medium is BashResult.diagnostics (the local path cannot init protocol state, spec 195-197; filtered from the agent ToolResult at bash.rs:295). Clause 3 (test): cfg-branched marker-WRITING target pre-start refusal pin (marker absent off-Linux). Clause 5 (tests): absent->package_not_installed (real empty store) + target-mismatched->package_untrusted (real post-install manifest tamper -> IncompatibleTarget), both through ProcessCommandAdapter::exec with call_count()==0 no-fallback. windows.rs posture affirmed stable (no edit). Pre-impl 7-lens design audit wf_5ba8b59c-83f folded 4 must-fix/12 flagged/9 info before coding. D.2 exec-verify wf_fef0c172-577 clean (6 lenses findings:[], 0/0/0). Host-Windows D.1/D.3: fmt/clippy --workspace --all-targets/doc -D warnings clean; cli_contract 36/36, windows_execution_posture 3/3, bash_backend_diagnostics 3/3, execution_runtime 11/11, opi-coding-agent lib 151/151. SC16-12a closed.",
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        "Task 16.14.2 (Windows unsupported execution posture) PASSED iter 1 @f4e1c33. Clause 4 production change: local exec reports guarantee=supervised/placement=host as a constant in the operation_context diagnostic (option a mandated by design audit; option b rejected). Clauses 3+5 test pins. Pre-impl 7-lens audit wf_5ba8b59c-83f folded 4 must-fix (clause-4 surface disambig + constant value; clause-3 cfg-branch + marker-writer; clause-5b real IncompatibleTarget tamper not MockSource; clause-5 no-local-fallback via call_count==0). D.2 wf_fef0c172-577 clean. Unblocks 16.15.2 once 16.14.1 (macOS) lands."
+      ]
     },
     {
       "id": "16.15.1",
@@ -4208,7 +4219,8 @@
     "16.11.2 pre-impl 7-lens design audit (wf_0fd0517a-561) RECOVERED FROM JOURNAL after a synthesis bug in the workflow script returned an empty summary (stage-2 returned a bare array vs {lens,verified} object, dropping everything). The journal held all 7 lenses / 51 findings / 32 verify verdicts; 5 verify agents 429'd. Architecture VALIDATED by the rejections: production pre-start refusal on all platforms is correct; doctor Option A (supported=false everywhere in 16.11.2) is spec-faithful; the StdinPolicy C.1a is necessary (no smaller CLI-only approach); the SetupFailed{125} vs Exited{125} collision is unambiguous at the impl layer (lossy only at the shell, per spec L598-599). FOLDS APPLIED (confirmed must_fix + flagged): (1) tripwire narrows the NEEDLE not the scope -> scan src/**/*.rs recursively for [env::var,env::vars,var_os,vars_os,dotenvy], permitting env::args/args_os/consts (strictly stronger than 16.11.1; no brittle allowlist); (2) execute() takes injectable AsyncWrite sinks so byte-exact non-UTF8 stdout/stderr + exit mapping are testable without process-stdout capture; (3) pure build_request(&RunCommand)->SandboxRequest seam gives a structural stdin==Inherit proof (OS-stdin byte-flow is infeasible in-process + production refuses); (4) Posture carries doctor metadata (supported/mechanisms/limitations + optional restriction) so doctor is a pure serializer (no split brain, forward-compatible with 16.13/14.1); (5) hand-roll stream polling via std::future::poll_fn + hand-roll doctor JSON -> NO new deps, NO Cargo.toml change (bin auto-discovers from main.rs); (6) hand-rolled parser edge matrix (missing --, empty PROGRAM, unknown profile/network, dup/unknown flags, -- terminates) each -> exit 2; (7) parse validates timeout>0 + workspace -> exit 2 (usage) so runner InvalidRequest is unreachable; SetupFailed{ProgramNotFound|RestrictionSetup|SpawnFailed|UnsupportedPlatform}->125; (8) scripts do their OWN isolation (PATH scrub + sentinel env HOME/APPDATA/XDG_CONFIG_HOME/OPI_* + canary), pin run-exit==125, parse doctor JSON (supported=false/empty mechanisms), persist artifacts the test reads back, wrap expected-125 run against set -e; (9) --workspace/--profile/--network REQUIRED (spec grammar unbracketed); fixed default timeout (large finite, documented); doctor --unknown/extra->2, internal->1; (10) per-platform pinned limitations strings; target=std::env::consts::OS. C.1a appends (4 files, 16.11.1-owned, with inference_notes): runner.rs (StdinPolicy), sdk_contract.rs (literal fallout), crate_boundaries.rs (narrowed-needle tripwire), lib.rs (StdinPolicy re-export + doc). lib.rs doc 'mirrors ExecutePayload' narrowed: stdin is a local concern (ExecutePayload has no stdin).",
     "16.12 PASSED iter 1 @70f23a1 (protocol backend --stdio + atomic helper gate). Pre-impl audit wf_971f3d06 (14 mf/36 fl); D.2 wf_a0cf920a 1 fmt must-fix (fixed) -> wf_a3a90cee clean. SC16-06b substrate met. 2026-08-03T03:07:41Z",
     "Task 16.15.1 host-neutral opi-sandbox packaging PASSED @7a6f848 (iter1; D.2 wf_532c923d clean). Unblocks 16.13/16.14.1/16.14.2.",
-    "Task 16.13 Linux native restriction port PASSED @0a6a94c (iter1; D.2 wf_16d3e088 1 L-D4 footer-tense resolved by amend to passed). WSL2-verified (kernel 6.18 / Landlock ABI 7). 15 files incl. 8 C.1a appends (forbid-unsafe forces FFI into process_tree; Linux-supported flip forces smoke/backend/cli test flips). Unblocks 16.14.1/16.14.2/16.15.2."
+    "Task 16.13 Linux native restriction port PASSED @0a6a94c (iter1; D.2 wf_16d3e088 1 L-D4 footer-tense resolved by amend to passed). WSL2-verified (kernel 6.18 / Landlock ABI 7). 15 files incl. 8 C.1a appends (forbid-unsafe forces FFI into process_tree; Linux-supported flip forces smoke/backend/cli test flips). Unblocks 16.14.1/16.14.2/16.15.2.",
+    "Task 16.14.2 Windows unsupported execution posture PASSED @f4e1c33 (iter1; D.2 wf_fef0c172-577 0/0/0). Clause 4: local exec reports guarantee=supervised as a constant in the operation_context diagnostic (report surface is BashResult.diagnostics, NOT the agent ToolResult). Clauses 3+5 test pins (marker-absence pre-start refusal; absent/target-mismatched package fail-fast, no local fallback). 16/21 Phase 16 tasks passing; next unblocked 16.14.1 (macOS, needs GHA macOS)."
   ],
   "verify_runs": [
     {
@@ -4533,6 +4545,26 @@
       "rejected_count": 0,
       "ran_at": "2026-08-03T06:42:38Z",
       "task_id": "16.13",
+      "criterion_id": null
+    },
+    {
+      "stage": "plan",
+      "wf_ref": "wf_5ba8b59c-83f",
+      "folded_count": 4,
+      "flagged_count": 12,
+      "rejected_count": 0,
+      "ran_at": "2026-08-03T09:11:07Z",
+      "task_id": "16.14.2",
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": "wf_fef0c172-577",
+      "folded_count": 0,
+      "flagged_count": 0,
+      "rejected_count": 0,
+      "ran_at": "2026-08-03T09:11:07Z",
+      "task_id": "16.14.2",
       "criterion_id": null
     }
   ]
