@@ -2199,7 +2199,7 @@
       "definition_of_done": "On native supported macOS, workspace and extracted-archive opi-sandbox direct run and backend --stdio use the audited Phase 15 sandbox-exec profile and in-profile start gate, enforce workspace/temp writes, outside-write denial, outside-read allowance, and network deny/allow, fail before target start when sandbox-exec is missing or rejected, report legacy/experimental limitations, and run standalone smoke without Opi state with package target/protocol/hash matching extracted bytes.",
       "definition_source": "draft-reviewed",
       "replaces": null,
-      "status": "failing",
+      "status": "in_progress",
       "depends_on": [
         "16.12",
         "16.15.1"
@@ -2234,6 +2234,10 @@
           "field": "verification",
           "reason": "Replaced prose archive verification with exact build, package, extracted-binary, and artifact-directory commands.",
           "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Standalone CLI acceptance"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "C.1a append: 16.14.1 owns the macOS posture flip, whose full owned surface was folded by the pre-impl design audit wf_bda2df90-e2f. policy.rs (Mechanism::Seatbelt + LauncherSpec + launcher() default + trait doc), cli.rs (mechanism_name Seatbelt arm + BOTH doctor test gates), helper.rs (started_payload Seatbelt arm + test), platform/mod.rs (current() macOS dispatch + default_unix_posture cfg narrowing + stale '16.14.1' string drop), runner.rs (launcher branch -- Option A, DoD-required not optional), lib.rs (restriction-scope doc), standalone_smoke.rs + cli_contract.rs(2 tests) + fixtures/protocol_client.py (the four ci.yml-macOS posture-flip tests, 16.13 pattern), scripts/opi-sandbox-smoke.sh (macOS doctor/run branch), and the new .github/workflows/sandbox-macos-phase16.yml (focused macos-latest verifier)."
         }
       ],
       "tier": "cli-tool",
@@ -2291,15 +2295,30 @@
         "macOS package CI job"
       ],
       "substrate_only": false,
-      "iteration_count": 0,
+      "iteration_count": 1,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "825084dea9e4f93b9b82a0b6a79af44936295fc1",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "crates/opi-sandbox/src/platform/macos.rs",
-        "crates/opi-sandbox/tests/macos_policy.rs"
+        "crates/opi-sandbox/tests/macos_policy.rs",
+        "crates/opi-sandbox/src/policy.rs",
+        "crates/opi-sandbox/src/cli.rs",
+        "crates/opi-sandbox/src/helper.rs",
+        "crates/opi-sandbox/src/platform/mod.rs",
+        "crates/opi-sandbox/src/runner.rs",
+        "crates/opi-sandbox/src/lib.rs",
+        "crates/opi-sandbox/tests/standalone_smoke.rs",
+        "crates/opi-sandbox/tests/cli_contract.rs",
+        "crates/opi-sandbox/tests/fixtures/protocol_client.py",
+        "scripts/opi-sandbox-smoke.sh",
+        ".github/workflows/sandbox-macos-phase16.yml"
       ],
-      "last_attempt": null,
+      "last_attempt": {
+        "commit": "fa345f9",
+        "outcome": "substrate-landed-host-green-macos-deferred",
+        "iteration": 1
+      },
       "verified_at_commit": null,
       "evidence": null,
       "blocker": null,
@@ -4220,7 +4239,9 @@
     "16.12 PASSED iter 1 @70f23a1 (protocol backend --stdio + atomic helper gate). Pre-impl audit wf_971f3d06 (14 mf/36 fl); D.2 wf_a0cf920a 1 fmt must-fix (fixed) -> wf_a3a90cee clean. SC16-06b substrate met. 2026-08-03T03:07:41Z",
     "Task 16.15.1 host-neutral opi-sandbox packaging PASSED @7a6f848 (iter1; D.2 wf_532c923d clean). Unblocks 16.13/16.14.1/16.14.2.",
     "Task 16.13 Linux native restriction port PASSED @0a6a94c (iter1; D.2 wf_16d3e088 1 L-D4 footer-tense resolved by amend to passed). WSL2-verified (kernel 6.18 / Landlock ABI 7). 15 files incl. 8 C.1a appends (forbid-unsafe forces FFI into process_tree; Linux-supported flip forces smoke/backend/cli test flips). Unblocks 16.14.1/16.14.2/16.15.2.",
-    "Task 16.14.2 Windows unsupported execution posture PASSED @f4e1c33 (iter1; D.2 wf_fef0c172-577 0/0/0). Clause 4: local exec reports guarantee=supervised as a constant in the operation_context diagnostic (report surface is BashResult.diagnostics, NOT the agent ToolResult). Clauses 3+5 test pins (marker-absence pre-start refusal; absent/target-mismatched package fail-fast, no local fallback). 16/21 Phase 16 tasks passing; next unblocked 16.14.1 (macOS, needs GHA macOS)."
+    "Task 16.14.2 Windows unsupported execution posture PASSED @f4e1c33 (iter1; D.2 wf_fef0c172-577 0/0/0). Clause 4: local exec reports guarantee=supervised as a constant in the operation_context diagnostic (report surface is BashResult.diagnostics, NOT the agent ToolResult). Clauses 3+5 test pins (marker-absence pre-start refusal; absent/target-mismatched package fail-fast, no local fallback). 16/21 Phase 16 tasks passing; next unblocked 16.14.1 (macOS, needs GHA macOS).",
+    "Task 16.14.1 pre-impl 7-lens design audit wf_bda2df90-e2f folded 8 must-fix / 22 flagged. Keystone: Option A (Restriction::launcher() default method; runner builds launcher cmd before applying cwd/stdio/env/tree) is REQUIRED by the DoD (not optional) -- macOS prepare() is a no-op-on-cmd reporting Seatbelt/Restricted; the launcher installs sandbox-exec. Fold reframes the owned surface: (a) pure-profile invariants go INLINE in macos.rs (platform is pub(crate); integration test cannot reach them), NOT in macos_policy.rs; (b) NO file-level cfg on macos.rs -- mirror the 15.5.4 substrate (runtime items individually cfg(target_os=macos), pure model uncfg'd), NOT linux.rs's file-level cfg (would silently 0-test on Windows); (c) network-deny sentinel must BIND not socket() ((deny network*) blocks bind/connect not socket creation); (d) flipping macOS to supported=true breaks FOUR ci.yml-macOS tests (standalone_smoke.rs assert_artifacts, cli_contract.rs run_dispatch_valid_argv + run_dispatch_refuses_before_target_marker, protocol_client.py SUPPORTED) -- C.1a-appended in the substrate commit (16.13 pattern); (e) BOTH cli.rs doctor tests gate to not(any(linux,macos)); (f) drop the stale 'lands in 16.14.1' default_unix_posture arm + narrow its cfg; (g) mechanism wire name pinned 'seatbelt'; (h) limitations() must include soft-deprecation + L3-unavailable + host-reads-unrestricted. Host-verifiable (Windows): pure-model inline tests + Seatbelt dispatch/launcher/helper compile + fmt/clippy/doc. macOS-deferred (focused GHA macos-latest, widened to opi-sandbox --all-targets + SC16-09b archive steps): cfg(target_os=macos) behavioral sentinels + standalone archive.",
+    "Task 16.14.1 substrate committed fa345f9 (NEUTRAL, Opi-Evaluator: pending): opi-sandbox macOS sandbox-exec/Seatbelt port. Keystone seam = Restriction::launcher() default (runner builds cmd around the launcher; macOS prepare no-op-reports Seatbelt/Restricted); pure profile model inline-tested on every host (cfg(any(macos,test))), runtime cfg(macos). Pre-impl audit wf_bda2df90-e2f folded 8/22; D.2 wf_637ec584-50c 0 must-fix / 3 low flagged (folded: default_unix_posture cfg-narrow+macOS-arm drop [a macOS -D-warnings dead-code break invisible on Windows], macos_policy coverage-comment two-link correction, footer test-count 7->8). HOST gates green on Windows (fmt/clippy --all-targets/doc -D warnings; 82 tests incl 8 macos pure-model). BLOCKED on the macOS runtime half + SC16-09b-macos: cfg(macos) macos_policy sentinels + standalone archive run ONLY on a macOS kernel, verified via focused GHA macos-latest (sandbox-macos-phase16.yml) which requires a USER-AUTHORIZED PUSH (origin SSH). After GHA green: amend fa345f9 to Opi-Evaluator: passed + flip ledger 16.14.1 to passing + checkpoint."
   ],
   "verify_runs": [
     {
@@ -4565,6 +4586,26 @@
       "rejected_count": 0,
       "ran_at": "2026-08-03T09:11:07Z",
       "task_id": "16.14.2",
+      "criterion_id": null
+    },
+    {
+      "stage": "plan",
+      "wf_ref": "wf_bda2df90-e2f",
+      "folded_count": 8,
+      "flagged_count": 22,
+      "rejected_count": 0,
+      "ran_at": "2026-08-03T10:26:25Z",
+      "task_id": "16.14.1",
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": "wf_637ec584-50c",
+      "folded_count": 0,
+      "flagged_count": 3,
+      "rejected_count": 0,
+      "ran_at": "2026-08-03T11:00:19Z",
+      "task_id": "16.14.1",
       "criterion_id": null
     }
   ]
