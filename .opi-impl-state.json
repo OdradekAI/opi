@@ -1996,7 +1996,7 @@
       "definition_of_done": "On native supported Linux, the direct and extracted-archive opi-sandbox binaries enforce the audited Phase 15 Landlock ABI 4 filesystem/TCP behavior, fixed seccomp danger and socket/io_uring restrictions, closure of inherited nonessential descriptors, AF_UNIX/required-stdio preservation, start gate, path relativization, and documented limitations before target start; direct run and backend --stdio positive/negative filesystem/network sentinels pass, package target/protocol/hash match extracted bytes, and no Opi binary or state is required.",
       "definition_source": "draft-reviewed",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "16.12",
         "16.15.1"
@@ -2051,6 +2051,56 @@
           "field": "verification",
           "reason": "Replaced prose archive verification with exact build, package, extracted-binary, and artifact-directory commands.",
           "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Standalone CLI acceptance"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Mechanism::{Landlock,Seccomp} + ContractStatus::Restricted + RestrictionCtx for prepare are required to report the native contract honestly (spec ### Linux, ### Common profile); the seam is the integration point the task-owned runner calls.",
+          "source": "Phase 16 task 16.13 pre-impl design-audit fold (wf_e03e0e6e-c84)"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "The 3-arm cfg current() dispatch + #[cfg(target_os=\"linux\")] mod linux route to the native leaf; a naive append leaves default_unix_posture as dead_code on Linux under -D warnings (design-audit fold).",
+          "source": "Phase 16 task 16.13 pre-impl design-audit fold (wf_e03e0e6e-c84)"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "started_payload match on Mechanism must add Landlock/Seccomp arms returning the honest (supervised,restricted) vocabulary or the match is non-exhaustive on the Linux build (crate vocabulary contract).",
+          "source": "Phase 16 task 16.13 pre-impl design-audit fold (wf_e03e0e6e-c84)"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "mechanism_name must add Landlock/Seccomp arms so doctor reports the installed mechanisms or the match is non-exhaustive on the Linux build.",
+          "source": "Phase 16 task 16.13 pre-impl design-audit fold (wf_e03e0e6e-c84)"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "platform/mod.rs #![forbid(unsafe_code)] propagates to platform/linux.rs and cannot be overridden (Phase 15 trap, opi-coding-agent sandbox/linux.rs:36-38), so the audited unsafe confinement FFI (observed_landlock_abi + install_child_confinement + net-new fd-closure) MUST live in process_tree.rs, the crate documented FFI home (design-audit fold).",
+          "source": "Phase 16 task 16.13 pre-impl design-audit fold (wf_e03e0e6e-c84)"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "The script is hardcoded to the 16.11.2 unsupported posture (supported:false, mechanisms:[], run 125); its own comment attributes the Linux flip to 16.13; the Linux arm must expect supported:true + mechanisms + run exit 0 (spec ### Standalone CLI acceptance).",
+          "source": "Phase 16 task 16.13 pre-impl design-audit fold (wf_e03e0e6e-c84)"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "assert_artifacts hardcodes the unsupported assertions and is shared by the unix+windows arms; it must become cfg-OS-aware in lockstep with the smoke.sh Linux flip or the Linux gate breaks (design-audit fold).",
+          "source": "Phase 16 task 16.13 pre-impl design-audit fold (wf_e03e0e6e-c84)"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Latent unix-only clippy::unnecessary_cast (SIGTERM as i32) in a #[cfg(unix)] test, invisible during 16.12 Windows clippy; surfaced by 16.13 first opi-sandbox Linux clippy run. Trivial correct fix (drop the redundant cast) required to unblock the D.1 clippy gate. Not a behavior change.",
+          "source": "Phase 16 task 16.13 D.1 Linux clippy gate (wf_e03e0e6e-c84 design audit did not surface this; it is a build-gate discovery)"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "16.13 flips Linux to supported, so the 16.12 backend_protocol_smoke pre-start-refusal expectation only holds off-Linux; the test name + doc must reflect the OS-aware contract (refusal off-Linux, confined success on Linux) and it drives the rewritten OS-aware fixture.",
+          "source": "Phase 16 task 16.13 D.1 (16.13 Linux-supported flip changes 16.12 backend behavior; surfaced by the WSL2 full opi-sandbox test run)"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "16.13 Linux support changes the backend execute outcome from a pre-start refusal to a confined successful run (started{supervised,restricted} -> completed); the fixture must be OS-aware (real temp workspace + started/completed assertions on Linux; the 16.12 unavailable/handshake refusal off-Linux). This is the DoD backend --stdio positive sentinel on Linux.",
+          "source": "Phase 16 task 16.13 D.1 (16.13 Linux-supported flip changes 16.12 backend behavior; surfaced by the WSL2 full opi-sandbox test run)"
         }
       ],
       "tier": "cli-tool",
@@ -2108,21 +2158,37 @@
         "Linux package CI job"
       ],
       "substrate_only": false,
-      "iteration_count": 0,
+      "iteration_count": 1,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "874957ed33f39cff5fecc862b153e0c565a3bf97",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "crates/opi-sandbox/Cargo.toml",
         "crates/opi-sandbox/src/platform/linux.rs",
         "crates/opi-sandbox/src/runner.rs",
-        "crates/opi-sandbox/tests/linux_policy.rs"
+        "crates/opi-sandbox/tests/linux_policy.rs",
+        "crates/opi-sandbox/src/policy.rs",
+        "crates/opi-sandbox/src/platform/mod.rs",
+        "crates/opi-sandbox/src/helper.rs",
+        "crates/opi-sandbox/src/cli.rs",
+        "crates/opi-sandbox/src/process_tree.rs",
+        "scripts/opi-sandbox-smoke.sh",
+        "crates/opi-sandbox/tests/standalone_smoke.rs",
+        "crates/opi-sandbox/tests/cli_contract.rs",
+        "crates/opi-sandbox/tests/backend_protocol_smoke.rs",
+        "crates/opi-sandbox/tests/fixtures/protocol_client.py"
       ],
-      "last_attempt": null,
-      "verified_at_commit": null,
-      "evidence": null,
+      "last_attempt": {
+        "commit": "0a6a94c095fe215f8c9b43d49d35fd3b65ace683",
+        "outcome": "passed",
+        "iteration": 1
+      },
+      "verified_at_commit": "0a6a94c095fe215f8c9b43d49d35fd3b65ace683",
+      "evidence": "feat 0a6a94c (15 files: Cargo.lock + opi-sandbox Cargo.toml/src/{policy,runner,helper,cli,process_tree,platform/{mod,linux}}.rs + tests/{linux_policy,standalone_smoke,cli_contract,backend_protocol_smoke,fixtures/protocol_client.py} + scripts/opi-sandbox-smoke.sh). Linux native Landlock+seccomp restriction ported onto the opi-sandbox Restriction seam: platform/linux.rs (safe, parent-side plan) + process_tree.rs cfg-linux FFI (observed_landlock_abi + pre_exec: seccomp apply -> Landlock restrict_self fs/net -> inherited-fd closure LAST, preserve stdio+AF_UNIX via getsockopt SO_DOMAIN). Fail-closed (no Phase 15 require=false fail-open); network=deny needs ABI>=4. io_uring_setup/enter denied for network=deny (DoD enhancement over Phase 15 residual). D.1 on WSL2 (kernel 6.18, Landlock ABI 7): fmt/clippy/doc clean; 88 opi-sandbox tests; 4 gates (linux_policy 11/11, release build, package x86_64-unknown-linux-gnu sha256 68d2dc6c..., smoke run-exit 0 + doctor supported+landlock+seccomp). Windows: clippy clean, 73 tests (linux_policy cfg-gates to 0; OS-aware backend/smoke/cli run the unsupported path). D.2 exec.workflow.js wf_16d3e088-c32: 1 medium must-fix L-D4 footer-tense (resolved by amend to passed); 0 flagged; 0 rejected; 5/6 lenses clean.",
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        "Task 16.13 (Linux native restriction port) PASSED iter 1 @0a6a94c. Ported Phase 15 Landlock+seccomp onto the opi-sandbox Restriction seam (fail-closed; FFI in process_tree per forbid-propagation; pre_exec order seccomp->restrict_self->fd-closure; io_uring denied for network=deny). D.1 on WSL2: 88 tests + 4 gates green. D.2 wf_16d3e088: 1 L-D4 footer-tense must-fix resolved by amend to passed. Unblocks 16.14.1 (macOS), 16.14.2 (Windows), 16.15.2."
+      ]
     },
     {
       "id": "16.14.1",
@@ -4141,7 +4207,8 @@
     "16.10 PASSED @44c4140 (iter3): interactive permission broker + TUI prompt. opi-tui PermissionPrompt (3-way allow-once/session/deny) + AwaitingPermission AppState/AppStatus + redaction-safe PermissionSummary + insta snapshots (80x24/120x40 external + 80x24 local). PermissionManager (in-memory session grants, no Serialize/persistence) + InteractivePermissionBroker trait + TuiPermissionBroker (mpsc link, dropped rx/tx -> Deny). Keystone exec interception in RoutedBashOperations: on routed PermissionRequired+Interactive+broker, dispatch DIRECTLY (never re-runs resolve_selection); headless/no-broker -> permission_required (fail-closed). permission_denied un-dead-coded. Harness: broker installed for Interactive only, Arc<PermissionManager> shared, reset_grants at resume/fork/branch. Interactive loop: channel drain, modal key handling (Esc->Deny not abort), poll-gate relaxation, overlay render. Pre-impl 7-lens audit wf_9928510c (43 findings, 7 must-fix) shaped the design. SC16-05 closed. D.2 exec.workflow.js: iter1 wf_5f27e002 1 must-fix (no-persistence only at helper) + 3 flags; iter2 wf_638629c4 resolved -> deeper L-D3 must-fix (loop integration) + 1 flag; iter3 wf_2cfc57fe resolved -> ZERO must-fix (Phase D cleared). 3 advisory flags remain (non-blocking): 1 degenerate opi-tui test kept as regression guard; poll-gate || permission_pending relaxation running+pending state not synthetically driven (idle+pending path IS driven by production_loop_drains_permission_prompt; full end-to-end package-infra-blocked). Snapshots human-reviewed + accepted. Phase 16 = 10/21 tasks passing (16.1-16.10).",
     "16.11.2 pre-impl 7-lens design audit (wf_0fd0517a-561) RECOVERED FROM JOURNAL after a synthesis bug in the workflow script returned an empty summary (stage-2 returned a bare array vs {lens,verified} object, dropping everything). The journal held all 7 lenses / 51 findings / 32 verify verdicts; 5 verify agents 429'd. Architecture VALIDATED by the rejections: production pre-start refusal on all platforms is correct; doctor Option A (supported=false everywhere in 16.11.2) is spec-faithful; the StdinPolicy C.1a is necessary (no smaller CLI-only approach); the SetupFailed{125} vs Exited{125} collision is unambiguous at the impl layer (lossy only at the shell, per spec L598-599). FOLDS APPLIED (confirmed must_fix + flagged): (1) tripwire narrows the NEEDLE not the scope -> scan src/**/*.rs recursively for [env::var,env::vars,var_os,vars_os,dotenvy], permitting env::args/args_os/consts (strictly stronger than 16.11.1; no brittle allowlist); (2) execute() takes injectable AsyncWrite sinks so byte-exact non-UTF8 stdout/stderr + exit mapping are testable without process-stdout capture; (3) pure build_request(&RunCommand)->SandboxRequest seam gives a structural stdin==Inherit proof (OS-stdin byte-flow is infeasible in-process + production refuses); (4) Posture carries doctor metadata (supported/mechanisms/limitations + optional restriction) so doctor is a pure serializer (no split brain, forward-compatible with 16.13/14.1); (5) hand-roll stream polling via std::future::poll_fn + hand-roll doctor JSON -> NO new deps, NO Cargo.toml change (bin auto-discovers from main.rs); (6) hand-rolled parser edge matrix (missing --, empty PROGRAM, unknown profile/network, dup/unknown flags, -- terminates) each -> exit 2; (7) parse validates timeout>0 + workspace -> exit 2 (usage) so runner InvalidRequest is unreachable; SetupFailed{ProgramNotFound|RestrictionSetup|SpawnFailed|UnsupportedPlatform}->125; (8) scripts do their OWN isolation (PATH scrub + sentinel env HOME/APPDATA/XDG_CONFIG_HOME/OPI_* + canary), pin run-exit==125, parse doctor JSON (supported=false/empty mechanisms), persist artifacts the test reads back, wrap expected-125 run against set -e; (9) --workspace/--profile/--network REQUIRED (spec grammar unbracketed); fixed default timeout (large finite, documented); doctor --unknown/extra->2, internal->1; (10) per-platform pinned limitations strings; target=std::env::consts::OS. C.1a appends (4 files, 16.11.1-owned, with inference_notes): runner.rs (StdinPolicy), sdk_contract.rs (literal fallout), crate_boundaries.rs (narrowed-needle tripwire), lib.rs (StdinPolicy re-export + doc). lib.rs doc 'mirrors ExecutePayload' narrowed: stdin is a local concern (ExecutePayload has no stdin).",
     "16.12 PASSED iter 1 @70f23a1 (protocol backend --stdio + atomic helper gate). Pre-impl audit wf_971f3d06 (14 mf/36 fl); D.2 wf_a0cf920a 1 fmt must-fix (fixed) -> wf_a3a90cee clean. SC16-06b substrate met. 2026-08-03T03:07:41Z",
-    "Task 16.15.1 host-neutral opi-sandbox packaging PASSED @7a6f848 (iter1; D.2 wf_532c923d clean). Unblocks 16.13/16.14.1/16.14.2."
+    "Task 16.15.1 host-neutral opi-sandbox packaging PASSED @7a6f848 (iter1; D.2 wf_532c923d clean). Unblocks 16.13/16.14.1/16.14.2.",
+    "Task 16.13 Linux native restriction port PASSED @0a6a94c (iter1; D.2 wf_16d3e088 1 L-D4 footer-tense resolved by amend to passed). WSL2-verified (kernel 6.18 / Landlock ABI 7). 15 files incl. 8 C.1a appends (forbid-unsafe forces FFI into process_tree; Linux-supported flip forces smoke/backend/cli test flips). Unblocks 16.14.1/16.14.2/16.15.2."
   ],
   "verify_runs": [
     {
@@ -4446,6 +4513,26 @@
       "rejected_count": 0,
       "ran_at": "2026-08-03T12:35:00Z",
       "task_id": "16.15.1",
+      "criterion_id": null
+    },
+    {
+      "stage": "plan",
+      "wf_ref": "wf_e03e0e6e-c84",
+      "folded_count": 10,
+      "flagged_count": 33,
+      "rejected_count": 0,
+      "ran_at": "2026-08-03T06:42:38Z",
+      "task_id": "16.13",
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": "wf_16d3e088-c32",
+      "folded_count": 1,
+      "flagged_count": 0,
+      "rejected_count": 0,
+      "ran_at": "2026-08-03T06:42:38Z",
+      "task_id": "16.13",
       "criterion_id": null
     }
   ]
