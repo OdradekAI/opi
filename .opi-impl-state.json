@@ -2656,7 +2656,7 @@
       "definition_of_done": "Opi deletes built-in native sandbox modules, config, CLI flags, diagnostics, and native-policy dependencies while retaining policy-neutral L0 supervision; legacy [sandbox], --sandbox, and --sandbox-require inputs are rejected with stable targeted remediation to execution backends and the package workflow, Phase 15 historical evidence remains citable, and mechanical crate/source guards prove opi-coding-agent neither links opi-sandbox nor owns native restriction.",
       "definition_source": "draft-reviewed",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "16.10",
         "16.13",
@@ -2699,6 +2699,18 @@
           "field": "depends_on",
           "reason": "Core native-policy removal follows final platform package CI/release topology so no workflow points at incomplete native work.",
           "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Phase Integration"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "C.1a task_owned_paths append (Phase C fallout of the destructive refactor, lesson 14 enum/lesson 7 field hazards): src/diagnostic_bridge.rs — adding ConfigError::LegacySandboxConfig (the [sandbox] rejection variant) made diagnostic_from_config's exhaustive match non-exhaustive, arm added; src/adapter_host.rs — renaming CODE_SANDBOX_DEGRADED->CODE_PROCESS_TREE_DEGRADED and sandbox_degraded_diagnostic->process_tree_degraded_diagnostic (Fork 2 L0 rename) breaks its adapter-L0-degradation caller + inline test; tests/windows_execution_posture.rs — stale doc-comment reference to the renamed code constant. None change behavior; all are mechanical fallout edits."
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "C.1a task_owned_paths append (build_tools collapse fallout): collapsing CodingHarness::build_tools_with_sandbox (4-arg, took the deleted PreparedSandbox) into a single build_tools(workspace, tool_config, execution) and removing the 2-arg build_tools wrapper breaks its callers in execution_minimal_runtime.rs, execution_product.rs (4 sites), execution_routing.rs, and tool_selection.rs (the 2-arg caller now passes minimal_runtime_wiring). Each drops the prepared arg/construction (prepare_production/SandboxConfig are deleted); mechanical, no behavior change."
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "C.1a task_owned_paths append (Phase 15.3 sandbox config-parsing section in config_tests.rs was superseded by 16.16.1: [sandbox]/SandboxMode/config.sandbox are removed, and execution_migration.rs now covers the legacy rejection. Deleting the 2 sandbox acceptance tests + the SandboxMode import; mechanical, coverage superseded not lost.)"
         }
       ],
       "tier": "workspace",
@@ -2752,7 +2764,7 @@
       "substrate_only": false,
       "iteration_count": 0,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "35f2670c14ae37c3bfb1a4236a6e2a69793ac927",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "Cargo.toml",
@@ -2778,13 +2790,28 @@
         "crates/opi-coding-agent/tests/bash_backend_diagnostics.rs",
         "crates/opi-coding-agent/tests/execution_migration.rs",
         "crates/opi-coding-agent/tests/phase16_crate_boundaries.rs",
-        "crates/opi-coding-agent/tests/phase15_safety_sandbox_docs.rs"
+        "crates/opi-coding-agent/tests/phase15_safety_sandbox_docs.rs",
+        "crates/opi-coding-agent/src/diagnostic_bridge.rs",
+        "crates/opi-coding-agent/src/adapter_host.rs",
+        "crates/opi-coding-agent/tests/windows_execution_posture.rs",
+        "crates/opi-coding-agent/tests/execution_minimal_runtime.rs",
+        "crates/opi-coding-agent/tests/execution_product.rs",
+        "crates/opi-coding-agent/tests/execution_routing.rs",
+        "crates/opi-coding-agent/tests/tool_selection.rs",
+        "crates/opi-coding-agent/tests/config_tests.rs"
       ],
-      "last_attempt": null,
-      "verified_at_commit": null,
+      "last_attempt": {
+        "commit": "5227257",
+        "outcome": "passed",
+        "iteration": 0
+      },
+      "verified_at_commit": "5227257",
       "evidence": null,
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        "B.3 start: 16.16.1 in_progress. Forks resolved: legacy [sandbox]/--sandbox/--sandbox-require rejected at parse/config time with stable remediation message (no new execution code); CODE_SANDBOX_DEGRADED renamed to L0 code so it leaves with CODE_SANDBOX_UNAVAILABLE and the source-guard passes literally. Destructive deletion of src/sandbox* + strict FFI; retain L0 supervision (process_tree.rs 1-462 + supervision.rs). New tests execution_migration.rs + phase16_crate_boundaries.rs; adapt phase15_safety_sandbox_docs.rs off deleted src. start=35f2670c14",
+        "E.2 passed: D.2 exec-verify wf_867c5ad9-f4b clean (0 must-fix; 9 low flags all folded into the amend 5227257 — stale doc refs to removed sandbox surface in main.rs/bash.rs/process_tree.rs/operations.rs, bare --sandbox remediation via num_args=0..=1, LegacySandboxSection diagnostic-arm test, crate-boundary tripwire needles extended with prepare_production/build_tools_with_sandbox). verified_at_commit=5227257. C.1a appends during Phase C: diagnostic_bridge.rs (LegacySandboxSection arm), adapter_host.rs (CODE_PROCESS_TREE_DEGRADED rename), windows_execution_posture.rs (doc), execution_minimal_runtime/product/routing/tool_selection.rs (build_tools collapse), config_tests.rs (Phase 15.3 sandbox section superseded by execution_migration.rs). L0 supervision retained; CODE_SANDBOX_DEGRADED renamed to CODE_PROCESS_TREE_DEGRADED. Legacy [sandbox]/--sandbox/--sandbox-require rejected with stable remediation (ConfigError::LegacySandboxSection + hidden clap remediation args)."
+      ]
     },
     {
       "id": "16.16.2",
@@ -4671,6 +4698,16 @@
       "ran_at": "2026-08-04T02:50:00Z",
       "task_id": "16.15.2",
       "criterion_id": "SC16-12b"
+    },
+    {
+      "stage": "exec-workflow",
+      "wf_ref": "wf_867c5ad9-f4b (6 lenses + verify + synthesis; 0 must-fix, 9 low flagged folded)",
+      "folded_count": 9,
+      "flagged_count": 9,
+      "rejected_count": 0,
+      "ran_at": "2026-08-04T05:08:27Z",
+      "task_id": "16.16.1",
+      "criterion_id": "SC16-15a"
     }
   ]
 }
