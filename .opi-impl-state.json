@@ -5,7 +5,7 @@
     "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md"
   ],
   "spec_files_sha256": {
-    "docs/opi-spec.md": "1285c28c9c77188de58b319ce6519fb156aac76e23d6401c9dd1a1dd0208b55b",
+    "docs/opi-spec.md": "5c0781fcae8cba9f48435968b5dfbf0b0f9349fa337dfbee865f06b4e3d5085c",
     "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md": "d1a5c4403908fa7981da8e741ade49d00b25972d17360371d55799b08ca7be9e"
   },
   "task_graph_confirmed_at": "2026-08-01T12:43:54.975Z",
@@ -3021,7 +3021,7 @@
       "definition_of_done": "English and Chinese specs, README, AGENTS/CLAUDE guidance, and the Unreleased changelog describe the shipped Minimal Runtime, five gates, routing/permission, no-fallback, independent opi-sandbox CLI/SDK, native guarantees, Windows posture, migration, and Non-Goals in lockstep; documentation guards pass, and the final artifact audit verifies preserved Linux/macOS/Windows native smoke, extracted archives, six-target CI, crate-boundary, workspace test/doctest, format, clippy, and warning-free documentation evidence without rewriting Phase 15 history.",
       "definition_source": "draft-reviewed",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "16.16.2",
         "16.1"
@@ -3071,6 +3071,26 @@
           "field": "verification",
           "reason": "Updated final repository gates for the separated packaging and release-topology tests.",
           "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Repository gates"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "pre-existing 16.16.1 debt: sc8 foreground-await structural pin still points at tool/operations.rs after spawn+wait relocated to tool/supervision.rs; re-pointed so the workspace-test repository gate is green."
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Phase 6 non-goal guard still forbids positive opi package enable/disable claims, but 16.5 shipped the install/trust/enable/disable lifecycle; guard narrowed to keep update deferred while permitting the shipped commands."
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "pre-existing 16.5 debt: the real-opi pre-provider pin in main.rs counts package_cli.rs opi_command() sites as 11, but 16.5 added 5 enable/disable/doctor sites (16); bumped the pin so the workspace-test repository gate is green."
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "D.2 must-fix: the wired artifact-audit gate passed vacuously in default dogfood mode (no run*.ndjson/sessions to check). Added a --phase-exit evidence mode that genuinely validates the preserved per-platform bundles / six-target logs / gate evidence and rejects absent/skipped/zero-test/wrong-target/workspace-only evidence, and re-pointed the gate at it."
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "fixture-driven tests for the new --phase-exit artifact-audit mode (keeps the audit extension truthful and regression-guarded)."
         }
       ],
       "tier": "workspace",
@@ -3089,13 +3109,13 @@
           "cargo test --workspace --all-targets",
           "cargo test --workspace --doc",
           "RUSTDOCFLAGS=\"-D warnings\" cargo doc --workspace --no-deps",
-          "python scripts/opi-artifact-audit.py target/opi-artifacts/phase16-phase-exit --workspace-root . --json"
+          "python scripts/opi-artifact-audit.py target/opi-artifacts/phase16-phase-exit --workspace-root . --phase-exit --json"
         ],
         "behavioral_tests": [
           "crates/opi-coding-agent/tests/phase16_extension_docs.rs"
         ],
         "snapshot_tests": [],
-        "smoke_addendum": "Import preserved native artifacts from 16.13, 16.14.1, and 16.14.2 plus six-target CI logs into target/opi-artifacts/phase16-phase-exit; reject missing, skipped, zero-test, wrong-target, or workspace-only evidence."
+        "smoke_addendum": "Preserve genuine per-platform native smoke evidence (windows doctor unsupported + pass marker; linux packaged extracted archive + smoke OK; macos CI native-test log with real cargo pass markers + provenance note) plus six-target cargo-check logs into target/opi-artifacts/phase16-phase-exit bundles (windows/, linux/, macos/, six-target/, gates/) and audit with --phase-exit, which rejects missing, skipped, zero-test, wrong-target, or workspace-only evidence."
       },
       "acceptance_scenarios": [
         {
@@ -3113,7 +3133,7 @@
             "cargo test --workspace --all-targets",
             "cargo test --workspace --doc",
             "RUSTDOCFLAGS=\"-D warnings\" cargo doc --workspace --no-deps",
-            "python scripts/opi-artifact-audit.py target/opi-artifacts/phase16-phase-exit --workspace-root . --json"
+            "python scripts/opi-artifact-audit.py target/opi-artifacts/phase16-phase-exit --workspace-root . --phase-exit --json"
           ],
           "production_call_sites": [
             "workspace Cargo graph",
@@ -3123,7 +3143,7 @@
             "release workflow",
             "paired product documentation"
           ],
-          "status": "open"
+          "status": "closed"
         }
       ],
       "production_call_sites": [
@@ -3135,9 +3155,9 @@
         "paired product documentation"
       ],
       "substrate_only": false,
-      "iteration_count": 0,
+      "iteration_count": 3,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "bc09c65f430fc9dffd94b6702c16c964b79ef82f",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "crates/opi-coding-agent/tests/phase16_extension_docs.rs",
@@ -3147,13 +3167,24 @@
         "docs/opi-spec.zh.md",
         "AGENTS.md",
         "CLAUDE.md",
-        "CHANGELOG.md"
+        "CHANGELOG.md",
+        "crates/opi-coding-agent/tests/phase11_tooling_quality_docs.rs",
+        "crates/opi-coding-agent/tests/productized_packages_docs.rs",
+        "crates/opi-coding-agent/src/main.rs",
+        "scripts/opi-artifact-audit.py",
+        "crates/opi-coding-agent/tests/artifact_audit_script.rs"
       ],
-      "last_attempt": null,
-      "verified_at_commit": null,
+      "last_attempt": {
+        "commit": "f8aff02",
+        "outcome": "passed",
+        "iteration": 3
+      },
+      "verified_at_commit": "f8aff02",
       "evidence": null,
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        "D.2 exec-verify converged to 0 must-fix @f8aff02 after 3 iterations (vacuous default-mode audit -> added --phase-exit mode; six-target error-acceptance -> failed_target_evidence; empty/per-DoD-category gates -> per-category captures + failed_gate_evidence/zero-test rejection). Genuine native evidence: Windows host smoke (doctor supported=false + OK), Linux WSL2 smoke + packaged archive (supported=true landlock/seccomp + sha lock), macos CI native-test log with real cargo pass markers + provenance, six release-triple cargo checks green (4 CI + 2 WSL2 --all-targets). 3 low provenance-accuracy flags resolved (timings, --all-targets, macos prose)."
+      ]
     }
   ],
   "phase_exit": {
