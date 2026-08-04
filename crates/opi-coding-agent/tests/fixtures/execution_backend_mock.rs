@@ -55,6 +55,12 @@ fn main() {
         "protocol_incompatible" => protocol_incompatible(&mut reader, &mut writer),
         "hang_before_ready" => hang(&mut reader, &mut writer, HangPoint::BeforeReady),
         "hang_after_started" => hang(&mut reader, &mut writer, HangPoint::AfterStarted),
+        // In-band Completed with timed_out=true and a clean exit code: the host
+        // must NOT treat a timed-out frame as a success (no degraded success).
+        "completed_timed_out" => completed_timed_out(&mut reader, &mut writer),
+        // In-band Completed with cancelled=true and a clean exit code: the host
+        // must NOT treat a cancelled frame as a success (no degraded success).
+        "completed_cancelled" => completed_cancelled(&mut reader, &mut writer),
         "cancel_cleanup_unconfirmed" => cancel_cleanup_unconfirmed(&mut reader, &mut writer),
         "failed_pre_started" => failed(
             &mut reader,
@@ -206,6 +212,66 @@ fn happy(reader: &mut impl BufRead, writer: &mut impl Write, out: &[u8]) {
             signal: None,
             timed_out: false,
             cancelled: false,
+            cleanup: CleanupState::Confirmed,
+            diagnostics: vec![],
+        }),
+    );
+    drain_until_eof(reader);
+    std::process::exit(0);
+}
+
+/// Reports `Completed{timed_out: true, exit: Some(0)}` — a degraded-success
+/// canary. The host must surface this as an error even though the exit code is
+/// clean.
+fn completed_timed_out(reader: &mut impl BufRead, writer: &mut impl Write) {
+    completed_terminal(reader, writer, true, false);
+}
+
+/// Reports `Completed{cancelled: true, exit: Some(0)}` — the cancelled leg of
+/// the no-degraded-success invariant. The host must surface this as an error
+/// even though the exit code is clean.
+fn completed_cancelled(reader: &mut impl BufRead, writer: &mut impl Write) {
+    completed_terminal(reader, writer, false, true);
+}
+
+/// Shared in-band `Completed` reporter for a terminal state that carries a
+/// clean exit code: `timed_out` and/or `cancelled` set.
+fn completed_terminal(
+    reader: &mut impl BufRead,
+    writer: &mut impl Write,
+    timed_out: bool,
+    cancelled: bool,
+) {
+    let rid = match expect_initialize(reader) {
+        Some(r) => r,
+        None => return,
+    };
+    send(writer, &ready_frame(&rid, WIRE_IDENTITY));
+    let _ = read_host_frame(reader);
+    send(
+        writer,
+        &BackendToHost::Accepted(AcceptedPayload {
+            request_id: rid.clone(),
+        }),
+    );
+    send(
+        writer,
+        &BackendToHost::Started(StartedPayload {
+            request_id: rid.clone(),
+            placement: "host".into(),
+            guarantee: "supervised".into(),
+            policy: "none".into(),
+            limitations: vec![],
+        }),
+    );
+    send(
+        writer,
+        &BackendToHost::Completed(CompletedPayload {
+            request_id: rid,
+            exit: Some(0),
+            signal: None,
+            timed_out,
+            cancelled,
             cleanup: CleanupState::Confirmed,
             diagnostics: vec![],
         }),

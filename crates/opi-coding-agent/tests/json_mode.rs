@@ -7,11 +7,13 @@
 //! variant (renamed for wire compatibility); all stdout lines after the
 //! header round-trip through `AgentSessionEvent`.
 
+mod common;
+
 use opi_agent::session::{SessionHeader, SessionWriter};
 use opi_agent::session_event::AgentSessionEvent;
 use opi_ai::provider::{Provider, ProviderError};
 use opi_ai::test_support::{self, MockProvider, MockResponse};
-use opi_coding_agent::config::OpiConfig;
+use opi_coding_agent::config::{ExecutionStrategy, OpiConfig, PermissionDecision};
 use opi_coding_agent::harness::ResumeInfo;
 use opi_coding_agent::policy::ToolSelection;
 use opi_coding_agent::runner::{ExitCode, NDJSON_SCHEMA_VERSION, NonInteractiveRunner};
@@ -134,6 +136,75 @@ fn tool_execution_end_diagnostics_field_is_wire_compat() {
     let v: serde_json::Value = serde_json::to_value(&with_diag).expect("serializes");
     assert_eq!(v["diagnostics"][0]["code"], "tool_execution_failed");
     assert_eq!(v["diagnostics"][0]["context"]["exit_code"], 1);
+}
+
+// ---------------------------------------------------------------------------
+// SC16-14 cross-surface: a stable execution-failure code reaches the NDJSON wire
+// ---------------------------------------------------------------------------
+
+/// A `local = "deny"` Minimal-Runtime config makes `ExecutionRuntime::build`
+/// fail at startup (`policy_denied`); `CodingHarness::build_tools` emits it as a
+/// startup diagnostic (bash omitted, no fallback), which the runner surfaces as
+/// the NDJSON `StartupDiagnostics` line. This proves one of the 14 stable codes
+/// reaches a PUBLIC wire surface with its granular code + remediation intact
+/// (the design: "Text, TUI, NDJSON, RPC, package doctor, and top-level doctor
+/// preserve the same codes and remediation fields").
+#[tokio::test]
+async fn ndjson_startup_diagnostics_carry_stable_execution_code() {
+    let response = test_support::text_response("hi");
+    let provider = MockProvider::new("mock", vec![response]);
+    let mut config = OpiConfig::default();
+    config.execution.strategy = ExecutionStrategy::Fixed;
+    config.execution.backend = "local".into();
+    config
+        .execution
+        .permissions
+        .insert("local".into(), PermissionDecision::Deny);
+    // Isolate the user config dir so the Minimal-Runtime execution branch (the
+    // only one that emits the policy_denied startup diagnostic) is deterministic
+    // regardless of the host's real package-trust state. The runner resolves the
+    // config dir at construction, so the guard is dropped before the await.
+    let _env_guard = common::empty_user_config_dir();
+    let mut runner = NonInteractiveRunner::new(
+        Box::new(provider),
+        "mock-model".into(),
+        config,
+        std::env::current_dir().unwrap(),
+        false,
+        None,
+        Vec::new(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
+    );
+    drop(_env_guard);
+
+    let result = runner.run_json("hello").await;
+    assert_eq!(result.exit_code, ExitCode::Success as i32);
+
+    let lines = parse_ndjson(&result.stdout);
+    let startup = lines
+        .iter()
+        .find(|line| line["type"] == "StartupDiagnostics")
+        .expect("a StartupDiagnostics line must be emitted");
+    let diags = startup["diagnostics"]
+        .as_array()
+        .expect("startup diagnostics array");
+    let policy_denied = diags
+        .iter()
+        .find(|d| d["details"]["code"] == "policy_denied");
+    assert!(
+        policy_denied.is_some(),
+        "the stable policy_denied code must surface in NDJSON startup diagnostics: {startup}"
+    );
+    let pd = policy_denied.expect("found");
+    let remediation = pd["details"]["remediation"].as_str().unwrap_or_default();
+    assert!(
+        !remediation.is_empty(),
+        "remediation text must ride along and be actionable: {pd}"
+    );
+    assert!(
+        remediation.contains("execution permission"),
+        "remediation must carry the code-specific actionable fragment: {remediation}"
+    );
 }
 
 // ---------------------------------------------------------------------------

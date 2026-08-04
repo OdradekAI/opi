@@ -13,6 +13,8 @@
 //! - Interleaved async events
 //! - Compatibility with existing JSON mode event semantics
 
+mod common;
+
 use std::future::Future;
 use std::io::Write;
 use std::pin::Pin;
@@ -31,7 +33,7 @@ use opi_ai::stream::{AssistantStreamEvent, StopReason};
 use opi_ai::test_support::{MockProvider, MockResponse, base_assistant, text_response};
 use opi_coding_agent::adapter_extension::ProcessAdapter;
 use opi_coding_agent::adapter_host::{AdapterHost, AdapterProcessConfig};
-use opi_coding_agent::config::OpiConfig;
+use opi_coding_agent::config::{ExecutionStrategy, OpiConfig, PermissionDecision};
 use opi_coding_agent::policy::ToolSelection;
 use opi_coding_agent::rpc::{RPC_SCHEMA_VERSION, RpcCommand, RpcRunner};
 use opi_coding_agent::runtime_packages::RuntimePackageStartup;
@@ -3944,6 +3946,58 @@ async fn rpc_ready_header_carries_startup_diagnostics() {
             .any(|d| d["code"] == code::CODE_PACKAGE_DIAGNOSTIC
                 && d["message"] == "package disabled at runtime: rpc demo diagnostic"),
         "rpc_ready startup_diagnostics must include the injected diagnostic: {diagnostics:?}"
+    );
+
+    command_tx.send(RpcCommand::quit { id: None }).unwrap();
+    let _quit = recv_response(&mut output_rx, "quit").await;
+    assert_eq!(task.await.unwrap(), 0);
+}
+
+/// SC16-14 cross-surface: a `local = "deny"` Minimal-Runtime config makes
+/// `ExecutionRuntime::build` fail with `policy_denied` at startup; the harness
+/// surfaces it as a startup diagnostic, and the RPC ready header carries it
+/// (granular stable code in `details.code` + remediation) exactly like the
+/// NDJSON `StartupDiagnostics` line. Proves the SAME stable code reaches the RPC
+/// public surface.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn rpc_ready_header_carries_stable_execution_code() {
+    let mut config = OpiConfig::default();
+    config.execution.strategy = ExecutionStrategy::Fixed;
+    config.execution.backend = "local".into();
+    config
+        .execution
+        .permissions
+        .insert("local".into(), PermissionDecision::Deny);
+    // Isolate the user config dir so the Minimal-Runtime branch (which emits the
+    // policy_denied startup diagnostic) is deterministic. RpcRunner::new resolves
+    // the config dir synchronously inside custom_provider_runner_with_config; the
+    // guard is dropped before the first await.
+    let _env_guard = common::empty_user_config_dir();
+    let (command_tx, mut output_rx, task) =
+        custom_provider_runner_with_config(MockProvider::new("mock", Vec::new()), config);
+    drop(_env_guard);
+
+    let header = recv_rpc_line(&mut output_rx).await;
+    assert_eq!(header["type"], "rpc_ready");
+    let diagnostics = header["startup_diagnostics"]
+        .as_array()
+        .expect("rpc_ready should carry a startup_diagnostics array");
+    let policy_denied = diagnostics
+        .iter()
+        .find(|d| d["details"]["code"] == "policy_denied");
+    assert!(
+        policy_denied.is_some(),
+        "the stable policy_denied code must surface in the RPC ready header: {diagnostics:?}"
+    );
+    let pd = policy_denied.expect("found");
+    let remediation = pd["details"]["remediation"].as_str().unwrap_or_default();
+    assert!(
+        !remediation.is_empty(),
+        "remediation text must ride along and be actionable: {pd}"
+    );
+    assert!(
+        remediation.contains("execution permission"),
+        "remediation must carry the code-specific actionable fragment: {remediation}"
     );
 
     command_tx.send(RpcCommand::quit { id: None }).unwrap();

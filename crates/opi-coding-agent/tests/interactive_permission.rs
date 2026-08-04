@@ -25,7 +25,9 @@ use opi_coding_agent::execution::permission::PermissionPolicy;
 use opi_coding_agent::execution::{
     EnabledIdentity, ExecutionRuntime, IdentitySource, LOCAL_ADAPTER_ID, PermissionManager,
 };
+use opi_coding_agent::harness::{CodingHarness, ExecutionWiring};
 use opi_coding_agent::package_activation::{ActivatedContribution, ActivationError};
+use opi_coding_agent::policy::{RunMode, ToolRuntimeConfig, ToolSelection};
 use opi_coding_agent::tool::{BashOpError, BashOperations, BashRequest, BashResult};
 use opi_tui::{PermissionChoice, PermissionSummary};
 use tokio_util::sync::CancellationToken;
@@ -262,6 +264,88 @@ async fn deny_yields_permission_denied_and_no_dispatch() {
         local_ops_recorder.call_count(),
         0,
         "Deny must not dispatch (no local fallback)"
+    );
+}
+
+/// SC16-14 interactive surface at the PRODUCTION harness chokepoint: a routed
+/// external with `ask` policy, Interactive mode, and a denying broker drives the
+/// FULL `CodingHarness::build_tools` -> `BashTool::execute` -> `ToolResult`
+/// path (the same wiring the interactive startup installs). The stable
+/// `permission_denied` code survives into `ToolResult.diagnostics` — proving the
+/// interactive/TUI surface carries the same stable redacted code as NDJSON/RPC.
+#[tokio::test]
+async fn interactive_harness_chokepoint_surfaces_permission_denied() {
+    let workspace = tempfile::tempdir().unwrap();
+    let mut perms = BTreeMap::new();
+    perms.insert("opi-sandbox".to_string(), PermissionDecision::Ask);
+    let wiring = ExecutionWiring {
+        config: ExecutionConfig {
+            strategy: ExecutionStrategy::Fixed,
+            backend: "opi-sandbox".to_string(),
+            permissions: perms.clone(),
+            ..ExecutionConfig::default()
+        },
+        enabled: vec![EnabledIdentity {
+            adapter_id: "opi-sandbox".to_string(),
+            package_name: "mock-pkg".to_string(),
+        }],
+        policy: PermissionPolicy::from_map(perms),
+        store: Arc::new(PanicSource),
+        mode: ExecutionRunMode::Interactive,
+        host_target: opi_coding_agent::package_activation::host_target_triple().to_string(),
+        host_opi_version: opi_coding_agent::package_activation::host_opi_version().to_string(),
+        manager: Arc::new(PermissionManager::new()),
+        broker: Some(RecordingBroker::new(PermissionChoice::Deny)),
+    };
+    let tool_config =
+        ToolRuntimeConfig::resolve(RunMode::Interactive, true, ToolSelection::Default)
+            .expect("interactive tool config");
+    let (mut tools, startup_diagnostics) =
+        CodingHarness::build_tools(workspace.path(), &tool_config, &wiring);
+    assert!(
+        startup_diagnostics.is_empty(),
+        "routed ask must not warn at startup: {startup_diagnostics:?}"
+    );
+    let bash = tools
+        .iter_mut()
+        .find(|t| t.definition().name == "bash")
+        .expect("routed bash tool present");
+    let result = bash
+        .execute(
+            "interactive-deny",
+            serde_json::json!({"command": "echo hi", "timeout_secs": 5}),
+            CancellationToken::new(),
+            None,
+        )
+        .await
+        .expect("bash tool executes");
+    assert!(result.is_error, "deny must fail the tool turn");
+    assert!(
+        result
+            .diagnostics
+            .iter()
+            .any(|d| d.code == "permission_denied"),
+        "the stable permission_denied code must reach ToolResult.diagnostics: {:?}",
+        result.diagnostics
+    );
+    // Remediation must ride along and stay command-text-free.
+    let pd = result
+        .diagnostics
+        .iter()
+        .find(|d| d.code == "permission_denied")
+        .expect("permission_denied diagnostic");
+    let remediation = pd
+        .context
+        .get("remediation")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default();
+    assert!(
+        !remediation.is_empty(),
+        "permission_denied must carry actionable remediation: {pd:?}"
+    );
+    assert!(
+        !remediation.contains("echo"),
+        "permission_denied remediation must not leak command text: {remediation}"
     );
 }
 

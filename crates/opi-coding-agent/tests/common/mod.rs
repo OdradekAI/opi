@@ -19,6 +19,58 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
+/// Serializes tests that mutate `APPDATA`/`HOME` (process-global env).
+static USER_CONFIG_ENV_MUTEX: Mutex<()> = Mutex::new(());
+
+/// RAII guard that points the user-config environment (`%APPDATA%` on Windows,
+/// `$HOME` on Unix) at an empty tempdir while held, so
+/// [`opi_coding_agent::config::user_config_dir`] resolves to a store with zero
+/// enabled execution packages. Makes the Minimal-Runtime execution branch
+/// deterministic regardless of the host's real package-trust state (Phase 16
+/// SC16-14 cross-surface tests rely on `local = deny` -> `policy_denied` at
+/// startup, which only fires when `enabled_identities()` is empty).
+pub fn empty_user_config_dir() -> impl Drop + 'static {
+    // Hold the mutex for the WHOLE window (set -> runner construction ->
+    // restore on Drop), not just the set_var call. The static mutex yields a
+    // 'static guard, so it can ride in the returned value.
+    let _lock = USER_CONFIG_ENV_MUTEX.lock().expect("user-config env mutex");
+    let empty = tempfile::tempdir().expect("tempdir for empty user config");
+    let path = empty.path().to_path_buf();
+    // Keep the tempdir alive and the mutex held for the lifetime of the guard.
+    struct Guard {
+        _dir: tempfile::TempDir,
+        // The lock is held until the guard is dropped, so no other test can
+        // mutate APPDATA/HOME while this one's env is redirected.
+        _lock: std::sync::MutexGuard<'static, ()>,
+        previous: Option<(String, Option<String>)>,
+    }
+    impl Drop for Guard {
+        fn drop(&mut self) {
+            let (key, previous) = self.previous.take().unwrap();
+            match previous {
+                Some(value) => {
+                    // SAFETY: process-global env mutation is serialized by
+                    // USER_CONFIG_ENV_MUTEX (held in `_lock`) and restored on drop.
+                    unsafe { std::env::set_var(&key, value) };
+                }
+                None => {
+                    // SAFETY: serialized by USER_CONFIG_ENV_MUTEX (held in `_lock`).
+                    unsafe { std::env::remove_var(&key) };
+                }
+            }
+        }
+    }
+    let key = if cfg!(windows) { "APPDATA" } else { "HOME" };
+    let previous = std::env::var(key).ok();
+    // SAFETY: serialized by USER_CONFIG_ENV_MUTEX (held in `_lock`).
+    unsafe { std::env::set_var(key, &path) };
+    Box::new(Guard {
+        _dir: empty,
+        _lock,
+        previous: Some((key.to_string(), previous)),
+    })
+}
+
 use opi_agent::tool::ToolResult;
 use opi_ai::auth::LoginPresenter;
 use opi_ai::credential::BoxAuthFuture;

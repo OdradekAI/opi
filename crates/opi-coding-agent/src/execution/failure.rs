@@ -16,13 +16,17 @@
 //! `detail` string (which may carry an absolute path) and the opaque `Store`
 //! display, mapping them to code-keyed remediation instead.
 //!
-//! # Phase split
+//! # Producer split
 //!
 //! `permission_denied` is produced by the Phase 16.10 interactive grant layer
-//! (a user denies / cancels an `ask` prompt). The four `protocol_*`/`execution_*`
-//! codes and `cleanup_unconfirmed` are declared here as the stable contract and
-//! are produced by the 16.7 protocol host; they remain `#[allow(dead_code)]`
-//! until a production caller drives that host end-to-end.
+//! (a user denies / cancels an `ask` prompt). The `protocol_*`/`execution_*`
+//! codes and `cleanup_unconfirmed` are produced by the 16.7 protocol host
+//! ([`crate::execution::protocol_host`]), which is driven end-to-end by the
+//! production `ExecutionRuntime::build` -> `RoutedBashOperations` ->
+//! `ProcessCommandAdapter` -> `ExecutionProtocolHost::execute` path (proven by
+//! `tests/execution_product.rs::mock_peer_failure_modes_surface_stable_codes_via_production_path`
+//! and `tests/execution_protocol_host.rs`). Every variant is constructed in
+//! reachable non-test code, so no `#[allow(dead_code)]` is needed.
 
 use crate::config::{ExecutionRunMode, ExecutionStrategy};
 use crate::package_activation::ActivationError;
@@ -76,27 +80,24 @@ pub enum ExecutionFailure {
     },
 
     /// Produced by the 16.7 protocol host on a wire/identity mismatch.
-    #[allow(dead_code)] // produced by 16.7 protocol host
     #[error("adapter protocol mismatch")]
     ProtocolIncompatible,
 
     /// Produced by the 16.7 protocol host on a malformed/out-of-order frame.
-    #[allow(dead_code)] // produced by 16.7 protocol host
     #[error("adapter protocol violation")]
     ProtocolViolation,
 
     /// Produced by the 16.7 protocol host on a non-protocol execution failure.
-    #[allow(dead_code)] // produced by 16.7 protocol host
     #[error("command execution failed")]
     ExecutionFailed,
 
-    /// Produced by the 16.7 protocol host on deadline expiry.
-    #[allow(dead_code)] // produced by 16.7 protocol host
+    /// Produced by the 16.7 protocol host from a backend-reported
+    /// `Failed{ExecutionTimedOut}` frame (the host's own deadline expiry maps to
+    /// [`Self::CleanupUnconfirmed`]).
     #[error("command execution timed out")]
     ExecutionTimedOut,
 
     /// Produced by the 16.7 protocol host when cleanup state is unconfirmed.
-    #[allow(dead_code)] // produced by 16.7 protocol host
     #[error("command cleanup state unconfirmed")]
     CleanupUnconfirmed,
 }
@@ -157,11 +158,27 @@ impl ExecutionFailure {
                  policy. To allow it, set `[execution.permissions]` in your USER \
                  config (project permission sections are not honored)."
             ),
-            Self::PermissionRequired { adapter_id, mode } => format!(
-                "Adapter {adapter_id:?} requires interactive approval (policy \
-                 `ask`) and cannot be granted non-interactively in {mode} mode. \
-                 Allow it persistently in your USER config, or run interactively."
-            ),
+            Self::PermissionRequired { adapter_id, mode } => {
+                if matches!(mode, ExecutionRunMode::Interactive) {
+                    // Interactive mode does not need a "run interactively" nudge
+                    // (the user already is) and no prompt can be relied upon to
+                    // appear when this surfaces (startup build failure or the
+                    // fail-closed no-broker path). The actionable path is
+                    // persistent USER-config allowance.
+                    format!(
+                        "Adapter {adapter_id:?} requires interactive approval (policy \
+                         `ask`). Allow it persistently in your USER config."
+                    )
+                } else {
+                    // Headless modes cannot grant; the actionable paths are
+                    // persistent USER-config allowance or an interactive run.
+                    format!(
+                        "Adapter {adapter_id:?} requires interactive approval (policy \
+                         `ask`) and cannot be granted non-interactively in {mode} mode. \
+                         Allow it persistently in your USER config, or run interactively."
+                    )
+                }
+            }
             Self::PermissionDenied { adapter_id } => {
                 format!("Adapter {adapter_id:?} was not approved for this invocation.")
             }

@@ -1804,3 +1804,199 @@ fn package_scope_reports_execution_lifecycle_and_drift_at_top_level() {
         "drifted execution package is an error"
     );
 }
+
+/// SC16-14 doctor surfaces: the top-level `opi doctor` package scope emits the
+/// stable doctor-local codes (`doctor_package_exec_lifecycle`,
+/// `doctor_package_exec_drift`). The render-time redaction WIRING is proven by
+/// seeding abs-path + secret canaries into the lifecycle details and asserting
+/// `format_json` strips them with a `[REDACTED]` marker (the real lifecycle
+/// payload carries no secrets/commands/PIDs/abs-paths, so this proves the
+/// formatter path, not leak-freedom of the payload). The distinct
+/// `opi package doctor` surface reports the SAME lifecycle + drift resolution
+/// (exit 0 healthy / 2 drifted) through the same package resolution code, but
+/// renders plain-text lifecycle lines rather than the structured
+/// `doctor_package_exec_*` code objects (SC16-03 text format); this test pins
+/// the exit-code equivalence there and the structured code + redaction-wiring on
+/// the top-level surface. This complements the execution-layer stable codes
+/// proven in `execution_product.rs`.
+#[test]
+fn doctor_surfaces_emit_stable_redacted_package_codes() {
+    use opi_coding_agent::cli::PackageCommand;
+    use opi_coding_agent::package_activation;
+    use opi_coding_agent::package_cli;
+    use sha2::{Digest, Sha256};
+
+    let user = tempfile::tempdir().unwrap();
+    let workspace = tempfile::tempdir().unwrap();
+    let sessions = tempfile::tempdir().unwrap();
+
+    // Execution-package fixture targeting the running host.
+    let pkg = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(pkg.path().join("bin")).unwrap();
+    let exe_content: &[u8] = b"#!/bin/sh\necho hi\n";
+    let exe = pkg.path().join("bin").join("opi-sandbox");
+    std::fs::write(&exe, exe_content).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&exe, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let sha = format!("{:x}", Sha256::digest(exe_content));
+    let target = package_activation::host_target_triple();
+    let toml = format!(
+        "version = \"0.8.0\"\n\
+         opi_version = \">=0.7,<0.8\"\n\
+         name = \"opi-sandbox\"\n\
+         description = \"doctor fixture\"\n\
+         \n\
+         [[contributions.adapters]]\n\
+         capability = \"command.execute\"\n\
+         id = \"opi-sandbox\"\n\
+         transport = \"process-jsonl\"\n\
+         command = \"bin/opi-sandbox\"\n\
+         args = [\"backend\", \"--stdio\"]\n\
+         protocol = \"command-execution-jsonl-v1\"\n\
+         target = \"{target}\"\n\
+         sha256 = \"{sha}\"\n\
+         handshake_timeout_ms = 5000\n\
+         adapter_config = {{}}\n"
+    );
+    std::fs::write(pkg.path().join("package.toml"), toml).unwrap();
+
+    let exit = package_cli::handle_package_command(
+        &PackageCommand::Add {
+            source: pkg.path().to_str().unwrap().into(),
+            local: false,
+        },
+        workspace.path().to_path_buf(),
+        user.path().to_path_buf(),
+    );
+    assert_eq!(exit, 0);
+
+    let config = test_config("anthropic:claude-test-model");
+    let context = DoctorContext {
+        config: &config,
+        config_error: None,
+        workspace_root: workspace.path(),
+        user_config_dir: user.path(),
+        sessions_dir: sessions.path(),
+        term: None,
+        term_program: None,
+        term_features: None,
+        no_color: false,
+        colorterm: None,
+        env_var: &no_env,
+        store_probe: &EMPTY_STORE_PROBE,
+    };
+
+    // Healthy untrusted+disabled state: stable lifecycle code on BOTH doctor
+    // surfaces with redaction (no command text / PID / abs path in payload).
+    let report = run_doctor(&[DoctorScope::Package], &context);
+    let lifecycle = report
+        .entries
+        .iter()
+        .find(|e| e.diagnostic.code == "doctor_package_exec_lifecycle")
+        .expect("stable lifecycle code on top-level doctor");
+    assert_eq!(lifecycle.diagnostic.source, "package");
+
+    // Redaction on the RENDERED JSON surface: doctor redacts at render time
+    // (`format_json` calls `redacted_payload(Summary)` on every entry). To make
+    // the render-time redaction-wiring claim non-vacuous, seed an abs-path +
+    // secret canary into the lifecycle details and assert the rendered JSON
+    // strips both and carries a [REDACTED] marker. (The real lifecycle payload
+    // carries no secrets/commands/PIDs/abs-paths; this proves the FORMATTER path
+    // redacts, not that the payload is leak-free by construction.)
+    let canary_path = user
+        .path()
+        .join("C:\\Leak\\Canary\\secret.config")
+        .to_string_lossy()
+        .to_string();
+    let canary_secret = "sk-proj-DOCTOR-CANARY-SECRET-1234567890abcdef";
+    let mut canary_diagnostic = lifecycle.diagnostic.clone();
+    if let Some(obj) = canary_diagnostic
+        .details
+        .as_mut()
+        .and_then(|details| details.as_object_mut())
+    {
+        obj.insert("canary_path".into(), serde_json::json!(canary_path));
+        obj.insert("canary_secret".into(), serde_json::json!(canary_secret));
+    }
+    let canary_report = DoctorReport {
+        entries: vec![DoctorEntry {
+            scope: DoctorScope::Package,
+            diagnostic: canary_diagnostic,
+        }],
+    };
+    let rendered_json = format_json(&canary_report);
+    assert!(
+        !rendered_json.contains(canary_secret),
+        "rendered doctor JSON must not leak a credential: {rendered_json}"
+    );
+    assert!(
+        !rendered_json.contains("secret.config"),
+        "rendered doctor JSON must not leak an unnecessary absolute path: {rendered_json}"
+    );
+    // JSON carries the redaction marker on the scrubbed detail values.
+    assert!(
+        rendered_json.contains("[REDACTED]"),
+        "rendered doctor JSON must carry a redaction marker: {rendered_json}"
+    );
+
+    // `opi package doctor` is a distinct parseable surface driven through the
+    // same `package_cli` dispatch; it reports the identical lifecycle + drift
+    // resolution (0 = healthy, 2 = drifted) as the top-level doctor.
+    let exit_healthy = package_cli::handle_package_command(
+        &PackageCommand::Doctor { json: false },
+        workspace.path().to_path_buf(),
+        user.path().to_path_buf(),
+    );
+    assert_eq!(
+        exit_healthy, 0,
+        "package doctor must exit 0 for a healthy lifecycle (same detection as top-level)"
+    );
+
+    // Drift: the stable drift code surfaces as an ERROR on the top-level doctor.
+    // The drift payload is message-only (package name + adapter id) and carries no
+    // details, so the tampered executable's content can never leak into any field.
+    // Pin that structural guarantee directly rather than by a claimed message
+    // assertion: the message names only the package/adapter id, and there are no
+    // details.
+    std::fs::write(&exe, b"#!/bin/sh\necho pwned\n").unwrap();
+    let report2 = run_doctor(&[DoctorScope::Package], &context);
+    let drift = report2
+        .entries
+        .iter()
+        .find(|e| e.diagnostic.code == "doctor_package_exec_drift")
+        .expect("stable drift code on top-level doctor");
+    assert_eq!(
+        drift.diagnostic.severity,
+        opi_agent::diagnostic::Severity::Error
+    );
+    assert!(
+        drift.diagnostic.details.is_none(),
+        "drift diagnostic must be message-only (no command text / path / PID fields): {:?}",
+        drift.diagnostic
+    );
+    assert!(
+        drift.diagnostic.message.contains("opi-sandbox")
+            && !drift.diagnostic.message.contains("pwned")
+            && !drift.diagnostic.message.contains("echo"),
+        "drift message must name only safe identifiers: {:?}",
+        drift.diagnostic.message
+    );
+    // And the RENDERED output never carries the tampered content.
+    let rendered_drift = format_json(&report2);
+    assert!(
+        !rendered_drift.contains("pwned"),
+        "rendered doctor output must not leak the tampered executable content: {rendered_drift}"
+    );
+    let exit_drifted = package_cli::handle_package_command(
+        &PackageCommand::Doctor { json: false },
+        workspace.path().to_path_buf(),
+        user.path().to_path_buf(),
+    );
+    assert_eq!(
+        exit_drifted, 2,
+        "package doctor must exit 2 on drift (same detection as top-level)"
+    );
+}

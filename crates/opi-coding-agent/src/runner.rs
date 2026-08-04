@@ -453,11 +453,13 @@ impl NonInteractiveRunner {
 
         let prompt_result = self.harness.prompt_with_content(content).await;
         let persist_stderr = format_persist_errors(&persist_errors);
+        let startup_prefix = startup_diagnostics_stderr_prefix(&self.harness);
 
         match prompt_result {
             Ok(messages) => {
                 if let Some(error) = find_error_message(&messages) {
-                    let mut stderr = error;
+                    let mut stderr = startup_prefix.clone();
+                    stderr.push_str(&error);
                     stderr.push_str(&persist_stderr);
                     return NonInteractiveResult {
                         stdout: String::new(),
@@ -469,13 +471,16 @@ impl NonInteractiveRunner {
                 let stdout = text_parts.lock().map(|g| g.join("")).unwrap_or_default();
                 NonInteractiveResult {
                     stdout,
-                    stderr: persist_stderr,
+                    stderr: format!("{startup_prefix}{persist_stderr}"),
                     exit_code: ExitCode::Success as i32,
                 }
             }
             Err(error) => NonInteractiveResult {
                 stdout: String::new(),
-                stderr: stderr_for_agent_error(&error, &persist_stderr),
+                stderr: format!(
+                    "{startup_prefix}{}",
+                    stderr_for_agent_error(&error, &persist_stderr)
+                ),
                 exit_code: exit_code_for_agent_error(&error),
             },
         }
@@ -678,12 +683,17 @@ impl NonInteractiveRunner {
         // Format persist errors AFTER prompt returns so events emitted
         // during the run are captured.
         let persist_stderr = format_persist_errors(&persist_errors);
+        // Text-mode diagnostics contract: surface startup diagnostics (execution
+        // wiring failures, package resolution, resource discovery) on stderr so
+        // text mode preserves the same stable codes as NDJSON/RPC.
+        let startup_prefix = startup_diagnostics_stderr_prefix(&self.harness);
 
         match prompt_result {
             Ok(messages) => {
                 // Check for provider errors in assistant messages
                 if let Some(error) = find_error_message(&messages) {
-                    let mut stderr = error;
+                    let mut stderr = startup_prefix.clone();
+                    stderr.push_str(&error);
                     stderr.push_str(&persist_stderr);
                     return NonInteractiveResult {
                         stdout: String::new(),
@@ -695,13 +705,16 @@ impl NonInteractiveRunner {
                 let stdout = text_parts.lock().map(|g| g.join("")).unwrap_or_default();
                 NonInteractiveResult {
                     stdout,
-                    stderr: persist_stderr,
+                    stderr: format!("{startup_prefix}{persist_stderr}"),
                     exit_code: ExitCode::Success as i32,
                 }
             }
             Err(error) => NonInteractiveResult {
                 stdout: String::new(),
-                stderr: stderr_for_agent_error(&error, &persist_stderr),
+                stderr: format!(
+                    "{startup_prefix}{}",
+                    stderr_for_agent_error(&error, &persist_stderr)
+                ),
                 exit_code: exit_code_for_agent_error(&error),
             },
         }
@@ -800,6 +813,58 @@ pub fn format_persist_errors(errors: &Arc<Mutex<Vec<String>>>) -> String {
     for e in guard.iter() {
         out.push_str("\nsession persist error: ");
         out.push_str(&redact_text(e, RedactionMode::Summary));
+    }
+    out
+}
+
+/// Format the harness startup diagnostics (execution-wiring + resource
+/// discovery + package-resolution) as a redacted text prefix for text-mode
+/// stderr.
+///
+/// Text mode's contract (module doc: "for stdout, diagnostics for stderr")
+/// requires the same startup diagnostics that NDJSON/RPC surface as structured
+/// payloads to also reach the text surface, so a startup execution failure
+/// (e.g. `policy_denied` under a denied backend) is observable in text mode
+/// instead of being silently dropped.
+fn startup_diagnostics_stderr_prefix(harness: &CodingHarness) -> String {
+    let payloads = harness
+        .resource_metadata()
+        .diagnostic_payloads(RedactionMode::Summary);
+    if payloads.is_empty() {
+        return String::new();
+    }
+    let mut out = String::new();
+    for payload in payloads {
+        // Text mode shows the granular stable execution code too: execution
+        // failures are wrapped in the shared `adapter_startup_failed` envelope
+        // with the stable code (e.g. `policy_denied`) in `details.code`, exactly
+        // as NDJSON/RPC carry it. Surface that code + the redacted remediation
+        // so text mode preserves the SAME stable code and actionable remediation,
+        // not just the wrapper.
+        let granular = payload
+            .details
+            .as_ref()
+            .and_then(|d| d.get("code"))
+            .and_then(serde_json::Value::as_str)
+            .filter(|code| !code.is_empty());
+        let action = payload
+            .action
+            .as_deref()
+            .map(|a| format!(" (action: {a})"))
+            .unwrap_or_default();
+        match granular {
+            Some(code) => {
+                // Reuse the canonical lowercase severity Display + the
+                // source::code namespace so the text surface renders the SAME
+                // `[error] source::code: message (action: ...)` shape as the
+                // NDJSON/RPC/doctor surfaces (SC16-14 cross-surface consistency).
+                out.push_str(&format!(
+                    "[{}] {}::{code}: {}{action}\n",
+                    payload.severity, payload.source, payload.message
+                ));
+            }
+            None => out.push_str(&format!("{payload}\n")),
+        }
     }
     out
 }

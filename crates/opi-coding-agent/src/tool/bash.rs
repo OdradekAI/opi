@@ -234,7 +234,12 @@ impl Tool for BashTool {
                 truncated,
                 full_output,
             ));
-            let is_error = exit_code != Some(0);
+            // No degraded success state (design: "The adapter either reports its
+            // effective contract or the command fails"). A timeout or
+            // cancellation is an error even when the backend reports a clean
+            // exit code in the same terminal frame — matching the local backend,
+            // which yields exit_code=None on timeout.
+            let is_error = timed_out || cancelled || exit_code != Some(0);
             let mut result = bash_result(
                 vec![OutputContent::Text { text }],
                 details,

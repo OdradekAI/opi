@@ -90,6 +90,91 @@ fn every_code_has_nonempty_remediation() {
     }
 }
 
+/// SC16-14 "actionable remediation": the 14 stable codes each carry DISTINCT
+/// remediation text (not one generic phrase), and every distinct code resolves to
+/// a distinct remediation string. Guards a regression collapsing
+/// `ExecutionFailure::remediation()` to a shared phrase.
+#[test]
+fn remediation_is_distinct_across_all_14_codes() {
+    let all = one_of_each();
+    assert_eq!(
+        all.len(),
+        14,
+        "one_of_each must cover the full stable-code set"
+    );
+    let mut codes: std::collections::HashSet<&str> = std::collections::HashSet::new();
+    let mut remediation_values: std::collections::HashSet<String> =
+        std::collections::HashSet::new();
+    for f in &all {
+        let code = f.code();
+        assert!(
+            codes.insert(code),
+            "duplicate stable code in one_of_each: {code}"
+        );
+        let remediation = f.remediation();
+        assert!(
+            !remediation.trim().is_empty(),
+            "empty remediation for {code}"
+        );
+        // Compare remediation VALUES, not code keys: two codes collapsing to
+        // identical remediation text must fail here (remediation_values.len()
+        // < 14).
+        assert!(
+            remediation_values.insert(remediation.clone()),
+            "two distinct codes share identical remediation text `{remediation}`"
+        );
+    }
+    assert_eq!(
+        remediation_values.len(),
+        14,
+        "each of the 14 codes must carry distinct actionable remediation"
+    );
+}
+
+/// The mode-aware `PermissionRequired` remediation (D.2 must-fix): interactive
+/// mode gives the persistent USER-config allowance path only (no "run
+/// interactively" nudge — the user already is — and no prompt promise, which
+/// cannot be relied on in the startup-omission/fail-closed cases); headless
+/// modes point at persistent allowance or running interactively. Both branches
+/// and their divergence are pinned so a fragment swap/typo regresses.
+#[test]
+fn permission_required_remediation_is_mode_aware_and_divergent() {
+    let interactive = ExecutionFailure::PermissionRequired {
+        adapter_id: "opi-sandbox".into(),
+        mode: ExecutionRunMode::Interactive,
+    };
+    let headless = ExecutionFailure::PermissionRequired {
+        adapter_id: "opi-sandbox".into(),
+        mode: ExecutionRunMode::Rpc,
+    };
+    let interactive_remediation = interactive.remediation();
+    let headless_remediation = headless.remediation();
+    assert!(
+        interactive_remediation.contains("Allow it persistently in your USER config"),
+        "interactive permission_required must give persistent-allowance guidance: {interactive_remediation}"
+    );
+    assert!(
+        !interactive_remediation.contains("run interactively"),
+        "interactive permission_required must NOT say 'run interactively': {interactive_remediation}"
+    );
+    assert!(
+        !interactive_remediation.contains("cannot be granted non-interactively"),
+        "interactive permission_required must NOT claim it cannot be granted non-interactively: {interactive_remediation}"
+    );
+    assert!(
+        headless_remediation.contains("run interactively"),
+        "headless permission_required must say 'run interactively': {headless_remediation}"
+    );
+    assert!(
+        headless_remediation.contains("cannot be granted non-interactively"),
+        "headless permission_required must explain non-interactive cannot grant: {headless_remediation}"
+    );
+    assert!(
+        interactive_remediation != headless_remediation,
+        "interactive and headless permission_required remediation must differ"
+    );
+}
+
 #[test]
 fn from_activation_error_honors_pinned_mapping() {
     // The three pinned mappings documented on ActivationError.
