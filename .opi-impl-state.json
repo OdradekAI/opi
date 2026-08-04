@@ -1393,7 +1393,7 @@
             "CLI parsing",
             "interactive/text/NDJSON/RPC startup",
             "ExecutionRuntime::build",
-            "CommandExecutionRouter::select",
+            "resolve_selection",
             "BashTool::definition",
             "BashTool::execute",
             "tool selection and path-policy operations",
@@ -1409,7 +1409,7 @@
             "cargo test -p opi-coding-agent --features execution-backend-test-fixture --test execution_product -- --nocapture"
           ],
           "production_call_sites": [
-            "CommandExecutionRouter::select",
+            "resolve_selection",
             "ExecutionProtocolHost::execute",
             "BashTool::execute"
           ],
@@ -1419,7 +1419,7 @@
       "production_call_sites": [
         "interactive/text/NDJSON/RPC startup",
         "ExecutionRuntime::build",
-        "CommandExecutionRouter::select",
+        "resolve_selection",
         "ExecutionProtocolHost::execute",
         "BashTool::definition",
         "BashTool::execute",
@@ -2822,7 +2822,7 @@
       "definition_of_done": "A packaged adapter reaches a real bash tool turn through package CLI dispatch, PackageActivationStore, ExecutionRuntime, routing, permission, the production protocol host, and BashTool; fixed/rules/model and interactive/headless paths preserve Installed/Trusted/Enabled/Selected/Permitted separation, selected external failures never fall back, and text, NDJSON, RPC, interactive, package-doctor, and top-level-doctor surfaces emit the same stable redacted code and actionable remediation.",
       "definition_source": "draft-reviewed",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "16.16.1"
       ],
@@ -2866,6 +2866,31 @@
           "field": "acceptance_scenarios",
           "reason": "Pinned the complete stable failure-code set and cross-surface no-degraded-success assertion.",
           "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Failure and Diagnostics"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "D.2 exec-verify must-fix: text mode never surfaces startup diagnostics (module doc promises diagnostics for stderr); production fix in runner.rs run()/run_with_content() plus non_interactive.rs test",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Failure and Diagnostics"
+        },
+        {
+          "field": "production_call_sites",
+          "reason": "D.2 final must-fix: ledger named CommandExecutionRouter::select, but the production routing seam is the free fn execution::router::resolve_selection (reached via CodingHarness::build_tools -> BashTool::execute -> RoutedBashOperations::exec); corrected for ledger truthfulness",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Core Architecture"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "D.2 final must-fix: remove 5 vestigial #[allow(dead_code)] on protocol/execution/cleanup ExecutionFailure variants (production protocol host constructs all end-to-end) + correct the module doc producer-split note",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Failure and Diagnostics"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "D.2 final must-fix: (a) bash.rs is_error now flags timed_out/cancelled (no degraded success); (b) execution_backend_mock.rs gains a completed_timed_out mode; (c) execution_failures.rs gains full-14-code remediation-distinctness test; (d) interactive chokepoint test uses tempdir workspace",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Failure and Diagnostics"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "D.2 final must-fix: add shared tests/common/mod.rs empty_user_config_dir() helper used by the three cross-surface startup-diagnostic tests to isolate the real user config dir (hermetic Minimal-Runtime branch)",
+          "source": "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md#Testing and Acceptance"
         }
       ],
       "tier": "workspace",
@@ -2874,12 +2899,13 @@
       "evaluator_required": true,
       "verification": {
         "library_gates": [
-          "cargo test -p opi-coding-agent --features execution-backend-test-fixture --test execution_product -- --nocapture",
+          "cargo test -p opi-coding-agent --features execution-backend-test-fixture --test execution_backend_mock --no-run && cargo test -p opi-coding-agent --features execution-backend-test-fixture --test execution_product -- --nocapture",
           "cargo test -p opi-coding-agent --test non_interactive -- --nocapture",
           "cargo test -p opi-coding-agent --test json_mode -- --nocapture",
           "cargo test -p opi-coding-agent --test rpc_jsonl -- --nocapture",
           "cargo test -p opi-coding-agent --test interactive_permission -- --nocapture",
-          "cargo test -p opi-coding-agent --test doctor_cli -- --nocapture"
+          "cargo test -p opi-coding-agent --test doctor_cli -- --nocapture",
+          "cargo test -p opi-coding-agent --test execution_failures -- --nocapture"
         ],
         "behavioral_tests": [
           "crates/opi-coding-agent/tests/execution_product.rs",
@@ -2887,7 +2913,8 @@
           "crates/opi-coding-agent/tests/json_mode.rs",
           "crates/opi-coding-agent/tests/rpc_jsonl.rs",
           "crates/opi-coding-agent/tests/interactive_permission.rs",
-          "crates/opi-coding-agent/tests/doctor_cli.rs"
+          "crates/opi-coding-agent/tests/doctor_cli.rs",
+          "crates/opi-coding-agent/tests/execution_failures.rs"
         ],
         "snapshot_tests": [],
         "smoke_addendum": "Preserve command, stdout, stderr, exit code, NDJSON/RPC events, interactive decision trace, doctor output, adapter stderr capture, and no-local-fallback sentinel artifacts under target/opi-artifacts/phase16-product."
@@ -2904,12 +2931,12 @@
             "package CLI dispatch",
             "PackageActivationStore",
             "ExecutionRuntime::build",
-            "CommandExecutionRouter::select",
+            "resolve_selection",
             "PermissionManager",
             "ExecutionProtocolHost::execute",
             "BashTool::execute"
           ],
-          "status": "open"
+          "status": "closed"
         },
         {
           "id": "SC16-14",
@@ -2928,14 +2955,14 @@
             "package doctor",
             "top-level doctor"
           ],
-          "status": "open"
+          "status": "closed"
         }
       ],
       "production_call_sites": [
         "package CLI dispatch",
         "PackageActivationStore",
         "ExecutionRuntime::build",
-        "CommandExecutionRouter::select",
+        "resolve_selection",
         "PermissionManager",
         "ExecutionProtocolHost::execute",
         "BashTool::execute",
@@ -2949,7 +2976,7 @@
       "substrate_only": false,
       "iteration_count": 0,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "e872aa605c08622e5d33ce7423d658ecbd539c52",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "crates/opi-coding-agent/tests/execution_product.rs",
@@ -2957,13 +2984,33 @@
         "crates/opi-coding-agent/tests/json_mode.rs",
         "crates/opi-coding-agent/tests/rpc_jsonl.rs",
         "crates/opi-coding-agent/tests/interactive_permission.rs",
-        "crates/opi-coding-agent/tests/doctor_cli.rs"
+        "crates/opi-coding-agent/tests/doctor_cli.rs",
+        "crates/opi-coding-agent/src/runner.rs",
+        "crates/opi-coding-agent/src/execution/failure.rs",
+        "crates/opi-coding-agent/tests/fixtures/execution_backend_mock.rs",
+        "crates/opi-coding-agent/src/tool/bash.rs",
+        "crates/opi-coding-agent/tests/execution_failures.rs",
+        "crates/opi-coding-agent/tests/common/mod.rs"
       ],
-      "last_attempt": null,
-      "verified_at_commit": null,
-      "evidence": null,
+      "last_attempt": {
+        "commit": "0bf07e7",
+        "outcome": "passed",
+        "iteration": 0
+      },
+      "verified_at_commit": "0bf07e7",
+      "evidence": "D.2 exec-verify 0 must-fix (4 passes); 7 gates green (execution_product 17/17, non_interactive 12/12, json_mode 29/29, rpc_jsonl 83/83, interactive_permission 13/13, doctor_cli 44/44, execution_failures 8/8); fmt/clippy/doc clean",
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        "D.2 4-pass convergence to 0 must-fix: config-dir isolation (empty_user_config_dir), cancelled+timed_out no-degraded-success, value-based remediation distinctness, mode-aware PermissionRequired remediation, Opi-Acceptance footer scoped per-surface"
+      ],
+      "verify_runs": [
+        {
+          "id": "wf_85afdc26-83f",
+          "lens_count": 6,
+          "must_fix": 0,
+          "flagged": "cross-surface code-slot asymmetry, doctor-local namespace, version-constant time-bomb (16.16.3 bucket)"
+        }
+      ]
     },
     {
       "id": "16.16.3",
