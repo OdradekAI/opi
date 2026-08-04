@@ -255,8 +255,6 @@ fn resolve_headless_trust_config_blocking(
             trust: cli.trust,
             no_trust: cli.no_trust,
         },
-        cli.sandbox,
-        cli.sandbox_require,
         cli.execution_backend.as_deref(),
         cli.execution_strategy,
     ))
@@ -295,8 +293,6 @@ async fn resolve_headless_trust_config(
             trust: cli.trust,
             no_trust: cli.no_trust,
         },
-        cli.sandbox,
-        cli.sandbox_require,
         cli.execution_backend.as_deref(),
         cli.execution_strategy,
     )
@@ -316,8 +312,6 @@ async fn resolve_headless_trust_config_core(
     project_dir: Option<std::path::PathBuf>,
     user_config_dir: std::path::PathBuf,
     trust_cli: opi_coding_agent::project_trust::ProjectTrustCli,
-    sandbox: Option<opi_coding_agent::config::SandboxMode>,
-    sandbox_require: bool,
     execution_backend: Option<&str>,
     execution_strategy: Option<opi_coding_agent::config::ExecutionStrategy>,
 ) -> Result<
@@ -351,11 +345,9 @@ async fn resolve_headless_trust_config_core(
     // Headless ask-to-untrusted: an unresolved ask denies project resources.
     let decision = plan.headless_decision();
     let mut config = staged.finalize_with_project(!matches!(decision, TrustDecision::Untrusted))?;
-    config.apply_sandbox_overrides(sandbox, sandbox_require.then_some(true));
     // Phase 16.9: apply --execution-backend / --execution-strategy. These touch
     // only strategy/backend and never grant trust or permission (the resolved
-    // permissions map is byte-identical before and after), mirroring the sandbox
-    // override precedence.
+    // permissions map is byte-identical before and after).
     config.apply_execution_overrides(execution_backend, execution_strategy);
     Ok((config, decision))
 }
@@ -372,7 +364,7 @@ async fn resolve_headless_trust_config_core(
 /// entirely (not loaded-then-filtered), closing the `providers.bedrock.profile`
 /// vector. Because the prompt resolves BEFORE this returns, `run_interactive`
 /// (provider/package/harness build) provably follows it. Returns the merged
-/// config and the decision. Exits 2 on config/trust error. CLI sandbox
+/// config and the decision. Exits 2 on config/trust error. CLI execution
 /// overrides are re-applied to the two-stage result.
 async fn resolve_interactive_trust_config(
     cli: &Cli,
@@ -446,8 +438,6 @@ async fn resolve_interactive_trust_config(
     let config = match resolve_interactive_trust_config_core(
         staged,
         decision,
-        cli.sandbox,
-        cli.sandbox_require,
         cli.execution_backend.as_deref(),
         cli.execution_strategy,
     ) {
@@ -461,7 +451,7 @@ async fn resolve_interactive_trust_config(
 }
 
 /// Phase 16.9: the prompt-independent tail of [`resolve_interactive_trust_config`]
-/// — `finalize_with_project` plus the CLI sandbox/execution overrides. Extracted
+/// — `finalize_with_project` plus the CLI execution overrides. Extracted
 /// so the interactive execution-override call site is testable without the
 /// `TuiTrustPrompt` coupling (mirrors [`resolve_headless_trust_config_core`]):
 /// it takes the already-resolved trust `decision` and the staged config, then
@@ -471,8 +461,6 @@ async fn resolve_interactive_trust_config(
 fn resolve_interactive_trust_config_core(
     staged: opi_coding_agent::config::StagedConfig,
     decision: opi_coding_agent::project_trust::TrustDecision,
-    sandbox: Option<opi_coding_agent::config::SandboxMode>,
-    sandbox_require: bool,
     execution_backend: Option<&str>,
     execution_strategy: Option<opi_coding_agent::config::ExecutionStrategy>,
 ) -> Result<opi_coding_agent::config::OpiConfig, opi_coding_agent::config::ConfigError> {
@@ -480,7 +468,6 @@ fn resolve_interactive_trust_config_core(
         decision,
         opi_coding_agent::project_trust::TrustDecision::Untrusted
     ))?;
-    config.apply_sandbox_overrides(sandbox, sandbox_require.then_some(true));
     config.apply_execution_overrides(execution_backend, execution_strategy);
     Ok(config)
 }
@@ -1578,8 +1565,6 @@ mod tests {
                     no_trust: false,
                 },
                 None,
-                false,
-                None,
                 None,
             ))
             .expect("headless trust resolution");
@@ -1622,8 +1607,6 @@ mod tests {
                     trust: false,
                     no_trust: false,
                 },
-                None,
-                false,
                 // --execution-backend opi-sandbox --execution-strategy model
                 Some("opi-sandbox"),
                 Some(opi_coding_agent::config::ExecutionStrategy::Model),
@@ -1669,8 +1652,6 @@ mod tests {
         let config = resolve_interactive_trust_config_core(
             staged,
             opi_coding_agent::project_trust::TrustDecision::Trusted,
-            None,
-            false,
             // --execution-backend opi-sandbox --execution-strategy model
             Some("opi-sandbox"),
             Some(opi_coding_agent::config::ExecutionStrategy::Model),
@@ -2792,280 +2773,6 @@ mod tests {
                         .collect::<Vec<_>>();
                     assert_single_backend_fallback(&diagnostics);
                     Ok::<(), Box<dyn std::error::Error>>(())
-                },
-            ));
-
-        assert_eq!(launch_count.load(Ordering::SeqCst), 1);
-        assert!(
-            session_blocker.is_file(),
-            "session path must remain blocked"
-        );
-    }
-
-    // ------------------------------------------------------------------------
-    // Phase 15.5.1: strict-sandbox production dispatch reaches all three run_*
-    // startup entry points (acceptance scenario `phase15-sandbox-config-
-    // production-path`). Non-interactive drives a real bash tool turn through an
-    // injected MockProvider and independently inspects the production
-    // capability outcome before asserting either confined execution or a
-    // fail-closed error in user-visible NDJSON output. RPC and
-    // interactive cannot inject a MockProvider for a bash turn here (run_rpc_core
-    // prompt-turn timing is non-deterministic; run_interactive_core takes no
-    // provider_override and calling harness.prompt would hit the real API), so
-    // they prove their entry reached the built harness and, on permanent-gap
-    // hosts, the CODE_SANDBOX_UNAVAILABLE startup diagnostic — the option (b)
-    // the DoD verifier accepts. The non-interactive strong test covers the
-    // shared new_with_build_options -> build_tools_with_sandbox -> exec chain
-    // that all three modes route through.
-    // ------------------------------------------------------------------------
-
-    fn strict_require_sandbox_config() -> OpiConfig {
-        let mut config = backend_fallback_config();
-        config.sandbox = opi_coding_agent::config::SandboxConfig {
-            mode: opi_coding_agent::config::SandboxMode::Strict,
-            require: true,
-            ..Default::default()
-        };
-        config
-    }
-
-    fn bash_strict_marker_mock() -> Box<dyn opi_ai::provider::Provider> {
-        use opi_ai::test_support::{MockProvider, text_response, tool_call_response};
-        Box::new(MockProvider::new(
-            "anthropic",
-            vec![
-                tool_call_response(
-                    "tc1",
-                    "bash",
-                    r#"{"command":"echo engaged > phase15-strict-engaged.marker","timeout_secs":5}"#,
-                ),
-                text_response("done"),
-            ],
-        ))
-    }
-
-    fn assert_bash_fail_closed_reached(visible: &str) {
-        assert!(
-            visible.contains("sandbox required but unavailable"),
-            "strict+require bash fail-closed must reach user-visible output: {visible}"
-        );
-    }
-
-    #[test]
-    fn sandbox_strict_bash_production_outcome_reaches_noninteractive_output() {
-        use opi_coding_agent::runner::ExitCode;
-
-        let _env_lock = PROVIDER_ENV_LOCK.lock().expect("provider env lock");
-        let workspace_dir = tempfile::tempdir().expect("workspace temp dir");
-        let user_config_dir = tempfile::tempdir().expect("user config temp dir");
-        let session_dir = tempfile::tempdir().expect("session temp dir");
-        let session_blocker = session_blocker(&session_dir);
-        let _env = ProviderEnvGuard::scoped(&[
-            (FIX_G_API_KEY_ENV, std::ffi::OsStr::new(FIX_G_SECRET_CANARY)),
-            ("OPI_SESSIONS_DIR", session_blocker.as_os_str()),
-        ]);
-        let config = strict_require_sandbox_config();
-        let production_outcome =
-            opi_coding_agent::sandbox::prepare_production(&config.sandbox, workspace_dir.path());
-        let expect_fail_closed = match production_outcome {
-            opi_coding_agent::sandbox::PreparedSandbox::Strict(decision) => {
-                match decision.outcome {
-                    opi_coding_agent::sandbox::StrictOutcome::Engaged => false,
-                    opi_coding_agent::sandbox::StrictOutcome::FailClosed { .. } => true,
-                    opi_coding_agent::sandbox::StrictOutcome::FailOpen { .. } => {
-                        panic!("strict+require must never resolve to fail-open")
-                    }
-                }
-            }
-            opi_coding_agent::sandbox::PreparedSandbox::Off => {
-                panic!("strict config must resolve to a strict production outcome")
-            }
-        };
-        let marker = workspace_dir.path().join("phase15-strict-engaged.marker");
-        assert!(!marker.exists(), "marker starts absent");
-        let cli = Cli::parse_from(["opi", "--json", "--allow-mutating"]);
-        let observed = Arc::new(AtomicBool::new(false));
-        let observed_result = Arc::clone(&observed);
-
-        let exit_code = tokio::runtime::Runtime::new().expect("runtime").block_on(
-            run_non_interactive_core(
-                &cli,
-                &config,
-                "run echo via bash",
-                None,
-                None,
-                opi_coding_agent::policy::ToolSelection::Default,
-                opi_coding_agent::project_trust::TrustDecision::Trusted,
-                workspace_dir.path().to_path_buf(),
-                user_config_dir.path().to_path_buf(),
-                unavailable_backend_factory(),
-                Some(bash_strict_marker_mock()),
-                CommandOutput::discard(),
-                move |result| {
-                    observed_result.store(true, Ordering::SeqCst);
-                    assert_eq!(result.exit_code, ExitCode::Success as i32);
-                    if expect_fail_closed {
-                        assert_bash_fail_closed_reached(&result.stdout);
-                        assert!(
-                            !marker.exists(),
-                            "fail-closed strict must reject before spawning the marker command"
-                        );
-                    } else {
-                        assert!(
-                            result.stdout.contains("done"),
-                            "engaged strict+require bash turn must complete: {}",
-                            result.stdout
-                        );
-                        assert!(
-                            !result.stdout.contains("sandbox required but unavailable"),
-                            "an independently engaged strict outcome must not fail closed"
-                        );
-                        assert_eq!(
-                            std::fs::read_to_string(&marker)
-                                .expect("engaged strict executes workspace marker command")
-                                .trim(),
-                            "engaged",
-                            "engaged production confinement must execute the real bash side effect"
-                        );
-                    }
-                },
-            ),
-        );
-
-        assert_eq!(exit_code, ExitCode::Success as i32);
-        assert!(observed.load(Ordering::SeqCst));
-        assert!(
-            session_blocker.is_file(),
-            "session path must remain blocked"
-        );
-    }
-
-    #[test]
-    fn sandbox_strict_startup_diagnostic_reaches_rpc_ready() {
-        use opi_coding_agent::rpc::RpcCommand;
-        use opi_coding_agent::runner::ExitCode;
-
-        let _env_lock = PROVIDER_ENV_LOCK.lock().expect("provider env lock");
-        let workspace_dir = tempfile::tempdir().expect("workspace temp dir");
-        let user_config_dir = tempfile::tempdir().expect("user config temp dir");
-        let session_dir = tempfile::tempdir().expect("session temp dir");
-        let session_blocker = session_blocker(&session_dir);
-        let _env = ProviderEnvGuard::scoped(&[
-            (FIX_G_API_KEY_ENV, std::ffi::OsStr::new(FIX_G_SECRET_CANARY)),
-            ("OPI_SESSIONS_DIR", session_blocker.as_os_str()),
-        ]);
-        let config = strict_require_sandbox_config();
-        let cli = Cli::parse_from(["opi", "--rpc"]);
-        let (command_tx, command_rx) = tokio::sync::mpsc::unbounded_channel();
-        command_tx
-            .send(RpcCommand::quit { id: None })
-            .expect("queue quit command");
-        drop(command_tx);
-        let (output_tx, mut output_rx) = tokio::sync::mpsc::unbounded_channel();
-
-        let exit_code = tokio::runtime::Runtime::new()
-            .expect("runtime")
-            .block_on(run_rpc_core(
-                &cli,
-                &config,
-                None,
-                None,
-                opi_coding_agent::policy::ToolSelection::Default,
-                opi_coding_agent::project_trust::TrustDecision::Trusted,
-                workspace_dir.path().to_path_buf(),
-                user_config_dir.path().to_path_buf(),
-                unavailable_backend_factory(),
-                None,
-                CommandOutput::discard(),
-                RpcTransport::Channels {
-                    command_rx,
-                    output_tx,
-                },
-            ));
-
-        assert_eq!(exit_code, ExitCode::Success as i32);
-        let output: Vec<_> = std::iter::from_fn(|| output_rx.try_recv().ok()).collect();
-        let ready: Vec<_> = output
-            .iter()
-            .filter(|line| line["type"] == "rpc_ready")
-            .collect();
-        assert_eq!(ready.len(), 1, "rpc_ready must be reached: {output:?}");
-        // The RPC startup channel surfaces the permanent-gap diagnostic on
-        // platforms that report one (Windows in 15.5.1). On temporary-only
-        // hosts the startup channel is correctly empty, so only assert the
-        // diagnostic where the platform classifies the gap as permanent.
-        let startup = ready[0]["startup_diagnostics"]
-            .as_array()
-            .expect("rpc_ready startup diagnostics array");
-        #[cfg(target_os = "windows")]
-        assert!(
-            startup
-                .iter()
-                .any(|d| d["code"] == "opi.sandbox.unavailable"),
-            "Windows strict must surface the permanent-gap startup diagnostic: {startup:?}"
-        );
-        let _ = startup; // observed on permanent-gap hosts
-        assert!(
-            session_blocker.is_file(),
-            "session path must remain blocked"
-        );
-    }
-
-    #[test]
-    fn sandbox_strict_startup_diagnostic_reaches_interactive_launcher() {
-        use opi_agent::diagnostic::RedactionMode;
-
-        let _env_lock = PROVIDER_ENV_LOCK.lock().expect("provider env lock");
-        let workspace_dir = tempfile::tempdir().expect("workspace temp dir");
-        let user_config_dir = tempfile::tempdir().expect("user config temp dir");
-        let session_dir = tempfile::tempdir().expect("session temp dir");
-        let session_blocker = session_blocker(&session_dir);
-        let _env = ProviderEnvGuard::scoped(&[
-            (FIX_G_API_KEY_ENV, std::ffi::OsStr::new(FIX_G_SECRET_CANARY)),
-            ("OPI_SESSIONS_DIR", session_blocker.as_os_str()),
-        ]);
-        let config = strict_require_sandbox_config();
-        let cli = Cli::parse_from(["opi"]);
-        let launch_count = Arc::new(AtomicUsize::new(0));
-        let observed_launches = Arc::clone(&launch_count);
-
-        tokio::runtime::Runtime::new()
-            .expect("runtime")
-            .block_on(run_interactive_core(
-                &cli,
-                &config,
-                opi_coding_agent::project_trust::TrustDecision::Trusted,
-                None,
-                None,
-                opi_coding_agent::policy::ToolSelection::Default,
-                workspace_dir.path().to_path_buf(),
-                user_config_dir.path().to_path_buf(),
-                unavailable_backend_factory(),
-                move |harness, _model, _theme_name, _keybindings| {
-                    let observed_launches = Arc::clone(&observed_launches);
-                    async move {
-                        observed_launches.fetch_add(1, Ordering::SeqCst);
-                        let diagnostics = harness
-                            .resource_metadata()
-                            .diagnostic_payloads(RedactionMode::Summary)
-                            .into_iter()
-                            .map(|d| serde_json::to_value(d).expect("diagnostic serializes"))
-                            .collect::<Vec<_>>();
-                        // run_interactive_core takes no provider_override, so
-                        // this proves the strict config reached the interactive
-                        // startup build path (the launcher fired) and, on
-                        // permanent-gap hosts, the CODE_SANDBOX_UNAVAILABLE
-                        // startup diagnostic surfaced via prepare_production.
-                        #[cfg(target_os = "windows")]
-                        assert!(
-                            diagnostics
-                                .iter()
-                                .any(|d| d["code"] == "opi.sandbox.unavailable"),
-                            "Windows strict must surface the permanent-gap startup diagnostic: {diagnostics:?}"
-                        );
-                        let _ = diagnostics;
-                        Ok::<(), Box<dyn std::error::Error>>(())
-                    }
                 },
             ));
 

@@ -1,7 +1,7 @@
 #![cfg(feature = "execution-backend-test-fixture")]
 //! Task 16.9 SC16-07 (production path): a protocol-layer backend failure's
 //! stable code survives the FULL production path — `ExecutionRuntime::build`
-//! (wired by `CodingHarness::build_tools_with_sandbox`) -> the production
+//! (wired by `CodingHarness::build_tools`) -> the production
 //! `BashTool` -> `execute` -> `ToolResult.diagnostics`. The substrate suite
 //! (`execution_runtime.rs`) proves the code reaches `BashOpError`; this proves
 //! the `bash.rs` lift carries it into the agent `ToolResult`, end-to-end through
@@ -19,7 +19,6 @@ use std::sync::Arc;
 
 use opi_coding_agent::config::{
     ExecutionConfig, ExecutionRunMode, ExecutionStrategy, OpiConfig, PermissionDecision,
-    SandboxConfig,
 };
 use opi_coding_agent::execution::ValidatedExecutableContribution;
 use opi_coding_agent::execution::permission::PermissionPolicy;
@@ -32,7 +31,6 @@ use opi_coding_agent::package_activation::{
 };
 use opi_coding_agent::package_store::PackageLockEntry;
 use opi_coding_agent::policy::{RunMode, ToolRuntimeConfig, ToolSelection};
-use opi_coding_agent::sandbox::prepare_production;
 use opi_protocol::execution::v1::WIRE_IDENTITY;
 use tokio_util::sync::CancellationToken;
 
@@ -168,7 +166,7 @@ fn routed_wiring(contribution: ActivatedContribution) -> ExecutionWiring {
 
 /// SC16-07: a protocol-layer backend failure (malformed frame -> ProtocolViolation)
 /// reaches the agent `ToolResult.diagnostics` with its stable code intact,
-/// through the FULL production path (build_tools_with_sandbox -> BashTool ->
+/// through the FULL production path (build_tools -> BashTool ->
 /// execute). The substrate suite proves the code reaches `BashOpError`; this
 /// proves the `bash.rs` lift and that no failure retries through `local`.
 #[tokio::test]
@@ -178,9 +176,8 @@ async fn protocol_violation_survives_into_tool_result_via_production_path() {
     let tool_config =
         ToolRuntimeConfig::resolve(RunMode::Interactive, true, ToolSelection::Default)
             .expect("interactive tool config");
-    let prepared = prepare_production(&SandboxConfig::default(), ws.path());
     let (mut tools, startup_diagnostics) =
-        CodingHarness::build_tools_with_sandbox(ws.path(), &tool_config, prepared, &wiring);
+        CodingHarness::build_tools(ws.path(), &tool_config, &wiring);
     assert!(
         startup_diagnostics.is_empty(),
         "routed allow must not warn at startup: {startup_diagnostics:?}"
@@ -259,9 +256,7 @@ async fn activation_failure_survives_into_tool_result_via_production_path() {
     let tool_config =
         ToolRuntimeConfig::resolve(RunMode::Interactive, true, ToolSelection::Default)
             .expect("interactive tool config");
-    let prepared = prepare_production(&SandboxConfig::default(), ws.path());
-    let (mut tools, _diags) =
-        CodingHarness::build_tools_with_sandbox(ws.path(), &tool_config, prepared, &wiring);
+    let (mut tools, _diags) = CodingHarness::build_tools(ws.path(), &tool_config, &wiring);
     let bash = tools
         .iter_mut()
         .find(|t| t.definition().name == "bash")
@@ -324,9 +319,7 @@ async fn model_supplied_backend_selects_named_adapter_through_execute() {
     let tool_config =
         ToolRuntimeConfig::resolve(RunMode::Interactive, true, ToolSelection::Default)
             .expect("interactive tool config");
-    let prepared = prepare_production(&SandboxConfig::default(), ws.path());
-    let (mut tools, _diags) =
-        CodingHarness::build_tools_with_sandbox(ws.path(), &tool_config, prepared, &wiring);
+    let (mut tools, _diags) = CodingHarness::build_tools(ws.path(), &tool_config, &wiring);
     let bash = tools
         .iter_mut()
         .find(|t| t.definition().name == "bash")
@@ -378,7 +371,7 @@ async fn model_supplied_backend_selects_named_adapter_through_execute() {
     );
 }
 /// `apply_execution_overrides(strategy=Model)` -> the resolved `ExecutionWiring`
-/// -> `build_tools_with_sandbox` -> the bash schema gains the model backend
+/// -> `build_tools` -> the bash schema gains the model backend
 /// field. Proves the CLI-override -> config -> harness link end-to-end. (Schema
 /// only; no backend execution, so a panic store is correct.)
 #[test]
@@ -414,9 +407,7 @@ fn cli_execution_overrides_reach_bash_tool() {
     let tool_config =
         ToolRuntimeConfig::resolve(RunMode::Interactive, true, ToolSelection::Default)
             .expect("interactive tool config");
-    let prepared = prepare_production(&SandboxConfig::default(), ws.path());
-    let (tools, diags) =
-        CodingHarness::build_tools_with_sandbox(ws.path(), &tool_config, prepared, &wiring);
+    let (tools, diags) = CodingHarness::build_tools(ws.path(), &tool_config, &wiring);
     assert!(diags.is_empty(), "model override must not warn: {diags:?}");
     let bash = tools
         .iter()

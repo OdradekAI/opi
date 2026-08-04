@@ -114,7 +114,8 @@ windows-sys = { version = "0.61", features = [
     "Win32_System_Threading",
 ] }
 
-# Phase 15.5.2 Linux strict substrate: seccomp deny-overlay + Landlock.
-# Linux-only crates; referenced by opi-coding-agent under cfg(target_os = "linux").
+# Linux strict substrate: seccomp deny-overlay + Landlock. Linux-only crates;
+# referenced by the standalone opi-sandbox crate under cfg(target_os = "linux")
+# (16.16.1 removed them from opi-coding-agent when native restriction left core).
 landlock = "=0.4.5"
 seccompiler = { version = "0.5", default-features = false }

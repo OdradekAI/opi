@@ -4,7 +4,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 use opi_agent::tool::Tool;
-use opi_coding_agent::diagnostics::CODE_SANDBOX_DEGRADED;
+use opi_coding_agent::diagnostics::CODE_PROCESS_TREE_DEGRADED;
 use opi_coding_agent::tool::{
     BashOpError, BashOperations, BashRequest, BashResult, BashTool,
     LOCAL_BASH_OPERATION_DIAGNOSTIC, ToolDiagnostic as BackendDiagnostic,
@@ -42,7 +42,7 @@ fn operation_context(exit_code: i32) -> BackendDiagnostic {
 
 fn degraded_backend_diagnostic() -> BackendDiagnostic {
     BackendDiagnostic {
-        code: CODE_SANDBOX_DEGRADED.to_string(),
+        code: CODE_PROCESS_TREE_DEGRADED.to_string(),
         message: "subprocess tree lifecycle degraded".to_string(),
         details: Some(json!({
             "layer": "test-tree",
@@ -95,7 +95,7 @@ async fn bash_tool_preserves_backend_diagnostic_on_success() {
     assert!(!result.is_error);
     assert_eq!(result.diagnostics.len(), 1);
     let diagnostic = &result.diagnostics[0];
-    assert_eq!(diagnostic.code, CODE_SANDBOX_DEGRADED);
+    assert_eq!(diagnostic.code, CODE_PROCESS_TREE_DEGRADED);
     assert_eq!(diagnostic.context["layer"], "test-tree");
     assert_eq!(diagnostic.context["reason"], "attach unavailable");
 }
@@ -116,7 +116,7 @@ async fn bash_tool_preserves_backend_diagnostic_on_nonzero_exit() {
         result
             .diagnostics
             .iter()
-            .any(|diagnostic| diagnostic.code == CODE_SANDBOX_DEGRADED)
+            .any(|diagnostic| diagnostic.code == CODE_PROCESS_TREE_DEGRADED)
     );
 }
 
@@ -132,6 +132,6 @@ async fn bash_tool_preserves_backend_diagnostic_on_backend_error() {
 
     assert!(result.is_error);
     assert_eq!(result.diagnostics.len(), 1);
-    assert_eq!(result.diagnostics[0].code, CODE_SANDBOX_DEGRADED);
+    assert_eq!(result.diagnostics[0].code, CODE_PROCESS_TREE_DEGRADED);
     assert_eq!(result.diagnostics[0].context["layer"], "test-tree");
 }

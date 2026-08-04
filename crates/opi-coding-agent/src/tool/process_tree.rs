@@ -10,16 +10,16 @@
 //!
 //! # L0 scope
 //!
-//! L0 is the ALWAYS-ON baseline and runs for BOTH sandbox modes (`off` and
-//! `strict`). It is a lifecycle/correctness mechanism, NOT a security
-//! boundary: a dropped exec future, a timeout, or a cancellation must not
-//! leave orphaned grandchildren behind. Strict confinement is layered on top
-//! by 15.5.x; untrusted code belongs in a container or VM.
+//! L0 is the ALWAYS-ON baseline. It is a lifecycle/correctness mechanism, NOT
+//! a security boundary: a dropped exec future, a timeout, or a cancellation
+//! must not leave orphaned grandchildren behind. Native restriction (strict
+//! confinement) was removed from core by 16.16.1; untrusted code belongs in a
+//! container or VM.
 //!
 //! # Fail-open
 //!
 //! If tree assignment or termination fails, the caller emits a stable
-//! `CODE_SANDBOX_DEGRADED` diagnostic ([`crate::diagnostics`]) and continues at
+//! `CODE_PROCESS_TREE_DEGRADED` diagnostic ([`crate::diagnostics`]) and continues at
 //! the engaged baseline — the direct child is still killed via the Operations
 //! backend. [`TreeGuard`] and every function in this module are panic-free.
 //!
@@ -57,7 +57,7 @@ pub fn configure_tree(cmd: &mut Command) {
 
 /// Redacted L0 assignment/termination failure. Carries only a `{layer, reason}`
 /// pair — no command text, paths, env, or secrets — so it can flow unchanged
-/// into the stable `CODE_SANDBOX_DEGRADED` diagnostic.
+/// into the stable `CODE_PROCESS_TREE_DEGRADED` diagnostic.
 #[derive(Debug, Clone)]
 pub struct AttachError {
     pub layer: &'static str,
@@ -95,7 +95,7 @@ pub enum TerminationOutcome {
     Terminated,
     /// Termination failed at the given layer/reason. Fail-open: the caller
     /// still kills the direct child via the Operations backend and records a
-    /// `CODE_SANDBOX_DEGRADED` diagnostic.
+    /// `CODE_PROCESS_TREE_DEGRADED` diagnostic.
     Failed(AttachError),
 }
 
@@ -460,100 +460,6 @@ impl Drop for JobGuard {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Phase 15 task 15.5.3 — Linux strict confinement FFI
-// ---------------------------------------------------------------------------
-//
-// `sandbox.rs` is `#![forbid(unsafe_code)]` and that forbid propagates to its
-// `linux` submodule, so the two audited `unsafe` helpers required by the Linux
-// strict backend live HERE. `process_tree` is the documented home for
-// spawn-path FFI (its module doc: "every FFI call lives HERE behind a safe
-// wrapper"); `sandbox::linux` builds the confinement plan on the parent side
-// (safe landlock/seccomp APIs) and calls these helpers to perform the kernel
-// calls. `sandbox.rs` and `tool/operations.rs` stay `#![forbid(unsafe_code)]`.
-
-#[cfg(target_os = "linux")]
-use std::sync::Arc;
-
-#[cfg(target_os = "linux")]
-use landlock::{ABI, RulesetCreated};
-
-#[cfg(target_os = "linux")]
-use seccompiler::BpfProgram;
-
-/// Query the kernel's **observed** Landlock ABI (read-only; no confinement).
-/// Replicates landlock 0.4.5's private `LandlockStatus::current()` probe — the
-/// crate deliberately does not expose it, but the policy resolver must report
-/// per-layer availability before spawn. `landlock_create_ruleset(NULL, 0,
-/// LANDLOCK_CREATE_RULESET_VERSION)` returns the supported ABI (1..=7) or a
-/// negative errno when Landlock is absent/disabled.
-#[cfg(target_os = "linux")]
-pub fn observed_landlock_abi() -> ABI {
-    const LANDLOCK_CREATE_RULESET_VERSION: u32 = 1;
-    // SAFETY: read-only capability query. A null attribute pointer, size 0, and
-    // the VERSION flag direct the kernel to return the supported ABI integer
-    // without creating a ruleset or mutating state. No fd is produced. The
-    // landlock crate performs the identical call internally.
-    let v = unsafe {
-        libc::syscall(
-            libc::SYS_landlock_create_ruleset,
-            std::ptr::null::<libc::c_void>(),
-            0usize,
-            LANDLOCK_CREATE_RULESET_VERSION,
-        )
-    };
-    if v < 0 {
-        ABI::Unsupported
-    } else {
-        ABI::from(v as i32)
-    }
-}
-
-/// The one audited child-setup helper: register a `pre_exec` hook on `cmd`
-/// (built in the parent) that installs the seccomp deny-overlay and restricts
-/// the child via Landlock. Only the std `pre_exec` registration itself is
-/// `unsafe`; seccomp and Landlock application are delegated to library APIs.
-#[cfg(target_os = "linux")]
-pub fn install_child_confinement(
-    cmd: &mut tokio::process::Command,
-    bpf: Option<Arc<BpfProgram>>,
-    fs_ruleset: Option<RulesetCreated>,
-    network_ruleset: Option<RulesetCreated>,
-) {
-    use std::os::unix::process::CommandExt;
-    // SAFETY: `pre_exec` runs the supplied closure in the child process after
-    // fork but before execve, in an async-signal-safe context. The closure calls
-    // only async-signal-safe operations: seccomp filter installation (prctl +
-    // the seccomp syscall, inside seccompiler::apply_filter) and Landlock
-    // `restrict_self` (the landlock_restrict_self syscall, inside the landlock
-    // crate). No locking and no heap allocation occur on the success path; the
-    // error paths return only errno-backed `io::Error` values: no allocator,
-    // formatting machinery, or locks are touched after fork. `bpf`
-    // (`Arc<Vec<sock_filter>>`) and the fd-bearing rulesets are all
-    // `Send + Sync + 'static`, satisfying `pre_exec`'s closure bounds.
-    let mut fs_ruleset = fs_ruleset;
-    let mut network_ruleset = network_ruleset;
-    let _ = unsafe {
-        cmd.as_std_mut().pre_exec(move || {
-            if let Some(program) = &bpf
-                && let Err(error) = crate::sandbox::linux::apply_raw_filter(program.as_ref())
-            {
-                return Err(std::io::Error::from_raw_os_error(error.raw_os_error()));
-            }
-            for ruleset in [&mut fs_ruleset, &mut network_ruleset] {
-                if let Some(rs) = ruleset.take()
-                    && let Err(error) = rs.restrict_self()
-                {
-                    return Err(std::io::Error::from_raw_os_error(*landlock::Errno::from(
-                        error,
-                    )));
-                }
-            }
-            Ok(())
-        })
-    };
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -635,28 +541,5 @@ mod tests {
         // The injected handle is not a real kernel handle; disarm it before
         // test cleanup so JobGuard::drop does not call CloseHandle(1).
         job_slot.as_mut().unwrap().handle = 0;
-    }
-
-    #[cfg(target_os = "linux")]
-    #[tokio::test]
-    async fn empty_seccomp_filter_fails_spawn_before_command_side_effects() {
-        let dir = tempfile::tempdir().unwrap();
-        let marker = dir.path().join("must-not-exist");
-        let mut command = tokio::process::Command::new("sh");
-        command
-            .arg("-c")
-            .arg(format!("touch {}", marker.display()))
-            .current_dir(dir.path());
-        let empty = Arc::new(seccompiler::BpfProgram::new());
-        install_child_confinement(&mut command, Some(empty), None, None);
-
-        let error = command
-            .spawn()
-            .expect_err("empty filter must reject the child before exec");
-        assert_eq!(error.raw_os_error(), Some(libc::EINVAL));
-        assert!(
-            !marker.exists(),
-            "a failed pre_exec hook must prevent command side effects"
-        );
     }
 }

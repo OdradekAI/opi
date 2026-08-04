@@ -1,6 +1,6 @@
 //! Task 16.9 acceptance — SC16-01 Minimal Runtime (production startup path).
 //!
-//! Drives the REAL production chokepoint `CodingHarness::build_tools_with_sandbox`
+//! Drives the REAL production chokepoint `CodingHarness::build_tools`
 //! (NOT `ExecutionRuntime::build` or `BashTool::new_with_ops` directly) to prove
 //! that, with default-local routing and no enabled executable extension, startup:
 //!   - does not touch an invalid package-store sentinel (a panic-on-activate
@@ -11,13 +11,13 @@
 //!     `schemars::schema_for!(BashArgs)` computation (no `backend` enum added);
 //!   - leaves local command results and L0 behavior unchanged.
 //!
-//! A silent absence of the 16.9 startup wiring — e.g. `build_tools_with_sandbox`
+//! A silent absence of the 16.9 startup wiring — e.g. `build_tools`
 //! still constructing `LocalBashOperations` directly without calling
 //! `ExecutionRuntime::build` — fails these tests loud.
 
 use std::sync::Arc;
 
-use opi_coding_agent::config::{ExecutionConfig, ExecutionRunMode, SandboxConfig};
+use opi_coding_agent::config::{ExecutionConfig, ExecutionRunMode};
 use opi_coding_agent::execution::permission::PermissionPolicy;
 use opi_coding_agent::execution::{IdentitySource, LockMaterial, PermissionManager};
 use opi_coding_agent::harness::{CodingHarness, ExecutionWiring};
@@ -26,7 +26,6 @@ use opi_coding_agent::package_activation::{
 };
 use opi_coding_agent::package_store::PackageLockEntry;
 use opi_coding_agent::policy::{RunMode, ToolRuntimeConfig, ToolSelection};
-use opi_coding_agent::sandbox::prepare_production;
 use opi_coding_agent::tool::default_bash_schema;
 use tokio_util::sync::CancellationToken;
 
@@ -66,12 +65,9 @@ async fn production_minimal_runtime_preserves_schema_and_runs_local_backend() {
     let tool_config =
         ToolRuntimeConfig::resolve(RunMode::Interactive, true, ToolSelection::Default)
             .expect("interactive tool config");
-    // Mirror the production path: prepare_production(&config.sandbox, root).
-    let prepared = prepare_production(&SandboxConfig::default(), ws.path());
-    let (mut tools, startup_diagnostics) = CodingHarness::build_tools_with_sandbox(
+    let (mut tools, startup_diagnostics) = CodingHarness::build_tools(
         ws.path(),
         &tool_config,
-        prepared,
         &minimal_wiring(ExecutionRunMode::Interactive),
     );
     assert!(

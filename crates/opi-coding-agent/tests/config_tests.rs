@@ -6,9 +6,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use opi_coding_agent::config::{
-    ConfigError, ConfigSource, OpiConfig, SandboxMode, load_config_file, resolve_config,
-};
+use opi_coding_agent::config::{ConfigSource, OpiConfig, load_config_file, resolve_config};
 use tempfile::NamedTempFile;
 
 // ---------------------------------------------------------------------------
@@ -1225,31 +1223,5 @@ model = "config-model"
     assert_eq!(
         config.defaults.model, "cli-model",
         "--model should override --config and env"
-    );
-}
-
-// ---------------------------------------------------------------------------
-// Phase 15.3: sandbox config parsing (named filter: `sandbox`)
-// ---------------------------------------------------------------------------
-
-#[test]
-fn sandbox_defaults_off_when_absent() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = write_temp_config(dir.path(), "[defaults]\nmodel = \"m\"\n");
-    let config = load_config_file(&path).unwrap();
-    assert_eq!(config.sandbox.mode, SandboxMode::Off);
-    assert!(!config.sandbox.require);
-}
-
-#[test]
-fn sandbox_invalid_mode_is_named_parse_error() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = write_temp_config(dir.path(), "[sandbox]\nmode = \"bogus\"\n");
-    let err = load_config_file(&path).expect_err("invalid sandbox mode must error");
-    assert!(matches!(err, ConfigError::Parse { .. }));
-    assert!(
-        err.to_string().contains("bogus"),
-        "parse error should echo the invalid value: {}",
-        err
     );
 }

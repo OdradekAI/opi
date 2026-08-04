@@ -266,13 +266,9 @@ impl AdapterHost {
             l0_guard,
         };
         if let Some(error) = l0_attach_error {
-            host.diagnostics
-                .lock()
-                .unwrap()
-                .push(crate::diagnostics::sandbox_degraded_diagnostic(
-                    error.layer,
-                    error.reason,
-                ));
+            host.diagnostics.lock().unwrap().push(
+                crate::diagnostics::process_tree_degraded_diagnostic(error.layer, error.reason),
+            );
         }
 
         // Perform the initialize handshake
@@ -658,7 +654,7 @@ fn other_type(msg: &AdapterProcessMessage) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::diagnostics::CODE_SANDBOX_DEGRADED;
+    use crate::diagnostics::CODE_PROCESS_TREE_DEGRADED;
 
     fn one_handshake_adapter() -> AdapterProcessConfig {
         let response = r#"{"type":"capabilities","id":"1","tools":[],"commands":[],"hooks":[],"model_overrides":[]}"#;
@@ -705,7 +701,7 @@ mod tests {
         let diagnostics = host.take_diagnostics();
         assert_eq!(diagnostics.len(), 1);
         let diagnostic = &diagnostics[0];
-        assert_eq!(diagnostic.code, CODE_SANDBOX_DEGRADED);
+        assert_eq!(diagnostic.code, CODE_PROCESS_TREE_DEGRADED);
         assert_eq!(
             diagnostic.details,
             Some(serde_json::json!({

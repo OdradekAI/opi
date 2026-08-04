@@ -34,7 +34,6 @@ pub mod resource;
 pub mod rpc;
 pub mod runner;
 pub mod runtime_packages;
-pub mod sandbox;
 pub mod session_cli;
 pub mod session_coordinator;
 pub mod skill;

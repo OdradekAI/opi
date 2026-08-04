@@ -73,7 +73,6 @@ use crate::prompt::SystemPromptBuilder;
 use crate::resource::{
     DiscoveryLayerKind, ExplicitResourcePaths, ResourceDiscoveryLayers, standard_discovery_layers,
 };
-use crate::sandbox::PreparedSandbox;
 use crate::session_coordinator::{SessionCoordinator, to_wire_result};
 use crate::tool::{
     BashOperations, BashTool, EditTool, FileOperations, FindTool, GlobTool, GrepTool,
@@ -87,7 +86,7 @@ use tokio::sync::mpsc;
 /// constructs this from the layered config plus the global package-activation
 /// store; tests inject Minimal-Runtime fixtures (an empty enabled slice plus a
 /// panic-on-call [`IdentitySource`] sentinel) to drive the production
-/// [`CodingHarness::build_tools_with_sandbox`] chokepoint.
+/// [`CodingHarness::build_tools`] chokepoint.
 ///
 /// `policy` is the resolved [`PermissionPolicy`] derived from
 /// `config.execution.permissions` (NOT [`PermissionPolicy::empty`], which would
@@ -192,11 +191,10 @@ impl IdentitySource for PanicIdentitySource {
     }
 }
 
-/// The default-local / no-enabled-extensions execution context. Used by the
-/// [`CodingHarness::build_tools`] convenience, by tests that drive
-/// [`CodingHarness::build_tools_with_sandbox`] for non-execution concerns (the
-/// sandbox suites), and identical to the shape the production path reduces to
-/// when no executable extension is enabled.
+/// The default-local / no-enabled-extensions execution context. Used by tests
+/// that drive [`CodingHarness::build_tools`] without an enabled extension, and
+/// identical to the shape the production path reduces to when no executable
+/// extension is enabled.
 pub fn minimal_runtime_wiring(mode: ExecutionRunMode) -> ExecutionWiring {
     ExecutionWiring {
         config: ExecutionConfig::default(),
@@ -983,16 +981,10 @@ impl CodingHarness {
         // reuses the same dir below.
         let resolved_global_dir = global_config_dir.unwrap_or_else(crate::config::user_config_dir);
 
-        // Phase 15.5.1: resolve the sandbox policy once from the resolved
-        // config.sandbox. The permanent platform-gap diagnostics surface through
-        // the harness startup channel (merged into resources.metadata.diagnostics
-        // below); the decision is enforced per-command inside
-        // LocalBashOperations::exec.
-        let prepared = crate::sandbox::prepare_production(&config.sandbox, &workspace_root);
         // Phase 16.9: resolve the execution wiring once (enabled identities from
         // the global package-activation store + the resolved permission policy +
         // the run mode) and thread it through `ExecutionRuntime::build` inside
-        // `build_tools_with_sandbox`.
+        // `build_tools`.
         let mut execution =
             execution_wiring(&config, &resolved_global_dir, build_options.execution_mode);
         // Phase 16.10: interactive mode installs the TUI permission broker. The
@@ -1008,8 +1000,8 @@ impl CodingHarness {
         } else {
             None
         };
-        let (mut tools, sandbox_startup_diagnostics) =
-            Self::build_tools_with_sandbox(&workspace_root, &tool_config, prepared, &execution);
+        let (mut tools, tool_diagnostics) =
+            Self::build_tools(&workspace_root, &tool_config, &execution);
         tools.extend(extension_tools);
         let tool_defs: Vec<_> = tools.iter().map(|t| t.definition()).collect();
         let mut builder = SystemPromptBuilder::new().tools(tool_defs);
@@ -1038,10 +1030,7 @@ impl CodingHarness {
             .metadata
             .diagnostics
             .extend(build_options.startup_diagnostics);
-        resources
-            .metadata
-            .diagnostics
-            .extend(sandbox_startup_diagnostics);
+        resources.metadata.diagnostics.extend(tool_diagnostics);
         resources.metadata.diagnostics.extend(resume_diagnostics);
         for name in injected_extension_names {
             resources.metadata.add_extension_name(name);
@@ -2271,36 +2260,18 @@ impl CodingHarness {
 
     /// Construct the eight built-in tools, filtered to the active selection.
     ///
-    /// Phase 15 T5: `build_tools` constructs the local Operations defaults
-    /// (`LocalFileOperations` / `LocalBashOperations`) and injects them into
-    /// exactly `read`/`write`/`edit`/`bash`. The four navigation tools
-    /// (`grep`/`find`/`ls`/`glob`) keep their local-walk constructors unchanged
-    /// — their `ignore`-crate walker cannot be cleanly redirected to a backend.
+    /// Phase 15 T5 + 16.9: `build_tools` constructs the local Operations defaults
+    /// (`LocalFileOperations` / `LocalBashOperations`), threads the resolved
+    /// execution context through [`ExecutionRuntime::build`], and injects the
+    /// selected [`BashOperations`] plus the dynamic bash schema into the
+    /// production `BashTool`. The four navigation tools (`grep`/`find`/`ls`/
+    /// `glob`) keep their local-walk constructors unchanged — their `ignore`-
+    /// crate walker cannot be cleanly redirected to a backend. Returns any
+    /// execution-startup diagnostics (Phase 16.9) so they surface in
+    /// interactive, non-interactive, and RPC modes.
     pub fn build_tools(
         workspace_root: &Path,
         tool_config: &ToolRuntimeConfig,
-    ) -> Vec<Box<dyn Tool>> {
-        Self::build_tools_with_sandbox(
-            workspace_root,
-            tool_config,
-            PreparedSandbox::default(),
-            &minimal_runtime_wiring(ExecutionRunMode::Interactive),
-        )
-        .0
-    }
-
-    /// Phase 15.5.1 + 16.9: like [`Self::build_tools`] but constructs
-    /// `LocalBashOperations` with the resolved sandbox policy, then threads the
-    /// resolved execution context through [`ExecutionRuntime::build`] and injects
-    /// its selected [`BashOperations`] plus the dynamic bash schema into the
-    /// production `BashTool`. Returns the once-per-startup permanent-gap
-    /// diagnostics (Phase 15) alongside any execution-startup diagnostics
-    /// (Phase 16.9) so both surface in interactive, non-interactive, and RPC
-    /// modes.
-    pub fn build_tools_with_sandbox(
-        workspace_root: &Path,
-        tool_config: &ToolRuntimeConfig,
-        prepared: PreparedSandbox,
         execution: &ExecutionWiring,
     ) -> (Vec<Box<dyn Tool>>, Vec<Diagnostic>) {
         let read_policy = match tool_config.run_mode {
@@ -2308,16 +2279,13 @@ impl CodingHarness {
             RunMode::NonInteractive => crate::tool::PathPolicy::WorkspaceOnly,
         };
 
-        let mut startup_diagnostics = prepared.startup_diagnostics();
+        let mut startup_diagnostics = Vec::new();
         let file_ops: Arc<dyn FileOperations> =
             Arc::new(LocalFileOperations::new(workspace_root.to_path_buf()));
-        // 16.9: the prepared `LocalBashOperations` is the `local_ops` fed to
+        // 16.9: `LocalBashOperations` is the `local_ops` fed to
         // `ExecutionRuntime::build`. The Minimal-Runtime branch returns this same
-        // Arc by pointer-identity, so the Phase 15 sandbox confinement reaches
-        // spawn unchanged (no fresh `LocalBashOperations` with a default/Off
-        // `PreparedSandbox`).
-        let local_ops: Arc<dyn BashOperations> =
-            Arc::new(LocalBashOperations::with_prepared(prepared));
+        // Arc by pointer-identity (no fresh `LocalBashOperations` wrapper).
+        let local_ops: Arc<dyn BashOperations> = Arc::new(LocalBashOperations::new());
 
         let (bash_tool, exec_diagnostics) =
             Self::build_bash_tool(workspace_root, local_ops, execution);

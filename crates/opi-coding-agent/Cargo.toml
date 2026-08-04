@@ -71,8 +71,6 @@ libc = { workspace = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 zbus-secret-service-keyring-store = { workspace = true }
-landlock = { workspace = true }
-seccompiler = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

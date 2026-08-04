@@ -8,8 +8,8 @@ use std::fs;
 
 use opi_ai::test_support::{MockProvider, text_response};
 use opi_coding_agent::cli::Cli;
-use opi_coding_agent::config::OpiConfig;
-use opi_coding_agent::harness::CodingHarness;
+use opi_coding_agent::config::{ExecutionRunMode, OpiConfig};
+use opi_coding_agent::harness::{CodingHarness, minimal_runtime_wiring};
 use opi_coding_agent::policy::{
     RunMode, ToolFlags, ToolRuntimeConfig, ToolSelection, filter_tool_names, resolve_tool_selection,
 };
@@ -462,7 +462,12 @@ fn build_tools_constructs_expected_default_set() {
     )
     .expect("interactive allowlist of all eight resolves");
 
-    let tools = CodingHarness::build_tools(workspace.path(), &config);
+    let tools = CodingHarness::build_tools(
+        workspace.path(),
+        &config,
+        &minimal_runtime_wiring(ExecutionRunMode::Interactive),
+    )
+    .0;
     let names: Vec<String> = tools
         .iter()
         .map(|t| t.definition().name.to_string())

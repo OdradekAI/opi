@@ -33,7 +33,7 @@ use std::path::Path;
 use std::sync::OnceLock;
 use std::time::Duration;
 
-use opi_coding_agent::diagnostics::CODE_SANDBOX_DEGRADED;
+use opi_coding_agent::diagnostics::CODE_PROCESS_TREE_DEGRADED;
 use opi_coding_agent::tool::{BashOperations, BashRequest, LocalBashOperations};
 use tokio_util::sync::CancellationToken;
 
@@ -601,7 +601,7 @@ async fn legacy_fault_environment_names_are_inert() {
         result
             .diagnostics
             .iter()
-            .all(|diagnostic| diagnostic.code != CODE_SANDBOX_DEGRADED),
+            .all(|diagnostic| diagnostic.code != CODE_PROCESS_TREE_DEGRADED),
         "legacy environment names must not activate L0 fault injection"
     );
 }

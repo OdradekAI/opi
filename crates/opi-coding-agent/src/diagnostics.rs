@@ -1,44 +1,35 @@
-//! Sandbox fallback diagnostic contract (Phase 15 T4).
+//! L0 process-tree supervision diagnostic contract.
 //!
-//! Stable `&'static str` codes identify the two sandbox fallback conditions so
-//! embedders and tests can match them by literal. The shared
-//! [`opi_agent::Diagnostic`] model is constructed by value here; the opi-agent
-//! struct itself is unchanged. Both conditions carry a redacted
-//! `{ layer, reason }` payload in `Diagnostic.details`: `layer` names the
-//! sandbox layer (e.g. `"landlock"`, `"seccomp"`, `"windows-l3"`) and `reason`
-//! is a short, curator-controlled explanation. No command, environment
-//! variable, absolute path, or credential is ever placed in the payload.
-//!
-//! - [`CODE_SANDBOX_DEGRADED`]: a temporary/per-host layer degradation. The
-//!   layer failed to engage on this host or attempt; the default sandbox policy
-//!   is fail-open, so execution continues at the engaged baseline.
-//! - [`CODE_SANDBOX_UNAVAILABLE`]: a permanent platform gap (e.g. Windows
-//!   L1-L3, macOS L3). Reported once per startup rather than once per command.
+//! After Phase 16 task 16.16.1 removed the built-in native sandbox from core,
+//! only the policy-neutral L0 process-tree supervision diagnostic remains. The
+//! stable `&'static str` code identifies a process-tree supervision degradation
+//! (an attach/terminate failure during L0 supervision) so embedders and tests
+//! can match it by literal. The shared [`opi_agent::Diagnostic`] model is
+//! constructed by value here; the opi-agent struct itself is unchanged. The
+//! diagnostic carries a redacted `{ layer, reason }` payload in
+//! `Diagnostic.details`: `layer` names the supervision layer (e.g.
+//! `"unix-pgroup"`, `"windows-job"`) and `reason` is a short, curator-controlled
+//! explanation. No command, environment variable, absolute path, or credential
+//! is ever placed in the payload.
 
 use opi_agent::diagnostic::{Diagnostic, Severity};
 
-/// Closed, redaction-safe sandbox diagnostic reason.
+/// Closed, redaction-safe L0 process-tree supervision reason.
 ///
 /// Every variant serializes to curator-controlled static text. Raw OS,
-/// subprocess, probe, command, environment, credential, and path data cannot
-/// cross the public diagnostic-construction boundary.
+/// subprocess, command, environment, credential, and path data cannot cross the
+/// public diagnostic-construction boundary.
+///
+/// (Phase 16 task 16.16.1 pruned the strict-sandbox variants when native
+/// restriction left core; this enum now carries only the L0 supervision reasons
+/// used by `tool::process_tree` and `tool::supervision`. The name is retained to
+/// avoid churning the retained L0 `AttachError.reason` call sites; it is
+/// L0-only vocabulary now.)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SandboxReason {
     MissingChildProcessId,
     ProcessTreeAttachFailed,
     ProcessTreeTerminationFailed,
-    SeccompUnsupportedArchitecture,
-    SeccompFilterBuildFailed,
-    SeccompFilterCompileFailed,
-    LandlockFilesystemUnavailable,
-    LandlockTcpUnavailable,
-    LandlockFilesystemConstructionFailed,
-    LandlockNetworkConstructionFailed,
-    MacosSandboxExecMissing,
-    MacosSandboxExecUnusable,
-    MacosSyscallConfinementUnavailable,
-    WindowsStrictConfinementUnavailable,
-    StrictConfinementUnsupportedPlatform,
 }
 
 impl SandboxReason {
@@ -47,28 +38,6 @@ impl SandboxReason {
             Self::MissingChildProcessId => "missing child process id",
             Self::ProcessTreeAttachFailed => "process-tree containment attach failed",
             Self::ProcessTreeTerminationFailed => "process-tree containment termination failed",
-            Self::SeccompUnsupportedArchitecture => {
-                "seccomp target architecture is not in the verified release matrix"
-            }
-            Self::SeccompFilterBuildFailed => "seccomp filter construction failed",
-            Self::SeccompFilterCompileFailed => "seccomp filter compilation failed",
-            Self::LandlockFilesystemUnavailable => {
-                "landlock filesystem rights unavailable (kernel reports ABI 0)"
-            }
-            Self::LandlockTcpUnavailable => "landlock TCP bind/connect unavailable below ABI 4",
-            Self::LandlockFilesystemConstructionFailed => "landlock filesystem construction failed",
-            Self::LandlockNetworkConstructionFailed => "landlock network construction failed",
-            Self::MacosSandboxExecMissing => "sandbox-exec not found at /usr/bin/sandbox-exec",
-            Self::MacosSandboxExecUnusable => "sandbox-exec unusable",
-            Self::MacosSyscallConfinementUnavailable => {
-                "macOS sandbox-exec provides L1/L2 confinement only; no syscall-level (L3) confinement"
-            }
-            Self::WindowsStrictConfinementUnavailable => {
-                "windows provides no L1-L3 strict confinement (L0 Job-Object only)"
-            }
-            Self::StrictConfinementUnsupportedPlatform => {
-                "strict sandbox unsupported on this platform"
-            }
         }
     }
 }
@@ -79,45 +48,26 @@ impl std::fmt::Display for SandboxReason {
     }
 }
 
-/// Stable code for a temporary sandbox layer degradation (fail-open baseline).
-pub const CODE_SANDBOX_DEGRADED: &str = "opi.sandbox.degraded";
+/// Stable code for an L0 process-tree supervision degradation (an attach or
+/// terminate failure during supervision). Supervision degradations are reported,
+/// not fatal: the command still runs under the best-effort L0 baseline.
+pub const CODE_PROCESS_TREE_DEGRADED: &str = "opi.process-tree.degraded";
 
-/// Stable code for a permanent sandbox platform unavailability.
-pub const CODE_SANDBOX_UNAVAILABLE: &str = "opi.sandbox.unavailable";
+/// Owning subsystem for L0 process-tree supervision diagnostics.
+pub const SOURCE_PROCESS_TREE: &str = "process-tree";
 
-/// Owning subsystem for sandbox diagnostics.
-pub const SOURCE_SANDBOX: &str = "sandbox";
-
-/// Construct a redacted sandbox-layer-degraded diagnostic.
+/// Construct a redacted L0 process-tree-supervision-degraded diagnostic.
 ///
-/// `layer` names the sandbox layer (e.g. `"landlock"`); `reason` is a short
-/// curator-controlled explanation (e.g. `"kernel < 5.13"`). The payload is
-/// restricted to `{ layer, reason }` and never carries command text, env
-/// vars, paths, or secrets.
-pub fn sandbox_degraded_diagnostic(layer: &'static str, reason: SandboxReason) -> Diagnostic {
+/// `layer` names the supervision layer (e.g. `"unix-pgroup"`); `reason` is a
+/// short curator-controlled explanation. The payload is restricted to
+/// `{ layer, reason }` and never carries command text, env vars, paths, or
+/// secrets.
+pub fn process_tree_degraded_diagnostic(layer: &'static str, reason: SandboxReason) -> Diagnostic {
     Diagnostic::new(
         Severity::Warning,
-        CODE_SANDBOX_DEGRADED,
-        SOURCE_SANDBOX,
-        "sandbox layer degraded",
-    )
-    .details(serde_json::json!({
-        "layer": layer,
-        "reason": reason.as_str(),
-    }))
-}
-
-/// Construct a redacted sandbox-platform-unavailable diagnostic.
-///
-/// Semantics mirror [`sandbox_degraded_diagnostic`] but identify a permanent
-/// platform gap rather than a temporary degradation; callers should emit it at
-/// most once per startup.
-pub fn sandbox_unavailable_diagnostic(layer: &'static str, reason: SandboxReason) -> Diagnostic {
-    Diagnostic::new(
-        Severity::Warning,
-        CODE_SANDBOX_UNAVAILABLE,
-        SOURCE_SANDBOX,
-        "sandbox layer permanently unavailable",
+        CODE_PROCESS_TREE_DEGRADED,
+        SOURCE_PROCESS_TREE,
+        "process-tree supervision degraded",
     )
     .details(serde_json::json!({
         "layer": layer,

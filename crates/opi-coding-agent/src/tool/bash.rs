@@ -73,10 +73,9 @@ impl BashTool {
     }
 
     /// Phase 16.9: inject an explicit backend AND a precomputed input schema.
-    /// Production (`CodingHarness::build_tools_with_sandbox`) passes the
-    /// resolved dynamic schema (the default, or the default plus the
-    /// model-routing `backend` enum under `strategy = "model"`); tests pass
-    /// [`default_bash_schema`].
+    /// Production (`CodingHarness::build_tools`) passes the resolved dynamic
+    /// schema (the default, or the default plus the model-routing `backend`
+    /// enum under `strategy = "model"`); tests pass [`default_bash_schema`].
     pub fn new_with_ops_and_schema(
         workspace_root: PathBuf,
         ops: Arc<dyn BashOperations>,
@@ -313,14 +312,6 @@ fn backend_error_result(
             text: format!("failed to spawn command: {message}"),
         }]),
         BashOpError::WaitFailed { .. } => wait_failed_result(workspace_root, command, cwd, shell),
-        BashOpError::SandboxUnavailable { message } => {
-            // Phase 15.5.1 fail-closed: require=true + an unavailable layer.
-            // The backend refused to spawn, so surface only the redacted layer
-            // summary (no command/env/paths).
-            result::err(vec![OutputContent::Text {
-                text: format!("sandbox required but unavailable: {message}"),
-            }])
-        }
         BashOpError::Other { message } => result::err(vec![OutputContent::Text {
             text: format!("bash backend error: {message}"),
         }]),

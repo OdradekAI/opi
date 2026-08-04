@@ -261,7 +261,7 @@ fn ok_selection_carries_only_backend_and_mode() {
 }
 
 // ---------------------------------------------------------------------------
-// Task 16.9 SC16-04: PRODUCTION startup path (CodingHarness::build_tools_with_sandbox)
+// Task 16.9 SC16-04: PRODUCTION startup path (CodingHarness::build_tools)
 // ---------------------------------------------------------------------------
 // These drive the real production chokepoint (not `resolve_selection` directly)
 // to prove the dynamic bash schema and the no-fallback diagnostic surfacing are
@@ -273,7 +273,7 @@ fn ok_selection_carries_only_backend_and_mode() {
 use std::sync::Arc;
 
 use opi_agent::diagnostic::Severity;
-use opi_coding_agent::config::{OpiConfig, SandboxConfig};
+use opi_coding_agent::config::OpiConfig;
 use opi_coding_agent::execution::permission::PermissionPolicy;
 use opi_coding_agent::execution::{EnabledIdentity, IdentitySource, PermissionManager};
 use opi_coding_agent::harness::{CodingHarness, ExecutionWiring};
@@ -281,7 +281,6 @@ use opi_coding_agent::package_activation::{
     ActivatedContribution, ActivationError, host_opi_version, host_target_triple,
 };
 use opi_coding_agent::policy::{RunMode, ToolRuntimeConfig, ToolSelection};
-use opi_coding_agent::sandbox::prepare_production;
 use opi_coding_agent::tool::default_bash_schema;
 
 /// A store that panics if activated. The production-path routing tests below
@@ -345,8 +344,7 @@ fn build_prod_tools(
     let tool_config =
         ToolRuntimeConfig::resolve(RunMode::Interactive, true, ToolSelection::Default)
             .expect("interactive tool config");
-    let prepared = prepare_production(&SandboxConfig::default(), ws.path());
-    CodingHarness::build_tools_with_sandbox(ws.path(), &tool_config, prepared, w)
+    CodingHarness::build_tools(ws.path(), &tool_config, w)
 }
 
 fn bash_schema(tools: &[Box<dyn opi_agent::tool::Tool>]) -> serde_json::Value {

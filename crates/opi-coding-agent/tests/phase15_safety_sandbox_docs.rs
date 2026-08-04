@@ -413,18 +413,16 @@ fn heading_slices_reject_markers_moved_outside_the_target_section() {
 
 #[test]
 fn phase15_nongoals_have_structural_evidence() {
-    // No opi-side `unsafe` on the production sandbox path.
-    for path in [
-        "crates/opi-coding-agent/src/sandbox.rs",
-        "crates/opi-coding-agent/src/tool/operations.rs",
-        "crates/opi-coding-agent/src/sandbox/windows.rs",
-    ] {
-        let source = read_repo_file(path);
-        assert!(
-            source.contains("#![forbid(unsafe_code)]"),
-            "{path} must retain `#![forbid(unsafe_code)]`"
-        );
-    }
+    // No opi-side `unsafe` on the retained production tool path
+    // (`operations.rs`). The Phase 15 native-sandbox modules (`sandbox.rs`,
+    // `sandbox/windows.rs`, `sandbox/linux.rs`) were removed by 16.16.1 when
+    // native restriction left core; their forbid(unsafe) guarantee is preserved
+    // as historical evidence by the Phase 15 doc claims pinned above.
+    let operations_forbid = read_repo_file("crates/opi-coding-agent/src/tool/operations.rs");
+    assert!(
+        operations_forbid.contains("#![forbid(unsafe_code)]"),
+        "operations.rs must retain `#![forbid(unsafe_code)]`"
+    );
 
     // No built-in `/trust` slash command, no CLI `-e`/`--extension` flag.
     let interactive = read_repo_file("crates/opi-coding-agent/src/interactive.rs");
@@ -502,54 +500,6 @@ fn phase15_nongoals_have_structural_evidence() {
         "LocalFileOperations must document the deliberately ambient external-read path"
     );
 
-    // The narrowed Linux L2/L3 mechanism is pinned in source.
-    let linux = read_repo_file("crates/opi-coding-agent/src/sandbox/linux.rs");
-    for exact in [
-        "(\"AF_INET\", libc::AF_INET as i64)",
-        "(\"AF_INET6\", libc::AF_INET6 as i64)",
-        "(\"AF_NETLINK\", libc::AF_NETLINK as i64)",
-        "(\"open_by_handle_at\", libc::SYS_open_by_handle_at)",
-        "(\"bpf\", libc::SYS_bpf)",
-        "(\"ptrace\", libc::SYS_ptrace)",
-        "(\"kexec_load\", libc::SYS_kexec_load)",
-        "(\"reboot\", libc::SYS_reboot)",
-        "(\"init_module\", libc::SYS_init_module)",
-        "(\"finit_module\", libc::SYS_finit_module)",
-        "(\"delete_module\", libc::SYS_delete_module)",
-        "(\"swapon\", libc::SYS_swapon)",
-        "(\"swapoff\", libc::SYS_swapoff)",
-        "(\"acct\", libc::SYS_acct)",
-        "(\"settimeofday\", libc::SYS_settimeofday)",
-    ] {
-        assert!(
-            linux.contains(exact),
-            "linux.rs must pin the narrowed L2/L3 deny entry `{exact}`"
-        );
-    }
-    // clone/unshare must NOT be in the danger blocklist.
-    assert!(
-        !linux.contains("(\"clone\",") && !linux.contains("(\"unshare\","),
-        "linux.rs danger blocklist must not deny `clone`/`unshare`"
-    );
-    // The alternate-surface audit retains an uncovered residual (no completeness claim).
-    assert!(
-        linux.contains("uncovered-residual") && linux.contains("io_uring"),
-        "linux.rs alternate-surface audit must retain the io_uring uncovered residual"
-    );
-
-    // Diagnostics codes are stable `&'static str` literals.
-    let diagnostics = read_repo_file("crates/opi-coding-agent/src/diagnostics.rs");
-    for exact in [
-        "pub const CODE_SANDBOX_DEGRADED: &str = \"opi.sandbox.degraded\";",
-        "pub const CODE_SANDBOX_UNAVAILABLE: &str = \"opi.sandbox.unavailable\";",
-        "pub const SOURCE_SANDBOX: &str = \"sandbox\";",
-    ] {
-        assert!(
-            diagnostics.contains(exact),
-            "diagnostics.rs must pin the stable sandbox diagnostic `{exact}`"
-        );
-    }
-
     // Construction-ownership invariant: Phase 15 sandbox/trust/Operations code
     // lives only in opi-coding-agent. Check each lower-crate source path and
     // source body independently so a new module or one unchecked PascalCase API
@@ -592,40 +542,6 @@ fn construction_ownership_guard_rejects_mutated_module_and_api_fixtures() {
         .is_empty(),
         "unrelated lower-crate code must not be rejected"
     );
-}
-
-#[test]
-fn sandbox_product_ci_retains_each_native_product_filter_and_complete_log() {
-    let workflow = read_repo_file(".github/workflows/ci.yml");
-    for filter in [
-        "linux_engaged_subprocess_denies_requested_access",
-        "linux_new_inet_inet6_netlink_sockets_are_denied",
-        "linux_af_unix_survives_socket_creation_gate",
-        "linux_af_unix_datagram_round_trip_survives_socket_creation_gate",
-        "linux_landlock_abi4_denies_tcp_bind_connect",
-        "linux_l3_ptrace_is_denied_only_when_syscall_layer_is_enabled",
-        "linux_alternate_network_surface_audit",
-        "macos_engaged_subprocess_denies_outside_write",
-        "macos_engaged_subprocess_denies_network",
-        "macos_engaged_subprocess_allows_workspace_and_temp_writes",
-        "windows_strict_production_dispatch_reports_l0_only",
-    ] {
-        assert!(
-            workflow.contains(filter),
-            "sandbox_product must retain native product filter `{filter}`"
-        );
-    }
-    for evidence_guard in [
-        "-- --exact",
-        "0 failed; 0 ignored",
-        "Upload sandbox-product log",
-        "if: always()",
-    ] {
-        assert!(
-            workflow.contains(evidence_guard),
-            "sandbox_product must retain complete-log guard `{evidence_guard}`"
-        );
-    }
 }
 
 #[test]

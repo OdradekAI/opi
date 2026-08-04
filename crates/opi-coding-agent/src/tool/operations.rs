@@ -48,8 +48,6 @@ use serde::{Deserialize, Serialize};
 use tokio::io::AsyncWriteExt;
 use tokio_util::sync::CancellationToken;
 
-use crate::sandbox::{PreparedSandbox, StrictOutcome, TemporaryGap};
-
 // =========================================================================
 // Error types (house thiserror style; see policy.rs and credential_store.rs)
 // =========================================================================
@@ -93,13 +91,6 @@ pub enum BashOpError {
 
     #[error("failed to wait for process: {message}")]
     WaitFailed { message: String },
-
-    /// `--sandbox strict` with `require = true` (or `[sandbox] require = true`)
-    /// could not engage a requested layer, so the command is refused BEFORE any
-    /// spawn side effect (Phase 15.5.1 fail-closed path). The message is the
-    /// redacted layer summary from [`crate::sandbox`] — no command/env/paths.
-    #[error("sandbox required but unavailable: {message}")]
-    SandboxUnavailable { message: String },
 
     #[error("bash backend error: {message}")]
     Other { message: String },
@@ -840,16 +831,13 @@ pub const MAX_BASH_OUTPUT_BYTES: usize = 64 * 1024; // 64 KiB
 /// TimedOut, Cancelled); spawn/wait failures route through `Err(BashOpError)`.
 pub const LOCAL_BASH_OPERATION_DIAGNOSTIC: &str = "opi.operations.bash.operation_context";
 
-/// Local [`BashOperations`] backend. Owns the bash spawn path the Phase 15 T4
-/// sandbox attaches to (T4 lives INSIDE this impl, not as a wrapper). The
-/// bounded `StreamCapture`, timeout/cancel/`wait` race, and exit/signal
-/// extraction all live here; `BashTool::execute` is a thin caller that maps the
-/// [`BashResult`] into the agent `ToolResult`. Carries the resolved sandbox
-/// policy (Phase 15.5.1); the default [`PreparedSandbox::Off`] runs the L0-only
-/// baseline used by every pre-15.5.1 caller.
+/// Local [`BashOperations`] backend. Owns the bash spawn path; the bounded
+/// `StreamCapture`, timeout/cancel/`wait` race, and exit/signal extraction all
+/// live here, and `BashTool::execute` is a thin caller that maps the
+/// [`BashResult`] into the agent `ToolResult`. The L0 process-tree supervision
+/// (timeout, cancel, drop, tree kill, bounded drain) attaches to every spawn.
 #[derive(Debug, Default)]
 pub struct LocalBashOperations {
-    prepared: PreparedSandbox,
     #[cfg(test)]
     test_tree_faults: super::process_tree::TestTreeFaults,
 }
@@ -859,55 +847,24 @@ impl LocalBashOperations {
         Self::default()
     }
 
-    /// Construct with a resolved sandbox policy (Phase 15.5.1). Used by
-    /// [`crate::harness::CodingHarness::build_tools`], which resolves the policy
-    /// once at startup via [`crate::sandbox::prepare_production`] so per-command
-    /// exec enforces the decision and the permanent startup diagnostics surface
-    /// once. `new()` keeps the [`PreparedSandbox::Off`] default for direct/test
-    /// callers.
-    pub fn with_prepared(prepared: PreparedSandbox) -> Self {
-        Self {
-            prepared,
-            #[cfg(test)]
-            test_tree_faults: super::process_tree::TestTreeFaults::default(),
-        }
-    }
-
     #[cfg(test)]
     fn with_test_tree_faults(test_tree_faults: super::process_tree::TestTreeFaults) -> Self {
-        Self {
-            prepared: PreparedSandbox::Off,
-            test_tree_faults,
-        }
+        Self { test_tree_faults }
     }
 }
 
-/// Compose the exact command used by the production bash spawn path.
-///
-/// A launcher confinement prepends its program and prefix arguments while the
-/// original shell/flag/command tail remains verbatim. Common cwd, environment,
-/// kill-on-drop, and L0 tree configuration are applied once to the final
-/// command.
+/// Compose the exact command used by the production bash spawn path: the
+/// shell/flag/command tail with cwd, environment, kill-on-drop, and the L0
+/// process-tree configuration applied once.
 fn build_bash_command(
     shell: &str,
     flag: &str,
     command: &str,
     cwd: &Path,
     env: &[(String, String)],
-    confinement: Option<&crate::sandbox::Confinement>,
 ) -> tokio::process::Command {
-    let mut cmd = if let Some((launcher, prefix_args)) =
-        confinement.and_then(crate::sandbox::Confinement::launcher_prefix)
-    {
-        let mut launcher_command = tokio::process::Command::new(launcher);
-        launcher_command.args(prefix_args);
-        launcher_command.arg(shell).arg(flag).arg(command);
-        launcher_command
-    } else {
-        let mut shell_command = tokio::process::Command::new(shell);
-        shell_command.arg(flag).arg(command);
-        shell_command
-    };
+    let mut cmd = tokio::process::Command::new(shell);
+    cmd.arg(flag).arg(command);
     cmd.current_dir(cwd).kill_on_drop(true);
     super::process_tree::configure_tree(&mut cmd);
     cmd.envs(env.iter().map(|(key, value)| (key, value)));
@@ -919,7 +876,6 @@ impl BashOperations for LocalBashOperations {
         &self,
         request: BashRequest,
     ) -> Pin<Box<dyn Future<Output = Result<BashResult, BashOpError>> + Send>> {
-        let prepared = self.prepared.clone();
         #[cfg(test)]
         let test_tree_faults = self.test_tree_faults;
         Box::pin(async move {
@@ -936,61 +892,11 @@ impl BashOperations for LocalBashOperations {
             let shell = if cfg!(windows) { "cmd" } else { "sh" };
             let flag = if cfg!(windows) { "/C" } else { "-c" };
             // L0 degraded-diagnostics accumulator (Phase 15.4): attach/terminate
-            // failures append one `CODE_SANDBOX_DEGRADED` ToolDiagnostic each;
+            // failures append one `CODE_PROCESS_TREE_DEGRADED` ToolDiagnostic each;
             // the result arms fold them in alongside the operation-context diag.
             let mut degraded_diagnostics: Vec<ToolDiagnostic> = Vec::new();
 
-            // Phase 15.5.1: enforce the resolved sandbox policy BEFORE any spawn
-            // side effect. FailClosed returns a named error here (require=true +
-            // an unavailable layer); FailOpen records one per-command degraded
-            // diagnostic per TEMPORARY gap (permanent gaps were already emitted
-            // once at startup and are deliberately not repeated per command);
-            // Off/Engaged proceed to the L0 spawn below.
-            //
-            // Phase 15.5.3: an Engaged Linux decision carries a parent-built
-            // confinement plan; it is applied to the spawn `Command` between the
-            // L0 tree setup and `spawn()`.
-            let sandbox_require = matches!(
-                &prepared,
-                PreparedSandbox::Strict(decision) if decision.require
-            );
-            let confinement: Option<&crate::sandbox::Confinement> = match &prepared {
-                PreparedSandbox::Off => None,
-                PreparedSandbox::Strict(decision) => match &decision.outcome {
-                    StrictOutcome::Engaged => decision.confinement.as_ref(),
-                    StrictOutcome::FailOpen {
-                        per_command_temporary,
-                    } => {
-                        for gap in per_command_temporary {
-                            degraded_diagnostics.push(temporary_gap_diagnostic(gap));
-                        }
-                        decision.confinement.as_ref()
-                    }
-                    StrictOutcome::FailClosed { reason } => {
-                        return Err(BashOpError::SandboxUnavailable {
-                            message: reason.clone(),
-                        });
-                    }
-                },
-            };
-
-            let mut cmd = build_bash_command(shell, flag, &command, &cwd, &env, confinement);
-            // Phase 15.5.3: apply the strict confinement plan (Linux seccomp +
-            // Landlock `pre_exec` hook) when the decision engaged. Safe call: the
-            // confinement closure registers the audited `pre_exec` helper; the
-            // `unsafe` lives inside `tool/process_tree.rs`, not here.
-            if let Some(confinement) = &confinement {
-                let construction_gaps = confinement.apply(&mut cmd);
-                if !construction_gaps.is_empty() {
-                    if sandbox_require {
-                        return Err(BashOpError::SandboxUnavailable {
-                            message: summarize_gap_layers(&construction_gaps),
-                        });
-                    }
-                    degraded_diagnostics
-                        .extend(construction_gaps.iter().map(temporary_gap_diagnostic));
-                }
-            }
+            let mut cmd = build_bash_command(shell, flag, &command, &cwd, &env);
             let mut child = match cmd.stdout(Stdio::piped()).stderr(Stdio::piped()).spawn() {
                 Ok(c) => c,
                 Err(e) => {
@@ -1029,8 +935,8 @@ impl BashOperations for LocalBashOperations {
             } = outcome;
 
             // Map the redacted supervision degradations into the local
-            // CODE_SANDBOX_DEGRADED diagnostics, appended after the pre-spawn
-            // sandbox-gap diagnostics already accumulated above.
+            // CODE_PROCESS_TREE_DEGRADED diagnostics, appended as they
+            // accumulate during L0 supervision.
             degraded_diagnostics.extend(degradations.iter().map(l0_degraded_diagnostic));
 
             match kind {
@@ -1179,7 +1085,7 @@ fn bash_operation_context_diagnostic(
         // sandbox state: spec table line 146 assigns `local -> supervised`
         // (placement `host`), and the execution-backend guarantee axis is
         // distinct from the Phase 15 host-sandbox restriction axis (reported via
-        // `CODE_SANDBOX_DEGRADED`, not here). The literals mirror the opi-sandbox
+        // `CODE_PROCESS_TREE_DEGRADED`, not here). The literals mirror the opi-sandbox
         // wire vocabulary origin (`crates/opi-sandbox/src/helper.rs:154-161`) so
         // the two cannot drift; `restricted` belongs to the `opi-sandbox`
         // adapter identity (line 147), never the local path. Local reports only
@@ -1202,50 +1108,20 @@ fn bash_operation_context_diagnostic(
     }
 }
 
-/// Build the L0 degraded [`ToolDiagnostic`] (local type) from an
+/// Build the L0 process-tree degraded [`ToolDiagnostic`] (local type) from an
 /// [`super::process_tree::AttachError`]. Reuses the stable
-/// `CODE_SANDBOX_DEGRADED` literal from [`crate::diagnostics`] so embedders can
-/// match it by string, and restricts `details` to the redacted `{layer, reason}`
-/// pair — no command text, paths, env, or secrets.
+/// `CODE_PROCESS_TREE_DEGRADED` literal from [`crate::diagnostics`] so embedders
+/// can match it by string, and restricts `details` to the redacted
+/// `{layer, reason}` pair — no command text, paths, env, or secrets.
 fn l0_degraded_diagnostic(err: &super::process_tree::AttachError) -> ToolDiagnostic {
     ToolDiagnostic {
-        code: crate::diagnostics::CODE_SANDBOX_DEGRADED.to_string(),
+        code: crate::diagnostics::CODE_PROCESS_TREE_DEGRADED.to_string(),
         message: "subprocess tree lifecycle degraded".to_string(),
         details: Some(serde_json::json!({
             "layer": err.layer,
             "reason": err.reason.as_str(),
         })),
     }
-}
-
-/// Build a per-command strict-sandbox degraded [`ToolDiagnostic`] (local type)
-/// for a Phase 15.5.1 fail-open temporary gap. Reuses the stable
-/// `CODE_SANDBOX_DEGRADED` literal so embedders match it by string, and
-/// restricts `details` to the redacted `{ layer, reason }` pair. Permanent gaps
-/// do NOT use this path: they surface once at startup via the builder's
-/// `startup_diagnostics` channel as `CODE_SANDBOX_UNAVAILABLE`.
-fn temporary_gap_diagnostic(gap: &TemporaryGap) -> ToolDiagnostic {
-    ToolDiagnostic {
-        code: crate::diagnostics::CODE_SANDBOX_DEGRADED.to_string(),
-        message: "sandbox layer degraded".to_string(),
-        details: Some(serde_json::json!({
-            "layer": gap.layer.as_str(),
-            "reason": gap.reason.as_str(),
-        })),
-    }
-}
-
-fn summarize_gap_layers(gaps: &[TemporaryGap]) -> String {
-    let mut names = gaps
-        .iter()
-        .map(|gap| gap.layer.as_str())
-        .collect::<Vec<_>>();
-    names.sort_unstable();
-    names.dedup();
-    format!(
-        "strict sandbox unavailable for layer(s): {}",
-        names.join(", ")
-    )
 }
 
 /// Bounded capture of one output stream (stdout or stderr). Holds the first
@@ -1520,7 +1396,7 @@ mod tests {
         let result = run_pipe_holder_with_fault(TestTreeFaults::attach()).await;
         assert_eq!(result.exit_code, Some(0));
         assert!(result.diagnostics.iter().any(|diagnostic| {
-            diagnostic.code == crate::diagnostics::CODE_SANDBOX_DEGRADED
+            diagnostic.code == crate::diagnostics::CODE_PROCESS_TREE_DEGRADED
                 && diagnostic
                     .details
                     .as_ref()
@@ -1535,7 +1411,7 @@ mod tests {
         let result = run_pipe_holder_with_fault(TestTreeFaults::terminate()).await;
         assert_eq!(result.exit_code, Some(0));
         assert!(result.diagnostics.iter().any(|diagnostic| {
-            diagnostic.code == crate::diagnostics::CODE_SANDBOX_DEGRADED
+            diagnostic.code == crate::diagnostics::CODE_PROCESS_TREE_DEGRADED
                 && diagnostic
                     .details
                     .as_ref()
@@ -1573,42 +1449,6 @@ mod tests {
             cleanup_test_process(pid);
             panic!("clean shell exit left descendant PID {pid} alive");
         }
-    }
-
-    #[test]
-    fn default_macos_launcher_composition_preserves_shell_arguments() {
-        let confinement = crate::sandbox::macos::build_macos_confinement(
-            Path::new("."),
-            &crate::sandbox::macos::SandboxExecStatus::Available(PathBuf::from(
-                crate::sandbox::macos::SANDBOX_EXEC_PATH,
-            )),
-            &[
-                crate::sandbox::SandboxLayer::Fs,
-                crate::sandbox::SandboxLayer::Network,
-            ],
-        )
-        .expect("default macOS L1/L2 layers build a launcher");
-        let command = build_bash_command(
-            "sh",
-            "-c",
-            "printf '%s' 'verbatim value'",
-            Path::new("."),
-            &[("CANARY".to_string(), "value".to_string())],
-            Some(&confinement),
-        );
-        assert_eq!(
-            command.as_std().get_program(),
-            std::ffi::OsStr::new(crate::sandbox::macos::SANDBOX_EXEC_PATH)
-        );
-        let args = command
-            .as_std()
-            .get_args()
-            .map(|arg| arg.to_string_lossy().into_owned())
-            .collect::<Vec<_>>();
-        assert_eq!(args.first().map(String::as_str), Some("-p"));
-        assert!(args[1].contains("(deny network*)"));
-        assert!(args[1].contains("file-write*"));
-        assert_eq!(&args[2..], &["sh", "-c", "printf '%s' 'verbatim value'"]);
     }
 
     #[tokio::test]

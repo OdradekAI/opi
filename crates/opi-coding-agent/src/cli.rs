@@ -4,7 +4,35 @@ use std::path::PathBuf;
 
 use clap::{Parser, Subcommand, ValueEnum};
 
-use crate::config::{ExecutionStrategy, SandboxMode};
+use crate::config::ExecutionStrategy;
+
+/// Stable remediation text for the removed `[sandbox]` / `--sandbox` /
+/// `--sandbox-require` inputs, pointing at the execution-backend surface and
+/// the package workflow. Surfaced by the hidden legacy clap args' value
+/// parser so a user running the old flags gets a targeted pointer instead of
+/// a bare "unexpected argument". This is rejection, NOT an alias: the old
+/// behavior is gone and the error always fires.
+const LEGACY_SANDBOX_REMEDIATION: &str = "the --sandbox flag was removed with the native sandbox; use --execution-backend <local|adapter-id> or [execution] strategy = \"fixed\", backend = \"opi-sandbox\", and install/enable the opi-sandbox package (opi package add <dir>; opi package enable opi-sandbox)";
+
+/// Value parser for the removed legacy `--sandbox` / `--sandbox-require` flags:
+/// it always errors with [`LEGACY_SANDBOX_REMEDIATION`], so any invocation of
+/// either flag fails at parse time with migration remediation.
+fn legacy_sandbox_flag_rejected(_value: &str) -> Result<String, LegacySandboxInput> {
+    Err(LegacySandboxInput)
+}
+
+/// Error type backing [`legacy_sandbox_flag_rejected`]; its `Display` is the
+/// stable remediation text.
+#[derive(Debug)]
+struct LegacySandboxInput;
+
+impl std::fmt::Display for LegacySandboxInput {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(LEGACY_SANDBOX_REMEDIATION)
+    }
+}
+
+impl std::error::Error for LegacySandboxInput {}
 
 /// Supported shells for completion generation.
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -76,11 +104,6 @@ Bash policy:
   Combined stdout/stderr are capped at 64 KiB. Larger output sets truncated and may write the complete output path in details.full_output.
   This is a tool-selection check, not a permission popup or sandbox subsystem.
 
-Sandbox policy:
-  --sandbox off|strict selects the bash subprocess-tree sandbox; default off.
-  --sandbox-require is one-way: it enables fail-closed behavior and cannot clear a true config value.
-  Strict is opt-in defense-in-depth, not a security boundary; untrusted code belongs in a container or VM.
-
 Execution policy:
   --execution-backend local|<adapter-id> selects the fixed command.execute backend.
   --execution-strategy fixed|rules|model selects the routing strategy.
@@ -128,16 +151,32 @@ pub struct Cli {
     #[arg(long, conflicts_with = "trust")]
     pub no_trust: bool,
 
-    /// Sandbox mode override for the bash subprocess tree: `off` or `strict`.
-    /// Strict is opt-in defense-in-depth, not a security boundary. Overrides
-    /// `[sandbox] mode` from layered TOML.
-    #[arg(long, value_enum)]
-    pub sandbox: Option<SandboxMode>,
+    /// Removed legacy `--sandbox` flag, kept as a hidden arg whose parser
+    /// always errors with `LEGACY_SANDBOX_REMEDIATION` so ANY invocation
+    /// (bare or valued) gets a targeted migration pointer (rejection, not an
+    /// alias). `num_args = 0..=1` + `default_missing_value` route a bare
+    /// `--sandbox` through the value parser too, so it carries remediation
+    /// instead of clap's stock "a value is required" error.
+    #[arg(
+        long,
+        hide = true,
+        num_args = 0..=1,
+        default_missing_value = "",
+        value_parser = legacy_sandbox_flag_rejected
+    )]
+    pub sandbox: Option<String>,
 
-    /// Require configured sandbox layers (fail closed). This one-way bool flag
-    /// enables `require`; it cannot clear a true `[sandbox] require` value.
-    #[arg(long)]
-    pub sandbox_require: bool,
+    /// Removed legacy `--sandbox-require` flag, kept hidden so bare usage
+    /// (`--sandbox-require`) and valued usage both error with the same
+    /// migration remediation at parse time.
+    #[arg(
+        long,
+        hide = true,
+        num_args = 0..=1,
+        default_missing_value = "",
+        value_parser = legacy_sandbox_flag_rejected
+    )]
+    pub sandbox_require: Option<String>,
 
     /// Execution backend override for `command.execute`: `local` (built-in) or an
     /// installed adapter id. Selects the `fixed` strategy. This is a routing

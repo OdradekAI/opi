@@ -31,7 +31,6 @@ pub struct OpiConfig {
     pub compaction: CompactionConfigSection,
     pub extensions: ExtensionsConfig,
     pub packages: PackagesConfig,
-    pub sandbox: SandboxConfig,
     pub execution: ExecutionConfig,
 }
 
@@ -82,38 +81,6 @@ impl Default for DefaultsConfig {
             default_project_trust: ProjectTrustDefault::Ask,
         }
     }
-}
-
-/// Sandbox mode for the bash subprocess-tree sandbox (Phase 15 T4).
-///
-/// `Off` (default) ships the always-on L0 process-tree lifecycle only.
-/// `Strict` engages the OS-native L1/L2/L3 layers. Strict mode is opt-in
-/// defense-in-depth, explicitly NOT a security boundary. The variant is the
-/// shared type for the `[sandbox] mode` TOML field and the `--sandbox` CLI
-/// flag.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Deserialize, clap::ValueEnum)]
-#[serde(rename_all = "lowercase")]
-pub enum SandboxMode {
-    #[default]
-    #[value(name = "off")]
-    Off,
-    #[value(name = "strict")]
-    Strict,
-}
-
-/// `[sandbox]` section (Phase 15 T4).
-///
-/// `mode` defaults to `Off` and `require` to `false`. `fs`, `network`, and
-/// `syscalls` are optional per-layer toggles; `None` means "leave the layer
-/// at its platform default" so the dispatcher can distinguish an explicit
-/// opt-out from an unset value.
-#[derive(Debug, Clone, PartialEq, Default)]
-pub struct SandboxConfig {
-    pub mode: SandboxMode,
-    pub require: bool,
-    pub fs: Option<bool>,
-    pub network: Option<bool>,
-    pub syscalls: Option<bool>,
 }
 
 /// Run mode matched by deterministic execution rules (Phase 16). This is a
@@ -204,23 +171,6 @@ impl Default for ExecutionConfig {
 }
 
 impl OpiConfig {
-    /// Apply CLI sandbox overrides on top of the layered TOML configuration.
-    ///
-    /// Mirrors the `cli_model` CLI-over-config precedence: each `Some`
-    /// argument replaces the TOML-resolved value, while `None` leaves it. The
-    /// interactive/non-interactive/RPC startup wiring (15.5.1) calls this with
-    /// the parsed `--sandbox` / `--sandbox-require` values after
-    /// `resolve_config`; this method is the deterministic resolution hook the
-    /// resolver exposes for direct testing.
-    pub fn apply_sandbox_overrides(&mut self, mode: Option<SandboxMode>, require: Option<bool>) {
-        if let Some(mode) = mode {
-            self.sandbox.mode = mode;
-        }
-        if let Some(require) = require {
-            self.sandbox.require = require;
-        }
-    }
-
     /// Apply `--execution-backend` / `--execution-strategy` CLI overrides on top
     /// of the layered TOML configuration.
     ///
@@ -751,14 +701,41 @@ struct TomlResourcePaths {
     paths: Option<Vec<PathBuf>>,
 }
 
+/// Shadow of the REMOVED `[sandbox]` table, kept solely as a presence
+/// detector: if any field is set, the layer is rejected with a stable
+/// migration error. 16.16.1 deleted the native sandbox from core, so
+/// `[sandbox]` is no longer a valid config surface; `mode` is parsed as a
+/// raw string because its value is never used (only presence matters).
 #[derive(Debug, Clone, Deserialize, Default)]
 #[serde(default)]
 struct TomlSandbox {
-    mode: Option<SandboxMode>,
+    mode: Option<String>,
     require: Option<bool>,
     fs: Option<bool>,
     network: Option<bool>,
     syscalls: Option<bool>,
+}
+
+impl TomlSandbox {
+    /// True if the `[sandbox]` table carried any legacy field.
+    fn is_present(&self) -> bool {
+        self.mode.is_some()
+            || self.require.is_some()
+            || self.fs.is_some()
+            || self.network.is_some()
+            || self.syscalls.is_some()
+    }
+}
+
+/// Reject a layer that still carries the removed `[sandbox]` section with a
+/// stable, actionable remediation pointing at the execution-backend surface
+/// and the package workflow. Called at every layer-load site because
+/// `merge_into` is layer-blind and cannot enforce the rejection itself.
+fn legacy_sandbox_rejection(raw: &TomlConfig) -> Result<(), ConfigError> {
+    if raw.sandbox.is_present() {
+        return Err(ConfigError::LegacySandboxSection);
+    }
+    Ok(())
 }
 
 /// Shadow TOML for `[execution]`. `permissions` is present-marker for the
@@ -1070,21 +1047,6 @@ impl TomlConfig {
         }
         if let Some(paths) = self.packages.paths {
             config.packages.paths.extend(paths);
-        }
-        if let Some(v) = self.sandbox.mode {
-            config.sandbox.mode = v;
-        }
-        if let Some(v) = self.sandbox.require {
-            config.sandbox.require = v;
-        }
-        if let Some(v) = self.sandbox.fs {
-            config.sandbox.fs = Some(v);
-        }
-        if let Some(v) = self.sandbox.network {
-            config.sandbox.network = Some(v);
-        }
-        if let Some(v) = self.sandbox.syscalls {
-            config.sandbox.syscalls = Some(v);
         }
         // `[execution]`: strategy/backend/rules use REPLACE-if-present overlay
         // (NOT accumulating like extensions.paths/packages.paths). `permissions`
@@ -1746,6 +1708,10 @@ pub enum ConfigError {
     InvalidProviderNamespace { provider: String, message: String },
     #[error("invalid execution config field '{field}': {message}")]
     InvalidExecutionConfig { field: String, message: String },
+    #[error(
+        "the [sandbox] section was removed with the native sandbox; configure the execution backend instead ([execution] strategy = \"fixed\", backend = \"opi-sandbox\"; or --execution-backend) and install/enable the opi-sandbox package (opi package add <dir>; opi package enable opi-sandbox)"
+    )]
+    LegacySandboxSection,
 }
 
 // ---------------------------------------------------------------------------
@@ -1770,6 +1736,7 @@ fn parse_toml(contents: &str, path: &Path) -> Result<OpiConfig, ConfigError> {
         path: path.to_path_buf(),
         source: Box::new(source),
     })?;
+    legacy_sandbox_rejection(&raw)?;
     let mut config = OpiConfig::default();
     let mut custom = BTreeMap::new();
     raw.merge_into(&mut config, &mut custom);
@@ -1830,6 +1797,7 @@ impl StagedConfig {
     pub fn finalize_with_project(self, include_project: bool) -> Result<OpiConfig, ConfigError> {
         let mut config = OpiConfig::default();
         let mut custom = BTreeMap::new();
+        legacy_sandbox_rejection(&self.user)?;
         self.user.merge_into(&mut config, &mut custom);
 
         if include_project && let Some(project_dir) = &self.project_dir {
@@ -1838,11 +1806,13 @@ impl StagedConfig {
             // Persistent capability permission is user-owned: reject a project
             // `[execution.permissions]` BEFORE merging (merge_into is layer-blind).
             reject_project_execution_permissions(&project_raw)?;
+            legacy_sandbox_rejection(&project_raw)?;
             project_raw.merge_into(&mut config, &mut custom);
         }
 
         let has_explicit = self.explicit.is_some();
         if let Some(explicit) = self.explicit {
+            legacy_sandbox_rejection(&explicit)?;
             explicit.merge_into(&mut config, &mut custom);
         }
 
@@ -1919,6 +1889,7 @@ pub fn merge_project_config(
     // Persistent capability permission is user-owned: reject a project
     // `[execution.permissions]` BEFORE merging (merge_into is layer-blind).
     reject_project_execution_permissions(&project_raw)?;
+    legacy_sandbox_rejection(&project_raw)?;
     let mut project_custom = BTreeMap::new();
     project_raw.merge_into(&mut config, &mut project_custom);
     for (id, provider) in validate_custom_providers(project_custom)? {

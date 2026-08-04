@@ -23,7 +23,7 @@
 //! for the local identity, NOT sourced from any sandbox/confinement state: the
 //! execution-backend guarantee axis is distinct from the Phase 15 host-sandbox
 //! restriction axis (seccomp+Landlock on Linux-Engaged), which is reported via
-//! `CODE_SANDBOX_DEGRADED`. The report medium is the in-band
+//! `CODE_PROCESS_TREE_DEGRADED`. The report medium is the in-band
 //! `opi.operations.bash.operation_context` diagnostic on `BashResult` — the
 //! local path cannot initialize protocol state (spec lines 195-197), so its
 //! report intentionally does NOT flow to the agent `ToolResult` wire (the
