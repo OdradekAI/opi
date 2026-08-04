@@ -7,6 +7,75 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- `opi-coding-agent` 0.x: the built-in Phase 15 native sandbox is removed from
+  the Opi core (migration 16.16.1). The `[sandbox]` section and the `--sandbox` /
+  `--sandbox-require` flags are rejected in core without compatibility aliases;
+  native restriction and its helper/capability-selection code now live in the
+  standalone `opi-sandbox` package, selected through the `command.execute`
+  execution backend instead of `[sandbox] mode`. Project-local
+  executable/process package contributions are rejected; install globally,
+  review, and enable.
+- The workspace adds the `opi-protocol` and `opi-sandbox` crates (lockstep
+  workspace version). `opi-protocol` owns only the versioned
+  `command-execution-jsonl-v1` execution protocol; `opi-sandbox` depends on
+  `opi-protocol` plus standalone dependencies and publishes Linux/macOS
+  archives only (no official Windows artifact).
+
+### Added
+
+- `opi-coding-agent`: the `command.execute` capability with a Minimal Runtime
+  default. The model-callable `bash` tool runs directly through the built-in
+  `local` backend unless `[execution] strategy = "fixed"|"rules"|"model"` and
+  user permission policy (`deny`/`ask`/`allow`; project layers cannot set
+  `[execution.permissions]`) select an installed external adapter. Installed,
+  Trusted, Enabled, Selected, and Permitted are five independent lifecycle
+  gates implemented by `opi package add/remove/list/doctor` and
+  `PackageActivationStore`. Once an external adapter is selected, failure is
+  fail-closed and never falls back to local execution.
+- `opi-coding-agent`: 14 stable redacted `ExecutionFailure` codes (for example
+  `package_not_installed`, `permission_required`, `protocol_violation`) with
+  distinct actionable remediation, surfaced with consistent redaction across
+  text, NDJSON, RPC, and interactive outputs; `package doctor` and `opi doctor`
+  emit their own stable doctor-local codes (`doctor_package_exec_lifecycle` /
+  `doctor_package_exec_drift`) for execution-package lifecycle and drift.
+- `opi-protocol`: versioned `command.execute` protocol types, bounded codecs,
+  JSON schemas, and shared fixtures under the `command-execution-jsonl-v1` wire
+  identity.
+- `opi-sandbox`: a standalone library SDK (`SandboxPolicy`, `SandboxRequest`,
+  `SandboxRunner`, `SandboxEvent`/`SandboxResult`) and human CLI
+  (`opi-sandbox run`, `opi-sandbox backend --stdio`, `opi-sandbox doctor
+  --json`) for L0 process-tree supervision and Linux/macOS workspace-write
+  restriction, reusable without Opi and with no Opi configuration, session, or
+  package dependency.
+- `opi-sandbox` native guarantees: Linux uses Landlock filesystem-mutation
+  restriction plus a fixed seccomp danger blocklist (with `network = deny`
+  new-socket/TCP restrictions); macOS uses `sandbox-exec` with host
+  reads/execution allowed and writes confined to the workspace and invocation
+  temporary roots; Windows Job Objects provide L0 supervision only, with no
+  official `opi-sandbox` artifact.
+
+### Changed
+
+- `opi-coding-agent`: command execution now reports the selected backend's
+  effective placement and guarantee (`local` reports `supervised`,
+  `opi-sandbox` reports `restricted`) after setup succeeds; adapter identity
+  alone never establishes a guarantee. L0 subprocess-tree supervision remains
+  in core for both local and external adapter processes.
+
+### Non-Goals (Phase 16)
+
+- No Docker/VM/SSH/Gondolin or remote adapters; no routing of file,
+  navigation, or other built-in tools; no core-tool shadowing by extensions;
+  no universal extension protocol or migration of `opi-extension-jsonl-v1`,
+  RPC, NDJSON, or trace envelopes; no dynamic native-library loading; no
+  composing multiple adapters for one invocation; no host-read or
+  environment-variable confidentiality; no sandboxing of the extension process;
+  no publisher authentication; no project-local executable contributions; no
+  Windows AppContainer or restricted-token restriction; and no preserving of
+  unreleased Phase 15 sandbox configuration aliases.
+
 ## [0.7.2] - 2026-07-31
 
 ### Breaking Changes

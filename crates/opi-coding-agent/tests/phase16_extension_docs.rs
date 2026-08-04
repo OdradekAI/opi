@@ -305,3 +305,145 @@ fn heading_slices_reject_markers_moved_outside_the_target_section() {
     );
     assert!(!zh_phase.contains("forbidden marker"));
 }
+
+/// Task 16.16.3 shipped-state lockstep: after 16.16.1/16.16.2 the Phase 16
+/// spec describes the SHIPPED Minimal Runtime, native guarantees, Windows
+/// posture, migration, and non-goals in EN and ZH. Flipping the status away
+/// from `implementation pending` while the designed-contract claims pinned
+/// above stay intact is the documentation side of closing Phase 16.
+#[test]
+fn shipped_phase16_state_pinned_en_zh() {
+    let spec = read_repo_file("docs/opi-spec.md");
+    let spec_zh = read_repo_file("docs/opi-spec.zh.md");
+    let spec = heading_slice(
+        "docs/opi-spec.md",
+        &spec,
+        "### Phase 16 - Pluggable Extensions and Command Execution",
+        "### Phase 17 - Benchmark and Regression Evaluation",
+    );
+    let spec_zh = heading_slice(
+        "docs/opi-spec.zh.md",
+        &spec_zh,
+        "### 第十六阶段 - 可插拔扩展与命令执行",
+        "### 第十七阶段 - Benchmark 与回归评估",
+    );
+
+    // Shipped status replaces the stale designed/pending status.
+    assert_claims("docs/opi-spec.md", spec, &["Status: implemented."]);
+    assert_claims("docs/opi-spec.zh.md", spec_zh, &["状态：已实现。"]);
+    assert!(
+        !normalize_whitespace(spec).contains(&normalize_whitespace(
+            "Status: approved; implementation pending."
+        )),
+        "docs/opi-spec.md Phase 16 must not retain the designed/pending status"
+    );
+    assert!(
+        !normalize_whitespace(spec_zh).contains(&normalize_whitespace("状态：已批准；实现待定。")),
+        "docs/opi-spec.zh.md Phase 16 must not retain the designed/pending status"
+    );
+
+    // Migration, native guarantees, Windows posture, and non-goals in lockstep.
+    assert_claims(
+        "docs/opi-spec.md",
+        spec,
+        &[
+            "Native restriction and its helper/capability-selection code leave the Opi core",
+            "L0 subprocess-tree supervision remains in core for both local and external adapter processes",
+            "is rejected in core without compatibility aliases",
+            "`opi-sandbox` is one Rust package with a library SDK",
+            "depends only on `opi-protocol` plus standalone dependencies",
+            "reports `restricted`, never `isolated`",
+            "Windows Job Objects provide L0 supervision, not command restriction",
+            "publishes no official Windows `opi-sandbox` artifact",
+            "Docker/VM/SSH/Gondolin or remote adapters",
+            "letting extensions replace a core tool by name",
+            "Windows AppContainer or restricted-token restriction",
+            "preserving unreleased Phase 15 sandbox configuration aliases",
+        ],
+    );
+    assert_claims(
+        "docs/opi-spec.zh.md",
+        spec_zh,
+        &[
+            "原生限制及其 helper/capability-selection 代码离开 Opi 核心",
+            "L0 子进程树监督对 local 与外部 adapter 进程仍保留在核心",
+            "在核心被拒绝，不提供兼容 alias",
+            "`opi-sandbox` 是一个 Rust package",
+            "只依赖 `opi-protocol` 加独立依赖",
+            "报告 `restricted`，绝不报告 `isolated`",
+            "Windows Job Object 只提供 L0 监督，而非命令限制",
+            "不发布官方 Windows `opi-sandbox` artifact",
+            "Docker/VM/SSH/Gondolin 或远程 adapter",
+            "让扩展按名称替换核心工具",
+            "Windows AppContainer 或 restricted-token 限制",
+            "保留未发布的第十五阶段 sandbox 配置 alias",
+        ],
+    );
+}
+
+/// The shipped-state claims travel to the user-facing README (EN+ZH), the
+/// AGENTS/CLAUDE guidance files, and the Unreleased changelog in lockstep with
+/// the spec. A regression that drops `command.execute` / `opi-sandbox` /
+/// fail-closed no-fallback from one surface while another keeps it fails here.
+#[test]
+fn shipped_state_readme_guides_and_changelog_in_lockstep() {
+    let readme = read_repo_file("README.md");
+    let readme_zh = read_repo_file("README.zh.md");
+    let agents = read_repo_file("AGENTS.md");
+    let claude = read_repo_file("CLAUDE.md");
+    let changelog = read_repo_file("CHANGELOG.md");
+    // `split_once` so a missing/renamed `## [0.7.2]` marker fails loudly instead
+    // of silently widening `unreleased` to the whole changelog.
+    let (unreleased, _) = changelog
+        .split_once("## [0.7.2]")
+        .expect("Unreleased section precedes 0.7.2");
+
+    let surfaces = [
+        ("README.md", readme.as_str()),
+        ("README.zh.md", readme_zh.as_str()),
+        ("AGENTS.md", agents.as_str()),
+        ("CLAUDE.md", claude.as_str()),
+        ("CHANGELOG.md [Unreleased]", unreleased),
+    ];
+    for (name, content) in surfaces {
+        assert!(
+            content.contains("command.execute") || content.contains("command-execution-jsonl-v1"),
+            "{name} must describe the shipped command.execute capability"
+        );
+        assert!(
+            content.contains("opi-sandbox"),
+            "{name} must name the standalone opi-sandbox package"
+        );
+        // A discriminating no-fallback phrase per surface (the EN `fail-closed`
+        // token alone is pre-existing in the Phase 15 text, so pin the phrase
+        // that only the shipped command-execution section carries).
+        let no_fallback = if name == "README.zh.md" {
+            "绝不重试"
+        } else if name == "README.md" {
+            "never retries through"
+        } else {
+            "never falls back to local"
+        };
+        assert!(
+            content.contains(no_fallback),
+            "{name} must describe fail-closed no-fallback semantics (`{no_fallback}`)"
+        );
+        assert!(
+            content.contains("Installed") && content.contains("Permitted"),
+            "{name} must name the Installed..Permitted lifecycle gates"
+        );
+        // A Phase 16 non-goal marker travels to every surface, not just the spec.
+        assert!(
+            content.contains("Docker/VM/SSH"),
+            "{name} must name a Phase 16 non-goal marker (Docker/VM/SSH)"
+        );
+    }
+
+    // The Minimal Runtime default is named on every surface.
+    for (name, content) in surfaces {
+        assert!(
+            content.contains("Minimal Runtime") || content.contains("minimal runtime"),
+            "{name} must name the Minimal Runtime default"
+        );
+    }
+}

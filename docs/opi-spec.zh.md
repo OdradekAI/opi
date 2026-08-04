@@ -1580,10 +1580,18 @@ Diagnostic 是增量 `&'static str` code——source `sandbox` 下的 `opi.sandb
 
 ### 第十六阶段 - 可插拔扩展与命令执行
 
-状态：已批准；实现待定。规范设计：
+状态：已实现。规范设计：
 `docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md`。
 
 第十六阶段让默认 `opi` 进程保持最小运行时（Minimal Runtime）的直接本地执行路径，同时允许 `command.execute` 选择已安装的 adapter。首批 adapter 是内置 `local` 与外部 `opi-sandbox`；后者还可通过 SDK、面向用户的 CLI 和 `command-execution-jsonl-v1` 协议独立使用。Package 安装不等于包信任（Package Trust）或激活：Installed、Trusted、Enabled、Selected、Permitted 是五个独立门。路由支持 `fixed`、确定性的 `rules` 与受用户策略约束的模型建议，权限结果为 `deny`/`ask`/`allow`。Opi 二进制不链接 `opi-sandbox`；没有启用扩展时，本地运行且不启动扩展进程、不扫描 package store。外部 adapter 一旦被选择，失败即 fail-closed，绝不回退到本地执行。`opi-protocol` 初始只承载版本化的执行协议。
+
+在第十六阶段，`command.execute` capability 仅由模型可调用的 `bash` 工具承载。没有启用扩展时，Minimal Runtime 直接构造 `local`，不启动扩展进程、不触碰 package-store sentinel，也不创建 router、permission 或 protocol task。外部 adapter 在 setup 成功后报告其有效 placement、guarantee（`local` 为 `supervised`、`opi-sandbox` 为 `restricted`）、policy 与限制；adapter identity 本身从不确立 guarantee。
+
+原生限制及其 helper/capability-selection 代码离开 Opi 核心（16.16.1）：Landlock、seccomp、`sandbox-exec` 与 sandbox helper 实现从 `opi` 二进制移入独立的 `opi-sandbox` package，而 L0 子进程树监督对 local 与外部 adapter 进程仍保留在核心。内置的第十五阶段 sandbox 配置（`[sandbox]`、`--sandbox`、`--sandbox-require`）在核心被拒绝，不提供兼容 alias；`[execution] strategy`/`backend`（以及 `--execution-strategy` / `--execution-backend` CLI 覆盖）改为选择 `local` 或 `opi-sandbox` 后端，且所有已选择的外部 adapter 一律 fail-closed。项目本地可执行/进程 package 贡献被拒绝；请全局安装、审查后再启用。
+
+`opi-sandbox` 是一个 Rust package，包含库 SDK（`SandboxPolicy`、`SandboxRequest`、`SandboxRunner`、`SandboxEvent`/`SandboxResult`）与薄型 human CLI（`opi-sandbox run --workspace <PATH> --profile workspace-write ...`、`opi-sandbox backend --stdio`、`opi-sandbox doctor --json`）。它只依赖 `opi-protocol` 加独立依赖，无需 Opi 即可复用，调用期有状态、跨调用无状态，并报告 `restricted`，绝不报告 `isolated`。Linux 限制使用 Landlock 做文件系统变更限制，外加固定 seccomp danger-syscall blocklist；`network = deny` 时阻止新建 INET/INET6/NETLINK socket，同时保留 AF_UNIX。macOS 使用 `sandbox-exec`：host 读取与执行允许，workspace 与调用期临时根之外的写入被拒绝，不声称 syscall filter；`sandbox-exec` 缺失或被拒绝时 fail-closed。Windows Job Object 只提供 L0 监督，而非命令限制：第十六阶段不发布官方 Windows `opi-sandbox` artifact，选择缺失或 target 不匹配的 package 会在命令执行前失败。
+
+第十六阶段 non-goals：Docker/VM/SSH/Gondolin 或远程 adapter；路由 file、navigation 或其他内置工具；让扩展按名称替换核心工具；通用扩展协议或迁移 `opi-extension-jsonl-v1`、RPC、NDJSON 或 trace envelope；动态加载原生库；为一次调用组合多个 adapter；host 读取或环境变量机密性；沙箱化扩展进程本身；发布者认证；项目本地可执行贡献；Windows AppContainer 或 restricted-token 限制；以及保留未发布的第十五阶段 sandbox 配置 alias。
 
 ### 第十七阶段 - Benchmark 与回归评估
 

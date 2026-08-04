@@ -2035,7 +2035,7 @@ Phase 15 acceptance trace:
 
 ### Phase 16 - Pluggable Extensions and Command Execution
 
-Status: approved; implementation pending. Canonical design:
+Status: implemented. Canonical design:
 `docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md`.
 
 Phase 16 keeps the default `opi` process in the Minimal Runtime on a direct
@@ -2051,6 +2051,51 @@ deterministic `rules`, and model recommendation under user policy, with
 processes or package-store scans. Once an external adapter is selected, failure
 is fail-closed and never falls back to local execution. `opi-protocol` initially
 owns only the versioned execution protocol.
+
+In Phase 16 the `command.execute` capability is exercised only by the
+model-callable `bash` tool. With no enabled extension the Minimal Runtime
+constructs `local` directly, starts no extension process, touches no
+package-store sentinel, and creates no router, permission, or protocol task.
+An external adapter reports its effective placement, guarantee (`supervised`
+for `local`, `restricted` for `opi-sandbox`), policy, and limitations after
+setup succeeds; adapter identity alone never establishes a guarantee.
+
+Native restriction and its helper/capability-selection code leave the Opi core
+(16.16.1): Landlock, seccomp, `sandbox-exec`, and the sandbox helper
+implementations moved out of the `opi` binary into the standalone `opi-sandbox`
+package, while L0 subprocess-tree supervision remains in core for both local
+and external adapter processes. The built-in Phase 15 sandbox configuration
+(`[sandbox]`, `--sandbox`, `--sandbox-require`) is rejected in core without
+compatibility aliases; `[execution] strategy`/`backend` (and the
+`--execution-strategy` / `--execution-backend` CLI overrides) select the
+`local` or `opi-sandbox` backend instead, and all selected external adapters
+fail closed. Project-local executable/process package contributions are
+rejected; install globally, review, and enable.
+
+`opi-sandbox` is one Rust package with a library SDK (`SandboxPolicy`,
+`SandboxRequest`, `SandboxRunner`, `SandboxEvent`/`SandboxResult`) and a thin
+human CLI (`opi-sandbox run --workspace <PATH> --profile workspace-write ...`,
+`opi-sandbox backend --stdio`, `opi-sandbox doctor --json`). It depends only on
+`opi-protocol` plus standalone dependencies, is reusable without Opi, is
+invocation-stateful and cross-invocation stateless, and reports `restricted`,
+never `isolated`. Linux restriction uses Landlock for filesystem-mutation
+restriction and a fixed seccomp danger-syscall blocklist, and for
+`network = deny` blocks new INET/INET6/NETLINK sockets while preserving AF_UNIX;
+macOS uses `sandbox-exec` with host reads and execution allowed, writes denied
+outside the workspace and invocation temporary roots, and no syscall-filter
+claim, failing closed on a missing or rejected `sandbox-exec`. Windows Job
+Objects provide L0 supervision, not command restriction: Phase 16 publishes no
+official Windows `opi-sandbox` artifact, and selecting an absent or
+target-mismatched package fails before command execution.
+
+Phase 16 non-goals: Docker/VM/SSH/Gondolin or remote adapters; routing file,
+navigation, or other built-in tools; letting extensions replace a core tool by
+name; a universal extension protocol or migration of `opi-extension-jsonl-v1`,
+RPC, NDJSON, or trace envelopes; dynamic native-library loading; composing
+multiple adapters for one invocation; host-read or environment-variable
+confidentiality; sandboxing the extension process; publisher authentication;
+project-local executable contributions; Windows AppContainer or restricted-token
+restriction; and preserving unreleased Phase 15 sandbox configuration aliases.
 
 ### Phase 17 - Benchmark and Regression Evaluation
 

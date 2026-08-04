@@ -543,6 +543,230 @@ def audit_release_evidence(artifact_dir):
     }
 
 
+# ---------------------------------------------------------------------------
+# Phase 16 task 16.16.3: phase-exit evidence mode (--phase-exit).
+#
+# Genuinely validates the preserved Phase 16 phase-exit evidence (SC16-15b and
+# the 16.16.3 smoke addendum) against the claimed categories and rejects absent,
+# skipped, zero-test, wrong-target, and workspace-only evidence. Evidence
+# shapes preservable off-CI:
+#   windows/    doctor supported=false plus a genuine pass marker (no archive)
+#   linux/      native smoke evidence with a genuine pass marker; when a
+#               packaged extracted archive is preserved it is additionally
+#               validated for target identity and executable-sha provenance
+#   macos/      a preserved CI log carrying a genuine pass marker plus a
+#               `source` provenance note naming the CI run/job (the archive
+#               itself is CI-produced and pinned by the release-topology gate)
+#   six-target/ one preserved `cargo check --target` log per release triple;
+#               each log must record its outcome (a green `Finished` check or an
+#               explicit `error[` compiler record), never a blank/absent log
+#   gates/      preserved workspace gate evidence (doc guards, product captures,
+#               crate-boundary, packaging, release-topology) with a pass marker
+# ---------------------------------------------------------------------------
+
+SIX_TARGETS = [
+    "x86_64-unknown-linux-gnu",
+    "aarch64-unknown-linux-gnu",
+    "x86_64-apple-darwin",
+    "aarch64-apple-darwin",
+    "x86_64-pc-windows-msvc",
+    "aarch64-pc-windows-msvc",
+]
+
+GATE_PASS_RE = re.compile(r"test result: ok\. ([1-9][0-9]*) passed; 0 failed")
+
+
+def _audit_phase_exit_native(root, platform, target_suffix, issues):
+    """linux/macos bundle: genuine pass marker; validate archive when present."""
+    bundle = root / platform
+    if not bundle.is_dir():
+        issues.append({
+            "code": "missing_platform_evidence",
+            "platform": platform,
+            "message": f"missing native evidence bundle for {platform}",
+        })
+        return
+    if (bundle / "extracted" / "bin" / "opi-sandbox").is_file():
+        # A locally preserved extracted archive: validate target identity,
+        # executable-sha provenance, and the smoke/test evidence.
+        _audit_native_bundle(root, platform, target_suffix, issues)
+        return
+    # No local archive (CI-produced): a preserved CI log must carry a genuine
+    # pass marker and a provenance note, so absence-of-error is not enough.
+    text = _bundle_evidence_text(bundle)
+    if not text.strip():
+        issues.append({
+            "code": "zero_test_evidence",
+            "platform": platform,
+            "message": f"{platform} has no preserved native smoke/test evidence",
+        })
+        return
+    _classify_evidence(text, platform, issues)
+    if not (bundle / "source").is_file():
+        issues.append({
+            "code": "missing_provenance",
+            "platform": platform,
+            "message": f"{platform} CI-sourced evidence lacks a `source` provenance note",
+        })
+
+
+# Gate categories the DoD's final-artifact-audit clause names, keyed by a
+# filename marker the preserved capture must carry. A category with no
+# preserved pass-marked capture is missing evidence.
+GATE_CATEGORIES = {
+    "doc-guards": "doc-guard",
+    "crate-boundary": "crate-boundary",
+    "packaging": "packaging",
+    "release-topology": "release-topology",
+    "workspace-test": "workspace-test",
+    "doctest": "doctest",
+    "fmt": "fmt",
+    "clippy": "clippy",
+    "rustdoc": "rustdoc",
+}
+
+GATE_CLEAN_RE = re.compile(r"(PASS|--check: clean|Finished `[^`]+` profile)")
+
+# Outcome markers that prove a preserved gate run FAILED; any capture carrying
+# one is rejected even when it also contains passing lines.
+GATE_FAILURE_RE = re.compile(
+    r"test result: FAILED|error: test failed|error: could not compile|error\["
+)
+
+# Test-based gate categories require a NON-ZERO cargo pass; the Finished fallback
+# is reserved for the non-test gates (fmt/clippy/rustdoc) whose clean output has
+# no test-result line.
+GATE_TEST_CATEGORIES = {
+    "doc-guards",
+    "crate-boundary",
+    "packaging",
+    "release-topology",
+    "workspace-test",
+    "doctest",
+}
+
+
+def _gate_pass_marker(category, text):
+    if GATE_PASS_RE.search(text):
+        return True
+    if category in GATE_TEST_CATEGORIES:
+        # A test-based gate must prove a non-zero pass; 0-passed/Finished-only
+        # evidence is zero-test.
+        return False
+    return bool(GATE_CLEAN_RE.search(text))
+
+
+def _audit_six_target_bundle(root, issues):
+    six = root / "six-target"
+    if not six.is_dir():
+        issues.append({
+            "code": "missing_six_target_evidence",
+            "message": "missing six-target evidence bundle",
+        })
+        return
+    logs = {
+        entry.name: read_text(entry)
+        for entry in sorted(six.iterdir())
+        if entry.is_file() and entry.suffix.lower() in {".txt", ".log"}
+    }
+    if not logs:
+        issues.append({
+            "code": "zero_test_evidence",
+            "message": "six-target bundle has no preserved logs",
+        })
+        return
+    if not (six / "source").is_file():
+        issues.append({
+            "code": "missing_provenance",
+            "message": "six-target bundle lacks a `source` provenance note naming the "
+                "CI run / local runner that produced each triple log",
+        })
+    for triple in SIX_TARGETS:
+        matches = [
+            text
+            for text in logs.values()
+            if re.search(rf"cargo check.*--target {re.escape(triple)}\b", text)
+        ]
+        if not matches:
+            issues.append({
+                "code": "missing_target_evidence",
+                "message": f"no preserved cargo-check log for {triple}",
+            })
+            continue
+        text = "\n".join(matches)
+        if "error[" in text:
+            # A compiler failure means that triple's check did NOT pass; the
+            # six-target gate is not green and the audit must flag it.
+            issues.append({
+                "code": "failed_target_evidence",
+                "message": f"{triple} cargo check recorded a compiler failure",
+            })
+            continue
+        if "Finished" not in text:
+            issues.append({
+                "code": "ambiguous_target_evidence",
+                "message": f"{triple} log records neither a Finished check nor a compiler error",
+            })
+
+
+def _audit_gates_bundle(root, issues):
+    gates = root / "gates"
+    if not gates.is_dir():
+        issues.append({
+            "code": "missing_gate_evidence",
+            "message": "missing workspace gate evidence bundle",
+        })
+        return
+    by_name = {
+        entry.name: read_text(entry)
+        for entry in sorted(gates.iterdir())
+        if entry.is_file() and entry.suffix.lower() in {".txt", ".log"}
+    }
+    if not by_name:
+        issues.append({
+            "code": "zero_test_evidence",
+            "message": "gates bundle has no preserved pass-marked captures",
+        })
+        return
+    for category, marker in GATE_CATEGORIES.items():
+        captures = [n for n in by_name if marker in n]
+        if not captures:
+            issues.append({
+                "code": "missing_gate_evidence",
+                "message": f"no preserved gate capture for category `{category}` "
+                    f"(filename marker `{marker}`)",
+            })
+            continue
+        for name in captures:
+            text = by_name[name]
+            if GATE_FAILURE_RE.search(text):
+                issues.append({
+                    "code": "failed_gate_evidence",
+                    "message": f"gates/{name} records a failed gate run for `{category}`",
+                })
+                continue
+            if not _gate_pass_marker(category, text):
+                issues.append({
+                    "code": "zero_test_evidence",
+                    "message": f"gates/{name} lacks a genuine pass marker for `{category}`",
+                })
+
+
+def audit_phase_exit_evidence(artifact_dir):
+    issues = []
+    for platform, target_suffix in NATIVE_ARCHIVE_PLATFORMS.items():
+        _audit_phase_exit_native(artifact_dir, platform, target_suffix, issues)
+    _audit_windows_bundle(artifact_dir, issues)
+    _audit_six_target_bundle(artifact_dir, issues)
+    _audit_gates_bundle(artifact_dir, issues)
+    return {
+        "artifact_dir": str(artifact_dir),
+        "mode": "phase-exit",
+        "issues": issues,
+        "ok": not issues,
+    }
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("artifact_dir")
@@ -553,6 +777,13 @@ def main():
         action="store_true",
         help="audit native opi-sandbox release-archive evidence (SC16-12b) "
         "instead of dogfood run artifacts",
+    )
+    parser.add_argument(
+        "--phase-exit",
+        action="store_true",
+        help="audit preserved Phase 16 phase-exit evidence (SC16-15b) with "
+        "strict rejection of absent/skipped/zero-test/wrong-target/workspace-only "
+        "evidence",
     )
     args = parser.parse_args()
 
@@ -566,6 +797,9 @@ def main():
 
     if args.release:
         report = audit_release_evidence(artifact_dir)
+        issues = report["issues"]
+    elif args.phase_exit:
+        report = audit_phase_exit_evidence(artifact_dir)
         issues = report["issues"]
     else:
         ndjson_reports = [

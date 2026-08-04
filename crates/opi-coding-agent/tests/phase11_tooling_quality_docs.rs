@@ -412,11 +412,13 @@ fn sc8_non_goals_not_in_core() {
     //     shell. Behavioral coverage is owned by the bash tool tests (11.6);
     //     this guard pins the foreground-await call site in the source. The
     //     spawn+wait moved from bash.rs into LocalBashOperations::exec during
-    //     Phase 15.2 (T5 Operations injection), so the structural pin now
-    //     lives in operations.rs; bash.rs delegates to that backend.
-    let exec_src = read_repo_file("crates/opi-coding-agent/src/tool/operations.rs");
+    //     Phase 15.2 (T5 Operations injection), and the foreground wait plus
+    //     L0 tree race relocated into tool/supervision.rs when the native
+    //     sandbox left core (16.16.1); the structural pin lives there now, and
+    //     bash.rs delegates to the local backend through operations.rs.
+    let supervision_src = read_repo_file("crates/opi-coding-agent/src/tool/supervision.rs");
     assert!(
-        exec_src.contains("status = child.wait()"),
+        supervision_src.contains("status = child.wait()"),
         "bash must await the child (foreground) rather than spawn a background session"
     );
 }

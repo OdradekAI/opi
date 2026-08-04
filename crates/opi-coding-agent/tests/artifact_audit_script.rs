@@ -616,3 +616,508 @@ fn release_audit_rejects_windows_unsupported_without_pass_evidence() {
         "windows zero-test evidence must be flagged: {stdout}"
     );
 }
+
+// ============================================================================
+// Phase 16 task 16.16.3: phase-exit evidence mode (`--phase-exit`).
+//
+// The phase-exit audit validates the preserved Phase 16 phase-exit evidence
+// (SC16-15b / the 16.16.3 smoke addendum) against the claimed categories and
+// rejects absent, skipped, zero-test, wrong-target, and workspace-only
+// evidence. Unlike `--release` it accepts CI-sourced native evidence (a
+// preserved log with a genuine pass marker + a `source` provenance note) when
+// the extracted archive itself is CI-produced and not preservable off-CI. These
+// tests drive the audit on synthetic evidence trees (good + each defect class).
+// ============================================================================
+
+/// Run the artifact audit in PHASE-EXIT mode on `dir`.
+fn run_phase_exit_audit(dir: &std::path::Path) -> (bool, String, String) {
+    let out = Command::new(python_command())
+        .arg(
+            workspace_root()
+                .join("scripts")
+                .join("opi-artifact-audit.py"),
+        )
+        .arg(dir)
+        .arg("--phase-exit")
+        .output()
+        .expect("run phase-exit audit");
+    (
+        out.status.success(),
+        String::from_utf8_lossy(&out.stdout).into_owned(),
+        String::from_utf8_lossy(&out.stderr).into_owned(),
+    )
+}
+
+/// Write a macos CI-sourced bundle (no local archive): a preserved log plus a
+/// `source` provenance note. `with_pass` controls whether the log carries a
+/// genuine pass marker; `with_source` controls the provenance note.
+fn write_macos_ci_bundle(root: &std::path::Path, with_pass: bool, with_source: bool) {
+    let dir = root.join("macos");
+    std::fs::create_dir_all(&dir).unwrap();
+    let log = if with_pass {
+        "test result: ok. 10 passed; 0 failed; 0 ignored\n"
+    } else {
+        "cargo check --target aarch64-apple-darwin\n" // no pass marker
+    };
+    std::fs::write(dir.join("native.log"), log).unwrap();
+    if with_source {
+        std::fs::write(
+            dir.join("source"),
+            "run 123 @deadbeef (sandbox-macos-phase16): native tests pass\n",
+        )
+        .unwrap();
+    }
+}
+
+/// Write the six-target bundle: one preserved `cargo check --target` log per
+/// triple. `green` triples carry a `Finished` line; `failed` triples carry an
+/// `error[` line; `ambiguous` triples carry neither; triples absent from the
+/// map are omitted entirely.
+fn write_six_target_bundle(
+    root: &std::path::Path,
+    triples: &[(&str, &str)], // (triple, "green" | "failed" | "ambiguous")
+) {
+    let dir = root.join("six-target");
+    std::fs::create_dir_all(&dir).unwrap();
+    // The phase-exit audit requires a provenance note for the preserved logs.
+    std::fs::write(
+        dir.join("source"),
+        "ci run 123 @deadbeef target_check job\n",
+    )
+    .unwrap();
+    for (index, (triple, kind)) in triples.iter().enumerate() {
+        let body = match *kind {
+            "green" => format!("cargo check --target {triple}\nFinished dev profile\n"),
+            "failed" => format!("cargo check --target {triple}\nerror[E0]: boom\n"),
+            _ => format!("cargo check --target {triple}\n"),
+        };
+        std::fs::write(dir.join(format!("check-{index}.log")), body).unwrap();
+    }
+}
+
+/// The DoD gate categories the phase-exit audit requires a capture for, keyed
+/// by the filename marker (mirrors GATE_CATEGORIES in opi-artifact-audit.py).
+const GATE_CATEGORY_MARKERS: &[&str] = &[
+    "doc-guards",
+    "crate-boundary",
+    "packaging",
+    "release-topology",
+    "workspace-test",
+    "doctest",
+    "fmt",
+    "clippy",
+    "rustdoc",
+];
+
+/// Write one pass-marked (or marker-free, when `with_pass` is false) capture per
+/// DoD gate category under `gates/`.
+fn write_gates_bundle(root: &std::path::Path, with_pass: bool) {
+    let dir = root.join("gates");
+    std::fs::create_dir_all(&dir).unwrap();
+    for marker in GATE_CATEGORY_MARKERS {
+        let body = if with_pass {
+            "test result: ok. 3 passed; 0 failed; 0 ignored\n"
+        } else {
+            "some gate ran\n" // no pass marker
+        };
+        std::fs::write(dir.join(format!("gate-{marker}.txt")), body).unwrap();
+    }
+}
+
+/// A complete, correct phase-exit evidence tree: linux archive bundle + macos
+/// CI-sourced bundle + windows unsupported bundle + six green target-check logs
+/// + a passing gates bundle. Audit must PASS.
+fn write_complete_phase_exit_evidence(root: &std::path::Path) {
+    write_native_bundle(
+        root,
+        "linux",
+        LINUX_TARGET,
+        BINARY_BYTES,
+        good_smoke_log(),
+        false,
+        false,
+    );
+    write_macos_ci_bundle(root, true, true);
+    write_windows_bundle(root, good_windows_log(), false);
+    write_six_target_bundle(
+        root,
+        &[
+            ("x86_64-unknown-linux-gnu", "green"),
+            ("aarch64-unknown-linux-gnu", "green"),
+            ("x86_64-apple-darwin", "green"),
+            ("aarch64-apple-darwin", "green"),
+            ("x86_64-pc-windows-msvc", "green"),
+            ("aarch64-pc-windows-msvc", "green"),
+        ],
+    );
+    write_gates_bundle(root, true);
+}
+
+#[test]
+fn phase_exit_audit_passes_complete_evidence() {
+    let dir = tempfile::tempdir().expect("phase-exit evidence tempdir");
+    write_complete_phase_exit_evidence(dir.path());
+    let (ok, stdout, stderr) = run_phase_exit_audit(dir.path());
+    assert!(
+        ok,
+        "complete phase-exit evidence must pass: stdout={stdout} stderr={stderr}"
+    );
+}
+
+#[test]
+fn phase_exit_audit_rejects_missing_platform() {
+    let dir = tempfile::tempdir().expect("phase-exit evidence tempdir");
+    write_native_bundle(
+        dir.path(),
+        "linux",
+        LINUX_TARGET,
+        BINARY_BYTES,
+        good_smoke_log(),
+        false,
+        false,
+    );
+    // macos omitted entirely.
+    write_windows_bundle(dir.path(), good_windows_log(), false);
+    write_six_target_bundle(
+        dir.path(),
+        &[
+            ("x86_64-unknown-linux-gnu", "green"),
+            ("aarch64-unknown-linux-gnu", "green"),
+            ("x86_64-apple-darwin", "green"),
+            ("aarch64-apple-darwin", "green"),
+            ("x86_64-pc-windows-msvc", "green"),
+            ("aarch64-pc-windows-msvc", "green"),
+        ],
+    );
+    write_gates_bundle(dir.path(), true);
+    let (ok, stdout, stderr) = run_phase_exit_audit(dir.path());
+    assert!(
+        !ok,
+        "missing platform must fail: stdout={stdout} stderr={stderr}"
+    );
+    assert!(
+        stdout.contains("missing_platform_evidence"),
+        "expected missing_platform_evidence: {stdout}"
+    );
+}
+
+#[test]
+fn phase_exit_audit_rejects_ci_sourced_without_pass_marker() {
+    let dir = tempfile::tempdir().expect("phase-exit evidence tempdir");
+    write_native_bundle(
+        dir.path(),
+        "linux",
+        LINUX_TARGET,
+        BINARY_BYTES,
+        good_smoke_log(),
+        false,
+        false,
+    );
+    // macos CI log without a genuine pass marker -> zero-test, not absence-of-error.
+    write_macos_ci_bundle(dir.path(), false, true);
+    write_windows_bundle(dir.path(), good_windows_log(), false);
+    write_six_target_bundle(
+        dir.path(),
+        &[
+            ("x86_64-unknown-linux-gnu", "green"),
+            ("aarch64-unknown-linux-gnu", "green"),
+            ("x86_64-apple-darwin", "green"),
+            ("aarch64-apple-darwin", "green"),
+            ("x86_64-pc-windows-msvc", "green"),
+            ("aarch64-pc-windows-msvc", "green"),
+        ],
+    );
+    write_gates_bundle(dir.path(), true);
+    let (ok, stdout, stderr) = run_phase_exit_audit(dir.path());
+    assert!(
+        !ok,
+        "CI evidence without a pass marker must fail: stdout={stdout} stderr={stderr}"
+    );
+    assert!(
+        stdout.contains("zero_test_evidence"),
+        "macos CI log without a pass must be flagged zero-test: {stdout}"
+    );
+}
+
+#[test]
+fn phase_exit_audit_rejects_ci_sourced_without_provenance() {
+    let dir = tempfile::tempdir().expect("phase-exit evidence tempdir");
+    write_native_bundle(
+        dir.path(),
+        "linux",
+        LINUX_TARGET,
+        BINARY_BYTES,
+        good_smoke_log(),
+        false,
+        false,
+    );
+    // macos has a genuine pass marker but no `source` provenance note.
+    write_macos_ci_bundle(dir.path(), true, false);
+    write_windows_bundle(dir.path(), good_windows_log(), false);
+    write_six_target_bundle(
+        dir.path(),
+        &[
+            ("x86_64-unknown-linux-gnu", "green"),
+            ("aarch64-unknown-linux-gnu", "green"),
+            ("x86_64-apple-darwin", "green"),
+            ("aarch64-apple-darwin", "green"),
+            ("x86_64-pc-windows-msvc", "green"),
+            ("aarch64-pc-windows-msvc", "green"),
+        ],
+    );
+    write_gates_bundle(dir.path(), true);
+    let (ok, stdout, stderr) = run_phase_exit_audit(dir.path());
+    assert!(
+        !ok,
+        "CI-sourced evidence without provenance must fail: stdout={stdout} stderr={stderr}"
+    );
+    assert!(
+        stdout.contains("missing_provenance"),
+        "expected missing_provenance: {stdout}"
+    );
+}
+
+#[test]
+fn phase_exit_audit_rejects_missing_six_target_triple() {
+    let dir = tempfile::tempdir().expect("phase-exit evidence tempdir");
+    write_native_bundle(
+        dir.path(),
+        "linux",
+        LINUX_TARGET,
+        BINARY_BYTES,
+        good_smoke_log(),
+        false,
+        false,
+    );
+    write_macos_ci_bundle(dir.path(), true, true);
+    write_windows_bundle(dir.path(), good_windows_log(), false);
+    // Only 5 of the 6 release triples are preserved.
+    write_six_target_bundle(
+        dir.path(),
+        &[
+            ("x86_64-unknown-linux-gnu", "green"),
+            ("aarch64-unknown-linux-gnu", "green"),
+            ("x86_64-apple-darwin", "green"),
+            ("aarch64-apple-darwin", "green"),
+            ("x86_64-pc-windows-msvc", "green"),
+        ],
+    );
+    write_gates_bundle(dir.path(), true);
+    let (ok, stdout, stderr) = run_phase_exit_audit(dir.path());
+    assert!(
+        !ok,
+        "a missing six-target triple must fail: stdout={stdout} stderr={stderr}"
+    );
+    assert!(
+        stdout.contains("missing_target_evidence"),
+        "expected missing_target_evidence: {stdout}"
+    );
+}
+
+#[test]
+fn phase_exit_audit_rejects_ambiguous_six_target_log() {
+    let dir = tempfile::tempdir().expect("phase-exit evidence tempdir");
+    write_native_bundle(
+        dir.path(),
+        "linux",
+        LINUX_TARGET,
+        BINARY_BYTES,
+        good_smoke_log(),
+        false,
+        false,
+    );
+    write_macos_ci_bundle(dir.path(), true, true);
+    write_windows_bundle(dir.path(), good_windows_log(), false);
+    // One log records neither a Finished check nor a compiler error.
+    write_six_target_bundle(
+        dir.path(),
+        &[
+            ("x86_64-unknown-linux-gnu", "green"),
+            ("aarch64-unknown-linux-gnu", "ambiguous"),
+            ("x86_64-apple-darwin", "green"),
+            ("aarch64-apple-darwin", "green"),
+            ("x86_64-pc-windows-msvc", "green"),
+            ("aarch64-pc-windows-msvc", "green"),
+        ],
+    );
+    write_gates_bundle(dir.path(), true);
+    let (ok, stdout, stderr) = run_phase_exit_audit(dir.path());
+    assert!(
+        !ok,
+        "an outcome-less target log must fail: stdout={stdout} stderr={stderr}"
+    );
+    assert!(
+        stdout.contains("ambiguous_target_evidence"),
+        "expected ambiguous_target_evidence: {stdout}"
+    );
+}
+
+#[test]
+fn phase_exit_audit_rejects_gate_without_pass_marker() {
+    let dir = tempfile::tempdir().expect("phase-exit evidence tempdir");
+    write_native_bundle(
+        dir.path(),
+        "linux",
+        LINUX_TARGET,
+        BINARY_BYTES,
+        good_smoke_log(),
+        false,
+        false,
+    );
+    write_macos_ci_bundle(dir.path(), true, true);
+    write_windows_bundle(dir.path(), good_windows_log(), false);
+    write_six_target_bundle(
+        dir.path(),
+        &[
+            ("x86_64-unknown-linux-gnu", "green"),
+            ("aarch64-unknown-linux-gnu", "green"),
+            ("x86_64-apple-darwin", "green"),
+            ("aarch64-apple-darwin", "green"),
+            ("x86_64-pc-windows-msvc", "green"),
+            ("aarch64-pc-windows-msvc", "green"),
+        ],
+    );
+    write_gates_bundle(dir.path(), false);
+    let (ok, stdout, stderr) = run_phase_exit_audit(dir.path());
+    assert!(
+        !ok,
+        "a gate capture without a pass marker must fail: stdout={stdout} stderr={stderr}"
+    );
+    assert!(
+        stdout.contains("zero_test_evidence"),
+        "gate capture without a pass must be flagged zero-test: {stdout}"
+    );
+}
+
+#[test]
+fn phase_exit_audit_rejects_failed_target_evidence() {
+    let dir = tempfile::tempdir().expect("phase-exit evidence tempdir");
+    write_native_bundle(
+        dir.path(),
+        "linux",
+        LINUX_TARGET,
+        BINARY_BYTES,
+        good_smoke_log(),
+        false,
+        false,
+    );
+    write_macos_ci_bundle(dir.path(), true, true);
+    write_windows_bundle(dir.path(), good_windows_log(), false);
+    // One linux triple records a compiler failure -> the six-target gate is NOT
+    // green and must be flagged, even though a preserved log exists.
+    write_six_target_bundle(
+        dir.path(),
+        &[
+            ("x86_64-unknown-linux-gnu", "failed"),
+            ("aarch64-unknown-linux-gnu", "green"),
+            ("x86_64-apple-darwin", "green"),
+            ("aarch64-apple-darwin", "green"),
+            ("x86_64-pc-windows-msvc", "green"),
+            ("aarch64-pc-windows-msvc", "green"),
+        ],
+    );
+    write_gates_bundle(dir.path(), true);
+    let (ok, stdout, stderr) = run_phase_exit_audit(dir.path());
+    assert!(
+        !ok,
+        "a compiler-failure target log must fail: stdout={stdout} stderr={stderr}"
+    );
+    assert!(
+        stdout.contains("failed_target_evidence"),
+        "expected failed_target_evidence: {stdout}"
+    );
+}
+
+/// A complete, correct evidence tree whose workspace-test capture carries a
+/// genuine pass line plus a `test result: FAILED` line (a run that both passed
+/// some binaries and failed one). The audit must reject it as failed evidence.
+#[test]
+fn phase_exit_audit_rejects_gate_with_failed_test() {
+    let dir = tempfile::tempdir().expect("phase-exit evidence tempdir");
+    write_native_bundle(
+        dir.path(),
+        "linux",
+        LINUX_TARGET,
+        BINARY_BYTES,
+        good_smoke_log(),
+        false,
+        false,
+    );
+    write_macos_ci_bundle(dir.path(), true, true);
+    write_windows_bundle(dir.path(), good_windows_log(), false);
+    write_six_target_bundle(
+        dir.path(),
+        &[
+            ("x86_64-unknown-linux-gnu", "green"),
+            ("aarch64-unknown-linux-gnu", "green"),
+            ("x86_64-apple-darwin", "green"),
+            ("aarch64-apple-darwin", "green"),
+            ("x86_64-pc-windows-msvc", "green"),
+            ("aarch64-pc-windows-msvc", "green"),
+        ],
+    );
+    write_gates_bundle(dir.path(), true);
+    // Overwrite the workspace-test capture with a run that ended FAILED.
+    std::fs::write(
+        dir.path().join("gates").join("gate-workspace-test.txt"),
+        "test result: ok. 19 passed; 0 failed; 0 ignored\n\
+         test result: FAILED. 1 passed; 1 failed\n\
+         error: test failed, to rerun pass `-p opi-coding-agent --test x`\n",
+    )
+    .unwrap();
+    let (ok, stdout, stderr) = run_phase_exit_audit(dir.path());
+    assert!(
+        !ok,
+        "a gate capture recording a failed run must fail: stdout={stdout} stderr={stderr}"
+    );
+    assert!(
+        stdout.contains("failed_gate_evidence"),
+        "expected failed_gate_evidence: {stdout}"
+    );
+}
+
+/// A test-based gate capture with only `0 passed` lines plus a Finished line is
+/// zero-test evidence and must be rejected (the Finished fallback is reserved
+/// for the non-test gates).
+#[test]
+fn phase_exit_audit_rejects_zero_test_gate_capture() {
+    let dir = tempfile::tempdir().expect("phase-exit evidence tempdir");
+    write_native_bundle(
+        dir.path(),
+        "linux",
+        LINUX_TARGET,
+        BINARY_BYTES,
+        good_smoke_log(),
+        false,
+        false,
+    );
+    write_macos_ci_bundle(dir.path(), true, true);
+    write_windows_bundle(dir.path(), good_windows_log(), false);
+    write_six_target_bundle(
+        dir.path(),
+        &[
+            ("x86_64-unknown-linux-gnu", "green"),
+            ("aarch64-unknown-linux-gnu", "green"),
+            ("x86_64-apple-darwin", "green"),
+            ("aarch64-apple-darwin", "green"),
+            ("x86_64-pc-windows-msvc", "green"),
+            ("aarch64-pc-windows-msvc", "green"),
+        ],
+    );
+    write_gates_bundle(dir.path(), true);
+    // Overwrite the doctest capture: 0 passed but a Finished line -> zero-test.
+    std::fs::write(
+        dir.path().join("gates").join("gate-doctest.txt"),
+        "test result: ok. 0 passed; 0 failed; 0 ignored\nFinished `test` profile\n",
+    )
+    .unwrap();
+    let (ok, stdout, stderr) = run_phase_exit_audit(dir.path());
+    assert!(
+        !ok,
+        "a 0-passed test-based capture must be rejected: stdout={stdout} stderr={stderr}"
+    );
+    assert!(
+        stdout.contains("zero_test_evidence"),
+        "expected zero_test_evidence for the 0-passed doctest capture: {stdout}"
+    );
+}

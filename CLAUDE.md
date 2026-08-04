@@ -286,6 +286,31 @@ In non-interactive/RPC mode, `write`, `edit`, and `bash` require
 `--allow-mutating` or `defaults.allow_mutating_tools = true`. Interactive mode
 enables the mutating default tool set.
 
+### Command execution and opi-sandbox
+
+Phase 16 ships a pluggable `command.execute` capability for the model-callable
+`bash` tool. The default process stays in the Minimal Runtime on a direct local
+execution path; `[execution] strategy = "fixed"|"rules"|"model"` with
+`[execution] backend = "local"|<adapter-id>` (or `--execution-strategy` /
+`--execution-backend`) can select an installed external adapter instead.
+Installed, Trusted, Enabled, Selected, and Permitted are five independent
+lifecycle gates: `opi package add` installs, `opi package enable` grants
+Package Trust and enables, and user `[execution.permissions]` policy (never a
+project layer) grants approval. Once an external adapter is selected, failure
+is fail-closed and never falls back to local execution. The Opi binary does not
+link `opi-sandbox`; native restriction and its helper/capability-selection code
+moved to the standalone `opi-sandbox` crate (16.16.1), and the core `[sandbox]` /
+`--sandbox` / `--sandbox-require` surface is rejected without aliases.
+`opi-sandbox` depends only on `opi-protocol` (which owns just the versioned
+`command-execution-jsonl-v1` protocol), is reusable without Opi, and publishes
+Linux/macOS archives only; Windows gets L0 Job-Object supervision with no
+official `opi-sandbox` artifact. Phase 16 non-goals include Docker/VM/SSH and
+remote adapters, core-tool shadowing, a universal extension protocol, dynamic
+native loading, and Windows native restriction beyond L0 (see the spec).
+Adapters and packages are trusted code with
+the launching user's OS permissions — package permission declarations are
+metadata, not an enforced sandbox.
+
 ## Edition
 
 Workspace is on Rust edition 2024; the declared MSRV is Rust 1.97.

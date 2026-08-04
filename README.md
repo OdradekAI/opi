@@ -108,6 +108,8 @@ authors.
 | [`opi-agent`](crates/opi-agent) | Agent loop, tool contract, hooks, events, queues, sessions, compaction, SDK/RPC types, extensions, diagnostics, and streaming proxy. |
 | [`opi-tui`](crates/opi-tui) | Ratatui widgets, transcript rendering, diff view, pickers, terminal images, themes, and keybindings. |
 | [`opi-coding-agent`](crates/opi-coding-agent) | The `opi` binary, built-in coding tools, config/session/package handling, and embeddable `CodingHarness`. |
+| [`opi-protocol`](crates/opi-protocol) | Protocol types, bounded codecs, JSON schemas, and fixtures for `command.execute` (wire identity `command-execution-jsonl-v1`). |
+| [`opi-sandbox`](crates/opi-sandbox) | Standalone, Opi-independent command-execution sandbox: L0 process-tree supervision, a platform-neutral restriction seam, a library SDK, and a human CLI. |
 
 Internal dependency shape:
 
@@ -115,6 +117,8 @@ Internal dependency shape:
 opi-ai
 opi-tui
 opi-agent -> opi-ai
+opi-protocol
+opi-sandbox -> opi-protocol
 opi-coding-agent -> opi-ai + opi-agent + opi-tui -> opi binary
 ```
 
@@ -302,7 +306,65 @@ Resource discovery supports extensions, packages, skills, prompt fragments, and
 themes. `opi package add/remove/list/doctor` works for local and git package
 sources. Package manifests can start `process-jsonl` adapters using the
 `opi-extension-jsonl-v1` protocol; adapters can expose tools, commands, hooks,
-events, state, and model/provider overrides.
+events, state, and model/provider overrides. A package can also declare a
+`command.execute` adapter (wire identity `command-execution-jsonl-v1`) that the
+`bash` tool selects through the execution backend; see
+[Command Execution and opi-sandbox](#command-execution-and-opi-sandbox) below.
+
+## Command Execution and opi-sandbox
+
+Phase 16 adds a pluggable `command.execute` capability for the model-callable
+`bash` tool. The default `opi` process stays in the Minimal Runtime on a direct
+local execution path; it can instead select an installed external adapter
+through the execution backend.
+
+- Five independent lifecycle gates: Installed, Trusted, Enabled, Selected, and
+  Permitted. Installing a package never trusts or enables it: `opi package add
+  <source>` installs, `opi package enable <name>` grants Package Trust and
+  enables, and user permission policy grants per-invocation or persistent
+  approval. Project-local executable/process package contributions are
+  rejected; install globally, review, and enable.
+- Routing and permission: `[execution] strategy = "fixed"|"rules"|"model"` with
+  `[execution] backend = "local"|<adapter-id>` (or `--execution-strategy` /
+  `--execution-backend`) selects an eligible adapter. `rules` matches in order
+  and fails closed rather than falling through; `model` routing proposes a
+  backend under user policy. Permission outcomes are `deny`, `ask`, and
+  `allow`; a project layer may not set `[execution.permissions]`.
+- No fallback: once an external adapter is selected, failure is fail-closed and
+  never retries through `local`. Stable redacted failure codes (for example
+  `package_not_installed`, `permission_required`, `protocol_violation`) carry
+  actionable remediation on text, NDJSON, RPC, and interactive surfaces;
+  `package doctor` and `opi doctor` report their own stable redacted
+  doctor-local codes (`doctor_package_exec_lifecycle`,
+  `doctor_package_exec_drift`) for execution-package lifecycle and drift.
+- The Opi binary never links `opi-sandbox`. Native restriction and its
+  helper/capability-selection code left the core (16.16.1); `[sandbox]`,
+  `--sandbox`, and `--sandbox-require` are rejected without compatibility
+  aliases. L0 subprocess-tree supervision stays in core for local and adapter
+  processes.
+- `opi-sandbox` is a standalone crate (library SDK plus human CLI) that depends
+  only on `opi-protocol` and has no Opi configuration, session, or package-store
+  dependency. It offers `opi-sandbox run --workspace <PATH> --profile
+  workspace-write ...`, a `backend --stdio` protocol peer, and
+  `opi-sandbox doctor --json`, and confines only the target process tree (it is
+  not a security boundary). Linux uses Landlock plus a fixed seccomp danger
+  blocklist (with `network = deny` new-socket/TCP restrictions); macOS uses
+  `sandbox-exec` with writes confined to the workspace and invocation
+  temporary roots, failing closed when the helper is missing or rejected;
+  Windows Job Objects provide L0 supervision only, and no official Windows
+  `opi-sandbox` artifact is published.
+- `opi-protocol` owns only the versioned `command-execution-jsonl-v1` execution
+  protocol. `opi-sandbox` release archives are built for Linux and macOS; the
+  ordinary `opi` binary keeps its six release targets.
+- Phase 16 non-goals (see the spec for the full list): Docker/VM/SSH/Gondolin
+  or remote adapters; routing file, navigation, or other built-in tools;
+  extensions replacing a core tool by name; a universal extension protocol or
+  migration of `opi-extension-jsonl-v1`, RPC, NDJSON, or trace envelopes;
+  dynamic native-library loading; composing multiple adapters for one
+  invocation; host-read or environment-variable confidentiality; sandboxing the
+  extension process; publisher authentication; project-local executable
+  contributions; Windows AppContainer or restricted-token restriction; and
+  preserving unreleased Phase 15 sandbox configuration aliases.
 
 ## Permissions and Trust Boundaries
 

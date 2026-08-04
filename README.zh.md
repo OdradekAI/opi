@@ -105,6 +105,8 @@ opi --export-session <ID_OR_PATH> --output session.json --format json
 | [`opi-agent`](crates/opi-agent) | Agent 主循环、工具契约、hooks、事件、队列、会话、压缩、SDK/RPC 类型、扩展、诊断和 streaming proxy。 |
 | [`opi-tui`](crates/opi-tui) | Ratatui 组件、对话渲染、diff 视图、选择器、终端图片、主题和按键绑定。 |
 | [`opi-coding-agent`](crates/opi-coding-agent) | `opi` 二进制、内置编程工具、配置/会话/package 处理和可嵌入 `CodingHarness`。 |
+| [`opi-protocol`](crates/opi-protocol) | `command.execute` 的协议类型、有界 codec、JSON schema 与 fixtures（wire identity `command-execution-jsonl-v1`）。 |
+| [`opi-sandbox`](crates/opi-sandbox) | 独立、与 Opi 无关的命令执行沙箱：L0 进程树监督、平台无关 restriction seam、库 SDK 与 human CLI。 |
 
 内部依赖形状：
 
@@ -112,6 +114,8 @@ opi --export-session <ID_OR_PATH> --output session.json --format json
 opi-ai
 opi-tui
 opi-agent -> opi-ai
+opi-protocol
+opi-sandbox -> opi-protocol
 opi-coding-agent -> opi-ai + opi-agent + opi-tui -> opi binary
 ```
 
@@ -280,7 +284,50 @@ RPC 命令包括 `prompt`、`continue`、`steer`、`follow_up`、`abort`、`set_
 资源发现支持 extensions、packages、skills、prompt fragments 和 themes。
 `opi package add/remove/list/doctor` 可用于本地和 git package source。Package manifest
 可以启动使用 `opi-extension-jsonl-v1` 协议的 `process-jsonl` adapter；adapter 可以暴露
-工具、命令、hooks、事件、状态以及模型/Provider 覆盖。
+工具、命令、hooks、事件、状态以及模型/Provider 覆盖。Package 还可以声明
+`command.execute` adapter（wire identity `command-execution-jsonl-v1`），由 `bash`
+工具经 execution backend 选择；见下文「命令执行与 opi-sandbox」。
+
+## 命令执行与 opi-sandbox
+
+第十六阶段为模型可调用的 `bash` 工具新增可插拔的 `command.execute` capability。默认
+`opi` 进程保持最小运行时（Minimal Runtime）的直接本地执行路径；也可以经 execution
+backend 选择已安装的外部 adapter。
+
+- 五个独立生命周期门：Installed、Trusted、Enabled、Selected、Permitted。安装 package
+  从不等于信任或启用：`opi package add <source>` 安装，`opi package enable <name>`
+  授予 Package Trust 并启用，用户权限策略再授予单次或持久批准。项目本地可执行/进程
+  package 贡献被拒绝；请全局安装、审查后再启用。
+- 路由与权限：`[execution] strategy = "fixed"|"rules"|"model"` 配合
+  `[execution] backend = "local"|<adapter-id>`（或 `--execution-strategy` /
+  `--execution-backend`）选择合格 adapter。`rules` 按序匹配，失败即 fail-closed，绝不
+  落入兜底；`model` 路由在用户策略约束下给出后端建议。权限结果为 `deny`、`ask`、
+  `allow`；project 层不得设置 `[execution.permissions]`。
+- 绝不回退：外部 adapter 一旦被选择，失败即 fail-closed，绝不重试 `local`。稳定的
+  脱敏失败码（例如 `package_not_installed`、`permission_required`、
+  `protocol_violation`）在文本、NDJSON、RPC 与交互表面携带可执行的 remediation；
+  `package doctor` 与 `opi doctor` 针对执行 package 的生命周期与 drift 报告各自的
+  稳定脱敏 doctor-local 码（`doctor_package_exec_lifecycle`、
+  `doctor_package_exec_drift`）。
+- Opi 二进制绝不链接 `opi-sandbox`。原生限制及其 helper/capability-selection 代码
+  离开核心（16.16.1）；`[sandbox]`、`--sandbox`、`--sandbox-require` 被拒绝且不提供
+  兼容 alias。L0 子进程树监督对 local 与 adapter 进程仍保留在核心。
+- `opi-sandbox` 是独立 crate（库 SDK 加 human CLI），只依赖 `opi-protocol`，无任何
+  Opi 配置、会话或 package-store 依赖。它提供 `opi-sandbox run --workspace <PATH>
+  --profile workspace-write ...`、`backend --stdio` 协议对端与 `opi-sandbox doctor
+  --json`，只 confine 目标进程树（不是安全边界）。Linux 使用 Landlock 加固定 seccomp
+  danger blocklist（`network = deny` 时含新建 socket/TCP 限制）；macOS 使用
+  `sandbox-exec`，写入限制在 workspace 与调用期临时根内，helper 缺失或被拒绝时
+  fail-closed；Windows Job Object 只提供 L0 监督，且不发布官方 Windows
+  `opi-sandbox` artifact。
+- `opi-protocol` 只承载版本化的 `command-execution-jsonl-v1` 执行协议。`opi-sandbox`
+  发布 archive 只构建 Linux 与 macOS；普通 `opi` 二进制保持六个发布 target。
+- 第十六阶段 non-goals（完整列表见 spec）：Docker/VM/SSH/Gondolin 或远程 adapter；
+  路由 file、navigation 或其他内置工具；扩展按名称替换核心工具；通用扩展协议或迁移
+  `opi-extension-jsonl-v1`、RPC、NDJSON 或 trace envelope；动态加载原生库；为一次
+  调用组合多个 adapter；host 读取或环境变量机密性；沙箱化扩展进程本身；发布者认证；
+  项目本地可执行贡献；Windows AppContainer 或 restricted-token 限制；以及保留未发布
+  的第十五阶段 sandbox 配置 alias。
 
 ## 权限与信任边界
 

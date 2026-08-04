@@ -678,26 +678,18 @@ fn assert_docs_reject_claim(files: &[&str], needle: &str, what: &str) {
 
 #[test]
 fn docs_do_not_claim_package_update_enable_disable() {
-    // Phase 5 ships add/remove/list/doctor only. update/enable/disable are
-    // deferred ecosystem candidates and must not be claimed as commands.
+    // Phase 5 ships add/remove/list/doctor only, and Phase 16.5 later shipped
+    // the install/trust/enable/disable lifecycle (`opi package enable` /
+    // `opi package disable`). Only `update` remains a deferred ecosystem
+    // candidate and must not be claimed as a command.
     let files = [
         "README.md",
         "README.zh.md",
         "docs/opi-spec.md",
         "docs/opi-spec.zh.md",
     ];
-    for needle in [
-        "opi package update",
-        "opi package enable",
-        "opi package disable",
-        "update a package",
-        "enable a package",
-        "disable a package",
-        "package 更新",
-        "package 启用",
-        "package 禁用",
-    ] {
-        assert_docs_reject_claim(&files, needle, "a package update/enable/disable command");
+    for needle in ["opi package update", "update a package", "package 更新"] {
+        assert_docs_reject_claim(&files, needle, "a package update command");
     }
 }
 

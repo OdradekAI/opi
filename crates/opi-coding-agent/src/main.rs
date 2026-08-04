@@ -2848,9 +2848,14 @@ mod tests {
                 1,
             ),
             (
+                // 16.5's enable/disable/doctor lifecycle tests grew the count
+                // from 11 to 16 (one `fn opi_command(` definition + 15 call
+                // sites); all are `opi package ...` invocations handled before
+                // provider construction, so they remain pre-provider early
+                // exits and the per-site classifier below re-checks each one.
                 "package_cli.rs",
                 "opi_command(",
-                11,
+                16,
                 "fn opi_binary()",
                 1,
                 4,
