@@ -21,11 +21,12 @@
 #![forbid(unsafe_code)]
 
 use std::collections::BTreeMap;
+use std::ffi::OsString;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::process::Stdio;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
 use std::time::Duration;
 
@@ -34,8 +35,12 @@ use opi_protocol::execution::v1::EnvInherit;
 use tokio::process::{Child, Command};
 use tokio_util::sync::CancellationToken;
 
-use crate::policy::{ContractStatus, Mechanism, Restriction, RestrictionCtx, SandboxPolicy};
-use crate::process_tree::{TreeGuard, configure_tree};
+use crate::policy::{
+    ContractStatus, LauncherSpec, Mechanism, Restriction, RestrictionCtx, SandboxPolicy,
+};
+#[cfg(windows)]
+use crate::process_tree::resume_child;
+use crate::process_tree::{TerminationOutcome, TreeGuard, configure_tree};
 
 /// Bounded per-stream output capture (1 MiB). Output beyond this cap is dropped
 /// (the bound is enforced, not exceeded); the captured prefix is returned.
@@ -82,7 +87,7 @@ pub struct SandboxRequest {
     /// expression).
     pub program: PathBuf,
     /// The explicit argument vector.
-    pub args: Vec<String>,
+    pub args: Vec<OsString>,
     /// The canonical workspace root.
     pub workspace: PathBuf,
     /// The working directory inside the workspace.
@@ -94,7 +99,7 @@ pub struct SandboxRequest {
     /// `env_additions` are applied on top.
     pub env_inherit: EnvInherit,
     /// Bounded environment additions applied after the inheritance policy.
-    pub env_additions: BTreeMap<String, String>,
+    pub env_additions: BTreeMap<OsString, OsString>,
     /// Target standard-input policy. A LOCAL invocation concern (the protocol
     /// `ExecutePayload` carries no stdin); see [`StdinPolicy`].
     pub stdin: StdinPolicy,
@@ -149,9 +154,7 @@ pub enum OutputStream {
 
 /// The effective terminal status of a completed run. Unambiguous and structured
 /// (design `#Failure and Diagnostics`); exit code and signal are never
-/// conflated. There is NO `CleanupUnconfirmed` variant: cleanup-unconfirmed is a
-/// REMOTE destination concept owned by the protocol/binary layer (16.11.2), and
-/// local SDK cleanup is deterministic (Phase 16 task 16.11.1 audit folds #3/#10).
+/// conflated. Cleanup truth is carried separately by [`CleanupState`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SandboxOutcome {
     /// The target exited with the given code (`None` if the code could not be
@@ -172,15 +175,13 @@ pub enum SandboxOutcome {
 }
 
 /// Orthogonal cleanup state, mirroring the protocol `CompletedPayload.cleanup`.
-/// Local SDK cleanup is deterministic, so the library always reports
-/// [`CleanupState::Confirmed`]; [`CleanupState::Unconfirmed`] is reserved for
-/// the remote-destination case surfaced by the binary/protocol layer.
+/// Every observed tree-termination, child-reap, pipe-drain, and temp-removal
+/// step contributes to this result.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CleanupState {
     /// The invocation-owned temp root and child tree were removed.
     Confirmed,
-    /// Destination cleanup could not be confirmed (remote case; not emitted by
-    /// this library).
+    /// One or more cleanup steps could not be confirmed.
     Unconfirmed,
 }
 
@@ -197,7 +198,11 @@ pub struct SandboxResult {
     pub stdout: Vec<u8>,
     /// Bounded captured standard error.
     pub stderr: Vec<u8>,
-    /// The invocation-owned temp root that was removed at terminal completion.
+    /// Whether stdout exceeded the capture cap or could not be drained fully.
+    pub stdout_truncated: bool,
+    /// Whether stderr exceeded the capture cap or could not be drained fully.
+    pub stderr_truncated: bool,
+    /// The invocation-owned temp root, whether removed or left unconfirmed.
     pub temp_root: PathBuf,
 }
 
@@ -249,6 +254,15 @@ pub enum SandboxEvent {
 pub struct SandboxRunner {
     policy: SandboxPolicy,
     restriction: Arc<dyn Restriction>,
+    faults: FaultInjection,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct FaultInjection {
+    attach: bool,
+    terminate: bool,
+    wait: bool,
+    temp: bool,
 }
 
 impl SandboxRunner {
@@ -257,7 +271,14 @@ impl SandboxRunner {
         Self {
             policy,
             restriction,
+            faults: FaultInjection::default(),
         }
+    }
+
+    #[cfg(test)]
+    fn with_faults(mut self, faults: FaultInjection) -> Self {
+        self.faults = faults;
+        self
     }
 
     /// The configured policy.
@@ -289,16 +310,57 @@ impl SandboxRunner {
                 reason: SetupFailureReason::InvalidRequest,
             });
         }
+        #[cfg(windows)]
+        if request.env_additions.keys().any(|key| {
+            key.to_string_lossy()
+                .to_ascii_uppercase()
+                .starts_with("OPI_SANDBOX_")
+        }) {
+            return Err(SetupFailed {
+                reason: SetupFailureReason::InvalidRequest,
+            });
+        }
+        let workspace = request.workspace.canonicalize().map_err(|_| SetupFailed {
+            reason: SetupFailureReason::InvalidRequest,
+        })?;
+        let cwd = request.cwd.canonicalize().map_err(|_| SetupFailed {
+            reason: SetupFailureReason::InvalidRequest,
+        })?;
+        if !cwd.starts_with(&workspace) {
+            return Err(SetupFailed {
+                reason: SetupFailureReason::InvalidRequest,
+            });
+        }
+        let program = resolve_program(
+            &request.program,
+            &cwd,
+            request.env_inherit,
+            &request.env_additions,
+        )
+        .ok_or(SetupFailed {
+            reason: SetupFailureReason::ProgramNotFound,
+        })?;
         // Create the invocation-owned temp root. Owned by `run` until it is moved
         // into the supervision future; on any error path below it drops and the
         // dir is removed.
         let temp = tempfile::TempDir::new().map_err(|_| SetupFailed {
             reason: SetupFailureReason::SpawnFailed,
         })?;
-        let temp_root = temp.path().to_path_buf();
+        let temp_root = temp.path().canonicalize().map_err(|_| SetupFailed {
+            reason: SetupFailureReason::SpawnFailed,
+        })?;
+        let release_gate = temp_root.join("release.armed");
+        std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&release_gate)
+            .map_err(|_| SetupFailed {
+                reason: SetupFailureReason::SpawnFailed,
+            })?;
 
         let ctx = RestrictionCtx {
-            workspace: &request.workspace,
+            workspace: &workspace,
+            temp_root: &temp_root,
             network: self.policy.network,
         };
 
@@ -312,21 +374,14 @@ impl SandboxRunner {
         // policy) — the launcher spec must be computed before the command is
         // built. `NoRestriction`/Linux return `None` (default) and take the
         // bare path with a `prepare`-driven `pre_exec` hook unchanged.
-        let mut cmd = match self.restriction.launcher(&ctx) {
-            Some(spec) => {
-                let mut launcher = Command::new(&spec.program);
-                launcher.args(&spec.prefix);
-                launcher.arg(&request.program);
-                launcher.args(&request.args);
-                launcher
-            }
-            None => {
-                let mut bare = Command::new(&request.program);
-                bare.args(&request.args);
-                bare
-            }
-        };
-        cmd.current_dir(&request.cwd)
+        let mut cmd = gated_command(
+            &program,
+            &request.args,
+            &request.env_additions,
+            &release_gate,
+            self.restriction.launcher(&ctx),
+        );
+        cmd.current_dir(&cwd)
             .stdin(match request.stdin {
                 StdinPolicy::Null => Stdio::null(),
                 StdinPolicy::Inherit => Stdio::inherit(),
@@ -334,7 +389,14 @@ impl SandboxRunner {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .kill_on_drop(true);
-        apply_env(&mut cmd, request.env_inherit, &request.env_additions);
+        apply_env(
+            &mut cmd,
+            request.env_inherit,
+            &request.env_additions,
+            &temp_root,
+        );
+        #[cfg(windows)]
+        apply_windows_bootstrap_env(&mut cmd, &release_gate, &program, &request.args);
 
         let applied = self
             .restriction
@@ -342,10 +404,23 @@ impl SandboxRunner {
             .map_err(|_| SetupFailed {
                 reason: SetupFailureReason::RestrictionSetup,
             })?;
+        let contract_is_consistent = matches!(
+            (applied.mechanism, applied.contract),
+            (Mechanism::None, ContractStatus::Unrestricted)
+                | (
+                    Mechanism::Landlock | Mechanism::Seccomp | Mechanism::Seatbelt,
+                    ContractStatus::Restricted
+                )
+        );
+        if !contract_is_consistent {
+            return Err(SetupFailed {
+                reason: SetupFailureReason::RestrictionSetup,
+            });
+        }
 
         configure_tree(&mut cmd);
 
-        let child = match cmd.spawn() {
+        let mut child = match cmd.spawn() {
             Ok(child) => child,
             Err(error) if error.kind() == io::ErrorKind::NotFound => {
                 return Err(SetupFailed {
@@ -361,12 +436,54 @@ impl SandboxRunner {
         // Spawn and guard are in the same synchronous span: no `.await between`
         // them (Phase 16 task 16.11.1 audit fold #1).
         let child_pid = child.id();
-        let tree = TreeGuard::attach_child(child_pid).unwrap_or_else(|_| TreeGuard::disabled());
+        if self.faults.attach {
+            let _ = child.start_kill();
+            return Err(SetupFailed {
+                reason: SetupFailureReason::SpawnFailed,
+            });
+        }
+        let tree = match TreeGuard::attach_child(child_pid) {
+            Ok(tree) => tree,
+            Err(_) => {
+                let _ = child.start_kill();
+                return Err(SetupFailed {
+                    reason: SetupFailureReason::SpawnFailed,
+                });
+            }
+        };
+        #[cfg(windows)]
+        let mut tree = tree;
+        #[cfg(windows)]
+        if child_pid
+            .ok_or(SetupFailed {
+                reason: SetupFailureReason::SpawnFailed,
+            })
+            .and_then(|pid| {
+                resume_child(pid).map_err(|_| SetupFailed {
+                    reason: SetupFailureReason::SpawnFailed,
+                })
+            })
+            .is_err()
+        {
+            let _ = tree.terminate();
+            let _ = child.start_kill();
+            return Err(SetupFailed {
+                reason: SetupFailureReason::SpawnFailed,
+            });
+        }
 
         let cancel = request.cancel.unwrap_or_default();
         let mechanism = applied.mechanism;
         let contract = applied.contract;
-        let inner = Box::pin(supervise(child, tree, temp, request.timeout, cancel));
+        let inner = Box::pin(supervise(
+            child,
+            tree,
+            temp,
+            temp_root.clone(),
+            request.timeout,
+            cancel,
+            self.faults,
+        ));
 
         Ok(SandboxRun {
             started_emitted: false,
@@ -375,6 +492,7 @@ impl SandboxRunner {
             child_pid,
             mechanism,
             contract,
+            release_gate: Some(release_gate),
             inner: Some(inner),
         })
     }
@@ -397,6 +515,7 @@ pub struct SandboxRun {
     child_pid: Option<u32>,
     mechanism: Mechanism,
     contract: ContractStatus,
+    release_gate: Option<PathBuf>,
     inner: Option<Pin<Box<dyn std::future::Future<Output = SandboxResult> + Send>>>,
 }
 
@@ -410,6 +529,22 @@ impl SandboxRun {
     /// The direct-child process id, if available.
     pub fn child_pid(&self) -> Option<u32> {
         self.child_pid
+    }
+
+    /// Release the real target after the caller has observed and published the
+    /// [`SandboxEvent::Started`] contract. Idempotent.
+    pub fn release(&mut self) -> io::Result<()> {
+        let Some(release_gate) = self.release_gate.take() else {
+            return Ok(());
+        };
+        match std::fs::remove_file(&release_gate) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+            Err(error) => {
+                self.release_gate = Some(release_gate);
+                Err(error)
+            }
+        }
     }
 }
 
@@ -429,6 +564,7 @@ impl Stream for SandboxRun {
         if self.completed {
             return Poll::Ready(None);
         }
+        let _ = self.release();
         // Unpin: all fields are Unpin (Pin<Box<Future>> is Unpin). The scrutinee
         // borrow of `self.inner` ends before the `Ready` arm assigns it.
         match self
@@ -457,12 +593,254 @@ impl Stream for SandboxRun {
 // inside the supervision future before it returned.)
 
 /// Apply the environment-inheritance policy and bounded additions to `cmd`.
-fn apply_env(cmd: &mut Command, inherit: EnvInherit, additions: &BTreeMap<String, String>) {
+fn apply_env(
+    cmd: &mut Command,
+    inherit: EnvInherit,
+    additions: &BTreeMap<OsString, OsString>,
+    temp_root: &Path,
+) {
     if matches!(inherit, EnvInherit::Clear) {
         cmd.env_clear();
     }
     for (key, value) in additions {
         cmd.env(key, value);
+    }
+    cmd.env("TMPDIR", temp_root)
+        .env("TMP", temp_root)
+        .env("TEMP", temp_root);
+}
+
+#[cfg(windows)]
+fn apply_windows_bootstrap_env(
+    cmd: &mut Command,
+    release_gate: &Path,
+    program: &Path,
+    args: &[OsString],
+) {
+    cmd.env("OPI_SANDBOX_RELEASE_GATE", release_gate)
+        .env("OPI_SANDBOX_TARGET_PROGRAM", program)
+        .env("OPI_SANDBOX_TARGET_ARG_COUNT", args.len().to_string())
+        .env("OPI_SANDBOX_BACKEND_PID", std::process::id().to_string());
+    for (index, argument) in args.iter().enumerate() {
+        cmd.env(format!("OPI_SANDBOX_TARGET_ARG_{index}"), argument);
+    }
+}
+
+/// Build a platform-native bootstrap that waits on the invocation-owned release
+/// gate before it invokes the real target. A restriction launcher, when present,
+/// remains the outermost process so it confines the bootstrap and target alike.
+fn gated_command(
+    program: &Path,
+    args: &[OsString],
+    env_additions: &BTreeMap<OsString, OsString>,
+    release_gate: &Path,
+    launcher: Option<LauncherSpec>,
+) -> Command {
+    #[cfg(unix)]
+    {
+        use std::os::unix::ffi::{OsStrExt, OsStringExt};
+
+        const SCRIPT: &str = r#"gate=$1
+shift
+backend=$PPID
+exec 9>"${gate}.probe" || exit 125
+while [ -e "$gate" ]; do
+  kill -0 "$backend" 2>&9 || exit 125
+  sleep 0.01
+done
+(
+  leader=$$
+  while kill -0 "$backend" 2>&9 && kill -0 "$leader" 2>&9; do
+    sleep 0.05
+  done
+  if ! kill -0 "$backend" 2>&9; then
+    kill -KILL "-$leader" 2>&9
+  fi
+) &
+mode=$1
+shift
+if [ "$mode" = restore-native-env ]; then
+  exec /usr/bin/env -- "$@"
+fi
+[ "$mode" = direct ] || exit 125
+exec "$@""#;
+
+        let native_env = env_additions
+            .iter()
+            .filter(|(key, _)| {
+                let bytes = key.as_os_str().as_bytes();
+                !matches!(bytes.first(), Some(b'A'..=b'Z' | b'a'..=b'z' | b'_'))
+                    || bytes[1..]
+                        .iter()
+                        .any(|byte| !byte.is_ascii_alphanumeric() && *byte != b'_')
+            })
+            .map(|(key, value)| {
+                let mut assignment = key.as_os_str().as_bytes().to_vec();
+                assignment.push(b'=');
+                assignment.extend_from_slice(value.as_os_str().as_bytes());
+                OsString::from_vec(assignment)
+            })
+            .collect::<Vec<_>>();
+
+        let mut command = match launcher {
+            Some(spec) => {
+                let mut command = Command::new(spec.program);
+                command.args(spec.prefix);
+                command.arg("/bin/sh");
+                command
+            }
+            None => Command::new("/bin/sh"),
+        };
+        command
+            .arg("-c")
+            .arg(SCRIPT)
+            .arg("opi-sandbox-release-gate")
+            .arg(release_gate);
+        if native_env.is_empty() {
+            command.arg("direct").arg(program).args(args);
+        } else {
+            // POSIX shells discard inherited environment names that are not
+            // shell identifiers. Restore those byte-preserving additions with
+            // `env`, then use a fixed native utility to remove command-name
+            // ambiguity before it execs the target after `--`.
+            command
+                .arg("restore-native-env")
+                .args(native_env)
+                .args(["/usr/bin/nice", "-n", "0", "--"])
+                .arg(program)
+                .args(args);
+        }
+        command
+    }
+    #[cfg(windows)]
+    {
+        let _ = (env_additions, launcher);
+        const SCRIPT: &str = r#"$gate = $env:OPI_SANDBOX_RELEASE_GATE
+$program = $env:OPI_SANDBOX_TARGET_PROGRAM
+$count = [int]$env:OPI_SANDBOX_TARGET_ARG_COUNT
+$backendPid = [int]$env:OPI_SANDBOX_BACKEND_PID
+$rest = @()
+for ($i = 0; $i -lt $count; $i++) {
+  $rest += [Environment]::GetEnvironmentVariable("OPI_SANDBOX_TARGET_ARG_$i")
+}
+while (Test-Path -LiteralPath $gate) {
+  if ($null -eq (Get-Process -Id $backendPid -ErrorAction SilentlyContinue)) { exit 125 }
+  Start-Sleep -Milliseconds 10
+}
+& $program @rest
+exit $LASTEXITCODE"#;
+        let mut command = Command::new("powershell");
+        command
+            .arg("-NoProfile")
+            .arg("-Command")
+            .arg(SCRIPT)
+            .env("OPI_SANDBOX_RELEASE_GATE", release_gate)
+            .env("OPI_SANDBOX_TARGET_PROGRAM", program)
+            .env("OPI_SANDBOX_TARGET_ARG_COUNT", args.len().to_string())
+            .env("OPI_SANDBOX_BACKEND_PID", std::process::id().to_string());
+        for (index, argument) in args.iter().enumerate() {
+            command.env(format!("OPI_SANDBOX_TARGET_ARG_{index}"), argument);
+        }
+        command
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        let _ = (env_additions, release_gate, launcher);
+        let mut command = Command::new(program);
+        command.args(args);
+        command
+    }
+}
+
+fn resolve_program(
+    program: &Path,
+    cwd: &Path,
+    inherit: EnvInherit,
+    additions: &BTreeMap<OsString, OsString>,
+) -> Option<PathBuf> {
+    let has_path = program.is_absolute() || program.components().count() > 1;
+    if has_path {
+        let candidate = if program.is_absolute() {
+            program.to_path_buf()
+        } else {
+            cwd.join(program)
+        };
+        return candidate.is_file().then_some(candidate);
+    }
+
+    #[cfg(windows)]
+    {
+        let direct = cwd.join(program);
+        if direct.is_file() {
+            return Some(direct);
+        }
+        let mut executable = program.as_os_str().to_os_string();
+        executable.push(".exe");
+        let direct_executable = cwd.join(executable);
+        if direct_executable.is_file() {
+            return Some(direct_executable);
+        }
+        let path = additions
+            .iter()
+            .find(|(key, _)| key.to_string_lossy().eq_ignore_ascii_case("PATH"))
+            .map(|(_, value)| value.clone())
+            .or_else(|| {
+                matches!(inherit, EnvInherit::Inherit)
+                    .then(|| std::env::var_os("PATH"))
+                    .flatten()
+            })?;
+        std::env::split_paths(&path).find_map(|directory| {
+            let base = if directory.as_os_str().is_empty() {
+                cwd.to_path_buf()
+            } else if directory.is_absolute() {
+                directory
+            } else {
+                cwd.join(directory)
+            };
+            let candidate = base.join(program);
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+            if program.extension().is_none() {
+                let mut executable = program.as_os_str().to_os_string();
+                executable.push(".exe");
+                let candidate = base.join(executable);
+                if candidate.is_file() {
+                    return Some(candidate);
+                }
+            }
+            None
+        })
+    }
+
+    #[cfg(unix)]
+    {
+        let path = additions
+            .get(std::ffi::OsStr::new("PATH"))
+            .cloned()
+            .or_else(|| {
+                matches!(inherit, EnvInherit::Inherit)
+                    .then(|| std::env::var_os("PATH"))
+                    .flatten()
+            })
+            .unwrap_or_else(|| OsString::from("/usr/bin:/bin"));
+        std::env::split_paths(&path).find_map(|directory| {
+            let base = if directory.as_os_str().is_empty() {
+                cwd.to_path_buf()
+            } else if directory.is_absolute() {
+                directory
+            } else {
+                cwd.join(directory)
+            };
+            let candidate = base.join(program);
+            candidate.is_file().then_some(candidate)
+        })
+    }
+
+    #[cfg(not(any(unix, windows)))]
+    {
+        let _ = (cwd, inherit, additions);
+        Some(program.to_path_buf())
     }
 }
 
@@ -489,14 +867,16 @@ async fn supervise(
     mut child: Child,
     mut tree: TreeGuard,
     temp: tempfile::TempDir,
+    temp_root: PathBuf,
     timeout: Duration,
     cancel: CancellationToken,
+    faults: FaultInjection,
 ) -> SandboxResult {
-    let temp_root = temp.path().to_path_buf();
     let stdout = child.stdout.take();
     let stderr = child.stderr.take();
-    let drain_out = CaptureTask::new(stdout, OUTPUT_CAP);
-    let drain_err = CaptureTask::new(stderr, OUTPUT_CAP);
+    let mut drain_out = CaptureTask::new(stdout, OUTPUT_CAP);
+    let mut drain_err = CaptureTask::new(stderr, OUTPUT_CAP);
+    let mut cleanup_confirmed = true;
 
     // Race wait / timeout / cancellation. On every branch the whole tree is
     // terminated; biased ordering (cancel > timeout > wait) classifies
@@ -504,22 +884,26 @@ async fn supervise(
     let outcome = tokio::select! {
         biased;
         _ = cancel.cancelled() => {
-            let _ = child.kill().await;
-            let _ = tree.terminate();
+            cleanup_confirmed &= terminate_tree(&mut tree, faults.terminate);
+            let _ = child.start_kill();
+            cleanup_confirmed &= reap_child(&mut child).await;
             SandboxOutcome::Cancelled
         }
         _ = tokio::time::sleep(timeout) => {
-            let _ = child.kill().await;
-            let _ = tree.terminate();
+            cleanup_confirmed &= terminate_tree(&mut tree, faults.terminate);
+            let _ = child.start_kill();
+            cleanup_confirmed &= reap_child(&mut child).await;
             SandboxOutcome::TimedOut
         }
         status = child.wait() => match status {
             Ok(status) => {
-                let _ = tree.terminate();
+                cleanup_confirmed &= !faults.wait;
+                cleanup_confirmed &= terminate_tree(&mut tree, faults.terminate);
                 status_to_outcome(status)
             }
             Err(_) => {
-                let _ = tree.terminate();
+                cleanup_confirmed = false;
+                cleanup_confirmed &= terminate_tree(&mut tree, faults.terminate);
                 SandboxOutcome::Exited { code: None }
             }
         },
@@ -528,32 +912,72 @@ async fn supervise(
     // Finish both drains under a bounded grace. On grace expiry the inner future
     // is dropped, which drops the CaptureTasks (aborting their tasks) and we
     // return what was captured so far (empty).
-    let (out, err) = match tokio::time::timeout(PIPE_DRAIN_GRACE, async {
-        tokio::join!(drain_out.finish(), drain_err.finish())
+    match tokio::time::timeout(PIPE_DRAIN_GRACE, async {
+        tokio::join!(drain_out.wait(), drain_err.wait())
     })
     .await
     {
-        Ok((out, err)) => (out, err),
-        Err(_) => (Vec::new(), Vec::new()),
-    };
+        Ok((out_ok, err_ok)) => cleanup_confirmed &= out_ok && err_ok,
+        Err(_) => {
+            cleanup_confirmed = false;
+            drain_out.abort_incomplete();
+            drain_err.abort_incomplete();
+        }
+    }
+    let out = drain_out.snapshot();
+    let err = drain_err.snapshot();
 
-    // `temp`, `tree`, and `child` drop here (locals) in reverse order: temp-root
-    // removal, idempotent tree terminate, child kill_on_drop. Cleanup is
-    // deterministic, so the result reports Confirmed.
+    if temp.close().is_err() || faults.temp {
+        cleanup_confirmed = false;
+    }
+
+    // Every observed termination/reap/drain/temp-removal step contributes to
+    // the reported cleanup state. The remaining guards still provide a final
+    // best-effort kill on drop when an earlier step failed.
     SandboxResult {
         outcome,
-        cleanup: CleanupState::Confirmed,
-        stdout: out,
-        stderr: err,
+        cleanup: if cleanup_confirmed {
+            CleanupState::Confirmed
+        } else {
+            CleanupState::Unconfirmed
+        },
+        stdout: out.bytes,
+        stderr: err.bytes,
+        stdout_truncated: out.truncated,
+        stderr_truncated: err.truncated,
         temp_root,
     }
+}
+
+fn terminate_tree(tree: &mut TreeGuard, injected_failure: bool) -> bool {
+    let confirmed = !matches!(tree.terminate(), TerminationOutcome::Failed(_));
+    confirmed && !injected_failure
+}
+
+async fn reap_child(child: &mut Child) -> bool {
+    matches!(
+        tokio::time::timeout(PIPE_DRAIN_GRACE, child.wait()).await,
+        Ok(Ok(_))
+    )
 }
 
 /// Owned handle to one stream's drain task. The task reads the pipe into a
 /// `Vec<u8>` bounded by `cap`; `finish` awaits the capture, and `Drop` aborts an
 /// unfinished task so a descendant holding a pipe cannot outlive the run.
 struct CaptureTask {
-    handle: Option<tokio::task::JoinHandle<Vec<u8>>>,
+    handle: Option<tokio::task::JoinHandle<()>>,
+    state: Arc<Mutex<CaptureState>>,
+}
+
+#[derive(Default)]
+struct CaptureState {
+    bytes: Vec<u8>,
+    truncated: bool,
+}
+
+struct CaptureSnapshot {
+    bytes: Vec<u8>,
+    truncated: bool,
 }
 
 impl CaptureTask {
@@ -562,35 +986,61 @@ impl CaptureTask {
     where
         R: tokio::io::AsyncRead + Unpin + Send + 'static,
     {
+        let state = Arc::new(Mutex::new(CaptureState::default()));
+        let task_state = Arc::clone(&state);
         let handle = tokio::spawn(async move {
-            let mut buf = Vec::new();
             if let Some(mut stream) = stream {
                 use tokio::io::AsyncReadExt;
                 let mut chunk = [0u8; 8192];
                 loop {
                     match stream.read(&mut chunk).await {
-                        Ok(0) | Err(_) => break,
+                        Ok(0) => break,
+                        Err(_) => {
+                            lock_capture(&task_state).truncated = true;
+                            break;
+                        }
                         Ok(n) => {
-                            if buf.len() < cap {
-                                let take = std::cmp::min(n, cap - buf.len());
-                                buf.extend_from_slice(&chunk[..take]);
+                            let mut state = lock_capture(&task_state);
+                            if state.bytes.len() < cap {
+                                let take = std::cmp::min(n, cap - state.bytes.len());
+                                state.bytes.extend_from_slice(&chunk[..take]);
+                                state.truncated |= take < n;
+                            } else {
+                                state.truncated = true;
                             }
                         }
                     }
                 }
             }
-            buf
         });
         Self {
             handle: Some(handle),
+            state,
         }
     }
 
-    /// Await the capture. Consumes the handle so `Drop` will not double-abort.
-    async fn finish(mut self) -> Vec<u8> {
-        match self.handle.take() {
-            Some(handle) => handle.await.unwrap_or_default(),
-            None => Vec::new(),
+    /// Await the capture while keeping ownership so a cancelled wait can abort.
+    async fn wait(&mut self) -> bool {
+        let Some(handle) = self.handle.as_mut() else {
+            return true;
+        };
+        let completed = handle.await.is_ok();
+        self.handle = None;
+        completed
+    }
+
+    fn abort_incomplete(&mut self) {
+        if let Some(handle) = self.handle.take() {
+            handle.abort();
+            lock_capture(&self.state).truncated = true;
+        }
+    }
+
+    fn snapshot(&self) -> CaptureSnapshot {
+        let state = lock_capture(&self.state);
+        CaptureSnapshot {
+            bytes: state.bytes.clone(),
+            truncated: state.truncated,
         }
     }
 }
@@ -599,6 +1049,168 @@ impl Drop for CaptureTask {
     fn drop(&mut self) {
         if let Some(handle) = self.handle.take() {
             handle.abort();
+        }
+    }
+}
+
+fn lock_capture(state: &Mutex<CaptureState>) -> std::sync::MutexGuard<'_, CaptureState> {
+    state
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_program_resolution_uses_request_path_case_insensitively() {
+        let cwd = tempfile::tempdir().expect("cwd");
+        let tools = tempfile::tempdir().expect("tools");
+        let executable = tools.path().join("phase16-path-probe.exe");
+        std::fs::write(&executable, b"fixture").expect("write fixture executable");
+        let additions = [(
+            OsString::from("Path"),
+            tools.path().as_os_str().to_os_string(),
+        )]
+        .into_iter()
+        .collect();
+
+        assert_eq!(
+            resolve_program(
+                Path::new("phase16-path-probe"),
+                cwd.path(),
+                EnvInherit::Clear,
+                &additions,
+            ),
+            Some(executable),
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_clear_environment_does_not_search_ambient_path() {
+        let cwd = tempfile::tempdir().expect("cwd");
+        assert_eq!(
+            resolve_program(
+                Path::new("cmd"),
+                cwd.path(),
+                EnvInherit::Clear,
+                &BTreeMap::new(),
+            ),
+            None,
+        );
+    }
+
+    fn request(program: PathBuf, args: Vec<OsString>) -> (SandboxRequest, tempfile::TempDir) {
+        let workspace = tempfile::tempdir().expect("workspace");
+        (
+            SandboxRequest {
+                program,
+                args,
+                workspace: workspace.path().to_path_buf(),
+                cwd: workspace.path().to_path_buf(),
+                timeout: Duration::from_secs(5),
+                env_inherit: EnvInherit::Inherit,
+                env_additions: BTreeMap::new(),
+                stdin: StdinPolicy::Null,
+                cancel: None,
+            },
+            workspace,
+        )
+    }
+
+    fn exit_request() -> (SandboxRequest, tempfile::TempDir) {
+        if cfg!(windows) {
+            request(
+                PathBuf::from("cmd"),
+                vec![OsString::from("/C"), OsString::from("exit 0")],
+            )
+        } else {
+            request(
+                PathBuf::from("sh"),
+                vec![OsString::from("-c"), OsString::from("exit 0")],
+            )
+        }
+    }
+
+    async fn complete_with_faults(faults: FaultInjection) -> SandboxResult {
+        let (request, _workspace) = exit_request();
+        let runner = SandboxRunner::new(SandboxPolicy::default(), Arc::new(crate::NoRestriction))
+            .with_faults(faults);
+        let mut run = runner.run(request).expect("run starts");
+        assert!(matches!(
+            std::future::poll_fn(|cx| Pin::new(&mut run).poll_next(cx)).await,
+            Some(SandboxEvent::Started { .. })
+        ));
+        match std::future::poll_fn(|cx| Pin::new(&mut run).poll_next(cx)).await {
+            Some(SandboxEvent::Completed(result)) => result,
+            other => panic!("expected Completed, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn injected_attach_failure_refuses_before_target_release() {
+        let marker_dir = tempfile::tempdir().expect("marker dir");
+        let marker = marker_dir.path().join("must-not-exist");
+        let (program, args) = if cfg!(windows) {
+            (
+                PathBuf::from("powershell"),
+                vec![
+                    OsString::from("-NoProfile"),
+                    OsString::from("-Command"),
+                    OsString::from(format!(
+                        "Set-Content -LiteralPath '{}' -Value x",
+                        marker.display()
+                    )),
+                ],
+            )
+        } else {
+            (
+                PathBuf::from("sh"),
+                vec![
+                    OsString::from("-c"),
+                    OsString::from(format!("printf x > '{}'", marker.display())),
+                ],
+            )
+        };
+        let (request, _workspace) = request(program, args);
+        let runner = SandboxRunner::new(SandboxPolicy::default(), Arc::new(crate::NoRestriction))
+            .with_faults(FaultInjection {
+                attach: true,
+                ..FaultInjection::default()
+            });
+        let failure = match runner.run(request) {
+            Ok(run) => {
+                drop(run);
+                panic!("attach failure must refuse")
+            }
+            Err(failure) => failure,
+        };
+        assert_eq!(failure.reason, SetupFailureReason::SpawnFailed);
+        tokio::time::sleep(Duration::from_millis(250)).await;
+        assert!(!marker.exists(), "target crossed a failed attach gate");
+    }
+
+    #[tokio::test]
+    async fn injected_cleanup_failures_are_reported_unconfirmed() {
+        for faults in [
+            FaultInjection {
+                terminate: true,
+                ..FaultInjection::default()
+            },
+            FaultInjection {
+                wait: true,
+                ..FaultInjection::default()
+            },
+            FaultInjection {
+                temp: true,
+                ..FaultInjection::default()
+            },
+        ] {
+            let result = complete_with_faults(faults).await;
+            assert_eq!(result.cleanup, CleanupState::Unconfirmed);
         }
     }
 }

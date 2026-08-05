@@ -32,6 +32,9 @@ pub enum CodecError {
     /// A `diagnostic` message exceeded `max_diagnostics_size`.
     #[error("diagnostic message of {actual} bytes exceeded max_diagnostics_size ({limit})")]
     DiagnosticsTooLarge { actual: usize, limit: usize },
+    /// A decoded stdout/stderr chunk exceeded `max_decoded_chunk_size`.
+    #[error("decoded output chunk of {actual} bytes exceeded max_decoded_chunk_size ({limit})")]
+    OutputChunkTooLarge { actual: usize, limit: usize },
     /// Invalid JSON, or a frame that failed to deserialize.
     #[error("invalid json: {0}")]
     Json(#[from] serde_json::Error),
@@ -116,14 +119,43 @@ pub fn validate_host(frame: &HostToBackend, bounds: &Bounds) -> Result<(), Codec
 
 /// Validate per-frame bounds (diagnostics size) for a backend frame.
 pub fn validate_backend(frame: &BackendToHost, bounds: &Bounds) -> Result<(), CodecError> {
-    if let BackendToHost::Diagnostic(p) = frame {
-        let actual = p.message.len();
-        if actual > bounds.max_diagnostics_size {
-            return Err(CodecError::DiagnosticsTooLarge {
-                actual,
-                limit: bounds.max_diagnostics_size,
-            });
+    let output_bytes = frame.output_bytes();
+    if output_bytes > bounds.max_decoded_chunk_size {
+        return Err(CodecError::OutputChunkTooLarge {
+            actual: output_bytes,
+            limit: bounds.max_decoded_chunk_size,
+        });
+    }
+
+    let diagnostics = match frame {
+        BackendToHost::Diagnostic(payload) => std::slice::from_ref(&payload.message),
+        BackendToHost::Completed(payload) => {
+            for diagnostic in &payload.diagnostics {
+                validate_diagnostic(&diagnostic.message, bounds)?;
+            }
+            &[]
         }
+        BackendToHost::Failed(payload) => {
+            for diagnostic in &payload.diagnostics {
+                validate_diagnostic(&diagnostic.message, bounds)?;
+            }
+            &[]
+        }
+        _ => &[],
+    };
+    for message in diagnostics {
+        validate_diagnostic(message, bounds)?;
+    }
+    Ok(())
+}
+
+fn validate_diagnostic(message: &str, bounds: &Bounds) -> Result<(), CodecError> {
+    let actual = message.len();
+    if actual > bounds.max_diagnostics_size {
+        return Err(CodecError::DiagnosticsTooLarge {
+            actual,
+            limit: bounds.max_diagnostics_size,
+        });
     }
     Ok(())
 }
@@ -155,8 +187,8 @@ pub fn encode_backend(frame: &BackendToHost, bounds: &Bounds) -> Result<String, 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::execution::v1::RequestId;
-    use crate::execution::v1::frames::AcceptedPayload;
+    use crate::execution::v1::frames::{AcceptedPayload, CompletedPayload, StdoutPayload};
+    use crate::execution::v1::{Base64Bytes, CleanupState, Diagnostic, RequestId};
 
     fn accepted() -> BackendToHost {
         BackendToHost::Accepted(AcceptedPayload {
@@ -246,6 +278,63 @@ mod tests {
         assert!(matches!(
             encode_backend(&frame, &bounds),
             Err(CodecError::OversizedLine { .. })
+        ));
+    }
+
+    #[test]
+    fn encode_enforces_decoded_chunk_limit() {
+        let bounds = Bounds {
+            max_line_size: 4096,
+            max_decoded_chunk_size: 8,
+            max_configuration_size: 16,
+            max_diagnostics_size: 8,
+            max_cumulative_output: 64,
+        };
+        let make = |size| {
+            BackendToHost::Stdout(StdoutPayload {
+                request_id: RequestId::new("r1".to_string()).unwrap(),
+                data: Base64Bytes::from_bytes(vec![0; size]),
+            })
+        };
+        assert!(encode_backend(&make(8), &bounds).is_ok());
+        assert!(matches!(
+            encode_backend(&make(9), &bounds),
+            Err(CodecError::OutputChunkTooLarge {
+                actual: 9,
+                limit: 8
+            })
+        ));
+    }
+
+    #[test]
+    fn encode_enforces_nested_diagnostic_limit() {
+        let bounds = Bounds {
+            max_line_size: 4096,
+            max_decoded_chunk_size: 8,
+            max_configuration_size: 16,
+            max_diagnostics_size: 8,
+            max_cumulative_output: 64,
+        };
+        let make = |message: &str| {
+            BackendToHost::Completed(CompletedPayload {
+                request_id: RequestId::new("r1".to_string()).unwrap(),
+                exit: Some(0),
+                signal: None,
+                timed_out: false,
+                cancelled: false,
+                cleanup: CleanupState::Confirmed,
+                diagnostics: vec![Diagnostic {
+                    message: message.to_string(),
+                }],
+            })
+        };
+        assert!(encode_backend(&make("12345678"), &bounds).is_ok());
+        assert!(matches!(
+            encode_backend(&make("123456789"), &bounds),
+            Err(CodecError::DiagnosticsTooLarge {
+                actual: 9,
+                limit: 8
+            })
         ));
     }
 }

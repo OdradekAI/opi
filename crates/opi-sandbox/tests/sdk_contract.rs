@@ -10,6 +10,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
@@ -17,15 +18,30 @@ use std::time::Duration;
 use futures_util::StreamExt;
 use opi_protocol::execution::v1::EnvInherit;
 use opi_sandbox::{
-    CleanupState, ContractStatus, Mechanism, NoRestriction, SandboxEvent, SandboxOutcome,
-    SandboxPolicy, SandboxRequest, SandboxResult, SandboxRun, SandboxRunner, SetupFailureReason,
-    StdinPolicy,
+    AppliedRestriction, CleanupState, ContractStatus, Mechanism, NoRestriction, Restriction,
+    SandboxEvent, SandboxOutcome, SandboxPolicy, SandboxRequest, SandboxResult, SandboxRun,
+    SandboxRunner, SetupFailureReason, StdinPolicy,
 };
 use tokio_util::sync::CancellationToken;
 
 /// A default runner: workspace-write policy + the no-confinement restriction.
 fn runner() -> SandboxRunner {
     SandboxRunner::new(SandboxPolicy::default(), Arc::new(NoRestriction))
+}
+
+struct InconsistentRestriction;
+
+impl Restriction for InconsistentRestriction {
+    fn prepare(
+        &self,
+        _cmd: &mut tokio::process::Command,
+        _ctx: &opi_sandbox::policy::RestrictionCtx<'_>,
+    ) -> Result<AppliedRestriction, opi_sandbox::policy::RestrictionSetupError> {
+        Ok(AppliedRestriction {
+            mechanism: Mechanism::None,
+            contract: ContractStatus::Restricted,
+        })
+    }
 }
 
 /// Build a request for `program`/`args` with a fresh workspace temp dir and the
@@ -38,7 +54,7 @@ fn make_request(
     let workspace = tempfile::tempdir().expect("workspace temp dir");
     let request = SandboxRequest {
         program,
-        args,
+        args: args.into_iter().map(OsString::from).collect(),
         workspace: workspace.path().to_path_buf(),
         cwd: workspace.path().to_path_buf(),
         timeout,
@@ -93,6 +109,14 @@ fn exit_program(code: i32) -> (PathBuf, Vec<String>) {
 }
 
 #[cfg(unix)]
+fn signal_self_program() -> (PathBuf, Vec<String>) {
+    (
+        PathBuf::from("sh"),
+        vec!["-c".to_string(), "kill -TERM $$".to_string()],
+    )
+}
+
+#[cfg(unix)]
 fn stdout_program(text: &str) -> (PathBuf, Vec<String>) {
     (
         PathBuf::from("sh"),
@@ -105,6 +129,36 @@ fn env_echo_program(var: &str) -> (PathBuf, Vec<String>) {
     (
         PathBuf::from("sh"),
         vec!["-c".to_string(), format!("printf '%s' \"${var}\"")],
+    )
+}
+
+#[cfg(unix)]
+fn temp_env_program() -> (PathBuf, Vec<String>) {
+    (
+        PathBuf::from("sh"),
+        vec![
+            "-c".to_string(),
+            "printf '%s|%s|%s' \"$TMPDIR\" \"$TMP\" \"$TEMP\"".to_string(),
+        ],
+    )
+}
+
+#[cfg(unix)]
+fn marker_program(marker: &Path) -> (PathBuf, Vec<String>) {
+    (
+        PathBuf::from("sh"),
+        vec![
+            "-c".to_string(),
+            format!("printf started > '{}'", marker.display()),
+        ],
+    )
+}
+
+#[cfg(unix)]
+fn large_stdout_program(size: usize) -> (PathBuf, Vec<String>) {
+    (
+        PathBuf::from("sh"),
+        vec!["-c".to_string(), format!("head -c {size} /dev/zero")],
     )
 }
 
@@ -143,6 +197,48 @@ fn env_echo_program(var: &str) -> (PathBuf, Vec<String>) {
     (
         PathBuf::from("cmd"),
         vec!["/C".to_string(), format!("echo %{var}%")],
+    )
+}
+
+#[cfg(windows)]
+fn temp_env_program() -> (PathBuf, Vec<String>) {
+    (
+        PathBuf::from("powershell"),
+        vec![
+            "-NoProfile".to_string(),
+            "-Command".to_string(),
+            "Write-Output ([string]::Join([char]124,@($env:TMPDIR,$env:TMP,$env:TEMP)))"
+                .to_string(),
+        ],
+    )
+}
+
+#[cfg(windows)]
+fn marker_program(marker: &Path) -> (PathBuf, Vec<String>) {
+    (
+        PathBuf::from("powershell"),
+        vec![
+            "-NoProfile".to_string(),
+            "-Command".to_string(),
+            format!(
+                "Set-Content -NoNewline -LiteralPath '{}' -Value started",
+                marker.display()
+            ),
+        ],
+    )
+}
+
+#[cfg(windows)]
+fn large_stdout_program(size: usize) -> (PathBuf, Vec<String>) {
+    (
+        PathBuf::from("powershell"),
+        vec![
+            "-NoProfile".to_string(),
+            "-Command".to_string(),
+            format!(
+                "$bytes = New-Object byte[] {size}; [Console]::OpenStandardOutput().Write($bytes, 0, $bytes.Length)"
+            ),
+        ],
     )
 }
 
@@ -196,7 +292,7 @@ fn pid_alive(pid: u32) -> bool {
 
 /// Wait until `pidfile` is written, returning the recorded grandchild pid.
 async fn read_grandchild_pid(pidfile: &Path) -> u32 {
-    for _ in 0..60 {
+    for _ in 0..200 {
         if let Ok(text) = std::fs::read_to_string(pidfile)
             && let Ok(pid) = text.trim().parse::<u32>()
         {
@@ -254,6 +350,15 @@ async fn nonzero_exit_code_is_preserved() {
     );
 }
 
+#[cfg(unix)]
+#[tokio::test]
+async fn signal_termination_is_structured_not_an_exit_code() {
+    let (prog, args) = signal_self_program();
+    let (req, _ws) = make_request(prog, args, Duration::from_secs(5));
+    let result = drive_to_completion(runner().run(req).expect("run starts")).await;
+    assert_eq!(result.outcome, SandboxOutcome::Signaled { signal: 15 });
+}
+
 /// Captured stdout is returned in the terminal result.
 #[tokio::test]
 async fn captured_stdout_is_returned() {
@@ -270,11 +375,11 @@ async fn captured_stdout_is_returned() {
 /// `env_additions` reach the target (explicit environment inputs are honored).
 #[tokio::test]
 async fn explicit_env_additions_reach_the_target() {
-    let (prog, args) = env_echo_program("OPI_SANDBOX_TEST_VAR");
+    let (prog, args) = env_echo_program("OPI_EXPLICIT_TEST_VAR");
     let workspace = tempfile::tempdir().unwrap();
     let req = SandboxRequest {
         program: prog,
-        args,
+        args: args.into_iter().map(OsString::from).collect(),
         workspace: workspace.path().to_path_buf(),
         cwd: workspace.path().to_path_buf(),
         timeout: Duration::from_secs(5),
@@ -282,8 +387,8 @@ async fn explicit_env_additions_reach_the_target() {
         env_additions: {
             let mut m = BTreeMap::new();
             m.insert(
-                "OPI_SANDBOX_TEST_VAR".to_string(),
-                "explicit-value".to_string(),
+                OsString::from("OPI_EXPLICIT_TEST_VAR"),
+                OsString::from("explicit-value"),
             );
             m
         },
@@ -296,6 +401,168 @@ async fn explicit_env_additions_reach_the_target() {
         out.contains("explicit-value"),
         "env addition not honored, got {out:?}"
     );
+}
+
+#[cfg(windows)]
+#[tokio::test]
+async fn windows_rejects_bootstrap_environment_overrides() {
+    let (prog, args) = exit_program(0);
+    let (mut req, _workspace) = make_request(prog, args, Duration::from_secs(5));
+    req.env_additions.insert(
+        OsString::from("opi_sandbox_release_gate"),
+        OsString::from("caller-controlled"),
+    );
+    let failure = match runner().run(req) {
+        Ok(_) => panic!("bootstrap namespace must be reserved case-insensitively"),
+        Err(failure) => failure,
+    };
+    assert_eq!(failure.reason, SetupFailureReason::InvalidRequest);
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn non_utf8_argv_and_environment_round_trip_through_sdk() {
+    use std::os::unix::ffi::OsStringExt;
+
+    let invalid_arg = vec![0xff, 0xfe, b'a'];
+    let (mut arg_request, _arg_workspace) = make_request(
+        PathBuf::from("/usr/bin/printf"),
+        Vec::new(),
+        Duration::from_secs(5),
+    );
+    arg_request.args = vec![
+        OsString::from("%s"),
+        OsString::from_vec(invalid_arg.clone()),
+    ];
+    let arg_result = drive_to_completion(runner().run(arg_request).expect("argv run starts")).await;
+    assert_eq!(arg_result.stdout, invalid_arg);
+
+    let key = vec![b'K', 0xff];
+    let value = vec![b'V', 0x80];
+    let (mut env_request, _env_workspace) = make_request(
+        PathBuf::from("/usr/bin/env"),
+        Vec::new(),
+        Duration::from_secs(5),
+    );
+    env_request.env_additions.insert(
+        OsString::from_vec(key.clone()),
+        OsString::from_vec(value.clone()),
+    );
+    let env_result = drive_to_completion(runner().run(env_request).expect("env run starts")).await;
+    let mut expected = key;
+    expected.push(b'=');
+    expected.extend(value);
+    assert!(
+        env_result
+            .stdout
+            .split(|byte| *byte == b'\n')
+            .any(|line| line == expected),
+        "native environment entry was not preserved"
+    );
+}
+
+#[tokio::test]
+async fn output_over_capture_cap_retains_prefix_and_reports_truncation() {
+    const CAP: usize = 1024 * 1024;
+    let (prog, args) = large_stdout_program(CAP + 4096);
+    let (req, _ws) = make_request(prog, args, Duration::from_secs(10));
+    let result = drive_to_completion(runner().run(req).expect("run starts")).await;
+    assert_eq!(result.stdout.len(), CAP);
+    assert!(result.stdout_truncated, "truncation must be observable");
+    assert!(!result.stderr_truncated);
+}
+
+#[tokio::test]
+async fn invocation_temp_root_is_exported_through_standard_temp_variables() {
+    let (prog, args) = temp_env_program();
+    let (req, _ws) = make_request(prog, args, Duration::from_secs(5));
+    let mut run = runner().run(req).expect("run starts");
+    let temp_root = match run.next().await.expect("Started") {
+        SandboxEvent::Started { temp_root, .. } => temp_root,
+        other => panic!("expected Started, got {other:?}"),
+    };
+    let result = match run.next().await.expect("Completed") {
+        SandboxEvent::Completed(result) => result,
+        other => panic!("expected Completed, got {other:?}"),
+    };
+    let output = String::from_utf8_lossy(&result.stdout);
+    let values: Vec<PathBuf> = output.trim().split('|').map(PathBuf::from).collect();
+    assert_eq!(
+        values,
+        vec![temp_root.clone(), temp_root.clone(), temp_root],
+        "outcome={:?}, stderr={:?}",
+        result.outcome,
+        String::from_utf8_lossy(&result.stderr)
+    );
+}
+
+#[tokio::test]
+async fn cwd_outside_workspace_is_rejected_before_spawn() {
+    let (prog, args) = exit_program(0);
+    let (mut req, _ws) = make_request(prog, args, Duration::from_secs(5));
+    let outside = tempfile::tempdir().expect("outside cwd");
+    req.cwd = outside.path().to_path_buf();
+    let failure = match runner().run(req) {
+        Ok(run) => {
+            drop(run);
+            panic!("outside cwd must fail before spawn")
+        }
+        Err(failure) => failure,
+    };
+    assert_eq!(failure.reason, SetupFailureReason::InvalidRequest);
+}
+
+#[tokio::test]
+async fn inconsistent_effective_contract_is_rejected_before_spawn() {
+    let marker_dir = tempfile::tempdir().expect("marker dir");
+    let marker = marker_dir.path().join("must-not-exist.marker");
+    let (prog, args) = marker_program(&marker);
+    let (req, _ws) = make_request(prog, args, Duration::from_secs(5));
+    let inconsistent =
+        SandboxRunner::new(SandboxPolicy::default(), Arc::new(InconsistentRestriction));
+    let failure = match inconsistent.run(req) {
+        Ok(run) => {
+            drop(run);
+            panic!("inconsistent contract must fail before spawn")
+        }
+        Err(failure) => failure,
+    };
+    assert_eq!(failure.reason, SetupFailureReason::RestrictionSetup);
+    assert!(!marker.exists(), "target ran despite inconsistent contract");
+}
+
+#[tokio::test]
+async fn target_cannot_act_until_started_has_been_observed() {
+    let marker_dir = tempfile::tempdir().expect("marker dir");
+    let marker = marker_dir.path().join("started.marker");
+    let (prog, args) = marker_program(&marker);
+    let (req, _ws) = make_request(prog, args, Duration::from_secs(5));
+    let mut run = runner().run(req).expect("run starts behind gate");
+
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    assert!(!marker.exists(), "target acted before Started was observed");
+
+    assert!(matches!(
+        run.next().await,
+        Some(SandboxEvent::Started { .. })
+    ));
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert!(
+        !marker.exists(),
+        "target acted before the consumer advanced beyond Started"
+    );
+
+    let result = match run.next().await.expect("Completed") {
+        SandboxEvent::Completed(result) => result,
+        other => panic!("expected Completed, got {other:?}"),
+    };
+    assert!(
+        matches!(result.outcome, SandboxOutcome::Exited { code: Some(0) }),
+        "unexpected target outcome: {:?}; stderr={:?}",
+        result.outcome,
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert!(marker.exists(), "target did not run after release");
 }
 
 /// Timeout terminates the tree and removes the invocation-owned temp root.
@@ -469,6 +736,7 @@ async fn dropped_future_kills_surviving_grandchild() {
     let (req, _ws) = make_request(prog, args, Duration::from_secs(30));
     let mut run = runner().run(req).expect("run starts");
     let _ = run.next().await.expect("Started");
+    run.release().expect("release target after Started");
     // Wait until the grandchild has been spawned and its pid recorded, then drop.
     let grandchild = read_grandchild_pid(&pidfile).await;
     assert!(pid_alive(grandchild), "grandchild alive before drop");
@@ -485,7 +753,7 @@ async fn timeout_kills_surviving_grandchild() {
     let pid_dir = tempfile::tempdir().expect("pid dir");
     let pidfile = pid_dir.path().join("gcpid");
     let (prog, args) = surviving_grandchild_program(&pidfile);
-    let (req, _ws) = make_request(prog, args, Duration::from_millis(400));
+    let (req, _ws) = make_request(prog, args, Duration::from_secs(8));
     let run = runner().run(req).expect("run starts");
     let result = drive_to_completion(run).await;
     assert!(matches!(result.outcome, SandboxOutcome::TimedOut));
@@ -493,5 +761,57 @@ async fn timeout_kills_surviving_grandchild() {
     assert!(
         wait_for_exit(grandchild).await,
         "grandchild {grandchild} should have been killed on timeout"
+    );
+}
+
+/// Abruptly terminating the process that owns a run still kills the target
+/// tree: Windows relies on Job-Object kill-on-close, while Unix uses the gated
+/// bootstrap's parent-death watchdog.
+#[tokio::test]
+async fn hard_kill_of_run_owner_kills_target_tree() {
+    const HELPER: &str = "OPI_SANDBOX_TEST_OWNER_HELPER";
+    const PIDFILE: &str = "OPI_SANDBOX_TEST_OWNER_PIDFILE";
+
+    if std::env::var_os(HELPER).is_some() {
+        let pidfile = PathBuf::from(std::env::var_os(PIDFILE).expect("helper pidfile"));
+        let (prog, args) = surviving_grandchild_program(&pidfile);
+        let (req, _workspace) = make_request(prog, args, Duration::from_secs(60));
+        let mut run = runner().run(req).expect("helper run starts");
+        assert!(matches!(
+            run.next().await,
+            Some(SandboxEvent::Started { .. })
+        ));
+        run.release().expect("release helper target");
+        std::future::pending::<()>().await;
+        unreachable!();
+    }
+
+    let pid_dir = tempfile::tempdir().expect("pid dir");
+    let pidfile = pid_dir.path().join("owner-grandchild.pid");
+    let mut owner = std::process::Command::new(std::env::current_exe().expect("test binary"))
+        .args([
+            "--exact",
+            "hard_kill_of_run_owner_kills_target_tree",
+            "--nocapture",
+        ])
+        .env(HELPER, "1")
+        .env(PIDFILE, &pidfile)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .expect("spawn run owner helper");
+    let grandchild = tokio::time::timeout(Duration::from_secs(15), read_grandchild_pid(&pidfile))
+        .await
+        .unwrap_or_else(|_| {
+            let _ = owner.kill();
+            panic!("owner helper target did not start")
+        });
+    assert!(pid_alive(grandchild));
+    owner.kill().expect("hard-kill run owner");
+    let _ = owner.wait();
+    assert!(
+        wait_for_exit(grandchild).await,
+        "grandchild {grandchild} survived abrupt owner termination"
     );
 }

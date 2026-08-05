@@ -2804,8 +2804,10 @@ fn bash_tool_no_background_shell_symbols_guard() {
         "supervision.rs may spawn only the owned pipe-drain capture task"
     );
     for required in [
-        "OwnedCaptureTask::new(spawn_stream_capture(stdout, cap), cap)",
-        "OwnedCaptureTask::new(spawn_stream_capture(stderr, cap), cap)",
+        "OwnedCaptureTask::new(stdout, cap)",
+        "OwnedCaptureTask::new(stderr, cap)",
+        "fn spawn_shared_stream_capture",
+        "capture: Option<Arc<Mutex<StreamCapture>>>",
         "struct OwnedCaptureTask",
         "impl Drop for OwnedCaptureTask",
         "drain_out.finish()",

@@ -122,7 +122,7 @@ fn bash_input_schema(
     config: &ExecutionConfig,
     enabled: &[EnabledIdentity],
     policy: &PermissionPolicy,
-) -> serde_json::Value {
+) -> Option<serde_json::Value> {
     let base = default_bash_schema();
     match config.strategy {
         ExecutionStrategy::Model => {
@@ -141,14 +141,15 @@ fn bash_input_schema(
                 .collect();
             with_model_backend_enum(base, &candidates)
         }
-        _ => base,
+        _ => Some(base),
     }
 }
 
 /// Build the production [`ExecutionWiring`] from the layered config and the
-/// global package-activation store. The enabled identities come from
-/// [`PackageActivationStore::enabled_identities`] (tolerant of a corrupt trust
-/// file); the policy is [`PermissionPolicy::from_map`] over the resolved
+/// global package-activation store. Model-visible identities come from
+/// [`PackageActivationStore::usable_enabled_identities`] after current
+/// target/version/manifest/lock/hash validation; the policy is
+/// [`PermissionPolicy::from_map`] over the resolved
 /// permissions so explicit user deny/ask/allow for `local` and externals is
 /// honored exactly by both the Minimal-Runtime and routed branches.
 fn execution_wiring(
@@ -157,15 +158,17 @@ fn execution_wiring(
     mode: ExecutionRunMode,
 ) -> ExecutionWiring {
     let store = PackageActivationStore::global(global_config_dir.to_path_buf());
-    let enabled = store.enabled_identities();
+    let host_target = host_target_triple().to_string();
+    let host_opi_version = host_opi_version().to_string();
+    let enabled = store.usable_enabled_identities(&host_target, &host_opi_version);
     ExecutionWiring {
         config: config.execution.clone(),
         enabled,
         policy: PermissionPolicy::from_map(config.execution.permissions.clone()),
         store: Arc::new(store),
         mode,
-        host_target: host_target_triple().to_string(),
-        host_opi_version: host_opi_version().to_string(),
+        host_target,
+        host_opi_version,
         // Fresh per-harness manager (memory-only grants). The broker defaults to
         // None (fail-closed); the interactive startup path installs the
         // TUI-backed broker (Phase 16.10 interactive wiring).
@@ -2361,6 +2364,15 @@ impl CodingHarness {
         local_ops: Arc<dyn BashOperations>,
         execution: &ExecutionWiring,
     ) -> (Option<Box<dyn Tool>>, Vec<Diagnostic>) {
+        let Some(schema) =
+            bash_input_schema(&execution.config, &execution.enabled, &execution.policy)
+        else {
+            let failure = crate::execution::ExecutionFailure::NoEligibleAdapter {
+                strategy: execution.config.strategy,
+                mode: execution.mode,
+            };
+            return (None, vec![diagnostic_from_execution_failure(&failure)]);
+        };
         match ExecutionRuntime::build(
             &execution.config,
             execution.mode,
@@ -2374,18 +2386,14 @@ impl CodingHarness {
             Arc::clone(&execution.manager),
             execution.broker.clone(),
         ) {
-            Ok(ops) => {
-                let schema =
-                    bash_input_schema(&execution.config, &execution.enabled, &execution.policy);
-                (
-                    Some(Box::new(BashTool::new_with_ops_and_schema(
-                        workspace_root.to_path_buf(),
-                        ops,
-                        schema,
-                    ))),
-                    Vec::new(),
-                )
-            }
+            Ok(ops) => (
+                Some(Box::new(BashTool::new_with_ops_and_schema(
+                    workspace_root.to_path_buf(),
+                    ops,
+                    schema,
+                ))),
+                Vec::new(),
+            ),
             Err(failure) => (None, vec![diagnostic_from_execution_failure(&failure)]),
         }
     }

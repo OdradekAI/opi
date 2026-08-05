@@ -948,6 +948,12 @@ pub async fn run_interactive_tui(
                 result,
                 ..
             } => {
+                if tool_name == "bash"
+                    && let Some(details) = details
+                    && let Some(contract) = crate::tool::format_effective_contract(details)
+                {
+                    s.messages.push(TuiMessage::new(TuiRole::System, contract));
+                }
                 // Render diff for edit tool results that have before/after details.
                 if !is_error
                     && tool_name == "edit"

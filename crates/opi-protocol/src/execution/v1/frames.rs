@@ -12,7 +12,7 @@ use std::collections::BTreeMap;
 use schemars::{JsonSchema, Schema, SchemaGenerator, json_schema};
 use serde::{Deserialize, Serialize};
 
-use super::identity::RequestId;
+use super::identity::{ImplementationId, RequestId};
 use super::native::NativeString;
 
 // ---------------------------------------------------------------------------
@@ -198,6 +198,8 @@ pub struct ReadyPayload {
     pub request_id: RequestId,
     /// The single selected protocol (negotiation result).
     pub selected_protocol: super::identity::ProtocolId,
+    /// Selected backend implementation/adapter identity.
+    pub implementation: ImplementationId,
     /// Backend implementation version (diagnostics only; never a negotiation
     /// input).
     pub implementation_version: String,
@@ -307,6 +309,7 @@ pub enum CleanupState {
 
 /// One diagnostic entry (used in the `diagnostics` lists on `completed`/`failed`).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct Diagnostic {
     /// Redacted diagnostic message.
     pub message: String,

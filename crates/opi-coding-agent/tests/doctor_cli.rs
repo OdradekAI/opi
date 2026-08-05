@@ -1769,8 +1769,8 @@ fn package_scope_reports_execution_lifecycle_and_drift_at_top_level() {
         store_probe: &EMPTY_STORE_PROBE,
     };
 
-    // Healthy (untrusted+disabled) execution package: lifecycle is reported,
-    // and it is not itself an error.
+    // A freshly installed execution package is actionable until Package Trust
+    // is confirmed, and uses the same stable code as runtime activation.
     let report = run_doctor(&[DoctorScope::Package], &context);
     let text = format_text(&report);
     assert!(
@@ -1788,6 +1788,13 @@ fn package_scope_reports_execution_lifecycle_and_drift_at_top_level() {
             .any(|e| e.diagnostic.source == "package"),
         "package-scope entries present"
     );
+    let untrusted = report
+        .entries
+        .iter()
+        .find(|e| e.diagnostic.code == "package_untrusted")
+        .expect("stable runtime code on top-level doctor");
+    assert!(untrusted.diagnostic.action.is_some());
+    assert_eq!(report.exit_code(), 2);
 
     // Tamper with the executable: drift must surface as an error at the
     // top-level doctor, and no adapter process is started.
@@ -1805,20 +1812,15 @@ fn package_scope_reports_execution_lifecycle_and_drift_at_top_level() {
     );
 }
 
-/// SC16-14 doctor surfaces: the top-level `opi doctor` package scope emits the
-/// stable doctor-local codes (`doctor_package_exec_lifecycle`,
-/// `doctor_package_exec_drift`). The render-time redaction WIRING is proven by
+/// SC16-14 doctor surfaces: the top-level `opi doctor` package scope uses the
+/// stable execution-failure codes for actionable lifecycle failures and keeps
+/// the doctor-local lifecycle code for informational state. Redaction wiring is proven by
 /// seeding abs-path + secret canaries into the lifecycle details and asserting
 /// `format_json` strips them with a `[REDACTED]` marker (the real lifecycle
 /// payload carries no secrets/commands/PIDs/abs-paths, so this proves the
 /// formatter path, not leak-freedom of the payload). The distinct
-/// `opi package doctor` surface reports the SAME lifecycle + drift resolution
-/// (exit 0 healthy / 2 drifted) through the same package resolution code, but
-/// renders plain-text lifecycle lines rather than the structured
-/// `doctor_package_exec_*` code objects (SC16-03 text format); this test pins
-/// the exit-code equivalence there and the structured code + redaction-wiring on
-/// the top-level surface. This complements the execution-layer stable codes
-/// proven in `execution_product.rs`.
+/// `opi package doctor` surface reports the same lifecycle + drift resolution.
+/// This complements the runtime stable-code coverage in `execution_product.rs`.
 #[test]
 fn doctor_surfaces_emit_stable_redacted_package_codes() {
     use opi_coding_agent::cli::PackageCommand;
@@ -1889,8 +1891,8 @@ fn doctor_surfaces_emit_stable_redacted_package_codes() {
         store_probe: &EMPTY_STORE_PROBE,
     };
 
-    // Healthy untrusted+disabled state: stable lifecycle code on BOTH doctor
-    // surfaces with redaction (no command text / PID / abs path in payload).
+    // Fresh installs are untrusted: keep the informational lifecycle observation
+    // and also emit the actionable stable runtime code plus remediation.
     let report = run_doctor(&[DoctorScope::Package], &context);
     let lifecycle = report
         .entries
@@ -1898,6 +1900,20 @@ fn doctor_surfaces_emit_stable_redacted_package_codes() {
         .find(|e| e.diagnostic.code == "doctor_package_exec_lifecycle")
         .expect("stable lifecycle code on top-level doctor");
     assert_eq!(lifecycle.diagnostic.source, "package");
+    let untrusted = report
+        .entries
+        .iter()
+        .find(|e| e.diagnostic.code == "package_untrusted")
+        .expect("stable execution code on top-level doctor");
+    assert!(
+        untrusted
+            .diagnostic
+            .details
+            .as_ref()
+            .and_then(|details| details.get("remediation"))
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|remediation| !remediation.is_empty())
+    );
 
     // Redaction on the RENDERED JSON surface: doctor redacts at render time
     // (`format_json` calls `redacted_payload(Summary)` on every entry). To make
@@ -1942,40 +1958,75 @@ fn doctor_surfaces_emit_stable_redacted_package_codes() {
         "rendered doctor JSON must carry a redaction marker: {rendered_json}"
     );
 
-    // `opi package doctor` is a distinct parseable surface driven through the
-    // same `package_cli` dispatch; it reports the identical lifecycle + drift
-    // resolution (0 = healthy, 2 = drifted) as the top-level doctor.
-    let exit_healthy = package_cli::handle_package_command(
+    // The package-doctor surface agrees that untrusted is actionable.
+    let exit_untrusted = package_cli::handle_package_command(
         &PackageCommand::Doctor { json: false },
         workspace.path().to_path_buf(),
         user.path().to_path_buf(),
     );
-    assert_eq!(
-        exit_healthy, 0,
-        "package doctor must exit 0 for a healthy lifecycle (same detection as top-level)"
-    );
+    assert_eq!(exit_untrusted, 2);
 
-    // Drift: the stable drift code surfaces as an ERROR on the top-level doctor.
-    // The drift payload is message-only (package name + adapter id) and carries no
-    // details, so the tampered executable's content can never leak into any field.
-    // Pin that structural guarantee directly rather than by a claimed message
-    // assertion: the message names only the package/adapter id, and there are no
-    // details.
+    // Trusted but disabled uses contribution_disabled on the top-level doctor.
+    let activation = package_activation::PackageActivationStore::global(user.path().to_path_buf());
+    let mut records = activation.read_records().unwrap();
+    records[0].trusted = true;
+    records[0].enabled = true;
+    activation.write_records(&records).unwrap();
+    assert_eq!(
+        package_cli::handle_package_command(
+            &PackageCommand::Disable {
+                name: "opi-sandbox".into(),
+            },
+            workspace.path().to_path_buf(),
+            user.path().to_path_buf(),
+        ),
+        0
+    );
+    let disabled_report = run_doctor(&[DoctorScope::Package], &context);
+    let disabled = disabled_report
+        .entries
+        .iter()
+        .find(|e| e.diagnostic.code == "contribution_disabled")
+        .expect("disabled package uses stable runtime code");
+    assert!(disabled.diagnostic.action.is_some());
+
+    // Re-enable before testing drift so the hash mismatch itself determines
+    // the stable failure code.
+    assert_eq!(
+        package_cli::handle_package_command(
+            &PackageCommand::Enable {
+                name: "opi-sandbox".into(),
+            },
+            workspace.path().to_path_buf(),
+            user.path().to_path_buf(),
+        ),
+        0
+    );
+    assert_eq!(run_doctor(&[DoctorScope::Package], &context).exit_code(), 0);
+
+    // Drift invalidates Package Trust, so it correlates with runtime's
+    // package_untrusted code and remediation.
     std::fs::write(&exe, b"#!/bin/sh\necho pwned\n").unwrap();
     let report2 = run_doctor(&[DoctorScope::Package], &context);
     let drift = report2
         .entries
         .iter()
-        .find(|e| e.diagnostic.code == "doctor_package_exec_drift")
-        .expect("stable drift code on top-level doctor");
+        .find(|e| e.diagnostic.code == "package_untrusted")
+        .expect("stable execution code on top-level doctor");
     assert_eq!(
         drift.diagnostic.severity,
         opi_agent::diagnostic::Severity::Error
     );
     assert!(
-        drift.diagnostic.details.is_none(),
-        "drift diagnostic must be message-only (no command text / path / PID fields): {:?}",
-        drift.diagnostic
+        drift
+            .diagnostic
+            .details
+            .as_ref()
+            .and_then(|details| details.get("remediation"))
+            .and_then(serde_json::Value::as_str)
+            .is_some(),
+        "drift diagnostic must carry remediation: {:?}",
+        drift.diagnostic,
     );
     assert!(
         drift.diagnostic.message.contains("opi-sandbox")

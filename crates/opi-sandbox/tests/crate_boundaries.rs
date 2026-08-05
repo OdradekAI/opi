@@ -5,8 +5,9 @@
 //! storage. The strong structural proof is `cargo tree -p opi-sandbox --edges
 //! normal` (the resolve graph has no `opi-agent`/`opi-coding-agent` edge; the
 //! sole opi-internal dep is the pure-types `opi-protocol`). The secondary guard
-//! asserts the library source calls no host-environment-read API, which is a
-//! necessary condition for reading any `OPI_*` configuration env var.
+//! asserts the library source calls no host-environment-read API except the
+//! effective `PATH` used as an explicit execution input. That is a necessary
+//! condition for reading any `OPI_*` configuration env var.
 
 use std::path::PathBuf;
 use std::process::Command;
@@ -42,10 +43,13 @@ fn depends_only_on_neutral_crates_not_opi_agent_or_coding_agent() {
     }
 }
 
-/// Static tripwire: NO source file under `src/` (library OR binary) calls a
-/// runtime host-environment-VAR-read API. The forbidden needles are
+/// Static tripwire: no source file under `src/` (library OR binary) calls a
+/// runtime host-environment-VAR-read API except the effective inherited
+/// `PATH`. The forbidden needles are
 /// `env::var`, `env::vars`, `var_os`, `vars_os`, and `dotenvy` — the APIs that
-/// read host configuration/state. `env::args`, `env::args_os` (CLI argument
+/// read host configuration/state. `std::env::var_os("PATH")` is permitted
+/// because inherited PATH resolution is an explicit execution input.
+/// `env::args`, `env::args_os` (CLI argument
 /// plumbing) and `env::consts` (compile-time constants such as `consts::OS`)
 /// are PERMITTED and intentionally absent from the needle set.
 ///
@@ -72,7 +76,11 @@ fn source_calls_no_host_environment_var_read_api() {
             if path.extension().and_then(|e| e.to_str()) != Some("rs") {
                 continue;
             }
-            let content = std::fs::read_to_string(&path).unwrap_or_default();
+            // Effective PATH is an explicit execution input when inheritance
+            // is requested; it is the sole permitted host-variable read.
+            let content = std::fs::read_to_string(&path)
+                .unwrap_or_default()
+                .replace("std::env::var_os(\"PATH\")", "");
             for needle in ["env::var", "env::vars", "var_os", "vars_os", "dotenvy"] {
                 if content.contains(needle) {
                     hits.push_str(&format!("{}: `{needle}`\n", path.display()));

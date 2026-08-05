@@ -116,7 +116,7 @@ opi-tui
 opi-agent -> opi-ai
 opi-protocol
 opi-sandbox -> opi-protocol
-opi-coding-agent -> opi-ai + opi-agent + opi-tui -> opi binary
+opi-coding-agent -> opi-ai + opi-agent + opi-tui + opi-protocol -> opi binary
 ```
 
 ## 主要 CLI 表面
@@ -151,8 +151,8 @@ opi package list
 | `--no-tools` | 禁用所有工具。 |
 | `--no-builtin-tools` | 关闭内置工具，同时保留 extension/custom 工具可用。 |
 | `--allow-mutating` | 在非交互/RPC 运行中允许 `write`、`edit` 和 `bash`。 |
-| `--sandbox off\|strict` | 选择 `bash` 子进程树沙箱；默认 `off` 交付始终开启的 L0 tree-kill 基线。 |
-| `--sandbox-require` | 当已配置的 `strict` 层不可用时 fail-closed，而不是默认的 fail-open-with-diagnostic 策略。 |
+| `--execution-strategy <fixed\|rules\|model>` | 选择 `command.execute` 路由策略。 |
+| `--execution-backend <local\|ADAPTER_ID>` | 选择固定执行后端，或覆盖配置中的后端。 |
 | `--trust` / `--no-trust` | 针对本次会话的一次性项目信任覆盖；二者互斥。 |
 | `--trace <PATH>` | 为非交互或 JSON 运行写入可选、已脱敏的本地 trace envelope。 |
 
@@ -306,9 +306,8 @@ backend 选择已安装的外部 adapter。
 - 绝不回退：外部 adapter 一旦被选择，失败即 fail-closed，绝不重试 `local`。稳定的
   脱敏失败码（例如 `package_not_installed`、`permission_required`、
   `protocol_violation`）在文本、NDJSON、RPC 与交互表面携带可执行的 remediation；
-  `package doctor` 与 `opi doctor` 针对执行 package 的生命周期与 drift 报告各自的
-  稳定脱敏 doctor-local 码（`doctor_package_exec_lifecycle`、
-  `doctor_package_exec_drift`）。
+  `package doctor` 与 `opi doctor` 保留运行时执行所用的同一组可执行 lifecycle code
+  与 remediation。
 - Opi 二进制绝不链接 `opi-sandbox`。原生限制及其 helper/capability-selection 代码
   离开核心（16.16.1）；`[sandbox]`、`--sandbox`、`--sandbox-require` 被拒绝且不提供
   兼容 alias。L0 子进程树监督对 local 与 adapter 进程仍保留在核心。
@@ -347,10 +346,11 @@ backend 选择已安装的外部 adapter。
   默认测试中的付费实时 provider 调用，以及复制 pi 的 provider 专用配置文件格式仍被推迟。
 - 不支持从任意 extension 路径动态加载 Rust 插件。
 
-### 沙箱与项目信任
+### 历史记录：第十五阶段沙箱与项目信任
 
-第十五阶段增加 opt-in 的 `bash` 子进程树沙箱，以及一个启动期项目信任门。二者均为
-defense-in-depth，明确不是安全边界；不可信代码应放在容器或 VM 中。
+本节仅记录未发布的第十五阶段实现。第十六阶段已移除核心中的 `[sandbox]`、
+`--sandbox` 与 `--sandbox-require` 表面；当前配置请使用上文的 `command.execute`。
+下述项目信任行为仍然有效，沙箱细节与参数仅用于说明迁移历史。
 
 - 沙箱只 confine `bash` 子进程树，不 confine `opi` 自身。每个模式都交付始终开启的 L0
   基线（Unix 上 `process_group(0)`、Windows 上 kill-on-close Job Object）。

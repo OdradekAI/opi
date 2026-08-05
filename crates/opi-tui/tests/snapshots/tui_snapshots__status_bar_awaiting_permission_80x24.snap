@@ -1,0 +1,6 @@
+---
+source: crates/opi-tui/tests/tui_snapshots.rs
+assertion_line: 118
+expression: "render(bar, 80, 24)"
+---
+ claude-sonnet-4-5-20250514 [awaiting permission...] | 350 tokens

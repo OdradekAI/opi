@@ -12,11 +12,15 @@ Usage:
 Package layout (under $ArtifactDir):
     package/package.toml        rendered manifest (target + sha256 filled)
     package/bin/opi-sandbox     the executable
+    package/schemas/command-execution-jsonl-v1.schema.json
+    package/licenses/LICENSE    project license
     opi-sandbox-<target>.zip    distribution archive (package contents at root)
     extracted/                  clean extraction of the archive
     package-lock.toml           BUILD-TIME audit lock (8 LockMaterial fields)
+    target                      exact target triple for artifact audit
 
-The archive contains package.toml + bin/ at its root (NO wrapping directory),
+The archive contains package.toml + bin/ + schemas/ + licenses/ at its root
+(NO wrapping directory),
 matching the package_root that 16.5 install passes to 16.4
 validate_executable_contributions. package-lock.toml is an audit artifact;
 16.5 recomputes LockMaterial via 16.4 against the extracted package and does
@@ -66,7 +70,12 @@ if ($Verify) {
     $Pkg = Join-Path $ArtifactDir 'package'
     $Extracted = Join-Path $ArtifactDir 'extracted'
     $LockPath = Join-Path $ArtifactDir 'package-lock.toml'
-    foreach ($rel in @('package.toml', 'bin/opi-sandbox')) {
+    foreach ($rel in @(
+        'package.toml',
+        'bin/opi-sandbox',
+        'schemas/command-execution-jsonl-v1.schema.json',
+        'licenses/LICENSE'
+    )) {
         if (-not (Test-Path -LiteralPath (Join-Path $Pkg $rel))) {
             Fail-Layout "verify: missing package/$rel"
         }
@@ -75,6 +84,7 @@ if ($Verify) {
         }
     }
     if (-not (Test-Path -LiteralPath $LockPath)) { Fail-Layout 'verify: missing package-lock.toml' }
+    if (-not (Test-Path -LiteralPath (Join-Path $ArtifactDir 'target'))) { Fail-Layout 'verify: missing target' }
     $lockText = [System.IO.File]::ReadAllText($LockPath, $utf8NoBom)
     $declMh = Read-LockValue 'manifest_hash' $lockText
     $declExe = Read-LockValue 'executable_sha256' $lockText
@@ -85,6 +95,13 @@ if ($Verify) {
     $exeExt = Get-Sha256Path (Join-Path $Extracted 'bin/opi-sandbox')
     if ($exePkg -cne $declExe) { Fail-Layout 'verify: package executable sha mismatch' }
     if ($exeExt -cne $declExe) { Fail-Layout 'verify: extracted executable sha mismatch' }
+    $schemaRel = 'schemas/command-execution-jsonl-v1.schema.json'
+    if ((Get-Sha256Path (Join-Path $Pkg $schemaRel)) -cne (Get-Sha256Path (Join-Path $Extracted $schemaRel))) {
+        Fail-Layout 'verify: extracted schema mismatch'
+    }
+    if ((Get-Sha256Path (Join-Path $Pkg 'licenses/LICENSE')) -cne (Get-Sha256Path (Join-Path $Extracted 'licenses/LICENSE'))) {
+        Fail-Layout 'verify: extracted license mismatch'
+    }
     [Console]::Out.WriteLine("verified opi-sandbox layout: manifest_hash=$actualMh, executable_sha256=$declExe")
     exit 0
 }
@@ -95,6 +112,9 @@ if (-not $BinaryPath) { Fail-Usage '-BinaryPath PATH is required in pack mode' }
 $ScriptDir = $PSScriptRoot
 if (-not $ScriptDir) { $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path }
 $Template = Join-Path $ScriptDir '..\packaging\opi-sandbox\package.toml.template'
+$WorkspaceManifest = Join-Path $ScriptDir '..\Cargo.toml'
+$SchemaSnapshot = Join-Path $ScriptDir '..\crates\opi-protocol\tests\snapshots\execution_v1_schema__schema_v1.snap'
+$LicenseFile = Join-Path $ScriptDir '..\LICENSE'
 
 if (-not (Test-Path -LiteralPath $BinaryPath -PathType Leaf)) {
     Fail-Usage "binary not found: $BinaryPath"
@@ -105,6 +125,31 @@ if ((Get-Item -LiteralPath $BinaryPath).Length -eq 0) {
 if (-not (Test-Path -LiteralPath $Template -PathType Leaf)) {
     Fail-Usage "template not found: $Template"
 }
+if (-not (Test-Path -LiteralPath $WorkspaceManifest -PathType Leaf)) {
+    Fail-Usage "workspace manifest not found: $WorkspaceManifest"
+}
+if (-not (Test-Path -LiteralPath $SchemaSnapshot -PathType Leaf) -or -not (Test-Path -LiteralPath $LicenseFile -PathType Leaf)) {
+    Fail-Usage 'schema snapshot or LICENSE is missing'
+}
+
+# Derive package identity and the compatible minor line from this checkout.
+$workspaceText = [System.IO.File]::ReadAllText($WorkspaceManifest, $utf8NoBom)
+$workspacePackage = [regex]::Match(
+    $workspaceText,
+    '(?ms)^\[workspace\.package\]\s*(.*?)(?=^\[|\z)'
+)
+if (-not $workspacePackage.Success) { Fail-Usage 'missing [workspace.package] in Cargo.toml' }
+$versionMatch = [regex]::Match(
+    $workspacePackage.Groups[1].Value,
+    '(?m)^\s*version\s*=\s*"([^"]+)"\s*$'
+)
+if (-not $versionMatch.Success) { Fail-Usage 'missing workspace package version' }
+$PackageVersion = $versionMatch.Groups[1].Value
+$semver = [regex]::Match($PackageVersion, '^(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$')
+if (-not $semver.Success) { Fail-Usage "invalid workspace package version: $PackageVersion" }
+$major = [int]$semver.Groups[1].Value
+$minor = [int]$semver.Groups[2].Value
+$OpiRange = ">=$major.$minor,<$major.$($minor + 1)"
 
 # Detect host target triple from rustc (assumes the supplied -BinaryPath was
 # built for this same triple; cross-compiled binaries must be packaged on a
@@ -128,17 +173,37 @@ if (Test-Path -LiteralPath $Pkg) { Remove-Item -Recurse -Force -LiteralPath $Pkg
 if (Test-Path -LiteralPath $Extracted) { Remove-Item -Recurse -Force -LiteralPath $Extracted }
 Get-ChildItem -LiteralPath $ArtifactDir -Filter 'opi-sandbox-*.zip' -File -ErrorAction SilentlyContinue |
     Remove-Item -Force -ErrorAction SilentlyContinue
+Remove-Item -Force -LiteralPath (Join-Path $ArtifactDir 'target') -ErrorAction SilentlyContinue
 $null = New-Item -ItemType Directory -Force -Path (Join-Path $Pkg 'bin')
+$null = New-Item -ItemType Directory -Force -Path (Join-Path $Pkg 'schemas')
+$null = New-Item -ItemType Directory -Force -Path (Join-Path $Pkg 'licenses')
 
 # Render the manifest (literal token substitution) and write LF-only UTF-8.
 $templateText = [System.IO.File]::ReadAllText($Template, $utf8NoBom)
-$rendered = $templateText.Replace('__TARGET__', $Target).Replace('__SHA256__', $ExecSha)
+$rendered = $templateText.Replace('__PACKAGE_VERSION__', $PackageVersion).Replace('__OPI_RANGE__', $OpiRange).Replace('__TARGET__', $Target).Replace('__SHA256__', $ExecSha)
 $rendered = $rendered -replace "`r`n", "`n" -replace "`r", "`n"
 $PkgToml = Join-Path $Pkg 'package.toml'
 [System.IO.File]::WriteAllBytes($PkgToml, $utf8NoBom.GetBytes($rendered))
 
 # Copy the binary into the layout (basename always opi-sandbox; no extension).
 Copy-Item -LiteralPath $BinaryPath -Destination (Join-Path $Pkg 'bin/opi-sandbox') -Force
+
+# Strip insta's metadata header from the reviewed opi-protocol schema snapshot.
+$snapshotLines = [System.IO.File]::ReadAllLines($SchemaSnapshot, $utf8NoBom)
+$markers = @()
+for ($i = 0; $i -lt $snapshotLines.Length; $i++) {
+    if ($snapshotLines[$i] -ceq '---') { $markers += $i }
+}
+if ($markers.Count -lt 2 -or $markers[1] + 1 -ge $snapshotLines.Length) {
+    Fail-Usage 'invalid protocol schema snapshot header'
+}
+$schemaText = (($snapshotLines[($markers[1] + 1)..($snapshotLines.Length - 1)]) -join "`n") + "`n"
+try { $null = $schemaText | ConvertFrom-Json } catch { Fail-Usage 'invalid protocol schema JSON' }
+[System.IO.File]::WriteAllBytes(
+    (Join-Path $Pkg 'schemas/command-execution-jsonl-v1.schema.json'),
+    $utf8NoBom.GetBytes($schemaText)
+)
+Copy-Item -LiteralPath $LicenseFile -Destination (Join-Path $Pkg 'licenses/LICENSE') -Force
 
 # manifest_hash over the LF-normalized written manifest.
 $ManifestHash = Get-Sha256LfPath $PkgToml
@@ -162,14 +227,15 @@ $lock = @"
 manifest_hash = "$ManifestHash"
 executable_rel_path = "bin/opi-sandbox"
 executable_sha256 = "$ExecSha"
-package_version = "0.8.0"
+package_version = "$PackageVersion"
 target = "$Target"
-opi_range = ">=0.8,<0.9"
+opi_range = "$OpiRange"
 protocol = "command-execution-jsonl-v1"
 adapter_id = "opi-sandbox"
 "@
 $lock = $lock -replace "`r`n", "`n"
 [System.IO.File]::WriteAllBytes((Join-Path $ArtifactDir 'package-lock.toml'), $utf8NoBom.GetBytes($lock))
+[System.IO.File]::WriteAllBytes((Join-Path $ArtifactDir 'target'), $utf8NoBom.GetBytes("$Target`n"))
 
 [Console]::Out.WriteLine("packaged opi-sandbox for ${Target}: sha256=$ExecSha, layout=$Pkg")
 exit 0

@@ -53,10 +53,30 @@ impl Bounds {
 
     /// Check the bounds for internal consistency.
     pub const fn validate(self) -> Result<(), BoundsError> {
-        if self.max_line_size < self.max_decoded_chunk_size * 4 / 3 + 64 {
+        let chunk_numerator = match self.max_decoded_chunk_size.checked_mul(4) {
+            Some(value) => value,
+            None => return Err(BoundsError::LineTooSmallForChunk),
+        };
+        let chunk_numerator = match chunk_numerator.checked_add(2) {
+            Some(value) => value,
+            None => return Err(BoundsError::LineTooSmallForChunk),
+        };
+        let chunk_required = match (chunk_numerator / 3).checked_add(64) {
+            Some(value) => value,
+            None => return Err(BoundsError::LineTooSmallForChunk),
+        };
+        if self.max_line_size < chunk_required {
             return Err(BoundsError::LineTooSmallForChunk);
         }
-        if self.max_line_size < self.max_configuration_size * 5 + 256 {
+        let config_required = match self.max_configuration_size.checked_mul(5) {
+            Some(value) => value,
+            None => return Err(BoundsError::LineTooSmallForConfig),
+        };
+        let config_required = match config_required.checked_add(256) {
+            Some(value) => value,
+            None => return Err(BoundsError::LineTooSmallForConfig),
+        };
+        if self.max_line_size < config_required {
             return Err(BoundsError::LineTooSmallForConfig);
         }
         let _ = self.max_diagnostics_size;
@@ -90,5 +110,29 @@ mod tests {
             max_cumulative_output: 1024,
         };
         assert_eq!(bad.validate(), Err(BoundsError::LineTooSmallForChunk));
+    }
+
+    #[test]
+    fn overflowing_chunk_requirement_is_rejected() {
+        let bad = Bounds {
+            max_line_size: usize::MAX,
+            max_decoded_chunk_size: usize::MAX,
+            max_configuration_size: 0,
+            max_diagnostics_size: 0,
+            max_cumulative_output: 0,
+        };
+        assert_eq!(bad.validate(), Err(BoundsError::LineTooSmallForChunk));
+    }
+
+    #[test]
+    fn overflowing_configuration_requirement_is_rejected() {
+        let bad = Bounds {
+            max_line_size: usize::MAX,
+            max_decoded_chunk_size: 0,
+            max_configuration_size: usize::MAX,
+            max_diagnostics_size: 0,
+            max_cumulative_output: 0,
+        };
+        assert_eq!(bad.validate(), Err(BoundsError::LineTooSmallForConfig));
     }
 }

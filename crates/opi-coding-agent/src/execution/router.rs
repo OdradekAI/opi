@@ -84,7 +84,9 @@ pub fn resolve_selection(
     model_backend: Option<&str>,
 ) -> Result<Selection, ExecutionFailure> {
     match config.strategy {
-        ExecutionStrategy::Fixed => select_named(&config.backend, mode, eligibility),
+        ExecutionStrategy::Fixed => {
+            select_named(&config.backend, ExecutionStrategy::Fixed, mode, eligibility)
+        }
         ExecutionStrategy::Rules => resolve_rules(config, mode, eligibility),
         ExecutionStrategy::Model => resolve_model(model_backend, mode, eligibility),
     }
@@ -101,15 +103,13 @@ pub fn resolve_selection(
 /// permission. The model-supplied backend is ignored under `fixed`.
 fn select_named(
     backend: &str,
+    strategy: ExecutionStrategy,
     mode: ExecutionRunMode,
     eligibility: &Eligibility,
 ) -> Result<Selection, ExecutionFailure> {
     let entry = eligibility
         .find(backend)
-        .ok_or(ExecutionFailure::NoEligibleAdapter {
-            strategy: ExecutionStrategy::Fixed,
-            mode,
-        })?;
+        .ok_or(ExecutionFailure::NoEligibleAdapter { strategy, mode })?;
     gate(entry, mode)
 }
 
@@ -132,7 +132,7 @@ fn resolve_rules(
         strategy: ExecutionStrategy::Rules,
         mode,
     })?;
-    select_named(backend, mode, eligibility)
+    select_named(backend, ExecutionStrategy::Rules, mode, eligibility)
 }
 
 /// `model`: the model supplies a backend id. It must be model-visible
@@ -313,6 +313,25 @@ mod tests {
         let err =
             resolve_selection(&cfg, ExecutionRunMode::NonInteractive, &elig, None).unwrap_err();
         assert_eq!(err.code(), "policy_denied");
+    }
+
+    #[test]
+    fn rules_missing_selected_backend_reports_rules_strategy() {
+        let cfg = rules(vec![rule(None, "missing")]);
+        let err = resolve_selection(
+            &cfg,
+            ExecutionRunMode::Interactive,
+            &Eligibility::default(),
+            None,
+        )
+        .unwrap_err();
+        assert!(matches!(
+            err,
+            ExecutionFailure::NoEligibleAdapter {
+                strategy: ExecutionStrategy::Rules,
+                mode: ExecutionRunMode::Interactive,
+            }
+        ));
     }
 
     #[test]

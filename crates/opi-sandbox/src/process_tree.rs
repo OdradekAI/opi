@@ -15,14 +15,12 @@
 //! termination (and `Drop`) kills the whole tree. ESRCH (already gone) is a
 //! successful no-op; anything else is a redacted [`AttachError`].
 //!
-//! # Fail-open
+//! # Fail-closed attachment
 //!
-//! If tree assignment or termination fails, the caller still kills the direct
-//! child via `kill_on_drop(true)` set on the command by the runner, and records
-//! the redacted degradation. [`TreeGuard`] and every function here are
-//! panic-free; [`TreeGuard::terminate`] is idempotent so the explicit terminal
-//! kill and the `Drop` kill never double-signal (Phase 16 task 16.11.1 audit
-//! fold: idempotent, panic-free kill on a reaped child).
+//! Assignment failure is returned to the runner, which kills the unreleased
+//! bootstrap and refuses the run. Termination failure is retained as a redacted
+//! [`TerminationOutcome::Failed`] so cleanup cannot be reported as confirmed.
+//! [`TreeGuard::terminate`] is idempotent and panic-free.
 
 #[cfg(unix)]
 use std::io;
@@ -84,26 +82,73 @@ pub enum TerminationOutcome {
     AlreadyTerminated,
     /// The whole tree was terminated by this call.
     Terminated,
-    /// Termination failed at the given layer/reason (fail-open: the direct child
-    /// is still killed via `kill_on_drop`).
+    /// Termination failed at the given layer/reason; the caller must report
+    /// cleanup as unconfirmed while the drop guards retry best-effort cleanup.
     Failed(AttachError),
 }
 
 /// Configure a [`tokio::process::Command`] for tree containment BEFORE spawn.
 ///
 /// Unix: assigns the child to a brand-new process group (`pgid == child pid`),
-/// so the whole tree can be signaled later by negating the pid. Windows: no-op —
-/// the Job Object is attached post-spawn in [`TreeGuard::attach`] because it
-/// needs the spawned child's pid.
+/// so the whole tree can be signaled later by negating the pid. Windows creates
+/// the child suspended so [`TreeGuard::attach`] can assign its Job Object before
+/// any child code runs; the caller resumes it only after successful assignment.
 pub fn configure_tree(cmd: &mut Command) {
     #[cfg(unix)]
     {
         cmd.process_group(0);
     }
-    #[cfg(not(unix))]
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt as _;
+        use windows_sys::Win32::System::Threading::CREATE_SUSPENDED;
+        cmd.as_std_mut().creation_flags(CREATE_SUSPENDED);
+    }
+    #[cfg(not(any(unix, windows)))]
     {
         let _ = cmd;
     }
+}
+
+/// Resume every primary-process thread after the suspended child has been
+/// assigned to its Job Object. A newly-created suspended process has exactly
+/// one thread, but enumeration keeps the wrapper correct if Windows changes
+/// startup internals.
+#[cfg(windows)]
+pub fn resume_child(child_pid: u32) -> Result<(), AttachError> {
+    use windows_sys::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE};
+    use windows_sys::Win32::System::Diagnostics::ToolHelp::{
+        CreateToolhelp32Snapshot, TH32CS_SNAPTHREAD, THREADENTRY32, Thread32First, Thread32Next,
+    };
+    use windows_sys::Win32::System::Threading::{OpenThread, ResumeThread, THREAD_SUSPEND_RESUME};
+
+    let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0) };
+    if snapshot == INVALID_HANDLE_VALUE {
+        return Err(AttachError::new(LAYER, TreeReason::AttachFailed));
+    }
+    let mut entry: THREADENTRY32 = unsafe { core::mem::zeroed() };
+    entry.dwSize = core::mem::size_of::<THREADENTRY32>() as u32;
+    let mut found = false;
+    let mut ok = unsafe { Thread32First(snapshot, &mut entry) } != 0;
+    while ok {
+        if entry.th32OwnerProcessID == child_pid {
+            let thread = unsafe { OpenThread(THREAD_SUSPEND_RESUME, 0, entry.th32ThreadID) };
+            if thread.is_null() || unsafe { ResumeThread(thread) } == u32::MAX {
+                if !thread.is_null() {
+                    unsafe { CloseHandle(thread) };
+                }
+                unsafe { CloseHandle(snapshot) };
+                return Err(AttachError::new(LAYER, TreeReason::AttachFailed));
+            }
+            unsafe { CloseHandle(thread) };
+            found = true;
+        }
+        ok = unsafe { Thread32Next(snapshot, &mut entry) } != 0;
+    }
+    unsafe { CloseHandle(snapshot) };
+    found
+        .then_some(())
+        .ok_or_else(|| AttachError::new(LAYER, TreeReason::AttachFailed))
 }
 
 /// Post-spawn L0 tree guard. `Drop` terminates the whole tree best-effort, which
@@ -144,8 +189,9 @@ enum TreeGuardInner {
 }
 
 impl TreeGuard {
-    /// A guard that contains nothing — a fail-open placeholder after an
-    /// assignment failure so the runner can still own a guard value.
+    /// A guard that contains nothing on targets with no native tree primitive.
+    /// Supported Unix and Windows runners never use this after attachment
+    /// failure.
     pub fn disabled() -> Self {
         Self {
             inner: TreeGuardInner::Disabled,

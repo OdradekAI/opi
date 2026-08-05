@@ -68,6 +68,14 @@ fn request_id_schema_has_min_length() {
 }
 
 #[test]
+fn implementation_id_schema_has_min_length() {
+    let s = v1::schema();
+    let defs = s["$defs"].as_object().unwrap();
+    assert_eq!(defs["ImplementationId"]["type"], "string");
+    assert_eq!(defs["ImplementationId"]["minLength"], 1);
+}
+
+#[test]
 fn valid_fixtures_validate_against_schema() {
     let schema = v1::schema();
     let valid = [
@@ -100,6 +108,10 @@ fn invalid_fixtures_rejected_by_schema() {
         "invalid_empty_id.json",
         "invalid_unknown_field.json",
         "invalid_unknown_tag.json",
+        "invalid_nested_diagnostic_unknown_field.json",
+        "invalid_ready_missing_implementation.json",
+        "invalid_ready_empty_implementation.json",
+        "invalid_ready_unknown_field.json",
     ];
     for name in invalid {
         let instance = load_json(name);

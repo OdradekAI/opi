@@ -13,6 +13,11 @@ use super::WIRE_IDENTITY;
 #[error("request id must be a non-empty string")]
 pub struct InvalidRequestId;
 
+/// Error constructing an [`ImplementationId`] from an empty string.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("implementation id must be a non-empty string")]
+pub struct InvalidImplementationId;
+
 /// Host-generated opaque request id carried by every frame in one execution.
 ///
 /// Empty ids are rejected at the type boundary: construction ([`RequestId::new`])
@@ -60,6 +65,49 @@ impl std::fmt::Display for RequestId {
 }
 
 impl<'de> Deserialize<'de> for RequestId {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        Self::new(value).map_err(serde::de::Error::custom)
+    }
+}
+
+/// Backend implementation/adapter identity reported during negotiation.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, JsonSchema)]
+#[serde(transparent)]
+#[schemars(extend("minLength" = 1))]
+pub struct ImplementationId(String);
+
+impl ImplementationId {
+    /// Construct an implementation id, rejecting the empty string.
+    pub fn new(value: impl Into<String>) -> Result<Self, InvalidImplementationId> {
+        let value = value.into();
+        if value.is_empty() {
+            return Err(InvalidImplementationId);
+        }
+        Ok(Self(value))
+    }
+
+    /// The identity as a string slice.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    /// Consume into the inner string.
+    pub fn into_inner(self) -> String {
+        self.0
+    }
+}
+
+impl std::fmt::Display for ImplementationId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl<'de> Deserialize<'de> for ImplementationId {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,

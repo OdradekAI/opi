@@ -1225,12 +1225,7 @@ fn validate_rules(exec: &ExecutionConfig) -> Result<(), ConfigError> {
 /// `merge_project_config`) BEFORE `merge_into`, because `merge_into` is
 /// layer-blind and cannot enforce this itself.
 fn reject_project_execution_permissions(project_raw: &TomlConfig) -> Result<(), ConfigError> {
-    if project_raw
-        .execution
-        .permissions
-        .as_ref()
-        .is_some_and(|m| !m.is_empty())
-    {
+    if project_raw.execution.permissions.is_some() {
         return Err(invalid_exec(
             "permissions",
             "project layer may not set [execution.permissions]; persistent \

@@ -108,6 +108,29 @@ fn status_bar_tool_executing() {
     insta::assert_snapshot!("status_bar_tool_executing_80x1", render(bar, 80, 1));
 }
 
+#[test]
+fn status_bar_awaiting_permission_80x24() {
+    let bar = StatusBar::new(
+        "claude-sonnet-4-5-20250514".into(),
+        AppStatus::AwaitingPermission,
+        Some(350),
+    );
+    insta::assert_snapshot!("status_bar_awaiting_permission_80x24", render(bar, 80, 24));
+}
+
+#[test]
+fn status_bar_awaiting_permission_120x40() {
+    let bar = StatusBar::new(
+        "claude-sonnet-4-5-20250514".into(),
+        AppStatus::AwaitingPermission,
+        Some(350),
+    );
+    insta::assert_snapshot!(
+        "status_bar_awaiting_permission_120x40",
+        render(bar, 120, 40)
+    );
+}
+
 // ---------------------------------------------------------------------------
 // ToolCallView
 // ---------------------------------------------------------------------------

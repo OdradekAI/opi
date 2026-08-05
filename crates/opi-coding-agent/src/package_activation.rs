@@ -331,6 +331,38 @@ impl PackageActivationStore {
         out
     }
 
+    /// Resolve the enabled identities that are usable by this exact host.
+    /// Each trusted+enabled package is activated once, so target/version,
+    /// manifest, lock, executable type, and executable hash are current before
+    /// an identity is exposed in a model-visible schema. Invocation-time
+    /// activation still repeats the same validation immediately before spawn.
+    pub fn usable_enabled_identities(
+        &self,
+        host_target: &str,
+        host_opi_version: &str,
+    ) -> Vec<EnabledIdentity> {
+        let records = self.read_records().unwrap_or_default();
+        let mut out = Vec::new();
+        for record in records
+            .iter()
+            .filter(|record| record.trusted && record.enabled)
+        {
+            let Ok(activated) = self.activate(&record.name, host_target, host_opi_version) else {
+                continue;
+            };
+            out.extend(
+                activated
+                    .validated
+                    .iter()
+                    .map(|contribution| EnabledIdentity {
+                        adapter_id: contribution.id.clone(),
+                        package_name: record.name.clone(),
+                    }),
+            );
+        }
+        out
+    }
+
     /// Write all trust/enablement records, creating parent directories.
     pub fn write_records(&self, records: &[ActivationRecord]) -> Result<(), PackageStoreError> {
         let path = self.store.trust_path();
@@ -353,12 +385,14 @@ impl PackageActivationStore {
         &self,
         name: &str,
         source: &str,
+        previous_source: Option<&str>,
         adapter_ids: &[String],
+        preserve_trust: bool,
     ) -> Result<(), ActivationError> {
         let mut records = self.read_records()?;
         // Cross-package adapter-id collision across installed packages.
         for existing in &records {
-            if existing.source == source {
+            if existing.source == source || previous_source == Some(existing.source.as_str()) {
                 continue; // re-install / re-add of the same source: upsert below.
             }
             let existing_ids = self.installed_adapter_ids(&existing.source)?;
@@ -379,6 +413,8 @@ impl PackageActivationStore {
                 trusted: false,
                 enabled: false,
             },
+            previous_source,
+            preserve_trust,
         );
         self.write_records(&records)?;
         Ok(())
@@ -523,7 +559,7 @@ impl PackageActivationStore {
                     r.trusted = false;
                     r.enabled = false;
                 }
-                let _ = self.write_records(&recs);
+                self.write_records(&recs)?;
                 return Err(ActivationError::Untrusted {
                     name: name.to_string(),
                     detail: re.detail(),
@@ -584,6 +620,15 @@ impl PackageActivationStore {
             host_opi_version,
         )
         .map_err(RevalidationError::Gate)?;
+        if validated.len() != lock.contributions.len() {
+            let adapter_id = lock
+                .contributions
+                .iter()
+                .find(|stored| !validated.iter().any(|v| v.lock == **stored))
+                .map(|stored| stored.adapter_id.clone())
+                .unwrap_or_else(|| "contribution-set".to_string());
+            return Err(RevalidationError::Drift { adapter_id });
+        }
         // Drift: compare recomputed lock material to the stored contributions.
         for v in &validated {
             let stored = lock
@@ -605,12 +650,22 @@ impl PackageActivationStore {
     }
 }
 
-fn upsert_record(records: &mut Vec<ActivationRecord>, record: ActivationRecord) {
-    if let Some(existing) = records.iter_mut().find(|r| r.source == record.source) {
+fn upsert_record(
+    records: &mut Vec<ActivationRecord>,
+    record: ActivationRecord,
+    previous_source: Option<&str>,
+    preserve_trust: bool,
+) {
+    if let Some(existing) = records
+        .iter_mut()
+        .find(|r| r.source == record.source || previous_source == Some(r.source.as_str()))
+    {
         existing.name = record.name;
-        // Preserve trust/enablement across a re-add of the same source unless
-        // the lock material changed (drift is detected at activate/enable, not
-        // here; re-add of identical material keeps prior trust).
+        existing.source = record.source;
+        if !preserve_trust {
+            existing.trusted = false;
+            existing.enabled = false;
+        }
         return;
     }
     records.push(record);

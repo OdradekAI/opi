@@ -10,6 +10,7 @@ mod read;
 pub(crate) mod supervision;
 mod write;
 
+pub(crate) use bash::format_effective_contract;
 pub use bash::{BashTool, default_bash_schema, with_model_backend_enum};
 pub use edit::EditTool;
 pub use find::FindTool;

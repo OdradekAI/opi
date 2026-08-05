@@ -349,6 +349,7 @@ async fn resolve_headless_trust_config_core(
     // only strategy/backend and never grant trust or permission (the resolved
     // permissions map is byte-identical before and after).
     config.apply_execution_overrides(execution_backend, execution_strategy);
+    opi_coding_agent::config::validate_execution_config(&config)?;
     Ok((config, decision))
 }
 
@@ -469,6 +470,7 @@ fn resolve_interactive_trust_config_core(
         opi_coding_agent::project_trust::TrustDecision::Untrusted
     ))?;
     config.apply_execution_overrides(execution_backend, execution_strategy);
+    opi_coding_agent::config::validate_execution_config(&config)?;
     Ok(config)
 }
 
@@ -1626,6 +1628,38 @@ mod tests {
     }
 
     #[test]
+    fn headless_invalid_rules_override_fails_during_config_resolution() {
+        let workspace = tempfile::tempdir().expect("workspace");
+        let user = tempfile::tempdir().expect("user config");
+        std::fs::write(
+            user.path().join("config.toml"),
+            "[defaults]\ndefault_project_trust = \"never\"\n",
+        )
+        .expect("user config");
+        let error = tokio::runtime::Runtime::new()
+            .expect("runtime")
+            .block_on(resolve_headless_trust_config_core(
+                opi_coding_agent::config::ConfigSource {
+                    cli_model: None,
+                    config_path: None,
+                    env_model: None,
+                    project_dir: Some(workspace.path().to_path_buf()),
+                    user_config_path: Some(user.path().join("config.toml")),
+                },
+                Some(workspace.path().to_path_buf()),
+                user.path().to_path_buf(),
+                opi_coding_agent::project_trust::ProjectTrustCli {
+                    trust: false,
+                    no_trust: false,
+                },
+                None,
+                Some(opi_coding_agent::config::ExecutionStrategy::Rules),
+            ))
+            .expect_err("rules override without rules must fail as config");
+        assert!(matches!(error, super::StartupTrustConfigError::Config(_)));
+    }
+
+    #[test]
     fn interactive_trust_core_applies_execution_overrides_from_cli_flags() {
         // D.2 must-fix (L-D3): the interactive resolver's `apply_execution_overrides`
         // call site lives in the prompt-independent `resolve_interactive_trust_config_core`
@@ -1663,6 +1697,31 @@ mod tests {
             opi_coding_agent::config::ExecutionStrategy::Model
         );
         assert!(config.execution.permissions.is_empty());
+    }
+
+    #[test]
+    fn interactive_invalid_rules_override_fails_during_config_resolution() {
+        let user = tempfile::tempdir().expect("user config");
+        let staged =
+            opi_coding_agent::config::stage_config(opi_coding_agent::config::ConfigSource {
+                cli_model: None,
+                config_path: None,
+                env_model: None,
+                project_dir: None,
+                user_config_path: Some(user.path().join("missing.toml")),
+            })
+            .expect("stage config");
+        let error = resolve_interactive_trust_config_core(
+            staged,
+            opi_coding_agent::project_trust::TrustDecision::Untrusted,
+            None,
+            Some(opi_coding_agent::config::ExecutionStrategy::Rules),
+        )
+        .expect_err("rules override without rules must fail as config");
+        assert!(matches!(
+            error,
+            opi_coding_agent::config::ConfigError::InvalidExecutionConfig { .. }
+        ));
     }
 
     #[test]
@@ -2848,17 +2907,17 @@ mod tests {
                 1,
             ),
             (
-                // 16.5's enable/disable/doctor lifecycle tests grew the count
-                // from 11 to 16 (one `fn opi_command(` definition + 15 call
-                // sites); all are `opi package ...` invocations handled before
+                // Execution-package lifecycle/remediation tests grew the count
+                // to 20 (one `fn opi_command(` definition + 19 call sites);
+                // all are `opi package ...` invocations handled before
                 // provider construction, so they remain pre-provider early
                 // exits and the per-site classifier below re-checks each one.
                 "package_cli.rs",
                 "opi_command(",
-                16,
+                20,
                 "fn opi_binary()",
                 1,
-                4,
+                5,
             ),
             (
                 "session_cli.rs",

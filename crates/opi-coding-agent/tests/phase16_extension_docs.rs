@@ -110,7 +110,7 @@ fn phase16_section_binds_canonical_contract_en_zh() {
             "the latter remains independently usable through its SDK, human CLI, and `command-execution-jsonl-v1` protocol",
             "Package installation does not imply Package Trust or activation: Installed, Trusted, Enabled, Selected, and Permitted are separate gates.",
             "Routing supports `fixed`, deterministic `rules`, and model recommendation under user policy, with `deny`/`ask`/`allow` permission outcomes.",
-            "The Opi binary does not link `opi-sandbox`; with no enabled extension, it runs locally without extension processes or package-store scans.",
+            "The Opi binary does not link `opi-sandbox`; with no enabled extension, it runs locally without extension processes, package activation, or per-package scans.",
             "Once an external adapter is selected, failure is fail-closed and never falls back to local execution.",
             "`opi-protocol` initially owns only the versioned execution protocol.",
         ],
@@ -124,7 +124,7 @@ fn phase16_section_binds_canonical_contract_en_zh() {
             "后者还可通过 SDK、面向用户的 CLI 和 `command-execution-jsonl-v1` 协议独立使用",
             "Installed、Trusted、Enabled、Selected、Permitted 是五个独立门",
             "路由支持 `fixed`、确定性的 `rules` 与受用户策略约束的模型建议，权限结果为 `deny`/`ask`/`allow`",
-            "Opi 二进制不链接 `opi-sandbox`；没有启用扩展时，本地运行且不启动扩展进程、不扫描 package store",
+            "Opi 二进制不链接 `opi-sandbox`；没有启用扩展时，本地运行且不启动扩展进程、不执行 package activation 或逐 package 扫描",
             "外部 adapter 一旦被选择，失败即 fail-closed，绝不回退到本地执行",
             "`opi-protocol` 初始只承载版本化的执行协议",
         ],
@@ -446,4 +446,125 @@ fn shipped_state_readme_guides_and_changelog_in_lockstep() {
             "{name} must name the Minimal Runtime default"
         );
     }
+}
+
+#[test]
+fn current_docs_separate_phase16_from_historical_phase15_en_zh() {
+    let readme = read_repo_file("README.md");
+    let readme_zh = read_repo_file("README.zh.md");
+    let spec = read_repo_file("docs/opi-spec.md");
+    let spec_zh = read_repo_file("docs/opi-spec.zh.md");
+
+    let cli = heading_slice("README.md", &readme, "## Main CLI Surface", "## Providers");
+    let cli_zh = heading_slice(
+        "README.zh.md",
+        &readme_zh,
+        "## 主要 CLI 表面",
+        "## Provider",
+    );
+    assert_absent(
+        "README.md current CLI",
+        cli,
+        &["--sandbox", "--sandbox-require"],
+    );
+    assert_absent(
+        "README.zh.md current CLI",
+        cli_zh,
+        &["--sandbox", "--sandbox-require"],
+    );
+    assert_claims(
+        "README.md current CLI",
+        cli,
+        &["--execution-strategy", "--execution-backend"],
+    );
+    assert_claims(
+        "README.zh.md current CLI",
+        cli_zh,
+        &["--execution-strategy", "--execution-backend"],
+    );
+
+    assert_claims(
+        "README.md",
+        &readme,
+        &["### Historical Phase 15 sandbox and project trust"],
+    );
+    assert_claims(
+        "README.zh.md",
+        &readme_zh,
+        &["### 历史记录：第十五阶段沙箱与项目信任"],
+    );
+
+    let control = heading_slice(
+        "docs/opi-spec.md",
+        &spec,
+        "## 0. Document Control",
+        "## 2. Design Philosophy",
+    );
+    let control_zh = heading_slice(
+        "docs/opi-spec.zh.md",
+        &spec_zh,
+        "## 0. 文档控制",
+        "## 2. 设计理念",
+    );
+    assert_claims(
+        "docs/opi-spec.md current status",
+        control,
+        &[
+            "Phases 1-16 implemented",
+            "Next milestone | Phase 17",
+            "six Rust crates",
+        ],
+    );
+    assert_claims(
+        "docs/opi-spec.zh.md current status",
+        control_zh,
+        &[
+            "第 1-16 阶段已实现",
+            "下一里程碑 | 第十七阶段",
+            "六个 Rust crate",
+        ],
+    );
+    assert_absent(
+        "docs/opi-spec.md current status",
+        control,
+        &["Phases 1-15 implemented", "four Rust crates"],
+    );
+    assert_absent(
+        "docs/opi-spec.zh.md current status",
+        control_zh,
+        &["第 1-15 阶段已实现", "四个 Rust crate"],
+    );
+
+    let phase16 = heading_slice(
+        "docs/opi-spec.md",
+        &spec,
+        "### Phase 16 - Pluggable Extensions and Command Execution",
+        "### Phase 17 - Benchmark and Regression Evaluation",
+    );
+    let phase16_zh = heading_slice(
+        "docs/opi-spec.zh.md",
+        &spec_zh,
+        "### 第十六阶段 - 可插拔扩展与命令执行",
+        "### 第十七阶段 - Benchmark 与回归评估",
+    );
+    assert_claims(
+        "docs/opi-spec.md Phase 16",
+        phase16,
+        &["performs no package activation or per-package scan"],
+    );
+    assert_claims(
+        "docs/opi-spec.zh.md Phase 16",
+        phase16_zh,
+        &["不执行 package activation 或逐 package 扫描"],
+    );
+    assert_absent(
+        "docs/opi-spec.md Phase 16",
+        phase16,
+        &["touches no package-store sentinel"],
+    );
+    assert_absent(
+        "docs/opi-spec.zh.md Phase 16",
+        phase16_zh,
+        &["不触碰 package-store sentinel"],
+    );
 }

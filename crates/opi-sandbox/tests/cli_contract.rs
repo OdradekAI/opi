@@ -16,6 +16,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::ffi::OsString;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -23,6 +24,8 @@ use std::time::Duration;
 use opi_protocol::execution::v1::EnvInherit;
 use opi_sandbox::cli::{RunCommand, build_request, execute, parse_run};
 use opi_sandbox::{NoRestriction, SandboxPolicy, SandboxRequest, SandboxRunner, StdinPolicy};
+#[cfg(unix)]
+use opi_sandbox::{SandboxEvent, SandboxOutcome};
 use tempfile::TempDir;
 use tokio_util::sync::CancellationToken;
 
@@ -37,7 +40,7 @@ fn request(program: PathBuf, args: Vec<String>) -> (SandboxRequest, TempDir) {
     let workspace = tempfile::tempdir().expect("workspace temp dir");
     let req = SandboxRequest {
         program,
-        args,
+        args: args.into_iter().map(OsString::from).collect(),
         workspace: workspace.path().to_path_buf(),
         cwd: workspace.path().to_path_buf(),
         timeout: Duration::from_secs(10),
@@ -292,7 +295,7 @@ fn build_request_carries_terminal_stdin_inherit() {
     let req = build_request(&cmd);
     assert_eq!(req.stdin, StdinPolicy::Inherit);
     assert_eq!(req.program, PathBuf::from("/bin/echo"));
-    assert_eq!(req.args, s(&["hi"]));
+    assert_eq!(req.args, vec![OsString::from("hi")]);
     assert_eq!(req.cwd, PathBuf::from("/w"));
     // Non-zero timeout by construction (InvalidRequest unreachable from the CLI).
     assert!(!req.timeout.is_zero());
@@ -577,7 +580,7 @@ async fn run_dispatch_valid_argv_runs_or_refuses_by_platform() {
 /// written. Strengthens `run_dispatch_valid_argv_runs_or_refuses_by_platform`:
 /// it proves the target never started, not just that the dispatcher returned
 /// 125. On a supported native platform (Linux 16.13, macOS 16.14.1) the confined
-/// target runs and may write the marker (the temp-dir grant); off-native the
+/// target runs and writes the marker through the workspace grant; off-native the
 /// platform gate refuses (exit 125) and the marker stays absent. cfg-branched +
 /// marker-WRITING target per the Phase 16 task 16.14.2 design-audit (MF-2): an
 /// unconditional absence assertion would break the native legs, and an
@@ -586,10 +589,10 @@ async fn run_dispatch_valid_argv_runs_or_refuses_by_platform() {
 #[tokio::test]
 async fn run_dispatch_refuses_before_target_marker_starts_off_linux() {
     let workspace = tempfile::tempdir().expect("workspace temp dir");
-    // Dedicated marker dir at an absolute path, independent of the run workspace
-    // and the target cwd, so marker absence is unambiguous off-Linux.
-    let marker_dir = tempfile::tempdir().expect("marker temp dir");
-    let marker_path = marker_dir.path().join("started.marker");
+    // Keep the marker inside the declared workspace so a supported native
+    // workspace-write run can create it; off-native absence still proves the
+    // target did not cross the platform gate.
+    let marker_path = workspace.path().join("started.marker");
     let marker_str = marker_path.to_string_lossy().into_owned();
 
     // A target that WOULD write the marker if it ran.
@@ -621,10 +624,10 @@ async fn run_dispatch_refuses_before_target_marker_starts_off_linux() {
     let code = opi_sandbox::cli::run(full).await;
     if cfg!(target_os = "linux") {
         assert_eq!(code, 0, "supported Linux runs the confined target (exit 0)");
-        // The marker MAY exist (the Landlock temp-dir grant); not asserted here.
+        assert!(marker_path.exists(), "the confined Linux target ran");
     } else if cfg!(target_os = "macos") {
         assert_eq!(code, 0, "supported macOS runs the confined target (exit 0)");
-        // The marker MAY exist (the seatbelt temp-dir grant); not asserted here.
+        assert!(marker_path.exists(), "the confined macOS target ran");
     } else {
         assert_eq!(code, 125, "off-native refuses pre-start (125)");
         assert!(
@@ -671,6 +674,27 @@ async fn run_dispatch_backend_bogus_flag_returns_2() {
 #[tokio::test]
 async fn execute_signal_termination_maps_to_128_plus_signal_unix_only() {
     let (prog, args) = signal_self_program();
+    let (structured_request, _structured_ws) = request(prog.clone(), args.clone());
+    let mut run = runner().run(structured_request).expect("run starts");
+    let outcome = loop {
+        use futures_core::Stream as _;
+        use std::pin::Pin;
+
+        let event = std::future::poll_fn(|cx| Pin::new(&mut run).poll_next(cx))
+            .await
+            .expect("run emits terminal event");
+        if let SandboxEvent::Completed(result) = event {
+            break result.outcome;
+        }
+    };
+    assert_eq!(
+        outcome,
+        SandboxOutcome::Signaled {
+            signal: libc_signal::SIGTERM,
+        },
+        "the target must really be signaled, not exit normally with code 143"
+    );
+
     let (req, _ws) = request(prog, args);
     let mut out = Vec::new();
     let mut err = Vec::new();
@@ -678,6 +702,85 @@ async fn execute_signal_termination_maps_to_128_plus_signal_unix_only() {
         execute(&runner(), req, &mut out, &mut err).await,
         128 + libc_signal::SIGTERM
     );
+}
+
+/// The production Linux CLI converts a real SIGINT into cooperative
+/// cancellation, waits for tree cleanup, and exits 130 without leaving the
+/// target's grandchild alive.
+#[cfg(target_os = "linux")]
+#[test]
+fn real_sigint_returns_130_and_kills_descendants() {
+    use std::process::{Command, Stdio};
+
+    let workspace = tempfile::tempdir().expect("workspace");
+    let pidfile = workspace.path().join("grandchild.pid");
+    let script = format!("sleep 30 & echo $! > '{}'; wait", pidfile.to_string_lossy());
+    let mut child = Command::new(env!("CARGO_BIN_EXE_opi-sandbox"))
+        .args([
+            "run",
+            "--workspace",
+            workspace.path().to_str().expect("UTF-8 workspace"),
+            "--profile",
+            "workspace-write",
+            "--network",
+            "allow",
+            "--",
+            "sh",
+            "-c",
+            &script,
+        ])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn production CLI");
+
+    let grandchild = (0..100)
+        .find_map(|_| {
+            let pid = std::fs::read_to_string(&pidfile)
+                .ok()
+                .and_then(|text| text.trim().parse::<u32>().ok());
+            if pid.is_none() {
+                std::thread::sleep(Duration::from_millis(50));
+            }
+            pid
+        })
+        .unwrap_or_else(|| {
+            let _ = child.kill();
+            panic!("target grandchild did not start")
+        });
+
+    let signal = Command::new("kill")
+        .args(["-INT", &child.id().to_string()])
+        .status()
+        .expect("send SIGINT");
+    assert!(signal.success());
+
+    let status = (0..100)
+        .find_map(|_| match child.try_wait().expect("poll CLI") {
+            Some(status) => Some(status),
+            None => {
+                std::thread::sleep(Duration::from_millis(50));
+                None
+            }
+        })
+        .unwrap_or_else(|| {
+            let _ = child.kill();
+            panic!("CLI did not exit after SIGINT")
+        });
+    assert_eq!(status.code(), Some(130));
+
+    for _ in 0..80 {
+        let alive = Command::new("kill")
+            .args(["-0", &grandchild.to_string()])
+            .status()
+            .is_ok_and(|status| status.success());
+        if !alive {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    panic!("grandchild {grandchild} survived CLI SIGINT cleanup");
 }
 
 // =========================================================================

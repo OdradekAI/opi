@@ -119,7 +119,7 @@ opi-tui
 opi-agent -> opi-ai
 opi-protocol
 opi-sandbox -> opi-protocol
-opi-coding-agent -> opi-ai + opi-agent + opi-tui -> opi binary
+opi-coding-agent -> opi-ai + opi-agent + opi-tui + opi-protocol -> opi binary
 ```
 
 ## Main CLI Surface
@@ -154,8 +154,8 @@ Common mode and session flags:
 | `--no-tools` | Disable all tools. |
 | `--no-builtin-tools` | Drop built-in tools while leaving extension/custom tools available. |
 | `--allow-mutating` | Allow `write`, `edit`, and `bash` in non-interactive/RPC runs. |
-| `--sandbox off\|strict` | Select the `bash` subprocess-tree sandbox; default `off` ships the always-on L0 tree-kill baseline. |
-| `--sandbox-require` | Fail closed when a configured `strict` layer is unavailable, instead of the default fail-open-with-diagnostic policy. |
+| `--execution-strategy <fixed\|rules\|model>` | Select the `command.execute` routing strategy. |
+| `--execution-backend <local\|ADAPTER_ID>` | Select the fixed execution backend or override the configured backend. |
 | `--trust` / `--no-trust` | One-shot project-trust override for the session; mutually exclusive. |
 | `--trace <PATH>` | Write an opt-in, redacted local trace envelope for a non-interactive or JSON run. |
 
@@ -334,9 +334,8 @@ through the execution backend.
   never retries through `local`. Stable redacted failure codes (for example
   `package_not_installed`, `permission_required`, `protocol_violation`) carry
   actionable remediation on text, NDJSON, RPC, and interactive surfaces;
-  `package doctor` and `opi doctor` report their own stable redacted
-  doctor-local codes (`doctor_package_exec_lifecycle`,
-  `doctor_package_exec_drift`) for execution-package lifecycle and drift.
+  `package doctor` and `opi doctor` preserve the same actionable lifecycle
+  codes and remediation used by runtime execution.
 - The Opi binary never links `opi-sandbox`. Native restriction and its
   helper/capability-selection code left the core (16.16.1); `[sandbox]`,
   `--sandbox`, and `--sandbox-require` are rejected without compatibility
@@ -387,11 +386,13 @@ tools the agent can call; they are not an operating-system sandbox.
   deferred.
 - Dynamic Rust plugin loading from arbitrary extension paths is not supported.
 
-### Sandbox and project trust
+### Historical Phase 15 sandbox and project trust
 
-Phase 15 adds an opt-in `bash` subprocess-tree sandbox and a startup project-
-trust gate. Both are defense-in-depth, explicitly not a security boundary;
-untrusted code belongs in a container or VM.
+This section is a historical record of the unreleased Phase 15 implementation.
+Phase 16 removed its core `[sandbox]`, `--sandbox`, and `--sandbox-require`
+surface; use the current `command.execute` configuration above. The project-
+trust behavior described below remains current, while the sandbox details and
+flags are retained only to explain the migration.
 
 - The sandbox confines only the `bash` subprocess tree, not `opi` itself. An
   always-on L0 baseline (`process_group(0)` on Unix, a kill-on-close Job Object

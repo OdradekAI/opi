@@ -1,36 +1,35 @@
 #!/usr/bin/env python3
-"""Product-neutral ``command-execution-jsonl-v1`` host client for opi-sandbox.
+"""Product-neutral command-execution-jsonl-v1 client for opi-sandbox.
 
-Drives the REAL ``opi-sandbox backend --stdio`` binary and is OS-aware:
+The client imports no Opi code. On Linux and macOS it drives four fresh
+``opi-sandbox backend --stdio`` processes against an explicit target and proves
+binary stdout/stderr plus normal, nonzero, signal, and timeout outcomes. On an
+unsupported platform it proves the negotiated pre-start refusal.
 
-- ``initialize -> ready`` (negotiation; the command is not disclosed until ready
-  validates) on every platform;
-- on a SUPPORTED platform (Linux, task 16.13): ``execute -> accepted ->
-  started{supervised, restricted} -> ... -> completed`` — the backend runs a
-  confined target end-to-end against a real workspace (the DoD's
-  ``backend --stdio`` positive sentinel);
-- on an UNSUPPORTED platform (Windows; macOS until 16.14.1):
-  ``execute -> accepted -> failed{unavailable, handshake}`` — the Phase 16.12
-  pre-start refusal (the target never runs).
-
-Stdlib only; imports no opi module. Exit 0 = the backend behaved as the spec
-requires; non-zero = an assertion failure (the calling Rust test reports
-stdout/stderr).
-
-Usage: protocol_client.py <path-to-opi-sandbox-binary>
+Usage: protocol_client.py <opi-sandbox-binary> [archive-sha256] [expected-target]
 """
 
+import base64
 import json
+import os
 import platform
+import shutil
 import subprocess
 import sys
 import tempfile
 
 WIRE = "command-execution-jsonl-v1"
-# The platform is supported natively on Linux (Landlock + seccomp, task 16.13)
-# and macOS (sandbox-exec/Seatbelt, task 16.14.1); Windows publishes no
-# confinement artifact in Phase 16.
 SUPPORTED = platform.system() in ("Linux", "Darwin")
+ESCAPE = "\ue000"
+
+
+def _native(value):
+    """Encode a native string into the protocol's byte-preserving form."""
+    if platform.system() == "Windows":
+        raw = value.encode("utf-16-le", errors="surrogatepass")
+    else:
+        raw = os.fsencode(value)
+    return "".join(ESCAPE + chr(byte) for byte in raw)
 
 
 def _send(proc, frame):
@@ -46,7 +45,6 @@ def _read_frame(proc):
 
 
 def _negotiate(proc, rid):
-    """initialize -> ready; returns the ready payload or exits 1."""
     _send(
         proc,
         {
@@ -61,116 +59,19 @@ def _negotiate(proc, rid):
     )
     ready = _read_frame(proc)
     if ready is None:
-        sys.stderr.write("no ready frame; stderr=" + (proc.stderr.read() or "") + "\n")
-        sys.exit(1)
+        raise AssertionError("no ready frame; stderr=" + (proc.stderr.read() or ""))
     assert ready["type"] == "ready", ready
-    rp = ready["payload"]
-    assert rp["request_id"] == rid, rp
-    assert rp["selected_protocol"] == WIRE, rp
-    assert rp["implementation_version"], rp
-    assert rp["target"], rp
-    return rp
+    payload = ready["payload"]
+    assert payload["request_id"] == rid, payload
+    assert payload["selected_protocol"] == WIRE, payload
+    assert payload["implementation"] == "opi-sandbox", payload
+    assert payload["implementation_version"], payload
+    assert payload["target"], payload
+    if len(sys.argv) > 3:
+        assert payload["target"] == sys.argv[3], payload
 
 
-def _execute_confined(proc, rid, workspace):
-    """SUPPORTED path: execute -> started{supervised, restricted} -> completed
-    with no failed frame. Returns 0 on success, 1 on assertion failure."""
-    _send(
-        proc,
-        {
-            "type": "execute",
-            "payload": {
-                "request_id": rid,
-                "program": "sh",
-                "args": ["-c", "echo hi"],
-                "workspace": workspace,
-                "cwd": workspace,
-                "timeout_ms": 10000,
-                "env_inherit": "inherit",
-                "env_additions": {},
-            },
-        },
-    )
-    started = None
-    failed = None
-    completed = None
-    for _ in range(16):
-        frame = _read_frame(proc)
-        if frame is None:
-            break
-        ftype = frame["type"]
-        if ftype == "started":
-            started = frame["payload"]
-        elif ftype == "failed":
-            failed = frame["payload"]
-            break
-        elif ftype == "completed":
-            completed = frame["payload"]
-            break
-        # accepted / stdout / stderr / diagnostic are skipped.
-    if failed is not None:
-        sys.stderr.write(
-            "supported backend rejected the execute: " + json.dumps(failed) + "\n"
-        )
-        return 1
-    if started is None:
-        sys.stderr.write(
-            "no started frame on supported backend; stderr=" + (proc.stderr.read() or "") + "\n"
-        )
-        return 1
-    assert started["guarantee"] == "supervised", started
-    assert started["policy"] == "restricted", started
-    if completed is None:
-        sys.stderr.write("no completed frame on supported backend\n")
-        return 1
-    return 0
-
-
-def _execute_refused(proc, rid):
-    """UNSUPPORTED path: execute -> failed{unavailable, handshake} (16.12
-    pre-start refusal). Returns 0 on success, 1 on assertion failure."""
-    _send(
-        proc,
-        {
-            "type": "execute",
-            "payload": {
-                "request_id": rid,
-                "program": "sh",
-                "args": ["-c", "echo hi"],
-                "workspace": "/ws",
-                "cwd": "/ws",
-                "timeout_ms": 10000,
-                "env_inherit": "inherit",
-                "env_additions": {},
-            },
-        },
-    )
-    failed = None
-    for _ in range(8):
-        frame = _read_frame(proc)
-        if frame is None:
-            break
-        if frame["type"] == "failed":
-            failed = frame["payload"]
-            break
-    if failed is None:
-        sys.stderr.write(
-            "no failed frame; stderr=" + (proc.stderr.read() or "") + "\n"
-        )
-        return 1
-    assert failed["code"] == "unavailable", failed
-    assert failed["phase"] == "handshake", failed
-    return 0
-
-
-def main():
-    if len(sys.argv) != 2:
-        sys.stderr.write("usage: protocol_client.py <path-to-opi-sandbox-binary>\n")
-        return 2
-    binary = sys.argv[1]
-    # A real workspace is required on a supported platform so the Landlock fs
-    # ruleset can build (PathFd on the workspace) and the target actually runs.
-    workspace = tempfile.mkdtemp(prefix="opi-backend-ws-") if SUPPORTED else "/ws"
+def _execute(binary, workspace, rid, mode, timeout_ms, expected):
     proc = subprocess.Popen(
         [binary, "backend", "--stdio"],
         stdin=subprocess.PIPE,
@@ -179,26 +80,202 @@ def main():
         text=True,
         bufsize=1,
     )
-    rid = "py-host-1"
-
-    _negotiate(proc, rid)
-
-    if SUPPORTED:
-        rc = _execute_confined(proc, rid, workspace)
-    else:
-        rc = _execute_refused(proc, rid)
-    if rc != 0:
-        return rc
-
-    # After the terminal frame the backend exits 0; close stdin and reap.
-    proc.stdin.close()
     try:
-        wait_rc = proc.wait(timeout=10)
-    except subprocess.TimeoutExpired:
-        proc.kill()
-        sys.stderr.write("backend did not exit after the terminal frame\n")
-        return 1
-    assert wait_rc == 0, wait_rc
+        _negotiate(proc, rid)
+        _send(
+            proc,
+            {
+                "type": "execute",
+                "payload": {
+                    "request_id": rid,
+                    "program": _native("/bin/sh"),
+                    "args": [
+                        _native(os.path.join(workspace, "target.sh")),
+                        _native(mode),
+                        _native("arg one"),
+                        _native("--literal"),
+                    ],
+                    "workspace": _native(workspace),
+                    "cwd": _native(workspace),
+                    "timeout_ms": timeout_ms,
+                    "env_inherit": "inherit",
+                    "env_additions": {},
+                },
+            },
+        )
+
+        accepted = False
+        started = None
+        completed = None
+        failure = None
+        stdout = bytearray()
+        stderr = bytearray()
+        for _ in range(64):
+            frame = _read_frame(proc)
+            if frame is None:
+                break
+            kind = frame["type"]
+            payload = frame["payload"]
+            assert payload["request_id"] == rid, payload
+            if kind == "accepted":
+                accepted = True
+            elif kind == "started":
+                started = payload
+            elif kind == "stdout":
+                stdout.extend(base64.b64decode(payload["data"], validate=True))
+            elif kind == "stderr":
+                stderr.extend(base64.b64decode(payload["data"], validate=True))
+            elif kind == "completed":
+                completed = payload
+                break
+            elif kind == "failed":
+                failure = payload
+                break
+
+        assert failure is None, failure
+        assert accepted, "missing accepted frame"
+        assert started is not None, "missing started frame"
+        assert started["guarantee"] == "restricted", started
+        assert started["policy"] == "restricted", started
+        assert completed is not None, "missing completed frame"
+        assert bytes(stdout) == expected.get("stdout", b""), bytes(stdout)
+        assert bytes(stderr) == expected.get("stderr", b""), bytes(stderr)
+        for key in ("exit", "signal", "timed_out", "cancelled"):
+            assert completed[key] == expected[key], (key, completed, expected)
+        assert completed["cleanup"] == "confirmed", completed
+
+        proc.stdin.close()
+        rc = proc.wait(timeout=10)
+        assert rc == 0, (rc, proc.stderr.read())
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait()
+
+
+def _execute_refused(binary):
+    proc = subprocess.Popen(
+        [binary, "backend", "--stdio"],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        bufsize=1,
+    )
+    rid = "unsupported-1"
+    try:
+        _negotiate(proc, rid)
+        _send(
+            proc,
+            {
+                "type": "execute",
+                "payload": {
+                    "request_id": rid,
+                    "program": _native("cmd"),
+                    "args": [_native("/C"), _native("exit 0")],
+                    "workspace": _native("C:\\ws"),
+                    "cwd": _native("C:\\ws"),
+                    "timeout_ms": 10000,
+                    "env_inherit": "inherit",
+                    "env_additions": {},
+                },
+            },
+        )
+        accepted = _read_frame(proc)
+        failed = _read_frame(proc)
+        assert accepted["type"] == "accepted", accepted
+        assert failed["type"] == "failed", failed
+        assert failed["payload"]["code"] == "unavailable", failed
+        assert failed["payload"]["phase"] == "handshake", failed
+        proc.stdin.close()
+        assert proc.wait(timeout=10) == 0
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait()
+
+
+def _write_target(workspace):
+    target = os.path.join(workspace, "target.sh")
+    with open(target, "w", encoding="utf-8", newline="\n") as handle:
+        handle.write(
+            "#!/bin/sh\n"
+            "mode=$1; shift\n"
+            "[ \"$#\" -eq 2 ] && [ \"$1\" = 'arg one' ] && "
+            "[ \"$2\" = '--literal' ] || exit 96\n"
+            "case \"$mode\" in\n"
+            "  output) printf '\\001\\377'; printf '\\002\\376' >&2 ;;\n"
+            "  nonzero) exit 37 ;;\n"
+            "  signal) kill -TERM $$; sleep 5 ;;\n"
+            "  timeout) sleep 5 ;;\n"
+            "  *) exit 97 ;;\n"
+            "esac\n"
+        )
+    os.chmod(target, 0o755)
+
+
+def main():
+    if len(sys.argv) not in (2, 3, 4):
+        sys.stderr.write(
+            "usage: protocol_client.py <opi-sandbox-binary> "
+            "[archive-sha256] [expected-target]\n"
+        )
+        return 2
+    binary = os.path.abspath(sys.argv[1])
+    archive_sha256 = sys.argv[2] if len(sys.argv) >= 3 else None
+
+    if not SUPPORTED:
+        _execute_refused(binary)
+        return 0
+
+    workspace = tempfile.mkdtemp(prefix="opi-backend-ws-")
+    try:
+        _write_target(workspace)
+        base = {"signal": None, "timed_out": False, "cancelled": False}
+        _execute(
+            binary,
+            workspace,
+            "output-1",
+            "output",
+            10000,
+            {**base, "exit": 0, "stdout": b"\x01\xff", "stderr": b"\x02\xfe"},
+        )
+        _execute(
+            binary,
+            workspace,
+            "nonzero-1",
+            "nonzero",
+            10000,
+            {**base, "exit": 37},
+        )
+        _execute(
+            binary,
+            workspace,
+            "signal-1",
+            "signal",
+            10000,
+            {**base, "exit": None, "signal": 15},
+        )
+        _execute(
+            binary,
+            workspace,
+            "timeout-1",
+            "timeout",
+            150,
+            {
+                "exit": None,
+                "signal": None,
+                "timed_out": True,
+                "cancelled": False,
+            },
+        )
+    finally:
+        shutil.rmtree(workspace)
+
+    marker = "opi-sandbox-backend-smoke: OK"
+    if archive_sha256:
+        marker += " archive_sha256=" + archive_sha256
+    print(marker)
     return 0
 
 

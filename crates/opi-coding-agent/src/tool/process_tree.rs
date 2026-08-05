@@ -16,10 +16,12 @@
 //! confinement) was removed from core by 16.16.1; untrusted code belongs in a
 //! container or VM.
 //!
-//! # Fail-open
+//! # Failure policy
 //!
-//! If tree assignment or termination fails, the caller emits a stable
-//! `CODE_PROCESS_TREE_DEGRADED` diagnostic ([`crate::diagnostics`]) and continues at
+//! Tree assignment is a hard precondition: callers kill and reap the child and
+//! return a failed execution instead of running it uncontained. If later tree
+//! termination fails, the caller emits a stable `CODE_PROCESS_TREE_DEGRADED`
+//! diagnostic ([`crate::diagnostics`]) and does not claim confirmed cleanup at
 //! the engaged baseline — the direct child is still killed via the Operations
 //! backend. [`TreeGuard`] and every function in this module are panic-free.
 //!
@@ -40,19 +42,70 @@ const LAYER: &str = "unsupported";
 ///
 /// Unix: assigns the child to a brand-new process group (`pgid == child pid`)
 /// via tokio's safe `process_group(0)` wrapper over `setpgid`, so the whole
-/// tree can be signaled later by negating the pid. Windows: no-op — Job-Object
-/// assignment happens post-spawn in [`TreeGuard::attach`] because the job needs
-/// the spawned child's pid.
+/// tree can be signaled later by negating the pid. Windows creates the child
+/// suspended so [`TreeGuard::attach`] can assign its Job Object before any
+/// child code runs; the caller resumes it only after successful assignment.
 pub fn configure_tree(cmd: &mut Command) {
     #[cfg(unix)]
     {
         cmd.process_group(0);
     }
-    #[cfg(not(unix))]
+    #[cfg(windows)]
     {
-        // No pre-spawn configuration; the Job Object is attached after spawn.
+        use std::os::windows::process::CommandExt as _;
+        use windows_sys::Win32::System::Threading::CREATE_SUSPENDED;
+        cmd.as_std_mut().creation_flags(CREATE_SUSPENDED);
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
         let _ = cmd;
     }
+}
+
+#[cfg(windows)]
+pub fn resume_child(child_pid: u32) -> Result<(), AttachError> {
+    use windows_sys::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE};
+    use windows_sys::Win32::System::Diagnostics::ToolHelp::{
+        CreateToolhelp32Snapshot, TH32CS_SNAPTHREAD, THREADENTRY32, Thread32First, Thread32Next,
+    };
+    use windows_sys::Win32::System::Threading::{OpenThread, ResumeThread, THREAD_SUSPEND_RESUME};
+
+    let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0) };
+    if snapshot == INVALID_HANDLE_VALUE {
+        return Err(AttachError::new(
+            LAYER,
+            crate::diagnostics::SandboxReason::ProcessTreeAttachFailed,
+        ));
+    }
+    let mut entry: THREADENTRY32 = unsafe { core::mem::zeroed() };
+    entry.dwSize = core::mem::size_of::<THREADENTRY32>() as u32;
+    let mut found = false;
+    let mut ok = unsafe { Thread32First(snapshot, &mut entry) } != 0;
+    while ok {
+        if entry.th32OwnerProcessID == child_pid {
+            let thread = unsafe { OpenThread(THREAD_SUSPEND_RESUME, 0, entry.th32ThreadID) };
+            if thread.is_null() || unsafe { ResumeThread(thread) } == u32::MAX {
+                if !thread.is_null() {
+                    unsafe { CloseHandle(thread) };
+                }
+                unsafe { CloseHandle(snapshot) };
+                return Err(AttachError::new(
+                    LAYER,
+                    crate::diagnostics::SandboxReason::ProcessTreeAttachFailed,
+                ));
+            }
+            unsafe { CloseHandle(thread) };
+            found = true;
+        }
+        ok = unsafe { Thread32Next(snapshot, &mut entry) } != 0;
+    }
+    unsafe { CloseHandle(snapshot) };
+    found.then_some(()).ok_or_else(|| {
+        AttachError::new(
+            LAYER,
+            crate::diagnostics::SandboxReason::ProcessTreeAttachFailed,
+        )
+    })
 }
 
 /// Redacted L0 assignment/termination failure. Carries only a `{layer, reason}`
@@ -69,7 +122,7 @@ impl AttachError {
         Self { layer, reason }
     }
 
-    fn missing_pid() -> Self {
+    pub(crate) fn missing_pid() -> Self {
         Self::new(
             LAYER,
             crate::diagnostics::SandboxReason::MissingChildProcessId,
@@ -165,8 +218,8 @@ enum TreeGuardInner {
 }
 
 impl TreeGuard {
-    /// A guard that contains nothing. Useful as a fail-open placeholder after
-    /// an assignment failure so the exec scope can still own a guard value.
+    /// A guard that contains nothing. Used only where no live child tree is
+    /// being transferred; assignment failures with a live child fail closed.
     pub fn disabled() -> Self {
         Self {
             inner: TreeGuardInner::Disabled,

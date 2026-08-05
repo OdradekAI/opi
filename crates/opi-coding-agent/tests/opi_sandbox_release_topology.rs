@@ -19,11 +19,9 @@
 //!   - the two superseded standalone sandbox workflows are gone (their coverage
 //!     folded into `ci.yml`'s opi-sandbox job).
 //!
-//! opi-sandbox archives are built only for native-runner triples
-//! (`x86_64-unknown-linux-gnu` on `ubuntu-latest`, `aarch64-apple-darwin` on
-//! `macos-latest`) because the 16.15.1 packager detects the HOST triple and
-//! cannot label a cross-built archive correctly; cross-arch packaging is a
-//! 16.15.1 follow-up, out of scope here.
+//! All four supported opi-sandbox archive triples are built and smoked on
+//! matching native runners. The 16.15.1 packager detects the HOST triple and
+//! refuses to label a cross-built archive as native.
 //!
 //! These are config-contract guards over the workflow YAML (the artifact under
 //! test), structurally sliced by top-level job key; they are not source-text
@@ -193,17 +191,56 @@ fn release_defines_opi_sandbox_archive_job_linux_macos_only() {
     let release = read_repo_file(RELEASE);
     let job = job_block(&release, "sandbox_archive");
     assert_present("release.sandbox_archive", &job, &["package-opi-sandbox.sh"]);
-    assert_present(
-        "release.sandbox_archive",
-        &job,
-        &["ubuntu-latest", "macos-latest"],
-    );
+    for marker in [
+        "x86_64-unknown-linux-gnu",
+        "ubuntu-24.04",
+        "aarch64-unknown-linux-gnu",
+        "ubuntu-24.04-arm",
+        "x86_64-apple-darwin",
+        "macos-15-intel",
+        "aarch64-apple-darwin",
+        "macos-15",
+    ] {
+        assert_present("release.sandbox_archive", &job, &[marker]);
+    }
     // No Windows opi-sandbox artifact is ever produced.
     assert_absent(
         "release.sandbox_archive",
         &job,
         &["windows-latest", "pc-windows"],
     );
+}
+
+#[test]
+fn release_audits_all_native_archives_and_windows_posture_before_publish() {
+    let release = read_repo_file(RELEASE);
+    let windows = job_block(&release, "sandbox_windows_posture");
+    assert_absent(
+        "release.sandbox_windows_posture",
+        &windows,
+        &["Add-Content", "supported = false"],
+    );
+    let audit = job_block(&release, "sandbox_release_audit");
+    for target in [
+        "x86_64-unknown-linux-gnu",
+        "aarch64-unknown-linux-gnu",
+        "x86_64-apple-darwin",
+        "aarch64-apple-darwin",
+    ] {
+        assert_present("release.sandbox_release_audit", &audit, &[target]);
+    }
+    assert_present(
+        "release.sandbox_release_audit",
+        &audit,
+        &[
+            "sandbox-evidence-windows",
+            "opi-artifact-audit.py",
+            "--release",
+        ],
+    );
+
+    let publish = job_block(&release, "release");
+    assert_present("release.release", &publish, &["sandbox_release_audit"]);
 }
 
 #[test]

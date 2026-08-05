@@ -24,8 +24,8 @@ pub use permission::{
     InteractivePermissionBroker, LOCAL_ADAPTER_ID, PermissionManager, PermissionPolicy,
 };
 pub use protocol_host::{
-    BackendLaunch, CompletedOutcome, ExecutionProtocolHost, ExecutionRequest, ReadyReport,
-    StartedReport,
+    BackendLaunch, CompletedOutcome, ExecutionProtocolFailure, ExecutionProtocolHost,
+    ExecutionRequest, ReadyReport, StartedReport,
 };
 pub use router::{Eligibility, EligibleAdapter, Selection, resolve_selection};
 // 16.8 re-exports only the 16.9-facing assembly surfaces. The concrete routed

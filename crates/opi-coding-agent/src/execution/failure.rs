@@ -111,6 +111,8 @@ pub enum UnavailableDetail {
     Store,
     /// Adapter id collides with another package.
     Collision,
+    /// Backend reported that it was unavailable before target start.
+    Handshake,
 }
 
 impl ExecutionFailure {
@@ -203,6 +205,7 @@ impl ExecutionFailure {
                 let cause = match detail {
                     UnavailableDetail::Store => "a package-store error",
                     UnavailableDetail::Collision => "an adapter-id collision",
+                    UnavailableDetail::Handshake => "a pre-start handshake failure",
                 };
                 format!(
                     "{who} could not be activated ({cause}). Run `opi package \

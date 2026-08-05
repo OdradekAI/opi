@@ -24,8 +24,13 @@ import json
 import os
 import pathlib
 import re
+import stat
 import subprocess
 import sys
+import tarfile
+import tempfile
+import tomllib
+import zipfile
 from collections import Counter
 
 
@@ -375,11 +380,10 @@ def _session_files(artifact_dir):
 # complete non-skipped / non-zero-test Linux/macOS/Windows evidence. Rejects
 # absent, wrong-target, workspace-only, skipped, or zero-test evidence.
 #
-# Evidence directory layout (one bundle per platform):
-#   <dir>/linux/   target, package-lock.toml, extracted/{bin/opi-sandbox,
-#                 package.toml}, and a *.txt/*.log smoke evidence file carrying
-#                 the `opi-sandbox-smoke: OK` marker.
-#   <dir>/macos/   same shape; target is an apple-darwin triple.
+# Evidence directory layout (one bundle per supported target):
+#   <dir>/linux/<target>/ target, package-lock.toml, the target archive, and
+#                         direct + backend smoke markers bound to its SHA-256.
+#   <dir>/macos/<target>/ same shape for both apple-darwin triples.
 #   <dir>/windows/ a *.txt/*.log evidence file reporting doctor supported=false
 #                 plus a passing unsupported-posture test result; NO extracted
 #                 archive (16.14.2 unsupported posture).
@@ -392,10 +396,47 @@ NATIVE_ARCHIVE_PLATFORMS = {
     "linux": "-unknown-linux-gnu",
     "macos": "-apple-darwin",
 }
+NATIVE_ARCHIVE_TARGETS = {
+    "linux": ["x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu"],
+    "macos": ["x86_64-apple-darwin", "aarch64-apple-darwin"],
+}
+ARCHIVE_MEMBER_LIMITS = {
+    "package.toml": 1024 * 1024,
+    "bin/opi-sandbox": 64 * 1024 * 1024,
+    "schemas/command-execution-jsonl-v1.schema.json": 4 * 1024 * 1024,
+    "licenses/LICENSE": 1024 * 1024,
+}
+ARCHIVE_TOTAL_LIMIT = sum(ARCHIVE_MEMBER_LIMITS.values())
+KNOWN_MANIFEST_FIELDS = {"name", "description", "version", "opi_version", "contributions"}
+KNOWN_CONTRIBUTIONS_FIELDS = {"adapters"}
+KNOWN_ADAPTER_FIELDS = {
+    "capability", "id", "transport", "command", "args", "protocol", "target",
+    "sha256", "handshake_timeout_ms", "adapter_config",
+}
 SMOKE_OK_RE = re.compile(r"opi-sandbox-smoke:\s*OK")
+DIRECT_SMOKE_RE = re.compile(
+    r"opi-sandbox-direct-smoke:\s*OK\s+archive_sha256=([0-9a-f]{64})"
+)
+BACKEND_SMOKE_RE = re.compile(
+    r"opi-sandbox-backend-smoke:\s*OK\s+archive_sha256=([0-9a-f]{64})"
+)
 CARGO_PASS_RE = re.compile(r"test result: ok\. ([1-9][0-9]*) passed; 0 failed; 0 ignored")
 CARGO_SKIPPED_RE = re.compile(r"test result: ok\. \d+ passed; 0 failed; ([1-9][0-9]*) ignored")
 CARGO_ZERO_RE = re.compile(r"test result: ok\. 0 passed; 0 failed; 0 ignored")
+EVIDENCE_FAILURE_RE = re.compile(
+    r"test result: FAILED|error: test failed|error: could not compile|"
+    r"opi-sandbox-(?:direct|backend)-smoke:\s*(?:FAIL|FAILED)|AssertionError|Traceback"
+)
+LOCK_FIELDS = {
+    "manifest_hash",
+    "executable_rel_path",
+    "executable_sha256",
+    "package_version",
+    "target",
+    "opi_range",
+    "protocol",
+    "adapter_id",
+}
 
 
 def sha256_file(path):
@@ -406,96 +447,423 @@ def sha256_file(path):
     return digest.hexdigest()
 
 
-def _lock_value(lock_text, key):
-    match = re.search(
-        r'^%s = "([^"]*)"' % re.escape(key), lock_text, re.MULTILINE
-    )
-    return match.group(1) if match else None
-
-
 def _bundle_evidence_text(bundle):
-    """Concatenate every *.txt / *.log file directly in the bundle dir (not the
-    extracted/ subtree) so the pass/skip/zero markers are scanned regardless of
-    the exact evidence filename the producer chose."""
+    """Concatenate text/log evidence, including a packager's smoke/ subtree."""
     parts = []
-    for entry in sorted(bundle.iterdir()):
+    for entry in sorted(bundle.rglob("*")):
         if entry.is_file() and entry.suffix.lower() in {".txt", ".log"}:
             parts.append(read_text(entry))
     return "\n".join(parts)
 
 
 def _classify_evidence(text, platform, issues):
-    """Classify smoke/test evidence as pass / skipped / zero-test."""
-    if SMOKE_OK_RE.search(text) or CARGO_PASS_RE.search(text):
-        return  # passing direct smoke or a non-zero cargo pass.
+    """Classify evidence, giving any failure/skip/zero marker precedence."""
+    if EVIDENCE_FAILURE_RE.search(text):
+        issues.append({
+            "code": "failed_evidence",
+            "platform": platform,
+            "message": f"{platform} evidence records a failed run",
+        })
+        return False
     if CARGO_SKIPPED_RE.search(text):
         issues.append({
             "code": "skipped_evidence",
             "platform": platform,
             "message": f"{platform} evidence has ignored/skipped tests",
         })
-        return
-    # No passing marker: zero-test (an explicit 0-passed line) or absent/blank.
+        return False
+    if CARGO_ZERO_RE.search(text):
+        issues.append({
+            "code": "zero_test_evidence",
+            "platform": platform,
+            "message": f"{platform} evidence records a zero-test run",
+        })
+        return False
+    if SMOKE_OK_RE.search(text) or CARGO_PASS_RE.search(text):
+        return True
     issues.append({
         "code": "zero_test_evidence",
         "platform": platform,
         "message": f"{platform} evidence has no passing smoke/test marker",
     })
+    return False
 
 
-def _audit_native_bundle(root, platform, target_suffix, issues):
+def _archive_target(path):
+    name = path.name
+    prefix = "opi-sandbox-"
+    if name.startswith(prefix) and name.endswith(".tar.gz"):
+        return name[len(prefix):-len(".tar.gz")]
+    if name.startswith(prefix) and name.endswith(".zip"):
+        return name[len(prefix):-len(".zip")]
+    return None
+
+
+def _safe_member_name(name):
+    if "\\" in name:
+        return None
+    while name.startswith("./"):
+        name = name[2:]
+    if name in {"", "."}:
+        return ""
+    path = pathlib.PurePosixPath(name)
+    if path.is_absolute() or ".." in path.parts or (path.parts and ":" in path.parts[0]):
+        return None
+    return path.as_posix().rstrip("/")
+
+
+def _extract_owned_archive(archive, destination):
+    """Extract the exact distribution-wrapper layout into an owned empty dir."""
+    expected_files = set(ARCHIVE_MEMBER_LIMITS)
+    allowed_dirs = {"", "bin", "schemas", "licenses"}
+    seen = set()
+    destination.mkdir()
+
+    total_written = 0
+
+    def write_member(name, source, declared_size, mode):
+        nonlocal total_written
+        if name not in expected_files or name in seen:
+            raise ValueError(f"unexpected or duplicate archive member: {name}")
+        limit = ARCHIVE_MEMBER_LIMITS[name]
+        if declared_size < 0 or declared_size > limit or total_written + declared_size > ARCHIVE_TOTAL_LIMIT:
+            raise ValueError(f"archive member exceeds extraction limit: {name}")
+        if name == "bin/opi-sandbox" and mode & 0o111 == 0:
+            raise ValueError("archive executable has no Unix execute bit")
+        seen.add(name)
+        output = destination / pathlib.PurePosixPath(name)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        written = 0
+        with open(output, "wb") as handle:
+            while True:
+                chunk = source.read(65536)
+                if not chunk:
+                    break
+                written += len(chunk)
+                if written > limit or total_written + written > ARCHIVE_TOTAL_LIMIT:
+                    raise ValueError(f"archive member exceeds extraction limit: {name}")
+                handle.write(chunk)
+        if written != declared_size:
+            raise ValueError(f"archive member size mismatch: {name}")
+        total_written += written
+
+    if archive.name.endswith(".tar.gz"):
+        # Stream headers and payloads so an archive with an excessive member
+        # count is rejected at the first unexpected entry without first
+        # materializing its complete table of contents.
+        with tarfile.open(archive, "r|gz") as source:
+            for member in source:
+                name = _safe_member_name(member.name)
+                if name is None:
+                    raise ValueError(f"unsafe archive member: {member.name}")
+                if member.isdir():
+                    if name not in allowed_dirs:
+                        raise ValueError(f"unexpected archive directory: {member.name}")
+                    continue
+                if not member.isfile():
+                    raise ValueError(f"non-regular archive member: {member.name}")
+                extracted = source.extractfile(member)
+                if extracted is None:
+                    raise ValueError(f"unreadable archive member: {member.name}")
+                with extracted:
+                    write_member(name, extracted, member.size, member.mode)
+    elif archive.name.endswith(".zip"):
+        with zipfile.ZipFile(archive) as source:
+            for member in source.infolist():
+                name = _safe_member_name(member.filename)
+                if name is None:
+                    raise ValueError(f"unsafe archive member: {member.filename}")
+                if member.is_dir():
+                    if name not in allowed_dirs:
+                        raise ValueError(f"unexpected archive directory: {member.filename}")
+                    continue
+                mode = (member.external_attr >> 16) & 0o170000
+                if mode == stat.S_IFLNK:
+                    raise ValueError(f"non-regular archive member: {member.filename}")
+                with source.open(member) as extracted:
+                    unix_mode = (member.external_attr >> 16) & 0o7777
+                    write_member(name, extracted, member.file_size, unix_mode)
+    else:
+        raise ValueError("unsupported archive format")
+
+    if seen != expected_files:
+        raise ValueError(f"archive layout is {sorted(seen)}, expected {sorted(expected_files)}")
+
+
+def _validate_archive_assets(extracted):
+    schema_path = extracted / "schemas" / "command-execution-jsonl-v1.schema.json"
+    try:
+        schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, ValueError) as error:
+        raise ValueError(f"invalid packaged protocol schema: {error}") from error
+    if (
+        not isinstance(schema, dict)
+        or schema.get("$id")
+        != "https://odradek.ai/schemas/command-execution-jsonl-v1.json"
+        or "command-execution-jsonl-v1" not in schema.get("$comment", "")
+        or not isinstance(schema.get("oneOf"), list)
+        or len(schema["oneOf"]) != 2
+        or not isinstance(schema.get("$defs"), dict)
+        or not {"HostToBackend", "BackendToHost"}.issubset(schema["$defs"])
+    ):
+        raise ValueError("packaged protocol schema has the wrong identity or shape")
+    snapshot_path = (
+        pathlib.Path(__file__).resolve().parent.parent
+        / "crates"
+        / "opi-protocol"
+        / "tests"
+        / "snapshots"
+        / "execution_v1_schema__schema_v1.snap"
+    )
+    snapshot_lines = snapshot_path.read_text(encoding="utf-8").splitlines()
+    markers = [index for index, line in enumerate(snapshot_lines) if line == "---"]
+    if len(markers) < 2:
+        raise ValueError("repository protocol schema snapshot has an invalid header")
+    expected_schema = ("\n".join(snapshot_lines[markers[1] + 1:]) + "\n").encode()
+    if schema_path.read_bytes() != expected_schema:
+        raise ValueError("packaged protocol schema does not match the reviewed snapshot")
+
+    packaged_license = (extracted / "licenses" / "LICENSE").read_bytes()
+    repository_license = (
+        pathlib.Path(__file__).resolve().parent.parent / "LICENSE"
+    ).read_bytes()
+    if packaged_license != repository_license:
+        raise ValueError("packaged license does not match the repository LICENSE")
+
+
+def _parse_manifest(path, platform, issues):
+    try:
+        raw = path.read_bytes()
+        text = raw.decode("utf-8")
+        if re.search(r"__[A-Z_]+__", text):
+            raise ValueError("manifest contains an unresolved placeholder")
+        manifest = tomllib.loads(text)
+        unknown_manifest = set(manifest) - KNOWN_MANIFEST_FIELDS
+        if unknown_manifest:
+            raise ValueError(f"manifest has unknown fields: {sorted(unknown_manifest)}")
+        contributions = manifest.get("contributions", {})
+        if not isinstance(contributions, dict):
+            raise ValueError("manifest contributions must be a table")
+        unknown_contributions = set(contributions) - KNOWN_CONTRIBUTIONS_FIELDS
+        if unknown_contributions:
+            raise ValueError(
+                f"manifest contributions has unknown fields: {sorted(unknown_contributions)}"
+            )
+        adapters = contributions.get("adapters", [])
+        if len(adapters) != 1:
+            raise ValueError("manifest must declare exactly one adapter")
+        adapter = adapters[0]
+        unknown_adapter = set(adapter) - KNOWN_ADAPTER_FIELDS
+        if unknown_adapter:
+            raise ValueError(f"adapter has unknown fields: {sorted(unknown_adapter)}")
+        required = {
+            "name": manifest.get("name"),
+            "version": manifest.get("version"),
+            "opi_version": manifest.get("opi_version"),
+            "capability": adapter.get("capability"),
+            "id": adapter.get("id"),
+            "transport": adapter.get("transport"),
+            "command": adapter.get("command"),
+            "args": adapter.get("args"),
+            "protocol": adapter.get("protocol"),
+            "target": adapter.get("target"),
+            "sha256": adapter.get("sha256"),
+            "handshake_timeout_ms": adapter.get("handshake_timeout_ms"),
+            "adapter_config": adapter.get("adapter_config"),
+        }
+        expected = {
+            "name": "opi-sandbox",
+            "capability": "command.execute",
+            "id": "opi-sandbox",
+            "transport": "process-jsonl",
+            "command": "bin/opi-sandbox",
+            "args": ["backend", "--stdio"],
+            "protocol": "command-execution-jsonl-v1",
+            "handshake_timeout_ms": 5000,
+            "adapter_config": {},
+        }
+        for key, value in expected.items():
+            if required[key] != value:
+                raise ValueError(f"manifest {key} is {required[key]!r}, expected {value!r}")
+        version_match = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)(?:[-+].*)?", required["version"] or "")
+        if not version_match:
+            raise ValueError("manifest version is not semver")
+        compatible = ">=%s.%s,<%s.%d" % (
+            version_match.group(1), version_match.group(2),
+            version_match.group(1), int(version_match.group(2)) + 1,
+        )
+        if required["opi_version"] != compatible:
+            raise ValueError("manifest opi_version is not the package minor compatibility range")
+        if not re.fullmatch(r"[0-9a-f]{64}", required["sha256"] or ""):
+            raise ValueError("manifest sha256 is not lowercase SHA-256")
+        if not isinstance(required["target"], str) or not required["target"]:
+            raise ValueError("manifest target is empty or non-string")
+        return raw, required
+    except (OSError, UnicodeError, tomllib.TOMLDecodeError, TypeError, ValueError) as error:
+        issues.append({
+            "code": "invalid_package_manifest",
+            "platform": platform,
+            "message": f"{platform} package manifest is invalid: {error}",
+        })
+        return None, None
+
+
+def _parse_lock(path, platform, issues):
+    try:
+        lock = tomllib.loads(path.read_text(encoding="utf-8"))
+        if set(lock) != LOCK_FIELDS or not all(isinstance(lock[key], str) for key in LOCK_FIELDS):
+            raise ValueError("lock must contain exactly the eight string LockMaterial fields")
+        return lock
+    except (OSError, UnicodeError, tomllib.TOMLDecodeError, KeyError, ValueError) as error:
+        issues.append({
+            "code": "invalid_package_lock",
+            "platform": platform,
+            "message": f"{platform} package lock is invalid: {error}",
+        })
+        return None
+
+
+def _audit_native_smoke(bundle, platform, archive_sha, issues):
+    text = _bundle_evidence_text(bundle)
+    if not _classify_evidence(text, platform, issues):
+        return
+    direct = DIRECT_SMOKE_RE.findall(text)
+    backend = BACKEND_SMOKE_RE.findall(text)
+    if not direct or not backend:
+        issues.append({
+            "code": "missing_smoke_evidence",
+            "platform": platform,
+            "message": f"{platform} lacks separate direct and backend smoke markers",
+        })
+        return
+    if any(value != archive_sha for value in direct + backend):
+        issues.append({
+            "code": "archive_digest_mismatch",
+            "platform": platform,
+            "message": f"{platform} smoke evidence is not bound to archive {archive_sha}",
+        })
+
+
+def _audit_native_bundle(root, platform, target_suffix, issues, expected_target=None):
     bundle = root / platform
+    label = platform
+    if expected_target is not None:
+        bundle = bundle / expected_target
+        label = expected_target
     if not bundle.is_dir():
         issues.append({
             "code": "missing_platform_evidence",
-            "platform": platform,
-            "message": f"missing native evidence bundle for {platform}",
+            "platform": label,
+            "message": f"missing native evidence bundle for {label}",
         })
         return
-    target = read_text(bundle / "target").strip()
-    if not target:
+    if (bundle / "extracted").exists():
+        issues.append({
+            "code": "caller_prepared_extracted_tree",
+            "platform": platform,
+            "message": f"{platform} supplies a caller-prepared extracted tree",
+        })
+    target_file = read_text(bundle / "target").strip()
+    if not target_file:
         issues.append({
             "code": "missing_platform_evidence",
             "platform": platform,
             "message": f"{platform} bundle missing target file",
         })
+    archives = [
+        entry for entry in bundle.iterdir()
+        if entry.is_file() and _archive_target(entry) is not None
+    ]
+    if not archives:
+        issues.append({
+            "code": "missing_archive",
+            "platform": platform,
+            "message": f"{platform} bundle has no opi-sandbox archive",
+        })
+        _classify_evidence(_bundle_evidence_text(bundle), platform, issues)
         return
-    if "windows" in target or "pc-windows" in target or not target.endswith(target_suffix):
+    if len(archives) != 1:
+        issues.append({
+            "code": "invalid_archive_layout",
+            "platform": platform,
+            "message": f"{platform} bundle has {len(archives)} native archives; expected one",
+        })
+        return
+    archive = archives[0]
+    archive_target = _archive_target(archive)
+    if not archive.name.endswith(".tar.gz"):
+        issues.append({
+            "code": "invalid_archive_layout",
+            "platform": platform,
+            "message": f"{platform} native archive must use .tar.gz",
+        })
+    if (not archive_target or "windows" in archive_target or
+            "pc-windows" in archive_target or not archive_target.endswith(target_suffix)
+            or (expected_target is not None and archive_target != expected_target)):
         issues.append({
             "code": "wrong_target_identity",
             "platform": platform,
-            "message": f"{platform} target {target} is not a native {platform} triple",
+            "message": f"{platform} archive target {archive_target} is not a native {platform} triple",
         })
-    extracted_bin = bundle / "extracted" / "bin" / "opi-sandbox"
-    extracted_manifest = bundle / "extracted" / "package.toml"
-    if not extracted_bin.is_file():
+    if target_file and archive_target != target_file:
         issues.append({
-            "code": "workspace_only_binary",
+            "code": "wrong_target_identity",
             "platform": platform,
-            "message": f"{platform} has no extracted archive binary (workspace-only smoke)",
+            "message": f"{platform} target file {target_file} != archive target {archive_target}",
         })
-        return
-    if not extracted_manifest.is_file():
-        issues.append({
-            "code": "workspace_only_binary",
-            "platform": platform,
-            "message": f"{platform} extracted tree missing package.toml (layout)",
-        })
-    locked_sha = _lock_value(read_text(bundle / "package-lock.toml"), "executable_sha256")
-    actual_sha = sha256_file(extracted_bin)
-    if not locked_sha:
-        issues.append({
-            "code": "provenance_mismatch",
-            "platform": platform,
-            "message": f"{platform} package-lock.toml missing executable_sha256",
-        })
-    elif actual_sha != locked_sha:
-        issues.append({
-            "code": "provenance_mismatch",
-            "platform": platform,
-            "message": f"{platform} extracted binary sha {actual_sha} != locked {locked_sha}",
-        })
-    _classify_evidence(_bundle_evidence_text(bundle), platform, issues)
+
+    archive_sha = sha256_file(archive)
+    with tempfile.TemporaryDirectory(prefix="opi-artifact-audit-") as owned:
+        extracted = pathlib.Path(owned) / "extracted"
+        try:
+            _extract_owned_archive(archive, extracted)
+            _validate_archive_assets(extracted)
+        except (OSError, tarfile.TarError, zipfile.BadZipFile, ValueError) as error:
+            issues.append({
+                "code": "invalid_archive_layout",
+                "platform": platform,
+                "message": f"{platform} archive is invalid: {error}",
+            })
+            _audit_native_smoke(bundle, platform, archive_sha, issues)
+            return
+
+        extracted_bin = extracted / "bin" / "opi-sandbox"
+        extracted_manifest = extracted / "package.toml"
+        manifest_raw, manifest = _parse_manifest(extracted_manifest, platform, issues)
+        lock = _parse_lock(bundle / "package-lock.toml", platform, issues)
+        if manifest is not None and lock is not None:
+            manifest_hash = hashlib.sha256(manifest_raw.replace(b"\r", b"")).hexdigest()
+            actual_sha = sha256_file(extracted_bin)
+            expected_lock = {
+                "manifest_hash": manifest_hash,
+                "executable_rel_path": "bin/opi-sandbox",
+                "executable_sha256": actual_sha,
+                "package_version": manifest["version"],
+                "target": manifest["target"],
+                "opi_range": manifest["opi_version"],
+                "protocol": manifest["protocol"],
+                "adapter_id": manifest["id"],
+            }
+            for key, expected in expected_lock.items():
+                if lock[key] != expected:
+                    issues.append({
+                        "code": "provenance_mismatch",
+                        "platform": platform,
+                        "message": f"{platform} lock {key}={lock[key]!r} != {expected!r}",
+                    })
+            if manifest["sha256"] != actual_sha:
+                issues.append({
+                    "code": "provenance_mismatch",
+                    "platform": platform,
+                    "message": f"{platform} manifest executable sha does not match archive bytes",
+                })
+            if manifest["target"] != archive_target:
+                issues.append({
+                    "code": "wrong_target_identity",
+                    "platform": platform,
+                    "message": f"{platform} manifest target {manifest['target']} != {archive_target}",
+                })
+    _audit_native_smoke(bundle, platform, archive_sha, issues)
 
 
 def _audit_windows_bundle(root, issues):
@@ -507,27 +875,60 @@ def _audit_windows_bundle(root, issues):
             "message": "missing windows unsupported-posture evidence bundle",
         })
         return
-    if (bundle / "extracted" / "bin" / "opi-sandbox").is_file():
+    windows_archives = [
+        entry for entry in bundle.iterdir()
+        if entry.is_file() and entry.name.startswith("opi-sandbox-")
+        and (entry.name.endswith(".tar.gz") or entry.name.endswith(".zip"))
+    ]
+    if (bundle / "extracted").exists() or windows_archives:
         issues.append({
             "code": "wrong_target_identity",
             "platform": "windows",
             "message": "Windows must not ship an opi-sandbox archive",
         })
-    text = _bundle_evidence_text(bundle)
-    lower = text.lower()
-    if 'supported":false' not in text and "supported = false" not in text and "unsupported" not in lower:
+    doctor_path = bundle / "unsupported.log"
+    try:
+        doctor = json.loads(read_text(doctor_path))
+        doctor_is_unsupported = (
+            isinstance(doctor, dict)
+            and doctor.get("schema_version") == 1
+            and doctor.get("target") == "windows"
+            and doctor.get("supported") is False
+        )
+    except (OSError, ValueError, TypeError):
+        doctor_is_unsupported = False
+    if not doctor_is_unsupported:
         issues.append({
             "code": "wrong_target_identity",
             "platform": "windows",
-            "message": "Windows evidence does not report the unsupported posture",
+            "message": "Windows doctor JSON does not report supported=false for target=windows",
         })
+    text = _bundle_evidence_text(bundle)
     _classify_evidence(text, "windows", issues)
 
 
 def audit_release_evidence(artifact_dir):
     issues = []
     for platform, target_suffix in NATIVE_ARCHIVE_PLATFORMS.items():
-        _audit_native_bundle(artifact_dir, platform, target_suffix, issues)
+        platform_root = artifact_dir / platform
+        targets = NATIVE_ARCHIVE_TARGETS[platform]
+        if any((platform_root / target).is_dir() for target in targets):
+            for target in targets:
+                _audit_native_bundle(
+                    artifact_dir, platform, target_suffix, issues, expected_target=target
+                )
+        else:
+            # Keep inspecting legacy flat evidence so defects remain
+            # attributable, but it can never satisfy the four-target gate.
+            _audit_native_bundle(artifact_dir, platform, target_suffix, issues)
+            target_file = read_text(platform_root / "target").strip()
+            for target in targets:
+                if target != target_file:
+                    issues.append({
+                        "code": "missing_platform_evidence",
+                        "platform": target,
+                        "message": f"missing native evidence bundle for {target}",
+                    })
     _audit_windows_bundle(artifact_dir, issues)
     platforms = (
         sorted(p.name for p in artifact_dir.iterdir() if p.is_dir())
@@ -577,37 +978,22 @@ GATE_PASS_RE = re.compile(r"test result: ok\. ([1-9][0-9]*) passed; 0 failed")
 
 
 def _audit_phase_exit_native(root, platform, target_suffix, issues):
-    """linux/macos bundle: genuine pass marker; validate archive when present."""
-    bundle = root / platform
-    if not bundle.is_dir():
-        issues.append({
-            "code": "missing_platform_evidence",
-            "platform": platform,
-            "message": f"missing native evidence bundle for {platform}",
-        })
-        return
-    if (bundle / "extracted" / "bin" / "opi-sandbox").is_file():
-        # A locally preserved extracted archive: validate target identity,
-        # executable-sha provenance, and the smoke/test evidence.
+    """Phase exit has the same authenticated native-archive requirement."""
+    platform_root = root / platform
+    targets = NATIVE_ARCHIVE_TARGETS[platform]
+    if any((platform_root / target).is_dir() for target in targets):
+        for target in targets:
+            _audit_native_bundle(root, platform, target_suffix, issues, expected_target=target)
+    else:
         _audit_native_bundle(root, platform, target_suffix, issues)
-        return
-    # No local archive (CI-produced): a preserved CI log must carry a genuine
-    # pass marker and a provenance note, so absence-of-error is not enough.
-    text = _bundle_evidence_text(bundle)
-    if not text.strip():
-        issues.append({
-            "code": "zero_test_evidence",
-            "platform": platform,
-            "message": f"{platform} has no preserved native smoke/test evidence",
-        })
-        return
-    _classify_evidence(text, platform, issues)
-    if not (bundle / "source").is_file():
-        issues.append({
-            "code": "missing_provenance",
-            "platform": platform,
-            "message": f"{platform} CI-sourced evidence lacks a `source` provenance note",
-        })
+        target_file = read_text(platform_root / "target").strip()
+        for target in targets:
+            if target != target_file:
+                issues.append({
+                    "code": "missing_platform_evidence",
+                    "platform": target,
+                    "message": f"missing native evidence bundle for {target}",
+                })
 
 
 # Gate categories the DoD's final-artifact-audit clause names, keyed by a

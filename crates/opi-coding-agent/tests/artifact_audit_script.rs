@@ -244,28 +244,145 @@ fn run_release_audit(dir: &std::path::Path, json: bool) -> (bool, String, String
 }
 
 const LINUX_TARGET: &str = "x86_64-unknown-linux-gnu";
+const LINUX_ARM_TARGET: &str = "aarch64-unknown-linux-gnu";
+const MACOS_X64_TARGET: &str = "x86_64-apple-darwin";
 const MACOS_TARGET: &str = "aarch64-apple-darwin";
 const BINARY_BYTES: &[u8] = b"opi-sandbox extracted release binary payload\n";
 
 fn good_smoke_log() -> &'static str {
-    // Real smoke-script marker (opi-sandbox-smoke.sh writes smoke-result.txt).
-    // Direct smoke only; backend --stdio is deferred per the script header.
-    "opi-sandbox-smoke: OK\n"
+    "opi-sandbox-direct-smoke: OK archive_sha256=__ARCHIVE_SHA256__\n\
+     opi-sandbox-backend-smoke: OK archive_sha256=__ARCHIVE_SHA256__\n\
+     opi-sandbox-smoke: OK archive_sha256=__ARCHIVE_SHA256__\n"
 }
 
 fn good_windows_log() -> &'static str {
     // Windows unsupported-posture evidence: doctor reports supported=false, and
     // the unsupported-posture cargo tests pass (non-skipped, non-zero-test).
-    "doctor: {\"supported\":false,\"mechanisms\":[]}\n\
+    "doctor: {\"schema_version\":1,\"supported\":false,\"target\":\"windows\",\"mechanisms\":[],\"profiles\":[\"workspace-write\"],\"limitations\":[]}\n\
      run: refused pre-start (exit 125)\n\
      test result: ok. 3 passed; 0 failed; 0 ignored\n"
 }
 
-/// Write a native (linux/macos) evidence bundle under `<root>/<platform>/`.
-/// `binary_bytes` is the extracted opi-sandbox binary; its sha256 is written
-/// into the lock so provenance passes by default. `mismatch_sha` corrupts the
-/// locked sha for the provenance-mismatch case; `omit_extracted` drops the
-/// extracted tree (workspace-only binary).
+fn compatible_minor_range(version: &str) -> String {
+    let mut parts = version.split('.');
+    let major: u64 = parts.next().expect("major").parse().expect("numeric major");
+    let minor: u64 = parts.next().expect("minor").parse().expect("numeric minor");
+    format!(">={major}.{minor},<{major}.{}", minor + 1)
+}
+
+fn native_archive_path(dir: &std::path::Path, target: &str) -> std::path::PathBuf {
+    dir.join(format!("opi-sandbox-{target}.tar.gz"))
+}
+
+fn create_native_archive(
+    archive: &std::path::Path,
+    manifest: &std::path::Path,
+    executable: &std::path::Path,
+    extra_member: bool,
+) {
+    let script = r##"
+import io, sys, tarfile
+with tarfile.open(sys.argv[1], "w:gz") as out:
+    out.add(sys.argv[2], arcname="package.toml", recursive=False)
+    executable = out.gettarinfo(sys.argv[3], arcname="bin/opi-sandbox")
+    executable.mode = 0o755
+    with open(sys.argv[3], "rb") as payload:
+        out.addfile(executable, payload)
+    snapshot = open(sys.argv[4], encoding="utf-8").read().splitlines()
+    markers = [index for index, line in enumerate(snapshot) if line == "---"]
+    schema = ("\n".join(snapshot[markers[1] + 1:]) + "\n").encode()
+    schema_info = tarfile.TarInfo("schemas/command-execution-jsonl-v1.schema.json")
+    schema_info.mode = 0o644
+    schema_info.size = len(schema)
+    out.addfile(schema_info, io.BytesIO(schema))
+    out.add(sys.argv[5], arcname="licenses/LICENSE", recursive=False)
+    if sys.argv[6] == "extra":
+        info = tarfile.TarInfo("unexpected.txt")
+        payload = b"unexpected"
+        info.size = len(payload)
+        out.addfile(info, io.BytesIO(payload))
+"##;
+    let output = Command::new(python_command())
+        .args(["-c", script])
+        .arg(archive)
+        .arg(manifest)
+        .arg(executable)
+        .arg(
+            workspace_root()
+                .join("crates/opi-protocol/tests/snapshots/execution_v1_schema__schema_v1.snap"),
+        )
+        .arg(workspace_root().join("LICENSE"))
+        .arg(if extra_member { "extra" } else { "exact" })
+        .output()
+        .expect("create synthetic native archive");
+    assert!(
+        output.status.success(),
+        "archive fixture creation failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+fn rewrite_native_archive(archive: &std::path::Path, mutation: &str) {
+    let script = r##"
+import os, sys, tarfile, tempfile
+archive, mutation = sys.argv[1], sys.argv[2]
+payloads = {}
+modes = {}
+with tarfile.open(archive, "r:gz") as source:
+    for member in source.getmembers():
+        name = member.name
+        while name.startswith("./"):
+            name = name[2:]
+        if member.isfile():
+            payloads[name] = source.extractfile(member).read()
+            modes[name] = member.mode
+if mutation == "nonexec":
+    modes["bin/opi-sandbox"] = 0o644
+elif mutation == "unknown-field":
+    payloads["package.toml"] += b"unknown_adapter_field = 1\n"
+elif mutation == "oversized-manifest":
+    payloads["package.toml"] += b"#" * (1024 * 1024)
+elif mutation == "missing-schema":
+    del payloads["schemas/command-execution-jsonl-v1.schema.json"]
+else:
+    raise SystemExit("unknown mutation")
+fd, temporary = tempfile.mkstemp(dir=os.path.dirname(archive), suffix=".tar.gz")
+os.close(fd)
+try:
+    with tarfile.open(temporary, "w:gz") as output:
+        for name in (
+            "package.toml",
+            "bin/opi-sandbox",
+            "schemas/command-execution-jsonl-v1.schema.json",
+            "licenses/LICENSE",
+        ):
+            if name not in payloads:
+                continue
+            info = tarfile.TarInfo(name)
+            info.mode = modes[name]
+            info.size = len(payloads[name])
+            import io
+            output.addfile(info, io.BytesIO(payloads[name]))
+    os.replace(temporary, archive)
+finally:
+    if os.path.exists(temporary):
+        os.unlink(temporary)
+"##;
+    let output = Command::new(python_command())
+        .args(["-c", script])
+        .arg(archive)
+        .arg(mutation)
+        .output()
+        .expect("rewrite synthetic native archive");
+    assert!(
+        output.status.success(),
+        "archive fixture rewrite failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// Write a native release bundle containing the complete distribution wrapper,
+/// LockMaterial, and direct/backend smoke markers bound to the archive digest.
 fn write_native_bundle(
     root: &std::path::Path,
     platform: &str,
@@ -273,49 +390,88 @@ fn write_native_bundle(
     binary_bytes: &[u8],
     smoke_log: &str,
     mismatch_sha: bool,
-    omit_extracted: bool,
+    omit_archive: bool,
 ) {
     let dir = root.join(platform);
-    std::fs::create_dir_all(dir.join("extracted").join("bin")).unwrap();
+    std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(dir.join("target"), target).unwrap();
-    let exe_sha = if mismatch_sha {
+    let actual_exe_sha = sha256_hex_local(binary_bytes);
+    let locked_exe_sha = if mismatch_sha {
         "0".repeat(64)
     } else {
-        sha256_hex_local(binary_bytes)
+        actual_exe_sha.clone()
     };
+    let version = env!("CARGO_PKG_VERSION");
+    let opi_range = compatible_minor_range(version);
+    let manifest = format!(
+        "name = \"opi-sandbox\"\n\
+         description = \"Official host-native command restriction backend.\"\n\
+         version = \"{version}\"\n\
+         opi_version = \"{opi_range}\"\n\n\
+         [[contributions.adapters]]\n\
+         capability = \"command.execute\"\n\
+         id = \"opi-sandbox\"\n\
+         transport = \"process-jsonl\"\n\
+         command = \"bin/opi-sandbox\"\n\
+         args = [\"backend\", \"--stdio\"]\n\
+         protocol = \"command-execution-jsonl-v1\"\n\
+         target = \"{target}\"\n\
+         sha256 = \"{actual_exe_sha}\"\n\
+         handshake_timeout_ms = 5000\n\
+         adapter_config = {{}}\n"
+    );
+    let stage = dir.join("archive-stage");
+    std::fs::create_dir_all(stage.join("bin")).unwrap();
+    std::fs::write(stage.join("package.toml"), &manifest).unwrap();
+    std::fs::write(stage.join("bin").join("opi-sandbox"), binary_bytes).unwrap();
+    let archive = native_archive_path(&dir, target);
+    if !omit_archive {
+        create_native_archive(
+            &archive,
+            &stage.join("package.toml"),
+            &stage.join("bin").join("opi-sandbox"),
+            false,
+        );
+    }
+    std::fs::remove_dir_all(&stage).unwrap();
+    let manifest_hash = sha256_hex_local(manifest.as_bytes());
     std::fs::write(
         dir.join("package-lock.toml"),
         format!(
-            "manifest_hash = \"abc123\"\n\
+            "manifest_hash = \"{manifest_hash}\"\n\
              executable_rel_path = \"bin/opi-sandbox\"\n\
-             executable_sha256 = \"{exe_sha}\"\n\
-             package_version = \"0.8.0\"\n\
+             executable_sha256 = \"{locked_exe_sha}\"\n\
+             package_version = \"{version}\"\n\
              target = \"{target}\"\n\
-             opi_range = \">=0.8,<0.9\"\n\
+             opi_range = \"{opi_range}\"\n\
              protocol = \"command-execution-jsonl-v1\"\n\
              adapter_id = \"opi-sandbox\"\n"
         ),
     )
     .unwrap();
-    if !omit_extracted {
-        std::fs::write(
-            dir.join("extracted").join("bin").join("opi-sandbox"),
-            binary_bytes,
-        )
-        .unwrap();
-        std::fs::write(
-            dir.join("extracted").join("package.toml"),
-            "# rendered manifest\n",
-        )
-        .unwrap();
-    }
-    std::fs::write(dir.join("smoke.log"), smoke_log).unwrap();
+    let archive_sha = if omit_archive {
+        "0".repeat(64)
+    } else {
+        sha256_hex_local(&std::fs::read(&archive).unwrap())
+    };
+    std::fs::write(
+        dir.join("smoke.log"),
+        smoke_log.replace("__ARCHIVE_SHA256__", &archive_sha),
+    )
+    .unwrap();
 }
 
 fn write_windows_bundle(root: &std::path::Path, log: &str, with_archive: bool) {
     let dir = root.join("windows");
     std::fs::create_dir_all(&dir).unwrap();
-    std::fs::write(dir.join("unsupported.log"), log).unwrap();
+    let mut lines = log.lines();
+    let first = lines.next().unwrap_or_default();
+    let doctor = first.strip_prefix("doctor: ").unwrap_or(first);
+    std::fs::write(dir.join("unsupported.log"), format!("{doctor}\n")).unwrap();
+    let posture = lines.collect::<Vec<_>>().join("\n");
+    if !posture.is_empty() {
+        std::fs::write(dir.join("posture-tests.log"), format!("{posture}\n")).unwrap();
+    }
     if with_archive {
         // A Windows opi-sandbox archive must NOT exist (16.14.2 unsupported).
         std::fs::create_dir_all(dir.join("extracted").join("bin")).unwrap();
@@ -332,7 +488,7 @@ fn write_windows_bundle(root: &std::path::Path, log: &str, with_archive: bool) {
 fn write_complete_good_evidence(root: &std::path::Path) {
     write_native_bundle(
         root,
-        "linux",
+        &format!("linux/{LINUX_TARGET}"),
         LINUX_TARGET,
         BINARY_BYTES,
         good_smoke_log(),
@@ -341,7 +497,25 @@ fn write_complete_good_evidence(root: &std::path::Path) {
     );
     write_native_bundle(
         root,
-        "macos",
+        &format!("linux/{LINUX_ARM_TARGET}"),
+        LINUX_ARM_TARGET,
+        BINARY_BYTES,
+        good_smoke_log(),
+        false,
+        false,
+    );
+    write_native_bundle(
+        root,
+        &format!("macos/{MACOS_X64_TARGET}"),
+        MACOS_X64_TARGET,
+        BINARY_BYTES,
+        good_smoke_log(),
+        false,
+        false,
+    );
+    write_native_bundle(
+        root,
+        &format!("macos/{MACOS_TARGET}"),
         MACOS_TARGET,
         BINARY_BYTES,
         good_smoke_log(),
@@ -430,7 +604,7 @@ fn release_audit_rejects_wrong_target_identity() {
 fn release_audit_rejects_windows_opi_sandbox_archive() {
     let dir = tempfile::tempdir().expect("release evidence tempdir");
     write_complete_good_evidence(dir.path());
-    // Add a Windows opi-sandbox archive (forbidden: no Windows artifact).
+    // Add a Windows opi-sandbox artifact (forbidden: no Windows artifact).
     write_windows_bundle(dir.path(), good_windows_log(), true);
     let (ok, stdout, stderr) = run_release_audit(dir.path(), true);
     assert!(
@@ -444,7 +618,7 @@ fn release_audit_rejects_windows_opi_sandbox_archive() {
 }
 
 #[test]
-fn release_audit_rejects_workspace_only_binary() {
+fn release_audit_rejects_absent_archive() {
     let dir = tempfile::tempdir().expect("release evidence tempdir");
     // linux bundle with no extracted tree (smoke ran against a workspace
     // target/ binary, not an extracted archive).
@@ -470,11 +644,11 @@ fn release_audit_rejects_workspace_only_binary() {
     let (ok, stdout, stderr) = run_release_audit(dir.path(), true);
     assert!(
         !ok,
-        "workspace-only binary must fail: stdout={stdout} stderr={stderr}"
+        "absent archive must fail: stdout={stdout} stderr={stderr}"
     );
     assert!(
-        stdout.contains("workspace_only_binary"),
-        "expected workspace_only_binary: {stdout}"
+        stdout.contains("missing_archive"),
+        "expected missing_archive: {stdout}"
     );
 }
 
@@ -510,6 +684,197 @@ fn release_audit_rejects_provenance_mismatch() {
         stdout.contains("provenance_mismatch"),
         "expected provenance_mismatch: {stdout}"
     );
+}
+
+#[test]
+fn release_audit_rejects_tampered_archive() {
+    let dir = tempfile::tempdir().expect("release evidence tempdir");
+    write_complete_good_evidence(dir.path());
+    std::fs::write(
+        native_archive_path(
+            &dir.path().join(format!("linux/{LINUX_TARGET}")),
+            LINUX_TARGET,
+        ),
+        b"not a tar archive",
+    )
+    .unwrap();
+    let (ok, stdout, stderr) = run_release_audit(dir.path(), true);
+    assert!(!ok, "tampered archive must fail: {stdout} {stderr}");
+    assert!(stdout.contains("invalid_archive_layout"), "{stdout}");
+}
+
+#[test]
+fn release_audit_rejects_caller_prepared_extracted_tree() {
+    let dir = tempfile::tempdir().expect("release evidence tempdir");
+    write_complete_good_evidence(dir.path());
+    let linux_bundle = dir.path().join(format!("linux/{LINUX_TARGET}"));
+    std::fs::create_dir_all(linux_bundle.join("extracted/bin")).unwrap();
+    std::fs::write(linux_bundle.join("extracted/bin/opi-sandbox"), b"caller").unwrap();
+    let (ok, stdout, stderr) = run_release_audit(dir.path(), true);
+    assert!(!ok, "caller extraction must fail: {stdout} {stderr}");
+    assert!(
+        stdout.contains("caller_prepared_extracted_tree"),
+        "{stdout}"
+    );
+}
+
+#[test]
+fn release_audit_rejects_placeholder_manifest() {
+    let dir = tempfile::tempdir().expect("release evidence tempdir");
+    write_complete_good_evidence(dir.path());
+    let stage = tempfile::tempdir().unwrap();
+    let manifest = stage.path().join("package.toml");
+    let executable = stage.path().join("opi-sandbox");
+    std::fs::write(
+        &manifest,
+        "name = \"opi-sandbox\"\nversion = \"__PACKAGE_VERSION__\"\n",
+    )
+    .unwrap();
+    std::fs::write(&executable, BINARY_BYTES).unwrap();
+    create_native_archive(
+        &native_archive_path(
+            &dir.path().join(format!("linux/{LINUX_TARGET}")),
+            LINUX_TARGET,
+        ),
+        &manifest,
+        &executable,
+        false,
+    );
+    let (ok, stdout, stderr) = run_release_audit(dir.path(), true);
+    assert!(!ok, "placeholder manifest must fail: {stdout} {stderr}");
+    assert!(stdout.contains("invalid_package_manifest"), "{stdout}");
+}
+
+#[test]
+fn release_audit_rejects_extra_archive_layout_member() {
+    let dir = tempfile::tempdir().expect("release evidence tempdir");
+    write_complete_good_evidence(dir.path());
+    let stage = tempfile::tempdir().unwrap();
+    let manifest = stage.path().join("package.toml");
+    let executable = stage.path().join("opi-sandbox");
+    std::fs::write(&manifest, b"invalid is irrelevant after layout rejection\n").unwrap();
+    std::fs::write(&executable, BINARY_BYTES).unwrap();
+    create_native_archive(
+        &native_archive_path(
+            &dir.path().join(format!("linux/{LINUX_TARGET}")),
+            LINUX_TARGET,
+        ),
+        &manifest,
+        &executable,
+        true,
+    );
+    let (ok, stdout, stderr) = run_release_audit(dir.path(), true);
+    assert!(!ok, "extra archive member must fail: {stdout} {stderr}");
+    assert!(stdout.contains("invalid_archive_layout"), "{stdout}");
+}
+
+#[test]
+fn release_audit_rejects_non_executable_archive_binary() {
+    let dir = tempfile::tempdir().expect("release evidence tempdir");
+    write_complete_good_evidence(dir.path());
+    let archive = native_archive_path(
+        &dir.path().join(format!("linux/{LINUX_TARGET}")),
+        LINUX_TARGET,
+    );
+    rewrite_native_archive(&archive, "nonexec");
+    let (ok, stdout, stderr) = run_release_audit(dir.path(), true);
+    assert!(!ok, "non-executable archive must fail: {stdout} {stderr}");
+    assert!(stdout.contains("invalid_archive_layout"), "{stdout}");
+}
+
+#[test]
+fn release_audit_rejects_archive_without_protocol_schema() {
+    let dir = tempfile::tempdir().expect("release evidence tempdir");
+    write_complete_good_evidence(dir.path());
+    let archive = native_archive_path(
+        &dir.path().join(format!("linux/{LINUX_TARGET}")),
+        LINUX_TARGET,
+    );
+    rewrite_native_archive(&archive, "missing-schema");
+    let (ok, stdout, stderr) = run_release_audit(dir.path(), true);
+    assert!(!ok, "missing schema must fail: {stdout} {stderr}");
+    assert!(stdout.contains("invalid_archive_layout"), "{stdout}");
+}
+
+#[test]
+fn release_audit_rejects_oversized_archive_member() {
+    let dir = tempfile::tempdir().expect("release evidence tempdir");
+    write_complete_good_evidence(dir.path());
+    let archive = native_archive_path(
+        &dir.path().join(format!("linux/{LINUX_TARGET}")),
+        LINUX_TARGET,
+    );
+    rewrite_native_archive(&archive, "oversized-manifest");
+    let (ok, stdout, stderr) = run_release_audit(dir.path(), true);
+    assert!(!ok, "oversized archive must fail: {stdout} {stderr}");
+    assert!(stdout.contains("invalid_archive_layout"), "{stdout}");
+}
+
+#[test]
+fn release_audit_rejects_unknown_adapter_manifest_field() {
+    let dir = tempfile::tempdir().expect("release evidence tempdir");
+    write_complete_good_evidence(dir.path());
+    let archive = native_archive_path(
+        &dir.path().join(format!("linux/{LINUX_TARGET}")),
+        LINUX_TARGET,
+    );
+    rewrite_native_archive(&archive, "unknown-field");
+    let (ok, stdout, stderr) = run_release_audit(dir.path(), true);
+    assert!(!ok, "unknown manifest field must fail: {stdout} {stderr}");
+    assert!(stdout.contains("invalid_package_manifest"), "{stdout}");
+}
+
+#[test]
+fn release_audit_rejects_wrong_lock_field() {
+    let dir = tempfile::tempdir().expect("release evidence tempdir");
+    write_complete_good_evidence(dir.path());
+    let lock_path = dir
+        .path()
+        .join(format!("linux/{LINUX_TARGET}/package-lock.toml"));
+    let lock = std::fs::read_to_string(&lock_path).unwrap();
+    std::fs::write(
+        &lock_path,
+        lock.replace(
+            "protocol = \"command-execution-jsonl-v1\"",
+            "protocol = \"wrong-protocol\"",
+        ),
+    )
+    .unwrap();
+    let (ok, stdout, stderr) = run_release_audit(dir.path(), true);
+    assert!(!ok, "wrong lock field must fail: {stdout} {stderr}");
+    assert!(stdout.contains("provenance_mismatch"), "{stdout}");
+}
+
+#[test]
+fn release_audit_rejects_mixed_pass_and_failure_evidence() {
+    let dir = tempfile::tempdir().expect("release evidence tempdir");
+    write_complete_good_evidence(dir.path());
+    let smoke_path = dir.path().join(format!("linux/{LINUX_TARGET}/smoke.log"));
+    let mut smoke = std::fs::read_to_string(&smoke_path).unwrap();
+    smoke.push_str("test result: FAILED. 1 passed; 1 failed\n");
+    std::fs::write(&smoke_path, smoke).unwrap();
+    let (ok, stdout, stderr) = run_release_audit(dir.path(), true);
+    assert!(!ok, "mixed pass/failure must fail: {stdout} {stderr}");
+    assert!(stdout.contains("failed_evidence"), "{stdout}");
+}
+
+#[test]
+fn release_audit_rejects_evidence_for_a_different_archive() {
+    let dir = tempfile::tempdir().expect("release evidence tempdir");
+    write_complete_good_evidence(dir.path());
+    let smoke_path = dir.path().join(format!("linux/{LINUX_TARGET}/smoke.log"));
+    let smoke = std::fs::read_to_string(&smoke_path).unwrap();
+    let actual = sha256_hex_local(
+        &std::fs::read(native_archive_path(
+            &dir.path().join(format!("linux/{LINUX_TARGET}")),
+            LINUX_TARGET,
+        ))
+        .unwrap(),
+    );
+    std::fs::write(&smoke_path, smoke.replace(&actual, &"f".repeat(64))).unwrap();
+    let (ok, stdout, stderr) = run_release_audit(dir.path(), true);
+    assert!(!ok, "wrong digest evidence must fail: {stdout} {stderr}");
+    assert!(stdout.contains("archive_digest_mismatch"), "{stdout}");
 }
 
 #[test]
@@ -604,7 +969,7 @@ fn release_audit_rejects_windows_unsupported_without_pass_evidence() {
         false,
     );
     // Windows unsupported log with no passing test evidence (zero-test).
-    let no_pass = "doctor: {\"supported\":false,\"mechanisms\":[]}\nrun: refused pre-start\n";
+    let no_pass = "doctor: {\"schema_version\":1,\"supported\":false,\"target\":\"windows\",\"mechanisms\":[],\"profiles\":[\"workspace-write\"],\"limitations\":[]}\nrun: refused pre-start\n";
     write_windows_bundle(dir.path(), no_pass, false);
     let (ok, stdout, stderr) = run_release_audit(dir.path(), true);
     assert!(
@@ -614,6 +979,29 @@ fn release_audit_rejects_windows_unsupported_without_pass_evidence() {
     assert!(
         stdout.contains("zero_test_evidence"),
         "windows zero-test evidence must be flagged: {stdout}"
+    );
+}
+
+#[test]
+fn release_audit_rejects_supported_windows_doctor_even_with_free_form_claim() {
+    let dir = tempfile::tempdir().expect("release evidence tempdir");
+    write_complete_good_evidence(dir.path());
+    write_windows_bundle(
+        dir.path(),
+        "{\"schema_version\":1,\"supported\":true,\"target\":\"windows\",\"mechanisms\":[],\"profiles\":[],\"limitations\":[]}\n\
+         unsupported posture: supported = false\n\
+         test result: ok. 3 passed; 0 failed; 0 ignored\n",
+        false,
+    );
+
+    let (ok, stdout, stderr) = run_release_audit(dir.path(), true);
+    assert!(
+        !ok,
+        "a free-form claim must not override doctor JSON: stdout={stdout} stderr={stderr}"
+    );
+    assert!(
+        stdout.contains("wrong_target_identity"),
+        "supported=true must fail the Windows posture gate: {stdout}"
     );
 }
 
@@ -648,25 +1036,23 @@ fn run_phase_exit_audit(dir: &std::path::Path) -> (bool, String, String) {
     )
 }
 
-/// Write a macos CI-sourced bundle (no local archive): a preserved log plus a
-/// `source` provenance note. `with_pass` controls whether the log carries a
-/// genuine pass marker; `with_source` controls the provenance note.
+/// Write macOS evidence. The old `with_source` switch now controls archive
+/// presence so phase-exit tests prove there is no CI-log-only exception.
 fn write_macos_ci_bundle(root: &std::path::Path, with_pass: bool, with_source: bool) {
-    let dir = root.join("macos");
-    std::fs::create_dir_all(&dir).unwrap();
     let log = if with_pass {
-        "test result: ok. 10 passed; 0 failed; 0 ignored\n"
+        good_smoke_log()
     } else {
         "cargo check --target aarch64-apple-darwin\n" // no pass marker
     };
-    std::fs::write(dir.join("native.log"), log).unwrap();
-    if with_source {
-        std::fs::write(
-            dir.join("source"),
-            "run 123 @deadbeef (sandbox-macos-phase16): native tests pass\n",
-        )
-        .unwrap();
-    }
+    write_native_bundle(
+        root,
+        "macos",
+        MACOS_TARGET,
+        BINARY_BYTES,
+        log,
+        false,
+        !with_source,
+    );
 }
 
 /// Write the six-target bundle: one preserved `cargo check --target` log per
@@ -724,20 +1110,45 @@ fn write_gates_bundle(root: &std::path::Path, with_pass: bool) {
     }
 }
 
-/// A complete, correct phase-exit evidence tree: linux archive bundle + macos
-/// CI-sourced bundle + windows unsupported bundle + six green target-check logs
-/// + a passing gates bundle. Audit must PASS.
+/// A complete phase-exit evidence tree with Linux and macOS archives, Windows
+/// unsupported posture, six green target-check logs, and passing gates.
 fn write_complete_phase_exit_evidence(root: &std::path::Path) {
     write_native_bundle(
         root,
-        "linux",
+        &format!("linux/{LINUX_TARGET}"),
         LINUX_TARGET,
         BINARY_BYTES,
         good_smoke_log(),
         false,
         false,
     );
-    write_macos_ci_bundle(root, true, true);
+    write_native_bundle(
+        root,
+        &format!("linux/{LINUX_ARM_TARGET}"),
+        LINUX_ARM_TARGET,
+        BINARY_BYTES,
+        good_smoke_log(),
+        false,
+        false,
+    );
+    write_native_bundle(
+        root,
+        &format!("macos/{MACOS_X64_TARGET}"),
+        MACOS_X64_TARGET,
+        BINARY_BYTES,
+        good_smoke_log(),
+        false,
+        false,
+    );
+    write_native_bundle(
+        root,
+        &format!("macos/{MACOS_TARGET}"),
+        MACOS_TARGET,
+        BINARY_BYTES,
+        good_smoke_log(),
+        false,
+        false,
+    );
     write_windows_bundle(root, good_windows_log(), false);
     write_six_target_bundle(
         root,
@@ -851,7 +1262,7 @@ fn phase_exit_audit_rejects_ci_sourced_without_provenance() {
         false,
         false,
     );
-    // macos has a genuine pass marker but no `source` provenance note.
+    // A pass-marked macOS log without its archive is no longer accepted.
     write_macos_ci_bundle(dir.path(), true, false);
     write_windows_bundle(dir.path(), good_windows_log(), false);
     write_six_target_bundle(
@@ -872,8 +1283,8 @@ fn phase_exit_audit_rejects_ci_sourced_without_provenance() {
         "CI-sourced evidence without provenance must fail: stdout={stdout} stderr={stderr}"
     );
     assert!(
-        stdout.contains("missing_provenance"),
-        "expected missing_provenance: {stdout}"
+        stdout.contains("missing_archive"),
+        "expected missing_archive: {stdout}"
     );
 }
 

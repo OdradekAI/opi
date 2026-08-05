@@ -11,11 +11,15 @@
 # Package layout (under $ARTIFACT_DIR):
 #   package/package.toml          rendered manifest (target + sha256 filled)
 #   package/bin/opi-sandbox       the executable (chmod +x on Unix)
+#   package/schemas/command-execution-jsonl-v1.schema.json
+#   package/licenses/LICENSE      project license
 #   opi-sandbox-<target>.tar.gz   distribution archive (package contents at root)
 #   extracted/                    clean extraction of the archive
 #   package-lock.toml             BUILD-TIME audit lock (8 LockMaterial fields)
+#   target                        exact target triple for artifact audit
 #
-# The archive contains package.toml + bin/ at its root (NO wrapping directory),
+# The archive contains package.toml + bin/ + schemas/ + licenses/ at its root
+# (NO wrapping directory),
 # matching the package_root that 16.5 install passes to 16.4
 # validate_executable_contributions. package-lock.toml is an audit artifact;
 # 16.5 recomputes LockMaterial via 16.4 against the extracted package and does
@@ -48,6 +52,9 @@ fi
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 TEMPLATE="$SCRIPT_DIR/../packaging/opi-sandbox/package.toml.template"
+WORKSPACE_MANIFEST="$SCRIPT_DIR/../Cargo.toml"
+SCHEMA_SNAPSHOT="$SCRIPT_DIR/../crates/opi-protocol/tests/snapshots/execution_v1_schema__schema_v1.snap"
+LICENSE_FILE="$SCRIPT_DIR/../LICENSE"
 
 # Portable SHA-256: macOS ships `shasum -a 256`; Linux and git-bash ship
 # `sha256sum`. Both emit lowercase hex. The stream form reads stdin so the
@@ -76,7 +83,12 @@ if [ "$MODE" = "verify" ]; then
     EXTRACTED="$ARTIFACT_DIR/extracted"
     LOCK="$ARTIFACT_DIR/package-lock.toml"
     for f in "$PKG/package.toml" "$PKG/bin/opi-sandbox" \
-             "$EXTRACTED/package.toml" "$EXTRACTED/bin/opi-sandbox" "$LOCK"; do
+             "$PKG/schemas/command-execution-jsonl-v1.schema.json" \
+             "$PKG/licenses/LICENSE" \
+             "$EXTRACTED/package.toml" "$EXTRACTED/bin/opi-sandbox" "$LOCK" \
+             "$EXTRACTED/schemas/command-execution-jsonl-v1.schema.json" \
+             "$EXTRACTED/licenses/LICENSE" \
+             "$ARTIFACT_DIR/target"; do
         [ -f "$f" ] || { echo "package-opi-sandbox: verify: missing $f" >&2; exit 1; }
     done
     declared_mh="$(lock_value manifest_hash "$LOCK")"
@@ -92,6 +104,11 @@ if [ "$MODE" = "verify" ]; then
         echo "package-opi-sandbox: verify: package executable sha mismatch" >&2; exit 1; }
     [ "$exe_ext" = "$declared_exe" ] || {
         echo "package-opi-sandbox: verify: extracted executable sha mismatch" >&2; exit 1; }
+    cmp -s "$PKG/schemas/command-execution-jsonl-v1.schema.json" \
+        "$EXTRACTED/schemas/command-execution-jsonl-v1.schema.json" || {
+        echo "package-opi-sandbox: verify: extracted schema mismatch" >&2; exit 1; }
+    cmp -s "$PKG/licenses/LICENSE" "$EXTRACTED/licenses/LICENSE" || {
+        echo "package-opi-sandbox: verify: extracted license mismatch" >&2; exit 1; }
     echo "verified opi-sandbox layout: manifest_hash=$actual_mh, executable_sha256=$declared_exe"
     exit 0
 fi
@@ -101,6 +118,7 @@ mkdir -p "$ARTIFACT_DIR"
 # Re-packaging wipes prior outputs (clean staging tree, no stale overlay).
 shopt -s nullglob
 rm -rf "$ARTIFACT_DIR/package" "$ARTIFACT_DIR/extracted" "$ARTIFACT_DIR"/opi-sandbox-*.tar.gz
+rm -f "$ARTIFACT_DIR/target"
 shopt -u nullglob
 
 # Detect host target triple from rustc. This assumes the supplied --binary was
@@ -129,18 +147,69 @@ EXEC_SHA="$(sha256_raw "$BINARY")" || {
 if [ ! -f "$TEMPLATE" ]; then
     echo "package-opi-sandbox: template not found: $TEMPLATE" >&2; exit 2
 fi
+if [ ! -f "$WORKSPACE_MANIFEST" ]; then
+    echo "package-opi-sandbox: workspace manifest not found: $WORKSPACE_MANIFEST" >&2; exit 2
+fi
+if [ ! -f "$SCHEMA_SNAPSHOT" ] || [ ! -f "$LICENSE_FILE" ]; then
+    echo "package-opi-sandbox: schema snapshot or LICENSE is missing" >&2
+    exit 2
+fi
+
+# The package identity and compatibility window come from the same checkout as
+# this packager. This prevents release/template literals from drifting away
+# from the host version that validates the contribution.
+PACKAGE_VERSION="$(awk '
+    /^\[workspace\.package\][[:space:]]*$/ { in_workspace_package=1; next }
+    /^\[/ { in_workspace_package=0 }
+    in_workspace_package && /^[[:space:]]*version[[:space:]]*=/ {
+        line=$0
+        sub(/^[^=]*=[[:space:]]*"/, "", line)
+        sub(/"[[:space:]]*$/, "", line)
+        print line
+        exit
+    }
+' "$WORKSPACE_MANIFEST")"
+VERSION_CORE="${PACKAGE_VERSION%%-*}"
+IFS=. read -r VERSION_MAJOR VERSION_MINOR VERSION_PATCH VERSION_EXTRA <<EOF
+$VERSION_CORE
+EOF
+if [ -z "$PACKAGE_VERSION" ] || [ -z "${VERSION_MAJOR:-}" ] || \
+   [ -z "${VERSION_MINOR:-}" ] || [ -z "${VERSION_PATCH:-}" ] || \
+   [ -n "${VERSION_EXTRA:-}" ]; then
+    echo "package-opi-sandbox: invalid workspace package version: $PACKAGE_VERSION" >&2
+    exit 2
+fi
+case "$VERSION_MAJOR$VERSION_MINOR$VERSION_PATCH" in
+    *[!0-9]*)
+        echo "package-opi-sandbox: invalid workspace package version: $PACKAGE_VERSION" >&2
+        exit 2
+        ;;
+esac
+OPI_RANGE=">=$VERSION_MAJOR.$VERSION_MINOR,<$VERSION_MAJOR.$((VERSION_MINOR + 1))"
 
 PKG="$ARTIFACT_DIR/package"
-mkdir -p "$PKG/bin"
+mkdir -p "$PKG/bin" "$PKG/schemas" "$PKG/licenses"
 
 # Render the manifest (substitute tokens) and write LF-only bytes. EXEC_SHA is
 # lowercase hex and TARGET is a triple; neither contains sed metacharacters.
-sed -e "s/__TARGET__/$TARGET/g" -e "s/__SHA256__/$EXEC_SHA/g" "$TEMPLATE" \
+sed -e "s/__PACKAGE_VERSION__/$PACKAGE_VERSION/g" \
+    -e "s/__OPI_RANGE__/$OPI_RANGE/g" \
+    -e "s/__TARGET__/$TARGET/g" -e "s/__SHA256__/$EXEC_SHA/g" "$TEMPLATE" \
     | tr -d '\r' > "$PKG/package.toml"
 
 # Copy the binary into the layout (basename always opi-sandbox; no extension).
 cp "$BINARY" "$PKG/bin/opi-sandbox"
 chmod +x "$PKG/bin/opi-sandbox"
+
+# The reviewed schema snapshot is the byte-pinned output of opi-protocol's
+# generator. Strip only insta's metadata header and package the JSON document.
+tr -d '\r' < "$SCHEMA_SNAPSHOT" \
+    | awk 'BEGIN { markers=0 } /^---$/ { markers++; next } markers >= 2 { print }' \
+    > "$PKG/schemas/command-execution-jsonl-v1.schema.json"
+grep -q '"$id": "https://odradek.ai/schemas/command-execution-jsonl-v1.json"' \
+    "$PKG/schemas/command-execution-jsonl-v1.schema.json" || {
+    echo "package-opi-sandbox: invalid protocol schema snapshot" >&2; exit 2; }
+cp "$LICENSE_FILE" "$PKG/licenses/LICENSE"
 
 # manifest_hash over the LF-normalized written manifest.
 MANIFEST_HASH="$(sha256_lf "$PKG/package.toml")"
@@ -167,12 +236,13 @@ cat > "$ARTIFACT_DIR/package-lock.toml" <<EOF
 manifest_hash = "$MANIFEST_HASH"
 executable_rel_path = "bin/opi-sandbox"
 executable_sha256 = "$EXEC_SHA"
-package_version = "0.8.0"
+package_version = "$PACKAGE_VERSION"
 target = "$TARGET"
-opi_range = ">=0.8,<0.9"
+opi_range = "$OPI_RANGE"
 protocol = "command-execution-jsonl-v1"
 adapter_id = "opi-sandbox"
 EOF
+printf '%s\n' "$TARGET" > "$ARTIFACT_DIR/target"
 
 echo "packaged opi-sandbox for $TARGET: sha256=$EXEC_SHA, layout=$PKG"
 exit 0

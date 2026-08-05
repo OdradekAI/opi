@@ -192,16 +192,22 @@ impl ExecutionRuntime {
         // called. The borrowed policy IS consulted so an explicit local
         // deny/ask is honored consistently with the routed branch.
         if enabled.is_empty() && is_default_local(config) {
-            return match policy.decision_for(LOCAL_ADAPTER_ID) {
-                PermissionDecision::Allow => Ok(local_ops),
-                PermissionDecision::Deny => Err(ExecutionFailure::PolicyDenied {
-                    adapter_id: LOCAL_ADAPTER_ID.to_string(),
-                }),
-                PermissionDecision::Ask => Err(ExecutionFailure::PermissionRequired {
-                    adapter_id: LOCAL_ADAPTER_ID.to_string(),
-                    mode,
-                }),
-            };
+            match policy.decision_for(LOCAL_ADAPTER_ID) {
+                PermissionDecision::Allow => return Ok(local_ops),
+                PermissionDecision::Deny => {
+                    return Err(ExecutionFailure::PolicyDenied {
+                        adapter_id: LOCAL_ADAPTER_ID.to_string(),
+                    });
+                }
+                PermissionDecision::Ask
+                    if mode == ExecutionRunMode::Interactive && broker.is_some() => {}
+                PermissionDecision::Ask => {
+                    return Err(ExecutionFailure::PermissionRequired {
+                        adapter_id: LOCAL_ADAPTER_ID.to_string(),
+                        mode,
+                    });
+                }
+            }
         }
 
         // --- Branch 2: routed assembly ---
@@ -252,8 +258,10 @@ fn is_default_local(config: &ExecutionConfig) -> bool {
 /// never pre-empts a command that still fits the configured timeout (audit FL25:
 /// no host/backend race). Extracted as a pure helper so the deadline policy is
 /// unit-testable across timeouts rather than buried inline in `exec`.
-fn host_deadline(command_timeout: Duration) -> Duration {
-    command_timeout + CLEANUP_REPORT_GRACE
+fn host_deadline(command_timeout: Duration) -> Result<Duration, ExecutionFailure> {
+    command_timeout
+        .checked_add(CLEANUP_REPORT_GRACE)
+        .ok_or(ExecutionFailure::ExecutionFailed)
 }
 
 // =========================================================================
@@ -537,10 +545,12 @@ impl BashOperations for ProcessCommandAdapter {
                 .map(|(k, v)| (NativeString::from_utf8(k), NativeString::from_utf8(v)))
                 .collect();
             let supported_protocols = vec![ProtocolId::new(WIRE_IDENTITY)];
-            let deadline = host_deadline(request.timeout);
+            let deadline = host_deadline(request.timeout).map_err(exec_failure_to_bash_op_error)?;
+            let launch_path = contribution.bound_launch_path();
             let launch = BackendLaunch {
-                program: &contribution.command,
+                program: &launch_path,
                 args: &contribution.args,
+                validated_executable: &contribution.executable,
             };
             let protocol_request = ExecutionRequest {
                 command: &request.command,
@@ -548,6 +558,10 @@ impl BashOperations for ProcessCommandAdapter {
                 cwd: &request.cwd,
                 timeout: request.timeout,
                 deadline,
+                handshake_timeout: Duration::from_millis(contribution.handshake_timeout_ms),
+                expected_implementation: &contribution.id,
+                expected_implementation_version: &contribution.lock.package_version,
+                expected_target: &contribution.target,
                 env_inherit: EnvInherit::Inherit,
                 env_additions: &env_additions,
                 adapter_config: contribution.adapter_config.clone(),
@@ -558,7 +572,7 @@ impl BashOperations for ProcessCommandAdapter {
             // 4. Drive the one-shot host and map the outcome.
             match ExecutionProtocolHost::execute(launch, protocol_request).await {
                 Ok(outcome) => Ok(completed_outcome_to_bash_result(outcome)),
-                Err(failure) => Err(exec_failure_to_bash_op_error(failure)),
+                Err(failure) => Err(protocol_failure_to_bash_op_error(failure)),
             }
         })
     }
@@ -580,6 +594,8 @@ fn completed_outcome_to_bash_result(outcome: CompletedOutcome) -> BashResult {
         outcome.exit.map(|e| e as i32),
         outcome.cancelled,
         outcome.timed_out,
+        &outcome.ready,
+        &outcome.started,
     ));
     for diagnostic in outcome.diagnostics {
         diagnostics.push(ToolDiagnostic {
@@ -607,6 +623,8 @@ fn operation_context_diagnostic(
     exit_code: Option<i32>,
     cancelled: bool,
     timed_out: bool,
+    ready: &super::ReadyReport,
+    started: &super::StartedReport,
 ) -> ToolDiagnostic {
     let message = if cancelled {
         "command cancelled"
@@ -624,6 +642,14 @@ fn operation_context_diagnostic(
             "timed_out": timed_out,
             "truncated": false,
             "command_included": false,
+            "adapter_id": ready.implementation.as_str(),
+            "implementation_version": ready.implementation_version,
+            "target": ready.target.as_str(),
+            "protocol": ready.selected_protocol.as_str(),
+            "placement": started.placement,
+            "guarantee": started.guarantee,
+            "policy": started.policy,
+            "limitations": started.limitations,
         })),
     }
 }
@@ -660,6 +686,24 @@ fn exec_failure_to_bash_op_error(failure: ExecutionFailure) -> BashOpError {
     }
 }
 
+fn protocol_failure_to_bash_op_error(failure: super::ExecutionProtocolFailure) -> BashOpError {
+    let mut error = exec_failure_to_bash_op_error(failure.failure);
+    let BashOpError::BackendFailure { diagnostics, .. } = &mut error else {
+        unreachable!("execution failure mapping always returns BackendFailure");
+    };
+    diagnostics.extend(
+        failure
+            .diagnostics
+            .into_iter()
+            .map(|diagnostic| ToolDiagnostic {
+                code: BACKEND_DIAGNOSTIC_CODE.to_string(),
+                message: diagnostic.message,
+                details: None,
+            }),
+    );
+    error
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -694,7 +738,7 @@ mod tests {
             Duration::from_secs(5),
             Duration::from_secs(30),
         ] {
-            let deadline = host_deadline(timeout);
+            let deadline = host_deadline(timeout).expect("bounded timeout");
             let cancel_at = deadline
                 .checked_sub(CLEANUP_REPORT_GRACE)
                 .unwrap_or(Duration::ZERO);
@@ -704,6 +748,11 @@ mod tests {
             );
             assert_eq!(deadline, timeout + CLEANUP_REPORT_GRACE);
         }
+    }
+
+    #[test]
+    fn host_deadline_rejects_overflow() {
+        assert!(host_deadline(Duration::MAX).is_err());
     }
 
     #[test]

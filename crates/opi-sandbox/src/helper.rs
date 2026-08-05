@@ -29,6 +29,7 @@
 
 #![forbid(unsafe_code)]
 
+use std::ffi::OsString;
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -96,29 +97,35 @@ pub(crate) fn start(
 /// keystone stdin-isolation invariant ([`StdinPolicy::Null`]) and the field
 /// mapping are unit-testable.
 ///
-/// `NativeString` is a lossless byte sequence; the SDK takes UTF-8 `String` /
-/// `PathBuf`, so bytes are mapped lossily. In Phase 16 the host maps a bash shell
-/// string to an explicit UTF-8 program/args before sending, so the wire carries
-/// UTF-8 and the lossy mapping is exact.
-pub(crate) fn build_request(exec: &ExecutePayload, cancel: CancellationToken) -> SandboxRequest {
-    SandboxRequest {
-        program: PathBuf::from(native_to_string(&exec.program)),
-        args: exec.args.iter().map(native_to_string).collect::<Vec<_>>(),
-        workspace: PathBuf::from(native_to_string(&exec.workspace)),
-        cwd: PathBuf::from(native_to_string(&exec.cwd)),
+/// `NativeString` is converted back to the platform-native domain: Unix bytes
+/// become `OsString` bytes verbatim, while Windows bytes are interpreted as
+/// little-endian UTF-16 code units. No UTF-8 lossy conversion occurs.
+pub(crate) fn build_request(
+    exec: &ExecutePayload,
+    cancel: CancellationToken,
+) -> Result<SandboxRequest, FailureCode> {
+    Ok(SandboxRequest {
+        program: PathBuf::from(native_to_os_string(&exec.program)?),
+        args: exec
+            .args
+            .iter()
+            .map(native_to_os_string)
+            .collect::<Result<Vec<_>, _>>()?,
+        workspace: PathBuf::from(native_to_os_string(&exec.workspace)?),
+        cwd: PathBuf::from(native_to_os_string(&exec.cwd)?),
         timeout: Duration::from_millis(exec.timeout_ms),
         env_inherit: exec.env_inherit,
         env_additions: exec
             .env_additions
             .iter()
-            .map(|(k, v)| (native_to_string(k), native_to_string(v)))
-            .collect(),
+            .map(|(key, value)| Ok((native_to_os_string(key)?, native_to_os_string(value)?)))
+            .collect::<Result<_, FailureCode>>()?,
         // Protocol stdin is reserved (host->backend JSONL) and NEVER inherited
         // by the target (design `### State machine`: "the backend never inherits
         // protocol stdin as target stdin").
         stdin: StdinPolicy::Null,
         cancel: Some(cancel),
-    }
+    })
 }
 
 /// Map a pre-start [`SetupFailureReason`] to the closed wire [`FailureCode`]
@@ -143,26 +150,18 @@ pub(crate) fn map_setup_failure(reason: SetupFailureReason) -> FailureCode {
 /// platform limitations. `Mechanism::None` (L0 supervision only, the 16.12
 /// backend under `NoRestriction`) reports `supervised` / `unrestricted`; a
 /// native mechanism (`Landlock`/`Seccomp` on supported Linux 16.13, `Seatbelt`
-/// on supported macOS 16.14.1) reports `supervised` / `restricted` — NEVER
+/// on supported macOS 16.14.1) reports `restricted` / `restricted` — NEVER
 /// `isolated` (crate vocabulary contract, `lib.rs`; design `### Common profile`:
 /// the package reports `restricted`).
 pub(crate) fn started_payload(
     request_id: &RequestId,
-    mechanism: Mechanism,
-    _contract: ContractStatus,
+    _mechanism: Mechanism,
+    contract: ContractStatus,
     limitations: &[String],
 ) -> StartedPayload {
-    let (guarantee, policy) = match mechanism {
-        // L0 supervision only (NoRestriction, the protocol backend).
-        Mechanism::None => ("supervised", "unrestricted"),
-        // A native mechanism installed a confinement contract. Seccomp is
-        // always installed alongside Landlock on Linux (16.13); Seatbelt is the
-        // macOS sandbox-exec deny-overlay (16.14.1). All three report the same
-        // honest vocabulary: the run is supervised AND restricted, never
-        // `isolated` (design `### Common profile`).
-        Mechanism::Landlock | Mechanism::Seccomp | Mechanism::Seatbelt => {
-            ("supervised", "restricted")
-        }
+    let (guarantee, policy) = match contract {
+        ContractStatus::Unrestricted => ("supervised", "unrestricted"),
+        ContractStatus::Restricted => ("restricted", "restricted"),
     };
     StartedPayload {
         request_id: request_id.clone(),
@@ -173,10 +172,28 @@ pub(crate) fn started_payload(
     }
 }
 
-/// Lossily map a [`NativeString`] to a UTF-8 [`String`] for the SDK's String-typed
-/// fields.
-fn native_to_string(ns: &NativeString) -> String {
-    String::from_utf8_lossy(ns.as_bytes()).into_owned()
+/// Reconstruct the platform-native string domain carried by [`NativeString`].
+#[cfg(unix)]
+fn native_to_os_string(ns: &NativeString) -> Result<OsString, FailureCode> {
+    use std::os::unix::ffi::OsStringExt;
+    Ok(OsString::from_vec(ns.as_bytes().to_vec()))
+}
+
+/// Windows native strings are serialized as little-endian UTF-16 code units,
+/// including unpaired units. Odd byte lengths are malformed for this target.
+#[cfg(windows)]
+fn native_to_os_string(ns: &NativeString) -> Result<OsString, FailureCode> {
+    use std::os::windows::ffi::OsStringExt;
+
+    let mut chunks = ns.as_bytes().chunks_exact(2);
+    let units = chunks
+        .by_ref()
+        .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
+        .collect::<Vec<_>>();
+    if !chunks.remainder().is_empty() {
+        return Err(FailureCode::ProtocolViolation);
+    }
+    Ok(OsString::from_wide(&units))
 }
 
 #[cfg(test)]
@@ -189,21 +206,47 @@ mod tests {
         RequestId::new("r1".to_string()).unwrap()
     }
 
+    #[cfg(unix)]
+    fn native(value: &str) -> NativeString {
+        use std::os::unix::ffi::OsStrExt;
+        NativeString::from_bytes(std::ffi::OsStr::new(value).as_bytes())
+    }
+
+    #[cfg(windows)]
+    fn native(value: &str) -> NativeString {
+        use std::os::windows::ffi::OsStrExt;
+        NativeString::from_bytes(
+            std::ffi::OsStr::new(value)
+                .encode_wide()
+                .flat_map(u16::to_le_bytes)
+                .collect::<Vec<_>>(),
+        )
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn native_conversion_preserves_unpaired_wide_units() {
+        let expected = [0xD800u16, 0x0061];
+        let bytes = expected
+            .iter()
+            .flat_map(|unit| unit.to_le_bytes())
+            .collect::<Vec<_>>();
+        use std::os::windows::ffi::OsStrExt;
+        let converted = native_to_os_string(&NativeString::from_bytes(bytes)).unwrap();
+        let actual = converted.encode_wide().collect::<Vec<_>>();
+        assert_eq!(actual, expected);
+    }
+
     fn exec(program: &str, timeout_ms: u64) -> ExecutePayload {
         ExecutePayload {
             request_id: rid(),
-            program: NativeString::from_utf8(program),
-            args: vec![
-                NativeString::from_utf8("-c"),
-                NativeString::from_utf8("echo hi"),
-            ],
-            workspace: NativeString::from_utf8("/ws"),
-            cwd: NativeString::from_utf8("/ws"),
+            program: native(program),
+            args: vec![native("-c"), native("echo hi")],
+            workspace: native("/ws"),
+            cwd: native("/ws"),
             timeout_ms,
             env_inherit: EnvInherit::Inherit,
-            env_additions: [(NativeString::from_utf8("K"), NativeString::from_utf8("v"))]
-                .into_iter()
-                .collect(),
+            env_additions: [(native("K"), native("v"))].into_iter().collect(),
         }
     }
 
@@ -211,7 +254,7 @@ mod tests {
     #[test]
     fn build_request_pins_stdin_to_null() {
         let cancel = CancellationToken::new();
-        let request = build_request(&exec("sh", 1000), cancel);
+        let request = build_request(&exec("sh", 1000), cancel).unwrap();
         assert_eq!(
             request.stdin,
             StdinPolicy::Null,
@@ -222,16 +265,22 @@ mod tests {
     #[test]
     fn build_request_maps_fields_and_cancel() {
         let cancel = CancellationToken::new();
-        let request = build_request(&exec("sh", 7000), cancel.clone());
+        let request = build_request(&exec("sh", 7000), cancel.clone()).unwrap();
         assert_eq!(request.program, PathBuf::from("sh"));
-        assert_eq!(request.args, vec!["-c".to_string(), "echo hi".to_string()]);
+        assert_eq!(
+            request.args,
+            vec![OsString::from("-c"), OsString::from("echo hi")]
+        );
         assert_eq!(request.workspace, PathBuf::from("/ws"));
         assert_eq!(request.cwd, PathBuf::from("/ws"));
         assert_eq!(request.timeout, Duration::from_millis(7000));
         assert_eq!(request.env_inherit, EnvInherit::Inherit);
         assert_eq!(
-            request.env_additions.get("K").map(String::as_str),
-            Some("v")
+            request
+                .env_additions
+                .get(std::ffi::OsStr::new("K"))
+                .map(OsString::as_os_str),
+            Some(std::ffi::OsStr::new("v"))
         );
         // The cancel token is wired (firing it would resolve the run Cancelled).
         let _ = request.cancel.expect("cancel token wired");
@@ -292,14 +341,14 @@ mod tests {
     }
 
     /// A native mechanism (16.13 Landlock/Seccomp, 16.14.1 Seatbelt) reports
-    /// the honest `supervised` / `restricted` vocabulary, never
+    /// the honest `restricted` / `restricted` vocabulary, never
     /// `isolated`/`enforced`.
     #[test]
     fn started_payload_native_reports_restricted() {
         for mechanism in [Mechanism::Landlock, Mechanism::Seccomp, Mechanism::Seatbelt] {
             let frame = started_payload(&rid(), mechanism, ContractStatus::Restricted, &[]);
             assert_eq!(frame.placement, "host");
-            assert_eq!(frame.guarantee, "supervised");
+            assert_eq!(frame.guarantee, "restricted");
             assert_eq!(frame.policy, "restricted");
             for word in ["isolated", "enforced"] {
                 assert!(
@@ -320,7 +369,7 @@ mod tests {
             std::sync::Arc::new(crate::NoRestriction),
         );
         let cancel = CancellationToken::new();
-        let request = build_request(&exec("sh", 1000), cancel);
+        let request = build_request(&exec("sh", 1000), cancel).unwrap();
         match start(false, &runner, request) {
             StartOutcome::Refused {
                 code: FailureCode::Unavailable,

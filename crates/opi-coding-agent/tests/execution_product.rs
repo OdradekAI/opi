@@ -17,6 +17,9 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use opi_agent::event::AgentEvent;
+use opi_agent::sdk::agent_event_to_value;
+use opi_agent::session_event::AgentSessionEvent;
 use opi_coding_agent::cli::PackageCommand;
 use opi_coding_agent::config::{
     ExecutionConfig, ExecutionRunMode, ExecutionStrategy, OpiConfig, PermissionDecision,
@@ -36,15 +39,6 @@ use opi_coding_agent::package_store::PackageLockEntry;
 use opi_coding_agent::policy::{RunMode, ToolRuntimeConfig, ToolSelection};
 use opi_protocol::execution::v1::WIRE_IDENTITY;
 use tokio_util::sync::CancellationToken;
-
-const HOST_TARGET: &str = if cfg!(windows) {
-    "x86_64-pc-windows-msvc"
-} else if cfg!(target_os = "linux") {
-    "x86_64-unknown-linux-gnu"
-} else {
-    "x86_64-apple-darwin"
-};
-const HOST_OPI_VERSION: &str = "0.8.0";
 
 /// Locate the `execution_backend_mock` test binary in the same deps dir (mirrors
 /// `execution_runtime.rs::mock_bin`).
@@ -87,8 +81,8 @@ fn lock_material(adapter_id: &str) -> LockMaterial {
         manifest_hash: "dummy".to_string(),
         executable_rel_path: "bin/mock".to_string(),
         executable_sha256: "dummy".to_string(),
-        package_version: HOST_OPI_VERSION.to_string(),
-        target: HOST_TARGET.to_string(),
+        package_version: "mock-1.0.0".to_string(),
+        target: "mock-target".to_string(),
         opi_range: ">=0.8,<0.9".to_string(),
         protocol: WIRE_IDENTITY.to_string(),
         adapter_id: adapter_id.to_string(),
@@ -112,9 +106,10 @@ fn canned_with_args(adapter_id: &str, pkg: &str, mode_args: &[&str]) -> Activate
             id: adapter_id.to_string(),
             transport: "process-jsonl".to_string(),
             command: mock_bin(),
+            executable: Arc::new(std::fs::File::open(mock_bin()).unwrap()),
             args: mode_args.iter().map(|s| (*s).to_string()).collect(),
             protocol: WIRE_IDENTITY.to_string(),
-            target: HOST_TARGET.to_string(),
+            target: "mock-target".to_string(),
             handshake_timeout_ms: 5000,
             adapter_config: serde_json::json!({}),
             lock: lock_material(adapter_id),
@@ -524,7 +519,7 @@ fn packaged_mock_peer(adapter_id: &str) -> (tempfile::TempDir, PathBuf) {
          id = \"{adapter_id}\"\n\
          transport = \"process-jsonl\"\n\
          command = \"bin/{}\"\n\
-         args = [\"happy_path\"]\n\
+         args = [\"happy_path\", \"{adapter_id}\", \"0.8.0\", \"{target}\"]\n\
          protocol = \"command-execution-jsonl-v1\"\n\
          target = \"{target}\"\n\
          sha256 = \"{sha}\"\n\
@@ -649,6 +644,50 @@ async fn packaged_adapter_reaches_bash_turn_through_real_package_lifecycle() {
         text.contains("hello"),
         "the PACKAGED mock peer ran end-to-end (its happy_path reports 'hello'): {text}"
     );
+    let details = result.details.as_ref().expect("bash result details");
+    assert_eq!(details["adapter_id"], "opi-sandbox");
+    assert_eq!(details["implementation_version"], "0.8.0");
+    assert_eq!(details["target"], host_target_triple());
+    assert_eq!(details["protocol"], WIRE_IDENTITY);
+    assert_eq!(details["placement"], "host");
+    assert_eq!(details["guarantee"], "supervised");
+    assert_eq!(details["policy"], "none");
+    assert_eq!(details["limitations"], serde_json::json!([]));
+
+    // NDJSON wraps this exact public event in AgentSessionEvent; RPC applies
+    // agent_event_to_value. Both must retain the same effective contract.
+    let event = AgentEvent::ToolExecutionEnd {
+        tool_call_id: "sc16-13-call".into(),
+        tool_name: "bash".into(),
+        result: serde_json::json!(&result.content),
+        details: result.details.clone(),
+        is_error: result.is_error,
+        truncated: result.truncated,
+        diagnostics: result.diagnostics.clone(),
+    };
+    let ndjson = serde_json::to_value(AgentSessionEvent::Agent {
+        event: event.clone(),
+    })
+    .unwrap();
+    let rpc = agent_event_to_value(&event);
+    for (surface, value) in [("ndjson", ndjson), ("rpc", rpc)] {
+        let encoded = value.to_string();
+        for expected in [
+            "adapter_id",
+            "implementation_version",
+            "target",
+            "protocol",
+            "placement",
+            "guarantee",
+            "policy",
+            "limitations",
+        ] {
+            assert!(
+                encoded.contains(expected),
+                "{surface} dropped effective contract field {expected}: {encoded}"
+            );
+        }
+    }
 }
 
 /// SC16-14 companion: the same REAL store + real packaged backend, but the
@@ -875,6 +914,14 @@ async fn mock_peer_failure_modes_surface_stable_codes_via_production_path() {
         assert!(
             result.diagnostics.iter().any(|d| &d.code == expected),
             "mode {mode} {extra} must surface stable code `{expected}`: {:?}",
+            result.diagnostics
+        );
+        assert!(
+            result
+                .diagnostics
+                .iter()
+                .any(|d| d.code == "opi.execution.backend_diagnostic"),
+            "mode {mode} {extra} must surface redacted failed-terminal diagnostics: {:?}",
             result.diagnostics
         );
         for diagnostic in &result.diagnostics {

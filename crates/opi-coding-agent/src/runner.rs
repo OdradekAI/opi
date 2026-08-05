@@ -431,8 +431,10 @@ impl NonInteractiveRunner {
     pub async fn run_with_content(&mut self, content: Vec<InputContent>) -> NonInteractiveResult {
         let text_parts: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
         let persist_errors: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+        let execution_contracts: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
         let tp = text_parts.clone();
         let pe = persist_errors.clone();
+        let ec = execution_contracts.clone();
         self.harness.subscribe(Box::new(move |event| match event {
             AgentEvent::MessageUpdate {
                 assistant_event, ..
@@ -448,17 +450,30 @@ impl NonInteractiveRunner {
                     guard.push(message.clone());
                 }
             }
+            AgentEvent::ToolExecutionEnd {
+                tool_name, details, ..
+            } if tool_name == "bash" => {
+                if let Some(contract) = details
+                    .as_ref()
+                    .and_then(crate::tool::format_effective_contract)
+                    && let Ok(mut guard) = ec.lock()
+                {
+                    guard.push(contract);
+                }
+            }
             _ => {}
         }));
 
         let prompt_result = self.harness.prompt_with_content(content).await;
         let persist_stderr = format_persist_errors(&persist_errors);
         let startup_prefix = startup_diagnostics_stderr_prefix(&self.harness);
+        let contract_stderr = format_execution_contracts(&execution_contracts);
 
         match prompt_result {
             Ok(messages) => {
                 if let Some(error) = find_error_message(&messages) {
                     let mut stderr = startup_prefix.clone();
+                    stderr.push_str(&contract_stderr);
                     stderr.push_str(&error);
                     stderr.push_str(&persist_stderr);
                     return NonInteractiveResult {
@@ -471,14 +486,14 @@ impl NonInteractiveRunner {
                 let stdout = text_parts.lock().map(|g| g.join("")).unwrap_or_default();
                 NonInteractiveResult {
                     stdout,
-                    stderr: format!("{startup_prefix}{persist_stderr}"),
+                    stderr: format!("{startup_prefix}{contract_stderr}{persist_stderr}"),
                     exit_code: ExitCode::Success as i32,
                 }
             }
             Err(error) => NonInteractiveResult {
                 stdout: String::new(),
                 stderr: format!(
-                    "{startup_prefix}{}",
+                    "{startup_prefix}{contract_stderr}{}",
                     stderr_for_agent_error(&error, &persist_stderr)
                 ),
                 exit_code: exit_code_for_agent_error(&error),
@@ -658,8 +673,10 @@ impl NonInteractiveRunner {
         // Subscribe to capture text from TextDelta events and persist errors
         let text_parts: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
         let persist_errors: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+        let execution_contracts: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
         let tp = text_parts.clone();
         let pe = persist_errors.clone();
+        let ec = execution_contracts.clone();
         self.harness.subscribe(Box::new(move |event| match event {
             AgentEvent::MessageUpdate {
                 assistant_event, ..
@@ -675,6 +692,17 @@ impl NonInteractiveRunner {
                     guard.push(message.clone());
                 }
             }
+            AgentEvent::ToolExecutionEnd {
+                tool_name, details, ..
+            } if tool_name == "bash" => {
+                if let Some(contract) = details
+                    .as_ref()
+                    .and_then(crate::tool::format_effective_contract)
+                    && let Ok(mut guard) = ec.lock()
+                {
+                    guard.push(contract);
+                }
+            }
             _ => {}
         }));
 
@@ -687,12 +715,14 @@ impl NonInteractiveRunner {
         // wiring failures, package resolution, resource discovery) on stderr so
         // text mode preserves the same stable codes as NDJSON/RPC.
         let startup_prefix = startup_diagnostics_stderr_prefix(&self.harness);
+        let contract_stderr = format_execution_contracts(&execution_contracts);
 
         match prompt_result {
             Ok(messages) => {
                 // Check for provider errors in assistant messages
                 if let Some(error) = find_error_message(&messages) {
                     let mut stderr = startup_prefix.clone();
+                    stderr.push_str(&contract_stderr);
                     stderr.push_str(&error);
                     stderr.push_str(&persist_stderr);
                     return NonInteractiveResult {
@@ -705,14 +735,14 @@ impl NonInteractiveRunner {
                 let stdout = text_parts.lock().map(|g| g.join("")).unwrap_or_default();
                 NonInteractiveResult {
                     stdout,
-                    stderr: format!("{startup_prefix}{persist_stderr}"),
+                    stderr: format!("{startup_prefix}{contract_stderr}{persist_stderr}"),
                     exit_code: ExitCode::Success as i32,
                 }
             }
             Err(error) => NonInteractiveResult {
                 stdout: String::new(),
                 stderr: format!(
-                    "{startup_prefix}{}",
+                    "{startup_prefix}{contract_stderr}{}",
                     stderr_for_agent_error(&error, &persist_stderr)
                 ),
                 exit_code: exit_code_for_agent_error(&error),
@@ -724,6 +754,18 @@ impl NonInteractiveRunner {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+fn format_execution_contracts(contracts: &Arc<Mutex<Vec<String>>>) -> String {
+    contracts
+        .lock()
+        .map(|contracts| {
+            contracts
+                .iter()
+                .map(|contract| format!("{contract}\n"))
+                .collect()
+        })
+        .unwrap_or_default()
+}
 
 /// Find the first error_message in assistant messages.
 fn find_error_message(messages: &[AgentMessage]) -> Option<String> {

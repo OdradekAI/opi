@@ -17,12 +17,19 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use opi_coding_agent::execution::{
-    BackendLaunch, CompletedOutcome, ExecutionFailure, ExecutionProtocolHost, ExecutionRequest,
+    BackendLaunch, CompletedOutcome, ExecutionProtocolFailure, ExecutionProtocolHost,
+    ExecutionRequest,
 };
 use opi_protocol::execution::v1::{
     Bounds, CleanupState, EnvInherit, NativeString, ProtocolId, WIRE_IDENTITY,
 };
 use tokio_util::sync::CancellationToken;
+
+// Suspended-process creation and ToolHelp thread enumeration are intentionally
+// fail-closed on Windows. Limit fixture launch fan-out so the test harness does
+// not consume the one-second handshake budget in scheduler contention.
+#[cfg(windows)]
+static WINDOWS_PROTOCOL_CONCURRENCY: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(4);
 
 // ---------------------------------------------------------------------------
 // Test harness
@@ -73,7 +80,7 @@ async fn run(
     mode_args: &[&str],
     bounds: Bounds,
     deadline: Duration,
-) -> Result<CompletedOutcome, ExecutionFailure> {
+) -> Result<CompletedOutcome, ExecutionProtocolFailure> {
     run_with(mode_args, bounds, deadline, CancellationToken::new()).await
 }
 
@@ -82,15 +89,32 @@ async fn run_with(
     bounds: Bounds,
     deadline: Duration,
     signal: CancellationToken,
-) -> Result<CompletedOutcome, ExecutionFailure> {
+) -> Result<CompletedOutcome, ExecutionProtocolFailure> {
+    run_with_handshake(mode_args, bounds, deadline, Duration::from_secs(1), signal).await
+}
+
+async fn run_with_handshake(
+    mode_args: &[&str],
+    bounds: Bounds,
+    deadline: Duration,
+    handshake_timeout: Duration,
+    signal: CancellationToken,
+) -> Result<CompletedOutcome, ExecutionProtocolFailure> {
+    #[cfg(windows)]
+    let _permit = WINDOWS_PROTOCOL_CONCURRENCY
+        .acquire()
+        .await
+        .expect("protocol fixture semaphore remains open");
     let bin = mock_bin();
     let owned: Vec<String> = mode_args.iter().map(|s| (*s).to_string()).collect();
     let workspace = std::env::current_dir().expect("cwd");
     let empty = BTreeMap::<NativeString, NativeString>::new();
     let supported = supported_protocols();
+    let executable = std::fs::File::open(&bin).expect("open validated mock");
     let launch = BackendLaunch {
         program: &bin,
         args: &owned,
+        validated_executable: &executable,
     };
     let request = ExecutionRequest {
         command: "echo hi",
@@ -98,6 +122,10 @@ async fn run_with(
         cwd: &workspace,
         timeout: deadline,
         deadline,
+        handshake_timeout,
+        expected_implementation: "opi-sandbox",
+        expected_implementation_version: "mock-1.0.0",
+        expected_target: "mock-target",
         env_inherit: EnvInherit::Inherit,
         env_additions: &empty,
         adapter_config: serde_json::json!({}),
@@ -108,7 +136,7 @@ async fn run_with(
     ExecutionProtocolHost::execute(launch, request).await
 }
 
-fn assert_code(err: ExecutionFailure, expected: &str) {
+fn assert_code(err: ExecutionProtocolFailure, expected: &str) {
     assert_eq!(
         err.code(),
         expected,
@@ -127,6 +155,7 @@ async fn happy_path_full_ordering_and_output() {
         .await
         .expect("happy path completes");
     assert_eq!(outcome.ready.selected_protocol.as_str(), WIRE_IDENTITY);
+    assert_eq!(outcome.ready.implementation.as_str(), "opi-sandbox");
     assert_eq!(outcome.ready.implementation_version, "mock-1.0.0");
     assert_eq!(outcome.ready.target.as_str(), "mock-target");
     assert_eq!(outcome.started.placement, "host");
@@ -314,6 +343,73 @@ async fn protocol_incompatible_ready_mismatch() {
     );
 }
 
+#[tokio::test]
+async fn ready_identity_version_and_target_must_match_lock() {
+    for mode in [
+        "ready_identity_mismatch",
+        "ready_version_mismatch",
+        "ready_target_mismatch",
+    ] {
+        let err = run(&[mode], Bounds::DEFAULT, Duration::from_secs(3))
+            .await
+            .expect_err("ready mismatch must fail closed");
+        assert_code(err, "protocol_incompatible");
+    }
+}
+
+#[tokio::test]
+async fn configured_handshake_timeout_is_enforced() {
+    #[cfg(not(windows))]
+    let started = std::time::Instant::now();
+    let err = run_with_handshake(
+        &["slow_ready"],
+        Bounds::DEFAULT,
+        Duration::from_secs(5),
+        Duration::from_millis(50),
+        CancellationToken::new(),
+    )
+    .await
+    .expect_err("slow ready must exceed configured handshake timeout");
+    assert_code(err, "cleanup_unconfirmed");
+    #[cfg(not(windows))]
+    assert!(started.elapsed() < Duration::from_secs(2));
+}
+
+#[tokio::test]
+async fn terminal_requires_immediate_clean_eof() {
+    for mode in [
+        "terminal_extra_frame",
+        "terminal_extra_bytes",
+        "failed_terminal_extra_bytes",
+    ] {
+        let err = run(&[mode], Bounds::DEFAULT, Duration::from_secs(3))
+            .await
+            .expect_err("terminal contamination must fail closed");
+        assert_eq!(
+            err.code(),
+            "protocol_violation",
+            "{mode} must reject bytes after its terminal frame: {err}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn terminal_diagnostics_are_merged_and_host_redacted() {
+    let outcome = run(
+        &["terminal_diagnostic"],
+        Bounds::DEFAULT,
+        Duration::from_secs(3),
+    )
+    .await
+    .expect("terminal diagnostic path");
+    assert_eq!(outcome.diagnostics.len(), 2);
+    for diagnostic in &outcome.diagnostics {
+        let message = &diagnostic.message;
+        assert!(!message.contains("sk-proj-"), "secret leaked: {message}");
+        assert!(!message.contains("C:\\private"), "path leaked: {message}");
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Backend distress: typed BackendToHost::Failed frames drive the real execute()
 // Failed-terminal arm and every branch of map_failure_code on the production
@@ -321,7 +417,7 @@ async fn protocol_incompatible_ready_mismatch() {
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
-async fn failed_unavailable_pre_started_is_execution_failed() {
+async fn failed_unavailable_pre_started_is_adapter_unavailable() {
     assert_code(
         run(
             &["failed_pre_started", "unavailable"],
@@ -330,7 +426,7 @@ async fn failed_unavailable_pre_started_is_execution_failed() {
         )
         .await
         .unwrap_err(),
-        "execution_failed",
+        "adapter_unavailable",
     );
 }
 
@@ -440,6 +536,8 @@ async fn hang_before_ready_deadline_is_cleanup_unconfirmed() {
 #[tokio::test]
 async fn hang_after_started_deadline_is_cleanup_unconfirmed() {
     // deadline 2.5s -> cancel_at 1s (backend already started); grace -> kill.
+    #[cfg(not(windows))]
+    let started = std::time::Instant::now();
     assert_code(
         run(
             &["hang_after_started"],
@@ -450,6 +548,27 @@ async fn hang_after_started_deadline_is_cleanup_unconfirmed() {
         .unwrap_err(),
         "cleanup_unconfirmed",
     );
+    #[cfg(not(windows))]
+    assert!(
+        started.elapsed() < Duration::from_secs(3),
+        "cancel, cleanup, drain, and reap must share the 2.5s invocation deadline"
+    );
+}
+
+#[tokio::test]
+async fn failed_terminal_diagnostics_are_merged_and_host_redacted() {
+    let error = run(
+        &["failed_post_started", "execution_failed"],
+        Bounds::DEFAULT,
+        Duration::from_secs(5),
+    )
+    .await
+    .expect_err("failed terminal must fail the invocation");
+    assert_eq!(error.diagnostics.len(), 2);
+    for diagnostic in &error.diagnostics {
+        assert!(!diagnostic.message.contains("sk-proj-"));
+        assert!(!diagnostic.message.contains("C:\\private"));
+    }
 }
 
 #[tokio::test]
@@ -593,9 +712,11 @@ async fn tree_kill_reaps_backend_grandchild() {
     let supported = supported_protocols();
     let signal = CancellationToken::new();
     let ctrl = signal.clone();
+    let executable = std::fs::File::open(&bin).expect("open validated mock");
     let launch = BackendLaunch {
         program: &bin,
         args: &owned,
+        validated_executable: &executable,
     };
     let request = ExecutionRequest {
         command: "echo hi",
@@ -603,6 +724,10 @@ async fn tree_kill_reaps_backend_grandchild() {
         cwd: &workspace,
         timeout: Duration::from_secs(30),
         deadline: Duration::from_secs(30),
+        handshake_timeout: Duration::from_secs(1),
+        expected_implementation: "opi-sandbox",
+        expected_implementation_version: "mock-1.0.0",
+        expected_target: "mock-target",
         env_inherit: EnvInherit::Inherit,
         env_additions: &empty,
         adapter_config: serde_json::json!({}),

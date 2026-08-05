@@ -1053,11 +1053,8 @@ impl BashOperations for LocalBashOperations {
 ///
 /// It also carries the local execution-backend report (`guarantee="supervised"`,
 /// `placement="host"`) mandated by the Phase 16 Execution Backend contract (spec
-/// table line 146). Unlike the flags above, the wrapper does NOT lift these: the
-/// local path cannot initialize protocol state (spec lines 195-197), so its
-/// report stays in `BashResult::diagnostics` (the routed twin in
-/// `execution/runtime.rs` reports its guarantee via the wire `started` frame
-/// instead).
+/// table line 146). The wrapper lifts these redaction-safe contract fields into
+/// `ToolResult::details`, matching the routed twin in `execution/runtime.rs`.
 #[allow(clippy::too_many_arguments)]
 fn bash_operation_context_diagnostic(
     exit_code: Option<i32>,
@@ -1172,6 +1169,16 @@ impl StreamCapture {
         } else if self.write_to_spill(chunk).is_err() {
             self.mark_spill_failed();
         }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn preview(&self) -> &[u8] {
+        &self.preview
+    }
+
+    #[cfg(test)]
+    pub(crate) fn spill_path(&self) -> Option<PathBuf> {
+        self.spill_path.clone()
     }
 
     fn write_to_spill(&mut self, bytes: &[u8]) -> io::Result<()> {
@@ -1368,7 +1375,7 @@ mod tests {
         }
     }
 
-    async fn run_pipe_holder_with_fault(faults: TestTreeFaults) -> BashResult {
+    async fn run_pipe_holder_with_fault(faults: TestTreeFaults) -> Result<BashResult, BashOpError> {
         let dir = tempfile::tempdir().unwrap();
         let pidfile = dir.path().join("descendant.pid");
         let request = BashRequest {
@@ -1384,18 +1391,21 @@ mod tests {
             LocalBashOperations::with_test_tree_faults(faults).exec(request),
         )
         .await
-        .expect("pipe drains must be bounded after tree termination")
-        .expect("fault injection is fail-open");
-        let pid = read_test_pid(&pidfile).await;
-        cleanup_test_process(pid);
+        .expect("pipe drains must be bounded after tree termination");
+        if let Ok(text) = std::fs::read_to_string(&pidfile)
+            && let Ok(pid) = text.trim().parse::<u32>()
+        {
+            cleanup_test_process(pid);
+        }
         result
     }
 
     #[tokio::test]
     async fn injected_attach_failure_cannot_hang_on_descendant_held_pipes() {
-        let result = run_pipe_holder_with_fault(TestTreeFaults::attach()).await;
-        assert_eq!(result.exit_code, Some(0));
-        assert!(result.diagnostics.iter().any(|diagnostic| {
+        let error = run_pipe_holder_with_fault(TestTreeFaults::attach())
+            .await
+            .expect_err("L0 attachment failure must fail closed");
+        assert!(error.diagnostics().iter().any(|diagnostic| {
             diagnostic.code == crate::diagnostics::CODE_PROCESS_TREE_DEGRADED
                 && diagnostic
                     .details
@@ -1408,7 +1418,9 @@ mod tests {
 
     #[tokio::test]
     async fn injected_terminate_failure_cannot_hang_on_descendant_held_pipes() {
-        let result = run_pipe_holder_with_fault(TestTreeFaults::terminate()).await;
+        let result = run_pipe_holder_with_fault(TestTreeFaults::terminate())
+            .await
+            .expect("termination degradation remains an observed result");
         assert_eq!(result.exit_code, Some(0));
         assert!(result.diagnostics.iter().any(|diagnostic| {
             diagnostic.code == crate::diagnostics::CODE_PROCESS_TREE_DEGRADED
@@ -1777,21 +1789,23 @@ mod tests {
     #[tokio::test]
     async fn owned_capture_task_drop_aborts_task_and_removes_spill() {
         use super::super::supervision::OwnedCaptureTask;
-        let (spill_tx, spill_rx) = tokio::sync::oneshot::channel();
-        let handle = tokio::spawn(async move {
-            let mut capture = StreamCapture::new(4);
-            capture.append(b"overflow");
-            spill_tx
-                .send(capture.spill_path.clone().expect("spill path"))
-                .expect("report spill");
-            std::future::pending::<()>().await;
-            capture
-        });
-        let task = OwnedCaptureTask::new(handle, 4);
-        let spill = spill_rx.await.expect("capture created spill");
+        use tokio::io::AsyncWriteExt as _;
+
+        let (mut writer, reader) = tokio::io::duplex(64);
+        let task = OwnedCaptureTask::new(Some(reader), 4);
+        writer.write_all(b"overflow").await.unwrap();
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
+        let spill = loop {
+            if let Some(path) = task.spill_path() {
+                break path;
+            }
+            assert!(tokio::time::Instant::now() < deadline, "spill not created");
+            tokio::task::yield_now().await;
+        };
         assert!(spill.is_file());
 
         drop(task);
+        drop(writer);
 
         let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
         while spill.exists() && tokio::time::Instant::now() < deadline {

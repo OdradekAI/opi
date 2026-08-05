@@ -8,11 +8,11 @@
 |---|---|
 | 状态 | 草案 |
 | 规范版本 | 0.6-draft |
-| 最后更新 | 2026-07-29 |
+| 最后更新 | 2026-08-05 |
 | 仓库 | `https://github.com/OdradekAI/opi` |
 | 参考上游 | `pi` 0.80.2，位于 `.repo/pi-0.80.2/`；对齐由 `opi-realign` 新鲜审计评估，报告位于 [`docs/realign/`](realign/) |
-| 当前实现 | `opi` 0.7.2 workspace，第 1-15 阶段已实现；第十五阶段 Safety/Sandbox 与项目信任产品路径已存在 |
-| 下一里程碑 | 第十六阶段可插拔扩展与命令执行 |
+| 当前实现 | `opi` 0.7.2 workspace（六个 crate），第 1-16 阶段已实现；第十六阶段可插拔 `command.execute` 与独立 `opi-sandbox` 路径已存在 |
+| 下一里程碑 | 第十七阶段 Benchmark 与回归评估 |
 
 本文档对当前设计具有规范性。涉及公共 API、事件协议、会话存储、发布行为或阶段边界变更的修改，应在同一变更中更新本文件。
 
@@ -26,14 +26,16 @@
 
 ## 1. 概述
 
-Opi 以四个 Rust crate 映射 pi 的包结构：
+Opi 使用六个 Rust crate：保留受 pi 启发的产品边界，同时隔离独立的执行协议与沙箱：
 
 - `opi-ai`：与供应商无关的 LLM 流式处理。
 - `opi-agent`：代理循环、有状态代理、钩子、工具、队列和会话原语。
 - `opi-tui`：终端 UI 组件。
 - `opi-coding-agent`：`opi` CLI 二进制文件。
+- `opi-protocol`：版本化的独立命令执行 wire contract。
+- `opi-sandbox`：与 Opi 无关的命令限制 SDK 与 CLI。
 
-本仓库已完成第 1-15 阶段。除终端 Agent、运行时、package、Provider correctness、工具和会话上下文工作外，第十四阶段现在还提供 OS-keychain 凭据存储、Anthropic/GitHub Copilot/OpenAI Codex OAuth、按 stream 鉴权解析、Request/会话亲和扩充、能力门控的 Anthropic cache marker、cache/reasoning 用量记账，以及仅为基底的动态模型 refresh API。
+本仓库已完成第 1-16 阶段。除终端 Agent、运行时、package、Provider correctness、工具和会话上下文工作外，第十四阶段还提供 OS-keychain 凭据存储、Anthropic/GitHub Copilot/OpenAI Codex OAuth、按 stream 鉴权解析、Request/会话亲和扩充、能力门控的 Anthropic cache marker、cache/reasoning 用量记账，以及仅为基底的动态模型 refresh API。第十六阶段增加可插拔 `command.execute` 路由、package 信任/启用/权限门、独立协议 crate，以及 Linux/macOS 原生 `opi-sandbox` artifact，同时保留直接本地 Minimal Runtime。
 
 Opi 不声称 pi package 生态对等，也不支持 npm package 安装、marketplace 行为、TypeScript extension live reload、通过 adapter 拦截 provider stream、自定义终端 UI adapter 渲染、package 权限策略执行、第十四阶段三个获批 profile 之外的 OAuth provider、图像生成或 web/share 流程。MCP、子 Agent、plan mode、todos、permission gates 和动态插件加载应建立在该基底之上，而不是成为核心功能。
 
@@ -156,15 +158,15 @@ Pi 是行为参考。以下行为应被视为继承的设计，而非偶然的�
 
 | 领域 | 当前状态 |
 |---|---|
-| 工作区 | 一个 Cargo 工作区下的四个 crate |
+| 工作区 | 一个 Cargo 工作区下的六个 crate |
 | 版本控制 | 锁步 `0.7.2` |
 | 版本（Edition） | Rust 2024 |
-| 内部依赖 | `opi-agent -> opi-ai`、`opi-coding-agent -> opi-ai + opi-agent + opi-tui` |
+| 内部依赖 | `opi-agent -> opi-ai`、`opi-sandbox -> opi-protocol`、`opi-coding-agent -> opi-ai + opi-agent + opi-tui + opi-protocol` |
 | 外部依赖 | 来自工作区依赖的 Rust 原生异步、HTTP/SSE、schema、配置、TUI、搜索、追踪和测试技术栈 |
 | 二进制 | `opi` 支持交互式 TUI、非交互文本模式、`--json`、`--rpc`、会话命令、`--version` 和 `--help` |
 | CI | `fmt`、`clippy`、`test`、`doctest`、`doc` |
 | 发布 CI | 六平台二进制工作流 |
-| 可扩展性 | RPC JSONL、SDK 类型、extension API、资源/package 发现、自定义 provider/model registry、分支选择、streaming proxy、process-JSONL adapter 托管（`opi-extension-jsonl-v1`）和 package CLI（`add/remove/list/doctor`）已经作为不稳定 0.x API 实现 |
+| 可扩展性 | RPC JSONL、SDK 类型、extension API、资源/package 发现、自定义 provider/model registry、分支选择、streaming proxy、process-JSONL adapter 托管（`opi-extension-jsonl-v1`）、package CLI（`add/remove/list/doctor/enable/disable`）与可插拔 `command.execute` 路由已作为不稳定 0.x API 实现 |
 | crates.io | 可发布 crate 受质量门控 |
 
 ### 4.2 稳定前 API 说明
@@ -176,7 +178,9 @@ Pi 是行为参考。以下行为应被视为继承的设计，而非偶然的�
 | `opi-ai` | 供应商流式处理、模型注册表、用量/成本、重试/退避、自定义 provider/model 注册 | 尽可能通过注册机制保持 Provider 扩展性 |
 | `opi-agent` | 代理循环、钩子、队列、工具、会话、压缩、SDK 类型、extension API、streaming proxy | 保持核心运行时狭窄，并把所有 0.x 公共表面明确标为不稳定 |
 | `opi-tui` | ratatui 组件、markdown/代码、diff、主题、键绑定、图像渲染、模糊选择器、分支选择器 | 通过快照测试保持组件可复用和确定性 |
-| `opi-coding-agent` | `clap` CLI、TOML 配置、内置工具、会话、JSON/RPC 模式、资源/package 发现、分支选择 | 将可扩展性元数据接入 prompt/RPC，但不声称动态加载 Rust 插件 |
+| `opi-protocol` | 有界 `command-execution-jsonl-v1` 类型、codec、schema 与 fixtures | 保持产品无关，并只拥有版本化执行协议 |
+| `opi-sandbox` | 独立 restriction SDK、human CLI、协议 backend 与 Linux/macOS 原生实现 | 保持独立复用，不链接 Opi 产品代码 |
+| `opi-coding-agent` | `clap` CLI、TOML 配置、内置工具、会话、JSON/RPC 模式、资源/package 发现、分支选择与 `command.execute` 路由 | 保持扩展 fail-closed，但不声称动态加载 Rust 插件 |
 
 ### 4.3 第 0 阶段完成情况
 
@@ -201,6 +205,8 @@ opi/
 |   |-- opi-ai/
 |   |-- opi-agent/
 |   |-- opi-coding-agent/
+|   |-- opi-protocol/
+|   |-- opi-sandbox/
 |   `-- opi-tui/
 |-- docs/
 |-- .github/workflows/
@@ -215,7 +221,9 @@ opi/
 opi-ai           （无内部依赖）
 opi-tui          （无内部依赖）
 opi-agent        -> opi-ai
-opi-coding-agent -> opi-ai, opi-agent, opi-tui
+opi-protocol     （无内部依赖）
+opi-sandbox      -> opi-protocol
+opi-coding-agent -> opi-ai, opi-agent, opi-tui, opi-protocol
 ```
 
 内部依赖必须在根 `[workspace.dependencies]` 中声明，消费者通过 `{ workspace = true }` 引用。
@@ -227,6 +235,8 @@ opi-coding-agent -> opi-ai, opi-agent, opi-tui
 | `opi-ai` | 库 | 通过发布门控后发到 crates.io | 供应商协议、模型元数据、面向供应商的消息 |
 | `opi-agent` | 库 | 通过发布门控后发到 crates.io | 循环、代理、钩子、工具、队列、会话 |
 | `opi-tui` | 库 | 通过发布门控后发到 crates.io | 终端渲染库 |
+| `opi-protocol` | 库 | 通过发布门控后发到 crates.io | 版本化的独立命令执行协议 |
+| `opi-sandbox` | 库 + 二进制 | crates.io 加 Linux/macOS release archive | 与 Opi 无关的命令限制 SDK 与 CLI |
 | `opi-coding-agent` | 二进制 | 通过发布门控后发到 crates.io | `opi` CLI 应用 |
 
 ### 5.4 为何没有 `opi-types`
@@ -1528,9 +1538,11 @@ catalog 通过 checked 具体 wire 路由，并共享一个惰性凭据 source�
 | SC7 动态 refresh 与 api-map 基底 | 14.6, 14.16 | `ApiMappedProvider` 与自定义 TOML 测试证明带共享惰性鉴权的 checked multi-wire 派发；collection 测试保留确定性原子 refresh，且无生产触发。 |
 | SC8 文档与 guard | 14.7, 14.13, 14.21 | 成对公共文档、rustdoc、TUI help、运行时修复测试、58-row 验收 manifest 与 workspace gate 固定当前 Provider/Auth 真相和 api-map 实现。 |
 
-### 第十五阶段 - Safety & Sandbox
+### 第十五阶段 - Safety & Sandbox（历史记录）
 
 状态：已实现；pi-0.80.6 posture 对齐完成。历史设计：`docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md`。已交付机制经两份经审查的研究修正相比该设计有所收窄——`docs/research/2026-07-24-phase15-linux-l2-feasibility.md` 与 `docs/research/2026-07-24-project-trust-semantics-pi-claude-code-codex-cli.md`——在二者与 2026-07-11 设计分歧时，以这两份研究为权威来源。
+
+本节记录第十六阶段迁移前、未发布的第十五阶段实现。其核心 `[sandbox]`、`--sandbox` 与 `--sandbox-require` 表面已不再是当前产品行为；下述细节仅作为历史证据保留，而项目信任仍然有效。
 
 第十五阶段把 Safety/Sandbox 集群提升为正式阶段。它交付一个始终开启的 L0 子进程树 tree-kill 基线，外加 `bash` 的 opt-in `strict` 沙箱；一个为沙箱提供结构上正确归宿的按工具 `Operations` 缝合点；以及一个通过门控项目本地资源（含项目本地适配器声明）的*加载*来关闭原生子进程爆炸半径缺口的项目信任门。三个子系统均为 Rust 原生、位于 `opi-coding-agent`，并保持 construction-ownership 不变量：`opi-agent` 不获得任何沙箱、信任、UI 或 Operations 代码。该集群定位为 opt-in defense-in-depth——明确不是安全边界；不可信代码应放在容器或 VM 中（pi `security.md` 对齐）。
 
@@ -1583,9 +1595,9 @@ Diagnostic 是增量 `&'static str` code——source `sandbox` 下的 `opi.sandb
 状态：已实现。规范设计：
 `docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md`。
 
-第十六阶段让默认 `opi` 进程保持最小运行时（Minimal Runtime）的直接本地执行路径，同时允许 `command.execute` 选择已安装的 adapter。首批 adapter 是内置 `local` 与外部 `opi-sandbox`；后者还可通过 SDK、面向用户的 CLI 和 `command-execution-jsonl-v1` 协议独立使用。Package 安装不等于包信任（Package Trust）或激活：Installed、Trusted、Enabled、Selected、Permitted 是五个独立门。路由支持 `fixed`、确定性的 `rules` 与受用户策略约束的模型建议，权限结果为 `deny`/`ask`/`allow`。Opi 二进制不链接 `opi-sandbox`；没有启用扩展时，本地运行且不启动扩展进程、不扫描 package store。外部 adapter 一旦被选择，失败即 fail-closed，绝不回退到本地执行。`opi-protocol` 初始只承载版本化的执行协议。
+第十六阶段让默认 `opi` 进程保持最小运行时（Minimal Runtime）的直接本地执行路径，同时允许 `command.execute` 选择已安装的 adapter。首批 adapter 是内置 `local` 与外部 `opi-sandbox`；后者还可通过 SDK、面向用户的 CLI 和 `command-execution-jsonl-v1` 协议独立使用。Package 安装不等于包信任（Package Trust）或激活：Installed、Trusted、Enabled、Selected、Permitted 是五个独立门。路由支持 `fixed`、确定性的 `rules` 与受用户策略约束的模型建议，权限结果为 `deny`/`ask`/`allow`。Opi 二进制不链接 `opi-sandbox`；没有启用扩展时，本地运行且不启动扩展进程、不执行 package activation 或逐 package 扫描。外部 adapter 一旦被选择，失败即 fail-closed，绝不回退到本地执行。`opi-protocol` 初始只承载版本化的执行协议。
 
-在第十六阶段，`command.execute` capability 仅由模型可调用的 `bash` 工具承载。没有启用扩展时，Minimal Runtime 直接构造 `local`，不启动扩展进程、不触碰 package-store sentinel，也不创建 router、permission 或 protocol task。外部 adapter 在 setup 成功后报告其有效 placement、guarantee（`local` 为 `supervised`、`opi-sandbox` 为 `restricted`）、policy 与限制；adapter identity 本身从不确立 guarantee。
+在第十六阶段，`command.execute` capability 仅由模型可调用的 `bash` 工具承载。没有启用扩展时，Minimal Runtime 直接构造 `local`，不启动 extension 或 package adapter 进程，不执行 package activation 或逐 package 扫描，也不创建 router、permission 或 protocol task。外部 adapter 在 setup 成功后报告其有效 placement、guarantee（`local` 为 `supervised`、`opi-sandbox` 为 `restricted`）、policy 与限制；adapter identity 本身从不确立 guarantee。
 
 原生限制及其 helper/capability-selection 代码离开 Opi 核心（16.16.1）：Landlock、seccomp、`sandbox-exec` 与 sandbox helper 实现从 `opi` 二进制移入独立的 `opi-sandbox` package，而 L0 子进程树监督对 local 与外部 adapter 进程仍保留在核心。内置的第十五阶段 sandbox 配置（`[sandbox]`、`--sandbox`、`--sandbox-require`）在核心被拒绝，不提供兼容 alias；`[execution] strategy`/`backend`（以及 `--execution-strategy` / `--execution-backend` CLI 覆盖）改为选择 `local` 或 `opi-sandbox` 后端，且所有已选择的外部 adapter 一律 fail-closed。项目本地可执行/进程 package 贡献被拒绝；请全局安装、审查后再启用。
 
@@ -1637,7 +1649,7 @@ Diagnostic 是增量 `&'static str` code——source `sandbox` 下的 `opi.sandb
 
 | # | 决策 | 选择 | 原因 |
 |---|---|---|---|
-| ADR-001 | 工作区形状 | 四个 crate 映射 pi 包 | 保留概念边界 |
+| ADR-001 | 工作区形状 | 六个 crate：四个产品 crate 加独立的 `opi-protocol` 与 `opi-sandbox` | 保留概念边界，同时避免独立 adapter 耦合产品 crate |
 | ADR-002 | 版本控制 | 锁步工作区版本 | 简化兼容性和发布顺序 |
 | ADR-003 | 无共享领域类型 crate | 领域类型归属其语义拥有者；版本化 wire contract 可归属 `opi-protocol` | 避免枢纽依赖，同时不让独立 adapter 耦合产品 crate |
 | ADR-004 | pi 兼容性 | 语义对等，非 API/文件对等 | Rust 原生实现 |

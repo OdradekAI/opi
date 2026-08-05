@@ -43,7 +43,10 @@
 //! Cross-package adapter-id collision is a store-level gate owned by 16.5.
 
 use std::collections::HashSet;
+use std::fs::{File, OpenOptions};
+use std::io::Read as _;
 use std::path::{Component, Path, PathBuf};
+use std::sync::Arc;
 
 use crate::package_discovery::{OpiVersionDiagnostic, PackageManifest};
 
@@ -113,6 +116,9 @@ pub struct ValidatedExecutableContribution {
     pub transport: String,
     /// Resolved canonical absolute path of the executable (contained by root).
     pub command: PathBuf,
+    /// Immutable launch material. Unix owns a private copied descriptor (sealed
+    /// on Linux); Windows owns the validated no-write/no-delete-sharing handle.
+    pub executable: Arc<File>,
     pub args: Vec<String>,
     pub protocol: String,
     pub target: String,
@@ -120,6 +126,26 @@ pub struct ValidatedExecutableContribution {
     pub adapter_config: serde_json::Value,
     /// Exact lock material for this contribution.
     pub lock: LockMaterial,
+}
+
+impl ValidatedExecutableContribution {
+    /// Path passed to the process launcher for the already-open executable.
+    pub fn bound_launch_path(&self) -> PathBuf {
+        #[cfg(target_os = "linux")]
+        {
+            use std::os::fd::AsRawFd as _;
+            return PathBuf::from(format!("/proc/self/fd/{}", self.executable.as_raw_fd()));
+        }
+        #[cfg(target_os = "macos")]
+        {
+            use std::os::fd::AsRawFd as _;
+            return PathBuf::from(format!("/dev/fd/{}", self.executable.as_raw_fd()));
+        }
+        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+        {
+            self.command.clone()
+        }
+    }
 }
 
 /// A static contribution-validation failure. One distinct variant per gate so
@@ -373,8 +399,10 @@ fn validate_one(
 
     let canonical_cmd = validate_command_path(&raw.command, canonical_root)?;
 
-    // Regularity via metadata BEFORE any byte read: a FIFO or device under the
-    // root is rejected here without opening it for data (stat does not block).
+    // Inspect regularity before opening so a FIFO/device cannot block this
+    // path, then repeat the check on the opened handle to close a replacement
+    // race. Unix opens nonblocking/no-follow; Windows denies write/delete
+    // sharing for the lifetime of the validated handle.
     let metadata = std::fs::metadata(&canonical_cmd)?;
     if !metadata.file_type().is_file() {
         return Err(ContributionValidationError::NonRegularExecutable);
@@ -382,7 +410,21 @@ fn validate_one(
     if !is_executable(&metadata) {
         return Err(ContributionValidationError::NonExecutableFile);
     }
-    let file_bytes = std::fs::read(&canonical_cmd)?;
+    let source_executable = open_executable(&canonical_cmd)?;
+    let opened_metadata = source_executable.metadata()?;
+    if !opened_metadata.file_type().is_file() {
+        return Err(ContributionValidationError::NonRegularExecutable);
+    }
+    if !is_executable(&opened_metadata) {
+        return Err(ContributionValidationError::NonExecutableFile);
+    }
+    // Bind launch to private copied material before hashing. A concurrent
+    // in-place write to the package inode can only make the copied digest fail;
+    // it cannot alter the descriptor that is later executed.
+    let executable = bind_launch_material(&source_executable)?;
+    let mut file_bytes = Vec::new();
+    let mut reader = &executable;
+    reader.read_to_end(&mut file_bytes)?;
     let computed = sha256_hex(&file_bytes);
 
     if !is_lower_hex64(&raw.sha256) {
@@ -402,6 +444,7 @@ fn validate_one(
         id: raw.id.clone(),
         transport: raw.transport.clone(),
         command: canonical_cmd,
+        executable: Arc::new(executable),
         args: raw.args.clone(),
         protocol: raw.protocol.clone(),
         target: raw.target.clone(),
@@ -418,6 +461,84 @@ fn validate_one(
             adapter_id: raw.id.clone(),
         },
     })
+}
+
+fn open_executable(path: &Path) -> Result<File, std::io::Error> {
+    let mut options = OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt as _;
+        options.custom_flags(libc::O_NONBLOCK | libc::O_NOFOLLOW);
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt as _;
+        use windows_sys::Win32::Storage::FileSystem::FILE_SHARE_READ;
+        options.share_mode(FILE_SHARE_READ);
+    }
+    options.open(path)
+}
+
+#[cfg(unix)]
+fn bind_launch_material(source: &File) -> Result<File, std::io::Error> {
+    use std::io::{Seek as _, Write as _};
+    use std::os::fd::{AsRawFd as _, FromRawFd as _};
+    use std::os::unix::fs::PermissionsExt as _;
+
+    #[cfg(target_os = "linux")]
+    let mut snapshot = {
+        let name = c"opi-adapter";
+        // SAFETY: `name` is a live NUL-terminated static string; flags are the
+        // documented memfd_create bitset. The returned fd is checked before it
+        // is transferred exactly once into `File` ownership.
+        let fd = unsafe {
+            libc::memfd_create(name.as_ptr(), libc::MFD_CLOEXEC | libc::MFD_ALLOW_SEALING)
+        };
+        if fd < 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+        // SAFETY: `fd` is a newly-created owned descriptor on the success path.
+        unsafe { File::from_raw_fd(fd) }
+    };
+    #[cfg(not(target_os = "linux"))]
+    let mut snapshot = tempfile::tempfile()?;
+
+    let mut source_reader = source;
+    source_reader.seek(std::io::SeekFrom::Start(0))?;
+    std::io::copy(&mut source_reader, &mut snapshot)?;
+    snapshot.flush()?;
+    snapshot.set_permissions(std::fs::Permissions::from_mode(0o500))?;
+
+    #[cfg(target_os = "linux")]
+    {
+        let seals =
+            libc::F_SEAL_SEAL | libc::F_SEAL_SHRINK | libc::F_SEAL_GROW | libc::F_SEAL_WRITE;
+        // SAFETY: the descriptor is owned and has no writable mappings; adding
+        // seals mutates only this anonymous file's kernel metadata.
+        if unsafe { libc::fcntl(snapshot.as_raw_fd(), libc::F_ADD_SEALS, seals) } < 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+    }
+
+    let descriptor_path = if cfg!(target_os = "linux") {
+        format!("/proc/self/fd/{}", snapshot.as_raw_fd())
+    } else {
+        format!("/dev/fd/{}", snapshot.as_raw_fd())
+    };
+    let launch = File::open(descriptor_path)?;
+    let flags = unsafe { libc::fcntl(launch.as_raw_fd(), libc::F_GETFD) };
+    if flags < 0
+        || unsafe { libc::fcntl(launch.as_raw_fd(), libc::F_SETFD, flags & !libc::FD_CLOEXEC) } < 0
+    {
+        return Err(std::io::Error::last_os_error());
+    }
+    Ok(launch)
+}
+
+#[cfg(not(unix))]
+fn bind_launch_material(source: &File) -> Result<File, std::io::Error> {
+    source.try_clone()
 }
 
 /// Lexical reject of disallowed command shapes, then canonicalize-both-sides

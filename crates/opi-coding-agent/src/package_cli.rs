@@ -12,7 +12,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use crate::cli::PackageCommand;
-use crate::execution::PackageSource as ContributionScope;
+use crate::execution::{ExecutionFailure, PackageSource as ContributionScope};
 use crate::package_activation::{self, ActivationRecord, StdinTrustConfirmer};
 use crate::package_discovery::{PackageManifest, resolve_adapter_command_checked};
 use crate::package_resolver::{
@@ -22,7 +22,7 @@ use crate::package_resolver::{
 };
 use crate::package_store::{
     PackageDeclaration, PackageLockEntry, PackageSource, PackageStore, PackageStoreError,
-    PackageStoreScope, PendingCacheReplacement,
+    PackageStoreScope,
 };
 
 /// Execute a package CLI command and return an exit code.
@@ -113,6 +113,9 @@ fn install_local_package(
     source: &str,
     path: PathBuf,
 ) -> Result<(), PackageStoreError> {
+    let metadata = read_package_metadata_snapshot(store, scope)?;
+    let contribution_scope = contribution_scope_for(scope);
+    let trust_snapshot = capture_trust_snapshot(user_config_dir, contribution_scope)?;
     let source_root = resolve_local_source_path(scope_base(scope), source, path);
     if !source_root.is_dir() {
         return Err(PackageStoreError::Package(format!(
@@ -138,7 +141,6 @@ fn install_local_package(
     // validate_executable_contributions). Project-local packages with
     // contributions are rejected here; global packages persist the lock material
     // and an untrusted+disabled activation record.
-    let contribution_scope = contribution_scope_for(scope);
     let adapter_ids = apply_contributions(
         &mut lock_entry,
         &manifest,
@@ -147,12 +149,38 @@ fn install_local_package(
         contribution_scope,
     )?;
 
-    write_declaration_if_missing(store, scope, source, &lock_entry)?;
-    write_or_replace_lock(store, lock_entry)?;
-    if !adapter_ids.is_empty() && contribution_scope == ContributionScope::Global {
-        package_activation::PackageActivationStore::global(user_config_dir.to_path_buf())
-            .install(&manifest.name, source, &adapter_ids)
-            .map_err(|e| PackageStoreError::Package(e.to_string()))?;
+    let previous_source = previous_lock_source(&metadata.locks, &lock_entry);
+    let preserve_trust = locked_contributions_unchanged(&metadata.locks, &lock_entry);
+    let declarations =
+        declarations_with_package(metadata.declarations.clone(), scope, source, &lock_entry);
+    let locks = locks_with_package(metadata.locks.clone(), &lock_entry);
+    let activation_update = prepare_activation_update(
+        user_config_dir,
+        source,
+        previous_source,
+        preserve_trust,
+        contribution_scope,
+    )?;
+    if let Err(error) = publish_package_metadata_and_activation(
+        store,
+        user_config_dir,
+        source,
+        previous_source,
+        &manifest.name,
+        &adapter_ids,
+        activation_update,
+        contribution_scope,
+        &declarations,
+        &locks,
+    ) {
+        let metadata_restore = metadata.restore(store);
+        let trust_restore = restore_trust_snapshot(trust_snapshot.as_ref());
+        return Err(package_update_error(
+            error,
+            metadata_restore,
+            trust_restore,
+            Ok(()),
+        ));
     }
     println!(
         "Installed {} {} from {} ({})",
@@ -175,6 +203,8 @@ fn install_git_package(
     let cache_dir = store.cache_dir().join(sha256_hex(&format!("git:{url}")));
     let staging_dir = store.git_clone_to_staging(&url, refspec.as_deref(), &cache_dir)?;
     let metadata = read_package_metadata_snapshot(store, scope)?;
+    let contribution_scope = contribution_scope_for(scope);
+    let trust_snapshot = capture_trust_snapshot(user_config_dir, contribution_scope)?;
 
     let validated = (|| {
         let manifest_path = staging_dir.join("package.toml");
@@ -197,59 +227,101 @@ fn install_git_package(
         }
     };
 
-    let replacement = store.stage_cache_replacement(&cache_dir, &staging_dir)?;
-    if !cache_dir.join("package.toml").is_file() {
-        return Err(rollback_cache_on_error(
-            replacement,
-            PackageStoreError::Package(format!(
-                "package.toml not found in package root: {}",
-                cache_dir.display()
-            )),
-        ));
-    }
+    let mut lock_entry = match git_lock_entry(
+        source.to_string(),
+        url,
+        &staging_dir,
+        &staging_dir,
+        git_commit,
+    ) {
+        Ok(entry) => entry,
+        Err(e) => {
+            let _ = std::fs::remove_dir_all(&staging_dir);
+            return Err(PackageStoreError::Package(e.to_string()));
+        }
+    };
 
-    let mut lock_entry =
-        match git_lock_entry(source.to_string(), url, &cache_dir, &cache_dir, git_commit) {
-            Ok(entry) => entry,
-            Err(e) => {
-                return Err(rollback_cache_on_error(
-                    replacement,
-                    PackageStoreError::Package(e.to_string()),
-                ));
-            }
-        };
-
-    // Validate contributions against the materialized cache BEFORE committing
-    // the cache replacement (F2); rollback on validation failure.
-    let contribution_scope = contribution_scope_for(scope);
+    // Validate every contribution in the isolated clone before changing any
+    // live package state.
     let adapter_ids = match apply_contributions(
         &mut lock_entry,
         &manifest,
         &raw_bytes,
-        &cache_dir,
+        &staging_dir,
         contribution_scope,
     ) {
         Ok(ids) => ids,
         Err(e) => {
-            return Err(rollback_cache_on_error(replacement, e));
+            let _ = std::fs::remove_dir_all(&staging_dir);
+            return Err(e);
         }
     };
 
+    let previous_source = previous_lock_source(&metadata.locks, &lock_entry);
+    let preserve_trust = locked_contributions_unchanged(&metadata.locks, &lock_entry);
+    let activation_update = match prepare_activation_update(
+        user_config_dir,
+        source,
+        previous_source,
+        preserve_trust,
+        contribution_scope,
+    ) {
+        Ok(update) => update,
+        Err(error) => {
+            let _ = std::fs::remove_dir_all(&staging_dir);
+            return Err(error);
+        }
+    };
+
+    // Package Trust is now durably disabled. Only after that fail-closed gate
+    // may the live cache path expose the validated replacement bytes.
+    let replacement = match store.stage_cache_replacement(&cache_dir, &staging_dir) {
+        Ok(replacement) => replacement,
+        Err(error) => {
+            let trust_restore = restore_trust_snapshot(trust_snapshot.as_ref());
+            return Err(package_update_error(error, Ok(()), trust_restore, Ok(())));
+        }
+    };
+    let canonical_cache = match cache_dir.canonicalize() {
+        Ok(path) => path,
+        Err(error) => {
+            return Err(package_update_error(
+                PackageStoreError::Io(error),
+                Ok(()),
+                restore_trust_snapshot(trust_snapshot.as_ref()),
+                replacement.rollback(),
+            ));
+        }
+    };
+    lock_entry.package_root = canonical_cache.clone();
+    lock_entry.cache_path = Some(canonical_cache);
     let declarations =
         declarations_with_package(metadata.declarations.clone(), scope, source, &lock_entry);
     let locks = locks_with_package(metadata.locks.clone(), &lock_entry);
-    if let Err(e) = write_package_metadata(store, &declarations, &locks) {
+    if let Err(e) = publish_package_metadata_and_activation(
+        store,
+        user_config_dir,
+        source,
+        previous_source,
+        &manifest.name,
+        &adapter_ids,
+        activation_update,
+        contribution_scope,
+        &declarations,
+        &locks,
+    ) {
         let metadata_restore = metadata.restore(store);
+        let trust_restore = restore_trust_snapshot(trust_snapshot.as_ref());
         let cache_restore = replacement.rollback();
-        return Err(metadata_update_error(e, metadata_restore, cache_restore));
+        return Err(package_update_error(
+            e,
+            metadata_restore,
+            trust_restore,
+            cache_restore,
+        ));
     }
 
     replacement.commit();
-    if !adapter_ids.is_empty() && contribution_scope == ContributionScope::Global {
-        package_activation::PackageActivationStore::global(user_config_dir.to_path_buf())
-            .install(&manifest.name, source, &adapter_ids)
-            .map_err(|e| PackageStoreError::Package(e.to_string()))?;
-    }
     println!(
         "Installed {} {} from {} ({})",
         manifest.name,
@@ -399,19 +471,36 @@ fn cmd_doctor(
 
     // Drift detection for execution packages: recompute the executable SHA-256
     // (a read; no spawn) and flag any mismatch. This does not start package code.
-    let mut drift_errors: Vec<(String, Vec<String>)> = Vec::new();
+    let mut execution_failures: Vec<(String, Vec<String>, ExecutionFailure)> = Vec::new();
     for package in &resolution.packages {
         let drifted = executable_drifted_adapters(package);
-        if !drifted.is_empty() {
-            drift_errors.push((package.package.manifest.name.clone(), drifted));
+        let contributions = package
+            .lock
+            .as_ref()
+            .map(|lock| lock.contributions.as_slice())
+            .unwrap_or(&[]);
+        if contributions.is_empty() {
+            continue;
+        }
+        let record = records
+            .iter()
+            .find(|record| record.source == package.declaration.source);
+        let trusted = record.is_some_and(|record| record.trusted);
+        let enabled = record.is_some_and(|record| record.enabled);
+        if let Some(failure) = execution_lifecycle_failure(
+            &package.package.manifest.name,
+            trusted,
+            enabled,
+            !drifted.is_empty(),
+        ) {
+            execution_failures.push((package.package.manifest.name.clone(), drifted, failure));
         }
     }
-    let has_drift = !drift_errors.is_empty();
     let has_errors = resolution
         .diagnostics
         .iter()
         .any(|d| d.severity == PackageDiagnosticSeverity::Error)
-        || has_drift;
+        || !execution_failures.is_empty();
 
     if json {
         let stdout = std::io::stdout();
@@ -422,7 +511,7 @@ fn cmd_doctor(
             serde_json::Value::Array(doctor_rows(&resolution, &records))
         )
         .map_err(PackageStoreError::Io)?;
-    } else if resolution.diagnostics.is_empty() && !has_drift {
+    } else if resolution.diagnostics.is_empty() && execution_failures.is_empty() {
         let stdout = std::io::stdout();
         let mut out = stdout.lock();
         if resolution.packages.is_empty() {
@@ -441,11 +530,9 @@ fn cmd_doctor(
                 diagnostic.source, diagnostic.code, diagnostic.message
             );
         }
-        for (name, adapters) in &drift_errors {
-            eprintln!(
-                "{name}: executable hash drift for adapter(s) {} (Package Trust invalidated)",
-                adapters.join(", ")
-            );
+        for (_, _, failure) in &execution_failures {
+            eprintln!("{failure}");
+            eprintln!("remediation: {}", failure.remediation());
         }
         let stdout = std::io::stdout();
         let mut out = stdout.lock();
@@ -456,21 +543,11 @@ fn cmd_doctor(
     if has_errors {
         return Err(PackageStoreError::Package(format!(
             "{} diagnostic(s) found",
-            resolution.diagnostics.len() + drift_errors.len()
+            resolution.diagnostics.len() + execution_failures.len()
         )));
     }
 
     Ok(())
-}
-
-fn write_declaration_if_missing(
-    store: &PackageStore,
-    scope: &PackageStoreScope,
-    source: &str,
-    lock_entry: &PackageLockEntry,
-) -> Result<(), PackageStoreError> {
-    let decls = declarations_with_package(store.read_declarations()?, scope, source, lock_entry);
-    store.write_declarations(&decls)
 }
 
 fn declarations_with_package(
@@ -503,14 +580,6 @@ fn declarations_with_package(
     decls
 }
 
-fn write_or_replace_lock(
-    store: &PackageStore,
-    lock_entry: PackageLockEntry,
-) -> Result<(), PackageStoreError> {
-    let locks = locks_with_package(store.read_lock()?, &lock_entry);
-    store.write_lock(&locks)
-}
-
 fn locks_with_package(
     mut locks: Vec<PackageLockEntry>,
     lock_entry: &PackageLockEntry,
@@ -527,6 +596,119 @@ fn write_package_metadata(
 ) -> Result<(), PackageStoreError> {
     store.write_declarations(declarations)?;
     store.write_lock(locks)
+}
+
+#[derive(Debug, Default)]
+struct PreparedActivationUpdate {
+    had_existing: bool,
+    preserved_state: Option<(bool, bool)>,
+}
+
+fn prepare_activation_update(
+    user_config_dir: &Path,
+    source: &str,
+    previous_source: Option<&str>,
+    preserve_trust: bool,
+    contribution_scope: ContributionScope,
+) -> Result<PreparedActivationUpdate, PackageStoreError> {
+    if contribution_scope == ContributionScope::ProjectLocal {
+        return Ok(PreparedActivationUpdate::default());
+    }
+
+    let activation =
+        package_activation::PackageActivationStore::global(user_config_dir.to_path_buf());
+    let mut records = activation.read_records()?;
+    let existing_index = records.iter().position(|record| {
+        record.source == source || previous_source == Some(record.source.as_str())
+    });
+    let preserved_state = existing_index
+        .filter(|_| preserve_trust)
+        .map(|index| (records[index].trusted, records[index].enabled));
+
+    // This write is the fail-closed transaction gate. Git callers execute it
+    // before swapping the live cache directory, so a crash at every later
+    // boundary leaves the old or new package untrusted and disabled.
+    if let Some(index) = existing_index {
+        records[index].trusted = false;
+        records[index].enabled = false;
+        activation.write_records(&records)?;
+    }
+
+    Ok(PreparedActivationUpdate {
+        had_existing: existing_index.is_some(),
+        preserved_state,
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn publish_package_metadata_and_activation(
+    store: &PackageStore,
+    user_config_dir: &Path,
+    source: &str,
+    previous_source: Option<&str>,
+    package_name: &str,
+    adapter_ids: &[String],
+    activation_update: PreparedActivationUpdate,
+    contribution_scope: ContributionScope,
+    declarations: &[PackageDeclaration],
+    locks: &[PackageLockEntry],
+) -> Result<(), PackageStoreError> {
+    let activation =
+        package_activation::PackageActivationStore::global(user_config_dir.to_path_buf());
+
+    write_package_metadata(store, declarations, locks)?;
+    if contribution_scope == ContributionScope::Global
+        && (!adapter_ids.is_empty() || activation_update.had_existing)
+    {
+        activation
+            .install(package_name, source, previous_source, adapter_ids, false)
+            .map_err(|e| PackageStoreError::Package(e.to_string()))?;
+        if let Some((trusted, enabled)) = activation_update.preserved_state {
+            let mut records = activation.read_records()?;
+            let record = records
+                .iter_mut()
+                .find(|record| record.source == source)
+                .ok_or_else(|| {
+                    PackageStoreError::Package(
+                        "activation record disappeared during package update".to_string(),
+                    )
+                })?;
+            record.trusted = trusted;
+            record.enabled = enabled;
+            activation.write_records(&records)?;
+        }
+    }
+    Ok(())
+}
+
+fn locked_contributions_unchanged(
+    old_locks: &[PackageLockEntry],
+    new_lock: &PackageLockEntry,
+) -> bool {
+    if new_lock.contributions.is_empty() {
+        return false;
+    }
+    let Some(old_lock) = old_locks
+        .iter()
+        .find(|lock| lock_matches_entry(lock, new_lock))
+    else {
+        return false;
+    };
+    old_lock.contributions.len() == new_lock.contributions.len()
+        && old_lock
+            .contributions
+            .iter()
+            .all(|old| new_lock.contributions.iter().any(|new| new == old))
+}
+
+fn previous_lock_source<'a>(
+    old_locks: &'a [PackageLockEntry],
+    new_lock: &PackageLockEntry,
+) -> Option<&'a str> {
+    old_locks
+        .iter()
+        .find(|lock| lock_matches_entry(lock, new_lock))
+        .map(|lock| lock.source.as_str())
 }
 
 fn remove_locks_for_declaration(
@@ -757,6 +939,7 @@ fn doctor_rows(
     let mut rows = Vec::new();
     for package in &resolution.packages {
         let drifted = executable_drifted_adapters(package);
+        let has_drift = !drifted.is_empty();
         let status = if drifted.is_empty() { "ok" } else { "drifted" };
         let mut row = serde_json::json!({
             "scope": installed_scope_label(package.scope),
@@ -784,6 +967,27 @@ fn doctor_rows(
                     serde_json::json!(record.map(|r| r.enabled).unwrap_or(false)),
                 );
                 obj.insert("drifted_adapters".into(), serde_json::json!(drifted));
+                let trusted = record.is_some_and(|record| record.trusted);
+                let enabled = record.is_some_and(|record| record.enabled);
+                if let Some(failure) = execution_lifecycle_failure(
+                    &package.package.manifest.name,
+                    trusted,
+                    enabled,
+                    has_drift,
+                ) {
+                    let status = if has_drift {
+                        "drifted"
+                    } else {
+                        lifecycle_failure_status(&failure)
+                    };
+                    obj.insert("status".into(), status.into());
+                    obj.insert("code".into(), failure.code().into());
+                    obj.insert("remediation".into(), failure.remediation().into());
+                    obj.insert(
+                        "diagnostics".into(),
+                        serde_json::json!([execution_failure_json(&failure)]),
+                    );
+                }
             }
         }
         rows.push(row);
@@ -871,9 +1075,9 @@ pub(crate) fn executable_drifted_adapters(package: &ResolvedInstalledPackage) ->
     };
     for c in &lock.contributions {
         let exe = package.package.path.join(&c.executable_rel_path);
-        let matches = match std::fs::read(&exe) {
+        let matches = match read_regular_file_without_blocking(&exe) {
             Ok(bytes) => format!("{:x}", sha2::Sha256::digest(&bytes)) == c.executable_sha256,
-            Err(_) => false,
+            Err(()) => false,
         };
         if !matches {
             drifted.push(c.adapter_id.clone());
@@ -943,6 +1147,124 @@ struct PackageMetadataSnapshot {
     lock_existed: bool,
 }
 
+pub(crate) fn execution_lifecycle_failure(
+    name: &str,
+    trusted: bool,
+    enabled: bool,
+    drifted: bool,
+) -> Option<ExecutionFailure> {
+    if drifted || !trusted {
+        Some(ExecutionFailure::PackageUntrusted {
+            name: name.to_string(),
+        })
+    } else if !enabled {
+        Some(ExecutionFailure::ContributionDisabled {
+            name: name.to_string(),
+        })
+    } else {
+        None
+    }
+}
+
+fn lifecycle_failure_status(failure: &ExecutionFailure) -> &'static str {
+    match failure {
+        ExecutionFailure::PackageUntrusted { .. } => "untrusted",
+        ExecutionFailure::ContributionDisabled { .. } => "disabled",
+        _ => "error",
+    }
+}
+
+fn execution_failure_json(failure: &ExecutionFailure) -> serde_json::Value {
+    serde_json::json!({
+        "severity": "error",
+        "code": failure.code(),
+        "message": failure.to_string(),
+        "remediation": failure.remediation(),
+    })
+}
+
+fn read_regular_file_without_blocking(path: &Path) -> Result<Vec<u8>, ()> {
+    use std::io::Read as _;
+
+    let canonical = path.canonicalize().map_err(|_| ())?;
+    if !std::fs::metadata(&canonical)
+        .map_err(|_| ())?
+        .file_type()
+        .is_file()
+    {
+        return Err(());
+    }
+    let mut options = std::fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt as _;
+        options.custom_flags(libc::O_NONBLOCK | libc::O_NOFOLLOW);
+    }
+    let mut file = options.open(canonical).map_err(|_| ())?;
+    if !file.metadata().map_err(|_| ())?.file_type().is_file() {
+        return Err(());
+    }
+    let mut bytes = Vec::new();
+    file.read_to_end(&mut bytes).map_err(|_| ())?;
+    Ok(bytes)
+}
+
+struct PackageFileSnapshot {
+    path: PathBuf,
+    bytes: Option<Vec<u8>>,
+}
+
+impl PackageFileSnapshot {
+    fn capture(path: PathBuf) -> Result<Self, PackageStoreError> {
+        let bytes = match std::fs::read(&path) {
+            Ok(bytes) => Some(bytes),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+            Err(error) => return Err(PackageStoreError::Io(error)),
+        };
+        Ok(Self { path, bytes })
+    }
+
+    fn restore(&self) -> Result<(), PackageStoreError> {
+        match &self.bytes {
+            Some(bytes) => {
+                if let Some(parent) = self.path.parent() {
+                    std::fs::create_dir_all(parent)?;
+                }
+                std::fs::write(&self.path, bytes)?;
+                Ok(())
+            }
+            None => match std::fs::remove_file(&self.path) {
+                Ok(()) => Ok(()),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+                Err(error) => Err(PackageStoreError::Io(error)),
+            },
+        }
+    }
+}
+
+fn capture_trust_snapshot(
+    user_config_dir: &Path,
+    scope: ContributionScope,
+) -> Result<Option<PackageFileSnapshot>, PackageStoreError> {
+    if scope == ContributionScope::ProjectLocal {
+        return Ok(None);
+    }
+    PackageFileSnapshot::capture(
+        package_activation::PackageActivationStore::global(user_config_dir.to_path_buf())
+            .store()
+            .trust_path(),
+    )
+    .map(Some)
+}
+
+fn restore_trust_snapshot(snapshot: Option<&PackageFileSnapshot>) -> Result<(), PackageStoreError> {
+    match snapshot {
+        Some(snapshot) => snapshot.restore(),
+        None => Ok(()),
+    }
+}
+
 impl PackageMetadataSnapshot {
     fn restore(&self, store: &PackageStore) -> Result<(), PackageStoreError> {
         restore_package_file(&self.declarations_path, self.declarations_existed, || {
@@ -986,30 +1308,22 @@ fn restore_package_file(
     }
 }
 
-fn rollback_cache_on_error(
-    replacement: PendingCacheReplacement,
-    error: PackageStoreError,
-) -> PackageStoreError {
-    match replacement.rollback() {
-        Ok(()) => error,
-        Err(rollback) => PackageStoreError::Package(format!(
-            "{error}; cache rollback failed after package install error: {rollback}"
-        )),
-    }
-}
-
-fn metadata_update_error(
+fn package_update_error(
     error: PackageStoreError,
     metadata_restore: Result<(), PackageStoreError>,
+    trust_restore: Result<(), PackageStoreError>,
     cache_restore: Result<(), PackageStoreError>,
 ) -> PackageStoreError {
-    if metadata_restore.is_ok() && cache_restore.is_ok() {
+    if metadata_restore.is_ok() && trust_restore.is_ok() && cache_restore.is_ok() {
         return error;
     }
 
     let mut details = vec![format!("{error}")];
     if let Err(e) = metadata_restore {
         details.push(format!("metadata rollback failed: {e}"));
+    }
+    if let Err(e) = trust_restore {
+        details.push(format!("trust rollback failed: {e}"));
     }
     if let Err(e) = cache_restore {
         details.push(format!("cache rollback failed: {e}"));

@@ -110,20 +110,76 @@ jobs:
           name: ${{ matrix.artifact }}
           path: ${{ matrix.artifact }}.${{ matrix.ext }}
 
-  # Phase 16 task 16.15.2: opi-sandbox release archives for the native Linux +
-  # macOS triples ONLY. Windows has no native opi-sandbox confinement (16.14.2
-  # unsupported posture), so no Windows opi-sandbox artifact is produced. Only
-  # native-runner triples are packaged (the 16.15.1 packager detects the HOST
-  # triple; cross-arch packaging is a 16.15.1 follow-up). The ordinary six-target
-  # Opi `build` matrix above is preserved unchanged. Smoke runs against the
-  # EXTRACTED archive binary. The `release` job's `opi-*` glob + SHA256SUMS pick
-  # these archives up alongside the Opi binaries.
+  # Phase 16 task 16.15.2: every supported opi-sandbox archive is built and
+  # smoked on a host-native runner. Windows remains an explicitly unsupported
+  # posture and therefore produces evidence, but no opi-sandbox archive.
   sandbox_archive:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-24.04
+            platform: linux
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-24.04-arm
+            platform: linux
+          - target: x86_64-apple-darwin
+            os: macos-15-intel
+            platform: macos
+          - target: aarch64-apple-darwin
+            os: macos-15
+            platform: macos
     runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: opi-sandbox-${{ matrix.target }}
+
+      - name: Build opi-sandbox release binary
+        run: cargo build --release --target ${{ matrix.target }} -p opi-sandbox --bin opi-sandbox
+
+      - name: Package native archive
+        shell: bash
+        run: |
+          bash scripts/package-opi-sandbox.sh \
+            --binary target/${{ matrix.target }}/release/opi-sandbox \
+            --artifact-dir target/opi-artifacts/${{ matrix.target }}
+
+      - name: Standalone smoke (extracted archive, no opi on PATH)
+        shell: bash
+        run: |
+          bash scripts/opi-sandbox-smoke.sh \
+            --binary target/opi-artifacts/${{ matrix.target }}/extracted/bin/opi-sandbox \
+            --artifact-dir target/opi-artifacts/${{ matrix.target }}/smoke \
+            --archive target/opi-artifacts/${{ matrix.target }}/opi-sandbox-${{ matrix.target }}.tar.gz
+
+      - name: Upload opi-sandbox archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: opi-sandbox-${{ matrix.target }}
+          path: target/opi-artifacts/${{ matrix.target }}/opi-sandbox-${{ matrix.target }}.tar.gz
+
+      - name: Upload opi-sandbox release evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: sandbox-evidence-${{ matrix.target }}
+          path: |
+            target/opi-artifacts/${{ matrix.target }}/opi-sandbox-${{ matrix.target }}.tar.gz
+            target/opi-artifacts/${{ matrix.target }}/package-lock.toml
+            target/opi-artifacts/${{ matrix.target }}/target
+            target/opi-artifacts/${{ matrix.target }}/smoke
+
+  sandbox_windows_posture:
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
         with:
@@ -132,32 +188,65 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
 
       - uses: Swatinem/rust-cache@v2
+        with:
+          key: sandbox-windows-posture
 
-      - name: Build opi-sandbox release binary
-        run: cargo build --release -p opi-sandbox --bin opi-sandbox
-
-      - name: Package native archive
-        shell: bash
+      - name: Capture unsupported Windows posture
+        shell: pwsh
         run: |
-          bash scripts/package-opi-sandbox.sh \
-            --binary target/release/opi-sandbox \
-            --artifact-dir target/opi-artifacts/release-${{ matrix.os }}
+          $evidence = "target/opi-artifacts/windows"
+          New-Item -ItemType Directory -Force -Path $evidence | Out-Null
+          cargo run --quiet -p opi-sandbox -- doctor --json 2>&1 |
+            Tee-Object -FilePath "$evidence/unsupported.log"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test -p opi-coding-agent --test windows_execution_posture 2>&1 |
+            Tee-Object -FilePath "$evidence/posture-tests.log"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: Standalone smoke (extracted archive, no opi on PATH)
-        shell: bash
-        run: |
-          bash scripts/opi-sandbox-smoke.sh \
-            --binary target/opi-artifacts/release-${{ matrix.os }}/extracted/bin/opi-sandbox \
-            --artifact-dir target/opi-artifacts/release-${{ matrix.os }}/smoke
-
-      - name: Upload opi-sandbox archive
+      - name: Upload Windows posture evidence
         uses: actions/upload-artifact@v4
         with:
-          name: opi-sandbox-archive-${{ matrix.os }}
-          path: target/opi-artifacts/release-${{ matrix.os }}/opi-sandbox-*.tar.gz
+          name: sandbox-evidence-windows
+          path: target/opi-artifacts/windows
+
+  sandbox_release_audit:
+    needs: [sandbox_archive, sandbox_windows_posture]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: sandbox-evidence-x86_64-unknown-linux-gnu
+          path: evidence/linux/x86_64-unknown-linux-gnu
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: sandbox-evidence-aarch64-unknown-linux-gnu
+          path: evidence/linux/aarch64-unknown-linux-gnu
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: sandbox-evidence-x86_64-apple-darwin
+          path: evidence/macos/x86_64-apple-darwin
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: sandbox-evidence-aarch64-apple-darwin
+          path: evidence/macos/aarch64-apple-darwin
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: sandbox-evidence-windows
+          path: evidence/windows
+
+      - name: Audit the complete release evidence set
+        run: python3 scripts/opi-artifact-audit.py evidence --release
 
   release:
-    needs: [build, sandbox_archive]
+    needs: [build, sandbox_archive, sandbox_release_audit]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -165,6 +254,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
+          pattern: opi-*
           merge-multiple: true
 
       - name: Generate SHA256SUMS

@@ -80,6 +80,56 @@ fn unknown_tag_rejected() {
     );
 }
 
+#[test]
+fn malformed_json_fixture_rejected() {
+    assert!(
+        serde_json::from_str::<BackendToHost>(&read_fixture("invalid_malformed.json")).is_err()
+    );
+}
+
+#[test]
+fn invalid_base64_fixture_rejected() {
+    assert!(serde_json::from_str::<BackendToHost>(&read_fixture("invalid_base64.json")).is_err());
+}
+
+#[test]
+fn nested_diagnostic_unknown_field_rejected() {
+    assert!(
+        serde_json::from_str::<BackendToHost>(&read_fixture(
+            "invalid_nested_diagnostic_unknown_field.json"
+        ))
+        .is_err()
+    );
+}
+
+#[test]
+fn ready_requires_implementation_identity() {
+    assert!(
+        serde_json::from_str::<BackendToHost>(&read_fixture(
+            "invalid_ready_missing_implementation.json"
+        ))
+        .is_err()
+    );
+}
+
+#[test]
+fn ready_rejects_empty_implementation_identity() {
+    assert!(
+        serde_json::from_str::<BackendToHost>(&read_fixture(
+            "invalid_ready_empty_implementation.json"
+        ))
+        .is_err()
+    );
+}
+
+#[test]
+fn ready_rejects_unknown_identity_field() {
+    assert!(
+        serde_json::from_str::<BackendToHost>(&read_fixture("invalid_ready_unknown_field.json"))
+            .is_err()
+    );
+}
+
 // --- NativeString losslessness ---------------------------------------------
 
 #[test]

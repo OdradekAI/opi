@@ -205,7 +205,11 @@ fn landlock_write_rights(abi: ABI) -> BitFlags<AccessFs> {
 
 /// Build the Landlock filesystem ruleset granting write rights beneath the
 /// canonical workspace and the invocation temporary root.
-fn build_landlock_fs_ruleset(abi: ABI, workspace: &Path) -> io::Result<RulesetCreated> {
+fn build_landlock_fs_ruleset(
+    abi: ABI,
+    workspace: &Path,
+    temp_root: &Path,
+) -> io::Result<RulesetCreated> {
     let write_rights = landlock_write_rights(abi);
     let ruleset = Ruleset::default()
         .handle_access(write_rights)
@@ -220,7 +224,7 @@ fn build_landlock_fs_ruleset(abi: ABI, workspace: &Path) -> io::Result<RulesetCr
         .map_err(map_landlock_err("add_rule workspace"))?;
     ruleset
         .add_rule(PathBeneath::new(
-            PathFd::new(std::env::temp_dir()).map_err(map_pathfd_err("temp directory"))?,
+            PathFd::new(temp_root).map_err(map_pathfd_err("invocation temp root"))?,
             write_rights,
         ))
         .map_err(map_landlock_err("add_rule temp"))
@@ -301,7 +305,7 @@ impl Restriction for LinuxRestriction {
             Arc::clone(&self.seccomp_allow)
         };
         // Landlock fs ruleset: workspace + invocation temp root.
-        let fs_ruleset = build_landlock_fs_ruleset(self.abi, ctx.workspace)
+        let fs_ruleset = build_landlock_fs_ruleset(self.abi, ctx.workspace, ctx.temp_root)
             .map_err(|_| RestrictionSetupError::Failed("landlock-fs-ruleset"))?;
         // Landlock TCP ruleset: network = deny only (ABI >= 4 checked above).
         let network_ruleset = if deny {

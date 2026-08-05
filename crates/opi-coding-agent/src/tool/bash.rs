@@ -8,12 +8,15 @@ use opi_agent::diagnostic::code::CODE_TOOL_EXECUTION_FAILED;
 use opi_agent::tool::{ExecutionMode, Tool, ToolDiagnostic, ToolError, ToolResult, result};
 use opi_ai::message::{OutputContent, ToolDef};
 use schemars::JsonSchema;
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer, de};
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 
 use super::{BashOpError, BashOperations, BashRequest, BashResult};
 use super::{LOCAL_BASH_OPERATION_DIAGNOSTIC, LocalBashOperations, MAX_BASH_OUTPUT_BYTES};
+
+/// Maximum per-call command timeout accepted by the public bash tool.
+pub const MAX_BASH_TIMEOUT_SECS: u64 = 86_400;
 
 /// The schema source for the `bash` tool input. This is the byte-stable
 /// pre-extension contract: `schemars::schema_for!(BashArgs)` produces the
@@ -31,6 +34,7 @@ pub struct BashArgs {
     /// Command to execute.
     pub command: String,
     /// Timeout in seconds (optional, defaults to 30).
+    #[schemars(range(min = 1, max = 86400))]
     pub timeout_secs: Option<u64>,
 }
 
@@ -41,9 +45,23 @@ pub struct BashArgs {
 #[derive(Debug, Deserialize)]
 pub struct BashCallArgs {
     pub command: String,
+    #[serde(default, deserialize_with = "deserialize_timeout_secs")]
     pub timeout_secs: Option<u64>,
     #[serde(default)]
     pub backend: Option<String>,
+}
+
+fn deserialize_timeout_secs<'de, D>(deserializer: D) -> Result<Option<u64>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let timeout = Option::<u64>::deserialize(deserializer)?;
+    match timeout {
+        Some(value) if !(1..=MAX_BASH_TIMEOUT_SECS).contains(&value) => Err(de::Error::custom(
+            format!("timeout_secs must be between 1 and {MAX_BASH_TIMEOUT_SECS}"),
+        )),
+        _ => Ok(timeout),
+    }
 }
 
 /// Bash tool. A thin caller over the injected [`BashOperations`] backend
@@ -112,7 +130,10 @@ pub fn default_bash_schema() -> serde_json::Value {
 pub fn with_model_backend_enum(
     mut schema: serde_json::Value,
     candidates: &[(&str, bool)],
-) -> serde_json::Value {
+) -> Option<serde_json::Value> {
+    if candidates.is_empty() {
+        return None;
+    }
     let one_of: Vec<serde_json::Value> = candidates
         .iter()
         .map(|(id, requires_approval)| {
@@ -143,7 +164,7 @@ pub fn with_model_backend_enum(
         }
         obj.insert("additionalProperties".to_string(), serde_json::json!(false));
     }
-    schema
+    Some(schema)
 }
 
 impl Tool for BashTool {
@@ -223,7 +244,7 @@ impl Tool for BashTool {
                 String::from_utf8_lossy(&merged[..cap]).into_owned()
             };
 
-            let details = with_env_policy(result::bash_operation_metadata(
+            let mut details = with_env_policy(result::bash_operation_metadata(
                 &workspace_root,
                 &command,
                 &cwd,
@@ -234,6 +255,7 @@ impl Tool for BashTool {
                 truncated,
                 full_output,
             ));
+            copy_effective_contract(&backend, &mut details);
             // No degraded success state (design: "The adapter either reports its
             // effective contract or the command fails"). A timeout or
             // cancellation is an error even when the backend reports a clean
@@ -284,6 +306,64 @@ fn lift_operation_context(result: &BashResult) -> (bool, bool, bool, Option<&str
         opt_str("full_output"),
         opt_str("kill_error"),
     )
+}
+
+fn copy_effective_contract(result: &BashResult, output: &mut Value) {
+    let Some(context) = result
+        .diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic.code == LOCAL_BASH_OPERATION_DIAGNOSTIC)
+        .and_then(|diagnostic| diagnostic.details.as_ref())
+    else {
+        return;
+    };
+    for key in [
+        "adapter_id",
+        "implementation_version",
+        "target",
+        "protocol",
+        "placement",
+        "guarantee",
+        "policy",
+        "limitations",
+    ] {
+        if let Some(value) = context.get(key) {
+            output[key] = value.clone();
+        }
+    }
+}
+
+/// Format the redaction-safe effective execution contract carried by a bash
+/// result for human-facing text and TUI surfaces. Missing optional fields are
+/// omitted; a value without the required placement/guarantee pair is not an
+/// execution contract.
+pub(crate) fn format_effective_contract(details: &Value) -> Option<String> {
+    let placement = details.get("placement")?.as_str()?;
+    let guarantee = details.get("guarantee")?.as_str()?;
+    let mut fields = vec![
+        format!("placement={placement}"),
+        format!("guarantee={guarantee}"),
+    ];
+    for key in [
+        "adapter_id",
+        "implementation_version",
+        "target",
+        "protocol",
+        "policy",
+        "limitations",
+    ] {
+        if let Some(value) = details.get(key) {
+            let rendered = value
+                .as_str()
+                .map(str::to_owned)
+                .unwrap_or_else(|| value.to_string());
+            fields.push(format!("{key}={rendered}"));
+        }
+    }
+    Some(opi_agent::diagnostic::redact_text(
+        &format!("execution contract: {}", fields.join(" ")),
+        opi_agent::diagnostic::RedactionMode::Summary,
+    ))
 }
 
 /// Preserve every backend diagnostic except the private operation-context
@@ -438,6 +518,50 @@ fn with_env_policy(mut details: Value) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    struct PanicOperations;
+
+    impl BashOperations for PanicOperations {
+        fn exec(
+            &self,
+            _: BashRequest,
+        ) -> Pin<Box<dyn Future<Output = Result<BashResult, BashOpError>> + Send>> {
+            panic!("invalid timeout must be rejected before backend dispatch")
+        }
+    }
+
+    #[test]
+    fn schema_bounds_timeout_secs() {
+        let schema = default_bash_schema();
+        assert_eq!(schema["properties"]["timeout_secs"]["minimum"], 1);
+        assert_eq!(
+            schema["properties"]["timeout_secs"]["maximum"],
+            MAX_BASH_TIMEOUT_SECS
+        );
+    }
+
+    #[tokio::test]
+    async fn oversized_timeouts_are_stable_tool_failures() {
+        let tool = BashTool::new_with_ops(PathBuf::from("."), Arc::new(PanicOperations));
+        for timeout_secs in [0, MAX_BASH_TIMEOUT_SECS + 1, u64::MAX] {
+            let result = tool
+                .execute(
+                    "call",
+                    json!({"command": "echo hi", "timeout_secs": timeout_secs}),
+                    CancellationToken::new(),
+                    None,
+                )
+                .await
+                .expect("invalid arguments are a tool result");
+            assert!(result.is_error);
+            let text = match &result.content[0] {
+                OutputContent::Text { text } => text,
+                other => panic!("expected text result, got {other:?}"),
+            };
+            assert!(text.contains("invalid arguments"), "{text}");
+            assert!(text.contains("timeout_secs"), "{text}");
+        }
+    }
 
     #[test]
     fn wait_failed_result_carries_operation_metadata_and_diagnostic() {

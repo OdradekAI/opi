@@ -329,6 +329,35 @@ async fn runner_installed_adapter_hook_blocks_mutating_tool() {
     );
 }
 
+#[tokio::test]
+async fn runner_text_surfaces_local_effective_execution_contract() {
+    let workspace = tempfile::tempdir().unwrap();
+    let command = if cfg!(windows) { "exit 0" } else { "true" };
+    let first = test_support::tool_call_response(
+        "local-contract",
+        "bash",
+        &serde_json::json!({"command": command}).to_string(),
+    );
+    let second = test_support::text_response("done");
+    let provider = MockProvider::new("mock", vec![first, second]);
+    let mut runner = NonInteractiveRunner::new(
+        Box::new(provider),
+        "mock-model".into(),
+        OpiConfig::default(),
+        workspace.path().to_path_buf(),
+        true,
+        None,
+        Vec::new(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
+    );
+
+    let result = runner.run("run a command").await;
+    assert_eq!(result.exit_code, ExitCode::Success as i32);
+    assert!(result.stderr.contains("execution contract:"));
+    assert!(result.stderr.contains("placement=host"));
+    assert!(result.stderr.contains("guarantee=supervised"));
+}
+
 // ---------------------------------------------------------------------------
 // Test 3: provider error response produces stderr and exit code 4
 // ---------------------------------------------------------------------------

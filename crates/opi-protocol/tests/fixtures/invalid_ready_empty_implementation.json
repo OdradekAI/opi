@@ -3,7 +3,7 @@
   "payload": {
     "request_id": "r1",
     "selected_protocol": "command-execution-jsonl-v1",
-    "implementation": "opi-sandbox",
+    "implementation": "",
     "implementation_version": "opi-sandbox 0.1.0",
     "target": "linux-x86_64"
   }

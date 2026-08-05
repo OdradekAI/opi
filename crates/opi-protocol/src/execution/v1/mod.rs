@@ -146,7 +146,10 @@ pub use frames::{
     BackendToHost, Base64Bytes, CancelReason, CleanupState, Diagnostic, EnvInherit, FailureCode,
     FailurePhase, HostToBackend, TargetId,
 };
-pub use identity::{InvalidRequestId, ProtocolId, ProtocolIncompatible, RequestId, V1, select};
+pub use identity::{
+    ImplementationId, InvalidImplementationId, InvalidRequestId, ProtocolId, ProtocolIncompatible,
+    RequestId, V1, select,
+};
 pub use native::{NativeString, NativeStringError};
 pub use schema::{SCHEMA_DESCRIPTION, SCHEMA_ID_URL, schema};
 pub use session::{Session, SessionError};

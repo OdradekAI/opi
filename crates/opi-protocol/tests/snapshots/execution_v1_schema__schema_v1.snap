@@ -272,6 +272,7 @@ expression: pretty
       "type": "object"
     },
     "Diagnostic": {
+      "additionalProperties": false,
       "description": "One diagnostic entry (used in the `diagnostics` lists on `completed`/`failed`).",
       "properties": {
         "message": {
@@ -527,6 +528,11 @@ expression: pretty
         }
       ]
     },
+    "ImplementationId": {
+      "description": "Backend implementation/adapter identity reported during negotiation.",
+      "minLength": 1,
+      "type": "string"
+    },
     "InitializePayload": {
       "additionalProperties": false,
       "properties": {
@@ -569,6 +575,10 @@ expression: pretty
     "ReadyPayload": {
       "additionalProperties": false,
       "properties": {
+        "implementation": {
+          "$ref": "#/$defs/ImplementationId",
+          "description": "Selected backend implementation/adapter identity."
+        },
         "implementation_version": {
           "description": "Backend implementation version (diagnostics only; never a negotiation\ninput).",
           "type": "string"
@@ -588,6 +598,7 @@ expression: pretty
       "required": [
         "request_id",
         "selected_protocol",
+        "implementation",
         "implementation_version",
         "target"
       ],

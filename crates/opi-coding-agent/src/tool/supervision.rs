@@ -40,6 +40,7 @@
 
 use std::io;
 use std::process::ExitStatus;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use tokio::io::{AsyncRead, AsyncReadExt};
@@ -137,9 +138,9 @@ async fn supervise_inner(
 ) -> SupervisionOutcome {
     let mut degradations: Vec<AttachError> = Vec::new();
 
-    // Attach L0 to the spawned child. Fail-open: on failure keep a disabled
-    // guard (the direct child is still reaped via the wait path and
-    // `kill_on_drop`) and record the redacted degradation.
+    // Attach L0 to the spawned child. Attachment is a hard precondition for the
+    // advertised `supervised` guarantee: failure kills/reaps the child and
+    // returns a failed supervision outcome instead of running uncontained.
     #[cfg(test)]
     let l0_attach = match (child.id(), tree_faults) {
         (Some(pid), Some(faults)) => TreeGuard::attach_with_faults(pid, faults),
@@ -152,9 +153,33 @@ async fn supervise_inner(
         Ok(guard) => guard,
         Err(err) => {
             degradations.push(err);
-            TreeGuard::disabled()
+            let _ = child.kill().await;
+            let _ = child.wait().await;
+            return SupervisionOutcome {
+                kind: SupervisionKind::WaitFailed,
+                out: StreamCapture::new(cap),
+                err: StreamCapture::new(cap),
+                degradations,
+            };
         }
     };
+    #[cfg(windows)]
+    if child
+        .id()
+        .ok_or_else(AttachError::missing_pid)
+        .and_then(super::process_tree::resume_child)
+        .is_err()
+    {
+        let _ = l0_tree.terminate();
+        let _ = child.kill().await;
+        let _ = child.wait().await;
+        return SupervisionOutcome {
+            kind: SupervisionKind::WaitFailed,
+            out: StreamCapture::new(cap),
+            err: StreamCapture::new(cap),
+            degradations,
+        };
+    }
 
     let stdout = child.stdout.take();
     let stderr = child.stderr.take();
@@ -163,8 +188,8 @@ async fn supervise_inner(
     // avoid the stdout-then-stderr pipe deadlock. The tasks are owned so a
     // descendant that retained either pipe cannot keep this supervision pending
     // past grace after tree termination.
-    let drain_out = OwnedCaptureTask::new(spawn_stream_capture(stdout, cap), cap);
-    let drain_err = OwnedCaptureTask::new(spawn_stream_capture(stderr, cap), cap);
+    let drain_out = OwnedCaptureTask::new(stdout, cap);
+    let drain_err = OwnedCaptureTask::new(stderr, cap);
 
     // Run the control race. On every branch the whole tree is terminated: a
     // clean direct-child exit must still kill surviving background descendants,
@@ -233,60 +258,89 @@ fn push_terminate(tree: &mut TreeGuard, degradations: &mut Vec<AttachError>) {
 /// Spawn one stream's capture task. The task reads until EOF/error into a
 /// [`StreamCapture`] bounded by `cap`. Owned by [`OwnedCaptureTask`] so it can
 /// be aborted after grace.
-fn spawn_stream_capture<R>(stream: Option<R>, cap: usize) -> tokio::task::JoinHandle<StreamCapture>
+fn spawn_shared_stream_capture<R>(
+    stream: Option<R>,
+    cap: usize,
+) -> (tokio::task::JoinHandle<()>, Arc<Mutex<StreamCapture>>)
 where
     R: AsyncRead + Unpin + Send + 'static,
 {
-    tokio::spawn(async move {
-        let mut capture = StreamCapture::new(cap);
+    let capture = Arc::new(Mutex::new(StreamCapture::new(cap)));
+    let task_capture = Arc::clone(&capture);
+    let handle = tokio::spawn(async move {
         if let Some(mut stream) = stream {
             let mut buffer = [0u8; 8192];
             loop {
                 match stream.read(&mut buffer).await {
                     Ok(0) | Err(_) => break,
-                    Ok(read) => capture.append(&buffer[..read]),
+                    Ok(read) => task_capture
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner)
+                        .append(&buffer[..read]),
                 }
             }
         }
-        capture
-    })
+    });
+    (handle, capture)
 }
 
 /// Owned handle to one drain task. [`OwnedCaptureTask::finish`] awaits the
 /// capture under [`TERMINATED_PIPE_DRAIN_GRACE`]; on expiry the task is aborted
-/// and an empty capture (sized to the same `cap`) is returned so the bound is
-/// enforced regardless of pipe state. Drop aborts an unfinished task.
+/// and the shared capture state is snapshotted after abort, preserving every
+/// prefix byte read before the deadline. Drop aborts an unfinished task.
 pub(crate) struct OwnedCaptureTask {
-    handle: Option<tokio::task::JoinHandle<StreamCapture>>,
-    cap: usize,
+    handle: Option<tokio::task::JoinHandle<()>>,
+    capture: Option<Arc<Mutex<StreamCapture>>>,
 }
 
 impl OwnedCaptureTask {
-    pub(crate) fn new(handle: tokio::task::JoinHandle<StreamCapture>, cap: usize) -> Self {
+    pub(crate) fn new<R>(stream: Option<R>, cap: usize) -> Self
+    where
+        R: AsyncRead + Unpin + Send + 'static,
+    {
+        let (handle, capture) = spawn_shared_stream_capture(stream, cap);
         Self {
             handle: Some(handle),
-            cap,
+            capture: Some(capture),
         }
     }
 
     async fn finish(mut self) -> StreamCapture {
         let handle = self.handle.as_mut().expect("capture task is owned");
         match tokio::time::timeout(TERMINATED_PIPE_DRAIN_GRACE, handle).await {
-            Ok(Ok(capture)) => {
+            Ok(Ok(())) => {
                 self.handle.take();
-                capture
+                self.take_capture()
             }
             Ok(Err(_)) => {
                 self.handle.take();
-                StreamCapture::new(self.cap)
+                self.take_capture()
             }
             Err(_) => {
                 let handle = self.handle.take().expect("capture task is owned");
                 handle.abort();
                 let _ = handle.await;
-                StreamCapture::new(self.cap)
+                self.take_capture()
             }
         }
+    }
+
+    fn take_capture(&mut self) -> StreamCapture {
+        let capture = self.capture.take().expect("capture state is owned");
+        Arc::try_unwrap(capture)
+            .unwrap_or_else(|_| unreachable!("capture task released shared state"))
+            .into_inner()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn spill_path(&self) -> Option<std::path::PathBuf> {
+        self.capture.as_ref().and_then(|capture| {
+            capture
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .spill_path()
+        })
     }
 }
 
@@ -309,6 +363,23 @@ mod tests {
 
     use super::*;
     use std::time::Duration;
+    use tokio::io::AsyncWriteExt as _;
+
+    #[tokio::test]
+    async fn drain_expiry_retains_captured_prefix() {
+        let (mut writer, reader) = tokio::io::duplex(64);
+        let capture = OwnedCaptureTask::new(Some(reader), 64);
+        writer.write_all(b"captured-prefix").await.unwrap();
+
+        let started = std::time::Instant::now();
+        let capture = capture.finish().await;
+        assert!(
+            started.elapsed() >= TERMINATED_PIPE_DRAIN_GRACE,
+            "writer remained open, so the bounded grace should expire"
+        );
+        assert_eq!(capture.preview(), b"captured-prefix");
+        drop(writer);
+    }
 
     /// wait-failure still runs the per-branch terminate. `wait_fault` skips the
     /// real `child.wait()`; the `WaitFailed` branch must call `push_terminate`.
@@ -331,6 +402,7 @@ mod tests {
             c.args(["-c", "true"]);
             c
         };
+        super::super::process_tree::configure_tree(&mut cmd);
         let mut child = cmd
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())

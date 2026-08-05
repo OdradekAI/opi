@@ -474,6 +474,26 @@ fn production_model_strategy_ask_candidate_describes_interactive_approval() {
     );
 }
 
+/// Model routing with no non-denied candidate must omit `bash` instead of
+/// publishing an unusable schema containing `oneOf: []`.
+#[test]
+fn production_model_strategy_without_candidates_omits_bash() {
+    let w = wiring(
+        ExecutionStrategy::Model,
+        "local",
+        vec![identity("opi-sandbox", "pkg")],
+        &[
+            ("local", PermissionDecision::Deny),
+            ("opi-sandbox", PermissionDecision::Deny),
+        ],
+    );
+    let (tools, diags) = build_prod_tools(&w);
+    assert!(!has_bash(&tools), "zero candidates must omit bash");
+    assert_eq!(diags.len(), 1, "exactly one startup diagnostic: {diags:?}");
+    let details = diags[0].details.as_ref().expect("diagnostic details");
+    assert_eq!(details["code"], "no_eligible_adapter");
+}
+
 /// SC16-04: `fixed`/`rules`/default modes do NOT add the `backend` field — the
 /// schema is the default byte-for-byte even when routing selects an external.
 #[test]

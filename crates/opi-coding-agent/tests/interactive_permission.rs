@@ -136,10 +136,7 @@ fn local_ask_routed() -> (ExecutionConfig, Vec<EnabledIdentity>, PermissionPolic
         permissions: perms.clone(),
         ..ExecutionConfig::default()
     };
-    let enabled = vec![EnabledIdentity {
-        adapter_id: "dummy".to_string(),
-        package_name: "dummy-pkg".to_string(),
-    }];
+    let enabled = Vec::new();
     let policy = PermissionPolicy::from_map(perms);
     (config, enabled, policy)
 }
@@ -362,7 +359,7 @@ async fn headless_noninteractive_yields_permission_required_no_broker_call() {
     let broker = RecordingBroker::new(PermissionChoice::AllowSession);
     let local_ops_recorder: Arc<RecordingOps> = Arc::new(RecordingOps::new());
     let local_ops: Arc<dyn BashOperations> = local_ops_recorder.clone();
-    let ops = ExecutionRuntime::build(
+    let failure = match ExecutionRuntime::build(
         &config,
         ExecutionRunMode::NonInteractive,
         &enabled,
@@ -374,11 +371,12 @@ async fn headless_noninteractive_yields_permission_required_no_broker_call() {
         "0.8.0",
         Arc::clone(&manager),
         Some(broker.clone()),
-    )
-    .expect("routed build");
+    ) {
+        Err(failure) => failure,
+        Ok(_) => panic!("headless local ask must fail closed at build"),
+    };
 
-    let code = exec_code(ops, "echo hi").await;
-    assert_eq!(code.as_deref(), Some("permission_required"));
+    assert_eq!(failure.code(), "permission_required");
     assert!(
         broker.seen_summaries().is_empty(),
         "headless must not prompt"
@@ -394,7 +392,7 @@ async fn headless_rpc_yields_permission_required_no_broker_call() {
     let broker = RecordingBroker::new(PermissionChoice::AllowSession);
     let local_ops_recorder: Arc<RecordingOps> = Arc::new(RecordingOps::new());
     let local_ops: Arc<dyn BashOperations> = local_ops_recorder.clone();
-    let ops = ExecutionRuntime::build(
+    let failure = match ExecutionRuntime::build(
         &config,
         ExecutionRunMode::Rpc,
         &enabled,
@@ -406,11 +404,12 @@ async fn headless_rpc_yields_permission_required_no_broker_call() {
         "0.8.0",
         Arc::clone(&manager),
         Some(broker.clone()),
-    )
-    .expect("routed build");
+    ) {
+        Err(failure) => failure,
+        Ok(_) => panic!("RPC local ask must fail closed at build"),
+    };
 
-    let code = exec_code(ops, "echo hi").await;
-    assert_eq!(code.as_deref(), Some("permission_required"));
+    assert_eq!(failure.code(), "permission_required");
     assert!(broker.seen_summaries().is_empty());
 }
 
@@ -422,7 +421,7 @@ async fn no_broker_interactive_is_fail_closed_permission_required() {
     let manager = Arc::new(PermissionManager::new());
     let local_ops_recorder: Arc<RecordingOps> = Arc::new(RecordingOps::new());
     let local_ops: Arc<dyn BashOperations> = local_ops_recorder.clone();
-    let ops = ExecutionRuntime::build(
+    let failure = match ExecutionRuntime::build(
         &config,
         ExecutionRunMode::Interactive,
         &enabled,
@@ -434,13 +433,14 @@ async fn no_broker_interactive_is_fail_closed_permission_required() {
         "0.8.0",
         Arc::clone(&manager),
         None, // no broker -> fail-closed
-    )
-    .expect("routed build");
+    ) {
+        Err(failure) => failure,
+        Ok(_) => panic!("interactive local ask without a broker must fail closed at build"),
+    };
 
-    let code = exec_code(ops, "echo hi").await;
     assert_eq!(
-        code.as_deref(),
-        Some("permission_required"),
+        failure.code(),
+        "permission_required",
         "no broker must not dispatch or fall back to local"
     );
     assert_eq!(local_ops_recorder.call_count(), 0);

@@ -47,7 +47,9 @@ use opi_agent::{Diagnostic, DiagnosticPayload, RedactionMode, Severity};
 use opi_ai::credential::CredentialSource;
 
 use crate::config::{ConfigError, OpiConfig};
-use crate::diagnostic_bridge::{diagnostic_from_config, diagnostic_from_package};
+use crate::diagnostic_bridge::{
+    diagnostic_from_config, diagnostic_from_execution_package_failure, diagnostic_from_package,
+};
 use crate::package_activation;
 use crate::package_cli;
 use crate::package_resolver::resolve_installed_packages;
@@ -209,7 +211,6 @@ const CODE_DOCTOR_PROVIDER_UNKNOWN: &str = "doctor_provider_unknown";
 const CODE_DOCTOR_PACKAGE_SUMMARY: &str = "doctor_package_summary";
 const CODE_DOCTOR_PACKAGE_RESOLVE: &str = "doctor_package_resolve_failed";
 const CODE_DOCTOR_PACKAGE_EXEC_LIFECYCLE: &str = "doctor_package_exec_lifecycle";
-const CODE_DOCTOR_PACKAGE_DRIFT: &str = "doctor_package_exec_drift";
 const CODE_DOCTOR_SESSION_DIR: &str = "doctor_session_dir";
 const CODE_DOCTOR_TUI_CAPABILITY: &str = "doctor_tui_capability";
 const CODE_DOCTOR_RPC_SCHEMA: &str = "doctor_rpc_schema";
@@ -564,17 +565,13 @@ fn package_diagnostics(workspace_root: &Path, user_config_dir: &Path) -> Vec<Dia
                         "drifted_adapters": drifted,
                     })),
                 );
-                for id in &drifted {
-                    out.push(Diagnostic::new(
-                        Severity::Error,
-                        CODE_DOCTOR_PACKAGE_DRIFT,
-                        SOURCE_PACKAGE,
-                        format!(
-                            "execution package {}: executable hash drift for adapter {} \
-                             (Package Trust invalidated)",
-                            package.package.manifest.name, id
-                        ),
-                    ));
+                if let Some(failure) = package_cli::execution_lifecycle_failure(
+                    &package.package.manifest.name,
+                    trusted,
+                    enabled,
+                    !drifted.is_empty(),
+                ) {
+                    out.push(diagnostic_from_execution_package_failure(&failure));
                 }
             }
             // Always emit a summary so the scope appears in output even when

@@ -108,7 +108,8 @@ jobs:
         run: |
           bash scripts/opi-sandbox-smoke.sh \
             --binary target/opi-artifacts/ci-${{ matrix.os }}/extracted/bin/opi-sandbox \
-            --artifact-dir target/opi-artifacts/ci-${{ matrix.os }}/smoke
+            --artifact-dir target/opi-artifacts/ci-${{ matrix.os }}/smoke \
+            --archive target/opi-artifacts/ci-${{ matrix.os }}/opi-sandbox-*.tar.gz
 
   # Six-target opi-coding-agent compile gate (retained by task 16.15.2). Compiles
   # every supported release triple so a cross-target break surfaces on PR, not

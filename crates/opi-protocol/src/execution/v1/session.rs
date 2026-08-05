@@ -72,6 +72,7 @@ impl Session {
     /// Observe a host frame, enforcing the cross-request-id and duplicate
     /// invariants.
     pub fn observe_host(&mut self, frame: &HostToBackend) -> Result<(), SessionError> {
+        validate_host(frame, &self.bounds)?;
         self.check_id(frame.request_id())?;
         self.check_duplicate(frame.kind())?;
         Ok(())
@@ -80,6 +81,7 @@ impl Session {
     /// Observe a backend frame, enforcing cumulative output, cross-request id,
     /// and duplicate invariants.
     pub fn observe_backend(&mut self, frame: &BackendToHost) -> Result<(), SessionError> {
+        validate_backend(frame, &self.bounds)?;
         self.account_output(frame)?;
         self.check_id(frame.request_id())?;
         self.check_duplicate(frame.kind())?;
@@ -90,7 +92,6 @@ impl Session {
     /// and observe one host JSONL line (no trailing newline).
     pub fn feed_host_line(&mut self, line: &[u8]) -> Result<HostToBackend, SessionError> {
         let frame = decode_host(line)?;
-        validate_host(&frame, &self.bounds)?;
         self.observe_host(&frame)?;
         Ok(frame)
     }
@@ -99,7 +100,6 @@ impl Session {
     /// and observe one backend JSONL line (no trailing newline).
     pub fn feed_backend_line(&mut self, line: &[u8]) -> Result<BackendToHost, SessionError> {
         let frame = decode_backend(line)?;
-        validate_backend(&frame, &self.bounds)?;
         self.observe_backend(&frame)?;
         Ok(frame)
     }
@@ -295,5 +295,122 @@ mod tests {
             ),
             "oversized diagnostic message must be rejected: {err:?}"
         );
+    }
+
+    #[test]
+    fn decoded_output_chunk_enforces_exact_limit() {
+        let mut session = Session::new(small_bounds()).unwrap();
+        let exact = BackendToHost::Stdout(StdoutPayload {
+            request_id: rid("A"),
+            data: Base64Bytes::from_bytes([0u8; 8]),
+        });
+        session.observe_backend(&exact).unwrap();
+
+        let mut session = Session::new(small_bounds()).unwrap();
+        let oversized = BackendToHost::Stdout(StdoutPayload {
+            request_id: rid("A"),
+            data: Base64Bytes::from_bytes([0u8; 9]),
+        });
+        let err = session.observe_backend(&oversized).unwrap_err();
+        assert!(
+            err.to_string().contains("max_decoded_chunk_size"),
+            "oversized decoded chunk must be rejected: {err:?}"
+        );
+    }
+
+    #[test]
+    fn terminal_diagnostics_enforce_each_message_limit() {
+        let exact = BackendToHost::Completed(CompletedPayload {
+            request_id: rid("A"),
+            exit: Some(0),
+            signal: None,
+            timed_out: false,
+            cancelled: false,
+            cleanup: CleanupState::Confirmed,
+            diagnostics: vec![crate::execution::v1::Diagnostic {
+                message: "12345678".to_string(),
+            }],
+        });
+        let mut session = Session::new(small_bounds()).unwrap();
+        session.observe_backend(&exact).unwrap();
+
+        let oversized = BackendToHost::Failed(crate::execution::v1::frames::FailedPayload {
+            request_id: rid("B"),
+            code: crate::execution::v1::FailureCode::Failed,
+            phase: crate::execution::v1::FailurePhase::Handshake,
+            message: None,
+            diagnostics: vec![crate::execution::v1::Diagnostic {
+                message: "123456789".to_string(),
+            }],
+        });
+        let mut session = Session::new(small_bounds()).unwrap();
+        let err = session.observe_backend(&oversized).unwrap_err();
+        assert!(
+            err.to_string().contains("max_diagnostics_size"),
+            "oversized terminal diagnostic must be rejected: {err:?}"
+        );
+    }
+
+    #[test]
+    fn configuration_enforces_exact_serialized_limit() {
+        let bounds = Bounds {
+            max_configuration_size: 5,
+            ..small_bounds()
+        };
+        let exact = HostToBackend::Initialize(InitializePayload {
+            request_id: rid("A"),
+            deadline_ms: 1,
+            adapter_config: serde_json::json!("123"),
+            supported_protocols: vec![ProtocolId::new("command-execution-jsonl-v1")],
+        });
+        let mut session = Session::new(bounds).unwrap();
+        session.observe_host(&exact).unwrap();
+
+        let oversized = HostToBackend::Initialize(InitializePayload {
+            request_id: rid("B"),
+            deadline_ms: 1,
+            adapter_config: serde_json::json!("1234"),
+            supported_protocols: vec![ProtocolId::new("command-execution-jsonl-v1")],
+        });
+        let mut session = Session::new(bounds).unwrap();
+        assert!(matches!(
+            session.observe_host(&oversized),
+            Err(SessionError::Codec(CodecError::ConfigurationTooLarge {
+                actual: 6,
+                limit: 5
+            }))
+        ));
+    }
+
+    #[test]
+    fn cumulative_output_enforces_exact_limit() {
+        let bounds = Bounds {
+            max_cumulative_output: 10,
+            ..Bounds::DEFAULT
+        };
+        let mut session = Session::new(bounds).unwrap();
+        for bytes in [6usize, 4] {
+            session
+                .observe_backend(&BackendToHost::Stdout(StdoutPayload {
+                    request_id: rid("A"),
+                    data: Base64Bytes::from_bytes(vec![0; bytes]),
+                }))
+                .unwrap();
+        }
+        assert_eq!(session.cumulative_output(), 10);
+
+        let err = session
+            .observe_backend(&BackendToHost::Stdout(StdoutPayload {
+                request_id: rid("A"),
+                data: Base64Bytes::from_bytes([0]),
+            }))
+            .unwrap_err();
+        assert!(matches!(
+            err,
+            SessionError::CumulativeOutputExceeded {
+                cumulative: 11,
+                limit: 10
+            }
+        ));
     }
 }

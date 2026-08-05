@@ -310,11 +310,10 @@ impl Restriction for MacosRestriction {
         // Canonicalize: seatbelt resolves symlinks in the path the child opens,
         // so on macOS (TMPDIR is under /var -> /private/var) it evaluates the
         // /private/var/... form. The subpath exceptions must match that
-        // resolved form. temp comes from std::env::temp_dir() (the system temp,
-        // the same grant the Linux twin makes), NOT a RestrictionCtx field
-        // (there is none).
+        // resolved form. The temp exception is the exact invocation-owned root,
+        // never the sibling system-temporary directory.
         let ws = canonicalize_for_profile(ctx.workspace);
-        let tmp = canonicalize_for_profile(&std::env::temp_dir());
+        let tmp = canonicalize_for_profile(ctx.temp_root);
         // The WorkspaceWrite profile always engages the fs deny-overlay; the
         // network deny engages iff the request denies network.
         let network_enabled = matches!(ctx.network, NetworkPolicy::Deny);

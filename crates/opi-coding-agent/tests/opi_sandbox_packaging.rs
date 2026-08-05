@@ -34,7 +34,7 @@ use std::process::{Command, Output};
 use sha2::{Digest, Sha256};
 
 use opi_coding_agent::execution::{PackageSource, validate_executable_contributions};
-use opi_coding_agent::package_activation::host_target_triple;
+use opi_coding_agent::package_activation::{host_opi_version, host_target_triple};
 use opi_coding_agent::package_discovery::PackageManifest;
 
 /// The fixture payload. The packager hashes/copies these bytes verbatim; it
@@ -70,6 +70,13 @@ fn script_path() -> PathBuf {
 
 fn sha256_hex(bytes: &[u8]) -> String {
     hex::encode(Sha256::digest(bytes))
+}
+
+fn compatible_minor_range(version: &str) -> String {
+    let mut parts = version.split('.');
+    let major: u64 = parts.next().expect("major").parse().expect("numeric major");
+    let minor: u64 = parts.next().expect("minor").parse().expect("numeric minor");
+    format!(">={major}.{minor},<{major}.{}", minor + 1)
 }
 
 /// Build the pack command for the platform-native script.
@@ -216,7 +223,7 @@ fn packer_builds_valid_layout_lock_and_extraction() {
         &p.pkg_dir,
         PackageSource::Global,
         host_target,
-        "0.8.5",
+        host_opi_version(),
     )
     .expect("rendered manifest round-trips through 16.4 validation");
     let canonical = &validated[0].lock;
@@ -226,10 +233,19 @@ fn packer_builds_valid_layout_lock_and_extraction() {
     assert_eq!(canonical.adapter_id, "opi-sandbox");
     assert_eq!(canonical.target, host_target);
     assert_eq!(canonical.executable_rel_path, "bin/opi-sandbox");
-    assert_eq!(canonical.package_version, "0.8.0");
-    assert_eq!(canonical.opi_range, ">=0.8,<0.9");
+    assert_eq!(canonical.package_version, host_opi_version());
+    assert_eq!(
+        canonical.opi_range,
+        compatible_minor_range(host_opi_version())
+    );
     // The packager hashed the fixture bytes (lowercase hex).
     assert_eq!(canonical.executable_sha256, sha256_hex(FIXTURE_BYTES));
+    assert_eq!(
+        fs::read_to_string(p.artifact.join("target"))
+            .unwrap()
+            .trim(),
+        host_target
+    );
 
     // Emitted build-time lock matches the canonical lock (fixed format).
     let lock_str = fs::read_to_string(p.artifact.join("package-lock.toml")).unwrap();
@@ -272,8 +288,53 @@ fn packer_builds_valid_layout_lock_and_extraction() {
     // directory), identical bytes + hash.
     let extracted_toml = p.extracted.join("package.toml");
     let extracted_bin = p.extracted.join("bin").join("opi-sandbox");
+    let package_schema = p
+        .pkg_dir
+        .join("schemas")
+        .join("command-execution-jsonl-v1.schema.json");
+    let extracted_schema = p
+        .extracted
+        .join("schemas")
+        .join("command-execution-jsonl-v1.schema.json");
+    let package_license = p.pkg_dir.join("licenses").join("LICENSE");
+    let extracted_license = p.extracted.join("licenses").join("LICENSE");
     assert!(extracted_toml.is_file(), "extracted package.toml at root");
     assert!(extracted_bin.is_file(), "extracted bin/opi-sandbox at root");
+    assert!(package_schema.is_file(), "package carries the wire schema");
+    assert!(
+        extracted_schema.is_file(),
+        "archive carries the wire schema"
+    );
+    assert!(
+        package_license.is_file(),
+        "package carries the project license"
+    );
+    assert!(
+        extracted_license.is_file(),
+        "archive carries the project license"
+    );
+    let schema: serde_json::Value =
+        serde_json::from_slice(&fs::read(&package_schema).unwrap()).expect("schema is JSON");
+    assert_eq!(
+        schema["$id"],
+        "https://odradek.ai/schemas/command-execution-jsonl-v1.json"
+    );
+    assert_eq!(
+        fs::read(&package_schema).unwrap(),
+        fs::read(&extracted_schema).unwrap(),
+    );
+    let workspace_license = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .join("LICENSE");
+    assert_eq!(
+        fs::read(&package_license).unwrap(),
+        fs::read(&workspace_license).unwrap(),
+    );
+    assert_eq!(
+        fs::read(&package_license).unwrap(),
+        fs::read(&extracted_license).unwrap(),
+    );
     assert_eq!(
         fs::read(&extracted_bin).unwrap(),
         FIXTURE_BYTES,
@@ -289,6 +350,33 @@ fn packer_builds_valid_layout_lock_and_extraction() {
         canonical.manifest_hash,
         "extracted manifest hashes to the locked manifest_hash",
     );
+}
+
+#[test]
+fn rendered_manifest_rejects_the_adjacent_minor_version() {
+    let p = pack_fresh();
+    let pkg_toml_path = p.pkg_dir.join("package.toml");
+    let pkg_toml_bytes = fs::read(&pkg_toml_path).unwrap();
+    let manifest = PackageManifest::from_toml(
+        &String::from_utf8(pkg_toml_bytes.clone()).unwrap(),
+        &pkg_toml_path,
+    )
+    .expect("rendered manifest parses");
+    let range = compatible_minor_range(host_opi_version());
+    let adjacent = range
+        .split('<')
+        .nth(1)
+        .expect("range has exclusive upper bound");
+    let error = validate_executable_contributions(
+        &manifest,
+        &pkg_toml_bytes,
+        &p.pkg_dir,
+        PackageSource::Global,
+        host_target_triple(),
+        &format!("{adjacent}.0"),
+    )
+    .expect_err("the adjacent minor must remain outside the generated range");
+    assert!(error.to_string().contains("unsatisfied"), "{error}");
 }
 
 #[test]

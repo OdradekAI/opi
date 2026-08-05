@@ -3,10 +3,8 @@
 #
 # Usage: opi-sandbox-smoke.ps1 -BinaryPath PATH -ArtifactDir PATH
 #
-# Covers spec `### Standalone CLI acceptance` items 1-5, 8 (binary identity,
-# no-opi-on-PATH, Opi-sentinel env ignored, help/version/doctor, run pre-start
-# refusal, no durable state). Item 6 (installed-binary run success) and item 7
-# (backend --stdio) are deferred to 16.13/16.14.1 and 16.12 respectively.
+# Windows retains the Phase 16 unsupported/no-artifact posture. Native direct
+# and backend archive evidence is produced only by the Linux/macOS script.
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)][string]$BinaryPath,
@@ -84,4 +82,5 @@ if ($SentinelFiles.Count -ne 1 -or $SentinelFiles[0] -ne $CanaryPath) {
 }
 
 Set-Content -Path (Join-Path $ArtifactDir 'smoke-result.txt') -Value 'opi-sandbox-smoke: OK' -Encoding ascii
+Set-Content -Path (Join-Path $ArtifactDir 'windows-unsupported-smoke-result.txt') -Value 'opi-sandbox-windows-unsupported-smoke: OK' -Encoding ascii
 exit 0

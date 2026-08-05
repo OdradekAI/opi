@@ -157,6 +157,110 @@ fn opi_command(opi: &Path, workspace: &Path, user_config_root: &Path) -> std::pr
     command
 }
 
+fn write_git_execution_package(root: &Path, executable: &[u8]) {
+    use sha2::{Digest as _, Sha256};
+
+    std::fs::create_dir_all(root.join("bin")).unwrap();
+    let command = root.join("bin/adapter");
+    std::fs::write(&command, executable).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        std::fs::set_permissions(&command, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let sha = format!("{:x}", Sha256::digest(executable));
+    let target = opi_coding_agent::package_activation::host_target_triple();
+    std::fs::write(
+        root.join("package.toml"),
+        format!(
+            "version = \"0.8.0\"\n\
+             opi_version = \">=0.7,<0.8\"\n\
+             name = \"git-execution\"\n\
+             description = \"git execution fixture\"\n\
+             [[contributions.adapters]]\n\
+             capability = \"command.execute\"\n\
+             id = \"git-execution\"\n\
+             transport = \"process-jsonl\"\n\
+             command = \"bin/adapter\"\n\
+             args = [\"backend\", \"--stdio\"]\n\
+             protocol = \"command-execution-jsonl-v1\"\n\
+             target = \"{target}\"\n\
+             sha256 = \"{sha}\"\n\
+             handshake_timeout_ms = 5000\n\
+             adapter_config = {{}}\n"
+        ),
+    )
+    .unwrap();
+}
+
+fn git_execution_repo_with_changed_executable() -> GitPackageRepo {
+    let tmp = tempfile::tempdir().unwrap();
+    let bare_dir = tmp.path().join("bare.git");
+    let work_dir = tmp.path().join("work");
+    std::fs::create_dir_all(&work_dir).unwrap();
+    assert_git_ok(
+        std::process::Command::new("git")
+            .args(["init", "--bare"])
+            .arg(&bare_dir)
+            .output()
+            .unwrap(),
+        "git init --bare",
+    );
+    assert_git_ok(git_in(&work_dir, &["init"]), "git init");
+    assert_git_ok(
+        git_in(&work_dir, &["config", "core.autocrlf", "false"]),
+        "disable autocrlf",
+    );
+    write_git_execution_package(&work_dir, b"adapter-v1");
+    assert_git_ok(git_in(&work_dir, &["add", "."]), "git add first");
+    assert_git_ok(
+        git_in(&work_dir, &["commit", "-m", "first"]),
+        "git commit first",
+    );
+    let first = assert_git_ok(git_in(&work_dir, &["rev-parse", "HEAD"]), "first sha");
+    let first_commit = String::from_utf8_lossy(&first.stdout).trim().to_string();
+
+    let bare_url = format!(
+        "file:///{}",
+        bare_dir.display().to_string().replace('\\', "/")
+    );
+    assert_git_ok(
+        git_in(&work_dir, &["remote", "add", "origin", &bare_url]),
+        "git remote add",
+    );
+    assert_git_ok(
+        git_in(&work_dir, &["push", "origin", "HEAD:refs/heads/main"]),
+        "git push first",
+    );
+    write_git_execution_package(&work_dir, b"adapter-v2");
+    assert_git_ok(git_in(&work_dir, &["add", "."]), "git add second");
+    assert_git_ok(
+        git_in(&work_dir, &["commit", "-m", "second"]),
+        "git commit second",
+    );
+    let second = assert_git_ok(git_in(&work_dir, &["rev-parse", "HEAD"]), "second sha");
+    let second_commit = String::from_utf8_lossy(&second.stdout).trim().to_string();
+    assert_git_ok(
+        git_in(&work_dir, &["push", "origin", "HEAD:refs/heads/main"]),
+        "git push second",
+    );
+
+    GitPackageRepo {
+        _tmp: tmp,
+        bare_url,
+        first_commit,
+        second_commit,
+    }
+}
+
+fn opi_user_config_dir(user_config_root: &Path) -> PathBuf {
+    if cfg!(windows) {
+        user_config_root.join("opi")
+    } else {
+        user_config_root.join(".config").join("opi")
+    }
+}
+
 fn set_file_readonly(path: &Path, readonly: bool) {
     let mut permissions = std::fs::metadata(path).unwrap().permissions();
     set_permissions_readonly(&mut permissions, readonly);
@@ -1326,7 +1430,8 @@ fn package_cli_subprocess_list_and_doctor_json_report_execution_lifecycle() {
     assert_eq!(contributions[0]["protocol"], "command-execution-jsonl-v1");
     assert!(contributions[0]["executable_sha256"].is_string());
 
-    // doctor --json: row carries trusted/enabled/drifted_adapters.
+    // doctor --json: an untrusted fresh install is actionable and carries the
+    // same stable code/remediation as runtime activation.
     let doc = opi_command(&opi, workspace.path(), user_config.path())
         .args(["package", "doctor", "--json"])
         .output()
@@ -1348,6 +1453,47 @@ fn package_cli_subprocess_list_and_doctor_json_report_execution_lifecycle() {
             .is_some_and(|a| a.is_empty()),
         "healthy execution package has no drift"
     );
+    assert!(!doc.status.success(), "untrusted package fails doctor");
+    assert_eq!(doc_row["status"], "untrusted");
+    assert_eq!(doc_row["code"], "package_untrusted");
+    assert!(
+        doc_row["remediation"]
+            .as_str()
+            .is_some_and(|s| !s.is_empty())
+    );
+
+    let activation = opi_coding_agent::package_activation::PackageActivationStore::global(
+        opi_user_config_dir(user_config.path()),
+    );
+    let mut records = activation.read_records().unwrap();
+    records[0].trusted = true;
+    records[0].enabled = true;
+    activation.write_records(&records).unwrap();
+
+    let disable = opi_command(&opi, workspace.path(), user_config.path())
+        .args(["package", "disable", "opi-sandbox"])
+        .output()
+        .expect("disable package");
+    assert!(disable.status.success());
+    let disabled_doc = opi_command(&opi, workspace.path(), user_config.path())
+        .args(["package", "doctor", "--json"])
+        .output()
+        .expect("doctor disabled package");
+    assert!(!disabled_doc.status.success());
+    let disabled_rows: serde_json::Value = serde_json::from_slice(&disabled_doc.stdout).unwrap();
+    assert_eq!(disabled_rows[0]["status"], "disabled");
+    assert_eq!(disabled_rows[0]["code"], "contribution_disabled");
+    assert!(
+        disabled_rows[0]["remediation"]
+            .as_str()
+            .is_some_and(|s| !s.is_empty())
+    );
+
+    let enable = opi_command(&opi, workspace.path(), user_config.path())
+        .args(["package", "enable", "opi-sandbox"])
+        .output()
+        .expect("re-enable package");
+    assert!(enable.status.success());
 
     // doctor (text): reports execution lifecycle; drift surfaces after tamper.
     let doc_text = opi_command(&opi, workspace.path(), user_config.path())
@@ -1356,7 +1502,7 @@ fn package_cli_subprocess_list_and_doctor_json_report_execution_lifecycle() {
         .expect("run opi package doctor (text)");
     let text_out = String::from_utf8_lossy(&doc_text.stdout);
     assert!(
-        text_out.contains("ok (untrusted, disabled)"),
+        text_out.contains("ok (trusted, enabled)"),
         "text doctor reports execution lifecycle: {text_out}"
     );
 
@@ -1374,5 +1520,91 @@ fn package_cli_subprocess_list_and_doctor_json_report_execution_lifecycle() {
     assert!(
         drift_out.contains("drifted"),
         "text doctor reports drift: {drift_out}"
+    );
+    assert!(
+        !drift_out.contains("pwned")
+            && !String::from_utf8_lossy(&doc_text_drift.stderr).contains("pwned"),
+        "text doctor must not expose executable contents"
+    );
+
+    let drift_json = opi_command(&opi, workspace.path(), user_config.path())
+        .args(["package", "doctor", "--json"])
+        .output()
+        .expect("run package doctor --json after drift");
+    assert!(!drift_json.status.success());
+    let rows: serde_json::Value = serde_json::from_slice(&drift_json.stdout).unwrap();
+    assert_eq!(rows[0]["status"], "drifted");
+    assert_eq!(rows[0]["code"], "package_untrusted");
+    assert!(
+        rows[0]["remediation"]
+            .as_str()
+            .is_some_and(|remediation| !remediation.is_empty())
+    );
+}
+
+#[test]
+fn package_add_git_changed_executable_invalidates_trust_and_enablement() {
+    let workspace = tempfile::tempdir().unwrap();
+    let user = tempfile::tempdir().unwrap();
+    let repo = git_execution_repo_with_changed_executable();
+    let first_source = format!("git:{}@{}", repo.bare_url, repo.first_commit);
+    let second_source = format!("git:{}@{}", repo.bare_url, repo.second_commit);
+
+    assert_eq!(
+        handle_package_command(
+            &PackageCommand::Add {
+                source: first_source,
+                local: false,
+            },
+            workspace.path().to_path_buf(),
+            user.path().to_path_buf(),
+        ),
+        0
+    );
+    let activation = opi_coding_agent::package_activation::PackageActivationStore::global(
+        user.path().to_path_buf(),
+    );
+    let mut records = activation.read_records().unwrap();
+    records[0].trusted = true;
+    records[0].enabled = true;
+    activation.write_records(&records).unwrap();
+
+    assert_eq!(
+        handle_package_command(
+            &PackageCommand::Add {
+                source: second_source.clone(),
+                local: false,
+            },
+            workspace.path().to_path_buf(),
+            user.path().to_path_buf(),
+        ),
+        0
+    );
+    let records = activation.read_records().unwrap();
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].source, second_source);
+    assert!(!records[0].trusted);
+    assert!(!records[0].enabled);
+}
+
+#[test]
+fn git_update_invalidates_trust_before_live_cache_swap() {
+    let source = include_str!("../src/package_cli.rs");
+    let function = source
+        .split("fn install_git_package(")
+        .nth(1)
+        .expect("install_git_package exists")
+        .split("\nfn cmd_remove(")
+        .next()
+        .expect("install_git_package body");
+    let invalidation = function
+        .find("prepare_activation_update(")
+        .expect("Git update prepares durable trust invalidation");
+    let cache_swap = function
+        .find("stage_cache_replacement(")
+        .expect("Git update swaps the validated cache");
+    assert!(
+        invalidation < cache_swap,
+        "trust must be invalidated before the live cache path can expose new bytes"
     );
 }

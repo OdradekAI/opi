@@ -309,3 +309,18 @@ pub fn diagnostic_from_execution_failure(failure: &ExecutionFailure) -> Diagnost
     }))
     .action(remediation.as_str())
 }
+
+/// Surface an actionable execution-package lifecycle failure on doctor
+/// commands using the same stable code and remediation as runtime activation.
+/// The failure display and remediation contain only package/adapter identities,
+/// never executable contents or paths.
+pub fn diagnostic_from_execution_package_failure(failure: &ExecutionFailure) -> Diagnostic {
+    let code = failure.code();
+    let remediation = failure.remediation();
+    Diagnostic::new(Severity::Error, code, SOURCE_PACKAGE, failure.to_string())
+        .details(serde_json::json!({
+            "code": code,
+            "remediation": &remediation,
+        }))
+        .action(remediation.as_str())
+}

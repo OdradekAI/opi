@@ -141,14 +141,18 @@ pub enum RestrictionSetupError {
 }
 
 /// Per-request context handed to [`Restriction::prepare`]: the canonical
-/// workspace root a filesystem-confinement ruleset grants writes beneath, and
-/// the requested network policy. Native restriction implementations consume
-/// this to build per-spawn confinement; [`NoRestriction`] ignores it.
+/// workspace root and invocation-owned temporary root a filesystem-confinement
+/// ruleset grants writes beneath, and the requested network policy. Native
+/// restriction implementations consume this to build per-spawn confinement;
+/// [`NoRestriction`] ignores it.
 #[derive(Debug, Clone, Copy)]
 pub struct RestrictionCtx<'a> {
     /// The canonical workspace root the target may write beneath (and that host
     /// reads remain unrestricted around).
     pub workspace: &'a Path,
+    /// The canonical invocation-owned temporary root the target may write
+    /// beneath. No sibling system-temporary directory is granted.
+    pub temp_root: &'a Path,
     /// The requested network policy.
     pub network: NetworkPolicy,
 }

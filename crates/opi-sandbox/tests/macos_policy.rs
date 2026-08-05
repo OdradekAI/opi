@@ -80,9 +80,8 @@ fn doctor_json() -> String {
     String::from_utf8_lossy(&out.stdout).into_owned()
 }
 
-/// A writable directory OUTSIDE the seatbelt temp grant (`std::env::temp_dir()`
-/// / TMPDIR). On macOS TMPDIR is under `/var/folders`; `/tmp` (-> `/private/tmp`)
-/// and `/var/tmp` are outside it, so a write there is denied. Returns `None` if
+/// A writable directory OUTSIDE the exact invocation-private Seatbelt temp
+/// grant. On macOS `/tmp` and `/var/tmp` are outside that private root. Returns `None` if
 /// no such outside dir is usable on this host (the caller skips rather than
 /// fails).
 fn outside_grant_dir() -> Option<PathBuf> {
@@ -141,7 +140,7 @@ fn workspace_write_allowed() {
     assert_eq!(fs::read_to_string(&marker).unwrap().trim(), "ok");
 }
 
-/// A write to the invocation temporary root (system temp / TMPDIR) succeeds.
+/// A write to the exact invocation-private temporary root succeeds.
 #[test]
 fn temp_write_allowed() {
     let ws = tempfile::tempdir().expect("workspace tempdir");
@@ -149,16 +148,25 @@ fn temp_write_allowed() {
     let out = run_sh(
         ws.path(),
         "deny",
-        "f=$(mktemp) && echo ok > \"$f\" && echo \"$f\"",
+        "f=$(mktemp) && echo ok > \"$f\" && cat \"$f\"",
     );
     assert!(
         out.status.success(),
         "temp write must be allowed\nstderr: {}",
         String::from_utf8_lossy(&out.stderr)
     );
-    let path = String::from_utf8_lossy(&out.stdout).trim().to_string();
-    assert!(!path.is_empty(), "mktemp must print a path: {:?}", out);
-    assert_eq!(fs::read_to_string(&path).unwrap().trim(), "ok");
+    assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "ok");
+}
+
+/// A sibling in the system temporary directory is not covered by the private
+/// temp-root grant.
+#[test]
+fn system_temp_sibling_write_denied() {
+    let ws = tempfile::tempdir().expect("workspace tempdir");
+    let marker = std::env::temp_dir().join(format!("opi-outside-{}.txt", std::process::id()));
+    let _ = fs::remove_file(&marker);
+    let _out = run_sh(ws.path(), "deny", &format!("echo x > {}", marker.display()));
+    assert!(!marker.exists(), "system-temp sibling write must be denied");
 }
 
 /// A write OUTSIDE the workspace + temp is DENIED (the seatbelt fs deny-overlay).

@@ -8,11 +8,11 @@
 |---|---|
 | Status | Draft |
 | Spec version | 0.6-draft |
-| Last updated | 2026-07-29 |
+| Last updated | 2026-08-05 |
 | Repository | `https://github.com/OdradekAI/opi` |
 | Upstream studied | `pi` 0.80.2 at `.repo/pi-0.80.2/`; alignment is assessed by fresh `opi-realign` audits under [`docs/realign/`](realign/) |
-| Current implementation | `opi` 0.7.2 workspace with Phases 1-15 implemented; Phase 15 safety/sandbox and project-trust product paths are present |
-| Next milestone | Phase 16 pluggable extension command execution |
+| Current implementation | `opi` 0.7.2 workspace (six crates) with Phases 1-16 implemented; Phase 16 pluggable `command.execute` and standalone `opi-sandbox` paths are present |
+| Next milestone | Phase 17 benchmark and regression evaluation |
 
 This document is normative for the current design. Changes that alter public APIs, event protocols, session storage, release behavior, or phase boundaries SHOULD update this file in the same change.
 
@@ -28,19 +28,25 @@ Normative terms:
 
 ## 1. Executive Summary
 
-Opi mirrors pi's package structure with four Rust crates:
+Opi uses six Rust crates, retaining pi-inspired product boundaries while
+isolating the standalone execution protocol and sandbox:
 
 - `opi-ai`: provider-agnostic LLM streaming.
 - `opi-agent`: agent loop, stateful agent, hooks, tools, queues, and session primitives.
 - `opi-tui`: terminal UI components.
 - `opi-coding-agent`: the `opi` CLI binary.
+- `opi-protocol`: the versioned standalone command-execution wire contract.
+- `opi-sandbox`: the Opi-independent command-restriction SDK and CLI.
 
-The repository has completed Phases 1-15. In addition to the terminal agent,
+The repository has completed Phases 1-16. In addition to the terminal agent,
 runtime, package, provider-correctness, tooling, and session-context work,
 Phase 14 now supplies OS-keychain credential storage, OAuth for Anthropic,
 GitHub Copilot, and OpenAI Codex, per-stream auth resolution, request/session
 affinity enrichment, capability-gated Anthropic cache markers, cache/reasoning
-usage accounting, and a substrate-only dynamic model refresh API.
+usage accounting, and a substrate-only dynamic model refresh API. Phase 16
+adds pluggable `command.execute` routing, package trust/enablement/permission
+gates, the standalone protocol crate, and native Linux/macOS `opi-sandbox`
+artifacts while retaining a direct local Minimal Runtime.
 
 Opi does not claim pi package ecosystem parity and does not support npm package install, marketplace behavior, TypeScript extension live reload, provider stream interception through adapters, custom terminal UI adapter rendering, package permission policy enforcement, OAuth providers beyond the three reviewed Phase 14 profiles, image generation, or web/share flows. MCP, sub-agents, plan mode, todos, permission gates, and dynamic plugin loading should build on the substrate rather than become core features.
 
@@ -175,15 +181,15 @@ sub-agents, plan mode, todos, permission popups, and background bash.
 
 | Area | Current state |
 |---|---|
-| Workspace | four crates under one Cargo workspace |
+| Workspace | six crates under one Cargo workspace |
 | Versioning | lockstep `0.7.2` |
 | Edition | Rust 2024 |
-| Internal dependencies | `opi-agent -> opi-ai`, `opi-coding-agent -> opi-ai + opi-agent + opi-tui` |
+| Internal dependencies | `opi-agent -> opi-ai`, `opi-sandbox -> opi-protocol`, `opi-coding-agent -> opi-ai + opi-agent + opi-tui + opi-protocol` |
 | External dependencies | Rust-native async, HTTP/SSE, schema, config, TUI, search, tracing, and test stacks from workspace dependencies |
 | Binary | `opi` supports interactive TUI, non-interactive text mode, `--json`, `--rpc`, session commands, `--version`, and `--help` |
 | CI | `fmt`, `clippy`, `test`, `doctest`, `doc` |
 | Release CI | six platform binary workflow |
-| Extensibility | RPC JSONL, SDK types, extension API, resource/package discovery, custom provider/model registry, branch selection, streaming proxy, process-JSONL adapter hosting (`opi-extension-jsonl-v1`), and package CLI (`add/remove/list/doctor`) are implemented as unstable 0.x APIs |
+| Extensibility | RPC JSONL, SDK types, extension API, resource/package discovery, custom provider/model registry, branch selection, streaming proxy, process-JSONL adapter hosting (`opi-extension-jsonl-v1`), package CLI (`add/remove/list/doctor/enable/disable`), and pluggable `command.execute` routing are implemented as unstable 0.x APIs |
 | crates.io | publishable crates are quality-gated |
 
 ### 4.2 Pre-Stable API Notes
@@ -197,7 +203,9 @@ rather than introduce broad new platform scope.
 | `opi-ai` | provider streaming, model registry, usage/cost, retry/backoff, custom provider/model registration | keep provider breadth extensible through registration where possible |
 | `opi-agent` | agent loop, hooks, queues, tools, sessions, compaction, SDK types, extension API, streaming proxy | keep core runtime narrow and document all 0.x public surfaces as unstable |
 | `opi-tui` | ratatui components, markdown/code, diff, themes, keybindings, image rendering, fuzzy pickers, branch picker | keep widgets reusable and deterministic under snapshot tests |
-| `opi-coding-agent` | `clap` CLI, TOML config, built-in tools, sessions, JSON/RPC modes, resource/package discovery, branch selection | wire extensibility metadata into prompts/RPC without claiming dynamic Rust plugin loading |
+| `opi-protocol` | bounded `command-execution-jsonl-v1` types, codec, schema, and fixtures | remain product-neutral and limited to versioned execution protocol ownership |
+| `opi-sandbox` | standalone restriction SDK, human CLI, protocol backend, and Linux/macOS native implementations | remain independently reusable without linking Opi product code |
+| `opi-coding-agent` | `clap` CLI, TOML config, built-in tools, sessions, JSON/RPC modes, resource/package discovery, branch selection, and `command.execute` routing | keep extensions fail-closed without claiming dynamic Rust plugin loading |
 
 ### 4.3 Phase 0 Completion
 
@@ -222,6 +230,8 @@ opi/
 |   |-- opi-ai/
 |   |-- opi-agent/
 |   |-- opi-coding-agent/
+|   |-- opi-protocol/
+|   |-- opi-sandbox/
 |   `-- opi-tui/
 |-- docs/
 |-- .github/workflows/
@@ -236,7 +246,9 @@ The earlier draft's root `config/` directory is not present. Built-in themes or 
 opi-ai           (no internal deps)
 opi-tui          (no internal deps)
 opi-agent        -> opi-ai
-opi-coding-agent -> opi-ai, opi-agent, opi-tui
+opi-protocol     (no internal deps)
+opi-sandbox      -> opi-protocol
+opi-coding-agent -> opi-ai, opi-agent, opi-tui, opi-protocol
 ```
 
 Internal dependencies MUST be declared in root `[workspace.dependencies]` and referenced by consumers with `{ workspace = true }`.
@@ -248,6 +260,8 @@ Internal dependencies MUST be declared in root `[workspace.dependencies]` and re
 | `opi-ai` | library | crates.io after publish gates pass | provider protocols, model metadata, provider-facing messages |
 | `opi-agent` | library | crates.io after publish gates pass | loop, agent, hooks, tools, queues, sessions |
 | `opi-tui` | library | crates.io after publish gates pass | terminal rendering library |
+| `opi-protocol` | library | crates.io after publish gates pass | versioned standalone command-execution protocol |
+| `opi-sandbox` | library + binary | crates.io plus Linux/macOS release archives | Opi-independent command restriction SDK and CLI |
 | `opi-coding-agent` | binary | crates.io after publish gates pass | `opi` CLI application |
 
 ### 5.4 Why There Is No `opi-types`
@@ -1838,7 +1852,7 @@ Phase 14 acceptance trace:
 | SC7 dynamic refresh and api-map substrate | 14.6, 14.16 | `ApiMappedProvider` and custom TOML tests prove checked multi-wire dispatch with shared lazy auth; collection tests retain deterministic atomic refresh, which has no production trigger. |
 | SC8 documentation and guards | 14.7, 14.13, 14.21 | Paired public docs, rustdoc, TUI help, runtime remediation tests, the 58-row acceptance manifest, and workspace gates pin current provider/auth truth and api-map implementation. |
 
-### Phase 15 - Safety & Sandbox
+### Phase 15 - Safety & Sandbox (Historical Record)
 
 Status: implemented; pi-0.80.6 posture parity complete. Historical design:
 `docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md`. The
@@ -1847,6 +1861,11 @@ correctives — `docs/research/2026-07-24-phase15-linux-l2-feasibility.md` and
 `docs/research/2026-07-24-project-trust-semantics-pi-claude-code-codex-cli.md`
 — which are the authoritative source where they diverge from the 2026-07-11
 design.
+
+This section records the unreleased Phase 15 implementation before the Phase
+16 migration. Its core `[sandbox]`, `--sandbox`, and `--sandbox-require`
+surface is no longer current product behavior; the retained detail below is
+historical evidence, while project trust remains active.
 
 Phase 15 promotes the Safety/Sandbox cluster. It ships an always-on L0
 subprocess-tree-kill baseline plus an opt-in `strict` sandbox for `bash`; a
@@ -2048,14 +2067,15 @@ Enabled, Selected, and Permitted are separate gates. Routing supports `fixed`,
 deterministic `rules`, and model recommendation under user policy, with
 `deny`/`ask`/`allow` permission outcomes. The Opi binary does not link
 `opi-sandbox`; with no enabled extension, it runs locally without extension
-processes or package-store scans. Once an external adapter is selected, failure
+processes, package activation, or per-package scans. Once an external adapter is selected, failure
 is fail-closed and never falls back to local execution. `opi-protocol` initially
 owns only the versioned execution protocol.
 
 In Phase 16 the `command.execute` capability is exercised only by the
 model-callable `bash` tool. With no enabled extension the Minimal Runtime
-constructs `local` directly, starts no extension process, touches no
-package-store sentinel, and creates no router, permission, or protocol task.
+constructs `local` directly, starts no extension or package adapter process,
+performs no package activation or per-package scan, and creates no router,
+permission, or protocol task.
 An external adapter reports its effective placement, guarantee (`supervised`
 for `local`, `restricted` for `opi-sandbox`), policy, and limitations after
 setup succeeds; adapter identity alone never establishes a guarantee.
@@ -2166,7 +2186,7 @@ their entry conditions are met.
 
 | # | Decision | Choice | Reason |
 |---|---|---|---|
-| ADR-001 | Workspace shape | four crates mirroring pi packages | preserves conceptual boundaries |
+| ADR-001 | Workspace shape | six crates: four product crates plus standalone `opi-protocol` and `opi-sandbox` | preserves conceptual boundaries without coupling independent adapters to product crates |
 | ADR-002 | Versioning | lockstep workspace version | simplifies compatibility and release order |
 | ADR-003 | No shared domain-types crate | domain types live with their semantic owner; versioned wire contracts may live in `opi-protocol` | avoids a hub dependency without coupling independent adapters to product crates |
 | ADR-004 | pi compatibility | semantic alignment, not API/file compatibility | Rust-native implementation |

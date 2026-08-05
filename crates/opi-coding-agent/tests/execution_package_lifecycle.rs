@@ -16,10 +16,12 @@
 use std::path::{Path, PathBuf};
 
 use opi_coding_agent::cli::PackageCommand;
+use opi_coding_agent::execution::{PackageSource, validate_executable_contributions};
 use opi_coding_agent::package_activation::{
     self, ActivationError, ActivationRecord, TrustConfirmer, TrustDisplay,
 };
 use opi_coding_agent::package_cli;
+use opi_coding_agent::package_discovery::PackageManifest;
 use opi_coding_agent::package_store::PackageStore;
 
 const EXE_CONTENT: &[u8] = b"#!/bin/sh\necho hi\n";
@@ -177,6 +179,12 @@ fn install_rejects_colliding_adapter_id_across_packages() {
         add_global(root_a.to_str().unwrap(), workspace.path(), user.path()),
         0
     );
+    let declaration_path = user.path().join("packages.toml");
+    let lock_path = user.path().join("package-lock.toml");
+    let trust_path = user.path().join("package-trust.toml");
+    let before_declarations = std::fs::read(&declaration_path).unwrap();
+    let before_lock = std::fs::read(&lock_path).unwrap();
+    let before_trust = std::fs::read(&trust_path).unwrap();
     let exit = add_global(root_b.to_str().unwrap(), workspace.path(), user.path());
     assert_eq!(
         exit, 2,
@@ -187,6 +195,252 @@ fn install_rejects_colliding_adapter_id_across_packages() {
         1,
         "only the first package is recorded"
     );
+    assert_eq!(
+        std::fs::read(declaration_path).unwrap(),
+        before_declarations
+    );
+    assert_eq!(std::fs::read(lock_path).unwrap(), before_lock);
+    assert_eq!(std::fs::read(trust_path).unwrap(), before_trust);
+}
+
+fn set_file_readonly(path: &Path, readonly: bool) {
+    let mut permissions = std::fs::metadata(path).unwrap().permissions();
+    set_permissions_readonly(&mut permissions, readonly);
+    std::fs::set_permissions(path, permissions).unwrap();
+}
+
+#[cfg(unix)]
+fn set_permissions_readonly(permissions: &mut std::fs::Permissions, readonly: bool) {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let mode = permissions.mode();
+    permissions.set_mode(if readonly {
+        mode & !0o222
+    } else {
+        mode | 0o600
+    });
+}
+
+#[cfg(not(unix))]
+fn set_permissions_readonly(permissions: &mut std::fs::Permissions, readonly: bool) {
+    permissions.set_readonly(readonly);
+}
+
+#[test]
+fn validated_executable_identity_cannot_be_replaced_before_launch() {
+    let (_pkg, root, _sha) = make_execution_package("opi-sandbox");
+    let manifest_path = root.join("package.toml");
+    let raw = std::fs::read(&manifest_path).unwrap();
+    let manifest =
+        PackageManifest::from_toml(&String::from_utf8_lossy(&raw), &manifest_path).unwrap();
+    let validated = validate_executable_contributions(
+        &manifest,
+        &raw,
+        &root,
+        PackageSource::Global,
+        package_activation::host_target_triple(),
+        package_activation::host_opi_version(),
+    )
+    .unwrap();
+    let contribution = &validated[0];
+    let command = root.join("bin/opi-sandbox");
+
+    #[cfg(unix)]
+    {
+        let validated_file = root.join("bin/validated-original");
+        std::fs::rename(&command, &validated_file).unwrap();
+        std::fs::write(&command, b"#!/bin/sh\necho replacement\n").unwrap();
+        make_executable(&command);
+        assert_eq!(
+            std::fs::read(contribution.bound_launch_path()).unwrap(),
+            EXE_CONTENT,
+            "the launch path stays bound to the validated inode"
+        );
+    }
+
+    #[cfg(windows)]
+    {
+        let error = std::fs::write(&command, b"replacement")
+            .expect_err("validated handle must deny write/delete replacement sharing");
+        assert_ne!(error.kind(), std::io::ErrorKind::NotFound);
+        assert_eq!(
+            std::fs::read(contribution.bound_launch_path()).unwrap(),
+            EXE_CONTENT,
+            "the launch path still names the validated locked file"
+        );
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn validated_executable_material_survives_same_inode_rewrite() {
+    let (_pkg, root, _sha) = make_execution_package("opi-sandbox");
+    let manifest_path = root.join("package.toml");
+    let raw = std::fs::read(&manifest_path).unwrap();
+    let manifest =
+        PackageManifest::from_toml(&String::from_utf8_lossy(&raw), &manifest_path).unwrap();
+    let validated = validate_executable_contributions(
+        &manifest,
+        &raw,
+        &root,
+        PackageSource::Global,
+        package_activation::host_target_triple(),
+        package_activation::host_opi_version(),
+    )
+    .unwrap();
+    let contribution = &validated[0];
+
+    std::fs::write(root.join("bin/opi-sandbox"), b"changed in place").unwrap();
+    assert_eq!(
+        std::fs::read(contribution.bound_launch_path()).unwrap(),
+        EXE_CONTENT,
+        "launch material must be detached from later writes to the package inode"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn package_doctor_rejects_fifo_executable_without_blocking() {
+    use std::ffi::CString;
+    use std::os::unix::ffi::OsStrExt as _;
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    let (_pkg, root, _sha) = make_execution_package("opi-sandbox");
+    let workspace = tempfile::tempdir().unwrap();
+    let user = tempfile::tempdir().unwrap();
+    assert_eq!(
+        add_global(root.to_str().unwrap(), workspace.path(), user.path()),
+        0
+    );
+    let executable = root.join("bin/opi-sandbox");
+    std::fs::remove_file(&executable).unwrap();
+    let path = CString::new(executable.as_os_str().as_bytes()).unwrap();
+    // SAFETY: `path` is a live NUL-terminated filesystem path and the mode is valid.
+    assert_eq!(unsafe { libc::mkfifo(path.as_ptr(), 0o600) }, 0);
+
+    let workspace_path = workspace.path().to_path_buf();
+    let user_path = user.path().to_path_buf();
+    let (tx, rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        let code = package_cli::handle_package_command(
+            &PackageCommand::Doctor { json: true },
+            workspace_path,
+            user_path,
+        );
+        let _ = tx.send(code);
+    });
+    assert_eq!(
+        rx.recv_timeout(Duration::from_secs(2))
+            .expect("doctor must not block opening a FIFO"),
+        2
+    );
+}
+
+#[test]
+fn byte_identical_readd_preserves_trust_and_enablement() {
+    let (_pkg, root, _sha) = make_execution_package("opi-sandbox");
+    let workspace = tempfile::tempdir().unwrap();
+    let user = tempfile::tempdir().unwrap();
+    assert_eq!(
+        add_global(root.to_str().unwrap(), workspace.path(), user.path()),
+        0
+    );
+    let mut confirmer = TestConfirmer {
+        grant: true,
+        saw_display: false,
+    };
+    store(user.path())
+        .enable(
+            "opi-sandbox",
+            package_activation::host_target_triple(),
+            package_activation::host_opi_version(),
+            &mut confirmer,
+        )
+        .unwrap();
+
+    assert_eq!(
+        add_global(root.to_str().unwrap(), workspace.path(), user.path()),
+        0
+    );
+    let rec = &records(user.path())[0];
+    assert!(rec.trusted && rec.enabled);
+}
+
+#[test]
+fn changed_executable_readd_invalidates_trust_and_enablement() {
+    let (_pkg, root, old_sha) = make_execution_package("opi-sandbox");
+    let workspace = tempfile::tempdir().unwrap();
+    let user = tempfile::tempdir().unwrap();
+    assert_eq!(
+        add_global(root.to_str().unwrap(), workspace.path(), user.path()),
+        0
+    );
+    let mut confirmer = TestConfirmer {
+        grant: true,
+        saw_display: false,
+    };
+    store(user.path())
+        .enable(
+            "opi-sandbox",
+            package_activation::host_target_triple(),
+            package_activation::host_opi_version(),
+            &mut confirmer,
+        )
+        .unwrap();
+
+    let changed = b"#!/bin/sh\necho changed\n";
+    std::fs::write(root.join("bin/opi-sandbox"), changed).unwrap();
+    make_executable(&root.join("bin/opi-sandbox"));
+    let manifest_path = root.join("package.toml");
+    let manifest = std::fs::read_to_string(&manifest_path).unwrap();
+    std::fs::write(
+        &manifest_path,
+        manifest.replace(&old_sha, &t_sha256(changed)),
+    )
+    .unwrap();
+
+    assert_eq!(
+        add_global(root.to_str().unwrap(), workspace.path(), user.path()),
+        0
+    );
+    let rec = &records(user.path())[0];
+    assert!(!rec.trusted && !rec.enabled);
+}
+
+#[test]
+fn removing_all_contributions_on_readd_invalidates_trust_and_enablement() {
+    let (_pkg, root, _sha) = make_execution_package("opi-sandbox");
+    let workspace = tempfile::tempdir().unwrap();
+    let user = tempfile::tempdir().unwrap();
+    assert_eq!(
+        add_global(root.to_str().unwrap(), workspace.path(), user.path()),
+        0
+    );
+    let mut confirmer = TestConfirmer {
+        grant: true,
+        saw_display: false,
+    };
+    store(user.path())
+        .enable(
+            "opi-sandbox",
+            package_activation::host_target_triple(),
+            package_activation::host_opi_version(),
+            &mut confirmer,
+        )
+        .unwrap();
+
+    std::fs::write(
+        root.join("package.toml"),
+        "version = \"0.8.0\"\nopi_version = \">=0.7,<0.8\"\nname = \"opi-sandbox\"\ndescription = \"no executable contribution\"\n",
+    )
+    .unwrap();
+    assert_eq!(
+        add_global(root.to_str().unwrap(), workspace.path(), user.path()),
+        0
+    );
+    let rec = &records(user.path())[0];
+    assert!(!rec.trusted && !rec.enabled);
 }
 
 // --- enable / disable / remove --------------------------------------------
@@ -490,6 +744,91 @@ fn activate_drift_invalidates_trust_durably() {
     let rec = &records(user.path())[0];
     assert!(!rec.trusted, "drift must invalidate persisted trust");
     assert!(!rec.enabled);
+}
+
+#[test]
+fn usable_identity_resolution_filters_current_target_mismatch() {
+    let (_pkg, root, _sha) = make_execution_package("opi-sandbox");
+    let workspace = tempfile::tempdir().unwrap();
+    let user = tempfile::tempdir().unwrap();
+    add_global(root.to_str().unwrap(), workspace.path(), user.path());
+    let activation = store(user.path());
+    let mut confirmer = TestConfirmer {
+        grant: true,
+        saw_display: false,
+    };
+    activation
+        .enable(
+            "opi-sandbox",
+            package_activation::host_target_triple(),
+            package_activation::host_opi_version(),
+            &mut confirmer,
+        )
+        .unwrap();
+    assert_eq!(
+        activation
+            .usable_enabled_identities(
+                package_activation::host_target_triple(),
+                package_activation::host_opi_version(),
+            )
+            .len(),
+        1
+    );
+
+    let manifest_path = root.join("package.toml");
+    let manifest = std::fs::read_to_string(&manifest_path).unwrap();
+    std::fs::write(
+        &manifest_path,
+        manifest.replace(
+            package_activation::host_target_triple(),
+            "mismatched-target",
+        ),
+    )
+    .unwrap();
+    assert!(
+        activation
+            .usable_enabled_identities(
+                package_activation::host_target_triple(),
+                package_activation::host_opi_version(),
+            )
+            .is_empty(),
+        "a stale target must not become a model-visible candidate"
+    );
+}
+
+#[test]
+fn activate_surfaces_trust_invalidation_write_failure() {
+    let (_pkg, root, _sha) = make_execution_package("opi-sandbox");
+    let workspace = tempfile::tempdir().unwrap();
+    let user = tempfile::tempdir().unwrap();
+    add_global(root.to_str().unwrap(), workspace.path(), user.path());
+    let mut confirmer = TestConfirmer {
+        grant: true,
+        saw_display: false,
+    };
+    store(user.path())
+        .enable(
+            "opi-sandbox",
+            package_activation::host_target_triple(),
+            package_activation::host_opi_version(),
+            &mut confirmer,
+        )
+        .unwrap();
+    std::fs::write(root.join("bin/opi-sandbox"), b"changed").unwrap();
+
+    let trust_path = user.path().join("package-trust.toml");
+    set_file_readonly(&trust_path, true);
+    let result = store(user.path()).activate(
+        "opi-sandbox",
+        package_activation::host_target_triple(),
+        package_activation::host_opi_version(),
+    );
+    set_file_readonly(&trust_path, false);
+
+    assert!(
+        matches!(result, Err(ActivationError::Store(_))),
+        "durable invalidation write failure must surface: {result:?}"
+    );
 }
 
 #[test]

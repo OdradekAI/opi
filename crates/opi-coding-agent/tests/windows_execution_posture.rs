@@ -23,11 +23,10 @@
 //! for the local identity, NOT sourced from any sandbox/confinement state: the
 //! execution-backend guarantee axis is distinct from the Phase 15 host-sandbox
 //! restriction axis (seccomp+Landlock on Linux-Engaged), which is reported via
-//! `CODE_PROCESS_TREE_DEGRADED`. The report medium is the in-band
+//! `CODE_PROCESS_TREE_DEGRADED`. The in-band
 //! `opi.operations.bash.operation_context` diagnostic on `BashResult` — the
-//! local path cannot initialize protocol state (spec lines 195-197), so its
-//! report intentionally does NOT flow to the agent `ToolResult` wire (the
-//! diagnostic is filtered at `tool/bash.rs:append_backend_diagnostics`).
+//! `BashTool` publishes the redaction-safe fields in `ToolResult::details` for
+//! every public surface.
 //!
 //! ## Clause 5: package-selection fail-fast before command execution
 //!
@@ -49,6 +48,7 @@ use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use opi_agent::tool::Tool as _;
 use opi_coding_agent::cli::PackageCommand;
 use opi_coding_agent::config::{
     ExecutionConfig, ExecutionRunMode, ExecutionStrategy, PermissionDecision,
@@ -60,8 +60,8 @@ use opi_coding_agent::execution::{
 use opi_coding_agent::package_activation::{self, TrustConfirmer, TrustDisplay};
 use opi_coding_agent::package_cli;
 use opi_coding_agent::tool::{
-    BashOpError, BashOperations, BashRequest, BashResult, LOCAL_BASH_OPERATION_DIAGNOSTIC,
-    LocalBashOperations,
+    BashOpError, BashOperations, BashRequest, BashResult, BashTool,
+    LOCAL_BASH_OPERATION_DIAGNOSTIC, LocalBashOperations,
 };
 use tempfile::{TempDir, tempdir};
 use tokio_util::sync::CancellationToken;
@@ -78,7 +78,7 @@ use tokio_util::sync::CancellationToken;
 #[tokio::test]
 async fn local_exec_reports_supervised_guarantee() {
     let workspace: TempDir = tempdir().expect("workspace temp dir");
-    let ops = LocalBashOperations::new();
+    let ops = Arc::new(LocalBashOperations::new());
     let command = if cfg!(windows) { "exit 0" } else { "true" };
     let request = BashRequest {
         command: command.to_string(),
@@ -128,6 +128,20 @@ async fn local_exec_reports_supervised_guarantee() {
         details.get("policy").is_none(),
         "local reports only placement+guarantee; no policy/limitations"
     );
+
+    let tool = BashTool::new_with_ops(workspace.path().to_path_buf(), ops);
+    let public = tool
+        .execute(
+            "local-contract",
+            serde_json::json!({"command": command}),
+            CancellationToken::new(),
+            None,
+        )
+        .await
+        .unwrap();
+    let public_details = public.details.expect("public ToolResult details");
+    assert_eq!(public_details["placement"], "host");
+    assert_eq!(public_details["guarantee"], "supervised");
 }
 
 // ---------------------------------------------------------------------------

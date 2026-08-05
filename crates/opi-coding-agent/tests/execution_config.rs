@@ -281,6 +281,56 @@ fn project_permissions_rejected_via_merge_project_config() {
 }
 
 #[test]
+fn empty_project_permissions_table_is_rejected_via_resolve_config() {
+    let root = tempfile::tempdir().unwrap();
+    let user_dir = root.path().join("user");
+    let project_dir = root.path().join("project");
+    std::fs::create_dir_all(&user_dir).unwrap();
+    std::fs::create_dir_all(project_dir.join(".opi")).unwrap();
+    let user_config = write_config(
+        &user_dir,
+        "config.toml",
+        "[execution.permissions]\nlocal = \"deny\"\n",
+    );
+    write_config(
+        &project_dir.join(".opi"),
+        "config.toml",
+        "[execution.permissions]\n",
+    );
+    let result = resolve_config(ConfigSource {
+        cli_model: None,
+        config_path: None,
+        env_model: None,
+        project_dir: Some(project_dir),
+        user_config_path: Some(user_config),
+    });
+    expect_invalid_exec(result, "permissions");
+}
+
+#[test]
+fn empty_project_permissions_table_is_rejected_via_merge_project_config() {
+    let root = tempfile::tempdir().unwrap();
+    let user_config = write_temp_config(root.path(), "[execution.permissions]\nlocal = \"deny\"\n");
+    let project_dir = root.path().join("project");
+    std::fs::create_dir_all(project_dir.join(".opi")).unwrap();
+    write_config(
+        &project_dir.join(".opi"),
+        "config.toml",
+        "[execution.permissions]\n",
+    );
+    let pretrust = load_config_file(&user_config).unwrap();
+    expect_invalid_exec(merge_project_config(pretrust, &project_dir), "permissions");
+}
+
+#[test]
+fn empty_user_permissions_table_is_allowed() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = load_config_file(&write_temp_config(dir.path(), "[execution.permissions]\n"))
+        .expect("user-owned empty permission table is valid");
+    assert!(config.execution.permissions.is_empty());
+}
+
+#[test]
 fn user_layer_permissions_are_accepted() {
     // Control: the user layer MAY set permissions (the rejection is project-only).
     let dir = tempfile::tempdir().unwrap();

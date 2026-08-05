@@ -18,9 +18,17 @@ use opi_protocol::execution::v1::frames::{
     TargetId,
 };
 use opi_protocol::execution::v1::{
-    BackendToHost, Base64Bytes, CleanupState, FailureCode, FailurePhase, HostToBackend, ProtocolId,
-    RequestId, WIRE_IDENTITY,
+    BackendToHost, Base64Bytes, CleanupState, Diagnostic, FailureCode, FailurePhase, HostToBackend,
+    ImplementationId, ProtocolId, RequestId, WIRE_IDENTITY,
 };
+
+struct ReadyIdentity {
+    implementation: String,
+    version: String,
+    target: String,
+}
+
+static READY_IDENTITY: std::sync::OnceLock<ReadyIdentity> = std::sync::OnceLock::new();
 
 fn main() {
     // Mode (and an optional mode-specific param) come from ARGS first so the
@@ -31,7 +39,24 @@ fn main() {
         .next()
         .or_else(|| std::env::var("OPI_PROTOCOL_MOCK_MODE").ok())
         .unwrap_or_else(|| "happy_path".to_string());
-    let extra = args.next();
+    let remaining = args.collect::<Vec<_>>();
+    let extra = remaining.first().cloned();
+    let ready_identity = if mode == "happy_path" && remaining.len() >= 3 {
+        ReadyIdentity {
+            implementation: remaining[0].clone(),
+            version: remaining[1].clone(),
+            target: remaining[2].clone(),
+        }
+    } else {
+        ReadyIdentity {
+            implementation: "opi-sandbox".into(),
+            version: "mock-1.0.0".into(),
+            target: "mock-target".into(),
+        }
+    };
+    READY_IDENTITY
+        .set(ready_identity)
+        .unwrap_or_else(|_| unreachable!("ready identity initialized once"));
     let stdin = std::io::stdin();
     let stdout = std::io::stdout();
     let mut reader = std::io::BufReader::new(stdin.lock());
@@ -53,6 +78,14 @@ fn main() {
         "crash_before_ready" => crash_before_ready(&mut reader),
         "crash_after_ready" => crash_after_ready(&mut reader, &mut writer),
         "protocol_incompatible" => protocol_incompatible(&mut reader, &mut writer),
+        "ready_identity_mismatch" => ready_mismatch(&mut reader, &mut writer, "identity"),
+        "ready_version_mismatch" => ready_mismatch(&mut reader, &mut writer, "version"),
+        "ready_target_mismatch" => ready_mismatch(&mut reader, &mut writer, "target"),
+        "slow_ready" => slow_ready(&mut reader, &mut writer),
+        "terminal_extra_frame" => terminal_contamination(&mut reader, &mut writer, true),
+        "terminal_extra_bytes" => terminal_contamination(&mut reader, &mut writer, false),
+        "failed_terminal_extra_bytes" => failed_terminal_contamination(&mut reader, &mut writer),
+        "terminal_diagnostic" => terminal_diagnostic(&mut reader, &mut writer),
         "hang_before_ready" => hang(&mut reader, &mut writer, HangPoint::BeforeReady),
         "hang_after_started" => hang(&mut reader, &mut writer, HangPoint::AfterStarted),
         // In-band Completed with timed_out=true and a clean exit code: the host
@@ -128,11 +161,28 @@ fn send(writer: &mut impl Write, frame: &BackendToHost) {
 }
 
 fn ready_frame(rid: &RequestId, protocol: &str) -> BackendToHost {
+    let identity = READY_IDENTITY.get().expect("ready identity initialized");
     BackendToHost::Ready(ReadyPayload {
         request_id: rid.clone(),
         selected_protocol: ProtocolId::new(protocol),
-        implementation_version: "mock-1.0.0".to_string(),
-        target: TargetId::new("mock-target"),
+        implementation: ImplementationId::new(identity.implementation.clone()).unwrap(),
+        implementation_version: identity.version.clone(),
+        target: TargetId::new(identity.target.clone()),
+    })
+}
+
+fn custom_ready_frame(
+    rid: &RequestId,
+    implementation: &str,
+    version: &str,
+    target: &str,
+) -> BackendToHost {
+    BackendToHost::Ready(ReadyPayload {
+        request_id: rid.clone(),
+        selected_protocol: ProtocolId::new(WIRE_IDENTITY),
+        implementation: ImplementationId::new(implementation).unwrap(),
+        implementation_version: version.to_string(),
+        target: TargetId::new(target),
     })
 }
 
@@ -517,8 +567,10 @@ fn failed(reader: &mut impl BufRead, writer: &mut impl Write, code: FailureCode,
             request_id: rid,
             code,
             phase,
-            message: None,
-            diagnostics: vec![],
+            message: Some("backend failure at C:\\private\\tool with sk-proj-secret".into()),
+            diagnostics: vec![Diagnostic {
+                message: "detail C:\\private\\detail sk-proj-secret".into(),
+            }],
         }),
     );
     drain_until_eof(reader);
@@ -560,6 +612,148 @@ fn protocol_incompatible(reader: &mut impl BufRead, writer: &mut impl Write) {
     send(writer, &ready_frame(&rid, "command-execution-jsonl-v9"));
     drain_until_eof(reader);
     std::process::exit(0);
+}
+
+fn ready_mismatch(reader: &mut impl BufRead, writer: &mut impl Write, field: &str) {
+    let Some(rid) = expect_initialize(reader) else {
+        return;
+    };
+    let (implementation, version, target) = match field {
+        "identity" => ("different-adapter", "mock-1.0.0", "mock-target"),
+        "version" => ("opi-sandbox", "different-version", "mock-target"),
+        "target" => ("opi-sandbox", "mock-1.0.0", "different-target"),
+        _ => unreachable!(),
+    };
+    send(
+        writer,
+        &custom_ready_frame(&rid, implementation, version, target),
+    );
+    drain_until_eof(reader);
+}
+
+fn slow_ready(reader: &mut impl BufRead, writer: &mut impl Write) {
+    let Some(rid) = expect_initialize(reader) else {
+        return;
+    };
+    std::thread::sleep(std::time::Duration::from_millis(250));
+    send(writer, &ready_frame(&rid, WIRE_IDENTITY));
+    drain_until_eof(reader);
+}
+
+fn terminal_contamination(reader: &mut impl BufRead, writer: &mut impl Write, frame: bool) {
+    let Some(rid) = expect_initialize(reader) else {
+        return;
+    };
+    send(writer, &ready_frame(&rid, WIRE_IDENTITY));
+    let _ = read_host_frame(reader);
+    send(
+        writer,
+        &BackendToHost::Accepted(AcceptedPayload {
+            request_id: rid.clone(),
+        }),
+    );
+    send(
+        writer,
+        &BackendToHost::Started(StartedPayload {
+            request_id: rid.clone(),
+            placement: "host".into(),
+            guarantee: "supervised".into(),
+            policy: "none".into(),
+            limitations: vec![],
+        }),
+    );
+    send(
+        writer,
+        &BackendToHost::Completed(CompletedPayload {
+            request_id: rid.clone(),
+            exit: Some(0),
+            signal: None,
+            timed_out: false,
+            cancelled: false,
+            cleanup: CleanupState::Confirmed,
+            diagnostics: vec![],
+        }),
+    );
+    if frame {
+        send(
+            writer,
+            &BackendToHost::Diagnostic(opi_protocol::execution::v1::frames::DiagnosticPayload {
+                request_id: rid,
+                message: "after terminal".into(),
+            }),
+        );
+    } else {
+        writer.write_all(b"x").unwrap();
+        writer.flush().unwrap();
+    }
+    drain_until_eof(reader);
+}
+
+fn failed_terminal_contamination(reader: &mut impl BufRead, writer: &mut impl Write) {
+    let Some(rid) = expect_initialize(reader) else {
+        return;
+    };
+    send(
+        writer,
+        &BackendToHost::Failed(FailedPayload {
+            request_id: rid,
+            code: FailureCode::Unavailable,
+            phase: FailurePhase::Handshake,
+            message: Some("redacted failure detail".into()),
+            diagnostics: vec![],
+        }),
+    );
+    writer.write_all(b"x").unwrap();
+    writer.flush().unwrap();
+    drain_until_eof(reader);
+}
+
+fn terminal_diagnostic(reader: &mut impl BufRead, writer: &mut impl Write) {
+    let Some(rid) = expect_initialize(reader) else {
+        return;
+    };
+    send(writer, &ready_frame(&rid, WIRE_IDENTITY));
+    let _ = read_host_frame(reader);
+    send(
+        writer,
+        &BackendToHost::Accepted(AcceptedPayload {
+            request_id: rid.clone(),
+        }),
+    );
+    send(
+        writer,
+        &BackendToHost::Started(StartedPayload {
+            request_id: rid.clone(),
+            placement: "host".into(),
+            guarantee: "supervised".into(),
+            policy: "none".into(),
+            limitations: vec![],
+        }),
+    );
+    send(
+        writer,
+        &BackendToHost::Diagnostic(opi_protocol::execution::v1::frames::DiagnosticPayload {
+            request_id: rid.clone(),
+            message:
+                "stream secret sk-proj-abcdefghijklmnopqrstuvwxyz123456 at C:\\private\\stream"
+                    .into(),
+        }),
+    );
+    send(
+        writer,
+        &BackendToHost::Completed(CompletedPayload {
+            request_id: rid,
+            exit: Some(0),
+            signal: None,
+            timed_out: false,
+            cancelled: false,
+            cleanup: CleanupState::Confirmed,
+            diagnostics: vec![Diagnostic {
+                message: "backend secret sk-proj-abcdefghijklmnopqrstuvwxyz123456 at C:\\private\\adapter".into(),
+            }],
+        }),
+    );
+    drain_until_eof(reader);
 }
 
 fn hang(reader: &mut impl BufRead, writer: &mut impl Write, point: HangPoint) {

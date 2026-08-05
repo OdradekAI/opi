@@ -202,10 +202,15 @@ fn localized_docs_pin_exact_phase15_claims() {
     let readme = heading_slice(
         "README.md",
         &readme,
-        "### Sandbox and project trust",
+        "### Historical Phase 15 sandbox and project trust",
         "## Development",
     );
-    let readme_zh = heading_slice("README.zh.md", &readme_zh, "### 沙箱与项目信任", "## 开发");
+    let readme_zh = heading_slice(
+        "README.zh.md",
+        &readme_zh,
+        "### 历史记录：第十五阶段沙箱与项目信任",
+        "## 开发",
+    );
 
     assert_claims(
         "docs/opi-spec.md",
@@ -278,7 +283,7 @@ fn localized_docs_pin_exact_phase15_claims() {
         "README.md",
         readme,
         &[
-            "### Sandbox and project trust",
+            "### Historical Phase 15 sandbox and project trust",
             "The sandbox confines only the `bash` subprocess tree, not `opi` itself.",
             "Linux `strict` L2 is a narrowed new-socket creation gate: seccomp denies `socket(AF_INET)`, `socket(AF_INET6)`, and `socket(AF_NETLINK)` while preserving `socket(AF_UNIX)`",
             "On Landlock ABI 1-3, fail-open retains the seccomp new-socket gate",
@@ -292,7 +297,7 @@ fn localized_docs_pin_exact_phase15_claims() {
         "README.zh.md",
         readme_zh,
         &[
-            "### 沙箱与项目信任",
+            "### 历史记录：第十五阶段沙箱与项目信任",
             "沙箱只 confine `bash` 子进程树，不 confine `opi` 自身。",
             "Linux `strict` L2 是收窄的新建 socket 创建门：seccomp 拒绝 `socket(AF_INET)`、 `socket(AF_INET6)` 与 `socket(AF_NETLINK)`，同时保留 `socket(AF_UNIX)`",
             "在 Landlock ABI 1-3 上， fail-open 会保留 seccomp 新建 socket 门",
@@ -339,10 +344,15 @@ fn phase15_docs_reject_superseded_design_and_nongoal_claims() {
     let readme = heading_slice(
         "README.md",
         &readme,
-        "### Sandbox and project trust",
+        "### Historical Phase 15 sandbox and project trust",
         "## Development",
     );
-    let readme_zh = heading_slice("README.zh.md", &readme_zh, "### 沙箱与项目信任", "## 开发");
+    let readme_zh = heading_slice(
+        "README.zh.md",
+        &readme_zh,
+        "### 历史记录：第十五阶段沙箱与项目信任",
+        "## 开发",
+    );
 
     for (path, content) in [
         ("docs/opi-spec.md", spec),

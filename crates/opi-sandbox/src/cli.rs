@@ -40,6 +40,7 @@
 #![forbid(unsafe_code)]
 
 use std::collections::BTreeMap;
+use std::ffi::OsString;
 use std::fmt::Write as _;
 use std::path::PathBuf;
 use std::pin::Pin;
@@ -47,6 +48,7 @@ use std::time::Duration;
 
 use futures_core::Stream;
 use opi_protocol::execution::v1::EnvInherit;
+use tokio_util::sync::CancellationToken;
 
 use crate::platform;
 use crate::policy::{Mechanism, NetworkPolicy, Profile, SandboxPolicy};
@@ -220,7 +222,7 @@ fn take_value(args: &[String], i: &mut usize, flag: &str) -> Result<String, Usag
 pub fn build_request(cmd: &RunCommand) -> SandboxRequest {
     SandboxRequest {
         program: cmd.program.clone(),
-        args: cmd.args.clone(),
+        args: cmd.args.iter().map(OsString::from).collect(),
         workspace: cmd.workspace.clone(),
         cwd: cmd.workspace.clone(),
         timeout: DEFAULT_RUN_TIMEOUT,
@@ -257,6 +259,12 @@ pub async fn execute(
             Some(SandboxEvent::Completed(result)) => {
                 let _ = stdout.write_all(&result.stdout);
                 let _ = stderr.write_all(&result.stderr);
+                if result.stdout_truncated {
+                    let _ = stderr.write_all(b"\nopi-sandbox: stdout capture truncated\n");
+                }
+                if result.stderr_truncated {
+                    let _ = stderr.write_all(b"\nopi-sandbox: stderr capture truncated\n");
+                }
                 return map_outcome(&result.outcome);
             }
             // Started is emitted first by the library stream; Output/Diagnostic
@@ -491,10 +499,19 @@ pub async fn run(args: Vec<String>) -> i32 {
                         .restriction
                         .expect("a supported platform posture carries a restriction"),
                 );
-                let request = build_request(&cmd);
+                let mut request = build_request(&cmd);
+                let cancel = CancellationToken::new();
+                request.cancel = Some(cancel.clone());
+                let signal_task = tokio::spawn(async move {
+                    if tokio::signal::ctrl_c().await.is_ok() {
+                        cancel.cancel();
+                    }
+                });
                 let mut out = std::io::stdout();
                 let mut err = std::io::stderr();
-                execute(&runner, request, &mut out, &mut err).await
+                let code = execute(&runner, request, &mut out, &mut err).await;
+                signal_task.abort();
+                code
             }
             Err(error) => {
                 eprintln!("opi-sandbox: {error}");
