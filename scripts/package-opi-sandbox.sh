@@ -10,7 +10,7 @@
 #
 # Package layout (under $ARTIFACT_DIR):
 #   package/package.toml          rendered manifest (target + sha256 filled)
-#   package/bin/opi-sandbox       the executable (chmod +x on Unix)
+#   package/bin/opi-sandbox       the executable (canonical mode 0755 on Unix)
 #   package/schemas/command-execution-jsonl-v1.schema.json
 #   package/licenses/LICENSE      project license
 #   opi-sandbox-<target>.tar.gz   distribution archive (package contents at root)
@@ -52,6 +52,7 @@ fi
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 TEMPLATE="$SCRIPT_DIR/../packaging/opi-sandbox/package.toml.template"
+PACKAGE_HELPER="$SCRIPT_DIR/opi-sandbox-package.py"
 WORKSPACE_MANIFEST="$SCRIPT_DIR/../Cargo.toml"
 SCHEMA_SNAPSHOT="$SCRIPT_DIR/../crates/opi-protocol/tests/snapshots/execution_v1_schema__schema_v1.snap"
 LICENSE_FILE="$SCRIPT_DIR/../LICENSE"
@@ -72,45 +73,11 @@ sha256_lf() { tr -d '\r' < "$1" | hash_stream; }
 # SHA-256 over the raw bytes of a file (no CR stripping: binary may contain 0x0D).
 sha256_raw() { hash_stream < "$1"; }
 
-# Read `key = "value"` from the build-time lock (fixed format, single quotes
-# never used by the emitter).
-lock_value() {
-    grep "^$1 = " "$2" | sed "s/^$1 = \"//;s/\"$//"
-}
-
 if [ "$MODE" = "verify" ]; then
-    PKG="$ARTIFACT_DIR/package"
-    EXTRACTED="$ARTIFACT_DIR/extracted"
-    LOCK="$ARTIFACT_DIR/package-lock.toml"
-    for f in "$PKG/package.toml" "$PKG/bin/opi-sandbox" \
-             "$PKG/schemas/command-execution-jsonl-v1.schema.json" \
-             "$PKG/licenses/LICENSE" \
-             "$EXTRACTED/package.toml" "$EXTRACTED/bin/opi-sandbox" "$LOCK" \
-             "$EXTRACTED/schemas/command-execution-jsonl-v1.schema.json" \
-             "$EXTRACTED/licenses/LICENSE" \
-             "$ARTIFACT_DIR/target"; do
-        [ -f "$f" ] || { echo "package-opi-sandbox: verify: missing $f" >&2; exit 1; }
-    done
-    declared_mh="$(lock_value manifest_hash "$LOCK")"
-    declared_exe="$(lock_value executable_sha256 "$LOCK")"
-    [ -n "$declared_mh" ] && [ -n "$declared_exe" ] || {
-        echo "package-opi-sandbox: verify: undecodable lock" >&2; exit 1; }
-    actual_mh="$(sha256_lf "$PKG/package.toml")"
-    [ "$actual_mh" = "$declared_mh" ] || {
-        echo "package-opi-sandbox: verify: manifest_hash mismatch" >&2; exit 1; }
-    exe_pkg="$(sha256_raw "$PKG/bin/opi-sandbox")"
-    exe_ext="$(sha256_raw "$EXTRACTED/bin/opi-sandbox")"
-    [ "$exe_pkg" = "$declared_exe" ] || {
-        echo "package-opi-sandbox: verify: package executable sha mismatch" >&2; exit 1; }
-    [ "$exe_ext" = "$declared_exe" ] || {
-        echo "package-opi-sandbox: verify: extracted executable sha mismatch" >&2; exit 1; }
-    cmp -s "$PKG/schemas/command-execution-jsonl-v1.schema.json" \
-        "$EXTRACTED/schemas/command-execution-jsonl-v1.schema.json" || {
-        echo "package-opi-sandbox: verify: extracted schema mismatch" >&2; exit 1; }
-    cmp -s "$PKG/licenses/LICENSE" "$EXTRACTED/licenses/LICENSE" || {
-        echo "package-opi-sandbox: verify: extracted license mismatch" >&2; exit 1; }
-    echo "verified opi-sandbox layout: manifest_hash=$actual_mh, executable_sha256=$declared_exe"
-    exit 0
+    python3 "$PACKAGE_HELPER" verify --artifact-dir "$ARTIFACT_DIR" \
+        --archive-suffix .tar.gz --workspace-license "$LICENSE_FILE" \
+        --schema-snapshot "$SCHEMA_SNAPSHOT"
+    exit $?
 fi
 
 # --- pack mode ---
@@ -144,7 +111,7 @@ fi
 EXEC_SHA="$(sha256_raw "$BINARY")" || {
     echo "package-opi-sandbox: cannot read binary: $BINARY" >&2; exit 2; }
 
-if [ ! -f "$TEMPLATE" ]; then
+if [ ! -f "$TEMPLATE" ] || [ ! -f "$PACKAGE_HELPER" ]; then
     echo "package-opi-sandbox: template not found: $TEMPLATE" >&2; exit 2
 fi
 if [ ! -f "$WORKSPACE_MANIFEST" ]; then
@@ -155,51 +122,22 @@ if [ ! -f "$SCHEMA_SNAPSHOT" ] || [ ! -f "$LICENSE_FILE" ]; then
     exit 2
 fi
 
-# The package identity and compatibility window come from the same checkout as
-# this packager. This prevents release/template literals from drifting away
-# from the host version that validates the contribution.
-PACKAGE_VERSION="$(awk '
-    /^\[workspace\.package\][[:space:]]*$/ { in_workspace_package=1; next }
-    /^\[/ { in_workspace_package=0 }
-    in_workspace_package && /^[[:space:]]*version[[:space:]]*=/ {
-        line=$0
-        sub(/^[^=]*=[[:space:]]*"/, "", line)
-        sub(/"[[:space:]]*$/, "", line)
-        print line
-        exit
-    }
-' "$WORKSPACE_MANIFEST")"
-VERSION_CORE="${PACKAGE_VERSION%%-*}"
-IFS=. read -r VERSION_MAJOR VERSION_MINOR VERSION_PATCH VERSION_EXTRA <<EOF
-$VERSION_CORE
-EOF
-if [ -z "$PACKAGE_VERSION" ] || [ -z "${VERSION_MAJOR:-}" ] || \
-   [ -z "${VERSION_MINOR:-}" ] || [ -z "${VERSION_PATCH:-}" ] || \
-   [ -n "${VERSION_EXTRA:-}" ]; then
-    echo "package-opi-sandbox: invalid workspace package version: $PACKAGE_VERSION" >&2
-    exit 2
-fi
-case "$VERSION_MAJOR$VERSION_MINOR$VERSION_PATCH" in
-    *[!0-9]*)
-        echo "package-opi-sandbox: invalid workspace package version: $PACKAGE_VERSION" >&2
-        exit 2
-        ;;
-esac
-OPI_RANGE=">=$VERSION_MAJOR.$VERSION_MINOR,<$VERSION_MAJOR.$((VERSION_MINOR + 1))"
-
 PKG="$ARTIFACT_DIR/package"
 mkdir -p "$PKG/bin" "$PKG/schemas" "$PKG/licenses"
 
-# Render the manifest (substitute tokens) and write LF-only bytes. EXEC_SHA is
-# lowercase hex and TARGET is a triple; neither contains sed metacharacters.
-sed -e "s/__PACKAGE_VERSION__/$PACKAGE_VERSION/g" \
-    -e "s/__OPI_RANGE__/$OPI_RANGE/g" \
-    -e "s/__TARGET__/$TARGET/g" -e "s/__SHA256__/$EXEC_SHA/g" "$TEMPLATE" \
-    | tr -d '\r' > "$PKG/package.toml"
+# One shared strict SemVer parser and literal renderer is used by both platform
+# wrappers. The metadata sidecar contains two already-validated literal lines.
+PACKAGE_META="$ARTIFACT_DIR/package-meta.txt"
+python3 "$PACKAGE_HELPER" render --workspace-manifest "$WORKSPACE_MANIFEST" \
+    --template "$TEMPLATE" --target "$TARGET" --sha256 "$EXEC_SHA" \
+    --output "$PKG/package.toml" --metadata-output "$PACKAGE_META" || exit $?
+PACKAGE_VERSION="$(sed -n '1p' "$PACKAGE_META")"
+OPI_RANGE="$(sed -n '2p' "$PACKAGE_META")"
+rm -f "$PACKAGE_META"
 
 # Copy the binary into the layout (basename always opi-sandbox; no extension).
 cp "$BINARY" "$PKG/bin/opi-sandbox"
-chmod +x "$PKG/bin/opi-sandbox"
+chmod 0755 "$PKG/bin/opi-sandbox"
 
 # The reviewed schema snapshot is the byte-pinned output of opi-protocol's
 # generator. Strip only insta's metadata header and package the JSON document.
@@ -216,7 +154,9 @@ MANIFEST_HASH="$(sha256_lf "$PKG/package.toml")"
 
 # Archive: package contents at root (no wrapping directory).
 ARCHIVE="$ARTIFACT_DIR/opi-sandbox-$TARGET.tar.gz"
-tar -C "$PKG" -czf "$ARCHIVE" .
+tar -C "$PKG" -czf "$ARCHIVE" \
+    package.toml bin/opi-sandbox \
+    schemas/command-execution-jsonl-v1.schema.json licenses/LICENSE
 
 # Clean extracted staging tree.
 EXTRACTED="$ARTIFACT_DIR/extracted"
@@ -243,6 +183,12 @@ protocol = "command-execution-jsonl-v1"
 adapter_id = "opi-sandbox"
 EOF
 printf '%s\n' "$TARGET" > "$ARTIFACT_DIR/target"
+
+# Authenticate the archive users receive, through the same independent
+# extraction path exposed by --verify, before a workflow can smoke or publish.
+python3 "$PACKAGE_HELPER" verify --artifact-dir "$ARTIFACT_DIR" \
+    --archive-suffix .tar.gz --workspace-license "$LICENSE_FILE" \
+    --schema-snapshot "$SCHEMA_SNAPSHOT"
 
 echo "packaged opi-sandbox for $TARGET: sha256=$EXEC_SHA, layout=$PKG"
 exit 0

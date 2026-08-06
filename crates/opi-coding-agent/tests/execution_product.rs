@@ -14,22 +14,27 @@
 //!   --test execution_backend_mock --no-run
 //! ```
 
+use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use opi_agent::event::AgentEvent;
+use opi_agent::loop_types::{AgentLoopConfig, AgentLoopContext};
+use opi_agent::message::AgentMessage;
 use opi_agent::sdk::agent_event_to_value;
 use opi_agent::session_event::AgentSessionEvent;
+use opi_ai::test_support::{self, MockProvider};
 use opi_coding_agent::cli::PackageCommand;
 use opi_coding_agent::config::{
     ExecutionConfig, ExecutionRunMode, ExecutionStrategy, OpiConfig, PermissionDecision,
 };
+use opi_coding_agent::doctor::{DoctorContext, DoctorScope, run_doctor};
 use opi_coding_agent::execution::ValidatedExecutableContribution;
 use opi_coding_agent::execution::permission::PermissionPolicy;
 use opi_coding_agent::execution::{
     EnabledIdentity, IdentitySource, LOCAL_ADAPTER_ID, LockMaterial, PermissionManager,
 };
-use opi_coding_agent::harness::{CodingHarness, ExecutionWiring};
+use opi_coding_agent::harness::{CodingAgentHooks, CodingHarness, ExecutionWiring};
 use opi_coding_agent::package_activation::{
     ActivatedContribution, ActivationError, PackageActivationStore, TrustConfirmer, TrustDisplay,
     host_opi_version, host_target_triple,
@@ -532,6 +537,59 @@ fn packaged_mock_peer(adapter_id: &str) -> (tempfile::TempDir, PathBuf) {
     (dir, root)
 }
 
+#[test]
+fn doctor_does_not_synthesize_untrusted_state_when_activation_store_is_corrupt() {
+    let (_package, root) = packaged_mock_peer("opi-sandbox");
+    let workspace = tempfile::tempdir().unwrap();
+    let user = tempfile::tempdir().unwrap();
+    assert_eq!(
+        package_cli::handle_package_command(
+            &PackageCommand::Add {
+                source: root.to_str().unwrap().to_string(),
+                local: false,
+            },
+            workspace.path().to_path_buf(),
+            user.path().to_path_buf(),
+        ),
+        0
+    );
+    let store = PackageActivationStore::global(user.path().to_path_buf());
+    std::fs::write(store.store().trust_path(), "not = [valid toml").unwrap();
+    let config = OpiConfig::default();
+    let env_var = |_name: &str| None;
+    let store_probe = HashMap::new();
+    let context = DoctorContext {
+        config: &config,
+        config_error: None,
+        workspace_root: workspace.path(),
+        user_config_dir: user.path(),
+        sessions_dir: workspace.path(),
+        term: None,
+        term_program: None,
+        term_features: None,
+        no_color: false,
+        colorterm: None,
+        env_var: &env_var,
+        store_probe: &store_probe,
+    };
+
+    let report = run_doctor(&[DoctorScope::Package], &context);
+    assert!(
+        report
+            .entries
+            .iter()
+            .any(|entry| entry.diagnostic.code == "adapter_unavailable")
+    );
+    assert!(
+        report
+            .entries
+            .iter()
+            .all(|entry| entry.diagnostic.code != "package_untrusted"),
+        "corrupt store must not be presented as an untrusted package: {:?}",
+        report.entries
+    );
+}
+
 /// The production wiring shape for a real installed+enabled package: the real
 /// `PackageActivationStore` is the `IdentitySource`, and `enabled` comes from
 /// `PackageActivationStore::enabled_identities` exactly as `execution_wiring`
@@ -867,10 +925,9 @@ fn assert_remediation(result: &opi_agent::tool::ToolResult, expected_code: &str)
 #[tokio::test]
 async fn mock_peer_failure_modes_surface_stable_codes_via_production_path() {
     // (mode, extra, expected stable code). The mock peer reads the failure code
-    // from its second CLI arg for the failed_* modes. NOTE: `failed_pre_started`
-    // (unavailable OR generic) maps to `execution_failed` at the protocol layer
-    // (proven in execution_protocol_host.rs); `adapter_unavailable` is produced
-    // at the activation layer and is covered separately below.
+    // from its second CLI arg for the failed_* modes. A pre-start generic
+    // failure maps to `execution_failed`; pre-start `unavailable` preserves the
+    // selected adapter identity and is covered separately below.
     let cases: &[(&str, &str, &str)] = &[
         ("failed_pre_started", "failed", "execution_failed"),
         (
@@ -1061,6 +1118,79 @@ async fn cancelled_in_band_completed_is_not_a_success() {
         "the cancelled operation-context flag must ride along: {:?}",
         result.diagnostics
     );
+}
+
+#[tokio::test]
+async fn wire_unavailable_preserves_selected_adapter_in_public_diagnostic() {
+    let result = routed_tool_result(
+        canned_with_args(
+            "opi-sandbox",
+            "mock-pkg",
+            &["failed_pre_started", "unavailable"],
+        ),
+        &[("opi-sandbox", PermissionDecision::Allow)],
+        &[("opi-sandbox", "mock-pkg")],
+        ExecutionRunMode::Interactive,
+    )
+    .await;
+    let diagnostic = result
+        .diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic.code == "adapter_unavailable")
+        .expect("wire unavailable carries the stable diagnostic");
+    assert_eq!(diagnostic.context["adapter_id"], "opi-sandbox");
+    assert!(
+        diagnostic.context["remediation"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("opi-sandbox")
+    );
+
+    let event = AgentEvent::ToolExecutionEnd {
+        tool_call_id: "wire-unavailable".into(),
+        tool_name: "bash".into(),
+        result: serde_json::json!(&result.content),
+        details: result.details.clone(),
+        is_error: result.is_error,
+        truncated: result.truncated,
+        diagnostics: result.diagnostics.clone(),
+    };
+    for value in [
+        serde_json::to_value(AgentSessionEvent::Agent {
+            event: event.clone(),
+        })
+        .unwrap(),
+        agent_event_to_value(&event),
+    ] {
+        assert!(value.to_string().contains("opi-sandbox"));
+    }
+}
+
+#[tokio::test]
+async fn routed_signal_is_public_and_signal_specific() {
+    let result = routed_tool_result(
+        canned("opi-sandbox", "mock-pkg", "signal_in_band"),
+        &[("opi-sandbox", PermissionDecision::Allow)],
+        &[("opi-sandbox", "mock-pkg")],
+        ExecutionRunMode::Interactive,
+    )
+    .await;
+
+    assert!(result.is_error);
+    assert_eq!(result.details.as_ref().unwrap()["signal"], 9);
+    let diagnostic = result
+        .diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic.code == "tool_execution_failed")
+        .expect("signal termination carries the public operation diagnostic");
+    assert_eq!(diagnostic.message, "command terminated by signal 9");
+    assert_eq!(diagnostic.context["signal"], 9);
+    match &result.content[0] {
+        opi_ai::message::OutputContent::Text { text } => {
+            assert_eq!(text, "command terminated by signal 9")
+        }
+        other => panic!("expected text output, got {other:?}"),
+    }
 }
 
 /// SC16-14: `permission_required` (headless ask on a selected external) lifts its
@@ -1330,6 +1460,182 @@ async fn adapter_not_selected_surfaces_via_production_path() {
         result.diagnostics
     );
     assert_remediation(&result, "adapter_not_selected");
+}
+
+#[tokio::test]
+async fn hostile_model_backend_is_redacted_on_all_public_surfaces() {
+    let canary = r#"C:\private\HOSTILE sk-proj-012345678901234567890123456789"#;
+    let ws = tempfile::tempdir().unwrap();
+    let wiring = ExecutionWiring {
+        config: ExecutionConfig {
+            strategy: ExecutionStrategy::Model,
+            ..ExecutionConfig::default()
+        },
+        enabled: vec![EnabledIdentity {
+            adapter_id: "opi-sandbox".to_string(),
+            package_name: "mock-pkg".to_string(),
+        }],
+        policy: PermissionPolicy::from_map(
+            [("opi-sandbox".to_string(), PermissionDecision::Allow)]
+                .into_iter()
+                .collect(),
+        ),
+        store: Arc::new(PanicSource),
+        mode: ExecutionRunMode::Interactive,
+        host_target: host_target_triple().to_string(),
+        host_opi_version: host_opi_version().to_string(),
+        manager: Arc::new(PermissionManager::new()),
+        broker: None,
+    };
+    let tool_config =
+        ToolRuntimeConfig::resolve(RunMode::Interactive, true, ToolSelection::Default)
+            .expect("interactive tool config");
+    let (tools, _diags) = CodingHarness::build_tools(ws.path(), &tool_config, &wiring);
+    let bash = tools
+        .into_iter()
+        .find(|tool| tool.definition().name == "bash")
+        .expect("routed bash tool present");
+    let result = bash
+        .execute(
+            "hostile-backend",
+            serde_json::json!({"command": "echo hi", "backend": canary, "timeout_secs": 5}),
+            CancellationToken::new(),
+            None,
+        )
+        .await
+        .expect("bash tool executes");
+    assert!(result.is_error);
+
+    let event = AgentEvent::ToolExecutionEnd {
+        tool_call_id: "hostile-backend".into(),
+        tool_name: "bash".into(),
+        result: serde_json::json!(&result.content),
+        details: result.details.clone(),
+        is_error: result.is_error,
+        truncated: result.truncated,
+        diagnostics: result.diagnostics.clone(),
+    };
+    let public_surfaces = [
+        serde_json::to_string(&result.content).unwrap(),
+        serde_json::to_string(&result.diagnostics).unwrap(),
+        serde_json::to_string(&AgentSessionEvent::Agent {
+            event: event.clone(),
+        })
+        .unwrap(),
+        agent_event_to_value(&event).to_string(),
+    ];
+    for surface in public_surfaces {
+        assert!(
+            !surface.contains(canary),
+            "hostile backend leaked: {surface}"
+        );
+        assert!(
+            surface.contains("<unavailable>") || surface.contains("adapter_not_selected"),
+            "public surface lost safe failure context: {surface}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn agent_loop_redacts_hostile_backend_rejected_by_model_schema() {
+    let canary = "HOSTILE_BACKEND_VALIDATION_CANARY";
+    let hostile_backend = format!(r#"C:\private\{canary} sk-proj-012345678901234567890123456789"#);
+    let ws = tempfile::tempdir().unwrap();
+    let wiring = ExecutionWiring {
+        config: ExecutionConfig {
+            strategy: ExecutionStrategy::Model,
+            ..ExecutionConfig::default()
+        },
+        enabled: vec![EnabledIdentity {
+            adapter_id: "opi-sandbox".to_string(),
+            package_name: "mock-pkg".to_string(),
+        }],
+        policy: PermissionPolicy::from_map(
+            [("opi-sandbox".to_string(), PermissionDecision::Allow)]
+                .into_iter()
+                .collect(),
+        ),
+        store: Arc::new(PanicSource),
+        mode: ExecutionRunMode::Interactive,
+        host_target: host_target_triple().to_string(),
+        host_opi_version: host_opi_version().to_string(),
+        manager: Arc::new(PermissionManager::new()),
+        broker: None,
+    };
+    let tool_config =
+        ToolRuntimeConfig::resolve(RunMode::Interactive, true, ToolSelection::Default)
+            .expect("interactive tool config");
+    let (tools, diagnostics) = CodingHarness::build_tools(ws.path(), &tool_config, &wiring);
+    assert!(diagnostics.is_empty());
+    let bash_schema = tools
+        .iter()
+        .find(|tool| tool.definition().name == "bash")
+        .expect("model-routed bash tool")
+        .definition()
+        .input_schema;
+    assert!(bash_schema["properties"]["backend"]["oneOf"].is_array());
+
+    let args = serde_json::json!({
+        "command": "echo validation must reject before execution",
+        "backend": hostile_backend,
+    })
+    .to_string();
+    let provider = MockProvider::new(
+        "mock",
+        vec![
+            test_support::tool_call_response("hostile-validation", "bash", &args),
+            test_support::text_response("done"),
+        ],
+    );
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let event_sink = Box::new({
+        let events = events.clone();
+        move |event: AgentEvent| {
+            events.lock().unwrap().push(agent_event_to_value(&event));
+        }
+    });
+    let context = AgentLoopContext {
+        provider: Box::new(provider),
+        tools,
+        messages: Vec::new(),
+        model: "mock".to_string(),
+        system: None,
+        steering_queue: None,
+        follow_up_queue: None,
+        diagnostic_sink: None,
+        trace: None,
+        session_id: None,
+    };
+
+    let messages = opi_agent::agent_loop(
+        context,
+        AgentLoopConfig::default(),
+        &CodingAgentHooks,
+        event_sink,
+        CancellationToken::new(),
+    )
+    .await
+    .expect("schema rejection is a normal tool result");
+    let public_tool_results = messages
+        .iter()
+        .filter_map(|message| match message {
+            AgentMessage::Llm(opi_ai::message::Message::ToolResult(result)) => Some(result),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(public_tool_results.len(), 1);
+    let public_tool_result_json = serde_json::to_string(&public_tool_results).unwrap();
+    assert!(public_tool_result_json.contains("schema validation failed"));
+
+    for surface in [
+        public_tool_result_json,
+        serde_json::to_string(&*events.lock().unwrap()).unwrap(),
+    ] {
+        assert!(
+            !surface.contains(canary),
+            "hostile backend leaked: {surface}"
+        );
+    }
 }
 
 /// SC16-14: activation-failure codes (`package_not_installed`) reach

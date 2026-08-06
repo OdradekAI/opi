@@ -2,23 +2,24 @@
 //! machine (Phase 16 task 16.12).
 //!
 //! These tests drive [`opi_sandbox::backend::drive`] with an INJECTED
-//! [`SandboxRunner`] (`NoRestriction`) + `supported = true`, feeding host frames
-//! as JSONL over an injected stdin (`std::io::Cursor`) and capturing the backend's
-//! stdout frames. They prove the full success ordering AND every bounded terminal
-//! invalid path required by the DoD. The REAL-binary negotiation + unsupported
-//! pre-start path is exercised by `tests/backend_protocol_smoke.rs` via the
-//! Python fixture client.
+//! [`NoRestriction`] + `supported = true`, feeding host frames as JSONL over an
+//! injected stdin (`std::io::Cursor`) and capturing the backend's stdout frames.
+//! They prove the full success ordering AND every bounded terminal invalid path
+//! required by the DoD. The REAL-binary negotiation + unsupported pre-start path
+//! is exercised by `tests/backend_protocol_smoke.rs` via the Python fixture
+//! client.
 //!
-//! Host input is written as literal JSONL (the protocol's own `decode_backend`
-//! parses the backend output, so no serde_json dev-dep is needed). Tempdir paths
-//! are forward-slashed so they need no JSON escaping on Windows.
+//! Host input is written as literal JSONL, while the protocol's own
+//! `decode_backend` parses backend output. Tempdir paths are forward-slashed so
+//! they need no JSON escaping on Windows.
 
 #![forbid(unsafe_code)]
 
 use std::collections::BTreeMap;
 use std::io::{Cursor, Read};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use opi_protocol::execution::v1::codec::decode_backend;
 use opi_protocol::execution::v1::frames::ExecutePayload;
@@ -27,17 +28,28 @@ use opi_protocol::execution::v1::{
     NativeString, RequestId, encode_line,
 };
 
-use opi_sandbox::{NoRestriction, SandboxPolicy, SandboxRunner, backend};
+use opi_sandbox::policy::{RestrictionCtx, RestrictionSetupError};
+use opi_sandbox::{AppliedRestriction, NetworkPolicy, NoRestriction, Restriction, backend};
 
 /// Build a host `initialize` JSONL line.
 fn init_json(rid: &str, deadline_ms: u64, protocols: &[&str]) -> String {
+    init_json_with_config(rid, deadline_ms, "{}", protocols)
+}
+
+/// Build a host `initialize` JSONL line with an explicit adapter configuration.
+fn init_json_with_config(
+    rid: &str,
+    deadline_ms: u64,
+    adapter_config: &str,
+    protocols: &[&str],
+) -> String {
     let protos = protocols
         .iter()
         .map(|p| format!("\"{p}\""))
         .collect::<Vec<_>>()
         .join(",");
     format!(
-        r#"{{"type":"initialize","payload":{{"request_id":"{rid}","deadline_ms":{deadline_ms},"adapter_config":{{}},"supported_protocols":[{protos}]}}}}"#
+        r#"{{"type":"initialize","payload":{{"request_id":"{rid}","deadline_ms":{deadline_ms},"adapter_config":{adapter_config},"supported_protocols":[{protos}]}}}}"#
     )
 }
 
@@ -172,10 +184,143 @@ async fn run_drive(stdin: String, supported: bool) -> (i32, Vec<u8>) {
 }
 
 async fn run_drive_reader(stdin: Box<dyn Read + Send>, supported: bool) -> (i32, Vec<u8>) {
-    let runner = SandboxRunner::new(SandboxPolicy::default(), Arc::new(NoRestriction));
+    run_drive_reader_with_restriction(stdin, supported, Arc::new(NoRestriction)).await
+}
+
+async fn run_drive_with_restriction(
+    stdin: String,
+    supported: bool,
+    restriction: Arc<dyn Restriction>,
+) -> (i32, Vec<u8>) {
+    let open = Arc::new(AtomicBool::new(true));
+    let reader = HeldOpenInput {
+        input: Cursor::new(stdin.into_bytes()),
+        open: open.clone(),
+    };
+    let result = run_drive_reader_with_restriction(Box::new(reader), supported, restriction).await;
+    open.store(false, Ordering::Release);
+    result
+}
+
+async fn run_drive_reader_with_restriction(
+    stdin: Box<dyn Read + Send>,
+    supported: bool,
+    restriction: Arc<dyn Restriction>,
+) -> (i32, Vec<u8>) {
     let mut out = Vec::new();
-    let code = backend::drive(stdin, &mut out, Bounds::DEFAULT, supported, &[], &runner).await;
+    let code = backend::drive(
+        stdin,
+        &mut out,
+        Bounds::DEFAULT,
+        supported,
+        &[],
+        restriction,
+    )
+    .await;
     (code, out)
+}
+
+struct RecordingRestriction {
+    observed_networks: Arc<Mutex<Vec<NetworkPolicy>>>,
+    setup_delay: Duration,
+}
+
+struct DelayedFailingRestriction {
+    prepare_count: Arc<AtomicUsize>,
+    setup_delay: Duration,
+}
+
+struct ReleaseFailingRestriction;
+
+impl Restriction for RecordingRestriction {
+    fn prepare(
+        &self,
+        _cmd: &mut tokio::process::Command,
+        ctx: &RestrictionCtx<'_>,
+    ) -> Result<AppliedRestriction, RestrictionSetupError> {
+        self.observed_networks
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .push(ctx.network);
+        std::thread::sleep(self.setup_delay);
+        Ok(AppliedRestriction::none())
+    }
+}
+
+impl Restriction for DelayedFailingRestriction {
+    fn prepare(
+        &self,
+        _cmd: &mut tokio::process::Command,
+        _ctx: &RestrictionCtx<'_>,
+    ) -> Result<AppliedRestriction, RestrictionSetupError> {
+        self.prepare_count.fetch_add(1, Ordering::Relaxed);
+        std::thread::sleep(self.setup_delay);
+        Err(RestrictionSetupError::Failed("injected failure"))
+    }
+}
+
+impl Restriction for ReleaseFailingRestriction {
+    fn prepare(
+        &self,
+        _cmd: &mut tokio::process::Command,
+        ctx: &RestrictionCtx<'_>,
+    ) -> Result<AppliedRestriction, RestrictionSetupError> {
+        let release_gate = ctx.temp_root.join("release.armed");
+        std::fs::remove_file(&release_gate).expect("replace release gate file");
+        std::fs::create_dir(&release_gate).expect("inject an unremovable release gate");
+        Ok(AppliedRestriction::none())
+    }
+}
+
+fn marker_target(marker: &std::path::Path) -> (&'static str, Vec<String>) {
+    if cfg!(windows) {
+        (
+            "powershell",
+            vec![
+                "-NoProfile".to_string(),
+                "-Command".to_string(),
+                format!(
+                    "Set-Content -LiteralPath '{}' -Value started",
+                    marker.display()
+                ),
+            ],
+        )
+    } else {
+        (
+            "sh",
+            vec![
+                "-c".to_string(),
+                format!("printf started > '{}'", marker.display()),
+            ],
+        )
+    }
+}
+
+fn recording_restriction(
+    observed_networks: Arc<Mutex<Vec<NetworkPolicy>>>,
+    setup_delay: Duration,
+) -> Arc<dyn Restriction> {
+    Arc::new(RecordingRestriction {
+        observed_networks,
+        setup_delay,
+    })
+}
+
+fn delayed_failing_restriction(
+    prepare_count: Arc<AtomicUsize>,
+    setup_delay: Duration,
+) -> Arc<dyn Restriction> {
+    Arc::new(DelayedFailingRestriction {
+        prepare_count,
+        setup_delay,
+    })
+}
+
+fn recorded_networks(observed_networks: &Mutex<Vec<NetworkPolicy>>) -> Vec<NetworkPolicy> {
+    observed_networks
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .clone()
 }
 
 struct BlockingAfterInput {
@@ -404,6 +549,229 @@ async fn success_full_state_machine() {
     }
 }
 
+#[tokio::test]
+async fn adapter_config_network_deny_reaches_the_shared_runner() {
+    let observed = Arc::new(Mutex::new(Vec::new()));
+    let restriction = recording_restriction(observed.clone(), Duration::ZERO);
+    let ws = workspace();
+    let (program, args) = echo_target();
+    let stdin = format!(
+        "{}\n{}\n",
+        init_json_with_config(
+            "r1",
+            30_000,
+            r#"{"profile":"workspace-write","network":"deny"}"#,
+            &["command-execution-jsonl-v1"],
+        ),
+        exec_json("r1", program, &args, &ws, 10_000, &[])
+    );
+
+    let (code, out) = run_drive_with_restriction(stdin, true, restriction).await;
+
+    assert_eq!(code, 0);
+    assert!(matches!(completed_frame(&out).exit, Some(0)));
+    assert_eq!(recorded_networks(&observed), vec![NetworkPolicy::Deny]);
+}
+
+#[tokio::test]
+async fn adapter_config_network_allow_reaches_the_shared_runner() {
+    let observed = Arc::new(Mutex::new(Vec::new()));
+    let restriction = recording_restriction(observed.clone(), Duration::ZERO);
+    let ws = workspace();
+    let (program, args) = echo_target();
+    let stdin = format!(
+        "{}\n{}\n",
+        init_json_with_config(
+            "r1",
+            30_000,
+            r#"{"profile":"workspace-write","network":"allow"}"#,
+            &["command-execution-jsonl-v1"],
+        ),
+        exec_json("r1", program, &args, &ws, 10_000, &[])
+    );
+
+    let (code, out) = run_drive_with_restriction(stdin, true, restriction).await;
+
+    assert_eq!(code, 0);
+    assert!(matches!(completed_frame(&out).exit, Some(0)));
+    assert_eq!(recorded_networks(&observed), vec![NetworkPolicy::Allow]);
+}
+
+#[tokio::test]
+async fn empty_adapter_config_preserves_the_default_network_policy() {
+    let observed = Arc::new(Mutex::new(Vec::new()));
+    let restriction = recording_restriction(observed.clone(), Duration::ZERO);
+    let ws = workspace();
+    let (program, args) = echo_target();
+    let stdin = format!(
+        "{}\n{}\n",
+        init_json("r1", 30_000, &["command-execution-jsonl-v1"]),
+        exec_json("r1", program, &args, &ws, 10_000, &[])
+    );
+
+    let (code, out) = run_drive_with_restriction(stdin, true, restriction).await;
+
+    assert_eq!(code, 0);
+    assert!(matches!(completed_frame(&out).exit, Some(0)));
+    assert_eq!(recorded_networks(&observed), vec![NetworkPolicy::Deny]);
+}
+
+#[tokio::test]
+async fn invalid_adapter_config_value_is_rejected_before_target_start() {
+    let marker_dir = tempfile::tempdir().expect("marker dir");
+    let marker = marker_dir.path().join("must-not-exist");
+    let ws = workspace();
+    let (program, args) = marker_target(&marker);
+    let arg_refs = args.iter().map(String::as_str).collect::<Vec<_>>();
+    let stdin = format!(
+        "{}\n{}\n",
+        init_json_with_config(
+            "r1",
+            30_000,
+            r#"{"profile":"workspace-write","network":"blocked"}"#,
+            &["command-execution-jsonl-v1"],
+        ),
+        exec_json("r1", program, &arg_refs, &ws, 10_000, &[])
+    );
+
+    let (code, out) = run_drive(stdin, true).await;
+
+    assert_eq!(code, 0);
+    let failed = failed_frame(&out);
+    assert_eq!(failed.code, FailureCode::ProtocolViolation);
+    assert_eq!(failed.phase, FailurePhase::Handshake);
+    assert!(!marker.exists(), "invalid config released the target");
+}
+
+#[tokio::test]
+async fn unknown_adapter_config_field_is_rejected_before_target_start() {
+    let marker_dir = tempfile::tempdir().expect("marker dir");
+    let marker = marker_dir.path().join("must-not-exist");
+    let ws = workspace();
+    let (program, args) = marker_target(&marker);
+    let arg_refs = args.iter().map(String::as_str).collect::<Vec<_>>();
+    let stdin = format!(
+        "{}\n{}\n",
+        init_json_with_config(
+            "r1",
+            30_000,
+            r#"{"profile":"workspace-write","network":"deny","extra":true}"#,
+            &["command-execution-jsonl-v1"],
+        ),
+        exec_json("r1", program, &arg_refs, &ws, 10_000, &[])
+    );
+
+    let (code, out) = run_drive(stdin, true).await;
+
+    assert_eq!(code, 0);
+    let failed = failed_frame(&out);
+    assert_eq!(failed.code, FailureCode::ProtocolViolation);
+    assert_eq!(failed.phase, FailurePhase::Handshake);
+    assert!(!marker.exists(), "unknown config field released the target");
+}
+
+#[tokio::test]
+async fn non_object_adapter_config_is_rejected_before_target_start() {
+    let marker_dir = tempfile::tempdir().expect("marker dir");
+    let marker = marker_dir.path().join("must-not-exist");
+    let ws = workspace();
+    let (program, args) = marker_target(&marker);
+    let arg_refs = args.iter().map(String::as_str).collect::<Vec<_>>();
+    let stdin = format!(
+        "{}\n{}\n",
+        init_json_with_config("r1", 30_000, "null", &["command-execution-jsonl-v1"],),
+        exec_json("r1", program, &arg_refs, &ws, 10_000, &[])
+    );
+
+    let (code, out) = run_drive(stdin, true).await;
+
+    assert_eq!(code, 0);
+    let failed = failed_frame(&out);
+    assert_eq!(failed.code, FailureCode::ProtocolViolation);
+    assert_eq!(failed.phase, FailurePhase::Handshake);
+    assert!(!marker.exists(), "non-object config released the target");
+}
+
+#[tokio::test]
+async fn initialize_deadline_expiry_during_setup_fails_closed() {
+    let marker_dir = tempfile::tempdir().expect("marker dir");
+    let marker = marker_dir.path().join("must-not-exist");
+    let observed = Arc::new(Mutex::new(Vec::new()));
+    let restriction = recording_restriction(observed.clone(), Duration::from_millis(1_500));
+    let ws = workspace();
+    let (program, args) = marker_target(&marker);
+    let arg_refs = args.iter().map(String::as_str).collect::<Vec<_>>();
+    let stdin = format!(
+        "{}\n{}\n",
+        init_json("r1", 1_000, &["command-execution-jsonl-v1"]),
+        exec_json("r1", program, &arg_refs, &ws, 10_000, &[])
+    );
+
+    let (code, out) = tokio::time::timeout(
+        Duration::from_secs(5),
+        run_drive_with_restriction(stdin, true, restriction),
+    )
+    .await
+    .expect("setup deadline path must remain bounded");
+
+    assert_eq!(code, 0);
+    let failed = failed_frame(&out);
+    assert_eq!(failed.code, FailureCode::ExecutionTimedOut);
+    assert_eq!(failed.phase, FailurePhase::Handshake);
+    assert_eq!(recorded_networks(&observed), vec![NetworkPolicy::Deny]);
+    assert!(!marker.exists(), "expired setup released the target");
+}
+
+#[tokio::test]
+async fn initialize_deadline_wins_over_a_delayed_setup_refusal() {
+    let marker_dir = tempfile::tempdir().expect("marker dir");
+    let marker = marker_dir.path().join("must-not-exist");
+    let prepare_count = Arc::new(AtomicUsize::new(0));
+    let restriction =
+        delayed_failing_restriction(prepare_count.clone(), Duration::from_millis(1_500));
+    let ws = workspace();
+    let (program, args) = marker_target(&marker);
+    let arg_refs = args.iter().map(String::as_str).collect::<Vec<_>>();
+    let stdin = format!(
+        "{}\n{}\n",
+        init_json("r1", 1_000, &["command-execution-jsonl-v1"]),
+        exec_json("r1", program, &arg_refs, &ws, 10_000, &[])
+    );
+
+    let (code, out) = tokio::time::timeout(
+        Duration::from_secs(5),
+        run_drive_with_restriction(stdin, true, restriction),
+    )
+    .await
+    .expect("delayed setup refusal must remain bounded");
+
+    assert_eq!(code, 0);
+    let failed = failed_frame(&out);
+    assert_eq!(failed.code, FailureCode::ExecutionTimedOut);
+    assert_eq!(failed.phase, FailurePhase::Handshake);
+    assert_eq!(prepare_count.load(Ordering::Relaxed), 1);
+    assert!(!marker.exists(), "refused setup released the target");
+}
+
+#[tokio::test]
+async fn injected_release_failure_is_execution_failed_in_execution_phase() {
+    let ws = workspace();
+    let (program, args) = echo_target();
+    let stdin = format!(
+        "{}\n{}\n",
+        init_json("r1", 30_000, &["command-execution-jsonl-v1"]),
+        exec_json("r1", program, &args, &ws, 10_000, &[])
+    );
+
+    let (code, out) =
+        run_drive_with_restriction(stdin, true, Arc::new(ReleaseFailingRestriction)).await;
+
+    assert_eq!(code, 0);
+    let failed = failed_frame(&out);
+    assert_eq!(failed.code, FailureCode::ExecutionFailed);
+    assert_eq!(failed.phase, FailurePhase::Execution);
+}
+
 /// Cancel during drain resolves to completed{cancelled:true}.
 #[tokio::test]
 async fn cancel_during_drain_completes_cancelled() {
@@ -453,9 +821,12 @@ async fn initialize_deadline_caps_execute_timeout() {
             .expect("initialize deadline must cap the target timeout");
     assert_eq!(code, 0);
     let failed = failed_frame(&out);
+    // The runner timeout and backend absolute deadline are intentionally the
+    // same instant. Scheduling can therefore observe expiry either before
+    // Started (Handshake) or while dropping the started run (Cleanup).
     match failed.code {
         FailureCode::ExecutionTimedOut => assert_eq!(failed.phase, FailurePhase::Handshake),
-        FailureCode::CleanupUnconfirmed => assert_eq!(failed.phase, FailurePhase::Execution),
+        FailureCode::CleanupUnconfirmed => assert_eq!(failed.phase, FailurePhase::Cleanup),
         other => panic!("unexpected deadline failure: {other:?}"),
     }
 }

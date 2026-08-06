@@ -269,6 +269,7 @@ impl ExecutionProtocolHost {
         let mut stdout_acc: Vec<u8> = Vec::new();
         let mut stderr_acc: Vec<u8> = Vec::new();
         let mut diagnostics: Vec<Diagnostic> = Vec::new();
+        let mut state = HostState::new(HostPhase::AwaitingReady);
 
         // --- initialize (seed the session with the HOST id by observing it first) ---
         let init = HostToBackend::Initialize(InitializePayload {
@@ -295,17 +296,16 @@ impl ExecutionProtocolHost {
         }
 
         // --- ready (command not disclosed until ready validates) ---
-        let placeholder_ready = || ReadyReport {
-            selected_protocol: request
-                .supported_protocols
-                .first()
-                .cloned()
-                .unwrap_or_else(|| ProtocolId::new(WIRE_IDENTITY)),
-            implementation: ImplementationId::new("unknown")
-                .expect("placeholder identity is non-empty"),
-            implementation_version: String::new(),
-            target: TargetId::new(""),
-        };
+        let placeholder_ready =
+            || ReadyReport {
+                selected_protocol: request.supported_protocols.first().cloned().unwrap_or_else(
+                    || ProtocolId::new(WIRE_IDENTITY).expect("v1 wire identity is non-empty"),
+                ),
+                implementation: ImplementationId::new(request.expected_implementation)
+                    .expect("validated selected adapter identity is non-empty"),
+                implementation_version: String::new(),
+                target: TargetId::new(""),
+            };
         let ready = match read_frame_select(
             &mut reader,
             &mut session,
@@ -314,29 +314,46 @@ impl ExecutionProtocolHost {
         )
         .await
         {
-            FrameSel::Frame(BackendToHost::Ready(p)) => p,
-            FrameSel::Frame(BackendToHost::Failed(p)) => {
-                return finalize_terminal(
-                    Terminal::Failed(p),
-                    child,
-                    guard,
-                    stderr_handle,
-                    stdin,
-                    placeholder_ready(),
-                    started,
-                    stdout_acc,
-                    stderr_acc,
-                    diagnostics,
-                    hard_deadline,
-                    &mut reader,
-                )
-                .await;
-            }
+            FrameSel::Frame(frame) => match transition(&mut state, &frame) {
+                Ok(Action::Continue) => match frame {
+                    BackendToHost::Ready(p) => p,
+                    _ => unreachable!("only ready advances the pre-ready state"),
+                },
+                Ok(Action::Terminal(terminal)) => {
+                    return finalize_terminal(
+                        terminal,
+                        child,
+                        guard,
+                        stderr_handle,
+                        stdin,
+                        placeholder_ready(),
+                        started,
+                        stdout_acc,
+                        stderr_acc,
+                        diagnostics,
+                        hard_deadline,
+                        &mut reader,
+                    )
+                    .await;
+                }
+                Err(e) => {
+                    return terminate_and_fail(
+                        child,
+                        guard,
+                        stderr_handle,
+                        stdin,
+                        e,
+                        hard_deadline,
+                    )
+                    .await;
+                }
+            },
             FrameSel::Canceled(reason) => {
                 return finish_with_cancel(
                     stdin,
                     &mut reader,
                     &mut session,
+                    &mut state,
                     child,
                     guard,
                     stderr_handle,
@@ -352,7 +369,7 @@ impl ExecutionProtocolHost {
                 )
                 .await;
             }
-            FrameSel::Frame(_) | FrameSel::Eof | FrameSel::Codec(_) => {
+            FrameSel::Eof | FrameSel::Codec(_) => {
                 return terminate_and_fail(
                     child,
                     guard,
@@ -430,7 +447,6 @@ impl ExecutionProtocolHost {
         }
 
         // --- main frame loop (host-side transition ordering + accumulation) ---
-        let mut state = HostState::AwaitingAccepted;
         loop {
             match read_frame_select(&mut reader, &mut session, &request.signal, cancel_at).await {
                 FrameSel::Canceled(reason) => {
@@ -438,6 +454,7 @@ impl ExecutionProtocolHost {
                         stdin,
                         &mut reader,
                         &mut session,
+                        &mut state,
                         child,
                         guard,
                         stderr_handle,
@@ -586,12 +603,32 @@ fn redact_backend_diagnostic(diagnostic: Diagnostic) -> Diagnostic {
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum HostState {
+enum HostPhase {
+    AwaitingReady,
     AwaitingAccepted,
     AwaitingStarted,
     Draining,
     #[allow(dead_code)]
     Terminal,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct HostState {
+    phase: HostPhase,
+    cancelling: bool,
+}
+
+impl HostState {
+    const fn new(phase: HostPhase) -> Self {
+        Self {
+            phase,
+            cancelling: false,
+        }
+    }
+
+    fn begin_cancel(&mut self) {
+        self.cancelling = true;
+    }
 }
 
 #[derive(Debug)]
@@ -610,29 +647,40 @@ enum Terminal {
 }
 
 /// Validate `frame` against the host state machine and advance state.
-/// `Failed` is legal pre-started (the backend may terminate before `started`).
+/// `Failed` is legal pre-started during normal flow, but once cancellation
+/// begins a terminal is legal only after the required milestones reach
+/// `started`.
 fn transition(state: &mut HostState, frame: &BackendToHost) -> Result<Action, ExecutionFailure> {
     use BackendToHost::*;
-    match (*state, frame) {
-        (HostState::AwaitingAccepted, Accepted(_)) => {
-            *state = HostState::AwaitingStarted;
+    match (state.phase, frame) {
+        (HostPhase::AwaitingReady, Ready(_)) if !state.cancelling => {
+            state.phase = HostPhase::AwaitingAccepted;
             Ok(Action::Continue)
         }
-        (HostState::AwaitingStarted, Started(_)) => {
-            *state = HostState::Draining;
+        (HostPhase::AwaitingAccepted, Accepted(_)) => {
+            state.phase = HostPhase::AwaitingStarted;
             Ok(Action::Continue)
         }
-        (HostState::Draining, Stdout(_) | Stderr(_) | Diagnostic(_)) => Ok(Action::Continue),
-        (HostState::Draining, Completed(p)) => {
-            *state = HostState::Terminal;
+        (HostPhase::AwaitingStarted, Started(_)) => {
+            state.phase = HostPhase::Draining;
+            Ok(Action::Continue)
+        }
+        (HostPhase::Draining, Stdout(_) | Stderr(_) | Diagnostic(_)) => Ok(Action::Continue),
+        (HostPhase::Draining, Completed(p)) => {
+            state.phase = HostPhase::Terminal;
             Ok(Action::Terminal(Terminal::Completed(p.clone())))
         }
-        // Failed is legal in any pre-terminal state (pre-started distress) and Draining.
+        // Failed is legal in any pre-terminal state during the normal flow.
+        // Once cancellation begins, a pre-started failure cannot bypass the
+        // ready -> accepted -> started milestones.
         (
-            HostState::AwaitingAccepted | HostState::AwaitingStarted | HostState::Draining,
+            HostPhase::AwaitingReady
+            | HostPhase::AwaitingAccepted
+            | HostPhase::AwaitingStarted
+            | HostPhase::Draining,
             Failed(p),
-        ) => {
-            *state = HostState::Terminal;
+        ) if !state.cancelling || state.phase == HostPhase::Draining => {
+            state.phase = HostPhase::Terminal;
             Ok(Action::Terminal(Terminal::Failed(p.clone())))
         }
         _ => Err(ExecutionFailure::ProtocolViolation),
@@ -641,14 +689,14 @@ fn transition(state: &mut HostState, frame: &BackendToHost) -> Result<Action, Ex
 
 /// Map a wire `FailureCode` (closed 7-code set) to the architecture envelope.
 /// Redacted: drops the optional `message` and diagnostics detail (F7).
-fn map_failure_code(p: &FailedPayload) -> ExecutionFailure {
+fn map_failure_code(p: &FailedPayload, selected_adapter_id: &str) -> ExecutionFailure {
     match p.code {
         FailureCode::ProtocolIncompatible => ExecutionFailure::ProtocolIncompatible,
         FailureCode::ProtocolViolation => ExecutionFailure::ProtocolViolation,
         FailureCode::ExecutionTimedOut => ExecutionFailure::ExecutionTimedOut,
         FailureCode::CleanupUnconfirmed => ExecutionFailure::CleanupUnconfirmed,
         FailureCode::Unavailable => ExecutionFailure::AdapterUnavailable {
-            adapter_id: None,
+            adapter_id: Some(selected_adapter_id.to_string()),
             detail: super::failure::UnavailableDetail::Handshake,
         },
         FailureCode::Failed | FailureCode::ExecutionFailed => ExecutionFailure::ExecutionFailed,
@@ -854,7 +902,7 @@ async fn finalize_terminal(
 
     match terminal {
         Terminal::Failed(p) => Err(ExecutionProtocolFailure::with_diagnostics(
-            map_failure_code(&p),
+            map_failure_code(&p, ready.implementation.as_str()),
             diagnostics,
         )),
         Terminal::Completed(p) if p.cleanup == CleanupState::Unconfirmed => {
@@ -887,6 +935,7 @@ async fn finish_with_cancel(
     mut stdin: ChildStdin,
     reader: &mut CappedReader<ChildStdout>,
     session: &mut Session,
+    state: &mut HostState,
     child: Child,
     mut guard: TreeGuard,
     stderr_handle: tokio::task::JoinHandle<Vec<u8>>,
@@ -895,11 +944,12 @@ async fn finish_with_cancel(
     hard_deadline: tokio::time::Instant,
     reason: CancelReason,
     ready: ReadyReport,
-    started: StartedReport,
+    mut started: StartedReport,
     mut stdout_acc: Vec<u8>,
     mut stderr_acc: Vec<u8>,
     mut diagnostics: Vec<Diagnostic>,
 ) -> Result<CompletedOutcome, ExecutionProtocolFailure> {
+    state.begin_cancel();
     let cancel = HostToBackend::Cancel(CancelPayload {
         request_id: request_id.clone(),
         reason,
@@ -907,34 +957,51 @@ async fn finish_with_cancel(
     let _ = session.observe_host(&cancel);
     let grace_end = grace_deadline(hard_deadline);
     let _ = write_frame(&mut stdin, bounds, &cancel, grace_end).await;
-    let outcome: Option<Terminal> = tokio::time::timeout_at(grace_end, async {
-        loop {
-            if tokio::time::Instant::now() >= grace_end {
-                return None;
+    let outcome: Result<Option<Terminal>, ExecutionFailure> =
+        tokio::time::timeout_at(grace_end, async {
+            loop {
+                if tokio::time::Instant::now() >= grace_end {
+                    return Ok(None);
+                }
+                match reader.read_line().await {
+                    Ok(None) => return Ok(None),
+                    Ok(Some(line)) => match session.feed_backend_line(&line) {
+                        Ok(frame) => match transition(state, &frame)? {
+                            Action::Continue => match frame {
+                                BackendToHost::Started(p) => {
+                                    started = StartedReport {
+                                        placement: p.placement,
+                                        guarantee: p.guarantee,
+                                        policy: p.policy,
+                                        limitations: p.limitations,
+                                    };
+                                }
+                                BackendToHost::Stdout(p) => {
+                                    stdout_acc.extend_from_slice(p.data.as_bytes());
+                                }
+                                BackendToHost::Stderr(p) => {
+                                    stderr_acc.extend_from_slice(p.data.as_bytes());
+                                }
+                                BackendToHost::Diagnostic(p) => {
+                                    diagnostics.push(redact_backend_diagnostic(Diagnostic {
+                                        message: p.message,
+                                    }))
+                                }
+                                _ => {}
+                            },
+                            Action::Terminal(terminal) => return Ok(Some(terminal)),
+                        },
+                        Err(_) => return Err(ExecutionFailure::ProtocolViolation),
+                    },
+                    Err(_) => return Err(ExecutionFailure::ProtocolViolation),
+                }
             }
-            match reader.read_line().await {
-                Ok(None) => return None,
-                Ok(Some(line)) => match session.feed_backend_line(&line) {
-                    Ok(BackendToHost::Completed(p)) => return Some(Terminal::Completed(p)),
-                    Ok(BackendToHost::Failed(p)) => return Some(Terminal::Failed(p)),
-                    Ok(BackendToHost::Stdout(p)) => stdout_acc.extend_from_slice(p.data.as_bytes()),
-                    Ok(BackendToHost::Stderr(p)) => stderr_acc.extend_from_slice(p.data.as_bytes()),
-                    Ok(BackendToHost::Diagnostic(p)) => {
-                        diagnostics
-                            .push(redact_backend_diagnostic(Diagnostic { message: p.message }));
-                    }
-                    Ok(_) => continue,
-                    Err(_) => return None,
-                },
-                Err(_) => return None,
-            }
-        }
-    })
-    .await
-    .unwrap_or(None);
+        })
+        .await
+        .unwrap_or(Ok(None));
 
     match outcome {
-        Some(Terminal::Completed(mut p)) => {
+        Ok(Some(Terminal::Completed(mut p))) => {
             p.cancelled = true;
             finalize_terminal(
                 Terminal::Completed(p),
@@ -952,7 +1019,7 @@ async fn finish_with_cancel(
             )
             .await
         }
-        Some(Terminal::Failed(p)) => {
+        Ok(Some(Terminal::Failed(p))) => {
             finalize_terminal(
                 Terminal::Failed(p),
                 child,
@@ -969,12 +1036,21 @@ async fn finish_with_cancel(
             )
             .await
         }
-        None => {
+        Ok(None) => {
             drop(stdin);
             let _ = guard.terminate();
             finish_teardown(child, stderr_handle, hard_deadline).await;
             Err(ExecutionProtocolFailure::with_diagnostics(
                 ExecutionFailure::CleanupUnconfirmed,
+                diagnostics,
+            ))
+        }
+        Err(failure) => {
+            drop(stdin);
+            let _ = guard.terminate();
+            finish_teardown(child, stderr_handle, hard_deadline).await;
+            Err(ExecutionProtocolFailure::with_diagnostics(
+                failure,
                 diagnostics,
             ))
         }
@@ -1153,7 +1229,7 @@ mod tests {
 
     #[test]
     fn completed_before_started_is_protocol_violation() {
-        let mut state = HostState::AwaitingStarted;
+        let mut state = HostState::new(HostPhase::AwaitingStarted);
         let completed = BackendToHost::Completed(CompletedPayload {
             request_id: rid(),
             exit: Some(0),
@@ -1171,7 +1247,7 @@ mod tests {
 
     #[test]
     fn stdout_before_started_is_protocol_violation() {
-        let mut state = HostState::AwaitingStarted;
+        let mut state = HostState::new(HostPhase::AwaitingStarted);
         let stdout = BackendToHost::Stdout(StdoutPayload {
             request_id: rid(),
             data: Base64Bytes::from_bytes(b"x"),
@@ -1184,7 +1260,7 @@ mod tests {
 
     #[test]
     fn failed_before_started_is_accepted_distress() {
-        let mut state = HostState::AwaitingStarted;
+        let mut state = HostState::new(HostPhase::AwaitingStarted);
         let failed = BackendToHost::Failed(FailedPayload {
             request_id: rid(),
             code: FailureCode::Unavailable,
@@ -1201,12 +1277,12 @@ mod tests {
 
     #[test]
     fn accepted_advances_to_awaiting_started() {
-        let mut state = HostState::AwaitingAccepted;
+        let mut state = HostState::new(HostPhase::AwaitingAccepted);
         let accepted = BackendToHost::Accepted(AcceptedPayload { request_id: rid() });
         assert!(matches!(
             transition(&mut state, &accepted),
             Ok(Action::Continue)
         ));
-        assert_eq!(state, HostState::AwaitingStarted);
+        assert_eq!(state.phase, HostPhase::AwaitingStarted);
     }
 }

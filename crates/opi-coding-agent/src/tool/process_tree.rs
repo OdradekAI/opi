@@ -128,6 +128,14 @@ impl AttachError {
             crate::diagnostics::SandboxReason::MissingChildProcessId,
         )
     }
+
+    #[cfg(all(windows, test))]
+    pub(crate) fn attach_failed() -> Self {
+        Self::new(
+            LAYER,
+            crate::diagnostics::SandboxReason::ProcessTreeAttachFailed,
+        )
+    }
 }
 
 impl std::fmt::Display for AttachError {
@@ -172,6 +180,8 @@ pub struct TreeGuard {
 pub(crate) struct TestTreeFaults {
     attach: bool,
     terminate: bool,
+    #[cfg(windows)]
+    resume: bool,
 }
 
 #[cfg(test)]
@@ -180,6 +190,8 @@ impl TestTreeFaults {
         Self {
             attach: true,
             terminate: false,
+            #[cfg(windows)]
+            resume: false,
         }
     }
 
@@ -187,7 +199,53 @@ impl TestTreeFaults {
         Self {
             attach: false,
             terminate: true,
+            #[cfg(windows)]
+            resume: false,
         }
+    }
+
+    #[cfg(windows)]
+    pub(crate) fn resume() -> Self {
+        Self {
+            attach: false,
+            terminate: false,
+            resume: true,
+        }
+    }
+
+    #[cfg(windows)]
+    pub(crate) fn resume_fails(self) -> bool {
+        self.resume
+    }
+}
+
+/// Fail-closed cleanup for the Unix spawn-to-attach window. The child must
+/// still be the leader of the process group configured before spawn; otherwise
+/// no group is signaled, avoiding an unrelated target after a setup failure.
+#[cfg(unix)]
+pub(crate) fn terminate_verified_configured_group(child_pid: u32) -> TerminationOutcome {
+    let Ok(pgid) = i32::try_from(child_pid) else {
+        return TerminationOutcome::Failed(AttachError::new(
+            LAYER,
+            crate::diagnostics::SandboxReason::ProcessTreeTerminationFailed,
+        ));
+    };
+    let actual_pgid = unsafe { libc::getpgid(pgid) };
+    if actual_pgid != pgid {
+        return TerminationOutcome::Failed(AttachError::new(
+            LAYER,
+            crate::diagnostics::SandboxReason::ProcessTreeTerminationFailed,
+        ));
+    }
+
+    let rc = unsafe { libc::kill(-pgid, libc::SIGKILL) };
+    if rc == 0 || io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH) {
+        TerminationOutcome::Terminated
+    } else {
+        TerminationOutcome::Failed(AttachError::new(
+            LAYER,
+            crate::diagnostics::SandboxReason::ProcessTreeTerminationFailed,
+        ))
     }
 }
 
@@ -565,6 +623,32 @@ mod tests {
                 crate::diagnostics::SandboxReason::MissingChildProcessId
             );
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn attach_failure_cleanup_refuses_an_unverified_process_group() {
+        let mut child = std::process::Command::new("sh")
+            .args(["-c", "sleep 60"])
+            .spawn()
+            .expect("spawn child without process-group configuration");
+        let pid = child.id();
+
+        let outcome = terminate_verified_configured_group(pid);
+
+        match outcome {
+            TerminationOutcome::Failed(error) => assert_eq!(
+                error.reason,
+                crate::diagnostics::SandboxReason::ProcessTreeTerminationFailed
+            ),
+            other => panic!("unverified group must be rejected, got {other:?}"),
+        }
+        assert!(
+            child.try_wait().unwrap().is_none(),
+            "verification failure must not signal the unrelated process group"
+        );
+        let _ = child.kill();
+        let _ = child.wait();
     }
 
     #[cfg(windows)]

@@ -945,6 +945,7 @@ impl BashOperations for LocalBashOperations {
                     cleanup_spill(&mut err_cap);
                     let diag = bash_operation_context_diagnostic(
                         None,
+                        None,
                         true,
                         false,
                         false,
@@ -966,6 +967,7 @@ impl BashOperations for LocalBashOperations {
                     cleanup_spill(&mut out_cap);
                     cleanup_spill(&mut err_cap);
                     let diag = bash_operation_context_diagnostic(
+                        None,
                         None,
                         false,
                         true,
@@ -1015,6 +1017,7 @@ impl BashOperations for LocalBashOperations {
                     let stderr = std::mem::take(&mut err_cap.preview);
                     let diag = bash_operation_context_diagnostic(
                         exit_code,
+                        signal_num,
                         false,
                         false,
                         truncated,
@@ -1045,7 +1048,7 @@ impl BashOperations for LocalBashOperations {
 
 /// Build the in-band operation-context [`ToolDiagnostic`] (local type) that
 /// carries the flags the `BashTool` wrapper needs to reconstruct the agent
-/// `ToolResult`: `exit_code`, `cancelled`, `timed_out`, `truncated`,
+/// `ToolResult`: `exit_code`, `signal`, `cancelled`, `timed_out`, `truncated`,
 /// `full_output`, and `kill_error`. `command_included` is always `false`
 /// (commands may contain secrets). The wrapper remaps this diagnostic's code to
 /// `CODE_TOOL_EXECUTION_FAILED` and pushes it only on an error result, matching
@@ -1058,6 +1061,7 @@ impl BashOperations for LocalBashOperations {
 #[allow(clippy::too_many_arguments)]
 fn bash_operation_context_diagnostic(
     exit_code: Option<i32>,
+    signal: Option<i32>,
     cancelled: bool,
     timed_out: bool,
     truncated: bool,
@@ -1073,6 +1077,7 @@ fn bash_operation_context_diagnostic(
     };
     let mut details = serde_json::json!({
         "exit_code": exit_code,
+        "signal": signal,
         "cancelled": cancelled,
         "timed_out": timed_out,
         "truncated": truncated,
@@ -1432,6 +1437,33 @@ mod tests {
                     == Some(
                         crate::diagnostics::SandboxReason::ProcessTreeTerminationFailed.as_str(),
                     )
+        }));
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn injected_resume_failure_surfaces_process_tree_degraded() {
+        let dir = tempfile::tempdir().unwrap();
+        let error = LocalBashOperations::with_test_tree_faults(TestTreeFaults::resume())
+            .exec(BashRequest {
+                command: "echo must-not-run".to_string(),
+                cwd: dir.path().to_path_buf(),
+                timeout: Duration::from_secs(5),
+                signal: CancellationToken::new(),
+                env: vec![],
+                backend: None,
+            })
+            .await
+            .expect_err("resume failure must fail closed");
+
+        assert!(error.diagnostics().iter().any(|diagnostic| {
+            diagnostic.code == crate::diagnostics::CODE_PROCESS_TREE_DEGRADED
+                && diagnostic
+                    .details
+                    .as_ref()
+                    .and_then(|details| details.get("reason"))
+                    .and_then(serde_json::Value::as_str)
+                    == Some(crate::diagnostics::SandboxReason::ProcessTreeAttachFailed.as_str())
         }));
     }
 

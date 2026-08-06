@@ -29,8 +29,8 @@ pub enum CodecError {
     /// An `initialize` adapter configuration exceeded `max_configuration_size`.
     #[error("adapter configuration of {actual} bytes exceeded max_configuration_size ({limit})")]
     ConfigurationTooLarge { actual: usize, limit: usize },
-    /// A `diagnostic` message exceeded `max_diagnostics_size`.
-    #[error("diagnostic message of {actual} bytes exceeded max_diagnostics_size ({limit})")]
+    /// A diagnostic or failure message exceeded `max_diagnostics_size`.
+    #[error("diagnostic/failure message of {actual} bytes exceeded max_diagnostics_size ({limit})")]
     DiagnosticsTooLarge { actual: usize, limit: usize },
     /// A decoded stdout/stderr chunk exceeded `max_decoded_chunk_size`.
     #[error("decoded output chunk of {actual} bytes exceeded max_decoded_chunk_size ({limit})")]
@@ -117,7 +117,8 @@ pub fn validate_host(frame: &HostToBackend, bounds: &Bounds) -> Result<(), Codec
     Ok(())
 }
 
-/// Validate per-frame bounds (diagnostics size) for a backend frame.
+/// Validate per-frame output, diagnostic, and failure-message bounds for a
+/// backend frame.
 pub fn validate_backend(frame: &BackendToHost, bounds: &Bounds) -> Result<(), CodecError> {
     let output_bytes = frame.output_bytes();
     if output_bytes > bounds.max_decoded_chunk_size {
@@ -136,6 +137,9 @@ pub fn validate_backend(frame: &BackendToHost, bounds: &Bounds) -> Result<(), Co
             &[]
         }
         BackendToHost::Failed(payload) => {
+            if let Some(message) = &payload.message {
+                validate_diagnostic(message, bounds)?;
+            }
             for diagnostic in &payload.diagnostics {
                 validate_diagnostic(&diagnostic.message, bounds)?;
             }

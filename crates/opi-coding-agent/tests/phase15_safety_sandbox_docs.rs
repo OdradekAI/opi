@@ -1,11 +1,11 @@
 //! Phase 15 safety/sandbox documentation and non-goal guards (task 15.9).
 //!
-//! These tests pin the *shipped* sandbox, Operations, and project-trust
-//! behavior in the paired EN/ZH public docs and reject every Phase 15
-//! non-goal. Source-level assertions enforce the structural invariants behind
-//! the doc claims (no opi-side `unsafe` on the production sandbox path, no
-//! built-in `/trust`, no CLI `-e`, an empty standard-CLI resolver registry,
-//! and the narrowed Linux L2/L3 mechanism).
+//! These tests pin historical Phase 15 sandbox evidence plus current
+//! Operations and project-trust behavior in the paired EN/ZH public docs and
+//! reject every Phase 15 non-goal. Source-level assertions enforce the current
+//! structural invariants behind the doc claims (the retained Operations path
+//! forbids `unsafe`, no built-in `/trust`, no CLI `-e`, and an empty
+//! standard-CLI resolver registry).
 
 use std::path::{Path, PathBuf};
 
@@ -61,6 +61,36 @@ fn assert_absent(path: &str, content: &str, claims: &[&str]) {
             "{path} must not retain the superseded Phase 15 claim `{claim}`"
         );
     }
+}
+
+const EN_DELETED_SANDBOX_HISTORY: &[&str] = &[
+    "At the Phase 15 exit, the then-production `sandbox.rs` and `sandbox/windows.rs` modules retained `#![forbid(unsafe_code)]`; the still-existing `tool/operations.rs` module retains that guard today.",
+    "Native CI ran the named platform tests on ubuntu/macos/windows and cross-compiled all six release triples; at the Phase 15 exit, `#![forbid(unsafe_code)]` was asserted on the then-existing `sandbox.rs` plus `tool/operations.rs`.",
+];
+
+const ZH_DELETED_SANDBOX_HISTORY: &[&str] = &[
+    "在第十五阶段退出点，彼时生产路径中的 `sandbox.rs` 与 `sandbox/windows.rs` 模块保有 `#![forbid(unsafe_code)]`；至今仍存在的 `tool/operations.rs` 模块当前仍保有该约束。",
+    "原生 CI 曾在 ubuntu/macos/windows 运行具名平台测试，并交叉编译全部六个 release triple；在第十五阶段退出点，`#![forbid(unsafe_code)]` 曾在彼时存在的 `sandbox.rs` 与 `tool/operations.rs` 上断言。",
+];
+
+fn remaining_deleted_sandbox_path_mentions(
+    path: &str,
+    content: &str,
+    historical_claims: &[&str],
+) -> Vec<&'static str> {
+    let mut remainder = normalize_whitespace(content);
+    for claim in historical_claims {
+        let claim = normalize_whitespace(claim);
+        let start = remainder.find(&claim).unwrap_or_else(|| {
+            panic!("{path} must contain the historical Phase 15 claim `{claim}`")
+        });
+        remainder.replace_range(start..start + claim.len(), "");
+    }
+
+    ["sandbox.rs", "sandbox/windows.rs"]
+        .into_iter()
+        .filter(|deleted_path| remainder.contains(deleted_path))
+        .collect()
 }
 
 fn rust_sources_under(relative: &str) -> String {
@@ -237,7 +267,9 @@ fn localized_docs_pin_exact_phase15_claims() {
             "The `Operations` seam is a pure FS/exec backend layered below `PathPolicy`.",
             "The shipped `LocalFileOperations` additionally resolves workspace paths relative to a held canonical workspace-root capability",
             "explicitly authorized external interactive reads retain ambient-path behavior.",
-            "the production-path `sandbox.rs`, `tool/operations.rs`, and `sandbox/windows.rs` modules retain `#![forbid(unsafe_code)]`.",
+            EN_DELETED_SANDBOX_HISTORY[0],
+            EN_DELETED_SANDBOX_HISTORY[1],
+            "`phase15_safety_sandbox_docs` pins Phase-15-exit sandbox evidence plus current Operations/trust truth in paired EN/ZH docs",
             "The project-trust gate gates *loading* of project-local resources, not tool execution.",
             "stored at `{user_config_dir}/trust.json` — i.e. `%APPDATA%\\opi\\trust.json` on Windows and `~/.config/opi/trust.json` on Unix, alongside `config.toml`",
             "there is no live mid-session trust mutation, no built-in `/trust` command, and no project-resource reload.",
@@ -270,7 +302,9 @@ fn localized_docs_pin_exact_phase15_claims() {
             "`Operations` 缝合点是分层位于 `PathPolicy` 之下的纯 FS/exec 后端。",
             "已交付的 `LocalFileOperations` 还会相对已持有且 canonical 的 workspace-root capability 解析 workspace 路径",
             "显式授权的外部交互式读取仍保留 ambient-path 行为。",
-            "生产路径 `sandbox.rs`、`tool/operations.rs` 与 `sandbox/windows.rs` 模块保持 `#![forbid(unsafe_code)]`。",
+            ZH_DELETED_SANDBOX_HISTORY[0],
+            ZH_DELETED_SANDBOX_HISTORY[1],
+            "`phase15_safety_sandbox_docs` 在成对 EN/ZH 文档中固定第十五阶段退出点的沙箱证据及当前 Operations/信任真相",
             "项目信任门门控的是项目本地资源的*加载*，而非工具执行。",
             "存储于 `{user_config_dir}/trust.json`——即 Windows 上 `%APPDATA%\\opi\\trust.json`、Unix 上 `~/.config/opi/trust.json`，与 `config.toml` 并列",
             "不存在 live mid-session trust mutation，不存在内置 `/trust` 命令，不存在 project-resource reload。",
@@ -383,6 +417,50 @@ fn phase15_docs_reject_superseded_design_and_nongoal_claims() {
             "网络*层*在 ABI < 4 时仍报告 `TemporarilyUnavailable`",
             "`FileOperations` 不被沙箱",
         ],
+    );
+
+    // Phase 16 removed the native-sandbox modules from core. Remove the two
+    // required historical claims from each Phase 15 section, then reject any
+    // remaining mention of either deleted path. This catches reworded or
+    // duplicated present-tense claims rather than only known stale sentences.
+    assert!(
+        remaining_deleted_sandbox_path_mentions(
+            "docs/opi-spec.md",
+            spec,
+            EN_DELETED_SANDBOX_HISTORY,
+        )
+        .is_empty(),
+        "docs/opi-spec.md must mention deleted sandbox paths only in the required historical claims"
+    );
+    assert!(
+        remaining_deleted_sandbox_path_mentions(
+            "docs/opi-spec.zh.md",
+            spec_zh,
+            ZH_DELETED_SANDBOX_HISTORY,
+        )
+        .is_empty(),
+        "docs/opi-spec.zh.md must mention deleted sandbox paths only in the required historical claims"
+    );
+}
+
+#[test]
+fn deleted_sandbox_path_guard_rejects_reworded_extra_mentions() {
+    let en = format!(
+        "{}\n{}\nThe production sandbox.rs module remains available, including sandbox/windows.rs.",
+        EN_DELETED_SANDBOX_HISTORY[0], EN_DELETED_SANDBOX_HISTORY[1]
+    );
+    assert_eq!(
+        remaining_deleted_sandbox_path_mentions("fixture-en", &en, EN_DELETED_SANDBOX_HISTORY),
+        vec!["sandbox.rs", "sandbox/windows.rs"]
+    );
+
+    let zh = format!(
+        "{}\n{}\n生产路径 sandbox.rs 模块仍然存在，包括 sandbox/windows.rs。",
+        ZH_DELETED_SANDBOX_HISTORY[0], ZH_DELETED_SANDBOX_HISTORY[1]
+    );
+    assert_eq!(
+        remaining_deleted_sandbox_path_mentions("fixture-zh", &zh, ZH_DELETED_SANDBOX_HISTORY),
+        vec!["sandbox.rs", "sandbox/windows.rs"]
     );
 }
 

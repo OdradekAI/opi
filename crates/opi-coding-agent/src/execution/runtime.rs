@@ -1,9 +1,11 @@
 //! Phase 16.8: the deep Execution Runtime assembly.
 //!
-//! [`ExecutionRuntime::build`] is the SOLE module that turns resolved execution
-//! configuration, enabled named-package identities, the resolved User Policy,
-//! and protocol hosting into a [`BashOperations`] selection. It decides between
-//! the two architecture-mandated backends (design §Core Architecture):
+//! [`ExecutionRuntime::build`] turns routed execution configuration, enabled
+//! named-package identities, the resolved User Policy, and protocol hosting
+//! into a [`BashOperations`] selection. The production harness classifies
+//! fixed-local allow before constructing extended execution state; this entry
+//! point preserves the same direct-local result for embedders and tests. It
+//! decides between the two architecture-mandated backends:
 //!
 //! ```text
 //! BashTool -> Arc<dyn BashOperations>
@@ -17,26 +19,20 @@
 //!
 //! # Branch contract (DoD)
 //!
-//! - **Minimal Runtime:** default-local routing + no enabled executable identity
-//!   returns the injected `local_ops` directly. The store is never called and no
-//!   router/eligibility/protocol/adapter state is constructed (proven transitively
-//!   by pointer-identity with the injected `local_ops`). The already-resolved User
-//!   Policy is still consulted for `local`, so an explicit `local = "deny"|"ask"`
-//!   is honored exactly like any other adapter; reading the borrowed policy is not
-//!   "constructing permission state".
+//! - **Minimal Runtime:** resolved fixed-local routing with effective
+//!   `local = "allow"` returns the injected `local_ops` directly. Enabled but
+//!   unselected external identities do not change that result. The store is
+//!   never called and no router/eligibility/protocol/adapter state is
+//!   constructed. Explicit `local = "deny"|"ask"` settings are outside this
+//!   branch; interactive `ask` uses the routed permission broker, while
+//!   headless `ask` is refused at build time with `permission_required`.
 //! - **Routed:** any other case constructs [`RoutedBashOperations`]. A selected
 //!   external failure becomes a tool failure; **no failure path invokes another
 //!   adapter** (no `local` fallback).
 //!
-//! # Substrate scope
-//!
-//! This task does NOT wire startup (16.9), add the bash-schema `backend` field
-//! (16.9), or implement interactive `ask` prompting (16.9). Model-strategy
-//! invocations therefore resolve with `adapter_not_selected` until 16.9 supplies
-//! the per-invocation backend. The three types this module defines
-//! ([`ExecutionRuntime`], [`RoutedBashOperations`], [`ProcessCommandAdapter`])
-//! have zero production callers in 16.8 — they are test-driven substrate seams
-//! exercised behaviorally via a mock [`IdentitySource`] and the 16.7 mock peer.
+//! The routed branch owns eligibility, selection, interactive permission, and
+//! external protocol adapters. The fixed-local allow branch owns none of that
+//! state; headless fixed-local ask is rejected during harness construction.
 
 use std::collections::{BTreeMap, HashMap};
 use std::future::Future;
@@ -66,6 +62,93 @@ use super::router::{Eligibility, EligibleAdapter, resolve_selection};
 // (16.7). `BackendLaunch`/`ExecutionRequest` carry borrowed lifetimes; the
 // adapter owns its launch params locally and borrows them for the one `execute`.
 use super::{BackendLaunch, CompletedOutcome, ExecutionProtocolHost, ExecutionRequest};
+
+#[cfg(test)]
+pub(crate) mod construction_probe {
+    use std::cell::RefCell;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[derive(Default)]
+    pub(crate) struct Counts {
+        permission_managers: AtomicUsize,
+        brokers: AtomicUsize,
+        routers: AtomicUsize,
+        protocol_states: AtomicUsize,
+    }
+
+    impl Counts {
+        pub(crate) fn permission_managers(&self) -> usize {
+            self.permission_managers.load(Ordering::SeqCst)
+        }
+
+        pub(crate) fn brokers(&self) -> usize {
+            self.brokers.load(Ordering::SeqCst)
+        }
+
+        pub(crate) fn routers(&self) -> usize {
+            self.routers.load(Ordering::SeqCst)
+        }
+
+        pub(crate) fn protocol_states(&self) -> usize {
+            self.protocol_states.load(Ordering::SeqCst)
+        }
+    }
+
+    thread_local! {
+        static ACTIVE: RefCell<Option<Arc<Counts>>> = const { RefCell::new(None) };
+    }
+
+    pub(crate) struct Guard {
+        previous: Option<Arc<Counts>>,
+    }
+
+    impl Drop for Guard {
+        fn drop(&mut self) {
+            ACTIVE.with(|active| {
+                active.replace(self.previous.take());
+            });
+        }
+    }
+
+    pub(crate) fn install() -> (Arc<Counts>, Guard) {
+        let counts = Arc::new(Counts::default());
+        let previous = ACTIVE.with(|active| active.replace(Some(Arc::clone(&counts))));
+        (counts, Guard { previous })
+    }
+
+    fn with_counts(f: impl FnOnce(&Counts)) {
+        ACTIVE.with(|active| {
+            if let Some(counts) = active.borrow().as_ref() {
+                f(counts);
+            }
+        });
+    }
+
+    pub(crate) fn permission_manager_constructed() {
+        with_counts(|counts| {
+            counts.permission_managers.fetch_add(1, Ordering::SeqCst);
+        });
+    }
+
+    pub(crate) fn broker_constructed() {
+        with_counts(|counts| {
+            counts.brokers.fetch_add(1, Ordering::SeqCst);
+        });
+    }
+
+    pub(crate) fn router_constructed() {
+        with_counts(|counts| {
+            counts.routers.fetch_add(1, Ordering::SeqCst);
+        });
+    }
+
+    pub(crate) fn protocol_state_constructed() {
+        with_counts(|counts| {
+            counts.protocol_states.fetch_add(1, Ordering::SeqCst);
+        });
+    }
+}
 
 /// Stable diagnostic code for a backend-reported protocol diagnostic lifted into
 /// a [`ToolDiagnostic`]. Backend diagnostics are message-only (redaction is the
@@ -165,6 +248,52 @@ impl Eligibility {
 // ExecutionRuntime — the sole assembly
 // =========================================================================
 
+/// Pure classification of the resolved fixed-local permission boundary.
+/// Harness startup and runtime assembly share this plan so early lazy-state
+/// decisions cannot drift from [`ExecutionRuntime::build`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ExecutionPlan {
+    DirectLocal,
+    PolicyDenied,
+    HeadlessAskRefused,
+    InteractiveAskRouted,
+    GeneralRouted,
+}
+
+impl ExecutionPlan {
+    pub(crate) fn refusal(self, mode: ExecutionRunMode) -> Option<ExecutionFailure> {
+        match self {
+            Self::PolicyDenied => Some(ExecutionFailure::PolicyDenied {
+                adapter_id: LOCAL_ADAPTER_ID.to_string(),
+            }),
+            Self::HeadlessAskRefused => Some(ExecutionFailure::PermissionRequired {
+                adapter_id: LOCAL_ADAPTER_ID.to_string(),
+                mode,
+            }),
+            Self::DirectLocal | Self::InteractiveAskRouted | Self::GeneralRouted => None,
+        }
+    }
+}
+
+pub(crate) fn execution_plan(
+    config: &ExecutionConfig,
+    mode: ExecutionRunMode,
+    policy: &PermissionPolicy,
+) -> ExecutionPlan {
+    if !is_default_local(config) {
+        return ExecutionPlan::GeneralRouted;
+    }
+
+    match policy.decision_for(LOCAL_ADAPTER_ID) {
+        PermissionDecision::Allow => ExecutionPlan::DirectLocal,
+        PermissionDecision::Deny => ExecutionPlan::PolicyDenied,
+        PermissionDecision::Ask if mode == ExecutionRunMode::Interactive => {
+            ExecutionPlan::InteractiveAskRouted
+        }
+        PermissionDecision::Ask => ExecutionPlan::HeadlessAskRefused,
+    }
+}
+
 /// The Execution Runtime assembly entry point.
 pub struct ExecutionRuntime;
 
@@ -186,27 +315,27 @@ impl ExecutionRuntime {
         manager: Arc<PermissionManager>,
         broker: Option<Arc<dyn InteractivePermissionBroker>>,
     ) -> Result<Arc<dyn BashOperations>, ExecutionFailure> {
-        // --- Branch 1: Minimal Runtime ---
-        // Default-local routing with no enabled external identity returns the
-        // local backend directly. Nothing else is constructed; the store is not
-        // called. The borrowed policy IS consulted so an explicit local
-        // deny/ask is honored consistently with the routed branch.
-        if enabled.is_empty() && is_default_local(config) {
-            match policy.decision_for(LOCAL_ADAPTER_ID) {
-                PermissionDecision::Allow => return Ok(local_ops),
-                PermissionDecision::Deny => {
-                    return Err(ExecutionFailure::PolicyDenied {
-                        adapter_id: LOCAL_ADAPTER_ID.to_string(),
-                    });
-                }
-                PermissionDecision::Ask
-                    if mode == ExecutionRunMode::Interactive && broker.is_some() => {}
-                PermissionDecision::Ask => {
-                    return Err(ExecutionFailure::PermissionRequired {
-                        adapter_id: LOCAL_ADAPTER_ID.to_string(),
-                        mode,
-                    });
-                }
+        let plan = execution_plan(config, mode, policy);
+        if let Some(failure) = plan.refusal(mode) {
+            return Err(failure);
+        }
+        match plan {
+            // --- Branch 1: Minimal Runtime ---
+            // Resolved default fixed-local routing with effective local allow
+            // returns the local backend directly. Enabled external identities
+            // are unselected and require no router/adapter state.
+            ExecutionPlan::DirectLocal => return Ok(local_ops),
+            // Interactive fixed-local ask needs the routed permission broker.
+            // A direct embedder that omits the broker remains fail-closed.
+            ExecutionPlan::InteractiveAskRouted if broker.is_none() => {
+                return Err(ExecutionFailure::PermissionRequired {
+                    adapter_id: LOCAL_ADAPTER_ID.to_string(),
+                    mode,
+                });
+            }
+            ExecutionPlan::InteractiveAskRouted | ExecutionPlan::GeneralRouted => {}
+            ExecutionPlan::PolicyDenied | ExecutionPlan::HeadlessAskRefused => {
+                unreachable!("refused execution plans returned above")
             }
         }
 
@@ -215,12 +344,16 @@ impl ExecutionRuntime {
         // pure constructor that the 16.9 harness model-schema builder also
         // calls; `available` is true for every entry (per-invocation activation
         // is the authoritative availability gate).
+        #[cfg(test)]
+        construction_probe::router_constructed();
         let eligibility = Eligibility::from_enabled(enabled, policy);
         let mut adapters: HashMap<String, ProcessCommandAdapter> = HashMap::new();
         for identity in enabled {
             // Adapter-id uniqueness within eligibility: contribution validation
             // rejects reserved/colliding ids, so an enabled external never
             // duplicates `local` or another identity.
+            #[cfg(test)]
+            construction_probe::protocol_state_constructed();
             let adapter = ProcessCommandAdapter {
                 adapter_id: identity.adapter_id.clone(),
                 package_name: identity.package_name.clone(),
@@ -245,7 +378,7 @@ impl ExecutionRuntime {
     }
 }
 
-/// The default Minimal-Runtime routing shape: `[execution] strategy = "fixed",
+/// The resolved fixed-local routing shape: `[execution] strategy = "fixed",
 /// backend = "local"`.
 fn is_default_local(config: &ExecutionConfig) -> bool {
     config.strategy == ExecutionStrategy::Fixed && config.backend == LOCAL_ADAPTER_ID
@@ -268,9 +401,10 @@ fn host_deadline(command_timeout: Duration) -> Result<Duration, ExecutionFailure
 // RoutedBashOperations
 // =========================================================================
 
-/// The routed [`BashOperations`] backend. Exists only when configured routing
-/// may select a non-`local` adapter. Resolves one selection per invocation via
-/// the pure 16.6 router and dispatches to the local backend or the matching
+/// The routed [`BashOperations`] backend. Constructed when routing may select a
+/// non-`local` adapter, or when explicit interactive fixed-local `ask` requires
+/// broker mediation before local dispatch. Resolves one selection per invocation
+/// via the pure 16.6 router and dispatches to the local backend or the matching
 /// [`ProcessCommandAdapter`]. A selection or adapter failure propagates as a
 /// tool failure; there is no fallback to `local` or any other adapter.
 pub struct RoutedBashOperations {
@@ -544,7 +678,8 @@ impl BashOperations for ProcessCommandAdapter {
                 .iter()
                 .map(|(k, v)| (NativeString::from_utf8(k), NativeString::from_utf8(v)))
                 .collect();
-            let supported_protocols = vec![ProtocolId::new(WIRE_IDENTITY)];
+            let supported_protocols =
+                vec![ProtocolId::new(WIRE_IDENTITY).expect("v1 wire identity is non-empty")];
             let deadline = host_deadline(request.timeout).map_err(exec_failure_to_bash_op_error)?;
             let launch_path = contribution.bound_launch_path();
             let launch = BackendLaunch {
@@ -584,7 +719,7 @@ impl BashOperations for ProcessCommandAdapter {
 
 /// Map a terminal in-band [`CompletedOutcome`] to a [`BashResult`]. Emits the
 /// local `LOCAL_BASH_OPERATION_DIAGNOSTIC` operation-context diagnostic carrying
-/// `exit_code`/`cancelled`/`timed_out` so `bash.rs`'s `lift_operation_context`
+/// `exit_code`/`signal`/`cancelled`/`timed_out` so `bash.rs`'s `lift_operation_context`
 /// treats the routed backend as a transparent drop-in (no bash.rs edit on the
 /// success path), then appends backend-reported diagnostics under
 /// [`BACKEND_DIAGNOSTIC_CODE`].
@@ -592,6 +727,7 @@ fn completed_outcome_to_bash_result(outcome: CompletedOutcome) -> BashResult {
     let mut diagnostics: Vec<ToolDiagnostic> = Vec::with_capacity(outcome.diagnostics.len() + 1);
     diagnostics.push(operation_context_diagnostic(
         outcome.exit.map(|e| e as i32),
+        outcome.signal.map(|signal| signal as i32),
         outcome.cancelled,
         outcome.timed_out,
         &outcome.ready,
@@ -621,6 +757,7 @@ fn completed_outcome_to_bash_result(outcome: CompletedOutcome) -> BashResult {
 /// in-band result.
 fn operation_context_diagnostic(
     exit_code: Option<i32>,
+    signal: Option<i32>,
     cancelled: bool,
     timed_out: bool,
     ready: &super::ReadyReport,
@@ -638,6 +775,7 @@ fn operation_context_diagnostic(
         message: message.to_string(),
         details: Some(serde_json::json!({
             "exit_code": exit_code,
+            "signal": signal,
             "cancelled": cancelled,
             "timed_out": timed_out,
             "truncated": false,
@@ -671,6 +809,13 @@ fn operation_context_diagnostic(
 /// that namespace.
 fn exec_failure_to_bash_op_error(failure: ExecutionFailure) -> BashOpError {
     let code = failure.code();
+    let mut details = serde_json::json!({
+        "code": code,
+        "remediation": failure.remediation(),
+    });
+    if let Some(adapter_id) = failure.adapter_id() {
+        details["adapter_id"] = serde_json::json!(adapter_id);
+    }
     BashOpError::BackendFailure {
         source: Box::new(BashOpError::Other {
             message: code.to_string(),
@@ -678,10 +823,7 @@ fn exec_failure_to_bash_op_error(failure: ExecutionFailure) -> BashOpError {
         diagnostics: vec![ToolDiagnostic {
             code: code.to_string(),
             message: failure.to_string(),
-            details: Some(serde_json::json!({
-                "code": code,
-                "remediation": failure.remediation(),
-            })),
+            details: Some(details),
         }],
     }
 }
@@ -727,6 +869,98 @@ mod tests {
     }
 
     #[test]
+    fn execution_plan_classifies_all_fixed_local_permission_paths() {
+        assert_eq!(
+            execution_plan(
+                &default_local_config(),
+                ExecutionRunMode::Interactive,
+                &PermissionPolicy::empty(),
+            ),
+            ExecutionPlan::DirectLocal,
+        );
+
+        let policy = |decision| {
+            let mut decisions = BTreeMap::new();
+            decisions.insert(LOCAL_ADAPTER_ID.to_string(), decision);
+            PermissionPolicy::from_map(decisions)
+        };
+        assert_eq!(
+            execution_plan(
+                &default_local_config(),
+                ExecutionRunMode::Interactive,
+                &policy(PermissionDecision::Deny),
+            ),
+            ExecutionPlan::PolicyDenied,
+        );
+        assert_eq!(
+            execution_plan(
+                &default_local_config(),
+                ExecutionRunMode::NonInteractive,
+                &policy(PermissionDecision::Ask),
+            ),
+            ExecutionPlan::HeadlessAskRefused,
+        );
+        assert_eq!(
+            execution_plan(
+                &default_local_config(),
+                ExecutionRunMode::Rpc,
+                &policy(PermissionDecision::Ask),
+            ),
+            ExecutionPlan::HeadlessAskRefused,
+        );
+        assert_eq!(
+            execution_plan(
+                &default_local_config(),
+                ExecutionRunMode::Interactive,
+                &policy(PermissionDecision::Ask),
+            ),
+            ExecutionPlan::InteractiveAskRouted,
+        );
+
+        let mut routed = default_local_config();
+        routed.strategy = ExecutionStrategy::Model;
+        assert_eq!(
+            execution_plan(
+                &routed,
+                ExecutionRunMode::Interactive,
+                &PermissionPolicy::empty(),
+            ),
+            ExecutionPlan::GeneralRouted,
+        );
+    }
+
+    #[test]
+    fn external_adapter_protocol_state_is_counted_during_runtime_construction() {
+        let (counts, _probe) = construction_probe::install();
+        let mut config = default_local_config();
+        config.backend = "opi-sandbox".to_string();
+        let mut decisions = BTreeMap::new();
+        decisions.insert("opi-sandbox".to_string(), PermissionDecision::Allow);
+        let policy = PermissionPolicy::from_map(decisions);
+        let local_ops: Arc<dyn BashOperations> = Arc::new(LocalBashOperations::new());
+
+        ExecutionRuntime::build(
+            &config,
+            ExecutionRunMode::Interactive,
+            &[EnabledIdentity {
+                adapter_id: "opi-sandbox".to_string(),
+                package_name: "mock-pkg".to_string(),
+            }],
+            &policy,
+            Arc::new(PanicStore),
+            local_ops,
+            Path::new("."),
+            "x86_64-pc-windows-msvc",
+            "0.8.0",
+            Arc::new(PermissionManager::new()),
+            None,
+        )
+        .expect("fixed external allow constructs the routed runtime");
+
+        assert_eq!(counts.protocol_states(), 1);
+    }
+
+    #[test]
     fn host_deadline_aligns_host_cancel_with_backend_timeout() {
         // FL25: the host's cancel point is `deadline - CLEANUP_REPORT_GRACE`.
         // Driving the REAL `host_deadline` helper (not std-lib Duration Add)
@@ -753,6 +987,27 @@ mod tests {
     #[test]
     fn host_deadline_rejects_overflow() {
         assert!(host_deadline(Duration::MAX).is_err());
+    }
+
+    #[test]
+    fn routed_operation_context_carries_signal() {
+        let ready = crate::execution::ReadyReport {
+            selected_protocol: ProtocolId::new(WIRE_IDENTITY).unwrap(),
+            implementation: opi_protocol::execution::v1::ImplementationId::new("opi-sandbox")
+                .unwrap(),
+            implementation_version: "1.0.0".to_string(),
+            target: opi_protocol::execution::v1::TargetId::new("test-target"),
+        };
+        let diagnostic = operation_context_diagnostic(
+            None,
+            Some(9),
+            false,
+            false,
+            &ready,
+            &crate::execution::StartedReport::default(),
+        );
+
+        assert_eq!(diagnostic.details.unwrap()["signal"], 9);
     }
 
     #[test]
@@ -817,8 +1072,8 @@ mod tests {
 
     #[test]
     fn minimal_runtime_with_local_deny_is_policy_denied() {
-        // MF2: branch 1 consults the policy — an explicit local deny must fail
-        // even with no enabled identity, and the store must never be touched.
+        // An explicit local deny is outside Branch 1 and fails during fixed-local
+        // preflight, even with no enabled identity. The store stays untouched.
         let mut decisions: BTreeMap<String, PermissionDecision> = BTreeMap::new();
         decisions.insert(LOCAL_ADAPTER_ID.to_string(), PermissionDecision::Deny);
         let policy = PermissionPolicy::from_map(decisions);

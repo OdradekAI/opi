@@ -1,0 +1,10 @@
+{
+  "type": "initialize",
+  "payload": {
+    "request_id": "r1",
+    "deadline_ms": 30000,
+    "adapter_config": {},
+    "supported_protocols": ["command-execution-jsonl-v1"],
+    "unexpected": true
+  }
+}

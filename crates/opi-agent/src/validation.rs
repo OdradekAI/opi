@@ -15,7 +15,7 @@ pub fn validate(
     match jsonschema::validate(schema, args) {
         Ok(()) => Ok(()),
         Err(e) => Err(ValidationError {
-            errors: vec![e.to_string()],
+            errors: vec![e.masked_with("<redacted>").to_string()],
         }),
     }
 }

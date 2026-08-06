@@ -82,8 +82,8 @@ impl Session {
     /// and duplicate invariants.
     pub fn observe_backend(&mut self, frame: &BackendToHost) -> Result<(), SessionError> {
         validate_backend(frame, &self.bounds)?;
-        self.account_output(frame)?;
         self.check_id(frame.request_id())?;
+        self.account_output(frame)?;
         self.check_duplicate(frame.kind())?;
         Ok(())
     }
@@ -265,7 +265,7 @@ mod tests {
             request_id: rid("A"),
             deadline_ms: 1000,
             adapter_config: oversized,
-            supported_protocols: vec![ProtocolId::new("command-execution-jsonl-v1")],
+            supported_protocols: vec![ProtocolId::new("command-execution-jsonl-v1").unwrap()],
         }))
         .unwrap();
         let err = session.feed_host_line(line.as_bytes()).unwrap_err();
@@ -361,7 +361,7 @@ mod tests {
             request_id: rid("A"),
             deadline_ms: 1,
             adapter_config: serde_json::json!("123"),
-            supported_protocols: vec![ProtocolId::new("command-execution-jsonl-v1")],
+            supported_protocols: vec![ProtocolId::new("command-execution-jsonl-v1").unwrap()],
         });
         let mut session = Session::new(bounds).unwrap();
         session.observe_host(&exact).unwrap();
@@ -370,7 +370,7 @@ mod tests {
             request_id: rid("B"),
             deadline_ms: 1,
             adapter_config: serde_json::json!("1234"),
-            supported_protocols: vec![ProtocolId::new("command-execution-jsonl-v1")],
+            supported_protocols: vec![ProtocolId::new("command-execution-jsonl-v1").unwrap()],
         });
         let mut session = Session::new(bounds).unwrap();
         assert!(matches!(

@@ -38,6 +38,14 @@ fn schema_carries_id_and_wire_identity() {
 }
 
 #[test]
+fn schema_omits_internal_root_title() {
+    assert!(
+        v1::schema().get("title").is_none(),
+        "the internal SchemaRoot wrapper must not leak into the wire schema"
+    );
+}
+
+#[test]
 fn nativestring_schema_is_string_with_escape_description() {
     let s = v1::schema();
     let defs = s["$defs"].as_object().unwrap();
@@ -76,11 +84,76 @@ fn implementation_id_schema_has_min_length() {
 }
 
 #[test]
+fn protocol_id_schema_has_min_length() {
+    let s = v1::schema();
+    let defs = s["$defs"].as_object().unwrap();
+    assert_eq!(defs["ProtocolId"]["type"], "string");
+    assert_eq!(defs["ProtocolId"]["minLength"], 1);
+}
+
+#[test]
+fn failed_message_schema_has_default_diagnostics_bound() {
+    let s = v1::schema();
+    assert_eq!(
+        s["$defs"]["FailedPayload"]["properties"]["message"]["maxLength"],
+        v1::Bounds::DEFAULT.max_diagnostics_size
+    );
+}
+
+#[test]
+fn custom_bounds_apply_to_every_diagnostic_message_schema() {
+    let bounds = v1::Bounds {
+        max_diagnostics_size: 7,
+        ..v1::Bounds::DEFAULT
+    };
+    let s = v1::schema_with_bounds(bounds);
+    for pointer in [
+        "/$defs/FailedPayload/properties/message/maxLength",
+        "/$defs/Diagnostic/properties/message/maxLength",
+        "/$defs/DiagnosticPayload/properties/message/maxLength",
+    ] {
+        assert_eq!(s.pointer(pointer), Some(&serde_json::json!(7)), "{pointer}");
+    }
+}
+
+#[test]
+fn schema_character_limit_defers_multibyte_byte_limit_to_codec() {
+    let bounds = v1::Bounds {
+        max_line_size: 4096,
+        max_decoded_chunk_size: 8,
+        max_configuration_size: 16,
+        max_diagnostics_size: 4,
+        max_cumulative_output: 64,
+    };
+    let instance = serde_json::json!({
+        "type": "diagnostic",
+        "payload": { "request_id": "r1", "message": "ééé" }
+    });
+    assert!(
+        jsonschema::validate(&v1::schema_with_bounds(bounds), &instance).is_ok(),
+        "three characters fit the schema maxLength"
+    );
+
+    let err = v1::Session::new(bounds)
+        .unwrap()
+        .feed_backend_line(&serde_json::to_vec(&instance).unwrap())
+        .unwrap_err();
+    assert!(matches!(
+        err,
+        v1::SessionError::Codec(v1::CodecError::DiagnosticsTooLarge {
+            actual: 6,
+            limit: 4
+        })
+    ));
+}
+
+#[test]
 fn valid_fixtures_validate_against_schema() {
     let schema = v1::schema();
     let valid = [
         "valid_initialize.json",
         "valid_execute.json",
+        "valid_cancel.json",
         "valid_ready.json",
         "valid_accepted.json",
         "valid_started.json",
@@ -112,6 +185,8 @@ fn invalid_fixtures_rejected_by_schema() {
         "invalid_ready_missing_implementation.json",
         "invalid_ready_empty_implementation.json",
         "invalid_ready_unknown_field.json",
+        "invalid_initialize_empty_protocol.json",
+        "invalid_initialize_unknown_field.json",
     ];
     for name in invalid {
         let instance = load_json(name);

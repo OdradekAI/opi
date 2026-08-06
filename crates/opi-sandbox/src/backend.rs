@@ -27,14 +27,14 @@
 //! [`crate::StdinPolicy::Null`]); protocol stdout carries ONLY `encode_backend`
 //! lines (target stdout/stderr are base64 `Stdout`/`Stderr` frames).
 //!
-//! # 16.12 scope (honest)
+//! # Platform posture
 //!
 //! Portable conformance (the full success state machine) is driven by
-//! [`drive`] with an INJECTED runner + `supported = true`; the REAL executable
-//! ([`run`]) negotiates then refuses at the platform gate
-//! (`failed{Unavailable, Handshake}`) because `crate::platform::current` is
-//! unsupported on every platform this phase. Successful NATIVE run is owned by
-//! 16.13 / 16.14.1.
+//! [`drive`] with an INJECTED restriction + `supported = true`. The real
+//! executable ([`run`]) uses `crate::platform::current`: supported native
+//! Linux and macOS postures can execute with their platform restriction, while
+//! unsupported postures refuse at the pre-start platform gate with
+//! `failed{Unavailable, Handshake}`.
 
 #![forbid(unsafe_code)]
 
@@ -47,8 +47,8 @@ use std::time::Duration;
 use futures_core::Stream;
 use opi_protocol::execution::v1::codec::{LineReader, encode_backend};
 use opi_protocol::execution::v1::frames::{
-    AcceptedPayload, CompletedPayload, Diagnostic, FailedPayload, ReadyPayload, StderrPayload,
-    StdoutPayload,
+    AcceptedPayload, CompletedPayload, Diagnostic, FailedPayload, InitializePayload, ReadyPayload,
+    StderrPayload, StdoutPayload,
 };
 use opi_protocol::execution::v1::{
     BackendToHost, Base64Bytes, Bounds, CleanupState as WireCleanup, FailureCode, FailurePhase,
@@ -59,8 +59,8 @@ use tokio_util::sync::CancellationToken;
 
 use crate::helper::{self, StartOutcome};
 use crate::platform;
-use crate::policy::{NoRestriction, SandboxPolicy};
-use crate::runner::{CleanupState, SandboxEvent, SandboxOutcome, SandboxRun, SandboxRunner};
+use crate::policy::{NetworkPolicy, NoRestriction, Profile, Restriction, SandboxPolicy};
+use crate::runner::{CleanupState, SandboxEvent, SandboxOutcome, SandboxRunner};
 
 /// Backend exit after a clean protocol exchange (a terminal frame was emitted +
 /// flushed). The target's own exit is in-band in `completed`.
@@ -75,6 +75,34 @@ const EXIT_NO_TERMINAL: i32 = 1;
 /// releases a reader blocked on backpressure.
 const INPUT_CHANNEL_CAPACITY: usize = 8;
 
+#[derive(Clone, Copy)]
+enum PostStartFailure {
+    Release,
+    StreamEnded,
+    CleanupUnconfirmed,
+}
+
+fn classify_post_start_failure(failure: PostStartFailure) -> (FailureCode, FailurePhase) {
+    match failure {
+        PostStartFailure::Release | PostStartFailure::StreamEnded => {
+            (FailureCode::ExecutionFailed, FailurePhase::Execution)
+        }
+        PostStartFailure::CleanupUnconfirmed => {
+            (FailureCode::CleanupUnconfirmed, FailurePhase::Cleanup)
+        }
+    }
+}
+
+fn emit_post_start_failure(
+    stdout: &mut dyn Write,
+    bounds: Bounds,
+    seed_id: &Option<RequestId>,
+    failure: PostStartFailure,
+) -> i32 {
+    let (code, phase) = classify_post_start_failure(failure);
+    emit_failed_or_silent(stdout, bounds, seed_id, code, phase)
+}
+
 /// One unit pushed from the blocking stdin reader to the async driver.
 enum InputLine {
     /// A capped JSONL line (no trailing newline).
@@ -85,11 +113,13 @@ enum InputLine {
     Error,
 }
 
-/// Drive one backend exchange over `stdin`/`stdout` with an INJECTED runner and
-/// platform posture. This is the pure testable core: production [`run`] wires
-/// `std::io::stdin()` / `stdout()` and `platform::current`; portable
+/// Drive one backend exchange over `stdin`/`stdout` with an INJECTED
+/// restriction and platform posture. This is the pure testable core: production
+/// [`run`] wires `std::io::stdin()` / `stdout()` and `platform::current`; portable
 /// conformance tests inject `supported = true`, empty limitations, and a
-/// [`NoRestriction`] runner to exercise the full success state machine.
+/// [`NoRestriction`] to exercise the full success state machine. The runner is
+/// constructed only after `initialize.adapter_config` has been validated and
+/// mapped to a [`SandboxPolicy`].
 ///
 /// `stdin` is owned + `Send` so the blocking reader can run on a dedicated
 /// thread; `stdout` is borrowed for the whole exchange and flushed after every
@@ -101,7 +131,7 @@ pub async fn drive(
     bounds: Bounds,
     supported: bool,
     limitations: &[String],
-    runner: &SandboxRunner,
+    restriction: Arc<dyn Restriction>,
 ) -> i32 {
     let exchange_started = tokio::time::Instant::now();
     let mut session = match Session::new(bounds) {
@@ -139,10 +169,41 @@ pub async fn drive(
             FailurePhase::Handshake,
         );
     };
+    if tokio::time::Instant::now() >= deadline {
+        return emit_failed_or_silent(
+            stdout,
+            bounds,
+            &seed_id,
+            FailureCode::ExecutionTimedOut,
+            FailurePhase::Handshake,
+        );
+    }
+    let policy = parse_adapter_policy(&init);
+    if tokio::time::Instant::now() >= deadline {
+        return emit_failed_or_silent(
+            stdout,
+            bounds,
+            &seed_id,
+            FailureCode::ExecutionTimedOut,
+            FailurePhase::Handshake,
+        );
+    }
+    let Some(policy) = policy else {
+        return emit_failed_or_silent(
+            stdout,
+            bounds,
+            &seed_id,
+            FailureCode::ProtocolViolation,
+            FailurePhase::Handshake,
+        );
+    };
+    let runner = SandboxRunner::new(policy, restriction);
 
     // --- negotiate (first-match by host preference) ---
     let backend_supported: BTreeSet<ProtocolId> =
-        [ProtocolId::new(WIRE_IDENTITY)].into_iter().collect();
+        [ProtocolId::new(WIRE_IDENTITY).expect("v1 wire identity is non-empty")]
+            .into_iter()
+            .collect();
     let selected = match select(&init.supported_protocols, &backend_supported) {
         Ok(p) => p,
         Err(_) => {
@@ -218,7 +279,17 @@ pub async fn drive(
         );
     }
     request.timeout = request.timeout.min(remaining);
-    let mut run = match helper::start(supported, runner, request) {
+    let start_outcome = helper::start(supported, &runner, request);
+    if tokio::time::Instant::now() >= deadline {
+        return emit_failed_or_silent(
+            stdout,
+            bounds,
+            &seed_id,
+            FailureCode::ExecutionTimedOut,
+            FailurePhase::Handshake,
+        );
+    }
+    let mut run = match start_outcome {
         StartOutcome::Ready { run } => run,
         StartOutcome::Refused { code } => {
             return emit_failed_or_silent(stdout, bounds, &seed_id, code, FailurePhase::Handshake);
@@ -268,21 +339,14 @@ pub async fn drive(
     if run.release().is_err() {
         cancel.cancel();
         if !drain_cancelled_run(&mut run, deadline).await {
-            return emit_failed_or_silent(
+            return emit_post_start_failure(
                 stdout,
                 bounds,
                 &seed_id,
-                FailureCode::CleanupUnconfirmed,
-                FailurePhase::Execution,
+                PostStartFailure::CleanupUnconfirmed,
             );
         }
-        return emit_failed_or_silent(
-            stdout,
-            bounds,
-            &seed_id,
-            FailureCode::ExecutionFailed,
-            FailurePhase::Execution,
-        );
+        return emit_post_start_failure(stdout, bounds, &seed_id, PostStartFailure::Release);
     }
 
     // --- drain: host input has deterministic precedence over deadline and
@@ -300,9 +364,11 @@ pub async fn drive(
                     Ok(_) | Err(_) => {
                         cancel.cancel();
                         if !drain_cancelled_run(&mut run, deadline).await {
-                            return emit_failed_or_silent(
-                                stdout, bounds, &seed_id,
-                                FailureCode::CleanupUnconfirmed, FailurePhase::Execution,
+                            return emit_post_start_failure(
+                                stdout,
+                                bounds,
+                                &seed_id,
+                                PostStartFailure::CleanupUnconfirmed,
                             );
                         }
                         return emit_failed_or_silent(
@@ -314,9 +380,11 @@ pub async fn drive(
                 Some(InputLine::Eof) | Some(InputLine::Error) | None => {
                     cancel.cancel();
                     if !drain_cancelled_run(&mut run, deadline).await {
-                        return emit_failed_or_silent(
-                            stdout, bounds, &seed_id,
-                            FailureCode::CleanupUnconfirmed, FailurePhase::Execution,
+                        return emit_post_start_failure(
+                            stdout,
+                            bounds,
+                            &seed_id,
+                            PostStartFailure::CleanupUnconfirmed,
                         );
                     }
                     return emit_failed_or_silent(
@@ -328,9 +396,11 @@ pub async fn drive(
             _ = tokio::time::sleep_until(deadline) => {
                 cancel.cancel();
                 drop(run);
-                return emit_failed_or_silent(
-                    stdout, bounds, &seed_id,
-                    FailureCode::CleanupUnconfirmed, FailurePhase::Execution,
+                return emit_post_start_failure(
+                    stdout,
+                    bounds,
+                    &seed_id,
+                    PostStartFailure::CleanupUnconfirmed,
                 );
             },
             ev = next_event(&mut run) => match ev {
@@ -342,9 +412,11 @@ pub async fn drive(
                 }
                 Some(_) => continue,
                 None => {
-                    return emit_failed_or_silent(
-                        stdout, bounds, &seed_id,
-                        FailureCode::ExecutionFailed, FailurePhase::Execution,
+                    return emit_post_start_failure(
+                        stdout,
+                        bounds,
+                        &seed_id,
+                        PostStartFailure::StreamEnded,
                     );
                 }
             },
@@ -373,22 +445,15 @@ pub async fn drive(
 }
 
 /// Production entry point: wire process stdio + the live platform posture and
-/// drive one exchange. In 16.12 `platform::current` is unsupported on every
-/// platform, so production negotiates then refuses at the gate
-/// (`failed{Unavailable, Handshake}`); the injected-runner tests exercise
-/// successful `started` -> `completed`.
+/// drive one exchange. Supported Linux/macOS postures execute with their native
+/// restriction; unsupported postures refuse before target start. Portable
+/// injected-restriction tests exercise successful `started` -> `completed`.
 pub async fn run() -> i32 {
     let posture = platform::current();
-    // The runner is constructed even on the unsupported path (with the neutral
-    // placeholder restriction); it is never invoked there because the helper
-    // gate refuses before `runner.run`.
-    let runner = SandboxRunner::new(
-        SandboxPolicy::default(),
-        posture
-            .restriction
-            .clone()
-            .unwrap_or_else(|| Arc::new(NoRestriction)),
-    );
+    let restriction = posture
+        .restriction
+        .clone()
+        .unwrap_or_else(|| Arc::new(NoRestriction));
     let stdin: Box<dyn Read + Send> = Box::new(std::io::stdin());
     let stdout = std::io::stdout();
     let mut stdout = stdout.lock();
@@ -398,9 +463,40 @@ pub async fn run() -> i32 {
         Bounds::DEFAULT,
         posture.supported,
         &posture.limitations,
-        &runner,
+        restriction,
     )
     .await
+}
+
+/// Parse the bounded opaque wire value as the backend's closed adapter
+/// configuration. Missing fields retain the standalone SDK defaults, so `{}`
+/// is `workspace-write` + `deny`. No aliases or extension keys are accepted.
+fn parse_adapter_policy(init: &InitializePayload) -> Option<SandboxPolicy> {
+    let config = init.adapter_config.as_object()?;
+    if config
+        .keys()
+        .any(|key| key != "profile" && key != "network")
+    {
+        return None;
+    }
+
+    let profile = match config.get("profile") {
+        None => Profile::default(),
+        Some(value) => match value.as_str() {
+            Some("workspace-write") => Profile::WorkspaceWrite,
+            _ => return None,
+        },
+    };
+    let network = match config.get("network") {
+        None => NetworkPolicy::default(),
+        Some(value) => match value.as_str() {
+            Some("deny") => NetworkPolicy::Deny,
+            Some("allow") => NetworkPolicy::Allow,
+            _ => return None,
+        },
+    };
+
+    Some(SandboxPolicy::new(profile, network))
 }
 
 // ---------------------------------------------------------------------------
@@ -574,11 +670,17 @@ fn map_cleanup(c: CleanupState) -> WireCleanup {
 
 /// Poll one event from the run stream without a `futures-util` dependency (the
 /// crate depends only on `futures_core` for the [`Stream`] trait).
-async fn next_event(run: &mut SandboxRun) -> Option<SandboxEvent> {
+async fn next_event<S>(run: &mut S) -> Option<SandboxEvent>
+where
+    S: Stream<Item = SandboxEvent> + Unpin,
+{
     std::future::poll_fn(|cx| Pin::new(&mut *run).poll_next(cx)).await
 }
 
-async fn next_completed(run: &mut SandboxRun) -> Option<crate::runner::SandboxResult> {
+async fn next_completed<S>(run: &mut S) -> Option<crate::runner::SandboxResult>
+where
+    S: Stream<Item = SandboxEvent> + Unpin,
+{
     loop {
         match next_event(run).await {
             Some(SandboxEvent::Completed(result)) => return Some(result),
@@ -588,10 +690,13 @@ async fn next_completed(run: &mut SandboxRun) -> Option<crate::runner::SandboxRe
     }
 }
 
-async fn drain_cancelled_run(run: &mut SandboxRun, deadline: tokio::time::Instant) -> bool {
+async fn drain_cancelled_run<S>(run: &mut S, deadline: tokio::time::Instant) -> bool
+where
+    S: Stream<Item = SandboxEvent> + Unpin,
+{
     tokio::time::timeout_at(deadline, next_completed(run))
         .await
-        .is_ok_and(|result| result.is_some())
+        .is_ok_and(|result| result.is_some_and(|result| result.cleanup == CleanupState::Confirmed))
 }
 
 /// Write `bytes` + a newline, then flush. Returns false on any I/O error.
@@ -633,5 +738,98 @@ fn run_reader(
                 return;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn ended_execution_stream_emits_execution_failed_in_execution_phase() {
+        let mut run = futures_util::stream::empty::<SandboxEvent>();
+        let failure = match next_event(&mut run).await {
+            None => PostStartFailure::StreamEnded,
+            Some(event) => panic!("expected ended stream, got {event:?}"),
+        };
+
+        let mut out = Vec::new();
+        let request_id = Some(RequestId::new("r1".to_string()).expect("valid request id"));
+        assert_eq!(
+            emit_post_start_failure(&mut out, Bounds::DEFAULT, &request_id, failure,),
+            EXIT_OK
+        );
+        let line = out
+            .strip_suffix(b"\n")
+            .expect("one newline-terminated frame");
+        let BackendToHost::Failed(failed) =
+            opi_protocol::execution::v1::codec::decode_backend(line).expect("valid failed frame")
+        else {
+            panic!("expected failed frame")
+        };
+        assert_eq!(failed.code, FailureCode::ExecutionFailed);
+        assert_eq!(failed.phase, FailurePhase::Execution);
+    }
+
+    #[tokio::test]
+    async fn drain_rejects_completed_run_with_unconfirmed_cleanup() {
+        let result = crate::runner::SandboxResult {
+            outcome: SandboxOutcome::Cancelled,
+            cleanup: CleanupState::Unconfirmed,
+            stdout: Vec::new(),
+            stderr: Vec::new(),
+            stdout_truncated: false,
+            stderr_truncated: false,
+            temp_root: std::path::PathBuf::from("injected-temp-root"),
+        };
+        let mut run = futures_util::stream::iter([SandboxEvent::Completed(result)]);
+
+        let failure = if drain_cancelled_run(
+            &mut run,
+            tokio::time::Instant::now() + Duration::from_secs(1),
+        )
+        .await
+        {
+            panic!("unconfirmed cleanup must not count as a successful drain")
+        } else {
+            PostStartFailure::CleanupUnconfirmed
+        };
+
+        let mut out = Vec::new();
+        let request_id = Some(RequestId::new("r1".to_string()).expect("valid request id"));
+        assert_eq!(
+            emit_post_start_failure(&mut out, Bounds::DEFAULT, &request_id, failure,),
+            EXIT_OK
+        );
+        let line = out
+            .strip_suffix(b"\n")
+            .expect("one newline-terminated frame");
+        let BackendToHost::Failed(failed) =
+            opi_protocol::execution::v1::codec::decode_backend(line).expect("valid failed frame")
+        else {
+            panic!("expected failed frame")
+        };
+        assert_eq!(failed.code, FailureCode::CleanupUnconfirmed);
+        assert_eq!(failed.phase, FailurePhase::Cleanup);
+    }
+
+    #[test]
+    fn empty_adapter_config_maps_to_the_exact_default_policy() {
+        let init = InitializePayload {
+            request_id: RequestId::new("r1".to_string()).expect("valid request id"),
+            deadline_ms: 1_000,
+            adapter_config: serde_json::json!({}),
+            supported_protocols: vec![
+                ProtocolId::new(WIRE_IDENTITY).expect("valid protocol identity"),
+            ],
+        };
+
+        assert_eq!(
+            parse_adapter_policy(&init),
+            Some(SandboxPolicy::new(
+                Profile::WorkspaceWrite,
+                NetworkPolicy::Deny,
+            ))
+        );
     }
 }

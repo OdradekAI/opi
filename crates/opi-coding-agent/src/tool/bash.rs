@@ -226,6 +226,7 @@ impl Tool for BashTool {
             let (cancelled, timed_out, truncated, full_output, kill_error) =
                 lift_operation_context(&backend);
             let exit_code = backend.exit_code;
+            let signal = backend.signal;
 
             // Content text mirrors the pre-15.2 shape: timeout/cancellation
             // report the cause (the backend discards the killed child's pipes,
@@ -235,6 +236,8 @@ impl Tool for BashTool {
                 "command cancelled".to_string()
             } else if timed_out {
                 "command timed out".to_string()
+            } else if let Some(signal) = signal {
+                format!("command terminated by signal {signal}")
             } else {
                 let mut merged: Vec<u8> =
                     Vec::with_capacity(backend.stdout.len() + backend.stderr.len());
@@ -255,19 +258,22 @@ impl Tool for BashTool {
                 truncated,
                 full_output,
             ));
+            details["signal"] = json!(signal);
             copy_effective_contract(&backend, &mut details);
             // No degraded success state (design: "The adapter either reports its
-            // effective contract or the command fails"). A timeout or
-            // cancellation is an error even when the backend reports a clean
+            // effective contract or the command fails"). A timeout,
+            // cancellation, or signal termination is an error even when the
+            // backend reports a clean
             // exit code in the same terminal frame — matching the local backend,
             // which yields exit_code=None on timeout.
-            let is_error = timed_out || cancelled || exit_code != Some(0);
+            let is_error = timed_out || cancelled || signal.is_some() || exit_code != Some(0);
             let mut result = bash_result(
                 vec![OutputContent::Text { text }],
                 details,
                 is_error,
                 truncated,
                 exit_code,
+                signal,
                 cancelled,
                 timed_out,
                 kill_error,
@@ -412,7 +418,7 @@ fn backend_error_result(
 /// present (the stable operation-metadata contract); only `is_error` flips.
 ///
 /// On an error result a [`ToolDiagnostic`] carrying the operation context
-/// (exit_code/cancelled/timed_out/truncated) is pushed so the agent loop (Phase
+/// (exit_code/signal/cancelled/timed_out/truncated) is pushed so the agent loop (Phase
 /// 11.8 / S1) lifts it into a Phase 7 Diagnostic + trace.
 #[allow(clippy::too_many_arguments)] // threads the failure discriminators alongside the result builder inputs
 fn bash_result(
@@ -421,6 +427,7 @@ fn bash_result(
     is_error: bool,
     truncated: bool,
     exit_code: Option<i32>,
+    signal: Option<i32>,
     cancelled: bool,
     timed_out: bool,
     kill_error: Option<&str>,
@@ -430,7 +437,7 @@ fn bash_result(
     tool_result.truncated = truncated;
     if is_error {
         tool_result.diagnostics.push(bash_operation_diagnostic(
-            exit_code, cancelled, timed_out, truncated, kill_error,
+            exit_code, signal, cancelled, timed_out, truncated, kill_error,
         ));
     }
     tool_result
@@ -456,6 +463,7 @@ fn wait_failed_result(workspace_root: &Path, command: &str, cwd: &Path, shell: &
         true,
         false,
         None,
+        None,
         false,
         false,
         None,
@@ -474,20 +482,24 @@ fn wait_failed_result(workspace_root: &Path, command: &str, cwd: &Path, shell: &
 /// excluded because commands can contain secrets.
 fn bash_operation_diagnostic(
     exit_code: Option<i32>,
+    signal: Option<i32>,
     cancelled: bool,
     timed_out: bool,
     truncated: bool,
     kill_error: Option<&str>,
 ) -> ToolDiagnostic {
     let message = if cancelled {
-        "command cancelled"
+        "command cancelled".to_string()
     } else if timed_out {
-        "command timed out"
+        "command timed out".to_string()
+    } else if let Some(signal) = signal {
+        format!("command terminated by signal {signal}")
     } else {
-        "command exited non-zero"
+        "command exited non-zero".to_string()
     };
     let mut context = json!({
         "exit_code": exit_code,
+        "signal": signal,
         "cancelled": cancelled,
         "timed_out": timed_out,
         "truncated": truncated,
@@ -498,7 +510,7 @@ fn bash_operation_diagnostic(
     }
     ToolDiagnostic {
         code: CODE_TOOL_EXECUTION_FAILED.to_string(),
-        message: message.to_string(),
+        message,
         context,
     }
 }

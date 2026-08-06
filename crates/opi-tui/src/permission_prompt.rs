@@ -141,7 +141,7 @@ impl PermissionPrompt {
     /// The currently selected choice.
     pub fn selected(&self) -> PermissionChoice {
         self.choice_at(self.cursor)
-            .unwrap_or(PermissionChoice::AllowOnce)
+            .unwrap_or(PermissionChoice::Deny)
     }
 
     /// Advance the cursor to the next choice; clamp at the last.
@@ -276,6 +276,16 @@ mod tests {
             PermissionPrompt::new(summary()).selected(),
             PermissionChoice::AllowOnce
         );
+    }
+
+    #[test]
+    fn permission_prompt_invalid_cursor_fails_closed_to_deny() {
+        let prompt = PermissionPrompt {
+            cursor: PermissionChoice::all().len(),
+            summary: summary(),
+        };
+
+        assert_eq!(prompt.selected(), PermissionChoice::Deny);
     }
 
     #[test]

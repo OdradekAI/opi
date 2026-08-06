@@ -12,6 +12,7 @@ use schemars::generate::SchemaSettings;
 use serde_json::{Value, json};
 
 use super::WIRE_IDENTITY;
+use super::bounds::Bounds;
 use super::frames::{BackendToHost, HostToBackend};
 
 /// Stable canonical `$id` for the `command-execution-jsonl-v1` schema.
@@ -40,6 +41,17 @@ struct SchemaRoot {
 /// `Base64Bytes` carries `contentEncoding: "base64"`, because both use manual
 /// `JsonSchema` impls.
 pub fn schema() -> Value {
+    schema_with_bounds(Bounds::DEFAULT)
+}
+
+/// Generate the normative JSON Schema with message lengths derived from
+/// `bounds`.
+///
+/// JSON Schema `maxLength` counts Unicode characters, while the codec's
+/// `max_diagnostics_size` enforcement counts UTF-8 bytes. The schema bound is
+/// therefore a necessary character-count limit; the codec remains authoritative
+/// for multibyte messages.
+pub fn schema_with_bounds(bounds: Bounds) -> Value {
     let generated = SchemaSettings::draft2020_12()
         .into_generator()
         .into_root_schema_for::<SchemaRoot>();
@@ -54,6 +66,23 @@ pub fn schema() -> Value {
     obj.remove("properties");
     obj.remove("required");
     obj.remove("additionalProperties");
+    obj.remove("title");
+
+    let definitions = obj
+        .get_mut("$defs")
+        .and_then(Value::as_object_mut)
+        .expect("generated schema has definitions");
+    for definition in ["FailedPayload", "Diagnostic", "DiagnosticPayload"] {
+        let message = definitions
+            .get_mut(definition)
+            .and_then(Value::as_object_mut)
+            .and_then(|schema| schema.get_mut("properties"))
+            .and_then(Value::as_object_mut)
+            .and_then(|properties| properties.get_mut("message"))
+            .and_then(Value::as_object_mut)
+            .expect("diagnostic message schema is an object");
+        message.insert("maxLength".to_string(), json!(bounds.max_diagnostics_size));
+    }
     obj.insert(
         "oneOf".to_string(),
         json!([

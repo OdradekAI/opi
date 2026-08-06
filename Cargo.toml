@@ -51,6 +51,7 @@ clap_complete = "4"
 
 # config
 toml = "0.8"
+semver = "1"
 
 # TUI
 ratatui = "0.30"

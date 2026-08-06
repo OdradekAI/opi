@@ -1,0 +1,7 @@
+{
+  "type": "cancel",
+  "payload": {
+    "request_id": "r1",
+    "reason": "canceled"
+  }
+}

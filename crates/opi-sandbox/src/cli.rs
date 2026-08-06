@@ -189,6 +189,9 @@ pub fn parse_run(args: &[String]) -> Result<RunCommand, UsageError> {
     if rest.is_empty() {
         return Err(UsageError::missing_program());
     }
+    if rest[0].is_empty() {
+        return Err(UsageError::new("empty program after `--`"));
+    }
     let program = PathBuf::from(&rest[0]);
     let args = rest[1..].to_vec();
     Ok(RunCommand {

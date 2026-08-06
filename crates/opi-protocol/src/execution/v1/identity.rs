@@ -18,6 +18,11 @@ pub struct InvalidRequestId;
 #[error("implementation id must be a non-empty string")]
 pub struct InvalidImplementationId;
 
+/// Error constructing a [`ProtocolId`] from an empty string.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("protocol id must be a non-empty string")]
+pub struct InvalidProtocolId;
+
 /// Host-generated opaque request id carried by every frame in one execution.
 ///
 /// Empty ids are rejected at the type boundary: construction ([`RequestId::new`])
@@ -119,16 +124,19 @@ impl<'de> Deserialize<'de> for ImplementationId {
 
 /// A wire-protocol identity. The version is baked into the identity string
 /// (`command-execution-jsonl-v1`); there is no separate numeric version.
-#[derive(
-    Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, JsonSchema,
-)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, JsonSchema)]
 #[serde(transparent)]
+#[schemars(extend("minLength" = 1))]
 pub struct ProtocolId(String);
 
 impl ProtocolId {
-    /// Construct a protocol id.
-    pub fn new(value: impl Into<String>) -> Self {
-        Self(value.into())
+    /// Construct a protocol id, rejecting the empty string.
+    pub fn new(value: impl Into<String>) -> Result<Self, InvalidProtocolId> {
+        let value = value.into();
+        if value.is_empty() {
+            return Err(InvalidProtocolId);
+        }
+        Ok(Self(value))
     }
 
     /// The identity as a string slice.
@@ -149,8 +157,19 @@ impl std::fmt::Display for ProtocolId {
     }
 }
 
+impl<'de> Deserialize<'de> for ProtocolId {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        Self::new(value).map_err(serde::de::Error::custom)
+    }
+}
+
 /// `command-execution-jsonl-v1`.
-pub static V1: LazyLock<ProtocolId> = LazyLock::new(|| ProtocolId::new(WIRE_IDENTITY));
+pub static V1: LazyLock<ProtocolId> =
+    LazyLock::new(|| ProtocolId::new(WIRE_IDENTITY).expect("v1 wire identity is non-empty"));
 
 /// No protocol in common between the host's ordered list and the backend's set.
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
@@ -203,8 +222,8 @@ mod tests {
 
     #[test]
     fn select_prefers_host_order_not_numeric() {
-        let v1 = ProtocolId::new("command-execution-jsonl-v1");
-        let v2 = ProtocolId::new("command-execution-jsonl-v2");
+        let v1 = ProtocolId::new("command-execution-jsonl-v1").unwrap();
+        let v2 = ProtocolId::new("command-execution-jsonl-v2").unwrap();
         let backend = [v1.clone(), v2.clone()]
             .into_iter()
             .collect::<BTreeSet<_>>();
@@ -216,8 +235,8 @@ mod tests {
 
     #[test]
     fn select_empty_intersection_is_incompatible() {
-        let v1 = ProtocolId::new("command-execution-jsonl-v1");
-        let backend = [ProtocolId::new("other")]
+        let v1 = ProtocolId::new("command-execution-jsonl-v1").unwrap();
+        let backend = [ProtocolId::new("other").unwrap()]
             .into_iter()
             .collect::<BTreeSet<_>>();
         assert!(select(&[v1], &backend).is_err());

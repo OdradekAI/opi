@@ -421,11 +421,8 @@ fn validate_one(
     // Bind launch to private copied material before hashing. A concurrent
     // in-place write to the package inode can only make the copied digest fail;
     // it cannot alter the descriptor that is later executed.
-    let executable = bind_launch_material(&source_executable)?;
-    let mut file_bytes = Vec::new();
-    let mut reader = &executable;
-    reader.read_to_end(&mut file_bytes)?;
-    let computed = sha256_hex(&file_bytes);
+    let mut executable = bind_launch_material(&source_executable)?;
+    let computed = hash_and_rewind_snapshot(&mut executable)?;
 
     if !is_lower_hex64(&raw.sha256) {
         return Err(ContributionValidationError::MalformedSha256(
@@ -521,6 +518,10 @@ fn bind_launch_material(source: &File) -> Result<File, std::io::Error> {
         }
     }
 
+    // macOS `/dev/fd` reopens with `dup` semantics, so it inherits this file
+    // description's offset. Rewind the completed copy before binding it.
+    snapshot.seek(std::io::SeekFrom::Start(0))?;
+
     let descriptor_path = if cfg!(target_os = "linux") {
         format!("/proc/self/fd/{}", snapshot.as_raw_fd())
     } else {
@@ -539,6 +540,15 @@ fn bind_launch_material(source: &File) -> Result<File, std::io::Error> {
 #[cfg(not(unix))]
 fn bind_launch_material(source: &File) -> Result<File, std::io::Error> {
     source.try_clone()
+}
+
+fn hash_and_rewind_snapshot(snapshot: &mut File) -> Result<String, std::io::Error> {
+    use std::io::Seek as _;
+
+    let mut file_bytes = Vec::new();
+    snapshot.read_to_end(&mut file_bytes)?;
+    snapshot.seek(std::io::SeekFrom::Start(0))?;
+    Ok(sha256_hex(&file_bytes))
 }
 
 /// Lexical reject of disallowed command shapes, then canonicalize-both-sides
@@ -659,5 +669,22 @@ mod tests {
             validate_adapter_id("Bad_Id").unwrap_err(),
             ContributionValidationError::AdapterIdInvalid { .. }
         ));
+    }
+
+    #[test]
+    fn hashing_rewinds_non_empty_snapshot_for_launch() {
+        use std::io::{Read as _, Seek as _, Write as _};
+
+        let bytes = b"non-empty executable bytes";
+        let mut snapshot = tempfile::tempfile().unwrap();
+        snapshot.write_all(bytes).unwrap();
+        snapshot.seek(std::io::SeekFrom::Start(0)).unwrap();
+
+        let digest = hash_and_rewind_snapshot(&mut snapshot).unwrap();
+
+        assert_eq!(digest, sha256_hex(bytes));
+        let mut rebound = Vec::new();
+        snapshot.read_to_end(&mut rebound).unwrap();
+        assert_eq!(rebound, bytes);
     }
 }

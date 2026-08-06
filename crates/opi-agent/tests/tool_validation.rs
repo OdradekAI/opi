@@ -153,6 +153,35 @@ fn wrong_type_fails_validation() {
 }
 
 #[test]
+fn validation_error_text_never_contains_the_offending_instance() {
+    let canary = "HOSTILE_BACKEND_VALIDATION_CANARY";
+    let schema = json!({
+        "type": "object",
+        "properties": {
+            "backend": {
+                "oneOf": [
+                    { "const": "local" },
+                    { "const": "opi-sandbox" }
+                ]
+            }
+        },
+        "required": ["backend"],
+        "additionalProperties": false
+    });
+    let args = json!({ "backend": canary });
+
+    let public = validation::validate(&schema, &args)
+        .unwrap_err()
+        .to_string();
+
+    assert!(
+        !public.contains(canary),
+        "offending instance leaked: {public}"
+    );
+    assert!(public.contains("schema validation failed"));
+}
+
+#[test]
 fn extra_properties_allowed_by_default() {
     let schema = json!({
         "type": "object",

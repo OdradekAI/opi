@@ -163,7 +163,7 @@ fn gate(entry: &EligibleAdapter, mode: ExecutionRunMode) -> Result<Selection, Ex
     if !entry.available {
         return Err(ExecutionFailure::AdapterUnavailable {
             adapter_id: Some(entry.id.clone()),
-            detail: super::failure::UnavailableDetail::Store,
+            detail: super::failure::UnavailableDetail::Ineligible,
         });
     }
     match entry.permission {

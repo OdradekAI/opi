@@ -154,6 +154,13 @@ jobs:
             --binary target/${{ matrix.target }}/release/opi-sandbox \
             --artifact-dir target/opi-artifacts/${{ matrix.target }}
 
+      - name: Verify native archive
+        shell: bash
+        run: |
+          bash scripts/package-opi-sandbox.sh \
+            --artifact-dir target/opi-artifacts/${{ matrix.target }} \
+            --verify
+
       - name: Standalone smoke (extracted archive, no opi on PATH)
         shell: bash
         run: |

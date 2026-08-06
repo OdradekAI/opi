@@ -86,15 +86,70 @@ fn main() {
         "terminal_extra_bytes" => terminal_contamination(&mut reader, &mut writer, false),
         "failed_terminal_extra_bytes" => failed_terminal_contamination(&mut reader, &mut writer),
         "terminal_diagnostic" => terminal_diagnostic(&mut reader, &mut writer),
-        "hang_before_ready" => hang(&mut reader, &mut writer, HangPoint::BeforeReady),
-        "hang_after_started" => hang(&mut reader, &mut writer, HangPoint::AfterStarted),
-        // In-band Completed with timed_out=true and a clean exit code: the host
-        // must NOT treat a timed-out frame as a success (no degraded success).
+        "hang_before_ready" => hang(&mut reader, &mut writer, HangPoint::BeforeReady, None),
+        "hang_after_started" => hang(
+            &mut reader,
+            &mut writer,
+            HangPoint::AfterStarted,
+            extra.as_deref(),
+        ),
+        "cancel_completed_pre_ready" => cancel_terminal_before_milestone(
+            &mut reader,
+            &mut writer,
+            CancelMilestone::Ready,
+            CancelTerminal::Completed,
+        ),
+        "cancel_completed_pre_accepted" => cancel_terminal_before_milestone(
+            &mut reader,
+            &mut writer,
+            CancelMilestone::Accepted,
+            CancelTerminal::Completed,
+        ),
+        "cancel_completed_pre_started" => cancel_terminal_before_milestone(
+            &mut reader,
+            &mut writer,
+            CancelMilestone::Started,
+            CancelTerminal::Completed,
+        ),
+        "cancel_failed_pre_ready" => cancel_terminal_before_milestone(
+            &mut reader,
+            &mut writer,
+            CancelMilestone::Ready,
+            CancelTerminal::Failed,
+        ),
+        "cancel_failed_pre_accepted" => cancel_terminal_before_milestone(
+            &mut reader,
+            &mut writer,
+            CancelMilestone::Accepted,
+            CancelTerminal::Failed,
+        ),
+        "cancel_failed_pre_started" => cancel_terminal_before_milestone(
+            &mut reader,
+            &mut writer,
+            CancelMilestone::Started,
+            CancelTerminal::Failed,
+        ),
+        "cancel_sequence_pre_ready" => cancel_sequence_pre_ready(&mut reader, &mut writer),
+        // In-band Completed with timed_out=true and a clean exit code: the
+        // protocol host preserves the terminal state and the bash wrapper maps
+        // it to a ToolResult error (no degraded success).
         "completed_timed_out" => completed_timed_out(&mut reader, &mut writer),
-        // In-band Completed with cancelled=true and a clean exit code: the host
-        // must NOT treat a cancelled frame as a success (no degraded success).
+        // In-band Completed with cancelled=true and a clean exit code: the
+        // protocol host preserves the terminal state and the bash wrapper maps
+        // it to a ToolResult error (no degraded success).
         "completed_cancelled" => completed_cancelled(&mut reader, &mut writer),
-        "cancel_cleanup_unconfirmed" => cancel_cleanup_unconfirmed(&mut reader, &mut writer),
+        "cancel_cleanup_confirmed" => cancel_cleanup(
+            &mut reader,
+            &mut writer,
+            CleanupState::Confirmed,
+            extra.as_deref(),
+        ),
+        "cancel_cleanup_unconfirmed" => cancel_cleanup(
+            &mut reader,
+            &mut writer,
+            CleanupState::Unconfirmed,
+            extra.as_deref(),
+        ),
         "failed_pre_started" => failed(
             &mut reader,
             &mut writer,
@@ -164,7 +219,7 @@ fn ready_frame(rid: &RequestId, protocol: &str) -> BackendToHost {
     let identity = READY_IDENTITY.get().expect("ready identity initialized");
     BackendToHost::Ready(ReadyPayload {
         request_id: rid.clone(),
-        selected_protocol: ProtocolId::new(protocol),
+        selected_protocol: ProtocolId::new(protocol).expect("mock protocol identity is non-empty"),
         implementation: ImplementationId::new(identity.implementation.clone()).unwrap(),
         implementation_version: identity.version.clone(),
         target: TargetId::new(identity.target.clone()),
@@ -179,7 +234,7 @@ fn custom_ready_frame(
 ) -> BackendToHost {
     BackendToHost::Ready(ReadyPayload {
         request_id: rid.clone(),
-        selected_protocol: ProtocolId::new(WIRE_IDENTITY),
+        selected_protocol: ProtocolId::new(WIRE_IDENTITY).expect("v1 wire identity is non-empty"),
         implementation: ImplementationId::new(implementation).unwrap(),
         implementation_version: version.to_string(),
         target: TargetId::new(target),
@@ -197,6 +252,12 @@ fn drain_until_eof(reader: &mut impl BufRead) {
     }
 }
 
+fn write_started_marker(path: Option<&str>) {
+    if let Some(path) = path.filter(|path| !path.is_empty()) {
+        std::fs::write(path, b"started").expect("write started marker");
+    }
+}
+
 enum HangPoint {
     BeforeReady,
     AfterStarted,
@@ -205,6 +266,19 @@ enum HangPoint {
 enum FailPoint {
     PreStarted,
     PostStarted,
+}
+
+#[derive(Clone, Copy)]
+enum CancelMilestone {
+    Ready,
+    Accepted,
+    Started,
+}
+
+#[derive(Clone, Copy)]
+enum CancelTerminal {
+    Completed,
+    Failed,
 }
 
 fn parse_failure_code(s: &str) -> FailureCode {
@@ -271,15 +345,16 @@ fn happy(reader: &mut impl BufRead, writer: &mut impl Write, out: &[u8]) {
 }
 
 /// Reports `Completed{timed_out: true, exit: Some(0)}` — a degraded-success
-/// canary. The host must surface this as an error even though the exit code is
-/// clean.
+/// canary. The protocol host keeps timeout in-band; the bash wrapper must
+/// surface a ToolResult error even though the exit code is clean.
 fn completed_timed_out(reader: &mut impl BufRead, writer: &mut impl Write) {
     completed_terminal(reader, writer, true, false);
 }
 
 /// Reports `Completed{cancelled: true, exit: Some(0)}` — the cancelled leg of
-/// the no-degraded-success invariant. The host must surface this as an error
-/// even though the exit code is clean.
+/// the no-degraded-success invariant. The protocol host keeps cancellation
+/// in-band; the bash wrapper must surface a ToolResult error even though the
+/// exit code is clean.
 fn completed_cancelled(reader: &mut impl BufRead, writer: &mut impl Write) {
     completed_terminal(reader, writer, false, true);
 }
@@ -756,7 +831,12 @@ fn terminal_diagnostic(reader: &mut impl BufRead, writer: &mut impl Write) {
     drain_until_eof(reader);
 }
 
-fn hang(reader: &mut impl BufRead, writer: &mut impl Write, point: HangPoint) {
+fn hang(
+    reader: &mut impl BufRead,
+    writer: &mut impl Write,
+    point: HangPoint,
+    started_marker: Option<&str>,
+) {
     let rid = match expect_initialize(reader) {
         Some(r) => r,
         None => return,
@@ -785,13 +865,112 @@ fn hang(reader: &mut impl BufRead, writer: &mut impl Write, point: HangPoint) {
             limitations: vec![],
         }),
     );
+    write_started_marker(started_marker);
     // Never complete; the host's execution deadline fires.
     loop {
         std::thread::sleep(std::time::Duration::from_secs(1));
     }
 }
 
-fn cancel_cleanup_unconfirmed(reader: &mut impl BufRead, writer: &mut impl Write) {
+fn cancel_terminal_before_milestone(
+    reader: &mut impl BufRead,
+    writer: &mut impl Write,
+    milestone: CancelMilestone,
+    terminal: CancelTerminal,
+) {
+    let Some(rid) = expect_initialize(reader) else {
+        return;
+    };
+    if !matches!(milestone, CancelMilestone::Ready) {
+        send(writer, &ready_frame(&rid, WIRE_IDENTITY));
+        let _ = read_host_frame(reader);
+    }
+    if matches!(milestone, CancelMilestone::Started) {
+        send(
+            writer,
+            &BackendToHost::Accepted(AcceptedPayload {
+                request_id: rid.clone(),
+            }),
+        );
+    }
+    while let Some(frame) = read_host_frame(reader) {
+        if matches!(frame, HostToBackend::Cancel(_)) {
+            match terminal {
+                CancelTerminal::Completed => send(
+                    writer,
+                    &BackendToHost::Completed(CompletedPayload {
+                        request_id: rid,
+                        exit: Some(0),
+                        signal: None,
+                        timed_out: false,
+                        cancelled: true,
+                        cleanup: CleanupState::Confirmed,
+                        diagnostics: vec![],
+                    }),
+                ),
+                CancelTerminal::Failed => send(
+                    writer,
+                    &BackendToHost::Failed(FailedPayload {
+                        request_id: rid,
+                        code: FailureCode::Failed,
+                        phase: FailurePhase::Handshake,
+                        message: None,
+                        diagnostics: vec![],
+                    }),
+                ),
+            }
+            std::process::exit(0);
+        }
+    }
+}
+
+fn cancel_sequence_pre_ready(reader: &mut impl BufRead, writer: &mut impl Write) {
+    let Some(rid) = expect_initialize(reader) else {
+        return;
+    };
+    while let Some(frame) = read_host_frame(reader) {
+        if matches!(frame, HostToBackend::Cancel(_)) {
+            send(writer, &ready_frame(&rid, WIRE_IDENTITY));
+            send(
+                writer,
+                &BackendToHost::Accepted(AcceptedPayload {
+                    request_id: rid.clone(),
+                }),
+            );
+            send(
+                writer,
+                &BackendToHost::Started(StartedPayload {
+                    request_id: rid.clone(),
+                    placement: "host".into(),
+                    guarantee: "supervised".into(),
+                    policy: "none".into(),
+                    limitations: vec![],
+                }),
+            );
+            send(
+                writer,
+                &BackendToHost::Completed(CompletedPayload {
+                    request_id: rid,
+                    exit: Some(0),
+                    signal: None,
+                    timed_out: false,
+                    cancelled: true,
+                    cleanup: CleanupState::Confirmed,
+                    diagnostics: vec![],
+                }),
+            );
+            drain_until_eof(reader);
+            std::process::exit(0);
+        }
+    }
+}
+
+fn cancel_cleanup(
+    reader: &mut impl BufRead,
+    writer: &mut impl Write,
+    cleanup: CleanupState,
+    started_marker: Option<&str>,
+) {
     let rid = match expect_initialize(reader) {
         Some(r) => r,
         None => return,
@@ -814,7 +993,8 @@ fn cancel_cleanup_unconfirmed(reader: &mut impl BufRead, writer: &mut impl Write
             limitations: vec![],
         }),
     );
-    // On receiving cancel, report unconfirmed cleanup -> CleanupUnconfirmed.
+    write_started_marker(started_marker);
+    // On receiving cancel, report the requested terminal cleanup state.
     while let Some(frame) = read_host_frame(reader) {
         if matches!(frame, HostToBackend::Cancel(_)) {
             send(
@@ -825,7 +1005,7 @@ fn cancel_cleanup_unconfirmed(reader: &mut impl BufRead, writer: &mut impl Write
                     signal: None,
                     timed_out: false,
                     cancelled: true,
-                    cleanup: CleanupState::Unconfirmed,
+                    cleanup,
                     diagnostics: vec![],
                 }),
             );

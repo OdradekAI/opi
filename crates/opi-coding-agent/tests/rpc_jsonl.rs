@@ -3953,52 +3953,92 @@ async fn rpc_ready_header_carries_startup_diagnostics() {
     assert_eq!(task.await.unwrap(), 0);
 }
 
-/// SC16-14 cross-surface: a `local = "deny"` Minimal-Runtime config makes
-/// `ExecutionRuntime::build` fail with `policy_denied` at startup; the harness
-/// surfaces it as a startup diagnostic, and the RPC ready header carries it
-/// (granular stable code in `details.code` + remediation) exactly like the
-/// NDJSON `StartupDiagnostics` line. Proves the SAME stable code reaches the RPC
-/// public surface.
+/// RPC fixed-local `ask` is refused while the harness is built, without a
+/// prompt. The ready header carries the stable `permission_required` code and
+/// headless-specific remediation (bash omitted, no fallback).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn rpc_ready_header_carries_stable_execution_code() {
+async fn rpc_ready_refuses_local_ask_at_startup_without_prompt() {
     let mut config = OpiConfig::default();
     config.execution.strategy = ExecutionStrategy::Fixed;
     config.execution.backend = "local".into();
     config
         .execution
         .permissions
-        .insert("local".into(), PermissionDecision::Deny);
-    // Isolate the user config dir so the Minimal-Runtime branch (which emits the
-    // policy_denied startup diagnostic) is deterministic. RpcRunner::new resolves
-    // the config dir synchronously inside custom_provider_runner_with_config; the
-    // guard is dropped before the first await.
+        .insert("local".into(), PermissionDecision::Ask);
+    // RpcRunner resolves this refusal synchronously during construction. The
+    // isolated config dir makes the result independent of host package state.
+    let provider = MockProvider::new("mock", vec![text_response("ok")]);
+    let call_log = provider.call_log_handle();
     let _env_guard = common::empty_user_config_dir();
-    let (command_tx, mut output_rx, task) =
-        custom_provider_runner_with_config(MockProvider::new("mock", Vec::new()), config);
+    let workspace = tempfile::tempdir().expect("workspace tempdir");
+    let runner = RpcRunner::new(
+        Box::new(provider),
+        "mock:mock-model".into(),
+        config,
+        workspace.path().to_path_buf(),
+        true,
+        ToolSelection::Default,
+        None,
+        Vec::new(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
+    )
+    .expect("rpc runner should construct");
     drop(_env_guard);
+    let (command_tx, command_rx) = tokio::sync::mpsc::unbounded_channel();
+    let (output_tx, mut output_rx) = tokio::sync::mpsc::unbounded_channel();
+    let task = tokio::spawn(async move {
+        let mut runner = runner;
+        runner.run_with_channels(command_rx, output_tx).await
+    });
 
     let header = recv_rpc_line(&mut output_rx).await;
     assert_eq!(header["type"], "rpc_ready");
     let diagnostics = header["startup_diagnostics"]
         .as_array()
         .expect("rpc_ready should carry a startup_diagnostics array");
-    let policy_denied = diagnostics
+    let permission_required = diagnostics
         .iter()
-        .find(|d| d["details"]["code"] == "policy_denied");
+        .find(|d| d["details"]["code"] == "permission_required");
     assert!(
-        policy_denied.is_some(),
-        "the stable policy_denied code must surface in the RPC ready header: {diagnostics:?}"
+        permission_required.is_some(),
+        "the stable permission_required code must surface in the RPC ready header: {diagnostics:?}"
     );
-    let pd = policy_denied.expect("found");
-    let remediation = pd["details"]["remediation"].as_str().unwrap_or_default();
+    let diagnostic = permission_required.expect("found");
+    let remediation = diagnostic["details"]["remediation"]
+        .as_str()
+        .unwrap_or_default();
     assert!(
         !remediation.is_empty(),
-        "remediation text must ride along and be actionable: {pd}"
+        "remediation text must ride along and be actionable: {diagnostic}"
     );
     assert!(
-        remediation.contains("execution permission"),
-        "remediation must carry the code-specific actionable fragment: {remediation}"
+        remediation.contains("cannot be granted non-interactively")
+            && remediation.contains("run interactively"),
+        "remediation must carry the headless-specific actionable fragment: {remediation}"
     );
+
+    command_tx
+        .send(RpcCommand::prompt {
+            id: Some("no-bash".into()),
+            message: "inspect available tools".into(),
+        })
+        .unwrap();
+    let prompt = recv_response(&mut output_rx, "prompt").await;
+    assert_eq!(prompt["success"], true);
+    recv_until_agent_end(&mut output_rx).await;
+    {
+        let calls = call_log.lock().unwrap();
+        assert_eq!(calls.len(), 1);
+        assert!(
+            calls[0].tools.iter().all(|tool| tool.name != "bash"),
+            "RPC headless ask must omit bash instead of falling back to local: {:?}",
+            calls[0]
+                .tools
+                .iter()
+                .map(|tool| tool.name.as_str())
+                .collect::<Vec<_>>()
+        );
+    }
 
     command_tx.send(RpcCommand::quit { id: None }).unwrap();
     let _quit = recv_response(&mut output_rx, "quit").await;

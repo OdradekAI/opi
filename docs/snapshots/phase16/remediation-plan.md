@@ -1,103 +1,102 @@
 # Phase 16 Remediation Plan
 
 **Date**: 2026-08-05
-**Audit sources**: `audit.deepseek-v4-flash.md`, `audit.gpt5.md`
-**Commit range**: `1021842c937653de545cd335450df985f822bd06..f8aff02`
-**Verified code**: `eb7bed84c6e1dea3af7ff391ed65f0dad7282a38`
+**Audit sources**: `audit.codex.md`, `audit.deepseek-v4-flash.md`
+**Commit range**: `1021842c937653de545cd335450df985f822bd06..f8aff0237221fbf7d56b58abb5dce02833344bfc`
+**Verified code**: `2c48c85638000df02880db1ec881f12fdcb96f6c`
 **Design specs**: `docs/opi-spec.md`, `docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md`
 
 ---
 
 ## Audit cross-reference summary
 
-Two independent reports were available. With two auditors, a finding is either
-full consensus (2/2) or unique (1/2); there is no separate majority tier. The
-candidate severity is the highest reported severity and was retained unless
-code verification justified a lower status.
+The reports inspect different baselines: Codex audited the archived Phase 16
+exit at `f8aff02`, while DeepSeek audited the post-remediation tree at
+`2c48c85`. Consensus therefore records report overlap, not proof that a defect
+still exists. Every row below was independently rechecked against `2c48c85`;
+that verification status controls the plan.
+
+With two auditors, a finding is either full consensus (2/2) or unique (1/2).
+Codex's two Blockers and most of its Majors were fixed by `2b23010`; the rows
+remain here so no audit finding silently disappears.
 
 | Cluster | Theme | Auditors | Consensus | Unified severity | Verification |
 |---|---|---|---|---|---|
-| C01 | Empty project permission table erases user policy | GPT B-01; DeepSeek 2.1 | Full (2/2) | Blocker (Blocker/Major) | Confirmed |
-| C02 | Same-source package update inherits trust across changed bytes | GPT B-02 | Unique (1/2) | Blocker | Confirmed |
-| C03 | Native restriction grants the system temp directory | GPT B-03; DeepSeek 3.1 | Full (2/2) | Blocker (Blocker/Minor) | Confirmed |
-| C04 | L0 tree attachment fails open while reporting supervision | GPT B-04; DeepSeek 2.3 | Full (2/2) | Blocker (Blocker/Major) | Confirmed |
-| C05 | Cleanup failures are ignored and reported as confirmed | GPT B-04 | Unique (1/2) | Blocker | Confirmed |
-| C06 | Removing all executable contributions does not invalidate trust | GPT M-01 | Unique (1/2) | Major | Confirmed |
-| C07 | Validated package bytes are not bound to the spawned executable | GPT M-02; DeepSeek 3.4 | Full (2/2) | Major (Major/Info) | Confirmed |
-| C08 | Unbounded external timeout arithmetic can panic | GPT M-03 | Unique (1/2) | Major | Confirmed |
-| C09 | Model schema uses stale candidates and can contain `oneOf: []` | GPT M-04 | Unique (1/2) | Major | Confirmed |
-| C10 | Protocol receiver does not enforce all declared bounds | GPT M-05; DeepSeek 4.1, 5.7 | Full (2/2) | Major | Confirmed |
-| C11 | Custom `Bounds` arithmetic can overflow | DeepSeek 4.7 | Unique (1/2) | Info | Confirmed |
-| C12 | `ready` omits identity and host does not match locked version/target | GPT M-06 | Unique (1/2) | Major | Confirmed |
-| C13 | Handshake/configured deadline is unused and phases get fresh grace windows | GPT M-07; DeepSeek 2.10, 2.12 | Full (2/2) | Major | Confirmed |
-| C14 | Terminal contamination is discarded and terminal diagnostics are lost | GPT M-08 | Unique (1/2) | Major | Confirmed |
-| C15 | In-band backend diagnostics are not host-redacted | DeepSeek 3.2 | Unique (1/2) | Minor | Confirmed |
-| C16 | Native strings are converted lossily at Opi and SDK boundaries | GPT M-09 | Unique (1/2) | Major | Confirmed |
-| C17 | Target starts before the host observes/flushed `started` | GPT M-10; DeepSeek 5.3 | Full (2/2) | Major | Confirmed |
-| C18 | Premature backend stdin EOF lets the target continue | GPT M-11 | Unique (1/2) | Major | Confirmed |
-| C19 | Backend protocol input uses an unbounded channel | GPT M-12 | Unique (1/2) | Major | Confirmed |
-| C20 | Direct CLI interruption can orphan the target | GPT M-13; DeepSeek 2.2 | Full (2/2) | Major | Confirmed |
-| C21 | Effective placement/guarantee/policy/limitations are wrong or hidden | GPT M-14; DeepSeek 2.3 | Full (2/2) | Major | Confirmed |
-| C22 | `local = "ask"` omits `bash` in the actual Minimal Runtime | GPT M-15; DeepSeek 5.1 | Full (2/2) | Major | Confirmed |
-| C23 | Core drain-grace expiry discards an already-captured prefix | GPT M-16; DeepSeek 2.6 | Full (2/2) | Major (Major/Minor) | Confirmed |
-| C24 | Packaged adapter declares an Opi-incompatible `0.8` range | GPT M-17; DeepSeek 4.9, 5.5 | Full (2/2) | Major | Confirmed |
-| C25 | Extracted standalone smoke omits full direct/backend contracts | GPT M-18 | Unique (1/2) | Major | Confirmed |
-| C26 | Artifact audit can pass without an archive or installable manifest | GPT M-19 | Unique (1/2) | Major | Confirmed |
-| C27 | Doctor surfaces replace runtime execution codes/remediation | GPT M-20 | Unique (1/2) | Major | Confirmed |
-| C28 | Current docs advertise rejected legacy behavior and stale baseline facts | GPT M-21; DeepSeek 5.4 | Full (2/2) | Major | Confirmed |
-| C29 | Nested terminal `Diagnostic` is not schema-closed | GPT N-01 | Unique (1/2) | Minor | Confirmed |
-| C30 | Rules selection failure reports strategy `fixed` | GPT N-02 | Unique (1/2) | Minor | Confirmed |
-| C31 | Required `AwaitingPermission` status snapshots are absent | GPT N-03 | Unique (1/2) | Minor | Confirmed |
-| C32 | Passing ledger tasks retain open acceptance scenarios | GPT N-04 | Unique (1/2) | Minor | Confirmed |
-| C33 | Failed package add leaves declaration/lock metadata behind | DeepSeek 2.4 | Unique (1/2) | Minor | Confirmed |
-| C34 | Diagnostic drift hashing can block on FIFO/device paths | DeepSeek 2.5 | Unique (1/2) | Minor | Confirmed |
-| C35 | Activation swallows durable trust-invalidation write failures | DeepSeek 2.7 | Unique (1/2) | Minor | Confirmed |
-| C36 | `opi-sandbox` silently truncates output at 1 MiB | DeepSeek 2.8 | Unique (1/2) | Minor | Confirmed |
-| C37 | Backend cancel/completion race is nondeterministic | DeepSeek 2.9 | Unique (1/2) | Minor | Confirmed |
-| C38 | SDK `cwd` is not required to be inside `workspace` | DeepSeek 2.11 | Unique (1/2) | Minor | Confirmed |
-| C39 | Legacy Phase 5 adapter resolver permits symlink escape | DeepSeek 3.3 | Unique (1/2) | Minor | Confirmed, outside Phase 16 scope |
-| C40 | Permission broker production paths lack tests | DeepSeek 4.2 | Unique (1/2) | Minor | Refuted |
-| C41 | Signal-exit test cannot distinguish signal from exit 143 | DeepSeek 4.3 | Unique (1/2) | Minor | Confirmed |
-| C42 | Supplementary source-text guards remain | DeepSeek 4.4 | Unique (1/2) | Minor | Confirmed, no defect by itself |
-| C43 | Malformed-JSON fixture is unused | DeepSeek 4.5 | Unique (1/2) | Info | Confirmed |
-| C44 | Invalid base64 deserialization is untested | DeepSeek 4.6 | Unique (1/2) | Info | Confirmed |
-| C45 | No-spawn lifecycle test never reaches trusted+enabled activation | DeepSeek 4.8 | Unique (1/2) | Info | Confirmed |
-| C46 | Wire `Unavailable` cannot produce `adapter_unavailable` | DeepSeek 5.2 | Unique (1/2) | Minor | Confirmed |
-| C47 | CLI execution overrides are not revalidated | DeepSeek 5.6 | Unique (1/2) | Info | Confirmed |
+| C01 | Same-source re-add preserves trust / failed add leaves metadata | Codex 1.1, 1.5 | Unique (1/2) | Blocker | Refuted at HEAD; fixed by `2b23010` |
+| C02 | Target starts before flushed `started` | Codex 1.2 | Unique (1/2) | Blocker | Refuted at HEAD; release gate and sentinel test exist |
+| C03 | Native policy grants system temp | Codex 1.3 | Unique (1/2) | Major | Refuted at HEAD; private invocation temp is used |
+| C04 | Sandbox tree/cleanup failures are erased | Codex 1.4 | Unique (1/2) | Major | Refuted at HEAD in `opi-sandbox` |
+| C05 | `ready` lacks identity/target binding | Codex 2.1 | Unique (1/2) | Major | Refuted at HEAD |
+| C06 | Protocol bounds/closure and integration coverage | Codex 2.2; DeepSeek 4.3 | Full (2/2) | Major (Major/Minor) | Partially confirmed: most bounds fixed; `failed.message` and integration coverage remain |
+| C07 | Premature EOF and simultaneous stdin-close handling | Codex 2.3; DeepSeek 2.3 | Full (2/2) | Major (Major/Info) | Partially confirmed: premature EOF fixed; simultaneous-close precedence remains informational |
+| C08 | Native strings are converted lossily | Codex 2.4 | Unique (1/2) | Major | Refuted at HEAD |
+| C09 | Initialize deadline/configuration is ignored | Codex 2.5 | Unique (1/2) | Major | Partially confirmed: deadline fixed; `adapter_config` still ignored |
+| C10 | Cancellation bypasses host protocol state | Codex 2.6 | Unique (1/2) | Major | Confirmed |
+| C11 | Terminal diagnostics are discarded | Codex 2.7 | Unique (1/2) | Minor | Refuted at HEAD |
+| C12 | Production Minimal Runtime constructs extension state | Codex 3.1; DeepSeek 5.2, 5.5 | Full (2/2) | Major (Major/Minor/Info) | Confirmed; default startup reads activation state and allocates permission state before branching |
+| C13 | Model routing advertises incompatible adapters | Codex 3.2 | Unique (1/2) | Major | Refuted at HEAD |
+| C14 | Handshake timeout is unused | Codex 3.3 | Unique (1/2) | Major | Refuted at HEAD |
+| C15 | Archives omit schema/license | Codex 4.1 | Unique (1/2) | Major | Refuted at HEAD |
+| C16 | Extracted smoke omits mandatory acceptance | Codex 4.2 | Unique (1/2) | Major | Partially confirmed: argv/I/O/exit/backend paths were added; setup, empty-cwd, FS, and network sentinels remain |
+| C17 | macOS launch snapshot hashes from EOF | DeepSeek 2.1 | Unique (1/2) | Major | Confirmed |
+| C18 | Signal death is dropped and misreported | DeepSeek 2.2 | Unique (1/2) | Minor | Confirmed |
+| C19 | Raw model backend is echoed in diagnostics | DeepSeek 3.1 | Unique (1/2) | Minor | Partially confirmed; schema callers are bounded, direct callers are not |
+| C20 | Windows resume failure drops degradation | DeepSeek 3.2 | Unique (1/2) | Minor | Confirmed |
+| C21 | Doctor swallows activation-store read failures | DeepSeek 3.3 | Unique (1/2) | Minor | Confirmed |
+| C22 | Legacy sandbox action omits migration needles | DeepSeek 3.4 | Unique (1/2) | Minor | Confirmed |
+| C23 | Unavailable adapter is always labeled store failure | DeepSeek 3.5 | Unique (1/2) | Info | Confirmed diagnostic-quality gap |
+| C24 | Crate-wide unsafe prohibition is incomplete | DeepSeek 3.6 | Unique (1/2) | Info | Partially confirmed; leaf modules are guarded, FFI prevents a crate-root `forbid` |
+| C25 | Feature-gated acceptance suites do not run in CI | DeepSeek 4.1 | Unique (1/2) | Major | Confirmed |
+| C26 | Windows target-mismatch test trips version gate first | DeepSeek 4.2 | Unique (1/2) | Major | Confirmed |
+| C27 | SDK effective contract is only type-checked | DeepSeek 4.4 | Unique (1/2) | Minor | Confirmed |
+| C28 | Human CLI stdin byte flow is only structural | DeepSeek 4.5 | Unique (1/2) | Minor | Confirmed |
+| C29 | Phase-exit audit accepts ignored tests | DeepSeek 4.6 | Unique (1/2) | Minor | Confirmed |
+| C30 | Backend failure codes/phases lack coverage | DeepSeek 4.7 | Unique (1/2) | Minor | Confirmed; cleanup phase semantics are also inconsistent |
+| C31 | `ProtocolId` accepts empty strings | DeepSeek 5.1 | Unique (1/2) | Minor | Confirmed |
+| C32 | Empty CLI program maps to setup failure | DeepSeek 5.3 | Unique (1/2) | Minor | Confirmed |
+| C33 | Headless local `ask` fails during runtime build | DeepSeek 5.4 | Unique (1/2) | Info | Confirmed, fail-closed and spec-compatible |
+| C34 | Wire `Unavailable` loses adapter identity | DeepSeek 7.1 | Unique (1/2) | Info | Confirmed |
+| C35 | Mock comments conflict with in-band timeout semantics | DeepSeek 7.2 | Unique (1/2) | Info | Confirmed documentation gap |
+| C36 | `Undecided` project trust would be treated as trusted | DeepSeek 7.3 | Unique (1/2) | Info | Confirmed latent guard |
+| C37 | Packager SemVer parsing/rendering diverges | DeepSeek 7.4 | Unique (1/2) | Info | Confirmed |
+| C38 | Ledger verification predates remediation | DeepSeek 8.1 | Unique (1/2) | Info | Confirmed; excluded by remediation guardrail |
+| C39 | Phase-exit evidence is locally absent | DeepSeek 8.2 | Unique (1/2) | Info | Confirmed observation |
+| C40 | Package remove is non-transactional; `preserve_trust` is dead | DeepSeek 8.3 residuals | Unique (1/2) | Minor | Confirmed |
+| C41 | Residual protocol accounting/bounds/schema/host fixtures | DeepSeek 8.3 residuals | Unique (1/2) | Minor | Confirmed |
+| C42 | Permission prompt's impossible cursor fallback allows once | DeepSeek 8.3 residual | Unique (1/2) | Info | Confirmed defensive fail-open |
+| C43 | Core attach-failure window can orphan a grandchild | DeepSeek 8.3 residual | Unique (1/2) | Major | Confirmed |
+| C44 | Packager `--verify` does not authenticate the archive | DeepSeek 8.3 residual | Unique (1/2) | Minor | Confirmed |
+| C45 | Artifact-audit filesystem errors can escape as traceback | DeepSeek 8.3 residual | Unique (1/2) | Minor | Confirmed |
+| C46 | Phase 15 docs guard pins deleted paths in present tense | DeepSeek 8.3 residual | Unique (1/2) | Minor | Confirmed |
+| C47 | macOS launcher watchdog under abrupt owner death | DeepSeek 8.3 residual | Unique (1/2) | Major candidate | Cannot confirm on Windows; requires native test |
 
-Verification notes:
+Focused verification completed during planning:
 
-- C40 is refuted by `tests/interactive_permission.rs`, which exercises
-  `AllowOnce`, `AllowSession`, session-grant suppression/reset, denial, the
-  `permission_denied` code, and the harness/`ToolResult` chokepoint.
-- C32 is real, but `opi-remediate` must not modify the canonical implementation
-  ledger. `SC16-10`, `SC16-09b-linux`, `SC16-11`, `SC16-09b-macos`,
-  `SC16-12a`, `SC16-12b`, and `SC16-15a` remain `open` while Phase 16 exit is
-  recorded as met.
-- C42 identifies brittle supplementary tests, but the audited behavioral tests
-  still exist. Removing the tripwires alone would not remediate a product defect.
+- `cargo test -p opi-protocol`: 59 passed.
+- `cargo test -p opi-sandbox --test sdk_contract --test cli_contract --test protocol_conformance`: 76 passed.
+- `cargo test -p opi-coding-agent --test execution_package_lifecycle`: 23 passed.
+- The feature-enabled handshake-timeout regression passed.
+
+These passes establish the current baseline; they do not clear the missing
+negative paths above.
 
 ## Decision record
 
 | ID | Finding cluster(s) | Decision | Rationale | Decided by |
 |---|---|---|---|---|
-| D1 | C01, C30, C47 | Treat any project `permissions: Some(_)` as forbidden, preserve the originating router strategy, and revalidate after CLI overrides. | These are closed configuration invariants with one direct fix each. | auto |
-| D2 | C02, C06, C33, C35, C45 | Make package metadata, lock material, and activation state one transactional update; retain trust only when the complete old/new locked contribution sets are byte-identical. | Trust must bind exact material, including contribution removal; failed writes must leave the old state intact or fail closed. | auto |
-| D3 | C07, C34 | Validate an opened regular executable and bind the same immutable file identity/material to spawn; diagnostics must reject non-regular files before reading. | This closes both blocking special-file reads and the validate/path/spawn replacement window. | auto |
-| D4 | C03, C38 | Carry the exact invocation temp root in `RestrictionCtx`, set `TMPDIR`/`TMP`/`TEMP`, grant only workspace+private-temp writes, and canonicalize/validate `cwd` under workspace. | This is the normative restriction boundary and has no compatible alternative. | auto |
-| D5 | C04, C05, C17, C20 | Make L0 attachment fail closed, create/assign Windows children before resume, add a real target-release gate and parent-death containment, and derive cleanup truth from every cleanup step. | A command must never run outside the promised lifecycle boundary or report confirmed cleanup after an unobserved failure. | auto |
-| D6 | C10, C11, C29, C43, C44 | Enforce every declared protocol bound on encode/decode, use checked bounds arithmetic, close nested schemas, and add malformed/base64/boundary tests. | These changes make the v1 contract match its own documented closed/bounded surface. | auto |
-| D7 | C12, C46 | Add implementation identity to `ready`, match identity/version/target to the selected locked contribution, and map pre-start `Unavailable` to `adapter_unavailable`. | The canonical ready contract requires all three identity fields and the stable failure vocabulary already contains the precise code. | auto |
-| D8 | C13 | Use one absolute invocation deadline; cap handshake by the configured sub-deadline and derive execute, cancel, cleanup, drain, and reap windows from the remaining budget. | Fresh grace windows and separate clocks violate the explicit single-deadline contract. | auto |
-| D9 | C14, C15, C18, C19, C36, C37 | Require clean EOF immediately after terminal, merge bounded terminal diagnostics after host redaction, make premature input EOF cancel+fail, bound the reader channel, make race precedence deterministic, and report truncation. | This produces a closed one-shot stream with bounded memory and truthful output. | auto |
-| D10 | C16 | Carry `OsString`/`PathBuf` losslessly through Opi and the public `opi-sandbox` SDK, with Unix byte and Windows wide-unit conversion tests. | `NativeString` exists specifically to preserve native values; the workspace is pre-stable and does not require compatibility shims. | auto |
-| D11 | C08, C09, C22 | Bound tool timeouts with checked arithmetic, resolve eligible compatible candidates before schema construction, omit `bash` with `no_eligible_adapter` when none remain, and route Minimal Runtime `local=ask` through the broker. | These are direct runtime/schema corrections and preserve fail-closed behavior. | auto |
-| D12 | C21, C27 | Preserve effective contract fields through `BashResult`, TUI/text, NDJSON, and RPC; reuse `ExecutionFailure` codes/remediation on actionable doctor findings. | Public surfaces must agree on the effective contract and stable diagnostic vocabulary. | auto |
-| D13 | C23 | Store stream capture state outside the abortable reader so drain expiry returns the captured prefix. | This directly satisfies the module contract without removing the bounded grace. | auto |
-| D14 | C24 | Derive package version and Opi compatibility range from the checked-out workspace/release version in both packagers and tests. | A package built from this tree must be installable by this tree; duplicated future-version constants are unsafe. | auto |
-| D15 | C25, C26 | Make smoke exercise exact argv/stdin/stdout/stderr/exit and `backend --stdio`; require the actual archive, auditor-owned extraction, exact layout/manifest/lock/target validation, and archive-bound evidence. | Release evidence must prove the distributable artifact, not a caller-prepared directory or marker. | auto |
-| D16 | C28 | Remove legacy Phase 15 configuration from current README/help tables, retain it only in explicitly historical sections, and update EN/ZH current-state headers, crate counts, phase status, and Minimal Runtime wording. | The executable rejects the legacy surface and the current workspace contains six crates. | auto |
-| D17 | C31, C41 | Add reviewed permission-status snapshots and a signal-specific exit-status test. | Both are additive coverage with a single direct implementation. | auto |
+| D1 | C06, C31, C41 | Finish the v1 closed/bounded contract and promote key unit invariants to integration fixtures. | The wire already declares these limits; runtime, schema, and fixtures must agree. | auto |
+| D2 | C09 | Parse a closed adapter configuration into the standalone policy and reject unsupported values. | Ignoring a trusted configuration field makes the production backend contract false. | auto |
+| D3 | C10 | Apply `HostState::transition` on every cancellation-finalization frame. | Frame ordering must not depend on which receive loop is active. | auto |
+| D4 | C12, C33 | Add an early default-local/allow production branch; keep explicit interactive `local=ask` as a documented, tested permission-broker exception. | This restores the normative Minimal Runtime without adding a second local permission wrapper. | auto |
+| D5 | C17 | Rewind the macOS snapshot before reopening `/dev/fd` and prove add/activate on macOS. | One direct fix restores a first-class target without weakening immutable launch binding. | auto |
+| D6 | C18, C19, C21, C22, C23, C34, C35 | Preserve signal and adapter identity, redact unrecognized model input, distinguish store/read/unavailable causes, and share exact remediation wording. | Public diagnostics must be truthful, correlatable, and redacted. | auto |
+| D7 | C20, C43 | Preserve every supervision degradation and close the Unix spawn-to-attach escape window. | L0 must fail closed and report cleanup truth on every platform. | auto |
+| D8 | C26, C27, C28, C30, C32 | Correct false-positive tests and add real runtime negative/byte-flow coverage. | These are additive tests or a one-condition parser correction with no API choice. | auto |
+| D9 | C25 | Add an explicit feature-enabled Phase 16 acceptance CI step and guard its topology. | Default workspace tests compile these suites to empty targets. | auto |
+| D10 | C16, C37, C44 | Complete native smoke, unify literal-safe SemVer rendering, and make `--verify` re-extract/authenticate the archive. | Release acceptance must prove the artifact users receive, not caller-owned staging trees. | auto |
+| D11 | C29, C45 | Harden phase-exit evidence parsing against ignored tests and filesystem-shape errors. | The auditor should reject bad evidence with structured findings, never accept or traceback. | auto |
+| D12 | C36, C40, C42 | Make latent trust/permission fallbacks fail closed and make package removal transactional. | These small changes remove future privilege and lifecycle foot-guns. | auto |
+| D13 | C46 | Rephrase the paired Phase 15 text and guard as historical exit evidence. | Historical evidence stays immutable while current docs stop claiming deleted paths exist. | auto |
 
 ## Remediation layers
 
@@ -109,25 +108,15 @@ Verification notes:
     cargo clippy -p opi-protocol --all-targets -- -D warnings
     cargo test -p opi-protocol --all-targets
 
-#### Fix 1A.1: Close and enforce the v1 bounds/schema contract
+#### Fix 1A.1: Finish v1 identity, bounds, and state accounting
 
-- **Audit source**: GPT M-05, N-01; DeepSeek 4.1, 4.5, 4.6, 4.7, 5.7
-- **Cluster**: C10, C11, C29, C43, C44
-- **Decision**: D6
-- **Verification status**: Confirmed
-- **File(s)**: `crates/opi-protocol/src/execution/v1/bounds.rs` ~L45; `codec.rs` ~L108; `session.rs` ~L125; `frames.rs` ~L197 and ~L306; `tests/execution_v1_contract.rs`; `tests/execution_v1_schema.rs`
-- **Change**: Add checked bound arithmetic; enforce decoded per-chunk size and every nested terminal diagnostic on decode and encode; add `deny_unknown_fields` to nested `Diagnostic`.
-- **Test plan**: Exact-limit and limit+1 tests for chunk/config/diagnostic/cumulative bounds; wire the malformed JSON fixture; add invalid-base64 and nested-unknown-field fixtures.
-
-#### Fix 1A.2: Extend ready negotiation identity
-
-- **Audit source**: GPT M-06; DeepSeek 5.2
-- **Cluster**: C12, C46
-- **Decision**: D7
-- **Verification status**: Confirmed
-- **File(s)**: `crates/opi-protocol/src/execution/v1/frames.rs` ~L197; valid/invalid ready fixtures and schema snapshots
-- **Change**: Add the selected implementation/adapter identity to `ReadyPayload` while retaining version and target as mandatory closed fields.
-- **Test plan**: Update shared Rust/non-Rust fixtures and schemas; reject missing, empty, or unknown identity fields.
+- **Audit source**: Codex 2.2; DeepSeek 4.3, 5.1, 8.3 residuals
+- **Cluster**: C06, C31, C41
+- **Decision**: D1
+- **Verification status**: Partially confirmed / Confirmed
+- **File(s)**: `crates/opi-protocol/src/execution/v1/identity.rs` ~L120; `bounds.rs` ~L70; `codec.rs` ~L115; `session.rs` ~L80; `schema.rs` ~L45; `mod.rs` ~L70; `tests/execution_v1_contract.rs`; `tests/execution_v1_schema.rs`; protocol fixtures
+- **Change**: Reject empty `ProtocolId` values and emit `minLength`; bound `FailedPayload.message`; check request identity before cumulative accounting; correct configuration amplification arithmetic/documentation; remove the internal `SchemaRoot` title; add host-direction, cancel, duplicate, and exact/over-boundary integration fixtures.
+- **Test plan**: Empty protocol construction/deserialization/schema tests; failure-message limit and limit+1 tests; cross-request accounting invariant; all five bounds plus duplicate/cancel/unknown-field integration cases.
 
 ### Layer 1B: `opi-tui` (substrate)
 
@@ -137,15 +126,15 @@ Verification notes:
     cargo clippy -p opi-tui --all-targets -- -D warnings
     cargo test -p opi-tui --all-targets
 
-#### Fix 1B.1: Snapshot the awaiting-permission status presentation
+#### Fix 1B.1: Fail closed on an invalid permission cursor
 
-- **Audit source**: GPT N-03
-- **Cluster**: C31
-- **Decision**: D17
+- **Audit source**: DeepSeek 8.3 residual
+- **Cluster**: C42
+- **Decision**: D12
 - **Verification status**: Confirmed
-- **File(s)**: `crates/opi-tui/tests/permission_prompt_snapshots.rs` ~L1; `tests/tui_snapshots.rs` ~L82
-- **Change**: Add deterministic public-state renders for `AppStatus::AwaitingPermission` at 80x24 and 120x40, alongside the existing prompt snapshots.
-- **Test plan**: Review the generated `.snap.new` files explicitly before accepting the snapshots; run the focused snapshot test.
+- **File(s)**: `crates/opi-tui/src/permission_prompt.rs` ~L136
+- **Change**: Replace the unreachable `AllowOnce` fallback with `Deny` (or an explicit checked error at the caller boundary).
+- **Test plan**: Unit-test an injected invalid cursor and assert it cannot authorize an invocation.
 
 ### Layer 2: `opi-sandbox` (depends on `opi-protocol`)
 
@@ -155,58 +144,25 @@ Verification notes:
     cargo clippy -p opi-sandbox --all-targets -- -D warnings
     cargo test -p opi-sandbox --all-targets
 
-Native Linux and macOS policy tests are additionally required on their owning
-platforms; Windows lifecycle changes require the Windows test target.
+#### Fix 2.1: Honor the initialized adapter configuration
 
-#### Fix 2.1: Restrict writes to the invocation-owned temp root
+- **Audit source**: Codex 2.5
+- **Cluster**: C09
+- **Decision**: D2
+- **Verification status**: Partially confirmed
+- **File(s)**: `crates/opi-sandbox/src/backend.rs` ~L125 and ~L380; `helper.rs`; `tests/protocol_conformance.rs`; `tests/backend_protocol_smoke.rs`
+- **Change**: Parse the bounded configuration as a closed profile/network object, reject invalid or unknown values before target start, and pass the resulting `SandboxPolicy` into the shared runner instead of always using `default()`.
+- **Test plan**: Real backend tests for network deny and allow, invalid/unknown configuration, deadline expiry during setup, and no target start on rejection.
 
-- **Audit source**: GPT B-03; DeepSeek 2.11, 3.1
-- **Cluster**: C03, C38
-- **Decision**: D4
+#### Fix 2.2: Close CLI and backend acceptance gaps
+
+- **Audit source**: DeepSeek 4.4, 4.5, 4.7, 5.3
+- **Cluster**: C27, C28, C30, C32
+- **Decision**: D8
 - **Verification status**: Confirmed
-- **File(s)**: `crates/opi-sandbox/src/policy.rs` ~L143; `runner.rs` ~L285; `platform/linux.rs` ~L204; `platform/macos.rs` ~L300
-- **Change**: Add `temp_root` to `RestrictionCtx`; set temp environment variables to it; grant only that canonical path; reject a canonical `cwd` outside the canonical workspace.
-- **Test plan**: Positive workspace/private-temp writes plus negative sibling-system-temp and outside-cwd tests on Linux/macOS; SDK unit tests for canonical containment and temp environment.
-
-#### Fix 2.2: Make process-tree setup and cleanup truthful
-
-- **Audit source**: GPT B-04, M-10, M-13; DeepSeek 2.2, 2.3, 5.3
-- **Cluster**: C04, C05, C17, C20
-- **Decision**: D5
-- **Verification status**: Confirmed
-- **File(s)**: `crates/opi-sandbox/src/runner.rs` ~L340 and ~L480; `process_tree.rs` ~L17 and Windows ~L150; `helper.rs` ~L60; `backend.rs` ~L160; `cli.rs` ~L215; `main.rs`
-- **Change**: Fail before target release when L0 attach fails; create Windows targets suspended, assign the Job Object, then resume; add a child bootstrap/release gate so `started` is flushed before the real target can act; add parent-death containment for hard backend termination; propagate termination/wait/drain/temp-removal failures as cleanup unconfirmed; wire SIGINT/Ctrl-C into cancellation and await bounded cleanup before returning 130.
-- **Test plan**: Fault-injected attach/terminate/wait/temp failures; target sentinel cannot fire before release; hard-kill backend kills target tree; real SIGINT returns 130 and kills descendants; Windows nested-job tests; macOS full-profile rejection remains pre-start.
-
-#### Fix 2.3: Preserve native strings end to end
-
-- **Audit source**: GPT M-09
-- **Cluster**: C16
-- **Decision**: D10
-- **Verification status**: Confirmed
-- **File(s)**: `crates/opi-sandbox/src/runner.rs` ~L75; `helper.rs` ~L90 and ~L175
-- **Change**: Change SDK program/args/environment fields to native `OsString`/`PathBuf` forms and replace lossy conversion with platform-correct reversible conversion from `NativeString`.
-- **Test plan**: Unix invalid-UTF-8 argv/path/env round trips and Windows unpaired-wide-unit round trips through SDK and protocol backend.
-
-#### Fix 2.4: Bound and close the backend state machine
-
-- **Audit source**: GPT M-07, M-11, M-12; DeepSeek 2.8, 2.9, 2.10
-- **Cluster**: C13, C18, C19, C36, C37
-- **Decision**: D8, D9
-- **Verification status**: Confirmed
-- **File(s)**: `crates/opi-sandbox/src/backend.rs` ~L100, ~L205, ~L410, ~L490; `runner.rs` ~L40 and ~L565
-- **Change**: Enforce `initialize.deadline_ms`; replace the unbounded input channel with a small bounded channel and stop it after terminal; treat premature EOF/read failure as cancellation plus protocol failure; define deterministic cancel-before-completion precedence; preserve incremental output or emit an explicit bounded truncation diagnostic/flag instead of silent loss.
-- **Test plan**: Flood/backpressure test, pre-terminal EOF tree-kill test, deadline-without-execute test, deterministic simultaneous cancel/exit test, and >1 MiB output test asserting a visible truncation marker.
-
-#### Fix 2.5: Strengthen CLI signal-exit coverage
-
-- **Audit source**: DeepSeek 4.3
-- **Cluster**: C41
-- **Decision**: D17
-- **Verification status**: Confirmed
-- **File(s)**: `crates/opi-sandbox/tests/cli_contract.rs` ~L672
-- **Change**: Make the test prove a signaled `ExitStatus` rather than accepting an ordinary exit code 143.
-- **Test plan**: Assert the structured SDK outcome is `Signaled { signal: 15 }` and the CLI maps that result to 143.
+- **File(s)**: `crates/opi-sandbox/src/cli.rs` ~L185; `src/backend.rs` ~L270; `tests/sdk_contract.rs` ~L680; `tests/cli_contract.rs` ~L280 and ~L710; `tests/protocol_conformance.rs`
+- **Change**: Reject an empty program as usage error; runtime-assert `None/Unrestricted` for the no-restriction runner; pipe actual stdin bytes through the human CLI; drive `ExecutionFailed`; and classify cleanup failures with the intended cleanup phase.
+- **Test plan**: Parser and real-binary empty-program exit 2; Linux byte-echo stdin test; exact effective-contract assertion; injected release/stream-end/cleanup failures with exact code and phase.
 
 ### Layer 3: `opi-coding-agent` (depends on `opi-protocol` and `opi-tui`)
 
@@ -216,67 +172,77 @@ platforms; Windows lifecycle changes require the Windows test target.
     cargo clippy -p opi-coding-agent --all-targets -- -D warnings
     cargo test -p opi-coding-agent --all-targets
 
-#### Fix 3.1: Close configuration authority and routing diagnostics
+#### Fix 3.1: Restore the production Minimal Runtime
 
-- **Audit source**: GPT B-01, N-02; DeepSeek 2.1, 5.6
-- **Cluster**: C01, C30, C47
-- **Decision**: D1
+- **Audit source**: Codex 3.1; DeepSeek 5.2, 5.4, 5.5
+- **Cluster**: C12, C33
+- **Decision**: D4
 - **Verification status**: Confirmed
-- **File(s)**: `crates/opi-coding-agent/src/config.rs` ~L185, ~L1065, ~L1227; `execution/router.rs` ~L95; `main.rs` ~L351 and ~L471
-- **Change**: Reject project permission table presence even when empty; make named selection carry the originating strategy; run execution-config validation after applying CLI overrides.
-- **Test plan**: User deny plus empty project table at both project merge sites; explicit empty user/CLI tables remain valid where owned; rules-selected missing backend reports `rules`; invalid rules override fails as config before runtime construction.
+- **File(s)**: `crates/opi-coding-agent/src/harness.rs` ~L150 and ~L975; `src/execution/runtime.rs` ~L185; `tests/execution_minimal_runtime.rs`; `tests/interactive_permission.rs`; text/NDJSON/RPC startup tests
+- **Change**: Detect default fixed-local with effective `allow` before constructing or reading the activation store, permission manager/broker, router, or protocol state. Keep explicit interactive `local=ask` routed through the broker, but scope the Branch-1 docs to the default allow path and document headless build-time refusal.
+- **Test plan**: Exercise the real harness constructor with unreadable/panic-on-open activation state and construction counters; prove no broker/router/protocol task for default allow; prove explicit interactive ask still supports once/session/deny; assert headless text/NDJSON/RPC return `permission_required` without prompting.
 
-#### Fix 3.2: Make package install/update and activation atomic
+#### Fix 3.2: Correct macOS immutable launch hashing
 
-- **Audit source**: GPT B-02, M-01, M-02; DeepSeek 2.4, 2.5, 2.7, 3.4, 4.8
-- **Cluster**: C02, C06, C07, C33, C34, C35, C45
-- **Decision**: D2, D3
+- **Audit source**: DeepSeek 2.1
+- **Cluster**: C17
+- **Decision**: D5
 - **Verification status**: Confirmed
-- **File(s)**: `crates/opi-coding-agent/src/package_cli.rs` ~L120, ~L220, ~L866; `package_activation.rs` ~L385, ~L490, ~L566, ~L608; `execution/contribution.rs` ~L375; `execution/runtime.rs` ~L493; `execution/protocol_host.rs` ~L155
-- **Change**: Stage declaration/lock/trust changes and publish them atomically after collision/activation validation; compare complete old/new lock sets before preserving trust; make zero-contribution updates invalidate trust; surface trust-file invalidation write errors; reject special executable files before diagnostic reads; bind the validated open immutable executable identity/material to spawn.
-- **Test plan**: Local and Git byte-change updates reset trust+enablement; byte-identical re-add preserves both; trusted+enabled to zero contributions resets both; collision/write failure leaves declaration/lock/trust/cache unchanged; FIFO/device doctor returns promptly; a replacement race cannot spawn unvalidated bytes; trusted+enabled activation still never starts package code.
+- **File(s)**: `crates/opi-coding-agent/src/execution/contribution.rs` ~L484; contribution/package lifecycle tests
+- **Change**: Seek the copied snapshot to offset zero before reopening `/dev/fd`; retain Linux sealing and the bound descriptor launch path.
+- **Test plan**: On macOS, add and activate a package with non-empty executable bytes and assert the declared digest, validated bound bytes, and pre-spawn revalidation all match.
 
-#### Fix 3.3: Build only usable runtime/schema candidates
+#### Fix 3.3: Enforce state ordering during cancellation
 
-- **Audit source**: GPT M-03, M-04, M-15; DeepSeek 5.1
-- **Cluster**: C08, C09, C22
-- **Decision**: D11
+- **Audit source**: Codex 2.6
+- **Cluster**: C10
+- **Decision**: D3
 - **Verification status**: Confirmed
-- **File(s)**: `crates/opi-coding-agent/src/tool/bash.rs` ~L110 and ~L175; `execution/runtime.rs` ~L145, ~L194, ~L255; `harness.rs` ~L120 and ~L2315
-- **Change**: Put a finite timeout maximum in schema/deserialization and use checked deadline arithmetic; resolve current target/version/hash compatibility before model-schema construction; never emit an empty backend `oneOf`; route the no-extension Minimal Runtime `local=ask` through the installed broker.
-- **Test plan**: `u64::MAX` and limit+1 return stable tool failures without panic; stale/mismatched identities do not appear in schema; zero candidates omit `bash` with `no_eligible_adapter`; exact production local-only `ask` supports allow-once/session/deny.
+- **File(s)**: `crates/opi-coding-agent/src/execution/protocol_host.rs` ~L880; `tests/execution_protocol_host.rs`; mock backend fixture
+- **Change**: Carry the current `HostState` into cancellation finalization and pass every received terminal through the same transition function used by the normal loop.
+- **Test plan**: Reject `completed`/`failed` before ready, accepted, and started under cancellation; preserve legal post-start cancellation and cleanup results.
 
-#### Fix 3.4: Enforce negotiation, deadline, terminal, and diagnostic contracts in the host
+#### Fix 3.4: Preserve truthful, redacted execution diagnostics
 
-- **Audit source**: GPT M-06, M-07, M-08, M-09, M-14; DeepSeek 2.12, 3.2, 5.2
-- **Cluster**: C12, C13, C14, C15, C16, C21, C46
-- **Decision**: D7, D8, D9, D10, D12
+- **Audit source**: DeepSeek 2.2, 3.1, 3.3, 3.4, 3.5, 7.1, 7.2
+- **Cluster**: C18, C19, C21, C22, C23, C34, C35
+- **Decision**: D6
+- **Verification status**: Confirmed / Partially confirmed
+- **File(s)**: `crates/opi-coding-agent/src/tool/operations.rs` ~L990 and ~L1045; `src/tool/bash.rs` ~L220 and ~L455; `src/execution/router.rs` ~L140; `src/execution/failure.rs` ~L65 and ~L190; `src/execution/protocol_host.rs` ~L800; `src/doctor.rs` ~L510; `src/diagnostic_bridge.rs` ~L270; related diagnostic/migration/product tests
+- **Change**: Carry Unix signal number into public operation context and use a signal-specific message; replace unknown model backend text with a safe placeholder; surface activation-store read failure without inventing untrusted records; share the full legacy-migration remediation string; preserve selected adapter identity on wire unavailability; distinguish not-installed from store failure; align mock comments with in-band timeout/cancel semantics.
+- **Test plan**: Known-signal local and routed tool results; hostile path/token backend canary across Display/remediation/public diagnostics; corrupt and permission-denied activation store; action/details migration needle parity; wire-unavailable identity and not-installed remediation tests.
+
+#### Fix 3.5: Close supervision degradation gaps
+
+- **Audit source**: DeepSeek 3.2 and 8.3 attach-window residual
+- **Cluster**: C20, C43
+- **Decision**: D7
 - **Verification status**: Confirmed
-- **File(s)**: `crates/opi-coding-agent/src/execution/protocol_host.rs` ~L70, ~L175, ~L275, ~L425, ~L490, ~L620; `execution/runtime.rs` ~L545; `tool/bash.rs` ~L260
-- **Change**: Pass expected identity/version/target and configured handshake timeout into the host; build native paths losslessly; use the single absolute deadline; reject bytes/frames after terminal and require immediate clean EOF; merge terminal diagnostics; redact all in-band diagnostics at the host boundary; map pre-start unavailable precisely; preserve ready/started effective-contract fields through `BashResult` instead of dropping/filtering them.
-- **Test plan**: Mismatched identity/version/target, slow handshake, cleanup consuming the remaining budget, terminal extra frame/raw byte, terminal diagnostic merge, hostile path/secret diagnostic redaction, native path round trip, and cross-surface effective-contract tests.
+- **File(s)**: `crates/opi-coding-agent/src/tool/supervision.rs` ~L145 and ~L166; `src/tool/process_tree.rs`; supervision/L0 tests
+- **Change**: Retain the Windows `resume_child` error in the degradation vector before cleanup. On Unix, prevent target/descendant execution until tree ownership is established, or terminate the verified process group on attach failure rather than killing only the direct child.
+- **Test plan**: Inject resume failure and assert `CODE_PROCESS_TREE_DEGRADED`; force a Unix child to fork during the attach window and prove no descendant survives or holds output pipes.
 
-#### Fix 3.5: Retain captured output across drain expiry
+#### Fix 3.6: Repair the Windows target-mismatch acceptance test
 
-- **Audit source**: GPT M-16; DeepSeek 2.6
-- **Cluster**: C23
-- **Decision**: D13
+- **Audit source**: DeepSeek 4.2
+- **Cluster**: C26
+- **Decision**: D8
 - **Verification status**: Confirmed
-- **File(s)**: `crates/opi-coding-agent/src/tool/supervision.rs` ~L245
-- **Change**: Move bounded capture state outside the abortable drain task and snapshot the prefix after abort/grace expiry.
-- **Test plan**: Write a prefix, keep the descendant pipe open past 500 ms, and assert the prefix plus the expected degradation survives.
+- **File(s)**: `crates/opi-coding-agent/tests/windows_execution_posture.rs` ~L160 and ~L280
+- **Change**: Make the synthetic Opi version satisfy the package range, then assert the internal validation detail names target mismatch before checking the public code and no-spawn sentinel.
+- **Test plan**: Run the focused test on Windows and retain an adjacent negative version-range test so the two gates cannot mask each other.
 
-#### Fix 3.6: Reuse execution diagnostics on doctor surfaces
+#### Fix 3.7: Make package removal and project trust fail closed
 
-- **Audit source**: GPT M-20
-- **Cluster**: C27
+- **Audit source**: DeepSeek 7.3 and 8.3 package residuals
+- **Cluster**: C36, C40
 - **Decision**: D12
 - **Verification status**: Confirmed
-- **File(s)**: `crates/opi-coding-agent/src/doctor.rs` ~L200 and ~L509; `package_cli.rs` ~L390; `execution/failure.rs` ~L115
-- **Change**: Emit the applicable stable `ExecutionFailure` code and remediation for actionable lifecycle/drift failures; keep doctor-local codes only for summaries and informational observations.
-- **Test plan**: Runtime, `package doctor --json`, and `opi doctor --json` produce correlatable code/remediation for the same drift/untrusted/disabled condition; text output remains redacted.
+- **File(s)**: `crates/opi-coding-agent/src/package_cli.rs` ~L335 and ~L610; `src/package_activation.rs` ~L384 and ~L657; `src/main.rs` ~L345 and ~L468; lifecycle and project-trust tests
+- **Change**: Snapshot and roll back declaration/lock/trust state around remove; delete the unused `preserve_trust` install parameter and keep preservation solely in the outer transaction; include project config only for explicit `Trusted`, never `Undecided`.
+- **Test plan**: Inject trust-store removal failure and assert all package files are unchanged; package install remains untrusted by default; an `Undecided` decision skips project configuration.
 
-### Layer 4: packaging, smoke, and artifact evidence
+### Layer 4: packaging, smoke, artifact audit, and CI
 
 **Verification**:
 
@@ -284,86 +250,89 @@ platforms; Windows lifecycle changes require the Windows test target.
     cargo clippy -p opi-coding-agent --all-targets -- -D warnings
     cargo test -p opi-coding-agent --test opi_sandbox_packaging
     cargo test -p opi-coding-agent --test artifact_audit_script
+    cargo test -p opi-coding-agent --test opi_sandbox_release_topology
 
-The extracted direct/backend smoke must additionally run against fresh Linux and
-macOS archives; Windows retains the unsupported/no-artifact posture test.
+#### Fix 4.1: Run feature-gated Phase 16 acceptance in CI
 
-#### Fix 4.1: Derive package compatibility from the workspace/release version
-
-- **Audit source**: GPT M-17; DeepSeek 4.9, 5.5
-- **Cluster**: C24
-- **Decision**: D14
-- **Verification status**: Confirmed
-- **File(s)**: `packaging/opi-sandbox/package.toml.template` ~L16; `scripts/package-opi-sandbox.sh` ~L165; `scripts/package-opi-sandbox.ps1` ~L165; packaging/product fixtures
-- **Change**: Remove hard-coded `0.8.0`/`>=0.8,<0.9`; derive the package version and compatible Opi semver range once and use it in manifest, audit lock, and tests.
-- **Test plan**: Validate the generated package with `host_opi_version()` from the same checkout; retain negative adjacent-range tests.
-
-#### Fix 4.2: Complete extracted standalone smoke
-
-- **Audit source**: GPT M-18
+- **Audit source**: DeepSeek 4.1
 - **Cluster**: C25
-- **Decision**: D15
+- **Decision**: D9
 - **Verification status**: Confirmed
-- **File(s)**: `scripts/opi-sandbox-smoke.sh`; `scripts/opi-sandbox-smoke.ps1`; protocol fixture host/evidence markers
-- **Change**: Run an explicit target that proves argv, stdin, binary stdout, binary stderr, normal/nonzero/signal/timeout exits, and run `backend --stdio` through a product-neutral client against the extracted binary.
-- **Test plan**: Separate direct and backend evidence markers; no workspace binary/cargo/`opi` fallback; no durable state or Opi sentinel access.
+- **File(s)**: `.github/workflows/ci.yml` ~L45; `crates/opi-coding-agent/Cargo.toml`; `tests/execution_product.rs`; `tests/execution_protocol_host.rs`; `tests/execution_runtime.rs`; CI topology tests
+- **Change**: Build `execution_backend_mock` with `--no-run`, then run the product, protocol-host, and runtime targets with `execution-backend-test-fixture`; guard the workflow so the feature cannot silently disappear.
+- **Test plan**: Run the exact CI command locally; topology test must find the feature and all three target names.
 
-#### Fix 4.3: Make artifact audit own and authenticate the evidence
+#### Fix 4.2: Complete and authenticate native archive acceptance
 
-- **Audit source**: GPT M-19
-- **Cluster**: C26
-- **Decision**: D15
+- **Audit source**: Codex 4.2; DeepSeek 7.4 and 8.3 archive-verification residual
+- **Cluster**: C16, C37, C44
+- **Decision**: D10
+- **Verification status**: Partially confirmed / Confirmed
+- **File(s)**: `scripts/opi-sandbox-smoke.sh`; `scripts/package-opi-sandbox.sh` ~L80 and ~L160; `scripts/package-opi-sandbox.ps1` ~L75 and ~L135; packaging/smoke tests; release workflow
+- **Change**: Add direct setup-failure, empty-working-directory isolation, native filesystem allow/deny, and network deny/allow sentinels against the extracted binary; use one strict SemVer parser and literal-safe manifest rendering in both packagers; make `--verify` independently extract the expected archive into an empty temporary directory and validate exact members and hashes.
+- **Test plan**: Linux/macOS extracted-archive runs for every named sentinel; prerelease/build/invalid-metacharacter parser parity; archive tamper with unchanged staging trees must fail verification.
+
+#### Fix 4.3: Harden phase-exit evidence parsing
+
+- **Audit source**: DeepSeek 4.6 and 8.3 artifact-audit residuals
+- **Cluster**: C29, C45
+- **Decision**: D11
 - **Verification status**: Confirmed
-- **File(s)**: `scripts/opi-artifact-audit.py` ~L427, ~L446, ~L579; `crates/opi-coding-agent/tests/artifact_audit_script.rs`; packaging verification tests
-- **Change**: Require the target archive; extract it into an auditor-owned empty directory; reject traversal/extra/missing layout; parse the real contribution manifest; compare all lock fields, target, manifest hash, executable hash, and archive digest; bind smoke evidence to that digest; inspect skip/failure evidence before any pass marker; remove the no-archive native phase-exit exception.
-- **Test plan**: Negative fixtures for absent/tampered archive, caller-prepared extracted tree, placeholder/invalid manifest, wrong target/layout/lock field, mixed PASS+failure log, and evidence for a different archive.
+- **File(s)**: `scripts/opi-artifact-audit.py` ~L60, ~L975, ~L1035; `crates/opi-coding-agent/tests/artifact_audit_script.rs`
+- **Change**: Apply the existing ignored-test rejection to phase-exit gate bundles; convert expected-file `OSError`s and wrong file kinds into structured issues; update stale phase-exit layout comments.
+- **Test plan**: Reject `3 passed; 0 failed; 2 ignored`; substitute a directory for each expected scalar file and assert a structured issue with no traceback.
 
-### Layer 5: current product documentation (final layer)
+### Layer 5: paired historical documentation (final layer)
 
 **Verification**:
 
     cargo fmt --all
     cargo clippy -p opi-coding-agent --all-targets -- -D warnings
-    cargo test -p opi-coding-agent --test phase16_extension_docs
     cargo test -p opi-coding-agent --test phase15_safety_sandbox_docs
+    cargo test -p opi-coding-agent --test phase16_extension_docs
 
-#### Fix 5.1: Separate current Phase 16 behavior from historical Phase 15
+#### Fix 5.1: Make Phase 15 deleted-path claims explicitly historical
 
-- **Audit source**: GPT M-21; DeepSeek 5.4
-- **Cluster**: C28
-- **Decision**: D16
+- **Audit source**: DeepSeek 8.3 residual
+- **Cluster**: C46
+- **Decision**: D13
 - **Verification status**: Confirmed
-- **File(s)**: `README.md` ~L150 and ~L390; `README.zh.md` counterparts; `docs/opi-spec.md` ~L9, ~L29, ~L174, ~L2036; `docs/opi-spec.zh.md` counterparts; Phase 16 doc guards
-- **Change**: Remove legacy flags/config from current option and safety guidance; retain Phase 15 text only under an explicit historical heading; update current implementation/next milestone/completed phases and the six-crate workspace; change Minimal Runtime wording from “touches no package-store sentinel” to the precise “no package activation or per-package scan” behavior; synchronize English and Chinese.
-- **Test plan**: Guard current sections against legacy instructions/stale four-crate/Phases-1-15 claims while explicitly allowing archived Phase 15 history; assert EN/ZH current-state equivalence.
+- **File(s)**: `docs/opi-spec.md` ~L1985 and ~L2048; `docs/opi-spec.zh.md` counterparts; `crates/opi-coding-agent/tests/phase15_safety_sandbox_docs.rs` ~L240
+- **Change**: Rephrase the deleted `sandbox.rs`/`sandbox/windows.rs` unsafe assertions as Phase-15-exit history in English and Chinese; keep current assertions only for files that still exist; update the guard without rewriting archived snapshots.
+- **Test plan**: Paired docs guard must require historical wording, current Phase 16 migration wording, and no present-tense claim that deleted paths exist.
 
 ## Final verification
 
     cargo fmt --check --all
     cargo clippy --workspace --all-targets -- -D warnings
     cargo test --workspace --all-targets
+    cargo test -p opi-coding-agent --features execution-backend-test-fixture --test execution_backend_mock --no-run
+    cargo test -p opi-coding-agent --features execution-backend-test-fixture --test execution_product --test execution_protocol_host --test execution_runtime
     cargo test --workspace --doc
     RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
 
-Native/release verification after workspace gates:
+Native verification after workspace gates:
 
-1. Build fresh `opi-sandbox` archives on Linux x86_64/aarch64 and macOS
-   x86_64/aarch64.
-2. Run the complete extracted direct and `backend --stdio` smoke against each
-   archive.
-3. Run native Linux/macOS restriction suites and the Windows L0/unsupported
-   posture suite.
-4. Run the strengthened artifact auditor from the archives and their bound
-   evidence, not from pre-extracted directories.
+1. Run the corrected macOS package add/activate digest regression.
+2. Run Linux/macOS native restriction suites and the complete extracted archive smoke.
+3. Run the Windows supervision and unsupported-posture suites.
+4. Rebuild authenticated four-target `opi-sandbox` archives and run the strengthened artifact audit.
 
 ## Scope exclusions
 
 | Finding | Status | Reason |
 |---|---|---|
-| GPT N-04 / C32 | Deferred to guarded ledger reconciliation | The finding is confirmed, but `opi-remediate` is forbidden from modifying `docs/snapshots/phase16/opi-impl-state.json`. Reconcile the open scenarios through `opi-implement` after remediation evidence exists. |
-| DeepSeek 3.3 / C39 | Deferred to Phase 19 | The legacy `opi-extension-jsonl-v1` resolver issue is confirmed but is a pre-existing Phase 5 surface explicitly outside the Phase 16 migration/non-goals. Track it with the broader extension-architecture work. |
-| DeepSeek 4.2 / C40 | Refuted | `tests/interactive_permission.rs` already tests the real broker decisions, grant lifetime/reset, `permission_denied`, and the harness result surface. |
-| DeepSeek 4.4 / C42 | Info/No action | The source-text assertions are supplementary tripwires backed by behavioral tests. Do not remove them as unrelated cleanup; replace only when a stronger behavioral proof is added for the same property. |
+| C01-C05, C08, C11, C13-C15 | Refuted | Current HEAD contains the previous remediation and focused regression evidence. |
+| C07 simultaneous stdin-close race | Info/No action | The real host closes stdin only after terminal completion. Changing biased precedence is a protocol decision with no demonstrated production failure; align evidence wording only under Fix 3.4. |
+| C24 crate-root `forbid(unsafe_code)` | Info/No action | Audited FFI remains isolated in `process_tree`; a crate-root forbid requires unrelated module/crate restructuring. Keep leaf-module guards and boundary tests. |
+| C38 stale archived ledger | Deferred to guarded ledger reconciliation | `opi-remediate` must not modify `.opi-impl-state.json` or the archived snapshot. Record post-remediation verification outside the canonical ledger. |
+| C39 absent local phase-exit artifacts | Evidence refresh | Do not fabricate or rewrite historical evidence. Recreate authenticated native evidence through approved CI/native hosts if durable re-audit is required. |
+| C47 macOS abrupt-owner watchdog | Cannot confirm | Requires a separate native Seatbelt launcher diagnostic; promote it to a code fix only if reproduced. |
+| Trailing-CR line bound | Info/No action | The off-by-one rejects early in the safe direction. |
+| Standalone `TreeGuard::attach` non-leader foot-gun | Info/No action | The shipped runner establishes its own process group; no production path passes an arbitrary non-leader PID. |
+| macOS profile lossy/special-path residual | Partially confirmed / manual | Current behavior fails toward denial. Exercise non-UTF-8/newline/parenthesis paths in native tests before changing profile serialization. |
+| Human CLI 1 MiB buffering/truncation | Info/No action | This is the documented buffered SDK model and not a false success state. |
+| PowerShell unsupported marker mismatch | Duplicate/No action | The script also emits the generic marker recognized by the auditor; remove the redundant marker only when touching that script for Fix 4.2. |
 
 No implementation, ledger, commit, push, or release action is authorized by
 this plan. Execution begins only after explicit user confirmation.

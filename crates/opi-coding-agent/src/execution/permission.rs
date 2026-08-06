@@ -93,8 +93,8 @@ impl PermissionPolicy {
 /// Shared by reference (`Arc<PermissionManager>`) between the routed bash backend
 /// (which checks + records grants during `exec`) and the harness (which resets
 /// them on in-process session switches), so a reset is immediately visible to the
-/// next tool call. One fresh manager is constructed per harness in
-/// `crate::harness::execution_wiring`.
+/// next tool call. One fresh manager is constructed per routed harness; Minimal
+/// Runtime and startup-refused harnesses construct no permission manager.
 #[derive(Debug, Default)]
 pub struct PermissionManager {
     session_grants: Mutex<HashSet<String>>,

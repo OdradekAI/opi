@@ -55,10 +55,12 @@ use opi_coding_agent::config::{
 };
 use opi_coding_agent::execution::permission::PermissionPolicy;
 use opi_coding_agent::execution::{
-    EnabledIdentity, ExecutionRuntime, IdentitySource, PermissionManager,
+    ContributionValidationError, EnabledIdentity, ExecutionRuntime, IdentitySource, PackageSource,
+    PermissionManager, validate_executable_contributions,
 };
 use opi_coding_agent::package_activation::{self, TrustConfirmer, TrustDisplay};
 use opi_coding_agent::package_cli;
+use opi_coding_agent::package_discovery::PackageManifest;
 use opi_coding_agent::tool::{
     BashOpError, BashOperations, BashRequest, BashResult, BashTool,
     LOCAL_BASH_OPERATION_DIAGNOSTIC, LocalBashOperations,
@@ -150,15 +152,35 @@ async fn local_exec_reports_supervised_guarantee() {
 // established repo convention across the execution_*.rs test binaries).
 // ---------------------------------------------------------------------------
 
-const HOST_TARGET: &str = if cfg!(windows) {
-    "x86_64-pc-windows-msvc"
-} else if cfg!(target_os = "linux") {
-    "x86_64-unknown-linux-gnu"
-} else {
-    "x86_64-apple-darwin"
-};
-const HOST_OPI_VERSION: &str = "0.8.0";
 const EXE_CONTENT: &[u8] = b"#!/bin/sh\necho hi\n";
+
+fn major_minor(version: &str) -> (u64, u64) {
+    let mut parts = version.split('.');
+    let major: u64 = parts.next().expect("major").parse().expect("numeric major");
+    let minor: u64 = parts.next().expect("minor").parse().expect("numeric minor");
+    (major, minor)
+}
+
+fn compatible_minor_range(version: &str) -> String {
+    let (major, minor) = major_minor(version);
+    format!(">={major}.{minor}.0-0,<{major}.{}.0-0", minor + 1)
+}
+
+fn incompatible_adjacent_minor_range(version: &str) -> String {
+    let (major, minor) = major_minor(version);
+    format!(">={major}.{}.0-0,<{major}.{}.0-0", minor + 1, minor + 2)
+}
+
+#[test]
+fn generated_minor_range_accepts_prerelease_host_versions() {
+    let host = "0.8.0-rc.1+build.17";
+    let range = compatible_minor_range(host);
+    let diagnostic = opi_coding_agent::package_discovery::OpiVersionDiagnostic::check(&range, host);
+    assert!(
+        diagnostic.is_none(),
+        "generated range {range:?} must include prerelease host {host:?}: {diagnostic:?}"
+    );
+}
 
 /// A `BashOperations` sentinel that records every `exec` call's command and
 /// returns a canned in-band result. Proves the local backend is (or is not)
@@ -230,8 +252,8 @@ fn build(
         store,
         local_ops,
         Path::new("."),
-        HOST_TARGET,
-        HOST_OPI_VERSION,
+        package_activation::host_target_triple(),
+        package_activation::host_opi_version(),
         Arc::new(PermissionManager::new()),
         None,
     )
@@ -283,9 +305,10 @@ fn make_execution_package(adapter_id: &str) -> (TempDir, PathBuf) {
     make_executable(&exe);
     let sha = t_sha256(EXE_CONTENT);
     let target = package_activation::host_target_triple();
+    let opi_range = compatible_minor_range(package_activation::host_opi_version());
     let toml = format!(
         "version = \"0.8.0\"\n\
-         opi_version = \">=0.7,<0.8\"\n\
+         opi_version = \"{opi_range}\"\n\
          name = \"{adapter_id}\"\n\
          description = \"test execution backend\"\n\
          \n\
@@ -422,6 +445,54 @@ async fn target_mismatched_package_fails_untrusted_before_command_with_no_fallba
     );
     std::fs::write(&manifest, content.replacen(&from_line, &to_line, 1)).unwrap();
 
+    let raw = std::fs::read(&manifest).expect("read target-tampered manifest");
+    let parsed = PackageManifest::from_toml(&String::from_utf8_lossy(&raw), &manifest)
+        .expect("target-tampered manifest remains syntactically valid");
+    let validation = validate_executable_contributions(
+        &parsed,
+        &raw,
+        &root,
+        PackageSource::Global,
+        &host_target,
+        package_activation::host_opi_version(),
+    )
+    .expect_err("target-tampered contribution must fail validation");
+    match validation {
+        ContributionValidationError::IncompatibleTarget { wanted, got } => {
+            assert_eq!(wanted, host_target, "validator must name the injected host");
+            assert_eq!(
+                got, foreign_target,
+                "validator must name the manifest target"
+            );
+        }
+        other => panic!("target tamper must reach IncompatibleTarget, got {other:?}"),
+    }
+
+    // Prove the real activation path reaches the target gate before checking
+    // the public redacted failure code below. Both incompatible-version and
+    // incompatible-target failures intentionally map to package_untrusted, so
+    // the public code alone cannot distinguish which validation gate ran.
+    let activation = package_activation::PackageActivationStore::global(user.path().to_path_buf());
+    let internal = activation
+        .activate(
+            "opi-sandbox",
+            package_activation::host_target_triple(),
+            package_activation::host_opi_version(),
+        )
+        .expect_err("the tampered target must fail pre-spawn revalidation");
+    let detail = match internal {
+        package_activation::ActivationError::Untrusted { detail, .. } => detail,
+        other => panic!("expected target mismatch to invalidate trust, got {other}"),
+    };
+    assert!(
+        detail.contains("manifest target"),
+        "activation must fail at IncompatibleTarget, got: {detail}"
+    );
+    assert!(
+        !detail.contains("opi version range"),
+        "the version gate must not mask the target gate: {detail}"
+    );
+
     let local_ops = Arc::new(RecordingOps::new());
     let local_handle = Arc::clone(&local_ops);
     let store: Arc<dyn IdentitySource> = Arc::new(
@@ -444,5 +515,111 @@ async fn target_mismatched_package_fails_untrusted_before_command_with_no_fallba
         local_handle.call_count(),
         0,
         "target-mismatched-package failure must NOT fall back to the local backend"
+    );
+}
+
+/// An incompatible Opi range reaches the version gate without being masked by
+/// target validation. This is intentionally adjacent to the target-mismatch
+/// regression because both internal failures redact to `package_untrusted` on
+/// the public tool surface.
+#[tokio::test]
+async fn version_mismatched_package_fails_untrusted_without_target_masking() {
+    let (_pkg, root) = make_execution_package("opi-sandbox");
+    let workspace = tempdir().expect("workspace dir");
+    let user = tempdir().expect("user dir");
+    assert_eq!(
+        add_global(root.to_str().unwrap(), workspace.path(), user.path()),
+        0,
+        "global add with the compatible generated range must succeed"
+    );
+    let mut confirmer = TestConfirmer { grant: true };
+    package_activation::PackageActivationStore::global(user.path().to_path_buf())
+        .enable(
+            "opi-sandbox",
+            package_activation::host_target_triple(),
+            package_activation::host_opi_version(),
+            &mut confirmer,
+        )
+        .expect("granting confirmer enables");
+
+    let manifest = root.join("package.toml");
+    let content = std::fs::read_to_string(&manifest).unwrap();
+    let compatible = compatible_minor_range(package_activation::host_opi_version());
+    let from_line = format!("opi_version = \"{compatible}\"");
+    let incompatible = incompatible_adjacent_minor_range(package_activation::host_opi_version());
+    let to_line = format!("opi_version = \"{incompatible}\"");
+    assert!(
+        content.contains(&from_line),
+        "manifest must carry the generated compatible range before tamper"
+    );
+    std::fs::write(&manifest, content.replacen(&from_line, &to_line, 1)).unwrap();
+
+    let raw = std::fs::read(&manifest).expect("read version-tampered manifest");
+    let parsed = PackageManifest::from_toml(&String::from_utf8_lossy(&raw), &manifest)
+        .expect("version-tampered manifest remains syntactically valid");
+    let host = package_activation::host_opi_version();
+    let validation = validate_executable_contributions(
+        &parsed,
+        &raw,
+        &root,
+        PackageSource::Global,
+        package_activation::host_target_triple(),
+        host,
+    )
+    .expect_err("version-tampered contribution must fail validation");
+    match validation {
+        ContributionValidationError::IncompatibleOpiRange { range, host: got } => {
+            assert_eq!(
+                range, incompatible,
+                "validator must name the manifest range"
+            );
+            assert_eq!(got, host, "validator must name the injected host version");
+        }
+        other => panic!("version tamper must reach IncompatibleOpiRange, got {other:?}"),
+    }
+
+    let activation = package_activation::PackageActivationStore::global(user.path().to_path_buf());
+    let internal = activation
+        .activate(
+            "opi-sandbox",
+            package_activation::host_target_triple(),
+            package_activation::host_opi_version(),
+        )
+        .expect_err("the tampered Opi range must fail pre-spawn revalidation");
+    let detail = match internal {
+        package_activation::ActivationError::Untrusted { detail, .. } => detail,
+        other => panic!("expected version mismatch to invalidate trust, got {other}"),
+    };
+    assert!(
+        detail.contains("opi version range"),
+        "activation must fail at IncompatibleOpiRange, got: {detail}"
+    );
+    assert!(
+        !detail.contains("manifest target"),
+        "the target gate must not mask the version gate: {detail}"
+    );
+
+    let local_ops = Arc::new(RecordingOps::new());
+    let local_handle = Arc::clone(&local_ops);
+    let store: Arc<dyn IdentitySource> = Arc::new(
+        package_activation::PackageActivationStore::global(user.path().to_path_buf()),
+    );
+    let ops: Arc<dyn BashOperations> = build(
+        &fixed("opi-sandbox"),
+        &[identity("opi-sandbox", "opi-sandbox")],
+        &policy(&[("opi-sandbox", PermissionDecision::Allow)]),
+        store,
+        local_ops as Arc<dyn BashOperations>,
+    );
+    let code = exec_code(ops, "echo hi").await;
+    assert_eq!(
+        code.as_deref(),
+        Some("package_untrusted"),
+        "version-mismatched package must redact to package_untrusted"
+    );
+    assert_eq!(
+        local_handle.call_count(),
+        0,
+        "version-mismatched-package failure must NOT fall back to local"
     );
 }

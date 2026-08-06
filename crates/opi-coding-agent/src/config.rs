@@ -1703,9 +1703,7 @@ pub enum ConfigError {
     InvalidProviderNamespace { provider: String, message: String },
     #[error("invalid execution config field '{field}': {message}")]
     InvalidExecutionConfig { field: String, message: String },
-    #[error(
-        "the [sandbox] section was removed with the native sandbox; configure the execution backend instead ([execution] strategy = \"fixed\", backend = \"opi-sandbox\"; or --execution-backend) and install/enable the opi-sandbox package (opi package add <dir>; opi package enable opi-sandbox)"
-    )]
+    #[error("{remediation}", remediation = crate::diagnostics::LEGACY_SANDBOX_REMEDIATION)]
     LegacySandboxSection,
 }
 

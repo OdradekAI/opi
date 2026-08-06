@@ -12,7 +12,9 @@
 use opi_coding_agent::config::{
     ExecutionConfig, ExecutionRule, ExecutionRunMode, ExecutionStrategy, PermissionDecision,
 };
-use opi_coding_agent::execution::{Eligibility, EligibleAdapter, Selection, resolve_selection};
+use opi_coding_agent::execution::{
+    Eligibility, EligibleAdapter, ExecutionFailure, Selection, UnavailableDetail, resolve_selection,
+};
 
 fn adapter(id: &str, available: bool, permission: PermissionDecision) -> EligibleAdapter {
     EligibleAdapter {
@@ -168,6 +170,25 @@ fn rules_selected_unavailable_does_not_fall_through() {
     ]);
     let err = resolve_selection(&cfg, NONINTERACTIVE, &elig, None).unwrap_err();
     assert_eq!(err.code(), "adapter_unavailable");
+}
+
+#[test]
+fn unavailable_eligibility_has_non_store_cause_and_exact_remediation() {
+    let cfg = fixed("opi-sandbox");
+    let elig = eligibility(&[adapter("opi-sandbox", false, PermissionDecision::Allow)]);
+    let err = resolve_selection(&cfg, INTERACTIVE, &elig, None).unwrap_err();
+
+    assert!(matches!(
+        &err,
+        ExecutionFailure::AdapterUnavailable {
+            adapter_id: Some(adapter_id),
+            detail: UnavailableDetail::Ineligible,
+        } if adapter_id == "opi-sandbox"
+    ));
+    assert_eq!(
+        err.remediation(),
+        "Adapter \"opi-sandbox\" is unavailable because it is not installed, trusted, enabled, or target-compatible. Install a package providing it, then review and enable that package with `opi package doctor` and `opi package enable <name>`."
+    );
 }
 
 #[test]

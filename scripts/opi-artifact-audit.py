@@ -20,6 +20,7 @@ Known limitations (documented, not blocking):
 """
 import argparse
 import hashlib
+import importlib.util
 import json
 import os
 import pathlib
@@ -32,6 +33,19 @@ import tempfile
 import tomllib
 import zipfile
 from collections import Counter
+
+
+def _load_package_helper():
+    helper_path = pathlib.Path(__file__).resolve().with_name("opi-sandbox-package.py")
+    spec = importlib.util.spec_from_file_location("opi_sandbox_package_helper", helper_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"cannot load shared package helper: {helper_path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+PACKAGE_HELPER = _load_package_helper()
 
 
 FAILURE_WORDS = ["ProviderFailure", "HTTP 429", "HTTP 404", "rate limited"]
@@ -62,16 +76,30 @@ TEXT_COMMIT_RANGE_RE = re.compile(
 )
 
 
-def read_text(path):
+def _record_evidence_filesystem_error(issues, path, error):
+    issues.append({
+        "code": "evidence_filesystem_error",
+        "file": str(path),
+        "message": f"cannot read expected evidence file: {error}",
+    })
+
+
+def read_evidence_text(path, issues):
     try:
         return path.read_text(encoding="utf-8", errors="replace")
     except FileNotFoundError:
         return ""
+    except OSError as error:
+        _record_evidence_filesystem_error(issues, path, error)
+        return None
 
 
-def parse_json_lines(path):
+def parse_json_lines(path, issues):
     records = []
-    for line_no, line in enumerate(read_text(path).splitlines(), start=1):
+    text = read_evidence_text(path, issues)
+    if text is None:
+        return records
+    for line_no, line in enumerate(text.splitlines(), start=1):
         if not line.strip():
             continue
         try:
@@ -121,7 +149,7 @@ def analyze_ndjson(path, root_forms_norm):
     partial_mentions = 0
     issues = []
 
-    for line_no, record in parse_json_lines(path):
+    for line_no, record in parse_json_lines(path, issues):
         if "_parse_error" in record:
             issues.append({
                 "code": "invalid_json_line",
@@ -202,7 +230,7 @@ def analyze_ndjson(path, root_forms_norm):
 
 def analyze_session(path, root_forms_norm):
     issues = []
-    records = parse_json_lines(path)
+    records = parse_json_lines(path, issues)
     for line_no, record in records:
         # The session header (type == "session") legitimately stores cwd.
         if isinstance(record, dict) and record.get("type") == "session":
@@ -219,8 +247,9 @@ def analyze_session(path, root_forms_norm):
 
 
 def analyze_failure_evidence(artifact_dir):
+    issues = []
     report_blob = "\n".join(
-        read_text(path)
+        read_evidence_text(path, issues) or ""
         for path in [artifact_dir / "RUN_SUMMARY.md", artifact_dir / "REVIEW_REPORT.md"]
     )
     report_lower = report_blob.lower()
@@ -229,12 +258,11 @@ def analyze_failure_evidence(artifact_dir):
 
     preserved = []
     for path in artifact_dir.glob("run*.ndjson"):
-        body = read_text(path).lower()
+        body = (read_evidence_text(path, issues) or "").lower()
         preserved.extend(w for w in FAILURE_WORDS if w.lower() in body)
-    stderr = read_text(artifact_dir / "run.stderr.log").lower()
+    stderr = (read_evidence_text(artifact_dir / "run.stderr.log", issues) or "").lower()
     preserved.extend(w for w in FAILURE_WORDS if w.lower() in stderr)
 
-    issues = []
     if mentioned and not preserved and not disclosed:
         issues.append({
             "code": "failure_claim_without_preserved_artifact",
@@ -322,10 +350,12 @@ def _text_commit_references(text, path):
     return references
 
 
-def collect_commit_references(artifact_dir):
+def collect_commit_references(artifact_dir, issues):
     references = []
     for path in sorted(p for p in artifact_dir.rglob("*") if p.is_file()):
-        text = read_text(path)
+        text = read_evidence_text(path, issues)
+        if text is None:
+            continue
         if path.suffix.lower() == ".json":
             try:
                 value = json.loads(text)
@@ -338,17 +368,25 @@ def collect_commit_references(artifact_dir):
 
 
 def analyze_commit_references(artifact_dir, workspace_root):
-    references = collect_commit_references(artifact_dir)
     issues = []
+    references = collect_commit_references(artifact_dir, issues)
     for reference in references:
         commit = reference["reference"]
-        lookup = subprocess.run(
-            ["git", "-C", str(workspace_root), "cat-file", "-t", commit],
-            capture_output=True,
-            check=False,
-            encoding="utf-8",
-            errors="replace",
-        )
+        try:
+            lookup = subprocess.run(
+                ["git", "-C", str(workspace_root), "cat-file", "-t", commit],
+                capture_output=True,
+                check=False,
+                encoding="utf-8",
+                errors="replace",
+            )
+        except OSError as error:
+            issues.append({
+                "code": "commit_reference_check_failed",
+                **reference,
+                "message": f"could not run Git to verify commit reference {commit}: {error}",
+            })
+            continue
         if lookup.returncode != 0 or lookup.stdout.strip() != "commit":
             issue = {
                 "code": "missing_commit_reference",
@@ -420,6 +458,19 @@ DIRECT_SMOKE_RE = re.compile(
 BACKEND_SMOKE_RE = re.compile(
     r"opi-sandbox-backend-smoke:\s*OK\s+archive_sha256=([0-9a-f]{64})"
 )
+NATIVE_SENTINEL_SMOKE_RES = {
+    name: re.compile(
+        rf"opi-sandbox-{re.escape(name)}-smoke:\s*OK\s+archive_sha256=([0-9a-f]{{64}})"
+    )
+    for name in [
+        "empty-cwd",
+        "setup-failure",
+        "filesystem-allow",
+        "filesystem-deny",
+        "network-deny",
+        "network-allow",
+    ]
+}
 CARGO_PASS_RE = re.compile(r"test result: ok\. ([1-9][0-9]*) passed; 0 failed; 0 ignored")
 CARGO_SKIPPED_RE = re.compile(r"test result: ok\. \d+ passed; 0 failed; ([1-9][0-9]*) ignored")
 CARGO_ZERO_RE = re.compile(r"test result: ok\. 0 passed; 0 failed; 0 ignored")
@@ -439,20 +490,26 @@ LOCK_FIELDS = {
 }
 
 
-def sha256_file(path):
+def sha256_evidence_file(path, issues):
     digest = hashlib.sha256()
-    with open(path, "rb") as handle:
-        for chunk in iter(lambda: handle.read(65536), b""):
-            digest.update(chunk)
+    try:
+        with open(path, "rb") as handle:
+            for chunk in iter(lambda: handle.read(65536), b""):
+                digest.update(chunk)
+    except OSError as error:
+        _record_evidence_filesystem_error(issues, path, error)
+        return None
     return digest.hexdigest()
 
 
-def _bundle_evidence_text(bundle):
+def _bundle_evidence_text(bundle, issues):
     """Concatenate text/log evidence, including a packager's smoke/ subtree."""
     parts = []
     for entry in sorted(bundle.rglob("*")):
-        if entry.is_file() and entry.suffix.lower() in {".txt", ".log"}:
-            parts.append(read_text(entry))
+        if entry.suffix.lower() in {".txt", ".log"}:
+            text = read_evidence_text(entry, issues)
+            if text is not None:
+                parts.append(text)
     return "\n".join(parts)
 
 
@@ -500,16 +557,20 @@ def _archive_target(path):
 
 
 def _safe_member_name(name):
-    if "\\" in name:
+    if "\\" in name or name.startswith("/"):
         return None
-    while name.startswith("./"):
-        name = name[2:]
-    if name in {"", "."}:
-        return ""
     path = pathlib.PurePosixPath(name)
-    if path.is_absolute() or ".." in path.parts or (path.parts and ":" in path.parts[0]):
+    if (
+        path.is_absolute()
+        or not path.parts
+        or ".." in path.parts
+        or (path.parts and ":" in path.parts[0])
+    ):
         return None
-    return path.as_posix().rstrip("/")
+    canonical_name = path.as_posix()
+    if name != canonical_name:
+        return None
+    return canonical_name
 
 
 def _extract_owned_archive(archive, destination):
@@ -685,13 +746,11 @@ def _parse_manifest(path, platform, issues):
         for key, value in expected.items():
             if required[key] != value:
                 raise ValueError(f"manifest {key} is {required[key]!r}, expected {value!r}")
-        version_match = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)(?:[-+].*)?", required["version"] or "")
-        if not version_match:
-            raise ValueError("manifest version is not semver")
-        compatible = ">=%s.%s,<%s.%d" % (
-            version_match.group(1), version_match.group(2),
-            version_match.group(1), int(version_match.group(2)) + 1,
-        )
+        try:
+            major, minor = PACKAGE_HELPER.parse_semver(required["version"])
+        except PACKAGE_HELPER.PackageError as error:
+            raise ValueError("manifest version is not strict SemVer") from error
+        compatible = f">={major}.{minor}.0-0,<{major}.{minor + 1}.0-0"
         if required["opi_version"] != compatible:
             raise ValueError("manifest opi_version is not the package minor compatibility range")
         if not re.fullmatch(r"[0-9a-f]{64}", required["sha256"] or ""):
@@ -710,7 +769,10 @@ def _parse_manifest(path, platform, issues):
 
 def _parse_lock(path, platform, issues):
     try:
-        lock = tomllib.loads(path.read_text(encoding="utf-8"))
+        text = read_evidence_text(path, issues)
+        if text is None:
+            return None
+        lock = tomllib.loads(text)
         if set(lock) != LOCK_FIELDS or not all(isinstance(lock[key], str) for key in LOCK_FIELDS):
             raise ValueError("lock must contain exactly the eight string LockMaterial fields")
         return lock
@@ -724,19 +786,30 @@ def _parse_lock(path, platform, issues):
 
 
 def _audit_native_smoke(bundle, platform, archive_sha, issues):
-    text = _bundle_evidence_text(bundle)
+    text = _bundle_evidence_text(bundle, issues)
     if not _classify_evidence(text, platform, issues):
         return
     direct = DIRECT_SMOKE_RE.findall(text)
     backend = BACKEND_SMOKE_RE.findall(text)
-    if not direct or not backend:
+    named = {
+        name: pattern.findall(text)
+        for name, pattern in NATIVE_SENTINEL_SMOKE_RES.items()
+    }
+    missing = [name for name, values in named.items() if not values]
+    if not direct or not backend or missing:
+        required = ([] if direct else ["direct"])
+        required += [] if backend else ["backend"]
+        required += missing
         issues.append({
             "code": "missing_smoke_evidence",
             "platform": platform,
-            "message": f"{platform} lacks separate direct and backend smoke markers",
+            "message": f"{platform} lacks required smoke markers: {', '.join(required)}",
         })
         return
-    if any(value != archive_sha for value in direct + backend):
+    digests = direct + backend
+    for values in named.values():
+        digests.extend(values)
+    if any(value != archive_sha for value in digests):
         issues.append({
             "code": "archive_digest_mismatch",
             "platform": platform,
@@ -763,24 +836,31 @@ def _audit_native_bundle(root, platform, target_suffix, issues, expected_target=
             "platform": platform,
             "message": f"{platform} supplies a caller-prepared extracted tree",
         })
-    target_file = read_text(bundle / "target").strip()
+    target_text = read_evidence_text(bundle / "target", issues)
+    target_file = (target_text or "").strip()
     if not target_file:
         issues.append({
             "code": "missing_platform_evidence",
             "platform": platform,
             "message": f"{platform} bundle missing target file",
         })
-    archives = [
-        entry for entry in bundle.iterdir()
-        if entry.is_file() and _archive_target(entry) is not None
-    ]
+    archives = []
+    for entry in bundle.iterdir():
+        if _archive_target(entry) is None:
+            continue
+        if entry.is_file():
+            archives.append(entry)
+        else:
+            _record_evidence_filesystem_error(
+                issues, entry, "expected a regular archive file"
+            )
     if not archives:
         issues.append({
             "code": "missing_archive",
             "platform": platform,
             "message": f"{platform} bundle has no opi-sandbox archive",
         })
-        _classify_evidence(_bundle_evidence_text(bundle), platform, issues)
+        _classify_evidence(_bundle_evidence_text(bundle, issues), platform, issues)
         return
     if len(archives) != 1:
         issues.append({
@@ -812,7 +892,9 @@ def _audit_native_bundle(root, platform, target_suffix, issues, expected_target=
             "message": f"{platform} target file {target_file} != archive target {archive_target}",
         })
 
-    archive_sha = sha256_file(archive)
+    archive_sha = sha256_evidence_file(archive, issues)
+    if archive_sha is None:
+        return
     with tempfile.TemporaryDirectory(prefix="opi-artifact-audit-") as owned:
         extracted = pathlib.Path(owned) / "extracted"
         try:
@@ -833,7 +915,10 @@ def _audit_native_bundle(root, platform, target_suffix, issues, expected_target=
         lock = _parse_lock(bundle / "package-lock.toml", platform, issues)
         if manifest is not None and lock is not None:
             manifest_hash = hashlib.sha256(manifest_raw.replace(b"\r", b"")).hexdigest()
-            actual_sha = sha256_file(extracted_bin)
+            actual_sha = sha256_evidence_file(extracted_bin, issues)
+            if actual_sha is None:
+                _audit_native_smoke(bundle, platform, archive_sha, issues)
+                return
             expected_lock = {
                 "manifest_hash": manifest_hash,
                 "executable_rel_path": "bin/opi-sandbox",
@@ -888,7 +973,8 @@ def _audit_windows_bundle(root, issues):
         })
     doctor_path = bundle / "unsupported.log"
     try:
-        doctor = json.loads(read_text(doctor_path))
+        doctor_text = read_evidence_text(doctor_path, issues)
+        doctor = json.loads(doctor_text) if doctor_text is not None else None
         doctor_is_unsupported = (
             isinstance(doctor, dict)
             and doctor.get("schema_version") == 1
@@ -903,7 +989,7 @@ def _audit_windows_bundle(root, issues):
             "platform": "windows",
             "message": "Windows doctor JSON does not report supported=false for target=windows",
         })
-    text = _bundle_evidence_text(bundle)
+    text = _bundle_evidence_text(bundle, issues)
     _classify_evidence(text, "windows", issues)
 
 
@@ -921,7 +1007,8 @@ def audit_release_evidence(artifact_dir):
             # Keep inspecting legacy flat evidence so defects remain
             # attributable, but it can never satisfy the four-target gate.
             _audit_native_bundle(artifact_dir, platform, target_suffix, issues)
-            target_file = read_text(platform_root / "target").strip()
+            target_text = read_evidence_text(platform_root / "target", issues)
+            target_file = (target_text or "").strip()
             for target in targets:
                 if target != target_file:
                     issues.append({
@@ -950,14 +1037,10 @@ def audit_release_evidence(artifact_dir):
 # Genuinely validates the preserved Phase 16 phase-exit evidence (SC16-15b and
 # the 16.16.3 smoke addendum) against the claimed categories and rejects absent,
 # skipped, zero-test, wrong-target, and workspace-only evidence. Evidence
-# shapes preservable off-CI:
+# layout:
 #   windows/    doctor supported=false plus a genuine pass marker (no archive)
-#   linux/      native smoke evidence with a genuine pass marker; when a
-#               packaged extracted archive is preserved it is additionally
-#               validated for target identity and executable-sha provenance
-#   macos/      a preserved CI log carrying a genuine pass marker plus a
-#               `source` provenance note naming the CI run/job (the archive
-#               itself is CI-produced and pinned by the release-topology gate)
+#   linux/      the same authenticated native-archive bundles as `--release`
+#   macos/      the same authenticated native-archive bundles as `--release`
 #   six-target/ one preserved `cargo check --target` log per release triple;
 #               each log must record its outcome (a green `Finished` check or an
 #               explicit `error[` compiler record), never a blank/absent log
@@ -986,7 +1069,8 @@ def _audit_phase_exit_native(root, platform, target_suffix, issues):
             _audit_native_bundle(root, platform, target_suffix, issues, expected_target=target)
     else:
         _audit_native_bundle(root, platform, target_suffix, issues)
-        target_file = read_text(platform_root / "target").strip()
+        target_text = read_evidence_text(platform_root / "target", issues)
+        target_file = (target_text or "").strip()
         for target in targets:
             if target != target_file:
                 issues.append({
@@ -1050,23 +1134,28 @@ def _audit_six_target_bundle(root, issues):
             "message": "missing six-target evidence bundle",
         })
         return
-    logs = {
-        entry.name: read_text(entry)
-        for entry in sorted(six.iterdir())
-        if entry.is_file() and entry.suffix.lower() in {".txt", ".log"}
-    }
+    logs = {}
+    for entry in sorted(six.iterdir()):
+        if entry.suffix.lower() not in {".txt", ".log"}:
+            continue
+        text = read_evidence_text(entry, issues)
+        if text is not None:
+            logs[entry.name] = text
     if not logs:
         issues.append({
             "code": "zero_test_evidence",
             "message": "six-target bundle has no preserved logs",
         })
         return
-    if not (six / "source").is_file():
+    source = six / "source"
+    if not source.exists():
         issues.append({
             "code": "missing_provenance",
             "message": "six-target bundle lacks a `source` provenance note naming the "
                 "CI run / local runner that produced each triple log",
         })
+    else:
+        read_evidence_text(source, issues)
     for triple in SIX_TARGETS:
         matches = [
             text
@@ -1103,11 +1192,13 @@ def _audit_gates_bundle(root, issues):
             "message": "missing workspace gate evidence bundle",
         })
         return
-    by_name = {
-        entry.name: read_text(entry)
-        for entry in sorted(gates.iterdir())
-        if entry.is_file() and entry.suffix.lower() in {".txt", ".log"}
-    }
+    by_name = {}
+    for entry in sorted(gates.iterdir()):
+        if entry.suffix.lower() not in {".txt", ".log"}:
+            continue
+        text = read_evidence_text(entry, issues)
+        if text is not None:
+            by_name[entry.name] = text
     if not by_name:
         issues.append({
             "code": "zero_test_evidence",
@@ -1129,6 +1220,12 @@ def _audit_gates_bundle(root, issues):
                 issues.append({
                     "code": "failed_gate_evidence",
                     "message": f"gates/{name} records a failed gate run for `{category}`",
+                })
+                continue
+            if category in GATE_TEST_CATEGORIES and CARGO_SKIPPED_RE.search(text):
+                issues.append({
+                    "code": "skipped_evidence",
+                    "message": f"gates/{name} has ignored/skipped tests for `{category}`",
                 })
                 continue
             if not _gate_pass_marker(category, text):

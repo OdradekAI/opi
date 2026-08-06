@@ -133,6 +133,22 @@ fn parse_run_missing_program_after_dd_is_usage_error() {
 }
 
 #[test]
+fn parse_run_empty_program_after_dd_is_usage_error() {
+    let error = parse_run(&s(&[
+        "--workspace",
+        "/w",
+        "--profile",
+        "workspace-write",
+        "--network",
+        "deny",
+        "--",
+        "",
+    ]))
+    .expect_err("an empty program must be rejected by the CLI parser");
+    assert_eq!(error.message, "empty program after `--`");
+}
+
+#[test]
 fn parse_run_unknown_profile_is_usage_error() {
     assert!(
         parse_run(&s(&[
@@ -279,10 +295,9 @@ fn parse_run_dd_terminates_flag_parsing_absolutely() {
 // =========================================================================
 
 /// Structural proof that the direct CLI's request carries terminal-stdin
-/// inheritance (Phase 16 task 16.11.2 audit fold: stdin-sdk-seam-c1a). OS-stdin
-/// byte flow is infeasible to drive in-process and production `run` refuses
-/// pre-start in 16.11.2, so the honest proof is that the built request sets
-/// `StdinPolicy::Inherit`.
+/// inheritance (Phase 16 task 16.11.2 audit fold: stdin-sdk-seam-c1a). The
+/// supported-platform real-binary test below complements this SDK seam by
+/// asserting exact inherited-stdin byte flow.
 #[test]
 fn build_request_carries_terminal_stdin_inherit() {
     let cmd = RunCommand {
@@ -299,6 +314,69 @@ fn build_request_carries_terminal_stdin_inherit() {
     assert_eq!(req.cwd, PathBuf::from("/w"));
     // Non-zero timeout by construction (InvalidRequest unreachable from the CLI).
     assert!(!req.timeout.is_zero());
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[test]
+fn real_binary_inherited_stdin_round_trips_exact_bytes() {
+    use std::io::{Read as _, Write as _};
+    use std::process::{Command, Stdio};
+
+    let workspace = tempfile::tempdir().expect("workspace temp dir");
+    let expected = [0x00, 0xff, 0xfe, 0x80, b'\n'];
+    let mut child = Command::new(env!("CARGO_BIN_EXE_opi-sandbox"))
+        .args([
+            "run",
+            "--workspace",
+            workspace.path().to_str().expect("UTF-8 workspace"),
+            "--profile",
+            "workspace-write",
+            "--network",
+            "deny",
+            "--",
+            "/bin/cat",
+        ])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn real opi-sandbox binary");
+
+    let mut stdin = child.stdin.take().expect("piped stdin");
+    stdin.write_all(&expected).expect("write exact stdin bytes");
+    drop(stdin);
+
+    let deadline = std::time::Instant::now() + Duration::from_secs(15);
+    let status = loop {
+        if let Some(status) = child.try_wait().expect("poll byte echo target") {
+            break status;
+        }
+        if std::time::Instant::now() >= deadline {
+            let _ = child.kill();
+            child.wait().expect("reap timed-out byte echo target");
+            panic!("byte echo target exceeded the 15-second deadline");
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    };
+
+    let mut stdout = Vec::new();
+    child
+        .stdout
+        .take()
+        .expect("piped stdout")
+        .read_to_end(&mut stdout)
+        .expect("drain byte echo stdout");
+    let mut stderr = Vec::new();
+    child
+        .stderr
+        .take()
+        .expect("piped stderr")
+        .read_to_end(&mut stderr)
+        .expect("drain byte echo stderr");
+
+    assert!(status.success(), "byte echo failed: {stderr:?}");
+    assert_eq!(stdout, expected);
+    assert!(stderr.is_empty());
 }
 
 // =========================================================================
@@ -661,6 +739,39 @@ async fn run_dispatch_backend_bogus_flag_returns_2() {
     // An unknown `backend` flag -> usage error 2.
     let code = opi_sandbox::cli::run(argv(&["opi-sandbox", "backend", "--bogus"])).await;
     assert_eq!(code, 2);
+}
+
+#[test]
+fn real_binary_empty_program_is_a_usage_error_before_execution() {
+    use std::process::{Command, Stdio};
+
+    let workspace = tempfile::tempdir().expect("workspace temp dir");
+    let output = Command::new(env!("CARGO_BIN_EXE_opi-sandbox"))
+        .args([
+            "run",
+            "--workspace",
+            workspace.path().to_str().expect("UTF-8 workspace"),
+            "--profile",
+            "workspace-write",
+            "--network",
+            "deny",
+            "--",
+            "",
+        ])
+        .stdin(Stdio::null())
+        .output()
+        .expect("run real opi-sandbox binary");
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(
+        output.stdout.is_empty(),
+        "usage rejection must not run a target"
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("empty program after `--`"),
+        "stderr must identify the parser rejection: {:?}",
+        output.stderr
+    );
 }
 
 // =========================================================================

@@ -44,6 +44,16 @@ use crate::execution::PackageSource as ContributionScope;
 use crate::package_discovery::PackageManifest;
 use crate::package_store::{PackageLockEntry, PackageStore, PackageStoreError};
 
+#[cfg(test)]
+thread_local! {
+    static FAIL_NEXT_RECORD_WRITE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+#[cfg(test)]
+pub(crate) fn fail_next_record_write_for_test() {
+    FAIL_NEXT_RECORD_WRITE.with(|fail| fail.set(true));
+}
+
 // ---------------------------------------------------------------------------
 // Host identity
 // ---------------------------------------------------------------------------
@@ -365,6 +375,12 @@ impl PackageActivationStore {
 
     /// Write all trust/enablement records, creating parent directories.
     pub fn write_records(&self, records: &[ActivationRecord]) -> Result<(), PackageStoreError> {
+        #[cfg(test)]
+        if FAIL_NEXT_RECORD_WRITE.with(std::cell::Cell::take) {
+            return Err(PackageStoreError::Io(std::io::Error::other(
+                "injected one-shot package trust write failure",
+            )));
+        }
         let path = self.store.trust_path();
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
@@ -387,7 +403,6 @@ impl PackageActivationStore {
         source: &str,
         previous_source: Option<&str>,
         adapter_ids: &[String],
-        preserve_trust: bool,
     ) -> Result<(), ActivationError> {
         let mut records = self.read_records()?;
         // Cross-package adapter-id collision across installed packages.
@@ -414,7 +429,6 @@ impl PackageActivationStore {
                 enabled: false,
             },
             previous_source,
-            preserve_trust,
         );
         self.write_records(&records)?;
         Ok(())
@@ -654,7 +668,6 @@ fn upsert_record(
     records: &mut Vec<ActivationRecord>,
     record: ActivationRecord,
     previous_source: Option<&str>,
-    preserve_trust: bool,
 ) {
     if let Some(existing) = records
         .iter_mut()
@@ -662,10 +675,8 @@ fn upsert_record(
     {
         existing.name = record.name;
         existing.source = record.source;
-        if !preserve_trust {
-            existing.trusted = false;
-            existing.enabled = false;
-        }
+        existing.trusted = false;
+        existing.enabled = false;
         return;
     }
     records.push(record);
@@ -747,5 +758,33 @@ mod tests {
         };
         assert!(e.detail().contains("opi-sandbox"));
         assert!(e.detail().contains("drift"));
+    }
+
+    #[test]
+    fn install_always_resets_existing_record_to_untrusted_and_disabled() {
+        let user = tempfile::tempdir().expect("user config");
+        let activation = PackageActivationStore::global(user.path().to_path_buf());
+        activation
+            .write_records(&[ActivationRecord {
+                name: "adapter".into(),
+                source: "./adapter".into(),
+                trusted: true,
+                enabled: true,
+            }])
+            .expect("seed trusted record");
+
+        activation
+            .install("adapter", "./adapter", None, &["adapter".into()])
+            .expect("reinstall record");
+
+        assert_eq!(
+            activation.read_records().expect("read record"),
+            [ActivationRecord {
+                name: "adapter".into(),
+                source: "./adapter".into(),
+                trusted: false,
+                enabled: false,
+            }]
+        );
     }
 }

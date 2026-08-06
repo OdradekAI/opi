@@ -12,6 +12,8 @@ use opi_coding_agent::tool::{
 use serde_json::json;
 use tokio_util::sync::CancellationToken;
 
+const INPUT_CANARY: &str = r#"SECRET_ENV=sk-proj-signal-canary C:\private\signal-canary"#;
+
 struct DiagnosticBashOperations {
     result: Result<BashResult, BashOpError>,
 }
@@ -58,7 +60,7 @@ async fn execute_with(result: BashResult) -> opi_agent::tool::ToolResult {
     )
     .execute(
         "diagnostic-test",
-        json!({ "command": "ignored" }),
+        json!({ "command": INPUT_CANARY }),
         CancellationToken::new(),
         None,
     )
@@ -79,6 +81,15 @@ async fn execute_error(error: BashOpError) -> opi_agent::tool::ToolResult {
     )
     .await
     .expect("tool execution")
+}
+
+fn public_result_json(result: &opi_agent::tool::ToolResult) -> String {
+    json!({
+        "content": &result.content,
+        "details": &result.details,
+        "diagnostics": &result.diagnostics,
+    })
+    .to_string()
 }
 
 #[tokio::test]
@@ -134,4 +145,106 @@ async fn bash_tool_preserves_backend_diagnostic_on_backend_error() {
     assert_eq!(result.diagnostics.len(), 1);
     assert_eq!(result.diagnostics[0].code, CODE_PROCESS_TREE_DEGRADED);
     assert_eq!(result.diagnostics[0].context["layer"], "test-tree");
+}
+
+#[tokio::test]
+async fn bash_tool_renders_signal_specific_public_result() {
+    let result = execute_with(BashResult {
+        stdout: Vec::new(),
+        stderr: Vec::new(),
+        exit_code: None,
+        signal: Some(9),
+        diagnostics: vec![BackendDiagnostic {
+            code: LOCAL_BASH_OPERATION_DIAGNOSTIC.to_string(),
+            message: "command executed".to_string(),
+            details: Some(json!({
+                "exit_code": null,
+                "signal": 9,
+                "cancelled": false,
+                "timed_out": false,
+                "truncated": false,
+                "command_included": false,
+            })),
+        }],
+    })
+    .await;
+
+    assert!(result.is_error);
+    assert_eq!(result.details.as_ref().unwrap()["signal"], 9);
+    assert_eq!(
+        result.diagnostics[0].message,
+        "command terminated by signal 9"
+    );
+    assert_eq!(result.diagnostics[0].context["signal"], 9);
+    match &result.content[0] {
+        opi_ai::message::OutputContent::Text { text } => {
+            assert_eq!(text, "command terminated by signal 9")
+        }
+        other => panic!("expected text output, got {other:?}"),
+    }
+    assert!(!public_result_json(&result).contains(INPUT_CANARY));
+}
+
+#[tokio::test]
+async fn bash_tool_treats_zero_exit_with_signal_as_signal_failure() {
+    let result = execute_with(BashResult {
+        stdout: Vec::new(),
+        stderr: Vec::new(),
+        exit_code: Some(0),
+        signal: Some(9),
+        diagnostics: vec![BackendDiagnostic {
+            code: LOCAL_BASH_OPERATION_DIAGNOSTIC.to_string(),
+            message: "command executed".to_string(),
+            details: Some(json!({
+                "exit_code": 0,
+                "signal": 9,
+                "cancelled": false,
+                "timed_out": false,
+                "truncated": false,
+                "command_included": false,
+            })),
+        }],
+    })
+    .await;
+
+    assert!(result.is_error, "a present signal cannot be successful");
+    assert_eq!(result.details.as_ref().unwrap()["exit_code"], 0);
+    assert_eq!(result.details.as_ref().unwrap()["signal"], 9);
+    assert_eq!(result.diagnostics.len(), 1);
+    assert_eq!(
+        result.diagnostics[0].message,
+        "command terminated by signal 9"
+    );
+    assert_eq!(result.diagnostics[0].context["exit_code"], 0);
+    assert_eq!(result.diagnostics[0].context["signal"], 9);
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn direct_local_signal_is_public_and_signal_specific() {
+    let workspace = tempfile::tempdir().unwrap();
+    let result = BashTool::new(workspace.path().to_path_buf())
+        .execute(
+            "direct-signal",
+            json!({ "command": format!(": # {INPUT_CANARY}\nkill -TERM $$") }),
+            CancellationToken::new(),
+            None,
+        )
+        .await
+        .expect("tool execution");
+
+    assert!(result.is_error);
+    assert_eq!(result.details.as_ref().unwrap()["signal"], 15);
+    assert_eq!(
+        result.diagnostics[0].message,
+        "command terminated by signal 15"
+    );
+    assert_eq!(result.diagnostics[0].context["signal"], 15);
+    match &result.content[0] {
+        opi_ai::message::OutputContent::Text { text } => {
+            assert_eq!(text, "command terminated by signal 15")
+        }
+        other => panic!("expected text output, got {other:?}"),
+    }
+    assert!(!public_result_json(&result).contains(INPUT_CANARY));
 }

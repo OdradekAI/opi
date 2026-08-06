@@ -666,58 +666,72 @@ async fn credential_needed_fails_without_prompt() {
     );
 }
 
-/// SC16-14 text surface: a `local = "deny"` Minimal-Runtime config makes
-/// `ExecutionRuntime::build` fail with `policy_denied` at startup (bash omitted,
-/// no fallback). Text mode surfaces that startup diagnostic on stderr — the same
-/// stable code + remediation NDJSON (`StartupDiagnostics`) and RPC (ready header)
-/// carry — so the TEXT surface preserves the stable code too. Without the
-/// production fix, the startup diagnostic was silently dropped in text mode.
+/// Headless fixed-local `ask` is refused while the harness is built. Text mode
+/// never opens a prompt and surfaces the stable `permission_required` code plus
+/// remediation on stderr (bash omitted, no fallback).
 #[tokio::test]
-async fn text_surface_surfaces_stable_execution_code_on_stderr() {
+async fn text_surface_refuses_local_ask_at_startup_without_prompt() {
     let response = test_support::text_response("hi");
     let provider = MockProvider::new("mock", vec![response]);
+    let call_log = provider.call_log_handle();
     let mut config = OpiConfig::default();
     config.execution.strategy = ExecutionStrategy::Fixed;
     config.execution.backend = "local".into();
     config
         .execution
         .permissions
-        .insert("local".into(), PermissionDecision::Deny);
-    // Isolate the user config dir so the Minimal-Runtime branch (which emits the
-    // policy_denied startup diagnostic) is deterministic regardless of the host's
-    // real package-trust state. The runner resolves the config dir at
-    // construction; the guard is dropped before the await.
+        .insert("local".into(), PermissionDecision::Ask);
+    // The runner resolves this refusal synchronously during construction. The
+    // isolated config dir makes the result independent of host package state.
     let _env_guard = common::empty_user_config_dir();
     let mut runner = NonInteractiveRunner::new(
         Box::new(provider),
         "mock-model".into(),
         config,
         std::env::current_dir().unwrap(),
-        false,
+        true,
         None,
         Vec::new(),
         opi_coding_agent::project_trust::TrustDecision::Trusted,
     );
     drop(_env_guard);
 
-    let result = runner.run("hello").await;
+    let result = tokio::time::timeout(std::time::Duration::from_secs(2), runner.run("hello"))
+        .await
+        .expect("headless local ask must not wait for a permission prompt");
     assert_eq!(result.exit_code, ExitCode::Success as i32);
+    let calls = call_log.lock().unwrap();
+    assert_eq!(calls.len(), 1);
+    assert!(
+        calls[0].tools.iter().all(|tool| tool.name != "bash"),
+        "headless ask must omit bash instead of falling back to local: {:?}",
+        calls[0]
+            .tools
+            .iter()
+            .map(|tool| tool.name.as_str())
+            .collect::<Vec<_>>()
+    );
     // Pin the canonical text form: the granular stable code renders in the
     // lowercase `source::code` slot, matching the NDJSON/RPC/doctor surfaces'
     // `[severity] source::code:` rendering.
     assert!(
-        result.stderr.contains("[error] adapter::policy_denied:"),
-        "text stderr must render the canonical [error] adapter::policy_denied: form: {:?}",
+        result
+            .stderr
+            .contains("[error] adapter::permission_required:"),
+        "text stderr must render the canonical permission_required form: {:?}",
         result.stderr
     );
     assert!(
-        result.stderr.contains("policy_denied"),
-        "the stable policy_denied code must reach text stderr: {:?}",
+        result.stderr.contains("permission_required"),
+        "the stable permission_required code must reach text stderr: {:?}",
         result.stderr
     );
     assert!(
-        result.stderr.contains("execution permission"),
-        "text stderr must carry the actionable remediation: {:?}",
+        result
+            .stderr
+            .contains("cannot be granted non-interactively")
+            && result.stderr.contains("run interactively"),
+        "text stderr must carry headless-specific remediation: {:?}",
         result.stderr
     );
 }

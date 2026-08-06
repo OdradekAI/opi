@@ -1,32 +1,33 @@
-//! Task 16.9 acceptance — SC16-01 Minimal Runtime (production startup path).
+//! Task 16.9 acceptance — SC16-01 Minimal Runtime runtime seam.
 //!
-//! Drives the REAL production chokepoint `CodingHarness::build_tools`
-//! (NOT `ExecutionRuntime::build` or `BashTool::new_with_ops` directly) to prove
-//! that, with default-local routing and no enabled executable extension, startup:
+//! Drives `CodingHarness::build_tools` and `ExecutionRuntime::build` to prove
+//! that fixed-local effective allow:
 //!   - does not touch an invalid package-store sentinel (a panic-on-activate
 //!     store survives — `ExecutionRuntime::build` Branch 1 never activates);
-//!   - starts no extension process and constructs no router/permission/protocol
-//!     state (the bash tool runs the LOCAL backend end-to-end);
+//!   - ignores enabled-but-unselected external identities and constructs no
+//!     routed adapter/protocol state (the bash tool runs local end-to-end);
 //!   - preserves the default bash input schema byte-for-byte vs a fresh
 //!     `schemars::schema_for!(BashArgs)` computation (no `backend` enum added);
 //!   - leaves local command results and L0 behavior unchanged.
 //!
-//! A silent absence of the 16.9 startup wiring — e.g. `build_tools`
-//! still constructing `LocalBashOperations` directly without calling
-//! `ExecutionRuntime::build` — fails these tests loud.
+//! The private harness unit tests separately drive the real constructor with a
+//! panic-on-open activation-store probe and construction counters, because that
+//! early classifier intentionally bypasses `ExecutionWiring` altogether.
 
 use std::sync::Arc;
 
 use opi_coding_agent::config::{ExecutionConfig, ExecutionRunMode};
 use opi_coding_agent::execution::permission::PermissionPolicy;
-use opi_coding_agent::execution::{IdentitySource, LockMaterial, PermissionManager};
+use opi_coding_agent::execution::{
+    EnabledIdentity, ExecutionRuntime, IdentitySource, LockMaterial, PermissionManager,
+};
 use opi_coding_agent::harness::{CodingHarness, ExecutionWiring};
 use opi_coding_agent::package_activation::{
     ActivatedContribution, ActivationError, ActivationRecord, PackageActivationStore,
 };
 use opi_coding_agent::package_store::PackageLockEntry;
 use opi_coding_agent::policy::{RunMode, ToolRuntimeConfig, ToolSelection};
-use opi_coding_agent::tool::default_bash_schema;
+use opi_coding_agent::tool::{BashOperations, LocalBashOperations, default_bash_schema};
 use tokio_util::sync::CancellationToken;
 
 /// A package-store sentinel that panics if `activate` is ever called. Minimal
@@ -58,9 +59,38 @@ fn minimal_wiring(mode: ExecutionRunMode) -> ExecutionWiring {
     }
 }
 
-/// SC16-01: the production startup chokepoint preserves the Minimal Runtime.
+#[test]
+fn fixed_local_effective_allow_is_direct_even_with_enabled_external_identity() {
+    let config = ExecutionConfig::default();
+    let policy = PermissionPolicy::from_map(config.permissions.clone());
+    let local_ops: Arc<dyn BashOperations> = Arc::new(LocalBashOperations::new());
+    let selected = ExecutionRuntime::build(
+        &config,
+        ExecutionRunMode::Interactive,
+        &[EnabledIdentity {
+            adapter_id: "opi-sandbox".to_string(),
+            package_name: "enabled-but-unselected".to_string(),
+        }],
+        &policy,
+        Arc::new(PanicSource),
+        Arc::clone(&local_ops),
+        std::path::Path::new("."),
+        opi_coding_agent::package_activation::host_target_triple(),
+        opi_coding_agent::package_activation::host_opi_version(),
+        Arc::new(PermissionManager::new()),
+        None,
+    )
+    .expect("fixed local allow must select the direct local backend");
+
+    assert!(
+        Arc::ptr_eq(&selected, &local_ops),
+        "resolved fixed-local allow must not construct the routed runtime"
+    );
+}
+
+/// SC16-01: the tool-assembly seam preserves the Minimal Runtime.
 #[tokio::test]
-async fn production_minimal_runtime_preserves_schema_and_runs_local_backend() {
+async fn tool_assembly_minimal_runtime_preserves_schema_and_runs_local_backend() {
     let ws = tempfile::tempdir().unwrap();
     let tool_config =
         ToolRuntimeConfig::resolve(RunMode::Interactive, true, ToolSelection::Default)
@@ -90,9 +120,7 @@ async fn production_minimal_runtime_preserves_schema_and_runs_local_backend() {
     );
 
     // The bash tool runs the LOCAL backend end-to-end. A trivial echo exits 0
-    // with the expected output, proving no routed wrapper intercepted (and
-    // transitively that no router/permission/protocol/adapter state was
-    // constructed — all of which live only inside RoutedBashOperations). The
+    // with the expected output, proving no routed wrapper intercepted. The
     // panic-on-activate store surviving this execution proves it was untouched.
     let result = bash
         .execute(
@@ -115,11 +143,10 @@ async fn production_minimal_runtime_preserves_schema_and_runs_local_backend() {
     );
 }
 
-/// SC16-01: a corrupt/unreadable `package-trust.toml` is ignored — startup
-/// treats it as "no enabled extensions" rather than aborting (mirrors the
-/// tolerant `doctor.rs` read pattern). This is the `enabled_identities` resolver
-/// property the production startup path depends on so an invalid package-store
-/// sentinel never blocks Minimal Runtime.
+/// Independent activation-store tolerance coverage: a corrupt/unreadable
+/// `package-trust.toml` is treated as "no enabled extensions" rather than
+/// aborting (mirrors the tolerant `doctor.rs` read pattern). Production Minimal
+/// Runtime does not depend on this fallback because it never opens the store.
 #[test]
 fn enabled_identities_ignores_corrupt_package_trust_file() {
     let dir = tempfile::tempdir().unwrap();
@@ -143,7 +170,7 @@ fn enabled_identities_ignores_corrupt_package_trust_file() {
 /// and a trusted-but-DISABLED record is excluded. Paired with the corrupt-file
 /// test above, this discriminates "tolerates corruption" from a degenerate
 /// always-empty stub and pins the `trusted && enabled` filter + per-adapter
-/// expansion the production `execution_wiring()` path depends on.
+/// expansion the production routed `execution_wiring()` path depends on.
 #[test]
 fn enabled_identities_returns_adapter_for_trusted_enabled_record_only() {
     let dir = tempfile::tempdir().unwrap();

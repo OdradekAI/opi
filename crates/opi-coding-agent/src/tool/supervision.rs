@@ -153,6 +153,13 @@ async fn supervise_inner(
         Ok(guard) => guard,
         Err(err) => {
             degradations.push(err);
+            #[cfg(unix)]
+            if let Some(pid) = child.id()
+                && let TerminationOutcome::Failed(err) =
+                    super::process_tree::terminate_verified_configured_group(pid)
+            {
+                degradations.push(err);
+            }
             let _ = child.kill().await;
             let _ = child.wait().await;
             return SupervisionOutcome {
@@ -164,13 +171,33 @@ async fn supervise_inner(
         }
     };
     #[cfg(windows)]
-    if child
-        .id()
-        .ok_or_else(AttachError::missing_pid)
-        .and_then(super::process_tree::resume_child)
-        .is_err()
-    {
-        let _ = l0_tree.terminate();
+    let resumed = {
+        #[cfg(test)]
+        if tree_faults.is_some_and(super::process_tree::TestTreeFaults::resume_fails) {
+            resume_attached_child_with(
+                child.id(),
+                |_| Err(AttachError::attach_failed()),
+                &mut degradations,
+            )
+        } else {
+            resume_attached_child_with(
+                child.id(),
+                super::process_tree::resume_child,
+                &mut degradations,
+            )
+        }
+        #[cfg(not(test))]
+        {
+            resume_attached_child_with(
+                child.id(),
+                super::process_tree::resume_child,
+                &mut degradations,
+            )
+        }
+    };
+    #[cfg(windows)]
+    if !resumed {
+        push_terminate(&mut l0_tree, &mut degradations);
         let _ = child.kill().await;
         let _ = child.wait().await;
         return SupervisionOutcome {
@@ -352,6 +379,27 @@ impl Drop for OwnedCaptureTask {
     }
 }
 
+#[cfg(windows)]
+fn resume_attached_child_with<F>(
+    child_pid: Option<u32>,
+    resume: F,
+    degradations: &mut Vec<AttachError>,
+) -> bool
+where
+    F: FnOnce(u32) -> Result<(), AttachError>,
+{
+    match child_pid
+        .ok_or_else(AttachError::missing_pid)
+        .and_then(resume)
+    {
+        Ok(()) => true,
+        Err(err) => {
+            degradations.push(err);
+            false
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     //! Supervision unit tests. The behavioral L0 supervision acceptance
@@ -364,6 +412,131 @@ mod tests {
     use super::*;
     use std::time::Duration;
     use tokio::io::AsyncWriteExt as _;
+
+    #[cfg(windows)]
+    #[test]
+    fn resume_failure_is_retained_as_a_redacted_degradation() {
+        let mut degradations = Vec::new();
+
+        let resumed = resume_attached_child_with(
+            Some(424242),
+            |_| Err(AttachError::attach_failed()),
+            &mut degradations,
+        );
+
+        assert!(!resumed);
+        assert_eq!(degradations.len(), 1);
+        assert_eq!(degradations[0].layer, "windows-job");
+        assert_eq!(
+            degradations[0].reason,
+            crate::diagnostics::SandboxReason::ProcessTreeAttachFailed
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn missing_pid_before_resume_is_retained_as_a_redacted_degradation() {
+        let mut degradations = Vec::new();
+
+        let resumed = resume_attached_child_with(
+            None,
+            |_| panic!("resume must not run without a PID"),
+            &mut degradations,
+        );
+
+        assert!(!resumed);
+        assert_eq!(degradations.len(), 1);
+        assert_eq!(
+            degradations[0].reason,
+            crate::diagnostics::SandboxReason::MissingChildProcessId
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn attach_failure_terminates_forced_fork_and_releases_inherited_pipes() {
+        use tokio::io::AsyncReadExt as _;
+
+        let dir = tempfile::tempdir().unwrap();
+        let pidfile = dir.path().join("forced-fork.pid");
+        let mut cmd = tokio::process::Command::new("sh");
+        cmd.args([
+            "-c",
+            &format!("sleep 60 & echo $! > '{}'; wait", pidfile.to_string_lossy()),
+        ]);
+        super::super::process_tree::configure_tree(&mut cmd);
+        let mut child = cmd
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .expect("spawn forced-fork child");
+
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(3);
+        let descendant_pid = loop {
+            if let Ok(text) = std::fs::read_to_string(&pidfile)
+                && let Ok(pid) = text.trim().parse::<u32>()
+            {
+                break pid;
+            }
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "forced descendant did not record its PID"
+            );
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        };
+        struct DescendantCleanup(u32);
+        impl Drop for DescendantCleanup {
+            fn drop(&mut self) {
+                let _ = std::process::Command::new("kill")
+                    .args(["-KILL", &self.0.to_string()])
+                    .output();
+            }
+        }
+        let _descendant_cleanup = DescendantCleanup(descendant_pid);
+
+        let outcome = tokio::time::timeout(
+            Duration::from_secs(3),
+            supervise_with_faults(
+                &mut child,
+                Duration::from_secs(10),
+                CancellationToken::new(),
+                64 * 1024,
+                super::super::process_tree::TestTreeFaults::attach(),
+                false,
+            ),
+        )
+        .await
+        .expect("attach-failure cleanup must be bounded");
+
+        assert!(matches!(outcome.kind, SupervisionKind::WaitFailed));
+        assert!(outcome.degradations.iter().any(|degradation| {
+            degradation.reason == crate::diagnostics::SandboxReason::ProcessTreeAttachFailed
+        }));
+
+        let mut stdout = child.stdout.take().expect("piped stdout remains owned");
+        let mut bytes = Vec::new();
+        tokio::time::timeout(Duration::from_secs(2), stdout.read_to_end(&mut bytes))
+            .await
+            .expect("forced descendant must not hold stdout past cleanup")
+            .expect("read stdout after cleanup");
+
+        let death_deadline = tokio::time::Instant::now() + Duration::from_secs(2);
+        let alive = loop {
+            let alive = std::process::Command::new("kill")
+                .args(["-0", &descendant_pid.to_string()])
+                .output()
+                .map(|output| output.status.success())
+                .unwrap_or(false);
+            if !alive || tokio::time::Instant::now() >= death_deadline {
+                break alive;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        };
+        assert!(
+            !alive,
+            "forced descendant PID {descendant_pid} survived attach failure"
+        );
+    }
 
     #[tokio::test]
     async fn drain_expiry_retains_captured_prefix() {

@@ -29,6 +29,7 @@ use opi_agent::diagnostic::code::CODE_CONFIG_PARSE_FAILED;
 use opi_coding_agent::cli::Cli;
 use opi_coding_agent::config::{ConfigError, ConfigSource, load_config_file, resolve_config};
 use opi_coding_agent::diagnostic_bridge::diagnostic_from_config;
+use opi_coding_agent::diagnostics::LEGACY_SANDBOX_REMEDIATION;
 
 /// Stable remediation needles every legacy-sandbox rejection must surface so a
 /// user (or embedder matching output) can find the replacement surface. The
@@ -231,10 +232,7 @@ fn legacy_sandbox_section_maps_to_stable_config_diagnostic() {
     assert_eq!(diagnostic.code, CODE_CONFIG_PARSE_FAILED);
     assert_eq!(diagnostic.severity, Severity::Error);
     let action = diagnostic.action.as_deref().unwrap_or_default();
-    assert!(
-        action.contains("remove [sandbox]"),
-        "action must carry remediation: {action}"
-    );
+    assert_has_remediation(action);
     let remediation = diagnostic
         .details
         .as_ref()
@@ -242,4 +240,22 @@ fn legacy_sandbox_section_maps_to_stable_config_diagnostic() {
         .and_then(serde_json::Value::as_str)
         .expect("details carry the remediation text");
     assert_has_remediation(remediation);
+}
+
+#[test]
+fn legacy_sandbox_public_remediation_is_byte_identical_across_fields() {
+    let error = ConfigError::LegacySandboxSection;
+    let diagnostic = diagnostic_from_config(&error);
+    let action = diagnostic.action.as_deref().expect("action remediation");
+    let details = diagnostic
+        .details
+        .as_ref()
+        .and_then(|value| value.get("remediation"))
+        .and_then(serde_json::Value::as_str)
+        .expect("details remediation");
+
+    assert_eq!(action, details);
+    assert_eq!(details, error.to_string());
+    assert_eq!(details, LEGACY_SANDBOX_REMEDIATION);
+    assert_has_remediation(action);
 }

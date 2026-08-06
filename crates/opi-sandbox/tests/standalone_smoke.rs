@@ -64,6 +64,7 @@ fn assert_artifacts(dir: &std::path::Path) {
             "0",
             "run succeeds (exit 0) on supported Linux: {run_exit:?}"
         );
+        assert_complete_native_markers(dir);
     } else if cfg!(target_os = "macos") {
         assert!(
             doctor.contains("\"supported\":true"),
@@ -78,6 +79,7 @@ fn assert_artifacts(dir: &std::path::Path) {
             "0",
             "run succeeds (exit 0) on supported macOS: {run_exit:?}"
         );
+        assert_complete_native_markers(dir);
     } else {
         assert!(
             doctor.contains("\"supported\":false"),
@@ -91,6 +93,41 @@ fn assert_artifacts(dir: &std::path::Path) {
             run_exit.trim(),
             "125",
             "run must refuse pre-start (125) off-native: {run_exit:?}"
+        );
+    }
+}
+
+fn assert_complete_native_markers(dir: &std::path::Path) {
+    for (file, marker) in [
+        (
+            "empty-cwd-smoke-result.txt",
+            "opi-sandbox-empty-cwd-smoke: OK",
+        ),
+        (
+            "setup-failure-smoke-result.txt",
+            "opi-sandbox-setup-failure-smoke: OK",
+        ),
+        (
+            "filesystem-allow-smoke-result.txt",
+            "opi-sandbox-filesystem-allow-smoke: OK",
+        ),
+        (
+            "filesystem-deny-smoke-result.txt",
+            "opi-sandbox-filesystem-deny-smoke: OK",
+        ),
+        (
+            "network-deny-smoke-result.txt",
+            "opi-sandbox-network-deny-smoke: OK",
+        ),
+        (
+            "network-allow-smoke-result.txt",
+            "opi-sandbox-network-allow-smoke: OK",
+        ),
+    ] {
+        let evidence = read_artifact(dir, file);
+        assert!(
+            evidence.contains(marker),
+            "missing named native marker {marker} in {file}: {evidence:?}"
         );
     }
 }

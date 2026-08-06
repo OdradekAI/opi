@@ -277,8 +277,10 @@ pub fn diagnostic_from_config(err: &ConfigError) -> Diagnostic {
             SOURCE_CONFIG,
             "removed [sandbox] configuration section",
         )
-        .details(serde_json::json!({ "remediation": err.to_string() }))
-        .action("remove [sandbox] and use [execution] strategy/backend or the opi-sandbox package"),
+        .details(serde_json::json!({
+            "remediation": crate::diagnostics::LEGACY_SANDBOX_REMEDIATION,
+        }))
+        .action(crate::diagnostics::LEGACY_SANDBOX_REMEDIATION),
     }
 }
 
@@ -297,16 +299,20 @@ pub fn diagnostic_from_config(err: &ConfigError) -> Diagnostic {
 pub fn diagnostic_from_execution_failure(failure: &ExecutionFailure) -> Diagnostic {
     let code = failure.code();
     let remediation = failure.remediation();
+    let mut details = serde_json::json!({
+        "code": code,
+        "remediation": &remediation,
+    });
+    if let Some(adapter_id) = failure.adapter_id() {
+        details["adapter_id"] = serde_json::json!(adapter_id);
+    }
     Diagnostic::new(
         Severity::Error,
         CODE_ADAPTER_STARTUP_FAILED,
         SOURCE_ADAPTER,
         "execution backend unavailable at startup",
     )
-    .details(serde_json::json!({
-        "code": code,
-        "remediation": &remediation,
-    }))
+    .details(details)
     .action(remediation.as_str())
 }
 
@@ -317,10 +323,14 @@ pub fn diagnostic_from_execution_failure(failure: &ExecutionFailure) -> Diagnost
 pub fn diagnostic_from_execution_package_failure(failure: &ExecutionFailure) -> Diagnostic {
     let code = failure.code();
     let remediation = failure.remediation();
+    let mut details = serde_json::json!({
+        "code": code,
+        "remediation": &remediation,
+    });
+    if let Some(adapter_id) = failure.adapter_id() {
+        details["adapter_id"] = serde_json::json!(adapter_id);
+    }
     Diagnostic::new(Severity::Error, code, SOURCE_PACKAGE, failure.to_string())
-        .details(serde_json::json!({
-            "code": code,
-            "remediation": &remediation,
-        }))
+        .details(details)
         .action(remediation.as_str())
 }

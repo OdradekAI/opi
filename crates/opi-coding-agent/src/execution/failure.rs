@@ -31,6 +31,10 @@
 use crate::config::{ExecutionRunMode, ExecutionStrategy};
 use crate::package_activation::ActivationError;
 
+/// Stable public placeholder for an omitted, unknown, or otherwise
+/// unselectable model-supplied backend. Raw model input is never echoed.
+pub const REDACTED_BACKEND_PLACEHOLDER: &str = "<unavailable>";
+
 /// One stable, redacted command-execution failure. See the module docs for the
 /// redaction and phase-split rules.
 #[derive(Debug, thiserror::Error)]
@@ -67,7 +71,7 @@ pub enum ExecutionFailure {
         mode: ExecutionRunMode,
     },
 
-    #[error("requested backend {requested:?} is not selectable under strategy {strategy}")]
+    #[error("requested backend <unavailable> is not selectable under strategy {strategy}")]
     AdapterNotSelected {
         requested: String,
         strategy: ExecutionStrategy,
@@ -109,6 +113,9 @@ pub enum ExecutionFailure {
 pub enum UnavailableDetail {
     /// Package store I/O or integrity error (no specific adapter identity).
     Store,
+    /// Selected eligibility entry is not currently usable. This is distinct
+    /// from an activation-store read/integrity failure.
+    Ineligible,
     /// Adapter id collides with another package.
     Collision,
     /// Backend reported that it was unavailable before target start.
@@ -116,6 +123,18 @@ pub enum UnavailableDetail {
 }
 
 impl ExecutionFailure {
+    /// Validated adapter identity safe to expose in structured diagnostics.
+    /// Raw model-supplied backend text is never returned here.
+    pub fn adapter_id(&self) -> Option<&str> {
+        match self {
+            Self::AdapterUnavailable {
+                adapter_id: Some(adapter_id),
+                ..
+            } => Some(adapter_id),
+            _ => None,
+        }
+    }
+
     /// The stable wire code (one of the 14 design codes). Embedders match this
     /// string exactly; it never changes for a given failure kind.
     pub fn code(&self) -> &'static str {
@@ -189,11 +208,8 @@ impl ExecutionFailure {
                  {mode} mode. Install, trust, and enable an adapter, or select a \
                  different backend."
             ),
-            Self::AdapterNotSelected {
-                requested,
-                strategy,
-            } => format!(
-                "Requested backend {requested:?} is not selectable under strategy \
+            Self::AdapterNotSelected { strategy, .. } => format!(
+                "Requested backend {REDACTED_BACKEND_PLACEHOLDER} is not selectable under strategy \
                  {strategy}. It must be installed, trusted, enabled, \
                  target-compatible, and not denied."
             ),
@@ -204,6 +220,11 @@ impl ExecutionFailure {
                     .unwrap_or_else(|| "An adapter".to_string());
                 let cause = match detail {
                     UnavailableDetail::Store => "a package-store error",
+                    UnavailableDetail::Ineligible => {
+                        return format!(
+                            "{who} is unavailable because it is not installed, trusted, enabled, or target-compatible. Install a package providing it, then review and enable that package with `opi package doctor` and `opi package enable <name>`."
+                        );
+                    }
                     UnavailableDetail::Collision => "an adapter-id collision",
                     UnavailableDetail::Handshake => "a pre-start handshake failure",
                 };
@@ -337,5 +358,25 @@ mod tests {
             ExecutionFailure::CleanupUnconfirmed.code(),
             "cleanup_unconfirmed"
         );
+    }
+
+    #[test]
+    fn unselectable_model_backend_is_redacted_from_public_text() {
+        let canary = r#"C:\private\HOSTILE sk-proj-012345678901234567890123456789"#;
+        let failure = ExecutionFailure::AdapterNotSelected {
+            requested: canary.to_string(),
+            strategy: ExecutionStrategy::Model,
+        };
+
+        for surface in [failure.to_string(), failure.remediation()] {
+            assert!(
+                !surface.contains(canary),
+                "raw model input leaked: {surface}"
+            );
+            assert!(
+                surface.contains("<unavailable>"),
+                "stable safe placeholder missing: {surface}"
+            );
+        }
     }
 }

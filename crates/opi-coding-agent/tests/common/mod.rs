@@ -23,12 +23,9 @@ use std::sync::{Arc, Mutex};
 static USER_CONFIG_ENV_MUTEX: Mutex<()> = Mutex::new(());
 
 /// RAII guard that points the user-config environment (`%APPDATA%` on Windows,
-/// `$HOME` on Unix) at an empty tempdir while held, so
-/// [`opi_coding_agent::config::user_config_dir`] resolves to a store with zero
-/// enabled execution packages. Makes the Minimal-Runtime execution branch
-/// deterministic regardless of the host's real package-trust state (Phase 16
-/// SC16-14 cross-surface tests rely on `local = deny` -> `policy_denied` at
-/// startup, which only fires when `enabled_identities()` is empty).
+/// `$HOME` on Unix) at an empty tempdir while held. Use this when a test must
+/// resolve user-scoped configuration without reading the developer's real
+/// configuration directory.
 pub fn empty_user_config_dir() -> impl Drop + 'static {
     // Hold the mutex for the WHOLE window (set -> runner construction ->
     // restore on Drop), not just the set_var call. The static mutex yields a

@@ -57,10 +57,15 @@ use crate::diagnostic_bridge::{
     diagnostic_for_resource_layer_message, diagnostic_from_execution_failure,
     diagnostic_from_package, diagnostic_from_package_resolution_error,
 };
+#[cfg(test)]
+use crate::execution::LOCAL_ADAPTER_ID;
 use crate::execution::permission::{
     InteractivePermissionBroker, PermissionManager, PermissionPolicy,
 };
-use crate::execution::{Eligibility, EnabledIdentity, ExecutionRuntime, IdentitySource};
+use crate::execution::runtime::{ExecutionPlan, execution_plan};
+use crate::execution::{
+    Eligibility, EnabledIdentity, ExecutionFailure, ExecutionRuntime, IdentitySource,
+};
 use crate::oauth::{OAuthEndpointConfig, OAuthProviderRegistry};
 use crate::package_activation::{
     ActivatedContribution, ActivationError, PackageActivationStore, host_opi_version,
@@ -81,18 +86,16 @@ use crate::tool::{
 };
 use tokio::sync::mpsc;
 
-/// Phase 16.9: the resolved execution-context inputs threaded into
-/// [`ExecutionRuntime::build`] at startup. Production (`new_with_build_options`)
-/// constructs this from the layered config plus the global package-activation
-/// store; tests inject Minimal-Runtime fixtures (an empty enabled slice plus a
-/// panic-on-call [`IdentitySource`] sentinel) to drive the production
-/// [`CodingHarness::build_tools`] chokepoint.
+/// Phase 16.9: resolved routed-execution inputs threaded into
+/// [`ExecutionRuntime::build`]. Production constructs this only after the early
+/// Minimal-Runtime/headless-refusal classifier. Tests may inject fixed-local
+/// fixtures to drive [`CodingHarness::build_tools`] at the runtime seam.
 ///
 /// `policy` is the resolved [`PermissionPolicy`] derived from
 /// `config.execution.permissions` (NOT [`PermissionPolicy::empty`], which would
-/// silently drop an explicit user `local = "deny"`/`ask`); `store` is the live
-/// package-activation store used both to enumerate enabled identities at startup
-/// and to revalidate per-invocation inside the routed backend.
+/// silently drop an explicit user `local = "deny"`/`ask`); in production,
+/// `store` is the live package-activation source used to revalidate external
+/// adapters per invocation.
 #[derive(Clone)]
 pub struct ExecutionWiring {
     pub config: ExecutionConfig,
@@ -145,43 +148,108 @@ fn bash_input_schema(
     }
 }
 
-/// Build the production [`ExecutionWiring`] from the layered config and the
-/// global package-activation store. Model-visible identities come from
+/// Build routed [`ExecutionWiring`] from the layered config and the global
+/// package-activation store. Model-visible identities come from
 /// [`PackageActivationStore::usable_enabled_identities`] after current
 /// target/version/manifest/lock/hash validation; the policy is
 /// [`PermissionPolicy::from_map`] over the resolved
 /// permissions so explicit user deny/ask/allow for `local` and externals is
-/// honored exactly by both the Minimal-Runtime and routed branches.
+/// honored exactly by the routed branch. Fixed-local allow and headless
+/// fixed-local ask are classified before this function is called.
 fn execution_wiring(
     config: &OpiConfig,
     global_config_dir: &Path,
     mode: ExecutionRunMode,
+    policy: PermissionPolicy,
 ) -> ExecutionWiring {
-    let store = PackageActivationStore::global(global_config_dir.to_path_buf());
     let host_target = host_target_triple().to_string();
     let host_opi_version = host_opi_version().to_string();
-    let enabled = store.usable_enabled_identities(&host_target, &host_opi_version);
+    let RoutedStoreState { store, enabled } =
+        routed_store_state(global_config_dir, &host_target, &host_opi_version);
     ExecutionWiring {
         config: config.execution.clone(),
         enabled,
-        policy: PermissionPolicy::from_map(config.execution.permissions.clone()),
-        store: Arc::new(store),
+        policy,
+        store,
         mode,
         host_target,
         host_opi_version,
         // Fresh per-harness manager (memory-only grants). The broker defaults to
         // None (fail-closed); the interactive startup path installs the
         // TUI-backed broker (Phase 16.10 interactive wiring).
-        manager: Arc::new(PermissionManager::new()),
+        manager: new_permission_manager(),
         broker: None,
     }
 }
 
-/// A no-state [`IdentitySource`] that panics if activated. The Minimal-Runtime
-/// branch of [`ExecutionRuntime::build`] never activates any package, so this is
-/// the correct store for the default-local / no-enabled-extensions shape and
-/// reifies the SC16-01 invariant: an invalid package-store sentinel is never
-/// touched. Used by the [`CodingHarness::build_tools`] test convenience.
+struct RoutedStoreState {
+    store: Arc<dyn IdentitySource>,
+    enabled: Vec<EnabledIdentity>,
+}
+
+fn routed_store_state(
+    global_config_dir: &Path,
+    host_target: &str,
+    host_opi_version: &str,
+) -> RoutedStoreState {
+    #[cfg(test)]
+    if let Some(state) = routed_store_factory_override::invoke() {
+        return state;
+    }
+
+    let store = PackageActivationStore::global(global_config_dir.to_path_buf());
+    let enabled = store.usable_enabled_identities(host_target, host_opi_version);
+    RoutedStoreState {
+        store: Arc::new(store),
+        enabled,
+    }
+}
+
+#[cfg(test)]
+mod routed_store_factory_override {
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    use super::RoutedStoreState;
+
+    type Factory = Rc<dyn Fn() -> RoutedStoreState>;
+
+    thread_local! {
+        static FACTORY: RefCell<Option<Factory>> = const { RefCell::new(None) };
+    }
+
+    pub(super) struct Guard {
+        previous: Option<Factory>,
+    }
+
+    impl Drop for Guard {
+        fn drop(&mut self) {
+            FACTORY.with(|factory| {
+                factory.replace(self.previous.take());
+            });
+        }
+    }
+
+    pub(super) fn install(factory: impl Fn() -> RoutedStoreState + 'static) -> Guard {
+        let previous = FACTORY.with(|active| active.replace(Some(Rc::new(factory))));
+        Guard { previous }
+    }
+
+    pub(super) fn invoke() -> Option<RoutedStoreState> {
+        let factory = FACTORY.with(|active| active.borrow().clone());
+        factory.map(|factory| factory())
+    }
+}
+
+fn new_permission_manager() -> Arc<PermissionManager> {
+    #[cfg(test)]
+    crate::execution::runtime::construction_probe::permission_manager_constructed();
+    Arc::new(PermissionManager::new())
+}
+
+/// A no-state [`IdentitySource`] that panics if activated. Fixed-local routing
+/// never selects an external package, so this sentinel is used by explicit
+/// interactive local-ask wiring and Minimal-Runtime test fixtures.
 struct PanicIdentitySource;
 impl IdentitySource for PanicIdentitySource {
     fn activate(
@@ -194,10 +262,9 @@ impl IdentitySource for PanicIdentitySource {
     }
 }
 
-/// The default-local / no-enabled-extensions execution context. Used by tests
-/// that drive [`CodingHarness::build_tools`] without an enabled extension, and
-/// identical to the shape the production path reduces to when no executable
-/// extension is enabled.
+/// A default-local / no-enabled-extensions execution fixture. Tests use this to
+/// drive [`CodingHarness::build_tools`] at the runtime seam; the real harness
+/// classifies Minimal Runtime before constructing [`ExecutionWiring`].
 pub fn minimal_runtime_wiring(mode: ExecutionRunMode) -> ExecutionWiring {
     ExecutionWiring {
         config: ExecutionConfig::default(),
@@ -209,6 +276,50 @@ pub fn minimal_runtime_wiring(mode: ExecutionRunMode) -> ExecutionWiring {
         host_opi_version: host_opi_version().to_string(),
         manager: Arc::new(PermissionManager::new()),
         broker: None,
+    }
+}
+
+enum HarnessExecution {
+    DirectLocal,
+    Refused(ExecutionFailure),
+    Routed(ExecutionWiring),
+}
+
+/// Resolve the execution shape before opening activation state or constructing
+/// permission/routing state. This decision uses the fully resolved config and
+/// effective local decision, so only fixed-local allow enters the Minimal
+/// Runtime. Explicit interactive local ask remains routed through the broker;
+/// headless ask is refused at build time without any prompt channel.
+fn harness_execution(
+    config: &OpiConfig,
+    global_config_dir: &Path,
+    mode: ExecutionRunMode,
+) -> HarnessExecution {
+    let policy = PermissionPolicy::from_map(config.execution.permissions.clone());
+    let plan = execution_plan(&config.execution, mode, &policy);
+    if let Some(failure) = plan.refusal(mode) {
+        return HarnessExecution::Refused(failure);
+    }
+
+    match plan {
+        ExecutionPlan::DirectLocal => HarnessExecution::DirectLocal,
+        ExecutionPlan::InteractiveAskRouted => HarnessExecution::Routed(ExecutionWiring {
+            config: config.execution.clone(),
+            enabled: Vec::new(),
+            policy,
+            store: Arc::new(PanicIdentitySource),
+            mode,
+            host_target: host_target_triple().to_string(),
+            host_opi_version: host_opi_version().to_string(),
+            manager: new_permission_manager(),
+            broker: None,
+        }),
+        ExecutionPlan::GeneralRouted => {
+            HarnessExecution::Routed(execution_wiring(config, global_config_dir, mode, policy))
+        }
+        ExecutionPlan::PolicyDenied | ExecutionPlan::HeadlessAskRefused => {
+            unreachable!("refused execution plans returned above")
+        }
     }
 }
 
@@ -289,13 +400,16 @@ pub struct CodingHarness {
     pub oauth_registry: Option<OAuthProviderRegistry>,
     pub(crate) oauth_endpoints: OAuthEndpointConfig,
     pub(crate) oauth_http_client: reqwest::Client,
-    /// In-memory capability-permission grants (Phase 16.10). Shared with the
-    /// routed bash backend; reset on in-process session switches so an
-    /// `allow-for-session` choice does not survive resume/fork/branch.
-    pub(crate) permission_manager: Arc<PermissionManager>,
+    /// In-memory capability-permission grants (Phase 16.10). Present only for
+    /// routed execution, shared with the routed bash backend, and reset on
+    /// in-process session switches so an `allow-for-session` choice does not
+    /// survive resume/fork/branch. Minimal and startup-refused execution use
+    /// `None` and construct no permission state.
+    pub(crate) permission_manager: Option<Arc<PermissionManager>>,
     /// The interactive permission-prompt channel receiver (Phase 16.10).
-    /// `Some` only in interactive mode (the TUI broker is installed); taken by
-    /// `run_interactive_tui` to drain prompt requests. Headless modes use `None`.
+    /// `Some` only for interactive routed execution (the TUI broker is
+    /// installed); taken by `run_interactive_tui` to drain prompt requests.
+    /// Minimal Runtime and headless modes use `None`.
     pub(crate) permission_prompt_rx:
         Option<mpsc::Receiver<crate::interactive::PermissionPromptRequest>>,
 }
@@ -677,9 +791,9 @@ struct HarnessBuildOptions {
     record_diagnostics: bool,
     trace: Option<TraceConfig>,
     trust_decision: TrustDecision,
-    /// Phase 16.9: the run mode threaded into `ExecutionRuntime::build`. Cannot
-    /// be derived from `tool_config.run_mode` (which collapses RPC into
-    /// `NonInteractive`); each startup path sets it explicitly.
+    /// Phase 16.9: the run mode threaded into `ExecutionRuntime::build`.
+    /// Legacy constructors derive interactive/non-interactive from tool config;
+    /// RPC remains available only through startup paths that set it explicitly.
     execution_mode: ExecutionRunMode,
 }
 
@@ -917,6 +1031,10 @@ impl CodingHarness {
         global_config_dir: Option<PathBuf>,
         trust_decision: TrustDecision,
     ) -> Self {
+        let execution_mode = match tool_config.run_mode {
+            RunMode::Interactive => ExecutionRunMode::Interactive,
+            RunMode::NonInteractive => ExecutionRunMode::NonInteractive,
+        };
         Self::new_with_build_options(
             provider,
             model,
@@ -930,6 +1048,7 @@ impl CodingHarness {
             global_config_dir,
             HarnessBuildOptions {
                 trust_decision,
+                execution_mode,
                 ..HarnessBuildOptions::default()
             },
         )
@@ -979,32 +1098,46 @@ impl CodingHarness {
             hooks = registry.wrap_hooks(hooks);
         }
 
-        // Resolve the global config dir once: the Phase 16.9 execution runtime
-        // needs it to build the package-activation store, and resource discovery
-        // reuses the same dir below.
+        // Resolve the global config dir once. Routed execution may use it for
+        // package activation, and resource discovery reuses it below.
         let resolved_global_dir = global_config_dir.unwrap_or_else(crate::config::user_config_dir);
 
-        // Phase 16.9: resolve the execution wiring once (enabled identities from
-        // the global package-activation store + the resolved permission policy +
-        // the run mode) and thread it through `ExecutionRuntime::build` inside
-        // `build_tools`.
-        let mut execution =
-            execution_wiring(&config, &resolved_global_dir, build_options.execution_mode);
-        // Phase 16.10: interactive mode installs the TUI permission broker. The
-        // broker talks to the event loop over a channel; the receiver is stored
-        // on the harness for `run_interactive_tui` to drain. Headless modes
-        // install no broker (the routed backend surfaces `permission_required`).
-        let permission_manager = Arc::clone(&execution.manager);
-        let permission_prompt_rx = if build_options.execution_mode == ExecutionRunMode::Interactive
-        {
-            let (tx, rx) = mpsc::channel::<crate::interactive::PermissionPromptRequest>(8);
-            execution.broker = Some(Arc::new(crate::interactive::TuiPermissionBroker::new(tx)));
-            Some(rx)
-        } else {
-            None
-        };
-        let (mut tools, tool_diagnostics) =
-            Self::build_tools(&workspace_root, &tool_config, &execution);
+        // Resolve fixed-local allow and headless fixed-local ask before opening
+        // package activation state or constructing permission/router/protocol
+        // state. Other execution configurations retain routed assembly.
+        let execution =
+            harness_execution(&config, &resolved_global_dir, build_options.execution_mode);
+        let (mut tools, tool_diagnostics, permission_manager, permission_prompt_rx) =
+            match execution {
+                HarnessExecution::DirectLocal => {
+                    let (tools, diagnostics) =
+                        Self::build_minimal_runtime_tools(&workspace_root, &tool_config);
+                    (tools, diagnostics, None, None)
+                }
+                HarnessExecution::Refused(failure) => {
+                    let (tools, diagnostics) =
+                        Self::build_refused_execution_tools(&workspace_root, &tool_config, failure);
+                    (tools, diagnostics, None, None)
+                }
+                HarnessExecution::Routed(mut execution) => {
+                    let permission_manager = Some(Arc::clone(&execution.manager));
+                    let permission_prompt_rx =
+                        if build_options.execution_mode == ExecutionRunMode::Interactive {
+                            #[cfg(test)]
+                            crate::execution::runtime::construction_probe::broker_constructed();
+                            let (tx, rx) =
+                                mpsc::channel::<crate::interactive::PermissionPromptRequest>(8);
+                            execution.broker =
+                                Some(Arc::new(crate::interactive::TuiPermissionBroker::new(tx)));
+                            Some(rx)
+                        } else {
+                            None
+                        };
+                    let (tools, diagnostics) =
+                        Self::build_tools(&workspace_root, &tool_config, &execution);
+                    (tools, diagnostics, permission_manager, permission_prompt_rx)
+                }
+            };
         tools.extend(extension_tools);
         let tool_defs: Vec<_> = tools.iter().map(|t| t.definition()).collect();
         let mut builder = SystemPromptBuilder::new().tools(tool_defs);
@@ -1461,7 +1594,9 @@ impl CodingHarness {
     pub fn resume_session_id(&mut self, session_id: &str) -> Result<usize, String> {
         // Phase 16.10: an allow-for-session grant must not survive a session
         // switch. Reset on the boundary (re-prompt is the safe failure mode).
-        self.permission_manager.reset_grants();
+        if let Some(manager) = &self.permission_manager {
+            manager.reset_grants();
+        }
         let dir = crate::session_cli::session_dir();
         let session =
             crate::session_cli::resume_session(&dir, session_id).map_err(|e| e.to_string())?;
@@ -1570,7 +1705,9 @@ impl CodingHarness {
     /// Fork the active session into a new parented session and switch to it.
     pub fn fork_current_session(&mut self) -> Result<(String, usize), String> {
         // Phase 16.10: grants do not survive a fork boundary.
-        self.permission_manager.reset_grants();
+        if let Some(manager) = &self.permission_manager {
+            manager.reset_grants();
+        }
         let (dir, source_session_id) = {
             let session = self
                 .session
@@ -1667,7 +1804,9 @@ impl CodingHarness {
     /// Switch the current session to the branch ending at `tip_id`.
     pub fn resume_session_branch_tip(&mut self, tip_id: &str) -> Result<usize, String> {
         // Phase 16.10: grants do not survive a branch switch.
-        self.permission_manager.reset_grants();
+        if let Some(manager) = &self.permission_manager {
+            manager.reset_grants();
+        }
         let (path, session_id) = {
             let session = self
                 .session
@@ -2277,23 +2416,60 @@ impl CodingHarness {
         tool_config: &ToolRuntimeConfig,
         execution: &ExecutionWiring,
     ) -> (Vec<Box<dyn Tool>>, Vec<Diagnostic>) {
+        let local_ops: Arc<dyn BashOperations> = Arc::new(LocalBashOperations::new());
+        let (bash_tool, exec_diagnostics) =
+            Self::build_bash_tool(workspace_root, local_ops, execution);
+        Self::build_tools_from_resolved_bash(
+            workspace_root,
+            tool_config,
+            bash_tool,
+            exec_diagnostics,
+        )
+    }
+
+    /// Construct the direct-local tool set without activation, permission,
+    /// router, adapter, or protocol state.
+    fn build_minimal_runtime_tools(
+        workspace_root: &Path,
+        tool_config: &ToolRuntimeConfig,
+    ) -> (Vec<Box<dyn Tool>>, Vec<Diagnostic>) {
+        let local_ops: Arc<dyn BashOperations> = Arc::new(LocalBashOperations::new());
+        let bash: Box<dyn Tool> = Box::new(BashTool::new_with_ops_and_schema(
+            workspace_root.to_path_buf(),
+            local_ops,
+            default_bash_schema(),
+        ));
+        Self::build_tools_from_resolved_bash(workspace_root, tool_config, Some(bash), Vec::new())
+    }
+
+    /// Build the non-bash tool set for an execution configuration refused at
+    /// startup. Headless fixed-local ask reaches this path with
+    /// `permission_required` and no prompt channel.
+    fn build_refused_execution_tools(
+        workspace_root: &Path,
+        tool_config: &ToolRuntimeConfig,
+        failure: ExecutionFailure,
+    ) -> (Vec<Box<dyn Tool>>, Vec<Diagnostic>) {
+        Self::build_tools_from_resolved_bash(
+            workspace_root,
+            tool_config,
+            None,
+            vec![diagnostic_from_execution_failure(&failure)],
+        )
+    }
+
+    fn build_tools_from_resolved_bash(
+        workspace_root: &Path,
+        tool_config: &ToolRuntimeConfig,
+        bash_tool: Option<Box<dyn Tool>>,
+        startup_diagnostics: Vec<Diagnostic>,
+    ) -> (Vec<Box<dyn Tool>>, Vec<Diagnostic>) {
         let read_policy = match tool_config.run_mode {
             RunMode::Interactive => crate::tool::PathPolicy::AllowOutsideWorkspace,
             RunMode::NonInteractive => crate::tool::PathPolicy::WorkspaceOnly,
         };
-
-        let mut startup_diagnostics = Vec::new();
         let file_ops: Arc<dyn FileOperations> =
             Arc::new(LocalFileOperations::new(workspace_root.to_path_buf()));
-        // 16.9: `LocalBashOperations` is the `local_ops` fed to
-        // `ExecutionRuntime::build`. The Minimal-Runtime branch returns this same
-        // Arc by pointer-identity (no fresh `LocalBashOperations` wrapper).
-        let local_ops: Arc<dyn BashOperations> = Arc::new(LocalBashOperations::new());
-
-        let (bash_tool, exec_diagnostics) =
-            Self::build_bash_tool(workspace_root, local_ops, execution);
-        startup_diagnostics.extend(exec_diagnostics);
-
         let mut tools: Vec<(&str, Box<dyn Tool>)> = Vec::with_capacity(8);
         tools.push((
             "read",
@@ -2317,11 +2493,6 @@ impl CodingHarness {
                 file_ops.clone(),
             )),
         ));
-        // `bash` is present only when `ExecutionRuntime::build` produced a usable
-        // backend. A startup build failure (e.g. an explicit `local = "deny"`
-        // under Minimal Runtime) OMITS the tool rather than substituting a
-        // fallback backend (no-fallback); the stable code surfaces via
-        // `startup_diagnostics` across text/NDJSON/RPC.
         if let Some(bash) = bash_tool {
             tools.push(("bash", bash));
         }
@@ -2338,7 +2509,6 @@ impl CodingHarness {
             "glob",
             Box::new(GlobTool::new(workspace_root.to_path_buf())),
         ));
-
         let tools = tools
             .drain(..)
             .filter(|(name, _)| {
@@ -2352,13 +2522,9 @@ impl CodingHarness {
         (tools, startup_diagnostics)
     }
 
-    /// Phase 16.9: assemble the production `BashTool` via [`ExecutionRuntime::build`].
-    ///
-    /// On success, returns the tool with the resolved dynamic schema (the default
-    /// byte-stable schema, or that schema plus the model `backend` enum under
-    /// `strategy = "model"`). On a startup build failure, returns `None` plus a
-    /// startup diagnostic carrying the stable code — the `bash` tool is omitted
-    /// (NEVER substituted with a fallback backend; no-fallback, SC16-07).
+    /// Assemble a routed `BashTool` via [`ExecutionRuntime::build`]. A startup
+    /// failure omits `bash` and returns its stable diagnostic; no fallback
+    /// backend is substituted.
     fn build_bash_tool(
         workspace_root: &Path,
         local_ops: Arc<dyn BashOperations>,
@@ -2771,10 +2937,15 @@ mod permission_boundary_tests {
             "mock",
             vec![opi_ai::test_support::text_response("ok")],
         );
+        let mut config = OpiConfig::default();
+        config
+            .execution
+            .permissions
+            .insert(LOCAL_ADAPTER_ID.to_string(), PermissionDecision::Ask);
         CodingHarness::builder(
             Box::new(provider),
             "mock:mock-model".to_string(),
-            OpiConfig::default(),
+            config,
             workspace.to_path_buf(),
             crate::project_trust::TrustDecision::Trusted,
         )
@@ -2821,28 +2992,185 @@ mod permission_boundary_tests {
 
         // resume_session_id errors (session not found) but its first action is
         // reset_grants, so the grant is cleared at the production call site.
-        harness.permission_manager.grant_session("opi-sandbox");
-        assert!(harness.permission_manager.has_session_grant("opi-sandbox"));
+        let manager = Arc::clone(
+            harness
+                .permission_manager
+                .as_ref()
+                .expect("interactive ask constructs a permission manager"),
+        );
+        manager.grant_session("opi-sandbox");
+        assert!(manager.has_session_grant("opi-sandbox"));
         let _ = harness.resume_session_id("ghost");
         assert!(
-            !harness.permission_manager.has_session_grant("opi-sandbox"),
+            !manager.has_session_grant("opi-sandbox"),
             "resume_session_id must reset permission grants at the boundary"
         );
 
-        harness.permission_manager.grant_session("opi-sandbox");
+        manager.grant_session("opi-sandbox");
         let _ = harness.fork_current_session();
         assert!(
-            !harness.permission_manager.has_session_grant("opi-sandbox"),
+            !manager.has_session_grant("opi-sandbox"),
             "fork_current_session must reset permission grants at the boundary"
         );
 
-        harness.permission_manager.grant_session("opi-sandbox");
+        manager.grant_session("opi-sandbox");
         let _ = harness.resume_session_branch_tip("ghost");
         assert!(
-            !harness.permission_manager.has_session_grant("opi-sandbox"),
+            !manager.has_session_grant("opi-sandbox"),
             "resume_session_branch_tip must reset permission grants at the boundary"
         );
 
         clear_sessions_dir();
+    }
+
+    #[test]
+    fn default_allow_real_constructor_opens_no_extended_execution_state() {
+        let ws = tempfile::tempdir().unwrap();
+        let global = tempfile::tempdir().unwrap();
+        let _store_factory = routed_store_factory_override::install(|| {
+            panic!("Minimal Runtime must not invoke the routed store factory")
+        });
+        let (counts, _probe) = crate::execution::runtime::construction_probe::install();
+
+        let provider = opi_ai::test_support::MockProvider::new(
+            "mock",
+            vec![opi_ai::test_support::text_response("ok")],
+        );
+        let harness = CodingHarness::builder(
+            Box::new(provider),
+            "mock:mock-model".to_string(),
+            OpiConfig::default(),
+            ws.path().to_path_buf(),
+            crate::project_trust::TrustDecision::Trusted,
+        )
+        .global_config_dir(global.path().to_path_buf())
+        .execution_mode(ExecutionRunMode::Interactive)
+        .build();
+
+        assert_eq!(counts.permission_managers(), 0);
+        assert_eq!(counts.brokers(), 0);
+        assert_eq!(counts.routers(), 0);
+        assert_eq!(counts.protocol_states(), 0);
+        assert!(harness.permission_manager.is_none());
+        assert!(harness.permission_prompt_rx.is_none());
+    }
+
+    #[test]
+    fn headless_ask_real_constructor_refuses_without_extended_execution_state() {
+        for mode in [ExecutionRunMode::NonInteractive, ExecutionRunMode::Rpc] {
+            let ws = tempfile::tempdir().unwrap();
+            let global = tempfile::tempdir().unwrap();
+            let _store_factory = routed_store_factory_override::install(|| {
+                panic!("headless refusal must not invoke the routed store factory")
+            });
+            let (counts, _probe) = crate::execution::runtime::construction_probe::install();
+            let mut config = OpiConfig::default();
+            config
+                .execution
+                .permissions
+                .insert(LOCAL_ADAPTER_ID.to_string(), PermissionDecision::Ask);
+            let provider = opi_ai::test_support::MockProvider::new(
+                "mock",
+                vec![opi_ai::test_support::text_response("ok")],
+            );
+
+            let harness = CodingHarness::builder(
+                Box::new(provider),
+                "mock:mock-model".to_string(),
+                config,
+                ws.path().to_path_buf(),
+                crate::project_trust::TrustDecision::Trusted,
+            )
+            .global_config_dir(global.path().to_path_buf())
+            .execution_mode(mode)
+            .build();
+
+            assert_eq!(counts.permission_managers(), 0);
+            assert_eq!(counts.brokers(), 0);
+            assert_eq!(counts.routers(), 0);
+            assert_eq!(counts.protocol_states(), 0);
+            assert!(harness.permission_manager.is_none());
+            assert!(harness.permission_prompt_rx.is_none());
+            assert!(harness.resource_metadata().diagnostics.iter().any(|d| {
+                d.details
+                    .as_ref()
+                    .and_then(|details| details.get("code"))
+                    .and_then(serde_json::Value::as_str)
+                    == Some("permission_required")
+            }));
+        }
+    }
+
+    #[test]
+    fn interactive_ask_real_constructor_installs_permission_broker() {
+        let ws = tempfile::tempdir().unwrap();
+        let global = tempfile::tempdir().unwrap();
+        let (counts, _probe) = crate::execution::runtime::construction_probe::install();
+        let mut config = OpiConfig::default();
+        config
+            .execution
+            .permissions
+            .insert(LOCAL_ADAPTER_ID.to_string(), PermissionDecision::Ask);
+        let provider = opi_ai::test_support::MockProvider::new(
+            "mock",
+            vec![opi_ai::test_support::text_response("ok")],
+        );
+
+        let harness = CodingHarness::builder(
+            Box::new(provider),
+            "mock:mock-model".to_string(),
+            config,
+            ws.path().to_path_buf(),
+            crate::project_trust::TrustDecision::Trusted,
+        )
+        .global_config_dir(global.path().to_path_buf())
+        .execution_mode(ExecutionRunMode::Interactive)
+        .build();
+
+        assert_eq!(counts.permission_managers(), 1);
+        assert_eq!(counts.brokers(), 1);
+        assert_eq!(counts.routers(), 1);
+        assert_eq!(counts.protocol_states(), 0);
+        assert!(harness.permission_manager.is_some());
+        assert!(harness.permission_prompt_rx.is_some());
+    }
+
+    #[test]
+    fn legacy_tool_config_constructor_derives_noninteractive_execution_mode() {
+        let ws = tempfile::tempdir().unwrap();
+        let (counts, _probe) = crate::execution::runtime::construction_probe::install();
+        let mut config = OpiConfig::default();
+        config
+            .execution
+            .permissions
+            .insert(LOCAL_ADAPTER_ID.to_string(), PermissionDecision::Ask);
+        let tool_config =
+            ToolRuntimeConfig::resolve(RunMode::NonInteractive, true, ToolSelection::Default)
+                .expect("non-interactive mutating tool config");
+        let provider = opi_ai::test_support::MockProvider::new(
+            "mock",
+            vec![opi_ai::test_support::text_response("ok")],
+        );
+
+        let harness = CodingHarness::new_with_tool_config(
+            Box::new(provider),
+            "mock:mock-model".to_string(),
+            config,
+            ws.path().to_path_buf(),
+            tool_config,
+            crate::project_trust::TrustDecision::Trusted,
+        );
+
+        assert_eq!(counts.brokers(), 0, "legacy headless mode must not prompt");
+        assert_eq!(counts.routers(), 0, "headless ask is refused at startup");
+        assert!(harness.permission_manager.is_none());
+        assert!(harness.permission_prompt_rx.is_none());
+        assert!(harness.resource_metadata().diagnostics.iter().any(|d| {
+            d.details
+                .as_ref()
+                .and_then(|details| details.get("code"))
+                .and_then(serde_json::Value::as_str)
+                == Some("permission_required")
+        }));
     }
 }

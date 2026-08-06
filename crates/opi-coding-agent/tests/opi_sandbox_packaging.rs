@@ -10,15 +10,16 @@
 //!     manifest_hash / executable_sha256 / target / protocol / adapter_id);
 //!   - the extracted staging tree carries identical bytes and hashes, with
 //!     package contents at the archive root (no wrapping directory);
-//!   - `--verify` recomputes manifest_hash + both trees' executable hashes and
-//!     rejects a tampered manifest, a tampered extracted binary, or a missing
-//!     layout member;
+//!   - `--verify` ignores caller-owned staging trees, independently extracts
+//!     the recorded-target archive, and rejects archive tampering, missing or
+//!     extra members, duplicates, and non-regular members;
+//!   - both platform wrappers use one strict SemVer/literal renderer;
 //!   - usage errors (missing/empty binary) exit 2.
 //!
-//! Parity between the `.sh` and `.ps1` is enforced indirectly: every OS asserts
-//! the script's emitted lock against the same canonical Rust computation
-//! (`sha256` lowercase, `manifest_hash` LF-normalized), so an encoding or casing
-//! drift in either script surfaces as a failure on its own OS. The packager only
+//! Parity between the `.sh` and `.ps1` is enforced directly by pinning both
+//! wrappers to the same helper and exercising its strict version matrix. Every
+//! OS also asserts the emitted lock against the same canonical Rust computation
+//! (`sha256` lowercase, `manifest_hash` LF-normalized). The packager only
 //! hashes/copies bytes and never runs a binary (executability + native run are
 //! install-time 16.4 + native-run 16.13/16.14.1), so a small fixture file
 //! faithfully exercises every packager code path; real-binary execution is owned
@@ -68,15 +69,27 @@ fn script_path() -> PathBuf {
     PathBuf::from(stripped)
 }
 
+fn package_helper_path() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .join("scripts")
+        .join("opi-sandbox-package.py")
+}
+
+fn python_command() -> Command {
+    Command::new(if cfg!(windows) { "python" } else { "python3" })
+}
+
 fn sha256_hex(bytes: &[u8]) -> String {
     hex::encode(Sha256::digest(bytes))
 }
 
 fn compatible_minor_range(version: &str) -> String {
-    let mut parts = version.split('.');
+    let core = version.split(['-', '+']).next().expect("version core");
+    let mut parts = core.split('.');
     let major: u64 = parts.next().expect("major").parse().expect("numeric major");
     let minor: u64 = parts.next().expect("minor").parse().expect("numeric minor");
-    format!(">={major}.{minor},<{major}.{}", minor + 1)
+    format!(">={major}.{minor}.0-0,<{major}.{}.0-0", minor + 1)
 }
 
 /// Build the pack command for the platform-native script.
@@ -158,6 +171,108 @@ fn archive_path(artifact: &Path) -> Option<PathBuf> {
             name.starts_with("opi-sandbox-")
                 && (name.ends_with(".tar.gz") || name.ends_with(".zip"))
         })
+}
+
+const REWRITE_ARCHIVE_PY: &str = r#"
+import io, json, pathlib, stat, sys, tarfile, zipfile
+
+archive = pathlib.Path(sys.argv[1])
+root = pathlib.Path(sys.argv[2])
+mode = sys.argv[3]
+members = [
+    "package.toml",
+    "bin/opi-sandbox",
+    "schemas/command-execution-jsonl-v1.schema.json",
+    "licenses/LICENSE",
+]
+if mode == "missing":
+    members.remove("licenses/LICENSE")
+
+def archive_name(name):
+    if mode == "dot-alias" and name == "package.toml":
+        return "./package.toml"
+    if mode == "double-slash-alias" and name == "bin/opi-sandbox":
+        return "bin//opi-sandbox"
+    return name
+
+def member_payload(name):
+    payload = (root / name).read_bytes()
+    if mode == "same-id-schema" and name == "schemas/command-execution-jsonl-v1.schema.json":
+        schema = json.loads(payload)
+        schema["same_id_tamper"] = True
+        return (json.dumps(schema, separators=(",", ":")) + "\n").encode()
+    return payload
+
+if archive.name.endswith(".zip"):
+    with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as out:
+        for name in members:
+            if mode == "wrong-kind" and name == "bin/opi-sandbox":
+                info = zipfile.ZipInfo(archive_name(name))
+                info.create_system = 3
+                info.external_attr = (stat.S_IFLNK | 0o777) << 16
+                out.writestr(info, "elsewhere")
+            elif mode == "same-id-schema" and name == "schemas/command-execution-jsonl-v1.schema.json":
+                info = zipfile.ZipInfo(archive_name(name))
+                info.create_system = 3
+                info.external_attr = (stat.S_IFREG | 0o644) << 16
+                out.writestr(info, member_payload(name))
+            elif archive_name(name) != name:
+                info = zipfile.ZipInfo(archive_name(name))
+                info.create_system = 3
+                info.external_attr = (stat.S_IFREG | 0o644) << 16
+                out.writestr(info, member_payload(name))
+            else:
+                out.write(root / name, archive_name(name))
+        if mode == "extra":
+            out.writestr("unexpected.txt", "unexpected")
+        if mode == "duplicate":
+            out.write(root / "package.toml", "package.toml")
+else:
+    with tarfile.open(archive, "w:gz") as out:
+        for name in members:
+            if mode == "wrong-kind" and name == "bin/opi-sandbox":
+                info = tarfile.TarInfo(archive_name(name))
+                info.type = tarfile.SYMTYPE
+                info.linkname = "elsewhere"
+                out.addfile(info)
+            elif mode == "nonexec-regular" and name == "bin/opi-sandbox":
+                payload = member_payload(name)
+                info = tarfile.TarInfo(archive_name(name))
+                info.mode = 0o644
+                info.size = len(payload)
+                out.addfile(info, io.BytesIO(payload))
+            elif mode == "same-id-schema" and name == "schemas/command-execution-jsonl-v1.schema.json":
+                payload = member_payload(name)
+                info = tarfile.TarInfo(archive_name(name))
+                info.size = len(payload)
+                out.addfile(info, io.BytesIO(payload))
+            else:
+                out.add(root / name, arcname=archive_name(name), recursive=False)
+        if mode == "extra":
+            info = tarfile.TarInfo("unexpected.txt")
+            payload = b"unexpected"
+            info.size = len(payload)
+            out.addfile(info, io.BytesIO(payload))
+        if mode == "duplicate":
+            out.add(root / "package.toml", arcname="package.toml", recursive=False)
+"#;
+
+fn rewrite_archive(p: &Packed, mode: &str) {
+    let helper = p.artifact.join("rewrite-archive.py");
+    fs::write(&helper, REWRITE_ARCHIVE_PY).unwrap();
+    let archive = archive_path(&p.artifact).expect("archive produced");
+    let output = python_command()
+        .arg(&helper)
+        .arg(&archive)
+        .arg(&p.extracted)
+        .arg(mode)
+        .output()
+        .expect("run archive rewrite fixture");
+    assert!(
+        output.status.success(),
+        "archive rewrite failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 /// Pack a fresh fixture into a fresh artifact dir; assert success. Returns the
@@ -380,6 +495,82 @@ fn rendered_manifest_rejects_the_adjacent_minor_version() {
 }
 
 #[test]
+fn platform_packagers_share_strict_literal_semver_renderer() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let helper_name = "opi-sandbox-package.py";
+    for wrapper in [
+        root.join("scripts/package-opi-sandbox.sh"),
+        root.join("scripts/package-opi-sandbox.ps1"),
+    ] {
+        let source = fs::read_to_string(&wrapper).unwrap();
+        assert!(
+            source.contains(helper_name),
+            "{} must delegate SemVer parsing and literal rendering to {helper_name}",
+            wrapper.display()
+        );
+    }
+}
+
+#[test]
+fn shared_renderer_accepts_strict_semver_and_rejects_malformed_or_metacharacters() {
+    let tmp = tempfile::tempdir().unwrap();
+    let template = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .join("packaging/opi-sandbox/package.toml.template");
+    let cases = [
+        ("1.2.3", true),
+        ("1.2.3-rc.1", true),
+        ("1.2.3+build.5", true),
+        ("1.02.3", false),
+        ("1.2.3-rc.01", false),
+        ("1.2.3-rc&1", false),
+        (r"1.2.3-rc\evil", false),
+    ];
+
+    for (index, (version, valid)) in cases.into_iter().enumerate() {
+        let manifest = tmp.path().join(format!("Cargo-{index}.toml"));
+        let output_path = tmp.path().join(format!("package-{index}.toml"));
+        fs::write(
+            &manifest,
+            format!("[workspace.package]\nversion = \"{version}\"\n"),
+        )
+        .unwrap();
+        let output = python_command()
+            .arg(package_helper_path())
+            .arg("render")
+            .arg("--workspace-manifest")
+            .arg(&manifest)
+            .arg("--template")
+            .arg(&template)
+            .arg("--target")
+            .arg("x86_64-test-target")
+            .arg("--sha256")
+            .arg("a".repeat(64))
+            .arg("--output")
+            .arg(&output_path)
+            .output()
+            .expect("run shared renderer");
+        assert_eq!(
+            output.status.success(),
+            valid,
+            "unexpected renderer result for {version:?}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        if valid {
+            let rendered = fs::read_to_string(&output_path).unwrap();
+            assert!(rendered.contains(&format!("version = \"{version}\"")));
+            assert!(rendered.contains("opi_version = \">=1.2.0-0,<1.3.0-0\""));
+        } else {
+            assert_eq!(
+                output.status.code(),
+                Some(2),
+                "invalid SemVer must use the packager usage exit for {version:?}"
+            );
+        }
+    }
+}
+
+#[test]
 fn verify_passes_immediately_after_pack() {
     let p = pack_fresh();
     let output = run(verify_cmd(&p.script, &p.artifact));
@@ -392,9 +583,8 @@ fn verify_passes_immediately_after_pack() {
 }
 
 #[test]
-fn verify_rejects_tampered_manifest() {
+fn verify_ignores_tampered_caller_owned_staging_trees() {
     let p = pack_fresh();
-    // Append a TOML comment to the packaged manifest; manifest_hash diverges.
     let pkg_toml = p.pkg_dir.join("package.toml");
     fs::OpenOptions::new()
         .append(true)
@@ -402,17 +592,6 @@ fn verify_rejects_tampered_manifest() {
         .unwrap()
         .write_all(b"# tampered\n")
         .unwrap();
-    let output = run(verify_cmd(&p.script, &p.artifact));
-    assert!(
-        !output.status.success(),
-        "verify must reject a tampered manifest:\n{:#?}",
-        output
-    );
-}
-
-#[test]
-fn verify_rejects_tampered_extracted_executable() {
-    let p = pack_fresh();
     let extracted_bin = p.extracted.join("bin").join("opi-sandbox");
     fs::OpenOptions::new()
         .append(true)
@@ -422,22 +601,187 @@ fn verify_rejects_tampered_extracted_executable() {
         .unwrap();
     let output = run(verify_cmd(&p.script, &p.artifact));
     assert!(
-        !output.status.success(),
-        "verify must reject a tampered extracted executable:\n{:#?}",
+        output.status.success(),
+        "verify must authenticate the archive, not caller-owned staging trees:\n{:#?}",
         output
     );
 }
 
 #[test]
-fn verify_rejects_missing_layout_member() {
+fn verify_rejects_tampered_archive_when_staging_trees_are_unchanged() {
     let p = pack_fresh();
-    fs::remove_file(p.extracted.join("bin").join("opi-sandbox")).unwrap();
+    let archive = archive_path(&p.artifact).unwrap();
+    fs::write(archive, b"tampered archive bytes").unwrap();
     let output = run(verify_cmd(&p.script, &p.artifact));
     assert!(
         !output.status.success(),
-        "verify must reject a missing layout member:\n{:#?}",
+        "verify must reject archive tampering with untouched staging trees:\n{:#?}",
         output
     );
+}
+
+#[test]
+fn verify_rejects_archive_with_missing_member() {
+    let p = pack_fresh();
+    rewrite_archive(&p, "missing");
+    assert!(!run(verify_cmd(&p.script, &p.artifact)).status.success());
+}
+
+#[test]
+fn verify_rejects_archive_with_extra_member() {
+    let p = pack_fresh();
+    rewrite_archive(&p, "extra");
+    assert!(!run(verify_cmd(&p.script, &p.artifact)).status.success());
+}
+
+#[test]
+fn verify_rejects_archive_with_duplicate_member() {
+    let p = pack_fresh();
+    rewrite_archive(&p, "duplicate");
+    assert!(!run(verify_cmd(&p.script, &p.artifact)).status.success());
+}
+
+#[test]
+fn verify_rejects_archive_with_non_regular_executable() {
+    let p = pack_fresh();
+    rewrite_archive(&p, "wrong-kind");
+    assert!(!run(verify_cmd(&p.script, &p.artifact)).status.success());
+}
+
+#[cfg(unix)]
+#[test]
+fn verify_rejects_byte_identical_non_executable_tar_member_with_untouched_staging_trees() {
+    let p = pack_fresh();
+    let package_binary = fs::read(p.pkg_dir.join("bin/opi-sandbox")).unwrap();
+    let extracted_binary = fs::read(p.extracted.join("bin/opi-sandbox")).unwrap();
+
+    rewrite_archive(&p, "nonexec-regular");
+
+    assert_eq!(
+        fs::read(p.pkg_dir.join("bin/opi-sandbox")).unwrap(),
+        package_binary,
+        "archive rewrite must not alter the package staging bytes"
+    );
+    assert_eq!(
+        fs::read(p.extracted.join("bin/opi-sandbox")).unwrap(),
+        extracted_binary,
+        "archive rewrite must not alter the extracted staging bytes"
+    );
+    let output = run(verify_cmd(&p.script, &p.artifact));
+    assert!(!output.status.success(), "{output:#?}");
+    assert!(
+        String::from_utf8_lossy(&output.stderr)
+            .contains("archive executable mode must be exactly 0755"),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn verify_rejects_archive_with_dot_path_alias() {
+    let p = pack_fresh();
+    rewrite_archive(&p, "dot-alias");
+    let output = run(verify_cmd(&p.script, &p.artifact));
+    assert!(!output.status.success());
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("archive member name is not canonical"),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn verify_rejects_archive_with_double_slash_path_alias() {
+    let p = pack_fresh();
+    rewrite_archive(&p, "double-slash-alias");
+    let output = run(verify_cmd(&p.script, &p.artifact));
+    assert!(!output.status.success());
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("archive member name is not canonical"),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn verify_rejects_same_id_schema_tamper_with_untouched_staging_trees() {
+    let p = pack_fresh();
+    let package_schema = fs::read(
+        p.pkg_dir
+            .join("schemas/command-execution-jsonl-v1.schema.json"),
+    )
+    .unwrap();
+    let extracted_schema = fs::read(
+        p.extracted
+            .join("schemas/command-execution-jsonl-v1.schema.json"),
+    )
+    .unwrap();
+    rewrite_archive(&p, "same-id-schema");
+    assert_eq!(
+        fs::read(
+            p.pkg_dir
+                .join("schemas/command-execution-jsonl-v1.schema.json")
+        )
+        .unwrap(),
+        package_schema
+    );
+    assert_eq!(
+        fs::read(
+            p.extracted
+                .join("schemas/command-execution-jsonl-v1.schema.json")
+        )
+        .unwrap(),
+        extracted_schema
+    );
+    let output = run(verify_cmd(&p.script, &p.artifact));
+    assert!(!output.status.success());
+    assert!(
+        String::from_utf8_lossy(&output.stderr)
+            .contains("schema does not match the reviewed snapshot"),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn verify_rejects_archive_and_lock_with_noncanonical_opi_range() {
+    let p = pack_fresh();
+    let manifest_path = p.extracted.join("package.toml");
+    let manifest = fs::read_to_string(&manifest_path).unwrap();
+    let canonical = compatible_minor_range(host_opi_version());
+    let noncanonical = format!(
+        ">={}.{},<{}.{}",
+        host_opi_version().split('.').next().unwrap(),
+        host_opi_version().split('.').nth(1).unwrap(),
+        host_opi_version().split('.').next().unwrap(),
+        host_opi_version()
+            .split('.')
+            .nth(1)
+            .unwrap()
+            .parse::<u64>()
+            .unwrap()
+            + 1
+    );
+    let changed_manifest = manifest.replace(&canonical, &noncanonical);
+    assert_ne!(changed_manifest, manifest);
+    fs::write(&manifest_path, &changed_manifest).unwrap();
+    rewrite_archive(&p, "normal");
+
+    let lock_path = p.artifact.join("package-lock.toml");
+    let lock = fs::read_to_string(&lock_path).unwrap();
+    let changed_lock = lock.replace(&canonical, &noncanonical).replace(
+        &format!(
+            "manifest_hash = \"{}\"",
+            sha256_hex(&lf_strip(manifest.as_bytes()))
+        ),
+        &format!(
+            "manifest_hash = \"{}\"",
+            sha256_hex(&lf_strip(changed_manifest.as_bytes()))
+        ),
+    );
+    fs::write(&lock_path, changed_lock).unwrap();
+
+    assert!(!run(verify_cmd(&p.script, &p.artifact)).status.success());
 }
 
 #[test]

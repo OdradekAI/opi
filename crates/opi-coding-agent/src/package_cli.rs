@@ -173,7 +173,7 @@ fn install_local_package(
         &declarations,
         &locks,
     ) {
-        let metadata_restore = metadata.restore(store);
+        let metadata_restore = metadata.restore();
         let trust_restore = restore_trust_snapshot(trust_snapshot.as_ref());
         return Err(package_update_error(
             error,
@@ -310,7 +310,7 @@ fn install_git_package(
         &declarations,
         &locks,
     ) {
-        let metadata_restore = metadata.restore(store);
+        let metadata_restore = metadata.restore();
         let trust_restore = restore_trust_snapshot(trust_snapshot.as_ref());
         let cache_restore = replacement.rollback();
         return Err(package_update_error(
@@ -338,26 +338,22 @@ fn cmd_remove(
     user_config_dir: &Path,
     name_or_source: &str,
 ) -> Result<(), PackageStoreError> {
-    let mut decls = store.read_declarations()?;
-    let removed_source = if let Some(index) = decls.iter().position(|d| d.source == name_or_source)
+    let metadata = read_package_metadata_snapshot(store, scope)?;
+    let mut declarations = metadata.declarations.clone();
+    let removed = if let Some(index) = declarations
+        .iter()
+        .position(|declaration| declaration.source == name_or_source)
     {
-        let removed = decls.remove(index);
-        store.write_declarations(&decls)?;
-        remove_locks_for_declaration(store, scope, &removed)?;
-        Some(removed.source)
+        Some(declarations.remove(index))
     } else {
-        let matches = declarations_matching_manifest_name(store, scope, &decls, name_or_source)?;
+        let matches =
+            declarations_matching_manifest_name(store, scope, &declarations, name_or_source)?;
         match matches.as_slice() {
             [] => {
                 eprintln!("opi package: no declaration matching '{name_or_source}'");
                 None
             }
-            [matched] => {
-                let removed = decls.remove(matched.index);
-                store.write_declarations(&decls)?;
-                remove_locks_for_declaration(store, scope, &removed)?;
-                Some(removed.source)
-            }
+            [matched] => Some(declarations.remove(matched.index)),
             _ => {
                 return Err(PackageStoreError::Package(format!(
                     "ambiguous package '{name_or_source}'; matches: {}",
@@ -373,14 +369,30 @@ fn cmd_remove(
         }
     };
 
-    // Phase 16.5: also delete the Package Trust + enablement record (global).
-    // Best-effort: removing a package with no trust record is a no-op.
-    if let Some(source) = removed_source {
-        let activation =
-            package_activation::PackageActivationStore::global(user_config_dir.to_path_buf());
-        if let Err(e) = activation.remove(&source) {
-            return Err(PackageStoreError::Package(e.to_string()));
+    let Some(removed) = removed else {
+        return Ok(());
+    };
+    let contribution_scope = contribution_scope_for(scope);
+    let trust_snapshot = capture_trust_snapshot(user_config_dir, contribution_scope)?;
+    let update = (|| {
+        store.write_declarations(&declarations)?;
+        remove_locks_for_declaration(store, scope, &removed)?;
+        if contribution_scope == ContributionScope::Global {
+            // Best-effort: removing a package with no trust record is a no-op.
+            package_activation::PackageActivationStore::global(user_config_dir.to_path_buf())
+                .remove(&removed.source)
+                .map_err(|error| PackageStoreError::Package(error.to_string()))?;
         }
+        Ok(())
+    })();
+
+    if let Err(error) = update {
+        return Err(package_update_error(
+            error,
+            metadata.restore(),
+            restore_trust_snapshot(trust_snapshot.as_ref()),
+            Ok(()),
+        ));
     }
     Ok(())
 }
@@ -661,7 +673,7 @@ fn publish_package_metadata_and_activation(
         && (!adapter_ids.is_empty() || activation_update.had_existing)
     {
         activation
-            .install(package_name, source, previous_source, adapter_ids, false)
+            .install(package_name, source, previous_source, adapter_ids)
             .map_err(|e| PackageStoreError::Package(e.to_string()))?;
         if let Some((trusted, enabled)) = activation_update.preserved_state {
             let mut records = activation.read_records()?;
@@ -1141,10 +1153,8 @@ struct RemoveMatch {
 struct PackageMetadataSnapshot {
     declarations: Vec<PackageDeclaration>,
     locks: Vec<PackageLockEntry>,
-    declarations_path: PathBuf,
-    lock_path: PathBuf,
-    declarations_existed: bool,
-    lock_existed: bool,
+    declarations_file: PackageFileSnapshot,
+    lock_file: PackageFileSnapshot,
 }
 
 pub(crate) fn execution_lifecycle_failure(
@@ -1266,13 +1276,16 @@ fn restore_trust_snapshot(snapshot: Option<&PackageFileSnapshot>) -> Result<(), 
 }
 
 impl PackageMetadataSnapshot {
-    fn restore(&self, store: &PackageStore) -> Result<(), PackageStoreError> {
-        restore_package_file(&self.declarations_path, self.declarations_existed, || {
-            store.write_declarations(&self.declarations)
-        })?;
-        restore_package_file(&self.lock_path, self.lock_existed, || {
-            store.write_lock(&self.locks)
-        })
+    fn restore(&self) -> Result<(), PackageStoreError> {
+        let declarations = self.declarations_file.restore();
+        let lock = self.lock_file.restore();
+        match (declarations, lock) {
+            (Ok(()), Ok(())) => Ok(()),
+            (Err(error), Ok(())) | (Ok(()), Err(error)) => Err(error),
+            (Err(declarations), Err(lock)) => Err(PackageStoreError::Package(format!(
+                "declarations rollback failed: {declarations}; lock rollback failed: {lock}"
+            ))),
+        }
     }
 }
 
@@ -1285,27 +1298,9 @@ fn read_package_metadata_snapshot(
     Ok(PackageMetadataSnapshot {
         declarations: store.read_declarations()?,
         locks: store.read_lock()?,
-        declarations_existed: declarations_path.exists(),
-        lock_existed: lock_path.exists(),
-        declarations_path,
-        lock_path,
+        declarations_file: PackageFileSnapshot::capture(declarations_path)?,
+        lock_file: PackageFileSnapshot::capture(lock_path)?,
     })
-}
-
-fn restore_package_file(
-    path: &Path,
-    existed: bool,
-    write_existing: impl FnOnce() -> Result<(), PackageStoreError>,
-) -> Result<(), PackageStoreError> {
-    if existed {
-        write_existing()
-    } else {
-        match std::fs::remove_file(path) {
-            Ok(()) => Ok(()),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-            Err(e) => Err(PackageStoreError::Io(e)),
-        }
-    }
 }
 
 fn package_update_error(
@@ -1332,4 +1327,104 @@ fn package_update_error(
         "package metadata update failed after cache replacement: {}",
         details.join("; ")
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::package_resolver::local_lock_entry;
+
+    fn file_state(path: &Path) -> (bool, Option<Vec<u8>>) {
+        (path.exists(), std::fs::read(path).ok())
+    }
+
+    fn seed_local_package(store: &PackageStore, base: &Path, source: &str) {
+        let root = base.join(source.trim_start_matches("./"));
+        std::fs::create_dir_all(&root).expect("package root");
+        std::fs::write(
+            root.join("package.toml"),
+            "name = \"adapter\"\ndescription = \"adapter\"\nversion = \"0.1.0\"\n",
+        )
+        .expect("manifest");
+        store
+            .write_declarations(&[PackageDeclaration {
+                source: source.into(),
+                filters: Default::default(),
+            }])
+            .expect("declaration");
+        store
+            .write_lock(&[local_lock_entry(source.into(), &root).expect("lock")])
+            .expect("write lock");
+    }
+
+    #[test]
+    fn global_remove_rolls_back_exact_files_when_trust_write_fails() {
+        let user = tempfile::tempdir().expect("user config");
+        let scope = PackageStoreScope::Global {
+            user_config_dir: user.path().to_path_buf(),
+        };
+        let store = PackageStore::new(scope.clone());
+        seed_local_package(&store, user.path(), "./adapter");
+        let activation =
+            package_activation::PackageActivationStore::global(user.path().to_path_buf());
+        activation
+            .write_records(&[ActivationRecord {
+                name: "adapter".into(),
+                source: "./adapter".into(),
+                trusted: true,
+                enabled: true,
+            }])
+            .expect("trust record");
+
+        let paths = [scope.config_path(), scope.lock_path(), store.trust_path()];
+        let before = paths
+            .iter()
+            .map(|path| file_state(path))
+            .collect::<Vec<_>>();
+        package_activation::fail_next_record_write_for_test();
+
+        let error = cmd_remove(&store, &scope, user.path(), "./adapter")
+            .expect_err("injected trust write failure must fail removal");
+        assert!(error.to_string().contains("injected one-shot"));
+        let after = paths
+            .iter()
+            .map(|path| file_state(path))
+            .collect::<Vec<_>>();
+        assert_eq!(after, before, "all package files must be restored exactly");
+
+        cmd_remove(&store, &scope, user.path(), "./adapter")
+            .expect("one-shot failure must allow a successful retry");
+        assert!(store.read_declarations().expect("declarations").is_empty());
+        assert!(store.read_lock().expect("locks").is_empty());
+        assert!(activation.read_records().expect("records").is_empty());
+    }
+
+    #[test]
+    fn project_remove_does_not_mutate_global_trust() {
+        let workspace = tempfile::tempdir().expect("workspace");
+        let user = tempfile::tempdir().expect("user config");
+        let scope = PackageStoreScope::Project {
+            workspace_root: workspace.path().to_path_buf(),
+        };
+        let store = PackageStore::new(scope.clone());
+        seed_local_package(&store, workspace.path(), "./adapter");
+        let activation =
+            package_activation::PackageActivationStore::global(user.path().to_path_buf());
+        activation
+            .write_records(&[ActivationRecord {
+                name: "global-adapter".into(),
+                source: "./adapter".into(),
+                trusted: true,
+                enabled: true,
+            }])
+            .expect("global trust record");
+        let trust_path = activation.store().trust_path();
+        let trust_before = file_state(&trust_path);
+
+        cmd_remove(&store, &scope, user.path(), "./adapter").expect("project remove");
+
+        assert_eq!(file_state(&trust_path), trust_before);
+        assert!(store.read_declarations().expect("declarations").is_empty());
+        assert!(store.read_lock().expect("locks").is_empty());
+    }
 }

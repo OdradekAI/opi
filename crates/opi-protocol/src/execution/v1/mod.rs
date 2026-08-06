@@ -73,8 +73,8 @@
 //! |---|---|---|---|
 //! | line size | wire bytes per JSONL line | [`codec`] capped read, before parse | per frame |
 //! | message size | coincident with line size for JSONL | [`codec`] | per frame |
-//! | configuration | native (pre-encode) bytes | [`codec`], on `initialize` | per frame |
-//! | diagnostics | bytes per `diagnostic` message | [`codec`] | per frame |
+//! | configuration | serialized JSON bytes | [`codec`], on `initialize` | per frame |
+//! | diagnostics | bytes per diagnostic or `failed.message` | [`codec`] | per frame |
 //! | cumulative output | decoded stdout+stderr bytes | [`Session`] | one execution |
 //!
 //! Frame count and rate are out of scope for this codec and are owned by host
@@ -83,10 +83,10 @@
 //! cap; it must satisfy `max_line_size >= ceil(max_decoded_chunk_size * 4/3) +
 //! framing` (asserted on [`Bounds::DEFAULT`]). Cumulative output is counted in
 //! **decoded** bytes; base64 inflation is transient and bounded per-frame by
-//! `max_line_size`, not by the cumulative counter. `NativeString` may amplify
-//! native bytes up to 5x on the wire; `max_configuration_size` is measured in
-//! native (pre-encode) bytes so a maximally-amplifying configuration still fits
-//! under `max_line_size`.
+//! `max_line_size`, not by the cumulative counter. `max_configuration_size` is
+//! measured after JSON serialization, including escapes such as `\u0000`, so
+//! the line-size consistency check reserves that serialized size plus framing
+//! without applying a second escaping multiplier.
 //!
 //! # Version negotiation
 //!
@@ -147,11 +147,11 @@ pub use frames::{
     FailurePhase, HostToBackend, TargetId,
 };
 pub use identity::{
-    ImplementationId, InvalidImplementationId, InvalidRequestId, ProtocolId, ProtocolIncompatible,
-    RequestId, V1, select,
+    ImplementationId, InvalidImplementationId, InvalidProtocolId, InvalidRequestId, ProtocolId,
+    ProtocolIncompatible, RequestId, V1, select,
 };
 pub use native::{NativeString, NativeStringError};
-pub use schema::{SCHEMA_DESCRIPTION, SCHEMA_ID_URL, schema};
+pub use schema::{SCHEMA_DESCRIPTION, SCHEMA_ID_URL, schema, schema_with_bounds};
 pub use session::{Session, SessionError};
 
 /// Wire identity of this protocol. Independent of the Cargo crate version.

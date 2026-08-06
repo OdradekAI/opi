@@ -518,11 +518,19 @@ fn package_diagnostics(workspace_root: &Path, user_config_dir: &Path) -> Vec<Dia
             // top-level `opi doctor` surface (SC16-03). Reads the activation
             // records and recomputes the executable SHA-256; never starts
             // package code (no spawn).
-            let records =
+            let records = activation_records_for_doctor(
                 package_activation::PackageActivationStore::global(user_config_dir.to_path_buf())
-                    .read_records()
-                    .unwrap_or_default();
-            for package in &resolution.packages {
+                    .read_records(),
+            );
+            if let Err(diagnostic) = &records {
+                out.push(diagnostic.clone());
+            }
+            for (package, records) in records.as_ref().into_iter().flat_map(|records| {
+                resolution
+                    .packages
+                    .iter()
+                    .map(move |package| (package, records))
+            }) {
                 let contributions = package
                     .lock
                     .as_ref()
@@ -595,6 +603,22 @@ fn package_diagnostics(workspace_root: &Path, user_config_dir: &Path) -> Vec<Dia
         )),
     }
     out
+}
+
+fn activation_records_for_doctor(
+    records: Result<
+        Vec<package_activation::ActivationRecord>,
+        crate::package_store::PackageStoreError,
+    >,
+) -> Result<Vec<package_activation::ActivationRecord>, Diagnostic> {
+    records.map_err(|_| {
+        diagnostic_from_execution_package_failure(
+            &crate::execution::ExecutionFailure::AdapterUnavailable {
+                adapter_id: None,
+                detail: crate::execution::UnavailableDetail::Store,
+            },
+        )
+    })
 }
 
 fn session_diagnostics(sessions_dir: &Path) -> Vec<Diagnostic> {
@@ -788,5 +812,27 @@ fn provider_proxy_url<'a>(config: &'a OpiConfig, provider: &str) -> Option<&'a s
                     .get(other)
                     .and_then(|profile| profile.proxy.as_ref().map(|p| p.url.as_str()))
             }),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn permission_denied_activation_store_error_is_not_package_not_installed() {
+        let error = crate::package_store::PackageStoreError::Io(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            r#"denied C:\private\HOSTILE sk-proj-012345678901234567890123456789"#,
+        ));
+        let diagnostic = activation_records_for_doctor(Err(error)).unwrap_err();
+        assert_eq!(diagnostic.code, "adapter_unavailable");
+        assert_ne!(diagnostic.code, "package_not_installed");
+        let public = serde_json::to_string(
+            &diagnostic.redacted_payload(opi_agent::diagnostic::RedactionMode::Summary),
+        )
+        .unwrap();
+        assert!(!public.contains("C:\\private"));
+        assert!(!public.contains("sk-proj-"));
     }
 }

@@ -138,7 +138,7 @@ fn main() {
         };
         let exit_code = rt.block_on(async {
             // Phase 15.8.1: two-stage headless trust preflight (project config
-            // skipped when untrusted) before provider/runner construction.
+            // skipped unless explicitly trusted) before provider/runner construction.
             let (config, trust_decision) =
                 resolve_headless_trust_config(&cli, project_dir.clone(), user_config_dir.clone())
                     .await;
@@ -323,7 +323,7 @@ async fn resolve_headless_trust_config_core(
 > {
     use opi_coding_agent::config::stage_config;
     use opi_coding_agent::project_trust::{
-        HeadlessPreTrustUi, ProjectTrustResolverRegistry, TrustDecision, prepare_project_startup,
+        HeadlessPreTrustUi, ProjectTrustResolverRegistry, prepare_project_startup,
     };
 
     let staged = stage_config(source)?;
@@ -344,13 +344,30 @@ async fn resolve_headless_trust_config_core(
     .await?;
     // Headless ask-to-untrusted: an unresolved ask denies project resources.
     let decision = plan.headless_decision();
-    let mut config = staged.finalize_with_project(!matches!(decision, TrustDecision::Untrusted))?;
+    let config = resolve_headless_trust_config_finalization(
+        staged,
+        decision,
+        execution_backend,
+        execution_strategy,
+    )?;
+    Ok((config, decision))
+}
+
+fn resolve_headless_trust_config_finalization(
+    staged: opi_coding_agent::config::StagedConfig,
+    decision: opi_coding_agent::project_trust::TrustDecision,
+    execution_backend: Option<&str>,
+    execution_strategy: Option<opi_coding_agent::config::ExecutionStrategy>,
+) -> Result<opi_coding_agent::config::OpiConfig, opi_coding_agent::config::ConfigError> {
+    use opi_coding_agent::project_trust::TrustDecision;
+
+    let mut config = staged.finalize_with_project(matches!(decision, TrustDecision::Trusted))?;
     // Phase 16.9: apply --execution-backend / --execution-strategy. These touch
     // only strategy/backend and never grant trust or permission (the resolved
     // permissions map is byte-identical before and after).
     config.apply_execution_overrides(execution_backend, execution_strategy);
     opi_coding_agent::config::validate_execution_config(&config)?;
-    Ok((config, decision))
+    Ok(config)
 }
 
 /// Phase 15.8.2 interactive two-stage trust-gated config + TUI prompt.
@@ -361,7 +378,7 @@ async fn resolve_headless_trust_config_core(
 /// trust-requiring resources renders the TUI `TrustChoice` prompt via
 /// `resolve_interactive_trust_decision` (persisting + mapping the choice), while
 /// a pre-decided plan bypasses the prompt. The decision gates stage 2
-/// (`merge_project_config`): an untrusted project's config layer is skipped
+/// (`merge_project_config`): a project not explicitly trusted has its config layer skipped
 /// entirely (not loaded-then-filtered), closing the `providers.bedrock.profile`
 /// vector. Because the prompt resolves BEFORE this returns, `run_interactive`
 /// (provider/package/harness build) provably follows it. Returns the merged
@@ -465,9 +482,9 @@ fn resolve_interactive_trust_config_core(
     execution_backend: Option<&str>,
     execution_strategy: Option<opi_coding_agent::config::ExecutionStrategy>,
 ) -> Result<opi_coding_agent::config::OpiConfig, opi_coding_agent::config::ConfigError> {
-    let mut config = staged.finalize_with_project(!matches!(
+    let mut config = staged.finalize_with_project(matches!(
         decision,
-        opi_coding_agent::project_trust::TrustDecision::Untrusted
+        opi_coding_agent::project_trust::TrustDecision::Trusted
     ))?;
     config.apply_execution_overrides(execution_backend, execution_strategy);
     opi_coding_agent::config::validate_execution_config(&config)?;
@@ -1344,9 +1361,9 @@ mod tests {
 
     use super::{
         CommandOutcome, CommandOutput, RpcTransport, resolve_headless_trust_config_core,
-        resolve_interactive_trust_config_core, run_doctor_command_core, run_interactive_core,
-        run_list_models_command_core, run_non_interactive_core, run_rpc_core, with_provider_bundle,
-        write_command_outcome,
+        resolve_headless_trust_config_finalization, resolve_interactive_trust_config_core,
+        run_doctor_command_core, run_interactive_core, run_list_models_command_core,
+        run_non_interactive_core, run_rpc_core, with_provider_bundle, write_command_outcome,
     };
     use opi_coding_agent::cli::Cli;
     use opi_coding_agent::config::{CredentialBackendSource, OpiConfig, ProviderProxyConfig};
@@ -1579,6 +1596,43 @@ mod tests {
     }
 
     #[test]
+    fn headless_trust_core_skips_undecided_project_config_and_resources() {
+        let workspace = tempfile::tempdir().expect("workspace");
+        std::fs::create_dir_all(workspace.path().join(".opi")).expect("project config dir");
+        std::fs::write(
+            workspace.path().join(".opi").join("config.toml"),
+            "[defaults]\nmodel = \"project:model\"\n[extensions]\npaths = [\"project-extension\"]\n",
+        )
+        .expect("project config");
+        let user = tempfile::tempdir().expect("user config");
+        std::fs::write(
+            user.path().join("config.toml"),
+            "[defaults]\nmodel = \"user:model\"\n",
+        )
+        .expect("user config");
+        let staged =
+            opi_coding_agent::config::stage_config(opi_coding_agent::config::ConfigSource {
+                cli_model: None,
+                config_path: None,
+                env_model: None,
+                project_dir: Some(workspace.path().to_path_buf()),
+                user_config_path: Some(user.path().join("config.toml")),
+            })
+            .expect("stage config");
+
+        let config = resolve_headless_trust_config_finalization(
+            staged,
+            opi_coding_agent::project_trust::TrustDecision::Undecided,
+            None,
+            None,
+        )
+        .expect("undecided finalization");
+
+        assert_eq!(config.defaults.model, "user:model");
+        assert!(config.extensions.paths.is_empty());
+    }
+
+    #[test]
     fn headless_trust_core_applies_execution_overrides_from_cli_flags() {
         // D.2 flagged (L-D3): `apply_execution_overrides` is covered as a direct
         // method call elsewhere; this drives the PRODUCTION resolver call site
@@ -1697,6 +1751,43 @@ mod tests {
             opi_coding_agent::config::ExecutionStrategy::Model
         );
         assert!(config.execution.permissions.is_empty());
+    }
+
+    #[test]
+    fn interactive_trust_core_skips_undecided_project_config_and_resources() {
+        let workspace = tempfile::tempdir().expect("workspace");
+        std::fs::create_dir_all(workspace.path().join(".opi")).expect("project config dir");
+        std::fs::write(
+            workspace.path().join(".opi").join("config.toml"),
+            "[defaults]\nmodel = \"project:model\"\n[extensions]\npaths = [\"project-extension\"]\n",
+        )
+        .expect("project config");
+        let user = tempfile::tempdir().expect("user config");
+        std::fs::write(
+            user.path().join("config.toml"),
+            "[defaults]\nmodel = \"user:model\"\n",
+        )
+        .expect("user config");
+        let staged =
+            opi_coding_agent::config::stage_config(opi_coding_agent::config::ConfigSource {
+                cli_model: None,
+                config_path: None,
+                env_model: None,
+                project_dir: Some(workspace.path().to_path_buf()),
+                user_config_path: Some(user.path().join("config.toml")),
+            })
+            .expect("stage config");
+
+        let config = resolve_interactive_trust_config_core(
+            staged,
+            opi_coding_agent::project_trust::TrustDecision::Undecided,
+            None,
+            None,
+        )
+        .expect("undecided finalization");
+
+        assert_eq!(config.defaults.model, "user:model");
+        assert!(config.extensions.paths.is_empty());
     }
 
     #[test]

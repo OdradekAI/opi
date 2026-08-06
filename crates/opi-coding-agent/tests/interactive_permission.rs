@@ -122,11 +122,10 @@ fn request(command: &str) -> BashRequest {
     }
 }
 
-/// fixed backend=`local` with `local = ask`, plus one dummy enabled identity so
-/// `ExecutionRuntime::build` takes Branch 2 (routed) — the only branch that
-/// constructs the broker-backed `RoutedBashOperations`. Routing still selects
-/// `local` (fixed), so the broker fires for the `local` adapter and dispatches
-/// directly to the local backend.
+/// Fixed backend=`local` with explicit `local = ask`. The non-allow decision is
+/// outside the default-allow Minimal Runtime, so interactive mode constructs the
+/// broker-backed routed operations. Routing still selects `local`, then applies
+/// allow-once / allow-session / deny before dispatching to the local backend.
 fn local_ask_routed() -> (ExecutionConfig, Vec<EnabledIdentity>, PermissionPolicy) {
     let mut perms = BTreeMap::new();
     perms.insert(LOCAL_ADAPTER_ID.to_string(), PermissionDecision::Ask);

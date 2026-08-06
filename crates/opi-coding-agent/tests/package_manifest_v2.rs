@@ -400,6 +400,36 @@ fn opi_version_compatible_produces_no_diagnostic() {
 }
 
 #[test]
+fn opi_version_prerelease_is_parsed_with_semver_precedence() {
+    let diagnostic = OpiVersionDiagnostic::check(">=0.8.0-0,<0.9.0-0", "0.8.0-rc.1");
+    assert!(
+        diagnostic.is_none(),
+        "a prerelease inside an explicit prerelease-inclusive range must be compatible: {diagnostic:?}"
+    );
+
+    let stable_floor = OpiVersionDiagnostic::check(">=0.8,<0.9", "0.8.0-rc.1");
+    assert!(
+        stable_floor.is_some(),
+        "SemVer prereleases must remain lower than the corresponding stable release"
+    );
+}
+
+#[test]
+fn opi_version_build_metadata_is_parsed_and_ignored_for_precedence() {
+    let diagnostic = OpiVersionDiagnostic::check(">=0.8,<0.9", "0.8.0+build.17");
+    assert!(
+        diagnostic.is_none(),
+        "build metadata must parse without changing SemVer precedence: {diagnostic:?}"
+    );
+
+    let exact = OpiVersionDiagnostic::check("=0.8.0", "0.8.0+build.17");
+    assert!(
+        exact.is_none(),
+        "build metadata must not affect exact SemVer precedence equality: {exact:?}"
+    );
+}
+
+#[test]
 fn opi_version_incompatible_produces_diagnostic() {
     // Use a version range that excludes 0.5.x
     let diagnostic = OpiVersionDiagnostic::check(">=1.0", "0.5.0");

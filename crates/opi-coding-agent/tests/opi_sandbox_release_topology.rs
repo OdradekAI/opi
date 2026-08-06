@@ -100,6 +100,54 @@ fn normalize_ws(s: &str) -> String {
     s.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
+/// Slice one named step from a previously sliced job block. The step begins at
+/// `- name: <step_name>` and ends at the next list item at the same indentation.
+fn named_step_block(job: &str, step_name: &str) -> String {
+    let header = format!("- name: {step_name}");
+    let leading_spaces = |line: &str| line.chars().take_while(|c| *c == ' ').count();
+    let mut block = String::new();
+    let mut started = false;
+    let mut indent = 0usize;
+    for line in job.split_inclusive('\n') {
+        let bare = line.trim_end_matches(['\n', '\r']);
+        if !started {
+            if bare.trim() == header {
+                indent = leading_spaces(bare);
+                block.push_str(line);
+                started = true;
+            }
+            continue;
+        }
+        if !bare.trim().is_empty()
+            && leading_spaces(bare) == indent
+            && bare.trim_start().starts_with("- ")
+        {
+            break;
+        }
+        block.push_str(line);
+    }
+    assert!(started, "job has no `{header}` step");
+    block
+}
+
+fn assert_feature_gated_test_step(step: &str, target: &str, must_not_run: bool) {
+    assert_present(
+        target,
+        step,
+        &[
+            "cargo test",
+            "-p opi-coding-agent",
+            "--features execution-backend-test-fixture",
+            &format!("--test {target}"),
+        ],
+    );
+    if must_not_run {
+        assert_present(target, step, &["--no-run"]);
+    } else {
+        assert_absent(target, step, &["--no-run"]);
+    }
+}
+
 const CI: &str = ".github/workflows/ci.yml";
 const RELEASE: &str = ".github/workflows/release.yml";
 
@@ -136,6 +184,12 @@ fn ci_defines_opi_sandbox_package_job_with_extracted_smoke() {
     );
     // Packages via the host-neutral packager.
     assert_present("ci.sandbox_package", &job, &["package-opi-sandbox.sh"]);
+    let verify = named_step_block(&job, "Verify native archive");
+    assert_present(
+        "ci.sandbox_package.verify",
+        &verify,
+        &["package-opi-sandbox.sh", "--verify"],
+    );
     // Smokes the EXTRACTED binary — the provenance marker that distinguishes a
     // release archive from a workspace-only binary.
     assert_present(
@@ -174,6 +228,40 @@ fn ci_retains_target_check_six_target_compile_gate() {
     let job = job_block(&ci, "target_check");
     for triple in SIX_TARGET_TRIPLES {
         assert_present("ci.target_check", &job, &[*triple]);
+    }
+}
+
+#[test]
+fn ci_runs_feature_gated_execution_acceptance_after_building_mock() {
+    let ci = read_repo_file(CI);
+    let job = job_block(&ci, "execution_acceptance");
+    assert_present("ci.execution_acceptance", &job, &["ubuntu-latest"]);
+
+    let build_name = "Build execution backend mock";
+    let build = named_step_block(&job, build_name);
+    assert_feature_gated_test_step(&build, "execution_backend_mock", true);
+
+    let acceptance_steps = [
+        ("Run execution product acceptance", "execution_product"),
+        (
+            "Run execution protocol host acceptance",
+            "execution_protocol_host",
+        ),
+        ("Run execution runtime acceptance", "execution_runtime"),
+    ];
+    let build_position = job
+        .find(&format!("- name: {build_name}"))
+        .expect("build step is present");
+    for (step_name, target) in acceptance_steps {
+        let step = named_step_block(&job, step_name);
+        assert_feature_gated_test_step(&step, target, false);
+        let run_position = job
+            .find(&format!("- name: {step_name}"))
+            .expect("acceptance step is present");
+        assert!(
+            build_position < run_position,
+            "execution_backend_mock must be built before `{target}` runs"
+        );
     }
 }
 
@@ -259,6 +347,58 @@ fn release_opi_sandbox_smokes_extracted_binary() {
         "release.sandbox_archive",
         &job,
         &["opi-sandbox-smoke.sh", "extracted/bin/opi-sandbox"],
+    );
+    let verify = named_step_block(&job, "Verify native archive");
+    assert_present(
+        "release.sandbox_archive.verify",
+        &verify,
+        &["package-opi-sandbox.sh", "--verify"],
+    );
+}
+
+#[test]
+fn unix_smoke_names_every_complete_native_acceptance_sentinel() {
+    let smoke = read_repo_file("scripts/opi-sandbox-smoke.sh");
+    for marker in [
+        "empty-cwd-smoke-result.txt",
+        "setup-failure-smoke-result.txt",
+        "filesystem-allow-smoke-result.txt",
+        "filesystem-deny-smoke-result.txt",
+        "network-deny-smoke-result.txt",
+        "network-allow-smoke-result.txt",
+    ] {
+        assert_present("opi-sandbox-smoke", &smoke, &[marker, "archive_sha256"]);
+    }
+    assert_present(
+        "opi-sandbox-smoke.setup-failure",
+        &smoke,
+        &[
+            "SETUP_TMPDIR_FILE",
+            r#"SETUP_NO_START="$WORKSPACE/setup-target-started.txt""#,
+            r#"TMPDIR="$SETUP_TMPDIR_FILE""#,
+            "/usr/bin/touch",
+            "SETUP_CODE",
+        ],
+    );
+    assert_absent(
+        "opi-sandbox-smoke.setup-failure",
+        &smoke,
+        &[
+            r#"SETUP_NO_START="$ARTIFACT_DIR/setup-target-started.txt""#,
+            "MISSING_WORKSPACE",
+            "definitely-not-an-executable",
+        ],
+    );
+    assert_present(
+        "opi-sandbox-smoke.network-deny",
+        &smoke,
+        &[
+            "except OSError",
+            "BIND_DENIED",
+            r#"[ "$NETWORK_DENY_CODE" -eq 23 ]"#,
+            r#"grep -q '^BIND_DENIED$' "$ARTIFACT_DIR/network-deny-stdout.txt""#,
+            r#"! grep -q 'Traceback' "$ARTIFACT_DIR/network-deny-stderr.txt""#,
+        ],
     );
 }
 

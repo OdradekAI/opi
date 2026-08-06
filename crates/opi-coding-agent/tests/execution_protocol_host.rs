@@ -72,7 +72,7 @@ fn mock_bin() -> PathBuf {
 }
 
 fn supported_protocols() -> Vec<ProtocolId> {
-    vec![ProtocolId::new(WIRE_IDENTITY)]
+    vec![ProtocolId::new(WIRE_IDENTITY).expect("v1 wire identity is non-empty")]
 }
 
 /// Drive the host against the mock selected by `mode_args` (first arg = mode).
@@ -358,7 +358,7 @@ async fn ready_identity_version_and_target_must_match_lock() {
 }
 
 #[tokio::test]
-async fn configured_handshake_timeout_is_enforced() {
+async fn late_ready_after_handshake_timeout_is_protocol_violation() {
     #[cfg(not(windows))]
     let started = std::time::Instant::now();
     let err = run_with_handshake(
@@ -370,7 +370,7 @@ async fn configured_handshake_timeout_is_enforced() {
     )
     .await
     .expect_err("slow ready must exceed configured handshake timeout");
-    assert_code(err, "cleanup_unconfirmed");
+    assert_code(err, "protocol_violation");
     #[cfg(not(windows))]
     assert!(started.elapsed() < Duration::from_secs(2));
 }
@@ -418,16 +418,21 @@ async fn terminal_diagnostics_are_merged_and_host_redacted() {
 
 #[tokio::test]
 async fn failed_unavailable_pre_started_is_adapter_unavailable() {
-    assert_code(
-        run(
-            &["failed_pre_started", "unavailable"],
-            Bounds::DEFAULT,
-            Duration::from_secs(5),
-        )
-        .await
-        .unwrap_err(),
-        "adapter_unavailable",
-    );
+    let error = run(
+        &["failed_pre_started", "unavailable"],
+        Bounds::DEFAULT,
+        Duration::from_secs(5),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(error.code(), "adapter_unavailable");
+    match &error.failure {
+        opi_coding_agent::execution::ExecutionFailure::AdapterUnavailable {
+            adapter_id, ..
+        } => assert_eq!(adapter_id.as_deref(), Some("opi-sandbox")),
+        other => panic!("expected adapter unavailable, got {other:?}"),
+    }
+    assert!(error.remediation().contains("opi-sandbox"));
 }
 
 #[tokio::test]
@@ -518,6 +523,40 @@ async fn failed_protocol_violation_is_protocol_violation() {
 // Deadline / cancel / cleanup
 // ---------------------------------------------------------------------------
 
+async fn wait_for_started_marker(path: &Path, timeout: Duration) -> bool {
+    let start = std::time::Instant::now();
+    loop {
+        if path.exists() {
+            return true;
+        }
+        if start.elapsed() >= timeout {
+            return false;
+        }
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
+}
+
+async fn cancel_after_started(mode: &str) -> Result<CompletedOutcome, ExecutionProtocolFailure> {
+    let dir = tempfile::tempdir().expect("started marker directory");
+    let marker = dir.path().join("started");
+    let marker_arg = marker.to_string_lossy().into_owned();
+    let mode_args = [mode, marker_arg.as_str()];
+    let signal = CancellationToken::new();
+    let ctrl = signal.clone();
+    let future = run_with(&mode_args, Bounds::DEFAULT, Duration::from_secs(30), signal);
+    tokio::pin!(future);
+    tokio::select! {
+        reached = wait_for_started_marker(&marker, Duration::from_secs(5)) => {
+            assert!(reached, "{mode} must reach started before cancellation");
+        }
+        result = &mut future => {
+            panic!("{mode} completed before reaching started: {result:?}");
+        }
+    }
+    ctrl.cancel();
+    future.await
+}
+
 #[tokio::test]
 async fn hang_before_ready_deadline_is_cleanup_unconfirmed() {
     // deadline 2s -> cancel_at 0.5s; backend never ready -> grace -> kill.
@@ -556,6 +595,58 @@ async fn hang_after_started_deadline_is_cleanup_unconfirmed() {
 }
 
 #[tokio::test]
+async fn cancellation_rejects_completed_before_each_required_milestone() {
+    for mode in [
+        "cancel_completed_pre_ready",
+        "cancel_completed_pre_accepted",
+        "cancel_completed_pre_started",
+    ] {
+        let err = run(&[mode], Bounds::DEFAULT, Duration::from_secs(3))
+            .await
+            .expect_err("completed before the current milestone must fail closed");
+        assert_eq!(
+            err.code(),
+            "protocol_violation",
+            "{mode} must remain out of order during cancellation: {err}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn cancellation_rejects_failed_before_each_required_milestone() {
+    for mode in [
+        "cancel_failed_pre_ready",
+        "cancel_failed_pre_accepted",
+        "cancel_failed_pre_started",
+    ] {
+        let err = run(&[mode], Bounds::DEFAULT, Duration::from_secs(3))
+            .await
+            .expect_err("failed before the current milestone must fail closed");
+        assert_eq!(
+            err.code(),
+            "protocol_violation",
+            "{mode} must remain out of order during cancellation: {err}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn cancellation_pre_ready_rejects_subsequent_negotiation_sequence() {
+    let err = run(
+        &["cancel_sequence_pre_ready"],
+        Bounds::DEFAULT,
+        Duration::from_secs(3),
+    )
+    .await
+    .expect_err("cancellation before ready must close negotiation");
+    assert_eq!(
+        err.code(),
+        "protocol_violation",
+        "post-cancel ready must not advance to a placeholder-backed success: {err}"
+    );
+}
+
+#[tokio::test]
 async fn failed_terminal_diagnostics_are_merged_and_host_redacted() {
     let error = run(
         &["failed_post_started", "execution_failed"],
@@ -573,33 +664,31 @@ async fn failed_terminal_diagnostics_are_merged_and_host_redacted() {
 
 #[tokio::test]
 async fn external_cancel_is_cleanup_unconfirmed() {
-    let signal = CancellationToken::new();
-    let ctrl = signal.clone();
-    let task = tokio::spawn(run_with(
-        &["hang_after_started"],
-        Bounds::DEFAULT,
-        Duration::from_secs(30),
-        signal,
-    ));
-    // Let the backend reach started, then cancel.
-    tokio::time::sleep(Duration::from_millis(400)).await;
-    ctrl.cancel();
-    assert_code(task.await.unwrap().unwrap_err(), "cleanup_unconfirmed");
+    assert_code(
+        cancel_after_started("hang_after_started")
+            .await
+            .unwrap_err(),
+        "cleanup_unconfirmed",
+    );
+}
+
+#[tokio::test]
+async fn cancel_confirmed_cleanup_after_started_is_in_band_canceled() {
+    let outcome = cancel_after_started("cancel_cleanup_confirmed")
+        .await
+        .expect("post-start cancellation with confirmed cleanup is in-band");
+    assert!(outcome.cancelled);
+    assert_eq!(outcome.cleanup, CleanupState::Confirmed);
 }
 
 #[tokio::test]
 async fn cancel_unconfirmed_cleanup_reports_cleanup_unconfirmed() {
-    let signal = CancellationToken::new();
-    let ctrl = signal.clone();
-    let task = tokio::spawn(run_with(
-        &["cancel_cleanup_unconfirmed"],
-        Bounds::DEFAULT,
-        Duration::from_secs(30),
-        signal,
-    ));
-    tokio::time::sleep(Duration::from_millis(400)).await;
-    ctrl.cancel();
-    assert_code(task.await.unwrap().unwrap_err(), "cleanup_unconfirmed");
+    assert_code(
+        cancel_after_started("cancel_cleanup_unconfirmed")
+            .await
+            .unwrap_err(),
+        "cleanup_unconfirmed",
+    );
 }
 
 // ---------------------------------------------------------------------------

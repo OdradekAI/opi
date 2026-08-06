@@ -434,9 +434,9 @@ mod tests {
             request_id: RequestId::new("r1".to_string()).unwrap(),
             deadline_ms: 30_000,
             adapter_config: serde_json::json!({"profile": "strict"}),
-            supported_protocols: vec![super::super::identity::ProtocolId::new(
-                "command-execution-jsonl-v1",
-            )],
+            supported_protocols: vec![
+                super::super::identity::ProtocolId::new("command-execution-jsonl-v1").unwrap(),
+            ],
         });
         let json = serde_json::to_string(&frame).unwrap();
         assert!(json.contains(r#""type":"initialize""#), "{json}");

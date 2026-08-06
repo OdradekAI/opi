@@ -55,6 +55,24 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --workspace --all-targets
 
+  # Phase 16 execution acceptance is feature-gated because it drives the real
+  # process-JSONL host against a harness-free mock peer. Build that peer first
+  # in the same job so all three suites can locate it in the shared deps dir.
+  execution_acceptance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build execution backend mock
+        run: cargo test -p opi-coding-agent --features execution-backend-test-fixture --test execution_backend_mock --no-run
+      - name: Run execution product acceptance
+        run: cargo test -p opi-coding-agent --features execution-backend-test-fixture --test execution_product
+      - name: Run execution protocol host acceptance
+        run: cargo test -p opi-coding-agent --features execution-backend-test-fixture --test execution_protocol_host
+      - name: Run execution runtime acceptance
+        run: cargo test -p opi-coding-agent --features execution-backend-test-fixture --test execution_runtime
+
   doctest:
     runs-on: ubuntu-latest
     steps:
@@ -103,6 +121,12 @@ jobs:
           bash scripts/package-opi-sandbox.sh \
             --binary target/release/opi-sandbox \
             --artifact-dir target/opi-artifacts/ci-${{ matrix.os }}
+      - name: Verify native archive
+        shell: bash
+        run: |
+          bash scripts/package-opi-sandbox.sh \
+            --artifact-dir target/opi-artifacts/ci-${{ matrix.os }} \
+            --verify
       - name: Standalone smoke (extracted archive, no opi on PATH)
         shell: bash
         run: |

@@ -275,7 +275,7 @@ impl OpiVersionDiagnostic {
             if let Some(version_str) = part.strip_prefix(">=") {
                 let version_str = version_str.trim();
                 match parse_simple_version(version_str) {
-                    Some(v) if current < v => {
+                    Some(v) if current.cmp_precedence(&v).is_lt() => {
                         return Some(Self {
                             message: format!(
                                 "incompatible opi version: {current_version} does not satisfy {constraint}"
@@ -294,7 +294,7 @@ impl OpiVersionDiagnostic {
             } else if let Some(version_str) = part.strip_prefix("<=") {
                 let version_str = version_str.trim();
                 match parse_simple_version(version_str) {
-                    Some(v) if current > v => {
+                    Some(v) if current.cmp_precedence(&v).is_gt() => {
                         return Some(Self {
                             message: format!(
                                 "incompatible opi version: {current_version} does not satisfy {constraint}"
@@ -313,7 +313,7 @@ impl OpiVersionDiagnostic {
             } else if let Some(version_str) = part.strip_prefix('>') {
                 let version_str = version_str.trim();
                 match parse_simple_version(version_str) {
-                    Some(v) if current <= v => {
+                    Some(v) if !current.cmp_precedence(&v).is_gt() => {
                         return Some(Self {
                             message: format!(
                                 "incompatible opi version: {current_version} does not satisfy {constraint}"
@@ -332,7 +332,7 @@ impl OpiVersionDiagnostic {
             } else if let Some(version_str) = part.strip_prefix('<') {
                 let version_str = version_str.trim();
                 match parse_simple_version(version_str) {
-                    Some(v) if current >= v => {
+                    Some(v) if !current.cmp_precedence(&v).is_lt() => {
                         return Some(Self {
                             message: format!(
                                 "incompatible opi version: {current_version} does not satisfy {constraint}"
@@ -351,7 +351,7 @@ impl OpiVersionDiagnostic {
             } else if let Some(version_str) = part.strip_prefix('=') {
                 let version_str = version_str.trim();
                 match parse_simple_version(version_str) {
-                    Some(v) if current != v => {
+                    Some(v) if !current.cmp_precedence(&v).is_eq() => {
                         return Some(Self {
                             message: format!(
                                 "incompatible opi version: {current_version} does not satisfy {constraint}"
@@ -370,7 +370,7 @@ impl OpiVersionDiagnostic {
             } else {
                 // Bare version or unknown prefix — try as exact match
                 match parse_simple_version(part) {
-                    Some(v) if current != v => {
+                    Some(v) if !current.cmp_precedence(&v).is_eq() => {
                         return Some(Self {
                             message: format!(
                                 "incompatible opi version: {current_version} does not satisfy {constraint}"
@@ -393,20 +393,22 @@ impl OpiVersionDiagnostic {
     }
 }
 
-/// Parse a version string "X.Y" or "X.Y.Z" into a comparable tuple.
-/// Two-part versions get an implicit `.0` patch.
-fn parse_simple_version(s: &str) -> Option<(u64, u64, u64)> {
+/// Parse a SemVer version string with the two-part shorthand accepted by Opi's
+/// constraint grammar. Two-part versions get an implicit `.0` patch while
+/// prerelease and build metadata retain their standard SemVer meaning.
+fn parse_simple_version(s: &str) -> Option<semver::Version> {
     let s = s.trim();
-    let parts: Vec<&str> = s.split('.').collect();
-    match parts.len() {
-        2 => Some((parts[0].parse().ok()?, parts[1].parse().ok()?, 0)),
-        3 => Some((
-            parts[0].parse().ok()?,
-            parts[1].parse().ok()?,
-            parts[2].parse().ok()?,
-        )),
-        _ => None,
-    }
+    let suffix_start = s
+        .char_indices()
+        .find_map(|(index, ch)| matches!(ch, '-' | '+').then_some(index))
+        .unwrap_or(s.len());
+    let (core, suffix) = s.split_at(suffix_start);
+    let normalized = match core.matches('.').count() {
+        1 => format!("{core}.0{suffix}"),
+        2 => s.to_string(),
+        _ => return None,
+    };
+    semver::Version::parse(&normalized).ok()
 }
 
 /// Resolve the adapter command path based on its form.

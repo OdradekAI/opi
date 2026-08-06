@@ -9,14 +9,14 @@
 pub struct Bounds {
     /// Max wire bytes per JSONL line. The decoder's per-stream line-buffer
     /// ceiling and thus the per-connection memory cap. Must be large enough to
-    /// hold a maximally base64-inflated output chunk and a maximally
-    /// NativeString-amplified configuration plus JSON framing.
+    /// hold a maximally base64-inflated output chunk or serialized adapter
+    /// configuration plus framing.
     pub max_line_size: usize,
     /// Max decoded bytes per stdout/stderr chunk.
     pub max_decoded_chunk_size: usize,
-    /// Max native (pre-encode) bytes of an `initialize` adapter configuration.
+    /// Max serialized JSON bytes of an `initialize` adapter configuration.
     pub max_configuration_size: usize,
-    /// Max bytes of a single `diagnostic` message.
+    /// Max bytes of a `diagnostic` entry or optional `failed.message`.
     pub max_diagnostics_size: usize,
     /// Max decoded stdout+stderr bytes across one execution.
     pub max_cumulative_output: usize,
@@ -34,15 +34,14 @@ pub enum BoundsError {
     /// `max_line_size` must be >= `ceil(max_decoded_chunk_size * 4/3) + framing`.
     #[error("max_line_size must be >= ceil(max_decoded_chunk_size * 4/3) + framing")]
     LineTooSmallForChunk,
-    /// `max_line_size` must be >= `max_configuration_size * 5 + framing` (because
-    /// NativeString can amplify each native byte up to 5x on the wire).
-    #[error("max_line_size must be >= max_configuration_size * 5 + framing")]
+    /// `max_line_size` must be >= `max_configuration_size + framing`.
+    #[error("max_line_size must be >= max_configuration_size + framing")]
     LineTooSmallForConfig,
 }
 
 impl Bounds {
-    /// Defaults chosen so a maximally base64-inflated chunk and a maximally
-    /// NativeString-amplified configuration both fit under `max_line_size`.
+    /// Defaults chosen so a maximally base64-inflated chunk and serialized
+    /// adapter configuration both fit under `max_line_size`.
     pub const DEFAULT: Bounds = Bounds {
         max_line_size: 2 * 1024 * 1024,
         max_decoded_chunk_size: 1024 * 1024,
@@ -68,11 +67,7 @@ impl Bounds {
         if self.max_line_size < chunk_required {
             return Err(BoundsError::LineTooSmallForChunk);
         }
-        let config_required = match self.max_configuration_size.checked_mul(5) {
-            Some(value) => value,
-            None => return Err(BoundsError::LineTooSmallForConfig),
-        };
-        let config_required = match config_required.checked_add(256) {
+        let config_required = match self.max_configuration_size.checked_add(256) {
             Some(value) => value,
             None => return Err(BoundsError::LineTooSmallForConfig),
         };
@@ -134,5 +129,25 @@ mod tests {
             max_cumulative_output: 0,
         };
         assert_eq!(bad.validate(), Err(BoundsError::LineTooSmallForConfig));
+    }
+
+    #[test]
+    fn configuration_reserve_covers_serialized_bytes() {
+        let exact = Bounds {
+            max_line_size: 100 + 256,
+            max_decoded_chunk_size: 0,
+            max_configuration_size: 100,
+            max_diagnostics_size: 0,
+            max_cumulative_output: 0,
+        };
+        assert!(exact.validate().is_ok());
+        assert_eq!(
+            Bounds {
+                max_line_size: exact.max_line_size - 1,
+                ..exact
+            }
+            .validate(),
+            Err(BoundsError::LineTooSmallForConfig)
+        );
     }
 }

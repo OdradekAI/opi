@@ -277,6 +277,7 @@ expression: pretty
       "properties": {
         "message": {
           "description": "Redacted diagnostic message.",
+          "maxLength": 65536,
           "type": "string"
         }
       },
@@ -290,6 +291,7 @@ expression: pretty
       "properties": {
         "message": {
           "description": "Redacted diagnostic message (redaction is the backend's responsibility).",
+          "maxLength": 65536,
           "type": "string"
         },
         "request_id": {
@@ -388,6 +390,7 @@ expression: pretty
         },
         "message": {
           "description": "Optional redacted message.",
+          "maxLength": 65536,
           "type": [
             "string",
             "null"
@@ -570,6 +573,7 @@ expression: pretty
     },
     "ProtocolId": {
       "description": "A wire-protocol identity. The version is baked into the identity string\n(`command-execution-jsonl-v1`); there is no separate numeric version.",
+      "minLength": 1,
       "type": "string"
     },
     "ReadyPayload": {
@@ -693,6 +697,5 @@ expression: pretty
     {
       "$ref": "#/$defs/BackendToHost"
     }
-  ],
-  "title": "SchemaRoot"
+  ]
 }

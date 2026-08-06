@@ -673,14 +673,8 @@ async fn invalid_request_is_rejected_before_work() {
     );
 }
 
-/// Pins that the `Started` event carries the effective-restriction fields
-/// produced by the runner. Today `Mechanism` and `ContractStatus` are
-/// single-variant enums (the native confinement variants land in 16.13 /
-/// 14.1), so their values are type-forced to `None` / `Unrestricted` and are
-/// NOT runtime-asserted here — that would be a tautology. This remains a
-/// compile-time API pin (the fields exist and carry those types); honest
-/// effective-contract reporting is runtime-asserted once a second variant
-/// exists.
+/// The no-restriction runner reports its exact effective mechanism and
+/// contract at runtime.
 #[tokio::test]
 async fn started_event_carries_effective_restriction_fields() {
     let (prog, args) = if cfg!(unix) {
@@ -697,11 +691,8 @@ async fn started_event_carries_effective_restriction_fields() {
             contract,
             ..
         } => {
-            // Compile-time pin: both fields carry the effective-contract types.
-            // Runtime equality is intentionally not asserted — the enums are
-            // single-variant today, so it would be a tautology (see the doc
-            // comment); it becomes meaningful once 16.13/14.1 add a variant.
-            let _: (Mechanism, ContractStatus) = (mechanism, contract);
+            assert_eq!(mechanism, Mechanism::None);
+            assert_eq!(contract, ContractStatus::Unrestricted);
         }
         other => panic!("expected Started, got {other:?}"),
     }

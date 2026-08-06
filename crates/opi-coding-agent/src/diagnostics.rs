@@ -14,6 +14,11 @@
 
 use opi_agent::diagnostic::{Diagnostic, Severity};
 
+/// Complete remediation for removed Phase 15 sandbox inputs. Public diagnostic
+/// action/details fields use this exact text so machine and human surfaces do
+/// not drift.
+pub const LEGACY_SANDBOX_REMEDIATION: &str = "the [sandbox] section was removed with the native sandbox; configure the execution backend instead ([execution] strategy = \"fixed\", backend = \"opi-sandbox\"; or --execution-backend) and install/enable the opi-sandbox package (opi package add <dir>; opi package enable opi-sandbox)";
+
 /// Closed, redaction-safe L0 process-tree supervision reason.
 ///
 /// Every variant serializes to curator-controlled static text. Raw OS,

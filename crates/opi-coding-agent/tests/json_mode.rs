@@ -142,43 +142,51 @@ fn tool_execution_end_diagnostics_field_is_wire_compat() {
 // SC16-14 cross-surface: a stable execution-failure code reaches the NDJSON wire
 // ---------------------------------------------------------------------------
 
-/// A `local = "deny"` Minimal-Runtime config makes `ExecutionRuntime::build`
-/// fail at startup (`policy_denied`); `CodingHarness::build_tools` emits it as a
-/// startup diagnostic (bash omitted, no fallback), which the runner surfaces as
-/// the NDJSON `StartupDiagnostics` line. This proves one of the 14 stable codes
-/// reaches a PUBLIC wire surface with its granular code + remediation intact
-/// (the design: "Text, TUI, NDJSON, RPC, package doctor, and top-level doctor
-/// preserve the same codes and remediation fields").
+/// Headless fixed-local `ask` is refused while the harness is built, without a
+/// prompt. NDJSON carries the stable `permission_required` startup diagnostic
+/// with its headless-specific remediation intact (bash omitted, no fallback).
 #[tokio::test]
-async fn ndjson_startup_diagnostics_carry_stable_execution_code() {
+async fn ndjson_refuses_local_ask_at_startup_without_prompt() {
     let response = test_support::text_response("hi");
     let provider = MockProvider::new("mock", vec![response]);
+    let call_log = provider.call_log_handle();
     let mut config = OpiConfig::default();
     config.execution.strategy = ExecutionStrategy::Fixed;
     config.execution.backend = "local".into();
     config
         .execution
         .permissions
-        .insert("local".into(), PermissionDecision::Deny);
-    // Isolate the user config dir so the Minimal-Runtime execution branch (the
-    // only one that emits the policy_denied startup diagnostic) is deterministic
-    // regardless of the host's real package-trust state. The runner resolves the
-    // config dir at construction, so the guard is dropped before the await.
+        .insert("local".into(), PermissionDecision::Ask);
+    // The runner resolves this refusal synchronously during construction. The
+    // isolated config dir makes the result independent of host package state.
     let _env_guard = common::empty_user_config_dir();
     let mut runner = NonInteractiveRunner::new(
         Box::new(provider),
         "mock-model".into(),
         config,
         std::env::current_dir().unwrap(),
-        false,
+        true,
         None,
         Vec::new(),
         opi_coding_agent::project_trust::TrustDecision::Trusted,
     );
     drop(_env_guard);
 
-    let result = runner.run_json("hello").await;
+    let result = tokio::time::timeout(std::time::Duration::from_secs(2), runner.run_json("hello"))
+        .await
+        .expect("headless local ask must not wait for a permission prompt");
     assert_eq!(result.exit_code, ExitCode::Success as i32);
+    let calls = call_log.lock().unwrap();
+    assert_eq!(calls.len(), 1);
+    assert!(
+        calls[0].tools.iter().all(|tool| tool.name != "bash"),
+        "headless ask must omit bash instead of falling back to local: {:?}",
+        calls[0]
+            .tools
+            .iter()
+            .map(|tool| tool.name.as_str())
+            .collect::<Vec<_>>()
+    );
 
     let lines = parse_ndjson(&result.stdout);
     let startup = lines
@@ -188,22 +196,25 @@ async fn ndjson_startup_diagnostics_carry_stable_execution_code() {
     let diags = startup["diagnostics"]
         .as_array()
         .expect("startup diagnostics array");
-    let policy_denied = diags
+    let permission_required = diags
         .iter()
-        .find(|d| d["details"]["code"] == "policy_denied");
+        .find(|d| d["details"]["code"] == "permission_required");
     assert!(
-        policy_denied.is_some(),
-        "the stable policy_denied code must surface in NDJSON startup diagnostics: {startup}"
+        permission_required.is_some(),
+        "the stable permission_required code must surface in NDJSON startup diagnostics: {startup}"
     );
-    let pd = policy_denied.expect("found");
-    let remediation = pd["details"]["remediation"].as_str().unwrap_or_default();
+    let diagnostic = permission_required.expect("found");
+    let remediation = diagnostic["details"]["remediation"]
+        .as_str()
+        .unwrap_or_default();
     assert!(
         !remediation.is_empty(),
-        "remediation text must ride along and be actionable: {pd}"
+        "remediation text must ride along and be actionable: {diagnostic}"
     );
     assert!(
-        remediation.contains("execution permission"),
-        "remediation must carry the code-specific actionable fragment: {remediation}"
+        remediation.contains("cannot be granted non-interactively")
+            && remediation.contains("run interactively"),
+        "remediation must carry the headless-specific actionable fragment: {remediation}"
     );
 }
 

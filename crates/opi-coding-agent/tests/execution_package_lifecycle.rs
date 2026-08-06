@@ -139,6 +139,55 @@ fn add_global_execution_package_persists_lock_and_untrusted_disabled_record() {
     assert!(!recs[0].enabled);
 }
 
+#[cfg(target_os = "macos")]
+#[test]
+fn macos_non_empty_snapshot_matches_install_lock_and_activation_revalidation() {
+    let (_pkg, root, declared_sha) = make_execution_package("opi-sandbox");
+    let workspace = tempfile::tempdir().unwrap();
+    let user = tempfile::tempdir().unwrap();
+
+    assert_eq!(
+        add_global(root.to_str().unwrap(), workspace.path(), user.path()),
+        0,
+        "macOS package add must hash the non-empty snapshot from byte zero"
+    );
+    let persisted_lock = PackageStore::global(user.path().to_path_buf())
+        .read_lock()
+        .expect("read persisted lock");
+    let persisted_contribution = &persisted_lock[0].contributions[0];
+    assert_eq!(persisted_contribution.executable_sha256, declared_sha);
+
+    let activation = store(user.path());
+    let mut confirmer = TestConfirmer {
+        grant: true,
+        saw_display: false,
+    };
+    activation
+        .enable(
+            "opi-sandbox",
+            package_activation::host_target_triple(),
+            package_activation::host_opi_version(),
+            &mut confirmer,
+        )
+        .expect("enable revalidation must match the declared digest");
+    let activated = activation
+        .activate(
+            "opi-sandbox",
+            package_activation::host_target_triple(),
+            package_activation::host_opi_version(),
+        )
+        .expect("pre-spawn revalidation must match the persisted lock");
+    let validated = &activated.validated[0];
+
+    assert_eq!(validated.lock, *persisted_contribution);
+    assert_eq!(validated.lock.executable_sha256, declared_sha);
+    assert_eq!(
+        std::fs::read(validated.bound_launch_path()).unwrap(),
+        EXE_CONTENT,
+        "the validated bound descriptor must expose the complete executable"
+    );
+}
+
 #[test]
 fn add_project_local_execution_package_is_rejected() {
     let (_pkg, root, _sha) = make_execution_package("proj-exec");
@@ -605,6 +654,13 @@ fn remove_deletes_lock_and_activation_record() {
             .read_lock()
             .unwrap()
             .is_empty(),
+    );
+    assert!(
+        PackageStore::global(user.path().to_path_buf())
+            .read_declarations()
+            .unwrap()
+            .is_empty(),
+        "remove deletes the package declaration"
     );
     drop(pkg);
 }
