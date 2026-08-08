@@ -125,9 +125,35 @@ Phase 4 examples:
 - `4.7 | skills, prompt fragments, themes, and packages with progressive discovery` becomes `4.7.1` skills, `4.7.2` prompt fragments/templates, `4.7.3` themes, and `4.7.4` packages.
 - `4.8 | extension/package examples: permission gate, protected paths, sub-agent, plan mode, todo, MCP adapter` becomes six package/example tasks; the parent row is not executable.
 
+### A.init.2b Grilling Pass
+
+After draft extraction (`A.init.2a/2c/2d`) and before verify (`A.init.2e`), settle
+the spec's cross-cutting ambiguities by grilling the human — the round-based
+interview from the installed `grilling` skill. This is the coarse, per-spec pass;
+per-task ambiguities survive to Phase B's grill-on-fuzzy.
+
+Run the grill when extraction left any cross-cutting decision open: unsettled
+vocabulary, a scope boundary a task's DoD depends on, an ambiguous out-of-scope
+line, or two tasks whose DoDs assume contradictory definitions. Surface these in
+rounds; close a line of questioning only when the decision is recorded.
+
+Land each resolved decision in exactly one home (one-decision-one-home):
+
+- Resolved **terminology** → a `docs/CONTEXT.md` glossary entry.
+- A **cross-cutting architectural decision** → amend the active phase design doc
+  via the Spec-amend procedure in `skill.md`.
+- An **in-task decision** → that task's `definition_of_done` /
+  `acceptance_scenarios` / out-of-scope, with an `inference_notes` entry
+  (`field = "grill_resolution"`).
+
+Completion: every cross-cutting ambiguity extraction surfaced is either resolved
+into one of the three homes or explicitly deferred to a named task's Phase B grill
+(recorded as an `inference_notes` entry naming the task). The draft graph handed
+to `A.init.2e` then carries no silent assumptions.
+
 ### A.init.2e Verify
 
-Run the six-lens audit over the draft graph (post-`A.init.2a/2c/2d`,
+Run the six-lens audit over the draft graph (post-`A.init.2a/2b/2c/2d`,
 pre-review) against the active phase's registered source design doc. Mode is
 auto-deep by drift magnitude (single-agent for routine drift; the Workflow at
 `.claude/skills/opi-implement/scripts/plan.workflow.js` for substantive change or first-init-of-a-phase).

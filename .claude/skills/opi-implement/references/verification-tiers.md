@@ -16,7 +16,8 @@ Gates:
 2. `cargo clippy --workspace --all-targets -- -D warnings`
 3. `cargo test --workspace --all-targets`
 4. `RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps`
-5. Smoke script runs
+5. `scripts/opi-impl-smoke.sh full` runs (the D.3 cross-cutting gate for this
+   tier is also `full`)
 
 ## `documentation` Tier
 
@@ -41,13 +42,19 @@ add provider wire formats, CLI runtime behavior, or visual snapshot surfaces.
 Gates:
 1. TDD red→green produced new/changed tests in `crates/<crate>/tests/` OR
    `#[cfg(test)]` modules. Verify via diff content inspection (not just stat).
-2. `cargo test -p <crate>` green
-3. `cargo clippy -p <crate> -- -D warnings` green
+2. `cargo test -p <crate>` green, run with per-target selection (`--lib`, `--bin`,
+   or `--test <name>`). Never run bare `cargo test -p <crate> --all-targets` or a
+   workspace-wide test run — both compile every test binary in the workspace (the
+   host disk constraint). The boot smoke already proved the workspace builds.
+3. `cargo clippy -p <crate> -- -D warnings` green (lib target)
 4. Docs with warnings denied green:
    - Unix shell: `RUSTDOCFLAGS="-D warnings" cargo doc -p <crate> --no-deps`
    - PowerShell: `$env:RUSTDOCFLAGS="-D warnings"; cargo doc -p <crate> --no-deps; Remove-Item Env:RUSTDOCFLAGS`
-5. `cargo build --workspace` green (catches breaking-API changes)
-6. No `unwrap`/`expect` in non-test code (grep check)
+5. No `unwrap`/`expect` in non-test code (grep check)
+
+The previous `cargo build --workspace` gate is removed here — the D.3 cross-cutting
+`scoped` smoke re-runs `build --workspace` after implementation, which is when
+cross-crate compile breakage from this task's change can actually surface.
 
 ## `cli-tool` Tier
 
@@ -270,14 +277,30 @@ Additional gates:
 
 ## Cross-Cutting Gates (Non-Documentation Tiers)
 
-Run after tier-specific gates:
+Run after tier-specific gates.
 
-1. `cargo fmt --check --all` exits 0
-2. `cargo clippy --workspace --all-targets -- -D warnings` exits 0
-3. `RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps` exits 0
-4. `bash scripts/opi-impl-smoke.sh` (or `.ps1` on Windows) exits 0
-5. Capture `baseline_dirty_files` at Phase B before implementation starts.
-6. Before commit-stage, every entry in
+Compile/test gates are tier-dispatched (the previous workspace-wide
+fmt + clippy + rustdoc + smoke duplicated the D.1 per-crate gates and re-ran the
+full workspace test on every non-documentation task):
+
+- `workspace` tier → `scripts/opi-impl-smoke.sh full` (or `.ps1 full` on Windows):
+  build + fmt + clippy `--all-targets` + rustdoc + full workspace test.
+- `library` / `cli-tool` / `cli-runtime` / `tui` tiers →
+  `scripts/opi-impl-smoke.sh scoped --crate <crate> [--test <name> ...]` (or the
+  `.ps1` equivalent): `build --workspace` (the one workspace-wide gate worth
+  keeping — cross-crate compile safety) + `fmt --check --all` + scoped clippy/test
+  for the task's crate and named test binaries only. This deliberately does NOT
+  compile or run every test binary in the workspace.
+- `documentation` tier → does not run these cross-cutting gates (see the
+  documentation tier gates above).
+
+Pass an explicit `--test <name>` per test binary the task owns so the final gate
+runs exactly those, not the whole crate's `--all-targets` set.
+
+Commit-staging gates (every non-documentation tier, unchanged):
+
+1. Capture `baseline_dirty_files` at Phase B before implementation starts.
+2. Before commit-stage, every entry in
    `git status --porcelain --untracked-files=all` MUST satisfy ONE of:
    - present in `baseline_dirty_files` AND unchanged by this task AND not
      matched by `task_owned_paths` (untouched baseline, leave alone);
@@ -285,14 +308,14 @@ Run after tier-specific gates:
    - matched by `task_owned_paths` AND also present in `baseline_dirty_files`
      → REFUSE; print the overlap and ask the user to either split the file
      manually or explicitly confirm the baseline edit is task-owned.
-7. Stage only paths matched by `task_owned_paths` AND changed since
+3. Stage only paths matched by `task_owned_paths` AND changed since
    `start_commit`. Never use `git add -A` or `git add .`.
-8. Pre-commit: `HEAD` must equal `tasks[].start_commit` unless the only new
+4. Pre-commit: `HEAD` must equal `tasks[].start_commit` unless the only new
    commit is a reviewed manual task commit handled by `--resume-from-manual`.
-9. Post-commit: `HEAD^` must equal `start_commit`; no path matched by
+5. Post-commit: `HEAD^` must equal `start_commit`; no path matched by
    `task_owned_paths` may remain dirty. Files in `baseline_dirty_files` that
    were not modified by the task remain as-is.
-10. Commit message includes `Opi-*` evidence footers.
+6. Commit message includes `Opi-*` evidence footers.
 
 ### `--resume-from-manual`
 
@@ -356,6 +379,13 @@ A task has `evaluator_required = true` when ANY of:
 
 `evaluator_required` is static (confirmed at init). Phase D MUST NOT dynamically
 promote a task. Phase-exit evaluation is separate (Phase F).
+
+D.2 skip rule: a task skips the D.2 exec-verify entirely (neither the 6-lens deep
+run nor the 2-lens single-agent pass) when its tier is `documentation`, or when it
+is an isolated single-crate `library` task (`evaluator_required = false` AND it
+touches exactly one crate). For these, D.1 tier gates + D.0/D.3 acceptance cover
+correctness and the per-task exec-verify is audit redundancy. All other tasks keep
+the existing `evaluator_required` routing (6-lens deep vs 2-lens pass).
 
 The evaluator receives: DoD, diff from `start_commit`, new/changed tests,
 verification outputs, planned commit evidence, acceptance scenarios, production

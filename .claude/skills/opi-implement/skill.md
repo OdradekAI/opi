@@ -25,6 +25,22 @@ auto-pick or run a task until the human confirms the reconciled graph. Only
 the authoritative contract for shipped work. Do not run stale ledger tasks whose
 title or DoD contradicts the current spec.
 
+**Spec-amend procedure (when grilling finds the spec wrong):** When the
+`A.init.2b` grilling pass or a Phase B grill reveals the live source spec is wrong
+or incomplete, amend it rather than work around it:
+1. Amend the affected section of the live spec in place and add a dated marker at
+   the edit point: `> Amendment (YYYY-MM-DD): <what changed and why>`.
+2. Re-derive only the affected task entries' `definition_of_done` /
+   `acceptance_scenarios` / out-of-scope — never the whole graph (that discards
+   `verified_at_commit` records).
+3. If an affected task is already verified, trigger a targeted re-verify of that
+   task by its tier, not a full re-implementation.
+4. The spec-hash re-sync is the existing mechanism (`spec_files_sha256`,
+   CRLF-normalized, pinned by `tests/spec_ledger.rs`).
+5. Amend only the live spec (`docs/superpowers/specs/<active-phase>` and
+   `docs/opi-spec.md` for reviewed documentation tasks). NEVER edit frozen copies
+   under `docs/snapshots/phaseN/`.
+
 **Reviewed supplemental sources:** Supplemental tasks come only from this
 registry. Do not auto-parse arbitrary files from `docs/superpowers/specs/`.
 
@@ -151,12 +167,20 @@ E is the only phase that mutates git **during normal task execution**.
    - A.1 Detect mode (status / clear-blocker / task-lifecycle / plan / run-specific / make-progress)
    - A.2 Load or create `.opi-impl-state.json`
    - A.3 Session ritual: `pwd`, `git status`, `git log -5 --oneline`, smoke
+     `boot` (workspace builds + lints clean; deliberately no test gate and no
+     `--all-targets` — see smoke script modes)
    - A.4 Select target task (auto-pick or validate override)
 
 2. **Phase B: Plan-the-task**
    - B.1 Print task DoD + verification tier + parallelize plan + owned
      acceptance scenarios + required production call-site traces + phase
      source files + phase-specific forbidden-scope guards
+   - B.1a If the task's spec slice is fuzzy — vague DoD verbs that survived
+     init, an unset scope boundary, or terms absent from `docs/CONTEXT.md` —
+     grill the human (installed `grilling` skill) to sharpen it before planning.
+     Land resolved decisions per the one-decision-one-home rule in
+     `references/initializer.md` A.init.2b; if grilling reveals the source spec
+     itself is wrong, run the Spec-amend procedure above before proceeding.
    - B.2 User gate: "proceed with task `<id>` and create the task commit plus
      its separate ledger-checkpoint commit if verification passes?"
    - B.3 If confirmed: mark `in_progress`, record `start_commit`, write ledger
@@ -197,9 +221,16 @@ E is the only phase that mutates git **during normal task execution**.
      invokes `.claude/skills/opi-implement/scripts/exec.workflow.js` (full 6-lens deep); for all others the
      2-lens single-agent L-D1+L-D5 pass per `references/verify-engine.md`.
      Must-fix findings block Phase D and route to Phase C (incrementing
-     `iteration_count`).
-   - D.3 Cross-cutting gates: fmt, clippy, doc, smoke
-   - D.4 If any fail -> back to Phase C
+     `iteration_count`). SKIP D.2 entirely for `documentation` tier and for
+     isolated single-crate `library` tasks (`evaluator_required = false`, one
+     crate) — see `references/verification-tiers.md` D.2 skip rule.
+   - D.3 Cross-cutting gates: tier-dispatched compile/test — `workspace` tier
+     runs `smoke full`; other non-documentation tiers run
+     `smoke scoped --crate <crate> [--test <name>...]`; `documentation` tier
+     runs none — plus the commit-staging rules in
+     `references/verification-tiers.md`.
+   - D.4 If any fail -> back to Phase C. After D.3 passes, reclaim the worked
+     crate with `cargo clean -p <crate>` (keeps the dependency cache).
 
 5. **Phase E: Task Commit & Ledger Checkpoint**
    - E.1 Commit only task-owned implementation files with `Opi-*` evidence
@@ -284,6 +315,7 @@ digraph select {
 
 | Phase | Skill | Purpose |
 |---|---|---|
+| A.init.2b / B.1a | `grilling` | settle cross-cutting spec ambiguities at init; sharpen a fuzzy task slice at Phase B |
 | C.1 | `superpowers:test-driven-development` | red-green-refactor body |
 | C.1 | `superpowers:dispatching-parallel-agents` | when `parallelize` non-empty |
 | C.2 | `superpowers:systematic-debugging` | attempt 3+ can't reach green |
@@ -364,10 +396,19 @@ Commit scope is the crate name. Example: `feat(opi-agent): implement agent_loop`
 ## Platform Detection
 
 - Detect host via `OSTYPE`/`OS` env vars and shell type
-- Linux/macOS: run `scripts/opi-impl-smoke.sh`
-- Windows native PowerShell: run `scripts/opi-impl-smoke.ps1`
-- Windows bash (Git Bash/MSYS/WSL): run `scripts/opi-impl-smoke.sh` with
-  forward-slash paths
+- Linux/macOS: run `scripts/opi-impl-smoke.sh <mode>`
+- Windows native PowerShell: run `scripts/opi-impl-smoke.ps1 <mode>`
+- Windows bash (Git Bash/MSYS/WSL): run `scripts/opi-impl-smoke.sh <mode>` with
+  forward-slash paths. `<mode>` is `boot` at Phase A.3, `full` for `workspace`
+  tier D.3, `scoped --crate <crate> [--test <name>...]` for other non-doc D.3.
+- Build output & disk: before any cargo gate, point
+  `CARGO_TARGET_DIR` at a per-session directory on a high-headroom drive
+  (`E:\opi-target\<OPI_IMPL_BUILD_SESSION>` on this host — the repo drive fills
+  to 100% under workspace smoke) and set `CARGO_INCREMENTAL=0`. The per-session
+  id MUST be unique per invocation/worktree; concurrent builds MUST NOT share one
+  target dir (cargo target-lock corruption). After D.3 passes, run
+  `cargo clean -p <worked-crate>` (keeps the dependency cache). At session end,
+  remove the session's target directory.
 - SHA-256: use `sha256sum`, PowerShell `Get-FileHash`, Python, or Rust helper. For `spec_files_sha256` entries (the spec-alignment guard) normalize CRLF→LF before hashing (replace the two-byte `\r\n` with `\n`); the `crates/opi-coding-agent/tests/spec_ledger.rs` CI guard and the live `.opi-impl-state.json` use this same convention. Phase-exit snapshots under `docs/snapshots/phaseN/` are historical and must NOT be re-synced to the current hash.
 - JSON manipulation: `jq` when present; fallback to PowerShell/Python
 - Windows ledger validation/install:
