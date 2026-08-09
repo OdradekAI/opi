@@ -1,5 +1,6 @@
 ---
 name: opi-eval
+description: Run explicit, isolated end-to-end runtime regression evaluations against real providers, preserve traces, and emit normalized findings for remediation.
 disable-model-invocation: true
 ---
 
@@ -21,16 +22,35 @@ recorded in the report regardless of how it was resolved.
 
 ## Step 1: Build
 
-Clean-compile the opi binary in release mode.
+Build the opi binary in release mode using the same persistent external-cache
+policy as `opi-implement`:
 
-```powershell
-cargo clean -p opi-coding-agent
+1. Respect an existing `CARGO_TARGET_DIR`.
+2. Otherwise set it to the single path printed by `python
+   scripts/opi-cargo-cache.py resolve`.
+3. For a resolver-managed cache, acquire a lease with
+   `scripts/opi-cargo-cache.py lease start` for the current process, and release
+   it in `finally`/`trap` after the build. An explicitly supplied unmarked
+   target remains externally managed and is never eligible for Opi pruning.
+4. Retain Cargo's incremental default and run:
+
+```text
 cargo build --release -p opi-coding-agent
 ```
 
-On Unix the binary is `target/release/opi`; on Windows `target/release/opi.exe`.
+Do not use a GUID/`mktemp` target, set `CARGO_INCREMENTAL=0`, run `cargo clean`,
+or delete the target after the eval. Different worktrees/toolchains must not
+share a target. Cache pruning is an explicit maintenance action outside an
+eval: report inactive marked-cache paths, age, and size; remove oldest caches
+only after confirming no Cargo process uses them. Inspect with `python
+scripts/opi-cargo-cache.py status`; `prune` is dry-run by default and requires
+both age/size thresholds plus `--execute` to delete marked inactive caches.
 
-**Completion criterion**: both commands exit 0 and the binary file exists.
+On Unix the binary is `$CARGO_TARGET_DIR/release/opi`; on Windows
+`$env:CARGO_TARGET_DIR\release\opi.exe`.
+
+**Completion criterion**: the build exits 0 and the resolved cached binary file
+exists.
 
 If the build fails, stop and report the error. Do not proceed with stale
 binaries.
@@ -86,8 +106,9 @@ output. Cases marked `ERROR` get a minimal extraction noting the failure.
 
 ## Step 4: Evaluate
 
-Dispatch a **readonly** evaluator subagent. The evaluator is independent of the
-opi binary under test -- it receives only data and criteria.
+Dispatch a **readonly** evaluator subagent. The evaluator receives only data and
+criteria. Prefer a different model family from the provider model under test;
+record the actual relationship using the shared finding-contract vocabulary.
 
 Feed the evaluator:
 - The test case definitions (from `references/test-cases.md`)
@@ -127,7 +148,9 @@ Append one JSON line to `docs/eval/history.jsonl` with:
   "model": "<provider:model>",
   "cases": { "<name>": { "verdict": "<PASS|DEGRADED|FAIL|ERROR>", ... } },
   "overall": "<PASS|REGRESSION|DEGRADED>",
-  "evaluator": "<subagent-type>"
+  "evaluator": "<subagent-type>",
+  "evaluator_model": "<provider:model of the evaluator>",
+  "independence": "<independent-family|fresh-context-same-family|unknown>"
 }
 ```
 
@@ -143,6 +166,23 @@ If a pi baseline file exists at `docs/eval/pi-baseline.jsonl`, include a
 comparison section. Otherwise omit the section entirely.
 
 **Completion criterion**: report markdown file written, `history.jsonl` updated.
+
+### Normalized regressions
+
+For every confirmed `FAIL`, `ERROR`, or cross-version regression signal, append
+the normalized YAML block from
+`../_shared/references/finding-contract.md`. Use:
+
+```text
+source_kind = eval
+axis = runtime-fidelity
+status = unverified
+```
+
+The block cites trace events, report artifacts, and the eval case or exact
+reproduction command. It diagnoses the regression but does not recommend or
+execute a source fix. `opi-remediate sources=<eval-report>` can ingest it
+directly.
 
 ## Evaluation dimensions
 
@@ -196,6 +236,12 @@ Does the runtime handle errors gracefully?
 
 - This skill consumes real API credits. Never fire without user invocation.
 - Always record the model in every output artifact.
+- **Model independence (preferred and truthful).** Use a different model family
+  when available and record `independent-family`. If only the same family is
+  available, use a fresh evaluator context, record
+  `fresh-context-same-family`, mark the overall verdict `DEGRADED`, and disclose
+  the self-grade risk. If identity cannot be established, record `unknown` and
+  mark the run `DEGRADED`.
 - The evaluator subagent must be readonly -- it analyzes, never executes.
 - Test fixtures use isolated temp directories. Never write fixtures into the
   workspace root.
@@ -211,3 +257,5 @@ Does the runtime handle errors gracefully?
 - Read `references/evaluator-prompt.md` for the evaluator's full task prompt
   and scoring protocol.
 - Read `references/report-template.md` for the output report format.
+- Read `../_shared/references/finding-contract.md` for normalized runtime
+  regression blocks consumed by `opi-remediate`.

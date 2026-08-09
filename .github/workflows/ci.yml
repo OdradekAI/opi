@@ -18,6 +18,12 @@ env:
   RUSTFLAGS: "-D warnings"
 
 jobs:
+  docs_contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 scripts/opi-doc-check.py
+
   fmt:
     runs-on: ubuntu-latest
     steps:

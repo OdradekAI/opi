@@ -8,16 +8,16 @@ Output format for `docs/snapshots/phase<N>/remediation-plan.md`.
 # Phase <N> Remediation Plan
 
 **Date**: <YYYY-MM-DD>
-**Audit sources**: <list of audit files consumed>
+**Finding sources**: <list of audit/eval files consumed, with source kinds>
 **Commit range**: `<first>..<last>`
 **Design spec**: <spec file path(s)>
 
 ---
 
-## Audit cross-reference summary
+## Finding cross-reference summary
 
-| Cluster | Theme | Auditors | Consensus | Unified severity | Verification |
-|---------|-------|----------|-----------|------------------|-------------|
+| Cluster | Theme | Sources | Independence | Coverage | Source severity range | Final severity + rationale | Verification |
+|---------|-------|---------|--------------|----------|-----------------------|----------------------------|-------------|
 | ... | ... | ... | ... | ... | Confirmed / Partially / Refuted |
 
 ## Decision record
@@ -33,12 +33,11 @@ Output format for `docs/snapshots/phase<N>/remediation-plan.md`.
 **Verification**:
 
     cargo fmt --all
-    cargo clippy -p <crate> --all-targets -- -D warnings
-    cargo test -p <crate> --all-targets
+    scripts/opi-impl-smoke.sh scoped --crate <crate> --test <affected-test-binary>
 
 #### Fix 1.1: <short title>
 
-- **Audit source**: <auditor IDs and finding IDs>
+- **Finding source**: <source paths, kinds, model IDs, and finding IDs>
 - **Cluster**: C<N>
 - **Decision**: D<N>
 - **Verification status**: Confirmed
@@ -58,8 +57,7 @@ Output format for `docs/snapshots/phase<N>/remediation-plan.md`.
 
 ## Final verification
 
-    cargo test --workspace --all-targets
-    cargo test --workspace --doc
+    <union of affected tier gates; smoke full only for workspace/cross-crate scope>
 
 ## Scope exclusions
 
@@ -77,7 +75,7 @@ Every fix item in the plan MUST include these fields:
 
 | Field | Description |
 |---|---|
-| Audit source | Which auditor(s) and finding ID(s) identified this issue |
+| Finding source | Which audit/eval artifacts, source kinds, model IDs, and finding IDs identified this issue |
 | Cluster | The cross-reference cluster ID (omit if single-source) |
 | Decision | The decision record ID that resolved the fix direction |
 | Verification status | Confirmed / Partially confirmed (from Phase C) |

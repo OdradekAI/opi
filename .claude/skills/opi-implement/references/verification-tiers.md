@@ -1,23 +1,18 @@
 # Verification Tiers Reference
 
-Each task carries a `tier` field; the skill selects gates from this table.
-All non-documentation tiers also run the cross-cutting gates at the bottom.
-Documentation-only tasks run the documentation tier gates and must be promoted
-to the relevant non-documentation tier if they touch Rust code, Cargo manifests,
-runtime scripts, or generated build artifacts.
+Each task carries a `tier` field; the skill selects one authoritative mechanical
+gate from this table. D.3 adds only acceptance/platform checks missing from that
+gate. Documentation-only tasks must be promoted when they touch runtime Rust,
+Cargo manifests, or generated build artifacts.
 
 ## `workspace` Tier
 
 Use for dependency graph changes, cross-crate integration harnesses, and tasks
 whose primary crate is `workspace` or `cross-crate`.
 
-Gates:
-1. `cargo fmt --check --all`
-2. `cargo clippy --workspace --all-targets -- -D warnings`
-3. `cargo test --workspace --all-targets`
-4. `RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps`
-5. `scripts/opi-impl-smoke.sh full` runs (the D.3 cross-cutting gate for this
-   tier is also `full`)
+Gate: `scripts/opi-impl-smoke.sh full` (or `.ps1 full` on Windows). It runs
+format, all-target clippy, rustdoc, and the workspace test exactly once. There
+is no preceding `cargo build --workspace` and no D.3 rerun.
 
 ## `documentation` Tier
 
@@ -25,12 +20,13 @@ Use for documentation/alignment tasks whose source spec explicitly says no
 runtime behavior or code migration is allowed.
 
 Gates:
-1. `git diff --check` exits 0.
-2. Task-owned paths are exact documentation paths, not broad `docs/**` globs.
-3. English and localized counterparts are updated together when both exist.
-4. Required docs guard commands from the source spec or
-   `acceptance_scenarios[].verification` exit with the expected result.
-5. `git diff --name-only` shows no Rust source, Cargo manifest, lockfile,
+1. `python scripts/opi-doc-check.py` exits 0.
+2. `git diff --check` exits 0.
+3. Task-owned paths are exact documentation paths, not broad `docs/**` globs.
+4. English and localized counterparts are updated together when both exist.
+5. Any source-spec or `acceptance_scenarios[].verification` command that proves
+   more than prose presence exits with the expected result.
+6. `git diff --name-only` shows no Rust source, Cargo manifest, lockfile,
    runtime script, fixture, snapshot, or generated build artifact changes. If
    it does, reclassify the task before implementation continues.
 
@@ -40,21 +36,19 @@ Use for focused `opi-ai`, `opi-agent`, or `opi-tui` library changes that do not
 add provider wire formats, CLI runtime behavior, or visual snapshot surfaces.
 
 Gates:
-1. TDD red→green produced new/changed tests in `crates/<crate>/tests/` OR
-   `#[cfg(test)]` modules. Verify via diff content inspection (not just stat).
-2. `cargo test -p <crate>` green, run with per-target selection (`--lib`, `--bin`,
-   or `--test <name>`). Never run bare `cargo test -p <crate> --all-targets` or a
-   workspace-wide test run — both compile every test binary in the workspace (the
-   host disk constraint). The boot smoke already proved the workspace builds.
-3. `cargo clippy -p <crate> -- -D warnings` green (lib target)
-4. Docs with warnings denied green:
-   - Unix shell: `RUSTDOCFLAGS="-D warnings" cargo doc -p <crate> --no-deps`
-   - PowerShell: `$env:RUSTDOCFLAGS="-D warnings"; cargo doc -p <crate> --no-deps; Remove-Item Env:RUSTDOCFLAGS`
-5. No `unwrap`/`expect` in non-test code (grep check)
+1. Record test impact as `add`, `update`, `delete`, `retain`, or `none`.
+   Features and bug fixes normally require `add`/`update`; a behavior-preserving
+   internal refactor may use `retain`; test-only cleanup may use `delete`;
+   docs/skills/metadata may use `none`.
+2. Run `scripts/opi-impl-smoke.sh scoped --crate <crate> [--test <name> ...]`
+   (or the PowerShell sibling). Name every affected integration binary; with no
+   `--test`, the gate runs lib tests only. The script owns format, production
+   clippy, named-test clippy/test, and crate rustdoc.
+3. No `unwrap`/`expect` in changed non-test code (focused grep/diff check).
 
-The previous `cargo build --workspace` gate is removed here — the D.3 cross-cutting
-`scoped` smoke re-runs `build --workspace` after implementation, which is when
-cross-crate compile breakage from this task's change can actually surface.
+Do not precede or follow the scoped gate with `cargo build --workspace`, bare
+`cargo test -p <crate>`, or another clippy/doc run. Cross-crate compile behavior
+belongs to a workspace-tier task or an explicit acceptance command.
 
 ## `cli-tool` Tier
 
@@ -275,27 +269,21 @@ Additional gates:
    session sharing service, web UI product, or pi session v3 compatibility
    claim is added.
 
-## Cross-Cutting Gates (Non-Documentation Tiers)
+## D.3 Gap-Only Gates
 
-Run after tier-specific gates.
+D.1 already owns mechanical format, compile/lint, test, and rustdoc proof. D.3
+runs only commands still missing for the task's acceptance scenarios:
 
-Compile/test gates are tier-dispatched (the previous workspace-wide
-fmt + clippy + rustdoc + smoke duplicated the D.1 per-crate gates and re-ran the
-full workspace test on every non-documentation task):
+- a public CLI/harness/subprocess or production-call-site check not covered by
+  the named D.1 test;
+- a generator/checksum/artifact verifier;
+- an authoritative OS/target check that cannot run locally;
+- an explicit external acceptance command from the reviewed source.
 
-- `workspace` tier → `scripts/opi-impl-smoke.sh full` (or `.ps1 full` on Windows):
-  build + fmt + clippy `--all-targets` + rustdoc + full workspace test.
-- `library` / `cli-tool` / `cli-runtime` / `tui` tiers →
-  `scripts/opi-impl-smoke.sh scoped --crate <crate> [--test <name> ...]` (or the
-  `.ps1` equivalent): `build --workspace` (the one workspace-wide gate worth
-  keeping — cross-crate compile safety) + `fmt --check --all` + scoped clippy/test
-  for the task's crate and named test binaries only. This deliberately does NOT
-  compile or run every test binary in the workspace.
-- `documentation` tier → does not run these cross-cutting gates (see the
-  documentation tier gates above).
-
-Pass an explicit `--test <name>` per test binary the task owns so the final gate
-runs exactly those, not the whole crate's `--all-targets` set.
+Build the union of D.0, D.1, and D.3 commands before execution and deduplicate
+exact commands and equivalent supersets. A workspace-tier D.1 `smoke full` is
+never repeated in D.3. A focused task is promoted to workspace tier only for a
+real cross-crate semantic contract, not as a precaution.
 
 Commit-staging gates (every non-documentation tier, unchanged):
 
@@ -359,7 +347,7 @@ Before confirming an init or reinit graph:
 12. Vague DoD verbs (`works`, `supports`, `loads`, `integrates`, `bridges`,
     `productizes`, `handles`) must be expanded into observable assertions before
     graph confirmation.
-13. For phases 5-14, `spec_files` must match the reviewed source registry in
+13. For phases 14-18, `spec_files` must match the reviewed source registry in
     `skill.md` for the active phase; arbitrary docs under
     `docs/superpowers/specs/` are not normative.
 14. Phase non-goals must appear as `forbidden_scope` inference notes or
@@ -367,25 +355,31 @@ Before confirming an init or reinit graph:
 
 ## Risk Evaluator Gate
 
-A task has `evaluator_required = true` when ANY of:
-- Tier is `cli-runtime` or `tui`
-- Task touches multiple crates or public protocol/data model
-- Task changes tool safety, tool selection, allowlists, extension hooks, config,
-  session storage, JSON framing, provider events, or release-critical behavior
-- Task changes diagnostics, trace envelopes, doctor output, runtime event
-  ordering, cancellation, tool result contracts, provider wire formats,
-  session context reconstruction, exports, TUI command discovery, accessibility,
-  or documented phase non-goal boundaries
+A task has `evaluator_required = true` only when it changes semantic high-risk
+behavior that benefits from adversarial judgment:
+
+- security, command/tool safety, authentication, authorization, permissions,
+  credential handling, or destructive-operation boundaries;
+- public API/protocol/schema compatibility or cross-crate semantic contracts;
+- session persistence, branch reconstruction, durability, recovery, or
+  user-data export/redaction;
+- provider wire formats, model-visible event/tool behavior, cancellation/event
+  ordering, or runtime behavior with ambiguous acceptance criteria;
+- a release-critical migration whose failure is not fully characterized by a
+  deterministic mechanical gate.
+
+Tier name, multiple touched files, TUI work, diagnostics, and configuration do
+not automatically require an evaluator. Set the flag only when the actual
+change meets a criterion above.
 
 `evaluator_required` is static (confirmed at init). Phase D MUST NOT dynamically
 promote a task. Phase-exit evaluation is separate (Phase F).
 
-D.2 skip rule: a task skips the D.2 exec-verify entirely (neither the 6-lens deep
-run nor the 2-lens single-agent pass) when its tier is `documentation`, or when it
-is an isolated single-crate `library` task (`evaluator_required = false` AND it
-touches exactly one crate). For these, D.1 tier gates + D.0/D.3 acceptance cover
-correctness and the per-task exec-verify is audit redundancy. All other tasks keep
-the existing `evaluator_required` routing (6-lens deep vs 2-lens pass).
+D.2 skip rule: every task with `evaluator_required = false` skips exec-verify.
+This normally includes deterministic docs/skills/metadata, test-only changes,
+mechanical generation/version edits, dependency-neutral cleanup, and
+behavior-preserving internal refactors with focused existing tests. D.0/D.1/D.3
+remain mandatory. Phase-exit evaluation is separate and still runs once.
 
 The evaluator receives: DoD, diff from `start_commit`, new/changed tests,
 verification outputs, planned commit evidence, acceptance scenarios, production
@@ -413,8 +407,7 @@ The D.2 evaluator is realized by the verify engine's exec stage (see
   tests-non-vacuous, L-D3 production-call-site-proven, L-D4
   evidence-truthfulness, L-D5 non-goal-leak, L-D6 workspace-deps-honored), with
   adversarial verify before any must-fix disposition.
-- All other tasks → the 2-lens single-agent pass (L-D1 + L-D5); no script, no
-  fan-out.
+- All other tasks → no D.2 run and no `verify_runs` exec entry.
 
 Must-fix findings BLOCK Phase D pass, route to Phase C, and increment
 `iteration_count` against `max_iterations` (5). The engine records a

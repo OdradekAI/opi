@@ -1,0 +1,6 @@
+interface:
+  display_name: "Opi Research"
+  short_description: "Research outward plugin capabilities"
+  default_prompt: "Use $opi-research to investigate an outward capability against primary sources and assess plugin-first placement in opi."
+policy:
+  allow_implicit_invocation: false

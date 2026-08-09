@@ -16,6 +16,11 @@ column explains reasoning so you can apply judgment in edge cases.
 | Never self-grade verification | LLMs rationalize success. Mechanical gates (exit codes, grep) are deterministic and auditable. |
 | Never auto-accept TUI snapshot changes | Snapshot diffs are visual regressions until proven otherwise. Only human can judge intent. |
 | Never silently rewrite inferred task graph metadata | Graph is a reviewed contract. Silent changes reorder execution, skip gates, break confirmed assumptions. |
+| Never amend a normative source from plan admission or task execution | Missing facts return to research/realignment; unresolved product meaning returns to human-led shaping. Editing the source inside the harness collapses author and reviewer roles. |
+| Never let a plan reviewer mutate the draft it reviews | Adversarial review must report independently. Auto-folding its own findings removes the fixed artifact needed for a credible verdict. |
+| Never run a second task, worktree, commit, or ticket state machine inside `opi-implement` | The canonical ledger, task commit, and ledger checkpoint already own delivery state. A nested generic workflow creates contradictory recovery evidence. |
+| Never write a test at an unconfirmed seam | Tests at private or accidental seams couple the suite to implementation and can make a task look covered without proving its public behavior. |
+| Never disguise a horizontal task graph as dependency sequencing | Infrastructure-by-layer tasks defer integration risk. Use demonstrable vertical slices, or explicitly justified expand-contract steps for wide refactors. |
 | Never run live provider tests from this skill | Non-deterministic, costs money, hits rate limits. Belong in `#[ignore]`-gated tests run manually. |
 | Never mix the canonical ledger into a task commit or commit transient ledger files | The task SHA is not known until the task commit exists, so the canonical ledger needs a separate checkpoint commit. Tmp, draft, candidate, backup, and corrupt files are nondurable artifacts and must remain ignored. |
 | Never resolve a canonical-ledger conflict by choosing one side | Parallel branches carry independent task evidence. Reconcile both branches' `Opi-*` footers through the plan path or valid progress is silently lost. |
@@ -33,11 +38,11 @@ column explains reasoning so you can apply judgment in edge cases.
 | Never archive a phase from ledger status alone | The ledger can encode weak DoDs. Phase exit must independently rebuild current source-spec criteria and trace them to code and tests. |
 | Never leave vague DoD verbs unexpanded | Words like `works`, `supports`, `loads`, `integrates`, `bridges`, and `handles` hide missing observable behavior. Expand before task execution. |
 | Never satisfy a phase by implementing its Non-Goals | Phase designs use Non-Goals to preserve product scope. npm, marketplace/gallery, telemetry, OAuth, sandboxing, pi-web-ui parity, pi session compatibility, background bash, vector memory, and workflow-heavy core features require separate reviewed designs. |
-| Never treat handoff/backlog lists as current executable scope | Future Ecosystem and phase handoff sections are dependency hints, not task authorization. Converting them to tasks requires a reviewed source update and `--reinit`. |
+| Never treat handoff/backlog lists as current executable scope | Future Ecosystem and phase handoff sections are dependency hints, not task authorization. Converting them to tasks requires a reviewed source update and a `plan` re-run. |
 | Never broaden into cross-task refactors without graph update | Scope creep invalidates adjacent task assumptions. Graph must reflect reality. |
 | Never clean/restore/discard user changes from failure gate | Working tree may contain in-progress manual fixes. Automated cleanup destroys expensive context. |
 | Never let sub-agent completion order decide result order | Non-deterministic ordering = unreproducible results. `parallelize` array defines canonical order. |
-| Never run the verify engine after its gate has fired | Plan verify runs only pre-`A.init.3`-confirmation (the graph is not yet a contract). Exec verify gates Phase D (must-fix routes to C); phase-exit verify gates F.1b archive. Re-running any stage to override its own gate — e.g. re-plan after confirmation, or re-exec after a must-fix was routed — silently rewrites confirmed/shipped state, violating red flag #7. The engine pre-corrects/pre-reviews; it never auto-overrides a gate it already fired. |
+| Never run the verify engine after its gate has fired | Plan review runs only before P.4 confirmation (the graph is not yet a contract). Exec verify gates Phase D (must-fix routes to C); phase-exit verify gates F.1b archive. Re-running a stage to erase its own finding silently rewrites confirmed or shipped state. |
 
 The skill refuses to act if any rule would be violated, even if the user
 requests it during an interactive failure-decision gate.

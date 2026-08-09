@@ -1,5 +1,6 @@
 ---
 name: opi-audit
+disable-model-invocation: true
 description: >-
   Perform an independent code audit of a specific opi implementation phase.
   Given a phase number, automatically extract the task graph, design spec, and
@@ -48,7 +49,9 @@ rules below exist to protect this independence.
 
 3. Extract the task graph from `tasks[]`:
    - Task IDs, titles, crates, `definition_of_done`
-   - `verified_at_commit` values (first and last define the commit range)
+   - `verified_at_commit` values. Resolve the first task commit's parent as the
+     fixed point and the last task commit as HEAD; verify the three-dot diff is
+     non-empty before review
    - `depends_on` relationships
 
 4. If `phase_exit` exists for this phase, extract:
@@ -61,14 +64,22 @@ rules below exist to protect this independence.
 
 ### Phase B: Dimension inference and interview
 
-Seven audit dimensions are available. Not all apply to every phase.
+Matt `code-review` supplies two mandatory, separate axes at the ledger-derived
+fixed commit range:
+
+| Axis | Question |
+|---|---|
+| Standards | Does the committed phase diff follow `AGENTS.md` / `CLAUDE.md`, other documented repository standards, and the Matt Fowler-smell baseline? |
+| Spec | Does the diff implement the registered source without omissions, incorrect behavior, or scope expansion? |
+
+Do not merge or rerank these axes; a phase may pass one and fail the other.
+Opi then adds the applicable phase-wide dimensions below.
 
 | Dimension | When it applies |
 |-----------|----------------|
 | Correctness | Always |
 | Security / redaction | Tasks involving export, user data, credentials, network I/O |
 | Test quality | Always (but depth varies) |
-| Spec compliance | Always |
 | Invariants | When the spec defines explicit invariants or contracts |
 | Cross-task integration | Phases with 4+ tasks or multi-crate changes |
 | Residuals | Always (catch-all for issues outside other dimensions) |
@@ -84,7 +95,7 @@ After inferring, briefly confirm with the user:
 - Whether any dimensions should be added or dropped
 
 If the user provided a `focus` parameter, weight those dimensions higher but
-still cover the basics (correctness, test quality, spec compliance).
+still cover the basics (Standards, Spec, correctness, and test quality).
 
 ### Phase C: Deep read
 
@@ -110,19 +121,26 @@ judgments.
 
 ### Phase D: Audit execution
 
+First open Matt `code-review`. When the phase head is current `HEAD`, invoke it
+with the resolved fixed point and registered sources. For a historical phase,
+apply its exact two-axis prompts to `git diff <fixed>...<phase-head>` and record
+`adapted-historical-range`; do not check out or rewrite the user's working tree.
+Its Standards and Spec agents receive this restriction:
+
+```text
+Do not invoke code-review, opi-audit, or spawn additional agents.
+```
+
+Preserve their results under separate `Standards` and `Spec` report headings.
+Then run the applicable opi dimensions over the complete phase, including
+unchanged production paths needed to verify the committed diff's integration.
+
 Work through each active dimension. For each finding, follow the template in
 `references/finding-template.md` (read it now if you haven't). The template is
-a guide, not a straitjacket -- adapt field names or add fields when a finding
-needs different structure to be clear.
-
-**Severity levels** (four-tier):
-
-| Level | Meaning |
-|-------|---------|
-| Blocker | Data loss, security vulnerability, crash on normal path, cannot ship |
-| Major | Incorrect behavior, unhandled edge case, significant spec deviation |
-| Minor | Code quality gap, missing edge-case test, doc inconsistency |
-| Info | Improvement suggestion, style preference, future consideration |
+a guide for narrative clarity. Every actionable finding also emits the exact
+normalized block from `../_shared/references/finding-contract.md`, using the
+canonical severity definitions in
+`../_shared/references/finding-contract.md`.
 
 **Correctness audit**:
 - Trace each task's DoD claims against the actual code
@@ -143,7 +161,7 @@ needs different structure to be clear.
 - Verify isolation: temp directories, no shared state, no test ordering deps
 - Look for missing negative tests (error paths, rejection paths)
 
-**Spec compliance audit**:
+**Spec axis follow-through**:
 - Map each Success Criterion from the spec to code evidence
 - Verify each Non-Goal is not accidentally implemented
 - Check priority tiers (P0/P1/P2) against actual completion
@@ -215,6 +233,25 @@ uncertain, ask the user.
 **Impact:** <consequences if unfixed>
 **Fix:** <specific suggested remediation>
 
+```yaml
+id: <source-stable identifier>
+source_kind: audit
+source_path: docs/snapshots/phase<N>/audit.<model-id>.md
+source_model: <model-id>
+independence: <independent-family | fresh-context-same-family | unknown>
+axis: <standards | spec | security | test-quality | invariants | integration | residuals>
+severity: <Blocker | Major | Minor | Info>
+title: <short title>
+claim: <falsifiable problem statement>
+evidence:
+  - location: <file:line or command>
+    detail: <observed evidence>
+criterion_source: <spec/rule citation or null>
+reproduction: [<command>]
+confidence: <high | medium | low>
+status: unverified
+```
+
 ---
 
 ## N+1. Invariant Verification (if applicable)
@@ -272,3 +309,7 @@ proportional to its independence from prior reviews.
 - Read `references/finding-template.md` for the finding format, severity
   definitions with examples, and a complete finding example drawn from a real
   audit.
+- Read `../_shared/references/finding-contract.md` for the machine-stable
+  interchange consumed by `opi-remediate`.
+- Open Matt `code-review` before running the Standards/Spec axes; this skill's
+  summary is not a substitute for the real subskill.

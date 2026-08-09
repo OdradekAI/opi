@@ -1,0 +1,6 @@
+interface:
+  display_name: "Opi Document"
+  short_description: "Synchronize truthful English and Chinese docs"
+  default_prompt: "Use $opi-document to update the requested documentation scope and keep English and Chinese mirrors truthful and synchronized."
+policy:
+  allow_implicit_invocation: false

@@ -1,0 +1,6 @@
+interface:
+  display_name: "Opi Eval"
+  short_description: "Run isolated runtime regression evaluations"
+  default_prompt: "Use $opi-eval to run an isolated runtime regression evaluation for the requested phase and preserve normalized findings."
+policy:
+  allow_implicit_invocation: false

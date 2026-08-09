@@ -2,6 +2,10 @@
 
 ## Severity definitions
 
+Canonical four-tier definitions and auditor-scale unification live in
+`../../_shared/references/finding-contract.md`. The per-tier guidance below is
+audit-specific.
+
 ### Blocker
 
 The implementation cannot ship safely. Examples:
@@ -46,8 +50,9 @@ Improvement opportunity or future consideration. Not a defect. Examples:
 ## Finding format
 
 Each finding should include enough context that a developer can locate and
-understand the issue without re-reading the full source. Adapt fields as needed
--- the goal is clarity, not rigid conformance.
+understand the issue without re-reading the full source. Narrative fields may be
+adapted for clarity, but every actionable finding also includes the normalized
+block from `../../_shared/references/finding-contract.md`.
 
 ### Recommended fields
 
@@ -66,6 +71,14 @@ understand the issue without re-reading the full source. Adapt fields as needed
 - **Spec ref:** when the finding relates to a specific spec section or criterion
 - **Test gap:** when the finding includes a missing test observation
 - **Related:** when multiple findings are connected
+
+### Normalized block
+
+Append a YAML block with the exact fields from the shared finding contract.
+For audit output, `source_kind` is `audit`; `axis` preserves `standards` and
+`spec` separately or names the applicable opi audit dimension. Set
+`status: unverified` even when the auditor is confident: `opi-remediate` owns
+independent verification.
 
 ## Complete example
 

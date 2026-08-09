@@ -1,84 +1,96 @@
 ---
 name: opi-realign
-description: Fresh, objective delta audit of this project against a target/reference project.
+description: Audit opi inward against an exact earendil-works/pi revision while preserving pi design lineage through Rust-native implementation choices.
 disable-model-invocation: true
 ---
 
 # Opi Realign
 
-A realign audit is **fresh**: it measures current source on both projects and
-produces a **delta ledger** of objective, cited differences. *Fresh* means
-today's code is the only input that counts — a completed phase, a prior audit,
-or any baseline doc are irrelevant to the measurement; quote them only for
-`file:line` anchors or recorded non-goals. Judgment (drift classification,
-priorities) is a separate appendix, never the frame.
+Realign is the **inward alignment** workflow. It measures opi against an exact
+revision of `earendil-works/pi` and produces a cited delta ledger. It asks
+whether opi still preserves pi's design ideas and visible semantics while
+expressing them through Rust ownership, dependency, concurrency, packaging,
+and testing norms.
+
+A fresh audit uses today's source only. Prior audits, implementation phases,
+roadmaps, and baseline documents do not define the result. They may be cited
+only for explicit non-goals or source anchors.
 
 ## Inputs
 
-- `target=<path>` — required. The reference/upstream project to compare against.
-- `current=<path>` — optional, defaults to cwd.
-- `scope=<text>` — optional. A named slice (dimensions, packages, or surfaces)
-  instead of the full audit.
-- Labels optional.
+- `target=<path>`: required local pi checkout.
+- `target-revision=<commit-or-tag>`: required. Resolve and record its exact
+  commit SHA.
+- `current=<path>`: optional; defaults to the current opi checkout.
+- `scope=<text>`: optional named dimensions/packages/surfaces; otherwise full.
 
-Treat `@path`, quoted, Windows, and POSIX paths as valid.
+Accept quoted, `@path`, Windows, and POSIX paths.
+
+If the user requests "latest", fetch the configured pi upstream read-only,
+resolve the default-branch tip, and record that SHA. Verify the remote identity.
+If this would replace a revision the user explicitly named, stop for
+confirmation. Never use `latest` as an evidence label in the report.
 
 ## Process
 
-1. **Scope.** Confirm current and target paths and the scope (full or a named
-   slice). State assumptions that affect the outcome.
-   *Done when:* both paths resolve and the scope is stated.
+1. **Pin and scope.** Resolve both roots, both commit SHAs, pi's remote identity,
+   and the exact scope. State material assumptions.
+   *Done when:* paths, revisions, remote, and scope are explicit.
 
-2. **Measure fresh, both sides, per dimension.** For every dimension in
-   `references/dimensions.md` (or the chosen slice): read current source on BOTH
-   projects and record each side's state with a `file:line` anchor. State absence
-   explicitly (`absent: searched <paths>`), never by silence.
-   *Done when:* every in-scope dimension has a cited current-state entry for both projects.
+2. **Measure both sides from source.** For every in-scope dimension in
+   `references/dimensions.md`, record current opi and pi state with `file:line`
+   anchors. Express absence as `absent: searched <paths>`, never as silence.
+   *Done when:* every dimension has cited evidence for both projects.
 
-3. **Write the deltas.** For each dimension, write the objective differences —
-   current state | target state | raw difference, one line each, factual, no
-   judgment language.
-   *Done when:* every consequential difference is a delta, and no delta contains phase/roadmap/plan/should language.
+3. **Write objective deltas.** For each consequential item, record opi state,
+   pi state, and the raw difference. Exclude judgment, phases, plans, and
+   recommendations.
+   *Done when:* each difference is factual and independently understandable.
 
-4. **Verify each delta adversarially.** For every delta claiming the current
-   project *lacks* a capability, hunt the current source for it before accepting
-   (refute-on-gap); for every "has", confirm it is real and not overstated. Give
-   each delta an outcome (defined in `references/audit-framework.md`). Drop or
-   footnote refuted deltas; fold in refined and added ones.
-   *Done when:* every delta carries an outcome. See `references/audit-framework.md`.
+4. **Verify adversarially.** A verifier independent from the measurer hunts opi
+   source for every claimed gap and checks every parity claim for overstatement.
+   Assign the outcome from `references/audit-framework.md`; drop or footnote
+   refuted deltas and correct refined ones.
+   *Done when:* every retained delta has an outcome.
 
-5. **Render the ledger (Layer A).** Write the report under `docs/realign/`
-   (filename pattern and template in `references/report-template.md`). The body
-   is pure objective state: dimension sections, per-project facts with anchors, a
-   difference table.
-   *Done when:* the body passes the cleanliness gate defined in
-   `references/report-template.md` (no numbered-phase / roadmap / baseline /
-   plan language leaks in).
+5. **Render Layer A.** Write the objective report under `docs/realign/` using
+   `references/report-template.md`. Include exact revisions and pass its body
+   cleanliness gate.
 
-6. **Judgment appendix (Layer B) — only if asked.** Add drift classification
-   and/or recommendations as a clearly separated appendix, so it never frames
-   the body. Keep recommendations as proposals for the user to action.
-   *Done when:* Layer B sits in an appendix, not interleaved into Layer A.
+6. **Add Layer B only when asked.** Drift classification and recommendations
+   belong in a separate appendix. They never frame or interleave the objective
+   body. Classification is not prioritization; priorities are optional and
+   require an explicit request.
 
-For a full audit, fan out one measurer + one verifier per dimension (see
-`references/dimensions.md`); the verifier red-teams the measurer's gaps.
+For a full audit, process dimensions in bounded batches. Use no more than the
+currently available worker slots minus one so the coordinator remains free.
+Measurement and verification are separate passes; they need not be resident at
+the same time. If independent workers are unavailable, measure and then run a
+fresh, explicitly labeled verifier pass without pretending it was independent.
 
-Summarize the highest-signal deltas in chat and point at the report file.
+## Inward boundary
+
+- Compare pi's current design and behavior to opi's Rust implementation.
+- A pi capability is not automatically an opi core task. Preserve the design
+  idea, then prefer plugin/package placement unless a missing core seam is
+  evidenced.
+- A capability pi lacks or implements poorly for opi's goals belongs to
+  `opi-research`. Do not smuggle outward ecosystem exploration into realign.
+- Target breadth is not automatically desirable. Distinguish semantic
+  alignment from ecosystem breadth.
+- Do not recommend copying target-language architecture when it conflicts with
+  Rust-native ownership, dependencies, concurrency, packaging, or tests. Apply
+  `references/language-porting.md`.
 
 ## Guardrails
 
-- Stay fresh: never frame the audit relative to a prior audit, baseline,
-  phase, or roadmap.
-- Keep judgment (classification, priorities) out of the objective body.
-- Cite `file:line` for every claim, or state absence with the search performed.
-- Do not claim API, config, package, or file-format compatibility unless
-  evidence proves it.
-- Target breadth is not automatically desirable; prefer strengthening existing
-  seams.
-- Do not recommend copying target-language architecture when it conflicts with
-  current-language ownership, dependency, concurrency, packaging, or testing
-  norms. See `references/language-porting.md`.
-- Reports under `docs/realign/` are generated, non-normative artifacts. Do not
-  edit source, `opi-spec.md`, READMEs, or roadmaps; state findings and let the
-  user action them.
+- Cite `file:line` for every claim or state the exact absence search.
+- Check the changelog before making version/currentness claims.
+- Do not claim compatibility without direct evidence.
+- Reports are generated, non-normative artifacts. Do not edit product source,
+  `docs/opi-spec.md`, READMEs, or roadmaps while running this skill.
 - Do not commit unless asked.
+
+Summarize the highest-signal inward deltas and link the report. Route outward
+questions to `opi-research` and design decisions to direct shaping rather than
+turning the audit into an implementation plan.

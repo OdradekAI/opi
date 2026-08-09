@@ -1,0 +1,6 @@
+interface:
+  display_name: "Opi Slim Tests"
+  short_description: "Reduce Rust test binaries without losing coverage"
+  default_prompt: "Use $opi-slim-tests to reduce integration-test binary count while preserving behavior and platform coverage."
+policy:
+  allow_implicit_invocation: false

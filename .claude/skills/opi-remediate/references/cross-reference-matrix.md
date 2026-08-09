@@ -1,41 +1,33 @@
 # Cross-Reference Matrix
 
-Algorithm and rules for cross-referencing findings from multiple independent
-audit reports.
+Algorithm and rules for cross-referencing findings from independent audit and
+runtime eval reports.
 
 ## Severity unification
 
-Different auditors use different severity scales. Normalize all findings to the
-project's four-tier scale before cross-referencing.
-
-| Unified tier | Codex equivalents | GLM equivalents | Opus equivalents |
-|---|---|---|---|
-| Blocker | P0 | Critical | Blocker |
-| Major | P1 | High | Major |
-| Minor | P2 | Medium | Minor |
-| Info | P3 | Low | Info |
-
-When an auditor uses a non-standard label (e.g., "Warning", "Note"), map it
-based on the finding's described impact:
-- Data loss, security vulnerability, crash on normal path -> Blocker
-- Incorrect behavior, unhandled edge case, spec deviation -> Major
-- Code quality gap, missing test, doc inconsistency -> Minor
-- Improvement suggestion, style, future consideration -> Info
+Canonical four-tier definitions, foreign-label normalization, and non-standard-
+label mapping live in `../../_shared/references/finding-contract.md`. Normalize
+every finding to that scale before clustering. Preserve the source label and
+normalization rationale; never infer a source model or silently rewrite its
+severity.
 
 ## Clustering algorithm
 
 ### Step 1: Extract findings
 
-From each audit report, extract a flat list of findings. Each finding needs:
+From each selected audit or eval report, parse normalized finding blocks from
+`../../_shared/references/finding-contract.md`. Preserve these source fields:
 
 ```
-auditor:      <model-id>
-finding_id:   <auditor's own ID, e.g. "H1", "M2", "m5">
-severity:     <unified tier>
-files:        <list of cited file paths>
-theme:        <behavioral theme, e.g. "branch_summary provider drop">
-description:  <one-sentence summary>
-recommendation: <auditor's suggested fix>
+source_kind:  <audit | eval>
+source_path:  <artifact path>
+source_model: <reported identity>
+finding_id:   <source-stable ID>
+axis:         <normalized axis>
+severity:     <source unified tier>
+evidence:     <locations and observed details>
+claim:        <falsifiable problem>
+independence: <reported relationship>
 ```
 
 ### Step 2: Cluster by theme
@@ -48,38 +40,47 @@ issue. Use these signals:
 2. **Behavioral-theme match**: findings describing the same observable behavior
    (e.g., "metadata lost on resume", "walker divergence on corrupt Leaf") even
    if they cite different lines.
-3. **Recommendation overlap**: findings recommending the same fix (e.g., "unify
-   the two walkers") even if their framing differs.
+3. **Causal overlap**: evidence points to the same violated invariant or
+   production seam even when the reports propose different fixes.
 
 Do NOT cluster findings that merely touch the same file but describe unrelated
 issues. The unit of clustering is the behavioral issue, not the file.
 
-### Step 3: Assign consensus tier
+Recommendations alone are not a clustering key. Two reviewers can recommend
+the same refactor for unrelated defects.
 
-| Tier | Condition | Trust weight |
-|---|---|---|
-| Full consensus | All auditors report the finding | 1.0 |
-| Majority consensus | >50% of auditors report it | 0.8 |
-| Unique finding | Single auditor only | 0.5 |
+### Step 3: Record source coverage
 
-Trust weight is advisory -- it guides verification priority (Phase C) but does
-not automatically determine whether a finding enters the plan.
+| Coverage | Condition |
+|---|---|
+| Full independent overlap | Every eligible independent source reports the behavior |
+| Partial independent overlap | More than one, but not every, eligible independent source reports it |
+| Single independent source | Exactly one eligible independent source reports it |
+| Correlated/degraded overlap | Repeated only by same-family or unknown-independence sources |
+
+Count independent source families, not report files. Same-family fresh contexts
+remain useful evidence but do not manufacture additional independent votes.
+Coverage is descriptive, not a confidence score or a decision about whether the
+finding enters remediation. Severity, evidence quality, reproducibility, and
+Phase C verification determine action.
 
 ### Step 4: Resolve severity conflicts
 
-When auditors assign different unified severities to the same cluster:
+When sources assign different unified severities to the same cluster:
 
-- **Candidate severity** = highest severity assigned by any auditor.
-- **Record the range** (e.g., "Major (Codex P1, GLM H2) / Minor (Opus)").
-- Phase C verification may adjust the final severity based on actual code
-  evidence.
+- **Candidate severity** = highest severity assigned by any source.
+- **Record the range** with each source path/model and original label.
+- Phase C verification may assign a final severity based on code/trace evidence,
+  but the matrix retains every original source severity and the adjustment
+  rationale.
 
 ## Single-report mode
 
-When only one audit report is available:
+When only one finding source is available:
 
-- Skip Steps 2-4 (no clustering or consensus possible).
-- Treat every finding as `trust_weight = 0.5` (unverified single-source).
+- Skip Steps 2-4 (no clustering or source-coverage comparison is possible).
+- Mark every finding as single-source and unverified; do not fabricate a
+  numeric trust weight.
 - Phase C verification is especially critical: increase the verification
   depth for each finding.
 - The remediation plan should note that findings are single-source and have
@@ -90,22 +91,23 @@ When only one audit report is available:
 The matrix is an internal working document consumed by Phase D. Format:
 
 ```markdown
-| Cluster | Theme | Auditors | Consensus | Severity | Verification |
-|---------|-------|----------|-----------|----------|-------------|
-| C1 | walker divergence on corrupt Leaf | Codex P2, GLM M1, Opus M1 | Full (3/3) | Major | pending |
-| C2 | rootless metadata inconsistency | Codex P2, GLM M4, Opus M2 | Full (3/3) | Major | pending |
-| C3 | BranchSummary provider drop | Codex P1, GLM H2 | Majority (2/3) | Major | pending |
-| C4 | model picker bypasses durable write | Codex P1 | Unique (1/3) | Major | pending |
+| Cluster | Theme | Source findings | Independence | Coverage | Severity range | Verification |
+|---------|-------|-----------------|--------------|----------|----------------|-------------|
+| C1 | session metadata lost on resume | audit-a:A2; eval-b:E4 | independent-family | Partial independent overlap | Major / Major | pending |
+| C2 | picker bypasses durable write | audit-c:S1 | unknown | Single independent source | Major | pending |
 ```
 
 The `Verification` column is updated during Phase C.
 
 ## Edge cases
 
-- **Contradictory findings**: When one auditor reports a finding and another
-  explicitly refutes it (e.g., GLM's "Refuted / non-finding" section), record
+- **Contradictory findings**: When one source reports a finding and another
+  explicitly refutes it, record
   both positions. Phase C must independently verify.
 - **Partially overlapping findings**: When two findings describe overlapping
   but not identical issues, create separate clusters but note the relationship.
 - **Info-level findings**: Do not cluster Info findings unless they converge
   into a pattern that suggests a higher-severity systemic issue.
+- **Cross-kind overlap**: An audit and eval finding may cluster only when they
+  describe the same behavior. Runtime evidence strengthens verification but
+  does not automatically validate the static audit's causal claim.

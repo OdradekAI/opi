@@ -56,6 +56,29 @@ in the template and writes the result as
 - Retries: <count, reasons>
 - Diagnostics: <any startup or runtime diagnostics>
 
+#### Normalized regression finding
+
+_Include for each confirmed FAIL, ERROR, or cross-version regression signal._
+
+```yaml
+id: <source-stable identifier>
+source_kind: eval
+source_path: docs/eval/<version>-<date>-<model-short>.md
+source_model: <evaluator provider:model>
+independence: <independent-family | fresh-context-same-family | unknown>
+axis: runtime-fidelity
+severity: <Blocker | Major | Minor | Info>
+title: <short title>
+claim: <falsifiable runtime regression>
+evidence:
+  - location: <trace event or artifact path>
+    detail: <observed evidence>
+criterion_source: <test-case criterion or null>
+reproduction: [<eval case or exact command>]
+confidence: <high | medium | low>
+status: unverified
+```
+
 ---
 
 ## Version Delta
@@ -92,7 +115,8 @@ _Present only when docs/eval/pi-baseline.jsonl exists._
 - opi version: <semver>
 - Commit: <full hash>
 - Date: <ISO 8601>
-- Evaluator: <subagent type and model if known>
+- Evaluator: <subagent type> on <evaluator provider:model>
+- Independence: <independent-family | fresh-context-same-family | unknown>
 ```
 
 ---
@@ -102,8 +126,8 @@ _Present only when docs/eval/pi-baseline.jsonl exists._
 Filename: `<version>-<date>-<model-short>.md`
 
 Examples:
-- `0.6.5-2026-07-07-anthropic-claude-sonnet-4.md`
-- `0.6.5-2026-07-07-openai-gpt-4o.md`
+- `0.7.2-2026-07-07-anthropic-claude-sonnet-4.md`
+- `0.7.2-2026-07-07-openai-gpt-4o.md`
 
 Rules:
 - Version is the workspace semver from `Cargo.toml`

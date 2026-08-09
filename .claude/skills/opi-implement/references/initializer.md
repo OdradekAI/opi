@@ -125,55 +125,84 @@ Phase 4 examples:
 - `4.7 | skills, prompt fragments, themes, and packages with progressive discovery` becomes `4.7.1` skills, `4.7.2` prompt fragments/templates, `4.7.3` themes, and `4.7.4` packages.
 - `4.8 | extension/package examples: permission gate, protected paths, sub-agent, plan mode, todo, MCP adapter` becomes six package/example tasks; the parent row is not executable.
 
-### A.init.2b Grilling Pass
+### P.0 Source Admission
 
-After draft extraction (`A.init.2a/2c/2d`) and before verify (`A.init.2e`), settle
-the spec's cross-cutting ambiguities by grilling the human — the round-based
-interview from the installed `grilling` skill. This is the coarse, per-spec pass;
-per-task ambiguities survive to Phase B's grill-on-fuzzy.
+Run after extraction has identified the registered source files and before a
+candidate graph can replace the canonical ledger. Verify that:
 
-Run the grill when extraction left any cross-cutting decision open: unsettled
-vocabulary, a scope boundary a task's DoD depends on, an ambiguous out-of-scope
-line, or two tasks whose DoDs assume contradictory definitions. Surface these in
-rounds; close a line of questioning only when the decision is recorded.
+- every source is reviewed and registered;
+- problem, solution, out-of-scope, success, and exit criteria are explicit;
+- evidence provenance is identified as inward pi alignment, outward research,
+  or both;
+- Rust-native divergence has a recorded rationale where relevant;
+- a new capability explains its core, extension-seam, or plugin/package
+  placement;
+- changed domain terms agree with `docs/CONTEXT.md`;
+- public acceptance and test seams are explicit enough to plan.
 
-Land each resolved decision in exactly one home (one-decision-one-home):
+Source admission does not edit the source. Return one of these stop verdicts
+when evidence or product meaning is missing:
 
-- Resolved **terminology** → a `docs/CONTEXT.md` glossary entry.
-- A **cross-cutting architectural decision** → amend the active phase design doc
-  via the Spec-amend procedure in `skill.md`.
-- An **in-task decision** → that task's `definition_of_done` /
-  `acceptance_scenarios` / out-of-scope, with an `inference_notes` entry
-  (`field = "grill_resolution"`).
+- `RESEARCH_REQUIRED` — route to `opi-research` or `opi-realign`.
+- `DESIGN_DECISION_REQUIRED` — route to Matt `wayfinder` or
+  `grill-with-docs`.
 
-Completion: every cross-cutting ambiguity extraction surfaced is either resolved
-into one of the three homes or explicitly deferred to a named task's Phase B grill
-(recorded as an `inference_notes` entry naming the task). The draft graph handed
-to `A.init.2e` then carries no silent assumptions.
+Do not write `.opi-impl-state.json` on either verdict.
 
-### A.init.2e Verify
+### P.1 Draft Graph
 
-Run the six-lens audit over the draft graph (post-`A.init.2a/2b/2c/2d`,
-pre-review) against the active phase's registered source design doc. Mode is
-auto-deep by drift magnitude (single-agent for routine drift; the Workflow at
-`.claude/skills/opi-implement/scripts/plan.workflow.js` for substantive change or first-init-of-a-phase).
-Read `references/verify-engine.md` for the lens charters, finding schema, fold
-matrix, citation grammar, the auto-deep classifier, and the plan-stage
-protocols.
+Write the extracted candidate only to `.opi-impl-state.draft.json`. Every task
+must be an independently demonstrable vertical slice unless it is an explicitly
+justified expand-contract migration step. Existing fields carry the admission
+evidence without a schema bump:
 
-### A.init.2f Fold + Report
+- `acceptance_scenarios[].scenario` names what can be demonstrated;
+- `acceptance_scenarios[].source` cites the reviewed criterion;
+- `production_call_sites` names the real production path;
+- `verification.behavioral_tests` exercises the agreed public seam;
+- `inference_notes` records an inferred seam or placement rationale.
 
-Apply high- and medium-high-confidence findings whose `suggested_fix` is a field
-edit on an existing task as draft edits, each recorded in `inference_notes` with
-provenance. Findings whose fix requires task-graph surgery, whose citation does
-not resolve, or that the deep-path adversarial verify rejected, are flagged for
-human (never folded). Write the folded draft to `.opi-impl-state.draft.json`,
-record a `verify_runs` entry (`stage = "plan"`, `wf_ref` on deep, counts,
-timestamp), and emit
-the verification report block at `A.init.3`. This is the only mutation of the
-draft between extraction and the human review gate.
+The draft is the only mutable plan artifact before confirmation. The canonical
+ledger remains unchanged.
 
-### A.init.3 Task-Graph Review Gate
+### P.2 Adversarial Review
+
+Review the registered sources and original draft in a fresh context. Use the
+Workflow at `.claude/skills/opi-implement/scripts/plan.workflow.js` when the
+runtime supports its bounded parallel agents; otherwise run the same lenses in
+one fresh reviewer. Both paths return the same schema and disclose whether
+independence is cross-model or fresh-context same-model.
+
+The two non-collapsible axes are:
+
+- **design readiness** — pi direction, justified Rust divergence, plugin-first
+  placement, domain language, deep interfaces, public seams, contradictions,
+  and unstated assumptions;
+- **execution readiness** — criterion coverage, demonstrable vertical slices,
+  real dependencies, owned paths, production wiring, proportional verification,
+  and forbidden scope.
+
+Reviewers report findings and try to reject unsupported findings. They do not
+edit the source or draft, and no finding is auto-folded.
+
+### P.3 Admission Verdict
+
+The plan review returns exactly one primary verdict while retaining every
+finding in the report:
+
+- `READY` — no blocking design or graph finding remains;
+- `RESEARCH_REQUIRED` — a blocking evidence gap remains;
+- `DESIGN_DECISION_REQUIRED` — a blocking product/architecture decision
+  remains;
+- `GRAPH_REVISION_REQUIRED` — the reviewed source is adequate but the draft
+  graph must change.
+
+Verdict precedence when several blocking findings coexist is research, then
+design decision, then graph revision. A non-`READY` verdict stops without
+writing the canonical ledger. `GRAPH_REVISION_REQUIRED` may revise only the
+draft, then must repeat P.2.
+
+### P.4 Task-Graph Review Gate
 
 Render complete draft as table with: id, title, tier, `task_owned_paths`
 (default derived from `crate`, editable), commit_type, depends_on,
@@ -194,7 +223,7 @@ Also render an acceptance coverage table:
 REFUSE `confirm-all` while any source criterion/workflow is `missing`, or while
 any runtime criterion is covered only by a `substrate_only` task.
 
-Gate options:
+Gate options after a `READY` adversarial verdict:
 - **confirm-all** — accept the graph as shown
 - **edit-task `<id>`** — modify one task's inferred fields
 - **apply-rule `<selector>` `<field>` `<value>`** — batch edit (show before/after diff)
@@ -202,11 +231,12 @@ Gate options:
 - **import-draft** — validate schema, uniqueness, deps, cycles, tiers; re-render
 - **abort** — stop without writing
 
-Every edit or import re-renders before confirmation.
+Every edit or import invalidates `READY`, re-runs P.2, and then re-renders before
+confirmation.
 REFUSE to proceed until whole graph is confirmed.
 MUST NOT silently apply inferred changes.
 
-### A.init.4 Write Ledger
+### P.5 Write Ledger
 - Write `.opi-impl-state.json` atomically
 - Ensure `.opi-impl-state.json` is tracked
 - Add `.opi-impl-state.json.tmp`, `.opi-impl-state.draft.json`, candidate,
@@ -237,7 +267,8 @@ step.
   fresh/drift detection. Print "Ledger is v1; running v1 → v2 migration as part
   of plan-path sync." Apply the v1 → v2 migration documented in
   `ledger-schema.md`, then continue with the rest of plan-path sync (drift
-  reconciliation below + `A.init.2e/2f` verify + `A.init.3` gate).
+  reconciliation below + P.0 source admission + P.1/P.2 draft review + P.4
+  gate).
 - `schema_version > 2` or missing: refuse with an explicit message identifying
   the offending value.
 
@@ -246,8 +277,9 @@ step.
 This is the drift branch of the unified plan path (spec §5.3), reached when the
 plan path detects a `spec_files_sha256` mismatch — not via a separate `--reinit`
 flag. When drift is detected on a bare (make-progress) or run-specific
-invocation, the harness runs this reconciliation, then `A.init.2e/2f`
-verify-and-fold, then PRESENTS the `A.init.3` gate and pauses — it does not
+invocation, the harness runs this reconciliation, then P.0 source admission and
+P.1/P.2 draft review, then PRESENTS the P.4 gate only on a `READY` verdict and
+pauses — it does not
 auto-pick or run a task until the human confirms the reconciled graph. The
 `plan` verb stops at the gate regardless.
 
@@ -313,4 +345,5 @@ Batch graph edits for tedious one-by-one changes:
 - Change all `opi-tui` rows to tier `tui`
 - Mark public-protocol rows as `evaluator_required = true`
 
-Always show before/after diff for affected rows, then return to A.init.3.
+Always show before/after diff for affected rows, invalidate the prior `READY`
+verdict, repeat P.2, then return to P.4.

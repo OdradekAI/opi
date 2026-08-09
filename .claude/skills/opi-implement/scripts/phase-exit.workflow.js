@@ -8,9 +8,12 @@ export const meta = {
   ],
 }
 
-const trace = args.criteriaTrace    // F.1a's criteria_trace[] array
-const sourcePath = args.sourceDesignPath
-const phaseNum = args.phase         // renamed from `phase` to avoid shadowing the `phase()` progress hook
+// The Workflow runtime may hand `args` as a JSON string rather than a parsed
+// object; normalize before reading so lens prompts get the bound trace/source/phase.
+const _args = typeof args === 'string' ? JSON.parse(args) : args
+const trace = _args.criteriaTrace    // F.1a's criteria_trace[] array
+const sourcePath = _args.sourceDesignPath
+const phaseNum = _args.phase         // renamed from `phase` to avoid shadowing the `phase()` progress hook
 
 const FINDINGS_SCHEMA = {
   type: 'object',

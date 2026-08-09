@@ -1,23 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# opi-implement smoke — parameterized verify gates.
+# Parameterized opi-implement mechanical gates.
 #
-# Modes (first argument, defaults to `boot`):
-#   boot    A.3 boot ritual: workspace builds and lints clean. No tests, no test-binary
-#           compilation (uses --lib, never --all-targets, to avoid compiling every test
-#           binary in the workspace — the host disk constraint).
-#   full    workspace-tier D.3: boot gates PLUS clippy --all-targets, rustdoc, and the
-#           full workspace test. Reserved for cross-crate / workspace-tier tasks.
-#   scoped --crate <c> [--test <t> ...]
-#           non-workspace D.3 (or an explicit per-crate re-check): build --workspace
-#           (cross-crate compile safety) plus scoped clippy/test for ONE crate. Pass an
-#           explicit --test <name> per relevant test binary; with no --test only the
-#           crate lib test runs. Never compiles the whole workspace's test binaries.
+# boot:   A.3 format + production lib/bin clippy; no tests or standalone build.
+# full:   workspace-tier D.1; format, all-target clippy, rustdoc, workspace test.
+# scoped: non-workspace D.1; one crate's production targets, rustdoc, and named
+#         test binaries (or lib tests when none are named).
 #
-# CARGO_TARGET_DIR is honored from the environment. The opi-implement skill sets a
-# per-session directory off the repository drive (e.g. E:\opi-target\<session>) before
-# invoking this script.
+# CARGO_TARGET_DIR is honored. The skill assigns a persistent external cache
+# keyed by worktree and toolchain; this script never cleans it.
 
 mode="${1:-boot}"
 shift || true
@@ -27,19 +19,31 @@ echo "=== opi-impl smoke [$mode] ==="
 rustc --version >/dev/null 2>&1 || { echo "FAIL: rustc not found"; exit 1; }
 cargo --version >/dev/null 2>&1 || { echo "FAIL: cargo not found"; exit 1; }
 
+cache_leased=0
+cache_tool="$(cd "$(dirname "$0")" && pwd)/opi-cargo-cache.py"
+if [ -z "${CARGO_TARGET_DIR:-}" ]; then
+  export CARGO_TARGET_DIR="$(python "$cache_tool" resolve)"
+  python "$cache_tool" lease start --target "$CARGO_TARGET_DIR" --pid "$$"
+  cache_leased=1
+fi
+release_cache_lease() {
+  if [ "$cache_leased" -eq 1 ]; then
+    python "$cache_tool" lease end --target "$CARGO_TARGET_DIR" --pid "$$" >/dev/null 2>&1 || true
+  fi
+}
+trap release_cache_lease EXIT
+
 case "$mode" in
   boot)
-    echo "Checking workspace build..."
-    cargo build --workspace 2>&1 || { echo "FAIL: cargo build --workspace"; exit 1; }
     echo "Checking format..."
     cargo fmt --check --all 2>&1 || { echo "FAIL: cargo fmt --check"; exit 1; }
-    echo "Checking clippy (lib targets)..."
-    cargo clippy --workspace --lib -- -D warnings 2>&1 || { echo "FAIL: clippy (lib)"; exit 1; }
+    echo "Checking clippy (production lib/bin targets)..."
+    cargo clippy --workspace --lib --bins -- -D warnings 2>&1 || {
+      echo "FAIL: clippy (production targets)"; exit 1;
+    }
     ;;
 
   full)
-    echo "Checking workspace build..."
-    cargo build --workspace 2>&1 || { echo "FAIL: cargo build --workspace"; exit 1; }
     echo "Checking format..."
     cargo fmt --check --all 2>&1 || { echo "FAIL: cargo fmt --check"; exit 1; }
     echo "Checking clippy (all targets)..."
@@ -61,19 +65,30 @@ case "$mode" in
       esac
     done
     [ -n "$crate" ] || { echo "FAIL: scoped mode requires --crate <name>"; exit 1; }
-    echo "Checking workspace build (cross-crate compile safety)..."
-    cargo build --workspace 2>&1 || { echo "FAIL: cargo build --workspace"; exit 1; }
+
     echo "Checking format..."
     cargo fmt --check --all 2>&1 || { echo "FAIL: cargo fmt --check"; exit 1; }
-    echo "Checking clippy for $crate (lib)..."
-    cargo clippy -p "$crate" --lib -- -D warnings 2>&1 || { echo "FAIL: clippy -p $crate"; exit 1; }
+    echo "Checking clippy for $crate (production lib/bin targets)..."
+    cargo clippy -p "$crate" --lib --bins -- -D warnings 2>&1 || {
+      echo "FAIL: clippy -p $crate"; exit 1;
+    }
+    echo "Checking rustdoc for $crate..."
+    RUSTDOCFLAGS="-D warnings" cargo doc -p "$crate" --no-deps 2>&1 || {
+      echo "FAIL: rustdoc -p $crate"; exit 1;
+    }
     if [ "${#tests[@]}" -eq 0 ]; then
       echo "Running lib tests for $crate..."
       cargo test -p "$crate" --lib 2>&1 || { echo "FAIL: cargo test -p $crate --lib"; exit 1; }
     else
-      for t in "${tests[@]}"; do
-        echo "Running test binary $crate::$t..."
-        cargo test -p "$crate" --test "$t" 2>&1 || { echo "FAIL: cargo test -p $crate --test $t"; exit 1; }
+      for test_name in "${tests[@]}"; do
+        echo "Checking clippy for test binary $crate::$test_name..."
+        cargo clippy -p "$crate" --test "$test_name" -- -D warnings 2>&1 || {
+          echo "FAIL: clippy -p $crate --test $test_name"; exit 1;
+        }
+        echo "Running test binary $crate::$test_name..."
+        cargo test -p "$crate" --test "$test_name" 2>&1 || {
+          echo "FAIL: cargo test -p $crate --test $test_name"; exit 1;
+        }
       done
     fi
     ;;

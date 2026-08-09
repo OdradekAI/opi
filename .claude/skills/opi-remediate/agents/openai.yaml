@@ -1,0 +1,6 @@
+interface:
+  display_name: "Opi Remediate"
+  short_description: "Verify and remediate normalized assurance findings"
+  default_prompt: "Use $opi-remediate phase=<N> sources=<path,...> to verify normalized audit or eval findings and prepare a user-gated remediation."
+policy:
+  allow_implicit_invocation: false

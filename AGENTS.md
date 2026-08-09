@@ -57,8 +57,22 @@ Normative design references live in `docs/`: `opi-spec.md` is the technical
 spec. Consult it before answering scope or behavior questions. The domain
 glossary lives at `docs/CONTEXT.md` (records the domain language for extension
 runtime, command execution, and safety boundaries; it is not auto-loaded by the
-runtime — only `AGENTS.md`/`CLAUDE.md` are). Fresh alignment audits against
-upstream are produced under `docs/realign/` by the `opi-realign` skill.
+runtime — only `AGENTS.md`/`CLAUDE.md` are). Pinned-revision inward alignment
+audits against pi live under `docs/realign/`; outward capability research lives
+under `docs/research/`. Both are non-normative evidence until human-led shaping
+turns settled decisions into a registered spec.
+
+## Development workflow
+
+The canonical workflow and skill-selection policy are documented in
+`.claude/skills/README.md` and `.claude/skills/README.zh.md`. All `opi-*` skills
+are explicitly invoked. `opi-realign` aligns inward to pi; `opi-research`
+explores outward plugin capabilities; direct Matt `wayfinder`/
+`grill-with-docs`/`to-spec` calls support non-mechanical shaping; and
+`opi-implement plan` is the adversarial admission gate to the sole canonical
+implementation ledger. Matt supplies reasoning/artifact subskills;
+Superpowers is retained only for verification-before-completion and conditional
+parallel dispatch inside opi workflows.
 
 ## Conversational style
 
@@ -126,11 +140,11 @@ Cargo workspace with lockstep versioning. All crates share
 `[workspace.dependencies]` in the root `Cargo.toml`:
 
 ```text
-opi-ai          (no internal deps) - multi-provider LLM API
-opi-tui         (no internal deps) - terminal UI widgets, pickers, diff and image rendering
-opi-protocol    (no internal deps) - versioned `command-execution-jsonl-v1` protocol types, codecs, schemas, and fixtures
-opi-agent       -> opi-ai - agent runtime, tool calling, sessions, compaction
-opi-sandbox     -> opi-protocol - standalone native-restriction SDK/CLI/backend; not linked into the `opi` binary
+opi-ai      (no internal deps)        - multi-provider LLM API
+opi-tui     (no internal deps)        - terminal UI widgets, pickers, diff and image rendering
+opi-agent   -> opi-ai                 - agent runtime, tool calling, sessions, compaction
+opi-protocol (no internal deps)       - versioned `command-execution-jsonl-v1` protocol types, codecs, schemas, and fixtures
+opi-sandbox  -> opi-protocol          - standalone native-restriction SDK/CLI/backend; not linked into the `opi` binary
 opi-coding-agent -> opi-ai, opi-agent, opi-protocol, opi-tui - produces the `opi` binary; coding harness, execution routing, and package activation
 ```
 
@@ -357,11 +371,16 @@ cargo clippy --workspace --all-targets -- -D warnings
 RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
 ```
 
-After code changes (not documentation-only), run
-`cargo clippy --workspace --all-targets -- -D warnings` and fix all warnings
-before committing.
+After runtime Rust or Cargo changes, run the relevant `opi-implement` tier gate
+and fix its warnings before committing. Reserve workspace all-target clippy/test
+for cross-crate semantic changes, phase exit, CI, release evidence, or an
+explicit user request. Documentation/skill/metadata-only work does not require
+a Rust compile.
 
-If you create or modify a test file, run that test and iterate until it passes.
+If you create or modify a test file, run that exact test binary/filter and
+iterate until it passes. If you delete a superseded test without changing
+runtime code, verify the replacement evidence and Cargo target inventory; do
+not run the workspace suite solely because a test file was removed.
 
 ## Testing
 
@@ -380,6 +399,14 @@ If you create or modify a test file, run that test and iterate until it passes.
 - For snapshot/UI tests, follow the existing `insta` snapshot pattern in
   `opi-tui`. Do not auto-accept snapshot updates without explicit review.
 - Run the relevant test after writing it: `cargo test -p <crate> -- <test_name>`.
+- Record test impact for every change as `add`, `update`, `delete`, `retain`, or
+  `none`. Features/bug fixes normally add or update tests; behavior-preserving
+  internal refactors may retain focused coverage; removed behavior deletes its
+  old tests; docs/skills/metadata may use `none`.
+- Exact narrative wording, phase status, roadmap placeholders, historical
+  non-goals, changelog tokens, and test function names do not belong in Rust
+  tests. Use `python scripts/opi-doc-check.py` for stable, source-derived
+  documentation contracts.
 
 ## Git rules
 
@@ -501,11 +528,18 @@ ledger is clean and every required ledger checkpoint is contained in the
 destination branch.
 
 The skill runs `scripts/opi-impl-smoke.{sh,ps1}` at Phase A.3 in `boot` mode:
-`cargo build --workspace` + `cargo fmt --check --all` +
-`cargo clippy --workspace --lib` (no `--all-targets`/test gate, to avoid
-compiling every test binary in the workspace). D.3 runs `full` for the `workspace`
-tier or `scoped --crate <crate>` for other non-documentation tiers. See
-`scripts/opi-impl-smoke.sh` for the mode reference.
+`cargo fmt --check --all` plus production lib/bin clippy, with no standalone
+build or test-target compile. D.1 is the single mechanical gate: `full` for a
+workspace tier or `scoped --crate <crate> --test <name>...` for focused Rust
+work. D.3 runs only missing acceptance/platform checks and never repeats D.1.
+Documentation uses `python scripts/opi-doc-check.py` without compiling Rust.
+
+Cargo output uses a persistent external cache keyed by worktree and toolchain.
+Keep incremental compilation enabled. Do not use per-session target
+directories, task-time `cargo clean`, or end-of-session cache deletion; prune
+only inactive marked caches as a separate size/age-based maintenance action.
+Use `python scripts/opi-cargo-cache.py status` to inspect; `prune` is a dry run
+unless `--execute` is explicitly supplied.
 
 Reviewed supplemental implementation specs are registered by phase in
 `.claude/skills/opi-implement/skill.md`; do not treat arbitrary
@@ -515,8 +549,9 @@ Reviewed supplemental implementation specs are registered by phase in
 
 Two GitHub Actions workflows live in `.github/workflows/`:
 
-- `ci.yml`: runs on push/PR to `main`. Jobs: `fmt`, `clippy`, `test`,
-  `doctest` (`cargo test --workspace --doc`), and `doc`.
+- `ci.yml`: runs on push/PR to `main`. Jobs include the fast `docs_contract`,
+  `fmt`, `clippy`, `test`, `doctest` (`cargo test --workspace --doc`), and
+  `doc` gates plus platform/product acceptance jobs.
 - `release.yml`: triggered by `v*` tags or manual `workflow_dispatch`. Builds
   `opi` for linux-x64, linux-arm64, darwin-x64, darwin-arm64, windows-x64, and
   windows-arm64.

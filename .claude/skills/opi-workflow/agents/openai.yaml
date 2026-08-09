@@ -1,0 +1,6 @@
+interface:
+  display_name: "Opi Workflow"
+  short_description: "Route work through the opi lifecycle"
+  default_prompt: "Use $opi-workflow to route this request to inward alignment, outward research, human-led shaping, delivery, or assurance."
+policy:
+  allow_implicit_invocation: false

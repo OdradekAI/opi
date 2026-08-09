@@ -1,4 +1,6 @@
 interface:
   display_name: "Opi Realign"
-  short_description: "Compare ports with target projects"
-  default_prompt: "Use $opi-realign to run a fresh, objective delta audit of this project against target=<path> and write the report under docs/realign/."
+  short_description: "Compare opi inward with an exact pi revision"
+  default_prompt: "Use $opi-realign target=<path> target-revision=<commit-or-tag> to audit opi inward against a pinned pi revision."
+policy:
+  allow_implicit_invocation: false

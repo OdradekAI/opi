@@ -1,8 +1,10 @@
 ---
 name: opi-remediate
+disable-model-invocation: true
 description: >-
-  Use when the user wants to confirm, verify, or fix issues from audit reports
-  for a specific opi implementation phase. Triggers on "remediate phase N",
+  Use when the user wants to confirm, verify, or fix normalized findings from
+  audit or runtime eval reports for a specific opi implementation phase.
+  Triggers on "remediate phase N",
   "verify audit findings", "fix audit issues", "confirm audit", "修复审计",
   "验证审计发现", "审计修复", or any request to cross-reference multiple audit
   reports and produce a verified remediation plan. Also use when the user asks
@@ -11,16 +13,17 @@ description: >-
 
 # opi-remediate
 
-Cross-reference, verify, and remediate findings from independent audit reports
-for a specific opi implementation phase. The skill consumes audit reports
-produced by `opi-audit`, validates each finding against actual code, resolves
-design decisions, and produces a layered remediation plan. Execution of the
-plan is optional and user-gated.
+Cross-reference, verify, and remediate normalized findings from independent
+audit reports and runtime eval reports for a specific opi implementation phase.
+The skill validates each finding against actual code or preserved runtime
+artifacts, resolves design decisions, and produces a layered remediation plan.
+Execution of the plan is optional and user-gated.
 
 ## Inputs
 
 ```text
 phase=<N>          # required; the phase number (e.g. 13)
+sources=<path,...> # optional; explicit audit/eval reports; defaults to all phase audit.*.md files
 scope=<text>       # optional; focus on specific findings, crates, or themes
 execute=<bool>     # optional; continue into execution after plan confirmation
                    # (default: false -- produce plan only)
@@ -57,49 +60,61 @@ digraph remediate {
 
 1. Locate `docs/snapshots/phase<N>/`.
 
-2. Discover all `audit.*.md` files. Record their auditor identifiers (the
-   part after `audit.` and before `.md`, e.g. `codex`, `glm5.2`, `opus4.6`).
-   If zero audit files exist, stop and tell the user to run `opi-audit` first.
+2. Resolve finding sources:
+   - when `sources` is present, validate and read exactly those report paths;
+   - otherwise discover all phase `audit.*.md` files.
+   Accept audit and eval reports containing normalized blocks from
+   `../_shared/references/finding-contract.md`. If no source exists, stop and
+   ask the user to run `opi-audit` or `opi-eval`.
 
 3. Read `docs/snapshots/phase<N>/opi-impl-state.json`:
    - Extract `spec_files` (or `spec_path` for schema v1).
    - Extract the commit range from task `verified_at_commit` values.
    - Extract task graph for context (task IDs, titles, crates, DoDs).
 
-4. Read all audit files in full. Also read:
+4. Read every selected source report in full. Also read:
    - The design spec(s) referenced by `spec_files`.
    - `CLAUDE.md` / `AGENTS.md` for project context.
    - `docs/opi-spec.md` for the normative spec.
 
 ## Phase B: Cross-reference
 
-When **2+ audit reports** are available, cross-reference their findings. Read
+When **2+ finding sources** are available, cross-reference their findings. Read
 `references/cross-reference-matrix.md` for the full algorithm and trust model.
 
 Summary of the process:
 
-1. **Normalize**: Extract each report's findings into a flat list with
-   uniform fields: `id`, `severity`, `file(s)`, `theme`, `description`.
-   Different reports use different severity scales -- map them to a unified
-   four-tier scale (Blocker / Major / Minor / Info).
+1. **Normalize**: Parse each normalized finding block. Preserve `source_kind`,
+   `source_path`, `source_model`, `independence`, `axis`, source severity, and
+   source evidence unchanged. Legacy audit narrative may be mapped into the
+   contract only with a recorded `degraded-legacy-input` note. Foreign severity
+   labels map to the canonical four-tier scale without overwriting the original
+   label in the source report.
 
 2. **Cluster**: Group findings that describe the same underlying issue. Use
    file-path overlap and behavioral-theme similarity as clustering signals.
    A single underlying issue may appear with different severity ratings or
    different phrasings across reports.
 
-3. **Tier by consensus**:
-   - **Full consensus** (all auditors agree): highest confidence.
-   - **Majority consensus** (>50% of auditors): high confidence.
-   - **Unique finding** (single auditor): needs extra verification scrutiny.
+3. **Record source coverage and independence**:
+   - Full independent overlap: every eligible independent source reports it.
+   - Partial independent overlap: multiple but not all independent sources.
+   - Single independent source: one independent source only.
+   - Correlated/degraded overlap: repeated only by same-family or
+     unknown-independence sources.
 
-4. **Resolve severity conflicts**: When auditors assign different severities
-   to the same finding, take the highest severity as the candidate and record
-   the range. The verification step (Phase C) may adjust.
+   Count independent source families, not files. Coverage is descriptive; it
+   never substitutes for Phase C verification or manufactures a confidence
+   score.
 
-When **only 1 audit report** is available, skip clustering and consensus
-tiers. Treat every finding as "unverified single-source" and proceed directly
-to Phase C with increased scrutiny.
+4. **Resolve severity conflicts**: When sources assign different severities to
+   the same cluster, take the highest as the candidate and record the range.
+   Phase C may assign a final severity only with evidence and rationale; it does
+   not silently rerank any source finding.
+
+When only one finding source is available, skip clustering and coverage tiers.
+Treat every finding as `unverified single-source` and proceed directly to Phase
+C with increased scrutiny.
 
 ## Phase C: Code verification
 
@@ -111,8 +126,9 @@ misattributed behavior, or outright misreadings.
 
 For each finding (or cluster of related findings):
 
-1. Read the cited source file(s) in full. Do not rely on search snippets.
-2. Trace the code path described in the finding.
+1. Read cited source files in full and inspect cited runtime traces/artifacts.
+   Do not rely on search snippets or a report's conclusion.
+2. Trace the code path or reproduce the runtime path described in the finding.
 3. Classify the finding:
    - **Confirmed**: code matches the audit's description.
    - **Partially confirmed**: the issue exists but the severity or scope
@@ -144,10 +160,14 @@ For each confirmed finding, determine the fix direction:
 ### Auto-decision criteria
 
 Apply an automatic decision (with recorded rationale) when:
-- Only one reasonable fix exists (e.g., doc wording correction, alignment
-  matrix status update, missing redaction call).
-- The audit reports converge on the same recommendation.
-- The fix is purely additive (new test, new diagnostic field).
+- The existing normative criterion and verified production seam determine one
+  behavior-preserving correction (for example truthful doc wording or a missing
+  regression test for already-required behavior).
+- The change does not choose new product semantics, public API, compatibility,
+  architecture, or core-vs-plugin placement.
+
+Source agreement is evidence, not design authority. Multiple reviewers
+recommending the same new architecture does not make it an automatic decision.
 
 ### Escalation criteria
 
@@ -156,12 +176,14 @@ Ask the user when:
   BranchSummary to provider now" vs "explicitly defer to next phase").
 - The fix has backward-compatibility implications for embedders.
 - The fix requires removing functionality or changing public API.
-- Auditors disagree on the correct fix direction.
+- Finding sources disagree on the correct fix direction.
+- The finding exposes a missing requirement or changes product intent; route
+  it back to shaping instead of deciding inside remediation.
 
 When escalating, present:
 - The options (labeled a/b/c...).
 - A recommended option with rationale.
-- The auditors' positions on each option.
+- The source reports' positions on each option.
 
 ### Decision record
 
@@ -195,7 +217,7 @@ Within each layer, order fixes by:
 ### Plan content
 
 For each fix item:
-- Audit source(s) and finding ID(s).
+- Finding source(s), source kind(s), and finding ID(s).
 - Verification status (confirmed / partially confirmed).
 - File path(s) and approximate line numbers.
 - Description of the change.
@@ -203,18 +225,12 @@ For each fix item:
 
 ### Verification commands
 
-Each layer includes:
-```
-cargo fmt --all
-cargo clippy -p <crate> --all-targets -- -D warnings
-cargo test -p <crate> --all-targets
-```
-
-Final verification after all layers:
-```
-cargo test --workspace --all-targets
-cargo test --workspace --doc
-```
+Derive verification from the affected task/crate tier. A single-crate layer
+uses the scoped smoke mode and named affected integration tests. Reserve the
+full workspace mode for cross-crate/workspace changes. Documentation layers run
+`python scripts/opi-doc-check.py` and any source-specific EN/ZH checks. Do not
+compile every workspace test binary merely because the source finding came from
+a phase audit.
 
 ### Output
 
@@ -233,7 +249,9 @@ Summary:
 3. After each layer, run the layer's verification commands.
 4. If verification fails, stop and report. Do not proceed to the next layer
    with a broken previous layer.
-5. After all layers pass, run the workspace-wide smoke check.
+5. After all layers pass, run the union of affected tier gates; run
+   workspace-wide smoke only when the remediation is cross-crate/workspace
+   scoped.
 6. Report final status.
 
 ## Guardrails
@@ -241,8 +259,8 @@ Summary:
 - Do not modify `.opi-impl-state.json` -- that file belongs to `opi-implement`.
 - Do not commit or push unless the user explicitly asks.
 - Do not modify design spec files unless an audit finding specifically
-  identifies a spec documentation error (e.g., "spec says X but code does Y
-  and Y is correct").
+  identifies a spec documentation error and the user approves returning that
+  decision to the source-owning shaping flow.
 - Every changed line must trace to a verified audit finding. Do not refactor,
   reformat, or improve code outside the finding scope.
 - Do not add features. Remediation fixes defects, inconsistencies, and gaps
@@ -257,7 +275,9 @@ Summary:
 ```text
 opi-audit  -->  produces audit reports (docs/snapshots/phase<N>/audit.*.md)
                     |
-opi-remediate  -->  consumes audit reports, produces remediation-plan.md,
+opi-eval   -->  produces runtime reports (docs/eval/*.md)
+                    |
+opi-remediate  -->  consumes normalized findings, produces remediation-plan.md,
                     optionally executes fixes
                     |
 opi-implement  -->  drives next-phase implementation (independent ledger)
@@ -269,9 +289,10 @@ phases forward; `opi-remediate` fixes backward from audit findings.
 
 ## References
 
-- Read `references/cross-reference-matrix.md` for the cross-reference
-  algorithm, consensus tiers, severity mapping, and trust model.
+- Read `references/cross-reference-matrix.md` for clustering, source coverage,
+  independence handling, and severity mapping.
 - Read `references/remediation-plan-template.md` for the plan output format
   and required fields.
 - Read `references/execution-protocol.md` for the layer-by-layer execution
   protocol, verification gates, and failure handling.
+- Read `../_shared/references/finding-contract.md` before acquiring findings.

@@ -1,0 +1,6 @@
+interface:
+  display_name: "Opi Release"
+  short_description: "Release GitHub artifacts and all workspace crates"
+  default_prompt: "Use $opi-release <version> to run the gated GitHub and crates.io release workflow."
+policy:
+  allow_implicit_invocation: false

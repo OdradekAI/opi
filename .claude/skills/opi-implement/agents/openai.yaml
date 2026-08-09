@@ -1,0 +1,6 @@
+interface:
+  display_name: "Opi Implement"
+  short_description: "Execute the canonical implementation ledger safely"
+  default_prompt: "Use $opi-implement plan to admit and adversarially review the source specification before executing its canonical task graph."
+policy:
+  allow_implicit_invocation: false

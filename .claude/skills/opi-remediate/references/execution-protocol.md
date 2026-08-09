@@ -23,9 +23,14 @@ If `cargo metadata` is unavailable, read the workspace layout from
 ```text
 opi-ai (no internal deps)
 opi-tui (no internal deps)
+opi-protocol (no internal deps)
 opi-agent -> opi-ai
-opi-coding-agent -> opi-ai, opi-agent, opi-tui
+opi-sandbox -> opi-protocol
+opi-coding-agent -> opi-ai, opi-agent, opi-protocol, opi-tui
 ```
+
+This is a snapshot of CLAUDE.md's workspace-layout diagram; prefer `cargo metadata`
+(which always reflects the current workspace) when available.
 
 ### Layer assignment
 
@@ -38,9 +43,9 @@ Example for the current workspace:
 
 | Layer | Crates | Reason |
 |---|---|---|
-| 1 | opi-ai, opi-tui | No internal deps |
-| 2 | opi-agent | Depends on opi-ai |
-| 3 | opi-coding-agent | Depends on opi-ai, opi-agent, opi-tui |
+| 1 | opi-ai, opi-tui, opi-protocol | No internal deps |
+| 2 | opi-agent, opi-sandbox | opi-agent -> opi-ai; opi-sandbox -> opi-protocol |
+| 3 | opi-coding-agent | Depends on opi-ai, opi-agent, opi-protocol, opi-tui |
 | 4 | Documentation | Always last |
 
 If a fix spans multiple crates in different layers, split it into per-layer
@@ -61,15 +66,18 @@ Apply all fix items assigned to this layer:
 
 ### Step 2: Verify
 
-Run the layer's verification commands:
+Run the layer's one authoritative tier-scoped verification. For one affected
+crate:
 
 ```bash
-cargo fmt --all
-cargo clippy -p <crate> --all-targets -- -D warnings
-cargo test -p <crate> --all-targets
+scripts/opi-impl-smoke.sh scoped --crate <crate> --test <affected-test-binary>
 ```
 
-For documentation layers, verify:
+On Windows PowerShell use the `.ps1` sibling. Omit `--test` only when the
+affected behavior is fully covered by library tests. Use smoke `full` only for
+cross-crate/workspace-tier remediation.
+
+For documentation layers, run `python scripts/opi-doc-check.py` and verify:
 - Localized counterparts are updated (EN + ZH).
 - No broken internal references.
 - Terminology is consistent with the code changes made in previous layers.
@@ -78,21 +86,21 @@ For documentation layers, verify:
 
 - **All pass**: Proceed to the next layer.
 - **fmt fails**: Auto-fix with `cargo fmt --all` and re-verify.
-- **clippy fails**: Fix the warning, re-verify. If the warning is in code
-  you did not modify, record it as a pre-existing issue and continue.
+- **clippy fails**: Fix the warning, re-verify. If evidence shows the warning
+  predates the remediation and is outside owned scope, stop and ask whether to
+  record a scoped exclusion or expand the remediation; do not call the layer
+  passing while silently continuing.
 - **test fails**: Investigate. If the failure is in a test you added or
   modified, fix it. If the failure is in an existing test broken by your
-  change, fix the change. If the failure is pre-existing, record it and
-  continue.
+  change, fix the change. If evidence shows the failure is pre-existing and
+  outside owned scope, stop for the same explicit exclusion/expansion decision.
 
 ## Final verification
 
-After all layers pass individually:
-
-```bash
-cargo test --workspace --all-targets
-cargo test --workspace --doc
-```
+After all layers pass individually, run only the deduplicated union of missing
+acceptance/platform gates. Do not rerun scoped gates. A cross-crate/workspace
+remediation uses `scripts/opi-impl-smoke.sh full` once as its layer gate;
+doctests are added only when Rust API documentation changed.
 
 ### Platform detection
 
@@ -104,9 +112,9 @@ Detect the host platform for smoke script selection:
 | Windows PowerShell | `scripts/opi-impl-smoke.ps1` |
 | Windows Git Bash / MSYS / WSL | `scripts/opi-impl-smoke.sh` |
 
-The smoke script bundles `cargo build`, `cargo fmt --check --all`,
-`cargo clippy --workspace --all-targets -- -D warnings`, and
-`cargo test --workspace --all-targets`.
+The full smoke mode bundles formatting, all-target clippy, rustdoc, and
+workspace tests. It has no redundant standalone build. Scoped remediation does
+not escalate to full mode without a cross-crate semantic reason.
 
 ## Failure handling
 
@@ -141,8 +149,9 @@ be reverted:
 
 1. Use `git diff` to identify the changed files.
 2. Present the list to the user.
-3. The user decides whether to revert (via `git checkout -- <file>` on
-   specific files).
+3. The user decides whether to preserve the changes or authorizes a recoverable,
+   file-specific reversal. The protocol does not print or execute a reversal
+   command because files may contain pre-existing user work.
 
 Never run `git reset --hard`, `git checkout .`, or `git clean -fd`.
 

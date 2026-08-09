@@ -1,55 +1,121 @@
 ---
 name: opi-slim-tests
-description: Cut opi's test integration-binary count to speed compiles — each tests/*.rs is its own binary/link step. Use when the user wants to slim the test suite, cut test compile/build time, or says tests are slow, too numerous, or bloated. Preserves coverage.
+description: Reduce Rust integration-test binary and link cost while preserving current behavior, architecture, and platform coverage.
+disable-model-invocation: true
 ---
 
-# opi-slim-tests
+# Opi Slim Tests
 
-Cut the opi test suite's integration-**binary** count to speed up `cargo test` / CI, without losing coverage.
+Reduce integration-test **binary count**, not useful behavioral coverage. Every
+top-level `tests/*.rs` is a separate Cargo target and link step; modules below a
+suite directory do not create another binary.
 
-## The lever
+Stop at a verified working-tree diff. Git safety and commit authorization come
+from the always-loaded `AGENTS.md` / `CLAUDE.md`; this skill never stages or
+commits automatically.
 
-Every `tests/*.rs` is a separate integration **binary**: Cargo compiles and **links** the full dependency tree (reqwest, tokio, ratatui, clap, schemars, wiremock) once per file. **File count, not test count, is the compile cost.** Files in `tests/` *subdirectories* are modules, not binaries — a `tests/common/mod.rs` reached by `mod common;` costs zero binaries. Reducing binaries (link steps) is the only lever that moves wall-clock; rearranging tests within one file does nothing for compile time.
+## 1. Establish the baseline
 
-## Steps
+Use `cargo metadata --no-deps --format-version 1` to inventory integration test
+targets per crate. Record candidate line count, test count, `cfg`/platform,
+fixtures, subprocess use, and representative timing when available. Thin files
+are candidates, not automatic deletions.
 
-### 1. Inventory — where the link-step mass is
-Count test files and lines per crate; flag **thin binaries** (≈1–13 tests) — they pay a full link for almost nothing and are the cheapest merge fuel. opi-coding-agent (~77 binaries) is historically the centre of mass.
-Criterion: a ranked list of binaries by test count, thin binaries marked.
+Use the configured persistent external `CARGO_TARGET_DIR`; resolve it with
+`python scripts/opi-cargo-cache.py resolve` when unset. Never run
+`cargo clean` to prepare the measurement and never create a disposable target
+directory merely to prove isolation.
 
-### 2. Classify each candidate — clone / per-X / load-bearing
-Read the duplicate test *bodies*; never classify from names alone (same name often masks different coverage).
-- **clone** — identical assertions, differing only in a model string / fixture / provider constructor → **merge** or **delete** (the subsuming test must prove identical coverage).
-- **per-X** — same name, but each copy tests a *different* thing (find vs ls vs glob; openai vs mistral profile) → **not redundant**. Merge by renaming per-X or wrapping each in a sibling `mod`; **skip** when per-file locality outweighs the link-step win.
-- **load-bearing** — release-critical (see step 5) → **hold**; never change without a byte-identity gate + linux CI.
-Criterion: every candidate labelled clone / per-X / load-bearing, with evidence quoted from the bodies.
+## 2. Classify from full bodies
 
-### 3. Merge (clones only)
-- **clean merge** — `cat` the files, then strip each per-file `//!` header and duplicate `use` lines at every **seam**; dedup byte-identical helpers; keep one copy where signatures differ.
-- **helper-colliding but distinct** — wrap each file verbatim in a sibling `mod` (`mod profile_a { … } mod profile_b { … }`); mod-namespacing removes the collision with zero behavior change.
-- **misplaced pure unit test** (tests a library fn, no subprocess) — inline into the owning `src/*.rs` as `#[cfg(test)]`.
-- **shared helpers** → `tests/common/mod.rs` with `#![allow(dead_code)]` at the top — the module is compiled per-binary, so a helper unused by one binary trips `dead_code` and CI fails under `-D warnings` without it.
-Criterion: merged file compiles — `cargo clippy -p <crate> --test <name> -- -D warnings`.
+Every candidate receives exactly one primary classification:
 
-### 4. Verify — CI parity, reported honestly
-`cargo clippy -p <crate> --test <name> -- -D warnings` + `cargo test -p <crate> --test <name>` + **`cargo fmt --check --all`**. The fmt gate bites cat-built merges (rustfmt reflows unified imports and indents `mod` bodies): run `cargo fmt --all`, then re-check.
-**cfg(unix) tests are invisible on this Windows host** — they compile out locally; never claim a unix-only test passes from a local run. The linux CI job is authoritative for them.
-Criterion: clippy clean, converted tests pass locally, fmt clean; unix-gated coverage explicitly deferred to CI.
+- **current-contract**: proves observable shipped behavior or a live public
+  protocol/API/safety boundary;
+- **duplicate**: another test reaches the same seam with equivalent fixtures
+  and assertions;
+- **superseded**: pins behavior, prose, phase status, or non-goals replaced by
+  the current implementation/design;
+- **historical-evidence**: records why an old phase shipped; belongs in a frozen
+  plan/snapshot, not the current test graph;
+- **platform-only**: has a real OS/toolchain-specific contract;
+- **helper-binary**: exists mainly to provide a subprocess fixture rather than
+  assertions.
 
-### 5. Hold the load-bearing guards
-Do not silently change: the **phase4/phase6 ledger** SHA-256 of `docs/opi-spec.md` (CRLF-normalized) vs `docs/snapshots/phase{4,6}/`; `productized_packages_docs` `CARGO_PKG_VERSION` guard; the doc-guards' **two `no_positive_claim` token sets** (Phase5/6 vs Phase7 — never unify into one); the `strip_rust_comments` variants. Touch only with a byte-identity gate (sha256 of helper bodies pre/post) and confirm on linux CI.
-Criterion: each load-bearing item either untouched, or verified byte-identical and CI-green.
+Names are not evidence. Read candidate bodies in full and cite the retained
+behavioral seam. “Documentation guard” is not automatically load-bearing.
 
-### 6. Commit
-Feature branch (never commit direct to `main`); Conventional Commits (`test(crate): …`); `git add` only your files — never `-A`/`.` (the opi working tree routinely carries other agents' uncommitted changes).
-Criterion: clean commit on a feature branch, only your files staged.
+## 3. Record test impact for the product change
 
-## Placement — the publish-leak rule
-Shared helpers must not enlarge a published crate's API:
-- **opi-coding-agent** publishes to crates.io *and* has a lib target → use `tests/common/mod.rs` (`mod common;`). **Never** `src/test_support.rs`: `#[doc(hidden)]` masks rustdoc only, not the callable public API.
-- **pure unit tests** inlined as `#[cfg(test)]` are always publish-safe (cfg-gated out of release builds).
-- **opi-ai** already leaks `src/test_support` (MockProvider); extending it adds no *new* surface class, but `tests/common` avoids the leak entirely.
+For each feature/refactor/removal that led to the candidate, choose:
 
-## Host constraints
-- Windows host: `cfg(unix)` tests compile out — invisible to local `cargo test`/`clippy`. Grep for bare `extern "C"` / `unsafe` before pushing unix-test changes (edition-2024 `unsafe extern` errors fail linux CI, not local).
-- Full-workspace `cargo test --workspace --all-targets` can fill the 452G disk (~106 GB `target/` bloat). Use per-crate / per-`--test` builds.
+- `add`: new observable behavior needs coverage;
+- `update`: the current contract changed;
+- `delete`: removed/superseded behavior should remove its old test;
+- `retain`: existing coverage already proves unchanged behavior;
+- `none`: docs/skills/metadata only, with no runtime contract.
+
+This prevents a refactor from accumulating old and new tests for mutually
+exclusive designs. A later phase that replaces an earlier contract should
+delete or rewrite the earlier test in the same change.
+
+## 4. Choose the smallest safe form
+
+In preference order:
+
+1. Delete superseded or historical prose assertions after current evidence is
+   identified.
+2. Parameterize true clones through one public behavior seam.
+3. Move distinct cases into modules under one integration binary.
+4. Move a pure unit test to the owning module under `#[cfg(test)]` when it does
+   not exercise integration/subprocess behavior.
+5. Keep genuine platform and helper binaries separate when Cargo execution
+   boundaries are part of the test.
+
+Shared test-only helpers belong under `tests/common/`; do not enlarge a
+published API to make consolidation easier. Reconcile attributes, imports,
+fixtures, environment serialization, snapshots, and test names explicitly;
+never concatenate files mechanically.
+
+## 5. Preserve the right guards
+
+Preserve unless explicitly migrated with equivalent proof:
+
+- the live spec-ledger CRLF-normalized SHA-256 contract;
+- public protocol/schema behavior tests;
+- current safety/security and persistence invariants;
+- platform-only process/sandbox behavior;
+- reviewed snapshots that assert current UI rendering.
+
+Do not preserve exact narrative phrases, roadmap placeholders, phase numbers,
+historical non-goals, released changelog tokens, or test function names as
+current Rust assertions. Documentation contracts use
+`scripts/opi-doc-check.py`; historical phase artifacts remain frozen.
+
+## 6. Verify proportionally
+
+For each retained/consolidated binary:
+
+```text
+cargo clippy -p <crate> --test <name> -- -D warnings
+cargo test -p <crate> --test <name>
+```
+
+For deleted prose-only binaries, run:
+
+```text
+python scripts/opi-doc-check.py
+cargo metadata --no-deps --format-version 1
+```
+
+Compare before/after target and discovered-test counts. Run broader crate tests
+only when shared helpers, library code, or runtime behavior changed. Defer
+platform proof to its authoritative CI and say so explicitly. Do not run the
+workspace all-target test solely because test files were reorganized.
+
+## 7. Handoff
+
+Report the binary count delta, classification and retained-evidence mapping,
+files removed/created/modified, commands and outcomes, unproven platform
+coverage, and remaining risks. Leave changes uncommitted unless separately
+authorized.

@@ -96,26 +96,26 @@ Atomic writes use an ignored `.opi-impl-state.json.tmp` plus rename.
 | `spec_files` | array | const-on-init, reinit-editable | Normative spec file paths whose drift triggers the plan path's drift branch. Default `["docs/opi-spec.md"]`. Supplemental phases MUST include only the reviewed source files registered in `skill.md` for the active phase, plus `docs/opi-spec.md`. Adding or removing a path requires a plan-path sync. |
 | `spec_files_sha256` | object | reinit-only | Map of file path → its CRLF-normalized SHA-256 (replace `\r\n` with `\n` before hashing) at last init/reinit. The live root `.opi-impl-state.json` is pinned to the current spec by `crates/opi-coding-agent/tests/spec_ledger.rs`; phase-exit snapshots under `docs/snapshots/phaseN/` are historical and are NOT re-synced. Each entry is checked independently; any mismatch triggers the spec-alignment guard. |
 | `task_graph_confirmed_at` | string/null | init/reinit | ISO-8601 confirmation time |
-| `verify_runs` | array/null | plan+exec+phase-exit | Active-phase verify history. Each entry: `{ stage ("plan"|"exec"|"phase-exit"), wf_ref (string/null — null when the run used the single-agent path), folded_count, flagged_count, rejected_count, ran_at, task_id (string for exec; null for plan/phase-exit), criterion_id (string for phase-exit; null for plan/exec) }`. Additive/optional within a phase; after a durable pre-archive ledger checkpoint, archive compaction resets it to `[]`. The checkpoint remains the recovery source; do not duplicate the array into a generic history artifact. Does NOT affect `schema_version`. |
+| `verify_runs` | array/null | plan+exec+phase-exit | Active-phase verify history. Each entry: `{ stage ("plan"|"exec"|"phase-exit"), wf_ref (string/null — null only when a supported plan fallback has no Workflow id), folded_count, flagged_count, rejected_count, ran_at, task_id (string for risk-gated exec; null for plan/phase-exit), criterion_id (string for phase-exit; null for plan/exec) }`. Tasks with `evaluator_required = false` create no exec entry. Additive/optional within a phase; after a durable pre-archive ledger checkpoint, archive compaction resets it to `[]`. The checkpoint remains the recovery source; do not duplicate the array into a generic history artifact. Does NOT affect `schema_version`. |
 | `session_notes` | array/null | plan+runtime+archive | Active-phase root coordination notes. This is distinct from per-task `tasks[].session_notes`. After a durable pre-archive ledger checkpoint, archive compaction resets it to `[]`; archived-phase notes do not accumulate in the live root ledger and remain recoverable from the checkpoint. |
 | `current_phase` | int | auto | Lowest phase with non-`passing` task |
 | `tasks[].id` | string | const | Matches a row in `opi-spec.md` §15 OR a sub-task expansion. Pattern: `^\d+\.\d+(\.\d+)?$`. Sub-task IDs carry a third component (e.g. `4.6.1`) and MUST also set `parent_spec_row`. |
 | `tasks[].phase` | int | const | From row's phase grouping |
 | `tasks[].title` | string | const | Spec row title |
-| `tasks[].crate` | string | const | One of opi's five crates, `workspace`, or any free-string identifier (e.g. `examples`, `package-template`) when the spec row uses an open identifier. Review-gate warns for unknown values but does not refuse. |
+| `tasks[].crate` | string | const | One of opi's six workspace crates (`opi-ai`, `opi-agent`, `opi-coding-agent`, `opi-protocol`, `opi-sandbox`, `opi-tui`), `workspace`, or any free-string packaging identifier (e.g. `examples`, `package-template`) when the reviewed source uses an open identifier. The review gate warns for unknown values but does not refuse solely on that basis. |
 | `tasks[].parent_spec_row` | string/null | const | Source spec row ID when this task is a sub-task expansion (e.g. `"4.7"` for `4.7.1`). Direct spec rows MUST use `null`, not an empty string. |
 | `tasks[].definition_of_done` | string | const | Verbatim from spec |
 | `tasks[].definition_source` | enum | const | `verbatim`, `inferred`, or `draft-reviewed`; inferred values require review gate confirmation |
 | `tasks[].replaces` | string/null | const | Prior task title/meaning superseded during reinit, when the same task ID was repurposed by spec changes |
 | `tasks[].status` | enum | runtime | `failing`/`in_progress`/`passing`/`blocked`/`archived` |
 | `tasks[].depends_on` | array | const | Task IDs that must be `passing` |
-| `tasks[].inference_notes` | array | const | Reasons for inferred fields. Phase non-goal guards use `field = "forbidden_scope"` with an exact source heading. Init-verify (L5) defer/split/residual devices use `field` ∈ {`deferred`,`split`,`residual`} with `reason` packed as `"<verb>: trigger=<clause|null>"` (a `null` trigger means the human must specify it at `A.init.3`). |
+| `tasks[].inference_notes` | array | const | Reasons for inferred fields. Phase non-goal guards use `field = "forbidden_scope"` with an exact source heading. Plan extraction may use `field` ∈ {`deferred`,`split`,`residual`} with `reason` packed as `"<verb>: trigger=<clause|null>"` (a `null` trigger requires a human decision before P.4 confirmation). Inferred placement or public-test-seam choices also record their rationale here. |
 | `tasks[].tier` | enum | const | `documentation`/`workspace`/`library`/`cli-tool`/`cli-runtime`/`tui` |
 | `tasks[].commit_type` | enum | const | `feat`/`fix`/`docs`/`refactor`/`test`/`chore`/`perf` |
 | `tasks[].parallelize` | array | const | Sub-unit names for parallel dispatch |
 | `tasks[].evaluator_required` | bool | const | Static risk flag |
 | `tasks[].verification` | object | const | Tier-specific gate spec |
-| `tasks[].acceptance_scenarios` | array | const-on-init, reinit-editable | Product/user-path scenarios owned by this task. Required when the task closes a source-spec goal, success criterion, exit criterion, or workflow. Each scenario has `id`, `source`, `scenario`, `verification`, `production_call_sites`, and runtime `status` (`open`, `met`, or `deferred-by-updated-design`). Component/substrate tasks may use `[]`, but then they cannot close a product acceptance criterion. |
+| `tasks[].acceptance_scenarios` | array | const-on-init, reinit-editable | Product/user-path scenarios owned by this task. Required when the task closes a source-spec goal, success criterion, exit criterion, or workflow. Each scenario has `id`, `source`, `scenario`, `verification`, `production_call_sites`, and runtime `status` (`open`, `met`, or `deferred-by-updated-design`). `scenario` answers what can be demonstrated when the task is complete; `source` cites the reviewed criterion. Component/substrate tasks may use `[]`, but then they cannot close a product acceptance criterion. |
 | `tasks[].production_call_sites` | array | const-on-init, append-only during Phase C | Production entry points that must call or exercise this task's implementation before the task can close runtime acceptance. Examples: CLI subcommand handler, harness startup, agent loop hook wrapper, session persistence path. Tests-only helpers do not count. |
 | `tasks[].substrate_only` | bool | const-on-init, reinit-editable | `true` means the task intentionally implements a helper/parser/protocol/bridge slice and cannot by itself close product acceptance scenarios. A later vertical-slice task must consume it through a production call site. |
 | `tasks[].iteration_count` | int | runtime | Attempts since `in_progress` |
@@ -144,6 +144,12 @@ exit fields and active-phase working history, not expanded evidence tables or
 prior-phase journals.
 
 Validation rule: every path listed in `tasks[].verification.behavioral_tests` MUST be matched by at least one `task_owned_paths` glob before the task graph is confirmed. This prevents Phase C from needing an immediate ownership expansion just to create the task's declared tests.
+
+Validation rule: `tasks[].verification.behavioral_tests` MUST exercise the
+pre-agreed highest practical public seam for each owned acceptance scenario.
+When the seam is inferred rather than verbatim from the source, record the seam
+and rationale in `inference_notes`. A private helper test may supplement but
+cannot replace the public behavioral seam.
 
 Validation rule: when `behavioral_tests` references more than one crate, either `tier` MUST be `workspace` or `verification.library_gates` MUST include mechanical gates for every referenced crate. Snapshot-bearing tests also require `snapshot_tests` and explicit snapshot approval under the `tui` rules.
 

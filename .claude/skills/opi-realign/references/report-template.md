@@ -1,55 +1,65 @@
-# Report template
+# Realign report template
 
-File path: `docs/realign/YYYY-MM-DD-<current>-vs-<target>.md`
-(for example `docs/realign/2026-07-10-opi-vs-pi-0.80.2.md`).
+Write to `docs/realign/YYYY-MM-DD-opi-vs-pi-<revision>.md`, using a short pi
+commit prefix or immutable tag in the filename.
 
-The body is Layer A (objective). Layer B (judgment) is an appendix, produced
-only when asked. See `audit-framework.md` for the layer rule and taxonomy.
+The body is Layer A (objective). Layer B (judgment) is an appendix produced
+only when requested. See `audit-framework.md` for the taxonomy.
 
-## Body (Layer A)
+## Header
 
-Header:
+- Title: `opi vs pi <revision> - objective differences`.
+- Measurement date.
+- opi root, version, and exact commit SHA.
+- pi root, version when declared, exact commit SHA, and verified remote URL.
+- Scope and dimension count.
+- Method: both sides read from source; every retained delta adversarially
+  checked; any non-independent verification limitation stated.
+- Framing: `No phases, baselines, or roadmap framing.`
 
-- Title: `<current> vs <target> — Objective Differences`.
-- One line: fresh measurement, date, current project + version vs target +
-  version, read from source with file:line anchors. State "No phases, no
-  baseline, no roadmap framing."
-- Source roots for both projects (path, language, crates/packages).
-- Method line: number of dimensions measured; that each delta was adversarially
-  verified (refute-on-gap); note any dimension re-measured from source.
+Never leave `latest`, a moving branch name, or only a semantic version as the
+target identity.
 
-A short "How to read" block: columns are factual current state with citations;
-"Difference" is one line, factual, no judgment; absence is stated with where
-searched; drift classification lives in the appendix.
+## Body: Layer A
 
-Then one section per dimension, in the `dimensions.md` order. For each:
+Start with a short `How to read` block: project columns are cited facts;
+`Difference` is factual; absence names searched paths; judgment appears only in
+the appendix.
 
-- `**<current>:**` 1–3 sentence summary, then `Key facts:` as a bulleted list,
-  one `file:line` anchor per fact.
-- `**<target>:**` same shape.
-- A difference table with columns `Item | <current> | <target> | Difference`.
+For each dimension in `dimensions.md` order:
 
-Body-cleanliness gate: after writing, grep the body for
-`Phase [0-9]|roadmap|matrix says|should|needs to|planned` and remove any hit
-that crept in. A `Phase` type/enum name (e.g. the harness `Phase` enum) is fine;
-a numbered roadmap phase is not. The body reports state, not intent.
+1. `**opi:**` one or two sentences, followed by key facts with one `file:line`
+   anchor per fact.
+2. `**pi:**` the same shape.
+3. A table with `Item | opi | pi | Difference | Verification outcome`.
 
-## Appendix A — Drift classification (Layer B, only if asked)
+Allowed outcomes are `confirmed`, `refuted`, `refined`, and `added`. Refuted
+items are normally omitted from the main table and retained as method notes.
 
-A table with columns `Dimension | Item | Classification | Note`, classification
-drawn from the `audit-framework.md` taxonomy.
+### Body cleanliness gate
 
-## Appendix B — Method & verification
+Search the objective body for roadmap language such as
+`Phase [0-9]`, `roadmap`, `matrix says`, `should`, `needs to`, and `planned`.
+Remove judgment leaks. A source symbol actually named `Phase` is allowed when
+clearly cited as code.
 
-State the dimension count and the outcome tally (see `audit-framework.md`).
-List any refuted deltas as footnotes. Flag any dimension that was
-single-sourced (re-measured from source rather than adversarially verified) and
-why.
+## Appendix A: drift classification (optional)
+
+Only when requested, add:
+
+`Dimension | Item | Classification | Evidence note`
+
+Use only the primary statuses and optional sub-flags in `audit-framework.md`.
+Do not add priorities unless the user separately asked for prioritization.
+
+## Appendix B: method and verification
+
+Record the dimension count, outcome tally, refuted-delta notes, unavailable
+evidence, and every dimension that lacked an independent verifier.
 
 ## Chat summary
 
-Lead with nothing about phases or the prior audit. Give the highest-signal
-deltas, one line each and dimension-prefixed, grouped as "where the target is
-ahead" and "where the current project is ahead". Note any single-sourced
-dimension. Point at the report file. Mention spot-checks only if you performed
-them.
+Report the highest-signal inward deltas, grouped as `pi ahead` and `opi ahead`,
+without phase/roadmap framing. State the exact pi revision, disclose any
+single-pass dimensions, link the report, and route outward opportunities to
+`opi-research`.
