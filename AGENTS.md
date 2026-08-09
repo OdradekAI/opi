@@ -54,9 +54,11 @@ Repository: https://github.com/OdradekAI/opi
 rules change, update both in lockstep to avoid drift.
 
 Normative design references live in `docs/`: `opi-spec.md` is the technical
-spec. Consult it before answering scope or behavior questions. Fresh alignment
-audits against upstream are produced under `docs/realign/` by the `opi-realign`
-skill.
+spec. Consult it before answering scope or behavior questions. The domain
+glossary lives at `docs/CONTEXT.md` (records the domain language for extension
+runtime, command execution, and safety boundaries; it is not auto-loaded by the
+runtime — only `AGENTS.md`/`CLAUDE.md` are). Fresh alignment audits against
+upstream are produced under `docs/realign/` by the `opi-realign` skill.
 
 ## Conversational style
 
@@ -498,10 +500,12 @@ boundaries. Before removing a worktree, refuse cleanup unless its canonical
 ledger is clean and every required ledger checkpoint is contained in the
 destination branch.
 
-The skill runs `scripts/opi-impl-smoke.{sh,ps1}` at Phase A.3. That smoke check
-bundles `cargo build`, `cargo fmt --check --all`,
-`cargo clippy --workspace --all-targets -- -D warnings`, and
-`cargo test --workspace --all-targets`.
+The skill runs `scripts/opi-impl-smoke.{sh,ps1}` at Phase A.3 in `boot` mode:
+`cargo build --workspace` + `cargo fmt --check --all` +
+`cargo clippy --workspace --lib` (no `--all-targets`/test gate, to avoid
+compiling every test binary in the workspace). D.3 runs `full` for the `workspace`
+tier or `scoped --crate <crate>` for other non-documentation tiers. See
+`scripts/opi-impl-smoke.sh` for the mode reference.
 
 Reviewed supplemental implementation specs are registered by phase in
 `.claude/skills/opi-implement/skill.md`; do not treat arbitrary
