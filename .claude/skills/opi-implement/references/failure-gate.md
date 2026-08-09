@@ -31,7 +31,7 @@ Reproduction commands: <exact commands>
 | Option | Effect |
 |---|---|
 | (a) Retry with extended cap | +5 attempts (total 10). Status stays `in_progress`. |
-| (b) Return to shaping | If facts are missing, route to `opi-research` or `opi-realign`; if product meaning is unresolved, route to Matt `wayfinder` or `grill-with-docs`. The owning shaping artifact may update the source, then the user re-runs `plan`. |
+| (b) Return to shaping | Apply the `skill.md` Source-return rule: route missing facts to `opi-research` or `opi-realign`; for unresolved product meaning, recommend the exact explicit user invocation of Matt `wayfinder` or `grill-with-docs`. After the reviewed source changes, the user re-runs `plan`. |
 | (c) Mark blocked | Record blocker text. Leave failing tests. Stage nothing. Status → `blocked`. Skipped on auto until `--clear-blocker`. |
 | (d) Drop to manual | Print reproduction commands, touched files, suggested cleanup. Do NOT run cleanup. User finishes manually, then `--resume-from-manual`. |
 
@@ -47,4 +47,5 @@ If **three consecutive** task invocations hit the failure gate, print:
 
 > "Harness components may be misaligned with the current spec or model.
 > Re-read the registered source and return missing facts to research/realignment
-> or unresolved decisions to wayfinding/grilling before continuing."
+> or recommend explicit wayfinding/grilling for unresolved decisions before
+> continuing."

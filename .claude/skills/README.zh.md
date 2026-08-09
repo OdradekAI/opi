@@ -11,7 +11,8 @@
 所有 `opi-*` 技能都只能显式调用。Claude 侧使用
 `disable-model-invocation: true`，Codex 侧使用
 `policy.allow_implicit_invocation: false`。不确定入口时，显式调用
-`opi-workflow`。
+`opi-workflow`。Matt 的 `wayfinder`、`grill-with-docs`、`to-spec` 与 setup
+命令同样只能由用户调用：路由器只给出精确调用建议，不会代为调用。
 
 ## 工作流地图
 
@@ -19,9 +20,9 @@
 |---|---|---|
 | 向内证据 | `opi-realign` | `docs/realign/` 下基于精确 pi 修订版的差异账本 |
 | 向外证据 | `opi-research` | `docs/research/` 下基于一手资料的能力调研 |
-| 高不确定性塑形 | 直接调用 Matt `wayfinder` | 决策地图；按需反复 research、realign、追问 |
-| 有界设计质询 | 直接调用 Matt `grill-with-docs` | 明确的设计抉择与领域语言 |
-| 设计已收敛 | 直接调用 Matt `to-spec` | 候选实现规格 |
+| 高不确定性塑形 | 完成 tracker 配置后显式调用 Matt `wayfinder` | issue tracker 决策地图及其子决策票据 |
+| 有界设计质询 | 显式调用 Matt `grill-with-docs` | 明确的设计抉择；必要时更新 `docs/CONTEXT.md`/ADR |
+| 设计已收敛 | 完成 tracker 配置后显式调用 Matt `to-spec` | issue tracker 上的非规范候选 spec |
 | 准入与交付 | `opi-implement plan`，再调用 `opi-implement` | 已评审任务图与规范实现账本 |
 | 静态保障 | `opi-audit` | 基于当前已提交 HEAD 的需求符合性审计，分别输出 Standards/Spec 双轴发现 |
 | 运行时保障 | `opi-eval` | 运行时保真度发现与 trace |
@@ -54,6 +55,17 @@
 
 `opi-workflow` 只负责路由，不新建账本，也不会把这个循环藏进自动转换。
 
+当前 Matt 的 `wayfinder` 与 `to-spec` 都以 issue tracker 为原生产物载体。
+使用前应通过 Matt `setup-matt-pocock-skills` 配置
+`docs/agents/issue-tracker.md`。当 `wayfinder` 或 `grill-with-docs` 调用
+`domain-modeling` 时，opi 将其词汇表目标适配为既有的 `docs/CONTEXT.md`，
+ADR 目标适配为 `docs/adr/`；不得新建根目录 `CONTEXT.md`。Tracker 地图、
+票据和候选 spec 在人工评审并落入 `docs/opi-spec.md` 或
+`opi-implement` 已登记的补充来源前，始终是非规范产物。
+
+这些塑形命令是仅用户可调用的 Matt 技能。`opi-workflow` 会返回精确的推荐
+命令并停在该边界，不会声称把它们作为模型可组合子技能调用。
+
 ### `opi-implement plan` 是对抗性准入关卡
 
 plan 路径不替代产品设计。它只验证候选来源能否进入唯一的实现状态机：
@@ -71,8 +83,9 @@ plan 路径不替代产品设计。它只验证候选来源能否进入唯一的
 
 ## Matt 与 Superpowers 的取舍
 
-opi-* 内的推理与产物级子技能默认来自本地 Matt 技能包。Superpowers 只保留
-不会与 opi 正式账本竞争的窄操作原语。
+opi-* 内可组合的推理与产物级子技能默认采用可由模型调用的 Matt 技能；仅
+用户可调用的 Matt 塑形命令仍是直接的人为入口。项目本地技能继续拥有 opi
+特有的产物契约。Superpowers 只保留不会与 opi 正式账本竞争的窄操作原语。
 
 | 需求 | 选择 | 原因 |
 |---|---|---|
@@ -80,10 +93,12 @@ opi-* 内的推理与产物级子技能默认来自本地 Matt 技能包。Super
 | 高不确定性塑形 | Matt `wayfinder` | 决策地图允许反复、回退与跨会话探索 |
 | 有界对抗塑形 | Matt `grill-with-docs` | 将追问与领域语言维护结合 |
 | Spec 合成 | Matt `to-spec` | 从已收敛上下文合成，而不是重新启动探索 |
+| 领域语言 | Matt `domain-modeling`，由 `opi-workflow` 适配 | 维护 `docs/CONTEXT.md`，仅在确有必要时创建 ADR |
+| 测试 seam 设计 | Matt `codebase-design` | 为 `tdd` 与 `opi-implement` 提供统一的深模块和公共 seam 词汇 |
 | 实现切片 | Matt `tdd` | 先约定公共 seam，再做纵向 red/green 切片 |
 | 困难诊断 | Matt `diagnosing-bugs` | 先建立可变红反馈环，再最小化与差分定位 |
 | 审计视角 | Matt `code-review` | 提供独立 Standards/Spec 双轴与 smell baseline；`opi-audit` 以当前状态核实替代其 diff 边界 |
-| 文档 | Matt `writing-for-agents` | 强调可缓存事实、指针和无需改动的结论 |
+| 文档 | 项目本地 `opi-document`；新增中文使用 `baoyu-translate` | 负责源派生事实、中英文同步与无需编译的检查 |
 | 完成证明 | Superpowers `verification-before-completion` | 狭窄的“先证据、后声明”纪律 |
 | 独立并行 | Superpowers `dispatching-parallel-agents` | 仅作为条件性并发原语 |
 
@@ -93,6 +108,8 @@ opi-* 内的推理与产物级子技能默认来自本地 Matt 技能包。Super
   `subagent-driven-development` 会在正式账本旁形成第二套计划/执行流。
 - Matt `to-tickets` 与 `implement` 含有可吸收的启发式规则，但不能替代
   `.opi-impl-state.json`；其中 tracer-bullet 拆分原则已进入 plan 准入。
+- Matt tracker 产物只是塑形证据；只有经人工评审、落入 opi 规范来源，并在
+  必要时登记为 `opi-implement` 补充 spec 后，才具有规范性。
 - 这些技能仍可在实现 harness 之外直接用于塑形；不组合不代表它们普遍更差。
 
 这套选择结合了 [AI Hero Skills 官方文档](https://www.aihero.dev/skills)、
@@ -123,6 +140,7 @@ opi-* 内的推理与产物级子技能默认来自本地 Matt 技能包。Super
 |---|---|
 | `docs/realign/*.md` | `opi-realign`；非规范的向内证据 |
 | `docs/research/*.md` | `opi-research`；非规范的向外证据 |
+| issue tracker 中的 wayfinder 地图/票据与 `to-spec` 候选 | 人主导塑形；落入已登记的 opi 来源前不具规范性 |
 | `docs/opi-spec.md` 与登记过的补充 spec | 人主导塑形；规范来源 |
 | `.opi-impl-state.json` | `opi-implement`；受 Git 跟踪的唯一实现账本 |
 | `docs/snapshots/phase<N>/` | `opi-implement` 归档及 audit/remediation 证据 |

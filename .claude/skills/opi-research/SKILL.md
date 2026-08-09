@@ -58,7 +58,9 @@ The report must cover:
 
 Placement is a recommendation, not an approved product decision. Feed the
 report into direct human deliberation, Matt `wayfinder`, or Matt
-`grill-with-docs` as appropriate.
+`grill-with-docs` as appropriate. The Matt shaping skills are user-invoked:
+recommend the exact explicit invocation and stop rather than claiming research
+invoked them.
 
 ## Boundaries
 

@@ -12,7 +12,9 @@ The design principle is:
 All `opi-*` skills require explicit invocation. Claude metadata uses
 `disable-model-invocation: true`; Codex metadata uses
 `policy.allow_implicit_invocation: false`. Use `opi-workflow` when the correct
-entry point is unclear.
+entry point is unclear. Matt's `wayfinder`, `grill-with-docs`, `to-spec`, and
+setup command are also user-invoked: the router recommends their exact
+invocation but does not call them.
 
 ## Workflow map
 
@@ -20,9 +22,9 @@ entry point is unclear.
 |---|---|---|
 | Inward evidence | `opi-realign` | Exact-revision pi/opi delta ledger under `docs/realign/` |
 | Outward evidence | `opi-research` | Primary-source capability study under `docs/research/` |
-| Foggy shaping | Matt `wayfinder` directly | Decision map; repeated research/realign/grilling as needed |
-| Bounded design challenge | Matt `grill-with-docs` directly | Explicit decisions and domain language |
-| Settled design | Matt `to-spec` directly | Candidate implementation specification |
+| Foggy shaping | Explicit Matt `wayfinder` after tracker setup | Issue-tracker decision map and child decision tickets |
+| Bounded design challenge | Explicit Matt `grill-with-docs` | Explicit decisions; `docs/CONTEXT.md`/ADR updates when warranted |
+| Settled design | Explicit Matt `to-spec` after tracker setup | Non-normative candidate spec on the issue tracker |
 | Admission and delivery | `opi-implement plan`, then `opi-implement` | Reviewed task graph and canonical implementation ledger |
 | Static assurance | `opi-audit` | Current-HEAD requirements-conformance findings across separate Standards/Spec axes |
 | Runtime assurance | `opi-eval` | Runtime-fidelity findings and traces |
@@ -59,6 +61,19 @@ evidence. Use Matt's tools directly according to uncertainty:
 `opi-workflow` routes to these skills but does not own another ledger or hide
 the loop behind automatic transitions.
 
+Matt's current `wayfinder` and `to-spec` are issue-tracker-native. Configure
+`docs/agents/issue-tracker.md` through Matt `setup-matt-pocock-skills` before
+using either. When `wayfinder` or `grill-with-docs` invokes
+`domain-modeling`, opi adapts its glossary target to the existing
+`docs/CONTEXT.md` and ADRs to `docs/adr/`; it must not create a root
+`CONTEXT.md`. Tracker maps, tickets, and candidate specs remain non-normative
+until human review materializes the result into `docs/opi-spec.md` or a
+supplemental source registered by `opi-implement`.
+
+These shaping commands are user-invoked Matt skills. `opi-workflow` returns the
+exact recommended command and stops at that boundary; it does not claim to
+invoke them as model-composable subskills.
+
 ### `opi-implement plan` is an adversarial admission gate
 
 The plan path does not design the product. It tests whether a candidate source
@@ -78,9 +93,11 @@ source or edits its own draft to manufacture a pass.
 
 ## Matt vs Superpowers
 
-The local Matt package is the default source of reasoning- and artifact-level
-subskills inside `opi-*`. Superpowers remains only for narrow operational
-primitives that do not compete with opi's canonical ledger.
+Model-invoked Matt skills are the default source of composable reasoning and
+artifact subskills inside `opi-*`. User-invoked Matt shaping commands remain
+direct human entry points. Project-local skills retain opi-specific artifact
+contracts. Superpowers remains only for narrow operational primitives that do
+not compete with opi's canonical ledger.
 
 | Need | Choice | Rationale |
 |---|---|---|
@@ -88,10 +105,12 @@ primitives that do not compete with opi's canonical ledger.
 | High-uncertainty shaping | Matt `wayfinder` | Decision-map workflow tolerates iteration and reversals |
 | Bounded adversarial shaping | Matt `grill-with-docs` | Couples questioning with domain-language maintenance |
 | Spec synthesis | Matt `to-spec` | Synthesizes settled context instead of restarting discovery |
+| Domain language | Matt `domain-modeling`, adapted by `opi-workflow` | Maintains `docs/CONTEXT.md` and creates ADRs only when warranted |
+| Test-seam design | Matt `codebase-design` | Supplies the shared deep-module and public-seam vocabulary used by `tdd` and `opi-implement` |
 | Implementation slices | Matt `tdd` | Public seam first; vertical red/green slices; no premature refactor phase |
 | Hard diagnosis | Matt `diagnosing-bugs` | Establishes a red-capable feedback loop, then minimizes/differentiates |
 | Audit lenses | Matt `code-review` | Supplies separate Standards/Spec axes and the smell baseline; `opi-audit` replaces its diff boundary with current-state verification |
-| Documentation | Matt `writing-for-agents` | Favors cacheable facts, pointers, and no-op guidance |
+| Documentation | Project-local `opi-document`; `baoyu-translate` for net-new Chinese | Owns source-derived truth, EN/ZH synchronization, and no-compile checks |
 | Completion proof | Superpowers `verification-before-completion` | Narrow evidence-before-claim discipline |
 | Independent work | Superpowers `dispatching-parallel-agents` | Conditional concurrency primitive only |
 
@@ -103,6 +122,9 @@ Not composed inside `opi-implement`:
 - Matt `to-tickets` and `implement` encode useful heuristics, but their state
   machine must not replace `.opi-impl-state.json`. Tracer-bullet decomposition
   is absorbed into plan admission instead.
+- Matt tracker artifacts are shaping evidence. They become normative only
+  after human review materializes them into an opi source and registers any
+  supplemental spec with `opi-implement`.
 - Direct shaping remains available outside `opi-implement`; exclusion from the
   harness is not a judgment that those skills are generally inferior.
 
@@ -142,6 +164,7 @@ project workflow.
 |---|---|
 | `docs/realign/*.md` | `opi-realign`; generated, non-normative inward evidence |
 | `docs/research/*.md` | `opi-research`; generated, non-normative outward evidence |
+| Issue-tracker wayfinder maps/tickets and `to-spec` candidates | Human-led shaping; non-normative until materialized into a registered opi source |
 | `docs/opi-spec.md` and registered supplemental specs | Human-led shaping; normative sources |
 | `.opi-impl-state.json` | `opi-implement`; canonical tracked implementation ledger |
 | `docs/snapshots/phase<N>/` | `opi-implement` archive plus audit/remediation evidence |

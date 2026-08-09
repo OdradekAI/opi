@@ -43,10 +43,11 @@ Cargo metadata, behavior tests, and the normative spec as authority. Do not
 preserve narrative wording solely because an obsolete prose test once matched
 it.
 
-For agent-facing prose, apply Matt `writing-for-agents`: keep the environment
-as source of truth, expose completion criteria near the action, and remove
-duplicated instructions. For net-new Chinese prose, use `baoyu-translate`;
-edit existing Chinese mirrors surgically rather than regenerating whole files.
+For agent-facing prose, apply the project-local contract directly: keep the
+repository as source of truth, expose completion criteria near the action, and
+remove duplicated or no-op instructions. For net-new Chinese prose, use
+`baoyu-translate`; edit existing Chinese mirrors surgically rather than
+regenerating whole files.
 
 ## 3. Edit in mirrored units
 

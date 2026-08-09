@@ -1,405 +1,376 @@
 # Phase 16 Pluggable Extensions and Command Execution — Independent Code Audit
 
-**Auditor**: glm5.2 (independent; no prior audit reports, evaluator transcripts, or reader notes consulted)
-**Date**: 2026-08-06
-**Scope**: Tasks 16.1–16.16.3 (21 tasks). Commit range `1021842c` (16.1) → `f8aff02` (16.16.3), plus two post-phase remediation commits `2b23010` and `edd8d91` ("fix(execution): remediate phase 16 audit findings"). Audited at HEAD `8b547da`, which includes both remediation passes.
-**Spec**: `docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md` (canonical) + `docs/opi-spec.md` §Phase 16.
-**Method**: Full read of the design spec (967 lines) and all 21 task DoDs/exit criteria. Deep read of the affected source/test across `opi-protocol`, `opi-sandbox`, `opi-coding-agent`, and `opi-tui` via 10 parallel independent readers organized by concern area (~1.59M tokens, 377 tool calls), each walled off from prior audit content. Findings were then adversarially verified by 4 fresh cross-cutting agents (a redaction attacker, a fail-closed/no-fallback attacker, a Major-refutation skeptic, and a completeness critic) that had not seen the readers' findings, plus direct inline confirmation of the load-bearing findings against the source. The host is Windows, so `#[cfg(unix)]` / Linux / macOS code was read as source and is noted as host-verifiability-limited where relevant.
+**Auditor**: glm5.2 (independent, fresh context; no prior audit reports consulted)
+**Date**: 2026-08-09
+**Scope**: Tasks 16.1–16.16.3, commits `6f51761..26613ac` (current HEAD, **including the three post-exit remediation passes** `2b23010`, `edd8d91`, `458736f`)
+**Method**: Matt `code-review` (separate Standards + Spec axes) → 6-dimension adversarial workflow (6 finders + 6 skeptic verifiers, 12 agents) → independent invariant tracing → native verification (WSL2 Linux real Landlock/seccomp + GHA `macos-latest` sandbox-exec) → CI reproduction on the remediated HEAD (draft PR #3, run 31319356200)
+**Independence note**: This is a fresh-context re-audit by the same model family that produced the earlier `audit.glm5.2.md`. The earlier report was **not** read. Per the finding contract, independence is `fresh-context-same-family`. The earlier report predated the final remediation pass and never executed CI on this code.
 
 ---
 
 ## 1. Executive Summary
 
-**Verdict: PASS**
+**Verdict: PASS-WITH-FINDINGS**
 
 | Severity | Count |
 |----------|-------|
 | Blocker  | 0     |
-| Major    | 0     |
-| Minor    | 26    |
-| Info     | 12    |
+| Major    | 4     |
+| Minor    | 7     |
+| Info     | 7     |
 
-Phase 16 is a large, security-sensitive slice (command-execution capability, package trust lifecycle, routing/permission, a versioned wire protocol, a standalone sandbox product, native confinement, and a Phase 15 → 16 migration). It is in strong shape. Every load-bearing invariant I traced holds in code and is test-pinned: the five independent gates, fail-closed-after-selection with **no** local fallback, **no** degraded-success state (timeout/cancellation are errors even on a clean exit code), the 14-code redacted failure envelope, request-id correlation, byte-for-byte Minimal-Runtime schema invariance, invocation-stateful/cross-invocation-stateless cleanup-on-every-path for `opi-sandbox`, honest `restricted`/`supervised` vocabulary, and the crate-boundary + migration contract (native sandbox deleted from core; `[sandbox]`/`--sandbox`/`--sandbox-require` rejected without aliases; `opi-coding-agent` links no `opi-sandbox`/native-policy dependency). No Non-Goal leaked into the implementation. The two remediation commits introduced no new behavioral defect on independent re-examination.
+The Phase 16 **design and core implementation are strong**: the deep audit (Spec axis + 6-dimension adversarial workflow over the full source) produced **zero Blockers and zero code-level Majors**. The fail-closed protocol host, redaction envelope, deterministic router, independent lifecycle gates, TOCTOU-safe contribution validator, crate boundaries, and Minimal Runtime all verify against the spec. C8/C9 (Linux Landlock+seccomp) and C10 (macOS sandbox-exec) were confirmed by **real native execution**, not stubs.
 
-The findings are overwhelmingly **test-quality gaps, doc drift, and defense-in-depth/latent hardening observations** — not live defects. The one initially-promoted Major (git-install crash-safety ordering) was **downgraded to Minor after adversarial verification**: the runtime ordering is correct, the primary (publish-failure) rollback path *is* behaviorally tested, and only a degenerate source-text ordering test plus two hard-to-trigger rollback edges are genuinely uncovered.
+The **Majors are all integration/CI-hygiene defects** on a branch that is **18 commits ahead of `origin/main` and has never been CI-verified before this audit**. The most important is a **macOS build break** (`tempfile` declared as a dev-dependency but used in non-test library code) that none of the prior pre-remediation audits caught — because it only manifests on macOS and the developer's host is Windows. The remediated HEAD is **CI-red on all three OSes** for distinct, fixable reasons. None of these indicate a systemic problem with the Phase 16 architecture; they indicate the remediation was not validated against CI before being left unpushed.
+
+Two agent-flagged findings were **refuted by independent tracing** (documented in §9): the "no-degraded-success" C5 concern and an "ungated test seam" claim both fail at the tool layer / are `#[cfg(test)]`-gated. This validates the adversarial-verification approach.
 
 ### Per-task summary
 
-All 21 tasks pass; residuals are Minor/Info only.
-
 | Task | Title | Verdict |
 |------|-------|---------|
-| 16.1 | Pin the Phase 16 documentation contract | PASS |
-| 16.2 | Pin L0 supervision and define the policy-neutral seam | PASS (Minor T15/C1) |
-| 16.3 | Add opi-protocol::execution::v1 | PASS (Minor C3/T5; Info C4/C7) |
-| 16.4 | Parse and hard-gate executable contributions | PASS (Minor T3/T4) |
-| 16.5 | Add Package Trust and enable/disable lifecycle | PASS (Minor T1/T7; Info I4) |
-| 16.6 | Add execution config, failures, routing, permission policy | PASS (Minor S3/S4; Info S5) |
-| 16.7 | Implement the one-shot execution protocol host | PASS (Minor C2; Info C4/T19) |
-| 16.8 | Build the deep Execution Runtime assembly | PASS (Minor I1; Info I3) |
-| 16.9 | Wire Execution Runtime, dynamic bash schema, public surfaces | PASS (Minor T8/T9; Info C5) |
-| 16.10 | Add the interactive permission broker and TUI prompt | PASS (Minor T10/T11; Info T20) |
-| 16.11.1 | Build the standalone opi-sandbox SDK and runner | PASS |
-| 16.11.2 | Build the human opi-sandbox CLI and direct smoke | PASS (Minor T6/T12) |
-| 16.12 | Add the atomic helper gate and protocol backend | PASS |
-| 16.13 | Port the Linux native restriction contract | PASS (Minor T2/T13/T14; Info C6/SC2) |
-| 16.14.1 | Port the macOS native restriction contract | PASS (Minor T13) |
-| 16.14.2 | Pin the Windows unsupported execution posture | PASS |
-| 16.15.1 | Build host-neutral opi-sandbox packaging | PASS |
-| 16.15.2 | Wire native package CI, release, and artifact audit | PASS (Minor T17/T18) |
-| 16.16.1 | Remove core native sandbox and enforce migration boundaries | PASS (Minor SC1; Info I2) |
-| 16.16.2 | Prove install-to-execute and cross-surface diagnostics | PASS |
-| 16.16.3 | Synchronize documentation and close Phase 16 repository gates | PASS |
+| 16.1 | Pin Phase 16 documentation contract | PASS |
+| 16.2 | Pin L0 supervision and policy-neutral seam | PASS |
+| 16.3 | Add opi-protocol::execution::v1 | PASS |
+| 16.4 | Parse and hard-gate executable contributions | PASS-WITH-FINDINGS (owns the macOS `tempfile` build break — Major A1) |
+| 16.5 | Add Package Trust and enable/disable lifecycle | PASS |
+| 16.6 | Execution config, failures, routing, permission policy | PASS |
+| 16.7 | One-shot execution protocol host | PASS-WITH-FINDINGS (owns Windows cancellation test failure — Major A3; source-text pin tests — Minor D1) |
+| 16.8 | Deep Execution Runtime assembly | PASS |
+| 16.9 | Wire Execution Runtime, dynamic bash schema, public surfaces | PASS |
+| 16.10 | Interactive permission broker and TUI prompt | PASS |
+| 16.11.1/.2 | Standalone opi-sandbox SDK and human CLI | PASS (C8 verified natively) |
+| 16.12 | Atomic helper gate and protocol backend | PASS |
+| 16.13 | Port Linux native restriction contract | PASS-WITH-FINDINGS (C9 verified; Landlock-TCP test gap — Minor D4; clippy lint — Minor M1) |
+| 16.14.1 | Port macOS native restriction contract | PASS (C10 verified via GHA) |
+| 16.14.2 | Pin Windows unsupported execution posture | PASS (C11 verified) |
+| 16.15.1 | Host-neutral opi-sandbox packaging | PASS |
+| 16.15.2 | Native package CI, release, artifact audit | PASS-WITH-FINDINGS (CI topology present; CI is RED — Major A4; artifact-audit test failures — Major A2) |
+| 16.16.1 | Remove core native sandbox, enforce migration | PASS (C13/C14 verified) |
+| 16.16.2 | Install-to-execute and cross-surface diagnostics | PASS |
+| 16.16.3 | Synchronize docs and close repository gates | PASS-WITH-FINDINGS (docs lockstep OK; repository gates RED) |
 
 ---
 
-## 2. Correctness findings
+## 2. CI Health Findings (Majors — highest priority)
 
-### 2.1 MINOR: L0 supervision cancel/timeout arms kill the child but never reap it (asymmetry vs attach/resume arms)
+The remediated HEAD was run through CI via draft PR #3 (run `31319356200`, OdradekAI/opi). Result: **`conclusion: failure`**, red on all three OSes. The Phase 16 product tests that *did* run are overwhelmingly green; the failures are specific and characterized below.
 
-**File:** `crates/opi-coding-agent/src/tool/supervision.rs`
-**Lines:** 241–249 (cancel/timeout arms), cf. 163–164 and 201–202 (attach/resume arms)
-**Cause:** In `supervise_inner`'s biased select, the cancel arm (:241–244) and timeout arm (:246–249) call `child.kill().await` + `push_terminate`, but never `child.wait()`. The attach-failure path (:163–164) and the Windows resume-failure path (:201–202) both explicitly do `child.kill().await; child.wait().await;`, and the `Done` arm reaps via the `child.wait()` future. So the direct child of a cancelled or timed-out local `bash` invocation is killed but not explicitly reaped.
-**Impact:** The L0 *terminate* contract (kill the whole process tree) is still satisfied, and the child is eventually reaped by tokio's drop/orphan-reap semantics plus process exit. This is a consistency/defense-in-depth gap rather than a confirmed leak: if reap semantics ever differ (e.g. a current-thread runtime, or a future tokio change), cancelled/timed-out bash calls in a long-running interactive/RPC session could accumulate zombies. The within-file asymmetry reads as an oversight.
-**Fix:** After the kill in the cancel/timeout arms (or once before constructing `SupervisionOutcome`), call `let _ = child.wait().await;` (optionally wrapped in `tokio::time::timeout(TERMINATED_PIPE_DRAIN_GRACE, child.wait())`), mirroring the attach-failure arm.
+### A1 — MAJOR: `tempfile` is a dev-dependency but is used in non-test library code → opi-coding-agent does not compile on macOS
 
-### 2.2 MINOR: Diagnostic-frame count is unbounded in the protocol host
+**Files:** `crates/opi-coding-agent/Cargo.toml:77` (`tempfile` under `[dev-dependencies]`); `crates/opi-coding-agent/src/execution/contribution.rs:502`
 
-**File:** `crates/opi-coding-agent/src/execution/protocol_host.rs` (with `crates/opi-protocol/src/execution/v1/session.rs`)
-**Lines:** protocol_host.rs ~508–510 (Diagnostic accumulation); session.rs `observe_backend`/`account_output`
-**Cause:** `Session::account_output` accumulates only `Stdout`/`Stderr` bytes toward `max_cumulative_output`; `validate_backend` caps each `Diagnostic` *message* at `max_diagnostics_size`, but `Diagnostic` frames are excluded from the cumulative counter and have no per-execution count or aggregate-bytes cap. The host pushes every received (redacted) Diagnostic into a `Vec<Diagnostic>` with no upper bound.
-**Impact:** A buggy or chatty backend can stream unlimited Diagnostic frames within the deadline; the `Vec` grows without bound until the host deadline fires. Bounded by wall-clock + pipe throughput and by the threat model (adapters are trusted code), so this is a defense-in-depth/asymmetric-DoS surface, not an exploit. It is the one protocol frame class with neither per-frame-amount nor cumulative accounting.
-**Fix:** Count Diagnostic frames (and their decoded message bytes) toward `max_cumulative_output` in `account_output`, or add a separate `max_diagnostics_frames`/`max_diagnostics_bytes` bound enforced in `observe_backend`.
+`tempfile` is declared only in `[dev-dependencies]`, but the `#[cfg(unix)] fn bind_launch_material` references it on its non-Linux (macOS) branch:
 
-### 2.3 MINOR: `feed_host_line`/`feed_backend_line` do not enforce line/message size (rustdoc overclaim + defense-in-depth gap)
+```rust
+#[cfg(not(target_os = "linux"))]
+let mut snapshot = tempfile::tempfile()?;
+```
 
-**File:** `crates/opi-protocol/src/execution/v1/session.rs`
-**Lines:** 91–105
-**Cause:** The rustdoc claims these functions "enforce per-frame codec bounds (line/message/... size)", but they call `decode_*` → `observe_*` → `validate_host/validate_backend`, which (per `validate_host`'s own doc) check only configuration/diagnostics/chunk sizes. Line size is enforced only by `LineReader::read_line` on the input stream and `encode_line` on output.
-**Impact:** A caller that bypasses `LineReader` (the codec module doc explicitly warns against `BufRead::read_line`) and feeds a 10 MB line directly to `feed_*_line` gets no line-size rejection. In the documented input path (`LineReader` then `feed_*_line`) all bounds are enforced, so this is doc drift + a defense-in-depth gap on a wire-facing public API.
-**Fix:** Add a defensive `if line.len() > self.bounds.max_line_size { return Err(...) }` guard at the top of `feed_host_line`/`feed_backend_line`, or correct the rustdoc to drop "line/message" (matching `validate_host`'s disclaimer).
+Dev-dependencies are not in scope when the **library** crate is compiled. On macOS (unix ∧ ¬linux) this line is active in the lib, so `cargo check/build -p opi-coding-agent` fails with `error[E0433]: cannot find module or crate 'tempfile' in this scope`. It is invisible on the developer's Windows host (the `#[cfg(not(unix))]` clone path is used) and on Linux (the memfd branch is used), which is why it escaped notice.
 
-### 2.4 INFO: `map_failure_code` always maps `Unavailable` to `Handshake`, ignoring `FailedPayload.phase`
+**Impact:** Blocks every macOS build of the Opi binary and library — a documented six-target release platform (C12). Concretely it failed `Target check (x86_64-apple-darwin)`, `Target check (aarch64-apple-darwin)`, and `execution_acceptance (macos-latest)` in CI.
 
-**File:** `crates/opi-coding-agent/src/execution/protocol_host.rs`
-**Lines:** 692–704
-**Cause:** `FailureCode::Unavailable` is mapped to `UnavailableDetail::Handshake` unconditionally, regardless of `FailedPayload.phase`. A (semantically anomalous) post-`started` `Unavailable` would be labeled a pre-start handshake failure in remediation text.
-**Impact:** `Unavailable` is by definition a pre-start condition, so no correct backend triggers this; the wire code returned (`adapter_unavailable`) is still correct. Only the human-readable detail sublabel is inaccurate for that anomalous combination, and no test covers `failed_post_started`+`unavailable`.
-**Fix:** Add a comment that `Unavailable` is by-definition handshake-phase, or map `Unavailable` with `phase != Handshake` to `ProtocolViolation`.
+**Fix:** Move `tempfile` from `[dev-dependencies]` to `[dependencies]` in `crates/opi-coding-agent/Cargo.toml` (it is legitimately needed by the macOS launch-material path).
 
-### 2.5 INFO: `operation_context` diagnostic `signal` field is write-only (dead data for routed adapters)
+```yaml
+id: glm5.2-A1
+source_kind: audit
+source_path: docs/snapshots/phase16/audit.glm5.2.md
+source_model: glm5.2
+independence: fresh-context-same-family
+axis: integration
+severity: Major
+title: tempfile dev-dependency used in non-test lib code breaks macOS compilation
+claim: opi-coding-agent's library does not compile on macOS because tempfile (declared only in [dev-dependencies]) is referenced in non-test code at contribution.rs:502 on the macOS (unix non-linux) launch-material branch.
+evidence:
+  - location: crates/opi-coding-agent/Cargo.toml:77
+    detail: "tempfile = { workspace = true }" is under [dev-dependencies], not [dependencies].
+  - location: crates/opi-coding-agent/src/execution/contribution.rs:502
+    detail: inside #[cfg(unix)] fn bind_launch_material, `#[cfg(not(target_os = "linux"))] let mut snapshot = tempfile::tempfile()?;` — active on macOS, in library (non-test) code.
+  - location: CI run 31319356200 jobs 93259723562 / 93259723529 / 93259723490
+    detail: "error[E0433]: cannot find module or crate `tempfile` in this scope ... could not compile `opi-coding-agent` (lib)" on x86_64-apple-darwin, aarch64-apple-darwin, and execution_acceptance(macos).
+criterion_source: docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md §Repository gates (six target check; macOS release target); C12
+reproduction:
+  - cargo check --target x86_64-apple-darwin -p opi-coding-agent --all-targets
+confidence: high
+status: unverified
+```
 
-**File:** `crates/opi-coding-agent/src/tool/operations.rs` (:1077) cross-ref `tool/bash.rs` (:295–340)
-**Cause:** The remediation added `signal` to the operation-context payload, but `lift_operation_context` (bash.rs:295–315) and `copy_effective_contract` (bash.rs:317–340) do not read it; the wrapper sources signal from `BashResult.signal`. For an external adapter that reported signal only through this diagnostic (leaving `BashResult.signal=None`), the signal would be dropped from the public `ToolResult`.
-**Impact:** No current functional defect observed for `LocalBashOperations` (`BashResult.signal` carries the value). Flagged so the next reviewer confirms routed adapters source signal correctly.
-**Fix:** Drop the field if it is purely informational, or have `lift_operation_context` read `signal`/`exit_code` from the diagnostic when the `BashResult` fields are `None`.
+### A2 — MAJOR: four `artifact_audit_script` "reparse seam" tests fail on Linux/macOS (the C16 evidence-truthfulness guard is itself red on unix)
 
-### 2.6 INFO: `close_nonessential_inherited_fds` iterates up to the soft `RLIMIT_NOFILE` per spawn
+**File:** `crates/opi-coding-agent/tests/artifact_audit_script.rs:1080, 2548, 2563`
 
-**File:** `crates/opi-sandbox/src/process_tree.rs`
-**Lines:** ~539–550
-**Cause:** `fd_table_size()` returns the soft `RLIMIT_NOFILE` (`getdtablesize`), and the closure loops fd 3..max calling `getsockopt`+`close` per fd. On hosts that raise the soft limit (tokio runtimes, `systemd DefaultLimitNOFILE=1M`), this is ~1M syscalls per confined spawn under `network=deny`.
-**Impact:** Latency tax only; not a correctness or security issue.
-**Fix:** Iterate only open fds (scan `/proc/self/fd`) or cap at a sane bound (e.g. 4096); document the trade-off.
+`cargo test --workspace --all-targets` on ubuntu/macos fails:
+- `phase_exit_audit_rejects_bundle_root_identity_change` (panic `:2563`)
+- `phase_exit_audit_rejects_reparse_bundle_root_seam` (panic `:2548`)
+- `release_audit_rejects_bundle_root_reparse_and_identity_change_seams` (panic `:1080`)
+- `release_audit_rejects_native_scalar_reparse_seams`
 
-### 2.7 INFO: Base64 size formula in `Bounds::validate` underestimates by up to 2 bytes (fail-closed)
+These tests guard that re-parsing artifact-audit bundles/sems is deterministic (no identity drift) — the C16 evidence-truthfulness machinery. They pass on Windows and fail on unix.
 
-**File:** `crates/opi-protocol/src/execution/v1/bounds.rs`
-**Lines:** 55–69
-**Cause:** Computes `ceil(4N/3)+64` rather than the exact `ceil(N/3)*4+64`, under-counting by up to 2 bytes for non-multiples of 3.
-**Impact:** Default bounds are unaffected (`max_line_size` 2 MiB ≫ need). For custom bounds set exactly at the threshold, a maximal valid chunk could be rejected by `encode_line` as `OversizedLine` — fail-**closed**, never over-allocated.
-**Fix:** Optional: compute `((max_decoded_chunk_size + 2) / 3) * 4 + 64` exactly, or document the approximation.
+**Impact:** The suite that is supposed to *reject* bad/overclaimed evidence is itself failing on two of three OSes. Root cause is unconfirmed by this audit (path-separator/normalization in the reparse fixtures is the most likely cause; real reparse non-determinism is the worse possibility). Either way it must be green before merge.
+
+```yaml
+id: glm5.2-A2
+source_kind: audit
+source_path: docs/snapshots/phase16/audit.glm5.2.md
+source_model: glm5.2
+independence: fresh-context-same-family
+axis: test-quality
+severity: Major
+title: artifact_audit_script reparse-seam tests fail on Linux/macOS (C16 guard red on unix)
+claim: Four tests in tests/artifact_audit_script.rs that assert deterministic reparse of artifact-audit bundles/seams panic on ubuntu-latest and macos-latest CI, so the C16 evidence-truthfulness guard does not pass on unix.
+evidence:
+  - location: CI run 31319356200 job 93259723470 (test ubuntu)
+    detail: "phase_exit_audit_rejects_bundle_root_identity_change ... FAILED" and three siblings; panics at artifact_audit_script.rs:2563/2548/1080; test (macos-latest) also failed.
+criterion_source: design §Repository gates (workspace tests pass); C16 (artifact-audit evidence truthfulness)
+reproduction:
+  - gh run view --job 93259723470 --log | grep FAILED
+confidence: high (failure observed); medium (root cause unconfirmed)
+status: unverified
+```
+
+### A3 — MAJOR: `cancellation_diagnostic_frame_count_is_bounded` fails on Windows
+
+**File:** `crates/opi-coding-agent/tests/execution_protocol_host.rs:183`
+
+`execution_acceptance (windows-latest)`: `Run execution protocol host acceptance` → `test cancellation_diagnostic_frame_count_is_bounded ... FAILED` (52 passed, 1 failed, panic at `execution_protocol_host.rs:183`). ubuntu acceptance passed.
+
+**Impact:** A C6/C7 protocol-host cancellation test is red on a release OS. Root cause unconfirmed (likely a timing/boundedness assertion sensitive to Windows scheduling vs. a real bound defect). Must be green before merge.
+
+```yaml
+id: glm5.2-A3
+source_kind: audit
+source_path: docs/snapshots/phase16/audit.glm5.2.md
+source_model: glm5.2
+independence: fresh-context-same-family
+axis: test-quality
+severity: Major
+title: execution_protocol_host cancellation-diagnostic-bound test fails on Windows
+claim: tests/execution_protocol_host.rs::cancellation_diagnostic_frame_count_is_bounded fails on windows-latest CI (panic at :183) while passing on ubuntu, so protocol-host cancellation acceptance is red on a release OS.
+evidence:
+  - location: CI run 31319356200 job 93259723485 (execution_acceptance windows)
+    detail: "test cancellation_diagnostic_frame_count_is_bounded ... FAILED ... panicked at crates\opi-coding-agent\tests\execution_protocol_host.rs:183:5 ... 52 passed; 1 failed".
+criterion_source: design §Protocol contract / L0 supervision; C6, C7
+reproduction:
+  - gh run view --job 93259723485 --log
+confidence: high (failure observed); medium (root cause unconfirmed)
+status: unverified
+```
+
+### A4 — MAJOR: remediated Phase 16 is CI-red and 18 commits ahead of origin/main (process gate)
+
+**File:** `.github/workflows/ci.yml`; git history (`origin/main` at `53bc40c`, HEAD at `26613ac`)
+
+HEAD is 18 commits ahead of `origin/main` with the three remediation passes + the workflow refactor never pushed. Triggering CI on this audit's draft PR surfaced A1–A3 plus a clippy failure (M1). The Phase 16 repository gates (C12/C15/C16) are not satisfied on the remediated state.
+
+**Impact:** The branch cannot merge/ship green. This is the umbrella finding under which A1–A3 + M1 sit; it is recorded separately because the *process* (remediation performed without CI validation, then left unpushed) is itself the systemic risk, even though each code defect is isolated.
+
+```yaml
+id: glm5.2-A4
+source_kind: audit
+source_path: docs/snapshots/phase16/audit.glm5.2.md
+source_model: glm5.2
+independence: fresh-context-same-family
+axis: integration
+severity: Major
+title: Remediated Phase 16 HEAD is 18 commits ahead of origin/main and CI-red on all three OSes
+claim: HEAD (26613ac) is 18 commits ahead of origin/main (53bc40c); running ci.yml on it fails clippy on ubuntu/macos, test on ubuntu/macos, execution_acceptance on windows/macos, and target_check on apple-darwin, so the Phase 16 repository gates are not met.
+evidence:
+  - location: git rev-list --count origin/main..HEAD
+    detail: 18
+  - location: CI run 31319356200 (conclusion: failure)
+    detail: red jobs = clippy(ubuntu/macos), test(ubuntu/macos), execution_acceptance(windows/macos), Target check(apple-darwin ×2).
+criterion_source: design §Repository gates; C12, C16
+reproduction:
+  - gh run view 31319356200
+confidence: high
+status: unverified
+```
 
 ---
 
-## 3. Security / redaction findings
+## 3. Standards Findings (Matt code-review Standards axis)
 
-No live redaction leak was found. A dedicated cross-cutting attacker traced every hostile source (model-supplied `backend` string, hostile backend `Diagnostic`/`Failed`/`Stdout`/`Stderr` frames, attacker-influenced package name/path/adapter id, command/env/secrets, raw backend *process* stderr) to every public surface (ToolResult content+details/diagnostics, NDJSON, RPC, doctor, TUI, tracing, `Debug`/`{:?}`). All are contained: the failure envelope interpolates only safe identifiers; `From<ActivationError>` drops untrusted detail; backend crash stderr is bounded (`STDERR_CAP`) and discarded (`let _ =`); target stdout/stderr are legitimately in-band command output; embedder boundaries apply `redact(_, Summary)`. The items below are hardening / latent / asymmetry observations.
+### S1 — MINOR: manual `impl Display + Error` instead of thiserror on a library error type
 
-### 3.1 MINOR: `full_output` spill path carries the opi PID into model-visible `ToolResult.details` (pre-existing; redacted at embedder boundary)
+**File:** `crates/opi-coding-agent/src/execution/protocol_host.rs:188-194`
 
-**File:** `crates/opi-coding-agent/src/tool/operations.rs` (:1100–1101, :1241–1251), consumed at `tool/bash.rs` (:226–259)
-**Cause:** When merged target stdout+stderr exceeds 64 KiB, the local backend spills to `temp_dir().join(format!("opi-bash-output-{pid}-{nanos}-{counter}.log"))` and surfaces that absolute path + the opi PID in `details.full_output`, lifted into `ToolResult.details` (which crosses to the model before the event-boundary redaction runs).
-**Impact:** Host-generated (opi's own PID/temp path), not hostile. It is scrubbed at NDJSON/RPC event boundaries (pinned by `rpc_jsonl.rs:3013`), so it does not reach embedders. It is pre-existing Phase 11 behavior, not a Phase 16 regression. The spec's "omit PIDs and unnecessary absolute paths" guidance is met at public/embedder surfaces but not in the model-visible details block.
-**Fix:** Optional hardening — drop the PID from the spill filename (counter+nanos already guarantee uniqueness), or apply `redact_text`/`redact_public_value` to `ToolResult.details` before provider conversion.
+`ExecutionProtocolFailure` hand-implements `Display`/`Error` by delegating to `self.failure`. CLAUDE.md/AGENTS.md "Code quality" states: "Prefer thiserror for library error types… If a file uses thiserror, do not switch to manual impl Display + Error." Every sibling error in this diff (`ExecutionFailure`, `ContributionValidationError`, `ActivationError`, the opi-protocol set) uses thiserror; this is the lone exception. A `#[derive(thiserror::Error)] #[error("{failure}")]` would satisfy it.
 
-### 3.2 MINOR: `adapter_command` reaches `opi package list --json` stdout unredacted (asymmetry vs doctor)
+```yaml
+id: glm5.2-S1
+source_kind: audit
+source_path: docs/snapshots/phase16/audit.glm5.2.md
+source_model: glm5.2
+independence: fresh-context-same-family
+axis: standards
+severity: Minor
+title: ExecutionProtocolFailure uses manual impl Display+Error instead of thiserror
+claim: crates/opi-coding-agent/src/execution/protocol_host.rs:188-194 manually implements Display/Error for a library error type, contrary to the repo's documented "prefer thiserror for library error types" rule and the module's own thiserror convention.
+evidence:
+  - location: crates/opi-coding-agent/src/execution/protocol_host.rs:188-194
+    detail: "impl std::fmt::Display … impl std::error::Error {}" hand-rolled, delegating to self.failure.
+criterion_source: CLAUDE.md / AGENTS.md "Code quality" (prefer thiserror; match module style)
+reproduction:
+  - grep -n "impl std::fmt::Display for ExecutionProtocolFailure" crates/opi-coding-agent/src/execution/protocol_host.rs
+confidence: high
+status: unverified
+```
 
-**File:** `crates/opi-coding-agent/src/package_cli.rs`
-**Lines:** 884–888 (`list_package_json`)
-**Cause:** `list_package_json` emits the manifest-declared `adapter_command` and resolved `adapter_resolved_command`/`package_root` verbatim, with no `redact()`/`redact_public_value()`. A hostile package author controls these strings via the shipped manifest. The sibling `doctor` path *does* redact via `redacted_payload(Summary)` (`doctor.rs:306`).
-**Impact:** A user reviewing an installed crafted package sees attacker-controlled text unredacted in `list --json`. Strong mitigations: the user already installed it via `package add`, and `list` is a review/audit tool whose purpose is to show what was installed (redacting would hide the threat the user is evaluating). The list-vs-doctor asymmetry is the real concern.
-**Fix:** Route `list_package_json` through `redact_public_value`/`redact_summary_paths` for consistency with `doctor`, or document that the unredacted value is intentional for auditability.
+### S2 — MINOR (smell): teardown bundle duplicated across six error arms (Shotgun Surgery / Data Clump)
 
-### 3.3 MINOR: Multi-layer `[execution.permissions]` uses whole-map REPLACE — a partial explicit `--config` silently wipes user-layer `deny`
+`protocol_host.rs::execute` calls `terminate_and_fail(child, guard, stderr_handle, stdin, <code>, hard_deadline).await` at lines 276-284, 369-377, 402-410, 523-530, 551-558, 582-590 (plus the `terminate_failed_transmission` sibling at 1268). The same five-handle bundle threads through every error arm. Bundling into one `BackendHandles` struct would collapse it. Judgement call.
 
-**File:** `crates/opi-coding-agent/src/config.rs`
-**Lines:** 1051–1067 (`merge_into`), layers user → project → explicit
-**Cause:** `merge_into` applies `permissions` with whole-map REPLACE (`config.execution.permissions = v;`). A user with `local = "deny"` in USER config who runs `opi --config c.toml` where `c.toml` carries any `[execution.permissions]` table (even `{opi-sandbox="allow"}`) ends up with that map replacing the accumulated user map — `local` reverts to its default (`Allow`) with no warning.
-**Impact:** A persistent safety guard can be silently unset by a partial explicit-config permissions table the user did not realize was complete-replace. Not a project-layer vector (project permissions are rejected). The behavior is documented ("REPLACE-if-present") but unpinned by a test, and the security relevance of the permissions map makes the footgun sharper than for single-value strategy/backend.
-**Fix:** Add a regression test loading user `local="deny"` + explicit `"opi-sandbox"="allow"` through `resolve_config` and pinning the resulting map (documenting REPLACE explicitly). If the design intent is key-level merge for safety, merge entry-by-entry instead.
+### S3 — MINOR (smell): `#[allow(clippy::too_many_arguments)]` data clumps
 
-### 3.4 MINOR: Redaction sweep test uses safe values; does not prove `Display` redacts canaries placed in interpolated `adapter_id`/`name` fields
+`finalize_terminal` (13 params, `protocol_host.rs:995`) and `finish_with_cancel` (16 params, `:1113`); `runtime.rs:306 ExecutionRuntime::build` (11 params). The accumulators + handle bundle travel together. `too_many_arguments` is endemic in this crate (harness/rpc), which partly endorses the pattern, but the execution core is greenfield and could bundle.
 
-**File:** `crates/opi-coding-agent/tests/execution_failures.rs`
-**Lines:** 269–288
-**Cause:** `redaction_safe_across_all_declared_codes` constructs each variant with hard-coded safe values. The `Display` impls for `PolicyDenied`/`PermissionDenied`/`PermissionRequired`/`PackageNotInstalled`/`PackageUntrusted`/`ContributionDisabled` interpolate `{adapter_id:?}`/`{name:?}`. Because the canaries are never placed into these `String` fields, the sweep proves "safe input → safe output", not "canary input → redacted output".
-**Impact:** No live leak: production populates these from validated package-store identities. But a future change routing a less-vetted string into `adapter_id`/`name` would leak via `Display` and this test would not catch it.
-**Fix:** Inject each `REDACT_CANARY` into the `String` field of each variant that carries one and assert neither `Display` nor `remediation()` contains the canary, matching the strength of the existing `AdapterNotSelected` test.
+### S4 — MINOR (smell): duplicated `CLEANUP_REPORT_GRACE` literal
 
-### 3.5 INFO: `AdapterNotSelected.requested` is a public field with raw model input; `Debug` derive prints it verbatim
+`Duration::from_millis(1500)` exists at both `protocol_host.rs:53` and `runtime.rs:168`. The runtime.rs comment justifies the mirror on phase-ownership grounds ("owned by 16.7, not edited here"), but two literals can drift; a `pub(crate)` re-export from `failure.rs` would be safer.
 
-**File:** `crates/opi-coding-agent/src/execution/failure.rs`
-**Lines:** 40–107 (struct + `#[derive(Debug)]`), 75–78 (`requested: String`)
-**Cause:** `Display` and `remediation()` correctly substitute `REDACTED_BACKEND_PLACEHOLDER` and never interpolate `requested`, but the field is public and `Debug` prints it verbatim. `exec_failure_to_bash_op_error` drops the field entirely (only code/Display/remediation/adapter_id are read).
-**Impact:** No production leak: a grep found no non-test `{:?}` site debug-prints an `ExecutionFailure`. Latent risk only — a future `tracing::error!("{:?}", failure)` would reintroduce a leak.
-**Fix:** Document that the redaction contract covers only `Display`/`remediation`/`code` (not `Debug`/field access), or drop the raw payload in favor of a boolean/placeholder.
+### S6 — INFO (smell): repeated switches over the 14-variant failure enum
 
----
+`failure.rs:140-157 code()`, `:162-252 remediation()`, `diagnostic_bridge.rs`, and `runtime.rs:777` all switch on the same closed set. Inherent to the closed-enum design; noted for completeness.
 
-## 4. Test-quality findings
-
-### 4.1 MINOR (downgraded from Major): git-install crash-safety ordering verified only by a degenerate source-text test; two rollback edges untested
-
-**File:** `crates/opi-coding-agent/tests/package_cli.rs` (:1591–1610); ref `src/package_cli.rs` (`install_git_package` :195–333)
-**Cause:** `git_update_invalidates_trust_before_live_cache_swap` uses `include_str!("../src/package_cli.rs")` and string-searches for `"prepare_activation_update("` and `"stage_cache_replacement("` to assert textual ordering — the documented L-D3 degenerate pattern (it would pass on no-op bodies). The runtime ordering is **correct**: `prepare_activation_update` durably writes `trusted=false`/`enabled=false` (`package_activation.rs:644–646`) **before** `stage_cache_replacement` swaps the live cache (`package_cli.rs:262` then `:278`); every crash boundary between/after leaves the package untrusted+disabled, and `PendingCacheReplacement::Drop` backs this. The primary (publish-failure) rollback (`:312–321`) **is** behaviorally tested — `package_add_git_metadata_write_failure_preserves_existing_lock_and_cache` (`:609–656`) sets `packages.toml` read-only between two git installs, forcing the publish to fail after the cache swap, then asserts `git_head(&package_root)==first_commit` (`:654`), proving `replacement.rollback()` restored the cache.
-**Impact:** The two remaining rollback edges — `stage_cache_replacement` failure (`:280–283`) and `canonicalize` failure (`:287–294`) — have no dedicated behavioral test, and the ordering invariant is pinned only by a brittle source-text assertion. These are hard-to-trigger paths on correct code. A future refactor could silently break the textual ordering or those edges.
-**Fix:** Replace (or augment) the source-text test with a behavioral fault-injection test that fails *inside* `stage_cache_replacement` after the trust-disable write committed and asserts `package-trust.toml` is untrusted+disabled while the live cache still holds the old bytes. Add focused tests for the two untested rollback edges via a stage/canonicalize-failure seam. No runtime code change needed.
-
-### 4.2 MINOR: `danger_blocklist` unit test verifies only 9 of 14 syscalls
-
-**File:** `crates/opi-sandbox/src/platform/linux.rs`
-**Lines:** 391–416
-**Cause:** `danger_blocklist_is_fixed_and_io_uring_free` iterates a 9-element required list; `danger_syscalls()` returns 14 (also `kexec_load`, `kexec_file_load`, `init_module`, `finit_module`, `delete_module`). Removing any of those 5 would not fail the test.
-**Impact:** A future edit dropping the kexec/module syscalls from the seccomp baseline would pass CI silently.
-**Fix:** Extend the required list to all 14 entries (or assert length 14 on x86_64).
-
-### 4.3 MINOR: No `LockMaterial` TOML round-trip test for all 8 fields
-
-**File:** `crates/opi-coding-agent/tests/execution_package_lifecycle.rs`
-**Lines:** 117–140
-**Cause:** `valid_contribution_yields_exact_lock_material` asserts all 8 fields in-memory; no test writes a populated `PackageLockEntry`, reads it back via `read_lock`, and asserts all 8 fields survive TOML serialize/deserialize (with hyphens/dots).
-**Impact:** A serde rename/typo or a non-ASCII-deserialization quirk would not be caught; `revalidate_lock` drift comparison relies on `PartialEq` over deserialized bytes.
-**Fix:** Add a write→read→assert-field-for-field round-trip test.
-
-### 4.4 MINOR: No negative tests for missing required contribution fields (`adapter_config`, `handshake_timeout_ms`)
-
-**File:** `crates/opi-coding-agent/tests/execution_contribution_manifest.rs`
-**Lines:** 386–412
-**Cause:** These fields lack `#[serde(default)]`, so omission correctly yields `Malformed`; value-range and unknown-field rejections are tested, but missing-required-field rejection is not.
-**Impact:** Adding `#[serde(default)]` later would weaken the gate with no test failure.
-**Fix:** Add two manifest tests omitting each field, asserting `ContributionValidationError::Malformed`.
-
-### 4.5 MINOR: No `LineReader` clean-EOF / final-line-without-newline test
-
-**File:** `crates/opi-protocol/tests/execution_v1_contract.rs`
-**Lines:** ~301–315
-**Cause:** `LineReader::read_line` documents `Ok(false)` (clean EOF) and `Ok(true)` at EOF with a partial line; only the oversized and at-cap paths are tested.
-**Fix:** Add tests for empty input (`Ok(false)`), `b"abc"` no newline (`Ok(true)`), and a second read after `b"abc\n"` (`Ok(false)`).
-
-### 4.6 MINOR: `cli.rs` doc claims `InvalidRequest` is "unreachable from the human CLI" — false for nonexistent workspace/cwd
-
-**File:** `crates/opi-sandbox/src/cli.rs`
-**Lines:** 299–312
-**Cause:** `parse_run` only validates the `--workspace` token is non-empty/flag-shaped; it does not stat the path. `SandboxRunner::run` then calls `workspace.canonicalize()` (`runner.rs:323–328`), which fails for nonexistent paths and returns `SetupFailed{InvalidRequest}`, mapped to exit **2** (usage) not **125** (pre-start).
-**Impact:** On a supported platform, a nonexistent `--workspace` returns exit 2, contradicting the docstring's exit table. A script checking 125 for "setup failed" mis-classifies a path-existence failure as usage.
-**Fix:** Correct the docstring, or split the variant (e.g. `WorkspaceNotFound`) and map canonicalize failures to 125.
-
-### 4.7 MINOR: `build_trust_display` sets `executable_rel_path` to the absolute canonical path (inconsistent with field name and `list --json`)
-
-**File:** `crates/opi-coding-agent/src/package_activation.rs`
-**Lines:** 694–703
-**Cause:** Maps `executable_rel_path: v.command.display()` where `v.command` is the canonical *absolute* path; the lock material's `executable_rel_path` is the relative raw command, and `list_package_json` surfaces the relative path.
-**Impact:** Inconsistent identity display between `package enable` (absolute) and `package list --json` (relative) under a field named `..._rel_path`. Not a redaction violation.
-**Fix:** Set it to `v.lock.executable_rel_path.clone()`, or rename the field and intentionally surface the canonical path.
-
-### 4.8 MINOR: `real_store_wiring` test fixture uses `enabled_identities()` instead of production's `usable_enabled_identities()`
-
-**File:** `crates/opi-coding-agent/tests/execution_product.rs`
-**Lines:** 597–624
-**Cause:** Production `routed_store_state` filters trusted+enabled records by target/opi-version compatibility (`usable_enabled_identities`); the fixture uses the unfiltered `enabled_identities()`.
-**Impact:** The SC16-13 slice does not exercise the startup target/version filter (silent today because the fixture's adapter matches the host). The per-invocation `activate()` gate still catches mismatches at exec time, so this is a realism gap, not a hole.
-**Fix:** Switch the fixture to `usable_enabled_identities(host_target_triple(), host_opi_version())` and add a focused test that a target-mismatched enabled adapter is filtered out at startup.
-
-### 4.9 MINOR: Harness startup broker-installation for an external-ask adapter through the real constructor is not exercised end-to-end
-
-**File:** `crates/opi-coding-agent/src/harness.rs`
-**Lines:** 1122–1140
-**Cause:** The local-ask broker-install shape is covered (`interactive_ask_real_constructor_installs_permission_broker`); the external-ask + `GeneralRouted` + `Interactive` shape is covered at the runtime layer (broker injected directly into `ExecutionWiring`), but no test drives the real `CodingHarness::builder().build()` for that shape.
-**Fix:** Add a harness unit test with a routed-store override returning one enabled external identity + external ask policy + `Interactive`, asserting `brokers()==1`, `permission_managers()==1`, and the rx/manager survive into the harness fields.
-
-### 4.10 MINOR: Permission-prompt snapshot coverage is asymmetric (local/no-package only at 80×24)
-
-**File:** `crates/opi-tui/tests/permission_prompt_snapshots.rs`
-**Lines:** 42–66
-**Cause:** The external variant is snapshotted at both 80×24 and 120×40; the local/no-package variant (different render branch) only at 80×24. The DoD calls for deterministic 80×24 and 120×40 snapshots.
-**Fix:** Add `permission_prompt_local_no_package_120x40` and commit the `.snap` after review.
-
-### 4.11 MINOR: Prompt widget snapshots render into the full buffer, not the production centered 70%×50% overlay rect
-
-**File:** `crates/opi-tui/tests/permission_prompt_snapshots.rs`
-**Lines:** 15–32
-**Cause:** Snapshots render the widget at `f.area()`; production renders inside `centered_rect(70, 50, frame.area())` (`interactive.rs:833`) — ~56×12 on 80×24. The committed `.snap`s pin only the widget in isolation.
-**Impact:** A regression in the centered overlay/layout under the smaller sub-rect would not be caught.
-**Fix:** Add an integration-level snapshot through the production `draw_state` path (or document the snapshots as widget-level + add a `centered_rect` assertion).
-
-### 4.12 MINOR: `crate_boundaries` PATH-read whitelist is a brittle exact-string match
-
-**File:** `crates/opi-sandbox/tests/crate_boundaries.rs`
-**Lines:** 79–90
-**Cause:** The tripwire permits the legitimate `std::env::var_os("PATH")` read by string-replacing exactly that token before grepping. A different call shape (`use std::env; env::var_os("PATH")`, or a computed key) either false-positives or bypasses.
-**Fix:** Add a companion negative test asserting known-bad patterns (`var_os("OPI_SESSIONS_DIR")`) are caught, or move to a `syn`-aware scan.
-
-### 4.13 MINOR: `linux_policy.rs` / `macos_policy.rs` network tests assume `python3` on PATH without documenting it
-
-**File:** `crates/opi-sandbox/tests/linux_policy.rs` (:200–257), `macos_policy.rs`
-**Cause:** Several network/io_uring/AF_UNIX sentinels shell out to `python3 -c '...'`; the file preambles document only the Landlock-ABI / sandbox-exec requirement, not python3. The io_uring test also hard-codes syscall 425 (x86_64).
-**Impact:** On a supported Linux/macOS host without python3 (minimal containers), these tests fail spuriously with NotFound-style errors that look like confinement failures.
-**Fix:** Add a python3 availability guard that skips with a clear message; use `libc::SYS_io_uring_setup` for arch-correctness; update the preamble.
-
-### 4.14 MINOR: `outside_write_denied` test discards run output and asserts only marker non-creation
-
-**File:** `crates/opi-sandbox/tests/linux_policy.rs`
-**Lines:** 152–173 (and macOS twin `macos_policy.rs:174–190`)
-**Cause:** Binds `let _ = out;` and asserts `!marker.exists()`. Sound (a Landlock regression would create the marker), but does not exercise the denial's exit-code/error-class surface.
-**Fix:** Also assert `!out.status.success()` and optionally a permission-denied-class stderr.
-
-### 4.15 MINOR: `OwnedCaptureTask::take_capture` uses `unreachable!()` (panic) if the drain-task `Arc` is not yet unique
-
-**File:** `crates/opi-coding-agent/src/tool/supervision.rs`
-**Lines:** 355–361
-**Cause:** `Arc::try_unwrap(capture).unwrap_or_else(|_| unreachable!(...))` relies on the drain task having released its clone. That holds today on the Ok/Err and timeout paths (task completed or aborted+awaited).
-**Impact:** Forward-looking only: a future refactor adding another clone or a partial-drop path turns this into a runtime panic inside the production supervision path.
-**Fix:** Replace with a non-panicking snapshot (lock the mutex, clone the `StreamCapture`, let the `Arc` drop naturally).
-
-### 4.16 MINOR: `release-topology` guard does not pin the `python3` interpreter prefix on the release-audit invocation
-
-**File:** `crates/opi-coding-agent/tests/opi_sandbox_release_topology.rs`
-**Lines:** 303–332
-**Cause:** Asserts the `sandbox_release_audit` job contains `opi-artifact-audit.py` and `--release` but not the `python3` interpreter token that `release.yml:253` actually uses.
-**Fix:** Add `"python3"` to the `assert_present` needle list (and consider pinning the `evidence` positional).
-
-### 4.17 MINOR: Artifact-audit gate/six-target evidence bundles use unbound text markers with no run-identity binding
-
-**File:** `scripts/opi-artifact-audit.py`
-**Lines:** 1086–1235 (`_audit_gates_bundle`, `_audit_six_target_bundle`)
-**Cause:** Native smoke markers are cryptographically bound to the archive SHA-256 (`DIRECT_SMOKE_RE`/`BACKEND_SMOKE_RE`/`NATIVE_SENTINEL_SMOKE_RE` require `archive_sha256=<digest>`). The gate/six-target bundles accept cargo text markers (`test result: ok. N passed; 0 failed`, `Finished \`...\` profile`, `PASS`) with no binding to a build identity/digest. A text file with those literals passes the gate.
-**Impact:** Under the operator-trust model (genuine preserved evidence) this is acceptable, and failure-marker precedence is sound. The native-archive topology is genuinely fail-closed; the workspace-gate half is text-trust only — not "genuinely fail-closed" against a self-deceiving operator.
-**Fix:** If fail-closed-ness is a release-gate requirement, bind gate/six-target captures to a run identity (commit SHA or artifact hash) and validate it like the native smokes; otherwise document the asymmetry.
-
-### 4.18 INFO: Headless model-strategy `ask` lacks an end-to-end production-path test asserting `permission_required` in the `ToolResult`
-
-**File:** `crates/opi-coding-agent/tests/execution_product.rs`
-**Lines:** 840–890 (`routed_tool_result` hard-codes `RunMode::Interactive`)
-**Cause:** The headless (Rpc/NonInteractive) leg of a model-strategy external `ask` is exercised only at the unit level; no single test drives it through `CodingHarness::build_tools` → `RoutedBashOperations::exec` → `resolve_selection` → `PermissionRequired` passthrough and asserts the `ToolResult` carries the stable code.
-**Impact:** The invariant holds by composition of unit-tested pieces (no behavioral hole).
-**Fix:** Parameterize `routed_tool_result` by `RunMode` and add one assertion for the headless ask path.
-
-### 4.19 INFO: `FixedChoiceBroker` is dead code
-
-**File:** `crates/opi-coding-agent/src/execution/permission.rs`
-**Lines:** 179–197
-**Cause:** Declared `pub`, impls `InteractivePermissionBroker`, but no production code or test constructs it (tests use `RecordingBroker`; harness installs `TuiPermissionBroker`); not re-exported from `execution/mod.rs`.
-**Fix:** Delete it, or re-export + add a test if intended as an embedder utility.
+*(S5, "test-seam `routed_store_factory_override` ships in release", was REFUTED — see §9.)*
 
 ---
 
-## 5. Spec-compliance findings
+## 4. Spec Findings (Matt code-review Spec axis)
 
-### 5.1 MINOR: Empty or unknown-field-only `[sandbox]` table is silently accepted (contract says rejected)
+**Net: all 11 spec areas (five gates, routing, permission, protocol host, fail-closed, contribution gates, minimal runtime, opi-sandbox standalone, crate boundaries, migration, CI) verify as IMPLEMENTED.** Notably robust:
+- **TOCTOU-safe SHA-256**: `contribution.rs:413-543` opens with `O_NOFOLLOW`, copies into a sealed memfd (Linux) / private fd (macOS) / `FILE_SHARE_READ`-only handle (Windows), hashes the snapshot, spawns from `/proc/self/fd/{fd}`, and revalidates per-spawn (`package_activation.rs`).
+- **Minimal Runtime**: `harness.rs` constructs `LocalBashOperations` directly with zero router/permission/protocol/store state; default bash schema byte-identical (pinned by `execution_minimal_runtime.rs`).
+- **Five gates + non-TTY enable refusal**, drift fail-closed, project-layer `[execution.permissions]` rejected unconditionally, session grants memory-only and reset on resume/fork/branch.
 
-**File:** `crates/opi-coding-agent/src/config.rs`
-**Lines:** 704–739
-**Cause:** `TomlSandbox` is `#[serde(default)]` with no `deny_unknown_fields`; `legacy_sandbox_rejection` rejects only when `is_present()` (any of mode/require/fs/network/syscalls is set). serde cannot distinguish an absent `[sandbox]` from a present-but-empty one for an all-Option all-default struct, and unknown fields are silently dropped. So `[sandbox]` (empty) and `[sandbox]\nunknown="x"` both deserialize to default with `is_present()==false` and are accepted.
-**Impact:** Functionally harmless (an empty/unknown-only table configures nothing and reintroduces no sandbox behavior), but it deviates from the strict contract wording ("`[sandbox]` is rejected") and is an untested edge — `execution_migration.rs` tests only non-empty tables.
-**Fix:** Add `#[serde(deny_unknown_fields)]` and make `TomlConfig.sandbox` an `Option<TomlSandbox>` so `legacy_sandbox_rejection` rejects any `Some(_)` (covers empty + unknown-field tables); or explicitly accept this and add a test pinning the field-presence-based design.
+### Spec-1 — EVALUATED, REFUTED: claimed C5 "no-degraded-success" violation in the cancel-grace race
 
-### 5.2 INFO: Per-run Linux confinement reports only `Mechanism::Landlock` despite both Landlock and seccomp being applied
-
-**File:** `crates/opi-sandbox/src/platform/linux.rs` (:329–332) + `lib.rs:28–29`
-**Cause:** `AppliedRestriction` carries a single `Mechanism`; `LinuxRestriction::prepare` returns `Landlock` even though it also installs the seccomp overlay. `lib.rs` documents that a native Linux run "reports `Mechanism::Landlock`/`Mechanism::Seccomp`", overstating the per-run `Started` vocabulary (doctor does list both).
-**Impact:** No confinement is weakened — only the per-run reported vocabulary. A consumer observing only `Started` must consult `doctor` to learn seccomp is engaged.
-**Fix:** Narrow the `lib.rs` comment to "the doctor report lists both; the per-run Started reports Landlock as the lead mechanism", or extend `AppliedRestriction` to carry both.
-
-### 5.3 INFO: Runtime resolver does not re-validate project-local `[[contributions.adapters]]` (inert contributions silently)
-
-**File:** `crates/opi-coding-agent/src/package_resolver.rs`
-**Lines:** 292–432
-**Cause:** `resolve_declaration`/`resolve_git_declaration` parse `[[contributions.adapters]]` as raw tables but never call `validate_executable_contributions`. The project-local gate is enforced only at `package add --local`; a hand-edited project package with contribution tables resolves normally and silently ignores them.
-**Impact:** Not exploitable: activation is global-only, so a project-local contribution can never activate or be model-selected. But it violates the spirit of the gate (install-time-only) and a user could believe a project contribution is active when it is inert.
-**Fix:** Validate during discovery with `PackageSource::ProjectLocal` and surface a diagnostic, or document the install-time-only gate and add a `doctor` diagnostic for project manifests carrying non-empty `adapter_contributions`.
+The Spec agent flagged `finish_with_cancel` (`protocol_host.rs:1182-1208`) returning `Ok(CompletedOutcome{ exit: Some(0), timed_out: true })` when a clean `Completed` races the cancel grace, arguing a cancelled/timed-out command is reported as success. **Refuted by tracing through the tool layer**: `completed_outcome_to_bash_result` (`runtime.rs:693`) carries `exit_code: Some(0)` with `timed_out` only in the operation-context diagnostic, but `bash.rs:269` computes `let is_error = timed_out || cancelled || signal.is_some() || exit_code != Some(0)`, so the production **tool result** is `is_error = true`. C5 holds at the layer that matters. (Residual: the intermediate `BashResult` carries `exit_code:Some(0)`; a non-`BashTool` consumer that gates on `exit_code` alone could misread it — Info, not a C5 violation.) Recorded for transparency; **not a defect**.
 
 ---
 
-## 6. Invariant verification
+## 5. Correctness / Test-quality / Invariants / Integration Findings (opi-dimensions workflow, adversarially verified)
 
-All Phase 16 invariants hold in code; test-coverage caveats are noted.
+*(6 finder agents + 6 skeptic verifiers; 8 findings, all confirmed/Info, none Blocker/Major in the code itself.)*
 
-| Invariant | Code evidence | Test coverage |
-|-----------|--------------|---------------|
-| Minimal Runtime: default local direct, no sentinel/package/router/permission/protocol task, byte-identical schema | `execution/runtime.rs` `ExecutionRuntime::build` DirectLocal branch; `harness.rs` `harness_execution`; `tool/bash.rs` schema | `execution_minimal_runtime.rs::default_allow_real_constructor_opens_no_extended_execution_state` (real constructor, 0 managers/brokers/routers + panic-on-call store); `tool_assembly_minimal_runtime_preserves_schema_and_runs_local_backend` (compares vs fresh schema) |
-| Five independent gates; model cannot mutate any | `package_activation.rs` (install/enable/disable/remove/activate); `execution/router.rs` `resolve_selection` (pure, non-mutating) | `execution_package_lifecycle.rs` (install→untrusted+disabled, type-the-name enable, disable-preserves-trust, drift-invalidates, collision-rejected); `execution_routing.rs::model_cannot_mutate_permission_or_trust` |
-| Fail-closed after selection; no local fallback | `runtime.rs` `RoutedBashOperations::exec` / `ProcessCommandAdapter::exec`; no `Local` variant in `failure.rs`; structural `no_local_fallback_exists` guard | `execution_runtime.rs::routed_external_activation_failure_does_not_fall_back_to_local` (call_count==0); `execution_product.rs::disabled_packaged_adapter_is_contribution_disabled_without_fallback`; `execution_routing.rs::rules_selected_backend_failure_does_not_fall_through` |
-| No degraded success (timeout/cancel are errors on clean exit) | `tool/bash.rs:269` `is_error = timed_out \|\| cancelled \|\| signal.is_some() \|\| exit_code != Some(0)`; host force-sets `cancelled=true` on cancel-raced Completed | `execution_product.rs::timed_out_in_band_completed_is_not_a_success`, `cancelled_in_band_completed_is_not_a_success` |
-| 14-code redacted failure envelope; no `Degraded` variant | `execution/failure.rs` (14 codes, `remediation()`); `From<ActivationError>` drops detail | `execution_failures.rs::all_14_codes_declared_with_stable_literal`, `remediation_is_distinct_across_all_14_codes`, `redaction_omits_*`; (caveat: S4 — sweep uses safe values) |
-| Every frame carries one host-generated request id; cross-id/dup/cumulative enforced | `execution/protocol_host.rs` seeds `Session`; `session.rs` `check_id`/`check_duplicate`/`account_output` | `execution_protocol_host.rs::cross_request_id_is_protocol_violation`; `session.rs` unit tests; `cross_request_output_is_rejected_before_accounting` (remediation-fixed ordering) |
-| `started` flushed before target release; command undisclosed until `ready` | `protocol_host.rs` transition ordering + start gate; `helper.rs` (sandbox side) | `ready_identity_version_and_target_must_match_lock`; `target_cannot_act_until_started_has_been_observed`; ten protocol-violation surfaces |
-| Backend stderr bounded crash evidence only; never in payload | `protocol_host.rs::drain_stderr` (capped, discarded); `redact_backend_diagnostic` | `backend_stderr_canary_never_surfaces` (Display + Debug); `protocol_conformance.rs::failed_frame_is_redacted` |
-| Protocol stdin never inherited as target stdin | `StdinPolicy::Null` for backend; `helper.rs` pins it | `helper.rs::build_request_pins_stdin_to_null`; `cli_contract.rs::execute_stdin_null_target_receives_eof` |
-| Cleanup on every terminal path + guard drop (opi-sandbox) | `runner.rs` `SandboxRun` Drop (kill_on_drop + TreeGuard + TempDir); no `.await` between spawn and guard | `sdk_contract.rs` timeout/cancel/drop/hard-kill + grandchild-kill |
-| Crate boundaries: core links no opi-sandbox/native-policy; opi-sandbox depends only on opi-protocol | `Cargo.toml` graphs; `src/sandbox*` deleted | `phase16_crate_boundaries.rs::cargo_tree_proves_no_sandbox_or_native_policy_dependency` + `no_legacy_sandbox_symbols_in_production_source` |
-| Migration: `[sandbox]`/`--sandbox`/`--sandbox-require` rejected without aliases; L0 stays in core | `cli.rs`/`config.rs` rejection; `supervision.rs`/`process_tree.rs` retained | `execution_migration.rs` (off/strict/require/bare rejected at every layer + stable diagnostic); (caveat: SC1 — empty table accepted) |
-| Permission grants memory-only; do not survive resume/fork/branch | `PermissionManager` in-process `HashSet`; `reset_grants` at session-switch boundaries | `interactive_permission.rs` + `harness.rs::session_switches_reset_permission_grants_at_production_call_sites` |
-| Native honesty: `restricted` (never `isolated`) for opi-sandbox; `supervised` for local | `helper.rs::started_payload`; `windows.rs` unsupported posture | `started_payload_*` tests; `windows_execution_posture.rs::local_exec_reports_supervised_guarantee`; linux/macos doctor asserts `!isolated` |
+### D1 — MINOR (C16): source-text structural pin tests reproduce the repo's known degenerate-test pattern (3 sites)
 
----
+**File:** `crates/opi-coding-agent/tests/execution_protocol_host.rs:1196` (+ 2 more sites)
 
-## 7. Cross-task integration findings
+Three Phase 16 tests assert invariants by matching substrings of production source (`src.contains("…")` / `include_str!`) rather than by driving behavior — the exact pattern the repo documents as a prior failure mode. They are honestly scoped as secondary guards and the real behavioral coverage exists alongside, but the pattern is fragile (a rename passes the test while breaking nothing it checks). Confirmed by the skeptic.
 
-### 7.1 MINOR: `router.rs` module doc contradicts the runtime's `always-available=true` eligibility construction
+### D2 — INFO (C7/C16): external protocol-host dropped-future reap is argued by transitivity, not a direct drop-the-future test
 
-**File:** `crates/opi-coding-agent/src/execution/router.rs`
-**Lines:** 31–35 (cf. `execution/runtime.rs:222–228`)
-**Cause:** The `EligibleAdapter` docstring says the runtime builds these "installed + trusted + enabled + target-compatible" and "`available` reflects everything except permission". But `Eligibility::from_enabled` (`runtime.rs:229–244`) hardcodes `available: true` for every entry and defers all availability to per-invocation `IdentitySource::activate()` (documented correctly at `runtime.rs:222–228`).
-**Impact:** A reader of the public routing surface is misled into thinking `available` is a meaningful pre-spawn signal; the `gate()` `AdapterUnavailable{Ineligible}` branch is effectively unreachable from production (only from hand-built fixtures). Documentation/code consistency defect, not a behavior defect.
-**Fix:** Update `router.rs:31–35` to state that production sets `available=true` and availability is re-gated per invocation by `activate` (cross-reference `runtime.rs:222–228`).
+**File:** `crates/opi-coding-agent/tests/execution_protocol_host.rs:1123`
 
-### 7.2 INFO: Two distinct `LEGACY_SANDBOX_REMEDIATION` constants (private `cli.rs` vs public `diagnostics.rs`) with different wording
+The C7 invariant "dropping the execution future kills child AND descendants" is directly tested for the local bash future and the AdapterHost, but for the external `ExecutionProtocolHost::execute` future it is argued by transitivity from the cancel path (same `TreeGuard`). Sound, but a direct drop-the-future test would close the gap.
 
-**File:** `crates/opi-coding-agent/src/cli.rs` (:15–20) vs `src/diagnostics.rs` (:20)
-**Cause:** The two constants legitimately name different removed inputs (`--sandbox flag` vs `[sandbox] section`). Only the public one has a byte-identity pin; the private one is pinned only via a substring-needle check.
-**Fix:** Optional — extract the shared remediation tail into one constant and compose the per-surface prefix at the call site, or add a test that the `cli.rs` constant also contains `REMEDIATION_NEEDLES`.
+### D3 — INFO (C4): backend-diagnostic redaction is defense-in-depth; no canary test for backend-injected diagnostics
 
-### 7.3 INFO: `bash_input_schema` duplicates `Eligibility::model_visible_ids` filter logic
+**File:** `crates/opi-coding-agent/src/execution/protocol_host.rs:644`
 
-**File:** `crates/opi-coding-agent/src/harness.rs`
-**Lines:** 124–148
-**Cause:** `bash_input_schema` re-implements the `available && !Deny` filter (plus an `Ask` annotation) that `Eligibility::model_visible_ids` (`router.rs:58–64`) already implements. The two agree today.
-**Fix:** Extend `model_visible_ids` to return the ask flag and have `bash_input_schema` call it, or document the intentional duplication.
+A trusted backend emitting a `Diagnostic{message}` with command text / non-secret env substrings would have secret/absolute-path substrings scrubbed by `redact_text`, but residual command text / non-secret env substrings can survive into the retained diagnostics. This matches the spec's "backend diagnostics are message-only; redaction is the backend's responsibility per the v1 wire" contract, so it is not a violation — but there is no canary test injecting a hostile backend diagnostic to prove the scrubbing that *does* happen. Confirmed.
 
-### 7.4 INFO: Outer `PackageLockEntry.manifest_sha256` uses raw bytes while inner `LockMaterial.manifest_hash` uses LF-normalized bytes
+### D4 — MINOR (C9): Landlock TCP bind/connect layer is wired but never independently exercised — seccomp `socket()` gate masks it in every network=deny probe
 
-**File:** `crates/opi-coding-agent/src/package_resolver.rs` (:210–215) vs `execution/contribution.rs:631–644`
-**Cause:** A deliberate two-layer design (outer raw hash for resolver drift; inner LF-normalized for activation drift), each internally consistent.
-**Impact:** The outer resolver drift check can false-positive across CRLF/LF checkouts on Windows, disabling a package at runtime until re-lock. No correctness bug in the contribution/trust layer.
-**Fix:** Consider LF-normalizing the outer hash too (reuse `contribution::lf_normalize`) for cross-platform stability, or document the two-hash design.
+**File:** `crates/opi-sandbox/tests/linux_policy.rs:441`; build path `crates/opi-sandbox/src/platform/linux.rs:234-240, 300-304`
+
+The C9-required Landlock TCP bind/connect confinement is built, wired, and fail-closed-gated on ABI ≥ 4, but no test can observe its *independent* enforcement: in every network=deny end-to-end probe the seccomp `socket()`-creation gate fires first (the probe's `TcpListener::bind` calls `socket(AF_INET,…)` before `bind()`), so the Landlock-TCP-policed path is never reached. A regression disabling Landlock TCP bind/connect would not fail any test. The overall network=deny contract still holds because seccomp holds the line, and the Landlock **fs** layer *is* independently proven (`outside_write_denied`/`workspace_write_allowed`). Confirmed; defense-in-depth coverage gap, not a correctness defect.
+
+### D5 — INFO (C11/C4): Windows bootstrap exposes `OPI_SANDBOX_*` control env vars to the target
+
+**File:** `crates/opi-sandbox/src/runner.rs:1349`
+
+On Windows the gated bootstrap passes the target program, per-index args, the release-gate path, and the backend PID to the PowerShell bootstrap via `OPI_SANDBOX_*` env vars, which the target then inherits (even with `env_inherit=Clear`). Acceptable under the documented Windows posture (L0-only, no confinement claim, target runs only after the release gate is removed) — but the control metadata is visible to the target. Re-evaluate if Windows confinement is ever added. Confirmed.
+
+### D6 — INFO (C12/C16): `release.yml` marks `aarch64-pc-windows-msvc` tier-2 with `continue-on-error`, making the six-target release best-effort for that leg
+
+**File:** `.github/workflows/release.yml:60`
+
+`continue-on-error: ${{ matrix.tier2 == true }}` for the arm64-windows target means a build break on that leg omits the artifact and the build job still succeeds — the release can publish five instead of six artifacts without failing. Defensible as tier-2 policy, but it weakens the "six-target" claim for that one leg.
+
+### D7 — INFO (C2): Windows absolute path (`C:\foo`) is classified `DriveRelativeCommand` in the contribution validator
+
+**File:** `crates/opi-coding-agent/src/execution/contribution.rs:564`
+
+`validate_command_path` maps `Component::Prefix` to `DriveRelativeCommand`, so a Windows absolute path like `C:\foo` (Prefix + RootDir + Normal) is reported as "drive-relative" rather than "absolute" — a misleading error variant/message, though the path is **correctly rejected**. Cosmetic; both shapes are rejected.
 
 ---
 
-## 8. Residuals and recommendations
+## 6. Minor tooling finding
 
-### Host-verifiability limits (not defects)
-This audit ran on Windows. All `#[cfg(unix)]` / Linux / macOS code and tests compiled out locally and were reviewed as source: the Landlock/seccomp FFI in `opi-sandbox/src/process_tree.rs` (install order seccomp → `restrict_self` → fd-closure is correct, with the documented rationale that ruleset fds are consumed before close), the sandbox-exec profile in `platform/macos.rs` (last-match-wins on an allow-default base; `escape_path` neutralizes `\`, `"`, `$`; fail-closed on missing/rejected helper), and the unix process-group SIGKILL path. The **behavioral** native enforcement (Landlock actually denies writes, seccomp returns EPERM, sandbox-exec denies network) was not directly re-verified here; it rests on the phase-exit evidence (`linux_policy`/`macos_policy` on WSL2/GHA per the task ledger) and the artifact audit. Per §4.17, the artifact-audit's gate/six-target half is text-trust; the native-archive half is SHA-bound and fail-closed.
+### M1 — MINOR: new clippy lint `manual_is_multiple_of` denied by `-D warnings` on linux/macos
 
-### Pre-existing, out-of-Phase-16-scope items noted
-- The `bash` result **details block** carries the raw command text (the model's own input echoed back) and the `full_output` spill temp-path/PID (§3.1). Both are pre-existing Phase 11 behavior; Phase 16's redaction scope targets diagnostics/envelopes (which are clean). Worth a future cross-phase pass on `ToolResult.details` redaction before provider conversion.
+**File:** `crates/opi-sandbox/src/platform/linux.rs:473` (`if relative % 8 == 0`) and one sibling site
+
+CI `clippy` runs on a newer `stable` than the code was written against; the `manual_is_multiple_of` lint fires (2 sites) and `-D warnings` turns it into an error. Tooling-version drift, not a logic defect. Mechanical fix: `relative.is_multiple_of(8)`. (Observed in CI run 31319356200, `clippy (ubuntu-latest)`/`(macos-latest)`.)
+
+---
+
+## 7. Invariant Verification (C1–C16)
+
+| Criterion | Status | Code evidence | Test / native evidence |
+|---|---|---|---|
+| C1 Minimal Runtime | PASS | `harness.rs` direct `LocalBashOperations`; default schema byte-identical | `execution_minimal_runtime.rs` (schema pin); construction_probe counts |
+| C2 Five independent gates | PASS | `package_activation.rs`, `contribution.rs` | `execution_package_lifecycle.rs`, `package_store.rs` (D7 cosmetic only) |
+| C3 Routing/permission | PASS | `router.rs`, `permission.rs` | `execution_routing.rs`, `execution_selected_routing.rs`, `execution_permission.rs` |
+| C4 Redacted failure envelope | PASS | `failure.rs`, `protocol_host.rs:644` | `execution_failures.rs`; D3 (no backend-diagnostic canary — Info) |
+| C5 No degraded success / no fallback | PASS | `protocol_host.rs` cancel path; `runtime.rs` no-fallback; **`bash.rs:269` is_error** | Spec-1 refuted; traced end-to-end |
+| C6 Protocol contract | PASS (win test red — A3) | `protocol_host.rs`, opi-protocol `v1` | `execution_protocol_host.rs`; `execution_v1_contract.rs`; A3 (1 win test fails) |
+| C7 L0 supervision | PASS | `process_tree.rs`, `TreeGuard` | `sandbox_l0.rs`; D2 (drop-future by transitivity — Info) |
+| C8 opi-sandbox SDK+CLI | PASS | `runner.rs`, `cli.rs`, `backend.rs` | **WSL2 native**: `--version`, `doctor --json`, `run` exit mapping all verified |
+| C9 Linux native | PASS | `platform/linux.rs` (Landlock+seccomp) | **WSL2 native**: `cargo test -p opi-sandbox` RC=0; doctor reports landlock+seccomp; **outside-write denied at kernel level**; D4 (Landlock-TCP not independently exercised — Minor) |
+| C10 macOS native | PASS | `platform/macos.rs` (sandbox-exec) | **GHA `opi-sandbox package (macos-latest)` → SUCCESS** |
+| C11 Windows posture | PASS | `platform/windows.rs` (Job Objects L0) | `windows_execution_posture.rs`; D5 (env-var exposure — Info) |
+| C12 Six-target CI | **FAIL** | ci.yml topology present | **CI red**: apple-darwin target_check (A1), clippy linux/macos (M1) |
+| C13 Migration (no aliases) | PASS | `config.rs` `LegacySandboxSection`; no `--sandbox` Arg | grep confirms; `execution_migration.rs` |
+| C14 Crate boundaries | PASS | opi-sandbox → opi-protocol only; opi-coding-agent ≠deps opi-sandbox | `crate_boundaries.rs` |
+| C15 Doc lockstep EN/ZH | PASS | README/README.zh, opi-spec/opi-spec.zh | 16.16.3 docs task; `docs_contract` CI green |
+| C16 Artifact-audit evidence | **AT RISK** | `artifact_audit_script.rs` | **A2: the guard itself fails on unix**; M1 clippy |
+
+---
+
+## 8. Native Verification Evidence (real execution, not stubs)
+
+**WSL2 Linux (kernel 6.18 → real seccomp + Landlock):**
+- `cargo test -p opi-protocol` → **RC=0**
+- `cargo test -p opi-sandbox` → **RC=0** (includes `linux_policy.rs` exercising real Landlock fs + seccomp)
+- `doctor --json` → `{"supported":true,"target":"linux","mechanisms":["landlock","seccomp"],"profiles":["workspace-write"],…}`
+- Direct CLI `run`: in-workspace write **allowed** (rc 0); **outside-workspace write denied at the kernel** (`/bin/sh: cannot create /tmp/…: Permission denied`) — genuine Landlock restriction engaged, not a stub; `network=allow` control succeeded. (The `network=deny` ad-hoc probe was inconclusive — `/dev/tcp` is bash-only and the probe used dash — but `linux_policy.rs` covers network denial.)
+
+**GHA macOS (run 31319356200):**
+- `opi-sandbox package (macos-latest)` → **SUCCESS** (release build → native archive → verify → standalone smoke on the extracted binary). **C10 confirmed.**
+- `opi-sandbox package (ubuntu-latest)` → **SUCCESS**.
+
+---
+
+## 9. Refuted Findings (adversarial-verification value)
+
+- **Standards S5** ("test-seam `routed_store_factory_override` ships in release") — **REFUTED**. Both the call site (`harness.rs:203`) and the module definition (`harness.rs:260`) carry `#[cfg(test)]`; the seam does not compile into release.
+- **Spec-1** (C5 "no-degraded-success" violated by cancel-grace clean-exit race) — **REFUTED**. The agent stopped at the `BashResult` intermediate; the production tool-result path (`bash.rs:269` `is_error = timed_out || …`) makes it an error regardless of `exit_code`. C5 holds.
+
+Both were independently refuted by tracing the actual code paths rather than trusting the agent summaries.
+
+---
+
+## 10. Residuals and Recommendations
 
 ### Priority recommendations
-1. **(Minor, correctness)** Close the L0 reap asymmetry (§2.1) and bound Diagnostic frames (§2.2) — both are quick, both harden long-running sessions.
-2. **(Minor, security-semantics)** Pin the permissions REPLACE contract with a test, or switch to key-level merge (§3.3); strengthen the redaction sweep to inject canaries into the interpolated fields (§3.4).
-3. **(Minor, test fidelity)** Replace the degenerate git-install ordering test with a behavioral fault-injection test and cover the two untested rollback edges (§4.1); extend the danger-blocklist test to all 14 syscalls (§4.2).
-4. **(Minor, contract)** Decide and pin the `[sandbox]` empty-table behavior (§5.1) and the artifact-audit gate/six-target run-identity binding (§4.17) — both are about whether "fail-closed/rejected" means what the docs imply.
-5. **(Info, doc drift)** `router.rs` eligibility doc (§7.1), `feed_*_line` rustdoc (§2.3), `cli.rs` `InvalidRequest` doc (§4.6), `lib.rs` per-run mechanism vocabulary (§5.2).
+1. **Fix A1 before any push/merge** — move `tempfile` to `[dependencies]` in `crates/opi-coding-agent/Cargo.toml`. This unblocks macOS/`apple-darwin` compilation. Highest single-action value; prior audits missed it because it is macOS-only and the dev host is Windows.
+2. **Triage A2 and A3** — root-cause the four `artifact_audit_script` reparse failures on unix and the Windows `cancellation_diagnostic_frame_count_is_bounded` failure. Determine whether they are test defects (path normalization / timing) or real; either way they must be green.
+3. **Fix M1** — `relative.is_multiple_of(8)` at `linux.rs:473` (+ sibling); or pin the CI clippy baseline.
+4. **Push and require green CI before merge** (A4) — the 18-commit unpushed remediation accrued CI debt that this audit had to surface by triggering a draft PR. The branch should not merge until A1–A3 + M1 are resolved and `ci.yml` is green on all six targets.
+5. **Close the temporary audit PR #3 and delete branch `audit-phase16-native`** after the evidence above is no longer needed (it was opened solely to trigger CI for this audit).
 
-### Items verified clean (no action)
-Redaction across all public surfaces (no leak); fail-closed/no-fallback/no-degraded-success end-to-end (including `assert_invariants` release-safety and TOCTOU mitigation via `/proc/self/fd`, `/dev/fd`, and `FILE_SHARE_READ`-only Windows handle); five-gate independence; request-id correlation and the post-remediation cumulative-accounting ordering; byte-for-byte Minimal-Runtime schema; `opi-sandbox` invocation-stateful/cross-invocation-stateless cleanup; crate boundaries and the migration rejection surface; Non-Goal compliance (no Docker/VM/SSH/Gondolin/remote adapters, no file/navigation routing, no core-tool shadowing, no universal-protocol/RPC/NDJSON/trace migration, no dynamic native-library loading, no multi-adapter composition, no host-read/env confidentiality claim, no extension-process sandboxing, no publisher checksum auth, no project-local executable activation, no Windows AppContainer/restricted-token, no Phase 15 alias preservation).
+### Lower-priority (Minor/Info)
+- Replace the 3 source-text structural pin tests (D1) with behavioral assertions, or document them strictly as supplemental.
+- Add a Landlock-TCP isolated test (D4) and a backend-diagnostic redaction canary (D3) when the native test harness is next touched.
+- Re-export `CLEANUP_REPORT_GRACE` (S4) and consider a `BackendHandles` bundle (S2/S3) to reduce remediation-churn debt in the protocol host.
+- Switch `ExecutionProtocolFailure` to thiserror (S1).
+
+### Notable strengths
+- The fail-closed protocol state machine, the no-fallback/no-degraded-success guarantees, redaction, TOCTOU-safe contribution validation, deterministic routing, and crate boundaries are all spec-faithful and well-tested at the code level (0 code-level Majors).
+- Native restriction is genuinely enforced (real Landlock outside-write denial; real seccomp; real macOS sandbox-exec via GHA), not stubbed.

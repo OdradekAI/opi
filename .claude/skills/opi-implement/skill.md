@@ -28,11 +28,12 @@ the authoritative contract for shipped work. Do not run stale ledger tasks whose
 title or DoD contradicts the current spec.
 
 **Source-return rule:** The harness never repairs missing or wrong product
-meaning while initializing a graph or executing a task. Return an incomplete
-source to `opi-research` / `opi-realign` for missing evidence or to Matt
-`wayfinder` / `grill-with-docs` for an unresolved decision. The owning shaping
-artifact updates the source; a later `opi-implement plan` run reconciles the
-result. Frozen copies under `docs/snapshots/phaseN/` are never edited.
+meaning while initializing a graph or executing a task. Return missing evidence
+to `opi-research` / `opi-realign`; for unresolved decisions, recommend the exact
+explicit user invocation of Matt `wayfinder` or `grill-with-docs`. Matt tracker
+artifacts never enter `spec_files`; only human-reviewed results materialized in
+`docs/opi-spec.md` or a registered supplemental source may be admitted by plan.
+Frozen copies under `docs/snapshots/phaseN/` are never edited.
 
 **Reviewed supplemental sources:** Supplemental tasks come only from this
 registry. Do not auto-parse arbitrary files from `docs/superpowers/specs/`.
