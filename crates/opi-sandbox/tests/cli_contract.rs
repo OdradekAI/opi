@@ -515,6 +515,21 @@ async fn execute_byte_stderr_pass_through() {
     );
 }
 
+#[tokio::test]
+async fn execute_streams_large_stdout_and_stderr_without_loss_or_diagnostics_injection() {
+    const SIZE: usize = 1024 * 1024 + 4096;
+    let (prog, args) = large_output_program(SIZE);
+    let (req, _ws) = request(prog, args);
+    let mut out = Vec::new();
+    let mut err = Vec::new();
+
+    let code = execute(&runner(), req, &mut out, &mut err).await;
+
+    assert_eq!(code, 0);
+    assert_eq!(out, vec![0; SIZE]);
+    assert_eq!(err, vec![0; SIZE]);
+}
+
 /// Non-UTF-8 stdout is passed through byte-for-byte (no lossy conversion). The
 /// implementation is platform-independent (`write_all` of the captured bytes), so
 /// the Unix `printf` form proves the property; verified via WSL2/GHA on Linux
@@ -953,6 +968,31 @@ fn stderr_program(text: &str) -> (PathBuf, Vec<String>) {
     (
         PathBuf::from("sh"),
         vec!["-c".into(), format!("printf '%s' '{text}' >&2")],
+    )
+}
+
+#[cfg(unix)]
+fn large_output_program(size: usize) -> (PathBuf, Vec<String>) {
+    (
+        PathBuf::from("sh"),
+        vec![
+            "-c".into(),
+            format!("head -c {size} /dev/zero; head -c {size} /dev/zero >&2"),
+        ],
+    )
+}
+
+#[cfg(windows)]
+fn large_output_program(size: usize) -> (PathBuf, Vec<String>) {
+    (
+        PathBuf::from("powershell"),
+        vec![
+            "-NoProfile".into(),
+            "-Command".into(),
+            format!(
+                "$bytes = New-Object byte[] {size}; [Console]::OpenStandardOutput().Write($bytes, 0, $bytes.Length); [Console]::OpenStandardError().Write($bytes, 0, $bytes.Length)"
+            ),
+        ],
     )
 }
 #[cfg(windows)]

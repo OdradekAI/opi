@@ -22,18 +22,11 @@
 //!   - `doctor` reports `supported = true` with the `seatbelt` mechanism and the
 //!     honest legacy/experimental limitations.
 //!
-//! The "fail before target start when sandbox-exec is missing or rejected" DoD
-//! clause is covered by TWO separately-tested links rather than one macOS
-//! end-to-end test: (1) the pure `macos_posture_fields(Missing|Unusable)`
-//! invariants in `src/platform/macos.rs` prove a missing/rejected probe ->
-//! `supported = false` (host-independent); (2) the platform-neutral refusal
-//! gate — `cli run` exits 125 and the backend emits `failed{Unavailable,
-//! Handshake}` when `!posture.supported` — is exercised by the OFF-NATIVE
-//! `cli_contract` / `backend` tests (a separate branch from this file's
-//! Available-path sentinels). A stock-macOS end-to-end missing-helper test is
-//! impractical (`/usr/bin/sandbox-exec` is always present, and the probe checks
-//! that absolute path, not `PATH`), so the two links are proven separately
-//! rather than chained on a macOS runner.
+//! Missing and unusable helper postures are injected at the production probe
+//! seam by the macOS-only inline test in `src/platform/macos.rs`. That test
+//! chains each posture through the CLI gate and protocol backend, asserts exit
+//! 125 / `failed{Unavailable, Handshake}`, and proves the target sentinel never
+//! starts without modifying `/usr/bin/sandbox-exec`.
 //!
 //! File-gated to macOS: the confinement is macOS-native and the whole file
 //! references macOS-only behavior, so on every other target it compiles to no

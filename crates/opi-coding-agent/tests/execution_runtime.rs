@@ -30,7 +30,9 @@ use opi_coding_agent::execution::{
     EnabledIdentity, ExecutionRuntime, IdentitySource, LOCAL_ADAPTER_ID, PermissionManager,
 };
 use opi_coding_agent::package_activation::{ActivatedContribution, ActivationError};
-use opi_coding_agent::tool::{BashOpError, BashOperations, BashRequest, BashResult, BashTool};
+use opi_coding_agent::tool::{
+    BashOpError, BashOperationContext, BashOperations, BashRequest, BashResult, BashTool,
+};
 use tokio_util::sync::CancellationToken;
 
 // ---------------------------------------------------------------------------
@@ -65,8 +67,7 @@ impl BashOperations for RecordingOps {
             Ok(BashResult {
                 stdout: b"local\n".to_vec(),
                 stderr: Vec::new(),
-                exit_code: Some(0),
-                signal: None,
+                context: BashOperationContext::local(Some(0), None),
                 diagnostics: Vec::new(),
             })
         })
@@ -457,7 +458,7 @@ async fn rules_first_match_wins_and_local_catch_all_routes_to_local() {
         .exec(request("echo hi"))
         .await
         .expect("local routes to local");
-    assert_eq!(outcome.exit_code, Some(0));
+    assert_eq!(outcome.context.exit_code, Some(0));
     assert_eq!(local_handle.call_count(), 1);
 }
 
@@ -731,7 +732,7 @@ mod fixture {
             .await
             .expect("selected second adapter executes");
 
-        assert_eq!(outcome.exit_code, Some(0));
+        assert_eq!(outcome.context.exit_code, Some(0));
         assert_eq!(outcome.stdout, b"hello\n");
         assert_eq!(
             source.activated(),
@@ -768,7 +769,7 @@ mod fixture {
             .await
             .expect("approved ask dispatches");
 
-        assert_eq!(outcome.exit_code, Some(0));
+        assert_eq!(outcome.context.exit_code, Some(0));
         assert_eq!(outcome.stdout, b"hello\n");
         assert_eq!(source.activated(), ["pkg-b"]);
         let seen = broker.seen();
@@ -784,16 +785,15 @@ mod fixture {
             .exec(request("echo hi"))
             .await
             .expect("happy path is Ok");
-        assert_eq!(outcome.exit_code, Some(0));
+        assert_eq!(outcome.context.exit_code, Some(0));
         assert_eq!(outcome.stdout, b"hello\n");
-        // The routed success path emits the local operation-context diagnostic
-        // so bash.rs treats the backend as a transparent drop-in.
-        assert!(
-            outcome
-                .diagnostics
-                .iter()
-                .any(|d| d.code == "opi.operations.bash.operation_context")
+        // The routed success path carries the typed operation context that
+        // bash.rs consumes directly.
+        assert_eq!(
+            outcome.context.contract.adapter_id.as_deref(),
+            Some("opi-sandbox")
         );
+        assert_eq!(outcome.context.contract.guarantee, "supervised");
     }
 
     #[tokio::test]
@@ -803,7 +803,7 @@ mod fixture {
             .exec(request("echo hi"))
             .await
             .expect("nonzero exit is in-band Ok");
-        assert_eq!(outcome.exit_code, Some(2));
+        assert_eq!(outcome.context.exit_code, Some(2));
     }
 
     #[tokio::test]

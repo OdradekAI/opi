@@ -387,7 +387,11 @@ impl Restriction for MacosRestriction {
 /// legacy/experimental caveats for `doctor`. Mirrors `linux::posture`.
 #[cfg(target_os = "macos")]
 pub(crate) fn posture() -> super::Posture {
-    let status = probe_sandbox_exec();
+    posture_from_status(probe_sandbox_exec())
+}
+
+#[cfg(target_os = "macos")]
+fn posture_from_status(status: SandboxExecStatus) -> super::Posture {
     let fields = macos_posture_fields(&status);
     let restriction = if fields.supported {
         Some(Arc::new(MacosRestriction::new(status)) as Arc<dyn Restriction>)
@@ -584,6 +588,107 @@ mod tests {
             assert!(f.mechanisms.is_empty(), "no mechanism when unsupported");
             assert_eq!(f.limitations.len(), 1, "one honest limitation");
             assert!(!f.limitations[0].is_empty(), "limitation must be populated");
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[tokio::test]
+    async fn missing_and_unusable_helpers_refuse_cli_and_backend_before_target_start() {
+        use std::ffi::OsString;
+        use std::os::unix::ffi::OsStrExt as _;
+
+        use opi_protocol::execution::v1::frames::{ExecutePayload, InitializePayload};
+        use opi_protocol::execution::v1::{
+            BackendToHost, Bounds, EnvInherit, FailureCode, FailurePhase, HostToBackend,
+            NativeString, ProtocolId, RequestId, WIRE_IDENTITY, encode_line,
+        };
+        use tokio::io::AsyncWriteExt as _;
+
+        use crate::policy::{NetworkPolicy, NoRestriction, Profile};
+
+        for status in [
+            SandboxExecStatus::Missing,
+            SandboxExecStatus::Unusable("injected probe rejection".to_string()),
+        ] {
+            let workspace = tempfile::tempdir().expect("workspace");
+            let marker = workspace.path().join("must-not-start");
+            let target = format!("printf started > '{}'", marker.display());
+            let command = crate::cli::RunCommand {
+                workspace: workspace.path().to_path_buf(),
+                profile: Profile::WorkspaceWrite,
+                network: NetworkPolicy::Deny,
+                program: PathBuf::from("/bin/sh"),
+                args: vec![OsString::from("-c"), OsString::from(&target)],
+            };
+
+            let cli_code =
+                crate::cli::execute_run_command(command, posture_from_status(status.clone())).await;
+            assert_eq!(cli_code, 125, "CLI must refuse {status:?}");
+            assert!(!marker.exists(), "CLI refusal must not start the target");
+
+            let request_id =
+                RequestId::new("macos-helper-refusal".to_string()).expect("request id");
+            let initialize = HostToBackend::Initialize(InitializePayload {
+                request_id: request_id.clone(),
+                deadline_ms: 10_000,
+                adapter_config: serde_json::json!({}),
+                supported_protocols: vec![
+                    ProtocolId::new(WIRE_IDENTITY).expect("protocol identity"),
+                ],
+            });
+            let execute = HostToBackend::Execute(ExecutePayload {
+                request_id,
+                program: NativeString::from_bytes(b"/bin/sh".to_vec()),
+                args: vec![
+                    NativeString::from_bytes(b"-c".to_vec()),
+                    NativeString::from_bytes(target.as_bytes().to_vec()),
+                ],
+                workspace: NativeString::from_bytes(workspace.path().as_os_str().as_bytes()),
+                cwd: NativeString::from_bytes(workspace.path().as_os_str().as_bytes()),
+                timeout_ms: 5_000,
+                env_inherit: EnvInherit::Inherit,
+                env_additions: Default::default(),
+            });
+            let input = format!(
+                "{}\n{}\n",
+                encode_line(&initialize, &Bounds::DEFAULT).expect("initialize frame"),
+                encode_line(&execute, &Bounds::DEFAULT).expect("execute frame"),
+            )
+            .into_bytes();
+            let (mut host, reader) = tokio::io::duplex(input.len());
+            host.write_all(&input).await.expect("write backend input");
+            drop(host);
+            let posture = posture_from_status(status.clone());
+            let mut output = Vec::new();
+            let code = crate::backend::drive(
+                Box::pin(reader),
+                &mut output,
+                Bounds::DEFAULT,
+                posture.supported,
+                &posture.limitations,
+                posture
+                    .restriction
+                    .unwrap_or_else(|| Arc::new(NoRestriction)),
+            )
+            .await;
+            assert_eq!(code, 0, "backend emits a terminal refusal");
+            let frames = output
+                .split(|byte| *byte == b'\n')
+                .filter(|line| !line.is_empty())
+                .map(|line| {
+                    opi_protocol::execution::v1::codec::decode_backend(line)
+                        .expect("valid backend frame")
+                })
+                .collect::<Vec<_>>();
+            let BackendToHost::Failed(failed) = frames.last().expect("terminal frame") else {
+                panic!("expected terminal failed frame, got {frames:?}");
+            };
+            assert_eq!(failed.code, FailureCode::Unavailable);
+            assert_eq!(failed.phase, FailurePhase::Handshake);
+            assert!(
+                !marker.exists(),
+                "backend refusal must not start the target"
+            );
         }
     }
 

@@ -2,7 +2,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::sync::OnceLock;
 
-use opi_ai::test_support::{MockProvider, text_response};
+use opi_ai::test_support::{self, MockProvider, text_response};
 use opi_coding_agent::cli::PackageCommand;
 use opi_coding_agent::config::{
     ExecutionRunMode, ExecutionStrategy, OpiConfig, PermissionDecision,
@@ -221,5 +221,58 @@ async fn interactive_unavailable_fixed_external_shows_stable_startup_refusal_onc
         &messages,
         &calls,
         &expected_message("package_untrusted", remediation),
+    );
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn interactive_tool_failure_diagnostic_survives_provider_recovery() {
+    let _lock = test_lock().await;
+    let workspace = tempfile::tempdir().unwrap();
+    let user = tempfile::tempdir().unwrap();
+    let command = if cfg!(windows) { "exit /B 7" } else { "exit 7" };
+    let provider = MockProvider::new(
+        "mock",
+        vec![
+            test_support::tool_call_response(
+                "local-failure",
+                "bash",
+                &serde_json::json!({"command": command}).to_string(),
+            ),
+            text_response("recovered"),
+        ],
+    );
+    let mut harness = CodingHarness::builder(
+        Box::new(provider),
+        "mock:mock-model".into(),
+        OpiConfig::default(),
+        workspace.path().to_path_buf(),
+        TrustDecision::Trusted,
+    )
+    .global_config_dir(user.path().to_path_buf())
+    .execution_mode(ExecutionRunMode::Interactive)
+    .build();
+    harness.credential_store = Some(Arc::new(KeychainCredentialStore::new(
+        Box::new(FakeKeyringBackend::new()),
+        user.path().to_path_buf(),
+    )));
+
+    let driver = install_interactive_tui_test_driver(["run a failing command", "exit"]).unwrap();
+    run_interactive_tui(
+        harness,
+        "mock:mock-model".into(),
+        "default",
+        Keybindings::default(),
+    )
+    .await
+    .unwrap();
+
+    let rendered = driver.capture().system_messages.join("\n");
+    assert!(
+        rendered.contains("tool::tool_execution_failed"),
+        "tool failure diagnostic must remain visible after provider recovery: {rendered:?}"
+    );
+    assert!(
+        rendered.contains("command exited non-zero"),
+        "the TUI diagnostic must preserve its public message: {rendered:?}"
     );
 }

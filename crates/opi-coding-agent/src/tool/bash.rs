@@ -12,8 +12,10 @@ use serde::{Deserialize, Deserializer, de};
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 
-use super::{BashOpError, BashOperations, BashRequest, BashResult};
-use super::{LOCAL_BASH_OPERATION_DIAGNOSTIC, LocalBashOperations, MAX_BASH_OUTPUT_BYTES};
+#[cfg(test)]
+use super::BashResult;
+use super::{BashExecutionContract, BashOpError, BashOperations, BashRequest};
+use super::{LocalBashOperations, MAX_BASH_OUTPUT_BYTES};
 
 /// Maximum per-call command timeout accepted by the public bash tool.
 pub const MAX_BASH_TIMEOUT_SECS: u64 = 86_400;
@@ -67,7 +69,8 @@ where
 /// Bash tool. A thin caller over the injected [`BashOperations`] backend
 /// (Phase 15 T5 Operations seam). Command construction, spawn, bounded stream
 /// capture, the timeout/cancel/`wait` race, and exit/signal extraction live in
-/// `LocalBashOperations::exec`; this tool maps the returned [`BashResult`] into
+/// `LocalBashOperations::exec`; this tool maps the returned
+/// [`BashResult`](crate::tool::BashResult) into
 /// the agent `ToolResult`, rebuilding the exact pre-15.2 details/diagnostic
 /// shape so existing behavior is preserved byte-for-byte.
 pub struct BashTool {
@@ -222,11 +225,16 @@ impl Tool for BashTool {
                 }
             };
 
-            // Lift the operation-context flags the backend carried in-band.
-            let (cancelled, timed_out, truncated, full_output, kill_error) =
-                lift_operation_context(&backend);
-            let exit_code = backend.exit_code;
-            let signal = backend.signal;
+            let context = &backend.context;
+            let cancelled = context.cancelled;
+            let timed_out = context.timed_out;
+            let truncated = context.truncated;
+            let exit_code = context.exit_code;
+            let signal = context.signal;
+            let full_output = context
+                .full_output
+                .as_ref()
+                .map(|path| path.to_string_lossy().into_owned());
 
             // Content text mirrors the pre-15.2 shape: timeout/cancellation
             // report the cause (the backend discards the killed child's pipes,
@@ -256,10 +264,10 @@ impl Tool for BashTool {
                 timed_out,
                 cancelled,
                 truncated,
-                full_output,
+                full_output.as_deref(),
             ));
             details["signal"] = json!(signal);
-            copy_effective_contract(&backend, &mut details);
+            copy_effective_contract(&context.contract, &mut details);
             // No degraded success state (design: "The adapter either reports its
             // effective contract or the command fails"). A timeout,
             // cancellation, or signal termination is an error even when the
@@ -276,7 +284,7 @@ impl Tool for BashTool {
                 signal,
                 cancelled,
                 timed_out,
-                kill_error,
+                context.kill_error.as_deref(),
             );
             append_backend_diagnostics(&mut result, &backend.diagnostics);
             Ok(result)
@@ -288,54 +296,25 @@ impl Tool for BashTool {
     }
 }
 
-/// Lift the operation-context flags the backend carried in
-/// [`BashResult::diagnostics`] under [`LOCAL_BASH_OPERATION_DIAGNOSTIC`].
-/// Returns `(cancelled, timed_out, truncated, full_output, kill_error)`. Defaults
-/// to `false`/`None` if the backend omitted the context diagnostic.
-fn lift_operation_context(result: &BashResult) -> (bool, bool, bool, Option<&str>, Option<&str>) {
-    let details = result
-        .diagnostics
-        .iter()
-        .find(|d| d.code == LOCAL_BASH_OPERATION_DIAGNOSTIC)
-        .and_then(|d| d.details.as_ref());
-    let flag = |key: &str| {
-        details
-            .and_then(|d| d.get(key))
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false)
-    };
-    let opt_str = |key: &str| details.and_then(|d| d.get(key)).and_then(|v| v.as_str());
-    (
-        flag("cancelled"),
-        flag("timed_out"),
-        flag("truncated"),
-        opt_str("full_output"),
-        opt_str("kill_error"),
-    )
-}
-
-fn copy_effective_contract(result: &BashResult, output: &mut Value) {
-    let Some(context) = result
-        .diagnostics
-        .iter()
-        .find(|diagnostic| diagnostic.code == LOCAL_BASH_OPERATION_DIAGNOSTIC)
-        .and_then(|diagnostic| diagnostic.details.as_ref())
-    else {
-        return;
-    };
-    for key in [
-        "adapter_id",
-        "implementation_version",
-        "target",
-        "protocol",
-        "placement",
-        "guarantee",
-        "policy",
-        "limitations",
+fn copy_effective_contract(contract: &BashExecutionContract, output: &mut Value) {
+    output["placement"] = json!(contract.placement);
+    output["guarantee"] = json!(contract.guarantee);
+    for (key, value) in [
+        ("adapter_id", contract.adapter_id.as_ref()),
+        (
+            "implementation_version",
+            contract.implementation_version.as_ref(),
+        ),
+        ("target", contract.target.as_ref()),
+        ("protocol", contract.protocol.as_ref()),
+        ("policy", contract.policy.as_ref()),
     ] {
-        if let Some(value) = context.get(key) {
-            output[key] = value.clone();
+        if let Some(value) = value {
+            output[key] = json!(value);
         }
+    }
+    if contract.adapter_id.is_some() || !contract.limitations.is_empty() {
+        output["limitations"] = json!(contract.limitations);
     }
 }
 
@@ -372,23 +351,19 @@ pub(crate) fn format_effective_contract(details: &Value) -> Option<String> {
     ))
 }
 
-/// Preserve every backend diagnostic except the private operation-context
-/// carrier, which this wrapper consumes when rebuilding the stable bash
-/// details and execution-failure diagnostic.
+/// Preserve every backend diagnostic after the typed operation context has
+/// been consumed directly from [`BashResult`].
 fn append_backend_diagnostics(
     result: &mut ToolResult,
     diagnostics: &[super::operations::ToolDiagnostic],
 ) {
-    result.diagnostics.extend(
-        diagnostics
-            .iter()
-            .filter(|diagnostic| diagnostic.code != LOCAL_BASH_OPERATION_DIAGNOSTIC)
-            .map(|diagnostic| ToolDiagnostic {
-                code: diagnostic.code.clone(),
-                message: diagnostic.message.clone(),
-                context: diagnostic.details.clone().unwrap_or_else(|| json!({})),
-            }),
-    );
+    result
+        .diagnostics
+        .extend(diagnostics.iter().map(|diagnostic| ToolDiagnostic {
+            code: diagnostic.code.clone(),
+            message: diagnostic.message.clone(),
+            context: diagnostic.details.clone().unwrap_or_else(|| json!({})),
+        }));
 }
 
 fn backend_error_result(

@@ -28,7 +28,9 @@ use opi_coding_agent::execution::{
 use opi_coding_agent::harness::{CodingHarness, ExecutionWiring};
 use opi_coding_agent::package_activation::{ActivatedContribution, ActivationError};
 use opi_coding_agent::policy::{RunMode, ToolRuntimeConfig, ToolSelection};
-use opi_coding_agent::tool::{BashOpError, BashOperations, BashRequest, BashResult};
+use opi_coding_agent::tool::{
+    BashOpError, BashOperationContext, BashOperations, BashRequest, BashResult,
+};
 use opi_tui::{PermissionChoice, PermissionSummary};
 use tokio_util::sync::CancellationToken;
 
@@ -61,8 +63,7 @@ impl BashOperations for RecordingOps {
             Ok(BashResult {
                 stdout: b"local\n".to_vec(),
                 stderr: Vec::new(),
-                exit_code: Some(0),
-                signal: None,
+                context: BashOperationContext::local(Some(0), None),
                 diagnostics: Vec::new(),
             })
         })

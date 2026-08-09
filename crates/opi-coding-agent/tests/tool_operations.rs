@@ -25,9 +25,9 @@ use std::time::Duration;
 use opi_agent::diagnostic::code;
 use opi_agent::tool::Tool;
 use opi_coding_agent::tool::{
-    AccessMode, BashOpError, BashOperations, BashRequest, BashResult, BashTool, EditTool,
-    FileOperations, FsOpError, LocalFileOperations, OpMetadata, PathPolicy, ReadTool,
-    ToolDiagnostic, WriteTool, validate_workspace_path,
+    AccessMode, BashOpError, BashOperationContext, BashOperations, BashRequest, BashResult,
+    BashTool, EditTool, FileOperations, FsOpError, LocalFileOperations, OpMetadata, PathPolicy,
+    ReadTool, ToolDiagnostic, WriteTool, validate_workspace_path,
 };
 use serde_json::json;
 use tokio_util::sync::CancellationToken;
@@ -706,8 +706,8 @@ fn bash_result_carries_stdout_stderr_exit_code_signal_diagnostics() {
     let result = sample_bash_result();
     assert_eq!(result.stdout, b"out");
     assert_eq!(result.stderr, b"err");
-    assert_eq!(result.exit_code, Some(0));
-    assert!(result.signal.is_none());
+    assert_eq!(result.context.exit_code, Some(0));
+    assert!(result.context.signal.is_none());
     assert_eq!(result.diagnostics.len(), 1);
 }
 
@@ -794,7 +794,7 @@ async fn mock_bash_operations_returns_injected_result_through_dyn() {
     };
     let result = dyn_ops.exec(request).await.unwrap();
     assert_eq!(result.stdout, expected.stdout);
-    assert_eq!(result.exit_code, expected.exit_code);
+    assert_eq!(result.context.exit_code, expected.context.exit_code);
 }
 
 #[tokio::test]
@@ -825,8 +825,7 @@ fn sample_bash_result() -> BashResult {
     BashResult {
         stdout: b"out".to_vec(),
         stderr: b"err".to_vec(),
-        exit_code: Some(0),
-        signal: None,
+        context: BashOperationContext::local(Some(0), None),
         diagnostics: vec![ToolDiagnostic {
             code: "test_diagnostic".to_string(),
             message: "sample".to_string(),
@@ -1608,8 +1607,7 @@ impl RecordingBashOps {
             result: BashResult {
                 stdout,
                 stderr: Vec::new(),
-                exit_code: Some(0),
-                signal: None,
+                context: BashOperationContext::local(Some(0), None),
                 diagnostics: Vec::new(),
             },
         }

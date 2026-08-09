@@ -1,4 +1,36 @@
-use std::process::Command;
+use std::process::{Command, ExitStatus};
+
+struct AuditRun {
+    status: ExitStatus,
+    stdout: String,
+    stderr: String,
+}
+
+impl AuditRun {
+    fn success(&self) -> bool {
+        self.status.success()
+    }
+
+    fn issue_codes(&self) -> Vec<String> {
+        serde_json::from_str::<serde_json::Value>(&self.stdout)
+            .ok()
+            .and_then(|report| report["issues"].as_array().cloned())
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|issue| issue["code"].as_str().map(str::to_owned))
+            .collect()
+    }
+
+    fn diagnostic_context(&self) -> String {
+        format!(
+            "status={:?} issue_codes={:?} stdout={} stderr={}",
+            self.status,
+            self.issue_codes(),
+            self.stdout,
+            self.stderr
+        )
+    }
+}
 
 fn workspace_root() -> std::path::PathBuf {
     let crate_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -418,10 +450,7 @@ raise SystemExit(0 if report["ok"] else 1)
     )
 }
 
-fn run_release_audit_with_evidence_lstat_seam(
-    dir: &std::path::Path,
-    mode: &str,
-) -> (bool, String, String) {
+fn run_release_audit_with_evidence_lstat_seam(dir: &std::path::Path, mode: &str) -> AuditRun {
     let harness = r#"
 import importlib.util, json, os, pathlib, sys, types
 
@@ -482,11 +511,11 @@ raise SystemExit(0 if report["ok"] else 1)
         .arg(mode)
         .output()
         .expect("run release audit with evidence lstat seam");
-    (
-        output.status.success(),
-        String::from_utf8_lossy(&output.stdout).into_owned(),
-        String::from_utf8_lossy(&output.stderr).into_owned(),
-    )
+    AuditRun {
+        status: output.status,
+        stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+        stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+    }
 }
 
 const LINUX_TARGET: &str = "x86_64-unknown-linux-gnu";
@@ -1023,9 +1052,17 @@ fn release_audit_rejects_native_scalar_reparse_seams() {
         let dir = tempfile::tempdir().expect("release evidence tempdir");
         write_complete_good_evidence(dir.path());
 
-        let (ok, stdout, stderr) = run_release_audit_with_evidence_lstat_seam(dir.path(), mode);
-        assert!(!ok, "{mode} must fail: stdout={stdout} stderr={stderr}");
-        assert!(stdout.contains("invalid_evidence_entry"), "{stdout}");
+        let run = run_release_audit_with_evidence_lstat_seam(dir.path(), mode);
+        assert!(
+            !run.success(),
+            "{mode} must fail: {}",
+            run.diagnostic_context()
+        );
+        assert!(
+            run.stdout.contains("invalid_evidence_entry"),
+            "{}",
+            run.diagnostic_context()
+        );
     }
 }
 
@@ -1075,9 +1112,13 @@ fn release_audit_rejects_bundle_root_reparse_and_identity_change_seams() {
         let dir = tempfile::tempdir().expect("release evidence tempdir");
         write_complete_good_evidence(dir.path());
 
-        let (ok, stdout, stderr) = run_release_audit_with_evidence_lstat_seam(dir.path(), mode);
-        assert!(!ok, "{mode} must fail: stdout={stdout} stderr={stderr}");
-        assert!(stdout.contains(code), "{stdout}");
+        let run = run_release_audit_with_evidence_lstat_seam(dir.path(), mode);
+        assert!(
+            !run.success(),
+            "{mode} must fail: {}",
+            run.diagnostic_context()
+        );
+        assert!(run.stdout.contains(code), "{}", run.diagnostic_context());
     }
 }
 
@@ -2154,10 +2195,7 @@ raise SystemExit(0 if report["ok"] else 1)
     )
 }
 
-fn run_phase_exit_audit_with_bundle_root_lstat_seam(
-    dir: &std::path::Path,
-    mode: &str,
-) -> (bool, String, String) {
+fn run_phase_exit_audit_with_bundle_root_lstat_seam(dir: &std::path::Path, mode: &str) -> AuditRun {
     let harness = r#"
 import importlib.util, json, os, pathlib, stat, sys, types
 
@@ -2212,11 +2250,11 @@ raise SystemExit(0 if report["ok"] else 1)
         .arg(EVIDENCE_COMMIT_SHA)
         .output()
         .expect("run phase-exit audit with bundle-root lstat seam");
-    (
-        output.status.success(),
-        String::from_utf8_lossy(&output.stdout).into_owned(),
-        String::from_utf8_lossy(&output.stderr).into_owned(),
-    )
+    AuditRun {
+        status: output.status,
+        stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+        stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+    }
 }
 
 fn run_evidence_snapshot_lstat_symlink_seam() -> serde_json::Value {
@@ -2542,11 +2580,22 @@ fn phase_exit_audit_rejects_reparse_bundle_root_seam() {
     let dir = tempfile::tempdir().expect("phase-exit evidence tempdir");
     write_complete_phase_exit_evidence(dir.path());
 
-    let (ok, stdout, stderr) =
-        run_phase_exit_audit_with_bundle_root_lstat_seam(dir.path(), "reparse");
-    assert!(!ok, "reparse bundle root must fail: {stdout} {stderr}");
-    assert!(stdout.contains("invalid_evidence_bundle"), "{stdout}");
-    assert!(stdout.contains("\"test_root_lstat_calls\": 1"), "{stdout}");
+    let run = run_phase_exit_audit_with_bundle_root_lstat_seam(dir.path(), "reparse");
+    assert!(
+        !run.success(),
+        "reparse bundle root must fail: {}",
+        run.diagnostic_context()
+    );
+    assert!(
+        run.stdout.contains("invalid_evidence_bundle"),
+        "{}",
+        run.diagnostic_context()
+    );
+    assert!(
+        run.stdout.contains("\"test_root_lstat_calls\": 1"),
+        "{}",
+        run.diagnostic_context()
+    );
 }
 
 #[test]
@@ -2554,17 +2603,22 @@ fn phase_exit_audit_rejects_bundle_root_identity_change() {
     let dir = tempfile::tempdir().expect("phase-exit evidence tempdir");
     write_complete_phase_exit_evidence(dir.path());
 
-    let (ok, stdout, stderr) =
-        run_phase_exit_audit_with_bundle_root_lstat_seam(dir.path(), "identity-mismatch");
+    let run = run_phase_exit_audit_with_bundle_root_lstat_seam(dir.path(), "identity-mismatch");
     assert!(
-        !ok,
-        "replaced bundle root must fail: stdout={stdout} stderr={stderr}"
+        !run.success(),
+        "replaced bundle root must fail: {}",
+        run.diagnostic_context()
     );
     assert!(
-        stdout.contains("evidence_bundle_identity_mismatch"),
-        "{stdout}"
+        run.stdout.contains("evidence_bundle_identity_mismatch"),
+        "{}",
+        run.diagnostic_context()
     );
-    assert!(stdout.contains("\"test_root_lstat_calls\": 2"), "{stdout}");
+    assert!(
+        run.stdout.contains("\"test_root_lstat_calls\": 2"),
+        "{}",
+        run.diagnostic_context()
+    );
 }
 
 #[cfg(unix)]

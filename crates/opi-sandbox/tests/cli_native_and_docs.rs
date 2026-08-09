@@ -10,16 +10,6 @@ use opi_sandbox::cli::{build_request, execute, parse_run};
 use opi_sandbox::process_tree::TreeGuard;
 use opi_sandbox::{NoRestriction, SandboxPolicy, SandboxRunner};
 
-fn source_section<'a>(source: &'a str, start: &str, end: &str) -> &'a str {
-    source
-        .split_once(start)
-        .unwrap_or_else(|| panic!("missing source section start: {start}"))
-        .1
-        .split_once(end)
-        .unwrap_or_else(|| panic!("missing source section end: {end}"))
-        .0
-}
-
 #[cfg(target_os = "linux")]
 #[test]
 fn real_cli_preserves_non_utf8_workspace_and_target_argument() {
@@ -227,115 +217,23 @@ async fn unsupported_platform_refusal_wins_before_workspace_validation() {
 }
 
 #[test]
-fn help_describes_shipped_native_platform_posture() {
+fn help_exposes_the_stable_run_backend_and_doctor_grammar() {
     let output = Command::new(env!("CARGO_BIN_EXE_opi-sandbox"))
         .arg("--help")
         .output()
         .expect("run opi-sandbox --help");
     assert!(output.status.success());
     let stdout = String::from_utf8(output.stdout).expect("help is UTF-8");
-    assert_eq!(
-        stdout.lines().nth(1),
-        Some(
-            "Standalone command-execution sandbox (native restriction on supported Linux/macOS; Windows run is refused)."
-        )
-    );
-    assert!(!stdout.contains("lands in later tasks"));
-}
-
-#[test]
-fn source_docs_pin_exit_mapping_and_platform_posture() {
-    let main = include_str!("../src/main.rs");
-    assert!(main.contains("std::env::args_os()"));
-
-    let cli = include_str!("../src/cli.rs");
-    assert!(cli.contains(
-        "| nonexistent `--workspace` / derived cwd after the supported-platform posture gate (`InvalidRequest`) | `2` |"
-    ));
-    assert!(
-        cli.contains("| unsupported platform (wins before workspace/cwd validation) | `125` |")
-    );
-    assert!(!cli.contains("| nonexistent `--workspace` / derived cwd (`InvalidRequest`) | `2` |"));
-    assert!(!cli.contains("unreachable from the human CLI"));
-    assert!(!cli.contains("16.11.2: every platform is unsupported"));
-    assert!(!cli.contains("empty in 16.11.2"));
-    assert!(
-        cli.contains(
-            "The mechanism names installed by a supported posture; empty when unsupported."
-        )
-    );
-
-    let platform = include_str!("../src/platform/mod.rs");
-    assert!(
-        platform
-            .contains("Linux and macOS install native restrictions when available; Windows has L0")
-    );
-    assert!(!platform.contains("macOS remains"));
-    assert!(!platform.contains("\"not yet wired in this build\" (macOS, temporary)"));
-    assert!(!platform.contains("runs are unrestricted under L0 supervision only"));
-    assert!(platform.contains(
-        "native confinement is not supported on this platform; the human CLI refuses before target start"
-    ));
-}
-
-#[test]
-fn source_docs_pin_leaf_refusal_and_current_restriction_mechanisms() {
-    let linux = include_str!("../src/platform/linux.rs");
-    let linux_limitations = source_section(linux, "fn limitations(", "\n#[cfg(test)]");
-    assert!(linux_limitations.contains(
-        "Landlock is absent or disabled on this kernel; the requested restriction cannot be established, so the target is refused before start"
-    ));
-    assert!(linux_limitations.contains(
-        "the host seccomp architecture is unsupported; the requested restriction cannot be established, so the target is refused before start"
-    ));
-    assert!(!linux_limitations.contains("runs are unrestricted"));
-
-    let macos = include_str!("../src/platform/macos.rs");
-    let unsupported_macos = source_section(
-        macos,
-        "fn unsupported_limitation(",
-        "\n/// The pure, host-independent fields",
-    );
-    assert!(unsupported_macos.contains(
-        "canonical /usr/bin/sandbox-exec is missing; the requested restriction cannot be established, so the target is refused before start"
-    ));
-    assert!(unsupported_macos.contains(
-        "canonical /usr/bin/sandbox-exec did not pass the runtime probe; the requested restriction cannot be established, so the target is refused before start"
-    ));
-    assert!(!unsupported_macos.contains("runs are unrestricted"));
-    assert!(!unsupported_macos.contains("PATH"));
-    assert!(!macos.contains("on `PATH`"));
-    assert!(!macos.contains("on PATH"));
-
-    let macos_probe = source_section(
-        macos,
-        "const SANDBOX_EXEC_PATH: &str",
-        "\n/// The macOS native",
-    );
-    assert!(macos_probe.starts_with(" = \"/usr/bin/sandbox-exec\";"));
-    assert!(macos_probe.contains("std::process::Command::new(&bin)"));
-    assert!(!macos_probe.contains("Command::new(\"sandbox-exec\")"));
-
-    let helper = include_str!("../src/helper.rs");
-    let helper_header = source_section(helper, "//! The atomic helper", "\n#![forbid")
-        .replace("\r\n", "\n")
-        .replace("\n//! ", " ");
-    assert!(
-        helper_header.contains(
-            "Supported Linux and macOS postures install their current native restrictions"
-        )
-    );
-    assert!(!helper.contains("lands in 16.13"));
-    assert!(!helper.contains("lands in 16.14.1"));
-    assert!(!helper.contains("is owned by 16.13"));
-
-    let policy = include_str!("../src/policy.rs");
-    let policy_header = source_section(policy, "//! Sandbox policy", "\n#![forbid")
-        .replace("\r\n", "\n")
-        .replace("\n//! ", " ");
-    assert!(policy_header.contains(
-        "The shipped Linux and macOS native implementations provide the confinement mechanisms"
-    ));
-    assert!(!policy.contains("lands in task 16.13"));
-    assert!(!policy.contains("lands in 16.14.1"));
+    for token in [
+        "opi-sandbox run --workspace <PATH>",
+        "--profile workspace-write",
+        "--network <deny|allow>",
+        "opi-sandbox backend --stdio",
+        "opi-sandbox doctor [--json]",
+    ] {
+        assert!(
+            stdout.contains(token),
+            "help is missing grammar token {token:?}"
+        );
+    }
 }

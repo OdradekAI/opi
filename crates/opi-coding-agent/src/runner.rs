@@ -432,9 +432,11 @@ impl NonInteractiveRunner {
         let text_parts: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
         let persist_errors: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
         let execution_contracts: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+        let tool_diagnostics: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
         let tp = text_parts.clone();
         let pe = persist_errors.clone();
         let ec = execution_contracts.clone();
+        let td = tool_diagnostics.clone();
         self.harness.subscribe(Box::new(move |event| match event {
             AgentEvent::MessageUpdate {
                 assistant_event, ..
@@ -451,14 +453,25 @@ impl NonInteractiveRunner {
                 }
             }
             AgentEvent::ToolExecutionEnd {
-                tool_name, details, ..
-            } if tool_name == "bash" => {
-                if let Some(contract) = details
-                    .as_ref()
-                    .and_then(crate::tool::format_effective_contract)
+                tool_name,
+                details,
+                diagnostics,
+                ..
+            } => {
+                if tool_name == "bash"
+                    && let Some(contract) = details
+                        .as_ref()
+                        .and_then(crate::tool::format_effective_contract)
                     && let Ok(mut guard) = ec.lock()
                 {
                     guard.push(contract);
+                }
+                if let Ok(mut guard) = td.lock() {
+                    guard.extend(
+                        diagnostics
+                            .iter()
+                            .map(crate::diagnostic_bridge::format_tool_diagnostic),
+                    );
                 }
             }
             _ => {}
@@ -468,12 +481,14 @@ impl NonInteractiveRunner {
         let persist_stderr = format_persist_errors(&persist_errors);
         let startup_prefix = startup_diagnostics_stderr_prefix(&self.harness);
         let contract_stderr = format_execution_contracts(&execution_contracts);
+        let tool_stderr = format_tool_diagnostics(&tool_diagnostics);
 
         match prompt_result {
             Ok(messages) => {
                 if let Some(error) = find_error_message(&messages) {
                     let mut stderr = startup_prefix.clone();
                     stderr.push_str(&contract_stderr);
+                    stderr.push_str(&tool_stderr);
                     stderr.push_str(&error);
                     stderr.push_str(&persist_stderr);
                     return NonInteractiveResult {
@@ -486,14 +501,16 @@ impl NonInteractiveRunner {
                 let stdout = text_parts.lock().map(|g| g.join("")).unwrap_or_default();
                 NonInteractiveResult {
                     stdout,
-                    stderr: format!("{startup_prefix}{contract_stderr}{persist_stderr}"),
+                    stderr: format!(
+                        "{startup_prefix}{contract_stderr}{tool_stderr}{persist_stderr}"
+                    ),
                     exit_code: ExitCode::Success as i32,
                 }
             }
             Err(error) => NonInteractiveResult {
                 stdout: String::new(),
                 stderr: format!(
-                    "{startup_prefix}{contract_stderr}{}",
+                    "{startup_prefix}{contract_stderr}{tool_stderr}{}",
                     stderr_for_agent_error(&error, &persist_stderr)
                 ),
                 exit_code: exit_code_for_agent_error(&error),
@@ -674,9 +691,11 @@ impl NonInteractiveRunner {
         let text_parts: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
         let persist_errors: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
         let execution_contracts: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+        let tool_diagnostics: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
         let tp = text_parts.clone();
         let pe = persist_errors.clone();
         let ec = execution_contracts.clone();
+        let td = tool_diagnostics.clone();
         self.harness.subscribe(Box::new(move |event| match event {
             AgentEvent::MessageUpdate {
                 assistant_event, ..
@@ -693,14 +712,25 @@ impl NonInteractiveRunner {
                 }
             }
             AgentEvent::ToolExecutionEnd {
-                tool_name, details, ..
-            } if tool_name == "bash" => {
-                if let Some(contract) = details
-                    .as_ref()
-                    .and_then(crate::tool::format_effective_contract)
+                tool_name,
+                details,
+                diagnostics,
+                ..
+            } => {
+                if tool_name == "bash"
+                    && let Some(contract) = details
+                        .as_ref()
+                        .and_then(crate::tool::format_effective_contract)
                     && let Ok(mut guard) = ec.lock()
                 {
                     guard.push(contract);
+                }
+                if let Ok(mut guard) = td.lock() {
+                    guard.extend(
+                        diagnostics
+                            .iter()
+                            .map(crate::diagnostic_bridge::format_tool_diagnostic),
+                    );
                 }
             }
             _ => {}
@@ -716,6 +746,7 @@ impl NonInteractiveRunner {
         // text mode preserves the same stable codes as NDJSON/RPC.
         let startup_prefix = startup_diagnostics_stderr_prefix(&self.harness);
         let contract_stderr = format_execution_contracts(&execution_contracts);
+        let tool_stderr = format_tool_diagnostics(&tool_diagnostics);
 
         match prompt_result {
             Ok(messages) => {
@@ -723,6 +754,7 @@ impl NonInteractiveRunner {
                 if let Some(error) = find_error_message(&messages) {
                     let mut stderr = startup_prefix.clone();
                     stderr.push_str(&contract_stderr);
+                    stderr.push_str(&tool_stderr);
                     stderr.push_str(&error);
                     stderr.push_str(&persist_stderr);
                     return NonInteractiveResult {
@@ -735,14 +767,16 @@ impl NonInteractiveRunner {
                 let stdout = text_parts.lock().map(|g| g.join("")).unwrap_or_default();
                 NonInteractiveResult {
                     stdout,
-                    stderr: format!("{startup_prefix}{contract_stderr}{persist_stderr}"),
+                    stderr: format!(
+                        "{startup_prefix}{contract_stderr}{tool_stderr}{persist_stderr}"
+                    ),
                     exit_code: ExitCode::Success as i32,
                 }
             }
             Err(error) => NonInteractiveResult {
                 stdout: String::new(),
                 stderr: format!(
-                    "{startup_prefix}{contract_stderr}{}",
+                    "{startup_prefix}{contract_stderr}{tool_stderr}{}",
                     stderr_for_agent_error(&error, &persist_stderr)
                 ),
                 exit_code: exit_code_for_agent_error(&error),
@@ -762,6 +796,18 @@ fn format_execution_contracts(contracts: &Arc<Mutex<Vec<String>>>) -> String {
             contracts
                 .iter()
                 .map(|contract| format!("{contract}\n"))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn format_tool_diagnostics(diagnostics: &Arc<Mutex<Vec<String>>>) -> String {
+    diagnostics
+        .lock()
+        .map(|diagnostics| {
+            diagnostics
+                .iter()
+                .map(|diagnostic| format!("{diagnostic}\n"))
                 .collect()
         })
         .unwrap_or_default()

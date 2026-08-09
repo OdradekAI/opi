@@ -46,12 +46,13 @@ use opi_protocol::execution::v1::{Bounds, EnvInherit, NativeString, ProtocolId, 
 use crate::config::{ExecutionConfig, ExecutionRunMode, ExecutionStrategy, PermissionDecision};
 use crate::package_activation::{ActivatedContribution, ActivationError, PackageActivationStore};
 use crate::tool::{
-    BashOpError, BashOperations, BashRequest, BashResult, LOCAL_BASH_OPERATION_DIAGNOSTIC,
-    ToolDiagnostic,
+    BashExecutionContract, BashOpError, BashOperationContext, BashOperations, BashRequest,
+    BashResult, ToolDiagnostic, finalize_complete_bash_output,
 };
 
 use opi_tui::{PermissionChoice, PermissionSummary};
 
+use super::CLEANUP_REPORT_GRACE;
 use super::failure::{ExecutionFailure, UnavailableDetail};
 use super::permission::{
     InteractivePermissionBroker, LOCAL_ADAPTER_ID, PermissionManager, PermissionPolicy,
@@ -157,16 +158,6 @@ pub(crate) mod construction_probe {
 /// backend's responsibility per the v1 wire); this code lets embedders match them.
 const BACKEND_DIAGNOSTIC_CODE: &str = "opi.execution.backend_diagnostic";
 
-/// Grace granted to the backend to report a terminal cleanup state. Mirrors
-/// `execution::protocol_host::CLEANUP_REPORT_GRACE` (1500ms): the host sends
-/// `cancel` at `deadline - CLEANUP_REPORT_GRACE`. Setting the host deadline to
-/// `command_timeout + CLEANUP_REPORT_GRACE` aligns the host's cancel point with
-/// the `execute.timeout_ms` sent to the backend, so the host never pre-empts a
-/// command that still fits the configured timeout (audit FL25: no host/backend
-/// timeout race). `protocol_host.rs` is owned by 16.7 (not edited here), so this
-/// mirrors its constant rather than re-exporting it.
-const CLEANUP_REPORT_GRACE: Duration = Duration::from_millis(1500);
-
 // =========================================================================
 // IdentitySource — injectable activation seam
 // =========================================================================
@@ -181,7 +172,8 @@ const CLEANUP_REPORT_GRACE: Duration = Duration::from_millis(1500);
 /// [`ProcessCommandAdapter::exec`] offloads it via `spawn_blocking`.
 pub trait IdentitySource: Send + Sync {
     /// Resolve + revalidate the named package's executable contribution
-    /// immediately before a process start. Returns metadata only (no spawn).
+    /// immediately before a process start. Returns metadata plus immutable
+    /// validated executable launch material (no spawn).
     fn activate(
         &self,
         name: &str,
@@ -684,78 +676,42 @@ impl BashOperations for ProcessCommandAdapter {
 // Outcome + error mapping
 // =========================================================================
 
-/// Map a terminal in-band [`CompletedOutcome`] to a [`BashResult`]. Emits the
-/// local `LOCAL_BASH_OPERATION_DIAGNOSTIC` operation-context diagnostic carrying
-/// `exit_code`/`signal`/`cancelled`/`timed_out` so `bash.rs`'s `lift_operation_context`
-/// treats the routed backend as a transparent drop-in (no bash.rs edit on the
-/// success path), then appends backend-reported diagnostics under
-/// [`BACKEND_DIAGNOSTIC_CODE`].
+/// Map a terminal in-band [`CompletedOutcome`] to a [`BashResult`], applying the
+/// same preview/full-output policy as local execution.
 fn completed_outcome_to_bash_result(outcome: CompletedOutcome) -> BashResult {
-    let mut diagnostics: Vec<ToolDiagnostic> = Vec::with_capacity(outcome.diagnostics.len() + 1);
-    diagnostics.push(operation_context_diagnostic(
-        outcome.exit.map(|e| e as i32),
-        outcome.signal.map(|signal| signal as i32),
-        outcome.cancelled,
-        outcome.timed_out,
-        &outcome.ready,
-        &outcome.started,
-    ));
-    for diagnostic in outcome.diagnostics {
-        diagnostics.push(ToolDiagnostic {
+    let output = finalize_complete_bash_output(outcome.stdout, outcome.stderr);
+    let diagnostics = outcome
+        .diagnostics
+        .into_iter()
+        .map(|diagnostic| ToolDiagnostic {
             code: BACKEND_DIAGNOSTIC_CODE.to_string(),
             message: diagnostic.message,
             details: None,
-        });
-    }
+        })
+        .collect();
     BashResult {
-        stdout: outcome.stdout,
-        stderr: outcome.stderr,
-        exit_code: outcome.exit.map(|e| e as i32),
-        signal: outcome.signal.map(|s| s as i32),
+        stdout: output.stdout,
+        stderr: output.stderr,
+        context: BashOperationContext {
+            exit_code: outcome.exit.map(|exit| exit as i32),
+            signal: outcome.signal.map(|signal| signal as i32),
+            cancelled: outcome.cancelled,
+            timed_out: outcome.timed_out,
+            truncated: output.truncated,
+            full_output: output.full_output,
+            kill_error: None,
+            contract: BashExecutionContract {
+                placement: outcome.started.placement,
+                guarantee: outcome.started.guarantee,
+                adapter_id: Some(outcome.ready.implementation.as_str().to_string()),
+                implementation_version: Some(outcome.ready.implementation_version),
+                target: Some(outcome.ready.target.as_str().to_string()),
+                protocol: Some(outcome.ready.selected_protocol.as_str().to_string()),
+                policy: Some(outcome.started.policy),
+                limitations: outcome.started.limitations,
+            },
+        },
         diagnostics,
-    }
-}
-
-/// Build the local operation-context [`ToolDiagnostic`] (mirrors
-/// `operations::bash_operation_context_diagnostic` for the routed path).
-/// `command_included` is always false (commands may carry secrets); `truncated`
-/// is always false here because output bounding is the host's responsibility and
-/// a truncated external stream surfaces as a protocol violation, not an
-/// in-band result.
-fn operation_context_diagnostic(
-    exit_code: Option<i32>,
-    signal: Option<i32>,
-    cancelled: bool,
-    timed_out: bool,
-    ready: &super::ReadyReport,
-    started: &super::StartedReport,
-) -> ToolDiagnostic {
-    let message = if cancelled {
-        "command cancelled"
-    } else if timed_out {
-        "command timed out"
-    } else {
-        "command executed"
-    };
-    ToolDiagnostic {
-        code: LOCAL_BASH_OPERATION_DIAGNOSTIC.to_string(),
-        message: message.to_string(),
-        details: Some(serde_json::json!({
-            "exit_code": exit_code,
-            "signal": signal,
-            "cancelled": cancelled,
-            "timed_out": timed_out,
-            "truncated": false,
-            "command_included": false,
-            "adapter_id": ready.implementation.as_str(),
-            "implementation_version": ready.implementation_version,
-            "target": ready.target.as_str(),
-            "protocol": ready.selected_protocol.as_str(),
-            "placement": started.placement,
-            "guarantee": started.guarantee,
-            "policy": started.policy,
-            "limitations": started.limitations,
-        })),
     }
 }
 
@@ -763,17 +719,10 @@ fn operation_context_diagnostic(
 /// [`BashOperations`] boundary.
 ///
 /// The stable code rides into the agent `ToolResult` via a [`ToolDiagnostic`]
-/// whose `code` is the stable literal: `bash.rs`'s `append_backend_diagnostics`
-/// lifts `error.diagnostics()` (every code except `LOCAL_BASH_OPERATION_DIAGNOSTIC`)
-/// into the result, and `root_cause()` unwraps the [`BashOpError::BackendFailure`]
-/// wrapper to its `Other` source for the user-facing message.
-///
-/// INVARIANT: no [`ExecutionFailure`] code equals
-/// `LOCAL_BASH_OPERATION_DIAGNOSTIC` (`"opi.operations.bash.operation_context"`),
-/// or `bash.rs`'s lift filter would drop it. The 14 stable execution codes never
-/// collide with that marker; this is a cross-module coupling between this mapper
-/// and `bash.rs`'s filter — a future `ExecutionFailure` variant must keep out of
-/// that namespace.
+/// whose `code` is the stable literal: `bash.rs`'s
+/// `append_backend_diagnostics` lifts `error.diagnostics()` into the result,
+/// and `root_cause()` unwraps the [`BashOpError::BackendFailure`] wrapper to its
+/// `Other` source for the user-facing message.
 fn exec_failure_to_bash_op_error(failure: ExecutionFailure) -> BashOpError {
     let code = failure.code();
     let mut details = serde_json::json!({
@@ -958,23 +907,64 @@ mod tests {
 
     #[test]
     fn routed_operation_context_carries_signal() {
-        let ready = crate::execution::ReadyReport {
-            selected_protocol: ProtocolId::new(WIRE_IDENTITY).unwrap(),
-            implementation: opi_protocol::execution::v1::ImplementationId::new("opi-sandbox")
-                .unwrap(),
-            implementation_version: "1.0.0".to_string(),
-            target: opi_protocol::execution::v1::TargetId::new("test-target"),
-        };
-        let diagnostic = operation_context_diagnostic(
-            None,
-            Some(9),
-            false,
-            false,
-            &ready,
-            &crate::execution::StartedReport::default(),
-        );
+        let result = completed_outcome_to_bash_result(CompletedOutcome {
+            ready: crate::execution::ReadyReport {
+                selected_protocol: ProtocolId::new(WIRE_IDENTITY).unwrap(),
+                implementation: opi_protocol::execution::v1::ImplementationId::new("opi-sandbox")
+                    .unwrap(),
+                implementation_version: "1.0.0".to_string(),
+                target: opi_protocol::execution::v1::TargetId::new("test-target"),
+            },
+            started: crate::execution::StartedReport::default(),
+            exit: None,
+            signal: Some(9),
+            timed_out: false,
+            cancelled: false,
+            cleanup: opi_protocol::execution::v1::CleanupState::Confirmed,
+            stdout: Vec::new(),
+            stderr: Vec::new(),
+            diagnostics: Vec::new(),
+        });
 
-        assert_eq!(diagnostic.details.unwrap()["signal"], 9);
+        assert_eq!(result.context.signal, Some(9));
+    }
+
+    #[test]
+    fn routed_output_cap_plus_one_is_truncated_and_byte_recoverable() {
+        let mut complete = vec![b'a'; crate::tool::MAX_BASH_OUTPUT_BYTES];
+        complete.push(b'z');
+        let result = completed_outcome_to_bash_result(CompletedOutcome {
+            ready: crate::execution::ReadyReport {
+                selected_protocol: ProtocolId::new(WIRE_IDENTITY).unwrap(),
+                implementation: opi_protocol::execution::v1::ImplementationId::new("opi-sandbox")
+                    .unwrap(),
+                implementation_version: "1.0.0".to_string(),
+                target: opi_protocol::execution::v1::TargetId::new("test-target"),
+            },
+            started: crate::execution::StartedReport {
+                placement: "host".to_string(),
+                guarantee: "restricted".to_string(),
+                policy: "strict".to_string(),
+                limitations: Vec::new(),
+            },
+            exit: Some(0),
+            signal: None,
+            timed_out: false,
+            cancelled: false,
+            cleanup: opi_protocol::execution::v1::CleanupState::Confirmed,
+            stdout: complete.clone(),
+            stderr: Vec::new(),
+            diagnostics: Vec::new(),
+        });
+
+        assert_eq!(result.stdout.len(), crate::tool::MAX_BASH_OUTPUT_BYTES);
+        assert!(result.context.truncated);
+        let path = result
+            .context
+            .full_output
+            .expect("routed truncation must retain complete bytes");
+        assert_eq!(std::fs::read(&path).unwrap(), complete);
+        std::fs::remove_file(path).unwrap();
     }
 
     #[test]
@@ -1027,9 +1017,6 @@ mod tests {
                 BashOpError::Other { message } => assert_eq!(message, expected),
                 other => panic!("root cause must be Other, got {other:?}"),
             }
-            // The stable-code diagnostic survives (never equals the marker that
-            // bash.rs filters out).
-            assert_ne!(expected, LOCAL_BASH_OPERATION_DIAGNOSTIC);
             assert!(
                 err.diagnostics().iter().any(|d| d.code == expected),
                 "diagnostic with code {expected:?} must survive the mapping for {expected:?}"

@@ -111,7 +111,8 @@ pub fn resume_child(child_pid: u32) -> Result<(), AttachError> {
 /// Redacted L0 assignment/termination failure. Carries only a `{layer, reason}`
 /// pair — no command text, paths, env, or secrets — so it can flow unchanged
 /// into the stable `CODE_PROCESS_TREE_DEGRADED` diagnostic.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, thiserror::Error)]
+#[error("L0 attach failed ({layer}): {reason}")]
 pub struct AttachError {
     pub layer: &'static str,
     pub reason: crate::diagnostics::SandboxReason,
@@ -137,14 +138,6 @@ impl AttachError {
         )
     }
 }
-
-impl std::fmt::Display for AttachError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "L0 attach failed ({}): {}", self.layer, self.reason)
-    }
-}
-
-impl std::error::Error for AttachError {}
 
 /// Outcome of a [`TreeGuard::terminate`] call, used by the Operations exec path
 /// to surface the right diagnostic without inspecting the guard's interior.

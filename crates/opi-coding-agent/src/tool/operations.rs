@@ -220,22 +220,76 @@ pub struct BashRequest {
     pub backend: Option<String>,
 }
 
+/// Redaction-safe effective execution contract reported by a bash backend.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BashExecutionContract {
+    pub placement: String,
+    pub guarantee: String,
+    pub adapter_id: Option<String>,
+    pub implementation_version: Option<String>,
+    pub target: Option<String>,
+    pub protocol: Option<String>,
+    pub policy: Option<String>,
+    pub limitations: Vec<String>,
+}
+
+impl BashExecutionContract {
+    pub fn local() -> Self {
+        Self {
+            placement: "host".to_string(),
+            guarantee: "supervised".to_string(),
+            adapter_id: None,
+            implementation_version: None,
+            target: None,
+            protocol: None,
+            policy: None,
+            limitations: Vec::new(),
+        }
+    }
+}
+
+/// Typed operation context shared by local and routed bash backends.
+///
+/// Keeping these fields in the result contract prevents backend state from
+/// being smuggled through diagnostics and makes omission a compile-time error
+/// for every [`BashOperations`] implementation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BashOperationContext {
+    pub exit_code: Option<i32>,
+    pub signal: Option<i32>,
+    pub cancelled: bool,
+    pub timed_out: bool,
+    pub truncated: bool,
+    pub full_output: Option<PathBuf>,
+    pub kill_error: Option<String>,
+    pub contract: BashExecutionContract,
+}
+
+impl BashOperationContext {
+    pub fn local(exit_code: Option<i32>, signal: Option<i32>) -> Self {
+        Self {
+            exit_code,
+            signal,
+            cancelled: false,
+            timed_out: false,
+            truncated: false,
+            full_output: None,
+            kill_error: None,
+            contract: BashExecutionContract::local(),
+        }
+    }
+}
+
 /// Bash exec result. Exit-nonzero, timeout, and cancellation are represented
-/// here IN-BAND (not as `Err(BashOpError)`): `exit_code` is `None` on
-/// timeout/cancellation/signal-death, `Some(code)` on clean exit. The 15.2
-/// BashTool wrapper lifts these fields into the agent-loop `ToolResult`
-/// details block. Field set matches the Phase-15 spec contract.
+/// here IN-BAND (not as `Err(BashOpError)`) through [`BashOperationContext`].
 #[derive(Debug, Clone)]
 pub struct BashResult {
     /// Drained stdout bytes.
     pub stdout: Vec<u8>,
     /// Drained stderr bytes.
     pub stderr: Vec<u8>,
-    /// `status.code()`; `None` on signal-death / timeout / cancellation.
-    pub exit_code: Option<i32>,
-    /// Unix signal number if the process was terminated by a signal;
-    /// `None` on non-Unix hosts and on clean exit.
-    pub signal: Option<i32>,
+    /// Required typed execution state and effective contract.
+    pub context: BashOperationContext,
     /// Non-fatal operation warnings (kill_error, output-spill failure, etc.).
     pub diagnostics: Vec<ToolDiagnostic>,
 }
@@ -822,15 +876,6 @@ where
 // in 15.2 so the bounded capture lives inside `LocalBashOperations::exec`.
 pub const MAX_BASH_OUTPUT_BYTES: usize = 64 * 1024; // 64 KiB
 
-/// Local diagnostic code carried in [`BashResult::diagnostics`] to surface the
-/// operation-context flags the 15.2 `BashTool` wrapper lifts into the agent
-/// `ToolResult`. Distinct from `opi_agent` diagnostic codes: the Operations
-/// contract is self-contained (it does not pull in opi-agent tool-result
-/// types), and the wrapper remaps this to `CODE_TOOL_EXECUTION_FAILED`. Exactly
-/// one such diagnostic is emitted on every in-band [`BashResult`] (Done,
-/// TimedOut, Cancelled); spawn/wait failures route through `Err(BashOpError)`.
-pub const LOCAL_BASH_OPERATION_DIAGNOSTIC: &str = "opi.operations.bash.operation_context";
-
 /// Local [`BashOperations`] backend. Owns the bash spawn path; the bounded
 /// `StreamCapture`, timeout/cancel/`wait` race, and exit/signal extraction all
 /// live here, and `BashTool::execute` is a thin caller that maps the
@@ -943,47 +988,39 @@ impl BashOperations for LocalBashOperations {
                 super::supervision::SupervisionKind::Cancelled { kill_error } => {
                     cleanup_spill(&mut out_cap);
                     cleanup_spill(&mut err_cap);
-                    let diag = bash_operation_context_diagnostic(
-                        None,
-                        None,
-                        true,
-                        false,
-                        false,
-                        None,
-                        kill_error.as_ref().map(|e| e.to_string()).as_deref(),
-                    );
                     Ok(BashResult {
                         stdout: Vec::new(),
                         stderr: Vec::new(),
-                        exit_code: None,
-                        signal: None,
-                        diagnostics: vec![diag]
-                            .into_iter()
-                            .chain(degraded_diagnostics.iter().cloned())
-                            .collect(),
+                        context: BashOperationContext {
+                            exit_code: None,
+                            signal: None,
+                            cancelled: true,
+                            timed_out: false,
+                            truncated: false,
+                            full_output: None,
+                            kill_error: kill_error.as_ref().map(ToString::to_string),
+                            contract: BashExecutionContract::local(),
+                        },
+                        diagnostics: degraded_diagnostics,
                     })
                 }
                 super::supervision::SupervisionKind::TimedOut { kill_error } => {
                     cleanup_spill(&mut out_cap);
                     cleanup_spill(&mut err_cap);
-                    let diag = bash_operation_context_diagnostic(
-                        None,
-                        None,
-                        false,
-                        true,
-                        false,
-                        None,
-                        kill_error.as_ref().map(|e| e.to_string()).as_deref(),
-                    );
                     Ok(BashResult {
                         stdout: Vec::new(),
                         stderr: Vec::new(),
-                        exit_code: None,
-                        signal: None,
-                        diagnostics: vec![diag]
-                            .into_iter()
-                            .chain(degraded_diagnostics.iter().cloned())
-                            .collect(),
+                        context: BashOperationContext {
+                            exit_code: None,
+                            signal: None,
+                            cancelled: false,
+                            timed_out: true,
+                            truncated: false,
+                            full_output: None,
+                            kill_error: kill_error.as_ref().map(ToString::to_string),
+                            contract: BashExecutionContract::local(),
+                        },
+                        diagnostics: degraded_diagnostics,
                     })
                 }
                 super::supervision::SupervisionKind::WaitFailed => Err(BashOpError::WaitFailed {
@@ -1000,39 +1037,21 @@ impl BashOperations for LocalBashOperations {
                     #[cfg(not(unix))]
                     let signal_num: Option<i32> = None;
 
-                    let total = out_cap.total.saturating_add(err_cap.total);
-                    let truncated = total > MAX_BASH_OUTPUT_BYTES as u64;
-                    // On truncation, spill the COMPLETE merged output (stdout
-                    // then stderr) to one temp file and report its path; the
-                    // per-stream spill files are then removed.
-                    let full_output = if truncated {
-                        write_merged_full_output(&out_cap, &err_cap)
-                    } else {
-                        None
-                    };
-                    cleanup_spill(&mut out_cap);
-                    cleanup_spill(&mut err_cap);
-
-                    let stdout = std::mem::take(&mut out_cap.preview);
-                    let stderr = std::mem::take(&mut err_cap.preview);
-                    let diag = bash_operation_context_diagnostic(
-                        exit_code,
-                        signal_num,
-                        false,
-                        false,
-                        truncated,
-                        full_output.as_deref(),
-                        None,
-                    );
+                    let output = finalize_captured_bash_output(out_cap, err_cap);
                     Ok(BashResult {
-                        stdout,
-                        stderr,
-                        exit_code,
-                        signal: signal_num,
-                        diagnostics: vec![diag]
-                            .into_iter()
-                            .chain(degraded_diagnostics.iter().cloned())
-                            .collect(),
+                        stdout: output.stdout,
+                        stderr: output.stderr,
+                        context: BashOperationContext {
+                            exit_code,
+                            signal: signal_num,
+                            cancelled: false,
+                            timed_out: false,
+                            truncated: output.truncated,
+                            full_output: output.full_output,
+                            kill_error: None,
+                            contract: BashExecutionContract::local(),
+                        },
+                        diagnostics: degraded_diagnostics,
                     })
                 }
             }
@@ -1045,70 +1064,6 @@ impl BashOperations for LocalBashOperations {
 // `OwnedCaptureTask`) moved to the policy-neutral `super::supervision` seam in
 // Phase 16 task 16.2. The redacted-attach/terminate-to-diagnostic mapper stays
 // here alongside the other bash diagnostics.
-
-/// Build the in-band operation-context [`ToolDiagnostic`] (local type) that
-/// carries the flags the `BashTool` wrapper needs to reconstruct the agent
-/// `ToolResult`: `exit_code`, `signal`, `cancelled`, `timed_out`, `truncated`,
-/// `full_output`, and `kill_error`. `command_included` is always `false`
-/// (commands may contain secrets). The wrapper remaps this diagnostic's code to
-/// `CODE_TOOL_EXECUTION_FAILED` and pushes it only on an error result, matching
-/// the pre-15.2 bash behavior.
-///
-/// It also carries the local execution-backend report (`guarantee="supervised"`,
-/// `placement="host"`) mandated by the Phase 16 Execution Backend contract (spec
-/// table line 146). The wrapper lifts these redaction-safe contract fields into
-/// `ToolResult::details`, matching the routed twin in `execution/runtime.rs`.
-#[allow(clippy::too_many_arguments)]
-fn bash_operation_context_diagnostic(
-    exit_code: Option<i32>,
-    signal: Option<i32>,
-    cancelled: bool,
-    timed_out: bool,
-    truncated: bool,
-    full_output: Option<&str>,
-    kill_error: Option<&str>,
-) -> ToolDiagnostic {
-    let message = if cancelled {
-        "command cancelled"
-    } else if timed_out {
-        "command timed out"
-    } else {
-        "command executed"
-    };
-    let mut details = serde_json::json!({
-        "exit_code": exit_code,
-        "signal": signal,
-        "cancelled": cancelled,
-        "timed_out": timed_out,
-        "truncated": truncated,
-        "command_included": false,
-        // Execution-backend guarantee for the LOCAL identity (Phase 16 task
-        // 16.14.2). A compile-time CONSTANT, never sourced from the prepared
-        // sandbox state: spec table line 146 assigns `local -> supervised`
-        // (placement `host`), and the execution-backend guarantee axis is
-        // distinct from the Phase 15 host-sandbox restriction axis (reported via
-        // `CODE_PROCESS_TREE_DEGRADED`, not here). The literals mirror the opi-sandbox
-        // wire vocabulary origin (`crates/opi-sandbox/src/helper.rs:154-161`) so
-        // the two cannot drift; `restricted` belongs to the `opi-sandbox`
-        // adapter identity (line 147), never the local path. Local reports only
-        // placement+guarantee (no `policy`/`limitations`): a constant
-        // `policy="unrestricted"` would be dishonest on Linux-Engaged, where the
-        // Phase 15 host sandbox restricts.
-        "guarantee": "supervised",
-        "placement": "host",
-    });
-    if let Some(full) = full_output {
-        details["full_output"] = serde_json::json!(full);
-    }
-    if let Some(kill) = kill_error {
-        details["kill_error"] = serde_json::json!(kill);
-    }
-    ToolDiagnostic {
-        code: LOCAL_BASH_OPERATION_DIAGNOSTIC.to_string(),
-        message: message.to_string(),
-        details: Some(details),
-    }
-}
 
 /// Build the L0 process-tree degraded [`ToolDiagnostic`] (local type) from an
 /// [`super::process_tree::AttachError`]. Reuses the stable
@@ -1236,9 +1191,50 @@ fn cleanup_spill(cap: &mut StreamCapture) {
     }
 }
 
+pub(crate) struct FinalizedBashOutput {
+    pub(crate) stdout: Vec<u8>,
+    pub(crate) stderr: Vec<u8>,
+    pub(crate) truncated: bool,
+    pub(crate) full_output: Option<PathBuf>,
+}
+
+/// Apply the shared bash output cap to complete routed output.
+pub(crate) fn finalize_complete_bash_output(
+    stdout: Vec<u8>,
+    stderr: Vec<u8>,
+) -> FinalizedBashOutput {
+    let mut out = StreamCapture::new(MAX_BASH_OUTPUT_BYTES);
+    out.append(&stdout);
+    let mut err = StreamCapture::new(MAX_BASH_OUTPUT_BYTES);
+    err.append(&stderr);
+    finalize_captured_bash_output(out, err)
+}
+
+/// Finalize local stream captures and routed complete buffers through the same
+/// preview/truncation/full-output policy.
+fn finalize_captured_bash_output(
+    mut out: StreamCapture,
+    mut err: StreamCapture,
+) -> FinalizedBashOutput {
+    let truncated = out.total.saturating_add(err.total) > MAX_BASH_OUTPUT_BYTES as u64;
+    let full_output = truncated
+        .then(|| write_merged_full_output(&out, &err))
+        .flatten();
+    let stdout = std::mem::take(&mut out.preview);
+    let stderr = std::mem::take(&mut err.preview);
+    cleanup_spill(&mut out);
+    cleanup_spill(&mut err);
+    FinalizedBashOutput {
+        stdout,
+        stderr,
+        truncated,
+        full_output,
+    }
+}
+
 /// Write the COMPLETE merged output (stdout-then-stderr) to one temp file and
 /// return its path. Returns `None` only if the file cannot be created/written.
-fn write_merged_full_output(out: &StreamCapture, err: &StreamCapture) -> Option<String> {
+fn write_merged_full_output(out: &StreamCapture, err: &StreamCapture) -> Option<PathBuf> {
     let out_bytes = out.complete_bytes().ok()?;
     let err_bytes = err.complete_bytes().ok()?;
     let path = bash_output_temp_path();
@@ -1247,7 +1243,7 @@ fn write_merged_full_output(out: &StreamCapture, err: &StreamCapture) -> Option<
     file.write_all(&err_bytes).ok()?;
     let _ = file.sync_all();
     drop(file);
-    Some(path.to_string_lossy().into_owned())
+    Some(path)
 }
 
 /// Create a private spill file at a caller-chosen temp path.
@@ -1426,7 +1422,7 @@ mod tests {
         let result = run_pipe_holder_with_fault(TestTreeFaults::terminate())
             .await
             .expect("termination degradation remains an observed result");
-        assert_eq!(result.exit_code, Some(0));
+        assert_eq!(result.context.exit_code, Some(0));
         assert!(result.diagnostics.iter().any(|diagnostic| {
             diagnostic.code == crate::diagnostics::CODE_PROCESS_TREE_DEGRADED
                 && diagnostic
@@ -1484,7 +1480,7 @@ mod tests {
             .unwrap();
         let pid = read_test_pid(&pidfile).await;
 
-        assert_eq!(result.exit_code, Some(0));
+        assert_eq!(result.context.exit_code, Some(0));
         let deadline = tokio::time::Instant::now() + Duration::from_secs(3);
         while test_process_alive(pid) && tokio::time::Instant::now() < deadline {
             tokio::time::sleep(Duration::from_millis(50)).await;
@@ -1780,6 +1776,31 @@ mod tests {
         c.append(b"abcde"); // cap+1 -> overflow
         assert_eq!(c.total, 5);
         assert_eq!(c.complete_bytes().unwrap(), b"abcde");
+    }
+
+    #[test]
+    fn bash_output_finalizer_accepts_exact_cap_without_spill() {
+        let output = finalize_complete_bash_output(vec![b'a'; MAX_BASH_OUTPUT_BYTES], Vec::new());
+
+        assert_eq!(output.stdout.len(), MAX_BASH_OUTPUT_BYTES);
+        assert!(output.stderr.is_empty());
+        assert!(!output.truncated);
+        assert!(output.full_output.is_none());
+    }
+
+    #[test]
+    fn bash_output_finalizer_spills_cap_plus_one_byte_completely() {
+        let mut complete = vec![b'a'; MAX_BASH_OUTPUT_BYTES];
+        complete.push(b'z');
+        let output = finalize_complete_bash_output(complete.clone(), Vec::new());
+
+        assert_eq!(output.stdout.len(), MAX_BASH_OUTPUT_BYTES);
+        assert!(output.truncated);
+        let path = output
+            .full_output
+            .expect("truncated output remains recoverable");
+        assert_eq!(std::fs::read(&path).unwrap(), complete);
+        std::fs::remove_file(path).unwrap();
     }
 
     /// Regression: preview frozen at EXACTLY cap by an earlier fitting chunk (no

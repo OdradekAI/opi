@@ -18,9 +18,9 @@ use std::time::Duration;
 use futures_util::StreamExt;
 use opi_protocol::execution::v1::EnvInherit;
 use opi_sandbox::{
-    AppliedRestriction, CleanupState, ContractStatus, Mechanism, NoRestriction, Restriction,
-    SandboxEvent, SandboxOutcome, SandboxPolicy, SandboxRequest, SandboxResult, SandboxRun,
-    SandboxRunner, SetupFailureReason, StdinPolicy,
+    AppliedRestriction, CleanupState, ContractStatus, Mechanism, NoRestriction, OutputStream,
+    Restriction, SandboxEvent, SandboxOutcome, SandboxPolicy, SandboxRequest, SandboxResult,
+    SandboxRun, SandboxRunner, SetupFailureReason, StdinPolicy,
 };
 use tokio_util::sync::CancellationToken;
 
@@ -73,9 +73,12 @@ async fn drive_to_completion(mut run: SandboxRun) -> SandboxResult {
         matches!(started, SandboxEvent::Started { .. }),
         "first event must be Started, got {started:?}"
     );
-    match run.next().await.expect("a Completed event") {
-        SandboxEvent::Completed(result) => result,
-        other => panic!("expected Completed, got {other:?}"),
+    loop {
+        match run.next().await.expect("a terminal Completed event") {
+            SandboxEvent::Completed(result) => return result,
+            SandboxEvent::Output { .. } | SandboxEvent::Diagnostic { .. } => {}
+            other => panic!("expected streamed output or Completed, got {other:?}"),
+        }
     }
 }
 
@@ -86,7 +89,13 @@ async fn started_temp_root(mut run: SandboxRun) -> PathBuf {
         SandboxEvent::Started { temp_root, .. } => temp_root,
         other => panic!("expected Started, got {other:?}"),
     };
-    let _ = run.next().await; // drain Completed
+    loop {
+        match run.next().await {
+            Some(SandboxEvent::Completed(_)) => break,
+            Some(_) => {}
+            None => panic!("run ended without Completed"),
+        }
+    }
     root
 }
 
@@ -462,13 +471,34 @@ async fn non_utf8_argv_and_environment_round_trip_through_sdk() {
 }
 
 #[tokio::test]
-async fn output_over_capture_cap_retains_prefix_and_reports_truncation() {
+async fn output_over_preview_cap_streams_every_byte_and_bounds_the_terminal_preview() {
     const CAP: usize = 1024 * 1024;
-    let (prog, args) = large_stdout_program(CAP + 4096);
+    const EXTRA: usize = 4096;
+    let (prog, args) = large_stdout_program(CAP + EXTRA);
     let (req, _ws) = make_request(prog, args, Duration::from_secs(10));
-    let result = drive_to_completion(runner().run(req).expect("run starts")).await;
+    let mut run = runner().run(req).expect("run starts");
+    assert!(matches!(
+        run.next().await,
+        Some(SandboxEvent::Started { .. })
+    ));
+    let mut streamed = Vec::new();
+    let result = loop {
+        match run.next().await.expect("stream reaches completion") {
+            SandboxEvent::Output {
+                stream: OutputStream::Stdout,
+                bytes,
+            } => streamed.extend(bytes),
+            SandboxEvent::Diagnostic { .. } => {}
+            SandboxEvent::Completed(result) => break result,
+            event => panic!("unexpected event while draining stdout: {event:?}"),
+        }
+    };
+    assert_eq!(streamed, vec![0; CAP + EXTRA]);
     assert_eq!(result.stdout.len(), CAP);
-    assert!(result.stdout_truncated, "truncation must be observable");
+    assert!(
+        result.stdout_truncated,
+        "preview truncation must be observable"
+    );
     assert!(!result.stderr_truncated);
 }
 
@@ -481,9 +511,12 @@ async fn invocation_temp_root_is_exported_through_standard_temp_variables() {
         SandboxEvent::Started { temp_root, .. } => temp_root,
         other => panic!("expected Started, got {other:?}"),
     };
-    let result = match run.next().await.expect("Completed") {
-        SandboxEvent::Completed(result) => result,
-        other => panic!("expected Completed, got {other:?}"),
+    let result = loop {
+        match run.next().await.expect("stream reaches Completed") {
+            SandboxEvent::Completed(result) => break result,
+            SandboxEvent::Output { .. } | SandboxEvent::Diagnostic { .. } => {}
+            other => panic!("expected output or Completed, got {other:?}"),
+        }
     };
     let output = String::from_utf8_lossy(&result.stdout);
     let values: Vec<PathBuf> = output.trim().split('|').map(PathBuf::from).collect();

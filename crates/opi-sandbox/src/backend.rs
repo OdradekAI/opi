@@ -49,8 +49,8 @@ use std::time::Duration;
 use futures_core::Stream;
 use opi_protocol::execution::v1::codec::{CodecError, encode_backend};
 use opi_protocol::execution::v1::frames::{
-    AcceptedPayload, CompletedPayload, Diagnostic, FailedPayload, InitializePayload, ReadyPayload,
-    StderrPayload, StdoutPayload,
+    AcceptedPayload, CompletedPayload, Diagnostic, DiagnosticPayload, FailedPayload,
+    InitializePayload, ReadyPayload, StderrPayload, StdoutPayload,
 };
 use opi_protocol::execution::v1::{
     BackendToHost, Base64Bytes, Bounds, CleanupState as WireCleanup, FailureCode, FailurePhase,
@@ -64,7 +64,8 @@ use crate::helper::{self, StartOutcome};
 use crate::platform;
 use crate::policy::{NetworkPolicy, NoRestriction, Profile, Restriction, SandboxPolicy};
 use crate::runner::{
-    CleanupState, FaultInjection, RunDeadlines, SandboxEvent, SandboxOutcome, SandboxRunner,
+    CleanupState, FaultInjection, OutputStream, RunDeadlines, SandboxEvent, SandboxOutcome,
+    SandboxRunner,
 };
 
 /// Backend exit after a clean protocol exchange (a terminal frame was emitted +
@@ -535,13 +536,30 @@ async fn drive_with_faults(
                 );
             },
             ev = next_event(&mut run) => match ev {
+                Some(SandboxEvent::Output { stream, bytes }) => {
+                    if !emit_output_event(stdout, bounds, &id, stream, &bytes) {
+                        return EXIT_NO_TERMINAL;
+                    }
+                }
+                Some(SandboxEvent::Diagnostic { message }) => {
+                    if !emit_frame(
+                        stdout,
+                        bounds,
+                        &BackendToHost::Diagnostic(DiagnosticPayload {
+                            request_id: id.clone(),
+                            message,
+                        }),
+                    ) {
+                        return EXIT_NO_TERMINAL;
+                    }
+                }
                 Some(SandboxEvent::Completed(mut result)) => {
                     if cancel_requested {
                         result.outcome = SandboxOutcome::Cancelled;
                     }
                     break result;
                 }
-                Some(_) => continue,
+                Some(SandboxEvent::Started { .. }) => continue,
                 None => {
                     return emit_post_start_failure(
                         stdout,
@@ -554,13 +572,7 @@ async fn drive_with_faults(
         }
     };
 
-    // --- emit captured stdout/stderr as base64 chunks, then completed ---
-    if !emit_output(stdout, bounds, &id, &result.stdout, true) {
-        return EXIT_NO_TERMINAL;
-    }
-    if !emit_output(stdout, bounds, &id, &result.stderr, false) {
-        return EXIT_NO_TERMINAL;
-    }
+    // --- output has already been relayed incrementally; emit completed ---
     let completed = BackendToHost::Completed(completed_payload(&id, &result));
     if !emit_frame(stdout, bounds, &completed) {
         return EXIT_NO_TERMINAL;
@@ -755,6 +767,22 @@ fn emit_output(
         }
     }
     true
+}
+
+fn emit_output_event(
+    stdout: &mut dyn Write,
+    bounds: Bounds,
+    id: &RequestId,
+    stream: OutputStream,
+    data: &[u8],
+) -> bool {
+    emit_output(
+        stdout,
+        bounds,
+        id,
+        data,
+        matches!(stream, OutputStream::Stdout),
+    )
 }
 
 /// Map a terminal [`crate::SandboxResult`] to the wire `completed` payload.

@@ -8,6 +8,13 @@
 //! the one-shot protocol host ([`protocol_host`]); later tasks add the runtime
 //! assembly.
 
+use std::time::Duration;
+
+/// Grace granted to a backend to report terminal cleanup after cancellation.
+/// Shared by the protocol host and runtime deadline calculation so their
+/// cancellation boundary cannot drift.
+pub(crate) const CLEANUP_REPORT_GRACE: Duration = Duration::from_millis(1500);
+
 pub mod contribution;
 pub mod failure;
 pub mod permission;

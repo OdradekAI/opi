@@ -17,9 +17,10 @@ pub use find::FindTool;
 pub use glob::GlobTool;
 pub use grep::GrepTool;
 pub use ls::LsTool;
+pub(crate) use operations::finalize_complete_bash_output;
 pub use operations::{
-    AccessMode, BashOpError, BashOperations, BashRequest, BashResult, FileOperations, FsOpError,
-    LOCAL_BASH_OPERATION_DIAGNOSTIC, LocalBashOperations, LocalFileOperations,
+    AccessMode, BashExecutionContract, BashOpError, BashOperationContext, BashOperations,
+    BashRequest, BashResult, FileOperations, FsOpError, LocalBashOperations, LocalFileOperations,
     MAX_BASH_OUTPUT_BYTES, OpMetadata, ToolDiagnostic,
 };
 pub use process_tree::{AttachError, TerminationOutcome, TreeGuard, configure_tree};

@@ -6,8 +6,8 @@ use std::sync::Arc;
 use opi_agent::tool::Tool;
 use opi_coding_agent::diagnostics::CODE_PROCESS_TREE_DEGRADED;
 use opi_coding_agent::tool::{
-    BashOpError, BashOperations, BashRequest, BashResult, BashTool,
-    LOCAL_BASH_OPERATION_DIAGNOSTIC, ToolDiagnostic as BackendDiagnostic,
+    BashOpError, BashOperationContext, BashOperations, BashRequest, BashResult, BashTool,
+    ToolDiagnostic as BackendDiagnostic,
 };
 use serde_json::json;
 use tokio_util::sync::CancellationToken;
@@ -28,18 +28,8 @@ impl BashOperations for DiagnosticBashOperations {
     }
 }
 
-fn operation_context(exit_code: i32) -> BackendDiagnostic {
-    BackendDiagnostic {
-        code: LOCAL_BASH_OPERATION_DIAGNOSTIC.to_string(),
-        message: "command executed".to_string(),
-        details: Some(json!({
-            "exit_code": exit_code,
-            "cancelled": false,
-            "timed_out": false,
-            "truncated": false,
-            "command_included": false,
-        })),
-    }
+fn operation_context(exit_code: Option<i32>, signal: Option<i32>) -> BashOperationContext {
+    BashOperationContext::local(exit_code, signal)
 }
 
 fn degraded_backend_diagnostic() -> BackendDiagnostic {
@@ -97,9 +87,8 @@ async fn bash_tool_preserves_backend_diagnostic_on_success() {
     let result = execute_with(BashResult {
         stdout: b"ok".to_vec(),
         stderr: Vec::new(),
-        exit_code: Some(0),
-        signal: None,
-        diagnostics: vec![operation_context(0), degraded_backend_diagnostic()],
+        context: operation_context(Some(0), None),
+        diagnostics: vec![degraded_backend_diagnostic()],
     })
     .await;
 
@@ -116,9 +105,8 @@ async fn bash_tool_preserves_backend_diagnostic_on_nonzero_exit() {
     let result = execute_with(BashResult {
         stdout: Vec::new(),
         stderr: b"failed".to_vec(),
-        exit_code: Some(7),
-        signal: None,
-        diagnostics: vec![operation_context(7), degraded_backend_diagnostic()],
+        context: operation_context(Some(7), None),
+        diagnostics: vec![degraded_backend_diagnostic()],
     })
     .await;
 
@@ -152,20 +140,8 @@ async fn bash_tool_renders_signal_specific_public_result() {
     let result = execute_with(BashResult {
         stdout: Vec::new(),
         stderr: Vec::new(),
-        exit_code: None,
-        signal: Some(9),
-        diagnostics: vec![BackendDiagnostic {
-            code: LOCAL_BASH_OPERATION_DIAGNOSTIC.to_string(),
-            message: "command executed".to_string(),
-            details: Some(json!({
-                "exit_code": null,
-                "signal": 9,
-                "cancelled": false,
-                "timed_out": false,
-                "truncated": false,
-                "command_included": false,
-            })),
-        }],
+        context: operation_context(None, Some(9)),
+        diagnostics: Vec::new(),
     })
     .await;
 
@@ -190,20 +166,8 @@ async fn bash_tool_treats_zero_exit_with_signal_as_signal_failure() {
     let result = execute_with(BashResult {
         stdout: Vec::new(),
         stderr: Vec::new(),
-        exit_code: Some(0),
-        signal: Some(9),
-        diagnostics: vec![BackendDiagnostic {
-            code: LOCAL_BASH_OPERATION_DIAGNOSTIC.to_string(),
-            message: "command executed".to_string(),
-            details: Some(json!({
-                "exit_code": 0,
-                "signal": 9,
-                "cancelled": false,
-                "timed_out": false,
-                "truncated": false,
-                "command_included": false,
-            })),
-        }],
+        context: operation_context(Some(0), Some(9)),
+        diagnostics: Vec::new(),
     })
     .await;
 

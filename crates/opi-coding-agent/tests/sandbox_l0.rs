@@ -158,9 +158,9 @@ async fn bash_l0_kills_process_tree_in_off_mode() {
     };
     let result = ops.exec(req).await.unwrap();
     assert!(
-        result.exit_code.is_none(),
+        result.context.exit_code.is_none(),
         "exec should time out, got exit {:?}",
-        result.exit_code
+        result.context.exit_code
     );
 
     let pid = read_pid(&pidfile, 2000)
@@ -195,7 +195,7 @@ async fn bash_l0_kills_process_tree_on_cancel() {
     token.cancel();
     let result = handle.await.unwrap().unwrap();
     assert!(
-        result.exit_code.is_none(),
+        result.context.exit_code.is_none(),
         "cancelled exec must not report an exit code"
     );
 
@@ -330,7 +330,7 @@ async fn bash_l0_kills_process_tree_in_off_mode() {
         backend: None,
     };
     let result = ops.exec(req).await.unwrap();
-    assert!(result.exit_code.is_none(), "exec should time out");
+    assert!(result.context.exit_code.is_none(), "exec should time out");
     let pid = read_pid(&pidfile, 2000)
         .await
         .expect("grandchild should record its pid");
@@ -359,7 +359,7 @@ async fn bash_l0_kills_process_tree_on_cancel() {
     token.cancel();
     let result = handle.await.unwrap().unwrap();
     assert!(
-        result.exit_code.is_none(),
+        result.context.exit_code.is_none(),
         "cancelled exec must not report an exit code"
     );
     let pid = read_pid(&pidfile, 2000)
@@ -462,7 +462,7 @@ async fn clean_exit_kills_surviving_background_descendants() {
     };
     let result = ops.exec(req).await.unwrap();
     assert_eq!(
-        result.exit_code,
+        result.context.exit_code,
         Some(0),
         "direct child should exit cleanly"
     );
@@ -493,7 +493,7 @@ async fn clean_exit_kills_surviving_background_descendants() {
     };
     let result = ops.exec(req).await.unwrap();
     assert_eq!(
-        result.exit_code,
+        result.context.exit_code,
         Some(0),
         "direct child should exit cleanly"
     );
@@ -536,7 +536,7 @@ async fn pipe_holding_descendant_drains_within_bounded_grace() {
     let start = std::time::Instant::now();
     let result = ops.exec(req).await.unwrap();
     let elapsed = start.elapsed();
-    assert_eq!(result.exit_code, Some(0));
+    assert_eq!(result.context.exit_code, Some(0));
     assert!(
         elapsed < Duration::from_secs(3),
         "exec must return within the bounded drain, took {elapsed:?}"
@@ -563,7 +563,7 @@ async fn pipe_holding_descendant_drains_within_bounded_grace() {
     let start = std::time::Instant::now();
     let result = ops.exec(req).await.unwrap();
     let elapsed = start.elapsed();
-    assert_eq!(result.exit_code, Some(0));
+    assert_eq!(result.context.exit_code, Some(0));
     assert!(
         elapsed < Duration::from_secs(3),
         "exec must return within the bounded drain, took {elapsed:?}"
@@ -596,7 +596,7 @@ async fn legacy_fault_environment_names_are_inert() {
         .await
         .unwrap();
 
-    assert_eq!(result.exit_code, Some(0));
+    assert_eq!(result.context.exit_code, Some(0));
     assert!(
         result
             .diagnostics

@@ -16,8 +16,9 @@
 //! execution protocol host (Phase 16.7) calls immediately before every process
 //! start. It resolves ONLY the named package, re-runs the static contribution
 //! gates, recomputes the lock material, and either returns an
-//! [`ActivatedContribution`] (metadata only — no spawn) or fails closed. The
-//! actual process spawn is owned by 16.7; startup wiring by 16.9.
+//! [`ActivatedContribution`] (metadata plus immutable validated executable
+//! launch material, but no spawn) or fails closed. The actual process spawn is
+//! owned by 16.7; startup wiring by 16.9.
 //!
 //! Failure codes use 16.5's OWN internal vocabulary ([`ActivationError`]); the
 //! architecture-level `ExecutionFailure` stable-code envelope is owned by Phase
@@ -121,10 +122,11 @@ struct TrustFile {
 /// A package whose executable contribution was validated and whose trust is
 /// current at activation time.
 ///
-/// **Metadata only.** The protocol host (Phase 16.7) re-runs
-/// [`PackageActivationStore::activate`] immediately before spawn and reads the
-/// executable itself, so no validated-bytes handle or TOCTOU contract is
-/// carried here.
+/// The protocol host (Phase 16.7) re-runs
+/// [`PackageActivationStore::activate`] immediately before spawn. Each
+/// [`ValidatedExecutableContribution`] carries immutable validated executable
+/// launch material so the later spawn stays bound to the bytes that passed
+/// validation. Activation itself does not spawn a process.
 #[derive(Debug, Clone)]
 pub struct ActivatedContribution {
     pub name: String,
@@ -600,9 +602,10 @@ impl PackageActivationStore {
 
     /// The pre-spawn revalidation seam. Resolves ONLY the named package,
     /// revalidates manifest/lock/executable-hash/target/version/protocol/trust,
-    /// and returns an [`ActivatedContribution`] (metadata only; no spawn) or
-    /// fails closed. Drift durably invalidates trust. Phase 16.7 calls this
-    /// immediately before every process start.
+    /// and returns an [`ActivatedContribution`] (metadata plus immutable
+    /// validated executable launch material; no spawn) or fails closed. Drift
+    /// durably invalidates trust. Phase 16.7 calls this immediately before
+    /// every process start.
     pub fn activate(
         &self,
         name: &str,

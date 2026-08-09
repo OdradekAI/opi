@@ -358,6 +358,39 @@ async fn runner_text_surfaces_local_effective_execution_contract() {
     assert!(result.stderr.contains("guarantee=supervised"));
 }
 
+#[tokio::test]
+async fn runner_text_preserves_tool_failure_diagnostic_after_provider_recovery() {
+    let workspace = tempfile::tempdir().unwrap();
+    let command = if cfg!(windows) { "exit /B 7" } else { "exit 7" };
+    let first = test_support::tool_call_response(
+        "local-failure",
+        "bash",
+        &serde_json::json!({"command": command}).to_string(),
+    );
+    let second = test_support::text_response("recovered");
+    let provider = MockProvider::new("mock", vec![first, second]);
+    let mut runner = NonInteractiveRunner::new(
+        Box::new(provider),
+        "mock-model".into(),
+        OpiConfig::default(),
+        workspace.path().to_path_buf(),
+        true,
+        None,
+        Vec::new(),
+        TrustDecision::Trusted,
+    );
+
+    let result = runner.run("run a failing command").await;
+
+    assert_eq!(result.exit_code, ExitCode::Success as i32);
+    assert_eq!(result.stdout, "recovered");
+    assert!(
+        result.stderr.contains("tool::tool_execution_failed"),
+        "tool failure diagnostic must survive provider recovery: {:?}",
+        result.stderr
+    );
+}
+
 // ---------------------------------------------------------------------------
 // Test 3: provider error response produces stderr and exit code 4
 // ---------------------------------------------------------------------------

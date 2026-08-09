@@ -21,6 +21,7 @@ import tempfile
 WIRE = "command-execution-jsonl-v1"
 SUPPORTED = platform.system() in ("Linux", "Darwin")
 ESCAPE = "\ue000"
+LARGE_SIZE = 1024 * 1024 + 4096
 
 
 def _native(value):
@@ -110,7 +111,7 @@ def _execute(binary, workspace, rid, mode, timeout_ms, expected):
         failure = None
         stdout = bytearray()
         stderr = bytearray()
-        for _ in range(64):
+        for _ in range(128):
             frame = _read_frame(proc)
             if frame is None:
                 break
@@ -207,6 +208,8 @@ def _write_target(workspace):
             "[ \"$2\" = '--literal' ] || exit 96\n"
             "case \"$mode\" in\n"
             "  output) printf '\\001\\377'; printf '\\002\\376' >&2 ;;\n"
+            f"  large) head -c {LARGE_SIZE} /dev/zero; "
+            f"head -c {LARGE_SIZE} /dev/zero >&2 ;;\n"
             "  nonzero) exit 37 ;;\n"
             "  signal) kill -TERM $$; sleep 5 ;;\n"
             "  timeout) sleep 5 ;;\n"
@@ -249,6 +252,19 @@ def main():
             "nonzero",
             10000,
             {**base, "exit": 37},
+        )
+        _execute(
+            binary,
+            workspace,
+            "large-1",
+            "large",
+            10000,
+            {
+                **base,
+                "exit": 0,
+                "stdout": bytes(LARGE_SIZE),
+                "stderr": bytes(LARGE_SIZE),
+            },
         )
         _execute(
             binary,

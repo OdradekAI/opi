@@ -55,7 +55,8 @@ use tokio_util::sync::CancellationToken;
 use crate::platform;
 use crate::policy::{Mechanism, NetworkPolicy, Profile, SandboxPolicy};
 use crate::runner::{
-    SandboxEvent, SandboxOutcome, SandboxRequest, SandboxRunner, SetupFailureReason, StdinPolicy,
+    OutputStream, SandboxEvent, SandboxOutcome, SandboxRequest, SandboxRunner, SetupFailureReason,
+    StdinPolicy,
 };
 
 /// The fixed `run` timeout applied when the human CLI invokes a target. The
@@ -233,7 +234,7 @@ pub fn build_request(cmd: &RunCommand) -> SandboxRequest {
     }
 }
 
-/// Drive one sandboxed run to terminal completion, pass the target's captured
+/// Drive one sandboxed run to terminal completion, pass the target's streamed
 /// stdout/stderr through to `stdout`/`stderr` as bytes, and return the mapped
 /// exit code. This is the pure plumbing seam (no platform check); production
 /// [`run`] gates the platform posture before calling this, and the portable
@@ -241,8 +242,8 @@ pub fn build_request(cmd: &RunCommand) -> SandboxRequest {
 ///
 /// `stdout`/`stderr` are injected `std::io::Write` sinks so byte-exact
 /// pass-through (including non-UTF-8 bytes) is testable without capturing
-/// process stdout. The SDK buffers the target's output into a `Vec<u8>` before
-/// the run completes, so a single synchronous write per stream suffices.
+/// process stdout. Output events are written as they arrive, so successful
+/// output is never limited by the terminal preview cap.
 pub async fn execute(
     runner: &SandboxRunner,
     request: SandboxRequest,
@@ -255,20 +256,23 @@ pub async fn execute(
     };
     loop {
         match next_event(&mut run).await {
-            Some(SandboxEvent::Completed(result)) => {
-                let _ = stdout.write_all(&result.stdout);
-                let _ = stderr.write_all(&result.stderr);
-                if result.stdout_truncated {
-                    let _ = stderr.write_all(b"\nopi-sandbox: stdout capture truncated\n");
-                }
-                if result.stderr_truncated {
-                    let _ = stderr.write_all(b"\nopi-sandbox: stderr capture truncated\n");
-                }
-                return map_outcome(&result.outcome);
+            Some(SandboxEvent::Output {
+                stream: OutputStream::Stdout,
+                bytes,
+            }) => {
+                let _ = stdout.write_all(&bytes);
             }
-            // Started is emitted first by the library stream; Output/Diagnostic
-            // are reserved for the binary/protocol layer and not emitted here.
-            Some(_) => continue,
+            Some(SandboxEvent::Output {
+                stream: OutputStream::Stderr,
+                bytes,
+            }) => {
+                let _ = stderr.write_all(&bytes);
+            }
+            Some(SandboxEvent::Completed(result)) => return map_outcome(&result.outcome),
+            // Diagnostics are a structured SDK/protocol surface. The human
+            // direct CLI has no separate diagnostic channel, so it preserves
+            // target stdout/stderr byte identity and leaves them unrendered.
+            Some(SandboxEvent::Started { .. } | SandboxEvent::Diagnostic { .. }) => continue,
             // The stream ended without a Completed event: an internal failure.
             None => return 1,
         }
@@ -486,35 +490,7 @@ pub async fn run(args: Vec<OsString>) -> i32 {
             }
         }
         Some("run") => match parse_run(&rest) {
-            Ok(cmd) => {
-                // Platform gate OUTSIDE execute: refuse pre-start on an
-                // unsupported platform before constructing a runner.
-                let posture = platform::current();
-                if !posture.supported {
-                    // Windows, other Unix, or an unavailable native mechanism:
-                    // refuse before target start rather than run unrestricted.
-                    return 125;
-                }
-                let runner = SandboxRunner::new(
-                    SandboxPolicy::new(cmd.profile, cmd.network),
-                    posture
-                        .restriction
-                        .expect("a supported platform posture carries a restriction"),
-                );
-                let mut request = build_request(&cmd);
-                let cancel = CancellationToken::new();
-                request.cancel = Some(cancel.clone());
-                let signal_task = tokio::spawn(async move {
-                    if tokio::signal::ctrl_c().await.is_ok() {
-                        cancel.cancel();
-                    }
-                });
-                let mut out = std::io::stdout();
-                let mut err = std::io::stderr();
-                let code = execute(&runner, request, &mut out, &mut err).await;
-                signal_task.abort();
-                code
-            }
+            Ok(cmd) => execute_run_command(cmd, platform::current()).await,
             Err(error) => {
                 eprintln!("opi-sandbox: {error}");
                 2
@@ -526,6 +502,33 @@ pub async fn run(args: Vec<OsString>) -> i32 {
             2
         }
     }
+}
+
+pub(crate) async fn execute_run_command(cmd: RunCommand, posture: platform::Posture) -> i32 {
+    // Platform gate OUTSIDE execute: refuse pre-start before constructing a
+    // runner when the requested native contract cannot be established.
+    if !posture.supported {
+        return 125;
+    }
+    let runner = SandboxRunner::new(
+        SandboxPolicy::new(cmd.profile, cmd.network),
+        posture
+            .restriction
+            .expect("a supported platform posture carries a restriction"),
+    );
+    let mut request = build_request(&cmd);
+    let cancel = CancellationToken::new();
+    request.cancel = Some(cancel.clone());
+    let signal_task = tokio::spawn(async move {
+        if tokio::signal::ctrl_c().await.is_ok() {
+            cancel.cancel();
+        }
+    });
+    let mut out = std::io::stdout();
+    let mut err = std::io::stderr();
+    let code = execute(&runner, request, &mut out, &mut err).await;
+    signal_task.abort();
+    code
 }
 
 fn print_usage() {

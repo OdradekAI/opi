@@ -43,6 +43,7 @@ use futures_core::Stream;
 use opi_protocol::execution::v1::EnvInherit;
 use rand::RngCore;
 use tokio::process::{Child, Command};
+use tokio::sync::mpsc;
 use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
 
@@ -53,9 +54,13 @@ use crate::policy::{
 use crate::process_tree::resume_child;
 use crate::process_tree::{TerminationOutcome, TreeGuard, configure_tree};
 
-/// Bounded per-stream output capture (1 MiB). Output beyond this cap is dropped
-/// (the bound is enforced, not exceeded); the captured prefix is returned.
+/// Bounded per-stream terminal preview (1 MiB). Every byte is also relayed as
+/// an incremental [`SandboxEvent::Output`] through a bounded channel.
 const OUTPUT_CAP: usize = 1024 * 1024;
+/// At most eight 8-KiB output chunks may wait between the pipe drains and the
+/// consumer. A slow consumer therefore applies process-pipe backpressure while
+/// keeping the runner's memory use bounded.
+const OUTPUT_EVENT_CAPACITY: usize = 8;
 
 /// Bounded grace for draining a terminated tree's still-open stdout/stderr pipes
 /// (mirrors the Phase 16 task 16.2 `TERMINATED_PIPE_DRAIN_GRACE` invariant).
@@ -395,17 +400,18 @@ pub enum CleanupState {
 }
 
 /// The terminal result of one sandboxed run. Carries the structured outcome, the
-/// orthogonal cleanup state, the bounded captured stdout/stderr, and the path of
-/// the invocation-owned temp root that was removed.
+/// orthogonal cleanup state, bounded stdout/stderr previews, and the path of the
+/// invocation-owned temp root that was removed. Complete output is delivered by
+/// preceding [`SandboxEvent::Output`] events.
 #[derive(Debug, Clone)]
 pub struct SandboxResult {
     /// The effective terminal outcome.
     pub outcome: SandboxOutcome,
     /// Whether invocation-owned cleanup completed.
     pub cleanup: CleanupState,
-    /// Bounded captured standard output.
+    /// Bounded standard-output preview.
     pub stdout: Vec<u8>,
-    /// Bounded captured standard error.
+    /// Bounded standard-error preview.
     pub stderr: Vec<u8>,
     /// Whether stdout exceeded the capture cap or could not be drained fully.
     pub stdout_truncated: bool,
@@ -416,13 +422,9 @@ pub struct SandboxResult {
 }
 
 /// Lifecycle events streamed by [`SandboxRun`]. A successfully established run
-/// emits [`SandboxEvent::Started`] then a single terminal
-/// [`SandboxEvent::Completed`]. A rejected launcher completes without a
-/// `Started` event; [`SandboxEvent::Output`] and
-/// [`SandboxEvent::Diagnostic`] are defined for incremental consumption (used by
-/// the binary/protocol layer, task 16.11.2) and are not emitted by the library
-/// stream itself (Phase 16 task 16.11.1 audit fold: enumerated variants, no
-/// trailing placeholder).
+/// emits [`SandboxEvent::Started`], incremental output and redacted diagnostics,
+/// then a single terminal [`SandboxEvent::Completed`]. A rejected launcher
+/// completes without a `Started` event.
 #[derive(Debug, Clone)]
 pub enum SandboxEvent {
     /// The target has started. Carries the invocation-owned temp-root path, the
@@ -440,9 +442,8 @@ pub enum SandboxEvent {
         /// The effective contract status after setup.
         contract: ContractStatus,
     },
-    /// A captured output chunk. Emitted incrementally by the binary/protocol
-    /// layer; not emitted by the library stream (output is buffered into the
-    /// terminal [`SandboxResult`]).
+    /// A target output chunk. Chunks are emitted incrementally with bounded
+    /// backpressure and remain ordered within each output stream.
     Output {
         /// Which stream this chunk belongs to.
         stream: OutputStream,
@@ -907,14 +908,18 @@ impl SandboxRunner {
         if let RunDeadlinePlan::Fixed(deadlines) = deadline_plan {
             let _ = deadline_cell.set(deadlines);
         }
+        let (event_tx, event_rx) = mpsc::channel(OUTPUT_EVENT_CAPACITY);
         let inner = Box::pin(supervise(
             child,
             tree,
             temp,
             temp_root.clone(),
-            Arc::clone(&deadline_cell),
-            cancel.clone(),
-            faults,
+            SupervisionControl {
+                deadline_cell: Arc::clone(&deadline_cell),
+                cancel: cancel.clone(),
+                faults,
+                event_tx,
+            },
         ));
 
         let run = SandboxRun {
@@ -933,6 +938,8 @@ impl SandboxRunner {
             cancel,
             deadline_plan,
             deadline_cell,
+            event_rx,
+            terminal_result: None,
             inner: Some(inner),
         };
         SpawnPreparedOutcome::Spawned(Box::new(SpawnedSandboxRun { run, expired }))
@@ -1005,6 +1012,8 @@ pub struct SandboxRun {
     cancel: CancellationToken,
     deadline_plan: RunDeadlinePlan,
     deadline_cell: Arc<OnceLock<RunDeadlines>>,
+    event_rx: mpsc::Receiver<SandboxEvent>,
+    terminal_result: Option<SandboxResult>,
     inner: Option<Pin<Box<dyn std::future::Future<Output = SandboxResult> + Send>>>,
 }
 
@@ -1210,20 +1219,33 @@ impl Stream for SandboxRun {
         if self.auto_release {
             let _ = self.release();
         }
-        // Unpin: all fields are Unpin (Pin<Box<Future>> is Unpin). The scrutinee
-        // borrow of `self.inner` ends before the `Ready` arm assigns it.
-        match self
-            .inner
-            .as_mut()
-            .expect("inner present until completion")
-            .as_mut()
-            .poll(cx)
-        {
-            Poll::Pending => Poll::Pending,
-            Poll::Ready(result) => {
-                self.completed = true;
-                self.inner = None;
-                Poll::Ready(Some(SandboxEvent::Completed(result)))
+        loop {
+            // Output/diagnostic events always precede completion. Once the
+            // supervision future is ready, retain its result until every
+            // already-sent channel item has been observed and all senders have
+            // closed; this prevents a final chunk racing the terminal event.
+            match Pin::new(&mut self.event_rx).poll_recv(cx) {
+                Poll::Ready(Some(event)) => return Poll::Ready(Some(event)),
+                Poll::Ready(None) if self.terminal_result.is_some() => {
+                    self.completed = true;
+                    return Poll::Ready(Some(SandboxEvent::Completed(
+                        self.terminal_result
+                            .take()
+                            .expect("terminal result checked above"),
+                    )));
+                }
+                Poll::Ready(None) | Poll::Pending => {}
+            }
+
+            let Some(inner) = self.inner.as_mut() else {
+                return Poll::Pending;
+            };
+            match inner.as_mut().poll(cx) {
+                Poll::Pending => return Poll::Pending,
+                Poll::Ready(result) => {
+                    self.inner = None;
+                    self.terminal_result = Some(result);
+                }
             }
         }
     }
@@ -1610,18 +1632,23 @@ async fn supervise(
     mut tree: TreeGuard,
     temp: tempfile::TempDir,
     temp_root: PathBuf,
-    deadline_cell: Arc<OnceLock<RunDeadlines>>,
-    cancel: CancellationToken,
-    faults: FaultInjection,
+    control: SupervisionControl,
 ) -> SandboxResult {
+    let SupervisionControl {
+        deadline_cell,
+        cancel,
+        faults,
+        event_tx,
+    } = control;
     let deadlines = *deadline_cell
         .get()
         .expect("execution deadline armed before supervision");
     let execution_deadline = deadlines.execution_deadline_at(Instant::now());
     let stdout = child.stdout.take();
     let stderr = child.stderr.take();
-    let mut drain_out = CaptureTask::new(stdout, OUTPUT_CAP);
-    let mut drain_err = CaptureTask::new(stderr, OUTPUT_CAP);
+    let mut drain_out =
+        CaptureTask::new(stdout, OUTPUT_CAP, OutputStream::Stdout, event_tx.clone());
+    let mut drain_err = CaptureTask::new(stderr, OUTPUT_CAP, OutputStream::Stderr, event_tx);
     let mut cleanup_confirmed = true;
 
     // Race wait / timeout / cancellation. On every branch the whole tree is
@@ -1704,6 +1731,13 @@ async fn supervise(
     }
 }
 
+struct SupervisionControl {
+    deadline_cell: Arc<OnceLock<RunDeadlines>>,
+    cancel: CancellationToken,
+    faults: FaultInjection,
+    event_tx: mpsc::Sender<SandboxEvent>,
+}
+
 async fn remove_temp_root_until(
     temp: tempfile::TempDir,
     deadline: Instant,
@@ -1753,8 +1787,14 @@ struct CaptureSnapshot {
 }
 
 impl CaptureTask {
-    /// Spawn the drain for `stream`, capturing up to `cap` bytes.
-    fn new<R>(stream: Option<R>, cap: usize) -> Self
+    /// Spawn the drain for `stream`, retaining a preview of at most `cap`
+    /// bytes while relaying every read chunk through the bounded event channel.
+    fn new<R>(
+        stream: Option<R>,
+        cap: usize,
+        output_stream: OutputStream,
+        event_tx: mpsc::Sender<SandboxEvent>,
+    ) -> Self
     where
         R: tokio::io::AsyncRead + Unpin + Send + 'static,
     {
@@ -1769,16 +1809,41 @@ impl CaptureTask {
                         Ok(0) => break,
                         Err(_) => {
                             lock_capture(&task_state).truncated = true;
+                            let _ = event_tx
+                                .send(SandboxEvent::Diagnostic {
+                                    message: match output_stream {
+                                        OutputStream::Stdout => {
+                                            "stdout stream read failed; terminal preview may be incomplete"
+                                        }
+                                        OutputStream::Stderr => {
+                                            "stderr stream read failed; terminal preview may be incomplete"
+                                        }
+                                    }
+                                    .to_string(),
+                                })
+                                .await;
                             break;
                         }
                         Ok(n) => {
-                            let mut state = lock_capture(&task_state);
-                            if state.bytes.len() < cap {
-                                let take = std::cmp::min(n, cap - state.bytes.len());
-                                state.bytes.extend_from_slice(&chunk[..take]);
-                                state.truncated |= take < n;
-                            } else {
-                                state.truncated = true;
+                            {
+                                let mut state = lock_capture(&task_state);
+                                if state.bytes.len() < cap {
+                                    let take = std::cmp::min(n, cap - state.bytes.len());
+                                    state.bytes.extend_from_slice(&chunk[..take]);
+                                    state.truncated |= take < n;
+                                } else {
+                                    state.truncated = true;
+                                }
+                            }
+                            if event_tx
+                                .send(SandboxEvent::Output {
+                                    stream: output_stream,
+                                    bytes: chunk[..n].to_vec(),
+                                })
+                                .await
+                                .is_err()
+                            {
+                                break;
                             }
                         }
                     }
@@ -1912,14 +1977,18 @@ mod tests {
         let deadline_cell = Arc::new(OnceLock::new());
         deadline_cell.set(deadlines).expect("set deadlines");
         let cancel = CancellationToken::new();
+        let (event_tx, event_rx) = mpsc::channel(OUTPUT_EVENT_CAPACITY);
         let inner = Box::pin(supervise(
             child,
             tree,
             temp,
             temp_root.clone(),
-            Arc::clone(&deadline_cell),
-            cancel.clone(),
-            FaultInjection::default(),
+            SupervisionControl {
+                deadline_cell: Arc::clone(&deadline_cell),
+                cancel: cancel.clone(),
+                faults: FaultInjection::default(),
+                event_tx,
+            },
         ));
         let run = SandboxRun {
             started_emitted: false,
@@ -1940,6 +2009,8 @@ mod tests {
             cancel,
             deadline_plan: RunDeadlinePlan::Fixed(deadlines),
             deadline_cell,
+            event_rx,
+            terminal_result: None,
             inner: Some(inner),
         };
         (run, probe, marker)
@@ -1985,6 +2056,8 @@ mod tests {
         );
         let deadline_cell = Arc::new(OnceLock::new());
         deadline_cell.set(deadlines).expect("set deadlines");
+        let (event_tx, event_rx) = mpsc::channel(OUTPUT_EVENT_CAPACITY);
+        drop(event_tx);
         let result = SandboxResult {
             outcome: SandboxOutcome::Exited { code: Some(68) },
             cleanup: CleanupState::Confirmed,
@@ -2013,6 +2086,8 @@ mod tests {
             cancel: CancellationToken::new(),
             deadline_plan: RunDeadlinePlan::Fixed(deadlines),
             deadline_cell,
+            event_rx,
+            terminal_result: None,
             inner: Some(Box::pin(ProbeAndExitTogether {
                 probe,
                 token: TEST_START_TOKEN.to_vec(),

@@ -35,6 +35,13 @@ def require(rel: str, token: str, *, label: str | None = None) -> None:
         ERRORS.append(f"{rel}: missing {label or token!r}")
 
 
+def require_tokens(rel: str, label: str, tokens: tuple[str, ...]) -> None:
+    text = read(rel)
+    missing = [token for token in tokens if token not in text]
+    if missing:
+        ERRORS.append(f"{rel}: {label} missing semantic tokens {missing!r}")
+
+
 def workspace_version() -> str:
     cargo = read("Cargo.toml")
     match = re.search(
@@ -162,6 +169,85 @@ def phase15_safety_sandbox_docs() -> None:
         ERRORS.append("main.rs: standard CLI must not register a native trust resolver")
 
 
+def phase16_command_execution_docs() -> None:
+    """Stable Phase 16 product and source-derived documentation contracts."""
+    lifecycle = (
+        "Minimal Runtime",
+        "Installed",
+        "Trusted",
+        "Enabled",
+        "Selected",
+        "Permitted",
+        "fail-closed",
+        "opi-sandbox",
+    )
+    standalone = (
+        "SandboxPolicy",
+        "SandboxRequest",
+        "SandboxRunner",
+        "SandboxEvent",
+        "SandboxResult",
+        "opi-sandbox backend --stdio",
+    )
+    migration = ("[sandbox]", "--sandbox", "--sandbox-require")
+    for rel in ("docs/opi-spec.md", "docs/opi-spec.zh.md"):
+        require_tokens(rel, "Phase 16 lifecycle", lifecycle)
+        require_tokens(rel, "standalone sandbox SDK/CLI", standalone)
+        require_tokens(rel, "removed core sandbox surface", migration)
+        require_tokens(
+            rel,
+            "Phase 16 non-goals",
+            (
+                "Docker",
+                "VM",
+                "SSH",
+                "remote" if rel.endswith("opi-spec.md") else "远程",
+                "AppContainer",
+            ),
+        )
+        require_tokens(rel, "Windows L0 posture", ("Windows", "L0", "Job Object"))
+
+    for rel in ("AGENTS.md", "CLAUDE.md"):
+        require_tokens(rel, "Phase 16 lifecycle", lifecycle)
+        require_tokens(rel, "removed core sandbox surface", migration)
+        require_tokens(rel, "Phase 16 non-goals", ("Docker", "VM", "SSH"))
+        require_tokens(rel, "Windows L0 posture", ("Windows", "L0", "Job-Object"))
+
+    require_tokens(
+        "crates/opi-sandbox/src/main.rs",
+        "native CLI argv",
+        ("std::env::args_os()",),
+    )
+    require_tokens(
+        "crates/opi-sandbox/src/cli.rs",
+        "CLI exit mapping",
+        (
+            "SetupFailureReason::InvalidRequest",
+            "SetupFailureReason::UnsupportedPlatform",
+            "SandboxOutcome::TimedOut",
+            "SandboxOutcome::Cancelled",
+            "124",
+            "125",
+            "130",
+        ),
+    )
+    require_tokens(
+        "crates/opi-sandbox/src/platform/mod.rs",
+        "native platform dispatch",
+        ('target_os = "linux"', 'target_os = "macos"', "windows::posture()"),
+    )
+    require_tokens(
+        "crates/opi-sandbox/src/platform/macos.rs",
+        "canonical sandbox-exec probe",
+        (
+            'const SANDBOX_EXEC_PATH: &str = "/usr/bin/sandbox-exec"',
+            "std::process::Command::new(&bin)",
+            "SandboxExecStatus::Missing",
+            "SandboxExecStatus::Unusable",
+        ),
+    )
+
+
 LINK_RE = re.compile(r"!?\[[^\]]*\]\(([^)]+)\)")
 
 
@@ -242,6 +328,7 @@ def main() -> int:
     check_root_guidance_lockstep()
     check_workspace_graph()
     phase15_safety_sandbox_docs()
+    phase16_command_execution_docs()
     check_current_contracts(docs)
     for rel in [*docs, "AGENTS.md", "CLAUDE.md"]:
         check_local_links(rel)

@@ -23,10 +23,9 @@
 //! for the local identity, NOT sourced from any sandbox/confinement state: the
 //! execution-backend guarantee axis is distinct from the Phase 15 host-sandbox
 //! restriction axis (seccomp+Landlock on Linux-Engaged), which is reported via
-//! `CODE_PROCESS_TREE_DEGRADED`. The in-band
-//! `opi.operations.bash.operation_context` diagnostic on `BashResult` — the
-//! `BashTool` publishes the redaction-safe fields in `ToolResult::details` for
-//! every public surface.
+//! `CODE_PROCESS_TREE_DEGRADED`. The typed operation context on `BashResult`
+//! carries the contract; `BashTool` publishes its redaction-safe fields in
+//! `ToolResult::details` for every public surface.
 //!
 //! ## Clause 5: package-selection fail-fast before command execution
 //!
@@ -62,8 +61,8 @@ use opi_coding_agent::package_activation::{self, TrustConfirmer, TrustDisplay};
 use opi_coding_agent::package_cli;
 use opi_coding_agent::package_discovery::PackageManifest;
 use opi_coding_agent::tool::{
-    BashOpError, BashOperations, BashRequest, BashResult, BashTool,
-    LOCAL_BASH_OPERATION_DIAGNOSTIC, LocalBashOperations,
+    BashOpError, BashOperationContext, BashOperations, BashRequest, BashResult, BashTool,
+    LocalBashOperations,
 };
 use tempfile::{TempDir, tempdir};
 use tokio_util::sync::CancellationToken;
@@ -74,9 +73,9 @@ use tokio_util::sync::CancellationToken;
 
 /// Built-in local execution reports guarantee=`supervised`, placement=`host`,
 /// and never `restricted`. Drives the REAL `LocalBashOperations::exec` (Done
-/// branch, a benign exit-0 target) and reads the in-band operation_context
-/// diagnostic. The guarantee is a constant for the local identity (spec line
-/// 146), not derived from the prepared/confinement state.
+/// branch, a benign exit-0 target) and reads the typed operation context. The
+/// guarantee is a constant for the local identity (spec line 146), not derived
+/// from the prepared/confinement state.
 #[tokio::test]
 async fn local_exec_reports_supervised_guarantee() {
     let workspace: TempDir = tempdir().expect("workspace temp dir");
@@ -95,30 +94,16 @@ async fn local_exec_reports_supervised_guarantee() {
         .await
         .expect("benign local target must succeed");
     assert_eq!(
-        result.exit_code,
+        result.context.exit_code,
         Some(0),
-        "target must exit 0 so the Done-branch diagnostic is the one inspected"
+        "target must exit 0 so the Done-branch context is the one inspected"
     );
-    let diagnostic = result
-        .diagnostics
-        .iter()
-        .find(|d| d.code == LOCAL_BASH_OPERATION_DIAGNOSTIC)
-        .expect("the local operation_context diagnostic is emitted on every in-band BashResult");
-    let details = diagnostic
-        .details
-        .as_ref()
-        .expect("operation_context diagnostic carries a details payload");
-
-    let guarantee = details.get("guarantee").and_then(|v| v.as_str());
-    let placement = details.get("placement").and_then(|v| v.as_str());
     assert_eq!(
-        guarantee,
-        Some("supervised"),
+        result.context.contract.guarantee, "supervised",
         "local execution-backend guarantee is supervised (spec line 146; helper.rs:154-161)"
     );
     assert_eq!(
-        placement,
-        Some("host"),
+        result.context.contract.placement, "host",
         "local execution-backend placement is host (spec line 146)"
     );
     // The local identity never reports "restricted" (that is the opi-sandbox
@@ -127,7 +112,7 @@ async fn local_exec_reports_supervised_guarantee() {
     // sources the guarantee from the Phase 15 host-sandbox state (and emits a
     // constant `policy="unrestricted"`) would be dishonest on Linux-Engaged.
     assert!(
-        details.get("policy").is_none(),
+        result.context.contract.policy.is_none(),
         "local reports only placement+guarantee; no policy/limitations"
     );
 
@@ -208,8 +193,7 @@ impl BashOperations for RecordingOps {
             Ok(BashResult {
                 stdout: b"local\n".to_vec(),
                 stderr: Vec::new(),
-                exit_code: Some(0),
-                signal: None,
+                context: BashOperationContext::local(Some(0), None),
                 diagnostics: Vec::new(),
             })
         })

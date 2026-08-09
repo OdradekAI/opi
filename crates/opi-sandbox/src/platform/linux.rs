@@ -397,6 +397,106 @@ fn limitations(abi: ABI, supported: bool) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
+
+    const LANDLOCK_NETWORK_PROBE: &str = "OPI_SANDBOX_LANDLOCK_NETWORK_PROBE";
+    const LANDLOCK_UNIX_PATH: &str = "OPI_SANDBOX_LANDLOCK_UNIX_PATH";
+
+    struct LandlockNetworkTestRestriction {
+        abi: ABI,
+        seccomp_baseline: Arc<BpfProgram>,
+        install_network_layer: bool,
+    }
+
+    impl Restriction for LandlockNetworkTestRestriction {
+        fn prepare(
+            &self,
+            cmd: &mut Command,
+            ctx: &RestrictionCtx<'_>,
+        ) -> Result<AppliedRestriction, RestrictionSetupError> {
+            let fs_ruleset = build_landlock_fs_ruleset(self.abi, ctx.workspace, ctx.temp_root)
+                .map_err(|_| RestrictionSetupError::Failed("landlock-fs-ruleset"))?;
+            let network_ruleset = self
+                .install_network_layer
+                .then(|| build_landlock_network_ruleset(self.abi))
+                .transpose()
+                .map_err(|_| RestrictionSetupError::Failed("landlock-network-ruleset"))?;
+            crate::process_tree::install_child_confinement(
+                cmd,
+                Arc::clone(&self.seccomp_baseline),
+                Some(fs_ruleset),
+                network_ruleset,
+                false,
+            );
+            Ok(AppliedRestriction {
+                mechanism: Mechanism::Landlock,
+                contract: ContractStatus::Restricted,
+            })
+        }
+    }
+
+    async fn run_landlock_network_probe(
+        abi: ABI,
+        mode: &str,
+        install_network_layer: bool,
+    ) -> crate::runner::SandboxResult {
+        use std::ffi::OsString;
+        use std::time::Duration;
+
+        use futures_util::StreamExt as _;
+        use opi_protocol::execution::v1::EnvInherit;
+
+        use crate::policy::{Profile, SandboxPolicy};
+        use crate::runner::{SandboxEvent, SandboxRequest, SandboxRunner, StdinPolicy};
+
+        let workspace = tempfile::tempdir().expect("Landlock network workspace");
+        let socket_path = workspace.path().join("local.sock");
+        let baseline = LinuxRestriction::new(abi).expect("host seccomp architecture");
+        let restriction = LandlockNetworkTestRestriction {
+            abi,
+            seccomp_baseline: baseline.seccomp_allow,
+            install_network_layer,
+        };
+        let mut env_additions = BTreeMap::new();
+        env_additions.insert(OsString::from(LANDLOCK_NETWORK_PROBE), OsString::from(mode));
+        env_additions.insert(
+            OsString::from(LANDLOCK_UNIX_PATH),
+            socket_path.into_os_string(),
+        );
+        let request = SandboxRequest {
+            program: std::env::current_exe().expect("current test executable"),
+            args: [
+                OsString::from("--exact"),
+                OsString::from("platform::linux::tests::landlock_tcp_rules_are_independent_of_the_seccomp_socket_gate"),
+                OsString::from("--nocapture"),
+            ]
+            .into_iter()
+            .collect(),
+            workspace: workspace.path().to_path_buf(),
+            cwd: workspace.path().to_path_buf(),
+            timeout: Duration::from_secs(10),
+            env_inherit: EnvInherit::Inherit,
+            env_additions,
+            stdin: StdinPolicy::Null,
+            cancel: None,
+        };
+        let runner = SandboxRunner::new(
+            SandboxPolicy::new(Profile::WorkspaceWrite, NetworkPolicy::Allow),
+            Arc::new(restriction),
+        );
+        let mut run = runner.run(request).expect("Landlock probe starts");
+        assert!(matches!(
+            run.next().await,
+            Some(SandboxEvent::Started { .. })
+        ));
+        loop {
+            match run.next().await {
+                Some(SandboxEvent::Completed(result)) => return result,
+                Some(_) => {}
+                None => panic!("Landlock probe ended without completion"),
+            }
+        }
+    }
 
     #[derive(Clone, Copy)]
     struct TestSeccompData {
@@ -467,10 +567,10 @@ mod tests {
             4 => data.arch,
             8 => data.instruction_pointer as u32,
             12 => (data.instruction_pointer >> 32) as u32,
-            16..=63 if (offset - 16) % 4 == 0 => {
+            16..=63 if (offset - 16).is_multiple_of(4) => {
                 let relative = offset - 16;
                 let argument = data.args[(relative / 8) as usize];
-                if relative % 8 == 0 {
+                if relative.is_multiple_of(8) {
                     argument as u32
                 } else {
                     (argument >> 32) as u32
@@ -652,5 +752,61 @@ mod tests {
         // Both compile for the host arch.
         assert!(compile_seccomp(arch, true).is_ok());
         assert!(compile_seccomp(arch, false).is_ok());
+    }
+
+    #[tokio::test]
+    async fn landlock_tcp_rules_are_independent_of_the_seccomp_socket_gate() {
+        use std::net::{TcpListener, TcpStream};
+        use std::os::unix::net::UnixListener;
+
+        if let Ok(mode) = std::env::var(LANDLOCK_NETWORK_PROBE) {
+            match mode.as_str() {
+                "tcp-bind-denied" => {
+                    let error = TcpListener::bind(("127.0.0.1", 0))
+                        .expect_err("Landlock must deny TCP bind");
+                    assert_eq!(error.raw_os_error(), Some(libc::EACCES));
+                }
+                "tcp-connect-denied" => {
+                    let error = TcpStream::connect(("127.0.0.1", 9))
+                        .expect_err("Landlock must deny TCP connect");
+                    assert_eq!(error.raw_os_error(), Some(libc::EACCES));
+                }
+                "tcp-bind-allowed" => {
+                    TcpListener::bind(("127.0.0.1", 0))
+                        .expect("baseline seccomp must preserve TCP bind");
+                }
+                "unix-preserved" => {
+                    let path = std::env::var_os(LANDLOCK_UNIX_PATH)
+                        .map(PathBuf::from)
+                        .expect("Unix socket path");
+                    UnixListener::bind(path).expect("Landlock TCP layer must preserve AF_UNIX");
+                }
+                other => panic!("unknown Landlock network probe mode: {other}"),
+            }
+            return;
+        }
+
+        let abi = crate::process_tree::observed_landlock_abi();
+        if !abi_supports_tcp(abi) {
+            eprintln!("skipping Landlock TCP isolation test: ABI < 4");
+            return;
+        }
+
+        for mode in ["tcp-bind-denied", "tcp-connect-denied", "unix-preserved"] {
+            let result = run_landlock_network_probe(abi, mode, true).await;
+            assert_eq!(
+                result.outcome,
+                crate::runner::SandboxOutcome::Exited { code: Some(0) },
+                "Landlock-only probe {mode} failed: stderr={}",
+                String::from_utf8_lossy(&result.stderr)
+            );
+        }
+        let control = run_landlock_network_probe(abi, "tcp-bind-allowed", false).await;
+        assert_eq!(
+            control.outcome,
+            crate::runner::SandboxOutcome::Exited { code: Some(0) },
+            "baseline control failed: stderr={}",
+            String::from_utf8_lossy(&control.stderr)
+        );
     }
 }

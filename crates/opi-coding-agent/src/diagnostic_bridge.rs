@@ -12,7 +12,9 @@
 //! the shared diagnostic carries a stable `package_diagnostic` code.
 
 use opi_agent::diagnostic::code::*;
-use opi_agent::diagnostic::{Diagnostic, SOURCE_ADAPTER, SOURCE_CONFIG, SOURCE_PACKAGE, Severity};
+use opi_agent::diagnostic::{
+    Diagnostic, RedactionMode, SOURCE_ADAPTER, SOURCE_CONFIG, SOURCE_PACKAGE, Severity, redact_text,
+};
 
 use crate::config::ConfigError;
 use crate::execution::ExecutionFailure;
@@ -333,4 +335,43 @@ pub fn diagnostic_from_execution_package_failure(failure: &ExecutionFailure) -> 
     Diagnostic::new(Severity::Error, code, SOURCE_PACKAGE, failure.to_string())
         .details(details)
         .action(remediation.as_str())
+}
+
+/// Render one tool diagnostic for human-facing text and TUI surfaces.
+///
+/// The stable diagnostic code and optional remediation remain visible while
+/// message/context strings pass through summary redaction.
+pub fn format_tool_diagnostic(diagnostic: &opi_agent::tool::ToolDiagnostic) -> String {
+    let message = redact_text(&diagnostic.message, RedactionMode::Summary);
+    let action = diagnostic
+        .context
+        .get("remediation")
+        .and_then(serde_json::Value::as_str)
+        .map(|remediation| redact_text(remediation, RedactionMode::Summary))
+        .filter(|remediation| !remediation.is_empty())
+        .map(|remediation| format!(" (action: {remediation})"))
+        .unwrap_or_default();
+    format!("[error] tool::{}: {message}{action}", diagnostic.code)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tool_diagnostic_formatter_keeps_code_and_remediation_but_redacts_secrets() {
+        let diagnostic = opi_agent::tool::ToolDiagnostic {
+            code: "execution_failed".to_string(),
+            message: "failed with sk-proj-abcdefghijklmnopqrstuvwxyz123456".to_string(),
+            context: serde_json::json!({
+                "remediation": "inspect C:\\private\\adapter and retry"
+            }),
+        };
+
+        let rendered = format_tool_diagnostic(&diagnostic);
+        assert!(rendered.contains("execution_failed"));
+        assert!(rendered.contains("action:"));
+        assert!(!rendered.contains("sk-proj-abcdefghijklmnopqrstuvwxyz123456"));
+        assert!(!rendered.contains("C:\\private\\adapter"));
+    }
 }

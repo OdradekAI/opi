@@ -41,16 +41,11 @@ use opi_protocol::execution::v1::frames::{
 use crate::tool::process_tree::resume_child;
 use crate::tool::process_tree::{TerminationOutcome, TreeGuard, configure_tree};
 
+use super::CLEANUP_REPORT_GRACE;
 use super::failure::ExecutionFailure;
 
 /// Monotonic request-id counter (host-generated ids; no RNG required).
 static REQUEST_ID_COUNTER: AtomicU64 = AtomicU64::new(0);
-
-/// Grace granted to the backend to report a terminal cleanup state after the
-/// host sends `cancel`, and to reap the backend process after `completed`.
-/// Distinct from `supervision::TERMINATED_PIPE_DRAIN_GRACE` (the post-kill pipe
-/// drain bound). Sourced from the Phase 16 design §Cancellation and cleanup.
-const CLEANUP_REPORT_GRACE: Duration = Duration::from_millis(1500);
 
 /// Per-write timeout for every host->backend stdin frame. Bounds a wedged
 /// backend that is not draining its stdin (preventing a hung `execute`). After a
@@ -156,7 +151,8 @@ pub struct CompletedOutcome {
 
 /// A failed protocol execution plus any redacted in-band diagnostics emitted
 /// before or on its terminal `failed` frame.
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
+#[error("{failure}")]
 pub struct ExecutionProtocolFailure {
     pub failure: ExecutionFailure,
     pub diagnostics: Vec<Diagnostic>,
@@ -184,14 +180,6 @@ impl From<ExecutionFailure> for ExecutionProtocolFailure {
         Self::with_diagnostics(failure, Vec::new())
     }
 }
-
-impl std::fmt::Display for ExecutionProtocolFailure {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.failure.fmt(f)
-    }
-}
-
-impl std::error::Error for ExecutionProtocolFailure {}
 
 /// The one-shot execution protocol host.
 pub struct ExecutionProtocolHost;
@@ -1017,11 +1005,12 @@ async fn finalize_terminal(
                 .extend_backend(p.diagnostics.iter().cloned())
                 .is_err()
             {
-                let _ = guard.terminate();
-                finish_teardown(child, stderr_handle, hard_deadline).await;
-                return Err(ExecutionProtocolFailure::with_diagnostics(
+                let teardown =
+                    terminate_and_finish(child, &mut guard, stderr_handle, hard_deadline).await;
+                return Err(failure_after_teardown(
                     ExecutionFailure::ProtocolViolation,
                     diagnostics.into_entries(),
+                    &teardown,
                 ));
             }
         }
@@ -1033,11 +1022,12 @@ async fn finalize_terminal(
                 .map(|message| Diagnostic { message })
                 .chain(p.diagnostics.iter().cloned());
             if diagnostics.extend_backend(terminal_diagnostics).is_err() {
-                let _ = guard.terminate();
-                finish_teardown(child, stderr_handle, hard_deadline).await;
-                return Err(ExecutionProtocolFailure::with_diagnostics(
+                let teardown =
+                    terminate_and_finish(child, &mut guard, stderr_handle, hard_deadline).await;
+                return Err(failure_after_teardown(
                     ExecutionFailure::ProtocolViolation,
                     diagnostics.into_entries(),
+                    &teardown,
                 ));
             }
         }
@@ -1051,44 +1041,46 @@ async fn finalize_terminal(
     // of whether the terminal was `completed` or `failed`.
     let reap_deadline = grace_deadline(hard_deadline);
     if let Err(failure) = require_clean_eof(reader, reap_deadline).await {
-        let _ = guard.terminate();
-        finish_teardown(child, stderr_handle, hard_deadline).await;
-        return Err(ExecutionProtocolFailure::with_diagnostics(
+        let teardown = terminate_and_finish(child, &mut guard, stderr_handle, hard_deadline).await;
+        return Err(failure_after_teardown(
             failure,
             diagnostics.into_entries(),
+            &teardown,
         ));
     }
-    match reap_child(&mut child, reap_deadline).await {
-        Some(0) => {
-            finish_teardown(child, stderr_handle, hard_deadline).await;
-        }
+    let reap_result = reap_child(&mut child, reap_deadline).await;
+    let teardown = terminate_and_finish(child, &mut guard, stderr_handle, hard_deadline).await;
+    match reap_result {
+        Some(0) => {}
         Some(_) => {
-            let _ = guard.terminate();
-            finish_teardown(child, stderr_handle, hard_deadline).await;
-            return Err(ExecutionProtocolFailure::with_diagnostics(
+            return Err(failure_after_teardown(
                 ExecutionFailure::ProtocolViolation,
                 diagnostics.into_entries(),
+                &teardown,
             ));
         }
         None => {
-            let _ = guard.terminate();
-            finish_teardown(child, stderr_handle, hard_deadline).await;
-            return Err(ExecutionProtocolFailure::with_diagnostics(
+            return Err(failure_after_teardown(
                 ExecutionFailure::CleanupUnconfirmed,
                 diagnostics.into_entries(),
+                &teardown,
             ));
         }
     }
 
     match terminal {
-        Terminal::Failed(p) => Err(ExecutionProtocolFailure::with_diagnostics(
+        Terminal::Failed(p) => Err(failure_after_teardown(
             map_failure_code(&p, ready.implementation.as_str()),
             diagnostics.into_entries(),
+            &teardown,
         )),
-        Terminal::Completed(p) if p.cleanup == CleanupState::Unconfirmed => {
-            Err(ExecutionProtocolFailure::with_diagnostics(
+        Terminal::Completed(p)
+            if p.cleanup == CleanupState::Unconfirmed || !teardown.confirmed() =>
+        {
+            Err(failure_after_teardown(
                 ExecutionFailure::CleanupUnconfirmed,
                 diagnostics.into_entries(),
+                &teardown,
             ))
         }
         Terminal::Completed(p) => Ok(CompletedOutcome {
@@ -1225,20 +1217,22 @@ async fn finish_with_cancel(
         }
         Ok(None) => {
             drop(stdin);
-            let _ = guard.terminate();
-            finish_teardown(child, stderr_handle, hard_deadline).await;
-            Err(ExecutionProtocolFailure::with_diagnostics(
+            let teardown =
+                terminate_and_finish(child, &mut guard, stderr_handle, hard_deadline).await;
+            Err(failure_after_teardown(
                 ExecutionFailure::CleanupUnconfirmed,
                 diagnostics.into_entries(),
+                &teardown,
             ))
         }
         Err(failure) => {
             drop(stdin);
-            let _ = guard.terminate();
-            finish_teardown(child, stderr_handle, hard_deadline).await;
-            Err(ExecutionProtocolFailure::with_diagnostics(
+            let teardown =
+                terminate_and_finish(child, &mut guard, stderr_handle, hard_deadline).await;
+            Err(failure_after_teardown(
                 failure,
                 diagnostics.into_entries(),
+                &teardown,
             ))
         }
     }
@@ -1255,9 +1249,8 @@ async fn terminate_and_fail(
     hard_deadline: tokio::time::Instant,
 ) -> Result<CompletedOutcome, ExecutionProtocolFailure> {
     drop(stdin);
-    let _ = guard.terminate();
-    finish_teardown(child, stderr_handle, hard_deadline).await;
-    Err(code.into())
+    let teardown = terminate_and_finish(child, &mut guard, stderr_handle, hard_deadline).await;
+    Err(failure_after_teardown(code, Vec::new(), &teardown))
 }
 
 /// A deadline-expired or otherwise incomplete host frame cannot be followed by
@@ -1273,37 +1266,78 @@ async fn terminate_failed_transmission(
     hard_deadline: tokio::time::Instant,
 ) -> Result<CompletedOutcome, ExecutionProtocolFailure> {
     drop(stdin);
-    let tree_confirmed = !matches!(guard.terminate(), TerminationOutcome::Failed(_));
-    let teardown = finish_teardown(child, stderr_handle, hard_deadline).await;
-    Err(failed_transmission_failure(
-        tree_confirmed,
-        teardown.child_reaped,
-        teardown.stderr_drained,
-    )
-    .into())
+    let teardown = terminate_and_finish(child, &mut guard, stderr_handle, hard_deadline).await;
+    Err(failure_after_teardown(
+        ExecutionFailure::ProtocolViolation,
+        Vec::new(),
+        &teardown,
+    ))
 }
 
+#[cfg(test)]
 fn failed_transmission_failure(
     tree_confirmed: bool,
     child_reaped: bool,
     stderr_drained: bool,
 ) -> ExecutionFailure {
-    if tree_confirmed && child_reaped && stderr_drained {
-        ExecutionFailure::ProtocolViolation
-    } else {
-        ExecutionFailure::CleanupUnconfirmed
+    TeardownConfirmation {
+        tree_terminated: tree_confirmed,
+        child_reaped,
+        stderr_drained,
     }
+    .classify(ExecutionFailure::ProtocolViolation)
 }
 
 struct TeardownConfirmation {
+    tree_terminated: bool,
     child_reaped: bool,
     stderr_drained: bool,
+}
+
+impl TeardownConfirmation {
+    fn confirmed(&self) -> bool {
+        self.tree_terminated && self.child_reaped && self.stderr_drained
+    }
+
+    fn classify(&self, original: ExecutionFailure) -> ExecutionFailure {
+        if self.confirmed() {
+            original
+        } else {
+            ExecutionFailure::CleanupUnconfirmed
+        }
+    }
+}
+
+fn failure_after_teardown(
+    original: ExecutionFailure,
+    mut diagnostics: Vec<Diagnostic>,
+    teardown: &TeardownConfirmation,
+) -> ExecutionProtocolFailure {
+    let original_code = original.code();
+    let failure = teardown.classify(original);
+    if !teardown.confirmed() && original_code != ExecutionFailure::CleanupUnconfirmed.code() {
+        diagnostics.push(Diagnostic {
+            message: format!("original_failure={original_code}"),
+        });
+    }
+    ExecutionProtocolFailure::with_diagnostics(failure, diagnostics)
+}
+
+async fn terminate_and_finish(
+    child: Child,
+    guard: &mut TreeGuard,
+    stderr_handle: tokio::task::JoinHandle<Vec<u8>>,
+    hard_deadline: tokio::time::Instant,
+) -> TeardownConfirmation {
+    let tree_terminated = !matches!(guard.terminate(), TerminationOutcome::Failed(_));
+    finish_teardown(child, stderr_handle, hard_deadline, tree_terminated).await
 }
 
 async fn finish_teardown(
     mut child: Child,
     stderr_handle: tokio::task::JoinHandle<Vec<u8>>,
     hard_deadline: tokio::time::Instant,
+    tree_terminated: bool,
 ) -> TeardownConfirmation {
     // Best-effort reap so kill_on_drop/terminate are accounted; do not hang.
     let teardown_deadline = grace_deadline(hard_deadline);
@@ -1316,6 +1350,7 @@ async fn finish_teardown(
         Ok(Ok(_))
     );
     TeardownConfirmation {
+        tree_terminated,
         child_reaped,
         stderr_drained,
     }
@@ -1335,6 +1370,7 @@ struct CappedReader<R: AsyncRead + Unpin> {
     inner: BufReader<R>,
     cap: usize,
     line: Vec<u8>,
+    pending_cr: bool,
 }
 
 impl<R: AsyncRead + Unpin> CappedReader<R> {
@@ -1343,6 +1379,7 @@ impl<R: AsyncRead + Unpin> CappedReader<R> {
             inner: BufReader::new(reader),
             cap,
             line: Vec::new(),
+            pending_cr: false,
         }
     }
 
@@ -1354,6 +1391,13 @@ impl<R: AsyncRead + Unpin> CappedReader<R> {
             let (newline_found, oversize, consumed) = {
                 let buf = self.inner.fill_buf().await.map_err(|_| ReadErr::Io)?;
                 if buf.is_empty() {
+                    if self.pending_cr {
+                        if self.line.len() >= self.cap {
+                            return Err(ReadErr::Oversized);
+                        }
+                        self.line.push(b'\r');
+                        self.pending_cr = false;
+                    }
                     return if self.line.is_empty() {
                         Ok(None)
                     } else {
@@ -1365,9 +1409,23 @@ impl<R: AsyncRead + Unpin> CappedReader<R> {
                 let mut consumed = 0;
                 for &byte in buf.iter() {
                     if byte == b'\n' {
+                        self.pending_cr = false;
                         newline_found = true;
                         consumed += 1;
                         break;
+                    }
+                    if self.pending_cr {
+                        if self.line.len() >= self.cap {
+                            oversize = true;
+                            break;
+                        }
+                        self.line.push(b'\r');
+                        self.pending_cr = false;
+                    }
+                    if byte == b'\r' {
+                        self.pending_cr = true;
+                        consumed += 1;
+                        continue;
                     }
                     if self.line.len() >= self.cap {
                         oversize = true;
@@ -1383,9 +1441,6 @@ impl<R: AsyncRead + Unpin> CappedReader<R> {
                 return Err(ReadErr::Oversized);
             }
             if newline_found {
-                if self.line.last() == Some(&b'\r') {
-                    self.line.pop();
-                }
                 return Ok(Some(std::mem::take(&mut self.line)));
             }
         }
@@ -1510,6 +1565,37 @@ mod tests {
         })
     }
 
+    async fn read_capped(input: &[u8], cap: usize) -> Result<Option<Vec<u8>>, ReadErr> {
+        let (mut writer, reader) = tokio::io::duplex(input.len().max(1));
+        writer.write_all(input).await.expect("write capped input");
+        writer.shutdown().await.expect("close capped input");
+        CappedReader::new(reader, cap).read_line().await
+    }
+
+    #[tokio::test]
+    async fn capped_reader_matches_canonical_lf_and_crlf_boundaries() {
+        assert_eq!(
+            read_capped(b"abcd\n", 4).await.unwrap(),
+            Some(b"abcd".to_vec())
+        );
+        assert_eq!(
+            read_capped(b"abcd\r\n", 4).await.unwrap(),
+            Some(b"abcd".to_vec())
+        );
+        assert!(matches!(
+            read_capped(b"abcde\n", 4).await,
+            Err(ReadErr::Oversized)
+        ));
+        assert_eq!(
+            read_capped(b"ab\rc\n", 4).await.unwrap(),
+            Some(b"ab\rc".to_vec())
+        );
+        assert_eq!(
+            read_capped(b"abcd\r", 5).await.unwrap(),
+            Some(b"abcd\r".to_vec())
+        );
+    }
+
     #[tokio::test(start_paused = true)]
     async fn pending_initialize_write_failure_requires_fully_confirmed_local_teardown() {
         let start = tokio::time::Instant::now();
@@ -1535,6 +1621,32 @@ mod tests {
         ] {
             assert!(matches!(
                 failed_transmission_failure(tree_confirmed, child_reaped, stderr_drained),
+                ExecutionFailure::CleanupUnconfirmed
+            ));
+        }
+    }
+
+    #[test]
+    fn every_original_failure_yields_to_unconfirmed_teardown() {
+        for teardown in [
+            TeardownConfirmation {
+                tree_terminated: false,
+                child_reaped: true,
+                stderr_drained: true,
+            },
+            TeardownConfirmation {
+                tree_terminated: true,
+                child_reaped: false,
+                stderr_drained: true,
+            },
+            TeardownConfirmation {
+                tree_terminated: true,
+                child_reaped: true,
+                stderr_drained: false,
+            },
+        ] {
+            assert!(matches!(
+                teardown.classify(ExecutionFailure::ProtocolViolation),
                 ExecutionFailure::CleanupUnconfirmed
             ));
         }

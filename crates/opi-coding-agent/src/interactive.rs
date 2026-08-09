@@ -982,8 +982,17 @@ pub async fn run_interactive_tui(
                 is_error,
                 details,
                 result,
+                diagnostics,
                 ..
             } => {
+                let formatted_diagnostics: Vec<String> = diagnostics
+                    .iter()
+                    .map(crate::diagnostic_bridge::format_tool_diagnostic)
+                    .collect();
+                for diagnostic in &formatted_diagnostics {
+                    s.messages
+                        .push(TuiMessage::new(TuiRole::System, diagnostic.clone()));
+                }
                 if tool_name == "bash"
                     && let Some(details) = details
                     && let Some(contract) = crate::tool::format_effective_contract(details)
@@ -1064,7 +1073,12 @@ pub async fn run_interactive_tui(
                     && name == tool_name
                 {
                     let status = if *is_error {
-                        ToolCallStatus::Error("failed".into())
+                        ToolCallStatus::Error(
+                            formatted_diagnostics
+                                .first()
+                                .cloned()
+                                .unwrap_or_else(|| "tool execution failed".to_string()),
+                        )
                     } else {
                         ToolCallStatus::Success
                     };

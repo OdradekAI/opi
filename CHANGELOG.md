@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking Changes
 
+- `opi-coding-agent` 0.x API: `BashResult` now carries the required typed
+  `BashOperationContext` and `BashExecutionContract` instead of duplicating
+  exit, signal, truncation, and effective-contract state through flat fields
+  and a magic diagnostic payload.
 - `opi-coding-agent` 0.x: the built-in Phase 15 native sandbox is removed from
   the Opi core (migration 16.16.1). The `[sandbox]` section and the `--sandbox` /
   `--sandbox-require` flags are rejected in core without compatibility aliases;
@@ -63,6 +67,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `opi-sandbox` reports `restricted`) after setup succeeds; adapter identity
   alone never establishes a guarantee. L0 subprocess-tree supervision remains
   in core for both local and external adapter processes.
+
+### Fixed
+
+- `opi-sandbox`: standalone CLI and protocol-backend runs now stream complete
+  stdout/stderr bytes through bounded backpressure while retaining bounded SDK
+  terminal previews, so successful output beyond 1 MiB is neither dropped nor
+  duplicated.
+- `opi-coding-agent`: routed bash execution now shares the local recoverable
+  preview/full-output policy, text and TUI modes preserve redacted tool failure
+  diagnostics after provider recovery, and exact-cap CRLF protocol frames are
+  accepted.
+- `opi-coding-agent`: protocol teardown now gives unconfirmed tree termination,
+  child reap, or stderr drain precedence over the original failure; macOS
+  production builds also receive their required `tempfile` dependency.
+- `opi-sandbox`: added fail-closed macOS missing/unusable-helper coverage and an
+  isolated Linux Landlock network test seam, and updated Linux policy decoding
+  for the declared toolchain's lint gate.
 
 ### Non-Goals (Phase 16)
 
