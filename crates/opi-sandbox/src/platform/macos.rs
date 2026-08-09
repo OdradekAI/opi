@@ -54,7 +54,7 @@
 // ---------------------------------------------------------------------------
 
 #[cfg(any(target_os = "macos", test))]
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 #[cfg(any(target_os = "macos", test))]
 use crate::policy::Mechanism;
@@ -64,12 +64,15 @@ use crate::policy::Mechanism;
 /// Backslash, double-quote, and dollar are backslash-escaped. The dollar escape
 /// is load-bearing: seatbelt expands `${var}` inside profile strings, so an
 /// unescaped `$` in a workspace path would let a crafted path inject or expand
-/// a variable. Every special char is prefixed with `\`; the raw path therefore
-/// never appears verbatim in the rendered profile.
+/// a variable. Every special char is prefixed with `\`; control characters are
+/// rejected because they cannot be embedded safely in the profile source.
 #[cfg(any(target_os = "macos", test))]
-fn escape_path(path: &str) -> String {
+fn escape_path(path: &str) -> Result<String, ProfilePathError> {
     let mut out = String::with_capacity(path.len());
     for ch in path.chars() {
+        if ch.is_control() {
+            return Err(ProfilePathError);
+        }
         match ch {
             '\\' | '"' | '$' => {
                 out.push('\\');
@@ -78,7 +81,17 @@ fn escape_path(path: &str) -> String {
             _ => out.push(ch),
         }
     }
-    out
+    Ok(out)
+}
+
+#[cfg(any(target_os = "macos", test))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ProfilePathError;
+
+#[cfg(any(target_os = "macos", test))]
+fn profile_path(path: &Path) -> Result<String, ProfilePathError> {
+    let path = path.to_str().ok_or(ProfilePathError)?;
+    escape_path(path)
 }
 
 /// Render the macOS seatbelt deny-overlay profile string.
@@ -95,14 +108,15 @@ fn escape_path(path: &str) -> String {
 /// operation, the LAST one decides it. The workspace/temp allow exceptions
 /// therefore MUST follow the root write deny. Order: `(allow default)` base,
 /// root write deny, workspace/temp write exceptions, network deny. Pure:
-/// produces a string, never invokes `sandbox-exec`.
+/// returns an error for an unrepresentable native path and never invokes
+/// `sandbox-exec`.
 #[cfg(any(target_os = "macos", test))]
 fn render_profile(
-    workspace: &str,
-    temp_dir: &str,
+    workspace: &Path,
+    temp_dir: &Path,
     fs_enabled: bool,
     network_enabled: bool,
-) -> String {
+) -> Result<String, ProfilePathError> {
     let mut out = String::from("(version 1)\n");
     // seatbelt's default decision is DENY; an explicit allow-default base is
     // load-bearing — without it the confined target cannot exec or read system
@@ -115,27 +129,34 @@ fn render_profile(
         out.push_str("(deny file-write* (subpath \"/\"))\n");
         out.push_str(&format!(
             "(allow file-write* (subpath \"{}\"))\n",
-            escape_path(workspace)
+            profile_path(workspace)?
         ));
         out.push_str(&format!(
             "(allow file-write* (subpath \"{}\"))\n",
-            escape_path(temp_dir)
+            profile_path(temp_dir)?
         ));
     }
     if network_enabled {
         out.push_str("(deny network*)\n");
     }
-    out
+    Ok(out)
 }
 
 /// Canonicalize a path for a seatbelt subpath rule (resolve symlinks like
 /// `/var` -> `/private/var`). Falls back to the verbatim path if the target
-/// does not exist (`canonicalize` requires existence).
+/// does not exist (`canonicalize` requires existence). Either result is
+/// rejected unless it is exact UTF-8 with no profile control characters.
 #[cfg(any(target_os = "macos", test))]
-fn canonicalize_for_profile(p: &Path) -> String {
+fn canonicalize_for_profile(p: &Path) -> Result<PathBuf, ProfilePathError> {
     match std::fs::canonicalize(p) {
-        Ok(c) => c.to_string_lossy().into_owned(),
-        Err(_) => p.to_string_lossy().into_owned(),
+        Ok(c) => {
+            profile_path(&c)?;
+            Ok(c)
+        }
+        Err(_) => {
+            profile_path(p)?;
+            Ok(p.to_path_buf())
+        }
     }
 }
 
@@ -143,8 +164,8 @@ fn canonicalize_for_profile(p: &Path) -> String {
 #[cfg(any(target_os = "macos", test))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum SandboxExecStatus {
-    /// `sandbox-exec` is on `PATH` and answered the probe; confinement can be
-    /// installed.
+    /// The canonical `/usr/bin/sandbox-exec` answered the probe; confinement
+    /// can be installed.
     Available(std::path::PathBuf),
     /// `sandbox-exec` was not found.
     Missing,
@@ -181,11 +202,10 @@ fn supported_limitations() -> Vec<String> {
 fn unsupported_limitation(status: &SandboxExecStatus) -> String {
     match status {
         SandboxExecStatus::Missing => {
-            "sandbox-exec is missing on PATH; runs are unrestricted under L0 supervision only"
-                .to_string()
+            "canonical /usr/bin/sandbox-exec is missing; the requested restriction cannot be established, so the target is refused before start".to_string()
         }
         SandboxExecStatus::Unusable(_) => {
-            "sandbox-exec is present but did not pass the runtime probe; runs are unrestricted under L0 supervision only".to_string()
+            "canonical /usr/bin/sandbox-exec did not pass the runtime probe; the requested restriction cannot be established, so the target is refused before start".to_string()
         }
         SandboxExecStatus::Available(_) => String::new(),
     }
@@ -232,8 +252,6 @@ pub(crate) fn macos_posture_fields(status: &SandboxExecStatus) -> MacosPostureFi
 // ---------------------------------------------------------------------------
 
 #[cfg(target_os = "macos")]
-use std::path::PathBuf;
-#[cfg(target_os = "macos")]
 use std::sync::Arc;
 #[cfg(target_os = "macos")]
 use tokio::process::Command;
@@ -277,8 +295,9 @@ fn probe_sandbox_exec() -> SandboxExecStatus {
 /// installed via a [`Restriction::launcher`] parent program. Caches the
 /// construction-time probe; constructed ONLY inside [`posture`] after an
 /// [`SandboxExecStatus::Available`] probe (mirrors `LinuxRestriction`'s
-/// `pub(crate)` + posture-only construction). [`Restriction::launcher`] is
-/// infallible and [`Restriction::prepare`] reports [`Mechanism::Seatbelt`] /
+/// `pub(crate)` + posture-only construction). [`Restriction::launcher`]
+/// rejects paths Seatbelt cannot represent exactly, and
+/// [`Restriction::prepare`] reports [`Mechanism::Seatbelt`] /
 /// [`ContractStatus::Restricted`]
 /// — the two agree by construction (an `Available` probe => the launcher wraps
 /// the target => the started frame honestly reports `restricted`).
@@ -299,40 +318,57 @@ impl MacosRestriction {
 
 #[cfg(target_os = "macos")]
 impl Restriction for MacosRestriction {
-    fn launcher(&self, ctx: &RestrictionCtx<'_>) -> Option<LauncherSpec> {
+    fn launcher(
+        &self,
+        ctx: &RestrictionCtx<'_>,
+    ) -> Result<Option<LauncherSpec>, RestrictionSetupError> {
+        if ctx.setup_cancelled() {
+            return Err(RestrictionSetupError::Failed("setup-cancelled"));
+        }
         // Defense-in-depth: posture() constructs us only when Available, but
         // fail closed (no launcher => no confinement) if the cached probe was
         // not Available, so an intra-crate misuse cannot silently run the
         // target unrestricted while prepare() would report Restricted.
         let SandboxExecStatus::Available(_) = &self.status else {
-            return None;
+            return Err(RestrictionSetupError::Failed(
+                "seatbelt-sandbox-exec-unavailable",
+            ));
         };
         // Canonicalize: seatbelt resolves symlinks in the path the child opens,
         // so on macOS (TMPDIR is under /var -> /private/var) it evaluates the
         // /private/var/... form. The subpath exceptions must match that
         // resolved form. The temp exception is the exact invocation-owned root,
         // never the sibling system-temporary directory.
-        let ws = canonicalize_for_profile(ctx.workspace);
-        let tmp = canonicalize_for_profile(ctx.temp_root);
+        let ws = canonicalize_for_profile(ctx.workspace)
+            .map_err(|_| RestrictionSetupError::Failed("seatbelt-path-unrepresentable"))?;
+        let tmp = canonicalize_for_profile(ctx.temp_root)
+            .map_err(|_| RestrictionSetupError::Failed("seatbelt-path-unrepresentable"))?;
         // The WorkspaceWrite profile always engages the fs deny-overlay; the
         // network deny engages iff the request denies network.
         let network_enabled = matches!(ctx.network, NetworkPolicy::Deny);
-        let profile = render_profile(&ws, &tmp, true, network_enabled);
-        Some(LauncherSpec {
+        let profile = render_profile(&ws, &tmp, true, network_enabled)
+            .map_err(|_| RestrictionSetupError::Failed("seatbelt-path-unrepresentable"))?;
+        if ctx.setup_cancelled() {
+            return Err(RestrictionSetupError::Failed("setup-cancelled"));
+        }
+        Ok(Some(LauncherSpec {
             program: PathBuf::from(SANDBOX_EXEC_PATH),
             prefix: vec!["-p".to_string(), profile],
-        })
+        }))
     }
 
     fn prepare(
         &self,
         _cmd: &mut Command,
-        _ctx: &RestrictionCtx<'_>,
+        ctx: &RestrictionCtx<'_>,
     ) -> Result<AppliedRestriction, RestrictionSetupError> {
         // The launcher already installed the confinement; prepare is a
         // no-op-on-cmd that only reports the effective mechanism/contract.
         // Fail-closed defense-in-depth: never report Restricted without an
         // Available probe (which would mean no launcher was applied).
+        if ctx.setup_cancelled() {
+            return Err(RestrictionSetupError::Failed("setup-cancelled"));
+        }
         if !self.status.is_available() {
             return Err(RestrictionSetupError::Failed(
                 "seatbelt-sandbox-exec-unavailable",
@@ -382,13 +418,13 @@ mod tests {
     /// expand a `${var}` (the leading `\` neutralizes the `$`).
     #[test]
     fn escape_path_neutralizes_seatbelt_metacharacters() {
-        assert_eq!(escape_path("/clean/path"), "/clean/path");
-        assert_eq!(escape_path("a\"b"), "a\\\"b");
-        assert_eq!(escape_path("a$b"), "a\\$b");
-        assert_eq!(escape_path("a\\b"), "a\\\\b");
+        assert_eq!(escape_path("/clean/path").unwrap(), "/clean/path");
+        assert_eq!(escape_path("a\"b").unwrap(), "a\\\"b");
+        assert_eq!(escape_path("a$b").unwrap(), "a\\$b");
+        assert_eq!(escape_path("a\\b").unwrap(), "a\\\\b");
         // ${var}: the dollar is backslash-escaped, so seatbelt treats it as a
         // literal `$` and does not expand the variable.
-        assert_eq!(escape_path("${HOME}"), "\\${HOME}");
+        assert_eq!(escape_path("${HOME}").unwrap(), "\\${HOME}");
     }
 
     /// `canonicalize_for_profile` falls back to the verbatim path when the
@@ -402,7 +438,32 @@ mod tests {
             "precondition: the chosen path must not exist on the host"
         );
         let rendered = canonicalize_for_profile(missing);
-        assert_eq!(rendered, missing.to_string_lossy());
+        assert_eq!(rendered.unwrap(), missing);
+    }
+
+    #[test]
+    fn profile_paths_with_control_characters_are_refused() {
+        let rendered = render_profile(Path::new("/ws\n(injected)"), Path::new("/tmp"), true, false);
+
+        assert!(
+            rendered.is_err(),
+            "Seatbelt paths containing control characters must be refused"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn profile_paths_with_invalid_native_bytes_are_refused_without_replacement() {
+        use std::ffi::OsString;
+        use std::os::unix::ffi::OsStringExt;
+
+        let invalid =
+            std::path::PathBuf::from(OsString::from_vec(vec![b'/', b'w', b's', b'/', 0xff]));
+
+        assert!(
+            canonicalize_for_profile(&invalid).is_err(),
+            "an unrepresentable native path must be refused rather than changed"
+        );
     }
 
     /// The profile carries the version header + the load-bearing allow-default
@@ -410,7 +471,7 @@ mod tests {
     /// and the target cannot exec or read system files).
     #[test]
     fn render_profile_always_emits_version_and_allow_default_base() {
-        let p = render_profile("/ws", "/tmp", false, false);
+        let p = render_profile(Path::new("/ws"), Path::new("/tmp"), false, false).unwrap();
         assert!(
             p.starts_with("(version 1)\n"),
             "version header first: {p:?}"
@@ -434,7 +495,8 @@ mod tests {
     /// override them and reject workspace writes too.
     #[test]
     fn render_profile_orders_deny_before_allow_exceptions() {
-        let p = render_profile("/ws", "/private/var/tmp", true, false);
+        let p =
+            render_profile(Path::new("/ws"), Path::new("/private/var/tmp"), true, false).unwrap();
         let deny_idx = p
             .find("(deny file-write* (subpath \"/\"))")
             .expect("root write deny present");
@@ -451,13 +513,13 @@ mod tests {
     /// The network deny is emitted iff engaged; the fs deny is independent.
     #[test]
     fn render_profile_independent_fs_and_network_toggles() {
-        let both = render_profile("/ws", "/tmp", true, true);
+        let both = render_profile(Path::new("/ws"), Path::new("/tmp"), true, true).unwrap();
         assert!(both.contains("(deny file-write* (subpath \"/\"))"));
         assert!(both.contains("(deny network*)"));
-        let fs_only = render_profile("/ws", "/tmp", true, false);
+        let fs_only = render_profile(Path::new("/ws"), Path::new("/tmp"), true, false).unwrap();
         assert!(fs_only.contains("(deny file-write*"));
         assert!(!fs_only.contains("(deny network*)"));
-        let net_only = render_profile("/ws", "/tmp", false, true);
+        let net_only = render_profile(Path::new("/ws"), Path::new("/tmp"), false, true).unwrap();
         assert!(!net_only.contains("(deny file-write*"));
         assert!(net_only.contains("(deny network*)"));
     }
@@ -470,7 +532,7 @@ mod tests {
     fn render_profile_escapes_paths_in_exceptions() {
         // Input carrying all three specials: $ " and \.
         let patho = "a$b\"c\\d";
-        let p = render_profile(patho, "/tmp", true, false);
+        let p = render_profile(Path::new(patho), Path::new("/tmp"), true, false).unwrap();
         // The raw path never appears verbatim inside a subpath rule.
         assert!(
             !p.contains(&format!("(subpath \"{patho}\"")),
@@ -523,5 +585,90 @@ mod tests {
             assert_eq!(f.limitations.len(), 1, "one honest limitation");
             assert!(!f.limitations[0].is_empty(), "limitation must be populated");
         }
+    }
+
+    /// Native CI-only proof: the acknowledgement file is created by the
+    /// bootstrap running inside the accepted Seatbelt profile, and the target
+    /// remains behind the outer release gate when `Started` is observed.
+    #[cfg(target_os = "macos")]
+    #[tokio::test]
+    async fn native_acknowledgement_precedes_started_and_target_release() {
+        use std::ffi::OsString;
+        use std::time::Duration;
+
+        use futures_util::StreamExt;
+        use opi_protocol::execution::v1::EnvInherit;
+
+        use crate::policy::{NetworkPolicy, Profile, SandboxPolicy};
+        use crate::runner::{SandboxEvent, SandboxRequest, SandboxRunner, StdinPolicy};
+
+        let workspace = tempfile::tempdir().expect("workspace");
+        let marker = workspace.path().join("target-ran");
+        let request = SandboxRequest {
+            program: PathBuf::from("/bin/sh"),
+            args: vec![
+                OsString::from("-c"),
+                OsString::from(format!("printf released > '{}'", marker.display())),
+            ],
+            workspace: workspace.path().to_path_buf(),
+            cwd: workspace.path().to_path_buf(),
+            timeout: Duration::from_secs(5),
+            env_inherit: EnvInherit::Inherit,
+            env_additions: Default::default(),
+            stdin: StdinPolicy::Null,
+            cancel: None,
+        };
+        let restriction = MacosRestriction::new(SandboxExecStatus::Available(PathBuf::from(
+            SANDBOX_EXEC_PATH,
+        )));
+        let runner = SandboxRunner::new(
+            SandboxPolicy::new(Profile::WorkspaceWrite, NetworkPolicy::Deny),
+            Arc::new(restriction),
+        );
+        let mut run = runner.run(request).expect("native Seatbelt run");
+
+        let temp_root = match tokio::time::timeout(Duration::from_secs(5), run.next())
+            .await
+            .expect("acknowledgement is bounded")
+        {
+            Some(SandboxEvent::Started { temp_root, .. }) => temp_root,
+            other => panic!("expected Started after native acknowledgement, got {other:?}"),
+        };
+        let mut probe_name = temp_root.join("release.armed").into_os_string();
+        probe_name.push(".probe");
+        let probe = PathBuf::from(probe_name);
+        let metadata = std::fs::symlink_metadata(&probe).expect("probe metadata");
+        assert!(
+            metadata.file_type().is_file() && !metadata.file_type().is_symlink(),
+            "Started requires a regular in-profile acknowledgement"
+        );
+        let content = std::fs::read(&probe).expect("read native acknowledgement");
+        assert_eq!(content.len(), 64, "acknowledgement uses a 256-bit token");
+        assert!(
+            content
+                .iter()
+                .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f')),
+            "acknowledgement token is lowercase hexadecimal"
+        );
+        assert!(!marker.exists(), "target remains gated at Started");
+
+        run.release().expect("release target");
+        assert!(matches!(run.next().await, Some(SandboxEvent::Completed(_))));
+        assert!(marker.exists(), "target runs only after release");
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn native_non_utf8_workspace_is_refused_before_spawn() {
+        use std::ffi::OsString;
+        use std::os::unix::ffi::OsStringExt;
+
+        let base = tempfile::tempdir().expect("workspace parent");
+        let workspace = base
+            .path()
+            .join(OsString::from_vec(vec![b'w', b's', b'-', 0xff]));
+        std::fs::create_dir(&workspace).expect("create non-UTF workspace");
+
+        assert!(canonicalize_for_profile(&workspace).is_err());
     }
 }

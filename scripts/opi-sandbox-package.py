@@ -47,9 +47,41 @@ SEMVER_RE = re.compile(
     r"(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?"
     r"(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?\Z"
 )
+ELF64_HEADER_LEN = 64
+MACHO64_HEADER_LEN = 32
+ELF_MAGIC = b"\x7fELF"
+MACHO64_LE_MAGIC = b"\xcf\xfa\xed\xfe"
+UNSUPPORTED_MACHO_MAGICS = {
+    b"\xce\xfa\xed\xfe",  # 32-bit little-endian
+    b"\xfe\xed\xfa\xce",  # 32-bit big-endian
+    b"\xfe\xed\xfa\xcf",  # 64-bit big-endian
+    b"\xca\xfe\xba\xbe",  # fat/universal 32-bit table
+    b"\xbe\xba\xfe\xca",  # swapped fat/universal 32-bit table
+    b"\xca\xfe\xba\xbf",  # fat/universal 64-bit table
+    b"\xbf\xba\xfe\xca",  # swapped fat/universal 64-bit table
+}
+ELF_MACHINE_TARGETS = {
+    62: "x86_64-unknown-linux-gnu",
+    183: "aarch64-unknown-linux-gnu",
+}
+MACHO_CPU_TARGETS = {
+    0x01000007: "x86_64-apple-darwin",
+    0x0100000C: "aarch64-apple-darwin",
+}
+SUPPORTED_PACKAGE_TARGETS = frozenset(
+    (*ELF_MACHINE_TARGETS.values(), *MACHO_CPU_TARGETS.values())
+)
 
 
 class PackageError(Exception):
+    pass
+
+
+class ExecutableFormatError(PackageError):
+    pass
+
+
+class ExecutableTargetError(PackageError):
     pass
 
 
@@ -59,6 +91,64 @@ def sha256_raw(data: bytes) -> str:
 
 def sha256_lf(data: bytes) -> str:
     return sha256_raw(data.replace(b"\r", b""))
+
+
+def validate_executable_header(data: bytes, target: str) -> str:
+    if len(data) < 4:
+        raise ExecutableFormatError("invalid executable format: truncated executable header")
+
+    magic = data[:4]
+    if magic == ELF_MAGIC:
+        if len(data) < ELF64_HEADER_LEN:
+            raise ExecutableFormatError("invalid executable format: truncated ELF64 header")
+        if data[4] != 2:
+            raise ExecutableFormatError("invalid executable format: unsupported ELF class")
+        if data[5] != 1:
+            raise ExecutableFormatError("invalid executable format: unsupported ELF endian")
+        if data[6] != 1:
+            raise ExecutableFormatError("invalid executable format: invalid ELF ident version")
+        elf_type = int.from_bytes(data[16:18], "little")
+        if elf_type not in (2, 3):
+            raise ExecutableFormatError("invalid executable format: unsupported ELF file type")
+        machine = int.from_bytes(data[18:20], "little")
+        actual_target = ELF_MACHINE_TARGETS.get(machine)
+        if actual_target is None:
+            raise ExecutableFormatError("invalid executable format: unsupported ELF machine")
+        if int.from_bytes(data[20:24], "little") != 1:
+            raise ExecutableFormatError("invalid executable format: invalid ELF version")
+        if int.from_bytes(data[52:54], "little") != ELF64_HEADER_LEN:
+            raise ExecutableFormatError("invalid executable format: invalid ELF header size")
+    elif magic == MACHO64_LE_MAGIC:
+        if len(data) < MACHO64_HEADER_LEN:
+            raise ExecutableFormatError("invalid executable format: truncated Mach-O64 header")
+        cpu_type = int.from_bytes(data[4:8], "little")
+        actual_target = MACHO_CPU_TARGETS.get(cpu_type)
+        if actual_target is None:
+            raise ExecutableFormatError("invalid executable format: unsupported Mach-O CPU type")
+        if int.from_bytes(data[12:16], "little") != 2:
+            raise ExecutableFormatError("invalid executable format: unsupported Mach-O file type")
+    elif magic in UNSUPPORTED_MACHO_MAGICS:
+        raise ExecutableFormatError(
+            "invalid executable format: unsupported Mach-O class, endian, or universal binary"
+        )
+    else:
+        raise ExecutableFormatError("invalid executable format: unsupported executable magic")
+
+    if target != actual_target:
+        raise ExecutableTargetError(
+            "executable architecture/target mismatch: "
+            f"declared target {target} does not match header target {actual_target}"
+        )
+    return actual_target
+
+
+def validate_executable_file(path: Path, target: str) -> None:
+    try:
+        with path.open("rb") as handle:
+            header = handle.read(ELF64_HEADER_LEN)
+    except OSError as error:
+        raise PackageError(f"cannot read executable: {error}") from error
+    validate_executable_header(header, target)
 
 
 def parse_semver(version: str) -> tuple[int, int]:
@@ -90,8 +180,8 @@ def render(args: argparse.Namespace) -> None:
     output_path = Path(args.output)
     version = read_workspace_version(manifest_path)
     major, minor = parse_semver(version)
-    if TARGET_RE.fullmatch(args.target) is None:
-        raise PackageError(f"invalid target triple: {args.target}")
+    if args.target not in SUPPORTED_PACKAGE_TARGETS:
+        raise PackageError(f"unsupported package target: {args.target}")
     if SHA256_RE.fullmatch(args.sha256) is None:
         raise PackageError("invalid executable SHA-256")
     opi_range = f">={major}.{minor}.0-0,<{major}.{minor + 1}.0-0"
@@ -124,6 +214,11 @@ def render(args: argparse.Namespace) -> None:
         Path(args.metadata_output).write_text(
             f"{version}\n{opi_range}\n", encoding="utf-8", newline="\n"
         )
+
+
+def validate_executable(args: argparse.Namespace) -> None:
+    validate_executable_file(Path(args.binary), args.target)
+    print(f"validated executable header for {args.target}")
 
 
 def checked_member_name(name: str) -> str:
@@ -283,6 +378,7 @@ def verify(args: argparse.Namespace) -> None:
             destination.write_bytes(archive_members[name])
         manifest_bytes = (extraction / "package.toml").read_bytes()
         executable_bytes = (extraction / "bin/opi-sandbox").read_bytes()
+        validate_executable_header(executable_bytes, target)
         if sha256_lf(manifest_bytes) != lock["manifest_hash"]:
             raise PackageError("verify: archive manifest_hash mismatch")
         if sha256_raw(executable_bytes) != lock["executable_sha256"]:
@@ -325,6 +421,9 @@ def parser() -> argparse.ArgumentParser:
     render_parser.add_argument("--sha256", required=True)
     render_parser.add_argument("--output", required=True)
     render_parser.add_argument("--metadata-output")
+    executable_parser = commands.add_parser("validate-executable")
+    executable_parser.add_argument("--binary", required=True)
+    executable_parser.add_argument("--target", required=True)
     verify_parser = commands.add_parser("verify")
     verify_parser.add_argument("--artifact-dir", required=True)
     verify_parser.add_argument("--archive-suffix", choices=(".tar.gz", ".zip"), required=True)
@@ -338,11 +437,13 @@ def main() -> None:
     try:
         if args.command == "render":
             render(args)
+        elif args.command == "validate-executable":
+            validate_executable(args)
         else:
             verify(args)
     except PackageError as error:
         print(f"package-opi-sandbox: {error}", file=sys.stderr)
-        raise SystemExit(2 if args.command == "render" else 1) from error
+        raise SystemExit(1 if args.command == "verify" else 2) from error
 
 
 if __name__ == "__main__":

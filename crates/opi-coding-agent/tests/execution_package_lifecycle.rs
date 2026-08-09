@@ -16,13 +16,13 @@
 use std::path::{Path, PathBuf};
 
 use opi_coding_agent::cli::PackageCommand;
-use opi_coding_agent::execution::{PackageSource, validate_executable_contributions};
+use opi_coding_agent::execution::{LockMaterial, PackageSource, validate_executable_contributions};
 use opi_coding_agent::package_activation::{
     self, ActivationError, ActivationRecord, TrustConfirmer, TrustDisplay,
 };
 use opi_coding_agent::package_cli;
 use opi_coding_agent::package_discovery::PackageManifest;
-use opi_coding_agent::package_store::PackageStore;
+use opi_coding_agent::package_store::{PackageLockEntry, PackageStore};
 
 const EXE_CONTENT: &[u8] = b"#!/bin/sh\necho hi\n";
 
@@ -91,6 +91,18 @@ impl TrustConfirmer for TestConfirmer {
     }
 }
 
+#[derive(Default)]
+struct CapturingConfirmer {
+    display: Option<TrustDisplay>,
+}
+
+impl TrustConfirmer for CapturingConfirmer {
+    fn confirm(&mut self, display: &TrustDisplay) -> Result<(), String> {
+        self.display = Some(display.clone());
+        Ok(())
+    }
+}
+
 fn add_global(source: &str, workspace: &Path, user: &Path) -> i32 {
     package_cli::handle_package_command(
         &PackageCommand::Add {
@@ -137,6 +149,55 @@ fn add_global_execution_package_persists_lock_and_untrusted_disabled_record() {
     assert_eq!(recs[0].name, "opi-sandbox");
     assert!(!recs[0].trusted);
     assert!(!recs[0].enabled);
+}
+
+#[test]
+fn populated_contribution_lock_round_trips_through_toml_exactly() {
+    let user = tempfile::tempdir().expect("user config");
+    let store = PackageStore::global(user.path().to_path_buf());
+    let lock = LockMaterial {
+        manifest_hash: "manifest:sha256/ab-cd_01!?".into(),
+        executable_rel_path: "bin/tools/adapter-v2.exe".into(),
+        executable_sha256: "exe:sha256/98-76_zy!?".into(),
+        package_version: "1.2.3-rc.4+build.5".into(),
+        target: "x86_64-pc-windows-msvc.custom".into(),
+        opi_range: ">=0.7.2-rc.1, <0.9.0 || =1.0.0".into(),
+        protocol: "command-execution-jsonl-v1+fixture/test".into(),
+        adapter_id: "adapter.v2-beta/test".into(),
+    };
+    let entry = PackageLockEntry {
+        identity_kind: "git+ssh".into(),
+        identity_value: "ssh://git@example.test:2222/org/pkg.git?ref=v1#main".into(),
+        source: "git:ssh://git@example.test:2222/org/pkg.git@feature/test".into(),
+        package_root: user.path().join("cache root").join("pkg.v1"),
+        cache_path: Some(user.path().join("cache root").join("pkg.v1")),
+        git_commit: Some("deadbeef:0123/4567".into()),
+        manifest_sha256: "package-manifest:sha256/aa_bb-cc!?".into(),
+        contributions: vec![lock.clone()],
+    };
+
+    store
+        .write_lock(std::slice::from_ref(&entry))
+        .expect("write lock");
+    let first_toml = std::fs::read_to_string(user.path().join("package-lock.toml"))
+        .expect("serialized lock TOML");
+    let read = store.read_lock().expect("read lock");
+    assert_eq!(read, [entry]);
+    assert_eq!(read[0].contributions.len(), 1);
+    let round_tripped = &read[0].contributions[0];
+    assert_eq!(round_tripped.manifest_hash, lock.manifest_hash);
+    assert_eq!(round_tripped.executable_rel_path, lock.executable_rel_path);
+    assert_eq!(round_tripped.executable_sha256, lock.executable_sha256);
+    assert_eq!(round_tripped.package_version, lock.package_version);
+    assert_eq!(round_tripped.target, lock.target);
+    assert_eq!(round_tripped.opi_range, lock.opi_range);
+    assert_eq!(round_tripped.protocol, lock.protocol);
+    assert_eq!(round_tripped.adapter_id, lock.adapter_id);
+
+    store.write_lock(&read).expect("rewrite parsed lock");
+    let second_toml = std::fs::read_to_string(user.path().join("package-lock.toml"))
+        .expect("reserialized lock TOML");
+    assert_eq!(second_toml, first_toml, "TOML serialization must be stable");
 }
 
 #[cfg(target_os = "macos")]
@@ -544,6 +605,33 @@ fn enable_grants_trust_and_enables_with_confirmation() {
     let rec = &records(user.path())[0];
     assert!(rec.trusted);
     assert!(rec.enabled);
+}
+
+#[test]
+fn enable_trust_display_uses_locked_relative_executable_path() {
+    let (_pkg, root, _sha) = make_execution_package("opi-sandbox");
+    let workspace = tempfile::tempdir().unwrap();
+    let user = tempfile::tempdir().unwrap();
+    add_global(root.to_str().unwrap(), workspace.path(), user.path());
+
+    let mut confirmer = CapturingConfirmer::default();
+    store(user.path())
+        .enable(
+            "opi-sandbox",
+            package_activation::host_target_triple(),
+            package_activation::host_opi_version(),
+            &mut confirmer,
+        )
+        .expect("enable package");
+
+    let display = confirmer.display.expect("trust display");
+    assert_eq!(display.contributions.len(), 1);
+    let displayed_path = &display.contributions[0].executable_rel_path;
+    assert_eq!(displayed_path, "bin/opi-sandbox");
+    assert!(
+        !Path::new(displayed_path).is_absolute(),
+        "trust display must never expose a canonical absolute command"
+    );
 }
 
 #[test]

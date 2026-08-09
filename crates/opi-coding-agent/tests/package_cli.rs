@@ -1428,6 +1428,16 @@ fn package_cli_subprocess_list_and_doctor_json_report_execution_lifecycle() {
     assert_eq!(contributions[0]["adapter_id"], "opi-sandbox");
     assert_eq!(contributions[0]["target"], target);
     assert_eq!(contributions[0]["protocol"], "command-execution-jsonl-v1");
+    assert_eq!(contributions[0]["executable_rel_path"], "bin/opi-sandbox");
+    assert!(
+        !Path::new(
+            contributions[0]["executable_rel_path"]
+                .as_str()
+                .expect("relative executable path")
+        )
+        .is_absolute(),
+        "package list --json must never expose an absolute executable path"
+    );
     assert!(contributions[0]["executable_sha256"].is_string());
 
     // doctor --json: an untrusted fresh install is actionable and carries the
@@ -1585,26 +1595,4 @@ fn package_add_git_changed_executable_invalidates_trust_and_enablement() {
     assert_eq!(records[0].source, second_source);
     assert!(!records[0].trusted);
     assert!(!records[0].enabled);
-}
-
-#[test]
-fn git_update_invalidates_trust_before_live_cache_swap() {
-    let source = include_str!("../src/package_cli.rs");
-    let function = source
-        .split("fn install_git_package(")
-        .nth(1)
-        .expect("install_git_package exists")
-        .split("\nfn cmd_remove(")
-        .next()
-        .expect("install_git_package body");
-    let invalidation = function
-        .find("prepare_activation_update(")
-        .expect("Git update prepares durable trust invalidation");
-    let cache_swap = function
-        .find("stage_cache_replacement(")
-        .expect("Git update swaps the validated cache");
-    assert!(
-        invalidation < cache_swap,
-        "trust must be invalidated before the live cache path can expose new bytes"
-    );
 }

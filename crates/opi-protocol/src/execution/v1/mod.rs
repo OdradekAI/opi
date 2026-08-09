@@ -71,7 +71,7 @@
 //!
 //! | Bound | Unit | Enforcement | Scope |
 //! |---|---|---|---|
-//! | line size | wire bytes per JSONL line | [`codec`] capped read, before parse | per frame |
+//! | line size | JSON data bytes, excluding the LF/CRLF delimiter | [`codec`] capped read, before parse | per frame |
 //! | message size | coincident with line size for JSONL | [`codec`] | per frame |
 //! | configuration | serialized JSON bytes | [`codec`], on `initialize` | per frame |
 //! | diagnostics | bytes per diagnostic or `failed.message` | [`codec`] | per frame |
@@ -80,8 +80,9 @@
 //! Frame count and rate are out of scope for this codec and are owned by host
 //! L0 supervision (deadline + kill after bounded grace). `max_line_size` is the
 //! decoder's per-stream line-buffer ceiling and thus the per-connection memory
-//! cap; it must satisfy `max_line_size >= ceil(max_decoded_chunk_size * 4/3) +
-//! framing` (asserted on [`Bounds::DEFAULT`]). Cumulative output is counted in
+//! cap; it must satisfy `max_line_size >= 4 *
+//! ceil(max_decoded_chunk_size / 3) + framing` so a padded base64 chunk fits
+//! (asserted on [`Bounds::DEFAULT`]). Cumulative output is counted in
 //! **decoded** bytes; base64 inflation is transient and bounded per-frame by
 //! `max_line_size`, not by the cumulative counter. `max_configuration_size` is
 //! measured after JSON serialization, including escapes such as `\u0000`, so

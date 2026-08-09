@@ -100,11 +100,53 @@ async fn run_with_handshake(
     handshake_timeout: Duration,
     signal: CancellationToken,
 ) -> Result<CompletedOutcome, ExecutionProtocolFailure> {
+    run_with_handshake_and_config(
+        mode_args,
+        bounds,
+        deadline,
+        handshake_timeout,
+        signal,
+        serde_json::json!({}),
+    )
+    .await
+}
+
+async fn run_with_handshake_and_config(
+    mode_args: &[&str],
+    bounds: Bounds,
+    deadline: Duration,
+    handshake_timeout: Duration,
+    signal: CancellationToken,
+    adapter_config: serde_json::Value,
+) -> Result<CompletedOutcome, ExecutionProtocolFailure> {
+    run_with_handshake_and_config_observed(
+        mode_args,
+        bounds,
+        deadline,
+        handshake_timeout,
+        signal,
+        adapter_config,
+        "echo hi",
+    )
+    .await
+    .1
+}
+
+async fn run_with_handshake_and_config_observed(
+    mode_args: &[&str],
+    bounds: Bounds,
+    deadline: Duration,
+    handshake_timeout: Duration,
+    signal: CancellationToken,
+    adapter_config: serde_json::Value,
+    command: &str,
+) -> (Duration, Result<CompletedOutcome, ExecutionProtocolFailure>) {
     #[cfg(windows)]
     let _permit = WINDOWS_PROTOCOL_CONCURRENCY
         .acquire()
         .await
         .expect("protocol fixture semaphore remains open");
+    let started = std::time::Instant::now();
     let bin = mock_bin();
     let owned: Vec<String> = mode_args.iter().map(|s| (*s).to_string()).collect();
     let workspace = std::env::current_dir().expect("cwd");
@@ -117,7 +159,7 @@ async fn run_with_handshake(
         validated_executable: &executable,
     };
     let request = ExecutionRequest {
-        command: "echo hi",
+        command,
         workspace: &workspace,
         cwd: &workspace,
         timeout: deadline,
@@ -128,12 +170,13 @@ async fn run_with_handshake(
         expected_target: "mock-target",
         env_inherit: EnvInherit::Inherit,
         env_additions: &empty,
-        adapter_config: serde_json::json!({}),
+        adapter_config,
         supported_protocols: &supported,
         signal,
         bounds,
     };
-    ExecutionProtocolHost::execute(launch, request).await
+    let result = ExecutionProtocolHost::execute(launch, request).await;
+    (started.elapsed(), result)
 }
 
 fn assert_code(err: ExecutionProtocolFailure, expected: &str) {
@@ -376,6 +419,117 @@ async fn late_ready_after_handshake_timeout_is_protocol_violation() {
 }
 
 #[tokio::test]
+async fn non_reading_adapter_cannot_extend_one_millisecond_handshake() {
+    let (elapsed, result) = run_with_handshake_and_config_observed(
+        &["non_reading_initialize"],
+        Bounds::DEFAULT,
+        Duration::from_secs(3),
+        Duration::from_millis(1),
+        CancellationToken::new(),
+        serde_json::json!({"padding": "x".repeat(192 * 1024)}),
+        "echo hi",
+    )
+    .await;
+    let err = result.expect_err("spawn, attach, and initialize must share the handshake deadline");
+
+    assert_code(err, "protocol_violation");
+    assert!(
+        elapsed < Duration::from_millis(350),
+        "a 1 ms handshake must not inherit the 500 ms write timeout: {:?}",
+        elapsed
+    );
+}
+
+#[tokio::test]
+async fn non_reading_initialize_write_failure_confirms_real_subprocess_teardown() {
+    let dir = tempfile::tempdir().expect("non-reading initialize marker directory");
+    let marker = dir.path().join("entered-non-reading-initialize");
+    let marker_arg = marker.to_string_lossy().into_owned();
+    let mode_args = ["non_reading_initialize", marker_arg.as_str()];
+    let future = run_with_handshake_and_config(
+        &mode_args,
+        Bounds::DEFAULT,
+        Duration::from_secs(5),
+        Duration::from_secs(2),
+        CancellationToken::new(),
+        serde_json::json!({"padding": "x".repeat(192 * 1024)}),
+    );
+    tokio::pin!(future);
+    tokio::select! {
+        reached = wait_for_started_marker(&marker, Duration::from_secs(5)) => {
+            assert!(reached, "mock must enter its non-reading write-fault mode");
+        }
+        result = &mut future => {
+            panic!("initialize transmission completed before the mock entered its write-fault mode: {result:?}");
+        }
+    }
+    let err = future
+        .await
+        .expect_err("an incomplete initialize transmission must fail closed");
+
+    assert_code(err, "protocol_violation");
+}
+
+#[tokio::test]
+async fn non_reading_execute_preserves_the_cleanup_reserve() {
+    let large_command = "x".repeat(192 * 1024);
+    let (elapsed, result) = run_with_handshake_and_config_observed(
+        &["non_reading_execute"],
+        Bounds::DEFAULT,
+        Duration::from_millis(1750),
+        Duration::from_secs(1),
+        CancellationToken::new(),
+        serde_json::json!({}),
+        &large_command,
+    )
+    .await;
+    let err = result.expect_err("an incomplete execute transmission must fail closed");
+
+    assert_code(err, "protocol_violation");
+    assert!(
+        elapsed < Duration::from_millis(450),
+        "execute transmission consumed the reserved cleanup window: {elapsed:?}"
+    );
+}
+
+#[tokio::test]
+async fn empty_or_whitespace_started_contract_is_protocol_violation() {
+    for field in [
+        "empty-placement",
+        "whitespace-placement",
+        "empty-guarantee",
+        "whitespace-guarantee",
+        "empty-policy",
+        "whitespace-policy",
+    ] {
+        let err = run(
+            &["invalid_started", field],
+            Bounds::DEFAULT,
+            Duration::from_secs(3),
+        )
+        .await
+        .expect_err("empty effective-contract fields must fail closed");
+        assert_eq!(
+            err.code(),
+            "protocol_violation",
+            "invalid started field {field:?} must be rejected"
+        );
+    }
+}
+
+#[tokio::test]
+async fn cancellation_drain_rejects_whitespace_started_contract() {
+    let err = run(
+        &["cancel_invalid_started"],
+        Bounds::DEFAULT,
+        Duration::from_secs(2),
+    )
+    .await
+    .expect_err("cancellation drain must validate the started contract");
+    assert_code(err, "protocol_violation");
+}
+
+#[tokio::test]
 async fn terminal_requires_immediate_clean_eof() {
     for mode in [
         "terminal_extra_frame",
@@ -464,6 +618,20 @@ async fn failed_execution_post_started_is_execution_failed() {
 }
 
 #[tokio::test]
+async fn unavailable_after_started_is_protocol_violation() {
+    assert_code(
+        run(
+            &["failed_post_started", "unavailable"],
+            Bounds::DEFAULT,
+            Duration::from_secs(5),
+        )
+        .await
+        .unwrap_err(),
+        "protocol_violation",
+    );
+}
+
+#[tokio::test]
 async fn failed_timed_out_is_execution_timed_out() {
     assert_code(
         run(
@@ -479,9 +647,17 @@ async fn failed_timed_out_is_execution_timed_out() {
 
 #[tokio::test]
 async fn failed_cleanup_unconfirmed_is_cleanup_unconfirmed() {
+    let dir = tempfile::tempdir().unwrap();
+    let marker = dir.path().join("cleanup_failed_after_started.txt");
+    let marker_arg = marker.to_string_lossy().into_owned();
     assert_code(
         run(
-            &["failed_post_started", "cleanup_unconfirmed"],
+            &[
+                "failed_post_started",
+                "cleanup_unconfirmed",
+                "cleanup",
+                marker_arg.as_str(),
+            ],
             Bounds::DEFAULT,
             Duration::from_secs(5),
         )
@@ -489,13 +665,17 @@ async fn failed_cleanup_unconfirmed_is_cleanup_unconfirmed() {
         .unwrap_err(),
         "cleanup_unconfirmed",
     );
+    assert!(
+        marker.exists(),
+        "post-start cleanup failure fixture must emit Started before Failed"
+    );
 }
 
 #[tokio::test]
-async fn failed_protocol_incompatible_is_protocol_incompatible() {
+async fn failed_protocol_incompatible_pre_started_is_protocol_incompatible() {
     assert_code(
         run(
-            &["failed_post_started", "protocol_incompatible"],
+            &["failed_pre_started", "protocol_incompatible"],
             Bounds::DEFAULT,
             Duration::from_secs(5),
         )
@@ -519,6 +699,78 @@ async fn failed_protocol_violation_is_protocol_violation() {
     );
 }
 
+#[tokio::test]
+async fn pre_started_timeout_and_cleanup_failure_pairs_remain_legal() {
+    for (args, expected) in [
+        (
+            &["failed_pre_started", "execution_timed_out"][..],
+            "execution_timed_out",
+        ),
+        (
+            &["failed_pre_started", "cleanup_unconfirmed", "cleanup"][..],
+            "cleanup_unconfirmed",
+        ),
+    ] {
+        assert_code(
+            run(args, Bounds::DEFAULT, Duration::from_secs(5))
+                .await
+                .unwrap_err(),
+            expected,
+        );
+    }
+}
+
+#[tokio::test]
+async fn pre_started_rejects_post_started_codes_and_mismatched_phases() {
+    for args in [
+        &["failed_pre_started", "execution_failed", "execution"][..],
+        &["failed_pre_started", "unavailable", "execution"][..],
+        &["failed_pre_started", "failed", "cleanup"][..],
+        &["failed_pre_started", "protocol_incompatible", "execution"][..],
+        &["failed_pre_started", "execution_timed_out", "execution"][..],
+        &["failed_pre_started", "protocol_violation", "execution"][..],
+        &["failed_pre_started", "cleanup_unconfirmed", "handshake"][..],
+    ] {
+        assert_code(
+            run(args, Bounds::DEFAULT, Duration::from_secs(5))
+                .await
+                .unwrap_err(),
+            "protocol_violation",
+        );
+    }
+}
+
+#[tokio::test]
+async fn post_started_rejects_pre_started_codes_and_mismatched_phases() {
+    let dir = tempfile::tempdir().unwrap();
+    for (code, phase) in [
+        ("unavailable", "handshake"),
+        ("failed", "handshake"),
+        ("protocol_incompatible", "handshake"),
+        ("execution_failed", "handshake"),
+        ("execution_timed_out", "handshake"),
+        ("protocol_violation", "handshake"),
+        ("cleanup_unconfirmed", "execution"),
+    ] {
+        let marker = dir.path().join(format!("{code}-{phase}.txt"));
+        let marker_arg = marker.to_string_lossy().into_owned();
+        assert_code(
+            run(
+                &["failed_post_started", code, phase, marker_arg.as_str()],
+                Bounds::DEFAULT,
+                Duration::from_secs(5),
+            )
+            .await
+            .unwrap_err(),
+            "protocol_violation",
+        );
+        assert!(
+            marker.exists(),
+            "{code}+{phase} fixture must emit Started before Failed"
+        );
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Deadline / cancel / cleanup
 // ---------------------------------------------------------------------------
@@ -537,13 +789,20 @@ async fn wait_for_started_marker(path: &Path, timeout: Duration) -> bool {
 }
 
 async fn cancel_after_started(mode: &str) -> Result<CompletedOutcome, ExecutionProtocolFailure> {
+    cancel_after_started_with_bounds(mode, Bounds::DEFAULT).await
+}
+
+async fn cancel_after_started_with_bounds(
+    mode: &str,
+    bounds: Bounds,
+) -> Result<CompletedOutcome, ExecutionProtocolFailure> {
     let dir = tempfile::tempdir().expect("started marker directory");
     let marker = dir.path().join("started");
     let marker_arg = marker.to_string_lossy().into_owned();
     let mode_args = [mode, marker_arg.as_str()];
     let signal = CancellationToken::new();
     let ctrl = signal.clone();
-    let future = run_with(&mode_args, Bounds::DEFAULT, Duration::from_secs(30), signal);
+    let future = run_with(&mode_args, bounds, Duration::from_secs(30), signal);
     tokio::pin!(future);
     tokio::select! {
         reached = wait_for_started_marker(&marker, Duration::from_secs(5)) => {
@@ -679,6 +938,85 @@ async fn cancel_confirmed_cleanup_after_started_is_in_band_canceled() {
         .expect("post-start cancellation with confirmed cleanup is in-band");
     assert!(outcome.cancelled);
     assert_eq!(outcome.cleanup, CleanupState::Confirmed);
+}
+
+#[tokio::test]
+async fn host_normalizes_contradictory_terminal_flags_for_external_cancel() {
+    let outcome = cancel_after_started("cancel_cleanup_contradictory")
+        .await
+        .expect("confirmed external cancellation remains in-band");
+    assert!(!outcome.timed_out);
+    assert!(outcome.cancelled);
+    assert_eq!(outcome.cleanup, CleanupState::Confirmed);
+}
+
+#[tokio::test]
+async fn host_normalizes_contradictory_terminal_flags_for_deadline() {
+    let outcome = run(
+        &["cancel_cleanup_contradictory"],
+        Bounds::DEFAULT,
+        Duration::from_secs(2),
+    )
+    .await
+    .expect("confirmed deadline cleanup remains in-band");
+    assert!(outcome.timed_out);
+    assert!(!outcome.cancelled);
+    assert_eq!(outcome.cleanup, CleanupState::Confirmed);
+}
+
+fn diagnostic_byte_bounds() -> Bounds {
+    Bounds {
+        max_cumulative_output: 8,
+        ..Bounds::DEFAULT
+    }
+}
+
+#[tokio::test]
+async fn normal_diagnostic_frame_count_is_bounded() {
+    assert_code(
+        run(
+            &["diagnostic_count_flood"],
+            Bounds::DEFAULT,
+            Duration::from_secs(5),
+        )
+        .await
+        .unwrap_err(),
+        "protocol_violation",
+    );
+}
+
+#[tokio::test]
+async fn cancellation_diagnostic_frame_count_is_bounded() {
+    assert_code(
+        cancel_after_started("cancel_diagnostic_count_flood")
+            .await
+            .unwrap_err(),
+        "protocol_violation",
+    );
+}
+
+#[tokio::test]
+async fn normal_cumulative_diagnostic_bytes_are_bounded() {
+    assert_code(
+        run(
+            &["diagnostic_byte_flood"],
+            diagnostic_byte_bounds(),
+            Duration::from_secs(5),
+        )
+        .await
+        .unwrap_err(),
+        "protocol_violation",
+    );
+}
+
+#[tokio::test]
+async fn cancellation_cumulative_diagnostic_bytes_are_bounded() {
+    assert_code(
+        cancel_after_started_with_bounds("cancel_diagnostic_byte_flood", diagnostic_byte_bounds())
+            .await
+            .unwrap_err(),
+        "protocol_violation",
+    );
 }
 
 #[tokio::test]

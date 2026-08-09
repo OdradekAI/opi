@@ -65,6 +65,20 @@ fn permission_prompt_local_no_package_80x24() {
     );
 }
 
+#[test]
+fn permission_prompt_local_no_package_120x40() {
+    // `local` has no package name; the package context line is omitted.
+    let p = PermissionPrompt::new(PermissionSummary {
+        adapter_id: "local".to_string(),
+        package_name: String::new(),
+        run_mode_label: "interactive".to_string(),
+    });
+    insta::assert_snapshot!(
+        "permission_prompt_local_no_package_120x40",
+        render(p, 120, 40)
+    );
+}
+
 /// Determinism guard (audit flag): an over-long adapter id must not panic, wrap,
 /// or overflow the fixed buffer — ratatui clips to the area, so the rendered
 /// buffer is exactly 80 cols and the title is truncated to the border width.

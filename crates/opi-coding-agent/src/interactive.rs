@@ -21,6 +21,7 @@ use crossterm::{
 use ratatui::backend::TestBackend;
 use ratatui::prelude::*;
 
+use opi_agent::diagnostic::{DiagnosticPayload, RedactionMode};
 use opi_agent::event::AgentEvent;
 use opi_agent::loop_types::AgentError;
 use opi_agent::message::AgentMessage;
@@ -824,19 +825,50 @@ trait TuiTerminal: LoginTerminalControl {
 
 impl TuiTerminal for Terminal<CrosstermBackend<io::Stdout>> {
     fn draw_state(&mut self, state: &TuiState) -> io::Result<()> {
-        let shell = build_shell(state);
-        self.draw(|frame| {
-            frame.render_widget(shell, frame.area());
-            // Phase 16.10: render the modal permission prompt as a centered
-            // overlay on top of the shell when a prompt is pending.
-            if let Some(pending) = &state.pending_permission {
-                let area = centered_rect(70, 50, frame.area());
-                frame.render_widget(ratatui::widgets::Clear, area);
-                frame.render_widget(pending.prompt.clone(), area);
-            }
-        })?;
+        self.draw(|frame| render_tui_state(frame, state))?;
         Ok(())
     }
+}
+
+fn render_tui_state(frame: &mut Frame<'_>, state: &TuiState) {
+    frame.render_widget(build_shell(state), frame.area());
+    // Phase 16.10: render the modal permission prompt as a centered overlay on
+    // top of the shell when a prompt is pending.
+    if let Some(pending) = &state.pending_permission {
+        let area = centered_rect(70, 50, frame.area());
+        frame.render_widget(ratatui::widgets::Clear, area);
+        frame.render_widget(pending.prompt.clone(), area);
+    }
+}
+
+fn format_startup_diagnostic(payload: &DiagnosticPayload) -> String {
+    let granular = payload
+        .details
+        .as_ref()
+        .and_then(|details| details.get("code"))
+        .and_then(serde_json::Value::as_str)
+        .filter(|code| !code.is_empty());
+    let action = payload
+        .action
+        .as_deref()
+        .map(|action| format!(" (action: {action})"))
+        .unwrap_or_default();
+    match granular {
+        Some(code) => format!(
+            "[{}] {}::{code}: {}{action}",
+            payload.severity, payload.source, payload.message
+        ),
+        None => payload.to_string(),
+    }
+}
+
+fn startup_diagnostic_messages(harness: &CodingHarness) -> Vec<TuiMessage> {
+    harness
+        .resource_metadata()
+        .diagnostic_payloads(RedactionMode::Summary)
+        .iter()
+        .map(|payload| TuiMessage::new(TuiRole::System, format_startup_diagnostic(payload)))
+        .collect()
 }
 
 /// Run the outer interactive TUI and its prompt/auth state machine.
@@ -853,6 +885,10 @@ pub async fn run_interactive_tui(
     keybindings: Keybindings,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let theme = resolve_interactive_theme(&harness, theme_name);
+    // Startup diagnostics are projected once into the initial state before the
+    // first frame. Later redraws reuse that state instead of re-reading metadata,
+    // preserving order without duplicating refusals.
+    let initial_messages = startup_diagnostic_messages(&harness);
     if theme.name != theme_name {
         eprintln!("opi: warning: unknown theme {theme_name:?}, using default");
     }
@@ -863,7 +899,7 @@ pub async fn run_interactive_tui(
         &CapabilitySource::EnvVars,
     );
     let state = Arc::new(Mutex::new(TuiState {
-        messages: Vec::new(),
+        messages: initial_messages,
         input_text: String::new(),
         app_state: AppState::Idle,
         model: model.clone(),
@@ -1660,11 +1696,7 @@ struct HeadlessTuiTerminal {
 
 impl TuiTerminal for HeadlessTuiTerminal {
     fn draw_state(&mut self, state: &TuiState) -> io::Result<()> {
-        let shell = build_shell(state);
-        match self
-            .terminal
-            .draw(|frame| frame.render_widget(shell, frame.area()))
-        {
+        match self.terminal.draw(|frame| render_tui_state(frame, state)) {
             Ok(_) => Ok(()),
             Err(error) => match error {},
         }
@@ -2387,6 +2419,41 @@ mod tests {
         state.pending_permission = None;
         handle_permission_key(&mut state, KeyCode::Enter);
         assert!(state.pending_permission.is_none());
+    }
+
+    fn render_permission_prompt_whole_frame(width: u16, height: u16) -> String {
+        let (state, _response) = state_with_pending_permission(PermissionChoice::AllowOnce);
+        let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
+        terminal
+            .draw(|frame| render_tui_state(frame, &state))
+            .unwrap();
+        let buffer = terminal.backend().buffer();
+        let mut rendered = String::new();
+        for y in 0..buffer.area.height {
+            let mut line = String::new();
+            for x in 0..buffer.area.width {
+                line.push_str(buffer.cell((x, y)).unwrap().symbol());
+            }
+            rendered.push_str(line.trim_end());
+            rendered.push('\n');
+        }
+        rendered
+    }
+
+    #[test]
+    fn permission_prompt_production_geometry_whole_frame_80x24() {
+        insta::assert_snapshot!(
+            "permission_prompt_production_geometry_whole_frame_80x24",
+            render_permission_prompt_whole_frame(80, 24)
+        );
+    }
+
+    #[test]
+    fn permission_prompt_production_geometry_whole_frame_120x40() {
+        insta::assert_snapshot!(
+            "permission_prompt_production_geometry_whole_frame_120x40",
+            render_permission_prompt_whole_frame(120, 40)
+        );
     }
 
     /// A no-op keyring backend so tests can construct a `KeychainCredentialStore`

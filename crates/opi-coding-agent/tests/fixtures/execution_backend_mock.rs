@@ -18,8 +18,8 @@ use opi_protocol::execution::v1::frames::{
     TargetId,
 };
 use opi_protocol::execution::v1::{
-    BackendToHost, Base64Bytes, CleanupState, Diagnostic, FailureCode, FailurePhase, HostToBackend,
-    ImplementationId, ProtocolId, RequestId, WIRE_IDENTITY,
+    BackendToHost, Base64Bytes, CancelReason, CleanupState, Diagnostic, FailureCode, FailurePhase,
+    HostToBackend, ImplementationId, ProtocolId, RequestId, WIRE_IDENTITY,
 };
 
 struct ReadyIdentity {
@@ -82,6 +82,22 @@ fn main() {
         "ready_version_mismatch" => ready_mismatch(&mut reader, &mut writer, "version"),
         "ready_target_mismatch" => ready_mismatch(&mut reader, &mut writer, "target"),
         "slow_ready" => slow_ready(&mut reader, &mut writer),
+        "non_reading_initialize" => non_reading_initialize(extra.as_deref()),
+        "non_reading_execute" => non_reading_execute(&mut reader, &mut writer),
+        "invalid_started" => invalid_started(
+            &mut reader,
+            &mut writer,
+            extra.as_deref().unwrap_or("empty-placement"),
+        ),
+        "cancel_invalid_started" => cancel_invalid_started(&mut reader, &mut writer),
+        "diagnostic_count_flood" => diagnostic_flood(&mut reader, &mut writer, 256, ""),
+        "diagnostic_byte_flood" => diagnostic_flood(&mut reader, &mut writer, 2, "12345"),
+        "cancel_diagnostic_count_flood" => {
+            cancel_diagnostic_flood(&mut reader, &mut writer, 256, "", extra.as_deref())
+        }
+        "cancel_diagnostic_byte_flood" => {
+            cancel_diagnostic_flood(&mut reader, &mut writer, 2, "12345", extra.as_deref())
+        }
         "terminal_extra_frame" => terminal_contamination(&mut reader, &mut writer, true),
         "terminal_extra_bytes" => terminal_contamination(&mut reader, &mut writer, false),
         "failed_terminal_extra_bytes" => failed_terminal_contamination(&mut reader, &mut writer),
@@ -150,17 +166,24 @@ fn main() {
             CleanupState::Unconfirmed,
             extra.as_deref(),
         ),
+        "cancel_cleanup_contradictory" => {
+            cancel_cleanup_contradictory(&mut reader, &mut writer, extra.as_deref())
+        }
         "failed_pre_started" => failed(
             &mut reader,
             &mut writer,
             parse_failure_code(extra.as_deref().unwrap_or("failed")),
             FailPoint::PreStarted,
+            remaining.get(1).map(|phase| parse_failure_phase(phase)),
+            remaining.get(2).map(String::as_str),
         ),
         "failed_post_started" => failed(
             &mut reader,
             &mut writer,
             parse_failure_code(extra.as_deref().unwrap_or("execution_failed")),
             FailPoint::PostStarted,
+            remaining.get(1).map(|phase| parse_failure_phase(phase)),
+            remaining.get(2).map(String::as_str),
         ),
         "redact_canary" => redact_canary(
             &mut reader,
@@ -605,14 +628,19 @@ fn out_of_order(reader: &mut impl BufRead, writer: &mut impl Write) {
     std::process::exit(0);
 }
 
-fn failed(reader: &mut impl BufRead, writer: &mut impl Write, code: FailureCode, point: FailPoint) {
+fn failed(
+    reader: &mut impl BufRead,
+    writer: &mut impl Write,
+    code: FailureCode,
+    point: FailPoint,
+    phase_override: Option<FailurePhase>,
+    started_marker: Option<&str>,
+) {
     let rid = match expect_initialize(reader) {
         Some(r) => r,
         None => return,
     };
-    let phase = if matches!(point, FailPoint::PreStarted) {
-        FailurePhase::Handshake
-    } else {
+    if matches!(point, FailPoint::PostStarted) {
         send(writer, &ready_frame(&rid, WIRE_IDENTITY));
         let _ = read_host_frame(reader);
         send(
@@ -631,8 +659,16 @@ fn failed(reader: &mut impl BufRead, writer: &mut impl Write, code: FailureCode,
                 limitations: vec![],
             }),
         );
+        write_started_marker(started_marker);
+    }
+    let default_phase = if code == FailureCode::CleanupUnconfirmed {
+        FailurePhase::Cleanup
+    } else if matches!(point, FailPoint::PreStarted) {
+        FailurePhase::Handshake
+    } else {
         FailurePhase::Execution
     };
+    let phase = phase_override.unwrap_or(default_phase);
     // Typed distress frame. Spec: before `started` the backend may terminate
     // with `unavailable`/`failed`; after started it may report execution
     // failure/timeout/cleanup/protocol distress.
@@ -713,6 +749,229 @@ fn slow_ready(reader: &mut impl BufRead, writer: &mut impl Write) {
     std::thread::sleep(std::time::Duration::from_millis(250));
     send(writer, &ready_frame(&rid, WIRE_IDENTITY));
     drain_until_eof(reader);
+}
+
+fn parse_failure_phase(s: &str) -> FailurePhase {
+    match s {
+        "handshake" => FailurePhase::Handshake,
+        "execution" => FailurePhase::Execution,
+        "cleanup" => FailurePhase::Cleanup,
+        _ => unreachable!("unknown mock failure phase"),
+    }
+}
+
+fn non_reading_initialize(started_marker: Option<&str>) {
+    write_started_marker(started_marker);
+    loop {
+        std::thread::sleep(std::time::Duration::from_secs(1));
+    }
+}
+
+fn non_reading_execute(reader: &mut impl BufRead, writer: &mut impl Write) {
+    let Some(rid) = expect_initialize(reader) else {
+        return;
+    };
+    send(writer, &ready_frame(&rid, WIRE_IDENTITY));
+    loop {
+        std::thread::sleep(std::time::Duration::from_secs(1));
+    }
+}
+
+fn invalid_started(reader: &mut impl BufRead, writer: &mut impl Write, field: &str) {
+    let Some(rid) = expect_initialize(reader) else {
+        return;
+    };
+    send(writer, &ready_frame(&rid, WIRE_IDENTITY));
+    let _ = read_host_frame(reader);
+    send(
+        writer,
+        &BackendToHost::Accepted(AcceptedPayload {
+            request_id: rid.clone(),
+        }),
+    );
+    let mut started = StartedPayload {
+        request_id: rid.clone(),
+        placement: "host".into(),
+        guarantee: "supervised".into(),
+        policy: "none".into(),
+        limitations: vec![],
+    };
+    match field {
+        "empty-placement" => started.placement.clear(),
+        "whitespace-placement" => started.placement = " \t".into(),
+        "empty-guarantee" => started.guarantee.clear(),
+        "whitespace-guarantee" => started.guarantee = "\r\n".into(),
+        "empty-policy" => started.policy.clear(),
+        "whitespace-policy" => started.policy = "   ".into(),
+        _ => unreachable!(),
+    }
+    send(writer, &BackendToHost::Started(started));
+    send(
+        writer,
+        &BackendToHost::Completed(CompletedPayload {
+            request_id: rid,
+            exit: Some(0),
+            signal: None,
+            timed_out: false,
+            cancelled: false,
+            cleanup: CleanupState::Confirmed,
+            diagnostics: vec![],
+        }),
+    );
+    drain_until_eof(reader);
+}
+
+fn cancel_invalid_started(reader: &mut impl BufRead, writer: &mut impl Write) {
+    let Some(rid) = expect_initialize(reader) else {
+        return;
+    };
+    send(writer, &ready_frame(&rid, WIRE_IDENTITY));
+    let _ = read_host_frame(reader);
+    send(
+        writer,
+        &BackendToHost::Accepted(AcceptedPayload {
+            request_id: rid.clone(),
+        }),
+    );
+    while let Some(frame) = read_host_frame(reader) {
+        if matches!(frame, HostToBackend::Cancel(_)) {
+            send(
+                writer,
+                &BackendToHost::Started(StartedPayload {
+                    request_id: rid.clone(),
+                    placement: "host".into(),
+                    guarantee: "supervised".into(),
+                    policy: " \t".into(),
+                    limitations: vec![],
+                }),
+            );
+            send(
+                writer,
+                &BackendToHost::Completed(CompletedPayload {
+                    request_id: rid,
+                    exit: None,
+                    signal: None,
+                    timed_out: false,
+                    cancelled: true,
+                    cleanup: CleanupState::Confirmed,
+                    diagnostics: vec![],
+                }),
+            );
+            drain_until_eof(reader);
+            return;
+        }
+    }
+}
+
+fn diagnostic_flood(
+    reader: &mut impl BufRead,
+    writer: &mut impl Write,
+    count: usize,
+    message: &str,
+) {
+    let Some(rid) = expect_initialize(reader) else {
+        return;
+    };
+    send(writer, &ready_frame(&rid, WIRE_IDENTITY));
+    let _ = read_host_frame(reader);
+    send(
+        writer,
+        &BackendToHost::Accepted(AcceptedPayload {
+            request_id: rid.clone(),
+        }),
+    );
+    send(
+        writer,
+        &BackendToHost::Started(StartedPayload {
+            request_id: rid.clone(),
+            placement: "host".into(),
+            guarantee: "supervised".into(),
+            policy: "none".into(),
+            limitations: vec![],
+        }),
+    );
+    for _ in 0..count {
+        send(
+            writer,
+            &BackendToHost::Diagnostic(opi_protocol::execution::v1::frames::DiagnosticPayload {
+                request_id: rid.clone(),
+                message: message.into(),
+            }),
+        );
+    }
+    send(
+        writer,
+        &BackendToHost::Completed(CompletedPayload {
+            request_id: rid,
+            exit: Some(0),
+            signal: None,
+            timed_out: false,
+            cancelled: false,
+            cleanup: CleanupState::Confirmed,
+            diagnostics: vec![],
+        }),
+    );
+    drain_until_eof(reader);
+}
+
+fn cancel_diagnostic_flood(
+    reader: &mut impl BufRead,
+    writer: &mut impl Write,
+    count: usize,
+    message: &str,
+    started_marker: Option<&str>,
+) {
+    let Some(rid) = expect_initialize(reader) else {
+        return;
+    };
+    send(writer, &ready_frame(&rid, WIRE_IDENTITY));
+    let _ = read_host_frame(reader);
+    send(
+        writer,
+        &BackendToHost::Accepted(AcceptedPayload {
+            request_id: rid.clone(),
+        }),
+    );
+    send(
+        writer,
+        &BackendToHost::Started(StartedPayload {
+            request_id: rid.clone(),
+            placement: "host".into(),
+            guarantee: "supervised".into(),
+            policy: "none".into(),
+            limitations: vec![],
+        }),
+    );
+    write_started_marker(started_marker);
+    while let Some(frame) = read_host_frame(reader) {
+        if matches!(frame, HostToBackend::Cancel(_)) {
+            for _ in 0..count {
+                send(
+                    writer,
+                    &BackendToHost::Diagnostic(
+                        opi_protocol::execution::v1::frames::DiagnosticPayload {
+                            request_id: rid.clone(),
+                            message: message.into(),
+                        },
+                    ),
+                );
+            }
+            send(
+                writer,
+                &BackendToHost::Completed(CompletedPayload {
+                    request_id: rid,
+                    exit: None,
+                    signal: None,
+                    timed_out: false,
+                    cancelled: true,
+                    cleanup: CleanupState::Confirmed,
+                    diagnostics: vec![],
+                }),
+            );
+            drain_until_eof(reader);
+            return;
+        }
+    }
 }
 
 fn terminal_contamination(reader: &mut impl BufRead, writer: &mut impl Write, frame: bool) {
@@ -1006,6 +1265,56 @@ fn cancel_cleanup(
                     timed_out: false,
                     cancelled: true,
                     cleanup,
+                    diagnostics: vec![],
+                }),
+            );
+            std::process::exit(0);
+        }
+    }
+}
+
+fn cancel_cleanup_contradictory(
+    reader: &mut impl BufRead,
+    writer: &mut impl Write,
+    started_marker: Option<&str>,
+) {
+    let Some(rid) = expect_initialize(reader) else {
+        return;
+    };
+    send(writer, &ready_frame(&rid, WIRE_IDENTITY));
+    let _ = read_host_frame(reader);
+    send(
+        writer,
+        &BackendToHost::Accepted(AcceptedPayload {
+            request_id: rid.clone(),
+        }),
+    );
+    send(
+        writer,
+        &BackendToHost::Started(StartedPayload {
+            request_id: rid.clone(),
+            placement: "host".into(),
+            guarantee: "supervised".into(),
+            policy: "none".into(),
+            limitations: vec![],
+        }),
+    );
+    write_started_marker(started_marker);
+    while let Some(frame) = read_host_frame(reader) {
+        if let HostToBackend::Cancel(cancel) = frame {
+            let (timed_out, cancelled) = match cancel.reason {
+                CancelReason::Deadline => (false, true),
+                CancelReason::Canceled => (true, false),
+            };
+            send(
+                writer,
+                &BackendToHost::Completed(CompletedPayload {
+                    request_id: rid,
+                    exit: None,
+                    signal: None,
+                    timed_out,
+                    cancelled,
+                    cleanup: CleanupState::Confirmed,
                     diagnostics: vec![],
                 }),
             );

@@ -11,8 +11,8 @@ use opi_protocol::execution::v1;
 use opi_protocol::execution::v1::codec::{LineReader, encode_backend, encode_host};
 use opi_protocol::execution::v1::frames::{AcceptedPayload, FailedPayload, StdoutPayload};
 use opi_protocol::execution::v1::{
-    BackendToHost, Base64Bytes, Bounds, CodecError, FailureCode, FailurePhase, HostToBackend,
-    NativeString, ProtocolId, RequestId, Session, SessionError,
+    BackendToHost, Base64Bytes, Bounds, BoundsError, CodecError, FailureCode, FailurePhase,
+    HostToBackend, NativeString, ProtocolId, RequestId, Session, SessionError,
 };
 
 use proptest::prelude::*;
@@ -369,6 +369,183 @@ fn all_declared_bounds_enforce_exact_and_over_boundary() {
             cumulative: 11,
             limit: 10
         })
+    ));
+    assert_eq!(
+        session.cumulative_output(),
+        10,
+        "a rejected output chunk must not mutate cumulative state"
+    );
+}
+
+#[test]
+fn chunk_bound_uses_exact_padded_base64_thresholds() {
+    // Worked standard-base64 lengths plus the v1 64-byte output framing
+    // reserve: 1 -> 4, 2 -> 4, 4 -> 8, and 1 MiB -> 1_398_104.
+    for (decoded, threshold) in [
+        (1usize, 68usize),
+        (2, 68),
+        (4, 72),
+        (1024 * 1024, 1_398_168),
+    ] {
+        let exact = Bounds {
+            max_line_size: threshold,
+            max_decoded_chunk_size: decoded,
+            max_configuration_size: 0,
+            max_diagnostics_size: 0,
+            max_cumulative_output: decoded,
+        };
+        assert!(
+            !matches!(exact.validate(), Err(BoundsError::LineTooSmallForChunk)),
+            "decoded chunk size {decoded} must fit at {threshold} bytes"
+        );
+        assert_eq!(
+            Bounds {
+                max_line_size: threshold - 1,
+                ..exact
+            }
+            .validate(),
+            Err(BoundsError::LineTooSmallForChunk),
+            "decoded chunk size {decoded} must not fit below {threshold} bytes"
+        );
+    }
+}
+
+#[test]
+fn maximal_output_chunk_encodes_at_exact_padded_base64_threshold() {
+    let decoded = 1024 * 1024;
+    let bounds = Bounds {
+        max_line_size: 1_398_168,
+        max_decoded_chunk_size: decoded,
+        max_configuration_size: 0,
+        max_diagnostics_size: 0,
+        max_cumulative_output: decoded,
+    };
+    bounds.validate().unwrap();
+
+    let frame = BackendToHost::Stdout(StdoutPayload {
+        request_id: RequestId::new("r1".to_string()).unwrap(),
+        data: Base64Bytes::from_bytes(vec![0; decoded]),
+    });
+    let encoded = encode_backend(&frame, &bounds).unwrap();
+    assert!(encoded.len() <= bounds.max_line_size);
+}
+
+#[test]
+fn chunk_bound_rejects_requirement_overflow() {
+    let bounds = Bounds {
+        max_line_size: usize::MAX,
+        max_decoded_chunk_size: usize::MAX,
+        max_configuration_size: 0,
+        max_diagnostics_size: 0,
+        max_cumulative_output: usize::MAX,
+    };
+    assert_eq!(bounds.validate(), Err(BoundsError::LineTooSmallForChunk));
+}
+
+#[test]
+fn line_reader_allows_lf_and_crlf_at_the_same_data_cap() {
+    let cap = 8;
+    let bounds = Bounds {
+        max_line_size: cap,
+        max_decoded_chunk_size: 0,
+        max_configuration_size: 0,
+        max_diagnostics_size: 0,
+        max_cumulative_output: 0,
+    };
+
+    for delimiter in [b"\n".as_slice(), b"\r\n".as_slice()] {
+        let mut input = vec![b'x'; cap];
+        input.extend_from_slice(delimiter);
+        let mut reader = LineReader::new(std::io::Cursor::new(input), bounds);
+        let mut line = Vec::new();
+        assert!(reader.read_line(&mut line).unwrap());
+        assert_eq!(line, vec![b'x'; cap]);
+    }
+}
+
+#[test]
+fn line_reader_rejects_over_cap_lines_with_newline_or_partial_eof() {
+    let cap = 3;
+    let bounds = Bounds {
+        max_line_size: cap,
+        max_decoded_chunk_size: 0,
+        max_configuration_size: 0,
+        max_diagnostics_size: 0,
+        max_cumulative_output: 0,
+    };
+
+    for input in [b"abcd\n".as_slice(), b"abcd".as_slice()] {
+        let err = LineReader::new(std::io::Cursor::new(input), bounds)
+            .read_line(&mut Vec::new())
+            .unwrap_err();
+        assert!(matches!(
+            err,
+            CodecError::OversizedLine { max_line_size: 3 }
+        ));
+    }
+}
+
+#[test]
+fn line_reader_handles_clean_eof_and_final_line_without_newline() {
+    let bounds = Bounds {
+        max_line_size: 3,
+        max_decoded_chunk_size: 0,
+        max_configuration_size: 0,
+        max_diagnostics_size: 0,
+        max_cumulative_output: 0,
+    };
+
+    let mut reader = LineReader::new(std::io::Cursor::new(Vec::<u8>::new()), bounds);
+    assert!(!reader.read_line(&mut Vec::new()).unwrap());
+
+    for input in [b"abc".as_slice(), b"abc\n".as_slice()] {
+        let mut reader = LineReader::new(std::io::Cursor::new(input), bounds);
+        let mut line = Vec::new();
+        assert!(reader.read_line(&mut line).unwrap());
+        assert_eq!(line, b"abc");
+        assert!(!reader.read_line(&mut line).unwrap());
+        assert!(line.is_empty());
+    }
+}
+
+#[test]
+fn direct_session_feeds_enforce_exact_line_cap_in_both_directions() {
+    let cap = 256;
+    let bounds = Bounds {
+        max_line_size: cap,
+        max_decoded_chunk_size: 0,
+        max_configuration_size: 0,
+        max_diagnostics_size: 0,
+        max_cumulative_output: 0,
+    };
+    let padded = |json: &[u8]| {
+        let mut line = json.to_vec();
+        assert!(line.len() <= cap);
+        line.resize(cap, b' ');
+        line
+    };
+
+    let mut host_line =
+        padded(br#"{"type":"cancel","payload":{"request_id":"r1","reason":"canceled"}}"#);
+    let mut host_session = Session::new(bounds).unwrap();
+    host_session.feed_host_line(&host_line).unwrap();
+    host_line.push(b' ');
+    assert!(matches!(
+        host_session.feed_host_line(&host_line),
+        Err(SessionError::Codec(CodecError::OversizedLine {
+            max_line_size: 256
+        }))
+    ));
+
+    let mut backend_line = padded(br#"{"type":"accepted","payload":{"request_id":"r1"}}"#);
+    let mut backend_session = Session::new(bounds).unwrap();
+    backend_session.feed_backend_line(&backend_line).unwrap();
+    backend_line.push(b' ');
+    assert!(matches!(
+        backend_session.feed_backend_line(&backend_line),
+        Err(SessionError::Codec(CodecError::OversizedLine {
+            max_line_size: 256
+        }))
     ));
 }
 

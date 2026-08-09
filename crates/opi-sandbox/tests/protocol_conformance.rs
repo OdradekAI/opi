@@ -3,7 +3,7 @@
 //!
 //! These tests drive [`opi_sandbox::backend::drive`] with an INJECTED
 //! [`NoRestriction`] + `supported = true`, feeding host frames as JSONL over an
-//! injected stdin (`std::io::Cursor`) and capturing the backend's stdout frames.
+//! injected async stdin and capturing the backend's stdout frames.
 //! They prove the full success ordering AND every bounded terminal invalid path
 //! required by the DoD. The REAL-binary negotiation + unsupported pre-start path
 //! is exercised by `tests/backend_protocol_smoke.rs` via the Python fixture
@@ -16,10 +16,12 @@
 #![forbid(unsafe_code)]
 
 use std::collections::BTreeMap;
-use std::io::{Cursor, Read};
+use std::io::{Cursor, Write};
+use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::task::{Context, Poll};
+use std::time::{Duration, Instant};
 
 use opi_protocol::execution::v1::codec::decode_backend;
 use opi_protocol::execution::v1::frames::ExecutePayload;
@@ -30,6 +32,9 @@ use opi_protocol::execution::v1::{
 
 use opi_sandbox::policy::{RestrictionCtx, RestrictionSetupError};
 use opi_sandbox::{AppliedRestriction, NetworkPolicy, NoRestriction, Restriction, backend};
+use tokio::io::{AsyncRead, AsyncWriteExt, ReadBuf};
+
+type TestInput = Pin<Box<dyn AsyncRead + Send>>;
 
 /// Build a host `initialize` JSONL line.
 fn init_json(rid: &str, deadline_ms: u64, protocols: &[&str]) -> String {
@@ -62,12 +67,26 @@ fn exec_json(
     timeout_ms: u64,
     env_kvs: &[(&str, &str)],
 ) -> String {
+    exec_json_with_cwd(
+        rid, program, args, workspace, workspace, timeout_ms, env_kvs,
+    )
+}
+
+fn exec_json_with_cwd(
+    rid: &str,
+    program: &str,
+    args: &[&str],
+    workspace: &str,
+    cwd: &str,
+    timeout_ms: u64,
+    env_kvs: &[(&str, &str)],
+) -> String {
     let frame = HostToBackend::Execute(ExecutePayload {
         request_id: RequestId::new(rid.to_string()).unwrap(),
         program: native(program),
         args: args.iter().map(|value| native(value)).collect(),
         workspace: native(workspace),
-        cwd: native(workspace),
+        cwd: native(cwd),
         timeout_ms,
         env_inherit: EnvInherit::Inherit,
         env_additions: env_kvs
@@ -92,6 +111,16 @@ fn native(value: &str) -> NativeString {
             .flat_map(u16::to_le_bytes)
             .collect::<Vec<_>>(),
     )
+}
+
+#[cfg(unix)]
+fn native_nul() -> NativeString {
+    NativeString::from_bytes([0])
+}
+
+#[cfg(windows)]
+fn native_nul() -> NativeString {
+    NativeString::from_bytes([0, 0])
 }
 
 /// Build a host `cancel` JSONL line.
@@ -173,17 +202,10 @@ fn workspace() -> String {
 
 /// Drive the backend with an injected NoRestriction runner and return (exit, stdout).
 async fn run_drive(stdin: String, supported: bool) -> (i32, Vec<u8>) {
-    let open = Arc::new(AtomicBool::new(true));
-    let reader = HeldOpenInput {
-        input: Cursor::new(stdin.into_bytes()),
-        open: open.clone(),
-    };
-    let result = run_drive_reader(Box::new(reader), supported).await;
-    open.store(false, Ordering::Release);
-    result
+    run_drive_with_restriction(stdin, supported, Arc::new(NoRestriction)).await
 }
 
-async fn run_drive_reader(stdin: Box<dyn Read + Send>, supported: bool) -> (i32, Vec<u8>) {
+async fn run_drive_reader(stdin: TestInput, supported: bool) -> (i32, Vec<u8>) {
     run_drive_reader_with_restriction(stdin, supported, Arc::new(NoRestriction)).await
 }
 
@@ -192,18 +214,16 @@ async fn run_drive_with_restriction(
     supported: bool,
     restriction: Arc<dyn Restriction>,
 ) -> (i32, Vec<u8>) {
-    let open = Arc::new(AtomicBool::new(true));
-    let reader = HeldOpenInput {
-        input: Cursor::new(stdin.into_bytes()),
-        open: open.clone(),
-    };
-    let result = run_drive_reader_with_restriction(Box::new(reader), supported, restriction).await;
-    open.store(false, Ordering::Release);
+    let bytes = stdin.into_bytes();
+    let (mut host, reader) = tokio::io::duplex(bytes.len().max(1));
+    host.write_all(&bytes).await.expect("write host frames");
+    let result = run_drive_reader_with_restriction(Box::pin(reader), supported, restriction).await;
+    drop(host);
     result
 }
 
 async fn run_drive_reader_with_restriction(
-    stdin: Box<dyn Read + Send>,
+    stdin: TestInput,
     supported: bool,
     restriction: Arc<dyn Restriction>,
 ) -> (i32, Vec<u8>) {
@@ -225,12 +245,46 @@ struct RecordingRestriction {
     setup_delay: Duration,
 }
 
+struct CooperativeRecordingRestriction {
+    observed_networks: Arc<Mutex<Vec<NetworkPolicy>>>,
+    setup_delay: Duration,
+    stopped: Arc<AtomicBool>,
+}
+
+struct LatchingRestriction {
+    observed_networks: Arc<Mutex<Vec<NetworkPolicy>>>,
+    release: Mutex<std::sync::mpsc::Receiver<()>>,
+    completed: std::sync::mpsc::Sender<()>,
+}
+
 struct DelayedFailingRestriction {
     prepare_count: Arc<AtomicUsize>,
     setup_delay: Duration,
 }
 
 struct ReleaseFailingRestriction;
+
+struct DelayedFlushWriter {
+    bytes: Vec<u8>,
+    flushes: usize,
+    delay_on_flush: usize,
+    delay: Duration,
+}
+
+impl Write for DelayedFlushWriter {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.bytes.extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.flushes += 1;
+        if self.flushes == self.delay_on_flush {
+            std::thread::sleep(self.delay);
+        }
+        Ok(())
+    }
+}
 
 impl Restriction for RecordingRestriction {
     fn prepare(
@@ -243,6 +297,48 @@ impl Restriction for RecordingRestriction {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .push(ctx.network);
         std::thread::sleep(self.setup_delay);
+        Ok(AppliedRestriction::none())
+    }
+}
+
+impl Restriction for CooperativeRecordingRestriction {
+    fn prepare(
+        &self,
+        _cmd: &mut tokio::process::Command,
+        ctx: &RestrictionCtx<'_>,
+    ) -> Result<AppliedRestriction, RestrictionSetupError> {
+        self.observed_networks
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .push(ctx.network);
+        let finish = Instant::now() + self.setup_delay;
+        while Instant::now() < finish {
+            if ctx.setup_cancelled() {
+                self.stopped.store(true, Ordering::Release);
+                return Err(RestrictionSetupError::Failed("setup-cancelled"));
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        Ok(AppliedRestriction::none())
+    }
+}
+
+impl Restriction for LatchingRestriction {
+    fn prepare(
+        &self,
+        _cmd: &mut tokio::process::Command,
+        ctx: &RestrictionCtx<'_>,
+    ) -> Result<AppliedRestriction, RestrictionSetupError> {
+        self.observed_networks
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .push(ctx.network);
+        let _ = self
+            .release
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .recv();
+        let _ = self.completed.send(());
         Ok(AppliedRestriction::none())
     }
 }
@@ -306,6 +402,18 @@ fn recording_restriction(
     })
 }
 
+fn cooperative_recording_restriction(
+    observed_networks: Arc<Mutex<Vec<NetworkPolicy>>>,
+    setup_delay: Duration,
+    stopped: Arc<AtomicBool>,
+) -> Arc<dyn Restriction> {
+    Arc::new(CooperativeRecordingRestriction {
+        observed_networks,
+        setup_delay,
+        stopped,
+    })
+}
+
 fn delayed_failing_restriction(
     prepare_count: Arc<AtomicUsize>,
     setup_delay: Duration,
@@ -323,26 +431,23 @@ fn recorded_networks(observed_networks: &Mutex<Vec<NetworkPolicy>>) -> Vec<Netwo
         .clone()
 }
 
-struct BlockingAfterInput {
-    input: Cursor<Vec<u8>>,
-    release: std::sync::mpsc::Receiver<()>,
+struct BlockingDropInput {
+    dropped: Arc<AtomicBool>,
 }
 
-struct HeldOpenInput {
-    input: Cursor<Vec<u8>>,
-    open: Arc<AtomicBool>,
+impl AsyncRead for BlockingDropInput {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        _cx: &mut Context<'_>,
+        _buf: &mut ReadBuf<'_>,
+    ) -> Poll<std::io::Result<()>> {
+        Poll::Pending
+    }
 }
 
-impl Read for HeldOpenInput {
-    fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
-        let read = self.input.read(buffer)?;
-        if read != 0 {
-            return Ok(read);
-        }
-        while self.open.load(Ordering::Acquire) {
-            std::thread::sleep(std::time::Duration::from_millis(5));
-        }
-        Ok(0)
+impl Drop for BlockingDropInput {
+    fn drop(&mut self) {
+        self.dropped.store(true, Ordering::Release);
     }
 }
 
@@ -353,43 +458,23 @@ struct FloodInput {
     reads: Arc<AtomicUsize>,
 }
 
-impl Read for FloodInput {
-    fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
-        let line = if let Some(line) = self.initial.get(self.next) {
+impl AsyncRead for FloodInput {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        _cx: &mut Context<'_>,
+        buffer: &mut ReadBuf<'_>,
+    ) -> Poll<std::io::Result<()>> {
+        let next = self.next;
+        let line = if next < self.initial.len() {
             self.next += 1;
-            line
+            &self.initial[next]
         } else {
             &self.flood
         };
-        assert!(line.len() <= buffer.len());
-        buffer[..line.len()].copy_from_slice(line);
+        assert!(line.len() <= buffer.remaining());
+        buffer.put_slice(line);
         self.reads.fetch_add(1, Ordering::Relaxed);
-        Ok(line.len())
-    }
-}
-
-struct EofAfterFile {
-    input: Cursor<Vec<u8>>,
-    path: std::path::PathBuf,
-}
-
-impl Read for EofAfterFile {
-    fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
-        let read = self.input.read(buffer)?;
-        if read != 0 {
-            return Ok(read);
-        }
-        for _ in 0..200 {
-            if std::fs::read_to_string(&self.path)
-                .ok()
-                .and_then(|text| text.trim().parse::<u32>().ok())
-                .is_some()
-            {
-                return Ok(0);
-            }
-            std::thread::sleep(std::time::Duration::from_millis(50));
-        }
-        Ok(0)
+        Poll::Ready(Ok(()))
     }
 }
 
@@ -406,17 +491,6 @@ fn pid_alive(pid: u32) -> bool {
             .args(["-0", &pid.to_string()])
             .status()
             .is_ok_and(|status| status.success())
-    }
-}
-
-impl Read for BlockingAfterInput {
-    fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
-        let read = self.input.read(buffer)?;
-        if read != 0 {
-            return Ok(read);
-        }
-        let _ = self.release.recv();
-        Ok(0)
     }
 }
 
@@ -456,6 +530,13 @@ fn completed_frame(out: &[u8]) -> opi_protocol::execution::v1::frames::Completed
             _ => None,
         })
         .expect("completed frame")
+}
+
+fn assert_pre_admission_protocol_failure(out: &[u8]) {
+    assert_eq!(kinds(&parse(out)), vec!["ready", "failed"]);
+    let failed = failed_frame(out);
+    assert_eq!(failed.code, FailureCode::ProtocolViolation);
+    assert_eq!(failed.phase, FailurePhase::Handshake);
 }
 
 /// SUCCESS: the full initialize->ready->execute->accepted->started->stdout->
@@ -697,29 +778,82 @@ async fn initialize_deadline_expiry_during_setup_fails_closed() {
     let marker_dir = tempfile::tempdir().expect("marker dir");
     let marker = marker_dir.path().join("must-not-exist");
     let observed = Arc::new(Mutex::new(Vec::new()));
-    let restriction = recording_restriction(observed.clone(), Duration::from_millis(1_500));
+    let stopped = Arc::new(AtomicBool::new(false));
+    let restriction = cooperative_recording_restriction(
+        observed.clone(),
+        Duration::from_millis(500),
+        stopped.clone(),
+    );
     let ws = workspace();
     let (program, args) = marker_target(&marker);
     let arg_refs = args.iter().map(String::as_str).collect::<Vec<_>>();
     let stdin = format!(
         "{}\n{}\n",
-        init_json("r1", 1_000, &["command-execution-jsonl-v1"]),
+        init_json("r1", 700, &["command-execution-jsonl-v1"]),
         exec_json("r1", program, &arg_refs, &ws, 10_000, &[])
     );
 
     let (code, out) = tokio::time::timeout(
-        Duration::from_secs(5),
+        Duration::from_secs(2),
         run_drive_with_restriction(stdin, true, restriction),
     )
     .await
     .expect("setup deadline path must remain bounded");
-
     assert_eq!(code, 0);
     let failed = failed_frame(&out);
     assert_eq!(failed.code, FailureCode::ExecutionTimedOut);
     assert_eq!(failed.phase, FailurePhase::Handshake);
     assert_eq!(recorded_networks(&observed), vec![NetworkPolicy::Deny]);
+    assert!(
+        stopped.load(Ordering::Acquire),
+        "cooperative setup did not observe its cutoff"
+    );
     assert!(!marker.exists(), "expired setup released the target");
+}
+
+#[tokio::test]
+async fn non_cooperative_setup_is_observed_only_until_the_hard_deadline() {
+    let marker_dir = tempfile::tempdir().expect("marker dir");
+    let marker = marker_dir.path().join("must-not-exist");
+    let observed = Arc::new(Mutex::new(Vec::new()));
+    let (release_tx, release_rx) = std::sync::mpsc::channel();
+    let (completed_tx, completed_rx) = std::sync::mpsc::channel();
+    let restriction = Arc::new(LatchingRestriction {
+        observed_networks: observed.clone(),
+        release: Mutex::new(release_rx),
+        completed: completed_tx,
+    });
+    let ws = workspace();
+    let (program, args) = marker_target(&marker);
+    let arg_refs = args.iter().map(String::as_str).collect::<Vec<_>>();
+    let stdin = format!(
+        "{}\n{}\n",
+        init_json("r1", 700, &["command-execution-jsonl-v1"]),
+        exec_json("r1", program, &arg_refs, &ws, 10_000, &[])
+    );
+
+    let (code, out) = tokio::time::timeout(
+        Duration::from_secs(2),
+        run_drive_with_restriction(stdin, true, restriction),
+    )
+    .await
+    .expect("hard deadline must bound non-cooperative setup");
+    assert_eq!(code, 0);
+    assert_eq!(kinds(&parse(&out)), vec!["ready", "accepted", "failed"]);
+    let failed = failed_frame(&out);
+    assert_eq!(failed.code, FailureCode::CleanupUnconfirmed);
+    assert_eq!(failed.phase, FailurePhase::Cleanup);
+    assert_eq!(recorded_networks(&observed), vec![NetworkPolicy::Deny]);
+    assert!(
+        completed_rx.try_recv().is_err(),
+        "non-cooperative setup finished before the backend hard deadline"
+    );
+    release_tx.send(()).expect("release setup worker");
+    tokio::task::spawn_blocking(move || completed_rx.recv_timeout(Duration::from_secs(1)))
+        .await
+        .expect("join completion observer")
+        .expect("setup worker completes after release");
+    assert!(!marker.exists(), "expired setup released a late target");
 }
 
 #[tokio::test]
@@ -728,7 +862,7 @@ async fn initialize_deadline_wins_over_a_delayed_setup_refusal() {
     let marker = marker_dir.path().join("must-not-exist");
     let prepare_count = Arc::new(AtomicUsize::new(0));
     let restriction =
-        delayed_failing_restriction(prepare_count.clone(), Duration::from_millis(1_500));
+        delayed_failing_restriction(prepare_count.clone(), Duration::from_millis(700));
     let ws = workspace();
     let (program, args) = marker_target(&marker);
     let arg_refs = args.iter().map(String::as_str).collect::<Vec<_>>();
@@ -746,11 +880,60 @@ async fn initialize_deadline_wins_over_a_delayed_setup_refusal() {
     .expect("delayed setup refusal must remain bounded");
 
     assert_eq!(code, 0);
+    assert_eq!(kinds(&parse(&out)), vec!["ready", "accepted", "failed"]);
     let failed = failed_frame(&out);
     assert_eq!(failed.code, FailureCode::ExecutionTimedOut);
     assert_eq!(failed.phase, FailurePhase::Handshake);
     assert_eq!(prepare_count.load(Ordering::Relaxed), 1);
     assert!(!marker.exists(), "refused setup released the target");
+}
+
+#[tokio::test]
+async fn execution_cutoff_after_started_flush_never_releases_the_target() {
+    let marker_dir = tempfile::tempdir().expect("marker dir");
+    let marker = marker_dir.path().join("must-not-exist");
+    let ws = workspace();
+    let (program, args) = marker_target(&marker);
+    let arg_refs = args.iter().map(String::as_str).collect::<Vec<_>>();
+    let input = format!(
+        "{}\n{}\n",
+        init_json("r1", 30_000, &["command-execution-jsonl-v1"]),
+        exec_json("r1", program, &arg_refs, &ws, 100, &[])
+    );
+    let bytes = input.into_bytes();
+    let (mut host, reader) = tokio::io::duplex(bytes.len().max(1));
+    host.write_all(&bytes).await.expect("write host frames");
+    let mut out = DelayedFlushWriter {
+        bytes: Vec::new(),
+        flushes: 0,
+        delay_on_flush: 3,
+        delay: Duration::from_millis(200),
+    };
+
+    let code = backend::drive(
+        Box::pin(reader),
+        &mut out,
+        Bounds::DEFAULT,
+        true,
+        &[],
+        Arc::new(NoRestriction),
+    )
+    .await;
+    drop(host);
+
+    assert_eq!(code, 0);
+    assert_eq!(
+        kinds(&parse(&out.bytes)),
+        vec!["ready", "accepted", "started", "failed"]
+    );
+    let failed = failed_frame(&out.bytes);
+    assert_eq!(failed.code, FailureCode::ExecutionTimedOut);
+    assert_eq!(failed.phase, FailurePhase::Execution);
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert!(
+        !marker.exists(),
+        "target crossed the gate after its execution cutoff"
+    );
 }
 
 #[tokio::test]
@@ -788,6 +971,7 @@ async fn cancel_during_drain_completes_cancelled() {
     let completed = completed_frame(&out);
     assert!(completed.cancelled, "cancelled flag set");
     assert!(!completed.timed_out);
+    assert_eq!(completed.cleanup, CleanupState::Confirmed);
 }
 
 /// SDK timeout (execute.timeout_ms) resolves to completed{timed_out:true}.
@@ -804,6 +988,34 @@ async fn timeout_completes_timed_out() {
     assert_eq!(code, 0);
     let completed = completed_frame(&out);
     assert!(completed.timed_out, "timed_out flag set");
+    assert_eq!(completed.cleanup, CleanupState::Confirmed);
+}
+
+#[tokio::test]
+async fn absolute_deadline_reserves_time_for_confirmed_timeout_cleanup() {
+    let ws = workspace();
+    let (program, args) = sleep_target();
+    let stdin = format!(
+        "{}\n{}\n",
+        init_json("r1", 2_500, &["command-execution-jsonl-v1"]),
+        exec_json("r1", program, &args, &ws, 30_000, &[])
+    );
+    let started = Instant::now();
+
+    let (code, out) = tokio::time::timeout(Duration::from_secs(3), run_drive(stdin, true))
+        .await
+        .expect("the single request deadline must bound execution and cleanup");
+
+    assert_eq!(code, 0);
+    let completed = completed_frame(&out);
+    assert!(completed.timed_out);
+    assert!(!completed.cancelled);
+    assert_eq!(completed.cleanup, CleanupState::Confirmed);
+    assert!(
+        started.elapsed() <= Duration::from_millis(2_650),
+        "cleanup must not receive a fresh post-deadline grace: {:?}",
+        started.elapsed()
+    );
 }
 
 #[tokio::test]
@@ -837,22 +1049,36 @@ async fn initialize_deadline_expires_while_waiting_for_execute() {
         "{}\n",
         init_json("r1", 100, &["command-execution-jsonl-v1"])
     );
-    let (release_tx, release_rx) = std::sync::mpsc::channel();
-    let reader = BlockingAfterInput {
-        input: Cursor::new(input.into_bytes()),
-        release: release_rx,
-    };
-    let result = tokio::time::timeout(
-        std::time::Duration::from_secs(2),
-        run_drive_reader(Box::new(reader), true),
-    )
-    .await;
-    drop(release_tx);
+    let result =
+        tokio::time::timeout(std::time::Duration::from_secs(2), run_drive(input, true)).await;
     let (code, out) = result.expect("initialize deadline must bound execute wait");
     assert_eq!(code, 0);
     let failed = failed_frame(&out);
     assert_eq!(failed.code, FailureCode::ExecutionTimedOut);
     assert_eq!(failed.phase, FailurePhase::Handshake);
+}
+
+#[tokio::test]
+async fn initialize_watchdog_releases_owned_silent_input() {
+    let dropped = Arc::new(AtomicBool::new(false));
+    let reader = BlockingDropInput {
+        dropped: dropped.clone(),
+    };
+
+    let (code, out) = tokio::time::timeout(
+        Duration::from_secs(7),
+        run_drive_reader(Box::pin(reader), true),
+    )
+    .await
+    .expect("initialize watchdog must remain bounded");
+    let dropped_at_return = dropped.load(Ordering::Acquire);
+
+    assert_eq!(code, 1);
+    assert!(out.is_empty());
+    assert!(
+        dropped_at_return,
+        "drive returned while a reader worker still owned the silent input"
+    );
 }
 
 #[tokio::test]
@@ -866,7 +1092,7 @@ async fn eof_after_execute_cancels_and_fails_protocol() {
     );
     let (code, out) = tokio::time::timeout(
         std::time::Duration::from_secs(5),
-        run_drive_reader(Box::new(Cursor::new(stdin.into_bytes())), true),
+        run_drive_reader(Box::pin(Cursor::new(stdin.into_bytes())), true),
     )
     .await
     .expect("premature EOF must not wait for the command timeout");
@@ -888,24 +1114,34 @@ async fn eof_after_target_start_kills_descendant_tree() {
         init_json("r1", 30_000, &["command-execution-jsonl-v1"]),
         exec_json("r1", program, &arg_refs, &ws, 30_000, &[])
     );
-    let reader = EofAfterFile {
-        input: Cursor::new(stdin.into_bytes()),
-        path: pidfile.clone(),
-    };
-    let (code, out) = tokio::time::timeout(
-        std::time::Duration::from_secs(15),
-        run_drive_reader(Box::new(reader), true),
-    )
+    let bytes = stdin.into_bytes();
+    let (mut host, reader) = tokio::io::duplex(bytes.len().max(1));
+    host.write_all(&bytes).await.expect("write host frames");
+    let mut drive = Box::pin(run_drive_reader(Box::pin(reader), true));
+    let pid = tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            tokio::select! {
+                result = &mut drive => panic!("backend ended before target pid was visible: {result:?}"),
+                _ = tokio::time::sleep(Duration::from_millis(50)) => {
+                    if let Some(pid) = std::fs::read_to_string(&pidfile)
+                        .ok()
+                        .and_then(|text| text.trim().parse::<u32>().ok())
+                    {
+                        break pid;
+                    }
+                }
+            }
+        }
+    })
     .await
-    .expect("premature EOF must cancel and reap the target tree");
+    .expect("target pidfile");
+    drop(host);
+    let (code, out) = tokio::time::timeout(std::time::Duration::from_secs(5), &mut drive)
+        .await
+        .expect("premature EOF must cancel and reap the target tree");
     assert_eq!(code, 0);
     let failed = failed_frame(&out);
     assert_eq!(failed.code, FailureCode::ProtocolViolation);
-    let pid = std::fs::read_to_string(&pidfile)
-        .expect("grandchild pidfile")
-        .trim()
-        .parse::<u32>()
-        .expect("grandchild pid");
     for _ in 0..80 {
         if !pid_alive(pid) {
             return;
@@ -916,7 +1152,7 @@ async fn eof_after_target_start_kills_descendant_tree() {
 }
 
 #[tokio::test]
-async fn bounded_input_channel_backpressures_a_flooding_host() {
+async fn bounded_async_reader_stops_a_flooding_host() {
     let ws = workspace();
     let (program, args) = sleep_target();
     let init = format!(
@@ -934,7 +1170,7 @@ async fn bounded_input_channel_backpressures_a_flooding_host() {
     };
     let (code, out) = tokio::time::timeout(
         std::time::Duration::from_secs(5),
-        run_drive_reader(Box::new(reader), true),
+        run_drive_reader(Box::pin(reader), true),
     )
     .await
     .expect("protocol violation must terminate a flooded exchange");
@@ -942,7 +1178,7 @@ async fn bounded_input_channel_backpressures_a_flooding_host() {
     assert_eq!(failed_frame(&out).code, FailureCode::ProtocolViolation);
     assert!(
         reads.load(Ordering::Relaxed) <= 16,
-        "bounded channel must stop the reader near capacity; reads={}",
+        "bounded reader must stop near the violation; reads={}",
         reads.load(Ordering::Relaxed)
     );
 }
@@ -1035,8 +1271,7 @@ async fn unsupported_platform_refuses_unavailable_handshake() {
     let (code, out) = run_drive(stdin, false).await;
     assert_eq!(code, 0, "clean distress exits 0");
     let frames = parse(&out);
-    // ready (negotiation) precedes the pre-start failed.
-    assert!(frames.iter().any(|f| f.kind() == "ready"));
+    assert_eq!(kinds(&frames), vec!["ready", "accepted", "failed"]);
     let failed = frames
         .iter()
         .find_map(|f| match f {
@@ -1059,6 +1294,11 @@ async fn program_not_found_failed_handshake() {
     );
     let (code, out) = run_drive(stdin, true).await;
     assert_eq!(code, 0);
+    assert_eq!(
+        kinds(&parse(&out)),
+        vec!["ready", "accepted", "failed"],
+        "execution setup failures remain post-admission"
+    );
     let failed = failed_frame(&out);
     assert_eq!(failed.code, FailureCode::Failed);
     assert_eq!(failed.phase, FailurePhase::Handshake);
@@ -1077,9 +1317,150 @@ async fn zero_timeout_is_protocol_violation_handshake() {
     );
     let (code, out) = run_drive(stdin, true).await;
     assert_eq!(code, 0);
-    let failed = failed_frame(&out);
-    assert_eq!(failed.code, FailureCode::ProtocolViolation);
-    assert_eq!(failed.phase, FailurePhase::Handshake);
+    assert_pre_admission_protocol_failure(&out);
+}
+
+#[tokio::test]
+async fn nonexistent_workspace_is_rejected_before_admission() {
+    let parent = tempfile::tempdir().expect("workspace parent");
+    let missing = parent
+        .path()
+        .join("missing")
+        .to_string_lossy()
+        .replace('\\', "/");
+    let (program, args) = echo_target();
+    let stdin = format!(
+        "{}\n{}\n",
+        init_json("r1", 30_000, &["command-execution-jsonl-v1"]),
+        exec_json("r1", program, &args, &missing, 10_000, &[]),
+    );
+
+    let (code, out) = run_drive(stdin, true).await;
+
+    assert_eq!(code, 0);
+    assert_pre_admission_protocol_failure(&out);
+}
+
+#[tokio::test]
+async fn workspace_file_is_rejected_before_admission() {
+    let parent = tempfile::tempdir().expect("workspace parent");
+    let file = parent.path().join("not-a-directory");
+    std::fs::write(&file, b"fixture").expect("workspace file");
+    let file = file.to_string_lossy().replace('\\', "/");
+    let (program, args) = echo_target();
+    let stdin = format!(
+        "{}\n{}\n",
+        init_json("r1", 30_000, &["command-execution-jsonl-v1"]),
+        exec_json("r1", program, &args, &file, 10_000, &[]),
+    );
+
+    let (code, out) = run_drive(stdin, true).await;
+
+    assert_eq!(code, 0);
+    assert_pre_admission_protocol_failure(&out);
+}
+
+#[tokio::test]
+async fn invalid_cwd_is_rejected_before_admission() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    let outside = tempfile::tempdir().expect("outside cwd");
+    let missing = workspace.path().join("missing");
+    let workspace = workspace.path().to_string_lossy().replace('\\', "/");
+    let outside = outside.path().to_string_lossy().replace('\\', "/");
+    let missing = missing.to_string_lossy().replace('\\', "/");
+    let (program, args) = echo_target();
+
+    for cwd in [&outside, &missing] {
+        let stdin = format!(
+            "{}\n{}\n",
+            init_json("r1", 30_000, &["command-execution-jsonl-v1"]),
+            exec_json_with_cwd("r1", program, &args, &workspace, cwd, 10_000, &[]),
+        );
+        let (code, out) = run_drive(stdin, true).await;
+
+        assert_eq!(code, 0);
+        assert_pre_admission_protocol_failure(&out);
+    }
+}
+
+#[cfg(windows)]
+#[tokio::test]
+async fn malformed_native_string_is_rejected_before_admission() {
+    let ws = workspace();
+    let execute = HostToBackend::Execute(ExecutePayload {
+        request_id: RequestId::new("r1".to_string()).unwrap(),
+        program: NativeString::from_bytes(*b"x"),
+        args: Vec::new(),
+        workspace: native(&ws),
+        cwd: native(&ws),
+        timeout_ms: 10_000,
+        env_inherit: EnvInherit::Inherit,
+        env_additions: BTreeMap::new(),
+    });
+    let stdin = format!(
+        "{}\n{}\n",
+        init_json("r1", 30_000, &["command-execution-jsonl-v1"]),
+        encode_line(&execute, &Bounds::DEFAULT).unwrap(),
+    );
+
+    let (code, out) = run_drive(stdin, true).await;
+
+    assert_eq!(code, 0);
+    assert_pre_admission_protocol_failure(&out);
+}
+
+#[tokio::test]
+async fn native_string_with_nul_is_rejected_before_admission() {
+    let ws = workspace();
+    let execute = HostToBackend::Execute(ExecutePayload {
+        request_id: RequestId::new("r1".to_string()).unwrap(),
+        program: native_nul(),
+        args: Vec::new(),
+        workspace: native(&ws),
+        cwd: native(&ws),
+        timeout_ms: 10_000,
+        env_inherit: EnvInherit::Inherit,
+        env_additions: BTreeMap::new(),
+    });
+    let stdin = format!(
+        "{}\n{}\n",
+        init_json("r1", 30_000, &["command-execution-jsonl-v1"]),
+        encode_line(&execute, &Bounds::DEFAULT).unwrap(),
+    );
+
+    let (code, out) = run_drive(stdin, true).await;
+
+    assert_eq!(code, 0);
+    assert_pre_admission_protocol_failure(&out);
+}
+
+#[tokio::test]
+async fn invalid_environment_keys_are_rejected_before_admission() {
+    let ws = workspace();
+    let (program, args) = echo_target();
+
+    for key in ["", "A=B"] {
+        let execute = HostToBackend::Execute(ExecutePayload {
+            request_id: RequestId::new("r1".to_string()).unwrap(),
+            program: native(program),
+            args: args.iter().map(|value| native(value)).collect(),
+            workspace: native(&ws),
+            cwd: native(&ws),
+            timeout_ms: 10_000,
+            env_inherit: EnvInherit::Inherit,
+            env_additions: [(native(key), native("value"))].into_iter().collect(),
+        });
+        let stdin = format!(
+            "{}\n{}\n",
+            init_json("r1", 30_000, &["command-execution-jsonl-v1"]),
+            encode_line(&execute, &Bounds::DEFAULT).unwrap(),
+        );
+
+        let (code, out) = run_drive(stdin, true).await;
+
+        assert_eq!(code, 0);
+        assert_pre_admission_protocol_failure(&out);
+    }
 }
 
 /// execute before initialize is out of order: failed{ProtocolViolation, Handshake}.

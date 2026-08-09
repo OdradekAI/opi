@@ -7,9 +7,12 @@
 //! backend, and returns either a [`Selection`] or a stable
 //! [`ExecutionFailure`]. It never queries the package store, never spawns a
 //! process, never reads the model, and never mutates its inputs. The 16.8
-//! runtime builds the `Eligibility` input from the activated package store
-//! (16.5) plus the resolved permission policy, and the 16.7 protocol host turns
-//! a [`Selection`] into a live backend process.
+//! runtime builds the `Eligibility` input from a construction-validated package
+//! identity catalog plus the resolved permission policy. The production catalog
+//! contains construction-validated identities, but it is not an authoritative
+//! process-start availability claim: the selected external package is
+//! revalidated at invocation time immediately before spawn. The 16.7 protocol
+//! host then turns a [`Selection`] into a live backend process.
 //!
 //! # Guarantees (Phase 16 design)
 //!
@@ -28,11 +31,14 @@ use crate::config::{ExecutionConfig, ExecutionRunMode, ExecutionStrategy, Permis
 
 use super::failure::ExecutionFailure;
 
-/// A server-derived eligible-adapter entry. The 16.8 runtime builds these from
-/// the activated package store (installed + trusted + enabled + target-
-/// compatible) annotated with the resolved permission decision. `available`
-/// reflects everything *except* permission; `permission` is the resolved
-/// deny/ask/allow for that adapter.
+/// A router eligibility entry. `local` is a synthesized built-in entry.
+/// External entries come from construction-validated package identities that
+/// are installed, trusted, enabled, and target-compatible. Each entry is
+/// annotated with the resolved permission decision.
+/// `available` is a router input, not an authoritative external process-start
+/// guarantee;
+/// production revalidates the selected external package immediately before
+/// spawn. `permission` is the resolved deny/ask/allow for that adapter.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EligibleAdapter {
     pub id: String,
@@ -73,6 +79,25 @@ pub struct Selection {
     pub mode: ExecutionRunMode,
 }
 
+/// Router result that still identifies the construction-validated candidate
+/// by position. The execution runtime uses this index to carry the concrete
+/// dispatch target through permission approval without a second id lookup.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct CandidateSelection {
+    pub(crate) index: usize,
+    pub(crate) backend: String,
+    pub(crate) mode: ExecutionRunMode,
+}
+
+/// Permission-aware result of resolving one configured/model-supplied
+/// candidate. `Ask` deliberately retains the selected candidate so the
+/// interactive grant path cannot lose its concrete dispatch target.
+pub(crate) enum CandidateDecision {
+    Allowed(CandidateSelection),
+    Ask(CandidateSelection),
+    Refused(ExecutionFailure),
+}
+
 /// Resolve the backend for one invocation.
 ///
 /// See the module docs for the determinism, no-fallthrough, and model
@@ -83,103 +108,152 @@ pub fn resolve_selection(
     eligibility: &Eligibility,
     model_backend: Option<&str>,
 ) -> Result<Selection, ExecutionFailure> {
-    match config.strategy {
-        ExecutionStrategy::Fixed => {
-            select_named(&config.backend, ExecutionStrategy::Fixed, mode, eligibility)
-        }
-        ExecutionStrategy::Rules => resolve_rules(config, mode, eligibility),
-        ExecutionStrategy::Model => resolve_model(model_backend, mode, eligibility),
+    match resolve_candidate(config, mode, eligibility, model_backend) {
+        CandidateDecision::Allowed(candidate) => Ok(Selection {
+            backend: candidate.backend,
+            mode: candidate.mode,
+        }),
+        CandidateDecision::Ask(candidate) => Err(ExecutionFailure::PermissionRequired {
+            adapter_id: candidate.backend,
+            mode: candidate.mode,
+        }),
+        CandidateDecision::Refused(failure) => Err(failure),
     }
-    .inspect(|sel| {
-        // Invariant: a successful selection always names an eligible adapter.
-        debug_assert!(
-            eligibility.find(&sel.backend).is_some(),
-            "selected backend must be a member of the eligibility input"
-        );
-    })
 }
 
-/// `fixed`: select the configured backend, then gate it on availability +
+/// Resolve a candidate while retaining its construction index across an
+/// interactive `ask` decision. This is the runtime-facing form of
+/// [`resolve_selection`]; both functions share the exact strategy semantics.
+pub(crate) fn resolve_candidate(
+    config: &ExecutionConfig,
+    mode: ExecutionRunMode,
+    eligibility: &Eligibility,
+    model_backend: Option<&str>,
+) -> CandidateDecision {
+    match config.strategy {
+        ExecutionStrategy::Fixed => {
+            select_named_candidate(&config.backend, ExecutionStrategy::Fixed, mode, eligibility)
+        }
+        ExecutionStrategy::Rules => resolve_rules_candidate(config, mode, eligibility),
+        ExecutionStrategy::Model => resolve_model_candidate(model_backend, mode, eligibility),
+    }
+}
+
+/// Resolve the concrete adapter named by a deterministic Routing Strategy.
+///
+/// Fixed routing names its configured backend. Rules routing names only the
+/// first rule matching `mode`; a later catch-all is not considered once an
+/// earlier rule matches. Model routing has no concrete identity until the
+/// invocation supplies one.
+pub(crate) fn concrete_adapter_id(
+    config: &ExecutionConfig,
+    mode: ExecutionRunMode,
+) -> Option<&str> {
+    match config.strategy {
+        ExecutionStrategy::Fixed => Some(&config.backend),
+        ExecutionStrategy::Rules => config.rules.iter().find_map(|rule| {
+            rule.modes
+                .as_ref()
+                .is_none_or(|modes| modes.contains(&mode))
+                .then_some(rule.backend.as_str())
+        }),
+        ExecutionStrategy::Model => None,
+    }
+}
+
+/// `fixed`: select the configured backend, then gate it on availability and
 /// permission. The model-supplied backend is ignored under `fixed`.
-fn select_named(
+fn select_named_candidate(
     backend: &str,
     strategy: ExecutionStrategy,
     mode: ExecutionRunMode,
     eligibility: &Eligibility,
-) -> Result<Selection, ExecutionFailure> {
-    let entry = eligibility
-        .find(backend)
-        .ok_or(ExecutionFailure::NoEligibleAdapter { strategy, mode })?;
-    gate(entry, mode)
+) -> CandidateDecision {
+    let Some((index, entry)) = eligibility
+        .0
+        .iter()
+        .enumerate()
+        .find(|(_, entry)| entry.id == backend)
+    else {
+        return CandidateDecision::Refused(ExecutionFailure::NoEligibleAdapter { strategy, mode });
+    };
+    gate_candidate(index, entry, mode)
 }
 
-/// `rules`: first rule (declaration order) whose `modes` matches the run mode —
-/// a catch-all rule (`modes` absent) matches every mode. The matched rule's
+/// `rules`: the first rule whose `modes` matches wins. A catch-all rule
+/// (`modes` absent) matches every mode. The matched rule's
 /// backend is then gated; a gate failure does NOT fall through to a later rule.
-fn resolve_rules(
+fn resolve_rules_candidate(
     config: &ExecutionConfig,
     mode: ExecutionRunMode,
     eligibility: &Eligibility,
-) -> Result<Selection, ExecutionFailure> {
-    let chosen = config.rules.iter().find_map(|rule| {
-        let matches = rule
-            .modes
-            .as_ref()
-            .is_none_or(|modes| modes.contains(&mode));
-        matches.then_some(&rule.backend)
-    });
-    let backend = chosen.ok_or(ExecutionFailure::NoEligibleAdapter {
-        strategy: ExecutionStrategy::Rules,
-        mode,
-    })?;
-    select_named(backend, ExecutionStrategy::Rules, mode, eligibility)
+) -> CandidateDecision {
+    let Some(backend) = concrete_adapter_id(config, mode) else {
+        return CandidateDecision::Refused(ExecutionFailure::NoEligibleAdapter {
+            strategy: ExecutionStrategy::Rules,
+            mode,
+        });
+    };
+    select_named_candidate(backend, ExecutionStrategy::Rules, mode, eligibility)
 }
 
 /// `model`: the model supplies a backend id. It must be model-visible
 /// (`available && !deny`); otherwise the model attempted to select something it
 /// was never offered. Then gate on ask/allow.
-fn resolve_model(
+fn resolve_model_candidate(
     model_backend: Option<&str>,
     mode: ExecutionRunMode,
     eligibility: &Eligibility,
-) -> Result<Selection, ExecutionFailure> {
-    let requested = model_backend.ok_or(ExecutionFailure::AdapterNotSelected {
-        requested: "<model omitted backend>".to_string(),
-        strategy: ExecutionStrategy::Model,
-    })?;
-    match eligibility.find(requested) {
-        Some(entry) if entry.available && entry.permission != PermissionDecision::Deny => {
-            gate(entry, mode)
-        }
-        _ => Err(ExecutionFailure::AdapterNotSelected {
+) -> CandidateDecision {
+    let Some(requested) = model_backend else {
+        return CandidateDecision::Refused(ExecutionFailure::AdapterNotSelected {
+            requested: "<model omitted backend>".to_string(),
+            strategy: ExecutionStrategy::Model,
+        });
+    };
+    let Some((index, entry)) = eligibility
+        .0
+        .iter()
+        .enumerate()
+        .find(|(_, entry)| entry.id == requested)
+    else {
+        return CandidateDecision::Refused(ExecutionFailure::AdapterNotSelected {
             requested: requested.to_string(),
             strategy: ExecutionStrategy::Model,
-        }),
+        });
+    };
+    if !entry.available || entry.permission == PermissionDecision::Deny {
+        return CandidateDecision::Refused(ExecutionFailure::AdapterNotSelected {
+            requested: requested.to_string(),
+            strategy: ExecutionStrategy::Model,
+        });
     }
+    gate_candidate(index, entry, mode)
 }
 
 /// Gate a selected, present, available adapter on its permission decision.
-fn gate(entry: &EligibleAdapter, mode: ExecutionRunMode) -> Result<Selection, ExecutionFailure> {
+fn gate_candidate(
+    index: usize,
+    entry: &EligibleAdapter,
+    mode: ExecutionRunMode,
+) -> CandidateDecision {
     if !entry.available {
-        return Err(ExecutionFailure::AdapterUnavailable {
+        return CandidateDecision::Refused(ExecutionFailure::AdapterUnavailable {
             adapter_id: Some(entry.id.clone()),
             detail: super::failure::UnavailableDetail::Ineligible,
         });
     }
+    let candidate = CandidateSelection {
+        index,
+        backend: entry.id.clone(),
+        mode,
+    };
     match entry.permission {
-        PermissionDecision::Deny => Err(ExecutionFailure::PolicyDenied {
+        PermissionDecision::Deny => CandidateDecision::Refused(ExecutionFailure::PolicyDenied {
             adapter_id: entry.id.clone(),
         }),
-        // `ask` requires an interactive grant; the pure router returns
-        // permission_required for every mode (interactive prompting is 16.7).
-        PermissionDecision::Ask => Err(ExecutionFailure::PermissionRequired {
-            adapter_id: entry.id.clone(),
-            mode,
-        }),
-        PermissionDecision::Allow => Ok(Selection {
-            backend: entry.id.clone(),
-            mode,
-        }),
+        PermissionDecision::Ask => CandidateDecision::Ask(candidate),
+        PermissionDecision::Allow => CandidateDecision::Allowed(candidate),
     }
 }
 

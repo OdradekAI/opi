@@ -108,6 +108,8 @@ fi
 if [ ! -s "$BINARY" ]; then
     echo "package-opi-sandbox: binary is empty: $BINARY" >&2; exit 2
 fi
+python3 "$PACKAGE_HELPER" validate-executable --binary "$BINARY" --target "$TARGET" \
+    || exit $?
 EXEC_SHA="$(sha256_raw "$BINARY")" || {
     echo "package-opi-sandbox: cannot read binary: $BINARY" >&2; exit 2; }
 

@@ -501,9 +501,12 @@ async fn stable_failure_code_lifts_into_tool_result_diagnostics() {
 #[cfg(feature = "execution-backend-test-fixture")]
 mod fixture {
     use super::*;
-    use opi_coding_agent::execution::{LockMaterial, ValidatedExecutableContribution};
+    use opi_coding_agent::execution::{
+        InteractivePermissionBroker, LockMaterial, ValidatedExecutableContribution,
+    };
     use opi_coding_agent::package_store::PackageLockEntry;
     use opi_protocol::execution::v1::WIRE_IDENTITY;
+    use opi_tui::{PermissionChoice, PermissionSummary};
 
     /// Locate the `execution_backend_mock` test binary in the same deps dir
     /// (mirrors `execution_protocol_host.rs::mock_bin`).
@@ -542,9 +545,18 @@ mod fixture {
     }
 
     fn canned(adapter_id: &str, pkg: &str, mode: &str) -> ActivatedContribution {
-        // The mock peer selects behavior by first CLI arg (mode); launch it with
-        // that one arg so each test exercises a distinct backend behavior.
-        let args = vec![mode.to_string()];
+        // The mock peer selects behavior by first CLI arg. Happy-path launches
+        // also pin the expected adapter identity, package version, and target.
+        let args = if mode == "happy_path" {
+            vec![
+                mode.to_string(),
+                adapter_id.to_string(),
+                "mock-1.0.0".to_string(),
+                "mock-target".to_string(),
+            ]
+        } else {
+            vec![mode.to_string()]
+        };
         ActivatedContribution {
             name: pkg.to_string(),
             source: pkg.to_string(),
@@ -598,6 +610,171 @@ mod fixture {
             store,
             Arc::new(RecordingOps::new()),
         )
+    }
+
+    /// A multi-package activation seam for total-dispatch tests. Resolving by
+    /// requested package makes invocation-time activation observable, so a
+    /// candidate/dispatch index mismatch selects the wrong marker or fails.
+    struct CatalogSource {
+        contributions: BTreeMap<String, ActivatedContribution>,
+        activated: Mutex<Vec<String>>,
+    }
+
+    impl CatalogSource {
+        fn new(entries: impl IntoIterator<Item = (String, ActivatedContribution)>) -> Arc<Self> {
+            Arc::new(Self {
+                contributions: entries.into_iter().collect(),
+                activated: Mutex::new(Vec::new()),
+            })
+        }
+
+        fn activated(&self) -> Vec<String> {
+            self.activated.lock().unwrap().clone()
+        }
+    }
+
+    impl IdentitySource for CatalogSource {
+        fn activate(
+            &self,
+            name: &str,
+            _host_target: &str,
+            _host_opi_version: &str,
+        ) -> Result<ActivatedContribution, ActivationError> {
+            self.activated.lock().unwrap().push(name.to_string());
+            self.contributions
+                .get(name)
+                .cloned()
+                .ok_or_else(|| ActivationError::NotInstalled(name.to_string()))
+        }
+    }
+
+    struct AllowOnceBroker {
+        seen: Mutex<Vec<PermissionSummary>>,
+    }
+
+    impl AllowOnceBroker {
+        fn new() -> Arc<Self> {
+            Arc::new(Self {
+                seen: Mutex::new(Vec::new()),
+            })
+        }
+
+        fn seen(&self) -> Vec<PermissionSummary> {
+            self.seen.lock().unwrap().clone()
+        }
+    }
+
+    impl InteractivePermissionBroker for AllowOnceBroker {
+        fn resolve_ask(
+            &self,
+            summary: PermissionSummary,
+        ) -> Pin<Box<dyn Future<Output = PermissionChoice> + Send + '_>> {
+            self.seen.lock().unwrap().push(summary);
+            Box::pin(async { PermissionChoice::AllowOnce })
+        }
+    }
+
+    fn two_candidate_source() -> Arc<CatalogSource> {
+        CatalogSource::new([
+            (
+                "pkg-a".to_string(),
+                canned("opi-sandbox", "pkg-a", "nonzero_exit"),
+            ),
+            (
+                "pkg-b".to_string(),
+                canned("second-adapter", "pkg-b", "happy_path"),
+            ),
+        ])
+    }
+
+    fn model_request(backend: &str) -> BashRequest {
+        BashRequest {
+            backend: Some(backend.to_string()),
+            ..request("echo selected")
+        }
+    }
+
+    fn model_runtime(
+        permission: PermissionDecision,
+        source: Arc<CatalogSource>,
+        broker: Option<Arc<dyn InteractivePermissionBroker>>,
+    ) -> Arc<dyn BashOperations> {
+        ExecutionRuntime::build(
+            &model(),
+            ExecutionRunMode::Interactive,
+            &[
+                identity("opi-sandbox", "pkg-a"),
+                identity("second-adapter", "pkg-b"),
+            ],
+            &policy(&[
+                ("opi-sandbox", PermissionDecision::Allow),
+                ("second-adapter", permission),
+            ]),
+            source,
+            Arc::new(RecordingOps::new()),
+            Path::new("."),
+            HOST_TARGET,
+            HOST_OPI_VERSION,
+            Arc::new(PermissionManager::new()),
+            broker,
+        )
+        .expect("model runtime builds")
+    }
+
+    #[tokio::test]
+    async fn model_allow_dispatches_the_selected_non_first_external_candidate() {
+        let source = two_candidate_source();
+        let ops = model_runtime(PermissionDecision::Allow, source.clone(), None);
+
+        let outcome = ops
+            .exec(model_request("second-adapter"))
+            .await
+            .expect("selected second adapter executes");
+
+        assert_eq!(outcome.exit_code, Some(0));
+        assert_eq!(outcome.stdout, b"hello\n");
+        assert_eq!(
+            source.activated(),
+            ["pkg-b"],
+            "dispatch must activate exactly the package paired with the selected candidate"
+        );
+    }
+
+    #[tokio::test]
+    async fn model_ask_keeps_the_selected_non_first_target_through_approval() {
+        let refused_source = two_candidate_source();
+        let refused = model_runtime(PermissionDecision::Ask, refused_source.clone(), None);
+        let error = refused
+            .exec(model_request("second-adapter"))
+            .await
+            .expect_err("ask without a broker fails closed");
+        assert!(
+            error
+                .diagnostics()
+                .iter()
+                .any(|diagnostic| diagnostic.code == "permission_required")
+        );
+        assert!(
+            refused_source.activated().is_empty(),
+            "permission-required must not activate an adapter"
+        );
+
+        let source = two_candidate_source();
+        let broker = AllowOnceBroker::new();
+        let broker_trait: Arc<dyn InteractivePermissionBroker> = broker.clone();
+        let approved = model_runtime(PermissionDecision::Ask, source.clone(), Some(broker_trait));
+        let outcome = approved
+            .exec(model_request("second-adapter"))
+            .await
+            .expect("approved ask dispatches");
+
+        assert_eq!(outcome.exit_code, Some(0));
+        assert_eq!(outcome.stdout, b"hello\n");
+        assert_eq!(source.activated(), ["pkg-b"]);
+        let seen = broker.seen();
+        assert_eq!(seen.len(), 1);
+        assert_eq!(seen[0].adapter_id, "second-adapter");
+        assert_eq!(seen[0].package_name, "pkg-b");
     }
 
     #[tokio::test]

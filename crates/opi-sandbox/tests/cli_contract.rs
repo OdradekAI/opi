@@ -6,9 +6,9 @@
 //! [`NoRestriction`](opi_sandbox::NoRestriction) runner that actually starts
 //! targets, so the CLI plumbing — argument preservation, byte stdout/stderr
 //! pass-through, exit-code mapping, and verbatim reserved-code handling — is
-//! proven without depending on native confinement (production `run` refuses
-//! pre-start off-Linux — Windows, and macOS until 16.14.1; on supported Linux
-//! (16.13) it runs the target confined).
+//! proven without depending on native confinement (production `run` uses the
+//! supported Linux/macOS native restriction and refuses pre-start on Windows or
+//! another host without one).
 //!
 //! The platform gate lives OUTSIDE [`execute`], so these tests call `execute`
 //! directly and never hit the unsupported-platform refusal.
@@ -52,8 +52,8 @@ fn request(program: PathBuf, args: Vec<String>) -> (SandboxRequest, TempDir) {
     (req, workspace)
 }
 
-fn s(items: &[&str]) -> Vec<String> {
-    items.iter().map(|i| (*i).to_string()).collect()
+fn s(items: &[&str]) -> Vec<OsString> {
+    items.iter().map(OsString::from).collect()
 }
 
 // =========================================================================
@@ -312,7 +312,7 @@ fn build_request_carries_terminal_stdin_inherit() {
     assert_eq!(req.program, PathBuf::from("/bin/echo"));
     assert_eq!(req.args, vec![OsString::from("hi")]);
     assert_eq!(req.cwd, PathBuf::from("/w"));
-    // Non-zero timeout by construction (InvalidRequest unreachable from the CLI).
+    // Non-zero timeout by construction (the zero-timeout InvalidRequest is excluded).
     assert!(!req.timeout.is_zero());
 }
 
@@ -574,8 +574,8 @@ fn doctor_returns_zero_completed() {
 // Phase D (wf_353c950f-4f1) production-call-site finding.
 // =========================================================================
 
-fn argv(items: &[&str]) -> Vec<String> {
-    items.iter().map(|i| (*i).to_string()).collect()
+fn argv(items: &[&str]) -> Vec<OsString> {
+    items.iter().map(OsString::from).collect()
 }
 
 #[tokio::test]
@@ -685,19 +685,19 @@ async fn run_dispatch_refuses_before_target_marker_starts_off_linux() {
         vec!["/C".to_string(), format!("echo x> {marker_str}")],
     );
 
-    let mut full: Vec<String> = vec![
-        "opi-sandbox".to_string(),
-        "run".to_string(),
-        "--workspace".to_string(),
-        workspace.path().to_string_lossy().into_owned(),
-        "--profile".to_string(),
-        "workspace-write".to_string(),
-        "--network".to_string(),
-        "deny".to_string(),
-        "--".to_string(),
-        program.to_string_lossy().into_owned(),
+    let mut full: Vec<OsString> = vec![
+        OsString::from("opi-sandbox"),
+        OsString::from("run"),
+        OsString::from("--workspace"),
+        workspace.path().as_os_str().to_os_string(),
+        OsString::from("--profile"),
+        OsString::from("workspace-write"),
+        OsString::from("--network"),
+        OsString::from("deny"),
+        OsString::from("--"),
+        program.into_os_string(),
     ];
-    full.extend(args);
+    full.extend(args.into_iter().map(OsString::from));
 
     let code = opi_sandbox::cli::run(full).await;
     if cfg!(target_os = "linux") {

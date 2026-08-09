@@ -2057,8 +2057,8 @@ Phase 15 acceptance trace:
 Status: implemented. Canonical design:
 `docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md`.
 
-Phase 16 keeps the default `opi` process in the Minimal Runtime on a direct
-local execution path while
+Phase 16 keeps the `command.execute` path of the default `opi` process in the
+Minimal Runtime on a direct local execution path while
 allowing `command.execute` to select an installed adapter. The first adapters
 are built-in `local` and external `opi-sandbox`; the latter remains independently
 usable through its SDK, human CLI, and `command-execution-jsonl-v1` protocol.
@@ -2066,16 +2066,19 @@ Package installation does not imply Package Trust or activation: Installed, Trus
 Enabled, Selected, and Permitted are separate gates. Routing supports `fixed`,
 deterministic `rules`, and model recommendation under user policy, with
 `deny`/`ask`/`allow` permission outcomes. The Opi binary does not link
-`opi-sandbox`; with no enabled extension, it runs locally without extension
-processes, package activation, or per-package scans. Once an external adapter is selected, failure
-is fail-closed and never falls back to local execution. `opi-protocol` initially
-owns only the versioned execution protocol.
+`opi-sandbox`. The Minimal Runtime label describes only this command-execution
+path; it does not disable separately configured resource-package discovery or
+legacy `opi-extension-jsonl-v1` adapter startup. Once an external adapter is
+selected, failure is fail-closed and never falls back to local execution.
+`opi-protocol` initially owns only the versioned execution protocol.
 
 In Phase 16 the `command.execute` capability is exercised only by the
-model-callable `bash` tool. With no enabled extension the Minimal Runtime
-constructs `local` directly, starts no extension or package adapter process,
-performs no package activation or per-package scan, and creates no router,
-permission, or protocol task.
+model-callable `bash` tool. For this capability, fixed-local `allow` directly
+constructs `LocalBashOperations` without opening the command-execution package
+activation store; it creates no router, permission, or protocol task and starts
+no command-execution adapter process. This narrow statement does not disable
+the separate resource-package discovery and legacy `opi-extension-jsonl-v1`
+process-adapter runtime.
 An external adapter reports its effective placement, guarantee (`supervised`
 for `local`, `restricted` for `opi-sandbox`), policy, and limitations after
 setup succeeds; adapter identity alone never establishes a guarantee.

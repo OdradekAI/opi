@@ -24,10 +24,13 @@
 //! `Mechanism::None` / `ContractStatus::Unrestricted`. Native restriction is
 //! implemented for Linux (Landlock + seccomp, task 16.13) and for macOS
 //! (`sandbox-exec`/Seatbelt, task 16.14.1); Windows publishes no confinement
-//! artifact in Phase 16 (the unsupported posture, task 16.14.2). A native run
-//! therefore reports [`Mechanism::Landlock`]/[`Mechanism::Seccomp`] (Linux) or
-//! [`Mechanism::Seatbelt`] (macOS) with [`ContractStatus::Restricted`] — never
-//! `isolated` (design `### Common profile`: the package reports `restricted`).
+//! artifact in Phase 16 (the unsupported posture, task 16.14.2). A supported
+//! Linux run reports [`Mechanism::Landlock`] as the lead mechanism in its
+//! per-run `Started` event, while `opi-sandbox doctor --json` reports the full
+//! observed Landlock-plus-seccomp posture. A supported macOS run reports
+//! [`Mechanism::Seatbelt`] in `Started`. Both use
+//! [`ContractStatus::Restricted`] — never `isolated` (design `### Common
+//! profile`: the package reports `restricted`).
 //!
 //! # L0 supervision
 //!

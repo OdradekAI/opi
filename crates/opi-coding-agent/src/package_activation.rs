@@ -373,6 +373,70 @@ impl PackageActivationStore {
         out
     }
 
+    /// Resolve and revalidate only the enabled adapter identities named by
+    /// `adapter_ids`.
+    ///
+    /// The package lock is the installed identity index, so resolving an
+    /// adapter id may read that machine-owned metadata. Package manifests and
+    /// executables are opened only for packages that provide a requested
+    /// identity. Every match is collected before activation so a duplicate
+    /// selected id fails closed without opening or mutating either package.
+    /// Unlike [`Self::usable_enabled_identities`], activation errors are
+    /// preserved because fixed/rules routing selected this exact identity and
+    /// must surface its concrete drift/trust cause.
+    pub(crate) fn usable_enabled_identities_for(
+        &self,
+        adapter_ids: &[String],
+        host_target: &str,
+        host_opi_version: &str,
+    ) -> Result<Vec<EnabledIdentity>, ActivationError> {
+        let enabled = self.enabled_identities();
+        let mut selected = Vec::new();
+        for adapter_id in adapter_ids {
+            if selected
+                .iter()
+                .any(|identity: &EnabledIdentity| identity.adapter_id == *adapter_id)
+            {
+                continue;
+            }
+            let mut matches = enabled
+                .iter()
+                .filter(|identity| identity.adapter_id == *adapter_id);
+            if let Some(identity) = matches.next() {
+                if let Some(other) = matches.next() {
+                    return Err(ActivationError::CollidingAdapterId {
+                        adapter_id: adapter_id.clone(),
+                        other: other.package_name.clone(),
+                    });
+                }
+                selected.push(identity.clone());
+            }
+        }
+
+        let mut activated_packages = Vec::new();
+        let mut out = Vec::new();
+        for identity in selected {
+            if !activated_packages.contains(&identity.package_name) {
+                let activated =
+                    self.activate(&identity.package_name, host_target, host_opi_version)?;
+                activated_packages.push(identity.package_name.clone());
+                for requested_id in adapter_ids {
+                    if activated
+                        .validated
+                        .iter()
+                        .any(|contribution| contribution.id == *requested_id)
+                    {
+                        out.push(EnabledIdentity {
+                            adapter_id: requested_id.clone(),
+                            package_name: identity.package_name.clone(),
+                        });
+                    }
+                }
+            }
+        }
+        Ok(out)
+    }
+
     /// Write all trust/enablement records, creating parent directories.
     pub fn write_records(&self, records: &[ActivationRecord]) -> Result<(), PackageStoreError> {
         #[cfg(test)]
@@ -695,7 +759,7 @@ fn build_trust_display(
         .iter()
         .map(|v| ContributionSummary {
             adapter_id: v.id.clone(),
-            executable_rel_path: v.command.display().to_string(),
+            executable_rel_path: v.lock.executable_rel_path.clone(),
             executable_sha256: v.lock.executable_sha256.clone(),
             target: v.target.clone(),
             protocol: v.protocol.clone(),

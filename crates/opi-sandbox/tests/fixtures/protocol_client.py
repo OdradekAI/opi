@@ -154,6 +154,7 @@ def _execute(binary, workspace, rid, mode, timeout_ms, expected):
 
 
 def _execute_refused(binary):
+    workspace = tempfile.mkdtemp(prefix="opi-backend-ws-")
     proc = subprocess.Popen(
         [binary, "backend", "--stdio"],
         stdin=subprocess.PIPE,
@@ -173,8 +174,8 @@ def _execute_refused(binary):
                     "request_id": rid,
                     "program": _native("cmd"),
                     "args": [_native("/C"), _native("exit 0")],
-                    "workspace": _native("C:\\ws"),
-                    "cwd": _native("C:\\ws"),
+                    "workspace": _native(workspace),
+                    "cwd": _native(workspace),
                     "timeout_ms": 10000,
                     "env_inherit": "inherit",
                     "env_additions": {},
@@ -193,6 +194,7 @@ def _execute_refused(binary):
         if proc.poll() is None:
             proc.kill()
             proc.wait()
+        shutil.rmtree(workspace)
 
 
 def _write_target(workspace):

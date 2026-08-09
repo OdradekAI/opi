@@ -24,13 +24,16 @@
 //! refuses to label a cross-built archive as native.
 //!
 //! These are config-contract guards over the workflow YAML (the artifact under
-//! test), structurally sliced by top-level job key; they are not source-text
-//! tautologies. The packager's own layout/lock/extraction contract is pinned
-//! independently by `opi_sandbox_packaging.rs` (16.15.1) and is not duplicated.
+//! test). Execution acceptance is parsed as YAML nodes; the remaining topology
+//! guards are structurally sliced by top-level job key. The packager's own
+//! layout/lock/extraction contract is pinned independently by
+//! `opi_sandbox_packaging.rs` (16.15.1) and is not duplicated.
 
 #![forbid(unsafe_code)]
 
 use std::path::{Path, PathBuf};
+
+use serde_yaml::{Mapping, Value};
 
 fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
@@ -40,6 +43,379 @@ fn read_repo_file(relative: &str) -> String {
     let path = repo_root().join(relative);
     std::fs::read_to_string(&path)
         .unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()))
+}
+
+fn yaml_key(key: &str) -> Value {
+    Value::String(key.to_owned())
+}
+
+fn yaml_field<'a>(mapping: &'a Mapping, key: &str, path: &str) -> Result<&'a Value, String> {
+    mapping
+        .get(yaml_key(key))
+        .ok_or_else(|| format!("{path} must define `{key}`"))
+}
+
+fn yaml_mapping<'a>(value: &'a Value, path: &str) -> Result<&'a Mapping, String> {
+    value
+        .as_mapping()
+        .ok_or_else(|| format!("{path} must be a YAML mapping"))
+}
+
+fn yaml_has_key(mapping: &Mapping, key: &str) -> bool {
+    mapping.contains_key(yaml_key(key))
+}
+
+fn yaml_string_field<'a>(mapping: &'a Mapping, key: &str) -> Option<&'a str> {
+    mapping.get(yaml_key(key)).and_then(Value::as_str)
+}
+
+fn validate_cargo_test_command(
+    step_name: &str,
+    run: &str,
+    expected_target: &str,
+    expect_no_run: bool,
+) -> Result<(), String> {
+    let tokens = run.split_whitespace().collect::<Vec<_>>();
+    if tokens.get(..2) != Some(["cargo", "test"].as_slice()) {
+        return Err(format!(
+            "step `{step_name}` command must start with `cargo test`"
+        ));
+    }
+
+    let mut package_seen = false;
+    let mut feature_seen = false;
+    let mut test_target_seen = false;
+    let mut no_run = false;
+    let mut index = 2;
+    while index < tokens.len() {
+        match tokens[index] {
+            "-p" if !package_seen && tokens.get(index + 1) == Some(&"opi-coding-agent") => {
+                package_seen = true;
+                index += 2;
+            }
+            "--features"
+                if !feature_seen
+                    && tokens.get(index + 1) == Some(&"execution-backend-test-fixture") =>
+            {
+                feature_seen = true;
+                index += 2;
+            }
+            "--test" if !test_target_seen && tokens.get(index + 1) == Some(&expected_target) => {
+                test_target_seen = true;
+                index += 2;
+            }
+            "--no-run" if expect_no_run && !no_run => {
+                no_run = true;
+                index += 1;
+            }
+            token => {
+                return Err(format!(
+                    "step `{step_name}` command contains unexpected or duplicate token `{token}`"
+                ));
+            }
+        }
+    }
+
+    if !package_seen {
+        return Err(format!(
+            "step `{step_name}` command must contain `-p opi-coding-agent` exactly once"
+        ));
+    }
+    if !feature_seen {
+        return Err(format!(
+            "step `{step_name}` command must contain `--features execution-backend-test-fixture` exactly once"
+        ));
+    }
+    if !test_target_seen {
+        return Err(format!(
+            "step `{step_name}` command must contain `--test {expected_target}` exactly once"
+        ));
+    }
+    if expect_no_run && !no_run {
+        return Err(format!(
+            "step `{step_name}` command must contain `--no-run` exactly once"
+        ));
+    }
+    Ok(())
+}
+
+fn validate_execution_acceptance_ci(yaml: &str) -> Result<(), String> {
+    let document: Value =
+        serde_yaml::from_str(yaml).map_err(|error| format!("invalid workflow YAML: {error}"))?;
+    let root = yaml_mapping(&document, "workflow root")?;
+    let jobs = yaml_mapping(yaml_field(root, "jobs", "workflow root")?, "jobs")?;
+    let job = yaml_mapping(
+        yaml_field(jobs, "execution_acceptance", "jobs")?,
+        "jobs.execution_acceptance",
+    )?;
+    if yaml_has_key(job, "if") {
+        return Err("jobs.execution_acceptance has a job-level if".to_owned());
+    }
+
+    let strategy = yaml_mapping(
+        yaml_field(job, "strategy", "jobs.execution_acceptance")?,
+        "jobs.execution_acceptance.strategy",
+    )?;
+    let matrix = yaml_mapping(
+        yaml_field(strategy, "matrix", "jobs.execution_acceptance.strategy")?,
+        "jobs.execution_acceptance.strategy.matrix",
+    )?;
+    if yaml_has_key(matrix, "exclude") {
+        return Err("jobs.execution_acceptance matrix exclude is forbidden".to_owned());
+    }
+    let os = yaml_field(matrix, "os", "jobs.execution_acceptance.strategy.matrix")?
+        .as_sequence()
+        .ok_or_else(|| "jobs.execution_acceptance matrix.os must be a sequence".to_owned())?;
+    let actual_os = os
+        .iter()
+        .enumerate()
+        .map(|(index, value)| {
+            value.as_str().ok_or_else(|| {
+                format!("jobs.execution_acceptance matrix.os[{index}] must be a string")
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let expected_os = ["ubuntu-latest", "macos-latest", "windows-latest"];
+    if actual_os.as_slice() != expected_os {
+        return Err(format!(
+            "jobs.execution_acceptance matrix.os must equal {expected_os:?}, got {actual_os:?}"
+        ));
+    }
+
+    let runs_on = yaml_field(job, "runs-on", "jobs.execution_acceptance")?
+        .as_str()
+        .ok_or_else(|| "jobs.execution_acceptance runs-on must be a string".to_owned())?;
+    if runs_on != "${{ matrix.os }}" {
+        return Err(format!(
+            "jobs.execution_acceptance runs-on must equal `${{{{ matrix.os }}}}`, got `{runs_on}`"
+        ));
+    }
+
+    let steps = yaml_field(job, "steps", "jobs.execution_acceptance")?
+        .as_sequence()
+        .ok_or_else(|| "jobs.execution_acceptance steps must be a sequence".to_owned())?;
+    let step_mappings = steps
+        .iter()
+        .enumerate()
+        .map(|(index, value)| {
+            yaml_mapping(value, &format!("jobs.execution_acceptance.steps[{index}]"))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let required_steps = [
+        (
+            "Build execution backend mock",
+            "execution_backend_mock",
+            true,
+        ),
+        (
+            "Run execution product acceptance",
+            "execution_product",
+            false,
+        ),
+        (
+            "Run execution protocol host acceptance",
+            "execution_protocol_host",
+            false,
+        ),
+        (
+            "Run execution runtime acceptance",
+            "execution_runtime",
+            false,
+        ),
+    ];
+    let mut previous_index = None;
+    for (step_name, test_target, expect_no_run) in required_steps {
+        let matches = step_mappings
+            .iter()
+            .enumerate()
+            .filter_map(|(index, step)| {
+                (yaml_string_field(step, "name") == Some(step_name)).then_some((index, *step))
+            })
+            .collect::<Vec<_>>();
+        if matches.len() != 1 {
+            return Err(format!(
+                "jobs.execution_acceptance must define step `{step_name}` exactly once"
+            ));
+        }
+        let (index, step) = matches[0];
+        if previous_index.is_some_and(|previous| index <= previous) {
+            return Err(format!(
+                "jobs.execution_acceptance step `{step_name}` is out of order"
+            ));
+        }
+        if yaml_has_key(step, "if") {
+            return Err(format!(
+                "jobs.execution_acceptance step `{step_name}` has a step-level if"
+            ));
+        }
+        let run = yaml_field(
+            step,
+            "run",
+            &format!("jobs.execution_acceptance step `{step_name}`"),
+        )?
+        .as_str()
+        .ok_or_else(|| format!("step `{step_name}` run must be a string"))?;
+        validate_cargo_test_command(step_name, run, test_target, expect_no_run)?;
+        previous_index = Some(index);
+    }
+    Ok(())
+}
+
+fn validate_release_audit_step(yaml: &str) -> Result<(), String> {
+    let document: Value =
+        serde_yaml::from_str(yaml).map_err(|error| format!("invalid workflow YAML: {error}"))?;
+    let root = yaml_mapping(&document, "workflow root")?;
+    if let Some(defaults) = root.get(yaml_key("defaults")) {
+        let defaults = yaml_mapping(defaults, "workflow root.defaults")?;
+        if let Some(run) = defaults.get(yaml_key("run")) {
+            let run = yaml_mapping(run, "workflow root.defaults.run")?;
+            if yaml_has_key(run, "shell") {
+                return Err("workflow root defaults.run.shell is forbidden".to_owned());
+            }
+        }
+    }
+    let jobs = yaml_mapping(yaml_field(root, "jobs", "workflow root")?, "jobs")?;
+    let job = yaml_mapping(
+        yaml_field(jobs, "sandbox_release_audit", "jobs")?,
+        "jobs.sandbox_release_audit",
+    )?;
+    if yaml_has_key(job, "if") {
+        return Err("jobs.sandbox_release_audit has a job-level if".to_owned());
+    }
+    if yaml_has_key(job, "shell") {
+        return Err("jobs.sandbox_release_audit must not define `shell`".to_owned());
+    }
+    if yaml_has_key(job, "continue-on-error") {
+        return Err("jobs.sandbox_release_audit must not define `continue-on-error`".to_owned());
+    }
+    if let Some(defaults) = job.get(yaml_key("defaults")) {
+        let defaults = yaml_mapping(defaults, "jobs.sandbox_release_audit.defaults")?;
+        if let Some(run) = defaults.get(yaml_key("run")) {
+            let run = yaml_mapping(run, "jobs.sandbox_release_audit.defaults.run")?;
+            if yaml_has_key(run, "shell") {
+                return Err("jobs.sandbox_release_audit defaults.run.shell is forbidden".to_owned());
+            }
+        }
+    }
+    let audit_needs = yaml_field(job, "needs", "jobs.sandbox_release_audit")?
+        .as_sequence()
+        .ok_or_else(|| "jobs.sandbox_release_audit.needs must be a sequence".to_owned())?;
+    let audit_needs = audit_needs
+        .iter()
+        .map(|value| {
+            value.as_str().ok_or_else(|| {
+                "jobs.sandbox_release_audit.needs entries must be strings".to_owned()
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let expected_audit_needs = ["sandbox_archive", "sandbox_windows_posture"];
+    if audit_needs.as_slice() != expected_audit_needs {
+        return Err(format!(
+            "jobs.sandbox_release_audit.needs must equal {expected_audit_needs:?}"
+        ));
+    }
+    for dependency in ["build", "sandbox_archive", "sandbox_windows_posture"] {
+        yaml_mapping(
+            yaml_field(jobs, dependency, "jobs")?,
+            &format!("jobs.{dependency}"),
+        )?;
+    }
+    let steps = yaml_field(job, "steps", "jobs.sandbox_release_audit")?
+        .as_sequence()
+        .ok_or_else(|| "jobs.sandbox_release_audit steps must be a sequence".to_owned())?;
+    let matches = steps
+        .iter()
+        .enumerate()
+        .filter_map(|(index, value)| {
+            let step = value.as_mapping()?;
+            (yaml_string_field(step, "name") == Some("Audit the complete release evidence set"))
+                .then_some((index, step))
+        })
+        .collect::<Vec<_>>();
+    if matches.len() != 1 {
+        return Err(
+            "jobs.sandbox_release_audit must define the named audit step exactly once".to_owned(),
+        );
+    }
+    let (index, step) = matches[0];
+    if yaml_has_key(step, "if") {
+        return Err(format!(
+            "jobs.sandbox_release_audit.steps[{index}] must not define `if`"
+        ));
+    }
+    if yaml_has_key(step, "continue-on-error") {
+        return Err(format!(
+            "jobs.sandbox_release_audit.steps[{index}] must not define `continue-on-error`"
+        ));
+    }
+    if yaml_has_key(step, "shell") {
+        return Err(format!(
+            "jobs.sandbox_release_audit.steps[{index}] must not define `shell`"
+        ));
+    }
+    let run = yaml_field(
+        step,
+        "run",
+        &format!("jobs.sandbox_release_audit.steps[{index}]"),
+    )?
+    .as_str()
+    .ok_or_else(|| format!("jobs.sandbox_release_audit.steps[{index}].run must be a string"))?;
+    let tokens = run.split_whitespace().collect::<Vec<_>>();
+    if tokens.first() != Some(&"python3") {
+        return Err(
+            "release audit command must start with the explicit `python3` interpreter".to_owned(),
+        );
+    }
+    let expected = [
+        "python3",
+        "scripts/opi-artifact-audit.py",
+        "evidence",
+        "--release",
+    ];
+    if tokens.as_slice() != expected {
+        return Err(format!(
+            "release audit command must equal `{}`, got `{run}`",
+            expected.join(" ")
+        ));
+    }
+
+    let release = yaml_mapping(yaml_field(jobs, "release", "jobs")?, "jobs.release")?;
+    if yaml_has_key(release, "if") {
+        return Err("jobs.release has a job-level if".to_owned());
+    }
+    if yaml_has_key(release, "continue-on-error") {
+        return Err("jobs.release must not define `continue-on-error`".to_owned());
+    }
+    if yaml_has_key(release, "shell") {
+        return Err("jobs.release must not define `shell`".to_owned());
+    }
+    if let Some(defaults) = release.get(yaml_key("defaults")) {
+        let defaults = yaml_mapping(defaults, "jobs.release.defaults")?;
+        if let Some(run) = defaults.get(yaml_key("run")) {
+            let run = yaml_mapping(run, "jobs.release.defaults.run")?;
+            if yaml_has_key(run, "shell") {
+                return Err("jobs.release defaults.run.shell is forbidden".to_owned());
+            }
+        }
+    }
+    let release_needs = yaml_field(release, "needs", "jobs.release")?
+        .as_sequence()
+        .ok_or_else(|| "jobs.release.needs must be a sequence".to_owned())?;
+    let release_needs = release_needs
+        .iter()
+        .map(|value| {
+            value
+                .as_str()
+                .ok_or_else(|| "jobs.release.needs entries must be strings".to_owned())
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let expected_release_needs = ["build", "sandbox_archive", "sandbox_release_audit"];
+    if release_needs.as_slice() != expected_release_needs {
+        return Err(format!(
+            "jobs.release.needs must equal {expected_release_needs:?}"
+        ));
+    }
+    Ok(())
 }
 
 /// Slice one YAML job block: from the `<job>:` key line to the next sibling key
@@ -130,26 +506,72 @@ fn named_step_block(job: &str, step_name: &str) -> String {
     block
 }
 
-fn assert_feature_gated_test_step(step: &str, target: &str, must_not_run: bool) {
-    assert_present(
-        target,
-        step,
-        &[
-            "cargo test",
-            "-p opi-coding-agent",
-            "--features execution-backend-test-fixture",
-            &format!("--test {target}"),
-        ],
-    );
-    if must_not_run {
-        assert_present(target, step, &["--no-run"]);
-    } else {
-        assert_absent(target, step, &["--no-run"]);
-    }
-}
-
 const CI: &str = ".github/workflows/ci.yml";
 const RELEASE: &str = ".github/workflows/release.yml";
+
+const VALID_SEMANTIC_EXECUTION_ACCEPTANCE: &str = r#"
+jobs:
+  execution_acceptance:
+    strategy:
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+          - windows-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Build execution backend mock
+        run: >-
+          cargo test --test execution_backend_mock --no-run
+          --features execution-backend-test-fixture -p opi-coding-agent
+      - name: Run execution product acceptance
+        run: >-
+          cargo test --test execution_product
+          --features execution-backend-test-fixture -p opi-coding-agent
+      - name: Run execution protocol host acceptance
+        run: >-
+          cargo test --features execution-backend-test-fixture
+          -p opi-coding-agent --test execution_protocol_host
+      - name: Run execution runtime acceptance
+        run: >-
+          cargo test -p opi-coding-agent --test execution_runtime
+          --features execution-backend-test-fixture
+"#;
+
+fn assert_execution_acceptance_error(yaml: &str, expected: &str) {
+    let error = validate_execution_acceptance_ci(yaml)
+        .expect_err("adversarial execution-acceptance YAML must be rejected");
+    assert!(
+        error.contains(expected),
+        "expected validation error containing `{expected}`, got `{error}`"
+    );
+}
+
+const VALID_RELEASE_AUDIT_STEP: &str = r#"
+jobs:
+  build: {}
+  sandbox_archive: {}
+  sandbox_windows_posture: {}
+  sandbox_release_audit:
+    needs: [sandbox_archive, sandbox_windows_posture]
+    steps:
+      - name: Audit the complete release evidence set
+        run: >-
+          python3 scripts/opi-artifact-audit.py
+          evidence --release
+  release:
+    needs: [build, sandbox_archive, sandbox_release_audit]
+    steps: []
+"#;
+
+fn assert_release_audit_error(yaml: &str, expected: &str) {
+    let error = validate_release_audit_step(yaml)
+        .expect_err("adversarial release-audit YAML must be rejected");
+    assert!(
+        error.contains(expected),
+        "expected validation error containing `{expected}`, got `{error}`"
+    );
+}
 
 // The six Opi release targets that MUST remain published (release.yml `build`).
 const SIX_OPI_ARTIFACTS: &[&str] = &[
@@ -234,35 +656,177 @@ fn ci_retains_target_check_six_target_compile_gate() {
 #[test]
 fn ci_runs_feature_gated_execution_acceptance_after_building_mock() {
     let ci = read_repo_file(CI);
-    let job = job_block(&ci, "execution_acceptance");
-    assert_present("ci.execution_acceptance", &job, &["ubuntu-latest"]);
+    validate_execution_acceptance_ci(&ci)
+        .unwrap_or_else(|error| panic!("invalid execution_acceptance topology: {error}"));
+}
 
-    let build_name = "Build execution backend mock";
-    let build = named_step_block(&job, build_name);
-    assert_feature_gated_test_step(&build, "execution_backend_mock", true);
+#[test]
+fn execution_acceptance_validator_accepts_semantic_yaml_variants() {
+    validate_execution_acceptance_ci(VALID_SEMANTIC_EXECUTION_ACCEPTANCE)
+        .expect("block OS list, multiline commands, and reordered flags are valid");
+}
 
-    let acceptance_steps = [
-        ("Run execution product acceptance", "execution_product"),
-        (
-            "Run execution protocol host acceptance",
-            "execution_protocol_host",
-        ),
-        ("Run execution runtime acceptance", "execution_runtime"),
-    ];
-    let build_position = job
-        .find(&format!("- name: {build_name}"))
-        .expect("build step is present");
-    for (step_name, target) in acceptance_steps {
-        let step = named_step_block(&job, step_name);
-        assert_feature_gated_test_step(&step, target, false);
-        let run_position = job
-            .find(&format!("- name: {step_name}"))
-            .expect("acceptance step is present");
-        assert!(
-            build_position < run_position,
-            "execution_backend_mock must be built before `{target}` runs"
-        );
-    }
+#[test]
+fn execution_acceptance_validator_rejects_comment_only_matrix_decoy() {
+    let yaml = r#"
+jobs:
+  execution_acceptance:
+    # strategy:
+    #   matrix:
+    #     os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ubuntu-latest
+    steps: []
+"#;
+    assert_execution_acceptance_error(yaml, "strategy");
+}
+
+#[test]
+fn execution_acceptance_validator_rejects_block_scalar_node_decoy() {
+    let yaml = r#"
+jobs:
+  execution_acceptance:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Decoy
+        run: |
+          strategy:
+            matrix:
+              os: [ubuntu-latest, macos-latest, windows-latest]
+          runs-on: ${{ matrix.os }}
+"#;
+    assert_execution_acceptance_error(yaml, "strategy");
+}
+
+#[test]
+fn execution_acceptance_validator_rejects_job_level_if_with_spaced_colon() {
+    let mutated = VALID_SEMANTIC_EXECUTION_ACCEPTANCE.replacen(
+        "    runs-on: ${{ matrix.os }}",
+        "    if : false\n    runs-on: ${{ matrix.os }}",
+        1,
+    );
+    assert_ne!(mutated, VALID_SEMANTIC_EXECUTION_ACCEPTANCE);
+    assert_execution_acceptance_error(&mutated, "job-level if");
+}
+
+#[test]
+fn execution_acceptance_validator_rejects_block_matrix_exclude() {
+    let mutated = VALID_SEMANTIC_EXECUTION_ACCEPTANCE.replacen(
+        "    runs-on: ${{ matrix.os }}",
+        "        exclude:\n          - os: macos-latest\n    runs-on: ${{ matrix.os }}",
+        1,
+    );
+    assert_ne!(mutated, VALID_SEMANTIC_EXECUTION_ACCEPTANCE);
+    assert_execution_acceptance_error(&mutated, "matrix exclude");
+}
+
+#[test]
+fn execution_acceptance_validator_rejects_flow_matrix_exclude() {
+    let mutated = VALID_SEMANTIC_EXECUTION_ACCEPTANCE.replacen(
+        "      matrix:\n        os:\n          - ubuntu-latest\n          - macos-latest\n          - windows-latest",
+        "      matrix: { os: [ubuntu-latest, macos-latest, windows-latest], exclude: [{ os: windows-latest }] }",
+        1,
+    );
+    assert_ne!(mutated, VALID_SEMANTIC_EXECUTION_ACCEPTANCE);
+    assert_execution_acceptance_error(&mutated, "matrix exclude");
+}
+
+#[test]
+fn execution_acceptance_validator_rejects_step_level_if() {
+    let mutated = VALID_SEMANTIC_EXECUTION_ACCEPTANCE.replacen(
+        "      - name: Run execution product acceptance",
+        "      - name: Run execution product acceptance\n        if: false",
+        1,
+    );
+    assert_ne!(mutated, VALID_SEMANTIC_EXECUTION_ACCEPTANCE);
+    assert_execution_acceptance_error(&mutated, "step-level if");
+}
+
+#[test]
+fn execution_acceptance_validator_rejects_extra_matrix_os() {
+    let mutated = VALID_SEMANTIC_EXECUTION_ACCEPTANCE.replacen(
+        "          - windows-latest",
+        "          - windows-latest\n          - freebsd-latest",
+        1,
+    );
+    assert_ne!(mutated, VALID_SEMANTIC_EXECUTION_ACCEPTANCE);
+    assert_execution_acceptance_error(&mutated, "matrix.os");
+}
+
+#[test]
+fn execution_acceptance_validator_rejects_missing_suite() {
+    let mutated = VALID_SEMANTIC_EXECUTION_ACCEPTANCE.replacen(
+        "      - name: Run execution runtime acceptance\n        run: >-\n          cargo test -p opi-coding-agent --test execution_runtime\n          --features execution-backend-test-fixture\n",
+        "",
+        1,
+    );
+    assert_ne!(mutated, VALID_SEMANTIC_EXECUTION_ACCEPTANCE);
+    assert_execution_acceptance_error(&mutated, "Run execution runtime acceptance");
+}
+
+#[test]
+fn execution_acceptance_validator_rejects_feature_after_shell_comment() {
+    let mutated = VALID_SEMANTIC_EXECUTION_ACCEPTANCE.replacen(
+        "          cargo test --test execution_product\n          --features execution-backend-test-fixture -p opi-coding-agent",
+        "          cargo test --test execution_product -p opi-coding-agent # --features execution-backend-test-fixture",
+        1,
+    );
+    assert_ne!(mutated, VALID_SEMANTIC_EXECUTION_ACCEPTANCE);
+    assert_execution_acceptance_error(&mutated, "command");
+}
+
+#[test]
+fn execution_acceptance_validator_rejects_cargo_harness_separator() {
+    let mutated = VALID_SEMANTIC_EXECUTION_ACCEPTANCE.replacen(
+        "          cargo test -p opi-coding-agent --test execution_runtime\n          --features execution-backend-test-fixture",
+        "          cargo test -p opi-coding-agent --test execution_runtime\n          --features execution-backend-test-fixture -- --list",
+        1,
+    );
+    assert_ne!(mutated, VALID_SEMANTIC_EXECUTION_ACCEPTANCE);
+    assert_execution_acceptance_error(&mutated, "command");
+}
+
+#[test]
+fn execution_acceptance_validator_rejects_masked_failure() {
+    let mutated = VALID_SEMANTIC_EXECUTION_ACCEPTANCE.replacen(
+        "          -p opi-coding-agent --test execution_protocol_host",
+        "          -p opi-coding-agent --test execution_protocol_host || true",
+        1,
+    );
+    assert_ne!(mutated, VALID_SEMANTIC_EXECUTION_ACCEPTANCE);
+    assert_execution_acceptance_error(&mutated, "command");
+}
+
+#[test]
+fn execution_acceptance_validator_rejects_extra_shell_command() {
+    let mutated = VALID_SEMANTIC_EXECUTION_ACCEPTANCE.replacen(
+        "          --features execution-backend-test-fixture -p opi-coding-agent",
+        "          --features execution-backend-test-fixture -p opi-coding-agent && echo extra",
+        1,
+    );
+    assert_ne!(mutated, VALID_SEMANTIC_EXECUTION_ACCEPTANCE);
+    assert_execution_acceptance_error(&mutated, "command");
+}
+
+#[test]
+fn execution_acceptance_validator_rejects_duplicate_flag() {
+    let mutated = VALID_SEMANTIC_EXECUTION_ACCEPTANCE.replacen(
+        "--test execution_backend_mock --no-run",
+        "--test execution_backend_mock --no-run --no-run",
+        1,
+    );
+    assert_ne!(mutated, VALID_SEMANTIC_EXECUTION_ACCEPTANCE);
+    assert_execution_acceptance_error(&mutated, "command");
+}
+
+#[test]
+fn execution_acceptance_validator_rejects_extra_positional_token() {
+    let mutated = VALID_SEMANTIC_EXECUTION_ACCEPTANCE.replacen(
+        "          cargo test -p opi-coding-agent --test execution_runtime\n          --features execution-backend-test-fixture",
+        "          cargo test -p opi-coding-agent --test execution_runtime\n          --features execution-backend-test-fixture unexpected",
+        1,
+    );
+    assert_ne!(mutated, VALID_SEMANTIC_EXECUTION_ACCEPTANCE);
+    assert_execution_acceptance_error(&mutated, "command");
 }
 
 #[test]
@@ -308,6 +872,8 @@ fn release_audits_all_native_archives_and_windows_posture_before_publish() {
         &windows,
         &["Add-Content", "supported = false"],
     );
+    validate_release_audit_step(&release)
+        .unwrap_or_else(|error| panic!("invalid sandbox_release_audit topology: {error}"));
     let audit = job_block(&release, "sandbox_release_audit");
     for target in [
         "x86_64-unknown-linux-gnu",
@@ -329,6 +895,196 @@ fn release_audits_all_native_archives_and_windows_posture_before_publish() {
 
     let publish = job_block(&release, "release");
     assert_present("release.release", &publish, &["sandbox_release_audit"]);
+}
+
+#[test]
+fn release_audit_validator_accepts_semantic_multiline_command() {
+    validate_release_audit_step(VALID_RELEASE_AUDIT_STEP)
+        .expect("an explicit Python interpreter in the real named step is valid");
+}
+
+#[test]
+fn release_audit_validator_rejects_omitted_python_interpreter() {
+    let mutated = VALID_RELEASE_AUDIT_STEP.replacen(
+        "          python3 scripts/opi-artifact-audit.py",
+        "          scripts/opi-artifact-audit.py",
+        1,
+    );
+    assert_release_audit_error(&mutated, "python3");
+}
+
+#[test]
+fn release_audit_validator_rejects_comment_only_interpreter_decoy() {
+    let mutated = VALID_RELEASE_AUDIT_STEP.replacen(
+        "          python3 scripts/opi-artifact-audit.py",
+        "          scripts/opi-artifact-audit.py # python3",
+        1,
+    );
+    assert_release_audit_error(&mutated, "command");
+}
+
+#[test]
+fn release_audit_validator_rejects_block_scalar_decoy_in_another_step() {
+    let yaml = r#"
+jobs:
+  build: {}
+  sandbox_archive: {}
+  sandbox_windows_posture: {}
+  sandbox_release_audit:
+    needs: [sandbox_archive, sandbox_windows_posture]
+    steps:
+      - name: Decoy
+        run: |
+          python3 scripts/opi-artifact-audit.py evidence --release
+      - name: Audit the complete release evidence set
+        run: scripts/opi-artifact-audit.py evidence --release
+  release:
+    needs: [build, sandbox_archive, sandbox_release_audit]
+    steps: []
+"#;
+    assert_release_audit_error(yaml, "python3");
+}
+
+#[test]
+fn release_audit_validator_rejects_shell_bypass() {
+    let mutated = VALID_RELEASE_AUDIT_STEP.replacen(
+        "          python3 scripts/opi-artifact-audit.py\n          evidence --release",
+        "          bash -c 'python3 scripts/opi-artifact-audit.py evidence --release'",
+        1,
+    );
+    assert_release_audit_error(&mutated, "command");
+}
+
+#[test]
+fn release_audit_validator_rejects_job_continue_on_error() {
+    let mutated = VALID_RELEASE_AUDIT_STEP.replacen(
+        "    steps:",
+        "    continue-on-error: ${{ matrix.allow_failure }}\n    steps:",
+        1,
+    );
+    assert_ne!(mutated, VALID_RELEASE_AUDIT_STEP);
+    assert_release_audit_error(&mutated, "continue-on-error");
+}
+
+#[test]
+fn release_audit_validator_rejects_step_continue_on_error() {
+    let mutated = VALID_RELEASE_AUDIT_STEP.replacen(
+        "      - name: Audit the complete release evidence set",
+        "      - name: Audit the complete release evidence set\n        continue-on-error: true",
+        1,
+    );
+    assert_ne!(mutated, VALID_RELEASE_AUDIT_STEP);
+    assert_release_audit_error(&mutated, "continue-on-error");
+}
+
+#[test]
+fn release_audit_validator_rejects_audit_job_if() {
+    let mutated = VALID_RELEASE_AUDIT_STEP.replacen(
+        "  sandbox_release_audit:\n",
+        "  sandbox_release_audit:\n    if: always()\n",
+        1,
+    );
+    assert_release_audit_error(&mutated, "job-level if");
+}
+
+#[test]
+fn release_audit_validator_rejects_job_shell_override() {
+    let mutated = VALID_RELEASE_AUDIT_STEP.replacen(
+        "  sandbox_release_audit:\n",
+        "  sandbox_release_audit:\n    shell: bash\n",
+        1,
+    );
+    assert_release_audit_error(&mutated, "shell");
+}
+
+#[test]
+fn release_audit_validator_rejects_step_shell_override() {
+    let mutated = VALID_RELEASE_AUDIT_STEP.replacen(
+        "      - name: Audit the complete release evidence set",
+        "      - name: Audit the complete release evidence set\n        shell: bash",
+        1,
+    );
+    assert_release_audit_error(&mutated, "shell");
+}
+
+#[test]
+fn release_audit_validator_rejects_workflow_default_shell_override() {
+    let mutated = VALID_RELEASE_AUDIT_STEP.replacen(
+        "jobs:\n",
+        "defaults:\n  run:\n    shell: bash\njobs:\n",
+        1,
+    );
+    assert_release_audit_error(&mutated, "defaults.run.shell");
+}
+
+#[test]
+fn release_audit_validator_rejects_audit_job_default_shell_override() {
+    let mutated = VALID_RELEASE_AUDIT_STEP.replacen(
+        "  sandbox_release_audit:\n",
+        "  sandbox_release_audit:\n    defaults:\n      run:\n        shell: bash\n",
+        1,
+    );
+    assert_release_audit_error(&mutated, "defaults.run.shell");
+}
+
+#[test]
+fn release_audit_validator_rejects_incomplete_audit_needs() {
+    let mutated = VALID_RELEASE_AUDIT_STEP.replacen(
+        "    needs: [sandbox_archive, sandbox_windows_posture]",
+        "    needs: [sandbox_archive]",
+        1,
+    );
+    assert_release_audit_error(&mutated, "sandbox_release_audit.needs");
+}
+
+#[test]
+fn release_audit_validator_rejects_missing_dependency_job() {
+    let mutated = VALID_RELEASE_AUDIT_STEP.replacen("  sandbox_windows_posture: {}\n", "", 1);
+    assert_release_audit_error(&mutated, "sandbox_windows_posture");
+}
+
+#[test]
+fn release_audit_validator_rejects_publish_without_audit_dependency() {
+    let mutated = VALID_RELEASE_AUDIT_STEP.replacen(
+        "    needs: [build, sandbox_archive, sandbox_release_audit]",
+        "    needs: [build, sandbox_archive]",
+        1,
+    );
+    assert_release_audit_error(&mutated, "jobs.release.needs");
+}
+
+#[test]
+fn release_audit_validator_rejects_release_job_if() {
+    let mutated =
+        VALID_RELEASE_AUDIT_STEP.replacen("  release:\n", "  release:\n    if: always()\n", 1);
+    assert_release_audit_error(&mutated, "jobs.release has a job-level if");
+}
+
+#[test]
+fn release_audit_validator_rejects_release_job_continue_on_error() {
+    let mutated = VALID_RELEASE_AUDIT_STEP.replacen(
+        "  release:\n",
+        "  release:\n    continue-on-error: true\n",
+        1,
+    );
+    assert_release_audit_error(&mutated, "jobs.release");
+}
+
+#[test]
+fn release_audit_validator_rejects_release_job_shell_override() {
+    let mutated =
+        VALID_RELEASE_AUDIT_STEP.replacen("  release:\n", "  release:\n    shell: bash\n", 1);
+    assert_release_audit_error(&mutated, "jobs.release");
+}
+
+#[test]
+fn release_audit_validator_rejects_release_job_default_shell_override() {
+    let mutated = VALID_RELEASE_AUDIT_STEP.replacen(
+        "  release:\n",
+        "  release:\n    defaults:\n      run:\n        shell: bash\n",
+        1,
+    );
+    assert_release_audit_error(&mutated, "jobs.release defaults.run.shell");
 }
 
 #[test]

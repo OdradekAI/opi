@@ -54,6 +54,15 @@ fn empty_config_leaves_execution_at_default() {
 }
 
 #[test]
+fn unknown_non_sandbox_field_preserves_existing_default_serde_behavior() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = write_temp_config(dir.path(), "[execution]\nfuture = true\n");
+    let config = load_config_file(&path).expect("unknown execution fields remain ignored");
+    assert_eq!(config.execution.strategy, ExecutionStrategy::Fixed);
+    assert_eq!(config.execution.backend, "local");
+}
+
+#[test]
 fn parse_fixed_explicit_backend() {
     let toml = "[execution]\nstrategy = \"fixed\"\nbackend = \"opi-sandbox\"\n";
     let dir = tempfile::tempdir().unwrap();
@@ -136,18 +145,36 @@ fn rules_strategy_rejects_missing_catch_all() {
     let toml = "[execution]\nstrategy = \"rules\"\n\
                 [[execution.rules]]\nmodes = [\"interactive\"]\nbackend = \"local\"\n";
     let dir = tempfile::tempdir().unwrap();
-    expect_invalid_config(load_config_file(&write_temp_config(dir.path(), toml)));
-}
-
-fn expect_invalid_config(result: Result<OpiConfig, ConfigError>) {
-    result.expect_err("expected execution-config rejection");
+    let err = load_config_file(&write_temp_config(dir.path(), toml))
+        .expect_err("rules strategy without a catch-all must be rejected");
+    match err {
+        ConfigError::InvalidExecutionConfig { field, message } => {
+            assert_eq!(field, "rules");
+            assert_eq!(
+                message,
+                "rules strategy requires exactly one final catch-all rule (no `modes`)"
+            );
+        }
+        other => panic!("expected InvalidExecutionConfig, got {other:?}"),
+    }
 }
 
 #[test]
 fn rules_strategy_rejects_empty_rules() {
     let toml = "[execution]\nstrategy = \"rules\"\n";
     let dir = tempfile::tempdir().unwrap();
-    expect_invalid_config(load_config_file(&write_temp_config(dir.path(), toml)));
+    let err = load_config_file(&write_temp_config(dir.path(), toml))
+        .expect_err("rules strategy without rules must be rejected");
+    match err {
+        ConfigError::InvalidExecutionConfig { field, message } => {
+            assert_eq!(field, "strategy");
+            assert_eq!(
+                message,
+                "rules strategy requires at least one rule with a final catch-all"
+            );
+        }
+        other => panic!("expected InvalidExecutionConfig, got {other:?}"),
+    }
 }
 
 #[test]
@@ -253,12 +280,17 @@ fn project_permissions_rejected_via_resolve_config() {
         user_config_path: None,
     })
     .expect_err("project [execution.permissions] must be rejected");
-    match err {
+    match &err {
         ConfigError::InvalidExecutionConfig { field, .. } => {
             assert!(field.contains("permissions"), "field was {field:?}");
         }
         other => panic!("expected InvalidExecutionConfig, got {other:?}"),
     }
+    assert_eq!(
+        err.to_string(),
+        "invalid execution config field 'permissions': project layer may not set \
+         [execution.permissions]; persistent permission is user-owned"
+    );
 }
 
 #[test]
@@ -342,6 +374,66 @@ fn user_layer_permissions_are_accepted() {
     assert_eq!(
         c.execution.permissions.get("opi-sandbox"),
         Some(&PermissionDecision::Allow)
+    );
+}
+
+#[test]
+fn explicit_permissions_replace_the_whole_user_permissions_map() {
+    let root = tempfile::tempdir().unwrap();
+    let user_config = write_config(
+        root.path(),
+        "user.toml",
+        "[execution.permissions]\nlocal = \"deny\"\n",
+    );
+    let explicit_config = write_config(
+        root.path(),
+        "explicit.toml",
+        "[execution.permissions]\n\"opi-sandbox\" = \"allow\"\n",
+    );
+
+    let config = resolve_config(ConfigSource {
+        cli_model: None,
+        config_path: Some(explicit_config),
+        env_model: None,
+        project_dir: None,
+        user_config_path: Some(user_config),
+    })
+    .expect("user plus explicit execution permissions must resolve");
+
+    assert_eq!(config.execution.permissions.len(), 1);
+    assert_eq!(
+        config.execution.permissions.get("opi-sandbox"),
+        Some(&PermissionDecision::Allow)
+    );
+    assert_eq!(
+        config.execution.permissions.get("local"),
+        None,
+        "explicit permissions replace the user map instead of merging by adapter id"
+    );
+}
+
+#[test]
+fn explicit_empty_permissions_clear_the_whole_user_permissions_map() {
+    let root = tempfile::tempdir().unwrap();
+    let user_config = write_config(
+        root.path(),
+        "user.toml",
+        "[execution.permissions]\nlocal = \"deny\"\n",
+    );
+    let explicit_config = write_config(root.path(), "explicit.toml", "[execution.permissions]\n");
+
+    let config = resolve_config(ConfigSource {
+        cli_model: None,
+        config_path: Some(explicit_config),
+        env_model: None,
+        project_dir: None,
+        user_config_path: Some(user_config),
+    })
+    .expect("explicit empty execution permissions must resolve");
+
+    assert!(
+        config.execution.permissions.is_empty(),
+        "an explicitly present empty map replaces and clears the user permissions map"
     );
 }
 

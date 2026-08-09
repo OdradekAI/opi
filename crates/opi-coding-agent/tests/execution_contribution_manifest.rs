@@ -383,7 +383,41 @@ fn handshake_timeout_over_cap_rejected() {
     ));
 }
 
+#[test]
+fn missing_handshake_timeout_is_malformed_with_field_detail() {
+    let (_dir, root, sha) = make_package();
+    let toml = manifest_one(&sha, |m| m.replace("handshake_timeout_ms = 5000\n", ""));
+    let manifest = parse(&toml);
+    let error = validate(&manifest, &toml, &root, PackageSource::Global).unwrap_err();
+    match error {
+        ContributionValidationError::Malformed { reason } => {
+            assert!(
+                reason.contains("missing field `handshake_timeout_ms`"),
+                "missing-field detail must identify handshake_timeout_ms: {reason}"
+            );
+        }
+        other => panic!("missing handshake_timeout_ms must be malformed, got {other:?}"),
+    }
+}
+
 // --- adapter configuration gate ----------------------------------------------
+
+#[test]
+fn missing_adapter_config_is_malformed_with_field_detail() {
+    let (_dir, root, sha) = make_package();
+    let toml = manifest_one(&sha, |m| m.replace("adapter_config = {}\n", ""));
+    let manifest = parse(&toml);
+    let error = validate(&manifest, &toml, &root, PackageSource::Global).unwrap_err();
+    match error {
+        ContributionValidationError::Malformed { reason } => {
+            assert!(
+                reason.contains("missing field `adapter_config`"),
+                "missing-field detail must identify adapter_config: {reason}"
+            );
+        }
+        other => panic!("missing adapter_config must be malformed, got {other:?}"),
+    }
+}
 
 #[test]
 fn oversized_adapter_config_rejected() {

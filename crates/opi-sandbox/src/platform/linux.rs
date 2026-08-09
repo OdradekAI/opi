@@ -289,6 +289,9 @@ impl Restriction for LinuxRestriction {
         cmd: &mut Command,
         ctx: &RestrictionCtx<'_>,
     ) -> Result<AppliedRestriction, RestrictionSetupError> {
+        if ctx.setup_cancelled() {
+            return Err(RestrictionSetupError::Failed("setup-cancelled"));
+        }
         let deny = matches!(ctx.network, NetworkPolicy::Deny);
         // Fail-closed: network = deny requires the Landlock TCP layer (ABI >= 4).
         // Phase 15 fail-opens on an older kernel; opi-sandbox has no `require`
@@ -307,6 +310,9 @@ impl Restriction for LinuxRestriction {
         // Landlock fs ruleset: workspace + invocation temp root.
         let fs_ruleset = build_landlock_fs_ruleset(self.abi, ctx.workspace, ctx.temp_root)
             .map_err(|_| RestrictionSetupError::Failed("landlock-fs-ruleset"))?;
+        if ctx.setup_cancelled() {
+            return Err(RestrictionSetupError::Failed("setup-cancelled"));
+        }
         // Landlock TCP ruleset: network = deny only (ABI >= 4 checked above).
         let network_ruleset = if deny {
             Some(
@@ -316,6 +322,9 @@ impl Restriction for LinuxRestriction {
         } else {
             None
         };
+        if ctx.setup_cancelled() {
+            return Err(RestrictionSetupError::Failed("setup-cancelled"));
+        }
         // Wire the audited pre_exec child-setup (seccomp -> restrict_self ->
         // fd closure). The child is not released on a pre_exec failure: spawn
         // fails -> SpawnFailed (fail-closed).
@@ -326,6 +335,9 @@ impl Restriction for LinuxRestriction {
             network_ruleset,
             deny,
         );
+        if ctx.setup_cancelled() {
+            return Err(RestrictionSetupError::Failed("setup-cancelled"));
+        }
         Ok(AppliedRestriction {
             mechanism: Mechanism::Landlock,
             contract: ContractStatus::Restricted,
@@ -364,9 +376,9 @@ pub(crate) fn posture() -> Posture {
 fn limitations(abi: ABI, supported: bool) -> Vec<String> {
     if !supported {
         return vec![if matches!(abi, ABI::Unsupported) {
-            "Landlock is absent or disabled on this kernel; runs are unrestricted under L0 supervision only".to_string()
+            "Landlock is absent or disabled on this kernel; the requested restriction cannot be established, so the target is refused before start".to_string()
         } else {
-            "the host seccomp architecture is unsupported; runs are unrestricted under L0 supervision only".to_string()
+            "the host seccomp architecture is unsupported; the requested restriction cannot be established, so the target is refused before start".to_string()
         }];
     }
     let mut v = vec![
@@ -386,32 +398,210 @@ fn limitations(abi: ABI, supported: bool) -> Vec<String> {
 mod tests {
     use super::*;
 
-    /// The danger blocklist is the audited fixed set; io_uring is NOT in it
-    /// (it is network-tied, asserted by `build_seccomp_rules`).
+    #[derive(Clone, Copy)]
+    struct TestSeccompData {
+        syscall: i64,
+        arch: u32,
+        instruction_pointer: u64,
+        args: [u64; 6],
+    }
+
+    fn evaluate_classic_bpf(program: &BpfProgram, data: TestSeccompData) -> u32 {
+        const LD_W_ABS: u16 = 0x20;
+        const ALU_AND_K: u16 = 0x54;
+        const JMP_JA: u16 = 0x05;
+        const JMP_JEQ_K: u16 = 0x15;
+        const JMP_JGT_K: u16 = 0x25;
+        const JMP_JGE_K: u16 = 0x35;
+        const RET_K: u16 = 0x06;
+
+        let mut accumulator = 0_u32;
+        let mut pc = 0_usize;
+        for _ in 0..=program.len() {
+            let instruction = program
+                .get(pc)
+                .unwrap_or_else(|| panic!("classic-BPF jumped outside program at pc={pc}"));
+            match instruction.code {
+                LD_W_ABS => {
+                    accumulator = seccomp_data_word(data, instruction.k);
+                    pc += 1;
+                }
+                ALU_AND_K => {
+                    accumulator &= instruction.k;
+                    pc += 1;
+                }
+                JMP_JA => pc += 1 + instruction.k as usize,
+                JMP_JEQ_K => {
+                    pc += 1 + if accumulator == instruction.k {
+                        instruction.jt as usize
+                    } else {
+                        instruction.jf as usize
+                    };
+                }
+                JMP_JGT_K => {
+                    pc += 1 + if accumulator > instruction.k {
+                        instruction.jt as usize
+                    } else {
+                        instruction.jf as usize
+                    };
+                }
+                JMP_JGE_K => {
+                    pc += 1 + if accumulator >= instruction.k {
+                        instruction.jt as usize
+                    } else {
+                        instruction.jf as usize
+                    };
+                }
+                RET_K => return instruction.k,
+                code => panic!(
+                    "unsupported classic-BPF instruction code {code:#x} at pc={pc}: {instruction:?}"
+                ),
+            }
+        }
+        panic!("classic-BPF program did not return within its instruction bound")
+    }
+
+    fn seccomp_data_word(data: TestSeccompData, offset: u32) -> u32 {
+        match offset {
+            0 => data.syscall as u32,
+            4 => data.arch,
+            8 => data.instruction_pointer as u32,
+            12 => (data.instruction_pointer >> 32) as u32,
+            16..=63 if (offset - 16) % 4 == 0 => {
+                let relative = offset - 16;
+                let argument = data.args[(relative / 8) as usize];
+                if relative % 8 == 0 {
+                    argument as u32
+                } else {
+                    (argument >> 32) as u32
+                }
+            }
+            _ => panic!("invalid seccomp_data word offset {offset}"),
+        }
+    }
+
+    fn host_audit_arch() -> u32 {
+        match std::env::consts::ARCH {
+            "x86_64" => 0xc000_003e,
+            "aarch64" => 0xc000_00b7,
+            arch => panic!("unsupported test architecture: {arch}"),
+        }
+    }
+
+    fn seccomp_data(syscall: i64) -> TestSeccompData {
+        TestSeccompData {
+            syscall,
+            arch: host_audit_arch(),
+            instruction_pointer: 0,
+            args: [0; 6],
+        }
+    }
+
+    #[test]
+    fn compiled_bpf_returns_exact_actions_for_canonical_syscalls() {
+        let arch = target_arch(std::env::consts::ARCH).expect("host arch supported");
+        let baseline = compile_seccomp(arch, false).expect("compile baseline filter");
+        let denied = u32::from(SeccompAction::Errno(DENY_ERRNO));
+        let allowed = u32::from(SeccompAction::Allow);
+
+        for (name, syscall) in danger_syscalls() {
+            assert_eq!(
+                evaluate_classic_bpf(&baseline, seccomp_data(syscall)),
+                denied,
+                "compiled baseline BPF must return EPERM for {name}"
+            );
+        }
+        for (name, syscall) in [
+            ("getpid", libc::SYS_getpid),
+            ("read", libc::SYS_read),
+            ("write", libc::SYS_write),
+            ("exit_group", libc::SYS_exit_group),
+            ("unshare", libc::SYS_unshare),
+            ("io_uring_setup", libc::SYS_io_uring_setup),
+        ] {
+            assert_eq!(
+                evaluate_classic_bpf(&baseline, seccomp_data(syscall)),
+                allowed,
+                "compiled baseline BPF must allow representative syscall {name}"
+            );
+        }
+
+        let mut wrong_arch = seccomp_data(libc::SYS_read);
+        wrong_arch.arch = 0;
+        assert_eq!(
+            evaluate_classic_bpf(&baseline, wrong_arch),
+            libc::SECCOMP_RET_KILL_PROCESS,
+            "compiled BPF architecture guard must kill a mismatched architecture"
+        );
+
+        let network_deny = compile_seccomp(arch, true).expect("compile network-deny filter");
+        for (name, syscall) in [
+            ("io_uring_setup", libc::SYS_io_uring_setup),
+            ("io_uring_enter", libc::SYS_io_uring_enter),
+        ] {
+            assert_eq!(
+                evaluate_classic_bpf(&network_deny, seccomp_data(syscall)),
+                denied,
+                "compiled network-deny BPF must return EPERM for {name}"
+            );
+        }
+        for (name, domain) in DENIED_SOCKET_DOMAINS {
+            let mut data = seccomp_data(libc::SYS_socket);
+            data.args[0] = *domain as u64;
+            assert_eq!(
+                evaluate_classic_bpf(&network_deny, data),
+                denied,
+                "compiled network-deny BPF must return EPERM for socket({name})"
+            );
+        }
+        let mut unix_socket = seccomp_data(libc::SYS_socket);
+        unix_socket.args[0] = libc::AF_UNIX as u64;
+        assert_eq!(
+            evaluate_classic_bpf(&network_deny, unix_socket),
+            allowed,
+            "compiled network-deny BPF must preserve AF_UNIX"
+        );
+        for (name, syscall) in [
+            ("getpid", libc::SYS_getpid),
+            ("read", libc::SYS_read),
+            ("write", libc::SYS_write),
+            ("unshare", libc::SYS_unshare),
+        ] {
+            assert_eq!(
+                evaluate_classic_bpf(&network_deny, seccomp_data(syscall)),
+                allowed,
+                "compiled network-deny BPF must allow nonblocked syscall {name}"
+            );
+        }
+    }
+
+    /// The danger blocklist is exactly the audited fixed set; io_uring is NOT
+    /// in it (it is network-tied, asserted by `build_seccomp_rules`).
     #[test]
     fn danger_blocklist_is_fixed_and_io_uring_free() {
-        let names: Vec<&str> = danger_syscalls().iter().map(|(n, _)| *n).collect();
-        for required in [
+        let mut names: Vec<&str> = danger_syscalls().iter().map(|(n, _)| *n).collect();
+        let mut expected = vec![
             "open_by_handle_at",
             "bpf",
             "perf_event_open",
             "ptrace",
+            "kexec_load",
+            "kexec_file_load",
             "reboot",
+            "init_module",
+            "finit_module",
+            "delete_module",
             "swapon",
             "swapoff",
             "acct",
             "settimeofday",
-        ] {
-            assert!(
-                names.contains(&required),
-                "danger blocklist missing {required}"
-            );
-        }
-        assert!(!names.contains(&"clone"), "clone must remain allowed");
-        assert!(!names.contains(&"unshare"), "unshare must remain allowed");
-        assert!(
-            !names.contains(&"io_uring_setup") && !names.contains(&"io_uring_enter"),
-            "io_uring is network-tied, not a baseline danger syscall"
+        ];
+        expected.extend(x86_io_port_syscalls().iter().map(|(name, _)| *name));
+        names.sort_unstable();
+        expected.sort_unstable();
+        assert_eq!(
+            names, expected,
+            "danger blocklist additions and removals require an explicit contract review"
         );
     }
 

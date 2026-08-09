@@ -21,15 +21,15 @@ use std::process::Stdio;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
-use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, ChildStdout};
 use tokio_util::sync::CancellationToken;
 
 // Re-exported at the `execution::v1` root.
 use opi_protocol::execution::v1::{
     BackendToHost, Bounds, CancelReason, CleanupState, Diagnostic, EnvInherit, FailureCode,
-    HostToBackend, ImplementationId, NativeString, ProtocolId, RequestId, Session, TargetId,
-    WIRE_IDENTITY,
+    FailurePhase, HostToBackend, ImplementationId, NativeString, ProtocolId, RequestId, Session,
+    TargetId, WIRE_IDENTITY,
 };
 // NOT re-exported at the root -> addressed by module path.
 use opi_protocol::execution::v1::codec::encode_host;
@@ -39,7 +39,7 @@ use opi_protocol::execution::v1::frames::{
 
 #[cfg(windows)]
 use crate::tool::process_tree::resume_child;
-use crate::tool::process_tree::{TreeGuard, configure_tree};
+use crate::tool::process_tree::{TerminationOutcome, TreeGuard, configure_tree};
 
 use super::failure::ExecutionFailure;
 
@@ -64,6 +64,12 @@ const WRITE_TIMEOUT: Duration = Duration::from_millis(500);
 /// the envelope is payload-free). Mirror of `adapter_host.rs`'s tracing-only
 /// stderr handling.
 const STDERR_CAP: usize = 64 * 1024;
+
+/// Maximum number of diagnostic entries retained from one backend invocation.
+/// The byte side of the diagnostic budget is supplied by
+/// [`Bounds::max_cumulative_output`]; this independent count cap also bounds a
+/// flood of empty diagnostic messages.
+const MAX_DIAGNOSTIC_ENTRIES: usize = 128;
 
 /// What to spawn as the backend (the locked executable). Command and
 /// configuration travel in protocol frames, NEVER in these args.
@@ -223,6 +229,9 @@ impl ExecutionProtocolHost {
         let mut session = Session::new(bounds).map_err(|_| ExecutionFailure::ProtocolViolation)?;
 
         // --- spawn (no await between spawn and attach: closes the drop window) ---
+        if tokio::time::Instant::now() >= handshake_deadline {
+            return Err(ExecutionFailure::ProtocolViolation.into());
+        }
         let mut cmd = tokio::process::Command::new(launch.program);
         let _validated_executable = launch.validated_executable;
         cmd.args(launch.args);
@@ -263,12 +272,23 @@ impl ExecutionProtocolHost {
         // --- concurrent bounded stderr drain (crash evidence only; never surfaced) ---
         let stderr_handle = tokio::spawn(drain_stderr(stderr));
         let mut reader = CappedReader::new(stdout, bounds.max_line_size);
+        if tokio::time::Instant::now() >= handshake_deadline {
+            return terminate_and_fail(
+                child,
+                guard,
+                stderr_handle,
+                stdin,
+                ExecutionFailure::ProtocolViolation,
+                hard_deadline,
+            )
+            .await;
+        }
 
         // accumulated state for the eventual outcome
         let mut started = StartedReport::default();
         let mut stdout_acc: Vec<u8> = Vec::new();
         let mut stderr_acc: Vec<u8> = Vec::new();
-        let mut diagnostics: Vec<Diagnostic> = Vec::new();
+        let mut diagnostics = DiagnosticAccumulator::new(bounds.max_cumulative_output);
         let mut state = HostState::new(HostPhase::AwaitingReady);
 
         // --- initialize (seed the session with the HOST id by observing it first) ---
@@ -279,17 +299,26 @@ impl ExecutionProtocolHost {
             adapter_config: request.adapter_config.clone(),
             supported_protocols: request.supported_protocols.to_vec(),
         });
-        if session.observe_host(&init).is_err()
-            || write_frame(&mut stdin, bounds, &init, hard_deadline)
-                .await
-                .is_err()
-        {
+        if session.observe_host(&init).is_err() {
             return terminate_and_fail(
                 child,
                 guard,
                 stderr_handle,
                 stdin,
                 ExecutionFailure::ProtocolViolation,
+                hard_deadline,
+            )
+            .await;
+        }
+        if write_frame(&mut stdin, bounds, &init, handshake_deadline)
+            .await
+            .is_err()
+        {
+            return terminate_failed_transmission(
+                child,
+                guard,
+                stderr_handle,
+                stdin,
                 hard_deadline,
             )
             .await;
@@ -430,17 +459,26 @@ impl ExecutionProtocolHost {
             env_inherit: request.env_inherit,
             env_additions: request.env_additions.clone(),
         });
-        if session.observe_host(&exec_frame).is_err()
-            || write_frame(&mut stdin, bounds, &exec_frame, hard_deadline)
-                .await
-                .is_err()
-        {
+        if session.observe_host(&exec_frame).is_err() {
             return terminate_and_fail(
                 child,
                 guard,
                 stderr_handle,
                 stdin,
                 ExecutionFailure::ProtocolViolation,
+                hard_deadline,
+            )
+            .await;
+        }
+        if write_frame(&mut stdin, bounds, &exec_frame, cancel_at)
+            .await
+            .is_err()
+        {
+            return terminate_failed_transmission(
+                child,
+                guard,
+                stderr_handle,
+                stdin,
                 hard_deadline,
             )
             .await;
@@ -505,8 +543,22 @@ impl ExecutionProtocolHost {
                         }
                         BackendToHost::Stdout(p) => stdout_acc.extend_from_slice(p.data.as_bytes()),
                         BackendToHost::Stderr(p) => stderr_acc.extend_from_slice(p.data.as_bytes()),
-                        BackendToHost::Diagnostic(p) => diagnostics
-                            .push(redact_backend_diagnostic(Diagnostic { message: p.message })),
+                        BackendToHost::Diagnostic(p) => {
+                            if diagnostics
+                                .push_backend(Diagnostic { message: p.message })
+                                .is_err()
+                            {
+                                return terminate_and_fail(
+                                    child,
+                                    guard,
+                                    stderr_handle,
+                                    stdin,
+                                    ExecutionFailure::ProtocolViolation,
+                                    hard_deadline,
+                                )
+                                .await;
+                            }
+                        }
                         _ => {}
                     },
                     Ok(Action::Terminal(terminal)) => {
@@ -598,6 +650,67 @@ fn redact_backend_diagnostic(diagnostic: Diagnostic) -> Diagnostic {
     }
 }
 
+/// Host-owned diagnostic budget. At most [`MAX_DIAGNOSTIC_ENTRIES`] (128)
+/// entries and `Bounds::max_cumulative_output` unredacted message bytes are
+/// accepted across streaming plus terminal diagnostics. This byte budget is
+/// separate from [`Session`]'s decoded stdout/stderr cumulative-output counter;
+/// the bounds field is reused only as the configured ceiling.
+struct DiagnosticAccumulator {
+    entries: Vec<Diagnostic>,
+    cumulative_bytes: usize,
+    max_cumulative_bytes: usize,
+}
+
+impl DiagnosticAccumulator {
+    fn new(max_cumulative_bytes: usize) -> Self {
+        Self {
+            entries: Vec::new(),
+            cumulative_bytes: 0,
+            max_cumulative_bytes,
+        }
+    }
+
+    fn push_backend(&mut self, diagnostic: Diagnostic) -> Result<(), ExecutionFailure> {
+        self.extend_backend(std::iter::once(diagnostic))
+    }
+
+    fn extend_backend(
+        &mut self,
+        diagnostics: impl IntoIterator<Item = Diagnostic>,
+    ) -> Result<(), ExecutionFailure> {
+        let incoming = diagnostics.into_iter().collect::<Vec<_>>();
+        let next_count = self
+            .entries
+            .len()
+            .checked_add(incoming.len())
+            .ok_or(ExecutionFailure::ProtocolViolation)?;
+        if next_count > MAX_DIAGNOSTIC_ENTRIES {
+            return Err(ExecutionFailure::ProtocolViolation);
+        }
+        let incoming_bytes = incoming.iter().try_fold(0usize, |total, diagnostic| {
+            total.checked_add(diagnostic.message.len())
+        });
+        let next_bytes = incoming_bytes
+            .and_then(|bytes| self.cumulative_bytes.checked_add(bytes))
+            .ok_or(ExecutionFailure::ProtocolViolation)?;
+        if next_bytes > self.max_cumulative_bytes {
+            return Err(ExecutionFailure::ProtocolViolation);
+        }
+        self.entries
+            .extend(incoming.into_iter().map(redact_backend_diagnostic));
+        self.cumulative_bytes = next_bytes;
+        Ok(())
+    }
+
+    fn entries(&self) -> &[Diagnostic] {
+        &self.entries
+    }
+
+    fn into_entries(self) -> Vec<Diagnostic> {
+        self.entries
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Host-side state machine (Session deliberately does NOT enforce ordering)
 // ---------------------------------------------------------------------------
@@ -661,7 +774,7 @@ fn transition(state: &mut HostState, frame: &BackendToHost) -> Result<Action, Ex
             state.phase = HostPhase::AwaitingStarted;
             Ok(Action::Continue)
         }
-        (HostPhase::AwaitingStarted, Started(_)) => {
+        (HostPhase::AwaitingStarted, Started(p)) if valid_started_contract(p) => {
             state.phase = HostPhase::Draining;
             Ok(Action::Continue)
         }
@@ -679,12 +792,54 @@ fn transition(state: &mut HostState, frame: &BackendToHost) -> Result<Action, Ex
             | HostPhase::AwaitingStarted
             | HostPhase::Draining,
             Failed(p),
-        ) if !state.cancelling || state.phase == HostPhase::Draining => {
+        ) if valid_failed_for_phase(state.phase, p)
+            && (!state.cancelling || state.phase == HostPhase::Draining) =>
+        {
             state.phase = HostPhase::Terminal;
             Ok(Action::Terminal(Terminal::Failed(p.clone())))
         }
         _ => Err(ExecutionFailure::ProtocolViolation),
     }
+}
+
+/// Validate the documented `FailureCode`/`FailurePhase` pair against whether
+/// the target has crossed the Started publication gate.
+fn valid_failed_for_phase(host_phase: HostPhase, payload: &FailedPayload) -> bool {
+    match host_phase {
+        HostPhase::AwaitingReady | HostPhase::AwaitingAccepted | HostPhase::AwaitingStarted => {
+            matches!(
+                (payload.code, payload.phase),
+                (
+                    FailureCode::Unavailable
+                        | FailureCode::Failed
+                        | FailureCode::ProtocolIncompatible
+                        | FailureCode::ProtocolViolation
+                        | FailureCode::ExecutionTimedOut,
+                    FailurePhase::Handshake
+                ) | (FailureCode::CleanupUnconfirmed, FailurePhase::Cleanup)
+            )
+        }
+        HostPhase::Draining => matches!(
+            (payload.code, payload.phase),
+            (
+                FailureCode::ProtocolViolation
+                    | FailureCode::ExecutionFailed
+                    | FailureCode::ExecutionTimedOut,
+                FailurePhase::Execution
+            ) | (FailureCode::CleanupUnconfirmed, FailurePhase::Cleanup)
+        ),
+        HostPhase::Terminal => false,
+    }
+}
+
+fn valid_started_contract(payload: &opi_protocol::execution::v1::frames::StartedPayload) -> bool {
+    [
+        payload.placement.as_str(),
+        payload.guarantee.as_str(),
+        payload.policy.as_str(),
+    ]
+    .into_iter()
+    .all(|field| !field.trim().is_empty())
 }
 
 /// Map a wire `FailureCode` (closed 7-code set) to the architecture envelope.
@@ -737,13 +892,19 @@ async fn read_frame_select(
 
 /// Encode + write one host frame, timeout-bounded. On any failure (encode,
 /// timeout, I/O) returns Err; the caller proceeds to terminate.
-async fn write_frame(
-    stdin: &mut ChildStdin,
+async fn write_frame<W: AsyncWrite + Unpin>(
+    stdin: &mut W,
     bounds: Bounds,
     frame: &HostToBackend,
-    hard_deadline: tokio::time::Instant,
+    deadline: tokio::time::Instant,
 ) -> Result<(), ()> {
+    if tokio::time::Instant::now() >= deadline {
+        return Err(());
+    }
     let line = encode_host(frame, &bounds).map_err(|_| ())?;
+    if tokio::time::Instant::now() >= deadline {
+        return Err(());
+    }
     let line = line + "\n";
     let write = async {
         stdin.write_all(line.as_bytes()).await?;
@@ -751,10 +912,10 @@ async fn write_frame(
         Ok::<(), std::io::Error>(())
     };
     let write_deadline = std::cmp::min(
-        hard_deadline,
+        deadline,
         tokio::time::Instant::now()
             .checked_add(WRITE_TIMEOUT)
-            .unwrap_or(hard_deadline),
+            .unwrap_or(deadline),
     );
     match tokio::time::timeout_at(write_deadline, write).await {
         Ok(Ok(())) => Ok(()),
@@ -842,7 +1003,7 @@ async fn finalize_terminal(
     started: StartedReport,
     stdout_acc: Vec<u8>,
     stderr_acc: Vec<u8>,
-    mut diagnostics: Vec<Diagnostic>,
+    mut diagnostics: DiagnosticAccumulator,
     hard_deadline: tokio::time::Instant,
     reader: &mut CappedReader<ChildStdout>,
 ) -> Result<CompletedOutcome, ExecutionProtocolFailure> {
@@ -852,19 +1013,36 @@ async fn finalize_terminal(
     drop(stdin);
     match &terminal {
         Terminal::Completed(p) => {
-            diagnostics.extend(p.diagnostics.iter().cloned().map(redact_backend_diagnostic));
+            if diagnostics
+                .extend_backend(p.diagnostics.iter().cloned())
+                .is_err()
+            {
+                let _ = guard.terminate();
+                finish_teardown(child, stderr_handle, hard_deadline).await;
+                return Err(ExecutionProtocolFailure::with_diagnostics(
+                    ExecutionFailure::ProtocolViolation,
+                    diagnostics.into_entries(),
+                ));
+            }
         }
         Terminal::Failed(p) => {
-            diagnostics.extend(
-                p.message
-                    .iter()
-                    .cloned()
-                    .map(|message| redact_backend_diagnostic(Diagnostic { message })),
-            );
-            diagnostics.extend(p.diagnostics.iter().cloned().map(redact_backend_diagnostic));
+            let terminal_diagnostics = p
+                .message
+                .iter()
+                .cloned()
+                .map(|message| Diagnostic { message })
+                .chain(p.diagnostics.iter().cloned());
+            if diagnostics.extend_backend(terminal_diagnostics).is_err() {
+                let _ = guard.terminate();
+                finish_teardown(child, stderr_handle, hard_deadline).await;
+                return Err(ExecutionProtocolFailure::with_diagnostics(
+                    ExecutionFailure::ProtocolViolation,
+                    diagnostics.into_entries(),
+                ));
+            }
         }
     }
-    for diagnostic in &diagnostics {
+    for diagnostic in diagnostics.entries() {
         tracing::debug!(target: "execution_backend_diagnostic", message = %diagnostic.message);
     }
 
@@ -877,17 +1055,19 @@ async fn finalize_terminal(
         finish_teardown(child, stderr_handle, hard_deadline).await;
         return Err(ExecutionProtocolFailure::with_diagnostics(
             failure,
-            diagnostics,
+            diagnostics.into_entries(),
         ));
     }
     match reap_child(&mut child, reap_deadline).await {
-        Some(0) => finish_teardown(child, stderr_handle, hard_deadline).await,
+        Some(0) => {
+            finish_teardown(child, stderr_handle, hard_deadline).await;
+        }
         Some(_) => {
             let _ = guard.terminate();
             finish_teardown(child, stderr_handle, hard_deadline).await;
             return Err(ExecutionProtocolFailure::with_diagnostics(
                 ExecutionFailure::ProtocolViolation,
-                diagnostics,
+                diagnostics.into_entries(),
             ));
         }
         None => {
@@ -895,7 +1075,7 @@ async fn finalize_terminal(
             finish_teardown(child, stderr_handle, hard_deadline).await;
             return Err(ExecutionProtocolFailure::with_diagnostics(
                 ExecutionFailure::CleanupUnconfirmed,
-                diagnostics,
+                diagnostics.into_entries(),
             ));
         }
     }
@@ -903,12 +1083,12 @@ async fn finalize_terminal(
     match terminal {
         Terminal::Failed(p) => Err(ExecutionProtocolFailure::with_diagnostics(
             map_failure_code(&p, ready.implementation.as_str()),
-            diagnostics,
+            diagnostics.into_entries(),
         )),
         Terminal::Completed(p) if p.cleanup == CleanupState::Unconfirmed => {
             Err(ExecutionProtocolFailure::with_diagnostics(
                 ExecutionFailure::CleanupUnconfirmed,
-                diagnostics,
+                diagnostics.into_entries(),
             ))
         }
         Terminal::Completed(p) => Ok(CompletedOutcome {
@@ -921,7 +1101,7 @@ async fn finalize_terminal(
             cleanup: p.cleanup,
             stdout: stdout_acc,
             stderr: stderr_acc,
-            diagnostics,
+            diagnostics: diagnostics.into_entries(),
         }),
     }
 }
@@ -947,7 +1127,7 @@ async fn finish_with_cancel(
     mut started: StartedReport,
     mut stdout_acc: Vec<u8>,
     mut stderr_acc: Vec<u8>,
-    mut diagnostics: Vec<Diagnostic>,
+    mut diagnostics: DiagnosticAccumulator,
 ) -> Result<CompletedOutcome, ExecutionProtocolFailure> {
     state.begin_cancel();
     let cancel = HostToBackend::Cancel(CancelPayload {
@@ -983,9 +1163,7 @@ async fn finish_with_cancel(
                                     stderr_acc.extend_from_slice(p.data.as_bytes());
                                 }
                                 BackendToHost::Diagnostic(p) => {
-                                    diagnostics.push(redact_backend_diagnostic(Diagnostic {
-                                        message: p.message,
-                                    }))
+                                    diagnostics.push_backend(Diagnostic { message: p.message })?;
                                 }
                                 _ => {}
                             },
@@ -1002,7 +1180,16 @@ async fn finish_with_cancel(
 
     match outcome {
         Ok(Some(Terminal::Completed(mut p))) => {
-            p.cancelled = true;
+            match reason {
+                CancelReason::Deadline => {
+                    p.timed_out = true;
+                    p.cancelled = false;
+                }
+                CancelReason::Canceled => {
+                    p.timed_out = false;
+                    p.cancelled = true;
+                }
+            }
             finalize_terminal(
                 Terminal::Completed(p),
                 child,
@@ -1042,7 +1229,7 @@ async fn finish_with_cancel(
             finish_teardown(child, stderr_handle, hard_deadline).await;
             Err(ExecutionProtocolFailure::with_diagnostics(
                 ExecutionFailure::CleanupUnconfirmed,
-                diagnostics,
+                diagnostics.into_entries(),
             ))
         }
         Err(failure) => {
@@ -1051,7 +1238,7 @@ async fn finish_with_cancel(
             finish_teardown(child, stderr_handle, hard_deadline).await;
             Err(ExecutionProtocolFailure::with_diagnostics(
                 failure,
-                diagnostics,
+                diagnostics.into_entries(),
             ))
         }
     }
@@ -1073,15 +1260,65 @@ async fn terminate_and_fail(
     Err(code.into())
 }
 
+/// A deadline-expired or otherwise incomplete host frame cannot be followed by
+/// more protocol traffic: `write_all` cancellation may have left a partial
+/// JSON line in the pipe. Close stdin and terminate locally. Preserve the
+/// transmission's protocol-violation classification only when L0 termination,
+/// child reap, and stderr drain all confirm inside the original hard deadline.
+async fn terminate_failed_transmission(
+    child: Child,
+    mut guard: TreeGuard,
+    stderr_handle: tokio::task::JoinHandle<Vec<u8>>,
+    stdin: ChildStdin,
+    hard_deadline: tokio::time::Instant,
+) -> Result<CompletedOutcome, ExecutionProtocolFailure> {
+    drop(stdin);
+    let tree_confirmed = !matches!(guard.terminate(), TerminationOutcome::Failed(_));
+    let teardown = finish_teardown(child, stderr_handle, hard_deadline).await;
+    Err(failed_transmission_failure(
+        tree_confirmed,
+        teardown.child_reaped,
+        teardown.stderr_drained,
+    )
+    .into())
+}
+
+fn failed_transmission_failure(
+    tree_confirmed: bool,
+    child_reaped: bool,
+    stderr_drained: bool,
+) -> ExecutionFailure {
+    if tree_confirmed && child_reaped && stderr_drained {
+        ExecutionFailure::ProtocolViolation
+    } else {
+        ExecutionFailure::CleanupUnconfirmed
+    }
+}
+
+struct TeardownConfirmation {
+    child_reaped: bool,
+    stderr_drained: bool,
+}
+
 async fn finish_teardown(
     mut child: Child,
     stderr_handle: tokio::task::JoinHandle<Vec<u8>>,
     hard_deadline: tokio::time::Instant,
-) {
+) -> TeardownConfirmation {
     // Best-effort reap so kill_on_drop/terminate are accounted; do not hang.
     let teardown_deadline = grace_deadline(hard_deadline);
-    let _ = tokio::time::timeout_at(teardown_deadline, child.wait()).await;
-    let _ = tokio::time::timeout_at(teardown_deadline, stderr_handle).await;
+    let child_reaped = matches!(
+        tokio::time::timeout_at(teardown_deadline, child.wait()).await,
+        Ok(Ok(_))
+    );
+    let stderr_drained = matches!(
+        tokio::time::timeout_at(teardown_deadline, stderr_handle).await,
+        Ok(Ok(_))
+    );
+    TeardownConfirmation {
+        child_reaped,
+        stderr_drained,
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1174,8 +1411,12 @@ enum ReadErr {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::pin::Pin;
+    use std::task::{Context, Poll};
+
     use opi_protocol::execution::v1::frames::{AcceptedPayload, StdoutPayload};
     use opi_protocol::execution::v1::{Base64Bytes, FailurePhase};
+    use tokio::io::AsyncWrite;
 
     #[cfg(unix)]
     #[test]
@@ -1225,6 +1466,157 @@ mod tests {
 
     fn rid() -> RequestId {
         RequestId::new("r".into()).unwrap()
+    }
+
+    struct PendingWriter;
+
+    impl AsyncWrite for PendingWriter {
+        fn poll_write(
+            self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+            _buf: &[u8],
+        ) -> Poll<std::io::Result<usize>> {
+            Poll::Pending
+        }
+
+        fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+            Poll::Pending
+        }
+
+        fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+    }
+
+    fn initialize_frame() -> HostToBackend {
+        HostToBackend::Initialize(InitializePayload {
+            request_id: rid(),
+            deadline_ms: 1,
+            adapter_config: serde_json::json!({}),
+            supported_protocols: vec![ProtocolId::new(WIRE_IDENTITY).unwrap()],
+        })
+    }
+
+    fn execute_frame() -> HostToBackend {
+        HostToBackend::Execute(ExecutePayload {
+            request_id: rid(),
+            program: NativeString::from_utf8("sh"),
+            args: vec![NativeString::from_utf8("-c")],
+            workspace: NativeString::from_utf8("workspace"),
+            cwd: NativeString::from_utf8("workspace"),
+            timeout_ms: 1,
+            env_inherit: EnvInherit::Clear,
+            env_additions: BTreeMap::new(),
+        })
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn pending_initialize_write_failure_requires_fully_confirmed_local_teardown() {
+        let start = tokio::time::Instant::now();
+        let handshake_deadline = start + Duration::from_millis(7);
+        let result = write_frame(
+            &mut PendingWriter,
+            Bounds::DEFAULT,
+            &initialize_frame(),
+            handshake_deadline,
+        )
+        .await;
+
+        assert!(result.is_err());
+        assert_eq!(tokio::time::Instant::now(), handshake_deadline);
+        assert!(matches!(
+            failed_transmission_failure(true, true, true),
+            ExecutionFailure::ProtocolViolation
+        ));
+        for (tree_confirmed, child_reaped, stderr_drained) in [
+            (false, true, true),
+            (true, false, true),
+            (true, true, false),
+        ] {
+            assert!(matches!(
+                failed_transmission_failure(tree_confirmed, child_reaped, stderr_drained),
+                ExecutionFailure::CleanupUnconfirmed
+            ));
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn pending_execute_write_stops_at_host_cancellation_cutoff() {
+        let start = tokio::time::Instant::now();
+        let cancel_at = start + Duration::from_millis(13);
+        let result = write_frame(
+            &mut PendingWriter,
+            Bounds::DEFAULT,
+            &execute_frame(),
+            cancel_at,
+        )
+        .await;
+
+        assert!(result.is_err());
+        assert_eq!(tokio::time::Instant::now(), cancel_at);
+    }
+
+    #[test]
+    fn diagnostics_count_cap_accepts_exact_boundary_and_rejects_one_more() {
+        let mut diagnostics = DiagnosticAccumulator::new(usize::MAX);
+        diagnostics
+            .extend_backend((0..MAX_DIAGNOSTIC_ENTRIES).map(|_| Diagnostic {
+                message: String::new(),
+            }))
+            .unwrap();
+        assert_eq!(diagnostics.entries().len(), MAX_DIAGNOSTIC_ENTRIES);
+        assert!(
+            diagnostics
+                .push_backend(Diagnostic {
+                    message: String::new(),
+                })
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn diagnostics_byte_budget_accepts_exact_boundary_and_rejects_one_more() {
+        let mut diagnostics = DiagnosticAccumulator::new(8);
+        diagnostics
+            .extend_backend([
+                Diagnostic {
+                    message: "123".into(),
+                },
+                Diagnostic {
+                    message: "45678".into(),
+                },
+            ])
+            .unwrap();
+        assert_eq!(diagnostics.cumulative_bytes, 8);
+        assert!(
+            diagnostics
+                .push_backend(Diagnostic {
+                    message: "9".into(),
+                })
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn terminal_diagnostic_batch_shares_stream_count_and_byte_budgets() {
+        let mut diagnostics = DiagnosticAccumulator::new(8);
+        diagnostics
+            .push_backend(Diagnostic {
+                message: "12".into(),
+            })
+            .unwrap();
+        diagnostics
+            .extend_backend([
+                Diagnostic {
+                    message: "345".into(),
+                },
+                Diagnostic {
+                    message: "678".into(),
+                },
+            ])
+            .unwrap();
+        assert_eq!(diagnostics.entries().len(), 3);
+        assert_eq!(diagnostics.cumulative_bytes, 8);
     }
 
     #[test]

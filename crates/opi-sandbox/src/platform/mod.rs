@@ -1,17 +1,14 @@
 //! Platform restriction posture: whether the host can establish a confinement
 //! contract, and with which mechanism/limitations.
 //!
-//! Task 16.11.2 shipped every platform as [`Posture::supported`] == false (no
-//! native confinement wired). Task 16.13 flips the Linux arm to `Supported`:
-//! `linux::posture()` probes the observed Landlock ABI, reports the
-//! `Landlock` + `Seccomp` mechanisms and honest limitations, and installs a
-//! `Landlock`+`seccomp` [`crate::policy::Restriction`]. macOS remains
-//! `Unsupported` until 16.14.1, and Phase 16 publishes no Windows confinement
-//! artifact. The human CLI's `run` therefore refuses BEFORE target start
-//! (exit 125) on Windows/macOS, and executes confined on supported Linux;
-//! `doctor` serializes a [`Posture`] directly, so there is no split brain
-//! between the dispatcher and the diagnostic (Phase 16 task 16.11.2 audit fold:
-//! platform-posture-honesty).
+//! Linux and macOS install native restrictions when available; Windows has L0
+//! Job-Object supervision but Phase 16 publishes no Windows confinement
+//! artifact. `linux::posture()` reports Landlock + seccomp, while
+//! `macos::posture()` reports Seatbelt through `sandbox-exec`. The human CLI's
+//! `run` executes under those supported native postures and refuses BEFORE
+//! target start (exit 125) on Windows or any host without an available native
+//! restriction. `doctor` serializes a [`Posture`] directly, so there is no split
+//! brain between the dispatcher and the diagnostic.
 //!
 //! # `forbid(unsafe_code)`
 //!
@@ -58,10 +55,9 @@ pub(crate) struct Posture {
     /// The mechanisms a `Supported` platform installs. Empty while `supported`
     /// is false.
     pub mechanisms: Vec<Mechanism>,
-    /// Honest per-platform caveats reported by `doctor`. The strings distinguish
-    /// "not yet wired in this build" (macOS, temporary) from "no command
-    /// restriction" (Windows, permanent) so users do not infer permanent
-    /// platform inferiority.
+    /// Honest per-platform caveats reported by `doctor`: residual limitations
+    /// for a supported native posture, or why this host cannot establish one.
+    /// Unsupported postures never imply an unrestricted execution fallback.
     pub limitations: Vec<String>,
     /// The restriction to install on a `Supported` platform. `None` while
     /// `supported` is false; the CLI refuses `run` before constructing a runner.
@@ -106,8 +102,7 @@ fn default_unix_posture() -> Posture {
         supported: false,
         mechanisms: Vec::new(),
         limitations: vec![
-            "native confinement is not supported on this platform; runs are \
-              unrestricted under L0 supervision only"
+            "native confinement is not supported on this platform; the human CLI refuses before target start"
                 .to_string(),
         ],
         restriction: None,

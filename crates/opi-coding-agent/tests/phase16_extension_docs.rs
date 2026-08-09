@@ -1,16 +1,16 @@
-//! Phase 16 pluggable-extension documentation contract guard (task 16.1).
+//! Phase 16 pluggable-extension documentation contract guard.
 //!
-//! This substrate guard pins the *designed* Phase 16 contract in the paired
-//! EN/ZH product spec before any Phase 16 implementation lands. It freezes the
-//! canonical design binding (and rejects the superseded architecture filename
-//! as a second normative source), keeps Phase 17 a reserved benchmark
-//! placeholder with no premature spec, binds the renamed Phase 18 source, and
-//! pins Minimal Runtime, the five independent lifecycle gates, no local
-//! fallback, the standalone CLI/SDK/protocol surface, and the Phase 19/20
-//! deferrals exactly as authored. It asserts documentation invariants only; it
-//! does not claim shipped runtime behavior, which later Phase 16 tasks own.
+//! These guards pin the implemented Phase 16 contract in the paired EN/ZH
+//! product spec and current source/help documentation. They freeze the
+//! canonical design binding (and reject the superseded architecture filename
+//! as a second normative source), keep Phase 17 a reserved benchmark
+//! placeholder with no premature spec, bind the renamed Phase 18 source, and
+//! pin the scoped Minimal Runtime, lifecycle gates, no-local-fallback rule,
+//! standalone CLI/SDK/protocol surface, and Phase 19/20 deferrals.
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
@@ -25,6 +25,32 @@ fn read_repo_file(relative: &str) -> String {
 
 fn normalize_whitespace(value: &str) -> String {
     value.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn module_docs(content: &str) -> String {
+    content
+        .lines()
+        .take_while(|line| line.starts_with("//!") || line.trim().is_empty())
+        .map(|line| {
+            line.strip_prefix("//! ")
+                .or_else(|| line.strip_prefix("//!"))
+                .unwrap_or(line)
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn item_docs(content: &str) -> String {
+    content
+        .lines()
+        .take_while(|line| line.starts_with("///") || line.trim().is_empty())
+        .map(|line| {
+            line.strip_prefix("/// ")
+                .or_else(|| line.strip_prefix("///"))
+                .unwrap_or(line)
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn heading_slice<'a>(
@@ -46,6 +72,18 @@ fn heading_slice<'a>(
     &content[start..end]
 }
 
+fn marker_slice<'a>(path: &str, content: &'a str, start_marker: &str, end_marker: &str) -> &'a str {
+    let start = content
+        .find(start_marker)
+        .unwrap_or_else(|| panic!("{path} is missing marker `{start_marker}`"));
+    let after_start = start + start_marker.len();
+    let end = content[after_start..]
+        .find(end_marker)
+        .map(|offset| after_start + offset)
+        .unwrap_or_else(|| panic!("{path} marker `{start_marker}` is missing `{end_marker}`"));
+    &content[start..end]
+}
+
 fn assert_claims(path: &str, content: &str, claims: &[&str]) {
     let normalized = normalize_whitespace(content);
     for claim in claims {
@@ -64,6 +102,170 @@ fn assert_absent(path: &str, content: &str, claims: &[&str]) {
             "{path} must not retain the superseded Phase 16 claim `{claim}`"
         );
     }
+}
+
+fn workspace_layout_block<'a>(path: &str, content: &'a str) -> &'a str {
+    let section = heading_slice(path, content, "## Workspace layout", "## Architecture");
+    let (_, after_fence) = section
+        .split_once("```text\n")
+        .unwrap_or_else(|| panic!("{path} workspace layout is missing its `text` graph fence"));
+    let (graph, _) = after_fence
+        .split_once("\n```")
+        .unwrap_or_else(|| panic!("{path} workspace graph fence is not closed"));
+    graph
+}
+
+fn parse_workspace_graph(
+    path: &str,
+    content: &str,
+) -> BTreeMap<String, (BTreeSet<String>, String)> {
+    let mut graph = BTreeMap::new();
+    for line in workspace_layout_block(path, content)
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+    {
+        let (edge, role) = line
+            .split_once(" - ")
+            .unwrap_or_else(|| panic!("{path} has malformed workspace graph line `{line}`"));
+        assert!(
+            !role.trim().is_empty(),
+            "{path} has an empty role in `{line}`"
+        );
+
+        let edge = edge.trim();
+        let (name, dependencies) = if let Some(name) = edge.strip_suffix("(no internal deps)") {
+            (name.trim(), BTreeSet::new())
+        } else {
+            let (name, dependencies) = edge
+                .split_once(" -> ")
+                .unwrap_or_else(|| panic!("{path} has malformed workspace edge `{edge}`"));
+            let dependencies = dependencies
+                .split(',')
+                .map(str::trim)
+                .map(str::to_owned)
+                .collect();
+            (name.trim(), dependencies)
+        };
+        assert!(
+            graph
+                .insert(name.to_owned(), (dependencies, role.trim().to_owned()))
+                .is_none(),
+            "{path} repeats workspace crate `{name}`"
+        );
+    }
+    graph
+}
+
+fn workspace_graph_from_metadata(
+    metadata: &serde_json::Value,
+) -> BTreeMap<String, BTreeSet<String>> {
+    let workspace_members: BTreeSet<String> = metadata["workspace_members"]
+        .as_array()
+        .expect("cargo metadata has workspace_members")
+        .iter()
+        .map(|member| member.as_str().expect("workspace member id").to_owned())
+        .collect();
+    let packages = metadata["packages"]
+        .as_array()
+        .expect("cargo metadata has packages");
+    let workspace_packages_by_path: BTreeMap<PathBuf, String> = packages
+        .iter()
+        .filter(|package| workspace_members.contains(package["id"].as_str().expect("package id")))
+        .map(|package| {
+            let manifest_path = Path::new(
+                package["manifest_path"]
+                    .as_str()
+                    .expect("workspace package manifest_path"),
+            );
+            let package_path = manifest_path
+                .parent()
+                .expect("workspace package manifest has a parent")
+                .to_owned();
+            let package_name = package["name"].as_str().expect("package name").to_owned();
+            (package_path, package_name)
+        })
+        .collect();
+
+    packages
+        .iter()
+        .filter(|package| workspace_members.contains(package["id"].as_str().expect("package id")))
+        .map(|package| {
+            let name = package["name"].as_str().expect("package name").to_owned();
+            let dependencies = package["dependencies"]
+                .as_array()
+                .expect("package dependencies")
+                .iter()
+                // Cargo metadata represents normal dependencies as `kind:
+                // null`; dev/build edges are not links in the shipped crate
+                // graph.
+                .filter(|dependency| {
+                    dependency
+                        .get("kind")
+                        .is_some_and(serde_json::Value::is_null)
+                })
+                // Bind the dependency's resolved local path to a workspace
+                // member manifest. This excludes a registry/git package that
+                // happens to share a workspace package name and naturally
+                // handles manifest-local dependency renames.
+                .filter_map(|dependency| dependency["path"].as_str())
+                .filter_map(|path| workspace_packages_by_path.get(Path::new(path)))
+                .cloned()
+                .collect();
+            (name, dependencies)
+        })
+        .collect()
+}
+
+fn cargo_metadata_workspace_graph() -> BTreeMap<String, BTreeSet<String>> {
+    let output = Command::new(env!("CARGO"))
+        .args(["metadata", "--format-version", "1", "--no-deps"])
+        .current_dir(repo_root())
+        .output()
+        .expect("run cargo metadata for the workspace documentation guard");
+    assert!(
+        output.status.success(),
+        "cargo metadata failed:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let metadata: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("cargo metadata emits valid JSON");
+    workspace_graph_from_metadata(&metadata)
+}
+
+fn normalize_guidance_identity(content: &str) -> String {
+    let normalized = content.replace("\r\n", "\n");
+    let normalized = if let Some(rest) = normalized.strip_prefix("# AGENTS.md\n") {
+        format!("# GUIDANCE.md\n{rest}")
+    } else if let Some(rest) = normalized.strip_prefix("# CLAUDE.md\n") {
+        format!("# GUIDANCE.md\n{rest}")
+    } else {
+        normalized
+    };
+    normalized
+        .replace(
+            "This file provides guidance to Codex (Codex.ai/code) when working with code in\nthis repository.",
+            "This file provides guidance to the coding assistant when working with code in\nthis repository.",
+        )
+        .replace(
+            "This file provides guidance to Claude Code (claude.ai/code) when working with\ncode in this repository.",
+            "This file provides guidance to the coding assistant when working with code in\nthis repository.",
+        )
+        .replace(
+            "`CLAUDE.md` is the Claude Code-flavored sibling of this file. When project\nrules change, update both in lockstep to avoid drift.",
+            "The other guidance file is the product-flavored sibling of this file. When project\nrules change, update both in lockstep to avoid drift.",
+        )
+        .replace(
+            "`AGENTS.md` is the Codex-flavored sibling of this file. When project rules\nchange, update both in lockstep to avoid drift.",
+            "The other guidance file is the product-flavored sibling of this file. When project\nrules change, update both in lockstep to avoid drift.",
+        )
+        .replace(
+            "`Co-Authored-By: Codex ...`",
+            "`Co-Authored-By: ASSISTANT ...`",
+        )
+        .replace(
+            "`Co-Authored-By: Claude ...`",
+            "`Co-Authored-By: ASSISTANT ...`",
+        )
 }
 
 const CANONICAL_PHASE16_DESIGN: &str =
@@ -105,12 +307,13 @@ fn phase16_section_binds_canonical_contract_en_zh() {
         "docs/opi-spec.md",
         spec,
         &[
-            "Phase 16 keeps the default `opi` process in the Minimal Runtime on a direct local execution path",
+            "Phase 16 keeps the `command.execute` path of the default `opi` process in the Minimal Runtime on a direct local execution path",
             "The first adapters are built-in `local` and external `opi-sandbox`",
             "the latter remains independently usable through its SDK, human CLI, and `command-execution-jsonl-v1` protocol",
             "Package installation does not imply Package Trust or activation: Installed, Trusted, Enabled, Selected, and Permitted are separate gates.",
             "Routing supports `fixed`, deterministic `rules`, and model recommendation under user policy, with `deny`/`ask`/`allow` permission outcomes.",
-            "The Opi binary does not link `opi-sandbox`; with no enabled extension, it runs locally without extension processes, package activation, or per-package scans.",
+            "The Opi binary does not link `opi-sandbox`.",
+            "The Minimal Runtime label describes only this command-execution path; it does not disable separately configured resource-package discovery or legacy `opi-extension-jsonl-v1` adapter startup.",
             "Once an external adapter is selected, failure is fail-closed and never falls back to local execution.",
             "`opi-protocol` initially owns only the versioned execution protocol.",
         ],
@@ -119,15 +322,118 @@ fn phase16_section_binds_canonical_contract_en_zh() {
         "docs/opi-spec.zh.md",
         spec_zh,
         &[
-            "默认 `opi` 进程保持最小运行时（Minimal Runtime）的直接本地执行路径",
+            "默认 `opi` 进程的 `command.execute` 路径保持最小运行时（Minimal Runtime）的直接本地执行路径",
             "首批 adapter 是内置 `local` 与外部 `opi-sandbox`",
             "后者还可通过 SDK、面向用户的 CLI 和 `command-execution-jsonl-v1` 协议独立使用",
             "Installed、Trusted、Enabled、Selected、Permitted 是五个独立门",
             "路由支持 `fixed`、确定性的 `rules` 与受用户策略约束的模型建议，权限结果为 `deny`/`ask`/`allow`",
-            "Opi 二进制不链接 `opi-sandbox`；没有启用扩展时，本地运行且不启动扩展进程、不执行 package activation 或逐 package 扫描",
+            "Opi 二进制不链接 `opi-sandbox`",
+            "Minimal Runtime 标签只描述这条命令执行路径；它不会停用另行配置的资源 package 发现或既有 `opi-extension-jsonl-v1` adapter 启动路径",
             "外部 adapter 一旦被选择，失败即 fail-closed，绝不回退到本地执行",
             "`opi-protocol` 初始只承载版本化的执行协议",
         ],
+    );
+}
+
+#[test]
+fn phase16_runtime_scope_and_source_mechanism_docs_are_exact() {
+    let spec = read_repo_file("docs/opi-spec.md");
+    let spec_zh = read_repo_file("docs/opi-spec.zh.md");
+    let spec = heading_slice(
+        "docs/opi-spec.md",
+        &spec,
+        "### Phase 16 - Pluggable Extensions and Command Execution",
+        "### Phase 17 - Benchmark and Regression Evaluation",
+    );
+    let spec_zh = heading_slice(
+        "docs/opi-spec.zh.md",
+        &spec_zh,
+        "### 第十六阶段 - 可插拔扩展与命令执行",
+        "### 第十七阶段 - Benchmark 与回归评估",
+    );
+
+    assert_claims(
+        "docs/opi-spec.md Phase 16",
+        spec,
+        &[
+            "fixed-local `allow` directly constructs `LocalBashOperations` without opening the command-execution package activation store",
+            "This narrow statement does not disable the separate resource-package discovery and legacy `opi-extension-jsonl-v1` process-adapter runtime.",
+        ],
+    );
+    assert_claims(
+        "docs/opi-spec.zh.md Phase 16",
+        spec_zh,
+        &[
+            "fixed-local `allow` 会直接构造 `LocalBashOperations`，且不会打开 command-execution package activation store",
+            "这一窄范围声明不会停用独立的资源 package 发现与既有 `opi-extension-jsonl-v1` process-adapter runtime",
+        ],
+    );
+    assert_absent(
+        "docs/opi-spec.md Phase 16",
+        spec,
+        &[
+            "with no enabled extension, it runs locally without extension processes, package activation, or per-package scans",
+            "starts no extension or package adapter process",
+        ],
+    );
+    assert_absent(
+        "docs/opi-spec.zh.md Phase 16",
+        spec_zh,
+        &[
+            "没有启用扩展时，本地运行且不启动扩展进程、不执行 package activation 或逐 package 扫描",
+            "不启动 extension 或 package adapter 进程",
+        ],
+    );
+
+    let sandbox_lib = module_docs(&read_repo_file("crates/opi-sandbox/src/lib.rs"));
+    assert_claims(
+        "crates/opi-sandbox/src/lib.rs module docs",
+        &sandbox_lib,
+        &[
+            "A supported Linux run reports [`Mechanism::Landlock`] as the lead mechanism in its per-run `Started` event, while `opi-sandbox doctor --json` reports the full observed Landlock-plus-seccomp posture.",
+            "A supported macOS run reports [`Mechanism::Seatbelt`] in `Started`.",
+        ],
+    );
+    assert_absent(
+        "crates/opi-sandbox/src/lib.rs module docs",
+        &sandbox_lib,
+        &["reports [`Mechanism::Landlock`]/[`Mechanism::Seccomp`] (Linux)"],
+    );
+
+    let router_source = read_repo_file("crates/opi-coding-agent/src/execution/router.rs");
+    let router = module_docs(&router_source);
+    assert_claims(
+        "crates/opi-coding-agent/src/execution/router.rs module docs",
+        &router,
+        &[
+            "The production catalog contains construction-validated identities, but it is not an authoritative process-start availability claim: the selected external package is revalidated at invocation time immediately before spawn.",
+        ],
+    );
+    assert_absent(
+        "crates/opi-coding-agent/src/execution/router.rs module docs",
+        &router,
+        &["builds the `Eligibility` input from the activated package store"],
+    );
+
+    let eligible_adapter_docs = item_docs(marker_slice(
+        "crates/opi-coding-agent/src/execution/router.rs",
+        &router_source,
+        "/// A router eligibility entry.",
+        "pub struct EligibleAdapter",
+    ));
+    assert_claims(
+        "crates/opi-coding-agent/src/execution/router.rs EligibleAdapter docs",
+        &eligible_adapter_docs,
+        &[
+            "`local` is a synthesized built-in entry.",
+            "External entries come from construction-validated package identities that are installed, trusted, enabled, and target-compatible.",
+            "a router input, not an authoritative external process-start guarantee",
+        ],
+    );
+    assert_absent(
+        "crates/opi-coding-agent/src/execution/router.rs EligibleAdapter docs",
+        &eligible_adapter_docs,
+        &["activated package store"],
     );
 }
 
@@ -449,6 +755,196 @@ fn shipped_state_readme_guides_and_changelog_in_lockstep() {
 }
 
 #[test]
+fn guidance_workspace_graph_matches_cargo_metadata() {
+    let actual = cargo_metadata_workspace_graph();
+    let required_graph = BTreeMap::from([
+        (
+            "opi-agent".to_owned(),
+            BTreeSet::from(["opi-ai".to_owned()]),
+        ),
+        ("opi-ai".to_owned(), BTreeSet::new()),
+        (
+            "opi-coding-agent".to_owned(),
+            BTreeSet::from([
+                "opi-agent".to_owned(),
+                "opi-ai".to_owned(),
+                "opi-protocol".to_owned(),
+                "opi-tui".to_owned(),
+            ]),
+        ),
+        ("opi-protocol".to_owned(), BTreeSet::new()),
+        (
+            "opi-sandbox".to_owned(),
+            BTreeSet::from(["opi-protocol".to_owned()]),
+        ),
+        ("opi-tui".to_owned(), BTreeSet::new()),
+    ]);
+    assert_eq!(
+        actual, required_graph,
+        "cargo metadata must retain the intended six-crate dependency topology"
+    );
+
+    let expected_roles = BTreeMap::from([
+        (
+            "opi-agent",
+            "agent runtime, tool calling, sessions, compaction",
+        ),
+        ("opi-ai", "multi-provider LLM API"),
+        (
+            "opi-coding-agent",
+            "produces the `opi` binary; coding harness, execution routing, and package activation",
+        ),
+        (
+            "opi-protocol",
+            "versioned `command-execution-jsonl-v1` protocol types, codecs, schemas, and fixtures",
+        ),
+        (
+            "opi-sandbox",
+            "standalone native-restriction SDK/CLI/backend; not linked into the `opi` binary",
+        ),
+        (
+            "opi-tui",
+            "terminal UI widgets, pickers, diff and image rendering",
+        ),
+    ]);
+
+    for path in ["AGENTS.md", "CLAUDE.md"] {
+        let content = read_repo_file(path);
+        let documented = parse_workspace_graph(path, &content);
+        let documented_dependencies: BTreeMap<String, BTreeSet<String>> = documented
+            .iter()
+            .map(|(name, (dependencies, _))| (name.clone(), dependencies.clone()))
+            .collect();
+        assert_eq!(
+            documented_dependencies, actual,
+            "{path} workspace graph must match cargo metadata exactly"
+        );
+        let documented_roles: BTreeMap<&str, &str> = documented
+            .iter()
+            .map(|(name, (_, role))| (name.as_str(), role.as_str()))
+            .collect();
+        assert_eq!(
+            documented_roles, expected_roles,
+            "{path} must describe each crate's current responsibility"
+        );
+    }
+
+    assert_eq!(
+        actual["opi-sandbox"],
+        BTreeSet::from(["opi-protocol".to_owned()]),
+        "standalone opi-sandbox must depend on opi-protocol only"
+    );
+    assert!(
+        !actual["opi-coding-agent"].contains("opi-sandbox"),
+        "the opi binary must not link opi-sandbox"
+    );
+}
+
+#[test]
+fn metadata_graph_uses_only_normal_dependencies_and_package_names_for_renames() {
+    let metadata = serde_json::json!({
+        "workspace_members": ["opi-ai id", "opi-coding-agent id", "opi-protocol id", "opi-sandbox id"],
+        "packages": [
+            {
+                "id": "opi-ai id",
+                "name": "opi-ai",
+                "manifest_path": "C:/workspace/crates/opi-ai/Cargo.toml",
+                "dependencies": []
+            },
+            {
+                "id": "opi-coding-agent id",
+                "name": "opi-coding-agent",
+                "manifest_path": "C:/workspace/crates/opi-coding-agent/Cargo.toml",
+                "dependencies": [
+                    {
+                        "name": "opi-protocol",
+                        "rename": "execution-wire",
+                        "kind": null,
+                        "path": "C:/workspace/crates/opi-protocol",
+                        "source": null
+                    },
+                    {
+                        "name": "opi-sandbox",
+                        "rename": null,
+                        "kind": "dev",
+                        "path": "C:/workspace/crates/opi-sandbox",
+                        "source": null
+                    },
+                    {
+                        "name": "opi-ai",
+                        "rename": null,
+                        "kind": "build",
+                        "path": "C:/workspace/crates/opi-ai",
+                        "source": null
+                    },
+                    {
+                        "name": "opi-ai",
+                        "rename": "registry-opi-ai",
+                        "kind": null,
+                        "path": null,
+                        "source": "registry+https://github.com/rust-lang/crates.io-index"
+                    },
+                    {
+                        "name": "external-crate",
+                        "rename": null,
+                        "kind": null,
+                        "path": null,
+                        "source": "registry+https://github.com/rust-lang/crates.io-index"
+                    }
+                ]
+            },
+            {
+                "id": "opi-protocol id",
+                "name": "opi-protocol",
+                "manifest_path": "C:/workspace/crates/opi-protocol/Cargo.toml",
+                "dependencies": []
+            },
+            {
+                "id": "opi-sandbox id",
+                "name": "opi-sandbox",
+                "manifest_path": "C:/workspace/crates/opi-sandbox/Cargo.toml",
+                "dependencies": []
+            }
+        ]
+    });
+
+    assert_eq!(
+        workspace_graph_from_metadata(&metadata),
+        BTreeMap::from([
+            ("opi-ai".to_owned(), BTreeSet::new()),
+            (
+                "opi-coding-agent".to_owned(),
+                BTreeSet::from(["opi-protocol".to_owned()]),
+            ),
+            ("opi-protocol".to_owned(), BTreeSet::new()),
+            ("opi-sandbox".to_owned(), BTreeSet::new()),
+        ])
+    );
+}
+
+#[test]
+fn guidance_identity_normalization_preserves_markdown_whitespace() {
+    let agents = "# AGENTS.md\n\n- item\n  continued\n\n```text\n  indented\n```\n";
+    let claude = "# CLAUDE.md\n\n- item\n continued\n\n```text\n indented\n```\n";
+
+    assert_ne!(
+        normalize_guidance_identity(agents),
+        normalize_guidance_identity(claude),
+        "list and code-block indentation drift must remain visible"
+    );
+}
+
+#[test]
+fn guidance_files_differ_only_in_expected_assistant_identity() {
+    let agents = normalize_guidance_identity(&read_repo_file("AGENTS.md"));
+    let claude = normalize_guidance_identity(&read_repo_file("CLAUDE.md"));
+    assert_eq!(
+        agents, claude,
+        "AGENTS.md and CLAUDE.md may differ only in their assistant identity wording"
+    );
+}
+
+#[test]
 fn current_docs_separate_phase16_from_historical_phase15_en_zh() {
     let readme = read_repo_file("README.md");
     let readme_zh = read_repo_file("README.zh.md");
@@ -550,21 +1046,109 @@ fn current_docs_separate_phase16_from_historical_phase15_en_zh() {
     assert_claims(
         "docs/opi-spec.md Phase 16",
         phase16,
-        &["performs no package activation or per-package scan"],
+        &["without opening the command-execution package activation store"],
     );
     assert_claims(
         "docs/opi-spec.zh.md Phase 16",
         phase16_zh,
-        &["不执行 package activation 或逐 package 扫描"],
+        &["不会打开 command-execution package activation store"],
     );
     assert_absent(
         "docs/opi-spec.md Phase 16",
         phase16,
-        &["touches no package-store sentinel"],
+        &[
+            "touches no package-store sentinel",
+            "performs no package activation or per-package scan",
+        ],
     );
     assert_absent(
         "docs/opi-spec.zh.md Phase 16",
         phase16_zh,
-        &["不触碰 package-store sentinel"],
+        &[
+            "不触碰 package-store sentinel",
+            "不执行 package activation 或逐 package 扫描",
+        ],
+    );
+}
+
+#[test]
+fn readmes_pin_tool_policy_and_sandbox_trust_boundaries_en_zh() {
+    let readme = read_repo_file("README.md");
+    let readme_zh = read_repo_file("README.zh.md");
+
+    let tools = heading_slice(
+        "README.md",
+        &readme,
+        "## Built-in Tools",
+        "## Config and Sessions",
+    );
+    let tools_zh = heading_slice("README.zh.md", &readme_zh, "## 内置工具", "## 配置与会话");
+    assert_claims(
+        "README.md Built-in Tools",
+        tools,
+        &[
+            "These are tool-policy and file-operation hardening measures, not an operating-system sandbox.",
+        ],
+    );
+    assert_claims(
+        "README.zh.md 内置工具",
+        tools_zh,
+        &["这些是工具策略与文件操作加固，不是操作系统级 sandbox。"],
+    );
+
+    let execution = heading_slice(
+        "README.md",
+        &readme,
+        "## Command Execution and opi-sandbox",
+        "## Permissions and Trust Boundaries",
+    );
+    let execution_zh = heading_slice(
+        "README.zh.md",
+        &readme_zh,
+        "## 命令执行与 opi-sandbox",
+        "## 权限与信任边界",
+    );
+    assert_claims(
+        "README.md Command Execution",
+        execution,
+        &[
+            "The Opi binary never links `opi-sandbox`.",
+            "`opi-sandbox` is a standalone crate",
+            "depends only on `opi-protocol`",
+            "Windows Job Objects provide L0 supervision only, and no official Windows `opi-sandbox` artifact is published.",
+        ],
+    );
+    assert_claims(
+        "README.zh.md 命令执行",
+        execution_zh,
+        &[
+            "Opi 二进制绝不链接 `opi-sandbox`",
+            "`opi-sandbox` 是独立 crate",
+            "只依赖 `opi-protocol`",
+            "Windows Job Object 只提供 L0 监督，且不发布官方 Windows `opi-sandbox` artifact",
+        ],
+    );
+
+    let trust = heading_slice(
+        "README.md",
+        &readme,
+        "## Permissions and Trust Boundaries",
+        "### Historical Phase 15 sandbox and project trust",
+    );
+    let trust_zh = heading_slice(
+        "README.zh.md",
+        &readme_zh,
+        "## 权限与信任边界",
+        "### 历史记录：第十五阶段沙箱与项目信任",
+    );
+    assert_claims(
+        "README.md Permissions",
+        trust,
+        &["package permission declarations are metadata, not enforced sandbox policy"],
+    );
+    assert_claims(
+        "README.zh.md 权限",
+        trust_zh,
+        &["package 权限声明是元数据，不是强制 sandbox 策略"],
     );
 }

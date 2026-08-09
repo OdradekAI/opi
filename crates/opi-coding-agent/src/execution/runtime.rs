@@ -34,7 +34,7 @@
 //! external protocol adapters. The fixed-local allow branch owns none of that
 //! state; headless fixed-local ask is rejected during harness construction.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashSet};
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
@@ -57,7 +57,9 @@ use super::permission::{
     InteractivePermissionBroker, LOCAL_ADAPTER_ID, PermissionManager, PermissionPolicy,
     run_mode_label,
 };
-use super::router::{Eligibility, EligibleAdapter, resolve_selection};
+use super::router::{
+    CandidateDecision, CandidateSelection, Eligibility, EligibleAdapter, resolve_candidate,
+};
 // The protocol-host entry types are re-exported by the parent `execution` module
 // (16.7). `BackendLaunch`/`ExecutionRequest` carry borrowed lifetimes; the
 // adapter owns its launch params locally and borrows them for the one `execute`.
@@ -346,8 +348,19 @@ impl ExecutionRuntime {
         // is the authoritative availability gate).
         #[cfg(test)]
         construction_probe::router_constructed();
+        let mut seen = HashSet::with_capacity(enabled.len() + 1);
+        seen.insert(LOCAL_ADAPTER_ID.to_string());
+        for identity in enabled {
+            if !seen.insert(identity.adapter_id.clone()) {
+                return Err(ExecutionFailure::AdapterUnavailable {
+                    adapter_id: Some(identity.adapter_id.clone()),
+                    detail: UnavailableDetail::Collision,
+                });
+            }
+        }
         let eligibility = Eligibility::from_enabled(enabled, policy);
-        let mut adapters: HashMap<String, ProcessCommandAdapter> = HashMap::new();
+        let mut dispatches = Vec::with_capacity(enabled.len() + 1);
+        dispatches.push(DispatchTarget::Local(local_ops));
         for identity in enabled {
             // Adapter-id uniqueness within eligibility: contribution validation
             // rejects reserved/colliding ids, so an enabled external never
@@ -362,18 +375,16 @@ impl ExecutionRuntime {
                 host_target: host_target.to_string(),
                 host_opi_version: host_opi_version.to_string(),
             };
-            adapters.insert(identity.adapter_id.clone(), adapter);
+            dispatches.push(DispatchTarget::External(adapter));
         }
         let routed = RoutedBashOperations {
             config: config.clone(),
             mode,
             eligibility,
-            local_ops,
-            adapters,
+            dispatches,
             manager,
             broker,
         };
-        routed.assert_invariants();
         Ok(Arc::new(routed))
     }
 }
@@ -411,8 +422,9 @@ pub struct RoutedBashOperations {
     config: ExecutionConfig,
     mode: ExecutionRunMode,
     eligibility: Eligibility,
-    local_ops: Arc<dyn BashOperations>,
-    adapters: HashMap<String, ProcessCommandAdapter>,
+    /// Concrete targets in the same construction-validated order as
+    /// `eligibility`. A router candidate index therefore resolves totally.
+    dispatches: Vec<DispatchTarget>,
     /// In-memory session grants shared with the harness (reset on in-process
     /// session switches). Checked before prompting and updated on allow-session.
     manager: Arc<PermissionManager>,
@@ -423,20 +435,17 @@ pub struct RoutedBashOperations {
 }
 
 impl RoutedBashOperations {
-    /// Invariant (audit FL11): every non-`local` eligibility entry has a matching
-    /// adapter, so `adapters.get(selection.backend)` is total by construction.
-    /// `resolve_selection` can only return a backend that is a member of the
-    /// input eligibility (router.rs debug_assert), and `local` dispatches to
-    /// `local_ops`, so a missing adapter is provably unreachable.
-    fn assert_invariants(&self) {
+    fn selected_dispatch(&self, candidate: CandidateSelection) -> SelectedDispatch {
         debug_assert!(
-            self.eligibility
-                .0
-                .iter()
-                .filter(|e| e.id != LOCAL_ADAPTER_ID)
-                .all(|e| self.adapters.contains_key(&e.id)),
-            "every non-local eligible adapter must have a ProcessCommandAdapter"
+            candidate.index < self.dispatches.len()
+                && self.eligibility.0[candidate.index].id == candidate.backend,
+            "router candidate must index the construction-validated dispatch catalog"
         );
+        SelectedDispatch {
+            adapter_id: candidate.backend,
+            mode: candidate.mode,
+            target: self.dispatches[candidate.index].clone(),
+        }
     }
 }
 
@@ -445,69 +454,39 @@ impl BashOperations for RoutedBashOperations {
         &self,
         request: BashRequest,
     ) -> Pin<Box<dyn Future<Output = Result<BashResult, BashOpError>> + Send>> {
-        // resolve_selection is pure and cheap; run it directly (no await), then
-        // dispatch. The returned future borrows neither `&self` nor the inputs.
-        // The model-supplied `backend` reaches the router here (Phase 16.9); it is
-        // `None` under `fixed`/`rules` (where the router ignores it) and for the
-        // local backend, and is only consulted under `strategy = "model"`.
-        let selection = match resolve_selection(
+        // Candidate resolution is pure and cheap. Its index selects a concrete
+        // target from the catalog assembled with the same eligibility order.
+        let selection = match resolve_candidate(
             &self.config,
             self.mode,
             &self.eligibility,
             request.backend.as_deref(),
         ) {
-            Ok(sel) => sel,
-            Err(failure) => {
-                // Phase 16.10 broker interception: a routed PermissionRequired
-                // in Interactive mode with a broker installed is the ask-prompt
-                // trigger. Grant dispatches DIRECTLY to the selected adapter —
-                // never re-runs resolve_selection (the static policy is still
-                // `ask`; the in-memory grant is the only escalation path, which
-                // the pure router cannot observe — re-running it would re-fail
-                // forever). Headless/no-broker permission_required and every
-                // other failure pass through unchanged.
-                if let ExecutionFailure::PermissionRequired {
-                    ref adapter_id,
-                    mode,
-                } = failure
-                    && mode == ExecutionRunMode::Interactive
+            CandidateDecision::Allowed(candidate) => candidate,
+            CandidateDecision::Ask(candidate) => {
+                let selected = self.selected_dispatch(candidate);
+                if selected.mode == ExecutionRunMode::Interactive
                     && let Some(broker) = self.broker.clone()
                 {
                     let manager = Arc::clone(&self.manager);
-                    let adapters = self.adapters.clone();
-                    let local_ops = Arc::clone(&self.local_ops);
-                    let adapter_id = adapter_id.clone();
-                    let mode = self.mode;
                     return Box::pin(async move {
-                        resolve_ask_and_dispatch(
-                            &manager, broker, adapters, local_ops, adapter_id, mode, request,
-                        )
-                        .await
+                        resolve_ask_and_dispatch(&manager, broker, selected, request).await
                     });
                 }
+                let failure = ExecutionFailure::PermissionRequired {
+                    adapter_id: selected.adapter_id,
+                    mode: selected.mode,
+                };
+                let err = exec_failure_to_bash_op_error(failure);
+                return Box::pin(async move { Err(err) });
+            }
+            CandidateDecision::Refused(failure) => {
                 let err = exec_failure_to_bash_op_error(failure);
                 return Box::pin(async move { Err(err) });
             }
         };
-        if selection.backend == LOCAL_ADAPTER_ID {
-            let local_ops = Arc::clone(&self.local_ops);
-            return Box::pin(async move { local_ops.exec(request).await });
-        }
-        // By construction (assert_invariants) the selected external has an
-        // adapter. The defensive None arm is unreachable; map it to a named
-        // error rather than unwrapping so a future invariant break cannot panic
-        // a production run.
-        match self.adapters.get(&selection.backend).cloned() {
-            Some(adapter) => Box::pin(async move { adapter.exec(request).await }),
-            None => Box::pin(async move {
-                Err(BashOpError::Other {
-                    message: format!(
-                        "selected backend {:?} has no adapter (invariant violation)",
-                        selection.backend
-                    ),
-                })
-            }),
-        }
+        let selected = self.selected_dispatch(selection);
+        Box::pin(async move { selected.dispatch(request).await })
     }
 }
 
@@ -517,81 +496,69 @@ impl BashOperations for RoutedBashOperations {
 
 /// Resolve an interactive `ask` through the broker and dispatch directly to the
 /// selected adapter. The static policy is still `ask`; the in-memory session
-/// grant (or a fresh broker choice) is the ONLY escalation path, so this NEVER
-/// re-runs `resolve_selection` (which would re-fail on the static ask policy).
+/// grant (or a fresh broker choice) is the ONLY escalation path, so this never
+/// re-runs routing (which would re-fail on the static ask policy).
 async fn resolve_ask_and_dispatch(
     manager: &PermissionManager,
     broker: Arc<dyn InteractivePermissionBroker>,
-    adapters: HashMap<String, ProcessCommandAdapter>,
-    local_ops: Arc<dyn BashOperations>,
-    adapter_id: String,
-    mode: ExecutionRunMode,
+    selected: SelectedDispatch,
     request: BashRequest,
 ) -> Result<BashResult, BashOpError> {
     // Session-grant short-circuit: an allow-for-session choice earlier this
     // session suppresses re-prompting. (BashTool runs Sequentially, so there is
     // no concurrent double-prompt on the same adapter.)
-    if !manager.has_session_grant(&adapter_id) {
-        let summary = permission_summary(&adapter_id, &adapters, mode);
+    if !manager.has_session_grant(&selected.adapter_id) {
+        let summary = selected.permission_summary();
         match broker.resolve_ask(summary).await {
-            PermissionChoice::AllowSession => manager.grant_session(&adapter_id),
+            PermissionChoice::AllowSession => manager.grant_session(&selected.adapter_id),
             // AllowOnce authorizes exactly this invocation; consumed at decision
             // time, independent of dispatch outcome (a crashed dispatch neither
             // burns nor double-spends it).
             PermissionChoice::AllowOnce => {}
             PermissionChoice::Deny => {
                 return Err(exec_failure_to_bash_op_error(
-                    ExecutionFailure::PermissionDenied { adapter_id },
+                    ExecutionFailure::PermissionDenied {
+                        adapter_id: selected.adapter_id,
+                    },
                 ));
             }
         }
     }
-    dispatch_direct(&adapters, local_ops, &adapter_id, request).await
+    selected.dispatch(request).await
 }
 
-/// Build the redaction-safe [`PermissionSummary`] for a prompt. Carries ONLY
-/// adapter id + package name + run-mode label — never command text, env, or
-/// paths (the Phase 16 redaction invariant).
-fn permission_summary(
-    adapter_id: &str,
-    adapters: &HashMap<String, ProcessCommandAdapter>,
+/// One concrete dispatch target retained from routing through permission.
+#[derive(Clone)]
+enum DispatchTarget {
+    Local(Arc<dyn BashOperations>),
+    External(ProcessCommandAdapter),
+}
+
+#[derive(Clone)]
+struct SelectedDispatch {
+    adapter_id: String,
     mode: ExecutionRunMode,
-) -> PermissionSummary {
-    let package_name = if adapter_id == LOCAL_ADAPTER_ID {
-        String::new()
-    } else {
-        adapters
-            .get(adapter_id)
-            .map(|a| a.package_name.clone())
-            .unwrap_or_default()
-    };
-    PermissionSummary {
-        adapter_id: adapter_id.to_string(),
-        package_name,
-        run_mode_label: run_mode_label(mode).to_string(),
-    }
+    target: DispatchTarget,
 }
 
-/// Dispatch directly to the already-selected adapter (local or external). This
-/// is the post-grant path: `resolve_selection` already picked `adapter_id`, so
-/// re-running it is both unnecessary and wrong (it would re-fail on the static
-/// ask policy). Mirrors the normal Ok-dispatch minus the router call.
-async fn dispatch_direct(
-    adapters: &HashMap<String, ProcessCommandAdapter>,
-    local_ops: Arc<dyn BashOperations>,
-    adapter_id: &str,
-    request: BashRequest,
-) -> Result<BashResult, BashOpError> {
-    if adapter_id == LOCAL_ADAPTER_ID {
-        return local_ops.exec(request).await;
+impl SelectedDispatch {
+    fn permission_summary(&self) -> PermissionSummary {
+        let package_name = match &self.target {
+            DispatchTarget::Local(_) => String::new(),
+            DispatchTarget::External(adapter) => adapter.package_name.clone(),
+        };
+        PermissionSummary {
+            adapter_id: self.adapter_id.clone(),
+            package_name,
+            run_mode_label: run_mode_label(self.mode).to_string(),
+        }
     }
-    match adapters.get(adapter_id).cloned() {
-        Some(adapter) => adapter.exec(request).await,
-        None => Err(BashOpError::Other {
-            message: format!(
-                "selected backend {adapter_id:?} has no adapter (invariant violation)"
-            ),
-        }),
+
+    async fn dispatch(self, request: BashRequest) -> Result<BashResult, BashOpError> {
+        match self.target {
+            DispatchTarget::Local(local) => local.exec(request).await,
+            DispatchTarget::External(adapter) => adapter.exec(request).await,
+        }
     }
 }
 

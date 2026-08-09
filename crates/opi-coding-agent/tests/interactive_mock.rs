@@ -283,25 +283,56 @@ async fn harness_multi_turn_with_mock() {
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
+#[allow(clippy::await_holding_lock)]
 async fn harness_respects_max_iterations_config() {
     let _lock = session_lock();
-    let response = test_support::text_response("ok");
-    let provider = MockProvider::new("mock", vec![response]);
+    let responses = (0..50)
+        .map(|index| {
+            test_support::tool_call_response(
+                &format!("tc-{index}"),
+                "record_tool",
+                r#"{"arg":"keep-going"}"#,
+            )
+        })
+        .collect();
+    let provider = MockProvider::new("mock", responses);
+    let provider_calls = provider.call_log_handle();
+    let tool_calls = Arc::new(Mutex::new(Vec::new()));
 
     let mut config = OpiConfig::default();
     config.defaults.max_iterations = 3;
 
-    let harness = CodingHarness::new(
+    let mut harness = CodingHarness::new(
         Box::new(provider),
         "mock-model".into(),
         config,
         std::env::current_dir().unwrap(),
         opi_coding_agent::project_trust::TrustDecision::Trusted,
     );
+    harness.add_tool(Box::new(RecordTool::new(
+        "record_tool",
+        Arc::clone(&tool_calls),
+    )));
 
-    // Harness should be created without error even with low max_iterations
-    // (the agent loop will enforce the cap internally)
-    drop(harness);
+    let result = harness.prompt("Keep using the record tool").await;
+
+    assert!(
+        matches!(
+            result,
+            Err(opi_agent::loop_types::AgentError::MaxTurnsExceeded(3))
+        ),
+        "the configured boundary must terminate the production loop: {result:?}"
+    );
+    assert_eq!(
+        provider_calls.lock().unwrap().len(),
+        3,
+        "max_iterations=3 must stop before a fourth provider turn"
+    );
+    assert_eq!(
+        tool_calls.lock().unwrap().len(),
+        3,
+        "each permitted provider turn must execute exactly one tool call"
+    );
 }
 
 // ---------------------------------------------------------------------------

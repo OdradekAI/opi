@@ -14,16 +14,14 @@
 //!     the recorded-target archive, and rejects archive tampering, missing or
 //!     extra members, duplicates, and non-regular members;
 //!   - both platform wrappers use one strict SemVer/literal renderer;
-//!   - usage errors (missing/empty binary) exit 2.
+//!   - executable headers match one of the four supported release targets;
+//!   - usage errors (missing/empty/invalid binary) exit 2.
 //!
 //! Parity between the `.sh` and `.ps1` is enforced directly by pinning both
 //! wrappers to the same helper and exercising its strict version matrix. Every
 //! OS also asserts the emitted lock against the same canonical Rust computation
-//! (`sha256` lowercase, `manifest_hash` LF-normalized). The packager only
-//! hashes/copies bytes and never runs a binary (executability + native run are
-//! install-time 16.4 + native-run 16.13/16.14.1), so a small fixture file
-//! faithfully exercises every packager code path; real-binary execution is owned
-//! by 16.13/16.14.1 (`substrate_only` classification).
+//! (`sha256` lowercase, `manifest_hash` LF-normalized). Header checks never run
+//! the binary; native-run behavior remains owned by 16.13/16.14.1.
 
 #![forbid(unsafe_code)]
 
@@ -38,9 +36,52 @@ use opi_coding_agent::execution::{PackageSource, validate_executable_contributio
 use opi_coding_agent::package_activation::{host_opi_version, host_target_triple};
 use opi_coding_agent::package_discovery::PackageManifest;
 
-/// The fixture payload. The packager hashes/copies these bytes verbatim; it
-/// never executes them.
-const FIXTURE_BYTES: &[u8] = b"opi-sandbox packaging fixture payload\n";
+const LINUX_X64_TARGET: &str = "x86_64-unknown-linux-gnu";
+const LINUX_ARM64_TARGET: &str = "aarch64-unknown-linux-gnu";
+const DARWIN_X64_TARGET: &str = "x86_64-apple-darwin";
+const DARWIN_ARM64_TARGET: &str = "aarch64-apple-darwin";
+
+fn minimal_elf64(machine: u16) -> Vec<u8> {
+    let mut bytes = vec![0; 64];
+    bytes[..4].copy_from_slice(b"\x7fELF");
+    bytes[4] = 2; // ELFCLASS64
+    bytes[5] = 1; // ELFDATA2LSB
+    bytes[6] = 1; // EV_CURRENT
+    bytes[16..18].copy_from_slice(&2_u16.to_le_bytes()); // ET_EXEC
+    bytes[18..20].copy_from_slice(&machine.to_le_bytes());
+    bytes[20..24].copy_from_slice(&1_u32.to_le_bytes()); // EV_CURRENT
+    bytes[52..54].copy_from_slice(&64_u16.to_le_bytes());
+    bytes
+}
+
+fn minimal_macho64(cpu_type: u32) -> Vec<u8> {
+    let mut bytes = vec![0; 32];
+    bytes[..4].copy_from_slice(&[0xcf, 0xfa, 0xed, 0xfe]); // MH_MAGIC_64, little-endian
+    bytes[4..8].copy_from_slice(&cpu_type.to_le_bytes());
+    bytes[12..16].copy_from_slice(&2_u32.to_le_bytes()); // MH_EXECUTE
+    bytes
+}
+
+fn executable_fixture(target: &str) -> Vec<u8> {
+    match target {
+        LINUX_X64_TARGET => minimal_elf64(62),
+        LINUX_ARM64_TARGET => minimal_elf64(183),
+        DARWIN_X64_TARGET => minimal_macho64(0x0100_0007),
+        DARWIN_ARM64_TARGET => minimal_macho64(0x0100_000c),
+        _ => panic!("unsupported fixture target {target}"),
+    }
+}
+
+fn package_target() -> &'static str {
+    if cfg!(windows) {
+        // Windows has no official package family. Portable wrapper tests use a
+        // rustc host shim naming one supported target; real native coverage is
+        // cfg-gated below.
+        LINUX_X64_TARGET
+    } else {
+        host_target_triple()
+    }
+}
 
 fn script_path() -> PathBuf {
     // CARGO_MANIFEST_DIR is the opi-coding-agent crate dir
@@ -80,6 +121,25 @@ fn python_command() -> Command {
     Command::new(if cfg!(windows) { "python" } else { "python3" })
 }
 
+fn validate_executable_cmd(binary: &Path, target: &str) -> Command {
+    let mut command = python_command();
+    command
+        .arg(package_helper_path())
+        .arg("validate-executable")
+        .arg("--binary")
+        .arg(binary)
+        .arg("--target")
+        .arg(target);
+    command
+}
+
+fn run_header_validation(bytes: &[u8], target: &str) -> Output {
+    let temp = tempfile::tempdir().expect("header fixture tempdir");
+    let binary = temp.path().join("opi-sandbox");
+    fs::write(&binary, bytes).unwrap();
+    run(validate_executable_cmd(&binary, target))
+}
+
 fn sha256_hex(bytes: &[u8]) -> String {
     hex::encode(Sha256::digest(bytes))
 }
@@ -95,6 +155,16 @@ fn compatible_minor_range(version: &str) -> String {
 /// Build the pack command for the platform-native script.
 fn pack_cmd(script: &Path, fixture: &Path, artifact: &Path) -> Command {
     if cfg!(windows) {
+        let shim_dir = artifact
+            .parent()
+            .expect("artifact has a parent")
+            .join("rustc-shim");
+        fs::create_dir_all(&shim_dir).unwrap();
+        fs::write(
+            shim_dir.join("rustc.cmd"),
+            "@echo off\r\necho rustc 1.97.0\r\necho host: x86_64-unknown-linux-gnu\r\n",
+        )
+        .unwrap();
         let mut c = Command::new("powershell");
         c.args([
             "-NoProfile",
@@ -106,6 +176,14 @@ fn pack_cmd(script: &Path, fixture: &Path, artifact: &Path) -> Command {
         c.arg(script);
         c.arg("-BinaryPath").arg(fixture);
         c.arg("-ArtifactDir").arg(artifact);
+        let mut paths = vec![shim_dir];
+        paths.extend(std::env::split_paths(
+            &std::env::var_os("PATH").unwrap_or_default(),
+        ));
+        c.env(
+            "PATH",
+            std::env::join_paths(paths).expect("compose PATH with rustc shim"),
+        );
         c
     } else {
         let mut c = Command::new("bash");
@@ -174,7 +252,7 @@ fn archive_path(artifact: &Path) -> Option<PathBuf> {
 }
 
 const REWRITE_ARCHIVE_PY: &str = r#"
-import io, json, pathlib, stat, sys, tarfile, zipfile
+import hashlib, io, json, pathlib, re, stat, sys, tarfile, zipfile
 
 archive = pathlib.Path(sys.argv[1])
 root = pathlib.Path(sys.argv[2])
@@ -188,6 +266,35 @@ members = [
 if mode == "missing":
     members.remove("licenses/LICENSE")
 
+overrides = {}
+if mode in ("cpu-swap", "malformed-header"):
+    binary = bytearray((root / "bin/opi-sandbox").read_bytes())
+    if binary[:4] == b"\x7fELF":
+        if mode == "cpu-swap":
+            machine = int.from_bytes(binary[18:20], "little")
+            binary[18:20] = (183 if machine == 62 else 62).to_bytes(2, "little")
+        else:
+            binary[16:18] = (0).to_bytes(2, "little")
+    elif binary[:4] == b"\xcf\xfa\xed\xfe":
+        if mode == "cpu-swap":
+            cpu = int.from_bytes(binary[4:8], "little")
+            binary[4:8] = (0x0100000c if cpu == 0x01000007 else 0x01000007).to_bytes(4, "little")
+        else:
+            binary[12:16] = (1).to_bytes(4, "little")
+    else:
+        raise SystemExit("cpu-swap fixture requires ELF64 or Mach-O64")
+    overrides["bin/opi-sandbox"] = bytes(binary)
+    executable_sha = hashlib.sha256(binary).hexdigest().encode()
+    manifest, count = re.subn(
+        br'(?m)^sha256 = "[0-9a-f]{64}"$',
+        b'sha256 = "' + executable_sha + b'"',
+        (root / "package.toml").read_bytes(),
+        count=1,
+    )
+    if count != 1:
+        raise SystemExit("manifest executable SHA fixture not found")
+    overrides["package.toml"] = manifest
+
 def archive_name(name):
     if mode == "dot-alias" and name == "package.toml":
         return "./package.toml"
@@ -196,6 +303,8 @@ def archive_name(name):
     return name
 
 def member_payload(name):
+    if name in overrides:
+        return overrides[name]
     payload = (root / name).read_bytes()
     if mode == "same-id-schema" and name == "schemas/command-execution-jsonl-v1.schema.json":
         schema = json.loads(payload)
@@ -215,6 +324,12 @@ if archive.name.endswith(".zip"):
                 info = zipfile.ZipInfo(archive_name(name))
                 info.create_system = 3
                 info.external_attr = (stat.S_IFREG | 0o644) << 16
+                out.writestr(info, member_payload(name))
+            elif mode in ("cpu-swap", "malformed-header"):
+                info = zipfile.ZipInfo(archive_name(name))
+                info.create_system = 3
+                permissions = 0o755 if name == "bin/opi-sandbox" else 0o644
+                info.external_attr = (stat.S_IFREG | permissions) << 16
                 out.writestr(info, member_payload(name))
             elif archive_name(name) != name:
                 info = zipfile.ZipInfo(archive_name(name))
@@ -246,6 +361,12 @@ else:
                 info = tarfile.TarInfo(archive_name(name))
                 info.size = len(payload)
                 out.addfile(info, io.BytesIO(payload))
+            elif mode in ("cpu-swap", "malformed-header"):
+                payload = member_payload(name)
+                info = tarfile.TarInfo(archive_name(name))
+                info.mode = 0o755 if name == "bin/opi-sandbox" else 0o644
+                info.size = len(payload)
+                out.addfile(info, io.BytesIO(payload))
             else:
                 out.add(root / name, arcname=archive_name(name), recursive=False)
         if mode == "extra":
@@ -255,9 +376,12 @@ else:
             out.addfile(info, io.BytesIO(payload))
         if mode == "duplicate":
             out.add(root / "package.toml", arcname="package.toml", recursive=False)
+if mode in ("cpu-swap", "malformed-header"):
+    print(hashlib.sha256(overrides["bin/opi-sandbox"]).hexdigest())
+    print(hashlib.sha256(overrides["package.toml"].replace(b"\r", b"")).hexdigest())
 "#;
 
-fn rewrite_archive(p: &Packed, mode: &str) {
+fn rewrite_archive_output(p: &Packed, mode: &str) -> String {
     let helper = p.artifact.join("rewrite-archive.py");
     fs::write(&helper, REWRITE_ARCHIVE_PY).unwrap();
     let archive = archive_path(&p.artifact).expect("archive produced");
@@ -273,11 +397,41 @@ fn rewrite_archive(p: &Packed, mode: &str) {
         "archive rewrite failed: {}",
         String::from_utf8_lossy(&output.stderr)
     );
+    String::from_utf8(output.stdout)
+        .expect("archive rewrite output is UTF-8")
+        .trim()
+        .to_string()
+}
+
+fn rewrite_archive(p: &Packed, mode: &str) {
+    let _ = rewrite_archive_output(p, mode);
+}
+
+fn replace_lock_value(path: &Path, key: &str, value: &str) {
+    let prefix = format!("{key} = \"");
+    let lock = fs::read_to_string(path).unwrap();
+    let mut replaced = false;
+    let rewritten = lock
+        .lines()
+        .map(|line| {
+            if line.starts_with(&prefix) {
+                replaced = true;
+                format!("{prefix}{value}\"")
+            } else {
+                line.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+        + "\n";
+    assert!(replaced, "lock fixture has no {key}");
+    fs::write(path, rewritten).unwrap();
 }
 
 /// Pack a fresh fixture into a fresh artifact dir; assert success. Returns the
 /// resolved paths.
 struct Packed {
+    _tempdir: tempfile::TempDir,
     artifact: PathBuf,
     script: PathBuf,
     pkg_dir: PathBuf,
@@ -290,7 +444,7 @@ fn pack_fresh() -> Packed {
     let fixture_dir = tmp.path().join("in");
     fs::create_dir_all(&fixture_dir).unwrap();
     let fixture = fixture_dir.join("fixture-binary");
-    fs::write(&fixture, FIXTURE_BYTES).unwrap();
+    fs::write(&fixture, executable_fixture(package_target())).unwrap();
     let script = script_path();
 
     let output = run(pack_cmd(&script, &fixture, &artifact));
@@ -301,12 +455,10 @@ fn pack_fresh() -> Packed {
         String::from_utf8_lossy(&output.stdout),
     );
 
-    // Keep the tempdir alive for the test body.
-    std::mem::forget(tmp);
-
     let pkg_dir = artifact.join("package");
     let extracted = artifact.join("extracted");
     Packed {
+        _tempdir: tmp,
         artifact,
         script,
         pkg_dir,
@@ -315,9 +467,33 @@ fn pack_fresh() -> Packed {
 }
 
 #[test]
+fn packed_fixture_cleans_its_temporary_tree_on_drop() {
+    let temp_root = {
+        let packed = pack_fresh();
+        let root = packed
+            .artifact
+            .parent()
+            .expect("artifact has temporary parent")
+            .to_path_buf();
+        assert!(
+            root.exists(),
+            "fixture root must live through the test body"
+        );
+        drop(packed);
+        root
+    };
+
+    assert!(
+        !temp_root.exists(),
+        "dropping Packed must remove its temporary fixture tree"
+    );
+}
+
+#[test]
 fn packer_builds_valid_layout_lock_and_extraction() {
     let p = pack_fresh();
-    let host_target = host_target_triple();
+    let target = package_target();
+    let fixture_bytes = executable_fixture(target);
 
     // Rendered manifest round-trips through PackageManifest + 16.4 validation.
     let pkg_toml_path = p.pkg_dir.join("package.toml");
@@ -337,7 +513,7 @@ fn packer_builds_valid_layout_lock_and_extraction() {
         &pkg_toml_bytes,
         &p.pkg_dir,
         PackageSource::Global,
-        host_target,
+        target,
         host_opi_version(),
     )
     .expect("rendered manifest round-trips through 16.4 validation");
@@ -346,7 +522,7 @@ fn packer_builds_valid_layout_lock_and_extraction() {
     // Canonical LockMaterial correctness.
     assert_eq!(canonical.protocol, "command-execution-jsonl-v1");
     assert_eq!(canonical.adapter_id, "opi-sandbox");
-    assert_eq!(canonical.target, host_target);
+    assert_eq!(canonical.target, target);
     assert_eq!(canonical.executable_rel_path, "bin/opi-sandbox");
     assert_eq!(canonical.package_version, host_opi_version());
     assert_eq!(
@@ -354,12 +530,12 @@ fn packer_builds_valid_layout_lock_and_extraction() {
         compatible_minor_range(host_opi_version())
     );
     // The packager hashed the fixture bytes (lowercase hex).
-    assert_eq!(canonical.executable_sha256, sha256_hex(FIXTURE_BYTES));
+    assert_eq!(canonical.executable_sha256, sha256_hex(&fixture_bytes));
     assert_eq!(
         fs::read_to_string(p.artifact.join("target"))
             .unwrap()
             .trim(),
-        host_target
+        target
     );
 
     // Emitted build-time lock matches the canonical lock (fixed format).
@@ -387,7 +563,7 @@ fn packer_builds_valid_layout_lock_and_extraction() {
     let pkg_bin = p.pkg_dir.join("bin").join("opi-sandbox");
     assert_eq!(
         fs::read(&pkg_bin).unwrap(),
-        FIXTURE_BYTES,
+        fixture_bytes,
         "package copy == fixture"
     );
 
@@ -452,7 +628,7 @@ fn packer_builds_valid_layout_lock_and_extraction() {
     );
     assert_eq!(
         fs::read(&extracted_bin).unwrap(),
-        FIXTURE_BYTES,
+        fixture_bytes,
         "extracted bytes == fixture"
     );
     assert_eq!(
@@ -487,7 +663,7 @@ fn rendered_manifest_rejects_the_adjacent_minor_version() {
         &pkg_toml_bytes,
         &p.pkg_dir,
         PackageSource::Global,
-        host_target_triple(),
+        package_target(),
         &format!("{adjacent}.0"),
     )
     .expect_err("the adjacent minor must remain outside the generated range");
@@ -543,7 +719,7 @@ fn shared_renderer_accepts_strict_semver_and_rejects_malformed_or_metacharacters
             .arg("--template")
             .arg(&template)
             .arg("--target")
-            .arg("x86_64-test-target")
+            .arg(LINUX_X64_TARGET)
             .arg("--sha256")
             .arg("a".repeat(64))
             .arg("--output")
@@ -571,6 +747,143 @@ fn shared_renderer_accepts_strict_semver_and_rejects_malformed_or_metacharacters
 }
 
 #[test]
+fn shared_renderer_rejects_non_release_target() {
+    let temp = tempfile::tempdir().unwrap();
+    let manifest = temp.path().join("Cargo.toml");
+    let output_path = temp.path().join("package.toml");
+    fs::write(&manifest, "[workspace.package]\nversion = \"1.2.3\"\n").unwrap();
+    let output = python_command()
+        .arg(package_helper_path())
+        .arg("render")
+        .arg("--workspace-manifest")
+        .arg(&manifest)
+        .arg("--template")
+        .arg(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../..")
+                .join("packaging/opi-sandbox/package.toml.template"),
+        )
+        .arg("--target")
+        .arg("x86_64-pc-windows-msvc")
+        .arg("--sha256")
+        .arg("a".repeat(64))
+        .arg("--output")
+        .arg(output_path)
+        .output()
+        .expect("run shared renderer");
+
+    assert!(!output.status.success(), "{output:#?}");
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("unsupported package target"),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn executable_header_validator_accepts_all_supported_release_targets() {
+    for target in [
+        LINUX_X64_TARGET,
+        LINUX_ARM64_TARGET,
+        DARWIN_X64_TARGET,
+        DARWIN_ARM64_TARGET,
+    ] {
+        let output = run_header_validation(&executable_fixture(target), target);
+        assert!(
+            output.status.success(),
+            "valid {target} header was rejected: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+}
+
+#[test]
+fn executable_header_validator_rejects_cpu_and_target_family_swaps() {
+    for (bytes, target) in [
+        (minimal_elf64(62), LINUX_ARM64_TARGET),
+        (minimal_elf64(183), LINUX_X64_TARGET),
+        (minimal_macho64(0x0100_0007), DARWIN_ARM64_TARGET),
+        (minimal_macho64(0x0100_000c), DARWIN_X64_TARGET),
+        (minimal_elf64(62), DARWIN_X64_TARGET),
+        (minimal_macho64(0x0100_0007), LINUX_X64_TARGET),
+    ] {
+        let output = run_header_validation(&bytes, target);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(!output.status.success(), "mismatch for {target} passed");
+        assert!(
+            stderr.contains("executable architecture/target mismatch"),
+            "mismatch for {target} had the wrong diagnostic: {stderr}"
+        );
+    }
+}
+
+#[test]
+fn executable_header_validator_rejects_malformed_and_unsupported_formats() {
+    let mut truncated_elf = minimal_elf64(62);
+    truncated_elf.truncate(20);
+    let mut elf32 = minimal_elf64(62);
+    elf32[4] = 1;
+    let mut big_endian_elf = minimal_elf64(62);
+    big_endian_elf[5] = 2;
+    let unknown_elf_machine = minimal_elf64(3);
+    let mut invalid_elf_ident_version = minimal_elf64(62);
+    invalid_elf_ident_version[6] = 0;
+    let mut invalid_elf_type = minimal_elf64(62);
+    invalid_elf_type[16..18].copy_from_slice(&0_u16.to_le_bytes());
+    let mut invalid_elf_version = minimal_elf64(62);
+    invalid_elf_version[20..24].copy_from_slice(&0_u32.to_le_bytes());
+    let mut invalid_elf_header_size = minimal_elf64(62);
+    invalid_elf_header_size[52..54].copy_from_slice(&0_u16.to_le_bytes());
+    let mut truncated_macho = minimal_macho64(0x0100_0007);
+    truncated_macho.truncate(8);
+    let unknown_macho_cpu = minimal_macho64(9);
+    let mut invalid_macho_filetype = minimal_macho64(0x0100_0007);
+    invalid_macho_filetype[12..16].copy_from_slice(&1_u32.to_le_bytes());
+    let cases = [
+        (b"not an executable\n".to_vec(), LINUX_X64_TARGET),
+        (b"MZ\0\0portable executable".to_vec(), LINUX_X64_TARGET),
+        (truncated_elf, LINUX_X64_TARGET),
+        (elf32, LINUX_X64_TARGET),
+        (big_endian_elf, LINUX_X64_TARGET),
+        (unknown_elf_machine, LINUX_X64_TARGET),
+        (invalid_elf_ident_version, LINUX_X64_TARGET),
+        (invalid_elf_type, LINUX_X64_TARGET),
+        (invalid_elf_version, LINUX_X64_TARGET),
+        (invalid_elf_header_size, LINUX_X64_TARGET),
+        (truncated_macho, DARWIN_X64_TARGET),
+        (vec![0xce, 0xfa, 0xed, 0xfe], DARWIN_X64_TARGET),
+        (vec![0xca, 0xfe, 0xba, 0xbe], DARWIN_X64_TARGET),
+        (vec![0xfe, 0xed, 0xfa, 0xcf], DARWIN_X64_TARGET),
+        (unknown_macho_cpu, DARWIN_X64_TARGET),
+        (invalid_macho_filetype, DARWIN_X64_TARGET),
+    ];
+
+    for (bytes, target) in cases {
+        let output = run_header_validation(&bytes, target);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            !output.status.success(),
+            "malformed header for {target} passed"
+        );
+        assert!(
+            stderr.contains("invalid executable format"),
+            "malformed header for {target} had the wrong diagnostic: {stderr}"
+        );
+    }
+}
+
+#[test]
+fn executable_header_validator_rejects_non_release_target() {
+    let output = run_header_validation(&minimal_elf64(62), "x86_64-pc-windows-msvc");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!output.status.success());
+    assert!(
+        stderr.contains("executable architecture/target mismatch"),
+        "{stderr}"
+    );
+}
+
+#[test]
 fn verify_passes_immediately_after_pack() {
     let p = pack_fresh();
     let output = run(verify_cmd(&p.script, &p.artifact));
@@ -579,6 +892,28 @@ fn verify_passes_immediately_after_pack() {
         "verify should pass on a fresh pack:\n--- stderr ---\n{}\n--- stdout ---\n{}",
         String::from_utf8_lossy(&output.stderr),
         String::from_utf8_lossy(&output.stdout),
+    );
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[test]
+fn packer_accepts_real_native_test_executable() {
+    let tmp = tempfile::tempdir().expect("native package tempdir");
+    let artifact = tmp.path().join("artifact");
+    let binary = std::env::current_exe().expect("current test executable");
+    let script = script_path();
+
+    let pack = run(pack_cmd(&script, &binary, &artifact));
+    assert!(
+        pack.status.success(),
+        "native pack failed: {}",
+        String::from_utf8_lossy(&pack.stderr)
+    );
+    let verify = run(verify_cmd(&script, &artifact));
+    assert!(
+        verify.status.success(),
+        "native verify failed: {}",
+        String::from_utf8_lossy(&verify.stderr)
     );
 }
 
@@ -617,6 +952,56 @@ fn verify_rejects_tampered_archive_when_staging_trees_are_unchanged() {
         !output.status.success(),
         "verify must reject archive tampering with untouched staging trees:\n{:#?}",
         output
+    );
+}
+
+#[test]
+fn verify_rejects_cpu_swapped_archive_when_hashes_are_consistent() {
+    let p = pack_fresh();
+    let material = rewrite_archive_output(&p, "cpu-swap");
+    let mut lines = material.lines();
+    let executable_sha = lines.next().expect("rewritten executable SHA");
+    let manifest_hash = lines.next().expect("rewritten manifest hash");
+    assert!(
+        lines.next().is_none(),
+        "unexpected rewrite output: {material}"
+    );
+    let lock = p.artifact.join("package-lock.toml");
+    replace_lock_value(&lock, "executable_sha256", executable_sha);
+    replace_lock_value(&lock, "manifest_hash", manifest_hash);
+
+    let output = run(verify_cmd(&p.script, &p.artifact));
+
+    assert!(!output.status.success(), "{output:#?}");
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("executable architecture/target mismatch"),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn verify_rejects_structurally_invalid_header_when_hashes_are_consistent() {
+    let packed = pack_fresh();
+    let material = rewrite_archive_output(&packed, "malformed-header");
+    let mut lines = material.lines();
+    let executable_sha = lines.next().expect("rewritten executable SHA");
+    let manifest_hash = lines.next().expect("rewritten manifest hash");
+    assert!(
+        lines.next().is_none(),
+        "unexpected rewrite output: {material}"
+    );
+    let lock = packed.artifact.join("package-lock.toml");
+    replace_lock_value(&lock, "executable_sha256", executable_sha);
+    replace_lock_value(&lock, "manifest_hash", manifest_hash);
+
+    let output = run(verify_cmd(&packed.script, &packed.artifact));
+
+    assert!(!output.status.success(), "{output:#?}");
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("invalid executable format"),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
     );
 }
 
@@ -795,6 +1180,48 @@ fn pack_rejects_missing_binary() {
         &artifact,
     ));
     assert_pack_failure(&output, 2);
+}
+
+#[test]
+fn pack_rejects_arbitrary_text_binary() {
+    let tmp = tempfile::tempdir().unwrap();
+    let artifact = tmp.path().join("artifact");
+    let fixture = tmp.path().join("text-binary");
+    fs::write(&fixture, b"not an executable\n").unwrap();
+    let script = script_path();
+
+    let output = run(pack_cmd(&script, &fixture, &artifact));
+
+    assert!(!output.status.success(), "{output:#?}");
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("invalid executable format"),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn pack_rejects_structurally_invalid_executable_header() {
+    let temp = tempfile::tempdir().unwrap();
+    let artifact = temp.path().join("artifact");
+    let binary = temp.path().join("invalid-header");
+    let target = package_target();
+    let mut bytes = executable_fixture(target);
+    if target.ends_with("-unknown-linux-gnu") {
+        bytes[16..18].copy_from_slice(&0_u16.to_le_bytes());
+    } else {
+        bytes[12..16].copy_from_slice(&1_u32.to_le_bytes());
+    }
+    fs::write(&binary, bytes).unwrap();
+
+    let output = run(pack_cmd(&script_path(), &binary, &artifact));
+
+    assert!(!output.status.success(), "{output:#?}");
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("invalid executable format"),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 #[test]

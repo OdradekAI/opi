@@ -11,22 +11,23 @@
 //! (the per-request workspace + network policy). Its default implementation
 //! [`NoRestriction`] applies NO kernel confinement and reports
 //! `Mechanism::None` / `ContractStatus::Unrestricted` — the honest status for
-//! an unrestricted run. The Linux native implementation (`Landlock` +
-//! `Seccomp`) is supplied by task 16.13 in `platform/linux.rs`; the macOS
-//! implementation lands in 16.14.1, and the Windows unsupported posture in
-//! 16.14.2. The seam shape here (a `&mut tokio::process::Command` plus a
-//! [`RestrictionCtx`] handed over before spawn) is what makes those fillable
-//! without a breaking change.
+//! an unrestricted run. The shipped Linux and macOS native implementations
+//! provide the confinement mechanisms in `platform/linux.rs` and
+//! `platform/macos.rs`; unsupported postures refuse before target start. The
+//! seam shape here (a `&mut tokio::process::Command` plus a [`RestrictionCtx`]
+//! handed over before spawn) is the current common integration boundary.
 
 #![forbid(unsafe_code)]
 
 use std::path::{Path, PathBuf};
 use tokio::process::Command;
+use tokio::time::Instant;
+use tokio_util::sync::CancellationToken;
 
 /// The requested sandbox profile. Only [`Profile::WorkspaceWrite`] is defined
 /// here; the confinement it names is enforced by the native restriction
-/// implementations (Landlock/seccomp on Linux in 16.13, `sandbox-exec` on macOS
-/// in 16.14.1), NOT by the default [`NoRestriction`].
+/// implementations (Landlock/seccomp on Linux, canonical
+/// `/usr/bin/sandbox-exec` on macOS), NOT by the default [`NoRestriction`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Profile {
     /// Writes, creates, removes, and renames are intended to be restricted to
@@ -70,19 +71,19 @@ impl SandboxPolicy {
 
 /// The mechanism a [`Restriction`] actually installed. [`Mechanism::None`] is
 /// the default (no confinement); [`Mechanism::Landlock`] and
-/// [`Mechanism::Seccomp`] are produced together on supported Linux by task
-/// 16.13; [`Mechanism::Seatbelt`] is produced on supported macOS by task
-/// 16.14.1 (the Apple `sandbox-exec`/Seatbelt deny-overlay).
+/// [`Mechanism::Seccomp`] are produced together on supported Linux;
+/// [`Mechanism::Seatbelt`] is produced on supported macOS by the Apple
+/// `sandbox-exec`/Seatbelt deny-overlay.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mechanism {
     /// No kernel confinement was applied (the default restriction).
     None,
     /// Linux Landlock filesystem-write + TCP bind/connect confinement
-    /// (ABI-gated; task 16.13).
+    /// (ABI-gated).
     Landlock,
     /// A fixed Linux seccomp deny-overlay: the L3 danger blocklist, io_uring
     /// setup denial, and (for `network = deny`) the AF_INET/AF_INET6/AF_NETLINK
-    /// socket-creation gate (task 16.13).
+    /// socket-creation gate.
     Seccomp,
     /// The macOS Seatbelt deny-overlay installed via `sandbox-exec` (task
     /// 16.14.1): a last-match-wins deny-overlay on a seatbelt allow-default
@@ -97,7 +98,7 @@ pub enum Mechanism {
 /// The effective contract status a [`Restriction`] reports after `prepare`.
 /// [`ContractStatus::Unrestricted`] is the default;
 /// [`ContractStatus::Restricted`] is produced by the native implementations
-/// (Linux in 16.13, macOS in 16.14.1).
+/// on supported Linux and macOS.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ContractStatus {
     /// No confinement contract was established (the target runs unrestricted,
@@ -142,9 +143,10 @@ pub enum RestrictionSetupError {
 
 /// Per-request context handed to [`Restriction::prepare`]: the canonical
 /// workspace root and invocation-owned temporary root a filesystem-confinement
-/// ruleset grants writes beneath, and the requested network policy. Native
-/// restriction implementations consume this to build per-spawn confinement;
-/// [`NoRestriction`] ignores it.
+/// ruleset grants writes beneath, the requested network policy, and the
+/// cooperative setup cutoff exposed by [`RestrictionCtx::setup_cancelled`].
+/// Native restriction implementations consume this to build per-spawn
+/// confinement.
 #[derive(Debug, Clone, Copy)]
 pub struct RestrictionCtx<'a> {
     /// The canonical workspace root the target may write beneath (and that host
@@ -155,6 +157,22 @@ pub struct RestrictionCtx<'a> {
     pub temp_root: &'a Path,
     /// The requested network policy.
     pub network: NetworkPolicy,
+    /// Absolute cutoff for cooperative protocol pre-spawn setup. Direct SDK
+    /// preparation has no setup deadline and stores `None`.
+    pub(crate) setup_deadline: Option<Instant>,
+    /// Cancellation fired when setup reaches its cutoff or the request is
+    /// cancelled by its owner.
+    pub(crate) setup_cancel: &'a CancellationToken,
+}
+
+impl RestrictionCtx<'_> {
+    /// Whether cooperative setup must stop before creating more side effects.
+    pub fn setup_cancelled(&self) -> bool {
+        self.setup_cancel.is_cancelled()
+            || self
+                .setup_deadline
+                .is_some_and(|deadline| Instant::now() >= deadline)
+    }
 }
 
 /// A parent-program prefix a [`Restriction`] can ask the runner to wrap the
@@ -185,21 +203,25 @@ pub struct LauncherSpec {
 /// cooperative steps, both BEFORE spawn:
 ///
 /// 1. [`Restriction::launcher`] — ask whether the target should be wrapped in a
-///    parent program (returns `None` for the default and for in-place
-///    `pre_exec`-style confinement such as Linux Landlock/seccomp; `Some` for
-///    macOS Seatbelt, which needs `sandbox-exec` as the parent).
+///    parent program (returns `Ok(None)` for the default and for in-place
+///    `pre_exec`-style confinement such as Linux Landlock/seccomp; `Ok(Some)`
+///    for macOS Seatbelt, which needs `sandbox-exec` as the parent). Invalid
+///    per-invocation launcher inputs fail before spawn.
 /// 2. [`Restriction::prepare`] — install any in-place confinement on the built
 ///    command and report the effective mechanism/contract.
 ///
 /// These two are COOPERATIVE, not independent: an implementation that returns
-/// `Some(launcher)` MUST make [`Restriction::prepare`] a no-op-on-`cmd` that
+/// `Ok(Some(launcher))` MUST make [`Restriction::prepare`] a no-op-on-`cmd` that
 /// only reports the mechanism/contract (the launcher already installed the
-/// confinement); an implementation that returns `None` from
+/// confinement); an implementation that returns `Ok(None)` from
 /// [`Restriction::launcher`] does its confinement work in
 /// [`Restriction::prepare`] (e.g. a `pre_exec` hook). The reported
 /// mechanism/contract MUST agree with whether [`Restriction::launcher`] wrapped
 /// the command. The returned [`AppliedRestriction`] is reported on the `started`
 /// event so the effective contract is always honest.
+/// Implementations must check [`RestrictionCtx::setup_cancelled`] before and
+/// after potentially blocking setup steps and stop without spawning helpers or
+/// creating further side effects when it returns true.
 ///
 /// The default implementation [`NoRestriction`] applies nothing and reports
 /// `Mechanism::None` / `ContractStatus::Unrestricted`.
@@ -208,12 +230,14 @@ pub trait Restriction: Send + Sync {
     /// the command is built. The default returns `None` (no launcher; the
     /// default and the Linux `pre_exec`-style paths). An implementation returns
     /// `Some` only when confinement requires a parent process (macOS Seatbelt).
-    /// Infallible on a supported host: once a platform posture reports
-    /// `supported == true` with this restriction, [`Restriction::launcher`] and
-    /// [`Restriction::prepare`] agree (a `Some` launcher implies the reported
-    /// mechanism).
-    fn launcher(&self, _ctx: &RestrictionCtx<'_>) -> Option<LauncherSpec> {
-        None
+    /// Fallible because a per-invocation launcher can reject native inputs that
+    /// its policy language cannot represent exactly. Such failures happen
+    /// before the launcher or target is spawned.
+    fn launcher(
+        &self,
+        _ctx: &RestrictionCtx<'_>,
+    ) -> Result<Option<LauncherSpec>, RestrictionSetupError> {
+        Ok(None)
     }
 
     /// Install in-place confinement on `cmd` before it is spawned, using the
@@ -231,8 +255,9 @@ pub trait Restriction: Send + Sync {
 }
 
 /// The default [`Restriction`]: applies NO kernel confinement and reports the
-/// run as unrestricted (L0 supervision only). The native Linux replacement
-/// (`Landlock` + `Seccomp`) lands in task 16.13; macOS in 16.14.1.
+/// run as unrestricted (L0 supervision only). Direct SDK callers may supply it
+/// explicitly; the platform-gated CLI/backend instead use the current native
+/// restriction and refuse an unsupported posture before target start.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct NoRestriction;
 
@@ -240,8 +265,11 @@ impl Restriction for NoRestriction {
     fn prepare(
         &self,
         _cmd: &mut Command,
-        _ctx: &RestrictionCtx<'_>,
+        ctx: &RestrictionCtx<'_>,
     ) -> Result<AppliedRestriction, RestrictionSetupError> {
+        if ctx.setup_cancelled() {
+            return Err(RestrictionSetupError::Failed("setup-cancelled"));
+        }
         Ok(AppliedRestriction::none())
     }
 }

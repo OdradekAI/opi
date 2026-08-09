@@ -75,11 +75,13 @@ zbus-secret-service-keyring-store = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
+insta = { workspace = true }
 base64 = { workspace = true }
 wiremock = { workspace = true }
 secrecy = { workspace = true }
 sha2 = { workspace = true }
 hex = { workspace = true }
+serde_yaml = { workspace = true }
 
 [[test]]
 name = "adapter_host_mock"

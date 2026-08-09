@@ -150,6 +150,38 @@ pub struct ExecutionRule {
 /// layers only (project `[execution.permissions]` is rejected even when trusted).
 /// `rules` and `permissions` use REPLACE-if-present overlay semantics across
 /// layers (intentionally NOT accumulating like `extensions.paths`).
+/// `permissions` replaces the whole map when present; it does not merge per adapter id.
+///
+/// ```
+/// use opi_coding_agent::config::{
+///     ConfigSource, PermissionDecision, resolve_config,
+/// };
+///
+/// let root = tempfile::tempdir().unwrap();
+/// let user = root.path().join("user.toml");
+/// let explicit = root.path().join("explicit.toml");
+/// std::fs::write(&user, "[execution.permissions]\nlocal = \"deny\"\n").unwrap();
+/// std::fs::write(
+///     &explicit,
+///     "[execution.permissions]\n\"opi-sandbox\" = \"allow\"\n",
+/// )
+/// .unwrap();
+///
+/// let config = resolve_config(ConfigSource {
+///     cli_model: None,
+///     config_path: Some(explicit),
+///     env_model: None,
+///     project_dir: None,
+///     user_config_path: Some(user),
+/// })
+/// .unwrap();
+///
+/// assert_eq!(
+///     config.execution.permissions.get("opi-sandbox"),
+///     Some(&PermissionDecision::Allow),
+/// );
+/// assert!(!config.execution.permissions.contains_key("local"));
+/// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExecutionConfig {
     pub strategy: ExecutionStrategy,
@@ -456,7 +488,7 @@ struct TomlConfig {
     compaction: TomlCompaction,
     extensions: TomlResourcePaths,
     packages: TomlResourcePaths,
-    sandbox: TomlSandbox,
+    sandbox: Option<TomlSandboxPresence>,
     execution: TomlExecution,
 }
 
@@ -701,13 +733,38 @@ struct TomlResourcePaths {
     paths: Option<Vec<PathBuf>>,
 }
 
-/// Shadow of the REMOVED `[sandbox]` table, kept solely as a presence
-/// detector: if any field is set, the layer is rejected with a stable
-/// migration error. 16.16.1 deleted the native sandbox from core, so
-/// `[sandbox]` is no longer a valid config surface; `mode` is parsed as a
-/// raw string because its value is never used (only presence matters).
+/// Presence marker for the REMOVED `[sandbox]` table. Its field-local
+/// deserializer checks the closed legacy shape without leaking that shape's
+/// parse errors: every present table is classified by
+/// `legacy_sandbox_rejection` as the same removed surface. This keeps unrelated
+/// TOML deserialization errors on their ordinary paths and avoids parsing the
+/// whole document twice.
+#[derive(Debug, Clone)]
+struct TomlSandboxPresence;
+
+impl<'de> Deserialize<'de> for TomlSandboxPresence {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = toml::Value::deserialize(deserializer)?;
+        if !value.is_table() {
+            return TomlSandbox::deserialize(value)
+                .map(|_| Self)
+                .map_err(serde::de::Error::custom);
+        }
+        // The shape stays deliberately closed, but both known and unknown
+        // legacy table forms are one removed public surface with one remediation.
+        // Naming the result makes that intentional collapse explicit: validation
+        // still runs, and only its outward error classification is unified.
+        let _closed_legacy_shape_result = TomlSandbox::deserialize(value);
+        Ok(Self)
+    }
+}
+
+/// Closed legacy shape used only by [`TomlSandboxPresence`].
 #[derive(Debug, Clone, Deserialize, Default)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 struct TomlSandbox {
     mode: Option<String>,
     require: Option<bool>,
@@ -716,23 +773,12 @@ struct TomlSandbox {
     syscalls: Option<bool>,
 }
 
-impl TomlSandbox {
-    /// True if the `[sandbox]` table carried any legacy field.
-    fn is_present(&self) -> bool {
-        self.mode.is_some()
-            || self.require.is_some()
-            || self.fs.is_some()
-            || self.network.is_some()
-            || self.syscalls.is_some()
-    }
-}
-
 /// Reject a layer that still carries the removed `[sandbox]` section with a
 /// stable, actionable remediation pointing at the execution-backend surface
 /// and the package workflow. Called at every layer-load site because
 /// `merge_into` is layer-blind and cannot enforce the rejection itself.
 fn legacy_sandbox_rejection(raw: &TomlConfig) -> Result<(), ConfigError> {
-    if raw.sandbox.is_present() {
+    if raw.sandbox.is_some() {
         return Err(ConfigError::LegacySandboxSection);
     }
     Ok(())

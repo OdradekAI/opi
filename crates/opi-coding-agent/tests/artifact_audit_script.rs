@@ -243,11 +243,290 @@ fn run_release_audit(dir: &std::path::Path, json: bool) -> (bool, String, String
     )
 }
 
+fn run_release_audit_with_hash_swap(
+    dir: &std::path::Path,
+    victim: &std::path::Path,
+    replacement: &std::path::Path,
+) -> (bool, String, String) {
+    let harness = r#"
+import importlib.util, json, os, pathlib, sys
+
+module_path = pathlib.Path(sys.argv[1])
+root = pathlib.Path(sys.argv[2])
+victim = pathlib.Path(sys.argv[3])
+replacement = pathlib.Path(sys.argv[4])
+spec = importlib.util.spec_from_file_location("artifact_audit_under_test", module_path)
+if spec is None or spec.loader is None:
+    raise SystemExit("cannot load artifact audit")
+audit = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(audit)
+original_hash = audit.sha256_evidence_file
+swapped = [False]
+
+def hash_then_swap(path, issues):
+    digest = original_hash(path, issues)
+    if not swapped[0] and pathlib.Path(path).name == victim.name:
+        os.replace(replacement, victim)
+        swapped[0] = True
+    return digest
+
+audit.sha256_evidence_file = hash_then_swap
+report = audit.audit_release_evidence(root)
+report["test_hash_swap_triggered"] = swapped[0]
+print(json.dumps(report))
+raise SystemExit(0 if report["ok"] else 1)
+"#;
+    let out = Command::new(python_command())
+        .args(["-c", harness])
+        .arg(
+            workspace_root()
+                .join("scripts")
+                .join("opi-artifact-audit.py"),
+        )
+        .arg(dir)
+        .arg(victim)
+        .arg(replacement)
+        .output()
+        .expect("run release audit with deterministic hash swap");
+    (
+        out.status.success(),
+        String::from_utf8_lossy(&out.stdout).into_owned(),
+        String::from_utf8_lossy(&out.stderr).into_owned(),
+    )
+}
+
+fn run_archive_snapshot_copy_case(mode: &str, limit: usize) -> serde_json::Value {
+    let temp = tempfile::tempdir().expect("snapshot copy tempdir");
+    let source = temp.path().join("source.tar.gz");
+    let destination = temp.path().join("snapshot.tar.gz");
+    let other = temp.path().join("other.tar.gz");
+    std::fs::write(&source, b"12345678").unwrap();
+    std::fs::write(&other, b"abcdefgh").unwrap();
+    #[cfg(unix)]
+    if mode == "native-symlink" {
+        std::fs::remove_file(&source).unwrap();
+        std::os::unix::fs::symlink(&other, &source).unwrap();
+    }
+    let harness = r#"
+import importlib.util, json, os, pathlib, stat, sys
+
+module_path = pathlib.Path(sys.argv[1])
+source = pathlib.Path(sys.argv[2])
+destination = pathlib.Path(sys.argv[3])
+other = pathlib.Path(sys.argv[4])
+mode = sys.argv[5]
+limit = int(sys.argv[6])
+spec = importlib.util.spec_from_file_location("artifact_audit_snapshot_test", module_path)
+if spec is None or spec.loader is None:
+    raise SystemExit("cannot load artifact audit")
+audit = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(audit)
+audit.ARCHIVE_SNAPSHOT_LIMIT = limit
+
+if mode == "grow-after-fstat":
+    original_fstat = audit.os.fstat
+    grew = [False]
+    def fstat_then_grow(fd):
+        opened = original_fstat(fd)
+        if not grew[0]:
+            with source.open("ab") as handle:
+                handle.write(b"GROW")
+            grew[0] = True
+        return opened
+    audit.os.fstat = fstat_then_grow
+elif mode == "symlink-lstat-seam":
+    original_lstat = audit.os.lstat
+    def symlink_lstat(path):
+        opened = original_lstat(path)
+        fields = list(opened)
+        fields[0] = stat.S_IFLNK | 0o777
+        return os.stat_result(fields)
+    audit.os.lstat = symlink_lstat
+elif mode == "identity-mismatch-seam":
+    other_stat = audit.os.lstat(other)
+    audit.os.lstat = lambda path: other_stat
+
+try:
+    audit._copy_archive_snapshot(source, destination)
+    report = {"ok": True, "snapshot_size": destination.stat().st_size}
+except Exception as error:
+    report = {"ok": False, "error_type": type(error).__name__, "message": str(error)}
+print(json.dumps(report))
+"#;
+    let output = Command::new(python_command())
+        .args(["-c", harness])
+        .arg(
+            workspace_root()
+                .join("scripts")
+                .join("opi-artifact-audit.py"),
+        )
+        .arg(&source)
+        .arg(&destination)
+        .arg(&other)
+        .arg(mode)
+        .arg(limit.to_string())
+        .output()
+        .expect("run archive snapshot copy seam");
+    assert!(
+        output.status.success(),
+        "snapshot seam failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    serde_json::from_slice(&output.stdout).unwrap_or_else(|error| {
+        panic!(
+            "snapshot seam returned invalid JSON: {error}: {}",
+            String::from_utf8_lossy(&output.stdout)
+        )
+    })
+}
+
+fn run_release_audit_with_snapshot_limit(
+    dir: &std::path::Path,
+    limit: u64,
+) -> (bool, String, String) {
+    let harness = r#"
+import importlib.util, json, pathlib, sys
+
+module_path = pathlib.Path(sys.argv[1])
+root = pathlib.Path(sys.argv[2])
+limit = int(sys.argv[3])
+spec = importlib.util.spec_from_file_location("artifact_audit_limit_test", module_path)
+if spec is None or spec.loader is None:
+    raise SystemExit("cannot load artifact audit")
+audit = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(audit)
+audit.ARCHIVE_SNAPSHOT_LIMIT = limit
+report = audit.audit_release_evidence(root)
+print(json.dumps(report))
+raise SystemExit(0 if report["ok"] else 1)
+"#;
+    let output = Command::new(python_command())
+        .args(["-c", harness])
+        .arg(
+            workspace_root()
+                .join("scripts")
+                .join("opi-artifact-audit.py"),
+        )
+        .arg(dir)
+        .arg(limit.to_string())
+        .output()
+        .expect("run release audit with snapshot limit");
+    (
+        output.status.success(),
+        String::from_utf8_lossy(&output.stdout).into_owned(),
+        String::from_utf8_lossy(&output.stderr).into_owned(),
+    )
+}
+
+fn run_release_audit_with_evidence_lstat_seam(
+    dir: &std::path::Path,
+    mode: &str,
+) -> (bool, String, String) {
+    let harness = r#"
+import importlib.util, json, os, pathlib, sys, types
+
+module_path = pathlib.Path(sys.argv[1])
+root = pathlib.Path(sys.argv[2])
+mode = sys.argv[3]
+spec = importlib.util.spec_from_file_location("artifact_audit_release_evidence_lstat", module_path)
+if spec is None or spec.loader is None:
+    raise SystemExit("cannot load artifact audit")
+audit = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(audit)
+original_lstat = audit.os.lstat
+native_root = root / "linux" / "x86_64-unknown-linux-gnu"
+windows_root = root / "windows"
+target = native_root / "target"
+lock = native_root / "package-lock.toml"
+selected = {
+    "target-reparse": target,
+    "lock-reparse": lock,
+    "native-root-reparse": native_root,
+    "windows-root-reparse": windows_root,
+}.get(mode)
+root_lstat_calls = [0]
+
+def lstat_seam(path):
+    candidate = pathlib.Path(path)
+    if candidate == native_root:
+        root_lstat_calls[0] += 1
+        # The first call selects nested topology; the second is the collector's
+        # owned root identity. Replace it for the collector's first recheck.
+        if mode == "native-root-identity-mismatch" and root_lstat_calls[0] > 2:
+            return original_lstat(windows_root)
+    opened = original_lstat(path)
+    if selected is not None and candidate == selected:
+        return types.SimpleNamespace(
+            st_mode=opened.st_mode,
+            st_dev=opened.st_dev,
+            st_ino=opened.st_ino,
+            st_size=opened.st_size,
+            st_file_attributes=(getattr(opened, "st_file_attributes", 0) or 0) | 0x400,
+        )
+    return opened
+
+audit.os.lstat = lstat_seam
+report = audit.audit_release_evidence(root)
+report["test_native_root_lstat_calls"] = root_lstat_calls[0]
+print(json.dumps(report))
+raise SystemExit(0 if report["ok"] else 1)
+"#;
+    let output = Command::new(python_command())
+        .args(["-c", harness])
+        .arg(
+            workspace_root()
+                .join("scripts")
+                .join("opi-artifact-audit.py"),
+        )
+        .arg(dir)
+        .arg(mode)
+        .output()
+        .expect("run release audit with evidence lstat seam");
+    (
+        output.status.success(),
+        String::from_utf8_lossy(&output.stdout).into_owned(),
+        String::from_utf8_lossy(&output.stderr).into_owned(),
+    )
+}
+
 const LINUX_TARGET: &str = "x86_64-unknown-linux-gnu";
 const LINUX_ARM_TARGET: &str = "aarch64-unknown-linux-gnu";
 const MACOS_X64_TARGET: &str = "x86_64-apple-darwin";
 const MACOS_TARGET: &str = "aarch64-apple-darwin";
-const BINARY_BYTES: &[u8] = b"opi-sandbox extracted release binary payload\n";
+const EVIDENCE_WORKFLOW_RUN_ID: &str = "123456789";
+const EVIDENCE_COMMIT_SHA: &str = "0123456789abcdef0123456789abcdef01234567";
+const EVIDENCE_IDENTITY_FILE: &str = "evidence-identity.json";
+
+fn minimal_elf64(machine: u16) -> Vec<u8> {
+    let mut bytes = vec![0; 64];
+    bytes[..4].copy_from_slice(b"\x7fELF");
+    bytes[4] = 2;
+    bytes[5] = 1;
+    bytes[6] = 1;
+    bytes[16..18].copy_from_slice(&2_u16.to_le_bytes());
+    bytes[18..20].copy_from_slice(&machine.to_le_bytes());
+    bytes[20..24].copy_from_slice(&1_u32.to_le_bytes());
+    bytes[52..54].copy_from_slice(&64_u16.to_le_bytes());
+    bytes
+}
+
+fn minimal_macho64(cpu_type: u32) -> Vec<u8> {
+    let mut bytes = vec![0; 32];
+    bytes[..4].copy_from_slice(&[0xcf, 0xfa, 0xed, 0xfe]);
+    bytes[4..8].copy_from_slice(&cpu_type.to_le_bytes());
+    bytes[12..16].copy_from_slice(&2_u32.to_le_bytes());
+    bytes
+}
+
+fn executable_for_target(target: &str) -> Vec<u8> {
+    match target {
+        LINUX_TARGET => minimal_elf64(62),
+        LINUX_ARM_TARGET => minimal_elf64(183),
+        MACOS_X64_TARGET => minimal_macho64(0x0100_0007),
+        MACOS_TARGET => minimal_macho64(0x0100_000c),
+        _ => panic!("unsupported executable fixture target {target}"),
+    }
+}
 
 fn good_smoke_log() -> &'static str {
     "opi-sandbox-direct-smoke: OK archive_sha256=__ARCHIVE_SHA256__\n\
@@ -457,7 +736,7 @@ fn replace_lock_value(lock: &mut String, key: &str, value: &str) {
 
 /// Write a native release bundle containing the complete distribution wrapper,
 /// LockMaterial, and direct/backend smoke markers bound to the archive digest.
-fn write_native_bundle(
+fn write_native_bundle_with_executable(
     root: &std::path::Path,
     platform: &str,
     target: &str,
@@ -535,6 +814,25 @@ fn write_native_bundle(
     .unwrap();
 }
 
+fn write_native_bundle(
+    root: &std::path::Path,
+    platform: &str,
+    target: &str,
+    smoke_log: &str,
+    mismatch_sha: bool,
+    omit_archive: bool,
+) {
+    write_native_bundle_with_executable(
+        root,
+        platform,
+        target,
+        &executable_for_target(target),
+        smoke_log,
+        mismatch_sha,
+        omit_archive,
+    );
+}
+
 fn write_windows_bundle(root: &std::path::Path, log: &str, with_archive: bool) {
     let dir = root.join("windows");
     std::fs::create_dir_all(&dir).unwrap();
@@ -564,7 +862,6 @@ fn write_complete_good_evidence(root: &std::path::Path) {
         root,
         &format!("linux/{LINUX_TARGET}"),
         LINUX_TARGET,
-        BINARY_BYTES,
         good_smoke_log(),
         false,
         false,
@@ -573,7 +870,6 @@ fn write_complete_good_evidence(root: &std::path::Path) {
         root,
         &format!("linux/{LINUX_ARM_TARGET}"),
         LINUX_ARM_TARGET,
-        BINARY_BYTES,
         good_smoke_log(),
         false,
         false,
@@ -582,7 +878,6 @@ fn write_complete_good_evidence(root: &std::path::Path) {
         root,
         &format!("macos/{MACOS_X64_TARGET}"),
         MACOS_X64_TARGET,
-        BINARY_BYTES,
         good_smoke_log(),
         false,
         false,
@@ -591,7 +886,6 @@ fn write_complete_good_evidence(root: &std::path::Path) {
         root,
         &format!("macos/{MACOS_TARGET}"),
         MACOS_TARGET,
-        BINARY_BYTES,
         good_smoke_log(),
         false,
         false,
@@ -611,6 +905,327 @@ fn release_audit_passes_complete_native_evidence() {
 }
 
 #[test]
+fn release_audit_rejects_oversized_native_smoke_log() {
+    const LIMIT: usize = 4 * 1024 * 1024;
+    let dir = tempfile::tempdir().expect("release evidence tempdir");
+    write_complete_good_evidence(dir.path());
+    let smoke = dir.path().join(format!("linux/{LINUX_TARGET}/smoke.log"));
+    let mut bytes = std::fs::read(&smoke).unwrap();
+    bytes.resize(LIMIT + 1, b' ');
+    std::fs::write(smoke, bytes).unwrap();
+
+    let (ok, stdout, stderr) = run_release_audit(dir.path(), true);
+    assert!(!ok, "oversized native log must fail: {stdout} {stderr}");
+    assert!(
+        stdout.contains("evidence_snapshot_limit_exceeded"),
+        "{stdout}"
+    );
+}
+
+#[test]
+fn release_audit_rejects_native_evidence_over_aggregate_limit() {
+    const PER_FILE_LIMIT: usize = 4 * 1024 * 1024;
+    let dir = tempfile::tempdir().expect("release evidence tempdir");
+    write_complete_good_evidence(dir.path());
+    let smoke = dir.path().join(format!("linux/{LINUX_TARGET}/smoke"));
+    std::fs::create_dir(&smoke).unwrap();
+    let bytes = vec![b'x'; PER_FILE_LIMIT];
+    for name in [
+        "run-stdout.bin",
+        "run-stderr.bin",
+        "expected-stdout.bin",
+        "expected-stderr.bin",
+        "setup-stdout.txt",
+        "setup-stderr.txt",
+        "filesystem-deny-stdout.txt",
+        "filesystem-deny-stderr.txt",
+        "network-deny-stdout.txt",
+    ] {
+        std::fs::write(smoke.join(name), &bytes).unwrap();
+    }
+
+    let (ok, stdout, stderr) = run_release_audit(dir.path(), true);
+    assert!(
+        !ok,
+        "over-aggregate native evidence must fail: {stdout} {stderr}"
+    );
+    assert!(
+        stdout.contains("evidence_bundle_snapshot_limit_exceeded"),
+        "{stdout}"
+    );
+}
+
+#[test]
+fn release_audit_rejects_unexpected_non_text_native_entry() {
+    let dir = tempfile::tempdir().expect("release evidence tempdir");
+    write_complete_good_evidence(dir.path());
+    std::fs::write(
+        dir.path()
+            .join(format!("linux/{LINUX_TARGET}/ignored-failure.out")),
+        "test result: FAILED. 0 passed; 1 failed\n",
+    )
+    .unwrap();
+
+    let (ok, stdout, stderr) = run_release_audit(dir.path(), true);
+    assert!(!ok, "unexpected native entry must fail: {stdout} {stderr}");
+    assert!(stdout.contains("unexpected_evidence_entry"), "{stdout}");
+}
+
+#[test]
+fn release_audit_rejects_failure_marker_in_allowed_non_text_evidence() {
+    let dir = tempfile::tempdir().expect("release evidence tempdir");
+    write_complete_good_evidence(dir.path());
+    let smoke = dir.path().join(format!("linux/{LINUX_TARGET}/smoke"));
+    std::fs::create_dir(&smoke).unwrap();
+    std::fs::write(
+        smoke.join("run-stdout.bin"),
+        "test result: FAILED. 0 passed; 1 failed\n",
+    )
+    .unwrap();
+
+    let (ok, stdout, stderr) = run_release_audit(dir.path(), true);
+    assert!(
+        !ok,
+        "failure in allowed binary evidence must fail: {stdout} {stderr}"
+    );
+    assert!(stdout.contains("failed_evidence"), "{stdout}");
+}
+
+#[test]
+fn release_audit_rejects_oversized_target_and_lock() {
+    for scalar in ["target", "package-lock.toml"] {
+        let dir = tempfile::tempdir().expect("release evidence tempdir");
+        write_complete_good_evidence(dir.path());
+        let path = dir.path().join(format!("linux/{LINUX_TARGET}/{scalar}"));
+        let mut bytes = std::fs::read(&path).unwrap();
+        let limit = if scalar == "target" { 256 } else { 16 * 1024 };
+        if scalar == "package-lock.toml" {
+            bytes.extend_from_slice(b"\n#");
+        }
+        bytes.resize(limit + 1, b' ');
+        std::fs::write(&path, bytes).unwrap();
+
+        let (ok, stdout, stderr) = run_release_audit(dir.path(), true);
+        assert!(
+            !ok,
+            "oversized {scalar} must fail: stdout={stdout} stderr={stderr}"
+        );
+        assert!(
+            stdout.contains("evidence_snapshot_limit_exceeded"),
+            "{stdout}"
+        );
+    }
+}
+
+#[test]
+fn release_audit_rejects_native_scalar_reparse_seams() {
+    for mode in ["target-reparse", "lock-reparse"] {
+        let dir = tempfile::tempdir().expect("release evidence tempdir");
+        write_complete_good_evidence(dir.path());
+
+        let (ok, stdout, stderr) = run_release_audit_with_evidence_lstat_seam(dir.path(), mode);
+        assert!(!ok, "{mode} must fail: stdout={stdout} stderr={stderr}");
+        assert!(stdout.contains("invalid_evidence_entry"), "{stdout}");
+    }
+}
+
+#[test]
+fn release_audit_rejects_oversized_windows_log() {
+    const LIMIT: usize = 4 * 1024 * 1024;
+    let dir = tempfile::tempdir().expect("release evidence tempdir");
+    write_complete_good_evidence(dir.path());
+    let posture = dir.path().join("windows/posture-tests.log");
+    let mut bytes = std::fs::read(&posture).unwrap();
+    bytes.resize(LIMIT + 1, b' ');
+    std::fs::write(posture, bytes).unwrap();
+
+    let (ok, stdout, stderr) = run_release_audit(dir.path(), true);
+    assert!(!ok, "oversized Windows log must fail: {stdout} {stderr}");
+    assert!(
+        stdout.contains("evidence_snapshot_limit_exceeded"),
+        "{stdout}"
+    );
+}
+
+#[test]
+fn release_audit_rejects_unexpected_windows_entry() {
+    let dir = tempfile::tempdir().expect("release evidence tempdir");
+    write_complete_good_evidence(dir.path());
+    std::fs::write(
+        dir.path().join("windows/ignored-failure.out"),
+        "test result: FAILED. 0 passed; 1 failed\n",
+    )
+    .unwrap();
+
+    let (ok, stdout, stderr) = run_release_audit(dir.path(), true);
+    assert!(!ok, "unexpected Windows entry must fail: {stdout} {stderr}");
+    assert!(stdout.contains("unexpected_evidence_entry"), "{stdout}");
+}
+
+#[test]
+fn release_audit_rejects_bundle_root_reparse_and_identity_change_seams() {
+    for (mode, code) in [
+        ("native-root-reparse", "invalid_evidence_bundle"),
+        ("windows-root-reparse", "invalid_evidence_bundle"),
+        (
+            "native-root-identity-mismatch",
+            "evidence_bundle_identity_mismatch",
+        ),
+    ] {
+        let dir = tempfile::tempdir().expect("release evidence tempdir");
+        write_complete_good_evidence(dir.path());
+
+        let (ok, stdout, stderr) = run_release_audit_with_evidence_lstat_seam(dir.path(), mode);
+        assert!(!ok, "{mode} must fail: stdout={stdout} stderr={stderr}");
+        assert!(stdout.contains(code), "{stdout}");
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn release_audit_rejects_symlinked_native_target() {
+    let dir = tempfile::tempdir().expect("release evidence tempdir");
+    write_complete_good_evidence(dir.path());
+    let bundle = dir.path().join(format!("linux/{LINUX_TARGET}"));
+    let target = bundle.join("target");
+    let replacement = bundle.join("target-replacement");
+    std::fs::rename(&target, &replacement).unwrap();
+    std::os::unix::fs::symlink(&replacement, &target).unwrap();
+
+    let (ok, stdout, stderr) = run_release_audit(dir.path(), true);
+    assert!(!ok, "symlinked target must fail: {stdout} {stderr}");
+    assert!(stdout.contains("invalid_evidence_entry"), "{stdout}");
+}
+
+#[test]
+fn release_audit_rejects_arbitrary_text_executable_even_when_hashes_match() {
+    let dir = tempfile::tempdir().expect("release evidence tempdir");
+    write_complete_good_evidence(dir.path());
+    write_native_bundle_with_executable(
+        dir.path(),
+        &format!("linux/{LINUX_TARGET}"),
+        LINUX_TARGET,
+        b"not an executable\n",
+        good_smoke_log(),
+        false,
+        false,
+    );
+
+    let (ok, stdout, stderr) = run_release_audit(dir.path(), true);
+
+    assert!(
+        !ok,
+        "text executable must fail despite matching provenance: stdout={stdout} stderr={stderr}"
+    );
+    assert!(
+        stdout.contains("invalid_executable_format"),
+        "expected invalid_executable_format: {stdout}"
+    );
+}
+
+#[test]
+fn release_audit_rejects_cpu_swapped_executables_in_both_native_families() {
+    for (platform, target, bytes) in [
+        (
+            format!("linux/{LINUX_TARGET}"),
+            LINUX_TARGET,
+            minimal_elf64(183),
+        ),
+        (
+            format!("linux/{LINUX_ARM_TARGET}"),
+            LINUX_ARM_TARGET,
+            minimal_elf64(62),
+        ),
+        (
+            format!("macos/{MACOS_X64_TARGET}"),
+            MACOS_X64_TARGET,
+            minimal_macho64(0x0100_000c),
+        ),
+        (
+            format!("macos/{MACOS_TARGET}"),
+            MACOS_TARGET,
+            minimal_macho64(0x0100_0007),
+        ),
+    ] {
+        let dir = tempfile::tempdir().expect("release evidence tempdir");
+        write_complete_good_evidence(dir.path());
+        write_native_bundle_with_executable(
+            dir.path(),
+            &platform,
+            target,
+            &bytes,
+            good_smoke_log(),
+            false,
+            false,
+        );
+
+        let (ok, stdout, stderr) = run_release_audit(dir.path(), true);
+        assert!(
+            !ok,
+            "CPU-swapped {target} executable passed: stdout={stdout} stderr={stderr}"
+        );
+        assert!(
+            stdout.contains("executable_target_mismatch"),
+            "CPU-swapped {target} had the wrong finding: {stdout}"
+        );
+    }
+}
+
+#[test]
+fn release_audit_rejects_truncated_executable_header() {
+    let dir = tempfile::tempdir().expect("release evidence tempdir");
+    write_complete_good_evidence(dir.path());
+    write_native_bundle_with_executable(
+        dir.path(),
+        &format!("macos/{MACOS_X64_TARGET}"),
+        MACOS_X64_TARGET,
+        &[0xcf, 0xfa, 0xed, 0xfe, 7, 0, 0, 1],
+        good_smoke_log(),
+        false,
+        false,
+    );
+
+    let (ok, stdout, stderr) = run_release_audit(dir.path(), true);
+    assert!(
+        !ok,
+        "truncated executable passed: stdout={stdout} stderr={stderr}"
+    );
+    assert!(stdout.contains("invalid_executable_format"), "{stdout}");
+}
+
+#[test]
+fn release_audit_rejects_structurally_invalid_executable_headers() {
+    let mut elf = executable_for_target(LINUX_TARGET);
+    elf[16..18].copy_from_slice(&0_u16.to_le_bytes());
+    let mut macho = executable_for_target(MACOS_X64_TARGET);
+    macho[12..16].copy_from_slice(&1_u32.to_le_bytes());
+
+    for (platform, target, bytes) in [
+        (format!("linux/{LINUX_TARGET}"), LINUX_TARGET, elf),
+        (format!("macos/{MACOS_X64_TARGET}"), MACOS_X64_TARGET, macho),
+    ] {
+        let dir = tempfile::tempdir().expect("release evidence tempdir");
+        write_complete_good_evidence(dir.path());
+        write_native_bundle_with_executable(
+            dir.path(),
+            &platform,
+            target,
+            &bytes,
+            good_smoke_log(),
+            false,
+            false,
+        );
+
+        let (ok, stdout, stderr) = run_release_audit(dir.path(), true);
+        assert!(
+            !ok,
+            "structurally invalid {target} header passed: stdout={stdout} stderr={stderr}"
+        );
+        assert!(stdout.contains("invalid_executable_format"), "{stdout}");
+    }
+}
+
+#[test]
 fn release_audit_rejects_missing_platform() {
     let dir = tempfile::tempdir().expect("release evidence tempdir");
     // Omit macos entirely.
@@ -618,7 +1233,6 @@ fn release_audit_rejects_missing_platform() {
         dir.path(),
         "linux",
         LINUX_TARGET,
-        BINARY_BYTES,
         good_smoke_log(),
         false,
         false,
@@ -648,7 +1262,6 @@ fn release_audit_rejects_wrong_target_identity() {
         dir.path(),
         "linux",
         MACOS_TARGET,
-        BINARY_BYTES,
         good_smoke_log(),
         false,
         false,
@@ -657,7 +1270,6 @@ fn release_audit_rejects_wrong_target_identity() {
         dir.path(),
         "macos",
         MACOS_TARGET,
-        BINARY_BYTES,
         good_smoke_log(),
         false,
         false,
@@ -700,7 +1312,6 @@ fn release_audit_rejects_absent_archive() {
         dir.path(),
         "linux",
         LINUX_TARGET,
-        BINARY_BYTES,
         good_smoke_log(),
         false,
         true,
@@ -709,7 +1320,6 @@ fn release_audit_rejects_absent_archive() {
         dir.path(),
         "macos",
         MACOS_TARGET,
-        BINARY_BYTES,
         good_smoke_log(),
         false,
         false,
@@ -734,7 +1344,6 @@ fn release_audit_rejects_provenance_mismatch() {
         dir.path(),
         "linux",
         LINUX_TARGET,
-        BINARY_BYTES,
         good_smoke_log(),
         true,
         false,
@@ -743,7 +1352,6 @@ fn release_audit_rejects_provenance_mismatch() {
         dir.path(),
         "macos",
         MACOS_TARGET,
-        BINARY_BYTES,
         good_smoke_log(),
         false,
         false,
@@ -778,6 +1386,118 @@ fn release_audit_rejects_tampered_archive() {
 }
 
 #[test]
+fn release_audit_hashes_and_extracts_one_owned_archive_snapshot() {
+    let dir = tempfile::tempdir().expect("release evidence tempdir");
+    write_complete_good_evidence(dir.path());
+    let bundle = dir.path().join(format!("linux/{LINUX_TARGET}"));
+    let archive = native_archive_path(&bundle, LINUX_TARGET);
+    let replacement = dir.path().join("replacement.tar.gz");
+    std::fs::copy(&archive, &replacement).unwrap();
+    let original_sha = sha256_hex_local(&std::fs::read(&archive).unwrap());
+    rewrite_native_archive(&archive, "dot-alias");
+    rebind_smoke_to_archive(&bundle, &original_sha, &archive);
+
+    let (ok, stdout, stderr) = run_release_audit_with_hash_swap(dir.path(), &archive, &replacement);
+
+    let report: serde_json::Value = serde_json::from_str(&stdout)
+        .unwrap_or_else(|error| panic!("invalid audit JSON: {error}: {stdout} {stderr}"));
+    assert_eq!(report["test_hash_swap_triggered"], true, "{stdout}");
+    assert!(
+        !ok,
+        "hashing one archive then extracting its replacement must fail: {stdout} {stderr}"
+    );
+    assert!(
+        stdout.contains("invalid_archive_layout"),
+        "snapshot must preserve the invalid archive that was hashed: {stdout}"
+    );
+}
+
+#[test]
+fn archive_snapshot_copy_accepts_exact_size_limit() {
+    let report = run_archive_snapshot_copy_case("normal", 8);
+    assert_eq!(report["ok"], true, "{report}");
+    assert_eq!(report["snapshot_size"], 8, "{report}");
+}
+
+#[test]
+fn archive_snapshot_copy_rejects_initial_size_over_limit() {
+    let report = run_archive_snapshot_copy_case("normal", 7);
+    assert_eq!(report["ok"], false, "{report}");
+    assert_eq!(report["error_type"], "ArchiveSnapshotError", "{report}");
+    assert!(
+        report["message"]
+            .as_str()
+            .is_some_and(|message| message.contains("snapshot limit")),
+        "{report}"
+    );
+}
+
+#[test]
+fn archive_snapshot_copy_rejects_growth_after_opened_size_check() {
+    let report = run_archive_snapshot_copy_case("grow-after-fstat", 8);
+    assert_eq!(report["ok"], false, "{report}");
+    assert_eq!(report["error_type"], "ArchiveSnapshotError", "{report}");
+    assert!(
+        report["message"]
+            .as_str()
+            .is_some_and(|message| message.contains("snapshot limit")),
+        "{report}"
+    );
+}
+
+#[test]
+fn archive_snapshot_copy_rejects_symlink_or_reparse_lstat_seam() {
+    let report = run_archive_snapshot_copy_case("symlink-lstat-seam", 8);
+    assert_eq!(report["ok"], false, "{report}");
+    assert_eq!(report["error_type"], "ArchiveSnapshotError", "{report}");
+    assert!(
+        report["message"]
+            .as_str()
+            .is_some_and(|message| message.contains("regular file")),
+        "{report}"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn archive_snapshot_copy_rejects_native_symlink() {
+    let report = run_archive_snapshot_copy_case("native-symlink", 8);
+    assert_eq!(report["ok"], false, "{report}");
+    assert_eq!(report["error_type"], "OSError", "{report}");
+}
+
+#[test]
+fn archive_snapshot_copy_rejects_open_handle_path_identity_mismatch() {
+    let report = run_archive_snapshot_copy_case("identity-mismatch-seam", 8);
+    assert_eq!(report["ok"], false, "{report}");
+    assert_eq!(report["error_type"], "ArchiveSnapshotError", "{report}");
+    assert!(
+        report["message"]
+            .as_str()
+            .is_some_and(|message| message.contains("identity changed")),
+        "{report}"
+    );
+}
+
+#[test]
+fn release_audit_reports_snapshot_limit_as_structured_archive_issue() {
+    let dir = tempfile::tempdir().expect("release evidence tempdir");
+    write_complete_good_evidence(dir.path());
+
+    let (ok, stdout, stderr) = run_release_audit_with_snapshot_limit(dir.path(), 1);
+
+    assert!(
+        !ok,
+        "over-limit archive must fail: stdout={stdout} stderr={stderr}"
+    );
+    assert!(
+        stdout.contains("archive_snapshot_limit_exceeded"),
+        "snapshot limit must be structured: {stdout}"
+    );
+    assert!(!stderr.contains("Traceback"), "{stderr}");
+}
+
+#[test]
 fn release_audit_rejects_caller_prepared_extracted_tree() {
     let dir = tempfile::tempdir().expect("release evidence tempdir");
     write_complete_good_evidence(dir.path());
@@ -804,7 +1524,7 @@ fn release_audit_rejects_placeholder_manifest() {
         "name = \"opi-sandbox\"\nversion = \"__PACKAGE_VERSION__\"\n",
     )
     .unwrap();
-    std::fs::write(&executable, BINARY_BYTES).unwrap();
+    std::fs::write(&executable, executable_for_target(LINUX_TARGET)).unwrap();
     create_native_archive(
         &native_archive_path(
             &dir.path().join(format!("linux/{LINUX_TARGET}")),
@@ -827,7 +1547,7 @@ fn release_audit_rejects_extra_archive_layout_member() {
     let manifest = stage.path().join("package.toml");
     let executable = stage.path().join("opi-sandbox");
     std::fs::write(&manifest, b"invalid is irrelevant after layout rejection\n").unwrap();
-    std::fs::write(&executable, BINARY_BYTES).unwrap();
+    std::fs::write(&executable, executable_for_target(LINUX_TARGET)).unwrap();
     create_native_archive(
         &native_archive_path(
             &dir.path().join(format!("linux/{LINUX_TARGET}")),
@@ -1014,8 +1734,7 @@ fn release_audit_accepts_a_real_packager_produced_archive() {
     write_complete_good_evidence(dir.path());
 
     let pack = tempfile::tempdir().expect("real packager artifact tempdir");
-    let fixture = pack.path().join("fixture-binary");
-    std::fs::write(&fixture, BINARY_BYTES).unwrap();
+    let fixture = std::env::current_exe().expect("current native test executable");
     let output = Command::new("bash")
         .arg(workspace_root().join("scripts/package-opi-sandbox.sh"))
         .arg("--binary")
@@ -1181,20 +1900,11 @@ fn release_audit_rejects_skipped_evidence() {
     let dir = tempfile::tempdir().expect("release evidence tempdir");
     // smoke evidence shows ignored tests (skipped evidence).
     let skipped = "test result: ok. 8 passed; 0 failed; 2 ignored\n";
-    write_native_bundle(
-        dir.path(),
-        "linux",
-        LINUX_TARGET,
-        BINARY_BYTES,
-        skipped,
-        false,
-        false,
-    );
+    write_native_bundle(dir.path(), "linux", LINUX_TARGET, skipped, false, false);
     write_native_bundle(
         dir.path(),
         "macos",
         MACOS_TARGET,
-        BINARY_BYTES,
         good_smoke_log(),
         false,
         false,
@@ -1216,20 +1926,11 @@ fn release_audit_rejects_zero_test_evidence() {
     let dir = tempfile::tempdir().expect("release evidence tempdir");
     // smoke evidence shows 0 passed (zero-test evidence).
     let zero = "test result: ok. 0 passed; 0 failed; 0 ignored\n";
-    write_native_bundle(
-        dir.path(),
-        "linux",
-        LINUX_TARGET,
-        BINARY_BYTES,
-        zero,
-        false,
-        false,
-    );
+    write_native_bundle(dir.path(), "linux", LINUX_TARGET, zero, false, false);
     write_native_bundle(
         dir.path(),
         "macos",
         MACOS_TARGET,
-        BINARY_BYTES,
         good_smoke_log(),
         false,
         false,
@@ -1253,7 +1954,6 @@ fn release_audit_rejects_windows_unsupported_without_pass_evidence() {
         dir.path(),
         "linux",
         LINUX_TARGET,
-        BINARY_BYTES,
         good_smoke_log(),
         false,
         false,
@@ -1262,7 +1962,6 @@ fn release_audit_rejects_windows_unsupported_without_pass_evidence() {
         dir.path(),
         "macos",
         MACOS_TARGET,
-        BINARY_BYTES,
         good_smoke_log(),
         false,
         false,
@@ -1330,6 +2029,10 @@ fn run_phase_exit_audit_with_json(dir: &std::path::Path, json: bool) -> (bool, S
         )
         .arg(dir)
         .arg("--phase-exit")
+        .arg("--workflow-run-id")
+        .arg(EVIDENCE_WORKFLOW_RUN_ID)
+        .arg("--commit-sha")
+        .arg(EVIDENCE_COMMIT_SHA)
         .args(json.then_some("--json"))
         .output()
         .expect("run phase-exit audit");
@@ -1340,6 +2043,303 @@ fn run_phase_exit_audit_with_json(dir: &std::path::Path, json: bool) -> (bool, S
     )
 }
 
+fn run_phase_exit_audit_with_post_native_archive_swap(
+    dir: &std::path::Path,
+    victim: &std::path::Path,
+    replacement: &std::path::Path,
+) -> (bool, String, String) {
+    let harness = r#"
+import importlib.util, json, os, pathlib, sys
+
+module_path = pathlib.Path(sys.argv[1])
+root = pathlib.Path(sys.argv[2])
+victim = pathlib.Path(sys.argv[3])
+replacement = pathlib.Path(sys.argv[4])
+run_id = sys.argv[5]
+commit_sha = sys.argv[6]
+spec = importlib.util.spec_from_file_location("artifact_audit_phase_exit_swap", module_path)
+if spec is None or spec.loader is None:
+    raise SystemExit("cannot load artifact audit")
+audit = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(audit)
+original_native = audit._audit_phase_exit_native
+swapped = [False]
+
+def audit_native_then_swap(root, platform, target_suffix, issues, actual_digests):
+    original_native(root, platform, target_suffix, issues, actual_digests)
+    if platform == "linux" and not swapped[0]:
+        os.replace(replacement, victim)
+        swapped[0] = True
+
+audit._audit_phase_exit_native = audit_native_then_swap
+report = audit.audit_phase_exit_evidence(root, run_id, commit_sha)
+report["test_post_native_swap_triggered"] = swapped[0]
+print(json.dumps(report))
+raise SystemExit(0 if report["ok"] else 1)
+"#;
+    let output = Command::new(python_command())
+        .args(["-c", harness])
+        .arg(
+            workspace_root()
+                .join("scripts")
+                .join("opi-artifact-audit.py"),
+        )
+        .arg(dir)
+        .arg(victim)
+        .arg(replacement)
+        .arg(EVIDENCE_WORKFLOW_RUN_ID)
+        .arg(EVIDENCE_COMMIT_SHA)
+        .output()
+        .expect("run phase-exit audit with post-native archive swap");
+    (
+        output.status.success(),
+        String::from_utf8_lossy(&output.stdout).into_owned(),
+        String::from_utf8_lossy(&output.stderr).into_owned(),
+    )
+}
+
+fn run_phase_exit_audit_with_post_snapshot_evidence_swap(
+    dir: &std::path::Path,
+    victim: &std::path::Path,
+    replacement: &std::path::Path,
+) -> (bool, String, String) {
+    let harness = r#"
+import importlib.util, json, os, pathlib, sys
+
+module_path = pathlib.Path(sys.argv[1])
+root = pathlib.Path(sys.argv[2])
+victim = pathlib.Path(sys.argv[3])
+replacement = pathlib.Path(sys.argv[4])
+run_id = sys.argv[5]
+commit_sha = sys.argv[6]
+spec = importlib.util.spec_from_file_location("artifact_audit_evidence_swap", module_path)
+if spec is None or spec.loader is None:
+    raise SystemExit("cannot load artifact audit")
+audit = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(audit)
+original_snapshot = audit._read_bounded_evidence_snapshot
+swapped = [False]
+
+def snapshot_then_swap(path, limit):
+    snapshot = original_snapshot(path, limit)
+    if pathlib.Path(path) == victim and not swapped[0]:
+        os.replace(replacement, victim)
+        swapped[0] = True
+    return snapshot
+
+audit._read_bounded_evidence_snapshot = snapshot_then_swap
+report = audit.audit_phase_exit_evidence(root, run_id, commit_sha)
+report["test_post_snapshot_swap_triggered"] = swapped[0]
+print(json.dumps(report))
+raise SystemExit(0 if report["ok"] else 1)
+"#;
+    let output = Command::new(python_command())
+        .args(["-c", harness])
+        .arg(
+            workspace_root()
+                .join("scripts")
+                .join("opi-artifact-audit.py"),
+        )
+        .arg(dir)
+        .arg(victim)
+        .arg(replacement)
+        .arg(EVIDENCE_WORKFLOW_RUN_ID)
+        .arg(EVIDENCE_COMMIT_SHA)
+        .output()
+        .expect("run phase-exit audit with post-snapshot evidence swap");
+    (
+        output.status.success(),
+        String::from_utf8_lossy(&output.stdout).into_owned(),
+        String::from_utf8_lossy(&output.stderr).into_owned(),
+    )
+}
+
+fn run_phase_exit_audit_with_bundle_root_lstat_seam(
+    dir: &std::path::Path,
+    mode: &str,
+) -> (bool, String, String) {
+    let harness = r#"
+import importlib.util, json, os, pathlib, stat, sys, types
+
+module_path = pathlib.Path(sys.argv[1])
+root = pathlib.Path(sys.argv[2])
+mode = sys.argv[3]
+run_id = sys.argv[4]
+commit_sha = sys.argv[5]
+spec = importlib.util.spec_from_file_location("artifact_audit_bundle_root_lstat", module_path)
+if spec is None or spec.loader is None:
+    raise SystemExit("cannot load artifact audit")
+audit = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(audit)
+original_lstat = audit.os.lstat
+gates = root / "gates"
+other_root = root / "six-target"
+root_lstat_calls = [0]
+
+def root_lstat(path):
+    candidate = pathlib.Path(path)
+    if candidate != gates:
+        return original_lstat(path)
+    root_lstat_calls[0] += 1
+    if mode == "reparse":
+        opened = original_lstat(path)
+        return types.SimpleNamespace(
+            st_mode=opened.st_mode,
+            st_dev=opened.st_dev,
+            st_ino=opened.st_ino,
+            st_file_attributes=(getattr(opened, "st_file_attributes", 0) or 0) | 0x400,
+        )
+    if mode == "identity-mismatch" and root_lstat_calls[0] > 1:
+        return original_lstat(other_root)
+    return original_lstat(path)
+
+audit.os.lstat = root_lstat
+report = audit.audit_phase_exit_evidence(root, run_id, commit_sha)
+report["test_root_lstat_calls"] = root_lstat_calls[0]
+print(json.dumps(report))
+raise SystemExit(0 if report["ok"] else 1)
+"#;
+    let output = Command::new(python_command())
+        .args(["-c", harness])
+        .arg(
+            workspace_root()
+                .join("scripts")
+                .join("opi-artifact-audit.py"),
+        )
+        .arg(dir)
+        .arg(mode)
+        .arg(EVIDENCE_WORKFLOW_RUN_ID)
+        .arg(EVIDENCE_COMMIT_SHA)
+        .output()
+        .expect("run phase-exit audit with bundle-root lstat seam");
+    (
+        output.status.success(),
+        String::from_utf8_lossy(&output.stdout).into_owned(),
+        String::from_utf8_lossy(&output.stderr).into_owned(),
+    )
+}
+
+fn run_evidence_snapshot_lstat_symlink_seam() -> serde_json::Value {
+    let temp = tempfile::tempdir().expect("evidence snapshot tempdir");
+    let source = temp.path().join("evidence.log");
+    std::fs::write(&source, b"bounded evidence\n").unwrap();
+    let harness = r#"
+import importlib.util, json, os, pathlib, stat, sys
+
+module_path = pathlib.Path(sys.argv[1])
+source = pathlib.Path(sys.argv[2])
+spec = importlib.util.spec_from_file_location("artifact_audit_evidence_lstat", module_path)
+if spec is None or spec.loader is None:
+    raise SystemExit("cannot load artifact audit")
+audit = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(audit)
+original_lstat = audit.os.lstat
+
+def symlink_lstat(path):
+    opened = original_lstat(path)
+    fields = list(opened)
+    fields[0] = stat.S_IFLNK | 0o777
+    return os.stat_result(fields)
+
+audit.os.lstat = symlink_lstat
+try:
+    audit._read_bounded_evidence_snapshot(source, 1024)
+    report = {"ok": True}
+except Exception as error:
+    report = {
+        "ok": False,
+        "error_type": type(error).__name__,
+        "code": getattr(error, "code", None),
+        "message": str(error),
+    }
+print(json.dumps(report))
+"#;
+    let output = Command::new(python_command())
+        .args(["-c", harness])
+        .arg(
+            workspace_root()
+                .join("scripts")
+                .join("opi-artifact-audit.py"),
+        )
+        .arg(source)
+        .output()
+        .expect("run evidence snapshot lstat seam");
+    assert!(
+        output.status.success(),
+        "evidence snapshot seam failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    serde_json::from_slice(&output.stdout).unwrap_or_else(|error| {
+        panic!(
+            "evidence snapshot seam returned invalid JSON: {error}: {}",
+            String::from_utf8_lossy(&output.stdout)
+        )
+    })
+}
+
+fn phase_exit_archive_digests(
+    root: &std::path::Path,
+) -> serde_json::Map<String, serde_json::Value> {
+    let mut digests = serde_json::Map::new();
+    for (platform, target) in [
+        ("linux", LINUX_TARGET),
+        ("linux", LINUX_ARM_TARGET),
+        ("macos", MACOS_X64_TARGET),
+        ("macos", MACOS_TARGET),
+    ] {
+        let nested = native_archive_path(&root.join(platform).join(target), target);
+        let flat = native_archive_path(&root.join(platform), target);
+        let archive = if nested.is_file() { nested } else { flat };
+        let digest = if archive.is_file() {
+            sha256_hex_local(&std::fs::read(archive).unwrap())
+        } else {
+            "0".repeat(64)
+        };
+        digests.insert(target.to_string(), serde_json::Value::String(digest));
+    }
+    digests
+}
+
+fn write_bound_evidence_identity(root: &std::path::Path, bundle_name: &str) {
+    let bundle = root.join(bundle_name);
+    let mut files = serde_json::Map::new();
+    for entry in std::fs::read_dir(&bundle).unwrap() {
+        let entry = entry.unwrap();
+        let path = entry.path();
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if path.is_file() && name != EVIDENCE_IDENTITY_FILE {
+            files.insert(
+                name,
+                serde_json::Value::String(sha256_hex_local(&std::fs::read(path).unwrap())),
+            );
+        }
+    }
+    let identity = serde_json::json!({
+        "schema_version": 1,
+        "workflow_run_id": EVIDENCE_WORKFLOW_RUN_ID,
+        "commit_sha": EVIDENCE_COMMIT_SHA,
+        "archive_sha256_by_target": phase_exit_archive_digests(root),
+        "files_sha256": files,
+    });
+    std::fs::write(
+        bundle.join(EVIDENCE_IDENTITY_FILE),
+        serde_json::to_vec_pretty(&identity).unwrap(),
+    )
+    .unwrap();
+}
+
+fn mutate_bound_evidence_identity(
+    root: &std::path::Path,
+    bundle_name: &str,
+    mutate: impl FnOnce(&mut serde_json::Value),
+) {
+    let path = root.join(bundle_name).join(EVIDENCE_IDENTITY_FILE);
+    let mut identity: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    mutate(&mut identity);
+    std::fs::write(path, serde_json::to_vec_pretty(&identity).unwrap()).unwrap();
+}
+
 /// Write a macOS native-archive bundle for phase-exit evidence.
 fn write_macos_phase_exit_bundle(root: &std::path::Path, with_pass: bool, with_archive: bool) {
     let log = if with_pass {
@@ -1347,15 +2347,7 @@ fn write_macos_phase_exit_bundle(root: &std::path::Path, with_pass: bool, with_a
     } else {
         "cargo check --target aarch64-apple-darwin\n" // no pass marker
     };
-    write_native_bundle(
-        root,
-        "macos",
-        MACOS_TARGET,
-        BINARY_BYTES,
-        log,
-        false,
-        !with_archive,
-    );
+    write_native_bundle(root, "macos", MACOS_TARGET, log, false, !with_archive);
 }
 
 /// Write the six-target bundle: one preserved `cargo check --target` log per
@@ -1371,7 +2363,11 @@ fn write_six_target_bundle(
     // The phase-exit audit requires a provenance note for the preserved logs.
     std::fs::write(
         dir.join("source"),
-        "ci run 123 @deadbeef target_check job\n",
+        format!(
+            "workflow_run_id={EVIDENCE_WORKFLOW_RUN_ID}\n\
+             commit_sha={EVIDENCE_COMMIT_SHA}\n\
+             job=target_check\n"
+        ),
     )
     .unwrap();
     for (index, (triple, kind)) in triples.iter().enumerate() {
@@ -1382,6 +2378,7 @@ fn write_six_target_bundle(
         };
         std::fs::write(dir.join(format!("check-{index}.log")), body).unwrap();
     }
+    write_bound_evidence_identity(root, "six-target");
 }
 
 /// The DoD gate categories the phase-exit audit requires a capture for, keyed
@@ -1411,6 +2408,7 @@ fn write_gates_bundle(root: &std::path::Path, with_pass: bool) {
         };
         std::fs::write(dir.join(format!("gate-{marker}.txt")), body).unwrap();
     }
+    write_bound_evidence_identity(root, "gates");
 }
 
 /// A complete phase-exit evidence tree with Linux and macOS archives, Windows
@@ -1420,7 +2418,6 @@ fn write_complete_phase_exit_evidence(root: &std::path::Path) {
         root,
         &format!("linux/{LINUX_TARGET}"),
         LINUX_TARGET,
-        BINARY_BYTES,
         good_smoke_log(),
         false,
         false,
@@ -1429,7 +2426,6 @@ fn write_complete_phase_exit_evidence(root: &std::path::Path) {
         root,
         &format!("linux/{LINUX_ARM_TARGET}"),
         LINUX_ARM_TARGET,
-        BINARY_BYTES,
         good_smoke_log(),
         false,
         false,
@@ -1438,7 +2434,6 @@ fn write_complete_phase_exit_evidence(root: &std::path::Path) {
         root,
         &format!("macos/{MACOS_X64_TARGET}"),
         MACOS_X64_TARGET,
-        BINARY_BYTES,
         good_smoke_log(),
         false,
         false,
@@ -1447,7 +2442,6 @@ fn write_complete_phase_exit_evidence(root: &std::path::Path) {
         root,
         &format!("macos/{MACOS_TARGET}"),
         MACOS_TARGET,
-        BINARY_BYTES,
         good_smoke_log(),
         false,
         false,
@@ -1479,13 +2473,296 @@ fn phase_exit_audit_passes_complete_evidence() {
 }
 
 #[test]
+fn phase_exit_audit_rejects_non_integer_schema_versions() {
+    for invalid in [
+        serde_json::json!(true),
+        serde_json::json!(1.0),
+        serde_json::json!("1"),
+        serde_json::json!(2),
+    ] {
+        let dir = tempfile::tempdir().expect("phase-exit evidence tempdir");
+        write_complete_phase_exit_evidence(dir.path());
+        mutate_bound_evidence_identity(dir.path(), "gates", |identity| {
+            identity["schema_version"] = invalid;
+        });
+
+        let (ok, stdout, stderr) = run_phase_exit_audit(dir.path());
+        assert!(
+            !ok,
+            "invalid schema version must fail: stdout={stdout} stderr={stderr}"
+        );
+        assert!(stdout.contains("invalid_evidence_identity"), "{stdout}");
+    }
+}
+
+#[test]
+fn phase_exit_audit_rejects_identity_listing_a_missing_file() {
+    let dir = tempfile::tempdir().expect("phase-exit evidence tempdir");
+    write_complete_phase_exit_evidence(dir.path());
+    mutate_bound_evidence_identity(dir.path(), "gates", |identity| {
+        identity["files_sha256"]["missing.log"] = serde_json::Value::String("0".repeat(64));
+    });
+
+    let (ok, stdout, stderr) = run_phase_exit_audit(dir.path());
+    assert!(!ok, "listed missing file must fail: {stdout} {stderr}");
+    assert!(stdout.contains("invalid_evidence_identity"), "{stdout}");
+}
+
+#[test]
+fn phase_exit_audit_rejects_unbound_extra_evidence_file() {
+    let dir = tempfile::tempdir().expect("phase-exit evidence tempdir");
+    write_complete_phase_exit_evidence(dir.path());
+    std::fs::write(
+        dir.path().join("gates/fabricated.out"),
+        "test result: FAILED. 0 passed; 1 failed\n",
+    )
+    .unwrap();
+
+    let (ok, stdout, stderr) = run_phase_exit_audit(dir.path());
+    assert!(!ok, "unbound extra file must fail: {stdout} {stderr}");
+    assert!(stdout.contains("unexpected_evidence_entry"), "{stdout}");
+}
+
+#[test]
+fn phase_exit_audit_rejects_nested_evidence_directory() {
+    let dir = tempfile::tempdir().expect("phase-exit evidence tempdir");
+    write_complete_phase_exit_evidence(dir.path());
+    std::fs::create_dir(dir.path().join("gates/nested")).unwrap();
+
+    let (ok, stdout, stderr) = run_phase_exit_audit(dir.path());
+    assert!(
+        !ok,
+        "nested evidence directory must fail: {stdout} {stderr}"
+    );
+    assert!(stdout.contains("invalid_evidence_entry"), "{stdout}");
+}
+
+#[test]
+fn phase_exit_audit_rejects_reparse_bundle_root_seam() {
+    let dir = tempfile::tempdir().expect("phase-exit evidence tempdir");
+    write_complete_phase_exit_evidence(dir.path());
+
+    let (ok, stdout, stderr) =
+        run_phase_exit_audit_with_bundle_root_lstat_seam(dir.path(), "reparse");
+    assert!(!ok, "reparse bundle root must fail: {stdout} {stderr}");
+    assert!(stdout.contains("invalid_evidence_bundle"), "{stdout}");
+    assert!(stdout.contains("\"test_root_lstat_calls\": 1"), "{stdout}");
+}
+
+#[test]
+fn phase_exit_audit_rejects_bundle_root_identity_change() {
+    let dir = tempfile::tempdir().expect("phase-exit evidence tempdir");
+    write_complete_phase_exit_evidence(dir.path());
+
+    let (ok, stdout, stderr) =
+        run_phase_exit_audit_with_bundle_root_lstat_seam(dir.path(), "identity-mismatch");
+    assert!(
+        !ok,
+        "replaced bundle root must fail: stdout={stdout} stderr={stderr}"
+    );
+    assert!(
+        stdout.contains("evidence_bundle_identity_mismatch"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("\"test_root_lstat_calls\": 2"), "{stdout}");
+}
+
+#[cfg(unix)]
+#[test]
+fn phase_exit_audit_rejects_symlinked_bundle_root() {
+    let dir = tempfile::tempdir().expect("phase-exit evidence tempdir");
+    write_complete_phase_exit_evidence(dir.path());
+    let gates = dir.path().join("gates");
+    let actual_gates = dir.path().join("actual-gates");
+    std::fs::rename(&gates, &actual_gates).unwrap();
+    std::os::unix::fs::symlink(&actual_gates, &gates).unwrap();
+
+    let (ok, stdout, stderr) = run_phase_exit_audit(dir.path());
+    assert!(
+        !ok,
+        "symlinked bundle root must fail: stdout={stdout} stderr={stderr}"
+    );
+    assert!(stdout.contains("invalid_evidence_bundle"), "{stdout}");
+}
+
+#[test]
+fn evidence_snapshot_rejects_symlink_or_reparse_lstat_seam() {
+    let report = run_evidence_snapshot_lstat_symlink_seam();
+    assert_eq!(report["ok"], false, "{report}");
+    assert_eq!(report["error_type"], "EvidenceSnapshotError", "{report}");
+    assert_eq!(report["code"], "invalid_evidence_entry", "{report}");
+}
+
+#[cfg(unix)]
+#[test]
+fn phase_exit_audit_rejects_symlinked_evidence_file() {
+    let dir = tempfile::tempdir().expect("phase-exit evidence tempdir");
+    write_complete_phase_exit_evidence(dir.path());
+    std::os::unix::fs::symlink(
+        dir.path().join("gates/gate-fmt.txt"),
+        dir.path().join("gates/linked.log"),
+    )
+    .unwrap();
+
+    let (ok, stdout, stderr) = run_phase_exit_audit(dir.path());
+    assert!(!ok, "symlinked evidence must fail: {stdout} {stderr}");
+    assert!(stdout.contains("invalid_evidence_entry"), "{stdout}");
+}
+
+#[test]
+fn phase_exit_audit_rejects_oversized_evidence_snapshot() {
+    const LIMIT: usize = 16 * 1024 * 1024;
+    let dir = tempfile::tempdir().expect("phase-exit evidence tempdir");
+    write_complete_phase_exit_evidence(dir.path());
+    let mut oversized = b"test result: ok. 3 passed; 0 failed; 0 ignored\n".to_vec();
+    oversized.resize(LIMIT + 1, b'x');
+    std::fs::write(dir.path().join("gates/gate-workspace-test.txt"), oversized).unwrap();
+    write_bound_evidence_identity(dir.path(), "gates");
+
+    let (ok, stdout, stderr) = run_phase_exit_audit(dir.path());
+    assert!(!ok, "oversized evidence must fail: {stdout} {stderr}");
+    assert!(
+        stdout.contains("evidence_snapshot_limit_exceeded"),
+        "{stdout}"
+    );
+}
+
+#[test]
+fn phase_exit_identity_uses_the_auditor_owned_archive_snapshot_digest() {
+    let dir = tempfile::tempdir().expect("phase-exit evidence tempdir");
+    write_complete_phase_exit_evidence(dir.path());
+    let bundle = dir.path().join(format!("linux/{LINUX_TARGET}"));
+    let victim = native_archive_path(&bundle, LINUX_TARGET);
+    let replacement = dir.path().join("replacement.tar.gz");
+    std::fs::copy(&victim, &replacement).unwrap();
+    rewrite_native_archive(&replacement, "dot-alias");
+
+    let (ok, stdout, stderr) =
+        run_phase_exit_audit_with_post_native_archive_swap(dir.path(), &victim, &replacement);
+
+    let report: serde_json::Value = serde_json::from_str(&stdout)
+        .unwrap_or_else(|error| panic!("invalid audit JSON: {error}: {stdout} {stderr}"));
+    assert_eq!(report["test_post_native_swap_triggered"], true, "{stdout}");
+    assert!(
+        ok,
+        "identity comparison must retain the snapshot digest after the caller path changes: {stdout} {stderr}"
+    );
+}
+
+#[test]
+fn phase_exit_evidence_hash_and_parse_use_one_owned_snapshot() {
+    let dir = tempfile::tempdir().expect("phase-exit evidence tempdir");
+    write_complete_phase_exit_evidence(dir.path());
+    let victim = dir.path().join("gates/gate-workspace-test.txt");
+    let replacement = dir.path().join("replacement-gate.txt");
+    std::fs::write(&replacement, "test result: FAILED. 0 passed; 1 failed\n").unwrap();
+
+    let (ok, stdout, stderr) =
+        run_phase_exit_audit_with_post_snapshot_evidence_swap(dir.path(), &victim, &replacement);
+
+    let report: serde_json::Value = serde_json::from_str(&stdout)
+        .unwrap_or_else(|error| panic!("invalid audit JSON: {error}: {stdout} {stderr}"));
+    assert_eq!(
+        report["test_post_snapshot_swap_triggered"], true,
+        "{stdout}"
+    );
+    assert!(
+        ok,
+        "audit must hash and parse the same snapshot after caller path replacement: {stdout} {stderr}"
+    );
+}
+
+#[test]
+fn phase_exit_audit_rejects_fabricated_pass_text_not_bound_by_file_digest() {
+    let dir = tempfile::tempdir().expect("phase-exit evidence tempdir");
+    write_complete_phase_exit_evidence(dir.path());
+    std::fs::write(
+        dir.path().join("gates/gate-workspace-test.txt"),
+        "test result: ok. 99 passed; 0 failed; 0 ignored\n",
+    )
+    .unwrap();
+
+    let (ok, stdout, stderr) = run_phase_exit_audit(dir.path());
+    assert!(
+        !ok,
+        "fabricated pass text must fail: stdout={stdout} stderr={stderr}"
+    );
+    assert!(
+        stdout.contains("evidence_file_digest_mismatch"),
+        "fabricated text must be rejected by its declared digest: {stdout}"
+    );
+}
+
+#[test]
+fn phase_exit_audit_rejects_missing_workflow_run_identity() {
+    let dir = tempfile::tempdir().expect("phase-exit evidence tempdir");
+    write_complete_phase_exit_evidence(dir.path());
+    mutate_bound_evidence_identity(dir.path(), "gates", |identity| {
+        identity
+            .as_object_mut()
+            .expect("identity object")
+            .remove("workflow_run_id");
+    });
+
+    let (ok, stdout, stderr) = run_phase_exit_audit(dir.path());
+    assert!(!ok, "missing run identity must fail: {stdout} {stderr}");
+    assert!(stdout.contains("invalid_evidence_identity"), "{stdout}");
+}
+
+#[test]
+fn phase_exit_audit_rejects_mismatched_workflow_run_identities() {
+    let dir = tempfile::tempdir().expect("phase-exit evidence tempdir");
+    write_complete_phase_exit_evidence(dir.path());
+    mutate_bound_evidence_identity(dir.path(), "six-target", |identity| {
+        identity["workflow_run_id"] = serde_json::Value::String("987654321".to_string());
+    });
+
+    let (ok, stdout, stderr) = run_phase_exit_audit(dir.path());
+    assert!(
+        !ok,
+        "mismatched run identities must fail: {stdout} {stderr}"
+    );
+    assert!(stdout.contains("run_identity_mismatch"), "{stdout}");
+    assert!(stdout.contains("evidence_identity_mismatch"), "{stdout}");
+}
+
+#[test]
+fn phase_exit_audit_rejects_commit_identity_mismatch() {
+    let dir = tempfile::tempdir().expect("phase-exit evidence tempdir");
+    write_complete_phase_exit_evidence(dir.path());
+    mutate_bound_evidence_identity(dir.path(), "gates", |identity| {
+        identity["commit_sha"] = serde_json::Value::String("f".repeat(40));
+    });
+
+    let (ok, stdout, stderr) = run_phase_exit_audit(dir.path());
+    assert!(!ok, "commit mismatch must fail: {stdout} {stderr}");
+    assert!(stdout.contains("commit_identity_mismatch"), "{stdout}");
+    assert!(stdout.contains("evidence_identity_mismatch"), "{stdout}");
+}
+
+#[test]
+fn phase_exit_audit_rejects_declared_archive_digest_mismatch() {
+    let dir = tempfile::tempdir().expect("phase-exit evidence tempdir");
+    write_complete_phase_exit_evidence(dir.path());
+    for bundle in ["gates", "six-target"] {
+        mutate_bound_evidence_identity(dir.path(), bundle, |identity| {
+            identity["archive_sha256_by_target"][LINUX_TARGET] =
+                serde_json::Value::String("f".repeat(64));
+        });
+    }
+
+    let (ok, stdout, stderr) = run_phase_exit_audit(dir.path());
+    assert!(!ok, "archive digest mismatch must fail: {stdout} {stderr}");
+    assert!(stdout.contains("archive_digest_mismatch"), "{stdout}");
+}
+
+#[test]
 fn phase_exit_audit_rejects_missing_platform() {
     let dir = tempfile::tempdir().expect("phase-exit evidence tempdir");
     write_native_bundle(
         dir.path(),
         "linux",
         LINUX_TARGET,
-        BINARY_BYTES,
         good_smoke_log(),
         false,
         false,
@@ -1522,7 +2799,6 @@ fn phase_exit_audit_rejects_macos_archive_without_pass_marker() {
         dir.path(),
         "linux",
         LINUX_TARGET,
-        BINARY_BYTES,
         good_smoke_log(),
         false,
         false,
@@ -1560,7 +2836,6 @@ fn phase_exit_audit_rejects_macos_bundle_without_archive() {
         dir.path(),
         "linux",
         LINUX_TARGET,
-        BINARY_BYTES,
         good_smoke_log(),
         false,
         false,
@@ -1598,7 +2873,6 @@ fn phase_exit_audit_rejects_missing_six_target_triple() {
         dir.path(),
         "linux",
         LINUX_TARGET,
-        BINARY_BYTES,
         good_smoke_log(),
         false,
         false,
@@ -1635,7 +2909,6 @@ fn phase_exit_audit_rejects_ambiguous_six_target_log() {
         dir.path(),
         "linux",
         LINUX_TARGET,
-        BINARY_BYTES,
         good_smoke_log(),
         false,
         false,
@@ -1673,7 +2946,6 @@ fn phase_exit_audit_rejects_gate_without_pass_marker() {
         dir.path(),
         "linux",
         LINUX_TARGET,
-        BINARY_BYTES,
         good_smoke_log(),
         false,
         false,
@@ -1710,7 +2982,6 @@ fn phase_exit_audit_rejects_failed_target_evidence() {
         dir.path(),
         "linux",
         LINUX_TARGET,
-        BINARY_BYTES,
         good_smoke_log(),
         false,
         false,
@@ -1752,7 +3023,6 @@ fn phase_exit_audit_rejects_gate_with_failed_test() {
         dir.path(),
         "linux",
         LINUX_TARGET,
-        BINARY_BYTES,
         good_smoke_log(),
         false,
         false,
@@ -1800,7 +3070,6 @@ fn phase_exit_audit_rejects_zero_test_gate_capture() {
         dir.path(),
         "linux",
         LINUX_TARGET,
-        BINARY_BYTES,
         good_smoke_log(),
         false,
         false,
@@ -1866,6 +3135,7 @@ fn phase_exit_audit_does_not_apply_test_result_rules_to_non_test_gates() {
         "test result: ok. 3 passed; 0 failed; 2 ignored\nFinished `dev` profile\n",
     )
     .unwrap();
+    write_bound_evidence_identity(dir.path(), "gates");
 
     let (ok, stdout, stderr) = run_phase_exit_audit(dir.path());
     assert!(

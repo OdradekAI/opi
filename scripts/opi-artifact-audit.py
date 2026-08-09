@@ -425,6 +425,13 @@ def _session_files(artifact_dir):
 #   <dir>/windows/ a *.txt/*.log evidence file reporting doctor supported=false
 #                 plus a passing unsupported-posture test result; NO extracted
 #                 archive (16.14.2 unsupported posture).
+# Native target bundles are exact: target, package-lock.toml, one native
+# archive, and either the synthetic smoke.log fixture or the reviewed smoke/
+# output paths produced by opi-sandbox-smoke.sh. Windows permits exactly
+# unsupported.log and posture-tests.log. Roots and nested directories are
+# lstat/reparse checked and identity-rechecked; regular files are captured once
+# with the bounded limits below, while archives use the existing owned on-disk
+# snapshot before hashing/extraction.
 # ---------------------------------------------------------------------------
 
 # Native opi-sandbox target families that ship an archive, keyed by the evidence
@@ -445,6 +452,55 @@ ARCHIVE_MEMBER_LIMITS = {
     "licenses/LICENSE": 1024 * 1024,
 }
 ARCHIVE_TOTAL_LIMIT = sum(ARCHIVE_MEMBER_LIMITS.values())
+# Allow bounded container metadata/compression overhead beyond the maximum
+# extracted payload while keeping the auditor-owned snapshot itself bounded.
+ARCHIVE_SNAPSHOT_LIMIT = ARCHIVE_TOTAL_LIMIT + 1024 * 1024
+NATIVE_TARGET_SNAPSHOT_LIMIT = 256
+NATIVE_LOCK_SNAPSHOT_LIMIT = 16 * 1024
+NATIVE_EVIDENCE_FILE_SNAPSHOT_LIMIT = 4 * 1024 * 1024
+NATIVE_EVIDENCE_TOTAL_SNAPSHOT_LIMIT = 32 * 1024 * 1024
+NATIVE_BUNDLE_ENTRY_LIMIT = 64
+WINDOWS_EVIDENCE_FILE_SNAPSHOT_LIMIT = 4 * 1024 * 1024
+WINDOWS_EVIDENCE_TOTAL_SNAPSHOT_LIMIT = 8 * 1024 * 1024
+WINDOWS_BUNDLE_ENTRY_LIMIT = 8
+NATIVE_SMOKE_DIRECTORIES = {
+    "smoke",
+    "smoke/empty-cwd",
+    "smoke/sentinel",
+    "smoke/sentinel/opi",
+    "smoke/ws",
+}
+NATIVE_SMOKE_FILES = {
+    "smoke/help.txt",
+    "smoke/version.txt",
+    "smoke/doctor.json",
+    "smoke/setup-temp-root-blocker",
+    "smoke/setup-stdout.txt",
+    "smoke/setup-stderr.txt",
+    "smoke/setup-failure-smoke-result.txt",
+    "smoke/run-stdout.bin",
+    "smoke/run-stderr.bin",
+    "smoke/expected-stdout.bin",
+    "smoke/expected-stderr.bin",
+    "smoke/run-exit.txt",
+    "smoke/direct-smoke-result.txt",
+    "smoke/filesystem-allow-smoke-result.txt",
+    "smoke/filesystem-deny-stdout.txt",
+    "smoke/filesystem-deny-stderr.txt",
+    "smoke/filesystem-deny-smoke-result.txt",
+    "smoke/network-deny-stdout.txt",
+    "smoke/network-deny-stderr.txt",
+    "smoke/network-deny-smoke-result.txt",
+    "smoke/network-allow-stdout.txt",
+    "smoke/network-allow-stderr.txt",
+    "smoke/network-allow-smoke-result.txt",
+    "smoke/backend-smoke-result.txt",
+    "smoke/empty-cwd-smoke-result.txt",
+    "smoke/smoke-result.txt",
+    "smoke/ws/direct-target.sh",
+    "smoke/ws/filesystem-allowed.txt",
+    "smoke/sentinel/opi/config.toml",
+}
 KNOWN_MANIFEST_FIELDS = {"name", "description", "version", "opi_version", "contributions"}
 KNOWN_CONTRIBUTIONS_FIELDS = {"adapters"}
 KNOWN_ADAPTER_FIELDS = {
@@ -490,6 +546,12 @@ LOCK_FIELDS = {
 }
 
 
+class ArchiveSnapshotError(ValueError):
+    def __init__(self, code, message):
+        super().__init__(message)
+        self.code = code
+
+
 def sha256_evidence_file(path, issues):
     digest = hashlib.sha256()
     try:
@@ -502,15 +564,46 @@ def sha256_evidence_file(path, issues):
     return digest.hexdigest()
 
 
-def _bundle_evidence_text(bundle, issues):
-    """Concatenate text/log evidence, including a packager's smoke/ subtree."""
-    parts = []
-    for entry in sorted(bundle.rglob("*")):
-        if entry.suffix.lower() in {".txt", ".log"}:
-            text = read_evidence_text(entry, issues)
-            if text is not None:
-                parts.append(text)
-    return "\n".join(parts)
+def _copy_archive_snapshot(source, destination):
+    flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = None
+    try:
+        descriptor = os.open(source, flags)
+        with os.fdopen(descriptor, "rb") as input_handle:
+            descriptor = None
+            opened_stat = os.fstat(input_handle.fileno())
+            path_stat = os.lstat(source)
+            if (
+                not _is_regular_no_reparse(path_stat)
+                or not _is_regular_no_reparse(opened_stat)
+            ):
+                raise ArchiveSnapshotError(
+                    "archive_source_not_regular",
+                    "archive source is not a regular file",
+                )
+            if not os.path.samestat(path_stat, opened_stat):
+                raise ArchiveSnapshotError(
+                    "archive_source_identity_mismatch",
+                    "archive source identity changed after open",
+                )
+            if opened_stat.st_size < 0 or opened_stat.st_size > ARCHIVE_SNAPSHOT_LIMIT:
+                raise ArchiveSnapshotError(
+                    "archive_snapshot_limit_exceeded",
+                    f"archive exceeds snapshot limit of {ARCHIVE_SNAPSHOT_LIMIT} bytes",
+                )
+            with destination.open("xb") as output_handle:
+                copied = 0
+                for chunk in iter(lambda: input_handle.read(65536), b""):
+                    copied += len(chunk)
+                    if copied > ARCHIVE_SNAPSHOT_LIMIT:
+                        raise ArchiveSnapshotError(
+                            "archive_snapshot_limit_exceeded",
+                            f"archive exceeds snapshot limit of {ARCHIVE_SNAPSHOT_LIMIT} bytes while copying",
+                        )
+                    output_handle.write(chunk)
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
 
 
 def _classify_evidence(text, platform, issues):
@@ -554,6 +647,32 @@ def _archive_target(path):
     if name.startswith(prefix) and name.endswith(".zip"):
         return name[len(prefix):-len(".zip")]
     return None
+
+
+def _native_evidence_file_policy(relative_name):
+    if relative_name == "target":
+        return "memory", NATIVE_TARGET_SNAPSHOT_LIMIT
+    if relative_name == "package-lock.toml":
+        return "memory", NATIVE_LOCK_SNAPSHOT_LIMIT
+    if relative_name == "smoke.log" or relative_name in NATIVE_SMOKE_FILES:
+        return "memory", NATIVE_EVIDENCE_FILE_SNAPSHOT_LIMIT
+    if "/" not in relative_name and _archive_target(pathlib.PurePath(relative_name)):
+        return "owned", ARCHIVE_SNAPSHOT_LIMIT
+    return None
+
+
+def _windows_evidence_file_policy(relative_name):
+    if relative_name in {"unsupported.log", "posture-tests.log"}:
+        return "memory", WINDOWS_EVIDENCE_FILE_SNAPSHOT_LIMIT
+    return None
+
+
+def _snapshot_text_evidence(snapshots):
+    return "\n".join(
+        snapshot["text"]
+        for name, snapshot in sorted(snapshots.items())
+        if name not in {"target", "package-lock.toml"}
+    )
 
 
 def _safe_member_name(name):
@@ -767,11 +886,10 @@ def _parse_manifest(path, platform, issues):
         return None, None
 
 
-def _parse_lock(path, platform, issues):
+def _parse_lock(text, platform, issues):
     try:
-        text = read_evidence_text(path, issues)
         if text is None:
-            return None
+            raise ValueError("missing package lock snapshot")
         lock = tomllib.loads(text)
         if set(lock) != LOCK_FIELDS or not all(isinstance(lock[key], str) for key in LOCK_FIELDS):
             raise ValueError("lock must contain exactly the eight string LockMaterial fields")
@@ -785,8 +903,7 @@ def _parse_lock(path, platform, issues):
         return None
 
 
-def _audit_native_smoke(bundle, platform, archive_sha, issues):
-    text = _bundle_evidence_text(bundle, issues)
+def _audit_native_smoke(text, platform, archive_sha, issues):
     if not _classify_evidence(text, platform, issues):
         return
     direct = DIRECT_SMOKE_RE.findall(text)
@@ -817,50 +934,52 @@ def _audit_native_smoke(bundle, platform, archive_sha, issues):
         })
 
 
-def _audit_native_bundle(root, platform, target_suffix, issues, expected_target=None):
+def _audit_native_bundle(
+        root, platform, target_suffix, issues, expected_target=None,
+        actual_archive_digests=None):
     bundle = root / platform
     label = platform
     if expected_target is not None:
         bundle = bundle / expected_target
         label = expected_target
-    if not bundle.is_dir():
-        issues.append({
-            "code": "missing_platform_evidence",
-            "platform": label,
-            "message": f"missing native evidence bundle for {label}",
-        })
+    collected = _collect_exact_evidence_bundle(
+        bundle,
+        label,
+        _native_evidence_file_policy,
+        NATIVE_SMOKE_DIRECTORIES,
+        "missing_platform_evidence",
+        f"missing native evidence bundle for {label}",
+        NATIVE_BUNDLE_ENTRY_LIMIT,
+        NATIVE_EVIDENCE_TOTAL_SNAPSHOT_LIMIT,
+        ARCHIVE_SNAPSHOT_LIMIT,
+        issues,
+    )
+    if collected is None:
         return
-    if (bundle / "extracted").exists():
+    snapshots = collected["snapshots"]
+    evidence_text = _snapshot_text_evidence(snapshots)
+    if "extracted" in collected["observed_entries"]:
         issues.append({
             "code": "caller_prepared_extracted_tree",
             "platform": platform,
             "message": f"{platform} supplies a caller-prepared extracted tree",
         })
-    target_text = read_evidence_text(bundle / "target", issues)
-    target_file = (target_text or "").strip()
+    target_snapshot = snapshots.get("target")
+    target_file = (target_snapshot["text"] if target_snapshot else "").strip()
     if not target_file:
         issues.append({
             "code": "missing_platform_evidence",
             "platform": platform,
             "message": f"{platform} bundle missing target file",
         })
-    archives = []
-    for entry in bundle.iterdir():
-        if _archive_target(entry) is None:
-            continue
-        if entry.is_file():
-            archives.append(entry)
-        else:
-            _record_evidence_filesystem_error(
-                issues, entry, "expected a regular archive file"
-            )
+    archives = list(collected["owned_paths"].values())
     if not archives:
         issues.append({
             "code": "missing_archive",
             "platform": platform,
             "message": f"{platform} bundle has no opi-sandbox archive",
         })
-        _classify_evidence(_bundle_evidence_text(bundle, issues), platform, issues)
+        _classify_evidence(evidence_text, platform, issues)
         return
     if len(archives) != 1:
         issues.append({
@@ -892,32 +1011,110 @@ def _audit_native_bundle(root, platform, target_suffix, issues, expected_target=
             "message": f"{platform} target file {target_file} != archive target {archive_target}",
         })
 
-    archive_sha = sha256_evidence_file(archive, issues)
-    if archive_sha is None:
-        return
     with tempfile.TemporaryDirectory(prefix="opi-artifact-audit-") as owned:
-        extracted = pathlib.Path(owned) / "extracted"
+        owned_root = pathlib.Path(owned)
+        snapshot = owned_root / archive.name
         try:
-            _extract_owned_archive(archive, extracted)
-            _validate_archive_assets(extracted)
+            _copy_archive_snapshot(archive, snapshot)
+        except ArchiveSnapshotError as error:
+            issues.append({
+                "code": error.code,
+                "platform": platform,
+                "message": f"{platform} archive snapshot is invalid: {error}",
+            })
+            return
+        except OSError as error:
+            _record_evidence_filesystem_error(issues, archive, error)
+            return
+        if not _evidence_bundle_root_unchanged(
+                bundle, label, collected["root_stat"], issues):
+            return
+
+        archive_sha = sha256_evidence_file(snapshot, issues)
+        if archive_sha is None:
+            return
+        if actual_archive_digests is not None and archive_target in {
+                target
+                for targets in NATIVE_ARCHIVE_TARGETS.values()
+                for target in targets
+        }:
+            previous = actual_archive_digests.get(archive_target)
+            if previous is not None and previous != archive_sha:
+                issues.append({
+                    "code": "archive_digest_mismatch",
+                    "platform": platform,
+                    "message": (
+                        f"multiple archive snapshots for {archive_target} have different digests"
+                    ),
+                })
+            else:
+                # This digest comes from the auditor-owned snapshot that is
+                # subsequently extracted and validated. Bound evidence never
+                # re-hashes the caller-controlled path.
+                actual_archive_digests[archive_target] = archive_sha
+
+        extracted = owned_root / "extracted"
+        try:
+            _extract_owned_archive(snapshot, extracted)
         except (OSError, tarfile.TarError, zipfile.BadZipFile, ValueError) as error:
             issues.append({
                 "code": "invalid_archive_layout",
                 "platform": platform,
                 "message": f"{platform} archive is invalid: {error}",
             })
-            _audit_native_smoke(bundle, platform, archive_sha, issues)
+            _audit_native_smoke(evidence_text, platform, archive_sha, issues)
             return
 
         extracted_bin = extracted / "bin" / "opi-sandbox"
+        try:
+            PACKAGE_HELPER.validate_executable_file(extracted_bin, archive_target)
+        except PACKAGE_HELPER.ExecutableFormatError as error:
+            issues.append({
+                "code": "invalid_executable_format",
+                "platform": platform,
+                "message": f"{platform} packaged executable is invalid: {error}",
+            })
+            _audit_native_smoke(evidence_text, platform, archive_sha, issues)
+            return
+        except PACKAGE_HELPER.ExecutableTargetError as error:
+            issues.append({
+                "code": "executable_target_mismatch",
+                "platform": platform,
+                "message": f"{platform} packaged executable target is invalid: {error}",
+            })
+            _audit_native_smoke(evidence_text, platform, archive_sha, issues)
+            return
+        except PACKAGE_HELPER.PackageError as error:
+            issues.append({
+                "code": "invalid_executable_format",
+                "platform": platform,
+                "message": f"{platform} packaged executable cannot be read: {error}",
+            })
+            _audit_native_smoke(evidence_text, platform, archive_sha, issues)
+            return
+
+        try:
+            _validate_archive_assets(extracted)
+        except (OSError, ValueError) as error:
+            issues.append({
+                "code": "invalid_archive_layout",
+                "platform": platform,
+                "message": f"{platform} archive is invalid: {error}",
+            })
+            _audit_native_smoke(evidence_text, platform, archive_sha, issues)
+            return
+
         extracted_manifest = extracted / "package.toml"
         manifest_raw, manifest = _parse_manifest(extracted_manifest, platform, issues)
-        lock = _parse_lock(bundle / "package-lock.toml", platform, issues)
+        lock_snapshot = snapshots.get("package-lock.toml")
+        lock = _parse_lock(
+            lock_snapshot["text"] if lock_snapshot else None, platform, issues
+        )
         if manifest is not None and lock is not None:
             manifest_hash = hashlib.sha256(manifest_raw.replace(b"\r", b"")).hexdigest()
             actual_sha = sha256_evidence_file(extracted_bin, issues)
             if actual_sha is None:
-                _audit_native_smoke(bundle, platform, archive_sha, issues)
+                _audit_native_smoke(evidence_text, platform, archive_sha, issues)
                 return
             expected_lock = {
                 "manifest_hash": manifest_hash,
@@ -948,33 +1145,44 @@ def _audit_native_bundle(root, platform, target_suffix, issues, expected_target=
                     "platform": platform,
                     "message": f"{platform} manifest target {manifest['target']} != {archive_target}",
                 })
-    _audit_native_smoke(bundle, platform, archive_sha, issues)
+    if not _evidence_bundle_root_unchanged(
+            bundle, label, collected["root_stat"], issues):
+        return
+    _audit_native_smoke(evidence_text, platform, archive_sha, issues)
 
 
 def _audit_windows_bundle(root, issues):
     bundle = root / "windows"
-    if not bundle.is_dir():
-        issues.append({
-            "code": "missing_platform_evidence",
-            "platform": "windows",
-            "message": "missing windows unsupported-posture evidence bundle",
-        })
+    collected = _collect_exact_evidence_bundle(
+        bundle,
+        "windows",
+        _windows_evidence_file_policy,
+        set(),
+        "missing_platform_evidence",
+        "missing windows unsupported-posture evidence bundle",
+        WINDOWS_BUNDLE_ENTRY_LIMIT,
+        WINDOWS_EVIDENCE_TOTAL_SNAPSHOT_LIMIT,
+        0,
+        issues,
+    )
+    if collected is None:
         return
+    observed = collected["observed_entries"]
     windows_archives = [
-        entry for entry in bundle.iterdir()
-        if entry.is_file() and entry.name.startswith("opi-sandbox-")
-        and (entry.name.endswith(".tar.gz") or entry.name.endswith(".zip"))
+        name for name in observed
+        if name.startswith("opi-sandbox-")
+        and (name.endswith(".tar.gz") or name.endswith(".zip"))
     ]
-    if (bundle / "extracted").exists() or windows_archives:
+    if "extracted" in observed or windows_archives:
         issues.append({
             "code": "wrong_target_identity",
             "platform": "windows",
             "message": "Windows must not ship an opi-sandbox archive",
         })
-    doctor_path = bundle / "unsupported.log"
+    snapshots = collected["snapshots"]
+    doctor_snapshot = snapshots.get("unsupported.log")
     try:
-        doctor_text = read_evidence_text(doctor_path, issues)
-        doctor = json.loads(doctor_text) if doctor_text is not None else None
+        doctor = json.loads(doctor_snapshot["text"]) if doctor_snapshot else None
         doctor_is_unsupported = (
             isinstance(doctor, dict)
             and doctor.get("schema_version") == 1
@@ -989,7 +1197,7 @@ def _audit_windows_bundle(root, issues):
             "platform": "windows",
             "message": "Windows doctor JSON does not report supported=false for target=windows",
         })
-    text = _bundle_evidence_text(bundle, issues)
+    text = _snapshot_text_evidence(snapshots)
     _classify_evidence(text, "windows", issues)
 
 
@@ -998,7 +1206,7 @@ def audit_release_evidence(artifact_dir):
     for platform, target_suffix in NATIVE_ARCHIVE_PLATFORMS.items():
         platform_root = artifact_dir / platform
         targets = NATIVE_ARCHIVE_TARGETS[platform]
-        if any((platform_root / target).is_dir() for target in targets):
+        if any(_path_entry_exists_no_follow(platform_root / target) for target in targets):
             for target in targets:
                 _audit_native_bundle(
                     artifact_dir, platform, target_suffix, issues, expected_target=target
@@ -1007,15 +1215,12 @@ def audit_release_evidence(artifact_dir):
             # Keep inspecting legacy flat evidence so defects remain
             # attributable, but it can never satisfy the four-target gate.
             _audit_native_bundle(artifact_dir, platform, target_suffix, issues)
-            target_text = read_evidence_text(platform_root / "target", issues)
-            target_file = (target_text or "").strip()
             for target in targets:
-                if target != target_file:
-                    issues.append({
-                        "code": "missing_platform_evidence",
-                        "platform": target,
-                        "message": f"missing native evidence bundle for {target}",
-                    })
+                issues.append({
+                    "code": "missing_platform_evidence",
+                    "platform": target,
+                    "message": f"missing native evidence bundle for {target}",
+                })
     _audit_windows_bundle(artifact_dir, issues)
     platforms = (
         sorted(p.name for p in artifact_dir.iterdir() if p.is_dir())
@@ -1046,6 +1251,18 @@ def audit_release_evidence(artifact_dir):
 #               explicit `error[` compiler record), never a blank/absent log
 #   gates/      preserved workspace gate evidence (doc guards, product captures,
 #               crate-boundary, packaging, release-topology) with a pass marker
+#   gates/evidence-identity.json and six-target/evidence-identity.json use the
+#               exact schema_version/workflow_run_id/commit_sha/
+#               archive_sha256_by_target/files_sha256 schema validated below.
+#               The run and commit are explicit audit arguments, never inferred
+#               from process environment, and archive digests are compared with
+#               the same auditor-owned snapshots used for extraction.
+#               Each bundle is flat and exact: no unlisted files, directories,
+#               links, or reparse entries. The identity excludes itself from
+#               files_sha256. Evidence bytes are opened no-follow, identity-
+#               checked, and read once for both digest and parsing, bounded to
+#               1 MiB per identity, 16 MiB per evidence file, 64 MiB/64 entries
+#               per bundle.
 # ---------------------------------------------------------------------------
 
 SIX_TARGETS = [
@@ -1060,24 +1277,35 @@ SIX_TARGETS = [
 GATE_PASS_RE = re.compile(r"test result: ok\. ([1-9][0-9]*) passed; 0 failed")
 
 
-def _audit_phase_exit_native(root, platform, target_suffix, issues):
+def _audit_phase_exit_native(
+        root, platform, target_suffix, issues, actual_archive_digests):
     """Phase exit has the same authenticated native-archive requirement."""
     platform_root = root / platform
     targets = NATIVE_ARCHIVE_TARGETS[platform]
-    if any((platform_root / target).is_dir() for target in targets):
+    if any(_path_entry_exists_no_follow(platform_root / target) for target in targets):
         for target in targets:
-            _audit_native_bundle(root, platform, target_suffix, issues, expected_target=target)
+            _audit_native_bundle(
+                root,
+                platform,
+                target_suffix,
+                issues,
+                expected_target=target,
+                actual_archive_digests=actual_archive_digests,
+            )
     else:
-        _audit_native_bundle(root, platform, target_suffix, issues)
-        target_text = read_evidence_text(platform_root / "target", issues)
-        target_file = (target_text or "").strip()
+        _audit_native_bundle(
+            root,
+            platform,
+            target_suffix,
+            issues,
+            actual_archive_digests=actual_archive_digests,
+        )
         for target in targets:
-            if target != target_file:
-                issues.append({
-                    "code": "missing_platform_evidence",
-                    "platform": target,
-                    "message": f"missing native evidence bundle for {target}",
-                })
+            issues.append({
+                "code": "missing_platform_evidence",
+                "platform": target,
+                "message": f"missing native evidence bundle for {target}",
+            })
 
 
 # Gate categories the DoD's final-artifact-audit clause names, keyed by a
@@ -1115,6 +1343,535 @@ GATE_TEST_CATEGORIES = {
     "doctest",
 }
 
+EVIDENCE_IDENTITY_FILE = "evidence-identity.json"
+EVIDENCE_IDENTITY_FIELDS = {
+    "schema_version",
+    "workflow_run_id",
+    "commit_sha",
+    "archive_sha256_by_target",
+    "files_sha256",
+}
+BOUND_ARCHIVE_TARGETS = [
+    "x86_64-unknown-linux-gnu",
+    "aarch64-unknown-linux-gnu",
+    "x86_64-apple-darwin",
+    "aarch64-apple-darwin",
+]
+WORKFLOW_RUN_ID_RE = re.compile(r"^[1-9][0-9]*$")
+FULL_COMMIT_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+EVIDENCE_IDENTITY_SNAPSHOT_LIMIT = 1024 * 1024
+EVIDENCE_FILE_SNAPSHOT_LIMIT = 16 * 1024 * 1024
+EVIDENCE_BUNDLE_SNAPSHOT_LIMIT = 64 * 1024 * 1024
+EVIDENCE_BUNDLE_ENTRY_LIMIT = 64
+
+
+class EvidenceSnapshotError(ValueError):
+    def __init__(self, code, message):
+        super().__init__(message)
+        self.code = code
+
+
+def _is_reparse(file_stat):
+    attributes = getattr(file_stat, "st_file_attributes", 0) or 0
+    reparse_mask = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400) or 0x400
+    return bool(attributes & reparse_mask)
+
+
+def _is_regular_no_reparse(file_stat):
+    return stat.S_ISREG(file_stat.st_mode) and not _is_reparse(file_stat)
+
+
+def _is_directory_no_reparse(file_stat):
+    return stat.S_ISDIR(file_stat.st_mode) and not _is_reparse(file_stat)
+
+
+def _path_entry_exists_no_follow(path):
+    try:
+        os.lstat(path)
+        return True
+    except FileNotFoundError:
+        return False
+    except OSError:
+        # Let the exact collector produce the attributable filesystem issue.
+        return True
+
+
+def _read_bounded_evidence_snapshot(path, limit):
+    """Read one regular no-follow file once; hash and parse use these bytes."""
+    flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = None
+    try:
+        descriptor = os.open(path, flags)
+        with os.fdopen(descriptor, "rb") as handle:
+            descriptor = None
+            opened_stat = os.fstat(handle.fileno())
+            path_stat = os.lstat(path)
+            if not _is_regular_no_reparse(opened_stat) or not _is_regular_no_reparse(path_stat):
+                raise EvidenceSnapshotError(
+                    "invalid_evidence_entry",
+                    "evidence entry is not a regular no-follow file",
+                )
+            if not os.path.samestat(opened_stat, path_stat):
+                raise EvidenceSnapshotError(
+                    "evidence_snapshot_identity_mismatch",
+                    "evidence path identity changed after open",
+                )
+            if opened_stat.st_size < 0 or opened_stat.st_size > limit:
+                raise EvidenceSnapshotError(
+                    "evidence_snapshot_limit_exceeded",
+                    f"evidence file exceeds the {limit}-byte snapshot limit",
+                )
+
+            digest = hashlib.sha256()
+            chunks = []
+            copied = 0
+            while True:
+                chunk = handle.read(65536)
+                if not chunk:
+                    break
+                copied += len(chunk)
+                if copied > limit:
+                    raise EvidenceSnapshotError(
+                        "evidence_snapshot_limit_exceeded",
+                        f"evidence file exceeds the {limit}-byte snapshot limit while reading",
+                    )
+                digest.update(chunk)
+                chunks.append(chunk)
+            if copied != opened_stat.st_size:
+                raise EvidenceSnapshotError(
+                    "evidence_snapshot_changed",
+                    "evidence file size changed while snapshotting",
+                )
+            raw = b"".join(chunks)
+            return {
+                "sha256": digest.hexdigest(),
+                "text": raw.decode("utf-8", errors="replace"),
+                "size": copied,
+            }
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+
+
+def _record_evidence_snapshot_error(issues, path, error):
+    issues.append({
+        "code": error.code,
+        "file": str(path),
+        "message": str(error),
+    })
+    if error.code == "invalid_evidence_entry":
+        # Preserve the established wrong-kind diagnostic alongside the more
+        # precise inventory finding used by bound evidence.
+        _record_evidence_filesystem_error(
+            issues, path, "expected a regular no-follow evidence file"
+        )
+
+
+def _evidence_bundle_root_unchanged(bundle, label, original_stat, issues):
+    try:
+        current_stat = os.lstat(bundle)
+    except OSError:
+        issues.append({
+            "code": "evidence_bundle_identity_mismatch",
+            "file": str(bundle),
+            "message": f"{label} root identity changed during evidence collection",
+        })
+        return False
+    if (
+        not _is_directory_no_reparse(current_stat)
+        or not os.path.samestat(original_stat, current_stat)
+    ):
+        issues.append({
+            "code": "evidence_bundle_identity_mismatch",
+            "file": str(bundle),
+            "message": f"{label} root identity changed during evidence collection",
+        })
+        return False
+    return True
+
+
+def _collect_exact_evidence_bundle(
+        bundle, label, file_policy, allowed_directories, missing_code,
+        missing_message, entry_limit, memory_aggregate_limit,
+        owned_aggregate_limit, issues):
+    """Snapshot an exact bundle inventory without following caller entries."""
+    try:
+        bundle_stat = os.lstat(bundle)
+    except FileNotFoundError:
+        issues.append({
+            "code": missing_code,
+            "platform": label,
+            "message": missing_message,
+        })
+        return None
+    except OSError as error:
+        _record_evidence_filesystem_error(issues, bundle, error)
+        return None
+    if not _is_directory_no_reparse(bundle_stat):
+        issues.append({
+            "code": "invalid_evidence_bundle",
+            "file": str(bundle),
+            "message": f"{label} must be a real non-reparse directory",
+        })
+        return None
+
+    snapshots = {}
+    owned_paths = {}
+    observed_entries = set()
+    state = {"entries": 0, "memory_bytes": 0, "owned_bytes": 0}
+
+    def unexpected(path, relative_name):
+        issues.append({
+            "code": "unexpected_evidence_entry",
+            "file": str(path),
+            "message": f"{label} contains unexpected entry {relative_name!r}",
+        })
+
+    def scan_directory(directory, prefix, original_stat):
+        try:
+            with os.scandir(directory) as iterator:
+                entries = [pathlib.Path(entry.path) for entry in iterator]
+        except OSError as error:
+            _record_evidence_filesystem_error(issues, directory, error)
+            return False
+        if not _evidence_bundle_root_unchanged(
+                directory, f"{label} evidence directory", original_stat, issues):
+            return False
+
+        for path in sorted(entries, key=lambda entry: entry.name):
+            relative_name = f"{prefix}/{path.name}" if prefix else path.name
+            observed_entries.add(relative_name)
+            state["entries"] += 1
+            if state["entries"] > entry_limit:
+                issues.append({
+                    "code": "evidence_bundle_entry_limit_exceeded",
+                    "file": str(bundle),
+                    "message": f"{label} has more than {entry_limit} entries",
+                })
+                return False
+            try:
+                path_stat = os.lstat(path)
+            except OSError as error:
+                _record_evidence_filesystem_error(issues, path, error)
+                continue
+
+            policy = file_policy(relative_name)
+            if _is_directory_no_reparse(path_stat):
+                if policy is not None:
+                    error = EvidenceSnapshotError(
+                        "invalid_evidence_entry",
+                        "expected evidence file is a directory",
+                    )
+                    _record_evidence_snapshot_error(issues, path, error)
+                    continue
+                if relative_name not in allowed_directories:
+                    unexpected(path, relative_name)
+                    continue
+                if not scan_directory(path, relative_name, path_stat):
+                    return False
+                continue
+            if not _is_regular_no_reparse(path_stat):
+                error = EvidenceSnapshotError(
+                    "invalid_evidence_entry",
+                    "evidence entry is not a regular no-follow file",
+                )
+                _record_evidence_snapshot_error(issues, path, error)
+                continue
+            if policy is None:
+                unexpected(path, relative_name)
+                continue
+
+            ownership, limit = policy
+            if path_stat.st_size < 0 or path_stat.st_size > limit:
+                code = (
+                    "archive_snapshot_limit_exceeded"
+                    if ownership == "owned"
+                    else "evidence_snapshot_limit_exceeded"
+                )
+                issues.append({
+                    "code": code,
+                    "file": str(path),
+                    "message": f"{relative_name} exceeds its {limit}-byte snapshot limit",
+                })
+                continue
+            aggregate_key = (
+                "owned_bytes" if ownership == "owned" else "memory_bytes"
+            )
+            aggregate_limit = (
+                owned_aggregate_limit
+                if ownership == "owned"
+                else memory_aggregate_limit
+            )
+            if state[aggregate_key] + path_stat.st_size > aggregate_limit:
+                issues.append({
+                    "code": "evidence_bundle_snapshot_limit_exceeded",
+                    "file": str(bundle),
+                    "message": f"{label} exceeds its {aggregate_limit}-byte snapshot budget",
+                })
+                continue
+
+            if ownership == "owned":
+                owned_paths[relative_name] = path
+                state[aggregate_key] += path_stat.st_size
+                continue
+            try:
+                snapshot = _read_bounded_evidence_snapshot(path, limit)
+            except EvidenceSnapshotError as error:
+                _record_evidence_snapshot_error(issues, path, error)
+                continue
+            except OSError as error:
+                _record_evidence_filesystem_error(issues, path, error)
+                continue
+            snapshots[relative_name] = snapshot
+            state[aggregate_key] += snapshot["size"]
+
+        return _evidence_bundle_root_unchanged(
+            directory, f"{label} evidence directory", original_stat, issues
+        )
+
+    if not scan_directory(bundle, "", bundle_stat):
+        return None
+    return {
+        "root_stat": bundle_stat,
+        "snapshots": snapshots,
+        "owned_paths": owned_paths,
+        "observed_entries": observed_entries,
+    }
+
+
+def _collect_bound_evidence_bundle(
+        bundle, label, allowed_name, missing_code, missing_message, issues):
+    try:
+        bundle_stat = os.lstat(bundle)
+    except FileNotFoundError:
+        issues.append({"code": missing_code, "message": missing_message})
+        return None, {}
+    except OSError as error:
+        _record_evidence_filesystem_error(issues, bundle, error)
+        return None, {}
+    if not _is_directory_no_reparse(bundle_stat):
+        issues.append({
+            "code": "invalid_evidence_bundle",
+            "file": str(bundle),
+            "message": f"{label} must be a real non-reparse directory",
+        })
+        return None, {}
+
+    entries = []
+    try:
+        with os.scandir(bundle) as iterator:
+            for entry in iterator:
+                entries.append(pathlib.Path(entry.path))
+                if len(entries) > EVIDENCE_BUNDLE_ENTRY_LIMIT:
+                    issues.append({
+                        "code": "evidence_bundle_entry_limit_exceeded",
+                        "file": str(bundle),
+                        "message": (
+                            f"{label} has more than {EVIDENCE_BUNDLE_ENTRY_LIMIT} entries"
+                        ),
+                    })
+                    return None, {}
+    except OSError as error:
+        _record_evidence_filesystem_error(issues, bundle, error)
+        return None, {}
+    if not _evidence_bundle_root_unchanged(bundle, label, bundle_stat, issues):
+        return None, {}
+
+    identity_snapshot = None
+    evidence_snapshots = {}
+    total_size = 0
+    for path in sorted(entries, key=lambda entry: entry.name):
+        name = path.name
+        try:
+            path_stat = os.lstat(path)
+        except OSError as error:
+            _record_evidence_filesystem_error(issues, path, error)
+            continue
+        if not _is_regular_no_reparse(path_stat):
+            error = EvidenceSnapshotError(
+                "invalid_evidence_entry",
+                "nested directories, links, and non-regular evidence entries are forbidden",
+            )
+            _record_evidence_snapshot_error(issues, path, error)
+            continue
+        if name != EVIDENCE_IDENTITY_FILE and not allowed_name(name):
+            issues.append({
+                "code": "unexpected_evidence_entry",
+                "file": str(path),
+                "message": f"{label} contains an entry outside its exact inventory",
+            })
+            continue
+
+        limit = (
+            EVIDENCE_IDENTITY_SNAPSHOT_LIMIT
+            if name == EVIDENCE_IDENTITY_FILE
+            else EVIDENCE_FILE_SNAPSHOT_LIMIT
+        )
+        try:
+            snapshot = _read_bounded_evidence_snapshot(path, limit)
+        except EvidenceSnapshotError as error:
+            _record_evidence_snapshot_error(issues, path, error)
+            continue
+        except OSError as error:
+            _record_evidence_filesystem_error(issues, path, error)
+            continue
+        if total_size + snapshot["size"] > EVIDENCE_BUNDLE_SNAPSHOT_LIMIT:
+            issues.append({
+                "code": "evidence_bundle_snapshot_limit_exceeded",
+                "file": str(bundle),
+                "message": (
+                    f"{label} exceeds the {EVIDENCE_BUNDLE_SNAPSHOT_LIMIT}-byte snapshot budget"
+                ),
+            })
+            continue
+        total_size += snapshot["size"]
+        if name == EVIDENCE_IDENTITY_FILE:
+            identity_snapshot = snapshot
+        else:
+            evidence_snapshots[name] = snapshot
+    if not _evidence_bundle_root_unchanged(bundle, label, bundle_stat, issues):
+        return None, {}
+    return identity_snapshot, evidence_snapshots
+
+
+def _invalid_evidence_identity(issues, label, message):
+    issues.append({
+        "code": "invalid_evidence_identity",
+        "file": f"{label}/{EVIDENCE_IDENTITY_FILE}",
+        "message": message,
+    })
+
+
+def _read_bound_evidence_identity(
+        bundle, label, identity_snapshot, evidence_snapshots, expected_run_id,
+        expected_commit_sha, actual_archive_digests, issues):
+    identity_path = bundle / EVIDENCE_IDENTITY_FILE
+    if identity_snapshot is None:
+        issues.append({
+            "code": "missing_evidence_identity",
+            "file": str(identity_path),
+            "message": f"{label} lacks the required structured evidence identity",
+        })
+        return None
+    try:
+        identity = json.loads(identity_snapshot["text"])
+    except (json.JSONDecodeError, TypeError):
+        _invalid_evidence_identity(issues, label, "identity must be valid JSON")
+        return None
+    if not isinstance(identity, dict) or set(identity) != EVIDENCE_IDENTITY_FIELDS:
+        _invalid_evidence_identity(
+            issues,
+            label,
+            "identity must contain exactly the five version, run, commit, archive, and file fields",
+        )
+        return None
+    schema_version = identity.get("schema_version")
+    if type(schema_version) is not int or schema_version != 1:
+        _invalid_evidence_identity(
+            issues, label, "schema_version must be the JSON integer 1"
+        )
+        return None
+
+    run_id = identity.get("workflow_run_id")
+    commit_sha = identity.get("commit_sha")
+    archives = identity.get("archive_sha256_by_target")
+    files = identity.get("files_sha256")
+    if not isinstance(run_id, str) or not WORKFLOW_RUN_ID_RE.fullmatch(run_id):
+        _invalid_evidence_identity(
+            issues, label, "workflow_run_id must be a non-zero decimal string"
+        )
+        return None
+    if not isinstance(commit_sha, str) or not FULL_COMMIT_SHA_RE.fullmatch(commit_sha):
+        _invalid_evidence_identity(
+            issues, label, "commit_sha must be a full lowercase 40-hex Git SHA"
+        )
+        return None
+    if (
+        not isinstance(archives, dict)
+        or set(archives) != set(BOUND_ARCHIVE_TARGETS)
+        or not all(
+            isinstance(value, str) and SHA256_RE.fullmatch(value)
+            for value in archives.values()
+        )
+    ):
+        _invalid_evidence_identity(
+            issues,
+            label,
+            "archive_sha256_by_target must contain exactly the four native targets with lowercase SHA-256 values",
+        )
+        return None
+
+    expected_file_names = set(evidence_snapshots)
+    if (
+        not isinstance(files, dict)
+        or set(files) != expected_file_names
+        or not all(
+            isinstance(value, str) and SHA256_RE.fullmatch(value)
+            for value in files.values()
+        )
+    ):
+        _invalid_evidence_identity(
+            issues,
+            label,
+            "files_sha256 must bind every and only the evidence files in this bundle",
+        )
+        return None
+
+    if expected_run_id is not None and run_id != expected_run_id:
+        issues.append({
+            "code": "run_identity_mismatch",
+            "file": str(identity_path),
+            "message": f"{label} workflow run identity does not match the audit invocation",
+        })
+    if expected_commit_sha is not None and commit_sha != expected_commit_sha:
+        issues.append({
+            "code": "commit_identity_mismatch",
+            "file": str(identity_path),
+            "message": f"{label} commit identity does not match the audit invocation",
+        })
+
+    for target in BOUND_ARCHIVE_TARGETS:
+        if archives[target] != actual_archive_digests.get(target):
+            issues.append({
+                "code": "archive_digest_mismatch",
+                "file": str(identity_path),
+                "message": (
+                    f"{label} archive digest for {target} does not match "
+                    "the auditor-owned archive snapshot"
+                ),
+            })
+
+    for name, snapshot in evidence_snapshots.items():
+        if files[name] != snapshot["sha256"]:
+            path = bundle / name
+            issues.append({
+                "code": "evidence_file_digest_mismatch",
+                "file": str(path),
+                "message": f"{label} evidence file is not bound to its declared digest",
+            })
+
+    return {
+        "workflow_run_id": run_id,
+        "commit_sha": commit_sha,
+        "archive_sha256_by_target": archives,
+    }
+
+
+def _compare_bound_identities(gates_identity, six_target_identity, issues):
+    if (
+        gates_identity is not None
+        and six_target_identity is not None
+        and gates_identity != six_target_identity
+    ):
+        issues.append({
+            "code": "evidence_identity_mismatch",
+            "message": (
+                "gates and six-target evidence were not produced by the same "
+                "workflow run, commit, and native archive set"
+            ),
+        })
+
 
 def _gate_pass_marker(category, text):
     if GATE_PASS_RE.search(text):
@@ -1126,36 +1883,33 @@ def _gate_pass_marker(category, text):
     return bool(GATE_CLEAN_RE.search(text))
 
 
-def _audit_six_target_bundle(root, issues):
+def _audit_six_target_bundle(
+        root, expected_run_id, expected_commit_sha, actual_archive_digests, issues):
     six = root / "six-target"
-    if not six.is_dir():
-        issues.append({
-            "code": "missing_six_target_evidence",
-            "message": "missing six-target evidence bundle",
-        })
-        return
-    logs = {}
-    for entry in sorted(six.iterdir()):
-        if entry.suffix.lower() not in {".txt", ".log"}:
-            continue
-        text = read_evidence_text(entry, issues)
-        if text is not None:
-            logs[entry.name] = text
+    identity_snapshot, evidence_snapshots = _collect_bound_evidence_bundle(
+        six,
+        "six-target",
+        lambda name: name == "source" or pathlib.PurePath(name).suffix.lower() in {".txt", ".log"},
+        "missing_six_target_evidence",
+        "missing six-target evidence bundle",
+        issues,
+    )
+    logs = {
+        name: snapshot["text"]
+        for name, snapshot in evidence_snapshots.items()
+        if pathlib.PurePath(name).suffix.lower() in {".txt", ".log"}
+    }
     if not logs:
         issues.append({
             "code": "zero_test_evidence",
             "message": "six-target bundle has no preserved logs",
         })
-        return
-    source = six / "source"
-    if not source.exists():
+    if "source" not in evidence_snapshots:
         issues.append({
             "code": "missing_provenance",
             "message": "six-target bundle lacks a `source` provenance note naming the "
                 "CI run / local runner that produced each triple log",
         })
-    else:
-        read_evidence_text(source, issues)
     for triple in SIX_TARGETS:
         matches = [
             text
@@ -1182,29 +1936,38 @@ def _audit_six_target_bundle(root, issues):
                 "code": "ambiguous_target_evidence",
                 "message": f"{triple} log records neither a Finished check nor a compiler error",
             })
+    return _read_bound_evidence_identity(
+        six,
+        "six-target",
+        identity_snapshot,
+        evidence_snapshots,
+        expected_run_id,
+        expected_commit_sha,
+        actual_archive_digests,
+        issues,
+    )
 
 
-def _audit_gates_bundle(root, issues):
+def _audit_gates_bundle(
+        root, expected_run_id, expected_commit_sha, actual_archive_digests, issues):
     gates = root / "gates"
-    if not gates.is_dir():
-        issues.append({
-            "code": "missing_gate_evidence",
-            "message": "missing workspace gate evidence bundle",
-        })
-        return
-    by_name = {}
-    for entry in sorted(gates.iterdir()):
-        if entry.suffix.lower() not in {".txt", ".log"}:
-            continue
-        text = read_evidence_text(entry, issues)
-        if text is not None:
-            by_name[entry.name] = text
+    identity_snapshot, evidence_snapshots = _collect_bound_evidence_bundle(
+        gates,
+        "gates",
+        lambda name: pathlib.PurePath(name).suffix.lower() in {".txt", ".log"},
+        "missing_gate_evidence",
+        "missing workspace gate evidence bundle",
+        issues,
+    )
+    by_name = {
+        name: snapshot["text"]
+        for name, snapshot in evidence_snapshots.items()
+    }
     if not by_name:
         issues.append({
             "code": "zero_test_evidence",
             "message": "gates bundle has no preserved pass-marked captures",
         })
-        return
     for category, marker in GATE_CATEGORIES.items():
         captures = [n for n in by_name if marker in n]
         if not captures:
@@ -1233,15 +1996,65 @@ def _audit_gates_bundle(root, issues):
                     "code": "zero_test_evidence",
                     "message": f"gates/{name} lacks a genuine pass marker for `{category}`",
                 })
+    return _read_bound_evidence_identity(
+        gates,
+        "gates",
+        identity_snapshot,
+        evidence_snapshots,
+        expected_run_id,
+        expected_commit_sha,
+        actual_archive_digests,
+        issues,
+    )
 
 
-def audit_phase_exit_evidence(artifact_dir):
+def audit_phase_exit_evidence(
+        artifact_dir, expected_run_id=None, expected_commit_sha=None):
     issues = []
+    if expected_run_id is None or expected_commit_sha is None:
+        issues.append({
+            "code": "missing_declared_identity",
+            "message": (
+                "phase-exit audit requires explicit --workflow-run-id and --commit-sha values"
+            ),
+        })
+    if expected_run_id is not None and not WORKFLOW_RUN_ID_RE.fullmatch(expected_run_id):
+        issues.append({
+            "code": "invalid_declared_identity",
+            "message": "declared workflow run id must be a non-zero decimal string",
+        })
+        expected_run_id = None
+    if expected_commit_sha is not None and not FULL_COMMIT_SHA_RE.fullmatch(expected_commit_sha):
+        issues.append({
+            "code": "invalid_declared_identity",
+            "message": "declared commit must be a full lowercase 40-hex Git SHA",
+        })
+        expected_commit_sha = None
+    actual_archive_digests = {}
     for platform, target_suffix in NATIVE_ARCHIVE_PLATFORMS.items():
-        _audit_phase_exit_native(artifact_dir, platform, target_suffix, issues)
+        _audit_phase_exit_native(
+            artifact_dir,
+            platform,
+            target_suffix,
+            issues,
+            actual_archive_digests,
+        )
     _audit_windows_bundle(artifact_dir, issues)
-    _audit_six_target_bundle(artifact_dir, issues)
-    _audit_gates_bundle(artifact_dir, issues)
+    six_target_identity = _audit_six_target_bundle(
+        artifact_dir,
+        expected_run_id,
+        expected_commit_sha,
+        actual_archive_digests,
+        issues,
+    )
+    gates_identity = _audit_gates_bundle(
+        artifact_dir,
+        expected_run_id,
+        expected_commit_sha,
+        actual_archive_digests,
+        issues,
+    )
+    _compare_bound_identities(gates_identity, six_target_identity, issues)
     return {
         "artifact_dir": str(artifact_dir),
         "mode": "phase-exit",
@@ -1255,6 +2068,14 @@ def main():
     parser.add_argument("artifact_dir")
     parser.add_argument("--workspace-root", default="")
     parser.add_argument("--json", action="store_true")
+    parser.add_argument(
+        "--workflow-run-id",
+        help="explicit workflow run identity for bound phase-exit evidence",
+    )
+    parser.add_argument(
+        "--commit-sha",
+        help="explicit full commit SHA for bound phase-exit evidence",
+    )
     parser.add_argument(
         "--release",
         action="store_true",
@@ -1282,7 +2103,11 @@ def main():
         report = audit_release_evidence(artifact_dir)
         issues = report["issues"]
     elif args.phase_exit:
-        report = audit_phase_exit_evidence(artifact_dir)
+        report = audit_phase_exit_evidence(
+            artifact_dir,
+            expected_run_id=args.workflow_run_id,
+            expected_commit_sha=args.commit_sha,
+        )
         issues = report["issues"]
     else:
         ndjson_reports = [

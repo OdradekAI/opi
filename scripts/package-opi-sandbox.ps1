@@ -106,6 +106,8 @@ $hostLine = ($vV | Where-Object { $_ -match '^host:' } | Select-Object -First 1)
 $Target = ($hostLine -replace '^host:\s*', '').Trim()
 if (-not $Target) { Fail-Usage 'could not parse host triple from rustc -vV' }
 
+& python $PackageHelper validate-executable --binary $BinaryPath --target $Target
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 $ExecSha = Get-Sha256Path $BinaryPath
 
 $null = New-Item -ItemType Directory -Force -Path $ArtifactDir

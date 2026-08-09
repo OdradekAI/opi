@@ -49,7 +49,8 @@ pub enum TreeReason {
 }
 
 /// Redacted L0 assignment/termination failure: a `{layer, reason}` pair only.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("L0 attach failed ({layer}): {reason:?}")]
 pub struct AttachError {
     /// The L0 layer that failed (e.g. `unix-pgroup`, `windows-job`).
     pub layer: &'static str,
@@ -66,14 +67,6 @@ impl AttachError {
         Self::new(LAYER, TreeReason::MissingChildProcessId)
     }
 }
-
-impl std::fmt::Display for AttachError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "L0 attach failed ({}): {:?}", self.layer, self.reason)
-    }
-}
-
-impl std::error::Error for AttachError {}
 
 /// Outcome of [`TreeGuard::terminate`].
 #[derive(Debug, Clone, PartialEq, Eq)]

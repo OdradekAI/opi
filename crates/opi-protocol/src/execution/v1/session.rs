@@ -91,6 +91,12 @@ impl Session {
     /// Decode, enforce per-frame codec bounds (line/message/configuration size),
     /// and observe one host JSONL line (no trailing newline).
     pub fn feed_host_line(&mut self, line: &[u8]) -> Result<HostToBackend, SessionError> {
+        if line.len() > self.bounds.max_line_size {
+            return Err(CodecError::OversizedLine {
+                max_line_size: self.bounds.max_line_size,
+            }
+            .into());
+        }
         let frame = decode_host(line)?;
         self.observe_host(&frame)?;
         Ok(frame)
@@ -99,6 +105,12 @@ impl Session {
     /// Decode, enforce per-frame codec bounds (line/message/diagnostics size),
     /// and observe one backend JSONL line (no trailing newline).
     pub fn feed_backend_line(&mut self, line: &[u8]) -> Result<BackendToHost, SessionError> {
+        if line.len() > self.bounds.max_line_size {
+            return Err(CodecError::OversizedLine {
+                max_line_size: self.bounds.max_line_size,
+            }
+            .into());
+        }
         let frame = decode_backend(line)?;
         self.observe_backend(&frame)?;
         Ok(frame)
@@ -134,13 +146,20 @@ impl Session {
         if bytes == 0 {
             return Ok(());
         }
-        self.cumulative = self.cumulative.saturating_add(bytes);
-        if self.cumulative > self.bounds.max_cumulative_output {
+        let cumulative =
+            self.cumulative
+                .checked_add(bytes)
+                .ok_or(SessionError::CumulativeOutputExceeded {
+                    cumulative: usize::MAX,
+                    limit: self.bounds.max_cumulative_output,
+                })?;
+        if cumulative > self.bounds.max_cumulative_output {
             return Err(SessionError::CumulativeOutputExceeded {
-                cumulative: self.cumulative,
+                cumulative,
                 limit: self.bounds.max_cumulative_output,
             });
         }
+        self.cumulative = cumulative;
         Ok(())
     }
 }
@@ -412,5 +431,30 @@ mod tests {
                 limit: 10
             }
         ));
+    }
+
+    #[test]
+    fn cumulative_output_rejects_arithmetic_overflow_without_mutation() {
+        let bounds = Bounds {
+            max_cumulative_output: usize::MAX,
+            ..Bounds::DEFAULT
+        };
+        let mut session = Session::new(bounds).unwrap();
+        session.cumulative = usize::MAX - 3;
+
+        let err = session
+            .observe_backend(&BackendToHost::Stdout(StdoutPayload {
+                request_id: rid("A"),
+                data: Base64Bytes::from_bytes([0; 4]),
+            }))
+            .unwrap_err();
+        assert!(matches!(
+            err,
+            SessionError::CumulativeOutputExceeded {
+                cumulative: usize::MAX,
+                limit: usize::MAX
+            }
+        ));
+        assert_eq!(session.cumulative_output(), usize::MAX - 3);
     }
 }

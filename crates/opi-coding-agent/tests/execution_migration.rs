@@ -18,8 +18,7 @@
 
 #![forbid(unsafe_code)]
 
-use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use clap::Parser;
 
@@ -37,26 +36,26 @@ use opi_coding_agent::diagnostics::LEGACY_SANDBOX_REMEDIATION;
 /// workflow.
 const REMEDIATION_NEEDLES: &[&str] = &["--execution-backend", "[execution]", "opi package"];
 
-/// Write a TOML config body to a fresh temp file and return its path.
-fn write_temp_config(body: &str) -> PathBuf {
-    let mut path = std::env::temp_dir();
-    path.push(format!(
-        "opi-execution-migration-{}-{}.toml",
-        std::process::id(),
-        // Vary across calls within one test binary so independent fixtures do
-        // not collide. `Math/random`-free: use a monotonic counter via a file
-        // count probe is overkill; the pid + an atomic-ish suffix suffices.
-        unique_suffix(),
-    ));
-    let mut file = std::fs::File::create(&path).expect("create temp config");
-    file.write_all(body.as_bytes()).expect("write temp config");
-    path
+struct TempConfig {
+    _owner: tempfile::TempDir,
+    path: PathBuf,
 }
 
-fn unique_suffix() -> String {
-    use std::sync::atomic::{AtomicU64, Ordering};
-    static N: AtomicU64 = AtomicU64::new(0);
-    N.fetch_add(1, Ordering::Relaxed).to_string()
+impl TempConfig {
+    fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+/// Write a TOML config body to an owned temporary directory.
+fn write_temp_config(body: &str) -> TempConfig {
+    let owner = tempfile::tempdir().expect("create temp config directory");
+    let path = owner.path().join("config.toml");
+    std::fs::write(&path, body).expect("write temp config");
+    TempConfig {
+        _owner: owner,
+        path,
+    }
 }
 
 /// The remediation text every legacy-sandbox rejection carries names the
@@ -69,6 +68,18 @@ fn assert_has_remediation(message: &str) {
             "legacy-sandbox rejection must name remediation `{needle}`; got: {message}"
         );
     }
+}
+
+/// Every present legacy `[sandbox]` shape takes the dedicated removed-surface
+/// error path, whose public text is the exact stable remediation contract.
+fn assert_exact_legacy_sandbox_rejection(body: &str) {
+    let path = write_temp_config(body);
+    let err = load_config_file(path.path()).expect_err("[sandbox] must be rejected");
+    assert!(
+        matches!(&err, ConfigError::LegacySandboxSection),
+        "present [sandbox] must use the stable removed-surface error: {err:?}"
+    );
+    assert_eq!(err.to_string(), LEGACY_SANDBOX_REMEDIATION);
 }
 
 // ---------------------------------------------------------------------------
@@ -128,30 +139,49 @@ fn cli_no_longer_advertises_a_sandbox_flag() {
 
 #[test]
 fn sandbox_mode_off_table_is_rejected() {
-    let path = write_temp_config("[sandbox]\nmode = \"off\"\n");
-    let result = load_config_file(&path);
-    let err = result.expect_err("[sandbox] mode=\"off\" must be rejected");
-    assert_has_remediation(&err.to_string());
+    assert_exact_legacy_sandbox_rejection("[sandbox]\nmode = \"off\"\n");
 }
 
 #[test]
 fn sandbox_mode_strict_table_is_rejected() {
-    let path = write_temp_config("[sandbox]\nmode = \"strict\"\n");
-    load_config_file(&path).expect_err("[sandbox] mode=\"strict\" must be rejected");
+    assert_exact_legacy_sandbox_rejection("[sandbox]\nmode = \"strict\"\n");
 }
 
 #[test]
 fn sandbox_require_toggle_is_rejected() {
-    let path = write_temp_config("[sandbox]\nrequire = true\n");
-    load_config_file(&path).expect_err("[sandbox] require must be rejected");
+    assert_exact_legacy_sandbox_rejection("[sandbox]\nrequire = true\n");
 }
 
 #[test]
 fn sandbox_layer_toggles_are_rejected() {
     for toggle in ["fs = true", "network = false", "syscalls = true"] {
-        let path = write_temp_config(&format!("[sandbox]\n{toggle}\n"));
-        load_config_file(&path).expect_err(&format!("[sandbox] {toggle} must be rejected"));
+        assert_exact_legacy_sandbox_rejection(&format!("[sandbox]\n{toggle}\n"));
     }
+}
+
+#[test]
+fn empty_sandbox_table_is_rejected_with_exact_remediation() {
+    assert_exact_legacy_sandbox_rejection("[sandbox]\n");
+}
+
+#[test]
+fn unknown_only_sandbox_table_is_rejected_with_exact_remediation() {
+    assert_exact_legacy_sandbox_rejection("[sandbox]\nfuture = true\n");
+}
+
+#[test]
+fn malformed_known_sandbox_field_is_rejected_with_exact_remediation() {
+    assert_exact_legacy_sandbox_rejection("[sandbox]\nrequire = \"not-bool\"\n");
+}
+
+#[test]
+fn non_table_sandbox_value_remains_a_parse_error() {
+    let path = write_temp_config("sandbox = \"strict\"\n");
+    let err = load_config_file(path.path()).expect_err("non-table sandbox value must be rejected");
+    assert!(
+        matches!(err, ConfigError::Parse { .. }),
+        "only a present sandbox table maps to the removed-surface remediation: {err:?}"
+    );
 }
 
 #[test]
@@ -162,7 +192,7 @@ fn resolve_config_rejects_legacy_sandbox_in_user_layer() {
         config_path: None,
         env_model: None,
         project_dir: None,
-        user_config_path: Some(user),
+        user_config_path: Some(user.path().to_path_buf()),
     };
     resolve_config(source).expect_err("user-layer [sandbox] must be rejected");
 }
@@ -172,7 +202,7 @@ fn resolve_config_rejects_legacy_sandbox_in_explicit_layer() {
     let explicit = write_temp_config("[sandbox]\nmode = \"off\"\n");
     let source = ConfigSource {
         cli_model: None,
-        config_path: Some(explicit),
+        config_path: Some(explicit.path().to_path_buf()),
         env_model: None,
         project_dir: None,
         user_config_path: None,
@@ -183,12 +213,8 @@ fn resolve_config_rejects_legacy_sandbox_in_explicit_layer() {
 #[test]
 fn resolve_config_rejects_legacy_sandbox_in_project_layer() {
     // A trusted project still cannot reintroduce the removed sandbox section.
-    let project_dir = std::env::temp_dir().join(format!(
-        "opi-migration-project-{}-{}",
-        std::process::id(),
-        unique_suffix()
-    ));
-    let opi_dir = project_dir.join(".opi");
+    let project_dir = tempfile::tempdir().expect("create project directory");
+    let opi_dir = project_dir.path().join(".opi");
     std::fs::create_dir_all(&opi_dir).expect("create project .opi dir");
     std::fs::write(
         opi_dir.join("config.toml"),
@@ -199,7 +225,7 @@ fn resolve_config_rejects_legacy_sandbox_in_project_layer() {
         cli_model: None,
         config_path: None,
         env_model: None,
-        project_dir: Some(project_dir),
+        project_dir: Some(project_dir.path().to_path_buf()),
         user_config_path: None,
     };
     resolve_config(source).expect_err("project-layer [sandbox] must be rejected");
@@ -218,7 +244,7 @@ fn execution_backend_local_flag_is_accepted() {
 #[test]
 fn execution_strategy_fixed_local_is_accepted() {
     let path = write_temp_config("[execution]\nstrategy = \"fixed\"\nbackend = \"local\"\n");
-    let config = load_config_file(&path).expect("fixed/local execution config must load");
+    let config = load_config_file(path.path()).expect("fixed/local execution config must load");
     assert_eq!(config.execution.backend, "local");
 }
 

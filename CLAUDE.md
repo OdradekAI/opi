@@ -124,10 +124,12 @@ Cargo workspace with lockstep versioning. All crates share
 `[workspace.dependencies]` in the root `Cargo.toml`:
 
 ```text
-opi-ai      (no internal deps)        - multi-provider LLM API
-opi-tui     (no internal deps)        - terminal UI widgets, pickers, diff and image rendering
-opi-agent   -> opi-ai                 - agent runtime, tool calling, sessions, compaction
-opi-coding-agent -> opi-ai, opi-agent, opi-tui - produces the `opi` binary
+opi-ai          (no internal deps) - multi-provider LLM API
+opi-tui         (no internal deps) - terminal UI widgets, pickers, diff and image rendering
+opi-protocol    (no internal deps) - versioned `command-execution-jsonl-v1` protocol types, codecs, schemas, and fixtures
+opi-agent       -> opi-ai - agent runtime, tool calling, sessions, compaction
+opi-sandbox     -> opi-protocol - standalone native-restriction SDK/CLI/backend; not linked into the `opi` binary
+opi-coding-agent -> opi-ai, opi-agent, opi-protocol, opi-tui - produces the `opi` binary; coding harness, execution routing, and package activation
 ```
 
 Adding a new internal dependency means updating `[workspace.dependencies]` in

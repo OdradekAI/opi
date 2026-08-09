@@ -592,15 +592,15 @@ fn doctor_does_not_synthesize_untrusted_state_when_activation_store_is_corrupt()
 
 /// The production wiring shape for a real installed+enabled package: the real
 /// `PackageActivationStore` is the `IdentitySource`, and `enabled` comes from
-/// `PackageActivationStore::enabled_identities` exactly as `execution_wiring`
-/// (harness.rs) does at startup.
+/// `PackageActivationStore::usable_enabled_identities` after production host
+/// compatibility filtering.
 fn real_store_wiring(
     user_dir: &std::path::Path,
     backend: &str,
     mode: ExecutionRunMode,
 ) -> (ExecutionWiring, PackageActivationStore) {
     let store = PackageActivationStore::global(user_dir.to_path_buf());
-    let enabled = store.enabled_identities();
+    let enabled = store.usable_enabled_identities(host_target_triple(), host_opi_version());
     let wiring = ExecutionWiring {
         config: ExecutionConfig {
             strategy: ExecutionStrategy::Fixed,
@@ -633,6 +633,7 @@ fn real_store_wiring(
 #[tokio::test]
 async fn packaged_adapter_reaches_bash_turn_through_real_package_lifecycle() {
     let (_pkg, root) = packaged_mock_peer("opi-sandbox");
+    let (_mismatched_pkg, mismatched_root) = packaged_mock_peer("target-mismatch");
     let workspace = tempfile::tempdir().unwrap();
     let user = tempfile::tempdir().unwrap();
 
@@ -646,6 +647,15 @@ async fn packaged_adapter_reaches_bash_turn_through_real_package_lifecycle() {
         user.path().to_path_buf(),
     );
     assert_eq!(exit, 0, "package add must install the archive");
+    let exit = package_cli::handle_package_command(
+        &PackageCommand::Add {
+            source: mismatched_root.to_str().unwrap().to_string(),
+            local: false,
+        },
+        workspace.path().to_path_buf(),
+        user.path().to_path_buf(),
+    );
+    assert_eq!(exit, 0, "package add must install the mismatched archive");
 
     // 2. PackageActivationStore: explicit trust + enable (first enablement
     // requires interactive confirmation; the granting confirmer stands in for
@@ -659,15 +669,45 @@ async fn packaged_adapter_reaches_bash_turn_through_real_package_lifecycle() {
             &mut GrantingConfirmer,
         )
         .expect("enable must grant trust + enablement");
+    store
+        .enable(
+            "target-mismatch",
+            host_target_triple(),
+            host_opi_version(),
+            &mut GrantingConfirmer,
+        )
+        .expect("the second package is initially compatible and enabled");
+
+    // Simulate machine-owned lock metadata copied from another target after
+    // enablement. The trust record remains really enabled, while startup must
+    // exclude this now-incompatible locked contribution.
+    let mut locks = store.store().read_lock().expect("read package lock");
+    let mismatched = locks
+        .iter_mut()
+        .flat_map(|entry| entry.contributions.iter_mut())
+        .find(|contribution| contribution.adapter_id == "target-mismatch")
+        .expect("target-mismatch locked contribution");
+    assert_eq!(mismatched.target, host_target_triple());
+    mismatched.target = "mismatched-target".to_string();
+    store
+        .store()
+        .write_lock(&locks)
+        .expect("persist mismatched locked target");
     assert_eq!(
         store.enabled_identities().len(),
-        1,
-        "exactly the one enabled package identity"
+        2,
+        "both the compatible and target-mismatched package identities are really enabled"
     );
 
     // 3. Production wiring + build_tools chokepoint.
     let (wiring, _store) =
         real_store_wiring(user.path(), "opi-sandbox", ExecutionRunMode::Interactive);
+    assert_eq!(
+        wiring.enabled.len(),
+        1,
+        "startup compatibility filtering must remove the enabled target mismatch"
+    );
+    assert_eq!(wiring.enabled[0].adapter_id, "opi-sandbox");
     let tool_config =
         ToolRuntimeConfig::resolve(RunMode::Interactive, true, ToolSelection::Default)
             .expect("interactive tool config");
@@ -946,7 +986,7 @@ async fn mock_peer_failure_modes_surface_stable_codes_via_production_path() {
             "cleanup_unconfirmed",
         ),
         (
-            "failed_post_started",
+            "failed_pre_started",
             "protocol_incompatible",
             "protocol_incompatible",
         ),
@@ -999,6 +1039,39 @@ async fn mock_peer_failure_modes_surface_stable_codes_via_production_path() {
             }
         }
     }
+
+    // `protocol_incompatible` is a handshake-only distress code. Once the
+    // backend has published Started, the same wire code is an invalid terminal
+    // combination and the host must normalize it to `protocol_violation`
+    // without retaining diagnostics from the rejected terminal frame.
+    let invalid_post_started = routed_tool_result(
+        canned_with_args(
+            "opi-sandbox",
+            "mock-pkg",
+            &["failed_post_started", "protocol_incompatible"],
+        ),
+        &[("opi-sandbox", PermissionDecision::Allow)],
+        &[("opi-sandbox", "mock-pkg")],
+        ExecutionRunMode::Interactive,
+    )
+    .await;
+    assert!(invalid_post_started.is_error);
+    assert!(
+        invalid_post_started
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "protocol_violation"),
+        "post-start protocol_incompatible must normalize to protocol_violation: {:?}",
+        invalid_post_started.diagnostics
+    );
+    assert!(
+        invalid_post_started
+            .diagnostics
+            .iter()
+            .all(|diagnostic| diagnostic.code != "opi.execution.backend_diagnostic"),
+        "diagnostics on a rejected terminal frame must not be retained: {:?}",
+        invalid_post_started.diagnostics
+    );
 }
 
 /// SC16-14: remediation text is DISTINCT per stable code (not one generic

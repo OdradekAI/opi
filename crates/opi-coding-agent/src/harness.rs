@@ -57,11 +57,11 @@ use crate::diagnostic_bridge::{
     diagnostic_for_resource_layer_message, diagnostic_from_execution_failure,
     diagnostic_from_package, diagnostic_from_package_resolution_error,
 };
-#[cfg(test)]
 use crate::execution::LOCAL_ADAPTER_ID;
 use crate::execution::permission::{
     InteractivePermissionBroker, PermissionManager, PermissionPolicy,
 };
+use crate::execution::router::concrete_adapter_id;
 use crate::execution::runtime::{ExecutionPlan, execution_plan};
 use crate::execution::{
     Eligibility, EnabledIdentity, ExecutionFailure, ExecutionRuntime, IdentitySource,
@@ -149,24 +149,29 @@ fn bash_input_schema(
 }
 
 /// Build routed [`ExecutionWiring`] from the layered config and the global
-/// package-activation store. Model-visible identities come from
-/// [`PackageActivationStore::usable_enabled_identities`] after current
-/// target/version/manifest/lock/hash validation; the policy is
-/// [`PermissionPolicy::from_map`] over the resolved
-/// permissions so explicit user deny/ask/allow for `local` and externals is
-/// honored exactly by the routed branch. Fixed-local allow and headless
-/// fixed-local ask are classified before this function is called.
+/// package-activation store. Fixed and rules routing revalidate only the one
+/// concrete selected identity; model routing revalidates only non-denied
+/// candidates before exposing them. The policy is [`PermissionPolicy::from_map`]
+/// over the resolved permissions so explicit user deny/ask/allow for `local`
+/// and externals is honored exactly by the routed branch. Fixed-local allow and
+/// headless fixed-local ask are classified before this function is called.
 fn execution_wiring(
     config: &OpiConfig,
     global_config_dir: &Path,
     mode: ExecutionRunMode,
     policy: PermissionPolicy,
-) -> ExecutionWiring {
+) -> Result<ExecutionWiring, ExecutionFailure> {
     let host_target = host_target_triple().to_string();
     let host_opi_version = host_opi_version().to_string();
-    let RoutedStoreState { store, enabled } =
-        routed_store_state(global_config_dir, &host_target, &host_opi_version);
-    ExecutionWiring {
+    let RoutedStoreState { store, enabled } = routed_store_state(
+        global_config_dir,
+        &config.execution,
+        mode,
+        &policy,
+        &host_target,
+        &host_opi_version,
+    )?;
+    Ok(ExecutionWiring {
         config: config.execution.clone(),
         enabled,
         policy,
@@ -179,7 +184,7 @@ fn execution_wiring(
         // TUI-backed broker (Phase 16.10 interactive wiring).
         manager: new_permission_manager(),
         broker: None,
-    }
+    })
 }
 
 struct RoutedStoreState {
@@ -189,20 +194,67 @@ struct RoutedStoreState {
 
 fn routed_store_state(
     global_config_dir: &Path,
+    config: &ExecutionConfig,
+    mode: ExecutionRunMode,
+    policy: &PermissionPolicy,
     host_target: &str,
     host_opi_version: &str,
-) -> RoutedStoreState {
+) -> Result<RoutedStoreState, ExecutionFailure> {
     #[cfg(test)]
     if let Some(state) = routed_store_factory_override::invoke() {
-        return state;
+        return Ok(state);
     }
 
     let store = PackageActivationStore::global(global_config_dir.to_path_buf());
-    let enabled = store.usable_enabled_identities(host_target, host_opi_version);
-    RoutedStoreState {
+    let enabled = match config.strategy {
+        ExecutionStrategy::Fixed | ExecutionStrategy::Rules => {
+            let selected = concrete_adapter_id(config, mode)
+                .filter(|adapter_id| *adapter_id != LOCAL_ADAPTER_ID)
+                .map(str::to_owned)
+                .into_iter()
+                .collect::<Vec<_>>();
+            store
+                .usable_enabled_identities_for(&selected, host_target, host_opi_version)
+                .map_err(ExecutionFailure::from)?
+        }
+        ExecutionStrategy::Model => {
+            let candidates = store
+                .enabled_identities()
+                .into_iter()
+                .filter(|identity| !policy.is_denied(&identity.adapter_id))
+                .collect::<Vec<_>>();
+            let mut packages = Vec::new();
+            let mut usable = Vec::new();
+            for identity in &candidates {
+                if packages.contains(&identity.package_name) {
+                    continue;
+                }
+                packages.push(identity.package_name.clone());
+                let Ok(activated) =
+                    store.activate(&identity.package_name, host_target, host_opi_version)
+                else {
+                    continue;
+                };
+                usable.extend(
+                    candidates
+                        .iter()
+                        .filter(|candidate| candidate.package_name == identity.package_name)
+                        .filter(|candidate| {
+                            activated
+                                .validated
+                                .iter()
+                                .any(|contribution| contribution.id == candidate.adapter_id)
+                        })
+                        .cloned(),
+                );
+            }
+            usable
+        }
+    };
+    Ok(RoutedStoreState {
         store: Arc::new(store),
         enabled,
-    }
+    })
 }
 
 #[cfg(test)]
@@ -315,7 +367,10 @@ fn harness_execution(
             broker: None,
         }),
         ExecutionPlan::GeneralRouted => {
-            HarnessExecution::Routed(execution_wiring(config, global_config_dir, mode, policy))
+            match execution_wiring(config, global_config_dir, mode, policy) {
+                Ok(wiring) => HarnessExecution::Routed(wiring),
+                Err(failure) => HarnessExecution::Refused(failure),
+            }
         }
         ExecutionPlan::PolicyDenied | ExecutionPlan::HeadlessAskRefused => {
             unreachable!("refused execution plans returned above")
@@ -412,6 +467,10 @@ pub struct CodingHarness {
     /// Minimal Runtime and headless modes use `None`.
     pub(crate) permission_prompt_rx:
         Option<mpsc::Receiver<crate::interactive::PermissionPromptRequest>>,
+    /// Unit-test-only per-instance session lookup root. Production session
+    /// creation and resume always use [`crate::session_cli::session_dir`].
+    #[cfg(test)]
+    session_dir_override: Option<PathBuf>,
 }
 
 pub struct RuntimeThinkingState {
@@ -617,6 +676,8 @@ pub struct CodingHarnessBuilder {
     trace: Option<TraceConfig>,
     trust_decision: TrustDecision,
     execution_mode: ExecutionRunMode,
+    #[cfg(test)]
+    session_dir_override: Option<PathBuf>,
 }
 
 impl CodingHarnessBuilder {
@@ -648,6 +709,8 @@ impl CodingHarnessBuilder {
             trace: None,
             trust_decision,
             execution_mode: ExecutionRunMode::Interactive,
+            #[cfg(test)]
+            session_dir_override: None,
         }
     }
 
@@ -748,6 +811,14 @@ impl CodingHarnessBuilder {
         self
     }
 
+    /// Unit-test-only instance seam for isolating session persistence without
+    /// mutating the process-global `OPI_SESSIONS_DIR` environment variable.
+    #[cfg(test)]
+    fn session_dir_for_test(mut self, dir: PathBuf) -> Self {
+        self.session_dir_override = Some(dir);
+        self
+    }
+
     pub fn build(self) -> CodingHarness {
         let tool_selection = self.tool_selection;
         let tool_config = self.tool_config.unwrap_or_else(|| {
@@ -776,6 +847,8 @@ impl CodingHarnessBuilder {
                 trace: self.trace,
                 trust_decision: self.trust_decision,
                 execution_mode: self.execution_mode,
+                #[cfg(test)]
+                session_dir_override: self.session_dir_override,
             },
         )
     }
@@ -795,6 +868,8 @@ struct HarnessBuildOptions {
     /// Legacy constructors derive interactive/non-interactive from tool config;
     /// RPC remains available only through startup paths that set it explicitly.
     execution_mode: ExecutionRunMode,
+    #[cfg(test)]
+    session_dir_override: Option<PathBuf>,
 }
 
 impl Default for HarnessBuildOptions {
@@ -810,6 +885,8 @@ impl Default for HarnessBuildOptions {
             trace: None,
             trust_decision: TrustDecision::Undecided,
             execution_mode: ExecutionRunMode::Interactive,
+            #[cfg(test)]
+            session_dir_override: None,
         }
     }
 }
@@ -1068,6 +1145,8 @@ impl CodingHarness {
         global_config_dir: Option<PathBuf>,
         build_options: HarnessBuildOptions,
     ) -> Self {
+        #[cfg(test)]
+        let session_dir_override = build_options.session_dir_override.clone();
         let mut hooks = hooks;
         let mut extension_tools = Vec::new();
         let mut injected_extension_names = Vec::new();
@@ -1256,6 +1335,11 @@ impl CodingHarness {
             )
             .ok()
         } else {
+            #[cfg(test)]
+            let session_dir = session_dir_override
+                .clone()
+                .unwrap_or_else(crate::session_cli::session_dir);
+            #[cfg(not(test))]
             let session_dir = crate::session_cli::session_dir();
             SessionCoordinator::new(&session_dir, &cwd, compaction_config, model.clone()).ok()
         };
@@ -1293,6 +1377,8 @@ impl CodingHarness {
             oauth_http_client: crate::oauth::production_oauth_client(),
             permission_manager,
             permission_prompt_rx,
+            #[cfg(test)]
+            session_dir_override,
         };
 
         // Phase 13.3: re-apply recorded model/thinking on the CLI --resume path
@@ -1597,6 +1683,12 @@ impl CodingHarness {
         if let Some(manager) = &self.permission_manager {
             manager.reset_grants();
         }
+        #[cfg(test)]
+        let dir = self
+            .session_dir_override
+            .clone()
+            .unwrap_or_else(crate::session_cli::session_dir);
+        #[cfg(not(test))]
         let dir = crate::session_cli::session_dir();
         let session =
             crate::session_cli::resume_session(&dir, session_id).map_err(|e| e.to_string())?;
@@ -2928,11 +3020,12 @@ impl AgentHooks for InteractiveCodingHooks {
 #[cfg(test)]
 mod permission_boundary_tests {
     use super::*;
-    use std::sync::Mutex;
 
-    static SESSION_MUTEX: Mutex<()> = Mutex::new(());
-
-    fn build_interactive_harness(workspace: &Path, global: &Path) -> CodingHarness {
+    fn build_interactive_harness(
+        workspace: &Path,
+        global: &Path,
+        session_dir: &Path,
+    ) -> CodingHarness {
         let provider = opi_ai::test_support::MockProvider::new(
             "mock",
             vec![opi_ai::test_support::text_response("ok")],
@@ -2951,20 +3044,8 @@ mod permission_boundary_tests {
         )
         .global_config_dir(global.to_path_buf())
         .execution_mode(ExecutionRunMode::Interactive)
+        .session_dir_for_test(session_dir.to_path_buf())
         .build()
-    }
-
-    fn set_sessions_dir(dir: &Path) {
-        // SAFETY: test-only env mutation; SESSION_MUTEX serializes it.
-        unsafe {
-            std::env::set_var("OPI_SESSIONS_DIR", dir);
-        }
-    }
-    fn clear_sessions_dir() {
-        // SAFETY: test-only env mutation; SESSION_MUTEX serializes it.
-        unsafe {
-            std::env::remove_var("OPI_SESSIONS_DIR");
-        }
     }
 
     /// Phase 16.10 D.2 must-fix: the production harness session-switch methods
@@ -2976,12 +3057,23 @@ mod permission_boundary_tests {
     /// installs the TUI broker for Interactive mode (`permission_prompt_rx` Some).
     #[test]
     fn session_switches_reset_permission_grants_at_production_call_sites() {
-        let _lock = SESSION_MUTEX.lock().unwrap();
+        let sessions_env_before = std::env::var_os("OPI_SESSIONS_DIR");
         let ws = tempfile::tempdir().unwrap();
         let global = tempfile::tempdir().unwrap();
         let sessions = tempfile::tempdir().unwrap();
-        set_sessions_dir(sessions.path());
-        let mut harness = build_interactive_harness(ws.path(), global.path());
+        let mut harness = build_interactive_harness(ws.path(), global.path(), sessions.path());
+        let source_session_path = harness
+            .session()
+            .expect("builder creates an isolated session")
+            .session_path()
+            .to_path_buf();
+        let source_session_id = harness
+            .session()
+            .expect("builder creates an isolated session")
+            .session_id()
+            .to_string();
+        assert!(source_session_path.starts_with(sessions.path()));
+        assert_eq!(std::env::var_os("OPI_SESSIONS_DIR"), sessions_env_before);
 
         // The production constructor installs the TUI broker for Interactive mode
         // (permission_prompt_rx Some); headless modes leave it None (fail-closed).
@@ -2990,8 +3082,9 @@ mod permission_boundary_tests {
             "interactive harness installs the permission broker"
         );
 
-        // resume_session_id errors (session not found) but its first action is
-        // reset_grants, so the grant is cleared at the production call site.
+        // Resume the real source fixture by id. Before the per-instance lookup
+        // fix this searched the process-global session directory and failed (or
+        // could have opened an unrelated user session with the same id).
         let manager = Arc::clone(
             harness
                 .permission_manager
@@ -3000,18 +3093,40 @@ mod permission_boundary_tests {
         );
         manager.grant_session("opi-sandbox");
         assert!(manager.has_session_grant("opi-sandbox"));
-        let _ = harness.resume_session_id("ghost");
+        assert_eq!(
+            harness
+                .resume_session_id(&source_session_id)
+                .expect("resume resolves inside the instance session root"),
+            0
+        );
         assert!(
             !manager.has_session_grant("opi-sandbox"),
             "resume_session_id must reset permission grants at the boundary"
         );
+        assert_eq!(
+            harness
+                .session()
+                .expect("resumed session remains active")
+                .session_path(),
+            source_session_path
+        );
 
         manager.grant_session("opi-sandbox");
-        let _ = harness.fork_current_session();
+        let (fork_session_id, _) = harness
+            .fork_current_session()
+            .expect("fork derives from the instance-scoped resumed path");
         assert!(
             !manager.has_session_grant("opi-sandbox"),
             "fork_current_session must reset permission grants at the boundary"
         );
+        let fork_session_path = harness
+            .session()
+            .expect("forked session remains active")
+            .session_path()
+            .to_path_buf();
+        assert!(fork_session_path.starts_with(sessions.path()));
+        assert_ne!(fork_session_path, source_session_path);
+        assert!(fork_session_path.ends_with(format!("{fork_session_id}.jsonl")));
 
         manager.grant_session("opi-sandbox");
         let _ = harness.resume_session_branch_tip("ghost");
@@ -3019,8 +3134,17 @@ mod permission_boundary_tests {
             !manager.has_session_grant("opi-sandbox"),
             "resume_session_branch_tip must reset permission grants at the boundary"
         );
-
-        clear_sessions_dir();
+        assert_eq!(
+            harness
+                .session()
+                .expect("failed branch selection keeps the fork active")
+                .session_path(),
+            fork_session_path
+        );
+        drop(harness);
+        assert!(source_session_path.exists());
+        assert!(fork_session_path.exists());
+        assert_eq!(std::env::var_os("OPI_SESSIONS_DIR"), sessions_env_before);
     }
 
     #[test]
@@ -3133,6 +3257,125 @@ mod permission_boundary_tests {
         assert_eq!(counts.protocol_states(), 0);
         assert!(harness.permission_manager.is_some());
         assert!(harness.permission_prompt_rx.is_some());
+    }
+
+    #[tokio::test]
+    async fn general_routed_external_ask_builder_uses_installed_manager_and_channel() {
+        struct MissingPackageSource;
+        impl IdentitySource for MissingPackageSource {
+            fn activate(
+                &self,
+                name: &str,
+                _: &str,
+                _: &str,
+            ) -> Result<ActivatedContribution, ActivationError> {
+                Err(ActivationError::NotInstalled(name.to_string()))
+            }
+        }
+
+        let sessions_env_before = std::env::var_os("OPI_SESSIONS_DIR");
+        let sessions = tempfile::tempdir().unwrap();
+        let ws = tempfile::tempdir().unwrap();
+        let global = tempfile::tempdir().unwrap();
+        let _store_factory = routed_store_factory_override::install(|| RoutedStoreState {
+            store: Arc::new(MissingPackageSource),
+            enabled: vec![EnabledIdentity {
+                adapter_id: "external-ask".to_string(),
+                package_name: "external-package".to_string(),
+            }],
+        });
+        let (counts, _probe) = crate::execution::runtime::construction_probe::install();
+        let mut config = OpiConfig::default();
+        config.execution.backend = "external-ask".to_string();
+        config
+            .execution
+            .permissions
+            .insert("external-ask".to_string(), PermissionDecision::Ask);
+        let provider = opi_ai::test_support::MockProvider::new(
+            "mock",
+            vec![
+                opi_ai::test_support::tool_call_response(
+                    "external-ask-call",
+                    "bash",
+                    r#"{"command":"echo hi"}"#,
+                ),
+                opi_ai::test_support::text_response("done"),
+            ],
+        );
+
+        let mut harness = CodingHarness::builder(
+            Box::new(provider),
+            "mock:mock-model".to_string(),
+            config,
+            ws.path().to_path_buf(),
+            crate::project_trust::TrustDecision::Trusted,
+        )
+        .global_config_dir(global.path().to_path_buf())
+        .execution_mode(ExecutionRunMode::Interactive)
+        .session_dir_for_test(sessions.path().to_path_buf())
+        .build();
+        let session_path = harness
+            .session()
+            .expect("builder creates an isolated session")
+            .session_path()
+            .to_path_buf();
+        assert!(
+            session_path.starts_with(sessions.path()),
+            "session artifact escaped the isolated root: {}",
+            session_path.display()
+        );
+        assert_eq!(std::env::var_os("OPI_SESSIONS_DIR"), sessions_env_before);
+
+        assert_eq!(counts.permission_managers(), 1);
+        assert_eq!(counts.brokers(), 1);
+        assert_eq!(counts.routers(), 1);
+        assert_eq!(counts.protocol_states(), 1);
+        let manager = Arc::clone(
+            harness
+                .permission_manager
+                .as_ref()
+                .expect("GeneralRouted installs its permission manager on the harness"),
+        );
+        let mut permission_rx = harness
+            .permission_prompt_rx
+            .take()
+            .expect("interactive GeneralRouted installs its prompt channel");
+
+        let (result, ()) = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            let prompt = harness.prompt("run the external adapter");
+            let respond = async {
+                let request =
+                    tokio::time::timeout(std::time::Duration::from_secs(2), permission_rx.recv())
+                        .await
+                        .expect("production broker must send on the harness channel")
+                        .expect("permission channel remains open");
+                assert_eq!(request.summary.adapter_id, "external-ask");
+                assert_eq!(request.summary.package_name, "external-package");
+                assert_eq!(request.summary.run_mode_label, "interactive");
+                request
+                    .responder
+                    .send(opi_tui::PermissionChoice::AllowSession)
+                    .expect("production broker awaits the TUI response");
+            };
+            tokio::join!(prompt, respond)
+        })
+        .await
+        .expect("production harness prompt and permission exchange timed out");
+
+        assert!(
+            result.is_ok(),
+            "tool error returns to the agent loop: {result:?}"
+        );
+        assert!(
+            manager.has_session_grant("external-ask"),
+            "the runtime and harness must retain the same permission manager"
+        );
+        drop(harness);
+        assert!(
+            session_path.exists(),
+            "prompt must persist only inside the isolated session root"
+        );
+        assert_eq!(std::env::var_os("OPI_SESSIONS_DIR"), sessions_env_before);
     }
 
     #[test]

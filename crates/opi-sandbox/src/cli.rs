@@ -13,12 +13,12 @@
 //! check, which is the seam the portable `cli_contract` tests drive directly
 //! with an injected [`NoRestriction`](crate::NoRestriction) runner.
 //!
-//! `platform::current` reports the host posture. On Windows (and on macOS until
-//! 16.14.1) `supported == false`, so production `run` refuses before target
-//! start (exit 125); on supported Linux (16.13) `supported == true` and `run`
-//! executes the target under Landlock + seccomp. The unsupported refusal is
-//! exercised directly here; the native Linux run is exercised by
-//! `tests/linux_policy`.
+//! `platform::current` reports the host posture. Supported Linux installs
+//! Landlock + seccomp and supported macOS installs Seatbelt through
+//! `sandbox-exec`; Windows has L0 Job-Object supervision but no Phase 16 native
+//! restriction, so production `run` refuses there before target start (exit
+//! 125). The native contracts are exercised by `tests/linux_policy` and
+//! `tests/macos_policy`.
 //!
 //! # Exit mapping (spec `### Human CLI`)
 //!
@@ -28,7 +28,9 @@
 //! | Unix signal termination | `128 + signal` |
 //! | `run` timeout | `124` |
 //! | cooperative cancellation | `130` |
+//! | unsupported platform (wins before workspace/cwd validation) | `125` |
 //! | pre-start setup failure (`ProgramNotFound`/`RestrictionSetup`/`SpawnFailed`/`UnsupportedPlatform`) | `125` |
+//! | nonexistent `--workspace` / derived cwd after the supported-platform posture gate (`InvalidRequest`) | `2` |
 //! | malformed `run`/usage (`InvalidRequest`, missing flags, bad values) | `2` |
 //! | `--help`/`--version`/`doctor` completed | `0` |
 //!
@@ -40,7 +42,7 @@
 #![forbid(unsafe_code)]
 
 use std::collections::BTreeMap;
-use std::ffi::OsString;
+use std::ffi::{OsStr, OsString};
 use std::fmt::Write as _;
 use std::path::PathBuf;
 use std::pin::Pin;
@@ -59,13 +61,13 @@ use crate::runner::{
 /// The fixed `run` timeout applied when the human CLI invokes a target. The
 /// spec `### Human CLI` grammar carries no `--timeout`, so the CLI applies a
 /// single effectively-unbounded finite default (365 days); this satisfies the
-/// SDK's non-zero timeout requirement by construction, so `InvalidRequest` is
-/// unreachable from the human `run` path.
+/// SDK's non-zero timeout requirement by construction.
 pub const DEFAULT_RUN_TIMEOUT: Duration = Duration::from_secs(365 * 86_400);
 
 /// A redacted usage error from the `run` parser; the CLI maps every usage error
 /// to exit `2`.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, thiserror::Error)]
+#[error("{message}")]
 pub struct UsageError {
     /// A short human-readable reason.
     pub message: String,
@@ -86,22 +88,14 @@ impl UsageError {
     fn duplicate(flag: &str) -> Self {
         Self::new(format!("duplicate flag `{flag}`"))
     }
-    fn invalid_value(flag: &str, value: &str) -> Self {
-        Self::new(format!("invalid value `{value}` for flag `{flag}`"))
+    fn invalid_value(flag: &str) -> Self {
+        Self::new(format!("invalid value for flag `{flag}`"))
     }
-    fn unknown_token(token: &str) -> Self {
-        Self::new(format!(
-            "unknown flag or positional token `{token}` before `--`"
-        ))
+    fn unknown_token() -> Self {
+        Self::new("unknown flag or positional token before `--`")
     }
     fn missing_program() -> Self {
         Self::new("missing program after `--`")
-    }
-}
-
-impl std::fmt::Display for UsageError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.message)
     }
 }
 
@@ -117,67 +111,65 @@ pub struct RunCommand {
     pub network: NetworkPolicy,
     /// The explicit program to execute (after `--`).
     pub program: PathBuf,
-    /// The explicit argument vector (after the program).
-    pub args: Vec<String>,
+    /// The platform-native argument vector (after the program).
+    pub args: Vec<OsString>,
 }
 
 /// Parse the `run` subcommand tokens (everything after the literal `run`
-/// subcommand). The grammar is:
+/// subcommand) without converting paths or target arguments to UTF-8. The
+/// grammar is:
 /// `--workspace <PATH> --profile workspace-write --network <deny|allow> -- <PROGRAM> [ARGS...]`.
 ///
 /// The three flags are required and may appear in any order before `--`. `--`
 /// terminates flag parsing absolutely: every later token (including
 /// `--workspace`-shaped ones) becomes the program or an argument. An empty
 /// program, a missing flag, an unknown flag/value, a duplicate flag, or a flag
-/// value shaped like a flag (`--foo`) each produce a [`UsageError`] the CLI maps
-/// to exit `2`. A present-but-nonexistent program is NOT a parse error — the
-/// runner detects it at spawn and the CLI maps it to `125`.
-pub fn parse_run(args: &[String]) -> Result<RunCommand, UsageError> {
+/// value shaped like a flag (`--foo`) each produce a redacted [`UsageError`]
+/// the CLI maps to exit `2`. A present-but-nonexistent program is NOT a parse
+/// error — the runner detects it at spawn and the CLI maps it to `125`.
+pub fn parse_run(args: &[OsString]) -> Result<RunCommand, UsageError> {
     let mut workspace: Option<PathBuf> = None;
     let mut profile: Option<Profile> = None;
     let mut network: Option<NetworkPolicy> = None;
-    let mut program_and_args: Option<Vec<String>> = None;
+    let mut program_and_args: Option<Vec<OsString>> = None;
 
     let mut i = 0;
     while i < args.len() {
-        let token = args[i].as_str();
-        if token == "--" {
+        let token = args[i].as_os_str();
+        if token == OsStr::new("--") {
             program_and_args = Some(args[i + 1..].to_vec());
             break;
         }
-        match token {
-            "--workspace" => {
-                let value = take_value(args, &mut i, "--workspace")?;
-                if value.is_empty() {
-                    return Err(UsageError::invalid_value("--workspace", "(empty)"));
-                }
-                if workspace.is_some() {
-                    return Err(UsageError::duplicate("--workspace"));
-                }
-                workspace = Some(PathBuf::from(value));
+        if token == OsStr::new("--workspace") {
+            let value = take_value(args, &mut i, "--workspace")?;
+            if value.is_empty() {
+                return Err(UsageError::invalid_value("--workspace"));
             }
-            "--profile" => {
-                let value = take_value(args, &mut i, "--profile")?;
-                if profile.is_some() {
-                    return Err(UsageError::duplicate("--profile"));
-                }
-                profile = Some(match value.as_str() {
-                    "workspace-write" => Profile::WorkspaceWrite,
-                    other => return Err(UsageError::invalid_value("--profile", other)),
-                });
+            if workspace.is_some() {
+                return Err(UsageError::duplicate("--workspace"));
             }
-            "--network" => {
-                let value = take_value(args, &mut i, "--network")?;
-                if network.is_some() {
-                    return Err(UsageError::duplicate("--network"));
-                }
-                network = Some(match value.as_str() {
-                    "deny" => NetworkPolicy::Deny,
-                    "allow" => NetworkPolicy::Allow,
-                    other => return Err(UsageError::invalid_value("--network", other)),
-                });
+            workspace = Some(PathBuf::from(value));
+        } else if token == OsStr::new("--profile") {
+            let value = take_value(args, &mut i, "--profile")?;
+            if profile.is_some() {
+                return Err(UsageError::duplicate("--profile"));
             }
-            other => return Err(UsageError::unknown_token(other)),
+            profile = Some(match value.to_str() {
+                Some("workspace-write") => Profile::WorkspaceWrite,
+                _ => return Err(UsageError::invalid_value("--profile")),
+            });
+        } else if token == OsStr::new("--network") {
+            let value = take_value(args, &mut i, "--network")?;
+            if network.is_some() {
+                return Err(UsageError::duplicate("--network"));
+            }
+            network = Some(match value.to_str() {
+                Some("deny") => NetworkPolicy::Deny,
+                Some("allow") => NetworkPolicy::Allow,
+                _ => return Err(UsageError::invalid_value("--network")),
+            });
+        } else {
+            return Err(UsageError::unknown_token());
         }
         i += 1;
     }
@@ -207,16 +199,20 @@ pub fn parse_run(args: &[String]) -> Result<RunCommand, UsageError> {
 /// is missing, is the `--` separator, or looks like another flag (so a missing
 /// value cannot accidentally consume the next flag). Advances `*i` past the
 /// value on success.
-fn take_value(args: &[String], i: &mut usize, flag: &str) -> Result<String, UsageError> {
+fn take_value<'a>(
+    args: &'a [OsString],
+    i: &mut usize,
+    flag: &str,
+) -> Result<&'a OsStr, UsageError> {
     if *i + 1 >= args.len() {
         return Err(UsageError::missing_value(flag));
     }
-    let value = &args[*i + 1];
-    if value == "--" || value.starts_with("--") {
+    let value = args[*i + 1].as_os_str();
+    if value.as_encoded_bytes().starts_with(b"--") {
         return Err(UsageError::missing_value(flag));
     }
     *i += 1;
-    Ok(value.clone())
+    Ok(value)
 }
 
 /// Build the SDK [`SandboxRequest`] from a parsed [`RunCommand`]. Pure, so a
@@ -225,7 +221,7 @@ fn take_value(args: &[String], i: &mut usize, flag: &str) -> Result<String, Usag
 pub fn build_request(cmd: &RunCommand) -> SandboxRequest {
     SandboxRequest {
         program: cmd.program.clone(),
-        args: cmd.args.iter().map(OsString::from).collect(),
+        args: cmd.args.clone(),
         workspace: cmd.workspace.clone(),
         cwd: cmd.workspace.clone(),
         timeout: DEFAULT_RUN_TIMEOUT,
@@ -296,11 +292,11 @@ fn map_outcome(outcome: &SandboxOutcome) -> i32 {
     }
 }
 
-/// Map a pre-start setup failure to the CLI exit code. `InvalidRequest` is usage
-/// (`2`) — unreachable from the human CLI because [`parse_run`] validates the
-/// request first, but mapped to `2` as defense-in-depth; every other variant is
-/// a pre-start failure (`125`). `ProgramNotFound` is `125` (the CLI does NOT
-/// follow the POSIX-shell `127` convention).
+/// Map a pre-start setup failure to the CLI exit code. `InvalidRequest` is `2`;
+/// this includes a nonexistent `--workspace` (and therefore its derived cwd),
+/// because canonical path validation happens in [`SandboxRunner::run`]. Every
+/// other variant is a pre-start failure (`125`). `ProgramNotFound` is `125`
+/// (the CLI does NOT follow the POSIX-shell `127` convention).
 fn map_setup_failure(reason: &SetupFailureReason) -> i32 {
     match reason {
         SetupFailureReason::InvalidRequest => 2,
@@ -322,7 +318,7 @@ pub struct DoctorReport {
     pub supported: bool,
     /// The OS family (matches the `cfg(target_os)` dispatch).
     pub target: &'static str,
-    /// The mechanism names a supported platform installs (empty in 16.11.2).
+    /// The mechanism names installed by a supported posture; empty when unsupported.
     pub mechanisms: Vec<String>,
     /// The available profile names.
     pub profiles: Vec<String>,
@@ -438,33 +434,35 @@ fn json_escape(s: &str) -> String {
     out
 }
 
-/// The top-level CLI entry point. `args` is the full `argv` including the
-/// program name at `args[0]` (ignored). Returns the process exit code.
-pub async fn run(args: Vec<String>) -> i32 {
+/// The reusable CLI entry point. `args` is the native full `argv` including the
+/// program name at `args[0]` (ignored). The standalone binary intercepts
+/// `backend --stdio` because its blocking native-stdin bridge is process-only;
+/// this reusable dispatcher rejects that route. Returns the process exit code.
+pub async fn run(args: Vec<OsString>) -> i32 {
     let mut iter = args.iter().skip(1);
     let subcommand = match iter.next() {
-        Some(s) => s.as_str(),
+        Some(s) => s.as_os_str(),
         None => {
             print_usage();
             return 2;
         }
     };
-    let rest: Vec<String> = iter.cloned().collect();
-    match subcommand {
-        "--help" | "-h" => {
+    let rest: Vec<OsString> = iter.cloned().collect();
+    match subcommand.to_str() {
+        Some("--help" | "-h") => {
             print_help();
             0
         }
-        "--version" | "-V" => {
+        Some("--version" | "-V") => {
             println!("opi-sandbox {}", env!("CARGO_PKG_VERSION"));
             0
         }
-        "doctor" => {
+        Some("doctor") => {
             let json = match rest.len() {
                 0 => false,
-                1 if rest[0] == "--json" => true,
+                1 if rest[0] == OsStr::new("--json") => true,
                 1 => {
-                    eprintln!("opi-sandbox: unknown doctor flag `{}`", rest[0]);
+                    eprintln!("opi-sandbox: unknown doctor flag");
                     return 2;
                 }
                 _ => {
@@ -474,26 +472,27 @@ pub async fn run(args: Vec<String>) -> i32 {
             };
             doctor(json)
         }
-        // The backend subcommand speaks command-execution-jsonl-v1 over stdio
-        // (stdin = host->backend frames, stdout = backend->host frames). It runs
-        // exactly one execution and exits 0 after the terminal frame; the
-        // target's exit is in-band in `completed`. Phase 16 task 16.12.
-        "backend" => {
-            if rest.len() == 1 && rest[0] == "--stdio" {
-                crate::backend::run().await
+        // The standalone binary intercepts the exact process-only backend
+        // subcommand before this reusable dispatcher. Reject it here so a
+        // library caller cannot create a native-stdin worker.
+        Some("backend") => {
+            if rest.len() == 1 && rest[0] == OsStr::new("--stdio") {
+                eprintln!("opi-sandbox: backend --stdio requires the standalone process entry");
+                2
             } else {
                 eprintln!("opi-sandbox: backend requires the `--stdio` flag");
                 print_usage();
                 2
             }
         }
-        "run" => match parse_run(&rest) {
+        Some("run") => match parse_run(&rest) {
             Ok(cmd) => {
                 // Platform gate OUTSIDE execute: refuse pre-start on an
                 // unsupported platform before constructing a runner.
                 let posture = platform::current();
                 if !posture.supported {
-                    // 16.11.2: every platform is unsupported -> pre-start refusal.
+                    // Windows, other Unix, or an unavailable native mechanism:
+                    // refuse before target start rather than run unrestricted.
                     return 125;
                 }
                 let runner = SandboxRunner::new(
@@ -521,8 +520,8 @@ pub async fn run(args: Vec<String>) -> i32 {
                 2
             }
         },
-        other => {
-            eprintln!("opi-sandbox: unknown subcommand `{other}`");
+        _ => {
+            eprintln!("opi-sandbox: unknown subcommand");
             print_usage();
             2
         }
@@ -537,7 +536,7 @@ fn print_usage() {
 fn print_help() {
     println!("opi-sandbox {}", env!("CARGO_PKG_VERSION"));
     println!(
-        "Standalone command-execution sandbox (L0-supervised; native restriction lands in later tasks)."
+        "Standalone command-execution sandbox (native restriction on supported Linux/macOS; Windows run is refused)."
     );
     println!();
     println!("usage:");
@@ -591,5 +590,22 @@ mod tests {
         assert!(json.contains("\"supported\":false"));
         assert!(json.contains(&format!("\"target\":\"{}\"", std::env::consts::OS)));
         assert!(json.contains("\"mechanisms\":[]"));
+    }
+}
+
+#[cfg(test)]
+mod reusable_dispatch_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn reusable_dispatch_rejects_process_only_backend_route() {
+        let args = ["opi-sandbox", "backend", "--stdio"]
+            .into_iter()
+            .map(OsString::from)
+            .collect();
+        let code = tokio::time::timeout(Duration::from_secs(1), run(args))
+            .await
+            .expect("reusable dispatch must not open a native-stdin worker");
+        assert_eq!(code, 2);
     }
 }

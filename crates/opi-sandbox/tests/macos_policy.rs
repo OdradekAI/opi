@@ -42,7 +42,12 @@
 #![cfg(target_os = "macos")]
 #![forbid(unsafe_code)]
 
+#[path = "support/policy_probe.rs"]
+mod policy_probe;
+
+use std::ffi::OsString;
 use std::fs;
+use std::os::unix::ffi::OsStringExt;
 use std::path::PathBuf;
 use std::process::{Command, Output};
 
@@ -68,6 +73,34 @@ fn run_sh(workspace: &std::path::Path, network: &str, target: &str) -> Output {
         .arg("-c")
         .arg(target);
     cmd.output().expect("spawn opi-sandbox run")
+}
+
+fn run_native_probe(
+    workspace: &std::path::Path,
+    network: &str,
+    mode: &str,
+    environment: &[(&str, String)],
+) -> Output {
+    let mut cmd = Command::new(binary());
+    cmd.arg("run")
+        .arg("--workspace")
+        .arg(workspace)
+        .arg("--profile")
+        .arg("workspace-write")
+        .arg("--network")
+        .arg(network)
+        .arg("--")
+        .arg(std::env::current_exe().expect("current test executable"))
+        .arg("--exact")
+        .arg(policy_probe::TEST_NAME)
+        .arg("--ignored")
+        .arg("--nocapture")
+        .env("PATH", "/opi-policy-probe-no-path")
+        .env("OPI_POLICY_PROBE_MODE", mode);
+    for (key, value) in environment {
+        cmd.env(key, value);
+    }
+    cmd.output().expect("spawn native policy probe")
 }
 
 /// `opi-sandbox doctor --json` output.
@@ -165,7 +198,11 @@ fn system_temp_sibling_write_denied() {
     let ws = tempfile::tempdir().expect("workspace tempdir");
     let marker = std::env::temp_dir().join(format!("opi-outside-{}.txt", std::process::id()));
     let _ = fs::remove_file(&marker);
-    let _out = run_sh(ws.path(), "deny", &format!("echo x > {}", marker.display()));
+    let out = run_sh(ws.path(), "deny", &format!("echo x > {}", marker.display()));
+    assert!(
+        !out.status.success(),
+        "denied system-temp write must return a nonzero target status"
+    );
     assert!(!marker.exists(), "system-temp sibling write must be denied");
 }
 
@@ -182,7 +219,11 @@ fn outside_write_denied() {
     let ws = tempfile::tempdir().expect("workspace tempdir");
     let marker = outside.join(format!("opi-outside-{}.txt", std::process::id()));
     let _ = fs::remove_file(&marker);
-    let _out = run_sh(ws.path(), "deny", &format!("echo x > {}", marker.display()));
+    let out = run_sh(ws.path(), "deny", &format!("echo x > {}", marker.display()));
+    assert!(
+        !out.status.success(),
+        "denied outside write must return a nonzero target status"
+    );
     assert!(
         !marker.exists(),
         "write outside the grant must be DENIED (marker must not exist)"
@@ -213,23 +254,20 @@ fn outside_read_allowed() {
 #[test]
 fn network_deny_blocks_inet_bind() {
     let ws = tempfile::tempdir().expect("workspace tempdir");
-    let out = run_sh(
-        ws.path(),
-        "deny",
-        "python3 -c 'import socket,sys; s=socket.socket(socket.AF_INET,socket.SOCK_STREAM); sys.stdout.write(\"BIND_OK\\n\") if s.bind((\"127.0.0.1\",0)) is None else None'",
-    );
+    let out = run_native_probe(ws.path(), "deny", "inet-bind", &[]);
     let stdout = String::from_utf8_lossy(&out.stdout);
     let stderr = String::from_utf8_lossy(&out.stderr);
-    // Under (deny network*) the bind raises (denied); the python either prints
-    // nothing on the success path or exits nonzero on the raised bind. Either
-    // way BIND_OK must NOT appear.
     assert!(
-        !stdout.contains("BIND_OK"),
+        !stdout.contains("INET_BIND_OK"),
         "network=deny must block INET bind: {stdout}\nstderr: {stderr}"
     );
     assert!(
         !out.status.success(),
         "the denied bind must surface as a nonzero target exit"
+    );
+    assert!(
+        stderr.contains("INET_BIND_DENIED:"),
+        "denied INET bind must emit the native denial marker"
     );
 }
 
@@ -237,14 +275,15 @@ fn network_deny_blocks_inet_bind() {
 #[test]
 fn network_allow_permits_inet_bind() {
     let ws = tempfile::tempdir().expect("workspace tempdir");
-    let out = run_sh(
-        ws.path(),
-        "allow",
-        "python3 -c 'import socket,sys; s=socket.socket(socket.AF_INET,socket.SOCK_STREAM); s.bind((\"127.0.0.1\",0)); sys.stdout.write(\"BIND_OK\\n\")'",
-    );
+    let out = run_native_probe(ws.path(), "allow", "inet-bind", &[]);
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(
-        stdout.contains("BIND_OK"),
+        out.status.success(),
+        "network=allow native probe must exit zero\nstderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        stdout.contains("INET_BIND_OK"),
         "network=allow must permit INET bind: {stdout}\nstderr: {}",
         String::from_utf8_lossy(&out.stderr)
     );
@@ -255,16 +294,48 @@ fn network_allow_permits_inet_bind() {
 #[test]
 fn network_deny_preserves_af_unix() {
     let ws = tempfile::tempdir().expect("workspace tempdir");
-    let out = run_sh(
-        ws.path(),
-        "deny",
-        "python3 -c 'import socket,sys; a,b=socket.socketpair(socket.AF_UNIX); sys.stdout.write(\"AFUNIX_OK\\n\")'",
-    );
+    let out = run_native_probe(ws.path(), "deny", "unix-socket", &[]);
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(
-        stdout.contains("AFUNIX_OK"),
+        out.status.success(),
+        "AF_UNIX native probe must exit zero\nstderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        stdout.contains("AF_UNIX_OK"),
         "network=deny must preserve AF_UNIX: {stdout}\nstderr: {}",
         String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+/// The runner overwrites all portable temporary-directory aliases with the
+/// same invocation-private root while preserving unrelated inherited values.
+#[test]
+fn private_temp_aliases_and_environment_inheritance_are_exact() {
+    let ws = tempfile::tempdir().expect("workspace tempdir");
+    let inherited_temp_dir = tempfile::tempdir().expect("inherited temp base");
+    let inherited_temp = inherited_temp_dir.path().display().to_string();
+    let out = run_native_probe(
+        ws.path(),
+        "deny",
+        "environment",
+        &[
+            ("OPI_POLICY_INHERITED", "inherited-exactly".to_string()),
+            ("OPI_POLICY_REQUEST_TEMP", inherited_temp.clone()),
+            ("TMPDIR", inherited_temp.clone()),
+            ("TMP", inherited_temp.clone()),
+            ("TEMP", inherited_temp),
+        ],
+    );
+    assert!(
+        out.status.success(),
+        "environment probe must exit zero\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&out.stdout).contains("ENVIRONMENT_ALIASES_OK"),
+        "environment probe must emit its success marker"
     );
 }
 
@@ -277,6 +348,52 @@ fn run_maps_target_exit_code() {
     assert_eq!(out.status.code(), Some(7), "target exit 7 maps verbatim");
     let out = run_sh(ws.path(), "deny", "exit 0");
     assert_eq!(out.status.code(), Some(0), "target exit 0 maps verbatim");
+}
+
+/// Seatbelt profile strings cannot safely represent control characters in
+/// path literals. Refusal is pre-start and leaves the target marker absent.
+#[test]
+fn control_character_workspace_is_refused_before_target_start() {
+    let parent = tempfile::tempdir().expect("workspace parent");
+    let workspace = parent.path().join("workspace\ncontrol");
+    fs::create_dir(&workspace).expect("create control-character workspace");
+    let marker = parent.path().join("must-not-exist-control");
+
+    let out = run_sh(
+        &workspace,
+        "deny",
+        &format!("printf started > '{}'", marker.display()),
+    );
+
+    assert_eq!(out.status.code(), Some(125), "profile refusal is pre-start");
+    assert!(
+        !marker.exists(),
+        "refused profile never releases the target"
+    );
+}
+
+/// A native path that is not valid UTF-8 is refused rather than changed with a
+/// replacement character in the Seatbelt profile.
+#[test]
+fn non_utf8_workspace_is_refused_before_target_start() {
+    let parent = tempfile::tempdir().expect("workspace parent");
+    let workspace = parent
+        .path()
+        .join(OsString::from_vec(vec![b'w', b's', b'-', 0xff]));
+    fs::create_dir(&workspace).expect("create non-UTF workspace");
+    let marker = parent.path().join("must-not-exist-native");
+
+    let out = run_sh(
+        &workspace,
+        "deny",
+        &format!("printf started > '{}'", marker.display()),
+    );
+
+    assert_eq!(out.status.code(), Some(125), "profile refusal is pre-start");
+    assert!(
+        !marker.exists(),
+        "refused native path never releases target"
+    );
 }
 
 /// L0 tree-kill through the launcher: when the target forks a surviving

@@ -25,6 +25,42 @@ use crate::package_store::{
     PackageStoreScope,
 };
 
+#[cfg(test)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum GitInstallFaultPoint {
+    StageCacheReplacement,
+    CanonicalizeLiveCache,
+}
+
+#[cfg(test)]
+thread_local! {
+    static NEXT_GIT_INSTALL_FAULT: std::cell::Cell<Option<GitInstallFaultPoint>> = const {
+        std::cell::Cell::new(None)
+    };
+}
+
+#[cfg(test)]
+fn fail_next_git_install_at(point: GitInstallFaultPoint) {
+    NEXT_GIT_INSTALL_FAULT.with(|fault| fault.set(Some(point)));
+}
+
+#[cfg(test)]
+fn check_git_install_fault(point: GitInstallFaultPoint) -> Result<(), PackageStoreError> {
+    if NEXT_GIT_INSTALL_FAULT.with(|fault| {
+        if fault.get() == Some(point) {
+            fault.set(None);
+            true
+        } else {
+            false
+        }
+    }) {
+        return Err(PackageStoreError::Io(std::io::Error::other(format!(
+            "injected git install failure at {point:?}"
+        ))));
+    }
+    Ok(())
+}
+
 /// Execute a package CLI command and return an exit code.
 ///
 /// `workspace_root` is typically `std::env::current_dir()`.
@@ -275,20 +311,35 @@ fn install_git_package(
 
     // Package Trust is now durably disabled. Only after that fail-closed gate
     // may the live cache path expose the validated replacement bytes.
-    let replacement = match store.stage_cache_replacement(&cache_dir, &staging_dir) {
+    #[cfg(test)]
+    let replacement_result = check_git_install_fault(GitInstallFaultPoint::StageCacheReplacement)
+        .and_then(|()| store.stage_cache_replacement(&cache_dir, &staging_dir));
+    #[cfg(not(test))]
+    let replacement_result = store.stage_cache_replacement(&cache_dir, &staging_dir);
+    let replacement = match replacement_result {
         Ok(replacement) => replacement,
         Err(error) => {
-            let trust_restore = restore_trust_snapshot(trust_snapshot.as_ref());
-            return Err(package_update_error(error, Ok(()), trust_restore, Ok(())));
+            let staging_cleanup = match std::fs::remove_dir_all(&staging_dir) {
+                Ok(()) => Ok(()),
+                Err(cleanup) if cleanup.kind() == std::io::ErrorKind::NotFound => Ok(()),
+                Err(cleanup) => Err(PackageStoreError::Io(cleanup)),
+            };
+            return Err(package_update_error(error, Ok(()), Ok(()), staging_cleanup));
         }
     };
-    let canonical_cache = match cache_dir.canonicalize() {
+    #[cfg(test)]
+    let canonical_cache_result =
+        check_git_install_fault(GitInstallFaultPoint::CanonicalizeLiveCache)
+            .and_then(|()| cache_dir.canonicalize().map_err(PackageStoreError::Io));
+    #[cfg(not(test))]
+    let canonical_cache_result = cache_dir.canonicalize().map_err(PackageStoreError::Io);
+    let canonical_cache = match canonical_cache_result {
         Ok(path) => path,
         Err(error) => {
             return Err(package_update_error(
-                PackageStoreError::Io(error),
+                error,
                 Ok(()),
-                restore_trust_snapshot(trust_snapshot.as_ref()),
+                Ok(()),
                 replacement.rollback(),
             ));
         }
@@ -1333,6 +1384,7 @@ fn package_update_error(
 mod tests {
     use super::*;
     use crate::package_resolver::local_lock_entry;
+    use std::collections::BTreeMap;
 
     fn file_state(path: &Path) -> (bool, Option<Vec<u8>>) {
         (path.exists(), std::fs::read(path).ok())
@@ -1355,6 +1407,221 @@ mod tests {
         store
             .write_lock(&[local_lock_entry(source.into(), &root).expect("lock")])
             .expect("write lock");
+    }
+
+    struct GitExecutionRepo {
+        _tmp: tempfile::TempDir,
+        bare_url: String,
+        first_commit: String,
+        second_commit: String,
+    }
+
+    fn git_in(cwd: &Path, args: &[&str]) -> std::process::Output {
+        std::process::Command::new("git")
+            .args(args)
+            .current_dir(cwd)
+            .env("GIT_AUTHOR_NAME", "test")
+            .env("GIT_AUTHOR_EMAIL", "test@test.com")
+            .env("GIT_COMMITTER_NAME", "test")
+            .env("GIT_COMMITTER_EMAIL", "test@test.com")
+            .env("GIT_TERMINAL_PROMPT", "0")
+            .output()
+            .expect("git command")
+    }
+
+    fn assert_git_ok(output: std::process::Output, action: &str) -> std::process::Output {
+        assert!(
+            output.status.success(),
+            "{action} failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        output
+    }
+
+    fn write_git_execution_package(root: &Path, executable: &[u8]) {
+        use sha2::{Digest as _, Sha256};
+
+        std::fs::create_dir_all(root.join("bin")).expect("bin directory");
+        let command = root.join("bin/adapter");
+        std::fs::write(&command, executable).expect("adapter executable");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+            std::fs::set_permissions(&command, std::fs::Permissions::from_mode(0o755))
+                .expect("executable permissions");
+        }
+        let sha = format!("{:x}", Sha256::digest(executable));
+        let target = package_activation::host_target_triple();
+        std::fs::write(
+            root.join("package.toml"),
+            format!(
+                "version = \"0.8.0\"\n\
+                 opi_version = \">=0.7,<0.8\"\n\
+                 name = \"git-execution\"\n\
+                 description = \"git execution fixture\"\n\
+                 [[contributions.adapters]]\n\
+                 capability = \"command.execute\"\n\
+                 id = \"git-execution\"\n\
+                 transport = \"process-jsonl\"\n\
+                 command = \"bin/adapter\"\n\
+                 args = [\"backend\", \"--stdio\"]\n\
+                 protocol = \"command-execution-jsonl-v1\"\n\
+                 target = \"{target}\"\n\
+                 sha256 = \"{sha}\"\n\
+                 handshake_timeout_ms = 5000\n\
+                 adapter_config = {{}}\n"
+            ),
+        )
+        .expect("package manifest");
+    }
+
+    fn git_execution_repo_with_changed_executable() -> GitExecutionRepo {
+        let tmp = tempfile::tempdir().expect("git fixture");
+        let bare_dir = tmp.path().join("bare.git");
+        let work_dir = tmp.path().join("work");
+        std::fs::create_dir_all(&work_dir).expect("work directory");
+        assert_git_ok(
+            std::process::Command::new("git")
+                .args(["init", "--bare"])
+                .arg(&bare_dir)
+                .output()
+                .expect("git init --bare"),
+            "git init --bare",
+        );
+        assert_git_ok(git_in(&work_dir, &["init"]), "git init");
+        assert_git_ok(
+            git_in(&work_dir, &["config", "core.autocrlf", "false"]),
+            "disable autocrlf",
+        );
+        write_git_execution_package(&work_dir, b"adapter-v1");
+        assert_git_ok(git_in(&work_dir, &["add", "."]), "git add first");
+        assert_git_ok(
+            git_in(&work_dir, &["commit", "-m", "first"]),
+            "git commit first",
+        );
+        let first = assert_git_ok(git_in(&work_dir, &["rev-parse", "HEAD"]), "first sha");
+        let first_commit = String::from_utf8_lossy(&first.stdout).trim().to_string();
+
+        let bare_url = format!(
+            "file:///{}",
+            bare_dir.display().to_string().replace('\\', "/")
+        );
+        assert_git_ok(
+            git_in(&work_dir, &["remote", "add", "origin", &bare_url]),
+            "git remote add",
+        );
+        assert_git_ok(
+            git_in(&work_dir, &["push", "origin", "HEAD:refs/heads/main"]),
+            "git push first",
+        );
+        write_git_execution_package(&work_dir, b"adapter-v2");
+        assert_git_ok(git_in(&work_dir, &["add", "."]), "git add second");
+        assert_git_ok(
+            git_in(&work_dir, &["commit", "-m", "second"]),
+            "git commit second",
+        );
+        let second = assert_git_ok(git_in(&work_dir, &["rev-parse", "HEAD"]), "second sha");
+        let second_commit = String::from_utf8_lossy(&second.stdout).trim().to_string();
+        assert_git_ok(
+            git_in(&work_dir, &["push", "origin", "HEAD:refs/heads/main"]),
+            "git push second",
+        );
+
+        GitExecutionRepo {
+            _tmp: tmp,
+            bare_url,
+            first_commit,
+            second_commit,
+        }
+    }
+
+    fn snapshot_tree(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
+        fn visit(root: &Path, path: &Path, files: &mut BTreeMap<PathBuf, Vec<u8>>) {
+            for entry in std::fs::read_dir(path).expect("read cache tree") {
+                let entry = entry.expect("cache entry");
+                let path = entry.path();
+                let file_type = entry.file_type().expect("cache entry type");
+                if file_type.is_dir() {
+                    visit(root, &path, files);
+                } else if file_type.is_file() {
+                    files.insert(
+                        path.strip_prefix(root)
+                            .expect("relative cache path")
+                            .to_path_buf(),
+                        std::fs::read(path).expect("cache file bytes"),
+                    );
+                }
+            }
+        }
+
+        let mut files = BTreeMap::new();
+        visit(root, root, &mut files);
+        files
+    }
+
+    fn directory_entries(path: &Path) -> Vec<PathBuf> {
+        let mut entries = std::fs::read_dir(path)
+            .expect("cache parent")
+            .map(|entry| entry.expect("cache parent entry").path())
+            .collect::<Vec<_>>();
+        entries.sort();
+        entries
+    }
+
+    fn assert_git_update_fault_rolls_back(point: GitInstallFaultPoint) {
+        let user = tempfile::tempdir().expect("user config");
+        let repo = git_execution_repo_with_changed_executable();
+        let first_source = format!("git:{}@{}", repo.bare_url, repo.first_commit);
+        let second_source = format!("git:{}@{}", repo.bare_url, repo.second_commit);
+        let scope = PackageStoreScope::Global {
+            user_config_dir: user.path().to_path_buf(),
+        };
+        let store = PackageStore::new(scope.clone());
+
+        cmd_add(&store, &scope, user.path(), &first_source).expect("first install");
+        let activation =
+            package_activation::PackageActivationStore::global(user.path().to_path_buf());
+        let mut records = activation.read_records().expect("initial trust record");
+        records[0].trusted = true;
+        records[0].enabled = true;
+        activation.write_records(&records).expect("trusted record");
+
+        let lock_path = scope.lock_path();
+        let declarations_path = scope.config_path();
+        let old_lock_bytes = std::fs::read(&lock_path).expect("old lock bytes");
+        let old_declaration_bytes =
+            std::fs::read(&declarations_path).expect("old declaration bytes");
+        let old_lock = store.read_lock().expect("old lock").remove(0);
+        let old_cache = old_lock.package_root.clone();
+        let old_cache_bytes = snapshot_tree(&old_cache);
+        let old_cache_entries = directory_entries(old_cache.parent().expect("cache parent"));
+
+        fail_next_git_install_at(point);
+        let error = cmd_add(&store, &scope, user.path(), &second_source)
+            .expect_err("injected git update fault");
+        assert!(error.to_string().contains("injected git install failure"));
+
+        assert_eq!(std::fs::read(&lock_path).unwrap(), old_lock_bytes);
+        assert_eq!(
+            std::fs::read(&declarations_path).unwrap(),
+            old_declaration_bytes
+        );
+        assert_eq!(store.read_lock().unwrap(), [old_lock]);
+        assert_eq!(snapshot_tree(&old_cache), old_cache_bytes);
+        assert_eq!(
+            directory_entries(old_cache.parent().expect("cache parent")),
+            old_cache_entries,
+            "failed update must not leave a staged or backup cache published"
+        );
+
+        let records = activation.read_records().expect("trust after fault");
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].source, first_source);
+        assert!(
+            !records[0].trusted,
+            "committed invalidation must be durable"
+        );
+        assert!(!records[0].enabled, "committed disablement must be durable");
     }
 
     #[test]
@@ -1426,5 +1693,15 @@ mod tests {
         assert_eq!(file_state(&trust_path), trust_before);
         assert!(store.read_declarations().expect("declarations").is_empty());
         assert!(store.read_lock().expect("locks").is_empty());
+    }
+
+    #[test]
+    fn git_update_stage_failure_preserves_old_state_and_durable_invalidation() {
+        assert_git_update_fault_rolls_back(GitInstallFaultPoint::StageCacheReplacement);
+    }
+
+    #[test]
+    fn git_update_canonicalize_failure_restores_old_state_and_durable_invalidation() {
+        assert_git_update_fault_rolls_back(GitInstallFaultPoint::CanonicalizeLiveCache);
     }
 }

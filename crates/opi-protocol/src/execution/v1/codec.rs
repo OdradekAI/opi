@@ -62,7 +62,8 @@ impl<R: Read> LineReader<R> {
     }
 
     /// Read one JSONL line into `out` (clearing it first), without the trailing
-    /// newline. Carriage returns are stripped.
+    /// newline. A carriage return immediately before the newline is treated as
+    /// part of the delimiter and does not consume the line-size cap.
     ///
     /// Returns `Ok(true)` if a line was read, `Ok(false)` at clean EOF (no bytes
     /// remaining), or `Err(OversizedLine)` if a line exceeds the cap.
@@ -70,16 +71,32 @@ impl<R: Read> LineReader<R> {
         out.clear();
         let cap = self.max_line_size;
         let mut byte = [0u8; 1];
+        let mut pending_cr = false;
         loop {
             match self.inner.read(&mut byte)? {
-                0 => return Ok(!out.is_empty()),
+                0 => {
+                    if pending_cr {
+                        if out.len() >= cap {
+                            return Err(CodecError::OversizedLine { max_line_size: cap });
+                        }
+                        out.push(b'\r');
+                    }
+                    return Ok(!out.is_empty());
+                }
                 _ => {
                     if byte[0] == b'\n' {
-                        // Strip a trailing CR.
-                        if out.last() == Some(&b'\r') {
-                            out.pop();
-                        }
                         return Ok(true);
+                    }
+                    if pending_cr {
+                        if out.len() >= cap {
+                            return Err(CodecError::OversizedLine { max_line_size: cap });
+                        }
+                        out.push(b'\r');
+                        pending_cr = false;
+                    }
+                    if byte[0] == b'\r' {
+                        pending_cr = true;
+                        continue;
                     }
                     if out.len() >= cap {
                         return Err(CodecError::OversizedLine { max_line_size: cap });

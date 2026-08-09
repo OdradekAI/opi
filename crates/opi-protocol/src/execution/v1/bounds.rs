@@ -3,14 +3,16 @@
 //! See the [`v1`](super) module docs for the bound-enforcement table. Defaults
 //! are checked for internal consistency at compile time.
 
+const OUTPUT_CHUNK_FRAMING_RESERVE: usize = 64;
+
 /// Wire/size bounds enforced by the codec (per frame) and the session
 /// (cumulative, across one execution).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Bounds {
-    /// Max wire bytes per JSONL line. The decoder's per-stream line-buffer
-    /// ceiling and thus the per-connection memory cap. Must be large enough to
-    /// hold a maximally base64-inflated output chunk or serialized adapter
-    /// configuration plus framing.
+    /// Max JSON data bytes per line, excluding the LF or CRLF delimiter. The
+    /// decoder's per-stream line-buffer ceiling and thus the per-connection
+    /// memory cap. Must be large enough to hold a maximally base64-inflated
+    /// output chunk or serialized adapter configuration plus framing.
     pub max_line_size: usize,
     /// Max decoded bytes per stdout/stderr chunk.
     pub max_decoded_chunk_size: usize,
@@ -31,8 +33,9 @@ impl Default for Bounds {
 /// Error indicating the configured [`Bounds`] are internally inconsistent.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum BoundsError {
-    /// `max_line_size` must be >= `ceil(max_decoded_chunk_size * 4/3) + framing`.
-    #[error("max_line_size must be >= ceil(max_decoded_chunk_size * 4/3) + framing")]
+    /// `max_line_size` must be >= the padded base64 chunk length plus output
+    /// framing: `4 * ceil(max_decoded_chunk_size / 3) + framing`.
+    #[error("max_line_size must be >= 4 * ceil(max_decoded_chunk_size / 3) + output framing")]
     LineTooSmallForChunk,
     /// `max_line_size` must be >= `max_configuration_size + framing`.
     #[error("max_line_size must be >= max_configuration_size + framing")]
@@ -52,15 +55,15 @@ impl Bounds {
 
     /// Check the bounds for internal consistency.
     pub const fn validate(self) -> Result<(), BoundsError> {
-        let chunk_numerator = match self.max_decoded_chunk_size.checked_mul(4) {
+        let padded_groups = match self.max_decoded_chunk_size.checked_add(2) {
             Some(value) => value,
             None => return Err(BoundsError::LineTooSmallForChunk),
         };
-        let chunk_numerator = match chunk_numerator.checked_add(2) {
+        let padded_base64_len = match (padded_groups / 3).checked_mul(4) {
             Some(value) => value,
             None => return Err(BoundsError::LineTooSmallForChunk),
         };
-        let chunk_required = match (chunk_numerator / 3).checked_add(64) {
+        let chunk_required = match padded_base64_len.checked_add(OUTPUT_CHUNK_FRAMING_RESERVE) {
             Some(value) => value,
             None => return Err(BoundsError::LineTooSmallForChunk),
         };

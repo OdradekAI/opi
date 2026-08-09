@@ -13,8 +13,10 @@
 //!
 //! ```text
 //! read initialize  -> negotiate (select) -> emit ready
-//! read execute     -> emit accepted
+//! read execute     -> validate -> emit accepted
 //! helper::start    -> Refused{code} -> emit failed{Handshake}; or
+//!                  -> Expired{run} -> keep gated + cancel + drain; or
+//!                  -> CleanupUnconfirmed -> emit failed{Cleanup}; or
 //!                  -> Ready{run} -> poll Started -> emit+flush started
 //! drain            -> select { cancel frame -> fire token ; run -> Completed }
 //!                  -> emit Stdout/Stderr chunks -> emit completed
@@ -39,13 +41,13 @@
 #![forbid(unsafe_code)]
 
 use std::collections::BTreeSet;
-use std::io::{Read, Write};
+use std::io::Write;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 
 use futures_core::Stream;
-use opi_protocol::execution::v1::codec::{LineReader, encode_backend};
+use opi_protocol::execution::v1::codec::{CodecError, encode_backend};
 use opi_protocol::execution::v1::frames::{
     AcceptedPayload, CompletedPayload, Diagnostic, FailedPayload, InitializePayload, ReadyPayload,
     StderrPayload, StdoutPayload,
@@ -55,12 +57,15 @@ use opi_protocol::execution::v1::{
     HostToBackend, ImplementationId, ProtocolId, RequestId, Session, TargetId, WIRE_IDENTITY,
     select,
 };
+use tokio::io::{AsyncRead, AsyncReadExt};
 use tokio_util::sync::CancellationToken;
 
 use crate::helper::{self, StartOutcome};
 use crate::platform;
 use crate::policy::{NetworkPolicy, NoRestriction, Profile, Restriction, SandboxPolicy};
-use crate::runner::{CleanupState, SandboxEvent, SandboxOutcome, SandboxRunner};
+use crate::runner::{
+    CleanupState, FaultInjection, RunDeadlines, SandboxEvent, SandboxOutcome, SandboxRunner,
+};
 
 /// Backend exit after a clean protocol exchange (a terminal frame was emitted +
 /// flushed). The target's own exit is in-band in `completed`.
@@ -70,10 +75,16 @@ const EXIT_OK: i32 = 0;
 /// broke). The host classifies unexpected exit / EOF as a protocol violation.
 const EXIT_NO_TERMINAL: i32 = 1;
 
-/// A small bounded queue prevents an input-flooding host from growing backend
-/// memory without bound. Dropping the receiver after the terminal frame also
-/// releases a reader blocked on backpressure.
-const INPUT_CHANNEL_CAPACITY: usize = 8;
+/// The host must send `initialize` immediately after spawning the one-shot
+/// backend. No request id exists before that frame, so expiry is a silent,
+/// nonzero process failure rather than a fabricated request-scoped terminal.
+const INITIALIZE_WAIT_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// Portion of the hard request budget held back for target cancellation,
+/// process-tree reap, pipe drain, and invocation-root removal. The execute
+/// timeout can select an earlier cutoff, but cleanup never extends the hard
+/// Initialize deadline.
+const CLEANUP_RESERVE: Duration = Duration::from_millis(500);
 
 #[derive(Clone, Copy)]
 enum PostStartFailure {
@@ -103,61 +114,77 @@ fn emit_post_start_failure(
     emit_failed_or_silent(stdout, bounds, seed_id, code, phase)
 }
 
-/// One unit pushed from the blocking stdin reader to the async driver.
-enum InputLine {
-    /// A capped JSONL line (no trailing newline).
-    Line(Vec<u8>),
-    /// Clean EOF (no more bytes).
-    Eof,
-    /// A read or codec error (oversized line / I/O).
-    Error,
-}
-
 /// Drive one backend exchange over `stdin`/`stdout` with an INJECTED
 /// restriction and platform posture. This is the pure testable core: production
-/// [`run`] wires `std::io::stdin()` / `stdout()` and `platform::current`; portable
-/// conformance tests inject `supported = true`, empty limitations, and a
-/// [`NoRestriction`] to exercise the full success state machine. The runner is
-/// constructed only after `initialize.adapter_config` has been validated and
-/// mapped to a [`SandboxPolicy`].
+/// [`run`] applies `platform::current`, while the standalone binary owns the
+/// native-stdin bridge; portable conformance tests inject `supported = true`,
+/// empty limitations, and a [`NoRestriction`] to exercise the full success
+/// state machine. The runner is constructed only after
+/// `initialize.adapter_config` has been validated and mapped to a
+/// [`SandboxPolicy`].
 ///
-/// `stdin` is owned + `Send` so the blocking reader can run on a dedicated
-/// thread; `stdout` is borrowed for the whole exchange and flushed after every
-/// emitted frame. Returns `EXIT_OK` (0) after a terminal frame, or
-/// `EXIT_NO_TERMINAL` (1) if none could be emitted.
+/// `stdin` is an owned asynchronous reader, so cancellation drops the input
+/// resource without leaving a blocking worker behind. `stdout` is borrowed for
+/// the whole exchange and flushed after every emitted frame. Returns `EXIT_OK`
+/// (0) after a terminal frame, or `EXIT_NO_TERMINAL` (1) if none could be
+/// emitted.
 pub async fn drive(
-    stdin: Box<dyn Read + Send>,
+    stdin: Pin<Box<dyn AsyncRead + Send>>,
     stdout: &mut dyn Write,
     bounds: Bounds,
     supported: bool,
     limitations: &[String],
     restriction: Arc<dyn Restriction>,
 ) -> i32 {
+    drive_with_faults(
+        stdin,
+        stdout,
+        bounds,
+        supported,
+        limitations,
+        restriction,
+        FaultInjection::default(),
+    )
+    .await
+}
+
+async fn drive_with_faults(
+    stdin: Pin<Box<dyn AsyncRead + Send>>,
+    stdout: &mut dyn Write,
+    bounds: Bounds,
+    supported: bool,
+    limitations: &[String],
+    restriction: Arc<dyn Restriction>,
+    faults: FaultInjection,
+) -> i32 {
     let exchange_started = tokio::time::Instant::now();
     let mut session = match Session::new(bounds) {
         Ok(s) => s,
         Err(_) => return EXIT_NO_TERMINAL,
     };
-    // Bridge the sync LineReader to the async driver: a blocking reader thread
-    // owns stdin and feeds capped lines through a bounded channel. This lets
-    // the drain loop `select!` between a host `cancel` frame and the run poll
-    // (the opi-protocol LineReader is sync `R: Read` and cannot live in a select).
-    let (tx, mut rx) = tokio::sync::mpsc::channel::<InputLine>(INPUT_CHANNEL_CAPACITY);
-    let _reader = tokio::task::spawn_blocking(move || run_reader(stdin, bounds, tx));
+    let mut reader = AsyncLineReader::new(stdin, bounds);
 
     let mut seed_id: Option<RequestId> = None;
 
     // --- read initialize (establishes the seed request id) ---
-    let init = match recv_host_frame(&mut rx, &mut session, &mut seed_id).await {
-        HostIn::Frame(HostToBackend::Initialize(p)) => p,
-        HostIn::Frame(_) => {
-            // First frame was not initialize: a protocol violation. If a seed id
-            // somehow exists, report it; otherwise the host classifies the
-            // silence. (initialize is the only frame that seeds, so this is
-            // usually EXIT_NO_TERMINAL.)
-            return fail_or_silent(stdout, bounds, &seed_id, FailureCode::ProtocolViolation);
-        }
-        HostIn::Eof | HostIn::Error => return EXIT_NO_TERMINAL,
+    let init = match tokio::time::timeout(
+        INITIALIZE_WAIT_TIMEOUT,
+        recv_host_frame(&mut reader, &mut session, &mut seed_id),
+    )
+    .await
+    {
+        Err(_) => return EXIT_NO_TERMINAL,
+        Ok(frame) => match frame {
+            HostIn::Frame(HostToBackend::Initialize(p)) => p,
+            HostIn::Frame(_) => {
+                // First frame was not initialize: a protocol violation. If a seed id
+                // somehow exists, report it; otherwise the host classifies the
+                // silence. (initialize is the only frame that seeds, so this is
+                // usually EXIT_NO_TERMINAL.)
+                return fail_or_silent(stdout, bounds, &seed_id, FailureCode::ProtocolViolation);
+            }
+            HostIn::Eof | HostIn::Error => return EXIT_NO_TERMINAL,
+        },
     };
     let Some(deadline) = exchange_started.checked_add(Duration::from_millis(init.deadline_ms))
     else {
@@ -197,7 +224,7 @@ pub async fn drive(
             FailurePhase::Handshake,
         );
     };
-    let runner = SandboxRunner::new(policy, restriction);
+    let runner = SandboxRunner::new(policy, restriction).with_faults(faults);
 
     // --- negotiate (first-match by host preference) ---
     let backend_supported: BTreeSet<ProtocolId> =
@@ -230,7 +257,7 @@ pub async fn drive(
     // --- read execute ---
     let exec = match tokio::time::timeout_at(
         deadline,
-        recv_host_frame(&mut rx, &mut session, &mut seed_id),
+        recv_host_frame(&mut reader, &mut session, &mut seed_id),
     )
     .await
     {
@@ -250,6 +277,38 @@ pub async fn drive(
             }
         },
     };
+    // Build and validate every side-effect-free request invariant before
+    // admission. Restriction setup and process spawning remain after Accepted.
+    let cancel = CancellationToken::new();
+    let request = match helper::build_request(&exec, cancel.clone()) {
+        Ok(request) => request,
+        Err(code) => {
+            return emit_failed_or_silent(stdout, bounds, &seed_id, code, FailurePhase::Handshake);
+        }
+    };
+    let request = match helper::validate_request_until(&runner, request, deadline).await {
+        Ok(request) => request,
+        Err(code) => {
+            return emit_failed_or_silent(stdout, bounds, &seed_id, code, FailurePhase::Handshake);
+        }
+    };
+    let cleanup_cutoff = deadline
+        .checked_sub(CLEANUP_RESERVE)
+        .unwrap_or(exchange_started);
+    if tokio::time::Instant::now() >= cleanup_cutoff {
+        return emit_failed_or_silent(
+            stdout,
+            bounds,
+            &seed_id,
+            FailureCode::ExecutionTimedOut,
+            FailurePhase::Handshake,
+        );
+    }
+    let deadlines = RunDeadlines::new(
+        cleanup_cutoff,
+        deadline,
+        Duration::from_millis(exec.timeout_ms),
+    );
     if !emit_frame(
         stdout,
         bounds,
@@ -261,62 +320,102 @@ pub async fn drive(
     }
 
     // --- helper start gate (atomic: setup all-or-nothing) ---
-    let cancel = CancellationToken::new();
-    let mut request = match helper::build_request(&exec, cancel.clone()) {
-        Ok(request) => request,
-        Err(code) => {
-            return emit_failed_or_silent(stdout, bounds, &seed_id, code, FailurePhase::Handshake);
-        }
-    };
-    let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
-    if remaining.is_zero() {
-        return emit_failed_or_silent(
-            stdout,
-            bounds,
-            &seed_id,
-            FailureCode::ExecutionTimedOut,
-            FailurePhase::Handshake,
-        );
-    }
-    request.timeout = request.timeout.min(remaining);
-    let start_outcome = helper::start(supported, &runner, request);
-    if tokio::time::Instant::now() >= deadline {
-        return emit_failed_or_silent(
-            stdout,
-            bounds,
-            &seed_id,
-            FailureCode::ExecutionTimedOut,
-            FailurePhase::Handshake,
-        );
-    }
+    let start_outcome = helper::start(supported, &runner, request, deadlines).await;
     let mut run = match start_outcome {
         StartOutcome::Ready { run } => run,
         StartOutcome::Refused { code } => {
             return emit_failed_or_silent(stdout, bounds, &seed_id, code, FailurePhase::Handshake);
         }
-    };
-
-    // --- poll Started, build + flush the started frame (output-relay gate) ---
-    let id = seed_id.clone().expect("seed present");
-    let (mechanism, contract) = match next_event(&mut run).await {
-        Some(SandboxEvent::Started {
-            mechanism,
-            contract,
-            ..
-        }) => (mechanism, contract),
-        Some(_) | None => {
-            // The stream produced no Started event: setup did not establish a
-            // started contract. Treat as a pre-start failure.
+        StartOutcome::Expired { mut run } => {
+            cancel.cancel();
+            run.keep_gated();
+            let cleanup = drain_cancelled_run(&mut run, deadline).await;
+            if cleanup.is_none_or(|result| result.cleanup != CleanupState::Confirmed) {
+                return emit_post_start_failure(
+                    stdout,
+                    bounds,
+                    &seed_id,
+                    PostStartFailure::CleanupUnconfirmed,
+                );
+            }
             return emit_failed_or_silent(
                 stdout,
                 bounds,
                 &seed_id,
-                FailureCode::Failed,
+                FailureCode::ExecutionTimedOut,
                 FailurePhase::Handshake,
             );
         }
+        StartOutcome::CleanupUnconfirmed => {
+            return emit_post_start_failure(
+                stdout,
+                bounds,
+                &seed_id,
+                PostStartFailure::CleanupUnconfirmed,
+            );
+        }
     };
-    if tokio::time::Instant::now() >= deadline {
+    // The execute timeout starts once setup has established the gated run. It
+    // is converted to an absolute cutoff exactly once here and is still capped
+    // by the request-wide cleanup cutoff, so setup has consumed the hard
+    // Initialize budget without consuming target runtime.
+    let execution_deadline = deadlines.execution_deadline_at(tokio::time::Instant::now());
+
+    // --- poll Started, build + flush the started frame (output-relay gate) ---
+    let id = seed_id.clone().expect("seed present");
+    let (mechanism, contract) =
+        match tokio::time::timeout_at(execution_deadline, next_event(&mut run)).await {
+            Err(_) => {
+                cancel.cancel();
+                run.keep_gated();
+                let cleanup = drain_cancelled_run(&mut run, deadline).await;
+                if cleanup.is_none_or(|result| result.cleanup != CleanupState::Confirmed) {
+                    return emit_post_start_failure(
+                        stdout,
+                        bounds,
+                        &seed_id,
+                        PostStartFailure::CleanupUnconfirmed,
+                    );
+                }
+                return emit_failed_or_silent(
+                    stdout,
+                    bounds,
+                    &seed_id,
+                    FailureCode::ExecutionTimedOut,
+                    FailurePhase::Handshake,
+                );
+            }
+            Ok(event) => match event {
+                Some(SandboxEvent::Started {
+                    mechanism,
+                    contract,
+                    ..
+                }) => (mechanism, contract),
+                Some(_) | None => {
+                    // The stream produced no Started event: setup did not establish a
+                    // started contract. Treat as a pre-start failure.
+                    return emit_failed_or_silent(
+                        stdout,
+                        bounds,
+                        &seed_id,
+                        FailureCode::Failed,
+                        FailurePhase::Handshake,
+                    );
+                }
+            },
+        };
+    if tokio::time::Instant::now() >= execution_deadline {
+        cancel.cancel();
+        run.keep_gated();
+        let cleanup = drain_cancelled_run(&mut run, deadline).await;
+        if cleanup.is_none_or(|result| result.cleanup != CleanupState::Confirmed) {
+            return emit_post_start_failure(
+                stdout,
+                bounds,
+                &seed_id,
+                PostStartFailure::CleanupUnconfirmed,
+            );
+        }
         return emit_failed_or_silent(
             stdout,
             bounds,
@@ -334,11 +433,37 @@ pub async fn drive(
     if !emit_frame(stdout, bounds, &started) {
         return EXIT_NO_TERMINAL;
     }
+    // `started` is a publication gate, not permission to reset time. Recheck
+    // the original execution cutoff immediately before releasing the target.
+    if tokio::time::Instant::now() >= execution_deadline {
+        cancel.cancel();
+        run.keep_gated();
+        let cleanup = drain_cancelled_run(&mut run, deadline).await;
+        if cleanup.is_none_or(|result| result.cleanup != CleanupState::Confirmed) {
+            return emit_post_start_failure(
+                stdout,
+                bounds,
+                &seed_id,
+                PostStartFailure::CleanupUnconfirmed,
+            );
+        }
+        return emit_failed_or_silent(
+            stdout,
+            bounds,
+            &seed_id,
+            FailureCode::ExecutionTimedOut,
+            FailurePhase::Execution,
+        );
+    }
     // The real target remains behind the runner's release gate until the
     // `started` frame has been written and flushed.
     if run.release().is_err() {
         cancel.cancel();
-        if !drain_cancelled_run(&mut run, deadline).await {
+        run.keep_gated();
+        if drain_cancelled_run(&mut run, deadline)
+            .await
+            .is_none_or(|result| result.cleanup != CleanupState::Confirmed)
+        {
             return emit_post_start_failure(
                 stdout,
                 bounds,
@@ -355,31 +480,17 @@ pub async fn drive(
     let result = loop {
         tokio::select! {
             biased;
-            line = rx.recv(), if !cancel_requested => match line {
-                Some(InputLine::Line(b)) => match session.feed_host_line(&b) {
-                    Ok(HostToBackend::Cancel(_)) => {
+            frame = recv_host_frame(&mut reader, &mut session, &mut seed_id), if !cancel_requested => match frame {
+                HostIn::Frame(HostToBackend::Cancel(_)) => {
                         cancel_requested = true;
                         cancel.cancel();
-                    }
-                    Ok(_) | Err(_) => {
-                        cancel.cancel();
-                        if !drain_cancelled_run(&mut run, deadline).await {
-                            return emit_post_start_failure(
-                                stdout,
-                                bounds,
-                                &seed_id,
-                                PostStartFailure::CleanupUnconfirmed,
-                            );
-                        }
-                        return emit_failed_or_silent(
-                            stdout, bounds, &seed_id,
-                            FailureCode::ProtocolViolation, FailurePhase::Execution,
-                        );
-                    }
-                },
-                Some(InputLine::Eof) | Some(InputLine::Error) | None => {
+                }
+                HostIn::Frame(_) | HostIn::Eof | HostIn::Error => {
                     cancel.cancel();
-                    if !drain_cancelled_run(&mut run, deadline).await {
+                    if drain_cancelled_run(&mut run, deadline)
+                        .await
+                        .is_none_or(|result| result.cleanup != CleanupState::Confirmed)
+                    {
                         return emit_post_start_failure(
                             stdout,
                             bounds,
@@ -393,9 +504,29 @@ pub async fn drive(
                     );
                 }
             },
+            _ = tokio::time::sleep_until(execution_deadline), if !cancel_requested => {
+                cancel.cancel();
+                let Some(mut result) = drain_cancelled_run(&mut run, deadline).await else {
+                    return emit_post_start_failure(
+                        stdout,
+                        bounds,
+                        &seed_id,
+                        PostStartFailure::CleanupUnconfirmed,
+                    );
+                };
+                if result.cleanup != CleanupState::Confirmed {
+                    return emit_post_start_failure(
+                        stdout,
+                        bounds,
+                        &seed_id,
+                        PostStartFailure::CleanupUnconfirmed,
+                    );
+                }
+                result.outcome = SandboxOutcome::TimedOut;
+                break result;
+            },
             _ = tokio::time::sleep_until(deadline) => {
                 cancel.cancel();
-                drop(run);
                 return emit_post_start_failure(
                     stdout,
                     bounds,
@@ -423,10 +554,6 @@ pub async fn drive(
         }
     };
 
-    // Stop protocol input immediately after reaching a terminal result. This
-    // drops queued/future frames and unblocks the bounded reader channel.
-    rx.close();
-
     // --- emit captured stdout/stderr as base64 chunks, then completed ---
     if !emit_output(stdout, bounds, &id, &result.stdout, true) {
         return EXIT_NO_TERMINAL;
@@ -444,17 +571,17 @@ pub async fn drive(
     EXIT_OK
 }
 
-/// Production entry point: wire process stdio + the live platform posture and
-/// drive one exchange. Supported Linux/macOS postures execute with their native
-/// restriction; unsupported postures refuse before target start. Portable
-/// injected-restriction tests exercise successful `started` -> `completed`.
-pub async fn run() -> i32 {
+/// Drive one exchange with the live platform posture. The standalone binary
+/// owns the process-only native-stdin bridge and supplies it here; reusable
+/// library callers can supply any owned asynchronous reader without workers.
+/// Supported Linux/macOS postures execute with their native restriction;
+/// unsupported postures refuse before target start.
+pub async fn run(stdin: Pin<Box<dyn AsyncRead + Send>>) -> i32 {
     let posture = platform::current();
     let restriction = posture
         .restriction
         .clone()
         .unwrap_or_else(|| Arc::new(NoRestriction));
-    let stdin: Box<dyn Read + Send> = Box::new(std::io::stdin());
     let stdout = std::io::stdout();
     let mut stdout = stdout.lock();
     drive(
@@ -518,12 +645,12 @@ enum HostIn {
 /// any codec or session invariant violation (the caller decides whether a seed
 /// id exists to echo in a `failed` frame).
 async fn recv_host_frame(
-    rx: &mut tokio::sync::mpsc::Receiver<InputLine>,
+    reader: &mut AsyncLineReader,
     session: &mut Session,
     seed_id: &mut Option<RequestId>,
 ) -> HostIn {
-    match rx.recv().await {
-        Some(InputLine::Line(b)) => match session.feed_host_line(&b) {
+    match reader.read_line().await {
+        Ok(Some(line)) => match session.feed_host_line(&line) {
             Ok(frame) => {
                 if seed_id.is_none() {
                     *seed_id = Some(frame.request_id().clone());
@@ -532,8 +659,8 @@ async fn recv_host_frame(
             }
             Err(_) => HostIn::Error,
         },
-        Some(InputLine::Eof) => HostIn::Eof,
-        Some(InputLine::Error) | None => HostIn::Error,
+        Ok(None) => HostIn::Eof,
+        Err(_) => HostIn::Error,
     }
 }
 
@@ -690,13 +817,17 @@ where
     }
 }
 
-async fn drain_cancelled_run<S>(run: &mut S, deadline: tokio::time::Instant) -> bool
+async fn drain_cancelled_run<S>(
+    run: &mut S,
+    deadline: tokio::time::Instant,
+) -> Option<crate::runner::SandboxResult>
 where
     S: Stream<Item = SandboxEvent> + Unpin,
 {
     tokio::time::timeout_at(deadline, next_completed(run))
         .await
-        .is_ok_and(|result| result.is_some_and(|result| result.cleanup == CleanupState::Confirmed))
+        .ok()
+        .flatten()
 }
 
 /// Write `bytes` + a newline, then flush. Returns false on any I/O error.
@@ -710,40 +841,167 @@ fn write_all_nl_flush(stdout: &mut dyn Write, bytes: &[u8]) -> bool {
     res.is_ok()
 }
 
-/// The blocking stdin reader: cap lines at `bounds.max_line_size` and feed them
-/// to the channel; send a terminal `Eof` / `Error` and return at end.
-fn run_reader(
-    mut stdin: Box<dyn Read + Send>,
-    bounds: Bounds,
-    tx: tokio::sync::mpsc::Sender<InputLine>,
-) {
-    let mut reader = LineReader::new(stdin.as_mut(), bounds);
-    let mut buf = Vec::new();
-    loop {
-        match reader.read_line(&mut buf) {
-            Ok(true) => {
-                if tx
-                    .blocking_send(InputLine::Line(std::mem::take(&mut buf)))
-                    .is_err()
-                {
-                    return;
+/// Cancellation-safe bounded async JSONL reader. Partial bytes live in this
+/// object, so dropping an in-progress `read_line` future never loses data and
+/// dropping the reader releases its owned input directly.
+struct AsyncLineReader {
+    inner: tokio::io::BufReader<Pin<Box<dyn AsyncRead + Send>>>,
+    max_line_size: usize,
+    line: Vec<u8>,
+    pending_cr: bool,
+}
+
+impl AsyncLineReader {
+    fn new(reader: Pin<Box<dyn AsyncRead + Send>>, bounds: Bounds) -> Self {
+        Self {
+            inner: tokio::io::BufReader::new(reader),
+            max_line_size: bounds.max_line_size,
+            line: Vec::new(),
+            pending_cr: false,
+        }
+    }
+
+    async fn read_line(&mut self) -> Result<Option<Vec<u8>>, CodecError> {
+        let mut byte = [0u8; 1];
+        loop {
+            match self.inner.read(&mut byte).await? {
+                0 => {
+                    if self.pending_cr {
+                        self.push_byte(b'\r')?;
+                        self.pending_cr = false;
+                    }
+                    return if self.line.is_empty() {
+                        Ok(None)
+                    } else {
+                        Ok(Some(std::mem::take(&mut self.line)))
+                    };
+                }
+                _ if byte[0] == b'\n' => {
+                    self.pending_cr = false;
+                    return Ok(Some(std::mem::take(&mut self.line)));
+                }
+                _ => {
+                    if self.pending_cr {
+                        self.push_byte(b'\r')?;
+                        self.pending_cr = false;
+                    }
+                    if byte[0] == b'\r' {
+                        self.pending_cr = true;
+                    } else {
+                        self.push_byte(byte[0])?;
+                    }
                 }
             }
-            Ok(false) => {
-                let _ = tx.blocking_send(InputLine::Eof);
-                return;
-            }
-            Err(_) => {
-                let _ = tx.blocking_send(InputLine::Error);
-                return;
-            }
         }
+    }
+
+    fn push_byte(&mut self, byte: u8) -> Result<(), CodecError> {
+        if self.line.len() >= self.max_line_size {
+            return Err(CodecError::OversizedLine {
+                max_line_size: self.max_line_size,
+            });
+        }
+        self.line.push(byte);
+        Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use opi_protocol::execution::v1::EnvInherit;
+    use tokio::io::AsyncWriteExt;
+
+    #[cfg(unix)]
+    fn test_native(value: &std::ffi::OsStr) -> opi_protocol::execution::v1::NativeString {
+        use std::os::unix::ffi::OsStrExt;
+        opi_protocol::execution::v1::NativeString::from_bytes(value.as_bytes())
+    }
+
+    #[cfg(windows)]
+    fn test_native(value: &std::ffi::OsStr) -> opi_protocol::execution::v1::NativeString {
+        use std::os::windows::ffi::OsStrExt;
+        opi_protocol::execution::v1::NativeString::from_bytes(
+            value
+                .encode_wide()
+                .flat_map(u16::to_le_bytes)
+                .collect::<Vec<_>>(),
+        )
+    }
+
+    #[tokio::test]
+    async fn delayed_filesystem_validation_fails_before_accepted() {
+        let workspace = tempfile::tempdir().expect("workspace");
+        let marker_dir = tempfile::tempdir().expect("marker dir");
+        let marker = marker_dir.path().join("must-not-exist");
+        let request_id = RequestId::new("r1".to_string()).expect("request id");
+        let initialize = HostToBackend::Initialize(InitializePayload {
+            request_id: request_id.clone(),
+            deadline_ms: 100,
+            adapter_config: serde_json::json!({}),
+            supported_protocols: vec![ProtocolId::new(WIRE_IDENTITY).expect("protocol id")],
+        });
+        let execute = HostToBackend::Execute(opi_protocol::execution::v1::frames::ExecutePayload {
+            request_id,
+            program: test_native(std::ffi::OsStr::new("target-must-not-run")),
+            args: Vec::new(),
+            workspace: test_native(workspace.path().as_os_str()),
+            cwd: test_native(workspace.path().as_os_str()),
+            timeout_ms: 1_000,
+            env_inherit: EnvInherit::Inherit,
+            env_additions: Default::default(),
+        });
+        let input = format!(
+            "{}\n{}\n",
+            opi_protocol::execution::v1::encode_line(&initialize, &Bounds::DEFAULT)
+                .expect("initialize line"),
+            opi_protocol::execution::v1::encode_line(&execute, &Bounds::DEFAULT)
+                .expect("execute line"),
+        )
+        .into_bytes();
+        let (mut host, reader) = tokio::io::duplex(input.len());
+        host.write_all(&input).await.expect("write request");
+        let mut out = Vec::new();
+
+        let code = tokio::time::timeout(
+            Duration::from_millis(500),
+            drive_with_faults(
+                Box::pin(reader),
+                &mut out,
+                Bounds::DEFAULT,
+                true,
+                &[],
+                Arc::new(NoRestriction),
+                FaultInjection {
+                    validation_delay: Duration::from_millis(300),
+                    ..FaultInjection::default()
+                },
+            ),
+        )
+        .await
+        .expect("initialize deadline bounds validation");
+        drop(host);
+
+        assert_eq!(code, EXIT_OK);
+        let frames = out
+            .split(|byte| *byte == b'\n')
+            .filter(|line| !line.is_empty())
+            .map(|line| {
+                opi_protocol::execution::v1::codec::decode_backend(line)
+                    .expect("valid backend frame")
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            frames.iter().map(BackendToHost::kind).collect::<Vec<_>>(),
+            vec!["ready", "failed"]
+        );
+        let BackendToHost::Failed(failed) = &frames[1] else {
+            panic!("expected terminal failed frame")
+        };
+        assert_eq!(failed.code, FailureCode::ExecutionTimedOut);
+        assert_eq!(failed.phase, FailurePhase::Handshake);
+        assert!(!marker.exists(), "validation timeout mutated target state");
+    }
 
     #[tokio::test]
     async fn ended_execution_stream_emits_execution_failed_in_execution_phase() {
@@ -789,6 +1047,7 @@ mod tests {
             tokio::time::Instant::now() + Duration::from_secs(1),
         )
         .await
+        .is_some_and(|result| result.cleanup == CleanupState::Confirmed)
         {
             panic!("unconfirmed cleanup must not count as a successful drain")
         } else {
@@ -799,6 +1058,48 @@ mod tests {
         let request_id = Some(RequestId::new("r1".to_string()).expect("valid request id"));
         assert_eq!(
             emit_post_start_failure(&mut out, Bounds::DEFAULT, &request_id, failure,),
+            EXIT_OK
+        );
+        let line = out
+            .strip_suffix(b"\n")
+            .expect("one newline-terminated frame");
+        let BackendToHost::Failed(failed) =
+            opi_protocol::execution::v1::codec::decode_backend(line).expect("valid failed frame")
+        else {
+            panic!("expected failed frame")
+        };
+        assert_eq!(failed.code, FailureCode::CleanupUnconfirmed);
+        assert_eq!(failed.phase, FailurePhase::Cleanup);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn stuck_cleanup_stops_at_the_original_deadline_and_reports_unconfirmed() {
+        let mut run = futures_util::stream::pending::<SandboxEvent>();
+        let started = tokio::time::Instant::now();
+        let deadline = started + Duration::from_millis(100);
+        let drain = drain_cancelled_run(&mut run, deadline);
+        tokio::pin!(drain);
+
+        tokio::time::advance(Duration::from_millis(99)).await;
+        assert!(
+            tokio::time::timeout(Duration::ZERO, &mut drain)
+                .await
+                .is_err(),
+            "cleanup must remain pending before the absolute deadline"
+        );
+        tokio::time::advance(Duration::from_millis(1)).await;
+        assert!(drain.await.is_none());
+        assert_eq!(tokio::time::Instant::now(), deadline);
+
+        let mut out = Vec::new();
+        let request_id = Some(RequestId::new("r1".to_string()).expect("valid request id"));
+        assert_eq!(
+            emit_post_start_failure(
+                &mut out,
+                Bounds::DEFAULT,
+                &request_id,
+                PostStartFailure::CleanupUnconfirmed,
+            ),
             EXIT_OK
         );
         let line = out
