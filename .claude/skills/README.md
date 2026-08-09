@@ -24,7 +24,7 @@ entry point is unclear.
 | Bounded design challenge | Matt `grill-with-docs` directly | Explicit decisions and domain language |
 | Settled design | Matt `to-spec` directly | Candidate implementation specification |
 | Admission and delivery | `opi-implement plan`, then `opi-implement` | Reviewed task graph and canonical implementation ledger |
-| Static assurance | `opi-audit` | Independent Standards/Spec findings |
+| Static assurance | `opi-audit` | Current-HEAD requirements-conformance findings across separate Standards/Spec axes |
 | Runtime assurance | `opi-eval` | Runtime-fidelity findings and traces |
 | Verified correction | `opi-remediate` | Source-preserving verification and optional fixes |
 | Documentation | `opi-document` | Truthful EN/ZH docs and fast source-derived checks |
@@ -90,7 +90,7 @@ primitives that do not compete with opi's canonical ledger.
 | Spec synthesis | Matt `to-spec` | Synthesizes settled context instead of restarting discovery |
 | Implementation slices | Matt `tdd` | Public seam first; vertical red/green slices; no premature refactor phase |
 | Hard diagnosis | Matt `diagnosing-bugs` | Establishes a red-capable feedback loop, then minimizes/differentiates |
-| Audit lenses | Matt `code-review` | Keeps Standards and Spec axes separate |
+| Audit lenses | Matt `code-review` | Supplies separate Standards/Spec axes and the smell baseline; `opi-audit` replaces its diff boundary with current-state verification |
 | Documentation | Matt `writing-for-agents` | Favors cacheable facts, pointers, and no-op guidance |
 | Completion proof | Superpowers `verification-before-completion` | Narrow evidence-before-claim discipline |
 | Independent work | Superpowers `dispatching-parallel-agents` | Conditional concurrency primitive only |
@@ -119,6 +119,12 @@ rationale is recorded in
 `_shared/references/finding-contract.md`. Each finding preserves its source
 kind/path/model, independence quality, axis, severity, evidence, reproduction,
 confidence, and unverified status.
+
+`opi-audit` builds its verification requirements from the registered specs,
+ledger task claims, definitions of done, and claimed evidence, then checks them
+against the complete relevant implementation at the current committed `HEAD`.
+Unchanged and pre-existing paths remain auditable. Commit history and diffs are
+provenance and discovery aids only; they never define audit coverage.
 
 `opi-remediate` consumes either source without manual transcription. It
 preserves provenance and severity, verifies the claim against code or runtime
@@ -157,7 +163,7 @@ create competing task ledgers.
 | `opi-realign` | Pinned-revision inward alignment; no outward proposals |
 | `opi-research` | Primary-source outward exploration; no requirements or implementation |
 | `opi-implement` | Source admission, adversarial graph review, TDD delivery, verification, and ledger checkpoints |
-| `opi-audit` | Independent committed-range Standards/Spec audit; no fixes |
+| `opi-audit` | Independent current-HEAD requirement-conformance audit; history/diffs do not bound coverage; no fixes |
 | `opi-eval` | Explicit, credentialed runtime regression evaluation in isolation |
 | `opi-remediate` | Verify normalized audit/eval findings; execution remains user-gated |
 | `opi-document` | Truthful documentation, EN/ZH synchronization, and a no-compile documentation check |

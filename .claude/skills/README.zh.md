@@ -23,7 +23,7 @@
 | 有界设计质询 | 直接调用 Matt `grill-with-docs` | 明确的设计抉择与领域语言 |
 | 设计已收敛 | 直接调用 Matt `to-spec` | 候选实现规格 |
 | 准入与交付 | `opi-implement plan`，再调用 `opi-implement` | 已评审任务图与规范实现账本 |
-| 静态保障 | `opi-audit` | 独立的 Standards/Spec 双轴发现 |
+| 静态保障 | `opi-audit` | 基于当前已提交 HEAD 的需求符合性审计，分别输出 Standards/Spec 双轴发现 |
 | 运行时保障 | `opi-eval` | 运行时保真度发现与 trace |
 | 验证后修复 | `opi-remediate` | 保留来源的验证与可选修复 |
 | 文档 | `opi-document` | 真实同步的中英文文档与快速、源派生检查 |
@@ -82,7 +82,7 @@ opi-* 内的推理与产物级子技能默认来自本地 Matt 技能包。Super
 | Spec 合成 | Matt `to-spec` | 从已收敛上下文合成，而不是重新启动探索 |
 | 实现切片 | Matt `tdd` | 先约定公共 seam，再做纵向 red/green 切片 |
 | 困难诊断 | Matt `diagnosing-bugs` | 先建立可变红反馈环，再最小化与差分定位 |
-| 审计视角 | Matt `code-review` | Standards 与 Spec 两个维度互不混淆 |
+| 审计视角 | Matt `code-review` | 提供独立 Standards/Spec 双轴与 smell baseline；`opi-audit` 以当前状态核实替代其 diff 边界 |
 | 文档 | Matt `writing-for-agents` | 强调可缓存事实、指针和无需改动的结论 |
 | 完成证明 | Superpowers `verification-before-completion` | 狭窄的“先证据、后声明”纪律 |
 | 独立并行 | Superpowers `dispatching-parallel-agents` | 仅作为条件性并发原语 |
@@ -105,6 +105,10 @@ opi-* 内的推理与产物级子技能默认来自本地 Matt 技能包。Super
 `opi-audit` 与 `opi-eval` 按 `_shared/references/finding-contract.md` 输出
 统一发现。每条发现保留来源类型、路径、模型、独立性、轴、严重度、证据、
 复现方式、置信度与“尚未验证”状态。
+
+`opi-audit` 从已登记的 spec、账本任务声明、DoD 与证据声明建立核实要求，
+再逐项检查当前已提交 `HEAD` 中的完整相关实现。未变更和既有路径同样属于
+审计对象。提交历史与 diff 仅用于溯源和定位，绝不定义审计覆盖范围。
 
 `opi-remediate` 可以直接消费任一来源，不再手工转录。它保留来源和严重度，
 再用代码或运行时产物验证，并把修复验证与原始发现分开记录。如果发现实际
@@ -139,7 +143,7 @@ remediation 计划、文档和发布都不得创建竞争性的任务账本。
 | `opi-realign` | 固定修订版的向内对齐；不提出向外功能 |
 | `opi-research` | 一手资料优先的向外探索；不生成需求或实现 |
 | `opi-implement` | 来源准入、对抗性任务图评审、TDD 交付、验证与账本检查点 |
-| `opi-audit` | 独立审查固定提交区间的 Standards/Spec；不修复 |
+| `opi-audit` | 独立核实当前 HEAD 的需求符合性；历史/diff 不限制覆盖范围；不修复 |
 | `opi-eval` | 显式、带凭据、隔离运行的运行时回归评估 |
 | `opi-remediate` | 验证 audit/eval 的统一发现；执行仍需用户确认 |
 | `opi-document` | 真实文档、中英文同步与无需编译的文档检查 |

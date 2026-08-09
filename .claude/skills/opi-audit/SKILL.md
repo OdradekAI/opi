@@ -3,9 +3,11 @@ name: opi-audit
 disable-model-invocation: true
 description: >-
   Perform an independent code audit of a specific opi implementation phase.
-  Given a phase number, automatically extract the task graph, design spec, and
-  commit range from impl-state.json, then systematically compare spec against
-  actual implementation. Use this skill whenever the user mentions "audit",
+  Given a phase number, extract the task graph, registered specs, definitions
+  of done, and claimed evidence from impl-state.json, pin the repository's
+  current committed HEAD, then verify every requirement against the complete
+  relevant implementation at that HEAD. Use this skill whenever the user
+  mentions "audit",
   "code review", "审计", "审查", "review phase N", "compare spec and
   implementation", or asks to verify whether a phase was implemented correctly.
   Also use when the user wants to check spec compliance, find implementation
@@ -28,6 +30,33 @@ focus=<text>        # optional; specific dimensions, tasks, or concerns
 If the user says "audit phase 13" or "审查 phase 12", extract the phase number.
 If no phase number is provided, ask for it.
 
+## Current-HEAD authority
+
+An `opi-audit` always evaluates the repository's current committed `HEAD`. The
+implementation ledger and its registered specs define the requirements to
+verify. They do not define a changed-file or commit-range coverage boundary.
+Auditing only a historical diff would re-report defects that later remediation
+already fixed, miss defects introduced by that remediation, and omit relevant
+code that did not change inside the selected range.
+
+At audit start, resolve and retain:
+
+```text
+requirement_set   = registered specs + task claims + DoD + evidence claims
+phase_exit_commit = last task verified_at_commit (provenance only)
+audit_head        = git rev-parse HEAD (the sole audit endpoint)
+```
+
+There is no historical audit mode. Do not offer or infer a phase-exit scope.
+Git commits and diffs are optional provenance and discovery aids only. Never
+use them to decide which requirements, source files, tests, or findings are in
+scope. The audit object is the complete relevant implementation at `audit_head`.
+When the worktree is dirty, audit the committed objects at `audit_head`, not the
+working-tree copies. The report itself may be written to the worktree after the
+evidence has been derived from the pinned commit. Run any build, test, or
+reproduction command against an isolated checkout of `audit_head`; never treat
+execution from a dirty working tree as audit evidence.
+
 ## Why independence matters
 
 Audit value comes from fresh eyes. When multiple models audit the same phase
@@ -40,37 +69,55 @@ rules below exist to protect this independence.
 
 ### Phase A: Data acquisition
 
-1. Read `docs/snapshots/phase<N>/opi-impl-state.json`.
+1. Pin `audit_head = git rev-parse HEAD`. All ledger, spec, context, source, and
+   test reads for the audit must come from this commit (for example,
+   `git show <audit_head>:<path>`), never from dirty working-tree copies.
 
-2. Extract the spec file paths. The schema has evolved:
+2. Read `docs/snapshots/phase<N>/opi-impl-state.json` at `audit_head`.
+
+3. Extract the spec file paths. The schema has evolved:
    - Schema v1: single `spec_path` string field
    - Schema v2: `spec_files` array of strings
-   Handle both. Read all referenced spec files in full.
+   Handle both. Read all referenced spec files in full at `audit_head`.
 
-3. Extract the task graph from `tasks[]`:
+4. Extract the task graph from `tasks[]`:
    - Task IDs, titles, crates, `definition_of_done`
-   - `verified_at_commit` values. Resolve the first task commit's parent as the
-     fixed point and the last task commit as HEAD; verify the three-dot diff is
-     non-empty before review
+   - Claimed evidence, acceptance commands, and `verified_at_commit` values
+   - The last task commit as `phase_exit_commit`; other commits remain
+     provenance or discovery aids only
    - `depends_on` relationships
 
-4. If `phase_exit` exists for this phase, extract:
+5. Build a requirements matrix from every registered spec criterion, task
+   claim, DoD item, and evidence claim. Merge duplicates but do not silently
+   drop conflicts. A ledger claim or cited test is something to verify, not
+   proof that the requirement passes.
+
+6. If `phase_exit` exists for this phase, extract:
    - `completed_at` timestamp
    - `evaluator_summary` (prior evaluator's view -- use as context, not as
      ground truth)
    - Per-task `verified_at_commit` from `task_summary[]`
 
-5. Read project context: `CLAUDE.md` or `AGENTS.md`, `docs/opi-spec.md`.
+7. Record dirty worktree paths for isolation only. Do not read their contents as
+   implementation evidence and do not include them in findings unless they are
+   also present in `audit_head`.
+
+8. Read project context at `audit_head`: `CLAUDE.md` or `AGENTS.md`,
+   `docs/opi-spec.md`.
+
+9. Use commit history or diffs only when helpful for locating implementation or
+   understanding provenance. Do not require a non-empty diff and do not derive
+   audit coverage from changed paths.
 
 ### Phase B: Dimension inference and interview
 
-Matt `code-review` supplies two mandatory, separate axes at the ledger-derived
-fixed commit range:
+Matt `code-review` supplies two mandatory, separate axes and its Standards smell
+baseline. Its fixed-point diff workflow does not define an `opi-audit` scope:
 
 | Axis | Question |
 |---|---|
-| Standards | Does the committed phase diff follow `AGENTS.md` / `CLAUDE.md`, other documented repository standards, and the Matt Fowler-smell baseline? |
-| Spec | Does the diff implement the registered source without omissions, incorrect behavior, or scope expansion? |
+| Standards | Does the complete relevant implementation at `audit_head` follow `AGENTS.md` / `CLAUDE.md`, other documented repository standards, and the Matt Fowler-smell baseline? |
+| Spec | Does the complete relevant implementation at `audit_head` satisfy every registered spec criterion, task claim, and DoD item without omissions, incorrect behavior, or scope expansion? |
 
 Do not merge or rerank these axes; a phase may pass one and fail the other.
 Opi then adds the applicable phase-wide dimensions below.
@@ -90,6 +137,7 @@ Opi then adds the applicable phase-wide dimensions below.
 - Multiple crates in task list, or "resume", "fork", "handoff" -> Integration
 
 After inferring, briefly confirm with the user:
+- The pinned `audit_head` and requirement sources
 - Which dimensions apply
 - Any specific areas of concern or focus
 - Whether any dimensions should be added or dropped
@@ -104,10 +152,15 @@ snippets. Partial reads miss context like error handling paths, type
 definitions, and import relationships that are critical for correctness
 judgments.
 
-1. From the task graph, identify affected source files and test files:
+1. From the requirements matrix, identify every relevant source, configuration,
+   documentation, fixture, and test file at `audit_head`:
    - Task `crate` fields point to the relevant crates
-   - Task titles and DoD text often name specific modules
+   - Spec criteria, task titles, DoD text, evidence claims, public entry points,
+     call paths, and repository search identify additional implementation
    - Search for test files: `crates/<crate>/tests/` and inline `#[cfg(test)]`
+   - Do not use a changed-file list to decide relevance
+   - Read every selected file in full from `audit_head`, even when the worktree
+     has a different copy
 
 2. For phases touching many files, use parallel subagents organized by file
    group. For example, split by crate or by source-vs-test. This is a
@@ -121,19 +174,29 @@ judgments.
 
 ### Phase D: Audit execution
 
-First open Matt `code-review`. When the phase head is current `HEAD`, invoke it
-with the resolved fixed point and registered sources. For a historical phase,
-apply its exact two-axis prompts to `git diff <fixed>...<phase-head>` and record
-`adapted-historical-range`; do not check out or rewrite the user's working tree.
-Its Standards and Spec agents receive this restriction:
+First verify that `git rev-parse HEAD` still equals the pinned `audit_head`. If
+it changed, discard partial conclusions and restart Phase A with the new HEAD.
+
+Open Matt `code-review` to load its two-axis definitions and full Standards
+smell baseline. Do not invoke or inherit its fixed-point diff coverage model.
+Run separate Standards and Spec reviewers against the requirements matrix and
+the complete relevant implementation at `audit_head`. Instruct every reviewer
+to read committed objects from `audit_head`, ignore uncommitted working-tree
+content, and treat history/diffs only as non-authoritative discovery aids.
+Their prompts receive this restriction:
 
 ```text
 Do not invoke code-review, opi-audit, or spawn additional agents.
 ```
 
 Preserve their results under separate `Standards` and `Spec` report headings.
-Then run the applicable opi dimensions over the complete phase, including
-unchanged production paths needed to verify the committed diff's integration.
+Then run the applicable opi dimensions over every row of the requirements
+matrix and all relevant current implementation, including unchanged and
+pre-existing paths. A finding cannot be excluded merely because its file or
+line is absent from a Git diff.
+
+Before writing the verdict, verify `git rev-parse HEAD` against `audit_head`
+again. A changed HEAD invalidates the pinned review and requires a restart.
 
 Work through each active dimension. For each finding, follow the template in
 `references/finding-template.md` (read it now if you haven't). The template is
@@ -197,7 +260,10 @@ uncertain, ask the user.
 
 **Auditor**: <model-id> (independent, no prior audit reports consulted)
 **Date**: <YYYY-MM-DD>
-**Scope**: Tasks <first>--<last>, commits `<first-commit>..<last-commit>`
+**Scope**: Phase <N> registered requirements and Tasks <first>--<last>
+**Implementation target**: `<audit-head>` (current committed implementation)
+**Phase exit commit**: `<last-task-commit>` (provenance only)
+**History use**: provenance and discovery only; no diff coverage boundary
 **Method**: <brief description of audit approach>
 
 ---
@@ -296,6 +362,15 @@ proportional to its independence from prior reviews.
 - Do not modify source code, specs, tests, or documentation unless the user
   explicitly asks. This is an audit, not a fix-up session.
 - Do not commit or push unless the user explicitly asks.
+- Always audit the pinned current committed `audit_head`; never substitute the
+  ledger's last task commit or a historical phase snapshot as the endpoint.
+- Derive coverage from the registered specs, task claims, DoD, evidence claims,
+  and their complete relevant implementation. Never derive coverage from a
+  commit range, diff, or changed-file list.
+- Exclude uncommitted worktree changes from evidence. Do not check out, stash,
+  reset, or rewrite the user's worktree to achieve this; read Git objects.
+- Execute verification commands against an isolated checkout of `audit_head`
+  when the user's worktree is dirty.
 - Distinguish "spec deviation" from "reasonable implementation evolution". When
   the implementation differs from the spec but the choice is defensible, note
   it as Info rather than Major.
@@ -311,5 +386,6 @@ proportional to its independence from prior reviews.
   audit.
 - Read `../_shared/references/finding-contract.md` for the machine-stable
   interchange consumed by `opi-remediate`.
-- Open Matt `code-review` before running the Standards/Spec axes; this skill's
-  summary is not a substitute for the real subskill.
+- Open Matt `code-review` before running the Standards/Spec axes to load its
+  axis definitions and complete smell baseline. Do not inherit its diff-bound
+  review scope.
