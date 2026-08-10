@@ -96,11 +96,11 @@ if ($docRaw -match 'CANARY-opi-config-not-read') {
     throw "opi-sandbox-smoke: binary leaked sentinel config into doctor output"
 }
 $SentinelFiles = @(Get-ChildItem -Path $Sentinel -Recurse -File | ForEach-Object { $_.FullName } | Sort-Object)
-if ($SentinelFiles.Count -ne 1 -or (Split-Path -Leaf $SentinelFiles[0]) -ne (Split-Path -Leaf $CanaryPath)) {
+if ($SentinelFiles.Count -ne 1 -or $SentinelFiles[0] -ne $CanaryPath) {
     throw "opi-sandbox-smoke: binary created files under sentinel: $($SentinelFiles -join ', ')"
 }
 $BinFiles = @(Get-ChildItem -LiteralPath $IsolatedBinDir -Force)
-if ($BinFiles.Count -ne 1 -or (Split-Path -Leaf $BinFiles[0].FullName) -ne (Split-Path -Leaf $IsolatedBinary)) {
+if ($BinFiles.Count -ne 1 -or $BinFiles[0].FullName -ne $IsolatedBinary) {
     throw "opi-sandbox-smoke: isolated bin directory gained state: $($BinFiles.FullName -join ', ')"
 }
 $CwdEntries = @(Get-ChildItem -LiteralPath $IsolatedCwd -Force)

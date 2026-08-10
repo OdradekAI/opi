@@ -155,7 +155,15 @@ fn standalone_smoke_script_unix() {
 fn standalone_smoke_script_windows() {
     let bin = env!("CARGO_BIN_EXE_opi-sandbox");
     let artifact_dir = tempfile::tempdir().expect("artifact temp dir");
-    let artifact_str = artifact_dir.path().to_str().expect("utf8 artifact dir");
+    // Canonicalize to the long-form path for the smoke script: on CI the temp
+    // dir is an 8.3 short name (RUNNER~1), and the script's strict full-path
+    // sentinel/bin checks compare Get-ChildItem output (long form) against this
+    // path; a short-form path would false-positive. Canonicalize expands 8.3 and
+    // adds the `\\?\` verbatim prefix, which is stripped here.
+    let artifact_canonical =
+        std::fs::canonicalize(artifact_dir.path()).expect("canonicalize artifact dir");
+    let artifact_lossy = artifact_canonical.to_string_lossy();
+    let artifact_str = artifact_lossy.trim_start_matches(r"\\?\");
     let script = repo_root()
         .join("scripts")
         .join("opi-sandbox-smoke.ps1")
