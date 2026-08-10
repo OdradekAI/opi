@@ -368,15 +368,15 @@ if mode == "grow-after-fstat":
     audit.os.fstat = fstat_then_grow
 elif mode == "symlink-lstat-seam":
     original_lstat = audit.os.lstat
-    def symlink_lstat(path):
-        opened = original_lstat(path)
+    def symlink_lstat(path, **kwargs):
+        opened = original_lstat(path, **kwargs)
         fields = list(opened)
         fields[0] = stat.S_IFLNK | 0o777
         return os.stat_result(fields)
     audit.os.lstat = symlink_lstat
 elif mode == "identity-mismatch-seam":
     other_stat = audit.os.lstat(other)
-    audit.os.lstat = lambda path: other_stat
+    audit.os.lstat = lambda path, **kwargs: other_stat
 
 try:
     audit._copy_archive_snapshot(source, destination)
@@ -475,7 +475,7 @@ selected = {
 }.get(mode)
 root_lstat_calls = [0]
 
-def lstat_seam(path):
+def lstat_seam(path, **kwargs):
     candidate = pathlib.Path(path)
     if candidate == native_root:
         root_lstat_calls[0] += 1
@@ -483,7 +483,7 @@ def lstat_seam(path):
         # owned root identity. Replace it for the collector's first recheck.
         if mode == "native-root-identity-mismatch" and root_lstat_calls[0] > 2:
             return original_lstat(windows_root)
-    opened = original_lstat(path)
+    opened = original_lstat(path, **kwargs)
     if selected is not None and candidate == selected:
         return types.SimpleNamespace(
             st_mode=opened.st_mode,
@@ -2254,13 +2254,13 @@ gates = root / "gates"
 other_root = root / "six-target"
 root_lstat_calls = [0]
 
-def root_lstat(path):
+def root_lstat(path, **kwargs):
     candidate = pathlib.Path(path)
     if candidate != gates:
-        return original_lstat(path)
+        return original_lstat(path, **kwargs)
     root_lstat_calls[0] += 1
     if mode == "reparse":
-        opened = original_lstat(path)
+        opened = original_lstat(path, **kwargs)
         return types.SimpleNamespace(
             st_mode=opened.st_mode,
             st_dev=opened.st_dev,
@@ -2269,7 +2269,7 @@ def root_lstat(path):
         )
     if mode == "identity-mismatch" and root_lstat_calls[0] > 1:
         return original_lstat(other_root)
-    return original_lstat(path)
+    return original_lstat(path, **kwargs)
 
 audit.os.lstat = root_lstat
 report = audit.audit_phase_exit_evidence(root, run_id, commit_sha)
@@ -2313,8 +2313,8 @@ audit = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(audit)
 original_lstat = audit.os.lstat
 
-def symlink_lstat(path):
-    opened = original_lstat(path)
+def symlink_lstat(path, **kwargs):
+    opened = original_lstat(path, **kwargs)
     fields = list(opened)
     fields[0] = stat.S_IFLNK | 0o777
     return os.stat_result(fields)

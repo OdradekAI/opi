@@ -111,7 +111,10 @@ def _execute(binary, workspace, rid, mode, timeout_ms, expected):
         failure = None
         stdout = bytearray()
         stderr = bytearray()
-        for _ in range(128):
+        # Read until a terminal frame (completed/failed) or EOF. The large
+        # mode streams ~1 MiB on both stdout and stderr, so a fixed small cap
+        # would exhaust before the completed frame arrives.
+        while True:
             frame = _read_frame(proc)
             if frame is None:
                 break

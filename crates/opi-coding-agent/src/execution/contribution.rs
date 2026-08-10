@@ -480,7 +480,9 @@ fn open_executable(path: &Path) -> Result<File, std::io::Error> {
 #[cfg(unix)]
 fn bind_launch_material(source: &File) -> Result<File, std::io::Error> {
     use std::io::{Seek as _, Write as _};
-    use std::os::fd::{AsRawFd as _, FromRawFd as _};
+    use std::os::fd::AsRawFd as _;
+    #[cfg(target_os = "linux")]
+    use std::os::fd::FromRawFd as _;
     use std::os::unix::fs::PermissionsExt as _;
 
     #[cfg(target_os = "linux")]

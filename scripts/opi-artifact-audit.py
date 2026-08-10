@@ -402,12 +402,21 @@ def analyze_commit_references(artifact_dir, workspace_root):
 
 def _session_files(artifact_dir):
     # Broad glob: top-level sessions/, sibling attempts, and nested shapes.
+    # Deduplicate on the resolved path (so symlinked/reparsed duplicates
+    # collapse) but report the as-traversed path. This keeps issue["file"]
+    # consistent with the rest of the walker and avoids platform-specific
+    # short-name (8.3) expansion surfacing on the report.
     seen = set()
+    files = []
     for path in artifact_dir.rglob("sessions*"):
         if path.is_dir():
             for f in path.glob("*.jsonl"):
-                seen.add(f.resolve())
-    return sorted(seen)
+                resolved = f.resolve()
+                if resolved in seen:
+                    continue
+                seen.add(resolved)
+                files.append(f)
+    return sorted(files)
 
 
 # ---------------------------------------------------------------------------
