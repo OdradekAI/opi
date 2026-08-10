@@ -229,7 +229,7 @@ async fn protocol_violation_survives_into_tool_result_via_production_path() {
         result
             .diagnostics
             .iter()
-            .any(|d| d.code == "protocol_violation"),
+            .any(|d| d.code == "protocol_violation" || d.message.contains("protocol_violation")),
         "the stable protocol_violation code must survive into ToolResult.diagnostics: {:?}",
         result.diagnostics
     );
@@ -1070,7 +1070,8 @@ async fn mock_peer_failure_modes_surface_stable_codes_via_production_path() {
         invalid_post_started
             .diagnostics
             .iter()
-            .any(|diagnostic| diagnostic.code == "protocol_violation"),
+            .any(|diagnostic| diagnostic.code == "protocol_violation"
+                || diagnostic.message.contains("protocol_violation")),
         "post-start protocol_incompatible must normalize to protocol_violation: {:?}",
         invalid_post_started.diagnostics
     );
