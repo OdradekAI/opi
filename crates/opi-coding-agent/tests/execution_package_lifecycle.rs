@@ -336,6 +336,7 @@ fn set_permissions_readonly(permissions: &mut std::fs::Permissions, readonly: bo
     permissions.set_readonly(readonly);
 }
 
+#[cfg(any(target_os = "linux", windows))]
 #[test]
 fn validated_executable_identity_cannot_be_replaced_before_launch() {
     let (_pkg, root, _sha) = make_execution_package("opi-sandbox");
@@ -355,7 +356,11 @@ fn validated_executable_identity_cannot_be_replaced_before_launch() {
     let contribution = &validated[0];
     let command = root.join("bin/opi-sandbox");
 
-    #[cfg(unix)]
+    // The inode-bound launch (`/proc/self/fd`) is Linux-only. macOS fdesc
+    // `/dev/fd` does not support Mach-O exec, so macOS launches via the resolved
+    // command path; its anti-replacement guarantee is `activate()` revalidation,
+    // not an inode-bound launch path, so the assertion is Linux-only.
+    #[cfg(target_os = "linux")]
     {
         let validated_file = root.join("bin/validated-original");
         std::fs::rename(&command, &validated_file).unwrap();
@@ -381,7 +386,7 @@ fn validated_executable_identity_cannot_be_replaced_before_launch() {
     }
 }
 
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 #[test]
 fn validated_executable_material_survives_same_inode_rewrite() {
     let (_pkg, root, _sha) = make_execution_package("opi-sandbox");
