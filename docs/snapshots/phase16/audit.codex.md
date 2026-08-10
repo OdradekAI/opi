@@ -1,515 +1,443 @@
-# Phase 16 Pluggable Extensions and Command Execution — Independent Code Audit
+# Phase 16 Audit — Codex
 
 ## Audit metadata
 
-- Auditor: `codex`
-- Date: 2026-08-10
-- Audit head: `c5de89216b316529d1c8c1c182fe496a3103f42f`
-- Phase-exit implementation commit: `f8aff0237221fbf7d56b58abb5dce02833344bfc` (task 16.16.3's recorded verification commit)
-- Scope: tasks 16.1 through 16.16.3, including their DoDs, evidence claims, acceptance scenarios, phase-exit criteria, registered Phase 16 design, and current implementation at the pinned head
-- Normative sources: `docs/opi-spec.md`, `docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md`, `.opi-impl-state.json`, and `docs/snapshots/phase16/opi-impl-state.json`
-- History use: commit history and the phase-exit commit were used only for provenance and discovery. History and diffs were not used as the coverage boundary.
-- Prior-report isolation: the root auditor did not consult any prior `audit.*.md`. An initial Standards worker accidentally surfaced lines from a prohibited report through a broad grep; all of that worker's evidence was quarantined and discarded. A replacement clean-room Standards audit used explicit committed-object paths and attested that no prior report was read or surfaced.
-- Post-lock cleanup event: after all findings and normalized blocks had been written, an untracked collaborator artifact named `.audit_survivors.json` appeared. It was opened only to identify cleanup ownership, was not an `audit_head` object, did not alter any finding, and was removed together with generated Python cache files.
-- Independence: implementation-author model provenance is not recorded, so normalized findings use `independence: unknown`.
+- Phase: `16`
+- Task scope: `16.1` through `16.16.3` (21 ledger tasks)
+- Current-state authority: `21dfcd8836974cd7e12454774156b3aefa97f2b5`
+- Recorded task-commit span: `1021842c937653de545cd335450df985f822bd06` through `f8aff0237221fbf7d56b58abb5dce02833344bfc`
+- Normative sources:
+  - `docs/opi-spec.md`
+  - `docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md`
+  - `docs/snapshots/phase16/opi-impl-state.json`
+- Review axes: Standards and Spec, plus correctness, security/redaction, test quality, invariants, integration, and residuals
+- Dirty-tree isolation: the unrelated deletion of `docs/snapshots/phase16/remediation-plan.md` was excluded. Static reads used committed objects; commands ran in an isolated detached worktree at the pinned HEAD.
+- Contamination isolation: no prior `audit.*.md` or evaluator report was read or searched.
 
-## Executive summary
+## Verdict
 
-**Verdict: FAIL — 5 Major findings and 7 Minor findings.**
+**PASS-WITH-FINDINGS**
 
-The current implementation passes the complete Windows workspace test suite, focused feature-gated execution acceptance, scoped clippy, formatting, and documentation contracts. Protocol ordering, bounds, package lifecycle, routing, no-fallback behavior, archive structure, and the Windows unsupported posture are generally strong.
+No Blocker was found. Three Major gaps remain:
 
-Phase 16 nevertheless cannot be accepted at the pinned head. Two runtime-liveness defects break mandatory cleanup guarantees: the outer Unix host process group does not contain the real `opi-sandbox` target process group, and synchronous backend stdout writes can block the async execution loop past every deadline. Public-surface redaction also trusts adapter-controlled free text, and normal in-band timeouts lose the promised stable `execution_timed_out` code. Finally, the committed phase-exit record contradicts its own open/null acceptance state and names ignored evidence that is absent and no longer replayable with the recorded command.
+1. cancellation during the pre-`ready` handshake is classified as a protocol violation rather than completing the required cancellation/cleanup flow;
+2. normal fixed/rules startup removes missing, untrusted, and disabled named adapters before routing, collapsing their distinct lifecycle failures into `no_eligible_adapter`;
+3. the phase-exit native/six-target evidence bundle claimed as preserved is absent from both committed HEAD and the current checkout, so critical platform claims cannot be independently re-audited.
 
-| Severity | Count |
-|---|---:|
-| Blocker | 0 |
-| Major | 5 |
-| Minor | 7 |
-| Info | 0 |
+The runtime remains fail-closed in the reviewed paths. Protocol bounds, redaction, Minimal Runtime isolation, no-local-fallback behavior, package executable binding, crate boundaries, Windows L0 posture, and documentation contracts have strong focused coverage.
 
-## Per-task assessment
+## Findings summary
 
-| Task | Assessment | Finding impact |
-|---|---|---|
-| 16.1 | PASS | Documentation contract is present and `opi-doc-check` passes. |
-| 16.2 | FAIL | P16-CODEX-INT-001 violates L0 descendant cleanup. |
-| 16.3 | PARTIAL | P16-CODEX-STD-001 leaves the wire framing state machine triplicated. |
-| 16.4 | PARTIAL | P16-CODEX-STD-004 and P16-CODEX-SPEC-003 weaken identity exactness. |
-| 16.5 | PARTIAL | P16-CODEX-STD-004 and P16-CODEX-SPEC-003 affect lifecycle identity. |
-| 16.6 | FAIL | P16-CODEX-SPEC-001 loses the stable timeout code. |
-| 16.7 | FAIL | P16-CODEX-INT-001 and P16-CODEX-SEC-001 affect teardown and redaction; two Standards findings add maintenance risk. |
-| 16.8 | FAIL | P16-CODEX-INT-001, P16-CODEX-SPEC-001, and P16-CODEX-SEC-001 cross the runtime seam. |
-| 16.9 | FAIL | Stable-code/redaction failures plus contradictory null evidence; P16-CODEX-STD-003 duplicates finalization. |
-| 16.10 | PARTIAL | Behavior passes, but P16-CODEX-STD-004 leaves validated adapter identity convention-based. |
-| 16.11.1 | FAIL | P16-CODEX-INT-001 and P16-CODEX-INV-001 break drop/deadline cleanup in composition. |
-| 16.11.2 | FAIL | Backend liveness fails; P16-CODEX-TQ-001 leaves Windows standalone isolation unproved. |
-| 16.12 | FAIL | P16-CODEX-INT-001 and P16-CODEX-INV-001 break the backend/host contract. |
-| 16.13 | FAIL | Outer cleanup and phase evidence fail; native skip reporting is incomplete. |
-| 16.14.1 | FAIL | Outer cleanup and phase evidence fail; native skip reporting is incomplete. |
-| 16.14.2 | FAIL | Runtime posture passes, but phase evidence and Windows isolation acceptance do not. |
-| 16.15.1 | PARTIAL | Packaging tests pass; manifest byte identity remains canonicalized rather than exact. |
-| 16.15.2 | FAIL | P16-CODEX-SPEC-002 and P16-CODEX-TQ-002 invalidate the claimed evidence closure. |
-| 16.16.1 | FAIL | Crate boundaries pass, but the task is marked passing with null evidence. |
-| 16.16.2 | FAIL | Install-to-execute works, but cleanup, stable-code, and redaction findings reach public surfaces. |
-| 16.16.3 | FAIL | Repository gates pass locally, but runtime invariants and the phase-exit evidence claim do not. |
+| ID | Axis | Severity | Finding |
+|---|---|---:|---|
+| AUD-P16-001 | Spec | Major | Pre-`ready` cancellation cannot complete the specified cleanup flow |
+| AUD-P16-002 | Spec / integration | Major | Fixed/rules startup collapses three lifecycle failures into `no_eligible_adapter` |
+| AUD-P16-003 | Test quality | Major | Claimed phase-exit platform evidence is not preserved at current HEAD |
+| AUD-P16-004 | Test quality | Minor | `package_cli` subprocess tests hard-code the in-tree Cargo target directory |
+| AUD-P16-005 | Residuals | Minor | Seven acceptance scenarios remain `open` after phase exit is marked complete |
+| AUD-P16-006 | Standards | Minor | `runner.rs` has accumulated divergent responsibilities in one 2,967-line module |
+| AUD-P16-007 | Standards | Minor | Backend timeout branches duplicate security-sensitive cancellation cleanup |
+| AUD-P16-008 | Standards | Info | Trust invalidation is duplicated between enable and activation paths |
+| AUD-P16-009 | Standards | Info | `AdapterNotSelected` retains unused model-controlled text |
 
-## Standards axis
+## Spec and integration findings
 
-The clean-room Standards review found no hard repository-rule violation. It found four Fowler maintainability smells.
+### AUD-P16-001 Major: Pre-`ready` cancellation cannot complete the specified cleanup flow
 
-### P16-CODEX-STD-001 — Minor: Capped JSONL framing is implemented three times
+**Files:** `crates/opi-coding-agent/src/execution/protocol_host.rs`, `crates/opi-sandbox/src/backend.rs`
 
-**Cause:** `opi-protocol`, the Opi protocol host, and the sandbox backend independently implement the same CR/LF, EOF, exact-cap, and oversize state machine.
+**Cause:** `finish_with_cancel` marks the host state as cancelling before reading grace-period frames. The transition table then rejects `Ready` while cancelling and rejects every pre-`started` `Failed` frame. A conforming backend that was already processing `initialize` can therefore send its normal `ready` milestone or a pre-start terminal failure after receiving `cancel`, but the host converts either response into `protocol_violation`. The shipped backend itself sends `ready` before reading the next host frame, so a cancel racing the handshake enters this path.
 
-**Impact:** A boundary or framing fix must be reproduced in three implementations, increasing the probability of host/backend divergence.
+**Impact:** A valid user cancellation or deadline during adapter startup is surfaced as protocol corruption (or, for a silent backend, `cleanup_unconfirmed`) instead of the bounded cancellation result required by the Phase 16 cancellation contract. The failure code and remediation are wrong for a normal control-flow event.
 
-**Fix:** Extract an I/O-neutral capped-line accumulator into `opi-protocol`; retain thin synchronous and Tokio I/O adapters in consumers.
+**Fix:** Define an explicit pre-start cancellation state. It must accept only the bounded post-cancel sequence needed to prove no target escaped, then return cancellation/timeout with confirmed cleanup. Add a production-host test that races cancellation with the shipped backend's `ready` emission; do not encode `protocol_violation` as the expected cancellation result.
 
 ```yaml
-id: P16-CODEX-STD-001
-source_kind: audit
-source_path: docs/snapshots/phase16/audit.codex.md
-source_model: codex
-independence: unknown
-axis: standards
-severity: Minor
-title: Capped JSONL framing is implemented three times
-claim: The same bounded JSONL byte-framing state machine has three independent production owners.
-evidence:
-  - location: crates/opi-protocol/src/execution/v1/codec.rs:50
-    detail: The protocol crate implements capped CR/LF, EOF, and oversize handling through line 108.
-  - location: crates/opi-coding-agent/src/execution/protocol_host.rs:1369
-    detail: The host independently implements the same state transitions through line 1447.
-  - location: crates/opi-sandbox/src/backend.rs:875
-    detail: The backend carries a third implementation through line 934.
-criterion_source: Fowler Duplicated Code; opi-protocol is the semantic owner of command-execution-jsonl-v1 framing.
-reproduction:
-  - "git show c5de89216b316529d1c8c1c182fe496a3103f42f:crates/opi-protocol/src/execution/v1/codec.rs"
-  - "git show c5de89216b316529d1c8c1c182fe496a3103f42f:crates/opi-coding-agent/src/execution/protocol_host.rs"
-  - "git show c5de89216b316529d1c8c1c182fe496a3103f42f:crates/opi-sandbox/src/backend.rs"
-confidence: high
-status: unverified
-```
-
-### P16-CODEX-STD-002 — Minor: Protocol teardown state is a positional data clump
-
-**Cause:** Ownership-sensitive child, tree guard, stderr task, stdin, deadline, reports, output, and diagnostics are repeatedly threaded through large positional signatures.
-
-**Impact:** Cleanup invariants are difficult to evolve safely, and the module suppresses `clippy::too_many_arguments` at its most sensitive lifecycle seam.
-
-**Fix:** Introduce an owned active-backend lifecycle object and an execution accumulator with terminal, cancellation, and teardown methods.
-
-```yaml
-id: P16-CODEX-STD-002
-source_kind: audit
-source_path: docs/snapshots/phase16/audit.codex.md
-source_model: codex
-independence: unknown
-axis: standards
-severity: Minor
-title: Protocol teardown state is a positional data clump
-claim: The host repeatedly passes the same ownership-sensitive lifecycle state through 12- and 16-parameter functions.
-evidence:
-  - location: crates/opi-coding-agent/src/execution/protocol_host.rs:983
-    detail: finalize_terminal accepts 12 parameters through line 997.
-  - location: crates/opi-coding-agent/src/execution/protocol_host.rs:1105
-    detail: finish_with_cancel accepts 16 parameters through line 1123.
-  - location: crates/opi-coding-agent/src/execution/protocol_host.rs:1185
-    detail: The same process and accumulator group is threaded into teardown calls through line 1269.
-criterion_source: Fowler Data Clumps; AGENTS.md requires the simplest design that preserves behavior.
-reproduction:
-  - "git show c5de89216b316529d1c8c1c182fe496a3103f42f:crates/opi-coding-agent/src/execution/protocol_host.rs"
-confidence: high
-status: unverified
-```
-
-### P16-CODEX-STD-003 — Minor: Headless and interactive config finalizers duplicate behavior
-
-**Cause:** Both finalizers finalize project trust, apply the same execution overrides, validate, and return the result.
-
-**Impact:** Future precedence or validation changes require synchronized edits in two startup paths.
-
-**Fix:** Keep mode-specific orchestration, but delegate the common tail to one `finalize_trusted_config` helper.
-
-```yaml
-id: P16-CODEX-STD-003
-source_kind: audit
-source_path: docs/snapshots/phase16/audit.codex.md
-source_model: codex
-independence: unknown
-axis: standards
-severity: Minor
-title: Headless and interactive config finalizers duplicate behavior
-claim: Two startup functions have the same trust finalization, execution override, and validation implementation.
-evidence:
-  - location: crates/opi-coding-agent/src/main.rs:356
-    detail: resolve_headless_trust_config_finalization performs the common tail through line 370.
-  - location: crates/opi-coding-agent/src/main.rs:479
-    detail: resolve_interactive_trust_config_core repeats the same tail through line 491.
-criterion_source: Fowler Duplicated Code.
-reproduction:
-  - "git show c5de89216b316529d1c8c1c182fe496a3103f42f:crates/opi-coding-agent/src/main.rs"
-confidence: high
-status: unverified
-```
-
-### P16-CODEX-STD-004 — Minor: Validated adapter identity remains primitive strings
-
-**Cause:** Contribution validation, config, routing, permission policy, and runtime eligibility use `String`/`&str` for both validated adapter identities and raw selection text.
-
-**Impact:** Reserved-ID semantics and the boundary between untrusted model text and validated identities depend on convention at every seam.
-
-**Fix:** Introduce a validated `AdapterId` newtype and retain raw user/model input as a separate type until validation succeeds.
-
-```yaml
-id: P16-CODEX-STD-004
-source_kind: audit
-source_path: docs/snapshots/phase16/audit.codex.md
-source_model: codex
-independence: unknown
-axis: standards
-severity: Minor
-title: Validated adapter identity remains primitive strings
-claim: Adapter identity validation and reserved-ID semantics are not preserved by the type system across execution boundaries.
-evidence:
-  - location: crates/opi-coding-agent/src/execution/contribution.rs:92
-    detail: Validated contribution and lock structures retain adapter ids as String through line 128.
-  - location: crates/opi-coding-agent/src/execution/router.rs:43
-    detail: Eligibility and selection retain ids as String through line 79.
-  - location: crates/opi-coding-agent/src/execution/permission.rs:38
-    detail: Reserved local semantics are applied to raw &str values through line 75.
-  - location: crates/opi-coding-agent/src/execution/runtime.rs:209
-    detail: Enabled identities remain string-keyed through line 234.
-criterion_source: Fowler Primitive Obsession; Phase 16 executable identity is a validated security/lifecycle boundary.
-reproduction:
-  - "git show c5de89216b316529d1c8c1c182fe496a3103f42f:crates/opi-coding-agent/src/execution/contribution.rs"
-  - "git show c5de89216b316529d1c8c1c182fe496a3103f42f:crates/opi-coding-agent/src/execution/router.rs"
-confidence: medium
-status: unverified
-```
-
-## Spec axis
-
-The Spec review found two material conformance failures and one minor exactness mismatch.
-
-### P16-CODEX-SPEC-001 — Major: In-band timeout loses the stable `execution_timed_out` code
-
-**Cause:** `Completed { timed_out: true }` is mapped into `BashOperationContext`; the generic bash failure builder then assigns `opi.tool.execution_failed` to every operation error.
-
-**Impact:** Text/TUI/NDJSON/RPC do not preserve the Phase 16 stable failure code for the normal backend timeout path. Consumers cannot reliably match the documented timeout code.
-
-**Fix:** Map the in-band timeout outcome to an `execution_timed_out` diagnostic before generic bash failure mapping, and assert that code on ToolResult, NDJSON, RPC, and trace surfaces.
-
-```yaml
-id: P16-CODEX-SPEC-001
+id: AUD-P16-001
 source_kind: audit
 source_path: docs/snapshots/phase16/audit.codex.md
 source_model: codex
 independence: unknown
 axis: spec
 severity: Major
-title: In-band timeout loses the stable execution_timed_out code
-claim: A valid Completed frame with timed_out true surfaces opi.tool.execution_failed instead of execution_timed_out.
+title: Pre-ready cancellation cannot complete the specified cleanup flow
+claim: A cancellation received while the protocol host is AwaitingReady cannot be acknowledged through either Ready or a pre-start Failed terminal; the host returns protocol_violation or cleanup_unconfirmed instead of a bounded cancellation result.
 evidence:
-  - location: crates/opi-coding-agent/src/execution/runtime.rs:681
-    detail: completed_outcome_to_bash_result stores timed_out only in BashOperationContext.
-  - location: crates/opi-coding-agent/src/tool/bash.rs:277
-    detail: The result becomes an error based on the context flag.
-  - location: crates/opi-coding-agent/src/tool/bash.rs:487
-    detail: bash_operation_diagnostic unconditionally assigns CODE_TOOL_EXECUTION_FAILED.
-  - location: crates/opi-coding-agent/tests/execution_product.rs:1145
-    detail: The timeout acceptance test checks is_error and timed_out context but not the stable code.
-criterion_source: docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md:740-768; task 16.6 DoD and SC16-14.
+  - location: crates/opi-coding-agent/src/execution/protocol_host.rs:718-753
+    detail: Ready advances only when cancelling is false, and Failed is accepted during cancellation only in Draining after Started.
+  - location: crates/opi-coding-agent/src/execution/protocol_host.rs:1142-1231
+    detail: finish_with_cancel sets cancelling before reading grace-period frames and maps rejected frames to ProtocolViolation.
+  - location: crates/opi-sandbox/src/backend.rs:249-283
+    detail: The shipped backend emits Ready before it reads the next host frame, where a racing Cancel is treated as a non-Execute protocol failure.
+  - location: crates/opi-coding-agent/tests/execution_protocol_host.rs:856-905
+    detail: Existing tests explicitly pin protocol_violation for pre-milestone cancellation rather than the normative cancellation outcome.
+criterion_source: docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md:516-529
 reproduction:
-  - Add an assertion for diagnostic code execution_timed_out to timed_out_in_band_completed_is_not_a_success and run the exact test with execution-backend-test-fixture enabled.
+  - cargo test -p opi-coding-agent --test execution_protocol_host cancellation_pre_ready_rejects_subsequent_negotiation_sequence -- --exact
+  - Race the production host cancellation token immediately after initialize reaches the shipped opi-sandbox backend and observe protocol_violation instead of a cancelled or timed-out terminal with confirmed cleanup.
 confidence: high
 status: unverified
 ```
 
-### P16-CODEX-SPEC-002 — Major: Phase-exit acceptance is internally contradictory and not replayable
+### AUD-P16-002 Major: Fixed/rules startup collapses three lifecycle failures into `no_eligible_adapter`
 
-**Cause:** The committed snapshot declares Phase 16 complete while five passing tasks have `evidence: null`, seven task-owned scenarios remain `open`, and the claimed evidence bundle is under ignored `/target` and absent from the commit. The recorded audit command also omits identity arguments now required by the current audit script.
+**Files:** `crates/opi-coding-agent/src/harness.rs`, `crates/opi-coding-agent/src/package_activation.rs`, `crates/opi-coding-agent/src/execution/router.rs`
 
-**Impact:** Current-head Linux/macOS native behavior, six-target checks, and per-category gates cannot be independently established from the authoritative Phase 16 record. The exact recorded acceptance command fails on a clean checkout.
+**Cause:** Fixed/rules startup asks `usable_enabled_identities_for` for the selected adapter. That function starts from `enabled_identities`, which keeps only `trusted && enabled` records and omits absent matches. The resulting eligibility catalog therefore contains no selected external identity for a missing, untrusted, or disabled package. `select_named_candidate` maps all three cases to `NoEligibleAdapter` before invocation-time activation can return `NotInstalled`, `Untrusted`, or `Disabled`.
 
-**Fix:** Use the guarded `opi-implement` reconciliation flow to close or correct every task scenario and evidence field. Regenerate evidence against the current implementation, publish it durably with content hashes/run/commit identity, and record a replayable command including `--workflow-run-id` and `--commit-sha`.
+**Impact:** Ordinary startup with a configured external adapter produces the wrong stable code and remediation for three user-actionable lifecycle states. The more precise codes are currently reachable mainly through stale/injected identity snapshots, so focused runtime tests do not prove the normal production startup path promised by the five-gate model.
 
-```yaml
-id: P16-CODEX-SPEC-002
-source_kind: audit
-source_path: docs/snapshots/phase16/audit.codex.md
-source_model: codex
-independence: unknown
-axis: spec
-severity: Major
-title: Phase-exit acceptance is internally contradictory and not replayable
-claim: The committed Phase 16 state asserts complete evidence while its task state and clean-checkout audit command prove otherwise.
-evidence:
-  - location: docs/snapshots/phase16/opi-impl-state.json:3193
-    detail: exit_criteria_met is true and the evaluator claims all 21 tasks clean and evidence preserved.
-  - location: docs/snapshots/phase16/opi-impl-state.json:1469
-    detail: Tasks 16.9, 16.14.1, 16.15.2, 16.16.1, and 16.16.3 have null evidence at lines 1469, 2323, 2646, 2809, and 3183.
-  - location: docs/snapshots/phase16/opi-impl-state.json:2135
-    detail: Seven acceptance scenarios remain open at lines 2135, 2151, 2272, 2288, 2409, 2618, and 2754.
-  - location: .gitignore:1
-    detail: /target is ignored; the named target/opi-artifacts/phase16-phase-exit bundle has no committed object.
-  - location: docs/snapshots/phase16/opi-impl-state.json:3112
-    detail: The recorded phase-exit command omits explicit workflow and commit identity arguments.
-  - location: scripts/opi-artifact-audit.py:2016
-    detail: Current phase-exit mode rejects invocations without --workflow-run-id and --commit-sha.
-criterion_source: Phase 16 task DoDs/evidence/acceptance scenarios and .claude/skills/opi-implement/skill.md:200-207,236-242.
-reproduction:
-  - "git ls-tree -r c5de89216b316529d1c8c1c182fe496a3103f42f -- target/opi-artifacts/phase16-phase-exit"
-  - "git check-ignore -v target/opi-artifacts/phase16-phase-exit"
-  - "python scripts/opi-artifact-audit.py target/opi-artifacts/phase16-phase-exit --workspace-root . --phase-exit --json"
-confidence: high
-status: unverified
-```
-
-### P16-CODEX-SPEC-003 — Minor: Manifest trust hashes canonical line endings, not exact bytes
-
-**Cause:** Manifest hash calculation converts CRLF to LF before hashing.
-
-**Impact:** A line-ending-only byte change does not stale Package Trust, despite the design describing trust as matching the exact locked artifact. The normalization is intentional for checkout portability, so the code or the exact-artifact language must be made explicit.
-
-**Fix:** Either hash exact distribution bytes and make packaging deterministic, or define the locked manifest artifact as a canonical LF-normalized representation in the spec and lock schema.
+**Fix:** Preserve the selected named identity and its lifecycle state through startup, or perform a selected-package lookup that returns the precise lifecycle error before building routing eligibility. Add full harness tests for fixed and rules configurations where the package is absent, untrusted, and disabled before startup.
 
 ```yaml
-id: P16-CODEX-SPEC-003
-source_kind: audit
-source_path: docs/snapshots/phase16/audit.codex.md
-source_model: codex
-independence: unknown
-axis: spec
-severity: Minor
-title: Manifest trust hashes canonical line endings rather than exact bytes
-claim: Changing only a trusted manifest's LF and CRLF representation does not invalidate its stored manifest hash.
-evidence:
-  - location: crates/opi-coding-agent/src/execution/contribution.rs:277
-    detail: manifest_hash is computed from lf_normalize(raw_manifest_bytes).
-  - location: crates/opi-coding-agent/src/execution/contribution.rs:631
-    detail: lf_normalize replaces every CRLF sequence with LF before hashing.
-  - location: crates/opi-coding-agent/tests/execution_contribution_manifest.rs:186
-    detail: The behavior is intentionally pinned by manifest_hash_is_crlf_stable.
-criterion_source: docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md:53; task 16.4 exact lock-material DoD.
-reproduction:
-  - Enable a package, change only package.toml line endings, and rerun package activation diagnostics; trust remains current.
-confidence: medium
-status: unverified
-```
-
-## Integration, invariants, security, and test quality
-
-### P16-CODEX-INT-001 — Major: Unix host teardown misses the real sandbox target process group
-
-**Cause:** The protocol host creates a process group for the adapter backend, while `opi-sandbox` creates a second process group for the target. The host's Unix guard kills only the backend PGID. A SIGKILLed/crashed backend cannot run the sandbox guard's destructor.
-
-**Impact:** Host-future drop, hard timeout, backend crash, or forced teardown can leave the command and its invocation temp root alive on Linux/macOS while the host reports the backend group reaped. The surviving command can continue consuming resources and mutating permitted user workspace data after cancellation.
-
-**Fix:** Establish one compositional containment owner that includes backend and target descendants across group boundaries, or make adapter death fail-safe for the complete target tree. Add a real `opi-sandbox backend --stdio` integration test that creates the production nested PGID, drops/kills the host, and proves target and temp-root removal.
-
-```yaml
-id: P16-CODEX-INT-001
+id: AUD-P16-002
 source_kind: audit
 source_path: docs/snapshots/phase16/audit.codex.md
 source_model: codex
 independence: unknown
 axis: integration
 severity: Major
-title: Unix host teardown misses the real sandbox target process group
-claim: Killing the backend process group does not kill the opi-sandbox target because the target is moved into a different Unix process group.
+title: Fixed and rules startup collapse lifecycle failures into no_eligible_adapter
+claim: When a fixed or rules configuration names an external adapter whose package is absent, untrusted, or disabled before harness startup, the production wiring omits the identity and routing returns no_eligible_adapter rather than package_not_installed, package_untrusted, or contribution_disabled.
 evidence:
-  - location: crates/opi-coding-agent/src/execution/protocol_host.rs:223
-    detail: The host applies configure_tree before spawning the backend and attaches a guard to its PID through line 235.
-  - location: crates/opi-coding-agent/src/tool/process_tree.rs:43
-    detail: Unix containment is process_group(0), and termination is kill(-pgid, SIGKILL) at lines 375-382.
-  - location: crates/opi-sandbox/src/runner.rs:794
-    detail: The sandbox independently applies configure_tree to the real target before spawning it at lines 847-872.
-  - location: crates/opi-coding-agent/tests/fixtures/execution_backend_mock.rs:1336
-    detail: The host L0 fixture spawns a grandchild without creating the production second process group, so the test cannot detect the escape.
-  - location: WSL process-group probe
-    detail: Backend PGID 456 and target PGID 490 were distinct; killpg(456) left target 490 alive, after which the probe explicitly killed PGID 490.
-criterion_source: docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md:171-180,850-870; phase criterion C7.
+  - location: crates/opi-coding-agent/src/harness.rs:208-219
+    detail: Fixed and rules wiring resolves only the concrete selected id through usable_enabled_identities_for.
+  - location: crates/opi-coding-agent/src/package_activation.rs:329-343
+    detail: enabled_identities filters records to trusted and enabled before exposing adapter identities.
+  - location: crates/opi-coding-agent/src/package_activation.rs:389-439
+    detail: Requested ids with no enabled match are silently omitted instead of returning a lifecycle error.
+  - location: crates/opi-coding-agent/src/execution/router.rs:164-180
+    detail: A named backend missing from eligibility is mapped to NoEligibleAdapter.
+  - location: crates/opi-coding-agent/tests/windows_execution_posture.rs:30-41
+    detail: The precise absent-package test injects an EnabledIdentity directly into ExecutionRuntime and does not exercise production harness startup.
+criterion_source: docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md:50-61,740-762
 reproduction:
-  - On Unix, start a backend in a new PGID, start its target in another new PGID, kill the backend PGID, and verify kill(target_pid, 0) still succeeds.
+  - Start a production harness with strategy=fixed and backend=<external-id> while the corresponding global package is installed but untrusted before startup; invoke bash and inspect the stable diagnostic code.
+  - Repeat with the package disabled and absent; compare the result to package_untrusted, contribution_disabled, and package_not_installed respectively.
 confidence: high
 status: unverified
 ```
 
-### P16-CODEX-INV-001 — Major: Blocking backend stdout defeats all request deadlines
+## Test-quality and residual findings
 
-**Cause:** The async backend loop writes every frame through synchronous `std::io::Write::write_all` and `flush`. If the client stops reading, the task blocks inside the write and stops polling the execution stream, cancellation, and deadlines.
+### AUD-P16-003 Major: Claimed phase-exit platform evidence is not preserved at current HEAD
 
-**Impact:** A chatty target can keep the backend, target tree, and temp root alive indefinitely after the execution and hard request deadlines. This also weakens the started-before-release gate if the `started` flush blocks.
+**Files:** `docs/snapshots/phase16/opi-impl-state.json`, `.gitignore`
 
-**Fix:** Use bounded asynchronous stdout I/O or a separately supervised bounded writer whose backpressure is included in the absolute request deadline. On expiry, cancel and clean the target independently of writer progress. Add a non-reading-host pipe-capacity test.
+**Cause:** Phase-exit criteria C9-C12 and C16 cite evidence under `target/opi-artifacts/phase16-phase-exit`, and C16 explicitly says the evidence is preserved. `/target` is ignored, the cited `evidence.json` is not a committed object, and the bundle is absent from the current checkout and from a clean detached checkout at the audited HEAD.
+
+**Impact:** The Linux Landlock/seccomp run, macOS Seatbelt run, Windows posture smoke, six-target logs, and final phase-exit artifact audit cannot be independently rerun or authenticated from current repository state. These are critical platform/security claims that cannot be replaced by a green ledger assertion.
+
+**Fix:** Preserve an immutable, repository-addressable evidence index and artifacts, or record durable external artifact URLs plus hashes and provenance sufficient for `opi-artifact-audit.py` to reacquire and verify them. Update C9-C12/C16 only after the preserved bundle passes the audit from a clean checkout.
 
 ```yaml
-id: P16-CODEX-INV-001
+id: AUD-P16-003
 source_kind: audit
 source_path: docs/snapshots/phase16/audit.codex.md
 source_model: codex
 independence: unknown
-axis: invariants
+axis: test-quality
 severity: Major
-title: Blocking backend stdout defeats all request deadlines
-claim: A protocol client that stops reading stdout can block the backend event loop so execution timeout, cancellation, tree cleanup, and temp cleanup are never polled.
+title: Claimed phase-exit platform evidence is not preserved at current HEAD
+claim: The evidence bundle required by phase-exit criteria C9 through C12 and C16 cannot be obtained from current committed HEAD or the current checkout, so those native and six-target claims are not independently verifiable.
 evidence:
-  - location: crates/opi-sandbox/src/backend.rs:132
-    detail: drive accepts a synchronous &mut dyn Write while the surrounding state machine is async.
-  - location: crates/opi-sandbox/src/backend.rs:539
-    detail: Output frames are emitted synchronously from inside the tokio select loop through line 553.
-  - location: crates/opi-sandbox/src/backend.rs:861
-    detail: write_all_nl_flush performs blocking write_all and flush with no deadline through line 869.
-  - location: crates/opi-sandbox/tests/protocol_conformance.rs:204
-    detail: Tests use an unbounded Vec sink or finite delayed writer, not a pipe-capacity/non-reading client.
-criterion_source: docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md:516-529; SC16-06b.
+  - location: docs/snapshots/phase16/opi-impl-state.json:3440-3550
+    detail: C9-C12 and C16 cite preserved files under target/opi-artifacts/phase16-phase-exit and mark each criterion met.
+  - location: .gitignore:1
+    detail: /target is ignored.
+  - location: command git cat-file -e HEAD:target/opi-artifacts/phase16-phase-exit/evidence.json
+    detail: The command exits 128 because the claimed evidence index is not committed.
+  - location: clean detached worktree at 21dfcd8836974cd7e12454774156b3aefa97f2b5
+    detail: Test-Path target/opi-artifacts/phase16-phase-exit/evidence.json returned False.
+criterion_source: docs/snapshots/phase16/opi-impl-state.json:3538-3548
 reproduction:
-  - Pipe backend --stdio stdout without reading it, execute a short-deadline target that emits more than pipe capacity, keep stdin open, and observe the backend alive after the deadline.
+  - git cat-file -e HEAD:target/opi-artifacts/phase16-phase-exit/evidence.json
+  - Test-Path -LiteralPath target/opi-artifacts/phase16-phase-exit/evidence.json
+  - python scripts/opi-artifact-audit.py target/opi-artifacts/phase16-phase-exit --workspace-root . --phase-exit --json
 confidence: high
 status: unverified
 ```
 
-### P16-CODEX-SEC-001 — Major: Adapter-controlled protocol text bypasses public redaction
+### AUD-P16-004 Minor: `package_cli` subprocess tests hard-code the in-tree Cargo target directory
 
-**Cause:** Diagnostic messages are redacted as unkeyed strings, so command/environment structural redaction cannot recognize plain command text. `started` placement/guarantee/policy/limitations are only checked for non-empty core fields and then copied verbatim into ToolResult details.
+**File:** `crates/opi-coding-agent/tests/package_cli.rs`
 
-**Impact:** An adapter can place command text, environment values, credentials not recognized by generic patterns, PIDs, or paths into public ToolResult, NDJSON, RPC, and session events, contrary to SC16-14.
+**Cause:** `opi_binary` ignores Cargo's configured target directory and constructs `<workspace>/target/debug/opi(.exe)`. This repository uses a persistent external Cargo cache, so even a successful `cargo build -p opi-coding-agent` places the binary elsewhere.
 
-**Fix:** Treat adapter free text as untrusted at the host boundary. Replace public diagnostic text with closed codes/host-owned summaries, and make effective-contract fields closed typed tokens or apply an explicit allowlist before public serialization. Add canary tests across ToolResult, NDJSON, RPC, and trace.
+**Impact:** Eight subprocess tests fail before exercising behavior in the canonical cached build environment. Focused task verification is not hermetic and produces a false red despite a successfully built binary.
 
-```yaml
-id: P16-CODEX-SEC-001
-source_kind: audit
-source_path: docs/snapshots/phase16/audit.codex.md
-source_model: codex
-independence: unknown
-axis: security
-severity: Major
-title: Adapter-controlled protocol text bypasses public redaction
-claim: Free-form backend diagnostic and started-contract strings can reach public surfaces with command, environment, credential, path, or PID content intact.
-evidence:
-  - location: crates/opi-coding-agent/src/execution/protocol_host.rs:632
-    detail: redact_backend_diagnostic passes the whole free-form message to generic redact_text.
-  - location: crates/opi-agent/src/diagnostic.rs:533
-    detail: redact_text wraps the text as an unkeyed JSON string, so key-based command/env redaction cannot apply.
-  - location: crates/opi-coding-agent/src/execution/protocol_host.rs:823
-    detail: valid_started_contract checks only non-empty placement, guarantee, and policy.
-  - location: crates/opi-coding-agent/src/tool/bash.rs:299
-    detail: copy_effective_contract writes adapter strings directly into public details through line 318.
-  - location: crates/opi-coding-agent/tests/execution_product.rs:745
-    detail: NDJSON/RPC propagation is asserted only with safe fixture literals through line 787.
-criterion_source: docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md:763-771; SC16-14.
-reproduction:
-  - Emit a plain command canary in a backend Diagnostic and assert it is absent from ToolResult diagnostics; the assertion fails.
-  - Emit a credential/path canary in started.limitations and inspect ToolResult, NDJSON, and RPC details; the canary is preserved.
-confidence: high
-status: unverified
-```
-
-### P16-CODEX-TQ-001 — Minor: Windows standalone smoke does not use an isolated copy and empty CWD
-
-**Cause:** The PowerShell smoke invokes the workspace-built binary by absolute path but never copies it to isolation or changes the working directory. The Rust test inherits the repository CWD.
-
-**Impact:** The smoke can pass while project-local Opi state is present, so it does not prove the required standalone empty-CWD condition. Source-level crate-boundary tests reduce the runtime risk but do not satisfy this acceptance case.
-
-**Fix:** Copy the binary into a fresh isolated directory, create a separate empty working directory, invoke every smoke command with that CWD, and assert neither location acquires Opi state.
+**Fix:** Use Cargo's `CARGO_BIN_EXE_opi` integration-test path (or a shared target-path resolver that honors `CARGO_TARGET_DIR`) and remove the manual pre-build assertion.
 
 ```yaml
-id: P16-CODEX-TQ-001
+id: AUD-P16-004
 source_kind: audit
 source_path: docs/snapshots/phase16/audit.codex.md
 source_model: codex
 independence: unknown
 axis: test-quality
 severity: Minor
-title: Windows standalone smoke does not use an isolated copy and empty CWD
-claim: The Windows smoke can pass while the tested binary runs from the workspace and inherits the repository working directory.
+title: package_cli subprocess tests hard-code the in-tree Cargo target directory
+claim: In the repository's configured external Cargo target environment, cargo build succeeds but eight package_cli subprocess tests fail because opi_binary checks only workspace/target/debug/opi.
 evidence:
-  - location: scripts/opi-sandbox-smoke.ps1:16
-    detail: The script validates the supplied binary and scrubs environment values but never copies it or changes CWD through line 68.
-  - location: crates/opi-sandbox/tests/standalone_smoke.rs:153
-    detail: The test passes CARGO_BIN_EXE_opi-sandbox without setting current_dir through line 172.
-criterion_source: docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md:631-642.
+  - location: crates/opi-coding-agent/tests/package_cli.rs:1048-1061
+    detail: The helper constructs workspace_root/target/debug/opi and asserts that path exists.
+  - location: command cargo build -p opi-coding-agent then cargo test -p opi-coding-agent --test package_cli
+    detail: Build succeeded; 28 tests passed and 8 subprocess tests failed with 'opi binary must be built' while the binary existed in the configured external target directory.
+criterion_source: AGENTS.md#Implementation workflow
 reproduction:
-  - Run standalone_smoke_script_windows from the repository root with a project-local sentinel; the smoke still reports success because only the environment sentinel is inspected.
+  - cargo build -p opi-coding-agent
+  - cargo test -p opi-coding-agent --test package_cli
 confidence: high
 status: unverified
 ```
 
-### P16-CODEX-TQ-002 — Minor: Native early-return skips are recorded as passing evidence
+### AUD-P16-005 Minor: Seven acceptance scenarios remain `open` after phase exit is complete
 
-**Cause:** Required outside-write tests print a skip message and return early instead of using an ignored/failed outcome. The artifact classifier recognizes Cargo ignored counts but not these textual skips.
+**File:** `docs/snapshots/phase16/opi-impl-state.json`
 
-**Impact:** A platform bundle can satisfy the pass-marker rule without executing the required outside-write assertion. Separate native smoke coverage lowers runtime risk, but the claimed skip-rejection evidence rule is false-green capable.
+**Cause:** Acceptance scenarios for tasks 16.13, 16.14.1, 16.14.2, 16.15.2, and 16.16.1 retain `status: open`, while the same snapshot marks every task `passing`, sets `exit_criteria_met: true`, and marks the corresponding exit criteria met.
 
-**Fix:** Make absence of a valid outside directory fail the required native job, or emit a machine-readable skip marker that the artifact auditor rejects. Add an artifact-audit fixture for the early-return marker.
+**Impact:** The canonical phase snapshot contradicts itself, making automated and human consumers unable to tell whether those scenarios were actually closed or merely summarized as complete later.
+
+**Fix:** Reconcile the canonical ledger through the guarded ledger workflow so each scenario status matches its independently verified criterion; do not hand-edit the snapshot.
 
 ```yaml
-id: P16-CODEX-TQ-002
+id: AUD-P16-005
 source_kind: audit
 source_path: docs/snapshots/phase16/audit.codex.md
 source_model: codex
 independence: unknown
-axis: test-quality
+axis: residuals
 severity: Minor
-title: Native early-return skips are recorded as passing evidence
-claim: Required Linux/macOS outside-write tests can skip their assertion while Cargo and the artifact auditor classify the run as passing.
+title: Seven acceptance scenarios remain open after phase exit is complete
+claim: The Phase 16 snapshot contains seven acceptance_scenarios with status open even though phase_exit.exit_criteria_met is true and the corresponding tasks and criteria are recorded as passing or met.
 evidence:
-  - location: crates/opi-sandbox/tests/linux_policy.rs:396
-    detail: outside_write_denied prints a skip message and returns when no candidate exists.
-  - location: crates/opi-sandbox/tests/macos_policy.rs:202
-    detail: The macOS equivalent uses the same early-return pattern through line 210.
-  - location: scripts/opi-artifact-audit.py:531
-    detail: Skip detection matches nonzero Cargo ignored counts, while pass detection accepts ordinary passed counts through line 684.
-criterion_source: Phase criterion C16 and task 16.15.2 require skipped native evidence to be rejected.
+  - location: docs/snapshots/phase16/opi-impl-state.json:2135,2151,2272,2288,2409,2618,2754
+    detail: Seven scenario records retain status open.
+  - location: docs/snapshots/phase16/opi-impl-state.json:3190-3195
+    detail: Phase exit is marked completed with exit_criteria_met true and all 21 tasks D.2-clean.
+  - location: docs/snapshots/phase16/opi-impl-state.json:3440-3507
+    detail: The matching Linux, macOS, Windows, release-topology, and migration criteria are marked met.
+criterion_source: docs/snapshots/phase16/opi-impl-state.json
 reproduction:
-  - Run either native policy test on a host with no accepted outside directory; Cargo reports the test passed with zero ignored and the artifact classifier accepts its pass marker.
+  - git show HEAD:docs/snapshots/phase16/opi-impl-state.json | Select-String '"status": "open"'
 confidence: high
 status: unverified
 ```
 
-## Invariant verification matrix
+## Standards findings
 
-| Invariant | Code evidence | Test coverage / assessment |
+### AUD-P16-006 Minor: `runner.rs` has divergent responsibilities
+
+**File:** `crates/opi-sandbox/src/runner.rs`
+
+**Cause:** The 2,967-line module owns request validation, temporary-root preparation, command construction and spawning, release-gate state, platform bootstrap, process supervision, output capture, and cleanup outcomes. These concerns change for different reasons despite the spec's explicit large-module split requirement.
+
+**Impact:** Security-sensitive lifecycle changes require navigating and modifying one broad module, increasing review cost and the chance that preparation, start-gate, or cleanup invariants drift.
+
+**Fix:** Keep `SandboxRunner` as the facade and split validation/preparation, gated spawn, supervision/cleanup, and output collection into responsibility-focused private modules.
+
+```yaml
+id: AUD-P16-006
+source_kind: audit
+source_path: docs/snapshots/phase16/audit.codex.md
+source_model: codex
+independence: unknown
+axis: standards
+severity: Minor
+title: Sandbox runner has divergent responsibilities in one large module
+claim: crates/opi-sandbox/src/runner.rs combines at least six independently changing responsibilities in 2967 lines, contrary to the repository requirement to split large modules by responsibility.
+evidence:
+  - location: crates/opi-sandbox/src/runner.rs:176-1905
+    detail: Production definitions cover validation, deadline planning, prepared/spawned run state, release gates, process control, capture, and cleanup in one module; tests continue through line 2967.
+  - location: docs/opi-spec.md:2234-2239
+    detail: Maintainability requirements explicitly require splitting large modules by responsibility.
+criterion_source: docs/opi-spec.md:2234-2239
+reproduction:
+  - (git show HEAD:crates/opi-sandbox/src/runner.rs | Measure-Object -Line).Lines
+  - Inspect the production type and function inventory in crates/opi-sandbox/src/runner.rs.
+confidence: high
+status: unverified
+```
+
+### AUD-P16-007 Minor: Backend timeout branches duplicate cancellation cleanup
+
+**File:** `crates/opi-sandbox/src/backend.rs`
+
+**Cause:** Multiple handshake/start-gate timeout checks independently cancel, retain the gate, drain until the same deadline, classify cleanup, and emit a terminal failure. The repeated branches differ only in phase or surrounding milestone.
+
+**Impact:** A future correction to timeout or cleanup semantics can be applied to one branch but missed in another. This is the same security-sensitive state area implicated by AUD-P16-001.
+
+**Fix:** Extract one fail-closed cancellation-and-cleanup classifier parameterized by failure phase and target-start state, then use it from all four branches.
+
+```yaml
+id: AUD-P16-007
+source_kind: audit
+source_path: docs/snapshots/phase16/audit.codex.md
+source_model: codex
+independence: unknown
+axis: standards
+severity: Minor
+title: Backend timeout branches duplicate cancellation cleanup
+claim: Four backend timeout branches independently implement the same cancel, keep-gated, bounded-drain, cleanup-classification, and terminal-emission sequence.
+evidence:
+  - location: crates/opi-sandbox/src/backend.rs:339-354
+    detail: Expired start outcome performs cancellation, gated drain, cleanup classification, and timeout emission.
+  - location: crates/opi-sandbox/src/backend.rs:371-387
+    detail: Started-event timeout repeats the same sequence.
+  - location: crates/opi-sandbox/src/backend.rs:408-423
+    detail: Post-start-event deadline check repeats the sequence.
+  - location: crates/opi-sandbox/src/backend.rs:436-451
+    detail: Pre-release deadline check repeats the sequence with only the phase changed.
+criterion_source: null
+reproduction:
+  - Inspect crates/opi-sandbox/src/backend.rs:330-451 and compare the four timeout branches.
+confidence: high
+status: unverified
+```
+
+### AUD-P16-008 Info: Trust invalidation is duplicated between enable and activation
+
+**File:** `crates/opi-coding-agent/src/package_activation.rs`
+
+**Cause:** `enable` and `activate` separately re-read records, clear `trusted` and `enabled`, persist the records, and construct an `Untrusted` error when lock revalidation fails.
+
+**Impact:** The lifecycle is currently correct, but future changes to the security-sensitive drift transition must be kept synchronized in two implementations.
+
+**Fix:** Centralize durable drift invalidation and error construction in one private helper.
+
+```yaml
+id: AUD-P16-008
+source_kind: audit
+source_path: docs/snapshots/phase16/audit.codex.md
+source_model: codex
+independence: unknown
+axis: standards
+severity: Info
+title: Trust invalidation is duplicated between enable and activation
+claim: Both PackageActivationStore::enable and PackageActivationStore::activate independently clear trusted and enabled state, write records, and return an Untrusted error after revalidation failure.
+evidence:
+  - location: crates/opi-coding-agent/src/package_activation.rs:525-536
+    detail: enable implements the drift invalidation transition inline.
+  - location: crates/opi-coding-agent/src/package_activation.rs:634-647
+    detail: activate independently implements the same transition and error construction.
+criterion_source: null
+reproduction:
+  - Inspect and compare the revalidate_lock error arms in PackageActivationStore::enable and PackageActivationStore::activate.
+confidence: high
+status: unverified
+```
+
+### AUD-P16-009 Info: `AdapterNotSelected` retains unused model-controlled text
+
+**Files:** `crates/opi-coding-agent/src/execution/failure.rs`, `crates/opi-coding-agent/src/execution/router.rs`
+
+**Cause:** The router stores the omitted or rejected model-provided backend string in `AdapterNotSelected.requested`, but the Display implementation substitutes `<unavailable>` and production code/remediation matches discard the field. Derived `Debug` still retains the original value.
+
+**Impact:** This adds unused state and keeps attacker/model-controlled text alive in an error type whose public contract intentionally redacts it. No current public leak was found.
+
+**Fix:** Remove `requested` from the variant and construct only the strategy, unless a concrete non-public consumer is added with an explicit redaction boundary.
+
+```yaml
+id: AUD-P16-009
+source_kind: audit
+source_path: docs/snapshots/phase16/audit.codex.md
+source_model: codex
+independence: unknown
+axis: standards
+severity: Info
+title: AdapterNotSelected retains unused model-controlled text
+claim: AdapterNotSelected.requested is populated from model input but is discarded by every production display, code, and remediation match while remaining present in derived Debug output.
+evidence:
+  - location: crates/opi-coding-agent/src/execution/failure.rs:74-78
+    detail: The variant stores requested while its Display string uses the constant <unavailable>.
+  - location: crates/opi-coding-agent/src/execution/failure.rs:149,211-214
+    detail: Stable-code and remediation paths match requested with .. and never consume it.
+  - location: crates/opi-coding-agent/src/execution/router.rs:208-229
+    detail: The field is populated from omitted or rejected model backend input.
+criterion_source: AGENTS.md#Operating principles
+reproduction:
+  - git grep -n 'AdapterNotSelected' HEAD -- crates/opi-coding-agent
+confidence: high
+status: unverified
+```
+
+## Invariant assessment
+
+| Invariant | Code evidence | Test / audit result |
 |---|---|---|
-| Minimal Runtime starts no extension machinery | `ExecutionRuntime::build` directly constructs local operations when no enabled identities exist | PASS: minimal-runtime tests and full workspace suite |
-| Installed, Trusted, Enabled, Selected, Permitted remain independent | Package lock/activation/router/permission layers remain separate | PASS: lifecycle and selected-routing suites |
-| Ready precedes command disclosure | Host emits `Execute` only after validating `Ready` identity | PASS: protocol host negative tests |
-| Frame order, IDs, duplicates, and bounds are closed | `opi-protocol::Session`, bounded codec, host accumulator | PASS: protocol contract/schema suites |
-| Started is flushed before target release | Backend emits/flushed `Started`, rechecks cutoff, then releases | CONDITIONAL: correct only while stdout makes progress; P16-CODEX-INV-001 fails bounded liveness |
-| Timeout/cancel/drop kill child and descendants | Host and sandbox each own process-group guards | FAIL on Unix composition: P16-CODEX-INT-001 |
-| Deadline covers startup through cleanup | One absolute request deadline and cleanup reserve exist | FAIL under blocked stdout: P16-CODEX-INV-001 |
-| Selected external failure never falls back to local | Routed operations return the selected failure | PASS: execution product/routing suites |
-| No degraded success state | timeout/cancel/signal/nonzero set `is_error` | PASS for boolean outcome; stable timeout code FAILS under P16-CODEX-SPEC-001 |
-| Public surfaces omit command/env/credentials/paths/PIDs/raw stderr | Backend process stderr is hidden; generic redaction is applied to diagnostics | FAIL for adapter free text and raw contract fields: P16-CODEX-SEC-001 |
-| Linux/macOS native restriction fails closed | Landlock/seccomp and Seatbelt setup precede release | Source and focused tests are strong; current-head native evidence is not replayable, and outer cleanup fails |
-| Windows reports unsupported confinement honestly | Doctor unsupported, run refuses, local reports supervised | PASS on Windows; empty-CWD standalone acceptance is incomplete |
-| Archive layout, hash, target, and evidence parser are bounded | Packaging and artifact-audit scripts validate exact members and limits | PASS structurally; phase-exit evidence closure FAILS |
-| Phase exit is backed by closed task evidence | Archived ledger and named bundle | FAIL: P16-CODEX-SPEC-002 |
+| Default fixed-local allow stays in Minimal Runtime | `harness.rs:195-257`; `runtime.rs:294-380` | Focused minimal-runtime and routing suites passed |
+| External selection never falls back to local | `runtime.rs:407-665` | Runtime/product/no-fallback tests passed |
+| Installed, Trusted, Enabled, Selected, Permitted remain separate | Trust records and permission/router types are separate | **Partial:** AUD-P16-002 collapses normal startup diagnostics |
+| One request deadline covers handshake through cleanup | Absolute deadlines in protocol host and sandbox runner | **Partial:** AUD-P16-001 breaks pre-`ready` cancellation semantics |
+| Wire messages are bounded and stateful | `opi-protocol::execution::v1` bounds, codec, session | Protocol all-target tests passed |
+| Public failures redact command/env/path/backend text | Failure mapping and backend diagnostic redactor | Failure/redaction/product tests passed; no leak found |
+| `started` is an atomic target-release gate | Sandbox helper/runner release-gate design | Sandbox all-target tests passed on Windows; native macOS/Linux runtime not rerun |
+| Opi does not link `opi-sandbox` or native restriction policy | Cargo graph and crate-boundary guards | Crate-boundary tests passed |
+| Windows reports L0 supervision only | Windows posture and local contract | Windows posture and L0 tests passed |
+| Platform evidence is durable and independently auditable | Phase snapshot C9-C12/C16 | **Not met:** AUD-P16-003 |
+| EN/ZH/product documentation stays synchronized | Documentation contract script and guards | `opi-doc-check.py` passed |
+
+## Per-task summary
+
+| Task | Ledger status | Audit disposition |
+|---|---|---|
+| 16.1 | passing | Minor residual ledger inconsistency (AUD-P16-005) |
+| 16.2 | passing | No task-specific finding |
+| 16.3 | passing | Protocol bounds/schema/session suites passed |
+| 16.4 | passing | Contribution hard-gate coverage passed |
+| 16.5 | passing | Informational duplication in drift invalidation (AUD-P16-008) |
+| 16.6 | passing | Lifecycle diagnosis gap and unused redacted payload (AUD-P16-002, AUD-P16-009) |
+| 16.7 | passing | Major pre-`ready` cancellation gap (AUD-P16-001) |
+| 16.8 | passing | No separate runtime-assembly finding; affected by AUD-P16-002 |
+| 16.9 | passing | Production startup loses lifecycle specificity (AUD-P16-002) |
+| 16.10 | passing | Interactive permission coverage passed |
+| 16.11.1 | passing | Runner maintainability gap (AUD-P16-006) |
+| 16.11.2 | passing | Standalone CLI and smoke tests passed on Windows posture |
+| 16.12 | passing | Cancellation semantics and duplicated cleanup paths (AUD-P16-001, AUD-P16-007) |
+| 16.13 | passing | Native evidence unavailable; scenario status stale (AUD-P16-003, AUD-P16-005) |
+| 16.14.1 | passing | Native evidence unavailable; scenario status stale (AUD-P16-003, AUD-P16-005) |
+| 16.14.2 | passing | Windows tests passed; preserved evidence absent and scenario stale (AUD-P16-003, AUD-P16-005) |
+| 16.15.1 | passing | Packaging structure tests passed |
+| 16.15.2 | passing | Artifact-auditor fixtures passed, but real bundle is absent and scenario stale (AUD-P16-003, AUD-P16-005) |
+| 16.16.1 | passing | Migration tests passed; scenario status stale (AUD-P16-005) |
+| 16.16.2 | passing | Product tests passed; focused package CLI subprocess tests are non-hermetic (AUD-P16-004) |
+| 16.16.3 | passing | Documentation check passed; final evidence-preservation claim is not reproducible (AUD-P16-003) |
 
 ## Verification performed
 
-- `cargo fmt --check --all` — PASS
-- `cargo clippy -p opi-protocol -p opi-sandbox -p opi-coding-agent --all-targets --features execution-backend-test-fixture -- -D warnings` — PASS
-- `cargo test --workspace --all-targets --quiet` — PASS on Windows
-- `cargo test -p opi-protocol --all-targets` — PASS (35 unit, 32 contract, 14 schema tests)
-- `cargo test -p opi-sandbox --all-targets` — PASS on Windows; native Linux/macOS policy tests are target-gated
-- Feature-gated execution acceptance (`execution_product`, `execution_protocol_host`, `execution_runtime`) — PASS (22, 53, and 16 tests)
-- Focused lifecycle/routing/release/audit/Windows-posture suites — PASS
-- `python scripts/opi-doc-check.py` — PASS
-- Recorded Phase 16 artifact command — FAIL as expected by P16-CODEX-SPEC-002 with missing identity, platform, six-target, and gate evidence
-- Independent WSL nested-process-group probe — reproduced P16-CODEX-INT-001; the surviving target PGID was explicitly killed by the probe
+All commands below ran against the isolated detached worktree at `21dfcd8836974cd7e12454774156b3aefa97f2b5`.
 
-The first full-workspace attempt hit the external 240-second command timeout after compilation and was interrupted, not failed by an assertion. A second warm-cache run with a longer bound completed successfully.
+- `cargo fmt --check --all` — passed.
+- `cargo test -p opi-protocol --all-targets` — passed (unit, contract, and schema suites).
+- `cargo test -p opi-sandbox --all-targets` — passed on Windows, including protocol, SDK, CLI, policy-model, process-tree, and standalone-smoke coverage.
+- Focused `opi-coding-agent` execution suites — passed:
+  - `execution_failures`
+  - `execution_routing`
+  - `execution_minimal_runtime`
+  - `phase16_crate_boundaries`
+  - `execution_migration`
+  - feature-gated `execution_product`
+  - `execution_config`
+  - `execution_contribution_manifest`
+  - `execution_package_lifecycle`
+  - `execution_permission`
+  - `execution_protocol_host`
+  - `execution_runtime`
+  - `execution_selected_routing`
+  - `artifact_audit_script` (81 tests)
+  - `opi_sandbox_packaging`
+  - `opi_sandbox_release_topology`
+  - `package_adapter_example`
+  - `package_store`
+  - `sandbox_l0`
+  - `windows_execution_posture`
+- `cargo test -p opi-coding-agent --test package_cli` — 28 passed, 8 failed at the hard-coded binary-path precondition (AUD-P16-004), even after `cargo build -p opi-coding-agent` succeeded in the configured external target directory.
+- `python scripts/opi-doc-check.py` — `opi documentation contracts: PASS`.
 
-## Residuals and recommendations
+## Limits and residual risk
 
-1. Fix and test the Unix containment composition before relying on external adapter cancellation or cleanup claims.
-2. Make backend output writing deadline-aware and independently supervise cleanup before expanding the protocol surface.
-3. Close the adapter-text redaction boundary and stable timeout code across ToolResult, text/TUI, NDJSON, RPC, and trace.
-4. Reconcile the canonical ledger only through the guarded workflow, then regenerate current-head Linux/macOS, Windows-posture, six-target, and gate evidence with durable identity.
-5. Run native Linux and macOS policy and real backend-host teardown tests after remediation; this Windows audit could not execute those Rust target-gated suites.
-
-Test impact: `none` — this audit changes only the report. No implementation, test, ledger, or documentation contract was modified.
+- This host is Windows. Native Linux Landlock/seccomp and macOS Seatbelt enforcement were reviewed statically but not executed locally.
+- The phase snapshot's claimed native and six-target evidence bundle was unavailable, which is itself AUD-P16-003.
+- The full workspace clippy, all-target workspace test, doctest, and rustdoc release gates were not repeated; focused Phase 16 gates were prioritized.
+- Runtime code, tests, specifications, and ledger were not modified. Test impact: `none` (audit artifact only).

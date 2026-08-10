@@ -375,7 +375,7 @@ impl PackageActivationStore {
         out
     }
 
-    /// Resolve and revalidate only the enabled adapter identities named by
+    /// Resolve and revalidate only the installed adapter identities named by
     /// `adapter_ids`.
     ///
     /// The package lock is the installed identity index, so resolving an
@@ -392,7 +392,11 @@ impl PackageActivationStore {
         host_target: &str,
         host_opi_version: &str,
     ) -> Result<Vec<EnabledIdentity>, ActivationError> {
-        let enabled = self.enabled_identities();
+        if adapter_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let records = self.read_records()?;
+        let locks = self.store.read_lock()?;
         let mut selected = Vec::new();
         for adapter_id in adapter_ids {
             if selected
@@ -401,18 +405,28 @@ impl PackageActivationStore {
             {
                 continue;
             }
-            let mut matches = enabled
-                .iter()
-                .filter(|identity| identity.adapter_id == *adapter_id);
-            if let Some(identity) = matches.next() {
-                if let Some(other) = matches.next() {
-                    return Err(ActivationError::CollidingAdapterId {
-                        adapter_id: adapter_id.clone(),
-                        other: other.package_name.clone(),
-                    });
-                }
-                selected.push(identity.clone());
+            let mut matches = records.iter().filter(|record| {
+                locks.iter().any(|lock| {
+                    lock.source == record.source
+                        && lock
+                            .contributions
+                            .iter()
+                            .any(|contribution| contribution.adapter_id == *adapter_id)
+                })
+            });
+            let Some(record) = matches.next() else {
+                return Err(ActivationError::NotInstalled(adapter_id.clone()));
+            };
+            if let Some(other) = matches.next() {
+                return Err(ActivationError::CollidingAdapterId {
+                    adapter_id: adapter_id.clone(),
+                    other: other.name.clone(),
+                });
             }
+            selected.push(EnabledIdentity {
+                adapter_id: adapter_id.clone(),
+                package_name: record.name.clone(),
+            });
         }
 
         let mut activated_packages = Vec::new();

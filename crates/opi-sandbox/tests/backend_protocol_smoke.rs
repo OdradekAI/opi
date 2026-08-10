@@ -12,9 +12,12 @@
 
 #![forbid(unsafe_code)]
 
+use std::io::{BufRead, BufReader, Read, Write};
 use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
+
+use opi_protocol::execution::v1::{BackendToHost, FailureCode, FailurePhase};
 
 fn python_command() -> &'static str {
     if cfg!(windows) { "python" } else { "python3" }
@@ -39,6 +42,72 @@ fn backend_negotiation_and_execute_contract() {
          --- stderr ---\n{}",
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr),
+    );
+}
+
+#[test]
+fn cancellation_after_ready_terminates_without_execute() {
+    let binary = env!("CARGO_BIN_EXE_opi-sandbox");
+    let mut child = Command::new(binary)
+        .args(["backend", "--stdio"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn real backend");
+    let mut stdin = child.stdin.take().expect("piped stdin");
+    let mut stdout = BufReader::new(child.stdout.take().expect("piped stdout"));
+
+    writeln!(
+        stdin,
+        r#"{{"type":"initialize","payload":{{"request_id":"cancel-before-execute","deadline_ms":30000,"adapter_config":{{}},"supported_protocols":["command-execution-jsonl-v1"]}}}}"#
+    )
+    .expect("write initialize");
+    stdin.flush().expect("flush initialize");
+
+    let mut line = String::new();
+    stdout.read_line(&mut line).expect("read ready");
+    let ready: BackendToHost = serde_json::from_str(&line).expect("decode ready");
+    assert!(matches!(ready, BackendToHost::Ready(_)), "{ready:?}");
+
+    writeln!(
+        stdin,
+        r#"{{"type":"cancel","payload":{{"request_id":"cancel-before-execute","reason":"canceled"}}}}"#
+    )
+    .expect("write cancel");
+    stdin.flush().expect("flush cancel");
+
+    line.clear();
+    stdout.read_line(&mut line).expect("read failed");
+    let failed: BackendToHost = serde_json::from_str(&line).expect("decode failed");
+    let BackendToHost::Failed(payload) = failed else {
+        panic!("expected terminal failed frame, got {failed:?}");
+    };
+    assert_eq!(payload.code, FailureCode::Failed);
+    assert_eq!(payload.phase, FailurePhase::Handshake);
+
+    drop(stdin);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let status = loop {
+        if let Some(status) = child.try_wait().expect("poll backend") {
+            break status;
+        }
+        if Instant::now() >= deadline {
+            child.kill().expect("kill hung backend");
+            let _ = child.wait();
+            panic!("backend did not exit after the pre-execute terminal frame");
+        }
+        std::thread::sleep(Duration::from_millis(25));
+    };
+    assert!(status.success(), "backend exited with {status}");
+
+    let mut trailing = String::new();
+    stdout
+        .read_to_string(&mut trailing)
+        .expect("read trailing stdout");
+    assert!(
+        trailing.is_empty(),
+        "unexpected trailing frame(s): {trailing}"
     );
 }
 

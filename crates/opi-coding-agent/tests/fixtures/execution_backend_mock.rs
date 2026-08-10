@@ -134,6 +134,12 @@ fn main() {
             CancelMilestone::Ready,
             CancelTerminal::Failed,
         ),
+        "cancel_failed_pre_ready_mismatch" => cancel_terminal_before_milestone(
+            &mut reader,
+            &mut writer,
+            CancelMilestone::Ready,
+            CancelTerminal::FailedMismatched,
+        ),
         "cancel_failed_pre_accepted" => cancel_terminal_before_milestone(
             &mut reader,
             &mut writer,
@@ -303,6 +309,7 @@ enum CancelMilestone {
 enum CancelTerminal {
     Completed,
     Failed,
+    FailedMismatched,
 }
 
 fn parse_failure_code(s: &str) -> FailureCode {
@@ -747,9 +754,13 @@ fn slow_ready(reader: &mut impl BufRead, writer: &mut impl Write) {
     let Some(rid) = expect_initialize(reader) else {
         return;
     };
-    std::thread::sleep(std::time::Duration::from_millis(250));
-    send(writer, &ready_frame(&rid, WIRE_IDENTITY));
-    drain_until_eof(reader);
+    while let Some(frame) = read_host_frame(reader) {
+        if matches!(frame, HostToBackend::Cancel(_)) {
+            send(writer, &ready_frame(&rid, WIRE_IDENTITY));
+            drain_until_eof(reader);
+            return;
+        }
+    }
 }
 
 fn parse_failure_phase(s: &str) -> FailurePhase {
@@ -1207,7 +1218,7 @@ fn cancel_terminal_before_milestone(
         );
     }
     while let Some(frame) = read_host_frame(reader) {
-        if matches!(frame, HostToBackend::Cancel(_)) {
+        if let HostToBackend::Cancel(cancel) = frame {
             match terminal {
                 CancelTerminal::Completed => send(
                     writer,
@@ -1221,11 +1232,14 @@ fn cancel_terminal_before_milestone(
                         diagnostics: vec![],
                     }),
                 ),
-                CancelTerminal::Failed => send(
+                CancelTerminal::Failed | CancelTerminal::FailedMismatched => send(
                     writer,
                     &BackendToHost::Failed(FailedPayload {
                         request_id: rid,
-                        code: FailureCode::Failed,
+                        code: cancel_failure_code(
+                            cancel.reason,
+                            matches!(terminal, CancelTerminal::FailedMismatched),
+                        ),
                         phase: FailurePhase::Handshake,
                         message: None,
                         diagnostics: vec![],
@@ -1242,39 +1256,30 @@ fn cancel_sequence_pre_ready(reader: &mut impl BufRead, writer: &mut impl Write)
         return;
     };
     while let Some(frame) = read_host_frame(reader) {
-        if matches!(frame, HostToBackend::Cancel(_)) {
+        if let HostToBackend::Cancel(cancel) = frame {
             send(writer, &ready_frame(&rid, WIRE_IDENTITY));
             send(
                 writer,
-                &BackendToHost::Accepted(AcceptedPayload {
-                    request_id: rid.clone(),
-                }),
-            );
-            send(
-                writer,
-                &BackendToHost::Started(StartedPayload {
-                    request_id: rid.clone(),
-                    placement: "host".into(),
-                    guarantee: "supervised".into(),
-                    policy: "none".into(),
-                    limitations: vec![],
-                }),
-            );
-            send(
-                writer,
-                &BackendToHost::Completed(CompletedPayload {
+                &BackendToHost::Failed(FailedPayload {
                     request_id: rid,
-                    exit: Some(0),
-                    signal: None,
-                    timed_out: false,
-                    cancelled: true,
-                    cleanup: CleanupState::Confirmed,
+                    code: cancel_failure_code(cancel.reason, false),
+                    phase: FailurePhase::Handshake,
+                    message: None,
                     diagnostics: vec![],
                 }),
             );
             drain_until_eof(reader);
             std::process::exit(0);
         }
+    }
+}
+
+fn cancel_failure_code(reason: CancelReason, mismatched: bool) -> FailureCode {
+    match (reason, mismatched) {
+        (CancelReason::Deadline, false) | (CancelReason::Canceled, true) => {
+            FailureCode::ExecutionTimedOut
+        }
+        (CancelReason::Canceled, false) | (CancelReason::Deadline, true) => FailureCode::Failed,
     }
 }
 

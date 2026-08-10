@@ -43,8 +43,11 @@ pub enum NativeStringError {
 ///
 /// Decoding is total: a corrupted wire form (trailing introducer, or an
 /// introducer followed by a scalar outside U+0000..=U+00FF and not U+E000)
-/// returns [`NativeStringError`] rather than panicking; the codec maps both
-/// variants to [`super::FailureCode::ProtocolViolation`] at the session layer.
+/// returns [`NativeStringError`] rather than panicking. When decoding a JSON
+/// frame, serde surfaces either variant through [`super::codec::CodecError::Json`]
+/// and [`super::Session`] wraps it as [`super::SessionError::Codec`]. The
+/// consuming host/backend runtime, not this protocol substrate, maps that error
+/// to a wire or public protocol-violation failure.
 #[derive(Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct NativeString(Vec<u8>);
 

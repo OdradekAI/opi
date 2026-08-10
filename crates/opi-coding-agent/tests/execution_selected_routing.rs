@@ -264,6 +264,86 @@ fn assert_collision_failure(harness: &CodingHarness) {
     );
 }
 
+fn assert_diagnostic_code(harness: &CodingHarness, code: &str) {
+    assert!(
+        harness
+            .resource_metadata()
+            .diagnostics
+            .iter()
+            .any(|diagnostic| {
+                diagnostic
+                    .details
+                    .as_ref()
+                    .and_then(|details| details.get("code"))
+                    .and_then(serde_json::Value::as_str)
+                    == Some(code)
+            }),
+        "expected {code}, got {:?}",
+        harness.resource_metadata().diagnostics
+    );
+}
+
+fn write_corrupt_package_state(user: &Path) {
+    std::fs::write(user.join("package-trust.toml"), "[[record]\ninvalid = [\n").unwrap();
+}
+
+#[test]
+fn fixed_local_startup_ignores_corrupt_unrelated_package_state() {
+    let workspace = tempfile::tempdir().unwrap();
+    let user = tempfile::tempdir().unwrap();
+    write_corrupt_package_state(user.path());
+
+    let harness = build_harness(workspace.path(), user.path(), OpiConfig::default());
+
+    assert!(
+        harness.resource_metadata().diagnostics.is_empty(),
+        "fixed-local startup must not inspect unrelated package state: {:?}",
+        harness.resource_metadata().diagnostics
+    );
+}
+
+#[test]
+fn rules_without_a_matching_rule_ignore_corrupt_unrelated_package_state() {
+    let workspace = tempfile::tempdir().unwrap();
+    let user = tempfile::tempdir().unwrap();
+    write_corrupt_package_state(user.path());
+    let mut config = OpiConfig::default();
+    config.execution.strategy = ExecutionStrategy::Rules;
+    config.execution.rules = vec![ExecutionRule {
+        modes: Some(vec![ExecutionRunMode::Rpc]),
+        backend: "unused-adapter".into(),
+    }];
+
+    let harness = build_harness(workspace.path(), user.path(), config);
+
+    assert!(
+        harness.resource_metadata().diagnostics.is_empty(),
+        "rules startup without a matching rule must defer routing without reading package state: {:?}",
+        harness.resource_metadata().diagnostics
+    );
+}
+
+#[test]
+fn rules_local_startup_ignores_corrupt_unrelated_package_state() {
+    let workspace = tempfile::tempdir().unwrap();
+    let user = tempfile::tempdir().unwrap();
+    write_corrupt_package_state(user.path());
+    let mut config = OpiConfig::default();
+    config.execution.strategy = ExecutionStrategy::Rules;
+    config.execution.rules = vec![ExecutionRule {
+        modes: Some(vec![ExecutionRunMode::Interactive]),
+        backend: "local".into(),
+    }];
+
+    let harness = build_harness(workspace.path(), user.path(), config);
+
+    assert!(
+        harness.resource_metadata().diagnostics.is_empty(),
+        "rules-local startup must not inspect unrelated package state: {:?}",
+        harness.resource_metadata().diagnostics
+    );
+}
+
 #[test]
 fn fixed_startup_does_not_activate_or_mutate_unrelated_drifted_package() {
     let (workspace, user, _selected, _unrelated) = setup_two_packages();
@@ -396,6 +476,73 @@ fn selected_drifted_fixed_package_surfaces_package_untrusted() {
                     == Some("package_untrusted")
             })
     );
+}
+
+#[test]
+fn fixed_selected_untrusted_package_surfaces_package_untrusted() {
+    let workspace = tempfile::tempdir().unwrap();
+    let user = tempfile::tempdir().unwrap();
+    let selected = package("selected-adapter");
+    let exit = package_cli::handle_package_command(
+        &PackageCommand::Add {
+            source: selected.root.to_string_lossy().into_owned(),
+            local: false,
+        },
+        workspace.path().to_path_buf(),
+        user.path().to_path_buf(),
+    );
+    assert_eq!(exit, 0);
+    let mut config = OpiConfig::default();
+    config.execution.backend = "selected-adapter".into();
+    config
+        .execution
+        .permissions
+        .insert("selected-adapter".into(), PermissionDecision::Allow);
+
+    let harness = build_harness(workspace.path(), user.path(), config);
+
+    assert_diagnostic_code(&harness, "package_untrusted");
+}
+
+#[test]
+fn fixed_unknown_external_surfaces_package_not_installed() {
+    let workspace = tempfile::tempdir().unwrap();
+    let user = tempfile::tempdir().unwrap();
+    let mut config = OpiConfig::default();
+    config.execution.backend = "missing-adapter".into();
+    config
+        .execution
+        .permissions
+        .insert("missing-adapter".into(), PermissionDecision::Allow);
+
+    let harness = build_harness(workspace.path(), user.path(), config);
+
+    assert_diagnostic_code(&harness, "package_not_installed");
+}
+
+#[test]
+fn rules_selected_disabled_package_surfaces_contribution_disabled() {
+    let workspace = tempfile::tempdir().unwrap();
+    let user = tempfile::tempdir().unwrap();
+    let selected = package("selected-adapter");
+    install_and_enable(&selected, workspace.path(), user.path(), "selected-adapter");
+    PackageActivationStore::global(user.path().to_path_buf())
+        .disable("selected-adapter")
+        .unwrap();
+    let mut config = OpiConfig::default();
+    config.execution.strategy = ExecutionStrategy::Rules;
+    config.execution.rules = vec![ExecutionRule {
+        modes: Some(vec![ExecutionRunMode::Interactive]),
+        backend: "selected-adapter".into(),
+    }];
+    config
+        .execution
+        .permissions
+        .insert("selected-adapter".into(), PermissionDecision::Allow);
+
+    let harness = build_harness(workspace.path(), user.path(), config);
+
+    assert_diagnostic_code(&harness, "contribution_disabled");
 }
 
 #[test]

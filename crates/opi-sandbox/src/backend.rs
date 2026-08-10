@@ -54,9 +54,9 @@ use opi_protocol::execution::v1::frames::{
     InitializePayload, ReadyPayload, StderrPayload, StdoutPayload,
 };
 use opi_protocol::execution::v1::{
-    BackendToHost, Base64Bytes, Bounds, CleanupState as WireCleanup, FailureCode, FailurePhase,
-    HostToBackend, ImplementationId, ProtocolId, RequestId, Session, TargetId, WIRE_IDENTITY,
-    select,
+    BackendToHost, Base64Bytes, Bounds, CancelReason, CleanupState as WireCleanup, FailureCode,
+    FailurePhase, HostToBackend, ImplementationId, ProtocolId, RequestId, Session, TargetId,
+    WIRE_IDENTITY, select,
 };
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio_util::sync::CancellationToken;
@@ -275,6 +275,15 @@ where
         }
         Ok(frame) => match frame {
             HostIn::Frame(HostToBackend::Execute(p)) => p,
+            HostIn::Frame(HostToBackend::Cancel(p)) => {
+                let code = match p.reason {
+                    CancelReason::Deadline => FailureCode::ExecutionTimedOut,
+                    CancelReason::Canceled => FailureCode::Failed,
+                };
+                return output
+                    .emit_failed_or_silent(&seed_id, code, FailurePhase::Handshake)
+                    .await;
+            }
             HostIn::Frame(_) | HostIn::Eof | HostIn::Error => {
                 return output
                     .fail_or_silent(&seed_id, FailureCode::ProtocolViolation)
@@ -882,7 +891,8 @@ impl AsyncLineReader {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use opi_protocol::execution::v1::EnvInherit;
+    use opi_protocol::execution::v1::frames::CancelPayload;
+    use opi_protocol::execution::v1::{CancelReason, EnvInherit};
     use tokio::io::AsyncWriteExt;
 
     #[cfg(unix)]
@@ -900,6 +910,62 @@ mod tests {
                 .flat_map(u16::to_le_bytes)
                 .collect::<Vec<_>>(),
         )
+    }
+
+    #[tokio::test]
+    async fn cancel_before_execute_emits_handshake_failure_without_starting_target() {
+        let request_id = RequestId::new("cancel-before-execute".to_string()).expect("request id");
+        let initialize = HostToBackend::Initialize(InitializePayload {
+            request_id: request_id.clone(),
+            deadline_ms: 1_000,
+            adapter_config: serde_json::json!({}),
+            supported_protocols: vec![ProtocolId::new(WIRE_IDENTITY).expect("protocol id")],
+        });
+        let cancel = HostToBackend::Cancel(CancelPayload {
+            request_id,
+            reason: CancelReason::Canceled,
+        });
+        let input = format!(
+            "{}\n{}\n",
+            opi_protocol::execution::v1::encode_line(&initialize, &Bounds::DEFAULT)
+                .expect("initialize line"),
+            opi_protocol::execution::v1::encode_line(&cancel, &Bounds::DEFAULT)
+                .expect("cancel line"),
+        )
+        .into_bytes();
+        let (mut host, reader) = tokio::io::duplex(input.len());
+        host.write_all(&input).await.expect("write request");
+        let mut out = Vec::new();
+
+        let code = drive(
+            Box::pin(reader),
+            &mut out,
+            Bounds::DEFAULT,
+            true,
+            &[],
+            Arc::new(NoRestriction),
+        )
+        .await;
+        drop(host);
+
+        assert_eq!(code, EXIT_OK);
+        let frames = out
+            .split(|byte| *byte == b'\n')
+            .filter(|line| !line.is_empty())
+            .map(|line| {
+                opi_protocol::execution::v1::codec::decode_backend(line)
+                    .expect("valid backend frame")
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            frames.iter().map(BackendToHost::kind).collect::<Vec<_>>(),
+            vec!["ready", "failed"]
+        );
+        let BackendToHost::Failed(failed) = &frames[1] else {
+            panic!("expected terminal failed frame")
+        };
+        assert_eq!(failed.code, FailureCode::Failed);
+        assert_eq!(failed.phase, FailurePhase::Handshake);
     }
 
     #[tokio::test]

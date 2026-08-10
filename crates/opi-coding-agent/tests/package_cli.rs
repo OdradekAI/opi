@@ -1046,19 +1046,16 @@ fn package_doctor_reports_duplicate_name() {
 // ---------------------------------------------------------------------------
 
 fn opi_binary() -> PathBuf {
-    let crate_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| ".".into());
-    let workspace_root = PathBuf::from(&crate_dir)
-        .parent()
-        .and_then(|p| p.parent())
-        .expect("crate should be in crates/opi-coding-agent")
-        .to_path_buf();
-    let bin_name = if cfg!(windows) { "opi.exe" } else { "opi" };
-    let path = workspace_root.join("target").join("debug").join(bin_name);
-    assert!(
-        path.exists(),
-        "opi binary must be built: run `cargo build -p opi-coding-agent`"
+    PathBuf::from(env!("CARGO_BIN_EXE_opi"))
+}
+
+#[test]
+fn subprocess_tests_use_cargo_provided_opi_binary() {
+    assert_eq!(
+        opi_binary(),
+        PathBuf::from(env!("CARGO_BIN_EXE_opi")),
+        "subprocess tests must execute the binary Cargo built for this test run"
     );
-    path
 }
 
 #[test]

@@ -108,6 +108,10 @@
 //!   violation (serde rejects it; maps to [`FailureCode::ProtocolViolation`]).
 //! - Unknown field in a known frame is a protocol violation: every frame
 //!   payload uses `#[serde(deny_unknown_fields)]` (strict  --  `v1` is closed).
+//! - A malformed [`NativeString`] representation surfaces from this substrate
+//!   as [`CodecError::Json`] and then [`SessionError::Codec`]. The consuming
+//!   host/backend runtime maps that substrate error to a wire or public protocol
+//!   violation; this crate does not emit a [`FailureCode`] by itself.
 //! - Selecting a `ProtocolId` for which the peer has no codec is a protocol
 //!   violation.
 //!

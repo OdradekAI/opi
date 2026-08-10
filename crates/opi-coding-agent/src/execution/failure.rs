@@ -96,8 +96,9 @@ pub enum ExecutionFailure {
     ExecutionFailed,
 
     /// Produced by the 16.7 protocol host from a backend-reported
-    /// `Failed{ExecutionTimedOut}` frame (the host's own deadline expiry maps to
-    /// [`Self::CleanupUnconfirmed`]).
+    /// `Failed{ExecutionTimedOut}` frame, including a reason-consistent
+    /// pre-disclosure response to the host deadline. Host deadline expiry with
+    /// no valid terminal cleanup report maps to [`Self::CleanupUnconfirmed`].
     #[error("command execution timed out")]
     ExecutionTimedOut,
 

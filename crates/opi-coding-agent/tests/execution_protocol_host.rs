@@ -401,19 +401,19 @@ async fn ready_identity_version_and_target_must_match_lock() {
 }
 
 #[tokio::test]
-async fn late_ready_after_handshake_timeout_is_protocol_violation() {
+async fn late_ready_without_terminal_after_handshake_timeout_is_cleanup_unconfirmed() {
     #[cfg(not(windows))]
     let started = std::time::Instant::now();
     let err = run_with_handshake(
         &["slow_ready"],
         Bounds::DEFAULT,
         Duration::from_secs(5),
-        Duration::from_millis(50),
+        Duration::from_millis(250),
         CancellationToken::new(),
     )
     .await
     .expect_err("slow ready must exceed configured handshake timeout");
-    assert_code(err, "protocol_violation");
+    assert_code(err, "cleanup_unconfirmed");
     #[cfg(not(windows))]
     assert!(started.elapsed() < Duration::from_secs(2));
 }
@@ -873,11 +873,7 @@ async fn cancellation_rejects_completed_before_each_required_milestone() {
 
 #[tokio::test]
 async fn cancellation_rejects_failed_before_each_required_milestone() {
-    for mode in [
-        "cancel_failed_pre_ready",
-        "cancel_failed_pre_accepted",
-        "cancel_failed_pre_started",
-    ] {
+    for mode in ["cancel_failed_pre_accepted", "cancel_failed_pre_started"] {
         let err = run(&[mode], Bounds::DEFAULT, Duration::from_secs(3))
             .await
             .expect_err("failed before the current milestone must fail closed");
@@ -890,19 +886,101 @@ async fn cancellation_rejects_failed_before_each_required_milestone() {
 }
 
 #[tokio::test]
-async fn cancellation_pre_ready_rejects_subsequent_negotiation_sequence() {
+async fn deadline_pre_ready_requires_timed_out_terminal_without_command_disclosure() {
+    let err = run(
+        &["cancel_failed_pre_ready"],
+        Bounds::DEFAULT,
+        Duration::from_secs(3),
+    )
+    .await
+    .expect_err("pre-ready cancellation may terminate with a handshake failure");
+    assert_eq!(err.code(), "execution_timed_out");
+}
+
+#[tokio::test]
+async fn deadline_pre_ready_accepts_raced_ready_then_timed_out_terminal() {
     let err = run(
         &["cancel_sequence_pre_ready"],
         Bounds::DEFAULT,
         Duration::from_secs(3),
     )
     .await
-    .expect_err("cancellation before ready must close negotiation");
-    assert_eq!(
-        err.code(),
-        "protocol_violation",
-        "post-cancel ready must not advance to a placeholder-backed success: {err}"
+    .expect_err("an in-flight matching ready may precede the cancellation failure");
+    assert_eq!(err.code(), "execution_timed_out");
+}
+
+#[tokio::test]
+async fn external_cancel_pre_ready_requires_failed_terminal() {
+    let signal = CancellationToken::new();
+    signal.cancel();
+    let err = run_with(
+        &["cancel_failed_pre_ready"],
+        Bounds::DEFAULT,
+        Duration::from_secs(3),
+        signal,
+    )
+    .await
+    .expect_err("user cancellation may terminate with a matching handshake failure");
+    assert_eq!(err.code(), "execution_failed");
+}
+
+#[tokio::test]
+async fn deadline_pre_ready_rejects_user_cancel_failure_code() {
+    let err = run(
+        &["cancel_failed_pre_ready_mismatch"],
+        Bounds::DEFAULT,
+        Duration::from_secs(3),
+    )
+    .await
+    .expect_err("the terminal failure code must agree with the cancellation reason");
+    assert_eq!(err.code(), "protocol_violation");
+}
+
+#[tokio::test]
+#[ignore = "requires OPI_SANDBOX_TEST_BIN pointing to an explicitly built opi-sandbox"]
+async fn real_opi_sandbox_host_cancels_before_command_disclosure() {
+    let binary = PathBuf::from(
+        std::env::var_os("OPI_SANDBOX_TEST_BIN")
+            .expect("OPI_SANDBOX_TEST_BIN must identify the built opi-sandbox binary"),
     );
+    let executable = std::fs::File::open(&binary).expect("open validated opi-sandbox binary");
+    let args = vec!["backend".to_string(), "--stdio".to_string()];
+    let workspace = tempfile::tempdir().expect("workspace");
+    let marker = workspace.path().join("must-not-start");
+    let empty = BTreeMap::<NativeString, NativeString>::new();
+    let supported = supported_protocols();
+    let target = opi_coding_agent::package_activation::host_target_triple();
+    let signal = CancellationToken::new();
+    signal.cancel();
+    let launch = BackendLaunch {
+        program: &binary,
+        args: &args,
+        validated_executable: &executable,
+    };
+    let request = ExecutionRequest {
+        command: "echo started > must-not-start",
+        workspace: workspace.path(),
+        cwd: workspace.path(),
+        timeout: Duration::from_secs(5),
+        deadline: Duration::from_secs(5),
+        handshake_timeout: Duration::from_secs(2),
+        expected_implementation: "opi-sandbox",
+        expected_implementation_version: env!("CARGO_PKG_VERSION"),
+        expected_target: &target,
+        env_inherit: EnvInherit::Inherit,
+        env_additions: &empty,
+        adapter_config: serde_json::json!({}),
+        supported_protocols: &supported,
+        signal,
+        bounds: Bounds::DEFAULT,
+    };
+
+    let error = ExecutionProtocolHost::execute(launch, request)
+        .await
+        .expect_err("pre-disclosure user cancellation returns the matching pre-start failure");
+
+    assert_eq!(error.code(), "execution_failed");
+    assert!(!marker.exists(), "the canceled target must never start");
 }
 
 #[tokio::test]

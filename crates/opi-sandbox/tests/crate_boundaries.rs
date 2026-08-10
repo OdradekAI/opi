@@ -577,8 +577,12 @@ fn source_calls_no_host_environment_var_read_api() {
             }
             let content = std::fs::read_to_string(&path)
                 .unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
-            let permit_program_path_lookup =
-                path.file_name().and_then(|name| name.to_str()) == Some("runner.rs");
+            let permit_program_path_lookup = path
+                .parent()
+                .and_then(|parent| parent.file_name())
+                .and_then(|name| name.to_str())
+                == Some("runner")
+                && path.file_name().and_then(|name| name.to_str()) == Some("preparation.rs");
             for needle in host_environment_reads(&content, permit_program_path_lookup) {
                 hits.push_str(&format!("{}: `{needle}`\n", path.display()));
             }
@@ -860,7 +864,7 @@ fn resolve_program() {
     assert!(host_environment_reads(allowed, true).is_empty());
     assert!(
         !host_environment_reads(allowed, false).is_empty(),
-        "the PATH exception is scoped to runner.rs as well as resolve_program"
+        "the PATH exception is scoped to runner/preparation.rs as well as resolve_program"
     );
 
     let computed = r#"

@@ -37,7 +37,7 @@ use opi_protocol::execution::v1::codec::{
 };
 use opi_protocol::execution::v1::frames::{
     CancelPayload, CompletedPayload, ExecutePayload, FailedPayload, InitializePayload,
-    StartedPayload,
+    ReadyPayload, StartedPayload,
 };
 
 #[cfg(windows)]
@@ -121,6 +121,65 @@ pub struct ReadyReport {
     pub implementation: ImplementationId,
     pub implementation_version: String,
     pub target: TargetId,
+}
+
+#[derive(Clone, Copy)]
+struct ReadyExpectation<'a> {
+    supported_protocols: &'a [ProtocolId],
+    implementation: &'a str,
+    implementation_version: &'a str,
+    target: &'a str,
+}
+
+impl<'a> ReadyExpectation<'a> {
+    fn for_request(request: &'a ExecutionRequest<'_>) -> Self {
+        Self {
+            supported_protocols: request.supported_protocols,
+            implementation: request.expected_implementation,
+            implementation_version: request.expected_implementation_version,
+            target: request.expected_target,
+        }
+    }
+
+    fn validate(self, ready: &ReadyPayload) -> Result<ReadyReport, ExecutionFailure> {
+        if !self
+            .supported_protocols
+            .iter()
+            .any(|protocol| protocol == &ready.selected_protocol)
+            || ready.implementation.as_str() != self.implementation
+            || ready.implementation_version != self.implementation_version
+            || ready.target.as_str() != self.target
+        {
+            return Err(ExecutionFailure::ProtocolIncompatible);
+        }
+        Ok(ReadyReport {
+            selected_protocol: ready.selected_protocol.clone(),
+            implementation: ready.implementation.clone(),
+            implementation_version: ready.implementation_version.clone(),
+            target: ready.target.clone(),
+        })
+    }
+}
+
+struct CancellationReady<'a> {
+    report: ReadyReport,
+    expectation: Option<ReadyExpectation<'a>>,
+}
+
+impl<'a> CancellationReady<'a> {
+    fn awaiting(report: ReadyReport, expectation: ReadyExpectation<'a>) -> Self {
+        Self {
+            report,
+            expectation: Some(expectation),
+        }
+    }
+
+    fn negotiated(report: ReadyReport) -> Self {
+        Self {
+            report,
+            expectation: None,
+        }
+    }
 }
 
 /// Effective contract captured from `started` (reported before target release).
@@ -338,7 +397,10 @@ impl ExecutionProtocolHost {
                     &mut state,
                     &request_id,
                     reason,
-                    placeholder_ready(),
+                    CancellationReady::awaiting(
+                        placeholder_ready(),
+                        ReadyExpectation::for_request(&request),
+                    ),
                     accumulation,
                 )
                 .await;
@@ -347,24 +409,9 @@ impl ExecutionProtocolHost {
                 return terminate_and_fail(active, ExecutionFailure::ProtocolViolation).await;
             }
         };
-        if !request
-            .supported_protocols
-            .iter()
-            .any(|p| p == &ready.selected_protocol)
-        {
-            return terminate_and_fail(active, ExecutionFailure::ProtocolIncompatible).await;
-        }
-        if ready.implementation.as_str() != request.expected_implementation
-            || ready.implementation_version != request.expected_implementation_version
-            || ready.target.as_str() != request.expected_target
-        {
-            return terminate_and_fail(active, ExecutionFailure::ProtocolIncompatible).await;
-        }
-        let ready_report = ReadyReport {
-            selected_protocol: ready.selected_protocol.clone(),
-            implementation: ready.implementation.clone(),
-            implementation_version: ready.implementation_version.clone(),
-            target: ready.target.clone(),
+        let ready_report = match ReadyExpectation::for_request(&request).validate(&ready) {
+            Ok(report) => report,
+            Err(failure) => return terminate_and_fail(active, failure).await,
         };
 
         // --- execute (map the bash shell string host-side) ---
@@ -407,7 +454,7 @@ impl ExecutionProtocolHost {
                         &mut state,
                         &request_id,
                         reason,
-                        ready_report,
+                        CancellationReady::negotiated(ready_report),
                         accumulation,
                     )
                     .await;
@@ -670,6 +717,7 @@ impl DiagnosticAccumulator {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum HostPhase {
     AwaitingReady,
+    CancellingPreReady,
     AwaitingAccepted,
     AwaitingStarted,
     Draining,
@@ -692,6 +740,9 @@ impl HostState {
     }
 
     fn begin_cancel(&mut self) {
+        if self.phase == HostPhase::AwaitingReady {
+            self.phase = HostPhase::CancellingPreReady;
+        }
         self.cancelling = true;
     }
 }
@@ -712,9 +763,10 @@ enum Terminal {
 }
 
 /// Validate `frame` against the host state machine and advance state.
-/// `Failed` is legal pre-started during normal flow, but once cancellation
-/// begins a terminal is legal only after the required milestones reach
-/// `started`.
+/// `Failed` is legal pre-started during normal flow. Cancellation before
+/// command disclosure accepts an already in-flight matching `ready` followed
+/// by a handshake failure, while later cancellation still requires the
+/// accepted/started milestones before a terminal frame.
 fn transition(state: &mut HostState, frame: &BackendToHost) -> Result<Action, ExecutionFailure> {
     use BackendToHost::*;
     match (state.phase, frame) {
@@ -722,6 +774,7 @@ fn transition(state: &mut HostState, frame: &BackendToHost) -> Result<Action, Ex
             state.phase = HostPhase::AwaitingAccepted;
             Ok(Action::Continue)
         }
+        (HostPhase::CancellingPreReady, Ready(_)) => Ok(Action::Continue),
         (HostPhase::AwaitingAccepted, Accepted(_)) => {
             state.phase = HostPhase::AwaitingStarted;
             Ok(Action::Continue)
@@ -736,16 +789,22 @@ fn transition(state: &mut HostState, frame: &BackendToHost) -> Result<Action, Ex
             Ok(Action::Terminal(Terminal::Completed(p.clone())))
         }
         // Failed is legal in any pre-terminal state during the normal flow.
-        // Once cancellation begins, a pre-started failure cannot bypass the
-        // ready -> accepted -> started milestones.
+        // Once Execute has been disclosed, cancellation cannot bypass the
+        // accepted -> started milestones. Before disclosure, the backend may
+        // fail the canceled handshake directly or after a raced Ready.
         (
             HostPhase::AwaitingReady
+            | HostPhase::CancellingPreReady
             | HostPhase::AwaitingAccepted
             | HostPhase::AwaitingStarted
             | HostPhase::Draining,
             Failed(p),
         ) if valid_failed_for_phase(state.phase, p)
-            && (!state.cancelling || state.phase == HostPhase::Draining) =>
+            && (!state.cancelling
+                || matches!(
+                    state.phase,
+                    HostPhase::CancellingPreReady | HostPhase::Draining
+                )) =>
         {
             state.phase = HostPhase::Terminal;
             Ok(Action::Terminal(Terminal::Failed(p.clone())))
@@ -758,7 +817,10 @@ fn transition(state: &mut HostState, frame: &BackendToHost) -> Result<Action, Ex
 /// the target has crossed the Started publication gate.
 fn valid_failed_for_phase(host_phase: HostPhase, payload: &FailedPayload) -> bool {
     match host_phase {
-        HostPhase::AwaitingReady | HostPhase::AwaitingAccepted | HostPhase::AwaitingStarted => {
+        HostPhase::AwaitingReady
+        | HostPhase::CancellingPreReady
+        | HostPhase::AwaitingAccepted
+        | HostPhase::AwaitingStarted => {
             matches!(
                 (payload.code, payload.phase),
                 (
@@ -782,6 +844,15 @@ fn valid_failed_for_phase(host_phase: HostPhase, payload: &FailedPayload) -> boo
         ),
         HostPhase::Terminal => false,
     }
+}
+
+fn valid_pre_ready_cancel_failure(reason: CancelReason, payload: &FailedPayload) -> bool {
+    payload.phase == FailurePhase::Handshake
+        && matches!(
+            (reason, payload.code),
+            (CancelReason::Deadline, FailureCode::ExecutionTimedOut)
+                | (CancelReason::Canceled, FailureCode::Failed)
+        )
 }
 
 fn valid_started_contract(payload: &opi_protocol::execution::v1::frames::StartedPayload) -> bool {
@@ -1145,9 +1216,13 @@ async fn finish_with_cancel(
     state: &mut HostState,
     request_id: &RequestId,
     reason: CancelReason,
-    ready: ReadyReport,
+    ready: CancellationReady<'_>,
     mut accumulation: ProtocolAccumulation,
 ) -> Result<CompletedOutcome, ExecutionProtocolFailure> {
+    let CancellationReady {
+        report: mut ready,
+        mut expectation,
+    } = ready;
     state.begin_cancel();
     let cancel = HostToBackend::Cancel(CancelPayload {
         request_id: request_id.clone(),
@@ -1166,27 +1241,47 @@ async fn finish_with_cancel(
                 match active.reader_mut().read_line().await {
                     Ok(None) => return Ok(None),
                     Ok(Some(line)) => match session.feed_backend_line(&line) {
-                        Ok(frame) => match transition(state, &frame)? {
-                            Action::Continue => match frame {
-                                BackendToHost::Started(p) => {
-                                    accumulation.started =
-                                        accumulation.diagnostics.redact_started(p);
+                        Ok(frame) => {
+                            let cancelling_pre_ready = state.phase == HostPhase::CancellingPreReady;
+                            match transition(state, &frame)? {
+                                Action::Continue => match frame {
+                                    BackendToHost::Ready(p) => {
+                                        let Some(expectation) = expectation.take() else {
+                                            return Err(ExecutionFailure::ProtocolViolation);
+                                        };
+                                        ready = expectation.validate(&p)?;
+                                    }
+                                    BackendToHost::Started(p) => {
+                                        accumulation.started =
+                                            accumulation.diagnostics.redact_started(p);
+                                    }
+                                    BackendToHost::Stdout(p) => {
+                                        accumulation.stdout.extend_from_slice(p.data.as_bytes());
+                                    }
+                                    BackendToHost::Stderr(p) => {
+                                        accumulation.stderr.extend_from_slice(p.data.as_bytes());
+                                    }
+                                    BackendToHost::Diagnostic(p) => {
+                                        accumulation
+                                            .diagnostics
+                                            .push_backend(Diagnostic { message: p.message })?;
+                                    }
+                                    _ => {}
+                                },
+                                Action::Terminal(terminal) => {
+                                    if cancelling_pre_ready
+                                        && !matches!(
+                                            &terminal,
+                                            Terminal::Failed(payload)
+                                                if valid_pre_ready_cancel_failure(reason, payload)
+                                        )
+                                    {
+                                        return Err(ExecutionFailure::ProtocolViolation);
+                                    }
+                                    return Ok(Some(terminal));
                                 }
-                                BackendToHost::Stdout(p) => {
-                                    accumulation.stdout.extend_from_slice(p.data.as_bytes());
-                                }
-                                BackendToHost::Stderr(p) => {
-                                    accumulation.stderr.extend_from_slice(p.data.as_bytes());
-                                }
-                                BackendToHost::Diagnostic(p) => {
-                                    accumulation
-                                        .diagnostics
-                                        .push_backend(Diagnostic { message: p.message })?;
-                                }
-                                _ => {}
-                            },
-                            Action::Terminal(terminal) => return Ok(Some(terminal)),
-                        },
+                            }
+                        }
                         Err(_) => return Err(ExecutionFailure::ProtocolViolation),
                     },
                     Err(_) => return Err(ExecutionFailure::ProtocolViolation),
