@@ -7,400 +7,342 @@
 - `docs/snapshots/phase16/audit.glm5.2.md` (`audit`, model `glm5.2`, independence `fresh-context-same-family`)
 
 **Implementation commit range**: `1021842c937653de545cd335450df985f822bd06..f8aff0237221fbf7d56b58abb5dce02833344bfc`
-**Verification head**: `4207dd071e7f0c121f708245710ae3f58d451143`
+**Verification head**: `c5de89216b316529d1c8c1c182fe496a3103f42f`
 **Design specs**: `docs/opi-spec.md`; `docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md`
-**Mode**: recommended execution approved by the user; unblocked remediation
-implemented without commits or ledger mutation
+**Mode**: plan only (`execute=false`)
+**Status**: plan confirmed with exact-byte manifest identity; execution still requires explicit opt-in
 
-The two sources provide no `independent-family` reviewer. Codex reports
-`unknown` independence and GLM reports a fresh context from the same model
-family. Source agreement is therefore degraded overlap, never independent
-consensus.
+Neither report declares an `independent-family` reviewer. Cross-report agreement
+is therefore correlated/degraded evidence, never independent consensus. The GLM
+blocks `P16-correctness-02` and `P16-correctness-04` use the non-contract axis
+`correctness`; this plan preserves that source field and ingests both blocks as
+`degraded-legacy-input` rather than silently rewriting their provenance.
 
-The GLM report contains twelve actionable narrative findings without complete
-normalized YAML blocks (`S2`, `S3`, `S4`, `S6`, `D1`-`D7`, and `M1`). They are
-ingested as `degraded-legacy-input`; their original wording and severities are
-preserved. `glm5.2-A2` and `glm5.2-A3` also use compound confidence strings
-outside the finding contract and are treated as degraded input without silently
-rewriting those fields. The report's already-refuted `S5` and `Spec-1` are
-retained in scope exclusions rather than reintroduced as unverified findings.
+The previous checked-in remediation plan described superseded audit reports. It
+has been replaced from the two current working-tree reports; no finding was
+carried forward without current-code verification.
 
 ---
 
 ## Finding cross-reference summary
 
-| Cluster | Theme | Sources | Independence | Coverage | Source severity range | Final severity + rationale | Verification |
-|---|---|---|---|---|---|---|---|
-| C1 | Exact-cap CRLF protocol frame | codex `P16-STD-001` | unknown | Single source; no independent coverage | Major | Major; valid protocol input is rejected | Confirmed |
-| C2 | Narrative/source-text assertions in Rust tests | codex `P16-STD-002`; GLM `D1` | unknown + same-family degraded | Degraded thematic overlap | Minor | Minor for exact narrative pins; structural guards are Info | Confirmed / Partially confirmed |
-| C3 | Hand-written library error traits | codex `P16-STD-003`; GLM `S1` | unknown + same-family degraded | Correlated/degraded overlap | Minor / Minor | Minor; repository style violation without behavior loss | Confirmed |
-| C4 | Activated contribution documentation | codex `P16-STD-004` | unknown | Single source; no independent coverage | Minor | Minor; implementation is correct but documentation is false | Confirmed |
-| C5 | Magic bash operation-context JSON | codex `P16-STD-005` | unknown | Single source; no independent coverage | Minor | Minor; typed state is duplicated and silently defaulted | Confirmed |
-| C6 | Duplicated cleanup grace | codex `P16-STD-006`; GLM `S4` | unknown + same-family degraded | Correlated/degraded overlap | Minor / Minor | Minor; current values agree but can drift | Confirmed |
-| C7 | Public sandbox states without production constructors | codex `P16-STD-007` | unknown | Single source; no independent coverage | Minor | Info; reserved API is not itself an observable defect | Partially confirmed |
-| C8 | Unix descendant escape through `setsid` | codex `P16-SPEC-001`; GLM narrative C7 PASS | unknown + same-family degraded | Contradictory degraded coverage | Major | Major; literal C7 is not met | Confirmed, including WSL2 mechanism reproduction |
-| C9 | Text/TUI drop failure code and remediation | codex `P16-SPEC-002`; GLM narrative C4 PASS | unknown + same-family degraded | Contradictory degraded coverage | Major | Major; only NDJSON/RPC preserve the envelope | Confirmed |
-| C10 | Teardown masks unconfirmed cleanup | codex `P16-SPEC-003` | unknown | Single source; no independent coverage | Major | Major; required cleanup classification is lost | Confirmed |
-| C11 | Phase-exit evidence is not reproducible at current HEAD | codex `P16-SPEC-004` | unknown | Single source; no independent coverage | Major | Major for current-head evidence integrity; historical commands existed at phase exit | Confirmed as current-head gap |
-| C12 | Passing ledger tasks retain open/null closure state | codex `P16-SPEC-005` | unknown | Single source; no independent coverage | Minor | Minor; phase summary does not record how task fields were superseded | Confirmed |
-| C13 | Routed output silently truncated at 64 KiB | codex `P16-INTEG-001` | unknown | Single source; no independent coverage | Major | Major; successful output is irrecoverably lost | Confirmed |
-| C14 | Standalone output silently truncated at 1 MiB | codex `P16-INTEG-002` | unknown | Single source; no independent coverage | Major | Major; direct byte pass-through and no-degraded-success fail | Confirmed |
-| C15 | Missing macOS helper refusal lacks chained test | codex `P16-TEST-001` | unknown | Single source; no independent coverage | Minor | Minor; specified fail-closed plumbing is not tested end to end | Confirmed |
-| C16 | macOS production dependency declared dev-only | GLM `glm5.2-A1` | same-family degraded | Single degraded source | Major | Major; Apple targets cannot compile | Confirmed |
-| C17 | Artifact-audit reparse tests fail on Unix CI | GLM `glm5.2-A2` | same-family degraded | Single degraded source | Major | Minor diagnostic pending Linux rerun; production defect not established | Partially confirmed |
-| C18 | Windows cancellation diagnostic bound failure | GLM `glm5.2-A3` | same-family degraded | Single degraded source | Major | Info pending reproduction; 11 focused repeats plus the full target passed | Cannot confirm |
-| C19 | Audited branch is ahead and CI-red | GLM `glm5.2-A4` | same-family degraded | Single degraded source | Major | Major as a historical gate umbrella; not a separate code defect | Partially confirmed / duplicate |
-| C20 | Protocol teardown handle data clump | GLM `S2` | same-family degraded | Single degraded source | Minor | Info; maintainability smell only | Confirmed |
-| C21 | `too_many_arguments` execution functions | GLM `S3` | same-family degraded | Single degraded source | Minor | Info; ergonomics without incorrect behavior | Confirmed |
-| C22 | Repeated failure-enum switches | GLM `S6` | same-family degraded | Single degraded source | Info | Info; only two distinct exhaustive owner mappings remain | Partially confirmed |
-| C23 | Protocol-host dropped future not directly tested | GLM `D2` | same-family degraded | Single degraded source | Info | Info; direct test closes a literal C7 gap | Confirmed |
-| C24 | Backend diagnostic redaction lacks a canary | GLM `D3` | same-family degraded | Single degraded source | Info | Info; two direct hostile-diagnostic canaries already exist | Refuted |
-| C25 | Landlock TCP enforcement is masked by seccomp in tests | GLM `D4` | same-family degraded | Single degraded source | Minor | Minor; defense-in-depth path can regress unnoticed | Confirmed |
-| C26 | Windows bootstrap variables reach the target | GLM `D5` | same-family degraded | Single degraded source | Info | Info; permitted by the documented Windows L0-only posture | Confirmed |
-| C27 | Windows ARM64 release leg is non-blocking | GLM `D6` | same-family degraded | Single degraded source | Info | Info; explicit Tier 2 policy, while PR target checks remain strict | Confirmed / no defect |
-| C28 | Windows absolute path gets drive-relative error | GLM `D7` | same-family degraded | Single degraded source | Info | Info; rejection is correct and only the message is cosmetic | Confirmed |
-| C29 | New Linux clippy lint fails `-D warnings` | GLM `M1` | same-family degraded | Single degraded source | Minor | Minor; repository gate fails on the declared toolchain | Confirmed |
-
-## Verification summary
-
-- The canonical synchronous codec accepts exact-cap LF and CRLF frames, while
-  the private async reader rejects the CRLF form before observing LF.
-- The protocol-host target passed 53/53 tests on Windows. The historical
-  `glm5.2-A3` test also passed ten additional direct repetitions, so its root
-  cause remains unconfirmed.
-- A WSL2 reproduction matching the current negative-PGID termination path
-  demonstrated that a `setsid` descendant survives. No native macOS
-  reproduction was available from this host.
-- Focused current Windows artifact-audit reparse tests passed. The GLM report
-  proves four failures on Ubuntu at its audited head; macOS never reached those
-  tests because the dev-dependency error stopped compilation first.
-- Current HEAD has no production-code changes after either audit head, so the
-  static findings apply directly to the verified tree.
-
-## Execution result
-
-The approved unblocked scope is implemented: Fixes 2.1-2.5, 3.1-3.6,
-3.8-3.10, D.1, and D.2. Windows focused gates pass, including the Layer 2
-`opi-sandbox` scoped smoke, the expanded Layer 3 `opi-coding-agent` scoped
-smoke, the 53-test protocol-host target, the 22-test execution-product target,
-the feature-gated execution-runtime target, large binary output recovery,
-text/TUI provider-recovery diagnostics, and all 79 current artifact-audit
-tests. Warning-free production/test clippy and affected-crate rustdoc are part
-of the scoped smoke results. The final Windows-host workspace gate also passes
-in full (`fmt`, all-target clippy, workspace rustdoc, and all-target tests), as
-do workspace doctests and `scripts/opi-doc-check.py`.
-
-Fix 3.1 is structurally verified for both Apple target graphs: `tempfile` is a
-normal dependency. Full Apple cross-checks stop in `ring` before this crate is
-compiled because this Windows host has no macOS C cross-compiler. Native
-Linux/macOS sandbox behavior, the four historical artifact-audit seams on
-those hosts, and exact remediation-commit CI remain platform handoffs rather
-than locally claimed evidence.
-
-Fix 3.7 remains blocked by its explicit shaping precondition: no supported
-Linux/macOS mechanism has yet been selected and proven to contain descendants
-that call `setsid`. The historical Phase 16 evidence/ledger work likewise
-remains with `opi-implement`; this remediation did not edit either canonical
-ledger. Phase 16 therefore remains partially remediated rather than closed.
+| Cluster | Theme | Source findings | Independence / coverage | Source severity range | Final severity + rationale | Verification |
+|---|---|---|---|---|---|---|
+| C1 | Triplicated capped JSONL framing | Codex `P16-CODEX-STD-001`; GLM `P16-integration-02` | unknown + same-family; correlated/degraded overlap | Minor / Info | Minor; three current owners can drift although no current semantic divergence was found | Confirmed |
+| C2 | Protocol teardown state data clump | Codex `P16-CODEX-STD-002` | single unknown source | Minor | Minor; 12- and 16-parameter lifecycle functions weaken cleanup ownership | Confirmed |
+| C3 | Duplicated config-finalization tail | Codex `P16-CODEX-STD-003` | single unknown source | Minor | Info; maintainability-only duplication with separate coverage | Confirmed |
+| C4 | Adapter identities remain primitive strings | Codex `P16-CODEX-STD-004` | single unknown source | Minor | Info; validation and indexed candidates prevent a demonstrated identity mix-up | Confirmed as smell |
+| C5 | In-band timeout loses `execution_timed_out` | Codex `P16-CODEX-SPEC-001` | single unknown source; GLM narrative disagrees | Major | Major; a valid timed-out `Completed` outcome emits the generic tool-failure code | Confirmed |
+| C6 | Phase-exit acceptance is not replayable | Codex `P16-CODEX-SPEC-002` | single unknown source | Major | Minor; real historical provenance/closure defect, not a current runtime defect | Confirmed |
+| C7 | Manifest identity uses incompatible raw/canonical bases | Codex `P16-CODEX-SPEC-003`; GLM `P16-spec-01` | unknown + same-family; correlated/degraded overlap | Minor / Minor | Minor; both the exact-byte mismatch and internal two-hash inconsistency are real; semantics require user decision | Confirmed / Partially confirmed |
+| C8 | Host/backend/target cleanup composition is unproved | Codex `P16-CODEX-INT-001`; GLM `P16-correctness-03` | unknown + same-family; correlated/degraded overlap | Major / Major | Minor; separate process groups exist, but the audits omitted the Unix parent-death watchdog; target and temp-root cleanup still lack a real composition test | Partially confirmed |
+| C9 | Backend protocol stdout blocks its async driver | Codex `P16-CODEX-INV-001`; GLM `P16-correctness-04` | unknown + same-family; correlated/degraded overlap; GLM axis degraded | Major / Minor | Minor; backend-side cancellation/deadline polling can stall, while the outer host still enforces its deadline | Partially confirmed / Confirmed |
+| C10 | Adapter-controlled text crosses public redaction boundaries | Codex `P16-CODEX-SEC-001`; GLM `P16-security-03` | unknown + same-family; correlated/degraded overlap | Major / Info | Major; generic pattern redaction cannot remove arbitrary command/env text, and event diagnostics copy messages raw | Confirmed |
+| C11 | Windows standalone smoke is not isolated | Codex `P16-CODEX-TQ-001` | single unknown source | Minor | Minor; the binary and cwd do not satisfy the mandatory isolated-executable acceptance path | Confirmed |
+| C12 | Native early-return skips look like passing evidence | Codex `P16-CODEX-TQ-002` | single unknown source | Minor | Minor; required outside-write assertions can return successfully and evade artifact skip detection | Confirmed |
+| C13 | Windows Job-Object FFI is duplicated | GLM `P16-standards-01` | single same-family source | Info | Info; intentional crate-boundary trade-off | Confirmed |
+| C14 | Standalone crates lack paired READMEs | GLM `P16-standards-02` | single same-family source | Info | Info/no defect; lockstep applies when a localized counterpart exists, not to every crate | Refuted as a standards violation |
+| C15 | Startup and doctor use different top-level diagnostic envelopes | GLM `P16-spec-02` | single same-family source | Minor | Info; stable execution code/remediation is preserved in startup `details.code` and the convention is tested | Partially confirmed |
+| C16 | Inactive rule tables are validated eagerly | GLM `P16-spec-03` | single same-family source | Info | Info; deliberate fail-fast validation permitted by the spec | Confirmed / no defect |
+| C17 | Store-level reinstall resets trust and enablement | GLM `P16-spec-04` | single same-family source | Info | Info; CLI idempotence preserves exact unchanged state while store install enforces fresh gates | Confirmed / no defect |
+| C18 | `Bounds::validate` omits diagnostic-line realizability | GLM `P16-correctness-01` | single same-family source | Minor | Minor; custom bounds may validate but be unable to encode their declared diagnostic size | Confirmed |
+| C19 | `CompletedPayload` permits ambiguous exit/signal state | GLM `P16-correctness-02` | single same-family degraded source | Minor | Minor; both/neither is accepted for normal completion, while neither is valid for timeout/cancel | Partially confirmed |
+| C20 | Store activation failure omits adapter identity | GLM `P16-security-01` | single same-family source | Info | Info; intentional redaction because the error carries no validated safe identity | Confirmed / no defect |
+| C21 | Windows target sees bootstrap metadata variables | GLM `P16-security-02` | single same-family source | Info | Info; environment confidentiality is an explicit non-goal on the unsupported Windows restriction path | Confirmed / no defect |
+| C22 | External execution always inherits the environment | GLM `P16-invariants-01` | single same-family source | Info | Info; deliberate current-local-behavior policy, not a missing Phase 16 option | Confirmed / no defect |
+| C23 | Local/protocol shell mapping is duplicated | GLM `P16-integration-01` | single same-family source | Minor | Info; no current divergence and a shared helper would be optional refactoring | Confirmed |
+| C24 | Host accepts out-of-range wire exit values | GLM `P16-integration-03` | single same-family source | Info | Info; conforming backend masks correctly, but hostile values should fail protocol validation | Confirmed |
+| C25 | Some tests are source-text tripwires | GLM `P16-testquality-01` | single same-family source | Info | Info; structural guards are intentional where no stable behavioral seam exists | Confirmed / no blanket action |
+| C26 | Three contribution tests are Unix-only | GLM `P16-testquality-02` | single same-family source | Info | Info; executable-bit coverage is intrinsically Unix and the remaining Windows cases need platform-specific setup | Partially confirmed |
+| C27 | Protocol-host subprocess suite is feature-gated | GLM `P16-testquality-03` | single same-family source | Info | Info; CI explicitly runs the documented heavy feature-gated suite | Confirmed / no defect |
+| C28 | Drain-grace integration threshold is loose | GLM `P16-testquality-04` | single same-family source | Info | Info; integration deliberately allows scheduling jitter and focused unit coverage pins expiry behavior | Partially confirmed / no action |
+| C29 | Model strategy lacks duplicate mismatch cases | GLM `P16-testquality-05` | single same-family source | Info | Info; activation validation is strategy-independent and already covered through production fixed routing | Confirmed / no action |
+| C30 | Invocation temp variables override SDK additions | GLM `P16-residuals-01` | single same-family source | Info | Info; correct restriction invariant but underdocumented reserved-key behavior | Confirmed |
+| C31 | Executable hashing materializes the whole file | GLM `P16-residuals-02` | single same-family source | Info | Info; bounded only by artifact size and not release-blocking | Confirmed |
+| C32 | Local HEAD is ahead of `origin/main` | GLM `P16-residuals-03` | single same-family source | Info | Info; release hygiene based on an unfetched local tracking ref, not a code defect | Confirmed locally only |
 
 ## Decision record
 
 | ID | Finding cluster(s) | Decision | Rationale | Decided by |
 |---|---|---|---|---|
-| D1 | C1 | Give the async reader the canonical pending-CR semantics | One behavior is already fixed by the shared protocol contract | auto |
-| D2 | C2 | Move narrative/phase prose checks to `opi-doc-check.py`; retain structural Rust guards only when behavior cannot express the invariant | Matches the repository testing policy without deleting useful architecture coverage | auto |
-| D3 | C3, C4, C6 | Derive `thiserror`, correct activation rustdoc, and own cleanup grace once | Behavior-preserving corrections with one clear implementation | auto |
-| D4 | C5, C13 | Introduce typed `BashOperationContext`, populate it in local/routed operations, and use it for output finalization | Removes JSON smuggling and gives routed output the established recoverable truncation contract. Alternative rejected: centralize the magic JSON while retaining the public shape | user (`recommended`) |
-| D5 | C8, C23 | Preserve the full C7 descendant guarantee and strengthen Unix containment | Narrowing C7 would change product intent. A supported mechanism must be shaped and proven before implementation; do not claim a polling approximation as complete containment | user (`recommended`) |
-| D6 | C9 | Project the same redacted diagnostic code/remediation into text stderr and TUI state; do not change recovered-run exit semantics in this remediation | Cross-surface presentation is normative; forced nonzero exit after provider recovery is not | auto |
-| D7 | C10 | Centralize teardown confirmation and elevate any unconfirmed termination/reap/drain to `cleanup_unconfirmed` | The partial-transmission path already establishes the required policy | auto |
-| D8 | C11, C12 | Do not edit the archived ledger in remediation. Hand evidence recovery or historical-claim correction to the guarded `opi-implement` owner | `opi-remediate` is forbidden from mutating `.opi-impl-state.json`; historical evidence cannot be fabricated | auto |
-| D9 | C7, C14 | Emit existing `SandboxEvent::Output`/`Diagnostic` variants with bounded backpressure and preserve a bounded terminal preview | Satisfies byte pass-through and makes the public event surface real. Alternative rejected: private spooling that retains unproducible public events | user (`recommended`) |
-| D10 | C15 | Add an injectable helper probe/launcher seam and chained missing/unusable-helper tests on macOS | One behavior-preserving test seam closes the specified pre-start path | auto |
-| D11 | C16 | Move `tempfile` to normal `opi-coding-agent` dependencies | The production macOS cfg branch requires it | auto |
-| D12 | C17 | Improve subprocess failure diagnostics, then rerun the exact tests on Ubuntu and macOS before changing production auditor logic | Current Windows passes and the historical failure lacks root-cause evidence | auto |
-| D13 | C25 | Exercise Landlock TCP rules independently of the seccomp socket gate | Required defense-in-depth behavior needs an observable regression test | auto |
-| D14 | C29 | Replace manual remainder tests with `is_multiple_of` | Mechanical current-toolchain correction | auto |
-| D15 | C18, C20-C22, C26-C28 | Make no product change for unconfirmed, cosmetic, deliberate-policy, or low-value refactor findings | Minimum-change rule; no verified incorrect behavior | auto |
-| D16 | C19 | Treat the historical CI-red finding as the final verification umbrella for C16, C17, C18, and C29 | Ahead-of-origin count is not itself a defect | auto |
+| D1 | C1 | Put one I/O-neutral capped-line accumulator in `opi-protocol`; keep thin sync/Tokio readers in consumers | The wire owner can prevent future exact-cap/CRLF divergence without coupling I/O runtimes | auto |
+| D2 | C2 | Introduce one owned active-protocol lifecycle/accumulator object while touching teardown paths | Preserves behavior and makes child/guard/stdin/stderr/deadline ownership explicit; avoid a larger protocol rewrite | auto |
+| D3 | C5 | Map an in-band timed-out terminal outcome to the stable `execution_timed_out` diagnostic before generic bash failure mapping | The normative stable code determines one correction | auto |
+| D4 | C6 | Do not edit the frozen snapshot or canonical ledger; disclose the historical gap and route fresh evidence to a new guarded `opi-implement` task | Remediation does not own ledger state and cannot manufacture past evidence | auto |
+| D5 | C7 | Use exact raw `package.toml` bytes for resolver locks and Package Trust; CRLF-only byte changes invalidate trust | This follows the normative “exact locked artifact” contract and removes the incompatible raw/canonical hash bases | user (`recommended`, selected 2026-08-10) |
+| D6 | C8 | Add a real host-to-`opi-sandbox` composition test before redesigning containment; change cleanup code only for a reproduced target/temp-root failure | The parent-death watchdog refutes the audits' unconditional orphan claim | auto |
+| D7 | C9 | Replace synchronous protocol output with ordered cancellable async writes covered by the absolute request deadline | Restores backend-side cancellation without weakening framing or output order | auto |
+| D8 | C10 | Redact exact request command, env values, cwd/workspace, and process identifiers at the host boundary; also redact diagnostic messages at the public event boundary | Meets the existing public-redaction criterion without redesigning the wire vocabulary in remediation | auto |
+| D9 | C11 | Copy the tested binary into an isolated bin directory and run every smoke command from a separate empty cwd | Directly implements the mandatory standalone acceptance wording | auto |
+| D10 | C12 | Required native jobs fail when no proven writable outside candidate exists; artifact audit also rejects the textual skip marker | Eliminates false-green evidence without changing restriction semantics | auto |
+| D11 | C18, C19, C24 | Extend protocol semantic validation for diagnostic realizability, completion status shape, and exit range | These are fail-closed substrate checks with one conformant behavior | auto |
+| D12 | C30 | Document `TMPDIR`/`TMP`/`TEMP` as invocation-owned reserved keys that override additions | Current behavior is correct; documentation is the minimum correction | auto |
+| D13 | C3, C4, C13-C17, C20-C23, C25-C29, C31-C32 | No product change | Refuted, intentional, informational, release-hygiene, or low-value optional refactors do not justify remediation churn | auto |
 
-## Preconditions and handoffs
+### Selected manifest-identity decision
 
-### Unix descendant containment
+The user selected the recommended exact-byte behavior. Resolver locks and
+Package Trust will hash raw `package.toml` bytes through one shared helper. A
+CRLF-only byte change therefore invalidates trust, matching the current
+normative phrase “exact locked artifact.” The prior canonical-LF option is not
+part of this remediation plan and no normative spec change is required.
 
-Before Fix 3.7 begins, run a bounded architecture review for the Unix
-`ProcessTree` implementation. The accepted behavior is fixed: timeout,
-cancellation, future drop, and clean direct-child exit must kill a descendant
-that calls `setsid` on every Unix platform for which C7 is claimed. The review
-must select a real OS mechanism for Linux and macOS and demonstrate it with a
-throwaway native prototype. If macOS cannot provide that guarantee, stop and
-return to shaping; do not silently substitute a best-effort poller or narrow
-the specification inside remediation.
-
-### Historical evidence and ledger closure
-
-The Phase 16 snapshot is an input, not a remediation-owned ledger. The owning
-guarded workflow must:
-
-1. attempt to recover authoritative Phase 16 CI/native artifacts with their
-   original run and commit identities;
-2. preserve recovered evidence in a tracked or durably retrievable location
-   bound by digest;
-3. if recovery is impossible, formally correct or withdraw the historical C16
-   claim through an `opi-implement` checkpoint rather than reconstructing
-   evidence;
-4. reconcile the five null task-evidence fields and seven open acceptance
-   scenarios, or record explicitly how the phase-exit trace superseded them;
-5. replace stale current gate inventory with `opi-doc-check.py` and existing
-   Cargo targets while preserving the historical command record.
-
-This handoff is not authorization to edit either the root ledger or the
-snapshot during remediation execution.
+Fix 3.5 is design-unblocked. Phase F remains disabled until the user explicitly
+requests execution.
 
 ## Remediation layers
 
-### Layer 2: `opi-sandbox`
+### Layer 1: `opi-protocol` (substrate)
 
 **Verification**:
 
-    cargo fmt --all
-    powershell -NoProfile -ExecutionPolicy Bypass -File scripts/opi-impl-smoke.ps1 scoped --crate opi-sandbox --test cli_native_and_docs --test cli_contract --test sdk_contract --test backend_protocol_smoke --test macos_policy --test linux_policy
-    cargo clippy -p opi-sandbox --all-targets -- -D warnings
+    powershell -NoProfile -ExecutionPolicy Bypass -File scripts/opi-impl-smoke.ps1 scoped --crate opi-protocol --test execution_v1_contract --test execution_v1_schema
 
-#### Fix 2.1: Stream complete standalone output with bounded backpressure
+#### Fix 1.1: Own capped JSONL framing once
 
-- **Finding source**: `docs/snapshots/phase16/audit.codex.md` (`audit`, model `codex`, `P16-INTEG-002`, `P16-STD-007`)
-- **Cluster**: C7, C14
-- **Decision**: D9
+- **Finding source**: Codex audit `P16-CODEX-STD-001`; GLM audit `P16-integration-02`
+- **Cluster**: C1
+- **Decision**: D1
+- **Verification status**: Confirmed
+- **File(s)**: `crates/opi-protocol/src/execution/v1/codec.rs` ~L50-L108; public execution-v1 module exports; `crates/opi-protocol/tests/execution_v1_contract.rs`
+- **Change**: Extract the CR/LF, pending-CR, EOF, exact-cap, and oversize state machine into an I/O-neutral accumulator owned by `opi-protocol`. Keep existing synchronous codec behavior unchanged.
+- **Test plan**: Add exact-cap LF/CRLF, cap-plus-one, lone-CR, EOF-after-CR, and chunk-boundary cases against the accumulator and synchronous codec.
+
+#### Fix 1.2: Validate diagnostic bounds against the frame cap
+
+- **Finding source**: GLM audit `P16-correctness-01`
+- **Cluster**: C18
+- **Decision**: D11
+- **Verification status**: Confirmed
+- **File(s)**: `crates/opi-protocol/src/execution/v1/bounds.rs` ~L22-L83; contract/schema tests
+- **Change**: Add framing-reserve-aware validation proving `max_diagnostics_size` can fit under `max_line_size`; return a typed bounds error when it cannot.
+- **Test plan**: Cover exact fit, one byte over, default bounds, and interaction with the existing chunk/configuration checks.
+
+#### Fix 1.3: Reject ambiguous terminal status and invalid exit range
+
+- **Finding source**: GLM audit `P16-correctness-02` (degraded source axis `correctness`); GLM audit `P16-integration-03`
+- **Cluster**: C19, C24
+- **Decision**: D11
+- **Verification status**: Partially confirmed / Confirmed
+- **File(s)**: `crates/opi-protocol/src/execution/v1/frames.rs` ~L254-L270; codec/session validation; fixtures
+- **Change**: Reject `exit` plus `signal` together; require one for ordinary completion but allow neither for timed-out/cancelled completion; reject wire exit values above 255 as a protocol violation.
+- **Test plan**: Add valid normal/signal/timeout/cancel fixtures and invalid both/neither/out-of-range fixtures shared by host and backend consumers.
+
+### Layer 2A: `opi-agent`
+
+**Verification**:
+
+    powershell -NoProfile -ExecutionPolicy Bypass -File scripts/opi-impl-smoke.ps1 scoped --crate opi-agent --test tool_event_redaction
+
+#### Fix 2A.1: Redact diagnostic messages at the public event boundary
+
+- **Finding source**: Codex audit `P16-CODEX-SEC-001`; GLM audit `P16-security-03`
+- **Cluster**: C10
+- **Decision**: D8
+- **Verification status**: Confirmed
+- **File(s)**: `crates/opi-agent/src/event.rs` ~L152-L174; `crates/opi-agent/tests/tool_event_redaction.rs`
+- **Change**: Apply summary redaction to `ToolExecutionEnd` diagnostic messages in addition to the existing context/details redaction. Keep host-boundary exact-value removal as the primary control.
+- **Test plan**: Add raw message canaries for command text, env values, path, PID, and a non-pattern secret; assert all public event/session forms omit them.
+
+### Layer 2B: `opi-sandbox`
+
+**Verification**:
+
+    powershell -NoProfile -ExecutionPolicy Bypass -File scripts/opi-impl-smoke.ps1 scoped --crate opi-sandbox --test protocol_conformance --test backend_protocol_smoke --test sdk_contract --test standalone_smoke --test linux_policy --test macos_policy
+
+#### Fix 2B.1: Consume canonical framing and make protocol output deadline-aware
+
+- **Finding source**: Codex audit `P16-CODEX-STD-001`, `P16-CODEX-INV-001`; GLM audit `P16-integration-02`, `P16-correctness-04` (degraded source axis `correctness`)
+- **Cluster**: C1, C9
+- **Decision**: D1, D7
 - **Verification status**: Confirmed / Partially confirmed
-- **File(s)**: `crates/opi-sandbox/src/runner.rs` ~L58, ~L427-L459, ~L1739-L1816; `crates/opi-sandbox/src/cli.rs` ~L259-L306; `crates/opi-sandbox/src/backend.rs` ~L558-L563, ~L778-L786; `crates/opi-sandbox/tests/sdk_contract.rs` ~L465
-- **Change**: Emit stdout/stderr chunks as ordered `SandboxEvent::Output` events through a bounded channel. Emit runner diagnostics through `SandboxEvent::Diagnostic`. Make the direct CLI write event bytes immediately and make the protocol backend map them to stdout/stderr frames without duplicating terminal-preview bytes. Keep only a bounded preview and explicit preview-truncation metadata in the terminal result; never discard the only copy of successful output. Leave `UnsupportedPlatform` reserved rather than removing public API.
-- **Test plan**: Add greater-than-1-MiB binary stdout and stderr cases through the isolated standalone executable and backend protocol; assert byte equality, ordering, exit zero, bounded buffering, cancellation under backpressure, and no duplicated bytes.
+- **File(s)**: `crates/opi-sandbox/src/backend.rs` ~L132, ~L478-L573, ~L861-L934; protocol conformance tests
+- **Change**: Replace the private capped reader with the shared accumulator. Replace blocking `std::io::Write` frame emission with ordered cancellable async writes whose backpressure is bounded by the absolute request deadline. Do not use an uninterruptible `spawn_blocking` writer.
+- **Test plan**: Add a pipe-capacity/non-reading client case, cancellation during blocked output, `started` flush before release, ordered binary chunks, and deadline cleanup; retain all framing edge cases.
 
-#### Fix 2.2: Chain macOS missing/unusable helper refusal through production
+#### Fix 2B.2: Prove real nested cleanup composition
 
-- **Finding source**: `docs/snapshots/phase16/audit.codex.md` (`audit`, model `codex`, `P16-TEST-001`)
-- **Cluster**: C15
+- **Finding source**: Codex audit `P16-CODEX-INT-001`; GLM audit `P16-correctness-03`
+- **Cluster**: C8
+- **Decision**: D6
+- **Verification status**: Partially confirmed
+- **File(s)**: `crates/opi-sandbox/src/runner.rs` ~L739, ~L1402; `crates/opi-sandbox/tests/sdk_contract.rs` ~L790; protocol/standalone integration tests
+- **Change**: Add a real backend-stdio composition test that hard-kills the owning backend after target start and proves target-group death plus invocation temp-root removal. Do not change process-group architecture unless the test reproduces a residual failure.
+- **Test plan**: Run natively on Linux and macOS for hard owner death, host timeout, cancellation, and dropped host future. If temp cleanup fails, add the smallest OS-appropriate cleanup owner and first pin the failing case.
+
+#### Fix 2B.3: Run Windows standalone smoke from isolated locations
+
+- **Finding source**: Codex audit `P16-CODEX-TQ-001`
+- **Cluster**: C11
+- **Decision**: D9
+- **Verification status**: Confirmed
+- **File(s)**: `scripts/opi-sandbox-smoke.ps1` ~L16-L68; `crates/opi-sandbox/tests/standalone_smoke.rs` ~L153-L172
+- **Change**: Copy the supplied executable into a fresh isolated bin directory, create a distinct empty cwd, run every command from that cwd, retain invalid Opi sentinels, and assert neither location gains Opi or durable sandbox state.
+- **Test plan**: Exercise help/version/doctor/run refusal against the isolated copy and assert binary path, cwd, sentinel, and no-state conditions.
+
+#### Fix 2B.4: Make missing native outside-write coverage fail
+
+- **Finding source**: Codex audit `P16-CODEX-TQ-002`
+- **Cluster**: C12
 - **Decision**: D10
 - **Verification status**: Confirmed
-- **File(s)**: `crates/opi-sandbox/src/platform/macos.rs`; `crates/opi-sandbox/src/runner.rs`; `crates/opi-sandbox/tests/macos_policy.rs` ~L25-L40
-- **Change**: Add the smallest injectable helper-probe/launcher seam needed to drive `Missing` and `Unusable` posture through the real pre-start gate without modifying `/usr/bin`.
-- **Test plan**: On macOS, assert both postures return setup/unavailable failure with CLI exit 125, emit the expected structured backend failure, and never start the target sentinel. Retain the available-helper native path.
+- **File(s)**: `crates/opi-sandbox/tests/linux_policy.rs` ~L396-L402; `crates/opi-sandbox/tests/macos_policy.rs` ~L202-L210
+- **Change**: Select and prove a writable outside-workspace candidate before the restricted run; fail the required native job when no valid candidate exists instead of printing a skip and returning success.
+- **Test plan**: Add candidate-unavailable failure coverage and native positive/negative controls; preserve outside-read and workspace-write assertions.
 
-#### Fix 2.3: Exercise Landlock TCP independently
-
-- **Finding source**: `docs/snapshots/phase16/audit.glm5.2.md` (`audit`, model `glm5.2`, degraded narrative `D4`)
-- **Cluster**: C25
-- **Decision**: D13
-- **Verification status**: Confirmed
-- **File(s)**: `crates/opi-sandbox/src/platform/linux.rs` ~L233-L335; `crates/opi-sandbox/tests/linux_policy.rs` ~L441-L465
-- **Change**: Add a Linux-only test seam that installs the Landlock network layer without the seccomp socket-creation gate, solely for observing Landlock bind/connect enforcement.
-- **Test plan**: On a real Linux host with Landlock ABI >= 4, assert TCP bind/connect denial, an allow control, and AF_UNIX preservation. Keep the existing combined production-policy tests.
-
-#### Fix 2.4: Satisfy the current Linux clippy gate
-
-- **Finding source**: `docs/snapshots/phase16/audit.glm5.2.md` (`audit`, model `glm5.2`, degraded narrative `M1`)
-- **Cluster**: C29
-- **Decision**: D14
-- **Verification status**: Confirmed
-- **File(s)**: `crates/opi-sandbox/src/platform/linux.rs` ~L470-L473
-- **Change**: Replace the two manual remainder checks with `is_multiple_of(4)` and `is_multiple_of(8)`.
-- **Test plan**: Run the focused decoder/unit tests and Linux `cargo clippy -p opi-sandbox --all-targets -- -D warnings` on the declared toolchain.
-
-#### Fix 2.5: Remove narrative prose ownership from Rust tests
-
-- **Finding source**: `docs/snapshots/phase16/audit.codex.md` (`audit`, model `codex`, `P16-STD-002`); `docs/snapshots/phase16/audit.glm5.2.md` (`audit`, model `glm5.2`, degraded narrative `D1`)
-- **Cluster**: C2
-- **Decision**: D2
-- **Verification status**: Confirmed / Partially confirmed
-- **File(s)**: `crates/opi-sandbox/tests/cli_native_and_docs.rs` ~L230-L339
-- **Change**: Delete exact help-sentence, source-comment, historical phase-token, and negative-prose assertions from this Rust test. Retain executable CLI grammar, exit behavior, and stable machine-contract assertions. Move source-derived documentation contracts to the final documentation layer. Do not delete the separate `opi-coding-agent` structural source guards unless equivalent behavioral coverage is added first.
-- **Test plan**: Run `cli_native_and_docs`; demonstrate that harmless prose rewording no longer fails Rust tests while behavioral changes still do.
-
-### Layer 3: `opi-coding-agent`
+### Layer 3: `opi-coding-agent` and workspace integration
 
 **Verification**:
 
-    cargo fmt --all
-    powershell -NoProfile -ExecutionPolicy Bypass -File scripts/opi-impl-smoke.ps1 scoped --crate opi-coding-agent --test sandbox_l0 --test non_interactive --test interactive_permission --test artifact_audit_script --test execution_contribution_manifest --test tools_read_write_edit_bash
+    powershell -NoProfile -ExecutionPolicy Bypass -File scripts/opi-impl-smoke.ps1 scoped --crate opi-coding-agent --test execution_contribution_manifest --test package_resolver --test artifact_audit_script --test bash_backend_diagnostics
     cargo test -p opi-coding-agent --features execution-backend-test-fixture --test execution_backend_mock --no-run
     cargo test -p opi-coding-agent --features execution-backend-test-fixture --test execution_protocol_host
     cargo test -p opi-coding-agent --features execution-backend-test-fixture --test execution_product
 
-#### Fix 3.1: Restore macOS compilation
+#### Fix 3.1: Consume the canonical capped-line accumulator
 
-- **Finding source**: `docs/snapshots/phase16/audit.glm5.2.md` (`audit`, model `glm5.2`, `glm5.2-A1`)
-- **Cluster**: C16
-- **Decision**: D11
-- **Verification status**: Confirmed
-- **File(s)**: `crates/opi-coding-agent/Cargo.toml` ~L77; `crates/opi-coding-agent/src/execution/contribution.rs` ~L481-L502
-- **Change**: Move `tempfile = { workspace = true }` from `[dev-dependencies]` to normal `[dependencies]`; do not add a direct version.
-- **Test plan**: Run library and all-target checks for both `x86_64-apple-darwin` and `aarch64-apple-darwin`, followed by the native macOS acceptance job.
-
-#### Fix 3.2: Add typed bash operation context and recover routed full output
-
-- **Finding source**: `docs/snapshots/phase16/audit.codex.md` (`audit`, model `codex`, `P16-STD-005`, `P16-INTEG-001`)
-- **Cluster**: C5, C13
-- **Decision**: D4
-- **Verification status**: Confirmed
-- **File(s)**: `crates/opi-coding-agent/src/tool/operations.rs` ~L192-L240, ~L1003-L1110; `crates/opi-coding-agent/src/execution/runtime.rs` ~L693-L759; `crates/opi-coding-agent/src/tool/bash.rs` ~L225-L339
-- **Change**: Define a typed `BashOperationContext` owned by `tool::operations` for cancellation, timeout, signal, effective contract, truncation, and recoverable full-output metadata. Add it to `BashResult`, populate it in local and routed implementations, and make `BashTool` consume it directly. Build public diagnostics/details from the typed value at the boundary. Centralize preview/finalization so routed output over 64 KiB uses the same capped preview, `truncated=true`, and complete `full_output` spill as local execution. Missing context must be an explicit internal error, not silent `false`/`None` defaults.
-- **Test plan**: Add local/routed context parity tests, exact-64-KiB and 64-KiB-plus-one cases, byte-complete full-output recovery, and propagation of `truncated` through `ToolResultMessage`, `ToolExecutionEnd`, NDJSON, and RPC.
-
-#### Fix 3.3: Align async line framing with the canonical codec
-
-- **Finding source**: `docs/snapshots/phase16/audit.codex.md` (`audit`, model `codex`, `P16-STD-001`)
+- **Finding source**: Codex audit `P16-CODEX-STD-001`; GLM audit `P16-integration-02`
 - **Cluster**: C1
 - **Decision**: D1
 - **Verification status**: Confirmed
-- **File(s)**: `crates/opi-coding-agent/src/execution/protocol_host.rs` ~L1330-L1370; `crates/opi-protocol/src/execution/v1/codec.rs` ~L64-L90
-- **Change**: Give `CappedReader` a pending-CR state outside the data-size cap, matching the canonical reader's LF/CRLF delimiter treatment. Do not widen frame bounds.
-- **Test plan**: Add async exact-cap LF and CRLF acceptance, cap-plus-one rejection, lone-CR, EOF-after-CR, and production host/mock-peer coverage.
+- **File(s)**: `crates/opi-coding-agent/src/execution/protocol_host.rs` ~L1369-L1447; feature-gated protocol-host tests
+- **Change**: Replace the host's private framing state machine with a thin Tokio reader feeding the `opi-protocol` accumulator.
+- **Test plan**: Re-run host exact-cap LF/CRLF, cap-plus-one, lone-CR, EOF, malformed, and cumulative-bound cases against the production mock peer.
 
-#### Fix 3.4: Preserve cleanup failure classification on every teardown path
+#### Fix 3.2: Give active protocol teardown one owner
 
-- **Finding source**: `docs/snapshots/phase16/audit.codex.md` (`audit`, model `codex`, `P16-SPEC-003`); `docs/snapshots/phase16/audit.glm5.2.md` (`audit`, model `glm5.2`, degraded narrative `S2`)
-- **Cluster**: C10, C20
-- **Decision**: D7
+- **Finding source**: Codex audit `P16-CODEX-STD-002`
+- **Cluster**: C2
+- **Decision**: D2
 - **Verification status**: Confirmed
-- **File(s)**: `crates/opi-coding-agent/src/execution/protocol_host.rs` ~L511-L590, ~L995-L1285
-- **Change**: Introduce one teardown outcome that records tree termination, child reap, and stderr drain confirmation. Route EOF, codec, transition, diagnostic-overflow, cancellation, and terminal-finalization failures through it. Return `cleanup_unconfirmed` whenever any component is unconfirmed while retaining the original failure as redacted diagnostic context. Bundle handles only where needed to make this correction; do not perform a standalone parameter-count refactor.
-- **Test plan**: Inject each teardown-component failure across malformed, out-of-order, EOF, diagnostic-overflow, cancellation, and partial-frame paths; assert exact code precedence and redaction.
+- **File(s)**: `crates/opi-coding-agent/src/execution/protocol_host.rs` ~L983-L1269
+- **Change**: Bundle child/tree guard/stdin/stderr task/deadline and output/diagnostic accumulation into owned lifecycle objects with terminal, cancel, and teardown methods. Preserve current failure precedence and redaction.
+- **Test plan**: Retain every terminal/cancel/EOF/overflow/drop teardown case and add ownership-focused tests for exactly-once termination and reap.
 
-#### Fix 3.5: Own cleanup report grace once
+#### Fix 3.3: Preserve the stable in-band timeout code
 
-- **Finding source**: `docs/snapshots/phase16/audit.codex.md` (`audit`, model `codex`, `P16-STD-006`); `docs/snapshots/phase16/audit.glm5.2.md` (`audit`, model `glm5.2`, degraded narrative `S4`)
-- **Cluster**: C6
+- **Finding source**: Codex audit `P16-CODEX-SPEC-001`
+- **Cluster**: C5
 - **Decision**: D3
 - **Verification status**: Confirmed
-- **File(s)**: `crates/opi-coding-agent/src/execution/protocol_host.rs` ~L53; `crates/opi-coding-agent/src/execution/runtime.rs` ~L168
-- **Change**: Define the cleanup-report grace in one execution-owned module and use it for both host cancellation timing and runtime deadline expansion.
-- **Test plan**: Retain `host_deadline_aligns_host_cancel_with_backend_timeout` and add one assertion that both calculations derive from the shared value.
+- **File(s)**: `crates/opi-coding-agent/src/execution/runtime.rs` ~L667-L703; `crates/opi-coding-agent/src/tool/bash.rs` ~L458-L487; `crates/opi-coding-agent/tests/execution_product.rs` ~L1145
+- **Change**: Carry the stable execution failure code/remediation in `BashOperationContext` for a valid `Completed { timed_out: true }` and use it before generic bash error construction. Do not change the deliberate host-deadline `cleanup_unconfirmed` path.
+- **Test plan**: Assert `execution_timed_out` on ToolResult, ToolExecutionEnd, text/TUI, NDJSON, RPC, session, and trace surfaces; retain typed backend-timeout and host-cleanup-unconfirmed cases.
 
-#### Fix 3.6: Preserve runtime failures on text and TUI surfaces
+#### Fix 3.4: Remove adapter-controlled secrets at the host boundary
 
-- **Finding source**: `docs/snapshots/phase16/audit.codex.md` (`audit`, model `codex`, `P16-SPEC-002`)
-- **Cluster**: C9
-- **Decision**: D6
+- **Finding source**: Codex audit `P16-CODEX-SEC-001`; GLM audit `P16-security-03`
+- **Cluster**: C10
+- **Decision**: D8
 - **Verification status**: Confirmed
-- **File(s)**: `crates/opi-coding-agent/src/runner.rs` ~L438-L465, ~L680-L740; `crates/opi-coding-agent/src/interactive.rs` ~L980-L1074; `crates/opi-coding-agent/src/diagnostic_bridge.rs`
-- **Change**: Add one shared redacted formatter for tool diagnostics. Text runners write stable code and remediation to stderr; the TUI stores/renders the same information instead of literal `failed`. Keep recovery text on stdout and preserve the current process exit result when the provider recovers.
-- **Test plan**: Drive a routed bash `execution_failed` followed by provider recovery through the real text runner and headless TUI. Assert code/remediation visibility and redaction. Retain runner/server-level NDJSON and RPC assertions.
+- **File(s)**: `crates/opi-coding-agent/src/execution/protocol_host.rs` ~L632, ~L823; `crates/opi-coding-agent/src/execution/runtime.rs` ~L703; `crates/opi-coding-agent/src/tool/bash.rs` ~L299-L318; protocol/product tests
+- **Change**: Treat backend diagnostic and effective-contract text as untrusted. Before public serialization, remove exact request command, env values, workspace/cwd, backend/target PIDs, and known path values, then apply generic summary redaction. Keep closed/typed effective-contract vocabulary as a future API design rather than changing the wire in remediation.
+- **Test plan**: Use arbitrary non-pattern canaries embedded in diagnostics, policy, placement, guarantee, and limitations; assert absence from ToolResult, text/TUI, NDJSON, RPC, session, and trace while safe contract values remain visible.
 
-#### Fix 3.7: Contain Unix descendants that leave the process group
+#### Fix 3.5: Unify manifest identity on exact raw bytes
 
-- **Finding source**: `docs/snapshots/phase16/audit.codex.md` (`audit`, model `codex`, `P16-SPEC-001`); `docs/snapshots/phase16/audit.glm5.2.md` (`audit`, model `glm5.2`, degraded narrative `D2` and contradictory C7 PASS narrative)
-- **Cluster**: C8, C23
+- **Finding source**: Codex audit `P16-CODEX-SPEC-003`; GLM audit `P16-spec-01`
+- **Cluster**: C7
 - **Decision**: D5
+- **Verification status**: Confirmed / Partially confirmed
+- **File(s)**: `crates/opi-coding-agent/src/execution/contribution.rs` ~L93-L94, ~L277, ~L545-L551, ~L629-L643; `crates/opi-coding-agent/src/package_resolver.rs` ~L210-L214, ~L365-L399; manifest/resolver lifecycle tests
+- **Change**: Hash raw `package.toml` bytes through one shared helper in every resolver, lock, and Package Trust path. Remove LF normalization from manifest identity and make CRLF-only drift invalidate trust. Optionally stream the executable SHA-256 while touching the hash helper, without changing executable-hash semantics.
+- **Test plan**: Pin identical-byte stability, LF/CRLF inequality, durable trust invalidation, resolver/contribution hash equality, re-enable flow, and pre-spawn revalidation.
+
+#### Fix 3.6: Reject textual native skips in artifact evidence
+
+- **Finding source**: Codex audit `P16-CODEX-TQ-002`
+- **Cluster**: C12
+- **Decision**: D10
 - **Verification status**: Confirmed
-- **File(s)**: `crates/opi-coding-agent/src/tool/process_tree.rs` ~L43-L51, ~L257-L382; `crates/opi-coding-agent/src/tool/supervision.rs`; `crates/opi-coding-agent/tests/sandbox_l0.rs` ~L432; `crates/opi-coding-agent/tests/execution_protocol_host.rs` ~L1131
-- **Change**: After the Unix containment precondition selects and proves supported Linux/macOS mechanisms, integrate them behind `ProcessTree`/`TreeGuard` while retaining the process-group fast path and Windows Job Object behavior. Track and terminate descendants that call `setsid`; confirm reap before reporting cleanup. Do not merge a best-effort implementation that cannot satisfy the native tests.
-- **Test plan**: On Linux and macOS, cover timeout, cancellation, execute-future drop, and clean direct-child exit with a `setsid` descendant. Add the direct protocol-host drop-the-future test. Retain ordinary background-descendant and bounded-drain tests.
+- **File(s)**: `scripts/opi-artifact-audit.py` ~L530-L632; `crates/opi-coding-agent/tests/artifact_audit_script.rs`
+- **Change**: Recognize the legacy textual skip marker as failed required evidence in addition to Cargo ignored/zero-test/failure markers.
+- **Test plan**: Add a fixture whose Cargo output otherwise passes but contains the early-return marker; assert a stable failed-evidence issue code.
 
-#### Fix 3.8: Use repository error style
-
-- **Finding source**: `docs/snapshots/phase16/audit.codex.md` (`audit`, model `codex`, `P16-STD-003`); `docs/snapshots/phase16/audit.glm5.2.md` (`audit`, model `glm5.2`, `glm5.2-S1`)
-- **Cluster**: C3
-- **Decision**: D3
-- **Verification status**: Confirmed
-- **File(s)**: `crates/opi-coding-agent/src/execution/protocol_host.rs` ~L160-L194; `crates/opi-coding-agent/src/tool/process_tree.rs` ~L141
-- **Change**: Replace manual `Display`/`Error` implementations for `ExecutionProtocolFailure` and `AttachError` with `thiserror::Error` derives that preserve the current redacted text and source behavior.
-- **Test plan**: Retain error formatting/source tests, protocol-host tests, `sandbox_l0`, and focused clippy.
-
-#### Fix 3.9: Correct activated-contribution rustdoc
-
-- **Finding source**: `docs/snapshots/phase16/audit.codex.md` (`audit`, model `codex`, `P16-STD-004`)
-- **Cluster**: C4
-- **Decision**: D3
-- **Verification status**: Confirmed
-- **File(s)**: `crates/opi-coding-agent/src/package_activation.rs` ~L19, ~L121-L132, ~L603
-- **Change**: State that activation performs no spawn but returns metadata plus immutable validated executable launch material. Remove the false claim that no validated-bytes handle is carried.
-- **Test plan**: Retain contribution binding/TOCTOU tests and run warning-free rustdoc for `opi-coding-agent`.
-
-#### Fix 3.10: Make artifact-audit test failures diagnosable before changing production
-
-- **Finding source**: `docs/snapshots/phase16/audit.glm5.2.md` (`audit`, model `glm5.2`, `glm5.2-A2`)
-- **Cluster**: C17
-- **Decision**: D12
-- **Verification status**: Partially confirmed
-- **File(s)**: `crates/opi-coding-agent/tests/artifact_audit_script.rs` ~L421-L470, ~L1021-L1081, ~L2157-L2200, ~L2541-L2567; `scripts/opi-artifact-audit.py` ~L1375-L1491
-- **Change**: Make the test harness include subprocess status, stderr, stdout, and parsed issue codes in assertion failures. Do not change production reparse/identity logic until the exact four tests reproduce on current Ubuntu or macOS and identify a root cause.
-- **Test plan**: Run the four exact tests sequentially and in parallel on Ubuntu current HEAD, then on macOS after Fix 3.1. If they pass, close as historical/non-reproducible; if they fail, add the smallest root-cause regression before production changes.
-
-### Final layer: documentation and public contract synchronization
+### Final layer: documentation and evidence handoff
 
 **Verification**:
 
     python scripts/opi-doc-check.py
 
-#### Fix D.1: Move stable Phase 16 prose contracts into the documentation checker
+#### Fix D.1: Document reserved invocation temp variables and shipped fixes
 
-- **Finding source**: `docs/snapshots/phase16/audit.codex.md` (`audit`, model `codex`, `P16-STD-002`)
-- **Cluster**: C2
-- **Decision**: D2
+- **Finding source**: GLM audit `P16-residuals-01`; all implemented Major/Minor clusters above
+- **Cluster**: C30 plus implemented remediation clusters
+- **Decision**: D12
 - **Verification status**: Confirmed
-- **File(s)**: `scripts/opi-doc-check.py`; paired documentation files only where the source-derived contract requires synchronization
-- **Change**: Add stable source-derived checks for current Phase 16 product claims that were removed from Rust tests: Minimal Runtime, five independent gates, external no-fallback, standalone CLI/SDK, current migration surface, Windows posture, and declared non-goals. Check semantic tokens/structured sources rather than exact narrative sentences. Update English and Chinese counterparts together if wording changes.
-- **Test plan**: Run the documentation checker; add negative fixtures or direct checker tests that prove a missing contract fails while harmless rewording passes.
+- **File(s)**: affected public rustdoc; `CHANGELOG.md` under `Unreleased`; paired EN/ZH docs only if product wording changes
+- **Change**: State that `TMPDIR`, `TMP`, and `TEMP` are invocation-owned reserved keys and override caller additions. Record user-visible timeout/redaction/trust changes under `Unreleased`; synchronize English/Chinese counterparts if D5 changes normative wording.
+- **Test plan**: Run warning-free affected-crate rustdoc and `python scripts/opi-doc-check.py`.
 
-#### Fix D.2: Document the selected public event/context behavior
+## Historical evidence handoff
 
-- **Finding source**: `docs/snapshots/phase16/audit.codex.md` (`audit`, model `codex`, `P16-STD-005`, `P16-STD-007`, `P16-INTEG-001`, `P16-INTEG-002`)
-- **Cluster**: C5, C7, C13, C14
-- **Decision**: D4, D9
-- **Verification status**: Confirmed / Partially confirmed
-- **File(s)**: affected crate rustdoc/README files; `CHANGELOG.md` under `Unreleased`; localized counterparts when present
-- **Change**: Document `BashOperationContext`, recoverable preview/full-output semantics, and the fact that sandbox output/diagnostic events are now emitted with bounded backpressure. Record the 0.x public behavior change without modifying a released changelog section.
-- **Test plan**: Run `python scripts/opi-doc-check.py` and warning-free affected-crate rustdoc.
+Cluster C6 is real but cannot be fixed by editing history. The frozen snapshot
+has five null task-evidence fields, seven open acceptance scenarios, an
+identity-less artifact-audit command, and a phase-exit summary claiming ignored
+`target/` evidence that is absent from the commit and current worktree.
+
+The owning workflow must create a new guarded `opi-implement` task that:
+
+1. records current acceptance criteria rather than rewriting the Phase 16
+   snapshot;
+2. runs current Linux/macOS/Windows, six-target, and gate evidence at one exact
+   commit with workflow/run identity;
+3. stores a durable digest-bound retrieval record outside ignored `target/`;
+4. explicitly cites the historical Phase 16 gap instead of presenting new
+   evidence as retroactive proof.
+
+This handoff does not authorize ledger mutation, commit, push, or publication.
 
 ## Final verification
 
-After every unblocked layer passes its focused gate:
+After each layer's scoped gate passes, the cross-crate change requires the
+workspace tier:
 
     powershell -NoProfile -ExecutionPolicy Bypass -File scripts/opi-impl-smoke.ps1 full
     cargo test --workspace --doc
     python scripts/opi-doc-check.py
 
-Required platform evidence:
+Required native evidence:
 
-1. Linux: native `opi-sandbox` policy tests, isolated Landlock TCP test,
-   `setsid` L0 tests, affected clippy, and artifact-audit reparse tests.
-2. macOS: both Apple target checks, native sandbox helper refusal tests,
-   `setsid` L0 tests, and the extracted standalone smoke.
-3. Windows: affected protocol-host tests including a constrained stress run of
-   `cancellation_diagnostic_frame_count_is_bounded`.
-4. CI: all ordinary jobs and all six strict target checks green at the exact
-   remediation commit.
-5. Evidence handoff: from a clean clone, retrieve the bound artifacts and run:
-
-       python scripts/opi-artifact-audit.py <artifact-dir> --workspace-root . --phase-exit --workflow-run-id <run-id> --commit-sha <full-sha> --json
-
-Do not claim Phase 16 fully remediated while the Unix containment precondition
-or historical-evidence handoff remains unresolved.
+1. Linux: real host/backend/target cleanup composition, blocked-output deadline,
+   outside-write required assertion, and extracted standalone smoke.
+2. macOS: the same cleanup composition, blocked-output deadline, outside-write
+   required assertion, and extracted standalone smoke.
+3. Windows: isolated-copy/empty-cwd standalone smoke and all affected protocol
+   and public-surface tests.
+4. CI: ordinary jobs and all six strict target checks green at the exact
+   remediation commit before release.
 
 ## Scope exclusions
 
-| Finding | Status | Reason |
+| Cluster / finding | Status | Reason |
 |---|---|---|
-| C7 `UnsupportedPlatform` variant | Info/No action | Reserved public state causes no current incorrect behavior; do not remove intentional API in remediation |
-| C11, C12 | Deferred to source owner | Ledger/evidence mutation belongs to guarded `opi-implement`, not `opi-remediate` |
-| C18 / `glm5.2-A3` | Cannot confirm | Current full target and eleven focused Windows runs pass; retain as a stress/reproduction gate |
-| C19 / `glm5.2-A4` | Duplicate | Underlying actionable failures are C16, C17, C18, and C29; ahead-of-origin count is not a defect |
-| C20 / GLM `S2` beyond Fix 3.4 | Info/No action | Do not perform an independent handle-bundle refactor |
-| C21 / GLM `S3` | Info/No action | Parameter count is ergonomic and multiple designs are reasonable |
-| C22 / GLM `S6` | Info/No action | Remaining exhaustive matches encode distinct code/remediation contracts |
-| C24 / GLM `D3` | Refuted | Hostile backend-diagnostic canaries already exist and pass |
-| C26 / GLM `D5` | Info/No action | Windows Phase 16 is explicitly L0-only and not an environment-confidentiality boundary |
-| C27 / GLM `D6` | Info/No action | Windows ARM64 non-blocking release behavior is the explicit Tier 2 policy; PR checks remain strict |
-| C28 / GLM `D7` | Info/No action | Absolute Windows paths are safely rejected; only the cosmetic variant differs |
-| GLM `S5` | Source-refuted | `routed_store_factory_override` is `#[cfg(test)]` at definition and call site |
-| GLM `Spec-1` | Source-refuted | `BashTool` correctly makes timed-out/cancelled completed outcomes errors |
+| C3 | Info/No action | Optional helper extraction is not needed for correctness |
+| C4 | Info/No action | Validated candidates prevent a demonstrated identity mix-up; a newtype is broad refactoring |
+| C6 | Handoff | Frozen snapshot/ledger cannot be edited by remediation |
+| C13 | Info/No action | Duplication preserves intentional crate isolation |
+| C14 | Refuted | Repository rules do not require a README pair for every crate |
+| C15 | Info/No action | Startup envelope retains stable execution code/remediation in structured details |
+| C16 | Info/No action | Eager validation is deliberate fail-fast behavior |
+| C17 | Info/No action | Store install resets gates; CLI transaction preserves exact unchanged state |
+| C20 | Info/No action | Store detail lacks a safe validated identity and is intentionally redacted |
+| C21 | Info/No action | Environment confidentiality is an explicit Windows/non-goal boundary |
+| C22 | Info/No action | Environment inheritance is the specified current-behavior policy |
+| C23 | Info/No action | Shell mapping agrees; shared helper is optional refactoring |
+| C25 | Info/No blanket action | Structural guards remain appropriate where no stable behavioral seam exists |
+| C26 | Info/No action | Unix-only mechanics need platform-specific tests, not copied assertions |
+| C27 | Info/No action | CI explicitly runs the feature-gated protocol-host suite |
+| C28 | Info/No action | Unit coverage pins behavior; integration threshold permits scheduler jitter |
+| C29 | Info/No action | Activation validation is strategy-independent |
+| C31 | Info/No action | Streaming SHA-256 is optional unless combined with D5 implementation |
+| C32 | Release handoff | Fetch/push/CI require explicit user authorization and are not code remediation |
 
 ## Test impact
 
-Planned impact: `update` existing protocol, sandbox, runner/TUI, documentation,
-and artifact-audit tests; `add` exact-cap CRLF, routed large-output,
-standalone streamed-output, macOS helper refusal, Landlock TCP isolation,
-Unix `setsid`, and direct dropped-future coverage. No tests are deleted unless
-their source-derived documentation contract is first represented by
-`opi-doc-check.py` or equivalent behavioral coverage.
+Current plan-only change: `none` for Rust tests and runtime behavior.
+
+If executed: `add` protocol bound/terminal fixtures, blocked-output and nested
+cleanup integration tests, public redaction canaries, isolated Windows smoke,
+and artifact-skip fixtures; `update` existing timeout, manifest identity, and
+native policy tests. No test deletion is planned.

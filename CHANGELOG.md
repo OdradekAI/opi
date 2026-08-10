@@ -70,6 +70,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `opi-coding-agent` / `opi-agent`: routed timeout completions retain the stable
+  `execution_timed_out` diagnostic and remediation, while public tool events
+  replace backend-authored diagnostic prose and redact exact invocation values
+  from adapter-reported execution-contract text.
+- `opi-coding-agent`: package trust and release verification now hash the exact
+  `package.toml` bytes, so line-ending-only manifest drift invalidates the lock
+  consistently across activation, resolution, packaging, and artifact audit.
+- `opi-protocol` / `opi-sandbox`: completed-frame semantics and diagnostic
+  framing bounds are validated before encoding; protocol writes are bounded by
+  the invocation deadline; and owner-death/teardown paths retain one process
+  owner through confirmed tree cleanup.
 - `opi-sandbox`: standalone CLI and protocol-backend runs now stream complete
   stdout/stderr bytes through bounded backpressure while retaining bounded SDK
   terminal previews, so successful output beyond 1 MiB is neither dropped nor

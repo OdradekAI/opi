@@ -3,7 +3,7 @@
 //!
 //! One test per static gate (each rejection maps to an exact
 //! [`ContributionValidationError`] variant), plus the green-path lock-material
-//! exactness anchor and manifest-hash CRLF stability.
+//! exactness anchor and exact-byte manifest identity.
 
 use std::path::{Path, PathBuf};
 
@@ -21,21 +21,6 @@ const EXE_CONTENT: &[u8] = b"#!/bin/sh\necho hi\n";
 fn t_sha256(bytes: &[u8]) -> String {
     use sha2::{Digest, Sha256};
     hex::encode(Sha256::digest(bytes))
-}
-
-fn t_lf_normalize(bytes: &[u8]) -> Vec<u8> {
-    let mut out = Vec::with_capacity(bytes.len());
-    let mut i = 0;
-    while i < bytes.len() {
-        if i + 1 < bytes.len() && bytes[i] == b'\r' && bytes[i + 1] == b'\n' {
-            out.push(b'\n');
-            i += 2;
-        } else {
-            out.push(bytes[i]);
-            i += 1;
-        }
-    }
-    out
 }
 
 fn make_executable(path: &Path) {
@@ -160,10 +145,7 @@ fn valid_contribution_yields_exact_lock_material() {
     assert!(v.command.starts_with(root.canonicalize().unwrap()));
 
     let lock = &v.lock;
-    assert_eq!(
-        lock.manifest_hash,
-        t_sha256(&t_lf_normalize(toml.as_bytes()))
-    );
+    assert_eq!(lock.manifest_hash, t_sha256(toml.as_bytes()));
     assert_eq!(lock.executable_rel_path, "bin/opi-sandbox");
     assert_eq!(lock.executable_sha256, sha);
     assert_eq!(lock.package_version, "0.8.0");
@@ -183,7 +165,7 @@ fn empty_contributions_validate_to_empty() {
 }
 
 #[test]
-fn manifest_hash_is_crlf_stable() {
+fn manifest_hash_changes_for_crlf_byte_drift() {
     let (_dir, root, sha) = make_package();
     let lf = default_manifest_toml(&sha);
     let crlf = lf.replace('\n', "\r\n");
@@ -197,7 +179,9 @@ fn manifest_hash_is_crlf_stable() {
         .lock
         .manifest_hash
         .clone();
-    assert_eq!(lf_hash, crlf_hash);
+    assert_ne!(lf_hash, crlf_hash);
+    assert_eq!(lf_hash, t_sha256(lf.as_bytes()));
+    assert_eq!(crlf_hash, t_sha256(crlf.as_bytes()));
 }
 
 // --- closed field set --------------------------------------------------------

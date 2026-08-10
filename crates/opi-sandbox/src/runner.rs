@@ -187,7 +187,9 @@ pub struct SandboxRequest {
     pub timeout: Duration,
     /// Environment-inheritance policy. `Clear` starts from an empty environment;
     /// `Inherit` keeps the host process environment. In both cases
-    /// `env_additions` are applied on top.
+    /// `env_additions` are applied next, then the invocation-owned `TMPDIR`,
+    /// `TMP`, and `TEMP` aliases are set to the private temporary root. Callers
+    /// cannot override those reserved aliases through `env_additions`.
     pub env_inherit: EnvInherit,
     /// Bounded environment additions applied after the inheritance policy.
     pub env_additions: BTreeMap<OsString, OsString>,
@@ -216,6 +218,7 @@ pub(crate) struct StructurallyValidatedRequest {
 pub(crate) struct PreparedSandboxRun {
     cmd: Command,
     temp: PreparedTemp,
+    owner_death_cleanup: Option<OwnerDeathCleanup>,
     temp_root: PathBuf,
     release_gate: PathBuf,
     start_probe: Option<StartProbe>,
@@ -223,6 +226,76 @@ pub(crate) struct PreparedSandboxRun {
     mechanism: Mechanism,
     contract: ContractStatus,
     faults: FaultInjection,
+}
+
+#[cfg(unix)]
+struct OwnerDeathCleanup {
+    child: Option<std::process::Child>,
+    keepalive: Option<std::process::ChildStdin>,
+}
+
+#[cfg(unix)]
+impl OwnerDeathCleanup {
+    fn start(temp_root: &Path) -> io::Result<Self> {
+        use std::os::unix::process::CommandExt;
+
+        let mut child = std::process::Command::new("/bin/sh");
+        child
+            .arg("-c")
+            .arg("IFS= read -r _; /bin/rm -rf -- \"$1\"")
+            .arg("opi-sandbox-owner-cleanup")
+            .arg(temp_root)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .process_group(0);
+        let mut child = child.spawn()?;
+        let keepalive = child
+            .stdin
+            .take()
+            .ok_or_else(|| io::Error::other("owner cleanup keepalive unavailable"))?;
+        Ok(Self {
+            child: Some(child),
+            keepalive: Some(keepalive),
+        })
+    }
+
+    fn finish(mut self) -> bool {
+        drop(self.keepalive.take());
+        self.child
+            .take()
+            .is_some_and(|mut child| child.wait().is_ok_and(|status| status.success()))
+    }
+}
+
+#[cfg(unix)]
+impl Drop for OwnerDeathCleanup {
+    fn drop(&mut self) {
+        drop(self.keepalive.take());
+        if let Some(mut child) = self.child.take() {
+            let _ = child.wait();
+        }
+    }
+}
+
+#[cfg(unix)]
+fn start_owner_death_cleanup(temp_root: &Path) -> io::Result<Option<OwnerDeathCleanup>> {
+    OwnerDeathCleanup::start(temp_root).map(Some)
+}
+
+#[cfg(not(unix))]
+struct OwnerDeathCleanup;
+
+#[cfg(not(unix))]
+impl OwnerDeathCleanup {
+    fn finish(self) -> bool {
+        true
+    }
+}
+
+#[cfg(not(unix))]
+fn start_owner_death_cleanup(_temp_root: &Path) -> io::Result<Option<OwnerDeathCleanup>> {
+    Ok(None)
 }
 
 struct StartProbe {
@@ -301,8 +374,14 @@ impl PreparedSandboxRun {
     }
 
     fn cleanup(self) -> bool {
-        let Self { temp, .. } = self;
-        temp.close()
+        let Self {
+            temp,
+            owner_death_cleanup,
+            ..
+        } = self;
+        let removed = temp.close();
+        let cleanup_owner_finished = owner_death_cleanup.is_none_or(OwnerDeathCleanup::finish);
+        removed && cleanup_owner_finished
     }
 }
 
@@ -696,6 +775,10 @@ impl SandboxRunner {
         let temp_root = temp.path().canonicalize().map_err(|_| SetupFailed {
             reason: SetupFailureReason::SpawnFailed,
         })?;
+        let owner_death_cleanup =
+            start_owner_death_cleanup(&temp_root).map_err(|_| SetupFailed {
+                reason: SetupFailureReason::SpawnFailed,
+            })?;
         let release_gate = temp_root.join("release.armed");
         std::fs::OpenOptions::new()
             .write(true)
@@ -807,6 +890,7 @@ impl SandboxRunner {
                 remove_delay: self.faults.prepared_temp_remove_delay,
                 injected_failure: self.faults.prepared_temp_remove_fail,
             },
+            owner_death_cleanup,
             temp_root,
             release_gate,
             start_probe,
@@ -835,6 +919,7 @@ impl SandboxRunner {
         let PreparedSandboxRun {
             mut cmd,
             temp,
+            owner_death_cleanup,
             temp_root,
             release_gate,
             start_probe,
@@ -913,6 +998,7 @@ impl SandboxRunner {
             child,
             tree,
             temp,
+            owner_death_cleanup,
             temp_root.clone(),
             SupervisionControl {
                 deadline_cell: Arc::clone(&deadline_cell),
@@ -1631,6 +1717,7 @@ async fn supervise(
     mut child: Child,
     mut tree: TreeGuard,
     temp: tempfile::TempDir,
+    owner_death_cleanup: Option<OwnerDeathCleanup>,
     temp_root: PathBuf,
     control: SupervisionControl,
 ) -> SandboxResult {
@@ -1712,6 +1799,8 @@ async fn supervise(
     {
         cleanup_confirmed = false;
     }
+    cleanup_confirmed &=
+        finish_owner_death_cleanup_until(owner_death_cleanup, deadlines.cleanup).await;
 
     // Every observed termination/reap/drain/temp-removal step contributes to
     // the reported cleanup state. The remaining guards still provide a final
@@ -1729,6 +1818,20 @@ async fn supervise(
         stderr_truncated: err.truncated,
         temp_root,
     }
+}
+
+async fn finish_owner_death_cleanup_until(
+    cleanup: Option<OwnerDeathCleanup>,
+    deadline: Instant,
+) -> bool {
+    let Some(cleanup) = cleanup else {
+        return true;
+    };
+    let finish = tokio::task::spawn_blocking(move || cleanup.finish());
+    matches!(
+        tokio::time::timeout_at(deadline, finish).await,
+        Ok(Ok(true))
+    )
 }
 
 struct SupervisionControl {
@@ -1982,6 +2085,7 @@ mod tests {
             child,
             tree,
             temp,
+            None,
             temp_root.clone(),
             SupervisionControl {
                 deadline_cell: Arc::clone(&deadline_cell),

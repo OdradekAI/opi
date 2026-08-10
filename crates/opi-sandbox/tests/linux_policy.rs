@@ -306,15 +306,34 @@ fn doctor_json() -> String {
     String::from_utf8_lossy(&out.stdout).into_owned()
 }
 
-/// A writable directory OUTSIDE the Landlock grant (workspace + the exact
-/// invocation-private temp root). Returns `None` if no such outside dir is
-/// usable on this host (the caller skips the test rather than failing).
-fn outside_grant_dir() -> Option<PathBuf> {
-    let candidate = PathBuf::from("/var/tmp");
-    if candidate.is_dir() {
-        return Some(candidate);
+/// Select a directory that is demonstrably writable before restriction.
+fn first_writable_candidate(
+    candidates: impl IntoIterator<Item = PathBuf>,
+) -> Result<PathBuf, String> {
+    let mut checked = Vec::new();
+    for candidate in candidates {
+        checked.push(candidate.clone());
+        if candidate.is_dir() && tempfile::NamedTempFile::new_in(&candidate).is_ok() {
+            return Ok(candidate);
+        }
     }
-    None
+    Err(format!(
+        "no writable outside-grant directory in {checked:?}"
+    ))
+}
+
+/// A writable directory OUTSIDE the Landlock grant (workspace + the exact
+/// invocation-private temp root). Missing coverage is a native-job failure.
+fn outside_grant_dir() -> Result<PathBuf, String> {
+    first_writable_candidate([PathBuf::from("/var/tmp")])
+}
+
+#[test]
+fn writable_outside_candidate_is_required() {
+    let root = tempfile::tempdir().expect("candidate root");
+    let error = first_writable_candidate([root.path().join("missing")])
+        .expect_err("missing candidates must fail coverage setup");
+    assert!(error.contains("no writable outside-grant directory"));
 }
 
 /// The doctor reports a supported Linux posture with both native mechanisms and
@@ -396,13 +415,7 @@ fn system_temp_sibling_write_denied() {
 /// A write OUTSIDE the workspace + temp is DENIED (Landlock fs enforcement).
 #[test]
 fn outside_write_denied() {
-    let outside = match outside_grant_dir() {
-        Some(d) => d,
-        None => {
-            eprintln!("skip outside_write_denied: no writable dir outside the grant");
-            return;
-        }
-    };
+    let outside = outside_grant_dir().unwrap_or_else(|error| panic!("{error}"));
     let ws = tempfile::tempdir().expect("workspace tempdir");
     let marker = outside.join(format!("opi-outside-{}.txt", std::process::id()));
     let _ = fs::remove_file(&marker);

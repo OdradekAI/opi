@@ -201,6 +201,29 @@ fn tool_execution_update_redacts_args_and_partial_result() {
 }
 
 #[test]
+fn tool_execution_end_redacts_diagnostic_message_text() {
+    let event = AgentEvent::ToolExecutionEnd {
+        tool_call_id: "tc-end".into(),
+        tool_name: "bash".into(),
+        result: json!({"status": "failed"}),
+        details: None,
+        is_error: true,
+        truncated: false,
+        diagnostics: vec![ToolDiagnostic {
+            code: CODE_TOOL_EXECUTION_FAILED.into(),
+            message: "adapter failed at C:\\Users\\private\\repo with sk-proj-secret1234567890"
+                .into(),
+            context: json!({}),
+        }],
+    };
+
+    let rendered = serde_json::to_string(&event.redacted_for_public()).unwrap();
+    assert!(!rendered.contains("C:\\\\Users"), "{rendered}");
+    assert!(!rendered.contains("sk-proj-secret1234567890"), "{rendered}");
+    assert!(rendered.contains("[REDACTED]"), "{rendered}");
+}
+
+#[test]
 fn public_message_events_redact_assistant_tool_call_arguments() {
     let mut assistant = test_support::base_assistant();
     assistant.content.push(AssistantContent::ToolCall {

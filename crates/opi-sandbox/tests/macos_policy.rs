@@ -106,17 +106,40 @@ fn doctor_json() -> String {
     String::from_utf8_lossy(&out.stdout).into_owned()
 }
 
-/// A writable directory OUTSIDE the exact invocation-private Seatbelt temp
-/// grant. On macOS `/tmp` and `/var/tmp` are outside that private root. Returns `None` if
-/// no such outside dir is usable on this host (the caller skips rather than
-/// fails).
-fn outside_grant_dir() -> Option<PathBuf> {
+/// Select a directory that is demonstrably writable before restriction.
+fn first_writable_candidate(
+    candidates: impl IntoIterator<Item = PathBuf>,
+) -> Result<PathBuf, String> {
     let temp = std::env::temp_dir();
-    [PathBuf::from("/tmp"), PathBuf::from("/var/tmp")]
-        .into_iter()
-        .find(|candidate| {
-            candidate.is_dir() && !candidate.starts_with(&temp) && !temp.starts_with(candidate)
-        })
+    let mut checked = Vec::new();
+    for candidate in candidates {
+        checked.push(candidate.clone());
+        if candidate.is_dir()
+            && !candidate.starts_with(&temp)
+            && !temp.starts_with(&candidate)
+            && tempfile::NamedTempFile::new_in(&candidate).is_ok()
+        {
+            return Ok(candidate);
+        }
+    }
+    Err(format!(
+        "no writable outside-grant directory in {checked:?}"
+    ))
+}
+
+/// A writable directory OUTSIDE the exact invocation-private Seatbelt temp
+/// grant. On macOS `/tmp` and `/var/tmp` are outside that private root. Missing
+/// coverage is a native-job failure.
+fn outside_grant_dir() -> Result<PathBuf, String> {
+    first_writable_candidate([PathBuf::from("/tmp"), PathBuf::from("/var/tmp")])
+}
+
+#[test]
+fn writable_outside_candidate_is_required() {
+    let root = tempfile::tempdir().expect("candidate root");
+    let error = first_writable_candidate([root.path().join("missing")])
+        .expect_err("missing candidates must fail coverage setup");
+    assert!(error.contains("no writable outside-grant directory"));
 }
 
 /// The doctor reports a supported macOS posture with the seatbelt mechanism and
@@ -202,13 +225,7 @@ fn system_temp_sibling_write_denied() {
 /// A write OUTSIDE the workspace + temp is DENIED (the seatbelt fs deny-overlay).
 #[test]
 fn outside_write_denied() {
-    let outside = match outside_grant_dir() {
-        Some(d) => d,
-        None => {
-            eprintln!("skip outside_write_denied: no writable dir outside the grant");
-            return;
-        }
-    };
+    let outside = outside_grant_dir().unwrap_or_else(|error| panic!("{error}"));
     let ws = tempfile::tempdir().expect("workspace tempdir");
     let marker = outside.join(format!("opi-outside-{}.txt", std::process::id()));
     let _ = fs::remove_file(&marker);

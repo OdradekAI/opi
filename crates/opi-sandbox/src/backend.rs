@@ -41,13 +41,14 @@
 #![forbid(unsafe_code)]
 
 use std::collections::BTreeSet;
-use std::io::Write;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 
 use futures_core::Stream;
-use opi_protocol::execution::v1::codec::{CodecError, encode_backend};
+use opi_protocol::execution::v1::codec::{
+    CappedLineAccumulator, CodecError, LineAccumulatorEvent, encode_backend,
+};
 use opi_protocol::execution::v1::frames::{
     AcceptedPayload, CompletedPayload, Diagnostic, DiagnosticPayload, FailedPayload,
     InitializePayload, ReadyPayload, StderrPayload, StdoutPayload,
@@ -57,7 +58,7 @@ use opi_protocol::execution::v1::{
     HostToBackend, ImplementationId, ProtocolId, RequestId, Session, TargetId, WIRE_IDENTITY,
     select,
 };
-use tokio::io::{AsyncRead, AsyncReadExt};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio_util::sync::CancellationToken;
 
 use crate::helper::{self, StartOutcome};
@@ -105,16 +106,6 @@ fn classify_post_start_failure(failure: PostStartFailure) -> (FailureCode, Failu
     }
 }
 
-fn emit_post_start_failure(
-    stdout: &mut dyn Write,
-    bounds: Bounds,
-    seed_id: &Option<RequestId>,
-    failure: PostStartFailure,
-) -> i32 {
-    let (code, phase) = classify_post_start_failure(failure);
-    emit_failed_or_silent(stdout, bounds, seed_id, code, phase)
-}
-
 /// Drive one backend exchange over `stdin`/`stdout` with an INJECTED
 /// restriction and platform posture. This is the pure testable core: production
 /// [`run`] applies `platform::current`, while the standalone binary owns the
@@ -129,14 +120,17 @@ fn emit_post_start_failure(
 /// the whole exchange and flushed after every emitted frame. Returns `EXIT_OK`
 /// (0) after a terminal frame, or `EXIT_NO_TERMINAL` (1) if none could be
 /// emitted.
-pub async fn drive(
+pub async fn drive<W>(
     stdin: Pin<Box<dyn AsyncRead + Send>>,
-    stdout: &mut dyn Write,
+    stdout: &mut W,
     bounds: Bounds,
     supported: bool,
     limitations: &[String],
     restriction: Arc<dyn Restriction>,
-) -> i32 {
+) -> i32
+where
+    W: AsyncWrite + Unpin + ?Sized,
+{
     drive_with_faults(
         stdin,
         stdout,
@@ -149,27 +143,32 @@ pub async fn drive(
     .await
 }
 
-async fn drive_with_faults(
+async fn drive_with_faults<W>(
     stdin: Pin<Box<dyn AsyncRead + Send>>,
-    stdout: &mut dyn Write,
+    stdout: &mut W,
     bounds: Bounds,
     supported: bool,
     limitations: &[String],
     restriction: Arc<dyn Restriction>,
     faults: FaultInjection,
-) -> i32 {
+) -> i32
+where
+    W: AsyncWrite + Unpin + ?Sized,
+{
     let exchange_started = tokio::time::Instant::now();
+    let initialize_deadline = exchange_started + INITIALIZE_WAIT_TIMEOUT;
     let mut session = match Session::new(bounds) {
         Ok(s) => s,
         Err(_) => return EXIT_NO_TERMINAL,
     };
     let mut reader = AsyncLineReader::new(stdin, bounds);
+    let mut output = FrameOutput::new(stdout, bounds, initialize_deadline);
 
     let mut seed_id: Option<RequestId> = None;
 
     // --- read initialize (establishes the seed request id) ---
-    let init = match tokio::time::timeout(
-        INITIALIZE_WAIT_TIMEOUT,
+    let init = match tokio::time::timeout_at(
+        initialize_deadline,
         recv_host_frame(&mut reader, &mut session, &mut seed_id),
     )
     .await
@@ -182,48 +181,51 @@ async fn drive_with_faults(
                 // somehow exists, report it; otherwise the host classifies the
                 // silence. (initialize is the only frame that seeds, so this is
                 // usually EXIT_NO_TERMINAL.)
-                return fail_or_silent(stdout, bounds, &seed_id, FailureCode::ProtocolViolation);
+                return output
+                    .fail_or_silent(&seed_id, FailureCode::ProtocolViolation)
+                    .await;
             }
             HostIn::Eof | HostIn::Error => return EXIT_NO_TERMINAL,
         },
     };
     let Some(deadline) = exchange_started.checked_add(Duration::from_millis(init.deadline_ms))
     else {
-        return emit_failed_or_silent(
-            stdout,
-            bounds,
-            &seed_id,
-            FailureCode::ProtocolViolation,
-            FailurePhase::Handshake,
-        );
+        return output
+            .emit_failed_or_silent(
+                &seed_id,
+                FailureCode::ProtocolViolation,
+                FailurePhase::Handshake,
+            )
+            .await;
     };
+    output.set_deadline(deadline);
     if tokio::time::Instant::now() >= deadline {
-        return emit_failed_or_silent(
-            stdout,
-            bounds,
-            &seed_id,
-            FailureCode::ExecutionTimedOut,
-            FailurePhase::Handshake,
-        );
+        return output
+            .emit_failed_or_silent(
+                &seed_id,
+                FailureCode::ExecutionTimedOut,
+                FailurePhase::Handshake,
+            )
+            .await;
     }
     let policy = parse_adapter_policy(&init);
     if tokio::time::Instant::now() >= deadline {
-        return emit_failed_or_silent(
-            stdout,
-            bounds,
-            &seed_id,
-            FailureCode::ExecutionTimedOut,
-            FailurePhase::Handshake,
-        );
+        return output
+            .emit_failed_or_silent(
+                &seed_id,
+                FailureCode::ExecutionTimedOut,
+                FailurePhase::Handshake,
+            )
+            .await;
     }
     let Some(policy) = policy else {
-        return emit_failed_or_silent(
-            stdout,
-            bounds,
-            &seed_id,
-            FailureCode::ProtocolViolation,
-            FailurePhase::Handshake,
-        );
+        return output
+            .emit_failed_or_silent(
+                &seed_id,
+                FailureCode::ProtocolViolation,
+                FailurePhase::Handshake,
+            )
+            .await;
     };
     let runner = SandboxRunner::new(policy, restriction).with_faults(faults);
 
@@ -235,13 +237,13 @@ async fn drive_with_faults(
     let selected = match select(&init.supported_protocols, &backend_supported) {
         Ok(p) => p,
         Err(_) => {
-            return emit_failed_or_silent(
-                stdout,
-                bounds,
-                &seed_id,
-                FailureCode::ProtocolIncompatible,
-                FailurePhase::Handshake,
-            );
+            return output
+                .emit_failed_or_silent(
+                    &seed_id,
+                    FailureCode::ProtocolIncompatible,
+                    FailurePhase::Handshake,
+                )
+                .await;
         }
     };
     let ready = BackendToHost::Ready(ReadyPayload {
@@ -251,7 +253,7 @@ async fn drive_with_faults(
         implementation_version: env!("CARGO_PKG_VERSION").to_string(),
         target: TargetId::new(env!("OPI_SANDBOX_BUILD_TARGET")),
     });
-    if !emit_frame(stdout, bounds, &ready) {
+    if !output.emit_frame(&ready).await {
         return EXIT_NO_TERMINAL;
     }
 
@@ -263,18 +265,20 @@ async fn drive_with_faults(
     .await
     {
         Err(_) => {
-            return emit_failed_or_silent(
-                stdout,
-                bounds,
-                &seed_id,
-                FailureCode::ExecutionTimedOut,
-                FailurePhase::Handshake,
-            );
+            return output
+                .emit_failed_or_silent(
+                    &seed_id,
+                    FailureCode::ExecutionTimedOut,
+                    FailurePhase::Handshake,
+                )
+                .await;
         }
         Ok(frame) => match frame {
             HostIn::Frame(HostToBackend::Execute(p)) => p,
             HostIn::Frame(_) | HostIn::Eof | HostIn::Error => {
-                return fail_or_silent(stdout, bounds, &seed_id, FailureCode::ProtocolViolation);
+                return output
+                    .fail_or_silent(&seed_id, FailureCode::ProtocolViolation)
+                    .await;
             }
         },
     };
@@ -284,39 +288,42 @@ async fn drive_with_faults(
     let request = match helper::build_request(&exec, cancel.clone()) {
         Ok(request) => request,
         Err(code) => {
-            return emit_failed_or_silent(stdout, bounds, &seed_id, code, FailurePhase::Handshake);
+            return output
+                .emit_failed_or_silent(&seed_id, code, FailurePhase::Handshake)
+                .await;
         }
     };
     let request = match helper::validate_request_until(&runner, request, deadline).await {
         Ok(request) => request,
         Err(code) => {
-            return emit_failed_or_silent(stdout, bounds, &seed_id, code, FailurePhase::Handshake);
+            return output
+                .emit_failed_or_silent(&seed_id, code, FailurePhase::Handshake)
+                .await;
         }
     };
     let cleanup_cutoff = deadline
         .checked_sub(CLEANUP_RESERVE)
         .unwrap_or(exchange_started);
     if tokio::time::Instant::now() >= cleanup_cutoff {
-        return emit_failed_or_silent(
-            stdout,
-            bounds,
-            &seed_id,
-            FailureCode::ExecutionTimedOut,
-            FailurePhase::Handshake,
-        );
+        return output
+            .emit_failed_or_silent(
+                &seed_id,
+                FailureCode::ExecutionTimedOut,
+                FailurePhase::Handshake,
+            )
+            .await;
     }
     let deadlines = RunDeadlines::new(
         cleanup_cutoff,
         deadline,
         Duration::from_millis(exec.timeout_ms),
     );
-    if !emit_frame(
-        stdout,
-        bounds,
-        &BackendToHost::Accepted(AcceptedPayload {
+    if !output
+        .emit_frame(&BackendToHost::Accepted(AcceptedPayload {
             request_id: seed_id.clone().expect("seed present"),
-        }),
-    ) {
+        }))
+        .await
+    {
         return EXIT_NO_TERMINAL;
     }
 
@@ -325,35 +332,31 @@ async fn drive_with_faults(
     let mut run = match start_outcome {
         StartOutcome::Ready { run } => run,
         StartOutcome::Refused { code } => {
-            return emit_failed_or_silent(stdout, bounds, &seed_id, code, FailurePhase::Handshake);
+            return output
+                .emit_failed_or_silent(&seed_id, code, FailurePhase::Handshake)
+                .await;
         }
         StartOutcome::Expired { mut run } => {
             cancel.cancel();
             run.keep_gated();
             let cleanup = drain_cancelled_run(&mut run, deadline).await;
             if cleanup.is_none_or(|result| result.cleanup != CleanupState::Confirmed) {
-                return emit_post_start_failure(
-                    stdout,
-                    bounds,
-                    &seed_id,
-                    PostStartFailure::CleanupUnconfirmed,
-                );
+                return output
+                    .emit_post_start_failure(&seed_id, PostStartFailure::CleanupUnconfirmed)
+                    .await;
             }
-            return emit_failed_or_silent(
-                stdout,
-                bounds,
-                &seed_id,
-                FailureCode::ExecutionTimedOut,
-                FailurePhase::Handshake,
-            );
+            return output
+                .emit_failed_or_silent(
+                    &seed_id,
+                    FailureCode::ExecutionTimedOut,
+                    FailurePhase::Handshake,
+                )
+                .await;
         }
         StartOutcome::CleanupUnconfirmed => {
-            return emit_post_start_failure(
-                stdout,
-                bounds,
-                &seed_id,
-                PostStartFailure::CleanupUnconfirmed,
-            );
+            return output
+                .emit_post_start_failure(&seed_id, PostStartFailure::CleanupUnconfirmed)
+                .await;
         }
     };
     // The execute timeout starts once setup has established the gated run. It
@@ -371,20 +374,17 @@ async fn drive_with_faults(
                 run.keep_gated();
                 let cleanup = drain_cancelled_run(&mut run, deadline).await;
                 if cleanup.is_none_or(|result| result.cleanup != CleanupState::Confirmed) {
-                    return emit_post_start_failure(
-                        stdout,
-                        bounds,
-                        &seed_id,
-                        PostStartFailure::CleanupUnconfirmed,
-                    );
+                    return output
+                        .emit_post_start_failure(&seed_id, PostStartFailure::CleanupUnconfirmed)
+                        .await;
                 }
-                return emit_failed_or_silent(
-                    stdout,
-                    bounds,
-                    &seed_id,
-                    FailureCode::ExecutionTimedOut,
-                    FailurePhase::Handshake,
-                );
+                return output
+                    .emit_failed_or_silent(
+                        &seed_id,
+                        FailureCode::ExecutionTimedOut,
+                        FailurePhase::Handshake,
+                    )
+                    .await;
             }
             Ok(event) => match event {
                 Some(SandboxEvent::Started {
@@ -395,13 +395,13 @@ async fn drive_with_faults(
                 Some(_) | None => {
                     // The stream produced no Started event: setup did not establish a
                     // started contract. Treat as a pre-start failure.
-                    return emit_failed_or_silent(
-                        stdout,
-                        bounds,
-                        &seed_id,
-                        FailureCode::Failed,
-                        FailurePhase::Handshake,
-                    );
+                    return output
+                        .emit_failed_or_silent(
+                            &seed_id,
+                            FailureCode::Failed,
+                            FailurePhase::Handshake,
+                        )
+                        .await;
                 }
             },
         };
@@ -410,20 +410,17 @@ async fn drive_with_faults(
         run.keep_gated();
         let cleanup = drain_cancelled_run(&mut run, deadline).await;
         if cleanup.is_none_or(|result| result.cleanup != CleanupState::Confirmed) {
-            return emit_post_start_failure(
-                stdout,
-                bounds,
-                &seed_id,
-                PostStartFailure::CleanupUnconfirmed,
-            );
+            return output
+                .emit_post_start_failure(&seed_id, PostStartFailure::CleanupUnconfirmed)
+                .await;
         }
-        return emit_failed_or_silent(
-            stdout,
-            bounds,
-            &seed_id,
-            FailureCode::ExecutionTimedOut,
-            FailurePhase::Handshake,
-        );
+        return output
+            .emit_failed_or_silent(
+                &seed_id,
+                FailureCode::ExecutionTimedOut,
+                FailurePhase::Handshake,
+            )
+            .await;
     }
     let started = BackendToHost::Started(helper::started_payload(
         &id,
@@ -431,7 +428,7 @@ async fn drive_with_faults(
         contract,
         limitations,
     ));
-    if !emit_frame(stdout, bounds, &started) {
+    if !output.emit_frame(&started).await {
         return EXIT_NO_TERMINAL;
     }
     // `started` is a publication gate, not permission to reset time. Recheck
@@ -441,20 +438,17 @@ async fn drive_with_faults(
         run.keep_gated();
         let cleanup = drain_cancelled_run(&mut run, deadline).await;
         if cleanup.is_none_or(|result| result.cleanup != CleanupState::Confirmed) {
-            return emit_post_start_failure(
-                stdout,
-                bounds,
-                &seed_id,
-                PostStartFailure::CleanupUnconfirmed,
-            );
+            return output
+                .emit_post_start_failure(&seed_id, PostStartFailure::CleanupUnconfirmed)
+                .await;
         }
-        return emit_failed_or_silent(
-            stdout,
-            bounds,
-            &seed_id,
-            FailureCode::ExecutionTimedOut,
-            FailurePhase::Execution,
-        );
+        return output
+            .emit_failed_or_silent(
+                &seed_id,
+                FailureCode::ExecutionTimedOut,
+                FailurePhase::Execution,
+            )
+            .await;
     }
     // The real target remains behind the runner's release gate until the
     // `started` frame has been written and flushed.
@@ -465,14 +459,13 @@ async fn drive_with_faults(
             .await
             .is_none_or(|result| result.cleanup != CleanupState::Confirmed)
         {
-            return emit_post_start_failure(
-                stdout,
-                bounds,
-                &seed_id,
-                PostStartFailure::CleanupUnconfirmed,
-            );
+            return output
+                .emit_post_start_failure(&seed_id, PostStartFailure::CleanupUnconfirmed)
+                .await;
         }
-        return emit_post_start_failure(stdout, bounds, &seed_id, PostStartFailure::Release);
+        return output
+            .emit_post_start_failure(&seed_id, PostStartFailure::Release)
+            .await;
     }
 
     // --- drain: host input has deterministic precedence over deadline and
@@ -492,64 +485,57 @@ async fn drive_with_faults(
                         .await
                         .is_none_or(|result| result.cleanup != CleanupState::Confirmed)
                     {
-                        return emit_post_start_failure(
-                            stdout,
-                            bounds,
-                            &seed_id,
-                            PostStartFailure::CleanupUnconfirmed,
-                        );
+                        return output
+                            .emit_post_start_failure(
+                                &seed_id,
+                                PostStartFailure::CleanupUnconfirmed,
+                            )
+                            .await;
                     }
-                    return emit_failed_or_silent(
-                        stdout, bounds, &seed_id,
-                        FailureCode::ProtocolViolation, FailurePhase::Execution,
-                    );
+                    return output
+                        .emit_failed_or_silent(
+                            &seed_id,
+                            FailureCode::ProtocolViolation,
+                            FailurePhase::Execution,
+                        )
+                        .await;
                 }
             },
             _ = tokio::time::sleep_until(execution_deadline), if !cancel_requested => {
                 cancel.cancel();
                 let Some(mut result) = drain_cancelled_run(&mut run, deadline).await else {
-                    return emit_post_start_failure(
-                        stdout,
-                        bounds,
-                        &seed_id,
-                        PostStartFailure::CleanupUnconfirmed,
-                    );
+                    return output
+                        .emit_post_start_failure(&seed_id, PostStartFailure::CleanupUnconfirmed)
+                        .await;
                 };
                 if result.cleanup != CleanupState::Confirmed {
-                    return emit_post_start_failure(
-                        stdout,
-                        bounds,
-                        &seed_id,
-                        PostStartFailure::CleanupUnconfirmed,
-                    );
+                    return output
+                        .emit_post_start_failure(&seed_id, PostStartFailure::CleanupUnconfirmed)
+                        .await;
                 }
                 result.outcome = SandboxOutcome::TimedOut;
                 break result;
             },
             _ = tokio::time::sleep_until(deadline) => {
                 cancel.cancel();
-                return emit_post_start_failure(
-                    stdout,
-                    bounds,
-                    &seed_id,
-                    PostStartFailure::CleanupUnconfirmed,
-                );
+                return output
+                    .emit_post_start_failure(&seed_id, PostStartFailure::CleanupUnconfirmed)
+                    .await;
             },
             ev = next_event(&mut run) => match ev {
                 Some(SandboxEvent::Output { stream, bytes }) => {
-                    if !emit_output_event(stdout, bounds, &id, stream, &bytes) {
+                    if !output.emit_output_event(&id, stream, &bytes).await {
                         return EXIT_NO_TERMINAL;
                     }
                 }
                 Some(SandboxEvent::Diagnostic { message }) => {
-                    if !emit_frame(
-                        stdout,
-                        bounds,
-                        &BackendToHost::Diagnostic(DiagnosticPayload {
+                    if !output
+                        .emit_frame(&BackendToHost::Diagnostic(DiagnosticPayload {
                             request_id: id.clone(),
                             message,
-                        }),
-                    ) {
+                        }))
+                        .await
+                    {
                         return EXIT_NO_TERMINAL;
                     }
                 }
@@ -561,12 +547,9 @@ async fn drive_with_faults(
                 }
                 Some(SandboxEvent::Started { .. }) => continue,
                 None => {
-                    return emit_post_start_failure(
-                        stdout,
-                        bounds,
-                        &seed_id,
-                        PostStartFailure::StreamEnded,
-                    );
+                    return output
+                        .emit_post_start_failure(&seed_id, PostStartFailure::StreamEnded)
+                        .await;
                 }
             },
         }
@@ -574,7 +557,7 @@ async fn drive_with_faults(
 
     // --- output has already been relayed incrementally; emit completed ---
     let completed = BackendToHost::Completed(completed_payload(&id, &result));
-    if !emit_frame(stdout, bounds, &completed) {
+    if !output.emit_frame(&completed).await {
         return EXIT_NO_TERMINAL;
     }
 
@@ -594,8 +577,7 @@ pub async fn run(stdin: Pin<Box<dyn AsyncRead + Send>>) -> i32 {
         .restriction
         .clone()
         .unwrap_or_else(|| Arc::new(NoRestriction));
-    let stdout = std::io::stdout();
-    let mut stdout = stdout.lock();
+    let mut stdout = tokio::io::stdout();
     drive(
         stdin,
         &mut stdout,
@@ -676,113 +658,112 @@ async fn recv_host_frame(
     }
 }
 
-/// Encode + write + flush one backend frame. Returns false on encode failure
-/// (oversized line) or write/flush failure (broken pipe).
-fn emit_frame(stdout: &mut dyn Write, bounds: Bounds, frame: &BackendToHost) -> bool {
-    let Ok(line) = encode_backend(frame, &bounds) else {
-        return false;
-    };
-    write_all_nl_flush(stdout, line.as_bytes())
+/// Ordered, deadline-aware backend frame output.
+struct FrameOutput<'a, W: ?Sized> {
+    stdout: &'a mut W,
+    bounds: Bounds,
+    deadline: tokio::time::Instant,
 }
 
-/// Emit a `failed` frame if a seed id exists (reporting the violation to the
-/// host); otherwise exit silent. Always returns the appropriate exit code.
-fn emit_failed_or_silent(
-    stdout: &mut dyn Write,
-    bounds: Bounds,
-    seed_id: &Option<RequestId>,
-    code: FailureCode,
-    phase: FailurePhase,
-) -> i32 {
-    match seed_id {
-        Some(id) => {
-            if emit_failed(stdout, bounds, id, code, phase) {
-                EXIT_OK
-            } else {
-                EXIT_NO_TERMINAL
-            }
+impl<W> FrameOutput<'_, W>
+where
+    W: AsyncWrite + Unpin + ?Sized,
+{
+    fn new(stdout: &mut W, bounds: Bounds, deadline: tokio::time::Instant) -> FrameOutput<'_, W> {
+        FrameOutput {
+            stdout,
+            bounds,
+            deadline,
         }
-        None => EXIT_NO_TERMINAL,
     }
-}
 
-/// Convenience for the common "ProtocolViolation, phase by target_started" case.
-fn fail_or_silent(
-    stdout: &mut dyn Write,
-    bounds: Bounds,
-    seed_id: &Option<RequestId>,
-    code: FailureCode,
-) -> i32 {
-    // Callers of this helper are always pre-start (target_started == false).
-    emit_failed_or_silent(stdout, bounds, seed_id, code, FailurePhase::Handshake)
-}
+    fn set_deadline(&mut self, deadline: tokio::time::Instant) {
+        self.deadline = deadline;
+    }
 
-/// Encode + write + flush a `failed` frame (redacted: no message, no
-/// diagnostics). Returns false on emit failure.
-fn emit_failed(
-    stdout: &mut dyn Write,
-    bounds: Bounds,
-    id: &RequestId,
-    code: FailureCode,
-    phase: FailurePhase,
-) -> bool {
-    emit_frame(
-        stdout,
-        bounds,
-        &BackendToHost::Failed(FailedPayload {
+    /// Encode, write, and flush one backend frame before the request deadline.
+    async fn emit_frame(&mut self, frame: &BackendToHost) -> bool {
+        let Ok(line) = encode_backend(frame, &self.bounds) else {
+            return false;
+        };
+        tokio::time::timeout_at(self.deadline, async {
+            self.stdout.write_all(line.as_bytes()).await?;
+            self.stdout.write_all(b"\n").await?;
+            self.stdout.flush().await
+        })
+        .await
+        .is_ok_and(|result| result.is_ok())
+    }
+
+    /// Emit a `failed` frame if a seed id exists; otherwise exit silent.
+    async fn emit_failed_or_silent(
+        &mut self,
+        seed_id: &Option<RequestId>,
+        code: FailureCode,
+        phase: FailurePhase,
+    ) -> i32 {
+        match seed_id {
+            Some(id) if self.emit_failed(id, code, phase).await => EXIT_OK,
+            Some(_) | None => EXIT_NO_TERMINAL,
+        }
+    }
+
+    async fn fail_or_silent(&mut self, seed_id: &Option<RequestId>, code: FailureCode) -> i32 {
+        self.emit_failed_or_silent(seed_id, code, FailurePhase::Handshake)
+            .await
+    }
+
+    async fn emit_failed(
+        &mut self,
+        id: &RequestId,
+        code: FailureCode,
+        phase: FailurePhase,
+    ) -> bool {
+        self.emit_frame(&BackendToHost::Failed(FailedPayload {
             request_id: id.clone(),
             code,
             phase,
             message: None,
             diagnostics: vec![],
-        }),
-    )
-}
-
-/// Emit captured target bytes as base64 `Stdout` (`is_stdout`) / `Stderr`
-/// frames, chunked to `max_decoded_chunk_size` so each encoded line fits
-/// `max_line_size`. Empty data emits zero frames. Returns false on emit failure.
-fn emit_output(
-    stdout: &mut dyn Write,
-    bounds: Bounds,
-    id: &RequestId,
-    data: &[u8],
-    is_stdout: bool,
-) -> bool {
-    let chunk = bounds.max_decoded_chunk_size.max(1);
-    for piece in data.chunks(chunk) {
-        let frame = if is_stdout {
-            BackendToHost::Stdout(StdoutPayload {
-                request_id: id.clone(),
-                data: Base64Bytes::from_bytes(piece),
-            })
-        } else {
-            BackendToHost::Stderr(StderrPayload {
-                request_id: id.clone(),
-                data: Base64Bytes::from_bytes(piece),
-            })
-        };
-        if !emit_frame(stdout, bounds, &frame) {
-            return false;
-        }
+        }))
+        .await
     }
-    true
-}
 
-fn emit_output_event(
-    stdout: &mut dyn Write,
-    bounds: Bounds,
-    id: &RequestId,
-    stream: OutputStream,
-    data: &[u8],
-) -> bool {
-    emit_output(
-        stdout,
-        bounds,
-        id,
-        data,
-        matches!(stream, OutputStream::Stdout),
-    )
+    async fn emit_post_start_failure(
+        &mut self,
+        seed_id: &Option<RequestId>,
+        failure: PostStartFailure,
+    ) -> i32 {
+        let (code, phase) = classify_post_start_failure(failure);
+        self.emit_failed_or_silent(seed_id, code, phase).await
+    }
+
+    /// Emit captured target bytes as bounded base64 output frames.
+    async fn emit_output_event(
+        &mut self,
+        id: &RequestId,
+        stream: OutputStream,
+        data: &[u8],
+    ) -> bool {
+        let chunk = self.bounds.max_decoded_chunk_size.max(1);
+        for piece in data.chunks(chunk) {
+            let frame = if matches!(stream, OutputStream::Stdout) {
+                BackendToHost::Stdout(StdoutPayload {
+                    request_id: id.clone(),
+                    data: Base64Bytes::from_bytes(piece),
+                })
+            } else {
+                BackendToHost::Stderr(StderrPayload {
+                    request_id: id.clone(),
+                    data: Base64Bytes::from_bytes(piece),
+                })
+            };
+            if !self.emit_frame(&frame).await {
+                return false;
+            }
+        }
+        true
+    }
 }
 
 /// Map a terminal [`crate::SandboxResult`] to the wire `completed` payload.
@@ -858,34 +839,21 @@ where
         .flatten()
 }
 
-/// Write `bytes` + a newline, then flush. Returns false on any I/O error.
-fn write_all_nl_flush(stdout: &mut dyn Write, bytes: &[u8]) -> bool {
-    let res = (|| -> std::io::Result<()> {
-        stdout.write_all(bytes)?;
-        stdout.write_all(b"\n")?;
-        stdout.flush()?;
-        Ok(())
-    })();
-    res.is_ok()
-}
-
 /// Cancellation-safe bounded async JSONL reader. Partial bytes live in this
 /// object, so dropping an in-progress `read_line` future never loses data and
 /// dropping the reader releases its owned input directly.
 struct AsyncLineReader {
     inner: tokio::io::BufReader<Pin<Box<dyn AsyncRead + Send>>>,
-    max_line_size: usize,
     line: Vec<u8>,
-    pending_cr: bool,
+    accumulator: CappedLineAccumulator,
 }
 
 impl AsyncLineReader {
     fn new(reader: Pin<Box<dyn AsyncRead + Send>>, bounds: Bounds) -> Self {
         Self {
             inner: tokio::io::BufReader::new(reader),
-            max_line_size: bounds.max_line_size,
             line: Vec::new(),
-            pending_cr: false,
+            accumulator: CappedLineAccumulator::new(bounds.max_line_size),
         }
     }
 
@@ -894,43 +862,20 @@ impl AsyncLineReader {
         loop {
             match self.inner.read(&mut byte).await? {
                 0 => {
-                    if self.pending_cr {
-                        self.push_byte(b'\r')?;
-                        self.pending_cr = false;
-                    }
-                    return if self.line.is_empty() {
+                    return if !self.accumulator.finish_eof(&mut self.line)? {
                         Ok(None)
                     } else {
                         Ok(Some(std::mem::take(&mut self.line)))
                     };
                 }
-                _ if byte[0] == b'\n' => {
-                    self.pending_cr = false;
+                _ if self.accumulator.push_byte(byte[0], &mut self.line)?
+                    == LineAccumulatorEvent::Complete =>
+                {
                     return Ok(Some(std::mem::take(&mut self.line)));
                 }
-                _ => {
-                    if self.pending_cr {
-                        self.push_byte(b'\r')?;
-                        self.pending_cr = false;
-                    }
-                    if byte[0] == b'\r' {
-                        self.pending_cr = true;
-                    } else {
-                        self.push_byte(byte[0])?;
-                    }
-                }
+                _ => {}
             }
         }
-    }
-
-    fn push_byte(&mut self, byte: u8) -> Result<(), CodecError> {
-        if self.line.len() >= self.max_line_size {
-            return Err(CodecError::OversizedLine {
-                max_line_size: self.max_line_size,
-            });
-        }
-        self.line.push(byte);
-        Ok(())
     }
 }
 
@@ -1041,10 +986,17 @@ mod tests {
 
         let mut out = Vec::new();
         let request_id = Some(RequestId::new("r1".to_string()).expect("valid request id"));
-        assert_eq!(
-            emit_post_start_failure(&mut out, Bounds::DEFAULT, &request_id, failure,),
-            EXIT_OK
-        );
+        {
+            let mut output = FrameOutput::new(
+                &mut out,
+                Bounds::DEFAULT,
+                tokio::time::Instant::now() + Duration::from_secs(1),
+            );
+            assert_eq!(
+                output.emit_post_start_failure(&request_id, failure).await,
+                EXIT_OK
+            );
+        }
         let line = out
             .strip_suffix(b"\n")
             .expect("one newline-terminated frame");
@@ -1084,10 +1036,17 @@ mod tests {
 
         let mut out = Vec::new();
         let request_id = Some(RequestId::new("r1".to_string()).expect("valid request id"));
-        assert_eq!(
-            emit_post_start_failure(&mut out, Bounds::DEFAULT, &request_id, failure,),
-            EXIT_OK
-        );
+        {
+            let mut output = FrameOutput::new(
+                &mut out,
+                Bounds::DEFAULT,
+                tokio::time::Instant::now() + Duration::from_secs(1),
+            );
+            assert_eq!(
+                output.emit_post_start_failure(&request_id, failure).await,
+                EXIT_OK
+            );
+        }
         let line = out
             .strip_suffix(b"\n")
             .expect("one newline-terminated frame");
@@ -1121,15 +1080,19 @@ mod tests {
 
         let mut out = Vec::new();
         let request_id = Some(RequestId::new("r1".to_string()).expect("valid request id"));
-        assert_eq!(
-            emit_post_start_failure(
+        {
+            let mut output = FrameOutput::new(
                 &mut out,
                 Bounds::DEFAULT,
-                &request_id,
-                PostStartFailure::CleanupUnconfirmed,
-            ),
-            EXIT_OK
-        );
+                tokio::time::Instant::now() + Duration::from_secs(1),
+            );
+            assert_eq!(
+                output
+                    .emit_post_start_failure(&request_id, PostStartFailure::CleanupUnconfirmed)
+                    .await,
+                EXIT_OK
+            );
+        }
         let line = out
             .strip_suffix(b"\n")
             .expect("one newline-terminated frame");

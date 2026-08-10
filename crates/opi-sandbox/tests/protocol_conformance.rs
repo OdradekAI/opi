@@ -16,12 +16,14 @@
 #![forbid(unsafe_code)]
 
 use std::collections::BTreeMap;
-use std::io::{Cursor, Write};
+use std::io::Cursor;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
+#[cfg(unix)]
+use std::{fs, path::PathBuf};
 
 use opi_protocol::execution::v1::codec::decode_backend;
 use opi_protocol::execution::v1::frames::ExecutePayload;
@@ -32,7 +34,9 @@ use opi_protocol::execution::v1::{
 
 use opi_sandbox::policy::{RestrictionCtx, RestrictionSetupError};
 use opi_sandbox::{AppliedRestriction, NetworkPolicy, NoRestriction, Restriction, backend};
-use tokio::io::{AsyncRead, AsyncWriteExt, ReadBuf};
+#[cfg(unix)]
+use tokio::io::AsyncBufReadExt;
+use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, ReadBuf};
 
 type TestInput = Pin<Box<dyn AsyncRead + Send>>;
 
@@ -269,20 +273,59 @@ struct DelayedFlushWriter {
     flushes: usize,
     delay_on_flush: usize,
     delay: Duration,
+    pending_flush: Option<Pin<Box<tokio::time::Sleep>>>,
 }
 
-impl Write for DelayedFlushWriter {
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+impl AsyncWrite for DelayedFlushWriter {
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        _cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<std::io::Result<usize>> {
         self.bytes.extend_from_slice(buf);
-        Ok(buf.len())
+        Poll::Ready(Ok(buf.len()))
     }
 
-    fn flush(&mut self) -> std::io::Result<()> {
-        self.flushes += 1;
-        if self.flushes == self.delay_on_flush {
-            std::thread::sleep(self.delay);
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        if let Some(delay) = self.pending_flush.as_mut() {
+            return match delay.as_mut().poll(cx) {
+                Poll::Ready(()) => {
+                    self.pending_flush = None;
+                    Poll::Ready(Ok(()))
+                }
+                Poll::Pending => Poll::Pending,
+            };
         }
-        Ok(())
+        self.flushes += 1;
+        if self.flushes != self.delay_on_flush {
+            return Poll::Ready(Ok(()));
+        }
+        self.pending_flush = Some(Box::pin(tokio::time::sleep(self.delay)));
+        self.poll_flush(cx)
+    }
+
+    fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        Poll::Ready(Ok(()))
+    }
+}
+
+struct StalledWriter;
+
+impl AsyncWrite for StalledWriter {
+    fn poll_write(
+        self: Pin<&mut Self>,
+        _cx: &mut Context<'_>,
+        _buf: &[u8],
+    ) -> Poll<std::io::Result<usize>> {
+        Poll::Pending
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        Poll::Pending
+    }
+
+    fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        Poll::Ready(Ok(()))
     }
 }
 
@@ -908,6 +951,7 @@ async fn execution_cutoff_after_started_flush_never_releases_the_target() {
         flushes: 0,
         delay_on_flush: 3,
         delay: Duration::from_millis(200),
+        pending_flush: None,
     };
 
     let code = backend::drive(
@@ -934,6 +978,144 @@ async fn execution_cutoff_after_started_flush_never_releases_the_target() {
         !marker.exists(),
         "target crossed the gate after its execution cutoff"
     );
+}
+
+#[tokio::test]
+async fn stalled_protocol_output_is_bounded_by_the_request_deadline() {
+    let marker_dir = tempfile::tempdir().expect("marker dir");
+    let marker = marker_dir.path().join("must-not-exist");
+    let ws = workspace();
+    let (program, args) = marker_target(&marker);
+    let arg_refs = args.iter().map(String::as_str).collect::<Vec<_>>();
+    let input = format!(
+        "{}\n{}\n",
+        init_json("r1", 100, &["command-execution-jsonl-v1"]),
+        exec_json("r1", program, &arg_refs, &ws, 10_000, &[])
+    );
+    let bytes = input.into_bytes();
+    let (mut host, reader) = tokio::io::duplex(bytes.len().max(1));
+    host.write_all(&bytes).await.expect("write host frames");
+    let mut out = StalledWriter;
+
+    let code = tokio::time::timeout(
+        Duration::from_secs(1),
+        backend::drive(
+            Box::pin(reader),
+            &mut out,
+            Bounds::DEFAULT,
+            true,
+            &[],
+            Arc::new(NoRestriction),
+        ),
+    )
+    .await
+    .expect("request deadline must cancel a stalled protocol write");
+    drop(host);
+
+    assert_eq!(code, 1, "no terminal frame could be written");
+    assert!(!marker.exists(), "stalled output released the target");
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn hard_backend_death_reaps_target_group_and_removes_invocation_temp_root() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    let target_pid_file = workspace.path().join("target.pid");
+    let grandchild_pid_file = workspace.path().join("grandchild.pid");
+    let temp_root_file = workspace.path().join("temp-root");
+    let target = format!(
+        "printf '%s' \"$$\" > '{}'; printf '%s' \"$TMPDIR\" > '{}'; sleep 60 & printf '%s' \"$!\" > '{}'; wait",
+        target_pid_file.display(),
+        temp_root_file.display(),
+        grandchild_pid_file.display(),
+    );
+    let workspace_wire = workspace.path().to_string_lossy().replace('\\', "/");
+    let input = format!(
+        "{}\n{}\n",
+        init_json("r1", 30_000, &["command-execution-jsonl-v1"]),
+        exec_json(
+            "r1",
+            "/bin/sh",
+            &["-c", &target],
+            &workspace_wire,
+            30_000,
+            &[],
+        )
+    );
+
+    let mut child = tokio::process::Command::new(env!("CARGO_BIN_EXE_opi-sandbox"))
+        .args(["backend", "--stdio"])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .expect("spawn real backend");
+    let mut stdin = child.stdin.take().expect("piped backend stdin");
+    stdin
+        .write_all(input.as_bytes())
+        .await
+        .expect("write backend request");
+    let mut stdout = tokio::io::BufReader::new(child.stdout.take().expect("piped backend stdout"));
+
+    tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            let mut line = String::new();
+            assert_ne!(stdout.read_line(&mut line).await.unwrap(), 0, "backend EOF");
+            if decode_backend(line.trim_end().as_bytes())
+                .is_ok_and(|frame| matches!(frame, BackendToHost::Started(_)))
+            {
+                break;
+            }
+        }
+        while !target_pid_file.is_file()
+            || !grandchild_pid_file.is_file()
+            || !temp_root_file.is_file()
+        {
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+    })
+    .await
+    .expect("target start evidence");
+
+    let target_pid = fs::read_to_string(&target_pid_file)
+        .expect("target pid")
+        .trim()
+        .parse::<u32>()
+        .expect("target pid parses");
+    let grandchild_pid = fs::read_to_string(&grandchild_pid_file)
+        .expect("grandchild pid")
+        .trim()
+        .parse::<u32>()
+        .expect("grandchild pid parses");
+    let temp_root = PathBuf::from(
+        fs::read_to_string(&temp_root_file)
+            .expect("temp root")
+            .trim(),
+    );
+    assert!(
+        temp_root.is_dir(),
+        "invocation temp root must exist at start"
+    );
+
+    child.start_kill().expect("hard-kill backend owner");
+    child.wait().await.expect("reap backend owner");
+    drop(stdin);
+    drop(stdout);
+
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while pid_alive(target_pid) || pid_alive(grandchild_pid) || temp_root.exists() {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    })
+    .await
+    .unwrap_or_else(|_| {
+        panic!(
+            "owner death cleanup incomplete: target_alive={}, grandchild_alive={}, temp_root_exists={}",
+            pid_alive(target_pid),
+            pid_alive(grandchild_pid),
+            temp_root.exists()
+        )
+    });
 }
 
 #[tokio::test]

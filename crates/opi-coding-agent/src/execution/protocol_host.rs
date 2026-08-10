@@ -21,7 +21,7 @@ use std::process::Stdio;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
-use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, ChildStdout};
 use tokio_util::sync::CancellationToken;
 
@@ -32,9 +32,12 @@ use opi_protocol::execution::v1::{
     TargetId, WIRE_IDENTITY,
 };
 // NOT re-exported at the root -> addressed by module path.
-use opi_protocol::execution::v1::codec::encode_host;
+use opi_protocol::execution::v1::codec::{
+    CappedLineAccumulator, LineAccumulatorEvent, encode_host,
+};
 use opi_protocol::execution::v1::frames::{
     CancelPayload, CompletedPayload, ExecutePayload, FailedPayload, InitializePayload,
+    StartedPayload,
 };
 
 #[cfg(windows)]
@@ -253,30 +256,29 @@ impl ExecutionProtocolHost {
             let _ = tokio::time::timeout_at(hard_deadline, child.wait()).await;
             return Err(ExecutionFailure::ExecutionFailed.into());
         }
-        let mut stdin = child.stdin.take().expect("piped stdin present");
+        let stdin = child.stdin.take().expect("piped stdin present");
         let stdout = child.stdout.take().expect("piped stdout present");
         let stderr = child.stderr.take().expect("piped stderr present");
 
         // --- concurrent bounded stderr drain (crash evidence only; never surfaced) ---
         let stderr_handle = tokio::spawn(drain_stderr(stderr));
-        let mut reader = CappedReader::new(stdout, bounds.max_line_size);
+        let reader = CappedReader::new(stdout, bounds.max_line_size);
+        let mut active = ActiveProtocol::new(
+            child,
+            guard,
+            stdin,
+            reader,
+            stderr_handle,
+            hard_deadline,
+            bounds,
+        );
         if tokio::time::Instant::now() >= handshake_deadline {
-            return terminate_and_fail(
-                child,
-                guard,
-                stderr_handle,
-                stdin,
-                ExecutionFailure::ProtocolViolation,
-                hard_deadline,
-            )
-            .await;
+            return terminate_and_fail(active, ExecutionFailure::ProtocolViolation).await;
         }
 
         // accumulated state for the eventual outcome
-        let mut started = StartedReport::default();
-        let mut stdout_acc: Vec<u8> = Vec::new();
-        let mut stderr_acc: Vec<u8> = Vec::new();
-        let mut diagnostics = DiagnosticAccumulator::new(bounds.max_cumulative_output);
+        let redactor = BackendTextRedactor::for_invocation(&launch, &request, child_pid);
+        let mut accumulation = ProtocolAccumulation::new(bounds.max_cumulative_output, redactor);
         let mut state = HostState::new(HostPhase::AwaitingReady);
 
         // --- initialize (seed the session with the HOST id by observing it first) ---
@@ -288,28 +290,13 @@ impl ExecutionProtocolHost {
             supported_protocols: request.supported_protocols.to_vec(),
         });
         if session.observe_host(&init).is_err() {
-            return terminate_and_fail(
-                child,
-                guard,
-                stderr_handle,
-                stdin,
-                ExecutionFailure::ProtocolViolation,
-                hard_deadline,
-            )
-            .await;
+            return terminate_and_fail(active, ExecutionFailure::ProtocolViolation).await;
         }
-        if write_frame(&mut stdin, bounds, &init, handshake_deadline)
+        if write_frame(active.stdin_mut(), bounds, &init, handshake_deadline)
             .await
             .is_err()
         {
-            return terminate_failed_transmission(
-                child,
-                guard,
-                stderr_handle,
-                stdin,
-                hard_deadline,
-            )
-            .await;
+            return terminate_failed_transmission(active).await;
         }
 
         // --- ready (command not disclosed until ready validates) ---
@@ -324,7 +311,7 @@ impl ExecutionProtocolHost {
                 target: TargetId::new(""),
             };
         let ready = match read_frame_select(
-            &mut reader,
+            active.reader_mut(),
             &mut session,
             &request.signal,
             handshake_deadline,
@@ -337,65 +324,27 @@ impl ExecutionProtocolHost {
                     _ => unreachable!("only ready advances the pre-ready state"),
                 },
                 Ok(Action::Terminal(terminal)) => {
-                    return finalize_terminal(
-                        terminal,
-                        child,
-                        guard,
-                        stderr_handle,
-                        stdin,
-                        placeholder_ready(),
-                        started,
-                        stdout_acc,
-                        stderr_acc,
-                        diagnostics,
-                        hard_deadline,
-                        &mut reader,
-                    )
-                    .await;
+                    return finalize_terminal(terminal, active, placeholder_ready(), accumulation)
+                        .await;
                 }
                 Err(e) => {
-                    return terminate_and_fail(
-                        child,
-                        guard,
-                        stderr_handle,
-                        stdin,
-                        e,
-                        hard_deadline,
-                    )
-                    .await;
+                    return terminate_and_fail(active, e).await;
                 }
             },
             FrameSel::Canceled(reason) => {
                 return finish_with_cancel(
-                    stdin,
-                    &mut reader,
+                    active,
                     &mut session,
                     &mut state,
-                    child,
-                    guard,
-                    stderr_handle,
-                    bounds,
                     &request_id,
-                    hard_deadline,
                     reason,
                     placeholder_ready(),
-                    started,
-                    stdout_acc,
-                    stderr_acc,
-                    diagnostics,
+                    accumulation,
                 )
                 .await;
             }
             FrameSel::Eof | FrameSel::Codec(_) => {
-                return terminate_and_fail(
-                    child,
-                    guard,
-                    stderr_handle,
-                    stdin,
-                    ExecutionFailure::ProtocolViolation,
-                    hard_deadline,
-                )
-                .await;
+                return terminate_and_fail(active, ExecutionFailure::ProtocolViolation).await;
             }
         };
         if !request
@@ -403,29 +352,13 @@ impl ExecutionProtocolHost {
             .iter()
             .any(|p| p == &ready.selected_protocol)
         {
-            return terminate_and_fail(
-                child,
-                guard,
-                stderr_handle,
-                stdin,
-                ExecutionFailure::ProtocolIncompatible,
-                hard_deadline,
-            )
-            .await;
+            return terminate_and_fail(active, ExecutionFailure::ProtocolIncompatible).await;
         }
         if ready.implementation.as_str() != request.expected_implementation
             || ready.implementation_version != request.expected_implementation_version
             || ready.target.as_str() != request.expected_target
         {
-            return terminate_and_fail(
-                child,
-                guard,
-                stderr_handle,
-                stdin,
-                ExecutionFailure::ProtocolIncompatible,
-                hard_deadline,
-            )
-            .await;
+            return terminate_and_fail(active, ExecutionFailure::ProtocolIncompatible).await;
         }
         let ready_report = ReadyReport {
             selected_protocol: ready.selected_protocol.clone(),
@@ -448,101 +381,64 @@ impl ExecutionProtocolHost {
             env_additions: request.env_additions.clone(),
         });
         if session.observe_host(&exec_frame).is_err() {
-            return terminate_and_fail(
-                child,
-                guard,
-                stderr_handle,
-                stdin,
-                ExecutionFailure::ProtocolViolation,
-                hard_deadline,
-            )
-            .await;
+            return terminate_and_fail(active, ExecutionFailure::ProtocolViolation).await;
         }
-        if write_frame(&mut stdin, bounds, &exec_frame, cancel_at)
+        if write_frame(active.stdin_mut(), bounds, &exec_frame, cancel_at)
             .await
             .is_err()
         {
-            return terminate_failed_transmission(
-                child,
-                guard,
-                stderr_handle,
-                stdin,
-                hard_deadline,
-            )
-            .await;
+            return terminate_failed_transmission(active).await;
         }
 
         // --- main frame loop (host-side transition ordering + accumulation) ---
         loop {
-            match read_frame_select(&mut reader, &mut session, &request.signal, cancel_at).await {
+            match read_frame_select(
+                active.reader_mut(),
+                &mut session,
+                &request.signal,
+                cancel_at,
+            )
+            .await
+            {
                 FrameSel::Canceled(reason) => {
                     return finish_with_cancel(
-                        stdin,
-                        &mut reader,
+                        active,
                         &mut session,
                         &mut state,
-                        child,
-                        guard,
-                        stderr_handle,
-                        bounds,
                         &request_id,
-                        hard_deadline,
                         reason,
                         ready_report,
-                        started,
-                        stdout_acc,
-                        stderr_acc,
-                        diagnostics,
+                        accumulation,
                     )
                     .await;
                 }
                 FrameSel::Eof => {
-                    return terminate_and_fail(
-                        child,
-                        guard,
-                        stderr_handle,
-                        stdin,
-                        ExecutionFailure::ProtocolViolation,
-                        hard_deadline,
-                    )
-                    .await;
+                    return terminate_and_fail(active, ExecutionFailure::ProtocolViolation).await;
                 }
                 FrameSel::Codec(e) => {
-                    return terminate_and_fail(
-                        child,
-                        guard,
-                        stderr_handle,
-                        stdin,
-                        e,
-                        hard_deadline,
-                    )
-                    .await;
+                    return terminate_and_fail(active, e).await;
                 }
                 FrameSel::Frame(frame) => match transition(&mut state, &frame) {
                     Ok(Action::Continue) => match frame {
                         BackendToHost::Accepted(_) => {}
                         BackendToHost::Started(p) => {
-                            started = StartedReport {
-                                placement: p.placement.clone(),
-                                guarantee: p.guarantee.clone(),
-                                policy: p.policy.clone(),
-                                limitations: p.limitations.clone(),
-                            };
+                            accumulation.started = accumulation.diagnostics.redact_started(p);
                         }
-                        BackendToHost::Stdout(p) => stdout_acc.extend_from_slice(p.data.as_bytes()),
-                        BackendToHost::Stderr(p) => stderr_acc.extend_from_slice(p.data.as_bytes()),
+                        BackendToHost::Stdout(p) => {
+                            accumulation.stdout.extend_from_slice(p.data.as_bytes())
+                        }
+                        BackendToHost::Stderr(p) => {
+                            accumulation.stderr.extend_from_slice(p.data.as_bytes())
+                        }
                         BackendToHost::Diagnostic(p) => {
-                            if diagnostics
+                            if accumulation
+                                .diagnostics
                                 .push_backend(Diagnostic { message: p.message })
                                 .is_err()
                             {
                                 return terminate_and_fail(
-                                    child,
-                                    guard,
-                                    stderr_handle,
-                                    stdin,
+                                    active,
                                     ExecutionFailure::ProtocolViolation,
-                                    hard_deadline,
                                 )
                                 .await;
                             }
@@ -550,32 +446,11 @@ impl ExecutionProtocolHost {
                         _ => {}
                     },
                     Ok(Action::Terminal(terminal)) => {
-                        return finalize_terminal(
-                            terminal,
-                            child,
-                            guard,
-                            stderr_handle,
-                            stdin,
-                            ready_report,
-                            started,
-                            stdout_acc,
-                            stderr_acc,
-                            diagnostics,
-                            hard_deadline,
-                            &mut reader,
-                        )
-                        .await;
+                        return finalize_terminal(terminal, active, ready_report, accumulation)
+                            .await;
                     }
                     Err(e) => {
-                        return terminate_and_fail(
-                            child,
-                            guard,
-                            stderr_handle,
-                            stdin,
-                            e,
-                            hard_deadline,
-                        )
-                        .await;
+                        return terminate_and_fail(active, e).await;
                     }
                 },
             }
@@ -629,12 +504,88 @@ fn native_path(p: &Path) -> NativeString {
     }
 }
 
-fn redact_backend_diagnostic(diagnostic: Diagnostic) -> Diagnostic {
-    Diagnostic {
-        message: opi_agent::diagnostic::redact_text(
-            &diagnostic.message,
+#[derive(Default)]
+struct BackendTextRedactor {
+    exact_values: Vec<String>,
+}
+
+impl BackendTextRedactor {
+    fn new(values: impl IntoIterator<Item = impl Into<String>>) -> Self {
+        let mut exact_values = values
+            .into_iter()
+            .map(Into::into)
+            .filter(|value| !value.is_empty())
+            .collect::<Vec<_>>();
+        exact_values.sort_by_key(|value| std::cmp::Reverse(value.len()));
+        exact_values.dedup();
+        Self { exact_values }
+    }
+
+    fn for_invocation(
+        launch: &BackendLaunch<'_>,
+        request: &ExecutionRequest<'_>,
+        child_pid: Option<u32>,
+    ) -> Self {
+        let mut values = vec![
+            request.command.to_string(),
+            request.workspace.to_string_lossy().into_owned(),
+            request.cwd.to_string_lossy().into_owned(),
+            native_path(request.workspace).to_wire_string(),
+            native_path(request.cwd).to_wire_string(),
+            launch.program.to_string_lossy().into_owned(),
+        ];
+        values.extend(launch.args.iter().cloned());
+        for value in request.env_additions.values() {
+            values.push(value.to_wire_string());
+        }
+        collect_json_strings(&request.adapter_config, &mut values);
+        if let Some(pid) = child_pid {
+            values.push(pid.to_string());
+        }
+        Self::new(values)
+    }
+
+    fn redact(&self, value: &str) -> String {
+        let exact_redacted = self
+            .exact_values
+            .iter()
+            .fold(value.to_string(), |text, exact| {
+                text.replace(exact, "[REDACTED]")
+            });
+        opi_agent::diagnostic::redact_text(
+            &exact_redacted,
             opi_agent::diagnostic::RedactionMode::Summary,
-        ),
+        )
+    }
+
+    fn redact_started(&self, payload: StartedPayload) -> StartedReport {
+        StartedReport {
+            placement: self.redact(&payload.placement),
+            guarantee: self.redact(&payload.guarantee),
+            policy: self.redact(&payload.policy),
+            limitations: payload
+                .limitations
+                .iter()
+                .map(|limitation| self.redact(limitation))
+                .collect(),
+        }
+    }
+}
+
+fn collect_json_strings(value: &serde_json::Value, values: &mut Vec<String>) {
+    match value {
+        serde_json::Value::String(value) => values.push(value.clone()),
+        serde_json::Value::Array(items) => {
+            for item in items {
+                collect_json_strings(item, values);
+            }
+        }
+        serde_json::Value::Object(fields) => {
+            for value in fields.values() {
+                collect_json_strings(value, values);
+            }
+        }
+        serde_json::Value::Null | serde_json::Value::Bool(_) | serde_json::Value::Number(_) => {}
     }
 }
 
@@ -647,15 +598,26 @@ struct DiagnosticAccumulator {
     entries: Vec<Diagnostic>,
     cumulative_bytes: usize,
     max_cumulative_bytes: usize,
+    redactor: BackendTextRedactor,
 }
 
 impl DiagnosticAccumulator {
+    #[cfg(test)]
     fn new(max_cumulative_bytes: usize) -> Self {
+        Self::with_redactor(max_cumulative_bytes, BackendTextRedactor::default())
+    }
+
+    fn with_redactor(max_cumulative_bytes: usize, redactor: BackendTextRedactor) -> Self {
         Self {
             entries: Vec::new(),
             cumulative_bytes: 0,
             max_cumulative_bytes,
+            redactor,
         }
+    }
+
+    fn redact_started(&self, payload: StartedPayload) -> StartedReport {
+        self.redactor.redact_started(payload)
     }
 
     fn push_backend(&mut self, diagnostic: Diagnostic) -> Result<(), ExecutionFailure> {
@@ -685,7 +647,9 @@ impl DiagnosticAccumulator {
             return Err(ExecutionFailure::ProtocolViolation);
         }
         self.entries
-            .extend(incoming.into_iter().map(redact_backend_diagnostic));
+            .extend(incoming.into_iter().map(|_| Diagnostic {
+                message: "backend reported a diagnostic".to_string(),
+            }));
         self.cumulative_bytes = next_bytes;
         Ok(())
     }
@@ -976,40 +940,110 @@ fn grace_deadline(hard_deadline: tokio::time::Instant) -> tokio::time::Instant {
 // Terminal finalization + cancel path + teardown
 // ---------------------------------------------------------------------------
 
+/// Sole owner of the live backend lifecycle. Moving this value into a terminal
+/// path makes stdin closure, tree termination, child reap, and stderr-drain
+/// accounting a single-consumption operation.
+struct ActiveProtocol {
+    child: Child,
+    guard: TreeGuard,
+    stdin: Option<ChildStdin>,
+    reader: CappedReader<ChildStdout>,
+    stderr_handle: Option<tokio::task::JoinHandle<Vec<u8>>>,
+    hard_deadline: tokio::time::Instant,
+    bounds: Bounds,
+}
+
+impl ActiveProtocol {
+    fn new(
+        child: Child,
+        guard: TreeGuard,
+        stdin: ChildStdin,
+        reader: CappedReader<ChildStdout>,
+        stderr_handle: tokio::task::JoinHandle<Vec<u8>>,
+        hard_deadline: tokio::time::Instant,
+        bounds: Bounds,
+    ) -> Self {
+        Self {
+            child,
+            guard,
+            stdin: Some(stdin),
+            reader,
+            stderr_handle: Some(stderr_handle),
+            hard_deadline,
+            bounds,
+        }
+    }
+
+    fn stdin_mut(&mut self) -> &mut ChildStdin {
+        self.stdin.as_mut().expect("active protocol stdin is open")
+    }
+
+    fn close_stdin(&mut self) {
+        self.stdin.take();
+    }
+
+    fn reader_mut(&mut self) -> &mut CappedReader<ChildStdout> {
+        &mut self.reader
+    }
+
+    async fn terminate_and_finish(mut self) -> TeardownConfirmation {
+        self.close_stdin();
+        let tree_terminated = !matches!(self.guard.terminate(), TerminationOutcome::Failed(_));
+        finish_teardown(
+            self.child,
+            self.stderr_handle
+                .take()
+                .expect("active protocol stderr task is owned"),
+            self.hard_deadline,
+            tree_terminated,
+        )
+        .await
+    }
+}
+
+struct ProtocolAccumulation {
+    started: StartedReport,
+    stdout: Vec<u8>,
+    stderr: Vec<u8>,
+    diagnostics: DiagnosticAccumulator,
+}
+
+impl ProtocolAccumulation {
+    fn new(max_diagnostic_bytes: usize, redactor: BackendTextRedactor) -> Self {
+        Self {
+            started: StartedReport::default(),
+            stdout: Vec::new(),
+            stderr: Vec::new(),
+            diagnostics: DiagnosticAccumulator::with_redactor(max_diagnostic_bytes, redactor),
+        }
+    }
+}
+
 /// Handle a terminal frame: Completed -> close stdin / drain / reap / Ok-or-
 /// CleanupUnconfirmed; Failed -> the mapped code. Closing stdin after a terminal
 /// frame lets the backend finish and exit (spec: after completed the host closes
 /// protocol stdin and requires a successful backend exit).
-#[allow(clippy::too_many_arguments)]
 async fn finalize_terminal(
     terminal: Terminal,
-    mut child: Child,
-    mut guard: TreeGuard,
-    stderr_handle: tokio::task::JoinHandle<Vec<u8>>,
-    stdin: ChildStdin,
+    mut active: ActiveProtocol,
     ready: ReadyReport,
-    started: StartedReport,
-    stdout_acc: Vec<u8>,
-    stderr_acc: Vec<u8>,
-    mut diagnostics: DiagnosticAccumulator,
-    hard_deadline: tokio::time::Instant,
-    reader: &mut CappedReader<ChildStdout>,
+    mut accumulation: ProtocolAccumulation,
 ) -> Result<CompletedOutcome, ExecutionProtocolFailure> {
     // After a terminal frame the host closes stdin (no further host frames).
     // ChildStdin is unbuffered (writes go straight to the OS pipe), so dropping
     // it cleanly closes the write end without losing flushed frames.
-    drop(stdin);
+    active.close_stdin();
     match &terminal {
         Terminal::Completed(p) => {
-            if diagnostics
+            if accumulation
+                .diagnostics
                 .extend_backend(p.diagnostics.iter().cloned())
                 .is_err()
             {
-                let teardown =
-                    terminate_and_finish(child, &mut guard, stderr_handle, hard_deadline).await;
+                let teardown = active.terminate_and_finish().await;
                 return Err(failure_after_teardown(
                     ExecutionFailure::ProtocolViolation,
-                    diagnostics.into_entries(),
+                    accumulation.diagnostics.into_entries(),
                     &teardown,
                 ));
             }
@@ -1021,48 +1055,51 @@ async fn finalize_terminal(
                 .cloned()
                 .map(|message| Diagnostic { message })
                 .chain(p.diagnostics.iter().cloned());
-            if diagnostics.extend_backend(terminal_diagnostics).is_err() {
-                let teardown =
-                    terminate_and_finish(child, &mut guard, stderr_handle, hard_deadline).await;
+            if accumulation
+                .diagnostics
+                .extend_backend(terminal_diagnostics)
+                .is_err()
+            {
+                let teardown = active.terminate_and_finish().await;
                 return Err(failure_after_teardown(
                     ExecutionFailure::ProtocolViolation,
-                    diagnostics.into_entries(),
+                    accumulation.diagnostics.into_entries(),
                     &teardown,
                 ));
             }
         }
     }
-    for diagnostic in diagnostics.entries() {
+    for diagnostic in accumulation.diagnostics.entries() {
         tracing::debug!(target: "execution_backend_diagnostic", message = %diagnostic.message);
     }
 
     // Every terminal frame must be followed immediately by clean EOF and a
     // successful backend exit. Extra bytes are a protocol violation regardless
     // of whether the terminal was `completed` or `failed`.
-    let reap_deadline = grace_deadline(hard_deadline);
-    if let Err(failure) = require_clean_eof(reader, reap_deadline).await {
-        let teardown = terminate_and_finish(child, &mut guard, stderr_handle, hard_deadline).await;
+    let reap_deadline = grace_deadline(active.hard_deadline);
+    if let Err(failure) = require_clean_eof(active.reader_mut(), reap_deadline).await {
+        let teardown = active.terminate_and_finish().await;
         return Err(failure_after_teardown(
             failure,
-            diagnostics.into_entries(),
+            accumulation.diagnostics.into_entries(),
             &teardown,
         ));
     }
-    let reap_result = reap_child(&mut child, reap_deadline).await;
-    let teardown = terminate_and_finish(child, &mut guard, stderr_handle, hard_deadline).await;
+    let reap_result = reap_child(&mut active.child, reap_deadline).await;
+    let teardown = active.terminate_and_finish().await;
     match reap_result {
         Some(0) => {}
         Some(_) => {
             return Err(failure_after_teardown(
                 ExecutionFailure::ProtocolViolation,
-                diagnostics.into_entries(),
+                accumulation.diagnostics.into_entries(),
                 &teardown,
             ));
         }
         None => {
             return Err(failure_after_teardown(
                 ExecutionFailure::CleanupUnconfirmed,
-                diagnostics.into_entries(),
+                accumulation.diagnostics.into_entries(),
                 &teardown,
             ));
         }
@@ -1071,7 +1108,7 @@ async fn finalize_terminal(
     match terminal {
         Terminal::Failed(p) => Err(failure_after_teardown(
             map_failure_code(&p, ready.implementation.as_str()),
-            diagnostics.into_entries(),
+            accumulation.diagnostics.into_entries(),
             &teardown,
         )),
         Terminal::Completed(p)
@@ -1079,21 +1116,21 @@ async fn finalize_terminal(
         {
             Err(failure_after_teardown(
                 ExecutionFailure::CleanupUnconfirmed,
-                diagnostics.into_entries(),
+                accumulation.diagnostics.into_entries(),
                 &teardown,
             ))
         }
         Terminal::Completed(p) => Ok(CompletedOutcome {
             ready,
-            started,
+            started: accumulation.started,
             exit: p.exit,
             signal: p.signal,
             timed_out: p.timed_out,
             cancelled: p.cancelled,
             cleanup: p.cleanup,
-            stdout: stdout_acc,
-            stderr: stderr_acc,
-            diagnostics: diagnostics.into_entries(),
+            stdout: accumulation.stdout,
+            stderr: accumulation.stderr,
+            diagnostics: accumulation.diagnostics.into_entries(),
         }),
     }
 }
@@ -1102,24 +1139,14 @@ async fn finalize_terminal(
 /// terminate. A `Completed{cleanup:Confirmed}` arriving in grace is an Ok result
 /// (the cancel raced with completion); anything else -> CleanupUnconfirmed (or
 /// the mapped Failed code).
-#[allow(clippy::too_many_arguments)]
 async fn finish_with_cancel(
-    mut stdin: ChildStdin,
-    reader: &mut CappedReader<ChildStdout>,
+    mut active: ActiveProtocol,
     session: &mut Session,
     state: &mut HostState,
-    child: Child,
-    mut guard: TreeGuard,
-    stderr_handle: tokio::task::JoinHandle<Vec<u8>>,
-    bounds: Bounds,
     request_id: &RequestId,
-    hard_deadline: tokio::time::Instant,
     reason: CancelReason,
     ready: ReadyReport,
-    mut started: StartedReport,
-    mut stdout_acc: Vec<u8>,
-    mut stderr_acc: Vec<u8>,
-    mut diagnostics: DiagnosticAccumulator,
+    mut accumulation: ProtocolAccumulation,
 ) -> Result<CompletedOutcome, ExecutionProtocolFailure> {
     state.begin_cancel();
     let cancel = HostToBackend::Cancel(CancelPayload {
@@ -1127,35 +1154,34 @@ async fn finish_with_cancel(
         reason,
     });
     let _ = session.observe_host(&cancel);
-    let grace_end = grace_deadline(hard_deadline);
-    let _ = write_frame(&mut stdin, bounds, &cancel, grace_end).await;
+    let grace_end = grace_deadline(active.hard_deadline);
+    let bounds = active.bounds;
+    let _ = write_frame(active.stdin_mut(), bounds, &cancel, grace_end).await;
     let outcome: Result<Option<Terminal>, ExecutionFailure> =
         tokio::time::timeout_at(grace_end, async {
             loop {
                 if tokio::time::Instant::now() >= grace_end {
                     return Ok(None);
                 }
-                match reader.read_line().await {
+                match active.reader_mut().read_line().await {
                     Ok(None) => return Ok(None),
                     Ok(Some(line)) => match session.feed_backend_line(&line) {
                         Ok(frame) => match transition(state, &frame)? {
                             Action::Continue => match frame {
                                 BackendToHost::Started(p) => {
-                                    started = StartedReport {
-                                        placement: p.placement,
-                                        guarantee: p.guarantee,
-                                        policy: p.policy,
-                                        limitations: p.limitations,
-                                    };
+                                    accumulation.started =
+                                        accumulation.diagnostics.redact_started(p);
                                 }
                                 BackendToHost::Stdout(p) => {
-                                    stdout_acc.extend_from_slice(p.data.as_bytes());
+                                    accumulation.stdout.extend_from_slice(p.data.as_bytes());
                                 }
                                 BackendToHost::Stderr(p) => {
-                                    stderr_acc.extend_from_slice(p.data.as_bytes());
+                                    accumulation.stderr.extend_from_slice(p.data.as_bytes());
                                 }
                                 BackendToHost::Diagnostic(p) => {
-                                    diagnostics.push_backend(Diagnostic { message: p.message })?;
+                                    accumulation
+                                        .diagnostics
+                                        .push_backend(Diagnostic { message: p.message })?;
                                 }
                                 _ => {}
                             },
@@ -1182,56 +1208,24 @@ async fn finish_with_cancel(
                     p.cancelled = true;
                 }
             }
-            finalize_terminal(
-                Terminal::Completed(p),
-                child,
-                guard,
-                stderr_handle,
-                stdin,
-                ready,
-                started,
-                stdout_acc,
-                stderr_acc,
-                diagnostics,
-                hard_deadline,
-                reader,
-            )
-            .await
+            finalize_terminal(Terminal::Completed(p), active, ready, accumulation).await
         }
         Ok(Some(Terminal::Failed(p))) => {
-            finalize_terminal(
-                Terminal::Failed(p),
-                child,
-                guard,
-                stderr_handle,
-                stdin,
-                ready,
-                started,
-                stdout_acc,
-                stderr_acc,
-                diagnostics,
-                hard_deadline,
-                reader,
-            )
-            .await
+            finalize_terminal(Terminal::Failed(p), active, ready, accumulation).await
         }
         Ok(None) => {
-            drop(stdin);
-            let teardown =
-                terminate_and_finish(child, &mut guard, stderr_handle, hard_deadline).await;
+            let teardown = active.terminate_and_finish().await;
             Err(failure_after_teardown(
                 ExecutionFailure::CleanupUnconfirmed,
-                diagnostics.into_entries(),
+                accumulation.diagnostics.into_entries(),
                 &teardown,
             ))
         }
         Err(failure) => {
-            drop(stdin);
-            let teardown =
-                terminate_and_finish(child, &mut guard, stderr_handle, hard_deadline).await;
+            let teardown = active.terminate_and_finish().await;
             Err(failure_after_teardown(
                 failure,
-                diagnostics.into_entries(),
+                accumulation.diagnostics.into_entries(),
                 &teardown,
             ))
         }
@@ -1241,15 +1235,10 @@ async fn finish_with_cancel(
 /// Terminate the tree guard + reap the child + await the stderr drain. Used on
 /// every non-terminal failure path before returning the failure code.
 async fn terminate_and_fail(
-    child: Child,
-    mut guard: TreeGuard,
-    stderr_handle: tokio::task::JoinHandle<Vec<u8>>,
-    stdin: ChildStdin,
+    active: ActiveProtocol,
     code: ExecutionFailure,
-    hard_deadline: tokio::time::Instant,
 ) -> Result<CompletedOutcome, ExecutionProtocolFailure> {
-    drop(stdin);
-    let teardown = terminate_and_finish(child, &mut guard, stderr_handle, hard_deadline).await;
+    let teardown = active.terminate_and_finish().await;
     Err(failure_after_teardown(code, Vec::new(), &teardown))
 }
 
@@ -1259,14 +1248,9 @@ async fn terminate_and_fail(
 /// transmission's protocol-violation classification only when L0 termination,
 /// child reap, and stderr drain all confirm inside the original hard deadline.
 async fn terminate_failed_transmission(
-    child: Child,
-    mut guard: TreeGuard,
-    stderr_handle: tokio::task::JoinHandle<Vec<u8>>,
-    stdin: ChildStdin,
-    hard_deadline: tokio::time::Instant,
+    active: ActiveProtocol,
 ) -> Result<CompletedOutcome, ExecutionProtocolFailure> {
-    drop(stdin);
-    let teardown = terminate_and_finish(child, &mut guard, stderr_handle, hard_deadline).await;
+    let teardown = active.terminate_and_finish().await;
     Err(failure_after_teardown(
         ExecutionFailure::ProtocolViolation,
         Vec::new(),
@@ -1323,16 +1307,6 @@ fn failure_after_teardown(
     ExecutionProtocolFailure::with_diagnostics(failure, diagnostics)
 }
 
-async fn terminate_and_finish(
-    child: Child,
-    guard: &mut TreeGuard,
-    stderr_handle: tokio::task::JoinHandle<Vec<u8>>,
-    hard_deadline: tokio::time::Instant,
-) -> TeardownConfirmation {
-    let tree_terminated = !matches!(guard.terminate(), TerminationOutcome::Failed(_));
-    finish_teardown(child, stderr_handle, hard_deadline, tree_terminated).await
-}
-
 async fn finish_teardown(
     mut child: Child,
     stderr_handle: tokio::task::JoinHandle<Vec<u8>>,
@@ -1368,18 +1342,16 @@ async fn finish_teardown(
 /// materialize the full line before any cap check). Cap = `Bounds.max_line_size`.
 struct CappedReader<R: AsyncRead + Unpin> {
     inner: BufReader<R>,
-    cap: usize,
     line: Vec<u8>,
-    pending_cr: bool,
+    accumulator: CappedLineAccumulator,
 }
 
 impl<R: AsyncRead + Unpin> CappedReader<R> {
     fn new(reader: R, cap: usize) -> Self {
         Self {
             inner: BufReader::new(reader),
-            cap,
             line: Vec::new(),
-            pending_cr: false,
+            accumulator: CappedLineAccumulator::new(cap),
         }
     }
 
@@ -1387,61 +1359,30 @@ impl<R: AsyncRead + Unpin> CappedReader<R> {
     /// Returns `Ok(None)` at clean EOF, `Ok(Some(line))` with the bytes, or
     /// `Err` if a non-newline byte is seen while `line.len() >= cap`.
     async fn read_line(&mut self) -> Result<Option<Vec<u8>>, ReadErr> {
+        let mut byte = [0_u8; 1];
         loop {
-            let (newline_found, oversize, consumed) = {
-                let buf = self.inner.fill_buf().await.map_err(|_| ReadErr::Io)?;
-                if buf.is_empty() {
-                    if self.pending_cr {
-                        if self.line.len() >= self.cap {
-                            return Err(ReadErr::Oversized);
-                        }
-                        self.line.push(b'\r');
-                        self.pending_cr = false;
-                    }
-                    return if self.line.is_empty() {
+            match self.inner.read(&mut byte).await.map_err(|_| ReadErr::Io)? {
+                0 => {
+                    return if !self
+                        .accumulator
+                        .finish_eof(&mut self.line)
+                        .map_err(|_| ReadErr::Oversized)?
+                    {
                         Ok(None)
                     } else {
                         Ok(Some(std::mem::take(&mut self.line)))
                     };
                 }
-                let mut newline_found = false;
-                let mut oversize = false;
-                let mut consumed = 0;
-                for &byte in buf.iter() {
-                    if byte == b'\n' {
-                        self.pending_cr = false;
-                        newline_found = true;
-                        consumed += 1;
-                        break;
+                _ => {
+                    if self
+                        .accumulator
+                        .push_byte(byte[0], &mut self.line)
+                        .map_err(|_| ReadErr::Oversized)?
+                        == LineAccumulatorEvent::Complete
+                    {
+                        return Ok(Some(std::mem::take(&mut self.line)));
                     }
-                    if self.pending_cr {
-                        if self.line.len() >= self.cap {
-                            oversize = true;
-                            break;
-                        }
-                        self.line.push(b'\r');
-                        self.pending_cr = false;
-                    }
-                    if byte == b'\r' {
-                        self.pending_cr = true;
-                        consumed += 1;
-                        continue;
-                    }
-                    if self.line.len() >= self.cap {
-                        oversize = true;
-                        break;
-                    }
-                    self.line.push(byte);
-                    consumed += 1;
                 }
-                (newline_found, oversize, consumed)
-            };
-            self.inner.consume(consumed);
-            if oversize {
-                return Err(ReadErr::Oversized);
-            }
-            if newline_found {
-                return Ok(Some(std::mem::take(&mut self.line)));
             }
         }
     }
@@ -1729,6 +1670,57 @@ mod tests {
             .unwrap();
         assert_eq!(diagnostics.entries().len(), 3);
         assert_eq!(diagnostics.cumulative_bytes, 8);
+    }
+
+    #[test]
+    fn backend_diagnostic_text_is_replaced_by_a_host_owned_summary() {
+        let canary = "plain-non-pattern-command-canary";
+        let mut diagnostics = DiagnosticAccumulator::new(usize::MAX);
+        diagnostics
+            .push_backend(Diagnostic {
+                message: format!("adapter echoed {canary}"),
+            })
+            .unwrap();
+
+        assert_eq!(
+            diagnostics.entries()[0].message,
+            "backend reported a diagnostic"
+        );
+        assert!(!diagnostics.entries()[0].message.contains(canary));
+    }
+
+    #[test]
+    fn effective_contract_redacts_exact_invocation_values() {
+        let canaries = [
+            "plain-command-canary",
+            "plain-env-canary",
+            "C:\\private\\workspace-canary",
+            "424242",
+        ];
+        let redactor = BackendTextRedactor::new(canaries.iter().copied());
+        let report = redactor.redact_started(StartedPayload {
+            request_id: rid(),
+            placement: format!("host {}", canaries[0]),
+            guarantee: format!("restricted {}", canaries[1]),
+            policy: format!("policy {}", canaries[2]),
+            limitations: vec![format!("target pid {}", canaries[3])],
+        });
+        let public = serde_json::json!({
+            "placement": report.placement,
+            "guarantee": report.guarantee,
+            "policy": report.policy,
+            "limitations": report.limitations,
+        })
+        .to_string();
+
+        for canary in canaries {
+            assert!(
+                !public.contains(canary),
+                "contract leaked {canary:?}: {public}"
+            );
+        }
+        assert!(public.contains("host"));
+        assert!(public.contains("restricted"));
     }
 
     #[test]

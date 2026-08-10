@@ -677,6 +677,8 @@ elif mutation in ("version-trailing-hyphen", "version-metacharacter"):
     )
     if count != 1:
         raise SystemExit("manifest opi_version fixture not found")
+elif mutation == "crlf-manifest":
+    payloads["package.toml"] = payloads["package.toml"].replace(b"\n", b"\r\n")
 elif mutation not in ("dot-alias", "double-slash-alias", "embedded-dot-alias"):
     raise SystemExit("unknown mutation")
 
@@ -706,7 +708,7 @@ try:
             import io
             output.addfile(info, io.BytesIO(payloads[name]))
     os.replace(temporary, archive)
-    print(hashlib.sha256(payloads["package.toml"].replace(b"\r", b"")).hexdigest())
+    print(hashlib.sha256(payloads["package.toml"]).hexdigest())
 finally:
     if os.path.exists(temporary):
         os.unlink(temporary)
@@ -1959,6 +1961,44 @@ fn release_audit_rejects_skipped_evidence() {
     assert!(
         stdout.contains("skipped_evidence"),
         "expected skipped_evidence: {stdout}"
+    );
+}
+
+#[test]
+fn release_audit_rejects_textual_native_skip_marker() {
+    let dir = tempfile::tempdir().expect("release evidence tempdir");
+    write_complete_good_evidence(dir.path());
+    let smoke_path = dir.path().join(format!("linux/{LINUX_TARGET}/smoke.log"));
+    let mut smoke = std::fs::read_to_string(&smoke_path).unwrap();
+    smoke.push_str("skip outside_write_denied\n");
+    std::fs::write(&smoke_path, smoke).unwrap();
+
+    let (ok, stdout, stderr) = run_release_audit(dir.path(), true);
+    assert!(
+        !ok,
+        "textual native skip marker must fail: stdout={stdout} stderr={stderr}"
+    );
+    assert!(stdout.contains("skipped_evidence"), "{stdout}");
+}
+
+#[test]
+fn release_audit_uses_exact_manifest_bytes_for_lock_provenance() {
+    let dir = tempfile::tempdir().expect("release evidence tempdir");
+    write_complete_good_evidence(dir.path());
+    let bundle = dir.path().join(format!("linux/{LINUX_TARGET}"));
+    let archive = native_archive_path(&bundle, LINUX_TARGET);
+    let previous_archive_sha = sha256_hex_local(&std::fs::read(&archive).unwrap());
+    let manifest_hash = rewrite_native_archive(&archive, "crlf-manifest");
+    rebind_smoke_to_archive(&bundle, &previous_archive_sha, &archive);
+    let lock_path = bundle.join("package-lock.toml");
+    let mut lock = std::fs::read_to_string(&lock_path).unwrap();
+    replace_lock_value(&mut lock, "manifest_hash", &manifest_hash);
+    std::fs::write(lock_path, lock).unwrap();
+
+    let (ok, stdout, stderr) = run_release_audit(dir.path(), true);
+    assert!(
+        ok,
+        "exact-byte CRLF manifest provenance must pass: stdout={stdout} stderr={stderr}"
     );
 }
 

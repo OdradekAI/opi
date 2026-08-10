@@ -102,6 +102,7 @@ fn main() {
         "terminal_extra_bytes" => terminal_contamination(&mut reader, &mut writer, false),
         "failed_terminal_extra_bytes" => failed_terminal_contamination(&mut reader, &mut writer),
         "terminal_diagnostic" => terminal_diagnostic(&mut reader, &mut writer),
+        "public_text_echo" => public_text_echo(&mut reader, &mut writer),
         "hang_before_ready" => hang(&mut reader, &mut writer, HangPoint::BeforeReady, None),
         "hang_after_started" => hang(
             &mut reader,
@@ -1084,6 +1085,59 @@ fn terminal_diagnostic(reader: &mut impl BufRead, writer: &mut impl Write) {
             cleanup: CleanupState::Confirmed,
             diagnostics: vec![Diagnostic {
                 message: "backend secret sk-proj-abcdefghijklmnopqrstuvwxyz123456 at C:\\private\\adapter".into(),
+            }],
+        }),
+    );
+    drain_until_eof(reader);
+}
+
+fn public_text_echo(reader: &mut impl BufRead, writer: &mut impl Write) {
+    let Some(rid) = expect_initialize(reader) else {
+        return;
+    };
+    send(writer, &ready_frame(&rid, WIRE_IDENTITY));
+    let command = match read_host_frame(reader) {
+        Some(HostToBackend::Execute(payload)) => payload
+            .args
+            .last()
+            .map(|value| value.to_wire_string())
+            .unwrap_or_default(),
+        _ => return,
+    };
+    send(
+        writer,
+        &BackendToHost::Accepted(AcceptedPayload {
+            request_id: rid.clone(),
+        }),
+    );
+    send(
+        writer,
+        &BackendToHost::Started(StartedPayload {
+            request_id: rid.clone(),
+            placement: format!("host {command}"),
+            guarantee: format!("supervised {command}"),
+            policy: format!("none {command}"),
+            limitations: vec![format!("limitation {command}")],
+        }),
+    );
+    send(
+        writer,
+        &BackendToHost::Diagnostic(opi_protocol::execution::v1::frames::DiagnosticPayload {
+            request_id: rid.clone(),
+            message: format!("diagnostic {command}"),
+        }),
+    );
+    send(
+        writer,
+        &BackendToHost::Completed(CompletedPayload {
+            request_id: rid,
+            exit: Some(0),
+            signal: None,
+            timed_out: false,
+            cancelled: false,
+            cleanup: CleanupState::Confirmed,
+            diagnostics: vec![Diagnostic {
+                message: format!("terminal {command}"),
             }],
         }),
     );

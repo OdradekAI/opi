@@ -4,6 +4,7 @@
 //! are checked for internal consistency at compile time.
 
 const OUTPUT_CHUNK_FRAMING_RESERVE: usize = 64;
+const DIAGNOSTIC_FRAMING_RESERVE: usize = 256;
 
 /// Wire/size bounds enforced by the codec (per frame) and the session
 /// (cumulative, across one execution).
@@ -12,7 +13,8 @@ pub struct Bounds {
     /// Max JSON data bytes per line, excluding the LF or CRLF delimiter. The
     /// decoder's per-stream line-buffer ceiling and thus the per-connection
     /// memory cap. Must be large enough to hold a maximally base64-inflated
-    /// output chunk or serialized adapter configuration plus framing.
+    /// output chunk, serialized adapter configuration, or diagnostic plus
+    /// framing.
     pub max_line_size: usize,
     /// Max decoded bytes per stdout/stderr chunk.
     pub max_decoded_chunk_size: usize,
@@ -40,11 +42,14 @@ pub enum BoundsError {
     /// `max_line_size` must be >= `max_configuration_size + framing`.
     #[error("max_line_size must be >= max_configuration_size + framing")]
     LineTooSmallForConfig,
+    /// `max_line_size` must be >= `max_diagnostics_size + framing`.
+    #[error("max_line_size must be >= max_diagnostics_size + framing")]
+    LineTooSmallForDiagnostics,
 }
 
 impl Bounds {
     /// Defaults chosen so a maximally base64-inflated chunk and serialized
-    /// adapter configuration both fit under `max_line_size`.
+    /// adapter configuration, and diagnostic all fit under `max_line_size`.
     pub const DEFAULT: Bounds = Bounds {
         max_line_size: 2 * 1024 * 1024,
         max_decoded_chunk_size: 1024 * 1024,
@@ -77,7 +82,16 @@ impl Bounds {
         if self.max_line_size < config_required {
             return Err(BoundsError::LineTooSmallForConfig);
         }
-        let _ = self.max_diagnostics_size;
+        let diagnostics_required = match self
+            .max_diagnostics_size
+            .checked_add(DIAGNOSTIC_FRAMING_RESERVE)
+        {
+            Some(value) => value,
+            None => return Err(BoundsError::LineTooSmallForDiagnostics),
+        };
+        if self.max_line_size < diagnostics_required {
+            return Err(BoundsError::LineTooSmallForDiagnostics);
+        }
         let _ = self.max_cumulative_output;
         Ok(())
     }

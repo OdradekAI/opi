@@ -35,9 +35,90 @@ pub enum CodecError {
     /// A decoded stdout/stderr chunk exceeded `max_decoded_chunk_size`.
     #[error("decoded output chunk of {actual} bytes exceeded max_decoded_chunk_size ({limit})")]
     OutputChunkTooLarge { actual: usize, limit: usize },
+    /// A completed frame reported both a normal exit and a signal.
+    #[error("completed frame reported both exit and signal")]
+    CompletedExitAndSignal,
+    /// An ordinary completed frame reported neither a normal exit nor a signal.
+    #[error("completed frame reported neither exit nor signal")]
+    CompletedStatusMissing,
+    /// A process exit code is outside the portable command-exit range.
+    #[error("completed frame exit code {exit} exceeded 255")]
+    ExitCodeOutOfRange { exit: u32 },
     /// Invalid JSON, or a frame that failed to deserialize.
     #[error("invalid json: {0}")]
     Json(#[from] serde_json::Error),
+}
+
+/// The result of feeding one byte to a [`CappedLineAccumulator`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LineAccumulatorEvent {
+    /// More bytes are required to complete the current line.
+    Pending,
+    /// An LF or CRLF delimiter completed the current line.
+    Complete,
+}
+
+/// I/O-neutral JSONL line accumulator with an exact data-byte cap.
+///
+/// Callers retain ownership of the output buffer and may feed bytes from
+/// synchronous or asynchronous transports. LF and CRLF delimiters do not count
+/// against the cap.
+pub struct CappedLineAccumulator {
+    max_line_size: usize,
+    pending_cr: bool,
+}
+
+impl CappedLineAccumulator {
+    /// Create an accumulator with the given data-byte cap.
+    pub fn new(max_line_size: usize) -> Self {
+        Self {
+            max_line_size,
+            pending_cr: false,
+        }
+    }
+
+    /// Feed one byte, appending line data to `out`.
+    pub fn push_byte(
+        &mut self,
+        byte: u8,
+        out: &mut Vec<u8>,
+    ) -> Result<LineAccumulatorEvent, CodecError> {
+        if byte == b'\n' {
+            self.pending_cr = false;
+            return Ok(LineAccumulatorEvent::Complete);
+        }
+        if self.pending_cr {
+            self.push_data_byte(b'\r', out)?;
+            self.pending_cr = false;
+        }
+        if byte == b'\r' {
+            self.pending_cr = true;
+        } else {
+            self.push_data_byte(byte, out)?;
+        }
+        Ok(LineAccumulatorEvent::Pending)
+    }
+
+    /// Finish the current line at EOF.
+    ///
+    /// Returns `true` when a final unterminated line contains data.
+    pub fn finish_eof(&mut self, out: &mut Vec<u8>) -> Result<bool, CodecError> {
+        if self.pending_cr {
+            self.push_data_byte(b'\r', out)?;
+            self.pending_cr = false;
+        }
+        Ok(!out.is_empty())
+    }
+
+    fn push_data_byte(&self, byte: u8, out: &mut Vec<u8>) -> Result<(), CodecError> {
+        if out.len() >= self.max_line_size {
+            return Err(CodecError::OversizedLine {
+                max_line_size: self.max_line_size,
+            });
+        }
+        out.push(byte);
+        Ok(())
+    }
 }
 
 /// A buffered reader that yields one JSONL line at a time, capped at
@@ -49,7 +130,7 @@ pub enum CodecError {
 /// violation and tears down the stream rather than continuing to read.
 pub struct LineReader<R> {
     inner: std::io::BufReader<R>,
-    max_line_size: usize,
+    accumulator: CappedLineAccumulator,
 }
 
 impl<R: Read> LineReader<R> {
@@ -57,7 +138,7 @@ impl<R: Read> LineReader<R> {
     pub fn new(reader: R, bounds: Bounds) -> Self {
         Self {
             inner: std::io::BufReader::new(reader),
-            max_line_size: bounds.max_line_size,
+            accumulator: CappedLineAccumulator::new(bounds.max_line_size),
         }
     }
 
@@ -69,39 +150,14 @@ impl<R: Read> LineReader<R> {
     /// remaining), or `Err(OversizedLine)` if a line exceeds the cap.
     pub fn read_line(&mut self, out: &mut Vec<u8>) -> Result<bool, CodecError> {
         out.clear();
-        let cap = self.max_line_size;
         let mut byte = [0u8; 1];
-        let mut pending_cr = false;
         loop {
             match self.inner.read(&mut byte)? {
-                0 => {
-                    if pending_cr {
-                        if out.len() >= cap {
-                            return Err(CodecError::OversizedLine { max_line_size: cap });
-                        }
-                        out.push(b'\r');
-                    }
-                    return Ok(!out.is_empty());
-                }
+                0 => return self.accumulator.finish_eof(out),
                 _ => {
-                    if byte[0] == b'\n' {
+                    if self.accumulator.push_byte(byte[0], out)? == LineAccumulatorEvent::Complete {
                         return Ok(true);
                     }
-                    if pending_cr {
-                        if out.len() >= cap {
-                            return Err(CodecError::OversizedLine { max_line_size: cap });
-                        }
-                        out.push(b'\r');
-                        pending_cr = false;
-                    }
-                    if byte[0] == b'\r' {
-                        pending_cr = true;
-                        continue;
-                    }
-                    if out.len() >= cap {
-                        return Err(CodecError::OversizedLine { max_line_size: cap });
-                    }
-                    out.push(byte[0]);
                 }
             }
         }
@@ -148,6 +204,18 @@ pub fn validate_backend(frame: &BackendToHost, bounds: &Bounds) -> Result<(), Co
     let diagnostics = match frame {
         BackendToHost::Diagnostic(payload) => std::slice::from_ref(&payload.message),
         BackendToHost::Completed(payload) => {
+            match (payload.exit, payload.signal) {
+                (Some(_), Some(_)) => return Err(CodecError::CompletedExitAndSignal),
+                (None, None) if !payload.timed_out && !payload.cancelled => {
+                    return Err(CodecError::CompletedStatusMissing);
+                }
+                _ => {}
+            }
+            if let Some(exit) = payload.exit
+                && exit > u8::MAX.into()
+            {
+                return Err(CodecError::ExitCodeOutOfRange { exit });
+            }
             for diagnostic in &payload.diagnostics {
                 validate_diagnostic(&diagnostic.message, bounds)?;
             }

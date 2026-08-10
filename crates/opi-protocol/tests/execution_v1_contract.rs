@@ -8,11 +8,15 @@ use std::collections::BTreeSet;
 use std::path::PathBuf;
 
 use opi_protocol::execution::v1;
-use opi_protocol::execution::v1::codec::{LineReader, encode_backend, encode_host};
-use opi_protocol::execution::v1::frames::{AcceptedPayload, FailedPayload, StdoutPayload};
+use opi_protocol::execution::v1::codec::{
+    CappedLineAccumulator, LineAccumulatorEvent, LineReader, encode_backend, encode_host,
+};
+use opi_protocol::execution::v1::frames::{
+    AcceptedPayload, CompletedPayload, FailedPayload, StdoutPayload,
+};
 use opi_protocol::execution::v1::{
-    BackendToHost, Base64Bytes, Bounds, BoundsError, CodecError, FailureCode, FailurePhase,
-    HostToBackend, NativeString, ProtocolId, RequestId, Session, SessionError,
+    BackendToHost, Base64Bytes, Bounds, BoundsError, CleanupState, CodecError, FailureCode,
+    FailurePhase, HostToBackend, NativeString, ProtocolId, RequestId, Session, SessionError,
 };
 
 use proptest::prelude::*;
@@ -440,6 +444,109 @@ fn chunk_bound_rejects_requirement_overflow() {
         max_cumulative_output: usize::MAX,
     };
     assert_eq!(bounds.validate(), Err(BoundsError::LineTooSmallForChunk));
+}
+
+#[test]
+fn diagnostic_bound_uses_framing_reserve_and_detects_overflow() {
+    let exact = Bounds {
+        max_line_size: 356,
+        max_decoded_chunk_size: 0,
+        max_configuration_size: 0,
+        max_diagnostics_size: 100,
+        max_cumulative_output: 0,
+    };
+    assert!(exact.validate().is_ok());
+    assert_eq!(
+        Bounds {
+            max_line_size: 355,
+            ..exact
+        }
+        .validate(),
+        Err(BoundsError::LineTooSmallForDiagnostics)
+    );
+    assert_eq!(
+        Bounds {
+            max_line_size: usize::MAX,
+            max_diagnostics_size: usize::MAX,
+            ..exact
+        }
+        .validate(),
+        Err(BoundsError::LineTooSmallForDiagnostics)
+    );
+}
+
+#[test]
+fn completed_status_semantics_are_validated() {
+    let completed = |exit, signal, timed_out, cancelled| {
+        BackendToHost::Completed(CompletedPayload {
+            request_id: RequestId::new("r1".to_string()).unwrap(),
+            exit,
+            signal,
+            timed_out,
+            cancelled,
+            cleanup: CleanupState::Confirmed,
+            diagnostics: vec![],
+        })
+    };
+
+    for frame in [
+        completed(Some(0), None, false, false),
+        completed(None, Some(9), false, false),
+        completed(None, None, true, false),
+        completed(None, None, false, true),
+    ] {
+        encode_backend(&frame, &Bounds::DEFAULT).unwrap();
+    }
+
+    assert!(matches!(
+        encode_backend(&completed(Some(0), Some(9), false, false), &Bounds::DEFAULT),
+        Err(CodecError::CompletedExitAndSignal)
+    ));
+    assert!(matches!(
+        encode_backend(&completed(None, None, false, false), &Bounds::DEFAULT),
+        Err(CodecError::CompletedStatusMissing)
+    ));
+    assert!(matches!(
+        encode_backend(&completed(Some(256), None, false, false), &Bounds::DEFAULT),
+        Err(CodecError::ExitCodeOutOfRange { exit: 256 })
+    ));
+}
+
+#[test]
+fn capped_line_accumulator_preserves_delimiter_and_eof_semantics() {
+    let mut accumulator = CappedLineAccumulator::new(3);
+    let mut line = Vec::new();
+    for byte in b"abc\r" {
+        assert_eq!(
+            accumulator.push_byte(*byte, &mut line).unwrap(),
+            LineAccumulatorEvent::Pending
+        );
+    }
+    assert_eq!(
+        accumulator.push_byte(b'\n', &mut line).unwrap(),
+        LineAccumulatorEvent::Complete
+    );
+    assert_eq!(line, b"abc");
+
+    let mut accumulator = CappedLineAccumulator::new(3);
+    let mut line = Vec::new();
+    for byte in b"ab\r" {
+        accumulator.push_byte(*byte, &mut line).unwrap();
+    }
+    assert!(accumulator.finish_eof(&mut line).unwrap());
+    assert_eq!(line, b"ab\r");
+
+    let mut accumulator = CappedLineAccumulator::new(3);
+    let mut line = Vec::new();
+    for byte in b"abcd" {
+        let result = accumulator.push_byte(*byte, &mut line);
+        if *byte == b'd' {
+            assert!(matches!(
+                result,
+                Err(CodecError::OversizedLine { max_line_size: 3 })
+            ));
+        }
+    }
 }
 
 #[test]

@@ -168,7 +168,7 @@ impl AgentEvent {
                     .iter()
                     .map(|d| crate::tool::ToolDiagnostic {
                         code: d.code.clone(),
-                        message: d.message.clone(),
+                        message: redact_text(&d.message, RedactionMode::Summary),
                         context: redact_public_value(&d.context),
                     })
                     .collect(),

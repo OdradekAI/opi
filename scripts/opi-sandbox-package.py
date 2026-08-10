@@ -89,10 +89,6 @@ def sha256_raw(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def sha256_lf(data: bytes) -> str:
-    return sha256_raw(data.replace(b"\r", b""))
-
-
 def validate_executable_header(data: bytes, target: str) -> str:
     if len(data) < 4:
         raise ExecutableFormatError("invalid executable format: truncated executable header")
@@ -379,7 +375,7 @@ def verify(args: argparse.Namespace) -> None:
         manifest_bytes = (extraction / "package.toml").read_bytes()
         executable_bytes = (extraction / "bin/opi-sandbox").read_bytes()
         validate_executable_header(executable_bytes, target)
-        if sha256_lf(manifest_bytes) != lock["manifest_hash"]:
+        if sha256_raw(manifest_bytes) != lock["manifest_hash"]:
             raise PackageError("verify: archive manifest_hash mismatch")
         if sha256_raw(executable_bytes) != lock["executable_sha256"]:
             raise PackageError("verify: archive executable sha mismatch")

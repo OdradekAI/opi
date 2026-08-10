@@ -17,6 +17,19 @@ if (-not (Test-Path $BinaryPath)) {
     throw "opi-sandbox-smoke: binary not found: $BinaryPath"
 }
 New-Item -ItemType Directory -Force -Path $ArtifactDir | Out-Null
+$BinaryPath = (Resolve-Path -LiteralPath $BinaryPath).Path
+$ArtifactDir = (Resolve-Path -LiteralPath $ArtifactDir).Path
+
+# Run an isolated copy from a distinct empty working directory. Neither the
+# supplied binary's build directory nor the caller's current directory is part
+# of the standalone acceptance surface.
+$IsolationRoot = Join-Path $ArtifactDir ("isolated-" + [guid]::NewGuid().ToString('N'))
+$IsolatedBinDir = Join-Path $IsolationRoot 'bin'
+$IsolatedCwd = Join-Path $IsolationRoot 'cwd'
+New-Item -ItemType Directory -Path $IsolatedBinDir | Out-Null
+New-Item -ItemType Directory -Path $IsolatedCwd | Out-Null
+$IsolatedBinary = Join-Path $IsolatedBinDir 'opi-sandbox.exe'
+Copy-Item -LiteralPath $BinaryPath -Destination $IsolatedBinary
 
 # Isolation: scrub opi from PATH; point Opi config/session/package/model env at
 # sentinel locations under the artifact dir. The binary must ignore all of them.
@@ -36,20 +49,22 @@ $env:PATH = (($env:PATH -split ';') |
         Where-Object { $_ -and -not (Test-Path (Join-Path $_ 'opi.exe')) -and -not (Test-Path (Join-Path $_ 'opi')) }) -join ';'
 
 # 1. --help
-& $BinaryPath --help | Out-File -FilePath (Join-Path $ArtifactDir 'help.txt') -Encoding ascii
+Push-Location $IsolatedCwd
+try {
+& $IsolatedBinary --help | Out-File -FilePath (Join-Path $ArtifactDir 'help.txt') -Encoding ascii
 $help = Get-Content (Join-Path $ArtifactDir 'help.txt') -Raw
 if (-not ($help -match 'run') -or -not ($help -match 'doctor')) {
     throw "opi-sandbox-smoke: --help missing run/doctor"
 }
 
 # 2. --version
-& $BinaryPath --version | Out-File -FilePath (Join-Path $ArtifactDir 'version.txt') -Encoding ascii
+& $IsolatedBinary --version | Out-File -FilePath (Join-Path $ArtifactDir 'version.txt') -Encoding ascii
 if (-not ((Get-Content (Join-Path $ArtifactDir 'version.txt') -Raw) -match 'opi-sandbox')) {
     throw "opi-sandbox-smoke: --version missing opi-sandbox"
 }
 
 # 3. doctor --json (stable object; supported=false everywhere in 16.11.2)
-& $BinaryPath doctor --json | Out-File -FilePath (Join-Path $ArtifactDir 'doctor.json') -Encoding ascii
+& $IsolatedBinary doctor --json | Out-File -FilePath (Join-Path $ArtifactDir 'doctor.json') -Encoding ascii
 $doc = Get-Content (Join-Path $ArtifactDir 'doctor.json') -Raw | ConvertFrom-Json
 if ($doc.schema_version -ne 1) { throw "opi-sandbox-smoke: doctor schema_version=$($doc.schema_version)" }
 if ($doc.supported -ne $false) { throw "opi-sandbox-smoke: doctor supported=$($doc.supported) (must be false in 16.11.2)" }
@@ -60,15 +75,19 @@ if (-not (@($doc.profiles) -contains 'workspace-write')) { throw "opi-sandbox-sm
 # 4. run with a VALID argv -> pre-start platform refusal (125) in 16.11.2.
 $Workspace = Join-Path $ArtifactDir 'ws'
 New-Item -ItemType Directory -Force -Path $Workspace | Out-Null
-$rp = Start-Process -FilePath $BinaryPath `
+$rp = Start-Process -FilePath $IsolatedBinary `
     -ArgumentList 'run', '--workspace', $Workspace, '--profile', 'workspace-write', `
     '--network', 'deny', '--', 'cmd', '/C', 'exit 0' `
-    -NoNewWindow -Wait -PassThru `
+    -WorkingDirectory $IsolatedCwd -NoNewWindow -Wait -PassThru `
     -RedirectStandardOutput (Join-Path $ArtifactDir 'run-stdout.txt') `
     -RedirectStandardError (Join-Path $ArtifactDir 'run-stderr.txt')
 Set-Content -Path (Join-Path $ArtifactDir 'run-exit.txt') -Value $rp.ExitCode -Encoding ascii
 if ($rp.ExitCode -ne 125) {
     throw "opi-sandbox-smoke: expected run exit 125 (pre-start refusal), got $($rp.ExitCode)"
+}
+}
+finally {
+    Pop-Location
 }
 
 # 5. no durable state / no Opi access: canary never read; no files under sentinel.
@@ -80,7 +99,16 @@ $SentinelFiles = @(Get-ChildItem -Path $Sentinel -Recurse -File | ForEach-Object
 if ($SentinelFiles.Count -ne 1 -or $SentinelFiles[0] -ne $CanaryPath) {
     throw "opi-sandbox-smoke: binary created files under sentinel: $($SentinelFiles -join ', ')"
 }
+$BinFiles = @(Get-ChildItem -LiteralPath $IsolatedBinDir -Force)
+if ($BinFiles.Count -ne 1 -or $BinFiles[0].FullName -ne $IsolatedBinary) {
+    throw "opi-sandbox-smoke: isolated bin directory gained state: $($BinFiles.FullName -join ', ')"
+}
+$CwdEntries = @(Get-ChildItem -LiteralPath $IsolatedCwd -Force)
+if ($CwdEntries.Count -ne 0) {
+    throw "opi-sandbox-smoke: isolated cwd gained state: $($CwdEntries.FullName -join ', ')"
+}
 
 Set-Content -Path (Join-Path $ArtifactDir 'smoke-result.txt') -Value 'opi-sandbox-smoke: OK' -Encoding ascii
 Set-Content -Path (Join-Path $ArtifactDir 'windows-unsupported-smoke-result.txt') -Value 'opi-sandbox-windows-unsupported-smoke: OK' -Encoding ascii
+Set-Content -Path (Join-Path $ArtifactDir 'windows-isolation-smoke-result.txt') -Value 'opi-sandbox-windows-isolation-smoke: OK' -Encoding ascii
 exit 0

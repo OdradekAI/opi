@@ -530,6 +530,7 @@ NATIVE_SENTINEL_SMOKE_RES = {
 CARGO_PASS_RE = re.compile(r"test result: ok\. ([1-9][0-9]*) passed; 0 failed; 0 ignored")
 CARGO_SKIPPED_RE = re.compile(r"test result: ok\. \d+ passed; 0 failed; ([1-9][0-9]*) ignored")
 CARGO_ZERO_RE = re.compile(r"test result: ok\. 0 passed; 0 failed; 0 ignored")
+NATIVE_SKIP_MARKER_RE = re.compile(r"(?im)^\s*skip\s+outside_write_denied\b")
 EVIDENCE_FAILURE_RE = re.compile(
     r"test result: FAILED|error: test failed|error: could not compile|"
     r"opi-sandbox-(?:direct|backend)-smoke:\s*(?:FAIL|FAILED)|AssertionError|Traceback"
@@ -620,6 +621,13 @@ def _classify_evidence(text, platform, issues):
             "code": "skipped_evidence",
             "platform": platform,
             "message": f"{platform} evidence has ignored/skipped tests",
+        })
+        return False
+    if NATIVE_SKIP_MARKER_RE.search(text):
+        issues.append({
+            "code": "skipped_evidence",
+            "platform": platform,
+            "message": f"{platform} evidence records a skipped outside-write assertion",
         })
         return False
     if CARGO_ZERO_RE.search(text):
@@ -1111,7 +1119,7 @@ def _audit_native_bundle(
             lock_snapshot["text"] if lock_snapshot else None, platform, issues
         )
         if manifest is not None and lock is not None:
-            manifest_hash = hashlib.sha256(manifest_raw.replace(b"\r", b"")).hexdigest()
+            manifest_hash = hashlib.sha256(manifest_raw).hexdigest()
             actual_sha = sha256_evidence_file(extracted_bin, issues)
             if actual_sha is None:
                 _audit_native_smoke(evidence_text, platform, archive_sha, issues)

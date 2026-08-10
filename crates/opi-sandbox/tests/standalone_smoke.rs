@@ -170,4 +170,9 @@ fn standalone_smoke_script_windows() {
         .expect("run powershell smoke script");
     assert!(status.success(), "smoke script failed: {status}");
     assert_artifacts(artifact_dir.path());
+    assert!(
+        read_artifact(artifact_dir.path(), "windows-isolation-smoke-result.txt")
+            .contains("opi-sandbox-windows-isolation-smoke: OK"),
+        "Windows smoke did not persist its isolation proof"
+    );
 }

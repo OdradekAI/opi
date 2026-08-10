@@ -883,6 +883,16 @@ async fn routed_tool_result(
     enabled: &[(&str, &str)],
     mode: ExecutionRunMode,
 ) -> opi_agent::tool::ToolResult {
+    routed_tool_result_with_command(contribution, permissions, enabled, mode, "echo hi").await
+}
+
+async fn routed_tool_result_with_command(
+    contribution: ActivatedContribution,
+    permissions: &[(&str, PermissionDecision)],
+    enabled: &[(&str, &str)],
+    mode: ExecutionRunMode,
+    command: &str,
+) -> opi_agent::tool::ToolResult {
     let ws = tempfile::tempdir().unwrap();
     let wiring = ExecutionWiring {
         config: ExecutionConfig {
@@ -921,7 +931,7 @@ async fn routed_tool_result(
         .expect("routed bash tool present");
     bash.execute(
         "code-matrix",
-        serde_json::json!({"command": "echo hi", "backend": "opi-sandbox", "timeout_secs": 5}),
+        serde_json::json!({"command": command, "backend": "opi-sandbox", "timeout_secs": 5}),
         CancellationToken::new(),
         None,
     )
@@ -1162,6 +1172,90 @@ async fn timed_out_in_band_completed_is_not_a_success() {
             .any(|d| d.context.get("timed_out") == Some(&serde_json::json!(true))),
         "the timed-out operation-context flag must ride along: {:?}",
         result.diagnostics
+    );
+    assert_remediation(&result, "execution_timed_out");
+    let event = AgentEvent::ToolExecutionEnd {
+        tool_call_id: "timed-out-completed".into(),
+        tool_name: "bash".into(),
+        result: serde_json::json!(&result.content),
+        details: result.details.clone(),
+        is_error: result.is_error,
+        truncated: result.truncated,
+        diagnostics: result.diagnostics.clone(),
+    };
+    let event = event.redacted_for_public();
+    for surface in [
+        serde_json::to_string(&AgentSessionEvent::Agent {
+            event: event.clone(),
+        })
+        .unwrap(),
+        agent_event_to_value(&event).to_string(),
+    ] {
+        assert!(
+            surface.contains("execution_timed_out"),
+            "public event lost stable timeout identity: {surface}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn adapter_text_cannot_echo_request_canary_to_public_surfaces() {
+    let canary = "PUBLIC_REQUEST_CANARY_7f43d1";
+    let command = format!("echo {canary}");
+    let result = routed_tool_result_with_command(
+        canned("opi-sandbox", "mock-pkg", "public_text_echo"),
+        &[("opi-sandbox", PermissionDecision::Allow)],
+        &[("opi-sandbox", "mock-pkg")],
+        ExecutionRunMode::Interactive,
+        &command,
+    )
+    .await;
+    assert!(
+        !result.is_error,
+        "redaction must preserve the successful outcome"
+    );
+    let event = AgentEvent::ToolExecutionEnd {
+        tool_call_id: "public-text-echo".into(),
+        tool_name: "bash".into(),
+        result: serde_json::json!(&result.content),
+        details: result.details.clone(),
+        is_error: result.is_error,
+        truncated: result.truncated,
+        diagnostics: result.diagnostics.clone(),
+    };
+    let event = event.redacted_for_public();
+    let details = result.details.as_ref().expect("effective contract details");
+    let contract = serde_json::json!({
+        "placement": details["placement"],
+        "guarantee": details["guarantee"],
+        "policy": details["policy"],
+        "limitations": details["limitations"],
+    });
+    let surfaces = [
+        contract.to_string(),
+        serde_json::to_string(&result.diagnostics).unwrap(),
+        serde_json::to_string(&AgentSessionEvent::Agent {
+            event: event.clone(),
+        })
+        .unwrap(),
+        agent_event_to_value(&event).to_string(),
+    ];
+    for surface in surfaces {
+        assert!(
+            !surface.contains(canary),
+            "adapter-controlled text leaked the request canary: {surface}"
+        );
+    }
+    assert_eq!(
+        result.diagnostics[0].message,
+        "backend reported a diagnostic"
+    );
+    assert!(details["placement"].as_str().unwrap().contains("host"));
+    assert!(
+        details["guarantee"]
+            .as_str()
+            .unwrap()
+            .contains("supervised")
     );
 }
 

@@ -20,7 +20,7 @@
 //! Parity between the `.sh` and `.ps1` is enforced directly by pinning both
 //! wrappers to the same helper and exercising its strict version matrix. Every
 //! OS also asserts the emitted lock against the same canonical Rust computation
-//! (`sha256` lowercase, `manifest_hash` LF-normalized). Header checks never run
+//! (`sha256` lowercase, `manifest_hash` over exact bytes). Header checks never run
 //! the binary; native-run behavior remains owned by 16.13/16.14.1.
 
 #![forbid(unsafe_code)]
@@ -310,6 +310,8 @@ def member_payload(name):
         schema = json.loads(payload)
         schema["same_id_tamper"] = True
         return (json.dumps(schema, separators=(",", ":")) + "\n").encode()
+    if mode == "crlf-manifest" and name == "package.toml":
+        return payload.replace(b"\n", b"\r\n")
     return payload
 
 if archive.name.endswith(".zip"):
@@ -325,7 +327,7 @@ if archive.name.endswith(".zip"):
                 info.create_system = 3
                 info.external_attr = (stat.S_IFREG | 0o644) << 16
                 out.writestr(info, member_payload(name))
-            elif mode in ("cpu-swap", "malformed-header"):
+            elif mode in ("cpu-swap", "malformed-header", "crlf-manifest"):
                 info = zipfile.ZipInfo(archive_name(name))
                 info.create_system = 3
                 permissions = 0o755 if name == "bin/opi-sandbox" else 0o644
@@ -361,7 +363,7 @@ else:
                 info = tarfile.TarInfo(archive_name(name))
                 info.size = len(payload)
                 out.addfile(info, io.BytesIO(payload))
-            elif mode in ("cpu-swap", "malformed-header"):
+            elif mode in ("cpu-swap", "malformed-header", "crlf-manifest"):
                 payload = member_payload(name)
                 info = tarfile.TarInfo(archive_name(name))
                 info.mode = 0o755 if name == "bin/opi-sandbox" else 0o644
@@ -378,7 +380,7 @@ else:
             out.add(root / "package.toml", arcname="package.toml", recursive=False)
 if mode in ("cpu-swap", "malformed-header"):
     print(hashlib.sha256(overrides["bin/opi-sandbox"]).hexdigest())
-    print(hashlib.sha256(overrides["package.toml"].replace(b"\r", b"")).hexdigest())
+    print(hashlib.sha256(overrides["package.toml"]).hexdigest())
 "#;
 
 fn rewrite_archive_output(p: &Packed, mode: &str) -> String {
@@ -635,9 +637,9 @@ fn packer_builds_valid_layout_lock_and_extraction() {
         sha256_hex(&fs::read(&extracted_bin).unwrap()),
         canonical.executable_sha256,
     );
-    // The extracted manifest hashes identically (no CRLF/encoding drift).
+    // The extracted manifest hashes identically byte-for-byte.
     assert_eq!(
-        sha256_hex(&lf_strip(&fs::read(&extracted_toml).unwrap())),
+        sha256_hex(&fs::read(&extracted_toml).unwrap()),
         canonical.manifest_hash,
         "extracted manifest hashes to the locked manifest_hash",
     );
@@ -956,6 +958,21 @@ fn verify_rejects_tampered_archive_when_staging_trees_are_unchanged() {
 }
 
 #[test]
+fn verify_rejects_crlf_manifest_drift_against_lf_lock() {
+    let p = pack_fresh();
+    rewrite_archive(&p, "crlf-manifest");
+
+    let output = run(verify_cmd(&p.script, &p.artifact));
+
+    assert!(!output.status.success(), "{output:#?}");
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("archive manifest_hash mismatch"),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
 fn verify_rejects_cpu_swapped_archive_when_hashes_are_consistent() {
     let p = pack_fresh();
     let material = rewrite_archive_output(&p, "cpu-swap");
@@ -1155,13 +1172,10 @@ fn verify_rejects_archive_and_lock_with_noncanonical_opi_range() {
     let lock_path = p.artifact.join("package-lock.toml");
     let lock = fs::read_to_string(&lock_path).unwrap();
     let changed_lock = lock.replace(&canonical, &noncanonical).replace(
+        &format!("manifest_hash = \"{}\"", sha256_hex(manifest.as_bytes())),
         &format!(
             "manifest_hash = \"{}\"",
-            sha256_hex(&lf_strip(manifest.as_bytes()))
-        ),
-        &format!(
-            "manifest_hash = \"{}\"",
-            sha256_hex(&lf_strip(changed_manifest.as_bytes()))
+            sha256_hex(changed_manifest.as_bytes())
         ),
     );
     fs::write(&lock_path, changed_lock).unwrap();
@@ -1233,11 +1247,4 @@ fn pack_rejects_empty_binary() {
     let script = script_path();
     let output = run(pack_cmd(&script, &fixture, &artifact));
     assert_pack_failure(&output, 2);
-}
-
-/// Drop every 0x0D byte (mirror `execution::contribution::lf_normalize`'s
-/// CR-stripping) so an independent manifest_hash recomputation matches the
-/// packager + 16.4 regardless of host line endings.
-fn lf_strip(bytes: &[u8]) -> Vec<u8> {
-    bytes.iter().filter(|&&b| b != 0x0D).copied().collect()
 }

@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+use crate::execution::contribution::manifest_sha256_bytes;
 use crate::package_discovery::{
     OpiVersionDiagnostic, PackageResource, discover_package_root, resolve_adapter_command_checked,
 };
@@ -210,8 +211,7 @@ pub fn resolve_declared_installed_packages_for_scopes(
 pub fn manifest_sha256(path: &Path) -> Result<String, PackageResolverError> {
     let bytes = std::fs::read(path)
         .map_err(|e| PackageResolverError::Failed(format!("read {}: {e}", path.display())))?;
-    use sha2::Digest as _;
-    Ok(format!("{:x}", sha2::Sha256::digest(&bytes)))
+    Ok(manifest_sha256_bytes(&bytes))
 }
 
 pub fn local_lock_entry(

@@ -52,16 +52,6 @@ function Fail-Layout([string]$msg) {
 function Get-Sha256Path([string]$Path) {
     (Get-FileHash -Algorithm SHA256 -LiteralPath $Path).Hash.ToLowerInvariant()
 }
-# Lowercase SHA-256 over the LF-normalized bytes of a file (drop every 0x0D),
-# matching execution::contribution::lf_normalize + sha256_hex used by 16.4.
-function Get-Sha256LfPath([string]$Path) {
-    $raw = [System.IO.File]::ReadAllBytes($Path)
-    $list = New-Object System.Collections.Generic.List[byte]
-    foreach ($b in $raw) { if ($b -ne 13) { $list.Add($b) } }
-    $ms = New-Object System.IO.MemoryStream(, $list.ToArray())
-    try { (Get-FileHash -Algorithm SHA256 -InputStream $ms).Hash.ToLowerInvariant() }
-    finally { $ms.Dispose() }
-}
 $ScriptDir = $PSScriptRoot
 if (-not $ScriptDir) { $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path }
 $PackageHelper = Join-Path $ScriptDir 'opi-sandbox-package.py'
@@ -153,8 +143,8 @@ try { $null = $schemaText | ConvertFrom-Json } catch { Fail-Usage 'invalid proto
 )
 Copy-Item -LiteralPath $LicenseFile -Destination (Join-Path $Pkg 'licenses/LICENSE') -Force
 
-# manifest_hash over the LF-normalized written manifest.
-$ManifestHash = Get-Sha256LfPath $PkgToml
+# manifest_hash over the exact written manifest bytes.
+$ManifestHash = Get-Sha256Path $PkgToml
 
 # Archive: package contents at root (no wrapping directory).
 $Archive = Join-Path $ArtifactDir "opi-sandbox-$Target.zip"

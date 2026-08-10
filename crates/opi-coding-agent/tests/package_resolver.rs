@@ -51,6 +51,18 @@ fn manifest_sha256_returns_lowercase_hex_sha256_digest() {
 }
 
 #[test]
+fn manifest_sha256_distinguishes_exact_line_endings() {
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("package.toml");
+    fs::write(&path, b"name = \"demo\"\n").unwrap();
+    let lf = manifest_sha256(&path).unwrap();
+    fs::write(&path, b"name = \"demo\"\r\n").unwrap();
+    let crlf = manifest_sha256(&path).unwrap();
+
+    assert_ne!(lf, crlf);
+}
+
+#[test]
 fn source_identity_for_resolution_canonicalizes_local_paths_against_base() {
     let workspace = tempdir().unwrap();
     let package_root = workspace.path().join("vendor").join("todo");

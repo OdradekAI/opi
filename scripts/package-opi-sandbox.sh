@@ -58,8 +58,7 @@ SCHEMA_SNAPSHOT="$SCRIPT_DIR/../crates/opi-protocol/tests/snapshots/execution_v1
 LICENSE_FILE="$SCRIPT_DIR/../LICENSE"
 
 # Portable SHA-256: macOS ships `shasum -a 256`; Linux and git-bash ship
-# `sha256sum`. Both emit lowercase hex. The stream form reads stdin so the
-# caller can pipe LF-normalized text or raw bytes.
+# `sha256sum`. Both emit lowercase hex. The stream form reads raw stdin bytes.
 hash_stream() {
     if command -v sha256sum >/dev/null 2>&1; then
         sha256sum | awk '{print $1}'
@@ -67,9 +66,6 @@ hash_stream() {
         shasum -a 256 | awk '{print $1}'
     fi
 }
-# SHA-256 over the LF-normalized bytes of a file (drops every 0x0D), matching
-# execution::contribution::lf_normalize + sha256_hex used by 16.4.
-sha256_lf() { tr -d '\r' < "$1" | hash_stream; }
 # SHA-256 over the raw bytes of a file (no CR stripping: binary may contain 0x0D).
 sha256_raw() { hash_stream < "$1"; }
 
@@ -151,8 +147,8 @@ grep -q '"$id": "https://odradek.ai/schemas/command-execution-jsonl-v1.json"' \
     echo "package-opi-sandbox: invalid protocol schema snapshot" >&2; exit 2; }
 cp "$LICENSE_FILE" "$PKG/licenses/LICENSE"
 
-# manifest_hash over the LF-normalized written manifest.
-MANIFEST_HASH="$(sha256_lf "$PKG/package.toml")"
+# manifest_hash over the exact written manifest bytes.
+MANIFEST_HASH="$(sha256_raw "$PKG/package.toml")"
 
 # Archive: package contents at root (no wrapping directory).
 ARCHIVE="$ARTIFACT_DIR/opi-sandbox-$TARGET.tar.gz"

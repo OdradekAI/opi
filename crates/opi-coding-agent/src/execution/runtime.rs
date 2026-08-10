@@ -680,7 +680,7 @@ impl BashOperations for ProcessCommandAdapter {
 /// same preview/full-output policy as local execution.
 fn completed_outcome_to_bash_result(outcome: CompletedOutcome) -> BashResult {
     let output = finalize_complete_bash_output(outcome.stdout, outcome.stderr);
-    let diagnostics = outcome
+    let mut diagnostics: Vec<_> = outcome
         .diagnostics
         .into_iter()
         .map(|diagnostic| ToolDiagnostic {
@@ -689,6 +689,11 @@ fn completed_outcome_to_bash_result(outcome: CompletedOutcome) -> BashResult {
             details: None,
         })
         .collect();
+    if outcome.timed_out {
+        diagnostics.push(execution_failure_diagnostic(
+            &ExecutionFailure::ExecutionTimedOut,
+        ));
+    }
     BashResult {
         stdout: output.stdout,
         stderr: output.stderr,
@@ -724,6 +729,17 @@ fn completed_outcome_to_bash_result(outcome: CompletedOutcome) -> BashResult {
 /// and `root_cause()` unwraps the [`BashOpError::BackendFailure`] wrapper to its
 /// `Other` source for the user-facing message.
 fn exec_failure_to_bash_op_error(failure: ExecutionFailure) -> BashOpError {
+    let diagnostic = execution_failure_diagnostic(&failure);
+    let code = failure.code();
+    BashOpError::BackendFailure {
+        source: Box::new(BashOpError::Other {
+            message: code.to_string(),
+        }),
+        diagnostics: vec![diagnostic],
+    }
+}
+
+fn execution_failure_diagnostic(failure: &ExecutionFailure) -> ToolDiagnostic {
     let code = failure.code();
     let mut details = serde_json::json!({
         "code": code,
@@ -732,15 +748,10 @@ fn exec_failure_to_bash_op_error(failure: ExecutionFailure) -> BashOpError {
     if let Some(adapter_id) = failure.adapter_id() {
         details["adapter_id"] = serde_json::json!(adapter_id);
     }
-    BashOpError::BackendFailure {
-        source: Box::new(BashOpError::Other {
-            message: code.to_string(),
-        }),
-        diagnostics: vec![ToolDiagnostic {
-            code: code.to_string(),
-            message: failure.to_string(),
-            details: Some(details),
-        }],
+    ToolDiagnostic {
+        code: code.to_string(),
+        message: failure.to_string(),
+        details: Some(details),
     }
 }
 
@@ -927,6 +938,43 @@ mod tests {
         });
 
         assert_eq!(result.context.signal, Some(9));
+    }
+
+    #[test]
+    fn routed_completed_timeout_preserves_stable_failure_identity() {
+        let result = completed_outcome_to_bash_result(CompletedOutcome {
+            ready: crate::execution::ReadyReport {
+                selected_protocol: ProtocolId::new(WIRE_IDENTITY).unwrap(),
+                implementation: opi_protocol::execution::v1::ImplementationId::new("opi-sandbox")
+                    .unwrap(),
+                implementation_version: "1.0.0".to_string(),
+                target: opi_protocol::execution::v1::TargetId::new("test-target"),
+            },
+            started: crate::execution::StartedReport::default(),
+            exit: None,
+            signal: None,
+            timed_out: true,
+            cancelled: false,
+            cleanup: opi_protocol::execution::v1::CleanupState::Confirmed,
+            stdout: Vec::new(),
+            stderr: Vec::new(),
+            diagnostics: Vec::new(),
+        });
+
+        let diagnostic = result
+            .diagnostics
+            .iter()
+            .find(|diagnostic| diagnostic.code == "execution_timed_out")
+            .expect("timed-out completion must retain its stable failure code");
+        assert_eq!(
+            diagnostic.details.as_ref().unwrap()["code"],
+            "execution_timed_out"
+        );
+        assert!(
+            diagnostic.details.as_ref().unwrap()["remediation"]
+                .as_str()
+                .is_some_and(|remediation| !remediation.is_empty())
+        );
     }
 
     #[test]

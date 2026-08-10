@@ -90,7 +90,7 @@ pub enum PackageSource {
 /// in `package-lock.toml` (Phase 16.5), per the design's lock contract.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct LockMaterial {
-    /// SHA-256 over the LF-normalized `package.toml` bytes that were parsed.
+    /// SHA-256 over the exact `package.toml` bytes that were parsed.
     pub manifest_hash: String,
     /// The contribution `command`, as a relative path contained by the root.
     pub executable_rel_path: String,
@@ -228,7 +228,7 @@ struct RawAdapterContribution {
 /// Validate every executable `command.execute` contribution on `manifest`.
 ///
 /// `raw_manifest_bytes` must be the exact bytes parsed into `manifest` (the
-/// manifest hash is computed over their LF-normalized form); the validator
+/// manifest hash is computed over those exact bytes); the validator
 /// never re-reads the manifest file. `package_root` is canonicalized on both
 /// sides for the containment proof. `host_target` and `host_opi_version` are
 /// pure inputs (the caller decides how the host learns them), keeping this
@@ -274,7 +274,7 @@ pub fn validate_executable_contributions(
         return Err(ContributionValidationError::EmptyTarget);
     }
 
-    let manifest_hash = sha256_hex(&lf_normalize(raw_manifest_bytes));
+    let manifest_hash = manifest_sha256_bytes(raw_manifest_bytes);
     let canonical_root = package_root.canonicalize().map_err(|e| {
         ContributionValidationError::CommandNotCanonicalizable(format!("package root: {e}"))
     })?;
@@ -626,21 +626,10 @@ fn sha256_hex(bytes: &[u8]) -> String {
     hex::encode(Sha256::digest(bytes))
 }
 
-/// CRLF -> LF so the manifest hash is reproducible across checkouts (git may
-/// materialize LF as CRLF on Windows).
-fn lf_normalize(bytes: &[u8]) -> Vec<u8> {
-    let mut out = Vec::with_capacity(bytes.len());
-    let mut i = 0;
-    while i < bytes.len() {
-        if i + 1 < bytes.len() && bytes[i] == b'\r' && bytes[i + 1] == b'\n' {
-            out.push(b'\n');
-            i += 2;
-        } else {
-            out.push(bytes[i]);
-            i += 1;
-        }
-    }
-    out
+/// Trust and package resolution share this exact-byte identity function so a
+/// checkout line-ending change is observable lock drift.
+pub(crate) fn manifest_sha256_bytes(bytes: &[u8]) -> String {
+    sha256_hex(bytes)
 }
 
 #[cfg(test)]
