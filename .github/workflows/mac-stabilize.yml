@@ -1,0 +1,24 @@
+name: mac-stabilize
+
+# Focused macOS-only verification for stabilizing opi-sandbox / native_keyring /
+# execution-acceptance tests that cannot be reproduced on the Windows dev host.
+# Manual dispatch only (does not gate main); the full matrix is covered by ci.yml.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: opi-sandbox unit tests
+        run: cargo test -p opi-sandbox
+      - name: native_keyring unit tests
+        run: cargo test -p opi-coding-agent --lib native_keyring
+      - name: execution acceptance
+        run: |
+          cargo test -p opi-coding-agent --test execution_product
+          cargo test -p opi-coding-agent --test execution_protocol_host

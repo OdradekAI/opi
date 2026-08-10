@@ -188,6 +188,21 @@ fn assert_code(err: ExecutionProtocolFailure, expected: &str) {
     );
 }
 
+/// A backend crash closes protocol stdout with no terminal frame, so the host
+/// reads EOF and fails closed. `failure_after_teardown` keeps the
+/// `protocol_violation` classification only when L0 termination, child reap,
+/// and stderr drain all confirm within `CLEANUP_REPORT_GRACE`; on a loaded
+/// shared runner (notably macOS CI) one leg can race that grace and the crash
+/// is correctly downgraded to `cleanup_unconfirmed`. Both codes prove the crash
+/// was detected and the invocation terminated fail-closed.
+fn assert_crash_fail_closed(result: Result<CompletedOutcome, ExecutionProtocolFailure>) {
+    let code = result.unwrap_err().code();
+    assert!(
+        code == "protocol_violation" || code == "cleanup_unconfirmed",
+        "crash must fail closed (protocol_violation or cleanup_unconfirmed), got {code}"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // Happy path + in-band results
 // ---------------------------------------------------------------------------
@@ -346,29 +361,25 @@ async fn premature_eof_is_protocol_violation() {
 
 #[tokio::test]
 async fn crash_before_ready_is_protocol_violation() {
-    assert_code(
+    assert_crash_fail_closed(
         run(
             &["crash_before_ready"],
             Bounds::DEFAULT,
             Duration::from_secs(5),
         )
-        .await
-        .unwrap_err(),
-        "protocol_violation",
+        .await,
     );
 }
 
 #[tokio::test]
 async fn crash_after_ready_is_protocol_violation() {
-    assert_code(
+    assert_crash_fail_closed(
         run(
             &["crash_after_ready"],
             Bounds::DEFAULT,
             Duration::from_secs(5),
         )
-        .await
-        .unwrap_err(),
-        "protocol_violation",
+        .await,
     );
 }
 

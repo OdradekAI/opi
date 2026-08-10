@@ -124,6 +124,18 @@ async fn next(run: &mut SandboxRun) -> Option<SandboxEvent> {
     std::future::poll_fn(|cx| Pin::new(&mut *run).poll_next(cx)).await
 }
 
+/// Assertion window for "rejected immediately" probe tests. The probe is
+/// rejected within one 5ms poll of appearing, but on Windows the fake launcher
+/// is PowerShell, whose cold-start on CI runners can exceed 500ms before it
+/// creates the probe artifact. Stay well under the 3s setup deadline.
+fn probe_rejection_window() -> Duration {
+    if cfg!(windows) {
+        Duration::from_secs(2)
+    } else {
+        Duration::from_millis(500)
+    }
+}
+
 /// Drain interim Output/Diagnostic events until the terminal Completed event.
 /// Stdout-producing targets (for example `/usr/bin/env`) emit Output chunks
 /// between Started and Completed; on macOS the inherited environment adds
@@ -281,7 +293,7 @@ async fn forged_probe_content_is_rejected_immediately() {
     };
     let (mut run, _probe, marker) = fake_seatbelt_run(script);
 
-    let event = tokio::time::timeout(Duration::from_millis(500), next(&mut run))
+    let event = tokio::time::timeout(probe_rejection_window(), next(&mut run))
         .await
         .expect("wrong probe content must fail without waiting for the deadline");
 
@@ -298,7 +310,7 @@ async fn non_regular_probe_is_rejected_immediately() {
     };
     let (mut run, _probe, marker) = fake_seatbelt_run(script);
 
-    let event = tokio::time::timeout(Duration::from_millis(500), next(&mut run))
+    let event = tokio::time::timeout(probe_rejection_window(), next(&mut run))
         .await
         .expect("non-regular probe must fail without waiting for the deadline");
 

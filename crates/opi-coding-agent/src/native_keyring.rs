@@ -186,6 +186,25 @@ mod tests {
         }
     }
 
+    fn mock_store_timestamp_secs_f64() -> f64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs_f64())
+            .unwrap_or_default()
+    }
+
+    /// Ensure the next `keyring_core::mock::Store::new()` produces an id
+    /// distinct from a store built at `prior`. The mock store derives its id
+    /// solely from `SystemTime::now().as_secs_f64()`, which at current epoch
+    /// magnitudes resolves only to ~0.24us; two back-to-back stores can
+    /// otherwise collide on id and defeat the identity comparisons these lease
+    /// tests rely on.
+    fn advance_mock_store_clock(prior: f64) {
+        while mock_store_timestamp_secs_f64() == prior {
+            std::hint::spin_loop();
+        }
+    }
+
     #[test]
     fn platform_initialization_errors_preserve_operational_classification() {
         use crate::credential_store::BackendError;
@@ -356,10 +375,12 @@ mod tests {
     fn last_lease_restores_preexisting_foreign_default_store() {
         let _serial = super::KEYRING_TEST_LOCK.lock().expect("keyring test lock");
         keyring_core::unset_default_store();
+        let foreign_ts = mock_store_timestamp_secs_f64();
         let foreign: Arc<keyring_core::CredentialStore> =
             keyring_core::mock::Store::new().expect("foreign mock store");
         let foreign_id = foreign.id();
         keyring_core::set_default_store(foreign);
+        advance_mock_store_clock(foreign_ts);
         let opi: Arc<keyring_core::CredentialStore> =
             keyring_core::mock::Store::new().expect("opi mock store");
 
