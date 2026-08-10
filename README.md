@@ -106,10 +106,10 @@ authors.
 | --- | --- |
 | [`opi-ai`](crates/opi-ai) | Provider-neutral LLM API, streaming events, model registry, retries, HTTP/proxy support, usage, and best-effort cost helpers. |
 | [`opi-agent`](crates/opi-agent) | Agent loop, tool contract, hooks, events, queues, sessions, compaction, SDK/RPC types, extensions, diagnostics, and streaming proxy. |
-| [`opi-tui`](crates/opi-tui) | Ratatui widgets, transcript rendering, diff view, pickers, terminal images, themes, and keybindings. |
+| [`opi-tui`](crates/opi-tui) | Ratatui widgets, transcript rendering, diff view, pickers, trust/permission prompts, terminal images, themes, and keybindings. |
 | [`opi-coding-agent`](crates/opi-coding-agent) | The `opi` binary, built-in coding tools, config/session/package handling, and embeddable `CodingHarness`. |
 | [`opi-protocol`](crates/opi-protocol) | Protocol types, bounded codecs, JSON schemas, and fixtures for `command.execute` (wire identity `command-execution-jsonl-v1`). |
-| [`opi-sandbox`](crates/opi-sandbox) | Standalone, Opi-independent command-execution sandbox: L0 process-tree supervision, a platform-neutral restriction seam, a library SDK, and a human CLI. |
+| [`opi-sandbox`](crates/opi-sandbox) | Standalone, Opi-independent command-execution restriction package: L0 process-tree supervision, native Linux/macOS restriction, a library SDK, and a human CLI. |
 
 Internal dependency shape:
 
@@ -376,8 +376,9 @@ tools the agent can call; they are not an operating-system sandbox.
 - Observability is local and explicit: `opi` does not collect telemetry or
   analytics, does not share sessions automatically, `opi doctor` is local and
   network-free by default, and `trace` is opt-in.
-- Production sub-agent, permission-gate, plan/todo, and MCP workflows are
-  examples/package patterns, not built-in core workflows.
+- Production sub-agent, plan/todo, MCP, and general-purpose permission-gate
+  workflows beyond `command.execute` are examples/package patterns, not
+  built-in core workflows.
 - OAuth providers beyond Anthropic, GitHub Copilot, and OpenAI Codex; provider
   catalogs beyond the two audited pi-0.80.6 snapshots; image generation;
   browser automation; provider
@@ -386,40 +387,8 @@ tools the agent can call; they are not an operating-system sandbox.
   deferred.
 - Dynamic Rust plugin loading from arbitrary extension paths is not supported.
 
-### Historical Phase 15 sandbox and project trust
+### Project Trust
 
-This section is a historical record of the unreleased Phase 15 implementation.
-Phase 16 removed its core `[sandbox]`, `--sandbox`, and `--sandbox-require`
-surface; use the current `command.execute` configuration above. The project-
-trust behavior described below remains current, while the sandbox details and
-flags are retained only to explain the migration.
-
-- The sandbox confines only the `bash` subprocess tree, not `opi` itself. An
-  always-on L0 baseline (`process_group(0)` on Unix, a kill-on-close Job Object
-  on Windows) ships in every mode. `[sandbox] mode = "strict"` (default `off`)
-  opts into L1/L2/L3 layers; `require = true` (default `false`) fails closed
-  when a layer cannot engage, otherwise `opi` proceeds at the engaged baseline
-  with a `opi.sandbox.degraded` diagnostic. CLI: `--sandbox off|strict`,
-  `--sandbox-require`.
-- Linux `strict` L2 is a narrowed new-socket creation gate: seccomp denies
-  `socket(AF_INET)`, `socket(AF_INET6)`, and `socket(AF_NETLINK)` while
-  preserving `socket(AF_UNIX)`, and Landlock ABI 4 (Linux 6.7+) additionally
-  denies TCP `bind`/`connect`. On Landlock ABI 1-3, fail-open retains the
-  seccomp new-socket gate, reports the missing TCP bind/connect capability with
-  `opi.sandbox.degraded`, and continues at that partial baseline;
-  `require = true` fails closed before spawning. It does not claim complete
-  network isolation: inherited fds, non-TCP traffic, and `io_uring` remain
-  documented residuals. L3 denies a fixed kernel-handle danger blocklist
-  (`clone`/`unshare` stay allowed). macOS probes and launches the same absolute
-  `/usr/bin/sandbox-exec` deny-overlay helper (L1/L2; L3 is n/a); Windows is
-  L0-only and `strict` degrades to L0 with a diagnostic.
-- File tools (`read`/`write`/`edit`) and nav tools (`grep`/`find`/`ls`/`glob`)
-  are not process-sandboxed. File tools stay `PathPolicy`-guarded, and the
-  shipped local file backend performs workspace operations relative to a held
-  root capability; explicitly allowed external reads remain ambient. The
-  subprocess sandbox lives inside local `BashOperations::exec` behind the
-  per-tool `Operations` seam, which ships local impls only (no SSH/container
-  remote backends).
 - Project trust is resolved once at startup, before any project resource or
   project config consumer (including `doctor` and `--list-models`) runs. The
   store is a flat `Map<canonical_path, bool>` at

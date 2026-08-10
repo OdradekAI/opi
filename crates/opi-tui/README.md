@@ -41,6 +41,7 @@ picker rows, and edit diff previews.
 | `InputEditor` | Multi-line input buffer with cursor/edit helpers. |
 | `StatusBar` | App state, model, and token/cost status. |
 | `ToolCallView` | Tool-call line with name, args, and status. |
+| `PermissionPrompt` | Mid-execution `command.execute` permission choices with a redaction-safe summary. |
 | `MarkdownView` / `CodeBlock` | Markdown and fenced code-block rendering. |
 | `DiffView` | Unified diff rendering for before/after file edits and edit-preview snapshots. |
 | `SelectList` / `SelectListState` | Fuzzy-select list for model, session, and tree pickers. |
@@ -85,17 +86,18 @@ For custom themes, `parse_color`, `THEME_TOKENS`, `is_valid_token`, and
 `Theme::from_color_map` form the theme-discovery API. These types are an
 **unstable 0.x extension API** and may break between minor versions.
 
-## Application State and Trust Prompt
+## Application State, Trust, and Permission Prompts
 
 `AppState` is the application-state enum callers feed to `StatusBar` and
-`Shell`: `Idle`, `Thinking`, `Streaming`, `ToolExecuting`, and
-`AwaitingTrust(AwaitingTrustState)`. The `AwaitingTrust` variant carries the
-interactive project-trust payload, including a `oneshot::Sender<TrustChoice>`;
-because it owns that sender, `AppState` is `Debug`-only and is not
+`Shell`: `Idle`, `Thinking`, `Streaming`, `ToolExecuting`,
+`AwaitingTrust(AwaitingTrustState)`, and
+`AwaitingPermission(AwaitingPermissionState)`. The two awaiting variants carry
+interactive payloads with `oneshot::Sender` responders; because `AppState`
+owns those senders, it is `Debug`-only and is not
 `Copy`/`Clone`/`PartialEq`/`Eq`. Renderers that need only a display label use
 the `Copy` projection `AppStatus` (the same variants minus the payload)
-returned by `AppState::status`. `AppState` is exhaustive, so adding
-`AwaitingTrust` is a breaking 0.x change for downstream exhaustive matches.
+returned by `AppState::status`. `AppState` is exhaustive, so new variants are
+breaking 0.x changes for downstream exhaustive matches.
 
 `TrustPrompt` is the ratatui selection widget rendered while `AppState` is
 `AwaitingTrust`. `TrustChoice` is the five-way user choice — `Trust`,
@@ -103,6 +105,13 @@ returned by `AppState::status`. `AppState` is exhaustive, so adding
 `Trust`/`TrustParent`/`Deny` decisions are persisted by `opi-coding-agent`;
 the `*Session` variants are session-only and never persisted.
 `TrustPrompt::without_parent()` omits `TrustParent` at a filesystem root.
+
+`PermissionPrompt` is rendered while `AppState` is `AwaitingPermission`. Its
+`PermissionSummary` contains only the adapter id, package name, and run-mode
+label—never command text, environment values, paths, or credentials. The
+choices are `AllowOnce`, `AllowSession`, and `Deny`; the session grant is
+memory-only, and dismissal or a dropped responder resolves to deny. Policy,
+grant lifetime, and persistence remain owned by `opi-coding-agent`.
 
 ## Integration Pattern
 
@@ -117,8 +126,8 @@ The `opi` binary uses this crate from `crates/opi-coding-agent/src/interactive.r
 ## Public Modules
 
 `branch_picker`, `diff_view`, `editor`, `keybindings`, `markdown`,
-`message_list`, `render`, `select_list`, `status_bar`, `terminal_image`,
-`theme`, `tool_call`, and `trust_prompt`.
+`message_list`, `permission_prompt`, `render`, `select_list`, `status_bar`,
+`terminal_image`, `theme`, `tool_call`, and `trust_prompt`.
 
 ## License
 

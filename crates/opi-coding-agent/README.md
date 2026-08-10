@@ -15,8 +15,8 @@ eight built-in tools, and session/config/package handling.
 
 Current crate version: `0.7.2`, inherited from the workspace package version.
 
-This crate connects `opi-ai`, `opi-agent`, and `opi-tui` into a terminal coding
-agent. It provides:
+This crate connects `opi-ai`, `opi-agent`, `opi-protocol`, and `opi-tui` into a
+terminal coding agent. It provides:
 
 - the `opi` CLI binary;
 - interactive ratatui TUI mode;
@@ -26,6 +26,8 @@ agent. It provides:
 - image attachments through `--image` and `/image`;
 - session list/resume/fork/delete commands;
 - eight built-in tools;
+- pluggable `command.execute` routing for `bash`, with capability permissions
+  and fail-closed external adapters;
 - config, context-file loading, session persistence, compaction, retry, usage,
   cost summaries, package/resource discovery, diagnostics, opt-in traces, an
   OS-keychain credential store, and interactive OAuth login/logout.
@@ -100,8 +102,8 @@ Run `opi --help` for the exact current surface. Important commands and flags:
 | `--json-compact` | Compact `--json`: streamed `text_delta` updates omit the redundant cumulative snapshot (~linear bytes). |
 | `--rpc` | Start bidirectional JSONL command/event mode over stdin/stdout. |
 | `--allow-mutating` | Allow `write`, `edit`, and `bash` outside interactive mode. |
-| `--sandbox off\|strict` | Select the `bash` subprocess-tree sandbox; default `off` ships the always-on L0 tree-kill baseline. |
-| `--sandbox-require` | Fail closed when a configured `strict` layer is unavailable, instead of the default fail-open-with-diagnostic policy. |
+| `--execution-strategy <fixed\|rules\|model>` | Select the `command.execute` routing strategy. |
+| `--execution-backend <local\|ADAPTER_ID>` | Select the fixed execution backend or override the configured backend. |
 | `--trust` / `--no-trust` | One-shot project-trust override for the session; mutually exclusive. |
 | `--tools <TOOLS>` | Comma-separated built-in tool allowlist. |
 | `--no-tools` | Disable all tools. |
@@ -123,7 +125,7 @@ Run `opi --help` for the exact current surface. Important commands and flags:
 | `--trace <PATH>` | Write an opt-in, redacted local trace envelope for a non-interactive/JSON run. |
 | `-v, --verbose` | Enable debug tracing. |
 | `doctor [--json] [--scope ...]` | Local, network-free health check. |
-| `package <add|remove|list|doctor>` | Manage local/git extension packages. |
+| `package <add|remove|list|doctor|enable|disable>` | Manage local/git extension packages and executable-package activation. |
 
 ## Providers
 
@@ -279,9 +281,10 @@ command/path-sensitive diagnostic context.
 ## Tool Policy
 
 The eight built-in tools split into a read-only set and a mutating set. Mutating
-tools run only where the resolved policy allows them; the rest is enforced
-through tool selection, not through an OS sandbox or interactive permission
-prompts.
+tools run only where the resolved tool-selection policy allows them. For
+`bash`, `command.execute` routing and capability permission are a separate
+gate: enabling the tool does not authorize an external adapter, and authorizing
+an adapter does not enable the tool. Neither gate is an OS sandbox.
 
 ### Read-only vs mutating
 
@@ -312,9 +315,11 @@ available; otherwise the mode default applies.
 |--------|----------|
 | Shell | `cmd /C` on Windows, `sh -c` on Unix. |
 | Working directory | Workspace root. |
+| Execution backend | Built-in `local` by default; `[execution]` or the execution CLI flags can select an eligible external `command.execute` adapter. |
 | Timeout | 30 seconds by default; `timeout_secs` overrides. |
 | Cancellation | A cancellation token reports `cancelled=true` / `timed_out=false`; a timeout reports `timed_out=true` / `cancelled=false`. |
-| Path confinement | None — `bash` is not restricted to the workspace. |
+| Effective contract | Local execution reports `placement=host`, `guarantee=supervised`; external placement, guarantee, policy, and limitations come from the backend's `started` event. Adapter identity alone is not a security guarantee. |
+| Path confinement | The local backend does not restrict `bash` to the workspace. An external backend is limited only by its reported effective contract. |
 | Environment | Inherited from the parent process, but never copied into details: `details.env = { "inheritance": "inherited", "values_included": false }`. A value is exposed only if the command itself prints it. |
 | Exit code | Reported in details; a nonzero exit sets `is_error`. `exit_code` is null when the process is cancelled or times out before exiting. |
 | Output | Combined stdout and stderr are capped at 64 KiB. See [Output truncation](#output-truncation). |
@@ -340,7 +345,7 @@ early termination are reported through `details` and diagnostics when available.
 The following are intentionally out of scope for the built-in tools (broader
 product boundaries are listed under [Boundaries](#boundaries)):
 
-- built-in permission popup or interactive approval prompt
+- a general-purpose permission system outside `command.execute` adapter grants
 - persistent background bash or shell sessions
 - remote execution
 - IDE project index
@@ -348,37 +353,34 @@ product boundaries are listed under [Boundaries](#boundaries)):
 - automatic formatting on `write` / `edit`
 - package ecosystem expansion
 - workflow tools such as todo, plan mode, or sub-agents
-- a complete or security-grade sandbox (the opt-in `bash` sandbox is defense-in-depth only, not a security boundary)
+- built-in native restriction; native restriction is supplied by standalone adapters such as `opi-sandbox`
 
-Mutating-tool safety is a tool-selection check, not a permission or sandbox subsystem.
+Mutating-tool availability remains a tool-selection check. Capability
+permission is separate and currently applies only to `command.execute`.
 
-## Sandbox and Project Trust
+## Command Execution and Project Trust
 
-`opi-coding-agent` ships an opt-in `bash` subprocess-tree sandbox and a startup
-project-trust gate. Both are defense-in-depth and explicitly not a security
-boundary; untrusted code belongs in a container or VM. The mutating-tool policy
-above is unchanged and remains a tool-selection check.
+The default Minimal Runtime executes `bash` through the built-in `local`
+backend. `[execution] strategy = "fixed"|"rules"|"model"` with
+`backend = "local"|<adapter-id>` can select an installed external
+`command.execute` adapter instead.
 
-- The sandbox confines only the `bash` subprocess tree, not `opi` itself. An
-  always-on L0 baseline (`process_group(0)` on Unix, a kill-on-close Job Object
-  on Windows) ships in every mode. `[sandbox] mode = "strict"` (default `off`)
-  opts into L1/L2/L3 layers; `require = true` (default `false`) fails closed
-  when a layer cannot engage, otherwise `opi` proceeds at the engaged baseline
-  with an `opi.sandbox.degraded` diagnostic. CLI: `--sandbox off|strict`,
-  `--sandbox-require`.
-- Linux `strict` L2 narrows new-socket creation: seccomp denies
-  `socket(AF_INET)`, `socket(AF_INET6)`, and `socket(AF_NETLINK)` while
-  preserving `socket(AF_UNIX)`, and Landlock ABI 4 (Linux 6.7+) additionally
-  denies TCP `bind`/`connect`. It does not claim complete network isolation:
-  inherited fds, non-TCP traffic, and `io_uring` are documented residuals.
-  macOS probes and launches `/usr/bin/sandbox-exec`; Windows is L0-only and
-  `strict` degrades to L0 with a diagnostic.
-- The sandbox lives inside local `BashOperations::exec` behind the per-tool
-  `Operations` seam — `FileOperations` and `BashOperations` traits with
-  `Arc<dyn>` constructor injection into `read`/`write`/`edit`/`bash`, layered
-  below `PathPolicy`. The seam ships local impls only (no SSH/container remote
-  backends). Nav tools (`grep`/`find`/`ls`/`glob`) take no `Operations` handle
-  and are not process-sandboxed.
+- `--execution-strategy` and `--execution-backend` override routing only; they
+  never grant package trust or capability permission.
+- Installed, Trusted, Enabled, Selected, and Permitted are independent gates.
+  `opi package enable <NAME>` grants Package Trust after confirmation and
+  enables the package. `[execution.permissions]` is user-owned; project config
+  cannot grant it. `local` defaults to `allow`, while external adapters default
+  to `ask`. Interactive `ask` offers one-invocation or memory-only session
+  grants; headless modes fail with `permission_required`.
+- Once an external adapter is selected, activation, protocol, timeout, and
+  other execution failures fail closed without falling back to `local`.
+  Runtime results report the effective execution contract; adapter identity or
+  package metadata alone does not establish a restriction guarantee.
+- The Opi binary does not link `opi-sandbox`. The removed `[sandbox]`,
+  `--sandbox`, and `--sandbox-require` surface is rejected without aliases.
+  Native restriction lives in standalone packages such as
+  [`opi-sandbox`](../opi-sandbox), which is reusable without Opi.
 - Project trust is resolved once at startup, before any project resource or
   project config consumer (including `doctor` and `--list-models`) runs. The
   store is a flat `Map<canonical_path, bool>` at `{user_config_dir}/trust.json`
@@ -498,6 +500,8 @@ Package commands:
 opi package add ./vendor/todo
 opi package add --local ./vendor/todo
 opi package add git:github.com/user/pkg@v1
+opi package enable todo
+opi package disable todo
 opi package list
 opi package list --json
 opi package doctor
@@ -505,10 +509,13 @@ opi package doctor --json
 opi package remove todo
 ```
 
-Packages can start `process-jsonl` adapters using the
-`opi-extension-jsonl-v1` protocol. That adapter protocol is an unstable 0.x
-contract. Packages are trusted code and are not sandboxed by the package
-manager.
+Packages can start `process-jsonl` extension adapters using the
+`opi-extension-jsonl-v1` protocol or contribute executable `command.execute`
+adapters using `command-execution-jsonl-v1`. Both are unstable 0.x contracts.
+Installing an executable package does not trust, enable, select, or permit it;
+those lifecycle gates remain independent. Packages are trusted code with the
+launching user's OS permissions, and package permission declarations are
+metadata rather than enforced sandbox policy.
 
 ## Library Use
 
@@ -527,8 +534,10 @@ Common methods include `prompt`, `prompt_with_content`, `queue_images`,
   automatically.
 - `opi doctor` makes no paid model calls or network checks by default.
 - Mutating-tool policy is not an OS sandbox.
-- Production sub-agent, permission-gate, plan/todo, and MCP workflows are
-  examples/package patterns, not built-in core workflows.
+- Core `opi` has no native-restriction backend and does not link `opi-sandbox`.
+- Production sub-agent, plan/todo, MCP, and general-purpose permission-gate
+  workflows beyond `command.execute` are examples/package patterns, not
+  built-in core workflows.
 - OAuth providers beyond Anthropic, GitHub Copilot, and OpenAI Codex remain
   deferred. Other deferred product decisions are provider catalogs beyond the
   audited static pi-0.80.6 Copilot/Codex snapshots, a broad new first-class

@@ -341,7 +341,8 @@ crate 维持 0.x，`harness` seam 仅为内部使用。以下明确不在范围�
 - 不声明稳定 1.0 公共 API 承诺（表面保持 0.x）。
 - 不得引入 TypeScript 扩展 API 兼容。
 - 不得引入 package 生态扩张或 package 市场。
-- 除 `process-jsonl`（`opi-extension-jsonl-v1`）外不得引入新 adapter 类型。
+- `opi-agent` 不提供 `process-jsonl`（`opi-extension-jsonl-v1`）之外的 extension
+  adapter 类型；`command.execute` 是独立的 `opi-coding-agent` / `opi-protocol` 表面。
 - 不得添加 Web UI 产品工作。
 - `opi-agent` 不得实现凭据 store、登录 presenter 或供应商 OAuth flow；这些仍由
   `opi-ai` 契约与 `opi-coding-agent` 产品接线拥有。

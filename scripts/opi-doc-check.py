@@ -63,15 +63,28 @@ def rust_u32(rel: str, name: str) -> int | None:
     return int(match.group(1))
 
 
+def crate_packages() -> list[tuple[str, str]]:
+    packages: list[tuple[str, str]] = []
+    for manifest_path in sorted((ROOT / "crates").glob("*/Cargo.toml")):
+        crate_dir = manifest_path.parent.relative_to(ROOT).as_posix()
+        manifest = tomllib.loads(read(f"{crate_dir}/Cargo.toml"))
+        name = manifest.get("package", {}).get("name")
+        if not isinstance(name, str):
+            ERRORS.append(f"{crate_dir}/Cargo.toml: missing package.name")
+            continue
+        packages.append((name, crate_dir))
+    return packages
+
+
 def check_counterparts() -> list[str]:
     pairs = [
         ("README.md", "README.zh.md"),
         ("docs/opi-spec.md", "docs/opi-spec.zh.md"),
-        ("crates/opi-ai/README.md", "crates/opi-ai/README.zh.md"),
-        ("crates/opi-agent/README.md", "crates/opi-agent/README.zh.md"),
-        ("crates/opi-coding-agent/README.md", "crates/opi-coding-agent/README.zh.md"),
-        ("crates/opi-tui/README.md", "crates/opi-tui/README.zh.md"),
     ]
+    pairs.extend(
+        (f"{crate_dir}/README.md", f"{crate_dir}/README.zh.md")
+        for _, crate_dir in crate_packages()
+    )
     for english, chinese in pairs:
         read(english)
         read(chinese)
@@ -277,9 +290,9 @@ def check_current_contracts(doc_paths: list[str]) -> None:
             f"The workspace package version in `Cargo.toml` is `{version}`",
             label="current workspace version sentence",
         )
-        for crate in ("opi-ai", "opi-agent", "opi-coding-agent", "opi-tui"):
+        for crate, crate_dir in crate_packages():
             require(
-                f"crates/{crate}/README.md",
+                f"{crate_dir}/README.md",
                 f"Current crate version: `{version}`",
                 label=f"{crate} current version sentence",
             )

@@ -37,6 +37,7 @@ cargo add opi-tui
 | `InputEditor` | 多行输入缓冲区，带光标和编辑辅助。 |
 | `StatusBar` | 应用状态、模型和 token/费用状态。 |
 | `ToolCallView` | 展示工具名、参数和状态的工具调用行。 |
+| `PermissionPrompt` | 提供执行过程中的 `command.execute` 权限选择，并只显示经过脱敏的安全摘要。 |
 | `MarkdownView` / `CodeBlock` | Markdown 与 fenced code block 渲染。 |
 | `DiffView` | 为文件编辑 before/after 和编辑预览快照渲染 unified diff。 |
 | `SelectList` / `SelectListState` | 模型、会话和会话树选择器使用的 fuzzy-select 列表。 |
@@ -78,20 +79,27 @@ cargo add opi-tui
 `Theme::from_color_map` 组成的主题发现 API 加载。这些类型属于**不稳定的 0.x 扩展
 API**，可能在次版本间发生破坏性变更。
 
-## 应用状态与信任提示
+## 应用状态、信任与权限提示
 
 `AppState` 是调用方传给 `StatusBar` 和 `Shell` 的应用状态枚举：`Idle`、`Thinking`、
-`Streaming`、`ToolExecuting` 和 `AwaitingTrust(AwaitingTrustState)`。`AwaitingTrust` 变体
-携带交互式项目信任 payload，包括一个 `oneshot::Sender<TrustChoice>`；由于它持有该 sender，
-`AppState` 仅为 `Debug`，且不是 `Copy`/`Clone`/`PartialEq`/`Eq`。只需显示标签的渲染方应使用
-由 `AppState::status` 返回的 `Copy` 投影 `AppStatus`（相同变体但去掉 payload）。`AppState` 是
-穷举的，因此新增 `AwaitingTrust` 对下游穷举 match 是一次破坏性的 0.x 变更。
+`Streaming`、`ToolExecuting`、`AwaitingTrust(AwaitingTrustState)` 和
+`AwaitingPermission(AwaitingPermissionState)`。两个等待变体都携带包含
+`oneshot::Sender` responder 的交互式 payload；由于 `AppState` 持有这些 sender，它仅实现
+`Debug`，不实现 `Copy`/`Clone`/`PartialEq`/`Eq`。只需要显示标签的渲染方应使用
+`AppState::status` 返回的 `Copy` 投影 `AppStatus`（相同变体但去掉 payload）。`AppState`
+是穷举枚举，因此新增变体会对下游穷举 match 造成破坏性的 0.x 变更。
 
 `TrustPrompt` 是当 `AppState` 处于 `AwaitingTrust` 时渲染的 ratatui 选择 widget。
 `TrustChoice` 是五选一的用户选择——`Trust`、`TrustParent`、`TrustSession`、`Deny` 和
 `DenySession`。持久的 `Trust`/`TrustParent`/`Deny` 决策由 `opi-coding-agent` 持久化；
 `*Session` 变体仅对当前会话生效，不会被持久化。`TrustPrompt::without_parent()` 在文件系统
 根目录处省略 `TrustParent`。
+
+当 `AppState` 为 `AwaitingPermission` 时渲染 `PermissionPrompt`。其
+`PermissionSummary` 只包含 adapter id、package 名称和运行模式标签，绝不包含命令文本、
+环境变量值、路径或凭据。可选项为 `AllowOnce`、`AllowSession` 和 `Deny`；会话授权只驻留
+内存，关闭提示或 responder 被丢弃时都会按拒绝处理。策略、授权生命周期与持久化仍由
+`opi-coding-agent` 负责。
 
 ## 集成模式
 
@@ -106,8 +114,8 @@ API**，可能在次版本间发生破坏性变更。
 ## 公共模块
 
 `branch_picker`、`diff_view`、`editor`、`keybindings`、`markdown`、
-`message_list`、`render`、`select_list`、`status_bar`、`terminal_image`、
-`theme`、`tool_call` 和 `trust_prompt`。
+`message_list`、`permission_prompt`、`render`、`select_list`、`status_bar`、
+`terminal_image`、`theme`、`tool_call` 和 `trust_prompt`。
 
 ## 许可证
 

@@ -14,7 +14,8 @@
 
 当前 crate 版本是 `0.7.2`，继承自 workspace 包版本。
 
-本 crate 把 `opi-ai`、`opi-agent` 和 `opi-tui` 连接成终端编程 Agent。它提供：
+本 crate 把 `opi-ai`、`opi-agent`、`opi-protocol` 和 `opi-tui` 连接成终端编程
+Agent。它提供：
 
 - `opi` CLI 二进制；
 - 交互式 ratatui TUI 模式；
@@ -24,6 +25,8 @@
 - 通过 `--image` 和 `/image` 附加图片；
 - 会话 list/resume/fork/delete 命令；
 - 8 个内置工具；
+- 为 `bash` 提供可插拔的 `command.execute` 路由、Capability Permission 与失败关闭的
+  外部 adapter；
 - 配置、上下文文件加载、会话持久化、压缩、重试、用量、费用摘要、package/资源发现、
   诊断、可选 trace、OS-keychain 凭据 store，以及交互式 OAuth 登录/登出。
 
@@ -93,8 +96,8 @@ opi --allow-mutating "更新 README。"
 | `--json-compact` | 紧凑 `--json`：流式 `text_delta` 更新省略冗余累积快照（~线性字节）。 |
 | `--rpc` | 通过 stdin/stdout 启动双向 JSONL 命令/事件模式。 |
 | `--allow-mutating` | 在交互模式之外允许 `write`、`edit` 和 `bash`。 |
-| `--sandbox off\|strict` | 选择 `bash` 子进程树 sandbox；默认 `off` 仍提供常开的 L0 树级终止基线。 |
-| `--sandbox-require` | 当某个 `strict` 层不可用时直接失败关闭，而非默认的失败打开并附诊断的策略。 |
+| `--execution-strategy <fixed\|rules\|model>` | 选择 `command.execute` 路由策略。 |
+| `--execution-backend <local\|ADAPTER_ID>` | 选择固定执行 backend，或覆盖配置中的 backend。 |
 | `--trust` / `--no-trust` | 针对本次会话的一次性项目信任覆盖；二者互斥。 |
 | `--tools <TOOLS>` | 逗号分隔的内置工具 allowlist。 |
 | `--no-tools` | 禁用所有工具。 |
@@ -116,7 +119,7 @@ opi --allow-mutating "更新 README。"
 | `--trace <PATH>` | 为非交互/JSON 运行写入可选的、已脱敏本地 trace envelope。 |
 | `-v, --verbose` | 启用调试追踪。 |
 | `doctor [--json] [--scope ...]` | 本地、无网络健康检查。 |
-| `package <add|remove|list|doctor>` | 管理本地/git extension package。 |
+| `package <add|remove|list|doctor|enable|disable>` | 管理本地/git extension package 与可执行 package 的激活状态。 |
 
 ## Provider
 
@@ -253,8 +256,9 @@ CLI、TUI、RPC、doctor、模型列表和启动路径都不会调用它。
 
 ## 工具策略
 
-八个内置工具分为只读和修改性两组。修改性工具仅在已解析策略允许时运
-行；其余约束通过工具选择落实，而非操作系统级 sandbox 或交互式权限提示。
+八个内置工具分为只读和修改性两组。修改性工具仅在解析后的工具选择策略允许时运行。
+对于 `bash`，`command.execute` 路由与 Capability Permission 是独立门：启用工具不会
+授权外部 adapter，授权 adapter 也不会启用工具。这两个门都不是操作系统级 sandbox。
 
 ### 只读与修改性
 
@@ -283,9 +287,11 @@ CLI、TUI、RPC、doctor、模型列表和启动路径都不会调用它。
 |------|------|
 | Shell | Windows 使用 `cmd /C`，Unix 使用 `sh -c`。 |
 | 工作目录 | 工作区根目录。 |
+| 执行 backend | 默认使用内置 `local`；`[execution]` 或 execution CLI 参数可以选择合格的外部 `command.execute` adapter。 |
 | 超时 | 默认 30 秒；`timeout_secs` 可覆盖。 |
 | 取消 | 取消令牌报告 `cancelled=true` / `timed_out=false`；超时报告 `timed_out=true` / `cancelled=false`。 |
-| 路径限制 | 无 —— `bash` 不限制在工作区内。 |
+| 有效执行契约 | 本地执行报告 `placement=host`、`guarantee=supervised`；外部 placement、guarantee、policy 与 limitations 来自 backend 的 `started` 事件。仅凭 adapter 身份不能证明安全保证。 |
+| 路径限制 | `local` backend 不会把 `bash` 限制在工作区内；外部 backend 只受其报告的有效执行契约约束。 |
 | 环境 | 继承自父进程，但绝不写入 details：`details.env = { "inheritance": "inherited", "values_included": false }`。只有当命令本身打印某个值时，该值才会暴露。 |
 | 退出码 | 记录在 details 中；非零退出码置 `is_error`。进程在退出前被取消或超时时 `exit_code` 为 null。 |
 | 输出 | 合并后的 stdout 与 stderr 上限 64 KiB。见[输出截断](#输出截断)。 |
@@ -309,7 +315,7 @@ inline 结果；四个导航工具都会在访问 10,000 个条目后停止遍�
 
 以下各项刻意不在内置工具范围内（更广的产品边界见[边界](#边界)）：
 
-- 内置权限弹窗或交互式批准提示
+- `command.execute` adapter 授权以外的通用权限系统
 - 持久后台 bash 或 shell 会话
 - 远程执行
 - IDE 项目索引
@@ -317,31 +323,30 @@ inline 结果；四个导航工具都会在访问 10,000 个条目后停止遍�
 - `write` / `edit` 时自动格式化
 - package 生态扩展
 - todo、plan mode 或 sub-agents 等工作流工具
-- 完整或安全级别的 sandbox（可选的 `bash` sandbox 仅为纵深防御，不是安全边界）
+- 内置原生限制；原生限制由 `opi-sandbox` 等独立 adapter 提供
 
-修改性工具安全是工具选择校验，不是权限或 sandbox 子系统。
+修改性工具的可用性仍由工具选择校验。Capability Permission 与之独立，目前只适用于
+`command.execute`。
 
-## sandbox 与项目信任
+## 命令执行与项目信任
 
-`opi-coding-agent` 提供可选的 `bash` 子进程树 sandbox 与启动期项目信任门。二者均为
-纵深防御，且明确不是安全边界；不可信代码应放在容器或 VM 中运行。上方的修改性工具策略保持
-不变，仍为工具选择校验。
+默认的 Minimal Runtime 通过内置 `local` backend 执行 `bash`。
+`[execution] strategy = "fixed"|"rules"|"model"` 配合
+`backend = "local"|<adapter-id>`，可以改为选择已安装的外部 `command.execute` adapter。
 
-- sandbox 仅约束 `bash` 子进程树，不约束 `opi` 本身。一个常开的 L0 基线（Unix 上的
-  `process_group(0)`、Windows 上的 kill-on-close Job Object）在所有模式下都生效。
-  `[sandbox] mode = "strict"`（默认 `off`）开启 L1/L2/L3 层；`require = true`（默认
-  `false`）在某个层无法启用时直接失败关闭，否则 `opi` 以已启用的基线继续，并附带
-  `opi.sandbox.degraded` 诊断。CLI：`--sandbox off|strict`、`--sandbox-require`。
-- Linux `strict` L2 收窄新建 socket 的能力：seccomp 拒绝 `socket(AF_INET)`、
-  `socket(AF_INET6)` 与 `socket(AF_NETLINK)`，但保留 `socket(AF_UNIX)`；Landlock ABI 4
-  （Linux 6.7+）进一步拒绝 TCP `bind`/`connect`。它不声称完整的网络隔离：继承的 fd、非 TCP
-  流量和 `io_uring` 都是已记录的残留项。macOS 探测并启动 `/usr/bin/sandbox-exec`；Windows
-  仅支持 L0，`strict` 会带诊断降级为 L0。
-- sandbox 位于本地 `BashOperations::exec` 内部，处于按工具的 `Operations` seam
-  （`FileOperations` 与 `BashOperations` trait，通过 `Arc<dyn>` 构造注入到
-  `read`/`write`/`edit`/`bash`）之后，并位于 `PathPolicy` 之下。该 seam 仅提供本地实现
-  （没有 SSH/容器远端 backend）。导航工具（`grep`/`find`/`ls`/`glob`）不持有 `Operations`
-  句柄，也不受进程级 sandbox 约束。
+- `--execution-strategy` 与 `--execution-backend` 只覆盖路由；它们绝不会授予 package
+  信任或 Capability Permission。
+- Installed、Trusted、Enabled、Selected 与 Permitted 是彼此独立的门。
+  `opi package enable <NAME>` 在确认后授予 Package Trust 并启用 package。
+  `[execution.permissions]` 归用户所有；项目配置不能授予权限。`local` 默认为
+  `allow`，外部 adapter 默认为 `ask`。交互模式下，`ask` 提供单次调用授权或仅驻留
+  内存的会话授权；无头模式以 `permission_required` 失败。
+- 一旦选定外部 adapter，激活、协议、超时及其他执行失败都会失败关闭，不会回退到
+  `local`。运行时结果会报告有效执行契约；仅凭 adapter 身份或 package 元数据不能证明
+  限制保证。
+- Opi 二进制不链接 `opi-sandbox`。已移除的 `[sandbox]`、`--sandbox` 与
+  `--sandbox-require` 表面会被拒绝，且不提供别名。原生限制位于
+  [`opi-sandbox`](../opi-sandbox) 等独立 package 中；它们可脱离 Opi 复用。
 - 项目信任在启动期解析一次，先于任何项目资源或项目配置消费者（包括 `doctor` 与
   `--list-models`）运行。该 store 是位于 `{user_config_dir}/trust.json`（Windows 为
   `%APPDATA%\opi\trust.json`，Unix 为 `~/.config/opi/trust.json`）的扁平
@@ -450,6 +455,8 @@ Package 命令：
 opi package add ./vendor/todo
 opi package add --local ./vendor/todo
 opi package add git:github.com/user/pkg@v1
+opi package enable todo
+opi package disable todo
 opi package list
 opi package list --json
 opi package doctor
@@ -457,9 +464,11 @@ opi package doctor --json
 opi package remove todo
 ```
 
-Package 可以启动使用 `opi-extension-jsonl-v1` 协议的 `process-jsonl` adapter。该
-adapter 协议是不稳定的 0.x 契约。Package 是受信任代码，不会被 package manager
-sandbox。
+Package 可以通过 `opi-extension-jsonl-v1` 协议启动 `process-jsonl` extension
+adapter，或通过 `command-execution-jsonl-v1` 提供可执行的 `command.execute`
+adapter。两者都是不稳定的 0.x 契约。安装可执行 package 不等于信任、启用、选择或
+许可它；这些生命周期门彼此独立。Package 是以启动用户的操作系统权限运行的受信任代码，
+package 权限声明只是元数据，不是强制执行的 sandbox 策略。
 
 ## 作为库使用
 
@@ -476,8 +485,9 @@ metadata 和启动诊断。
 - `opi` 不收集 telemetry 或 analytics，也不会自动分享会话。
 - `opi doctor` 默认不发起付费模型调用，也不做网络检查。
 - 修改性工具策略不是操作系统级 sandbox。
-- 生产级子 Agent、permission gate、plan/todo 和 MCP 工作流是 examples/package
-  模式，不是内置核心工作流。
+- 核心 `opi` 没有原生限制 backend，也不链接 `opi-sandbox`。
+- 生产级子 Agent、plan/todo、MCP，以及 `command.execute` 之外的通用 permission gate
+  工作流是 examples/package 模式，不是内置核心工作流。
 - Anthropic、GitHub Copilot 与 OpenAI Codex 之外的 OAuth provider 仍被推迟。其它推迟的
   产品决策包括经审计的静态 pi-0.80.6 Copilot/Codex snapshot 之外的 provider catalog、
   大范围新增 first-class provider 列表（兼容

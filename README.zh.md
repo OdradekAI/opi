@@ -103,10 +103,10 @@ opi --export-session <ID_OR_PATH> --output session.json --format json
 | --- | --- |
 | [`opi-ai`](crates/opi-ai) | Provider 无关 LLM API、流式事件、模型注册表、重试、HTTP/代理、用量和尽力而为的费用辅助。 |
 | [`opi-agent`](crates/opi-agent) | Agent 主循环、工具契约、hooks、事件、队列、会话、压缩、SDK/RPC 类型、扩展、诊断和 streaming proxy。 |
-| [`opi-tui`](crates/opi-tui) | Ratatui 组件、对话渲染、diff 视图、选择器、终端图片、主题和按键绑定。 |
+| [`opi-tui`](crates/opi-tui) | Ratatui 组件、对话渲染、diff 视图、选择器、信任/权限提示、终端图片、主题和按键绑定。 |
 | [`opi-coding-agent`](crates/opi-coding-agent) | `opi` 二进制、内置编程工具、配置/会话/package 处理和可嵌入 `CodingHarness`。 |
 | [`opi-protocol`](crates/opi-protocol) | `command.execute` 的协议类型、有界 codec、JSON schema 与 fixtures（wire identity `command-execution-jsonl-v1`）。 |
-| [`opi-sandbox`](crates/opi-sandbox) | 独立、与 Opi 无关的命令执行沙箱：L0 进程树监督、平台无关 restriction seam、库 SDK 与 human CLI。 |
+| [`opi-sandbox`](crates/opi-sandbox) | 独立、与 Opi 无关的命令执行限制 package：L0 进程树监督、Linux/macOS 原生限制、库 SDK 与 human CLI。 |
 
 内部依赖形状：
 
@@ -338,39 +338,16 @@ backend 选择已安装的外部 adapter。
   package 权限声明是元数据，不是强制 sandbox 策略。
 - 可观测性是本地且显式的：`opi` 不收集 telemetry 或 analytics，不会自动分享会话，
   `opi doctor` 默认只做本地、无网络检查，`trace` 需要显式启用。
-- 生产级子 Agent、permission gate、plan/todo 和 MCP 工作流是 examples/package
-  模式，不是内置核心工作流。
+- 生产级子 Agent、plan/todo、MCP，以及 `command.execute` 之外的通用 permission gate
+  工作流是 examples/package 模式，不是内置核心工作流。
 - Anthropic、GitHub Copilot 与 OpenAI Codex 之外的 OAuth provider、两个经审计
   pi-0.80.6 snapshot 之外的 provider catalog、图像生成、浏览器自动化、面向 package
   的 provider 流式 adapter 协议、
   默认测试中的付费实时 provider 调用，以及复制 pi 的 provider 专用配置文件格式仍被推迟。
 - 不支持从任意 extension 路径动态加载 Rust 插件。
 
-### 历史记录：第十五阶段沙箱与项目信任
+### 项目信任
 
-本节仅记录未发布的第十五阶段实现。第十六阶段已移除核心中的 `[sandbox]`、
-`--sandbox` 与 `--sandbox-require` 表面；当前配置请使用上文的 `command.execute`。
-下述项目信任行为仍然有效，沙箱细节与参数仅用于说明迁移历史。
-
-- 沙箱只 confine `bash` 子进程树，不 confine `opi` 自身。每个模式都交付始终开启的 L0
-  基线（Unix 上 `process_group(0)`、Windows 上 kill-on-close Job Object）。
-  `[sandbox] mode = "strict"`（默认 `off`）opt-in L1/L2/L3 层；`require = true`
-  （默认 `false`）在层无法生效时 fail-closed，否则 `opi` 按已生效基线继续并给出
-  `opi.sandbox.degraded` diagnostic。CLI：`--sandbox off|strict`、`--sandbox-require`。
-- Linux `strict` L2 是收窄的新建 socket 创建门：seccomp 拒绝 `socket(AF_INET)`、
-  `socket(AF_INET6)` 与 `socket(AF_NETLINK)`，同时保留 `socket(AF_UNIX)`；Landlock
-  ABI 4（Linux 6.7+）额外拒绝 TCP `bind`/`connect`。在 Landlock ABI 1-3 上，
-  fail-open 会保留 seccomp 新建 socket 门，使用 `opi.sandbox.degraded` 报告缺失的 TCP
-  bind/connect 能力，并按该部分基线继续；`require = true` 会在 spawn 前 fail-closed。
-  它不声称完整网络隔离：继承的 fd、non-TCP 流量与 `io_uring` 仍是已记录的残留。L3
-  拒绝固定的内核句柄危险 blocklist（`clone`/`unshare` 保持允许）。macOS 探测并启动同一个
-  绝对路径 `/usr/bin/sandbox-exec` deny-overlay helper（L1/L2；L3 不可用）；Windows 仅
-  L0，`strict` degrade 到 L0 并给出 diagnostic。
-- 文件工具（`read`/`write`/`edit`）与 nav 工具（`grep`/`find`/`ls`/`glob`）不被沙箱；
-  文件工具保持 `PathPolicy` 守卫，且已交付的 local 文件后端相对已持有的 root capability
-  执行 workspace 操作；显式允许的外部读取仍使用 ambient 路径。子进程沙箱位于按工具的
-  `Operations` 缝合点之后的 local `BashOperations::exec` 内，该缝合点仅交付 local 实现
-  （无 SSH/container 远端后端）。
 - 项目信任在启动时恰好解析一次，先于任何项目资源或项目配置消费者（包括 `doctor` 与
   `--list-models`）运行。store 是扁平
   `Map<canonical_path, bool>`，位于 `{user_config_dir}/trust.json`（Windows 上

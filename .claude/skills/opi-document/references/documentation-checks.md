@@ -5,7 +5,7 @@ proves the current claim.
 
 | Claim | Authoritative evidence | Verification |
 |---|---|---|
-| Current version, schema constant, paired docs, local links, root-guidance lockstep | Cargo/source plus maintained docs | `python scripts/opi-doc-check.py` |
+| Current version, schema constant, paired docs for every `crates/*/Cargo.toml` package, local links, root-guidance lockstep | Cargo/source plus maintained docs | `python scripts/opi-doc-check.py` |
 | Public Rust API and examples | Rust items and rustdoc | crate-scoped `cargo test --doc` / `cargo doc` |
 | Runtime, CLI, provider, session, tool, or safety behavior | Owning behavior/integration test | named test binary or test filter |
 | Architecture boundary | Cargo metadata or topic-based contract test | focused architecture check |

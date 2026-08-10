@@ -390,7 +390,9 @@ remain explicitly out of scope and are not claimed:
 - No stable 1.0 public API promise (surfaces stay 0.x).
 - No TypeScript extension API compatibility.
 - No package ecosystem expansion or package marketplace.
-- No new adapter kind beyond `process-jsonl` (`opi-extension-jsonl-v1`).
+- No additional `opi-agent` extension-adapter kind beyond `process-jsonl`
+  (`opi-extension-jsonl-v1`); `command.execute` is a separate
+  `opi-coding-agent` / `opi-protocol` surface.
 - No web UI product work.
 - No credential store, login presenter, or vendor OAuth flow implementation in
   `opi-agent`; those remain owned by `opi-ai` contracts and

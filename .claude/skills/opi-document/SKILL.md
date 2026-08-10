@@ -73,9 +73,9 @@ git diff --check
 ```
 
 The Python check validates current workspace/crate versions, source-derived
-wire-schema versions, maintained EN/ZH counterpart presence, local links,
-root-guidance lockstep, UTF-8, and selected stale-current-claim exclusions. It
-does not compile Rust.
+wire-schema versions, EN/ZH counterpart presence for the root/spec and every
+Cargo package under `crates/`, local links, root-guidance lockstep, UTF-8, and
+selected stale-current-claim exclusions. It does not compile Rust.
 
 Run extra verification only when the edited surface requires it:
 
