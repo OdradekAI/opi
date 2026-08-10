@@ -16,11 +16,14 @@
 use std::path::{Path, PathBuf};
 
 use opi_coding_agent::cli::PackageCommand;
-use opi_coding_agent::execution::{LockMaterial, PackageSource, validate_executable_contributions};
+use opi_coding_agent::execution::LockMaterial;
+#[cfg(any(target_os = "linux", windows))]
+use opi_coding_agent::execution::{PackageSource, validate_executable_contributions};
 use opi_coding_agent::package_activation::{
     self, ActivationError, ActivationRecord, TrustConfirmer, TrustDisplay,
 };
 use opi_coding_agent::package_cli;
+#[cfg(any(target_os = "linux", windows))]
 use opi_coding_agent::package_discovery::PackageManifest;
 use opi_coding_agent::package_store::{PackageLockEntry, PackageStore};
 
