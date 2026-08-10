@@ -390,7 +390,9 @@ fn non_utf8_workspace_is_refused_before_target_start() {
     let workspace = parent
         .path()
         .join(OsString::from_vec(vec![b'w', b's', b'-', 0xff]));
-    fs::create_dir(&workspace).expect("create non-UTF workspace");
+    // macOS (HFS+/APFS) rejects non-UTF8 filenames at creation, so a non-UTF8
+    // workspace can never exist on disk; the seatbelt profile refuses the
+    // verbatim non-UTF8 path before target start regardless.
     let marker = parent.path().join("must-not-exist-native");
 
     let out = run_sh(
