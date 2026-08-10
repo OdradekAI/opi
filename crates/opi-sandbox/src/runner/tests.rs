@@ -124,6 +124,22 @@ async fn next(run: &mut SandboxRun) -> Option<SandboxEvent> {
     std::future::poll_fn(|cx| Pin::new(&mut *run).poll_next(cx)).await
 }
 
+/// Drain interim Output/Diagnostic events until the terminal Completed event.
+/// Stdout-producing targets (for example `/usr/bin/env`) emit Output chunks
+/// between Started and Completed; on macOS the inherited environment adds
+/// extra stdout, so callers that need only the final result must drain rather
+/// than assert the immediately-following event is Completed.
+#[cfg(unix)]
+async fn next_completed(run: &mut SandboxRun) -> SandboxResult {
+    loop {
+        match next(run).await {
+            Some(SandboxEvent::Completed(result)) => return result,
+            Some(_) => {}
+            None => panic!("run ended without a Completed event"),
+        }
+    }
+}
+
 struct ProbeAndExitTogether {
     probe: PathBuf,
     token: Vec<u8>,
@@ -598,10 +614,7 @@ async fn unix_bootstrap_preserves_caller_token_environment_variables() {
         next(&mut run).await,
         Some(SandboxEvent::Started { .. })
     ));
-    let result = match next(&mut run).await {
-        Some(SandboxEvent::Completed(result)) => result,
-        other => panic!("expected Completed, got {other:?}"),
-    };
+    let result = next_completed(&mut run).await;
 
     assert_eq!(
         result.outcome,
@@ -642,10 +655,7 @@ async fn unix_acknowledgement_does_not_require_request_path() {
         next(&mut run).await,
         Some(SandboxEvent::Started { .. })
     ));
-    let result = match next(&mut run).await {
-        Some(SandboxEvent::Completed(result)) => result,
-        other => panic!("expected Completed, got {other:?}"),
-    };
+    let result = next_completed(&mut run).await;
 
     assert_eq!(
         result.outcome,
@@ -704,10 +714,7 @@ async fn unix_acknowledgement_ignores_hostile_request_path_utilities() {
         "request-controlled utilities ran before Started"
     );
     run.release().expect("release target");
-    let result = match next(&mut run).await {
-        Some(SandboxEvent::Completed(result)) => result,
-        other => panic!("expected Completed, got {other:?}"),
-    };
+    let result = next_completed(&mut run).await;
 
     assert_eq!(result.outcome, SandboxOutcome::Exited { code: Some(0) });
     assert!(!marker.exists(), "request-controlled utilities ran");

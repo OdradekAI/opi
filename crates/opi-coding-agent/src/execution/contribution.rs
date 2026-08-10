@@ -130,18 +130,20 @@ pub struct ValidatedExecutableContribution {
 
 impl ValidatedExecutableContribution {
     /// Path passed to the process launcher for the already-open executable.
+    ///
+    /// Linux can exec the validated bytes directly via procfs
+    /// (`/proc/self/fd/{N}`), closing the TOCTOU window between hash
+    /// validation and spawn. macOS fdesc `/dev/fd/{N}` does not support
+    /// Mach-O image activation, so spawning it fails; macOS (like Windows)
+    /// launches via the resolved canonical `command` path and relies on the
+    /// pre-spawn `activate()` hash revalidation for integrity.
     pub fn bound_launch_path(&self) -> PathBuf {
         #[cfg(target_os = "linux")]
         {
             use std::os::fd::AsRawFd as _;
             PathBuf::from(format!("/proc/self/fd/{}", self.executable.as_raw_fd()))
         }
-        #[cfg(target_os = "macos")]
-        {
-            use std::os::fd::AsRawFd as _;
-            PathBuf::from(format!("/dev/fd/{}", self.executable.as_raw_fd()))
-        }
-        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+        #[cfg(not(target_os = "linux"))]
         {
             self.command.clone()
         }

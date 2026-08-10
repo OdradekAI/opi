@@ -902,8 +902,25 @@ fn verify_passes_immediately_after_pack() {
 fn packer_accepts_real_native_test_executable() {
     let tmp = tempfile::tempdir().expect("native package tempdir");
     let artifact = tmp.path().join("artifact");
-    let binary = std::env::current_exe().expect("current test executable");
     let script = script_path();
+    // current_exe() is a debug test binary (~hundreds of MiB with debug
+    // info); the packer enforces a deployable-binary size cap, so strip a
+    // copy down to a real deployable native executable before packing.
+    let binary = tmp.path().join("stripped-test-executable");
+    std::fs::copy(
+        std::env::current_exe().expect("current test executable"),
+        &binary,
+    )
+    .expect("copy current test executable");
+    let strip = std::process::Command::new("strip")
+        .arg(&binary)
+        .output()
+        .expect("run strip");
+    assert!(
+        strip.status.success(),
+        "strip failed: {}",
+        String::from_utf8_lossy(&strip.stderr)
+    );
 
     let pack = run(pack_cmd(&script, &binary, &artifact));
     assert!(

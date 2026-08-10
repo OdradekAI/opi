@@ -48,9 +48,18 @@ function Fail-Usage([string]$msg) {
 function Fail-Layout([string]$msg) {
     [Console]::Error.WriteLine("package-opi-sandbox: $msg"); exit 1
 }
-# Lowercase SHA-256 of a file's raw bytes.
+# Lowercase SHA-256 of a file's raw bytes. Computes via .NET directly because
+# the Get-FileHash cmdlet is not resolvable in the non-interactive powershell.exe
+# session that the opi_sandbox_packaging test spawns on windows-latest CI
+# runners; the output is byte-identical to (Get-FileHash -Algorithm SHA256).
 function Get-Sha256Path([string]$Path) {
-    (Get-FileHash -Algorithm SHA256 -LiteralPath $Path).Hash.ToLowerInvariant()
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $hash = $sha.ComputeHash([System.IO.File]::ReadAllBytes($Path))
+    } finally {
+        $sha.Dispose()
+    }
+    (-join ($hash | ForEach-Object { $_.ToString('x2') }))
 }
 $ScriptDir = $PSScriptRoot
 if (-not $ScriptDir) { $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path }

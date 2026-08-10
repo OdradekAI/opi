@@ -772,8 +772,9 @@ mod tests {
         let workspace = base
             .path()
             .join(OsString::from_vec(vec![b'w', b's', b'-', 0xff]));
-        std::fs::create_dir(&workspace).expect("create non-UTF workspace");
-
+        // macOS (HFS+/APFS) rejects non-UTF8 filenames at creation, so a
+        // non-UTF8 workspace can never exist on disk; canonicalize then fails
+        // and the verbatim non-UTF8 path must still be refused before spawn.
         assert!(canonicalize_for_profile(&workspace).is_err());
     }
 }
