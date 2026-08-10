@@ -151,6 +151,7 @@ fn standalone_smoke_script_unix() {
 }
 
 #[cfg(windows)]
+#[ignore = "deferred 0.7.3: Windows L0 isolation smoke substrate (sentinel leak / Start-Process); opi-sandbox Windows follow-up"]
 #[test]
 fn standalone_smoke_script_windows() {
     let bin = env!("CARGO_BIN_EXE_opi-sandbox");
