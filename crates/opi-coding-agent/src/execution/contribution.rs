@@ -134,12 +134,12 @@ impl ValidatedExecutableContribution {
         #[cfg(target_os = "linux")]
         {
             use std::os::fd::AsRawFd as _;
-            return PathBuf::from(format!("/proc/self/fd/{}", self.executable.as_raw_fd()));
+            PathBuf::from(format!("/proc/self/fd/{}", self.executable.as_raw_fd()))
         }
         #[cfg(target_os = "macos")]
         {
             use std::os::fd::AsRawFd as _;
-            return PathBuf::from(format!("/dev/fd/{}", self.executable.as_raw_fd()));
+            PathBuf::from(format!("/dev/fd/{}", self.executable.as_raw_fd()))
         }
         #[cfg(not(any(target_os = "linux", target_os = "macos")))]
         {

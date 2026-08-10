@@ -1,4 +1,5 @@
 use super::gated::{StartProbe, acknowledgement_path};
+#[cfg(windows)]
 use super::preparation::resolve_program;
 use super::supervision::{SupervisionControl, remove_temp_root_until, supervise};
 use super::*;
