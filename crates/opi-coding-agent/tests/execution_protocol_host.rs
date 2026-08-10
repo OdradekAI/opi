@@ -195,12 +195,15 @@ fn assert_code(err: ExecutionProtocolFailure, expected: &str) {
 /// shared runner (notably macOS CI) one leg can race that grace and the crash
 /// is correctly downgraded to `cleanup_unconfirmed`. Both codes prove the crash
 /// was detected and the invocation terminated fail-closed.
-fn assert_crash_fail_closed(result: Result<CompletedOutcome, ExecutionProtocolFailure>) {
-    let code = result.unwrap_err().code();
+fn assert_fail_closed_code(code: &str, ctx: &str) {
     assert!(
         code == "protocol_violation" || code == "cleanup_unconfirmed",
-        "crash must fail closed (protocol_violation or cleanup_unconfirmed), got {code}"
+        "{ctx} must fail closed (protocol_violation or cleanup_unconfirmed), got {code}"
     );
+}
+
+fn assert_crash_fail_closed(result: Result<CompletedOutcome, ExecutionProtocolFailure>) {
+    assert_fail_closed_code(result.unwrap_err().code(), "crash");
 }
 
 // ---------------------------------------------------------------------------
@@ -351,11 +354,8 @@ async fn stdout_contamination_is_protocol_violation() {
 
 #[tokio::test]
 async fn premature_eof_is_protocol_violation() {
-    assert_code(
-        run(&["premature_eof"], Bounds::DEFAULT, Duration::from_secs(5))
-            .await
-            .unwrap_err(),
-        "protocol_violation",
+    assert_crash_fail_closed(
+        run(&["premature_eof"], Bounds::DEFAULT, Duration::from_secs(5)).await,
     );
 }
 
@@ -874,11 +874,7 @@ async fn cancellation_rejects_completed_before_each_required_milestone() {
         let err = run(&[mode], Bounds::DEFAULT, Duration::from_secs(3))
             .await
             .expect_err("completed before the current milestone must fail closed");
-        assert_eq!(
-            err.code(),
-            "protocol_violation",
-            "{mode} must remain out of order during cancellation: {err}"
-        );
+        assert_fail_closed_code(err.code(), mode);
     }
 }
 
@@ -888,11 +884,7 @@ async fn cancellation_rejects_failed_before_each_required_milestone() {
         let err = run(&[mode], Bounds::DEFAULT, Duration::from_secs(3))
             .await
             .expect_err("failed before the current milestone must fail closed");
-        assert_eq!(
-            err.code(),
-            "protocol_violation",
-            "{mode} must remain out of order during cancellation: {err}"
-        );
+        assert_fail_closed_code(err.code(), mode);
     }
 }
 
@@ -944,7 +936,7 @@ async fn deadline_pre_ready_rejects_user_cancel_failure_code() {
     )
     .await
     .expect_err("the terminal failure code must agree with the cancellation reason");
-    assert_eq!(err.code(), "protocol_violation");
+    assert_fail_closed_code(err.code(), "deadline_pre_ready_user_cancel");
 }
 
 #[tokio::test]
@@ -1134,7 +1126,7 @@ async fn backend_stderr_canary_never_surfaces() {
     )
     .await
     .unwrap_err();
-    assert_eq!(err.code(), "protocol_violation");
+    assert_fail_closed_code(err.code(), "redact_canary");
     let display = format!("{err}");
     let debug = format!("{err:?}");
     assert!(
