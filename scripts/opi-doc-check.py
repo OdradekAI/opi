@@ -145,6 +145,28 @@ EVAL_BEHAVIOR_BASELINE_CONTRACT = {
 }
 
 
+OPI_SPEC_EVIDENCE_REFINEMENT_CONTRACT = {
+    "docs/opi-spec.md": (
+        "resolved execution",
+        "benchmark integrity",
+        "model-visible content",
+        "exact immutable package artifact digest",
+        "ordinary-context/no-memory baseline",
+        "Proactive or scheduled Agent behavior",
+        "Multi-Agent orchestration",
+    ),
+    "docs/opi-spec.zh.md": (
+        "已解析执行",
+        "基准完整性",
+        "模型可见内容",
+        "精确的不可变 package artifact digest",
+        "普通上下文/无记忆基线",
+        "主动式或定时 Agent 行为",
+        "多 Agent 编排",
+    ),
+}
+
+
 def read(rel: str) -> str:
     path = ROOT / rel
     if not path.is_file():
@@ -192,6 +214,15 @@ def check_eval_behavior_baseline_contract() -> None:
         require_tokens(
             rel,
             "eval behavior-baseline contract",
+            tokens,
+        )
+
+
+def check_opi_spec_evidence_refinement_contract() -> None:
+    for rel, tokens in OPI_SPEC_EVIDENCE_REFINEMENT_CONTRACT.items():
+        require_tokens(
+            rel,
+            "Opi spec evidence refinement contract",
             tokens,
         )
 
@@ -692,6 +723,7 @@ def main() -> int:
     check_workspace_graph()
     phase15_safety_sandbox_docs()
     phase16_command_execution_docs()
+    check_opi_spec_evidence_refinement_contract()
     check_top_level_spec()
     check_current_contracts(docs)
     for rel in [*docs, *skill_docs, "AGENTS.md", "CLAUDE.md"]:

@@ -232,15 +232,21 @@ domain vocabulary across provider, turn, tool, compaction, retry, and session
 activity. Exporters, hosted storage, dashboards, and evaluation policy remain
 outside Agent Core.
 
-Evidence artifacts are immutable and content-addressed. Missing measurements
-remain `unknown`; they are never silently converted to zero. Sensitive prompts,
-tool arguments, results, and environment data require explicit capture and
-redaction policy.
+Evidence artifacts are immutable and content-addressed. A reproducible claim
+binds evidence to the resolved execution that produced it: harness, runtime,
+adapter, and material configuration identity; requested and actual model route;
+effective policy and snapshot; trigger provenance; and measurement origin.
+Exact field schemas remain with their authoritative evidence contracts.
+
+Missing measurements remain `unknown` with their reason; they are never
+silently converted to zero. Estimated, provider-reported, quota, and billed
+costs remain distinguishable. Sensitive prompts, tool arguments, results, and
+environment data require explicit capture and redaction policy.
 
 | ID | Requirement | Owner | Verification |
 |---|---|---|---|
 | CTRL-001 | Agent Core **MUST** propagate stable run/turn/call correlation and finalized artifact references without binding an exporter. | Agent Core observability owner | No-op/in-memory adapter conformance and trace tests. |
-| CTRL-002 | Evidence **MUST** retain source, permission, time, environment, model, prompt, tool, budget, and artifact provenance sufficient for offline verification. | Evidence Producer | Manifest validation and offline recomputation. |
+| CTRL-002 | Evidence **MUST** retain resolved harness/runtime/adapter identity and configuration, requested and actual provider/model/wire/authentication/fallback route, source, permission, time, environment, prompt, tool, budget, trigger, measurement origin, and artifact provenance sufficient for offline verification. | Evidence Producer | Manifest/schema validation and offline recomputation of the resolved execution. |
 | CTRL-003 | Sensitive evidence **MUST** be classified and redacted before export; capture **MUST NOT** be enabled merely because an Eval consumer exists. | Runtime owner | Secret scan, redaction tests, and User Policy review. |
 
 ### 6.2 Independent cross-Agent evaluation
@@ -272,10 +278,16 @@ input/output/cache/reasoning tokens, known cost and coverage, compression, and
 failed-call consumption as separate dimensions. Quality, cost, safety, and
 authority are not collapsed into one score.
 
+Native graders own benchmark outcome semantics; they do not prove benchmark
+integrity. Evaluation admits and retires benchmark revisions through an
+integrity record that distinguishes valid Agent outcomes from broken,
+unsatisfiable, ambiguous, prompt/test-misaligned, and infrastructure-failed
+trials. Coverage and every exclusion reason remain visible.
+
 | ID | Requirement | Owner | Verification |
 |---|---|---|---|
-| CTRL-004 | Headline benchmark results **MUST** come from the benchmark's native grader; an LLM judge **MAY** provide a separately labelled diagnostic only. | Evidence Producer | Grader provenance and report-schema validation. |
-| CTRL-005 | Baseline and candidate runs **MUST** be paired by task and trial under one frozen manifest; missing pairs and telemetry **MUST** remain visible. | Evaluation orchestrator | Pairing and coverage checks. |
+| CTRL-004 | Headline benchmark results **MUST** come from the benchmark's native grader under an admitted benchmark revision; an LLM judge **MAY** provide a separately labelled diagnostic only. | Evidence Producer | Grader provenance, benchmark integrity record, and report-schema validation. |
+| CTRL-005 | Baseline and candidate runs **MUST** be paired by task and trial under one frozen manifest; missing pairs or telemetry, exclusions, task-integrity decisions, and infrastructure-failure classifications **MUST** remain visible. Invalid or infrastructure-failed trials **MUST NOT** be scored as Agent success or failure. | Evaluation orchestrator | Pairing, coverage, adjudication, and failure-classification checks. |
 | CTRL-006 | A report **MUST** be reproducible offline from immutable run bundles; a new real execution **MUST** receive a new trial identity. | Evaluation product owner | Deterministic recompute/regrade/render conformance. |
 | CTRL-007 | Benchmark datasets, native graders, container images, sandboxes, remote schedulers, exporters, leaderboards, and learning policy **MUST** remain outside the evaluation module. | Evaluation product owner | Dependency and package-content review. |
 
@@ -323,6 +335,12 @@ source. Withdrawal and deletion propagate to all derived views. Existing work
 remains bound to the snapshot it started with; new work reads the current active
 pointer.
 
+Content from a tool, retrieval adapter, channel, memory item, extension package,
+or another Agent remains untrusted for authority even when it becomes
+model-visible content. A model, classifier, prompt label, or risk score may deny,
+mark risk, or escalate to Human Authority; it cannot grant permission, weaken
+policy, or widen scope.
+
 Automatic rollback is always permitted inside the pre-authorized recovery path.
 Automatic reactivation is never permitted: a rejected or rolled-back candidate
 requires a new identity and a new authorization decision.
@@ -361,7 +379,7 @@ queues make backpressure and overflow visible.
 
 | ID | Requirement | Owner | Verification |
 |---|---|---|---|
-| INV-005 | Authority and schema validation **MUST** complete before a tool causes side effects. | Agent runtime owner | Negative permission/schema tests. |
+| INV-005 | Authority, capability, scope, and schema validation **MUST** derive from User Policy and trusted runtime state and complete before a tool causes side effects; model-visible content or a model decision **MUST NOT** grant permission, weaken policy, or widen scope. | Agent runtime owner | Negative source-to-sink permission, capability, scope, and schema tests. |
 | INV-006 | Cancellation, queue closure, overflow, and partial tool failure **MUST** be observable and **MUST NOT** be converted into silent success. | Agent runtime owner | Failure-injection and bounded-queue tests. |
 
 ### 7.4 Sessions and artifacts
@@ -374,7 +392,7 @@ and shared conformance demonstrate the necessary variation.
 | ID | Requirement | Owner | Verification |
 |---|---|---|---|
 | INV-007 | Session persistence **MUST** preserve active-branch reconstruction, parent links, leaf selection, and crash recovery. | `opi-agent` | Repository conformance and corruption recovery tests. |
-| INV-008 | Finalized run evidence **MUST** identify the session branch and Active Snapshot that produced it. | Agent runtime owner | Artifact-schema and resume/fork tests. |
+| INV-008 | Finalized run evidence **MUST** identify the session branch, Active Snapshot, resolved harness/runtime/adapter configuration, and effective User Policy that produced it. | Agent runtime owner | Artifact-schema, resume/fork, and offline resolved-execution tests. |
 
 ### 7.5 Extensions and command execution
 
@@ -383,6 +401,14 @@ path. Optional external execution follows five independent lifecycle gates:
 **Installed**, **Trusted**, **Enabled**, **Selected**, and **Permitted**. Package
 Trust authorizes package code; Capability Permission authorizes an invocation.
 Neither implies the other.
+
+Package Trust is object-specific: it binds an exact immutable package artifact
+digest and declared capability footprint. A changed artifact or expanded
+footprint remains Installed but is a new trust object; it does not automatically
+inherit Trusted or affected Capability Permission. Signatures, scans, registry
+provenance, and review results are evidence for the user's decision, not sources
+of Trust. The declared footprint remains metadata and does not enforce an
+operating-system sandbox.
 
 Once an external execution adapter is Selected, failure is **fail-closed** and
 never falls back to local execution. Extension packages and adapters are trusted
@@ -408,7 +434,7 @@ claim.
 
 | ID | Requirement | Owner | Verification |
 |---|---|---|---|
-| INV-009 | Installed, Trusted, Enabled, Selected, and Permitted **MUST** remain independently observable and enforceable lifecycle states. | Reference Product owner | Package/execution routing tests and diagnostics. |
+| INV-009 | Installed, Trusted, Enabled, Selected, and Permitted **MUST** remain independently observable and enforceable lifecycle states. Package Trust **MUST** bind to an exact immutable package artifact digest and declared capability footprint; a changed artifact or expanded footprint **MUST NOT** inherit Trusted or affected Capability Permission without user reauthorization. | Reference Product owner | Package install/update, footprint-expansion, execution-routing, and lifecycle-diagnostic tests. |
 | INV-010 | A selected external execution backend failure **MUST NOT** fall back to local execution. | Capability Router owner | Adapter failure tests. |
 | INV-011 | `opi-sandbox` **MUST** remain reusable without linking Opi product crates; platform degradation **MUST** be explicit. | `opi-sandbox` owner | Standalone build, protocol conformance, and platform acceptance. |
 
@@ -481,7 +507,10 @@ Every candidate freezes:
 - a Control Baseline: the pre-candidate Active Snapshot under an identical
   model, tools, prompt, configuration, policy, budget, data, grader, seed, and
   resource manifest;
-- a no-learning ablation for memory and skill candidates;
+- source episode, ownership, permission snapshot, expiry, contradiction, and
+  withdrawal state for memory and skill candidates;
+- an ordinary-context/no-memory baseline and a no-learning ablation for memory
+  and skill candidates;
 - the immediately previous rollback artifact; and
 - target, retention, safety, and efficiency history across frozen seasons.
 
@@ -499,7 +528,7 @@ in the evidence set.
 
 | Gate | Admission rule |
 |---|---|
-| Evidence | Resolved manifest, digests, adapter conformance, source deduplication, privacy scan, holdout isolation, and offline recomputation all pass. |
+| Evidence | Resolved manifest, digests, adapter conformance, benchmark-revision admission, source deduplication, privacy scan, holdout isolation, failure classification, and offline recomputation all pass. |
 | Target Gain | On pre-registered headline outcome and paired task/trial results, the paired 95% confidence-interval lower bound is greater than zero. |
 | Retention | On prior and holdout tasks, the paired 95% confidence-interval lower bound is at least `-epsilon`; critical correctness and compatibility use `epsilon = 0`. |
 | Safety and Authority | High-severity policy, privacy, secret, injection, or authority regression count is zero; derived scope is no wider than the narrowest source. |
@@ -545,8 +574,9 @@ statement.
 
 Give runtime provider dispatch real ownership; make next-turn state replacement
 atomic and correctly ordered; establish the minimum product-neutral evidence
-and observability seam. Adding more catalogue entries is lower priority than
-making the existing abstraction true at runtime.
+and observability seam for resolved-execution provenance; and validate authority
+before side effects. Adding more catalogue entries is lower priority than making
+the existing abstraction true at runtime.
 
 ### STRAT-002 — Establish independent cross-Agent Eval
 
@@ -554,6 +584,10 @@ Deliver Agent/Grader adapters, native-grader provenance, ATIF trajectory plus a
 call graph, content-addressed run bundles, paired outcome-first reporting, and
 offline recomputation. The product must evaluate Opi, pi, and other Agents
 without linking their runtimes.
+
+Benchmark integrity admission, retirement, coverage, and task/infrastructure
+failure classification precede any Learning or Promotion claim that consumes
+the report.
 
 Shape the initial Eval delivery as a dedicated Phase, separate from Continual
 Learning and Promotion. Only the minimum Agent Core evidence seam may be an
@@ -569,8 +603,10 @@ observation signals until real Opi consumers prove their seams.
 ### STRAT-004 — Prototype C1 Continual Learning
 
 Validate episodic memory before reusable skills, shadow before activation, and
-retention/privacy/withdrawal before scale. The current knowledge/learning
-research document remains evidence, not an implementation specification.
+retention/privacy/withdrawal before scale. Bind candidates to source and
+permission state, and compare them with an ordinary-context/no-memory baseline
+and no-learning ablation. The current knowledge/learning research document
+remains evidence, not an implementation specification.
 
 ### STRAT-005 — Introduce C2 behavior candidates
 
@@ -591,6 +627,13 @@ activation, monitoring, and rollback without per-candidate intervention.
   Placement Review for repository or brand independence.
 - Reference Product and Extension Ecosystem work may remove demonstrated user
   friction when it does not expand Agent Core.
+- Proactive or scheduled Agent behavior may be explored through the Reference
+  Product or Extension Ecosystem only with trigger provenance, snapshot/policy
+  binding, budget, interruption/delivery policy, and dedicated Eval; it does not
+  create a Gateway or scheduler seam in Agent Core.
+- Multi-Agent orchestration and Agent-to-Agent protocols remain Extension
+  Ecosystem or Independent Companion experiments until real consumers, shared
+  conformance, and frozen evaluation evidence justify a Placement Review.
 - Model-weight training remains a separately governed, long-term product route.
 
 ## 10. Phase Derivation and Verification

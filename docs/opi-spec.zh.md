@@ -182,12 +182,14 @@ Agent 执行
 
 Agent 核心可观测性提供显式上下文传播，并为 Provider、轮次、工具、压缩、重试和会话活动提供一套稳定的领域词汇。exporter、托管存储、dashboard 和评测策略仍保留在 Agent 核心之外。
 
-证据制品不可变且按内容寻址。缺失的度量保持为 `unknown`，绝不能静默转换为零。敏感提示词、工具参数、结果和环境数据需要显式的采集与脱敏策略。
+证据制品不可变且按内容寻址。可复现声明会把证据绑定到产生它的已解析执行：harness、runtime、adapter 及实质配置身份，请求与实际模型路由，有效策略与快照，触发来源，以及度量来源。精确字段 schema 保留在其权威证据契约中。
+
+缺失度量连同原因保持为 `unknown`，绝不能静默转换为零。估算成本、Provider 报告成本、quota 和实际账单保持可区分。敏感提示词、工具参数、结果和环境数据需要显式的采集与脱敏策略。
 
 | ID | 要求 | 责任方 | 验证方式 |
 |---|---|---|---|
 | CTRL-001 | Agent 核心**必须（MUST）**传播稳定的运行/轮次/调用关联信息和最终制品引用，且不绑定 exporter。 | Agent 核心可观测性责任方 | no-op/in-memory adapter 合规测试和 trace 测试。 |
-| CTRL-002 | 证据**必须（MUST）**保留足以进行离线验证的来源、权限、时间、环境、模型、提示词、工具、预算和制品来源信息。 | 证据生产者 | manifest 验证和离线重计算。 |
+| CTRL-002 | 证据**必须（MUST）**保留已解析的 harness/runtime/adapter 身份与配置、请求与实际 Provider/model/wire/authentication/fallback 路由，以及足以离线验证的来源、权限、时间、环境、prompt、工具、预算、触发、度量来源和制品来源信息。 | 证据生产者 | manifest/schema 验证和已解析执行的离线重计算。 |
 | CTRL-003 | 敏感证据在导出前**必须（MUST）**经过分类和脱敏；不得（MUST NOT）仅仅因为存在评测使用方就启用采集。 | 运行时责任方 | 密钥扫描、脱敏测试和用户策略评审。 |
 
 ### 6.2 独立的跨 Agent 评测
@@ -208,10 +210,12 @@ Agent 与基准之间的差异通过两个支持进程的 seam 接入：
 
 报告以结果为先。报告将原生评分器给出的成功结果、墙钟时间和关键路径时间、首 token 时间、LLM/工具/压缩/重试的计数与延迟、输入/输出/cache/推理 token、已知成本及其覆盖率、压缩情况，以及失败调用的消耗分别呈现。质量、成本、安全性和权威不得合并为单一分数。
 
+原生 grader 拥有基准结果语义，但不证明基准完整性。Eval 通过完整性记录准入和停用基准修订，并将有效 Agent 结果与损坏、不可解、歧义、prompt/test 不一致及基础设施失败的 trial 区分开。覆盖率和每项排除理由保持可见。
+
 | ID | 要求 | 责任方 | 验证方式 |
 |---|---|---|---|
-| CTRL-004 | 对外发布的基准主结果**必须（MUST）**来自基准的原生评分器；LLM 裁判**可以（MAY）**仅提供单独标记的诊断信息。 | 证据生产者 | 评分器来源和报告 schema 验证。 |
-| CTRL-005 | 基线运行和候选运行**必须（MUST）**在同一份冻结 manifest 下按任务和试验配对；缺失的配对和 telemetry **必须（MUST）**保持可见。 | 评测编排器 | 配对和覆盖率检查。 |
+| CTRL-004 | 对外发布的基准主结果**必须（MUST）**来自已准入基准修订的原生 grader；LLM 裁判**可以（MAY）**仅提供单独标记的诊断信息。 | 证据生产者 | grader 来源、基准完整性记录和报告 schema 验证。 |
+| CTRL-005 | 基线运行和候选运行**必须（MUST）**在同一份冻结 manifest 下按任务和 trial 配对；缺失配对或 telemetry、排除项、任务完整性裁决和基础设施失败分类**必须（MUST）**保持可见。无效或基础设施失败的 trial **不得（MUST NOT）**计为 Agent 成功或失败。 | Eval 编排器 | 配对、覆盖率、裁决和失败分类检查。 |
 | CTRL-006 | 报告**必须（MUST）**可以从不可变 RunBundle 离线复现；新的真实执行**必须（MUST）**获得新的试验标识。 | 评测产品责任方 | 确定性的 recompute/regrade/render 合规验证。 |
 | CTRL-007 | 基准数据集、原生评分器、容器镜像、sandbox、远程调度器、exporter、leaderboard 和学习策略**必须（MUST）**保留在评测模块之外。 | 评测产品责任方 | 依赖和 package 内容评审。 |
 
@@ -245,6 +249,8 @@ shadow → opt-in canary → active / rollback
 
 用户策略设定硬性限制。模型可以请求权限，但不能授予权限。派生证据或知识的作用域绝不能宽于其权限范围最窄的来源。撤回和删除会传播到所有派生视图。现有工作始终绑定到其启动时的快照；新工作读取当前活跃指针。
 
+来自工具、retrieval adapter、channel、memory item、扩展 package 或其他 Agent 的内容，即使成为模型可见内容，也仍不具有权威可信性。模型、classifier、prompt label 或 risk score 可以拒绝、标记风险或升级到人类权威；它不能授予权限、削弱策略或扩大作用域。
+
 在预授权恢复路径内始终允许自动回滚。绝不允许自动重新激活：遭拒绝或已回滚的候选需要新的标识以及新的授权决定。
 
 ## 7. 持久架构不变量
@@ -273,7 +279,7 @@ shadow → opt-in canary → active / rollback
 
 | ID | 要求 | 责任方 | 验证方式 |
 |---|---|---|---|
-| INV-005 | 在工具产生副作用之前，**必须（MUST）**完成权威校验和 schema 验证。 | Agent 运行时责任方 | 权限/schema 负向测试。 |
+| INV-005 | 权威、能力、作用域和 schema 验证**必须（MUST）**仅从用户策略与可信运行时状态导出，并在工具产生副作用前完成；模型可见内容或模型决策**不得（MUST NOT）**授予权限、削弱策略或扩大作用域。 | Agent 运行时责任方 | source-to-sink 权限、能力、作用域和 schema 负向测试。 |
 | INV-006 | 取消、队列关闭、溢出和部分工具失败**必须（MUST）**可观测，并且**不得（MUST NOT）**被转换为静默成功。 | Agent 运行时责任方 | 故障注入和有界队列测试。 |
 
 ### 7.4 会话与制品
@@ -283,11 +289,13 @@ shadow → opt-in canary → active / rollback
 | ID | 要求 | 责任方 | 验证方式 |
 |---|---|---|---|
 | INV-007 | 会话持久化**必须（MUST）**保留活跃分支重建、父级链接、叶节点选择和崩溃恢复。 | `opi-agent` | repository 合规测试和损坏恢复测试。 |
-| INV-008 | 最终运行证据**必须（MUST）**标识生成它的会话分支和活跃快照。 | Agent 运行时责任方 | 制品 schema 和 resume/fork 测试。 |
+| INV-008 | 最终运行证据**必须（MUST）**标识生成它的会话分支、活跃快照、已解析 harness/runtime/adapter 配置和有效用户策略。 | Agent 运行时责任方 | 制品 schema、resume/fork 和已解析执行离线测试。 |
 
 ### 7.5 扩展与命令执行
 
 标准发行版包含一个最小运行时（Minimal Runtime），并提供直接本地执行路径。可选的外部执行遵循五个相互独立的生命周期门禁：**Installed**、**Trusted**、**Enabled**、**Selected** 和 **Permitted**。Package 信任授权 package 代码；能力权限授权一次调用。二者互不蕴含。
+
+Package Trust 以对象为单位：它绑定精确的不可变 package artifact digest 和声明的 capability footprint。artifact 变化或 footprint 扩大后仍保持 Installed，但会形成新的信任对象；它不会自动继承 Trusted 或受影响的 Capability Permission。签名、扫描、registry 来源和评审结果只作为用户决策的证据，不产生 Trust。声明的 footprint 仍是 metadata，不执行操作系统 sandbox。
 
 一旦选择了外部执行 adapter，其失败就采取**失败关闭（fail-closed）**策略，并且绝不回退到本地执行。扩展 package 和 adapter 是受信任代码，拥有启动用户的操作系统权限；权限声明只是 metadata，并非强制执行的 sandbox。
 
@@ -299,7 +307,7 @@ Docker、VM、SSH、远程执行 adapter、AppContainer、通用工具 shadowing
 
 | ID | 要求 | 责任方 | 验证方式 |
 |---|---|---|---|
-| INV-009 | Installed、Trusted、Enabled、Selected 和 Permitted **必须（MUST）**保持为可独立观测和强制执行的生命周期状态。 | 参考产品责任方 | package/执行路由测试和诊断。 |
+| INV-009 | Installed、Trusted、Enabled、Selected 和 Permitted **必须（MUST）**保持为可独立观测和强制执行的生命周期状态。Package Trust **必须（MUST）**绑定精确的不可变 package artifact digest 和声明的 capability footprint；变化的 artifact 或扩大的 footprint **不得（MUST NOT）**在没有用户重新授权时继承 Trusted 或受影响的 Capability Permission。 | 参考产品责任方 | package 安装/更新、footprint 扩张、执行路由和生命周期诊断测试。 |
 | INV-010 | 已选择的外部执行 backend 失败时**不得（MUST NOT）**回退到本地执行。 | Capability Router 责任方 | adapter 失败测试。 |
 | INV-011 | `opi-sandbox` **必须（MUST）**保持可在不链接 Opi 产品 crate 的情况下复用；平台降级**必须（MUST）**显式呈现。 | `opi-sandbox` 责任方 | 独立构建、协议合规测试和平台验收。 |
 
@@ -354,7 +362,8 @@ Docker、VM、SSH、远程执行 adapter、AppContainer、通用工具 shadowing
 每个候选项都会冻结：
 
 - 一个控制基线：候选项产生前的活跃快照，使用完全相同的模型、工具、prompt、配置、策略、预算、数据、grader、seed 和资源 manifest；
-- 针对记忆和技能候选项的无学习消融；
+- 记忆和技能候选项的来源 episode、所有者、权限快照、expiry、contradiction 和 withdrawal 状态；
+- 记忆和技能候选项的普通上下文/无记忆基线及无学习消融；
 - 前一个即时回滚产物；以及
 - 各冻结评测周期中的目标、保持性、安全性和效率历史记录。
 
@@ -366,7 +375,7 @@ Docker、VM、SSH、远程执行 adapter、AppContainer、通用工具 shadowing
 
 | 门禁 | 准入规则 |
 |---|---|
-| Evidence | 已解析的 manifest、digest、adapter 一致性、来源去重、隐私扫描、留出集隔离和离线重计算全部通过。 |
+| Evidence | 已解析 manifest、digest、adapter 一致性、基准修订准入、来源去重、隐私扫描、留出集隔离、失败分类和离线重计算全部通过。 |
 | 目标增益 | 对预注册的 headline 结果以及配对任务/试验结果，配对 95% 置信区间的下界大于零。 |
 | 保持性 | 对既往任务和留出任务，配对 95% 置信区间的下界至少为 `-epsilon`；关键正确性与兼容性使用 `epsilon = 0`。 |
 | 安全与权威 | 高严重级别的策略、隐私、secret、注入或权威回归数量为零；派生范围不宽于最窄来源。 |
@@ -395,11 +404,13 @@ shadow 输出不影响工具、用户可见输出或持久状态。canary 的作
 
 ### STRAT-001 — 填补深层 Agent 核心语义缺口
 
-赋予运行时 Provider 分派真正的所有权；使下一轮状态替换具有原子性并保持正确顺序；建立产品中立的最小证据与可观测性 seam。让现有抽象在运行时名副其实，优先级高于增加更多目录条目。
+赋予运行时 Provider 分派真正的所有权；使下一轮状态替换具有原子性并保持正确顺序；为已解析执行的来源追溯建立产品中立的最小证据与可观测性 seam；并在副作用前验证权威。让现有抽象在运行时名副其实，优先级高于增加更多目录条目。
 
 ### STRAT-002 — 建立独立的跨 Agent Eval
 
 交付 Agent/Grader adapter、原生 grader 来源追溯、ATIF 轨迹及调用图、内容寻址的 run bundle、结果优先的配对报告，以及离线重计算。该产品必须能评估 Opi、pi 和其他 Agent，而无需链接它们的运行时。
+
+基准完整性准入与停用、覆盖率检查，以及任务/基础设施失败分类，先于任何使用报告的学习或晋级声明。
 
 将首个 Eval 交付塑形为一个专门 Phase，并与持续学习和晋级分离。只有最小的 Agent 核心证据 seam 可以作为其显式前置条件。
 
@@ -409,7 +420,7 @@ shadow 输出不影响工具、用户可见输出或持久状态。canary 的作
 
 ### STRAT-004 — 构建 C1 持续学习原型
 
-先验证情景记忆，再验证可复用技能；先进行 shadow，再激活；先验证保持性/隐私/撤回，再扩大规模。当前的知识/学习研究文档仍是证据，而非实施规范。
+先验证情景记忆，再验证可复用技能；先进行 shadow，再激活；先验证保持性/隐私/撤回，再扩大规模。候选项绑定来源和权限状态，并与普通上下文/无记忆基线及无学习消融比较。当前的知识/学习研究文档仍是证据，而非实施规范。
 
 ### STRAT-005 — 引入 C2 行为候选项
 
@@ -424,6 +435,8 @@ shadow 输出不影响工具、用户可见输出或持久状态。canary 的作
 - 外部知识同步可以独立于持续学习成熟。
 - `opi-sandbox` 可以作为独立伴生产品成熟，之后再就仓库或品牌独立性进行归属复审。
 - 当不会扩大 Agent 核心时，参考产品和扩展生态的工作可以消除已证实的用户阻碍。
+- 主动式或定时 Agent 行为只能在绑定触发来源、快照/策略、预算、打断/交付策略和专用 Eval 后，通过参考产品或扩展生态进行探索；它不会在 Agent 核心中建立 Gateway 或 scheduler seam。
+- 多 Agent 编排和 Agent-to-Agent 协议仍属于扩展生态或独立伴生产品实验，直到真实消费者、共享合规验证和冻结评测证据足以支持归属复审。
 - 模型权重训练仍是一条单独治理的长期产品路线。
 
 ## 10. Phase 推导与验证

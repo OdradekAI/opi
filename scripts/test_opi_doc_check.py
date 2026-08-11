@@ -147,6 +147,28 @@ EVAL_BEHAVIOR_BASELINE_REQUIRED = {
 }
 
 
+OPI_SPEC_EVIDENCE_REFINEMENT_REQUIRED = {
+    "docs/opi-spec.md": (
+        "resolved execution",
+        "benchmark integrity",
+        "model-visible content",
+        "exact immutable package artifact digest",
+        "ordinary-context/no-memory baseline",
+        "Proactive or scheduled Agent behavior",
+        "Multi-Agent orchestration",
+    ),
+    "docs/opi-spec.zh.md": (
+        "已解析执行",
+        "基准完整性",
+        "模型可见内容",
+        "精确的不可变 package artifact digest",
+        "普通上下文/无记忆基线",
+        "主动式或定时 Agent 行为",
+        "多 Agent 编排",
+    ),
+}
+
+
 class SkillContractTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
@@ -185,6 +207,10 @@ class SkillContractTests(unittest.TestCase):
 
     def write_eval_behavior_baseline_docs(self) -> None:
         for rel, tokens in EVAL_BEHAVIOR_BASELINE_REQUIRED.items():
+            self.write(rel, "\n".join(tokens) + "\n")
+
+    def write_opi_spec_evidence_refinement_docs(self) -> None:
+        for rel, tokens in OPI_SPEC_EVIDENCE_REFINEMENT_REQUIRED.items():
             self.write(rel, "\n".join(tokens) + "\n")
 
     def write_skill(
@@ -321,6 +347,41 @@ class SkillContractTests(unittest.TestCase):
 
                     self.assertIn(
                         f"{rel}: eval behavior-baseline contract "
+                        f"missing semantic tokens {[token]!r}",
+                        doc_check.ERRORS,
+                    )
+
+    def test_opi_spec_evidence_refinement_contract_passes(self) -> None:
+        self.write_opi_spec_evidence_refinement_docs()
+        checker = getattr(
+            doc_check,
+            "check_opi_spec_evidence_refinement_contract",
+            None,
+        )
+        self.assertIsNotNone(checker, "Opi spec evidence checker must exist")
+        checker()
+        self.assertEqual([], doc_check.ERRORS)
+
+    def test_opi_spec_evidence_refinement_requires_every_token(self) -> None:
+        checker = getattr(
+            doc_check,
+            "check_opi_spec_evidence_refinement_contract",
+            None,
+        )
+        self.assertIsNotNone(checker, "Opi spec evidence checker must exist")
+        for rel, tokens in OPI_SPEC_EVIDENCE_REFINEMENT_REQUIRED.items():
+            for token in tokens:
+                with self.subTest(rel=rel, token=token):
+                    doc_check.ERRORS = []
+                    self.write_opi_spec_evidence_refinement_docs()
+                    self.write(
+                        rel,
+                        "\n".join(item for item in tokens if item != token)
+                        + "\n",
+                    )
+                    checker()
+                    self.assertIn(
+                        f"{rel}: Opi spec evidence refinement contract "
                         f"missing semantic tokens {[token]!r}",
                         doc_check.ERRORS,
                     )
