@@ -5,571 +5,199 @@ code in this repository.
 
 ## Project
 
-`opi` is a Rust reimplementation of selected ideas from
-[earendil-works/pi](https://github.com/earendil-works/pi), organized as an AI
-agent toolkit and terminal-first coding agent.
-
-Current workspace version: `0.7.2`. The repository may contain unreleased
-changes on top of that version; check `CHANGELOG.md` before making release or
-documentation claims.
-
-The current implementation includes:
-
-- A working `opi` coding-agent binary produced by `opi-coding-agent`.
-- Interactive ratatui TUI mode with model/session/branch/tree pickers and
-  terminal image rendering.
-- Non-interactive text mode, `--json` NDJSON mode, and `--rpc` JSONL mode.
-- Eight built-in tools: `read`, `write`, `edit`, `bash`, `grep`, `find`, `ls`,
-  `glob`.
-- Mode-aware tool defaults and tool selection flags: `--tools`, `--no-tools`,
-  `--no-builtin-tools`, and `--allow-mutating`.
-- Image attachments through `--image` and the TUI `/image` command.
-- Multi-provider streaming through Anthropic, OpenAI Chat Completions, OpenAI
-  Responses, OpenRouter, Mistral, Gemini, AWS Bedrock, Azure OpenAI, Google
-  Vertex AI, GitHub Copilot (one static catalog routed across Anthropic Messages
-  and OpenAI Completions/Chat/Responses wires), and OpenAI Codex (dedicated
-  Responses wire).
-- Config-driven OpenAI-compatible provider profiles and custom provider/model
-  registration through the provider registry.
-- TOML config with layered precedence, per-provider proxy config, image limits,
-  thinking/retry/compaction defaults, keybindings/themes, and mutating-tool
-  defaults.
-- Session JSONL persistence with list/resume/fork/delete CLI commands, active
-  branch `parent_id` links, `leaf` pointers, compaction entries, and extension
-  state restore.
-- AGENTS.md / CLAUDE.md context file loading from workspace ancestors and the
-  user config directory.
-- Context compaction, retry/backoff, usage accumulation, shell completion
-  generation, edit diff rendering, best-effort cost tracking, diagnostics, and
-  opt-in redacted trace envelopes.
-- Top-level `opi doctor` local health checks and `opi package
-  add/remove/list/doctor` package management.
-- Extension hooks/tools/state for embedders, config-driven resource discovery
-  for extensions, packages, skills, prompt fragments, and themes, and
-  `process-jsonl` package adapters.
+`opi` is a Rust AI Agent toolkit with a terminal-first coding Agent as its
+Reference Product. It reimplements selected ideas from
+[earendil-works/pi](https://github.com/earendil-works/pi), but it is not a
+line-by-line port or a pi compatibility layer.
 
 Repository: https://github.com/OdradekAI/opi
 
 `AGENTS.md` is the Codex-flavored sibling of this file. When project rules
 change, update both in lockstep to avoid drift.
 
-Normative design references live in `docs/`: `opi-spec.md` is the technical
-spec. Consult it before answering scope or behavior questions. The domain
-glossary lives at `docs/CONTEXT.md` (records the domain language for extension
-runtime, command execution, and safety boundaries; it is not auto-loaded by the
-runtime — only `AGENTS.md`/`CLAUDE.md` are). Pinned-revision inward alignment
-audits against pi live under `docs/realign/`; outward capability research lives
-under `docs/research/`. Both are non-normative evidence until human-led shaping
-turns settled decisions into a registered spec.
+## Sources of truth
 
-## Development workflow
+Use the narrowest authoritative source for each claim:
 
-The canonical workflow and skill-selection policy are documented in
-`.claude/skills/README.md` and `.claude/skills/README.zh.md`. All `opi-*` skills
-are explicitly invoked. `opi-realign` aligns inward to pi; `opi-research`
-explores outward plugin capabilities; direct Matt `wayfinder`/
-`grill-with-docs`/`to-spec` calls support non-mechanical shaping; and
-`opi-implement plan` is the adversarial admission gate to the sole canonical
-implementation ledger. Matt supplies reasoning/artifact subskills;
-Superpowers is retained only for verification-before-completion and conditional
-parallel dispatch inside opi workflows.
+- `docs/opi-spec.md` is the normative source for durable product direction,
+  architecture invariants, admission gates, and strategic priority.
+- `docs/CONTEXT.md` owns the domain language for architecture, extension
+  runtime, command execution, evidence, and authority boundaries.
+- `README.md`, generated `opi --help`, crate documentation, manifests, schemas,
+  fixtures, and source own current product and protocol facts.
+- `Cargo.toml` and crate manifests own workspace topology, versions, Rust
+  edition, MSRV, and dependency declarations.
+- `CHANGELOG.md` owns release history and unreleased user-visible changes.
+- `docs/realign/` and `.repo/pi-0.84.1` are non-normative inward evidence;
+  `docs/research/` is non-normative outward evidence.
+- `.opi-impl-state.json` and `docs/snapshots/` own implementation progress and
+  completed delivery history. Do not record progress in `docs/opi-spec.md`.
 
-## Conversational style
+When documentation has an English/Chinese counterpart, update both in the same
+change or state why synchronization is unnecessary. Keep `AGENTS.md` and
+`CLAUDE.md` identical except for their four intentional tool-flavor phrases.
 
-- Keep answers short and concise.
-- No emojis in commits, issues, PR comments, or code.
-- No fluff or cheerful filler text.
-- Technical prose only; be kind but direct.
-- When the user asks a question, answer it first before making edits or running
-  commands.
+## Design boundaries
 
-## Operating principles
+- Keep the Agent Core small and deep. Mechanism belongs below policy; terminal,
+  workflow, benchmark, and user-policy opinions do not belong in core crates.
+- Dependencies point inward toward the smallest stable interface. A new public
+  seam needs intrinsic state-machine value or at least two real adapters or
+  consumers with shared conformance tests.
+- Optional Opi workflows belong in the Extension Ecosystem. Agent-neutral
+  capabilities should begin as Independent Companions with Agent-neutral
+  contracts.
+- Prefer Rust-native correctness: enums for closed states, explicit ownership,
+  typed errors, bounded concurrency, and fail-closed validation at authority,
+  protocol, adapter, and permission boundaries.
+- Do not add a feature flag, trait, crate, config key, compatibility layer, or
+  abstraction for hypothetical future use.
 
-These rules bias toward caution over speed. For trivial tasks, use judgment.
-
-- Think before editing. State assumptions that affect the outcome. If
-  requirements have multiple reasonable interpretations, present them instead
-  of choosing silently. If something is unclear, stop, name the uncertainty,
-  and ask.
-- Prefer the minimum change that solves the request. Do not add features,
-  abstractions, configurability, or error handling for impossible cases unless
-  the user asked for them.
-- Push back when a simpler approach exists or the requested path would add
-  unnecessary complexity. Self-test: if a 200-line change could be 50, rewrite
-  it; if a senior engineer would call it overcomplicated, simplify.
-- Make surgical changes. Every changed line should trace directly to the
-  user's request. Do not refactor, reformat, or improve adjacent code that is
-  outside the task.
-- Clean up only changes you caused. Remove imports, variables, functions,
-  tests, or docs made unused by your work; mention unrelated dead code instead
-  of deleting it.
-- Transform tasks into verifiable goals, then loop until the check passes:
-  "add validation" -> write tests for invalid inputs, then make them pass;
-  "fix the bug" -> write a test that reproduces it, then make it pass;
-  "refactor X" -> confirm tests pass before and after. For multi-step work,
-  state each step as `step -> verify: <check>` and loop until it passes or
-  state exactly what remains unverified. Strong criteria ("tests pass") let you
-  loop independently; weak ones ("make it work") force clarification loops.
-
-## Code quality
-
-- Read files in full before making wide-ranging changes, before editing files
-  you have not already fully inspected, and when the user asks you to
-  investigate or audit something. Do not rely only on search snippets for broad
-  changes.
-- Always ask before removing functionality or code that appears intentional.
-- Do not preserve backward compatibility unless the user explicitly asks for
-  it.
-- Avoid `unsafe` unless absolutely necessary; prefer safe abstractions.
-- Prefer `thiserror` for library error types, `anyhow` only in binary/test
-  code.
-- Use workspace dependencies. Never add a version directly to a crate's
-  `Cargo.toml` if it can go through `[workspace.dependencies]`.
-- Trait objects (`Box<dyn T>`) are fine at crate boundaries; prefer generics
-  within a crate when the concrete type is known at compile time.
-- Match the existing module's style. If a file uses `thiserror`, do not switch
-  to manual `impl Display + Error`.
-- When updating documentation that has a localized counterpart such as
-  `README.zh.md` or `docs/*.zh.md`, update the localized counterpart in the
-  same change or explicitly state why it does not need synchronization.
+Consult the spec before answering scope or architecture questions. If a request
+would contradict a normative clause, stop and ask the user whether they intend
+to revise the specification.
 
 ## Workspace layout
 
-Cargo workspace with lockstep versioning. All crates share
-`version.workspace = true`. Internal dependencies flow through
-`[workspace.dependencies]` in the root `Cargo.toml`:
+All crates use lockstep workspace versioning and Rust edition 2024.
 
 ```text
-opi-ai      (no internal deps)        - multi-provider LLM API
-opi-tui     (no internal deps)        - terminal UI widgets, pickers, diff and image rendering
-opi-agent   -> opi-ai                 - agent runtime, tool calling, sessions, compaction
-opi-protocol (no internal deps)       - versioned `command-execution-jsonl-v1` protocol types, codecs, schemas, and fixtures
-opi-sandbox  -> opi-protocol          - standalone native-restriction SDK/CLI/backend; not linked into the `opi` binary
-opi-coding-agent -> opi-ai, opi-agent, opi-protocol, opi-tui - produces the `opi` binary; coding harness, execution routing, and package activation
+opi-ai       (no internal deps)       - provider-neutral LLM API
+opi-tui      (no internal deps)       - terminal UI components
+opi-agent    -> opi-ai                - product-neutral Agent runtime
+opi-protocol (no internal deps)       - command-execution protocol
+opi-sandbox  -> opi-protocol          - standalone restriction SDK/CLI
+opi-coding-agent -> opi-ai, opi-agent, opi-protocol, opi-tui - opi binary and coding harness
 ```
 
-Adding a new internal dependency means updating `[workspace.dependencies]` in
-root `Cargo.toml`, then referencing it as `foo = { workspace = true }` in the
-consumer crate's `Cargo.toml`.
+Internal dependencies must be declared in root `[workspace.dependencies]` and
+referenced with `{ workspace = true }`. Publishable path dependencies also need
+a version. Do not duplicate workspace-owned package metadata in crate manifests.
 
-When publishing internal crates, path dependencies must also carry a `version`
-field. Bare path dependencies cannot be published to crates.io.
+## Project workflow
 
-## Architecture
+The canonical workflow and skill-selection policy live in
+`.claude/skills/README.md` and `.claude/skills/README.zh.md`. All `opi-*` skills
+require explicit user invocation; use `opi-workflow` only when the user asks for
+workflow routing.
 
-The `opi` binary is produced by `opi-coding-agent`. Startup flow:
+- `opi-realign` gathers pinned pi alignment evidence.
+- `opi-research` gathers outward capability evidence.
+- Human-led shaping updates the normative spec or a registered supplemental
+  source.
+- `opi-implement plan` is the admission gate for implementation work;
+  `opi-implement` alone owns `.opi-impl-state.json`.
+- `opi-audit`, `opi-eval`, and `opi-remediate` provide assurance and correction.
+- `opi-document`, `opi-release`, and `opi-slim-tests` own their named workflows.
 
-- Shell completion generation (`--generate-completion <SHELL>`) is handled
-  before config/provider construction and then exits.
-- Package commands (`opi package add/remove/list/doctor`) are handled before
-  provider construction.
-- Top-level `opi doctor` is handled before provider construction, is local and
-  network-free by default, and reports config/provider/package/session/tui/rpc
-  diagnostics.
-- Model listing (`--list-models`, optionally with `--json`) resolves config,
-  lists models advertised by configured providers, and then exits.
-- Session commands (`--list-sessions`, `--delete-session`) are handled before
-  full provider construction and then exit.
-- `--resume <ID>` loads a JSONL session, reconstructs the active branch, and
-  then continues in interactive, non-interactive, or RPC mode.
-- `--fork <ID>` copies the source session's active branch into a new JSONL
-  session whose `parent_session` points at the source, then continues from the
-  fork.
-- Tool selection is resolved from `--no-tools`, `--tools`,
-  `--no-builtin-tools`, run mode, and mutating-tool opt-in.
-- RPC mode (`--rpc`) builds a provider and `CodingHarness`, then runs the
-  unstable JSONL command/event protocol over stdin/stdout.
-- Non-interactive mode is selected by non-empty positional `[PROMPT]...`,
-  `--non-interactive`, or `--json`. It builds a provider, runs
-  `NonInteractiveRunner`, prints stdout/stderr or NDJSON, and exits with a
-  numeric code.
-- Interactive mode is the default with no prompt args. It builds a
-  `CodingHarness` with `InteractiveCodingHooks` and launches
-  `interactive::run_interactive_tui()`.
+Do not hand-edit `.opi-impl-state.json`, create a competing implementation
+ledger, or treat arbitrary `docs/superpowers/specs/` files as normative.
 
-Both interactive and non-interactive modes use the same core loop from
-`opi-agent`:
+## Working principles
 
-```text
-agent_loop()
-  -> transform_context
-  -> convert_to_llm
-  -> validate request capabilities
-  -> stream provider response
-  -> accumulate AssistantStreamEvent values
-  -> detect tool calls
-  -> validate args with JSON Schema
-  -> run before_tool_call hook
-  -> execute tools in parallel or sequential batches
-  -> run after_tool_call hook
-  -> check terminate flags and should_stop_after_turn
-  -> prepare_next_turn
-  -> poll steering/follow-up queues
-  -> repeat
-```
+- Answer questions before editing or running commands.
+- State assumptions that affect the outcome. If materially different
+  interpretations remain, present them instead of choosing silently. If the
+  request is still unclear, name the uncertainty and ask before proceeding.
+- Prefer the simplest approach that satisfies the request. Surface a simpler
+  alternative and push back when the proposed path adds avoidable complexity.
+- Make the minimum change that solves the request. Every changed line must
+  trace to the requested outcome; do not refactor, reformat, or harden adjacent
+  code without evidence that it is required.
+- Do not add unrequested features, one-use abstractions, speculative
+  configurability, or error handling for states the design makes impossible.
+  If a solution is much larger than its essential behavior, simplify it before
+  continuing.
+- Read relevant files in full before broad investigation or wide-ranging edits.
+  Preserve unrelated working-tree changes and clean up only changes you caused.
+- Match the surrounding style even when you would structure new code
+  differently. Mention unrelated dead code instead of deleting it; remove only
+  imports, variables, functions, tests, or docs made unused by your change.
+- Ask before removing intentional behavior. Do not preserve backward
+  compatibility unless the user explicitly requests it.
+- Prefer safe Rust. Avoid `unsafe` unless there is no sound safe alternative;
+  keep any required unsafe boundary narrow and justified.
+- Use `thiserror` for library error types and `anyhow` only in binaries or tests.
+  Match the surrounding module's established style.
+- Trait objects are appropriate at crate boundaries; prefer generics within a
+  crate when the concrete type is known.
 
-Key abstractions in `opi-agent`:
+## Verification
 
-- `AgentHooks`: six hook methods: `transform_context`, `convert_to_llm`,
-  `before_tool_call`, `after_tool_call`, `should_stop_after_turn`,
-  `prepare_next_turn`.
-- `Tool`: `definition()` returns JSON schema, `execute()` runs the tool,
-  `execution_mode()` controls parallel vs sequential batching.
-- `SessionWriter` / `SessionReader`: append-only JSONL session storage with
-  crash recovery.
-- `CompactionEngine`: threshold/manual/overflow compaction primitives with hook
-  support.
-- `AgentSessionEvent`: session-level event protocol used by JSON mode.
-- `sdk`: shared SDK/RPC command, response, and event types.
-- `extension`: lifecycle hooks, custom tools, custom commands, event observers,
-  extension state, custom providers, and model overrides.
+Define the success criterion before implementation and run the narrowest
+sufficient check. Translate vague requests into observable outcomes: reproduce
+a bug before fixing it, exercise invalid inputs when adding validation, and
+compare focused tests before and after a refactor. For multi-step work, state
+each item as `step -> verify: <check>` and loop until every check passes or the
+remaining gap is explicit.
 
-Provider implementations live in `opi-ai`:
-
-- `anthropic:` uses Anthropic Messages streaming.
-- `openai:` uses OpenAI Chat Completions streaming.
-- `openai-responses:` uses OpenAI Responses streaming.
-- `openrouter:` uses an OpenAI-compatible OpenRouter profile.
-- `mistral:` uses an OpenAI-compatible Mistral profile.
-- `gemini:` uses Gemini `streamGenerateContent?alt=sse`.
-- `bedrock:` uses AWS Bedrock Converse streaming with SigV4 signing.
-- `azure:` uses Azure OpenAI Chat Completions deployments.
-- `vertex:` uses Google Vertex AI Gemini streaming.
-- `github-copilot:` one audited static catalog routed through Anthropic Messages,
-  OpenAI Completions/Chat, and OpenAI Responses; OS keychain via `/login
-  github-copilot`.
-- `openai-codex:` dedicated OpenAI Codex Responses wire; OS keychain via `/login
-  openai-codex` (Browser default or Device Code).
-
-Config resolution for model selection:
-
-1. `--model`
-2. `OPI_MODEL` only when `--config` was not passed
-3. `model` in `--config <FILE>`
-4. Project `.opi/config.toml`
-5. User config
-6. Built-in defaults
-
-TOML layers merge user -> project -> `--config`. Model specs use
-`provider:model` format, for example
-`anthropic:claude-sonnet-4-5-20250514`, `openai:gpt-4o`, or
-`gemini:gemini-2.5-flash`.
-
-The user config path is `%APPDATA%\opi\config.toml` on Windows and
-`~/.config/opi/config.toml` on Unix. Global context files (`AGENTS.md`,
-`CLAUDE.md`) live in the same user config directory. `OPI.md` is intentionally
-not loaded.
-
-Provider credentials are configurable per provider. Defaults include
-`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY`, `MISTRAL_API_KEY`,
-`GEMINI_API_KEY`, `AZURE_OPENAI_API_KEY`, and `VERTEX_ACCESS_TOKEN`; Bedrock
-uses AWS SigV4 credentials from env/config/profile sources. GitHub Copilot and
-OpenAI Codex persist OAuth tokens in the native OS keychain (Windows Credential
-Manager, macOS Keychain Services, Freedesktop Secret Service) through the
-interactive TUI `/login <provider>` and `/logout <provider>` commands, with env
-API-key fallback for the first-class providers; their canonical ids are
-`github-copilot` and `openai-codex` (the development ids `copilot` and `codex`
-have no alias or migration). `main()` calls
-`dotenvy::dotenv()` at startup, so a local `.env` may change provider behavior.
-Both `.env` and `.opi/config.toml` are gitignored and may carry live keys or a
-non-default `base_url`.
-
-Wire versions embedders must respect:
-
-- NDJSON mode: `NDJSON_SCHEMA_VERSION == 2`.
-- RPC / streaming proxy: `SDK_SCHEMA_VERSION == 3`.
-- Trace envelopes: `TRACE_SCHEMA_VERSION == 1`.
-- Process JSONL adapters: `protocol == "opi-extension-jsonl-v1"`.
-
-## Built-in tool policy
-
-Available built-in tools are `read`, `write`, `edit`, `bash`, `grep`, `find`,
-`ls`, and `glob`.
-
-Default active tools:
-
-| Mode | Tools |
-|------|-------|
-| Interactive | `read`, `write`, `edit`, `bash` |
-| Non-interactive / RPC | `read`, `grep`, `find`, `ls`, `glob` |
-| Non-interactive / RPC with mutating opt-in | `read`, `write`, `edit`, `bash` |
-
-File writes and edits are restricted to the harness workspace root.
-Non-interactive file tools remain workspace-root scoped by default.
-Interactive `read` can inspect absolute paths and paths outside the workspace.
-`bash` runs with the workspace root as its initial cwd but is not path-confined.
-These are tool-policy checks, not an operating-system sandbox.
-
-In non-interactive/RPC mode, `write`, `edit`, and `bash` require
-`--allow-mutating` or `defaults.allow_mutating_tools = true`. Interactive mode
-enables the mutating default tool set.
-
-### Command execution and opi-sandbox
-
-Phase 16 ships a pluggable `command.execute` capability for the model-callable
-`bash` tool. The default process stays in the Minimal Runtime on a direct local
-execution path; `[execution] strategy = "fixed"|"rules"|"model"` with
-`[execution] backend = "local"|<adapter-id>` (or `--execution-strategy` /
-`--execution-backend`) can select an installed external adapter instead.
-Installed, Trusted, Enabled, Selected, and Permitted are five independent
-lifecycle gates: `opi package add` installs, `opi package enable` grants
-Package Trust and enables, and user `[execution.permissions]` policy (never a
-project layer) grants approval. Once an external adapter is selected, failure
-is fail-closed and never falls back to local execution. The Opi binary does not
-link `opi-sandbox`; native restriction and its helper/capability-selection code
-moved to the standalone `opi-sandbox` crate (16.16.1), and the core `[sandbox]` /
-`--sandbox` / `--sandbox-require` surface is rejected without aliases.
-`opi-sandbox` depends only on `opi-protocol` (which owns just the versioned
-`command-execution-jsonl-v1` protocol), is reusable without Opi, and publishes
-Linux/macOS archives only; Windows gets L0 Job-Object supervision with no
-official `opi-sandbox` artifact. Phase 16 non-goals include Docker/VM/SSH and
-remote adapters, core-tool shadowing, a universal extension protocol, dynamic
-native loading, and Windows native restriction beyond L0 (see the spec).
-Adapters and packages are trusted code with
-the launching user's OS permissions — package permission declarations are
-metadata, not an enforced sandbox.
-
-## Edition
-
-Workspace is on Rust edition 2024; the declared MSRV is Rust 1.97.
-
-## Commands
+Runtime Rust or Cargo changes require the relevant `opi-implement` tier gate
+when that workflow is active. Documentation, skill, and metadata-only work uses
+the no-compile documentation check.
 
 ```sh
-# Build everything
-cargo build
-cargo build --release
+# Fast documentation contract
+python scripts/opi-doc-check.py
 
-# Run the CLI binary
-cargo run -p opi-coding-agent             # interactive TUI
-cargo run -p opi-coding-agent -- --help
-cargo run -p opi-coding-agent -- --version
-cargo run -p opi-coding-agent -- --list-models
-cargo run -p opi-coding-agent -- --generate-completion powershell
-cargo run -p opi-coding-agent -- doctor
-cargo run -p opi-coding-agent -- package list
+# Focused Rust test
+cargo test -p <crate> -- <test_name>
 
-# Non-interactive examples
-cargo run -p opi-coding-agent -- "Summarize this workspace"
-cargo run -p opi-coding-agent -- --json "Summarize this workspace"
-cargo run -p opi-coding-agent -- --image screenshot.png "Review this UI"
-cargo run -p opi-coding-agent -- --tools read,grep "Inspect without edits"
-
-# Tests
-cargo test --workspace --all-targets
-cargo test --workspace --doc
-cargo test -p opi-ai
-cargo test -p opi-ai -- some_test_name
-cargo test -p opi-agent --test sdk_embedding
-
-# Lint and format (CI and release gates)
-cargo fmt --all
+# Workspace gates (cross-crate changes, phase exit, CI, or release)
 cargo fmt --check --all
 cargo clippy --workspace --all-targets -- -D warnings
-
-# Docs with warnings as errors (release gate)
+cargo test --workspace --all-targets
+cargo test --workspace --doc
 RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
 ```
 
-After runtime Rust or Cargo changes, run the relevant `opi-implement` tier gate
-and fix its warnings before committing. Reserve workspace all-target clippy/test
-for cross-crate semantic changes, phase exit, CI, release evidence, or an
-explicit user request. Documentation/skill/metadata-only work does not require
-a Rust compile.
+If a test file is created or modified, run that exact test binary/filter and
+iterate until it passes. Use `opi_ai::test_support::MockProvider` and local
+fixtures; tests must not call paid providers or require live credentials.
+Filesystem and session tests use isolated temp directories. Serialize tests
+that mutate process environment variables.
 
-If you create or modify a test file, run that exact test binary/filter and
-iterate until it passes. If you delete a superseded test without changing
-runtime code, verify the replacement evidence and Cargo target inventory; do
-not run the workspace suite solely because a test file was removed.
+Record test impact in the handoff as `add`, `update`, `delete`, `retain`, or
+`none`. Do not encode prose wording, phase status, roadmap text, changelog
+tokens, or test-function names as Rust documentation tests; use
+`scripts/opi-doc-check.py` for stable source-derived documentation contracts.
 
-## Testing
+Keep incremental compilation enabled and use the repository's external Cargo
+cache workflow. Do not run `cargo clean`, create per-session target directories,
+or delete caches as task cleanup. Inspect with
+`python scripts/opi-cargo-cache.py status`.
 
-- Tests live in `crates/<crate>/tests/` for integration tests and inline
-  `#[cfg(test)]` modules for unit tests.
-- Use `opi_ai::test_support::MockProvider` for agent/harness integration tests.
-  Never hit a real LLM API or require API keys in tests.
-- For provider wire-format tests, use fixtures or `wiremock`; do not require
-  external network access.
-- For tool tests that touch the filesystem, use `tempfile::tempdir()` and build
-  fixtures in the temp directory.
-- For session tests, use isolated temp directories or `OPI_SESSIONS_DIR` to
-  avoid user data and test races.
-- Tests that mutate process environment variables such as `OPI_SESSIONS_DIR`
-  must be serialized.
-- For snapshot/UI tests, follow the existing `insta` snapshot pattern in
-  `opi-tui`. Do not auto-accept snapshot updates without explicit review.
-- Run the relevant test after writing it: `cargo test -p <crate> -- <test_name>`.
-- Record test impact for every change as `add`, `update`, `delete`, `retain`, or
-  `none`. Features/bug fixes normally add or update tests; behavior-preserving
-  internal refactors may retain focused coverage; removed behavior deletes its
-  old tests; docs/skills/metadata may use `none`.
-- Exact narrative wording, phase status, roadmap placeholders, historical
-  non-goals, changelog tokens, and test function names do not belong in Rust
-  tests. Use `python scripts/opi-doc-check.py` for stable, source-derived
-  documentation contracts.
-
-## Git rules
-
-### Committing
+## Git safety
 
 - NEVER commit unless the user asks.
-- ONLY commit files YOU changed in THIS session.
-- NEVER use `git add -A` or `git add .`; these sweep up changes from other
-  agents or unrelated working-tree state.
-- ALWAYS use `git add <specific-file-paths>` listing only files you modified.
-- Before committing, run `git status` and verify you are only staging YOUR
-  files.
-- Always include `fixes #<number>` or `closes #<number>` in the commit message
-  when there is a related issue.
-- NEVER include `Co-Authored-By` trailers in commit messages. No
-  `Co-Authored-By: Claude ...` or similar.
+- Commit only files changed for the current task. Stage them by explicit path;
+  never use `git add -A` or `git add .`.
+- Run `git status` before staging and again before committing.
+- Use Conventional Commits. Include `fixes #<number>` or `closes #<number>`
+  when a related issue exists.
+- NEVER add `Co-Authored-By` trailers. Do not add
+  `Co-Authored-By: Claude` or similar text.
+- Never bypass hooks or rewrite shared history.
 
-### Forbidden git operations
+Forbidden operations include `git reset --hard`, `git checkout .`,
+`git clean -fd`, `git stash`, `git commit --no-verify`, and
+`git push --force`. If a rebase conflicts in a file you did not modify, abort
+and ask the user. Never discard unrelated worktree changes.
 
-These commands can destroy work:
+Analyze pull requests without pulling first. Create or publish a branch, commit,
+push, PR, or release only when the user explicitly asks. Automation-created
+branch names should use the `codex/` prefix unless the user specifies another
+name.
 
-- `git reset --hard` - destroys uncommitted changes
-- `git checkout .` - destroys uncommitted changes
-- `git clean -fd` - deletes untracked files
-- `git stash` - stashes ALL changes including other agents' work
-- `git add -A` / `git add .` - stages other agents' uncommitted work
-- `git commit --no-verify` - bypasses required hooks and is never allowed
-- `git push --force` - can overwrite shared history
+## Changelog and release
 
-### Safe workflow
+Add user-visible changes only under `## [Unreleased]` in `CHANGELOG.md`. Released
+sections are immutable. Release work must use the explicitly invoked
+`opi-release <version>` workflow; never improvise crates.io publication, tags,
+or rollback. Public release rollback uses a revert and tag deletion, never a
+hard reset or force push.
 
-```bash
-# 1. Check status
-git status
+## Communication
 
-# 2. Add ONLY your specific files
-git add crates/opi-ai/src/anthropic.rs
-git add crates/opi-ai/tests/anthropic_test.rs
-
-# 3. Commit (Conventional Commits format)
-git commit -m "fix(opi-ai): handle CRLF in SSE parser"
-
-# 4. Push (pull --rebase if needed, but NEVER reset/checkout)
-git pull --rebase && git push
-```
-
-### If rebase conflicts occur
-
-- Resolve conflicts in YOUR files only.
-- If conflict is in a file you did not modify, abort and ask the user.
-- NEVER force push.
-
-## PR workflow
-
-- Analyze PRs without pulling locally first.
-- Work in feature branches until everything meets requirements, then merge
-  into main and push.
-- Never open PRs unless the user explicitly asks.
-
-## Changelog
-
-Location: `CHANGELOG.md` at the repo root (single changelog for the whole
-workspace).
-
-Format is [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) with
-sections:
-
-- `### Breaking Changes`
-- `### Added`
-- `### Changed`
-- `### Fixed`
-- `### Removed`
-
-Rules:
-
-- New entries ALWAYS go under `## [Unreleased]`; create this section if it does
-  not exist.
-- NEVER modify already-released version sections.
-- Each released version section is immutable.
-
-## Releasing
-
-Releases go to both GitHub Releases and crates.io via the `opi-release` skill
-at `.claude/skills/opi-release/skill.md`. Invoke with a target semver version,
-for example `0.5.3`.
-
-Critical properties:
-
-- Phases 1-4 are reversible.
-- Phase 5 pushes a commit/tag and is publicly visible.
-- Phase 6 publishes to crates.io and is irreversible; crates can only be
-  yanked, never deleted.
-- All publishable crates use the same version and publish in dependency order
-  computed from `cargo metadata`.
-- Never use `git reset --hard` plus `git push --force` for rollback. Use
-  `git revert` plus tag deletion.
-- Interrupted releases can resume from `.opi-release-state.json` at the repo
-  root.
-- CI-driven binary builds are recommended: push the tag, then `release.yml`
-  builds all six platform targets and uploads them to the GitHub Release.
-
-The design rationale is in
-`.claude/skills/opi-release/skill.md`.
-
-## Implementation workflow
-
-Long-running spec implementations track state in `.opi-impl-state.json` at the
-repo root, driven by the `opi-implement` skill. The canonical ledger is tracked
-in Git; temporary, draft, candidate, backup, and corrupt copies are not. Do not
-delete or hand-edit the canonical file; use the skill's guarded atomic-write
-flow to query, advance, recover, or reset progress.
-
-When the user authorizes an implementation task commit, commit task-owned work
-first with its `Opi-*` footers, then record that commit SHA in the ledger and
-create a separate ledger-checkpoint commit. Blocked handoffs, phase-exit
-updates, and reviewed graph reconciliation are also durable checkpoint
-boundaries. Before removing a worktree, refuse cleanup unless its canonical
-ledger is clean and every required ledger checkpoint is contained in the
-destination branch.
-
-The skill runs `scripts/opi-impl-smoke.{sh,ps1}` at Phase A.3 in `boot` mode:
-`cargo fmt --check --all` plus production lib/bin clippy, with no standalone
-build or test-target compile. D.1 is the single mechanical gate: `full` for a
-workspace tier or `scoped --crate <crate> --test <name>...` for focused Rust
-work. D.3 runs only missing acceptance/platform checks and never repeats D.1.
-Documentation uses `python scripts/opi-doc-check.py` without compiling Rust.
-
-Cargo output uses a persistent external cache keyed by worktree and toolchain.
-Keep incremental compilation enabled. Do not use per-session target
-directories, task-time `cargo clean`, or end-of-session cache deletion; prune
-only inactive marked caches as a separate size/age-based maintenance action.
-Use `python scripts/opi-cargo-cache.py status` to inspect; `prune` is a dry run
-unless `--execute` is explicitly supplied.
-
-Reviewed supplemental implementation specs are registered by phase in
-`.claude/skills/opi-implement/skill.md`; do not treat arbitrary
-`docs/superpowers/specs/` files as normative without that registry.
-
-## CI
-
-Two GitHub Actions workflows live in `.github/workflows/`:
-
-- `ci.yml`: runs on push/PR to `main`. Jobs include the fast `docs_contract`,
-  `fmt`, `clippy`, `test`, `doctest` (`cargo test --workspace --doc`), and
-  `doc` gates plus platform/product acceptance jobs.
-- `release.yml`: triggered by `v*` tags or manual `workflow_dispatch`. Builds
-  `opi` for linux-x64, linux-arm64, darwin-x64, darwin-arm64, windows-x64, and
-  windows-arm64.
-
-## Conventions
-
-- Conventional Commits drive changelog categorization (`feat:` -> Added,
-  `fix:` -> Fixed, `feat!:` / `BREAKING CHANGE` -> Breaking Changes).
-- Each crate's `description`, `license`, and `repository` come from the
-  workspace; do not duplicate them per crate.
-- The CLI binary is named `opi` (defined by `[[bin]]` in
-  `crates/opi-coding-agent/Cargo.toml`), not `opi-coding-agent`.
-- Runtime expansion of prompt fragments, production sub-agent workflows,
-  permission gates, plan/todo workflows, and MCP workflows are example/package
-  patterns, not built-in core product workflows.
-
-## User override
-
-If the user's instructions conflict with rules set out here, ask for
-confirmation that they want to override the rules. Only then execute their
-instructions.
+Keep responses concise and technical. No fluff and no emojis in commits,
+issues, PR comments, or code. Lead with the result, then state verification and
+any remaining risk or unverified work.

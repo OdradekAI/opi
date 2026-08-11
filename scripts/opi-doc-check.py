@@ -405,7 +405,10 @@ def phase16_command_execution_docs() -> None:
         )
         require_tokens(rel, "Windows L0 posture", ("Windows", "L0", "Job Object"))
 
-    for rel in ("AGENTS.md", "CLAUDE.md"):
+    # Current command-execution behavior is a user-facing product contract.
+    # Keep it in the root READMEs rather than duplicating volatile inventories
+    # in the always-loaded agent guidance files.
+    for rel in ("README.md", "README.zh.md"):
         require_tokens(rel, "Phase 16 lifecycle", lifecycle)
         require_tokens(rel, "removed core sandbox surface", migration)
         require_tokens(rel, "Phase 16 non-goals", ("Docker", "VM", "SSH"))
