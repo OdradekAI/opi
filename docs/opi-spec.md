@@ -11,7 +11,7 @@
 | Last updated | 2026-08-05 |
 | Repository | `https://github.com/OdradekAI/opi` |
 | Upstream studied | `pi` 0.80.2 at `.repo/pi-0.80.2/`; alignment is assessed by fresh `opi-realign` audits under [`docs/realign/`](realign/) |
-| Current implementation | `opi` 0.7.2 workspace (six crates) with Phases 1-16 implemented; Phase 16 pluggable `command.execute` and standalone `opi-sandbox` paths are present |
+| Current implementation | `opi` 0.7.3 workspace (six crates) with Phases 1-16 implemented; Phase 16 pluggable `command.execute` and standalone `opi-sandbox` paths are present |
 | Next milestone | Phase 17 benchmark and regression evaluation |
 
 This document is normative for the current design. Changes that alter public APIs, event protocols, session storage, release behavior, or phase boundaries SHOULD update this file in the same change.
@@ -177,12 +177,12 @@ sub-agents, plan mode, todos, permission popups, and background bash.
 
 ## 4. Current Baseline
 
-### 4.1 Version 0.7.2
+### 4.1 Version 0.7.3
 
 | Area | Current state |
 |---|---|
 | Workspace | six crates under one Cargo workspace |
-| Versioning | lockstep `0.7.2` |
+| Versioning | lockstep `0.7.3` |
 | Edition | Rust 2024 |
 | Internal dependencies | `opi-agent -> opi-ai`, `opi-sandbox -> opi-protocol`, `opi-coding-agent -> opi-ai + opi-agent + opi-tui + opi-protocol` |
 | External dependencies | Rust-native async, HTTP/SSE, schema, config, TUI, search, tracing, and test stacks from workspace dependencies |
@@ -1272,6 +1272,7 @@ All crates share one workspace version.
 | 0.7.0 workspace | Interim release on top of Phase 13: NDJSON linear text deltas via `--json-compact`, provider turn counts in session summaries, the opi-document documentation skill with Artifact Truthfulness Gate and opi-eval evaluation skill, and fixes for custom chat-completions endpoint paths, runtime message timestamps, and read-tool workspace-path redaction | GitHub + crates.io for publishable crates |
 | 0.7.1 workspace | Phase 14 provider/auth: OS-keychain credential persistence (Windows Credential Manager, macOS Keychain Services, Freedesktop Secret Service) with env API-key fallback and interactive `/login` / `/logout` for Anthropic Browser PKCE, GitHub Copilot Device Code, and OpenAI Codex Browser/Device Code; per-request auth re-resolution and typed credential failures; audited GitHub Copilot and dedicated OpenAI Codex provider catalogs; public `ApiMappedProvider` and `[providers.custom.<id>]` multi-wire routing; wire-aware model metadata, pricing, and cache/reasoning usage accounting; request scalars and session-affinity; plus fixes that make the Unix keychain backends compile and complete tool path-relativization across read/write/edit/ls/find | GitHub + crates.io for publishable crates |
 | 0.7.2 workspace | Phase 15 safety/trust: opt-in OS-native `bash` subprocess-tree sandbox (always-on L0 tree-kill baseline plus optional strict layers — Linux seccomp new-socket gate + Landlock TCP, macOS `sandbox-exec`, Windows kill-on-close Job Object; defense-in-depth, not a security boundary), per-tool `Operations` seam (`FileOperations`/`BashOperations`), startup project-trust gate (`trust.json`, headless preflight for `doctor`/`--list-models`, interactive `TrustChoice`), and `--list-models` credential listing that falls back to env API keys when the OS keychain is operationally unavailable | GitHub + crates.io for publishable crates |
+| 0.7.3 workspace | Phase 16 pluggable command execution: a model-callable `command.execute` capability with a Minimal Runtime default and installable external execution adapters behind Installed/Trusted/Enabled/Selected/Permitted lifecycle gates; the new `opi-protocol` (`command-execution-jsonl-v1`) and standalone `opi-sandbox` crates with Linux Landlock+seccomp and macOS `sandbox-exec` native restriction (Windows L0 Job-Object only, no official archive); redacted stable `ExecutionFailure` codes, `package.toml` byte-exact trust hashing, and execution diagnostics. Known limitation: the macOS seatbelt does not propagate the invocation `TMPDIR` to the sandboxed target, so `$TMPDIR`-based temp writes are denied on macOS (Linux unaffected) | GitHub + crates.io for publishable crates |
 
 The first crates.io publish is gated by quality, not by the version number alone.
 It MAY happen at 0.2.0 if all published crates expose real, documented behavior
@@ -1401,7 +1402,7 @@ Exit criteria: enterprise providers work, image and terminal-image flows work, p
 
 ### Phase 4 - Extensibility Substrate
 
-Status: substrate implemented in the current `0.7.2` workspace.
+Status: substrate implemented in the current `0.7.3` workspace.
 
 Phase 4 is ordered so the reusable substrate lands before workflow-heavy
 features. Later tasks may depend on earlier tasks, but examples must not become
@@ -1424,7 +1425,7 @@ Exit criteria: third parties can compose and extend opi through RPC, SDK, extens
 
 ### Phase 5 - Rust-Native Package and Process-Adapter MVP
 
-Status: implemented in the current `0.7.2` workspace.
+Status: implemented in the current `0.7.3` workspace.
 
 Phase 5 adds package management and executable adapter hosting so that external packages can provide tools, commands, hooks, and events through child process adapters without patching core crates. It deliberately does not claim parity with pi's npm package ecosystem, TypeScript extension runtime, hot reload behavior, marketplace conventions, provider streaming adapters, custom TUI adapters, or package permission enforcement.
 
@@ -1444,7 +1445,7 @@ Exit criteria: `opi package add/remove/list/doctor` works for local and git pack
 
 ### Phase 6 - Alignment and Reliability Hardening
 
-Status: complete in the current `0.7.2` workspace.
+Status: complete in the current `0.7.3` workspace.
 
 Phase 6 tightened documentation, package/runtime integration, provider
 configuration behavior, and reliability around the Phase 4-5 surfaces. It did
@@ -1453,7 +1454,7 @@ substrate-level extension paths, not built-in product workflows.
 
 ### Phase 7 - Reliability and Observability Hardening
 
-Status: complete in the current `0.7.2` workspace.
+Status: complete in the current `0.7.3` workspace.
 
 Phase 7 added shared diagnostics, redaction, provider/runtime error
 classification, opt-in local trace envelopes, and `opi doctor`. Observability
@@ -1462,7 +1463,7 @@ session sharing, or a stable 1.0 trace protocol.
 
 ### Phase 8 - Runtime Stabilization
 
-Status: complete in the current `0.7.2` workspace.
+Status: complete in the current `0.7.3` workspace.
 
 Phase 8 documented and tested runtime event order, hook semantics, tool
 scheduling/termination, cancellation, SDK/RPC command state, diagnostics/trace
@@ -1568,7 +1569,7 @@ persistent background shells or broad permission-popup systems.
 
 ### Phase 12 - Provider Correctness
 
-Status: implemented in the current `0.7.2` workspace.
+Status: implemented in the current `0.7.3` workspace.
 
 Phase 12 hardens the existing provider families and OpenAI-compatible profiles
 through fixture-backed lifecycle, error, auth, image-input, thinking, usage,

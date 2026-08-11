@@ -19,7 +19,7 @@ cargo add opi-protocol
 
 ## 当前状态
 
-当前 crate 版本：`0.7.2`，继承自 workspace package 版本。
+当前 crate 版本：`0.7.3`，继承自 workspace package 版本。
 
 Cargo crate 版本与 wire 版本相互独立。当前唯一的 wire identity 是
 `command-execution-jsonl-v1`，由 [`execution::v1`][v1] 定义，并通过

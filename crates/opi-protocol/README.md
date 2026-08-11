@@ -21,7 +21,7 @@ Requires Rust 1.97+ (workspace MSRV; edition 2024).
 
 ## Status
 
-Current crate version: `0.7.2`, inherited from the workspace package version.
+Current crate version: `0.7.3`, inherited from the workspace package version.
 
 The Cargo crate version and wire version are separate. The current and only
 wire identity is `command-execution-jsonl-v1`, defined by

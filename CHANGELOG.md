@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.3] - 2026-08-11
+
+> Note: on macOS, `opi-sandbox`'s seatbelt substrate does not propagate the
+> invocation `TMPDIR` to the sandboxed target in this release, so sandboxed
+> commands whose temp writes rely on `$TMPDIR` (for example `mktemp`) are
+> denied on macOS. Linux is unaffected. Tracked for a follow-up.
+
 ### Breaking Changes
 
 - `opi-coding-agent` 0.x API: `BashResult` now carries the required typed

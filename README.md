@@ -13,8 +13,8 @@ interactive TUI, a one-shot CLI, an NDJSON event stream, or an RPC harness.
 
 ## Status
 
-The workspace package version in `Cargo.toml` is `0.7.2`. This checkout may
-contain unreleased changes on top of the published `0.7.2` crates; check
+The workspace package version in `Cargo.toml` is `0.7.3`. This checkout may
+contain unreleased changes on top of the published `0.7.3` crates; check
 [CHANGELOG.md](CHANGELOG.md) for the current delta.
 
 `opi` is usable today as a terminal coding agent and as a set of Rust crates
