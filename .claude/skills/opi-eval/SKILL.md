@@ -6,9 +6,28 @@ disable-model-invocation: true
 
 # opi-eval
 
-End-to-end regression eval for the opi runtime. Compiles opi, runs structured
-test cases against a real LLM provider, collects NDJSON runtime traces, and
+End-to-end real-provider fidelity eval for the opi runtime. It compiles opi,
+runs structured cases against a real LLM provider, collects NDJSON traces, and
 dispatches an independent evaluator subagent to detect fidelity degradation.
+
+Existing public-seam Rust tests and CI remain the
+sole deterministic acceptance baseline. `opi-eval` supplements them only when
+a registered criterion requires real-provider evidence; a generic canary is
+never acceptance proof.
+
+## Evidence authority
+
+- `provider-fidelity` cases detect general model/provider regressions and do
+  not cite Opi product criteria.
+- `runtime-fidelity` cases cover a registered behavior that deterministic
+  providers cannot faithfully reproduce. They must cite that criterion or
+  acceptance scenario and state the remaining fidelity gap.
+- Do not create a behavior-baseline manifest, copy production call sites into
+  this skill, or generate eval cases from the implementation ledger.
+
+Every case supplies metadata from `references/test-cases.md`. Historical
+comparison is permitted only for the exact identity
+`case_id@revision + provider:model + OS/arch + run_mode + effective_tools`.
 
 ## Inputs
 
@@ -146,7 +165,24 @@ Append one JSON line to `docs/eval/history.jsonl` with:
   "commit": "<short hash>",
   "date": "<YYYY-MM-DD>",
   "model": "<provider:model>",
-  "cases": { "<name>": { "verdict": "<PASS|DEGRADED|FAIL|ERROR>", ... } },
+  "platform": "<OS/arch>",
+  "run_mode": "json",
+  "effective_tools": ["<tool-name>"],
+  "cases": {
+    "<name>": {
+      "case_id": "<name>",
+      "case_class": "<provider-fidelity|runtime-fidelity>",
+      "case_revision": 1,
+      "criterion_source": null,
+      "comparison_identity": "<case@revision + subject + environment>",
+      "comparison_status": "<comparable|incomparable|record-only>",
+      "verdict": "<PASS|DEGRADED|FAIL|ERROR>",
+      "tokens_input": 0,
+      "tokens_output": 0,
+      "time_ms": 0,
+      "tool_calls": 0
+    }
+  },
   "overall": "<PASS|REGRESSION|DEGRADED>",
   "evaluator": "<subagent-type>",
   "evaluator_model": "<provider:model of the evaluator>",
@@ -154,11 +190,15 @@ Append one JSON line to `docs/eval/history.jsonl` with:
 }
 ```
 
+Keep `evaluator_model` and `independence` truthful according to the model
+independence guardrail below.
+
 ### Delta analysis
 
-If `history.jsonl` contains prior entries for the same or adjacent versions,
-include a "Version Delta" section comparing key metrics (pass rate, token usage,
-tool call count).
+Compare a case only with prior samples having the same comparison identity.
+Mark all other prior samples `incomparable`; do not calculate or narrate a
+percentage delta. Opi version and commit remain recorded but are intentionally
+outside the identity because cross-version comparison is the purpose.
 
 ### pi comparison (reserved)
 
@@ -220,10 +260,14 @@ Is the execution path efficient? No dead loops, no redundant operations.
 
 ### 5. Resource consumption
 
-Token usage and timing within expected bounds for the task complexity.
-- PASS: within 1.5x of expected baseline
-- DEGRADED: 1.5x-3x expected
-- FAIL: >3x expected or timeout
+Always record token usage, elapsed time, and tool-call count. By default score
+this dimension `N/A` with resource status `record-only`; it does not change
+the case or overall verdict.
+
+A resource threshold is allowed only when a registered performance criterion
+defines the budget, or when at least three prior samples share the comparison
+identity and the resource policy is explicitly enabled. Historical thresholds
+use the comparable cohort median, never the first run.
 
 ### 6. Error handling
 
@@ -236,6 +280,12 @@ Does the runtime handle errors gracefully?
 
 - This skill consumes real API credits. Never fire without user invocation.
 - Always record the model in every output artifact.
+- Generic `provider-fidelity` cases are fidelity signals, not deterministic
+  acceptance evidence.
+- Admit a `runtime-fidelity` case only for a registered-source fidelity gap;
+  do not duplicate a deterministic test for convenience.
+- Never compare metrics across different case revisions, provider/models,
+  OS/architectures, run modes, or effective tool sets.
 - **Model independence (preferred and truthful).** Use a different model family
   when available and record `independent-family`. If only the same family is
   available, use a fresh evaluator context, record

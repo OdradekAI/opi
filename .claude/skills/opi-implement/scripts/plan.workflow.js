@@ -93,7 +93,7 @@ const LENSES = [
   {
     key: 'design-lineage-placement',
     axis: 'design-readiness',
-    charter: 'Check pi design lineage, justified Rust-native divergence, evidence provenance, plugin-first placement, and whether any proposed core work is only the smallest missing extension seam.',
+    charter: 'Check pi design lineage, justified Rust-native divergence, evidence provenance, plugin-first placement, and whether any proposed core work is only the smallest missing extension seam. Require inference_notes fields "reuse_search", "placement", "surface_necessity", and "simplification_ceiling" with an observable revisit_when.',
   },
   {
     key: 'design-domain-seams',
@@ -103,7 +103,7 @@ const LENSES = [
   {
     key: 'execution-coverage-slices',
     axis: 'execution-readiness',
-    charter: 'Check criterion coverage, demonstrable vertical slices, substrate/product honesty, acceptance scenarios, and production call sites.',
+    charter: 'Check criterion coverage, demonstrable vertical slices, substrate/product honesty, acceptance scenarios, and production call sites. Every substrate task must be contained by a later scenario owner through the transitive depends_on closure.',
   },
   {
     key: 'execution-dependencies-ownership',
@@ -113,7 +113,7 @@ const LENSES = [
   {
     key: 'execution-verification-scope',
     axis: 'execution-readiness',
-    charter: 'Check observable DoDs, agreed behavioral seams, proportional verification tiers/addenda, forbidden-scope guards, and non-goal leakage.',
+    charter: 'Check observable DoDs, agreed behavioral seams, proportional verification tiers/addenda, forbidden-scope guards, non-goal leakage, and whether every runtime claim has both a production caller and behavioral verification.',
   },
 ]
 

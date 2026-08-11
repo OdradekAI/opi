@@ -1,20 +1,38 @@
 # Test Cases
 
-Eval test case definitions for `opi-eval`. Each case specifies:
-- A unique **name** (used as key in history.jsonl)
-- The **prompt** to send to opi
-- Whether **tools** are required
-- Any **fixture** files to create beforehand
-- The **expected answer** or behavior
-- **Evaluation criteria** per dimension
+Eval case definitions for `opi-eval`. These cases measure real-provider
+fidelity; deterministic public-seam tests and CI remain the acceptance
+baseline.
 
-Adding a new test case: append a new `## Case N:` section following the same
-structure. No changes to SKILL.md are needed.
+Each case specifies:
+
+- a unique `case_id` and semantic `revision`;
+- a class: `provider-fidelity` or `runtime-fidelity`;
+- a `criterion/scenario reference`, or `N/A` for a generic canary;
+- a `fidelity justification`;
+- the prompt, effective tool set, fixtures, expected behavior, and evaluation
+  criteria.
+
+Adding a `provider-fidelity` case requires a distinct general provider risk.
+Adding a `runtime-fidelity` case requires a registered criterion or acceptance
+scenario plus a fidelity gap that deterministic tests cannot reproduce. Do not
+copy production call sites or complete acceptance prose here; resolve them
+through the referenced ledger scenario.
+
+Increment the revision only when the prompt, assertions, run mode, or effective
+tool set changes semantically. Editorial changes retain the revision.
 
 ---
 
 ## Case 1: candy (long-chain reasoning)
 
+**Case ID**: `candy`
+**Case identity**: `candy@1`
+**Class**: `provider-fidelity`
+**Revision**: `1`
+**Criterion/scenario reference**: `N/A`
+**Fidelity justification**: General real-provider reasoning and answer-format
+behavior; it is not an Opi product criterion.
 **Category**: math / combinatorics
 **Tools required**: no (`--no-builtin-tools`)
 **Fixtures**: none
@@ -47,13 +65,20 @@ Regex for automated check: `(?<!\d)21(?!\d)`
 | Tool calls | N/A (tools disabled) |
 | Context | Single-turn, no context loss possible |
 | Efficiency | Single response, no looping |
-| Resources | Baseline case -- record tokens as reference |
+| Resources | Record token, timing, and tool-call observations; score `N/A` with `record-only` resource status. |
 | Errors | No errors expected |
 
 ---
 
 ## Case 2: tool_chain (multi-step file operation)
 
+**Case ID**: `tool_chain`
+**Case identity**: `tool_chain@1`
+**Class**: `provider-fidelity`
+**Revision**: `1`
+**Criterion/scenario reference**: `N/A`
+**Fidelity justification**: General real-provider tool selection, argument
+generation, and result chaining; it is not an Opi product criterion.
 **Category**: tool use / file operations
 **Tools required**: yes (`--allow-mutating`)
 **Fixtures**:
@@ -96,13 +121,20 @@ Verification:
 | Tool calls | Exactly 2 tool calls: read then write. Args must reference correct filenames. |
 | Context | Tool result from read must inform the write content |
 | Efficiency | 2 tool calls minimum; up to 3 acceptable (read + ls + write). >3 is degraded. |
-| Resources | Expected < 2000 tokens total |
+| Resources | Record token, timing, and tool-call observations; score `N/A` with `record-only` resource status. |
 | Errors | No `is_error: true` in tool results |
 
 ---
 
 ## Case 3: context_retention (buried detail recall)
 
+**Case ID**: `context_retention`
+**Case identity**: `context_retention@1`
+**Class**: `provider-fidelity`
+**Revision**: `1`
+**Criterion/scenario reference**: `N/A`
+**Fidelity justification**: General real-provider long-prompt attention and
+detail retention; it is not an Opi product criterion.
 **Category**: context / attention
 **Tools required**: no (`--no-builtin-tools`)
 **Fixtures**: none
@@ -157,5 +189,5 @@ Regex checks (any of these present indicates correctness):
 | Tool calls | N/A (tools disabled) |
 | Context | Must correctly recall: total 52 engineers, $15,000 budget, $3,000 venue, $25/person catering, $500/group. The buried mascot detail is a distractor -- not needed for the answer but tests whether the model processes the full context without confusion. |
 | Efficiency | Single response expected |
-| Resources | Expected moderate token usage (longer prompt) -- record as baseline |
+| Resources | Record token, timing, and tool-call observations; score `N/A` with `record-only` resource status. |
 | Errors | No errors expected |

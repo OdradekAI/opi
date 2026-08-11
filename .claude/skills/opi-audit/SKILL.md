@@ -92,6 +92,23 @@ rules below exist to protect this independence.
    drop conflicts. A ledger claim or cited test is something to verify, not
    proof that the requirement passes.
 
+5a. Derive a `minimum-change conformance matrix` from committed ledger objects
+    at `audit_head`. For every task, collect:
+    - `acceptance_scenarios[].id` and `.source`, or the later scenario owner
+      whose dependency closure contains a substrate task;
+    - `inference_notes` entries `reuse_search`, `placement`,
+      `surface_necessity`, and `simplification_ceiling`;
+    - scenario/task `production_call_sites` and
+      `verification.behavioral_tests`.
+
+    Classify trace availability structurally:
+    - none of the four standardized notes exists -> `not-recorded`; continue
+      the ordinary audit without reconstructing legacy answers;
+    - at least one note exists but a required note or clause is absent ->
+      `drifted`; add a Spec requirement for incomplete admission evidence;
+    - all required trace evidence exists -> compare it with the complete
+      relevant implementation at the current committed `audit_head`.
+
 6. If `phase_exit` exists for this phase, extract:
    - `completed_at` timestamp
    - `evaluator_summary` (prior evaluator's view -- use as context, not as
@@ -130,6 +147,19 @@ Opi then adds the applicable phase-wide dimensions below.
 | Invariants | When the spec defines explicit invariants or contracts |
 | Cross-task integration | Phases with 4+ tasks or multi-crate changes |
 | Residuals | Always (catch-all for issues outside other dimensions) |
+
+**Minimum-change conformance overlay:** Activate this overlay when at least one
+audited task contains a standardized minimum-change note. It is not a
+selectable dimension and does not add an axis, severity, or verdict. Report it
+as an overlay on Standards, Spec, and Integration.
+
+The overlay compares the admitted trace with the complete relevant
+implementation at the current committed `audit_head`. Trigger evidence is
+limited to committed source/configuration, tests/fixtures, checked-in
+platform/build matrices, registered specs, and archived task evidence.
+External usage metrics, telemetry, provider dashboards, and dirty working-tree
+content are outside audit authority; classify those triggers
+`not-assessable` rather than inventing a finding.
 
 **Inference heuristic**: scan task titles and the spec for keywords:
 - "export", "redact", "credential", "key", "auth" -> Security
@@ -240,6 +270,27 @@ canonical severity definitions in
 - Look for duplicated logic that could diverge
 - Verify handoff points between crates
 
+**Minimum-change conformance audit** (when the overlay is active):
+- Verify the actual committed module interface, placement, configuration,
+  state, dependency edges, and production callers against the task trace.
+- Search the complete relevant implementation for each recorded reuse target
+  and for competing duplicate helpers, seams, packages, or protocols.
+- Treat shallow modules, hypothetical seams, and adapters without leverage as
+  Standards concerns; do not use implementation-line/interface-line ratios.
+- Treat unadmitted public/config/state/dependency surface or core placement as
+  Spec concerns.
+- Treat cross-task duplicate logic, divergent protocol handling, or
+  inconsistent handoffs as Integration concerns.
+- Verify that substrate work reaches the later scenario-owning task through
+  the recorded dependency closure and production call path.
+- Mark a repository-observable simplification trigger `triggered`. It becomes
+  a finding only when the implementation still exceeds its recorded ceiling
+  or the registered source requires an action that did not occur.
+
+Finding routing remains on existing axes: `standards`, `spec`, and
+`integration`. Complexity alone is never a Blocker. Apply the existing
+severity definitions to the observed behavior or contract impact.
+
 **Residuals**:
 - Anything that doesn't fit other dimensions
 - Concurrency concerns, performance cliffs, API ergonomics
@@ -328,7 +379,20 @@ status: unverified
 
 ---
 
-## N+2. Residuals and Recommendations
+## N+2. Minimum-change Conformance
+
+| Task | Scenario/source | Reuse | Placement | Surface | Production slice | Ceiling/trigger | Status |
+|------|-----------------|-------|-----------|---------|------------------|-----------------|--------|
+| ...  | ...             | ...   | ...       | ...     | ...              | ...             | `conforming` |
+
+Allowed primary statuses are `conforming`, `drifted`, `triggered`,
+`not-recorded`, and `not-assessable`. Cells cite committed code, tests, task
+evidence, or the applicable non-assessable/legacy state. Actionable rows link
+to their ordinary normalized finding under Standards, Spec, or Integration.
+
+---
+
+## N+3. Residuals and Recommendations
 
 ### Priority recommendations
 1. ...

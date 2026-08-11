@@ -18,10 +18,9 @@ in the template and writes the result as
 
 ## Summary
 
-| Case | Correctness | Tools | Context | Efficiency | Resources | Errors | Overall |
-|------|-------------|-------|---------|------------|-----------|--------|---------|
-| <name> | <verdict> | <verdict> | <verdict> | <verdict> | <verdict> | <verdict> | <verdict> |
-| ... | ... | ... | ... | ... | ... | ... | ... |
+| Case | Class | Revision | Comparison | Correctness | Tools | Context | Efficiency | Resources | Errors | Overall |
+|------|-------|----------|------------|-------------|-------|---------|------------|-----------|--------|---------|
+| <name> | <provider-fidelity or runtime-fidelity> | <N> | <comparable, incomparable, or record-only> | <verdict> | <verdict> | <verdict> | <verdict> | <verdict> | <verdict> | <verdict> |
 
 **Pass rate**: <X/Y dimensions passed> across <N> cases
 
@@ -31,6 +30,11 @@ in the template and writes the result as
 
 ### Case: <name>
 
+**Case class**: <provider-fidelity | runtime-fidelity>
+**Case revision**: <positive integer>
+**Criterion/scenario**: <registered reference | N/A>
+**Comparison identity**: <case@revision + subject + environment>
+**Comparison status**: <comparable | incomparable | record-only>
 **Prompt** (truncated): <first 100 chars>...
 **Expected**: <expected answer summary>
 **Actual**: <what opi produced>
@@ -48,6 +52,9 @@ in the template and writes the result as
 | Efficiency | <V> | <evidence> |
 | Resources | <V> | <evidence> |
 | Errors | <V> | <evidence> |
+
+When Resources is `N/A` / `record-only`, retain the observed metrics but do not
+include that dimension in pass rate or verdict escalation.
 
 #### Runtime trace highlights
 
@@ -83,7 +90,9 @@ status: unverified
 
 ## Version Delta
 
-_Present only when history.jsonl contains prior entries for comparison._
+_Present only when history.jsonl contains a prior sample with the same complete
+comparison identity. Mark other samples `incomparable` and omit percentage
+deltas._
 
 | Metric | Previous (<version>) | Current | Delta |
 |--------|---------------------|---------|-------|

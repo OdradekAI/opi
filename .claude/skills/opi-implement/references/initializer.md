@@ -38,10 +38,10 @@ design registry in `skill.md`. Do not scan arbitrary `docs/superpowers/specs/` f
 
 | Phase | Registered source | Draft task extraction |
 |---:|---|---|
-| 14 | `docs/superpowers/specs/2026-07-11-phase14-provider-auth-design.md` | Goals, Non-Goals, T1 Credential store, T2 OAuth + per-request auth, T3 Request enrichment, Sequencing, Residuals |
-| 14 | `docs/superpowers/specs/2026-07-14-phase14-exit-remediation-design.md` | Phase-exit remediation criteria and residuals |
-| 15 | `docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md` | Goals, Non-Goals, T4 OS-native sandbox, T5 Operations seam, T6 Project-trust gate, Sequencing, Cross-ticket interactions, Residuals |
-| 16 | `docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md` | Goals, Non-Goals, Product Contract, Configuration and Routing, Executable Package Lifecycle, Protocol, standalone SDK/CLI, Testing and Acceptance, Phase Integration |
+| 14 | `docs/snapshots/phase14/2026-07-11-phase14-provider-auth-design.md` | Goals, Non-Goals, T1 Credential store, T2 OAuth + per-request auth, T3 Request enrichment, Sequencing, Residuals |
+| 14 | `docs/snapshots/phase14/2026-07-14-phase14-exit-remediation-design.md` | Phase-exit remediation criteria and residuals |
+| 15 | `docs/snapshots/phase15/2026-07-11-phase15-safety-sandbox-design.md` | Goals, Non-Goals, T4 OS-native sandbox, T5 Operations seam, T6 Project-trust gate, Sequencing, Cross-ticket interactions, Residuals |
+| 16 | `docs/snapshots/phase16/2026-07-28-phase16-pluggable-extension-command-execution-design.md` | Goals, Non-Goals, Product Contract, Configuration and Routing, Executable Package Lifecycle, Protocol, standalone SDK/CLI, Testing and Acceptance, Phase Integration |
 | 18 | `docs/superpowers/specs/2026-07-11-phase18-agent-intelligence-design.md` | Goals, Non-Goals, T7 Skills/templates runtime, T8 LLM compaction + branch-summary, T9 Read-tool inline image, Sequencing, Cross-ticket interactions, Residuals |
 
 For each active phase:
@@ -166,6 +166,44 @@ evidence without a schema bump:
 The draft is the only mutable plan artifact before confirmation. The canonical
 ledger remains unchanged.
 
+#### Minimum-change trace
+
+For every executable draft task, construct the six-answer trace from existing
+source and repository evidence already read during admission; do not start a
+second research workflow solely to fill this trace. Product/vertical-slice
+tasks cite `acceptance_scenarios[].id` and `.source`. A `substrate_only` task
+may own no scenario only when a later scenario-owning task's
+transitive `depends_on` closure contains it; otherwise
+the substrate is orphan work and fails admission.
+
+Add these four standardized notes using the existing
+`{ field, reason, source }` shape:
+
+- `field = "reuse_search"`: `reason` is
+  `searched=<symbols/paths/packages/protocols>; reused=<items|none>;
+  gap=<smallest missing capability>`;
+- `field = "placement"`: `reason` is
+  `target=<core|extension|plugin|package>; existing_home=<id|none>;
+  cannot_fit_fully=<reason|not-applicable>`;
+- `field = "surface_necessity"`: `reason` is
+  `public_api=<none|necessity>; config=<none|necessity>;
+  state=<none|necessity>; dependency_edge=<none|necessity>`;
+- `field = "simplification_ceiling"`: `reason` is
+  `accepted=<none|simplification>; ceiling=<known limit>;
+  revisit_when=<observable condition>`.
+
+Every `source` cites the registered source heading, reviewed decision, or
+repository evidence used for that answer. `none` and `not-applicable` are
+valid only with a reason. `revisit_when` must name an observable workflow,
+threshold, platform capability, or failure condition; “when needed” is not
+admissible.
+
+The production-slice answer reuses
+`acceptance_scenarios[].verification`, scenario/task
+`production_call_sites`, and `verification.behavioral_tests`. Documentation
+tasks may answer `not-applicable` and use their documentation-contract gate;
+runtime tasks require both a production caller and behavioral proof.
+
 ### P.2 Adversarial Review
 
 Review the registered sources and original draft in a fresh context. Use the
@@ -182,6 +220,12 @@ The two non-collapsible axes are:
 - **execution readiness** — criterion coverage, demonstrable vertical slices,
   real dependencies, owned paths, production wiring, proportional verification,
   and forbidden scope.
+
+Review all six minimum-change answers explicitly. An omitted answer with
+otherwise sufficient source material is `GRAPH_REVISION_REQUIRED`; a missing
+fact is `RESEARCH_REQUIRED`; an unsettled placement, public surface, or
+simplification decision is `DESIGN_DECISION_REQUIRED`. Do not let generic
+prose such as “reuse considered” satisfy a standardized note.
 
 Reviewers report findings and try to reject unsupported findings. They do not
 edit the source or draft, and no finding is auto-folded.
@@ -223,6 +267,14 @@ Also render an acceptance coverage table:
 
 REFUSE `confirm-all` while any source criterion/workflow is `missing`, or while
 any runtime criterion is covered only by a `substrate_only` task.
+
+Also render a six-row minimum-change trace per task. For substrate tasks, show
+the later scenario owner whose transitive `depends_on` closure contains the
+substrate. REFUSE `confirm-all` when a required answer is absent, any
+`surface_necessity` clause is missing, `simplification_ceiling` omits
+`revisit_when`, a substrate has no later scenario owner, or a runtime claim
+lacks either a production call site or behavioral verification. This is
+evidence inside the existing human graph gate, not an additional gate.
 
 Gate options after a `READY` adversarial verdict:
 - **confirm-all** — accept the graph as shown

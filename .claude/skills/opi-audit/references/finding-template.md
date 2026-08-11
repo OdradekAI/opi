@@ -80,6 +80,25 @@ For audit output, `source_kind` is `audit`; `axis` preserves `standards` and
 `status: unverified` even when the auditor is confident: `opi-remediate` owns
 independent verification.
 
+## Minimum-change Conformance
+
+When the audited phase contains standardized minimum-change notes, include
+this table before Residuals:
+
+| Task | Scenario/source | Reuse | Placement | Surface | Production slice | Ceiling/trigger | Status |
+|------|-----------------|-------|-----------|---------|------------------|-----------------|--------|
+| ...  | ...             | ...   | ...       | ...     | ...              | ...             | `conforming` |
+
+Allowed statuses are `conforming`, `drifted`, `triggered`, `not-recorded`,
+and `not-assessable`. `not-recorded` is a legacy state and
+`not-assessable` means required evidence is outside pinned-HEAD authority;
+neither creates a finding by itself.
+
+Actionable rows still emit the shared normalized block. Use axis `standards`
+for shallow interfaces, duplicate implementation, or hypothetical seams; axis
+`spec` for unadmitted placement/surface or incomplete post-contract evidence;
+and axis `integration` for cross-task duplication or divergent handoffs.
+
 ## Complete example
 
 This example is drawn from a real Phase 12 audit finding:

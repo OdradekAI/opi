@@ -12,6 +12,137 @@ from urllib.parse import unquote
 
 ROOT = Path(__file__).resolve().parent.parent
 ERRORS: list[str] = []
+MINIMUM_CHANGE_TRACE_CONTRACT = {
+    ".claude/skills/opi-implement/skill.md": (
+        "**Minimum-change trace rule:**",
+        "`reuse_search`",
+        "`surface_necessity`",
+        "`simplification_ceiling`",
+        "`legacy-unrecorded`",
+    ),
+    ".claude/skills/opi-implement/references/initializer.md": (
+        "#### Minimum-change trace",
+        '`field = "reuse_search"`',
+        '`field = "placement"`',
+        '`field = "surface_necessity"`',
+        '`field = "simplification_ceiling"`',
+        "`revisit_when`",
+        "transitive `depends_on` closure",
+        "REFUSE `confirm-all`",
+    ),
+    ".claude/skills/opi-implement/references/ledger-schema.md": (
+        '`field = "reuse_search"`',
+        "`searched=`",
+        "`reused=`",
+        "`gap=`",
+        '`field = "placement"`',
+        "`cannot_fit_fully=`",
+        '`field = "surface_necessity"`',
+        "`public_api=`",
+        "`config=`",
+        "`state=`",
+        "`dependency_edge=`",
+        '`field = "simplification_ceiling"`',
+        "`ceiling=`",
+        "`revisit_when=`",
+    ),
+    ".claude/skills/opi-implement/references/verify-engine.md": (
+        "### Minimum-change trace overlay",
+        "`reuse_search`",
+        "`placement`",
+        "`surface_necessity`",
+        "`simplification_ceiling`",
+        "`revisit_when`",
+        "`GRAPH_REVISION_REQUIRED`",
+        "`RESEARCH_REQUIRED`",
+        "`DESIGN_DECISION_REQUIRED`",
+    ),
+    ".claude/skills/opi-implement/scripts/plan.workflow.js": (
+        '"reuse_search"',
+        '"placement"',
+        '"surface_necessity"',
+        '"simplification_ceiling"',
+        "revisit_when",
+        "transitive depends_on closure",
+    ),
+}
+
+AUDIT_MINIMUM_CHANGE_CONFORMANCE_CONTRACT = {
+    ".claude/skills/opi-audit/SKILL.md": (
+        "minimum-change conformance matrix",
+        "`reuse_search`",
+        "`surface_necessity`",
+        "`simplification_ceiling`",
+        "`conforming`",
+        "`drifted`",
+        "`triggered`",
+        "`not-recorded`",
+        "`not-assessable`",
+        "current committed `audit_head`",
+        "Finding routing remains on existing axes",
+        "## N+2. Minimum-change Conformance",
+    ),
+    ".claude/skills/opi-audit/references/finding-template.md": (
+        "## Minimum-change Conformance",
+        "| Task | Scenario/source | Reuse | Placement | Surface | Production slice | Ceiling/trigger | Status |",
+        "`not-recorded`",
+        "`not-assessable`",
+        "`standards`",
+        "`spec`",
+        "`integration`",
+    ),
+}
+
+
+EVAL_BEHAVIOR_BASELINE_CONTRACT = {
+    ".claude/skills/opi-eval/SKILL.md": (
+        "sole deterministic acceptance baseline",
+        "`provider-fidelity`",
+        "`runtime-fidelity`",
+        "`case_id@revision + provider:model + OS/arch + run_mode + effective_tools`",
+        "`incomparable`",
+        "`record-only`",
+        "`evaluator_model`",
+        "`independence`",
+        "Do not create a behavior-baseline manifest",
+    ),
+    ".claude/skills/opi-eval/references/test-cases.md": (
+        "`provider-fidelity`",
+        "`runtime-fidelity`",
+        "`candy@1`",
+        "`tool_chain@1`",
+        "`context_retention@1`",
+        "`criterion/scenario reference`",
+        "`fidelity justification`",
+    ),
+    ".claude/skills/opi-eval/references/evaluator-prompt.md": (
+        "fidelity signal, not deterministic acceptance evidence",
+        "same comparison identity",
+        "`incomparable`",
+        "`record-only`",
+        "do not calculate a delta",
+        "must not affect the overall verdict",
+    ),
+    ".claude/skills/opi-eval/references/report-template.md": (
+        "**Case class**",
+        "**Case revision**",
+        "**Criterion/scenario**",
+        "**Comparison identity**",
+        "**Comparison status**",
+        "`record-only`",
+    ),
+    "docs/eval/README.md": (
+        "not deterministic acceptance evidence",
+        "`case_id`",
+        "`case_class`",
+        "`case_revision`",
+        "`criterion_source`",
+        "`comparison_identity`",
+        "`comparison_status`",
+        "`evaluator_model`",
+        "`independence`",
+    ),
+}
 
 
 def read(rel: str) -> str:
@@ -40,6 +171,29 @@ def require_tokens(rel: str, label: str, tokens: tuple[str, ...]) -> None:
     missing = [token for token in tokens if token not in text]
     if missing:
         ERRORS.append(f"{rel}: {label} missing semantic tokens {missing!r}")
+
+
+def check_minimum_change_trace_contract() -> None:
+    for rel, tokens in MINIMUM_CHANGE_TRACE_CONTRACT.items():
+        require_tokens(rel, "minimum-change trace contract", tokens)
+
+
+def check_audit_minimum_change_conformance_contract() -> None:
+    for rel, tokens in AUDIT_MINIMUM_CHANGE_CONFORMANCE_CONTRACT.items():
+        require_tokens(
+            rel,
+            "audit minimum-change conformance contract",
+            tokens,
+        )
+
+
+def check_eval_behavior_baseline_contract() -> None:
+    for rel, tokens in EVAL_BEHAVIOR_BASELINE_CONTRACT.items():
+        require_tokens(
+            rel,
+            "eval behavior-baseline contract",
+            tokens,
+        )
 
 
 def workspace_version() -> str:
@@ -261,6 +415,120 @@ def phase16_command_execution_docs() -> None:
     )
 
 
+def scalar(value: str) -> str:
+    value = value.strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+        return value[1:-1]
+    return value
+
+
+def frontmatter_scalars(rel: str) -> dict[str, str]:
+    lines = read(rel).splitlines()
+    if not lines or lines[0] != "---":
+        ERRORS.append(f"{rel}: missing YAML frontmatter")
+        return {}
+    try:
+        end = lines.index("---", 1)
+    except ValueError:
+        ERRORS.append(f"{rel}: unterminated YAML frontmatter")
+        return {}
+    values: dict[str, str] = {}
+    for line in lines[1:end]:
+        if not line or line[0].isspace():
+            continue
+        match = re.fullmatch(r"([A-Za-z0-9_-]+):\s*(.*)", line)
+        if match:
+            values[match.group(1)] = scalar(match.group(2))
+    return values
+
+
+def sidecar_scalars(rel: str) -> dict[str, str]:
+    values: dict[str, str] = {}
+    section: str | None = None
+    for line in read(rel).splitlines():
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        top = re.fullmatch(r"([A-Za-z0-9_-]+):\s*", line)
+        if top:
+            section = top.group(1)
+            continue
+        nested = re.fullmatch(r"  ([A-Za-z0-9_-]+):\s*(.*)", line)
+        if section is not None and nested:
+            values[f"{section}.{nested.group(1)}"] = scalar(nested.group(2))
+    return values
+
+
+def skill_index_names(rel: str) -> set[str]:
+    return set(
+        re.findall(r"(?m)^\|\s*`(opi-[a-z0-9-]+)`\s*\|", read(rel))
+    )
+
+
+def check_skill_contracts() -> list[str]:
+    skills_root = ROOT / ".claude" / "skills"
+    index_paths = [
+        ".claude/skills/README.md",
+        ".claude/skills/README.zh.md",
+    ]
+    selected_paths: list[str] = []
+    discovered: set[str] = set()
+    if not skills_root.is_dir():
+        ERRORS.append("missing directory: .claude/skills")
+        return index_paths
+
+    for directory in sorted(skills_root.glob("opi-*")):
+        if not directory.is_dir():
+            continue
+        name = directory.name
+        discovered.add(name)
+        candidates = [
+            path
+            for path in directory.iterdir()
+            if path.is_file() and path.name.lower() == "skill.md"
+        ]
+        if len(candidates) != 1:
+            ERRORS.append(
+                f".claude/skills/{name}: expected exactly one SKILL.md or skill.md"
+            )
+            continue
+
+        skill_rel = candidates[0].relative_to(ROOT).as_posix()
+        selected_paths.append(skill_rel)
+        metadata = frontmatter_scalars(skill_rel)
+        if metadata.get("name") != name:
+            ERRORS.append(f"{skill_rel}: frontmatter name must equal {name!r}")
+        if metadata.get("disable-model-invocation") != "true":
+            ERRORS.append(f"{skill_rel}: disable-model-invocation must be true")
+
+        sidecar_rel = f".claude/skills/{name}/agents/openai.yaml"
+        sidecar = sidecar_scalars(sidecar_rel)
+        for field in (
+            "interface.display_name",
+            "interface.short_description",
+            "interface.default_prompt",
+        ):
+            if not sidecar.get(field):
+                ERRORS.append(f"{sidecar_rel}: missing non-empty {field}")
+        if f"${name}" not in sidecar.get("interface.default_prompt", ""):
+            ERRORS.append(f"{sidecar_rel}: default_prompt must invoke ${name}")
+        if sidecar.get("policy.allow_implicit_invocation") != "false":
+            ERRORS.append(
+                f"{sidecar_rel}: policy.allow_implicit_invocation must be false"
+            )
+
+    for index_rel in index_paths:
+        indexed = skill_index_names(index_rel)
+        if indexed != discovered:
+            missing = sorted(discovered - indexed)
+            extra = sorted(indexed - discovered)
+            ERRORS.append(
+                f"{index_rel}: skill index differs; "
+                f"missing={missing!r}, extra={extra!r}"
+            )
+
+    return [*index_paths, *selected_paths]
+
+
 LINK_RE = re.compile(r"!?\[[^\]]*\]\(([^)]+)\)")
 SPEC_ID_RE = re.compile(
     r"\b(?:AUTH|GOAL|PRIN|PLACE|CAP|CTRL|INV|GATE|STRAT|PHASE)-\d{3}\b"
@@ -416,13 +684,17 @@ def check_current_contracts(doc_paths: list[str]) -> None:
 
 def main() -> int:
     docs = check_counterparts()
+    skill_docs = check_skill_contracts()
+    check_minimum_change_trace_contract()
+    check_audit_minimum_change_conformance_contract()
+    check_eval_behavior_baseline_contract()
     check_root_guidance_lockstep()
     check_workspace_graph()
     phase15_safety_sandbox_docs()
     phase16_command_execution_docs()
     check_top_level_spec()
     check_current_contracts(docs)
-    for rel in [*docs, "AGENTS.md", "CLAUDE.md"]:
+    for rel in [*docs, *skill_docs, "AGENTS.md", "CLAUDE.md"]:
         check_local_links(rel)
 
     if ERRORS:

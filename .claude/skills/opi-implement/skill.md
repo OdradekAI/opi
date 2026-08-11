@@ -40,10 +40,10 @@ registry. Do not auto-parse arbitrary files from `docs/superpowers/specs/`.
 
 | Phase | Source files |
 |---:|---|
-| 14 | `docs/superpowers/specs/2026-07-11-phase14-provider-auth-design.md` |
-| 14 | `docs/superpowers/specs/2026-07-14-phase14-exit-remediation-design.md` |
-| 15 | `docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md` |
-| 16 | `docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md` |
+| 14 | `docs/snapshots/phase14/2026-07-11-phase14-provider-auth-design.md` |
+| 14 | `docs/snapshots/phase14/2026-07-14-phase14-exit-remediation-design.md` |
+| 15 | `docs/snapshots/phase15/2026-07-11-phase15-safety-sandbox-design.md` |
+| 16 | `docs/snapshots/phase16/2026-07-28-phase16-pluggable-extension-command-execution-design.md` |
 | 18 | `docs/superpowers/specs/2026-07-11-phase18-agent-intelligence-design.md` |
 
 When a ledger is initialized or reconciled for a supplemental phase, the
@@ -68,6 +68,18 @@ init/reinit or task-graph review into concrete observable assertions:
 command/API entry point, persisted artifact, production call site, runtime
 effect, diagnostics, and negative/error behavior where relevant. A vague DoD is
 not executable until expanded or explicitly accepted as a substrate-only task.
+
+**Minimum-change trace rule:** Every task graph admitted after this contract
+MUST answer six questions using existing ledger fields: registered criterion
+or scenario; reuse search; plugin/package placement; necessity of public API,
+config, state, and dependency surfaces; the smallest production vertical
+slice; and any accepted simplification's ceiling plus observable revisit
+trigger. Reuse `acceptance_scenarios`, `production_call_sites`,
+`verification.behavioral_tests`, `depends_on`, and standardized
+`inference_notes` fields `reuse_search`, `placement`, `surface_necessity`, and
+`simplification_ceiling`. Do not add a duplicate trace object or bump the
+ledger schema. A substrate task must be in the transitive dependency closure
+of a later scenario-owning task; otherwise refuse it as orphan work.
 
 ## Invocation
 
@@ -170,7 +182,14 @@ E is the only phase that mutates git **during normal task execution**.
 2. **Phase B: Plan-the-task**
    - B.1 Print task DoD + verification tier + parallelize plan + owned
      acceptance scenarios + required production call-site traces + phase
-     source files + phase-specific forbidden-scope guards
+     source files + phase-specific forbidden-scope guards + the six-answer
+     minimum-change trace. For a graph confirmed before this contract, print
+     absent answers as `legacy-unrecorded`; never fabricate them. The exemption
+     ends when the graph next enters the plan path. Phase B does not reinterpret
+     the answers. If implementation would change an admitted API, config item,
+     state field, dependency edge, placement, or simplification limit, stop and
+     return to graph review; the Phase C `task_owned_paths` append-only
+     exception remains the sole in-task mutation of a const field.
    - B.1a If the task's product meaning is fuzzy — an unset scope boundary,
      contradictory source, or unresolved domain term — stop before marking it
      `in_progress` and apply the Source-return rule. Implementation-detail
@@ -499,8 +518,8 @@ Print a summary table of all tasks:
 Full design rationale: `docs/superpowers/specs/2026-05-20-opi-implement-skill-design.md`
 
 Registered supplemental phase designs:
-- `docs/superpowers/specs/2026-07-11-phase14-provider-auth-design.md`
-- `docs/superpowers/specs/2026-07-14-phase14-exit-remediation-design.md`
-- `docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md`
-- `docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md`
+- `docs/snapshots/phase14/2026-07-11-phase14-provider-auth-design.md`
+- `docs/snapshots/phase14/2026-07-14-phase14-exit-remediation-design.md`
+- `docs/snapshots/phase15/2026-07-11-phase15-safety-sandbox-design.md`
+- `docs/snapshots/phase16/2026-07-28-phase16-pluggable-extension-command-execution-design.md`
 - `docs/superpowers/specs/2026-07-11-phase18-agent-intelligence-design.md`

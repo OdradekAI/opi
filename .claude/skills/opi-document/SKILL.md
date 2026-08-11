@@ -74,7 +74,8 @@ git diff --check
 
 The Python check validates current workspace/crate versions, source-derived
 wire-schema versions, EN/ZH counterpart presence for the root/spec and every
-Cargo package under `crates/`, local links, root-guidance lockstep, UTF-8, and
+Cargo package under `crates/`, project-local skill frontmatter, Codex sidecars,
+EN/ZH skill-index membership, local links, root-guidance lockstep, UTF-8, and
 selected stale-current-claim exclusions. It does not compile Rust.
 
 Run extra verification only when the edited surface requires it:

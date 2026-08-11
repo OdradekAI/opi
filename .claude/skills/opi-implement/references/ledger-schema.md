@@ -109,7 +109,7 @@ Atomic writes use an ignored `.opi-impl-state.json.tmp` plus rename.
 | `tasks[].replaces` | string/null | const | Prior task title/meaning superseded during reinit, when the same task ID was repurposed by spec changes |
 | `tasks[].status` | enum | runtime | `failing`/`in_progress`/`passing`/`blocked`/`archived` |
 | `tasks[].depends_on` | array | const | Task IDs that must be `passing` |
-| `tasks[].inference_notes` | array | const | Reasons for inferred fields. Phase non-goal guards use `field = "forbidden_scope"` with an exact source heading. Plan extraction may use `field` ∈ {`deferred`,`split`,`residual`} with `reason` packed as `"<verb>: trigger=<clause|null>"` (a `null` trigger requires a human decision before P.4 confirmation). Inferred placement or public-test-seam choices also record their rationale here. |
+| `tasks[].inference_notes` | array | const | Reasons for inferred fields. Phase non-goal guards use `field = "forbidden_scope"` with an exact source heading. Plan extraction may use `field` ∈ {`deferred`,`split`,`residual`} with `reason` packed as `"<verb>: trigger=<clause|null>"` (a `null` trigger requires a human decision before P.4 confirmation). Inferred placement or public-test-seam choices also record their rationale here. Minimum-change admission standardizes four additional `field` values without changing the note shape or schema version: `reuse_search`, `placement`, `surface_necessity`, and `simplification_ceiling`. |
 | `tasks[].tier` | enum | const | `documentation`/`workspace`/`library`/`cli-tool`/`cli-runtime`/`tui` |
 | `tasks[].commit_type` | enum | const | `feat`/`fix`/`docs`/`refactor`/`test`/`chore`/`perf` |
 | `tasks[].parallelize` | array | const | Sub-unit names for parallel dispatch |
@@ -150,6 +150,27 @@ pre-agreed highest practical public seam for each owned acceptance scenario.
 When the seam is inferred rather than verbatim from the source, record the seam
 and rationale in `inference_notes`. A private helper test may supplement but
 cannot replace the public behavioral seam.
+
+Validation rule: minimum-change notes retain `{ field, reason, source }`.
+`field = "reuse_search"` requires `searched=`, `reused=`, and `gap=` clauses.
+`field = "placement"` requires `target=`, `existing_home=`, and
+`cannot_fit_fully=` clauses. `field = "surface_necessity"` requires
+`public_api=`, `config=`, `state=`, and `dependency_edge=` clauses, each set to
+`none` or a necessity rationale. `field = "simplification_ceiling"` requires
+`accepted=`, `ceiling=`, and `revisit_when=` clauses; the revisit trigger must
+be observable rather than “when needed”. Missing clauses fail task-graph
+admission; explicit `none` or `not-applicable` remains valid when justified.
+
+Validation rule: a `substrate_only` task with no owned acceptance scenario
+MUST appear in the transitive `depends_on` closure of a later task that owns a
+sourced acceptance scenario. Otherwise it is orphan work and the graph cannot
+be confirmed. Do not add a fake production call site to a substrate task.
+
+Validation rule: the minimum-change trace is admission-only. Existing
+schema-v2 ledgers remain readable and already-confirmed no-drift graphs are not
+rewritten. After the next init, reconcile, import, or graph edit, every
+executable task must satisfy the trace contract. Phase B labels missing
+pre-contract answers `legacy-unrecorded` and never synthesizes them.
 
 Validation rule: when `behavioral_tests` references more than one crate, either `tier` MUST be `workspace` or `verification.library_gates` MUST include mechanical gates for every referenced crate. Snapshot-bearing tests also require `snapshot_tests` and explicit snapshot approval under the `tui` rules.
 

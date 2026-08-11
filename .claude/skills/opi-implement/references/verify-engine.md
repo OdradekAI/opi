@@ -87,23 +87,37 @@ The plan review has two non-collapsible axes.
 | Lens | Checks |
 |---|---|
 | P-D1 Pi lineage and Rust divergence | The source preserves pi's design direction or records why a Rust-native divergence is intentional. |
-| P-D2 Plugin-first placement | Optional/non-pi capability defaults to plugin/package; any core change is the smallest missing extension seam. |
+| P-D2 Plugin-first placement | Optional/non-pi capability defaults to plugin/package; `reuse_search` names what was inspected and `placement` proves any core change is the smallest missing extension seam. |
 | P-D3 Domain and interface clarity | Terms agree with `docs/CONTEXT.md`; modules expose deep interfaces at explicit seams. |
-| P-D4 Acceptance/test seam | User-visible behavior and the highest practical public test seam are explicit. |
-| P-D5 Source completeness | Problem, solution, out-of-scope, success, exit, and evidence provenance are present without contradictions or silent assumptions. |
+| P-D4 Acceptance/test seam | User-visible behavior, its registered scenario source, production call sites, and the highest practical public behavioral test seam are explicit. |
+| P-D5 Source completeness | Problem, solution, out-of-scope, success, exit, evidence provenance, `surface_necessity`, and any `simplification_ceiling` are present without contradictions or silent assumptions. |
 
 Route missing facts to `RESEARCH_REQUIRED`. Route unresolved product,
 architecture, terminology, placement, or seam decisions to
+`DESIGN_DECISION_REQUIRED`.
+
+### Minimum-change trace overlay
+
+The existing lenses jointly inspect the six answers; this does not add a new
+lens or verdict. Design readiness verifies `reuse_search`, `placement`,
+`surface_necessity`, and `simplification_ceiling`, including an observable
+`revisit_when`. Execution readiness verifies the sourced criterion/scenario,
+the smallest production vertical slice, and the later scenario owner for each
+substrate task.
+
+If the source is sufficient but the draft omits or malforms an answer, return
+`GRAPH_REVISION_REQUIRED`. Missing facts return `RESEARCH_REQUIRED`.
+Unsettled placement, surface, or simplification choices return
 `DESIGN_DECISION_REQUIRED`.
 
 ### Execution readiness
 
 | Lens | Checks |
 |---|---|
-| P-E1 Criterion coverage | Every goal/workflow/criterion owns an acceptance scenario and production path where applicable. |
-| P-E2 Demonstrable vertical slices | Each task answers what can be demonstrated; substrate tasks cannot close product criteria alone. |
+| P-E1 Criterion coverage | Every goal/workflow/criterion owns an acceptance scenario and production path where applicable; each substrate is contained by a later scenario owner's dependency closure. |
+| P-E2 Demonstrable vertical slices | Each task answers what can be demonstrated through scenario verification, production call sites, and behavioral tests; substrate tasks cannot close product criteria alone. |
 | P-E3 Dependencies and sequencing | Edges are real blockers, cycles are absent, and expand-contract is used only for justified wide refactors. |
-| P-E4 Ownership and verification | Owned paths, public behavioral seam, verification tier/addenda, and forbidden scope are proportional and consistent. |
+| P-E4 Ownership and verification | Owned paths, necessary public/config/state/dependency surfaces, public behavioral seam, verification tier/addenda, and forbidden scope are proportional and consistent. |
 | P-E5 DoD precision | Observable commands, interfaces, artifacts, runtime effects, diagnostics, and negative behavior replace vague verbs. |
 
 Route every blocking task-graph defect to `GRAPH_REVISION_REQUIRED`.
