@@ -5,7 +5,7 @@
     "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md"
   ],
   "spec_files_sha256": {
-    "docs/opi-spec.md": "2e37361bc421db495e7ee8da02155f6ce25a386450c25e84ef20994bd1e287e1",
+    "docs/opi-spec.md": "df976c2f705096539f0eb55bb4c63644cb757a70eec056fc1a7f3553b9b0c453",
     "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md": "d1a5c4403908fa7981da8e741ade49d00b25972d17360371d55799b08ca7be9e"
   },
   "task_graph_confirmed_at": "2026-08-09T04:59:23.2318733Z",

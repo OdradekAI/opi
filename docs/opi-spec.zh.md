@@ -1,1744 +1,464 @@
-# Opi 技术规范
+# Opi 技术方向与架构规范
 
-> Opi 是 [pi](https://github.com/earendil-works/pi) AI 代理工具包的 Rust 重新实现。它保留了 pi 的运行时语义，同时采用 Rust 原生的 API、存储格式和发布实践。
+本文档定义 Opi 在完成当前实现基线之后的长期技术方向。它是未来交付规范的规范性上位文档，而非进度日志、发布清单或 API 目录。
 
-## 0. 文档控制
+## 1. 文档权威与阅读模型
 
-| 字段 | 值 |
-|---|---|
-| 状态 | 草案 |
-| 规范版本 | 0.6-draft |
-| 最后更新 | 2026-08-05 |
-| 仓库 | `https://github.com/OdradekAI/opi` |
-| 参考上游 | `pi` 0.80.2，位于 `.repo/pi-0.80.2/`；对齐由 `opi-realign` 新鲜审计评估，报告位于 [`docs/realign/`](realign/) |
-| 当前实现 | `opi` 0.7.3 workspace（六个 crate），第 1-16 阶段已实现；第十六阶段可插拔 `command.execute` 与独立 `opi-sandbox` 路径已存在 |
-| 下一里程碑 | 第十七阶段 Benchmark 与回归评估 |
+### 1.1 范围
 
-本文档对当前设计具有规范性。涉及公共 API、事件协议、会话存储、发布行为或阶段边界变更的修改，应在同一变更中更新本文件。
+本规范负责五类决策：
 
-当前上游证据基线是 `.repo/pi-0.80.2`。与上游的对齐由 `opi-realign` 新鲜审计评估，报告写入 `docs/realign/`。
+- 产品使命与非目标；
+- 持久架构与依赖不变量；
+- 长期能力阶梯；
+- 准入、证据、权威与回滚门禁；以及
+- 在前置条件已经满足的目标之间确定当前战略优先级。
 
-规范性术语：
+确切的 CLI 标志、Provider 目录、wire 常量、文件布局、发布版本和实现状态仍以各自的权威来源为准，并索引于[第 11 章](#11-权威契约与证据索引)。
 
-- **必须（MUST）** 表示合规所要求的。
-- **应当（SHOULD）** 表示除非有文档化的理由，否则应遵循。
-- **可以（MAY）** 表示可选的扩展行为。
+### 1.2 规范性语言
 
-## 1. 概述
+`MUST` 和 `MUST NOT` 标识每项合规交付都必须满足的要求。`SHOULD` 标识默认架构；若要偏离，必须提供具有等效证据的 ADR。`MAY` 标识允许采用的选项。`Evidence` 标识来自源码、对齐、研究或实验的非规范性观察。
 
-Opi 使用六个 Rust crate：保留受 pi 启发的产品边界，同时隔离独立的执行协议与沙箱：
-
-- `opi-ai`：与供应商无关的 LLM 流式处理。
-- `opi-agent`：代理循环、有状态代理、钩子、工具、队列和会话原语。
-- `opi-tui`：终端 UI 组件。
-- `opi-coding-agent`：`opi` CLI 二进制文件。
-- `opi-protocol`：版本化的独立命令执行 wire contract。
-- `opi-sandbox`：与 Opi 无关的命令限制 SDK 与 CLI。
-
-本仓库已完成第 1-16 阶段。除终端 Agent、运行时、package、Provider correctness、工具和会话上下文工作外，第十四阶段还提供 OS-keychain 凭据存储、Anthropic/GitHub Copilot/OpenAI Codex OAuth、按 stream 鉴权解析、Request/会话亲和扩充、能力门控的 Anthropic cache marker、cache/reasoning 用量记账，以及仅为基底的动态模型 refresh API。第十六阶段增加可插拔 `command.execute` 路由、package 信任/启用/权限门、独立协议 crate，以及 Linux/macOS 原生 `opi-sandbox` artifact，同时保留直接本地 Minimal Runtime。
-
-Opi 不声称 pi package 生态对等，也不支持 npm package 安装、marketplace 行为、TypeScript extension live reload、通过 adapter 拦截 provider stream、自定义终端 UI adapter 渲染、package 权限策略执行、第十四阶段三个获批 profile 之外的 OAuth provider、图像生成或 web/share 流程。MCP、子 Agent、plan mode、todos、permission gates 和动态插件加载应建立在该基底之上，而不是成为核心功能。
-
-核心设计规则：
-
-> 在用户和集成方依赖的地方保留 pi 的行为。默认不保留 pi 的 TypeScript API、npm 扩展 ABI、配置文件或会话文件。
-
-## 2. 设计理念
-
-| 原则 | pi 0.80.2 | opi 设计 |
-|---|---|---|
-| 最小化核心 | `CONTRIBUTING.md` 和编程代理文档将工作流特定功能保持在核心之外 | 第 1-3 阶段避免 MCP、动态插件、子代理、计划模式、待办系统和后台 bash 的范围蔓延 |
-| 分层运行时 | `agentLoop` -> `Agent` -> `AgentHarness` / `AgentSession` | `agent_loop` -> `Agent` -> `Harness` / `CodingHarness` |
-| 流式优先 | `AssistantMessageEventStream` 和代理事件流 | `Stream<Item = Result<Event, Error>>` 加终端事件 |
-| 供应商无关 | provider 通过 `Models` 拥有模型目录、认证和流式行为 | `Provider` trait、registry/collection、Provider adapter、凭据/OAuth 契约与按 stream 鉴权解析 |
-| 代理消息 vs LLM 消息 | `AgentMessage[] -> transformContext -> convertToLlm -> Message[]` | 应用消息在 `opi-agent`，供应商消息在 `opi-ai` |
-| 工具隔离 | LLM 边界处的 TypeBox schema | 类型化的 Rust 工具输入，在 LLM 边界生成 JSON Schema |
-| 错误在流内 | 供应商故障变为 `error` 流事件 | 供应商/运行时故障作为事件呈现，而非 panic |
-| 仅追加会话 | 崩溃可恢复的 JSONL 会话文件 | opi 版本化树状 JSONL，灵感来自 pi |
-| 锁步发布 | 所有包共享版本 | 所有 crate 共享 `workspace.package.version` |
-
-### 2.1 非目标
-
-Opi 不是逐行移植。Rust 的枚举、trait、所有权和取消原语应当塑造实现方式。
-
-Opi 与 pi 不是 API 兼容的。TypeScript 的声明合并、`jiti` 扩展加载和 npm 包导出无法干净地映射到 Rust crate 和静态二进制文件。
-
-Opi 在第一阶段不要求读取 pi 配置或 pi 会话文件。迁移命令可以在后续添加，但不假设运行时兼容性。
-
-Opi 的 MVP 不是一个可扩展平台。MCP 不是 pi 设计中的内置核心功能；它可以在扩展 API 稳定后作为扩展或包提供。内置子代理、计划模式、待办系统、后台 bash、永久权限弹窗工作流、WASM 插件和子进程插件运行时都不属于第 1-3 阶段核心范围。
-
-### 2.2 pi 设计边界
-
-Pi 0.80.2 已经比最初的终端编程 harness 更宽，但它仍保留一些边界。除非后续设计明确选择偏离，Opi 应保留这些边界：
-
-- CLI/TUI 仍然是主要产品表面。
-- 核心提供实用默认值，而不是强工作流意见。
-- MCP、子代理、计划模式、权限门禁和待办系统属于扩展、包或外部工具，而不是内置核心。
-- 工具安全主要通过工具选择、可见性、容器/沙箱和扩展钩子控制。
-- RPC 和 SDK 表面支持组合，但不应让终端产品退居次要。
-- Anthropic、GitHub Copilot 与 OpenAI Codex 之外的 OAuth provider、图像生成、自定义扩展 UI、npm/gallery 工作流和 web/share 流程在进入 `opi` 前需要单独审查设计。
-
-## 3. 与 pi 的关系
-
-Pi 是行为参考。以下行为应被视为继承的设计，而非偶然的实现细节。
-
-### 3.1 Opi 必须保留的语义
-
-| 领域 | 要求的行为 | 上游锚点 |
-|---|---|---|
-| 代理事件顺序 | `agent_start`、`turn_start`、消息事件、工具事件、`turn_end`、`agent_end` | `packages/agent/README.md` |
-| 供应商流生命周期 | `start`、内容增量、内容结束事件，然后 `done` 或 `error` | `packages/ai/src/types.ts` |
-| 流内错误 | 请求开始后的失败是流错误和最终的失败助手消息 | `StreamFunction` 合约 |
-| 消息转换 | 应用消息在供应商转换前被变换 | `AgentMessage` / `convertToLlm` |
-| 工具批处理 | 默认并行；任何顺序工具使整个批次变为顺序执行 | pi agent README |
-| 工具结果顺序 | 完成事件可按完成顺序；持久化的工具结果消息遵循助手源顺序 | pi agent README |
-| 工具终止 | 仅当批次中每个已完成结果都有 `terminate` 时才提前停止 | pi agent README |
-| 工具钩子 | before 钩子可阻塞；after 钩子替换字段而非深度合并 | pi hook result types |
-| `shouldStopAfterTurn` | 在 `turn_end` 之后、steering/follow-up 轮询之前运行 | pi agent README |
-| 引导队列 | 在当前助手轮次和工具调用之后、下一次供应商调用之前交付 | pi agent README 和 RPC 文档 |
-| 后续队列 | 仅在代理即将停止时交付 | pi agent README 和 RPC 文档 |
-| 会话持久性 | 仅追加写入和从不完整最后一行恢复 | pi session manager |
-
-### 3.2 Rust 原生重新设计
-
-| pi 机制 | opi 替代方案 | 理由 |
-|---|---|---|
-| TypeScript 联合类型和声明合并 | Rust 枚举加显式扩展变体 | 穷尽匹配和更安全的演化 |
-| TypeBox schemas | `schemars` 生成的 JSON Schema 加 `jsonschema` 验证 | 动态供应商边界，静态工具代码 |
-| 动态供应商导入 | feature flag 加显式注册 | 可预测的二进制文件和交叉编译 |
-| `jiti` TypeScript 扩展 | 推迟的 Rust 兼容插件方案 | 在 MVP 中避免 Node 依赖和不稳定的 ABI |
-| pi `settings.json` / `auth.json` | TOML 配置和显式凭据解析 | Rust 生态系统惯例和注释支持 |
-| pi session v3 | opi session v1 树状 JSONL | 保留分支/压缩语义而不锁定 TS 特定条目 |
-| 自定义 TUI 渲染器 | `ratatui` + `crossterm` | 活跃的 Rust 终端技术栈 |
-
-### 3.3 功能对等矩阵
-
-| pi 能力 | Opi 阶段 | 兼容目标 |
-|---|---:|---|
-| 包/crate 布局 | 第 0 阶段已完成 | 结构对等 |
-| 二进制 | 第 0 阶段占位符，第 1 阶段可用 | `opi`，非 `pi` |
-| 供应商流式处理 | 第 1 阶段 | 语义对等 |
-| Anthropic 供应商 | 第 1 阶段 | 语义对等 |
-| `Models` / provider-owned auth | 第 10/14 阶段 | Rust 原生 collection/auth 缝合点，加 OS-keychain 凭据与 Anthropic、GitHub Copilot、OpenAI Codex 获批 OAuth flow |
-| `agentLoop` / `Agent` | 第 1 阶段 | 语义对等 |
-| `AgentHarness` / session repo | 第 10/13 阶段 | `opi-agent` 中的通用 harness/session facade，`opi-coding-agent` 中保留编程产品包装层 |
-| read/write/edit/bash 加文件搜索/列表工具 | 第 1/3 阶段 | 行为对等；保留 `glob` 作为 opi 原生搜索工具，在声明稳定 CLI 前补齐 `find`/`ls` 对等 |
-| 交互式 TUI | 第 1 阶段 | 用户体验对等 |
-| OpenAI 兼容/OpenRouter/OpenAI/Gemini/Mistral | 第 2 阶段 | 供应商合约对等 |
-| 会话/恢复 | 第 2 阶段 | opi 格式 |
-| 压缩 | 第 2 阶段 | 语义对等 |
-| JSON 事件模式 | 第 2 阶段 | 版本化的 opi NDJSON |
-| 图像支持 | 第 3 阶段 | 语义对等 |
-| 工具选择和安全钩子 | 第 3 阶段 | pi 风格 allowlist 和扩展介导确认，而不是核心权限弹窗子系统 |
-| RPC/SDK/扩展/技能/包 | 第 4 阶段 | pi 风格组合和定制 |
-| MCP 适配器 | 第 4 阶段以后 | 可选扩展/包示例，不内置到核心 |
-| 自定义扩展 UI/message renderer | 未来 | 内置 TUI 稳定且 UI/RPC 子协议完成设计后的生态候选 |
-| 图像生成 | 未来 | 聊天侧 provider collection/auth 稳定后的生态候选 |
-
-针对 `.repo/pi-0.80.2` 的按维度新鲜偏移审计由 `opi-realign` 技能产出，位于
-[`docs/realign/`](realign/)。
-
-### 3.4 pi 对齐状态词汇
-
-新鲜 `opi-realign` 审计使用以下固定状态词汇对偏移分类，以便一致追踪 pi 偏移：
-
-| 状态 | 含义 | 后续要求 |
-|---|---|---|
-| `Full` | opi 保留了用户可见或集成方可见的 pi 语义，即使 Rust 实现不同 | 保留合约测试，避免意外回归 |
-| `Partial` | opi 实现了核心思想，但产品宽度、边缘场景、命令、provider 或生态行为窄于 pi | 记录缺失表面，并决定后续阶段是否补齐 |
-| `Intentional Divergence` | opi 有意选择不同的 Rust 原生 module、interface、存储格式或 adapter 策略 | 记录原因，不把它当作 parity bug |
-| `Missing` | pi 有该能力，opi 没有，但该能力未来仍可能进入路线图 | 在宣称对等前创建或链接未来阶段/任务 |
-| `Out of Scope` | pi 有该能力，但 opi 明确不计划放入核心 | 除非后续设计改变范围，否则保持在核心之外 |
-
-新鲜审计至少应以核心语义对等、产品对等和生态对等三层追踪 agent loop 语义、通用 harness 归属、内置工具、会话格式、会话树语义、provider collection、auth、provider catalog、OAuth/subscription login、图像输入、图像生成、package 生态、TypeScript extension 兼容性、TUI renderer 架构，以及 pi 保持在核心之外的工作流功能，例如 MCP、子 Agent、plan mode、todos、permission popups 和 background bash。
-
-## 4. 当前基线
-
-### 4.1 版本 0.7.3
-
-| 领域 | 当前状态 |
-|---|---|
-| 工作区 | 一个 Cargo 工作区下的六个 crate |
-| 版本控制 | 锁步 `0.7.3` |
-| 版本（Edition） | Rust 2024 |
-| 内部依赖 | `opi-agent -> opi-ai`、`opi-sandbox -> opi-protocol`、`opi-coding-agent -> opi-ai + opi-agent + opi-tui + opi-protocol` |
-| 外部依赖 | 来自工作区依赖的 Rust 原生异步、HTTP/SSE、schema、配置、TUI、搜索、追踪和测试技术栈 |
-| 二进制 | `opi` 支持交互式 TUI、非交互文本模式、`--json`、`--rpc`、会话命令、`--version` 和 `--help` |
-| CI | `fmt`、`clippy`、`test`、`doctest`、`doc` |
-| 发布 CI | 六平台二进制工作流 |
-| 可扩展性 | RPC JSONL、SDK 类型、extension API、资源/package 发现、自定义 provider/model registry、分支选择、streaming proxy、process-JSONL adapter 托管（`opi-extension-jsonl-v1`）、package CLI（`add/remove/list/doctor/enable/disable`）与可插拔 `command.execute` 路由已作为不稳定 0.x API 实现 |
-| crates.io | 可发布 crate 受质量门控 |
-
-### 4.2 稳定前 API 说明
-
-第 0 阶段占位符已被替换，但除非另有明确文档说明，0.x 公共 API 仍不稳定。第 3 阶段应加固已有表面，而不是引入宽泛的新平台范围。
-
-| Crate | 当前表面 | 下一目标 |
-|---|---|---|
-| `opi-ai` | 供应商流式处理、模型注册表、用量/成本、重试/退避、自定义 provider/model 注册 | 尽可能通过注册机制保持 Provider 扩展性 |
-| `opi-agent` | 代理循环、钩子、队列、工具、会话、压缩、SDK 类型、extension API、streaming proxy | 保持核心运行时狭窄，并把所有 0.x 公共表面明确标为不稳定 |
-| `opi-tui` | ratatui 组件、markdown/代码、diff、主题、键绑定、图像渲染、模糊选择器、分支选择器 | 通过快照测试保持组件可复用和确定性 |
-| `opi-protocol` | 有界 `command-execution-jsonl-v1` 类型、codec、schema 与 fixtures | 保持产品无关，并只拥有版本化执行协议 |
-| `opi-sandbox` | 独立 restriction SDK、human CLI、协议 backend 与 Linux/macOS 原生实现 | 保持独立复用，不链接 Opi 产品代码 |
-| `opi-coding-agent` | `clap` CLI、TOML 配置、内置工具、会话、JSON/RPC 模式、资源/package 发现、分支选择与 `command.execute` 路由 | 保持扩展 fail-closed，但不声称动态加载 Rust 插件 |
-
-### 4.3 第 0 阶段完成情况
-
-第 0 阶段已完成：
-
-- 四 crate 工作区；
-- 锁步版本控制；
-- 占位模块和重导出；
-- CI 门控；
-- 六平台发布工作流；
-- `opi --version` 和 `opi --help`；
-- 仅 GitHub Release，crates.io 推迟。
-
-## 5. 工作区与依赖
-
-### 5.1 布局
-
-```text
-opi/
-|-- Cargo.toml
-|-- crates/
-|   |-- opi-ai/
-|   |-- opi-agent/
-|   |-- opi-coding-agent/
-|   |-- opi-protocol/
-|   |-- opi-sandbox/
-|   `-- opi-tui/
-|-- docs/
-|-- .github/workflows/
-`-- .claude/skills/opi-release/
-```
-
-早期草案中的根目录 `config/` 目录不存在。内置主题或语法资源应存放在拥有它们的 crate 中，直到出现真正的共享资源需求。
-
-### 5.2 依赖图
-
-```text
-opi-ai           （无内部依赖）
-opi-tui          （无内部依赖）
-opi-agent        -> opi-ai
-opi-protocol     （无内部依赖）
-opi-sandbox      -> opi-protocol
-opi-coding-agent -> opi-ai, opi-agent, opi-tui, opi-protocol
-```
-
-内部依赖必须在根 `[workspace.dependencies]` 中声明，消费者通过 `{ workspace = true }` 引用。
-
-### 5.3 Crate 角色
-
-| Crate | 类型 | 发布目标 | 角色 |
+| ID | 要求 | 责任方 | 验证方式 |
 |---|---|---|---|
-| `opi-ai` | 库 | 通过发布门控后发到 crates.io | 供应商协议、模型元数据、面向供应商的消息 |
-| `opi-agent` | 库 | 通过发布门控后发到 crates.io | 循环、代理、钩子、工具、队列、会话 |
-| `opi-tui` | 库 | 通过发布门控后发到 crates.io | 终端渲染库 |
-| `opi-protocol` | 库 | 通过发布门控后发到 crates.io | 版本化的独立命令执行协议 |
-| `opi-sandbox` | 库 + 二进制 | crates.io 加 Linux/macOS release archive | 与 Opi 无关的命令限制 SDK 与 CLI |
-| `opi-coding-agent` | 二进制 | 通过发布门控后发到 crates.io | `opi` CLI 应用 |
+| AUTH-001 | 本规范**必须（MUST）**仅包含持久方向、不变量、门禁和战略优先级。 | 规范维护者 | 文档契约检查以及依据第 1 章进行评审。 |
+| AUTH-002 | 每一项规范性 `MUST` **必须（MUST）**明确责任方和机械化验证路径。 | 条款作者 | 表格/schema 评审和 Phase 准入评审。 |
+| AUTH-003 | 权威**必须（MUST）**从本规范传递到 Phase 交付规范，再传递到实现台账和历史快照；下层**不得（MUST NOT）**覆盖上层。 | Phase 塑形者 | Phase 来源映射和台账验证。 |
+| AUTH-004 | `docs/opi-spec.md` **必须（MUST）**是规范性英文来源；`docs/opi-spec.zh.md` **必须（MUST）**保留相同的章节和条款标识符，并具有等效含义。 | 文档维护者 | 双语标题、标识符和语义评审。 |
+| AUTH-005 | 进度、完成状态、日期、任务列表和决策历史**不得（MUST NOT）**记录在本文档中。 | 规范维护者 | 禁止内容扫描。 |
 
-### 5.4 为何没有 `opi-types`
+### 1.3 支撑制品
 
-类型归属于拥有其语义的 crate：
+- ADR 用于说明难以逆转的权衡；它本身不产生路线图权威。
+- `docs/realign/` 和 `.repo/pi-0.84.1` 提供向内对齐证据。
+- `docs/research/` 提供向外证据和设计候选。
+- `docs/snapshots/` 和实现台账保存已完成的交付历史。
+- Git 历史和 `CHANGELOG.md` 保存文档与发布历史。
 
-- 面向供应商的 `Message`、`ToolDef`、`ModelInfo` 和 `Usage` 属于 `opi-ai`；
-- 运行时的 `AgentMessage`、`AgentEvent`、`Tool` 和 `SessionEntry` 属于 `opi-agent`；
-- CLI 配置属于 `opi-coding-agent`；
-- 视觉状态属于 `opi-tui`。
+只有通过对本文档的显式修订或通过准入的 Phase 交付规范，研究发现才会成为规范性要求。
 
-共享类型 crate 会成为枢纽依赖。如果某个类型跨越 crate 边界，较低语义层级的拥有者应直接暴露它。预期会增长的公共枚举应在 API 稳定前使用 `#[non_exhaustive]`。
+## 2. 使命、目标与非目标
 
-### 5.5 依赖计划
+### 2.1 使命
 
-第 1 阶段的依赖应当以能交付 MVP 的最小功能集引入。优先选择显式 feature、可选的重量级功能以及后续阶段添加，而非宽泛的默认值。
+Opi 是一个 Rust AI Agent 工具包，并提供终端优先的参考产品。它实现并扩展 pi 所展示的设计原则：保持 Agent 核心小而深，将产品主张置于 harness 中，并通过扩展和可独立复用的产品拓展可选能力。
 
-| 类别 | Crate | 状态 | 理由 |
+Opi 并非逐行 Rust 移植。它保留有价值的语义，同时在能够构成更安全或更深 module 的场合，采用 Rust 的所有权、enum、trait、显式错误模型、有界并发、可移植二进制文件和编译期检查。
+
+| ID | 要求 | 责任方 | 验证方式 |
 |---|---|---|---|
-| 异步运行时 | `tokio` | 已有，窄 feature | 网络、进程 IO、信号、定时器；除非有具体需要否则避免 `features = ["full"]` |
-| 序列化 | `serde`、`serde_json` | 已有 | 供应商/会话协议 |
-| 库错误 | `thiserror` | 已有 | 库 crate 的类型化错误处理 |
-| 应用错误 | `anyhow` | 第 1 阶段 | `opi-coding-agent` 中的顶层错误聚合；库 crate 的公共 API 中禁止使用 `anyhow` |
-| 异步 trait | `async-trait` | 已有，保持内部使用或在 API 稳定前移除 | 不是目标公共 API 依赖；dyn trait 使用显式的 boxed future/stream 返回值；内部非 dyn trait 可使用原生 async fn |
-| HTTP/SSE | `reqwest` 配合 `rustls-tls` | 第 1 阶段，窄 feature | 无需 OpenSSL 的供应商流式处理；使用 `default-features = false` 并仅启用所需的 HTTP/JSON/流 feature |
-| SSE 解析 | 手写行解析器或 `eventsource-stream` | 第 1 阶段 | `reqwest-eventsource` 被排除（不支持 POST）；Anthropic 使用基于 POST 的流式处理 |
-| 流 | `futures-core`，按需内部流辅助工具 | 第 1 阶段 | 公共流 API 应暴露 `futures-core::Stream`；保持 `futures-util` 等辅助工具为内部使用 |
-| 取消 | `tokio-util` | 第 1 阶段 | 协作式取消 |
-| CLI | `clap` | 第 1 阶段 | 稳定的选项和补全 |
-| 配置 | `toml` | 第 1 阶段 | 人类可编辑的配置 |
-| TUI | `ratatui`、`crossterm` | 第 1 阶段 | 跨平台终端 UI |
-| Schema | `schemars`、`jsonschema` | 第 1 阶段，工具边界优先 | 类型化的工具 schema 加上在模型/工具边界的运行时验证；在 schema 稳定前避免广泛的协议验证；参见 §5.6 关于草案兼容性 |
-| ID/时间 | `uuid`、`time` | 第 1 阶段 | 无需 `chrono` 额外表面的会话 ID 和时间戳 |
-| 文件搜索 | `ignore`、`globset`、`regex` | 第 1 阶段 | gitignore 感知的 glob 和 grep 行为 |
-| 追踪 | `tracing`、`tracing-subscriber` | 第 1/2 阶段 | 可观测性 |
-| Markdown/代码 | `pulldown-cmark`，后续可选 `syntect` | 第 1/2 阶段 | 先做基础 markdown；语法高亮必须是可选的或后续添加的，以免威胁二进制大小目标 |
-| Diff | `similar` | 第 2 阶段 | 补丁可视化；在真正的 diff 视图发布前不要添加 |
+| GOAL-001 | Opi **必须（MUST）**提供产品中立的 Agent 核心和一致的终端参考产品。 | Opi 维护者 | crate 依赖图、interface 测试和产品验收。 |
+| GOAL-002 | 可选工作流和可独立复用的能力**必须（MUST）**保留在 Agent 核心之外，除非它们通过第 8 章的所有门禁。 | 能力责任方 | 归属复审。 |
+| GOAL-003 | Rust 特有的设计**应该（SHOULD）**改善正确性、显式状态、可测试性、可移植性或交付，而不是模仿 TypeScript/npm 结构。 | module 责任方 | 设计评审和合规证据。 |
+| GOAL-004 | 即使没有评测、学习、远程托管或任何扩展 package，Opi **也必须（MUST）**保持可用。 | 参考产品责任方 | 最小运行时验收配置。 |
 
-### 5.6 JSON Schema 草案兼容性
+### 2.2 成功标准
 
-Anthropic 的 Messages API 接受工具 `input_schema` 作为带有顶层 `type: "object"` 约束的 JSON Schema 对象。API 验证错误表明使用了 draft-2020-12 兼容的验证器，而 `schemars` 0.8 默认生成 draft-07。
+项目在达到以下条件时即告成功：
 
-对于第 1 阶段的工具 schema（简单的 object + properties + required），draft-07 输出应当保持在 Anthropic 接受的通用 JSON Schema 子集内。使用在各草案版本间存在分歧的特性的复杂 schema（数组 `items` vs `prefixItems`、`definitions` vs `$defs`、条件关键字）可能被拒绝。
+- 调用方通过小而稳定的 interface 获得实质性行为；
+- Provider、Agent、工具、会话和扩展语义可以独立测试；
+- 参考产品保持实用，同时不强制嵌入方接受其产品主张；
+- Agent 中立的能力可以作为独立伴生产品逐步成熟；以及
+- 后续的学习与自我迭代声明有可复现的独立证据和可撤销的人类权威支持。
 
-要求：
+### 2.3 非目标
 
-- 第 1 阶段必须包含对生成的内置工具 schema 的本地固定测试，包括在反序列化前验证代表性的模型参数。
-- 第 1 阶段应当包含一个被忽略的、由环境变量门控的实时 Anthropic schema 验收测试，但默认 CI 禁止要求付费凭据或网络访问。
-- 如果发现不兼容，schema 后处理步骤应当将 draft-07 输出规范化为供应商接受的子集（例如，在需要时将 `definitions` 重命名为 `$defs`）。
-- `schemars` 1.0（稳定后）可能原生解决此问题；在此之前，将其视为具有已测试缓解路径的已知风险。
+Opi 不以实现以下事项为目标：
 
-## 6. 架构
+- 对应 pi 的每一个 package、TypeScript 类型、npm 边界、会话文件或 Provider 目录；
+- 将 MCP、子 Agent、计划、任务列表、权限弹窗或远程会话工作流设为 Agent 核心的强制功能；
+- 暴露、持久化或评估模型私有的原始思维链；
+- 将 LLM 裁判、模型置信度或单一基准视为改进的独立证明；
+- 允许运行中的 Agent 扩大自身的用户策略或批准自身的变更；或者
+- 默认执行在线模型权重修改。
 
-### 6.1 分层
+## 3. 首要设计准则
 
-```text
-opi-coding-agent
-  CLI、内置工具、配置、提示词、工具选择、应用层会话 UX
+### 3.1 小而深
 
-CodingHarness / Harness
-  会话持久化、压缩、应用钩子、模型/思考状态、队列
+Agent 核心仅负责在不同 harness、用户界面和产品之间仍然成立的语义。良好的 module 通过小型 interface 隐藏大量行为。只有真实存在的变化才能证明 seam 的合理性，预想中的可能性不能。
 
-Agent
-  有状态的运行时包装器、订阅、取消、prompt/continue API
-
-agent_loop
-  纯 LLM -> 工具 -> LLM 循环，无持久化或 UI 策略
-
-opi-ai Provider
-  供应商 HTTP、SSE 解析、模型元数据、面向供应商的消息
-```
-
-`agent_loop` 必须能够使用模拟供应商和模拟工具进行测试，无需磁盘或终端状态。`Agent` 添加状态、取消、队列和事件订阅。`Harness` 组合会话、压缩和应用钩子。
-
-### 6.2 Harness 边界
-
-Pi 0.80.2 已经把 `AgentHarness` 作为低层循环之上的核心复用编排层。它拥有 session persistence、runtime configuration、resource resolution、operation locking、turn snapshots、save points，以及 extension-facing mutation semantics。Opi 应在 Rust 中保留这种归属方向，而不是复制 TypeScript API。
-
-- `opi-agent` 应当拥有非 CLI 消费者所需的通用 harness 原语：phase guards、turn snapshots、save points、有序 pending session writes、session repo/facade traits，以及通用 resource/system-prompt hooks。
-- `opi-coding-agent` 应当拥有编程特定的行为：内置文件工具、项目上下文、package/resource discovery、工具 allowlist、CLI 配置、交互式命令和应用层会话命令。
-- `CodingHarness` 应当是通用运行时缝合点之上的编程产品包装层，而不是可复用编排语义的唯一归属地。
-- 如果某个功能同时被库消费者和 CLI 需要，它属于 `opi-agent`；否则留在 `opi-coding-agent`。
-
-### 6.3 运行时流程
-
-```text
-用户输入
-  -> CLI 解析模式和配置
-  -> CodingHarness 加载或创建会话
-  -> 从基础提示、工具、项目上下文、摘要构建系统提示
-  -> Agent 接收 prompt、steer、follow-up 或 continue 请求
-  -> agent_loop 将 AgentMessage 转换为供应商 Message
-  -> 供应商流式返回助手事件
-  -> 代理发出消息更新
-  -> 工具调用被验证并执行
-  -> 工具结果消息按助手源顺序追加
-  -> should_stop_after_turn 运行
-  -> 引导队列被轮询
-  -> 后续队列仅在代理即将停止时被轮询
-  -> 会话条目被追加
-  -> 订阅者在 agent_end 后稳定
-```
-
-### 6.4 边界规则
-
-- 供应商适配器禁止执行工具。
-- 工具禁止直接调用供应商，除非该工具明确是一个集成。
-- TUI 组件必须消费事件和快照；禁止拥有循环策略。
-- `agent_loop` 测试禁止要求会话存储。
-- CLI 快捷方式禁止泄漏到 `opi-agent`，除非它们描述的是可复用的运行时行为。
-
-## 7. 协议和数据模型
-
-Opi 有四个相关协议。它们必须保持独立。
-
-| 协议 | 所有者 | 用途 |
-|---|---|---|
-| 供应商流事件 | `opi-ai` | 将供应商分块规范化为助手增量 |
-| 代理事件 | `opi-agent` | 循环/消息/工具生命周期，用于 UI 和测试 |
-| 代理会话事件 | harness / `opi-coding-agent` | 队列、压缩、重试、会话元数据 |
-| 会话条目 | 存储 | 用于重建上下文的持久化记录 |
-
-### 7.1 面向供应商的消息
-
-```rust
-#[non_exhaustive]
-pub enum Message {
-    User(UserMessage),
-    Assistant(AssistantMessage),
-    ToolResult(ToolResultMessage),
-}
-
-pub struct UserMessage {
-    pub content: Vec<InputContent>,
-    pub timestamp_ms: i64,
-}
-
-pub struct AssistantMessage {
-    pub content: Vec<AssistantContent>,
-    pub api: ApiKind,
-    pub provider: String,
-    pub model: String,
-    pub response_model: Option<String>,
-    pub response_id: Option<String>,
-    pub usage: Usage,
-    pub stop_reason: StopReason,
-    pub error_message: Option<String>,
-    pub timestamp_ms: i64,
-}
-
-pub struct ToolResultMessage {
-    pub tool_call_id: String,
-    pub tool_name: String,
-    pub content: Vec<OutputContent>,
-    pub details: Option<serde_json::Value>,
-    pub is_error: bool,
-    pub truncated: bool,
-    pub timestamp_ms: i64,
-}
-```
-
-停止原因应当与 pi 保持接近：`stop`、`length`、`tool_use`、`error`、`aborted`。
-
-图片内容在 opi 协议边界上是结构化的。`InputContent::Image` 只转发给元数据声明支持
-图片的模型；已知的纯文本模型必须在 provider 网络调用之前失败。CLI 图片附件必须在
-读取整个文件之前强制执行配置的字节上限。
-
-`OutputContent::Image` 作为结构化数据在 tool 结果、会话 JSONL 与 JSON 模式之间往返。
-Provider 请求体可以把图片 tool 结果强制转换为文本占位符，例如 `[image: image/png]`，
-因为当前 provider 的 tool-result 角色并不一致地接受二进制图片负载。这种强制转换是
-provider 协议限制，不得被描述为会话存储或 JSON 模式中的丢失。
-
-### 7.2 代理消息
-
-```rust
-#[non_exhaustive]
-pub enum AgentMessage {
-    Llm(opi_ai::Message),
-    CompactionSummary(CompactionSummaryMessage),
-    BranchSummary(BranchSummaryMessage),
-    Custom(CustomAgentMessage),
-}
-```
-
-每次供应商调用前：
-
-1. `transform_context` 在 `AgentMessage` 层级工作。
-2. `convert_to_llm` 转换为 `Vec<opi_ai::Message>` 并过滤仅用于会话/UI 的消息。
-
-未知的自定义消息禁止导致运行时 panic。
-
-### 7.3 供应商流事件
-
-```rust
-#[non_exhaustive]
-pub enum AssistantStreamEvent {
-    Start { partial: AssistantMessage },
-    TextStart { content_index: usize, partial: AssistantMessage },
-    TextDelta { content_index: usize, delta: String, partial: AssistantMessage },
-    TextEnd { content_index: usize, content: String, partial: AssistantMessage },
-    ThinkingStart { content_index: usize, partial: AssistantMessage },
-    ThinkingDelta { content_index: usize, delta: String, partial: AssistantMessage },
-    ThinkingEnd { content_index: usize, content: String, partial: AssistantMessage },
-    ToolCallStart { content_index: usize, partial: AssistantMessage },
-    ToolCallDelta { content_index: usize, delta: String, partial: AssistantMessage },
-    ToolCallEnd { content_index: usize, tool_call: ToolCall, partial: AssistantMessage },
-    Done { reason: StopReason, message: AssistantMessage },
-    Error { reason: StopReason, message: AssistantMessage },
-}
-```
-
-每个供应商流必须在增量之前发出 `Start`，并以恰好一个 `Done` 或 `Error` 终止。一旦请求已开始，请求/模型/运行时故障应当成为带有最终助手消息的 `Error` 事件，而不是带外故障。
-
-### 7.4 代理事件
-
-```rust
-#[non_exhaustive]
-pub enum AgentEvent {
-    AgentStart,
-    AgentEnd { messages: Vec<AgentMessage> },
-    TurnStart,
-    TurnEnd { message: AgentMessage, tool_results: Vec<opi_ai::ToolResultMessage> },
-    MessageStart { message: AgentMessage },
-    MessageUpdate { message: AgentMessage, assistant_event: AssistantStreamEvent },
-    MessageEnd { message: AgentMessage },
-    ToolExecutionStart { tool_call_id: String, tool_name: String, args: serde_json::Value },
-    ToolExecutionUpdate { tool_call_id: String, tool_name: String, args: serde_json::Value, partial_result: serde_json::Value },
-    ToolExecutionEnd {
-        tool_call_id: String,
-        tool_name: String,
-        result: serde_json::Value,
-        details: Option<serde_json::Value>,
-        is_error: bool,
-        truncated: bool,
-        diagnostics: Vec<ToolDiagnostic>,
-    },
-}
-```
-
-`MessageUpdate` 仅用于助手消息。`AgentEnd` 表示不再发出循环事件，但等待中的订阅者可能仍在稳定。
-
-公共 agent events 和持久化 session messages 必须在暴露前对工具 args、details、partial results 与 diagnostics 中的 command/path/env/stdout/stderr 类字段做脱敏。公共 assistant message 快照和 stream events 也会脱敏 tool-call arguments 与 tool-call deltas，因为这些值处在同一边界上，且同样是模型生成的工具参数。Provider adapter 只消费工具结果 `content` 与 provider-specific `is_error` 处理；`details`、`diagnostics` 和 `truncated` 是本地 event/session metadata，不作为 provider tool-result payload 发送。
-
-### 7.5 会话事件
-
-```rust
-#[non_exhaustive]
-pub enum AgentSessionEvent {
-    Agent(AgentEvent),
-    QueueUpdate { steering: Vec<String>, follow_up: Vec<String> },
-    CompactionStart { reason: CompactionReason },
-    CompactionEnd { reason: CompactionReason, result: Option<CompactionResult>, aborted: bool, will_retry: bool, error_message: Option<String> },
-    AutoRetryStart { attempt: u32, max_attempts: u32, delay_ms: u64, error_message: String },
-    AutoRetryEnd { success: bool, attempt: u32, final_error: Option<String> },
-    SessionInfoChanged { session_id: String, name: Option<String> },
-    ThinkingLevelChanged { level: ThinkingLevel },
-}
-```
-
-当第 2 阶段 JSON 模式实现时，`--json` 每行输出一个 JSON 对象。事件协议必须在下游工具将其视为稳定之前包含 schema 版本。
-
-### 7.6 队列
-
-```rust
-pub enum QueueMode {
-    All,
-    OneAtATime,
-}
-```
-
-引导消息在当前助手轮次及其工具调用完成后、下一次供应商请求前交付。后续消息仅在代理没有工具调用、没有引导消息且即将停止时交付。如果 `should_stop_after_turn` 返回 true，循环在轮询任一队列之前退出。
-
-## 8. Crate 规范
-
-### 8.1 `opi-ai`
-
-`opi-ai` 拥有面向供应商的消息类型、模型元数据、供应商注册表、凭据辅助工具和流式适配器。第 10 阶段的目标是把它深化为受 `pi-ai` `Models` 启发的 provider collection/auth 缝合点：provider 和 model lookup、可选 refresh、provider-owned auth resolution、stream/complete dispatch 与兼容性 metadata 应位于 `opi-ai`。CLI 配置、env 加载、package 输入和产品默认值仍是 `opi-coding-agent` 拥有的构造输入。
-
-```rust
-pub trait Provider: Send + Sync {
-    fn id(&self) -> &str;
-    fn models(&self) -> &[ModelInfo];
-    fn stream(&self, request: Request) -> EventStream;
-    fn refresh_models(&self) -> BoxAuthFuture<'_, Result<Option<Vec<ModelInfo>>, ProviderError>>;
-    fn replace_model_catalog(&mut self, models: Vec<ModelInfo>) -> Result<(), ProviderError>;
-}
-
-pub type EventStream =
-    Pin<Box<dyn Stream<Item = Result<AssistantStreamEvent, ProviderError>> + Send>>;
-```
-
-`stream` 返回一个流句柄。取消通过 `Request::cancel` 或等效令牌传播。丢弃流应当取消底层 HTTP 请求。
-
-```rust
-pub struct Request {
-    pub model: String,
-    pub system: Option<String>,
-    pub messages: Vec<Message>,
-    pub tools: Vec<ToolDef>,
-    pub max_tokens: Option<u64>,
-    pub temperature: Option<f64>,
-    pub thinking: ThinkingConfig,
-    pub stop_sequences: Vec<String>,
-    pub metadata: Option<serde_json::Value>,
-    pub cancel: CancellationToken,
-    pub timeout: Option<std::time::Duration>,
-    pub extra_headers: Vec<(String, String)>,
-    pub cache_retention: CacheRetention,
-    pub session_id: Option<String>,
-}
-```
-
-Provider 上报的用量与费用行为：
-
-```rust
-pub struct Usage {
-    pub input_tokens: u32,
-    pub output_tokens: u32,
-    pub cache_read_tokens: u32,
-    pub cache_write_tokens: u32,
-    pub cache_write_1h_tokens: Option<u64>,
-    pub reasoning_tokens: Option<u64>,
-    pub reported: bool,
-}
-
-pub struct CostBreakdown {
-    pub input_cost: f64,
-    pub output_cost: f64,
-    pub cache_read_cost: f64,
-    pub cache_write_cost: f64,
-}
-```
-
-可选子集保留缺失与显式上报零的区别。加权的一小时 cache-write 子集折算进
-`cache_write_cost`，reasoning 仍计入 `output_cost`，total 只计一次每个父 bucket。
-
-供应商优先级：
-
-| 供应商 | API 风格 | 阶段 | 原因 |
-|---|---|---:|---|
-| Anthropic | Messages SSE | 1 | MVP 目标和 pi 的默认模型家族 |
-| OpenAI 兼容聊天 | SSE | 2 | 广泛兼容 OpenAI 风格的服务 |
-| OpenRouter | OpenAI 兼容路由器 | 2 | 快速模型覆盖扩展和路由诊断 |
-| OpenAI Responses | SSE | 2 | 独立的事件映射 |
-| Google Gemini | 流式 generateContent | 2 | 主要的非 OpenAI 系列 |
-| Mistral | 聊天 SSE | 2 | 供应商矩阵扩展 |
-| AWS Bedrock | 响应流 / SigV4 | 3 | 企业认证复杂性 |
-| Azure OpenAI | OpenAI 兼容 | 3 | 部署名称差异 |
-| Google Vertex | OAuth/服务账号 | 3 | 企业认证复杂性 |
-
-Provider 扩展策略：
-
-- 只有当 wire format、event model 或认证模型存在实质差异时，才增加一等 provider。
-- 如果 provider 能用 base URL、API key 环境变量、模型元数据和兼容性 flags 表达，应使用配置化 OpenAI-compatible profile。
-- deployment-specific 或 fine-tuned 模型元数据应优先通过 `ProviderRegistry` model overrides 表达。
-- 嵌入方和外部 adapter 应通过 extension/SDK provider registration 接入。
-
-OAuth 保持为单独产品决策。Anthropic OAuth、OpenAI Codex OAuth 和 GitHub Copilot OAuth 都会引入登录命令、credential storage、refresh 行为和面向用户的撤销语义；它们不得作为 provider profile 扩展的副作用被静默加入。
-
-图像生成同样保持为单独产品决策。`pi-ai` 0.80.2 将图像生成设计成镜像聊天侧 provider collection/auth 的独立表面，但 `opi` 不应在聊天侧 provider collection/auth 语义稳定前加入该表面。
-
-凭据优先级：
-
-1. 显式 CLI/配置覆盖；
-2. 供应商特定的环境变量；
-3. 已实现时的本地认证存储；
-4. 环境云凭据链。
-
-Bedrock 凭据解析是本地/离线的：显式配置、AWS 环境变量、`AWS_PROFILE`、
-`AWS_SHARED_CREDENTIALS_FILE`、`AWS_CONFIG_FILE`、共享凭据/配置 profile、region
-配置以及 `credential_process`。它不执行 IMDS、ECS task metadata、SSO 或 web-identity
-网络流程。
-
-Vertex 凭据解析被有意限定为通过所配置环境变量提供的静态 OAuth access token，加上
-project 和 location 配置。Service-account JSON 解析与 Application Default Credentials
-token minting 超出当前第三阶段契约范围。
-
-密钥禁止被日志记录、持久化到会话或包含在诊断信息中。
-
-### 8.2 `opi-agent`
-
-`opi-agent` 可在不依赖 `opi` 二进制的情况下使用。
-
-```rust
-pub trait Tool: Send + Sync {
-    fn definition(&self) -> opi_ai::ToolDef;
-
-    fn execute(
-        &self,
-        call_id: &str,
-        arguments: serde_json::Value,
-        signal: CancellationToken,
-        on_update: Option<UpdateCallback>,
-    ) -> Pin<Box<dyn Future<Output = Result<ToolResult, ToolError>> + Send>>;
-
-    fn execution_mode(&self) -> ExecutionMode {
-        ExecutionMode::Parallel
-    }
-}
-
-pub enum ExecutionMode {
-    Sequential,
-    Parallel,
-}
-
-pub struct ToolDiagnostic {
-    pub code: String,
-    pub message: String,
-    pub context: serde_json::Value,
-}
-
-pub struct ToolResult {
-    pub content: Vec<opi_ai::OutputContent>,
-    pub details: Option<serde_json::Value>,
-    pub is_error: bool,
-    pub terminate: bool,
-    pub truncated: bool,
-    pub diagnostics: Vec<ToolDiagnostic>,
-}
-```
-
-内置工具应当定义类型化的 Rust 参数结构体，派生 `Deserialize` 和 `schemars::JsonSchema`。`ToolDef` 向供应商暴露生成的 JSON Schema，而来自模型的动态输入在反序列化前使用 `jsonschema` 验证。`serde_json::Value` 在协议边界和诊断中可以接受，但工具业务逻辑不应保持基于 Value 的方式。
-
-参数验证发生在 `ToolExecutionStart` 之后和 `before_tool_call` 之前。验证失败成为错误工具结果。
-
-`ToolResult.details` 是成功/审计 metadata。多数内置工具失败结果应保持 `details: None`；结构化失败 metadata 位于 `diagnostics[].context`，并在 public event/session 边界脱敏。操作型失败可以在 `details` 中保留稳定的操作 metadata；bash 操作失败使用该例外保留 `command`、`exit_code`、`cancelled`、`timed_out` 和 `truncated` 等字段，但 public diagnostic context 不包含原始命令。大型或部分结果必须在 `ToolResult`、`ToolResultMessage` 和 `ToolExecutionEnd` 上一致设置 `truncated`。
-
-执行规则：
-
-- 全局顺序意味着所有调用顺序运行；
-- 全局并行意味着调用并发运行，除非任何目标工具是顺序的；
-- 如果批次中任何工具是顺序的，整个批次顺序运行；
-- 持久化的工具结果消息按助手源顺序排列。
-
-钩子表面：
-
-```rust
-pub trait AgentHooks: Send + Sync {
-    fn transform_context(&self, messages: Vec<AgentMessage>, signal: CancellationToken)
-        -> Pin<Box<dyn Future<Output = Result<Vec<AgentMessage>, AgentError>> + Send>>;
-
-    fn convert_to_llm(&self, messages: &[AgentMessage])
-        -> Result<Vec<opi_ai::Message>, AgentError>;
-
-    fn before_tool_call(&self, ctx: BeforeToolCallContext)
-        -> Pin<Box<dyn Future<Output = BeforeToolCallResult> + Send>>;
-
-    fn after_tool_call(&self, ctx: AfterToolCallContext)
-        -> Pin<Box<dyn Future<Output = AfterToolCallResult> + Send>>;
-
-    fn should_stop_after_turn(&self, ctx: ShouldStopAfterTurnContext)
-        -> Pin<Box<dyn Future<Output = bool> + Send>>;
-
-    fn prepare_next_turn(&self, ctx: PrepareNextTurnContext)
-        -> Pin<Box<dyn Future<Output = Option<AgentLoopTurnUpdate>> + Send>>;
-}
-```
-
-`after_tool_call` 使用字段替换语义，禁止深度合并 `content` 或 `details`。
-
-底层循环：
-
-```rust
-pub async fn agent_loop(
-    context: AgentLoopContext,
-    config: AgentLoopConfig,
-    hooks: &dyn AgentHooks,
-    events: AgentEventSink,
-    cancel: CancellationToken,
-) -> Result<Vec<AgentMessage>, AgentError>;
-```
-
-`Agent` 用状态、prompt/continue 方法、中止、引导和后续队列、订阅者管理和空闲稳定来包装循环。继续要求最后的上下文消息是用户消息或工具结果。
-
-`opi_agent::Transport` 已在第 4 阶段移除。RPC/proxy 表面现在位于 `opi-coding-agent::rpc`、`opi-agent::sdk` 和 `opi-agent::streaming_proxy`。
-
-### 8.3 `opi-tui`
-
-第 1 阶段组件：
-
-| 组件 | 阶段 | 用途 |
-|---|---:|---|
-| `MessageList` | 1 | 流式对话显示 |
-| `InputEditor` | 1 | 多行提示输入 |
-| `StatusBar` | 1 | 模型、状态、token/成本摘要占位符 |
-| `ToolCallView` | 1 | 工具调用参数和状态 |
-| `MarkdownView` | 1 | 基础 markdown 文本 |
-| `CodeBlock` | 1/2 | 语法高亮的代码块 |
-| `DiffView` | 2 | 编辑和补丁可视化 |
-| `SelectList` | 3 | 会话/模型选择器 |
-
-TUI 的目标是用户可见的行为，而非与 pi 的渲染器兼容：低闪烁、响应式流处理、调整大小安全、Windows 兼容性，以及在小终端上的优雅降级。
-
-第 1 阶段应保持最小可用的 TUI：流式消息、提示输入、状态和工具调用可见性。主题、模糊搜索选择器、丰富的 diff 视图和超出基础围栏代码展示的语法高亮属于后续阶段或可选功能。
-
-### 8.4 `opi-coding-agent`
-
-二进制拥有 CLI 解析、配置加载、供应商注册表构建、内置工具、系统提示构建、会话 UX、工具选择和运行时模式。
-
-| 工具 | 模式 | 阶段 | 范围 |
-|---|---|---:|---|
-| `read` | 并行 | 1 | 读取文件内容，可选行范围 |
-| `write` | 顺序 | 1 | 创建或替换文件 |
-| `edit` | 顺序 | 1 | 精确字符串替换或结构化补丁 |
-| `bash` | 顺序 | 1 | 带超时和流式输出的子进程命令 |
-| `glob` | 并行 | 1 | 额外的 gitignore 感知 glob 文件发现；pi 派生核心 workflow 不应依赖它 |
-| `grep` | 并行 | 1 | gitignore 感知的文件内容正则搜索 |
-| `find` | 并行 | 3 | pi 兼容的文件发现别名，具备 gitignore 感知行为 |
-| `ls` | 并行 | 3 | pi 兼容的目录列表，输出有界 |
-
-交互模式默认工具：`read`、`write`、`edit` 和 `bash`。非交互/RPC 默认工具：`read`、`grep`、`find`、`ls` 和 `glob`。`glob` 可保留为额外只读搜索便利工具，但核心非交互 workflow 应能不依赖它完成。
-
-非交互/RPC 中的修改性工具必须通过 `--allow-mutating` 或 `defaults.allow_mutating_tools = true` 显式选择加入。工具可见性必须与工具执行策略一致。
-
-文件工具必须使用显式 path policy。`write` 与 `edit` 默认保持 workspace-only。交互式 `read` 可以为 pi 风格可用性解析绝对路径和工作区外路径。非交互文件工具默认保持 workspace-only。
-
-交互式确认可以作为 extension-mediated safeguard 存在，但可复用 permission profiles 和权限弹窗不是核心行为；更丰富的 gate 应通过 tool allowlists、hooks、extensions、packages、containers 或 external wrappers 构建。
-
-工具选择 flag 应在稳定 CLI 声明前贴近 pi 的形态：`--tools <list>` 用于 allowlist，`--no-tools` 禁用所有工具，`--no-builtin-tools` 在扩展/自定义工具存在后禁用内置工具。
-
-CLI 目标：
-
-```text
-opi [选项] [提示]
-
-选项:
-  -m, --model <规格>       模型，例如 anthropic:claude-sonnet-4
-  -c, --config <路径>      配置文件路径
-  -s, --system <路径>      系统提示文件
-      --list-models        列出可用模型
-      --fork <SESSION_ID>  把已有会话 fork 成新的父子会话
-      --non-interactive    单提示模式
-  -v, --verbose            启用调试追踪
-  -V, --version            打印版本
-  -h, --help               打印帮助
-```
-
-第 2 阶段在会话存储和 JSON 事件 schema 具有合约测试后添加 `--resume`、`--list-sessions` 和 `--json`。
-当前 workspace 还提供 `--fork <SESSION_ID>`，用于从源会话的活跃分支创建新会话，且不改写源 JSONL 文件。
-
-提示层：
-
-1. 基础编程代理指令；
-2. 来自 `ToolDef` 的工具描述；
-3. 用户系统提示文件；
-4. 项目上下文文件，从第 3 阶段开始：来自全局配置和 cwd 祖先目录的 `AGENTS.md` 与 `CLAUDE.md`，匹配 pi；
-5. 压缩摘要，从第 2 阶段开始；
-6. 技能/提示片段，从第 4 阶段开始。
-
-`OPI.md` 不是默认上下文文件名，因为 pi 和更广泛的编程代理生态已经使用 `AGENTS.md` 与 `CLAUDE.md`。未来可以添加兼容别名，但不得替代这些名称。
-
-## 9. 配置和存储
-
-### 9.1 配置
-
-```toml
-[defaults]
-model = "anthropic:claude-sonnet-4"
-max_iterations = 50
-tool_timeout_ms = 30000
-theme = "default"
-
-[thinking]
-enabled = true
-budget_tokens = 10000
-
-[providers.anthropic]
-api_key_env = "ANTHROPIC_API_KEY"
-
-[providers.openai_compatible.localai]
-api_key_env = "LOCALAI_API_KEY"
-base_url = "https://localai.example.com"
-max_tokens_field = "max_completion_tokens"
-
-[[providers.openai_compatible.localai.models]]
-id = "local-model"
-display_name = "Local Model"
-context_window = 128000
-max_output_tokens = 4096
-supports_images = true
-supports_streaming = true
-supports_thinking = false
-
-[keybindings]
-submit = "enter"
-abort = "ctrl+c"
-new_line = "shift+enter"
-```
-
-格式错误的配置文件应当明确失败。对缺失的可选文件允许静默回退，但对无效的用户配置不允许。
-
-### 9.1.1 配置优先级
-
-配置值按以下优先级顺序解析（最高优先）：
-
-1. CLI 参数（`--model`、`--config` 等）
-2. 环境变量（`ANTHROPIC_API_KEY`、`OPI_MODEL` 等）
-3. 项目配置文件（工作区根目录的 `.opi/config.toml`，实现后）
-4. 用户配置文件（`~/.config/opi/config.toml`）
-5. 内置默认值
-
-第 1 阶段通过 clap（CLI 参数）+ `std::env`（环境变量）+ `toml` 反序列化（配置文件）+ 结构体默认值实现此功能。第 1 阶段不需要配置框架（figment、config-rs）。如果配置源复杂性超出手动合并能干净处理的范围，后续阶段可以引入框架。
-
-第 1 阶段的配置加载只需要默认值、供应商凭据、模型选择、超时、主题选择和高风险工具策略。压缩、会话和高级键绑定设置可以作为保留字段被接受，但不能暗示这些第 2 阶段功能已激活。
-
-第 2 阶段可以在会话持久化存在后添加 `[compaction]` 表，包含 `enabled`、`reserve_tokens` 和 `keep_recent_tokens` 等字段。
-
-### 9.2 目录布局
-
-```text
-~/.config/opi/config.toml
-~/.config/opi/themes/
-~/.local/share/opi/sessions/
-```
-
-Windows 上应当使用 `%APPDATA%\opi\` 存放配置类数据，`%LOCALAPPDATA%\opi\` 存放缓存类数据。
-
-### 9.3 会话格式
-
-opi 的会话格式是**Rust 原生**的仅追加 JSONL 树。它是一种独立格式，而非 pi 会话格式的副本。当前 v1 格式只表示 pi 会话概念的精选子集：仅追加历史、基于父链接的分支、压缩摘要、活跃 leaf 指针，以及基于 opi Rust crate 实现的持久化扩展状态。它**不**保证 pi session v3 的文件读写兼容性（见 9.4）。
-
-会话持久化从第 2 阶段开始，而非第 1 阶段。目标格式是仅追加的版本化 JSONL。第一行是头部：
-
-```json
-{"type":"session","version":1,"id":"018f...","timestamp":"2026-05-20T12:00:00Z","cwd":"/repo","parent_session":null}
-```
-
-后续行是树条目：
-
-```json
-{"type":"message","id":"a1b2c3d4","parent_id":null,"timestamp":"2026-05-20T12:00:01Z","message":{"role":"user","content":[{"type":"text","text":"Read src/main.rs"}]}}
-{"type":"message","id":"b2c3d4e5","parent_id":"a1b2c3d4","timestamp":"2026-05-20T12:00:02Z","message":{"role":"assistant","content":[{"type":"text","text":"I'll inspect it."}],"stop_reason":"tool_use"}}
-{"type":"compaction","id":"c3d4e5f6","parent_id":"b2c3d4e5","timestamp":"2026-05-20T13:00:00Z","summary":"The session inspected CLI scaffolding.","first_kept_entry_id":"b2c3d4e5","tokens_before":45000,"tokens_after":8000}
-```
-
-会话条目类型分为 v1 表面和第 13 阶段的增补条目。第 13 阶段保留头部 **版本 1**；新增的 metadata/context 条目是**增补**的，opi 在 v1 文件上直接读取它们，无需把自动迁移作为正常 resume 的前置条件。v1 会话保持可读和可恢复。
-
-| 类型 | 状态 | 用途 | LLM 上下文 |
+| ID | 要求 | 责任方 | 验证方式 |
 |---|---|---|---|
-| `message` | v1 | 用户、助手或工具结果消息 | 是 |
-| `compaction` | v1 | 摘要加首个保留的条目 | 是 |
-| `leaf` | v1 | 当前分支指针 | 否 |
-| `extension_state` | v1 | 持久化扩展状态 | 否 |
-| `session_info` | 第 13 阶段（在 v1 上增补） | 会话名称和元数据 | 否 |
-| `model_change` | 第 13 阶段（在 v1 上增补） | 选择的供应商/模型已更改 | 否 |
-| `thinking_level_change` | 第 13 阶段（在 v1 上增补） | 思考级别已更改 | 否 |
-| `label` | 第 13 阶段（在 v1 上增补） | 用户标记或书签 | 否 |
-| `branch_summary` | 第 13 阶段（在 v1 上增补） | 用于 tree/context 重建的父分支摘要 | 是 |
-| `custom_message` | 推迟 | 扩展提供的上下文消息 | 可配置 |
+| PRIN-001 | Agent 核心新增内容**必须（MUST）**通过删除测试：移除该 module 会使其复杂性重新出现在多个核心调用方中。 | Agent 核心维护者 | 归属论证和依赖评审。 |
+| PRIN-002 | 新的公开 seam **必须（MUST）**是 Agent 状态机的内在组成部分，或者由至少两个使用共享合规测试的真实 adapter 或使用方加以证明。 | interface 责任方 | 合规清单和测试。 |
+| PRIN-003 | 机制**必须（MUST）**位于策略之下；参考产品或扩展策略**不得（MUST NOT）**流入 Agent 核心依赖。 | workspace 维护者 | Cargo 依赖图和架构检查。 |
+| PRIN-004 | 权限、协议、adapter、证据和晋级边界处的选择**必须（MUST）**采取失败关闭策略。 | 边界责任方 | 负向路径测试和降级测试。 |
+| PRIN-005 | 正确性或改进声明**必须（MUST）**以不可变且可复现的证据为依据。 | 声明责任方 | 制品来源和验证记录。 |
 
-第 13 阶段成功标准：
+### 3.2 与 pi 对齐
 
-- 当需要这些条目时，新写入使用 v1 头部上的增补第 13 阶段条目（头部版本号保持 1）；
-- v1 session 仍可读取和恢复；
-- 当存在 label、name、model change、thinking change、branch summary 和 custom message 时，分支重建、`--list-sessions`、resume、fork、clone 和 tree 视图行为确定；
-- 合约测试覆盖 v1 fixture、增补第 13 阶段条目 fixture、不完整最后一行、损坏的中间条目、未知未来条目类型、活跃 leaf 重建，以及 branch-summary context 重建。
+pi 是持续演进的设计参考，而不是 Opi 的发布管理者。对齐工作将每项信号归为以下类别之一：
 
-崩溃恢复可以忽略不完整的最后一行。损坏的中间条目（畸形 JSON 或缺少必需字段）应当作为诊断报告；自动跳过中间条目应要求显式恢复模式。未知的未来条目类型——格式良好的 JSON 但其 `type` 字段无法识别——会被跳过并计数，但不会跨 read+rewrite 保留；读取器把未知未来条目与损坏中间条目分开，便于在诊断中区分二者。
+1. 应保留的长期 Agent 核心语义；
+2. 应观察的有用但不稳定的实验；
+3. 应保留在 Agent 核心之外的产品或生态能力；或者
+4. Rust 不应复制的实现偶然性。
 
-会话文件是敏感内容：它们包含提示词、工具输出、模型与思考选择，以及可能的泄露密钥。本地导出（`opi --export-session <id-or-path> --format markdown|json --output <file>`）渲染活跃分支或完整树，应用第 7 阶段的脱敏模式，并可通过 include/exclude 标志省略工具输出或思考内容。导出是本地且用户可控的：它只写入请求的输出文件，并在成功或失败时保持源会话不变。交互式 `/export` 以及任何 web/share/会话发布路径都推迟到后续产品打磨。
+新的 pi package 不会确立优先级。源码证据可以触发归属复审或路线修订，但是否修改本规范由人工塑形决定。
 
-会话 fork 命令会创建新的会话文件。新 header 的 `parent_session` 字段指向源会话 ID，复制的条目来自与 resume 相同的活跃分支重建路径。Fork 绝不能改写源会话文件。
+### 3.3 Rust 原生选择
 
-同文件分支创建使用 append-only 树模型：运行时 message 条目使用当前活跃 tip 作为 `parent_id`，compaction 条目链接到前一个活跃 tip 下，turn/compaction 完成后追加 `leaf` 指针来标记活跃分支。选择较早的分支 tip 后继续对话，会在同一个 JSONL session 中创建新的 sibling path，而不会改写旧条目。
+Rust 设计应优先采用：
 
-### 9.4 为何不使用 pi Session v3
+- enum 表达封闭的协议和状态机选项；
+- 显式所有权处理取消、会话绑定和可变权威；
+- 在经验证的 seam 使用 trait，并在编译期已知具体类型时使用 generic；
+- 在公开边界使用类型化错误和失败关闭式解码；
+- 在流式处理路径使用有界缓冲区和显式背压；以及
+- 当跨语言复用比进程内耦合更有价值时，使用独立二进制文件或进程协议。
 
-opi 的会话 JSONL 是一种 Rust 原生格式，它表示 pi 会话概念的精选子集，但**不**保证 pi session v3 的文件兼容性。Opi 保留了 pi 的仅追加历史、分支、压缩和会话元数据理念，但不使用其文件格式，因为 pi 存储 TypeScript 特定的扩展数据，opi 有独立的配置/package 计划，且意外的部分兼容性会产生误导。opi 刻意不沿用的概念包括：pi 的 TypeScript 特定扩展条目、其磁盘编码，以及任何“pi v3 会话文件可被 opi 打开、恢复或追加”的保证。未来的迁移命令可以将 pi v3 会话转换为 opi 会话，但在此之前两种格式不可互换。
+Rust 不能成为拆分浅层 crate、为一个假想 adapter 创建 trait，或将生态策略移入 library 的理由。
 
-### 9.5 压缩
+## 4. 系统归属与依赖方向
 
-压缩从第 2 阶段开始，在会话存储存在之后。
+### 4.1 归属词汇
 
-触发条件：
+**Agent 核心**、**参考产品**、**扩展生态**、**独立伴生产品**、**自主项目**和**归属复审**的规范定义位于 [CONTEXT.md](CONTEXT.md)。本章应用这些术语，不重新定义它们。
 
-- 手动；
-- 基于阈值；
-- 上下文溢出恢复。
+| 层级 | 当前归属 | 可以依赖 | 不得要求 |
+|---|---|---|---|
+| Agent 核心 | `opi-ai`、`opi-agent` | 产品中立的 library 和经验证的 adapter | TUI、编程工作流、评测、学习、晋级、可选扩展 |
+| 参考产品 | `opi-tui`、`opi-coding-agent` 和 `opi` 二进制文件 | Agent 核心和扩展 interface | 采用所有可选工作流 |
+| 扩展生态 | 技能、主题、提示词片段、工作流 package、存储和远程会话 adapter | 已发布的 Opi 扩展/package interface | 更改 Agent 核心语义 |
+| 独立伴生产品 | `opi-sandbox`、其最小协议和规划中的跨 Agent 评测产品 | Agent 中立的契约 | Opi 产品 crate 或最小运行时激活 |
 
-结果必须记录摘要、`first_kept_entry_id`、压缩前后的 token 数、原因，以及摘要是来自核心还是钩子/扩展。如果在溢出恢复期间压缩失败，代理必须显示可见错误而非静默丢弃历史。
+此表记录当前归属，而非永久性的 crate 拓扑。
 
-## 10. CLI 和运行时表面
+| ID | 要求 | 责任方 | 验证方式 |
+|---|---|---|---|
+| PLACE-001 | 依赖项**必须（MUST）**指向内部最小的稳定 interface；Agent 核心**不得（MUST NOT）**依赖参考产品、评测、学习或晋级 module。 | workspace 维护者 | Cargo metadata 和架构评审。 |
+| PLACE-002 | 解决 Agent 中立问题的能力**必须（MUST）**从 Opi 产品 crate 之外起步，并公开 Agent 中立的契约。 | 能力责任方 | 归属论证和独立构建。 |
+| PLACE-003 | workspace 位置、仓库位置、品牌和组织归属**必须（MUST）**独立决定。 | 产品维护者 | 归属复审和发布 metadata。 |
+| PLACE-004 | 实验性能力**不得（MUST NOT）**通过 feature flag 或不稳定标签进入 Agent 核心。 | Agent 核心维护者 | 公开 interface 和依赖扫描。 |
+| PLACE-005 | 现有代码**可以（MAY）**保留在原处，直至归属复审证明存在实质性的依赖、权威、发布或维护损害。 | module 责任方 | 已记录的归属论证。 |
 
-交互模式是 stdin 为 TTY 时的默认模式。它拥有终端初始化、渲染、输入编辑、取消键、工具选择 UX 和任何扩展提供的提示。
+### 4.2 参考产品的职责
 
-非交互模式从 argv 或 stdin 接收一个提示，将助手文本流式输出到 stdout，将诊断信息写入 stderr，并以显式状态退出。
+参考产品可以负责 CLI/TUI 交互、配置组装、凭据交互、默认编程工具、会话导航、诊断和 package 激活。这些选择不得重新定义 Agent 核心状态机，也不得成为嵌入方的强制要求。
 
-建议的退出码：
+### 4.3 生态与独立性
 
-| 码 | 含义 |
-|---:|---|
-| 0 | 成功 |
-| 1 | 一般运行时失败 |
-| 2 | 无效的 CLI 用法或配置 |
-| 3 | 认证失败 |
-| 4 | 重试后的供应商/网络故障 |
-| 5 | 未恢复的工具故障 |
-| 130 | 被用户中断 |
+Opi 特有的可选工作流属于扩展生态。当一项能力无需 Opi 即具备完整价值、拥有自己的制品和错误模型、可通过公开契约集成，并且在缺失或失败时不会改变最小运行时，它便属于独立伴生产品。
 
-JSON 模式属于第 2 阶段范围。在事件 schema 有合约测试后，它向 stdout 每行输出一个 `AgentSessionEvent` JSON 对象。人类可读的日志发送到 stderr。第 2 阶段 JSON 模式应当接近 pi 的事件模型，但必须包含 opi schema 版本。
+仓库拆分要求具备独立的构建/测试/发布运作能力、至少两个真实使用方且其中一个位于 Opi 之外、经验证并已版本化的 seam、不同的生命周期需求、完整的运维责任、正向净价值以及可逆迁移。脱离 Opi 品牌还要求具有在没有 Opi 时仍能完整成立的使命、用户群、治理和身份。
 
-RPC 模式是第 4 阶段早期可扩展性表面。它应使用严格的 JSONL 帧：stdin 上每行一个命令，通过可选 `id` 关联响应，stdout 上发送异步事件。RPC 和 SDK 组合应先于动态插件运行时，因为它们贴近 pi 的进程集成模型，同时不会扩张核心策略。
+## 5. 长期能力阶梯
 
-RPC `session_info` 始终返回 `model` 和 `resources`。没有活跃 session 时，来源于
-session 的字段（`session_id`、`name`、`labels`、`active_branch`、`thinking`、
-`entry_count`、`branch_summary`、`branches`、`tree_recovery`）缺省。有活跃
-session 时，若没有适用的 `session_info` 条目则 `name` 为 `null`，没有适用 label
-则 `labels` 为空数组；内容 tip 出现前 `active_branch` 缺省；活跃分支没有摘要时
-`branch_summary` 缺省；读取干净时 `tree_recovery` 缺省；只有 session 文件无法用于
-tree 重建时才出现 `tree_read_error`。
-
-默认的 extension 执行策略是显式注册，而不是动态加载 Rust 库。嵌入方可以通过 `ExtensionRegistry` 注册进程内 Rust extension；外部 package 应通过进程/RPC adapter 暴露可执行行为，把 package 命令转换为 `extension_command` 等 SDK 命令。package/resource discovery 默认只代表元数据和资源组合，除非 adapter 显式注册可执行代码。核心二进制默认不得 `dlopen` 任意 Rust crate，也不得为了保留 pi 的 TypeScript extension 机制而要求 Node/`jiti`。
-
-### 10.1 Package CLI
-
-第五阶段添加了 `opi package` 子命令组，在 provider 构造之前运行。这是 Rust 原生 package 和 process-adapter MVP，不是 pi package 生态对等实现：
-
-| 命令 | 用途 |
-|---|---|
-| `opi package add <source>` | 从本地目录或 git 来源安装 package |
-| `opi package remove <name>` | 卸载 package |
-| `opi package list` | 列出已安装的 package（支持 `--json`） |
-| `opi package doctor` | 诊断 package 问题（支持 `--json`） |
-
-Package 会记录在全局用户配置目录（`packages.toml` 和 `package-lock.toml`）或项目 `.opi/` 目录（`.opi/packages.toml` 和 `.opi/package-lock.toml`）中。Git package checkout 会缓存在所选 scope 的 `package-cache/` 下。lock 会记录来源路径、可选 git commit、缓存路径和 manifest 哈希。
-
-`opi package add` 会验证 package manifest、记录声明并写入 lock 条目。运行时启动会读取已安装声明和 lock 状态，不需要 `config.packages.paths` 也能解析有效 package，启动有效的 adapter package，并报告 adapter 启动诊断。`opi package doctor` 会验证来源可用性、lock 一致性、manifest V2、资源路径包含关系、opi 版本约束和 adapter 命令解析。
-
-Package 是受信任代码。安装 package 后，其 adapter 子进程会以与 `opi` 相同的操作系统权限运行；第五阶段 package 代码不会被 sandbox，package 权限声明也不会由 package manager 执行。
-
-第五阶段支持级别：
-
-| 能力 | 状态 | 说明 |
-|---|---|---|
-| 本地 package 声明 | 支持 | package 来源可以是本地目录 |
-| git package 声明 | 支持 | lock 在可用时记录 commit/cache 元数据 |
-| `process-jsonl` adapters | 实验性 | `opi-extension-jsonl-v1` 是诚实的 0.x 协议，不是稳定的 1.0 契约 |
-| adapter tools、commands、hooks、state、cancellation | 实验性 | 通过现有 extension interface 桥接 |
-| npm package 安装 | 不支持 | 不声称 pi npm package 兼容性 |
-| marketplace 行为 | 第五阶段不存在 | 没有 registry 搜索、评分、发布或 marketplace 更新策略 |
-| package update/config/enable/disable | 第五阶段不支持 | 可以作为未来 package manager 工作 |
-| TypeScript extension live reload | 有意不支持 | opi 不保留 pi 的 `jiti` extension ABI |
-| 通过 adapter 拦截 provider stream | 第五阶段不存在 | provider 宽度应通过现有 provider module 或显式 registry/profile 工作获得 |
-| 自定义终端 UI adapter 渲染 | 第五阶段不存在 | TUI extension UI 需要单独审查设计 |
-| package 权限策略执行 | 第五阶段不存在 | 声明可以作为元数据，但 package manager 不执行这些权限 |
-
-### 10.2 进程 Adapter
-
-带有 `[adapter]` 声明的 package 以子进程 adapter 方式运行。第五阶段 MVP 支持 `process-jsonl` adapter 类型和 `opi-extension-jsonl-v1` 协议。此处记录的行为是**诚实的 0.x 协议**：它记录的是当前实现实际观察到的行为，而非稳定的 1.0 契约，次版本之间可能变更。
-
-协议与类型的校验是**启动期的 manifest 门控**，而非线路握手。运行时启动时，`start_adapters_from_packages` 只启动 manifest 中声明 `protocol = "opi-extension-jsonl-v1"` 且 `kind = "process-jsonl"` 的 adapter。声明其他值的 package 会被跳过，并产生一条同时指明期望值与实际值（协议或类型）的诊断；该 package 的静态资源仍会加载。`initialize` 消息携带 host 协议字符串仅作信息用途，但 `capabilities` 响应不携带版本字段，因此 host 不会在线路上进行版本比较。
-
-Adapter 按确定性的顺序启动：按 `(layer_precedence, package 名称)` 升序，使工具与 hook 的组合在不同会话间可复现。
-
-Adapter 生命周期：
-
-1. harness 使用配置的命令和参数启动 adapter 子进程。
-2. harness 发送 `initialize` 消息；adapter 回复 `capabilities`（工具、命令、hooks、model overrides）。
-3. 运行时，harness 将 adapter 能力桥接到现有 `Extension` trait 方法：`on_command`、`on_before_tool_call`、`on_after_tool_call`、`on_event`、`serialize_state`、`restore_state`。只有 adapter 在 `capabilities.hooks` 中声明过的 hook 才会被分发。
-4. adapter 工具合并到工具集中；adapter hooks 通过 `ExtensionRegistry::wrap_hooks` 与 `CodingAgentHooks` 组合。
-5. 普通 registry teardown 是 best-effort kill-only，不保证发送协议 `shutdown`；显式 `AdapterHost::shutdown` 才是带协议握手的关闭路径。
-
-请求/响应关联：请求 id 由 host 生成。每个请求携带一个 `id`；adapter 在响应中返回同一个 `id`。响应按 `id` 匹配到在途请求，无主消息（例如不带 `id` 的 `error`）会被忽略。
-
-超时与取消：initialize 握手有启动超时，每个请求有独立的请求超时。若握手超时或 adapter 在启动期间退出，该 adapter 不会被注册并产生诊断。若单个请求超时，该请求以超时错误失败，host 仍可继续使用。`cancel` 是尽力而为且不要求响应；host 仍会强制执行本地超时。`before_tool_call` hook 超时时失败关闭（阻止该工具）；`after_tool_call` hook 超时时失败放行（结果保留）。
-
-事件与状态：`event` 是即发即弃；若 adapter 的 stdin 被背压，事件会被丢弃并记录诊断。`state_serialize` 与 `state_restore` 往返 adapter 状态用于会话持久化。
-
-关闭与崩溃：显式 `AdapterHost::shutdown` 会发送尽力而为的 `shutdown` 消息，等待宽限超时，并在子进程未退出时强制终止。普通 registry teardown 是 best-effort kill-only，因为 process adapter 通过共享 registry 引用持有。若 adapter 进程在成功握手后退出，在途请求以不可用失败，运行时 adapter 进入降级状态。
-
-Adapter 协议消息：`initialize`、`capabilities`、`tool_call`、`command`、`hook`、`event`、`state_serialize`、`state_restore`、`cancel`、`shutdown`。所有消息都是通过 stdin/stdout 的单行 JSON，带有相关联的 `id` 字段。
-
-未被路由到已注册 extension 的 adapter 命令可通过 RPC `extension_command` 分发使用。
-
-## 11. 跨领域运行时关注点
-
-### 11.1 错误处理
-
-| 层 | 方法 |
-|---|---|
-| `opi-ai` | 类型化 `ProviderError` 加流 `Error` 终端事件 |
-| `opi-agent` | 类型化 `AgentError`、`ToolError`、`SessionError` |
-| `opi-tui` | 类型化终端/渲染错误 |
-| `opi-coding-agent` | 顶层使用 `anyhow::Result` 进行错误聚合；映射退出码；库错误通过 `From` impl 转换 |
-
-库 crate（`opi-ai`、`opi-agent`、`opi-tui`）必须使用 `thiserror` 定义类型化错误，禁止在公共 API 中暴露 `anyhow`。`opi-coding-agent` 可以在类型化错误对最终用户无附加价值时使用 `anyhow`（或 `eyre`）进行顶层错误聚合。
-
-库 crate 必须避免使用 `unwrap` 和 `expect`，除非在测试或可证明安全的静态初始化中。
-
-### 11.2 取消和背压
-
-取消使用 `tokio_util::sync::CancellationToken`，组织为三层树结构：
+该阶梯表达能力依赖关系，而非交付状态。第 9 章的战略优先级在前置条件已经满足的目标中进行选择。
 
 ```text
-session_token（程序退出 / 重复 Ctrl+C）
-  └── operation_token（当前代理轮次 / 首次 Ctrl+C）
-        └── tool_token（单个工具执行 / 工具超时）
+模型运行时
+    ↓
+推理与上下文管理
+    ↓
+Agent 执行
+    ↓
+持续学习
+    ↓
+受控自我迭代
+
+评测 / 可观测性治理 Agent 执行及其后的每一层阶梯。
 ```
 
-取消语义：
-
-- 首次 Ctrl+C 取消 `operation_token`：中止活跃的供应商请求和任何正在运行的工具执行。代理返回空闲状态（准备接收新输入）。
-- 第二次 Ctrl+C（或空闲时 Ctrl+C）取消 `session_token`：触发优雅关闭（刷新待写入的会话、恢复终端状态、退出）。
-- 工具超时仅取消受影响的 `tool_token`。在并行执行模式下，批次中的其他工具继续执行。在顺序模式下，超时工具之后放弃该批次。
-- `Agent::abort()` 以编程方式取消 `operation_token`（等同于首次 Ctrl+C）。
-- 丢弃供应商流应当通过 `operation_token` 或 `Request::cancel` 字段取消底层 HTTP 请求。
-
-附加规则：
-
-- 供应商流应当使用有界通道传播背压。
-- 工具子进程在取消时必须被终止或刻意分离。
-- 子令牌按操作和按工具创建；禁止超出其父作用域的生命周期。
-
-### 11.3 可观测性
-
-opi 的可观测性是**本地且显式**的。共享诊断、本地 trace envelope 与 `opi doctor` 命令仅针对本地状态运行——从不回传，不传输 telemetry 或 analytics，也不会自动共享会话。这是**不稳定 0.x** 表面：诊断 code、trace envelope 形状以及 `--json`/RPC 事件字段在次版本之间可能变更，直到后续阶段才将其稳定。
-
-`tracing` span 应当覆盖供应商调用、SSE 解析、代理轮次、工具执行、会话追加/加载、压缩和重试调度。密钥和原始供应商载荷必须默认脱敏。非交互 CLI trace 只会在通过 `--trace` CLI 标志显式请求时生成。RPC 会话只在本地内存中保留最新一次运行的已脱敏 trace envelope，并且只在客户端发送 `trace` 命令时暴露；trace 不会自动持久化。trace 消费方必须容忍取消、provider failure 或 trace setup failure 在轮次中途退出时出现只有 `TurnStarted`、没有对应 `TurnEnded` 的记录。
-
-### 11.4 性能目标
-
-| 指标 | 目标 | 验证方式 |
-|---|---:|---|
-| 启动到首次提示 | 小于 100 ms | 无网络的 CLI 初始化基准测试 |
-| 首 token 显示开销 | 供应商增量加小于 50 ms | 模拟流式供应商 |
-| TUI 帧率 | 30 FPS 目标 | 终端快照/性能固定 |
-| 空闲内存 | 小于 50 MB | release 冒烟测量 |
-| release 二进制大小 | 小于 20 MB 目标 | release 产物检查 |
-
-## 12. 测试策略
-
-| 级别 | 所有者 | 要求的覆盖范围 |
-|---|---|---|
-| 单元 | 每个 crate | 消息转换、schema 验证、配置解析、路径处理 |
-| 供应商合约 | `opi-ai` | SSE 固定、终端事件、错误映射 |
-| 模拟循环集成 | `opi-agent` | 预设供应商事件和模拟工具 |
-| 会话往返 | `opi-agent` | JSONL 追加/加载、树重建、压缩 |
-| 工具测试 | `opi-coding-agent` | 临时目录文件工具、命令超时/取消 |
-| CLI E2E | `opi-coding-agent` | `--help`、`--version`、非交互模拟运行、退出码 |
-| TUI 快照 | `opi-tui` | 固定大小的确定性渲染输出 |
-| JSON 合约 | `opi-coding-agent` | NDJSON schema 和行帧 |
-| 实时供应商 | `opi-ai` | 由环境变量门控的被忽略测试 |
-| 模糊/属性 | 选定 crate | JSONL 加载器、供应商解析器、工具参数 schema |
-
-第 1 阶段必须包含模拟供应商测试框架。实时供应商测试不够充分，因为它们缓慢、付费、不稳定且依赖凭据。会话往返、JSON 合约和会话加载器模糊/属性测试在相应的第 2 阶段功能实现时变为必需。
-
-当前 CI 门控：
-
-- `cargo fmt --all --check`；
-- `cargo clippy --workspace --all-targets`；
-- `cargo test --workspace --all-targets`；
-- `cargo test --workspace --doc`；
-- `RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps`。
-
-## 13. 安全和风险
-
-### 13.1 威胁模型
-
-Opi 以用户权限运行本地工具。主要风险是危险的本地命令、密钥泄露、敏感会话文件和凭据处理不当。
-
-### 13.2 要求
-
-- API 密钥禁止被日志记录或写入会话。
-- 会话必须被记录为敏感内容。
-- `bash` 必须具有超时、工作目录控制、环境策略、取消行为和可见命令文本。
-- 文件工具必须有意地解析路径，并记录路径是在工作区内还是外。
-- 路径遍历可以被允许，但工具 allowlist 或扩展钩子应当能够限制它。
-- 供应商 HTTP 必须默认使用 TLS。
-- 第 1 阶段必须包含对 `write`、`edit` 和 `bash` 的可审计性；变异工具和 shell 执行必须可见、有界，并在非交互模式下可被显式控制。
-- Opi 核心不应把永久权限弹窗子系统作为第 3 阶段目标。需要环境特定门禁的用户应使用容器、只读工具 allowlist、钩子、扩展或包。
-
-结构化参数降低了 shell 注入风险，但调用 shell 仍然执行模型提供的命令文本。缓解措施是可见性、可审计性、工具 allowlist、超时、工作目录/环境控制、扩展钩子和谨慎的命令构建。
-
-### 13.3 风险登记
-
-| 风险 | 影响 | 可能性 | 缓解措施 |
-|---|---|---:|---|
-| 供应商 API 漂移 | 高 | 中 | 固定测试和窄适配器 |
-| 仅 Anthropic 的 MVP 令对等预期失望 | 中 | 中 | 发布清晰的阶段范围 |
-| 会话 schema 过早稳定 | 高 | 中 | 在合约测试通过前保持 v1 不稳定 |
-| Bash 工具执行破坏性操作 | 高 | 高 | 顺序模式、可见命令、超时、工具 allowlist、扩展钩子 |
-| 密钥泄露到日志/会话 | 高 | 中 | 脱敏测试和密钥类型 |
-| Windows TUI 问题 | 中 | 中 | crossterm 测试和 Windows 冒烟检查 |
-| 过早发布到 crates.io | 高 | 中 | 门控首次发布于真实实现、文档和合约测试；如果这些门控未在 0.2.0 达标则推迟 crates.io |
-| 扩展范围膨胀核心 | 中 | 高 | 最小核心规则 |
-| MCP 变成核心范围蔓延 | 中 | 中 | 扩展 API 稳定后将 MCP 保持为扩展/包示例 |
-| 重复的会话堆栈 | 高 | 中 | 显式的 Harness vs CodingHarness 所有权 |
-
-## 14. 发布和版本控制
-
-所有 crate 共享一个工作区版本。
-
-| 版本 | 里程碑 | 发布方式 |
-|---|---|---|
-| 0.1.0 | 脚手架 | 仅 GitHub Release |
-| 0.2.0 | 第 1 阶段 MVP | GitHub Release；crates.io 仅在发布门控通过时 |
-| 0.3.0 | 第 2 阶段持久化和供应商 | GitHub + crates.io |
-| 0.4.0 | 第 3 阶段生产加固 | GitHub + crates.io |
-| 0.5.0 workspace | 第 4 阶段可扩展性基底 | 可发布 crate 走 GitHub + crates.io |
-| 0.5.1 workspace | 第 5 阶段 Rust 原生 package 和 process-adapter MVP | 可发布 crate 走 GitHub + crates.io |
-| 0.5.2 workspace | 第 6 阶段文档对齐与可靠性加固 | 可发布 crate 走 GitHub + crates.io |
-| 0.5.3 workspace | 第 7 阶段可靠性与可观测性加固 | 可发布 crate 走 GitHub + crates.io |
-| 0.5.4 workspace | 第 8 阶段运行时稳定化 | 可发布 crate 走 GitHub + crates.io |
-| 0.6.0 workspace | 第 9-14 阶段路线图重校准 | 仅 GitHub 的规划/文档发布 |
-| 0.6.1 workspace | 第 9 阶段 pi 0.80.2 基线证据账本与文档守卫 | 仅 GitHub 的规划/文档发布 |
-| 0.6.2 workspace | 第 10 阶段架构深化：provider collection/auth、通用 harness 与 session facade 缝合点 | 可发布 crate 走 GitHub + crates.io |
-| 0.6.3 workspace | 第 11 阶段工具质量：内置工具加固、工具结果诊断与元数据、公共表面脱敏与 provider wire 一致性 | 可发布 crate 走 GitHub + crates.io |
-| 0.6.4 workspace | 第 12 阶段 provider 正确性：provider 错误分类与安全诊断、OpenAI-compatible profile 兼容性标志、覆盖所有内置 family 的 fixture-backed provider wire，以及 provider 正确性文档守卫 | 可发布 crate 走 GitHub + crates.io |
-| 0.6.5 workspace | 第 13 阶段会话树与上下文重建：类型化前向兼容 session entry、跨 resume/fork/list/export 的可复用上下文重建、交互式 session 元数据命令、本地脱敏 session 导出，以及 RPC/TUI session 交接元数据 | 可发布 crate 走 GitHub + crates.io |
-| 0.7.0 workspace | 第 13 阶段之上的 interim release：NDJSON 线性文本增量（通过 `--json-compact`）、session 摘要中的 provider turn 计数、opi-document 文档技能与 Artifact Truthfulness Gate / opi-eval 评测技能，以及对自定义 chat-completions 端点路径、运行时消息时间戳和 read 工具工作区路径脱敏的修复 | 可发布 crate 走 GitHub + crates.io |
-| 0.7.1 workspace | 第 14 阶段 provider/auth：OS keychain 凭证持久化（Windows Credential Manager、macOS Keychain Services、Freedesktop Secret Service）带 env API-key 回退，以及 Anthropic Browser PKCE、GitHub Copilot Device Code 和 OpenAI Codex Browser/Device Code 的交互式 `/login` / `/logout`；每请求 auth 再解析与类型化凭证失败；经审计的 GitHub Copilot 与专用 OpenAI Codex provider 目录；公共 `ApiMappedProvider` 与 `[providers.custom.<id>]` 多 wire 路由；wire 感知的模型元数据、定价与 cache/reasoning 用量核算；请求标量与 session-affinity；以及使 Unix keychain 后端可编译、并在 read/write/edit/ls/find 之间补全工具路径相对化的修复 | 可发布 crate 走 GitHub + crates.io |
-| 0.7.2 workspace | 第十五阶段 safety/trust：可选的 OS 原生 `bash` 子进程树 sandbox（常开 L0 树级终止基线加可选 strict 层——Linux seccomp 新建 socket 门控 + Landlock TCP、macOS `sandbox-exec`、Windows kill-on-close Job Object；纵深防御，不是安全边界）、按工具的 `Operations` 接缝（`FileOperations`/`BashOperations`）、启动期项目信任门（`trust.json`、`doctor`/`--list-models` 的 headless 预检、交互式 `TrustChoice`），以及当 OS keychain 操作性不可用时回退到 env API key 的 `--list-models` 凭证列表 | 可发布 crate 走 GitHub + crates.io |
-| 0.7.3 workspace | 第十六阶段可插拔命令执行：模型可调用的 `command.execute` 能力，默认 Minimal Runtime，可安装的外部执行适配器经过 Installed/Trusted/Enabled/Selected/Permitted 生命周期门控；新增 `opi-protocol`（`command-execution-jsonl-v1`）与独立 `opi-sandbox` crate，提供 Linux Landlock+seccomp 与 macOS `sandbox-exec` 原生限制（Windows 仅 L0 Job-Object，无官方归档）；脱敏的稳定 `ExecutionFailure` 错误码、`package.toml` 字节精确的信任哈希，以及执行诊断。已知限制：macOS seatbelt 不会将调用方 `TMPDIR` 传播到受沙箱目标，因此基于 `$TMPDIR` 的临时写入在 macOS 上被拒绝（Linux 不受影响） | 可发布 crate 走 GitHub + crates.io |
-
-首次 crates.io 发布由质量门控，而非仅由版本号决定。如果所有已发布的 crate 暴露真实的、文档化的行为而非占位公共 API，公共文档构建干净，合约测试覆盖已交付的供应商/工具/运行时边界，且发布技能的检查通过，它可以在 0.2.0 发生。如果这些门控未达标，crates.io 发布应当移至后续的 0.2.x 或 0.3.0 版本，同时 GitHub 二进制发布继续进行。因为二进制 crate 依赖内部库 crate，这些库应按依赖顺序一起发布。所有 0.x 公共 API 除非另有明确文档说明，否则为不稳定。
-
-发布流程应当遵循 `.claude/skills/opi-release/skill.md`：预检、版本升级、变更日志、检查、标签/草案发布、crates.io 发布、最终确认。crates.io 发布是不可逆的（只能 yank）；回滚应使用新提交和标签管理，而非强制推送的公开历史。
-
-发布 CI 构建：
-
-- `opi-linux-x64.tar.gz`；
-- `opi-linux-arm64.tar.gz`；
-- `opi-darwin-x64.tar.gz`；
-- `opi-darwin-arm64.tar.gz`；
-- `opi-windows-x64.zip`；
-- `opi-windows-arm64.zip`。
-
-`SHA256SUMS.txt` 应当与发布产物一起上传。Windows ARM64 是 Tier 2 目标，如果在 Tier 1 目标通过时特定目标的构建不稳定，应将其视为第 1 阶段 MVP 发布的非阻塞项。
-
-## 15. 实施路线图
-
-### 第 0 阶段 - 脚手架基线
-
-状态：在 0.1.0 中完成。
-
-| 任务 | 状态 |
-|---|---|
-| 四 crate 工作区 | 完成 |
-| 锁步版本控制 | 完成 |
-| 占位模块和重导出 | 完成 |
-| CI 门控 | 完成 |
-| 六平台发布工作流 | 完成 |
-| `opi --version` 和 `--help` | 完成 |
-| 仅 GitHub Release，crates.io 推迟 | 完成 |
-
-### 第 1 阶段 - MVP 基础
-
-目标：0.2.0。
-
-目标：仅 Anthropic 的编程代理，包含核心循环、六个工具、变异工具和 shell 执行的最小安全边界、基础 TUI、TOML 配置和模拟供应商测试。
-
-| # | 任务 | Crate | 完成定义 |
+| ID | 能力 | 长期成果 | 进入下一层阶梯所需的证据 |
 |---|---|---|---|
-| 1.0 | 引入第 1 阶段依赖 | 工作区 | 清单包含所需依赖并使用最小 feature，无未使用依赖警告 |
-| 1.1 | 消息和流类型 | `opi-ai` | 需要时可序列化；终端流事件已测试 |
-| 1.2 | 替换占位供应商 trait | `opi-ai` | `stream(Request)` 替换 `complete` |
-| 1.3 | Anthropic SSE 供应商 | `opi-ai` | 固定测试覆盖文本、工具调用、用量、错误 |
-| 1.4 | 供应商注册表 | `opi-ai` | 解析 `anthropic:model` 和能力 |
-| 1.5 | 工具 trait 和 schema 验证 | `opi-agent` | 无效参数成为错误工具结果 |
-| 1.6 | `agent_loop` | `opi-agent` | 模拟测试覆盖无工具和工具使用轮次 |
-| 1.7 | `Agent` 包装器 | `opi-agent` | prompt、continue、abort、subscribe 已测试 |
-| 1.8 | 钩子和队列 | `opi-agent` | before/after、should-stop、steering、follow-up 已测试 |
-| 1.9 | `read`、`write`、`edit`、`bash` | `opi-coding-agent` | 临时目录测试覆盖成功、失败、超时/取消、工作目录/环境报告和最小确认策略 |
-| 1.10 | `glob`、`grep` | `opi-coding-agent` | 测试覆盖忽略目录和正则错误 |
-| 1.11 | 系统提示构建 | `opi-coding-agent` | 提示包含工具定义和系统层 |
-| 1.12 | TUI 外壳 | `opi-tui` | 固定大小渲染快照 |
-| 1.13 | markdown/代码渲染 | `opi-tui` | markdown 和围栏代码快照 |
-| 1.14 | 交互式 CLI 连接 | `opi-coding-agent` | 可对模拟供应商运行 |
-| 1.15 | 非交互模式 | `opi-coding-agent` | stdout/stderr/退出码测试 |
-| 1.16 | TOML 配置加载 | `opi-coding-agent` | 缺失默认值和格式错误已测试 |
-| 1.17 | 集成测试框架 | 跨 crate | 模拟供应商 E2E 在 CI 中运行 |
-
-退出标准：`opi` 接受提示，流式传输 Claude 输出，在第 1 阶段安全边界后执行 `read/write/edit/bash/glob/grep`，在 TUI 中显示结果，支持带有显式高风险工具策略的非交互模式，并通过模拟供应商 CI 测试。会话、压缩、JSON 模式、MCP、插件、丰富 diff 视图和语法高亮代码块不是第 1 阶段退出标准。
-
-### 第 2 阶段 - 多供应商和持久化
-
-目标：0.3.0。
-
-| # | 任务 | Crate |
-|---|---|---|
-| 2.1 | OpenAI 兼容聊天供应商 | `opi-ai` |
-| 2.2 | OpenRouter 供应商配置 | `opi-ai` |
-| 2.3 | OpenAI Responses 供应商 | `opi-ai` |
-| 2.4 | Google Gemini 供应商 | `opi-ai` |
-| 2.5 | Mistral 供应商 | `opi-ai` |
-| 2.6 | opi session v1 JSONL 存储和合约测试 | `opi-agent` |
-| 2.7 | 会话列表/恢复/删除 | `opi-coding-agent` |
-| 2.8 | 压缩 | `opi-agent` / `opi-coding-agent` |
-| 2.9 | 思考/推理支持 | `opi-ai` |
-| 2.10 | 用量和成本追踪 | `opi-ai` |
-| 2.11 | diff 视图 | `opi-tui` |
-| 2.12 | 主题 | `opi-tui` |
-| 2.13 | 键绑定 | `opi-tui` |
-| 2.14 | `--json` NDJSON 模式 | `opi-coding-agent` |
-| 2.15 | 重试/退避/速率限制 | `opi-ai` |
-| 2.16 | 会话合约测试 | `opi-agent` |
-
-退出标准：会话在重启后存活，多个供应商通过合约固定测试，长对话在溢出前压缩，JSON 模式有 schema 测试。
-
-### 第 3 阶段 - 生产加固
-
-状态：完成于 0.4.0。
-
-| # | 任务 | Crate |
-|---|---|---|
-| 3.1 | AWS Bedrock 供应商 | `opi-ai` |
-| 3.2 | Azure OpenAI 供应商 | `opi-ai` |
-| 3.3 | Google Vertex 供应商 | `opi-ai` |
-| 3.4 | 图像输入 | `opi-ai` |
-| 3.5 | 图像工具结果 | `opi-agent` |
-| 3.6 | 终端图像渲染 | `opi-tui` |
-| 3.7 | `AGENTS.md` / `CLAUDE.md` 上下文加载 | `opi-coding-agent` |
-| 3.8 | pi 风格工具选择和安全钩子 | `opi-coding-agent` |
-| 3.9 | `find` / `ls` 内置工具对等 | `opi-coding-agent` |
-| 3.10 | shell 补全 | `opi-coding-agent` |
-| 3.11 | 模糊模型/会话选择器 | `opi-tui` |
-| 3.12 | 网络代理支持 | `opi-ai` |
-| 3.13 | 连接池调优 | `opi-ai` |
-
-跨平台二进制发布未在此列出，因为发布 CI 已是第 0 阶段的一部分。
-
-退出标准：企业供应商可用，图像和终端图像流程可用，项目上下文加载匹配 pi，高风险工具可通过 pi 风格工具选择/钩子保持可见且可控，发布产物可重复，交互式 UX 对日常使用足够健壮。
-
-### 第 4 阶段 - 可扩展性
-
-状态：当前 `0.7.3` workspace 中可扩展性基底已实现。
-
-| # | 任务 | Crate |
-|---|---|---|
-| 4.1 | 带严格 framing、关联响应、异步事件、extension commands，以及 session/model/thinking/compaction 命令的 RPC JSONL 模式 | `opi-coding-agent` |
-| 4.2 | 基于同一事件和命令模型的 SDK 嵌入表面 | `opi-coding-agent` / `opi-agent` |
-| 4.3 | 处理 `opi-agent::Transport`：实现、隐藏为不稳定 API，或在稳定公共 API 声明前移除 | `opi-agent` |
-| 4.4 | extension trait、生命周期 hooks、自定义工具、自定义命令、自定义消息和 extension state | `opi-agent` / `opi-coding-agent` |
-| 4.5 | 项目和用户资源的 extension/resource 加载策略 | `opi-coding-agent` |
-| 4.6 | 通过 SDK 或 extensions 注册自定义 provider/model | `opi-ai` / `opi-coding-agent` |
-| 4.7 | 渐进式发现的 skills、prompt fragments、themes 和 packages | `opi-coding-agent` |
-| 4.8 | extension/package 示例：permission gate、protected paths、sub-agent、plan mode、todo、MCP adapter | examples / package template |
-| 4.9 | 会话分支 UI | `opi-agent` / `opi-tui` |
-| 4.10 | streaming proxy | `opi-agent` 或新 crate |
-
-退出标准：第三方可以通过 RPC、SDK、extension API、发现到的资源、skills、prompt fragments、themes、packages 和自定义 provider/model 注册组合并扩展 opi，而无需修补核心 crate。MCP、子代理、plan mode、todos 和 permission gates 应作为 extensions 或 packages 演示，而不是核心功能。`Transport` 公共表面已经移除；除非有真实实现，否则不得重新作为稳定公共声明引入。
-
-### 第五阶段 - Rust 原生 Package 和 Process-Adapter MVP
-
-状态：当前 `0.7.3` workspace 中已实现。
-
-第五阶段添加了 package 管理和可执行 adapter 托管，使外部 package 可以通过子进程 adapter 提供工具、命令、hooks 和事件，而无需修补核心 crate。它有意不声称与 pi 的 npm package 生态、TypeScript extension runtime、热重载行为、marketplace 约定、provider streaming adapters、自定义 TUI adapters 或 package 权限执行对等。
-
-| # | 任务 | Crate |
-|---|---|---|
-| 5.1 | Package 存储和来源模型 | `opi-coding-agent` |
-| 5.2 | Package CLI MVP | `opi-coding-agent` |
-| 5.3 | 带有 adapter 和 opi_version 的 Manifest V2 兼容性 | `opi-coding-agent` |
-| 5.4 | Adapter JSONL 协议类型 | `opi-coding-agent` |
-| 5.5 | Adapter 进程托管 | `opi-coding-agent` |
-| 5.6 | Adapter 运行时桥接到 Extension trait | `opi-coding-agent` / `opi-agent` |
-| 5.7 | Harness 和启动集成 | `opi-coding-agent` / `opi-agent` |
-| 5.8 | 可运行的示例 adapter package | examples / `opi-coding-agent` |
-| 5.9 | 文档、对齐和守卫 | workspace |
-
-退出标准：`opi package add/remove/list/doctor` 对本地和 git package 声明可用；带有 `[adapter]` 段落的 package 以子进程方式启动并使用 `opi-extension-jsonl-v1`；adapter 工具、命令、hooks、状态和取消桥接到现有 extension API；示例 package（todo、permission-gate、protected-paths）演练完整流水线；文档如实描述，守卫测试拒绝关于 npm、marketplace、热重载、provider 流式 adapter、自定义 TUI adapter、package update/config/enable/disable 工作流或 package 权限执行的声明。
-
-### 第六阶段 - 对齐与可靠性加固
-
-状态：当前 `0.7.3` workspace 中已完成。
-
-第六阶段加固了第四/第五阶段表面的文档、package/runtime 集成、provider 配置行为和可靠性。它不改变核心范围：package adapters 和工作流示例仍是扩展基底路径，不是内置产品工作流。
-
-### 第七阶段 - 可靠性与可观测性加固
-
-状态：当前 `0.7.3` workspace 中已完成。
-
-第七阶段加入共享 diagnostics、redaction、provider/runtime 错误分类、可选本地 trace envelopes，以及 `opi doctor`。可观测性是本地且显式的；它不引入 telemetry、analytics、自动 session sharing 或稳定 1.0 trace 协议。
-
-### 第八阶段 - 运行时稳定化
-
-状态：当前 `0.7.3` workspace 中已完成。
-
-第八阶段文档化并测试了 runtime event order、hook 语义、tool scheduling/termination、cancellation、SDK/RPC command state、diagnostics/trace wire 行为和 public API surface classification。它保持 public API 为 0.x 成熟度，不声明 TypeScript extension API 兼容、package 生态扩张、provider OAuth login、MCP runtime、共享 `opi-types` crate 或整体 agent loop 重写。
-
-### 第九阶段 - pi 0.80.2 基线重校准
-
-状态：计划中的文档/证据门。
-
-第九阶段把项目基线从较早研究的上游快照更新到 `.repo/pi-0.80.2`，并记录修订后的第 9-14 阶段路线图。该阶段仅限文档：runtime 行为变更、代码迁移、OAuth、图像生成、自定义 UI 协议、npm/gallery 工作流、web/share 流程或 `pi` session 兼容承诺都不属于该阶段。
-
-退出标准：英文和中文规范文档都把 `.repo/pi-0.80.2` 命名为当前基线；`opi-agent` alignment 如实反映 generic harness 缺口；future ecosystem candidates 具有进入条件。（第九阶段最初维护一个持久对齐矩阵证据基线；持续对齐现在由 `opi-realign` 新鲜审计在 `docs/realign/` 下完成。）
-
-### 第十阶段 - 核心架构深化
-
-状态：进行中；初始缝合点已落地。
-
-第十阶段在扩张宽度前深化现有能力：
-
-| 工作流 | 归属 | 目的 |
-|---|---|---|
-| `Models/Auth` 缝合点 | `opi-ai` | provider collection/model lookup、可选 refresh、provider-owned auth、兼容性 metadata、stream/complete dispatch |
-| 通用 `AgentHarness` | `opi-agent` | phase guards、turn snapshots、save points、有序 pending writes、runtime config mutation semantics |
-| Session repo/facade | `opi-agent` | 面向第 13 阶段的稳定 durable append/load/entry-count traits 和有序 read/write facade；list/fork 仍由产品层拥有，保留在 `opi-coding-agent` |
-| Runtime hook boundaries | `opi-agent` / `opi-coding-agent` | 保持当前 hooks 狭窄，同时保留未来 provider/UI/session lifecycle 路径 |
-
-初始缝合点已横跨四个工作流落地：`opi-ai` 暴露已发布的 provider collection/auth 缝合点。`opi-coding-agent` 将 model listing 和 model-registry construction 路由经过该缝合点；活跃 runtime provider dispatch 仍使用现有 `Box<dyn Provider>` 路径，collection-level dispatch 采用推迟到经审查的 product-loop migration。`opi-agent` 暴露已发布的通用 `AgentHarness` 与 session facade 缝合点；产品 turn loop 采用已推迟到经审查的 product-loop migration，list/fork 仍由产品层拥有并保留在 `opi-coding-agent`。focused regression tests 覆盖既有行为，运行时钩子边界模型见下文。
-
-#### 会话 facade 边界
-
-第十阶段在 `opi-agent` 中加入稳定的 `SessionFacade` / `SessionRepo` 缝合点，使第十三阶段的 session-native context 条目不经由临时的 CLI-only 路径加入。`SessionRepo` 在 v1 session 文件之上拥有 durable append/load 与 entry-count 语义（v1 session 保持可读）；`SessionFacade` 在 repo 之上拥有有序 read/write，agent 发出的消息在 save points 处先于 pending extension/session writes 持久化。CLI 驱动的 session 构造（resume/fork/delete、分支选择）留在 `opi-coding-agent`；只有 durable storage 缝合点位于 `opi-agent`。增补条目集合（model/thinking 变更、labels、branch summaries、custom entries）推迟至第十三阶段。
-
-#### 运行时钩子边界
-
-第十阶段记录运行时钩子边界模型，使 `pi` 宽泛的 TypeScript 扩展面（provider 钩子、session lifecycle 钩子、自定义 UI、消息渲染器）不被复制进 Rust 核心。狭窄的核心循环钩子契约（`opi-agent::hooks::AgentHooks`）经过契约测试并留在 `opi-agent`；product extensions 与进程适配器不迁移进 `opi-agent`，除非具体的非 CLI 嵌入者需要托管。Provider 请求/响应钩子与自定义 TUI UI / 消息渲染器保持为未来生态候选，并具备明确前置条件（见下方未来生态候选）。
-
-| 表面 | 第十阶段归属 | 第十阶段动作 |
-|---|---|---|
-| 核心循环钩子 | `opi-agent` | 经契约测试且保持狭窄（`AgentHooks`：convert/transform/before/after/should_stop/prepare）。 |
-| 通用 harness 事件/结果 | `opi-agent` | 仅在 generic lifecycle 需要时设计 typed event/result reducer。 |
-| Coding-agent 扩展注册表 | `opi-coding-agent` / 桥接到 `opi-agent` | product 专属 commands、resources 与 packages 通过 `ExtensionRegistry` 组合。 |
-| 进程适配器协议 | `opi-coding-agent` | 拥有 `opi-extension-jsonl-v1` 解析与子进程托管；除非非 CLI host 需要，进程适配器协议不迁移进 `opi-agent`。 |
-| Provider 请求/响应钩子 | 未来候选 | 推迟；前提已在设计中满足（第十二阶段 correctness + 第七阶段 redaction + 第十四阶段 Request enrichment），消费者待定。 |
-| 自定义 TUI UI / 消息渲染器 | 未来候选 | 推迟至第二十阶段内置 TUI 稳定且设计了 UI/RPC 子协议。 |
-
-Typed hook result composition 由契约测试覆盖：扩展钩子在 base 钩子之后按注册顺序运行，`Block`/`Deny` 短路链条，coding-agent 进程适配器通过同一个 `ExtensionRegistry::wrap_hooks` 组合桥接（无绕过）。扩展 API 文档不声明 `pi` TypeScript 扩展 API 兼容为当前 `opi` 范围。
-
-非目标不声明：OAuth login、subscription auth、广泛 provider catalog 扩张、图像生成、自定义 TUI extension protocol、npm/package marketplace、browser/web、`pi` TypeScript API 兼容、`pi` session file 兼容、共享 `opi-types` crate 或整体 loop 重写。
-
-### 第十一阶段 - 工具质量
-
-状态：已完成于 Unreleased workspace changes。
-
-第十一阶段在第十阶段明确 harness/tool scheduling 边界后加固内置工具。已交付 tool-result contract、filesystem error taxonomy、read/write/edit/bash hardening、navigation-tool bounded work 与 skip diagnostics、diagnostics/trace lift 与 redaction、provider `is_error` propagation，以及 documentation/help guard tests。它刻意没有加入持久 background shells 或宽泛 permission-popup systems；权限弹窗不是核心行为。
-
-### 第十二阶段 - Provider 正确性
-
-状态：已完成于当前 `0.7.3` workspace。
-
-第十二阶段通过 fixture-backed lifecycle、error、auth、image-input、thinking、usage、retry、rate-limit 和 compatibility 测试加固现有 provider families 与 OpenAI-compatible profiles，全部经第十阶段的 provider collection/auth 缝合点路由。这不是 provider 宽度阶段。
-
-已交付的 provider 正确性面：九个内置 family（anthropic、openai chat、openai-responses、openrouter、mistral、gemini、bedrock、azure、vertex）加上 config-driven 的 OpenAI-compatible profile 承载按 family 的 request/streaming/tool-call/thinking/image/usage fixture；九类 provider 错误分类（auth、config、request、network、rate_limit、provider、stream、capability、cancelled）映射到安全诊断；OpenAI-compatible 的 `CompatConfig` 标志（`system_role_override`、`max_tokens_field`、`tool_result_name_field`、`usage_in_stream`、`strict_tool_schema`、`reasoning_effort`、`cache_key`、`require_assistant_after_tool_result`）和模型级 override 遵守 model-over-provider 优先级；其中 `require_assistant_after_tool_result` 仅表示面向遗留端点的兼容性元数据，不是由共享适配器在运行时强制执行的行为；`usage_in_stream` 会请求 `stream_options.include_usage`，并保留来自任意流式 chunk 的 usage 更新；按 profile 的静态请求 header（`extra_headers`）是独立的 profile 配置字段，不是 `CompatConfig` 标志；用量侧 cache token 和 provider response ID（Anthropic `message.id`、OpenAI Chat `chatcmpl-*`、Responses `resp_*`）回写到 `AssistantMessage::response_id`，其中 OpenAI Chat 会从任何携带 `id` 的 chunk 捕获 response ID，而不只是在 role chunk 中捕获；retry、partial-output no-retry、按 family 的取消和按 provider 的代理配置在无实时调用情况下覆盖；provider 构造执行结构与 provider-profile 校验并发出带安全补救的 auth/config 诊断，而托管凭据按 stream 解析，使 login、logout 和 refresh 无需重建 provider 即可生效。
-
-明确推迟：OpenAI Responses 的 `previous_response_id` 和服务端会话链（Responses 请求按 Chat-Completions 类比构造）；请求侧 prompt-caching 断点（`cache_key` profile 标志是可用的 cache-affinity 提示）；超出既有 per-model metadata 的图片数量/大小限制；广泛的 provider catalog 扩张。
-
-在第十二阶段，下列项目当时属于非目标；这份历史列表不覆盖后续阶段已批准的能力：OAuth 登录流程；Anthropic、OpenAI Codex 和 GitHub Copilot 订阅鉴权；大范围新增 first-class provider 列表；图像生成；浏览器使用；面向 package 的 provider 流式 adapter 协议；默认测试中的付费实时 provider 调用；复制 pi 的 provider 专用配置文件格式。尽力而为（best-effort）的费用映射保留显式未知值，而非推断虚假置信：缺失 usage 会被明确跟踪为未知，而当任一轮 usage 未知或定价未知时，会话费用汇总会被省略。
-
-### 第十三阶段 - 会话树与上下文重建
-
-状态：已实现基底及产品路径；由原第十一阶段重排而来。
-
-第十三阶段在第十阶段定义的 generic harness/session facade 语义之上深化 session-native context。它为会话元数据（`session_info`）、模型与思考变更（`model_change`、`thinking_level_change`）、标签（`label`）以及分支摘要（`branch_summary`）增加增补类型条目，同时保持 v1 文件可读且头部版本号保持 1。`custom_message` 推迟（见下）。导出为本地文件；web/share/session publishing 仍是未来生态范围。
-
-已实现条目及其产品路径：
-
-- `session_info`、`label` —— 交互式 `/name`、`/label`、`/unlabel`、`/session info`，RPC `session_info`，以及 `--list-sessions --json`（第 13.4 阶段）。
-- `model_change`、`thinking_level_change` —— 空闲态 `set_model_validated` 与 `set_thinking_level` 通过 `SessionCoordinator` 追加，且不推进活跃 leaf；resume 在兼容时应用记录值（第 13.3 阶段）。
-- `branch_summary` —— `opi-agent::session_context::reconstruct_context` 把父分支摘要作为 metadata-parented 消息注入重建的 LLM 上下文，并在存在时由 `opi-coding-agent` 转发给 provider（第 13.2 阶段基底）。同一 session 内合成的 `BranchSummaryMessage` 当前将 `parent_session_id` 置为 `""`、将 `entry_count` 置为 `0`，因为持久化条目只保存摘要文本；嵌入方应把这两个字段视为占位，直到跨 session 摘要注入携带更完整的来源信息。
-
-显式决策与推迟（每条均引用第 13 阶段设计）：
-
-- `branch_summary` 作为上下文重建和 provider 转换基底实现。其生成 UX 触发器——分支切换、fork、手动命令、扩展钩子——推迟到第十八阶段 Agent Intelligence；第 13 阶段不在这些触发器上自动生成分支摘要。
-- `custom_message` 的 provider-context 语义被推迟：扩展提供的上下文消息的 provider 转换与 transcript 规则尚未规定，因此第 13 阶段不提供 `custom_message` 写入器，并在读取时把未知 `custom_message` 条目当作其他未知未来条目处理。
-- 交互式 `/export` 推迟到第二十阶段界面产品化；第 13 阶段仅提供本地 `--export-session` CLI。
-
-Phase 13 交接：会话工作可以依赖经由共享 `opi-ai` 类型传递的 provider-correct usage、model、thinking 和 error 数据，而无需依赖 provider 专用内部实现。
-
-第 13 阶段非目标（记录为推迟，不属于当前核心）：
-
-- 不声明向量数据库。
-- 不声明语义记忆服务。
-- 不声明全局用户画像记忆。
-- 不声明跨项目记忆注入。
-- 不声明 pi session v3 读写兼容性。
-- 不声明云同步。
-- 不声明会话分享服务。
-- 不声明 Web UI 产品。
-- 不声明包生态扩张。
-- 不声明 provider 运行时、provider 鉴权、OAuth 或 `ProviderCollection` 调度重构。
-
-### 第十四阶段 - Provider & Auth
-
-状态：已实现；pi-0.80.6 对齐已完成。历史设计：
-`docs/superpowers/specs/2026-07-11-phase14-provider-auth-design.md`。修复设计：
-`docs/superpowers/specs/2026-07-14-phase14-exit-remediation-design.md`。
-
-生产启动会在任何凭据感知路径之前安装原生凭据 store：
-
-| 发布目标 | Store crate | 原生服务 |
-|---|---|---|
-| `x86_64-pc-windows-msvc`, `aarch64-pc-windows-msvc` | `windows-native-keyring-store` | Windows Credential Manager |
-| `x86_64-apple-darwin`, `aarch64-apple-darwin` | `apple-native-keyring-store` | macOS Keychain Services |
-| `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu` | `zbus-secret-service-keyring-store` | Freedesktop Secret Service |
-
-第十四阶段把 Provider/Auth 提升为生产集群。`opi-ai` 拥有无 IO 的
-`CredentialStore`、`OAuthProvider`、`LoginPresenter`、`AuthResolver`、`WireApi`、
-`ModelInfo` 与 `ApiMappedProvider` 契约。`opi-coding-agent` 拥有原生 keychain IO、
-环境变量回退、refresh 与 mutation locking、具体登录 flow、Provider 构造和 outer TUI
-交互策略。store 使用 `fs4` 锁定，并在边界使用 `secrecy`；不存在 opi 管理的明文凭据文件。
-
-规范 OAuth provider 与 keychain account id 是 `anthropic`、`github-copilot` 和
-`openai-codex`。开发期 id `copilot` 与 `codex` 没有 runtime alias、config alias 或
-keychain migration；持有这些开发期条目的用户必须使用规范 id 显式重新登录。
-`doctor` 与凭据门控的模型列表路径使用无 secret availability/credential-kind probe；这些
-probe 遵循实时凭据优先级，并在操作错误或 marker 损坏时失败关闭。GitHub Copilot 与 OpenAI
-Codex subscription catalog 保持为无条件静态 catalog，列表时不执行凭据 probe。
-
-每个 `ModelInfo` 声明一个精确 `WireApi`、匹配且带 tag 的 compatibility 值、capabilities、
-thinking-level map 与可选 pricing。pricing tier 是确定性的：只有 input token 严格大于
-`input_tokens_above` 时才应用 tier。公开 `ApiMappedProvider` 暴露一个 provider id 与
-catalog，为每个 catalog wire 校验精确一个具体 route，并在网络 IO 前拒绝未知 model、
-缺少 route 与 wire/compatibility 不匹配。一个 mapped provider 的所有 route 共享一个
-惰性 `AuthResolver`。
-在所有 wire 上，不支持的 thinking 级别在请求构造之前被拒绝：当
-`request.thinking.enabled` 且所选 `ModelInfo::thinking_level_map` 无法解析
-`request.thinking.level` 时，provider 返回 `ProviderError::UnsupportedCapability`
-且不进行任何网络 I/O。静态 `reasoning_effort` 字段只是遗留
-compatibility/profile metadata，不能覆盖该选择。
-
-GitHub Copilot 使用规范 `github-copilot` identity，以及一个经审计的静态 pi-0.80.6
-catalog；该 catalog 覆盖 `anthropic-messages`、`openai-completions` 与
-`openai-responses`。每条 route 都会在 HTTP 前重新解析当前 token 与 enterprise base URL。
-静态 catalog 是 opi 相对在线 account entitlement/model-enable filtering 的有意差异：
-模型列表既不读取 OAuth secret，也不发出 entitlement 请求。
-
-OpenAI Codex 使用规范 `openai-codex` identity，以及
-`https://chatgpt.com/backend-api/codex/responses` 上的专用
-`openai-codex-responses` provider。它不是带 compatibility flag 的标准 Responses。
-Codex 要求已持久化的 account id，并发出专用 body、header、session affinity 与 SSE mapping。
-存在有效 session 时，内置直连 Responses 在每次请求中发出 `prompt_cache_key` 和新的
-`x-client-request-id`；`send_session_id_header` 只门控 `session_id`。自定义/proxy
-profile 默认关闭全部 affinity；显式 opt-in 会启用经审查的完整映射。
-
-`[providers.custom.<id>]` 向 TOML 暴露 mapped-provider 契约。一个 provider 拥有一个共享
-`api_key_env`、auth scheme、默认 `base_url`、proxy 与 header 集合。provider `api` 是
-model 默认值；model `api` 与 `base_url` 覆盖 provider 默认值。自定义 model 只能选择
-`anthropic-messages`、`openai-completions` 或 `openai-responses`；
-`openai-codex-responses` 仅供内置使用。thinking-map 值是 `true`（identity）、
-`false`（unsupported）或非空 string（wire 值）。compatibility 值按 wire 加 tag。
-model 可以声明 base pricing 与严格递增的 threshold tier。未知/disabled wire、重复 model、
-缺少 API/route/base URL、compatibility 字段不匹配、非法 pricing 与 Provider 管理的鉴权
-header 都会在 config load 时失败。旧 `[providers.openai_compatible]` table 保持为单 wire
-Completions shorthand，并降低到同一 mapped 构造路径。
-`AuthInvalidPolicy` 由构造完成的 Anthropic、OpenAI Chat 与 OpenAI Responses
-route（包括 mapped static profile）显式指定，绝不从 Bearer 语法推断。在这些 route 内，规范
-credential-managed profile 可以返回 `CredentialRevoked`，而静态 custom、OpenRouter 与
-Mistral profile 返回固定且无 body 的 `AuthFailed`；该 body 抑制声明不扩展到
-Azure、Bedrock、Gemini 或 Vertex diagnostics。
-
-Anthropic 与 OpenAI Codex Browser 登录使用带 loopback callback 和
-manual-code/redirect-URL fallback 的 Browser PKCE。GitHub Copilot Device Code 与
-OpenAI Codex Device Code 调用 `present_device_code`，轮询 device endpoint，绝不调用
-`await_manual_code`。`/login openai-codex` 以 Browser 为默认项，以 Device Code 为
-headless 选项。`/login` 与 `/logout` 贯穿生产 dispatcher、具体 provider registry、
-带锁 store 和 RAII 终端暂停/恢复。
-一个绝对 OAuth flow deadline 覆盖所有 send、response body decode、wait/poll 与 exchange。
-所有 flow 只在获取一次性 code/token 前接受取消，并产生类型化 `LoginCancelled`、一条固定取消通知、不持久化任何凭据且恢复终端；获取 code/token 后忽略取消，但原 deadline 继续生效。
-手动输入使用一个串行化、可取消的 cooked-line 子进程；手动输入的 authorization code
-经由继承的 stdin 与捕获的 stdout 传递，绝不注入 argv 或新增环境变量，并在 retry 前回收子进程。
-
-在输出开始前收到 `CredentialNeeded` 后，只有同一 provider 的显式登录成功，outer
-`run_interactive_tui` 状态机才会对同一待处理轮次精确重试一次，且不追加重复 user message。
-不同 provider 登录、取消、presenter/OAuth/store/terminal 失败以及流中
-`CredentialRevoked` 都不重试。JSON、RPC 与文本模式报告规范 `provider_id` 与
-`/login <provider>` 修复提示后失败，不构造 presenter、不打开浏览器，也不等待输入。
-
-`AccountIdMissing { provider_id }` 是独立且不可重试的鉴权结果：凭据存在，但缺少所选
-wire 要求的 account identity。若在输出开始前发生，交互模式会保留待处理轮次，并允许
-采用同样的显式登录重试策略。文本模式以 `AuthFailure` 退出；JSON 与 RPC 发出
-`CredentialNeeded` 修复事件，并携带已脱敏的 `AccountIdMissing` 诊断。它绝不会被归类为
-`CredentialRevoked`。
-
-第十四阶段还增加 `opi_ai::Request` 扩充（`timeout`、`extra_headers`、
-`cache_retention`、`session_id`）、严格的 `Usage`/`CostBreakdown` cache/reasoning
-记账、驱动 Anthropic prompt-cache marker 的唯一嵌套 `ModelCapabilities`，以及动态
-`refresh_models` trait 基底。`cache_write_1h_tokens` 是 cache write 的子集，
-`reasoning_tokens` 是 output 的子集；二者都是可选 `u64` 子字段，因此能区分缺失与显式
-上报的零。四行 `CostBreakdown` 把加权的一小时 write 折算进 `cache_write_cost`，
-把 reasoning 保留在 `output_cost`，每个父 bucket 只计一次。累计 `Usage` 的每个公开
-`u32` 字段都在 `u32::MAX` 饱和；子集保持不超过父项，公开形状不拓宽。前三个 Request
-参数在第十四阶段不增加 config/harness 生产端；只有 `session_id` 贯穿真实 harness/agent 路径。
-动态 refresh 只有 mock collection 覆盖，第十四阶段不增加生产触发点，也不以它关闭产品验收路径。
-
-第十四阶段明确保留八条边界：不创建 opi 管理的明文凭据文件；不在 stream 中途自动重新登录；不允许按调用覆盖凭据（`apiKey`/`env`）或 Provider 管理的鉴权 header（`Request::extra_headers` 只可附加非保留 transport header）；不增加 `onPayload`/`onResponse` 流式钩子；不在 `Request` 上增加 `maxRetries`/`maxRetryDelay`；不进行贯穿 Provider 构造的端到端 `SecretString` 迁移；不增加 Anthropic、GitHub Copilot 与 OpenAI Codex 之外的 OAuth Provider；不修改 session schema 或 context reconstruction。TUI 改动仅限审查过的 `/login`、`/logout`、`CredentialNeeded` presenter，以及登录期间暂停 raw/alternate-screen。
-
-只有用户显式执行且成功的 `/login <provider>` 才会重试待处理的交互轮次；
-`CredentialNeeded` 绝不自动启动登录。JSON、RPC 和文本模式报告 `provider_id` 与
-`/login <provider>` 修复提示，然后在不启动 presenter、浏览器或输入提示的情况下失败。
-
-`api-map`：由 Task 14.16 标记为 `implemented`。公开 Rust
-`ApiMappedProvider` 契约与 `[providers.custom.<id>]` TOML 契约让一个 provider
-catalog 通过 checked 具体 wire 路由，并共享一个惰性凭据 source。
-离线 pi-0.80.6 fixture `github-copilot.models.json` 与 `openai-codex.models.json` 固定 catalog provenance；`mapped_provider_dispatches_one_catalog_across_three_wires`、`mapped_routes_share_one_lazy_auth_resolver`、`custom_provider_api_and_base_url_precedence` 与 `invalid_custom_provider_contracts_fail_at_load` 固定 mapped-provider 行为。
-
-第十四阶段验收追踪：
-
-| 条件 | Owner | 生产/证据追踪 |
-|---|---:|---|
-| SC1 凭据存储与 probe | 14.1, 14.8, 14.14 | cfg-gated host-selection 测试进入生产原生 store selector，证明 constructor、default-store 与 guard 生命周期；异步 store/doctor/listing 测试保留严格且脱敏的 resolver 行为。 |
-| SC2 OAuth 产品 flow | 14.2, 14.9, 14.18, 14.19 | 具体 dispatcher 测试覆盖 Anthropic Browser PKCE、GitHub Copilot Device Code 与 OpenAI Codex Browser/Device Code，并贯穿带锁持久化和精确终端恢复。 |
-| SC3 真实鉴权与会话交互 | 14.2, 14.10, 14.17, 14.18, 14.20 | Factory-built Provider 测试证明每条获批 wire 的惰性鉴权与撤销；outer `run_interactive_tui` 测试证明一次同 provider 重试和全部负向 gate；文本/JSON/RPC 绝不构造 presenter。 |
-| SC4 Request 与会话亲和 | 14.3 | `agent_loop_mock::session_id_reaches_every_request`、`session_runtime::phase14_session_affinity_tracks_new_resume_and_fork` 与 `request_enrichment::session_affinity_wire_mappings` 追踪生产传播和精确的正负 wire 映射。 |
-| SC5 能力与 cache marker | 14.4, 14.11, 14.15 | `ModelInfo` 携带精确 wire/能力元数据，`anthropic_cache_markers` 通过 factory-built 具体 Anthropic stream 捕获能力门控的 marker 位置与 TTL。 |
-| SC6 用量、元数据与费用 | 14.5, 14.12, 14.15, 14.17, 14.18 | 公开契约、pi catalog fixture、pricing-tier 测试、Provider fixture、费用测试与 session resume 保留严格子集和确定性 model pricing，且不重复计算。 |
-| SC7 动态 refresh 与 api-map 基底 | 14.6, 14.16 | `ApiMappedProvider` 与自定义 TOML 测试证明带共享惰性鉴权的 checked multi-wire 派发；collection 测试保留确定性原子 refresh，且无生产触发。 |
-| SC8 文档与 guard | 14.7, 14.13, 14.21 | 成对公共文档、rustdoc、TUI help、运行时修复测试、58-row 验收 manifest 与 workspace gate 固定当前 Provider/Auth 真相和 api-map 实现。 |
-
-### 第十五阶段 - Safety & Sandbox（历史记录）
-
-状态：已实现；pi-0.80.6 posture 对齐完成。历史设计：`docs/superpowers/specs/2026-07-11-phase15-safety-sandbox-design.md`。已交付机制经两份经审查的研究修正相比该设计有所收窄——`docs/research/2026-07-24-phase15-linux-l2-feasibility.md` 与 `docs/research/2026-07-24-project-trust-semantics-pi-claude-code-codex-cli.md`——在二者与 2026-07-11 设计分歧时，以这两份研究为权威来源。
-
-本节记录第十六阶段迁移前、未发布的第十五阶段实现。其核心 `[sandbox]`、`--sandbox` 与 `--sandbox-require` 表面已不再是当前产品行为；下述细节仅作为历史证据保留，而项目信任仍然有效。
-
-第十五阶段把 Safety/Sandbox 集群提升为正式阶段。它交付一个始终开启的 L0 子进程树 tree-kill 基线，外加 `bash` 的 opt-in `strict` 沙箱；一个为沙箱提供结构上正确归宿的按工具 `Operations` 缝合点；以及一个通过门控项目本地资源（含项目本地适配器声明）的*加载*来关闭原生子进程爆炸半径缺口的项目信任门。三个子系统均为 Rust 原生、位于 `opi-coding-agent`，并保持 construction-ownership 不变量：`opi-agent` 不获得任何沙箱、信任、UI 或 Operations 代码。该集群定位为 opt-in defense-in-depth——明确不是安全边界；不可信代码应放在容器或 VM 中（pi `security.md` 对齐）。
-
-沙箱只 confine `bash` 子进程树。L0 始终开启：Unix 上 `process_group(0)`、Windows 上 Job Object，二者均为 kill-on-close，因此脱离的子进程无法比 agent 存活更久。L1（文件系统）、L2（网络）与 L3（syscall）为 `[sandbox] mode = "strict"`（默认 `off`）下的 opt-in，`require = false`（fail-open-with-diagnostic）；`require = true` 为 CI/不可信场景 fail-closed。CLI 覆盖镜像 `--allow-mutating`：`--sandbox off|strict` 与 `--sandbox-require`。`off` 仍交付 L0 作为始终开启的正确性基线；`strict` 是按层 degrade 策略，不是 opi 自身 confinement。适配器只获得 L0；按适配器的能力声明是后续 follow-up。
-
-| 平台 | L0 | L1（FS） | L2（net） | L3（syscall） |
-|---|---|---|---|---|
-| Linux（x86_64、aarch64） | process group | Landlock（ABI 1 / 5.13+） | seccomp 新建 socket 门 + Landlock TCP（ABI 4 / 6.7+） | seccomp 危险 blocklist |
-| macOS | process group | `sandbox-exec` | `sandbox-exec` | 无 |
-| Windows | Job Object（`windows-sys` FFI） | 无 | 无 | 无 |
-
-Linux L2 是收窄的新建 socket 创建门，而非 2026-07-11 设计描述的六 syscall domain-filter：经典 seccomp 无法解引用 `sockaddr` 指针，因此只有 `socket()` 创建可按 domain 过滤。seccomp deny-overlay 对 `socket(AF_INET, ...)`、`socket(AF_INET6, ...)` 与 `socket(AF_NETLINK, ...)` 返回稳定的 `EPERM` errno，而 `socket(AF_UNIX, ...)` 与 Unix-domain IPC 所需的通用 socket 操作保持允许。在 Landlock ABI 4（Linux 6.7+；运行时经 `landlock_create_ruleset` 探测，绝不从内核版本推断）上，该层额外通过处理 `AccessNet::{BindTcp, ConnectTcp}` 且不设 allow-port 规则来拒绝 TCP `bind`/`connect`。在 Landlock ABI 1-3 上，独立的 seccomp socket-creation 门保持生效，同时把缺失的 TCP bind/connect 子能力报告为 degraded 缺口。fail-open 会按该部分基线继续；`require = true` 会在 spawn 前 fail-closed。Landlock 文件系统（L1）在 ABI 1+ 生效，并为 workspace 与 temp 目录 carve write 例外。
-
-L3 是危险 blocklist，而非严格 allowlist。它拒绝 `open_by_handle_at`、`bpf`、`perf_event_open`、`ptrace`、`kexec_load`、`kexec_file_load`、`reboot`、`init_module`、`finit_module`、`delete_module`、`swapon`、`swapoff`、`acct` 与 `settimeofday`；在 x86_64 上额外拒绝 `iopl` 与 `ioperm`（aarch64/riscv64 上不存在）。`clone` 与 `unshare` 保持允许，因为 user-namespace unshare 是额外的 confinement，而非逃逸。seccompiler `TargetArch` 在运行时解析，任何没有已验证后端的架构都会跳过 strict confinement，因此只有 x86_64 与 aarch64 Linux 声称 L2/L3 生效。
-
-Linux L2 不声称完整的网络隔离。已记录的残留：已打开或继承的 INET/INET6/NETLINK fd 仍可使用（含经 `read`/`write`、`sendmsg`、`recvmsg`）；UDP、raw socket、NETLINK、地址范围以及已连接 socket 上的流量在 Landlock 的 TCP-only 策略之外；且 `io_uring` 发起的 socket/connect/accept 操作绕过已审计的 `socket(2)` 路径，是显式的未覆盖残留（`socketpair` 机械上无关——只有 `AF_UNIX` socket pair 有定义语义，而 `AF_UNIX` 不是被拒绝的 family）。一个真正的无外部网络边界需要 sanitized-fd launcher 加 network namespace，仍是 follow-up。
-
-macOS 经探测到的绝对路径 `/usr/bin/sandbox-exec -p <templated profile>` deny-overlay 应用 L1/L2——`(allow default)`，随后 `(deny file-write* (subpath "/"))` 加 workspace 与 temp 写例外，以及 `(deny network*)`——经 `Confinement::launcher` 缝合点重新启动。探测到的 helper identity 会被保留，并启动同一绝对路径，因此 PATH shim 或后续 PATH 变化无法替换程序，且 opi 在此路径上不持有 `pre_exec`/`unsafe`。macOS 上 L3 不可用。`sandbox-exec` 自 Sierra 2016 起被 soft-deprecate，但仍可用；strict 在不可用时 degrade 到 L0 并给出启动 diagnostic。
-
-Windows 仅 L0。Job Object 经直接的 `windows-sys` FFI 实现（`CreateJobObjectW` / `SetInformationJobObject` / `AssignProcessToJobObject` / `TerminateJobObject`），而非 wrapper crate；它设置 `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` 并有意省略 breakaway-OK 标志，使子进程无法经 `CREATE_BREAKAWAY_FROM_JOB` 逃逸。Windows 上没有 Landlock、seccomp 或 `sandbox-exec` 等价物；`strict` degrade 到 L0 并给出一次性启动 diagnostic。`CreateProcess-suspended -> Assign -> Resume` 竞态被接受并作为残留记录。
-
-Diagnostic 是增量 `&'static str` code——source `sandbox` 下的 `opi.sandbox.degraded`（`CODE_SANDBOX_DEGRADED`）与 `opi.sandbox.unavailable`（`CODE_SANDBOX_UNAVAILABLE`）——携带脱敏的 `{ layer, reason }` payload。`reason` 来自封闭的 `SandboxReason` 枚举，只序列化经审查的静态文本；原始 OS/probe 错误会在 diagnostic 构造前完成映射，因此 command、env var、绝对路径或凭据无法进入 payload。临时缺口发出按命令的 `degraded` diagnostic 并按已生效基线继续；永久平台缺口在启动时发出一次 `unavailable` diagnostic，绝不按命令发出。
-
-`Operations` 缝合点是分层位于 `PathPolicy` 之下的纯 FS/exec 后端。`PathPolicy` 先运行（expand -> canonicalize -> verbatim-strip -> symlink-escape -> workspace-containment），并把已授权路径交给 Operations。两个分组 trait 位于 `opi-coding-agent`：`FileOperations`（read+write+edit：`read_file`/`write_file`/`mkdir`/`metadata`/`access`）与 `BashOperations`（`exec`）。`build_tools_with_sandbox` 经构造注入把 `Arc<dyn FileOperations>` 注入 read/write/edit，把 `Arc<dyn BashOperations>` 注入 bash；T4 沙箱位于 local `LocalBashOperations::exec` 内，由已 prepare 的 confinement 驱动，`BashTool::execute` 是不直接 `Command` spawn 的薄调用方。Nav 工具（`grep`/`find`/`ls`/`glob`）不接受 Operations 句柄：其 `ignore`-crate `WalkBuilder` 无法在不丢失 gitignore 语义的前提下干净地重定向到远端后端。文件工具不被进程沙箱——它们保持 `PathPolicy` 守卫，因为第十五阶段只 confine bash 子进程树。已交付的 `LocalFileOperations` 还会相对已持有且 canonical 的 workspace-root capability 解析 workspace 路径，包括 metadata、目录创建、读取与同 parent 的原子 staging/rename。这会关闭 `PathPolicy` 之后的祖先 symlink/junction 交换竞态；显式授权的外部交互式读取仍保留 ambient-path 行为。该缝合点仅交付 local 实现；SSH/container 远端后端属未来/示例（pi 对齐）。opi 侧 `unsafe` 在第十五阶段仅限于 `tool/process_tree.rs` 中已审计的 `pre_exec`/Job-Object helper。在第十五阶段退出点，彼时生产路径中的 `sandbox.rs` 与 `sandbox/windows.rs` 模块保有 `#![forbid(unsafe_code)]`；至今仍存在的 `tool/operations.rs` 模块当前仍保有该约束。
-
-项目信任门门控的是项目本地资源的*加载*，而非工具执行。`ProjectTrustStore` 是扁平 `Map<canonical_path, bool>`，带 ancestor walk、`fs4` sidecar 锁与 acquire-then-reread，存储于 `{user_config_dir}/trust.json`——即 Windows 上 `%APPDATA%\opi\trust.json`、Unix 上 `~/.config/opi/trust.json`，与 `config.toml` 并列——无 schema 版本或元数据。它在会话启动时经 `prepare_project_startup` 恰好查询一次，发生在 `discover_resources` 消费任何项目层之前；不存在 live mid-session trust mutation，不存在内置 `/trust` 命令，不存在 project-resource reload。当一个项目解析为 `Untrusted` 时，项目 `.opi/config.toml` 被整体跳过（不是加载后过滤），项目 `.opi/{skills,fragments,themes,extensions}` 与项目级 `.opi/packages.toml` 适配器声明不加载（因此不可信项目的原生适配器子进程绝不启动，关闭爆炸半径缺口），项目 `AGENTS.md`/`CLAUDE.md` 不被自动注入 system prompt（有意偏离 pi——它们仍可经 `read` 工具读取，这是不受门控的工具执行）。用户全局资源、用户全局适配器与所有工具执行均不受门控。交互式 TUI 仅在首次进入含需信任资源的项目时弹出 `AppState::AwaitingTrust` 提示（Trust / Trust-parent / Trust-session / Deny / Deny-session）；在 filesystem root 会省略 Trust-parent，伪造的 root-level 选择会以具名错误拒绝；非交互与 RPC 模式无法询问，除非 `--trust` 或 `default_project_trust = "always"`，否则默认 untrusted。优先级为 CLI（`--trust`/`--no-trust`）-> `project_trust` resolver hook -> store -> `[defaults] default_project_trust`（默认 `ask`，仅全局）-> ask。
-
-信任 resolver 经显式的 embedder-only API `ProjectTrustResolverRegistry::register` 注册；该 registry 仅通过该公开启动 API 接受确定顺序的注册，标准 CLI 交付空 registry（不注册任何 resolver），不存在 CLI `-e` 扩展标志，不存在原生 resolver 自动加载，且该 registry 在解析时被 seal，因此项目扩展（仅在信任解析后加载）无法影响其自身的信任决策。该 hook 暴露最小化的 pre-trust UI 表面（`select`/`confirm`/`input`/`notify`），且无法在同意前提升权限。
-
-第十五阶段显式保留以下边界：不 confine opi 自身（不可信代码应放在容器或 VM 中）；不对适配器做 strict-confinement（仅 L0）；不为进程内文件工具或 nav 工具提供进程沙箱（read/write/edit 保持 `PathPolicy` 守卫，local workspace 后端使用 capability-relative 操作）；不引入 SSH/container 远端 Operations 后端；不对工具执行做信任门控（信任决定项目资源*加载*什么，而非工具*做*什么）；不对未信任项目自动注入项目 `AGENTS.md`/`CLAUDE.md`；不引入内置 `/trust` slash 命令，不存在 live project-resource reload；不引入 CLI `-e` 标志，不存在原生 resolver 加载；不为 `trust.json` 引入 schema 版本或元数据；不声称完整的 Linux 网络隔离（inherited-fd、non-TCP 与 `io_uring` 残留保持显式）；以及不修改 provider 或 session schema。
-
-第十五阶段验收 trace：
-
-| 标准 | 负责任务 | 生产/证据 trace |
-|---|---:|---|
-| SC1 L0 bash tree 生命周期 + Windows 适配器赋值 | 15.4 | `sandbox_l0::bash_l0_kills_process_tree_in_off_mode` 证明 `off` 下 L0 tree-kill；`sandbox_l0::windows_bash_and_adapter_use_kill_on_close_job` 与 `sandbox_l0::adapter_process_group_contract` 固定 `windows-sys` Job-Object L0。 |
-| SC2 沙箱配置生产路径 + fallback 策略 | 15.5.1 | `sandbox_strict` bin + `sandbox_config::invalid_sandbox_config_exits_before_provider_construction` 证明 `main -> resolve_config -> build_tools -> LocalBashOperations::exec`；`unavailable_layer_fail_open_and_fail_closed` 与 `permanent_gap_diagnostic_is_once_per_startup` 固定 `require` degrade 策略。 |
-| SC3 Linux strict 后端（收窄 L2 + L3） | 15.5.3 | `linux_af_unix_survives_socket_creation_gate`、`linux_af_unix_datagram_round_trip_survives_socket_creation_gate`、`linux_new_inet_inet6_netlink_sockets_are_denied`、`linux_landlock_abi4_denies_tcp_bind_connect`、`linux_l3_ptrace_is_denied_only_when_syscall_layer_is_enabled`、`linux_strict_backend_capability_matrix` 与 `sandbox_linux_backend::linux_alternate_network_surface_audit` 固定保留的 seccomp socket 门、Unix stream/datagram 存活、Landlock TCP bind/connect、运行时 L3 拒绝与 `io_uring`/`socketpair` 残留。 |
-| SC4 macOS strict 后端 | 15.5.4 | `macos_profile_and_capability_matrix` 与三个 `macos_engaged_subprocess_*` 测试经 `Confinement::launcher` 缝合点固定 `sandbox-exec` profile deny-overlay。 |
-| SC5 Windows strict fallback | 15.5.5 | `windows_strict_reports_l0_only` 与 `windows_strict_production_dispatch_reports_l0_only` 固定 strict->L0 degrade。 |
-| SC6 strict bash 平台矩阵 + 无 opi unsafe | 15.5.6 | 原生 CI 曾在 ubuntu/macos/windows 运行具名平台测试，并交叉编译全部六个 release triple；在第十五阶段退出点，`#![forbid(unsafe_code)]` 曾在彼时存在的 `sandbox.rs` 与 `tool/operations.rs` 上断言。 |
-| SC7 Operations 生产路径 | 15.2, 15.3 | `tool_operations::operations_injection_reaches_tool_execution` 与 `tool_selection::build_tools_constructs_expected_default_set` 证明 `Arc<dyn>` 注入到达工具执行；`tool_operations` 覆盖 trait object-safety、mock dispatch、`PathPolicy`-before-backend 顺序与不发生外部访问的确定性祖先 symlink/junction 交换。 |
-| SC8 未信任项目资源门 | 15.6, 15.7 | `trust_resource_gating` 证明未信任项目跳过每个受门控层（config、skills/fragments/themes/extensions、项目级适配器声明、项目 context 文件），而信任项目保留它们；`untrusted_project_adapter_declaration_never_spawns` 关闭原生子进程缺口。 |
-| SC9 headless 信任解析 + resolver 优先级 | 15.8.1 | `non_interactive_trust`、`rpc_trust`、`early_command_trust`、`project_trust_startup` 与 `project_trust_store` 证明 headless 带覆盖默认 untrusted、`doctor`/`--list-models` 在 parse 前门控项目 config、RPC 绝不发信任提示，且标准 CLI 交付空 resolver registry，而显式 embedder resolver 赢得优先级。 |
-| SC10 交互式信任询问 | 15.8.2 | `opi-tui::trust_prompt` 与 `interactive_trust` 证明 `AppState::AwaitingTrust` 提示应用每个选择并先于项目启动副作用，且 predecided 路径绕过提示。 |
-| SC11 文档与非目标 guard | 15.9 | `phase15_safety_sandbox_docs` 在成对 EN/ZH 文档中固定第十五阶段退出点的沙箱证据及当前 Operations/信任真相，并拒绝每个列出的非目标；phase-exit artifact audit 重跑第十五阶段验收矩阵并保留 command/stdout/stderr/exit-code 证据。 |
-
-### 第十六阶段 - 可插拔扩展与命令执行
-
-状态：已实现。规范设计：
-`docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md`。
-
-第十六阶段让默认 `opi` 进程的 `command.execute` 路径保持最小运行时（Minimal Runtime）的直接本地执行路径，同时允许 `command.execute` 选择已安装的 adapter。首批 adapter 是内置 `local` 与外部 `opi-sandbox`；后者还可通过 SDK、面向用户的 CLI 和 `command-execution-jsonl-v1` 协议独立使用。Package 安装不等于包信任（Package Trust）或激活：Installed、Trusted、Enabled、Selected、Permitted 是五个独立门。路由支持 `fixed`、确定性的 `rules` 与受用户策略约束的模型建议，权限结果为 `deny`/`ask`/`allow`。Opi 二进制不链接 `opi-sandbox`。Minimal Runtime 标签只描述这条命令执行路径；它不会停用另行配置的资源 package 发现或既有 `opi-extension-jsonl-v1` adapter 启动路径。外部 adapter 一旦被选择，失败即 fail-closed，绝不回退到本地执行。`opi-protocol` 初始只承载版本化的执行协议。
-
-在第十六阶段，`command.execute` capability 仅由模型可调用的 `bash` 工具承载。对这项 capability，fixed-local `allow` 会直接构造 `LocalBashOperations`，且不会打开 command-execution package activation store；它不创建 router、permission 或 protocol task，也不启动 command-execution adapter 进程。这一窄范围声明不会停用独立的资源 package 发现与既有 `opi-extension-jsonl-v1` process-adapter runtime。外部 adapter 在 setup 成功后报告其有效 placement、guarantee（`local` 为 `supervised`、`opi-sandbox` 为 `restricted`）、policy 与限制；adapter identity 本身从不确立 guarantee。
-
-原生限制及其 helper/capability-selection 代码离开 Opi 核心（16.16.1）：Landlock、seccomp、`sandbox-exec` 与 sandbox helper 实现从 `opi` 二进制移入独立的 `opi-sandbox` package，而 L0 子进程树监督对 local 与外部 adapter 进程仍保留在核心。内置的第十五阶段 sandbox 配置（`[sandbox]`、`--sandbox`、`--sandbox-require`）在核心被拒绝，不提供兼容 alias；`[execution] strategy`/`backend`（以及 `--execution-strategy` / `--execution-backend` CLI 覆盖）改为选择 `local` 或 `opi-sandbox` 后端，且所有已选择的外部 adapter 一律 fail-closed。项目本地可执行/进程 package 贡献被拒绝；请全局安装、审查后再启用。
-
-`opi-sandbox` 是一个 Rust package，包含库 SDK（`SandboxPolicy`、`SandboxRequest`、`SandboxRunner`、`SandboxEvent`/`SandboxResult`）与薄型 human CLI（`opi-sandbox run --workspace <PATH> --profile workspace-write ...`、`opi-sandbox backend --stdio`、`opi-sandbox doctor --json`）。它只依赖 `opi-protocol` 加独立依赖，无需 Opi 即可复用，调用期有状态、跨调用无状态，并报告 `restricted`，绝不报告 `isolated`。Linux 限制使用 Landlock 做文件系统变更限制，外加固定 seccomp danger-syscall blocklist；`network = deny` 时阻止新建 INET/INET6/NETLINK socket，同时保留 AF_UNIX。macOS 使用 `sandbox-exec`：host 读取与执行允许，workspace 与调用期临时根之外的写入被拒绝，不声称 syscall filter；`sandbox-exec` 缺失或被拒绝时 fail-closed。Windows Job Object 只提供 L0 监督，而非命令限制：第十六阶段不发布官方 Windows `opi-sandbox` artifact，选择缺失或 target 不匹配的 package 会在命令执行前失败。
-
-第十六阶段 non-goals：Docker/VM/SSH/Gondolin 或远程 adapter；路由 file、navigation 或其他内置工具；让扩展按名称替换核心工具；通用扩展协议或迁移 `opi-extension-jsonl-v1`、RPC、NDJSON 或 trace envelope；动态加载原生库；为一次调用组合多个 adapter；host 读取或环境变量机密性；沙箱化扩展进程本身；发布者认证；项目本地可执行贡献；Windows AppContainer 或 restricted-token 限制；以及保留未发布的第十五阶段 sandbox 配置 alias。
-
-### 第十七阶段 - Benchmark 与回归评估
-
-状态：已预留。仅在第十六阶段达到退出标准后，才讨论并编写本阶段 spec。
-
-第十七阶段将建立后续架构与智能能力工作所需的 benchmark 和回归基线。语料、指标、provider matrix 与发布门禁在此不预设；它们应基于第十六阶段完成后的实现证据确定。
-
-### 第十八阶段 - Agent Intelligence
-
-状态：已设计；实现推迟至第十七阶段基线建立后。设计：
-`docs/superpowers/specs/2026-07-11-phase18-agent-intelligence-design.md`。
-
-第十八阶段把 Agent Intelligence 集群提升为正式阶段。它增加生产级 skills/fragments 运行时（`/skill:`/`/fragment:` 分发、pi 风格的 `<available_skills>` 系统提示词段、基于 `ignore` 的递归 skill 发现，以及接线既有的 `disable_model_invocation`/`expand_fragment_body` 机制）、LLM 驱动的压缩与分支摘要，以及带所需 provider wire 修复的 read-tool 内联图像。`opi-agent` 保持 skill-free；provider-backed 实现留在 `opi-coding-agent`。
-
-### 第十九阶段 - 扩展架构完善
-
-状态：roadmap 占位；在 benchmark 与 Agent Intelligence 证据形成后再设计。
-
-第十九阶段把第十六阶段的 capability/adapter 模型扩展到更多贡献类型与执行 adapter，例如 Docker、SSH、VM、远程执行和独立贡献的工具。只定义真实消费者与第十七阶段回归证据能够证明必要的表面。
-
-### 第二十阶段 - 界面产品化
-
-状态：推迟至核心、benchmark、智能能力与扩展基础稳定后。
-
-第二十阶段落地事件驱动 TUI 引擎（`OverlayStack`、streaming-redraw throttle）并打磨内置终端产品：model/session/branch pickers、transcript rendering、命令发现、status/error 反馈、accessibility、terminal compatibility，以及 image/diff 呈现。当具体消费者出现时，也会重新评估扩展 UI 表面。它不声明 web UI parity、custom extension UI、message renderer parity 或通用 TUI framework。从第十三阶段推迟的交互式 `/export` 在此落地。
-
-### 未来生态候选
-
-这些能力与 `pi` 方向一致，但在进入条件满足前不是已排期阶段。
-
-| 候选 | 进入条件 |
-|---|---|
-| 第十四阶段之外的 OAuth/subscription auth | 第十四阶段为 Anthropic、GitHub Copilot 与 OpenAI Codex 落地 OAuth（credential store、redaction、doctor、session interaction、login UX、refresh、revocation）；额外 OAuth/subscription provider 在用户需求出现前仍属未来。 |
-| 广泛 provider catalog | 第十二阶段 provider correctness 稳定；OpenAI-compatible profile quirks 有文档化兼容模型。 |
-| 图像生成 | 聊天侧 provider collection、auth、model metadata、cost 和 error semantics 稳定。 |
-| Custom extension UI / message renderer | 第二十阶段内置 TUI 稳定；单独的 RPC/UI 子协议已设计。 |
-| npm/gallery/update/enable/disable | Package adapter lifecycle、trust/source model、diagnostics 和 lock/update policy 稳定。 |
-| Web/share/session publishing | 第十三阶段 export、redaction 和 session sensitivity 规则稳定。 |
-| Provider request/response adapter hooks | Core provider seam、hook ordering、redaction 和 trace semantics 稳定；前提已在设计中满足（第十二阶段 + 第七阶段 + 第十四阶段），消费者待定。 |
-| `pi` session import/migration | `opi` session v2 稳定；用户价值明确；正常 resume 不受影响。 |
-
-## 16. 决策日志
-
-| # | 决策 | 选择 | 原因 |
+| CAP-001 | 模型运行时 | Provider 中立的消息与流式处理、真实的运行时 Provider/wire 分派、能力协商、用量核算和有界失败。 | Provider 合规证据和多 Provider 路由证据。 |
+| CAP-002 | 推理与上下文管理 | 可观测的上下文构建、思考预算、规划、反思、重试、压缩、模型切换和工具决策，且不要求私有原始推理。 | 可复现的上下文/压缩行为和实测任务结果。 |
+| CAP-003 | Agent 执行 | 确定性的轮次、工具、队列、引导、会话、取消、失败语义和最终制品。 | 跨 Agent 评测可以观察并复现结果与效率。 |
+| CAP-004 | 持续学习 | 从最终经验中派生的 C1 情景记忆和可复用技能候选，经过独立评测并可逆激活。 | 多个冻结评测周期证明收益、保持性、安全性、效率和撤回能力。 |
+| CAP-005 | 受控自我迭代 | C2 行为候选在可撤销的委托晋级策略范围内完成独立评测、分阶段激活、监控和回滚。 | 人类权威确认该闭环始终受限且不能扩大自身权限。 |
+
+| ID | 要求 | 责任方 | 验证方式 |
 |---|---|---|---|
-| ADR-001 | 工作区形状 | 六个 crate：四个产品 crate 加独立的 `opi-protocol` 与 `opi-sandbox` | 保留概念边界，同时避免独立 adapter 耦合产品 crate |
-| ADR-002 | 版本控制 | 锁步工作区版本 | 简化兼容性和发布顺序 |
-| ADR-003 | 无共享领域类型 crate | 领域类型归属其语义拥有者；版本化 wire contract 可归属 `opi-protocol` | 避免枢纽依赖，同时不让独立 adapter 耦合产品 crate |
-| ADR-004 | pi 兼容性 | 语义对等，非 API/文件对等 | Rust 原生实现 |
-| ADR-005 | MVP 供应商 | 仅 Anthropic | 首次发布保持可测试 |
-| ADR-006 | 供应商 SDK | 直接 HTTP 适配器 | 流控制和更少的不稳定依赖 |
-| ADR-007 | 流协议 | start/delta/end/done/error | 与 pi 对齐并支持 UI 部分状态 |
-| ADR-008 | 代理分层 | loop -> Agent -> Harness | 可测试性和关注点分离 |
-| ADR-009 | 代理 vs LLM 消息 | 保持分离 | 自定义消息不应泄露到供应商 |
-| ADR-010 | 工具边界 | 类型化参数加生成的 JSON Schema | 动态 LLM 边界，类型化内部，运行时验证 |
-| ADR-011 | 工具执行 | 默认并行带顺序覆盖 | 匹配 pi 并避免竞态 |
-| ADR-012 | 会话格式 | opi 树状 JSONL | 分支语义而不锁定 TS 格式 |
-| ADR-013 | 配置格式 | TOML | 注释支持和 Rust 生态系统契合 |
-| ADR-014 | TUI | ratatui/crossterm | 跨平台 Rust 终端技术栈 |
-| ADR-015 | 扩展策略 | RPC/SDK 和扩展 API 先于协议适配器 | 匹配 pi 的组合模型；MCP 是扩展/包候选，不是第 3 阶段核心功能 |
-| ADR-017 | Transport 存根 | 已从公共 API 移除 | 避免未文档化的公共表面 |
-| ADR-018 | crates.io 时机 | 质量门控的首次发布 | 仅在占位 API 被隐藏或替换且发布门控通过后发布 |
-| ADR-019 | 工具安全 | allowlist、可见性和钩子优先于通用核心权限配置文件 | pi 明确避免通用的内置逐工具权限弹窗子系统；第十六阶段 Capability Permission 是面向外部 adapter 调用的窄门禁，其他环境特定门禁属于扩展/包或外部沙箱 |
-| ADR-020 | 上下文文件 | `AGENTS.md` / `CLAUDE.md` 先于 `OPI.md` | 保留 pi 行为和生态约定 |
-| ADR-021 | 当前上游基线 | `.repo/pi-0.80.2` | 较早基线之后，`pi` 架构在 `Models/Auth`、`AgentHarness`、sessions 和 extension UI surfaces 周围发生了实质变化 |
+| CAP-006 | 后一层阶梯**不得（MUST NOT）**通过绕过前一层阶梯要求的证据而获准进入。 | 路线维护者 | Phase 准入矩阵。 |
+| CAP-007 | 外部知识同步**必须（MUST）**作为并行产品路线，不得计入持续学习。 | 知识产品责任方 | 产品 interface 和权威评审。 |
 
-## 17. 非功能性需求
+## 6. 横切控制平面
 
-Tier 1 目标：
+### 6.1 证据与可观测性
 
-- `x86_64-unknown-linux-gnu`；
-- `aarch64-unknown-linux-gnu`；
-- `x86_64-apple-darwin`；
-- `aarch64-apple-darwin`；
-- `x86_64-pc-windows-msvc`。
+Agent 核心可观测性提供显式上下文传播，并为 Provider、轮次、工具、压缩、重试和会话活动提供一套稳定的领域词汇。exporter、托管存储、dashboard 和评测策略仍保留在 Agent 核心之外。
 
-Tier 2 目标：`aarch64-pc-windows-msvc`。
+证据制品不可变且按内容寻址。缺失的度量保持为 `unknown`，绝不能静默转换为零。敏感提示词、工具参数、结果和环境数据需要显式的采集与脱敏策略。
 
-Rustls 优于 OpenSSL 以构建可移植二进制文件。
+| ID | 要求 | 责任方 | 验证方式 |
+|---|---|---|---|
+| CTRL-001 | Agent 核心**必须（MUST）**传播稳定的运行/轮次/调用关联信息和最终制品引用，且不绑定 exporter。 | Agent 核心可观测性责任方 | no-op/in-memory adapter 合规测试和 trace 测试。 |
+| CTRL-002 | 证据**必须（MUST）**保留足以进行离线验证的来源、权限、时间、环境、模型、提示词、工具、预算和制品来源信息。 | 证据生产者 | manifest 验证和离线重计算。 |
+| CTRL-003 | 敏感证据在导出前**必须（MUST）**经过分类和脱敏；不得（MUST NOT）仅仅因为存在评测使用方就启用采集。 | 运行时责任方 | 密钥扫描、脱敏测试和用户策略评审。 |
 
-可访问性要求：
+### 6.2 独立的跨 Agent 评测
 
-- 尊重 `NO_COLOR`；
-- 在非交互和 JSON 模式下暴露关键状态；
-- 不仅依赖颜色来表示错误、工具或 diff；
-- 提供适合脚本的退出码。
+评测是一个独立伴生产品，暂定形态为一个不依赖 Opi crate 的 Rust library 加 CLI。其深层 interface 接受已解析的实验锁定清单和 adapter，生成不可变 RunBundle，并从已保存制品中重新计算报告。最终名称、仓库和品牌留待归属复审决定。
 
-可维护性要求：
+Agent 与基准之间的差异通过两个支持进程的 seam 接入：
 
-- 实现后为公共 API 编写带示例的文档；
-- 在阶段任务标记完成前包含测试；
-- 在不可避免时在变更日志或 issue 中跟踪规范/代码漂移；
-- 按职责拆分大模块。
+- `AgentAdapter` 运行或导入 Agent 轨迹；以及
+- `GraderAdapter` 调用基准的原生评分器。
 
-## 18. 未来考虑
+规范证据 bundle 包含：
 
-架构不应排除 MCP 工具、远程工具执行、流式代理服务、编辑器集成、pi 会话迁移、provider OAuth、图像生成、自定义扩展 UI、web/share 流程或插件运行时。这些不是第 1-8 阶段核心需求，通常应通过 RPC、SDK、扩展、包或后续审查过的生态设计进入，并且应等第 10-14 阶段的深度工作稳定后再推进。
+- 一条经过验证的 [ATIF](https://github.com/harbor-framework/harbor/blob/main/rfcs/0001-trajectory-format.md) 轨迹；
+- 一张补充 span 图，覆盖运行、轮次、LLM、工具、压缩、重试和评分器调用链；
+- 包含名称、版本、digest、原生指标和来源信息的评分器输出；以及
+- 一个按内容寻址的制品 manifest，覆盖输入、日志、最终 workspace 结果、轨迹、调用和评分器输出。
 
-## 19. 术语表
+报告以结果为先。报告将原生评分器给出的成功结果、墙钟时间和关键路径时间、首 token 时间、LLM/工具/压缩/重试的计数与延迟、输入/输出/cache/推理 token、已知成本及其覆盖率、压缩情况，以及失败调用的消耗分别呈现。质量、成本、安全性和权威不得合并为单一分数。
 
-| 术语 | 定义 |
+| ID | 要求 | 责任方 | 验证方式 |
+|---|---|---|---|
+| CTRL-004 | 对外发布的基准主结果**必须（MUST）**来自基准的原生评分器；LLM 裁判**可以（MAY）**仅提供单独标记的诊断信息。 | 证据生产者 | 评分器来源和报告 schema 验证。 |
+| CTRL-005 | 基线运行和候选运行**必须（MUST）**在同一份冻结 manifest 下按任务和试验配对；缺失的配对和 telemetry **必须（MUST）**保持可见。 | 评测编排器 | 配对和覆盖率检查。 |
+| CTRL-006 | 报告**必须（MUST）**可以从不可变 RunBundle 离线复现；新的真实执行**必须（MUST）**获得新的试验标识。 | 评测产品责任方 | 确定性的 recompute/regrade/render 合规验证。 |
+| CTRL-007 | 基准数据集、原生评分器、容器镜像、sandbox、远程调度器、exporter、leaderboard 和学习策略**必须（MUST）**保留在评测模块之外。 | 评测产品责任方 | 依赖和 package 内容评审。 |
+
+### 6.3 学习与变更权威
+
+证据生产者、候选生产者、晋级控制器、人类权威、激活类别、活跃快照、控制基线、晋级生命周期、委托晋级策略和受控自我迭代的规范定义位于 [CONTEXT.md](CONTEXT.md)。
+
+```text
+Agent 核心证据 seam
+    ↓ AgentAdapter
+证据生产者 → 不可变 RunBundle
+    ↓
+候选生产者 → 不可变 CandidateBundle
+    ↓
+晋级控制器 + 人类策略
+    ↓ Runtime Adapter
+shadow → opt-in canary → active / rollback
+```
+
+证据生产者不提出或激活变更。候选生产者不选择自身的评分器、阈值或批准。晋级控制器不改写证据、候选或授权其运行的策略。运行时使用不可变的活跃快照，且不能为自身写入新的快照。
+
+外部知识同步具有不同的事实来源：经授权的 Source of Record。连续、经过验证且保持作用域不变的上游修订可以自动激活；新增来源、扩大作用域或更改权威需要人类权威批准。
+
+| ID | 要求 | 责任方 | 验证方式 |
+|---|---|---|---|
+| CTRL-008 | 证据生成、候选生成、晋级和人类授权**必须（MUST）**保持为相互分离的权威。 | 运行时和学习产品责任方 | interface/依赖评审和负向授权测试。 |
+| CTRL-009 | module 之间**必须（MUST）**交换不可变 bundle 和快照引用；共享可变数据库**不得（MUST NOT）**授予跨权威写入权限。 | 集成责任方 | 存储所有权和变更审计。 |
+| CTRL-010 | 评测、学习或晋级失败**必须（MUST）**阻止继续前进，且不得改变 Agent 核心行为；如果无法证明当前激活状态的安全性，受影响的新工作**必须（MUST）**停止。 | 晋级控制器责任方 | 故障注入和恢复测试。 |
+
+### 6.4 安全、隐私与可逆性
+
+用户策略设定硬性限制。模型可以请求权限，但不能授予权限。派生证据或知识的作用域绝不能宽于其权限范围最窄的来源。撤回和删除会传播到所有派生视图。现有工作始终绑定到其启动时的快照；新工作读取当前活跃指针。
+
+在预授权恢复路径内始终允许自动回滚。绝不允许自动重新激活：遭拒绝或已回滚的候选需要新的标识以及新的授权决定。
+
+## 7. 持久架构不变量
+
+### 7.1 Provider 运行时
+
+模型选择是运行时路由，而不是 metadata 查询。Provider 集合负责可用模型、凭据以及路由到正确的 Provider 和 wire 实现。
+
+| ID | 要求 | 责任方 | 验证方式 |
+|---|---|---|---|
+| INV-001 | 选择模型时**必须（MUST）**在运行时解析并保留对应的 Provider/wire 实现；不得（MUST NOT）仅仅因为启动时选择了另一个 Provider 而拒绝跨 Provider 选择。 | `opi-ai` | Provider 集合合规测试和跨 Provider 路由测试。 |
+| INV-002 | Provider 特有的 wire 代码**必须（MUST）**保留在 Provider 中立的请求、stream、用量和能力 interface 之后。 | `opi-ai` | Provider wire 格式 fixture 和 interface 测试。 |
+
+### 7.2 Agent 轮次转换
+
+下一轮准备是一项状态转换，而不是消息追加 hook。它可以原子性地替换上下文、模型和推理设置。停止判定和队列判定使用转换后的状态，它们的执行顺序属于公开 Agent 语义的一部分。
+
+| ID | 要求 | 责任方 | 验证方式 |
+|---|---|---|---|
+| INV-003 | Agent 循环**必须（MUST）**定义并测试轮次完成、下一轮准备、停止评估以及引导/后续队列轮询的确切顺序。 | `opi-agent` | 状态转换单元测试和集成测试。 |
+| INV-004 | 下一轮更新**必须（MUST）**能够原子性地替换下一次请求的完整状态，而非只能追加消息。 | `opi-agent` | hook interface 和状态替换测试。 |
+
+### 7.3 工具、取消与背压
+
+工具 schema 在执行前验证。hook 按规定顺序运行。可安全并行的调用可以并发运行；顺序调用保持次序。取消会传播到 Provider stream 和工具批次。有界队列使背压和溢出显式可见。
+
+| ID | 要求 | 责任方 | 验证方式 |
+|---|---|---|---|
+| INV-005 | 在工具产生副作用之前，**必须（MUST）**完成权威校验和 schema 验证。 | Agent 运行时责任方 | 权限/schema 负向测试。 |
+| INV-006 | 取消、队列关闭、溢出和部分工具失败**必须（MUST）**可观测，并且**不得（MUST NOT）**被转换为静默成功。 | Agent 运行时责任方 | 故障注入和有界队列测试。 |
+
+### 7.4 会话与制品
+
+会话分支、重建、追加持久性、最终证据和快照绑定都属于语义。JSONL、SQLite、搜索索引和云存储属于 adapter。只有在第二个真实 adapter 和共享合规验证证明存在必要变化后，repository seam 才应该扩展。
+
+| ID | 要求 | 责任方 | 验证方式 |
+|---|---|---|---|
+| INV-007 | 会话持久化**必须（MUST）**保留活跃分支重建、父级链接、叶节点选择和崩溃恢复。 | `opi-agent` | repository 合规测试和损坏恢复测试。 |
+| INV-008 | 最终运行证据**必须（MUST）**标识生成它的会话分支和活跃快照。 | Agent 运行时责任方 | 制品 schema 和 resume/fork 测试。 |
+
+### 7.5 扩展与命令执行
+
+标准发行版包含一个最小运行时（Minimal Runtime），并提供直接本地执行路径。可选的外部执行遵循五个相互独立的生命周期门禁：**Installed**、**Trusted**、**Enabled**、**Selected** 和 **Permitted**。Package 信任授权 package 代码；能力权限授权一次调用。二者互不蕴含。
+
+一旦选择了外部执行 adapter，其失败就采取**失败关闭（fail-closed）**策略，并且绝不回退到本地执行。扩展 package 和 adapter 是受信任代码，拥有启动用户的操作系统权限；权限声明只是 metadata，并非强制执行的 sandbox。
+
+原生限制由独立伴生产品 `opi-sandbox` 负责；它仅依赖最小的 `opi-protocol` 命令执行契约，且不链接到 `opi` 二进制文件。其公开独立 surface 包括 `SandboxPolicy`、`SandboxRequest`、`SandboxRunner`、`SandboxEvent`、`SandboxResult` 和 `opi-sandbox backend --stdio`。
+
+原有核心 `[sandbox]`、`--sandbox` 和 `--sandbox-require` surface 已移除，且没有 alias。Opi 不声称扩展 package 受到 sandbox 保护，不声称文件/导航工具受到路径限制，也不声称 package 权限 metadata 会执行操作系统策略。
+
+Docker、VM、SSH、远程执行 adapter、AppContainer、通用工具 shadowing 以及 L0 以上的 Windows 原生限制不属于此项不变量。官方 `opi-sandbox` 制品以 Linux 和 macOS 为目标平台。Windows 通过 Job Object 提供 L0 进程监管，不作更强的限制声明。
+
+| ID | 要求 | 责任方 | 验证方式 |
+|---|---|---|---|
+| INV-009 | Installed、Trusted、Enabled、Selected 和 Permitted **必须（MUST）**保持为可独立观测和强制执行的生命周期状态。 | 参考产品责任方 | package/执行路由测试和诊断。 |
+| INV-010 | 已选择的外部执行 backend 失败时**不得（MUST NOT）**回退到本地执行。 | Capability Router 责任方 | adapter 失败测试。 |
+| INV-011 | `opi-sandbox` **必须（MUST）**保持可在不链接 Opi 产品 crate 的情况下复用；平台降级**必须（MUST）**显式呈现。 | `opi-sandbox` 责任方 | 独立构建、协议合规测试和平台验收。 |
+
+### 7.6 参考产品
+
+参考产品可以选择终端交互、默认编程工具、配置层、凭据、会话命令、package 管理和诊断。这些选择使用 Agent 核心 interface，并且可以由嵌入方替换。
+
+确切的当前 surface 由生成的帮助、README 文件、crate 文档和源码记录，不在此重复。
+
+## 8. 能力准入与晋级门禁
+
+### 8.1 Agent 核心准入
+
+仅当所有门禁均通过时，一项能力才能进入 Agent 核心。
+
+| 门禁 | 所需证据 |
 |---|---|
-| 供应商（Provider） | LLM 后端，如 Anthropic、OpenAI、Gemini 或 Bedrock |
-| API 类型（API kind） | 线路协议家族，如 Anthropic Messages 或 OpenAI Chat Completions |
-| 模型（Model） | 具有能力和限制的供应商模型 |
-| 代理循环（Agent loop） | 发送上下文、接收助手输出、执行工具并重复的纯循环 |
-| 代理（Agent） | 围绕循环的有状态包装器 |
-| Harness | 用于会话、压缩和应用钩子的组合层 |
-| CodingHarness | 编程代理特定的 harness |
-| 代理消息（AgentMessage） | 应用层消息，可能包含自定义/仅会话数据 |
-| 消息（Message） | 面向供应商的用户/助手/工具结果消息 |
-| 流事件（Stream event） | 供应商级助手增量或终端事件 |
-| 代理事件（Agent event） | 运行时生命周期/消息/工具事件 |
-| 会话事件（Session event） | 队列/压缩/重试/会话事件 |
-| 会话条目（Session entry） | 持久化的 JSONL 树记录 |
-| 引导（Steering） | 在代理运行时注入的消息，在下一次供应商调用前 |
-| 后续（Follow-up） | 排队直到代理即将停止的消息 |
-| 压缩（Compaction） | 在保留近期状态的同时总结较旧的上下文 |
-| 工具（Tool） | 模型可调用的、具有 JSON Schema 参数的能力 |
+| 语义必要性 | 移除该能力会破坏持久的模型不变量或 Agent 状态机不变量。 |
+| 产品中立性 | 它不包含对终端工作流、基准测试、组织知识、操作系统或用户策略的立场。 |
+| 深度与局部性 | 一个小型 interface 隐藏了实质复杂性，否则这些复杂性会重新落到多个核心调用方。 |
+| 真实 seam | 它属于内在的状态机语义，或者具有两个真实的 adapter/消费者并共享一致性要求。 |
+| 耦合生命周期 | 独立版本控制会形成更复杂、更脆弱的契约。 |
+| 机械验证 | 不变量、顺序、错误模式和安全行为均有自动化证据。 |
+| 最小权威 | 此项新增不会因可选行为而扩大默认权限、I/O、依赖或供应链暴露面。 |
 
-## 20. 参考资料
+| ID | 要求 | 责任方 | 验证方式 |
+|---|---|---|---|
+| GATE-001 | 任何 Agent 核心准入门禁未通过时，能力都**必须（MUST）**留在参考产品、扩展生态或独立伴生产品中。 | 归属复审参与者 | 经签署的归属案例。 |
+| GATE-002 | 功能标志、不稳定标签或与 pi 对齐**不得（MUST NOT）**豁免任何准入门禁。 | Agent 核心维护者 | 公共 interface 评审。 |
 
-- [pi 源代码](https://github.com/earendil-works/pi)
-- `.repo/pi-0.80.2/packages/ai/README.md`
-- `.repo/pi-0.80.2/packages/ai/CHANGELOG.md`
-- `.repo/pi-0.80.2/packages/agent/src/index.ts`
-- `.repo/pi-0.80.2/packages/agent/docs/agent-harness.md`
-- `.repo/pi-0.80.2/packages/agent/docs/durable-harness.md`
-- `.repo/pi-0.80.2/packages/coding-agent/docs/extensions.md`
-- `Cargo.toml`
-- `CHANGELOG.md`
-- `.github/workflows/ci.yml`
-- `.github/workflows/release.yml`
-- `.claude/skills/opi-release/skill.md`
-- [Anthropic Messages API](https://docs.anthropic.com/en/api/messages)
-- [ratatui](https://ratatui.rs/)
-- [MCP 规范](https://modelcontextprotocol.io/)
+### 8.2 产品与独立性准入
+
+参考产品中的新增内容必须是构成连贯终端编程 Agent 所必需的，体现明确的产品立场，保持依赖单向，确保 Agent 核心语义可替换，不具有更强的跨 Agent 复用价值，并保留用户策略与最小运行时的默认设置。
+
+扩展生态与独立伴生产品之间的选择取决于问题归属：Opi 特有的生命周期与贡献语义属于生态；具有独立产物、错误、一致性要求和价值的 Agent 中立问题属于伴生产品。
+
+出现以下任一情况时触发归属复审：出现第二个真实消费者/adapter；新增公共 interface 或跨层依赖；权限、I/O、平台或供应链有所扩大；发布或安全生命周期出现分歧；删除测试结果发生变化；或者出现新的对齐/使用证据。归属案例记录归属、依赖、消费者、interface、一致性、权威、失败行为、生命周期、删除测试和迁移。跨层移动需要 ADR。
+
+### 8.3 激活类别
+
+| 类别 | 候选内容 | 自动化权威上限 |
+|---|---|---|
+| C0 Evidence-only | 轨迹、run bundle、评分、报告、诊断摘要 | 生成、存储和重新计算；绝不影响活跃运行时。 |
+| C1 限定范围知识 | 已定稿的 episode、有来源的摘要、检索索引、限定范围的记忆或技能视图 | 生成、shadow、canary，以及在明确委托的范围内激活或回滚。 |
+| C2 行为候选项 | 技能行为、prompt、非权威配置、模型路由、推理/压缩/重试策略、工具编排 | 提议、评估、shadow 和 canary；除非已有狭义委托，否则激活需要人类逐候选项批准。 |
+| C3 权威/可执行内容 | 用户策略、权限范围、安全/隐私阈值、网络或变更能力、代码、依赖、可执行 adapter、模型权重 | 提议、测试、收紧、撤销或回滚；扩展或激活始终需要人类批准和正常发布。 |
+
+影响越大，自动化权威越小。通过 Eval 绝不会授予权限或发布权威。
+
+### 8.4 基线与反自我确认
+
+每个候选项都会冻结：
+
+- 一个控制基线：候选项产生前的活跃快照，使用完全相同的模型、工具、prompt、配置、策略、预算、数据、grader、seed 和资源 manifest；
+- 针对记忆和技能候选项的无学习消融；
+- 前一个即时回滚产物；以及
+- 各冻结评测周期中的目标、保持性、安全性和效率历史记录。
+
+如果活跃快照或实质控制项发生变化，尚未裁决的候选项将过期，或被重新生成并重新评估。
+
+生成候选项的 episode 及其同源派生内容不会进入该候选项的目标、保持性或安全性 cohort。候选生产者不选择 cohort、grader、headline 指标、阈值或 epsilon。当前未完成的工作不会使用其自身派生内容。shadow/canary 数据只能为后续候选项提供信息。失败、冲突和安全事件仍保留在证据集中。
+
+### 8.5 六个独立晋级门禁
+
+| 门禁 | 准入规则 |
+|---|---|
+| Evidence | 已解析的 manifest、digest、adapter 一致性、来源去重、隐私扫描、留出集隔离和离线重计算全部通过。 |
+| 目标增益 | 对预注册的 headline 结果以及配对任务/试验结果，配对 95% 置信区间的下界大于零。 |
+| 保持性 | 对既往任务和留出任务，配对 95% 置信区间的下界至少为 `-epsilon`；关键正确性与兼容性使用 `epsilon = 0`。 |
+| 安全与权威 | 高严重级别的策略、隐私、secret、注入或权威回归数量为零；派生范围不宽于最窄来源。 |
+| 效率 | 结果门禁通过后，token、已知成本、墙钟时间、工具调用、重试和压缩分别保持在预注册预算内；缺失数据会阻止相应声明。 |
+| 可逆性 | 已演练原子回滚至前一个快照；现有工作继续使用其绑定快照，新工作使用回滚目标。 |
+
+各门禁之间不能相互补偿。修改未通过的候选项会创建新的身份，并需要新的证据和授权。
+
+### 8.6 晋级生命周期与委托
+
+```text
+offline candidate → shadow → opt-in canary → active
+                         ↘ rejected
+active ─────────────────→ rolled back
+```
+
+shadow 输出不影响工具、用户可见输出或持久状态。canary 的作用范围仅限于预注册的用户、会话、任务、权限范围、预算、样本量、观察窗口和停止条件。active 仅表示已授权范围内的默认设置；它不会扩大权威，也不表示永久批准。
+
+来源追溯或策略失败、一次高严重级别事件、滚动保持性或效率违规、所需遥测丢失，或人类权威撤销，都会触发自动回滚。失败的候选项及其证据会保留。禁止自动重新激活。
+
+委托晋级策略是由人类权威创建的有时限 C3 授权。它固定候选项类别/类型、cohort、模型/工具/Provider/grader/数据版本、指标、阈值、预算、canary 限制、有效期、最大晋级次数、回滚目标，以及仍需人类批准的对象。Candidate module 和 Promotion module 不能创建、修改、续期或扩展该策略。环境、权威、安全、来源追溯发生实质变化，或出现无法解释的回归，都会使该策略失效。
+
+## 9. 当前战略优先级
+
+优先级是尚未实现目标的排序，并非交付日程或进度说明。
+
+### STRAT-001 — 填补深层 Agent 核心语义缺口
+
+赋予运行时 Provider 分派真正的所有权；使下一轮状态替换具有原子性并保持正确顺序；建立产品中立的最小证据与可观测性 seam。让现有抽象在运行时名副其实，优先级高于增加更多目录条目。
+
+### STRAT-002 — 建立独立的跨 Agent Eval
+
+交付 Agent/Grader adapter、原生 grader 来源追溯、ATIF 轨迹及调用图、内容寻址的 run bundle、结果优先的配对报告，以及离线重计算。该产品必须能评估 Opi、pi 和其他 Agent，而无需链接它们的运行时。
+
+将首个 Eval 交付塑形为一个专门 Phase，并与持续学习和晋级分离。只有最小的 Agent 核心证据 seam 可以作为其显式前置条件。
+
+### STRAT-003 — 深化可度量的 Agent 能力
+
+仅依据冻结的评测证据来改进推理/上下文构建、压缩、模型/工具决策、可靠性和会话行为。在真实 Opi 消费者证明其 seam 之前，实验性的 pi 协议/客户端/服务器和宽泛的 harness surface 仍只是观察信号。
+
+### STRAT-004 — 构建 C1 持续学习原型
+
+先验证情景记忆，再验证可复用技能；先进行 shadow，再激活；先验证保持性/隐私/撤回，再扩大规模。当前的知识/学习研究文档仍是证据，而非实施规范。
+
+### STRAT-005 — 引入 C2 行为候选项
+
+评估 prompt、非权威配置、模型路由、推理和工具编排候选项；在进行任何委托之前，每个候选项均需获得人类权威批准。
+
+### STRAT-006 — 使受控自我迭代达到准入条件
+
+只有经过多个独立的冻结评测周期后，可撤销的委托晋级策略才可以允许 C2 候选项在无需逐候选项干预的情况下完成评估、分阶段激活、监控和回滚。
+
+### 并行路线
+
+- 外部知识同步可以独立于持续学习成熟。
+- `opi-sandbox` 可以作为独立伴生产品成熟，之后再就仓库或品牌独立性进行归属复审。
+- 当不会扩大 Agent 核心时，参考产品和扩展生态的工作可以消除已证实的用户阻碍。
+- 模型权重训练仍是一条单独治理的长期产品路线。
+
+## 10. Phase 推导与验证
+
+Phase 是由本规范派生出的有限交付单元。它不是阶梯、路线修订，也不是重新定义父级要求的场所。
+
+| ID | 要求 | 责任方 | 验证方式 |
+|---|---|---|---|
+| PHASE-001 | Phase 交付规范**必须（MUST）**引用本文档中的稳定条款标识符和一个战略目标。 | Phase 塑形者 | 准入 lint 和人工评审。 |
+| PHASE-002 | 它**必须（MUST）**陈述结果、非目标、架构归属、优先级理由、验收证据、风险阈值、回滚和平台范围。 | Phase 塑形者 | 准入检查清单。 |
+| PHASE-003 | 新能力或跨层 interface **必须（MUST）**包含归属案例。 | 能力责任方 | 归属复审。 |
+| PHASE-004 | 研究、realign 报告和 ADR **必须（MUST）**被标识为证据，而非上位权威。 | Phase 塑形者 | 来源分类评审。 |
+| PHASE-005 | 完成时**必须（MUST）**仅更新实现台账和历史快照；**不得（MUST NOT）**将进度写入本文档。 | 实施工作流责任方 | 实现台账/快照 diff 评审。 |
+| PHASE-006 | 如果实施暴露出路线错误，交付**必须（MUST）**停止，直至本规范得到明确修订；Phase **不得（MUST NOT）**降低或绕过上位门禁。 | Phase 责任方 | 受阻交接和路线修订评审。 |
+
+接下来塑形的是可准入且尚未实现的最高优先级目标。只有当相应 Phase 交付规范中记录了明确的依赖、风险降低或证据启用论据时，较低优先级的目标才能先行。
+
+## 11. 权威契约与证据索引
+
+本章指向易变事实的所有者，不复制其清单。
+
+| 主题 | 权威来源 | 在本规范中的作用 |
+|---|---|---|
+| 领域语言 | [CONTEXT.md](CONTEXT.md) | 产品、权威、执行和安全术语的规范来源。 |
+| 当前产品 surface | [README.md](../README.md)、生成的 `opi --help`、crate 文档和源代码 | 当前 CLI、模式、Provider、工具、配置和平台行为。 |
+| Workspace 拓扑与发布状态 | [`Cargo.toml`](../Cargo.toml)、crate manifest 和 [CHANGELOG.md](../CHANGELOG.md) | 当前版本、依赖和发布历史。 |
+| wire 与 schema 契约 | 源代码常量、schema、fixture 和 `opi-protocol` 文档 | 当前精确版本和 payload。 |
+| 已完成的交付历史 | [`docs/snapshots/`](snapshots/) 和实现台账 | 历史完成情况与验收证据。 |
+| pi 对齐 | [`.repo/pi-0.84.1`](../.repo/pi-0.84.1) 一手资料和 [`docs/realign/`](realign/) 索引 | 非规范性内部证据。 |
+| 外部能力研究 | [`docs/research/`](research/) | 非规范性外部证据。 |
+| 独立 Eval 方向 | [Agent 基准测试计划](research/2026-07-10-opi-agent-benchmark-plan.zh.md) 和官方基准测试/轨迹参考资料 | 第 6 章和战略优先级的 Evidence。 |
+| 持续学习方向 | `docs/research/opi-knowledge-sdk-learning-worker-spec.zh.md` 和引用的一手研究资料 | 仅作为方向性证据。 |
+| 难以逆转的权衡 | 已登记的 ADR | 已接受偏差与归属移动的理由。 |
+| 文档契约 | [`scripts/opi-doc-check.py`](../scripts/opi-doc-check.py) | 快速的结构、同步、链接和稳定安全检查。 |
+
+对于基准测试证据，原生 grader 和 harness 的权威来源包括 [Harbor/Terminal-Bench](https://www.harborframework.com/docs/tasks)、[SWE-bench](https://www.swebench.com/SWE-bench/reference/harness/) 和 [AgentDojo](https://github.com/ethz-spylab/agentdojo)。OpenTelemetry GenAI 语义约定可以为导入/导出 adapter 提供参考，但它们不拥有 Opi 的磁盘证据 schema。
+
+此索引闭合了权威循环：持久含义位于此处，领域词汇位于 `CONTEXT.md`，当前事实与实现共存，证据位于 realign/research/run 制品中，交付历史则位于实现台账和快照中。

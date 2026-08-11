@@ -262,6 +262,84 @@ def phase16_command_execution_docs() -> None:
 
 
 LINK_RE = re.compile(r"!?\[[^\]]*\]\(([^)]+)\)")
+SPEC_ID_RE = re.compile(
+    r"\b(?:AUTH|GOAL|PRIN|PLACE|CAP|CTRL|INV|GATE|STRAT|PHASE)-\d{3}\b"
+)
+
+
+def check_top_level_spec() -> None:
+    english = read("docs/opi-spec.md")
+    chinese = read("docs/opi-spec.zh.md")
+
+    expected_headings = {
+        "docs/opi-spec.md": (
+            "## 1. Document Authority and Reading Model",
+            "## 2. Mission, Goals, and Non-Goals",
+            "## 3. First Design Doctrine",
+            "## 4. System Placement and Dependency Direction",
+            "## 5. Long-Term Capability Ladder",
+            "## 6. Cross-Cutting Control Planes",
+            "## 7. Durable Architecture Invariants",
+            "## 8. Capability Admission and Promotion Gates",
+            "## 9. Current Strategic Priorities",
+            "## 10. Phase Derivation and Verification",
+            "## 11. Authoritative Contracts and Evidence Index",
+        ),
+        "docs/opi-spec.zh.md": (
+            "## 1. 文档权威与阅读模型",
+            "## 2. 使命、目标与非目标",
+            "## 3. 首要设计准则",
+            "## 4. 系统归属与依赖方向",
+            "## 5. 长期能力阶梯",
+            "## 6. 横切控制平面",
+            "## 7. 持久架构不变量",
+            "## 8. 能力准入与晋级门禁",
+            "## 9. 当前战略优先级",
+            "## 10. Phase 推导与验证",
+            "## 11. 权威契约与证据索引",
+        ),
+    }
+    for rel, headings in expected_headings.items():
+        text = english if rel.endswith("opi-spec.md") else chinese
+        actual = tuple(
+            line for line in text.splitlines() if re.match(r"^## \d+\. ", line)
+        )
+        if actual != headings:
+            ERRORS.append(f"{rel}: top-level specification chapter structure differs")
+
+    english_ids = SPEC_ID_RE.findall(english)
+    chinese_ids = SPEC_ID_RE.findall(chinese)
+    if len(english_ids) != 61:
+        ERRORS.append("docs/opi-spec.md: expected 61 stable clause identifiers")
+    if len(chinese_ids) != 61:
+        ERRORS.append("docs/opi-spec.zh.md: expected 61 stable clause identifiers")
+    if len(english_ids) != len(set(english_ids)):
+        ERRORS.append("docs/opi-spec.md: stable clause identifiers are not unique")
+    if len(chinese_ids) != len(set(chinese_ids)):
+        ERRORS.append("docs/opi-spec.zh.md: stable clause identifiers are not unique")
+    if english_ids != chinese_ids:
+        ERRORS.append(
+            "docs/opi-spec.md and docs/opi-spec.zh.md: stable clause identifiers differ"
+        )
+
+    for rel, text in (
+        ("docs/opi-spec.md", english),
+        ("docs/opi-spec.zh.md", chinese),
+    ):
+        for line_number, line in enumerate(text.splitlines(), start=1):
+            if "MUST" not in line or not line.startswith("| "):
+                continue
+            cells = [cell.strip() for cell in line.strip("|").split("|")]
+            if len(cells) != 4 or not cells[2] or not cells[3]:
+                ERRORS.append(
+                    f"{rel}:{line_number}: normative MUST lacks owner or verification"
+                )
+        if re.search(r"(?im)^#{2,6}\s+(?:phase|第.+阶段)\s*\d+\b", text):
+            ERRORS.append(f"{rel}: contains a numbered Phase progress heading")
+        if re.search(r"(?i)\b(?:TBD|TODO)\b", text):
+            ERRORS.append(f"{rel}: contains an unresolved placeholder")
+        if re.search(r"(?im)^#{2,6}\s+.*(?:progress|status|进度|状态)\s*$", text):
+            ERRORS.append(f"{rel}: contains a progress or status section")
 
 
 def check_local_links(rel: str) -> None:
@@ -297,7 +375,7 @@ def check_current_contracts(doc_paths: list[str]) -> None:
                 label=f"{crate} current version sentence",
             )
         for rel in doc_paths:
-            if rel.endswith(".zh.md"):
+            if rel.endswith(".zh.md") and rel != "docs/opi-spec.zh.md":
                 require(rel, f"`{version}`", label="current workspace version")
 
     constants = [
@@ -342,6 +420,7 @@ def main() -> int:
     check_workspace_graph()
     phase15_safety_sandbox_docs()
     phase16_command_execution_docs()
+    check_top_level_spec()
     check_current_contracts(docs)
     for rel in [*docs, "AGENTS.md", "CLAUDE.md"]:
         check_local_links(rel)

@@ -377,7 +377,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
 ```
 
-仓库协作规则见 [AGENTS.md](AGENTS.md)，技术规范草案见
+仓库协作规则见 [AGENTS.md](AGENTS.md)，规范性技术方向与架构规范见
 [docs/opi-spec.zh.md](docs/opi-spec.zh.md)。
 
 ## 许可证

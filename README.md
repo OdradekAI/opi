@@ -422,7 +422,8 @@ RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
 ```
 
 See [AGENTS.md](AGENTS.md) for repository working rules and
-[docs/opi-spec.md](docs/opi-spec.md) for the technical spec draft.
+[docs/opi-spec.md](docs/opi-spec.md) for the normative technical direction and
+architecture specification.
 
 ## License
 
