@@ -2,11 +2,11 @@
   "schema_version": 2,
   "spec_files": [
     "docs/opi-spec.md",
-    "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md"
+    "docs/snapshots/phase16/2026-07-28-phase16-pluggable-extension-command-execution-design.md"
   ],
   "spec_files_sha256": {
     "docs/opi-spec.md": "df976c2f705096539f0eb55bb4c63644cb757a70eec056fc1a7f3553b9b0c453",
-    "docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md": "d1a5c4403908fa7981da8e741ade49d00b25972d17360371d55799b08ca7be9e"
+    "docs/snapshots/phase16/2026-07-28-phase16-pluggable-extension-command-execution-design.md": "d1a5c4403908fa7981da8e741ade49d00b25972d17360371d55799b08ca7be9e"
   },
   "task_graph_confirmed_at": "2026-08-09T04:59:23.2318733Z",
   "current_phase": 16,

@@ -8,7 +8,7 @@
 //! normal`; the source/Cargo.toml tripwires are secondary regression guards.
 //!
 //! Design references:
-//! - `docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md`
+//! - `docs/snapshots/phase16/2026-07-28-phase16-pluggable-extension-command-execution-design.md`
 //!   Overview: "The Opi binary does not link `opi-sandbox`."
 //!   `## Migration from Phase 15`: "Native confinement and its
 //!   helper/capability-selection code leave core."

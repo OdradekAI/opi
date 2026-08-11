@@ -509,7 +509,7 @@ Critical properties:
   builds all six platform targets and uploads them to the GitHub Release.
 
 The design rationale is in
-`docs/superpowers/specs/2026-05-19-opi-release-skill-design.md`.
+`.claude/skills/opi-release/skill.md`.
 
 ## Implementation workflow
 

@@ -8,7 +8,7 @@
 //! suite into rejection + migration-target acceptance.
 //!
 //! Design references:
-//! - `docs/superpowers/specs/2026-07-28-phase16-pluggable-extension-command-execution-design.md`
+//! - `docs/snapshots/phase16/2026-07-28-phase16-pluggable-extension-command-execution-design.md`
 //!   `## Migration from Phase 15`: "`[sandbox]`, `--sandbox`, and
 //!   `--sandbox-require` ... No compatibility aliases are added."; "Corrected
 //!   L0 supervision remains in core."; non-goal "Preserving unreleased Phase

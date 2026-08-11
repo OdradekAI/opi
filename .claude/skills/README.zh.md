@@ -114,8 +114,7 @@ opi-* 内可组合的推理与产物级子技能默认采用可由模型调用�
 
 这套选择结合了 [AI Hero Skills 官方文档](https://www.aihero.dev/skills)、
 本地固定版本的 [Matt 技能包](https://github.com/mattpocock/skills) 与
-[Superpowers 技能包](https://github.com/obra/superpowers)。完整理由记录于
-`docs/superpowers/specs/2026-08-09-opi-workflow-skill-system-optimization-design.md`。
+[Superpowers 技能包](https://github.com/obra/superpowers)。
 
 ## 保障契约
 

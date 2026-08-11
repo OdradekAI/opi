@@ -11,7 +11,7 @@
 //! (16.8 wires routing), does NOT touch startup (16.9), and has NO fallback to
 //! `local` or `opi-extension-jsonl-v1`. There is no degraded-success state.
 //!
-//! See the Phase 16 design (`docs/superpowers/specs/2026-07-...-phase16-...md`):
+//! See the Phase 16 design (`docs/snapshots/phase16/2026-07-28-phase16-pluggable-extension-command-execution-design.md`):
 //! State machine (§`opi-protocol`), Process and transport, Cancellation and
 //! cleanup, Failure and Diagnostics.
 

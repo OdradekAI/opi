@@ -41,10 +41,8 @@ registry. Do not auto-parse arbitrary files from `docs/superpowers/specs/`.
 | Phase | Source files |
 |---:|---|
 | 14 | `docs/snapshots/phase14/2026-07-11-phase14-provider-auth-design.md` |
-| 14 | `docs/snapshots/phase14/2026-07-14-phase14-exit-remediation-design.md` |
 | 15 | `docs/snapshots/phase15/2026-07-11-phase15-safety-sandbox-design.md` |
 | 16 | `docs/snapshots/phase16/2026-07-28-phase16-pluggable-extension-command-execution-design.md` |
-| 18 | `docs/superpowers/specs/2026-07-11-phase18-agent-intelligence-design.md` |
 
 When a ledger is initialized or reconciled for a supplemental phase, the
 phase's registered source files MUST be included in `spec_files` and hashed in
@@ -515,11 +513,7 @@ Print a summary table of all tasks:
 
 ## Design Spec
 
-Full design rationale: `docs/superpowers/specs/2026-05-20-opi-implement-skill-design.md`
-
 Registered supplemental phase designs:
 - `docs/snapshots/phase14/2026-07-11-phase14-provider-auth-design.md`
-- `docs/snapshots/phase14/2026-07-14-phase14-exit-remediation-design.md`
 - `docs/snapshots/phase15/2026-07-11-phase15-safety-sandbox-design.md`
 - `docs/snapshots/phase16/2026-07-28-phase16-pluggable-extension-command-execution-design.md`
-- `docs/superpowers/specs/2026-07-11-phase18-agent-intelligence-design.md`

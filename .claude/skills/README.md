@@ -131,9 +131,7 @@ Not composed inside `opi-implement`:
 This selection follows the progressive-disclosure and invocation guidance in
 [AI Hero Skills](https://www.aihero.dev/skills), the locally pinned
 [Matt skills package](https://github.com/mattpocock/skills), and the locally
-available [Superpowers package](https://github.com/obra/superpowers). The full
-rationale is recorded in
-`docs/superpowers/specs/2026-08-09-opi-workflow-skill-system-optimization-design.md`.
+available [Superpowers package](https://github.com/obra/superpowers).
 
 ## Assurance contract
 
