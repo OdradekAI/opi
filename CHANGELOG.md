@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-08-12
+
+No runtime behavior changes. This release consolidates the Opi specification
+and project documentation, refreshes alignment and research evidence, and
+refines repository governance plus the documentation-contract checker.
+Published crate APIs and the `opi` CLI are unchanged from 0.7.3.
+
+### Changed
+
+- `docs/opi-spec.md` and `docs/opi-spec.zh.md` were substantially rewritten to
+  tighten durable product direction, architecture invariants, and admission
+  gates; `docs/CONTEXT.md` domain language was refreshed to match.
+- README (EN/ZH) and the six crate-level READMEs (EN/ZH): top-level technical
+  direction and project guidance streamlined; version surfaces updated to 0.8.0.
+- Completed phase design documents were archived under `docs/snapshots/` and
+  stale `docs/superpowers/specs/` references pruned; in-source design references
+  in `opi-coding-agent` execution tests were repointed to their snapshot
+  locations.
+
+### Added
+
+- Repository skill/workflow governance: admission and fidelity contracts across
+  the `opi-audit`, `opi-eval`, and `opi-implement` skills.
+- `scripts/opi-doc-check.py` was extended with new source-derived contracts,
+  accompanied by a `scripts/test_opi_doc_check.py` test suite.
+- Fresh pi 0.84.1 realignment reports (`docs/realign/2026-08-11-opi-vs-pi.*`,
+  EN/ZH) and refreshed outward research evidence under `docs/research/`.
+
 ## [0.7.3] - 2026-08-11
 
 > Note: on macOS, `opi-sandbox`'s seatbelt substrate does not propagate the

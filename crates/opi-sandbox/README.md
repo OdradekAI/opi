@@ -25,7 +25,7 @@ Requires Rust 1.97+ (workspace MSRV; edition 2024).
 
 ## Status
 
-Current crate version: `0.7.3`, inherited from the workspace package version.
+Current crate version: `0.8.0`, inherited from the workspace package version.
 
 Official release archives target Linux and macOS. There is no official Windows
 `opi-sandbox` artifact; a Windows build provides L0 Job Object supervision but

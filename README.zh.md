@@ -27,7 +27,7 @@ Opi 延续了 [earendil-works/pi](https://github.com/earendil-works/pi) 所展�
 
 ## 当前状态
 
-`Cargo.toml` 中的 workspace 包版本为 `0.7.3`。当前 checkout 可能包含尚未发布的
+`Cargo.toml` 中的 workspace 包版本为 `0.8.0`。当前 checkout 可能包含尚未发布的
 变更；在判断发布状态或兼容性前，请查看 [CHANGELOG.md](CHANGELOG.md)。
 
 终端 Agent 已可实际使用。公开 crate 与 wire format 仍处于 0.x 阶段：嵌入 Opi 时
