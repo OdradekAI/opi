@@ -8,6 +8,7 @@ pub mod compaction;
 pub mod diagnostic;
 pub mod diagnostic_sink;
 pub mod event;
+pub mod evidence;
 pub mod extension;
 pub mod harness;
 pub mod hooks;
