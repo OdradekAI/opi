@@ -188,7 +188,7 @@
       "definition_of_done": "Agent becomes the sole durable owner of a complete NextTurnState containing conversation context, canonical provider:model selection, thinking, max_tokens, and temperature. Agent::prompt and continue persist the loop's final complete state before settling; public piecemeal setters are removed or narrowed behind one validated idle-state replacement. For each logical provider call the Agent invokes ProviderCollection::prepare_call once before the retry loop, then opens every sequential attempt from that same opaque prepared call; route lookup and auth preparation are not repeated inside retries. prepare_next_turn builds and validates a candidate away from live state, atomically applies it, then stop observes the new state before steering or follow-up polling; error or cancellation preserves every field. Product compaction enters the same transition and removes superseded messages. SharedProvider, append-only AgentLoopTurnUpdate, the unused opi-agent AgentHarness/HarnessRuntimeConfig, their tests and resource assertions are removed without aliases or feature shims. Public Agent and CodingHarness tests prove consecutive-call persistence, resolver-call-count one across retries, complete replacement, failure rollback, corrected ordering, compaction, and next-call routing from applied state.",
       "definition_source": "inferred",
       "replaces": "Route Agent calls through atomic next-turn state",
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "17.1"
       ],
@@ -247,6 +247,11 @@
           "field": "criterion_slice",
           "reason": "P17-FAL-001..003 next-turn slice is owned here: preparation validation, cancellation, stop ordering, steering/follow-up queue polling, and atomic rollback preserve the owning outcome and leave no partial state. Task 17.9 only composes the cross-boundary precedence matrix.",
           "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Failure, cancellation, and partial-result semantics"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Phase 17.2 made prepare_call the universal dispatch path, so the Provider::stream_prepared trait default in opi-ai/src/provider.rs was changed to delegate to stream() (legacy/mock providers dispatch via their existing stream); opi-ai/src/test_support.rs gained CountingAuthResolver + single_route_collection + MockProvider::stream_prepared to drive the prepared-call path in tests. Both are consumed by the opi-agent cutover.",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Dispatchable provider collection"
         }
       ],
       "tier": "workspace",
@@ -262,11 +267,11 @@
           "crates/opi-agent/tests/agent_loop_semantics.rs",
           "crates/opi-agent/tests/hooks_queues.rs",
           "crates/opi-agent/tests/compaction.rs",
-          "crates/opi-agent/tests/harness.rs",
           "crates/opi-coding-agent/tests/session_runtime.rs",
           "crates/opi-coding-agent/tests/adapter_runtime.rs",
           "crates/opi-coding-agent/tests/mock_e2e.rs",
-          "crates/opi-coding-agent/tests/harness_resource_integration.rs"
+          "crates/opi-coding-agent/tests/harness_resource_integration.rs",
+          "crates/opi-agent/tests/phase17_prepare_call.rs"
         ],
         "snapshot_tests": [],
         "smoke_addendum": null
@@ -313,8 +318,10 @@
       "substrate_only": false,
       "iteration_count": 0,
       "max_iterations": 5,
-      "start_commit": null,
-      "baseline_dirty_files": [],
+      "start_commit": "95853732c689de9a29e55a21aa021920a8baee1d",
+      "baseline_dirty_files": [
+        "crates/opi-ai/src/test_support.rs"
+      ],
       "task_owned_paths": [
         "crates/opi-agent/src/agent.rs",
         "crates/opi-agent/src/agent_loop.rs",
@@ -359,13 +366,63 @@
         "crates/opi-coding-agent/tests/plan_mode_example.rs",
         "crates/opi-coding-agent/tests/protected_paths_example.rs",
         "crates/opi-coding-agent/tests/sub_agent_example.rs",
-        "crates/opi-coding-agent/tests/todo_example.rs"
+        "crates/opi-coding-agent/tests/todo_example.rs",
+        "crates/opi-ai/src/provider.rs",
+        "crates/opi-ai/src/test_support.rs"
       ],
-      "last_attempt": null,
-      "verified_at_commit": null,
-      "evidence": null,
+      "last_attempt": {
+        "attempt": 1,
+        "started_at": "2026-08-12T14:25:51+08:00",
+        "ended_at": "2026-08-12T22:16:43+08:00",
+        "outcome": "passed",
+        "failing_gate": null
+      },
+      "verified_at_commit": "0e7ed0b0160d10020067e2442e0fef1269d7331e",
+      "evidence": {
+        "task": "17.2",
+        "dod_sha256": "ee9d056601e146fe41c8c4fab0337ba9a4b45e49548516126f672c7498b7e0fd",
+        "verification": "workspace; fmt+clippy --all-targets+rustdoc+opi-doc-check clean; opi-agent suite green (incl A04/A05/PRV-003/NXT-006); opi-coding-agent main.rs+harness source-scan green; D.2 6-lens 0 must-fix (2 advisory about the pre-amend footer/ledger state, resolved by this amend)",
+        "evaluator": "passed",
+        "acceptance": "P17-A04 (agent_wrapper phase17_agent_persists_complete_next_turn_state + hooks_queues phase17_stop_observes_complete_next_turn_state), P17-A05 (hooks_queues phase17_failed_prepare_preserves_state_and_skips_later_boundaries), P17-PRV-003 (phase17_prepare_call resolver-once-across-retries), P17-NXT-006 (agent_wrapper phase17_next_call_routes_from_applied_state_nxt006)"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-08-12T21:58:37+08:00",
+          "attempt": 1,
+          "summary": "17.2 passing @22f2d37 (impl) + ledger checkpoint. D.2 exec.workflow.js 6-lens must_fix=[]; 4 advisory findings addressed: (1) A04 agent_wrapper test added (phase17_agent_persists_complete_next_turn_state); (2) NXT-006 next-call-routing test added (phase17_next_call_routes_from_applied_state_nxt006, 2-route collection + prepare_next_turn model-selection switch); (3) ledger behavioral_tests stale tests/harness.rs ref removed; (4) evidence-truthfulness resolved by the added A04 test. Pre-existing (NOT 17.2): opi-coding-agent package/doctor/activate tests fail on version range >=0.7,<0.8 vs host 0.8.0 + missing opi-sandbox. Slice G: AgentHarness/HarnessRuntimeConfig/HarnessRuntimeConfigBuilder + tests/harness.rs removed; harness_resource_integration source-scan flipped to SessionFacade; README surface tables updated. stream_prepared default -> delegate (universal prepare_call). 17.2/17.5 boundary: product real-auth wiring (AuthSource resolver) is 17.5; production path uses dummy resolver default (test-seam effective_model aligns mock-provider model with prepare_call resolution).",
+          "gate_results": [
+            {
+              "gate": "fmt --check --all",
+              "result": "passed"
+            },
+            {
+              "gate": "clippy --workspace --all-targets -D warnings",
+              "result": "passed"
+            },
+            {
+              "gate": "rustdoc -D warnings",
+              "result": "passed"
+            },
+            {
+              "gate": "opi-doc-check.py",
+              "result": "passed"
+            },
+            {
+              "gate": "opi-agent suite",
+              "result": "passed (incl A04/A05/PRV-003/NXT-006)"
+            },
+            {
+              "gate": "opi-coding-agent main.rs + harness_resource_integration",
+              "result": "passed"
+            },
+            {
+              "gate": "D.2 exec.workflow.js 6-lens",
+              "result": "must_fix=[] (4 advisory addressed)"
+            }
+          ]
+        }
+      ]
     },
     {
       "id": "17.3",
