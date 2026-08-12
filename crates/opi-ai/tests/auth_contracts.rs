@@ -184,3 +184,57 @@ async fn oauth_provider_and_login_presenter_are_object_safe_and_callable() {
     assert_eq!(refreshed.access.expose_secret(), "access-refreshed");
     assert_eq!(refreshed.refresh.expose_secret(), "refresh-fixed");
 }
+
+// ---------------------------------------------------------------------------
+// Phase 17 slice 1 — collection-carried AuthProvenance (substrate).
+//
+// Per the 17.1 DoD, `ResolvedAuth` is unchanged in this task; provenance is a
+// closed non-secret classification carried on the prepared call's redacted
+// route (17.5 moves it onto `ResolvedAuth` once it owns the product resolvers).
+// The closed-source round-trip through the real collection path is covered in
+// tests/provider_collection.rs (`prepare_call_surfaces_each_registered_auth_source_on_the_route`).
+// ---------------------------------------------------------------------------
+
+#[test]
+fn auth_provenance_debug_carries_no_secret() {
+    use opi_ai::auth::{AuthFallback, AuthProvenance, AuthProvenanceSource};
+
+    // Environment provenance carries the variable NAME, never a resolved value.
+    let provenance = AuthProvenance {
+        source: AuthProvenanceSource::Environment {
+            name: "ANTHROPIC_API_KEY".to_owned(),
+        },
+        fallback: AuthFallback::NotAttempted,
+    };
+    let dbg = format!("{provenance:?}");
+    assert!(
+        dbg.contains("ANTHROPIC_API_KEY"),
+        "env var name should be visible: {dbg}"
+    );
+    assert!(!dbg.contains("sk-super-secret"), "secret leaked: {dbg}");
+
+    // The fallback reason is a stable non-secret diagnostic, not a credential.
+    let used = AuthProvenance {
+        source: AuthProvenanceSource::OAuth {
+            kind: "github-copilot".to_owned(),
+        },
+        fallback: AuthFallback::Used {
+            from: AuthProvenanceSource::CredentialStore {
+                kind: "keychain".to_owned(),
+            },
+            to: AuthProvenanceSource::Environment {
+                name: "ANTHROPIC_API_KEY".to_owned(),
+            },
+            reason: "credential store unavailable".to_owned(),
+        },
+    };
+    let dbg_used = format!("{used:?}");
+    assert!(
+        !dbg_used.contains("sk-super-secret"),
+        "secret leaked: {dbg_used}"
+    );
+    assert!(
+        dbg_used.contains("credential store unavailable"),
+        "fallback reason should be visible: {dbg_used}"
+    );
+}

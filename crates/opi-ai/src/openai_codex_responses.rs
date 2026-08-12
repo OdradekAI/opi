@@ -374,6 +374,106 @@ impl Provider for OpenAiCodexResponsesProvider {
         });
         Box::pin(ReceiverStream { rx })
     }
+
+    fn stream_prepared(
+        &self,
+        request: Request,
+        resolved: crate::auth::ResolvedAuth,
+    ) -> EventStream {
+        // Same as `stream` but skips per-call auth resolution: the collection
+        // resolved and froze authentication once for the logical call.
+        if let Err(error) = crate::provider::validate_request_capabilities(self, &request) {
+            return Box::pin(stream::once(async move { Err(error) }));
+        }
+        let default_base_url = self.base_url.clone();
+        // C9: strip ONLY the openai-codex: prefix; do not strip arbitrary prefixes.
+        let model_id_owned = match request.model.strip_prefix("openai-codex:") {
+            Some(rest) => rest.to_owned(),
+            None => request.model.clone(),
+        };
+        let model_id = model_id_owned.as_str();
+        let model_known = self.models.iter().any(|model| model.id == model_id);
+        let model_base_url = self
+            .models
+            .iter()
+            .find(|model| model.id == model_id)
+            .and_then(|model| model.base_url.clone());
+        let extra_headers = validate_headers(&request.extra_headers);
+        let body = self.build_request_body(&request);
+        let timeout = request.timeout;
+        let session_id: Option<String> = if request.cache_retention != CacheRetention::Disabled {
+            Some(
+                request
+                    .session_id
+                    .clone()
+                    .filter(|id| !id.is_empty())
+                    .unwrap_or_else(|| uuid::Uuid::now_v7().to_string()),
+            )
+        } else {
+            None
+        };
+        let request_id: Option<String> = if request.cache_retention != CacheRetention::Disabled {
+            Some(uuid::Uuid::now_v7().to_string())
+        } else {
+            None
+        };
+        let cancel = request.cancel.clone();
+        let client = self.client.client().clone();
+        let (tx, rx) = tokio::sync::mpsc::channel(64);
+
+        // C9: UnknownModel pre-I/O guard — zero auth and zero HTTP for unknown or
+        // cross-provider models (the prepared path already holds resolved auth,
+        // so there is no resolver call to suppress here).
+        if !model_known {
+            let provider_id: String = PROVIDER_ID.into();
+            tokio::spawn(async move {
+                let _ = tx
+                    .send(Err(ProviderError::UnknownModel {
+                        provider_id,
+                        model_id: model_id_owned,
+                    }))
+                    .await;
+            });
+            return Box::pin(ReceiverStream { rx });
+        }
+
+        let tx_closed = tx.clone();
+        tokio::spawn(async move {
+            let work = async {
+                let extra_headers = match extra_headers {
+                    Ok(headers) => headers,
+                    Err(error) => {
+                        let _ = tx.send(Err(error)).await;
+                        return;
+                    }
+                };
+                let base_url = model_base_url.unwrap_or(default_base_url);
+                if let Err(error) = Self::stream_http(
+                    client,
+                    resolved,
+                    base_url,
+                    extra_headers,
+                    body,
+                    cancel,
+                    timeout,
+                    session_id,
+                    request_id,
+                    tx.clone(),
+                )
+                .await
+                {
+                    let _ = tx.send(Err(error)).await;
+                }
+            };
+
+            tokio::select! {
+                biased;
+                _ = tx_closed.closed() => (),
+                _ = work => {},
+            }
+        });
+        Box::pin(ReceiverStream { rx })
+    }
 }
 
 fn validate_headers(headers: &[(String, String)]) -> Result<Vec<(String, String)>, ProviderError> {

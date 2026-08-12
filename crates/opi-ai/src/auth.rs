@@ -89,6 +89,76 @@ impl std::fmt::Debug for ResolvedAuth {
     }
 }
 
+// ---------------------------------------------------------------------------
+// AuthProvenance — non-secret source classification (Phase 17)
+// ---------------------------------------------------------------------------
+
+/// Non-secret classification of where a resolved credential originated.
+///
+/// Carried beside the secret-bearing [`ResolvedAuth`] on a prepared call's
+/// redacted route so callers and evidence can distinguish auth sources without
+/// ever seeing the secret. No secret value, raw environment value, token, or
+/// credential-store payload enters this type: `Environment` names the variable,
+/// `CredentialStore` and `OAuth` name non-secret provider/store labels.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum AuthProvenanceSource {
+    /// A static credential baked into provider construction.
+    Static,
+    /// A credential read from a named environment variable. `name` is the
+    /// variable name (e.g. `ANTHROPIC_API_KEY`), never its resolved value.
+    Environment {
+        /// Non-secret environment variable name.
+        name: String,
+    },
+    /// A credential read from a credential store (e.g. OS keychain). `kind` is
+    /// a non-secret store label, never the stored payload.
+    CredentialStore {
+        /// Non-secret store kind label.
+        kind: String,
+    },
+    /// A credential obtained via an OAuth flow. `kind` is a non-secret provider
+    /// label (e.g. `github-copilot`), never a token.
+    OAuth {
+        /// Non-secret OAuth provider label.
+        kind: String,
+    },
+}
+
+/// Whether auth preparation used an explicitly allowed fallback.
+///
+/// An environment fallback is permitted only where the reviewed product auth
+/// policy allows it; that decision is retained here as a closed, typed value.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum AuthFallback {
+    /// No fallback was attempted; the primary source resolved the credential.
+    NotAttempted,
+    /// An explicitly allowed fallback resolved the credential by moving from
+    /// `from` to `to`. `reason` is a stable non-secret diagnostic.
+    Used {
+        /// The source that was attempted first.
+        from: AuthProvenanceSource,
+        /// The source that resolved the credential.
+        to: AuthProvenanceSource,
+        /// Stable non-secret reason for the fallback.
+        reason: String,
+    },
+}
+
+/// Closed, non-secret provenance carried beside resolved authentication.
+///
+/// Built by [`crate::ProviderCollection`] during call preparation from the
+/// route's registered source classification and the resolve outcome; the
+/// secret itself stays in [`ResolvedAuth`] and never enters this value.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AuthProvenance {
+    /// Where the credential originated.
+    pub source: AuthProvenanceSource,
+    /// Whether an allowed fallback was used during preparation.
+    pub fallback: AuthFallback,
+}
+
 /// Object-safe per-request auth resolver.
 ///
 /// Each concrete provider holds an `Arc<dyn AuthResolver>` and calls

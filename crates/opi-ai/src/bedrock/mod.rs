@@ -250,6 +250,13 @@ impl Provider for BedrockProvider {
 
         Box::pin(ReceiverStream { rx })
     }
+
+    fn stream_prepared(&self, request: Request, _auth: crate::auth::ResolvedAuth) -> EventStream {
+        // Bedrock auth is a multi-field AwsCredentials resolved at construction
+        // (not a single per-call secret), so a prepared call reuses the existing
+        // sigv4 dispatch path. (Phase 17 expand.)
+        self.stream(request)
+    }
 }
 
 // ---------------------------------------------------------------------------

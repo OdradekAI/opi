@@ -201,6 +201,35 @@ impl Provider for ApiMappedProvider {
         self.routes[&model.wire_api].stream(request)
     }
 
+    fn stream_prepared(&self, request: Request, auth: crate::auth::ResolvedAuth) -> EventStream {
+        let Some(model_id) = self.model_id(&request.model) else {
+            let provider_id = self.id.clone();
+            let model_id = request.model;
+            return Box::pin(stream::once(async move {
+                Err(ProviderError::UnknownModel {
+                    provider_id,
+                    model_id,
+                })
+            }));
+        };
+        let Some(model) = self.models.iter().find(|model| model.id == model_id) else {
+            let provider_id = self.id.clone();
+            let model_id = model_id.to_owned();
+            return Box::pin(stream::once(async move {
+                Err(ProviderError::UnknownModel {
+                    provider_id,
+                    model_id,
+                })
+            }));
+        };
+        if let Err(error) =
+            crate::provider::validate_request_for_model(&self.id, Some(model), &request)
+        {
+            return Box::pin(stream::once(async move { Err(error) }));
+        }
+        self.routes[&model.wire_api].stream_prepared(request, auth)
+    }
+
     fn replace_model_catalog(&mut self, models: Vec<ModelInfo>) -> Result<(), ProviderError> {
         if models.is_empty() {
             return Err(ProviderError::Config(format!(

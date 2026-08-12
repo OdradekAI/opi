@@ -1582,6 +1582,115 @@ impl Provider for OpenAiChatProvider {
         Box::pin(ReceiverStream { rx })
     }
 
+    fn stream_prepared(
+        &self,
+        request: Request,
+        resolved: crate::auth::ResolvedAuth,
+    ) -> EventStream {
+        // Same as `stream` but skips per-call auth resolution: the collection
+        // resolved and froze authentication once for the logical call.
+        if let Err(error) = crate::provider::validate_request_capabilities(self, &request) {
+            return Box::pin(stream::once(async move { Err(error) }));
+        }
+        let default_base_url = self.base_url.clone();
+        let provider_id = self.provider_id.clone();
+        let auth_invalid_policy = self.auth_invalid_policy;
+        let model_id = request
+            .model
+            .split_once(':')
+            .map(|(_, model_id)| model_id)
+            .unwrap_or(&request.model);
+        let model = self.models.iter().find(|model| model.id == model_id);
+        let model_base_url = model.and_then(|model| model.base_url.clone());
+        let chat_completions_path = self.resolve_compat(model_id).chat_completions_path;
+        let mut extra_headers = self.route_headers.clone();
+        let copilot_headers = if self.copilot_initiator {
+            match github_copilot_route_headers(&request) {
+                Ok(mut extra_headers) => {
+                    let initiator = github_copilot_initiator(&request);
+                    extra_headers.push(("X-Initiator".into(), initiator.into()));
+                    Ok(extra_headers)
+                }
+                Err(error) => Err(error),
+            }
+        } else {
+            Ok(Vec::new())
+        };
+        if self.resolve_compat(model_id).send_session_affinity_headers
+            && request.cache_retention != CacheRetention::Disabled
+            && let Some(session_id) = request.session_id.as_deref()
+            && !session_id.is_empty()
+        {
+            const AFFINITY_HEADERS: [&str; 3] =
+                ["session_id", "x-client-request-id", "x-session-affinity"];
+            extra_headers.retain(|(name, _)| {
+                !AFFINITY_HEADERS
+                    .iter()
+                    .any(|managed| name.eq_ignore_ascii_case(managed))
+            });
+            let clamped: String = session_id.chars().take(64).collect();
+            extra_headers.extend(
+                AFFINITY_HEADERS
+                    .into_iter()
+                    .map(|name| (name.into(), clamped.clone())),
+            );
+        }
+        let extra_headers = copilot_headers.and_then(|copilot_headers| {
+            extra_headers.extend(copilot_headers);
+            self.headers
+                .merge_request(&extra_headers, &request.extra_headers)
+        });
+        let timeout = request.timeout;
+        let body = self.build_request_body(&request);
+        let cancel = request.cancel.clone();
+        let http_client = self.client.client().clone();
+
+        let (tx, rx) = tokio::sync::mpsc::channel(64);
+        let tx_closed = tx.clone();
+
+        tokio::spawn(async move {
+            let work = async {
+                let extra_headers = match extra_headers {
+                    Ok(headers) => headers,
+                    Err(error) => {
+                        let _ = tx.send(Err(error)).await;
+                        return;
+                    }
+                };
+                let base_url = resolved
+                    .base_url
+                    .clone()
+                    .or(model_base_url)
+                    .unwrap_or(default_base_url);
+                if let Err(e) = Self::stream_http(
+                    http_client,
+                    resolved,
+                    base_url,
+                    provider_id,
+                    auth_invalid_policy,
+                    chat_completions_path,
+                    extra_headers,
+                    &body,
+                    cancel,
+                    timeout,
+                    &tx,
+                )
+                .await
+                {
+                    let _ = tx.send(Err(e)).await;
+                }
+            };
+
+            tokio::select! {
+                biased;
+                _ = tx_closed.closed() => (),
+                _ = work => {},
+            }
+        });
+
+        Box::pin(ReceiverStream { rx })
+    }
+
     fn id(&self) -> &str {
         &self.provider_id
     }

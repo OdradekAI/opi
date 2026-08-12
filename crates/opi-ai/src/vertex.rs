@@ -200,6 +200,12 @@ impl Provider for VertexProvider {
 
         Box::pin(ReceiverStream { rx })
     }
+
+    fn stream_prepared(&self, request: Request, _auth: crate::auth::ResolvedAuth) -> EventStream {
+        // Vertex auth is a construction-time access token (no per-call resolver),
+        // so a prepared call reuses the existing dispatch path. (Phase 17 expand.)
+        self.stream(request)
+    }
 }
 
 /// HTTP streaming with Vertex-specific URL and `Authorization: Bearer` header.

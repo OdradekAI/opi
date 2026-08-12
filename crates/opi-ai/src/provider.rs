@@ -31,6 +31,27 @@ pub trait Provider: Send + Sync {
     /// cancels via `Request::cancel`.
     fn stream(&self, request: Request) -> EventStream;
 
+    /// Start a streaming request using already-resolved authentication (Phase 17).
+    ///
+    /// This is the prepared-auth dispatch seam: the collection resolves the
+    /// route and authentication once per logical call, then every retry attempt
+    /// reuses that frozen authentication through this entry. Unlike
+    /// [`stream`](Self::stream), it must NOT consult a resolver or perform auth
+    /// preparation — it consumes the supplied
+    /// [`ResolvedAuth`](crate::auth::ResolvedAuth) directly at the wire boundary.
+    ///
+    /// The default fails closed: providers that have not migrated to the seam
+    /// cannot serve a prepared call. Concrete in-workspace adapters override it.
+    fn stream_prepared(&self, request: Request, _auth: crate::auth::ResolvedAuth) -> EventStream {
+        let id = self.id().to_owned();
+        let _ = request;
+        Box::pin(futures_util::stream::once(async move {
+            Err::<crate::stream::AssistantStreamEvent, ProviderError>(ProviderError::Config(
+                format!("provider '{id}' does not support prepared dispatch"),
+            ))
+        }))
+    }
+
     /// Replace this provider's effective model catalog before it is shared.
     ///
     /// Mapped providers use this construction-time hook to materialize
@@ -84,6 +105,7 @@ pub enum CacheRetention {
 }
 
 /// A single request to a provider.
+#[derive(Clone)]
 pub struct Request {
     pub model: String,
     pub system: Option<String>,

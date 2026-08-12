@@ -36,8 +36,9 @@ pub mod vertex;
 
 pub use api_mapped::{ApiMapError, ApiMappedProvider};
 pub use auth::{
-    AuthInvalidPolicy, AuthResolver, AuthScheme, LoginPresenter, OAuthCredential, OAuthLoginMethod,
-    OAuthProvider, ResolvedAuth, StaticAuthResolver,
+    AuthFallback, AuthInvalidPolicy, AuthProvenance, AuthProvenanceSource, AuthResolver,
+    AuthScheme, LoginPresenter, OAuthCredential, OAuthLoginMethod, OAuthProvider, ResolvedAuth,
+    StaticAuthResolver,
 };
 pub use config::{Config, Error};
 pub use credential::{
@@ -51,7 +52,7 @@ pub use model_info::{
 pub use provider::Provider;
 pub use provider_collection::{
     AuthDescriptor, AuthStatus, CollectionError, CompatMetadata, CompletedRequest,
-    ProviderCollection, SecretKey,
+    PreparedProviderCall, PreparedRoute, ProviderCollection, SecretKey,
 };
 pub use provider_headers::{ProviderHeaders, ProviderHeadersError};
 pub use registry::{ProviderRegistry, RegistrationError, RegistryError};

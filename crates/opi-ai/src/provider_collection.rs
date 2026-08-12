@@ -30,9 +30,12 @@
 //! changes may occur between minor versions without a major version bump.
 
 use std::collections::HashMap;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use futures_util::StreamExt;
 
+use crate::auth::{AuthFallback, AuthProvenance, AuthProvenanceSource, AuthResolver, ResolvedAuth};
 use crate::credential::CredentialSource;
 use crate::message::AssistantMessage;
 use crate::provider::{EventStream, ModelInfo, Provider, ProviderError, Request};
@@ -245,6 +248,24 @@ pub enum CollectionError {
         /// Redacted description of the missing auth source.
         detail: String,
     },
+    /// The resolved provider has no dispatchable route: it was registered
+    /// without a live [`AuthResolver`], so
+    /// [`ProviderCollection::prepare_call`] cannot prepare authentication for it.
+    #[error("provider '{provider}' has no dispatchable route")]
+    RouteNotDispatchable {
+        /// Provider id whose route is not dispatchable.
+        provider: String,
+    },
+    /// [`start_attempt`](PreparedProviderCall::start_attempt) was called while a
+    /// previous attempt stream is still active. At most one attempt may be
+    /// active for a prepared call; a sequential retry must wait until the prior
+    /// attempt's stream reaches a terminal event.
+    #[error("an attempt is already active for this prepared call")]
+    AttemptAlreadyActive,
+    /// The prepared call's shared cancellation token was cancelled, which
+    /// terminates the logical call and forbids any further attempt.
+    #[error("the prepared call was cancelled")]
+    CallCancelled,
     /// A provider stream failed while draining to completion.
     #[error(transparent)]
     Provider(#[from] ProviderError),
@@ -268,6 +289,12 @@ pub struct ProviderCollection {
     /// outer command path probes the store and injects the result here;
     /// [`ProviderCollection::dispatch_stream`] consults it.
     probed: HashMap<String, CredentialSource>,
+    /// Per-route live auth resolvers for dispatchable (Phase 17) routes. A route
+    /// is dispatchable via [`prepare_call`](Self::prepare_call) only when it has
+    /// a resolver here; legacy metadata-only registration leaves this absent.
+    resolvers: HashMap<String, Arc<dyn AuthResolver>>,
+    /// Per-route non-secret source classification used to build auth provenance.
+    sources: HashMap<String, AuthProvenanceSource>,
 }
 
 impl ProviderCollection {
@@ -278,6 +305,8 @@ impl ProviderCollection {
             auth: HashMap::new(),
             compat: HashMap::new(),
             probed: HashMap::new(),
+            resolvers: HashMap::new(),
+            sources: HashMap::new(),
         }
     }
 
@@ -293,6 +322,8 @@ impl ProviderCollection {
             auth: HashMap::new(),
             compat: HashMap::new(),
             probed: HashMap::new(),
+            resolvers: HashMap::new(),
+            sources: HashMap::new(),
         }
     }
 
@@ -314,6 +345,91 @@ impl ProviderCollection {
         self.auth.insert(id.clone(), auth);
         self.compat.insert(id, compat);
         Ok(())
+    }
+
+    /// Register a dispatchable route: a concrete provider plus its per-request
+    /// [`AuthResolver`] and non-secret source classification (Phase 17).
+    ///
+    /// The provider is registered in the underlying registry; the resolver and
+    /// source classification are retained so
+    /// [`prepare_call`](Self::prepare_call) can resolve and freeze authentication
+    /// for the route. Replaces any existing route with the same provider id.
+    ///
+    /// # Errors
+    ///
+    /// Propagates [`RegistrationError::EmptyProviderId`] from the registry.
+    pub fn register_route(
+        &mut self,
+        provider: Box<dyn Provider>,
+        resolver: Arc<dyn AuthResolver>,
+        source: AuthProvenanceSource,
+        compat: CompatMetadata,
+    ) -> Result<(), RegistrationError> {
+        let id = provider.id().to_owned();
+        self.registry.register_provider(provider)?;
+        self.resolvers.insert(id.clone(), resolver);
+        self.sources.insert(id.clone(), source);
+        self.compat.insert(id, compat);
+        Ok(())
+    }
+
+    /// Resolve one canonical `provider:model` route, validate the request,
+    /// resolve authentication once, and freeze an opaque
+    /// [`PreparedProviderCall`] (Phase 17).
+    ///
+    /// Sequential attempts from the prepared call reuse the same frozen route,
+    /// request, and authentication without repeating preparation. Route lookup,
+    /// capability/wire validation, and auth preparation each precede
+    /// model-request dispatch in that order; a failure at any step returns a
+    /// typed error without selecting another provider, model, wire, credential
+    /// policy, or local implementation.
+    pub async fn prepare_call(
+        &self,
+        spec: &str,
+        request: Request,
+    ) -> Result<PreparedProviderCall, CollectionError> {
+        let (provider_ref, model) = self.registry.resolve(spec)?;
+        let provider_id = provider_ref.id().to_owned();
+        let model_id = model.id.clone();
+        let wire_api = model.wire_api;
+        crate::provider::validate_request_for_model(&provider_id, Some(model), &request)?;
+
+        let resolver = self
+            .resolvers
+            .get(&provider_id)
+            .ok_or_else(|| CollectionError::RouteNotDispatchable {
+                provider: provider_id.clone(),
+            })?
+            .clone();
+        let source = self
+            .sources
+            .get(&provider_id)
+            .cloned()
+            .unwrap_or(AuthProvenanceSource::Static);
+
+        let auth = resolver.resolve().await?;
+        let provider = self
+            .registry
+            .get_provider_arc(&provider_id)
+            .ok_or_else(|| {
+                CollectionError::Registry(RegistryError::UnknownProvider(provider_id.clone()))
+            })?;
+        let route = PreparedRoute {
+            provider_id,
+            model_id,
+            wire_api,
+            provenance: AuthProvenance {
+                source,
+                fallback: AuthFallback::NotAttempted,
+            },
+        };
+        Ok(PreparedProviderCall {
+            provider,
+            request,
+            auth,
+            route,
+            active: Arc::new(AtomicBool::new(false)),
+        })
     }
 
     /// Access the underlying registry (for `--list-models`, overrides, etc.).
@@ -531,4 +647,98 @@ async fn drain_to_completion(mut stream: EventStream) -> Result<CompletedRequest
     Err(ProviderError::StreamError(
         "stream ended without a terminal event".to_owned(),
     ))
+}
+
+// ---------------------------------------------------------------------------
+// Prepared call (Phase 17)
+// ---------------------------------------------------------------------------
+
+/// Immutable, redacted facts about a resolved provider route.
+///
+/// Contains no secret material; the resolved secret stays private to
+/// [`PreparedProviderCall`].
+#[derive(Debug, Clone)]
+pub struct PreparedRoute {
+    /// Canonical provider id of the resolved route.
+    pub provider_id: String,
+    /// Canonical model id of the resolved route.
+    pub model_id: String,
+    /// Provider wire/API kind of the resolved route.
+    pub wire_api: crate::model_info::WireApi,
+    /// Non-secret auth source classification plus fallback decision.
+    pub provenance: AuthProvenance,
+}
+
+/// An opaque prepared provider call (Phase 17).
+///
+/// Privately freezes the resolved provider, the request, and the secret-bearing
+/// resolved authentication. [`start_attempt`](Self::start_attempt) reuses the
+/// frozen route, request, and authentication for each sequential retry without
+/// repeating route/auth preparation. The secret never enters [`PreparedRoute`],
+/// Agent-visible state, evidence, diagnostics, or model-visible state.
+pub struct PreparedProviderCall {
+    provider: Arc<dyn Provider>,
+    request: Request,
+    auth: ResolvedAuth,
+    route: PreparedRoute,
+    /// At-most-one-active-attempt guard, cleared when an attempt stream reaches
+    /// a terminal event or error.
+    active: Arc<AtomicBool>,
+}
+
+impl std::fmt::Debug for PreparedProviderCall {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Never surface the secret-bearing auth; only the redacted route facts.
+        f.debug_struct("PreparedProviderCall")
+            .field("route", &self.route)
+            .field("auth", &"<redacted>")
+            .finish()
+    }
+}
+
+impl PreparedProviderCall {
+    /// The immutable, redacted route facts for this prepared call.
+    pub fn route(&self) -> &PreparedRoute {
+        &self.route
+    }
+
+    /// Start one attempt using the frozen request and authentication.
+    ///
+    /// Reuses the prepared route and authentication; does not repeat preparation.
+    /// Every attempt shares the frozen [`Request::cancel`] token: cancelling it
+    /// terminates the logical call and forbids any further attempt. At most one
+    /// attempt stream may be active at a time; a sequential retry must wait until
+    /// the prior attempt's stream reaches a terminal event or error, which
+    /// releases the active slot.
+    ///
+    /// # Errors
+    ///
+    /// - [`CollectionError::CallCancelled`] if the shared cancellation token has
+    ///   been cancelled.
+    /// - [`CollectionError::AttemptAlreadyActive`] if a prior attempt stream is
+    ///   still active.
+    pub fn start_attempt(&self) -> Result<EventStream, CollectionError> {
+        if self.request.cancel.is_cancelled() {
+            return Err(CollectionError::CallCancelled);
+        }
+        if self.active.swap(true, Ordering::AcqRel) {
+            return Err(CollectionError::AttemptAlreadyActive);
+        }
+        let active = self.active.clone();
+        let stream = self
+            .provider
+            .stream_prepared(self.request.clone(), self.auth.clone());
+        // Release the active slot exactly when this attempt reaches a terminal
+        // event or errors, so a sequential retry can proceed. Cancellation does
+        // not clear the token, so a cancelled call still rejects further attempts
+        // at the entry guard above.
+        let released = stream.map(move |item| {
+            let terminal = item.is_err() || matches!(item, Ok(ref event) if event.is_terminal());
+            if terminal {
+                active.store(false, Ordering::Release);
+            }
+            item
+        });
+        Ok(Box::pin(released))
+    }
 }

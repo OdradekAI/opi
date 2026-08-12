@@ -618,6 +618,120 @@ impl Provider for OpenAiResponsesProvider {
         Box::pin(ReceiverStream { rx })
     }
 
+    fn stream_prepared(
+        &self,
+        request: Request,
+        resolved: crate::auth::ResolvedAuth,
+    ) -> EventStream {
+        // Same as `stream` but skips per-call auth resolution: the collection
+        // resolved and froze authentication once for the logical call.
+        if let Err(error) = crate::provider::validate_request_capabilities(self, &request) {
+            return Box::pin(stream::once(async move { Err(error) }));
+        }
+        let default_base_url = self.base_url.clone();
+        let provider_id = self.provider_id.clone();
+        let auth_invalid_policy = self.auth_invalid_policy;
+        let affinity_policy = self.affinity_policy;
+        let model_id = request
+            .model
+            .split_once(':')
+            .map(|(_, id)| id)
+            .unwrap_or(&request.model);
+        let model_base_url = self
+            .models
+            .iter()
+            .find(|model| model.id == model_id)
+            .and_then(|model| model.base_url.clone());
+        let config = self.resolve_config(model_id);
+        let route_path = self.resolve_route_path(model_id);
+        let copilot_headers = if self.copilot_headers {
+            match github_copilot_route_headers(&request) {
+                Ok(mut headers) => {
+                    headers.push((
+                        "X-Initiator".into(),
+                        github_copilot_initiator(&request).into(),
+                    ));
+                    Ok(headers)
+                }
+                Err(error) => Err(error),
+            }
+        } else {
+            Ok(Vec::new())
+        };
+        let extra_headers = copilot_headers.and_then(|copilot_headers| {
+            let mut route_headers = self.route_headers.clone();
+            route_headers.extend(copilot_headers);
+            self.headers
+                .merge_request(&route_headers, &request.extra_headers)
+        });
+        let session_id = if request.cache_retention != CacheRetention::Disabled {
+            request.session_id.clone().filter(|id| !id.is_empty())
+        } else {
+            None
+        };
+        let affinity_enabled = session_id.is_some()
+            && match affinity_policy {
+                ResponsesAffinityPolicy::Direct => true,
+                ResponsesAffinityPolicy::CustomDisabled => false,
+                ResponsesAffinityPolicy::CustomOptIn => config.send_session_id_header,
+            };
+        let request_id = affinity_enabled.then(|| uuid::Uuid::now_v7().to_string());
+        let mut body = self.build_request_body(&request);
+        if affinity_enabled && let Some(session_id) = session_id.as_deref() {
+            body["prompt_cache_key"] =
+                serde_json::Value::String(session_id.chars().take(64).collect());
+        }
+        let cancel = request.cancel.clone();
+        let timeout = request.timeout;
+        let client = self.client.client().clone();
+        let (tx, rx) = tokio::sync::mpsc::channel(64);
+        let tx_closed = tx.clone();
+
+        tokio::spawn(async move {
+            let work = async {
+                let extra_headers = match extra_headers {
+                    Ok(headers) => headers,
+                    Err(error) => {
+                        let _ = tx.send(Err(error)).await;
+                        return;
+                    }
+                };
+                let base_url = resolved
+                    .base_url
+                    .clone()
+                    .or(model_base_url)
+                    .unwrap_or(default_base_url);
+                if let Err(error) = Self::stream_http(
+                    client,
+                    resolved,
+                    base_url,
+                    route_path,
+                    config,
+                    auth_invalid_policy,
+                    extra_headers,
+                    provider_id,
+                    body,
+                    cancel,
+                    timeout,
+                    affinity_enabled.then_some(session_id).flatten(),
+                    request_id,
+                    tx.clone(),
+                )
+                .await
+                {
+                    let _ = tx.send(Err(error)).await;
+                }
+            };
+
+            tokio::select! {
+                biased;
+                _ = tx_closed.closed() => (),
+                _ = work => {},
+            }
+        });
+        Box::pin(ReceiverStream { rx })
+    }
+
     fn replace_model_catalog(&mut self, models: Vec<ModelInfo>) -> Result<(), ProviderError> {
         self.models = models;
         Ok(())

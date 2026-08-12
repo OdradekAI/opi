@@ -63,6 +63,7 @@
 //! bump.
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use crate::model_info::ModelInfoError;
 use crate::provider::{ModelInfo, Provider};
@@ -117,7 +118,7 @@ pub enum RegistrationError {
 /// Supports dynamic registration of custom providers and model overrides.
 /// See the [module-level documentation](self) for registration semantics.
 pub struct ProviderRegistry {
-    providers: Vec<Box<dyn Provider>>,
+    providers: Vec<Arc<dyn Provider>>,
     /// Supplementary model overrides keyed by `(provider_id, model_id)`.
     model_overrides: HashMap<(String, String), ModelInfo>,
     /// Per-provider dynamic catalogs populated by `Provider::refresh_models`.
@@ -151,6 +152,7 @@ impl ProviderRegistry {
             return Err(RegistrationError::EmptyProviderId);
         }
         let id = provider.id().to_owned();
+        let provider: Arc<dyn Provider> = Arc::from(provider);
         self.providers.retain(|p| p.id() != id);
         self.dynamic_catalogs.remove(&id);
         self.providers.push(provider);
@@ -162,6 +164,7 @@ impl ProviderRegistry {
     /// Prefer [`register_provider`](Self::register_provider) for new code.
     pub fn register(&mut self, provider: Box<dyn Provider>) {
         let id = provider.id().to_owned();
+        let provider: Arc<dyn Provider> = Arc::from(provider);
         self.providers.retain(|p| p.id() != id);
         self.dynamic_catalogs.remove(&id);
         self.providers.push(provider);
@@ -278,6 +281,14 @@ impl ProviderRegistry {
             .iter()
             .find(|p| p.id() == id)
             .map(|p| p.as_ref())
+    }
+
+    /// Get a shared (`Arc`) handle to a provider by id.
+    ///
+    /// Prepared calls (Phase 17) need an owned provider handle that outlives the
+    /// collection borrow; this clones the shared handle stored by the registry.
+    pub fn get_provider_arc(&self, id: &str) -> Option<Arc<dyn Provider>> {
+        self.providers.iter().find(|p| p.id() == id).cloned()
     }
 
     /// Return all models across all providers and the override layer.

@@ -1245,3 +1245,601 @@ async fn refresh_models_empty_catalog_is_valid() {
         "empty dynamic catalog should yield no models: got {dyn_models:?}"
     );
 }
+
+// ===========================================================================
+// Phase 17 — collection-owned route + auth preparation (task 17.1 substrate).
+// ===========================================================================
+
+mod phase17 {
+    use super::*;
+    use futures_util::StreamExt;
+    use opi_ai::auth::{AuthProvenanceSource, AuthResolver, AuthScheme, ResolvedAuth};
+    use opi_ai::credential::BoxAuthFuture;
+    use opi_ai::provider::{EventStream, Provider, ProviderError, Request};
+    use opi_ai::provider_collection::CompatMetadata;
+    use opi_ai::test_support::text_response;
+    use secrecy::SecretString;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    /// A probe provider that records whether dispatch went through the prepared
+    /// seam (`stream_prepared`) or the legacy `stream` entry, emitting canned
+    /// events regardless of the supplied auth (no HTTP).
+    struct ProbeProvider {
+        id: String,
+        models: Vec<ModelInfo>,
+        prepared: Arc<AtomicUsize>,
+        legacy: Arc<AtomicUsize>,
+    }
+
+    impl ProbeProvider {
+        fn new(
+            id: &str,
+            model: &str,
+            prepared: Arc<AtomicUsize>,
+            legacy: Arc<AtomicUsize>,
+        ) -> Self {
+            Self {
+                id: id.to_owned(),
+                models: vec![ModelInfo::new(
+                    model,
+                    model,
+                    WireApi::OpenAiCompletions,
+                    ModelCapabilities::new(100_000, 4_096),
+                )],
+                prepared,
+                legacy,
+            }
+        }
+    }
+
+    impl Provider for ProbeProvider {
+        fn id(&self) -> &str {
+            &self.id
+        }
+        fn models(&self) -> &[ModelInfo] {
+            &self.models
+        }
+        fn stream(&self, _request: Request) -> EventStream {
+            self.legacy.fetch_add(1, Ordering::SeqCst);
+            let events = text_response("legacy");
+            Box::pin(futures_util::stream::iter(
+                events.into_iter().map(Ok::<_, ProviderError>),
+            ))
+        }
+        fn stream_prepared(&self, _request: Request, _auth: ResolvedAuth) -> EventStream {
+            self.prepared.fetch_add(1, Ordering::SeqCst);
+            let events = text_response("prepared");
+            Box::pin(futures_util::stream::iter(
+                events.into_iter().map(Ok::<_, ProviderError>),
+            ))
+        }
+    }
+
+    /// A resolver that counts how many times it is consulted.
+    struct CountingResolver {
+        count: Arc<AtomicUsize>,
+        secret: SecretString,
+    }
+
+    impl AuthResolver for CountingResolver {
+        fn resolve<'a>(&'a self) -> BoxAuthFuture<'a, Result<ResolvedAuth, ProviderError>> {
+            let count = self.count.clone();
+            let secret = self.secret.clone();
+            Box::pin(async move {
+                count.fetch_add(1, Ordering::SeqCst);
+                Ok(ResolvedAuth {
+                    scheme: AuthScheme::ApiKey,
+                    secret,
+                    base_url: None,
+                    account_id: None,
+                })
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn prepare_call_resolves_route_and_auth_once_and_streams_via_prepared_seam() {
+        let prepared_hits = Arc::new(AtomicUsize::new(0));
+        let legacy_hits = Arc::new(AtomicUsize::new(0));
+        let resolve_hits = Arc::new(AtomicUsize::new(0));
+
+        let provider = ProbeProvider::new(
+            "alpha",
+            "model-a",
+            prepared_hits.clone(),
+            legacy_hits.clone(),
+        );
+        let resolver = Arc::new(CountingResolver {
+            count: resolve_hits.clone(),
+            secret: SecretString::from("sk-alpha-canary"),
+        });
+
+        let mut collection = ProviderCollection::new();
+        collection
+            .register_route(
+                Box::new(provider),
+                resolver,
+                AuthProvenanceSource::Static,
+                CompatMetadata::default(),
+            )
+            .expect("register dispatchable route");
+
+        let prepared = collection
+            .prepare_call("alpha:model-a", minimal_request("alpha:model-a"))
+            .await
+            .expect("prepare_call resolves route + auth");
+
+        // Redacted route facts identify the resolved route; the secret never
+        // appears in the route's debug output.
+        let route = prepared.route();
+        assert_eq!(route.provider_id, "alpha");
+        assert_eq!(route.model_id, "model-a");
+        assert_eq!(route.provenance.source, AuthProvenanceSource::Static);
+        let route_dbg = format!("{route:?}");
+        assert!(
+            !route_dbg.contains("sk-alpha-canary"),
+            "secret leaked into route facts: {route_dbg}"
+        );
+
+        // One attempt streams through the prepared seam; auth was resolved once
+        // and the legacy stream() entry was not used.
+        let mut stream = prepared.start_attempt().expect("start_attempt");
+        let first = stream.next().await;
+        assert!(first.is_some(), "prepared attempt produced no events");
+        drop(stream);
+
+        assert_eq!(
+            resolve_hits.load(Ordering::SeqCst),
+            1,
+            "auth resolved more than once"
+        );
+        assert_eq!(
+            prepared_hits.load(Ordering::SeqCst),
+            1,
+            "prepared seam not used"
+        );
+        assert_eq!(
+            legacy_hits.load(Ordering::SeqCst),
+            0,
+            "legacy stream() used"
+        );
+    }
+
+    /// Drain a stream until it yields a terminal event or an error.
+    async fn drain_to_terminal(stream: &mut EventStream) {
+        while let Some(item) = stream.next().await {
+            match item {
+                Ok(event) if event.is_terminal() => break,
+                Err(_) => break,
+                _ => {}
+            }
+        }
+    }
+
+    fn collection_with_probe(
+        prepared: Arc<AtomicUsize>,
+        legacy: Arc<AtomicUsize>,
+        resolved: Arc<AtomicUsize>,
+    ) -> ProviderCollection {
+        let mut collection = ProviderCollection::new();
+        collection
+            .register_route(
+                Box::new(ProbeProvider::new("alpha", "model-a", prepared, legacy)),
+                Arc::new(CountingResolver {
+                    count: resolved,
+                    secret: SecretString::from("sk-alpha-canary"),
+                }),
+                AuthProvenanceSource::Static,
+                CompatMetadata::default(),
+            )
+            .expect("register dispatchable route");
+        collection
+    }
+
+    #[tokio::test]
+    async fn start_attempt_rejects_a_second_active_attempt() {
+        let prepared_hits = Arc::new(AtomicUsize::new(0));
+        let legacy_hits = Arc::new(AtomicUsize::new(0));
+        let resolve_hits = Arc::new(AtomicUsize::new(0));
+        let collection = collection_with_probe(
+            prepared_hits.clone(),
+            legacy_hits.clone(),
+            resolve_hits.clone(),
+        );
+        let prepared = collection
+            .prepare_call("alpha:model-a", minimal_request("alpha:model-a"))
+            .await
+            .expect("prepare_call");
+
+        // Held (not drained) so it remains the active attempt.
+        let attempt = prepared.start_attempt().expect("first attempt");
+        let err = match prepared.start_attempt() {
+            Err(error) => error,
+            Ok(_) => panic!("second concurrent attempt must be rejected"),
+        };
+        assert!(
+            matches!(err, CollectionError::AttemptAlreadyActive),
+            "got {err:?}"
+        );
+        drop(attempt);
+    }
+
+    #[tokio::test]
+    async fn start_attempt_allows_sequential_retry_after_terminal_and_resolves_auth_once() {
+        let prepared_hits = Arc::new(AtomicUsize::new(0));
+        let legacy_hits = Arc::new(AtomicUsize::new(0));
+        let resolve_hits = Arc::new(AtomicUsize::new(0));
+        let collection = collection_with_probe(
+            prepared_hits.clone(),
+            legacy_hits.clone(),
+            resolve_hits.clone(),
+        );
+        let prepared = collection
+            .prepare_call("alpha:model-a", minimal_request("alpha:model-a"))
+            .await
+            .expect("prepare_call");
+
+        let mut first = prepared.start_attempt().expect("first attempt");
+        drain_to_terminal(&mut first).await;
+        let mut retry = prepared
+            .start_attempt()
+            .expect("sequential retry after terminal releases the active slot");
+        drain_to_terminal(&mut retry).await;
+
+        assert_eq!(
+            resolve_hits.load(Ordering::SeqCst),
+            1,
+            "auth resolved more than once across retries"
+        );
+        assert_eq!(
+            prepared_hits.load(Ordering::SeqCst),
+            2,
+            "two prepared attempts"
+        );
+    }
+
+    #[tokio::test]
+    async fn cancelling_the_shared_token_forbids_any_attempt() {
+        let prepared_hits = Arc::new(AtomicUsize::new(0));
+        let legacy_hits = Arc::new(AtomicUsize::new(0));
+        let resolve_hits = Arc::new(AtomicUsize::new(0));
+        let collection = collection_with_probe(
+            prepared_hits.clone(),
+            legacy_hits.clone(),
+            resolve_hits.clone(),
+        );
+
+        let request = minimal_request("alpha:model-a");
+        let token = request.cancel.clone();
+        let prepared = collection
+            .prepare_call("alpha:model-a", request)
+            .await
+            .expect("prepare_call");
+
+        token.cancel();
+        let err = match prepared.start_attempt() {
+            Err(error) => error,
+            Ok(_) => panic!("cancelled call must reject attempts"),
+        };
+        assert!(matches!(err, CollectionError::CallCancelled), "got {err:?}");
+        assert_eq!(
+            prepared_hits.load(Ordering::SeqCst),
+            0,
+            "provider dispatched despite cancellation"
+        );
+    }
+
+    /// A resolver that always fails preparation with a typed credential error.
+    struct FailingResolver {
+        kind: FailKind,
+        provider_id: &'static str,
+    }
+
+    #[derive(Debug, Clone, Copy)]
+    enum FailKind {
+        Revoked,
+        Needed,
+    }
+
+    impl AuthResolver for FailingResolver {
+        fn resolve<'a>(&'a self) -> BoxAuthFuture<'a, Result<ResolvedAuth, ProviderError>> {
+            let kind = self.kind;
+            let provider_id = self.provider_id.to_owned();
+            Box::pin(async move {
+                Err(match kind {
+                    FailKind::Revoked => ProviderError::CredentialRevoked { provider_id },
+                    FailKind::Needed => ProviderError::CredentialNeeded { provider_id },
+                })
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn rejected_or_expired_credential_terminates_the_call_without_dispatch() {
+        for kind in [FailKind::Revoked, FailKind::Needed] {
+            let prepared_hits = Arc::new(AtomicUsize::new(0));
+            let legacy_hits = Arc::new(AtomicUsize::new(0));
+            let provider = ProbeProvider::new(
+                "alpha",
+                "model-a",
+                prepared_hits.clone(),
+                legacy_hits.clone(),
+            );
+            let mut collection = ProviderCollection::new();
+            collection
+                .register_route(
+                    Box::new(provider),
+                    Arc::new(FailingResolver {
+                        kind,
+                        provider_id: "alpha",
+                    }),
+                    AuthProvenanceSource::Static,
+                    CompatMetadata::default(),
+                )
+                .expect("register route");
+
+            let err = collection
+                .prepare_call("alpha:model-a", minimal_request("alpha:model-a"))
+                .await
+                .expect_err("credential failure must terminate the call");
+            assert!(
+                matches!(
+                    err,
+                    CollectionError::Provider(
+                        ProviderError::CredentialRevoked { .. }
+                            | ProviderError::CredentialNeeded { .. }
+                    )
+                ),
+                "got {err:?}"
+            );
+            assert_eq!(
+                prepared_hits.load(Ordering::SeqCst),
+                0,
+                "provider dispatched despite credential failure ({kind:?})"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn prepared_call_debug_redacts_the_resolved_secret() {
+        let prepared_hits = Arc::new(AtomicUsize::new(0));
+        let legacy_hits = Arc::new(AtomicUsize::new(0));
+        let resolve_hits = Arc::new(AtomicUsize::new(0));
+        let collection = collection_with_probe(
+            prepared_hits.clone(),
+            legacy_hits.clone(),
+            resolve_hits.clone(),
+        );
+        let prepared = collection
+            .prepare_call("alpha:model-a", minimal_request("alpha:model-a"))
+            .await
+            .expect("prepare_call");
+
+        let call_dbg = format!("{prepared:?}");
+        assert!(
+            !call_dbg.contains("sk-alpha-canary"),
+            "secret leaked via PreparedProviderCall debug: {call_dbg}"
+        );
+        let route_dbg = format!("{:?}", prepared.route());
+        assert!(
+            !route_dbg.contains("sk-alpha-canary"),
+            "secret leaked via route debug: {route_dbg}"
+        );
+    }
+
+    use opi_ai::message::{ImageSource, InputContent, MediaType, Message, UserMessage};
+
+    /// A request carrying image content (rejected by text-only models).
+    fn image_request(model: &str) -> Request {
+        let mut request = minimal_request(model);
+        request.messages = vec![Message::User(UserMessage {
+            content: vec![InputContent::Image {
+                source: ImageSource::Bytes {
+                    data: vec![0x89, 0x50, 0x4E, 0x47],
+                },
+                media_type: MediaType::Png,
+            }],
+            timestamp_ms: 0,
+        })];
+        request
+    }
+
+    #[tokio::test]
+    async fn unknown_route_returns_typed_error_without_dispatch() {
+        let prepared_hits = Arc::new(AtomicUsize::new(0));
+        let legacy_hits = Arc::new(AtomicUsize::new(0));
+        let resolve_hits = Arc::new(AtomicUsize::new(0));
+        let collection = collection_with_probe(
+            prepared_hits.clone(),
+            legacy_hits.clone(),
+            resolve_hits.clone(),
+        );
+
+        let err = collection
+            .prepare_call("nope:missing", minimal_request("nope:missing"))
+            .await
+            .expect_err("unknown route must fail");
+        assert!(matches!(err, CollectionError::Registry(_)), "got {err:?}");
+        assert_eq!(
+            prepared_hits.load(Ordering::SeqCst),
+            0,
+            "dispatched despite unknown route"
+        );
+    }
+
+    #[tokio::test]
+    async fn unknown_model_returns_typed_registry_error_without_dispatch() {
+        let prepared_hits = Arc::new(AtomicUsize::new(0));
+        let legacy_hits = Arc::new(AtomicUsize::new(0));
+        let resolve_hits = Arc::new(AtomicUsize::new(0));
+        let collection = collection_with_probe(
+            prepared_hits.clone(),
+            legacy_hits.clone(),
+            resolve_hits.clone(),
+        );
+
+        let err = collection
+            .prepare_call(
+                "alpha:no-such-model",
+                minimal_request("alpha:no-such-model"),
+            )
+            .await
+            .expect_err("unknown model must fail");
+        assert!(
+            matches!(
+                err,
+                CollectionError::Registry(opi_ai::registry::RegistryError::UnknownModel { .. })
+            ),
+            "got {err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn auth_failure_does_not_silently_fall_back_to_another_provider() {
+        // alpha's auth fails; beta is healthy and must NOT be tried.
+        let beta_prepared = Arc::new(AtomicUsize::new(0));
+        let mut collection = ProviderCollection::new();
+        collection
+            .register_route(
+                Box::new(ProbeProvider::new(
+                    "alpha",
+                    "model-a",
+                    Arc::new(AtomicUsize::new(0)),
+                    Arc::new(AtomicUsize::new(0)),
+                )),
+                Arc::new(FailingResolver {
+                    kind: FailKind::Revoked,
+                    provider_id: "alpha",
+                }),
+                AuthProvenanceSource::Static,
+                CompatMetadata::default(),
+            )
+            .expect("register alpha");
+        collection
+            .register_route(
+                Box::new(ProbeProvider::new(
+                    "beta",
+                    "model-b",
+                    beta_prepared.clone(),
+                    Arc::new(AtomicUsize::new(0)),
+                )),
+                Arc::new(CountingResolver {
+                    count: Arc::new(AtomicUsize::new(0)),
+                    secret: SecretString::from("sk-beta-canary"),
+                }),
+                AuthProvenanceSource::Static,
+                CompatMetadata::default(),
+            )
+            .expect("register beta");
+
+        let err = collection
+            .prepare_call("alpha:model-a", minimal_request("alpha:model-a"))
+            .await
+            .expect_err("alpha auth must fail");
+        assert!(
+            matches!(
+                err,
+                CollectionError::Provider(ProviderError::CredentialRevoked { .. })
+            ),
+            "got {err:?}"
+        );
+        assert_eq!(
+            beta_prepared.load(Ordering::SeqCst),
+            0,
+            "silently fell back to beta"
+        );
+    }
+
+    #[tokio::test]
+    async fn capability_mismatch_returns_typed_error_before_auth_or_dispatch() {
+        let prepared_hits = Arc::new(AtomicUsize::new(0));
+        let legacy_hits = Arc::new(AtomicUsize::new(0));
+        let resolve_hits = Arc::new(AtomicUsize::new(0));
+        let collection = collection_with_probe(
+            prepared_hits.clone(),
+            legacy_hits.clone(),
+            resolve_hits.clone(),
+        );
+
+        // alpha's model is text-only; an image request is rejected before dispatch.
+        let err = collection
+            .prepare_call("alpha:model-a", image_request("alpha:model-a"))
+            .await
+            .expect_err("image to text-only model must fail");
+        assert!(
+            matches!(
+                err,
+                CollectionError::Provider(ProviderError::UnsupportedCapability(_))
+            ),
+            "got {err:?}"
+        );
+        assert_eq!(
+            prepared_hits.load(Ordering::SeqCst),
+            0,
+            "dispatched despite capability mismatch"
+        );
+        assert_eq!(
+            resolve_hits.load(Ordering::SeqCst),
+            0,
+            "auth resolved despite earlier capability failure"
+        );
+    }
+
+    #[tokio::test]
+    async fn prepare_call_surfaces_each_registered_auth_source_on_the_route() {
+        // Behavioral: every registered source classification must round-trip
+        // through the real prepare_call path onto route().provenance.source.
+        // (Replaces an earlier construct-then-assert-equals-self test.)
+        let sources: [(&str, AuthProvenanceSource); 4] = [
+            ("static-prov", AuthProvenanceSource::Static),
+            (
+                "env-prov",
+                AuthProvenanceSource::Environment {
+                    name: "PROVIDER_KEY".to_owned(),
+                },
+            ),
+            (
+                "store-prov",
+                AuthProvenanceSource::CredentialStore {
+                    kind: "keychain".to_owned(),
+                },
+            ),
+            (
+                "oauth-prov",
+                AuthProvenanceSource::OAuth {
+                    kind: "github-copilot".to_owned(),
+                },
+            ),
+        ];
+        for (id, source) in sources {
+            let mut collection = ProviderCollection::new();
+            collection
+                .register_route(
+                    Box::new(ProbeProvider::new(
+                        id,
+                        "model-a",
+                        Arc::new(AtomicUsize::new(0)),
+                        Arc::new(AtomicUsize::new(0)),
+                    )),
+                    Arc::new(CountingResolver {
+                        count: Arc::new(AtomicUsize::new(0)),
+                        secret: SecretString::from("sk-canary"),
+                    }),
+                    source.clone(),
+                    CompatMetadata::default(),
+                )
+                .expect("register route");
+            let spec = format!("{id}:model-a");
+            let prepared = collection
+                .prepare_call(&spec, minimal_request(&spec))
+                .await
+                .expect("prepare_call");
+            assert_eq!(
+                prepared.route().provenance.source,
+                source,
+                "source not surfaced on route for {id}"
+            );
+        }
+    }
+}

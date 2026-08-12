@@ -1384,6 +1384,98 @@ impl Provider for AnthropicProvider {
         Box::pin(ReceiverStream { rx })
     }
 
+    fn stream_prepared(
+        &self,
+        request: Request,
+        resolved: crate::auth::ResolvedAuth,
+    ) -> EventStream {
+        // Same as `stream` but skips per-call auth resolution: the collection
+        // resolved and froze authentication once for the logical call.
+        if let Err(error) = crate::provider::validate_request_capabilities(self, &request) {
+            return Box::pin(stream::once(async move { Err(error) }));
+        }
+        let default_base_url = self.default_base_url.clone();
+        let provider_id = self.provider_id.clone();
+        let auth_invalid_policy = self.auth_invalid_policy;
+        let direct_oauth_beta = self.direct_oauth_beta;
+        let credential_base_url_enabled = self.copilot_headers;
+        let model_id = request
+            .model
+            .split_once(':')
+            .map(|(_, model_id)| model_id)
+            .unwrap_or(&request.model);
+        let model_base_url = self
+            .models
+            .iter()
+            .find(|model| model.id == model_id)
+            .and_then(|model| model.base_url.clone());
+        let body = self.build_request_body(&request);
+        let cancel = request.cancel.clone();
+        let timeout = request.timeout;
+        let copilot_headers = if self.copilot_headers {
+            match github_copilot_route_headers(&request) {
+                Ok(mut headers) => {
+                    let initiator = github_copilot_initiator(&request);
+                    headers.push(("X-Initiator".into(), initiator.into()));
+                    Ok(headers)
+                }
+                Err(error) => Err(error),
+            }
+        } else {
+            Ok(Vec::new())
+        };
+        let extra_headers = copilot_headers.and_then(|route_headers| {
+            self.headers
+                .merge_request(&route_headers, &request.extra_headers)
+        });
+        let http_client = self.client.client().clone();
+
+        let (tx, rx) = tokio::sync::mpsc::channel(64);
+        let tx_closed = tx.clone();
+
+        tokio::spawn(async move {
+            let work = async {
+                let extra_headers = match extra_headers {
+                    Ok(headers) => headers,
+                    Err(error) => {
+                        let _ = tx.send(Err(error)).await;
+                        return;
+                    }
+                };
+                let base_url = credential_base_url_enabled
+                    .then(|| resolved.base_url.clone())
+                    .flatten()
+                    .or(model_base_url)
+                    .unwrap_or(default_base_url);
+                if let Err(e) = Self::stream_http(
+                    http_client,
+                    resolved,
+                    base_url,
+                    provider_id,
+                    auth_invalid_policy,
+                    direct_oauth_beta,
+                    &body,
+                    cancel,
+                    timeout,
+                    extra_headers,
+                    &tx,
+                )
+                .await
+                {
+                    let _ = tx.send(Err(e)).await;
+                }
+            };
+
+            tokio::select! {
+                biased;
+                _ = tx_closed.closed() => (),
+                _ = work => {},
+            }
+        });
+
+        Box::pin(ReceiverStream { rx })
+    }
+
     fn id(&self) -> &str {
         &self.provider_id
     }
