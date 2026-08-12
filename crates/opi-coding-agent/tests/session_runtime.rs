@@ -2931,7 +2931,18 @@ impl Provider for CompleteThenHangProvider {
         "mock"
     }
     fn models(&self) -> &[opi_ai::provider::ModelInfo] {
-        &[]
+        static MODELS: std::sync::OnceLock<Vec<opi_ai::provider::ModelInfo>> =
+            std::sync::OnceLock::new();
+        MODELS
+            .get_or_init(|| {
+                vec![opi_ai::provider::ModelInfo::new(
+                    "mock-model",
+                    "Mock Model",
+                    opi_ai::WireApi::OpenAiCompletions,
+                    opi_ai::ModelCapabilities::new(100_000, 4_096),
+                )]
+            })
+            .as_slice()
     }
     fn stream(&self, _request: Request) -> EventStream {
         let mut count = self.calls.lock().unwrap();

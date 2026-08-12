@@ -23,7 +23,7 @@ use opi_agent::hooks::{
     AfterToolCallContext, AfterToolCallResult, AgentHooks, BeforeToolCallContext,
     BeforeToolCallResult, PrepareNextTurnContext,
 };
-use opi_agent::loop_types::{AgentError, AgentLoopTurnUpdate};
+use opi_agent::loop_types::{AgentError, InferenceConfig, ModelSelection, NextTurnState};
 use opi_agent::message::{AgentMessage, CustomAgentMessage};
 use opi_agent::tool::{ExecutionMode, Tool, ToolError, ToolResult};
 use opi_ai::message::{OutputContent, ToolDef};
@@ -296,16 +296,17 @@ impl Extension for CustomMessageExtension {
 
     fn prepare_next_turn(
         &self,
-        _ctx: &PrepareNextTurnContext,
-    ) -> Pin<Box<dyn Future<Output = Option<AgentLoopTurnUpdate>> + Send>> {
-        Box::pin(async {
-            Some(AgentLoopTurnUpdate {
-                extra_messages: vec![AgentMessage::Custom(CustomAgentMessage {
-                    kind: "test/custom".into(),
-                    data: serde_json::json!({"from": "extension"}),
-                    include_in_llm_context: false,
-                })],
-            })
+        ctx: &PrepareNextTurnContext,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<NextTurnState>, AgentError>> + Send>> {
+        let mut state = ctx.state.clone();
+        let extra = vec![AgentMessage::Custom(CustomAgentMessage {
+            kind: "test/custom".into(),
+            data: serde_json::json!({"from": "extension"}),
+            include_in_llm_context: false,
+        })];
+        Box::pin(async move {
+            state.context.extend(extra);
+            Ok(Some(state))
         })
     }
 }
@@ -636,14 +637,21 @@ async fn composite_hooks_prepare_next_turn_includes_extension_custom_messages() 
     let composite = registry.wrap_hooks(Box::new(TestHooks));
     let update = composite
         .prepare_next_turn(PrepareNextTurnContext {
-            messages: vec![],
+            state: NextTurnState::new(
+                vec![],
+                ModelSelection::parse_spec("mock:mock-model").unwrap(),
+                InferenceConfig::default(),
+            ),
+            tool_results: vec![],
+            terminate: false,
             turn: 1,
         })
         .await
-        .expect("extension should inject next-turn messages");
+        .expect("extension should inject next-turn messages")
+        .expect("extension should return Some state");
 
-    assert_eq!(update.extra_messages.len(), 1);
-    match &update.extra_messages[0] {
+    assert_eq!(update.context.len(), 1);
+    match &update.context[0] {
         AgentMessage::Custom(message) => {
             assert_eq!(message.kind, "test/custom");
             assert_eq!(message.data["from"], "extension");
@@ -1148,11 +1156,11 @@ impl AgentHooks for LogHooks {
     fn prepare_next_turn(
         &self,
         _ctx: PrepareNextTurnContext,
-    ) -> Pin<Box<dyn Future<Output = Option<AgentLoopTurnUpdate>> + Send>> {
+    ) -> Pin<Box<dyn Future<Output = Result<Option<NextTurnState>, AgentError>> + Send>> {
         let log = self.log.clone();
         Box::pin(async move {
             log.lock().unwrap().push("base:prepare".into());
-            None
+            Ok(None)
         })
     }
 }
@@ -1234,12 +1242,12 @@ impl Extension for LogExt {
     fn prepare_next_turn(
         &self,
         _ctx: &PrepareNextTurnContext,
-    ) -> Pin<Box<dyn Future<Output = Option<AgentLoopTurnUpdate>> + Send>> {
+    ) -> Pin<Box<dyn Future<Output = Result<Option<NextTurnState>, AgentError>> + Send>> {
         let log = self.log.clone();
         let name = self.name.clone();
         Box::pin(async move {
             log.lock().unwrap().push(format!("ext:{name}:prepare"));
-            None
+            Ok(None)
         })
     }
 }
@@ -1315,10 +1323,17 @@ async fn phase8_hook_composition_base_then_extensions_in_order() {
     log.lock().unwrap().clear();
     composite
         .prepare_next_turn(PrepareNextTurnContext {
-            messages: vec![],
+            state: NextTurnState::new(
+                vec![],
+                ModelSelection::parse_spec("mock:mock-model").unwrap(),
+                InferenceConfig::default(),
+            ),
+            tool_results: vec![],
+            terminate: false,
             turn: 1,
         })
-        .await;
+        .await
+        .unwrap();
     assert_eq!(
         log.lock().unwrap().as_slice(),
         &["base:prepare", "ext:alpha:prepare", "ext:beta:prepare"]

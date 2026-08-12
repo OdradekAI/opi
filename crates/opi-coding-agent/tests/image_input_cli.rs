@@ -8,6 +8,7 @@ use clap::Parser;
 use opi_ai::message::{ImageSource, InputContent, MediaType};
 use opi_coding_agent::cli::Cli;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 // --- CLI flag parsing ---
 
@@ -157,10 +158,10 @@ fn load_image_rejects_file_above_limit() {
 // --- prompt_with_content integration tests ---
 
 use opi_agent::hooks::AgentHooks;
-use opi_agent::loop_types::AgentError;
+use opi_agent::loop_types::{AgentError, InferenceConfig};
 use opi_agent::message::AgentMessage;
 use opi_ai::message::Message;
-use opi_ai::test_support::MockProvider;
+use opi_ai::test_support::{MockProvider, single_route_collection};
 
 struct TestHooks;
 
@@ -195,7 +196,7 @@ fn pending_images_injected_into_first_prompt() {
     let config = OpiConfig::default();
     let mut harness = CodingHarness::new(
         provider,
-        "mock:test".into(),
+        "test-mock:mock-model".into(),
         config,
         std::env::current_dir().unwrap(),
         opi_coding_agent::project_trust::TrustDecision::Trusted,
@@ -232,13 +233,15 @@ async fn prompt_with_content_sends_image_to_provider() {
     ];
 
     let mut agent = opi_agent::Agent::new(
-        Box::new(provider),
+        Arc::new(single_route_collection(Box::new(provider))),
         vec![],
-        "test:model".into(),
+        "test-mock:mock-model".into(),
         None,
+        InferenceConfig::default(),
         Default::default(),
         Box::new(TestHooks),
-    );
+    )
+    .expect("agent");
 
     let messages = agent.prompt_with_content(content).await.unwrap();
 
@@ -285,7 +288,7 @@ async fn harness_prompt_with_content_sends_image() {
 
     let mut harness = CodingHarness::new(
         Box::new(provider),
-        "test:model".into(),
+        "test-mock:mock-model".into(),
         OpiConfig::default(),
         dir.path().to_path_buf(),
         opi_coding_agent::project_trust::TrustDecision::Trusted,

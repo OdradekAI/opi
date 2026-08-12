@@ -11,11 +11,13 @@ use std::sync::{Arc, Mutex};
 use opi_agent::Agent;
 use opi_agent::event::AgentEvent;
 use opi_agent::hooks::AgentHooks;
-use opi_agent::loop_types::{AgentError, AgentLoopConfig};
+use opi_agent::loop_types::{AgentError, AgentLoopConfig, InferenceConfig};
 use opi_agent::sdk::{SDK_SCHEMA_VERSION, SdkCommand, SdkResponse, agent_event_to_value};
 use opi_agent::tool::{ExecutionMode, Tool, ToolError, ToolResult};
 use opi_ai::message::{OutputContent, ToolDef};
-use opi_ai::test_support::{MockProvider, text_response, tool_call_response};
+use opi_ai::test_support::{
+    MockProvider, single_route_collection, text_response, tool_call_response,
+};
 use tokio_util::sync::CancellationToken;
 
 // ---------------------------------------------------------------------------
@@ -79,13 +81,15 @@ impl AgentHooks for NoopHooks {
 fn make_agent(responses: Vec<Vec<opi_ai::stream::AssistantStreamEvent>>) -> Agent {
     let provider = MockProvider::new("mock", responses);
     Agent::new(
-        Box::new(provider),
+        Arc::new(single_route_collection(Box::new(provider))),
         vec![Box::new(NoopTool)],
         "mock:mock-model".into(),
         Some("test system prompt".into()),
+        InferenceConfig::default(),
         AgentLoopConfig::default(),
         Box::new(NoopHooks),
     )
+    .expect("agent")
 }
 
 fn collect_events(agent: &mut Agent) -> Arc<Mutex<Vec<AgentEvent>>> {
@@ -384,10 +388,40 @@ async fn sdk_abort_cancels_running_agent() {
 
 #[tokio::test]
 async fn sdk_set_model_changes_model() {
-    let mut agent = make_agent(vec![text_response("response")]);
-    assert_eq!(agent.model(), "mock:mock-model");
-    agent.set_model("new:model".into());
-    assert_eq!(agent.model(), "new:model");
+    // Phase 17.2: set_model validates that the new selection resolves to a
+    // route in the provider collection, so the provider must advertise the
+    // target model. Switch the model within the same provider.
+    let provider = MockProvider::new_with_models(
+        "mock",
+        vec![
+            opi_ai::provider::ModelInfo::new(
+                "mock-model",
+                "Mock Model",
+                opi_ai::WireApi::OpenAiCompletions,
+                opi_ai::ModelCapabilities::new(100_000, 4_096),
+            ),
+            opi_ai::provider::ModelInfo::new(
+                "other-model",
+                "Other Model",
+                opi_ai::WireApi::OpenAiCompletions,
+                opi_ai::ModelCapabilities::new(100_000, 4_096),
+            ),
+        ],
+        vec![text_response("response")],
+    );
+    let mut agent = Agent::new(
+        std::sync::Arc::new(single_route_collection(Box::new(provider))),
+        vec![Box::new(NoopTool)],
+        "mock:mock-model".into(),
+        Some("test system prompt".into()),
+        InferenceConfig::default(),
+        AgentLoopConfig::default(),
+        Box::new(NoopHooks),
+    )
+    .expect("agent");
+    assert_eq!(agent.model(), "mock-model");
+    agent.set_model("mock:other-model".into());
+    assert_eq!(agent.model(), "other-model");
 }
 
 #[tokio::test]
@@ -589,13 +623,15 @@ fn agent_with_call_log(
     let provider = MockProvider::new("mock", responses);
     let call_log = provider.call_log_handle();
     let agent = Agent::new(
-        Box::new(provider),
+        Arc::new(single_route_collection(Box::new(provider))),
         vec![Box::new(NoopTool)],
         "mock:mock-model".into(),
         Some("test system prompt".into()),
+        InferenceConfig::default(),
         AgentLoopConfig::default(),
         Box::new(NoopHooks),
-    );
+    )
+    .expect("agent");
     (agent, call_log)
 }
 

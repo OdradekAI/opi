@@ -747,7 +747,9 @@ mod wiring {
     use opi_agent::diagnostic_sink::RecordingSink;
     use opi_agent::event::{AgentEvent, AgentEventSink};
     use opi_agent::hooks::AgentHooks;
-    use opi_agent::loop_types::{AgentLoopConfig, AgentLoopContext};
+    use opi_agent::loop_types::{
+        AgentLoopConfig, AgentLoopContext, InferenceConfig, ModelSelection, NextTurnState,
+    };
     use opi_agent::message::AgentMessage;
     use opi_agent::tool::{ExecutionMode, Tool, ToolResult};
     use opi_agent::{
@@ -757,7 +759,7 @@ mod wiring {
     use opi_ai::message::{InputContent, Message, OutputContent, ToolDef, UserMessage};
     use opi_ai::provider::ProviderError;
     use opi_ai::retry::RetryConfig;
-    use opi_ai::test_support::{self, MockProvider, MockResponse};
+    use opi_ai::test_support::{self, MockProvider, MockResponse, single_route_collection};
 
     /// Hooks that forward LLM messages unchanged and otherwise do nothing.
     struct NoopHooks;
@@ -807,10 +809,13 @@ mod wiring {
         tools: Vec<Box<dyn Tool>>,
     ) -> AgentLoopContext {
         AgentLoopContext {
-            provider: Box::new(provider),
+            collection: Arc::new(single_route_collection(Box::new(provider))),
             tools,
-            messages: vec![user_msg("hello")],
-            model: "mock-model".into(),
+            state: NextTurnState::new(
+                vec![user_msg("hello")],
+                ModelSelection::parse_spec("mock:mock-model").unwrap(),
+                InferenceConfig::default(),
+            ),
             system: None,
             steering_queue: None,
             follow_up_queue: None,
@@ -823,10 +828,7 @@ mod wiring {
     fn config(retry: Option<RetryConfig>) -> AgentLoopConfig {
         AgentLoopConfig {
             max_turns: 10,
-            max_tokens: None,
-            temperature: None,
             retry,
-            ..Default::default()
         }
     }
 
@@ -1528,7 +1530,10 @@ mod phase8_runtime_contract_failures {
     use opi_agent::diagnostic_sink::RecordingSink;
     use opi_agent::event::{AgentEvent, AgentEventSink};
     use opi_agent::hooks::{AgentHooks, BeforeToolCallContext, BeforeToolCallResult};
-    use opi_agent::loop_types::{AgentError, AgentLoopConfig, AgentLoopContext};
+    use opi_agent::loop_types::{
+        AgentError, AgentLoopConfig, AgentLoopContext, InferenceConfig, ModelSelection,
+        NextTurnState,
+    };
     use opi_agent::message::AgentMessage;
     use opi_agent::tool::{ExecutionMode, Tool, ToolError, ToolResult};
     use opi_agent::{DiagnosticSink, RecordingTraceSink, TraceCollector, TraceKind};
@@ -1539,7 +1544,7 @@ mod phase8_runtime_contract_failures {
     use opi_ai::provider::{EventStream, Provider, ProviderError, Request};
     use opi_ai::retry::RetryConfig;
     use opi_ai::stream::{AssistantStreamEvent, StopReason, Usage};
-    use opi_ai::test_support::{self, MockProvider};
+    use opi_ai::test_support::{self, MockProvider, single_route_collection};
 
     /// Hooks that forward LLM messages unchanged and otherwise do nothing.
     struct NoopHooks;
@@ -1620,11 +1625,15 @@ mod phase8_runtime_contract_failures {
         trace: Option<Arc<TraceCollector>>,
         tools: Vec<Box<dyn Tool>>,
     ) -> AgentLoopContext {
+        let model_spec = format!("{}:mock-model", provider.id());
         AgentLoopContext {
-            provider: Box::new(provider),
+            collection: Arc::new(single_route_collection(Box::new(provider))),
             tools,
-            messages: vec![user_msg("hello")],
-            model: "mock-model".into(),
+            state: NextTurnState::new(
+                vec![user_msg("hello")],
+                ModelSelection::parse_spec(&model_spec).unwrap(),
+                InferenceConfig::default(),
+            ),
             system: None,
             steering_queue: None,
             follow_up_queue: None,
@@ -1637,14 +1646,11 @@ mod phase8_runtime_contract_failures {
     fn config() -> AgentLoopConfig {
         AgentLoopConfig {
             max_turns: 10,
-            max_tokens: None,
-            temperature: None,
             retry: Some(RetryConfig {
                 max_attempts: 3,
                 initial_delay_ms: 1,
                 max_delay_ms: 10,
             }),
-            ..Default::default()
         }
     }
 
@@ -1681,7 +1687,18 @@ mod phase8_runtime_contract_failures {
         }
 
         fn models(&self) -> &[opi_ai::provider::ModelInfo] {
-            &[]
+            static MODELS: std::sync::OnceLock<Vec<opi_ai::provider::ModelInfo>> =
+                std::sync::OnceLock::new();
+            MODELS
+                .get_or_init(|| {
+                    vec![opi_ai::provider::ModelInfo::new(
+                        "mock-model",
+                        "Mock Model",
+                        opi_ai::WireApi::OpenAiCompletions,
+                        opi_ai::ModelCapabilities::new(100_000, 4_096),
+                    )]
+                })
+                .as_slice()
         }
 
         fn stream(&self, _request: Request) -> EventStream {

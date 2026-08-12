@@ -84,7 +84,7 @@ use crate::hooks::{
     AfterToolCallContext, AfterToolCallResult, AgentHooks, BeforeToolCallContext,
     BeforeToolCallResult, PrepareNextTurnContext, ShouldStopAfterTurnContext,
 };
-use crate::loop_types::{AgentError, AgentLoopTurnUpdate};
+use crate::loop_types::{AgentError, NextTurnState};
 use crate::message::AgentMessage;
 use crate::tool::{Tool, ToolResult};
 use crate::trace::TraceCollector;
@@ -252,16 +252,18 @@ pub trait Extension: Send + Sync {
         Box::pin(async move { Ok(messages) })
     }
 
-    /// Prepare context before the next turn begins.
+    /// Prepare the complete next-turn state before it is atomically applied.
     ///
-    /// Extensions may return extra messages to inject into the agent's next
-    /// turn. Composite hooks append these messages after the base hook's
-    /// messages and preserve extension registration order.
+    /// Phase 17.2: preparation returns a complete replacement state (not a
+    /// message append). The base hook is authoritative; an extension returning
+    /// `Ok(Some(replacement))` replaces the current candidate (last-wins, in
+    /// registration order); `Ok(None)` contributes nothing; `Err(_)` propagates
+    /// and leaves the prior state intact.
     fn prepare_next_turn(
         &self,
         _ctx: &PrepareNextTurnContext,
-    ) -> Pin<Box<dyn Future<Output = Option<AgentLoopTurnUpdate>> + Send>> {
-        Box::pin(async { None })
+    ) -> Pin<Box<dyn Future<Output = Result<Option<NextTurnState>, AgentError>> + Send>> {
+        Box::pin(async { Ok(None) })
     }
 
     /// Called for every agent event.
@@ -659,31 +661,21 @@ impl AgentHooks for CompositeHooks {
     fn prepare_next_turn(
         &self,
         ctx: PrepareNextTurnContext,
-    ) -> Pin<Box<dyn Future<Output = Option<AgentLoopTurnUpdate>> + Send>> {
+    ) -> Pin<Box<dyn Future<Output = Result<Option<NextTurnState>, AgentError>> + Send>> {
         let base = self.base.clone();
         let extensions = self.extensions.clone();
-        let extension_ctx = PrepareNextTurnContext {
-            messages: ctx.messages.clone(),
-            turn: ctx.turn,
-        };
         Box::pin(async move {
-            let mut extra_messages = base
-                .prepare_next_turn(ctx)
-                .await
-                .map(|update| update.extra_messages)
-                .unwrap_or_default();
-
+            // Base hook is authoritative. Phase 17.2 preparation is complete
+            // state replacement (not a message append), so each extension that
+            // returns Some replaces the current candidate (last-wins, in
+            // registration order); an error propagates and preserves prior state.
+            let mut candidate = base.prepare_next_turn(ctx.clone()).await?;
             for ext in extensions.iter() {
-                if let Some(update) = ext.prepare_next_turn(&extension_ctx).await {
-                    extra_messages.extend(update.extra_messages);
+                if let Some(replacement) = ext.prepare_next_turn(&ctx).await? {
+                    candidate = Some(replacement);
                 }
             }
-
-            if extra_messages.is_empty() {
-                None
-            } else {
-                Some(AgentLoopTurnUpdate { extra_messages })
-            }
+            Ok(candidate)
         })
     }
 }

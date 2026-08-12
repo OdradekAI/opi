@@ -17,7 +17,9 @@ use opi_agent::hooks::{
     AfterToolCallContext, AfterToolCallResult, AgentHooks, BeforeToolCallContext,
     BeforeToolCallResult, PrepareNextTurnContext, ShouldStopAfterTurnContext,
 };
-use opi_agent::loop_types::{AgentError, AgentLoopConfig, AgentLoopContext, AgentLoopTurnUpdate};
+use opi_agent::loop_types::{
+    AgentError, AgentLoopConfig, AgentLoopContext, InferenceConfig, ModelSelection, NextTurnState,
+};
 use opi_agent::message::AgentMessage;
 use opi_agent::tool::{ExecutionMode, Tool, ToolError, ToolResult};
 use opi_ai::message::{
@@ -25,6 +27,7 @@ use opi_ai::message::{
 };
 use opi_ai::provider::{EventStream, Provider, ProviderError, Request};
 use opi_ai::stream::{AssistantStreamEvent, StopReason, Usage};
+use opi_ai::test_support::single_route_collection;
 use tokio_util::sync::CancellationToken;
 
 // ---------------------------------------------------------------------------
@@ -50,7 +53,18 @@ impl Provider for RecordingProvider {
         "recording"
     }
     fn models(&self) -> &[opi_ai::provider::ModelInfo] {
-        &[]
+        static MODELS: std::sync::OnceLock<Vec<opi_ai::provider::ModelInfo>> =
+            std::sync::OnceLock::new();
+        MODELS
+            .get_or_init(|| {
+                vec![opi_ai::provider::ModelInfo::new(
+                    "mock",
+                    "Mock",
+                    opi_ai::WireApi::OpenAiCompletions,
+                    opi_ai::ModelCapabilities::new(100_000, 4_096),
+                )]
+            })
+            .as_slice()
     }
     fn stream(&self, _request: Request) -> EventStream {
         *self.call_count.lock().unwrap() += 1;
@@ -314,21 +328,21 @@ impl AgentHooks for InjectingHooks {
     fn prepare_next_turn(
         &self,
         ctx: PrepareNextTurnContext,
-    ) -> Pin<Box<dyn Future<Output = Option<AgentLoopTurnUpdate>> + Send>> {
+    ) -> Pin<Box<dyn Future<Output = Result<Option<NextTurnState>, AgentError>> + Send>> {
         let text = self.inject_text.clone();
         let inject_on_turn = self.inject_on_turn;
         Box::pin(async move {
             if ctx.turn == inject_on_turn {
-                Some(AgentLoopTurnUpdate {
-                    extra_messages: vec![AgentMessage::Llm(Message::User(
-                        opi_ai::message::UserMessage {
-                            content: vec![InputContent::Text { text }],
-                            timestamp_ms: 0,
-                        },
-                    ))],
-                })
+                let mut state = ctx.state.clone();
+                state.context.push(AgentMessage::Llm(Message::User(
+                    opi_ai::message::UserMessage {
+                        content: vec![InputContent::Text { text }],
+                        timestamp_ms: 0,
+                    },
+                )));
+                Ok(Some(state))
             } else {
-                None
+                Ok(None)
             }
         })
     }
@@ -411,18 +425,23 @@ fn multi_tool_call_response(calls: Vec<(&str, &str, &str)>) -> Vec<AssistantStre
 }
 
 fn make_context(provider: Box<dyn Provider>, tools: Vec<Box<dyn Tool>>) -> AgentLoopContext {
+    let model_spec = format!("{}:mock", provider.id());
+    let messages = vec![AgentMessage::Llm(Message::User(
+        opi_ai::message::UserMessage {
+            content: vec![InputContent::Text {
+                text: "test".into(),
+            }],
+            timestamp_ms: 0,
+        },
+    ))];
     AgentLoopContext {
-        provider,
+        collection: Arc::new(single_route_collection(provider)),
         tools,
-        messages: vec![AgentMessage::Llm(Message::User(
-            opi_ai::message::UserMessage {
-                content: vec![InputContent::Text {
-                    text: "test".into(),
-                }],
-                timestamp_ms: 0,
-            },
-        ))],
-        model: "mock".into(),
+        state: NextTurnState::new(
+            messages,
+            ModelSelection::parse_spec(&model_spec).unwrap(),
+            InferenceConfig::default(),
+        ),
         system: None,
         steering_queue: None,
         follow_up_queue: None,
@@ -710,7 +729,7 @@ async fn h4_all_terminate_stops_early() {
         "provider should be called once when all tools terminate"
     );
     assert!(
-        result.len() >= 3,
+        result.context.len() >= 3,
         "should have user + assistant + tool results"
     );
 }
@@ -792,7 +811,7 @@ async fn h5_prepare_next_turn_injects_and_continues() {
         "provider should be called twice after prepare_next_turn injection"
     );
 
-    let has_injected = result.iter().any(|m| match m {
+    let has_injected = result.context.iter().any(|m| match m {
         AgentMessage::Llm(Message::User(u)) => u
             .content
             .iter()
@@ -958,11 +977,11 @@ impl AgentHooks for TerminalStopHooks {
     fn prepare_next_turn(
         &self,
         ctx: PrepareNextTurnContext,
-    ) -> Pin<Box<dyn Future<Output = Option<AgentLoopTurnUpdate>> + Send>> {
+    ) -> Pin<Box<dyn Future<Output = Result<Option<NextTurnState>, AgentError>> + Send>> {
         let prepare_calls = self.prepare_calls.clone();
         Box::pin(async move {
             prepare_calls.lock().unwrap().push(ctx.turn);
-            None
+            Ok(None)
         })
     }
 }
@@ -1097,18 +1116,23 @@ async fn phase8_event_order_prepare_next_turn_injection() {
         "follow-up-msg".to_string(),
     ])));
 
+    let model_spec = format!("{}:mock", provider.id());
+    let seed_messages = vec![AgentMessage::Llm(Message::User(
+        opi_ai::message::UserMessage {
+            content: vec![InputContent::Text {
+                text: "seed".into(),
+            }],
+            timestamp_ms: 0,
+        },
+    ))];
     let context = AgentLoopContext {
-        provider: Box::new(provider),
+        collection: Arc::new(single_route_collection(Box::new(provider))),
         tools: vec![],
-        messages: vec![AgentMessage::Llm(Message::User(
-            opi_ai::message::UserMessage {
-                content: vec![InputContent::Text {
-                    text: "seed".into(),
-                }],
-                timestamp_ms: 0,
-            },
-        ))],
-        model: "mock".into(),
+        state: NextTurnState::new(
+            seed_messages,
+            ModelSelection::parse_spec(&model_spec).unwrap(),
+            InferenceConfig::default(),
+        ),
         system: None,
         steering_queue: None,
         follow_up_queue: Some(follow_up_queue),
@@ -1134,10 +1158,12 @@ async fn phase8_event_order_prepare_next_turn_injection() {
         "injection then follow-up yield three provider calls"
     );
     let injected_at = result
+        .context
         .iter()
         .position(|m| matches_user_text(m, "injected-context"))
         .expect("injected message must be present");
     let follow_up_at = result
+        .context
         .iter()
         .position(|m| matches_user_text(m, "follow-up-msg"))
         .expect("follow-up message must be present");
@@ -1147,10 +1173,10 @@ async fn phase8_event_order_prepare_next_turn_injection() {
     );
 }
 
-// DoD: a terminal should_stop_after_turn stops the run before prepare_next_turn
-// runs and before any queue is polled.
+// DoD (Phase 17.2): a terminal should_stop_after_turn stops the run after
+// prepare_next_turn has applied the candidate state, before any queue is polled.
 #[tokio::test]
-async fn phase8_event_order_terminal_should_stop_skips_prepare_next_turn() {
+async fn phase8_event_order_terminal_stop_runs_prepare_then_stops() {
     let provider = RecordingProvider::new(vec![text_response("only")]);
     let call_count = provider.call_count.clone();
 
@@ -1182,9 +1208,13 @@ async fn phase8_event_order_terminal_should_stop_skips_prepare_next_turn() {
         1,
         "terminal stop makes exactly one provider call"
     );
-    assert!(
-        prepare_calls.lock().unwrap().is_empty(),
-        "prepare_next_turn must NOT run after a terminal should_stop_after_turn"
+    // Phase 17.2: prepare_next_turn runs BEFORE should_stop (applies the
+    // candidate state that stop observes), so it is invoked once; the terminal
+    // stop then ends the run without polling queues.
+    assert_eq!(
+        prepare_calls.lock().unwrap().len(),
+        1,
+        "prepare_next_turn runs once before a terminal stop ends the run"
     );
     assert!(
         !seq.contains(&"queue_update".to_string()),
@@ -1451,7 +1481,7 @@ async fn phase8_tool_scheduling_persisted_results_in_source_order() {
     );
 
     // Yet persisted results follow assistant source order.
-    let ids = persisted_tool_result_ids(&messages);
+    let ids = persisted_tool_result_ids(&messages.context);
     assert_eq!(
         ids,
         vec!["c1".to_string(), "c2".to_string()],
@@ -1568,7 +1598,7 @@ async fn phase8_tool_scheduling_all_terminate_stops_early() {
         "all-terminate batch stops the run after a single provider call"
     );
     assert_eq!(
-        persisted_tool_result_ids(&messages),
+        persisted_tool_result_ids(&messages.context),
         vec!["c1".to_string(), "c2".to_string()],
         "both finalized results are persisted before the early stop"
     );
@@ -1648,7 +1678,18 @@ impl Provider for HangingStreamProvider {
         "hanging"
     }
     fn models(&self) -> &[opi_ai::provider::ModelInfo] {
-        &[]
+        static MODELS: std::sync::OnceLock<Vec<opi_ai::provider::ModelInfo>> =
+            std::sync::OnceLock::new();
+        MODELS
+            .get_or_init(|| {
+                vec![opi_ai::provider::ModelInfo::new(
+                    "mock",
+                    "Mock",
+                    opi_ai::WireApi::OpenAiCompletions,
+                    opi_ai::ModelCapabilities::new(100_000, 4_096),
+                )]
+            })
+            .as_slice()
     }
     fn stream(&self, _request: Request) -> EventStream {
         *self.call_count.lock().unwrap() += 1;

@@ -869,6 +869,21 @@ impl From<&crate::loop_types::AgentError> for Diagnostic {
             )
             .details(serde_json::json!({ "trace_error": message }))
             .action("check the trace path is writable and its parent directory exists"),
+            AgentError::RouteNotDispatchable { provider, detail } => Diagnostic::new(
+                Severity::Error,
+                code::CODE_PROVIDER_CAPABILITY_INVALID,
+                SOURCE_PROVIDER,
+                format!("provider route not dispatchable for '{provider}'"),
+            )
+            .details(serde_json::json!({ "provider": provider, "detail": detail }))
+            .action("check provider configuration and credentials"),
+            AgentError::InvalidNextTurnCandidate(message) => Diagnostic::new(
+                Severity::Error,
+                code::CODE_HOOK_FAILED,
+                SOURCE_AGENT,
+                "invalid next-turn candidate state",
+            )
+            .details(serde_json::json!({ "candidate_error": message })),
         }
     }
 }

@@ -5,7 +5,7 @@ use std::pin::Pin;
 
 use tokio_util::sync::CancellationToken;
 
-use crate::loop_types::AgentError;
+use crate::loop_types::{AgentError, NextTurnState};
 use crate::message::AgentMessage;
 
 /// Context provided before a tool call is executed.
@@ -42,14 +42,27 @@ pub enum AfterToolCallResult {
 }
 
 /// Context provided to the should_stop_after_turn hook.
+///
+/// Phase 17.2: stop evaluation runs after the next-turn state has been
+/// atomically applied, so this observes the applied complete state (not the
+/// pre-preparation buffer).
+#[derive(Clone)]
 pub struct ShouldStopAfterTurnContext {
-    pub messages: Vec<AgentMessage>,
+    pub state: NextTurnState,
     pub tool_results: Vec<opi_ai::message::ToolResultMessage>,
 }
 
 /// Context provided to the prepare_next_turn hook.
+///
+/// Phase 17.2: receives a snapshot of the current complete state plus the
+/// completed turn outcome (tool results and any tool-driven terminate flag).
+/// Returns a complete replacement state, `None` to retain the current state,
+/// or an error/cancellation that leaves the prior state intact.
+#[derive(Clone)]
 pub struct PrepareNextTurnContext {
-    pub messages: Vec<AgentMessage>,
+    pub state: NextTurnState,
+    pub tool_results: Vec<opi_ai::message::ToolResultMessage>,
+    pub terminate: bool,
     pub turn: u32,
 }
 
@@ -96,11 +109,22 @@ pub trait AgentHooks: Send + Sync {
         Box::pin(async { AfterToolCallResult::Keep })
     }
 
-    /// Prepare context before the next turn begins.
+    /// Prepare the complete next-turn state before it is atomically applied.
+    ///
+    /// Receives a snapshot of the current complete state plus the completed
+    /// turn outcome. Return `Ok(Some(replacement))` to replace the state with a
+    /// validated complete value, `Ok(None)` to retain the current state, or
+    /// `Err(_)` to leave the prior state intact and terminate the transition.
+    /// Phase 17.2: this runs before `should_stop_after_turn` observes state.
     fn prepare_next_turn(
         &self,
         _ctx: PrepareNextTurnContext,
-    ) -> Pin<Box<dyn Future<Output = Option<crate::loop_types::AgentLoopTurnUpdate>> + Send>> {
-        Box::pin(async { None })
+    ) -> Pin<
+        Box<
+            dyn Future<Output = Result<Option<crate::loop_types::NextTurnState>, AgentError>>
+                + Send,
+        >,
+    > {
+        Box::pin(async { Ok(None) })
     }
 }

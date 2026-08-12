@@ -19,11 +19,13 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use opi_agent::event::AgentEvent;
-use opi_agent::loop_types::{AgentLoopConfig, AgentLoopContext};
+use opi_agent::loop_types::{
+    AgentLoopConfig, AgentLoopContext, InferenceConfig, ModelSelection, NextTurnState,
+};
 use opi_agent::message::AgentMessage;
 use opi_agent::sdk::agent_event_to_value;
 use opi_agent::session_event::AgentSessionEvent;
-use opi_ai::test_support::{self, MockProvider};
+use opi_ai::test_support::{self, MockProvider, single_route_collection};
 use opi_coding_agent::cli::PackageCommand;
 use opi_coding_agent::config::{
     ExecutionConfig, ExecutionRunMode, ExecutionStrategy, OpiConfig, PermissionDecision,
@@ -1762,11 +1764,15 @@ async fn agent_loop_redacts_hostile_backend_rejected_by_model_schema() {
             events.lock().unwrap().push(agent_event_to_value(&event));
         }
     });
+    let model_spec = "mock:mock-model".to_string();
     let context = AgentLoopContext {
-        provider: Box::new(provider),
+        collection: Arc::new(single_route_collection(Box::new(provider))),
         tools,
-        messages: Vec::new(),
-        model: "mock".to_string(),
+        state: NextTurnState::new(
+            Vec::new(),
+            ModelSelection::parse_spec(&model_spec).unwrap(),
+            InferenceConfig::default(),
+        ),
         system: None,
         steering_queue: None,
         follow_up_queue: None,
@@ -1785,6 +1791,7 @@ async fn agent_loop_redacts_hostile_backend_rejected_by_model_schema() {
     .await
     .expect("schema rejection is a normal tool result");
     let public_tool_results = messages
+        .context
         .iter()
         .filter_map(|message| match message {
             AgentMessage::Llm(opi_ai::message::Message::ToolResult(result)) => Some(result),

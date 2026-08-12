@@ -2,10 +2,11 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex};
 
 use futures_util::StreamExt;
+use opi_ai::CollectionError;
 use opi_ai::message::{
     AssistantContent, InputContent, Message, ToolCall, ToolResultMessage, UserMessage,
 };
-use opi_ai::provider::{CacheRetention, Request, validate_request_capabilities};
+use opi_ai::provider::{CacheRetention, ProviderError, Request};
 use serde_json::json;
 use tokio_util::sync::CancellationToken;
 
@@ -17,7 +18,7 @@ use crate::hooks::{
     AfterToolCallContext, AfterToolCallResult, AgentHooks, BeforeToolCallContext,
     BeforeToolCallResult, PrepareNextTurnContext, ShouldStopAfterTurnContext,
 };
-use crate::loop_types::{AgentError, AgentLoopConfig, AgentLoopContext};
+use crate::loop_types::{AgentError, AgentLoopConfig, AgentLoopContext, NextTurnState};
 use crate::message::AgentMessage;
 use crate::tool::{ExecutionMode, Tool, ToolDiagnostic, ToolResult};
 use crate::trace::{TraceCollector, TraceKind};
@@ -25,9 +26,15 @@ use crate::validation;
 
 /// Run the agent loop until completion or cancellation.
 ///
-/// The loop iterates: provider request, stream response, detect tool calls,
-/// validate and execute tools, send tool results back, and repeat until no
-/// tool calls or stop condition.
+/// Phase 17.2: the loop operates on one complete [`NextTurnState`] (context,
+/// canonical provider:model selection, inference) owned durably by the Agent.
+/// Each turn prepares one logical model call through the registered
+/// [`opi_ai::ProviderCollection`] (route lookup + auth resolution + validation) before
+/// the retry loop, then opens every sequential attempt from that same opaque
+/// prepared call. After a turn reaches a terminal outcome the loop finalizes
+/// it, builds and validates a candidate next-turn state away from live state,
+/// atomically applies it, and only then lets `should_stop_after_turn` observe
+/// the applied state before any steering/follow-up polling.
 ///
 /// When `context.trace` is `Some`, the loop emits versioned, redacted trace
 /// records (run/turn/provider/tool/diagnostic-linked). Tracing is fail-open: a
@@ -40,13 +47,14 @@ pub async fn agent_loop(
     hooks: &dyn AgentHooks,
     events: AgentEventSink,
     cancel: CancellationToken,
-) -> Result<Vec<AgentMessage>, AgentError> {
-    // Clone the sink/collector handles up front (before any partial move out
-    // of `context`) so every failure path below can record an observation.
-    // `None` means emission is disabled and nothing below observes any
-    // behavior change.
+) -> Result<NextTurnState, AgentError> {
+    // Clone the sink/collector/collection handles up front (before any partial
+    // move out of `context`) so every failure path below can record an
+    // observation and prepare the next route. `None` means emission is disabled
+    // and nothing below observes any behavior change.
     let diagnostic_sink = context.diagnostic_sink.clone();
     let trace = context.trace.clone();
+    let collection = context.collection.clone();
     let tools_map: HashMap<String, &dyn Tool> = context
         .tools
         .iter()
@@ -54,7 +62,7 @@ pub async fn agent_loop(
         .collect();
     let tool_defs: Vec<_> = context.tools.iter().map(|t| t.definition()).collect();
 
-    let mut messages = context.messages;
+    let mut state = context.state;
 
     emit_public_event(&events, AgentEvent::AgentStart);
     trace_run(&trace, TraceKind::RunStarted);
@@ -68,7 +76,7 @@ pub async fn agent_loop(
                 &trace,
                 cancelled_diagnostic("before_turn"),
             );
-            emit_agent_end(&events, &trace, &messages);
+            emit_agent_end(&events, &trace, &state.context);
             return Err(AgentError::Cancelled);
         }
 
@@ -76,7 +84,7 @@ pub async fn agent_loop(
         trace_turn(&trace, TraceKind::TurnStarted, &turn_id);
 
         let transformed = hooks
-            .transform_context(messages.clone(), cancel.clone())
+            .transform_context(state.context.clone(), cancel.clone())
             .await?;
 
         let llm_messages = hooks.convert_to_llm(&transformed)?;
@@ -86,40 +94,69 @@ pub async fn agent_loop(
         let mut retry_attempt: u32 = 0;
         let max_attempts = config.retry.as_ref().map(|r| r.max_attempts).unwrap_or(0);
 
-        'stream: loop {
-            let request = Request {
-                model: context.model.clone(),
-                system: context.system.clone(),
-                messages: llm_messages.clone(),
-                tools: tool_defs.clone(),
-                max_tokens: config.max_tokens,
-                temperature: config.temperature,
-                thinking: config.thinking.clone().unwrap_or_default(),
-                stop_sequences: vec![],
-                metadata: None,
-                cancel: cancel.clone(),
-                timeout: None,
-                extra_headers: vec![],
-                cache_retention: CacheRetention::None,
-                session_id: context.session_id.clone(),
-            };
-            if let Err(e) = validate_request_capabilities(context.provider.as_ref(), &request) {
-                observe(
-                    &diagnostic_sink,
-                    &trace,
-                    Diagnostic::new(
-                        Severity::Error,
-                        CODE_PROVIDER_CAPABILITY_INVALID,
-                        SOURCE_PROVIDER,
-                        e.to_string(),
-                    ),
-                );
-                trace_provider(&trace, TraceKind::ProviderFailure, &turn_id);
-                emit_agent_end(&events, &trace, &messages);
-                return Err(AgentError::Provider(e.to_string()));
+        // Build the request ONCE per turn from the applied state's inference +
+        // canonical model selection. Retries reuse the same prepared call, so
+        // the request is not rebuilt inside the retry loop.
+        let request = Request {
+            model: state.model_selection.model_id.clone(),
+            system: context.system.clone(),
+            messages: llm_messages.clone(),
+            tools: tool_defs.clone(),
+            max_tokens: state.inference.max_tokens,
+            temperature: state.inference.temperature,
+            thinking: state.inference.thinking.clone(),
+            stop_sequences: vec![],
+            metadata: None,
+            cancel: cancel.clone(),
+            timeout: None,
+            extra_headers: vec![],
+            cache_retention: CacheRetention::None,
+            session_id: context.session_id.clone(),
+        };
+
+        // Prepare one logical model call: route lookup, capability/wire
+        // validation, and auth resolution all happen here, once, before any
+        // model-request dispatch. A failure returns a typed error without
+        // selecting another provider, model, wire, or credential policy.
+        let prepared = match collection
+            .prepare_call(&state.model_selection.to_spec(), request)
+            .await
+        {
+            Ok(prepared) => prepared,
+            Err(e) => {
+                let err = map_collection_error(e);
+                observe_provider_failure(&diagnostic_sink, &trace, &err, &turn_id);
+                emit_agent_end(&events, &trace, &state.context);
+                return Err(err);
             }
+        };
+
+        // Outcome of the turn's provider/tool work, collected inside the stream
+        // loop and consumed by the post-stream finalize → prepare → stop path.
+        let mut turn_tool_results: Vec<ToolResultMessage> = Vec::new();
+        let mut turn_terminate = false;
+        let mut terminal_assistant: Option<AgentMessage> = None;
+
+        'stream: loop {
             trace_provider(&trace, TraceKind::ProviderRequest, &turn_id);
-            let mut stream = context.provider.stream(request);
+            let mut stream = match prepared.start_attempt() {
+                Ok(stream) => stream,
+                Err(CollectionError::CallCancelled) => {
+                    observe(
+                        &diagnostic_sink,
+                        &trace,
+                        cancelled_diagnostic("during_prepare"),
+                    );
+                    emit_agent_end(&events, &trace, &state.context);
+                    return Err(AgentError::Cancelled);
+                }
+                Err(e) => {
+                    let err = map_collection_error(e);
+                    observe_provider_failure(&diagnostic_sink, &trace, &err, &turn_id);
+                    emit_agent_end(&events, &trace, &state.context);
+                    return Err(err);
+                }
+            };
             assistant_content.clear();
             // Track whether the provider has already delivered any stream item
             // for this attempt. Once content has been emitted to the caller, a
@@ -137,7 +174,7 @@ pub async fn agent_loop(
                             &trace,
                             cancelled_diagnostic("during_stream"),
                         );
-                        emit_agent_end(&events, &trace, &messages);
+                        emit_agent_end(&events, &trace, &state.context);
                         return Err(AgentError::Cancelled);
                     }
                     item = stream.next() => item,
@@ -163,7 +200,7 @@ pub async fn agent_loop(
                             );
                             trace_provider(&trace, TraceKind::ProviderStreamCompletion, &turn_id);
 
-                            messages.push(agent_msg.clone());
+                            state.context.push(agent_msg.clone());
 
                             let content = match &agent_msg {
                                 AgentMessage::Llm(Message::Assistant(a)) => &a.content,
@@ -214,7 +251,7 @@ pub async fn agent_loop(
                                                     &args,
                                                     &tools_map,
                                                     hooks,
-                                                    &messages,
+                                                    &state.context,
                                                     cancel.clone(),
                                                     &diagnostic_sink,
                                                     &trace,
@@ -249,7 +286,7 @@ pub async fn agent_loop(
 
                                         let trm = ToolResultMessage {
                                             tool_call_id: parsed.tool_call.id,
-                                            tool_name: parsed.tool_call.name,
+                                            tool_name: parsed.tool_call.name.clone(),
                                             content: result.content,
                                             details: result.details,
                                             is_error,
@@ -257,7 +294,9 @@ pub async fn agent_loop(
                                             timestamp_ms: opi_ai::time::now_ms(),
                                         };
                                         tool_results.push(trm.clone());
-                                        messages.push(AgentMessage::Llm(Message::ToolResult(trm)));
+                                        state
+                                            .context
+                                            .push(AgentMessage::Llm(Message::ToolResult(trm)));
                                     }
                                 } else {
                                     let parsed_calls: Vec<_> = tool_calls
@@ -282,7 +321,7 @@ pub async fn agent_loop(
                                         .iter()
                                         .map(|parsed| {
                                             let tools_map = &tools_map;
-                                            let messages = &messages;
+                                            let messages = &state.context;
                                             let cancel = cancel.clone();
                                             let diagnostic_sink = diagnostic_sink.clone();
                                             let trace = trace.clone();
@@ -344,7 +383,9 @@ pub async fn agent_loop(
                                             timestamp_ms: opi_ai::time::now_ms(),
                                         };
                                         tool_results.push(trm.clone());
-                                        messages.push(AgentMessage::Llm(Message::ToolResult(trm)));
+                                        state
+                                            .context
+                                            .push(AgentMessage::Llm(Message::ToolResult(trm)));
                                     }
                                 }
 
@@ -354,26 +395,15 @@ pub async fn agent_loop(
                                 emit_public_event(
                                     &events,
                                     AgentEvent::TurnEnd {
-                                        message: agent_msg,
+                                        message: agent_msg.clone(),
                                         tool_results: tool_results.clone(),
                                     },
                                 );
                                 trace_turn(&trace, TraceKind::TurnEnded, &turn_id);
 
-                                if all_terminate {
-                                    emit_agent_end(&events, &trace, &messages);
-                                    return Ok(messages);
-                                }
-
-                                let stop_ctx = ShouldStopAfterTurnContext {
-                                    messages: messages.clone(),
-                                    tool_results,
-                                };
-                                if hooks.should_stop_after_turn(stop_ctx).await {
-                                    emit_agent_end(&events, &trace, &messages);
-                                    return Ok(messages);
-                                }
-
+                                turn_tool_results = tool_results;
+                                turn_terminate = all_terminate;
+                                terminal_assistant = Some(agent_msg);
                                 break 'stream;
                             }
 
@@ -386,14 +416,8 @@ pub async fn agent_loop(
                             );
                             trace_turn(&trace, TraceKind::TurnEnded, &turn_id);
 
-                            let stop_ctx = ShouldStopAfterTurnContext {
-                                messages: messages.clone(),
-                                tool_results: vec![],
-                            };
-                            if hooks.should_stop_after_turn(stop_ctx).await {
-                                emit_agent_end(&events, &trace, &messages);
-                                return Ok(messages);
-                            }
+                            terminal_assistant = Some(agent_msg);
+                            break 'stream;
                         }
                     }
                     Err(e) => {
@@ -403,9 +427,7 @@ pub async fn agent_loop(
                             && let Some(ref rc) = config.retry
                         {
                             let retry_after_ms = match &e {
-                                opi_ai::provider::ProviderError::RateLimited { retry_after_ms } => {
-                                    *retry_after_ms
-                                }
+                                ProviderError::RateLimited { retry_after_ms } => *retry_after_ms,
                                 _ => None,
                             };
                             let delay_ms = rc.delay_for_attempt(retry_attempt, retry_after_ms);
@@ -445,13 +467,15 @@ pub async fn agent_loop(
                                         &trace,
                                         cancelled_diagnostic("during_retry_sleep"),
                                     );
-                                    emit_agent_end(&events, &trace, &messages);
+                                    emit_agent_end(&events, &trace, &state.context);
                                     return Err(AgentError::Cancelled);
                                 }
                                 _ = tokio::time::sleep(
                                     std::time::Duration::from_millis(delay_ms)
                                 ) => {}
                             }
+                            // Re-open the next attempt from the SAME prepared
+                            // call: route and auth are not re-resolved.
                             continue 'stream;
                         }
 
@@ -503,31 +527,11 @@ pub async fn agent_loop(
 
                         // The underlying provider error is classified regardless of whether
                         // retries were attempted, so callers see what actually failed.
+                        let err = classify_provider_error(&e);
                         observe(&diagnostic_sink, &trace, Diagnostic::from(&e));
                         trace_provider(&trace, TraceKind::ProviderFailure, &turn_id);
-                        emit_agent_end(&events, &trace, &messages);
-                        return Err(match &e {
-                            opi_ai::provider::ProviderError::AuthFailed(msg) => {
-                                AgentError::AuthFailed(msg.clone())
-                            }
-                            opi_ai::provider::ProviderError::CredentialNeeded { provider_id } => {
-                                AgentError::CredentialNeeded {
-                                    provider_id: provider_id.clone(),
-                                }
-                            }
-                            opi_ai::provider::ProviderError::CredentialRevoked { provider_id } => {
-                                AgentError::CredentialRevoked {
-                                    provider_id: provider_id.clone(),
-                                }
-                            }
-                            opi_ai::provider::ProviderError::AccountIdMissing { provider_id } => {
-                                AgentError::AccountIdMissing {
-                                    provider_id: provider_id.clone(),
-                                }
-                            }
-                            opi_ai::provider::ProviderError::Cancelled => AgentError::Cancelled,
-                            _ => AgentError::Provider(e.to_string()),
-                        });
+                        emit_agent_end(&events, &trace, &state.context);
+                        return Err(err);
                     }
                 }
             }
@@ -556,18 +560,86 @@ pub async fn agent_loop(
             break 'stream;
         }
 
-        let next_turn_ctx = PrepareNextTurnContext {
-            messages: messages.clone(),
-            turn: turn_idx + 1,
-        };
-        let mut hook_injected = false;
-        if let Some(update) = hooks.prepare_next_turn(next_turn_ctx).await
-            && !update.extra_messages.is_empty()
-        {
-            hook_injected = true;
-            messages.extend(update.extra_messages);
+        // A retried turn that reached a terminal outcome emits the retry-success
+        // event here (runs for every 'stream exit path, including the Done-event
+        // break that skips the post-while-loop emission above).
+        if retry_attempt > 0 && terminal_assistant.is_some() {
+            emit_public_event(
+                &events,
+                AgentEvent::AutoRetryEnd {
+                    success: true,
+                    attempt: retry_attempt,
+                    final_error: None,
+                },
+            );
+            observe(
+                &diagnostic_sink,
+                &trace,
+                Diagnostic::new(
+                    Severity::Info,
+                    CODE_PROVIDER_RETRY_SUCCEEDED,
+                    SOURCE_PROVIDER,
+                    "provider request succeeded after retry",
+                )
+                .details(json!({ "attempts": retry_attempt })),
+            );
         }
 
+        // A turn must produce a terminal assistant message to finalize. If the
+        // stream ended without one (e.g. only non-terminal deltas) there is no
+        // outcome to build a candidate from; preserve state and stop.
+        let Some(terminal_msg) = terminal_assistant else {
+            emit_agent_end(&events, &trace, &state.context);
+            return Ok(state);
+        };
+
+        // Construct the candidate next-turn state away from live state, validate
+        // it as a unit, and atomically apply it. None retains the state; an
+        // error or cancellation leaves the prior state intact. (P17-NXT-002)
+        let prep_ctx = PrepareNextTurnContext {
+            state: state.clone(),
+            tool_results: turn_tool_results.clone(),
+            terminate: turn_terminate,
+            turn: turn_idx + 1,
+        };
+        let mut did_prepare = false;
+        match hooks.prepare_next_turn(prep_ctx).await {
+            Ok(Some(candidate)) => {
+                if collection
+                    .resolve(&candidate.model_selection.to_spec())
+                    .is_err()
+                {
+                    let err = AgentError::InvalidNextTurnCandidate(format!(
+                        "prepared model selection '{}' does not resolve to a route",
+                        candidate.model_selection.to_spec()
+                    ));
+                    emit_agent_end(&events, &trace, &state.context);
+                    return Err(err);
+                }
+                state = candidate;
+                did_prepare = true;
+            }
+            Ok(None) => {}
+            Err(e) => {
+                emit_agent_end(&events, &trace, &state.context);
+                return Err(e);
+            }
+        }
+        let _ = terminal_msg;
+
+        // should_stop_after_turn observes the APPLIED state, after preparation.
+        // A tool-driven terminate flag forces the stop. (P17-NXT-003/004)
+        let stop_ctx = ShouldStopAfterTurnContext {
+            state: state.clone(),
+            tool_results: turn_tool_results,
+        };
+        if turn_terminate || hooks.should_stop_after_turn(stop_ctx).await {
+            emit_agent_end(&events, &trace, &state.context);
+            return Ok(state);
+        }
+
+        // Queue input is applied only after the stop decision permits polling;
+        // it cannot resurrect a transition that already failed or was cancelled.
         let steering = drain_queue(&context.steering_queue);
         if !steering.is_empty() {
             emit_public_event(
@@ -578,12 +650,15 @@ pub async fn agent_loop(
                 },
             );
             for msg in steering {
-                messages.push(user_text_message(msg));
+                state.context.push(user_text_message(msg));
             }
             continue;
         }
 
-        if hook_injected {
+        // prepare_next_turn applied a fresh candidate (new context for the next
+        // provider call). It gets its own next turn, polled before follow-up, so
+        // a prepared message is not bundled with a queued follow-up.
+        if did_prepare {
             continue;
         }
 
@@ -598,7 +673,7 @@ pub async fn agent_loop(
                     },
                 );
                 for msg in follow_up {
-                    messages.push(user_text_message(msg));
+                    state.context.push(user_text_message(msg));
                 }
                 continue;
             }
@@ -616,11 +691,81 @@ pub async fn agent_loop(
     if has_tools_pending {
         let err = AgentError::MaxTurnsExceeded(config.max_turns);
         observe(&diagnostic_sink, &trace, Diagnostic::from(&err));
-        emit_agent_end(&events, &trace, &messages);
+        emit_agent_end(&events, &trace, &state.context);
         return Err(err);
     }
-    emit_agent_end(&events, &trace, &messages);
-    Ok(messages)
+    emit_agent_end(&events, &trace, &state.context);
+    Ok(state)
+}
+
+/// Classify a provider stream error into the typed [`AgentError`] it maps to.
+/// Shared by the in-stream error path and [`map_collection_error`].
+fn classify_provider_error(e: &ProviderError) -> AgentError {
+    match e {
+        ProviderError::AuthFailed(msg) => AgentError::AuthFailed(msg.clone()),
+        ProviderError::CredentialNeeded { provider_id } => AgentError::CredentialNeeded {
+            provider_id: provider_id.clone(),
+        },
+        ProviderError::CredentialRevoked { provider_id } => AgentError::CredentialRevoked {
+            provider_id: provider_id.clone(),
+        },
+        ProviderError::AccountIdMissing { provider_id } => AgentError::AccountIdMissing {
+            provider_id: provider_id.clone(),
+        },
+        ProviderError::Cancelled => AgentError::Cancelled,
+        _ => AgentError::Provider(e.to_string()),
+    }
+}
+
+/// Map a collection-owned preparation/dispatch failure ([`CollectionError`])
+/// into the typed [`AgentError`] boundary. Route/auth failures surface as a
+/// typed route error rather than a generic provider string; the wrapped
+/// provider error is classified via [`classify_provider_error`].
+fn map_collection_error(e: CollectionError) -> AgentError {
+    match e {
+        CollectionError::CallCancelled => AgentError::Cancelled,
+        CollectionError::AttemptAlreadyActive => {
+            AgentError::Provider("prepared call attempt already active".into())
+        }
+        CollectionError::Provider(p) => classify_provider_error(&p),
+        CollectionError::RouteNotDispatchable { provider } => AgentError::RouteNotDispatchable {
+            provider,
+            detail: "no dispatchable route (missing auth resolver)".into(),
+        },
+        CollectionError::AuthNotConfigured { provider, detail } => {
+            AgentError::RouteNotDispatchable { provider, detail }
+        }
+        CollectionError::Registry(reg) => AgentError::RouteNotDispatchable {
+            provider: reg.to_string(),
+            detail: "unknown or ambiguous provider:model selection".into(),
+        },
+    }
+}
+
+/// Observe a provider-route/preparation failure as both a diagnostic and a
+/// provider failure trace record.
+fn observe_provider_failure(
+    sink: &Option<Arc<dyn DiagnosticSink>>,
+    trace: &Option<Arc<TraceCollector>>,
+    err: &AgentError,
+    turn_id: &str,
+) {
+    let detail = err.to_string();
+    let severity = match err {
+        AgentError::Cancelled => Severity::Info,
+        _ => Severity::Error,
+    };
+    observe(
+        sink,
+        trace,
+        Diagnostic::new(
+            severity,
+            CODE_PROVIDER_CAPABILITY_INVALID,
+            SOURCE_PROVIDER,
+            detail,
+        ),
+    );
+    trace_provider(trace, TraceKind::ProviderFailure, turn_id);
 }
 
 fn process_stream_event(

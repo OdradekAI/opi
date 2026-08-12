@@ -12,11 +12,13 @@ use opi_agent::event::{AgentEvent, AgentEventSink};
 use opi_agent::hooks::{
     AgentHooks, BeforeToolCallContext, BeforeToolCallResult, ShouldStopAfterTurnContext,
 };
-use opi_agent::loop_types::{AgentError, AgentLoopConfig, AgentLoopContext};
+use opi_agent::loop_types::{
+    AgentError, AgentLoopConfig, AgentLoopContext, InferenceConfig, ModelSelection, NextTurnState,
+};
 use opi_agent::message::AgentMessage;
 use opi_agent::tool::{Tool, ToolError, ToolResult};
 use opi_ai::message::{InputContent, Message, UserMessage};
-use opi_ai::test_support::{self, MockProvider};
+use opi_ai::test_support::{self, MockProvider, single_route_collection};
 use serde_json::json;
 use tokio_util::sync::CancellationToken;
 
@@ -145,13 +147,16 @@ async fn no_tool_turn_emits_lifecycle_events() {
     });
 
     let context = AgentLoopContext {
-        provider: Box::new(provider),
+        collection: Arc::new(single_route_collection(Box::new(provider))),
         tools: vec![],
-        messages: vec![AgentMessage::Llm(Message::User(UserMessage {
-            content: vec![InputContent::Text { text: "Hi".into() }],
-            timestamp_ms: 0,
-        }))],
-        model: "mock-model".into(),
+        state: NextTurnState::new(
+            vec![AgentMessage::Llm(Message::User(UserMessage {
+                content: vec![InputContent::Text { text: "Hi".into() }],
+                timestamp_ms: 0,
+            }))],
+            ModelSelection::parse_spec("mock:mock-model").unwrap(),
+            InferenceConfig::default(),
+        ),
         system: None,
         steering_queue: None,
         follow_up_queue: None,
@@ -170,7 +175,7 @@ async fn no_tool_turn_emits_lifecycle_events() {
         .await
         .unwrap();
 
-    assert!(result.len() >= 2);
+    assert!(result.context.len() >= 2);
 
     let events = collected_events.lock().unwrap();
     assert!(
@@ -202,13 +207,16 @@ async fn account_id_missing_provider_error_maps_to_typed_agent_error() {
     );
 
     let context = AgentLoopContext {
-        provider: Box::new(provider),
+        collection: Arc::new(single_route_collection(Box::new(provider))),
         tools: vec![],
-        messages: vec![AgentMessage::Llm(Message::User(UserMessage {
-            content: vec![InputContent::Text { text: "Hi".into() }],
-            timestamp_ms: 0,
-        }))],
-        model: "mock-model".into(),
+        state: NextTurnState::new(
+            vec![AgentMessage::Llm(Message::User(UserMessage {
+                content: vec![InputContent::Text { text: "Hi".into() }],
+                timestamp_ms: 0,
+            }))],
+            ModelSelection::parse_spec("openai-codex:mock-model").unwrap(),
+            InferenceConfig::default(),
+        ),
         system: None,
         steering_queue: None,
         follow_up_queue: None,
@@ -287,15 +295,18 @@ async fn tool_use_turn_executes_tool_and_loops() {
     });
 
     let context = AgentLoopContext {
-        provider: Box::new(provider),
+        collection: Arc::new(single_route_collection(Box::new(provider))),
         tools: vec![Box::new(tool)],
-        messages: vec![AgentMessage::Llm(Message::User(UserMessage {
-            content: vec![InputContent::Text {
-                text: "Use the tool".into(),
-            }],
-            timestamp_ms: 0,
-        }))],
-        model: "mock-model".into(),
+        state: NextTurnState::new(
+            vec![AgentMessage::Llm(Message::User(UserMessage {
+                content: vec![InputContent::Text {
+                    text: "Use the tool".into(),
+                }],
+                timestamp_ms: 0,
+            }))],
+            ModelSelection::parse_spec("mock:mock-model").unwrap(),
+            InferenceConfig::default(),
+        ),
         system: None,
         steering_queue: None,
         follow_up_queue: None,
@@ -320,9 +331,9 @@ async fn tool_use_turn_executes_tool_and_loops() {
     assert_eq!(log[0]["arg"], "world");
 
     assert!(
-        result.len() >= 3,
+        result.context.len() >= 3,
         "expected at least 3 messages, got {}",
-        result.len()
+        result.context.len()
     );
 
     let events = collected_events.lock().unwrap();
@@ -356,13 +367,16 @@ async fn text_content_preserved_in_assistant_message() {
     let sink: AgentEventSink = Box::new(|_| {});
 
     let context = AgentLoopContext {
-        provider: Box::new(provider),
+        collection: Arc::new(single_route_collection(Box::new(provider))),
         tools: vec![],
-        messages: vec![AgentMessage::Llm(Message::User(UserMessage {
-            content: vec![InputContent::Text { text: "Hi".into() }],
-            timestamp_ms: 0,
-        }))],
-        model: "mock-model".into(),
+        state: NextTurnState::new(
+            vec![AgentMessage::Llm(Message::User(UserMessage {
+                content: vec![InputContent::Text { text: "Hi".into() }],
+                timestamp_ms: 0,
+            }))],
+            ModelSelection::parse_spec("mock:mock-model").unwrap(),
+            InferenceConfig::default(),
+        ),
         system: None,
         steering_queue: None,
         follow_up_queue: None,
@@ -383,6 +397,7 @@ async fn text_content_preserved_in_assistant_message() {
 
     // Find the assistant message
     let assistant = result
+        .context
         .iter()
         .find_map(|m| match m {
             AgentMessage::Llm(Message::Assistant(a)) => Some(a),
@@ -412,13 +427,15 @@ async fn session_id_reaches_every_request() {
     );
     let call_log = provider.call_log_handle();
     let mut agent = Agent::new(
-        Box::new(provider),
+        Arc::new(single_route_collection(Box::new(provider))),
         vec![],
-        "mock-model".into(),
+        "mock:mock-model".into(),
         None,
+        InferenceConfig::default(),
         AgentLoopConfig::default(),
         Box::new(TestHooks),
-    );
+    )
+    .expect("agent");
 
     agent.set_session_id(Some("session-a".into()));
     agent.prompt("first").await.unwrap();

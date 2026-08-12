@@ -676,6 +676,10 @@ pub struct CodingHarnessBuilder {
     trace: Option<TraceConfig>,
     trust_decision: TrustDecision,
     execution_mode: ExecutionRunMode,
+    /// Phase 17.2: collection-owned auth resolver for the active dispatch route
+    /// (production passes the `ProviderBundle` resolver; `None` defaults to a
+    /// dummy static resolver so mock-provider tests dispatch via `prepare_call`).
+    auth_resolver: Option<Arc<dyn opi_ai::auth::AuthResolver>>,
     #[cfg(test)]
     session_dir_override: Option<PathBuf>,
 }
@@ -709,6 +713,7 @@ impl CodingHarnessBuilder {
             trace: None,
             trust_decision,
             execution_mode: ExecutionRunMode::Interactive,
+            auth_resolver: None,
             #[cfg(test)]
             session_dir_override: None,
         }
@@ -811,6 +816,16 @@ impl CodingHarnessBuilder {
         self
     }
 
+    /// Phase 17.2: set the collection-owned auth resolver for the active
+    /// dispatch route. Production startup passes the `ProviderBundle` resolver
+    /// (a `CredentialResolver`). When unset, the harness installs a dummy static
+    /// resolver so mock-provider tests dispatch through `prepare_call` without
+    /// credentials.
+    pub fn auth_resolver(mut self, resolver: Arc<dyn opi_ai::auth::AuthResolver>) -> Self {
+        self.auth_resolver = Some(resolver);
+        self
+    }
+
     /// Unit-test-only instance seam for isolating session persistence without
     /// mutating the process-global `OPI_SESSIONS_DIR` environment variable.
     #[cfg(test)]
@@ -847,6 +862,7 @@ impl CodingHarnessBuilder {
                 trace: self.trace,
                 trust_decision: self.trust_decision,
                 execution_mode: self.execution_mode,
+                auth_resolver: self.auth_resolver,
                 #[cfg(test)]
                 session_dir_override: self.session_dir_override,
             },
@@ -868,6 +884,12 @@ struct HarnessBuildOptions {
     /// Legacy constructors derive interactive/non-interactive from tool config;
     /// RPC remains available only through startup paths that set it explicitly.
     execution_mode: ExecutionRunMode,
+    /// Phase 17.2: the collection-owned auth resolver for the active dispatch
+    /// route. Production startup passes the `ProviderBundle` resolver (a
+    /// `CredentialResolver`); when `None`, the harness installs a dummy static
+    /// resolver so mock-provider tests dispatch through `prepare_call` without
+    /// supplying credentials (the mock ignores the resolved auth).
+    auth_resolver: Option<Arc<dyn opi_ai::auth::AuthResolver>>,
     #[cfg(test)]
     session_dir_override: Option<PathBuf>,
 }
@@ -885,6 +907,7 @@ impl Default for HarnessBuildOptions {
             trace: None,
             trust_decision: TrustDecision::Undecided,
             execution_mode: ExecutionRunMode::Interactive,
+            auth_resolver: None,
             #[cfg(test)]
             session_dir_override: None,
         }
@@ -1277,29 +1300,60 @@ impl CodingHarness {
         };
         let (thinking, max_tokens) =
             initial_thinking_request_config(&model_registry, &model_for_capability_lookup, &config);
+        let inference = opi_agent::loop_types::InferenceConfig {
+            thinking: thinking.unwrap_or_default(),
+            max_tokens,
+            temperature: None,
+        };
         let agent_config = AgentLoopConfig {
             max_turns: config.defaults.max_iterations,
-            max_tokens,
             retry: Some(config.retry.clone()),
-            thinking,
-            ..Default::default()
         };
 
+        // Phase 17.2: assemble one dispatchable route for the active provider.
+        // The Agent routes every model call through this collection via
+        // `prepare_call` (route + auth resolved once per turn). Production
+        // supplies the `ProviderBundle` resolver; when absent (mock-provider
+        // tests) a dummy static resolver is used since the mock ignores auth.
+        let auth_resolver: Arc<dyn opi_ai::auth::AuthResolver> =
+            build_options.auth_resolver.unwrap_or_else(|| {
+                Arc::new(opi_ai::auth::StaticAuthResolver::new(
+                    opi_ai::auth::AuthScheme::ApiKey,
+                    secrecy::SecretString::from("opi-mock-auth"),
+                ))
+            });
+        let mut dispatch_collection = opi_ai::ProviderCollection::new();
+        dispatch_collection
+            .register_route(
+                provider,
+                auth_resolver,
+                opi_ai::AuthProvenanceSource::Static,
+                opi_ai::CompatMetadata::default(),
+            )
+            .expect("registering the active dispatch route must succeed at startup");
+        let dispatch_collection = Arc::new(dispatch_collection);
+
         let mut agent = Agent::new(
-            provider,
+            dispatch_collection,
             tools,
-            model.clone(),
+            model_for_capability_lookup.clone(),
             Some(system_prompt.clone()),
+            inference,
             agent_config,
             hooks,
-        );
+        )
+        .expect("startup model selection must resolve to a dispatchable route");
         if let Some(registry) = extension_event_registry {
             agent.subscribe(Box::new(move |event| registry.dispatch_event(event)));
         }
 
         let initial_len = initial_messages.len();
         if !initial_messages.is_empty() {
-            agent.set_initial_messages(initial_messages);
+            let mut initial_state = agent.state_snapshot();
+            initial_state.context = initial_messages;
+            agent
+                .replace_state(initial_state)
+                .expect("initial context replace must keep the resolved route");
         }
 
         let cwd = if let Some(ref info) = resume {
@@ -1410,7 +1464,7 @@ impl CodingHarness {
 
     /// Return model picker items from the active provider.
     pub fn model_picker_items(&self) -> Vec<opi_tui::SelectItem> {
-        let current_provider = self.agent.provider().id();
+        let current_provider = self.agent.provider_id();
         crate::picker::model_picker_items(self.model_registry.registry())
             .into_iter()
             .filter(|item| item.metadata == current_provider)
@@ -1446,7 +1500,7 @@ impl CodingHarness {
     /// session state. Used by [`Self::set_model_validated`] (persists) and by
     /// resume (applies a recorded model without re-persisting the entry).
     fn try_configure_model(&mut self, model: &str) -> Result<(), String> {
-        let current_provider = self.agent.provider().id();
+        let current_provider = self.agent.provider_id();
         let normalized;
         let model_spec = if model.contains(':') || self.model_info(model).is_none() {
             model
@@ -1621,7 +1675,7 @@ impl CodingHarness {
     }
 
     fn active_model_info(&self) -> Option<ModelInfo> {
-        let current_provider = self.agent.provider().id();
+        let current_provider = self.agent.provider_id();
         let active_model = self.agent.model();
         let normalized;
         let model_spec = if active_model.contains(':') {
@@ -1649,7 +1703,7 @@ impl CodingHarness {
     }
 
     fn model_info(&self, model_id: &str) -> Option<ModelInfo> {
-        let spec = format!("{}:{model_id}", self.agent.provider().id());
+        let spec = format!("{}:{model_id}", self.agent.provider_id());
         self.model_registry
             .resolve(&spec)
             .ok()

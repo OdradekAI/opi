@@ -1224,7 +1224,7 @@ fn coding_harness_wrapper_keeps_product_policy_out_of_opi_agent() {
             .replace('\\', "/");
         let raw = std::fs::read_to_string(file).unwrap_or_default();
         let code = strip_rust_comments(&raw);
-        if code.contains("AgentHarness") {
+        if code.contains("SessionFacade") {
             generic_seam_seen = true;
         }
         for token in product_policy_tokens {
@@ -1235,12 +1235,13 @@ fn coding_harness_wrapper_keeps_product_policy_out_of_opi_agent() {
             }
         }
     }
-    // Sanity / non-vacuousness: the generic harness seam must be present in
-    // opi-agent code (proves the scan is live and the boundary is "generic
-    // seam present, product policy absent").
+    // Sanity / non-vacuousness: a generic harness/session seam must be present
+    // in opi-agent code (proves the scan is live and the boundary is "generic
+    // seam present, product policy absent"). Phase 17.2 removed the unused
+    // AgentHarness; SessionFacade (the live session seam) now anchors the check.
     assert!(
         generic_seam_seen,
-        "expected opi-agent to own the generic AgentHarness seam"
+        "expected opi-agent to own a generic session seam (SessionFacade)"
     );
     assert!(
         violations.is_empty(),

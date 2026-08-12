@@ -1,40 +1,31 @@
-//! Stateful Agent wrapper around the agent loop (S8.2).
+//! Stateful Agent wrapper around the agent loop (S8.2, Phase 17.2).
 //!
 //! Provides `prompt`, `continue_`, `abort`, `subscribe`, `steer`, and
-//! `follow_up` methods, managing conversation state, cancellation, event
-//! subscribers, and message queues.
+//! `follow_up` methods. The Agent is the sole durable owner of the complete
+//! mutable [`NextTurnState`] (conversation context, canonical provider:model
+//! selection, and inference configuration) and dispatches every logical model
+//! call through the registered [`opi_ai::ProviderCollection`] via one prepared call.
 
 use std::collections::VecDeque;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 
+use opi_ai::ProviderCollection;
 use opi_ai::message::{InputContent, Message, UserMessage};
-use opi_ai::provider::{Provider, ThinkingConfig};
+use opi_ai::provider::ThinkingConfig;
 use tokio_util::sync::CancellationToken;
 
 use crate::diagnostic_sink::DiagnosticSink;
 use crate::event::{AgentEvent, AgentEventSink};
 use crate::hooks::AgentHooks;
-use crate::loop_types::{AgentError, AgentLoopConfig, AgentLoopContext};
+use crate::loop_types::{
+    AgentError, AgentLoopConfig, AgentLoopContext, InferenceConfig, ModelSelection, NextTurnState,
+};
 use crate::message::AgentMessage;
 use crate::tool::{ExecutionMode, Tool, ToolError, ToolResult};
 
-// -- Arc wrappers for Provider and Tool reuse across calls ------------------
-
-struct SharedProvider(Arc<dyn Provider>);
-
-impl Provider for SharedProvider {
-    fn id(&self) -> &str {
-        self.0.id()
-    }
-    fn models(&self) -> &[opi_ai::provider::ModelInfo] {
-        self.0.models()
-    }
-    fn stream(&self, request: opi_ai::provider::Request) -> opi_ai::provider::EventStream {
-        self.0.stream(request)
-    }
-}
+// -- Arc wrapper for Tool reuse across calls -------------------------------
 
 struct SharedTool(Arc<dyn Tool>);
 
@@ -89,17 +80,21 @@ impl AgentControl {
 
 /// Stateful wrapper around `agent_loop` with conversation state, cancellation,
 /// event subscription, and message queue management.
+///
+/// Phase 17.2: the Agent durably owns one complete [`NextTurnState`] and one
+/// dispatchable [`opi_ai::ProviderCollection`]. Public piecemeal setters for model,
+/// inference, or messages are replaced by [`Agent::replace_state`], the one
+/// validated idle-state replacement operation.
 pub struct Agent {
-    provider: Arc<dyn Provider>,
+    collection: Arc<ProviderCollection>,
     tools: Vec<Arc<dyn Tool>>,
-    model: String,
+    state: NextTurnState,
     system: Option<String>,
     session_id: Option<String>,
     config: AgentLoopConfig,
     hooks: Box<dyn AgentHooks>,
     cancel: CancellationToken,
     subscribers: Arc<Mutex<Vec<EventSubscriber>>>,
-    messages: Vec<AgentMessage>,
     steering_queue: Arc<Mutex<VecDeque<String>>>,
     follow_up_queue: Arc<Mutex<VecDeque<String>>>,
     diagnostic_sink: Option<Arc<dyn DiagnosticSink>>,
@@ -107,31 +102,41 @@ pub struct Agent {
 }
 
 impl Agent {
-    /// Create a new Agent with the given provider, tools, model, and hooks.
+    /// Create a new Agent over a dispatchable provider collection.
+    ///
+    /// `model_spec` is the canonical `provider:model` selection for the first
+    /// call; `inference` is the initial per-request inference configuration.
+    /// Both live in the durable [`NextTurnState`] and may be replaced atomically
+    /// via [`Agent::replace_state`] between runs.
     pub fn new(
-        provider: Box<dyn Provider>,
+        collection: Arc<ProviderCollection>,
         tools: Vec<Box<dyn Tool>>,
-        model: String,
+        model_spec: String,
         system: Option<String>,
+        inference: InferenceConfig,
         config: AgentLoopConfig,
         hooks: Box<dyn AgentHooks>,
-    ) -> Self {
-        Self {
-            provider: Arc::from(provider),
+    ) -> Result<Self, AgentError> {
+        let model_selection = ModelSelection::parse_spec(&model_spec).ok_or_else(|| {
+            AgentError::InvalidNextTurnCandidate(format!(
+                "model spec '{model_spec}' is not a canonical provider:model selection"
+            ))
+        })?;
+        Ok(Self {
+            collection,
             tools: tools.into_iter().map(Arc::from).collect(),
-            model,
+            state: NextTurnState::new(Vec::new(), model_selection, inference),
             system,
             config,
             hooks,
             cancel: CancellationToken::new(),
             subscribers: Arc::new(Mutex::new(Vec::new())),
-            messages: Vec::new(),
             steering_queue: Arc::new(Mutex::new(VecDeque::new())),
             follow_up_queue: Arc::new(Mutex::new(VecDeque::new())),
             diagnostic_sink: None,
             trace_collector: None,
             session_id: None,
-        }
+        })
     }
 
     /// Set the opaque session identifier carried into every provider Request.
@@ -159,6 +164,100 @@ impl Agent {
         self.trace_collector = collector;
     }
 
+    /// Atomically replace the complete durable state with a validated
+    /// candidate, the one public idle-state replacement operation (Phase
+    /// 17.2). The candidate's model selection must resolve to a route in the
+    /// provider collection; otherwise the prior state is preserved and the
+    /// error is returned. Must be called while the agent is idle.
+    pub fn replace_state(&mut self, candidate: NextTurnState) -> Result<(), AgentError> {
+        self.validate_state(&candidate)?;
+        self.state = candidate;
+        Ok(())
+    }
+
+    fn validate_state(&self, candidate: &NextTurnState) -> Result<(), AgentError> {
+        if self
+            .collection
+            .resolve(&candidate.model_selection.to_spec())
+            .is_err()
+        {
+            return Err(AgentError::InvalidNextTurnCandidate(format!(
+                "model selection '{}' does not resolve to a route in the provider collection",
+                candidate.model_selection.to_spec()
+            )));
+        }
+        Ok(())
+    }
+
+    // -- Narrow convenience mutators (Phase 17.2) ---------------------------
+    // Each delegates to [`Agent::replace_state`] so no mutation bypasses
+    // candidate validation. They keep call sites concise; the one validated
+    // idle-state replacement operation remains `replace_state`. A bare model is
+    // normalized against the current provider id before validation.
+
+    /// Change the model used by subsequent calls. `model` may be a canonical
+    /// `provider:model` spec or a bare model id (normalized against the current
+    /// provider). Delegates to [`Agent::replace_state`]; panics if the result is
+    /// not a dispatchable route (callers validate first).
+    pub fn set_model(&mut self, model: String) {
+        let spec = if model.contains(':') {
+            model
+        } else {
+            format!("{}:{model}", self.provider_id())
+        };
+        let selection = ModelSelection::parse_spec(&spec)
+            .expect("normalized model spec must parse as provider:model");
+        let mut candidate = self.state_snapshot();
+        candidate.model_selection = selection;
+        self.replace_state(candidate)
+            .expect("model change must keep a dispatchable route");
+    }
+
+    /// Change the maximum output tokens. Delegates to [`Agent::replace_state`].
+    pub fn set_max_tokens(&mut self, max_tokens: Option<u64>) {
+        let mut candidate = self.state_snapshot();
+        candidate.inference.max_tokens = max_tokens;
+        let _ = self.replace_state(candidate);
+    }
+
+    /// Change the thinking configuration. Delegates to [`Agent::replace_state`].
+    pub fn set_thinking_config(&mut self, thinking: Option<ThinkingConfig>) {
+        let mut candidate = self.state_snapshot();
+        candidate.inference.thinking = thinking.unwrap_or_default();
+        let _ = self.replace_state(candidate);
+    }
+
+    /// Set the initial conversation context (for session resume). Delegates to
+    /// [`Agent::replace_state`].
+    pub fn set_initial_messages(&mut self, messages: Vec<AgentMessage>) {
+        let mut candidate = self.state_snapshot();
+        candidate.context = messages;
+        let _ = self.replace_state(candidate);
+    }
+
+    /// Inject a single message into the conversation context. Delegates to
+    /// [`Agent::replace_state`].
+    pub fn inject_message(&mut self, message: AgentMessage) {
+        let mut candidate = self.state_snapshot();
+        candidate.context.push(message);
+        let _ = self.replace_state(candidate);
+    }
+
+    /// Replace the entire conversation context. Delegates to
+    /// [`Agent::replace_state`].
+    pub fn replace_messages(&mut self, messages: Vec<AgentMessage>) {
+        let mut candidate = self.state_snapshot();
+        candidate.context = messages;
+        let _ = self.replace_state(candidate);
+    }
+
+    /// Drop trailing context beyond `len`. Delegates to [`Agent::replace_state`].
+    pub fn rewind_to(&mut self, len: usize) {
+        let mut candidate = self.state_snapshot();
+        candidate.context.truncate(len);
+        let _ = self.replace_state(candidate);
+    }
+
     /// Send a user message and run the agent loop.
     ///
     /// Resets the cancellation state if the agent was previously aborted,
@@ -169,11 +268,7 @@ impl Agent {
     ) -> Result<Vec<AgentMessage>, AgentError> {
         self.maybe_reset_cancel();
         let token = self.cancel.child_token();
-        self.messages
-            .push(AgentMessage::Llm(Message::User(UserMessage {
-                content: vec![InputContent::Text { text: text.into() }],
-                timestamp_ms: opi_ai::time::now_ms(),
-            })));
+        self.push_user_text(text.into());
         self.run_with_token(token).await
     }
 
@@ -185,7 +280,8 @@ impl Agent {
     ) -> Result<Vec<AgentMessage>, AgentError> {
         self.maybe_reset_cancel();
         let token = self.cancel.child_token();
-        self.messages
+        self.state
+            .context
             .push(AgentMessage::Llm(Message::User(UserMessage {
                 content,
                 timestamp_ms: opi_ai::time::now_ms(),
@@ -202,40 +298,24 @@ impl Agent {
     ) -> Result<Vec<AgentMessage>, AgentError> {
         self.maybe_reset_cancel();
 
-        if self.messages.is_empty() {
+        if self.state.context.is_empty() {
             return Err(AgentError::Hook("cannot continue: no messages".into()));
         }
 
         let token = self.cancel.child_token();
-        self.messages
-            .push(AgentMessage::Llm(Message::User(UserMessage {
-                content: vec![InputContent::Text { text: text.into() }],
-                timestamp_ms: opi_ai::time::now_ms(),
-            })));
+        self.push_user_text(text.into());
         self.run_with_token(token).await
     }
 
-    /// Re-run the agent loop with the current messages, without pushing a new
+    /// Re-run the agent loop with the current state, without pushing a new
     /// user message. Used by the harness to retry after a `CredentialNeeded`
     /// error is resolved via interactive login — the user message from the
-    /// original `prompt`/`continue_` call is already in `self.messages`, so
+    /// original `prompt`/`continue_` call is already in the context, so
     /// pushing another would duplicate it in the session.
     pub async fn retry_last_turn(&mut self) -> Result<Vec<AgentMessage>, AgentError> {
         self.maybe_reset_cancel();
         let token = self.cancel.child_token();
         self.run_with_token(token).await
-    }
-
-    /// Drop trailing in-memory messages beyond `len`.
-    ///
-    /// Used by the harness to discard an abandoned failed-turn user message
-    /// (for example after `CredentialNeeded`) before a fresh
-    /// [`Agent::prompt`]/[`Agent::prompt_with_content`] call, so the
-    /// unpersisted message is not absorbed into the next successful persistence
-    /// slice. [`Agent::retry_last_turn`] is unaffected because it does not push
-    /// a new user message.
-    pub fn rewind_to(&mut self, len: usize) {
-        self.messages.truncate(len);
     }
 
     /// Cancel the current operation.
@@ -251,58 +331,19 @@ impl Agent {
         self.tools.push(Arc::from(tool));
     }
 
-    /// Return the active model spec.
+    /// Return the active model id (the canonical selection's model half).
     pub fn model(&self) -> &str {
-        &self.model
+        &self.state.model_selection.model_id
     }
 
-    /// Change the model used by subsequent provider requests.
-    pub fn set_model(&mut self, model: String) {
-        self.model = model;
-    }
-
-    /// Return the underlying provider metadata.
-    pub fn provider(&self) -> &dyn Provider {
-        self.provider.as_ref()
+    /// Return the active provider id (the canonical selection's provider half).
+    pub fn provider_id(&self) -> &str {
+        &self.state.model_selection.provider_id
     }
 
     /// Return the thinking configuration used by subsequent provider requests.
     pub fn thinking_config(&self) -> ThinkingConfig {
-        self.config.thinking.clone().unwrap_or_default()
-    }
-
-    /// Change the thinking configuration used by subsequent provider requests.
-    pub fn set_thinking_config(&mut self, thinking: Option<ThinkingConfig>) {
-        self.config.thinking = thinking;
-    }
-
-    /// Change the maximum output tokens used by subsequent provider requests.
-    pub fn set_max_tokens(&mut self, max_tokens: Option<u64>) {
-        self.config.max_tokens = max_tokens;
-    }
-
-    /// Set the initial conversation messages (for session resume).
-    ///
-    /// Must be called before `prompt` or `continue_`. Replaces any
-    /// existing messages in the agent's internal buffer.
-    pub fn set_initial_messages(&mut self, messages: Vec<AgentMessage>) {
-        self.messages = messages;
-    }
-
-    /// Inject a single message into the conversation buffer.
-    ///
-    /// Used after compaction to insert a `CompactionSummary` so subsequent
-    /// provider calls include the summary in their context window.
-    pub fn inject_message(&mut self, message: AgentMessage) {
-        self.messages.push(message);
-    }
-
-    /// Replace the entire conversation buffer.
-    ///
-    /// Used after compaction to install `[summary, ...kept]` so subsequent
-    /// provider requests no longer carry the compacted messages.
-    pub fn replace_messages(&mut self, messages: Vec<AgentMessage>) {
-        self.messages = messages;
+        self.state.inference.thinking.clone()
     }
 
     /// Emit an `AgentEvent` to all subscribers outside of the agent loop.
@@ -316,13 +357,23 @@ impl Agent {
         }
     }
 
-    /// Snapshot the current conversation buffer.
+    /// Snapshot the current conversation context.
     ///
     /// The harness uses this after a turn (and any subsequent compaction) to
     /// compute the next `turn_offset` and return the post-compaction message
     /// list to callers.
     pub fn messages_snapshot(&self) -> Vec<AgentMessage> {
-        self.messages.clone()
+        self.state.context.clone()
+    }
+
+    /// Snapshot the complete durable state (context, model selection, inference).
+    ///
+    /// The harness builds a modified candidate from this snapshot and applies it
+    /// through [`Agent::replace_state`] — the one validated idle-state
+    /// replacement operation — for model changes, inference changes, failed-turn
+    /// rewind, and compaction.
+    pub fn state_snapshot(&self) -> NextTurnState {
+        self.state.clone()
     }
 
     /// Register an event subscriber that receives all `AgentEvent`s.
@@ -364,6 +415,15 @@ impl Agent {
 
     // -- Internal helpers ---------------------------------------------------
 
+    fn push_user_text(&mut self, text: String) {
+        self.state
+            .context
+            .push(AgentMessage::Llm(Message::User(UserMessage {
+                content: vec![InputContent::Text { text }],
+                timestamp_ms: opi_ai::time::now_ms(),
+            })));
+    }
+
     fn maybe_reset_cancel(&mut self) {
         if self.cancel.is_cancelled() {
             self.cancel = CancellationToken::new();
@@ -390,14 +450,13 @@ impl Agent {
         cancel: CancellationToken,
     ) -> Result<Vec<AgentMessage>, AgentError> {
         let context = AgentLoopContext {
-            provider: Box::new(SharedProvider(self.provider.clone())),
+            collection: self.collection.clone(),
             tools: self
                 .tools
                 .iter()
                 .map(|t| Box::new(SharedTool(t.clone())) as Box<dyn Tool>)
                 .collect(),
-            messages: self.messages.clone(),
-            model: self.model.clone(),
+            state: self.state.clone(),
             system: self.system.clone(),
             steering_queue: Some(self.steering_queue.clone()),
             follow_up_queue: Some(self.follow_up_queue.clone()),
@@ -407,10 +466,12 @@ impl Agent {
         };
 
         let sink = self.build_event_sink();
-        let result =
+        let final_state =
             crate::agent_loop(context, self.config.clone(), &*self.hooks, sink, cancel).await?;
 
-        self.messages = result.clone();
-        Ok(result)
+        // The Agent is the sole durable owner: persist the loop's final
+        // complete state before the public operation settles.
+        self.state = final_state;
+        Ok(self.state.context.clone())
     }
 }

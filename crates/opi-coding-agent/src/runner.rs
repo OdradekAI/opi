@@ -884,10 +884,12 @@ fn exit_code_for_agent_error(error: &AgentError) -> i32 {
         | AgentError::CredentialRevoked { .. }
         | AgentError::AccountIdMissing { .. } => ExitCode::AuthFailure as i32,
         AgentError::Provider(_) => ExitCode::ProviderFailure as i32,
+        AgentError::RouteNotDispatchable { .. } => ExitCode::ProviderFailure as i32,
         AgentError::Tool(_) => ExitCode::ToolFailure as i32,
-        AgentError::Hook(_) | AgentError::MaxTurnsExceeded(_) | AgentError::TraceSetup(_) => {
-            ExitCode::RuntimeFailure as i32
-        }
+        AgentError::Hook(_)
+        | AgentError::MaxTurnsExceeded(_)
+        | AgentError::TraceSetup(_)
+        | AgentError::InvalidNextTurnCandidate(_) => ExitCode::RuntimeFailure as i32,
     }
 }
 
@@ -1016,10 +1018,14 @@ impl AgentHooks for NonInteractiveHooks {
         _ctx: PrepareNextTurnContext,
     ) -> std::pin::Pin<
         Box<
-            dyn std::future::Future<Output = Option<opi_agent::loop_types::AgentLoopTurnUpdate>>
-                + Send,
+            dyn std::future::Future<
+                    Output = Result<
+                        Option<opi_agent::loop_types::NextTurnState>,
+                        opi_agent::loop_types::AgentError,
+                    >,
+                > + Send,
         >,
     > {
-        Box::pin(async { None })
+        Box::pin(async { Ok(None) })
     }
 }

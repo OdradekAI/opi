@@ -12,7 +12,9 @@ use opi_agent::hooks::{
     AfterToolCallContext, AfterToolCallResult, AgentHooks, BeforeToolCallContext,
     BeforeToolCallResult, ShouldStopAfterTurnContext,
 };
-use opi_agent::loop_types::{AgentError, AgentLoopConfig, AgentLoopContext};
+use opi_agent::loop_types::{
+    AgentError, AgentLoopConfig, AgentLoopContext, InferenceConfig, ModelSelection, NextTurnState,
+};
 use opi_agent::message::AgentMessage;
 use opi_agent::tool::{ExecutionMode, Tool, ToolError, ToolResult};
 use opi_agent::validation::{self, ValidationError};
@@ -21,6 +23,7 @@ use opi_ai::message::{
 };
 use opi_ai::provider::{EventStream, Provider, ProviderError, Request};
 use opi_ai::stream::{AssistantStreamEvent, StopReason, Usage};
+use opi_ai::test_support::single_route_collection;
 use serde_json::json;
 use tokio_util::sync::CancellationToken;
 
@@ -323,7 +326,18 @@ impl Provider for ScriptedProvider {
         "scripted"
     }
     fn models(&self) -> &[opi_ai::provider::ModelInfo] {
-        &[]
+        static MODELS: std::sync::OnceLock<Vec<opi_ai::provider::ModelInfo>> =
+            std::sync::OnceLock::new();
+        MODELS
+            .get_or_init(|| {
+                vec![opi_ai::provider::ModelInfo::new(
+                    "mock",
+                    "Mock",
+                    opi_ai::WireApi::OpenAiCompletions,
+                    opi_ai::ModelCapabilities::new(100_000, 4_096),
+                )]
+            })
+            .as_slice()
     }
     fn stream(&self, _request: Request) -> EventStream {
         *self.call_count.lock().unwrap() += 1;
@@ -584,15 +598,18 @@ async fn phase8_tool_validation_failure_contract() {
     };
 
     let context = AgentLoopContext {
-        provider: Box::new(provider),
+        collection: Arc::new(single_route_collection(Box::new(provider))),
         tools,
-        messages: vec![AgentMessage::Llm(Message::User(
-            opi_ai::message::UserMessage {
-                content: vec![InputContent::Text { text: "hi".into() }],
-                timestamp_ms: 0,
-            },
-        ))],
-        model: "mock".into(),
+        state: NextTurnState::new(
+            vec![AgentMessage::Llm(Message::User(
+                opi_ai::message::UserMessage {
+                    content: vec![InputContent::Text { text: "hi".into() }],
+                    timestamp_ms: 0,
+                },
+            ))],
+            ModelSelection::parse_spec("scripted:mock").unwrap(),
+            InferenceConfig::default(),
+        ),
         system: None,
         steering_queue: None,
         follow_up_queue: None,
@@ -626,6 +643,7 @@ async fn phase8_tool_validation_failure_contract() {
     );
 
     let error_result = messages
+        .context
         .iter()
         .find_map(|m| match m {
             AgentMessage::Llm(Message::ToolResult(trm)) if trm.tool_call_id == "call-1" => {
@@ -675,15 +693,18 @@ async fn phase8_malformed_tool_arguments_do_not_execute_permissive_tool() {
     };
 
     let context = AgentLoopContext {
-        provider: Box::new(provider),
+        collection: Arc::new(single_route_collection(Box::new(provider))),
         tools,
-        messages: vec![AgentMessage::Llm(Message::User(
-            opi_ai::message::UserMessage {
-                content: vec![InputContent::Text { text: "hi".into() }],
-                timestamp_ms: 0,
-            },
-        ))],
-        model: "mock".into(),
+        state: NextTurnState::new(
+            vec![AgentMessage::Llm(Message::User(
+                opi_ai::message::UserMessage {
+                    content: vec![InputContent::Text { text: "hi".into() }],
+                    timestamp_ms: 0,
+                },
+            ))],
+            ModelSelection::parse_spec("scripted:mock").unwrap(),
+            InferenceConfig::default(),
+        ),
         system: None,
         steering_queue: None,
         follow_up_queue: None,
@@ -730,6 +751,7 @@ async fn phase8_malformed_tool_arguments_do_not_execute_permissive_tool() {
     );
 
     let error_result = messages
+        .context
         .iter()
         .find_map(|m| match m {
             AgentMessage::Llm(Message::ToolResult(trm)) if trm.tool_call_id == "call-1" => {
@@ -777,15 +799,18 @@ async fn malformed_tool_arguments_result_is_structured_error_not_panic() {
     };
 
     let context = AgentLoopContext {
-        provider: Box::new(provider),
+        collection: Arc::new(single_route_collection(Box::new(provider))),
         tools,
-        messages: vec![AgentMessage::Llm(Message::User(
-            opi_ai::message::UserMessage {
-                content: vec![InputContent::Text { text: "hi".into() }],
-                timestamp_ms: 0,
-            },
-        ))],
-        model: "mock".into(),
+        state: NextTurnState::new(
+            vec![AgentMessage::Llm(Message::User(
+                opi_ai::message::UserMessage {
+                    content: vec![InputContent::Text { text: "hi".into() }],
+                    timestamp_ms: 0,
+                },
+            ))],
+            ModelSelection::parse_spec("scripted:mock").unwrap(),
+            InferenceConfig::default(),
+        ),
         system: None,
         steering_queue: None,
         follow_up_queue: None,
@@ -814,6 +839,7 @@ async fn malformed_tool_arguments_result_is_structured_error_not_panic() {
     );
 
     let error_result = messages
+        .context
         .iter()
         .find_map(|m| match m {
             AgentMessage::Llm(Message::ToolResult(trm)) if trm.tool_call_id == "call-1" => {
@@ -858,15 +884,18 @@ async fn phase8_malformed_tool_arguments_do_not_execute_parallel_permissive_tool
     };
 
     let context = AgentLoopContext {
-        provider: Box::new(provider),
+        collection: Arc::new(single_route_collection(Box::new(provider))),
         tools,
-        messages: vec![AgentMessage::Llm(Message::User(
-            opi_ai::message::UserMessage {
-                content: vec![InputContent::Text { text: "hi".into() }],
-                timestamp_ms: 0,
-            },
-        ))],
-        model: "mock".into(),
+        state: NextTurnState::new(
+            vec![AgentMessage::Llm(Message::User(
+                opi_ai::message::UserMessage {
+                    content: vec![InputContent::Text { text: "hi".into() }],
+                    timestamp_ms: 0,
+                },
+            ))],
+            ModelSelection::parse_spec("scripted:mock").unwrap(),
+            InferenceConfig::default(),
+        ),
         system: None,
         steering_queue: None,
         follow_up_queue: None,
@@ -913,6 +942,7 @@ async fn phase8_malformed_tool_arguments_do_not_execute_parallel_permissive_tool
     );
 
     let error_result = messages
+        .context
         .iter()
         .find_map(|m| match m {
             AgentMessage::Llm(Message::ToolResult(trm)) if trm.tool_call_id == "call-1" => {

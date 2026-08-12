@@ -57,7 +57,7 @@ use opi_agent::extension::{
     Extension, ExtensionCommand, ExtensionError, ExtensionHookResult, ExtensionRegistry,
 };
 use opi_agent::hooks::PrepareNextTurnContext;
-use opi_agent::loop_types::AgentLoopTurnUpdate;
+use opi_agent::loop_types::{AgentError, NextTurnState};
 use opi_agent::message::AgentMessage;
 use opi_agent::tool::{ExecutionMode, Tool, ToolError, ToolResult};
 use opi_agent::trace::{TraceCollector, TraceKind};
@@ -507,17 +507,18 @@ impl Extension for ProcessAdapter {
     fn prepare_next_turn(
         &self,
         ctx: &PrepareNextTurnContext,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Option<AgentLoopTurnUpdate>> + Send>>
-    {
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = Result<Option<NextTurnState>, AgentError>> + Send>,
+    > {
         if !self.hooks.contains("prepare_next_turn") {
             self.record_hook_skip("prepare_next_turn");
-            return Box::pin(async { None });
+            return Box::pin(async { Ok(None) });
         }
 
         let id = self.host.next_id();
         let host = self.host.clone();
         let turn = ctx.turn;
-        let messages = ctx.messages.clone();
+        let state = ctx.state.clone();
 
         Box::pin(async move {
             let request = AdapterHostMessage::Hook {
@@ -525,19 +526,27 @@ impl Extension for ProcessAdapter {
                 hook: "prepare_next_turn".to_string(),
                 payload: serde_json::json!({
                     "turn": turn,
-                    "messages": messages,
+                    "messages": state.context,
                 }),
             };
 
-            match host.send_request(request, REQUEST_TIMEOUT).await.ok()? {
-                AdapterProcessMessage::HookResult { data, .. } => {
-                    let extra_messages = data
+            // Phase 17.2: the adapter returns extra messages; fold them into a
+            // complete candidate built from the current state (complete-state
+            // replacement, not an append-only update).
+            let extra_messages: Vec<AgentMessage> =
+                match host.send_request(request, REQUEST_TIMEOUT).await {
+                    Ok(AdapterProcessMessage::HookResult { data, .. }) => data
                         .and_then(|d| d.get("extra_messages").cloned())
                         .and_then(|value| serde_json::from_value(value).ok())
-                        .unwrap_or_default();
-                    Some(AgentLoopTurnUpdate { extra_messages })
-                }
-                _ => None,
+                        .unwrap_or_default(),
+                    _ => return Ok(None),
+                };
+            if extra_messages.is_empty() {
+                Ok(None)
+            } else {
+                let mut candidate = state;
+                candidate.context.extend(extra_messages);
+                Ok(Some(candidate))
             }
         })
     }

@@ -6,7 +6,9 @@ use opi_agent::event::{AgentEvent, AgentEventSink};
 use opi_agent::hooks::{
     AgentHooks, BeforeToolCallContext, BeforeToolCallResult, ShouldStopAfterTurnContext,
 };
-use opi_agent::loop_types::{AgentError, AgentLoopConfig, AgentLoopContext};
+use opi_agent::loop_types::{
+    AgentError, AgentLoopConfig, AgentLoopContext, InferenceConfig, ModelSelection, NextTurnState,
+};
 use opi_agent::message::AgentMessage;
 use opi_agent::tool::{ExecutionMode, Tool, ToolDiagnostic, ToolError, ToolResult, result};
 use opi_ai::message::{
@@ -113,15 +115,18 @@ async fn tool_events_redact_command_context_and_provider_content_stays_unchanged
     });
 
     let context = AgentLoopContext {
-        provider: Box::new(provider),
+        collection: Arc::new(test_support::single_route_collection(Box::new(provider))),
         tools: vec![Box::new(SecretTool)],
-        messages: vec![AgentMessage::Llm(Message::User(UserMessage {
-            content: vec![InputContent::Text {
-                text: "use bash".into(),
-            }],
-            timestamp_ms: 0,
-        }))],
-        model: "mock-model".into(),
+        state: NextTurnState::new(
+            vec![AgentMessage::Llm(Message::User(UserMessage {
+                content: vec![InputContent::Text {
+                    text: "use bash".into(),
+                }],
+                timestamp_ms: 0,
+            }))],
+            ModelSelection::parse_spec("mock:mock-model").unwrap(),
+            InferenceConfig::default(),
+        ),
         system: None,
         steering_queue: None,
         follow_up_queue: None,
@@ -166,6 +171,7 @@ async fn tool_events_redact_command_context_and_provider_content_stays_unchanged
     );
 
     let returned_tool_result = messages
+        .context
         .iter()
         .find_map(|message| match message {
             AgentMessage::Llm(Message::ToolResult(tool_result)) => Some(tool_result),

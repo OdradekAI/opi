@@ -10,11 +10,13 @@ use opi_agent::event::{AgentEvent, AgentEventSink};
 use opi_agent::hooks::{
     AgentHooks, BeforeToolCallContext, BeforeToolCallResult, ShouldStopAfterTurnContext,
 };
-use opi_agent::loop_types::{AgentError, AgentLoopConfig, AgentLoopContext};
+use opi_agent::loop_types::{
+    AgentError, AgentLoopConfig, AgentLoopContext, InferenceConfig, ModelSelection, NextTurnState,
+};
 use opi_agent::message::AgentMessage;
 use opi_agent::tool::{ExecutionMode, Tool, ToolError, ToolResult};
 use opi_ai::message::{InputContent, Message, OutputContent, UserMessage};
-use opi_ai::test_support::{self, MockProvider};
+use opi_ai::test_support::{self, MockProvider, single_route_collection};
 use serde_json::json;
 use tokio_util::sync::CancellationToken;
 
@@ -105,16 +107,20 @@ async fn run_truncated(mode: ExecutionMode) -> (Option<bool>, Option<bool>) {
         }
     });
 
+    let messages = vec![AgentMessage::Llm(Message::User(UserMessage {
+        content: vec![InputContent::Text {
+            text: "use the tool".into(),
+        }],
+        timestamp_ms: 0,
+    }))];
     let context = AgentLoopContext {
-        provider: Box::new(provider),
+        collection: Arc::new(single_route_collection(Box::new(provider))),
         tools: vec![Box::new(tool)],
-        messages: vec![AgentMessage::Llm(Message::User(UserMessage {
-            content: vec![InputContent::Text {
-                text: "use the tool".into(),
-            }],
-            timestamp_ms: 0,
-        }))],
-        model: "mock-model".into(),
+        state: NextTurnState::new(
+            messages,
+            ModelSelection::parse_spec("mock:mock-model").unwrap(),
+            InferenceConfig::default(),
+        ),
         system: None,
         steering_queue: None,
         follow_up_queue: None,
@@ -131,7 +137,7 @@ async fn run_truncated(mode: ExecutionMode) -> (Option<bool>, Option<bool>) {
         .await
         .unwrap();
 
-    let message_truncated = result.iter().find_map(|m| match m {
+    let message_truncated = result.context.iter().find_map(|m| match m {
         AgentMessage::Llm(Message::ToolResult(trm)) => Some(trm.truncated),
         _ => None,
     });

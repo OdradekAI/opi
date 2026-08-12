@@ -35,13 +35,15 @@ use std::sync::{Arc, Mutex};
 use opi_agent::event::AgentEvent;
 use opi_agent::extension::{Extension, ExtensionCommand, ExtensionError, ExtensionRegistry};
 use opi_agent::hooks::AgentHooks;
-use opi_agent::loop_types::{AgentError, AgentLoopConfig};
+use opi_agent::loop_types::{AgentError, AgentLoopConfig, InferenceConfig};
 use opi_agent::message::AgentMessage;
 use opi_agent::sdk::SDK_SCHEMA_VERSION;
 use opi_agent::tool::{ExecutionMode, Tool, ToolError, ToolResult};
 use opi_ai::message::{AssistantContent, OutputContent, ToolDef};
 use opi_ai::provider::Provider;
-use opi_ai::test_support::{MockProvider, text_response, tool_call_response};
+use opi_ai::test_support::{
+    MockProvider, single_route_collection, text_response, tool_call_response,
+};
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 
@@ -199,16 +201,18 @@ impl Extension for SubAgentExtension {
 
                     let child_hooks = Box::new(ChildHooks) as Box<dyn AgentHooks>;
                     let mut child_agent = opi_agent::Agent::new(
-                        child_provider,
+                        Arc::new(single_route_collection(child_provider)),
                         child_tools,
                         model,
                         None,
+                        InferenceConfig::default(),
                         AgentLoopConfig {
                             max_turns: 10,
                             ..Default::default()
                         },
                         child_hooks,
-                    );
+                    )
+                    .expect("agent");
 
                     // Subscribe to child events.
                     let ce = child_events.clone();
@@ -453,7 +457,7 @@ async fn child_run_completes_and_result_routed_to_parent() {
             )) as Box<dyn Provider>
         }),
         Arc::new(Vec::new as fn() -> Vec<Box<dyn Tool>>),
-        "mock:child-model".into(),
+        "child:mock-model".into(),
     );
     let runs = ext.runs.clone();
     let child_events = ext.child_events.clone();
@@ -499,7 +503,7 @@ async fn child_run_with_tool_call_completes() {
             )) as Box<dyn Provider>
         }),
         Arc::new(|| vec![Box::new(DummyTool::new("read"))]),
-        "mock:child-model".into(),
+        "child:mock-model".into(),
     );
     let child_events = ext.child_events.clone();
 
@@ -543,7 +547,7 @@ async fn child_provider_error_propagates_to_parent() {
             )) as Box<dyn Provider>
         }),
         Arc::new(Vec::new as fn() -> Vec<Box<dyn Tool>>),
-        "mock:child-model".into(),
+        "child:mock-model".into(),
     );
     let runs = ext.runs.clone();
 
@@ -589,7 +593,7 @@ async fn child_run_cancelled_mid_execution() {
             )) as Box<dyn Provider>
         }),
         Arc::new(|| vec![Box::new(BlockingTool)]),
-        "mock:child-model".into(),
+        "child:mock-model".into(),
     );
     let child_events = ext.child_events.clone();
     let runs = ext.runs.clone();
@@ -664,7 +668,7 @@ async fn child_events_observable_by_parent() {
             )) as Box<dyn Provider>
         }),
         Arc::new(|| vec![Box::new(DummyTool::new("search"))]),
-        "mock:child-model".into(),
+        "child:mock-model".into(),
     );
     let child_events = ext.child_events.clone();
 
@@ -695,7 +699,7 @@ async fn extension_receives_parent_agent_events() {
             Box::new(MockProvider::new("child", vec![text_response("ok")])) as Box<dyn Provider>
         }),
         Arc::new(Vec::new as fn() -> Vec<Box<dyn Tool>>),
-        "mock:child-model".into(),
+        "child:mock-model".into(),
     );
     let parent_events = ext.parent_events.clone();
 
@@ -750,7 +754,7 @@ async fn multiple_child_runs_have_isolated_state() {
             }
         }),
         Arc::new(Vec::new as fn() -> Vec<Box<dyn Tool>>),
-        "mock:child-model".into(),
+        "child:mock-model".into(),
     );
     let runs = ext.runs.clone();
 
@@ -789,7 +793,7 @@ async fn run_history_visible_via_list_command() {
             Box::new(MockProvider::new("child", vec![text_response("ok")])) as Box<dyn Provider>
         }),
         Arc::new(Vec::new as fn() -> Vec<Box<dyn Tool>>),
-        "mock:child-model".into(),
+        "child:mock-model".into(),
     );
 
     let mut registry = ExtensionRegistry::new();
@@ -825,7 +829,7 @@ async fn run_history_round_trips_through_serialization() {
             Box::new(MockProvider::new("child", vec![text_response("ok")])) as Box<dyn Provider>
         }),
         Arc::new(Vec::new as fn() -> Vec<Box<dyn Tool>>),
-        "mock:child-model".into(),
+        "child:mock-model".into(),
     );
 
     let mut registry = ExtensionRegistry::new();
@@ -845,7 +849,7 @@ async fn run_history_round_trips_through_serialization() {
             Box::new(MockProvider::new("child", vec![text_response("ok")])) as Box<dyn Provider>
         }),
         Arc::new(Vec::new as fn() -> Vec<Box<dyn Tool>>),
-        "mock:child-model".into(),
+        "child:mock-model".into(),
     );
 
     let mut registry2 = ExtensionRegistry::new();
@@ -878,7 +882,7 @@ async fn unknown_command_returns_none() {
             Box::new(MockProvider::new("child", vec![text_response("ok")])) as Box<dyn Provider>
         }),
         Arc::new(Vec::new as fn() -> Vec<Box<dyn Tool>>),
-        "mock:child-model".into(),
+        "child:mock-model".into(),
     );
 
     let mut registry = ExtensionRegistry::new();

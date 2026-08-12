@@ -12,13 +12,15 @@ use opi_agent::diagnostic::code::{
 };
 use opi_agent::event::{AgentEvent, AgentEventSink};
 use opi_agent::hooks::AgentHooks;
-use opi_agent::loop_types::{AgentError, AgentLoopConfig, AgentLoopContext};
+use opi_agent::loop_types::{
+    AgentError, AgentLoopConfig, AgentLoopContext, InferenceConfig, ModelSelection, NextTurnState,
+};
 use opi_agent::message::AgentMessage;
 use opi_agent::{DiagnosticSink, RecordingSink};
 use opi_ai::message::{InputContent, Message, UserMessage};
 use opi_ai::provider::ProviderError;
 use opi_ai::retry::RetryConfig;
-use opi_ai::test_support::{self, MockProvider, MockResponse};
+use opi_ai::test_support::{self, MockProvider, MockResponse, single_route_collection};
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -47,10 +49,13 @@ fn user_msg(text: &str) -> AgentMessage {
 
 fn make_context(provider: MockProvider) -> AgentLoopContext {
     AgentLoopContext {
-        provider: Box::new(provider),
+        collection: Arc::new(single_route_collection(Box::new(provider))),
         tools: vec![],
-        messages: vec![user_msg("hello")],
-        model: "mock-model".into(),
+        state: NextTurnState::new(
+            vec![user_msg("hello")],
+            ModelSelection::parse_spec("mock:mock-model").unwrap(),
+            InferenceConfig::default(),
+        ),
         system: None,
         steering_queue: None,
         follow_up_queue: None,
@@ -62,10 +67,13 @@ fn make_context(provider: MockProvider) -> AgentLoopContext {
 
 fn make_context_with_sink(provider: MockProvider, sink: Arc<RecordingSink>) -> AgentLoopContext {
     AgentLoopContext {
-        provider: Box::new(provider),
+        collection: Arc::new(single_route_collection(Box::new(provider))),
         tools: vec![],
-        messages: vec![user_msg("hello")],
-        model: "mock-model".into(),
+        state: NextTurnState::new(
+            vec![user_msg("hello")],
+            ModelSelection::parse_spec("mock:mock-model").unwrap(),
+            InferenceConfig::default(),
+        ),
         system: None,
         steering_queue: None,
         follow_up_queue: None,
@@ -78,10 +86,7 @@ fn make_context_with_sink(provider: MockProvider, sink: Arc<RecordingSink>) -> A
 fn make_config(retry: Option<RetryConfig>) -> AgentLoopConfig {
     AgentLoopConfig {
         max_turns: 10,
-        max_tokens: None,
-        temperature: None,
         retry,
-        ..Default::default()
     }
 }
 

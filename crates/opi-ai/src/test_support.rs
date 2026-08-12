@@ -3,13 +3,72 @@
 //! Provides `MockProvider` for deterministic, fixture-based provider simulation
 //! across all workspace crates. No live API calls.
 
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 
+use crate::auth::{
+    AuthProvenanceSource, AuthResolver, AuthScheme, ResolvedAuth, StaticAuthResolver,
+};
+use crate::credential::BoxAuthFuture;
 use crate::message::AssistantMessage;
 use crate::model_info::WireApi;
 use crate::provider::{EventStream, ModelInfo, Provider, ProviderError, Request};
 use crate::registry::ModelCapabilities;
 use crate::stream::{AssistantStreamEvent, StopReason, Usage};
+use crate::{CompatMetadata, ProviderCollection};
+use secrecy::SecretString;
+
+/// An `AuthResolver` that increments a shared counter on every `resolve` and
+/// returns a fixed non-secret credential. Used to prove collection-owned auth
+/// is resolved once per logical call (not per retry attempt).
+#[doc(hidden)]
+pub struct CountingAuthResolver {
+    count: Arc<AtomicU32>,
+}
+
+#[doc(hidden)]
+impl CountingAuthResolver {
+    /// Create a resolver that increments `count` on each resolution.
+    pub fn new(count: Arc<AtomicU32>) -> Self {
+        Self { count }
+    }
+}
+
+impl AuthResolver for CountingAuthResolver {
+    fn resolve<'a>(&'a self) -> BoxAuthFuture<'a, Result<ResolvedAuth, ProviderError>> {
+        let count = self.count.clone();
+        Box::pin(async move {
+            count.fetch_add(1, Ordering::SeqCst);
+            Ok(ResolvedAuth {
+                scheme: AuthScheme::ApiKey,
+                secret: SecretString::from("test-key"),
+                base_url: None,
+                account_id: None,
+            })
+        })
+    }
+}
+
+/// Build a [`ProviderCollection`] with one dispatchable route for `provider`,
+/// using a dummy static resolver. Mock providers ignore the resolved auth, so
+/// this lets tests dispatch through the Phase 17.2 `prepare_call` path without
+/// supplying real credentials.
+#[doc(hidden)]
+pub fn single_route_collection(provider: Box<dyn Provider>) -> ProviderCollection {
+    let mut collection = ProviderCollection::new();
+    collection
+        .register_route(
+            provider,
+            Arc::new(StaticAuthResolver::new(
+                AuthScheme::ApiKey,
+                SecretString::from("test-key"),
+            )) as Arc<dyn AuthResolver>,
+            AuthProvenanceSource::Static,
+            CompatMetadata::default(),
+        )
+        .expect("test collection: registering one route must succeed");
+    collection
+}
 
 /// A response that a mock provider can return per `stream()` call.
 #[doc(hidden)]
@@ -232,6 +291,15 @@ impl Provider for MockProvider {
                 Box::pin(stream)
             }
         }
+    }
+
+    /// Prepared dispatch path (Phase 17.2): delegate to [`stream`](Self::stream),
+    /// ignoring the supplied resolved auth — the mock does not authenticate. This
+    /// lets the Agent's `ProviderCollection::prepare_call` path drive the mock in
+    /// tests; `stream_call_count` then records one entry per attempt, so a
+    /// counting resolver can prove auth is resolved once across retries.
+    fn stream_prepared(&self, request: Request, _auth: crate::auth::ResolvedAuth) -> EventStream {
+        self.stream(request)
     }
 
     fn replace_model_catalog(&mut self, models: Vec<ModelInfo>) -> Result<(), ProviderError> {

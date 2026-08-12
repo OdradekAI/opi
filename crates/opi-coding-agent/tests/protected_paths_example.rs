@@ -22,11 +22,13 @@ use std::sync::{Arc, Mutex};
 
 use opi_agent::extension::{Extension, ExtensionHookResult, ExtensionRegistry};
 use opi_agent::hooks::AgentHooks;
-use opi_agent::loop_types::{AgentError, AgentLoopConfig};
+use opi_agent::loop_types::{AgentError, AgentLoopConfig, InferenceConfig};
 use opi_agent::message::AgentMessage;
 use opi_agent::tool::{ExecutionMode, Tool, ToolError, ToolResult};
 use opi_ai::message::{OutputContent, ToolDef};
-use opi_ai::test_support::{MockProvider, text_response, tool_call_response};
+use opi_ai::test_support::{
+    MockProvider, single_route_collection, text_response, tool_call_response,
+};
 use tempfile::TempDir;
 use tokio_util::sync::CancellationToken;
 
@@ -458,19 +460,21 @@ async fn allow_all_permits_read_and_write() {
     );
     let hooks = registry.wrap_hooks(Box::new(TestHooks));
     let mut agent = opi_agent::Agent::new(
-        Box::new(provider),
+        Arc::new(single_route_collection(Box::new(provider))),
         vec![
             Box::new(DummyTool::new("read")),
             Box::new(DummyTool::new("write")),
         ],
-        "mock:model".into(),
+        "mock:mock-model".into(),
         None,
+        InferenceConfig::default(),
         AgentLoopConfig {
             max_turns: 10,
             ..Default::default()
         },
         hooks,
-    );
+    )
+    .expect("agent");
 
     let result = agent.prompt("test").await.unwrap();
     let tool_text = extract_tool_result_text(&result);
@@ -513,16 +517,18 @@ async fn allow_paths_permits_listed_paths() {
     );
     let hooks = registry.wrap_hooks(Box::new(TestHooks));
     let mut agent = opi_agent::Agent::new(
-        Box::new(provider),
+        Arc::new(single_route_collection(Box::new(provider))),
         vec![Box::new(DummyTool::new("read"))],
-        "mock:model".into(),
+        "mock:mock-model".into(),
         None,
+        InferenceConfig::default(),
         AgentLoopConfig {
             max_turns: 10,
             ..Default::default()
         },
         hooks,
-    );
+    )
+    .expect("agent");
 
     let result = agent.prompt("test").await.unwrap();
     let tool_text = extract_tool_result_text(&result);
@@ -565,16 +571,18 @@ async fn deny_paths_blocks_matching_write() {
     );
     let hooks = registry.wrap_hooks(Box::new(TestHooks));
     let mut agent = opi_agent::Agent::new(
-        Box::new(provider),
+        Arc::new(single_route_collection(Box::new(provider))),
         vec![Box::new(DummyTool::new("write"))],
-        "mock:model".into(),
+        "mock:mock-model".into(),
         None,
+        InferenceConfig::default(),
         AgentLoopConfig {
             max_turns: 10,
             ..Default::default()
         },
         hooks,
-    );
+    )
+    .expect("agent");
 
     let result = agent.prompt("test").await.unwrap();
     let tool_text = extract_tool_result_text(&result);
@@ -618,16 +626,18 @@ async fn deny_paths_allows_non_matching_path() {
     );
     let hooks = registry.wrap_hooks(Box::new(TestHooks));
     let mut agent = opi_agent::Agent::new(
-        Box::new(provider),
+        Arc::new(single_route_collection(Box::new(provider))),
         vec![Box::new(DummyTool::new("read"))],
-        "mock:model".into(),
+        "mock:mock-model".into(),
         None,
+        InferenceConfig::default(),
         AgentLoopConfig {
             max_turns: 10,
             ..Default::default()
         },
         hooks,
-    );
+    )
+    .expect("agent");
 
     let result = agent.prompt("test").await.unwrap();
     let tool_text = extract_tool_result_text(&result);
@@ -670,16 +680,18 @@ async fn deny_paths_blocks_edit_on_protected_file() {
     );
     let hooks = registry.wrap_hooks(Box::new(TestHooks));
     let mut agent = opi_agent::Agent::new(
-        Box::new(provider),
+        Arc::new(single_route_collection(Box::new(provider))),
         vec![Box::new(DummyTool::new("edit"))],
-        "mock:model".into(),
+        "mock:mock-model".into(),
         None,
+        InferenceConfig::default(),
         AgentLoopConfig {
             max_turns: 10,
             ..Default::default()
         },
         hooks,
-    );
+    )
+    .expect("agent");
 
     let result = agent.prompt("test").await.unwrap();
     let tool_text = extract_tool_result_text(&result);
@@ -715,16 +727,18 @@ async fn deny_paths_blocks_bash_when_workspace_root_is_denied() {
     );
     let hooks = registry.wrap_hooks(Box::new(TestHooks));
     let mut agent = opi_agent::Agent::new(
-        Box::new(provider),
+        Arc::new(single_route_collection(Box::new(provider))),
         vec![Box::new(DummyTool::new("bash"))],
-        "mock:model".into(),
+        "mock:mock-model".into(),
         None,
+        InferenceConfig::default(),
         AgentLoopConfig {
             max_turns: 10,
             ..Default::default()
         },
         hooks,
-    );
+    )
+    .expect("agent");
 
     let result = agent.prompt("test").await.unwrap();
     let tool_text = extract_tool_result_text(&result);
@@ -767,16 +781,18 @@ async fn parent_traversal_normalizes_to_workspace_root() {
     );
     let hooks = registry.wrap_hooks(Box::new(TestHooks));
     let mut agent = opi_agent::Agent::new(
-        Box::new(provider),
+        Arc::new(single_route_collection(Box::new(provider))),
         vec![Box::new(DummyTool::new("read"))],
-        "mock:model".into(),
+        "mock:mock-model".into(),
         None,
+        InferenceConfig::default(),
         AgentLoopConfig {
             max_turns: 10,
             ..Default::default()
         },
         hooks,
-    );
+    )
+    .expect("agent");
 
     let result = agent.prompt("test").await.unwrap();
     let tool_text = extract_tool_result_text(&result);
@@ -813,16 +829,18 @@ async fn dot_dot_in_path_is_resolved() {
     );
     let hooks = registry.wrap_hooks(Box::new(TestHooks));
     let mut agent = opi_agent::Agent::new(
-        Box::new(provider),
+        Arc::new(single_route_collection(Box::new(provider))),
         vec![Box::new(DummyTool::new("write"))],
-        "mock:model".into(),
+        "mock:mock-model".into(),
         None,
+        InferenceConfig::default(),
         AgentLoopConfig {
             max_turns: 10,
             ..Default::default()
         },
         hooks,
-    );
+    )
+    .expect("agent");
 
     let result = agent.prompt("test").await.unwrap();
     let tool_text = extract_tool_result_text(&result);
@@ -860,16 +878,18 @@ async fn absolute_path_outside_workspace_blocked() {
     );
     let hooks = registry.wrap_hooks(Box::new(TestHooks));
     let mut agent = opi_agent::Agent::new(
-        Box::new(provider),
+        Arc::new(single_route_collection(Box::new(provider))),
         vec![Box::new(DummyTool::new("read"))],
-        "mock:model".into(),
+        "mock:mock-model".into(),
         None,
+        InferenceConfig::default(),
         AgentLoopConfig {
             max_turns: 10,
             ..Default::default()
         },
         hooks,
-    );
+    )
+    .expect("agent");
 
     let result = agent.prompt("test").await.unwrap();
     let tool_text = extract_tool_result_text(&result);
@@ -917,16 +937,18 @@ async fn symlink_traversal_to_protected_path_blocked() {
     );
     let hooks = registry.wrap_hooks(Box::new(TestHooks));
     let mut agent = opi_agent::Agent::new(
-        Box::new(provider),
+        Arc::new(single_route_collection(Box::new(provider))),
         vec![Box::new(DummyTool::new("read"))],
-        "mock:model".into(),
+        "mock:mock-model".into(),
         None,
+        InferenceConfig::default(),
         AgentLoopConfig {
             max_turns: 10,
             ..Default::default()
         },
         hooks,
-    );
+    )
+    .expect("agent");
 
     let result = agent.prompt("test").await.unwrap();
     let tool_text = extract_tool_result_text(&result);
@@ -962,16 +984,18 @@ async fn non_file_tools_pass_through_unaffected() {
     );
     let hooks = registry.wrap_hooks(Box::new(TestHooks));
     let mut agent = opi_agent::Agent::new(
-        Box::new(provider),
+        Arc::new(single_route_collection(Box::new(provider))),
         vec![Box::new(DummyTool::new("glob"))],
-        "mock:model".into(),
+        "mock:mock-model".into(),
         None,
+        InferenceConfig::default(),
         AgentLoopConfig {
             max_turns: 10,
             ..Default::default()
         },
         hooks,
-    );
+    )
+    .expect("agent");
 
     let result = agent.prompt("test").await.unwrap();
     let tool_text = extract_tool_result_text(&result);
@@ -1027,16 +1051,18 @@ async fn audit_log_records_allow_and_deny_across_turns() {
     );
     let hooks = registry.wrap_hooks(Box::new(TestHooks));
     let mut agent = opi_agent::Agent::new(
-        Box::new(provider),
+        Arc::new(single_route_collection(Box::new(provider))),
         vec![Box::new(DummyTool::new("read"))],
-        "mock:model".into(),
+        "mock:mock-model".into(),
         None,
+        InferenceConfig::default(),
         AgentLoopConfig {
             max_turns: 10,
             ..Default::default()
         },
         hooks,
-    );
+    )
+    .expect("agent");
 
     let _ = agent.prompt("test").await.unwrap();
 

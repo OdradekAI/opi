@@ -823,6 +823,13 @@ where
             return ExitCode::ConfigError as i32;
         }
     };
+    // TEST SEAM: when a provider override is injected (tests only), align the
+    // model with the override's first advertised model so ProviderCollection's
+    // prepare_call resolves the override route. Production passes no override.
+    let effective_model = provider_override
+        .as_ref()
+        .and_then(|p| p.models().first().map(|m| format!("{}:{}", p.id(), m.id)))
+        .unwrap_or_else(|| config.defaults.model.clone());
     if let Some(provider) = provider_override {
         bundle.provider = provider;
     }
@@ -856,7 +863,7 @@ where
         merge_provider_diagnostics(&mut runtime_startup, provider_diagnostics);
         let mut runner = match NonInteractiveRunner::new_with_resume_and_runtime_packages(
             provider,
-            config.defaults.model.clone(),
+            effective_model.clone(),
             config.clone(),
             workspace_root,
             allow_mutating,
@@ -997,6 +1004,13 @@ async fn run_rpc_core(
             return ExitCode::ConfigError as i32;
         }
     };
+    // TEST SEAM: when a provider override is injected (tests only), align the
+    // model with the override's first advertised model so ProviderCollection's
+    // prepare_call resolves the override route. Production passes no override.
+    let effective_model = provider_override
+        .as_ref()
+        .and_then(|p| p.models().first().map(|m| format!("{}:{}", p.id(), m.id)))
+        .unwrap_or_else(|| config.defaults.model.clone());
     if let Some(provider) = provider_override {
         bundle.provider = provider;
     }
@@ -1030,7 +1044,7 @@ async fn run_rpc_core(
         merge_provider_diagnostics(&mut runtime_startup, provider_diagnostics);
         let mut runner = match RpcRunner::new_with_runtime_packages(
             provider,
-            config.defaults.model.clone(),
+            effective_model.clone(),
             config.clone(),
             workspace_root,
             allow_mutating,
@@ -1176,6 +1190,12 @@ async fn run_interactive_core<Launch, LaunchFuture>(
     .installed_packages(runtime_startup.installed_packages)
     .startup_diagnostics(runtime_startup.diagnostics)
     .trust_decision(trust_decision);
+    // Phase 17.2: the Agent now dispatches through ProviderCollection::prepare_call,
+    // which resolves a route auth resolver once per logical call. The product's real
+    // CredentialResolver is not (yet) an AuthResolver and provider-owned auth
+    // resolution is removed in 17.5; until then the harness installs a dummy static
+    // resolver so mock-provider tests dispatch via prepare_call. bundle.resolver
+    // remains owned by the bundle for /login and CredentialNeeded retry paths.
     if let Some(prompt) = user_system_prompt {
         builder = builder.user_system_prompt(prompt);
     }

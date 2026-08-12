@@ -322,7 +322,7 @@ run 返回 `Err(AgentError::Cancelled)` 的 turn 根本不会被持久化，因�
 | `Diagnostic`、`DiagnosticPayload`、`RedactionMode`、`Severity`、`redact`、`redact_text`、`DiagnosticSink`、`NullSink`、`RecordingSink` | 不稳定内部 | 运行时表面使用的诊断 payload 与 sink plumbing；当前契约是 redaction/schema-version 行为，不是稳定 API 形状。 |
 | `FileTraceSink`、`RecordingTraceSink`、`TRACE_SCHEMA_VERSION`、`TraceCollector`、`TraceError`、`TraceKind`、`TraceRecord`、`TraceSink` | 不稳定内部 | 本地 trace envelope plumbing；`trace` 模块标注为不稳定 0.x，并携带 `TRACE_SCHEMA_VERSION = 1`。 |
 | `AgentState` | 不稳定内部 | 为 crate 布局与 harness 集成暴露的运行时状态持有器；不是受支持的嵌入方契约。 |
-| `AgentHarness`、`Phase`、`HarnessError`、`HarnessResult`、`HarnessSnapshot`、`HarnessSession`、`HarnessRuntimeConfig`、`HarnessRuntimeConfigBuilder`、`SavePoint`、`PendingWriteQueue`、`PendingWrite`、`PendingWriteKind`、`SessionRepo`、`SessionFacade`、`JsonlHarnessSession`、`JsonlSessionRepo` | 不稳定内部 | 位于 `Agent` 之上的通用 agent-harness/session-facade 编排 seam；经契约测试，但尚未自行驱动主循环。`harness` 模块标注为不稳定 0.x。 |
+| `Phase`、`HarnessError`、`HarnessResult`、`HarnessSnapshot`、`HarnessSession`、`SavePoint`、`PendingWriteQueue`、`PendingWrite`、`PendingWriteKind`、`SessionRepo`、`SessionFacade`、`JsonlHarnessSession`、`JsonlSessionRepo` | 不稳定内部 | 通用 session-facade/repo 编排 seam（Phase 17.2 移除了未使用的 `AgentHarness`/`HarnessRuntimeConfig` 状态持有者）。经契约测试；`harness` 模块标注为不稳定 0.x。 |
 
 本次审查没有发现候选移除的 crate-root re-export。`src/lib.rs` 中的每个
 crate-root `pub use` 都已在上表点名。公共模块可能还会通过模块路径暴露其他项；

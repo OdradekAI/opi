@@ -11,11 +11,11 @@ use std::sync::{Arc, Mutex};
 
 use opi_agent::Agent;
 use opi_agent::hooks::AgentHooks;
-use opi_agent::loop_types::{AgentError, AgentLoopConfig};
+use opi_agent::loop_types::{AgentError, AgentLoopConfig, InferenceConfig};
 use opi_agent::message::AgentMessage;
 use opi_agent::tool::{Tool, ToolError, ToolResult};
 use opi_ai::message::{InputContent, Message};
-use opi_ai::test_support::{self, MockProvider};
+use opi_ai::test_support::{self, MockProvider, single_route_collection};
 use serde_json::json;
 use tokio_util::sync::CancellationToken;
 
@@ -130,13 +130,15 @@ async fn e2e_text_prompt_returns_assistant_message() {
     let provider = MockProvider::new("mock", vec![response]);
 
     let mut agent = Agent::new(
-        Box::new(provider),
+        Arc::new(single_route_collection(Box::new(provider))),
         vec![],
-        "mock-model".into(),
+        "mock:mock-model".into(),
         None,
+        InferenceConfig::default(),
         AgentLoopConfig::default(),
         Box::new(TestHooks),
-    );
+    )
+    .expect("agent");
 
     let events: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
     let ev = events.clone();
@@ -195,13 +197,15 @@ async fn e2e_tool_call_prompt_executes_tool() {
     let tool = MockTool::new("greet", tool_call_log.clone());
 
     let mut agent = Agent::new(
-        Box::new(provider),
+        Arc::new(single_route_collection(Box::new(provider))),
         vec![Box::new(tool)],
-        "mock-model".into(),
+        "mock:mock-model".into(),
         None,
+        InferenceConfig::default(),
         AgentLoopConfig::default(),
         Box::new(TestHooks),
-    );
+    )
+    .expect("agent");
 
     let events: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
     let ev = events.clone();
@@ -247,13 +251,15 @@ async fn e2e_multi_turn_conversation_accumulates_state() {
     let provider = MockProvider::new("mock", vec![first, second]);
 
     let mut agent = Agent::new(
-        Box::new(provider),
+        Arc::new(single_route_collection(Box::new(provider))),
         vec![],
-        "mock-model".into(),
+        "mock:mock-model".into(),
         None,
+        InferenceConfig::default(),
         AgentLoopConfig::default(),
         Box::new(TestHooks),
-    );
+    )
+    .expect("agent");
 
     let result1 = agent.prompt("Hello").await.unwrap();
     assert!(result1.len() >= 2);
@@ -278,13 +284,15 @@ async fn e2e_error_response_from_provider() {
     let provider = MockProvider::new("mock", vec![response]);
 
     let mut agent = Agent::new(
-        Box::new(provider),
+        Arc::new(single_route_collection(Box::new(provider))),
         vec![],
-        "mock-model".into(),
+        "mock:mock-model".into(),
         None,
+        InferenceConfig::default(),
         AgentLoopConfig::default(),
         Box::new(TestHooks),
-    );
+    )
+    .expect("agent");
 
     let result = agent.prompt("Hello").await.unwrap();
 

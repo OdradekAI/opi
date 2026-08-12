@@ -1,6 +1,6 @@
 //! Generic agent harness seam (Phase 10, Workstream 10.2).
 //!
-//! [`AgentHarness`] is the generic, product-agnostic orchestration layer above
+//! AgentHarness is the generic, product-agnostic orchestration layer above
 //! [`crate::Agent`]. It owns the conversation lifecycle concerns that are NOT
 //! specific to the coding-agent product:
 //!
@@ -28,7 +28,7 @@
 //! product defaults); this module owns the generic turn lifecycle, phase guards,
 //! save points, runtime-config snapshots, and pending-write ordering. Routing
 //! the product turn loop *through* `AgentHarness` is a later incremental
-//! migration, not a thin adapter: `AgentHarness::new` takes the `Agent` by
+//! migration, not a thin adapter: `AgentHarness` takes the `Agent` by
 //! value, so product adoption needs either a harness API extension or the
 //! session-facade migration tracked in Workstream 10.3 (task 10.5). The Phase 10
 //! design's implementation notes explicitly prefer letting existing product
@@ -43,19 +43,15 @@
 use std::path::{Path, PathBuf};
 
 use opi_ai::message::Message;
-use opi_ai::provider::ThinkingConfig;
 
-use crate::agent::{Agent, AgentControl};
-use crate::loop_types::AgentLoopConfig;
-use crate::message::AgentMessage;
 use crate::session::{
-    BranchSummaryEntry, CompactionEntry, CrashRecovery, ExtensionStateEntry, LabelAction,
-    LabelEntry, MessageEntry, ModelChangeEntry, SessionEntry, SessionHeader, SessionInfoEntry,
-    SessionReader, SessionWriter, ThinkingLevelChangeEntry,
+    BranchSummaryEntry, CrashRecovery, ExtensionStateEntry, LabelAction, LabelEntry, MessageEntry,
+    ModelChangeEntry, SessionEntry, SessionHeader, SessionInfoEntry, SessionReader, SessionWriter,
+    ThinkingLevelChangeEntry,
 };
-use crate::session_event::{CompactionResult, ThinkingLevel};
+use crate::session_event::ThinkingLevel;
 
-/// Lifecycle phase of an [`AgentHarness`].
+/// Lifecycle phase of an AgentHarness.
 ///
 /// A harness is `Idle` between operations. `Turn` covers a single
 /// provider/tool cycle; `Compaction` and `BranchSummary` are inter-turn
@@ -73,7 +69,7 @@ pub enum Phase {
     BranchSummary,
 }
 
-/// Errors returned by [`AgentHarness`] operations.
+/// Errors returned by AgentHarness operations.
 #[derive(Debug, thiserror::Error)]
 pub enum HarnessError {
     /// A structural or queue operation was attempted while the harness was busy
@@ -84,7 +80,7 @@ pub enum HarnessError {
     /// not be flushed remain queued and are never discarded.
     #[error("session write failed: {0}")]
     Write(#[from] std::io::Error),
-    /// [`AgentHarness::abort`] cancelled the active operation but its best-effort
+    /// AgentHarness cancelled the active operation but its best-effort
     /// flush left the carried number of accepted pending writes unflushed. The
     /// harness is reset to [`Phase::Idle`] and the writes remain queued.
     #[error("abort left {0} accepted pending write(s) unflushed")]
@@ -185,80 +181,6 @@ fn active_content_tip(entries: &[SessionEntry]) -> Option<String> {
         .map(str::to_owned)
 }
 
-/// Frozen runtime configuration for a turn.
-///
-/// This wraps [`AgentLoopConfig`] plus the active model and is the unit a turn
-/// snapshots. Mutations made through [`HarnessRuntimeConfigBuilder`] only take
-/// effect for a *future* snapshot; an in-flight turn keeps its frozen snapshot.
-#[derive(Debug, Clone, Default)]
-pub struct HarnessRuntimeConfig {
-    /// Loop parameters (max turns/tokens, retry, thinking, temperature).
-    pub loop_config: AgentLoopConfig,
-    /// Active model spec.
-    pub model: String,
-}
-
-/// Live, mutable runtime configuration. Setters affect the next
-/// [`HarnessRuntimeConfigBuilder::snapshot`], not any snapshot already issued.
-#[derive(Debug)]
-pub struct HarnessRuntimeConfigBuilder {
-    loop_config: AgentLoopConfig,
-    model: String,
-}
-
-impl HarnessRuntimeConfigBuilder {
-    fn from_config(config: HarnessRuntimeConfig) -> Self {
-        Self {
-            loop_config: config.loop_config,
-            model: config.model,
-        }
-    }
-
-    /// Set the active model for future turns.
-    pub fn set_model(&mut self, model: String) -> &mut Self {
-        self.model = model;
-        self
-    }
-
-    /// Set the max output tokens for future turns.
-    pub fn set_max_tokens(&mut self, max_tokens: Option<u64>) -> &mut Self {
-        self.loop_config.max_tokens = max_tokens;
-        self
-    }
-
-    /// Set the thinking/reasoning configuration for future turns.
-    pub fn set_thinking(&mut self, thinking: Option<ThinkingConfig>) -> &mut Self {
-        self.loop_config.thinking = thinking;
-        self
-    }
-
-    /// Set the retry configuration for future turns.
-    pub fn set_retry(&mut self, retry: Option<opi_ai::retry::RetryConfig>) -> &mut Self {
-        self.loop_config.retry = retry;
-        self
-    }
-
-    /// Set the max turns for future turns.
-    pub fn set_max_turns(&mut self, max_turns: u32) -> &mut Self {
-        self.loop_config.max_turns = max_turns;
-        self
-    }
-
-    /// Set the sampling temperature for future turns.
-    pub fn set_temperature(&mut self, temperature: Option<f64>) -> &mut Self {
-        self.loop_config.temperature = temperature;
-        self
-    }
-
-    /// Freeze an immutable snapshot of the current runtime configuration.
-    pub fn snapshot(&self) -> HarnessRuntimeConfig {
-        HarnessRuntimeConfig {
-            loop_config: self.loop_config.clone(),
-            model: self.model.clone(),
-        }
-    }
-}
-
 /// A save point recorded when the pending-write queue is flushed.
 ///
 /// `pending_before`/`pending_after` describe how many accepted writes were
@@ -285,12 +207,11 @@ pub struct HarnessSnapshot {
     /// Accepted pending writes not yet flushed.
     pub pending_writes: usize,
     /// Runtime config visible to the current phase (frozen for an in-flight turn).
-    pub runtime_config: HarnessRuntimeConfig,
     /// Most recent save point, if any.
     pub last_save_point: Option<SavePoint>,
 }
 
-/// Durable session backend for an [`AgentHarness`].
+/// Durable session backend for an AgentHarness.
 ///
 /// `append` is expected to be durable on success (the JSONL implementation
 /// syncs each entry). This trait is the facade boundary that lets product
@@ -327,283 +248,6 @@ impl HarnessSession for JsonlHarnessSession {
 
     fn message_count(&self) -> std::io::Result<usize> {
         Ok(self.count)
-    }
-}
-
-/// Generic agent harness seam.
-///
-/// Wraps an [`Agent`] and a [`HarnessSession`] backend and enforces the
-/// lifecycle/queue/save-point/runtime-config contract documented at the module
-/// level. Construct with [`AgentHarness::new`].
-pub struct AgentHarness {
-    agent: Agent,
-    session: Box<dyn HarnessSession>,
-    queue: PendingWriteQueue,
-    phase: Phase,
-    config_builder: HarnessRuntimeConfigBuilder,
-    turn_snapshot: Option<HarnessRuntimeConfig>,
-    last_save_point: Option<SavePoint>,
-    savepoint_seq: u64,
-    content_tip_entry_id: Option<String>,
-}
-
-impl AgentHarness {
-    /// Create a new harness wrapping `agent`, persisting through `session`,
-    /// initialized with `defaults` as the runtime configuration.
-    pub fn new(
-        agent: Agent,
-        session: Box<dyn HarnessSession>,
-        defaults: HarnessRuntimeConfig,
-    ) -> Self {
-        let config_builder = HarnessRuntimeConfigBuilder::from_config(defaults);
-        Self {
-            agent,
-            session,
-            queue: PendingWriteQueue::new(),
-            phase: Phase::Idle,
-            config_builder,
-            turn_snapshot: None,
-            last_save_point: None,
-            savepoint_seq: 0,
-            content_tip_entry_id: None,
-        }
-    }
-
-    /// Current lifecycle phase.
-    pub fn phase(&self) -> Phase {
-        self.phase
-    }
-
-    /// Read-only snapshot of harness state. During [`Phase::Turn`] the runtime
-    /// config is the frozen turn snapshot, so mutations to the builder do not
-    /// leak into the in-flight turn.
-    pub fn snapshot(&self) -> HarnessSnapshot {
-        let runtime_config = match self.phase {
-            Phase::Turn => self
-                .turn_snapshot
-                .clone()
-                .unwrap_or_else(|| self.config_builder.snapshot()),
-            _ => self.config_builder.snapshot(),
-        };
-        HarnessSnapshot {
-            phase: self.phase,
-            message_count: self.session.message_count().unwrap_or(0),
-            pending_writes: self.queue.len(),
-            runtime_config,
-            last_save_point: self.last_save_point,
-        }
-    }
-
-    /// Live runtime configuration. Setters here affect only future turn
-    /// snapshots, never an in-flight turn.
-    pub fn runtime_config(&mut self) -> &mut HarnessRuntimeConfigBuilder {
-        &mut self.config_builder
-    }
-
-    /// Enqueue an agent-emitted message write. Accepted only at [`Phase::Idle`];
-    /// returns the assigned pending-write order.
-    pub fn enqueue_message(&mut self, message: Message) -> HarnessResult<u64> {
-        self.require_idle()?;
-        let id = self.next_id();
-        let parent_id = self.content_tip_entry_id.clone();
-        let timestamp = self.next_timestamp();
-        let entry = SessionEntry::Message(MessageEntry {
-            id: id.clone(),
-            parent_id,
-            timestamp,
-            message,
-        });
-        self.content_tip_entry_id = Some(id);
-        Ok(self.queue.enqueue(entry, PendingWriteKind::AgentMessage))
-    }
-
-    /// Enqueue a pending extension/session-state write. Accepted only at
-    /// [`Phase::Idle`]. Always flushes after any agent-emitted message enqueued
-    /// in the same batch.
-    pub fn enqueue_extension_state(&mut self, state: serde_json::Value) -> HarnessResult<u64> {
-        self.require_idle()?;
-        let id = self.next_id();
-        let parent_id = self.content_tip_entry_id.clone();
-        let timestamp = self.next_timestamp();
-        let entry = SessionEntry::ExtensionState(ExtensionStateEntry {
-            id,
-            parent_id,
-            timestamp,
-            state,
-        });
-        Ok(self.queue.enqueue(entry, PendingWriteKind::ExtensionState))
-    }
-
-    /// Flush the pending-write queue at a save point. Valid only at
-    /// [`Phase::Idle`]. Agent-emitted writes are appended before
-    /// extension-state writes.
-    pub fn flush(&mut self) -> HarnessResult<SavePoint> {
-        if self.phase != Phase::Idle {
-            return Err(HarnessError::Busy(self.phase));
-        }
-        let pending_before = self.queue.len();
-        self.flush_internal()?;
-        let pending_after = self.queue.len();
-        let sp = self.record_save_point(pending_before, pending_after);
-        Ok(sp)
-    }
-
-    /// Begin an agent turn: [`Phase::Idle`] -> [`Phase::Turn`]. Freezes a
-    /// runtime-config snapshot for the turn. In Phase 10 this is a
-    /// state-machine guard plus snapshot discipline only; the product turn
-    /// loop is not routed through `AgentHarness` here (see the module-level
-    /// doc on the by-value adoption wall and deferred product-loop wiring).
-    pub fn begin_turn(&mut self) -> HarnessResult<()> {
-        self.require_idle()?;
-        self.turn_snapshot = Some(self.config_builder.snapshot());
-        self.phase = Phase::Turn;
-        Ok(())
-    }
-
-    /// End the current turn: [`Phase::Turn`] -> [`Phase::Idle`] and flush at
-    /// operation settlement. Returns the settlement save point.
-    pub fn end_turn(&mut self) -> HarnessResult<SavePoint> {
-        if self.phase != Phase::Turn {
-            return Err(HarnessError::Busy(self.phase));
-        }
-        self.phase = Phase::Idle;
-        self.turn_snapshot = None;
-        self.flush()
-    }
-
-    /// Begin a compaction: [`Phase::Idle`] -> [`Phase::Compaction`].
-    pub fn begin_compaction(&mut self) -> HarnessResult<()> {
-        self.require_idle()?;
-        self.phase = Phase::Compaction;
-        Ok(())
-    }
-
-    /// End the current compaction: enqueues a compaction entry as an
-    /// agent-emitted write, returns to [`Phase::Idle`], and flushes.
-    pub fn end_compaction(&mut self, result: &CompactionResult) -> HarnessResult<SavePoint> {
-        if self.phase != Phase::Compaction {
-            return Err(HarnessError::Busy(self.phase));
-        }
-        let entry = self.build_compaction_entry(result);
-        self.queue.enqueue(entry, PendingWriteKind::AgentMessage);
-        self.phase = Phase::Idle;
-        self.flush()
-    }
-
-    /// Begin a branch-summary operation: [`Phase::Idle`] ->
-    /// [`Phase::BranchSummary`].
-    pub fn begin_branch_summary(&mut self) -> HarnessResult<()> {
-        self.require_idle()?;
-        self.phase = Phase::BranchSummary;
-        Ok(())
-    }
-
-    /// End the current branch-summary operation: [`Phase::BranchSummary`] ->
-    /// [`Phase::Idle`] and flush. The durable branch-summary entry
-    /// representation is deferred to task 10.5 (session-facade workstream).
-    pub fn end_branch_summary(&mut self) -> HarnessResult<SavePoint> {
-        if self.phase != Phase::BranchSummary {
-            return Err(HarnessError::Busy(self.phase));
-        }
-        self.phase = Phase::Idle;
-        self.flush()
-    }
-
-    /// Abort the active operation: cancel the wrapped agent, then best-effort
-    /// flush ALL accepted pending writes. Never silently discards an accepted
-    /// write. On a flush failure, returns [`HarnessError::AbortLeftPending`]
-    /// with the number of unflushed writes; the harness is still reset to
-    /// [`Phase::Idle`] (reusable) and the writes remain queued.
-    pub fn abort(&mut self) -> HarnessResult<()> {
-        self.agent.abort();
-        let outcome = self.flush_internal();
-        self.phase = Phase::Idle;
-        self.turn_snapshot = None;
-        match outcome {
-            Ok(()) => Ok(()),
-            Err(_) => Err(HarnessError::AbortLeftPending(self.queue.len())),
-        }
-    }
-
-    /// Snapshot the wrapped agent's conversation buffer.
-    pub fn messages_snapshot(&self) -> Vec<AgentMessage> {
-        self.agent.messages_snapshot()
-    }
-
-    /// Clonable control handle for the wrapped agent.
-    pub fn control_handle(&self) -> AgentControl {
-        self.agent.control_handle()
-    }
-
-    /// Cancellation token for the wrapped agent.
-    pub fn cancel_token(&self) -> tokio_util::sync::CancellationToken {
-        self.agent.cancel_token()
-    }
-
-    // -- Internal helpers ---------------------------------------------------
-
-    fn require_idle(&self) -> HarnessResult<()> {
-        if self.phase != Phase::Idle {
-            return Err(HarnessError::Busy(self.phase));
-        }
-        Ok(())
-    }
-
-    /// Drain the queue in order and append each entry. On a write failure, the
-    /// unflushed tail is re-queued (order preserved) and the error is returned;
-    /// the queue is never silently emptied across a failure.
-    fn flush_internal(&mut self) -> Result<(), std::io::Error> {
-        let mut ordered = self.queue.drain_ordered();
-        let mut idx = 0;
-        while idx < ordered.len() {
-            if let Err(e) = self.session.append(&ordered[idx].entry) {
-                let tail: Vec<_> = ordered.drain(idx..).collect();
-                self.queue.reinsert(tail);
-                return Err(e);
-            }
-            idx += 1;
-        }
-        Ok(())
-    }
-
-    fn record_save_point(&mut self, pending_before: usize, pending_after: usize) -> SavePoint {
-        self.savepoint_seq += 1;
-        let sp = SavePoint {
-            seq: self.savepoint_seq,
-            at_phase: self.phase,
-            pending_before,
-            pending_after,
-        };
-        self.last_save_point = Some(sp);
-        sp
-    }
-
-    fn next_id(&mut self) -> String {
-        format!("entry-{}", uuid::Uuid::now_v7())
-    }
-
-    fn next_timestamp(&self) -> String {
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_millis().to_string())
-            .unwrap_or_else(|_| "0".to_string())
-    }
-
-    fn build_compaction_entry(&mut self, result: &CompactionResult) -> SessionEntry {
-        let id = self.next_id();
-        let parent_id = self.content_tip_entry_id.clone();
-        let timestamp = self.next_timestamp();
-        let entry = SessionEntry::Compaction(CompactionEntry {
-            id: id.clone(),
-            parent_id,
-            timestamp,
-            summary: result.summary.clone(),
-            first_kept_entry_id: result.first_kept_entry_id.clone(),
-            tokens_before: result.tokens_before,
-            tokens_after: result.tokens_after,
-        });
-        self.content_tip_entry_id = Some(id);
-        entry
     }
 }
 
@@ -693,8 +337,8 @@ impl SessionRepo for JsonlSessionRepo {
 /// generic harness seam ([`PendingWriteQueue`]) and exposes append/load
 /// semantics over a [`SessionRepo`] backend. It is the `Agent`-free subset of
 /// the session contract: a library caller that needs ordered durable session
-/// writes and active-branch reads without driving an [`Agent`] loop composes
-/// this directly. [`AgentHarness`] keeps the phase-guarded turn lifecycle (it
+/// writes and active-branch reads without driving an Agent loop composes
+/// this directly. AgentHarness keeps the phase-guarded turn lifecycle (it
 /// wraps an `Agent` by value); `SessionFacade` is the stable session seam
 /// Phase 13 extends with richer entry types and context reconstruction.
 ///
@@ -714,7 +358,7 @@ impl SessionRepo for JsonlSessionRepo {
 /// - **D2 (branch summaries):** a durable branch-summary representation is
 ///   metadata, not an injected provider-context message. Its representation
 ///   and any context injection are Phase 13 (spec S9.3 lists `branch_summary`
-///   as a Phase 13 v2 target); [`AgentHarness::begin_branch_summary`] keeps
+///   as a Phase 13 v2 target); AgentHarness keeps
 ///   the lifecycle guard introduced in task 10.3.
 /// - **D3 (extension custom messages):** the durable seam persists extension
 ///   state (including extension-provided messages); whether and how such

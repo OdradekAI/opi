@@ -14,13 +14,15 @@ use opi_agent::Agent;
 use opi_agent::event::AgentEvent;
 use opi_agent::extension::{Extension, ExtensionError, ExtensionHookResult, ExtensionRegistry};
 use opi_agent::hooks::AgentHooks;
-use opi_agent::loop_types::{AgentError, AgentLoopConfig};
+use opi_agent::loop_types::{AgentError, AgentLoopConfig, InferenceConfig};
 use opi_agent::message::AgentMessage;
 use opi_agent::tool::{ExecutionMode, Tool, ToolError, ToolResult};
 use opi_ai::message::{OutputContent, ToolDef};
 use opi_ai::provider::ModelInfo;
 use opi_ai::registry::ModelCapabilities;
-use opi_ai::test_support::{MockProvider, text_response, tool_call_response};
+use opi_ai::test_support::{
+    MockProvider, single_route_collection, text_response, tool_call_response,
+};
 use opi_coding_agent::config::OpiConfig;
 use opi_coding_agent::harness::CodingHarness;
 use opi_coding_agent::policy::{RunMode, ToolRuntimeConfig, ToolSelection};
@@ -166,16 +168,18 @@ async fn extension_tool_executes_through_agent_loop() {
     );
     let hooks = registry.wrap_hooks(Box::new(TestHooks));
     let mut agent = Agent::new(
-        Box::new(provider),
+        Arc::new(single_route_collection(Box::new(provider))),
         ext_tools,
-        "mock:model".into(),
+        "mock:mock-model".into(),
         None,
+        InferenceConfig::default(),
         AgentLoopConfig {
             max_turns: 10,
             ..Default::default()
         },
         hooks,
-    );
+    )
+    .expect("agent");
 
     let result = agent.prompt("test").await.unwrap();
 
@@ -265,16 +269,18 @@ async fn extension_hooks_observe_builtin_tool_calls() {
     );
     let hooks = registry.wrap_hooks(Box::new(TestHooks));
     let mut agent = Agent::new(
-        Box::new(provider),
+        Arc::new(single_route_collection(Box::new(provider))),
         vec![Box::new(DummyTool)],
-        "mock:model".into(),
+        "mock:mock-model".into(),
         None,
+        InferenceConfig::default(),
         AgentLoopConfig {
             max_turns: 10,
             ..Default::default()
         },
         hooks,
-    );
+    )
+    .expect("agent");
 
     let result = agent.prompt("test").await.unwrap();
     assert!(result.len() >= 3);
@@ -352,16 +358,18 @@ async fn extension_can_block_tool_in_agent_loop() {
     );
     let hooks = registry.wrap_hooks(Box::new(TestHooks));
     let mut agent = Agent::new(
-        Box::new(provider),
+        Arc::new(single_route_collection(Box::new(provider))),
         vec![Box::new(AlwaysOkTool)],
-        "mock:model".into(),
+        "mock:mock-model".into(),
         None,
+        InferenceConfig::default(),
         AgentLoopConfig {
             max_turns: 10,
             ..Default::default()
         },
         hooks,
-    );
+    )
+    .expect("agent");
 
     let result = agent.prompt("test").await.unwrap();
 

@@ -12,11 +12,11 @@ use std::sync::{Arc, Mutex};
 use opi_agent::event::AgentEvent;
 use opi_agent::extension::{Extension, ExtensionCommand, ExtensionError, ExtensionRegistry};
 use opi_agent::hooks::AgentHooks;
-use opi_agent::loop_types::AgentError;
+use opi_agent::loop_types::{AgentError, InferenceConfig};
 use opi_agent::message::AgentMessage;
 use opi_agent::tool::{ExecutionMode, Tool, ToolError, ToolResult};
 use opi_ai::message::{OutputContent, ToolDef};
-use opi_ai::test_support::{MockProvider, text_response};
+use opi_ai::test_support::{MockProvider, single_route_collection, text_response};
 use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
 
@@ -549,13 +549,15 @@ async fn session_integration_with_agent() {
 
     let hooks = registry.wrap_hooks(Box::new(TestHooks));
     let mut agent = opi_agent::Agent::new(
-        Box::new(provider),
+        Arc::new(single_route_collection(Box::new(provider))),
         vec![Box::new(DummyTool::new("read"))],
-        "mock:model".into(),
+        "mock:mock-model".into(),
         None,
+        InferenceConfig::default(),
         Default::default(),
         hooks,
-    );
+    )
+    .expect("agent");
 
     let _result = agent.prompt("test").await.unwrap();
 

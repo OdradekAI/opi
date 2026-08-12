@@ -3,15 +3,21 @@
 use std::sync::{Arc, Mutex};
 
 use opi_agent::hooks::AgentHooks;
-use opi_agent::loop_types::{AgentLoopConfig, AgentLoopContext};
+use opi_agent::loop_types::{
+    AgentLoopConfig, AgentLoopContext, InferenceConfig, ModelSelection, NextTurnState,
+};
 use opi_agent::message::AgentMessage;
 use opi_agent::{agent_loop, event::AgentEventSink};
+use opi_ai::WireApi;
 use opi_ai::message::{InputContent, Message, UserMessage};
-use opi_ai::provider::{EventStream, Provider, Request, ThinkingConfig};
+use opi_ai::provider::{EventStream, ModelInfo, Provider, Request, ThinkingConfig};
+use opi_ai::registry::ModelCapabilities;
 use opi_ai::stream::{AssistantStreamEvent, StopReason, Usage};
+use opi_ai::test_support::single_route_collection;
 
 struct CaptureProvider {
     requests: Arc<Mutex<Vec<Request>>>,
+    models: Vec<ModelInfo>,
 }
 
 impl Provider for CaptureProvider {
@@ -35,8 +41,8 @@ impl Provider for CaptureProvider {
         "test"
     }
 
-    fn models(&self) -> &[opi_ai::provider::ModelInfo] {
-        &[]
+    fn models(&self) -> &[ModelInfo] {
+        &self.models
     }
 }
 
@@ -72,12 +78,28 @@ async fn thinking_config_passed_to_provider() {
     let captured = Arc::new(Mutex::new(Vec::new()));
     let provider = CaptureProvider {
         requests: captured.clone(),
+        models: vec![ModelInfo::new(
+            "test-model",
+            "Test Model",
+            WireApi::OpenAiCompletions,
+            ModelCapabilities::new(8192, 1024).with_thinking(true),
+        )],
     };
     let context = AgentLoopContext {
-        provider: Box::new(provider),
+        collection: Arc::new(single_route_collection(Box::new(provider))),
         tools: vec![],
-        messages: vec![user_msg("hi")],
-        model: "test".into(),
+        state: NextTurnState::new(
+            vec![user_msg("hi")],
+            ModelSelection::parse_spec("test:test-model").unwrap(),
+            InferenceConfig {
+                thinking: ThinkingConfig {
+                    enabled: true,
+                    budget_tokens: Some(10_000),
+                    level: opi_ai::ThinkingLevel::Medium,
+                },
+                ..Default::default()
+            },
+        ),
         system: None,
         steering_queue: None,
         follow_up_queue: None,
@@ -87,11 +109,6 @@ async fn thinking_config_passed_to_provider() {
     };
     let config = AgentLoopConfig {
         max_turns: 1,
-        thinking: Some(ThinkingConfig {
-            enabled: true,
-            budget_tokens: Some(10_000),
-            level: opi_ai::ThinkingLevel::Medium,
-        }),
         ..Default::default()
     };
     let cancel = tokio_util::sync::CancellationToken::new();
@@ -107,12 +124,21 @@ async fn thinking_disabled_by_default() {
     let captured = Arc::new(Mutex::new(Vec::new()));
     let provider = CaptureProvider {
         requests: captured.clone(),
+        models: vec![ModelInfo::new(
+            "test-model",
+            "Test Model",
+            WireApi::OpenAiCompletions,
+            ModelCapabilities::new(8192, 1024).with_thinking(true),
+        )],
     };
     let context = AgentLoopContext {
-        provider: Box::new(provider),
+        collection: Arc::new(single_route_collection(Box::new(provider))),
         tools: vec![],
-        messages: vec![user_msg("hi")],
-        model: "test".into(),
+        state: NextTurnState::new(
+            vec![user_msg("hi")],
+            ModelSelection::parse_spec("test:test-model").unwrap(),
+            InferenceConfig::default(),
+        ),
         system: None,
         steering_queue: None,
         follow_up_queue: None,

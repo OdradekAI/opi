@@ -594,13 +594,16 @@ mod runtime_emission {
     use opi_agent::diagnostic::{SOURCE_AGENT, SOURCE_PROVIDER, SOURCE_TOOL, Severity};
     use opi_agent::event::{AgentEvent, AgentEventSink};
     use opi_agent::hooks::AgentHooks;
-    use opi_agent::loop_types::{AgentError, AgentLoopConfig, AgentLoopContext};
+    use opi_agent::loop_types::{
+        AgentError, AgentLoopConfig, AgentLoopContext, InferenceConfig, ModelSelection,
+        NextTurnState,
+    };
     use opi_agent::message::AgentMessage;
     use opi_agent::{DiagnosticSink, RecordingSink};
     use opi_ai::message::{InputContent, Message, UserMessage};
     use opi_ai::provider::ProviderError;
     use opi_ai::retry::RetryConfig;
-    use opi_ai::test_support::{self, MockProvider, MockResponse};
+    use opi_ai::test_support::{self, MockProvider, MockResponse, single_route_collection};
 
     struct NoopHooks;
     impl AgentHooks for NoopHooks {
@@ -624,10 +627,13 @@ mod runtime_emission {
 
     fn ctx(provider: MockProvider, sink: Arc<RecordingSink>) -> AgentLoopContext {
         AgentLoopContext {
-            provider: Box::new(provider),
+            collection: Arc::new(single_route_collection(Box::new(provider))),
             tools: vec![],
-            messages: vec![user_msg("hello")],
-            model: "mock-model".into(),
+            state: NextTurnState::new(
+                vec![user_msg("hello")],
+                ModelSelection::parse_spec("mock:mock-model").unwrap(),
+                InferenceConfig::default(),
+            ),
             system: None,
             steering_queue: None,
             follow_up_queue: None,
@@ -640,10 +646,7 @@ mod runtime_emission {
     fn config(retry: Option<RetryConfig>) -> AgentLoopConfig {
         AgentLoopConfig {
             max_turns: 10,
-            max_tokens: None,
-            temperature: None,
             retry,
-            ..Default::default()
         }
     }
 
@@ -931,10 +934,13 @@ mod runtime_emission {
         );
         let sink = Arc::new(RecordingSink::new());
         let loop_ctx = AgentLoopContext {
-            provider: Box::new(provider),
+            collection: Arc::new(single_route_collection(Box::new(provider))),
             tools: vec![Box::new(PendingTool)],
-            messages: vec![user_msg("go")],
-            model: "mock-model".into(),
+            state: NextTurnState::new(
+                vec![user_msg("go")],
+                ModelSelection::parse_spec("mock:mock-model").unwrap(),
+                InferenceConfig::default(),
+            ),
             system: None,
             steering_queue: None,
             follow_up_queue: None,

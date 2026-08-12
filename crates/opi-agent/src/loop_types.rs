@@ -1,13 +1,15 @@
-//! Types for the agent loop (S6.1, S8.2).
+//! Types for the agent loop (S6.1, S8.2, Phase 17.2).
 
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
+
+use opi_ai::ProviderCollection;
+use opi_ai::provider::ThinkingConfig;
 
 use crate::diagnostic_sink::DiagnosticSink;
 use crate::message::AgentMessage;
 use crate::tool::Tool;
 use crate::trace::TraceCollector;
-use opi_ai::provider::{Provider, ThinkingConfig};
 
 /// Errors that can occur during the agent loop.
 #[derive(Debug, thiserror::Error)]
@@ -40,19 +42,125 @@ pub enum AgentError {
     /// never runs untraced when tracing was explicitly requested.
     #[error("trace setup failed: {0}")]
     TraceSetup(String),
+    /// A provider route could not be prepared for a model call: the selection
+    /// was unknown, ambiguous, undispatchable, or its authentication could not
+    /// be resolved. Phase 17.2 surfaces collection-owned preparation failures
+    /// at this typed boundary rather than as a generic provider string.
+    #[error("provider route not dispatchable for '{provider}': {detail}")]
+    RouteNotDispatchable {
+        /// Provider id (or requested selection) whose route failed.
+        provider: String,
+        /// Redacted, non-secret reason the route could not be prepared.
+        detail: String,
+    },
+    /// A `prepare_next_turn` candidate was rejected because it was not a valid
+    /// complete state (e.g. its model selection does not resolve to a route in
+    /// the provider collection). The prior state is preserved unchanged.
+    #[error("invalid next-turn candidate state: {0}")]
+    InvalidNextTurnCandidate(String),
+}
+
+/// Canonical provider:model selection for one logical model call.
+///
+/// Phase 17 does not add an alias registry; the selection is always the
+/// canonical `provider_id:model_id` pair resolved by the provider collection.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModelSelection {
+    /// Provider identifier owning the route.
+    pub provider_id: String,
+    /// Model identifier within the provider.
+    pub model_id: String,
+}
+
+impl ModelSelection {
+    /// Build a selection from its two canonical parts.
+    pub fn new(provider_id: impl Into<String>, model_id: impl Into<String>) -> Self {
+        Self {
+            provider_id: provider_id.into(),
+            model_id: model_id.into(),
+        }
+    }
+
+    /// Parse a canonical `provider:model` spec. Returns `None` for a bare model
+    /// or missing provider; bare-input normalization is owned by the Reference
+    /// Product (Phase 17.5), not by Agent Core state.
+    pub fn parse_spec(spec: &str) -> Option<Self> {
+        let (provider_id, model_id) = spec.split_once(':')?;
+        let provider_id = provider_id.trim();
+        let model_id = model_id.trim();
+        if provider_id.is_empty() || model_id.is_empty() {
+            return None;
+        }
+        Some(Self {
+            provider_id: provider_id.to_owned(),
+            model_id: model_id.to_owned(),
+        })
+    }
+
+    /// Render the canonical `provider:model` spec consumed by
+    /// [`ProviderCollection::prepare_call`].
+    pub fn to_spec(&self) -> String {
+        format!("{}:{}", self.provider_id, self.model_id)
+    }
+}
+
+/// Per-request inference knobs owned by [`NextTurnState`]. These are mutable
+/// next-turn state (a preparation may change them atomically with context and
+/// model), distinct from the immutable loop-control knobs in
+/// [`AgentLoopConfig`].
+#[derive(Debug, Clone, Default)]
+pub struct InferenceConfig {
+    /// Thinking/reasoning configuration for extended thinking models.
+    pub thinking: ThinkingConfig,
+    /// Maximum output tokens per request.
+    pub max_tokens: Option<u64>,
+    /// Sampling temperature.
+    pub temperature: Option<f64>,
+}
+
+/// The complete mutable next-request state owned durably by the Agent (Phase
+/// 17.2). A loop run returns its final complete state to the Agent, which
+/// stores it before the public operation settles. Replacement is always a
+/// complete validated value, never a patch, merge, or append.
+#[derive(Debug, Clone)]
+pub struct NextTurnState {
+    /// Complete conversation context.
+    pub context: Vec<AgentMessage>,
+    /// Canonical provider:model selection for the next call.
+    pub model_selection: ModelSelection,
+    /// Per-request inference configuration.
+    pub inference: InferenceConfig,
+}
+
+impl NextTurnState {
+    /// Build a new complete next-turn state.
+    pub fn new(
+        context: Vec<AgentMessage>,
+        model_selection: ModelSelection,
+        inference: InferenceConfig,
+    ) -> Self {
+        Self {
+            context,
+            model_selection,
+            inference,
+        }
+    }
 }
 
 /// Input context for the agent loop.
 pub struct AgentLoopContext {
-    /// The LLM provider.
-    pub provider: Box<dyn Provider>,
+    /// The dispatchable provider collection that owns route lookup, per-call
+    /// auth preparation, and attempt dispatch (Phase 17.2). The loop prepares
+    /// one call per turn and opens every retry attempt from that same prepared
+    /// call.
+    pub collection: Arc<ProviderCollection>,
     /// Available tools.
     pub tools: Vec<Box<dyn Tool>>,
-    /// Initial conversation messages.
-    pub messages: Vec<AgentMessage>,
-    /// Model identifier to use.
-    pub model: String,
-    /// Optional system prompt.
+    /// The complete mutable state at the start of this run: conversation
+    /// context, canonical model selection, and inference configuration. The
+    /// loop atomically replaces this with the final complete state.
+    pub state: NextTurnState,
+    /// Optional immutable system prompt (run binding).
     pub system: Option<String>,
     /// Steering queue (high-priority user messages injected before next turn).
     pub steering_queue: Option<Arc<Mutex<VecDeque<String>>>>,
@@ -73,34 +181,22 @@ pub struct AgentLoopContext {
     pub session_id: Option<String>,
 }
 
-/// Configuration for the agent loop.
+/// Immutable loop-control configuration. Per-request inference knobs (thinking,
+/// max tokens, temperature) live in [`InferenceConfig`] on [`NextTurnState`] so
+/// a preparation can change them atomically with context and model.
 #[derive(Debug, Clone)]
 pub struct AgentLoopConfig {
     /// Maximum number of turns before stopping.
     pub max_turns: u32,
-    /// Maximum output tokens per request.
-    pub max_tokens: Option<u64>,
-    /// Sampling temperature.
-    pub temperature: Option<f64>,
     /// Retry configuration for retryable provider errors.
     pub retry: Option<opi_ai::retry::RetryConfig>,
-    /// Thinking/reasoning configuration for extended thinking models.
-    pub thinking: Option<ThinkingConfig>,
 }
 
 impl Default for AgentLoopConfig {
     fn default() -> Self {
         Self {
             max_turns: 50,
-            max_tokens: None,
-            temperature: None,
             retry: None,
-            thinking: None,
         }
     }
-}
-
-/// Update returned by `prepare_next_turn` to modify the next turn.
-pub struct AgentLoopTurnUpdate {
-    pub extra_messages: Vec<AgentMessage>,
 }

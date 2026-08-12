@@ -40,16 +40,14 @@ pub trait Provider: Send + Sync {
     /// preparation — it consumes the supplied
     /// [`ResolvedAuth`](crate::auth::ResolvedAuth) directly at the wire boundary.
     ///
-    /// The default fails closed: providers that have not migrated to the seam
-    /// cannot serve a prepared call. Concrete in-workspace adapters override it.
+    /// The default delegates to [`Provider::stream`], ignoring the supplied auth,
+    /// so providers that have not yet migrated to the seam (e.g. test mocks and
+    /// legacy baked-credential adapters) still dispatch through their existing
+    /// stream path now that the Agent routes every call through `prepare_call`.
+    /// Concrete resolver-based adapters override this to consume the supplied
+    /// auth; the 17.5 contract step makes every provider explicit.
     fn stream_prepared(&self, request: Request, _auth: crate::auth::ResolvedAuth) -> EventStream {
-        let id = self.id().to_owned();
-        let _ = request;
-        Box::pin(futures_util::stream::once(async move {
-            Err::<crate::stream::AssistantStreamEvent, ProviderError>(ProviderError::Config(
-                format!("provider '{id}' does not support prepared dispatch"),
-            ))
-        }))
+        self.stream(request)
     }
 
     /// Replace this provider's effective model catalog before it is shared.

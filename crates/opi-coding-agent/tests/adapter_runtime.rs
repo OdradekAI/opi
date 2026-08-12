@@ -11,6 +11,7 @@ use std::time::Duration;
 
 use opi_agent::extension::{Extension, ExtensionCommand, ExtensionHookResult, ExtensionRegistry};
 use opi_agent::hooks::{AgentHooks, BeforeToolCallContext, PrepareNextTurnContext};
+use opi_agent::loop_types::{InferenceConfig, ModelSelection, NextTurnState};
 use opi_agent::message::AgentMessage;
 use opi_coding_agent::adapter_extension::{ProcessAdapter, start_adapters_from_packages};
 use opi_coding_agent::adapter_host::{AdapterHost, AdapterProcessConfig};
@@ -512,14 +513,21 @@ async fn adapter_prepare_next_turn_can_inject_message() {
     let (_host, adapter) = start_prepare_adapter().await;
     let update = adapter
         .prepare_next_turn(&PrepareNextTurnContext {
-            messages: vec![],
+            state: NextTurnState::new(
+                vec![],
+                ModelSelection::parse_spec("mock:mock-model").unwrap(),
+                InferenceConfig::default(),
+            ),
+            tool_results: vec![],
+            terminate: false,
             turn: 1,
         })
         .await
-        .expect("update");
+        .expect("update")
+        .expect("prepare adapter injects a message");
 
-    assert_eq!(update.extra_messages.len(), 1);
-    match &update.extra_messages[0] {
+    assert_eq!(update.context.len(), 1);
+    match &update.context[0] {
         AgentMessage::Custom(message) => {
             assert_eq!(message.kind, "adapter_note");
             assert_eq!(message.data["text"], "next turn");
@@ -716,9 +724,15 @@ async fn phase8_skipped_adapter_hooks_trace() {
         .transform_context(vec![])
         .await
         .expect("skipped transform_context passes messages through");
-    adapter
+    let _ = adapter
         .prepare_next_turn(&PrepareNextTurnContext {
-            messages: vec![],
+            state: NextTurnState::new(
+                vec![],
+                ModelSelection::parse_spec("mock:mock-model").unwrap(),
+                InferenceConfig::default(),
+            ),
+            tool_results: vec![],
+            terminate: false,
             turn: 1,
         })
         .await;

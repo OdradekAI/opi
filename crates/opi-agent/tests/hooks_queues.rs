@@ -13,7 +13,7 @@ use opi_agent::hooks::{
     AfterToolCallContext, AfterToolCallResult, AgentHooks, BeforeToolCallContext,
     BeforeToolCallResult, PrepareNextTurnContext, ShouldStopAfterTurnContext,
 };
-use opi_agent::loop_types::{AgentError, AgentLoopConfig, AgentLoopTurnUpdate};
+use opi_agent::loop_types::{AgentError, AgentLoopConfig, InferenceConfig, NextTurnState};
 use opi_agent::message::AgentMessage;
 use opi_agent::tool::{ExecutionMode, Tool, ToolError, ToolResult};
 use opi_ai::message::{
@@ -22,6 +22,8 @@ use opi_ai::message::{
 };
 use opi_ai::provider::{EventStream, Provider, ProviderError, Request};
 use opi_ai::stream::{AssistantStreamEvent, StopReason, Usage};
+use opi_ai::test_support::single_route_collection;
+use opi_ai::{ModelCapabilities, ModelInfo, WireApi};
 use tokio_util::sync::CancellationToken;
 
 // ---------------------------------------------------------------------------
@@ -31,6 +33,7 @@ use tokio_util::sync::CancellationToken;
 struct RecordingProvider {
     responses: Arc<Mutex<Vec<Vec<AssistantStreamEvent>>>>,
     received_messages: Arc<Mutex<Vec<Vec<Message>>>>,
+    models: Vec<ModelInfo>,
 }
 
 impl RecordingProvider {
@@ -38,6 +41,12 @@ impl RecordingProvider {
         Self {
             responses: Arc::new(Mutex::new(responses)),
             received_messages: Arc::new(Mutex::new(Vec::new())),
+            models: vec![ModelInfo::new(
+                "mock-model",
+                "Mock Model",
+                WireApi::OpenAiCompletions,
+                ModelCapabilities::new(100_000, 4_096),
+            )],
         }
     }
 }
@@ -48,7 +57,7 @@ impl Provider for RecordingProvider {
     }
 
     fn models(&self) -> &[opi_ai::provider::ModelInfo] {
-        &[]
+        &self.models
     }
 
     fn stream(&self, request: Request) -> EventStream {
@@ -177,11 +186,11 @@ impl AgentHooks for RecordingHooks {
     fn prepare_next_turn(
         &self,
         ctx: PrepareNextTurnContext,
-    ) -> Pin<Box<dyn Future<Output = Option<AgentLoopTurnUpdate>> + Send>> {
+    ) -> Pin<Box<dyn Future<Output = Result<Option<NextTurnState>, AgentError>> + Send>> {
         let prepare_calls = self.prepare_calls.clone();
         Box::pin(async move {
             prepare_calls.lock().unwrap().push(ctx.turn);
-            None
+            Ok(None)
         })
     }
 }
@@ -313,13 +322,15 @@ fn make_agent(
     hooks: Box<dyn AgentHooks>,
 ) -> Agent {
     Agent::new(
-        Box::new(provider),
+        Arc::new(single_route_collection(Box::new(provider))),
         tools,
-        "mock-model".into(),
+        "recording:mock-model".into(),
         None,
+        InferenceConfig::default(),
         AgentLoopConfig::default(),
         hooks,
     )
+    .expect("agent")
 }
 
 fn user_text_in_messages(messages: &[Message], text: &str) -> bool {
@@ -401,7 +412,7 @@ async fn should_stop_receives_context() {
     let calls = stop_calls.lock().unwrap();
     assert!(!calls.is_empty(), "should_stop_after_turn should be called");
     assert!(
-        !calls[0].messages.is_empty(),
+        !calls[0].state.context.is_empty(),
         "context should have messages"
     );
 }
@@ -605,9 +616,13 @@ async fn phase8_queue_polling_order_compaction_stop_before_next_turn() {
             .any(|ms| user_text_in_messages(ms, "must-not-deliver")),
         "follow-up must not be delivered after a compaction stop"
     );
-    assert!(
-        prepare_calls.lock().unwrap().is_empty(),
-        "prepare_next_turn must not run after a compaction stop"
+    // Phase 17.2: prepare_next_turn runs BEFORE should_stop (it applies the
+    // candidate state that stop then observes), so it is invoked once; the stop
+    // then terminates the run without polling the follow-up queue.
+    assert_eq!(
+        prepare_calls.lock().unwrap().len(),
+        1,
+        "prepare_next_turn runs once before stop; stop terminates before queue polling"
     );
 }
 
@@ -739,11 +754,11 @@ impl AgentHooks for OrderHooks {
     fn prepare_next_turn(
         &self,
         _ctx: PrepareNextTurnContext,
-    ) -> Pin<Box<dyn Future<Output = Option<AgentLoopTurnUpdate>> + Send>> {
+    ) -> Pin<Box<dyn Future<Output = Result<Option<NextTurnState>, AgentError>> + Send>> {
         let log = self.log.clone();
         Box::pin(async move {
             log.lock().unwrap().push("prepare".into());
-            None
+            Ok(None)
         })
     }
 }
@@ -807,22 +822,24 @@ impl AgentHooks for InjectHooks {
     fn prepare_next_turn(
         &self,
         ctx: PrepareNextTurnContext,
-    ) -> Pin<Box<dyn Future<Output = Option<AgentLoopTurnUpdate>> + Send>> {
+    ) -> Pin<Box<dyn Future<Output = Result<Option<NextTurnState>, AgentError>> + Send>> {
         let injected = self.injected.clone();
         Box::pin(async move {
             // First prepare fires after turn 0 (ctx.turn == 1).
             if ctx.turn == 1 {
                 *injected.lock().unwrap() = true;
-                Some(AgentLoopTurnUpdate {
-                    extra_messages: vec![AgentMessage::Llm(Message::User(UserMessage {
+                let mut state = ctx.state.clone();
+                state
+                    .context
+                    .push(AgentMessage::Llm(Message::User(UserMessage {
                         content: vec![InputContent::Text {
                             text: "injected-from-prepare".into(),
                         }],
                         timestamp_ms: 0,
-                    }))],
-                })
+                    })));
+                Ok(Some(state))
             } else {
-                None
+                Ok(None)
             }
         })
     }
@@ -858,10 +875,10 @@ async fn phase8_hook_contract_order() {
             "convert",
             "before",
             "after",
-            "should_stop",
             "prepare",
+            "should_stop",
         ],
-        "first-turn hook order must be transform -> convert -> before -> after -> should_stop -> prepare"
+        "first-turn hook order must be transform -> convert -> before -> after -> prepare -> should_stop (Phase 17.2: prepare runs before stop observes the applied state)"
     );
 }
 
@@ -1012,9 +1029,11 @@ async fn phase8_hook_contract_prepare_injection() {
     );
 }
 
-// DoD: a terminal should_stop_after_turn skips prepare_next_turn.
+// DoD (Phase 17.2): a terminal should_stop_after_turn terminates the run after
+// prepare_next_turn has applied the candidate state; no further turns or queue
+// polling follow the stop.
 #[tokio::test]
-async fn phase8_hook_contract_terminal_stop_skips_prepare() {
+async fn phase8_hook_contract_terminal_stop_terminates_run() {
     let provider = RecordingProvider::new(vec![text_response("only")]);
 
     let hooks = RecordingHooks::new(true);
@@ -1023,8 +1042,179 @@ async fn phase8_hook_contract_terminal_stop_skips_prepare() {
     let mut agent = make_agent(provider, vec![], Box::new(hooks));
     agent.prompt("test").await.unwrap();
 
+    // Phase 17.2: prepare_next_turn runs before stop (applies candidate), then
+    // the terminal stop ends the run.
+    assert_eq!(
+        prepare_calls.lock().unwrap().len(),
+        1,
+        "prepare_next_turn runs once before a terminal stop ends the run"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Phase 17.2 acceptance — P17-A04 / P17-NXT-003: stop observes the applied
+// complete next-turn state (no observer sees a mixed/pre-preparation state).
+// ---------------------------------------------------------------------------
+
+fn llm_only(messages: &[AgentMessage]) -> Result<Vec<Message>, AgentError> {
+    Ok(messages
+        .iter()
+        .filter_map(|m| match m {
+            AgentMessage::Llm(m) => Some(m.clone()),
+            _ => None,
+        })
+        .collect())
+}
+
+struct ObserveAppliedStateHooks {
+    observed_max_tokens: Arc<Mutex<Option<u64>>>,
+    observed_context_len: Arc<Mutex<Option<usize>>>,
+}
+
+impl AgentHooks for ObserveAppliedStateHooks {
+    fn convert_to_llm(&self, messages: &[AgentMessage]) -> Result<Vec<Message>, AgentError> {
+        llm_only(messages)
+    }
+    fn prepare_next_turn(
+        &self,
+        ctx: PrepareNextTurnContext,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<NextTurnState>, AgentError>> + Send>> {
+        Box::pin(async move {
+            // Replace the complete state: change inference and add context.
+            let mut next = ctx.state.clone();
+            next.inference.max_tokens = Some(9999);
+            next.context
+                .push(AgentMessage::Llm(Message::User(UserMessage {
+                    content: vec![InputContent::Text {
+                        text: "prepared".into(),
+                    }],
+                    timestamp_ms: 0,
+                })));
+            Ok(Some(next))
+        })
+    }
+    fn should_stop_after_turn(
+        &self,
+        ctx: ShouldStopAfterTurnContext,
+    ) -> Pin<Box<dyn Future<Output = bool> + Send>> {
+        let observed_max_tokens = self.observed_max_tokens.clone();
+        let observed_context_len = self.observed_context_len.clone();
+        Box::pin(async move {
+            *observed_max_tokens.lock().unwrap() = ctx.state.inference.max_tokens;
+            *observed_context_len.lock().unwrap() = Some(ctx.state.context.len());
+            true
+        })
+    }
+    fn before_tool_call(
+        &self,
+        _ctx: BeforeToolCallContext,
+    ) -> Pin<Box<dyn Future<Output = BeforeToolCallResult> + Send>> {
+        Box::pin(async { BeforeToolCallResult::Allow })
+    }
+}
+
+#[tokio::test]
+async fn phase17_stop_observes_complete_next_turn_state() {
+    let provider = RecordingProvider::new(vec![text_response("hello")]);
+    let observed_max_tokens = Arc::new(Mutex::new(None));
+    let observed_context_len = Arc::new(Mutex::new(None));
+    let mut agent = make_agent(
+        provider,
+        vec![],
+        Box::new(ObserveAppliedStateHooks {
+            observed_max_tokens: observed_max_tokens.clone(),
+            observed_context_len: observed_context_len.clone(),
+        }),
+    );
+    agent.prompt("test").await.unwrap();
+
+    // should_stop ran AFTER prepare_next_turn applied the candidate, so it
+    // observes max_tokens == 9999 (the prepared value) and the prepared context
+    // message — proving stop sees the complete replacement, not a mixed state.
+    assert_eq!(
+        *observed_max_tokens.lock().unwrap(),
+        Some(9999),
+        "should_stop must observe the prepared inference, not the pre-preparation value"
+    );
+    let len = observed_context_len
+        .lock()
+        .unwrap()
+        .expect("should_stop must run after a successful prepare");
     assert!(
-        prepare_calls.lock().unwrap().is_empty(),
-        "prepare_next_turn must be skipped after a terminal should_stop_after_turn"
+        len >= 3,
+        "should_stop observed the prepared context (user + assistant + prepared): got {len}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Phase 17.2 acceptance — P17-A05 / P17-NXT-002/004: a preparation failure
+// preserves every mutable field and skips stop + steering/follow-up polling.
+// ---------------------------------------------------------------------------
+
+struct FailPrepareHooks {
+    stop_calls: Arc<Mutex<u32>>,
+}
+
+impl AgentHooks for FailPrepareHooks {
+    fn convert_to_llm(&self, messages: &[AgentMessage]) -> Result<Vec<Message>, AgentError> {
+        llm_only(messages)
+    }
+    fn prepare_next_turn(
+        &self,
+        _ctx: PrepareNextTurnContext,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<NextTurnState>, AgentError>> + Send>> {
+        Box::pin(async { Err(AgentError::Hook("forced prepare failure".into())) })
+    }
+    fn should_stop_after_turn(
+        &self,
+        _ctx: ShouldStopAfterTurnContext,
+    ) -> Pin<Box<dyn Future<Output = bool> + Send>> {
+        let stop_calls = self.stop_calls.clone();
+        Box::pin(async move {
+            *stop_calls.lock().unwrap() += 1;
+            false
+        })
+    }
+    fn before_tool_call(
+        &self,
+        _ctx: BeforeToolCallContext,
+    ) -> Pin<Box<dyn Future<Output = BeforeToolCallResult> + Send>> {
+        Box::pin(async { BeforeToolCallResult::Allow })
+    }
+}
+
+#[tokio::test]
+async fn phase17_failed_prepare_preserves_state_and_skips_later_boundaries() {
+    let provider = RecordingProvider::new(vec![text_response("hello")]);
+    let received = provider.received_messages.clone();
+    let stop_calls = Arc::new(Mutex::new(0u32));
+    let mut agent = make_agent(
+        provider,
+        vec![],
+        Box::new(FailPrepareHooks {
+            stop_calls: stop_calls.clone(),
+        }),
+    );
+    let result = agent.prompt("test").await;
+
+    assert!(result.is_err(), "a failed prepare must surface an error");
+    // should_stop was NOT called: prepare failed before the stop gate.
+    assert_eq!(
+        *stop_calls.lock().unwrap(),
+        0,
+        "should_stop must not run after a failed prepare"
+    );
+    // Prior state preserved: only the user message remains (the turn's
+    // assistant message is discarded because the candidate never applied).
+    assert_eq!(
+        agent.messages_snapshot().len(),
+        1,
+        "prior state preserved: only the user message remains"
+    );
+    // No steering/follow-up polling: exactly one provider call, no next turn.
+    assert_eq!(
+        received.lock().unwrap().len(),
+        1,
+        "no further turns after a failed prepare"
     );
 }
