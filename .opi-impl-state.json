@@ -433,7 +433,7 @@
       "definition_of_done": "opi-agent additively defines opaque RunId, TurnId, CallId, optional ParentCallId, monotonic Sequence, closed versioned EvidenceHealth, DirectRuntimeInput-or-ActiveSnapshot RuntimeInputBinding, classified artifact references, resolved-manifest values, and the EvidenceSink setup/emission/artifact/run-finalization lifecycle. The public contract exposes closed typed evidence-setup-failure, evidence-emission-failure, evidence-finalization-failure, and evidence-incomplete outcomes that callers can distinguish without parsing strings. It provides only no-op and in-memory new adapters; shared contract tests exhaustively map those lifecycle/failure classes, in-memory acts as recording oracle, and no-op proves capture disabled. Unknown measurements remain unknown with reason, finalization is immutable, and secret-bearing/raw content types cannot cross the sink contract. This substrate does not activate Agent evidence, add file storage, close a product scenario, or remove TraceSink before the explicit expand-contract migration in 17.6/17.7.",
       "definition_source": "inferred",
       "replaces": "Define stable evidence identities and the storage-neutral sink contract",
-      "status": "failing",
+      "status": "passing",
       "depends_on": [],
       "inference_notes": [
         {
@@ -507,7 +507,7 @@
       "substrate_only": true,
       "iteration_count": 0,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "8f364860bdb6defd38f4558a341fdb6d64039537",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "crates/opi-agent/src/evidence.rs",
@@ -518,11 +518,44 @@
         "crates/opi-agent/tests/evidence_contract.rs",
         "crates/opi-agent/tests/trace_envelope.rs"
       ],
-      "last_attempt": null,
-      "verified_at_commit": null,
-      "evidence": null,
+      "last_attempt": {
+        "attempt": 1,
+        "started_at": "2026-08-12T23:21:00+08:00",
+        "ended_at": "2026-08-12T23:21:00+08:00",
+        "outcome": "passed",
+        "failing_gate": null,
+        "touched_files": [
+          "crates/opi-agent/src/evidence.rs",
+          "crates/opi-agent/src/lib.rs",
+          "crates/opi-agent/tests/evidence_contract.rs"
+        ]
+      },
+      "verified_at_commit": "96370cecd24a3ac8a986dc13df1900ac3062e91e",
+      "evidence": {
+        "task": "17.3",
+        "dod_sha256": "d2fff10956d533ddb3b2f69142b9eabd76b83fff3184ee221e0ec9bab7600623",
+        "verification": "library; scoped opi-agent [evidence_contract, trace_envelope] fmt+clippy+rustdoc green; 25+43 tests",
+        "evaluator": "passed",
+        "acceptance": null
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-08-12T23:21:00+08:00",
+          "attempt": 1,
+          "summary": "17.3 passing @96370ce. Additive evidence substrate: opaque identities (RunId/TurnId/CallId/ParentCallId/Sequence + CallKind + IdentityAllocator), closed versioned EvidenceHealth (sticky first_failure_code), 4 typed failure outcomes (Setup/Emission/Finalization + Incomplete health = P17-FAL-001), closed RuntimeInputBinding (DirectRuntimeInput / reserved ActiveSnapshot), measurements (unknown!=zero, origins distinct), payload-free classified ArtifactReference, resolved-manifest value types + immutable FinalizedManifest, storage-neutral EvidenceSink lifecycle (setup/emit/finalize_artifact/finalize_run), no-op + in-memory adapters, RedactedValue producer-boundary. D.1 scoped opi-agent fmt+clippy+rustdoc green; evidence_contract 25 + trace_envelope 43. D.2 exec.workflow.js 6-lens must_fix=[] rejected=[]; 1 low-severity flagged (tautological clone-equality in a manifest test) addressed. Substrate: does not activate agent-loop evidence or remove TraceSink (17.6/17.7).",
+          "gate_results": [
+            {
+              "gate": "scoped opi-agent [evidence_contract, trace_envelope] fmt+clippy+rustdoc",
+              "result": "passed"
+            },
+            {
+              "gate": "D.2 exec.workflow.js 6-lens",
+              "result": "must_fix=[] rejected=[] (1 low flagged addressed)"
+            }
+          ]
+        }
+      ]
     },
     {
       "id": "17.4",
@@ -2866,6 +2899,16 @@
       "rejected_count": 0,
       "ran_at": "2026-08-12T13:07:16+08:00",
       "task_id": null,
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": "wf_3a0b210a-80d",
+      "folded_count": 0,
+      "flagged_count": 1,
+      "rejected_count": 0,
+      "ran_at": "2026-08-12T23:21:00+08:00",
+      "task_id": "17.3",
       "criterion_id": null
     }
   ]
