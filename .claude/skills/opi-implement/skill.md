@@ -40,9 +40,7 @@ registry. Do not auto-parse arbitrary files from `docs/superpowers/specs/`.
 
 | Phase | Source files |
 |---:|---|
-| 14 | `docs/snapshots/phase14/2026-07-11-phase14-provider-auth-design.md` |
-| 15 | `docs/snapshots/phase15/2026-07-11-phase15-safety-sandbox-design.md` |
-| 16 | `docs/snapshots/phase16/2026-07-28-phase16-pluggable-extension-command-execution-design.md` |
+| 17 | `docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md` |
 
 When a ledger is initialized or reconciled for a supplemental phase, the
 phase's registered source files MUST be included in `spec_files` and hashed in
@@ -69,7 +67,7 @@ not executable until expanded or explicitly accepted as a substrate-only task.
 
 **Minimum-change trace rule:** Every task graph admitted after this contract
 MUST answer six questions using existing ledger fields: registered criterion
-or scenario; reuse search; plugin/package placement; necessity of public API,
+or scenario; reuse search; architecture placement; necessity of public API,
 config, state, and dependency surfaces; the smallest production vertical
 slice; and any accepted simplification's ceiling plus observable revisit
 trigger. Reuse `acceptance_scenarios`, `production_call_sites`,
@@ -78,6 +76,10 @@ trigger. Reuse `acceptance_scenarios`, `production_call_sites`,
 `simplification_ceiling`. Do not add a duplicate trace object or bump the
 ledger schema. A substrate task must be in the transitive dependency closure
 of a later scenario-owning task; otherwise refuse it as orphan work.
+Placement targets use the controlled vocabulary `core`, `reference-product`,
+`extension`, `plugin`, `package`, `independent-companion`, or `assurance`;
+`assurance` is valid only for a task that introduces no runtime capability or
+ownership seam.
 
 ## Invocation
 
@@ -514,6 +516,4 @@ Print a summary table of all tasks:
 ## Design Spec
 
 Registered supplemental phase designs:
-- `docs/snapshots/phase14/2026-07-11-phase14-provider-auth-design.md`
-- `docs/snapshots/phase15/2026-07-11-phase15-safety-sandbox-design.md`
-- `docs/snapshots/phase16/2026-07-28-phase16-pluggable-extension-command-execution-design.md`
+- `docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md`

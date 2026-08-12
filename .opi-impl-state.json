@@ -2,15 +2,1463 @@
   "schema_version": 2,
   "spec_files": [
     "docs/opi-spec.md",
-    "docs/snapshots/phase16/2026-07-28-phase16-pluggable-extension-command-execution-design.md"
+    "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md"
   ],
   "spec_files_sha256": {
-    "docs/opi-spec.md": "df976c2f705096539f0eb55bb4c63644cb757a70eec056fc1a7f3553b9b0c453",
-    "docs/snapshots/phase16/2026-07-28-phase16-pluggable-extension-command-execution-design.md": "d1a5c4403908fa7981da8e741ade49d00b25972d17360371d55799b08ca7be9e"
+    "docs/opi-spec.md": "da24f94324842a254c87ff7c4e49661970b2b6c4b4ddf144a827982b06ee6062",
+    "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md": "9709183f265a5b215896cdb82c20530fdaeaf37220a08fba007295ea3ccc9f4c"
   },
-  "task_graph_confirmed_at": "2026-08-09T04:59:23.2318733Z",
-  "current_phase": 16,
-  "tasks": [],
+  "task_graph_confirmed_at": "2026-08-12T13:10:55+08:00",
+  "current_phase": 17,
+  "tasks": [
+    {
+      "id": "17.1",
+      "phase": 17,
+      "title": "Add collection-owned route and authentication preparation",
+      "crate": "opi-ai",
+      "parent_spec_row": null,
+      "definition_of_done": "ProviderCollection gains an additive async prepare_call contract whose registered route owns a concrete provider and AuthResolver. It validates one canonical provider:model Request, resolves authentication once, and returns an opaque PreparedProviderCall that privately freezes the request, selected provider, secret-bearing ResolvedAuth, and redacted route. Each sequential start_attempt reuses that frozen route/request/auth without re-resolution; at most one attempt is active, every attempt shares the frozen Request CancellationToken, cancellation terminates the call and forbids another attempt, and drop discards secrecy-wrapped auth without exposure. Credential rejection/expiry terminates the logical call; only explicit remediation plus user-level retry prepares again. ResolvedAuth carries closed non-secret AuthProvenance for static, environment, credential-store, and OAuth sources plus an allowed fallback reason. Missing routes, failed stored credentials or refresh, disallowed fallback, capability mismatch, request-route mismatch, and unsupported wire return typed errors without selecting another provider, model, credential policy, wire, or local implementation. Concrete opi-ai adapters implement the new prepared-auth attempt seam. The old stream(Request) path remains only as the explicit expand side for unmigrated workspace consumers until 17.5 removes it and resolver-bearing adapter state; 17.1 does not claim production cutover. Public opi-ai tests cover two-provider preparation, repeated attempts with one auth-resolution call, single-active-attempt enforcement, shared cancellation/no-post-cancel attempt, rejection/expiry termination, redacted drop/provenance/failures, and fixtures without adding a router trait, retry-factory trait, second registry, alias registry, provider breadth, or product policy.",
+      "definition_source": "inferred",
+      "replaces": "Make provider route resolution an immutable runtime contract",
+      "status": "failing",
+      "depends_on": [],
+      "inference_notes": [
+        {
+          "field": "replaces",
+          "reason": "Supersedes the confirmed pre-admission task 'Make provider route resolution an immutable runtime contract'; no implementation attempt or passing evidence existed.",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Delivery dependency order and implementation-plan handoff"
+        },
+        {
+          "field": "definition_of_done",
+          "reason": "Additive expand step for the provider-neutral route/auth substrate; 17.5 owns all product consumers and old-path removal.",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Dispatchable provider collection"
+        },
+        {
+          "field": "reuse_search",
+          "reason": "searched=ProviderCollection, ProviderRegistry, Provider, AuthResolver, ResolvedAuth, AuthDescriptor, concrete provider constructors, provider fixtures; reused=existing registry, per-request auth adapters, capability checks, streams, and fixtures; gap=collection-owned auth preparation with immutable redacted route/provenance",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Current implementation gap"
+        },
+        {
+          "field": "placement",
+          "reason": "target=core; existing_home=opi-ai::ProviderCollection and auth module; cannot_fit_fully=not-applicable because route lookup, auth preparation, capability validation, and wire dispatch are provider-neutral LLM semantics",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Architecture placement case"
+        },
+        {
+          "field": "surface_necessity",
+          "reason": "public_api=opaque PreparedProviderCall with start_attempt plus provider prepared-auth attempt and non-secret AuthProvenance are required so Agent retries reuse one frozen route/request/auth without seeing secrets; config=none because existing provider/auth configuration remains authoritative; state=one immutable prepared route, request, selected provider, and ResolvedAuth per logical call; dependency_edge=none because opi-ai keeps no internal Opi dependency",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Per-call route and auth preparation"
+        },
+        {
+          "field": "simplification_ceiling",
+          "reason": "accepted=deepen ProviderCollection and AuthResolver without a router trait; ceiling=no product cutover in this task, alias registry, provider breadth, product policy, ambient fallback, or compatibility facade; revisit_when=a second production consumer cannot express a real route through shared ProviderCollection conformance",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Dispatchable provider collection"
+        },
+        {
+          "field": "forbidden_scope",
+          "reason": "Do not add providers, models, wires, catalogue breadth, aliases, a generic AgentRuntime facade, or pi compatibility.",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Non-goals"
+        },
+        {
+          "field": "substrate_owner",
+          "reason": "Later final criterion/scenario owners=17.5 owns P17-PRV-004/P17-PRV-006 and P17-A02; 17.7 owns P17-A01/P17-A03 with evidence. Both depend transitively on 17.1.",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Delivery dependency order and implementation-plan handoff"
+        },
+        {
+          "field": "criterion_slice",
+          "reason": "P17-FAL-001..003 provider-route/auth slice is owned here: route lookup, authentication, capability/wire checks, credential rejection/expiry, cancellation, repeated-attempt exclusivity, and cleanup return their typed owning outcomes without fallback or partial dispatch. Task 17.9 only composes these assertions with the other runtime boundaries.",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Failure, cancellation, and partial-result semantics"
+        }
+      ],
+      "tier": "library",
+      "commit_type": "feat",
+      "parallelize": [],
+      "evaluator_required": true,
+      "verification": {
+        "library_gates": [
+          "scripts/opi-impl-smoke.ps1 scoped --crate opi-ai --test provider_collection --test per_request_auth --test auth_contracts --test phase14_remediation"
+        ],
+        "behavioral_tests": [
+          "crates/opi-ai/tests/provider_collection.rs",
+          "crates/opi-ai/tests/per_request_auth.rs",
+          "crates/opi-ai/tests/auth_contracts.rs",
+          "crates/opi-ai/tests/phase14_remediation.rs"
+        ],
+        "snapshot_tests": [],
+        "smoke_addendum": null
+      },
+      "acceptance_scenarios": [],
+      "production_call_sites": [],
+      "substrate_only": true,
+      "iteration_count": 0,
+      "max_iterations": 5,
+      "start_commit": null,
+      "baseline_dirty_files": [],
+      "task_owned_paths": [
+        "crates/opi-ai/src/auth.rs",
+        "crates/opi-ai/src/provider.rs",
+        "crates/opi-ai/src/provider_collection.rs",
+        "crates/opi-ai/src/registry.rs",
+        "crates/opi-ai/src/model_info.rs",
+        "crates/opi-ai/src/lib.rs",
+        "crates/opi-ai/src/anthropic.rs",
+        "crates/opi-ai/src/api_mapped.rs",
+        "crates/opi-ai/src/azure_openai.rs",
+        "crates/opi-ai/src/bedrock/**",
+        "crates/opi-ai/src/gemini.rs",
+        "crates/opi-ai/src/mistral.rs",
+        "crates/opi-ai/src/openai_chat.rs",
+        "crates/opi-ai/src/openai_codex_responses.rs",
+        "crates/opi-ai/src/openai_responses.rs",
+        "crates/opi-ai/src/openai_responses_shared.rs",
+        "crates/opi-ai/src/openrouter.rs",
+        "crates/opi-ai/src/vertex.rs",
+        "crates/opi-ai/tests/provider_collection.rs",
+        "crates/opi-ai/tests/per_request_auth.rs",
+        "crates/opi-ai/tests/auth_contracts.rs",
+        "crates/opi-ai/tests/phase14_remediation.rs"
+      ],
+      "last_attempt": null,
+      "verified_at_commit": null,
+      "evidence": null,
+      "blocker": null,
+      "session_notes": []
+    },
+    {
+      "id": "17.2",
+      "phase": 17,
+      "title": "Cut over Agent to durable atomic NextTurnState",
+      "crate": "workspace",
+      "parent_spec_row": null,
+      "definition_of_done": "Agent becomes the sole durable owner of a complete NextTurnState containing conversation context, canonical provider:model selection, thinking, max_tokens, and temperature. Agent::prompt and continue persist the loop's final complete state before settling; public piecemeal setters are removed or narrowed behind one validated idle-state replacement. For each logical provider call the Agent invokes ProviderCollection::prepare_call once before the retry loop, then opens every sequential attempt from that same opaque prepared call; route lookup and auth preparation are not repeated inside retries. prepare_next_turn builds and validates a candidate away from live state, atomically applies it, then stop observes the new state before steering or follow-up polling; error or cancellation preserves every field. Product compaction enters the same transition and removes superseded messages. SharedProvider, append-only AgentLoopTurnUpdate, the unused opi-agent AgentHarness/HarnessRuntimeConfig, their tests and resource assertions are removed without aliases or feature shims. Public Agent and CodingHarness tests prove consecutive-call persistence, resolver-call-count one across retries, complete replacement, failure rollback, corrected ordering, compaction, and next-call routing from applied state.",
+      "definition_source": "inferred",
+      "replaces": "Route Agent calls through atomic next-turn state",
+      "status": "failing",
+      "depends_on": [
+        "17.1"
+      ],
+      "inference_notes": [
+        {
+          "field": "replaces",
+          "reason": "Supersedes the confirmed pre-admission task 'Route Agent calls through atomic next-turn state'; no implementation attempt or passing evidence existed.",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Delivery dependency order and implementation-plan handoff"
+        },
+        {
+          "field": "definition_of_done",
+          "reason": "One compiling state-owner cutover covers public persistence, ordering, product compaction, and removal of the unused duplicate harness.",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Atomic next-turn state"
+        },
+        {
+          "field": "depends_on",
+          "reason": "Consumes the additive ProviderCollection preparation contract from 17.1; product provider assembly remains 17.5.",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Delivery dependency order and implementation-plan handoff"
+        },
+        {
+          "field": "reuse_search",
+          "reason": "searched=Agent, prompt/continue, SharedProvider, AgentLoopContext, AgentLoopTurnUpdate, prepare/stop hooks, queues, compaction, AgentHarness, HarnessRuntimeConfig, harness_resource_integration; reused=Agent state, cancellation, queues, compaction fixtures, CodingHarness, and SessionCoordinator; gap=durable complete-state replacement and fixed ordering",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Current implementation gap"
+        },
+        {
+          "field": "placement",
+          "reason": "target=core; existing_home=opi-agent Agent/agent_loop plus existing Reference Product compaction caller; cannot_fit_fully=product compaction supplies candidate content while atomic transition stays intrinsic Agent mechanism",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Architecture placement case"
+        },
+        {
+          "field": "surface_necessity",
+          "reason": "public_api=complete NextTurnState and one replacement/prepare contract prevent partial mutation while Agent consumes the admitted opaque PreparedProviderCall attempt seam; config=none because inference fields are regrouped without new keys; state=one durable context/model/inference value plus one prepared call scoped outside each retry loop; dependency_edge=none because existing inward dependencies suffice",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#State boundary"
+        },
+        {
+          "field": "simplification_ceiling",
+          "reason": "accepted=one complete value and one order with no patch protocol; ceiling=run-bound system identity, tools, policy, runtime-input binding, session, sink, and hard budgets remain immutable; revisit_when=two real Agent consumers require another shared per-turn field",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#End-to-end runtime model"
+        },
+        {
+          "field": "forbidden_scope",
+          "reason": "Do not add remote sessions, sub-Agents, workflows, generic runtime facade, patch protocol, or compatibility shims.",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Non-goals"
+        },
+        {
+          "field": "registered_criteria",
+          "reason": "P17-OUT-002, P17-NXT-001, P17-NXT-002, P17-NXT-003, P17-NXT-004, P17-NXT-005, P17-NXT-006",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Atomic next-turn state"
+        },
+        {
+          "field": "criterion_verification",
+          "reason": "P17-OUT-002/NXT-001..002=Agent before/after persistence tests; NXT-003..004=hook order and zero queue polls; NXT-005=CodingHarness compaction/session test; NXT-006=consecutive Agent route test",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Atomic next-turn state"
+        },
+        {
+          "field": "criterion_slice",
+          "reason": "P17-FAL-001..003 next-turn slice is owned here: preparation validation, cancellation, stop ordering, steering/follow-up queue polling, and atomic rollback preserve the owning outcome and leave no partial state. Task 17.9 only composes the cross-boundary precedence matrix.",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Failure, cancellation, and partial-result semantics"
+        }
+      ],
+      "tier": "workspace",
+      "commit_type": "feat",
+      "parallelize": [],
+      "evaluator_required": true,
+      "verification": {
+        "library_gates": [
+          "scripts/opi-impl-smoke.ps1 full"
+        ],
+        "behavioral_tests": [
+          "crates/opi-agent/tests/agent_wrapper.rs",
+          "crates/opi-agent/tests/agent_loop_semantics.rs",
+          "crates/opi-agent/tests/hooks_queues.rs",
+          "crates/opi-agent/tests/compaction.rs",
+          "crates/opi-agent/tests/harness.rs",
+          "crates/opi-coding-agent/tests/session_runtime.rs",
+          "crates/opi-coding-agent/tests/adapter_runtime.rs",
+          "crates/opi-coding-agent/tests/mock_e2e.rs",
+          "crates/opi-coding-agent/tests/harness_resource_integration.rs"
+        ],
+        "snapshot_tests": [],
+        "smoke_addendum": null
+      },
+      "acceptance_scenarios": [
+        {
+          "id": "P17-A04",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Acceptance scenarios and verification",
+          "scenario": "Preparation changes context, provider:model, thinking, max_tokens, and temperature; Agent persists one complete replacement and stop observes only it.",
+          "verification": [
+            "cargo test -p opi-agent --test agent_wrapper phase17_agent_persists_complete_next_turn_state",
+            "cargo test -p opi-agent --test hooks_queues phase17_stop_observes_complete_next_turn_state"
+          ],
+          "production_call_sites": [
+            "opi_agent::Agent::prompt",
+            "opi_agent::agent_loop",
+            "opi_agent::AgentHooks::prepare_next_turn",
+            "opi_agent::AgentHooks::should_stop_after_turn"
+          ],
+          "status": "open"
+        },
+        {
+          "id": "P17-A05",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Acceptance scenarios and verification",
+          "scenario": "Preparation validation error or cancellation preserves every prior mutable field and invokes neither stop nor steering/follow-up polling.",
+          "verification": [
+            "cargo test -p opi-agent --test hooks_queues phase17_failed_prepare_preserves_state_and_skips_later_boundaries"
+          ],
+          "production_call_sites": [
+            "opi_agent::Agent::prompt",
+            "opi_agent::agent_loop",
+            "opi_agent::AgentHooks::prepare_next_turn"
+          ],
+          "status": "open"
+        }
+      ],
+      "production_call_sites": [
+        "opi_agent::Agent::prompt",
+        "opi_agent::Agent::continue_",
+        "opi_agent::agent_loop",
+        "opi_coding_agent::CodingHarness::prompt",
+        "opi_coding_agent::CodingHarness compaction/session persistence"
+      ],
+      "substrate_only": false,
+      "iteration_count": 0,
+      "max_iterations": 5,
+      "start_commit": null,
+      "baseline_dirty_files": [],
+      "task_owned_paths": [
+        "crates/opi-agent/src/agent.rs",
+        "crates/opi-agent/src/agent_loop.rs",
+        "crates/opi-agent/src/loop_types.rs",
+        "crates/opi-agent/src/hooks.rs",
+        "crates/opi-agent/src/state.rs",
+        "crates/opi-agent/src/compaction.rs",
+        "crates/opi-agent/src/harness.rs",
+        "crates/opi-agent/src/sdk.rs",
+        "crates/opi-agent/src/extension.rs",
+        "crates/opi-agent/src/lib.rs",
+        "crates/opi-agent/README.md",
+        "crates/opi-agent/README.zh.md",
+        "crates/opi-agent/tests/agent_wrapper.rs",
+        "crates/opi-agent/tests/agent_loop_semantics.rs",
+        "crates/opi-agent/tests/hooks_queues.rs",
+        "crates/opi-agent/tests/compaction.rs",
+        "crates/opi-agent/tests/harness.rs",
+        "crates/opi-agent/tests/agent_loop_mock.rs",
+        "crates/opi-agent/tests/diagnostics_runtime.rs",
+        "crates/opi-agent/tests/extensions.rs",
+        "crates/opi-agent/tests/image_capability.rs",
+        "crates/opi-agent/tests/retry_agent.rs",
+        "crates/opi-agent/tests/sdk_embedding.rs",
+        "crates/opi-agent/tests/thinking_integration.rs",
+        "crates/opi-agent/tests/tool_event_redaction.rs",
+        "crates/opi-agent/tests/tool_validation.rs",
+        "crates/opi-agent/tests/trace_envelope.rs",
+        "crates/opi-agent/tests/truncated_propagation.rs",
+        "crates/opi-coding-agent/src/harness.rs",
+        "crates/opi-coding-agent/src/adapter_extension.rs",
+        "crates/opi-coding-agent/src/runner.rs",
+        "crates/opi-coding-agent/tests/session_runtime.rs",
+        "crates/opi-coding-agent/tests/adapter_runtime.rs",
+        "crates/opi-coding-agent/tests/mock_e2e.rs",
+        "crates/opi-coding-agent/tests/harness_resource_integration.rs",
+        "crates/opi-coding-agent/tests/execution_product.rs",
+        "crates/opi-coding-agent/tests/extensions.rs",
+        "crates/opi-coding-agent/tests/image_input_cli.rs",
+        "crates/opi-coding-agent/tests/mcp_adapter_example.rs",
+        "crates/opi-coding-agent/tests/permission_gate_example.rs",
+        "crates/opi-coding-agent/tests/plan_mode_example.rs",
+        "crates/opi-coding-agent/tests/protected_paths_example.rs",
+        "crates/opi-coding-agent/tests/sub_agent_example.rs",
+        "crates/opi-coding-agent/tests/todo_example.rs"
+      ],
+      "last_attempt": null,
+      "verified_at_commit": null,
+      "evidence": null,
+      "blocker": null,
+      "session_notes": []
+    },
+    {
+      "id": "17.3",
+      "phase": 17,
+      "title": "Define evidence identities, health, and storage-neutral lifecycle",
+      "crate": "opi-agent",
+      "parent_spec_row": null,
+      "definition_of_done": "opi-agent additively defines opaque RunId, TurnId, CallId, optional ParentCallId, monotonic Sequence, closed versioned EvidenceHealth, DirectRuntimeInput-or-ActiveSnapshot RuntimeInputBinding, classified artifact references, resolved-manifest values, and the EvidenceSink setup/emission/artifact/run-finalization lifecycle. The public contract exposes closed typed evidence-setup-failure, evidence-emission-failure, evidence-finalization-failure, and evidence-incomplete outcomes that callers can distinguish without parsing strings. It provides only no-op and in-memory new adapters; shared contract tests exhaustively map those lifecycle/failure classes, in-memory acts as recording oracle, and no-op proves capture disabled. Unknown measurements remain unknown with reason, finalization is immutable, and secret-bearing/raw content types cannot cross the sink contract. This substrate does not activate Agent evidence, add file storage, close a product scenario, or remove TraceSink before the explicit expand-contract migration in 17.6/17.7.",
+      "definition_source": "inferred",
+      "replaces": "Define stable evidence identities and the storage-neutral sink contract",
+      "status": "failing",
+      "depends_on": [],
+      "inference_notes": [
+        {
+          "field": "replaces",
+          "reason": "Supersedes the confirmed pre-admission task 'Define stable evidence identities and the storage-neutral sink contract'; no implementation attempt or passing evidence existed.",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Delivery dependency order and implementation-plan handoff"
+        },
+        {
+          "field": "definition_of_done",
+          "reason": "Independent identity/health/lifecycle expand step used by authorization and the later Agent/product cutover without a false production claim.",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Core vocabulary and adapters"
+        },
+        {
+          "field": "reuse_search",
+          "reason": "searched=TraceRecord, TraceCollector, TraceSink, RecordingTraceSink, AgentEvent, diagnostics, retry/tool ids, session branches; reused=redaction helpers, event vocabulary, trace envelopes, recording tests, and branch identity; gap=opaque call graph IDs, versioned health, runtime-input variants, storage-neutral lifecycle, immutable finalization",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Current implementation gap"
+        },
+        {
+          "field": "placement",
+          "reason": "target=core; existing_home=opi-agent trace/event vocabulary; cannot_fit_fully=not-applicable because call identity, lifecycle, health, and finalization are Agent semantics while paths/capture policy stay product-owned",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Architecture placement case"
+        },
+        {
+          "field": "surface_necessity",
+          "reason": "public_api=typed ids, EvidenceHealth snapshots, RuntimeInputBinding, manifest/artifact values, EvidenceSink and no-op/in-memory adapters are required by embedders, authorization and product adapter; config=none because capture activation stays product-owned; state=identity/health/lifecycle/finalization closed values; dependency_edge=none because opi-agent already owns the intrinsic trace/event vocabulary and no new workspace dependency is required",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Core vocabulary and adapters"
+        },
+        {
+          "field": "simplification_ceiling",
+          "reason": "accepted=one contract with no-op/in-memory only; ceiling=no active dual runtime, file adapter, exporter, database, Eval schema, shared mutable health, raw content, or fabricated ActiveSnapshot; revisit_when=a second production sink cannot express a required lifecycle state",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Core vocabulary and adapters"
+        },
+        {
+          "field": "forbidden_scope",
+          "reason": "Do not activate parallel evidence, implement file storage/exporters/Eval, fabricate ActiveSnapshot, or pass raw sensitive content to sinks.",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Non-goals"
+        },
+        {
+          "field": "substrate_owner",
+          "reason": "Later scenario owners=17.4 consumes identities/health for A06..A08; 17.7 consumes the evidence contract for A01/A03/A09..A12.",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Delivery dependency order and implementation-plan handoff"
+        },
+        {
+          "field": "criterion_slice",
+          "reason": "P17-FAL-001 evidence public-contract slice is owned here: setup failure, emission failure, finalization failure, and incomplete evidence are closed typed outcomes distinguishable by callers without string parsing. Runtime precedence, cancellation, partial effects, and product sink behavior remain 17.6/17.7; task 17.9 only composes the aggregate matrix.",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Failure, cancellation, and partial-result semantics"
+        },
+        {
+          "field": "criterion_verification",
+          "reason": "P17-FAL-001=opi-agent evidence_contract public-surface test exhaustively maps setup/emission/finalization/incomplete variants and proves caller-side typed matching with no generic string fallback.",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Failure, cancellation, and partial-result semantics"
+        }
+      ],
+      "tier": "library",
+      "commit_type": "feat",
+      "parallelize": [],
+      "evaluator_required": true,
+      "verification": {
+        "library_gates": [
+          "scripts/opi-impl-smoke.ps1 scoped --crate opi-agent --test evidence_contract --test trace_envelope"
+        ],
+        "behavioral_tests": [
+          "crates/opi-agent/tests/evidence_contract.rs",
+          "crates/opi-agent/tests/trace_envelope.rs"
+        ],
+        "snapshot_tests": [],
+        "smoke_addendum": null
+      },
+      "acceptance_scenarios": [],
+      "production_call_sites": [],
+      "substrate_only": true,
+      "iteration_count": 0,
+      "max_iterations": 5,
+      "start_commit": null,
+      "baseline_dirty_files": [],
+      "task_owned_paths": [
+        "crates/opi-agent/src/evidence.rs",
+        "crates/opi-agent/src/trace.rs",
+        "crates/opi-agent/src/event.rs",
+        "crates/opi-agent/src/diagnostic.rs",
+        "crates/opi-agent/src/lib.rs",
+        "crates/opi-agent/tests/evidence_contract.rs",
+        "crates/opi-agent/tests/trace_envelope.rs"
+      ],
+      "last_attempt": null,
+      "verified_at_commit": null,
+      "evidence": null,
+      "blocker": null,
+      "session_notes": []
+    },
+    {
+      "id": "17.4",
+      "phase": 17,
+      "title": "Cut over trusted tool registrations and mandatory authorization",
+      "crate": "workspace",
+      "parent_spec_row": null,
+      "definition_of_done": "Trusted assembly registers every tool as immutable RegisteredTool with registration id, provider-visible name, built-in/extension/embedder origin, registration-derived capability, schema, and implementation. The Reference Product applies the fixed built-in map workspace.read/workspace.write/command.execute, namespaces extension capabilities to origin/name, excludes and denies extension tools without exact existing permission, and never treats package/project trust as permission. Immutable digest-addressed EffectiveUserPolicy snapshots existing run/tool/mutating/trust/adapter/path/grant/evidence facts; live session grants remain separately versioned. Every provider request reprojects visible tools from trusted registrations. The loop resolves registration, runs deny-or-Continue hook, validates final arguments, calls mandatory ToolAuthorizer with current EvidenceHealth, emits redacted outcome, rejects an Allow whose evidence-health generation no longer matches the current injected snapshot, and only then executes. Evidence-failure-driven health advancement and reauthorization through the assembled product path belong to 17.7. Bash reuses current route selection/permission broker. Missing, failed, expired, stale, or forged authority yields zero executions; no allow-all authorizer, new permission language/UI, hook grant, or compatibility path remains.",
+      "definition_source": "inferred",
+      "replaces": "Cut over trusted tool authorization with the Reference Product policy binding",
+      "status": "failing",
+      "depends_on": [
+        "17.3"
+      ],
+      "inference_notes": [
+        {
+          "field": "replaces",
+          "reason": "Supersedes the confirmed pre-admission task 'Cut over trusted tool authorization with the Reference Product policy binding'; no implementation attempt or passing evidence existed.",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Delivery dependency order and implementation-plan handoff"
+        },
+        {
+          "field": "definition_of_done",
+          "reason": "Registration ownership, mandatory core mechanism, and real product policy binding ship in one fail-closed cutover with no intermediate allow-all state.",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Trusted tool authorization"
+        },
+        {
+          "field": "depends_on",
+          "reason": "Authorization consumes stable run/turn/call ids and current EvidenceHealth snapshots from 17.3; provider assembly remains independent.",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Delivery dependency order and implementation-plan handoff"
+        },
+        {
+          "field": "reuse_search",
+          "reason": "searched=Tool, definitions, validation, BeforeToolCallResult, CompositeHooks, ExtensionRegistry, CodingHarness tools, policy.rs, execution routing/permission, package trust; reused=schema validation, deny hooks, extension ordering, built-in tools, adapter routing, command.execute permissions, path/mutating/tool selection, execution counters; gap=registration-owned origin/capability and mandatory current-health authorization",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Trusted boundary"
+        },
+        {
+          "field": "placement",
+          "reason": "target=reference-product; existing_home=opi-agent final tool boundary plus opi-coding-agent trusted policy/tool assembly; cannot_fit_fully=the compiling cutover must bind the mandatory core mechanism to real product policy, capability maps, grants, adapter permissions, and trust facts, so the task is classified by its scenario-closing Reference Product assembly while keeping generic authorization mechanism in opi-agent",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Architecture placement case"
+        },
+        {
+          "field": "surface_necessity",
+          "reason": "public_api=RegisteredTool, ToolAuthorizer, request, and closed decision let embedders inject policy; config=none because existing facts are snapshotted, unpermitted extension capability fails closed, and complete-evidence maps closedly to capture absent=false and CLI --trace/SDK TraceConfig/RPC recording sink=true; state=immutable registrations/policy plus versioned grants/health; dependency_edge=none because existing opi-coding-agent -> opi-agent and opi-protocol dependencies already expose the required policy and execution seams",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Effective product policy"
+        },
+        {
+          "field": "simplification_ceiling",
+          "reason": "accepted=fixed built-in map, namespaced extension ids, mandatory authorizer, deny-or-Continue hook; ceiling=no generic policy engine, new permission language/UI, allow-all, hook authority, argument mutation, or OS sandbox; revisit_when=a reviewed tool class cannot map to existing capability families",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Trusted tool authorization"
+        },
+        {
+          "field": "forbidden_scope",
+          "reason": "Do not add permission popups, policy authoring UX, OS confinement, argument-transforming hooks, implicit extension allow, or temporary compatibility authorizers.",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Non-goals"
+        },
+        {
+          "field": "registered_criteria",
+          "reason": "P17-OUT-003, P17-AUT-001, P17-AUT-002, P17-AUT-003, P17-AUT-004, P17-AUT-005, P17-AUT-006, P17-AUT-007, P17-AUT-008",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Trusted tool authorization"
+        },
+        {
+          "field": "criterion_verification",
+          "reason": "OUT-003/AUT-001..002=origin/capability/schema/exact-argument tests; AUT-003..005=taint, denial/error/expiry zero-execution matrix plus a core synthetic evidence-generation mismatch rejection that does not claim evidence-failure-driven reauthorization; AUT-006..007=hook order and after-result isolation; AUT-008=consecutive-request tool projection",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Trusted tool authorization"
+        },
+        {
+          "field": "criterion_slice",
+          "reason": "P17-FAL-001..003 tool-authority slice is owned here: hook denial, schema failure, authorizer denial/error/expiry, synthetic stale-generation rejection, execution failure, timeout, and cancellation preserve the owning boundary and execute at most once. Evidence-sink-driven health advancement remains 17.7; task 17.9 only composes the aggregate precedence matrix.",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Failure, cancellation, and partial-result semantics"
+        }
+      ],
+      "tier": "workspace",
+      "commit_type": "feat",
+      "parallelize": [],
+      "evaluator_required": true,
+      "verification": {
+        "library_gates": [
+          "scripts/opi-impl-smoke.ps1 full"
+        ],
+        "behavioral_tests": [
+          "crates/opi-agent/tests/tool_authority.rs",
+          "crates/opi-agent/tests/tool_validation.rs",
+          "crates/opi-agent/tests/extensions.rs",
+          "crates/opi-agent/tests/diagnostics_runtime.rs",
+          "crates/opi-coding-agent/tests/phase17_tool_authority.rs",
+          "crates/opi-coding-agent/tests/tool_selection.rs",
+          "crates/opi-coding-agent/tests/adapter_runtime.rs",
+          "crates/opi-coding-agent/tests/execution_product.rs",
+          "crates/opi-coding-agent/tests/safety_hooks.rs",
+          "crates/opi-coding-agent/tests/extensions.rs"
+        ],
+        "snapshot_tests": [],
+        "smoke_addendum": null
+      },
+      "acceptance_scenarios": [
+        {
+          "id": "P17-A06",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Acceptance scenarios and verification",
+          "scenario": "Model-visible content requests permission expansion; EffectiveUserPolicy is unchanged, authorization denies, and Tool::execute is never called.",
+          "verification": [
+            "cargo test -p opi-coding-agent --test phase17_tool_authority phase17_model_content_cannot_expand_effective_policy"
+          ],
+          "production_call_sites": [
+            "opi_coding_agent::CodingHarness::prompt",
+            "opi_coding_agent trusted tool assembly",
+            "opi_agent::ToolAuthorizer::authorize"
+          ],
+          "status": "open"
+        },
+        {
+          "id": "P17-A07",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Acceptance scenarios and verification",
+          "scenario": "Hook, extension, skill, retrieval/tool result, or child output forges registration, capability, grant, or scope; trusted registration and policy fields remain unchanged.",
+          "verification": [
+            "cargo test -p opi-coding-agent --test phase17_tool_authority phase17_untrusted_sources_cannot_forge_registration_or_grants"
+          ],
+          "production_call_sites": [
+            "opi_agent::extension::CompositeHooks::before_tool_call",
+            "opi_coding_agent::CodingHarness::prompt",
+            "opi_agent::ToolAuthorizer::authorize"
+          ],
+          "status": "open"
+        },
+        {
+          "id": "P17-A08",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Acceptance scenarios and verification",
+          "scenario": "Expired Permission Scope or authorizer failure returns stable redacted denial with the owning authority source and zero tool executions.",
+          "verification": [
+            "cargo test -p opi-coding-agent --test phase17_tool_authority phase17_expired_or_failed_authority_is_fail_closed"
+          ],
+          "production_call_sites": [
+            "opi_coding_agent::CodingHarness::prompt",
+            "opi_agent::ToolAuthorizer::authorize",
+            "opi_agent::agent_loop tool execution path"
+          ],
+          "status": "open"
+        }
+      ],
+      "production_call_sites": [
+        "opi_coding_agent trusted tool registration assembly",
+        "opi_coding_agent::CodingHarness::prompt",
+        "opi_agent::agent_loop tool execution path",
+        "opi_agent::ToolAuthorizer::authorize",
+        "opi_agent::extension::CompositeHooks::before_tool_call"
+      ],
+      "substrate_only": false,
+      "iteration_count": 0,
+      "max_iterations": 5,
+      "start_commit": null,
+      "baseline_dirty_files": [],
+      "task_owned_paths": [
+        "crates/opi-agent/src/tool.rs",
+        "crates/opi-agent/src/agent.rs",
+        "crates/opi-agent/src/agent_loop.rs",
+        "crates/opi-agent/src/loop_types.rs",
+        "crates/opi-agent/src/hooks.rs",
+        "crates/opi-agent/src/extension.rs",
+        "crates/opi-agent/src/evidence.rs",
+        "crates/opi-agent/src/lib.rs",
+        "crates/opi-agent/tests/tool_authority.rs",
+        "crates/opi-agent/tests/tool_validation.rs",
+        "crates/opi-agent/tests/extensions.rs",
+        "crates/opi-agent/tests/agent_loop_mock.rs",
+        "crates/opi-agent/tests/agent_loop_semantics.rs",
+        "crates/opi-agent/tests/agent_wrapper.rs",
+        "crates/opi-agent/tests/harness.rs",
+        "crates/opi-agent/tests/hooks_queues.rs",
+        "crates/opi-agent/tests/sdk_embedding.rs",
+        "crates/opi-agent/tests/tool_event_redaction.rs",
+        "crates/opi-agent/tests/trace_envelope.rs",
+        "crates/opi-agent/tests/truncated_propagation.rs",
+        "crates/opi-agent/tests/diagnostics_runtime.rs",
+        "crates/opi-agent/tests/image_capability.rs",
+        "crates/opi-agent/tests/retry_agent.rs",
+        "crates/opi-agent/tests/thinking_integration.rs",
+        "crates/opi-coding-agent/src/policy.rs",
+        "crates/opi-coding-agent/src/harness.rs",
+        "crates/opi-coding-agent/src/tool/**",
+        "crates/opi-coding-agent/src/execution/permission.rs",
+        "crates/opi-coding-agent/src/execution/router.rs",
+        "crates/opi-coding-agent/src/execution/runtime.rs",
+        "crates/opi-coding-agent/src/adapter_extension.rs",
+        "crates/opi-coding-agent/src/package_activation.rs",
+        "crates/opi-coding-agent/src/runner.rs",
+        "crates/opi-coding-agent/tests/phase17_tool_authority.rs",
+        "crates/opi-coding-agent/tests/tool_selection.rs",
+        "crates/opi-coding-agent/tests/adapter_runtime.rs",
+        "crates/opi-coding-agent/tests/safety_hooks.rs",
+        "crates/opi-coding-agent/tests/extensions.rs",
+        "crates/opi-coding-agent/tests/example_adapters.rs",
+        "crates/opi-coding-agent/tests/image_input_cli.rs",
+        "crates/opi-coding-agent/tests/interactive_hooks.rs",
+        "crates/opi-coding-agent/tests/mcp_adapter_example.rs",
+        "crates/opi-coding-agent/tests/mock_e2e.rs",
+        "crates/opi-coding-agent/tests/permission_gate_example.rs",
+        "crates/opi-coding-agent/tests/plan_mode_example.rs",
+        "crates/opi-coding-agent/tests/protected_paths_example.rs",
+        "crates/opi-coding-agent/tests/sub_agent_example.rs",
+        "crates/opi-coding-agent/tests/todo_example.rs",
+        "crates/opi-coding-agent/tests/execution_product.rs"
+      ],
+      "last_attempt": null,
+      "verified_at_commit": null,
+      "evidence": null,
+      "blocker": null,
+      "session_notes": []
+    },
+    {
+      "id": "17.5",
+      "phase": 17,
+      "title": "Wire the Reference Product to dispatchable provider routes",
+      "crate": "workspace",
+      "parent_spec_row": null,
+      "definition_of_done": "Reference Product startup constructs one ProviderCollection containing each configured and dispatchable route, retains lazy collection-owned per-call auth preparation, migrates all remaining Provider implementations/tests to the prepared-auth attempt seam, and removes provider-owned AuthResolver invocation/state, the old stream(Request) bridge, MetadataProvider, raw registry/provider bypasses, SharedProvider construction, and same-provider model-switch rejection. Existing or legacy bare model input normalizes only when one route is provable; no alias registry/configuration is added. The opi-agent session schema and every new model-change write persist canonical provider:model plus distinct input source; 17.8 owns only read-side legacy normalization and byte preservation. Unknown, ambiguous, unauthenticated, refresh-failed, fallback-disallowed, capability-mismatched, and wire-mismatched selections fail before model HTTP dispatch with stable remediation. CodingHarness tests prove provider changes without Agent reconstruction, and startup/model listing use collection-owned seams. This is the contract half of 17.1's expand-contract migration; no old auth/dispatch path or resolver-bearing adapter remains afterward.",
+      "definition_source": "inferred",
+      "replaces": "Assemble every dispatchable provider in the Reference Product",
+      "status": "failing",
+      "depends_on": [
+        "17.2"
+      ],
+      "inference_notes": [
+        {
+          "field": "replaces",
+          "reason": "Supersedes the confirmed pre-admission task 'Assemble every dispatchable provider in the Reference Product'; no implementation attempt or passing evidence existed.",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Delivery dependency order and implementation-plan handoff"
+        },
+        {
+          "field": "definition_of_done",
+          "reason": "Product contract step removes the old path only after 17.1/17.2 additive contracts compile; authorization remains independent and evidence correlation follows.",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Dispatchable provider collection"
+        },
+        {
+          "field": "depends_on",
+          "reason": "17.2 transitively supplies 17.1 ProviderCollection preparation and durable NextTurnState, avoiding a redundant dependency edge.",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Delivery dependency order and implementation-plan handoff"
+        },
+        {
+          "field": "reuse_search",
+          "reason": "searched=build_provider_bundle, ProviderBundle, MetadataProvider, provider-owned resolvers, credential_store resolvers, Agent/CodingHarness constructors, picker/listing, parse_model_spec, model_change, registry exposure; reused=provider config, credential/OAuth resolvers, registry UI, canonical parsing, startup, harness, session events; gap=real dispatchable route assembly and final removal of provider-owned auth/raw bypass",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Current implementation gap"
+        },
+        {
+          "field": "placement",
+          "reason": "target=reference-product; existing_home=opi-coding-agent provider factory/startup/harness/session over opi-ai collection; cannot_fit_fully=provider configuration, bare-input normalization, terminal defaults, credentials, and session source provenance are product facts",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Architecture placement case"
+        },
+        {
+          "field": "surface_necessity",
+          "reason": "public_api=existing ProviderBundle/CodingHarness/Agent constructors change to carry ProviderCollection/NextTurnState with no overload; config=none because existing provider/model/auth config determines routes; state=collection/canonical selection/input source; dependency_edge=none because existing inward workspace dependencies already expose ProviderCollection and Agent state without a new crate edge",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Runtime ownership"
+        },
+        {
+          "field": "simplification_ceiling",
+          "reason": "accepted=replace active-provider proxy and normalize only existing/legacy bare input when unique; ceiling=no aliases, eager authentication, provider breadth, second registry, test-only public injection, or compatibility switch; revisit_when=a second production product duplicates assembly",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Runtime ownership"
+        },
+        {
+          "field": "forbidden_scope",
+          "reason": "Do not add providers, aliases, permission UX, remote sessions, workflows, test-only public injection, or a second live runtime path.",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Non-goals"
+        },
+        {
+          "field": "registered_criteria",
+          "reason": "P17-OUT-001, P17-PRV-001, P17-PRV-002, P17-PRV-004, P17-PRV-006",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Dispatchable provider collection"
+        },
+        {
+          "field": "criterion_verification",
+          "reason": "OUT-001/PRV-001=consecutive CodingHarness prompts reach two providers without reconstruction; PRV-002=canonical/unique-bare/ambiguous/missing zero-dispatch tests and no-alias/raw-bypass audit; PRV-004=typed auth/route/fallback failures and resolver/provider call counts; PRV-006=all provider fixtures, old-stream/resolver source audit, and dependency review",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Dispatchable provider collection"
+        },
+        {
+          "field": "criterion_slice",
+          "reason": "P17-FAL-001..003 Reference Product provider slice is owned here: startup selection, canonicalization, stored-credential/refresh/fallback/capability/wire failures, and provider dispatch preserve the typed route/auth owner and prove zero model HTTP dispatch before admission. Task 17.9 only composes these results with later boundaries.",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Failure, cancellation, and partial-result semantics"
+        }
+      ],
+      "tier": "workspace",
+      "commit_type": "feat",
+      "parallelize": [],
+      "evaluator_required": true,
+      "verification": {
+        "library_gates": [
+          "scripts/opi-impl-smoke.ps1 full"
+        ],
+        "behavioral_tests": [
+          "crates/opi-ai/tests/per_request_auth.rs",
+          "crates/opi-ai/tests/provider_trait.rs",
+          "crates/opi-ai/tests/provider_collection.rs",
+          "crates/opi-coding-agent/tests/phase17_provider_runtime.rs",
+          "crates/opi-coding-agent/tests/provider_factory.rs",
+          "crates/opi-coding-agent/tests/provider_identity.rs",
+          "crates/opi-coding-agent/tests/credential_store.rs",
+          "crates/opi-coding-agent/tests/mock_e2e.rs",
+          "crates/opi-coding-agent/tests/list_models.rs",
+          "crates/opi-coding-agent/tests/session_cli.rs"
+        ],
+        "snapshot_tests": [],
+        "smoke_addendum": null
+      },
+      "acceptance_scenarios": [
+        {
+          "id": "P17-A02",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Acceptance scenarios and verification",
+          "scenario": "Unknown, ambiguous, unauthenticated, refresh-failed, fallback-disallowed, or wire-incompatible provider:model returns the owning typed failure before model HTTP dispatch.",
+          "verification": [
+            "cargo test -p opi-coding-agent --test phase17_provider_runtime phase17_route_and_auth_failures_do_not_dispatch_model_http"
+          ],
+          "production_call_sites": [
+            "binary crate main.rs provider assembly",
+            "opi_coding_agent::provider_factory::build_provider_bundle",
+            "opi_coding_agent::CodingHarness::set_model_validated",
+            "opi_coding_agent::CodingHarness::prompt",
+            "opi_ai::ProviderCollection::prepare_call"
+          ],
+          "status": "open"
+        }
+      ],
+      "production_call_sites": [
+        "binary crate main.rs provider assembly",
+        "opi_coding_agent::provider_factory::build_provider_bundle",
+        "opi_coding_agent::CodingHarness::set_model_validated",
+        "opi_coding_agent::CodingHarness::prompt",
+        "opi_agent::Agent::prompt"
+      ],
+      "substrate_only": false,
+      "iteration_count": 0,
+      "max_iterations": 5,
+      "start_commit": null,
+      "baseline_dirty_files": [],
+      "task_owned_paths": [
+        "crates/opi-ai/src/auth.rs",
+        "crates/opi-ai/src/provider.rs",
+        "crates/opi-ai/src/provider_collection.rs",
+        "crates/opi-ai/src/registry.rs",
+        "crates/opi-ai/src/lib.rs",
+        "crates/opi-ai/src/test_support.rs",
+        "crates/opi-ai/src/credential.rs",
+        "crates/opi-ai/README.md",
+        "crates/opi-ai/README.zh.md",
+        "crates/opi-ai/src/anthropic.rs",
+        "crates/opi-ai/src/api_mapped.rs",
+        "crates/opi-ai/src/azure_openai.rs",
+        "crates/opi-ai/src/bedrock/**",
+        "crates/opi-ai/src/gemini.rs",
+        "crates/opi-ai/src/mistral.rs",
+        "crates/opi-ai/src/openai_chat.rs",
+        "crates/opi-ai/src/openai_codex_responses.rs",
+        "crates/opi-ai/src/openai_responses.rs",
+        "crates/opi-ai/src/openai_responses_shared.rs",
+        "crates/opi-ai/src/openrouter.rs",
+        "crates/opi-ai/src/vertex.rs",
+        "crates/opi-ai/tests/api_mapped_provider.rs",
+        "crates/opi-ai/tests/auth_contracts.rs",
+        "crates/opi-ai/tests/model_wire_metadata.rs",
+        "crates/opi-ai/tests/oauth_wire_shape.rs",
+        "crates/opi-ai/tests/openai_codex_responses.rs",
+        "crates/opi-ai/tests/openai_responses_fixtures.rs",
+        "crates/opi-ai/tests/per_request_auth.rs",
+        "crates/opi-ai/tests/phase14_remediation.rs",
+        "crates/opi-ai/tests/provider_collection.rs",
+        "crates/opi-ai/tests/provider_trait.rs",
+        "crates/opi-ai/tests/registry.rs",
+        "crates/opi-ai/tests/request_enrichment.rs",
+        "crates/opi-agent/src/agent.rs",
+        "crates/opi-agent/src/session.rs",
+        "crates/opi-agent/src/session_context.rs",
+        "crates/opi-agent/tests/agent_loop_semantics.rs",
+        "crates/opi-agent/tests/agent_wrapper.rs",
+        "crates/opi-agent/tests/hooks_queues.rs",
+        "crates/opi-agent/tests/image_capability.rs",
+        "crates/opi-agent/tests/thinking_integration.rs",
+        "crates/opi-agent/tests/tool_validation.rs",
+        "crates/opi-agent/tests/trace_envelope.rs",
+        "crates/opi-agent/tests/session_context.rs",
+        "crates/opi-agent/tests/session_contract.rs",
+        "crates/opi-agent/tests/session_facade.rs",
+        "crates/opi-agent/tests/session_storage.rs",
+        "crates/opi-coding-agent/src/provider_factory.rs",
+        "crates/opi-coding-agent/src/credential_store.rs",
+        "crates/opi-coding-agent/src/github_copilot.rs",
+        "crates/opi-coding-agent/src/openai_codex.rs",
+        "crates/opi-coding-agent/src/oauth.rs",
+        "crates/opi-coding-agent/src/interactive_auth.rs",
+        "crates/opi-coding-agent/src/main.rs",
+        "crates/opi-coding-agent/src/harness.rs",
+        "crates/opi-coding-agent/src/model_listing.rs",
+        "crates/opi-coding-agent/src/picker.rs",
+        "crates/opi-coding-agent/src/session_coordinator.rs",
+        "crates/opi-coding-agent/src/lib.rs",
+        "crates/opi-coding-agent/README.md",
+        "crates/opi-coding-agent/README.zh.md",
+        "crates/opi-coding-agent/tests/phase17_provider_runtime.rs",
+        "crates/opi-coding-agent/tests/provider_factory.rs",
+        "crates/opi-coding-agent/tests/provider_identity.rs",
+        "crates/opi-coding-agent/tests/credential_store.rs",
+        "crates/opi-coding-agent/tests/mock_e2e.rs",
+        "crates/opi-coding-agent/tests/list_models.rs",
+        "crates/opi-coding-agent/tests/extension_mapped_catalog.rs",
+        "crates/opi-coding-agent/tests/interactive_mock.rs",
+        "crates/opi-coding-agent/tests/oauth_auth.rs",
+        "crates/opi-coding-agent/tests/picker_integration.rs",
+        "crates/opi-coding-agent/tests/rpc_jsonl.rs",
+        "crates/opi-coding-agent/tests/session_runtime.rs",
+        "crates/opi-coding-agent/tests/non_interactive.rs",
+        "crates/opi-coding-agent/tests/session_cli.rs"
+      ],
+      "last_attempt": null,
+      "verified_at_commit": null,
+      "evidence": null,
+      "blocker": null,
+      "session_notes": []
+    },
+    {
+      "id": "17.6",
+      "phase": 17,
+      "title": "Expand Agent evidence runtime over stable identities",
+      "crate": "opi-agent",
+      "parent_spec_row": null,
+      "definition_of_done": "Agent and agent_loop additively consume the 17.3 EvidenceSink lifecycle with no-op/in-memory sinks, allocate run/turn/provider/tool/retry/compaction identities before emission, retain one immutable provider route across retries, attach requested/resolved/actual route and authorization identity facts, advance versioned EvidenceHealth on failures, and preserve cancellation/partial outcomes. Public Agent tests reconstruct ordered call graphs and prove health generation is copied into authorization rather than shared mutably. This is an explicit expand step: the Reference Product remains on its existing TraceSink capture path and no Phase 17 product scenario is closed; 17.7 must migrate every production trace consumer, install the file adapter, and remove the legacy types in one contract step. No exporter, database, file adapter, raw capture, or compatibility facade is introduced here.",
+      "definition_source": "inferred",
+      "replaces": "Cut over production evidence and migrate legacy session artifacts",
+      "status": "failing",
+      "depends_on": [
+        "17.2",
+        "17.4"
+      ],
+      "inference_notes": [
+        {
+          "field": "replaces",
+          "reason": "Supersedes and narrows the confirmed pre-admission task 'Cut over production evidence and migrate legacy session artifacts'; no implementation attempt or passing evidence existed, and product cutover/migration moved to 17.7/17.8.",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Delivery dependency order and implementation-plan handoff"
+        },
+        {
+          "field": "definition_of_done",
+          "reason": "Explicit expand-contract step activates the evidence state machine at the Agent public seam while deferring all product consumers and legacy removal to 17.7.",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Product-neutral evidence seam"
+        },
+        {
+          "field": "depends_on",
+          "reason": "Consumes durable next-turn/provider state from 17.2 and consumes the evidence contract plus authority identities/health transitively through 17.4, which depends on 17.3; Reference Product provider assembly is independent and the redundant direct 17.3 edge is intentionally omitted.",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Delivery dependency order and implementation-plan handoff"
+        },
+        {
+          "field": "reuse_search",
+          "reason": "searched=TraceCollector, Agent events, provider retry loop, tool calls, compaction, diagnostics, Agent builder/prompt; reused=existing lifecycle emission points, diagnostic envelopes, retry machinery, Agent events, and injectable builder fields; gap=identity-correlated EvidenceSink runtime with route/authority facts and versioned health",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Current implementation gap"
+        },
+        {
+          "field": "placement",
+          "reason": "target=core; existing_home=opi-agent Agent/loop/event lifecycle; cannot_fit_fully=product capture paths, activation, storage, and migration remain Reference Product work in 17.7/17.8",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Architecture placement case"
+        },
+        {
+          "field": "surface_necessity",
+          "reason": "public_api=Agent accepts EvidenceSink/runtime binding and exposes terminal completeness for embedders; config=none because no-op is default; state=run ids, sequence, health, route/authority correlation, finalization; dependency_edge=none because Agent and agent_loop already own these lifecycle boundaries and depend inward on the existing opi-ai seam",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Core vocabulary and adapters"
+        },
+        {
+          "field": "simplification_ceiling",
+          "reason": "accepted=Agent-only expand step with no-op/in-memory; ceiling=no product cutover, core file adapter, exporter, database, Eval, legacy migration, raw content, or hidden bridge; revisit_when=a real sink cannot express a required intrinsic lifecycle state",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Core vocabulary and adapters"
+        },
+        {
+          "field": "forbidden_scope",
+          "reason": "Do not migrate Reference Product capture, add file storage/exporters/Eval, or treat sinks as the redaction boundary in this substrate task.",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Non-goals"
+        },
+        {
+          "field": "substrate_owner",
+          "reason": "Later final criterion/scenario owner=17.7 owns P17-PRV-003/P17-EVD-001/P17-EVD-002 and A01/A03/A09..A12 and depends on 17.6; 17.6 intentionally has no Reference Product scenario even though Agent::prompt, Agent::continue_, and agent_loop are real core production call sites.",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Delivery dependency order and implementation-plan handoff"
+        },
+        {
+          "field": "criterion_slice",
+          "reason": "P17-FAL-001..003 Agent evidence/execution slice is owned here: allocation/emission ordering, provider retries, tool calls, compaction, cancellation, partial outcomes, health advancement, and terminal finalization preserve the actual owning outcome with monotonic identity and no fabricated completion. Task 17.7 closes the product sink path and 17.9 composes the aggregate matrix.",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Failure, cancellation, and partial-result semantics"
+        }
+      ],
+      "tier": "library",
+      "commit_type": "feat",
+      "parallelize": [],
+      "evaluator_required": true,
+      "verification": {
+        "library_gates": [
+          "scripts/opi-impl-smoke.ps1 scoped --crate opi-agent --test evidence_runtime --test retry_agent --test tool_authority --test trace_envelope"
+        ],
+        "behavioral_tests": [
+          "crates/opi-agent/tests/evidence_runtime.rs",
+          "crates/opi-agent/tests/retry_agent.rs",
+          "crates/opi-agent/tests/tool_authority.rs",
+          "crates/opi-agent/tests/trace_envelope.rs"
+        ],
+        "snapshot_tests": [],
+        "smoke_addendum": null
+      },
+      "acceptance_scenarios": [],
+      "production_call_sites": [
+        "opi_agent::Agent::prompt",
+        "opi_agent::Agent::continue_",
+        "opi_agent::agent_loop provider/retry/tool/compaction paths"
+      ],
+      "substrate_only": true,
+      "iteration_count": 0,
+      "max_iterations": 5,
+      "start_commit": null,
+      "baseline_dirty_files": [],
+      "task_owned_paths": [
+        "crates/opi-agent/src/evidence.rs",
+        "crates/opi-agent/src/agent.rs",
+        "crates/opi-agent/src/agent_loop.rs",
+        "crates/opi-agent/src/event.rs",
+        "crates/opi-agent/src/diagnostic.rs",
+        "crates/opi-agent/src/hooks.rs",
+        "crates/opi-agent/src/tool.rs",
+        "crates/opi-agent/src/loop_types.rs",
+        "crates/opi-agent/src/lib.rs",
+        "crates/opi-agent/tests/evidence_runtime.rs",
+        "crates/opi-agent/tests/retry_agent.rs",
+        "crates/opi-agent/tests/tool_authority.rs",
+        "crates/opi-agent/tests/trace_envelope.rs"
+      ],
+      "last_attempt": null,
+      "verified_at_commit": null,
+      "evidence": null,
+      "blocker": null,
+      "session_notes": []
+    },
+    {
+      "id": "17.7",
+      "phase": 17,
+      "title": "Cut over Reference Product evidence, finalization, and redaction",
+      "crate": "workspace",
+      "parent_spec_row": null,
+      "definition_of_done": "The Reference Product implements existing explicit file capture as an EvidenceSink adapter while Minimal Runtime remains no-op, migrates every TraceSink/TraceCollector/FileTraceSink/RecordingTraceSink production consumer, and removes those legacy core exports so only no-op/in-memory adapters remain in opi-agent. Capture setup completes before provider/tool effects. Complete-evidence policy has a fixed existing-input mapping with no new config key: absent capture=false; CLI --trace, SDK TraceConfig, or RPC recording sink=true, with no best-effort capture mode. Direct CLI/SDK assembly binds DirectRuntimeInput and never claims ActiveSnapshot. Producers classify/redact sensitive content before constructing sink values. The strict finalized manifest rejects each missing binding, distinguishes requested/resolved/actual and measured/estimated/quota/billed facts, retains unknown-with-reason, and emits only finalized classified artifact references. Failure preserves actual outcome, advances health, withholds manifest, and required-complete-evidence policy reauthorizes stale allows and denies unlaunched effects while preserving in-flight outcomes. Production CodingHarness, interactive, print, JSON/NDJSON, and RPC tests prove two-provider/retry graphs, policy mapping, adapter conformance, failures, and canary absence. This is the contract step for the 17.3/17.6 evidence expansion; no dual runtime or compatibility alias remains.",
+      "definition_source": "inferred",
+      "replaces": "Prove cross-mode and cross-platform Phase 17 acceptance",
+      "status": "failing",
+      "depends_on": [
+        "17.5",
+        "17.6"
+      ],
+      "inference_notes": [
+        {
+          "field": "replaces",
+          "reason": "Repurposes the confirmed pre-admission task id from 'Prove cross-mode and cross-platform Phase 17 acceptance' for the separate product evidence cutover; no implementation attempt or passing evidence existed, and assurance moved to 17.9.",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Delivery dependency order and implementation-plan handoff"
+        },
+        {
+          "field": "definition_of_done",
+          "reason": "Single contract cutover migrates all production trace consumers, preserves explicit capture, removes legacy core adapters, and closes route/manifest/redaction/failure workflows.",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Resolved-execution manifest"
+        },
+        {
+          "field": "depends_on",
+          "reason": "17.5 supplies production provider routes; 17.6 supplies Agent evidence/health runtime and transitively all evidence/authority/state contracts.",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Delivery dependency order and implementation-plan handoff"
+        },
+        {
+          "field": "reuse_search",
+          "reason": "searched=all TraceSink/TraceCollector/FileTraceSink/RecordingTraceSink consumers, TraceConfig, file capture, diagnostics, runners, RPC, CLI activation, environment allowlists, redaction helpers; reused=explicit capture option/paths, output runners, diagnostics, artifact-audit patterns, canary fixtures; gap=product EvidenceSink adapter, DirectRuntimeInput binding, producer redaction, strict manifest, and full legacy trace contract removal",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Product-neutral evidence seam"
+        },
+        {
+          "field": "placement",
+          "reason": "target=reference-product; existing_home=opi-coding-agent capture/runner/diagnostics assembly implementing opi-agent EvidenceSink; cannot_fit_fully=file paths, activation, environment allowlists, runtime-input assembly, and policy are Reference Product facts",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Architecture placement case"
+        },
+        {
+          "field": "surface_necessity",
+          "reason": "public_api=existing capture/runner outputs expose completeness/artifact refs while obsolete core trace exports are removed; config=none because existing capture inputs map closedly to complete-evidence absent=false and CLI --trace/SDK TraceConfig/RPC recording sink=true; state=product adapter lifecycle, policy digest, DirectRuntimeInput digest, manifest bindings, file schema; dependency_edge=none because existing opi-coding-agent dependencies already expose Agent lifecycle, runners, RPC, and filesystem capture assembly",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Resolved-execution manifest"
+        },
+        {
+          "field": "simplification_ceiling",
+          "reason": "accepted=one file adapter and strict manifest with producer redaction; ceiling=no exporter framework, database, hosted telemetry, ActiveSnapshot fabrication, raw-content default, second permission store, or legacy bridge; revisit_when=a second real product storage adapter duplicates product-only lifecycle",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Core vocabulary and adapters"
+        },
+        {
+          "field": "forbidden_scope",
+          "reason": "Do not add exporters, hosted telemetry, dashboards, databases, Eval, new capture language, raw defaults, Promotion authority, or retain dual trace/evidence paths.",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Non-goals"
+        },
+        {
+          "field": "registered_criteria",
+          "reason": "P17-OUT-004, P17-PRV-003, P17-PRV-005, P17-EVD-001, P17-EVD-002, P17-EVD-003, P17-EVD-004, P17-EVD-005, P17-EVD-006, P17-EVD-007, P17-EVD-008, P17-EVD-009, P17-EVD-010, P17-EVD-011, P17-FAL-004, P17-MIG-003",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Product-neutral evidence seam"
+        },
+        {
+          "field": "criterion_verification",
+          "reason": "OUT-004/EVD-003..004=strict manifest/runtime-input/provenance/unknown fixtures; PRV-003/A03=one prepared call, one route/auth resolution, repeated attempts and parent correlation; PRV-005=two-provider requested/resolved/actual/auth/fallback evidence; EVD-001..002/A09=production identity uniqueness, monotonic ordered provider/tool/retry/compaction graph; EVD-005/FAL-004=cross-mode canaries; EVD-006..007=default no-op/setup zero-call; EVD-008..009=failure health, closed capture-policy mapping, stale reauthorization/in-flight; EVD-010=core API/source scan; EVD-011/MIG-003=adapter conformance and explicit file capture",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Product-neutral evidence seam"
+        },
+        {
+          "field": "criterion_slice",
+          "reason": "P17-FAL-001..003 product evidence/execution slice is owned here: setup, emission, redaction, adapter I/O, manifest finalization, timeout/cancellation, partial/in-flight effects, health advancement, stale reauthorization, and cleanup-unknown preserve actual outcomes and fail closed before unlaunched effects. Task 17.9 only composes this with the other owner-task matrices.",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Failure, cancellation, and partial-result semantics"
+        }
+      ],
+      "tier": "workspace",
+      "commit_type": "feat",
+      "parallelize": [],
+      "evaluator_required": true,
+      "verification": {
+        "library_gates": [
+          "scripts/opi-impl-smoke.ps1 full"
+        ],
+        "behavioral_tests": [
+          "crates/opi-agent/tests/evidence_runtime.rs",
+          "crates/opi-agent/tests/trace_envelope.rs",
+          "crates/opi-coding-agent/tests/phase17_product_evidence.rs",
+          "crates/opi-coding-agent/tests/adapter_runtime.rs",
+          "crates/opi-coding-agent/tests/interactive_mock.rs",
+          "crates/opi-coding-agent/tests/non_interactive.rs",
+          "crates/opi-coding-agent/tests/json_mode.rs",
+          "crates/opi-coding-agent/tests/rpc_jsonl.rs"
+        ],
+        "snapshot_tests": [],
+        "smoke_addendum": "Under target/opi-artifacts/phase17-task-17.7 preserve command.txt, cwd.txt, env-overrides.json (only Opi-relevant overrides), exit-code.txt, stdout.txt, stderr.txt, session.jsonl, ndjson.jsonl, rpc.jsonl, provider-assertion.json, tool-execution-counts.json, evidence.jsonl, manifest.json, RUN_SUMMARY.md, and SHA256SUMS.txt. A required-artifact assertion must fail if any file is absent; command/cwd/env/exit and every runtime payload, summary, and checksum manifest must be non-empty (stdout/stderr may be empty but must exist). Verify SHA256SUMS.txt against a clean read of every listed raw file. RUN_SUMMARY.md must use the artifact-truthfulness claim/classification/artifact/result table, point every runtime claim to an existing raw file, and classify every closing claim verified; observed-unpreserved or source-inferred cannot close acceptance. Only after those checks run powershell -ExecutionPolicy Bypass -File scripts\\opi-artifact-audit.ps1 target/opi-artifacts/phase17-task-17.7 -WorkspaceRoot . -Json. Missing/empty evidence, digest mismatch, or generic audit PASS over insufficient files blocks the task. Do not copy runtime artifacts into docs/snapshots/."
+      },
+      "acceptance_scenarios": [
+        {
+          "id": "P17-A01",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Acceptance scenarios and verification",
+          "scenario": "One CodingHarness session selects provider A then B; requests reach A/B and finalized evidence retains matching requested/resolved/actual/auth/fallback facts.",
+          "verification": [
+            "cargo test -p opi-coding-agent --test phase17_product_evidence phase17_harness_switches_providers_with_matching_route_evidence"
+          ],
+          "production_call_sites": [
+            "opi_coding_agent::CodingHarness::set_model_validated",
+            "opi_coding_agent::CodingHarness::prompt",
+            "opi_agent::Agent::prompt",
+            "opi_ai::ProviderCollection::prepare_call",
+            "opi_agent::EvidenceSink lifecycle"
+          ],
+          "status": "open"
+        },
+        {
+          "id": "P17-A03",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Acceptance scenarios and verification",
+          "scenario": "A retrying production provider call keeps one route and ParentCallId for every attempt and one terminal retry chain.",
+          "verification": [
+            "cargo test -p opi-coding-agent --test phase17_product_evidence phase17_retry_keeps_route_parent_and_terminal_evidence"
+          ],
+          "production_call_sites": [
+            "opi_coding_agent::CodingHarness::prompt",
+            "opi_agent::Agent::prompt",
+            "opi_agent::agent_loop retry path",
+            "opi_agent::EvidenceSink lifecycle"
+          ],
+          "status": "open"
+        },
+        {
+          "id": "P17-A09",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Acceptance scenarios and verification",
+          "scenario": "A run with provider calls, retry, tools, and compaction reconstructs one ordered graph and finalizes every required DirectRuntimeInput-bound manifest field.",
+          "verification": [
+            "cargo test -p opi-coding-agent --test phase17_product_evidence phase17_complete_run_reconstructs_graph_and_rejects_missing_bindings"
+          ],
+          "production_call_sites": [
+            "opi_coding_agent::CodingHarness::prompt evidence setup/finalization",
+            "opi_agent::Agent::prompt",
+            "opi_agent::agent_loop provider/retry/tool/prepare paths",
+            "opi_agent::EvidenceSink lifecycle"
+          ],
+          "status": "open"
+        },
+        {
+          "id": "P17-A10",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Acceptance scenarios and verification",
+          "scenario": "Canary secrets in prompts, args, environment, credentials, and provider errors are absent from sink, file, diagnostics, mode output, and artifact metadata.",
+          "verification": [
+            "cargo test -p opi-coding-agent --test phase17_product_evidence phase17_canaries_stop_before_sink_file_and_manifest",
+            "cargo test -p opi-coding-agent --test interactive_mock phase17_canary_is_absent_from_interactive_text",
+            "cargo test -p opi-coding-agent --test non_interactive phase17_canary_is_absent_from_print_output",
+            "cargo test -p opi-coding-agent --test json_mode phase17_canary_is_absent_from_json_and_ndjson",
+            "cargo test -p opi-coding-agent --test rpc_jsonl phase17_canary_is_absent_from_rpc_jsonl"
+          ],
+          "production_call_sites": [
+            "binary crate main.rs::run_interactive_core",
+            "opi_coding_agent::NonInteractiveRunner::run",
+            "opi_coding_agent::RpcRunner",
+            "opi_coding_agent product evidence producer/file adapter"
+          ],
+          "status": "open"
+        },
+        {
+          "id": "P17-A11",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Acceptance scenarios and verification",
+          "scenario": "Evidence emission/finalization failure preserves actual outcome, marks incomplete, and produces no finalized manifest.",
+          "verification": [
+            "cargo test -p opi-coding-agent --test phase17_product_evidence phase17_sink_failure_preserves_outcome_and_withholds_manifest"
+          ],
+          "production_call_sites": [
+            "opi_coding_agent::CodingHarness::prompt",
+            "opi_agent::Agent::prompt",
+            "opi_agent::EvidenceSink lifecycle"
+          ],
+          "status": "open"
+        },
+        {
+          "id": "P17-A12",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Acceptance scenarios and verification",
+          "scenario": "After evidence becomes incomplete under complete-evidence policy, stale authorization is recomputed; unlaunched effects fail closed and in-flight effects keep actual outcome.",
+          "verification": [
+            "cargo test -p opi-coding-agent --test phase17_product_evidence phase17_required_evidence_failure_reauthorizes_and_denies_unlaunched_effects"
+          ],
+          "production_call_sites": [
+            "opi_coding_agent::CodingHarness::prompt",
+            "opi_agent::EvidenceSink lifecycle",
+            "opi_agent::ToolAuthorizer::authorize",
+            "opi_agent::agent_loop tool launch boundary"
+          ],
+          "status": "open"
+        }
+      ],
+      "production_call_sites": [
+        "binary crate main.rs::run_interactive_core",
+        "opi_coding_agent::CodingHarness::prompt evidence setup/finalization",
+        "opi_coding_agent::NonInteractiveRunner::run",
+        "opi_coding_agent::RpcRunner",
+        "opi_coding_agent product EvidenceSink adapter",
+        "opi_agent::Agent::prompt",
+        "opi_agent::ToolAuthorizer::authorize"
+      ],
+      "substrate_only": false,
+      "iteration_count": 0,
+      "max_iterations": 5,
+      "start_commit": null,
+      "baseline_dirty_files": [],
+      "task_owned_paths": [
+        "crates/opi-agent/src/evidence.rs",
+        "crates/opi-agent/src/trace.rs",
+        "crates/opi-agent/src/agent.rs",
+        "crates/opi-agent/src/agent_loop.rs",
+        "crates/opi-agent/src/extension.rs",
+        "crates/opi-agent/src/loop_types.rs",
+        "crates/opi-agent/src/lib.rs",
+        "crates/opi-agent/README.md",
+        "crates/opi-agent/README.zh.md",
+        "crates/opi-agent/tests/evidence_runtime.rs",
+        "crates/opi-agent/tests/trace_envelope.rs",
+        "crates/opi-coding-agent/src/evidence.rs",
+        "crates/opi-coding-agent/src/adapter_extension.rs",
+        "crates/opi-coding-agent/src/cli.rs",
+        "crates/opi-coding-agent/src/config.rs",
+        "crates/opi-coding-agent/src/harness.rs",
+        "crates/opi-coding-agent/src/main.rs",
+        "crates/opi-coding-agent/src/runner.rs",
+        "crates/opi-coding-agent/src/rpc.rs",
+        "crates/opi-coding-agent/src/diagnostics.rs",
+        "crates/opi-coding-agent/src/lib.rs",
+        "crates/opi-coding-agent/tests/phase17_product_evidence.rs",
+        "crates/opi-coding-agent/tests/adapter_runtime.rs",
+        "crates/opi-coding-agent/tests/interactive_mock.rs",
+        "crates/opi-coding-agent/tests/non_interactive.rs",
+        "crates/opi-coding-agent/tests/json_mode.rs",
+        "crates/opi-coding-agent/tests/rpc_jsonl.rs",
+        "crates/opi-coding-agent/tests/fixtures/phase17/**"
+      ],
+      "last_attempt": null,
+      "verified_at_commit": null,
+      "evidence": null,
+      "blocker": null,
+      "session_notes": []
+    },
+    {
+      "id": "17.8",
+      "phase": 17,
+      "title": "Migrate legacy session routes and preserve opaque trace artifacts",
+      "crate": "opi-coding-agent",
+      "parent_spec_row": null,
+      "definition_of_done": "Using the canonical route plus input-source session schema and new-write behavior completed in 17.5, resume, fork, and branch reconstruction accept existing exact routes and normalize a legacy bare model only when the dispatchable collection proves one route; missing or ambiguous routes return typed deterministic remediation before dispatch. This task owns only legacy read/normalization behavior, not the session schema or new model-change writes. Load, normalization, resume, and fork leave legacy session fixtures byte-identical. Existing serialize-only legacy trace files remain opaque and byte-identical at their paths; new evidence never overwrites, rewrites, upgrades, down-converts, or deletes them. No trace reader, user workflow, compatibility API, or removed-runtime shim is added. Isolated filesystem tests cover exact/unique/ambiguous/missing session routes, resume/fork/branch, old/new file coexistence, no-reader source structure, and rollback preservation.",
+      "definition_source": "inferred",
+      "replaces": null,
+      "status": "failing",
+      "depends_on": [
+        "17.7"
+      ],
+      "inference_notes": [
+        {
+          "field": "definition_of_done",
+          "reason": "Read-only session migration and opaque trace preservation remain a separate product slice after final provider/evidence file semantics exist.",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Compatibility and migration"
+        },
+        {
+          "field": "depends_on",
+          "reason": "17.7 transitively supplies canonical provider routing and new file schema whose coexistence with legacy artifacts must be proven.",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Delivery dependency order and implementation-plan handoff"
+        },
+        {
+          "field": "reuse_search",
+          "reason": "searched=SessionCoordinator, model_change, resume/fork/branch, session_cli, ProviderCollection lookup, serialize-only TraceRecord/FileTraceSink, legacy session/trace fixtures; reused=JSONL session repository, branch/fork logic, model parser, existing trace paths, byte-immutability fixtures; gap=collection-backed unique session normalization and explicit opaque old/new file coexistence without a reader",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Compatibility and migration"
+        },
+        {
+          "field": "placement",
+          "reason": "target=reference-product; existing_home=opi-coding-agent session repository/CLI/harness/provider normalization/evidence file adapter; cannot_fit_fully=legacy session and trace formats are product compatibility facts and create no Agent Core API",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Architecture placement case"
+        },
+        {
+          "field": "surface_necessity",
+          "reason": "public_api=existing resume/fork/session CLI returns typed route remediation; config=none because current collection determines unique route; state=canonical new event, immutable legacy-source provenance, distinct evidence schema; dependency_edge=none because existing opi-coding-agent session, provider, and filesystem modules already share the required product crate boundary",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Compatibility and migration"
+        },
+        {
+          "field": "simplification_ceiling",
+          "reason": "accepted=read-time unique session normalization and opaque trace preservation with separate new files; ceiling=no session rewrite, active-provider guessing, trace reader/upgrade/down-conversion/deletion, or removed-API shim; revisit_when=a separately registered user workflow requires consuming legacy trace records",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Compatibility and migration"
+        },
+        {
+          "field": "forbidden_scope",
+          "reason": "Do not rewrite sessions, read/upgrade/down-convert/delete legacy traces, guess active provider, or retain removed APIs behind aliases/flags.",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Non-goals"
+        },
+        {
+          "field": "registered_criteria",
+          "reason": "P17-MIG-001, P17-MIG-002, P17-MIG-004",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Compatibility and migration"
+        },
+        {
+          "field": "criterion_verification",
+          "reason": "MIG-001=byte-for-byte load/normalize/resume/fork fixtures; MIG-002=exact/unique/ambiguous/missing zero-dispatch tests; MIG-004=old/new coexistence, byte immutability, and no-reader source audit",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Compatibility and migration"
+        }
+      ],
+      "tier": "cli-runtime",
+      "commit_type": "feat",
+      "parallelize": [],
+      "evaluator_required": true,
+      "verification": {
+        "library_gates": [
+          "scripts/opi-impl-smoke.ps1 scoped --crate opi-coding-agent --test phase17_legacy_migration --test session_runtime --test session_cli"
+        ],
+        "behavioral_tests": [
+          "crates/opi-coding-agent/tests/phase17_legacy_migration.rs",
+          "crates/opi-coding-agent/tests/session_runtime.rs",
+          "crates/opi-coding-agent/tests/session_cli.rs"
+        ],
+        "snapshot_tests": [],
+        "smoke_addendum": "Under target/opi-artifacts/phase17-task-17.8 preserve command.txt, cwd.txt, env-overrides.json (only Opi-relevant overrides), exit-code.txt, stdout.txt, stderr.txt, legacy-session.before.jsonl, legacy-session.after.jsonl, legacy-trace.before.jsonl, legacy-trace.after.jsonl, new-evidence.jsonl, byte-digests.json, RUN_SUMMARY.md, and SHA256SUMS.txt. A required-artifact assertion must fail if any file is absent; command/cwd/env/exit, before/after/new payloads, digest records, summary, and checksum manifest must be non-empty (stdout/stderr may be empty but must exist). Verify SHA256SUMS.txt against a clean read of every listed raw file, and require byte-digests.json to prove identical before/after SHA-256 and length for each preserved legacy session/trace pair. RUN_SUMMARY.md must use the artifact-truthfulness claim/classification/artifact/result table and every closing claim must be verified; observed-unpreserved or source-inferred cannot close acceptance. Only after those checks run powershell -ExecutionPolicy Bypass -File scripts\\opi-artifact-audit.ps1 target/opi-artifacts/phase17-task-17.8 -WorkspaceRoot . -Json. Missing/empty evidence, digest mismatch, unequal before/after bytes, or generic audit PASS over insufficient files blocks the task. Do not copy runtime artifacts into docs/snapshots/."
+      },
+      "acceptance_scenarios": [
+        {
+          "id": "P17-A13",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Acceptance scenarios and verification",
+          "scenario": "Legacy sessions load while opaque legacy trace files coexist with new evidence; all legacy bytes remain unchanged, route normalization is unique/fail-closed, and new evidence never overwrites the old trace path.",
+          "verification": [
+            "cargo test -p opi-coding-agent --test phase17_legacy_migration phase17_legacy_sessions_and_opaque_traces_are_byte_preserved",
+            "cargo test -p opi-coding-agent --test session_runtime phase17_resume_fork_branch_preserve_canonical_route_binding"
+          ],
+          "production_call_sites": [
+            "opi_coding_agent::session_cli::handle_session_cli",
+            "opi_coding_agent::CodingHarness::resume_session_id",
+            "opi_coding_agent::CodingHarness::fork_current_session",
+            "opi_coding_agent::CodingHarness::resume_session_branch_tip",
+            "opi_coding_agent product EvidenceSink file creation"
+          ],
+          "status": "open"
+        }
+      ],
+      "production_call_sites": [
+        "opi_coding_agent::session_cli::handle_session_cli",
+        "opi_coding_agent::CodingHarness::resume_session_id",
+        "opi_coding_agent::CodingHarness::fork_current_session",
+        "opi_coding_agent::CodingHarness::resume_session_branch_tip",
+        "opi_coding_agent product EvidenceSink file creation"
+      ],
+      "substrate_only": false,
+      "iteration_count": 0,
+      "max_iterations": 5,
+      "start_commit": null,
+      "baseline_dirty_files": [],
+      "task_owned_paths": [
+        "crates/opi-coding-agent/src/session_coordinator.rs",
+        "crates/opi-coding-agent/src/session_cli.rs",
+        "crates/opi-coding-agent/src/harness.rs",
+        "crates/opi-coding-agent/src/provider_factory.rs",
+        "crates/opi-coding-agent/src/evidence.rs",
+        "crates/opi-coding-agent/src/lib.rs",
+        "crates/opi-coding-agent/tests/phase17_legacy_migration.rs",
+        "crates/opi-coding-agent/tests/session_runtime.rs",
+        "crates/opi-coding-agent/tests/session_cli.rs",
+        "crates/opi-coding-agent/tests/fixtures/phase17/**"
+      ],
+      "last_attempt": null,
+      "verified_at_commit": null,
+      "evidence": null,
+      "blocker": null,
+      "session_notes": []
+    },
+    {
+      "id": "17.9",
+      "phase": 17,
+      "title": "Close local cross-mode, failure, rollback, documentation, and CI acceptance",
+      "crate": "workspace",
+      "parent_spec_row": null,
+      "definition_of_done": "Hermetic integration/subprocess tests run one Phase 17 fixture through binary interactive assembly, CodingHarness, print, JSON/NDJSON, and RpcRunner with equivalent route, authority, cancellation, evidence, and legacy semantics. A typed boundary/precedence matrix proves owning errors and downstream counts for route/auth, next-turn, authority, evidence, timeout, cancellation, queue closure/overflow, partial effects, and cleanup-unknown. Source/API audits prove one coherent runtime with no SharedProvider, AgentLoopTurnUpdate, AgentHarness, hook Allow grant, MetadataProvider, core file TraceSink, alias registry, compatibility shim, legacy trace reader, or product policy in Agent Core. Rollback fixtures preserve session/evidence bytes and authority. Bilingual root/crate README pairs and CHANGELOG Unreleased document breaking interfaces, explicit capture, legacy behavior, and non-sandbox boundary. CI selects the same hermetic acceptance on Linux/macOS/Windows. This local task verifies workflow definition only; actual run SHA/URLs/results and exact six gates remain Phase F evidence. No production source is modified by this assurance task.",
+      "definition_source": "inferred",
+      "replaces": null,
+      "status": "failing",
+      "depends_on": [
+        "17.8"
+      ],
+      "inference_notes": [
+        {
+          "field": "definition_of_done",
+          "reason": "Deterministic local assurance, removal/rollback audit, docs, and CI definition do not make task completion depend on remote CI or modify runtime source.",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Acceptance scenarios and verification"
+        },
+        {
+          "field": "depends_on",
+          "reason": "17.8 contains the assembled provider, state, authority, evidence, file, and legacy paths transitively.",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Delivery dependency order and implementation-plan handoff"
+        },
+        {
+          "field": "reuse_search",
+          "reason": "searched=interactive/non-interactive/json/RPC/session tests, binary subprocess seams, CI matrix, smoke scripts, API audits, README pairs, CHANGELOG, doc-check; reused=mode runners, hermetic fixtures, three-platform CI, smoke wrappers, bilingual docs, doc contract; gap=one assembled Phase 17 equivalence/failure/rollback matrix and truthful CI selection audit",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Acceptance scenarios and verification"
+        },
+        {
+          "field": "placement",
+          "reason": "target=assurance; existing_home=workspace integration tests, CI, source audits, and Reference Product documentation; cannot_fit_fully=not-applicable because this task adds no runtime capability or ownership seam",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Platform scope"
+        },
+        {
+          "field": "surface_necessity",
+          "reason": "public_api=none because prior tasks own interfaces; config=none because no option is added; state=none because tests snapshot existing policy/artifacts; dependency_edge=none because workspace tests, CI, audits, and documentation consume the already assembled public seams without adding a runtime dependency",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Platform scope"
+        },
+        {
+          "field": "simplification_ceiling",
+          "reason": "accepted=reuse existing subprocess/mode harnesses, CI matrix, smoke, docs; ceiling=no runtime source repair, OS-specific permission, Eval/benchmark, release, push, or compatibility layer; revisit_when=a supported mode lacks a hermetic entry-point test or CI stops selecting the shared target",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Platform scope"
+        },
+        {
+          "field": "forbidden_scope",
+          "reason": "Do not add OS sandbox guarantees, Eval/benchmark, release artifacts, provider breadth, permission UX, workflows, or compatibility shims.",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Non-goals"
+        },
+        {
+          "field": "registered_criteria",
+          "reason": "P17-AUTH-001, P17-AUTH-002, P17-AUTH-003, P17-FAL-001, P17-FAL-002, P17-FAL-003, P17-MIG-005, P17-MIG-006, P17-PLT-001, P17-PLT-002, P17-PLT-003, P17-RBK-001, P17-RBK-002, P17-RBK-003, P17-RBK-004",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Risk thresholds and rollback"
+        },
+        {
+          "field": "criterion_verification",
+          "reason": "FAL-001..003=aggregate typed boundary/precedence/cancellation-timeout-queue-partial-cleanup matrix composed from owner-task slices in 17.1, 17.2, 17.3, 17.4, 17.5, 17.6, and 17.7 rather than first implementing boundary semantics here; MIG-005=cross-mode equivalence; MIG-006=removed API scan; PLT-002..003=hermetic/no-network/no-sandbox audits; RBK-003..004=filesystem/policy before-after fixtures",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Failure, cancellation, and partial-result semantics"
+        },
+        {
+          "field": "phase_exit_verification",
+          "reason": "AUTH-001..003, PLT-001, RBK-001..002 and actual A15 closure remain Phase F: exact source-ordered six gates, threshold/revert review, and Linux/macOS/Windows run SHA, URLs, results.",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Acceptance scenarios and verification"
+        },
+        {
+          "field": "phase_exit_only",
+          "reason": "The P17-A15 acceptance entry in task 17.9 represents only the source-defined task-local precondition: the CI definition selects the same hermetic acceptance and the contract is platform-neutral. Its task status may become met after that local verification, but this is not evidence that the source criterion itself is met. Phase F independently owns the P17-A15 criteria_trace status and must keep it not-met until actual Linux/macOS/Windows run SHA, URLs, and results are recorded.",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Acceptance scenarios and verification"
+        }
+      ],
+      "tier": "workspace",
+      "commit_type": "test",
+      "parallelize": [],
+      "evaluator_required": false,
+      "verification": {
+        "library_gates": [
+          "scripts/opi-impl-smoke.ps1 full"
+        ],
+        "behavioral_tests": [
+          "crates/opi-coding-agent/tests/phase17_cross_mode.rs",
+          "crates/opi-coding-agent/tests/phase17_failure_rollback.rs",
+          "crates/opi-coding-agent/tests/phase17_api_audit.rs"
+        ],
+        "snapshot_tests": [],
+        "smoke_addendum": "Before smoke full, run python scripts/opi-doc-check.py plus phase17_cross_mode, phase17_failure_rollback, and phase17_api_audit. Under target/opi-artifacts/phase17-task-17.9 preserve command.txt, cwd.txt, env-overrides.json (only Opi-relevant overrides), exit-code.txt, stdout.txt, stderr.txt, interactive.txt, harness.txt, print.txt, json.jsonl, ndjson.jsonl, rpc.jsonl, session.jsonl, evidence.jsonl, provider-assertion.json, tool-execution-counts.json, RUN_SUMMARY.md, and SHA256SUMS.txt. A required-artifact assertion must fail if any file is absent; command/cwd/env/exit, each mode/session/evidence/provider/tool payload, summary, and checksum manifest must be non-empty (stdout/stderr may be empty but must exist). Verify SHA256SUMS.txt against a clean read of every listed raw file. RUN_SUMMARY.md must use the artifact-truthfulness claim/classification/artifact/result table, point each route/authority/cancellation/evidence/legacy claim to raw evidence, and classify every closing claim verified; observed-unpreserved or source-inferred cannot close acceptance. Only after those checks run powershell -ExecutionPolicy Bypass -File scripts\\opi-artifact-audit.ps1 target/opi-artifacts/phase17-task-17.9 -WorkspaceRoot . -Json. Missing/empty evidence, digest mismatch, or generic audit PASS over insufficient files blocks the task. Phase F separately runs the exact six source-ordered gates and gathers actual three-platform CI evidence; do not copy runtime artifacts into docs/snapshots/."
+      },
+      "acceptance_scenarios": [
+        {
+          "id": "P17-A14",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Acceptance scenarios and verification",
+          "scenario": "Interactive binary subprocess, CodingHarness, print, JSON/NDJSON, and RPC entry points expose equivalent route, authority, cancellation, evidence, and legacy semantics.",
+          "verification": [
+            "cargo test -p opi-coding-agent --test phase17_cross_mode phase17_all_public_product_modes_share_runtime_semantics"
+          ],
+          "production_call_sites": [
+            "binary crate main.rs interactive entry",
+            "opi_coding_agent::CodingHarness::prompt",
+            "opi_coding_agent::NonInteractiveRunner::run",
+            "opi_coding_agent::runner print/json/ndjson",
+            "opi_coding_agent::RpcRunner"
+          ],
+          "status": "open"
+        },
+        {
+          "id": "P17-A15",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Acceptance scenarios and verification",
+          "scenario": "Task-local P17-A15 precondition: local tests prove that the CI definition selects the same hermetic Phase 17 acceptance on Linux, macOS, and Windows without OS-specific permission/confinement. Marking this task entry met records only that local precondition; Phase F independently keeps the source P17-A15 criterion not-met until it records actual three-platform run SHA, URLs, and results.",
+          "verification": [
+            "cargo test -p opi-coding-agent --test phase17_cross_mode phase17_platform_contract_is_platform_neutral",
+            "cargo test -p opi-coding-agent --test phase17_api_audit phase17_ci_matrix_selects_same_acceptance_on_three_platforms"
+          ],
+          "production_call_sites": [
+            ".github/workflows/ci.yml",
+            "binary crate main.rs interactive entry",
+            "opi_coding_agent::NonInteractiveRunner::run",
+            "opi_coding_agent::RpcRunner",
+            "opi_agent::Agent::prompt"
+          ],
+          "status": "open"
+        }
+      ],
+      "production_call_sites": [
+        "binary crate main.rs interactive entry",
+        "opi_coding_agent::CodingHarness::prompt",
+        "opi_coding_agent::NonInteractiveRunner::run",
+        "opi_coding_agent::runner print/json/ndjson",
+        "opi_coding_agent::RpcRunner",
+        "opi_agent::Agent::prompt",
+        ".github/workflows/ci.yml"
+      ],
+      "substrate_only": false,
+      "iteration_count": 0,
+      "max_iterations": 5,
+      "start_commit": null,
+      "baseline_dirty_files": [],
+      "task_owned_paths": [
+        "crates/opi-coding-agent/tests/phase17_cross_mode.rs",
+        "crates/opi-coding-agent/tests/phase17_failure_rollback.rs",
+        "crates/opi-coding-agent/tests/phase17_api_audit.rs",
+        "crates/opi-coding-agent/tests/common/phase17.rs",
+        ".github/workflows/ci.yml",
+        "README.md",
+        "README.zh.md",
+        "crates/opi-ai/README.md",
+        "crates/opi-ai/README.zh.md",
+        "crates/opi-agent/README.md",
+        "crates/opi-agent/README.zh.md",
+        "crates/opi-coding-agent/README.md",
+        "crates/opi-coding-agent/README.zh.md",
+        "CHANGELOG.md"
+      ],
+      "last_attempt": null,
+      "verified_at_commit": null,
+      "evidence": null,
+      "blocker": null,
+      "session_notes": []
+    }
+  ],
   "phase_exit": {
     "1": {
       "completed_at": "2026-05-22T12:00:00Z",
@@ -1283,7 +2731,27 @@
       "folded_count": 0,
       "flagged_count": 0,
       "rejected_count": 0,
-      "ran_at": "2026-08-06T04:21:43.0417804Z",
+      "ran_at": "2026-08-12T11:54:05+08:00",
+      "task_id": null,
+      "criterion_id": null
+    },
+    {
+      "stage": "plan",
+      "wf_ref": null,
+      "folded_count": 4,
+      "flagged_count": 1,
+      "rejected_count": 0,
+      "ran_at": "2026-08-12T13:07:16+08:00",
+      "task_id": null,
+      "criterion_id": null
+    },
+    {
+      "stage": "plan",
+      "wf_ref": null,
+      "folded_count": 0,
+      "flagged_count": 0,
+      "rejected_count": 0,
+      "ran_at": "2026-08-12T13:07:16+08:00",
       "task_id": null,
       "criterion_id": null
     }

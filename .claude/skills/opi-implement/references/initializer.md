@@ -38,9 +38,7 @@ design registry in `skill.md`. Do not scan arbitrary `docs/superpowers/specs/` f
 
 | Phase | Registered source | Draft task extraction |
 |---:|---|---|
-| 14 | `docs/snapshots/phase14/2026-07-11-phase14-provider-auth-design.md` | Goals, Non-Goals, T1 Credential store, T2 OAuth + per-request auth, T3 Request enrichment, Sequencing, Residuals |
-| 15 | `docs/snapshots/phase15/2026-07-11-phase15-safety-sandbox-design.md` | Goals, Non-Goals, T4 OS-native sandbox, T5 Operations seam, T6 Project-trust gate, Sequencing, Cross-ticket interactions, Residuals |
-| 16 | `docs/snapshots/phase16/2026-07-28-phase16-pluggable-extension-command-execution-design.md` | Goals, Non-Goals, Product Contract, Configuration and Routing, Executable Package Lifecycle, Protocol, standalone SDK/CLI, Testing and Acceptance, Phase Integration |
+| 17 | `docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md` | Outcome, Non-goals, Architecture placement case, Dispatchable provider collection, Atomic next-turn state, Trusted tool authorization, Product-neutral evidence seam, Failure and migration, Acceptance scenarios, Risk thresholds and rollback, Delivery dependency order |
 
 For each active phase:
 
@@ -181,7 +179,7 @@ Add these four standardized notes using the existing
   `searched=<symbols/paths/packages/protocols>; reused=<items|none>;
   gap=<smallest missing capability>`;
 - `field = "placement"`: `reason` is
-  `target=<core|extension|plugin|package>; existing_home=<id|none>;
+  `target=<core|reference-product|extension|plugin|package|independent-companion|assurance>; existing_home=<id|none>;
   cannot_fit_fully=<reason|not-applicable>`;
 - `field = "surface_necessity"`: `reason` is
   `public_api=<none|necessity>; config=<none|necessity>;
@@ -195,6 +193,11 @@ repository evidence used for that answer. `none` and `not-applicable` are
 valid only with a reason. `revisit_when` must name an observable workflow,
 threshold, platform capability, or failure condition; “when needed” is not
 admissible.
+
+Use `assurance` only for tests, documentation, CI, or audit work that introduces
+no runtime capability or ownership seam. Reference Product assembly and policy
+work uses `reference-product`, even when it consumes or narrows an Agent Core
+interface in the same compiling cutover.
 
 The production-slice answer reuses
 `acceptance_scenarios[].verification`, scenario/task

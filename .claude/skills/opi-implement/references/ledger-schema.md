@@ -154,7 +154,10 @@ cannot replace the public behavioral seam.
 Validation rule: minimum-change notes retain `{ field, reason, source }`.
 `field = "reuse_search"` requires `searched=`, `reused=`, and `gap=` clauses.
 `field = "placement"` requires `target=`, `existing_home=`, and
-`cannot_fit_fully=` clauses. `field = "surface_necessity"` requires
+`cannot_fit_fully=` clauses. `target` MUST be one of `core`,
+`reference-product`, `extension`, `plugin`, `package`,
+`independent-companion`, or `assurance`; `assurance` is valid only when the task
+adds no runtime capability or ownership seam. `field = "surface_necessity"` requires
 `public_api=`, `config=`, `state=`, and `dependency_edge=` clauses, each set to
 `none` or a necessity rationale. `field = "simplification_ceiling"` requires
 `accepted=`, `ceiling=`, and `revisit_when=` clauses; the revisit trigger must

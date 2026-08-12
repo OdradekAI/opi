@@ -73,6 +73,18 @@ A Human-Authority-owned risk category that sets the maximum automated lifecycle
 actions permitted for a change candidate.
 _Avoid_: Confidence score, evaluation grade
 
+**Runtime Input Binding**:
+The immutable provenance binding for the material runtime inputs used by one
+run. It is either a Direct Runtime Input assembled without Promotion authority
+or an Active Snapshot selected by the Promotion Controller.
+_Avoid_: Active configuration, mutable runtime state
+
+**Direct Runtime Input**:
+The immutable, digest-addressed runtime inputs assembled directly by a product
+or embedder when no Promotion Controller selected them. It must not be described
+as an Active Snapshot.
+_Avoid_: Active Snapshot, promoted configuration
+
 **Active Snapshot**:
 The immutable set of versioned runtime inputs selected for new work by the
 Promotion Controller. Existing work remains bound to its original snapshot.

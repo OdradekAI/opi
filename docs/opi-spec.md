@@ -235,7 +235,8 @@ outside Agent Core.
 Evidence artifacts are immutable and content-addressed. A reproducible claim
 binds evidence to the resolved execution that produced it: harness, runtime,
 adapter, and material configuration identity; requested and actual model route;
-effective policy and snapshot; trigger provenance; and measurement origin.
+effective policy and runtime-input binding; trigger provenance; and measurement
+origin.
 Exact field schemas remain with their authoritative evidence contracts.
 
 Missing measurements remain `unknown` with their reason; they are never
@@ -294,9 +295,10 @@ trials. Coverage and every exclusion reason remain visible.
 ### 6.3 Learning and change authority
 
 The canonical definitions of Evidence Producer, Candidate Producer, Promotion
-Controller, Human Authority, Activation Class, Active Snapshot, Control
-Baseline, Promotion Lifecycle, Delegated Promotion Policy, and Controlled
-Self-Iteration live in [CONTEXT.md](CONTEXT.md).
+Controller, Human Authority, Activation Class, Runtime Input Binding, Direct
+Runtime Input, Active Snapshot, Control Baseline, Promotion Lifecycle,
+Delegated Promotion Policy, and Controlled Self-Iteration live in
+[CONTEXT.md](CONTEXT.md).
 
 ```text
 Agent Core evidence seams
@@ -313,8 +315,10 @@ shadow → opt-in canary → active / rollback
 The Evidence Producer does not propose or activate changes. The Candidate
 Producer does not select its grader, thresholds, or approval. The Promotion
 Controller does not rewrite evidence, candidates, or the policy that authorizes
-it. The runtime consumes an immutable Active Snapshot and cannot write a new one
-for itself.
+it. Every runtime records one immutable Runtime Input Binding. Direct product or
+embedder assembly records a Direct Runtime Input. Only a Promotion Controller
+may supply an Active Snapshot reference; a promotion-controlled runtime consumes
+that snapshot and cannot write a new one for itself.
 
 External Knowledge Sync has a different truth source: an authorized Source of
 Record. A continuous, verified, scope-preserving upstream revision may be
@@ -332,8 +336,8 @@ requires Human Authority.
 User Policy sets hard limits. A model may request permission but cannot grant
 it. Derived evidence or knowledge never receives a wider scope than its narrowest
 source. Withdrawal and deletion propagate to all derived views. Existing work
-remains bound to the snapshot it started with; new work reads the current active
-pointer.
+remains bound to the Runtime Input Binding it started with; promotion-controlled
+new work reads the current active pointer.
 
 Content from a tool, retrieval adapter, channel, memory item, extension package,
 or another Agent remains untrusted for authority even when it becomes
@@ -385,14 +389,14 @@ queues make backpressure and overflow visible.
 ### 7.4 Sessions and artifacts
 
 Session branching, reconstruction, append durability, finalized evidence, and
-snapshot binding are semantics. JSONL, SQLite, search indexes, and cloud stores
-are adapters. A repository seam should expand only after a second real adapter
-and shared conformance demonstrate the necessary variation.
+runtime-input binding are semantics. JSONL, SQLite, search indexes, and cloud
+stores are adapters. A repository seam should expand only after a second real
+adapter and shared conformance demonstrate the necessary variation.
 
 | ID | Requirement | Owner | Verification |
 |---|---|---|---|
 | INV-007 | Session persistence **MUST** preserve active-branch reconstruction, parent links, leaf selection, and crash recovery. | `opi-agent` | Repository conformance and corruption recovery tests. |
-| INV-008 | Finalized run evidence **MUST** identify the session branch, Active Snapshot, resolved harness/runtime/adapter configuration, and effective User Policy that produced it. | Agent runtime owner | Artifact-schema, resume/fork, and offline resolved-execution tests. |
+| INV-008 | Finalized run evidence **MUST** identify the session branch, exact Runtime Input Binding, resolved harness/runtime/adapter configuration, and effective User Policy that produced it. A direct run **MUST** identify a Direct Runtime Input and **MUST NOT** claim an Active Snapshot; only a Promotion Controller may supply an Active Snapshot reference. | Agent runtime owner | Artifact-schema variant, direct-run, Promotion-authority, resume/fork, and offline resolved-execution tests. |
 
 ### 7.5 Extensions and command execution
 
@@ -628,9 +632,9 @@ activation, monitoring, and rollback without per-candidate intervention.
 - Reference Product and Extension Ecosystem work may remove demonstrated user
   friction when it does not expand Agent Core.
 - Proactive or scheduled Agent behavior may be explored through the Reference
-  Product or Extension Ecosystem only with trigger provenance, snapshot/policy
-  binding, budget, interruption/delivery policy, and dedicated Eval; it does not
-  create a Gateway or scheduler seam in Agent Core.
+  Product or Extension Ecosystem only with trigger provenance,
+  runtime-input/policy binding, budget, interruption/delivery policy, and
+  dedicated Eval; it does not create a Gateway or scheduler seam in Agent Core.
 - Multi-Agent orchestration and Agent-to-Agent protocols remain Extension
   Ecosystem or Independent Companion experiments until real consumers, shared
   conformance, and frozen evaluation evidence justify a Placement Review.
