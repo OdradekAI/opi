@@ -20,7 +20,7 @@
       "definition_of_done": "ProviderCollection gains an additive async prepare_call contract whose registered route owns a concrete provider and AuthResolver. It validates one canonical provider:model Request, resolves authentication once, and returns an opaque PreparedProviderCall that privately freezes the request, selected provider, secret-bearing ResolvedAuth, and redacted route. Each sequential start_attempt reuses that frozen route/request/auth without re-resolution; at most one attempt is active, every attempt shares the frozen Request CancellationToken, cancellation terminates the call and forbids another attempt, and drop discards secrecy-wrapped auth without exposure. Credential rejection/expiry terminates the logical call; only explicit remediation plus user-level retry prepares again. ResolvedAuth carries closed non-secret AuthProvenance for static, environment, credential-store, and OAuth sources plus an allowed fallback reason. Missing routes, failed stored credentials or refresh, disallowed fallback, capability mismatch, request-route mismatch, and unsupported wire return typed errors without selecting another provider, model, credential policy, wire, or local implementation. Concrete opi-ai adapters implement the new prepared-auth attempt seam. The old stream(Request) path remains only as the explicit expand side for unmigrated workspace consumers until 17.5 removes it and resolver-bearing adapter state; 17.1 does not claim production cutover. Public opi-ai tests cover two-provider preparation, repeated attempts with one auth-resolution call, single-active-attempt enforcement, shared cancellation/no-post-cancel attempt, rejection/expiry termination, redacted drop/provenance/failures, and fixtures without adding a router trait, retry-factory trait, second registry, alias registry, provider breadth, or product policy.",
       "definition_source": "inferred",
       "replaces": "Make provider route resolution an immutable runtime contract",
-      "status": "failing",
+      "status": "passing",
       "depends_on": [],
       "inference_notes": [
         {
@@ -67,6 +67,11 @@
           "field": "criterion_slice",
           "reason": "P17-FAL-001..003 provider-route/auth slice is owned here: route lookup, authentication, capability/wire checks, credential rejection/expiry, cancellation, repeated-attempt exclusivity, and cleanup return their typed owning outcomes without fallback or partial dispatch. Task 17.9 only composes these assertions with the other runtime boundaries.",
           "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Failure, cancellation, and partial-result semantics"
+        },
+        {
+          "field": "provenance_carrier_boundary",
+          "reason": "Per the user's option-B decision at the task 17.1 B.2 gate, AuthProvenance is carried on PreparedRoute.provenance in 17.1 and ResolvedAuth is unchanged. The DoD and design-doc #Per-call route and auth preparation (line 276) state ResolvedAuth carries provenance; task 17.5 must relocate AuthProvenance onto ResolvedAuth when it migrates the product resolvers it owns. D.2 L-D1 flagged and accepted this as the explicit 17.1/17.5 slice boundary.",
+          "source": "user decision (option B); docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Per-call route and auth preparation"
         }
       ],
       "tier": "library",
@@ -91,7 +96,7 @@
       "substrate_only": true,
       "iteration_count": 0,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "9d992efb0d4be6d68ece9bfde3c6f78d4de4dc19",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "crates/opi-ai/src/auth.rs",
@@ -117,11 +122,62 @@
         "crates/opi-ai/tests/auth_contracts.rs",
         "crates/opi-ai/tests/phase14_remediation.rs"
       ],
-      "last_attempt": null,
-      "verified_at_commit": null,
-      "evidence": null,
+      "last_attempt": {
+        "attempt": 1,
+        "started_at": "2026-08-12T14:25:51+08:00",
+        "ended_at": "2026-08-12T14:25:51+08:00",
+        "outcome": "passed",
+        "failing_gate": null,
+        "touched_files": [
+          "crates/opi-ai/src/auth.rs",
+          "crates/opi-ai/src/provider.rs",
+          "crates/opi-ai/src/provider_collection.rs",
+          "crates/opi-ai/src/registry.rs",
+          "crates/opi-ai/src/lib.rs",
+          "crates/opi-ai/src/anthropic.rs",
+          "crates/opi-ai/src/openai_chat.rs",
+          "crates/opi-ai/src/openai_responses.rs",
+          "crates/opi-ai/src/openai_codex_responses.rs",
+          "crates/opi-ai/src/api_mapped.rs",
+          "crates/opi-ai/src/azure_openai.rs",
+          "crates/opi-ai/src/gemini.rs",
+          "crates/opi-ai/src/vertex.rs",
+          "crates/opi-ai/src/bedrock/mod.rs",
+          "crates/opi-ai/tests/provider_collection.rs",
+          "crates/opi-ai/tests/per_request_auth.rs",
+          "crates/opi-ai/tests/auth_contracts.rs"
+        ]
+      },
+      "verified_at_commit": "41464d8c92313285ce53d9fc40b3cecb153e40e7",
+      "evidence": {
+        "task": "17.1",
+        "dod_sha256": "c544e5fa72dc0173bd6768b21ff86a4ed0bcc80db976c2614bf0c17499078d53",
+        "verification": "library; scoped opi-ai [provider_collection, per_request_auth, auth_contracts, phase14_remediation] fmt+clippy+rustdoc+tests green; workspace lib+bin clippy clean",
+        "evaluator": "passed",
+        "acceptance": null
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-08-12T14:25:51+08:00",
+          "attempt": 1,
+          "summary": "17.1 passing. D.2 (exec.workflow.js 6-lens) must_fix=[], 3 low-severity flagged: (1) AuthProvenance carried on PreparedRoute.provenance not ResolvedAuth -- ACCEPTED as the 17.1/17.5 slice boundary per the user's option-B decision at the B.2 gate; 17.5 must relocate it onto ResolvedAuth (DoD / design-doc line 276). (2) tautological AuthProvenance test replaced with a behavioral 4-source prepare_call round-trip. (3) OpenAI stream_prepared covered by 3 wiremock tests (supplied auth reaches the wire, resolver bypassed).",
+          "gate_results": [
+            {
+              "gate": "scoped opi-ai [provider_collection, per_request_auth, auth_contracts, phase14_remediation] fmt+clippy+rustdoc+tests",
+              "result": "passed"
+            },
+            {
+              "gate": "workspace lib+bin clippy",
+              "result": "clean"
+            },
+            {
+              "gate": "D.2 exec.workflow.js",
+              "result": "must_fix=[] (3 flagged: 1 accepted boundary, 2 fixed)"
+            }
+          ]
+        }
+      ]
     },
     {
       "id": "17.2",
