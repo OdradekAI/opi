@@ -624,6 +624,7 @@ async fn phase8_tool_validation_failure_contract() {
         diagnostic_sink: None,
         trace: None,
         session_id: None,
+        evidence_sink: None,
     };
 
     let messages = opi_agent::agent_loop(
@@ -721,6 +722,7 @@ async fn phase8_malformed_tool_arguments_do_not_execute_permissive_tool() {
         diagnostic_sink: Some(diagnostic_sink.clone()),
         trace: None,
         session_id: None,
+        evidence_sink: None,
     };
 
     let messages = opi_agent::agent_loop(
@@ -829,6 +831,7 @@ async fn malformed_tool_arguments_result_is_structured_error_not_panic() {
         diagnostic_sink: Some(diagnostic_sink.clone()),
         trace: None,
         session_id: None,
+        evidence_sink: None,
     };
 
     let messages = opi_agent::agent_loop(
@@ -916,6 +919,7 @@ async fn phase8_malformed_tool_arguments_do_not_execute_parallel_permissive_tool
         diagnostic_sink: Some(diagnostic_sink.clone()),
         trace: None,
         session_id: None,
+        evidence_sink: None,
     };
 
     let messages = opi_agent::agent_loop(

@@ -8,7 +8,7 @@ use opi_ai::provider::ThinkingConfig;
 
 use crate::authority::{ToolAuthorizer, ToolRegistry};
 use crate::diagnostic_sink::DiagnosticSink;
-use crate::evidence::EvidenceHealth;
+use crate::evidence::{EvidenceHealth, EvidenceSink};
 use crate::message::AgentMessage;
 use crate::trace::TraceCollector;
 
@@ -174,6 +174,12 @@ pub struct AgentLoopContext {
     /// run-start snapshot; evidence-failure-driven advancement and live reads
     /// arrive in 17.6/17.7.
     pub evidence_health: EvidenceHealth,
+    /// Optional evidence sink binding the run's call-graph lifecycle (Phase
+    /// 17.6). `None` is the capture-disabled no-op default: no identities are
+    /// minted and no records are emitted, so execution behavior is unchanged.
+    /// When `Some`, the loop allocates stable run/turn/call identities before
+    /// emitting correlated records through this sink.
+    pub evidence_sink: Option<Arc<dyn EvidenceSink>>,
     /// The complete mutable state at the start of this run: conversation
     /// context, canonical model selection, and inference configuration. The
     /// loop atomically replaces this with the final complete state.

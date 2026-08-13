@@ -73,6 +73,7 @@ pub struct Agent {
     follow_up_queue: Arc<Mutex<VecDeque<String>>>,
     diagnostic_sink: Option<Arc<dyn DiagnosticSink>>,
     trace_collector: Option<Arc<crate::trace::TraceCollector>>,
+    evidence_sink: Option<Arc<dyn crate::evidence::EvidenceSink>>,
 }
 
 impl Agent {
@@ -116,6 +117,7 @@ impl Agent {
             follow_up_queue: Arc::new(Mutex::new(VecDeque::new())),
             diagnostic_sink: None,
             trace_collector: None,
+            evidence_sink: None,
             session_id: None,
         })
     }
@@ -143,6 +145,18 @@ impl Agent {
     /// call `prepare`/`finish`, only emits records (fail-open).
     pub fn set_trace_collector(&mut self, collector: Option<Arc<crate::trace::TraceCollector>>) {
         self.trace_collector = collector;
+    }
+
+    /// Install an evidence sink that receives the run's call-graph lifecycle
+    /// (stable run/turn/call identities, ordered records, terminal manifest)
+    /// during the next `prompt`/`continue_`/`retry_last_turn` run (Phase 17.6).
+    /// `None` (the default) is the capture-disabled no-op: no identities are
+    /// minted and execution behavior is unchanged. Non-breaking: callers that
+    /// do not set a sink are unaffected. The Reference Product remains on its
+    /// existing `TraceSink` capture path; this substrate adds an independent,
+    /// additive evidence channel.
+    pub fn set_evidence_sink(&mut self, sink: Option<Arc<dyn crate::evidence::EvidenceSink>>) {
+        self.evidence_sink = sink;
     }
 
     /// Atomically replace the complete durable state with a validated
@@ -440,6 +454,7 @@ impl Agent {
             registry: self.registry.clone(),
             authorizer: self.authorizer.clone(),
             evidence_health: crate::evidence::EvidenceHealth::healthy(),
+            evidence_sink: self.evidence_sink.clone(),
             state: self.state.clone(),
             system: self.system.clone(),
             steering_queue: Some(self.steering_queue.clone()),

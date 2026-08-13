@@ -285,6 +285,7 @@ async fn stale_evidence_health_generation_yields_zero_executions() {
         diagnostic_sink: None,
         trace: None,
         session_id: None,
+        evidence_sink: None,
     };
     let cancel = tokio_util::sync::CancellationToken::new();
     let _ = agent_loop(

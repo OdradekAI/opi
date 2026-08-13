@@ -137,6 +137,7 @@ async fn tool_events_redact_command_context_and_provider_content_stays_unchanged
         diagnostic_sink: None,
         trace: None,
         session_id: None,
+        evidence_sink: None,
     };
     let messages = opi_agent::agent_loop(
         context,

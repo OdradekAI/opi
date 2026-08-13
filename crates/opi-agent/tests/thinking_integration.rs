@@ -110,6 +110,7 @@ async fn thinking_config_passed_to_provider() {
         diagnostic_sink: None,
         trace: None,
         session_id: None,
+        evidence_sink: None,
     };
     let config = AgentLoopConfig {
         max_turns: 1,
@@ -151,6 +152,7 @@ async fn thinking_disabled_by_default() {
         diagnostic_sink: None,
         trace: None,
         session_id: None,
+        evidence_sink: None,
     };
     let config = AgentLoopConfig {
         max_turns: 1,

@@ -99,6 +99,7 @@ async fn image_input_to_text_only_model_fails_before_provider_call() {
         diagnostic_sink: None,
         trace: None,
         session_id: None,
+        evidence_sink: None,
     };
 
     let err = opi_agent::agent_loop(

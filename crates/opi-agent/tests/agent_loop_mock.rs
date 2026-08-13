@@ -167,6 +167,7 @@ async fn no_tool_turn_emits_lifecycle_events() {
         diagnostic_sink: None,
         trace: None,
         session_id: None,
+        evidence_sink: None,
     };
 
     let config = AgentLoopConfig {
@@ -229,6 +230,7 @@ async fn account_id_missing_provider_error_maps_to_typed_agent_error() {
         diagnostic_sink: None,
         trace: None,
         session_id: None,
+        evidence_sink: None,
     };
     let config = AgentLoopConfig {
         max_turns: 10,
@@ -321,6 +323,7 @@ async fn tool_use_turn_executes_tool_and_loops() {
         diagnostic_sink: None,
         trace: None,
         session_id: None,
+        evidence_sink: None,
     };
 
     let config = AgentLoopConfig {
@@ -393,6 +396,7 @@ async fn text_content_preserved_in_assistant_message() {
         diagnostic_sink: None,
         trace: None,
         session_id: None,
+        evidence_sink: None,
     };
 
     let config = AgentLoopConfig {

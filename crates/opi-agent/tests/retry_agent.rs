@@ -66,6 +66,7 @@ fn make_context(provider: MockProvider) -> AgentLoopContext {
         diagnostic_sink: None,
         trace: None,
         session_id: None,
+        evidence_sink: None,
     }
 }
 
@@ -86,6 +87,7 @@ fn make_context_with_sink(provider: MockProvider, sink: Arc<RecordingSink>) -> A
         diagnostic_sink: Some(sink as Arc<dyn DiagnosticSink>),
         trace: None,
         session_id: None,
+        evidence_sink: None,
     }
 }
 

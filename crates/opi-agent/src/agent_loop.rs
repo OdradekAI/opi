@@ -57,7 +57,14 @@ pub async fn agent_loop(
     let collection = context.collection.clone();
     let registry = context.registry.clone();
     let authorizer = context.authorizer.clone();
-    let evidence_health = context.evidence_health;
+    let mut evidence_health = context.evidence_health;
+    let evidence_sink = context.evidence_sink.clone();
+    // One identity allocator per run mints opaque, non-reused run/turn/call
+    // identities and a monotonic run-local sequence. Identities are minted
+    // immediately before the corresponding lifecycle evidence is emitted, so
+    // correlation precedes any external effect (P17-EVD-001, Phase 17.6).
+    let mut identities = crate::evidence::IdentityAllocator::new();
+    let run = identities.run_id();
     let tool_defs: Vec<_> = context.registry.definitions();
 
     let mut state = context.state;
@@ -68,6 +75,7 @@ pub async fn agent_loop(
     let mut has_tools_pending = false;
     for turn_idx in 0..config.max_turns {
         let turn_id = format!("t{turn_idx}");
+        let turn = identities.next_turn();
         if cancel.is_cancelled() {
             observe(
                 &diagnostic_sink,
@@ -128,6 +136,42 @@ pub async fn agent_loop(
                 return Err(err);
             }
         };
+
+        // The prepared call resolves the one immutable provider route reused
+        // across retries. Allocate its call identity and emit a Provider record
+        // carrying the requested/resolved/actual route facts (P17-EVD-002 /
+        // P17-PRV-005, Phase 17.6). The actual route equals the resolved route:
+        // the substrate has no provider fallback, so start_attempt dispatches
+        // exactly the prepared route (a future fallback path would record a
+        // distinct actual after the stream).
+        let resolved_route = prepared.route();
+        let provider_call = identities.next_call();
+        emit_evidence(
+            &evidence_sink,
+            &mut identities,
+            &mut evidence_health,
+            run,
+            Some(turn),
+            provider_call,
+            None,
+            crate::evidence::CallKind::Provider,
+            crate::evidence::EvidencePayload::Structured(crate::evidence::RedactedValue::redacted(
+                json!({
+                    "requested_route": state.model_selection.to_spec(),
+                    "resolved": {
+                        "provider": resolved_route.provider_id,
+                        "model": resolved_route.model_id,
+                        "wire": resolved_route.wire_api,
+                    },
+                    "actual": {
+                        "provider": resolved_route.provider_id,
+                        "model": resolved_route.model_id,
+                        "wire": resolved_route.wire_api,
+                    }
+                }),
+                crate::diagnostic::RedactionMode::Summary,
+            )),
+        );
 
         // Outcome of the turn's provider/tool work, collected inside the stream
         // loop and consumed by the post-stream finalize → prepare → stop path.
@@ -216,7 +260,15 @@ pub async fn agent_loop(
 
                             if !tool_calls.is_empty() {
                                 has_tools_pending = true;
+                                // Pre-mint one Tool call identity per proposed tool call,
+                                // before any executes, so correlation precedes the tool's
+                                // external effect (P17-EVD-001/002, Phase 17.6).
+                                let tool_call_ids: Vec<crate::evidence::CallId> = (0..tool_calls
+                                    .len())
+                                    .map(|_| identities.next_call())
+                                    .collect();
                                 let mut tool_results = Vec::new();
+                                let mut tool_decisions: Vec<Option<Authorized>> = Vec::new();
                                 let mut terminate_flags = Vec::new();
 
                                 let batch_is_sequential = tool_calls.iter().any(|tc| {
@@ -244,7 +296,7 @@ pub async fn agent_loop(
                                             },
                                         );
 
-                                        let result = match parsed.parsed_args {
+                                        let (result, auth_decision) = match parsed.parsed_args {
                                             Ok(args) => {
                                                 execute_tool(
                                                     &parsed.tool_call.id,
@@ -262,12 +314,15 @@ pub async fn agent_loop(
                                                 )
                                                 .await
                                             }
-                                            Err(parse_error) => malformed_tool_arguments_result(
-                                                &parsed.tool_call.name,
-                                                &parse_error,
-                                                &diagnostic_sink,
-                                                &trace,
-                                                &turn_id,
+                                            Err(parse_error) => (
+                                                malformed_tool_arguments_result(
+                                                    &parsed.tool_call.name,
+                                                    &parse_error,
+                                                    &diagnostic_sink,
+                                                    &trace,
+                                                    &turn_id,
+                                                ),
+                                                None,
                                             ),
                                         };
 
@@ -297,6 +352,7 @@ pub async fn agent_loop(
                                             timestamp_ms: opi_ai::time::now_ms(),
                                         };
                                         tool_results.push(trm.clone());
+                                        tool_decisions.push(auth_decision);
                                         state
                                             .context
                                             .push(AgentMessage::Llm(Message::ToolResult(trm)));
@@ -350,21 +406,24 @@ pub async fn agent_loop(
                                                         )
                                                         .await
                                                     }
-                                                    Err(parse_error) => {
+                                                    Err(parse_error) => (
                                                         malformed_tool_arguments_result(
                                                             &parsed.tool_call.name,
                                                             &parse_error,
                                                             &diagnostic_sink,
                                                             &trace,
                                                             &turn_id,
-                                                        )
-                                                    }
+                                                        ),
+                                                        None,
+                                                    ),
                                                 }
                                             }
                                         })
                                         .collect();
                                     let results = futures_util::future::join_all(futures).await;
-                                    for (parsed, result) in parsed_calls.iter().zip(results) {
+                                    for (parsed, (result, auth_decision)) in
+                                        parsed_calls.iter().zip(results)
+                                    {
                                         let is_error = result.is_error;
                                         let truncated = result.truncated;
                                         terminate_flags.push(result.terminate);
@@ -390,10 +449,64 @@ pub async fn agent_loop(
                                             timestamp_ms: opi_ai::time::now_ms(),
                                         };
                                         tool_results.push(trm.clone());
+                                        tool_decisions.push(auth_decision);
                                         state
                                             .context
                                             .push(AgentMessage::Llm(Message::ToolResult(trm)));
                                     }
+                                }
+
+                                // Emit one Tool record per executed tool call, parented to
+                                // the provider call that produced it. Identities were pre-
+                                // minted before execution; sequence is assigned here in call
+                                // order (P17-EVD-002, Phase 17.6).
+                                for ((trm, call_id), decision) in
+                                    tool_results.iter().zip(&tool_call_ids).zip(&tool_decisions)
+                                {
+                                    // Re-resolve the trusted registration for the tool's
+                                    // authorization identity facts (registration id +
+                                    // capability) and attach the authorization outcome the
+                                    // 17.4 chain resolved (Allow / Deny:<code>) (Phase 17.6).
+                                    let (registration_id, capability) =
+                                        match registry.get(trm.tool_name.as_str()) {
+                                            Some(r) => (
+                                                Some(r.registration_id.as_str().to_owned()),
+                                                Some(format!("{:?}", r.capability)),
+                                            ),
+                                            None => (None, None),
+                                        };
+                                    let authorization = match decision.as_ref() {
+                                        Some(Authorized::AllowFresh) => "allow".to_owned(),
+                                        Some(Authorized::Deny { stable_code, .. }) => {
+                                            format!("deny:{stable_code}")
+                                        }
+                                        None => "not_reached".to_owned(),
+                                    };
+                                    emit_evidence(
+                                        &evidence_sink,
+                                        &mut identities,
+                                        &mut evidence_health,
+                                        run,
+                                        Some(turn),
+                                        *call_id,
+                                        Some(provider_call),
+                                        crate::evidence::CallKind::Tool,
+                                        crate::evidence::EvidencePayload::Structured(
+                                            crate::evidence::RedactedValue::redacted(
+                                                json!({
+                                                    "tool": trm.tool_name,
+                                                    "is_error": trm.is_error,
+                                                    "registration_id": registration_id,
+                                                    "capability": capability,
+                                                    // Named `decision` (not `authorization`) so the
+                                                    // non-secret Allow/Deny label is not scrubbed as an
+                                                    // HTTP Authorization-header field by the SecretRedactor.
+                                                    "decision": authorization,
+                                                }),
+                                                crate::diagnostic::RedactionMode::Summary,
+                                            ),
+                                        ),
+                                    );
                                 }
 
                                 let all_terminate = !terminate_flags.is_empty()
@@ -482,7 +595,28 @@ pub async fn agent_loop(
                                 ) => {}
                             }
                             // Re-open the next attempt from the SAME prepared
-                            // call: route and auth are not re-resolved.
+                            // call: route and auth are not re-resolved. Emit a
+                            // Retry record parented to the provider call: the
+                            // attempt re-opens the one immutable route (no
+                            // re-resolution), so it is a child of the provider
+                            // call (P17-EVD-002, Phase 17.6).
+                            let retry_call = identities.next_call();
+                            emit_evidence(
+                                &evidence_sink,
+                                &mut identities,
+                                &mut evidence_health,
+                                run,
+                                Some(turn),
+                                retry_call,
+                                Some(provider_call),
+                                crate::evidence::CallKind::Retry,
+                                crate::evidence::EvidencePayload::Structured(
+                                    crate::evidence::RedactedValue::redacted(
+                                        json!({ "attempt": retry_attempt }),
+                                        crate::diagnostic::RedactionMode::Summary,
+                                    ),
+                                ),
+                            );
                             continue 'stream;
                         }
 
@@ -991,10 +1125,13 @@ async fn execute_tool(
     sink: &Option<Arc<dyn DiagnosticSink>>,
     trace: &Option<Arc<TraceCollector>>,
     turn_id: &str,
-) -> ToolResult {
+) -> (ToolResult, Option<Authorized>) {
     // Tool call boundary record; emitted for every path below (completed,
     // failed, cancelled, denied) so the trace always brackets a tool execution.
     trace_tool(trace, TraceKind::ToolCallStarted, tool_name, turn_id);
+    // Authorization decision surfaced for the Tool evidence record (Phase
+    // 17.6): `None` until the trusted authorization boundary is reached.
+    let mut auth_decision: Option<Authorized> = None;
 
     // 1. Resolve one immutable trusted registration (AUT-001). Unknown tools
     //    never reach hook, validation, authorization, or execution.
@@ -1007,7 +1144,10 @@ async fn execute_tool(
                 tool_diagnostic(CODE_TOOL_UNKNOWN, tool_name, "unknown tool requested"),
             );
             trace_tool(trace, TraceKind::ToolCallFailed, tool_name, turn_id);
-            return error_text_result(format!("unknown tool: {tool_name}"));
+            return (
+                error_text_result(format!("unknown tool: {tool_name}")),
+                auth_decision,
+            );
         }
     };
 
@@ -1034,7 +1174,7 @@ async fn execute_tool(
                 ),
             );
             trace_tool(trace, TraceKind::ToolCallFailed, tool_name, turn_id);
-            return error_text_result(reason);
+            return (error_text_result(reason), auth_decision);
         }
     }
 
@@ -1052,7 +1192,7 @@ async fn execute_tool(
             ),
         );
         trace_tool(trace, TraceKind::ToolCallFailed, tool_name, turn_id);
-        return ToolResult::from_validation_error(err);
+        return (ToolResult::from_validation_error(err), auth_decision);
     }
 
     // 4-5. Mandatory trusted authorization against the current evidence-health
@@ -1072,9 +1212,16 @@ async fn execute_tool(
                 ),
             );
             trace_tool(trace, TraceKind::ToolCallFailed, tool_name, turn_id);
-            return denial_result(
-                "authorization_unavailable",
-                "no trusted authorizer bound; execution denied",
+            auth_decision = Some(Authorized::Deny {
+                stable_code: "authorization_unavailable".to_owned(),
+                redacted_reason: "no trusted authorizer bound; execution denied".to_owned(),
+            });
+            return (
+                denial_result(
+                    "authorization_unavailable",
+                    "no trusted authorizer bound; execution denied",
+                ),
+                auth_decision,
             );
         }
     };
@@ -1089,7 +1236,9 @@ async fn execute_tool(
     )
     .await
     {
-        Authorized::AllowFresh => {}
+        Authorized::AllowFresh => {
+            auth_decision = Some(Authorized::AllowFresh);
+        }
         Authorized::Deny {
             stable_code,
             redacted_reason,
@@ -1100,12 +1249,16 @@ async fn execute_tool(
                 tool_diagnostic(CODE_TOOL_AUTHORIZATION_DENIED, tool_name, &redacted_reason),
             );
             trace_tool(trace, TraceKind::ToolCallFailed, tool_name, turn_id);
-            return denial_result(&stable_code, &redacted_reason);
+            auth_decision = Some(Authorized::Deny {
+                stable_code: stable_code.clone(),
+                redacted_reason: redacted_reason.clone(),
+            });
+            return (denial_result(&stable_code, &redacted_reason), auth_decision);
         }
     }
 
     // 6. Execute: only a current Allow reaches Tool::execute (OUT-003).
-    match registration
+    let result = match registration
         .implementation
         .execute(call_id, args.clone(), cancel.clone(), None)
         .await
@@ -1170,7 +1323,9 @@ async fn execute_tool(
             trace_tool(trace, kind, tool_name, turn_id);
             error_text_result(e.to_string())
         }
-    }
+    };
+
+    (result, auth_decision)
 }
 
 /// A controlled tool error result carrying a single text message (no details).
@@ -1290,6 +1445,49 @@ fn trace_tool(
             .turn(turn_id)
             .details(json!({ "tool_name": tool_name }))
             .emit();
+    }
+}
+
+/// Mint the next monotonic sequence and emit one evidence record through the
+/// bound sink. Identities are minted immediately before emission so correlation
+/// precedes any external effect (P17-EVD-001). A `None` sink is the capture-
+/// disabled default: nothing is minted or emitted and execution behavior is
+/// unchanged (P17-EVD-006). An emission failure advances the run's versioned
+/// health (P17-EVD-008); the product-fact manifest binding and fail-closed
+/// policy arrive in 17.7.
+///
+/// The full run/turn/call/parent/kind/payload correlation tuple is intrinsic
+/// to one evidence record, so the argument count is the minimal honest shape.
+#[allow(clippy::too_many_arguments)]
+fn emit_evidence(
+    sink: &Option<Arc<dyn crate::evidence::EvidenceSink>>,
+    identities: &mut crate::evidence::IdentityAllocator,
+    health: &mut crate::evidence::EvidenceHealth,
+    run: crate::evidence::RunId,
+    turn: Option<crate::evidence::TurnId>,
+    call: crate::evidence::CallId,
+    parent: Option<crate::evidence::CallId>,
+    kind: crate::evidence::CallKind,
+    payload: crate::evidence::EvidencePayload,
+) {
+    if let Some(sink) = sink.as_ref() {
+        let sequence = identities.next_sequence();
+        let record = crate::evidence::EvidenceRecord {
+            run,
+            turn,
+            call,
+            parent,
+            sequence,
+            kind,
+            payload,
+        };
+        if let Err(err) = sink.emit(&record) {
+            // An emission failure advances the run's versioned health immediately
+            // (P17-EVD-008). The run preserves the actual execution outcome; a
+            // finalized manifest is withheld once health is incomplete (17.7 owns
+            // the fail-closed policy and the product-fact manifest binding).
+            health.advance_on_failure(err.failure_code());
+        }
     }
 }
 

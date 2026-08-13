@@ -131,6 +131,7 @@ async fn run_truncated(mode: ExecutionMode) -> (Option<bool>, Option<bool>) {
         diagnostic_sink: None,
         trace: None,
         session_id: None,
+        evidence_sink: None,
     };
     let config = AgentLoopConfig {
         max_turns: 10,

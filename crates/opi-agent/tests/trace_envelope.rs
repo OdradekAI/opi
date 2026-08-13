@@ -826,6 +826,7 @@ mod wiring {
             diagnostic_sink: Some(sink as Arc<dyn DiagnosticSink>),
             trace,
             session_id: None,
+            evidence_sink: None,
         }
     }
 
@@ -1646,6 +1647,7 @@ mod phase8_runtime_contract_failures {
             diagnostic_sink: Some(sink as Arc<dyn DiagnosticSink>),
             trace,
             session_id: None,
+            evidence_sink: None,
         }
     }
 
