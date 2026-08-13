@@ -44,9 +44,10 @@ fn package(adapter_id: &str) -> TestPackage {
     let executable = dir.path().join("bin").join(adapter_id);
     std::fs::write(&executable, EXE_CONTENT).unwrap();
     make_executable(&executable);
+    let opi_version = host_opi_version();
     let manifest = format!(
         "version = \"0.8.0\"\n\
-         opi_version = \">=0.7,<0.8\"\n\
+         opi_version = \"={opi_version}\"\n\
          name = \"{adapter_id}\"\n\
          description = \"selected routing test package\"\n\
          \n\

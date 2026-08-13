@@ -67,9 +67,10 @@ fn install_drifted_external_package(workspace: &Path, user: &Path) -> tempfile::
     std::fs::create_dir_all(command.parent().unwrap()).unwrap();
     std::fs::write(&command, EXE_CONTENT).unwrap();
     make_executable(&command);
+    let opi_version = host_opi_version();
     let manifest = format!(
         "version = \"0.8.0\"\n\
-         opi_version = \">=0.7,<0.8\"\n\
+         opi_version = \"={opi_version}\"\n\
          name = \"fixed-external\"\n\
          description = \"interactive startup diagnostic fixture\"\n\
          \n\

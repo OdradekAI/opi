@@ -517,9 +517,10 @@ fn packaged_mock_peer(adapter_id: &str) -> (tempfile::TempDir, PathBuf) {
     make_executable(&exe);
     let sha = t_sha256(&std::fs::read(&exe).expect("read packaged exe"));
     let target = host_target_triple();
+    let opi_version = host_opi_version();
     let toml = format!(
         "version = \"0.8.0\"\n\
-         opi_version = \">=0.7,<0.8\"\n\
+         opi_version = \"={opi_version}\"\n\
          name = \"{adapter_id}\"\n\
          description = \"packaged execution backend (16.16.2)\"\n\
          \n\

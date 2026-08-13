@@ -170,11 +170,12 @@ fn write_git_execution_package(root: &Path, executable: &[u8]) {
     }
     let sha = format!("{:x}", Sha256::digest(executable));
     let target = opi_coding_agent::package_activation::host_target_triple();
+    let opi_version = opi_coding_agent::package_activation::host_opi_version();
     std::fs::write(
         root.join("package.toml"),
         format!(
             "version = \"0.8.0\"\n\
-             opi_version = \">=0.7,<0.8\"\n\
+             opi_version = \"={opi_version}\"\n\
              name = \"git-execution\"\n\
              description = \"git execution fixture\"\n\
              [[contributions.adapters]]\n\
@@ -1357,11 +1358,12 @@ fn package_cli_subprocess_list_and_doctor_json_report_execution_lifecycle() {
     }
     let sha = format!("{:x}", Sha256::digest(exe_content));
     let target = opi_coding_agent::package_activation::host_target_triple();
+    let opi_version = opi_coding_agent::package_activation::host_opi_version();
     std::fs::write(
         pkg.join("package.toml"),
         format!(
             "version = \"0.8.0\"\n\
-             opi_version = \">=0.7,<0.8\"\n\
+             opi_version = \"={opi_version}\"\n\
              name = \"opi-sandbox\"\n\
              description = \"execution backend\"\n\
              \n\

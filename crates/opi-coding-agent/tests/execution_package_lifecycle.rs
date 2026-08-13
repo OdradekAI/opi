@@ -54,9 +54,10 @@ fn make_execution_package(adapter_id: &str) -> (tempfile::TempDir, PathBuf, Stri
     make_executable(&exe);
     let sha = t_sha256(EXE_CONTENT);
     let target = package_activation::host_target_triple();
+    let opi_version = package_activation::host_opi_version();
     let toml = format!(
         "version = \"0.8.0\"\n\
-         opi_version = \">=0.7,<0.8\"\n\
+         opi_version = \"={opi_version}\"\n\
          name = \"{adapter_id}\"\n\
          description = \"test execution backend\"\n\
          \n\
@@ -550,7 +551,10 @@ fn removing_all_contributions_on_readd_invalidates_trust_and_enablement() {
 
     std::fs::write(
         root.join("package.toml"),
-        "version = \"0.8.0\"\nopi_version = \">=0.7,<0.8\"\nname = \"opi-sandbox\"\ndescription = \"no executable contribution\"\n",
+        format!(
+            "version = \"0.8.0\"\nopi_version = \"={}\"\nname = \"opi-sandbox\"\ndescription = \"no executable contribution\"\n",
+            package_activation::host_opi_version()
+        ),
     )
     .unwrap();
     assert_eq!(
@@ -1094,9 +1098,10 @@ fn no_lifecycle_path_starts_an_adapter_process() {
     make_executable(&exe);
     let sha = t_sha256(exe_content.as_bytes());
     let target = package_activation::host_target_triple();
+    let opi_version = package_activation::host_opi_version();
     let toml = format!(
         "version = \"0.8.0\"\n\
-         opi_version = \">=0.7,<0.8\"\n\
+         opi_version = \"={opi_version}\"\n\
          name = \"opi-sandbox\"\n\
          description = \"marker backend\"\n\
          \n\

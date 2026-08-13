@@ -1722,9 +1722,10 @@ fn package_scope_reports_execution_lifecycle_and_drift_at_top_level() {
     }
     let sha = format!("{:x}", Sha256::digest(exe_content));
     let target = package_activation::host_target_triple();
+    let opi_version = package_activation::host_opi_version();
     let toml = format!(
         "version = \"0.8.0\"\n\
-         opi_version = \">=0.7,<0.8\"\n\
+         opi_version = \"={opi_version}\"\n\
          name = \"opi-sandbox\"\n\
          description = \"doctor fixture\"\n\
          \n\
@@ -1845,9 +1846,10 @@ fn doctor_surfaces_emit_stable_redacted_package_codes() {
     }
     let sha = format!("{:x}", Sha256::digest(exe_content));
     let target = package_activation::host_target_triple();
+    let opi_version = package_activation::host_opi_version();
     let toml = format!(
         "version = \"0.8.0\"\n\
-         opi_version = \">=0.7,<0.8\"\n\
+         opi_version = \"={opi_version}\"\n\
          name = \"opi-sandbox\"\n\
          description = \"doctor fixture\"\n\
          \n\

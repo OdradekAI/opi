@@ -1452,11 +1452,12 @@ mod tests {
         }
         let sha = format!("{:x}", Sha256::digest(executable));
         let target = package_activation::host_target_triple();
+        let opi_version = package_activation::host_opi_version();
         std::fs::write(
             root.join("package.toml"),
             format!(
                 "version = \"0.8.0\"\n\
-                 opi_version = \">=0.7,<0.8\"\n\
+                 opi_version = \"={opi_version}\"\n\
                  name = \"git-execution\"\n\
                  description = \"git execution fixture\"\n\
                  [[contributions.adapters]]\n\
