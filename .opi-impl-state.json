@@ -566,7 +566,7 @@
       "definition_of_done": "Trusted assembly registers every tool as immutable RegisteredTool with registration id, provider-visible name, built-in/extension/embedder origin, registration-derived capability, schema, and implementation. The Reference Product applies the fixed built-in map workspace.read/workspace.write/command.execute, namespaces extension capabilities to origin/name, excludes and denies extension tools without exact existing permission, and never treats package/project trust as permission. Immutable digest-addressed EffectiveUserPolicy snapshots existing run/tool/mutating/trust/adapter/path/grant/evidence facts; live session grants remain separately versioned. Every provider request reprojects visible tools from trusted registrations. The loop resolves registration, runs deny-or-Continue hook, validates final arguments, calls mandatory ToolAuthorizer with current EvidenceHealth, emits redacted outcome, rejects an Allow whose evidence-health generation no longer matches the current injected snapshot, and only then executes. Evidence-failure-driven health advancement and reauthorization through the assembled product path belong to 17.7. Bash reuses current route selection/permission broker. Missing, failed, expired, stale, or forged authority yields zero executions; no allow-all authorizer, new permission language/UI, hook grant, or compatibility path remains.",
       "definition_source": "inferred",
       "replaces": "Cut over trusted tool authorization with the Reference Product policy binding",
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "17.3"
       ],
@@ -663,7 +663,7 @@
             "opi_coding_agent trusted tool assembly",
             "opi_agent::ToolAuthorizer::authorize"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "P17-A07",
@@ -677,7 +677,7 @@
             "opi_coding_agent::CodingHarness::prompt",
             "opi_agent::ToolAuthorizer::authorize"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "P17-A08",
@@ -691,7 +691,7 @@
             "opi_agent::ToolAuthorizer::authorize",
             "opi_agent::agent_loop tool execution path"
           ],
-          "status": "open"
+          "status": "met"
         }
       ],
       "production_call_sites": [
@@ -704,7 +704,7 @@
       "substrate_only": false,
       "iteration_count": 0,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "396daaf1a0fff9c337994019b2e56cc5c1b889dd",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "crates/opi-agent/src/tool.rs",
@@ -757,11 +757,76 @@
         "crates/opi-coding-agent/tests/todo_example.rs",
         "crates/opi-coding-agent/tests/execution_product.rs"
       ],
-      "last_attempt": null,
-      "verified_at_commit": null,
-      "evidence": null,
+      "last_attempt": {
+        "attempt": 1,
+        "started_at": "2026-08-13T10:23:00+08:00",
+        "ended_at": "2026-08-13T11:00:26+08:00",
+        "outcome": "passed",
+        "failing_gate": null,
+        "touched_files": [
+          "crates/opi-agent/src/authority.rs",
+          "crates/opi-agent/src/agent.rs",
+          "crates/opi-agent/src/agent_loop.rs",
+          "crates/opi-agent/src/hooks.rs",
+          "crates/opi-agent/src/loop_types.rs",
+          "crates/opi-agent/src/extension.rs",
+          "crates/opi-agent/src/diagnostic.rs",
+          "crates/opi-agent/src/lib.rs",
+          "crates/opi-agent/tests/tool_authority.rs",
+          "crates/opi-agent/tests/common/mod.rs",
+          "crates/opi-coding-agent/src/tool_authority.rs",
+          "crates/opi-coding-agent/src/harness.rs",
+          "crates/opi-coding-agent/src/runner.rs",
+          "crates/opi-coding-agent/src/execution/permission.rs",
+          "crates/opi-coding-agent/tests/phase17_tool_authority.rs"
+        ]
+      },
+      "verified_at_commit": "5ebadac9f82e53f98526c2e900142a5712b27cc6",
+      "evidence": {
+        "task": "17.4",
+        "dod_sha256": "d0d4610256ced10f8563564c64bd4d5da125421ced0d6065b7f0f61236eeec95",
+        "verification": "workspace; fmt+clippy --all-targets -D warnings+rustdoc -D warnings+opi-doc-check clean; opi-agent suite green; phase17_tool_authority 8/8 (A06/A07/A08 + CommandExecute Allow/Deny/Ask-headless/Ask-interactive + WorkspaceWrite Allow via the real ProductToolAuthorizer); 6 pre-existing 17.2 carry-over failures disambiguated (extensions set_model_validated model-format + 5 session_runtime cross-provider resume, 17.5 domain); D.2 exec.workflow.js 6-lens must_fix=[] (round 2 @251ee1a)",
+        "evaluator": "passed",
+        "acceptance": "P17-A06 met (phase17_model_content_cannot_expand_effective_policy); P17-A07 met (phase17_untrusted_sources_cannot_forge_registration_or_grants); P17-A08 met (phase17_expired_or_failed_authority_is_fail_closed); plus phase17_command_execute_{allow,deny,ask_headless,ask_interactive} + phase17_workspace_write_allow_executes_when_mutating driving the real ProductToolAuthorizer via Agent::prompt"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-08-13T11:00:26+08:00",
+          "attempt": 1,
+          "summary": "17.4 passing @5ebadac. Trusted-registration + mandatory-authorization cutover: opi_agent::authority (RegisteredTool/ToolRegistry/ToolAuthorizer/AuthorizationDecision/Capability/ToolOrigin); execute_tool reordered resolve->hook(Continue)->validate->authorize->verify-stale->execute; Agent::new takes registrations+authorizer; add_tool/SharedTool removed; BeforeToolCallResult Allow->Continue. opi-coding-agent: EffectiveUserPolicy (digest-addressed, incl path/operation scope) + ProductToolAuthorizer (reuses command.execute PermissionPolicy; Extension excluded) + fixed built-in capability map; harness trusted-assembly; CodingHarness::add_tool removed. D.2 round1 must_fix=2 (A07 tautological block; CommandExecute/Allow untested) -> fixed (removed tautology; added 5 real-authorizer tests); round2 must_fix=[] (1 low flagged: authority.rs authorization_decision_carries_freshness_fields redundant, coverage subsumed by stale_evidence_health test, accepted advisory). 6 pre-existing 17.2 carry-over failures disambiguated (user-approved): extensions set_model_validated model-format + 5 session_runtime cross-provider resume -> 17.5 domain.",
+          "gate_results": [
+            {
+              "gate": "fmt --check --all",
+              "result": "clean"
+            },
+            {
+              "gate": "clippy --workspace --all-targets -D warnings",
+              "result": "clean (exit 0)"
+            },
+            {
+              "gate": "rustdoc -D warnings",
+              "result": "clean"
+            },
+            {
+              "gate": "opi-doc-check.py",
+              "result": "PASS"
+            },
+            {
+              "gate": "phase17_tool_authority",
+              "result": "8/8 passed"
+            },
+            {
+              "gate": "opi-agent suite",
+              "result": "passed"
+            },
+            {
+              "gate": "D.2 exec.workflow.js round 2",
+              "result": "must_fix=[] (1 low flagged, accepted)"
+            }
+          ]
+        }
+      ]
     },
     {
       "id": "17.5",
@@ -2909,6 +2974,26 @@
       "rejected_count": 0,
       "ran_at": "2026-08-12T23:21:00+08:00",
       "task_id": "17.3",
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": "wf_06d274f0-0ed",
+      "folded_count": 2,
+      "flagged_count": 2,
+      "rejected_count": 0,
+      "ran_at": "2026-08-13T10:55:00+08:00",
+      "task_id": "17.4",
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": "wf_ff546bb2-70b",
+      "folded_count": 0,
+      "flagged_count": 1,
+      "rejected_count": 0,
+      "ran_at": "2026-08-13T11:00:26+08:00",
+      "task_id": "17.4",
       "criterion_id": null
     }
   ]
