@@ -837,7 +837,7 @@
       "definition_of_done": "Reference Product startup constructs one ProviderCollection containing each configured and dispatchable route, retains lazy collection-owned per-call auth preparation, migrates all remaining Provider implementations/tests to the prepared-auth attempt seam, and removes provider-owned AuthResolver invocation/state, the old stream(Request) bridge, MetadataProvider, raw registry/provider bypasses, SharedProvider construction, and same-provider model-switch rejection. Existing or legacy bare model input normalizes only when one route is provable; no alias registry/configuration is added. The opi-agent session schema and every new model-change write persist canonical provider:model plus distinct input source; 17.8 owns only read-side legacy normalization and byte preservation. Unknown, ambiguous, unauthenticated, refresh-failed, fallback-disallowed, capability-mismatched, and wire-mismatched selections fail before model HTTP dispatch with stable remediation. CodingHarness tests prove provider changes without Agent reconstruction, and startup/model listing use collection-owned seams. This is the contract half of 17.1's expand-contract migration; no old auth/dispatch path or resolver-bearing adapter remains afterward.",
       "definition_source": "inferred",
       "replaces": "Assemble every dispatchable provider in the Reference Product",
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "17.2"
       ],
@@ -936,7 +936,7 @@
             "opi_coding_agent::CodingHarness::prompt",
             "opi_ai::ProviderCollection::prepare_call"
           ],
-          "status": "open"
+          "status": "met"
         }
       ],
       "production_call_sites": [
@@ -949,7 +949,7 @@
       "substrate_only": false,
       "iteration_count": 0,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "c2588035b45271fa4853b489631db545157dfce4",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "crates/opi-ai/src/auth.rs",
@@ -1029,10 +1029,56 @@
         "crates/opi-coding-agent/tests/session_cli.rs"
       ],
       "last_attempt": null,
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "6600cd226613c1081c4982147add77eb3ca525d5",
+      "evidence": {
+        "task": "17.5",
+        "dod_sha256": "f6000cc62a0ee5d5e0efaf62d351599e6e7d283f46bc3e11995624a6e1394b20",
+        "verification": "workspace; fmt+clippy --all-targets -D warnings+rustdoc -D warnings+opi-doc-check clean; full suite green modulo pre-existing version-range (~36 package/doctor/runtime) + environmental CARGO_TARGET_DIR (~13 e2e/completion) failures",
+        "evaluator": "passed",
+        "acceptance": "P17-A02 met (phase17_route_and_auth_failures_do_not_dispatch_model_http); plus phase17_coding_harness_cross_provider_switch_dispatches_both_providers (P17-A01/OUT-001) + build_provider_bundle_populates_eager_extra_dispatch_routes"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-08-13T18:30:00+08:00",
+          "attempt": 1,
+          "summary": "17.5 passing @6600cd2 (product multi-route contract). Full opi-ai cutover (Provider::stream removed, providers migrated to stream_prepared, AuthProvenance relocated to ResolvedAuth) + Reference Product eager multi-route (build_extra_dispatch_routes with lazy CredentialAuthResolver), single dispatch collection (build_harness_collection), MetadataProvider removed from harness path (renamed ListingMetadataProvider), try_configure_model cross-provider rejection lifted, set_model_validated normalizes bare->canonical. D.2 exec.workflow.js must_fix=[] rejected=[] (4 rounds: round1 fmt+input_source+bedrock-lens; round2 cross-provider-lift+CodingHarness-test; round3 bare-normalization+eager-test+footer-attribution; round4 interactive-extra_routes). 2 medium-confidence flagged_for_human (non-blocking coverage suggestions): (1) production CredentialAuthResolver never driven end-to-end through prepare_call (needs wiremock); (2) extension model-override resolvability assertion downgraded to helper-level.",
+          "gate_results": [
+            {
+              "gate": "fmt --check --all",
+              "result": "clean"
+            },
+            {
+              "gate": "clippy --workspace --all-targets -D warnings",
+              "result": "clean"
+            },
+            {
+              "gate": "rustdoc -D warnings",
+              "result": "clean"
+            },
+            {
+              "gate": "opi-doc-check",
+              "result": "PASS"
+            },
+            {
+              "gate": "phase17_provider_runtime (5 incl cross-provider)",
+              "result": "5/5"
+            },
+            {
+              "gate": "provider_factory (53 incl eager-extra-routes)",
+              "result": "53/53"
+            },
+            {
+              "gate": "session_runtime 58 + sdk_embedding 9 + credential_store 40",
+              "result": "green"
+            },
+            {
+              "gate": "D.2 exec.workflow.js round4",
+              "result": "must_fix=[] rejected=[] (2 flagged non-blocking)"
+            }
+          ]
+        }
+      ]
     },
     {
       "id": "17.6",
