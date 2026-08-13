@@ -72,8 +72,11 @@ pub struct Agent {
     steering_queue: Arc<Mutex<VecDeque<String>>>,
     follow_up_queue: Arc<Mutex<VecDeque<String>>>,
     diagnostic_sink: Option<Arc<dyn DiagnosticSink>>,
-    trace_collector: Option<Arc<crate::trace::TraceCollector>>,
     evidence_sink: Option<Arc<dyn crate::evidence::EvidenceSink>>,
+    /// The run's identity allocator, persisted after the loop so post-run
+    /// call-like activity (harness-side compaction) can mint a correlated
+    /// Compaction evidence record in the same run (P17-EVD-002).
+    last_run_identities: Option<crate::evidence::IdentityAllocator>,
 }
 
 impl Agent {
@@ -116,8 +119,8 @@ impl Agent {
             steering_queue: Arc::new(Mutex::new(VecDeque::new())),
             follow_up_queue: Arc::new(Mutex::new(VecDeque::new())),
             diagnostic_sink: None,
-            trace_collector: None,
             evidence_sink: None,
+            last_run_identities: None,
             session_id: None,
         })
     }
@@ -138,25 +141,49 @@ impl Agent {
         self.diagnostic_sink = sink;
     }
 
-    /// Install a trace collector that receives versioned redacted trace
-    /// records during the next `prompt`/`continue_` run. `None` (the default)
-    /// runs untraced with no behavior change. The collector MUST be prepared
-    /// by the caller before the run (fail-closed): the agent loop does not
-    /// call `prepare`/`finish`, only emits records (fail-open).
-    pub fn set_trace_collector(&mut self, collector: Option<Arc<crate::trace::TraceCollector>>) {
-        self.trace_collector = collector;
-    }
-
     /// Install an evidence sink that receives the run's call-graph lifecycle
     /// (stable run/turn/call identities, ordered records, terminal manifest)
     /// during the next `prompt`/`continue_`/`retry_last_turn` run (Phase 17.6).
     /// `None` (the default) is the capture-disabled no-op: no identities are
     /// minted and execution behavior is unchanged. Non-breaking: callers that
-    /// do not set a sink are unaffected. The Reference Product remains on its
-    /// existing `TraceSink` capture path; this substrate adds an independent,
-    /// additive evidence channel.
+    /// do not set a sink are unaffected. The Reference Product binds its file
+    /// adapter here (Phase 17.7); the minimal runtime leaves it unset.
     pub fn set_evidence_sink(&mut self, sink: Option<Arc<dyn crate::evidence::EvidenceSink>>) {
         self.evidence_sink = sink;
+    }
+
+    /// Emit a post-run [`CallKind::Compaction`] evidence record in the run that
+    /// just completed, using the persisted identity allocator so the compaction
+    /// shares the run's correlation graph (P17-EVD-002). A no-op when no
+    /// evidence sink is bound or no run has completed.
+    pub fn emit_compaction_evidence(
+        &mut self,
+        reason: &str,
+    ) -> Result<(), crate::evidence::EvidenceError> {
+        let Some(sink) = self.evidence_sink.clone() else {
+            return Ok(());
+        };
+        let Some(identities) = self.last_run_identities.as_mut() else {
+            return Ok(());
+        };
+        let run = identities.run_id();
+        let call = identities.next_call();
+        let sequence = identities.next_sequence();
+        let record = crate::evidence::EvidenceRecord {
+            run,
+            turn: None,
+            call,
+            parent: None,
+            sequence,
+            kind: crate::evidence::CallKind::Compaction,
+            payload: crate::evidence::EvidencePayload::Structured(
+                crate::evidence::RedactedValue::redacted(
+                    serde_json::json!({ "reason": reason }),
+                    crate::diagnostic::RedactionMode::Summary,
+                ),
+            ),
+        };
+        sink.emit(&record)
     }
 
     /// Atomically replace the complete durable state with a validated
@@ -460,17 +487,25 @@ impl Agent {
             steering_queue: Some(self.steering_queue.clone()),
             follow_up_queue: Some(self.follow_up_queue.clone()),
             diagnostic_sink: self.diagnostic_sink.clone(),
-            trace: self.trace_collector.clone(),
             session_id: self.session_id.clone(),
         };
 
         let sink = self.build_event_sink();
-        let final_state =
-            crate::agent_loop(context, self.config.clone(), &*self.hooks, sink, cancel).await?;
+        let (final_state, identities) = crate::agent_loop::agent_loop_with_identities(
+            context,
+            self.config.clone(),
+            &*self.hooks,
+            sink,
+            cancel,
+        )
+        .await?;
 
         // The Agent is the sole durable owner: persist the loop's final
-        // complete state before the public operation settles.
+        // complete state and the run's identity allocator (so post-run
+        // compaction can mint a correlated Compaction record) before the public
+        // operation settles.
         self.state = final_state;
+        self.last_run_identities = Some(identities);
         Ok(self.state.context.clone())
     }
 }

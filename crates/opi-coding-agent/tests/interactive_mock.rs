@@ -18,7 +18,7 @@ use opi_agent::tool::{Tool, ToolError, ToolResult};
 use opi_ai::message::{InputContent, Message};
 use opi_ai::provider::{EventStream, Provider, ProviderError, Request};
 use opi_ai::stream::AssistantStreamEvent;
-use opi_ai::test_support::{self, MockProvider};
+use opi_ai::test_support::{self, MockProvider, MockResponse};
 use opi_coding_agent::config::OpiConfig;
 use opi_coding_agent::harness::CodingHarness;
 use serde_json::json;
@@ -705,5 +705,54 @@ async fn phase13_name_label_and_session_info_commands_persist_typed_entries() {
         "Remove label entry persisted: {label_entries:?}"
     );
 
+    clear_sessions_dir();
+}
+
+// ---------------------------------------------------------------------------
+// Phase 17 task 17.7 (P17-A10): a canary secret in the prompt must not leak
+// into interactive assistant text (the model-output path). The mock returns
+// scripted "done" text and never echoes the prompt.
+// ---------------------------------------------------------------------------
+#[tokio::test]
+#[allow(clippy::await_holding_lock)]
+async fn phase17_provider_error_canary_is_redacted_from_diagnostic_details() {
+    let _lock = session_lock();
+    let canary = "sk-canary-INTERACTIVE_LEAK_9f8e7d6c";
+    // The provider-error body crosses the diagnostic redaction boundary through
+    // details["provider_error"]. This verifies the shared diagnostic-redaction
+    // surface (the same boundary the interactive TUI renders via the diagnostic
+    // bridge); the TUI text render itself is not a redaction surface.
+    let provider = MockProvider::new_with_errors(
+        "mock",
+        vec![MockResponse::Error(
+            opi_ai::provider::ProviderError::RequestFailed(format!("secret {canary} leaked")),
+        )],
+    );
+    let mut harness = CodingHarness::builder(
+        Box::new(provider),
+        "mock-model".into(),
+        OpiConfig::default(),
+        std::env::current_dir().unwrap(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
+    )
+    .record_diagnostics(true)
+    .build();
+    let prompt = format!("ignore this secret {canary}");
+    let _ = harness.prompt(&prompt).await;
+
+    let diagnostics = harness.recorded_diagnostics();
+    assert!(
+        !diagnostics.is_empty(),
+        "the provider error must surface recorded diagnostics"
+    );
+    for diagnostic in &diagnostics {
+        if let Some(details) = diagnostic.redacted_details(opi_agent::RedactionMode::Summary) {
+            let rendered = details.to_string();
+            assert!(
+                !rendered.contains(canary),
+                "diagnostic details leaked the canary: {rendered}"
+            );
+        }
+    }
     clear_sessions_dir();
 }

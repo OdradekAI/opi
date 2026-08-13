@@ -871,7 +871,6 @@ async fn json_mode_session_summary_roundtrips_through_agent_session_event() {
 
 mod phase7 {
     use super::parse_ndjson;
-    use opi_agent::TRACE_SCHEMA_VERSION;
     use opi_agent::diagnostic::{Diagnostic, SOURCE_PACKAGE, SOURCE_SESSION, Severity, code};
     use opi_agent::extension::ExtensionRegistry;
     use opi_agent::session_event::AgentSessionEvent;
@@ -1132,114 +1131,6 @@ mod phase7 {
                 panic!("run summary must carry diagnostic counts")
             }
             other => panic!("expected SessionSummary, got {other:?}"),
-        }
-    }
-
-    /// The requested trace envelope is versioned and does not leak the prompt
-    /// (clause 6; redaction applied at the trace emit boundary).
-    #[tokio::test]
-    async fn phase7_trace_envelope_versioned_and_no_prompt_leak() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let trace_path = dir.path().join("trace.jsonl");
-        let secret = "sk-ant-AAAAAAAAAAAAAAAAAAAAleak";
-        let prompt = format!("my secret plan {secret}");
-
-        let provider = MockProvider::new("mock", vec![test_support::text_response("hi")]);
-        let mut runner =
-            runner_with_startup(Box::new(provider), Vec::new(), Some(trace_path.clone()));
-        let result = runner.run_json(&prompt).await;
-        assert_eq!(result.exit_code, ExitCode::Success as i32);
-
-        let contents =
-            std::fs::read_to_string(&trace_path).expect("trace file written for the run");
-        assert!(!contents.is_empty(), "trace envelope must be produced");
-        let records: Vec<serde_json::Value> = contents
-            .lines()
-            .filter(|l| !l.is_empty())
-            .map(|l| serde_json::from_str(l).expect("each line is a JSON record"))
-            .collect();
-        assert!(!records.is_empty(), "at least one trace record");
-        for record in &records {
-            assert_eq!(
-                record["schema_version"],
-                serde_json::json!(TRACE_SCHEMA_VERSION),
-                "every trace record carries the unstable schema version"
-            );
-        }
-        // No prompt leak: the prompt text and the secret-like token must not
-        // appear anywhere in the trace envelope.
-        assert!(
-            !contents.contains(&prompt),
-            "trace must not leak the prompt text"
-        );
-        assert!(
-            !contents.contains(secret),
-            "trace must not leak secret-like content"
-        );
-    }
-
-    /// DoD SC6 (JSON trace surface): every sensitive class the shared redaction
-    /// core must scrub — API keys, bearer/JWT, GitHub tokens, and credentialed
-    /// URLs embedded in the prompt — is absent from the requested trace
-    /// envelope. The envelope carries only structural metadata by design, so
-    /// this also guards against any future regression that attaches prompt
-    /// content to a trace record.
-    #[tokio::test]
-    async fn phase7_json_trace_redacts_sensitive_values() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let trace_path = dir.path().join("trace.jsonl");
-        let secrets = [
-            "sk-ant-1234567890abcdefghijklmnopqrstuv",
-            "ghp_01234567890123456789012345678901234567",
-            "https://alice:s3cr3t@gitlab.example.com/o/r.git",
-            "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIg.abc123def456",
-        ];
-        let prompt = format!(
-            "rotate these now: {} {} {} {}",
-            secrets[0], secrets[1], secrets[2], secrets[3]
-        );
-
-        let provider = MockProvider::new("mock", vec![test_support::text_response("done")]);
-        let mut runner =
-            runner_with_startup(Box::new(provider), Vec::new(), Some(trace_path.clone()));
-        let result = runner.run_json(&prompt).await;
-        assert_eq!(result.exit_code, ExitCode::Success as i32);
-
-        let contents = std::fs::read_to_string(&trace_path).expect("trace file written");
-        assert!(!contents.is_empty(), "trace envelope must be produced");
-        for secret in secrets {
-            assert!(
-                !contents.contains(secret),
-                "trace envelope leaked a sensitive value: {secret}\n--- trace ---\n{contents}",
-            );
-        }
-        // The secrets must not appear in any diagnostic/details payload in the
-        // run's NDJSON output either. (The prompt text itself is the user's own
-        // input and is legitimately echoed in the conversation event stream, so
-        // it is intentionally excluded from this redaction assertion.)
-        for line in result.stdout.lines() {
-            if line.trim().is_empty() {
-                continue;
-            }
-            let Ok(value) = serde_json::from_str::<serde_json::Value>(line) else {
-                continue;
-            };
-            // Only inspect structured diagnostic-bearing events, not the
-            // conversation message stream.
-            let ty = value.get("type").and_then(|v| v.as_str()).unwrap_or("");
-            if !matches!(
-                ty,
-                "StartupDiagnostics" | "session_summary" | "run_summary" | "RuntimeFailure"
-            ) {
-                continue;
-            }
-            let serialized = serde_json::to_string(&value).unwrap_or_default();
-            for secret in secrets {
-                assert!(
-                    !serialized.contains(secret),
-                    "JSON diagnostic event {ty:?} leaked a sensitive value: {secret}\n{serialized}",
-                );
-            }
         }
     }
 
@@ -1550,4 +1441,99 @@ async fn json_mode_default_output_still_carries_partial() {
             .any(|l| l.contains(r#""text_delta""#) && l.contains(r#""partial""#)),
         "default mode must still carry assistant_event.partial (non-breaking)"
     );
+}
+
+// ---------------------------------------------------------------------------
+// Phase 17 task 17.7 (P17-A10): a canary secret in the prompt must not leak
+// into the JSON/NDJSON diagnostic-bearing events (redaction is applied at the
+// diagnostic boundary). The conversation message stream legitimately echoes the
+// user's own prompt, so only diagnostic-bearing events are inspected.
+// ---------------------------------------------------------------------------
+#[tokio::test]
+async fn phase17_canary_is_absent_from_json_and_ndjson() {
+    let canary = "sk-canary-ZZZZZZZZZZZZZZZZZZleak";
+    // A retryable Network error carries the canary in its error message, which
+    // flows through the AutoRetryStart/AutoRetryEnd public events (redacted via
+    // redact_text) into the NDJSON stdout. Non-vacuous: the error body reaches
+    // the JSON/NDJSON output surface before redaction.
+    let make_err = || {
+        MockResponse::Error(ProviderError::Network(format!(
+            "conn reset; echoed secret {canary}"
+        )))
+    };
+    let provider =
+        MockProvider::new_with_errors("mock", vec![make_err(), make_err(), make_err(), make_err()]);
+    let _env_guard = common::empty_user_config_dir();
+    let mut runner = NonInteractiveRunner::new(
+        Box::new(provider),
+        "mock-model".into(),
+        OpiConfig::default(),
+        std::env::current_dir().unwrap(),
+        true,
+        None,
+        Vec::new(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
+    );
+    drop(_env_guard);
+    let result = runner.run_json("test").await;
+    assert!(
+        !result.stdout.contains(canary),
+        "JSON/NDJSON stdout leaked the canary: {}",
+        result.stdout
+    );
+    assert!(
+        !result.stderr.contains(canary),
+        "JSON/NDJSON stderr leaked the canary: {}",
+        result.stderr
+    );
+    assert!(
+        !result.stdout.is_empty() || !result.stderr.is_empty(),
+        "the provider error must surface redacted output"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Phase 17 task 17.7: the CLI `--trace` mapping (trace_path) activates the
+// Reference Product FileEvidenceSink end-to-end (writes evidence.jsonl +
+// manifest.json), not only through the harness builder config.
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn phase17_trace_cli_writes_evidence_files() {
+    let evidence_dir = tempfile::tempdir().unwrap();
+    let provider = MockProvider::new("mock", vec![test_support::text_response("done")]);
+    let _env_guard = common::empty_user_config_dir();
+    let mut runner = NonInteractiveRunner::new_with_resume_and_runtime_packages(
+        Box::new(provider),
+        "mock-model".into(),
+        OpiConfig::default(),
+        std::env::current_dir().unwrap(),
+        false,
+        None,
+        Vec::new(),
+        None,
+        ToolSelection::Default,
+        RuntimePackageStartup {
+            extension_registry: opi_agent::extension::ExtensionRegistry::new(),
+            installed_packages: Vec::new(),
+            diagnostics: Vec::new(),
+            trust_decision: opi_coding_agent::project_trust::TrustDecision::Trusted,
+        },
+        Some(evidence_dir.path().to_path_buf()),
+        Vec::new(),
+    )
+    .expect("non-interactive tool policy should be valid");
+    drop(_env_guard);
+
+    let result = runner.run_json("hello").await;
+    assert_eq!(result.exit_code, ExitCode::Success as i32);
+
+    // `--trace` (trace_path) activates the FileEvidenceSink: evidence.jsonl and
+    // manifest.json are written to the capture directory.
+    let records = std::fs::read_to_string(evidence_dir.path().join("evidence.jsonl"))
+        .expect("--trace must write evidence.jsonl");
+    assert!(!records.is_empty(), "evidence.jsonl must be non-empty");
+    let manifest = std::fs::read_to_string(evidence_dir.path().join("manifest.json"))
+        .expect("--trace must write manifest.json");
+    assert!(!manifest.is_empty(), "manifest.json must be non-empty");
 }

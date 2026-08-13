@@ -10,7 +10,6 @@ use crate::authority::{ToolAuthorizer, ToolRegistry};
 use crate::diagnostic_sink::DiagnosticSink;
 use crate::evidence::{EvidenceHealth, EvidenceSink};
 use crate::message::AgentMessage;
-use crate::trace::TraceCollector;
 
 /// Errors that can occur during the agent loop.
 #[derive(Debug, thiserror::Error)]
@@ -38,11 +37,12 @@ pub enum AgentError {
     Cancelled,
     #[error("max turns exceeded ({0})")]
     MaxTurnsExceeded(u32),
-    /// A requested trace could not be prepared before the run (fail-closed):
-    /// the trace file could not be created/opened. The run is aborted so it
-    /// never runs untraced when tracing was explicitly requested.
-    #[error("trace setup failed: {0}")]
-    TraceSetup(String),
+    /// Evidence capture setup failed before the run (fail-closed, Phase 17.7):
+    /// the configured evidence sink could not be prepared. The run is aborted
+    /// before its first provider/tool call so it never runs with incomplete
+    /// evidence when capture was explicitly requested (P17-EVD-007).
+    #[error("evidence setup failed: {0}")]
+    EvidenceSetup(String),
     /// A provider route could not be prepared for a model call: the selection
     /// was unknown, ambiguous, undispatchable, or its authentication could not
     /// be resolved. Phase 17.2 surfaces collection-owned preparation failures
@@ -194,11 +194,6 @@ pub struct AgentLoopContext {
     /// (retry, cancellation, provider/tool failures). `None` disables emission
     /// without changing any other runtime behavior.
     pub diagnostic_sink: Option<Arc<dyn DiagnosticSink>>,
-    /// Optional trace collector receiving versioned redacted trace records
-    /// (run/turn/provider/tool/diagnostic-linked) during the run. `None`
-    /// (the default) runs untraced with no behavior change. Tracing is opt-in
-    /// and fail-open: a trace sink write failure never aborts the run.
-    pub trace: Option<Arc<TraceCollector>>,
     /// Opaque session identifier, set by the harness from the active
     /// SessionCoordinator. Propagated into every Request so providers can
     /// emit session-affinity headers.

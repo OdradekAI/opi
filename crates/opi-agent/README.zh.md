@@ -21,14 +21,14 @@ cargo add opi-agent
 
 `opi-agent` 负责 Agent 主循环和运行时基础能力：工具契约、JSON Schema 参数校验、
 并行/串行工具执行、生命周期 hooks、事件输出、steering/follow-up 队列、会话
-JSONL 存储、分支重建、上下文压缩、SDK/RPC 类型、扩展、本地诊断、已脱敏 trace
-envelope，以及 streaming proxy。
+JSONL 存储、分支重建、上下文压缩、SDK/RPC 类型、扩展、本地诊断、已脱敏证据
+记录，以及 streaming proxy。
 
 运行时契约保持聚焦于主循环本身，而非新增工作流。工具结果携带 `truncated` 和工具自有
-结构化诊断；主循环把这些诊断提升为共享 diagnostic/trace 系统，并在公共
+结构化诊断；主循环把这些诊断提升为共享 diagnostic/evidence 系统，并在公共
 `ToolExecutionEnd` 事件上暴露，同时让面向 provider 的工具结果消息只携带 LLM 可见内容
 和失败状态。来自 `opi-ai` 的 `ProviderErrorCategory` 会映射为已脱敏 diagnostics 和
-trace 记录；provider 返回的 cancellation 表现为 `AgentError::Cancelled`；retry diagnostics
+evidence 记录；provider 返回的 cancellation 表现为 `AgentError::Cancelled`；retry diagnostics
 会区分重试预算耗尽与部分 provider 输出后的重试抑制。append-only 会话存储携带类型化
 metadata 条目和分支摘要，同时保持 `SessionHeader::version = 1`；metadata 条目不进入
 provider 上下文，但分支摘要会通过 `session_context::reconstruct_context` 进入。
@@ -135,10 +135,9 @@ Rate limit 和 timeout 等可重试 Provider 错误可通过 `AgentLoopConfig.re
 扩展的 `on_before_tool_call` 返回 `Block` 会在首个 block 处中断链路；后续扩展不会被调用。
 扩展的 `on_after_tool_call` 观察者不能修改结果；只有基础 hook 可以 `Replace`。
 
-当 adapter 或扩展只实现了部分 hook 时，在启用 verbose trace 的情况下，被跳过的 hook 会以
-`trace::TraceKind::HookSkipped` 记录写入 trace。运行时会在每次运行之前通过
-`Extension::set_trace_collector` 把本次运行的 `TraceCollector` 下发给每个扩展（运行结束后清空），
-从而使短路了未声明 hook 的 adapter 能够记录该跳过。
+当 adapter 或扩展只实现了部分 hook 时，其余 hook 方法默认为 no-op。（旧版基于
+`TraceCollector` / `Extension::set_trace_collector` 的 hook 跳过记录已随 Phase 17.7
+的 trace 契约一并移除。）
 
 ## 工具调度
 
@@ -169,7 +168,7 @@ Rate limit 和 timeout 等可重试 Provider 错误可通过 `AgentLoopConfig.re
 | 字段 | 含义 |
 |---|---|
 | `content` | LLM 可见的文本或图片输出。 |
-| `details` | 面向运行时、UI、JSON/RPC 和 trace 边界的可选结构化元数据。 |
+| `details` | 面向运行时、UI、JSON/RPC 和 evidence 边界的可选结构化元数据。 |
 | `is_error` | 该结果是否表示工具失败。 |
 | `terminate` | 当同一批次中的每个结果也终止时，该结果是否可以结束运行。 |
 | `truncated` | 输出是否被缩短或受界限限制。 |
@@ -177,7 +176,7 @@ Rate limit 和 timeout 等可重试 Provider 错误可通过 `AgentLoopConfig.re
 
 Agent 主循环会在 `after_tool_call` 之后读取 diagnostics，因此替换后的结果也能替换
 诊断上下文。每个 `ToolDiagnostic` 会提升为共享 `Diagnostic` 和 diagnostic-linked
-trace 记录。公共事件在发出前会脱敏；provider 请求只通过
+evidence 记录。公共事件在发出前会脱敏；provider 请求只通过
 `opi_ai::message::ToolResultMessage` 接收工具结果 content、`is_error`、
 `truncated` 和时间戳字段。
 
@@ -195,9 +194,9 @@ trace 记录。公共事件在发出前会脱敏；provider 请求只通过
 部分流式内容会被丢弃：只有当流的 `Done` 事件到达时才会被推入消息缓冲区，因此流式
 过程中取消不会写入任何部分 assistant 消息。
 
-Trace 消费方必须容忍 provider 提前退出时留下的 open turn。Provider failure 和
+消费方必须容忍 provider 提前退出时留下的 open turn。Provider failure 和
 provider-stream cancellation 可能发出 `TurnStarted` 而没有匹配的 `TurnEnded`；
-这些路径的终止边界是 `AgentEnd`、trace `RunEnded` 以及关联的诊断。
+这些路径的终止边界是 `AgentEnd` 以及关联的诊断。
 
 `Agent::abort`（以及 harness 的 `cancel` / `cancel_token` 辅助方法）会取消活跃 run
 的 token；token 会在下一 turn 之前被重置，因此被取消的运行时会回到 idle 并接受新的
@@ -249,7 +248,7 @@ run 返回 `Err(AgentError::Cancelled)` 的 turn 根本不会被持久化，因�
 
 | `error_code` | 含义 |
 |---|---|
-| `unsupported_trace_request` | 会话没有 trace sink 时请求了 `trace`。 |
+| `unsupported_trace_request` | 运行没有 evidence recorder 时请求了 `trace`。 |
 | `agent_busy` | 已有 run 处于活跃状态，或运行中尝试执行运行时状态修改。 |
 | `harness_unavailable` | RPC runner 没有附着 `CodingHarness`。 |
 | `compaction_failed` | 手动压缩返回错误。 |
@@ -271,7 +270,7 @@ run 返回 `Err(AgentError::Cancelled)` 的 turn 根本不会被持久化，因�
 | `compact` | 手动压缩（结果 + 诊断） | 拒绝（`cannot compact while agent is running`） |
 | `session_info` | 返回 model / resources / session_id | 拒绝（`cannot query session info while agent is running`） |
 | `extension_command` | 派发到注册表（data / `not handled` / error） | 拒绝（`cannot dispatch extension command while agent is running`） |
-| `trace` | 返回版本化的脱敏信封，或 `unsupported_trace_request` | 允许（按运行的快照） |
+| `trace` | 返回运行的 evidence records，或 `unsupported_trace_request` | 允许（按运行的快照） |
 | `quit` | 成功 + 关闭 | 成功 + 关闭（等待活跃运行清理完成） |
 
 - 被拒绝的变更命令会被丢弃，绝不入队或部分应用：运行中的
@@ -289,7 +288,8 @@ run 返回 `Err(AgentError::Cancelled)` 的 turn 根本不会被持久化，因�
   工具、自定义命令、事件观察器、扩展状态、自定义 Provider 和模型覆盖。
 - `diagnostic` 和 `diagnostic_sink` 提供类型化诊断，以及面向公共 JSON/text 边界的
   脱敏辅助。
-- `trace` 在调用方显式启用时保存最新运行的本地、已脱敏 trace envelope。
+- `evidence` 提供存储无关的证据 sink、健康状态、身份标识，以及在调用方显式启用时
+  为最新运行生成 resolved-execution manifest。
 - `streaming_proxy` 可在任意 `BufRead`/`Write` 传输上转发 JSONL 命令/事件，输出
   `proxy_ready` header，提供事件缓冲、取消，并默认脱敏常见密钥模式。
 
@@ -320,7 +320,7 @@ run 返回 `Err(AgentError::Cancelled)` 的 turn 根本不会被持久化，因�
 | `SdkCommand`、`SdkResponse`、`SDK_SCHEMA_VERSION` | 不稳定内部 | RPC/SDK 命令模型（`SDK_SCHEMA_VERSION = 3`）；`sdk` 模块标注为不稳定 0.x。 |
 | `StreamingProxy`、`ProxyConfig`、`ProxyEvent`、`ProxyHandler`、`SecretRedactor`、`StreamingProxyError` | 不稳定内部 | streaming-proxy 原语；`streaming_proxy` 模块标注为不稳定 0.x。 |
 | `Diagnostic`、`DiagnosticPayload`、`RedactionMode`、`Severity`、`redact`、`redact_text`、`DiagnosticSink`、`NullSink`、`RecordingSink` | 不稳定内部 | 运行时表面使用的诊断 payload 与 sink plumbing；当前契约是 redaction/schema-version 行为，不是稳定 API 形状。 |
-| `FileTraceSink`、`RecordingTraceSink`、`TRACE_SCHEMA_VERSION`、`TraceCollector`、`TraceError`、`TraceKind`、`TraceRecord`、`TraceSink` | 不稳定内部 | 本地 trace envelope plumbing；`trace` 模块标注为不稳定 0.x，并携带 `TRACE_SCHEMA_VERSION = 1`。 |
+| `EvidenceSink`、`EvidenceRecorder`、`InMemoryEvidenceSink`、`NoopEvidenceSink`、`EvidenceRecord`、`FinalizedManifest`、`RuntimeInputBinding`、`EvidenceHealth`、`IdentityAllocator` | 不稳定内部 | 产品中立 evidence 契约（Phase 17.3/17.6/17.7）：存储中立 sink 生命周期与已解析执行清单值类型。`evidence` 模块标注为不稳定 0.x。 |
 | `AgentState` | 不稳定内部 | 为 crate 布局与 harness 集成暴露的运行时状态持有器；不是受支持的嵌入方契约。 |
 | `Phase`、`HarnessError`、`HarnessResult`、`HarnessSnapshot`、`HarnessSession`、`SavePoint`、`PendingWriteQueue`、`PendingWrite`、`PendingWriteKind`、`SessionRepo`、`SessionFacade`、`JsonlHarnessSession`、`JsonlSessionRepo` | 不稳定内部 | 通用 session-facade/repo 编排 seam（Phase 17.2 移除了未使用的 `AgentHarness`/`HarnessRuntimeConfig` 状态持有者）。经契约测试；`harness` 模块标注为不稳定 0.x。 |
 
@@ -329,10 +329,10 @@ crate-root `pub use` 都已在上表点名。公共模块可能还会通过模�
 除非这些项在这里被点名为支持的 0.x 表面，否则它们都属于不稳定内部 0.x API。
 
 不会给出稳定 1.0 API 承诺。当前稳定性由 `AgentEvent`、`AgentSessionEvent`、
-`SessionEntry` 及 trace/hook 结果枚举上的 `#[non_exhaustive]`，以及 `sdk`、
-`streaming_proxy`、`extension` 和 `trace` 模块级的 `# Unstable` / 不稳定 0.x 说明来
+`SessionEntry` 及 evidence/hook 结果枚举上的 `#[non_exhaustive]`，以及 `sdk`、
+`streaming_proxy`、`extension` 和 `evidence` 模块级的 `# Unstable` / 不稳定 0.x 说明来
 约束。没有 `#[doc(hidden)]` 或 `#[unstable]` feature gate，因此嵌入方应固定精确
-crate 版本。本地 trace envelope 携带 `TRACE_SCHEMA_VERSION = 1`。
+crate 版本。evidence sink 生命周期是捕获契约（Phase 17.7）。
 
 ## 非目标（Non-Goals）
 
@@ -355,8 +355,8 @@ crate 维持 0.x，`harness` seam 仅为内部使用。以下明确不在范围�
 
 `agent`、`compaction`、`diagnostic`、`diagnostic_sink`、`event`、`extension`、
 `harness`、`hooks`、`loop_types`、`message`、`sdk`、`session`、`session_branch`、
-`session_context`、`session_event`、`state`、`streaming_proxy`、`tool`、`trace` 和
-`validation`。
+`session_context`、`session_event`、`state`、`streaming_proxy`、`tool`、
+`evidence` 和 `validation`。
 
 crate root 重新导出了常用运行时类型，包括 `Agent`、`Tool`、`ToolResult`、
 `ToolError`、`ExecutionMode`、`AgentHooks`、`AgentEvent`、`AgentSessionEvent`、

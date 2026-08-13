@@ -94,6 +94,12 @@ pub struct EffectiveUserPolicy {
     run_mode: ExecutionRunMode,
     mutating_allowed: bool,
     command_execute_permission: PermissionPolicy,
+    /// Phase 17.7: whether complete evidence is required. Closed mapping: absent
+    /// capture is `false` (no-op Minimal Runtime); explicit capture (CLI
+    /// `--trace`, SDK embedder, RPC recording) is `true`. Under
+    /// required-complete-evidence, an incomplete health generation fails closed
+    /// at authorization (P17-EVD-009).
+    complete_evidence_required: bool,
     digest: String,
 }
 
@@ -146,14 +152,17 @@ impl EffectiveUserPolicy {
             hasher.update(path_scope_digest.as_bytes());
             hex::encode(hasher.finalize())
         };
-        // The digest-only facts (active-tool selection, evidence-required,
-        // project trust, package activation) are folded into `digest` above and
-        // are not stored separately: the digest is the address of the snapshot.
-        let _ = (active_tool_names, complete_evidence_required);
+        // The digest-only facts (active-tool selection, project trust, package
+        // activation) are folded into `digest` above and not stored separately.
+        // `complete_evidence_required` is also folded into the digest but IS
+        // stored, because the authorization fail-closed rule (P17-EVD-009) reads
+        // it at decision time.
+        let _ = active_tool_names;
         Self {
             run_mode,
             mutating_allowed,
             command_execute_permission,
+            complete_evidence_required,
             digest,
         }
     }
@@ -161,6 +170,11 @@ impl EffectiveUserPolicy {
     /// The content-addressed digest of the immutable policy.
     pub fn digest(&self) -> &str {
         &self.digest
+    }
+
+    /// Whether complete evidence is required for the run (Phase 17.7).
+    pub fn complete_evidence_required(&self) -> bool {
+        self.complete_evidence_required
     }
 }
 
@@ -204,6 +218,17 @@ impl ToolAuthorizer for ProductToolAuthorizer {
         let policy = self.policy.clone();
         let manager = self.permission_manager.clone();
         Box::pin(async move {
+            // P17-EVD-009: under required-complete-evidence, an incomplete health
+            // generation fails closed. Unlaunched side effects are denied here;
+            // in-flight effects already crossed the launch boundary and retain
+            // their actual outcome (the loop's parallel launch boundary).
+            if policy.complete_evidence_required() && !request.evidence_health.is_healthy() {
+                return Ok(AuthorizationDecision::Deny {
+                    stable_code: "evidence_incomplete".to_owned(),
+                    redacted_reason: "complete evidence is required and evidence is incomplete"
+                        .to_owned(),
+                });
+            }
             // AUT-003/004: the decision derives only from the immutable policy +
             // the capability + the current health snapshot. The validated
             // `request.arguments` are intentionally NOT consulted for permission.

@@ -686,10 +686,6 @@ def check_current_contracts(doc_paths: list[str]) -> None:
             rust_u32("crates/opi-coding-agent/src/runner.rs", "NDJSON_SCHEMA_VERSION"),
         ),
         ("SDK_SCHEMA_VERSION", rust_u32("crates/opi-agent/src/sdk.rs", "SDK_SCHEMA_VERSION")),
-        (
-            "TRACE_SCHEMA_VERSION",
-            rust_u32("crates/opi-agent/src/trace.rs", "TRACE_SCHEMA_VERSION"),
-        ),
     ]
     for name, value in constants:
         if value is None:

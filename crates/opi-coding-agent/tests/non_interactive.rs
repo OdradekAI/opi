@@ -762,3 +762,68 @@ async fn text_surface_refuses_local_ask_at_startup_without_prompt() {
         result.stderr
     );
 }
+
+// ---------------------------------------------------------------------------
+// Phase 17 task 17.7 (P17-A10): a canary secret in the prompt must not leak
+// into non-interactive print output (stdout/stderr). The mock returns scripted
+// "done" text and never echoes the prompt, so a leak indicates a redaction
+// regression in the runner's output path.
+// ---------------------------------------------------------------------------
+#[tokio::test]
+async fn phase17_canary_is_absent_from_print_output() {
+    // Plant the canary in a bash command, which genuinely flows through the
+    // ToolExecutionEnd redaction boundary (redact_public_value scrubs the
+    // "command" key) into print stdout/stderr. A provider error body is never
+    // surfaced by print mode, so this is the real redaction surface.
+    let canary = "sk-canary-PRINT-OUTPUT-LEAK-9f8e7d6c";
+    let command = if cfg!(windows) {
+        format!("echo {canary} && exit /B 1")
+    } else {
+        format!("echo {canary}; false")
+    };
+    let args = serde_json::to_string(&serde_json::json!({ "command": command })).unwrap();
+    let provider = MockProvider::new(
+        "mock",
+        vec![
+            opi_ai::test_support::tool_call_response("tc-bash", "bash", &args),
+            test_support::text_response("done"),
+        ],
+    );
+    let workspace = tempfile::tempdir().unwrap();
+    let mut runner = NonInteractiveRunner::new_with_resume_and_runtime_packages(
+        Box::new(provider),
+        "mock-model".into(),
+        OpiConfig::default(),
+        workspace.path().to_path_buf(),
+        true, // allow_mutating: bash must be executable
+        None,
+        Vec::new(),
+        None,
+        opi_coding_agent::policy::ToolSelection::Allowlist(vec!["bash".to_owned()]),
+        RuntimePackageStartup {
+            extension_registry: ExtensionRegistry::new(),
+            installed_packages: Vec::new(),
+            diagnostics: Vec::new(),
+            trust_decision: TrustDecision::Trusted,
+        },
+        None,
+        Vec::new(),
+    )
+    .expect("non-interactive runner with bash");
+
+    let result = runner.run("run the failing command").await;
+    assert!(
+        !result.stdout.contains(canary),
+        "print stdout leaked the canary: {}",
+        result.stdout
+    );
+    assert!(
+        !result.stderr.contains(canary),
+        "print stderr leaked the canary: {}",
+        result.stderr
+    );
+    assert!(
+        !result.stderr.is_empty() || !result.stdout.is_empty(),
+        "the run must surface redacted output"
+    );
+}

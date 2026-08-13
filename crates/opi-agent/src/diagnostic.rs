@@ -309,10 +309,8 @@ pub mod code {
     pub const CODE_ADAPTER_STARTUP_FAILED: &str = "adapter_startup_failed";
     pub const CODE_ADAPTER_REGISTRATION_FAILED: &str = "adapter_registration_failed";
     pub const CODE_ADAPTER_HOST_DIAGNOSTIC: &str = "adapter_host_diagnostic";
-    /// A local trace sink failed mid-run and was disabled (fail-open).
-    pub const CODE_TRACE_SINK_FAILED: &str = "trace_sink_failed";
-    /// A requested trace could not be prepared before the run (fail-closed).
-    pub const CODE_TRACE_SETUP_FAILED: &str = "trace_setup_failed";
+    /// Evidence capture setup failed before the run (fail-closed, Phase 17.7).
+    pub const CODE_EVIDENCE_SETUP_FAILED: &str = "evidence_setup_failed";
 }
 
 /// Shared filesystem/tool-error taxonomy (Phase 11.2).
@@ -866,14 +864,14 @@ impl From<&crate::loop_types::AgentError> for Diagnostic {
             )
             .details(serde_json::json!({ "max_turns": max_turns }))
             .action("increase max_turns or narrow the task"),
-            AgentError::TraceSetup(message) => Diagnostic::new(
+            AgentError::EvidenceSetup(message) => Diagnostic::new(
                 Severity::Error,
-                code::CODE_TRACE_SETUP_FAILED,
+                code::CODE_EVIDENCE_SETUP_FAILED,
                 SOURCE_AGENT,
-                "trace setup failed",
+                "evidence setup failed",
             )
-            .details(serde_json::json!({ "trace_error": message }))
-            .action("check the trace path is writable and its parent directory exists"),
+            .details(serde_json::json!({ "evidence_error": message }))
+            .action("check the evidence capture destination is writable"),
             AgentError::RouteNotDispatchable { provider, detail } => Diagnostic::new(
                 Severity::Error,
                 code::CODE_PROVIDER_CAPABILITY_INVALID,

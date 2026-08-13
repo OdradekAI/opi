@@ -283,7 +283,6 @@ async fn stale_evidence_health_generation_yields_zero_executions() {
         steering_queue: None,
         follow_up_queue: None,
         diagnostic_sink: None,
-        trace: None,
         session_id: None,
         evidence_sink: None,
     };

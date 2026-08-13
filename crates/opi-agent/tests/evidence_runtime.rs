@@ -3,9 +3,9 @@
 //! Drives the additive `EvidenceSink` lifecycle into the Agent/`agent_loop`
 //! seam through the PUBLIC Agent: a bound `InMemoryEvidenceSink` reconstructs
 //! the ordered call graph (run/turn/call/parent/sequence correlation + CallKind)
-//! as the loop runs. This is an EXPAND substrate — the Reference Product
-//! `TraceSink` capture path is untouched (`trace_envelope.rs` stays the guard)
-//! and no file adapter/exporter/Eval is introduced.
+//! as the loop runs. This is the Agent Core evidence substrate — the legacy
+//! `TraceSink` capture path was removed in Phase 17.7 and no file
+//! adapter/exporter/Eval is introduced here.
 //!
 //! Slices: (1) a provider-only turn emits a correlated Provider record; (2) a
 //! tool call emits a Tool record parented to the provider call; (3) a retry
@@ -159,11 +159,15 @@ async fn provider_turn_emits_correlated_provider_record() {
         obj["resolved"]["model"], "mock-model",
         "resolved model route"
     );
-    // The actual route (what dispatch used) is recorded explicitly and kept
-    // distinct from requested/resolved as a field (P17-PRV-005). In the
-    // no-fallback substrate it equals the resolved route.
-    assert_eq!(obj["actual"]["provider"], "mock", "actual provider route");
-    assert_eq!(obj["actual"]["model"], "mock-model", "actual model route");
+    // The actual route is provider-reported and only known after the response;
+    // the pre-dispatch record marks it unknown (empty) rather than copying
+    // `resolved` (P17-PRV-005 / P17-EVD-004).
+    assert_eq!(obj["actual"]["provider"], "", "actual provider is unknown");
+    assert_eq!(obj["actual"]["model"], "", "actual model is unknown");
+    assert_eq!(
+        obj["actual_reason"], "not_reported",
+        "the empty actual carries a typed reason"
+    );
 
     // Sequence is strictly monotonic across emission order (P17-EVD-001).
     assert!(
@@ -353,5 +357,59 @@ async fn emission_failure_advances_health_copied_into_authorization() {
         common::RecordingTool::count_of(&count),
         0,
         "the advanced health generation (1) reaches authorization and mismatches the stale Allow (0)"
+    );
+}
+
+// ===========================================================================
+// P17-EVD-002 — post-run compaction emits a correlated Compaction record
+// ===========================================================================
+
+#[tokio::test]
+async fn compaction_emits_correlated_evidence_record() {
+    let sink = Arc::new(InMemoryEvidenceSink::new());
+    let mut agent = make_agent(
+        vec![MockResponse::Events(text_response("done"))],
+        Vec::new(),
+        None,
+        None,
+        sink.clone(),
+    );
+    let _ = agent.prompt("go").await;
+
+    // Post-run compaction (harness-side) mints a correlated Compaction record
+    // in the same run.
+    agent
+        .emit_compaction_evidence("manual")
+        .expect("compaction evidence emits");
+
+    let records = sink.records();
+    let provider = records
+        .iter()
+        .find(|r| r.kind == CallKind::Provider)
+        .expect("a Provider record is emitted");
+    let compaction = records
+        .iter()
+        .find(|r| r.kind == CallKind::Compaction)
+        .expect("a Compaction record is emitted");
+
+    // The Compaction record shares the run identity and follows the provider
+    // record in sequence order (P17-EVD-001/EVD-002).
+    assert_eq!(
+        compaction.run, provider.run,
+        "compaction shares the run identity"
+    );
+    assert!(
+        provider.sequence < compaction.sequence,
+        "compaction follows the provider record in sequence order"
+    );
+
+    // The Compaction payload is a structured value carrying the reason.
+    let value = match &compaction.payload {
+        EvidencePayload::Structured(rv) => rv.as_value(),
+        _ => panic!("compaction payload must be structured"),
+    };
+    assert_eq!(
+        value["reason"], "manual",
+        "the compaction reason is recorded"
     );
 }

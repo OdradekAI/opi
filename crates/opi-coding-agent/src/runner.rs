@@ -14,14 +14,14 @@ use opi_agent::hooks::{
 use opi_agent::loop_types::AgentError;
 use opi_agent::message::AgentMessage;
 use opi_agent::session_event::{AgentSessionEvent, SessionCostTotals, SessionTokenTotals};
-use opi_agent::{Diagnostic, FileTraceSink, RedactionMode, redact_text};
+use opi_agent::{Diagnostic, RedactionMode, redact_text};
 use opi_ai::message::InputContent;
 use opi_ai::message::Message;
 use opi_ai::provider::Provider;
 use opi_ai::stream::AssistantStreamEvent;
 
 use crate::config::OpiConfig;
-use crate::harness::{CodingHarness, ResumeInfo, TraceConfig};
+use crate::harness::{CodingHarness, ResumeInfo};
 use crate::policy::{RunMode, ToolPolicyError, ToolRuntimeConfig, ToolSelection, is_mutating_tool};
 use crate::project_trust::TrustDecision;
 use crate::runtime_packages::RuntimePackageStartup;
@@ -171,8 +171,9 @@ impl NonInteractiveRunner {
     /// Create a non-interactive runner with installed package adapters already
     /// started by runtime startup. The startup's trust decision is the single
     /// source of truth for both package and harness resource loading.
-    /// `trace_path`, when set, writes a versioned redacted trace envelope to
-    /// that file for the run (Phase 7 task 7.5).
+    /// `trace_path`, when set, activates evidence capture for the run
+    /// (evidence.jsonl + manifest.json), replacing the removed trace envelope
+    /// (Phase 17.7).
     #[allow(clippy::too_many_arguments)]
     pub fn new_with_resume_and_runtime_packages(
         provider: Box<dyn Provider>,
@@ -254,10 +255,13 @@ impl NonInteractiveRunner {
                 .startup_diagnostics(runtime_startup.diagnostics);
         }
         if let Some(path) = trace_path {
-            builder = builder.trace(Some(TraceConfig {
-                sink: Arc::new(FileTraceSink::new(path)),
-                mode: RedactionMode::Summary,
-            }));
+            // Phase 17.7: `--trace` activates the Reference Product evidence
+            // file adapter (writes evidence.jsonl + manifest.json) rather than
+            // the removed trace envelope. Complete evidence is required.
+            builder = builder.evidence(crate::evidence::EvidenceBuilderConfig {
+                recorder: Arc::new(crate::evidence::FileEvidenceSink::new(path)),
+                source: opi_agent::evidence::AssemblySource::Cli,
+            });
         }
         let harness = builder.build();
         Ok(Self {
@@ -893,7 +897,7 @@ fn exit_code_for_agent_error(error: &AgentError) -> i32 {
         AgentError::Tool(_) => ExitCode::ToolFailure as i32,
         AgentError::Hook(_)
         | AgentError::MaxTurnsExceeded(_)
-        | AgentError::TraceSetup(_)
+        | AgentError::EvidenceSetup(_)
         | AgentError::InvalidNextTurnCandidate(_)
         | AgentError::InvalidToolRegistration(_) => ExitCode::RuntimeFailure as i32,
     }

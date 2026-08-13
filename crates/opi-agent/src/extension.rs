@@ -33,16 +33,6 @@
 //!   [`ExtensionError::CommandError`]. If an extension returns an error, the
 //!   dispatch stops and the error is returned.
 //!
-//! # Skipped-Hook Trace Visibility
-//!
-//! An extension or adapter may implement only a subset of hooks. When tracing
-//! is enabled, the runtime pushes the per-run [`crate::trace::TraceCollector`]
-//! to every extension via [`Extension::set_trace_collector`] before each run so
-//! that skipped hooks (a hook the extension does not implement) can be recorded
-//! as `TraceKind::HookSkipped` records. The default implementation is a no-op;
-//! only extensions that short-circuit a hook based on their own capabilities
-//! (such as the coding agent's `ProcessAdapter`) need to override it.
-//!
 //! # State Serialization
 //!
 //! Each extension can serialize and restore its own state. Extension states
@@ -87,7 +77,6 @@ use crate::hooks::{
 use crate::loop_types::{AgentError, NextTurnState};
 use crate::message::AgentMessage;
 use crate::tool::{Tool, ToolResult};
-use crate::trace::TraceCollector;
 
 // ---------------------------------------------------------------------------
 // Error types
@@ -310,21 +299,6 @@ pub trait Extension: Send + Sync {
     ) -> Pin<Box<dyn Future<Output = Result<(), ExtensionError>> + Send + '_>> {
         Box::pin(async move { self.restore_state(state) })
     }
-
-    /// Receive the per-run trace collector, if tracing is enabled.
-    ///
-    /// Called by the runtime before each run when tracing is configured, and
-    /// with `None` when tracing is disabled or the run ends. Extensions that
-    /// can observe skipped behavior (for example, an adapter that declares
-    /// only a subset of hooks) override this to record
-    /// [`crate::trace::TraceKind::HookSkipped`] records so the spec's "adapter
-    /// implements only a subset" case is visible in trace data. The default
-    /// implementation is a no-op, so extensions that do not need trace
-    /// visibility are unaffected.
-    ///
-    /// Takes `&self` because extensions are shared (`Arc`) across runs;
-    /// implementors must use interior mutability to store the handle.
-    fn set_trace_collector(&self, _collector: Option<Arc<TraceCollector>>) {}
 }
 
 // ---------------------------------------------------------------------------
@@ -535,18 +509,6 @@ impl ExtensionRegistry {
             }
             base_sink(event);
         })
-    }
-
-    /// Push the per-run trace collector to every extension (best-effort).
-    ///
-    /// Extensions that override [`Extension::set_trace_collector`] receive the
-    /// handle; others ignore it. The runtime calls this at run start (with the
-    /// collector) and at run end / when tracing is disabled (with `None`) so
-    /// adapters cannot leak a stale collector across runs.
-    pub fn set_trace_collector(&self, collector: Option<Arc<TraceCollector>>) {
-        for ext in self.extensions.iter() {
-            ext.set_trace_collector(collector.clone());
-        }
     }
 }
 

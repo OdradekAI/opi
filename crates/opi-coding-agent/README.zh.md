@@ -116,7 +116,7 @@ opi --allow-mutating "更新 README。"
 | `--exclude-thinking` | 从导出中省略思考内容。 |
 | `--redact <summary\|verbose\|none>` | `--export-session` 的脱敏模式。 |
 | `--generate-completion <SHELL>` | 为 `bash`、`zsh`、`fish`、`powershell` 或 `elvish` 生成补全。 |
-| `--trace <PATH>` | 为非交互/JSON 运行写入可选的、已脱敏本地 trace envelope。 |
+| `--trace <PATH>` | 为非交互/JSON 运行写入可选的证据（evidence.jsonl + manifest.json）。 |
 | `-v, --verbose` | 启用调试追踪。 |
 | `doctor [--json] [--scope ...]` | 本地、无网络健康检查。 |
 | `package <add|remove|list|doctor|enable|disable>` | 管理本地/git extension package 与可执行 package 的激活状态。 |

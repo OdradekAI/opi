@@ -642,7 +642,6 @@ mod runtime_emission {
             steering_queue: None,
             follow_up_queue: None,
             diagnostic_sink: Some(sink as Arc<dyn DiagnosticSink>),
-            trace: None,
             session_id: None,
             evidence_sink: None,
         }
@@ -952,7 +951,6 @@ mod runtime_emission {
             steering_queue: None,
             follow_up_queue: None,
             diagnostic_sink: Some(sink.clone() as Arc<dyn DiagnosticSink>),
-            trace: None,
             session_id: None,
             evidence_sink: None,
         };

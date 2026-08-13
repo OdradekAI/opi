@@ -80,6 +80,7 @@ fn sample_manifest() -> FinalizedManifest {
             requested: route("anthropic", "claude"),
             resolved: route("anthropic", "claude"),
             actual: route("anthropic", "claude"),
+            actual_reason: None,
         },
         provenance: ProvenanceFacts {
             auth_source: AuthProvenanceSource::CredentialStore,

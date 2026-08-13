@@ -23,7 +23,6 @@ pub mod session_event;
 pub mod state;
 pub mod streaming_proxy;
 pub mod tool;
-pub mod trace;
 pub mod validation;
 
 mod agent_loop;
@@ -46,10 +45,6 @@ pub use streaming_proxy::{
     ProxyConfig, ProxyEvent, ProxyHandler, SecretRedactor, StreamingProxy, StreamingProxyError,
 };
 pub use tool::{ExecutionMode, Tool, ToolError, ToolResult};
-pub use trace::{
-    FileTraceSink, RecordingTraceSink, TRACE_SCHEMA_VERSION, TraceCollector, TraceError, TraceKind,
-    TraceRecord, TraceSink,
-};
 
 // Re-export provider-facing types needed at the agent boundary.
 pub use opi_ai::message::ToolDef;

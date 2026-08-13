@@ -254,7 +254,6 @@ adapter。外部 adapter 一旦被选中，任何 adapter 或协议失败都会 
 | --- | --- |
 | NDJSON | `NDJSON_SCHEMA_VERSION = 2` |
 | SDK / RPC | `SDK_SCHEMA_VERSION = 3` |
-| Trace envelope | `TRACE_SCHEMA_VERSION = 1` |
 
 精确契约以 crate 文档和实际输出的 schema/version header 为准，不能从 workspace
 包版本推断协议兼容性。

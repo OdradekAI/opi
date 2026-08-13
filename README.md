@@ -270,7 +270,6 @@ Machine-facing surfaces remain unstable 0.x contracts:
 | --- | --- |
 | NDJSON | `NDJSON_SCHEMA_VERSION = 2` |
 | SDK / RPC | `SDK_SCHEMA_VERSION = 3` |
-| Trace envelope | `TRACE_SCHEMA_VERSION = 1` |
 
 Use crate documentation and the emitted schema/version headers as the exact
 contract. Do not infer compatibility from the workspace package version.

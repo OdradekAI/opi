@@ -64,7 +64,6 @@ fn make_context(provider: MockProvider) -> AgentLoopContext {
         steering_queue: None,
         follow_up_queue: None,
         diagnostic_sink: None,
-        trace: None,
         session_id: None,
         evidence_sink: None,
     }
@@ -85,7 +84,6 @@ fn make_context_with_sink(provider: MockProvider, sink: Arc<RecordingSink>) -> A
         steering_queue: None,
         follow_up_queue: None,
         diagnostic_sink: Some(sink as Arc<dyn DiagnosticSink>),
-        trace: None,
         session_id: None,
         evidence_sink: None,
     }

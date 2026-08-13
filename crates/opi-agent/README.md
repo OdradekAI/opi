@@ -23,15 +23,15 @@ Current crate version: `0.8.0`, inherited from the workspace package version.
 JSON Schema argument validation, parallel/sequential tool execution, lifecycle
 hooks, event emission, steering/follow-up queues, session JSONL storage,
 branch reconstruction, context compaction, SDK/RPC types, extensions, local
-diagnostics, redacted trace envelopes, and streaming proxy support.
+diagnostics, redacted evidence records, and streaming proxy support.
 
 The runtime contract stays focused on the loop itself rather than adding
 workflows. Tool results carry `truncated` and tool-owned structured diagnostics,
-which the loop lifts into the shared diagnostic/trace system and exposes on
+which the loop lifts into the shared diagnostic/evidence system and exposes on
 public `ToolExecutionEnd` events while keeping provider-facing tool-result
 messages limited to LLM-visible content and failure state.
 `ProviderErrorCategory` values from `opi-ai` map into redacted diagnostics and
-trace records, provider-returned cancellations surface as `AgentError::Cancelled`,
+evidence records, provider-returned cancellations surface as `AgentError::Cancelled`,
 and retry diagnostics distinguish exhausted retry budgets from suppression
 after partial provider output. Append-only session storage carries typed
 metadata entries and branch summaries while keeping `SessionHeader::version =
@@ -153,11 +153,10 @@ Extension composition: `ExtensionRegistry::wrap_hooks` runs the base
 block; later extensions are not consulted. Extension `on_after_tool_call`
 observers cannot modify the result; only the base hook can `Replace`.
 
-When an adapter or extension implements only a subset of hooks, the skipped
-hooks are recorded as `trace::TraceKind::HookSkipped` records when verbose
-tracing is enabled. The runtime pushes the per-run `TraceCollector` to every
-extension via `Extension::set_trace_collector` before each run (and clears it
-after), so adapters that short-circuit an undeclared hook can record the skip.
+When an adapter or extension implements only a subset of hooks, the remaining
+hook methods default to no-op. (The legacy per-run `TraceCollector` /
+`Extension::set_trace_collector` hook-skip recording was removed with the trace
+contract in Phase 17.7.)
 
 ## Tool Scheduling
 
@@ -193,7 +192,7 @@ tools, and extension tools:
 | Field | Meaning |
 |---|---|
 | `content` | LLM-visible text or image output. |
-| `details` | Optional structured metadata for runtime, UI, JSON/RPC, and trace boundaries. |
+| `details` | Optional structured metadata for runtime, UI, JSON/RPC, and evidence boundaries. |
 | `is_error` | Whether the result represents a tool failure. |
 | `terminate` | Whether this result can end the run when every result in the batch also terminates. |
 | `truncated` | Whether output was shortened or bounded. |
@@ -201,7 +200,7 @@ tools, and extension tools:
 
 The agent loop reads diagnostics after `after_tool_call`, so replacement results
 can replace diagnostic context too. Each `ToolDiagnostic` is lifted into a
-shared `Diagnostic` and diagnostic-linked trace record. Public events are
+shared `Diagnostic` and diagnostic-linked evidence record. Public events are
 redacted before emission; provider requests receive only the tool result
 content, `is_error`, `truncated`, and timestamp fields through
 `opi_ai::message::ToolResultMessage`.
@@ -224,10 +223,10 @@ in-flight assistant message is discarded: it is only pushed to the message
 buffer when the stream's `Done` event arrives, so a cancel mid-stream writes
 no partial assistant message.
 
-Trace consumers must tolerate open turns on early provider exits. Provider
-failure and provider-stream cancellation may emit `TurnStarted` without a
-matching `TurnEnded`; the terminal boundary for those paths is `AgentEnd` plus
-trace `RunEnded` and the linked diagnostic.
+Consumers must tolerate open turns on early provider exits. Provider failure
+and provider-stream cancellation may emit `TurnStarted` without a matching
+`TurnEnded`; the terminal boundary for those paths is `AgentEnd` plus the
+linked diagnostic.
 
 `Agent::abort` (and the harness `cancel` / `cancel_token` helpers) cancel the
 active run's token; the token is reset before the next turn, so a cancelled
@@ -288,7 +287,7 @@ Structured `error_code` values are limited to runtime-contract failures:
 
 | `error_code` | Meaning |
 |---|---|
-| `unsupported_trace_request` | `trace` was requested when the session has no trace sink. |
+| `unsupported_trace_request` | `trace` was requested when the run has no evidence recorder. |
 | `agent_busy` | A run is already active, or a runtime-state mutation was attempted while running. |
 | `harness_unavailable` | The RPC runner has no attached `CodingHarness`. |
 | `compaction_failed` | Manual compaction returned an error. |
@@ -310,7 +309,7 @@ Command-state contract (the runtime guard, not the parse layer):
 | `compact` | manual compaction (result + diagnostic) | rejected (`cannot compact while agent is running`) |
 | `session_info` | returns model / resources / session_id | rejected (`cannot query session info while agent is running`) |
 | `extension_command` | dispatched to the registry (data / `not handled` / error) | rejected (`cannot dispatch extension command while agent is running`) |
-| `trace` | versioned redacted envelope, or `unsupported_trace_request` | allowed (per-run snapshot) |
+| `trace` | the run's evidence records, or `unsupported_trace_request` | allowed (per-run snapshot) |
 | `quit` | success + shutdown | success + shutdown (waits for an active run to clean up) |
 
 - A rejected mutating command is dropped, never queued or partially applied: a
@@ -333,8 +332,8 @@ Command-state contract (the runtime guard, not the parse layer):
   providers, and model overrides.
 - `diagnostic` and `diagnostic_sink` provide typed diagnostics with redaction
   helpers for public JSON/text boundaries.
-- `trace` stores a local, redacted trace envelope for the latest run when a
-  caller opts in.
+- `evidence` carries the storage-neutral evidence sink, health, identities, and
+  the resolved-execution manifest for the latest run when a caller opts in.
 - `streaming_proxy` forwards JSONL commands/events over arbitrary
   `BufRead`/`Write` transports, emits a `proxy_ready` header, buffers events,
   supports cancellation, and redacts common secret patterns by default.
@@ -366,7 +365,7 @@ versions and pin exact crate versions when needed.
 | `SdkCommand`, `SdkResponse`, `SDK_SCHEMA_VERSION` | unstable internal | RPC/SDK command model (`SDK_SCHEMA_VERSION = 3`); the `sdk` module marks it unstable 0.x. |
 | `StreamingProxy`, `ProxyConfig`, `ProxyEvent`, `ProxyHandler`, `SecretRedactor`, `StreamingProxyError` | unstable internal | Streaming-proxy primitives; the `streaming_proxy` module marks them unstable 0.x. |
 | `Diagnostic`, `DiagnosticPayload`, `RedactionMode`, `Severity`, `redact`, `redact_text`, `DiagnosticSink`, `NullSink`, `RecordingSink` | unstable internal | Diagnostic payload and sink plumbing used by runtime surfaces; current contract is redaction/schema-version behavior, not a stable API shape. |
-| `FileTraceSink`, `RecordingTraceSink`, `TRACE_SCHEMA_VERSION`, `TraceCollector`, `TraceError`, `TraceKind`, `TraceRecord`, `TraceSink` | unstable internal | Local trace envelope plumbing; the `trace` module marks it unstable 0.x and carries `TRACE_SCHEMA_VERSION = 1`. |
+| `EvidenceSink`, `EvidenceRecorder`, `InMemoryEvidenceSink`, `NoopEvidenceSink`, `EvidenceRecord`, `FinalizedManifest`, `RuntimeInputBinding`, `EvidenceHealth`, `IdentityAllocator` | unstable internal | Product-neutral evidence contract (Phase 17.3/17.6/17.7): storage-neutral sink lifecycle and resolved-execution manifest value types. The `evidence` module is unstable 0.x. |
 | `AgentState` | unstable internal | Runtime state holder exposed for crate layout and harness integration; not a supported embedder contract. |
 | `Phase`, `HarnessError`, `HarnessResult`, `HarnessSnapshot`, `HarnessSession`, `SavePoint`, `PendingWriteQueue`, `PendingWrite`, `PendingWriteKind`, `SessionRepo`, `SessionFacade`, `JsonlHarnessSession`, `JsonlSessionRepo` | unstable internal | Generic session-facade/repo orchestration seam (Phase 17.2 removed the unused `AgentHarness`/`HarnessRuntimeConfig` state owner). Contract-tested; the `harness` module is unstable 0.x. |
 
@@ -377,10 +376,10 @@ additional items through module paths; unless those items are named as supported
 
 There is no stable 1.0 API promise. Stability is enforced today by
 `#[non_exhaustive]` on `AgentEvent`, `AgentSessionEvent`, `SessionEntry`, and
-the trace/hook result enums, and by module-level `# Unstable` / `unstable 0.x`
-prose on `sdk`, `streaming_proxy`, `extension`, and `trace`. There is no
+the evidence/hook result enums, and by module-level `# Unstable` / `unstable 0.x`
+prose on `sdk`, `streaming_proxy`, `extension`, and `evidence`. There is no
 `#[doc(hidden)]` or `#[unstable]` feature gate, so embedders should pin exact
-crate versions. The local trace envelope carries `TRACE_SCHEMA_VERSION = 1`.
+crate versions. The evidence sink lifecycle is the capture seam (Phase 17.7).
 
 ## Non-Goals
 
@@ -407,8 +406,8 @@ remain explicitly out of scope and are not claimed:
 
 `agent`, `compaction`, `diagnostic`, `diagnostic_sink`, `event`, `extension`,
 `harness`, `hooks`, `loop_types`, `message`, `sdk`, `session`, `session_branch`,
-`session_context`, `session_event`, `state`, `streaming_proxy`, `tool`, `trace`,
-and `validation`.
+`session_context`, `session_event`, `state`, `streaming_proxy`, `tool`,
+`evidence`, and `validation`.
 
 The crate root re-exports the most common runtime types, including `Agent`,
 `Tool`, `ToolResult`, `ToolError`, `ExecutionMode`, `AgentHooks`, `AgentEvent`,

@@ -97,7 +97,6 @@ async fn image_input_to_text_only_model_fails_before_provider_call() {
         steering_queue: None,
         follow_up_queue: None,
         diagnostic_sink: None,
-        trace: None,
         session_id: None,
         evidence_sink: None,
     };

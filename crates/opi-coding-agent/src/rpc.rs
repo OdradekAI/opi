@@ -32,7 +32,7 @@
 //! | `compact`         | Trigger manual compaction                        |
 //! | `session_info`    | Query session metadata                           |
 //! | `extension_command` | Dispatch a command to registered extensions    |
-//! | `trace`           | Request the versioned redacted trace envelope    |
+//! | `trace`           | Request the run's evidence records               |
 //! | `quit`            | Shut down the RPC session                        |
 //!
 //! # Responses and Errors
@@ -76,11 +76,11 @@ use opi_agent::loop_types::AgentError;
 use opi_agent::message::AgentMessage;
 use opi_agent::sdk::{SDK_SCHEMA_VERSION, SdkCommand, SdkResponse, agent_event_to_value};
 use opi_agent::session_event::CompactionReason;
-use opi_agent::{RecordingTraceSink, RedactionMode, TRACE_SCHEMA_VERSION, redact_text};
+use opi_agent::{RedactionMode, redact_text};
 use opi_ai::provider::Provider;
 
 use crate::config::OpiConfig;
-use crate::harness::{CodingHarness, ResumeInfo, TraceConfig};
+use crate::harness::{CodingHarness, ResumeInfo};
 use crate::policy::{RunMode, ToolSelection};
 use crate::project_trust::TrustDecision;
 use crate::runner::ExitCode;
@@ -118,10 +118,10 @@ pub struct RpcRunner {
     harness: Option<CodingHarness>,
     control: AgentControl,
     running: bool,
-    /// Optional recording trace sink. When set, runs are traced and the
-    /// `trace` command returns the accumulated versioned redacted envelope;
-    /// when unset, `trace` returns a structured unsupported error.
-    trace_sink: Option<Arc<RecordingTraceSink>>,
+    /// Optional evidence recorder. When set, runs emit ordered evidence
+    /// records and the `trace` command returns them; when unset, `trace`
+    /// returns a structured unsupported error.
+    evidence_recorder: Option<Arc<dyn opi_agent::evidence::EvidenceRecorder>>,
 }
 
 impl RpcRunner {
@@ -171,7 +171,7 @@ impl RpcRunner {
         tool_selection: ToolSelection,
         user_system_prompt: Option<String>,
         initial_messages: Vec<AgentMessage>,
-        trace_sink: Option<Arc<RecordingTraceSink>>,
+        trace_sink: Option<Arc<dyn opi_agent::evidence::EvidenceRecorder>>,
         trust_decision: TrustDecision,
     ) -> Result<Self, crate::policy::ToolPolicyError> {
         Self::new_with_optional_extension_registry(
@@ -260,7 +260,7 @@ impl RpcRunner {
             Some(extension_registry),
             Some(installed_packages),
             diagnostics,
-            Some(Arc::new(RecordingTraceSink::new())),
+            Some(Arc::new(opi_agent::evidence::InMemoryEvidenceSink::new())),
             trust_decision,
             extra_routes,
         )
@@ -280,7 +280,7 @@ impl RpcRunner {
         extension_registry: Option<ExtensionRegistry>,
         installed_packages: Option<Vec<crate::package_discovery::PackageResource>>,
         startup_diagnostics: Vec<Diagnostic>,
-        trace_sink: Option<Arc<RecordingTraceSink>>,
+        trace_sink: Option<Arc<dyn opi_agent::evidence::EvidenceRecorder>>,
         trust_decision: TrustDecision,
         extra_routes: Vec<crate::provider_factory::ProviderAuthPair>,
     ) -> Result<Self, crate::policy::ToolPolicyError> {
@@ -317,11 +317,11 @@ impl RpcRunner {
         if let Some(resume_info) = resume_info {
             builder = builder.resume(resume_info);
         }
-        if let Some(sink) = trace_sink.clone() {
-            builder = builder.trace(Some(TraceConfig {
-                sink,
-                mode: RedactionMode::Summary,
-            }));
+        if let Some(recorder) = trace_sink.clone() {
+            builder = builder.evidence(crate::evidence::EvidenceBuilderConfig {
+                recorder,
+                source: opi_agent::evidence::AssemblySource::Rpc,
+            });
         }
         let harness = builder.build();
         let control = harness.control_handle();
@@ -329,7 +329,7 @@ impl RpcRunner {
             harness: Some(harness),
             control,
             running: false,
-            trace_sink,
+            evidence_recorder: trace_sink,
         })
     }
 
@@ -944,17 +944,16 @@ impl RpcRunner {
                     Err(e) => emit(&response_error(cmd_id.as_deref(), cmd_name, &e)),
                 }
             }
-            SdkCommand::trace { .. } => match &self.trace_sink {
-                Some(sink) => {
-                    // Supported path: return the versioned redacted envelope.
-                    // Records are already redacted at emit time (Summary mode).
-                    let records: Vec<serde_json::Value> = sink
-                        .snapshot()
+            SdkCommand::trace { .. } => match &self.evidence_recorder {
+                Some(recorder) => {
+                    // Supported path: return the ordered, already-redacted
+                    // evidence records captured for this RPC session.
+                    let records: Vec<serde_json::Value> = recorder
+                        .records()
                         .iter()
                         .map(|r| serde_json::to_value(r).unwrap_or(serde_json::Value::Null))
                         .collect();
                     let data = serde_json::json!({
-                        "schema_version": TRACE_SCHEMA_VERSION,
                         "records": records,
                     });
                     emit(&response_success_with_data(

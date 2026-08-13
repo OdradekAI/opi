@@ -42,9 +42,12 @@ use opi_agent::session::ModelInputSource;
 use opi_agent::session_context::reconstruct_context;
 use opi_agent::session_event::{SessionDiagnosticCounts, ThinkingLevel};
 use opi_agent::tool::Tool;
-use opi_agent::trace::TraceKind;
-use opi_agent::{Agent, DiagnosticSink, RecordingSink, TraceCollector, TraceSink};
+use opi_agent::{Agent, DiagnosticSink, RecordingSink};
 use opi_ai::message::Message;
+
+use crate::evidence::{
+    EvidenceBuilderConfig, EvidenceCapture, RunDynamicFacts, build_finalized_manifest, usage_facts,
+};
 use opi_ai::provider::{ModelInfo, Provider, ThinkingConfig};
 use serde::Serialize;
 
@@ -86,6 +89,16 @@ use crate::tool::{
     with_model_backend_enum,
 };
 use tokio::sync::mpsc;
+
+/// Map a loop result's terminal outcome to the evidence manifest outcome
+/// (Phase 17.7). Success / cancellation / failure stay distinct.
+fn evidence_outcome<T>(result: &Result<T, AgentError>) -> opi_agent::evidence::TerminalOutcome {
+    match result {
+        Ok(_) => opi_agent::evidence::TerminalOutcome::Success,
+        Err(AgentError::Cancelled) => opi_agent::evidence::TerminalOutcome::Cancelled,
+        Err(_) => opi_agent::evidence::TerminalOutcome::Failed,
+    }
+}
 
 /// Phase 16.9: resolved routed-execution inputs threaded into
 /// [`ExecutionRuntime::build`]. Production constructs this only after the early
@@ -399,19 +412,6 @@ pub struct ResumeInfo {
     pub recorded_thinking: Option<ThinkingLevel>,
 }
 
-/// Opt-in trace configuration handed to the harness (Phase 7 task 7.5).
-///
-/// When set, the harness builds a fresh [`TraceCollector`] per run over the
-/// shared `sink`, prepares it before the run (fail-closed), and finishes it
-/// after. `TraceSink::prepare` defines per-run reset semantics: file sinks
-/// truncate on each run, while recording sinks keep only the latest run.
-/// `mode` controls redaction of record details (Summary by default).
-#[derive(Clone)]
-pub struct TraceConfig {
-    pub sink: Arc<dyn TraceSink>,
-    pub mode: RedactionMode,
-}
-
 /// Coding-agent product wrapper over the generic opi-agent runtime seams.
 ///
 /// Owns coding-agent product policy (built-in file tools, CLI/project config,
@@ -446,13 +446,10 @@ pub struct CodingHarness {
     /// summary can report severity counts. `None` (the default) leaves the
     /// diagnostic sink unset, preserving pre-7.5 behavior.
     diagnostics: Option<Arc<RecordingSink>>,
-    /// Opt-in trace configuration. When set, each prompt run is traced.
-    trace: Option<TraceConfig>,
-    /// The collector prepared for the run in progress, shared with the agent
-    /// (loop records) and the harness (compaction record). `None` between runs.
-    active_trace: Option<Arc<TraceCollector>>,
-    /// Monotonic counter minting per-run trace run ids.
-    run_seq: u64,
+    /// Phase 17.7 evidence capture: the recorder + immutable run-binding static
+    /// facts used to assemble the finalized manifest. `None` is the capture-
+    /// disabled no-op (Minimal Runtime); the Agent's evidence sink stays unset.
+    evidence: Option<EvidenceCapture>,
     /// The OS-keychain-backed credential store, set by production startup.
     /// Used by the interactive loop for `/login` and `/logout`.
     pub credential_store: Option<Arc<KeychainCredentialStore>>,
@@ -678,7 +675,9 @@ pub struct CodingHarnessBuilder {
     installed_packages: Option<Vec<PackageResource>>,
     startup_diagnostics: Vec<Diagnostic>,
     record_diagnostics: bool,
-    trace: Option<TraceConfig>,
+    /// Phase 17.7: opt-in evidence capture (recorder + direct-assembly source).
+    /// `None` is the capture-disabled no-op Minimal Runtime.
+    evidence: Option<EvidenceBuilderConfig>,
     trust_decision: TrustDecision,
     execution_mode: ExecutionRunMode,
     /// Phase 17.2: collection-owned auth resolver for the active dispatch route
@@ -719,7 +718,7 @@ impl CodingHarnessBuilder {
             installed_packages: None,
             startup_diagnostics: Vec::new(),
             record_diagnostics: false,
-            trace: None,
+            evidence: None,
             trust_decision,
             execution_mode: ExecutionRunMode::Interactive,
             auth_resolver: None,
@@ -797,12 +796,14 @@ impl CodingHarnessBuilder {
         self
     }
 
-    /// Enable per-run tracing (Phase 7 task 7.5). When set, each prompt run
-    /// emits a versioned redacted trace envelope to `config.sink`. Tracing is
-    /// opt-in and fail-open; a sink prepare failure is fail-closed (the run
-    /// aborts rather than running untraced when tracing was requested).
-    pub fn trace(mut self, config: Option<TraceConfig>) -> Self {
-        self.trace = config;
+    /// Enable evidence capture (Phase 17.7). When set, each prompt run binds the
+    /// recorder as the Agent's [`opi_agent::evidence::EvidenceSink`], calls
+    /// `setup` before the run (fail-closed), and finalizes one strict
+    /// `DirectRuntimeInput`-bound manifest after the run. `source` labels the
+    /// direct-assembly origin (CLI / SDK / RPC). Absent capture is the no-op
+    /// Minimal Runtime (P17-EVD-006).
+    pub fn evidence(mut self, config: EvidenceBuilderConfig) -> Self {
+        self.evidence = Some(config);
         self
     }
 
@@ -878,7 +879,7 @@ impl CodingHarnessBuilder {
                 startup_diagnostics: self.startup_diagnostics,
                 tool_selection,
                 record_diagnostics: self.record_diagnostics,
-                trace: self.trace,
+                evidence: self.evidence,
                 trust_decision: self.trust_decision,
                 execution_mode: self.execution_mode,
                 auth_resolver: self.auth_resolver,
@@ -898,7 +899,8 @@ struct HarnessBuildOptions {
     startup_diagnostics: Vec<Diagnostic>,
     tool_selection: ToolSelection,
     record_diagnostics: bool,
-    trace: Option<TraceConfig>,
+    /// Phase 17.7: opt-in evidence capture (recorder + direct-assembly source).
+    evidence: Option<EvidenceBuilderConfig>,
     trust_decision: TrustDecision,
     /// Phase 16.9: the run mode threaded into `ExecutionRuntime::build`.
     /// Legacy constructors derive interactive/non-interactive from tool config;
@@ -926,7 +928,7 @@ impl Default for HarnessBuildOptions {
             startup_diagnostics: Vec::new(),
             tool_selection: ToolSelection::Default,
             record_diagnostics: false,
-            trace: None,
+            evidence: None,
             trust_decision: TrustDecision::Undecided,
             execution_mode: ExecutionRunMode::Interactive,
             auth_resolver: None,
@@ -1300,13 +1302,20 @@ impl CodingHarness {
             active_tool_names,
             mutating_allowed,
             command_execute_permission,
-            false, // complete_evidence_required: 17.4 wires no evidence capture (17.6/17.7)
+            // P17-EVD-006/009: complete evidence is required iff capture is
+            // configured (CLI --trace / SDK embedder / RPC recording). The
+            // closed mapping adds no config key; absent capture is the no-op
+            // Minimal Runtime (complete_evidence_required = false).
+            build_options.evidence.is_some(),
             crate::tool_authority::digest_of(&format!("{:?}", build_options.trust_decision)),
             crate::tool_authority::digest_of(&format!("{:?}", build_options.installed_packages)),
             // Path/operation-scope fact: the workspace boundary anchor. A finer
             // protected-path/workspace-scope digest can refine this in a later task.
             crate::tool_authority::digest_of(&workspace_root.to_string_lossy()),
         ));
+        // Capture the policy digest before it moves into the authorizer; the
+        // evidence manifest addresses the effective policy by this digest.
+        let evidence_policy_digest_hex = effective_policy.digest().to_owned();
         let authorizer = Arc::new(crate::tool_authority::ProductToolAuthorizer::new(
             effective_policy,
             permission_manager.clone(),
@@ -1485,7 +1494,46 @@ impl CodingHarness {
         } else {
             None
         };
-        let trace = build_options.trace;
+
+        // Phase 17.7: assemble the evidence capture (recorder + immutable
+        // run-binding static facts) and bind the recorder as the Agent's
+        // EvidenceSink so the loop emits through it. Absent capture leaves the
+        // sink unset (Minimal Runtime no-op, P17-EVD-006).
+        let evidence = build_options.evidence.map(|cfg| {
+            let harness_digest = opi_agent::evidence::ContentDigest::from_hex(
+                crate::tool_authority::digest_of(&format!("system+model|{system_prompt}|{model}")),
+            );
+            let runtime_digest = opi_agent::evidence::ContentDigest::from_hex(
+                crate::tool_authority::digest_of(&format!(
+                    "max_turns={}|retry={:?}",
+                    config.defaults.max_iterations, config.retry
+                )),
+            );
+            let adapter_digest = opi_agent::evidence::ContentDigest::from_hex(
+                crate::tool_authority::digest_of(&format!("active_provider|{active_provider_id}")),
+            );
+            let material_digest = opi_agent::evidence::ContentDigest::from_hex(
+                crate::tool_authority::digest_of(&format!("execution|{:?}", config.execution)),
+            );
+            let config_identity = opi_agent::evidence::ConfigIdentity {
+                harness_digest,
+                runtime_digest,
+                adapter_digest,
+                material_digest,
+            };
+            let material_inputs = format!("{system_prompt}\n{model}\n{evidence_policy_digest_hex}");
+            let capture = EvidenceCapture::new(
+                cfg.recorder,
+                cfg.source,
+                opi_agent::evidence::ContentDigest::from_hex(evidence_policy_digest_hex),
+                config_identity,
+                &material_inputs,
+            );
+            // The recorder is also the Agent's evidence sink (EvidenceRecorder
+            // is a sub-trait of EvidenceSink), so the loop emits through it.
+            agent.set_evidence_sink(Some(capture.recorder.clone()));
+            capture
+        });
 
         let mut harness = Self {
             agent,
@@ -1499,9 +1547,7 @@ impl CodingHarness {
             pending_images: Vec::new(),
             pending_extension_state: resume_extension_state,
             diagnostics,
-            trace,
-            active_trace: None,
-            run_seq: 0,
+            evidence,
             credential_store: None,
             oauth_registry: None,
             oauth_endpoints: OAuthEndpointConfig::production(),
@@ -2081,23 +2127,25 @@ impl CodingHarness {
     /// Send a user prompt and run the agent loop.
     pub async fn prompt(&mut self, text: &str) -> Result<Vec<AgentMessage>, AgentError> {
         self.restore_pending_extension_state().await;
-        self.prepare_trace_run()?;
+        self.setup_evidence_run()?;
         // C5: discard any unpersisted failed-turn user message before starting
         // a fresh turn so it is not absorbed into this turn's persistence slice.
         // (retry_last_prompt intentionally does NOT rewind — it reuses the
         // failed-turn user message after an interactive login.)
         self.agent.rewind_to(self.turn_offset);
         let offset = self.turn_offset;
-        let messages = match self.agent.prompt(text).await {
+        let result = self.agent.prompt(text).await;
+        let outcome = evidence_outcome(&result);
+        let messages = match result {
             Ok(m) => m,
             Err(e) => {
-                self.finish_trace_run();
+                self.finalize_evidence_run(outcome, &[], text);
                 return Err(e);
             }
         };
         let new = &messages[offset..];
         self.persist_turn(new, offset).await;
-        self.finish_trace_run();
+        self.finalize_evidence_run(outcome, new, text);
         let final_messages = self.current_messages();
         self.turn_offset = final_messages.len();
         Ok(final_messages)
@@ -2110,21 +2158,24 @@ impl CodingHarness {
         content: Vec<opi_ai::message::InputContent>,
     ) -> Result<Vec<AgentMessage>, AgentError> {
         self.restore_pending_extension_state().await;
-        self.prepare_trace_run()?;
+        self.setup_evidence_run()?;
         // C5: discard any unpersisted failed-turn user message before starting a
         // fresh turn (see `prompt`).
         self.agent.rewind_to(self.turn_offset);
         let offset = self.turn_offset;
-        let messages = match self.agent.prompt_with_content(content).await {
+        let prompt_text = Self::render_input_content(&content);
+        let result = self.agent.prompt_with_content(content).await;
+        let outcome = evidence_outcome(&result);
+        let messages = match result {
             Ok(m) => m,
             Err(e) => {
-                self.finish_trace_run();
+                self.finalize_evidence_run(outcome, &[], &prompt_text);
                 return Err(e);
             }
         };
         let new = &messages[offset..];
         self.persist_turn(new, offset).await;
-        self.finish_trace_run();
+        self.finalize_evidence_run(outcome, new, &prompt_text);
         let final_messages = self.current_messages();
         self.turn_offset = final_messages.len();
         Ok(final_messages)
@@ -2136,18 +2187,21 @@ impl CodingHarness {
     /// in the agent's message list, so re-prompting would duplicate it.
     pub async fn retry_last_prompt(&mut self) -> Result<Vec<AgentMessage>, AgentError> {
         self.restore_pending_extension_state().await;
-        self.prepare_trace_run()?;
+        self.setup_evidence_run()?;
         let offset = self.turn_offset;
-        let messages = match self.agent.retry_last_turn().await {
+        let prompt_text = Self::last_user_prompt_text(&self.agent.messages_snapshot());
+        let result = self.agent.retry_last_turn().await;
+        let outcome = evidence_outcome(&result);
+        let messages = match result {
             Ok(m) => m,
             Err(e) => {
-                self.finish_trace_run();
+                self.finalize_evidence_run(outcome, &[], &prompt_text);
                 return Err(e);
             }
         };
         let new = &messages[offset..];
         self.persist_turn(new, offset).await;
-        self.finish_trace_run();
+        self.finalize_evidence_run(outcome, new, &prompt_text);
         let final_messages = self.current_messages();
         self.turn_offset = final_messages.len();
         Ok(final_messages)
@@ -2156,18 +2210,20 @@ impl CodingHarness {
     /// Continue the conversation with an additional message.
     pub async fn continue_(&mut self, text: &str) -> Result<Vec<AgentMessage>, AgentError> {
         self.restore_pending_extension_state().await;
-        self.prepare_trace_run()?;
+        self.setup_evidence_run()?;
         let offset = self.turn_offset;
-        let messages = match self.agent.continue_(text).await {
+        let result = self.agent.continue_(text).await;
+        let outcome = evidence_outcome(&result);
+        let messages = match result {
             Ok(m) => m,
             Err(e) => {
-                self.finish_trace_run();
+                self.finalize_evidence_run(outcome, &[], text);
                 return Err(e);
             }
         };
         let new = &messages[offset..];
         self.persist_turn(new, offset).await;
-        self.finish_trace_run();
+        self.finalize_evidence_run(outcome, new, text);
         let final_messages = self.current_messages();
         self.turn_offset = final_messages.len();
         Ok(final_messages)
@@ -2251,6 +2307,10 @@ impl CodingHarness {
             if let Some(reason) = compaction_reason {
                 self.agent
                     .emit_event(AgentEvent::CompactionStart { reason });
+                // Emit a correlated Compaction evidence record in the run's
+                // graph (P17-EVD-002: compaction retains run/turn/call
+                // correlation and kind).
+                let _ = self.agent.emit_compaction_evidence(&format!("{reason:?}"));
                 match session.execute_compaction(reason) {
                     Ok(Some(out)) => {
                         let wire = to_wire_result(&out);
@@ -2331,73 +2391,137 @@ impl CodingHarness {
         self.agent.messages_snapshot()
     }
 
-    // -- Phase 7 task 7.5: per-run trace bracketing + diagnostic counts -----
+    // -- Per-run setup: diagnostic reset + evidence capture -----------------
 
-    fn next_run_id(&mut self) -> String {
-        let id = format!("run-{}", self.run_seq);
-        self.run_seq += 1;
-        id
-    }
-
-    /// Build and prepare (fail-closed) a per-run trace collector when tracing
-    /// is configured, and hand it to the agent so the loop emits records.
-    /// Fail-closed: a prepare error aborts the run as `AgentError::TraceSetup`
-    /// rather than running untraced. No-op when tracing is not configured.
-    fn prepare_trace_run(&mut self) -> Result<(), AgentError> {
-        // Reset the per-run diagnostic buffer so run-summary counts reflect
-        // only the current run. RPC shares one harness (and one recording
-        // sink) across multiple prompt/continue runs in a session.
+    /// Reset the per-run diagnostic buffer so run-summary counts reflect only
+    /// the current run (RPC shares one harness and one recording sink across
+    /// prompt/continue runs in a session). No-op when no recording sink is
+    /// attached.
+    fn clear_run_diagnostics(&self) {
         if let Some(sink) = &self.diagnostics {
             sink.clear();
         }
-        let Some(config) = self.trace.clone() else {
-            // Clear any stale collector left on the agent from a prior run.
-            self.agent.set_trace_collector(None);
-            if let Some(registry) = &self.extension_registry {
-                registry.set_trace_collector(None);
-            }
-            return Ok(());
-        };
-        let run_id = self.next_run_id();
-        let diagnostics = self
-            .diagnostics
-            .clone()
-            .map(|sink| sink as Arc<dyn DiagnosticSink>);
-        let collector = TraceCollector::new(run_id, config.mode, config.sink, diagnostics);
-        collector
-            .prepare()
-            .map_err(|e| AgentError::TraceSetup(e.to_string()))?;
-        let collector = Arc::new(collector);
-        self.agent.set_trace_collector(Some(collector.clone()));
-        if let Some(registry) = &self.extension_registry {
-            registry.set_trace_collector(Some(collector.clone()));
+    }
+
+    /// Prepare the evidence sink before the run (fail-closed). A setup failure
+    /// aborts the run as `AgentError::EvidenceSetup` before its first
+    /// provider/tool call so the run never starts with unprepared capture
+    /// (P17-EVD-007). No-op when capture is not configured.
+    fn setup_evidence_run(&self) -> Result<(), AgentError> {
+        self.clear_run_diagnostics();
+        if let Some(capture) = &self.evidence {
+            capture
+                .recorder
+                .setup(&capture.binding)
+                .map_err(|e| AgentError::EvidenceSetup(e.to_string()))?;
         }
-        self.active_trace = Some(collector);
         Ok(())
     }
 
-    /// Finish the active run's collector (best-effort) and detach it from the
-    /// agent. Safe to call when no collector is active.
-    fn finish_trace_run(&mut self) {
-        if let Some(collector) = self.active_trace.take() {
-            collector.finish();
+    /// Finalize the evidence run after the loop returns. Assembles the strict
+    /// manifest from the recorder's ordered records (call-graph correlation +
+    /// route) plus the run's terminal `outcome` and finalizes it through the
+    /// sink. If any lifecycle phase failed, or no provider call emitted
+    /// evidence, the manifest is withheld (P17-EVD-008); the actual execution
+    /// outcome is already preserved. `prompt_text` addresses the prompt digest.
+    fn finalize_evidence_run(
+        &mut self,
+        outcome: opi_agent::evidence::TerminalOutcome,
+        messages: &[AgentMessage],
+        prompt_text: &str,
+    ) {
+        let Some(capture) = self.evidence.as_ref() else {
+            return;
+        };
+        let recorder = capture.recorder.clone();
+        // A failed setup/emission phase withholds the manifest (P17-EVD-008).
+        if recorder.has_failure() {
+            return;
         }
-        self.agent.set_trace_collector(None);
-        if let Some(registry) = &self.extension_registry {
-            registry.set_trace_collector(None);
+        let records = recorder.records();
+        if records.is_empty() {
+            // No provider call emitted evidence: there is no graph to finalize.
+            return;
         }
+        let (input_tokens, output_tokens) = Self::reported_token_usage(messages);
+        let usage = usage_facts(input_tokens, output_tokens);
+        let session_branch = self
+            .session
+            .as_ref()
+            .map(|s| opi_agent::evidence::SessionBranchRef::new(s.session_id().to_owned()));
+        let prompt_digest = opi_agent::evidence::ContentDigest::from_hex(
+            crate::tool_authority::digest_of(prompt_text),
+        );
+        let dynamic = RunDynamicFacts {
+            outcome,
+            usage,
+            session_branch,
+            prompt_digest,
+        };
+        let manifest = build_finalized_manifest(capture, &records, dynamic);
+        // The strict completeness gate withholds an incomplete manifest rather
+        // than finalizing one with a missing/wrong binding (P17-EVD-003).
+        if manifest.require_complete().is_err() {
+            return;
+        }
+        // A finalization failure marks the run incomplete (manifest withheld);
+        // the run's actual outcome is already preserved (P17-EVD-008).
+        let _ = recorder.finalize_run(&manifest);
     }
 
-    /// Mirror a diagnostic into the active run's trace as a diagnostic-linked
-    /// record (fail-open). Used by harness-owned events (e.g. compaction) that
-    /// do not flow through the agent loop's own observe() path.
-    fn trace_diagnostic(&self, diagnostic: &Diagnostic) {
-        if let Some(collector) = &self.active_trace {
-            collector
-                .record(diagnostic.source, TraceKind::DiagnosticLinked)
-                .severity(diagnostic.severity)
-                .diagnostic_code(diagnostic.code)
-                .emit();
+    /// Render user input content to a stable prompt-identity string (text parts
+    /// joined; images addressed by a placeholder). This addresses the
+    /// runtime-input binding digest for content-based prompts without embedding
+    /// raw image data.
+    fn render_input_content(content: &[opi_ai::message::InputContent]) -> String {
+        content
+            .iter()
+            .map(|c| match c {
+                opi_ai::message::InputContent::Text { text } => text.clone(),
+                opi_ai::message::InputContent::Image { .. } => "[image]".to_owned(),
+                _ => "[unknown]".to_owned(),
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    /// The last user message's rendered content, used to address the
+    /// runtime-input binding digest when retrying a prior prompt (no new user
+    /// text is supplied).
+    fn last_user_prompt_text(messages: &[AgentMessage]) -> String {
+        messages
+            .iter()
+            .rev()
+            .find_map(|m| match m {
+                AgentMessage::Llm(opi_ai::message::Message::User(u)) => {
+                    Some(Self::render_input_content(&u.content))
+                }
+                _ => None,
+            })
+            .unwrap_or_default()
+    }
+
+    /// Aggregate provider-reported token usage across a turn's assistant
+    /// messages. Returns `None` for input/output when no message reported usage,
+    /// so an unknown measurement stays distinct from a measured zero
+    /// (P17-EVD-004).
+    fn reported_token_usage(messages: &[AgentMessage]) -> (Option<u64>, Option<u64>) {
+        let mut input: u64 = 0;
+        let mut output: u64 = 0;
+        let mut any_reported = false;
+        for m in messages {
+            if let AgentMessage::Llm(Message::Assistant(a)) = m
+                && a.usage.is_reported()
+            {
+                any_reported = true;
+                input = input.saturating_add(a.usage.input_tokens as u64);
+                output = output.saturating_add(a.usage.output_tokens as u64);
+            }
+        }
+        if any_reported {
+            (Some(input), Some(output))
+        } else {
+            (None, None)
         }
     }
 
@@ -2405,7 +2529,6 @@ impl CodingHarness {
         if let Some(sink) = &self.diagnostics {
             sink.record(diagnostic.clone());
         }
-        self.trace_diagnostic(&diagnostic);
     }
 
     /// Severity counts captured during the most recent run, when diagnostic
@@ -2606,6 +2729,8 @@ impl CodingHarness {
                 let diagnostic = out.diagnostic.clone();
                 self.record_harness_diagnostic(diagnostic.clone());
                 self.agent.replace_messages(out.new_agent_messages);
+                // Emit a correlated Compaction evidence record (P17-EVD-002).
+                let _ = self.agent.emit_compaction_evidence(&format!("{reason:?}"));
                 Ok((Some(wire), diagnostic))
             }
             None => {

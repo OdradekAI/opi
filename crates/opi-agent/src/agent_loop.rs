@@ -21,7 +21,6 @@ use crate::hooks::{
 use crate::loop_types::{AgentError, AgentLoopConfig, AgentLoopContext, NextTurnState};
 use crate::message::AgentMessage;
 use crate::tool::{ExecutionMode, ToolDiagnostic, ToolResult};
-use crate::trace::{TraceCollector, TraceKind};
 use crate::validation;
 
 /// Run the agent loop until completion or cancellation.
@@ -36,11 +35,12 @@ use crate::validation;
 /// atomically applies it, and only then lets `should_stop_after_turn` observe
 /// the applied state before any steering/follow-up polling.
 ///
-/// When `context.trace` is `Some`, the loop emits versioned, redacted trace
-/// records (run/turn/provider/tool/diagnostic-linked). Tracing is fail-open: a
-/// trace sink write failure never aborts the run. The collector must be
-/// prepared by the caller before the loop runs (fail-closed is the caller's
-/// responsibility).
+/// When `context.evidence_sink` is `Some`, the loop emits ordered, redacted
+/// evidence records (provider/tool/retry) over stable run/turn/call identities
+/// (Phase 17.6). An emission failure advances the run's versioned evidence
+/// health (fail-open for the run; the authorizer then fails closed under a
+/// complete-evidence policy). Evidence setup and run finalization are the
+/// caller's responsibility.
 pub async fn agent_loop(
     context: AgentLoopContext,
     config: AgentLoopConfig,
@@ -48,12 +48,24 @@ pub async fn agent_loop(
     events: AgentEventSink,
     cancel: CancellationToken,
 ) -> Result<NextTurnState, AgentError> {
+    let (state, _) = agent_loop_with_identities(context, config, hooks, events, cancel).await?;
+    Ok(state)
+}
+
+/// Loop entry that also returns the run's identity allocator, so the Agent can
+/// persist it for post-run compaction correlation (P17-EVD-002).
+pub(crate) async fn agent_loop_with_identities(
+    context: AgentLoopContext,
+    config: AgentLoopConfig,
+    hooks: &dyn AgentHooks,
+    events: AgentEventSink,
+    cancel: CancellationToken,
+) -> Result<(NextTurnState, crate::evidence::IdentityAllocator), AgentError> {
     // Clone the sink/collector/collection handles up front (before any partial
     // move out of `context`) so every failure path below can record an
     // observation and prepare the next route. `None` means emission is disabled
     // and nothing below observes any behavior change.
     let diagnostic_sink = context.diagnostic_sink.clone();
-    let trace = context.trace.clone();
     let collection = context.collection.clone();
     let registry = context.registry.clone();
     let authorizer = context.authorizer.clone();
@@ -70,24 +82,18 @@ pub async fn agent_loop(
     let mut state = context.state;
 
     emit_public_event(&events, AgentEvent::AgentStart);
-    trace_run(&trace, TraceKind::RunStarted);
 
     let mut has_tools_pending = false;
     for turn_idx in 0..config.max_turns {
         let turn_id = format!("t{turn_idx}");
         let turn = identities.next_turn();
         if cancel.is_cancelled() {
-            observe(
-                &diagnostic_sink,
-                &trace,
-                cancelled_diagnostic("before_turn"),
-            );
-            emit_agent_end(&events, &trace, &state.context);
+            observe(&diagnostic_sink, cancelled_diagnostic("before_turn"));
+            emit_agent_end(&events, &state.context);
             return Err(AgentError::Cancelled);
         }
 
         emit_public_event(&events, AgentEvent::TurnStart);
-        trace_turn(&trace, TraceKind::TurnStarted, &turn_id);
 
         let transformed = hooks
             .transform_context(state.context.clone(), cancel.clone())
@@ -131,19 +137,19 @@ pub async fn agent_loop(
             Ok(prepared) => prepared,
             Err(e) => {
                 let err = map_collection_error(e);
-                observe_provider_failure(&diagnostic_sink, &trace, &err, &turn_id);
-                emit_agent_end(&events, &trace, &state.context);
+                observe_provider_failure(&diagnostic_sink, &err, &turn_id);
+                emit_agent_end(&events, &state.context);
                 return Err(err);
             }
         };
 
         // The prepared call resolves the one immutable provider route reused
         // across retries. Allocate its call identity and emit a Provider record
-        // carrying the requested/resolved/actual route facts (P17-EVD-002 /
-        // P17-PRV-005, Phase 17.6). The actual route equals the resolved route:
-        // the substrate has no provider fallback, so start_attempt dispatches
-        // exactly the prepared route (a future fallback path would record a
-        // distinct actual after the stream).
+        // carrying the requested/resolved route facts (P17-EVD-002 / P17-PRV-005,
+        // Phase 17.6). The actual route is provider-reported and only known after
+        // the response; the pre-dispatch record marks it unknown rather than
+        // copying `resolved`, so a real divergence (if the provider ever reports
+        // a different model/wire) is not silently normalized away (P17-EVD-004).
         let resolved_route = prepared.route();
         let provider_call = identities.next_call();
         emit_evidence(
@@ -164,10 +170,19 @@ pub async fn agent_loop(
                         "wire": resolved_route.wire_api,
                     },
                     "actual": {
-                        "provider": resolved_route.provider_id,
-                        "model": resolved_route.model_id,
+                        "provider": "",
+                        "model": "",
                         "wire": resolved_route.wire_api,
-                    }
+                    },
+                    // The actual route is provider-reported and only known after
+                    // the response; the pre-dispatch record carries a typed
+                    // not-reported reason rather than a bare empty.
+                    "actual_reason": "not_reported",
+                    // Non-secret auth source + fallback classification from the
+                    // resolved authentication (P17-PRV-005): the manifest must
+                    // distinguish the real source instead of assuming Static.
+                    "auth_source": auth_source_token(&prepared.auth_provenance().source),
+                    "fallback": auth_fallback_token(&prepared.auth_provenance().fallback),
                 }),
                 crate::diagnostic::RedactionMode::Summary,
             )),
@@ -180,22 +195,17 @@ pub async fn agent_loop(
         let mut terminal_assistant: Option<AgentMessage> = None;
 
         'stream: loop {
-            trace_provider(&trace, TraceKind::ProviderRequest, &turn_id);
             let mut stream = match prepared.start_attempt() {
                 Ok(stream) => stream,
                 Err(CollectionError::CallCancelled) => {
-                    observe(
-                        &diagnostic_sink,
-                        &trace,
-                        cancelled_diagnostic("during_prepare"),
-                    );
-                    emit_agent_end(&events, &trace, &state.context);
+                    observe(&diagnostic_sink, cancelled_diagnostic("during_prepare"));
+                    emit_agent_end(&events, &state.context);
                     return Err(AgentError::Cancelled);
                 }
                 Err(e) => {
                     let err = map_collection_error(e);
-                    observe_provider_failure(&diagnostic_sink, &trace, &err, &turn_id);
-                    emit_agent_end(&events, &trace, &state.context);
+                    observe_provider_failure(&diagnostic_sink, &err, &turn_id);
+                    emit_agent_end(&events, &state.context);
                     return Err(err);
                 }
             };
@@ -213,10 +223,9 @@ pub async fn agent_loop(
                     _ = cancel.cancelled() => {
                         observe(
                             &diagnostic_sink,
-                            &trace,
                             cancelled_diagnostic("during_stream"),
                         );
-                        emit_agent_end(&events, &trace, &state.context);
+                        emit_agent_end(&events, &state.context);
                         return Err(AgentError::Cancelled);
                     }
                     item = stream.next() => item,
@@ -240,7 +249,6 @@ pub async fn agent_loop(
                                     message: agent_msg.clone(),
                                 },
                             );
-                            trace_provider(&trace, TraceKind::ProviderStreamCompletion, &turn_id);
 
                             state.context.push(agent_msg.clone());
 
@@ -309,7 +317,6 @@ pub async fn agent_loop(
                                                     &state.context,
                                                     cancel.clone(),
                                                     &diagnostic_sink,
-                                                    &trace,
                                                     &turn_id,
                                                 )
                                                 .await
@@ -319,7 +326,6 @@ pub async fn agent_loop(
                                                     &parsed.tool_call.name,
                                                     &parse_error,
                                                     &diagnostic_sink,
-                                                    &trace,
                                                     &turn_id,
                                                 ),
                                                 None,
@@ -385,7 +391,6 @@ pub async fn agent_loop(
                                             let messages = &state.context;
                                             let cancel = cancel.clone();
                                             let diagnostic_sink = diagnostic_sink.clone();
-                                            let trace = trace.clone();
                                             let turn_id = turn_id.clone();
                                             async move {
                                                 match parsed.parsed_args.clone() {
@@ -401,7 +406,6 @@ pub async fn agent_loop(
                                                             messages,
                                                             cancel,
                                                             &diagnostic_sink,
-                                                            &trace,
                                                             &turn_id,
                                                         )
                                                         .await
@@ -411,7 +415,6 @@ pub async fn agent_loop(
                                                             &parsed.tool_call.name,
                                                             &parse_error,
                                                             &diagnostic_sink,
-                                                            &trace,
                                                             &turn_id,
                                                         ),
                                                         None,
@@ -519,7 +522,6 @@ pub async fn agent_loop(
                                         tool_results: tool_results.clone(),
                                     },
                                 );
-                                trace_turn(&trace, TraceKind::TurnEnded, &turn_id);
 
                                 turn_tool_results = tool_results;
                                 turn_terminate = all_terminate;
@@ -534,7 +536,6 @@ pub async fn agent_loop(
                                     tool_results: vec![],
                                 },
                             );
-                            trace_turn(&trace, TraceKind::TurnEnded, &turn_id);
 
                             terminal_assistant = Some(agent_msg);
                             break 'stream;
@@ -562,10 +563,8 @@ pub async fn agent_loop(
                                     error_message: e.to_string(),
                                 },
                             );
-                            trace_provider(&trace, TraceKind::ProviderRetry, &turn_id);
                             observe(
                                 &diagnostic_sink,
-                                &trace,
                                 Diagnostic::new(
                                     Severity::Warning,
                                     CODE_PROVIDER_RETRY_ATTEMPT,
@@ -584,10 +583,9 @@ pub async fn agent_loop(
                                 _ = cancel.cancelled() => {
                                     observe(
                                         &diagnostic_sink,
-                                        &trace,
                                         cancelled_diagnostic("during_retry_sleep"),
                                     );
-                                    emit_agent_end(&events, &trace, &state.context);
+                                    emit_agent_end(&events, &state.context);
                                     return Err(AgentError::Cancelled);
                                 }
                                 _ = tokio::time::sleep(
@@ -635,7 +633,6 @@ pub async fn agent_loop(
                             if retry_suppressed_after_partial_output {
                                 observe(
                                     &diagnostic_sink,
-                                    &trace,
                                     Diagnostic::new(
                                         Severity::Warning,
                                         CODE_PROVIDER_RETRY_SUPPRESSED_AFTER_PARTIAL_OUTPUT,
@@ -650,7 +647,6 @@ pub async fn agent_loop(
                             } else {
                                 observe(
                                     &diagnostic_sink,
-                                    &trace,
                                     Diagnostic::new(
                                         Severity::Error,
                                         CODE_PROVIDER_RETRY_EXHAUSTED,
@@ -669,9 +665,8 @@ pub async fn agent_loop(
                         // The underlying provider error is classified regardless of whether
                         // retries were attempted, so callers see what actually failed.
                         let err = classify_provider_error(&e);
-                        observe(&diagnostic_sink, &trace, Diagnostic::from(&e));
-                        trace_provider(&trace, TraceKind::ProviderFailure, &turn_id);
-                        emit_agent_end(&events, &trace, &state.context);
+                        observe(&diagnostic_sink, Diagnostic::from(&e));
+                        emit_agent_end(&events, &state.context);
                         return Err(err);
                     }
                 }
@@ -688,7 +683,6 @@ pub async fn agent_loop(
                 );
                 observe(
                     &diagnostic_sink,
-                    &trace,
                     Diagnostic::new(
                         Severity::Info,
                         CODE_PROVIDER_RETRY_SUCCEEDED,
@@ -715,7 +709,6 @@ pub async fn agent_loop(
             );
             observe(
                 &diagnostic_sink,
-                &trace,
                 Diagnostic::new(
                     Severity::Info,
                     CODE_PROVIDER_RETRY_SUCCEEDED,
@@ -730,8 +723,8 @@ pub async fn agent_loop(
         // stream ended without one (e.g. only non-terminal deltas) there is no
         // outcome to build a candidate from; preserve state and stop.
         let Some(terminal_msg) = terminal_assistant else {
-            emit_agent_end(&events, &trace, &state.context);
-            return Ok(state);
+            emit_agent_end(&events, &state.context);
+            return Ok((state, identities));
         };
 
         // Construct the candidate next-turn state away from live state, validate
@@ -754,7 +747,7 @@ pub async fn agent_loop(
                         "prepared model selection '{}' does not resolve to a route",
                         candidate.model_selection.to_spec()
                     ));
-                    emit_agent_end(&events, &trace, &state.context);
+                    emit_agent_end(&events, &state.context);
                     return Err(err);
                 }
                 state = candidate;
@@ -762,7 +755,7 @@ pub async fn agent_loop(
             }
             Ok(None) => {}
             Err(e) => {
-                emit_agent_end(&events, &trace, &state.context);
+                emit_agent_end(&events, &state.context);
                 return Err(e);
             }
         }
@@ -775,8 +768,8 @@ pub async fn agent_loop(
             tool_results: turn_tool_results,
         };
         if turn_terminate || hooks.should_stop_after_turn(stop_ctx).await {
-            emit_agent_end(&events, &trace, &state.context);
-            return Ok(state);
+            emit_agent_end(&events, &state.context);
+            return Ok((state, identities));
         }
 
         // Queue input is applied only after the stop decision permits polling;
@@ -831,12 +824,12 @@ pub async fn agent_loop(
     // loop alive), completes normally.
     if has_tools_pending {
         let err = AgentError::MaxTurnsExceeded(config.max_turns);
-        observe(&diagnostic_sink, &trace, Diagnostic::from(&err));
-        emit_agent_end(&events, &trace, &state.context);
+        observe(&diagnostic_sink, Diagnostic::from(&err));
+        emit_agent_end(&events, &state.context);
         return Err(err);
     }
-    emit_agent_end(&events, &trace, &state.context);
-    Ok(state)
+    emit_agent_end(&events, &state.context);
+    Ok((state, identities))
 }
 
 /// Classify a provider stream error into the typed [`AgentError`] it maps to.
@@ -883,13 +876,11 @@ fn map_collection_error(e: CollectionError) -> AgentError {
     }
 }
 
-/// Observe a provider-route/preparation failure as both a diagnostic and a
-/// provider failure trace record.
+/// Observe a provider-route/preparation failure as a diagnostic.
 fn observe_provider_failure(
     sink: &Option<Arc<dyn DiagnosticSink>>,
-    trace: &Option<Arc<TraceCollector>>,
     err: &AgentError,
-    turn_id: &str,
+    _turn_id: &str,
 ) {
     let detail = err.to_string();
     let severity = match err {
@@ -898,7 +889,6 @@ fn observe_provider_failure(
     };
     observe(
         sink,
-        trace,
         Diagnostic::new(
             severity,
             CODE_PROVIDER_CAPABILITY_INVALID,
@@ -906,7 +896,6 @@ fn observe_provider_failure(
             detail,
         ),
     );
-    trace_provider(trace, TraceKind::ProviderFailure, turn_id);
 }
 
 fn process_stream_event(
@@ -994,20 +983,16 @@ fn malformed_tool_arguments_result(
     tool_name: &str,
     parse_error: &str,
     sink: &Option<Arc<dyn DiagnosticSink>>,
-    trace: &Option<Arc<TraceCollector>>,
-    turn_id: &str,
+    _turn_id: &str,
 ) -> ToolResult {
-    trace_tool(trace, TraceKind::ToolCallStarted, tool_name, turn_id);
     observe(
         sink,
-        trace,
         tool_diagnostic(
             CODE_TOOL_VALIDATION_FAILED,
             tool_name,
             "tool arguments were not valid JSON",
         ),
     );
-    trace_tool(trace, TraceKind::ToolCallFailed, tool_name, turn_id);
     ToolResult {
         content: vec![opi_ai::message::OutputContent::Text {
             text: format!("tool arguments were not valid JSON: {parse_error}"),
@@ -1123,12 +1108,10 @@ async fn execute_tool(
     messages: &[AgentMessage],
     cancel: CancellationToken,
     sink: &Option<Arc<dyn DiagnosticSink>>,
-    trace: &Option<Arc<TraceCollector>>,
     turn_id: &str,
 ) -> (ToolResult, Option<Authorized>) {
     // Tool call boundary record; emitted for every path below (completed,
     // failed, cancelled, denied) so the trace always brackets a tool execution.
-    trace_tool(trace, TraceKind::ToolCallStarted, tool_name, turn_id);
     // Authorization decision surfaced for the Tool evidence record (Phase
     // 17.6): `None` until the trusted authorization boundary is reached.
     let mut auth_decision: Option<Authorized> = None;
@@ -1140,10 +1123,8 @@ async fn execute_tool(
         None => {
             observe(
                 sink,
-                trace,
                 tool_diagnostic(CODE_TOOL_UNKNOWN, tool_name, "unknown tool requested"),
             );
-            trace_tool(trace, TraceKind::ToolCallFailed, tool_name, turn_id);
             return (
                 error_text_result(format!("unknown tool: {tool_name}")),
                 auth_decision,
@@ -1166,14 +1147,12 @@ async fn execute_tool(
         BeforeToolCallResult::Deny { reason } => {
             observe(
                 sink,
-                trace,
                 tool_diagnostic(
                     CODE_TOOL_EXECUTION_FAILED,
                     tool_name,
                     "tool call denied by hook",
                 ),
             );
-            trace_tool(trace, TraceKind::ToolCallFailed, tool_name, turn_id);
             return (error_text_result(reason), auth_decision);
         }
     }
@@ -1184,14 +1163,12 @@ async fn execute_tool(
     if let Err(err) = validation::validate(schema, args) {
         observe(
             sink,
-            trace,
             tool_diagnostic(
                 CODE_TOOL_VALIDATION_FAILED,
                 tool_name,
                 "tool arguments failed schema validation",
             ),
         );
-        trace_tool(trace, TraceKind::ToolCallFailed, tool_name, turn_id);
         return (ToolResult::from_validation_error(err), auth_decision);
     }
 
@@ -1204,14 +1181,12 @@ async fn execute_tool(
         None => {
             observe(
                 sink,
-                trace,
                 tool_diagnostic(
                     CODE_TOOL_AUTHORIZATION_UNAVAILABLE,
                     tool_name,
                     "no trusted authorizer bound; execution denied",
                 ),
             );
-            trace_tool(trace, TraceKind::ToolCallFailed, tool_name, turn_id);
             auth_decision = Some(Authorized::Deny {
                 stable_code: "authorization_unavailable".to_owned(),
                 redacted_reason: "no trusted authorizer bound; execution denied".to_owned(),
@@ -1245,10 +1220,8 @@ async fn execute_tool(
         } => {
             observe(
                 sink,
-                trace,
                 tool_diagnostic(CODE_TOOL_AUTHORIZATION_DENIED, tool_name, &redacted_reason),
             );
-            trace_tool(trace, TraceKind::ToolCallFailed, tool_name, turn_id);
             auth_decision = Some(Authorized::Deny {
                 stable_code: stable_code.clone(),
                 redacted_reason: redacted_reason.clone(),
@@ -1275,16 +1248,15 @@ async fn execute_tool(
             };
             if final_result.is_error {
                 // Phase 11.8 (S1): lift tool-owned structured failure context from
-                // `final_result.diagnostics` into Phase 7 Diagnostics (per-cause
-                // code + structured context), mirrored as DiagnosticLinked trace
-                // records. The lift reads diagnostics AFTER `after_tool_call`, so a
-                // hook `Replace` owns the lifted set. When the tool reported a bare
-                // is_error result with no diagnostics, fall back to the generic
-                // execution-failed diagnostic so a failure is always observed.
+                // `final_result.diagnostics` into Diagnostics (per-cause code +
+                // structured context). The lift reads diagnostics AFTER
+                // `after_tool_call`, so a hook `Replace` owns the lifted set. When
+                // the tool reported a bare is_error result with no diagnostics,
+                // fall back to the generic execution-failed diagnostic so a
+                // failure is always observed.
                 if final_result.diagnostics.is_empty() {
                     observe(
                         sink,
-                        trace,
                         tool_diagnostic(
                             CODE_TOOL_EXECUTION_FAILED,
                             tool_name,
@@ -1293,34 +1265,21 @@ async fn execute_tool(
                     );
                 } else {
                     for tool_diag in &final_result.diagnostics {
-                        observe(sink, trace, tool_owned_diagnostic(tool_diag, tool_name));
+                        observe(sink, tool_owned_diagnostic(tool_diag, tool_name));
                     }
                 }
-                trace_tool(trace, TraceKind::ToolCallFailed, tool_name, turn_id);
-            } else {
-                trace_tool(trace, TraceKind::ToolCallCompleted, tool_name, turn_id);
             }
             final_result
         }
         Err(e) => {
             observe(
                 sink,
-                trace,
                 tool_diagnostic(
                     CODE_TOOL_EXECUTION_FAILED,
                     tool_name,
                     "tool execution failed",
                 ),
             );
-            // Distinguish a cancellation from a real failure when the token is
-            // set; otherwise this is a genuine tool error. Best-effort: the
-            // token may be set just after execute returned.
-            let kind = if cancel.is_cancelled() {
-                TraceKind::ToolCallCancelled
-            } else {
-                TraceKind::ToolCallFailed
-            };
-            trace_tool(trace, kind, tool_name, turn_id);
             error_text_result(e.to_string())
         }
     };
@@ -1391,60 +1350,9 @@ fn user_text_message(text: String) -> AgentMessage {
 /// disables diagnostic emission without any other observable effect; the trace
 /// mirror is independent and fail-open. Routing every runtime diagnostic
 /// through here keeps the two surfaces in lockstep.
-fn observe(
-    sink: &Option<Arc<dyn DiagnosticSink>>,
-    trace: &Option<Arc<TraceCollector>>,
-    diagnostic: Diagnostic,
-) {
-    let source = diagnostic.source;
-    let code = diagnostic.code;
-    let severity = diagnostic.severity;
+fn observe(sink: &Option<Arc<dyn DiagnosticSink>>, diagnostic: Diagnostic) {
     if let Some(sink) = sink {
         sink.record(diagnostic);
-    }
-    if let Some(trace) = trace {
-        trace
-            .record(source, TraceKind::DiagnosticLinked)
-            .severity(severity)
-            .diagnostic_code(code)
-            .emit();
-    }
-}
-
-/// Emit a run-scoped trace record (no turn id).
-fn trace_run(trace: &Option<Arc<TraceCollector>>, kind: TraceKind) {
-    if let Some(trace) = trace {
-        trace.record(SOURCE_AGENT, kind).emit();
-    }
-}
-
-/// Emit a turn-scoped agent trace record.
-fn trace_turn(trace: &Option<Arc<TraceCollector>>, kind: TraceKind, turn_id: &str) {
-    if let Some(trace) = trace {
-        trace.record(SOURCE_AGENT, kind).turn(turn_id).emit();
-    }
-}
-
-/// Emit a turn-scoped provider trace record.
-fn trace_provider(trace: &Option<Arc<TraceCollector>>, kind: TraceKind, turn_id: &str) {
-    if let Some(trace) = trace {
-        trace.record(SOURCE_PROVIDER, kind).turn(turn_id).emit();
-    }
-}
-
-/// Emit a turn-scoped tool trace record carrying the tool name in details.
-fn trace_tool(
-    trace: &Option<Arc<TraceCollector>>,
-    kind: TraceKind,
-    tool_name: &str,
-    turn_id: &str,
-) {
-    if let Some(trace) = trace {
-        trace
-            .record(SOURCE_TOOL, kind)
-            .turn(turn_id)
-            .details(json!({ "tool_name": tool_name }))
-            .emit();
     }
 }
 
@@ -1491,14 +1399,33 @@ fn emit_evidence(
     }
 }
 
-/// Emit the run-ended trace record (fail-open) followed by the `AgentEnd`
-/// event, deduplicating the seven exit paths.
-fn emit_agent_end(
-    events: &AgentEventSink,
-    trace: &Option<Arc<TraceCollector>>,
-    messages: &[AgentMessage],
-) {
-    trace_run(trace, TraceKind::RunEnded);
+/// Non-secret auth source classification token carried in the Provider evidence
+/// record (P17-PRV-005). The `name`/`kind` labels of environment /
+/// credential-store / oauth sources are supplementary; the closed classification
+/// is what the manifest distinguishes. A future [`opi_ai::auth::AuthProvenanceSource`]
+/// variant maps to `static` until the manifest vocabulary gains a counterpart.
+fn auth_source_token(source: &opi_ai::auth::AuthProvenanceSource) -> &'static str {
+    match source {
+        opi_ai::auth::AuthProvenanceSource::Static => "static",
+        opi_ai::auth::AuthProvenanceSource::Environment { .. } => "environment",
+        opi_ai::auth::AuthProvenanceSource::CredentialStore { .. } => "credential_store",
+        opi_ai::auth::AuthProvenanceSource::OAuth { .. } => "oauth",
+        _ => "static",
+    }
+}
+
+/// Non-secret auth fallback classification token carried in the Provider
+/// evidence record (P17-PRV-005): whether an allowed fallback was used.
+fn auth_fallback_token(fallback: &opi_ai::auth::AuthFallback) -> &'static str {
+    match fallback {
+        opi_ai::auth::AuthFallback::NotAttempted => "not_attempted",
+        opi_ai::auth::AuthFallback::Used { .. } => "used",
+        _ => "not_attempted",
+    }
+}
+
+/// Emit the `AgentEnd` event, deduplicating the exit paths.
+fn emit_agent_end(events: &AgentEventSink, messages: &[AgentMessage]) {
     emit_public_event(
         events,
         AgentEvent::AgentEnd {

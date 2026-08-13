@@ -122,7 +122,7 @@ Run `opi --help` for the exact current surface. Important commands and flags:
 | `--exclude-thinking` | Omit thinking content from the export. |
 | `--redact <summary\|verbose\|none>` | Redaction mode for `--export-session`. |
 | `--generate-completion <SHELL>` | Generate completion for `bash`, `zsh`, `fish`, `powershell`, or `elvish`. |
-| `--trace <PATH>` | Write an opt-in, redacted local trace envelope for a non-interactive/JSON run. |
+| `--trace <PATH>` | Write opt-in evidence (evidence.jsonl + manifest.json) for a non-interactive/JSON run. |
 | `-v, --verbose` | Enable debug tracing. |
 | `doctor [--json] [--scope ...]` | Local, network-free health check. |
 | `package <add|remove|list|doctor|enable|disable>` | Manage local/git extension packages and executable-package activation. |

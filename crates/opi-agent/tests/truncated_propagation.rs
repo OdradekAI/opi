@@ -129,7 +129,6 @@ async fn run_truncated(mode: ExecutionMode) -> (Option<bool>, Option<bool>) {
         steering_queue: None,
         follow_up_queue: None,
         diagnostic_sink: None,
-        trace: None,
         session_id: None,
         evidence_sink: None,
     };

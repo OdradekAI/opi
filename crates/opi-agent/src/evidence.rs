@@ -2,12 +2,11 @@
 //! health, the storage-neutral sink lifecycle, and the resolved-execution
 //! manifest value types (Phase 17 task 17.3).
 //!
-//! This is an **additive substrate**. It defines the Agent Core evidence
-//! vocabulary that authorization (17.4), the Agent runtime (17.6), and the
-//! Reference Product file-adapter cutover (17.7) consume. It does **not**
-//! activate evidence in [`crate::agent_loop`], add file storage/exporters/Eval,
-//! fabricate an `ActiveSnapshot`, or remove the existing [`crate::trace`]
-//! `TraceSink` contract (the expand-contract migration lives in 17.6/17.7).
+//! This is the Agent Core evidence vocabulary that authorization (17.4), the
+//! Agent runtime (17.6), and the Reference Product file-adapter cutover (17.7)
+//! consume. The loop emits records through this contract; file storage,
+//! exporters, Eval, and an `ActiveSnapshot` (Promotion Controller) remain
+//! outside Agent Core.
 //!
 //! ## Redaction boundary
 //!
@@ -320,6 +319,11 @@ impl ContentDigest {
     pub fn from_hex(hex: impl Into<String>) -> Self {
         Self(hex.into())
     }
+
+    /// The hex rendering of the digest.
+    pub fn as_hex(&self) -> &str {
+        &self.0
+    }
 }
 
 /// Where direct runtime assembly originated. Closed over the current Reference
@@ -586,7 +590,10 @@ pub struct RouteSelection {
 }
 
 /// Requested, resolved, and actual route facts. The three stages are distinct
-/// fields and cannot be conflated (P17-EVD-004).
+/// fields and cannot be conflated (P17-EVD-004). The actual route is
+/// provider-reported and only known after the response; when it is not
+/// reported, `actual` is empty and `actual_reason` carries the typed reason
+/// (never a bare empty without reason).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct RouteFacts {
     /// What the caller requested.
@@ -595,6 +602,8 @@ pub struct RouteFacts {
     pub resolved: RouteSelection,
     /// What route the dispatch actually used.
     pub actual: RouteSelection,
+    /// Why the actual route is empty, when the provider did not report it.
+    pub actual_reason: Option<UnknownReason>,
 }
 
 /// Non-secret authentication, fallback, and source provenance. Secret-bearing
@@ -1018,6 +1027,108 @@ impl EvidenceSink for InMemoryEvidenceSink {
             return Err(err);
         }
         *Self::lock(&self.manifest) = Some(manifest.clone());
+        Ok(())
+    }
+}
+
+// ===========================================================================
+// Recording introspection (P17-EVD-011 conformance oracle access)
+// ===========================================================================
+
+/// Introspection over a recording [`EvidenceSink`]: the ordered emitted
+/// records, whether any lifecycle phase failed, and the finalized manifest (if
+/// any). The Reference Product harness holds a recorder handle to assemble the
+/// [`FinalizedManifest`] from the recorded dynamic facts (correlation, route)
+/// plus its own static product facts, then calls [`EvidenceSink::finalize_run`].
+///
+/// This is a read-only query seam for recording adapters (in-memory oracle and
+/// the product file adapter); it is not part of the capture lifecycle and the
+/// no-op adapter does not implement it. It lives in Agent Core because the
+/// recording contract and the in-memory conformance oracle already do.
+pub trait EvidenceRecorder: EvidenceSink {
+    /// Snapshot of emitted records in emission order.
+    fn records(&self) -> Vec<EvidenceRecord>;
+    /// Whether any lifecycle phase failed (evidence is incomplete).
+    fn has_failure(&self) -> bool;
+    /// The finalized manifest, but only if no lifecycle phase failed. `None`
+    /// while incomplete or before [`EvidenceSink::finalize_run`] succeeds.
+    fn completed_manifest(&self) -> Option<FinalizedManifest>;
+}
+
+impl EvidenceRecorder for InMemoryEvidenceSink {
+    fn records(&self) -> Vec<EvidenceRecord> {
+        Self::lock(&self.records).clone()
+    }
+    fn has_failure(&self) -> bool {
+        Self::lock(&self.failure).is_some()
+    }
+    fn completed_manifest(&self) -> Option<FinalizedManifest> {
+        if Self::lock(&self.failure).is_some() {
+            return None;
+        }
+        Self::lock(&self.manifest).clone()
+    }
+}
+
+impl FinalizedManifest {
+    /// Strict completeness gate (P17-EVD-003). A direct run must bind
+    /// [`RuntimeInputBinding::DirectRuntimeInput`] (never
+    /// [`RuntimeInputBinding::ActiveSnapshot`], which only a future Promotion
+    /// Controller may supply), and the policy/config/route bindings must be
+    /// substantively present. A missing or wrong binding returns a typed
+    /// [`EvidenceError::Finalization`] so the caller withholds the manifest
+    /// rather than finalizing an incomplete one.
+    pub fn require_complete(&self) -> Result<(), EvidenceError> {
+        let RuntimeInputBinding::DirectRuntimeInput { digest, .. } = &self.binding else {
+            return Err(EvidenceError::Finalization {
+                detail: "manifest binding is not DirectRuntimeInput".to_owned(),
+            });
+        };
+        if matches!(digest, ContentDigest(d) if d.is_empty()) {
+            return Err(EvidenceError::Finalization {
+                detail: "manifest runtime-input digest is missing".to_owned(),
+            });
+        }
+        if matches!(&self.policy.policy_digest, ContentDigest(d) if d.is_empty()) {
+            return Err(EvidenceError::Finalization {
+                detail: "manifest policy digest is missing".to_owned(),
+            });
+        }
+        // Each config-identity binding must be substantively present (the doc
+        // comment promises the policy/config/route bindings are all present).
+        for (name, digest) in [
+            ("harness", &self.config.harness_digest),
+            ("runtime", &self.config.runtime_digest),
+            ("adapter", &self.config.adapter_digest),
+            ("material", &self.config.material_digest),
+        ] {
+            if matches!(digest, ContentDigest(d) if d.is_empty()) {
+                return Err(EvidenceError::Finalization {
+                    detail: format!("manifest {name} config digest is missing"),
+                });
+            }
+        }
+        // The resolved route must name a provider and model; an empty selection
+        // means the route facts were never extracted.
+        if self.route.resolved.provider_id.is_empty() || self.route.resolved.model_id.is_empty() {
+            return Err(EvidenceError::Finalization {
+                detail: "manifest resolved route is missing".to_owned(),
+            });
+        }
+        // The actual route must either be populated or carry a typed reason; a
+        // bare empty actual (unknown without reason) cannot finalize a
+        // "complete" manifest (P17-EVD-004).
+        if self.route.actual.provider_id.is_empty() && self.route.actual_reason.is_none() {
+            return Err(EvidenceError::Finalization {
+                detail: "manifest actual route is empty without a reason".to_owned(),
+            });
+        }
+        // The prompt input identity must be present (digest, never raw).
+        if matches!(&self.input_identity.prompt_digest, ContentDigest(d) if d.is_empty()) {
+            return Err(EvidenceError::Finalization {
+                detail: "manifest prompt input identity is missing".to_owned(),
+            });
+        }
         Ok(())
     }
 }
