@@ -455,7 +455,7 @@ async fn cache_1h_malformed_subset_stops_production_stream_with_non_retryable_er
         .mount(&server)
         .await;
 
-    let provider = AnthropicProvider::new("test-key".into(), Some(server.uri()));
+    let provider = AnthropicProvider::new(Some(server.uri()));
     let request = Request {
         model: "anthropic:claude-sonnet-4-5-20250514".into(),
         system: None,
@@ -478,7 +478,10 @@ async fn cache_1h_malformed_subset_stops_production_stream_with_non_retryable_er
         session_id: None,
     };
 
-    let results: Vec<_> = provider.stream(request).collect().await;
+    let results: Vec<_> = provider
+        .stream_prepared(request, opi_ai::test_support::resolved_auth())
+        .collect()
+        .await;
     assert_eq!(results.len(), 1, "invalid usage must stop the stream");
     let error = results[0].as_ref().expect_err("expected StreamError");
     assert!(matches!(error, ProviderError::StreamError(_)));
@@ -602,13 +605,13 @@ fn stop_reason_tool_use_maps_correctly() {
 
 #[test]
 fn anthropic_provider_id() {
-    let provider = opi_ai::anthropic::AnthropicProvider::new("test-key".into(), None);
+    let provider = opi_ai::anthropic::AnthropicProvider::new(None);
     assert_eq!(provider.id(), "anthropic");
 }
 
 #[test]
 fn anthropic_provider_models_not_empty() {
-    let provider = opi_ai::anthropic::AnthropicProvider::new("test-key".into(), None);
+    let provider = opi_ai::anthropic::AnthropicProvider::new(None);
     assert!(!provider.models().is_empty());
 }
 
@@ -734,7 +737,7 @@ async fn drain_sse_events_handles_crlf_stream() {
     let lf_input = "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_crlf\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"model\":\"claude-sonnet-4-5-20250514\",\"stop_reason\":null,\"usage\":{\"input_tokens\":10,\"output_tokens\":0}}}\n\n";
     let crlf_input = lf_input.replace('\n', "\r\n");
 
-    let provider = AnthropicProvider::new("test-key".into(), None);
+    let provider = AnthropicProvider::new(None);
     let cancel = CancellationToken::new();
     let mut stream = provider.stream_from_sse(&crlf_input, cancel);
 
@@ -910,7 +913,7 @@ fn thinking_fixture_usage_tracked() {
 
 #[test]
 fn build_request_body_includes_thinking_when_enabled() {
-    let provider = AnthropicProvider::new("test-key".into(), None);
+    let provider = AnthropicProvider::new(None);
     let request = Request {
         model: "anthropic:claude-sonnet-4-5-20250514".into(),
         system: None,
@@ -948,7 +951,7 @@ fn build_request_body_includes_thinking_when_enabled() {
 
 #[test]
 fn build_request_body_uses_default_budget_when_none() {
-    let provider = AnthropicProvider::new("test-key".into(), None);
+    let provider = AnthropicProvider::new(None);
     let request = Request {
         model: "anthropic:claude-sonnet-4-5-20250514".into(),
         system: None,
@@ -988,7 +991,7 @@ fn build_request_body_uses_default_budget_when_none() {
 
 #[test]
 fn build_request_body_omits_thinking_when_disabled() {
-    let provider = AnthropicProvider::new("test-key".into(), None);
+    let provider = AnthropicProvider::new(None);
     let request = Request {
         model: "anthropic:claude-sonnet-4-5-20250514".into(),
         system: None,
@@ -1448,7 +1451,7 @@ async fn stream_sends_text_request_body_and_auth_through_http() {
         .mount(&server)
         .await;
 
-    let provider = AnthropicProvider::new("test-key".into(), Some(server.uri()));
+    let provider = AnthropicProvider::new(Some(server.uri()));
     let request = Request {
         model: "anthropic:claude-sonnet-4-5-20250514".into(),
         system: Some("You are helpful.".into()),
@@ -1471,7 +1474,7 @@ async fn stream_sends_text_request_body_and_auth_through_http() {
         session_id: None,
     };
 
-    let mut stream = provider.stream(request);
+    let mut stream = provider.stream_prepared(request, opi_ai::test_support::resolved_auth());
     while let Some(result) = stream.next().await {
         match result {
             Ok(event) if event.is_terminal() => break,
@@ -1508,7 +1511,7 @@ async fn stream_cancellation_drains_without_hang_after_cancel() {
         .await;
 
     let cancel = CancellationToken::new();
-    let provider = AnthropicProvider::new("test-key".into(), Some(server.uri()));
+    let provider = AnthropicProvider::new(Some(server.uri()));
     let request = Request {
         model: "anthropic:claude-sonnet-4-5-20250514".into(),
         system: None,
@@ -1530,7 +1533,7 @@ async fn stream_cancellation_drains_without_hang_after_cancel() {
         cache_retention: CacheRetention::None,
         session_id: None,
     };
-    let mut stream = provider.stream(request);
+    let mut stream = provider.stream_prepared(request, opi_ai::test_support::resolved_auth());
 
     // Read one event so the stream is open, then cancel.
     let _ = stream

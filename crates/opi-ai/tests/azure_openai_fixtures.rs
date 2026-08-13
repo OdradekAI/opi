@@ -18,7 +18,6 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 
 fn make_provider() -> AzureOpenAIProvider {
     AzureOpenAIProvider::new(
-        "test-api-key-12345".into(),
         Some("https://myresource.openai.azure.com".into()),
         "my-gpt4o".into(),
         Some("2024-06-01".into()),
@@ -28,7 +27,6 @@ fn make_provider() -> AzureOpenAIProvider {
 
 fn make_provider_with_deployments(deployments: Vec<&str>) -> AzureOpenAIProvider {
     AzureOpenAIProvider::from_config(
-        "test-api-key-12345".into(),
         Some("https://myresource.openai.azure.com".into()),
         deployments.into_iter().map(|s| s.into()).collect(),
         Some("2024-06-01".into()),
@@ -254,7 +252,7 @@ fn azure_url_construction() {
 
 #[test]
 fn missing_endpoint_returns_error() {
-    let result = AzureOpenAIProvider::new("key".into(), None, "deploy1".into(), None);
+    let result = AzureOpenAIProvider::new(None, "deploy1".into(), None);
     assert!(result.is_err(), "missing endpoint should return error");
     let err = result.unwrap_err();
     match err {
@@ -397,10 +395,13 @@ async fn error_from_fixture() {
 
 #[test]
 fn secret_redaction_in_debug() {
+    // Phase 17.5: the api key moved out of AzureOpenAIProvider construction
+    // into ResolvedAuth (passed via stream_prepared). The provider no longer
+    // stores the credential, so it cannot leak through its Debug output.
+    // ResolvedAuth's own Debug redaction is pinned in auth_contracts.rs.
     let provider = make_provider();
     let debug_str = format!("{provider:?}");
     assert!(!debug_str.contains("test-api-key-12345"));
-    assert!(debug_str.contains("***"));
 }
 
 #[test]
@@ -445,14 +446,23 @@ async fn stream_drains_text_lifecycle_through_http() {
         .await;
 
     let provider = AzureOpenAIProvider::new(
-        "test-api-key-12345".into(),
         Some(server.uri()),
         "my-gpt4o".into(),
         Some("2024-06-01".into()),
     )
     .unwrap();
 
-    let events = collect_events(provider.stream(text_request())).await;
+    // The api-key header is supplied via ResolvedAuth (Phase 17.5); the
+    // production transport derives the `api-key` header from `auth.secret`
+    // in stream_prepared.
+    let auth = opi_ai::auth::ResolvedAuth {
+        scheme: opi_ai::auth::AuthScheme::ApiKey,
+        secret: secrecy::SecretString::from("test-api-key-12345"),
+        base_url: None,
+        account_id: None,
+        provenance: opi_ai::AuthProvenance::default(),
+    };
+    let events = collect_events(provider.stream_prepared(text_request(), auth)).await;
 
     // Lifecycle: Start -> TextDelta(s) -> Done.
     assert!(
@@ -499,14 +509,13 @@ async fn stream_http_error_maps_to_auth_failed() {
         .await;
 
     let provider = AzureOpenAIProvider::new(
-        "bad-key".into(),
         Some(server.uri()),
         "my-gpt4o".into(),
         Some("2024-06-01".into()),
     )
     .unwrap();
 
-    let stream = provider.stream(text_request());
+    let stream = provider.stream_prepared(text_request(), opi_ai::test_support::resolved_auth());
     let first = stream
         .collect::<Vec<_>>()
         .await
@@ -571,16 +580,12 @@ async fn stream_cancellation_aborts_before_completion() {
     let server = spawn_stalled_azure_server().await;
 
     let cancel = CancellationToken::new();
-    let provider = AzureOpenAIProvider::new(
-        "test-api-key-12345".into(),
-        Some(server),
-        "my-gpt4o".into(),
-        Some("2024-06-01".into()),
-    )
-    .unwrap();
+    let provider =
+        AzureOpenAIProvider::new(Some(server), "my-gpt4o".into(), Some("2024-06-01".into()))
+            .unwrap();
     let mut request = text_request();
     request.cancel = cancel.clone();
-    let mut stream = provider.stream(request);
+    let mut stream = provider.stream_prepared(request, opi_ai::test_support::resolved_auth());
 
     let first = stream
         .next()

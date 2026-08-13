@@ -7,11 +7,14 @@
 //! Provider trait, redacted missing/invalid auth diagnostics, and a registry
 //! regression asserting all built-in providers still resolve.
 
+use opi_ai::auth::{
+    AuthProvenanceSource, AuthResolver, AuthScheme, ResolvedAuth, StaticAuthResolver,
+};
 use opi_ai::message::{AssistantContent, AssistantMessage};
-use opi_ai::provider::{CacheRetention, Provider, Request, ThinkingConfig};
+use opi_ai::provider::{CacheRetention, Provider, ProviderError, Request, ThinkingConfig};
 use opi_ai::provider_collection::{
     AuthDescriptor, AuthStatus, CollectionError, CompatMetadata, CompletedRequest,
-    ProviderCollection, SecretKey,
+    ProviderCollection, SecretKey, drain_to_completion,
 };
 use opi_ai::registry::ProviderRegistry;
 use opi_ai::test_support::{MockProvider, text_response};
@@ -104,9 +107,28 @@ impl Provider for StreamProvider {
         })
     }
 
-    fn stream(&self, _request: Request) -> opi_ai::provider::EventStream {
+    fn stream_prepared(
+        &self,
+        _request: Request,
+        _auth: ResolvedAuth,
+    ) -> opi_ai::provider::EventStream {
         let events = self.events.lock().unwrap().take().unwrap_or_default();
         Box::pin(futures_util::stream::iter(events))
+    }
+}
+
+/// `AuthResolver` that always fails resolution with `CredentialNeeded`, proving
+/// dispatch rejects before the provider is touched when auth is unavailable.
+struct MissingAuthResolver {
+    provider_id: String,
+}
+
+impl AuthResolver for MissingAuthResolver {
+    fn resolve<'a>(
+        &'a self,
+    ) -> opi_ai::credential::BoxAuthFuture<'a, Result<ResolvedAuth, ProviderError>> {
+        let provider_id = self.provider_id.clone();
+        Box::pin(async move { Err(ProviderError::CredentialNeeded { provider_id }) })
     }
 }
 
@@ -245,24 +267,28 @@ fn auth_descriptor_resolved_treats_empty_source_as_missing() {
 async fn provider_collection_dispatches_with_redacted_auth() {
     let mut collection = ProviderCollection::new();
     collection
-        .register(
+        .register_route(
             text_mock_repeated("mock", "hello from mock", 2),
-            AuthDescriptor::StaticApiKey {
-                value: SecretKey::new(SECRET_VALUE),
-            },
+            Arc::new(StaticAuthResolver::new(
+                AuthScheme::ApiKey,
+                secret(SECRET_VALUE),
+            )) as Arc<dyn AuthResolver>,
+            AuthProvenanceSource::Static,
             CompatMetadata::default(),
         )
         .unwrap();
 
-    // Auth status is Configured and the descriptor never leaks the secret.
-    assert_eq!(collection.auth_status("mock"), Some(AuthStatus::Configured));
-    let descriptor_debug = format!("{:?}", collection.auth_descriptor("mock").unwrap());
-    assert!(!descriptor_debug.contains(SECRET_VALUE));
-
-    // Stream dispatch flows through the collection and reaches Done.
-    let stream = collection
-        .dispatch_stream("mock:mock-model", minimal_request("mock:mock-model"))
-        .unwrap();
+    // Stream dispatch flows through prepare_call and reaches Done.
+    let prepared = collection
+        .prepare_call("mock:mock-model", minimal_request("mock:mock-model"))
+        .await
+        .expect("prepare_call resolves the route");
+    // The prepared call's debug never leaks the resolved secret.
+    assert!(
+        !format!("{prepared:?}").contains(SECRET_VALUE),
+        "secret leaked via prepared call debug"
+    );
+    let stream = prepared.start_attempt().expect("start_attempt");
     use futures_util::StreamExt;
     let events: Vec<_> = stream.collect::<Vec<_>>().await;
     let done_message = events
@@ -275,11 +301,13 @@ async fn provider_collection_dispatches_with_redacted_auth() {
         .expect("stream produced a Done event");
     assert_eq!(assistant_text(&done_message), "hello from mock");
 
-    // Complete-dispatch decision: drain the streaming trait to a terminal.
-    let completed = collection
-        .dispatch_complete("mock:mock-model", minimal_request("mock:mock-model"))
+    // Complete-dispatch decision: drain a fresh attempt to a terminal.
+    let prepared = collection
+        .prepare_call("mock:mock-model", minimal_request("mock:mock-model"))
         .await
         .unwrap();
+    let attempt = prepared.start_attempt().unwrap();
+    let completed = drain_to_completion(attempt).await.unwrap();
     match completed {
         CompletedRequest::Done { message, .. } => {
             assert_eq!(assistant_text(&message), "hello from mock");
@@ -292,48 +320,33 @@ async fn provider_collection_dispatches_with_redacted_auth() {
 async fn provider_collection_dispatch_rejects_missing_auth_with_redacted_diagnostic() {
     let mut collection = ProviderCollection::new();
     collection
-        .register(
+        .register_route(
             text_mock("noauth", "should not stream"),
-            AuthDescriptor::StaticApiKey {
-                value: SecretKey::new(""),
-            },
+            Arc::new(MissingAuthResolver {
+                provider_id: "noauth".to_owned(),
+            }) as Arc<dyn AuthResolver>,
+            AuthProvenanceSource::Static,
             CompatMetadata::default(),
         )
         .unwrap();
 
-    assert!(matches!(
-        collection.auth_status("noauth"),
-        Some(AuthStatus::Missing { .. })
-    ));
-
+    // Missing auth terminates the call before the provider is touched.
     let err = match collection
-        .dispatch_stream("noauth:mock-model", minimal_request("noauth:mock-model"))
+        .prepare_call("noauth:mock-model", minimal_request("noauth:mock-model"))
+        .await
     {
         Err(error) => error,
-        Ok(_) => panic!("expected AuthNotConfigured error, got a stream"),
+        Ok(_) => panic!("expected credential failure, got a prepared call"),
     };
-    match err {
-        CollectionError::AuthNotConfigured {
-            ref provider,
-            ref detail,
-        } => {
-            assert_eq!(provider.as_str(), "noauth");
-            // Diagnostic is redacted: it never carries the secret value.
-            assert!(!detail.contains(SECRET_VALUE));
-            assert!(!format!("{err}").contains(SECRET_VALUE));
-        }
-        other => panic!("expected AuthNotConfigured, got {other:?}"),
-    }
-
-    // Complete-dispatch also rejects before touching the provider.
-    let complete_err = collection
-        .dispatch_complete("noauth:mock-model", minimal_request("noauth:mock-model"))
-        .await
-        .unwrap_err();
-    assert!(matches!(
-        complete_err,
-        CollectionError::AuthNotConfigured { .. }
-    ));
+    assert!(
+        matches!(
+            err,
+            CollectionError::Provider(ProviderError::CredentialNeeded { .. })
+        ),
+        "got {err:?}"
+    );
+    // Diagnostic is redacted: it never carries the secret value.
+    assert!(!format!("{err}").contains(SECRET_VALUE));
 }
 
 #[tokio::test]
@@ -354,7 +367,7 @@ async fn dispatch_complete_returns_terminal_error_event() {
     };
     let mut collection = ProviderCollection::new();
     collection
-        .register(
+        .register_route(
             Box::new(StreamProvider::new(
                 "mock",
                 vec![Ok(opi_ai::AssistantStreamEvent::Error {
@@ -362,17 +375,21 @@ async fn dispatch_complete_returns_terminal_error_event() {
                     message,
                 })],
             )),
-            AuthDescriptor::StaticApiKey {
-                value: SecretKey::new("configured"),
-            },
+            Arc::new(StaticAuthResolver::new(
+                AuthScheme::ApiKey,
+                secret("configured"),
+            )) as Arc<dyn AuthResolver>,
+            AuthProvenanceSource::Static,
             CompatMetadata::default(),
         )
         .unwrap();
 
-    let completed = collection
-        .dispatch_complete("mock:mock-model", minimal_request("mock:mock-model"))
+    let prepared = collection
+        .prepare_call("mock:mock-model", minimal_request("mock:mock-model"))
         .await
         .unwrap();
+    let stream = prepared.start_attempt().unwrap();
+    let completed = drain_to_completion(stream).await.unwrap();
     assert!(matches!(completed, CompletedRequest::Error { .. }));
 }
 
@@ -380,25 +397,29 @@ async fn dispatch_complete_returns_terminal_error_event() {
 async fn dispatch_complete_propagates_mid_stream_provider_error() {
     let mut collection = ProviderCollection::new();
     collection
-        .register(
+        .register_route(
             Box::new(StreamProvider::new(
                 "mock",
                 vec![Err(opi_ai::provider::ProviderError::StreamError(
                     "mid-stream failure".into(),
                 ))],
             )),
-            AuthDescriptor::StaticApiKey {
-                value: SecretKey::new("configured"),
-            },
+            Arc::new(StaticAuthResolver::new(
+                AuthScheme::ApiKey,
+                secret("configured"),
+            )) as Arc<dyn AuthResolver>,
+            AuthProvenanceSource::Static,
             CompatMetadata::default(),
         )
         .unwrap();
 
-    let err = collection
-        .dispatch_complete("mock:mock-model", minimal_request("mock:mock-model"))
+    let prepared = collection
+        .prepare_call("mock:mock-model", minimal_request("mock:mock-model"))
         .await
-        .unwrap_err();
-    assert!(matches!(err, CollectionError::Provider(_)));
+        .unwrap();
+    let stream = prepared.start_attempt().unwrap();
+    let err = drain_to_completion(stream).await.unwrap_err();
+    assert!(matches!(err, ProviderError::StreamError(_)));
     assert!(err.to_string().contains("mid-stream failure"));
 }
 
@@ -406,19 +427,23 @@ async fn dispatch_complete_propagates_mid_stream_provider_error() {
 async fn dispatch_complete_rejects_empty_stream() {
     let mut collection = ProviderCollection::new();
     collection
-        .register(
+        .register_route(
             Box::new(StreamProvider::new("mock", Vec::new())),
-            AuthDescriptor::StaticApiKey {
-                value: SecretKey::new("configured"),
-            },
+            Arc::new(StaticAuthResolver::new(
+                AuthScheme::ApiKey,
+                secret("configured"),
+            )) as Arc<dyn AuthResolver>,
+            AuthProvenanceSource::Static,
             CompatMetadata::default(),
         )
         .unwrap();
 
-    let err = collection
-        .dispatch_complete("mock:mock-model", minimal_request("mock:mock-model"))
+    let prepared = collection
+        .prepare_call("mock:mock-model", minimal_request("mock:mock-model"))
         .await
-        .unwrap_err();
+        .unwrap();
+    let stream = prepared.start_attempt().unwrap();
+    let err = drain_to_completion(stream).await.unwrap_err();
     assert!(
         err.to_string()
             .contains("stream ended without a terminal event")
@@ -450,11 +475,13 @@ async fn collection_supports_provider_correctness_fixtures() {
 
     let mut collection = ProviderCollection::new();
     collection
-        .register(
+        .register_route(
             profile_provider,
-            AuthDescriptor::StaticApiKey {
-                value: SecretKey::new(SECRET_VALUE),
-            },
+            Arc::new(StaticAuthResolver::new(
+                AuthScheme::ApiKey,
+                secret(SECRET_VALUE),
+            )) as Arc<dyn AuthResolver>,
+            AuthProvenanceSource::Static,
             CompatMetadata {
                 openai_compatible: true,
                 profile: Some("openrouter".into()),
@@ -480,23 +507,22 @@ async fn collection_supports_provider_correctness_fixtures() {
     assert!(compat.openai_compatible);
     assert_eq!(compat.profile.as_deref(), Some("openrouter"));
 
-    // Auth diagnostics resolve through the collection.
-    let status = collection.auth_status("openrouter-profile").unwrap();
-    assert_eq!(status, AuthStatus::Configured);
-    let descriptor_debug = format!(
-        "{:?}",
-        collection.auth_descriptor("openrouter-profile").unwrap()
-    );
-    assert!(!descriptor_debug.contains(SECRET_VALUE));
-
-    // Stream dispatch works without the CLI product harness.
-    let completed = collection
-        .dispatch_complete(
+    // The prepared call's debug never leaks the resolved secret.
+    let prepared = collection
+        .prepare_call(
             "openrouter-profile:profile-model",
             minimal_request("openrouter-profile:profile-model"),
         )
         .await
         .unwrap();
+    assert!(
+        !format!("{prepared:?}").contains(SECRET_VALUE),
+        "secret leaked via prepared call debug"
+    );
+
+    // Stream dispatch works without the CLI product harness.
+    let stream = prepared.start_attempt().unwrap();
+    let completed = drain_to_completion(stream).await.unwrap();
     match completed {
         CompletedRequest::Done { message, .. } => {
             assert_eq!(assistant_text(&message), "profile response");
@@ -621,8 +647,8 @@ fn credential_oauth_token_redacts_secrets_but_keeps_base_url() {
 fn auth_descriptor_store_credential_resolves_configured_not_authoritative() {
     // resolve() is intentionally not authoritative for StoreCredential: the
     // descriptor is secret-free and cannot perform IO, so it returns
-    // Configured (never blocks). The real gate is the injected probe
-    // consulted in dispatch_stream.
+    // Configured (never blocks). The real gate is the per-route resolver
+    // consulted in prepare_call.
     let descriptor = store_descriptor("anthropic");
     assert_eq!(descriptor.resolve(), AuthStatus::Configured);
     // The descriptor itself carries no secret material.
@@ -633,111 +659,118 @@ fn auth_descriptor_store_credential_resolves_configured_not_authoritative() {
 
 #[tokio::test]
 async fn store_credential_dispatch_proceeds_when_probe_present() {
+    // A present credential resolves and dispatches through prepare_call.
     let mut collection = ProviderCollection::new();
     collection
-        .register(
+        .register_route(
             text_mock("storeprov", "ok"),
-            store_descriptor("storeprov"),
+            Arc::new(StaticAuthResolver::new(
+                AuthScheme::ApiKey,
+                secret(STORE_API_KEY),
+            )) as Arc<dyn AuthResolver>,
+            AuthProvenanceSource::Static,
             CompatMetadata::default(),
         )
         .unwrap();
-    collection.set_probe(
-        "storeprov",
-        CredentialSource::Present {
-            label: "keychain opi:storeprov".to_owned(),
-        },
-    );
-    let stream = collection.dispatch_stream(
-        "storeprov:mock-model",
-        minimal_request("storeprov:mock-model"),
-    );
+    let prepared = collection
+        .prepare_call(
+            "storeprov:mock-model",
+            minimal_request("storeprov:mock-model"),
+        )
+        .await;
     assert!(
-        stream.is_ok(),
-        "Present probe should dispatch: {:?}",
-        stream.err()
+        prepared.is_ok(),
+        "present credential should dispatch: {:?}",
+        prepared.err()
     );
 }
 
 #[tokio::test]
 async fn store_credential_dispatch_rejects_when_probe_absent_with_redacted_detail() {
+    // An absent credential terminates the call before the provider is touched.
     let mut collection = ProviderCollection::new();
     collection
-        .register(
+        .register_route(
             text_mock("absentprov", "should not stream"),
-            store_descriptor("absentprov"),
+            Arc::new(MissingAuthResolver {
+                provider_id: "absentprov".to_owned(),
+            }) as Arc<dyn AuthResolver>,
+            AuthProvenanceSource::Static,
             CompatMetadata::default(),
         )
         .unwrap();
-    collection.set_probe("absentprov", CredentialSource::Absent);
 
-    // Match instead of unwrap_err: the stream Ok type is not Debug.
-    let err = match collection.dispatch_stream(
-        "absentprov:mock-model",
-        minimal_request("absentprov:mock-model"),
-    ) {
-        Err(error) => error,
-        Ok(_) => panic!("expected AuthNotConfigured error, got a stream"),
-    };
-    match err {
-        CollectionError::AuthNotConfigured { provider, detail } => {
-            assert_eq!(provider, "absentprov");
-            // detail is the redacted display_source, never a secret.
-            assert_eq!(detail, "keychain opi:absentprov");
-            assert!(!detail.contains(STORE_API_KEY));
-        }
-        other => panic!("expected AuthNotConfigured, got {other:?}"),
-    }
+    let err = collection
+        .prepare_call(
+            "absentprov:mock-model",
+            minimal_request("absentprov:mock-model"),
+        )
+        .await
+        .expect_err("absent credential must reject dispatch");
+    assert!(
+        matches!(
+            err,
+            CollectionError::Provider(ProviderError::CredentialNeeded { .. })
+        ),
+        "got {err:?}"
+    );
+    // Diagnostic never carries the secret value.
+    assert!(!format!("{err}").contains(STORE_API_KEY));
 }
 
 #[tokio::test]
 async fn store_credential_dispatch_proceeds_when_backend_unavailable() {
-    // BackendUnavailable proceeds intentionally: keychain-required enforcement
-    // is the live per-stream resolver's job (T2), not this non-live status gate.
+    // Dispatch proceeds when auth resolves; backend availability is the live
+    // resolver's concern, not the non-live status gate.
     let mut collection = ProviderCollection::new();
     collection
-        .register(
+        .register_route(
             text_mock("unavailprov", "ok"),
-            store_descriptor("unavailprov"),
+            Arc::new(StaticAuthResolver::new(
+                AuthScheme::ApiKey,
+                secret(STORE_API_KEY),
+            )) as Arc<dyn AuthResolver>,
+            AuthProvenanceSource::Static,
             CompatMetadata::default(),
         )
         .unwrap();
-    collection.set_probe(
-        "unavailprov",
-        CredentialSource::BackendUnavailable {
-            reason: "no daemon".to_owned(),
-        },
-    );
-    let stream = collection.dispatch_stream(
-        "unavailprov:mock-model",
-        minimal_request("unavailprov:mock-model"),
-    );
+    let prepared = collection
+        .prepare_call(
+            "unavailprov:mock-model",
+            minimal_request("unavailprov:mock-model"),
+        )
+        .await;
     assert!(
-        stream.is_ok(),
-        "BackendUnavailable should dispatch: {:?}",
-        stream.err()
+        prepared.is_ok(),
+        "resolving credential should dispatch: {:?}",
+        prepared.err()
     );
 }
 
 #[tokio::test]
 async fn store_credential_dispatch_proceeds_when_no_probe_injected() {
-    // No probe injected -> non-gated, matching from_registry's "no descriptor"
-    // semantics. The factory always injects a probe for StoreCredential
-    // providers before listing; this pins the fallback contract.
+    // No probe is needed on the dispatch path: a route with a resolver
+    // dispatches regardless of the (metadata-only) probe substrate.
     let mut collection = ProviderCollection::new();
     collection
-        .register(
+        .register_route(
             text_mock("noprobe", "ok"),
-            store_descriptor("noprobe"),
+            Arc::new(StaticAuthResolver::new(
+                AuthScheme::ApiKey,
+                secret(STORE_API_KEY),
+            )) as Arc<dyn AuthResolver>,
+            AuthProvenanceSource::Static,
             CompatMetadata::default(),
         )
         .unwrap();
     assert_eq!(collection.probe("noprobe"), None);
-    let stream =
-        collection.dispatch_stream("noprobe:mock-model", minimal_request("noprobe:mock-model"));
+    let prepared = collection
+        .prepare_call("noprobe:mock-model", minimal_request("noprobe:mock-model"))
+        .await;
     assert!(
-        stream.is_ok(),
-        "no-probe should be non-gated: {:?}",
-        stream.err()
+        prepared.is_ok(),
+        "route should dispatch without a probe: {:?}",
+        prepared.err()
     );
 }
 
@@ -869,7 +902,11 @@ impl Provider for RefreshProvider {
         Box::leak(self.builtin_models.clone().into_boxed_slice())
     }
 
-    fn stream(&self, _request: Request) -> opi_ai::provider::EventStream {
+    fn stream_prepared(
+        &self,
+        _request: Request,
+        _auth: ResolvedAuth,
+    ) -> opi_ai::provider::EventStream {
         let events = self.events.lock().unwrap().take().unwrap_or_default();
         Box::pin(futures_util::stream::iter(events))
     }
@@ -909,7 +946,11 @@ impl Provider for ErrorRefreshProvider {
         &[]
     }
 
-    fn stream(&self, _request: Request) -> opi_ai::provider::EventStream {
+    fn stream_prepared(
+        &self,
+        _request: Request,
+        _auth: ResolvedAuth,
+    ) -> opi_ai::provider::EventStream {
         Box::pin(futures_util::stream::empty())
     }
 
@@ -956,7 +997,11 @@ impl Provider for MutableRefreshProvider {
         Box::leak(self.builtin_models.clone().into_boxed_slice())
     }
 
-    fn stream(&self, _request: Request) -> opi_ai::provider::EventStream {
+    fn stream_prepared(
+        &self,
+        _request: Request,
+        _auth: ResolvedAuth,
+    ) -> opi_ai::provider::EventStream {
         Box::pin(futures_util::stream::empty())
     }
 
@@ -1253,7 +1298,9 @@ async fn refresh_models_empty_catalog_is_valid() {
 mod phase17 {
     use super::*;
     use futures_util::StreamExt;
-    use opi_ai::auth::{AuthProvenanceSource, AuthResolver, AuthScheme, ResolvedAuth};
+    use opi_ai::auth::{
+        AuthProvenance, AuthProvenanceSource, AuthResolver, AuthScheme, ResolvedAuth,
+    };
     use opi_ai::credential::BoxAuthFuture;
     use opi_ai::provider::{EventStream, Provider, ProviderError, Request};
     use opi_ai::provider_collection::CompatMetadata;
@@ -1262,13 +1309,15 @@ mod phase17 {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
-    /// A probe provider that records whether dispatch went through the prepared
-    /// seam (`stream_prepared`) or the legacy `stream` entry, emitting canned
-    /// events regardless of the supplied auth (no HTTP).
+    /// A probe provider that records prepared-seam (`stream_prepared`) hits,
+    /// emitting canned events regardless of the supplied auth (no HTTP). The
+    /// `Provider::stream` entry is gone, so the `legacy` counter is vestigial:
+    /// retained for call-site stability (marked `dead_code`) and never read.
     struct ProbeProvider {
         id: String,
         models: Vec<ModelInfo>,
         prepared: Arc<AtomicUsize>,
+        #[allow(dead_code)]
         legacy: Arc<AtomicUsize>,
     }
 
@@ -1300,13 +1349,6 @@ mod phase17 {
         fn models(&self) -> &[ModelInfo] {
             &self.models
         }
-        fn stream(&self, _request: Request) -> EventStream {
-            self.legacy.fetch_add(1, Ordering::SeqCst);
-            let events = text_response("legacy");
-            Box::pin(futures_util::stream::iter(
-                events.into_iter().map(Ok::<_, ProviderError>),
-            ))
-        }
         fn stream_prepared(&self, _request: Request, _auth: ResolvedAuth) -> EventStream {
             self.prepared.fetch_add(1, Ordering::SeqCst);
             let events = text_response("prepared");
@@ -1333,6 +1375,7 @@ mod phase17 {
                     secret,
                     base_url: None,
                     account_id: None,
+                    provenance: AuthProvenance::default(),
                 })
             })
         }
@@ -1375,7 +1418,10 @@ mod phase17 {
         let route = prepared.route();
         assert_eq!(route.provider_id, "alpha");
         assert_eq!(route.model_id, "model-a");
-        assert_eq!(route.provenance.source, AuthProvenanceSource::Static);
+        assert_eq!(
+            prepared.auth_provenance().source,
+            AuthProvenanceSource::Static
+        );
         let route_dbg = format!("{route:?}");
         assert!(
             !route_dbg.contains("sk-alpha-canary"),
@@ -1836,7 +1882,7 @@ mod phase17 {
                 .await
                 .expect("prepare_call");
             assert_eq!(
-                prepared.route().provenance.source,
+                prepared.auth_provenance().source,
                 source,
                 "source not surfaced on route for {id}"
             );

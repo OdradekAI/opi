@@ -343,7 +343,7 @@ impl Provider for ScriptedProvider {
             })
             .as_slice()
     }
-    fn stream(&self, _request: Request) -> EventStream {
+    fn stream_prepared(&self, _request: Request, _auth: opi_ai::auth::ResolvedAuth) -> EventStream {
         *self.call_count.lock().unwrap() += 1;
         let events = self.responses.lock().unwrap().remove(0);
         Box::pin(stream::iter(events.into_iter().map(Ok::<_, ProviderError>)))

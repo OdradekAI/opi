@@ -1,17 +1,26 @@
-//! Phase 14.2 slice 2 — per-request auth resolution in the concrete providers.
+//! Phase 14.2 slice 2 — per-request auth resolution and prepared dispatch.
 //!
-//! Proves each provider holds an injected `Arc<dyn AuthResolver>` and resolves
-//! auth inside the returned stream immediately before HTTP: a resolver with no
-//! credential yields typed `CredentialNeeded` (no HTTP attempted), and a
-//! resolver returning a `ResolvedAuth` drives the scheme-selected auth header
-//! at the HTTP boundary. The `StaticAuthResolver` path (existing `new(api_key)`
-//! constructors) is still covered by the per-provider fixture tests.
+//! Phase 17.5 moved auth resolution out of the concrete providers: the
+//! `Provider::stream` entry point is gone and the sole provider entry is
+//! `Provider::stream_prepared(request, auth)`, which consumes an already-resolved
+//! [`ResolvedAuth`] directly at the HTTP boundary. Auth resolution now lives in
+//! [`ProviderCollection::prepare_call`], which resolves the route's credential
+//! once per logical call and freezes it for every retry attempt.
+//!
+//! These tests prove both halves of that contract:
+//!
+//! - A route whose resolver reports no credential yields a typed
+//!   `CredentialNeeded` from `prepare_call` (no HTTP attempted).
+//! - Driving `stream_prepared` with a supplied `ResolvedAuth` attaches the
+//!   scheme-selected auth header at the HTTP boundary, without the provider
+//!   consulting any resolver. The secret in `ResolvedAuth` is the only auth
+//!   the wire ever sees.
 
 use std::sync::Arc;
 
 use futures_util::StreamExt;
 use opi_ai::anthropic::AnthropicProvider;
-use opi_ai::auth::{AuthResolver, AuthScheme, ResolvedAuth, StaticAuthResolver};
+use opi_ai::auth::{AuthProvenance, AuthResolver, AuthScheme, ResolvedAuth};
 use opi_ai::credential::BoxAuthFuture;
 use opi_ai::http::HttpClient;
 use opi_ai::message::{InputContent, Message, UserMessage};
@@ -72,61 +81,39 @@ async fn drain(stream: &mut opi_ai::provider::EventStream) {
     }
 }
 
-// --- CredentialNeeded is yielded before any HTTP request ---
+// --- CredentialNeeded surfaces from prepare_call before any HTTP request ---
 
 #[tokio::test]
-async fn anthropic_stream_yields_credential_needed_when_resolver_has_no_credential() {
-    let provider = AnthropicProvider::with_auth(
-        Arc::new(NoCredentialResolver {
-            provider_id: "anthropic",
-        }),
-        None,
-        Arc::new(HttpClient::new()),
-    );
-    let mut stream = provider.stream(sample_request("anthropic:claude-sonnet-4-5-20250514"));
-    match stream.next().await {
-        Some(Err(ProviderError::CredentialNeeded { provider_id })) => {
+async fn prepare_call_yields_credential_needed_when_route_resolver_has_no_credential() {
+    // Phase 17.5: auth resolution is the collection's job. Registering a route
+    // whose resolver always reports no credential must yield a typed
+    // `CredentialNeeded` from `prepare_call`, before the provider is ever asked
+    // to stream. (This behavior is provider-agnostic: it is the route resolver
+    // and the collection that decide it, so one representative route covers the
+    // contract the per-provider `stream`-level tests used to assert.)
+    let provider = AnthropicProvider::new(None);
+    let mut collection = opi_ai::ProviderCollection::new();
+    collection
+        .register_route(
+            Box::new(provider),
+            Arc::new(NoCredentialResolver {
+                provider_id: "anthropic",
+            }) as Arc<dyn AuthResolver>,
+            opi_ai::AuthProvenanceSource::Static,
+            opi_ai::CompatMetadata::default(),
+        )
+        .unwrap();
+
+    let error = collection
+        .prepare_call(
+            "anthropic:claude-sonnet-4-5-20250514",
+            sample_request("anthropic:claude-sonnet-4-5-20250514"),
+        )
+        .await
+        .unwrap_err();
+    match error {
+        opi_ai::CollectionError::Provider(ProviderError::CredentialNeeded { provider_id }) => {
             assert_eq!(provider_id, "anthropic");
-        }
-        other => panic!("expected CredentialNeeded, got {other:?}"),
-    }
-}
-
-#[tokio::test]
-async fn openai_chat_stream_yields_credential_needed_when_resolver_has_no_credential() {
-    let provider = OpenAiChatProvider::with_auth(
-        Arc::new(NoCredentialResolver {
-            provider_id: "openai",
-        }),
-        None,
-        Default::default(),
-        "openai".into(),
-        vec![],
-        Arc::new(HttpClient::new()),
-    );
-    let mut stream = provider.stream(sample_request("openai:gpt-4o"));
-    match stream.next().await {
-        Some(Err(ProviderError::CredentialNeeded { provider_id })) => {
-            assert_eq!(provider_id, "openai");
-        }
-        other => panic!("expected CredentialNeeded, got {other:?}"),
-    }
-}
-
-#[tokio::test]
-async fn openai_responses_stream_yields_credential_needed_when_resolver_has_no_credential() {
-    let provider = OpenAiResponsesProvider::with_auth(
-        Arc::new(NoCredentialResolver {
-            provider_id: "openai-responses",
-        }),
-        None,
-        Default::default(),
-        Arc::new(HttpClient::new()),
-    );
-    let mut stream = provider.stream(sample_request("openai-responses:gpt-4o"));
-    match stream.next().await {
-        Some(Err(ProviderError::CredentialNeeded { provider_id })) => {
-            assert_eq!(provider_id, "openai-responses");
         }
         other => panic!("expected CredentialNeeded, got {other:?}"),
     }
@@ -135,7 +122,7 @@ async fn openai_responses_stream_yields_credential_needed_when_resolver_has_no_c
 // --- Resolved auth drives the scheme-selected HTTP header ---
 
 #[tokio::test]
-async fn anthropic_stream_applies_bearer_header_from_resolver_not_api_key_header() {
+async fn anthropic_stream_prepared_applies_bearer_header_not_api_key_header() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(header("authorization", "Bearer oauth-token-anthropic"))
@@ -147,13 +134,18 @@ async fn anthropic_stream_applies_bearer_header_from_resolver_not_api_key_header
         .mount(&server)
         .await;
 
-    let resolver: Arc<dyn AuthResolver> = Arc::new(StaticAuthResolver::new(
-        AuthScheme::Bearer,
-        SecretString::from("oauth-token-anthropic"),
-    ));
-    let provider =
-        AnthropicProvider::with_auth(resolver, Some(server.uri()), Arc::new(HttpClient::new()));
-    let mut stream = provider.stream(sample_request("anthropic:claude-sonnet-4-5-20250514"));
+    let provider = AnthropicProvider::with_client(Some(server.uri()), Arc::new(HttpClient::new()));
+    let resolved = ResolvedAuth {
+        scheme: AuthScheme::Bearer,
+        secret: SecretString::from("oauth-token-anthropic"),
+        base_url: None,
+        account_id: None,
+        provenance: AuthProvenance::default(),
+    };
+    let mut stream = provider.stream_prepared(
+        sample_request("anthropic:claude-sonnet-4-5-20250514"),
+        resolved,
+    );
     drain(&mut stream).await;
 
     // verify() fails if no request matched the `authorization: Bearer …` matcher,
@@ -162,7 +154,7 @@ async fn anthropic_stream_applies_bearer_header_from_resolver_not_api_key_header
 }
 
 #[tokio::test]
-async fn openai_chat_stream_applies_resolved_secret_to_authorization_header() {
+async fn openai_chat_stream_prepared_applies_resolved_secret_to_authorization_header() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(header("authorization", "Bearer resolved-chat-key"))
@@ -174,25 +166,27 @@ async fn openai_chat_stream_applies_resolved_secret_to_authorization_header() {
         .mount(&server)
         .await;
 
-    let resolver: Arc<dyn AuthResolver> = Arc::new(StaticAuthResolver::new(
-        AuthScheme::ApiKey,
-        SecretString::from("resolved-chat-key"),
-    ));
     let provider = OpenAiChatProvider::with_auth(
-        resolver,
         Some(server.uri()),
         Default::default(),
         "openai".into(),
         vec![],
         Arc::new(HttpClient::new()),
     );
-    let mut stream = provider.stream(sample_request("openai:gpt-4o"));
+    let resolved = ResolvedAuth {
+        scheme: AuthScheme::ApiKey,
+        secret: SecretString::from("resolved-chat-key"),
+        base_url: None,
+        account_id: None,
+        provenance: AuthProvenance::default(),
+    };
+    let mut stream = provider.stream_prepared(sample_request("openai:gpt-4o"), resolved);
     drain(&mut stream).await;
     server.verify().await;
 }
 
 #[tokio::test]
-async fn openai_responses_stream_applies_resolved_secret_to_authorization_header() {
+async fn openai_responses_stream_prepared_applies_resolved_secret_to_authorization_header() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(header("authorization", "Bearer resolved-responses-key"))
@@ -204,25 +198,27 @@ async fn openai_responses_stream_applies_resolved_secret_to_authorization_header
         .mount(&server)
         .await;
 
-    let resolver: Arc<dyn AuthResolver> = Arc::new(StaticAuthResolver::new(
-        AuthScheme::ApiKey,
-        SecretString::from("resolved-responses-key"),
-    ));
     let provider = OpenAiResponsesProvider::with_auth(
-        resolver,
         Some(server.uri()),
         Default::default(),
         Arc::new(HttpClient::new()),
     );
-    let mut stream = provider.stream(sample_request("openai-responses:gpt-4o"));
+    let resolved = ResolvedAuth {
+        scheme: AuthScheme::ApiKey,
+        secret: SecretString::from("resolved-responses-key"),
+        base_url: None,
+        account_id: None,
+        provenance: AuthProvenance::default(),
+    };
+    let mut stream = provider.stream_prepared(sample_request("openai-responses:gpt-4o"), resolved);
     drain(&mut stream).await;
     server.verify().await;
 }
 
-// --- Phase 17: prepared dispatch uses supplied auth without resolving ---
+// --- Phase 17: prepared dispatch uses supplied auth directly at the wire ---
 
 #[tokio::test]
-async fn anthropic_stream_prepared_uses_supplied_auth_without_resolving() {
+async fn anthropic_stream_prepared_uses_supplied_auth_at_the_wire() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(header("authorization", "Bearer prepared-token-anthropic"))
@@ -234,21 +230,15 @@ async fn anthropic_stream_prepared_uses_supplied_auth_without_resolving() {
         .mount(&server)
         .await;
 
-    // The provider's own resolver would yield CredentialNeeded if consulted; the
-    // prepared seam must NOT consult it, instead dispatching with the supplied
-    // resolved auth directly at the HTTP boundary.
-    let provider = AnthropicProvider::with_auth(
-        Arc::new(NoCredentialResolver {
-            provider_id: "anthropic",
-        }),
-        Some(server.uri()),
-        Arc::new(HttpClient::new()),
-    );
+    // The provider holds no resolver in the Phase 17.5 model; the supplied
+    // resolved auth is the only credential that reaches the HTTP boundary.
+    let provider = AnthropicProvider::with_client(Some(server.uri()), Arc::new(HttpClient::new()));
     let resolved = ResolvedAuth {
         scheme: AuthScheme::Bearer,
         secret: SecretString::from("prepared-token-anthropic"),
         base_url: None,
         account_id: None,
+        provenance: AuthProvenance::default(),
     };
     let mut stream = provider.stream_prepared(
         sample_request("anthropic:claude-sonnet-4-5-20250514"),
@@ -256,13 +246,12 @@ async fn anthropic_stream_prepared_uses_supplied_auth_without_resolving() {
     );
     drain(&mut stream).await;
 
-    // verify() fails if no request matched the supplied Bearer matcher, which
-    // would happen if stream_prepared had consulted the NoCredentialResolver.
+    // verify() fails if no request matched the supplied Bearer matcher.
     server.verify().await;
 }
 
 #[tokio::test]
-async fn openai_chat_stream_prepared_uses_supplied_auth_without_resolving() {
+async fn openai_chat_stream_prepared_uses_supplied_auth_at_the_wire() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(header("authorization", "Bearer prepared-chat-token"))
@@ -275,9 +264,6 @@ async fn openai_chat_stream_prepared_uses_supplied_auth_without_resolving() {
         .await;
 
     let provider = OpenAiChatProvider::with_auth(
-        Arc::new(NoCredentialResolver {
-            provider_id: "openai",
-        }),
         Some(server.uri()),
         Default::default(),
         "openai".into(),
@@ -289,6 +275,7 @@ async fn openai_chat_stream_prepared_uses_supplied_auth_without_resolving() {
         secret: SecretString::from("prepared-chat-token"),
         base_url: None,
         account_id: None,
+        provenance: AuthProvenance::default(),
     };
     let mut stream = provider.stream_prepared(sample_request("openai:gpt-4o"), resolved);
     drain(&mut stream).await;
@@ -296,7 +283,7 @@ async fn openai_chat_stream_prepared_uses_supplied_auth_without_resolving() {
 }
 
 #[tokio::test]
-async fn openai_responses_stream_prepared_uses_supplied_auth_without_resolving() {
+async fn openai_responses_stream_prepared_uses_supplied_auth_at_the_wire() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(header("authorization", "Bearer prepared-responses-token"))
@@ -309,9 +296,6 @@ async fn openai_responses_stream_prepared_uses_supplied_auth_without_resolving()
         .await;
 
     let provider = OpenAiResponsesProvider::with_auth(
-        Arc::new(NoCredentialResolver {
-            provider_id: "openai-responses",
-        }),
         Some(server.uri()),
         Default::default(),
         Arc::new(HttpClient::new()),
@@ -321,6 +305,7 @@ async fn openai_responses_stream_prepared_uses_supplied_auth_without_resolving()
         secret: SecretString::from("prepared-responses-token"),
         base_url: None,
         account_id: None,
+        provenance: AuthProvenance::default(),
     };
     let mut stream = provider.stream_prepared(sample_request("openai-responses:gpt-4o"), resolved);
     drain(&mut stream).await;
@@ -328,7 +313,7 @@ async fn openai_responses_stream_prepared_uses_supplied_auth_without_resolving()
 }
 
 #[tokio::test]
-async fn openai_codex_stream_prepared_uses_supplied_auth_without_resolving() {
+async fn openai_codex_stream_prepared_uses_supplied_auth_at_the_wire() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(header("authorization", "Bearer prepared-codex-token"))
@@ -341,9 +326,6 @@ async fn openai_codex_stream_prepared_uses_supplied_auth_without_resolving() {
         .await;
 
     let provider = OpenAiCodexResponsesProvider::new(
-        Arc::new(NoCredentialResolver {
-            provider_id: "openai-codex",
-        }),
         Some(server.uri()),
         vec![ModelInfo::new(
             "gpt-5",
@@ -358,6 +340,7 @@ async fn openai_codex_stream_prepared_uses_supplied_auth_without_resolving() {
         secret: SecretString::from("prepared-codex-token"),
         base_url: None,
         account_id: None,
+        provenance: AuthProvenance::default(),
     };
     let mut stream = provider.stream_prepared(sample_request("openai-codex:gpt-5"), resolved);
     drain(&mut stream).await;

@@ -100,6 +100,7 @@ fn model_change(id: &str, parent: Option<&str>, model: &str) -> SessionEntry {
         parent_id: parent.map(str::to_owned),
         timestamp: "2026-07-01T00:00:05Z".into(),
         model: model.into(),
+        input_source: None,
     })
 }
 

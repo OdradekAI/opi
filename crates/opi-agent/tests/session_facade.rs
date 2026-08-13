@@ -369,6 +369,46 @@ fn session_facade_reconstructs_active_branch_leaf_deterministically() {
 // ---------------------------------------------------------------------------
 
 #[test]
+fn facade_model_change_records_input_source_provenance() {
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("input-source.jsonl");
+    let repo = JsonlSessionRepo::create(&path, header("s1")).unwrap();
+    let mut facade = SessionFacade::new(Box::new(repo)).unwrap();
+
+    // A canonical `provider:model` spec carries the separator; a bare model id
+    // does not. The facade records the truthful source of each (Phase 17.5).
+    facade
+        .enqueue_model_change("anthropic:claude-sonnet-4-5".into())
+        .unwrap();
+    facade
+        .enqueue_model_change("claude-haiku-4".into())
+        .unwrap();
+    facade.flush().unwrap();
+
+    let (_h, entries, recovery) = facade.load().unwrap();
+    assert!(
+        recovery.is_clean(),
+        "no recovery expected, got {recovery:?}"
+    );
+    let model_changes: Vec<_> = entries
+        .iter()
+        .filter_map(|entry| match entry {
+            SessionEntry::ModelChange(m) => Some(m),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(model_changes.len(), 2);
+    assert_eq!(
+        model_changes[0].input_source,
+        Some(opi_agent::session::ModelInputSource::Canonical)
+    );
+    assert_eq!(
+        model_changes[1].input_source,
+        Some(opi_agent::session::ModelInputSource::BareNormalized)
+    );
+}
+
+#[test]
 fn facade_metadata_entries_attach_to_tip_without_advancing_it() {
     let dir = tempdir().unwrap();
     let path = dir.path().join("metadata.jsonl");
@@ -429,6 +469,10 @@ fn facade_metadata_entries_attach_to_tip_without_advancing_it() {
             SessionEntry::ModelChange(m) => {
                 assert_eq!(m.model, "anthropic:claude-sonnet-4-5");
                 assert_eq!(m.parent_id.as_deref(), Some(tip_before.as_str()));
+                assert_eq!(
+                    m.input_source,
+                    Some(opi_agent::session::ModelInputSource::Canonical)
+                );
                 saw_model_change = true;
             }
             SessionEntry::ThinkingLevelChange(t) => {

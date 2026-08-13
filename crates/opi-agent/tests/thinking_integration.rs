@@ -23,7 +23,7 @@ struct CaptureProvider {
 }
 
 impl Provider for CaptureProvider {
-    fn stream(&self, request: Request) -> EventStream {
+    fn stream_prepared(&self, request: Request, _auth: opi_ai::auth::ResolvedAuth) -> EventStream {
         self.requests.lock().unwrap().push(request);
         let msg = opi_ai::message::AssistantMessage {
             content: vec![opi_ai::message::AssistantContent::Text { text: "ok".into() }],

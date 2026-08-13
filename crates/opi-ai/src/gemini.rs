@@ -7,6 +7,7 @@
 use std::sync::Arc;
 
 use futures_util::{StreamExt, stream};
+use secrecy::ExposeSecret;
 use serde::Deserialize;
 use tokio_util::sync::CancellationToken;
 
@@ -438,7 +439,6 @@ fn empty_assistant_message(provider: &str) -> AssistantMessage {
 // ---------------------------------------------------------------------------
 
 pub struct GeminiProvider {
-    api_key: String,
     base_url: String,
     models: Vec<ModelInfo>,
     client: Arc<HttpClient>,
@@ -475,17 +475,16 @@ pub fn model_catalog() -> Vec<ModelInfo> {
 }
 
 impl GeminiProvider {
-    pub fn new(api_key: String, base_url: Option<String>) -> Self {
-        Self::with_client(api_key, base_url, Arc::new(HttpClient::new()))
+    pub fn new(base_url: Option<String>) -> Self {
+        Self::with_client(base_url, Arc::new(HttpClient::new()))
     }
 
     /// Create with a shared HTTP client.
-    pub fn with_client(api_key: String, base_url: Option<String>, client: Arc<HttpClient>) -> Self {
+    pub fn with_client(base_url: Option<String>, client: Arc<HttpClient>) -> Self {
         let base_url =
             base_url.unwrap_or_else(|| "https://generativelanguage.googleapis.com".into());
         let models = model_catalog();
         Self {
-            api_key,
             base_url,
             models,
             client,
@@ -843,8 +842,8 @@ fn map_gemini_error(
 }
 
 impl Provider for GeminiProvider {
-    fn stream(&self, request: Request) -> EventStream {
-        let api_key = self.api_key.clone();
+    fn stream_prepared(&self, request: Request, auth: crate::auth::ResolvedAuth) -> EventStream {
+        let api_key = auth.secret.expose_secret().to_string();
         let base_url = self.base_url.clone();
         let model_id = request
             .model
@@ -867,12 +866,6 @@ impl Provider for GeminiProvider {
         });
 
         Box::pin(ReceiverStream { rx })
-    }
-
-    fn stream_prepared(&self, request: Request, _auth: crate::auth::ResolvedAuth) -> EventStream {
-        // Gemini auth is a construction-time API key (no per-call resolver), so a
-        // prepared call reuses the existing dispatch path. (Phase 17 expand.)
-        self.stream(request)
     }
 
     fn id(&self) -> &str {

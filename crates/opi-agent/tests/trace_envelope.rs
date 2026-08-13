@@ -1707,7 +1707,11 @@ mod phase8_runtime_contract_failures {
                 .as_slice()
         }
 
-        fn stream(&self, _request: Request) -> EventStream {
+        fn stream_prepared(
+            &self,
+            _request: Request,
+            _auth: opi_ai::auth::ResolvedAuth,
+        ) -> EventStream {
             let mut partial = base_msg();
             partial.content.push(AssistantContent::Text {
                 text: "partial".into(),

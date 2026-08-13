@@ -31,6 +31,7 @@ impl AuthResolver for CountingResolver {
                 secret: SecretString::from("test-token"),
                 base_url: None,
                 account_id: None,
+                provenance: opi_ai::AuthProvenance::default(),
             })
         })
     }
@@ -68,7 +69,7 @@ impl Provider for RecordingRoute {
         &self.models
     }
 
-    fn stream(&self, request: Request) -> EventStream {
+    fn stream_prepared(&self, request: Request, _auth: opi_ai::auth::ResolvedAuth) -> EventStream {
         let auth = Arc::clone(&self.auth);
         let calls = Arc::clone(&self.calls);
         Box::pin(futures_util::stream::once(async move {
@@ -125,7 +126,7 @@ impl Provider for CatalogRoute {
         &self.models
     }
 
-    fn stream(&self, _request: Request) -> EventStream {
+    fn stream_prepared(&self, _request: Request, _auth: opi_ai::auth::ResolvedAuth) -> EventStream {
         Box::pin(futures_util::stream::empty())
     }
 
@@ -219,7 +220,10 @@ async fn mapped_provider_dispatches_one_catalog_across_three_wires() {
         ("responses", WireApi::OpenAiResponses),
     ] {
         let event = provider
-            .stream(request(&format!("acme:{id}")))
+            .stream_prepared(
+                request(&format!("acme:{id}")),
+                opi_ai::test_support::resolved_auth(),
+            )
             .next()
             .await
             .unwrap()
@@ -240,13 +244,16 @@ async fn mapped_routes_share_one_lazy_auth_resolver() {
     assert_eq!(auth.calls.load(Ordering::SeqCst), 0);
 
     provider
-        .stream(request("acme:claude"))
+        .stream_prepared(
+            request("acme:claude"),
+            opi_ai::test_support::resolved_auth(),
+        )
         .next()
         .await
         .unwrap()
         .unwrap();
     provider
-        .stream(request("acme:chat"))
+        .stream_prepared(request("acme:chat"), opi_ai::test_support::resolved_auth())
         .next()
         .await
         .unwrap()
@@ -260,7 +267,7 @@ async fn mapped_provider_re_resolves_auth_for_every_stream() {
     let (provider, auth, _) = mapped_fixture();
     for _ in 0..3 {
         provider
-            .stream(request("responses"))
+            .stream_prepared(request("responses"), opi_ai::test_support::resolved_auth())
             .next()
             .await
             .unwrap()
@@ -273,7 +280,10 @@ async fn mapped_provider_re_resolves_auth_for_every_stream() {
 async fn unknown_model_fails_before_route_or_network() {
     let (provider, auth, logs) = mapped_fixture();
     let error = provider
-        .stream(request("acme:unknown"))
+        .stream_prepared(
+            request("acme:unknown"),
+            opi_ai::test_support::resolved_auth(),
+        )
         .next()
         .await
         .unwrap()
@@ -283,7 +293,7 @@ async fn unknown_model_fails_before_route_or_network() {
     assert!(logs.values().all(|log| log.lock().unwrap().is_empty()));
 
     let error = provider
-        .stream(request("other:chat"))
+        .stream_prepared(request("other:chat"), opi_ai::test_support::resolved_auth())
         .next()
         .await
         .unwrap()
@@ -616,25 +626,6 @@ async fn concrete_custom_route_ignores_credential_base_url_and_uses_model_base_u
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
-    struct BaseUrlResolver {
-        calls: Arc<AtomicUsize>,
-        base_url: String,
-    }
-    impl AuthResolver for BaseUrlResolver {
-        fn resolve<'a>(&'a self) -> BoxAuthFuture<'a, Result<ResolvedAuth, ProviderError>> {
-            self.calls.fetch_add(1, Ordering::SeqCst);
-            let base_url = self.base_url.clone();
-            Box::pin(async move {
-                Ok(ResolvedAuth {
-                    scheme: AuthScheme::Bearer,
-                    secret: SecretString::from("oauth-token"),
-                    base_url: Some(base_url),
-                    account_id: None,
-                })
-            })
-        }
-    }
-
     let auth_server = MockServer::start().await;
     let model_server = MockServer::start().await;
     let default_server = MockServer::start().await;
@@ -645,15 +636,9 @@ async fn concrete_custom_route_ignores_credential_base_url_and_uses_model_base_u
         )
         .mount(&model_server)
         .await;
-    let calls = Arc::new(AtomicUsize::new(0));
-    let auth: Arc<dyn AuthResolver> = Arc::new(BaseUrlResolver {
-        calls: Arc::clone(&calls),
-        base_url: auth_server.uri(),
-    });
     let routed_model =
         model("claude", WireApi::AnthropicMessages).with_base_url(model_server.uri());
     let route = opi_ai::anthropic::AnthropicProvider::for_route(
-        auth,
         "acme".into(),
         vec![routed_model.clone()],
         Some(default_server.uri()),
@@ -665,8 +650,17 @@ async fn concrete_custom_route_ignores_credential_base_url_and_uses_model_base_u
     routes.insert(WireApi::AnthropicMessages, Box::new(route));
     let provider = ApiMappedProvider::try_new("acme", vec![routed_model], routes).unwrap();
 
+    // The resolved auth carries the credential's base_url; a non-Copilot route
+    // must ignore it and dispatch to the model's own base_url instead.
+    let resolved = ResolvedAuth {
+        scheme: AuthScheme::Bearer,
+        secret: SecretString::from("oauth-token"),
+        base_url: Some(auth_server.uri()),
+        account_id: None,
+        provenance: opi_ai::AuthProvenance::default(),
+    };
     let error = provider
-        .stream(request("acme:claude"))
+        .stream_prepared(request("acme:claude"), resolved)
         .next()
         .await
         .unwrap()
@@ -674,7 +668,6 @@ async fn concrete_custom_route_ignores_credential_base_url_and_uses_model_base_u
     assert!(matches!(error, ProviderError::AuthFailed(_)));
     let rendered = format!("{error:?} {error}");
     assert!(!rendered.contains("echoed-key-canary-must-not-surface"));
-    assert_eq!(calls.load(Ordering::SeqCst), 1);
     assert!(auth_server.received_requests().await.unwrap().is_empty());
     let requests = model_server.received_requests().await.unwrap();
     assert_eq!(requests.len(), 1);

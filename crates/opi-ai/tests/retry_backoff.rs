@@ -178,7 +178,7 @@ async fn mock_provider_returns_error_response() {
         session_id: None,
     };
     use futures_util::StreamExt;
-    let mut stream = provider.stream(request);
+    let mut stream = provider.stream_prepared(request, opi_ai::test_support::resolved_auth());
     let first = stream.next().await.unwrap();
     assert!(first.is_err(), "first call should return error");
     match first.unwrap_err() {

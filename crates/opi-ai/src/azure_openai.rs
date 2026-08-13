@@ -10,6 +10,7 @@ use std::fmt;
 use std::sync::Arc;
 
 use futures_util::{StreamExt, stream};
+use secrecy::ExposeSecret;
 use tokio_util::sync::CancellationToken;
 
 use crate::http::HttpClient;
@@ -29,7 +30,6 @@ const DEFAULT_API_VERSION: &str = "2024-06-01";
 /// Wraps an [`OpenAiChatProvider`] for request body serialization and SSE
 /// parsing, but overrides the HTTP transport layer (URL and auth header).
 pub struct AzureOpenAIProvider {
-    api_key: String,
     endpoint: String,
     api_version: String,
     models: Vec<ModelInfo>,
@@ -42,7 +42,6 @@ impl fmt::Debug for AzureOpenAIProvider {
         f.debug_struct("AzureOpenAIProvider")
             .field("endpoint", &self.endpoint)
             .field("api_version", &self.api_version)
-            .field("api_key", &"***")
             .field("models", &self.models.len())
             .finish()
     }
@@ -54,7 +53,6 @@ impl AzureOpenAIProvider {
     /// `deployment` is a default deployment name (used for model list display).
     /// The actual deployment is resolved from the model spec `azure:<deployment>`.
     pub fn new(
-        api_key: String,
         endpoint: Option<String>,
         deployment: String,
         api_version: Option<String>,
@@ -72,7 +70,6 @@ impl AzureOpenAIProvider {
         }
         let models = vec![deployment_model(&deployment)];
         let inner = OpenAiChatProvider::new_for_profile(
-            api_key.clone(),
             endpoint.clone(),
             "azure".into(),
             CompatConfig::default(),
@@ -80,7 +77,6 @@ impl AzureOpenAIProvider {
             vec![],
         );
         Ok(Self {
-            api_key,
             endpoint,
             api_version,
             models,
@@ -91,7 +87,6 @@ impl AzureOpenAIProvider {
 
     /// Create from config with explicit deployment names for the model list.
     pub fn from_config(
-        api_key: String,
         endpoint: Option<String>,
         deployments: Vec<String>,
         api_version: Option<String>,
@@ -116,7 +111,6 @@ impl AzureOpenAIProvider {
             .map(|deployment| deployment_model(deployment))
             .collect();
         let inner = OpenAiChatProvider::new_for_profile(
-            api_key.clone(),
             endpoint.clone(),
             "azure".into(),
             CompatConfig::default(),
@@ -124,7 +118,6 @@ impl AzureOpenAIProvider {
             vec![],
         );
         Ok(Self {
-            api_key,
             endpoint,
             api_version,
             models,
@@ -146,7 +139,6 @@ impl AzureOpenAIProvider {
     /// profiles.
     pub fn with_compat(mut self, compat: CompatConfig) -> Self {
         self.inner = OpenAiChatProvider::new_for_profile(
-            self.api_key.clone(),
             self.endpoint.clone(),
             "azure".into(),
             compat,
@@ -230,7 +222,8 @@ impl Provider for AzureOpenAIProvider {
         &self.models
     }
 
-    fn stream(&self, request: Request) -> EventStream {
+    fn stream_prepared(&self, request: Request, auth: crate::auth::ResolvedAuth) -> EventStream {
+        let api_key = auth.secret.expose_secret().to_string();
         let model_id = request
             .model
             .split_once(':')
@@ -242,7 +235,6 @@ impl Provider for AzureOpenAIProvider {
         let body = self.inner.build_request_body(&request);
         let cancel = request.cancel;
         let http_client = self.client.client().clone();
-        let api_key = self.api_key.clone();
 
         let (tx, rx) = tokio::sync::mpsc::channel(64);
 
@@ -254,12 +246,6 @@ impl Provider for AzureOpenAIProvider {
         });
 
         Box::pin(ReceiverStream { rx })
-    }
-
-    fn stream_prepared(&self, request: Request, _auth: crate::auth::ResolvedAuth) -> EventStream {
-        // Azure auth is a construction-time API key (no per-call resolver), so a
-        // prepared call reuses the existing dispatch path. (Phase 17 expand.)
-        self.stream(request)
     }
 }
 

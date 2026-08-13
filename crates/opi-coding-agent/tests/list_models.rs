@@ -241,7 +241,7 @@ impl Provider for TestProvider {
         &self.models
     }
 
-    fn stream(&self, _request: Request) -> EventStream {
+    fn stream_prepared(&self, _request: Request, _auth: opi_ai::auth::ResolvedAuth) -> EventStream {
         let stream: Vec<Result<AssistantStreamEvent, ProviderError>> = Vec::new();
         Box::pin(futures_util::stream::iter(stream))
     }
@@ -754,7 +754,7 @@ async fn stored_only_credential_lists_models_through_async_orchestration() {
         .registry()
         .get_provider("anthropic")
         .expect("metadata provider registered")
-        .stream(request)
+        .stream_prepared(request, opi_ai::test_support::resolved_auth())
         .next()
         .await
         .expect("metadata provider returns one error")

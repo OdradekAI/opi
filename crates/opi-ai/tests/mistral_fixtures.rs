@@ -17,8 +17,8 @@ use wiremock::matchers::{body_partial_json, header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 /// Helper: create a Mistral-configured provider.
-fn mistral_provider(api_key: &str) -> OpenAiChatProvider {
-    opi_ai::mistral::mistral_provider(api_key.into(), None)
+fn mistral_provider() -> OpenAiChatProvider {
+    opi_ai::mistral::mistral_provider(None)
 }
 
 /// Helper: collect stream events asynchronously.
@@ -96,7 +96,7 @@ fn stalled_mistral_terminal_chunk() -> &'static str {
 
 #[test]
 fn mistral_provider_id_is_mistral() {
-    let provider = mistral_provider("test-key");
+    let provider = mistral_provider();
     assert_eq!(provider.id(), "mistral");
 }
 
@@ -107,7 +107,7 @@ fn mistral_provider_id_is_mistral() {
 #[test]
 fn mistral_resolves_model_in_registry() {
     let mut registry = ProviderRegistry::new();
-    registry.register(Box::new(mistral_provider("key")));
+    registry.register(Box::new(mistral_provider()));
     let (provider, model) = registry.resolve("mistral:mistral-large-latest").unwrap();
     assert_eq!(provider.id(), "mistral");
     assert_eq!(model.id, "mistral-large-latest");
@@ -116,7 +116,7 @@ fn mistral_resolves_model_in_registry() {
 #[test]
 fn mistral_registry_lists_provider_id() {
     let mut registry = ProviderRegistry::new();
-    registry.register(Box::new(mistral_provider("key")));
+    registry.register(Box::new(mistral_provider()));
     let ids = registry.provider_ids();
     assert!(ids.contains(&"mistral"));
 }
@@ -124,7 +124,7 @@ fn mistral_registry_lists_provider_id() {
 #[test]
 fn mistral_unknown_model_returns_error() {
     let mut registry = ProviderRegistry::new();
-    registry.register(Box::new(mistral_provider("key")));
+    registry.register(Box::new(mistral_provider()));
     let result = registry.resolve("mistral:nonexistent-model");
     assert!(result.is_err());
 }
@@ -135,7 +135,7 @@ fn mistral_unknown_model_returns_error() {
 
 #[test]
 fn mistral_request_body_strips_provider_prefix() {
-    let provider = mistral_provider("key");
+    let provider = mistral_provider();
     let request = Request {
         model: "mistral:mistral-small-latest".into(),
         system: Some("You are helpful.".into()),
@@ -167,7 +167,7 @@ fn mistral_request_body_strips_provider_prefix() {
 
 #[tokio::test]
 async fn mistral_text_streaming_produces_start_delta_done() {
-    let provider = mistral_provider("key");
+    let provider = mistral_provider();
     let sse = "data: {\"choices\":[{\"delta\":{\"role\":\"assistant\",\"content\":null}}],\"model\":\"mistral-large-latest\"}\n\n\
                data: {\"choices\":[{\"delta\":{\"content\":\"Hi there\"}}]}\n\n\
                data: {\"choices\":[{\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":5}}\n\n\
@@ -194,7 +194,7 @@ async fn mistral_text_streaming_produces_start_delta_done() {
 
 #[tokio::test]
 async fn mistral_done_event_has_mistral_provider() {
-    let provider = mistral_provider("key");
+    let provider = mistral_provider();
     let sse = "data: {\"choices\":[{\"delta\":{\"role\":\"assistant\",\"content\":null}}]}\n\n\
                data: {\"choices\":[{\"delta\":{\"content\":\"Hi\"}}]}\n\n\
                data: {\"choices\":[{\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":5,\"completion_tokens\":2}}\n\n\
@@ -217,7 +217,7 @@ async fn mistral_done_event_has_mistral_provider() {
 
 #[tokio::test]
 async fn mistral_tool_call_streaming_works() {
-    let provider = mistral_provider("key");
+    let provider = mistral_provider();
     let sse = "data: {\"choices\":[{\"delta\":{\"role\":\"assistant\",\"content\":null}}]}\n\n\
                data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_1\",\"type\":\"function\",\"function\":{\"name\":\"read_file\",\"arguments\":\"\"}}]}}]}\n\n\
                data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"{\\\"path\\\":\\\"foo.rs\\\"}\"}}]}}]}\n\n\
@@ -244,7 +244,7 @@ async fn mistral_tool_call_streaming_works() {
 
 #[tokio::test]
 async fn mistral_error_event_routing() {
-    let provider = mistral_provider("key");
+    let provider = mistral_provider();
     let sse = "data: {\"error\":{\"message\":\"Model not found\"}}\n\n\
                data: [DONE]\n\n";
     let events = collect_stream(provider.stream_from_sse(sse, CancellationToken::new())).await;
@@ -263,7 +263,7 @@ async fn mistral_error_event_routing() {
 
 #[tokio::test]
 async fn mistral_usage_in_done_event() {
-    let provider = mistral_provider("key");
+    let provider = mistral_provider();
     let sse = "data: {\"choices\":[{\"delta\":{\"role\":\"assistant\",\"content\":null}}]}\n\n\
                data: {\"choices\":[{\"delta\":{\"content\":\"test\"}}]}\n\n\
                data: {\"choices\":[{\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":42,\"completion_tokens\":13}}\n\n\
@@ -287,7 +287,7 @@ async fn mistral_usage_in_done_event() {
 
 #[test]
 fn mistral_has_model_list() {
-    let provider = mistral_provider("key");
+    let provider = mistral_provider();
     let models = provider.models();
     assert!(
         !models.is_empty(),
@@ -313,8 +313,7 @@ fn mistral_has_model_list() {
 
 #[test]
 fn mistral_custom_base_url() {
-    let provider =
-        opi_ai::mistral::mistral_provider("key".into(), Some("https://custom.proxy".into()));
+    let provider = opi_ai::mistral::mistral_provider(Some("https://custom.proxy".into()));
     assert_eq!(provider.id(), "mistral");
 }
 
@@ -324,7 +323,7 @@ fn mistral_custom_base_url() {
 
 #[tokio::test]
 async fn mistral_multiple_text_deltas() {
-    let provider = mistral_provider("key");
+    let provider = mistral_provider();
     let sse = "data: {\"choices\":[{\"delta\":{\"role\":\"assistant\",\"content\":null}}]}\n\n\
                data: {\"choices\":[{\"delta\":{\"content\":\"Hello\"}}]}\n\n\
                data: {\"choices\":[{\"delta\":{\"content\":\" world\"}}]}\n\n\
@@ -389,7 +388,7 @@ async fn stream_sends_text_request_body_and_auth_through_http() {
         .mount(&server)
         .await;
 
-    let provider = opi_ai::mistral::mistral_provider("test-key".into(), Some(server.uri()));
+    let provider = opi_ai::mistral::mistral_provider(Some(server.uri()));
     let request = Request {
         model: "mistral:mistral-small-latest".into(),
         system: Some("You are helpful.".into()),
@@ -412,7 +411,7 @@ async fn stream_sends_text_request_body_and_auth_through_http() {
         session_id: None,
     };
 
-    let mut stream = provider.stream(request);
+    let mut stream = provider.stream_prepared(request, opi_ai::test_support::resolved_auth());
     while let Some(result) = stream.next().await {
         match result {
             Ok(event) if event.is_terminal() => break,
@@ -438,7 +437,6 @@ fn mistral_profile_inherits_shared_compat_flags() {
     // max_completion_tokens field, its request body reflects all flags through
     // the shared serializer (DoD), not a parallel Mistral-specific serializer.
     let provider = OpenAiChatProvider::new_for_profile(
-        "test-key".into(),
         "https://mistral.example.com".into(),
         "mistral".into(),
         CompatConfig {
@@ -506,7 +504,7 @@ async fn stream_cancellation_aborts_before_completion() {
     let server = spawn_stalled_mistral_server().await;
 
     let cancel = CancellationToken::new();
-    let provider = opi_ai::mistral::mistral_provider("test-key".into(), Some(server));
+    let provider = opi_ai::mistral::mistral_provider(Some(server));
     let request = Request {
         model: "mistral:mistral-small-latest".into(),
         system: None,
@@ -528,7 +526,7 @@ async fn stream_cancellation_aborts_before_completion() {
         cache_retention: CacheRetention::None,
         session_id: None,
     };
-    let mut stream = provider.stream(request);
+    let mut stream = provider.stream_prepared(request, opi_ai::test_support::resolved_auth());
 
     let first = stream
         .next()

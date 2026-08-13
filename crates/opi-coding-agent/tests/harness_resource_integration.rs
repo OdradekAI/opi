@@ -717,9 +717,14 @@ async fn harness_includes_adapter_tools_alongside_builtins() {
         prompt.contains("- read:"),
         "builtin read tool missing from prompt"
     );
+    // Phase 17.4 trusted-tool-registration cutover: extension/adapter tools
+    // without a registered builtin capability are excluded fail-closed by
+    // `register_builtin_tools` (tool_authority.rs). The adapter `test_tool` is
+    // no longer model-visible; this inverts the pre-17.4 expectation that
+    // adapter tools appear alongside builtins.
     assert!(
-        prompt.contains("- test_tool:"),
-        "adapter test_tool missing from prompt"
+        !prompt.contains("- test_tool:"),
+        "adapter test_tool must be excluded by the 17.4 fail-closed tool registration: {prompt}"
     );
 }
 
@@ -801,9 +806,14 @@ async fn tool_selection_no_builtin_keeps_adapter_tools() {
         !prompt.contains("- read:"),
         "builtin read should be absent with NoBuiltin"
     );
+    // Phase 17.4 trusted-tool-registration cutover: extension/adapter tools are
+    // excluded fail-closed regardless of ToolSelection (no registered builtin
+    // capability). Under NoBuiltin both the builtins and the adapter tool are
+    // absent; this inverts the pre-17.4 expectation that NoBuiltin kept adapter
+    // tools.
     assert!(
-        prompt.contains("- test_tool:"),
-        "adapter test_tool should be present with NoBuiltin"
+        !prompt.contains("- test_tool:"),
+        "adapter test_tool must be excluded by the 17.4 fail-closed tool registration under NoBuiltin: {prompt}"
     );
 }
 

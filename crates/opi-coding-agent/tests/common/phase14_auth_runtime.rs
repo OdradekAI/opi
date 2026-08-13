@@ -20,9 +20,13 @@ pub fn credential_runner(workspace: &Path) -> NonInteractiveRunner {
             provider_id: "anthropic".into(),
         })],
     );
+    // Phase 17.5: the harness dispatches through ProviderCollection::prepare_call,
+    // which strictly resolves the `provider:model` spec against the provider's
+    // catalog. MockProvider only registers "mock-model", so the spec must match it;
+    // the CredentialNeeded provider_id is driven by the mock error, not the spec.
     NonInteractiveRunner::new(
         Box::new(provider),
-        "anthropic:claude-sonnet-4-5".into(),
+        "anthropic:mock-model".into(),
         OpiConfig::default(),
         workspace.to_path_buf(),
         false,
@@ -66,7 +70,7 @@ pub async fn run_rpc_stdio_child() {
     );
     let mut runner = RpcRunner::new(
         Box::new(provider),
-        "anthropic:claude-sonnet-4-5".into(),
+        "anthropic:mock-model".into(),
         OpiConfig::default(),
         workspace.path().to_path_buf(),
         false,

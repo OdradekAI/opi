@@ -63,7 +63,10 @@ impl AuthInvalidPolicy {
 ///
 /// Carries only what the provider's HTTP boundary consumes; the secret is a
 /// [`SecretString`] exposed only via [`secrecy::ExposeSecret`] at the provider
-/// boundary. [`Debug`](std::fmt::Debug) redacts the secret.
+/// boundary. [`Debug`](std::fmt::Debug) redacts the secret. The non-secret
+/// [`AuthProvenance`] is carried beside the secret so callers and evidence can
+/// distinguish auth sources without seeing the secret; it is attached by the
+/// collection after resolution (resolvers supply [`AuthProvenance::default`]).
 #[derive(Clone)]
 pub struct ResolvedAuth {
     /// How the provider attaches the secret to the HTTP request.
@@ -74,17 +77,23 @@ pub struct ResolvedAuth {
     pub base_url: Option<String>,
     /// Provider account identity, when required by a concrete wire.
     pub account_id: Option<String>,
+    /// Non-secret source classification plus fallback decision. Attached by
+    /// [`crate::ProviderCollection`] after resolution from the route's
+    /// registered source; resolvers supply the default.
+    pub provenance: AuthProvenance,
 }
 
 impl std::fmt::Debug for ResolvedAuth {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // Manual impl so a future secrecy version that changes SecretString's
-        // Debug cannot leak the secret here.
+        // Debug cannot leak the secret here. Provenance is non-secret and
+        // visible (design: only the secret is redacted).
         f.debug_struct("ResolvedAuth")
             .field("scheme", &self.scheme)
             .field("secret", &"<redacted>")
             .field("base_url", &self.base_url)
             .field("account_id", &self.account_id)
+            .field("provenance", &self.provenance)
             .finish()
     }
 }
@@ -100,10 +109,11 @@ impl std::fmt::Debug for ResolvedAuth {
 /// ever seeing the secret. No secret value, raw environment value, token, or
 /// credential-store payload enters this type: `Environment` names the variable,
 /// `CredentialStore` and `OAuth` name non-secret provider/store labels.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum AuthProvenanceSource {
     /// A static credential baked into provider construction.
+    #[default]
     Static,
     /// A credential read from a named environment variable. `name` is the
     /// variable name (e.g. `ANTHROPIC_API_KEY`), never its resolved value.
@@ -129,10 +139,11 @@ pub enum AuthProvenanceSource {
 ///
 /// An environment fallback is permitted only where the reviewed product auth
 /// policy allows it; that decision is retained here as a closed, typed value.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum AuthFallback {
     /// No fallback was attempted; the primary source resolved the credential.
+    #[default]
     NotAttempted,
     /// An explicitly allowed fallback resolved the credential by moving from
     /// `from` to `to`. `reason` is a stable non-secret diagnostic.
@@ -151,7 +162,7 @@ pub enum AuthFallback {
 /// Built by [`crate::ProviderCollection`] during call preparation from the
 /// route's registered source classification and the resolve outcome; the
 /// secret itself stays in [`ResolvedAuth`] and never enters this value.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AuthProvenance {
     /// Where the credential originated.
     pub source: AuthProvenanceSource,
@@ -202,6 +213,7 @@ impl AuthResolver for StaticAuthResolver {
                 secret,
                 base_url: None,
                 account_id: None,
+                provenance: AuthProvenance::default(),
             })
         })
     }

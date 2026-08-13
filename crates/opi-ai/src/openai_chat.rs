@@ -8,11 +8,11 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use futures_util::{StreamExt, stream};
-use secrecy::{ExposeSecret, SecretString};
+use secrecy::ExposeSecret;
 use serde::Deserialize;
 use tokio_util::sync::CancellationToken;
 
-use crate::auth::{AuthInvalidPolicy, AuthResolver, AuthScheme, ResolvedAuth, StaticAuthResolver};
+use crate::auth::{AuthInvalidPolicy, ResolvedAuth};
 use crate::http::HttpClient;
 use crate::message::{
     AssistantContent, AssistantMessage, OutputContent, TOOL_ERROR_MARKER, ToolCall,
@@ -792,7 +792,6 @@ pub struct ModelCompatOverride {
 
 /// Concrete OpenAI Chat Completions API provider.
 pub struct OpenAiChatProvider {
-    auth: Arc<dyn AuthResolver>,
     base_url: String,
     models: Vec<ModelInfo>,
     compat: CompatConfig,
@@ -848,21 +847,12 @@ pub fn model_catalog() -> Vec<ModelInfo> {
 }
 
 impl OpenAiChatProvider {
-    pub fn new(api_key: String, base_url: Option<String>) -> Self {
-        Self::new_with_compat(api_key, base_url, CompatConfig::default())
+    pub fn new(base_url: Option<String>) -> Self {
+        Self::new_with_compat(base_url, CompatConfig::default())
     }
 
-    pub fn new_with_compat(
-        api_key: String,
-        base_url: Option<String>,
-        compat: CompatConfig,
-    ) -> Self {
-        let auth = Arc::new(StaticAuthResolver::new(
-            AuthScheme::ApiKey,
-            SecretString::from(api_key),
-        ));
+    pub fn new_with_compat(base_url: Option<String>, compat: CompatConfig) -> Self {
         Self::with_auth(
-            auth,
             base_url,
             compat,
             "openai".into(),
@@ -874,18 +864,12 @@ impl OpenAiChatProvider {
 
     /// Create with a shared HTTP client.
     pub fn with_client(
-        api_key: String,
         base_url: Option<String>,
         provider_id: String,
         extra_headers: Vec<(String, String)>,
         client: Arc<HttpClient>,
     ) -> Self {
-        let auth = Arc::new(StaticAuthResolver::new(
-            AuthScheme::ApiKey,
-            SecretString::from(api_key),
-        ));
         Self::with_auth(
-            auth,
             base_url,
             CompatConfig::default(),
             provider_id,
@@ -895,13 +879,9 @@ impl OpenAiChatProvider {
         .with_auth_invalid_policy(AuthInvalidPolicy::Static)
     }
 
-    /// Build with an injected per-request auth resolver (Phase 14.2). The
-    /// resolver is consulted inside `Provider::stream` immediately before each
-    /// HTTP request; `new`/`new_with_compat`/`with_client` wrap a fixed key in
-    /// a [`StaticAuthResolver`]. OAuth/env-backed resolution (Copilot) is
-    /// supplied through this entry point by `opi-coding-agent`.
+    /// Build with provider route config. The secret arrives per-call via
+    /// [`crate::auth::ResolvedAuth`] on `Provider::stream_prepared`.
     pub fn with_auth(
-        auth: Arc<dyn AuthResolver>,
         base_url: Option<String>,
         compat: CompatConfig,
         provider_id: String,
@@ -912,7 +892,6 @@ impl OpenAiChatProvider {
         let models = model_catalog();
         let direct_prompt_cache_key = provider_id == "openai";
         Self {
-            auth,
             base_url,
             models,
             compat,
@@ -930,19 +909,13 @@ impl OpenAiChatProvider {
 
     /// Create a provider for an OpenAI-compatible profile (OpenRouter, Mistral, etc.).
     pub fn new_for_profile(
-        api_key: String,
         base_url: String,
         provider_id: String,
         compat: CompatConfig,
         extra_headers: Vec<(String, String)>,
         models: Vec<ModelInfo>,
     ) -> Self {
-        let auth = Arc::new(StaticAuthResolver::new(
-            AuthScheme::ApiKey,
-            SecretString::from(api_key),
-        ));
         Self {
-            auth,
             base_url,
             models,
             compat,
@@ -960,7 +933,6 @@ impl OpenAiChatProvider {
 
     /// Build a Chat Completions route for a mapped provider.
     pub fn for_route(
-        auth: Arc<dyn AuthResolver>,
         default_base_url: Option<String>,
         provider_id: String,
         headers: ProviderHeaders,
@@ -968,7 +940,6 @@ impl OpenAiChatProvider {
         client: Arc<HttpClient>,
     ) -> Self {
         Self {
-            auth,
             base_url: default_base_url.unwrap_or_else(|| "https://api.openai.com".into()),
             models,
             compat: CompatConfig::default(),
@@ -1468,120 +1439,6 @@ fn serialize_messages(
 }
 
 impl Provider for OpenAiChatProvider {
-    fn stream(&self, request: Request) -> EventStream {
-        if let Err(error) = crate::provider::validate_request_capabilities(self, &request) {
-            return Box::pin(stream::once(async move { Err(error) }));
-        }
-        let auth = self.auth.clone();
-        let default_base_url = self.base_url.clone();
-        let provider_id = self.provider_id.clone();
-        let auth_invalid_policy = self.auth_invalid_policy;
-        let model_id = request
-            .model
-            .split_once(':')
-            .map(|(_, model_id)| model_id)
-            .unwrap_or(&request.model);
-        let model = self.models.iter().find(|model| model.id == model_id);
-        let model_base_url = model.and_then(|model| model.base_url.clone());
-        let chat_completions_path = self.resolve_compat(model_id).chat_completions_path;
-        let mut extra_headers = self.route_headers.clone();
-        let copilot_headers = if self.copilot_initiator {
-            match github_copilot_route_headers(&request) {
-                Ok(mut extra_headers) => {
-                    let initiator = github_copilot_initiator(&request);
-                    extra_headers.push(("X-Initiator".into(), initiator.into()));
-                    Ok(extra_headers)
-                }
-                Err(error) => Err(error),
-            }
-        } else {
-            Ok(Vec::new())
-        };
-        if self.resolve_compat(model_id).send_session_affinity_headers
-            && request.cache_retention != CacheRetention::Disabled
-            && let Some(session_id) = request.session_id.as_deref()
-            && !session_id.is_empty()
-        {
-            const AFFINITY_HEADERS: [&str; 3] =
-                ["session_id", "x-client-request-id", "x-session-affinity"];
-            extra_headers.retain(|(name, _)| {
-                !AFFINITY_HEADERS
-                    .iter()
-                    .any(|managed| name.eq_ignore_ascii_case(managed))
-            });
-            let clamped: String = session_id.chars().take(64).collect();
-            extra_headers.extend(
-                AFFINITY_HEADERS
-                    .into_iter()
-                    .map(|name| (name.into(), clamped.clone())),
-            );
-        }
-        let extra_headers = copilot_headers.and_then(|copilot_headers| {
-            extra_headers.extend(copilot_headers);
-            self.headers
-                .merge_request(&extra_headers, &request.extra_headers)
-        });
-        let timeout = request.timeout;
-        let body = self.build_request_body(&request);
-        let cancel = request.cancel.clone();
-        let http_client = self.client.client().clone();
-
-        let (tx, rx) = tokio::sync::mpsc::channel(64);
-        // Clone the sender so the spawned task can observe receiver drop and
-        // abort credential resolution / HTTP the moment the caller drops the
-        // stream, instead of running detached until its next send attempt.
-        let tx_closed = tx.clone();
-
-        tokio::spawn(async move {
-            let work = async {
-                let extra_headers = match extra_headers {
-                    Ok(headers) => headers,
-                    Err(error) => {
-                        let _ = tx.send(Err(error)).await;
-                        return;
-                    }
-                };
-                let resolved = match auth.resolve().await {
-                    Ok(resolved) => resolved,
-                    Err(e) => {
-                        let _ = tx.send(Err(e)).await;
-                        return;
-                    }
-                };
-                let base_url = resolved
-                    .base_url
-                    .clone()
-                    .or(model_base_url)
-                    .unwrap_or(default_base_url);
-                if let Err(e) = Self::stream_http(
-                    http_client,
-                    resolved,
-                    base_url,
-                    provider_id,
-                    auth_invalid_policy,
-                    chat_completions_path,
-                    extra_headers,
-                    &body,
-                    cancel,
-                    timeout,
-                    &tx,
-                )
-                .await
-                {
-                    let _ = tx.send(Err(e)).await;
-                }
-            };
-
-            tokio::select! {
-                biased;
-                _ = tx_closed.closed() => (),
-                _ = work => {},
-            }
-        });
-
-        Box::pin(ReceiverStream { rx })
-    }
-
     fn stream_prepared(
         &self,
         request: Request,

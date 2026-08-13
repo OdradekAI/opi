@@ -246,7 +246,7 @@ async fn extension_provider_streams_without_network() {
         session_id: None,
     };
 
-    let stream = provider.stream(request);
+    let stream = provider.stream_prepared(request, opi_ai::test_support::resolved_auth());
     let events: Vec<_> = stream.collect::<Vec<_>>().await;
     assert!(!events.is_empty());
 }

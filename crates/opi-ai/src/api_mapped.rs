@@ -22,8 +22,8 @@ use crate::provider::{EventStream, ModelInfo, Provider, ProviderError, Request};
 /// [`try_new`](Self::try_new) rejects duplicate models/routes, missing or
 /// unexpected routes, hidden provider ids, catalog mismatches, and
 /// wire/compatibility mismatches before any request can reach the network.
-/// [`Provider::stream`] then resolves the requested model in this public
-/// catalog and delegates to its exact [`WireApi`] route.
+/// [`Provider::stream_prepared`] then resolves the requested model in this
+/// public catalog and delegates to its exact [`WireApi`] route.
 pub struct ApiMappedProvider {
     id: String,
     models: Vec<ModelInfo>,
@@ -170,35 +170,6 @@ impl Provider for ApiMappedProvider {
 
     fn models(&self) -> &[ModelInfo] {
         &self.models
-    }
-
-    fn stream(&self, request: Request) -> EventStream {
-        let Some(model_id) = self.model_id(&request.model) else {
-            let provider_id = self.id.clone();
-            let model_id = request.model;
-            return Box::pin(stream::once(async move {
-                Err(ProviderError::UnknownModel {
-                    provider_id,
-                    model_id,
-                })
-            }));
-        };
-        let Some(model) = self.models.iter().find(|model| model.id == model_id) else {
-            let provider_id = self.id.clone();
-            let model_id = model_id.to_owned();
-            return Box::pin(stream::once(async move {
-                Err(ProviderError::UnknownModel {
-                    provider_id,
-                    model_id,
-                })
-            }));
-        };
-        if let Err(error) =
-            crate::provider::validate_request_for_model(&self.id, Some(model), &request)
-        {
-            return Box::pin(stream::once(async move { Err(error) }));
-        }
-        self.routes[&model.wire_api].stream(request)
     }
 
     fn stream_prepared(&self, request: Request, auth: crate::auth::ResolvedAuth) -> EventStream {

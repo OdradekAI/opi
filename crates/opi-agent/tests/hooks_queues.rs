@@ -62,7 +62,7 @@ impl Provider for RecordingProvider {
         &self.models
     }
 
-    fn stream(&self, request: Request) -> EventStream {
+    fn stream_prepared(&self, request: Request, _auth: opi_ai::auth::ResolvedAuth) -> EventStream {
         self.received_messages
             .lock()
             .unwrap()

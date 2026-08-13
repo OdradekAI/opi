@@ -61,28 +61,28 @@ fn assert_no_truncated(body: &serde_json::Value, label: &str) {
 
 #[test]
 fn anthropic_body_does_not_leak_truncated() {
-    let provider = AnthropicProvider::new("key".into(), None);
+    let provider = AnthropicProvider::new(None);
     let body = provider.build_request_body(&request_with_truncated_tool_result());
     assert_no_truncated(&body, "anthropic");
 }
 
 #[test]
 fn openai_chat_body_does_not_leak_truncated() {
-    let provider = OpenAiChatProvider::new("key".into(), None);
+    let provider = OpenAiChatProvider::new(None);
     let body = provider.build_request_body(&request_with_truncated_tool_result());
     assert_no_truncated(&body, "openai_chat");
 }
 
 #[test]
 fn openai_responses_body_does_not_leak_truncated() {
-    let provider = OpenAiResponsesProvider::new("key".into(), None);
+    let provider = OpenAiResponsesProvider::new(None);
     let body = provider.build_request_body(&request_with_truncated_tool_result());
     assert_no_truncated(&body, "openai_responses");
 }
 
 #[test]
 fn gemini_body_does_not_leak_truncated() {
-    let provider = GeminiProvider::new("key".into(), None);
+    let provider = GeminiProvider::new(None);
     let body = provider.build_request_body(&request_with_truncated_tool_result());
     assert_no_truncated(&body, "gemini");
 }

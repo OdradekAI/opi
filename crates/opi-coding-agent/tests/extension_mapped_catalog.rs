@@ -86,7 +86,7 @@ impl Provider for ObservedRoute {
         &self.models
     }
 
-    fn stream(&self, _request: Request) -> EventStream {
+    fn stream_prepared(&self, _request: Request, _auth: opi_ai::auth::ResolvedAuth) -> EventStream {
         Box::pin(futures_util::stream::empty())
     }
 
@@ -106,7 +106,7 @@ impl Provider for Route {
         &self.models
     }
 
-    fn stream(&self, _request: Request) -> EventStream {
+    fn stream_prepared(&self, _request: Request, _auth: opi_ai::auth::ResolvedAuth) -> EventStream {
         self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         Box::pin(futures_util::stream::empty())
     }
@@ -167,7 +167,7 @@ fn harness_collection_materializes_active_mapped_provider_overrides() {
     assert!(diagnostics.is_empty());
     assert!(collection.resolve("mapped:added").is_ok());
 
-    drop(provider.stream(request("added")));
+    drop(provider.stream_prepared(request("added"), opi_ai::test_support::resolved_auth()));
 
     assert_eq!(openai_calls.load(std::sync::atomic::Ordering::SeqCst), 1);
     assert!(provider.models().iter().any(|model| model.id == "added"));
@@ -206,7 +206,7 @@ fn harness_collection_rejects_an_override_whose_wire_has_no_concrete_route() {
     assert_eq!(diagnostics.len(), 1);
     assert!(collection.resolve("mapped:original").is_ok());
 
-    drop(provider.stream(request("original")));
+    drop(provider.stream_prepared(request("original"), opi_ai::test_support::resolved_auth()));
     assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
     assert_eq!(
         provider

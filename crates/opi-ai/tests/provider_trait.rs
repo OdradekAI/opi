@@ -172,7 +172,7 @@ fn request_cancellation_propagates() {
 struct DummyProvider;
 
 impl Provider for DummyProvider {
-    fn stream(&self, _request: Request) -> EventStream {
+    fn stream_prepared(&self, _request: Request, _auth: opi_ai::auth::ResolvedAuth) -> EventStream {
         let msg = sample_assistant_message();
         let event = AssistantStreamEvent::Done {
             reason: StopReason::Stop,
@@ -210,7 +210,7 @@ async fn provider_trait_yields_done_event() {
         cache_retention: CacheRetention::None,
         session_id: None,
     };
-    let mut stream = provider.stream(request);
+    let mut stream = provider.stream_prepared(request, opi_ai::test_support::resolved_auth());
     let event = stream.next().await.unwrap().unwrap();
     assert!(event.is_terminal());
 }
@@ -252,7 +252,7 @@ fn provider_trait_has_no_complete_method() {
     // This test exists to ensure the old `complete` method is gone.
     // If Provider still had `async fn complete`, DummyProvider above would
     // need to implement it, and compilation would fail.
-    // Since DummyProvider only implements id/models/stream, this compiles.
+    // Since DummyProvider only implements id/models/stream_prepared, this compiles.
     let _provider = DummyProvider;
 }
 

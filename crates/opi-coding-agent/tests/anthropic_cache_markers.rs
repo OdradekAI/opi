@@ -12,9 +12,10 @@ use opi_ai::message::{
 use opi_ai::provider::{CacheRetention, ModelInfo, Request, ThinkingConfig};
 use opi_ai::registry::{ModelCapabilities, ProviderRegistry};
 use opi_ai::stream::{StopReason, Usage};
+use opi_ai::{AuthScheme, ResolvedAuth};
 use opi_coding_agent::config::OpiConfig;
 use opi_coding_agent::credential_store::{
-    CredentialResolver, FakeKeyringBackend, KeychainCredentialStore,
+    AuthSource, CredentialResolver, FakeKeyringBackend, KeychainCredentialStore,
 };
 use opi_coding_agent::oauth::OAuthProviderRegistry;
 use opi_coding_agent::provider_factory::build_provider_with_oauth;
@@ -129,11 +130,16 @@ fn request(model: &str, cache_retention: CacheRetention) -> Request {
     }
 }
 
-async fn send(registry: &ProviderRegistry, model: &str, retention: CacheRetention) {
+async fn send(
+    registry: &ProviderRegistry,
+    model: &str,
+    retention: CacheRetention,
+    auth: &ResolvedAuth,
+) {
     let provider = registry
         .get_provider("anthropic")
         .expect("factory-built Anthropic provider registered");
-    let mut stream = provider.stream(request(model, retention));
+    let mut stream = provider.stream_prepared(request(model, retention), auth.clone());
     while let Some(event) = stream.next().await {
         event.expect("mock Anthropic stream must not fail");
     }
@@ -209,6 +215,24 @@ async fn factory_built_anthropic_cache_markers_follow_final_capabilities() {
     let provider = build_provider_with_oauth(&config, &resolver, &oauth_registry)
         .await
         .expect("build Anthropic through the production provider factory");
+    // Phase 17.5: auth moved off the provider object. Rebuild the production
+    // AuthSource::Layered resolver the factory used internally and resolve once;
+    // the credential is static for this test, so a single resolution feeds every
+    // send (each would otherwise resolve per logical call).
+    let auth_resolver: Arc<dyn opi_ai::AuthResolver> = Arc::new(AuthSource::Layered {
+        resolver: Arc::new(resolver.clone()),
+        provider_id: "anthropic".into(),
+        oauth: oauth_registry
+            .lookup("anthropic")
+            .expect("anthropic OAuth provider registered"),
+        oauth_env_var: "ANTHROPIC_OAUTH_TOKEN".into(),
+        api_key_env_var: config.providers.anthropic.api_key_env.clone(),
+    });
+    let auth = auth_resolver
+        .resolve()
+        .await
+        .expect("resolve seeded Anthropic API key");
+    assert_eq!(auth.scheme, AuthScheme::ApiKey);
     let mut registry = ProviderRegistry::new();
     registry
         .register_provider(provider)
@@ -238,11 +262,11 @@ async fn factory_built_anthropic_cache_markers_follow_final_capabilities() {
     assert!(!custom.supports_long_cache_retention);
     assert!(registry.capabilities(UNKNOWN_MODEL).is_err());
 
-    send(&registry, BUILTIN_MODEL, CacheRetention::Long).await;
-    send(&registry, BUILTIN_MODEL, CacheRetention::Short).await;
-    send(&registry, BUILTIN_MODEL, CacheRetention::Disabled).await;
-    send(&registry, CUSTOM_MODEL, CacheRetention::Long).await;
-    send(&registry, UNKNOWN_MODEL, CacheRetention::Long).await;
+    send(&registry, BUILTIN_MODEL, CacheRetention::Long, &auth).await;
+    send(&registry, BUILTIN_MODEL, CacheRetention::Short, &auth).await;
+    send(&registry, BUILTIN_MODEL, CacheRetention::Disabled, &auth).await;
+    send(&registry, CUSTOM_MODEL, CacheRetention::Long, &auth).await;
+    send(&registry, UNKNOWN_MODEL, CacheRetention::Long, &auth).await;
 
     let requests = server.received_requests().await.expect("captured requests");
     assert_eq!(requests.len(), 5);

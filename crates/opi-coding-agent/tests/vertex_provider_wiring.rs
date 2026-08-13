@@ -98,19 +98,14 @@ project = "my-project"
 
 #[test]
 fn vertex_provider_builds_with_token() {
-    let provider = opi_ai::vertex::VertexProvider::new(
-        "test-oauth-token".into(),
-        "my-project".into(),
-        "us-central1".into(),
-        None,
-    );
+    let provider =
+        opi_ai::vertex::VertexProvider::new("my-project".into(), "us-central1".into(), None);
     assert_eq!(provider.id(), "vertex");
 }
 
 #[test]
 fn vertex_provider_from_config_with_models() {
     let provider = opi_ai::vertex::VertexProvider::from_config(
-        "test-token".into(),
         "proj".into(),
         "europe-west4".into(),
         vec!["model-a".into(), "model-b".into()],
@@ -128,28 +123,21 @@ fn vertex_provider_from_config_with_models() {
 
 #[test]
 fn vertex_access_token_not_in_debug() {
-    let provider = opi_ai::vertex::VertexProvider::new(
-        "super-secret-oauth-token-xyz".into(),
-        "proj".into(),
-        "us-central1".into(),
-        None,
-    );
+    let provider = opi_ai::vertex::VertexProvider::new("proj".into(), "us-central1".into(), None);
     let debug = format!("{provider:?}");
     assert!(
         !debug.contains("super-secret-oauth-token-xyz"),
         "access token leaked in Debug: {debug}"
     );
-    assert!(debug.contains("***"));
+    // Post-17.5: VertexProvider no longer stores the token (it arrives via
+    // ResolvedAuth), so its Debug carries no `***` redaction marker.
+    // Redaction is implicit-by-absence, proven by the assertion above.
 }
 
 #[test]
 fn vertex_project_visible_in_debug() {
-    let provider = opi_ai::vertex::VertexProvider::new(
-        "tok".into(),
-        "my-vertex-project".into(),
-        "us-central1".into(),
-        None,
-    );
+    let provider =
+        opi_ai::vertex::VertexProvider::new("my-vertex-project".into(), "us-central1".into(), None);
     let debug = format!("{provider:?}");
     assert!(debug.contains("my-vertex-project"));
     assert!(debug.contains("us-central1"));
@@ -157,12 +145,7 @@ fn vertex_project_visible_in_debug() {
 
 #[test]
 fn vertex_url_does_not_contain_access_token() {
-    let provider = opi_ai::vertex::VertexProvider::new(
-        "super-secret-token".into(),
-        "proj".into(),
-        "us-central1".into(),
-        None,
-    );
+    let provider = opi_ai::vertex::VertexProvider::new("proj".into(), "us-central1".into(), None);
     let url = provider.build_vertex_url("gemini-2.5-flash");
     assert!(!url.contains("super-secret-token"));
     assert!(url.contains("proj"));

@@ -723,6 +723,7 @@ fn model_change_entry_round_trip_and_shape() {
         parent_id: Some("msg-1".into()),
         timestamp: "2026-07-05T12:00:01Z".into(),
         model: "anthropic:claude-sonnet-4-5".into(),
+        input_source: None,
     });
     let json = serde_json::to_string(&entry).unwrap();
     let val: serde_json::Value = serde_json::from_str(&json).unwrap();
@@ -842,6 +843,7 @@ fn known_entry_types_match_session_entry_serde_tags() {
             parent_id: Some("msg-1".into()),
             timestamp: "2026-07-05T12:00:05Z".into(),
             model: "anthropic:claude-sonnet-4".into(),
+            input_source: None,
         }),
         SessionEntry::ThinkingLevelChange(ThinkingLevelChangeEntry {
             id: "thinking-1".into(),

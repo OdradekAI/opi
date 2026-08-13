@@ -1,8 +1,7 @@
 use std::sync::Arc;
 
 use futures_util::StreamExt;
-use opi_ai::auth::{AuthResolver, AuthScheme, ResolvedAuth};
-use opi_ai::credential::BoxAuthFuture;
+use opi_ai::auth::{AuthScheme, ResolvedAuth};
 use opi_ai::http::HttpClient;
 use opi_ai::message::{InputContent, Message, ToolDef, UserMessage};
 use opi_ai::openai_codex_responses::OpenAiCodexResponsesProvider;
@@ -13,25 +12,13 @@ use tokio_util::sync::CancellationToken;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-struct FixedAuth {
-    secret: SecretString,
-    base_url: Option<String>,
-    account_id: Option<String>,
-}
-
-impl AuthResolver for FixedAuth {
-    fn resolve<'a>(&'a self) -> BoxAuthFuture<'a, Result<ResolvedAuth, ProviderError>> {
-        let secret = self.secret.clone();
-        let base_url = self.base_url.clone();
-        let account_id = self.account_id.clone();
-        Box::pin(async move {
-            Ok(ResolvedAuth {
-                scheme: AuthScheme::Bearer,
-                secret,
-                base_url,
-                account_id,
-            })
-        })
+fn auth(secret: &str, base_url: Option<String>, account_id: Option<String>) -> ResolvedAuth {
+    ResolvedAuth {
+        scheme: AuthScheme::Bearer,
+        secret: SecretString::from(secret),
+        base_url,
+        account_id,
+        provenance: opi_ai::AuthProvenance::default(),
     }
 }
 
@@ -81,8 +68,12 @@ fn request() -> Request {
     }
 }
 
-async fn drain(provider: &dyn Provider, request: Request) -> Option<ProviderError> {
-    let mut stream = provider.stream(request);
+async fn drain(
+    provider: &dyn Provider,
+    request: Request,
+    auth: ResolvedAuth,
+) -> Option<ProviderError> {
+    let mut stream = provider.stream_prepared(request, auth);
     while let Some(result) = stream.next().await {
         match result {
             Ok(event) if event.is_terminal() => return None,
@@ -93,8 +84,12 @@ async fn drain(provider: &dyn Provider, request: Request) -> Option<ProviderErro
     None
 }
 
-async fn capture_stream(provider: &dyn Provider, request: Request) -> (Vec<String>, usize, usize) {
-    let mut stream = provider.stream(request);
+async fn capture_stream(
+    provider: &dyn Provider,
+    request: Request,
+    auth: ResolvedAuth,
+) -> (Vec<String>, usize, usize) {
+    let mut stream = provider.stream_prepared(request, auth);
     let mut captures = Vec::new();
     let mut events = 0;
     let mut errors = 0;
@@ -136,17 +131,17 @@ async fn dedicated_codex_request_uses_exact_base_path_body_and_headers() {
         .await;
 
     let provider = OpenAiCodexResponsesProvider::new(
-        Arc::new(FixedAuth {
-            secret: SecretString::from("sentinel-access"),
-            base_url: Some(auth_server.uri()),
-            account_id: Some("account-fixed".into()),
-        }),
         Some(default_server.uri()),
         vec![model(Some(model_server.uri()))],
         Arc::new(HttpClient::new()),
     );
+    let auth = auth(
+        "sentinel-access",
+        Some(auth_server.uri()),
+        Some("account-fixed".into()),
+    );
     assert_eq!(provider.id(), "openai-codex");
-    assert!(drain(&provider, request()).await.is_none());
+    assert!(drain(&provider, request(), auth).await.is_none());
     assert!(default_server.received_requests().await.unwrap().is_empty());
     assert!(auth_server.received_requests().await.unwrap().is_empty());
     let requests = model_server.received_requests().await.unwrap();
@@ -209,16 +204,8 @@ async fn dedicated_codex_request_uses_exact_base_path_body_and_headers() {
 
 #[test]
 fn dedicated_codex_only_strips_its_own_model_prefix() {
-    let provider = OpenAiCodexResponsesProvider::new(
-        Arc::new(FixedAuth {
-            secret: SecretString::from("unused"),
-            base_url: None,
-            account_id: Some("account-fixed".into()),
-        }),
-        None,
-        vec![model(None)],
-        Arc::new(HttpClient::new()),
-    );
+    let provider =
+        OpenAiCodexResponsesProvider::new(None, vec![model(None)], Arc::new(HttpClient::new()));
     let mut foreign = request();
     foreign.model = "foreign:gpt-5.4".into();
 
@@ -231,16 +218,8 @@ fn dedicated_codex_only_strips_its_own_model_prefix() {
 #[test]
 fn dedicated_codex_does_not_fallback_for_unsupported_thinking_level() {
     let unsupported = model(None).with_thinking_level_map(ThinkingLevelMap::disabled());
-    let provider = OpenAiCodexResponsesProvider::new(
-        Arc::new(FixedAuth {
-            secret: SecretString::from("unused"),
-            base_url: None,
-            account_id: Some("account-fixed".into()),
-        }),
-        None,
-        vec![unsupported],
-        Arc::new(HttpClient::new()),
-    );
+    let provider =
+        OpenAiCodexResponsesProvider::new(None, vec![unsupported], Arc::new(HttpClient::new()));
 
     assert!(
         provider
@@ -265,11 +244,6 @@ async fn dedicated_codex_generates_fresh_uuid_v7_headers_without_session_id() {
         .mount(&server)
         .await;
     let provider = OpenAiCodexResponsesProvider::new(
-        Arc::new(FixedAuth {
-            secret: SecretString::from("sentinel-access"),
-            base_url: Some(server.uri()),
-            account_id: Some("account-fixed".into()),
-        }),
         Some(server.uri()),
         vec![model(None)],
         Arc::new(HttpClient::new()),
@@ -278,7 +252,12 @@ async fn dedicated_codex_generates_fresh_uuid_v7_headers_without_session_id() {
     for _ in 0..2 {
         let mut generated = request();
         generated.session_id = None;
-        assert!(drain(&provider, generated).await.is_none());
+        let auth = auth(
+            "sentinel-access",
+            Some(server.uri()),
+            Some("account-fixed".into()),
+        );
+        assert!(drain(&provider, generated, auth).await.is_none());
     }
 
     let requests = server.received_requests().await.expect("captured requests");
@@ -326,20 +305,20 @@ async fn dedicated_codex_disabled_affinity_omits_user_session_everywhere() {
         .mount(&server)
         .await;
     let provider = OpenAiCodexResponsesProvider::new(
-        Arc::new(FixedAuth {
-            secret: SecretString::from("sentinel-access"),
-            base_url: Some(server.uri()),
-            account_id: Some("account-fixed".into()),
-        }),
         Some(server.uri()),
         vec![model(None)],
         Arc::new(HttpClient::new()),
+    );
+    let auth = auth(
+        "sentinel-access",
+        Some(server.uri()),
+        Some("account-fixed".into()),
     );
     let mut disabled = request();
     disabled.cache_retention = CacheRetention::Disabled;
     disabled.session_id = Some("user-session-must-not-leak".into());
 
-    assert!(drain(&provider, disabled).await.is_none());
+    assert!(drain(&provider, disabled, auth).await.is_none());
 
     let captured = server.received_requests().await.unwrap().remove(0);
     let body: serde_json::Value = serde_json::from_slice(&captured.body).unwrap();
@@ -374,17 +353,17 @@ async fn dedicated_codex_malformed_sse_never_surfaces_upstream_data() {
         .mount(&server)
         .await;
     let provider = OpenAiCodexResponsesProvider::new(
-        Arc::new(FixedAuth {
-            secret: SecretString::from("sentinel-access"),
-            base_url: Some(server.uri()),
-            account_id: Some("account-fixed".into()),
-        }),
         Some(server.uri()),
         vec![model(None)],
         Arc::new(HttpClient::new()),
     );
+    let auth = auth(
+        "sentinel-access",
+        Some(server.uri()),
+        Some("account-fixed".into()),
+    );
 
-    let (captures, events, errors) = capture_stream(&provider, request()).await;
+    let (captures, events, errors) = capture_stream(&provider, request(), auth).await;
 
     assert_eq!(events, 0);
     assert_eq!(errors, 1);
@@ -426,17 +405,17 @@ async fn dedicated_codex_valid_error_sse_never_surfaces_message() {
             .mount(&server)
             .await;
         let provider = OpenAiCodexResponsesProvider::new(
-            Arc::new(FixedAuth {
-                secret: SecretString::from("sentinel-access"),
-                base_url: Some(server.uri()),
-                account_id: Some("account-fixed".into()),
-            }),
             Some(server.uri()),
             vec![model(None)],
             Arc::new(HttpClient::new()),
         );
+        let auth = auth(
+            "sentinel-access",
+            Some(server.uri()),
+            Some("account-fixed".into()),
+        );
 
-        let (captures, events, errors) = capture_stream(&provider, request()).await;
+        let (captures, events, errors) = capture_stream(&provider, request(), auth).await;
 
         assert_eq!(events, 1, "{label}");
         assert_eq!(errors, 0, "{label}");
@@ -476,17 +455,17 @@ async fn dedicated_codex_data_only_frames_stream_to_completion() {
         .mount(&server)
         .await;
     let provider = OpenAiCodexResponsesProvider::new(
-        Arc::new(FixedAuth {
-            secret: SecretString::from("sentinel-access"),
-            base_url: Some(server.uri()),
-            account_id: Some("account-fixed".into()),
-        }),
         Some(server.uri()),
         vec![model(None)],
         Arc::new(HttpClient::new()),
     );
+    let auth = auth(
+        "sentinel-access",
+        Some(server.uri()),
+        Some("account-fixed".into()),
+    );
 
-    let (captures, events, errors) = capture_stream(&provider, request()).await;
+    let (captures, events, errors) = capture_stream(&provider, request(), auth).await;
 
     assert_eq!(errors, 0, "{captures:?}");
     assert!(events > 1, "expected stream events: {captures:?}");
@@ -520,17 +499,17 @@ async fn dedicated_codex_incomplete_terminal_is_length_not_error() {
         .mount(&server)
         .await;
     let provider = OpenAiCodexResponsesProvider::new(
-        Arc::new(FixedAuth {
-            secret: SecretString::from("sentinel-access"),
-            base_url: Some(server.uri()),
-            account_id: Some("account-fixed".into()),
-        }),
         Some(server.uri()),
         vec![model(None)],
         Arc::new(HttpClient::new()),
     );
+    let auth = auth(
+        "sentinel-access",
+        Some(server.uri()),
+        Some("account-fixed".into()),
+    );
 
-    let (captures, events, errors) = capture_stream(&provider, request()).await;
+    let (captures, events, errors) = capture_stream(&provider, request(), auth).await;
 
     assert_eq!(errors, 0, "incomplete must not error: {captures:?}");
     assert!(events > 0, "{captures:?}");
@@ -546,16 +525,12 @@ async fn dedicated_codex_requires_non_empty_account_id_before_http() {
     let server = MockServer::start().await;
     for account_id in [None, Some("".into()), Some("   ".into())] {
         let provider = OpenAiCodexResponsesProvider::new(
-            Arc::new(FixedAuth {
-                secret: SecretString::from("sentinel-access"),
-                base_url: Some(server.uri()),
-                account_id,
-            }),
             Some(server.uri()),
             vec![model(None)],
             Arc::new(HttpClient::new()),
         );
-        let error = drain(&provider, request())
+        let auth = auth("sentinel-access", Some(server.uri()), account_id);
+        let error = drain(&provider, request(), auth)
             .await
             .expect("missing account id");
         assert!(
@@ -584,20 +559,20 @@ async fn dedicated_codex_rejects_managed_header_overrides_before_http() {
         "x-client-request-id",
     ] {
         let provider = OpenAiCodexResponsesProvider::new(
-            Arc::new(FixedAuth {
-                secret: SecretString::from("sentinel-access"),
-                base_url: Some(server.uri()),
-                account_id: Some("account-fixed".into()),
-            }),
             Some(server.uri()),
             vec![model(None)],
             Arc::new(HttpClient::new()),
+        );
+        let auth = auth(
+            "sentinel-access",
+            Some(server.uri()),
+            Some("account-fixed".into()),
         );
         let mut request = request();
         request.extra_headers.push((name.into(), "override".into()));
         assert!(
             matches!(
-                drain(&provider, request).await,
+                drain(&provider, request, auth).await,
                 Some(ProviderError::RequestFailed(_))
             ),
             "{name}"
@@ -616,18 +591,18 @@ async fn dedicated_codex_rejects_invalid_header_names_and_values_before_http() {
         ("x-extra", "bad\0value"),
     ] {
         let provider = OpenAiCodexResponsesProvider::new(
-            Arc::new(FixedAuth {
-                secret: SecretString::from("sentinel-access"),
-                base_url: Some(server.uri()),
-                account_id: Some("account-fixed".into()),
-            }),
             Some(server.uri()),
             vec![model(None)],
             Arc::new(HttpClient::new()),
         );
+        let auth = auth(
+            "sentinel-access",
+            Some(server.uri()),
+            Some("account-fixed".into()),
+        );
         let mut request = request();
         request.extra_headers.push((name.into(), value.into()));
-        let error = drain(&provider, request)
+        let error = drain(&provider, request, auth)
             .await
             .expect("invalid header must fail");
         assert!(matches!(error, ProviderError::RequestFailed(_)));
@@ -648,16 +623,16 @@ async fn dedicated_codex_401_and_403_are_revoked_and_redacted() {
             .mount(&server)
             .await;
         let provider = OpenAiCodexResponsesProvider::new(
-            Arc::new(FixedAuth {
-                secret: SecretString::from("sentinel-access"),
-                base_url: Some(server.uri()),
-                account_id: Some("account-fixed".into()),
-            }),
             Some(server.uri()),
             vec![model(None)],
             Arc::new(HttpClient::new()),
         );
-        let error = drain(&provider, request()).await.expect("revoked");
+        let auth = auth(
+            "sentinel-access",
+            Some(server.uri()),
+            Some("account-fixed".into()),
+        );
+        let error = drain(&provider, request(), auth).await.expect("revoked");
         assert!(matches!(
             error,
             ProviderError::CredentialRevoked { ref provider_id }
@@ -690,17 +665,19 @@ async fn dedicated_codex_provider_failures_are_typed_and_redacted() {
         .mount(&server)
         .await;
     let provider = OpenAiCodexResponsesProvider::new(
-        Arc::new(FixedAuth {
-            secret: SecretString::from("sentinel-access"),
-            base_url: Some(server.uri()),
-            account_id: Some("sentinel-account".into()),
-        }),
         Some(server.uri()),
         vec![model(None)],
         Arc::new(HttpClient::new()),
     );
+    let auth = auth(
+        "sentinel-access",
+        Some(server.uri()),
+        Some("sentinel-account".into()),
+    );
 
-    let error = drain(&provider, request()).await.expect("provider failure");
+    let error = drain(&provider, request(), auth)
+        .await
+        .expect("provider failure");
     assert!(matches!(error, ProviderError::ProviderSide(_)));
     let rendered = format!("{error:?} {error}");
     for sentinel in [

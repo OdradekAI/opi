@@ -65,7 +65,8 @@ async fn mount_500_echoing_secret(server: &MockServer) {
 /// Drive the stream to its first event and assert a provider-side error with a
 /// redacted excerpt (the echoed credential must not survive `safe_excerpt`).
 async fn assert_provider_side_redacted(provider: Box<dyn Provider>, model: &str) {
-    let mut stream = provider.stream(text_request(model));
+    let mut stream =
+        provider.stream_prepared(text_request(model), opi_ai::test_support::resolved_auth());
     while let Some(result) = stream.next().await {
         if let Err(error) = result {
             assert_eq!(
@@ -87,10 +88,9 @@ async fn assert_provider_side_redacted(provider: Box<dyn Provider>, model: &str)
 async fn anthropic_500_classifies_as_provider_with_redacted_excerpt() {
     let server = MockServer::start().await;
     mount_500_echoing_secret(&server).await;
-    let provider: Box<dyn Provider> = Box::new(opi_ai::anthropic::AnthropicProvider::new(
-        "test-key".into(),
-        Some(server.uri()),
-    ));
+    let provider: Box<dyn Provider> = Box::new(opi_ai::anthropic::AnthropicProvider::new(Some(
+        server.uri(),
+    )));
     assert_provider_side_redacted(provider, "anthropic:claude-sonnet-4-5-20250514").await;
 }
 
@@ -98,10 +98,7 @@ async fn anthropic_500_classifies_as_provider_with_redacted_excerpt() {
 async fn openai_chat_500_classifies_as_provider_with_redacted_excerpt() {
     let server = MockServer::start().await;
     mount_500_echoing_secret(&server).await;
-    let provider: Box<dyn Provider> = Box::new(OpenAiChatProvider::new(
-        "test-key".into(),
-        Some(server.uri()),
-    ));
+    let provider: Box<dyn Provider> = Box::new(OpenAiChatProvider::new(Some(server.uri())));
     assert_provider_side_redacted(provider, "openai:gpt-4o").await;
 }
 
@@ -109,10 +106,7 @@ async fn openai_chat_500_classifies_as_provider_with_redacted_excerpt() {
 async fn openai_responses_500_classifies_as_provider_with_redacted_excerpt() {
     let server = MockServer::start().await;
     mount_500_echoing_secret(&server).await;
-    let provider: Box<dyn Provider> = Box::new(OpenAiResponsesProvider::new(
-        "test-key".into(),
-        Some(server.uri()),
-    ));
+    let provider: Box<dyn Provider> = Box::new(OpenAiResponsesProvider::new(Some(server.uri())));
     assert_provider_side_redacted(provider, "openai-responses:gpt-4o").await;
 }
 
@@ -120,10 +114,8 @@ async fn openai_responses_500_classifies_as_provider_with_redacted_excerpt() {
 async fn openrouter_500_classifies_as_provider_with_redacted_excerpt() {
     let server = MockServer::start().await;
     mount_500_echoing_secret(&server).await;
-    let provider: Box<dyn Provider> = Box::new(opi_ai::openrouter::openrouter_provider(
-        "test-key".into(),
-        Some(server.uri()),
-    ));
+    let provider: Box<dyn Provider> =
+        Box::new(opi_ai::openrouter::openrouter_provider(Some(server.uri())));
     assert_provider_side_redacted(provider, "openrouter:openai/gpt-4o").await;
 }
 
@@ -131,10 +123,8 @@ async fn openrouter_500_classifies_as_provider_with_redacted_excerpt() {
 async fn mistral_500_classifies_as_provider_with_redacted_excerpt() {
     let server = MockServer::start().await;
     mount_500_echoing_secret(&server).await;
-    let provider: Box<dyn Provider> = Box::new(opi_ai::mistral::mistral_provider(
-        "test-key".into(),
-        Some(server.uri()),
-    ));
+    let provider: Box<dyn Provider> =
+        Box::new(opi_ai::mistral::mistral_provider(Some(server.uri())));
     assert_provider_side_redacted(provider, "mistral:mistral-small-latest").await;
 }
 
@@ -142,10 +132,8 @@ async fn mistral_500_classifies_as_provider_with_redacted_excerpt() {
 async fn gemini_500_classifies_as_provider_with_redacted_excerpt() {
     let server = MockServer::start().await;
     mount_500_echoing_secret(&server).await;
-    let provider: Box<dyn Provider> = Box::new(opi_ai::gemini::GeminiProvider::new(
-        "test-key".into(),
-        Some(server.uri()),
-    ));
+    let provider: Box<dyn Provider> =
+        Box::new(opi_ai::gemini::GeminiProvider::new(Some(server.uri())));
     assert_provider_side_redacted(provider, "gemini:gemini-2.5-flash").await;
 }
 
@@ -154,7 +142,6 @@ async fn azure_500_classifies_as_provider_with_redacted_excerpt() {
     let server = MockServer::start().await;
     mount_500_echoing_secret(&server).await;
     let provider = AzureOpenAIProvider::new(
-        "test-key".into(),
         Some(server.uri()),
         "my-gpt4o".into(),
         Some("2024-06-01".into()),
@@ -169,7 +156,6 @@ async fn vertex_500_classifies_as_provider_with_redacted_excerpt() {
     let server = MockServer::start().await;
     mount_500_echoing_secret(&server).await;
     let provider: Box<dyn Provider> = Box::new(VertexProvider::new(
-        "test-key".into(),
         "my-project".into(),
         "us-central1".into(),
         Some(server.uri()),
@@ -187,11 +173,11 @@ async fn provider_side_excerpt_redacts_query_secret_values() {
         .mount(&server)
         .await;
 
-    let provider: Box<dyn Provider> = Box::new(OpenAiChatProvider::new(
-        "test-key".into(),
-        Some(server.uri()),
-    ));
-    let mut stream = provider.stream(text_request("openai:gpt-4o"));
+    let provider: Box<dyn Provider> = Box::new(OpenAiChatProvider::new(Some(server.uri())));
+    let mut stream = provider.stream_prepared(
+        text_request("openai:gpt-4o"),
+        opi_ai::test_support::resolved_auth(),
+    );
 
     while let Some(result) = stream.next().await {
         if let Err(error) = result {

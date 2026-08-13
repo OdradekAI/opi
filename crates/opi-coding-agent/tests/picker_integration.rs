@@ -41,7 +41,7 @@ impl Provider for TestProvider {
     fn models(&self) -> &[ModelInfo] {
         &self.models
     }
-    fn stream(&self, _request: Request) -> EventStream {
+    fn stream_prepared(&self, _request: Request, _auth: opi_ai::auth::ResolvedAuth) -> EventStream {
         // Picker tests never call stream(); return empty stream.
         let stream: Vec<Result<AssistantStreamEvent, ProviderError>> = vec![];
         Box::pin(futures_util::stream::iter(stream))

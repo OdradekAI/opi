@@ -93,6 +93,10 @@ pub enum ListModelsError {
 pub struct ProviderBundle {
     /// The active runtime provider.
     pub provider: Box<dyn Provider>,
+    /// The per-call auth resolver for the active provider's dispatch route
+    /// (Phase 17.5). The harness registers this alongside `provider` so
+    /// `ProviderCollection::prepare_call` resolves auth once per turn.
+    pub auth_resolver: Arc<dyn opi_ai::AuthResolver>,
     /// The OS-keychain-backed credential store (for `/login`/`/logout`).
     pub store: Arc<crate::credential_store::KeychainCredentialStore>,
     /// The credential resolver built over the same store.
@@ -105,16 +109,47 @@ pub struct ProviderBundle {
 
 struct ProviderBuildOutcome {
     provider: Box<dyn Provider>,
+    auth_resolver: Arc<dyn opi_ai::AuthResolver>,
     diagnostics: Vec<Diagnostic>,
 }
 
 impl ProviderBuildOutcome {
-    fn without_diagnostics(provider: Box<dyn Provider>) -> Self {
+    fn without_diagnostics(
+        provider: Box<dyn Provider>,
+        auth_resolver: Arc<dyn opi_ai::AuthResolver>,
+    ) -> Self {
         Self {
             provider,
+            auth_resolver,
             diagnostics: Vec::new(),
         }
     }
+}
+
+/// A constructed runtime provider paired with its per-call auth resolver.
+///
+/// Phase 17.5 moves authentication out of the provider object and onto the
+/// collection route, so every runtime construction returns both halves.
+type ProviderAuthPair = (Box<dyn Provider>, Arc<dyn opi_ai::AuthResolver>);
+
+/// Assemble the single dispatchable [`ProviderCollection`] route for the active
+/// runtime provider (Phase 17.5). Centralized here so `ProviderCollection`
+/// construction lives only in the provider factory; the harness calls this
+/// rather than building the collection inline.
+pub fn build_dispatch_collection(
+    provider: Box<dyn Provider>,
+    auth_resolver: Arc<dyn opi_ai::AuthResolver>,
+) -> Arc<ProviderCollection> {
+    let mut collection = ProviderCollection::new();
+    collection
+        .register_route(
+            provider,
+            auth_resolver,
+            opi_ai::AuthProvenanceSource::Static,
+            CompatMetadata::default(),
+        )
+        .expect("registering the active dispatch route must succeed at startup");
+    Arc::new(collection)
 }
 
 const CODE_PROVIDER_CREDENTIAL_BACKEND_UNAVAILABLE: &str =
@@ -245,6 +280,7 @@ impl opi_ai::AuthResolver for EnvAuthResolver {
                 secret: SecretString::from(secret),
                 base_url: None,
                 account_id: None,
+                provenance: opi_ai::AuthProvenance::default(),
             })
         })
     }
@@ -275,6 +311,7 @@ impl opi_ai::AuthResolver for CredentialAuthResolver {
                 secret: resolved.value,
                 base_url: None,
                 account_id: None,
+                provenance: opi_ai::AuthProvenance::default(),
             })
         })
     }
@@ -336,7 +373,7 @@ impl Provider for MetadataProvider {
         &self.models
     }
 
-    fn stream(&self, _request: Request) -> EventStream {
+    fn stream_prepared(&self, _request: Request, _auth: opi_ai::auth::ResolvedAuth) -> EventStream {
         let id = self.id.clone();
         Box::pin(futures_util::stream::once(async move {
             Err(ProviderError::StreamError(format!(
@@ -1034,28 +1071,28 @@ fn openai_compatible_model_catalog(
 
 fn build_runtime_openai_compatible_profile(
     profile: &OpenAiCompatibleProviderConfig,
-) -> Result<opi_ai::ApiMappedProvider, ProviderBuildError> {
+) -> Result<(opi_ai::ApiMappedProvider, Arc<dyn opi_ai::AuthResolver>), ProviderBuildError> {
     let default_env = profile_api_key_env_default(&profile.id);
     let env_name = resolve_env_name(&profile.api_key_env, &default_env);
     let api_key = require_api_key(&env_name)?;
     let client = build_proxied_client(profile.proxy.as_ref())?;
-    build_openai_compatible_profile(profile, api_key, client).map_err(ProviderBuildError::Config)
+    let auth: Arc<dyn opi_ai::AuthResolver> = Arc::new(opi_ai::StaticAuthResolver::new(
+        opi_ai::AuthScheme::Bearer,
+        SecretString::from(api_key),
+    ));
+    let provider =
+        build_openai_compatible_profile(profile, client).map_err(ProviderBuildError::Config)?;
+    Ok((provider, auth))
 }
 
 fn build_openai_compatible_profile(
     profile: &OpenAiCompatibleProviderConfig,
-    api_key: String,
     client: Arc<opi_ai::http::HttpClient>,
 ) -> Result<opi_ai::ApiMappedProvider, String> {
     let models = openai_compatible_model_catalog(profile)?;
     let headers = opi_ai::ProviderHeaders::try_new(profile.extra_headers.clone())
         .map_err(|e| e.to_string())?;
-    let auth: Arc<dyn opi_ai::AuthResolver> = Arc::new(opi_ai::StaticAuthResolver::new(
-        opi_ai::AuthScheme::Bearer,
-        SecretString::from(api_key),
-    ));
     let route = opi_ai::openai_chat::OpenAiChatProvider::for_route(
-        auth,
         Some(profile.base_url.clone()),
         profile.id.clone(),
         headers,
@@ -1071,7 +1108,6 @@ fn build_openai_compatible_profile(
 
 fn build_custom_provider(
     profile: &CustomProviderConfig,
-    auth: Arc<dyn opi_ai::AuthResolver>,
 ) -> Result<opi_ai::ApiMappedProvider, ProviderBuildError> {
     let client = build_proxied_client(profile.proxy.as_ref())?;
     let headers = opi_ai::ProviderHeaders::try_new(profile.headers.clone())
@@ -1093,7 +1129,6 @@ fn build_custom_provider(
         let route: Box<dyn Provider> = match wire {
             WireApi::AnthropicMessages => {
                 Box::new(opi_ai::anthropic::AnthropicProvider::for_route(
-                    Arc::clone(&auth),
                     profile.id.clone(),
                     models,
                     profile.base_url.clone(),
@@ -1104,7 +1139,6 @@ fn build_custom_provider(
             }
             WireApi::OpenAiCompletions => {
                 Box::new(opi_ai::openai_chat::OpenAiChatProvider::for_route(
-                    Arc::clone(&auth),
                     profile.base_url.clone(),
                     profile.id.clone(),
                     headers.clone(),
@@ -1114,7 +1148,6 @@ fn build_custom_provider(
             }
             WireApi::OpenAiResponses => Box::new(
                 opi_ai::openai_responses::OpenAiResponsesProvider::for_route(
-                    Arc::clone(&auth),
                     profile.base_url.clone(),
                     profile.id.clone(),
                     headers.clone(),
@@ -1143,7 +1176,7 @@ pub fn build_provider(config: &OpiConfig) -> Result<Box<dyn Provider>, ProviderB
         ))
     })?;
 
-    build_runtime_provider(config, provider_id, None)
+    build_runtime_provider(config, provider_id, None).map(|(provider, _)| provider)
 }
 
 /// Build the active provider, resolving its API key via `resolver`
@@ -1188,14 +1221,15 @@ async fn build_provider_with_resolver_outcome(
         {
             diagnostics.push(backend_fallback_diagnostic(provider_id, env_var));
         }
-        let auth = Arc::new(CredentialAuthResolver {
+        let auth: Arc<dyn opi_ai::AuthResolver> = Arc::new(CredentialAuthResolver {
             resolver: resolver.clone(),
             provider_id: provider_id.to_owned(),
             env_name: profile.api_key_env.clone(),
             scheme: profile.auth_scheme,
         });
         return Ok(ProviderBuildOutcome {
-            provider: Box::new(build_custom_provider(profile, auth)?),
+            provider: Box::new(build_custom_provider(profile)?),
+            auth_resolver: auth,
             diagnostics,
         });
     }
@@ -1225,9 +1259,10 @@ async fn build_provider_with_resolver_outcome(
         // their own credential chain below.
         None
     };
-    let provider = build_runtime_provider(config, provider_id, pre_resolved)?;
+    let (provider, auth_resolver) = build_runtime_provider(config, provider_id, pre_resolved)?;
     Ok(ProviderBuildOutcome {
         provider,
+        auth_resolver,
         diagnostics,
     })
 }
@@ -1248,17 +1283,22 @@ async fn build_anthropic_live_auth(
         ProviderBuildError::Config("no anthropic OAuth provider registered".into())
     })?;
     let client = build_proxied_client(config.providers.anthropic.proxy.as_ref())?;
-    let provider = opi_ai::anthropic::AnthropicProvider::with_auth(
-        Arc::new(AuthSource::Layered {
-            resolver: Arc::new(resolver.clone()),
-            provider_id: "anthropic".into(),
-            oauth,
-            oauth_env_var: "ANTHROPIC_OAUTH_TOKEN".into(),
-            api_key_env_var: config.providers.anthropic.api_key_env.clone(),
-        }),
+    let auth_resolver: Arc<dyn opi_ai::AuthResolver> = Arc::new(AuthSource::Layered {
+        resolver: Arc::new(resolver.clone()),
+        provider_id: "anthropic".into(),
+        oauth,
+        oauth_env_var: "ANTHROPIC_OAUTH_TOKEN".into(),
+        api_key_env_var: config.providers.anthropic.api_key_env.clone(),
+    });
+    let provider = opi_ai::anthropic::AnthropicProvider::for_route(
+        "anthropic".into(),
+        opi_ai::anthropic::model_catalog(),
         config.providers.anthropic.base_url.clone(),
+        opi_ai::ProviderHeaders::default(),
         client,
-    );
+        true,
+    )
+    .with_auth_invalid_policy(AuthInvalidPolicy::CredentialManaged);
     let mut diagnostics = Vec::new();
     let higher_priority_oauth = resolver.has_oauth_credential("anthropic").await?
         || resolver.env_value("ANTHROPIC_OAUTH_TOKEN").is_some();
@@ -1290,6 +1330,7 @@ async fn build_anthropic_live_auth(
     }
     Ok(ProviderBuildOutcome {
         provider: Box::new(provider),
+        auth_resolver,
         diagnostics,
     })
 }
@@ -1301,7 +1342,7 @@ async fn build_anthropic_live_auth(
 async fn build_copilot_oauth(
     resolver: &CredentialResolver,
     registry: &OAuthProviderRegistry,
-) -> Result<Box<dyn Provider>, ProviderBuildError> {
+) -> Result<ProviderAuthPair, ProviderBuildError> {
     let oauth = registry.lookup("github-copilot").ok_or_else(|| {
         ProviderBuildError::Config("no github-copilot OAuth provider registered".into())
     })?;
@@ -1333,7 +1374,6 @@ async fn build_copilot_oauth(
         let route: Box<dyn Provider> = match wire {
             WireApi::AnthropicMessages => Box::new(
                 opi_ai::anthropic::AnthropicProvider::for_route(
-                    Arc::clone(&auth),
                     "github-copilot".into(),
                     models,
                     default_base_url,
@@ -1346,7 +1386,6 @@ async fn build_copilot_oauth(
             ),
             WireApi::OpenAiCompletions => Box::new(
                 opi_ai::openai_chat::OpenAiChatProvider::for_route(
-                    Arc::clone(&auth),
                     default_base_url,
                     "github-copilot".into(),
                     headers.clone(),
@@ -1358,7 +1397,6 @@ async fn build_copilot_oauth(
             ),
             WireApi::OpenAiResponses => Box::new(
                 opi_ai::openai_responses::OpenAiResponsesProvider::for_route(
-                    Arc::clone(&auth),
                     default_base_url,
                     "github-copilot".into(),
                     headers.clone(),
@@ -1375,29 +1413,29 @@ async fn build_copilot_oauth(
 
     let provider = opi_ai::ApiMappedProvider::try_new("github-copilot", catalog, routes)
         .map_err(|error| ProviderBuildError::Config(error.to_string()))?;
-    Ok(Box::new(provider))
+    Ok((Box::new(provider), auth))
 }
 
 /// Build the dedicated Codex Responses provider over lazy stored OAuth.
 async fn build_codex_oauth(
     resolver: &CredentialResolver,
     registry: &OAuthProviderRegistry,
-) -> Result<Box<dyn Provider>, ProviderBuildError> {
+) -> Result<ProviderAuthPair, ProviderBuildError> {
     let oauth = registry.lookup("openai-codex").ok_or_else(|| {
         ProviderBuildError::Config("no openai-codex OAuth provider registered".into())
     })?;
     let client = build_proxied_client(None)?;
+    let auth: Arc<dyn opi_ai::AuthResolver> = Arc::new(AuthSource::Store {
+        resolver: Arc::new(resolver.clone()),
+        provider_id: "openai-codex".into(),
+        oauth,
+    });
     let provider = opi_ai::openai_codex_responses::OpenAiCodexResponsesProvider::new(
-        Arc::new(AuthSource::Store {
-            resolver: Arc::new(resolver.clone()),
-            provider_id: "openai-codex".into(),
-            oauth,
-        }),
         None,
         crate::openai_codex::openai_codex_catalog(),
         client,
     );
-    Ok(Box::new(provider))
+    Ok((Box::new(provider), auth))
 }
 
 /// Build the active provider, routing Anthropic/Copilot/Codex to providers that
@@ -1436,10 +1474,10 @@ async fn build_provider_with_oauth_outcome(
     match provider_id {
         "github-copilot" => build_copilot_oauth(resolver, registry)
             .await
-            .map(ProviderBuildOutcome::without_diagnostics),
+            .map(|(p, a)| ProviderBuildOutcome::without_diagnostics(p, a)),
         "openai-codex" => build_codex_oauth(resolver, registry)
             .await
-            .map(ProviderBuildOutcome::without_diagnostics),
+            .map(|(p, a)| ProviderBuildOutcome::without_diagnostics(p, a)),
         "anthropic" => build_anthropic_live_auth(config, resolver, registry).await,
         _ => build_provider_with_resolver_outcome(config, resolver).await,
     }
@@ -1463,6 +1501,7 @@ pub async fn build_provider_bundle(
     let outcome = build_provider_with_oauth_outcome(config, &resolver, &registry).await?;
     Ok(ProviderBundle {
         provider: outcome.provider,
+        auth_resolver: outcome.auth_resolver,
         store,
         resolver,
         registry,
@@ -1544,39 +1583,45 @@ fn resolved_or_env(
 fn build_anthropic(
     config: &OpiConfig,
     pre_resolved: Option<String>,
-) -> Result<Box<dyn Provider>, ProviderBuildError> {
+) -> Result<ProviderAuthPair, ProviderBuildError> {
     let env_name = &config.providers.anthropic.api_key_env;
     let api_key = resolved_or_env(pre_resolved, env_name)?;
     let client = build_proxied_client(config.providers.anthropic.proxy.as_ref())?;
     let provider = opi_ai::anthropic::AnthropicProvider::with_client(
-        api_key,
         config.providers.anthropic.base_url.clone(),
         client,
     );
-    Ok(Box::new(provider))
+    let auth: Arc<dyn opi_ai::AuthResolver> = Arc::new(opi_ai::StaticAuthResolver::new(
+        opi_ai::AuthScheme::ApiKey,
+        SecretString::from(api_key),
+    ));
+    Ok((Box::new(provider), auth))
 }
 
 fn build_openai(
     config: &OpiConfig,
     pre_resolved: Option<String>,
-) -> Result<Box<dyn Provider>, ProviderBuildError> {
+) -> Result<ProviderAuthPair, ProviderBuildError> {
     let env_name = resolve_env_name(&config.providers.openai.api_key_env, "OPENAI_API_KEY");
     let api_key = resolved_or_env(pre_resolved, &env_name)?;
     let client = build_proxied_client(config.providers.openai.proxy.as_ref())?;
     let provider = opi_ai::openai_chat::OpenAiChatProvider::with_client(
-        api_key,
         config.providers.openai.base_url.clone(),
         "openai".into(),
         vec![],
         client,
     );
-    Ok(Box::new(provider))
+    let auth: Arc<dyn opi_ai::AuthResolver> = Arc::new(opi_ai::StaticAuthResolver::new(
+        opi_ai::AuthScheme::Bearer,
+        SecretString::from(api_key),
+    ));
+    Ok((Box::new(provider), auth))
 }
 
 fn build_openrouter(
     config: &OpiConfig,
     pre_resolved: Option<String>,
-) -> Result<Box<dyn Provider>, ProviderBuildError> {
+) -> Result<ProviderAuthPair, ProviderBuildError> {
     let env_name = resolve_env_name(
         &config.providers.openrouter.api_key_env,
         "OPENROUTER_API_KEY",
@@ -1597,7 +1642,6 @@ fn build_openrouter(
             ("X-Title".into(), "opi".into()),
         ];
         opi_ai::openai_chat::OpenAiChatProvider::new_for_profile(
-            api_key,
             base_url,
             "openrouter".into(),
             compat,
@@ -1606,32 +1650,36 @@ fn build_openrouter(
         )
         .with_shared_client(client)
     } else {
-        opi_ai::openrouter::openrouter_provider(
-            api_key,
-            config.providers.openrouter.base_url.clone(),
-        )
-        .with_shared_client(client)
+        opi_ai::openrouter::openrouter_provider(config.providers.openrouter.base_url.clone())
+            .with_shared_client(client)
     };
-    Ok(Box::new(provider))
+    let auth: Arc<dyn opi_ai::AuthResolver> = Arc::new(opi_ai::StaticAuthResolver::new(
+        opi_ai::AuthScheme::Bearer,
+        SecretString::from(api_key),
+    ));
+    Ok((Box::new(provider), auth))
 }
 
 fn build_mistral(
     config: &OpiConfig,
     pre_resolved: Option<String>,
-) -> Result<Box<dyn Provider>, ProviderBuildError> {
+) -> Result<ProviderAuthPair, ProviderBuildError> {
     let env_name = resolve_env_name(&config.providers.mistral.api_key_env, "MISTRAL_API_KEY");
     let api_key = resolved_or_env(pre_resolved, &env_name)?;
     let client = build_proxied_client(config.providers.mistral.proxy.as_ref())?;
-    let provider =
-        opi_ai::mistral::mistral_provider(api_key, config.providers.mistral.base_url.clone())
-            .with_shared_client(client);
-    Ok(Box::new(provider))
+    let provider = opi_ai::mistral::mistral_provider(config.providers.mistral.base_url.clone())
+        .with_shared_client(client);
+    let auth: Arc<dyn opi_ai::AuthResolver> = Arc::new(opi_ai::StaticAuthResolver::new(
+        opi_ai::AuthScheme::Bearer,
+        SecretString::from(api_key),
+    ));
+    Ok((Box::new(provider), auth))
 }
 
 fn build_openai_responses(
     config: &OpiConfig,
     pre_resolved: Option<String>,
-) -> Result<Box<dyn Provider>, ProviderBuildError> {
+) -> Result<ProviderAuthPair, ProviderBuildError> {
     let env_name = resolve_env_name(
         &config.providers.openai_responses.api_key_env,
         "OPENAI_API_KEY",
@@ -1639,29 +1687,35 @@ fn build_openai_responses(
     let api_key = resolved_or_env(pre_resolved, &env_name)?;
     let client = build_proxied_client(config.providers.openai_responses.proxy.as_ref())?;
     let provider = opi_ai::openai_responses::OpenAiResponsesProvider::with_client(
-        api_key,
         config.providers.openai_responses.base_url.clone(),
         client,
     );
-    Ok(Box::new(provider))
+    let auth: Arc<dyn opi_ai::AuthResolver> = Arc::new(opi_ai::StaticAuthResolver::new(
+        opi_ai::AuthScheme::Bearer,
+        SecretString::from(api_key),
+    ));
+    Ok((Box::new(provider), auth))
 }
 
 fn build_gemini(
     config: &OpiConfig,
     pre_resolved: Option<String>,
-) -> Result<Box<dyn Provider>, ProviderBuildError> {
+) -> Result<ProviderAuthPair, ProviderBuildError> {
     let env_name = resolve_env_name(&config.providers.gemini.api_key_env, "GEMINI_API_KEY");
     let api_key = resolved_or_env(pre_resolved, &env_name)?;
     let client = build_proxied_client(config.providers.gemini.proxy.as_ref())?;
     let provider = opi_ai::gemini::GeminiProvider::with_client(
-        api_key,
         config.providers.gemini.base_url.clone(),
         client,
     );
-    Ok(Box::new(provider))
+    let auth: Arc<dyn opi_ai::AuthResolver> = Arc::new(opi_ai::StaticAuthResolver::new(
+        opi_ai::AuthScheme::ApiKey,
+        SecretString::from(api_key),
+    ));
+    Ok((Box::new(provider), auth))
 }
 
-fn build_bedrock(config: &OpiConfig) -> Result<Box<dyn Provider>, ProviderBuildError> {
+fn build_bedrock(config: &OpiConfig) -> Result<ProviderAuthPair, ProviderBuildError> {
     let bedrock_config = &config.providers.bedrock;
 
     // Resolve credentials: config > env > profile
@@ -1706,13 +1760,20 @@ fn build_bedrock(config: &OpiConfig) -> Result<Box<dyn Provider>, ProviderBuildE
         bedrock_config.base_url.clone(),
         client,
     );
-    Ok(Box::new(provider))
+    // Bedrock holds compound AwsCredentials and ignores `resolved.secret` in
+    // stream_prepared; supply a placeholder resolver so the dispatch route
+    // registers (its stream_prepared never reads the secret).
+    let auth: Arc<dyn opi_ai::AuthResolver> = Arc::new(opi_ai::StaticAuthResolver::new(
+        opi_ai::AuthScheme::ApiKey,
+        SecretString::from("bedrock-compound-credential"),
+    ));
+    Ok((Box::new(provider), auth))
 }
 
 fn build_azure(
     config: &OpiConfig,
     pre_resolved: Option<String>,
-) -> Result<Box<dyn Provider>, ProviderBuildError> {
+) -> Result<ProviderAuthPair, ProviderBuildError> {
     let azure_config = &config.providers.azure;
     let env_name = resolve_env_name(&azure_config.api_key_env, "AZURE_OPENAI_API_KEY");
     let api_key = resolved_or_env(pre_resolved, &env_name)?;
@@ -1724,27 +1785,29 @@ fn build_azure(
         .unwrap_or("");
     let provider = if azure_config.deployments.is_empty() {
         opi_ai::azure_openai::AzureOpenAIProvider::new(
-            api_key,
             azure_config.endpoint.clone(),
             deployment.to_string(),
             azure_config.api_version.clone(),
         )?
     } else {
         opi_ai::azure_openai::AzureOpenAIProvider::from_config(
-            api_key,
             azure_config.endpoint.clone(),
             azure_config.deployments.clone(),
             azure_config.api_version.clone(),
         )?
     }
     .with_client(build_proxied_client(azure_config.proxy.as_ref())?);
-    Ok(Box::new(provider))
+    let auth: Arc<dyn opi_ai::AuthResolver> = Arc::new(opi_ai::StaticAuthResolver::new(
+        opi_ai::AuthScheme::ApiKey,
+        SecretString::from(api_key),
+    ));
+    Ok((Box::new(provider), auth))
 }
 
 fn build_vertex(
     config: &OpiConfig,
     pre_resolved: Option<String>,
-) -> Result<Box<dyn Provider>, ProviderBuildError> {
+) -> Result<ProviderAuthPair, ProviderBuildError> {
     let vertex_config = &config.providers.vertex;
     let env_name = resolve_env_name(&vertex_config.access_token_env, "VERTEX_ACCESS_TOKEN");
     let access_token = resolved_or_env(pre_resolved, &env_name)?;
@@ -1758,14 +1821,12 @@ fn build_vertex(
         .ok_or_else(|| ProviderBuildError::Config("vertex provider requires location".into()))?;
     let provider = if vertex_config.models.is_empty() {
         opi_ai::vertex::VertexProvider::new(
-            access_token,
             project.into(),
             location.into(),
             vertex_config.base_url.clone(),
         )
     } else {
         opi_ai::vertex::VertexProvider::from_config(
-            access_token,
             project.into(),
             location.into(),
             vertex_config.models.clone(),
@@ -1773,45 +1834,55 @@ fn build_vertex(
         )
     }
     .with_client(build_proxied_client(vertex_config.proxy.as_ref())?);
-    Ok(Box::new(provider))
+    let auth: Arc<dyn opi_ai::AuthResolver> = Arc::new(opi_ai::StaticAuthResolver::new(
+        opi_ai::AuthScheme::Bearer,
+        SecretString::from(access_token),
+    ));
+    Ok((Box::new(provider), auth))
 }
 
 fn build_runtime_provider(
     config: &OpiConfig,
     provider_id: &str,
     pre_resolved: Option<String>,
-) -> Result<Box<dyn Provider>, ProviderBuildError> {
-    let (provider, wire_api) = match provider_id {
-        "anthropic" => (
-            build_anthropic(config, pre_resolved)?,
-            WireApi::AnthropicMessages,
-        ),
-        "openai" => (
-            build_openai(config, pre_resolved)?,
-            WireApi::OpenAiCompletions,
-        ),
-        "openrouter" => (
-            build_openrouter(config, pre_resolved)?,
-            WireApi::OpenAiCompletions,
-        ),
-        "mistral" => (
-            build_mistral(config, pre_resolved)?,
-            WireApi::OpenAiCompletions,
-        ),
-        "openai-responses" => (
-            build_openai_responses(config, pre_resolved)?,
-            WireApi::OpenAiResponses,
-        ),
-        "gemini" => (
-            build_gemini(config, pre_resolved)?,
-            WireApi::GoogleGenerativeAi,
-        ),
-        "bedrock" => (build_bedrock(config)?, WireApi::BedrockConverseStream),
-        "azure" => (
-            build_azure(config, pre_resolved)?,
-            WireApi::AzureOpenAiCompletions,
-        ),
-        "vertex" => (build_vertex(config, pre_resolved)?, WireApi::GoogleVertex),
+) -> Result<ProviderAuthPair, ProviderBuildError> {
+    let (provider, auth, wire_api) = match provider_id {
+        "anthropic" => {
+            let (p, a) = build_anthropic(config, pre_resolved)?;
+            (p, a, WireApi::AnthropicMessages)
+        }
+        "openai" => {
+            let (p, a) = build_openai(config, pre_resolved)?;
+            (p, a, WireApi::OpenAiCompletions)
+        }
+        "openrouter" => {
+            let (p, a) = build_openrouter(config, pre_resolved)?;
+            (p, a, WireApi::OpenAiCompletions)
+        }
+        "mistral" => {
+            let (p, a) = build_mistral(config, pre_resolved)?;
+            (p, a, WireApi::OpenAiCompletions)
+        }
+        "openai-responses" => {
+            let (p, a) = build_openai_responses(config, pre_resolved)?;
+            (p, a, WireApi::OpenAiResponses)
+        }
+        "gemini" => {
+            let (p, a) = build_gemini(config, pre_resolved)?;
+            (p, a, WireApi::GoogleGenerativeAi)
+        }
+        "bedrock" => {
+            let (p, a) = build_bedrock(config)?;
+            (p, a, WireApi::BedrockConverseStream)
+        }
+        "azure" => {
+            let (p, a) = build_azure(config, pre_resolved)?;
+            (p, a, WireApi::AzureOpenAiCompletions)
+        }
+        "vertex" => {
+            let (p, a) = build_vertex(config, pre_resolved)?;
+            (p, a, WireApi::GoogleVertex)
+        }
         "copilot" => {
             return Err(ProviderBuildError::Config(
                 "'copilot' has been renamed; use provider id 'github-copilot' (login: /login github-copilot)"
@@ -1826,17 +1897,18 @@ fn build_runtime_provider(
         }
         other => {
             if let Some(profile) = config.providers.custom.get(other) {
-                let auth = Arc::new(EnvAuthResolver {
+                let auth: Arc<dyn opi_ai::AuthResolver> = Arc::new(EnvAuthResolver {
                     provider_id: profile.id.clone(),
                     env_name: profile.api_key_env.clone(),
                     scheme: profile.auth_scheme,
                 });
-                let provider = build_custom_provider(profile, auth)?;
-                return Ok(Box::new(provider));
+                let provider = build_custom_provider(profile)?;
+                return Ok((Box::new(provider), auth));
             } else if let Some(profile) = config.providers.openai_compatible.get(other) {
-                let provider = build_runtime_openai_compatible_profile(profile)?;
+                let (provider, auth) = build_runtime_openai_compatible_profile(profile)?;
                 (
                     Box::new(provider) as Box<dyn Provider>,
+                    auth,
                     WireApi::OpenAiCompletions,
                 )
             } else {
@@ -1846,7 +1918,8 @@ fn build_runtime_provider(
             }
         }
     };
-    validate_single_wire_provider(provider, wire_api)
+    let provider = validate_single_wire_provider(provider, wire_api)?;
+    Ok((provider, auth))
 }
 
 /// Apply the production single-wire catalog guard before returning a provider

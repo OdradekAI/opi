@@ -280,7 +280,7 @@ fn anthropic_provider_with_proxy_client() {
             .build()
             .expect("build"),
     );
-    let provider = AnthropicProvider::with_client("test-key".into(), None, client);
+    let provider = AnthropicProvider::with_client(None, client);
     let proxy = provider.http_client().proxy_config();
     assert_eq!(proxy.url.as_deref(), Some("http://proxy.example.com:8080"));
     assert_eq!(proxy.no_proxy.as_deref(), Some("localhost"));
@@ -297,8 +297,7 @@ fn openai_chat_provider_with_proxy_client() {
             .build()
             .expect("build"),
     );
-    let provider =
-        OpenAiChatProvider::with_client("test-key".into(), None, "openai".into(), vec![], client);
+    let provider = OpenAiChatProvider::with_client(None, "openai".into(), vec![], client);
     assert_eq!(
         provider.http_client().proxy_config().url.as_deref(),
         Some("http://proxy.example.com:8080")
@@ -316,7 +315,7 @@ fn openai_responses_provider_with_proxy_client() {
             .build()
             .expect("build"),
     );
-    let provider = OpenAiResponsesProvider::with_client("test-key".into(), None, client);
+    let provider = OpenAiResponsesProvider::with_client(None, client);
     assert_eq!(
         provider.http_client().proxy_config().url.as_deref(),
         Some("http://proxy.example.com:8080")
@@ -334,7 +333,7 @@ fn gemini_provider_with_proxy_client() {
             .build()
             .expect("build"),
     );
-    let provider = GeminiProvider::with_client("test-key".into(), None, client);
+    let provider = GeminiProvider::with_client(None, client);
     assert_eq!(
         provider.http_client().proxy_config().url.as_deref(),
         Some("http://proxy.example.com:8080")
@@ -367,7 +366,6 @@ async fn openai_chat_provider_routes_http_requests_through_proxy() {
             .expect("build proxied client"),
     );
     let provider = OpenAiChatProvider::with_client(
-        "test-key".into(),
         Some("http://upstream.test".into()),
         "openai".into(),
         vec![],
@@ -395,7 +393,7 @@ async fn openai_chat_provider_routes_http_requests_through_proxy() {
         session_id: None,
     };
 
-    let mut stream = provider.stream(request);
+    let mut stream = provider.stream_prepared(request, opi_ai::test_support::resolved_auth());
     while let Some(result) = stream.next().await {
         match result {
             Ok(event) if event.is_terminal() => break,

@@ -6,10 +6,10 @@
 use std::sync::Arc;
 
 use futures_util::{StreamExt, stream};
-use secrecy::{ExposeSecret, SecretString};
+use secrecy::ExposeSecret;
 use tokio_util::sync::CancellationToken;
 
-use crate::auth::{AuthInvalidPolicy, AuthResolver, AuthScheme, ResolvedAuth, StaticAuthResolver};
+use crate::auth::{AuthInvalidPolicy, ResolvedAuth};
 use crate::http::HttpClient;
 use crate::model_info::WireApi;
 use crate::openai_responses_shared::{
@@ -67,7 +67,6 @@ pub enum ResponsesAffinityPolicy {
 /// Standard OpenAI Responses provider, also used as a route by mapped
 /// providers whose model metadata declares the standard Responses wire.
 pub struct OpenAiResponsesProvider {
-    auth: Arc<dyn AuthResolver>,
     base_url: String,
     models: Vec<ModelInfo>,
     config: ResponsesConfig,
@@ -122,43 +121,30 @@ pub fn model_catalog() -> Vec<ModelInfo> {
 }
 
 impl OpenAiResponsesProvider {
-    pub fn new(api_key: String, base_url: Option<String>) -> Self {
-        Self::with_client(api_key, base_url, Arc::new(HttpClient::new()))
+    pub fn new(base_url: Option<String>) -> Self {
+        Self::with_client(base_url, Arc::new(HttpClient::new()))
     }
 
     /// Create with a shared HTTP client.
-    pub fn with_client(api_key: String, base_url: Option<String>, client: Arc<HttpClient>) -> Self {
-        let auth = Arc::new(StaticAuthResolver::new(
-            AuthScheme::ApiKey,
-            SecretString::from(api_key),
-        ));
-        Self::with_auth(auth, base_url, ResponsesConfig::default(), client)
+    pub fn with_client(base_url: Option<String>, client: Arc<HttpClient>) -> Self {
+        Self::with_auth(base_url, ResponsesConfig::default(), client)
             .with_auth_invalid_policy(AuthInvalidPolicy::Static)
     }
 
     /// Create with native Responses request flags.
-    pub fn new_with_config(
-        api_key: String,
-        base_url: Option<String>,
-        config: ResponsesConfig,
-    ) -> Self {
-        let auth = Arc::new(StaticAuthResolver::new(
-            AuthScheme::ApiKey,
-            SecretString::from(api_key),
-        ));
-        Self::with_auth(auth, base_url, config, Arc::new(HttpClient::new()))
+    pub fn new_with_config(base_url: Option<String>, config: ResponsesConfig) -> Self {
+        Self::with_auth(base_url, config, Arc::new(HttpClient::new()))
             .with_auth_invalid_policy(AuthInvalidPolicy::Static)
     }
 
-    /// Build with an injected per-request auth resolver.
+    /// Build with provider route config. The secret arrives per-call via
+    /// [`crate::auth::ResolvedAuth`] on `Provider::stream_prepared`.
     pub fn with_auth(
-        auth: Arc<dyn AuthResolver>,
         base_url: Option<String>,
         config: ResponsesConfig,
         client: Arc<HttpClient>,
     ) -> Self {
         Self::with_auth_extra(
-            auth,
             base_url,
             config,
             "openai-responses".into(),
@@ -169,9 +155,8 @@ impl OpenAiResponsesProvider {
         .with_affinity_policy(ResponsesAffinityPolicy::Direct)
     }
 
-    /// Build with an injected auth resolver, provider id, and route headers.
+    /// Build with provider id and route headers.
     pub fn with_auth_extra(
-        auth: Arc<dyn AuthResolver>,
         base_url: Option<String>,
         config: ResponsesConfig,
         provider_id: String,
@@ -179,7 +164,6 @@ impl OpenAiResponsesProvider {
         client: Arc<HttpClient>,
     ) -> Self {
         Self {
-            auth,
             base_url: base_url.unwrap_or_else(|| DEFAULT_BASE_URL.into()),
             models: model_catalog(),
             config,
@@ -196,7 +180,6 @@ impl OpenAiResponsesProvider {
 
     /// Build a standard Responses route for a mapped provider.
     pub fn for_route(
-        auth: Arc<dyn AuthResolver>,
         default_base_url: Option<String>,
         provider_id: String,
         headers: ProviderHeaders,
@@ -204,7 +187,6 @@ impl OpenAiResponsesProvider {
         client: Arc<HttpClient>,
     ) -> Self {
         Self {
-            auth,
             base_url: default_base_url.unwrap_or_else(|| DEFAULT_BASE_URL.into()),
             models,
             config: ResponsesConfig::default(),
@@ -497,125 +479,6 @@ impl Provider for OpenAiResponsesProvider {
 
     fn models(&self) -> &[ModelInfo] {
         &self.models
-    }
-
-    fn stream(&self, request: Request) -> EventStream {
-        if let Err(error) = crate::provider::validate_request_capabilities(self, &request) {
-            return Box::pin(stream::once(async move { Err(error) }));
-        }
-        let auth = self.auth.clone();
-        let default_base_url = self.base_url.clone();
-        let provider_id = self.provider_id.clone();
-        let auth_invalid_policy = self.auth_invalid_policy;
-        let affinity_policy = self.affinity_policy;
-        let model_id = request
-            .model
-            .split_once(':')
-            .map(|(_, id)| id)
-            .unwrap_or(&request.model);
-        let model_base_url = self
-            .models
-            .iter()
-            .find(|model| model.id == model_id)
-            .and_then(|model| model.base_url.clone());
-        let config = self.resolve_config(model_id);
-        let route_path = self.resolve_route_path(model_id);
-        let copilot_headers = if self.copilot_headers {
-            match github_copilot_route_headers(&request) {
-                Ok(mut headers) => {
-                    headers.push((
-                        "X-Initiator".into(),
-                        github_copilot_initiator(&request).into(),
-                    ));
-                    Ok(headers)
-                }
-                Err(error) => Err(error),
-            }
-        } else {
-            Ok(Vec::new())
-        };
-        let extra_headers = copilot_headers.and_then(|copilot_headers| {
-            let mut route_headers = self.route_headers.clone();
-            route_headers.extend(copilot_headers);
-            self.headers
-                .merge_request(&route_headers, &request.extra_headers)
-        });
-        let session_id = if request.cache_retention != CacheRetention::Disabled {
-            request.session_id.clone().filter(|id| !id.is_empty())
-        } else {
-            None
-        };
-        let affinity_enabled = session_id.is_some()
-            && match affinity_policy {
-                ResponsesAffinityPolicy::Direct => true,
-                ResponsesAffinityPolicy::CustomDisabled => false,
-                ResponsesAffinityPolicy::CustomOptIn => config.send_session_id_header,
-            };
-        let request_id = affinity_enabled.then(|| uuid::Uuid::now_v7().to_string());
-        let mut body = self.build_request_body(&request);
-        if affinity_enabled && let Some(session_id) = session_id.as_deref() {
-            body["prompt_cache_key"] =
-                serde_json::Value::String(session_id.chars().take(64).collect());
-        }
-        let cancel = request.cancel.clone();
-        let timeout = request.timeout;
-        let client = self.client.client().clone();
-        let (tx, rx) = tokio::sync::mpsc::channel(64);
-        // Clone the sender so the spawned task can observe receiver drop and
-        // abort credential resolution / HTTP the moment the caller drops the
-        // stream, instead of running detached until its next send attempt.
-        let tx_closed = tx.clone();
-
-        tokio::spawn(async move {
-            let work = async {
-                let extra_headers = match extra_headers {
-                    Ok(headers) => headers,
-                    Err(error) => {
-                        let _ = tx.send(Err(error)).await;
-                        return;
-                    }
-                };
-                let resolved = match auth.resolve().await {
-                    Ok(resolved) => resolved,
-                    Err(error) => {
-                        let _ = tx.send(Err(error)).await;
-                        return;
-                    }
-                };
-                let base_url = resolved
-                    .base_url
-                    .clone()
-                    .or(model_base_url)
-                    .unwrap_or(default_base_url);
-                if let Err(error) = Self::stream_http(
-                    client,
-                    resolved,
-                    base_url,
-                    route_path,
-                    config,
-                    auth_invalid_policy,
-                    extra_headers,
-                    provider_id,
-                    body,
-                    cancel,
-                    timeout,
-                    affinity_enabled.then_some(session_id).flatten(),
-                    request_id,
-                    tx.clone(),
-                )
-                .await
-                {
-                    let _ = tx.send(Err(error)).await;
-                }
-            };
-
-            tokio::select! {
-                biased;
-                _ = tx_closed.closed() => (),
-                _ = work => {},
-            }
-        });
-        Box::pin(ReceiverStream { rx })
     }
 
     fn stream_prepared(

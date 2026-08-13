@@ -62,7 +62,7 @@ fn model_info_has_capabilities_not_flattened() {
     // supports_streaming, and supports_thinking into `capabilities`, so the
     // model-level fields no longer exist. The following compiles only because
     // we access through `capabilities`:
-    let provider = AnthropicProvider::new("test-key".into(), None);
+    let provider = AnthropicProvider::new(None);
     let models = provider.models();
     let model = &models[0];
 
@@ -86,7 +86,7 @@ fn anthropic_builtin_models_have_cache_capabilities() {
     // All three Claude 4.5 models must advertise cache-control and
     // long-cache-retention support so the provider can emit the
     // anthropic-beta prompt-caching header and cache_control markers.
-    let provider = AnthropicProvider::new("test-key".into(), None);
+    let provider = AnthropicProvider::new(None);
     for model in provider.models() {
         assert!(
             model.capabilities.supports_cache_control,
@@ -108,7 +108,7 @@ fn anthropic_builtin_models_have_cache_capabilities() {
 #[test]
 fn registry_capabilities_returns_nested_capabilities() {
     let mut registry = ProviderRegistry::new();
-    let provider = AnthropicProvider::new("test-key".into(), None);
+    let provider = AnthropicProvider::new(None);
     registry.register(Box::new(provider));
 
     let caps = registry

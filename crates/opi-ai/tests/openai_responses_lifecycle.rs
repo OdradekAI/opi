@@ -83,8 +83,11 @@ async fn stream_success() {
         .mount(&server)
         .await;
 
-    let provider = OpenAiResponsesProvider::new("test-key".into(), Some(server.uri()));
-    let mut stream = provider.stream(make_request(CancellationToken::new()));
+    let provider = OpenAiResponsesProvider::new(Some(server.uri()));
+    let mut stream = provider.stream_prepared(
+        make_request(CancellationToken::new()),
+        opi_ai::test_support::resolved_auth(),
+    );
 
     let mut events = Vec::new();
     while let Some(result) = stream.next().await {
@@ -151,9 +154,12 @@ async fn stream_accepts_canonical_data_only_responses_frames() {
         .mount(&server)
         .await;
 
-    let provider = OpenAiResponsesProvider::new("test-key".into(), Some(server.uri()));
+    let provider = OpenAiResponsesProvider::new(Some(server.uri()));
     let results: Vec<_> = provider
-        .stream(make_request(CancellationToken::new()))
+        .stream_prepared(
+            make_request(CancellationToken::new()),
+            opi_ai::test_support::resolved_auth(),
+        )
         .collect()
         .await;
 
@@ -185,8 +191,11 @@ async fn stream_auth_error() {
         .mount(&server)
         .await;
 
-    let provider = OpenAiResponsesProvider::new("bad-key".into(), Some(server.uri()));
-    let mut stream = provider.stream(make_request(CancellationToken::new()));
+    let provider = OpenAiResponsesProvider::new(Some(server.uri()));
+    let mut stream = provider.stream_prepared(
+        make_request(CancellationToken::new()),
+        opi_ai::test_support::resolved_auth(),
+    );
 
     let result = stream.next().await.expect("should have event");
     match result {
@@ -217,8 +226,11 @@ async fn stream_rate_limited() {
         .mount(&server)
         .await;
 
-    let provider = OpenAiResponsesProvider::new("test-key".into(), Some(server.uri()));
-    let mut stream = provider.stream(make_request(CancellationToken::new()));
+    let provider = OpenAiResponsesProvider::new(Some(server.uri()));
+    let mut stream = provider.stream_prepared(
+        make_request(CancellationToken::new()),
+        opi_ai::test_support::resolved_auth(),
+    );
 
     let result = stream.next().await.expect("should have event");
     match result {
@@ -248,8 +260,11 @@ async fn stream_no_terminal_event() {
         .mount(&server)
         .await;
 
-    let provider = OpenAiResponsesProvider::new("test-key".into(), Some(server.uri()));
-    let mut stream = provider.stream(make_request(CancellationToken::new()));
+    let provider = OpenAiResponsesProvider::new(Some(server.uri()));
+    let mut stream = provider.stream_prepared(
+        make_request(CancellationToken::new()),
+        opi_ai::test_support::resolved_auth(),
+    );
 
     let mut saw_stream_error = false;
     while let Some(result) = stream.next().await {

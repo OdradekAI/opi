@@ -69,7 +69,7 @@ impl Provider for MockProvider {
             })
             .as_slice()
     }
-    fn stream(&self, _request: Request) -> EventStream {
+    fn stream_prepared(&self, _request: Request, _auth: opi_ai::auth::ResolvedAuth) -> EventStream {
         let events = self.responses.lock().unwrap().remove(0);
         Box::pin(stream::iter(events.into_iter().map(Ok::<_, ProviderError>)))
     }

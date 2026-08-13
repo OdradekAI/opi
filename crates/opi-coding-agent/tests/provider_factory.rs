@@ -193,37 +193,37 @@ fn minimal_request(model: &str) -> Request {
 
 #[test]
 fn anthropic_provider_construction() {
-    let provider = opi_ai::anthropic::AnthropicProvider::new("test-key".into(), None);
+    let provider = opi_ai::anthropic::AnthropicProvider::new(None);
     assert_eq!(provider.id(), "anthropic");
 }
 
 #[test]
 fn openai_provider_construction() {
-    let provider = opi_ai::openai_chat::OpenAiChatProvider::new("test-key".into(), None);
+    let provider = opi_ai::openai_chat::OpenAiChatProvider::new(None);
     assert_eq!(provider.id(), "openai");
 }
 
 #[test]
 fn openrouter_provider_construction() {
-    let provider = opi_ai::openrouter::openrouter_provider("test-key".into(), None);
+    let provider = opi_ai::openrouter::openrouter_provider(None);
     assert_eq!(provider.id(), "openrouter");
 }
 
 #[test]
 fn mistral_provider_construction() {
-    let provider = opi_ai::mistral::mistral_provider("test-key".into(), None);
+    let provider = opi_ai::mistral::mistral_provider(None);
     assert_eq!(provider.id(), "mistral");
 }
 
 #[test]
 fn openai_responses_provider_construction() {
-    let provider = opi_ai::openai_responses::OpenAiResponsesProvider::new("test-key".into(), None);
+    let provider = opi_ai::openai_responses::OpenAiResponsesProvider::new(None);
     assert_eq!(provider.id(), "openai-responses");
 }
 
 #[test]
 fn gemini_provider_construction() {
-    let provider = opi_ai::gemini::GeminiProvider::new("test-key".into(), None);
+    let provider = opi_ai::gemini::GeminiProvider::new(None);
     assert_eq!(provider.id(), "gemini");
 }
 
@@ -244,19 +244,19 @@ fn assert_same_models(
 
 #[test]
 fn anthropic_model_catalog_matches_constructor() {
-    let provider = opi_ai::anthropic::AnthropicProvider::new("test-key".into(), None);
+    let provider = opi_ai::anthropic::AnthropicProvider::new(None);
     assert_same_models(provider.models(), &opi_ai::anthropic::model_catalog());
 }
 
 #[test]
 fn openai_chat_model_catalog_matches_constructor() {
-    let provider = opi_ai::openai_chat::OpenAiChatProvider::new("test-key".into(), None);
+    let provider = opi_ai::openai_chat::OpenAiChatProvider::new(None);
     assert_same_models(provider.models(), &opi_ai::openai_chat::model_catalog());
 }
 
 #[test]
 fn openai_responses_model_catalog_matches_constructor() {
-    let provider = opi_ai::openai_responses::OpenAiResponsesProvider::new("test-key".into(), None);
+    let provider = opi_ai::openai_responses::OpenAiResponsesProvider::new(None);
     assert_same_models(
         provider.models(),
         &opi_ai::openai_responses::model_catalog(),
@@ -265,19 +265,19 @@ fn openai_responses_model_catalog_matches_constructor() {
 
 #[test]
 fn openrouter_model_catalog_matches_constructor() {
-    let provider = opi_ai::openrouter::openrouter_provider("test-key".into(), None);
+    let provider = opi_ai::openrouter::openrouter_provider(None);
     assert_same_models(provider.models(), &opi_ai::openrouter::model_catalog());
 }
 
 #[test]
 fn mistral_model_catalog_matches_constructor() {
-    let provider = opi_ai::mistral::mistral_provider("test-key".into(), None);
+    let provider = opi_ai::mistral::mistral_provider(None);
     assert_same_models(provider.models(), &opi_ai::mistral::model_catalog());
 }
 
 #[test]
 fn gemini_model_catalog_matches_constructor() {
-    let provider = opi_ai::gemini::GeminiProvider::new("test-key".into(), None);
+    let provider = opi_ai::gemini::GeminiProvider::new(None);
     assert_same_models(provider.models(), &opi_ai::gemini::model_catalog());
 }
 
@@ -298,12 +298,8 @@ fn bedrock_model_catalog_matches_constructor() {
 
 #[test]
 fn vertex_model_catalog_matches_constructor() {
-    let provider = opi_ai::vertex::VertexProvider::new(
-        "test-token".into(),
-        "test-project".into(),
-        "us-central1".into(),
-        None,
-    );
+    let provider =
+        opi_ai::vertex::VertexProvider::new("test-project".into(), "us-central1".into(), None);
     assert_same_models(provider.models(), &opi_ai::vertex::model_catalog());
 }
 
@@ -444,6 +440,10 @@ async fn provider_bundle_retains_native_store_while_provider_is_callable() {
             "owned-provider",
             vec![opi_ai::test_support::text_response("delegated")],
         )),
+        auth_resolver: Arc::new(opi_ai::StaticAuthResolver::new(
+            opi_ai::AuthScheme::ApiKey,
+            secrecy::SecretString::from("test"),
+        )),
         store,
         resolver,
         registry,
@@ -453,7 +453,10 @@ async fn provider_bundle_retains_native_store_while_provider_is_callable() {
     assert!(!events.lock().unwrap().contains(&"guard_drop"));
     assert_eq!(bundle.provider.id(), "owned-provider");
     assert_eq!(bundle.provider.models()[0].id, "mock-model");
-    let mut stream = bundle.provider.stream(minimal_request("mock-model"));
+    let mut stream = bundle.provider.stream_prepared(
+        minimal_request("mock-model"),
+        opi_ai::test_support::resolved_auth(),
+    );
     assert!(
         stream.next().await.is_some(),
         "stream delegates to inner provider"
@@ -616,7 +619,16 @@ async fn anthropic_stored_api_key_routes_to_api_key_wire_auth() {
     )
     .await
     .expect("Anthropic API-key provider builds");
-    let mut stream = provider.stream(minimal_request("anthropic:claude-sonnet-4-5-20250514"));
+    let mut stream = provider.stream_prepared(
+        minimal_request("anthropic:claude-sonnet-4-5-20250514"),
+        opi_ai::auth::ResolvedAuth {
+            scheme: opi_ai::AuthScheme::ApiKey,
+            secret: secrecy::SecretString::from("sk-anthropic-stored-api"),
+            base_url: None,
+            account_id: None,
+            provenance: Default::default(),
+        },
+    );
     while let Some(event) = stream.next().await {
         if event.as_ref().is_ok_and(|event| event.is_terminal()) || event.is_err() {
             break;
@@ -643,10 +655,9 @@ async fn anthropic_stored_api_key_routes_to_api_key_wire_auth() {
 fn openrouter_with_custom_referer() {
     let compat = opi_ai::openai_chat::CompatConfig::default();
     // Get the default model list from the convenience function.
-    let temp = opi_ai::openrouter::openrouter_provider(String::new(), None);
+    let temp = opi_ai::openrouter::openrouter_provider(None);
     let models = temp.models().to_vec();
     let provider = opi_ai::openai_chat::OpenAiChatProvider::new_for_profile(
-        "test-key".into(),
         "https://openrouter.ai/api".into(),
         "openrouter".into(),
         compat,
@@ -1243,8 +1254,10 @@ async fn metadata_only_provider_dispatch_returns_explicit_error() {
     let (collection, diagnostics) = assemble_harness_collection(&mut provider, None);
     assert!(diagnostics.is_empty());
 
+    // 17.5: dispatch_complete was removed; the metadata-only rejection now
+    // surfaces at prepare_call as CollectionError::RouteNotDispatchable.
     let error = collection
-        .dispatch_complete(
+        .prepare_call(
             "metadata-provider:mock-model",
             minimal_request("metadata-provider:mock-model"),
         )
@@ -1252,8 +1265,8 @@ async fn metadata_only_provider_dispatch_returns_explicit_error() {
         .expect_err("metadata provider should not dispatch");
     let message = error.to_string();
     assert!(
-        message.contains("metadata-only provider"),
-        "expected metadata-only dispatch error, got {message:?}"
+        message.contains("no dispatchable route"),
+        "expected no-dispatchable-route error, got {message:?}"
     );
     assert!(
         message.contains("'metadata-provider'"),
@@ -1504,8 +1517,16 @@ async fn builtin_single_wire_models_route_by_declared_wire() {
         model.validate().unwrap();
         let model_id = model.id.clone();
 
-        let mut stream =
-            provider.stream(minimal_request(&format!("{}:{model_id}", case.provider_id)));
+        let mut stream = provider.stream_prepared(
+            minimal_request(&format!("{}:{model_id}", case.provider_id)),
+            opi_ai::auth::ResolvedAuth {
+                scheme: opi_ai::AuthScheme::ApiKey,
+                secret: secrecy::SecretString::from("test-secret"),
+                base_url: None,
+                account_id: None,
+                provenance: Default::default(),
+            },
+        );
         tokio::time::timeout(std::time::Duration::from_secs(2), stream.next())
             .await
             .unwrap_or_else(|_| panic!("{} stream did not issue a request", case.provider_id));
@@ -1661,7 +1682,6 @@ fn azure_default_factory_catalog_uses_selected_deployment_wire() {
 fn azure_constructor_rejects_empty_selected_deployment() {
     assert!(matches!(
         opi_ai::azure_openai::AzureOpenAIProvider::new(
-            "test-key".into(),
             Some("https://test.openai.azure.com".into()),
             " \t".into(),
             None,
@@ -1675,7 +1695,6 @@ fn azure_constructor_rejects_empty_selected_deployment() {
 fn azure_config_constructor_rejects_empty_deployment_catalog() {
     assert!(matches!(
         opi_ai::azure_openai::AzureOpenAIProvider::from_config(
-            "test-key".into(),
             Some("https://test.openai.azure.com".into()),
             vec![],
             None,
@@ -1989,7 +2008,7 @@ max_tokens_field = "max_completion_tokens"
     let mut request = minimal_request("prof:m1");
     request.system = Some("sys".into());
     request.max_tokens = Some(1024);
-    let mut stream = provider.stream(request);
+    let mut stream = provider.stream_prepared(request, opi_ai::test_support::resolved_auth());
     while let Some(result) = stream.next().await {
         match result {
             Ok(event) if event.is_terminal() => break,
@@ -2037,7 +2056,10 @@ max_output_tokens = 4096
     let provider = build_provider(&config).unwrap();
     let model_count_before_unknown_request = provider.models().len();
     let error = provider
-        .stream(minimal_request("prof:unknown"))
+        .stream_prepared(
+            minimal_request("prof:unknown"),
+            opi_ai::test_support::resolved_auth(),
+        )
         .next()
         .await
         .unwrap()

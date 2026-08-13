@@ -17,8 +17,8 @@ use wiremock::matchers::{body_partial_json, header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 /// Helper: create an OpenAI Responses provider.
-fn responses_provider(api_key: &str) -> OpenAiResponsesProvider {
-    OpenAiResponsesProvider::new(api_key.into(), None)
+fn responses_provider() -> OpenAiResponsesProvider {
+    OpenAiResponsesProvider::new(None)
 }
 
 /// Helper: collect stream events asynchronously.
@@ -32,7 +32,7 @@ async fn collect_stream(stream: EventStream) -> Vec<AssistantStreamEvent> {
 
 #[test]
 fn responses_provider_id_is_openai_responses() {
-    let provider = responses_provider("test-key");
+    let provider = responses_provider();
     assert_eq!(provider.id(), "openai-responses");
 }
 
@@ -43,7 +43,7 @@ fn responses_provider_id_is_openai_responses() {
 #[test]
 fn responses_resolves_model_in_registry() {
     let mut registry = ProviderRegistry::new();
-    registry.register(Box::new(responses_provider("key")));
+    registry.register(Box::new(responses_provider()));
     let (provider, model) = registry.resolve("openai-responses:gpt-4o").unwrap();
     assert_eq!(provider.id(), "openai-responses");
     assert_eq!(model.id, "gpt-4o");
@@ -52,7 +52,7 @@ fn responses_resolves_model_in_registry() {
 #[test]
 fn responses_registry_lists_provider_id() {
     let mut registry = ProviderRegistry::new();
-    registry.register(Box::new(responses_provider("key")));
+    registry.register(Box::new(responses_provider()));
     let ids = registry.provider_ids();
     assert!(ids.contains(&"openai-responses"));
 }
@@ -60,7 +60,7 @@ fn responses_registry_lists_provider_id() {
 #[test]
 fn responses_unknown_model_returns_error() {
     let mut registry = ProviderRegistry::new();
-    registry.register(Box::new(responses_provider("key")));
+    registry.register(Box::new(responses_provider()));
     let result = registry.resolve("openai-responses:nonexistent-model");
     assert!(result.is_err());
 }
@@ -71,7 +71,7 @@ fn responses_unknown_model_returns_error() {
 
 #[test]
 fn responses_request_body_uses_input_field() {
-    let provider = responses_provider("key");
+    let provider = responses_provider();
     let request = Request {
         model: "openai-responses:gpt-4o".into(),
         system: Some("You are helpful.".into()),
@@ -121,7 +121,7 @@ fn responses_request_body_uses_input_field() {
 
 #[test]
 fn responses_request_body_strips_provider_prefix() {
-    let provider = responses_provider("key");
+    let provider = responses_provider();
     let request = Request {
         model: "openai-responses:o3".into(),
         system: None,
@@ -195,7 +195,6 @@ fn responses_config_represents_store_reasoning_strict() {
 #[test]
 fn responses_request_body_store_emitted_when_configured() {
     let provider = OpenAiResponsesProvider::new_with_config(
-        "key".into(),
         None,
         ResponsesConfig {
             store: Some(false),
@@ -211,7 +210,7 @@ fn responses_request_body_store_emitted_when_configured() {
 
 #[test]
 fn responses_request_body_store_absent_by_default() {
-    let provider = responses_provider("key");
+    let provider = responses_provider();
     let body = provider.build_request_body(&responses_tool_request());
     assert!(
         body.get("store").is_none(),
@@ -222,7 +221,6 @@ fn responses_request_body_store_absent_by_default() {
 #[test]
 fn responses_static_reasoning_effort_does_not_drive_wire_output() {
     let provider = OpenAiResponsesProvider::new_with_config(
-        "key".into(),
         None,
         ResponsesConfig {
             reasoning_effort: Some("high".into()),
@@ -235,7 +233,7 @@ fn responses_static_reasoning_effort_does_not_drive_wire_output() {
 
 #[test]
 fn responses_request_body_reasoning_effort_absent_by_default() {
-    let provider = responses_provider("key");
+    let provider = responses_provider();
     let body = provider.build_request_body(&responses_tool_request());
     assert!(
         body.get("reasoning").is_none(),
@@ -247,15 +245,13 @@ fn responses_request_body_reasoning_effort_absent_by_default() {
 fn responses_reasoning_effort_uses_request_thinking_and_model_map() {
     use std::sync::Arc;
 
-    use opi_ai::auth::{AuthScheme, StaticAuthResolver};
     use opi_ai::http::HttpClient;
     use opi_ai::{
         ModelCapabilities, ModelInfo, ThinkingLevel, ThinkingLevelMap, ThinkingLevelMapping,
         WireApi,
     };
-    use secrecy::SecretString;
 
-    let provider = responses_provider("key");
+    let provider = responses_provider();
     let mut identity = responses_tool_request();
     identity.model = "openai-responses:o3".into();
     identity.thinking = ThinkingConfig {
@@ -281,10 +277,6 @@ fn responses_reasoning_effort_uses_request_thinking_and_model_map() {
         ThinkingLevelMapping::Mapped("provider-high".into()),
     ));
     let mapped_provider = OpenAiResponsesProvider::for_route(
-        Arc::new(StaticAuthResolver::new(
-            AuthScheme::ApiKey,
-            SecretString::from("key"),
-        )),
         Some("https://example.test".into()),
         "mapped".into(),
         Default::default(),
@@ -327,10 +319,6 @@ fn responses_reasoning_effort_uses_request_thinking_and_model_map() {
     )
     .with_thinking_level_map(ThinkingLevelMap::disabled());
     let unsupported_provider = OpenAiResponsesProvider::for_route(
-        Arc::new(StaticAuthResolver::new(
-            AuthScheme::ApiKey,
-            SecretString::from("key"),
-        )),
         Some("https://example.test".into()),
         "unsupported".into(),
         Default::default(),
@@ -351,7 +339,6 @@ fn responses_reasoning_effort_uses_request_thinking_and_model_map() {
 #[test]
 fn responses_request_body_strict_tools_emitted_when_configured() {
     let provider = OpenAiResponsesProvider::new_with_config(
-        "key".into(),
         None,
         ResponsesConfig {
             strict_tools: true,
@@ -368,7 +355,7 @@ fn responses_request_body_strict_tools_emitted_when_configured() {
 
 #[test]
 fn responses_request_body_strict_tools_absent_by_default() {
-    let provider = responses_provider("key");
+    let provider = responses_provider();
     let body = provider.build_request_body(&responses_tool_request());
     let tools = body["tools"].as_array().expect("tools array present");
     assert!(
@@ -386,7 +373,7 @@ fn responses_request_body_previous_response_id_is_deferred() {
     // server-side response chain), so previous_response_id is deferred to 12.9.
     // This test pins that the shared Responses adapter does not synthesize a
     // previous_response_id field today; 12.9 documents the deferral in docs.
-    let provider = responses_provider("key");
+    let provider = responses_provider();
     let body = provider.build_request_body(&responses_tool_request());
     assert!(
         body.get("previous_response_id").is_none(),
@@ -400,7 +387,7 @@ fn responses_request_body_previous_response_id_is_deferred() {
 
 #[tokio::test]
 async fn responses_text_streaming_produces_start_delta_done() {
-    let provider = responses_provider("key");
+    let provider = responses_provider();
     let sse = "event: response.created\n\
                data: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_1\",\"status\":\"in_progress\",\"model\":\"gpt-4o\",\"output\":[]}}\n\n\
                event: response.output_item.added\n\
@@ -438,7 +425,7 @@ async fn responses_text_streaming_produces_start_delta_done() {
 
 #[tokio::test]
 async fn responses_done_event_has_provider_id() {
-    let provider = responses_provider("key");
+    let provider = responses_provider();
     let sse = "event: response.created\n\
                data: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_1\",\"status\":\"in_progress\",\"model\":\"gpt-4o\",\"output\":[]}}\n\n\
                event: response.output_item.added\n\
@@ -472,7 +459,7 @@ async fn responses_done_event_has_provider_id() {
 
 #[tokio::test]
 async fn responses_tool_call_streaming_works() {
-    let provider = responses_provider("key");
+    let provider = responses_provider();
     let sse = "event: response.created\n\
                data: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_1\",\"status\":\"in_progress\",\"model\":\"gpt-4o\",\"output\":[]}}\n\n\
                event: response.output_item.added\n\
@@ -505,7 +492,7 @@ async fn responses_tool_call_streaming_works() {
 
 #[tokio::test]
 async fn responses_error_event_routing() {
-    let provider = responses_provider("key");
+    let provider = responses_provider();
     let sse = "event: error\n\
                data: {\"type\":\"error\",\"message\":\"Model not found\"}\n\n";
 
@@ -525,7 +512,7 @@ async fn responses_error_event_routing() {
 
 #[tokio::test]
 async fn responses_usage_in_done_event() {
-    let provider = responses_provider("key");
+    let provider = responses_provider();
     let sse = "event: response.created\n\
                data: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_1\",\"status\":\"in_progress\",\"model\":\"gpt-4o\",\"output\":[]}}\n\n\
                event: response.output_item.added\n\
@@ -561,7 +548,7 @@ async fn responses_usage_in_done_event() {
 
 #[tokio::test]
 async fn responses_response_id_round_trips_into_done_message() {
-    let provider = responses_provider("key");
+    let provider = responses_provider();
     let sse = "event: response.created\n\
                data: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_1\",\"status\":\"in_progress\",\"model\":\"gpt-4o\",\"output\":[]}}\n\n\
                event: response.output_item.added\n\
@@ -600,7 +587,7 @@ async fn responses_response_id_round_trips_into_done_message() {
 
 #[tokio::test]
 async fn responses_cache_tokens_in_done_event() {
-    let provider = responses_provider("key");
+    let provider = responses_provider();
     let sse = "event: response.created\n\
                data: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_cache\",\"status\":\"in_progress\",\"model\":\"gpt-4o\",\"output\":[]}}\n\n\
                event: response.output_item.added\n\
@@ -655,7 +642,7 @@ fn responses_reasoning_fixture(reasoning_tokens: Option<u64>, output_tokens: u32
 
 #[tokio::test]
 async fn responses_reasoning_tokens_in_done_event() {
-    let provider = responses_provider("key");
+    let provider = responses_provider();
     let sse = "event: response.created\n\
                data: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_reason\",\"status\":\"in_progress\",\"model\":\"o3\",\"output\":[]}}\n\n\
                event: response.output_item.added\n\
@@ -685,7 +672,7 @@ async fn responses_reasoning_tokens_in_done_event() {
 
 #[tokio::test]
 async fn responses_reasoning_absent_zero_and_equality_are_preserved() {
-    let provider = responses_provider("key");
+    let provider = responses_provider();
     for (reasoning, expected) in [(None, None), (Some(0), Some(0)), (Some(500), Some(500))] {
         let sse = responses_reasoning_fixture(reasoning, 500);
         let events = collect_stream(provider.stream_from_sse(&sse, CancellationToken::new())).await;
@@ -713,8 +700,14 @@ async fn responses_reasoning_malformed_subset_stops_production_stream_with_non_r
         .mount(&server)
         .await;
 
-    let provider = OpenAiResponsesProvider::new("test-key".into(), Some(server.uri()));
-    let results: Vec<_> = provider.stream(responses_tool_request()).collect().await;
+    let provider = OpenAiResponsesProvider::new(Some(server.uri()));
+    let results: Vec<_> = provider
+        .stream_prepared(
+            responses_tool_request(),
+            opi_ai::test_support::resolved_auth(),
+        )
+        .collect()
+        .await;
     let errors: Vec<_> = results
         .iter()
         .filter_map(|result| result.as_ref().err())
@@ -745,7 +738,7 @@ async fn responses_reasoning_malformed_subset_stops_production_stream_with_non_r
 
 #[test]
 fn responses_has_model_list() {
-    let provider = responses_provider("key");
+    let provider = responses_provider();
     let models = provider.models();
     assert!(
         !models.is_empty(),
@@ -765,7 +758,7 @@ fn responses_has_model_list() {
 
 #[tokio::test]
 async fn responses_multiple_text_deltas() {
-    let provider = responses_provider("key");
+    let provider = responses_provider();
     let sse = "event: response.created\n\
                data: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_1\",\"status\":\"in_progress\",\"model\":\"gpt-4o\",\"output\":[]}}\n\n\
                event: response.output_item.added\n\
@@ -820,7 +813,7 @@ async fn responses_multiple_text_deltas() {
 
 #[tokio::test]
 async fn responses_tool_call_multiple_arg_deltas() {
-    let provider = responses_provider("key");
+    let provider = responses_provider();
     let sse = "event: response.created\n\
                data: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_1\",\"status\":\"in_progress\",\"model\":\"gpt-4o\",\"output\":[]}}\n\n\
                event: response.output_item.added\n\
@@ -849,10 +842,8 @@ async fn responses_tool_call_multiple_arg_deltas() {
 
 #[test]
 fn responses_custom_base_url() {
-    let provider = opi_ai::openai_responses::OpenAiResponsesProvider::new(
-        "key".into(),
-        Some("https://custom.proxy".into()),
-    );
+    let provider =
+        opi_ai::openai_responses::OpenAiResponsesProvider::new(Some("https://custom.proxy".into()));
     assert_eq!(provider.id(), "openai-responses");
 }
 
@@ -866,7 +857,7 @@ fn responses_custom_base_url() {
 
 #[tokio::test]
 async fn responses_multi_tool_call_produces_two_calls() {
-    let provider = responses_provider("key");
+    let provider = responses_provider();
     let sse = "event: response.created\n\
                data: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_multi\",\"status\":\"in_progress\",\"model\":\"gpt-4o\",\"output\":[]}}\n\n\
                event: response.output_item.added\n\
@@ -909,7 +900,7 @@ async fn responses_multi_tool_call_produces_two_calls() {
 
 #[tokio::test]
 async fn responses_interleaved_tool_deltas_route_by_output_index() {
-    let provider = responses_provider("key");
+    let provider = responses_provider();
     let sse = r#"event: response.created
 data: {"type":"response.created","response":{"id":"resp_interleave","model":"gpt-4o"}}
 
@@ -960,7 +951,7 @@ data: {"type":"response.completed","response":{"id":"resp_interleave","model":"g
 
 #[tokio::test]
 async fn responses_message_output_item_done_does_not_duplicate_tool_end() {
-    let provider = responses_provider("key");
+    let provider = responses_provider();
     let sse = r#"event: response.created
 data: {"type":"response.created","response":{"id":"resp_mixed","model":"gpt-4o"}}
 
@@ -998,7 +989,7 @@ data: {"type":"response.completed","response":{"id":"resp_mixed","model":"gpt-4o
 
 #[tokio::test]
 async fn responses_text_after_tool_reports_actual_content_index() {
-    let provider = responses_provider("key");
+    let provider = responses_provider();
     let sse = r#"event: response.created
 data: {"type":"response.created","response":{"id":"resp_mixed_index","model":"gpt-4o"}}
 
@@ -1053,7 +1044,7 @@ data: {"type":"response.completed","response":{"id":"resp_mixed_index","model":"
 
 #[tokio::test]
 async fn responses_completed_closes_unfinished_tool_call_before_done() {
-    let provider = responses_provider("key");
+    let provider = responses_provider();
     let sse = r#"event: response.created
 data: {"type":"response.created","response":{"id":"resp_fallback","model":"gpt-4o"}}
 
@@ -1102,7 +1093,7 @@ async fn responses_tool_call_id_is_the_call_id() {
     // function_call items both an `id` (fc_1) and a `call_id` (call_1); opi
     // MUST surface `call_id` as ToolCall.id because that is the value a
     // subsequent function_call_output must echo back.
-    let provider = responses_provider("key");
+    let provider = responses_provider();
     let sse = "event: response.created\n\
                data: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_id\",\"status\":\"in_progress\",\"model\":\"gpt-4o\",\"output\":[]}}\n\n\
                event: response.output_item.added\n\
@@ -1133,7 +1124,7 @@ async fn responses_tool_call_id_is_the_call_id() {
 
 #[tokio::test]
 async fn responses_malformed_tool_args_pass_raw_string_without_panic() {
-    let provider = responses_provider("key");
+    let provider = responses_provider();
     let sse = "event: response.created\n\
                data: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_bad\",\"status\":\"in_progress\",\"model\":\"gpt-4o\",\"output\":[]}}\n\n\
                event: response.output_item.added\n\
@@ -1188,7 +1179,7 @@ async fn stream_sends_text_request_body_and_auth_through_http() {
         .mount(&server)
         .await;
 
-    let provider = OpenAiResponsesProvider::new("test-key".into(), Some(server.uri()));
+    let provider = OpenAiResponsesProvider::new(Some(server.uri()));
     let request = Request {
         model: "openai-responses:gpt-4o".into(),
         system: Some("You are helpful.".into()),
@@ -1211,7 +1202,7 @@ async fn stream_sends_text_request_body_and_auth_through_http() {
         session_id: None,
     };
 
-    let mut stream = provider.stream(request);
+    let mut stream = provider.stream_prepared(request, opi_ai::test_support::resolved_auth());
     while let Some(result) = stream.next().await {
         match result {
             Ok(event) if event.is_terminal() => break,
@@ -1255,7 +1246,7 @@ async fn stream_cancellation_drains_without_hang_after_cancel() {
         .await;
 
     let cancel = CancellationToken::new();
-    let provider = OpenAiResponsesProvider::new("test-key".into(), Some(server.uri()));
+    let provider = OpenAiResponsesProvider::new(Some(server.uri()));
     let request = Request {
         model: "openai-responses:gpt-4o".into(),
         system: None,
@@ -1277,7 +1268,7 @@ async fn stream_cancellation_drains_without_hang_after_cancel() {
         cache_retention: CacheRetention::None,
         session_id: None,
     };
-    let mut stream = provider.stream(request);
+    let mut stream = provider.stream_prepared(request, opi_ai::test_support::resolved_auth());
 
     let _ = stream
         .next()

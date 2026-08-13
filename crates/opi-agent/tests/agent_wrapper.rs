@@ -59,7 +59,7 @@ impl Provider for MockProvider {
             .as_slice()
     }
 
-    fn stream(&self, _request: Request) -> EventStream {
+    fn stream_prepared(&self, _request: Request, _auth: opi_ai::auth::ResolvedAuth) -> EventStream {
         let events = self.responses.lock().unwrap().remove(0);
         Box::pin(stream::iter(events.into_iter().map(Ok::<_, ProviderError>)))
     }
@@ -276,7 +276,11 @@ async fn abort_cancels_running_loop() {
                 .as_slice()
         }
 
-        fn stream(&self, request: Request) -> EventStream {
+        fn stream_prepared(
+            &self,
+            request: Request,
+            _auth: opi_ai::auth::ResolvedAuth,
+        ) -> EventStream {
             let cancel = request.cancel;
             // Yield Start event, then wait for cancellation to end the stream
             Box::pin(

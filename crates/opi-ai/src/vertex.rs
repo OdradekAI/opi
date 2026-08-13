@@ -11,6 +11,7 @@ use std::fmt;
 use std::sync::Arc;
 
 use futures_util::{StreamExt, stream};
+use secrecy::ExposeSecret;
 use tokio_util::sync::CancellationToken;
 
 use crate::gemini::{GeminiMapper, GeminiProvider, ParsedEvent, drain_sse_data, parse_sse_data};
@@ -25,7 +26,6 @@ use crate::stream::AssistantStreamEvent;
 /// Wraps a [`GeminiProvider`] for request body serialization and SSE parsing,
 /// but overrides the HTTP transport layer (URL and auth header).
 pub struct VertexProvider {
-    access_token: String,
     project: String,
     location: String,
     base_url: String,
@@ -39,7 +39,6 @@ impl fmt::Debug for VertexProvider {
         f.debug_struct("VertexProvider")
             .field("project", &self.project)
             .field("location", &self.location)
-            .field("access_token", &"***")
             .field("models", &self.models.len())
             .finish()
     }
@@ -47,18 +46,12 @@ impl fmt::Debug for VertexProvider {
 
 impl VertexProvider {
     /// Create a new Vertex AI provider.
-    pub fn new(
-        access_token: String,
-        project: String,
-        location: String,
-        base_url: Option<String>,
-    ) -> Self {
+    pub fn new(project: String, location: String, base_url: Option<String>) -> Self {
         let base_url =
             base_url.unwrap_or_else(|| format!("https://{location}-aiplatform.googleapis.com"));
-        let inner = GeminiProvider::new(String::new(), None);
+        let inner = GeminiProvider::new(None);
         let models = model_catalog();
         Self {
-            access_token,
             project,
             location,
             base_url,
@@ -70,7 +63,6 @@ impl VertexProvider {
 
     /// Create from config with explicit model list.
     pub fn from_config(
-        access_token: String,
         project: String,
         location: String,
         models: Vec<String>,
@@ -78,7 +70,7 @@ impl VertexProvider {
     ) -> Self {
         let base_url =
             base_url.unwrap_or_else(|| format!("https://{location}-aiplatform.googleapis.com"));
-        let inner = GeminiProvider::new(String::new(), None);
+        let inner = GeminiProvider::new(None);
         let model_list = models
             .iter()
             .map(|id| {
@@ -93,7 +85,6 @@ impl VertexProvider {
             })
             .collect();
         Self {
-            access_token,
             project,
             location,
             base_url,
@@ -174,7 +165,8 @@ impl Provider for VertexProvider {
         &self.models
     }
 
-    fn stream(&self, request: Request) -> EventStream {
+    fn stream_prepared(&self, request: Request, auth: crate::auth::ResolvedAuth) -> EventStream {
+        let access_token = auth.secret.expose_secret().to_string();
         let model_id = request
             .model
             .split_once(':')
@@ -186,7 +178,6 @@ impl Provider for VertexProvider {
         let body = self.inner.build_request_body(&request);
         let cancel = request.cancel;
         let http_client = self.client.client().clone();
-        let access_token = self.access_token.clone();
 
         let (tx, rx) = tokio::sync::mpsc::channel(64);
 
@@ -199,12 +190,6 @@ impl Provider for VertexProvider {
         });
 
         Box::pin(ReceiverStream { rx })
-    }
-
-    fn stream_prepared(&self, request: Request, _auth: crate::auth::ResolvedAuth) -> EventStream {
-        // Vertex auth is a construction-time access token (no per-call resolver),
-        // so a prepared call reuses the existing dispatch path. (Phase 17 expand.)
-        self.stream(request)
     }
 }
 

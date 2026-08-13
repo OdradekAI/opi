@@ -16,8 +16,8 @@ use wiremock::matchers::{body_partial_json, header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 /// Helper: create an OpenRouter-configured provider.
-fn openrouter_provider(api_key: &str) -> OpenAiChatProvider {
-    opi_ai::openrouter::openrouter_provider(api_key.into(), None)
+fn openrouter_provider() -> OpenAiChatProvider {
+    opi_ai::openrouter::openrouter_provider(None)
 }
 
 /// Helper: collect stream events asynchronously.
@@ -95,7 +95,7 @@ fn stalled_openrouter_terminal_chunk() -> &'static str {
 
 #[test]
 fn openrouter_provider_id_is_openrouter() {
-    let provider = openrouter_provider("test-key");
+    let provider = openrouter_provider();
     assert_eq!(provider.id(), "openrouter");
 }
 
@@ -106,7 +106,7 @@ fn openrouter_provider_id_is_openrouter() {
 #[test]
 fn openrouter_resolves_model_in_registry() {
     let mut registry = ProviderRegistry::new();
-    registry.register(Box::new(openrouter_provider("key")));
+    registry.register(Box::new(openrouter_provider()));
     let (provider, model) = registry
         .resolve("openrouter:anthropic/claude-sonnet-4")
         .unwrap();
@@ -117,7 +117,7 @@ fn openrouter_resolves_model_in_registry() {
 #[test]
 fn openrouter_registry_lists_provider_id() {
     let mut registry = ProviderRegistry::new();
-    registry.register(Box::new(openrouter_provider("key")));
+    registry.register(Box::new(openrouter_provider()));
     let ids = registry.provider_ids();
     assert!(ids.contains(&"openrouter"));
 }
@@ -125,7 +125,7 @@ fn openrouter_registry_lists_provider_id() {
 #[test]
 fn openrouter_unknown_model_returns_error() {
     let mut registry = ProviderRegistry::new();
-    registry.register(Box::new(openrouter_provider("key")));
+    registry.register(Box::new(openrouter_provider()));
     let result = registry.resolve("openrouter:nonexistent-model");
     assert!(result.is_err());
 }
@@ -136,7 +136,7 @@ fn openrouter_unknown_model_returns_error() {
 
 #[test]
 fn openrouter_request_body_strips_provider_prefix() {
-    let provider = openrouter_provider("key");
+    let provider = openrouter_provider();
     let request = Request {
         model: "openrouter:openai/gpt-4o".into(),
         system: Some("You are helpful.".into()),
@@ -168,7 +168,7 @@ fn openrouter_request_body_strips_provider_prefix() {
 
 #[tokio::test]
 async fn openrouter_text_streaming_produces_start_delta_done() {
-    let provider = openrouter_provider("key");
+    let provider = openrouter_provider();
     let sse = "data: {\"choices\":[{\"delta\":{\"role\":\"assistant\",\"content\":null}}],\"model\":\"anthropic/claude-sonnet-4\"}\n\n\
                data: {\"choices\":[{\"delta\":{\"content\":\"Hi there\"}}]}\n\n\
                data: {\"choices\":[{\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":5}}\n\n\
@@ -195,7 +195,7 @@ async fn openrouter_text_streaming_produces_start_delta_done() {
 
 #[tokio::test]
 async fn openrouter_done_message_has_openrouter_provider() {
-    let provider = openrouter_provider("key");
+    let provider = openrouter_provider();
     let sse = "data: {\"choices\":[{\"delta\":{\"role\":\"assistant\",\"content\":null}}]}\n\n\
                data: {\"choices\":[{\"delta\":{\"content\":\"Hi\"}}]}\n\n\
                data: {\"choices\":[{\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":5,\"completion_tokens\":2}}\n\n\
@@ -218,7 +218,7 @@ async fn openrouter_done_message_has_openrouter_provider() {
 
 #[tokio::test]
 async fn openrouter_tool_call_streaming_works() {
-    let provider = openrouter_provider("key");
+    let provider = openrouter_provider();
     let sse = "data: {\"choices\":[{\"delta\":{\"role\":\"assistant\",\"content\":null}}]}\n\n\
                data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_1\",\"type\":\"function\",\"function\":{\"name\":\"read_file\",\"arguments\":\"\"}}]}}]}\n\n\
                data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"{\\\"path\\\":\\\"foo.rs\\\"}\"}}]}}]}\n\n\
@@ -245,7 +245,7 @@ async fn openrouter_tool_call_streaming_works() {
 
 #[tokio::test]
 async fn openrouter_error_event_routing() {
-    let provider = openrouter_provider("key");
+    let provider = openrouter_provider();
     let sse = "data: {\"error\":{\"message\":\"Model not found\"}}\n\n\
                data: [DONE]\n\n";
     let events = collect_stream(provider.stream_from_sse(sse, CancellationToken::new())).await;
@@ -263,7 +263,7 @@ async fn openrouter_error_event_routing() {
 
 #[tokio::test]
 async fn openrouter_usage_in_done_event() {
-    let provider = openrouter_provider("key");
+    let provider = openrouter_provider();
     let sse = "data: {\"choices\":[{\"delta\":{\"role\":\"assistant\",\"content\":null}}]}\n\n\
                data: {\"choices\":[{\"delta\":{\"content\":\"test\"}}]}\n\n\
                data: {\"choices\":[{\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":42,\"completion_tokens\":13}}\n\n\
@@ -287,7 +287,7 @@ async fn openrouter_usage_in_done_event() {
 
 #[test]
 fn openrouter_has_model_list() {
-    let provider = openrouter_provider("key");
+    let provider = openrouter_provider();
     let models = provider.models();
     assert!(
         !models.is_empty(),
@@ -305,8 +305,7 @@ fn openrouter_has_model_list() {
 
 #[test]
 fn openrouter_custom_base_url() {
-    let provider =
-        opi_ai::openrouter::openrouter_provider("key".into(), Some("https://custom.proxy".into()));
+    let provider = opi_ai::openrouter::openrouter_provider(Some("https://custom.proxy".into()));
     assert_eq!(provider.id(), "openrouter");
 }
 
@@ -342,7 +341,7 @@ async fn stream_sends_text_request_body_and_auth_through_http() {
         .mount(&server)
         .await;
 
-    let provider = opi_ai::openrouter::openrouter_provider("test-key".into(), Some(server.uri()));
+    let provider = opi_ai::openrouter::openrouter_provider(Some(server.uri()));
     let request = Request {
         model: "openrouter:openai/gpt-4o".into(),
         system: Some("You are helpful.".into()),
@@ -365,7 +364,7 @@ async fn stream_sends_text_request_body_and_auth_through_http() {
         session_id: None,
     };
 
-    let mut stream = provider.stream(request);
+    let mut stream = provider.stream_prepared(request, opi_ai::test_support::resolved_auth());
     while let Some(result) = stream.next().await {
         match result {
             Ok(event) if event.is_terminal() => break,
@@ -393,7 +392,6 @@ fn openrouter_profile_inherits_shared_compat_flags() {
     // body reflects all compat flags. This proves the family inherits the shared
     // profile path (DoD) rather than carrying a parallel serializer.
     let provider = OpenAiChatProvider::new_for_profile(
-        "test-key".into(),
         "https://openrouter.example.com".into(),
         "openrouter".into(),
         CompatConfig {
@@ -459,7 +457,7 @@ async fn stream_cancellation_aborts_before_completion() {
     let server = spawn_stalled_openrouter_server().await;
 
     let cancel = CancellationToken::new();
-    let provider = opi_ai::openrouter::openrouter_provider("test-key".into(), Some(server));
+    let provider = opi_ai::openrouter::openrouter_provider(Some(server));
     let request = Request {
         model: "openrouter:openai/gpt-4o".into(),
         system: None,
@@ -481,7 +479,7 @@ async fn stream_cancellation_aborts_before_completion() {
         cache_retention: CacheRetention::None,
         session_id: None,
     };
-    let mut stream = provider.stream(request);
+    let mut stream = provider.stream_prepared(request, opi_ai::test_support::resolved_auth());
 
     let first = stream
         .next()

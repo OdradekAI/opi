@@ -21,8 +21,8 @@
 //! The current [`Provider`] trait is streaming-only.
 //! Rather than adding a second trait method (which would touch every provider
 //! adapter), complete dispatch is implemented by draining the stream returned
-//! by [`Provider::stream`] to its terminal event. This keeps the decision
-//! compatible with the existing streaming contract.
+//! by [`Provider::stream_prepared`] to its terminal event. This keeps the
+//! decision compatible with the existing streaming contract.
 //!
 //! # Unstable
 //!
@@ -123,8 +123,8 @@ pub enum AuthDescriptor {
     /// and `display_source` is a non-secret label shown in diagnostics. The
     /// descriptor itself cannot perform IO, so the redacted
     /// [`CredentialSource`] probe state is injected separately via
-    /// [`ProviderCollection::set_probe`] and consulted by
-    /// [`ProviderCollection::dispatch_stream`].
+    /// [`ProviderCollection::set_probe`] and read back via
+    /// [`ProviderCollection::probe`] for listing/auth-status display.
     StoreCredential {
         /// Store account key (typically the provider id).
         key: String,
@@ -171,10 +171,9 @@ impl AuthDescriptor {
                 }
             }
             // Not authoritative: the secret-free descriptor cannot perform IO,
-            // so the redacted probe state is injected via set_probe and gated in
-            // dispatch_stream. Returning Configured here keeps auth_status()
-            // non-blocking for the variant; dispatch_stream never consults
-            // auth_status() for StoreCredential providers (see its hoisted gate).
+            // so the redacted probe state is injected via set_probe and read
+            // back via probe() for listing/auth-status display. Returning
+            // Configured here keeps auth_status() non-blocking for the variant.
             AuthDescriptor::StoreCredential { .. } => AuthStatus::Configured,
         }
     }
@@ -287,7 +286,7 @@ pub struct ProviderCollection {
     /// Redacted, precomputed probe state for [`AuthDescriptor::StoreCredential`]
     /// providers. The secret-free descriptor cannot perform IO, so the async
     /// outer command path probes the store and injects the result here;
-    /// [`ProviderCollection::dispatch_stream`] consults it.
+    /// [`ProviderCollection::probe`] exposes it for listing/auth-status display.
     probed: HashMap<String, CredentialSource>,
     /// Per-route live auth resolvers for dispatchable (Phase 17) routes. A route
     /// is dispatchable via [`prepare_call`](Self::prepare_call) only when it has
@@ -407,7 +406,16 @@ impl ProviderCollection {
             .cloned()
             .unwrap_or(AuthProvenanceSource::Static);
 
-        let auth = resolver.resolve().await?;
+        let mut auth = resolver.resolve().await?;
+        // The collection attaches the non-secret provenance from the route's
+        // registered source classification after resolution; resolvers supply
+        // the default. Fallback reporting stays `NotAttempted` here: the live
+        // resolver does not yet surface a typed fallback fact back to the
+        // collection, so the hardcode is retained rather than guessed.
+        auth.provenance = AuthProvenance {
+            source,
+            fallback: AuthFallback::NotAttempted,
+        };
         let provider = self
             .registry
             .get_provider_arc(&provider_id)
@@ -418,10 +426,6 @@ impl ProviderCollection {
             provider_id,
             model_id,
             wire_api,
-            provenance: AuthProvenance {
-                source,
-                fallback: AuthFallback::NotAttempted,
-            },
         };
         Ok(PreparedProviderCall {
             provider,
@@ -463,8 +467,8 @@ impl ProviderCollection {
     /// Not authoritative for [`AuthDescriptor::StoreCredential`]: that variant
     /// always resolves to [`AuthStatus::Configured`] here because the
     /// secret-free descriptor cannot perform IO. The redacted probe state
-    /// injected via [`Self::set_probe`] is consulted separately in
-    /// [`Self::dispatch_stream`].
+    /// injected via [`Self::set_probe`] is read back via [`Self::probe`] for
+    /// listing/auth-status display.
     pub fn auth_status(&self, provider_id: &str) -> Option<AuthStatus> {
         self.auth.get(provider_id).map(AuthDescriptor::resolve)
     }
@@ -486,62 +490,6 @@ impl ProviderCollection {
     /// The compatibility metadata associated with a provider, if any.
     pub fn compat(&self, provider_id: &str) -> Option<&CompatMetadata> {
         self.compat.get(provider_id)
-    }
-
-    /// Resolve a spec, validate its auth, and return a provider stream.
-    ///
-    /// Dispatch is auth-gated only for providers the collection owns an auth
-    /// descriptor for. A [`AuthStatus::Missing`] descriptor yields a redacted
-    /// [`CollectionError::AuthNotConfigured`] before the provider is touched.
-    ///
-    /// [`AuthDescriptor::StoreCredential`] providers are gated on the injected
-    /// [`CredentialSource`] (see [`Self::set_probe`]): `Absent` rejects, while
-    /// `Present` and `BackendUnavailable` proceed. `BackendUnavailable`
-    /// proceeds intentionally — keychain-required enforcement is the
-    /// responsibility of the live per-stream resolver, not this deliberately
-    /// non-live status gate.
-    /// A StoreCredential provider with no injected probe is treated as
-    /// non-gated, matching `from_registry`'s "no descriptor" semantics.
-    pub fn dispatch_stream(
-        &self,
-        spec: &str,
-        request: Request,
-    ) -> Result<EventStream, CollectionError> {
-        let (provider, model) = self.registry.resolve(spec)?;
-        crate::provider::validate_request_for_model(provider.id(), Some(model), &request)?;
-        let id = provider.id();
-        if let Some(AuthDescriptor::StoreCredential { display_source, .. }) = self.auth.get(id) {
-            // Secret-free descriptor: consult the injected probe, not resolve().
-            if matches!(self.probed.get(id), Some(CredentialSource::Absent)) {
-                return Err(CollectionError::AuthNotConfigured {
-                    provider: id.to_owned(),
-                    detail: display_source.clone(),
-                });
-            }
-            // Present | BackendUnavailable | no probe injected -> proceed.
-        } else if let Some(AuthStatus::Missing { source }) = self.auth_status(id) {
-            return Err(CollectionError::AuthNotConfigured {
-                provider: id.to_owned(),
-                detail: source,
-            });
-        }
-        Ok(provider.stream(request))
-    }
-
-    /// Drain a provider stream to its terminal event.
-    ///
-    /// This is the explicit complete-dispatch decision: complete dispatch is
-    /// built on top of the streaming [`Provider`] trait rather than a separate
-    /// trait method. See the [module docs](self).
-    ///
-    /// Auth gating is identical to [`ProviderCollection::dispatch_stream`].
-    pub async fn dispatch_complete(
-        &self,
-        spec: &str,
-        request: Request,
-    ) -> Result<CompletedRequest, CollectionError> {
-        let stream = self.dispatch_stream(spec, request)?;
-        Ok(drain_to_completion(stream).await?)
     }
 
     /// Refresh provider-side model catalogs.
@@ -630,8 +578,13 @@ impl Default for ProviderCollection {
 
 /// Drain an event stream until it yields a terminal event or errors.
 ///
-/// A stream that ends without a terminal event is treated as a stream error.
-async fn drain_to_completion(mut stream: EventStream) -> Result<CompletedRequest, ProviderError> {
+/// A general stream-drain utility: drive any [`EventStream`] (for example the
+/// one returned by [`PreparedProviderCall::start_attempt`]) until it produces a
+/// terminal event. A stream that ends without a terminal event is treated as a
+/// stream error.
+pub async fn drain_to_completion(
+    mut stream: EventStream,
+) -> Result<CompletedRequest, ProviderError> {
     while let Some(item) = stream.next().await {
         match item {
             Ok(AssistantStreamEvent::Done { reason, message }) => {
@@ -655,8 +608,8 @@ async fn drain_to_completion(mut stream: EventStream) -> Result<CompletedRequest
 
 /// Immutable, redacted facts about a resolved provider route.
 ///
-/// Contains no secret material; the resolved secret stays private to
-/// [`PreparedProviderCall`].
+/// Contains no secret material; the resolved secret and its non-secret
+/// provenance both stay private to [`PreparedProviderCall`].
 #[derive(Debug, Clone)]
 pub struct PreparedRoute {
     /// Canonical provider id of the resolved route.
@@ -665,8 +618,6 @@ pub struct PreparedRoute {
     pub model_id: String,
     /// Provider wire/API kind of the resolved route.
     pub wire_api: crate::model_info::WireApi,
-    /// Non-secret auth source classification plus fallback decision.
-    pub provenance: AuthProvenance,
 }
 
 /// An opaque prepared provider call (Phase 17).
@@ -700,6 +651,17 @@ impl PreparedProviderCall {
     /// The immutable, redacted route facts for this prepared call.
     pub fn route(&self) -> &PreparedRoute {
         &self.route
+    }
+
+    /// The non-secret auth source classification plus fallback decision for the
+    /// resolved authentication (Phase 17).
+    ///
+    /// Provenance is carried beside the secret on the private
+    /// [`ResolvedAuth`]; this redacted accessor is the only public read path,
+    /// so callers and evidence can distinguish auth sources without seeing the
+    /// secret.
+    pub fn auth_provenance(&self) -> &AuthProvenance {
+        &self.auth.provenance
     }
 
     /// Start one attempt using the frozen request and authentication.

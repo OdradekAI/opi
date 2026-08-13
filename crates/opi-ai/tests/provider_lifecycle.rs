@@ -115,8 +115,11 @@ async fn stream_text_response_produces_correct_events() {
         .mount(&server)
         .await;
 
-    let provider = AnthropicProvider::new("test-key".into(), Some(server.uri()));
-    let mut stream = provider.stream(make_request(CancellationToken::new()));
+    let provider = AnthropicProvider::new(Some(server.uri()));
+    let mut stream = provider.stream_prepared(
+        make_request(CancellationToken::new()),
+        opi_ai::test_support::resolved_auth(),
+    );
 
     let mut events = Vec::new();
     while let Some(result) = stream.next().await {
@@ -177,8 +180,11 @@ async fn stream_tool_call_response_produces_correct_events() {
         .mount(&server)
         .await;
 
-    let provider = AnthropicProvider::new("test-key".into(), Some(server.uri()));
-    let mut stream = provider.stream(make_request(CancellationToken::new()));
+    let provider = AnthropicProvider::new(Some(server.uri()));
+    let mut stream = provider.stream_prepared(
+        make_request(CancellationToken::new()),
+        opi_ai::test_support::resolved_auth(),
+    );
 
     let mut events = Vec::new();
     while let Some(result) = stream.next().await {
@@ -229,8 +235,11 @@ async fn stream_http_401_maps_to_auth_failed() {
         .mount(&server)
         .await;
 
-    let provider = AnthropicProvider::new("bad-key".into(), Some(server.uri()));
-    let mut stream = provider.stream(make_request(CancellationToken::new()));
+    let provider = AnthropicProvider::new(Some(server.uri()));
+    let mut stream = provider.stream_prepared(
+        make_request(CancellationToken::new()),
+        opi_ai::test_support::resolved_auth(),
+    );
 
     let result = stream.next().await.expect("should have event");
     match result {
@@ -255,8 +264,11 @@ async fn stream_http_429_maps_to_rate_limited() {
         .mount(&server)
         .await;
 
-    let provider = AnthropicProvider::new("test-key".into(), Some(server.uri()));
-    let mut stream = provider.stream(make_request(CancellationToken::new()));
+    let provider = AnthropicProvider::new(Some(server.uri()));
+    let mut stream = provider.stream_prepared(
+        make_request(CancellationToken::new()),
+        opi_ai::test_support::resolved_auth(),
+    );
 
     let result = stream.next().await.expect("should have event");
     assert!(
@@ -276,8 +288,11 @@ async fn stream_http_500_maps_to_provider_side() {
         .mount(&server)
         .await;
 
-    let provider = AnthropicProvider::new("test-key".into(), Some(server.uri()));
-    let mut stream = provider.stream(make_request(CancellationToken::new()));
+    let provider = AnthropicProvider::new(Some(server.uri()));
+    let mut stream = provider.stream_prepared(
+        make_request(CancellationToken::new()),
+        opi_ai::test_support::resolved_auth(),
+    );
 
     let result = stream.next().await.expect("should have event");
     match result {
@@ -305,8 +320,11 @@ async fn stream_no_terminal_event_produces_stream_error() {
         .mount(&server)
         .await;
 
-    let provider = AnthropicProvider::new("test-key".into(), Some(server.uri()));
-    let mut stream = provider.stream(make_request(CancellationToken::new()));
+    let provider = AnthropicProvider::new(Some(server.uri()));
+    let mut stream = provider.stream_prepared(
+        make_request(CancellationToken::new()),
+        opi_ai::test_support::resolved_auth(),
+    );
 
     let mut saw_stream_error = false;
     while let Some(result) = stream.next().await {
@@ -347,8 +365,11 @@ async fn stream_cancellation_drains_without_hang_after_cancel() {
         .await;
 
     let cancel = CancellationToken::new();
-    let provider = AnthropicProvider::new("test-key".into(), Some(server.uri()));
-    let mut stream = provider.stream(make_request(cancel.clone()));
+    let provider = AnthropicProvider::new(Some(server.uri()));
+    let mut stream = provider.stream_prepared(
+        make_request(cancel.clone()),
+        opi_ai::test_support::resolved_auth(),
+    );
 
     // Read at least one event then cancel
     let first = stream.next().await.expect("should have Start event");
@@ -389,8 +410,17 @@ async fn stream_sends_correct_headers_and_body() {
         .mount(&server)
         .await;
 
-    let provider = AnthropicProvider::new("test-key-123".into(), Some(server.uri()));
-    let mut stream = provider.stream(make_request(CancellationToken::new()));
+    let provider = AnthropicProvider::new(Some(server.uri()));
+    // The mock matches x-api-key "test-key-123", so build a ResolvedAuth whose
+    // secret is exactly that (resolved_auth()'s placeholder is "test-key").
+    let auth = opi_ai::auth::ResolvedAuth {
+        scheme: opi_ai::auth::AuthScheme::ApiKey,
+        secret: secrecy::SecretString::from("test-key-123"),
+        base_url: None,
+        account_id: None,
+        provenance: opi_ai::auth::AuthProvenance::default(),
+    };
+    let mut stream = provider.stream_prepared(make_request(CancellationToken::new()), auth);
 
     // Consume stream to trigger the request
     while let Some(result) = stream.next().await {

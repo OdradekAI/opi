@@ -37,7 +37,7 @@ impl Provider for StubProvider {
     fn models(&self) -> &[ModelInfo] {
         &self.models
     }
-    fn stream(&self, _request: Request) -> EventStream {
+    fn stream_prepared(&self, _request: Request, _auth: opi_ai::auth::ResolvedAuth) -> EventStream {
         Box::pin(futures_util::stream::empty())
     }
 }
@@ -45,7 +45,7 @@ impl Provider for StubProvider {
 /// Helper: create a registry with the Anthropic provider registered.
 fn anthropic_registry() -> ProviderRegistry {
     let mut reg = ProviderRegistry::new();
-    reg.register(Box::new(AnthropicProvider::new("test-key".into(), None)));
+    reg.register(Box::new(AnthropicProvider::new(None)));
     reg
 }
 
@@ -247,7 +247,6 @@ fn registry_resolves_all_builtin_providers() {
     use opi_ai::openrouter::openrouter_provider;
     use opi_ai::vertex::VertexProvider;
 
-    let dummy_key = "test-key".to_string();
     let bedrock_creds = AwsCredentials {
         access_key_id: "AKIATEST".into(),
         secret_access_key: "secret".into(),
@@ -255,7 +254,6 @@ fn registry_resolves_all_builtin_providers() {
         region: "us-east-1".into(),
     };
     let azure = AzureOpenAIProvider::from_config(
-        dummy_key.clone(),
         Some("https://example.openai.azure.com".into()),
         vec!["gpt-4o".into()],
         None,
@@ -263,20 +261,17 @@ fn registry_resolves_all_builtin_providers() {
     .unwrap();
 
     let mut reg = ProviderRegistry::new();
-    reg.register_provider(Box::new(AnthropicProvider::new(dummy_key.clone(), None)))
+    reg.register_provider(Box::new(AnthropicProvider::new(None)))
         .unwrap();
-    reg.register_provider(Box::new(OpenAiChatProvider::new(dummy_key.clone(), None)))
+    reg.register_provider(Box::new(OpenAiChatProvider::new(None)))
         .unwrap();
-    reg.register_provider(Box::new(openrouter_provider(dummy_key.clone(), None)))
+    reg.register_provider(Box::new(openrouter_provider(None)))
         .unwrap();
-    reg.register_provider(Box::new(mistral_provider(dummy_key.clone(), None)))
+    reg.register_provider(Box::new(mistral_provider(None)))
         .unwrap();
-    reg.register_provider(Box::new(OpenAiResponsesProvider::new(
-        dummy_key.clone(),
-        None,
-    )))
-    .unwrap();
-    reg.register_provider(Box::new(GeminiProvider::new(dummy_key.clone(), None)))
+    reg.register_provider(Box::new(OpenAiResponsesProvider::new(None)))
+        .unwrap();
+    reg.register_provider(Box::new(GeminiProvider::new(None)))
         .unwrap();
     reg.register_provider(Box::new(BedrockProvider::new(
         bedrock_creds,
@@ -286,7 +281,6 @@ fn registry_resolves_all_builtin_providers() {
     .unwrap();
     reg.register_provider(Box::new(azure)).unwrap();
     reg.register_provider(Box::new(VertexProvider::new(
-        "test-token".into(),
         "test-project".into(),
         "us-central1".into(),
         None,

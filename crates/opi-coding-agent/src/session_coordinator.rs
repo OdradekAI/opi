@@ -8,8 +8,8 @@ use opi_agent::compaction::{CompactionConfig, CompactionEngine, DefaultCompactio
 use opi_agent::message::{AgentMessage, CompactionSummaryMessage};
 use opi_agent::session::{
     CompactionEntry, ExtensionStateEntry, LabelAction, LabelEntry, LeafEntry, MessageEntry,
-    ModelChangeEntry, SessionEntry, SessionHeader, SessionInfoEntry, SessionWriter,
-    ThinkingLevelChangeEntry,
+    ModelChangeEntry, ModelInputSource, SessionEntry, SessionHeader, SessionInfoEntry,
+    SessionWriter, ThinkingLevelChangeEntry,
 };
 use opi_agent::session_event::{CompactionReason, CompactionResult, ThinkingLevel};
 use opi_ai::ModelPricing;
@@ -509,11 +509,21 @@ impl SessionCoordinator {
     /// unchanged: model changes are metadata attachments, not new
     /// conversational turns.
     pub fn append_model_change(&mut self, model: String) -> Result<(), std::io::Error> {
+        // Phase 17.5: persist the distinct input source — a canonical
+        // `provider:model` spec carries the separator, a bare model id does
+        // not. Bare-input normalization itself is owned by the harness; the
+        // coordinator records the truthful source of the spec it is handed.
+        let input_source = if model.contains(':') {
+            ModelInputSource::Canonical
+        } else {
+            ModelInputSource::BareNormalized
+        };
         let entry = SessionEntry::ModelChange(ModelChangeEntry {
             id: format!("model-{}", ENTRY_SEQ.fetch_add(1, Ordering::Relaxed)),
             parent_id: self.active_tip_entry_id.clone(),
             timestamp: now_iso(),
             model,
+            input_source: Some(input_source),
         });
         self.append_entry(&entry)
     }

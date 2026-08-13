@@ -415,7 +415,7 @@ async fn rpc_set_model_updates_subsequent_provider_request() {
     {
         let calls = call_log.lock().unwrap();
         assert_eq!(calls.len(), 1);
-        assert_eq!(calls[0].model, "mock:next-model");
+        assert_eq!(calls[0].model, "next-model");
     }
 
     command_tx.send(RpcCommand::quit { id: None }).unwrap();
@@ -463,7 +463,7 @@ async fn rpc_set_model_rejects_while_running_without_mutating_model() {
     {
         let calls = call_log.lock().unwrap();
         assert_eq!(calls.len(), 1);
-        assert_eq!(calls[0].model, "mock:mock-model");
+        assert_eq!(calls[0].model, "mock-model");
     }
 
     release.notify_one();
@@ -486,7 +486,7 @@ async fn rpc_set_model_rejects_while_running_without_mutating_model() {
     {
         let calls = call_log.lock().unwrap();
         assert_eq!(calls.len(), 2);
-        assert_eq!(calls[1].model, "mock:mock-model");
+        assert_eq!(calls[1].model, "mock-model");
     }
 
     release.notify_one();
@@ -550,7 +550,7 @@ async fn rpc_set_model_revalidates_existing_thinking_before_switching() {
     {
         let calls = call_log.lock().unwrap();
         assert_eq!(calls.len(), 1);
-        assert_eq!(calls[0].model, "mock:large-model");
+        assert_eq!(calls[0].model, "large-model");
         assert_eq!(calls[0].thinking.budget_tokens, Some(20_000));
         assert_eq!(calls[0].max_tokens, Some(20_001));
     }
@@ -613,7 +613,7 @@ async fn rpc_set_model_rejects_switch_to_non_thinking_model_with_active_thinking
     {
         let calls = call_log.lock().unwrap();
         assert_eq!(calls.len(), 1);
-        assert_eq!(calls[0].model, "mock:thinking-model");
+        assert_eq!(calls[0].model, "thinking-model");
         assert!(calls[0].thinking.enabled);
         assert_eq!(calls[0].thinking.budget_tokens, Some(2048));
         assert_eq!(calls[0].max_tokens, Some(2049));
@@ -1864,7 +1864,7 @@ impl Provider for BlockingCleanupProvider {
         &MODELS
     }
 
-    fn stream(&self, _request: Request) -> EventStream {
+    fn stream_prepared(&self, _request: Request, _auth: opi_ai::auth::ResolvedAuth) -> EventStream {
         let stream = stream::unfold(0, move |step| async move {
             match step {
                 0 => Some((
@@ -1920,7 +1920,7 @@ impl Provider for ControlledEmitCleanupProvider {
         &MODELS
     }
 
-    fn stream(&self, _request: Request) -> EventStream {
+    fn stream_prepared(&self, _request: Request, _auth: opi_ai::auth::ResolvedAuth) -> EventStream {
         let continue_streaming = self.continue_streaming.clone();
         let stream = stream::unfold(0, move |step| {
             let continue_streaming = continue_streaming.clone();
@@ -2005,7 +2005,7 @@ impl Provider for HeldRequestProvider {
         &MODELS
     }
 
-    fn stream(&self, request: Request) -> EventStream {
+    fn stream_prepared(&self, request: Request, _auth: opi_ai::auth::ResolvedAuth) -> EventStream {
         let cancel = request.cancel.clone();
         let release = self.release.clone();
         self.calls.lock().unwrap().push(request);
@@ -2058,7 +2058,7 @@ impl Provider for PanickingProvider {
         &MODELS
     }
 
-    fn stream(&self, _request: Request) -> EventStream {
+    fn stream_prepared(&self, _request: Request, _auth: opi_ai::auth::ResolvedAuth) -> EventStream {
         let stream = stream::unfold(0, move |step| async move {
             match step {
                 0 => Some((
@@ -2209,7 +2209,7 @@ impl Provider for ControlledProvider {
         &MODELS
     }
 
-    fn stream(&self, request: Request) -> EventStream {
+    fn stream_prepared(&self, request: Request, _auth: opi_ai::auth::ResolvedAuth) -> EventStream {
         let cancel = request.cancel.clone();
         self.calls.lock().unwrap().push(request);
 
@@ -2306,7 +2306,7 @@ impl Provider for SecondTurnGatedDeltaProvider {
         &MODELS
     }
 
-    fn stream(&self, request: Request) -> EventStream {
+    fn stream_prepared(&self, request: Request, _auth: opi_ai::auth::ResolvedAuth) -> EventStream {
         let run_number = self.run_count.fetch_add(1, Ordering::SeqCst) + 1;
         let cancel = request.cancel.clone();
         let second_delta_parked = self.second_delta_parked.clone();

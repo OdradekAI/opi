@@ -64,7 +64,7 @@ async fn stream_yields_text_response_events() {
         session_id: None,
     };
 
-    let stream = provider.stream(request);
+    let stream = provider.stream_prepared(request, opi_ai::test_support::resolved_auth());
     let events: Vec<Result<AssistantStreamEvent, _>> = stream.collect::<Vec<_>>().await;
 
     assert_eq!(events.len(), 3);
@@ -108,7 +108,7 @@ async fn stream_yields_tool_call_response_events() {
         session_id: None,
     };
 
-    let stream = provider.stream(request);
+    let stream = provider.stream_prepared(request, opi_ai::test_support::resolved_auth());
     let events: Vec<Result<AssistantStreamEvent, _>> = stream.collect::<Vec<_>>().await;
 
     assert_eq!(events.len(), 3);
@@ -155,7 +155,7 @@ async fn stream_yields_error_response_events() {
         session_id: None,
     };
 
-    let stream = provider.stream(request);
+    let stream = provider.stream_prepared(request, opi_ai::test_support::resolved_auth());
     let events: Vec<Result<AssistantStreamEvent, _>> = stream.collect::<Vec<_>>().await;
 
     assert_eq!(events.len(), 2);
@@ -200,27 +200,30 @@ async fn multiple_stream_calls_consume_responses_in_order() {
     };
 
     // First call
-    let stream1 = provider.stream(dummy_request);
+    let stream1 = provider.stream_prepared(dummy_request, opi_ai::test_support::resolved_auth());
     let events1: Vec<_> = stream1.collect::<Vec<_>>().await;
     assert_eq!(events1.len(), 3);
 
     // Second call
-    let stream2 = provider.stream(Request {
-        model: "mock-model".into(),
-        system: None,
-        messages: vec![],
-        tools: vec![],
-        max_tokens: None,
-        temperature: None,
-        thinking: Default::default(),
-        stop_sequences: vec![],
-        metadata: None,
-        cancel: CancellationToken::new(),
-        timeout: None,
-        extra_headers: vec![],
-        cache_retention: CacheRetention::None,
-        session_id: None,
-    });
+    let stream2 = provider.stream_prepared(
+        Request {
+            model: "mock-model".into(),
+            system: None,
+            messages: vec![],
+            tools: vec![],
+            max_tokens: None,
+            temperature: None,
+            thinking: Default::default(),
+            stop_sequences: vec![],
+            metadata: None,
+            cancel: CancellationToken::new(),
+            timeout: None,
+            extra_headers: vec![],
+            cache_retention: CacheRetention::None,
+            session_id: None,
+        },
+        opi_ai::test_support::resolved_auth(),
+    );
     let events2: Vec<_> = stream2.collect::<Vec<_>>().await;
     assert_eq!(events2.len(), 3);
 

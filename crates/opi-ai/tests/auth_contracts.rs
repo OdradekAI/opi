@@ -54,6 +54,7 @@ async fn resolved_auth_debug_redacts_secret() {
         secret: SecretString::from("sk-secret-xyz"),
         base_url: None,
         account_id: None,
+        provenance: Default::default(),
     };
     let dbg = format!("{resolved:?}");
     assert!(!dbg.contains("sk-secret-xyz"), "secret leaked: {dbg}");

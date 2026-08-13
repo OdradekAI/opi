@@ -1,9 +1,9 @@
 //! Phase 14.2 slice 5 — exact OAuth wire shape per provider mapping.
 //!
-//! Where `per_request_auth.rs` (slice 2) proves each provider resolves an
-//! injected `Arc<dyn AuthResolver>` and attaches the scheme-selected header,
-//! these tests pin the EXACT OAuth wire contract the factory-built providers
-//! must emit — not merely "a Bearer token reached the wire":
+//! Where `per_request_auth.rs` (slice 2) proves each prepared dispatch attaches
+//! the scheme-selected header, these tests pin the EXACT OAuth wire contract
+//! the factory-built providers must emit — not merely "a Bearer token reached
+//! the wire":
 //!
 //! - Anthropic OAuth selects `authorization: Bearer` AND the required
 //!   `anthropic-beta: claude-code-20250219,oauth-2025-04-20` header, while API-key construction
@@ -12,7 +12,14 @@
 //!   `ProviderError::CredentialRevoked`; static routes use bodyless
 //!   `AuthFailed`, independent of the header scheme.
 //!
-//! opi-ai tests use `StaticAuthResolver` (opi-ai cannot depend on
+//! Phase 17.5: providers no longer resolve auth themselves. Every dispatch
+//! supplies a `ResolvedAuth` through `Provider::stream_prepared`, so these
+//! tests build the resolved credential directly and drive the prepared seam.
+//! The credential-managed vs static 401 policy is now an explicit per-route
+//! setting (`with_auth_invalid_policy` / `for_route`), independent of how the
+//! secret is delivered.
+//!
+//! opi-ai tests build `ResolvedAuth` directly (opi-ai cannot depend on
 //! opi-coding-agent's `AuthSource`); the factory + `AuthSource` + fake-store
 //! coverage lives in opi-coding-agent/tests.
 
@@ -20,8 +27,7 @@ use std::sync::Arc;
 
 use futures_util::StreamExt;
 use opi_ai::anthropic::AnthropicProvider;
-use opi_ai::auth::{AuthResolver, AuthScheme, ResolvedAuth, StaticAuthResolver};
-use opi_ai::credential::BoxAuthFuture;
+use opi_ai::auth::{AuthInvalidPolicy, AuthProvenance, AuthScheme, ResolvedAuth};
 use opi_ai::http::HttpClient;
 use opi_ai::message::{InputContent, Message, UserMessage};
 use opi_ai::mistral::mistral_provider;
@@ -77,6 +83,29 @@ async fn drain(stream: &mut opi_ai::provider::EventStream) {
     }
 }
 
+/// Build a Bearer `ResolvedAuth` carrying `token` (Phase 17.5: the prepared
+/// seam consumes this directly at the HTTP boundary).
+fn bearer_auth(token: &str) -> ResolvedAuth {
+    ResolvedAuth {
+        scheme: AuthScheme::Bearer,
+        secret: SecretString::from(token),
+        base_url: None,
+        account_id: None,
+        provenance: AuthProvenance::default(),
+    }
+}
+
+/// Build an ApiKey `ResolvedAuth` carrying `key`.
+fn apikey_auth(key: &str) -> ResolvedAuth {
+    ResolvedAuth {
+        scheme: AuthScheme::ApiKey,
+        secret: SecretString::from(key),
+        base_url: None,
+        account_id: None,
+        provenance: AuthProvenance::default(),
+    }
+}
+
 // --- Anthropic OAuth: Bearer + the required beta header ---
 
 /// Capture the one request the provider sent and assert its headers directly.
@@ -107,13 +136,25 @@ async fn anthropic_oauth_emits_bearer_plus_exact_beta_header() {
         .mount(&server)
         .await;
 
-    let resolver: Arc<dyn AuthResolver> = Arc::new(StaticAuthResolver::new(
-        AuthScheme::Bearer,
-        SecretString::from("oauth-token-anthropic"),
-    ));
-    let provider =
-        AnthropicProvider::with_auth(resolver, Some(server.uri()), Arc::new(HttpClient::new()));
-    let mut stream = provider.stream(sample_request("anthropic:claude-sonnet-4-5-20250514"));
+    // The OAuth beta header is gated on `direct_oauth_beta`, which the
+    // Phase 17.5 `for_route` constructor exposes as its final flag.
+    let provider = AnthropicProvider::for_route(
+        "anthropic".into(),
+        vec![ModelInfo::new(
+            "claude-sonnet-4-5-20250514",
+            "Claude Sonnet 4.5",
+            WireApi::AnthropicMessages,
+            ModelCapabilities::new(200_000, 8_192).with_streaming(true),
+        )],
+        Some(server.uri()),
+        ProviderHeaders::default(),
+        Arc::new(HttpClient::new()),
+        true,
+    );
+    let mut stream = provider.stream_prepared(
+        sample_request("anthropic:claude-sonnet-4-5-20250514"),
+        bearer_auth("oauth-token-anthropic"),
+    );
     drain(&mut stream).await;
 
     let req = one_captured_request(&server).await;
@@ -156,13 +197,11 @@ async fn anthropic_api_key_path_sends_xapi_key_no_bearer_no_beta() {
         .mount(&server)
         .await;
 
-    let resolver: Arc<dyn AuthResolver> = Arc::new(StaticAuthResolver::new(
-        AuthScheme::ApiKey,
-        SecretString::from("ak-anthropic"),
-    ));
-    let provider =
-        AnthropicProvider::with_auth(resolver, Some(server.uri()), Arc::new(HttpClient::new()));
-    let mut stream = provider.stream(sample_request("anthropic:claude-sonnet-4-5-20250514"));
+    let provider = AnthropicProvider::with_client(Some(server.uri()), Arc::new(HttpClient::new()));
+    let mut stream = provider.stream_prepared(
+        sample_request("anthropic:claude-sonnet-4-5-20250514"),
+        apikey_auth("ak-anthropic"),
+    );
     drain(&mut stream).await;
 
     let req = one_captured_request(&server).await;
@@ -192,13 +231,12 @@ async fn anthropic_oauth_401_maps_to_credential_revoked() {
         .mount(&server)
         .await;
 
-    let resolver: Arc<dyn AuthResolver> = Arc::new(StaticAuthResolver::new(
-        AuthScheme::Bearer,
-        SecretString::from("oauth-token-anthropic"),
-    ));
-    let provider =
-        AnthropicProvider::with_auth(resolver, Some(server.uri()), Arc::new(HttpClient::new()));
-    let mut stream = provider.stream(sample_request("anthropic:claude-sonnet-4-5-20250514"));
+    let provider = AnthropicProvider::with_client(Some(server.uri()), Arc::new(HttpClient::new()))
+        .with_auth_invalid_policy(AuthInvalidPolicy::CredentialManaged);
+    let mut stream = provider.stream_prepared(
+        sample_request("anthropic:claude-sonnet-4-5-20250514"),
+        bearer_auth("oauth-token-anthropic"),
+    );
     let err = stream
         .next()
         .await
@@ -213,20 +251,19 @@ async fn anthropic_oauth_401_maps_to_credential_revoked() {
 }
 
 #[tokio::test]
-async fn injected_anthropic_api_key_uses_managed_revocation_policy() {
+async fn anthropic_api_key_uses_managed_revocation_policy() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .respond_with(ResponseTemplate::new(401).set_body_string("auth error"))
         .mount(&server)
         .await;
 
-    let resolver: Arc<dyn AuthResolver> = Arc::new(StaticAuthResolver::new(
-        AuthScheme::ApiKey,
-        SecretString::from("ak-anthropic"),
-    ));
-    let provider =
-        AnthropicProvider::with_auth(resolver, Some(server.uri()), Arc::new(HttpClient::new()));
-    let mut stream = provider.stream(sample_request("anthropic:claude-sonnet-4-5-20250514"));
+    let provider = AnthropicProvider::with_client(Some(server.uri()), Arc::new(HttpClient::new()))
+        .with_auth_invalid_policy(AuthInvalidPolicy::CredentialManaged);
+    let mut stream = provider.stream_prepared(
+        sample_request("anthropic:claude-sonnet-4-5-20250514"),
+        apikey_auth("ak-anthropic"),
+    );
     let err = stream
         .next()
         .await
@@ -252,13 +289,12 @@ async fn anthropic_oauth_forged_401_body_does_not_leak_into_display() {
         .mount(&server)
         .await;
 
-    let resolver: Arc<dyn AuthResolver> = Arc::new(StaticAuthResolver::new(
-        AuthScheme::Bearer,
-        SecretString::from("oauth-token-anthropic"),
-    ));
-    let provider =
-        AnthropicProvider::with_auth(resolver, Some(server.uri()), Arc::new(HttpClient::new()));
-    let mut stream = provider.stream(sample_request("anthropic:claude-sonnet-4-5-20250514"));
+    let provider = AnthropicProvider::with_client(Some(server.uri()), Arc::new(HttpClient::new()))
+        .with_auth_invalid_policy(AuthInvalidPolicy::CredentialManaged);
+    let mut stream = provider.stream_prepared(
+        sample_request("anthropic:claude-sonnet-4-5-20250514"),
+        bearer_auth("oauth-token-anthropic"),
+    );
     let err = stream
         .next()
         .await
@@ -285,19 +321,17 @@ async fn copilot_chat_401_maps_to_credential_revoked() {
         .mount(&server)
         .await;
 
-    let resolver: Arc<dyn AuthResolver> = Arc::new(StaticAuthResolver::new(
-        AuthScheme::Bearer,
-        SecretString::from("copilot-token"),
-    ));
     let provider = OpenAiChatProvider::with_auth(
-        resolver,
         Some(server.uri()),
         Default::default(),
         "github-copilot".into(),
         vec![],
         Arc::new(HttpClient::new()),
     );
-    let mut stream = provider.stream(sample_request("github-copilot:gpt-4o"));
+    let mut stream = provider.stream_prepared(
+        sample_request("github-copilot:gpt-4o"),
+        bearer_auth("copilot-token"),
+    );
     let err = stream
         .next()
         .await
@@ -312,26 +346,22 @@ async fn copilot_chat_401_maps_to_credential_revoked() {
 }
 
 #[tokio::test]
-async fn injected_openai_chat_api_key_uses_managed_revocation_policy() {
+async fn openai_chat_api_key_uses_managed_revocation_policy() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .respond_with(ResponseTemplate::new(401).set_body_string("unauthorized"))
         .mount(&server)
         .await;
 
-    let resolver: Arc<dyn AuthResolver> = Arc::new(StaticAuthResolver::new(
-        AuthScheme::ApiKey,
-        SecretString::from("sk-openai"),
-    ));
     let provider = OpenAiChatProvider::with_auth(
-        resolver,
         Some(server.uri()),
         Default::default(),
         "openai".into(),
         vec![],
         Arc::new(HttpClient::new()),
     );
-    let mut stream = provider.stream(sample_request("openai:gpt-4o"));
+    let mut stream =
+        provider.stream_prepared(sample_request("openai:gpt-4o"), apikey_auth("sk-openai"));
     let err = stream
         .next()
         .await
@@ -355,14 +385,13 @@ fn reusable_route(
     credential_managed: bool,
     server_uri: String,
 ) -> (Box<dyn Provider>, String) {
-    let auth: Arc<dyn AuthResolver> = Arc::new(StaticAuthResolver::new(
-        AuthScheme::Bearer,
-        SecretString::from("bearer-auth-policy-token"),
-    ));
     let client = Arc::new(HttpClient::new());
     match (route, credential_managed) {
         (ReusableRoute::Anthropic, true) => (
-            Box::new(AnthropicProvider::with_auth(auth, Some(server_uri), client)),
+            Box::new(
+                AnthropicProvider::with_client(Some(server_uri), client)
+                    .with_auth_invalid_policy(AuthInvalidPolicy::CredentialManaged),
+            ),
             "anthropic:claude-sonnet-4-5-20250514".into(),
         ),
         (ReusableRoute::Anthropic, false) => {
@@ -374,7 +403,6 @@ fn reusable_route(
             );
             (
                 Box::new(AnthropicProvider::for_route(
-                    auth,
                     "custom-anthropic".into(),
                     vec![model],
                     Some(server_uri),
@@ -387,7 +415,6 @@ fn reusable_route(
         }
         (ReusableRoute::OpenAiChat, true) => (
             Box::new(OpenAiChatProvider::with_auth(
-                auth,
                 Some(server_uri),
                 Default::default(),
                 "openai".into(),
@@ -405,7 +432,6 @@ fn reusable_route(
             );
             (
                 Box::new(OpenAiChatProvider::for_route(
-                    auth,
                     Some(server_uri),
                     "custom-chat".into(),
                     ProviderHeaders::default(),
@@ -417,7 +443,6 @@ fn reusable_route(
         }
         (ReusableRoute::OpenAiResponses, true) => (
             Box::new(OpenAiResponsesProvider::with_auth(
-                auth,
                 Some(server_uri),
                 Default::default(),
                 client,
@@ -433,7 +458,6 @@ fn reusable_route(
             );
             (
                 Box::new(OpenAiResponsesProvider::for_route(
-                    auth,
                     Some(server_uri),
                     "custom-responses".into(),
                     ProviderHeaders::default(),
@@ -463,7 +487,10 @@ async fn reusable_route_auth_invalid_policy_matrix_is_scheme_independent_and_bod
                     .await;
                 let (provider, model) = reusable_route(route, credential_managed, server.uri());
                 let error = provider
-                    .stream(sample_request(&model))
+                    .stream_prepared(
+                        sample_request(&model),
+                        opi_ai::test_support::resolved_auth(),
+                    )
                     .next()
                     .await
                     .expect("auth-invalid error")
@@ -503,23 +530,23 @@ enum StaticRoute {
 fn static_route(route: StaticRoute, server_uri: String) -> (Box<dyn Provider>, &'static str) {
     match route {
         StaticRoute::Anthropic => (
-            Box::new(AnthropicProvider::new("key".into(), Some(server_uri))),
+            Box::new(AnthropicProvider::new(Some(server_uri))),
             "anthropic:claude-sonnet-4-5-20250514",
         ),
         StaticRoute::OpenAiChat => (
-            Box::new(OpenAiChatProvider::new("key".into(), Some(server_uri))),
+            Box::new(OpenAiChatProvider::new(Some(server_uri))),
             "openai:gpt-4o",
         ),
         StaticRoute::OpenAiResponses => (
-            Box::new(OpenAiResponsesProvider::new("key".into(), Some(server_uri))),
+            Box::new(OpenAiResponsesProvider::new(Some(server_uri))),
             "openai-responses:gpt-4o",
         ),
         StaticRoute::OpenRouter => (
-            Box::new(openrouter_provider("key".into(), Some(server_uri))),
+            Box::new(openrouter_provider(Some(server_uri))),
             "openrouter:openai/gpt-4o",
         ),
         StaticRoute::Mistral => (
-            Box::new(mistral_provider("key".into(), Some(server_uri))),
+            Box::new(mistral_provider(Some(server_uri))),
             "mistral:mistral-large-latest",
         ),
     }
@@ -543,7 +570,7 @@ async fn static_route_auth_errors_are_bodyless_for_all_profiles_and_schemes() {
                 .await;
             let (provider, model) = static_route(route, server.uri());
             let error = provider
-                .stream(sample_request(model))
+                .stream_prepared(sample_request(model), opi_ai::test_support::resolved_auth())
                 .next()
                 .await
                 .expect("auth-invalid error")
@@ -565,37 +592,8 @@ async fn static_route_auth_errors_are_bodyless_for_all_profiles_and_schemes() {
 
 // --- Dedicated Codex Responses wire shape ---
 
-/// Fixed auth carrying the dedicated wire's bearer token and account id.
-struct FixedCodexAuth {
-    secret: SecretString,
-    account_id: Option<String>,
-}
-
-impl AuthResolver for FixedCodexAuth {
-    fn resolve<'a>(&'a self) -> BoxAuthFuture<'a, Result<ResolvedAuth, ProviderError>> {
-        let secret = self.secret.clone();
-        let account_id = self.account_id.clone();
-        Box::pin(async move {
-            Ok(ResolvedAuth {
-                scheme: AuthScheme::Bearer,
-                secret,
-                base_url: None,
-                account_id,
-            })
-        })
-    }
-}
-
-fn codex_provider(
-    server: &MockServer,
-    secret: &str,
-    account_id: Option<&str>,
-) -> OpenAiCodexResponsesProvider {
+fn codex_provider(server: &MockServer) -> OpenAiCodexResponsesProvider {
     OpenAiCodexResponsesProvider::new(
-        Arc::new(FixedCodexAuth {
-            secret: SecretString::from(secret),
-            account_id: account_id.map(str::to_owned),
-        }),
         Some(server.uri()),
         vec![ModelInfo::new(
             "gpt-5",
@@ -605,6 +603,18 @@ fn codex_provider(
         )],
         Arc::new(HttpClient::new()),
     )
+}
+
+/// Build the Bearer auth the dedicated Codex wire consumes, optionally carrying
+/// the account id derived from the bearer JWT.
+fn codex_auth(secret: &str, account_id: Option<&str>) -> ResolvedAuth {
+    ResolvedAuth {
+        scheme: AuthScheme::Bearer,
+        secret: SecretString::from(secret),
+        base_url: None,
+        account_id: account_id.map(str::to_owned),
+        provenance: AuthProvenance::default(),
+    }
 }
 
 #[tokio::test]
@@ -619,8 +629,9 @@ async fn codex_responses_targets_codex_path_with_required_headers_and_account_id
         .mount(&server)
         .await;
 
-    let provider = codex_provider(&server, "codex-bearer", Some("acct-fixed"));
-    let mut stream = provider.stream(sample_request("openai-codex:gpt-5"));
+    let provider = codex_provider(&server);
+    let resolved = codex_auth("codex-bearer", Some("acct-fixed"));
+    let mut stream = provider.stream_prepared(sample_request("openai-codex:gpt-5"), resolved);
     drain(&mut stream).await;
 
     let req = one_captured_request(&server).await;
@@ -660,8 +671,9 @@ async fn codex_missing_account_id_is_rejected_before_http() {
         .mount(&server)
         .await;
 
-    let provider = codex_provider(&server, "opaque-not-a-jwt", None);
-    let mut stream = provider.stream(sample_request("openai-codex:gpt-5"));
+    let provider = codex_provider(&server);
+    let resolved = codex_auth("opaque-not-a-jwt", None);
+    let mut stream = provider.stream_prepared(sample_request("openai-codex:gpt-5"), resolved);
     assert!(
         matches!(
             stream.next().await,
@@ -684,8 +696,9 @@ async fn codex_responses_401_maps_to_credential_revoked_without_body_leak() {
         .mount(&server)
         .await;
 
-    let provider = codex_provider(&server, "codex-bearer-xyz", Some("acct"));
-    let mut stream = provider.stream(sample_request("openai-codex:gpt-5"));
+    let provider = codex_provider(&server);
+    let resolved = codex_auth("codex-bearer-xyz", Some("acct"));
+    let mut stream = provider.stream_prepared(sample_request("openai-codex:gpt-5"), resolved);
     let err = stream
         .next()
         .await

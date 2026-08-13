@@ -2,7 +2,6 @@ use std::sync::{Arc, Mutex};
 
 use futures_util::StreamExt;
 use opi_ai::anthropic::AnthropicProvider;
-use opi_ai::auth::{AuthResolver, AuthScheme, ResolvedAuth};
 use opi_ai::credential::BoxAuthFuture;
 use opi_ai::http::HttpClient;
 use opi_ai::model_info::{
@@ -15,7 +14,6 @@ use opi_ai::provider::{
 use opi_ai::provider_collection::{AuthDescriptor, CompatMetadata, ProviderCollection, SecretKey};
 use opi_ai::stream::{CumulativeUsage, Pricing, calculate_cumulative_cost};
 use opi_ai::{ApiMappedProvider, ModelCapabilities, ModelInfo, WireApi};
-use secrecy::SecretString;
 use tokio_util::sync::CancellationToken;
 
 fn request(model: &str) -> Request {
@@ -37,28 +35,8 @@ fn request(model: &str) -> Request {
     }
 }
 
-#[derive(Default)]
-struct CountingResolver {
-    calls: std::sync::atomic::AtomicUsize,
-}
-
-impl AuthResolver for CountingResolver {
-    fn resolve<'a>(&'a self) -> BoxAuthFuture<'a, Result<ResolvedAuth, ProviderError>> {
-        self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        Box::pin(async {
-            Ok(ResolvedAuth {
-                scheme: AuthScheme::ApiKey,
-                secret: SecretString::from("unused"),
-                base_url: Some("http://127.0.0.1:9".into()),
-                account_id: None,
-            })
-        })
-    }
-}
-
 #[tokio::test]
 async fn direct_anthropic_rejects_unsupported_thinking_before_auth() {
-    let resolver = Arc::new(CountingResolver::default());
     let model = ModelInfo::new(
         "thinking-model",
         "Thinking Model",
@@ -66,7 +44,6 @@ async fn direct_anthropic_rejects_unsupported_thinking_before_auth() {
         ModelCapabilities::new(1000, 100).with_thinking(true),
     );
     let provider = AnthropicProvider::for_route(
-        resolver.clone(),
         "test".into(),
         vec![model],
         None,
@@ -82,18 +59,13 @@ async fn direct_anthropic_rejects_unsupported_thinking_before_auth() {
     };
 
     let error = provider
-        .stream(request)
+        .stream_prepared(request, opi_ai::test_support::resolved_auth())
         .next()
         .await
         .expect("preflight result")
         .expect_err("unsupported thinking must fail");
 
     assert!(matches!(error, ProviderError::UnsupportedCapability { .. }));
-    assert_eq!(
-        resolver.calls.load(std::sync::atomic::Ordering::SeqCst),
-        0,
-        "preflight must run before auth resolution"
-    );
 }
 
 #[test]
@@ -111,7 +83,6 @@ fn anthropic_request_honors_adaptive_thinking_and_temperature_compat() {
     }))
     .unwrap();
     let provider = AnthropicProvider::for_route(
-        Arc::new(CountingResolver::default()),
         "copilot".into(),
         vec![model],
         None,
@@ -135,7 +106,7 @@ fn anthropic_request_honors_adaptive_thinking_and_temperature_compat() {
 
 #[test]
 fn anthropic_direct_catalog_preserves_fixed_thinking_and_temperature() {
-    let provider = AnthropicProvider::new("unused".into(), None);
+    let provider = AnthropicProvider::new(None);
     let mut request = request("anthropic:claude-sonnet-4-5-20250514");
     request.temperature = Some(0.4);
     request.thinking = ThinkingConfig {
@@ -232,7 +203,7 @@ impl Provider for CountingRoute {
         &self.model
     }
 
-    fn stream(&self, _request: Request) -> EventStream {
+    fn stream_prepared(&self, _request: Request, _auth: opi_ai::auth::ResolvedAuth) -> EventStream {
         self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         Box::pin(futures_util::stream::empty())
     }
@@ -276,7 +247,7 @@ async fn mapped_provider_preflights_before_route_dispatch() {
     };
 
     let error = mapped
-        .stream(request)
+        .stream_prepared(request, opi_ai::test_support::resolved_auth())
         .next()
         .await
         .expect("preflight result")
@@ -312,15 +283,18 @@ fn mapped_provider_materializes_an_effective_model_catalog_into_routes() {
     mapped
         .replace_model_catalog(vec![original, added])
         .expect("effective catalog");
-    let stream = mapped.stream(request("mapped:added"));
+    let stream = mapped.stream_prepared(
+        request("mapped:added"),
+        opi_ai::test_support::resolved_auth(),
+    );
 
     drop(stream);
     assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
     assert!(mapped.models().iter().any(|model| model.id == "added"));
 }
 
-#[test]
-fn collection_preflights_registry_model_before_provider_dispatch() {
+#[tokio::test]
+async fn collection_preflights_registry_model_before_provider_dispatch() {
     let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let mut collection = ProviderCollection::new();
     collection
@@ -342,10 +316,10 @@ fn collection_preflights_registry_model_before_provider_dispatch() {
         level: ThinkingLevel::XHigh,
     };
 
-    let error = match collection.dispatch_stream("mapped:reasoning", request) {
-        Ok(_) => panic!("unsupported thinking must fail"),
-        Err(error) => error,
-    };
+    let error = collection
+        .prepare_call("mapped:reasoning", request)
+        .await
+        .expect_err("unsupported thinking must fail");
 
     assert!(error.to_string().contains("unsupported"));
     assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 0);
@@ -399,7 +373,7 @@ impl Provider for LoggedRefreshProvider {
         &[]
     }
 
-    fn stream(&self, _request: Request) -> EventStream {
+    fn stream_prepared(&self, _request: Request, _auth: opi_ai::auth::ResolvedAuth) -> EventStream {
         Box::pin(futures_util::stream::empty())
     }
 

@@ -317,6 +317,16 @@ impl Agent {
         &self.state.model_selection.provider_id
     }
 
+    /// Return the canonical `provider:model` spec for the active selection.
+    ///
+    /// This is the full canonical form (both halves), for callers that need to
+    /// persist or report the durable model identity rather than the model half
+    /// alone. Distinct from [`Agent::model`](Self::model), which returns only
+    /// the model half.
+    pub fn model_spec(&self) -> String {
+        self.state.model_selection.to_spec()
+    }
+
     /// Return the thinking configuration used by subsequent provider requests.
     pub fn thinking_config(&self) -> ThinkingConfig {
         self.state.inference.thinking.clone()

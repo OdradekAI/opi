@@ -468,7 +468,7 @@ async fn json_mode_credential_needed_emits_typed_remediation_without_prompt() {
     let call_log = provider.call_log_handle();
     let mut runner = NonInteractiveRunner::new(
         Box::new(provider),
-        "anthropic:claude-sonnet-4-5".into(),
+        "anthropic:mock-model".into(),
         OpiConfig::default(),
         std::env::current_dir().unwrap(),
         false,
@@ -536,7 +536,7 @@ async fn json_mode_account_id_missing_emits_typed_remediation_without_prompt() {
     let call_log = provider.call_log_handle();
     let mut runner = NonInteractiveRunner::new(
         Box::new(provider),
-        "openai-codex:gpt-5.4".into(),
+        "openai-codex:mock-model".into(),
         OpiConfig::default(),
         std::env::current_dir().unwrap(),
         false,
@@ -764,7 +764,22 @@ async fn json_mode_stdout_is_only_ndjson() {
 #[tokio::test]
 async fn json_mode_emits_session_summary_with_token_totals() {
     let response = test_support::text_response("hi");
-    let provider = MockProvider::new("mock", vec![response]);
+    // Phase 17.5: the harness dispatches via ProviderCollection::prepare_call,
+    // which strictly resolves the `provider:model` spec. Register the asserted
+    // model under provider id "anthropic" so "anthropic:claude-sonnet-4" resolves
+    // and the session summary records exactly that canonical spec.
+    let provider = MockProvider::new_with_models(
+        "anthropic",
+        vec![opi_ai::provider::ModelInfo::new(
+            "claude-sonnet-4",
+            "Claude Sonnet 4",
+            opi_ai::model_info::WireApi::OpenAiCompletions,
+            opi_ai::registry::ModelCapabilities::new(100_000, 4_096)
+                .with_images(true)
+                .with_streaming(true),
+        )],
+        vec![response],
+    );
     let session_dir = tempfile::tempdir().expect("session dir");
     let mut runner = runner_with_isolated_session(
         Box::new(provider),
@@ -803,7 +818,21 @@ async fn json_mode_session_summary_roundtrips_through_agent_session_event() {
     // variant — not an ad-hoc JSON shape. Consumers parsing the NDJSON stream
     // as a sequence of AgentSessionEvent values rely on this.
     let response = test_support::text_response("hi");
-    let provider = MockProvider::new("mock", vec![response]);
+    // Phase 17.5: register the asserted model under provider id "anthropic" so
+    // prepare_call strictly resolves "anthropic:claude-sonnet-4" and the summary
+    // records that canonical spec.
+    let provider = MockProvider::new_with_models(
+        "anthropic",
+        vec![opi_ai::provider::ModelInfo::new(
+            "claude-sonnet-4",
+            "Claude Sonnet 4",
+            opi_ai::model_info::WireApi::OpenAiCompletions,
+            opi_ai::registry::ModelCapabilities::new(100_000, 4_096)
+                .with_images(true)
+                .with_streaming(true),
+        )],
+        vec![response],
+    );
     let session_dir = tempfile::tempdir().expect("session dir");
     let mut runner = runner_with_isolated_session(
         Box::new(provider),

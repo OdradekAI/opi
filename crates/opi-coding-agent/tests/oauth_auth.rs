@@ -25,6 +25,7 @@ use opi_ai::provider::{
     ThinkingConfig,
 };
 use opi_ai::registry::ModelCapabilities;
+use opi_ai::{AuthProvenanceSource, CompatMetadata, ProviderCollection};
 use opi_coding_agent::config::OpiConfig;
 use opi_coding_agent::credential_store::{
     AuthSource, CredentialResolver, EnvLookup, FakeKeyringBackend, KEYCHAIN_SERVICE,
@@ -514,7 +515,7 @@ impl Provider for CredentialNeededRpcProvider {
         &self.models
     }
 
-    fn stream(&self, _request: Request) -> EventStream {
+    fn stream_prepared(&self, _request: Request, _auth: opi_ai::auth::ResolvedAuth) -> EventStream {
         Box::pin(stream::once(async {
             Err(AiProviderError::CredentialNeeded {
                 provider_id: "anthropic".into(),
@@ -3053,7 +3054,10 @@ async fn capture_codex_factory_sse(body: String) -> Vec<String> {
     )
     .await
     .expect("dedicated provider");
-    let mut stream = provider.stream(factory_request("openai-codex:gpt-5.4"));
+    let mut stream = provider.stream_prepared(
+        factory_request("openai-codex:gpt-5.4"),
+        opi_ai::test_support::resolved_auth(),
+    );
     let mut captures = Vec::new();
     while let Some(result) = stream.next().await {
         match result {
@@ -3243,7 +3247,10 @@ async fn openai_codex_bounded_redaction_scenario() {
     )
     .await
     .expect("dedicated provider");
-    let mut stream = provider.stream(factory_request("openai-codex:gpt-5.4"));
+    let mut stream = provider.stream_prepared(
+        factory_request("openai-codex:gpt-5.4"),
+        opi_ai::test_support::resolved_auth(),
+    );
     let provider_error = loop {
         match stream.next().await {
             Some(Err(error)) => break error,
@@ -4307,6 +4314,78 @@ async fn drain_stream(stream: &mut opi_ai::provider::EventStream) {
     }
 }
 
+/// Phase 17.5: build a dispatchable [`ProviderCollection`] for the active
+/// provider, mirroring `build_provider_with_oauth`'s routing.
+///
+/// Authentication moved off the provider object onto the collection route, so
+/// the store-backed/layered resolver that `build_provider_with_oauth` used to
+/// install inside the provider is now registered here via `register_route`.
+/// `prepare_call` then resolves the live credential on each logical call.
+fn dispatch_collection(
+    provider: Box<dyn Provider>,
+    provider_id: &str,
+    config: &OpiConfig,
+    resolver: CredentialResolver,
+    registry: &OAuthProviderRegistry,
+) -> ProviderCollection {
+    let auth_resolver = oauth_auth_resolver_for(provider_id, config, resolver, registry);
+    let mut collection = ProviderCollection::new();
+    collection
+        .register_route(
+            provider,
+            auth_resolver,
+            AuthProvenanceSource::OAuth {
+                kind: provider_id.into(),
+            },
+            CompatMetadata::default(),
+        )
+        .expect("register dispatch route");
+    collection
+}
+
+/// Phase 17.5: build the per-route auth resolver matching
+/// `build_provider_with_oauth`'s routing, for handoff to a `CodingHarness`
+/// builder via `.auth_resolver(...)`. Anthropic uses the layered precedence
+/// (stored OAuth > `ANTHROPIC_OAUTH_TOKEN` > API key); Copilot/Codex use the
+/// store-backed OAuth resolver.
+fn oauth_auth_resolver_for(
+    provider_id: &str,
+    config: &OpiConfig,
+    resolver: CredentialResolver,
+    registry: &OAuthProviderRegistry,
+) -> Arc<dyn AuthResolver> {
+    match provider_id {
+        "anthropic" => Arc::new(AuthSource::Layered {
+            resolver: Arc::new(resolver),
+            provider_id: "anthropic".into(),
+            oauth: registry
+                .lookup("anthropic")
+                .expect("anthropic OAuth provider registered"),
+            oauth_env_var: "ANTHROPIC_OAUTH_TOKEN".into(),
+            api_key_env_var: config.providers.anthropic.api_key_env.clone(),
+        }),
+        "github-copilot" | "openai-codex" => Arc::new(AuthSource::Store {
+            resolver: Arc::new(resolver),
+            provider_id: provider_id.into(),
+            oauth: registry
+                .lookup(provider_id)
+                .expect("OAuth provider registered for {provider_id}"),
+        }),
+        other => panic!("oauth_auth_resolver_for: unsupported OAuth provider {other}"),
+    }
+}
+
+/// Phase 17.5: drain a dispatchable collection route to completion (or first
+/// stream error), mirroring a harness turn through `prepare_call` + `start_attempt`.
+async fn drain_route(collection: &ProviderCollection, spec: &str) {
+    let prepared = collection
+        .prepare_call(spec, factory_request(spec))
+        .await
+        .expect("prepare_call resolves the dispatch route");
+    let mut stream = prepared.start_attempt().expect("start_attempt");
+    drain_stream(&mut stream).await;
+}
+
 /// A fresh (non-expiring) stored OAuth credential. `base_url` redirects dispatch
 /// to a mock when `Some`.
 fn stored_oauth(access: &str, refresh: &str, base_url: Option<String>) -> Credential {
@@ -4373,9 +4452,12 @@ async fn factory_routes_github_copilot_models_by_declared_wire() {
         .await
         .expect("copilot OAuth provider builds");
     assert_eq!(provider.id(), "github-copilot");
+    // Phase 17.5: auth moved off the provider object onto the collection route.
+    // Register the store-backed Copilot resolver so prepare_call resolves the
+    // stored OAuth token on each logical call across all three wires.
+    let collection = dispatch_collection(provider, "github-copilot", &config, resolver, &registry);
     for model in ["claude-sonnet-4.5", "gpt-4.1", "gpt-5.4"] {
-        let mut stream = provider.stream(factory_request(&format!("github-copilot:{model}")));
-        drain_stream(&mut stream).await;
+        drain_route(&collection, &format!("github-copilot:{model}")).await;
     }
 
     let requests = server.received_requests().await.unwrap();
@@ -4464,8 +4546,11 @@ async fn factory_routes_anthropic_to_oauth_when_cred_stored() {
         .await
         .expect("anthropic OAuth provider builds");
     assert_eq!(provider.id(), "anthropic");
-    let mut stream = provider.stream(factory_request("anthropic:claude-sonnet-4-5-20250514"));
-    drain_stream(&mut stream).await;
+    // Phase 17.5: auth moved off the provider object onto the collection route.
+    // Register the layered Anthropic resolver so prepare_call resolves the stored
+    // OAuth credential and emits Bearer + the beta header (no x-api-key).
+    let collection = dispatch_collection(provider, "anthropic", &config, resolver, &registry);
+    drain_route(&collection, "anthropic:claude-sonnet-4-5-20250514").await;
 
     let requests = server.received_requests().await.unwrap();
     assert_eq!(requests.len(), 1, "exactly one Anthropic Messages request");
@@ -4610,8 +4695,9 @@ async fn anthropic_oauth_env_skips_unreadable_lower_priority_api_key() {
         "construction must not read the lower-priority API-key entry"
     );
 
-    let mut stream = provider.stream(factory_request("anthropic:claude-sonnet-4-5-20250514"));
-    drain_stream(&mut stream).await;
+    // Phase 17.5: auth resolution moved to prepare_call on the collection route.
+    let collection = dispatch_collection(provider, "anthropic", &config, resolver, &registry);
+    drain_route(&collection, "anthropic:claude-sonnet-4-5-20250514").await;
     assert_eq!(
         protected_get_calls.load(Ordering::SeqCst),
         0,
@@ -4661,8 +4747,9 @@ async fn anthropic_env_oauth_token_precedence_stored_wins_env_fallback() {
     let provider = build_provider_with_oauth(&config, &resolver, &registry)
         .await
         .expect("env-oauth provider builds");
-    let mut stream = provider.stream(factory_request("anthropic:claude-sonnet-4-5-20250514"));
-    drain_stream(&mut stream).await;
+    // Phase 17.5: auth resolution moved to prepare_call on the collection route.
+    let collection = dispatch_collection(provider, "anthropic", &config, resolver, &registry);
+    drain_route(&collection, "anthropic:claude-sonnet-4-5-20250514").await;
 
     let requests = server.received_requests().await.unwrap();
     assert_eq!(requests.len(), 1);
@@ -4715,8 +4802,8 @@ async fn anthropic_env_oauth_token_precedence_stored_wins_env_fallback() {
     let provider2 = build_provider_with_oauth(&config2, &resolver2, &registry)
         .await
         .unwrap();
-    let mut stream2 = provider2.stream(factory_request("anthropic:claude-sonnet-4-5-20250514"));
-    drain_stream(&mut stream2).await;
+    let collection2 = dispatch_collection(provider2, "anthropic", &config2, resolver2, &registry);
+    drain_route(&collection2, "anthropic:claude-sonnet-4-5-20250514").await;
 
     let requests2 = server2.received_requests().await.unwrap();
     assert_eq!(requests2.len(), 1);
@@ -5002,6 +5089,7 @@ impl AuthResolver for OneShotThenRevokedResolver {
                     secret,
                     base_url: None,
                     account_id: None,
+                    provenance: opi_ai::AuthProvenance::default(),
                 })
             }
         })
@@ -5022,33 +5110,50 @@ async fn anthropic_oauth_revoked_stops_turn_without_retry_or_relogin() {
         .mount(&server)
         .await;
 
-    let resolver = Arc::new(OneShotThenRevokedResolver {
+    // Phase 17.5: auth resolution lives in ProviderCollection::prepare_call.
+    // Register the one-shot resolver on the route so the revoked-credential path
+    // surfaces from prepare_call (the resolver returns CredentialRevoked on its
+    // second resolution, before any HTTP request).
+    let resolver: Arc<dyn AuthResolver> = Arc::new(OneShotThenRevokedResolver {
         bearer: SecretString::new("oauth-token-revoked-test".into()),
         provider_id: "anthropic".into(),
         revoked: std::sync::atomic::AtomicBool::new(false),
     });
-    let provider =
-        AnthropicProvider::with_auth(resolver, Some(server.uri()), Arc::new(HttpClient::new()));
-    let mut stream = provider.stream(factory_request("anthropic:claude-sonnet-4-5-20250514"));
+    let provider = AnthropicProvider::with_client(Some(server.uri()), Arc::new(HttpClient::new()));
+    let mut collection = ProviderCollection::new();
+    collection
+        .register_route(
+            Box::new(provider),
+            resolver,
+            AuthProvenanceSource::OAuth {
+                kind: "anthropic".into(),
+            },
+            CompatMetadata::default(),
+        )
+        .expect("register anthropic revoked-test route");
+    let spec = "anthropic:claude-sonnet-4-5-20250514";
+    let prepared = collection
+        .prepare_call(spec, factory_request(spec))
+        .await
+        .expect("first prepare_call resolves Bearer");
+    let mut stream = prepared.start_attempt().expect("first start_attempt");
     drain_stream(&mut stream).await;
     // First call succeeded.
 
-    // Second call: the resolver now returns CredentialRevoked, which must
-    // surface as the first stream event (no retry, no other request sent).
-    let mut stream2 = provider.stream(factory_request("anthropic:claude-sonnet-4-5-20250514"));
-    let err = stream2
-        .next()
-        .await
-        .expect("an event")
-        .expect_err("CredentialRevoked is an error");
-    match &err {
+    // Second call: the resolver now returns CredentialRevoked, which must surface
+    // from prepare_call (no retry, no other request sent).
+    let err_provider = match collection.prepare_call(spec, factory_request(spec)).await {
+        Err(opi_ai::CollectionError::Provider(p)) => p,
+        other => panic!("expected CollectionError::Provider(CredentialRevoked), got {other:?}"),
+    };
+    match &err_provider {
         AiProviderError::CredentialRevoked { provider_id } => {
             assert_eq!(provider_id, "anthropic");
         }
         other => panic!("expected CredentialRevoked, got {other:?}"),
     }
     assert!(
-        !err.is_retryable(),
+        !err_provider.is_retryable(),
         "CredentialRevoked must be non-retryable"
     );
     // Prove no second HTTP request was sent (the error came from the resolver,
@@ -5116,12 +5221,15 @@ async fn factory_built_approved_profiles_resolve_auth_inside_each_stream() {
             .unwrap_or_else(|error| {
                 panic!("{provider_id} must construct without an available credential: {error}")
             });
-        let mut stream = provider.stream(factory_request(&config.defaults.model));
-        let first = tokio::time::timeout(Duration::from_secs(2), stream.next())
-            .await
-            .unwrap_or_else(|_| panic!("{provider_id} auth resolution blocked"))
-            .unwrap_or_else(|| panic!("{provider_id} stream ended without auth result"))
-            .expect_err("missing credential must fail before provider output");
+        // Phase 17.5: auth resolution moved to prepare_call on the collection
+        // route. With no credential stored, prepare_call fails with
+        // CredentialNeeded before any HTTP request.
+        let collection = dispatch_collection(provider, provider_id, &config, resolver, &registry);
+        let spec = config.defaults.model.clone();
+        let first = match collection.prepare_call(&spec, factory_request(&spec)).await {
+            Err(opi_ai::CollectionError::Provider(p)) => p,
+            other => panic!("{provider_id} expected CredentialNeeded, got {other:?}"),
+        };
         match first {
             AiProviderError::CredentialNeeded {
                 provider_id: actual,
@@ -5137,8 +5245,8 @@ async fn factory_built_approved_profiles_resolve_auth_inside_each_stream() {
         }
 
         // Copilot alone owns credential-supplied enterprise routing metadata.
-        // Seed that route, construct, then remove the credential so the first
-        // stream proves auth fails before HTTP.
+        // Seed that route, construct, then remove the credential so the next
+        // prepare_call proves auth fails before HTTP.
         let (_routed_dir, routed_store, _routed_backend) = store_with(FakeKeyringBackend::new());
         routed_store
             .write(
@@ -5158,12 +5266,18 @@ async fn factory_built_approved_profiles_resolve_auth_inside_each_stream() {
             .unwrap();
         routed_store.delete(provider_id).await.unwrap();
 
-        let mut routed_stream = routed_provider.stream(factory_request(&config.defaults.model));
-        let routed_error = tokio::time::timeout(Duration::from_secs(2), routed_stream.next())
-            .await
-            .unwrap_or_else(|_| panic!("{provider_id} routed auth resolution blocked"))
-            .unwrap_or_else(|| panic!("{provider_id} routed stream ended without auth result"))
-            .expect_err("removed credential must fail before routed provider output");
+        let routed_collection = dispatch_collection(
+            routed_provider,
+            provider_id,
+            &config,
+            routed_resolver,
+            &registry,
+        );
+        let routed_error =
+            match collection_prepare_call_error(&routed_collection, &config.defaults.model).await {
+                Some(p) => p,
+                None => panic!("{provider_id} routed prepare_call unexpectedly succeeded"),
+            };
         match routed_error {
             AiProviderError::CredentialNeeded {
                 provider_id: actual,
@@ -5174,6 +5288,19 @@ async fn factory_built_approved_profiles_resolve_auth_inside_each_stream() {
             server.received_requests().await.unwrap().is_empty(),
             "{provider_id} must resolve auth before any routed HTTP request"
         );
+    }
+}
+
+/// Phase 17.5 helper: run prepare_call and return the wrapped ProviderError if
+/// the collection rejected the call, or `None` if it resolved a route.
+async fn collection_prepare_call_error(
+    collection: &ProviderCollection,
+    spec: &str,
+) -> Option<AiProviderError> {
+    match collection.prepare_call(spec, factory_request(spec)).await {
+        Err(opi_ai::CollectionError::Provider(p)) => Some(p),
+        Err(other) => panic!("expected Provider error from prepare_call, got {other:?}"),
+        Ok(_) => None,
     }
 }
 
@@ -5220,9 +5347,12 @@ async fn factory_stream_reresolves_after_store_change() {
         let provider = build_provider_with_oauth(&config, &resolver, &registry)
             .await
             .unwrap();
+        // Phase 17.5: auth moved to the collection route. Each prepare_call
+        // re-resolves the live credential, so changing the store between calls
+        // is observed by the next logical call.
+        let collection = dispatch_collection(provider, provider_id, &config, resolver, &registry);
 
-        let mut first = provider.stream(factory_request(&config.defaults.model));
-        drain_stream(&mut first).await;
+        drain_route(&collection, &config.defaults.model).await;
 
         let new = format!("new-{provider_id}-credential");
         let base_url = (provider_id != "anthropic").then(|| server.uri());
@@ -5233,8 +5363,7 @@ async fn factory_stream_reresolves_after_store_change() {
             )
             .await
             .unwrap();
-        let mut second = provider.stream(factory_request(&config.defaults.model));
-        drain_stream(&mut second).await;
+        drain_route(&collection, &config.defaults.model).await;
 
         let requests = server.received_requests().await.unwrap();
         assert_eq!(requests.len(), 2, "{provider_id} request count");
@@ -5388,6 +5517,10 @@ async fn factory_built_approved_profiles_map_revocation_without_retry() {
         let provider = build_provider_with_oauth(&config, &resolver, &registry)
             .await
             .unwrap();
+        // Phase 17.5: pass the store-backed resolver so the harness's
+        // prepare_call resolves the stored OAuth credential (the dummy resolver
+        // would bypass it and never exercise the revocation path).
+        let auth_resolver = oauth_auth_resolver_for(provider_id, &config, resolver, &registry);
         let workspace = tempfile::tempdir().unwrap();
         let mut harness = CodingHarness::builder(
             provider,
@@ -5397,6 +5530,7 @@ async fn factory_built_approved_profiles_map_revocation_without_retry() {
             opi_coding_agent::project_trust::TrustDecision::Trusted,
         )
         .tool_selection(ToolSelection::Disabled)
+        .auth_resolver(auth_resolver)
         .build();
 
         let error = tokio::time::timeout(Duration::from_secs(2), harness.prompt("hello"))

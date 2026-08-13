@@ -416,7 +416,7 @@ impl Provider for HangingThenCompleteProvider {
             })
             .as_slice()
     }
-    fn stream(&self, _request: Request) -> EventStream {
+    fn stream_prepared(&self, _request: Request, _auth: opi_ai::auth::ResolvedAuth) -> EventStream {
         let mut count = self.calls.lock().unwrap();
         *count += 1;
         let first = *count == 1;

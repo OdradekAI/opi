@@ -1358,16 +1358,8 @@ impl CodingHarness {
                     secrecy::SecretString::from("opi-mock-auth"),
                 ))
             });
-        let mut dispatch_collection = opi_ai::ProviderCollection::new();
-        dispatch_collection
-            .register_route(
-                provider,
-                auth_resolver,
-                opi_ai::AuthProvenanceSource::Static,
-                opi_ai::CompatMetadata::default(),
-            )
-            .expect("registering the active dispatch route must succeed at startup");
-        let dispatch_collection = Arc::new(dispatch_collection);
+        let dispatch_collection =
+            crate::provider_factory::build_dispatch_collection(provider, auth_resolver);
 
         let mut agent = Agent::new(
             dispatch_collection,
@@ -1515,7 +1507,7 @@ impl CodingHarness {
     /// active session branch (Phase 13.3), parented to the current content tip
     /// without advancing it. A later resume observes the recorded model and
     /// re-applies it when compatible with the CLI/config provider.
-    pub fn set_model_validated(&mut self, model: String) -> Result<&str, String> {
+    pub fn set_model_validated(&mut self, model: String) -> Result<String, String> {
         self.try_configure_model(&model)?;
         if let Some(session) = self.session.as_mut() {
             session
@@ -1524,7 +1516,7 @@ impl CodingHarness {
         }
         self.agent.set_model(model);
         self.sync_session_cost_model();
-        Ok(self.agent.model())
+        Ok(self.agent.model_spec())
     }
 
     /// Validate that `model` is a known same-provider spec and compatible with
@@ -1701,7 +1693,7 @@ impl CodingHarness {
             name: session.name().map(str::to_owned),
             labels: session.labels().to_vec(),
             active_branch: session.active_branch_id().map(str::to_owned),
-            model: self.agent.model().to_owned(),
+            model: self.agent.model_spec(),
             thinking: self.agent.thinking_config(),
         })
     }
@@ -1727,7 +1719,7 @@ impl CodingHarness {
     }
 
     fn sync_session_cost_model(&mut self) {
-        let model_spec = self.agent.model().to_owned();
+        let model_spec = self.agent.model_spec();
         let pricing = self.active_model_info().and_then(|model| model.pricing);
         if let Some(session) = self.session.as_mut() {
             session.set_cost_model(model_spec, pricing);
@@ -2391,6 +2383,14 @@ impl CodingHarness {
     /// Return the current model name.
     pub fn model(&self) -> &str {
         self.agent.model()
+    }
+
+    /// Return the canonical `provider:model` spec for the active selection
+    /// (Phase 17.5). Use this for any persisted or reported surface (session
+    /// summary, RPC responses, session metadata); [`CodingHarness::model`]
+    /// returns only the bare model-id half and mirrors [`Agent::model`].
+    pub fn model_spec(&self) -> String {
+        self.agent.model_spec()
     }
 
     /// Return the current thinking configuration (Phase 13.3 read-side accessor

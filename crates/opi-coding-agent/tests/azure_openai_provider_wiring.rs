@@ -99,7 +99,6 @@ endpoint = "https://myresource.openai.azure.com"
 #[test]
 fn azure_provider_builds_with_key() {
     let provider = opi_ai::azure_openai::AzureOpenAIProvider::new(
-        "secret-key-value".into(),
         Some("https://myresource.openai.azure.com".into()),
         "my-deploy".into(),
         Some("2024-06-01".into()),
@@ -111,7 +110,6 @@ fn azure_provider_builds_with_key() {
 #[test]
 fn azure_provider_from_config_with_deployments() {
     let provider = opi_ai::azure_openai::AzureOpenAIProvider::from_config(
-        "secret-key-value".into(),
         Some("https://myresource.openai.azure.com".into()),
         vec!["deploy1".into(), "deploy2".into()],
         None,
@@ -129,25 +127,45 @@ fn azure_provider_from_config_with_deployments() {
 
 #[test]
 fn azure_api_key_not_in_debug() {
+    use opi_ai::auth::{AuthProvenance, AuthScheme, ResolvedAuth};
+    use secrecy::SecretString;
+
+    // Phase 17.5 moved auth off the provider object onto the collection-owned
+    // route, so {provider:?} no longer carries any secret field. The redaction
+    // surface is now ResolvedAuth, whose Debug redacts the secret.
     let provider = opi_ai::azure_openai::AzureOpenAIProvider::new(
-        "super-secret-key-12345".into(),
         Some("https://myresource.openai.azure.com".into()),
         "my-deploy".into(),
         None,
     )
     .unwrap();
-    let debug = format!("{provider:?}");
+    let provider_debug = format!("{provider:?}");
     assert!(
-        !debug.contains("super-secret-key-12345"),
-        "API key leaked in Debug: {debug}"
+        !provider_debug.contains("super-secret-key-12345"),
+        "API key leaked in provider Debug: {provider_debug}"
     );
-    assert!(debug.contains("***"));
+
+    let auth = ResolvedAuth {
+        scheme: AuthScheme::ApiKey,
+        secret: SecretString::from("super-secret-key-12345"),
+        base_url: None,
+        account_id: None,
+        provenance: AuthProvenance::default(),
+    };
+    let auth_debug = format!("{auth:?}");
+    assert!(
+        !auth_debug.contains("super-secret-key-12345"),
+        "API key leaked in ResolvedAuth Debug: {auth_debug}"
+    );
+    assert!(
+        auth_debug.contains("<redacted>"),
+        "ResolvedAuth Debug must redact the secret: {auth_debug}"
+    );
 }
 
 #[test]
 fn azure_config_endpoint_visible_in_debug() {
     let provider = opi_ai::azure_openai::AzureOpenAIProvider::new(
-        "key".into(),
         Some("https://myresource.openai.azure.com".into()),
         "my-deploy".into(),
         None,
@@ -160,7 +178,6 @@ fn azure_config_endpoint_visible_in_debug() {
 #[test]
 fn azure_url_does_not_contain_api_key() {
     let provider = opi_ai::azure_openai::AzureOpenAIProvider::new(
-        "super-secret-key".into(),
         Some("https://myresource.openai.azure.com".into()),
         "my-deploy".into(),
         None,

@@ -26,29 +26,26 @@ pub trait Provider: Send + Sync {
     /// Models supported by this provider.
     fn models(&self) -> &[ModelInfo];
 
-    /// Start a streaming request. Returns an `EventStream` that yields events
-    /// until a terminal event (`Done` or `Error`) is reached or the caller
-    /// cancels via `Request::cancel`.
-    fn stream(&self, request: Request) -> EventStream;
-
-    /// Start a streaming request using already-resolved authentication (Phase 17).
+    /// Start a streaming request using already-resolved authentication.
     ///
-    /// This is the prepared-auth dispatch seam: the collection resolves the
-    /// route and authentication once per logical call, then every retry attempt
-    /// reuses that frozen authentication through this entry. Unlike
-    /// [`stream`](Self::stream), it must NOT consult a resolver or perform auth
+    /// This is the prepared-auth dispatch seam and the sole provider entry
+    /// point: the collection resolves the route and authentication once per
+    /// logical call, then every retry attempt reuses that frozen authentication
+    /// through this entry. It must NOT consult a resolver or perform auth
     /// preparation — it consumes the supplied
-    /// [`ResolvedAuth`](crate::auth::ResolvedAuth) directly at the wire boundary.
+    /// [`ResolvedAuth`](crate::auth::ResolvedAuth) directly at the wire
+    /// boundary, attaching the secret via [`secrecy::ExposeSecret`] immediately
+    /// before the HTTP request.
     ///
-    /// The default delegates to [`Provider::stream`], ignoring the supplied auth,
-    /// so providers that have not yet migrated to the seam (e.g. test mocks and
-    /// legacy baked-credential adapters) still dispatch through their existing
-    /// stream path now that the Agent routes every call through `prepare_call`.
-    /// Concrete resolver-based adapters override this to consume the supplied
-    /// auth; the 17.5 contract step makes every provider explicit.
-    fn stream_prepared(&self, request: Request, _auth: crate::auth::ResolvedAuth) -> EventStream {
-        self.stream(request)
-    }
+    /// Providers whose credential is a single API key or bearer token consume
+    /// `resolved.secret` at the wire boundary. Providers whose wire needs a
+    /// compound credential that [`ResolvedAuth`](crate::auth::ResolvedAuth) cannot carry (e.g. AWS SigV4
+    /// with separate access key, secret key, session token, and region) keep
+    /// that compound credential as construction-time state and attach it here,
+    /// ignoring the single-slot `resolved.secret`; such a provider holds no
+    /// [`AuthResolver`](crate::auth::AuthResolver) and is documented as a
+    /// compound-credential exemption.
+    fn stream_prepared(&self, request: Request, auth: crate::auth::ResolvedAuth) -> EventStream;
 
     /// Replace this provider's effective model catalog before it is shared.
     ///

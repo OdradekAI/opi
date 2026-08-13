@@ -731,10 +731,11 @@ where
         store,
         resolver,
         registry,
+        auth_resolver,
         diagnostics,
     } = bundle;
     let result = callback(provider, diagnostics).await;
-    drop((store, resolver, registry));
+    drop((store, resolver, registry, auth_resolver));
     result
 }
 
@@ -1189,13 +1190,13 @@ async fn run_interactive_core<Launch, LaunchFuture>(
     .extension_registry(runtime_startup.extension_registry)
     .installed_packages(runtime_startup.installed_packages)
     .startup_diagnostics(runtime_startup.diagnostics)
-    .trust_decision(trust_decision);
-    // Phase 17.2: the Agent now dispatches through ProviderCollection::prepare_call,
-    // which resolves a route auth resolver once per logical call. The product's real
-    // CredentialResolver is not (yet) an AuthResolver and provider-owned auth
-    // resolution is removed in 17.5; until then the harness installs a dummy static
-    // resolver so mock-provider tests dispatch via prepare_call. bundle.resolver
-    // remains owned by the bundle for /login and CredentialNeeded retry paths.
+    .trust_decision(trust_decision)
+    // Phase 17.5: production supplies the real per-call auth resolver (built
+    // alongside the active provider in the ProviderBundle). The harness
+    // registers it on the dispatch route so prepare_call resolves auth once
+    // per turn. bundle.resolver (CredentialResolver) stays owned by the bundle
+    // for /login and CredentialNeeded retry paths.
+    .auth_resolver(bundle.auth_resolver.clone());
     if let Some(prompt) = user_system_prompt {
         builder = builder.user_system_prompt(prompt);
     }

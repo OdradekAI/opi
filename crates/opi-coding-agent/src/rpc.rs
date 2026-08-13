@@ -807,7 +807,7 @@ impl RpcRunner {
                     ));
                 };
                 let mut data = serde_json::json!({
-                    "model": harness.model(),
+                    "model": harness.model_spec(),
                     "resources": harness.resource_metadata_json(),
                 });
                 if let Some(session) = harness.session() {

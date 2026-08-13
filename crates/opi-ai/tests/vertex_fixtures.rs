@@ -15,12 +15,7 @@ use wiremock::matchers::{body_partial_json, header, method, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 fn vertex_provider() -> VertexProvider {
-    VertexProvider::new(
-        "test-access-token".into(),
-        "my-project".into(),
-        "us-central1".into(),
-        None,
-    )
+    VertexProvider::new("my-project".into(), "us-central1".into(), None)
 }
 
 async fn collect_stream(stream: EventStream) -> Vec<AssistantStreamEvent> {
@@ -86,7 +81,6 @@ fn vertex_url_uses_aiplatform_domain() {
 #[test]
 fn vertex_url_with_custom_base() {
     let provider = VertexProvider::new(
-        "token".into(),
         "proj".into(),
         "europe-west1".into(),
         Some("https://custom.vertex.proxy".into()),
@@ -104,18 +98,16 @@ fn vertex_url_with_custom_base() {
 
 #[test]
 fn vertex_access_token_not_in_debug() {
-    let provider = VertexProvider::new(
-        "super-secret-oauth-token-12345".into(),
-        "proj".into(),
-        "us-central1".into(),
-        None,
-    );
+    // Phase 17.5: the access token moved out of VertexProvider construction
+    // into ResolvedAuth (passed via stream_prepared). The provider no longer
+    // stores the credential, so it cannot leak through its Debug output.
+    // ResolvedAuth's own Debug redaction is pinned in auth_contracts.rs.
+    let provider = VertexProvider::new("proj".into(), "us-central1".into(), None);
     let debug = format!("{provider:?}");
     assert!(
         !debug.contains("super-secret-oauth-token-12345"),
         "access token leaked in Debug: {debug}"
     );
-    assert!(debug.contains("***"));
 }
 
 #[test]
@@ -144,7 +136,6 @@ fn vertex_default_models() {
 #[test]
 fn vertex_custom_models_from_config() {
     let provider = VertexProvider::from_config(
-        "token".into(),
         "proj".into(),
         "europe-west4".into(),
         vec!["my-custom-model".into(), "other-model".into()],
@@ -411,13 +402,22 @@ async fn stream_drains_text_lifecycle_through_http() {
         .await;
 
     let provider = VertexProvider::new(
-        "test-access-token".into(),
         "my-project".into(),
         "us-central1".into(),
         Some(server.uri()),
     );
 
-    let events = collect_stream(provider.stream(lifecycle_text_request())).await;
+    // The OAuth bearer token is supplied via ResolvedAuth (Phase 17.5); the
+    // production transport derives `Authorization: Bearer <secret>` from
+    // `auth.secret` in stream_prepared.
+    let auth = opi_ai::auth::ResolvedAuth {
+        scheme: opi_ai::auth::AuthScheme::Bearer,
+        secret: secrecy::SecretString::from("test-access-token"),
+        base_url: None,
+        account_id: None,
+        provenance: opi_ai::AuthProvenance::default(),
+    };
+    let events = collect_stream(provider.stream_prepared(lifecycle_text_request(), auth)).await;
 
     // Lifecycle: Start -> TextDelta -> Done.
     assert!(
@@ -477,13 +477,15 @@ async fn stream_http_error_maps_to_auth_failed() {
         .await;
 
     let provider = VertexProvider::new(
-        "bad-token".into(),
         "my-project".into(),
         "us-central1".into(),
         Some(server.uri()),
     );
 
-    let stream = provider.stream(lifecycle_text_request());
+    let stream = provider.stream_prepared(
+        lifecycle_text_request(),
+        opi_ai::test_support::resolved_auth(),
+    );
     let first = stream
         .collect::<Vec<_>>()
         .await
@@ -524,14 +526,13 @@ async fn stream_cancellation_drains_without_hang_after_cancel() {
 
     let cancel = CancellationToken::new();
     let provider = VertexProvider::new(
-        "test-access-token".into(),
         "my-project".into(),
         "us-central1".into(),
         Some(server.uri()),
     );
     let mut request = lifecycle_text_request();
     request.cancel = cancel.clone();
-    let mut stream = provider.stream(request);
+    let mut stream = provider.stream_prepared(request, opi_ai::test_support::resolved_auth());
 
     let _ = stream
         .next()

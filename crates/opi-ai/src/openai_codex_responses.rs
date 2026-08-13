@@ -11,7 +11,7 @@ use futures_util::{StreamExt, stream};
 use secrecy::ExposeSecret;
 use tokio_util::sync::CancellationToken;
 
-use crate::auth::{AuthResolver, ResolvedAuth};
+use crate::auth::ResolvedAuth;
 use crate::http::HttpClient;
 use crate::openai_responses_shared::{
     ParsedEvent, ResponsesEvent, ResponsesMapper, convert_messages, drain_sse_frames,
@@ -37,26 +37,20 @@ const MANAGED_HEADERS: &[&str] = &[
 
 /// OpenAI Codex provider using the subscription-specific Responses wire.
 ///
-/// Authentication is resolved lazily for every stream and must include the
-/// non-secret ChatGPT account id. Provider-managed authorization, account,
-/// originator, beta, content, accept, and session headers are reserved from
-/// `Request::extra_headers`.
+/// Authentication is supplied per-call by the provider collection via
+/// [`crate::auth::ResolvedAuth`] on `Provider::stream_prepared` and must
+/// include the non-secret ChatGPT account id. Provider-managed authorization,
+/// account, originator, beta, content, accept, and session headers are
+/// reserved from `Request::extra_headers`.
 pub struct OpenAiCodexResponsesProvider {
-    auth: Arc<dyn AuthResolver>,
     base_url: String,
     models: Vec<ModelInfo>,
     client: Arc<HttpClient>,
 }
 
 impl OpenAiCodexResponsesProvider {
-    pub fn new(
-        auth: Arc<dyn AuthResolver>,
-        base_url: Option<String>,
-        models: Vec<ModelInfo>,
-        client: Arc<HttpClient>,
-    ) -> Self {
+    pub fn new(base_url: Option<String>, models: Vec<ModelInfo>, client: Arc<HttpClient>) -> Self {
         Self {
-            auth,
             base_url: base_url.unwrap_or_else(|| DEFAULT_BASE_URL.into()),
             models,
             client,
@@ -266,113 +260,6 @@ impl Provider for OpenAiCodexResponsesProvider {
 
     fn models(&self) -> &[ModelInfo] {
         &self.models
-    }
-
-    fn stream(&self, request: Request) -> EventStream {
-        if let Err(error) = crate::provider::validate_request_capabilities(self, &request) {
-            return Box::pin(stream::once(async move { Err(error) }));
-        }
-        let auth = self.auth.clone();
-        let default_base_url = self.base_url.clone();
-        // C9: strip ONLY the openai-codex: prefix; do not strip arbitrary prefixes.
-        let model_id_owned = match request.model.strip_prefix("openai-codex:") {
-            Some(rest) => rest.to_owned(),
-            None => request.model.clone(),
-        };
-        let model_id = model_id_owned.as_str();
-        let model_known = self.models.iter().any(|model| model.id == model_id);
-        let model_base_url = self
-            .models
-            .iter()
-            .find(|model| model.id == model_id)
-            .and_then(|model| model.base_url.clone());
-        let extra_headers = validate_headers(&request.extra_headers);
-        let body = self.build_request_body(&request);
-        let timeout = request.timeout;
-        // C7: derive affinity headers as None when caching is disabled; do not
-        // synthesize UUID fallbacks for the Disabled case.
-        let session_id: Option<String> = if request.cache_retention != CacheRetention::Disabled {
-            Some(
-                request
-                    .session_id
-                    .clone()
-                    .filter(|id| !id.is_empty())
-                    .unwrap_or_else(|| uuid::Uuid::now_v7().to_string()),
-            )
-        } else {
-            None
-        };
-        let request_id: Option<String> = if request.cache_retention != CacheRetention::Disabled {
-            Some(uuid::Uuid::now_v7().to_string())
-        } else {
-            None
-        };
-        let cancel = request.cancel.clone();
-        let client = self.client.client().clone();
-        let (tx, rx) = tokio::sync::mpsc::channel(64);
-
-        // C9: UnknownModel pre-I/O guard. Surfaces the error through a tiny
-        // spawned task (mirrors how other validation errors are surfaced via
-        // the channel), and guarantees ZERO auth-resolver calls and ZERO HTTP
-        // for unknown or cross-provider models.
-        if !model_known {
-            let provider_id: String = PROVIDER_ID.into();
-            tokio::spawn(async move {
-                let _ = tx
-                    .send(Err(ProviderError::UnknownModel {
-                        provider_id,
-                        model_id: model_id_owned,
-                    }))
-                    .await;
-            });
-            return Box::pin(ReceiverStream { rx });
-        }
-
-        // C1: observe receiver drop and abort credential resolution / HTTP
-        // instead of running detached until the next send attempt.
-        let tx_closed = tx.clone();
-        tokio::spawn(async move {
-            let work = async {
-                let extra_headers = match extra_headers {
-                    Ok(headers) => headers,
-                    Err(error) => {
-                        let _ = tx.send(Err(error)).await;
-                        return;
-                    }
-                };
-                let resolved = match auth.resolve().await {
-                    Ok(resolved) => resolved,
-                    Err(error) => {
-                        let _ = tx.send(Err(error)).await;
-                        return;
-                    }
-                };
-                let base_url = model_base_url.unwrap_or(default_base_url);
-                if let Err(error) = Self::stream_http(
-                    client,
-                    resolved,
-                    base_url,
-                    extra_headers,
-                    body,
-                    cancel,
-                    timeout,
-                    session_id,
-                    request_id,
-                    tx.clone(),
-                )
-                .await
-                {
-                    let _ = tx.send(Err(error)).await;
-                }
-            };
-
-            tokio::select! {
-                biased;
-                _ = tx_closed.closed() => (),
-                _ = work => {},
-            }
-        });
-        Box::pin(ReceiverStream { rx })
     }
 
     fn stream_prepared(

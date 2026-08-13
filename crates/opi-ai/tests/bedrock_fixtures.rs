@@ -539,7 +539,7 @@ async fn url_image_rejected_with_clear_error() {
         cache_retention: CacheRetention::None,
         session_id: None,
     };
-    let stream = provider.stream(request);
+    let stream = provider.stream_prepared(request, opi_ai::test_support::resolved_auth());
     use futures_util::StreamExt;
     let events: Vec<_> = stream.collect().await;
     assert_eq!(events.len(), 1, "expected exactly one event");
@@ -934,7 +934,11 @@ async fn stream_drains_text_lifecycle_through_http() {
         Arc::new(HttpClient::new()),
     );
 
-    let events = collect_events(provider.stream(lifecycle_text_request())).await;
+    let events = collect_events(provider.stream_prepared(
+        lifecycle_text_request(),
+        opi_ai::test_support::resolved_auth(),
+    ))
+    .await;
 
     // Lifecycle: Start -> TextDelta("Hello!") -> Done.
     assert!(
@@ -1017,7 +1021,11 @@ async fn stream_http_flushes_done_without_metadata() {
         Arc::new(HttpClient::new()),
     );
 
-    let events = collect_events(provider.stream(lifecycle_text_request())).await;
+    let events = collect_events(provider.stream_prepared(
+        lifecycle_text_request(),
+        opi_ai::test_support::resolved_auth(),
+    ))
+    .await;
 
     assert!(
         events
@@ -1042,7 +1050,10 @@ async fn stream_http_error_maps_to_auth_failed() {
         Arc::new(HttpClient::new()),
     );
 
-    let stream = provider.stream(lifecycle_text_request());
+    let stream = provider.stream_prepared(
+        lifecycle_text_request(),
+        opi_ai::test_support::resolved_auth(),
+    );
     pin_mut!(stream);
     let first = stream.next().await.expect("should produce an event");
     match first {
@@ -1076,7 +1087,10 @@ async fn stream_500_classifies_as_provider_with_redacted_excerpt() {
         Some(server.uri()),
         Arc::new(HttpClient::new()),
     );
-    let stream = provider.stream(lifecycle_text_request());
+    let stream = provider.stream_prepared(
+        lifecycle_text_request(),
+        opi_ai::test_support::resolved_auth(),
+    );
     pin_mut!(stream);
     let first = stream.next().await.expect("should produce an event");
     match first {

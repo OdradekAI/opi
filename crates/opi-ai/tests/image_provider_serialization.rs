@@ -127,8 +127,12 @@ async fn anthropic_image_url_in_request_body() {
         .mount(&server)
         .await;
 
-    let provider = opi_ai::anthropic::AnthropicProvider::new("test-key".into(), Some(server.uri()));
-    drain_stream(provider.stream(make_request(vec![image_url_msg()]))).await;
+    let provider = opi_ai::anthropic::AnthropicProvider::new(Some(server.uri()));
+    drain_stream(provider.stream_prepared(
+        make_request(vec![image_url_msg()]),
+        opi_ai::test_support::resolved_auth(),
+    ))
+    .await;
 
     let body = get_request_body(&server).await;
     let content = &body["messages"][0]["content"][0];
@@ -149,8 +153,12 @@ async fn anthropic_image_base64_in_request_body() {
         .mount(&server)
         .await;
 
-    let provider = opi_ai::anthropic::AnthropicProvider::new("test-key".into(), Some(server.uri()));
-    drain_stream(provider.stream(make_request(vec![image_base64_msg()]))).await;
+    let provider = opi_ai::anthropic::AnthropicProvider::new(Some(server.uri()));
+    drain_stream(provider.stream_prepared(
+        make_request(vec![image_base64_msg()]),
+        opi_ai::test_support::resolved_auth(),
+    ))
+    .await;
 
     let body = get_request_body(&server).await;
     let content = &body["messages"][0]["content"][0];
@@ -171,8 +179,12 @@ async fn anthropic_image_bytes_encoded_as_base64() {
         .mount(&server)
         .await;
 
-    let provider = opi_ai::anthropic::AnthropicProvider::new("test-key".into(), Some(server.uri()));
-    drain_stream(provider.stream(make_request(vec![image_bytes_msg()]))).await;
+    let provider = opi_ai::anthropic::AnthropicProvider::new(Some(server.uri()));
+    drain_stream(provider.stream_prepared(
+        make_request(vec![image_bytes_msg()]),
+        opi_ai::test_support::resolved_auth(),
+    ))
+    .await;
 
     let body = get_request_body(&server).await;
     let content = &body["messages"][0]["content"][0];
@@ -195,9 +207,12 @@ async fn openai_chat_image_url_in_request_body() {
         .mount(&server)
         .await;
 
-    let provider =
-        opi_ai::openai_chat::OpenAiChatProvider::new("test-key".into(), Some(server.uri()));
-    drain_stream(provider.stream(make_request(vec![image_url_msg()]))).await;
+    let provider = opi_ai::openai_chat::OpenAiChatProvider::new(Some(server.uri()));
+    drain_stream(provider.stream_prepared(
+        make_request(vec![image_url_msg()]),
+        opi_ai::test_support::resolved_auth(),
+    ))
+    .await;
 
     let body = get_request_body(&server).await;
     let content = &body["messages"][0]["content"];
@@ -221,9 +236,12 @@ async fn openai_chat_image_base64_as_data_uri() {
         .mount(&server)
         .await;
 
-    let provider =
-        opi_ai::openai_chat::OpenAiChatProvider::new("test-key".into(), Some(server.uri()));
-    drain_stream(provider.stream(make_request(vec![image_base64_msg()]))).await;
+    let provider = opi_ai::openai_chat::OpenAiChatProvider::new(Some(server.uri()));
+    drain_stream(provider.stream_prepared(
+        make_request(vec![image_base64_msg()]),
+        opi_ai::test_support::resolved_auth(),
+    ))
+    .await;
 
     let body = get_request_body(&server).await;
     let content = &body["messages"][0]["content"][0];
@@ -245,9 +263,12 @@ async fn openai_chat_mixed_text_image_not_flattened() {
         .mount(&server)
         .await;
 
-    let provider =
-        opi_ai::openai_chat::OpenAiChatProvider::new("test-key".into(), Some(server.uri()));
-    drain_stream(provider.stream(make_request(vec![mixed_text_image_msg()]))).await;
+    let provider = opi_ai::openai_chat::OpenAiChatProvider::new(Some(server.uri()));
+    drain_stream(provider.stream_prepared(
+        make_request(vec![mixed_text_image_msg()]),
+        opi_ai::test_support::resolved_auth(),
+    ))
+    .await;
 
     let body = get_request_body(&server).await;
     let content = &body["messages"][0]["content"];
@@ -271,11 +292,12 @@ async fn openai_responses_image_url_in_request_body() {
         .mount(&server)
         .await;
 
-    let provider = opi_ai::openai_responses::OpenAiResponsesProvider::new(
-        "test-key".into(),
-        Some(server.uri()),
-    );
-    drain_stream(provider.stream(make_request(vec![image_url_msg()]))).await;
+    let provider = opi_ai::openai_responses::OpenAiResponsesProvider::new(Some(server.uri()));
+    drain_stream(provider.stream_prepared(
+        make_request(vec![image_url_msg()]),
+        opi_ai::test_support::resolved_auth(),
+    ))
+    .await;
 
     let body = get_request_body(&server).await;
     let input = &body["input"];
@@ -302,11 +324,12 @@ async fn openai_responses_image_base64_as_data_uri() {
         .mount(&server)
         .await;
 
-    let provider = opi_ai::openai_responses::OpenAiResponsesProvider::new(
-        "test-key".into(),
-        Some(server.uri()),
-    );
-    drain_stream(provider.stream(make_request(vec![image_base64_msg()]))).await;
+    let provider = opi_ai::openai_responses::OpenAiResponsesProvider::new(Some(server.uri()));
+    drain_stream(provider.stream_prepared(
+        make_request(vec![image_base64_msg()]),
+        opi_ai::test_support::resolved_auth(),
+    ))
+    .await;
 
     let body = get_request_body(&server).await;
     let content = &body["input"][0]["content"][0];
@@ -328,8 +351,12 @@ async fn gemini_image_url_in_request_body() {
         .mount(&server)
         .await;
 
-    let provider = opi_ai::gemini::GeminiProvider::new("test-key".into(), Some(server.uri()));
-    drain_stream(provider.stream(make_request(vec![image_url_msg()]))).await;
+    let provider = opi_ai::gemini::GeminiProvider::new(Some(server.uri()));
+    drain_stream(provider.stream_prepared(
+        make_request(vec![image_url_msg()]),
+        opi_ai::test_support::resolved_auth(),
+    ))
+    .await;
 
     let body = get_request_body(&server).await;
     let parts = &body["contents"][0]["parts"][0];
@@ -352,8 +379,12 @@ async fn gemini_image_base64_as_inline_data() {
         .mount(&server)
         .await;
 
-    let provider = opi_ai::gemini::GeminiProvider::new("test-key".into(), Some(server.uri()));
-    drain_stream(provider.stream(make_request(vec![image_base64_msg()]))).await;
+    let provider = opi_ai::gemini::GeminiProvider::new(Some(server.uri()));
+    drain_stream(provider.stream_prepared(
+        make_request(vec![image_base64_msg()]),
+        opi_ai::test_support::resolved_auth(),
+    ))
+    .await;
 
     let body = get_request_body(&server).await;
     let parts = &body["contents"][0]["parts"][0];
@@ -376,8 +407,12 @@ async fn openrouter_image_in_request_body() {
         .mount(&server)
         .await;
 
-    let provider = opi_ai::openrouter::openrouter_provider("test-key".into(), Some(server.uri()));
-    drain_stream(provider.stream(make_request(vec![mixed_text_image_msg()]))).await;
+    let provider = opi_ai::openrouter::openrouter_provider(Some(server.uri()));
+    drain_stream(provider.stream_prepared(
+        make_request(vec![mixed_text_image_msg()]),
+        opi_ai::test_support::resolved_auth(),
+    ))
+    .await;
 
     let body = get_request_body(&server).await;
     let content = &body["messages"][0]["content"];
@@ -401,8 +436,12 @@ async fn mistral_image_in_request_body() {
         .mount(&server)
         .await;
 
-    let provider = opi_ai::mistral::mistral_provider("test-key".into(), Some(server.uri()));
-    drain_stream(provider.stream(make_request(vec![mixed_text_image_msg()]))).await;
+    let provider = opi_ai::mistral::mistral_provider(Some(server.uri()));
+    drain_stream(provider.stream_prepared(
+        make_request(vec![mixed_text_image_msg()]),
+        opi_ai::test_support::resolved_auth(),
+    ))
+    .await;
 
     let body = get_request_body(&server).await;
     let content = &body["messages"][0]["content"];

@@ -342,7 +342,7 @@ fn chat_chunk_id_round_trips_into_response_id() {
 
 #[tokio::test]
 async fn content_first_chunk_id_round_trips_into_response_id() {
-    let provider = OpenAiChatProvider::new("key".into(), None);
+    let provider = OpenAiChatProvider::new(None);
     let sse = r#"data: {"id":"chatcmpl-content-first","object":"chat.completion.chunk","created":1,"model":"gpt-4o","choices":[{"index":0,"delta":{"content":"hello"},"finish_reason":null}]}
 
 data: {"id":"chatcmpl-content-first","object":"chat.completion.chunk","created":1,"model":"gpt-4o","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1}}
@@ -371,7 +371,7 @@ data: {"id":"chatcmpl-content-first","object":"chat.completion.chunk","created":
 
 #[tokio::test]
 async fn non_terminal_usage_chunk_updates_done_usage() {
-    let provider = OpenAiChatProvider::new("key".into(), None);
+    let provider = OpenAiChatProvider::new(None);
     let sse = r#"data: {"id":"chatcmpl-usage-early","object":"chat.completion.chunk","created":1,"model":"gpt-4o","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}],"usage":{"prompt_tokens":7,"completion_tokens":0}}
 
 data: {"id":"chatcmpl-usage-early","object":"chat.completion.chunk","created":1,"model":"gpt-4o","choices":[{"index":0,"delta":{"content":"hello"},"finish_reason":null}],"usage":{"prompt_tokens":7,"completion_tokens":1}}
@@ -395,7 +395,7 @@ data: {"id":"chatcmpl-usage-early","object":"chat.completion.chunk","created":1,
 
 #[tokio::test]
 async fn usage_only_empty_choices_chunk_updates_done_usage() {
-    let provider = OpenAiChatProvider::new("key".into(), None);
+    let provider = OpenAiChatProvider::new(None);
     let sse = r#"data: {"id":"chatcmpl-usage-only","object":"chat.completion.chunk","created":1,"model":"gpt-4o","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}
 
 data: {"id":"chatcmpl-usage-only","object":"chat.completion.chunk","created":1,"model":"gpt-4o","choices":[{"index":0,"delta":{"content":"hello"},"finish_reason":null}]}
@@ -526,8 +526,11 @@ async fn reasoning_malformed_subset_stops_production_stream_with_non_retryable_e
         .mount(&server)
         .await;
 
-    let provider = OpenAiChatProvider::new("test-key".into(), Some(server.uri()));
-    let results: Vec<_> = provider.stream(make_test_request()).collect().await;
+    let provider = OpenAiChatProvider::new(Some(server.uri()));
+    let results: Vec<_> = provider
+        .stream_prepared(make_test_request(), opi_ai::test_support::resolved_auth())
+        .collect()
+        .await;
     let errors: Vec<_> = results
         .iter()
         .filter_map(|result| result.as_ref().err())
@@ -824,19 +827,19 @@ fn sse_parse_handles_crlf_line_endings() {
 
 #[test]
 fn openai_chat_provider_id() {
-    let provider = OpenAiChatProvider::new("test-key".into(), None);
+    let provider = OpenAiChatProvider::new(None);
     assert_eq!(provider.id(), "openai");
 }
 
 #[test]
 fn openai_chat_provider_models_not_empty() {
-    let provider = OpenAiChatProvider::new("test-key".into(), None);
+    let provider = OpenAiChatProvider::new(None);
     assert!(!provider.models().is_empty());
 }
 
 #[tokio::test]
 async fn stream_from_sse_produces_events() {
-    let provider = OpenAiChatProvider::new("test-key".into(), None);
+    let provider = OpenAiChatProvider::new(None);
     let cancel = tokio_util::sync::CancellationToken::new();
     let mut stream = provider.stream_from_sse(text_fixture(), cancel);
 
@@ -929,7 +932,7 @@ fn make_test_request() -> Request {
 
 #[test]
 fn build_request_body_uses_max_tokens_by_default() {
-    let provider = OpenAiChatProvider::new("test-key".into(), None);
+    let provider = OpenAiChatProvider::new(None);
     let body = provider.build_request_body(&make_test_request());
     assert!(body.get("max_tokens").is_some());
     assert_eq!(body["max_tokens"], 4096);
@@ -941,7 +944,7 @@ fn build_request_body_with_compat_max_completion_tokens() {
         max_tokens_field: "max_completion_tokens".into(),
         ..Default::default()
     };
-    let provider = OpenAiChatProvider::new_with_compat("test-key".into(), None, config);
+    let provider = OpenAiChatProvider::new_with_compat(None, config);
     let body = provider.build_request_body(&make_test_request());
     assert!(body.get("max_completion_tokens").is_some());
     assert!(body.get("max_tokens").is_none());
@@ -950,7 +953,7 @@ fn build_request_body_with_compat_max_completion_tokens() {
 
 #[test]
 fn build_request_body_system_role_default() {
-    let provider = OpenAiChatProvider::new("test-key".into(), None);
+    let provider = OpenAiChatProvider::new(None);
     let body = provider.build_request_body(&make_test_request());
     // Default: system message uses "system" role
     let messages = body["messages"].as_array().unwrap();
@@ -963,7 +966,7 @@ fn build_request_body_developer_role_override() {
         system_role_override: Some("developer".into()),
         ..Default::default()
     };
-    let provider = OpenAiChatProvider::new_with_compat("test-key".into(), None, config);
+    let provider = OpenAiChatProvider::new_with_compat(None, config);
     let body = provider.build_request_body(&make_test_request());
     let messages = body["messages"].as_array().unwrap();
     assert_eq!(messages[0]["role"], "developer");
@@ -972,7 +975,6 @@ fn build_request_body_developer_role_override() {
 #[test]
 fn build_request_body_usage_in_stream_emits_stream_options() {
     let provider = OpenAiChatProvider::new_for_profile(
-        "key".into(),
         "https://example.test".into(),
         "compat".into(),
         CompatConfig {
@@ -1081,7 +1083,7 @@ fn build_request_body_strict_tool_schema_emits_strict_flag() {
         strict_tool_schema: true,
         ..Default::default()
     };
-    let provider = OpenAiChatProvider::new_with_compat("test-key".into(), None, config);
+    let provider = OpenAiChatProvider::new_with_compat(None, config);
     let body = provider.build_request_body(&make_tool_request());
     let tools = body["tools"].as_array().expect("tools array present");
     assert!(
@@ -1092,7 +1094,7 @@ fn build_request_body_strict_tool_schema_emits_strict_flag() {
 
 #[test]
 fn build_request_body_strict_tool_schema_off_by_default() {
-    let provider = OpenAiChatProvider::new("test-key".into(), None);
+    let provider = OpenAiChatProvider::new(None);
     let body = provider.build_request_body(&make_tool_request());
     let tools = body["tools"].as_array().expect("tools array present");
     assert!(
@@ -1107,14 +1109,14 @@ fn static_compat_reasoning_effort_does_not_drive_wire_output() {
         reasoning_effort: Some("high".into()),
         ..Default::default()
     };
-    let provider = OpenAiChatProvider::new_with_compat("test-key".into(), None, config);
+    let provider = OpenAiChatProvider::new_with_compat(None, config);
     let body = provider.build_request_body(&make_test_request());
     assert!(body.get("reasoning_effort").is_none());
 }
 
 #[test]
 fn build_request_body_reasoning_effort_absent_by_default() {
-    let provider = OpenAiChatProvider::new("test-key".into(), None);
+    let provider = OpenAiChatProvider::new(None);
     let body = provider.build_request_body(&make_test_request());
     assert!(body.get("reasoning_effort").is_none());
 }
@@ -1123,7 +1125,7 @@ fn build_request_body_reasoning_effort_absent_by_default() {
 fn chat_reasoning_effort_uses_request_thinking_and_model_map() {
     use opi_ai::{ThinkingLevel, ThinkingLevelMap, ThinkingLevelMapping};
 
-    let provider = OpenAiChatProvider::new("test-key".into(), None);
+    let provider = OpenAiChatProvider::new(None);
     let mut identity = make_test_request();
     identity.model = "openai:o3".into();
     identity.thinking = ThinkingConfig {
@@ -1149,7 +1151,6 @@ fn chat_reasoning_effort_uses_request_thinking_and_model_map() {
         ThinkingLevelMapping::Mapped("provider-high".into()),
     ));
     let mapped_provider = OpenAiChatProvider::new_for_profile(
-        "key".into(),
         "https://example.test".into(),
         "mapped".into(),
         CompatConfig {
@@ -1195,7 +1196,6 @@ fn chat_reasoning_effort_uses_request_thinking_and_model_map() {
     )
     .with_thinking_level_map(ThinkingLevelMap::disabled());
     let unsupported_provider = OpenAiChatProvider::new_for_profile(
-        "key".into(),
         "https://example.test".into(),
         "unsupported".into(),
         Default::default(),
@@ -1219,14 +1219,14 @@ fn build_request_body_cache_key_emits_prompt_cache_key() {
         cache_key: Some("sess-abc".into()),
         ..Default::default()
     };
-    let provider = OpenAiChatProvider::new_with_compat("test-key".into(), None, config);
+    let provider = OpenAiChatProvider::new_with_compat(None, config);
     let body = provider.build_request_body(&make_test_request());
     assert_eq!(body["prompt_cache_key"], "sess-abc");
 }
 
 #[test]
 fn build_request_body_cache_key_absent_by_default() {
-    let provider = OpenAiChatProvider::new("test-key".into(), None);
+    let provider = OpenAiChatProvider::new(None);
     let body = provider.build_request_body(&make_test_request());
     assert!(body.get("prompt_cache_key").is_none());
 }
@@ -1274,7 +1274,7 @@ fn build_request_body_tool_result_name_field_wire_shape() {
         tool_result_name_field: true,
         ..Default::default()
     };
-    let provider = OpenAiChatProvider::new_with_compat("test-key".into(), None, config);
+    let provider = OpenAiChatProvider::new_with_compat(None, config);
     let body = provider.build_request_body(&make_tool_result_request());
     let messages = body["messages"].as_array().unwrap();
     let tool_msg = messages
@@ -1291,7 +1291,7 @@ fn build_request_body_tool_result_name_field_wire_shape() {
 
 #[test]
 fn build_request_body_tool_result_name_field_absent_by_default() {
-    let provider = OpenAiChatProvider::new("test-key".into(), None);
+    let provider = OpenAiChatProvider::new(None);
     let body = provider.build_request_body(&make_tool_result_request());
     let messages = body["messages"].as_array().unwrap();
     let tool_msg = messages
@@ -1317,7 +1317,6 @@ fn validate_rejects_image_on_text_only_openai_compatible_profile() {
         ModelCapabilities::new(8000, 1024).with_streaming(true),
     );
     let provider = OpenAiChatProvider::new_for_profile(
-        "test-key".into(),
         "https://example.test".into(),
         "compatprof".into(),
         CompatConfig::default(),
@@ -1379,7 +1378,6 @@ fn model_level_override_takes_precedence_over_provider_profile() {
         },
     );
     let provider = OpenAiChatProvider::new_for_profile(
-        "key".into(),
         "https://example.test".into(),
         "prof".into(),
         base,
@@ -1527,7 +1525,7 @@ async fn stream_sends_text_request_body_and_auth_through_http() {
         .mount(&server)
         .await;
 
-    let provider = OpenAiChatProvider::new("test-key".into(), Some(server.uri()));
+    let provider = OpenAiChatProvider::new(Some(server.uri()));
     let request = Request {
         model: "openai:gpt-4o".into(),
         system: Some("You are helpful.".into()),
@@ -1550,7 +1548,7 @@ async fn stream_sends_text_request_body_and_auth_through_http() {
         session_id: None,
     };
 
-    let mut stream = provider.stream(request);
+    let mut stream = provider.stream_prepared(request, opi_ai::test_support::resolved_auth());
     while let Some(result) = stream.next().await {
         match result {
             Ok(event) if event.is_terminal() => break,
@@ -1586,7 +1584,6 @@ async fn profile_extra_headers_reach_the_http_wire() {
         .await;
 
     let provider = OpenAiChatProvider::new_for_profile(
-        "test-key".into(),
         server.uri(),
         "affinityprof".into(),
         CompatConfig::default(),
@@ -1618,7 +1615,7 @@ async fn profile_extra_headers_reach_the_http_wire() {
         session_id: None,
     };
 
-    let mut stream = provider.stream(request);
+    let mut stream = provider.stream_prepared(request, opi_ai::test_support::resolved_auth());
     while let Some(result) = stream.next().await {
         match result {
             Ok(event) if event.is_terminal() => break,
@@ -1646,7 +1643,7 @@ async fn stream_cancellation_aborts_before_completion() {
     let server = spawn_stalled_openai_chat_server().await;
 
     let cancel = CancellationToken::new();
-    let provider = OpenAiChatProvider::new("test-key".into(), Some(server));
+    let provider = OpenAiChatProvider::new(Some(server));
     let request = Request {
         model: "openai:gpt-4o".into(),
         system: None,
@@ -1668,7 +1665,7 @@ async fn stream_cancellation_aborts_before_completion() {
         cache_retention: CacheRetention::None,
         session_id: None,
     };
-    let mut stream = provider.stream(request);
+    let mut stream = provider.stream_prepared(request, opi_ai::test_support::resolved_auth());
 
     let first = stream
         .next()

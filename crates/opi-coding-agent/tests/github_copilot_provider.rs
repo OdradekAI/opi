@@ -7,11 +7,13 @@ use opi_ai::credential::{Credential, CredentialStore};
 use opi_ai::message::{
     ImageSource, InputContent, MediaType, Message, OutputContent, ToolResultMessage, UserMessage,
 };
-use opi_ai::provider::{CacheRetention, Provider, ProviderError, Request, ThinkingConfig};
-use opi_ai::{ThinkingLevel, WireApi, WireCompat};
+use opi_ai::provider::{CacheRetention, ProviderError, Request, ThinkingConfig};
+use opi_ai::{
+    AuthProvenanceSource, CompatMetadata, ProviderCollection, ThinkingLevel, WireApi, WireCompat,
+};
 use opi_coding_agent::config::OpiConfig;
 use opi_coding_agent::credential_store::{
-    CredentialResolver, FakeKeyringBackend, KeychainCredentialStore,
+    AuthSource, CredentialResolver, FakeKeyringBackend, KeychainCredentialStore,
 };
 use opi_coding_agent::github_copilot::{
     GITHUB_COPILOT_DEFAULT_BASE_URL, github_copilot_catalog, github_copilot_static_headers,
@@ -254,7 +256,7 @@ async fn factory_provider(
     model: &str,
     access: &str,
     base_url: String,
-) -> (TempDir, Arc<KeychainCredentialStore>, Box<dyn Provider>) {
+) -> (TempDir, Arc<KeychainCredentialStore>, ProviderCollection) {
     let dir = tempfile::tempdir().unwrap();
     let store = Arc::new(KeychainCredentialStore::new(
         Box::new(FakeKeyringBackend::new()),
@@ -265,16 +267,34 @@ async fn factory_provider(
         .await
         .unwrap();
     let resolver = CredentialResolver::new(store.clone(), Arc::new(|_: &str| None));
+    let oauth_registry = OAuthProviderRegistry::registry_with_builtins();
     let mut config = OpiConfig::default();
     config.defaults.model = format!("github-copilot:{model}");
-    let provider = build_provider_with_oauth(
-        &config,
-        &resolver,
-        &OAuthProviderRegistry::registry_with_builtins(),
-    )
-    .await
-    .expect("offline Copilot provider");
-    (dir, store, provider)
+    let provider = build_provider_with_oauth(&config, &resolver, &oauth_registry)
+        .await
+        .expect("offline Copilot provider");
+    // Phase 17.5: auth moved off the provider object onto the collection route.
+    // Register the store-backed OAuth resolver so prepare_call resolves the live
+    // token + enterprise base_url from the keychain on each logical call.
+    let auth_resolver: Arc<dyn opi_ai::AuthResolver> = Arc::new(AuthSource::Store {
+        resolver: Arc::new(resolver),
+        provider_id: "github-copilot".into(),
+        oauth: oauth_registry
+            .lookup("github-copilot")
+            .expect("github-copilot OAuth provider registered"),
+    });
+    let mut collection = ProviderCollection::new();
+    collection
+        .register_route(
+            provider,
+            auth_resolver,
+            AuthProvenanceSource::OAuth {
+                kind: "github-copilot".into(),
+            },
+            CompatMetadata::default(),
+        )
+        .expect("register copilot route");
+    (dir, store, collection)
 }
 
 fn request(model: &str) -> Request {
@@ -313,8 +333,13 @@ async fn mount_stream(server: &MockServer, request_path: &str, status: u16) {
         .await;
 }
 
-async fn drain(provider: &dyn Provider, request: Request) -> Option<ProviderError> {
-    let mut stream = provider.stream(request);
+async fn drain(collection: &ProviderCollection, request: Request) -> Option<ProviderError> {
+    let spec = request.model.clone();
+    let prepared = collection
+        .prepare_call(&spec, request)
+        .await
+        .expect("prepare_call resolves the copilot route");
+    let mut stream = prepared.start_attempt().expect("start_attempt");
     let mut error = None;
     while let Some(result) = stream.next().await {
         match result {
@@ -332,9 +357,9 @@ async fn drain(provider: &dyn Provider, request: Request) -> Option<ProviderErro
 async fn assert_route(model: &str, request_path: &str) {
     let server = MockServer::start().await;
     mount_stream(&server, request_path, 200).await;
-    let (_dir, _store, provider) =
+    let (_dir, _store, collection) =
         factory_provider(model, "copilot-route-token", server.uri()).await;
-    let _ = drain(&*provider, request(model)).await;
+    let _ = drain(&collection, request(model)).await;
     let requests = server.received_requests().await.unwrap();
     assert_eq!(requests.len(), 1);
     assert_eq!(requests[0].url.path(), request_path);
@@ -360,7 +385,7 @@ async fn factory_built_copilot_anthropic_models_apply_catalog_compatibility() {
     for model in ["claude-opus-4.7", "claude-opus-4.8"] {
         let server = MockServer::start().await;
         mount_stream(&server, "/v1/messages", 200).await;
-        let (_dir, _store, provider) =
+        let (_dir, _store, collection) =
             factory_provider(model, "copilot-compat-token", server.uri()).await;
         let mut captured = request(model);
         captured.temperature = Some(0.3);
@@ -369,7 +394,7 @@ async fn factory_built_copilot_anthropic_models_apply_catalog_compatibility() {
             budget_tokens: Some(4096),
             level: ThinkingLevel::Medium,
         };
-        let _ = drain(&*provider, captured).await;
+        let _ = drain(&collection, captured).await;
 
         let requests = server.received_requests().await.unwrap();
         assert_eq!(requests.len(), 1, "{model}");
@@ -384,7 +409,7 @@ async fn factory_built_copilot_anthropic_models_apply_catalog_compatibility() {
     let server = MockServer::start().await;
     mount_stream(&server, "/v1/messages", 200).await;
     let model = "claude-sonnet-4.5";
-    let (_dir, _store, provider) =
+    let (_dir, _store, collection) =
         factory_provider(model, "copilot-compat-token", server.uri()).await;
     let mut captured = request(model);
     captured.temperature = Some(0.3);
@@ -393,7 +418,7 @@ async fn factory_built_copilot_anthropic_models_apply_catalog_compatibility() {
         budget_tokens: Some(4096),
         level: ThinkingLevel::Medium,
     };
-    let _ = drain(&*provider, captured).await;
+    let _ = drain(&collection, captured).await;
 
     let requests = server.received_requests().await.unwrap();
     let body: serde_json::Value = serde_json::from_slice(&requests[0].body).unwrap();
@@ -421,9 +446,9 @@ async fn github_copilot_headers_match_reviewed_static_contract() {
     ] {
         let server = MockServer::start().await;
         mount_stream(&server, request_path, 200).await;
-        let (_dir, _store, provider) =
+        let (_dir, _store, collection) =
             factory_provider(model, "copilot-header-token", server.uri()).await;
-        let _ = drain(&*provider, request(model)).await;
+        let _ = drain(&collection, request(model)).await;
         let requests = server.received_requests().await.unwrap();
         let headers = &requests[0].headers;
         for (name, expected) in github_copilot_static_headers() {
@@ -441,7 +466,7 @@ async fn github_copilot_headers_match_reviewed_static_contract() {
 
     let server = MockServer::start().await;
     mount_stream(&server, "/chat/completions", 200).await;
-    let (_dir, _store, provider) =
+    let (_dir, _store, collection) =
         factory_provider("gpt-4.1", "copilot-header-token", server.uri()).await;
     for name in [
         "User-Agent",
@@ -458,7 +483,7 @@ async fn github_copilot_headers_match_reviewed_static_contract() {
             .push((name.into(), "malicious-override".into()));
         assert!(
             matches!(
-                drain(&*provider, overridden).await,
+                drain(&collection, overridden).await,
                 Some(ProviderError::RequestFailed(_))
             ),
             "{name} must remain provider-managed"
@@ -473,15 +498,15 @@ async fn github_copilot_initiator_tracks_last_user_or_agent_message() {
     for request_path in ["/v1/messages", "/chat/completions", "/responses"] {
         mount_stream(&server, request_path, 200).await;
     }
-    let (_dir, _store, provider) =
+    let (_dir, _store, collection) =
         factory_provider("gpt-4.1", "copilot-initiator-token", server.uri()).await;
-    let _ = drain(&*provider, request("claude-sonnet-4.5")).await;
+    let _ = drain(&collection, request("claude-sonnet-4.5")).await;
 
     let mut assistant = request("gpt-4.1");
     assistant
         .messages
         .push(Message::Assistant(opi_ai::test_support::base_assistant()));
-    let _ = drain(&*provider, assistant).await;
+    let _ = drain(&collection, assistant).await;
 
     let mut tool = request("gpt-5.4");
     tool.messages.push(Message::ToolResult(ToolResultMessage {
@@ -495,7 +520,7 @@ async fn github_copilot_initiator_tracks_last_user_or_agent_message() {
         truncated: false,
         timestamp_ms: 0,
     }));
-    let _ = drain(&*provider, tool).await;
+    let _ = drain(&collection, tool).await;
 
     let requests = server.received_requests().await.unwrap();
     let initiators: BTreeMap<_, _> = requests
@@ -524,10 +549,10 @@ async fn github_copilot_vision_header_covers_user_and_tool_result_images() {
     for request_path in ["/v1/messages", "/chat/completions", "/responses"] {
         mount_stream(&server, request_path, 200).await;
     }
-    let (_dir, _store, provider) =
+    let (_dir, _store, collection) =
         factory_provider("gpt-4.1", "copilot-vision-token", server.uri()).await;
 
-    let _ = drain(&*provider, request("claude-sonnet-4.5")).await;
+    let _ = drain(&collection, request("claude-sonnet-4.5")).await;
     let mut user_image = request("gpt-4.1");
     user_image.messages = vec![Message::User(UserMessage {
         content: vec![InputContent::Image {
@@ -538,7 +563,7 @@ async fn github_copilot_vision_header_covers_user_and_tool_result_images() {
         }],
         timestamp_ms: 0,
     })];
-    let _ = drain(&*provider, user_image).await;
+    let _ = drain(&collection, user_image).await;
     let mut tool_image = request("gpt-5.4");
     tool_image
         .messages
@@ -556,7 +581,7 @@ async fn github_copilot_vision_header_covers_user_and_tool_result_images() {
             truncated: false,
             timestamp_ms: 0,
         }));
-    let _ = drain(&*provider, tool_image).await;
+    let _ = drain(&collection, tool_image).await;
 
     let requests = server.received_requests().await.unwrap();
     let by_path: BTreeMap<_, _> = requests
@@ -587,7 +612,7 @@ async fn github_copilot_vision_header_covers_user_and_tool_result_images() {
 
     let anthropic_server = MockServer::start().await;
     mount_stream(&anthropic_server, "/v1/messages", 200).await;
-    let (_dir, _store, anthropic_provider) = factory_provider(
+    let (_dir, _store, anthropic_collection) = factory_provider(
         "claude-sonnet-4.5",
         "copilot-vision-token",
         anthropic_server.uri(),
@@ -603,7 +628,7 @@ async fn github_copilot_vision_header_covers_user_and_tool_result_images() {
         }],
         timestamp_ms: 0,
     })];
-    let _ = drain(&*anthropic_provider, anthropic_user_image).await;
+    let _ = drain(&anthropic_collection, anthropic_user_image).await;
     let anthropic_requests = anthropic_server.received_requests().await.unwrap();
     assert_eq!(anthropic_requests.len(), 1);
     assert_eq!(
@@ -623,9 +648,9 @@ async fn github_copilot_next_stream_observes_changed_token_and_enterprise_base_u
     let second_server = MockServer::start().await;
     mount_stream(&first_server, "/chat/completions", 200).await;
     mount_stream(&second_server, "/chat/completions", 200).await;
-    let (_dir, store, provider) =
+    let (_dir, store, collection) =
         factory_provider("gpt-4.1", "old-token", first_server.uri()).await;
-    let _ = drain(&*provider, request("gpt-4.1")).await;
+    let _ = drain(&collection, request("gpt-4.1")).await;
     store
         .write(
             "github-copilot",
@@ -633,7 +658,7 @@ async fn github_copilot_next_stream_observes_changed_token_and_enterprise_base_u
         )
         .await
         .unwrap();
-    let _ = drain(&*provider, request("gpt-4.1")).await;
+    let _ = drain(&collection, request("gpt-4.1")).await;
 
     let first = first_server.received_requests().await.unwrap();
     let second = second_server.received_requests().await.unwrap();
@@ -669,9 +694,9 @@ async fn github_copilot_401_and_403_are_revoked_on_every_wire() {
         ] {
             let server = MockServer::start().await;
             mount_stream(&server, request_path, status).await;
-            let (_dir, _store, provider) =
+            let (_dir, _store, collection) =
                 factory_provider(model, "revoked-token", server.uri()).await;
-            let error = drain(&*provider, request(model))
+            let error = drain(&collection, request(model))
                 .await
                 .expect("auth-invalid response");
             assert!(

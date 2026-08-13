@@ -7,7 +7,8 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 
 use crate::auth::{
-    AuthProvenanceSource, AuthResolver, AuthScheme, ResolvedAuth, StaticAuthResolver,
+    AuthProvenance, AuthProvenanceSource, AuthResolver, AuthScheme, ResolvedAuth,
+    StaticAuthResolver,
 };
 use crate::credential::BoxAuthFuture;
 use crate::message::AssistantMessage;
@@ -39,13 +40,24 @@ impl AuthResolver for CountingAuthResolver {
         let count = self.count.clone();
         Box::pin(async move {
             count.fetch_add(1, Ordering::SeqCst);
-            Ok(ResolvedAuth {
-                scheme: AuthScheme::ApiKey,
-                secret: SecretString::from("test-key"),
-                base_url: None,
-                account_id: None,
-            })
+            Ok(resolved_auth())
         })
+    }
+}
+
+/// Build a non-secret [`ResolvedAuth`] for tests that drive `stream_prepared`
+/// directly (Phase 17.5: `Provider::stream` is gone; every dispatch goes through
+/// `stream_prepared(request, auth)`). The secret is a fixed placeholder and the
+/// provenance defaults; tests that need a specific secret or base_url construct
+/// their own `ResolvedAuth`.
+#[doc(hidden)]
+pub fn resolved_auth() -> ResolvedAuth {
+    ResolvedAuth {
+        scheme: AuthScheme::ApiKey,
+        secret: SecretString::from("test-key"),
+        base_url: None,
+        account_id: None,
+        provenance: AuthProvenance::default(),
     }
 }
 
@@ -266,7 +278,12 @@ impl Provider for MockProvider {
         &self.models
     }
 
-    fn stream(&self, request: Request) -> EventStream {
+    /// Prepared dispatch path (Phase 17.2): ignore the supplied resolved auth —
+    /// the mock does not authenticate. This lets the Agent's
+    /// `ProviderCollection::prepare_call` path drive the mock in tests;
+    /// `stream_call_count` then records one entry per attempt, so a counting
+    /// resolver can prove auth is resolved once across retries.
+    fn stream_prepared(&self, request: Request, _auth: crate::auth::ResolvedAuth) -> EventStream {
         self.call_log.lock().unwrap().push(request);
         let mut responses = self.responses.lock().unwrap();
         assert!(
@@ -291,15 +308,6 @@ impl Provider for MockProvider {
                 Box::pin(stream)
             }
         }
-    }
-
-    /// Prepared dispatch path (Phase 17.2): delegate to [`stream`](Self::stream),
-    /// ignoring the supplied resolved auth — the mock does not authenticate. This
-    /// lets the Agent's `ProviderCollection::prepare_call` path drive the mock in
-    /// tests; `stream_call_count` then records one entry per attempt, so a
-    /// counting resolver can prove auth is resolved once across retries.
-    fn stream_prepared(&self, request: Request, _auth: crate::auth::ResolvedAuth) -> EventStream {
-        self.stream(request)
     }
 
     fn replace_model_catalog(&mut self, models: Vec<ModelInfo>) -> Result<(), ProviderError> {

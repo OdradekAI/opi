@@ -46,8 +46,8 @@ use opi_ai::message::Message;
 
 use crate::session::{
     BranchSummaryEntry, CrashRecovery, ExtensionStateEntry, LabelAction, LabelEntry, MessageEntry,
-    ModelChangeEntry, SessionEntry, SessionHeader, SessionInfoEntry, SessionReader, SessionWriter,
-    ThinkingLevelChangeEntry,
+    ModelChangeEntry, ModelInputSource, SessionEntry, SessionHeader, SessionInfoEntry,
+    SessionReader, SessionWriter, ThinkingLevelChangeEntry,
 };
 use crate::session_event::ThinkingLevel;
 
@@ -454,11 +454,22 @@ impl SessionFacade {
         let id = self.next_id();
         let parent_id = self.content_tip_entry_id.clone();
         let timestamp = self.next_timestamp();
+        // Infer the input source from the recorded string: a canonical
+        // `provider:model` spec carries a provider separator, a bare model does
+        // not. Bare-input normalization itself is owned by the Reference
+        // Product; the facade only records the truthful source of what it was
+        // handed.
+        let input_source = if model.contains(':') {
+            ModelInputSource::Canonical
+        } else {
+            ModelInputSource::BareNormalized
+        };
         let entry = SessionEntry::ModelChange(ModelChangeEntry {
             id,
             parent_id,
             timestamp,
             model,
+            input_source: Some(input_source),
         });
         Ok(self.queue.enqueue(entry, PendingWriteKind::Metadata))
     }

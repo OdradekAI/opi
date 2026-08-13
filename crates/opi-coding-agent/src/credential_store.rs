@@ -1132,6 +1132,7 @@ impl CredentialResolver {
                 secret: cred.access.clone(),
                 base_url: cred.base_url.clone(),
                 account_id: cred.account_id.clone(),
+                provenance: Default::default(),
             });
         }
         // Slow path: hold the lock across re-read + refresh-HTTP + write so
@@ -1160,6 +1161,7 @@ impl CredentialResolver {
                 secret: cred.access.clone(),
                 base_url: cred.base_url.clone(),
                 account_id: cred.account_id.clone(),
+                provenance: Default::default(),
             });
         }
         let refresh = match tokio::time::timeout(self.refresh_timeout, oauth.refresh(&cred)).await {
@@ -1180,6 +1182,7 @@ impl CredentialResolver {
                     secret: refreshed.access,
                     base_url: refreshed.base_url,
                     account_id: refreshed.account_id,
+                    provenance: Default::default(),
                 })
             }
             Err(refresh_err) => {
@@ -1191,6 +1194,7 @@ impl CredentialResolver {
                         secret: reread.access.clone(),
                         base_url: reread.base_url.clone(),
                         account_id: reread.account_id.clone(),
+                        provenance: Default::default(),
                     }),
                     _ => Err(refresh_err),
                 }
@@ -1328,6 +1332,7 @@ impl AuthResolver for AuthSource {
                         secret,
                         base_url: None,
                         account_id: None,
+                        provenance: Default::default(),
                     })
                 })
             }
@@ -1356,6 +1361,7 @@ impl AuthResolver for AuthSource {
                             secret: SecretString::new(value.into_boxed_str()),
                             base_url: None,
                             account_id: None,
+                            provenance: Default::default(),
                         }),
                         _ => Err(ProviderError::CredentialNeeded { provider_id }),
                     }
@@ -1383,6 +1389,7 @@ impl AuthResolver for AuthSource {
                             secret: SecretString::new(value.into_boxed_str()),
                             base_url: None,
                             account_id: None,
+                            provenance: Default::default(),
                         });
                     }
                     match resolver
@@ -1395,6 +1402,7 @@ impl AuthResolver for AuthSource {
                             secret: resolved.value,
                             base_url: None,
                             account_id: None,
+                            provenance: Default::default(),
                         }),
                         None => Err(ProviderError::CredentialNeeded { provider_id }),
                     }

@@ -197,6 +197,7 @@ fn phase13_list_sessions_json_metadata_shape() {
             parent_id: Some("m1".into()),
             timestamp: "2026-07-05T12:00:04Z".into(),
             model: "mock:custom-model".into(),
+            input_source: None,
         }))
         .unwrap();
     writer

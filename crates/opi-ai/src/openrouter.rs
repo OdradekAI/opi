@@ -17,11 +17,12 @@ const BASE_URL: &str = "https://openrouter.ai/api";
 ///
 /// The provider resolves `openrouter:model` specs, routes through the
 /// OpenAI Chat Completions adapter, and sends `HTTP-Referer` and `X-Title`
-/// headers for app identification on the OpenRouter platform.
-pub fn openrouter_provider(api_key: String, base_url: Option<String>) -> OpenAiChatProvider {
+/// headers for app identification on the OpenRouter platform. Authentication
+/// is no longer baked into the provider; it arrives per call via the resolved
+/// auth passed to [`Provider::stream_prepared`](crate::provider::Provider::stream_prepared).
+pub fn openrouter_provider(base_url: Option<String>) -> OpenAiChatProvider {
     let base = base_url.unwrap_or_else(|| BASE_URL.into());
     OpenAiChatProvider::new_for_profile(
-        api_key,
         base,
         "openrouter".into(),
         CompatConfig::default(),

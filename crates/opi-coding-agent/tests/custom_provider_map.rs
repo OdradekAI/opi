@@ -446,7 +446,9 @@ async fn custom_mapped_provider_routes_three_wires_with_lazy_shared_env_auth() {
     use futures_util::StreamExt;
     use opi_ai::AssistantStreamEvent;
     use opi_ai::provider::{CacheRetention, Request, ThinkingConfig};
-    use opi_coding_agent::provider_factory::build_provider;
+    use opi_ai::{AuthProvenanceSource, CompatMetadata, ProviderCollection};
+    use opi_coding_agent::credential_store::FakeKeyringBackend;
+    use opi_coding_agent::provider_factory::build_provider_bundle;
     use tokio_util::sync::CancellationToken;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -524,9 +526,29 @@ max_output_tokens = 8192
         ),
     );
     let config = load_config_file(&path).unwrap();
-    let provider = build_provider(&config).expect("custom provider constructs before auth exists");
-    assert_eq!(provider.id(), "acme");
-    assert_eq!(provider.models().len(), 3);
+    let bundle = build_provider_bundle(
+        &config,
+        root.path().to_path_buf(),
+        Box::new(|| Box::new(FakeKeyringBackend::new())),
+    )
+    .await
+    .expect("custom provider bundle constructs before auth exists");
+    assert_eq!(bundle.provider.id(), "acme");
+    assert_eq!(bundle.provider.models().len(), 3);
+    // Phase 17.5: auth moved off the provider object onto the collection route.
+    // Register the bundle's resolver so prepare_call resolves env auth per
+    // logical call (one per model), observing the env value current at each call.
+    let mut collection = ProviderCollection::new();
+    collection
+        .register_route(
+            bundle.provider,
+            bundle.auth_resolver,
+            AuthProvenanceSource::Environment {
+                name: env_name.into(),
+            },
+            CompatMetadata::default(),
+        )
+        .expect("register acme route");
 
     for (index, model) in ["claude", "chat", "responses"].into_iter().enumerate() {
         // SAFETY: this test uses a task-unique environment variable and restores it.
@@ -547,7 +569,12 @@ max_output_tokens = 8192
             cache_retention: CacheRetention::None,
             session_id: None,
         };
-        let mut stream = provider.stream(request);
+        let spec = request.model.clone();
+        let prepared = collection
+            .prepare_call(&spec, request)
+            .await
+            .expect("prepare_call resolves the acme route");
+        let mut stream = prepared.start_attempt().expect("start_attempt");
         while let Some(event) = stream.next().await {
             match event {
                 Ok(
@@ -605,6 +632,7 @@ async fn production_custom_provider_reloads_store_then_env_auth_for_each_stream(
     use futures_util::StreamExt;
     use opi_ai::credential::Credential;
     use opi_ai::provider::{CacheRetention, Request, ThinkingConfig};
+    use opi_ai::{AuthProvenanceSource, CompatMetadata, ProviderCollection};
     use opi_coding_agent::credential_store::{
         FakeKeyringBackend, KEYCHAIN_PRESENCE_SERVICE, KEYCHAIN_SERVICE, KeyringBackend,
     };
@@ -692,14 +720,37 @@ max_output_tokens = 8192
         cache_retention: CacheRetention::None,
         session_id: None,
     };
-    let mut first = bundle.provider.stream(request());
+    // Phase 17.5: auth moved off the provider object onto the collection route.
+    // Each prepare_call resolves auth once: the first call reads the stored
+    // credential; after the store entries are deleted, the second call falls
+    // back to the env value (a new logical call, not a mid-retry re-resolution).
+    let mut collection = ProviderCollection::new();
+    collection
+        .register_route(
+            bundle.provider,
+            bundle.auth_resolver,
+            AuthProvenanceSource::CredentialStore {
+                kind: "keychain".into(),
+            },
+            CompatMetadata::default(),
+        )
+        .expect("register acme route");
+    let prepared = collection
+        .prepare_call("acme:chat", request())
+        .await
+        .expect("first prepare_call");
+    let mut first = prepared.start_attempt().expect("first start_attempt");
     while let Some(event) = first.next().await {
         event.unwrap();
     }
 
     KeyringBackend::delete(&backend, KEYCHAIN_SERVICE, "acme").unwrap();
     KeyringBackend::delete(&backend, KEYCHAIN_PRESENCE_SERVICE, "acme").unwrap();
-    let mut second = bundle.provider.stream(request());
+    let prepared = collection
+        .prepare_call("acme:chat", request())
+        .await
+        .expect("second prepare_call");
+    let mut second = prepared.start_attempt().expect("second start_attempt");
     while let Some(event) = second.next().await {
         event.unwrap();
     }
@@ -738,6 +789,7 @@ max_output_tokens = 8192
 async fn production_custom_provider_redacts_401_and_403_for_all_three_wires() {
     use futures_util::StreamExt;
     use opi_ai::provider::{CacheRetention, ProviderError, Request, ThinkingConfig};
+    use opi_ai::{AuthProvenanceSource, CompatMetadata, ProviderCollection};
     use opi_coding_agent::credential_store::FakeKeyringBackend;
     use opi_coding_agent::provider_factory::build_provider_bundle;
     use tokio_util::sync::CancellationToken;
@@ -815,9 +867,27 @@ max_output_tokens = 8192
                 session_id: None,
             };
 
-            let error = bundle
-                .provider
-                .stream(request)
+            // Phase 17.5: route through the collection so prepare_call resolves
+            // auth; the 401/403 redaction is preserved by the provider error path.
+            let mut collection = ProviderCollection::new();
+            collection
+                .register_route(
+                    bundle.provider,
+                    bundle.auth_resolver,
+                    AuthProvenanceSource::Environment {
+                        name: env_name.into(),
+                    },
+                    CompatMetadata::default(),
+                )
+                .expect("register acme route");
+            let spec = request.model.clone();
+            let prepared = collection
+                .prepare_call(&spec, request)
+                .await
+                .expect("prepare_call");
+            let error = prepared
+                .start_attempt()
+                .expect("start_attempt")
                 .next()
                 .await
                 .expect("auth failure stream item")
@@ -862,7 +932,9 @@ max_output_tokens = 8192
 async fn custom_responses_affinity_requires_explicit_true_compat() {
     use futures_util::StreamExt;
     use opi_ai::provider::{CacheRetention, Request, ThinkingConfig};
-    use opi_coding_agent::provider_factory::build_provider;
+    use opi_ai::{AuthProvenanceSource, CompatMetadata, ProviderCollection};
+    use opi_coding_agent::credential_store::FakeKeyringBackend;
+    use opi_coding_agent::provider_factory::build_provider_bundle;
     use tokio_util::sync::CancellationToken;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -920,7 +992,25 @@ send_session_id_header = true
         ),
     );
     let config = load_config_file(&path).unwrap();
-    let provider = build_provider(&config).unwrap();
+    let bundle = build_provider_bundle(
+        &config,
+        root.path().to_path_buf(),
+        Box::new(|| Box::new(FakeKeyringBackend::new())),
+    )
+    .await
+    .expect("custom responses provider bundle");
+    // Phase 17.5: route through the collection so prepare_call resolves env auth.
+    let mut collection = ProviderCollection::new();
+    collection
+        .register_route(
+            bundle.provider,
+            bundle.auth_resolver,
+            AuthProvenanceSource::Environment {
+                name: env_name.into(),
+            },
+            CompatMetadata::default(),
+        )
+        .expect("register acme route");
 
     for (model, session_id) in [
         ("omitted", "session-custom-omitted"),
@@ -942,7 +1032,12 @@ send_session_id_header = true
             cache_retention: CacheRetention::None,
             session_id: Some(session_id.into()),
         };
-        let mut stream = provider.stream(request);
+        let spec = request.model.clone();
+        let prepared = collection
+            .prepare_call(&spec, request)
+            .await
+            .expect("prepare_call");
+        let mut stream = prepared.start_attempt().expect("start_attempt");
         while let Some(event) = stream.next().await {
             event.unwrap();
         }

@@ -107,7 +107,7 @@ fn last_msg<'a>(body: &'a serde_json::Value, key: &str) -> &'a serde_json::Value
 // --- per-provider assertions ------------------------------------------------
 
 fn anthropic_asserts(is_error: bool, payload: &str) {
-    let provider = AnthropicProvider::new("k".into(), None);
+    let provider = AnthropicProvider::new(None);
     let body = provider.build_request_body(&request_with_tool_result(is_error, payload));
     let block = &last_msg(&body, "messages")["content"][0];
     assert_eq!(block["type"], "tool_result", "anthropic tool_result block");
@@ -158,7 +158,7 @@ fn bedrock_asserts(is_error: bool, payload: &str) {
 }
 
 fn openai_chat_asserts(is_error: bool, payload: &str) {
-    let provider = OpenAiChatProvider::new("k".into(), None);
+    let provider = OpenAiChatProvider::new(None);
     let body = provider.build_request_body(&request_with_tool_result(is_error, payload));
     let msg = last_msg(&body, "messages");
     assert_eq!(msg["role"], "tool", "openai_chat role");
@@ -185,7 +185,7 @@ fn openai_chat_asserts(is_error: bool, payload: &str) {
 }
 
 fn openai_responses_asserts(is_error: bool, payload: &str) {
-    let provider = OpenAiResponsesProvider::new("k".into(), None);
+    let provider = OpenAiResponsesProvider::new(None);
     let body = provider.build_request_body(&request_with_tool_result(is_error, payload));
     let item = last_msg(&body, "input");
     assert_eq!(
@@ -218,7 +218,7 @@ fn openai_responses_asserts(is_error: bool, payload: &str) {
 }
 
 fn gemini_asserts(is_error: bool, payload: &str) {
-    let provider = GeminiProvider::new("k".into(), None);
+    let provider = GeminiProvider::new(None);
     let body = provider.build_request_body(&request_with_tool_result(is_error, payload));
     let response = &last_msg(&body, "contents")["parts"][0]["functionResponse"]["response"];
     assert_eq!(
@@ -266,7 +266,7 @@ fn assert_chat_compatible_body(body: &serde_json::Value, is_error: bool, payload
 }
 
 fn vertex_inherits_gemini_shape(is_error: bool, payload: &str) {
-    let provider = VertexProvider::new("tok".into(), "proj".into(), "loc".into(), None);
+    let provider = VertexProvider::new("proj".into(), "loc".into(), None);
     let body = provider.build_request_body(&request_with_tool_result(is_error, payload));
     let response = &last_msg(&body, "contents")["parts"][0]["functionResponse"]["response"];
     assert_eq!(
@@ -307,14 +307,13 @@ fn tool_result_error_semantics_across_providers() {
     // Inheritance: Azure / OpenRouter / Mistral reuse the OpenAI Chat serializer
     // for BOTH failure (marker) and success (byte-identical payload).
     let azure = AzureOpenAIProvider::new(
-        "k".into(),
         Some("https://x.openai.azure.com".into()),
         "dep".into(),
         None,
     )
     .expect("azure provider constructs");
-    let openrouter = openrouter_provider("k".into(), None);
-    let mistral = mistral_provider("k".into(), None);
+    let openrouter = openrouter_provider(None);
+    let mistral = mistral_provider(None);
     for is_error in [true, false] {
         assert_chat_compatible_body(
             &azure.build_request_body(&request_with_tool_result(is_error, payload)),
@@ -339,8 +338,8 @@ fn tool_result_error_semantics_across_providers() {
 
     // Marker-drift pin: the two OpenAI surfaces must emit byte-identical failure
     // output through the shared marker constant.
-    let chat = OpenAiChatProvider::new("k".into(), None);
-    let responses = OpenAiResponsesProvider::new("k".into(), None);
+    let chat = OpenAiChatProvider::new(None);
+    let responses = OpenAiResponsesProvider::new(None);
     let chat_body = chat.build_request_body(&request_with_tool_result(true, payload));
     let responses_body = responses.build_request_body(&request_with_tool_result(true, payload));
     let chat_content = last_msg(&chat_body, "messages")["content"]

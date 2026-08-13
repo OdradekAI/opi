@@ -1296,7 +1296,7 @@ async fn harness_unprefixed_embedded_pricing_survives_switch_resume_and_fork() {
         harness
             .set_model_validated("claude-sonnet-4".into())
             .unwrap(),
-        "claude-sonnet-4"
+        "anthropic:claude-sonnet-4"
     );
     assert_total_cost(&harness, 18.0, "unprefixed set_model_validated");
     let unknown = harness
@@ -2560,6 +2560,7 @@ fn phase14_usage_subsets_survive_session_resume() {
     use opi_agent::compaction::CompactionConfig;
     use opi_agent::session::FORMAT_VERSION;
     use opi_ai::message::AssistantContent;
+    use opi_ai::model_info::{ModelInfo, WireApi};
     use opi_ai::stream::Usage;
     use opi_coding_agent::harness::ResumeInfo;
 
@@ -2624,7 +2625,16 @@ fn phase14_usage_subsets_survive_session_resume() {
 
     let reconstructed = opi_agent::session_context::reconstruct_context(&entries, &recovery);
     let resumed_harness = CodingHarness::builder(
-        Box::new(MockProvider::new("anthropic", Vec::new())),
+        Box::new(MockProvider::new_with_models(
+            "anthropic",
+            vec![ModelInfo::new(
+                "claude-sonnet-4",
+                "Claude Sonnet 4",
+                WireApi::AnthropicMessages,
+                ModelCapabilities::new(200_000, 8_192),
+            )],
+            Vec::new(),
+        )),
         "anthropic:claude-sonnet-4".into(),
         OpiConfig::default(),
         dir.path().to_path_buf(),
@@ -2913,7 +2923,7 @@ impl Provider for CompleteThenHangProvider {
             })
             .as_slice()
     }
-    fn stream(&self, _request: Request) -> EventStream {
+    fn stream_prepared(&self, _request: Request, _auth: opi_ai::auth::ResolvedAuth) -> EventStream {
         let mut count = self.calls.lock().unwrap();
         *count += 1;
         if *count == 1 {
@@ -3524,6 +3534,7 @@ fn write_phase13_recorded_session(
             parent_id: Some("msg-1".into()),
             timestamp: "2026-07-05T12:00:02Z".into(),
             model: recorded_model.into(),
+            input_source: None,
         }))
         .unwrap();
     writer
@@ -3565,15 +3576,16 @@ async fn phase13_resume_applies_recorded_model_and_thinking() {
     let workspace = tempfile::tempdir().unwrap();
     let mut harness = build_phase13_harness(workspace.path());
     // Harness starts on mock:mock-model; resume should re-apply the recorded
-    // mock:custom-model on the same provider.
-    assert_eq!(harness.model(), "mock:mock-model");
+    // mock:custom-model on the same provider. harness.model() returns the bare
+    // model-id half.
+    assert_eq!(harness.model(), "mock-model");
     harness
         .resume_session_id("resume-compat")
         .expect("resume succeeds");
 
     assert_eq!(
         harness.model(),
-        "mock:custom-model",
+        "custom-model",
         "resume re-applies the recorded model_change when the provider matches"
     );
     let thinking = harness.thinking_config();
@@ -3640,7 +3652,7 @@ fn phase13_builder_resume_applies_recorded_model_cli_path() {
 
     assert_eq!(
         harness.model(),
-        "mock:custom-model",
+        "custom-model",
         "CLI --resume path must re-apply the recorded model_change"
     );
     assert!(
@@ -3688,7 +3700,7 @@ async fn phase13_resume_emits_diagnostic_for_incompatible_recorded_model() {
 
     assert_eq!(
         harness.model(),
-        "mock:mock-model",
+        "mock-model",
         "CLI/config model is kept when the recorded model is incompatible"
     );
     let diags = harness.recorded_diagnostics();

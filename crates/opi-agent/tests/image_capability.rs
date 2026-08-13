@@ -45,7 +45,7 @@ impl Provider for TextOnlyProvider {
         &self.models
     }
 
-    fn stream(&self, _request: Request) -> EventStream {
+    fn stream_prepared(&self, _request: Request, _auth: opi_ai::auth::ResolvedAuth) -> EventStream {
         self.calls.fetch_add(1, Ordering::SeqCst);
         Box::pin(futures_util::stream::empty())
     }

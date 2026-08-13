@@ -50,7 +50,7 @@
 //!
 //! # Streaming Contract
 //!
-//! Registered providers must implement [`Provider::stream`] returning an
+//! Registered providers must implement [`Provider::stream_prepared`] returning an
 //! [`EventStream`](crate::provider::EventStream). The registry does not
 //! modify or wrap the stream — it passes the provider's stream through
 //! directly on resolve. Extensions that provide custom providers must honor

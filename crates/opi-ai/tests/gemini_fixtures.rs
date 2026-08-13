@@ -15,8 +15,8 @@ use wiremock::matchers::{body_partial_json, header, method, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 /// Helper: create a Gemini provider.
-fn gemini_provider(api_key: &str) -> GeminiProvider {
-    GeminiProvider::new(api_key.into(), None)
+fn gemini_provider() -> GeminiProvider {
+    GeminiProvider::new(None)
 }
 
 /// Helper: collect stream events asynchronously.
@@ -30,7 +30,7 @@ async fn collect_stream(stream: EventStream) -> Vec<AssistantStreamEvent> {
 
 #[test]
 fn gemini_provider_id_is_gemini() {
-    let provider = gemini_provider("test-key");
+    let provider = gemini_provider();
     assert_eq!(provider.id(), "gemini");
 }
 
@@ -41,7 +41,7 @@ fn gemini_provider_id_is_gemini() {
 #[test]
 fn gemini_resolves_model_in_registry() {
     let mut registry = ProviderRegistry::new();
-    registry.register(Box::new(gemini_provider("key")));
+    registry.register(Box::new(gemini_provider()));
     let (provider, model) = registry.resolve("gemini:gemini-2.5-flash").unwrap();
     assert_eq!(provider.id(), "gemini");
     assert_eq!(model.id, "gemini-2.5-flash");
@@ -50,7 +50,7 @@ fn gemini_resolves_model_in_registry() {
 #[test]
 fn gemini_registry_lists_provider_id() {
     let mut registry = ProviderRegistry::new();
-    registry.register(Box::new(gemini_provider("key")));
+    registry.register(Box::new(gemini_provider()));
     let ids = registry.provider_ids();
     assert!(ids.contains(&"gemini"));
 }
@@ -58,7 +58,7 @@ fn gemini_registry_lists_provider_id() {
 #[test]
 fn gemini_unknown_model_returns_error() {
     let mut registry = ProviderRegistry::new();
-    registry.register(Box::new(gemini_provider("key")));
+    registry.register(Box::new(gemini_provider()));
     let result = registry.resolve("gemini:nonexistent-model");
     assert!(result.is_err());
 }
@@ -69,7 +69,7 @@ fn gemini_unknown_model_returns_error() {
 
 #[test]
 fn gemini_request_body_uses_contents_field() {
-    let provider = gemini_provider("key");
+    let provider = gemini_provider();
     let request = Request {
         model: "gemini:gemini-2.5-flash".into(),
         system: Some("You are helpful.".into()),
@@ -129,7 +129,7 @@ fn gemini_request_body_uses_contents_field() {
 
 #[test]
 fn gemini_request_body_strips_provider_prefix() {
-    let provider = gemini_provider("key");
+    let provider = gemini_provider();
     let request = Request {
         model: "gemini:gemini-2.5-pro".into(),
         system: None,
@@ -160,7 +160,7 @@ fn gemini_request_body_strips_provider_prefix() {
 
 #[tokio::test]
 async fn gemini_text_streaming_produces_start_delta_done() {
-    let provider = gemini_provider("key");
+    let provider = gemini_provider();
     // Gemini streamGenerateContent SSE: each data line is a GenerateContentResponse
     let sse = "data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"Hi there\"}]},\"index\":0}]}\n\n\
                data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"\"}]},\"finishReason\":\"STOP\",\"index\":0}],\"usageMetadata\":{\"promptTokenCount\":10,\"candidatesTokenCount\":5,\"totalTokenCount\":15}}\n\n";
@@ -187,7 +187,7 @@ async fn gemini_text_streaming_produces_start_delta_done() {
 
 #[tokio::test]
 async fn gemini_done_event_has_provider_id() {
-    let provider = gemini_provider("key");
+    let provider = gemini_provider();
     let sse = "data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"Hello\"}]},\"index\":0}]}\n\n\
                data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"\"}]},\"finishReason\":\"STOP\",\"index\":0}],\"usageMetadata\":{\"promptTokenCount\":5,\"candidatesTokenCount\":2,\"totalTokenCount\":7}}\n\n";
 
@@ -209,7 +209,7 @@ async fn gemini_done_event_has_provider_id() {
 
 #[tokio::test]
 async fn gemini_tool_call_streaming_works() {
-    let provider = gemini_provider("key");
+    let provider = gemini_provider();
     let sse = "data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"functionCall\":{\"name\":\"read_file\",\"args\":{\"path\":\"foo.rs\"}}}]},\"index\":0}],\"usageMetadata\":{\"promptTokenCount\":20,\"candidatesTokenCount\":10,\"totalTokenCount\":30}}\n\n";
 
     let events = collect_stream(provider.stream_from_sse(sse, CancellationToken::new())).await;
@@ -233,7 +233,7 @@ async fn gemini_tool_call_streaming_works() {
 
 #[tokio::test]
 async fn gemini_error_event_routing() {
-    let provider = gemini_provider("key");
+    let provider = gemini_provider();
     let sse = "data: {\"error\":{\"code\":404,\"message\":\"Model not found\",\"status\":\"NOT_FOUND\"}}\n\n";
 
     let events = collect_stream(provider.stream_from_sse(sse, CancellationToken::new())).await;
@@ -252,7 +252,7 @@ async fn gemini_error_event_routing() {
 
 #[tokio::test]
 async fn gemini_usage_in_done_event() {
-    let provider = gemini_provider("key");
+    let provider = gemini_provider();
     let sse = "data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"test\"}]},\"index\":0}]}\n\n\
                data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"\"}]},\"finishReason\":\"STOP\",\"index\":0}],\"usageMetadata\":{\"promptTokenCount\":42,\"candidatesTokenCount\":13,\"totalTokenCount\":55}}\n\n";
 
@@ -275,7 +275,7 @@ async fn gemini_usage_in_done_event() {
 
 #[tokio::test]
 async fn gemini_cache_tokens_in_done_event() {
-    let provider = gemini_provider("key");
+    let provider = gemini_provider();
     let sse = "data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"test\"}]},\"index\":0}]}\n\n\
                data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"\"}]},\"finishReason\":\"STOP\",\"index\":0}],\"usageMetadata\":{\"promptTokenCount\":100,\"candidatesTokenCount\":20,\"totalTokenCount\":120,\"cachedContentTokenCount\":400}}\n\n";
 
@@ -299,7 +299,7 @@ async fn gemini_cache_tokens_in_done_event() {
 
 #[test]
 fn gemini_has_model_list() {
-    let provider = gemini_provider("key");
+    let provider = gemini_provider();
     let models = provider.models();
     assert!(
         !models.is_empty(),
@@ -321,7 +321,7 @@ fn gemini_has_model_list() {
 
 #[tokio::test]
 async fn gemini_multiple_text_deltas() {
-    let provider = gemini_provider("key");
+    let provider = gemini_provider();
     let sse = "data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"Hello\"}]},\"index\":0}]}\n\n\
                data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\" world\"}]},\"index\":0}]}\n\n\
                data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"!\"}]},\"index\":0}]}\n\n\
@@ -362,8 +362,7 @@ async fn gemini_multiple_text_deltas() {
 
 #[test]
 fn gemini_custom_base_url() {
-    let provider =
-        opi_ai::gemini::GeminiProvider::new("key".into(), Some("https://custom.proxy".into()));
+    let provider = opi_ai::gemini::GeminiProvider::new(Some("https://custom.proxy".into()));
     assert_eq!(provider.id(), "gemini");
 }
 
@@ -373,7 +372,7 @@ fn gemini_custom_base_url() {
 
 #[tokio::test]
 async fn gemini_multiple_tool_calls() {
-    let provider = gemini_provider("key");
+    let provider = gemini_provider();
     let sse = "data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"functionCall\":{\"name\":\"read_file\",\"args\":{\"path\":\"a.rs\"}}},{\"functionCall\":{\"name\":\"read_file\",\"args\":{\"path\":\"b.rs\"}}}]},\"index\":0}],\"usageMetadata\":{\"promptTokenCount\":20,\"candidatesTokenCount\":15,\"totalTokenCount\":35}}\n\n";
 
     let events = collect_stream(provider.stream_from_sse(sse, CancellationToken::new())).await;
@@ -397,7 +396,7 @@ async fn gemini_multiple_tool_calls() {
 
 #[tokio::test]
 async fn gemini_handles_crlf_line_endings() {
-    let provider = gemini_provider("key");
+    let provider = gemini_provider();
     let sse = "data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"Hi\"}]},\"index\":0}]}\r\n\r\n\
                data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"\"}]},\"finishReason\":\"STOP\",\"index\":0}],\"usageMetadata\":{\"promptTokenCount\":5,\"candidatesTokenCount\":2,\"totalTokenCount\":7}}\r\n\r\n";
 
@@ -422,7 +421,7 @@ async fn gemini_handles_crlf_line_endings() {
 
 #[tokio::test]
 async fn gemini_malformed_sse_data_surfaces_error() {
-    let provider = gemini_provider("key");
+    let provider = gemini_provider();
     let sse = "data: {not valid json}\n\n\
                data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"ok\"}]},\"index\":0}]}\n\n\
                data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"\"}]},\"finishReason\":\"STOP\",\"index\":0}],\"usageMetadata\":{\"promptTokenCount\":5,\"candidatesTokenCount\":2,\"totalTokenCount\":7}}\n\n";
@@ -454,7 +453,7 @@ async fn gemini_malformed_sse_data_surfaces_error() {
 
 #[tokio::test]
 async fn gemini_max_tokens_maps_to_length_stop_reason() {
-    let provider = gemini_provider("key");
+    let provider = gemini_provider();
     let sse = "data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"truncated\"}]},\"index\":0}]}\n\n\
                data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"\"}]},\"finishReason\":\"MAX_TOKENS\",\"index\":0}],\"usageMetadata\":{\"promptTokenCount\":10,\"candidatesTokenCount\":100,\"totalTokenCount\":110}}\n\n";
 
@@ -499,7 +498,7 @@ async fn stream_sends_text_request_body_and_auth_through_http() {
         .mount(&server)
         .await;
 
-    let provider = GeminiProvider::new("test-key".into(), Some(server.uri()));
+    let provider = GeminiProvider::new(Some(server.uri()));
     let request = Request {
         model: "gemini:gemini-2.5-flash".into(),
         system: Some("You are helpful.".into()),
@@ -522,7 +521,7 @@ async fn stream_sends_text_request_body_and_auth_through_http() {
         session_id: None,
     };
 
-    let mut stream = provider.stream(request);
+    let mut stream = provider.stream_prepared(request, opi_ai::test_support::resolved_auth());
     while let Some(result) = stream.next().await {
         match result {
             Ok(event) if event.is_terminal() => break,
@@ -563,7 +562,7 @@ async fn stream_cancellation_drains_without_hang_after_cancel() {
         .await;
 
     let cancel = CancellationToken::new();
-    let provider = GeminiProvider::new("test-key".into(), Some(server.uri()));
+    let provider = GeminiProvider::new(Some(server.uri()));
     let request = Request {
         model: "gemini:gemini-2.5-flash".into(),
         system: None,
@@ -585,7 +584,7 @@ async fn stream_cancellation_drains_without_hang_after_cancel() {
         cache_retention: CacheRetention::None,
         session_id: None,
     };
-    let mut stream = provider.stream(request);
+    let mut stream = provider.stream_prepared(request, opi_ai::test_support::resolved_auth());
 
     let _ = stream
         .next()

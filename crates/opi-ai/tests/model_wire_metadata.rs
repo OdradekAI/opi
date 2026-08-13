@@ -4,7 +4,6 @@ use std::sync::Arc;
 use futures_util::StreamExt;
 use opi_ai::ProviderHeaders;
 use opi_ai::anthropic;
-use opi_ai::auth::{AuthScheme, StaticAuthResolver};
 use opi_ai::azure_openai::AzureOpenAIProvider;
 use opi_ai::bedrock;
 use opi_ai::gemini;
@@ -23,7 +22,6 @@ use opi_ai::provider::{
 use opi_ai::registry::ModelCapabilities;
 use opi_ai::stream::Pricing;
 use opi_ai::vertex;
-use secrecy::SecretString;
 use tokio_util::sync::CancellationToken;
 use wiremock::MockServer;
 
@@ -189,19 +187,12 @@ fn unsupported_thinking_request(provider_id: &str, model_id: &str) -> Request {
     }
 }
 
-fn test_auth() -> Arc<dyn opi_ai::AuthResolver> {
-    Arc::new(StaticAuthResolver::new(
-        AuthScheme::Bearer,
-        SecretString::from("test-token"),
-    ))
-}
-
 async fn run_production_request(
     provider: &dyn Provider,
     request: Request,
 ) -> Result<(), ProviderError> {
     validate_request_capabilities(provider, &request)?;
-    let mut stream = provider.stream(request);
+    let mut stream = provider.stream_prepared(request, opi_ai::test_support::resolved_auth());
     while let Some(event) = stream.next().await {
         event?;
     }
@@ -212,7 +203,6 @@ async fn run_production_request(
 async fn chat_unsupported_thinking_level_is_rejected_before_http() {
     let server = MockServer::start().await;
     let provider = openai_chat::OpenAiChatProvider::for_route(
-        test_auth(),
         Some(server.uri()),
         "chat".into(),
         ProviderHeaders::default(),
@@ -240,7 +230,6 @@ async fn chat_unsupported_thinking_level_is_rejected_before_http() {
 async fn responses_unsupported_thinking_level_is_rejected_before_http() {
     let server = MockServer::start().await;
     let provider = openai_responses::OpenAiResponsesProvider::for_route(
-        test_auth(),
         Some(server.uri()),
         "responses".into(),
         ProviderHeaders::default(),
@@ -271,7 +260,6 @@ async fn responses_unsupported_thinking_level_is_rejected_before_http() {
 async fn strict_wire_unsupported_thinking_level_is_rejected_before_http() {
     let server = MockServer::start().await;
     let provider = anthropic::AnthropicProvider::for_route(
-        test_auth(),
         "strict".into(),
         vec![unsupported_thinking_model(
             "model",
@@ -312,7 +300,6 @@ fn every_builtin_model_declares_exact_wire() {
     }
 
     let azure = AzureOpenAIProvider::from_config(
-        "key".into(),
         Some("https://example.openai.azure.com".into()),
         vec!["deployment".into()],
         Some("2024-10-21".into()),

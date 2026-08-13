@@ -196,6 +196,7 @@ fn phase13_metadata_entries_round_trip_and_do_not_fork_branches() {
             parent_id: Some("e2".into()),
             timestamp: "2026-07-05T12:00:01Z".into(),
             model: "anthropic:claude-sonnet-4-5".into(),
+            input_source: None,
         }),
         SessionEntry::ThinkingLevelChange(ThinkingLevelChangeEntry {
             id: "tl1".into(),

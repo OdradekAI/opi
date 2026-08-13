@@ -1294,7 +1294,7 @@ async fn tui_event_loop<T: TuiTerminal, E: TuiEventSource>(
                     PickerAction::SelectModel(model) => {
                         let result = {
                             let mut h = harness.lock().await;
-                            h.set_model_validated(model).map(str::to_owned)
+                            h.set_model_validated(model)
                         };
                         let mut s = state.lock().unwrap();
                         match result {

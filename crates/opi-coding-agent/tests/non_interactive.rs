@@ -11,10 +11,6 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use opi_agent::extension::ExtensionRegistry;
-use opi_ai::anthropic::AnthropicProvider;
-use opi_ai::auth::{AuthResolver, ResolvedAuth};
-use opi_ai::credential::BoxAuthFuture;
-use opi_ai::http::HttpClient;
 use opi_ai::provider::ProviderError;
 use opi_ai::test_support::{self, MockProvider};
 use opi_coding_agent::config::{ExecutionStrategy, OpiConfig, PermissionDecision};
@@ -634,32 +630,27 @@ fn phase11_cli_help_tool_policy() {
 // Phase 14.2: typed CredentialNeeded -> exit 3, no prompt, no blocking
 // ---------------------------------------------------------------------------
 
-/// A resolver that always reports no credential is available for the given
-/// provider, producing `ProviderError::CredentialNeeded`.
-struct CredentialMissingResolver {
-    provider_id: &'static str,
-}
-
-impl AuthResolver for CredentialMissingResolver {
-    fn resolve<'a>(&'a self) -> BoxAuthFuture<'a, Result<ResolvedAuth, ProviderError>> {
-        let provider_id = self.provider_id.to_owned();
-        Box::pin(async move { Err(ProviderError::CredentialNeeded { provider_id }) })
-    }
-}
-
 #[tokio::test]
 async fn credential_needed_fails_without_prompt() {
-    let provider = AnthropicProvider::with_auth(
-        Arc::new(CredentialMissingResolver {
-            provider_id: "anthropic",
-        }),
-        None,
-        Arc::new(HttpClient::new()),
+    // Phase 17.5: CredentialNeeded now surfaces through the harness's
+    // ProviderCollection::prepare_call path. NonInteractiveRunner does not expose
+    // a custom auth resolver (the harness installs a dummy static resolver that
+    // mock-provider tests rely on), so a mock stream yielding CredentialNeeded
+    // exercises the identical classify_provider_error → AgentError::CredentialNeeded
+    // surfacing the runner maps to AuthFailure. The spec model resolves against
+    // the mock's catalog ("mock-model"); the CredentialNeeded provider_id is
+    // driven by the injected mock error.
+    let provider = MockProvider::new_with_errors(
+        "anthropic",
+        vec![opi_ai::test_support::MockResponse::Error(
+            ProviderError::CredentialNeeded {
+                provider_id: "anthropic".into(),
+            },
+        )],
     );
-
     let mut runner = NonInteractiveRunner::new(
         Box::new(provider),
-        "anthropic:claude-sonnet-4-5".into(),
+        "anthropic:mock-model".into(),
         OpiConfig::default(),
         std::env::current_dir().unwrap(),
         false,

@@ -16,11 +16,12 @@ const BASE_URL: &str = "https://api.mistral.ai";
 /// Create a Mistral-configured provider.
 ///
 /// The provider resolves `mistral:model` specs and routes through the
-/// OpenAI Chat Completions adapter using standard Bearer token auth.
-pub fn mistral_provider(api_key: String, base_url: Option<String>) -> OpenAiChatProvider {
+/// OpenAI Chat Completions adapter. Authentication is no longer baked into
+/// the provider; it arrives per call via the resolved auth passed to
+/// [`Provider::stream_prepared`](crate::provider::Provider::stream_prepared).
+pub fn mistral_provider(base_url: Option<String>) -> OpenAiChatProvider {
     let base = base_url.unwrap_or_else(|| BASE_URL.into());
     OpenAiChatProvider::new_for_profile(
-        api_key,
         base,
         "mistral".into(),
         CompatConfig::default(),

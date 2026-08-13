@@ -336,7 +336,10 @@ fn tracked_credential_runner(
     (
         NonInteractiveRunner::new(
             Box::new(provider),
-            "anthropic:claude-sonnet-4-5".into(),
+            // Phase 17.5: prepare_call strictly resolves the spec against the
+            // mock catalog (only "mock-model"); the CredentialNeeded provider_id
+            // is driven by the injected mock error, not the model spec.
+            "anthropic:mock-model".into(),
             OpiConfig::default(),
             workspace.to_path_buf(),
             false,
@@ -881,7 +884,7 @@ async fn phase14_outer_tui_rpc_credential_child() {
     let calls = provider.call_log_handle();
     let mut runner = RpcRunner::new(
         Box::new(provider),
-        "anthropic:claude-sonnet-4-5".into(),
+        "anthropic:mock-model".into(),
         OpiConfig::default(),
         workspace.path().to_path_buf(),
         false,

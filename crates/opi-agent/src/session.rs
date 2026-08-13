@@ -141,13 +141,36 @@ pub struct SessionInfoEntry {
 }
 
 /// Recorded provider/model change on the active branch (Phase 13
-/// `model_change` entry). `model` uses the `provider:model` spec format.
+/// `model_change` entry). `model` uses the canonical `provider:model` spec
+/// format; `input_source` records whether that canonical form was supplied
+/// directly or produced by normalizing a bare model input (Phase 17.5).
+///
+/// `input_source` is `#[serde(default)]` `Option` so legacy on-disk entries
+/// that predate the field deserialize as `None` rather than corrupting the
+/// session; the read-side legacy-normalization job is owned by Phase 17.8.
+/// Normalization today is a non-lossy provider-prefix prepend, so the bare
+/// original remains recoverable from the canonical form plus `BareNormalized`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelChangeEntry {
     pub id: String,
     pub parent_id: Option<String>,
     pub timestamp: String,
     pub model: String,
+    /// Whether `model` was supplied canonically or normalized from a bare
+    /// input. `None` marks a legacy entry written before this field existed.
+    #[serde(default)]
+    pub input_source: Option<ModelInputSource>,
+}
+
+/// How a `ModelChangeEntry.model` canonical spec was produced (Phase 17.5).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ModelInputSource {
+    /// The caller supplied a canonical `provider:model` spec directly.
+    Canonical,
+    /// The canonical spec was produced by normalizing a bare model input
+    /// against the single provable route.
+    BareNormalized,
 }
 
 /// Recorded thinking/reasoning level change (Phase 13
@@ -588,6 +611,7 @@ mod tests {
                 parent_id: Some("m1".into()),
                 timestamp: "2026-07-06T00:00:00Z".into(),
                 model: "mock:model".into(),
+                input_source: None,
             }),
             SessionEntry::ThinkingLevelChange(ThinkingLevelChangeEntry {
                 id: "thinking1".into(),

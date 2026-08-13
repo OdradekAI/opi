@@ -192,7 +192,19 @@ impl Provider for BedrockProvider {
         &self.models
     }
 
-    fn stream(&self, request: Request) -> EventStream {
+    /// Compound-credential exemption.
+    ///
+    /// This provider holds a multi-field AWS SigV4 credential
+    /// (`access_key_id` + `secret_access_key` + `session_token` + `region`) as
+    /// construction-time state in [`AwsCredentials`]. The supplied
+    /// [`ResolvedAuth`](crate::auth::ResolvedAuth) carries only a single secret
+    /// slot, which cannot carry SigV4's four-field credential shape, so the
+    /// resolved secret is ignored (`_auth`) and the request is signed and
+    /// dispatched directly with `self.credentials` via [`sign_request`]. This
+    /// provider holds no [`AuthResolver`](crate::auth::AuthResolver); credential
+    /// resolution runs before construction, so the frozen construction-time
+    /// credential is the sole auth source on every prepared call.
+    fn stream_prepared(&self, request: Request, _auth: crate::auth::ResolvedAuth) -> EventStream {
         let credentials = self.credentials.clone();
         let base_url = self.runtime_url();
         let body = self.build_converse_body(&request);
@@ -249,13 +261,6 @@ impl Provider for BedrockProvider {
         });
 
         Box::pin(ReceiverStream { rx })
-    }
-
-    fn stream_prepared(&self, request: Request, _auth: crate::auth::ResolvedAuth) -> EventStream {
-        // Bedrock auth is a multi-field AwsCredentials resolved at construction
-        // (not a single per-call secret), so a prepared call reuses the existing
-        // sigv4 dispatch path. (Phase 17 expand.)
-        self.stream(request)
     }
 }
 

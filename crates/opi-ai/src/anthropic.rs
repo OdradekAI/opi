@@ -3,11 +3,11 @@
 use std::sync::Arc;
 
 use futures_util::{StreamExt, stream};
-use secrecy::{ExposeSecret, SecretString};
+use secrecy::ExposeSecret;
 use serde::Deserialize;
 use tokio_util::sync::CancellationToken;
 
-use crate::auth::{AuthInvalidPolicy, AuthResolver, AuthScheme, ResolvedAuth, StaticAuthResolver};
+use crate::auth::{AuthInvalidPolicy, AuthScheme, ResolvedAuth};
 use crate::http::HttpClient;
 use crate::message::{AssistantContent, AssistantMessage, ToolCall};
 use crate::model_info::{AnthropicMessagesCompat, WireApi, WireCompat};
@@ -711,7 +711,6 @@ pub fn model_catalog() -> Vec<ModelInfo> {
 
 /// Concrete Anthropic Messages API provider.
 pub struct AnthropicProvider {
-    auth: Arc<dyn AuthResolver>,
     provider_id: String,
     default_base_url: String,
     models: Vec<ModelInfo>,
@@ -723,18 +722,13 @@ pub struct AnthropicProvider {
 }
 
 impl AnthropicProvider {
-    pub fn new(api_key: String, base_url: Option<String>) -> Self {
-        Self::with_client(api_key, base_url, Arc::new(HttpClient::new()))
+    pub fn new(base_url: Option<String>) -> Self {
+        Self::with_client(base_url, Arc::new(HttpClient::new()))
     }
 
     /// Create with a shared HTTP client for connection pooling.
-    pub fn with_client(api_key: String, base_url: Option<String>, client: Arc<HttpClient>) -> Self {
-        let auth = Arc::new(StaticAuthResolver::new(
-            AuthScheme::ApiKey,
-            SecretString::from(api_key),
-        ));
+    pub fn with_client(base_url: Option<String>, client: Arc<HttpClient>) -> Self {
         Self::for_route(
-            auth,
             "anthropic".into(),
             model_catalog(),
             base_url,
@@ -744,32 +738,9 @@ impl AnthropicProvider {
         )
     }
 
-    /// Build with an injected per-request auth resolver (Phase 14.2). The
-    /// resolver is consulted inside `Provider::stream` immediately before each
-    /// HTTP request; `new`/`with_client` wrap a fixed key in a
-    /// [`StaticAuthResolver`]. OAuth/env-backed resolution is supplied through
-    /// this entry point by `opi-coding-agent`.
-    pub fn with_auth(
-        auth: Arc<dyn AuthResolver>,
-        base_url: Option<String>,
-        client: Arc<HttpClient>,
-    ) -> Self {
-        Self::for_route(
-            auth,
-            "anthropic".into(),
-            model_catalog(),
-            base_url,
-            ProviderHeaders::default(),
-            client,
-            true,
-        )
-        .with_auth_invalid_policy(AuthInvalidPolicy::CredentialManaged)
-    }
-
     /// Build an Anthropic Messages route for a mapped provider.
     #[allow(clippy::too_many_arguments)]
     pub fn for_route(
-        auth: Arc<dyn AuthResolver>,
         provider_id: String,
         models: Vec<ModelInfo>,
         default_base_url: Option<String>,
@@ -780,7 +751,6 @@ impl AnthropicProvider {
         let default_base_url =
             default_base_url.unwrap_or_else(|| "https://api.anthropic.com".into());
         Self {
-            auth,
             provider_id,
             default_base_url,
             models,
@@ -1286,104 +1256,6 @@ fn mark_last_role_text(
 }
 
 impl Provider for AnthropicProvider {
-    fn stream(&self, request: Request) -> EventStream {
-        if let Err(error) = crate::provider::validate_request_capabilities(self, &request) {
-            return Box::pin(stream::once(async move { Err(error) }));
-        }
-        let auth = self.auth.clone();
-        let default_base_url = self.default_base_url.clone();
-        let provider_id = self.provider_id.clone();
-        let auth_invalid_policy = self.auth_invalid_policy;
-        let direct_oauth_beta = self.direct_oauth_beta;
-        let credential_base_url_enabled = self.copilot_headers;
-        let model_id = request
-            .model
-            .split_once(':')
-            .map(|(_, model_id)| model_id)
-            .unwrap_or(&request.model);
-        let model_base_url = self
-            .models
-            .iter()
-            .find(|model| model.id == model_id)
-            .and_then(|model| model.base_url.clone());
-        let body = self.build_request_body(&request);
-        let cancel = request.cancel.clone();
-        let timeout = request.timeout;
-        let copilot_headers = if self.copilot_headers {
-            match github_copilot_route_headers(&request) {
-                Ok(mut headers) => {
-                    let initiator = github_copilot_initiator(&request);
-                    headers.push(("X-Initiator".into(), initiator.into()));
-                    Ok(headers)
-                }
-                Err(error) => Err(error),
-            }
-        } else {
-            Ok(Vec::new())
-        };
-        let extra_headers = copilot_headers.and_then(|route_headers| {
-            self.headers
-                .merge_request(&route_headers, &request.extra_headers)
-        });
-        let http_client = self.client.client().clone();
-
-        let (tx, rx) = tokio::sync::mpsc::channel(64);
-        // Clone the sender so the spawned task can observe receiver drop and
-        // abort credential resolution / HTTP the moment the caller drops the
-        // stream, instead of running detached until its next send attempt.
-        let tx_closed = tx.clone();
-
-        tokio::spawn(async move {
-            let work = async {
-                // Validate extra headers before any network call.
-                let extra_headers = match extra_headers {
-                    Ok(headers) => headers,
-                    Err(error) => {
-                        let _ = tx.send(Err(error)).await;
-                        return;
-                    }
-                };
-                let resolved = match auth.resolve().await {
-                    Ok(resolved) => resolved,
-                    Err(e) => {
-                        let _ = tx.send(Err(e)).await;
-                        return;
-                    }
-                };
-                let base_url = credential_base_url_enabled
-                    .then(|| resolved.base_url.clone())
-                    .flatten()
-                    .or(model_base_url)
-                    .unwrap_or(default_base_url);
-                if let Err(e) = Self::stream_http(
-                    http_client,
-                    resolved,
-                    base_url,
-                    provider_id,
-                    auth_invalid_policy,
-                    direct_oauth_beta,
-                    &body,
-                    cancel,
-                    timeout,
-                    extra_headers,
-                    &tx,
-                )
-                .await
-                {
-                    let _ = tx.send(Err(e)).await;
-                }
-            };
-
-            tokio::select! {
-                biased;
-                _ = tx_closed.closed() => (),
-                _ = work => {},
-            }
-        });
-
-        Box::pin(ReceiverStream { rx })
-    }
-
     fn stream_prepared(
         &self,
         request: Request,
@@ -1583,12 +1455,7 @@ mod tests {
 
     /// Build a test AnthropicProvider whose models have cache capabilities.
     fn cache_capable_provider() -> AnthropicProvider {
-        let auth = Arc::new(StaticAuthResolver::new(
-            crate::auth::AuthScheme::ApiKey,
-            SecretString::from("test-key"),
-        ));
-        AnthropicProvider::with_auth(
-            auth,
+        AnthropicProvider::with_client(
             Some("https://api.anthropic.com".into()),
             Arc::new(crate::http::HttpClient::new()),
         )
