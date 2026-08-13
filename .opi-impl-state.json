@@ -1089,7 +1089,7 @@
       "definition_of_done": "Agent and agent_loop additively consume the 17.3 EvidenceSink lifecycle with no-op/in-memory sinks, allocate run/turn/provider/tool/retry/compaction identities before emission, retain one immutable provider route across retries, attach requested/resolved/actual route and authorization identity facts, advance versioned EvidenceHealth on failures, and preserve cancellation/partial outcomes. Public Agent tests reconstruct ordered call graphs and prove health generation is copied into authorization rather than shared mutably. This is an explicit expand step: the Reference Product remains on its existing TraceSink capture path and no Phase 17 product scenario is closed; 17.7 must migrate every production trace consumer, install the file adapter, and remove the legacy types in one contract step. No exporter, database, file adapter, raw capture, or compatibility facade is introduced here.",
       "definition_source": "inferred",
       "replaces": "Cut over production evidence and migrate legacy session artifacts",
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "17.2",
         "17.4"
@@ -1144,6 +1144,11 @@
           "field": "criterion_slice",
           "reason": "P17-FAL-001..003 Agent evidence/execution slice is owned here: allocation/emission ordering, provider retries, tool calls, compaction, cancellation, partial outcomes, health advancement, and terminal finalization preserve the actual owning outcome with monotonic identity and no fabricated completion. Task 17.7 closes the product sink path and 17.9 composes the aggregate matrix.",
           "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Failure, cancellation, and partial-result semantics"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "C.1a append: adding evidence_sink to AgentLoopContext (Phase 17.6) required updating every AgentLoopContext construction site; these test files construct AgentLoopContext directly and needed evidence_sink: None.",
+          "source": "Phase 17.6 AgentLoopContext.evidence_sink field addition"
         }
       ],
       "tier": "library",
@@ -1170,9 +1175,9 @@
         "opi_agent::agent_loop provider/retry/tool/compaction paths"
       ],
       "substrate_only": true,
-      "iteration_count": 0,
+      "iteration_count": 2,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "eaf51ab",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "crates/opi-agent/src/evidence.rs",
@@ -1187,13 +1192,33 @@
         "crates/opi-agent/tests/evidence_runtime.rs",
         "crates/opi-agent/tests/retry_agent.rs",
         "crates/opi-agent/tests/tool_authority.rs",
-        "crates/opi-agent/tests/trace_envelope.rs"
+        "crates/opi-agent/tests/trace_envelope.rs",
+        "crates/opi-agent/tests/agent_loop_mock.rs",
+        "crates/opi-agent/tests/agent_loop_semantics.rs",
+        "crates/opi-agent/tests/diagnostics_runtime.rs",
+        "crates/opi-agent/tests/image_capability.rs",
+        "crates/opi-agent/tests/thinking_integration.rs",
+        "crates/opi-agent/tests/tool_event_redaction.rs",
+        "crates/opi-agent/tests/tool_validation.rs",
+        "crates/opi-agent/tests/truncated_propagation.rs"
       ],
       "last_attempt": null,
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "b547f45f463658b465ae6d40aac48446faf757e8",
+      "evidence": {
+        "task": "17.6",
+        "dod_sha256": "4e705688dcbfb6487861a643f8d98b76e9c28253945347ee61621e72eac2adef",
+        "verification": "library; smoke scoped opi-agent --test evidence_runtime --test retry_agent --test tool_authority --test trace_envelope: fmt+clippy+rustdoc green; evidence_runtime 4, retry_agent 11, tool_authority 6, trace_envelope 43; regression tool_validation 17, agent_loop_mock 5, agent_loop_semantics 20, diagnostics_runtime 36, sdk_embedding 37",
+        "evaluator": "passed",
+        "acceptance": "substrate_only (no Phase 17 product scenario closed); production call sites Agent::prompt/continue_/retry_last_turn -> run_with_token -> agent_loop exercised by evidence_runtime.rs"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-08-13T21:09:42+08:00",
+          "attempt": 2,
+          "summary": "17.6 passing @b547f45 (Agent evidence runtime substrate). D.2 round 1 (wf_73c34236) must-fix: provider record missing actual route (P17-PRV-005 three-stage) + tool record missing authorization identity; fixed in b47cd8a (requested/resolved/actual route facts; execute_tool surfaces Authorized decision so Tool record carries registration_id+capability+decision, field named decision to avoid SecretRedactor HTTP-Authorization-header scrub). D.2 round 2 (wf_9c7f015f) clean must_fix=[]. Deferred to 17.7 (product facts per placement table): setup/finalize_run/full FinalizedManifest (RuntimeInputBinding/ConfigIdentity/UserPolicyFacts), compaction identity (harness-side per event.rs:90), fail-closed policy (P17-EVD-009). 1 advisory: capability label via Debug (no stability contract) -> typed capability arrives with 17.7 manifest."
+        }
+      ]
     },
     {
       "id": "17.7",
@@ -3040,6 +3065,16 @@
       "rejected_count": 0,
       "ran_at": "2026-08-13T11:00:26+08:00",
       "task_id": "17.4",
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": "wf_9c7f015f-df3",
+      "folded_count": 0,
+      "flagged_count": 1,
+      "rejected_count": 0,
+      "ran_at": "2026-08-13T21:09:42+08:00",
+      "task_id": "17.6",
       "criterion_id": null
     }
   ]
