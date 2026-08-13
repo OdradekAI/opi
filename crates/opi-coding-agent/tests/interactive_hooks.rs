@@ -3,6 +3,8 @@
 //! Directly exercises the before_tool_call hook. Interactive mode delegates
 //! tool availability to startup tool selection; the hook itself is pass-through.
 
+mod common;
+
 use opi_agent::hooks::{AgentHooks, BeforeToolCallContext, BeforeToolCallResult};
 use opi_coding_agent::harness::InteractiveCodingHooks;
 
@@ -18,7 +20,7 @@ fn make_ctx(tool_name: &str) -> BeforeToolCallContext {
 async fn assert_allowed(hooks: &InteractiveCodingHooks, tool_name: &str) {
     let result = hooks.before_tool_call(make_ctx(tool_name)).await;
     assert!(
-        matches!(result, BeforeToolCallResult::Allow),
+        matches!(result, BeforeToolCallResult::Continue),
         "{tool_name} should be allowed"
     );
 }

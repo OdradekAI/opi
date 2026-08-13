@@ -2,6 +2,8 @@
 //!
 //! DoD: "invalid args become error tool result"
 
+mod common;
+
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
@@ -303,8 +305,10 @@ async fn invalid_args_become_error_tool_result() {
 //
 // Drives opi_agent::agent_loop with a tool call whose arguments fail schema
 // validation and pins the contract: the failure is a normal runtime outcome
-// (Ok return, an error ToolResult persisted, run continues), and neither
-// before_tool_call nor Tool::execute runs because validation precedes them.
+// (Ok return, an error ToolResult persisted, run continues), and Tool::execute
+// never runs on invalid arguments. Under the Phase 17.4 invocation order the
+// before_tool_call hook runs BEFORE schema validation, so the hook may observe
+// schema-unvalidated args; the tool still never executes on invalid arguments.
 // ---------------------------------------------------------------------------
 
 struct ScriptedProvider {
@@ -499,7 +503,7 @@ impl AgentHooks for ProbeHooks {
         let before_called = self.before_called.clone();
         Box::pin(async move {
             *before_called.lock().unwrap() = true;
-            BeforeToolCallResult::Allow
+            BeforeToolCallResult::Continue
         })
     }
 
@@ -576,8 +580,10 @@ fn tool_call_response(call_id: &str, name: &str, args: &str) -> Vec<AssistantStr
 
 // DoD: invalid arguments are surfaced through the production tool scheduler as
 // a normal runtime outcome: the run returns Ok, an error ToolResult is
-// persisted, the run continues to the next turn, and neither before_tool_call
-// nor Tool::execute runs.
+// persisted, the run continues to the next turn, and Tool::execute never runs.
+// Under the Phase 17.4 invocation order the before_tool_call hook runs BEFORE
+// schema validation, so the hook may observe schema-unvalidated args; the tool
+// still never executes on invalid arguments.
 #[tokio::test]
 async fn phase8_tool_validation_failure_contract() {
     let executed = Arc::new(Mutex::new(false));
@@ -599,7 +605,9 @@ async fn phase8_tool_validation_failure_contract() {
 
     let context = AgentLoopContext {
         collection: Arc::new(single_route_collection(Box::new(provider))),
-        tools,
+        registry: common::test_registry(tools),
+        authorizer: Some(common::permissive_authorizer()),
+        evidence_health: opi_agent::evidence::EvidenceHealth::healthy(),
         state: NextTurnState::new(
             vec![AgentMessage::Llm(Message::User(
                 opi_ai::message::UserMessage {
@@ -638,8 +646,8 @@ async fn phase8_tool_validation_failure_contract() {
         "Tool::execute must not run when arguments fail validation"
     );
     assert!(
-        !*before_called.lock().unwrap(),
-        "before_tool_call must not run when arguments fail validation"
+        *before_called.lock().unwrap(),
+        "hook may observe schema-unvalidated args; the tool never executes on invalid arguments"
     );
 
     let error_result = messages
@@ -694,7 +702,9 @@ async fn phase8_malformed_tool_arguments_do_not_execute_permissive_tool() {
 
     let context = AgentLoopContext {
         collection: Arc::new(single_route_collection(Box::new(provider))),
-        tools,
+        registry: common::test_registry(tools),
+        authorizer: Some(common::permissive_authorizer()),
+        evidence_health: opi_agent::evidence::EvidenceHealth::healthy(),
         state: NextTurnState::new(
             vec![AgentMessage::Llm(Message::User(
                 opi_ai::message::UserMessage {
@@ -800,7 +810,9 @@ async fn malformed_tool_arguments_result_is_structured_error_not_panic() {
 
     let context = AgentLoopContext {
         collection: Arc::new(single_route_collection(Box::new(provider))),
-        tools,
+        registry: common::test_registry(tools),
+        authorizer: Some(common::permissive_authorizer()),
+        evidence_health: opi_agent::evidence::EvidenceHealth::healthy(),
         state: NextTurnState::new(
             vec![AgentMessage::Llm(Message::User(
                 opi_ai::message::UserMessage {
@@ -885,7 +897,9 @@ async fn phase8_malformed_tool_arguments_do_not_execute_parallel_permissive_tool
 
     let context = AgentLoopContext {
         collection: Arc::new(single_route_collection(Box::new(provider))),
-        tools,
+        registry: common::test_registry(tools),
+        authorizer: Some(common::permissive_authorizer()),
+        evidence_health: opi_agent::evidence::EvidenceHealth::healthy(),
         state: NextTurnState::new(
             vec![AgentMessage::Llm(Message::User(
                 opi_ai::message::UserMessage {

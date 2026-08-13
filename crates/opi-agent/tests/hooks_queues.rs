@@ -2,6 +2,8 @@
 //!
 //! DoD: "before/after, should-stop, steering, follow-up tested"
 
+mod common;
+
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
@@ -166,7 +168,7 @@ impl AgentHooks for RecordingHooks {
         &self,
         _ctx: BeforeToolCallContext,
     ) -> Pin<Box<dyn Future<Output = BeforeToolCallResult> + Send>> {
-        Box::pin(async { BeforeToolCallResult::Allow })
+        Box::pin(async { BeforeToolCallResult::Continue })
     }
 
     fn after_tool_call(
@@ -226,7 +228,7 @@ impl AgentHooks for ReplacingHooks {
         &self,
         _ctx: BeforeToolCallContext,
     ) -> Pin<Box<dyn Future<Output = BeforeToolCallResult> + Send>> {
-        Box::pin(async { BeforeToolCallResult::Allow })
+        Box::pin(async { BeforeToolCallResult::Continue })
     }
 
     fn after_tool_call(
@@ -323,7 +325,8 @@ fn make_agent(
 ) -> Agent {
     Agent::new(
         Arc::new(single_route_collection(Box::new(provider))),
-        tools,
+        common::registrations_from(tools),
+        Some(common::permissive_authorizer()),
         "recording:mock-model".into(),
         None,
         InferenceConfig::default(),
@@ -736,7 +739,7 @@ impl AgentHooks for OrderHooks {
         let log = self.log.clone();
         Box::pin(async move {
             log.lock().unwrap().push("before".into());
-            BeforeToolCallResult::Allow
+            BeforeToolCallResult::Continue
         })
     }
 
@@ -796,7 +799,7 @@ impl AgentHooks for DenyHooks {
                     reason: "denied by hook".into(),
                 }
             } else {
-                BeforeToolCallResult::Allow
+                BeforeToolCallResult::Continue
             }
         })
     }
@@ -882,16 +885,18 @@ async fn phase8_hook_contract_order() {
     );
 }
 
-// DoD: before_tool_call runs AFTER schema validation. An invalid-args call
-// fails validation before the hook and before execute; a valid-args call with
-// a Deny hook runs the hook but still does not execute the tool.
+// DoD (Phase 17.4): before_tool_call runs BEFORE schema validation. An
+// invalid-args call still runs the hook (which observes the proposed call) but
+// never reaches execute; a valid-args call with a Deny hook runs the hook,
+// passes validation, and still does not execute the tool.
 #[tokio::test]
-async fn phase8_hook_contract_before_call_after_validation() {
+async fn phase8_hook_runs_before_schema_validation() {
     let execs = Arc::new(Mutex::new(Vec::<String>::new()));
 
-    // Case 1: invalid arguments -> schema validation fails inside execute_tool
-    // before before_tool_call and before tool.execute. The error result does
-    // not terminate, so the loop needs a second response to end gracefully.
+    // Case 1: invalid arguments -> before_tool_call runs first, then schema
+    // validation fails inside execute_tool before tool.execute. The error
+    // result does not terminate, so the loop needs a second response to end
+    // gracefully.
     let provider = RecordingProvider::new(vec![
         tool_call_response("c-invalid", "echo", r#"{}"#),
         text_response("done"),
@@ -907,9 +912,10 @@ async fn phase8_hook_contract_before_call_after_validation() {
     let mut agent = make_agent(provider, vec![Box::new(tool)], hooks);
     let result = agent.prompt("test").await.unwrap();
 
-    assert!(
-        before_calls.lock().unwrap().is_empty(),
-        "before_tool_call must NOT run when schema validation fails first"
+    assert_eq!(
+        before_calls.lock().unwrap().len(),
+        1,
+        "before_tool_call runs before schema validation, so it observes the invalid-args call"
     );
     assert!(
         execs.lock().unwrap().is_empty(),
@@ -950,7 +956,7 @@ async fn phase8_hook_contract_before_call_after_validation() {
     assert_eq!(
         before_calls2.lock().unwrap().as_slice(),
         &["echo".to_string()],
-        "before_tool_call must run after validation passes"
+        "before_tool_call runs before validation; it observes the valid-args call"
     );
     assert!(
         execs.lock().unwrap().is_empty(),
@@ -1109,7 +1115,7 @@ impl AgentHooks for ObserveAppliedStateHooks {
         &self,
         _ctx: BeforeToolCallContext,
     ) -> Pin<Box<dyn Future<Output = BeforeToolCallResult> + Send>> {
-        Box::pin(async { BeforeToolCallResult::Allow })
+        Box::pin(async { BeforeToolCallResult::Continue })
     }
 }
 
@@ -1179,7 +1185,7 @@ impl AgentHooks for FailPrepareHooks {
         &self,
         _ctx: BeforeToolCallContext,
     ) -> Pin<Box<dyn Future<Output = BeforeToolCallResult> + Send>> {
-        Box::pin(async { BeforeToolCallResult::Allow })
+        Box::pin(async { BeforeToolCallResult::Continue })
     }
 }
 

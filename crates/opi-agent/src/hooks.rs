@@ -17,10 +17,16 @@ pub struct BeforeToolCallContext {
 }
 
 /// Result of the before_tool_call hook.
+///
+/// Phase 17.4 (AUT-006): this is a non-authoritative observation hook. It may
+/// deny a tool call, but it is **not** an authority grant; the former `Allow`
+/// variant is renamed `Continue` so no hook result can be mistaken for an
+/// authorization decision. The authoritative decision is owned by the
+/// [`ToolAuthorizer`](crate::authority::ToolAuthorizer).
 #[non_exhaustive]
 pub enum BeforeToolCallResult {
-    /// Allow the tool call to proceed.
-    Allow,
+    /// Continue to schema validation and trusted authorization (not a grant).
+    Continue,
     /// Reject the tool call with an error message.
     Deny { reason: String },
 }
@@ -98,7 +104,7 @@ pub trait AgentHooks: Send + Sync {
         &self,
         _ctx: BeforeToolCallContext,
     ) -> Pin<Box<dyn Future<Output = BeforeToolCallResult> + Send>> {
-        Box::pin(async { BeforeToolCallResult::Allow })
+        Box::pin(async { BeforeToolCallResult::Continue })
     }
 
     /// Hook called after a tool has been executed.

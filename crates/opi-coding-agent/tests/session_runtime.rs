@@ -1815,13 +1815,8 @@ fn resume_session_id_surfaces_recovery_diagnostics_in_resource_metadata() {
 #[tokio::test]
 #[allow(clippy::await_holding_lock)]
 async fn multi_assistant_turn_accumulates_all_assistant_usages() {
-    use std::pin::Pin;
-
-    use opi_agent::tool::{Tool, ToolError, ToolResult};
-    use opi_ai::message::{AssistantContent, OutputContent, ToolCall, ToolDef};
+    use opi_ai::message::{AssistantContent, ToolCall};
     use opi_ai::stream::{AssistantStreamEvent, StopReason, Usage};
-    use serde_json::json;
-    use tokio_util::sync::CancellationToken;
 
     let _lock = session_lock();
     let dir = tempfile::tempdir().unwrap();
@@ -1876,36 +1871,11 @@ async fn multi_assistant_turn_accumulates_all_assistant_usages() {
 
     let provider = MockProvider::new("mock", vec![tool_response, final_response]);
 
-    // Minimal no-op tool so the agent can satisfy the tool call.
-    struct NoopTool;
-    impl Tool for NoopTool {
-        fn definition(&self) -> ToolDef {
-            ToolDef {
-                name: "noop".into(),
-                description: "noop tool".into(),
-                input_schema: json!({"type": "object"}),
-            }
-        }
-        fn execute(
-            &self,
-            _call_id: &str,
-            _arguments: serde_json::Value,
-            _signal: CancellationToken,
-            _on_update: Option<opi_agent::tool::UpdateCallback>,
-        ) -> Pin<Box<dyn std::future::Future<Output = Result<ToolResult, ToolError>> + Send>>
-        {
-            Box::pin(async move {
-                Ok(ToolResult {
-                    content: vec![OutputContent::Text { text: "ok".into() }],
-                    details: None,
-                    is_error: false,
-                    terminate: false,
-                    truncated: false,
-                    diagnostics: vec![],
-                })
-            })
-        }
-    }
+    // Phase 17.4: the harness no longer accepts injected custom tools (only
+    // built-in registrations run). The scripted "noop" tool-call below is not a
+    // registered tool, so it resolves to an unknown-tool error result and the
+    // turn still completes within one persist_turn — which is exactly what this
+    // turn_count / token-summing assertion exercises.
 
     let mut harness = CodingHarness::new(
         Box::new(provider),
@@ -1914,7 +1884,6 @@ async fn multi_assistant_turn_accumulates_all_assistant_usages() {
         std::env::current_dir().unwrap(),
         opi_coding_agent::project_trust::TrustDecision::Trusted,
     );
-    harness.add_tool(Box::new(NoopTool));
 
     let _ = harness.prompt("Use the tool").await.unwrap();
 

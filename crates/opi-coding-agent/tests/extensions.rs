@@ -6,6 +6,8 @@
 //! - Extension events are observed during agent lifecycle
 //! - Extension state persists across agent invocations
 
+mod common;
+
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
@@ -169,7 +171,8 @@ async fn extension_tool_executes_through_agent_loop() {
     let hooks = registry.wrap_hooks(Box::new(TestHooks));
     let mut agent = Agent::new(
         Arc::new(single_route_collection(Box::new(provider))),
-        ext_tools,
+        common::registrations_from(ext_tools),
+        Some(common::permissive_authorizer()),
         "mock:mock-model".into(),
         None,
         InferenceConfig::default(),
@@ -270,7 +273,8 @@ async fn extension_hooks_observe_builtin_tool_calls() {
     let hooks = registry.wrap_hooks(Box::new(TestHooks));
     let mut agent = Agent::new(
         Arc::new(single_route_collection(Box::new(provider))),
-        vec![Box::new(DummyTool)],
+        common::registrations_from(vec![Box::new(DummyTool)]),
+        Some(common::permissive_authorizer()),
         "mock:mock-model".into(),
         None,
         InferenceConfig::default(),
@@ -359,7 +363,8 @@ async fn extension_can_block_tool_in_agent_loop() {
     let hooks = registry.wrap_hooks(Box::new(TestHooks));
     let mut agent = Agent::new(
         Arc::new(single_route_collection(Box::new(provider))),
-        vec![Box::new(AlwaysOkTool)],
+        common::registrations_from(vec![Box::new(AlwaysOkTool)]),
+        Some(common::permissive_authorizer()),
         "mock:mock-model".into(),
         None,
         InferenceConfig::default(),
@@ -559,20 +564,24 @@ async fn harness_builder_wraps_extension_registry_hooks_and_tools() {
     })
     .build();
 
-    assert!(harness.system_prompt().contains("builder_echo"));
+    assert!(
+        !harness.system_prompt().contains("builder_echo"),
+        "Phase 17.4 excludes extension tools from the model-visible projection"
+    );
     assert!(
         harness
             .resource_metadata()
             .extensions
             .iter()
-            .any(|entry| entry.name == "builder-extension")
+            .any(|entry| entry.name == "builder-extension"),
+        "the extension is still registered for hooks/events/metadata"
     );
 
     let messages = harness.prompt("use builder tool").await.unwrap();
     assert!(messages.len() >= 3);
-    assert_eq!(
-        before_calls.lock().unwrap().as_slice(),
-        ["builder_echo".to_string()]
+    assert!(
+        before_calls.lock().unwrap().is_empty(),
+        "Phase 17.4 excludes the extension tool, so it never resolves and its before_tool_call hook never runs"
     );
 }
 
@@ -756,7 +765,10 @@ async fn harness_builder_tool_selection_allowlist_filters_extension_tools_by_nam
     .tool_selection(ToolSelection::Allowlist(vec!["ext_echo".to_owned()]))
     .build();
 
-    assert!(harness.system_prompt().contains("ext_echo"));
+    assert!(
+        !harness.system_prompt().contains("ext_echo"),
+        "Phase 17.4 excludes extension tools even when named in the allowlist"
+    );
     assert!(!harness.system_prompt().contains("read_file"));
 }
 

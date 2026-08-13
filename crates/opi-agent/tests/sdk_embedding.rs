@@ -4,6 +4,8 @@
 //! session, model, thinking, compaction, and cancellation flows.
 //! No live provider network access required.
 
+mod common;
+
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
@@ -82,7 +84,8 @@ fn make_agent(responses: Vec<Vec<opi_ai::stream::AssistantStreamEvent>>) -> Agen
     let provider = MockProvider::new("mock", responses);
     Agent::new(
         Arc::new(single_route_collection(Box::new(provider))),
-        vec![Box::new(NoopTool)],
+        common::registrations_from(vec![Box::new(NoopTool)]),
+        Some(common::permissive_authorizer()),
         "mock:mock-model".into(),
         Some("test system prompt".into()),
         InferenceConfig::default(),
@@ -411,7 +414,8 @@ async fn sdk_set_model_changes_model() {
     );
     let mut agent = Agent::new(
         std::sync::Arc::new(single_route_collection(Box::new(provider))),
-        vec![Box::new(NoopTool)],
+        common::registrations_from(vec![Box::new(NoopTool)]),
+        Some(common::permissive_authorizer()),
         "mock:mock-model".into(),
         Some("test system prompt".into()),
         InferenceConfig::default(),
@@ -624,7 +628,8 @@ fn agent_with_call_log(
     let call_log = provider.call_log_handle();
     let agent = Agent::new(
         Arc::new(single_route_collection(Box::new(provider))),
-        vec![Box::new(NoopTool)],
+        common::registrations_from(vec![Box::new(NoopTool)]),
+        Some(common::permissive_authorizer()),
         "mock:mock-model".into(),
         Some("test system prompt".into()),
         InferenceConfig::default(),

@@ -3,6 +3,8 @@
 //! Validates hook-mediated confirm/deny for mutating tools in both interactive
 //! and non-interactive modes, JSON mode policy events, and session audit records.
 
+mod common;
+
 use std::fs;
 use std::sync::Mutex;
 
@@ -66,7 +68,7 @@ async fn interactive_allows_read_only_tools() {
     for tool in &["read", "glob", "grep"] {
         let result = hooks.before_tool_call(make_before_ctx(tool)).await;
         assert!(
-            matches!(result, BeforeToolCallResult::Allow),
+            matches!(result, BeforeToolCallResult::Continue),
             "read-only tool '{tool}' should be allowed when mutating denied"
         );
     }
@@ -78,7 +80,7 @@ async fn interactive_allows_mutating_tools() {
     for tool in &["write", "edit", "bash"] {
         let result = hooks.before_tool_call(make_before_ctx(tool)).await;
         assert!(
-            matches!(result, BeforeToolCallResult::Allow),
+            matches!(result, BeforeToolCallResult::Continue),
             "interactive hook should pass through mutating tool '{tool}'"
         );
     }
@@ -90,7 +92,7 @@ async fn interactive_allows_all_when_mutating_allowed() {
     for tool in &["read", "write", "edit", "bash", "glob", "grep"] {
         let result = hooks.before_tool_call(make_before_ctx(tool)).await;
         assert!(
-            matches!(result, BeforeToolCallResult::Allow),
+            matches!(result, BeforeToolCallResult::Continue),
             "tool '{tool}' should be allowed when allow_mutating=true"
         );
     }

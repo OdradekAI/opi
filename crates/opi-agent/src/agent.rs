@@ -7,8 +7,6 @@
 //! call through the registered [`opi_ai::ProviderCollection`] via one prepared call.
 
 use std::collections::VecDeque;
-use std::future::Future;
-use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 
 use opi_ai::ProviderCollection;
@@ -23,31 +21,6 @@ use crate::loop_types::{
     AgentError, AgentLoopConfig, AgentLoopContext, InferenceConfig, ModelSelection, NextTurnState,
 };
 use crate::message::AgentMessage;
-use crate::tool::{ExecutionMode, Tool, ToolError, ToolResult};
-
-// -- Arc wrapper for Tool reuse across calls -------------------------------
-
-struct SharedTool(Arc<dyn Tool>);
-
-impl Tool for SharedTool {
-    fn definition(&self) -> opi_ai::message::ToolDef {
-        self.0.definition()
-    }
-
-    fn execute(
-        &self,
-        call_id: &str,
-        arguments: serde_json::Value,
-        signal: CancellationToken,
-        on_update: Option<crate::tool::UpdateCallback>,
-    ) -> Pin<Box<dyn Future<Output = Result<ToolResult, ToolError>> + Send>> {
-        self.0.execute(call_id, arguments, signal, on_update)
-    }
-
-    fn execution_mode(&self) -> ExecutionMode {
-        self.0.execution_mode()
-    }
-}
 
 // -- Agent -------------------------------------------------------------------
 
@@ -87,7 +60,8 @@ impl AgentControl {
 /// validated idle-state replacement operation.
 pub struct Agent {
     collection: Arc<ProviderCollection>,
-    tools: Vec<Arc<dyn Tool>>,
+    registry: Arc<crate::authority::ToolRegistry>,
+    authorizer: Option<Arc<dyn crate::authority::ToolAuthorizer>>,
     state: NextTurnState,
     system: Option<String>,
     session_id: Option<String>,
@@ -108,9 +82,11 @@ impl Agent {
     /// call; `inference` is the initial per-request inference configuration.
     /// Both live in the durable [`NextTurnState`] and may be replaced atomically
     /// via [`Agent::replace_state`] between runs.
+    #[allow(clippy::too_many_arguments)] // Agent construction seam (Phase 17.4 adds the authorizer binding)
     pub fn new(
         collection: Arc<ProviderCollection>,
-        tools: Vec<Box<dyn Tool>>,
+        registrations: Vec<crate::authority::RegisteredTool>,
+        authorizer: Option<Arc<dyn crate::authority::ToolAuthorizer>>,
         model_spec: String,
         system: Option<String>,
         inference: InferenceConfig,
@@ -122,9 +98,14 @@ impl Agent {
                 "model spec '{model_spec}' is not a canonical provider:model selection"
             ))
         })?;
+        let registry = Arc::new(
+            crate::authority::ToolRegistry::from_tools(registrations)
+                .map_err(|e| AgentError::InvalidToolRegistration(e.to_string()))?,
+        );
         Ok(Self {
             collection,
-            tools: tools.into_iter().map(Arc::from).collect(),
+            registry,
+            authorizer,
             state: NextTurnState::new(Vec::new(), model_selection, inference),
             system,
             config,
@@ -326,11 +307,6 @@ impl Agent {
         self.cancel.cancel();
     }
 
-    /// Add an additional tool to the agent's tool set.
-    pub fn add_tool(&mut self, tool: Box<dyn Tool>) {
-        self.tools.push(Arc::from(tool));
-    }
-
     /// Return the active model id (the canonical selection's model half).
     pub fn model(&self) -> &str {
         &self.state.model_selection.model_id
@@ -451,11 +427,9 @@ impl Agent {
     ) -> Result<Vec<AgentMessage>, AgentError> {
         let context = AgentLoopContext {
             collection: self.collection.clone(),
-            tools: self
-                .tools
-                .iter()
-                .map(|t| Box::new(SharedTool(t.clone())) as Box<dyn Tool>)
-                .collect(),
+            registry: self.registry.clone(),
+            authorizer: self.authorizer.clone(),
+            evidence_health: crate::evidence::EvidenceHealth::healthy(),
             state: self.state.clone(),
             system: self.system.clone(),
             steering_queue: Some(self.steering_queue.clone()),

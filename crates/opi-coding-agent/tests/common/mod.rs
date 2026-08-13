@@ -316,3 +316,92 @@ fn hex_val(b: u8) -> Option<u8> {
         _ => None,
     }
 }
+
+// ===========================================================================
+// Phase 17.4 trusted-authorization test helpers
+//
+// TEST-ONLY doubles (mirroring opi-agent's tests/common). PermissiveAuthorizer
+// is morally equivalent to MockProvider/RecordingSink: it lets tool-mechanics
+// tests survive the mandatory fail-closed authorization cutover. It MUST NOT
+// appear in production code.
+// ===========================================================================
+
+use std::future::Future;
+use std::pin::Pin;
+
+use opi_agent::authority::{
+    AuthorizationDecision, AuthorizationError, Capability, RegisteredTool, RegistrationId,
+    ToolAuthorizationRequest, ToolAuthorizer, ToolOrigin,
+};
+use opi_agent::evidence::CapabilityClass;
+use tokio_util::sync::CancellationToken;
+
+/// Convert raw tools into trusted registrations with a default `Builtin` origin
+/// and `WorkspaceRead` capability, for tests that drive a raw `Agent`.
+pub fn registrations_from(tools: Vec<Box<dyn opi_agent::Tool>>) -> Vec<RegisteredTool> {
+    tools
+        .into_iter()
+        .map(|t| {
+            let name = t.definition().name.clone();
+            RegisteredTool::new(
+                RegistrationId::new(format!("test-{name}")),
+                name,
+                ToolOrigin::Builtin,
+                Capability::Builtin(CapabilityClass::WorkspaceRead),
+                t.definition(),
+                Arc::from(t),
+            )
+        })
+        .collect()
+}
+
+/// Permissive test authorizer: allows every request, echoing the current
+/// evidence-health generation so the freshness gate passes.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct PermissiveAuthorizer;
+
+impl ToolAuthorizer for PermissiveAuthorizer {
+    fn authorize(
+        &self,
+        request: ToolAuthorizationRequest,
+        _cancel: CancellationToken,
+    ) -> Pin<Box<dyn Future<Output = Result<AuthorizationDecision, AuthorizationError>> + Send>>
+    {
+        Box::pin(async move {
+            Ok(AuthorizationDecision::Allow {
+                policy_ref: "test-policy".to_owned(),
+                permission_ref: "test-permission".to_owned(),
+                permission_scope: "test-scope".to_owned(),
+                registration_id: request.registration_id.clone(),
+                capability: request.capability.clone(),
+                evidence_health_generation: request.evidence_health.generation(),
+            })
+        })
+    }
+}
+
+/// A shared permissive authorizer handle for tests that need execution to
+/// proceed past the mandatory authorization gate.
+pub fn permissive_authorizer() -> Arc<dyn ToolAuthorizer> {
+    Arc::new(PermissiveAuthorizer)
+}
+
+/// Denying test authorizer: denies every request.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct DenyingAuthorizer;
+
+impl ToolAuthorizer for DenyingAuthorizer {
+    fn authorize(
+        &self,
+        _request: ToolAuthorizationRequest,
+        _cancel: CancellationToken,
+    ) -> Pin<Box<dyn Future<Output = Result<AuthorizationDecision, AuthorizationError>> + Send>>
+    {
+        Box::pin(async move {
+            Ok(AuthorizationDecision::Deny {
+                stable_code: "test_deny".to_owned(),
+                redacted_reason: "denied by test authorizer".to_owned(),
+            })
+        })
+    }
+}

@@ -5,6 +5,8 @@
 //! call: a counting resolver increments exactly once even though the provider
 //! retries, and the mock provider's `stream` is invoked once per attempt.
 
+mod common;
+
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 
@@ -42,7 +44,7 @@ impl AgentHooks for StopImmediatelyHooks {
         &self,
         _ctx: BeforeToolCallContext,
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = BeforeToolCallResult> + Send>> {
-        Box::pin(async { BeforeToolCallResult::Allow })
+        Box::pin(async { BeforeToolCallResult::Continue })
     }
 }
 
@@ -78,7 +80,8 @@ async fn prepare_call_resolves_auth_once_across_retries() {
 
     let mut agent = Agent::new(
         Arc::new(collection),
-        Vec::new(),
+        common::registrations_from(Vec::new()),
+        Some(common::permissive_authorizer()),
         "mock:mock-model".to_string(),
         None,
         InferenceConfig::default(),

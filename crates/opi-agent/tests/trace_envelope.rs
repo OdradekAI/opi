@@ -9,6 +9,8 @@
 //! during a run (a write error emits a `trace_sink_failed` diagnostic then
 //! disables the sink so the run continues).
 
+mod common;
+
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -810,7 +812,9 @@ mod wiring {
     ) -> AgentLoopContext {
         AgentLoopContext {
             collection: Arc::new(single_route_collection(Box::new(provider))),
-            tools,
+            registry: crate::common::test_registry(tools),
+            authorizer: Some(crate::common::permissive_authorizer()),
+            evidence_health: opi_agent::evidence::EvidenceHealth::healthy(),
             state: NextTurnState::new(
                 vec![user_msg("hello")],
                 ModelSelection::parse_spec("mock:mock-model").unwrap(),
@@ -1592,7 +1596,7 @@ mod phase8_runtime_contract_failures {
                 if ctx.tool_name == denied {
                     BeforeToolCallResult::Deny { reason }
                 } else {
-                    BeforeToolCallResult::Allow
+                    BeforeToolCallResult::Continue
                 }
             })
         }
@@ -1628,7 +1632,9 @@ mod phase8_runtime_contract_failures {
         let model_spec = format!("{}:mock-model", provider.id());
         AgentLoopContext {
             collection: Arc::new(single_route_collection(Box::new(provider))),
-            tools,
+            registry: crate::common::test_registry(tools),
+            authorizer: Some(crate::common::permissive_authorizer()),
+            evidence_health: opi_agent::evidence::EvidenceHealth::healthy(),
             state: NextTurnState::new(
                 vec![user_msg("hello")],
                 ModelSelection::parse_spec(&model_spec).unwrap(),

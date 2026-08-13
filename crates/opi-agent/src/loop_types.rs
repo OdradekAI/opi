@@ -6,9 +6,10 @@ use std::sync::{Arc, Mutex};
 use opi_ai::ProviderCollection;
 use opi_ai::provider::ThinkingConfig;
 
+use crate::authority::{ToolAuthorizer, ToolRegistry};
 use crate::diagnostic_sink::DiagnosticSink;
+use crate::evidence::EvidenceHealth;
 use crate::message::AgentMessage;
-use crate::tool::Tool;
 use crate::trace::TraceCollector;
 
 /// Errors that can occur during the agent loop.
@@ -58,6 +59,10 @@ pub enum AgentError {
     /// the provider collection). The prior state is preserved unchanged.
     #[error("invalid next-turn candidate state: {0}")]
     InvalidNextTurnCandidate(String),
+    /// A trusted tool registration was rejected (e.g. two registrations share a
+    /// provider-visible name). Phase 17.4.
+    #[error("invalid tool registration: {0}")]
+    InvalidToolRegistration(String),
 }
 
 /// Canonical provider:model selection for one logical model call.
@@ -154,8 +159,21 @@ pub struct AgentLoopContext {
     /// one call per turn and opens every retry attempt from that same prepared
     /// call.
     pub collection: Arc<ProviderCollection>,
-    /// Available tools.
-    pub tools: Vec<Box<dyn Tool>>,
+    /// Immutable trusted-tool registry (Phase 17.4). The loop resolves every
+    /// model-proposed tool name against this registry, projects provider-facing
+    /// definitions from it, and executes only implementations reachable through
+    /// a current authorization `Allow`.
+    pub registry: Arc<ToolRegistry>,
+    /// Mandatory trusted tool authorizer bound to the effective User Policy for
+    /// the run. `None` is fail-closed: no tool executes without a current
+    /// `Allow` (AUT-005).
+    pub authorizer: Option<Arc<dyn ToolAuthorizer>>,
+    /// Current versioned evidence-health snapshot for the run (Phase 17.4). The
+    /// loop injects a copy into each authorization request and verifies an
+    /// `Allow`'s generation still matches before execution. In 17.4 this is a
+    /// run-start snapshot; evidence-failure-driven advancement and live reads
+    /// arrive in 17.6/17.7.
+    pub evidence_health: EvidenceHealth,
     /// The complete mutable state at the start of this run: conversation
     /// context, canonical model selection, and inference configuration. The
     /// loop atomically replaces this with the final complete state.

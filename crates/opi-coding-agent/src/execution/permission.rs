@@ -74,6 +74,16 @@ impl PermissionPolicy {
     pub fn is_denied(&self, adapter_id: &str) -> bool {
         self.decision_for(adapter_id) == PermissionDecision::Deny
     }
+
+    /// The resolved (adapter_id, decision) entries in canonical sorted order, for
+    /// digest-addressing an immutable policy snapshot (Phase 17.4). Exposes only
+    /// the already-resolved user/explicit-layer decisions, not the defaulting rule.
+    pub fn canonical_entries(&self) -> Vec<(&str, PermissionDecision)> {
+        self.decisions
+            .iter()
+            .map(|(id, d)| (id.as_str(), *d))
+            .collect()
+    }
 }
 
 // =========================================================================

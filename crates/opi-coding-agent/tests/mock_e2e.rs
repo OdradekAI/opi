@@ -6,6 +6,8 @@
 //! This test runs without any live API calls and exercises the cross-crate
 //! integration path that cli-runtime tasks (1.11, 1.14, 1.15, 1.16) will build on.
 
+mod common;
+
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 
@@ -131,7 +133,8 @@ async fn e2e_text_prompt_returns_assistant_message() {
 
     let mut agent = Agent::new(
         Arc::new(single_route_collection(Box::new(provider))),
-        vec![],
+        common::registrations_from(vec![]),
+        Some(common::permissive_authorizer()),
         "mock:mock-model".into(),
         None,
         InferenceConfig::default(),
@@ -198,7 +201,8 @@ async fn e2e_tool_call_prompt_executes_tool() {
 
     let mut agent = Agent::new(
         Arc::new(single_route_collection(Box::new(provider))),
-        vec![Box::new(tool)],
+        common::registrations_from(vec![Box::new(tool)]),
+        Some(common::permissive_authorizer()),
         "mock:mock-model".into(),
         None,
         InferenceConfig::default(),
@@ -252,7 +256,8 @@ async fn e2e_multi_turn_conversation_accumulates_state() {
 
     let mut agent = Agent::new(
         Arc::new(single_route_collection(Box::new(provider))),
-        vec![],
+        common::registrations_from(vec![]),
+        Some(common::permissive_authorizer()),
         "mock:mock-model".into(),
         None,
         InferenceConfig::default(),
@@ -285,7 +290,8 @@ async fn e2e_error_response_from_provider() {
 
     let mut agent = Agent::new(
         Arc::new(single_route_collection(Box::new(provider))),
-        vec![],
+        common::registrations_from(vec![]),
+        Some(common::permissive_authorizer()),
         "mock:mock-model".into(),
         None,
         InferenceConfig::default(),

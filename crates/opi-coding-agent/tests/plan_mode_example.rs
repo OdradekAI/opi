@@ -5,6 +5,8 @@
 //! active, mutating tools (write, edit, bash) are blocked and a planning prompt
 //! is injected into the conversation context.
 
+mod common;
+
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
@@ -417,7 +419,8 @@ async fn plan_mode_with_agent_blocks_mutating_tool_call() {
     let hooks = registry.wrap_hooks(Box::new(TestHooks));
     let mut agent = opi_agent::Agent::new(
         Arc::new(single_route_collection(Box::new(provider))),
-        vec![Box::new(DummyTool::new("write"))],
+        common::registrations_from(vec![Box::new(DummyTool::new("write"))]),
+        Some(common::permissive_authorizer()),
         "mock:mock-model".into(),
         None,
         InferenceConfig::default(),

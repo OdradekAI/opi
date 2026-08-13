@@ -560,7 +560,7 @@ async fn composite_hooks_allow_when_all_continue() {
         messages: vec![],
     };
     let result = composite.before_tool_call(ctx).await;
-    assert!(matches!(result, BeforeToolCallResult::Allow));
+    assert!(matches!(result, BeforeToolCallResult::Continue));
 }
 
 #[tokio::test]
@@ -598,7 +598,7 @@ async fn composite_hooks_allow_unblocked_tool() {
         messages: vec![],
     };
     let result = composite.before_tool_call(ctx).await;
-    assert!(matches!(result, BeforeToolCallResult::Allow));
+    assert!(matches!(result, BeforeToolCallResult::Continue));
 }
 
 #[tokio::test]
@@ -1138,7 +1138,7 @@ impl AgentHooks for LogHooks {
         let log = self.log.clone();
         Box::pin(async move {
             log.lock().unwrap().push("base:before".into());
-            BeforeToolCallResult::Allow
+            BeforeToolCallResult::Continue
         })
     }
 

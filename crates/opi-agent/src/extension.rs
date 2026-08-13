@@ -611,7 +611,7 @@ impl AgentHooks for CompositeHooks {
         Box::pin(async move {
             // Base hook decides first.
             match base.before_tool_call(ctx).await {
-                BeforeToolCallResult::Allow => {}
+                BeforeToolCallResult::Continue => {}
                 BeforeToolCallResult::Deny { reason } => {
                     return BeforeToolCallResult::Deny { reason };
                 }
@@ -627,7 +627,7 @@ impl AgentHooks for CompositeHooks {
                 }
             }
 
-            BeforeToolCallResult::Allow
+            BeforeToolCallResult::Continue
         })
     }
 

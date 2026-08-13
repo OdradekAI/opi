@@ -1,3 +1,5 @@
+mod common;
+
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 
@@ -93,7 +95,7 @@ impl AgentHooks for AllowHooks {
         &self,
         _: BeforeToolCallContext,
     ) -> Pin<Box<dyn std::future::Future<Output = BeforeToolCallResult> + Send>> {
-        Box::pin(async { BeforeToolCallResult::Allow })
+        Box::pin(async { BeforeToolCallResult::Continue })
     }
 }
 
@@ -116,7 +118,9 @@ async fn tool_events_redact_command_context_and_provider_content_stays_unchanged
 
     let context = AgentLoopContext {
         collection: Arc::new(test_support::single_route_collection(Box::new(provider))),
-        tools: vec![Box::new(SecretTool)],
+        registry: common::test_registry(vec![Box::new(SecretTool)]),
+        authorizer: Some(common::permissive_authorizer()),
+        evidence_health: opi_agent::evidence::EvidenceHealth::healthy(),
         state: NextTurnState::new(
             vec![AgentMessage::Llm(Message::User(UserMessage {
                 content: vec![InputContent::Text {

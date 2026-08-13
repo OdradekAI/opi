@@ -5,6 +5,8 @@
 //! discover-start-capabilities-command-hook pipeline without Node, npm, or
 //! live providers.
 
+mod common;
+
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -523,7 +525,7 @@ async fn example_adapter_protected_paths_allows_through_registry() {
 
     let result = hooks.before_tool_call(ctx).await;
     assert!(
-        matches!(result, opi_agent::hooks::BeforeToolCallResult::Allow),
+        matches!(result, opi_agent::hooks::BeforeToolCallResult::Continue),
         "protected-paths should allow safe read through composite hooks"
     );
 }

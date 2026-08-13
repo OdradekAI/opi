@@ -4,6 +4,8 @@
 //! and constructs correct InputContent::Image messages. Never reads user
 //! runtime data.
 
+mod common;
+
 use clap::Parser;
 use opi_ai::message::{ImageSource, InputContent, MediaType};
 use opi_coding_agent::cli::Cli;
@@ -234,7 +236,8 @@ async fn prompt_with_content_sends_image_to_provider() {
 
     let mut agent = opi_agent::Agent::new(
         Arc::new(single_route_collection(Box::new(provider))),
-        vec![],
+        common::registrations_from(vec![]),
+        Some(common::permissive_authorizer()),
         "test-mock:mock-model".into(),
         None,
         InferenceConfig::default(),

@@ -27,6 +27,8 @@
 //! [`Extension::on_event`] to observe agent lifecycle events. No core runtime
 //! changes or feature flags are needed.
 
+mod common;
+
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -202,7 +204,8 @@ impl Extension for SubAgentExtension {
                     let child_hooks = Box::new(ChildHooks) as Box<dyn AgentHooks>;
                     let mut child_agent = opi_agent::Agent::new(
                         Arc::new(single_route_collection(child_provider)),
-                        child_tools,
+                        common::registrations_from(child_tools),
+                        Some(common::permissive_authorizer()),
                         model,
                         None,
                         InferenceConfig::default(),

@@ -14,6 +14,8 @@
 //!   --test execution_backend_mock --no-run
 //! ```
 
+mod common;
+
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -1767,7 +1769,12 @@ async fn agent_loop_redacts_hostile_backend_rejected_by_model_schema() {
     let model_spec = "mock:mock-model".to_string();
     let context = AgentLoopContext {
         collection: Arc::new(single_route_collection(Box::new(provider))),
-        tools,
+        registry: std::sync::Arc::new(
+            opi_agent::authority::ToolRegistry::from_tools(common::registrations_from(tools))
+                .expect("distinct test tool names"),
+        ),
+        authorizer: Some(common::permissive_authorizer()),
+        evidence_health: opi_agent::evidence::EvidenceHealth::healthy(),
         state: NextTurnState::new(
             Vec::new(),
             ModelSelection::parse_spec(&model_spec).unwrap(),

@@ -5,6 +5,8 @@
 //! stores items, tracks status changes, emits observable events, and persists
 //! state through serialization.
 
+mod common;
+
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
@@ -550,7 +552,8 @@ async fn session_integration_with_agent() {
     let hooks = registry.wrap_hooks(Box::new(TestHooks));
     let mut agent = opi_agent::Agent::new(
         Arc::new(single_route_collection(Box::new(provider))),
-        vec![Box::new(DummyTool::new("read"))],
+        common::registrations_from(vec![Box::new(DummyTool::new("read"))]),
+        Some(common::permissive_authorizer()),
         "mock:mock-model".into(),
         None,
         InferenceConfig::default(),

@@ -3,6 +3,8 @@
 //! modes. The sequential and parallel batches are near-duplicates; this guards
 //! against a field landing in one but not the other.
 
+mod common;
+
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 
@@ -83,7 +85,7 @@ impl AgentHooks for AllowHooks {
         &self,
         _: BeforeToolCallContext,
     ) -> Pin<Box<dyn std::future::Future<Output = BeforeToolCallResult> + Send>> {
-        Box::pin(async { BeforeToolCallResult::Allow })
+        Box::pin(async { BeforeToolCallResult::Continue })
     }
 }
 
@@ -115,7 +117,9 @@ async fn run_truncated(mode: ExecutionMode) -> (Option<bool>, Option<bool>) {
     }))];
     let context = AgentLoopContext {
         collection: Arc::new(single_route_collection(Box::new(provider))),
-        tools: vec![Box::new(tool)],
+        registry: common::test_registry(vec![Box::new(tool)]),
+        authorizer: Some(common::permissive_authorizer()),
+        evidence_health: opi_agent::evidence::EvidenceHealth::healthy(),
         state: NextTurnState::new(
             messages,
             ModelSelection::parse_spec("mock:mock-model").unwrap(),

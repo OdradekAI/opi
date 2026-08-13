@@ -4,6 +4,8 @@
 //! emits AutoRetryStart/End events, respects max_attempts, and does not
 //! retry non-retryable errors (AuthFailed).
 
+mod common;
+
 use std::sync::{Arc, Mutex};
 
 use opi_agent::agent_loop;
@@ -50,7 +52,9 @@ fn user_msg(text: &str) -> AgentMessage {
 fn make_context(provider: MockProvider) -> AgentLoopContext {
     AgentLoopContext {
         collection: Arc::new(single_route_collection(Box::new(provider))),
-        tools: vec![],
+        registry: common::test_registry(vec![]),
+        authorizer: Some(common::permissive_authorizer()),
+        evidence_health: opi_agent::evidence::EvidenceHealth::healthy(),
         state: NextTurnState::new(
             vec![user_msg("hello")],
             ModelSelection::parse_spec("mock:mock-model").unwrap(),
@@ -68,7 +72,9 @@ fn make_context(provider: MockProvider) -> AgentLoopContext {
 fn make_context_with_sink(provider: MockProvider, sink: Arc<RecordingSink>) -> AgentLoopContext {
     AgentLoopContext {
         collection: Arc::new(single_route_collection(Box::new(provider))),
-        tools: vec![],
+        registry: common::test_registry(vec![]),
+        authorizer: Some(common::permissive_authorizer()),
+        evidence_health: opi_agent::evidence::EvidenceHealth::healthy(),
         state: NextTurnState::new(
             vec![user_msg("hello")],
             ModelSelection::parse_spec("mock:mock-model").unwrap(),

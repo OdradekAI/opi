@@ -10,6 +10,8 @@
 //! production call sites (agent loop retry/cancellation/tool execution, session
 //! recovery, compaction) is covered by the wiring cycles.
 
+mod common;
+
 use opi_agent::diagnostic::code::*;
 use opi_agent::diagnostic::{Diagnostic, SOURCE_AGENT, SOURCE_PROVIDER, SOURCE_TOOL, Severity};
 use opi_agent::loop_types::AgentError;
@@ -628,7 +630,9 @@ mod runtime_emission {
     fn ctx(provider: MockProvider, sink: Arc<RecordingSink>) -> AgentLoopContext {
         AgentLoopContext {
             collection: Arc::new(single_route_collection(Box::new(provider))),
-            tools: vec![],
+            registry: crate::common::test_registry(vec![]),
+            authorizer: Some(crate::common::permissive_authorizer()),
+            evidence_health: opi_agent::evidence::EvidenceHealth::healthy(),
             state: NextTurnState::new(
                 vec![user_msg("hello")],
                 ModelSelection::parse_spec("mock:mock-model").unwrap(),
@@ -935,7 +939,9 @@ mod runtime_emission {
         let sink = Arc::new(RecordingSink::new());
         let loop_ctx = AgentLoopContext {
             collection: Arc::new(single_route_collection(Box::new(provider))),
-            tools: vec![Box::new(PendingTool)],
+            registry: crate::common::test_registry(vec![Box::new(PendingTool)]),
+            authorizer: Some(crate::common::permissive_authorizer()),
+            evidence_health: opi_agent::evidence::EvidenceHealth::healthy(),
             state: NextTurnState::new(
                 vec![user_msg("go")],
                 ModelSelection::parse_spec("mock:mock-model").unwrap(),

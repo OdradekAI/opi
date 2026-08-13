@@ -4,6 +4,8 @@
 //!   H5 — prepare_next_turn message injection
 //!   M1 — should_stop_after_turn receives current-turn tool_results only
 
+mod common;
+
 use std::collections::VecDeque;
 use std::future::Future;
 use std::pin::Pin;
@@ -226,7 +228,7 @@ impl AgentHooks for MinimalHooks {
         &self,
         _: BeforeToolCallContext,
     ) -> Pin<Box<dyn Future<Output = BeforeToolCallResult> + Send>> {
-        Box::pin(async { BeforeToolCallResult::Allow })
+        Box::pin(async { BeforeToolCallResult::Continue })
     }
 
     fn after_tool_call(
@@ -275,7 +277,7 @@ impl AgentHooks for RecordingStopHooks {
         &self,
         _: BeforeToolCallContext,
     ) -> Pin<Box<dyn Future<Output = BeforeToolCallResult> + Send>> {
-        Box::pin(async { BeforeToolCallResult::Allow })
+        Box::pin(async { BeforeToolCallResult::Continue })
     }
 
     fn after_tool_call(
@@ -322,7 +324,7 @@ impl AgentHooks for InjectingHooks {
         &self,
         _: BeforeToolCallContext,
     ) -> Pin<Box<dyn Future<Output = BeforeToolCallResult> + Send>> {
-        Box::pin(async { BeforeToolCallResult::Allow })
+        Box::pin(async { BeforeToolCallResult::Continue })
     }
 
     fn prepare_next_turn(
@@ -436,7 +438,9 @@ fn make_context(provider: Box<dyn Provider>, tools: Vec<Box<dyn Tool>>) -> Agent
     ))];
     AgentLoopContext {
         collection: Arc::new(single_route_collection(provider)),
-        tools,
+        registry: common::test_registry(tools),
+        authorizer: Some(common::permissive_authorizer()),
+        evidence_health: opi_agent::evidence::EvidenceHealth::healthy(),
         state: NextTurnState::new(
             messages,
             ModelSelection::parse_spec(&model_spec).unwrap(),
@@ -964,7 +968,7 @@ impl AgentHooks for TerminalStopHooks {
         &self,
         _: BeforeToolCallContext,
     ) -> Pin<Box<dyn Future<Output = BeforeToolCallResult> + Send>> {
-        Box::pin(async { BeforeToolCallResult::Allow })
+        Box::pin(async { BeforeToolCallResult::Continue })
     }
 
     fn after_tool_call(
@@ -1127,7 +1131,9 @@ async fn phase8_event_order_prepare_next_turn_injection() {
     ))];
     let context = AgentLoopContext {
         collection: Arc::new(single_route_collection(Box::new(provider))),
-        tools: vec![],
+        registry: common::test_registry(vec![]),
+        authorizer: Some(common::permissive_authorizer()),
+        evidence_health: opi_agent::evidence::EvidenceHealth::healthy(),
         state: NextTurnState::new(
             seed_messages,
             ModelSelection::parse_spec(&model_spec).unwrap(),

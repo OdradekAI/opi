@@ -1,0 +1,501 @@
+//! Trusted tool authorization: immutable registration, capability identity, and
+//! the mandatory fail-closed authorizer boundary (Phase 17 task 17.4).
+//!
+//! Tools enter the Agent loop only through an immutable [`RegisteredTool`] owned
+//! by trusted assembly, never through `Tool::definition()` alone. Every tool
+//! execution must cross a [`ToolAuthorizer`] bound to the effective User Policy
+//! for the run; missing, failed, expired, stale, or forged authority yields zero
+//! executions. This module owns the generic core mechanism; the Reference
+//! Product owns the policy binding (the immutable digest-addressed
+//! `EffectiveUserPolicy`, the fixed built-in capability map, and the concrete
+//! authorizer implementation).
+//!
+//! ## Phase 17.4 boundary
+//!
+//! This substrate mints registration/capability identity and the fail-closed
+//! per-call authorization gate, including synthetic stale-health rejection. It
+//! does **not**:
+//! - wire the [`crate::evidence::EvidenceSink`] into the agent loop (17.6);
+//! - implement evidence-failure-driven health advancement, batch launch-boundary
+//!   reauthorization, or live mid-run health reads (17.7); or
+//! - add file storage/exporters (17.7).
+//!
+//! `ToolAuthorizationRequest` carries opaque string run/turn/call correlation
+//! handles rather than typed [`crate::evidence`] ids: the evidence subsystem
+//! that mints those ids is wired in 17.6, and authorization does not depend on
+//! them for its decision.
+
+use std::collections::HashMap;
+use std::future::Future;
+use std::pin::Pin;
+use std::sync::Arc;
+
+use opi_ai::message::ToolDef;
+use tokio_util::sync::CancellationToken;
+
+use crate::evidence::{CapabilityClass, EvidenceGeneration, EvidenceHealth};
+use crate::tool::Tool;
+
+// ===========================================================================
+// Registration identity
+// ===========================================================================
+
+/// Unique registration identifier assigned by trusted assembly. Distinct from
+/// the [`RegisteredTool::provider_visible_name`] the model calls: a registration
+/// id is trusted-assembly-owned provenance, not model-supplied content.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct RegistrationId(String);
+
+impl RegistrationId {
+    /// Construct a registration id from trusted-assembly-owned provenance.
+    pub fn new(value: impl Into<String>) -> Self {
+        Self(value.into())
+    }
+
+    /// The id as a string slice.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for RegistrationId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+/// Origin of a registered tool, assigned by trusted assembly. An extension
+/// cannot replace its origin with a model-visible field; an embedder supplies
+/// its registration and authorizer together as trusted assembly.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum ToolOrigin {
+    /// A built-in Reference Product tool.
+    Builtin,
+    /// A tool contributed by an extension, namespaced to `extension_id`.
+    Extension {
+        /// The extension that owns this registration.
+        extension_id: String,
+    },
+    /// A tool contributed by an embedder as trusted assembly.
+    Embedder {
+        /// The embedder that owns this registration.
+        embedder_id: String,
+    },
+}
+
+/// The capability a registered tool exercises. Built-in capabilities reuse the
+/// closed [`CapabilityClass`] families; extension capabilities are namespaced to
+/// the registration origin and tool name and require an exact existing
+/// permission, else the tool is excluded and denied.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum Capability {
+    /// A closed built-in capability family.
+    Builtin(CapabilityClass),
+    /// An extension capability namespaced to its registration origin and name.
+    Extension {
+        /// The extension that contributes this capability.
+        extension_id: String,
+        /// The tool name within the extension.
+        name: String,
+    },
+}
+
+impl Capability {
+    /// Render a stable string identity for this capability, used for
+    /// permission lookup and evidence correlation without exposing the enum
+    /// shape across the core boundary.
+    pub fn as_identity(&self) -> String {
+        match self {
+            Capability::Builtin(class) => match class {
+                CapabilityClass::WorkspaceRead => "workspace.read".to_owned(),
+                CapabilityClass::WorkspaceWrite => "workspace.write".to_owned(),
+                CapabilityClass::CommandExecute => "command.execute".to_owned(),
+            },
+            Capability::Extension { extension_id, name } => {
+                format!("extension:{extension_id}:{name}")
+            }
+        }
+    }
+}
+
+/// Immutable registration of one tool owned by trusted assembly.
+///
+/// Immutability is a usage guarantee: the [`ToolRegistry`] and the Agent hold
+/// registrations behind shared (non-`&mut`) handles. A registration is built
+/// once at trusted assembly and bound to the authorizer at construction; there
+/// is no post-construction registration path.
+pub struct RegisteredTool {
+    /// Trusted-assembly-owned registration identifier.
+    pub registration_id: RegistrationId,
+    /// The tool name the model sees and calls.
+    pub provider_visible_name: String,
+    /// Registration-owned origin (built-in / extension / embedder).
+    pub origin: ToolOrigin,
+    /// Registration-derived capability identity.
+    pub capability: Capability,
+    /// Provider-facing definition (name, description, JSON Schema).
+    pub definition: ToolDef,
+    /// The tool implementation invoked only after a current `Allow`.
+    pub implementation: Arc<dyn Tool>,
+}
+
+impl RegisteredTool {
+    /// Build an immutable registration.
+    pub fn new(
+        registration_id: RegistrationId,
+        provider_visible_name: String,
+        origin: ToolOrigin,
+        capability: Capability,
+        definition: ToolDef,
+        implementation: Arc<dyn Tool>,
+    ) -> Self {
+        Self {
+            registration_id,
+            provider_visible_name,
+            origin,
+            capability,
+            definition,
+            implementation,
+        }
+    }
+}
+
+// ===========================================================================
+// Immutable registry
+// ===========================================================================
+
+/// Immutable registry of registered tools. Built once from trusted
+/// registrations; rejects duplicate provider-visible names. Preserves insertion
+/// order for deterministic provider-facing projection and resolves names to
+/// registrations for the loop's per-call authorization gate.
+pub struct ToolRegistry {
+    tools: Vec<Arc<RegisteredTool>>,
+    index: HashMap<String, usize>,
+}
+
+impl ToolRegistry {
+    /// Build a registry from trusted registrations. Returns
+    /// [`AuthorityError::DuplicateRegistration`] if two registrations share a
+    /// provider-visible name.
+    pub fn from_tools(tools: Vec<RegisteredTool>) -> Result<Self, AuthorityError> {
+        let mut registered: Vec<Arc<RegisteredTool>> = Vec::with_capacity(tools.len());
+        let mut index: HashMap<String, usize> = HashMap::new();
+        for tool in tools {
+            let name = tool.provider_visible_name.clone();
+            if index.contains_key(&name) {
+                return Err(AuthorityError::DuplicateRegistration { name });
+            }
+            index.insert(name, registered.len());
+            registered.push(Arc::new(tool));
+        }
+        Ok(Self {
+            tools: registered,
+            index,
+        })
+    }
+
+    /// Resolve a provider-visible name to its registration.
+    pub fn get(&self, name: &str) -> Option<&RegisteredTool> {
+        self.index.get(name).map(|&pos| self.tools[pos].as_ref())
+    }
+
+    /// The provider-facing definitions in insertion order. Projection is
+    /// derived solely from trusted registrations, never from model content
+    /// (AUT-008).
+    pub fn definitions(&self) -> Vec<ToolDef> {
+        self.tools.iter().map(|t| t.definition.clone()).collect()
+    }
+
+    /// Iterate all registrations in insertion order.
+    pub fn iter(&self) -> impl Iterator<Item = &RegisteredTool> {
+        self.tools.iter().map(|t| t.as_ref())
+    }
+
+    /// The number of registered tools.
+    pub fn len(&self) -> usize {
+        self.tools.len()
+    }
+
+    /// Whether the registry holds no tools.
+    pub fn is_empty(&self) -> bool {
+        self.tools.is_empty()
+    }
+}
+
+// ===========================================================================
+// Authorization request, decision, and authorizer
+// ===========================================================================
+
+/// Core-confirmed facts supplied to the trusted authorizer. Full arguments are
+/// inspected inside the trusted boundary; the emitted authorization outcome
+/// carries only the classified or redacted representation. Run/turn/call are
+/// opaque correlation handles (not typed evidence ids, which are minted in
+/// 17.6); authorization does not depend on them for its decision.
+#[derive(Debug, Clone)]
+pub struct ToolAuthorizationRequest {
+    /// Opaque run correlation handle, when known.
+    pub run_id: Option<String>,
+    /// Opaque turn correlation handle.
+    pub turn_id: String,
+    /// Opaque call correlation handle (the provider tool-call id).
+    pub call_id: String,
+    /// The resolved registered tool's trusted registration id.
+    pub registration_id: RegistrationId,
+    /// The registration-derived capability identity.
+    pub capability: Capability,
+    /// The final validated arguments. The exact value authorized is the value
+    /// executed (AUT-002).
+    pub arguments: serde_json::Value,
+    /// The current versioned evidence-health snapshot (a copy per request).
+    pub evidence_health: EvidenceHealth,
+}
+
+/// The closed authorization decision returned by a [`ToolAuthorizer`].
+#[non_exhaustive]
+#[derive(Debug, Clone)]
+pub enum AuthorizationDecision {
+    /// Authorization granted against the effective User Policy at the carried
+    /// evidence-health generation. The runtime verifies the carried
+    /// `registration_id`, `capability`, and `evidence_health_generation` still
+    /// match the current call before executing; a mismatch is stale and is not
+    /// executed.
+    Allow {
+        /// Opaque product-owned effective-policy reference (e.g. digest).
+        policy_ref: String,
+        /// Opaque product-owned permission reference.
+        permission_ref: String,
+        /// Opaque product-owned permission scope.
+        permission_scope: String,
+        /// The registration the decision covers.
+        registration_id: RegistrationId,
+        /// The capability the decision covers.
+        capability: Capability,
+        /// The evidence-health generation the decision was computed against.
+        evidence_health_generation: EvidenceGeneration,
+    },
+    /// Authorization denied. `stable_code` and `redacted_reason` are the
+    /// controlled, secret-free outcome surfaced to the model and to evidence.
+    Deny {
+        /// Stable snake_case denial code.
+        stable_code: String,
+        /// Redacted, non-secret denial reason.
+        redacted_reason: String,
+    },
+}
+
+/// An authorizer malfunction (not a denial). Missing authorizer, authorizer
+/// error, and authorizer unavailability all yield zero executions (AUT-005); a
+/// denial is a normal [`AuthorizationDecision::Deny`], not an error.
+#[derive(Debug, thiserror::Error)]
+pub enum AuthorizationError {
+    /// The authorizer could not reach a decision (internal failure).
+    #[error("authorization failed: {0}")]
+    Failed(String),
+    /// The authorizer is unavailable for this run.
+    #[error("authorization unavailable: {0}")]
+    Unavailable(String),
+}
+
+/// Trusted tool authorizer, bound to the effective User Policy for the run by
+/// trusted assembly. Implementations are product-owned (the Reference Product
+/// authorizer closes over its `EffectiveUserPolicy` and reuses the existing
+/// `command.execute` permission broker). The authorizer is not replaceable by
+/// next-turn state or model-visible content.
+///
+/// `authorize` receives the loop's [`CancellationToken`] so an interactive
+/// permission broker or any blocking decision is cancellable; cancellation is
+/// treated as fail-closed (zero execution), mirroring [`Tool::execute`].
+pub trait ToolAuthorizer: Send + Sync {
+    /// Decide authorization for one resolved, schema-validated tool call.
+    fn authorize(
+        &self,
+        request: ToolAuthorizationRequest,
+        cancel: CancellationToken,
+    ) -> Pin<Box<dyn Future<Output = Result<AuthorizationDecision, AuthorizationError>> + Send>>;
+}
+
+/// Registry-construction failure. (Authorizer decision failures use
+/// [`AuthorizationError`].)
+#[derive(Debug, thiserror::Error)]
+pub enum AuthorityError {
+    /// Two registrations share a provider-visible name.
+    #[error("duplicate tool registration for provider-visible name '{name}'")]
+    DuplicateRegistration {
+        /// The colliding provider-visible name.
+        name: String,
+    },
+}
+
+// ===========================================================================
+// Tests
+// ===========================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tool::{ExecutionMode, ToolError, ToolResult};
+    use opi_ai::message::{OutputContent, ToolDef};
+
+    /// Minimal tool whose definition is configurable; execute is never reached
+    /// in these registry tests.
+    struct StubTool {
+        def: ToolDef,
+    }
+
+    impl Tool for StubTool {
+        fn definition(&self) -> ToolDef {
+            self.def.clone()
+        }
+        fn execute(
+            &self,
+            _call_id: &str,
+            _arguments: serde_json::Value,
+            _signal: CancellationToken,
+            _on_update: Option<crate::tool::UpdateCallback>,
+        ) -> Pin<Box<dyn Future<Output = Result<ToolResult, ToolError>> + Send>> {
+            Box::pin(async {
+                Ok(ToolResult {
+                    content: vec![OutputContent::Text {
+                        text: "stub".to_owned(),
+                    }],
+                    details: None,
+                    is_error: false,
+                    terminate: false,
+                    truncated: false,
+                    diagnostics: Vec::new(),
+                })
+            })
+        }
+        fn execution_mode(&self) -> ExecutionMode {
+            ExecutionMode::Parallel
+        }
+    }
+
+    fn stub_tool(name: &str) -> Arc<dyn Tool> {
+        Arc::new(StubTool {
+            def: ToolDef {
+                name: name.to_owned(),
+                description: "stub".to_owned(),
+                input_schema: serde_json::json!({ "type": "object" }),
+            },
+        })
+    }
+
+    fn registered(name: &str, capability: Capability) -> RegisteredTool {
+        RegisteredTool::new(
+            RegistrationId::new(format!("reg-{name}")),
+            name.to_owned(),
+            ToolOrigin::Builtin,
+            capability,
+            ToolDef {
+                name: name.to_owned(),
+                description: name.to_owned(),
+                input_schema: serde_json::json!({ "type": "object" }),
+            },
+            stub_tool(name),
+        )
+    }
+
+    #[test]
+    fn registry_rejects_duplicate_provider_visible_names() {
+        let cap = Capability::Builtin(CapabilityClass::WorkspaceRead);
+        let result = ToolRegistry::from_tools(vec![
+            registered("read", cap.clone()),
+            registered("read", cap),
+        ]);
+        assert!(matches!(
+            result,
+            Err(AuthorityError::DuplicateRegistration { name }) if name == "read"
+        ));
+    }
+
+    #[test]
+    fn registry_resolves_names_and_preserves_insertion_order() {
+        let registry = ToolRegistry::from_tools(vec![
+            registered("read", Capability::Builtin(CapabilityClass::WorkspaceRead)),
+            registered("bash", Capability::Builtin(CapabilityClass::CommandExecute)),
+            registered(
+                "write",
+                Capability::Builtin(CapabilityClass::WorkspaceWrite),
+            ),
+        ])
+        .expect("distinct names");
+
+        // Resolution by provider-visible name.
+        assert!(registry.get("read").is_some());
+        assert!(registry.get("missing").is_none());
+        assert_eq!(
+            registry.get("bash").unwrap().capability,
+            Capability::Builtin(CapabilityClass::CommandExecute)
+        );
+
+        // Definitions preserve insertion order (not alphabetical, not map order).
+        let defs = registry.definitions();
+        let names: Vec<&str> = defs.iter().map(|d| d.name.as_str()).collect();
+        assert_eq!(names, vec!["read", "bash", "write"]);
+        assert_eq!(registry.len(), 3);
+    }
+
+    #[test]
+    fn capability_identities_are_stable_and_distinct() {
+        let builtin_read = Capability::Builtin(CapabilityClass::WorkspaceRead);
+        let builtin_write = Capability::Builtin(CapabilityClass::WorkspaceWrite);
+        let builtin_exec = Capability::Builtin(CapabilityClass::CommandExecute);
+        let ext = Capability::Extension {
+            extension_id: "ext1".to_owned(),
+            name: "custom".to_owned(),
+        };
+        assert_eq!(builtin_read.as_identity(), "workspace.read");
+        assert_eq!(builtin_write.as_identity(), "workspace.write");
+        assert_eq!(builtin_exec.as_identity(), "command.execute");
+        assert_eq!(ext.as_identity(), "extension:ext1:custom");
+        // Identities are pairwise distinct.
+        let ids = [
+            builtin_read.as_identity(),
+            builtin_write.as_identity(),
+            builtin_exec.as_identity(),
+            ext.as_identity(),
+        ];
+        let unique: std::collections::BTreeSet<&String> = ids.iter().collect();
+        assert_eq!(unique.len(), ids.len());
+    }
+
+    #[test]
+    fn authorization_decision_carries_freshness_fields() {
+        // Allow carries the generation it was computed against; Deny carries a
+        // stable code + redacted reason (no secrets, no raw args).
+        let allow = AuthorizationDecision::Allow {
+            policy_ref: "digest".to_owned(),
+            permission_ref: "perm".to_owned(),
+            permission_scope: "scope".to_owned(),
+            registration_id: RegistrationId::new("reg-read"),
+            capability: Capability::Builtin(CapabilityClass::WorkspaceRead),
+            evidence_health_generation: EvidenceGeneration::INITIAL,
+        };
+        match allow {
+            AuthorizationDecision::Allow {
+                evidence_health_generation,
+                ..
+            } => {
+                assert_eq!(evidence_health_generation, EvidenceGeneration::INITIAL);
+            }
+            AuthorizationDecision::Deny { .. } => panic!("expected Allow"),
+        }
+        let deny = AuthorizationDecision::Deny {
+            stable_code: "expired_scope".to_owned(),
+            redacted_reason: "permission scope expired".to_owned(),
+        };
+        match deny {
+            AuthorizationDecision::Deny {
+                stable_code,
+                redacted_reason,
+            } => {
+                assert_eq!(stable_code, "expired_scope");
+                assert!(redacted_reason.contains("expired"));
+            }
+            AuthorizationDecision::Allow { .. } => panic!("expected Deny"),
+        }
+    }
+}

@@ -1,5 +1,7 @@
 //! Agent-side image capability gating.
 
+mod common;
+
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -70,7 +72,9 @@ async fn image_input_to_text_only_model_fails_before_provider_call() {
         collection: Arc::new(single_route_collection(Box::new(TextOnlyProvider::new(
             calls.clone(),
         )))),
-        tools: vec![],
+        registry: common::test_registry(vec![]),
+        authorizer: Some(common::permissive_authorizer()),
+        evidence_health: opi_agent::evidence::EvidenceHealth::healthy(),
         state: NextTurnState::new(
             vec![AgentMessage::Llm(Message::User(UserMessage {
                 content: vec![

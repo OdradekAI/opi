@@ -2,6 +2,8 @@
 //!
 //! DoD: "prompt, continue, abort, subscribe tested"
 
+mod common;
+
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 
@@ -91,7 +93,7 @@ impl AgentHooks for TestHooks {
         &self,
         _ctx: BeforeToolCallContext,
     ) -> Pin<Box<dyn std::future::Future<Output = BeforeToolCallResult> + Send>> {
-        Box::pin(async { BeforeToolCallResult::Allow })
+        Box::pin(async { BeforeToolCallResult::Continue })
     }
 }
 
@@ -145,7 +147,8 @@ async fn prompt_sends_user_message_and_returns_result() {
 
     let mut agent = Agent::new(
         Arc::new(single_route_collection(Box::new(provider))),
-        vec![],
+        common::registrations_from(vec![]),
+        Some(common::permissive_authorizer()),
         "mock:mock-model".into(),
         None,
         InferenceConfig::default(),
@@ -187,7 +190,8 @@ async fn prompt_accumulates_state_across_calls() {
 
     let mut agent = Agent::new(
         Arc::new(single_route_collection(Box::new(provider))),
-        vec![],
+        common::registrations_from(vec![]),
+        Some(common::permissive_authorizer()),
         "mock:mock-model".into(),
         None,
         InferenceConfig::default(),
@@ -222,7 +226,8 @@ async fn continue_appends_message_and_runs_loop() {
 
     let mut agent = Agent::new(
         Arc::new(single_route_collection(Box::new(provider))),
-        vec![],
+        common::registrations_from(vec![]),
+        Some(common::permissive_authorizer()),
         "mock:mock-model".into(),
         None,
         InferenceConfig::default(),
@@ -293,7 +298,8 @@ async fn abort_cancels_running_loop() {
 
     let mut agent = Agent::new(
         Arc::new(single_route_collection(Box::new(BlockingProvider))),
-        vec![],
+        common::registrations_from(vec![]),
+        Some(common::permissive_authorizer()),
         "blocking:mock-model".into(),
         None,
         InferenceConfig::default(),
@@ -335,7 +341,8 @@ async fn subscribe_receives_events() {
 
     let mut agent = Agent::new(
         Arc::new(single_route_collection(Box::new(provider))),
-        vec![],
+        common::registrations_from(vec![]),
+        Some(common::permissive_authorizer()),
         "mock:mock-model".into(),
         None,
         InferenceConfig::default(),
@@ -423,7 +430,7 @@ impl AgentHooks for PrepareInferenceHooks {
         &self,
         _ctx: BeforeToolCallContext,
     ) -> Pin<Box<dyn std::future::Future<Output = BeforeToolCallResult> + Send>> {
-        Box::pin(async { BeforeToolCallResult::Allow })
+        Box::pin(async { BeforeToolCallResult::Continue })
     }
 }
 
@@ -442,7 +449,8 @@ async fn phase17_agent_persists_complete_next_turn_state() {
     let call_log = provider.call_log_handle();
     let mut agent = Agent::new(
         Arc::new(single_route_collection(Box::new(provider))),
-        vec![],
+        common::registrations_from(vec![]),
+        Some(common::permissive_authorizer()),
         "mock:mock-model".into(),
         None,
         InferenceConfig::default(),
@@ -538,7 +546,7 @@ impl AgentHooks for RerouteHooks {
         &self,
         _ctx: BeforeToolCallContext,
     ) -> Pin<Box<dyn std::future::Future<Output = BeforeToolCallResult> + Send>> {
-        Box::pin(async { BeforeToolCallResult::Allow })
+        Box::pin(async { BeforeToolCallResult::Continue })
     }
 }
 
@@ -583,7 +591,8 @@ async fn phase17_next_call_routes_from_applied_state_nxt006() {
 
     let mut agent = Agent::new(
         Arc::new(collection),
-        vec![],
+        common::registrations_from(vec![]),
+        Some(common::permissive_authorizer()),
         "a:mock-model".into(),
         None,
         InferenceConfig::default(),

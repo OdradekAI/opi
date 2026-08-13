@@ -1241,7 +1241,43 @@ impl CodingHarness {
                 }
             };
         tools.extend(extension_tools);
-        let tool_defs: Vec<_> = tools.iter().map(|t| t.definition()).collect();
+        // Phase 17.4: register the built-in Reference Product tools as trusted
+        // registrations with their fixed capabilities. Extension/embedder tools
+        // without an exact existing capability permission are excluded (fail-
+        // closed; no implicit allow). The system-prompt tool definitions are
+        // projected from the trusted registrations so excluded tools never appear
+        // model-visible (AUT-008).
+        let registrations = crate::tool_authority::register_builtin_tools(tools);
+        let tool_defs: Vec<_> = registrations.iter().map(|r| r.definition.clone()).collect();
+
+        // Build the immutable digest-addressed effective user policy and the
+        // trusted authorizer bound to it. The authorization decision derives only
+        // from these facts + the capability + the current evidence health
+        // snapshot (AUT-003/004); model content is never consulted for permission.
+        let active_tool_names = tool_config.active_tool_names.clone();
+        let mutating_allowed = active_tool_names
+            .iter()
+            .any(|n| matches!(n.as_str(), "write" | "edit" | "bash"));
+        let command_execute_permission = crate::execution::permission::PermissionPolicy::from_map(
+            config.execution.permissions.clone(),
+        );
+        let effective_policy = Arc::new(crate::tool_authority::EffectiveUserPolicy::build(
+            build_options.execution_mode,
+            active_tool_names,
+            mutating_allowed,
+            command_execute_permission,
+            false, // complete_evidence_required: 17.4 wires no evidence capture (17.6/17.7)
+            crate::tool_authority::digest_of(&format!("{:?}", build_options.trust_decision)),
+            crate::tool_authority::digest_of(&format!("{:?}", build_options.installed_packages)),
+            // Path/operation-scope fact: the workspace boundary anchor. A finer
+            // protected-path/workspace-scope digest can refine this in a later task.
+            crate::tool_authority::digest_of(&workspace_root.to_string_lossy()),
+        ));
+        let authorizer = Arc::new(crate::tool_authority::ProductToolAuthorizer::new(
+            effective_policy,
+            permission_manager.clone(),
+        ));
+
         let mut builder = SystemPromptBuilder::new().tools(tool_defs);
         if let Some(content) = user_system_prompt {
             builder = builder.user_system(content);
@@ -1335,7 +1371,8 @@ impl CodingHarness {
 
         let mut agent = Agent::new(
             dispatch_collection,
-            tools,
+            registrations,
+            Some(authorizer),
             model_for_capability_lookup.clone(),
             Some(system_prompt.clone()),
             inference,
@@ -1445,11 +1482,6 @@ impl CodingHarness {
         harness.sync_session_id();
 
         harness
-    }
-
-    /// Add an extra tool to the harness (for testing with mock tools).
-    pub fn add_tool(&mut self, tool: Box<dyn Tool>) {
-        self.agent.add_tool(tool);
     }
 
     /// Queue images to be injected into the next prompt.

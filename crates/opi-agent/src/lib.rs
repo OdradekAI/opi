@@ -4,6 +4,7 @@
 //! tool systems, hooks, queues, and session persistence.
 
 pub mod agent;
+pub mod authority;
 pub mod compaction;
 pub mod diagnostic;
 pub mod diagnostic_sink;

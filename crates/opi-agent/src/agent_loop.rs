@@ -1,4 +1,4 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
 use futures_util::StreamExt;
@@ -20,7 +20,7 @@ use crate::hooks::{
 };
 use crate::loop_types::{AgentError, AgentLoopConfig, AgentLoopContext, NextTurnState};
 use crate::message::AgentMessage;
-use crate::tool::{ExecutionMode, Tool, ToolDiagnostic, ToolResult};
+use crate::tool::{ExecutionMode, ToolDiagnostic, ToolResult};
 use crate::trace::{TraceCollector, TraceKind};
 use crate::validation;
 
@@ -55,12 +55,10 @@ pub async fn agent_loop(
     let diagnostic_sink = context.diagnostic_sink.clone();
     let trace = context.trace.clone();
     let collection = context.collection.clone();
-    let tools_map: HashMap<String, &dyn Tool> = context
-        .tools
-        .iter()
-        .map(|t| (t.definition().name.clone(), t.as_ref()))
-        .collect();
-    let tool_defs: Vec<_> = context.tools.iter().map(|t| t.definition()).collect();
+    let registry = context.registry.clone();
+    let authorizer = context.authorizer.clone();
+    let evidence_health = context.evidence_health;
+    let tool_defs: Vec<_> = context.registry.definitions();
 
     let mut state = context.state;
 
@@ -222,9 +220,12 @@ pub async fn agent_loop(
                                 let mut terminate_flags = Vec::new();
 
                                 let batch_is_sequential = tool_calls.iter().any(|tc| {
-                                    tools_map
+                                    registry
                                         .get(tc.name.as_str())
-                                        .map(|t| t.execution_mode() == ExecutionMode::Sequential)
+                                        .map(|r| {
+                                            r.implementation.execution_mode()
+                                                == ExecutionMode::Sequential
+                                        })
                                         .unwrap_or(true)
                                 });
 
@@ -249,7 +250,9 @@ pub async fn agent_loop(
                                                     &parsed.tool_call.id,
                                                     &parsed.tool_call.name,
                                                     &args,
-                                                    &tools_map,
+                                                    &registry,
+                                                    authorizer.as_ref(),
+                                                    evidence_health.clone(),
                                                     hooks,
                                                     &state.context,
                                                     cancel.clone(),
@@ -320,7 +323,9 @@ pub async fn agent_loop(
                                     let futures: Vec<_> = parsed_calls
                                         .iter()
                                         .map(|parsed| {
-                                            let tools_map = &tools_map;
+                                            let registry = registry.clone();
+                                            let authorizer = authorizer.clone();
+                                            let evidence_health = evidence_health.clone();
                                             let messages = &state.context;
                                             let cancel = cancel.clone();
                                             let diagnostic_sink = diagnostic_sink.clone();
@@ -333,7 +338,9 @@ pub async fn agent_loop(
                                                             &parsed.tool_call.id,
                                                             &parsed.tool_call.name,
                                                             &args,
-                                                            tools_map,
+                                                            &registry,
+                                                            authorizer.as_ref(),
+                                                            evidence_health,
                                                             hooks,
                                                             messages,
                                                             cancel,
@@ -879,12 +886,105 @@ fn malformed_tool_arguments_result(
     }
 }
 
+/// Outcome of mandatory trusted authorization for one resolved, validated call.
+enum Authorized {
+    /// A fresh `Allow` whose registration, capability, and evidence-health
+    /// generation all match the current call.
+    AllowFresh,
+    /// Zero-execution denial (authorizer denial, stale generation, or authorizer
+    /// error/unavailability). `stable_code` and `redacted_reason` are secret-free.
+    Deny {
+        stable_code: String,
+        redacted_reason: String,
+    },
+}
+
+/// Resolve a current trusted `Allow` for one call: authorize against the
+/// current evidence-health snapshot, verify the returned `Allow` still matches
+/// the registration/capability/generation, and reauthorize once if it is stale.
+/// An authorizer error, denial, or a persistently stale generation all yield
+/// [`Authorized::Deny`] with zero execution (AUT-003/005).
+///
+/// Phase 17.4: `evidence_health` is a run-start snapshot, so a correct authorizer
+/// (which echoes the request generation) always returns a fresh `Allow` on the
+/// first attempt; the stale branch is exercised synthetically. Evidence-failure
+/// driven advancement and live mid-run reads arrive in 17.6/17.7.
+async fn authorize_and_verify(
+    authorizer: &dyn crate::authority::ToolAuthorizer,
+    registration: &crate::authority::RegisteredTool,
+    args: &serde_json::Value,
+    evidence_health: crate::evidence::EvidenceHealth,
+    call_id: &str,
+    turn_id: &str,
+    cancel: CancellationToken,
+) -> Authorized {
+    for attempt in 0..2u8 {
+        let request = crate::authority::ToolAuthorizationRequest {
+            run_id: None,
+            turn_id: turn_id.to_owned(),
+            call_id: call_id.to_owned(),
+            registration_id: registration.registration_id.clone(),
+            capability: registration.capability.clone(),
+            arguments: args.clone(),
+            evidence_health: evidence_health.clone(),
+        };
+        let decision = match authorizer.authorize(request, cancel.clone()).await {
+            Ok(decision) => decision,
+            Err(_) => {
+                return Authorized::Deny {
+                    stable_code: "authorization_unavailable".to_owned(),
+                    redacted_reason: "authorizer failed to reach a decision; execution denied"
+                        .to_owned(),
+                };
+            }
+        };
+        match decision {
+            crate::authority::AuthorizationDecision::Deny {
+                stable_code,
+                redacted_reason,
+            } => {
+                return Authorized::Deny {
+                    stable_code,
+                    redacted_reason,
+                };
+            }
+            crate::authority::AuthorizationDecision::Allow {
+                registration_id,
+                capability,
+                evidence_health_generation,
+                ..
+            } => {
+                if registration_id == registration.registration_id
+                    && capability == registration.capability
+                    && evidence_health_generation == evidence_health.generation()
+                {
+                    return Authorized::AllowFresh;
+                }
+                // Stale: the Allow no longer matches the current registration,
+                // capability, or evidence-health generation. Reauthorize once
+                // with the current health; a still-stale second decision denies
+                // with zero execution (spec 509-515).
+                if attempt > 0 {
+                    return Authorized::Deny {
+                        stable_code: "authorization_stale".to_owned(),
+                        redacted_reason: "authorization Allow was stale; execution denied"
+                            .to_owned(),
+                    };
+                }
+            }
+        }
+    }
+    unreachable!("authorize_and_verify loops at most twice before returning")
+}
+
 #[allow(clippy::too_many_arguments)] // private helper threading sinks + turn id alongside existing call context
 async fn execute_tool(
     call_id: &str,
     tool_name: &str,
     args: &serde_json::Value,
-    tools_map: &HashMap<String, &dyn Tool>,
+    registry: &crate::authority::ToolRegistry,
+    authorizer: Option<&Arc<dyn crate::authority::ToolAuthorizer>>,
+    evidence_health: crate::evidence::EvidenceHealth,
     hooks: &dyn AgentHooks,
     messages: &[AgentMessage],
     cancel: CancellationToken,
@@ -893,11 +993,13 @@ async fn execute_tool(
     turn_id: &str,
 ) -> ToolResult {
     // Tool call boundary record; emitted for every path below (completed,
-    // failed, cancelled) so the trace always brackets a tool execution.
+    // failed, cancelled, denied) so the trace always brackets a tool execution.
     trace_tool(trace, TraceKind::ToolCallStarted, tool_name, turn_id);
 
-    let tool = match tools_map.get(tool_name) {
-        Some(t) => *t,
+    // 1. Resolve one immutable trusted registration (AUT-001). Unknown tools
+    //    never reach hook, validation, authorization, or execution.
+    let registration = match registry.get(tool_name) {
+        Some(r) => r,
         None => {
             observe(
                 sink,
@@ -905,20 +1007,40 @@ async fn execute_tool(
                 tool_diagnostic(CODE_TOOL_UNKNOWN, tool_name, "unknown tool requested"),
             );
             trace_tool(trace, TraceKind::ToolCallFailed, tool_name, turn_id);
-            return ToolResult {
-                content: vec![opi_ai::message::OutputContent::Text {
-                    text: format!("unknown tool: {tool_name}"),
-                }],
-                details: None,
-                is_error: true,
-                terminate: false,
-                truncated: false,
-                diagnostics: vec![],
-            };
+            return error_text_result(format!("unknown tool: {tool_name}"));
         }
     };
 
-    let schema = &tool.definition().input_schema;
+    // 2. Non-authoritative before_tool_call hook: deny or continue (AUT-006).
+    //    Runs BEFORE schema validation (Phase 17.4 invocation order) so the hook
+    //    observes the proposed call regardless of argument validity; a denial
+    //    still yields zero execution.
+    let hook_ctx = BeforeToolCallContext {
+        tool_call_id: call_id.to_owned(),
+        tool_name: tool_name.to_owned(),
+        args: args.clone(),
+        messages: messages.to_vec(),
+    };
+    match hooks.before_tool_call(hook_ctx).await {
+        BeforeToolCallResult::Continue => {}
+        BeforeToolCallResult::Deny { reason } => {
+            observe(
+                sink,
+                trace,
+                tool_diagnostic(
+                    CODE_TOOL_EXECUTION_FAILED,
+                    tool_name,
+                    "tool call denied by hook",
+                ),
+            );
+            trace_tool(trace, TraceKind::ToolCallFailed, tool_name, turn_id);
+            return error_text_result(reason);
+        }
+    }
+
+    // 3. Validate the FINAL arguments against the registered schema (AUT-002).
+    //    The exact validated value is the value authorized and executed.
+    let schema = &registration.definition.input_schema;
     if let Err(err) = validation::validate(schema, args) {
         observe(
             sink,
@@ -933,37 +1055,58 @@ async fn execute_tool(
         return ToolResult::from_validation_error(err);
     }
 
-    let ctx = BeforeToolCallContext {
-        tool_call_id: call_id.to_owned(),
-        tool_name: tool_name.to_owned(),
-        args: args.clone(),
-        messages: messages.to_vec(),
-    };
-    match hooks.before_tool_call(ctx).await {
-        BeforeToolCallResult::Allow => {}
-        BeforeToolCallResult::Deny { reason } => {
+    // 4-5. Mandatory trusted authorization against the current evidence-health
+    //      snapshot (AUT-003/005). Missing authorizer, authorizer error, denial,
+    //      or a stale generation all yield zero executions and a redacted,
+    //      controlled outcome whose owning stable code is visible (A08).
+    let authorizer = match authorizer {
+        Some(a) => a,
+        None => {
             observe(
                 sink,
                 trace,
                 tool_diagnostic(
-                    CODE_TOOL_EXECUTION_FAILED,
+                    CODE_TOOL_AUTHORIZATION_UNAVAILABLE,
                     tool_name,
-                    "tool call denied by hook",
+                    "no trusted authorizer bound; execution denied",
                 ),
             );
             trace_tool(trace, TraceKind::ToolCallFailed, tool_name, turn_id);
-            return ToolResult {
-                content: vec![opi_ai::message::OutputContent::Text { text: reason }],
-                details: None,
-                is_error: true,
-                terminate: false,
-                truncated: false,
-                diagnostics: vec![],
-            };
+            return denial_result(
+                "authorization_unavailable",
+                "no trusted authorizer bound; execution denied",
+            );
+        }
+    };
+    match authorize_and_verify(
+        authorizer.as_ref(),
+        registration,
+        args,
+        evidence_health,
+        call_id,
+        turn_id,
+        cancel.clone(),
+    )
+    .await
+    {
+        Authorized::AllowFresh => {}
+        Authorized::Deny {
+            stable_code,
+            redacted_reason,
+        } => {
+            observe(
+                sink,
+                trace,
+                tool_diagnostic(CODE_TOOL_AUTHORIZATION_DENIED, tool_name, &redacted_reason),
+            );
+            trace_tool(trace, TraceKind::ToolCallFailed, tool_name, turn_id);
+            return denial_result(&stable_code, &redacted_reason);
         }
     }
 
-    match tool
+    // 6. Execute: only a current Allow reaches Tool::execute (OUT-003).
+    match registration
+        .implementation
         .execute(call_id, args.clone(), cancel.clone(), None)
         .await
     {
@@ -1025,17 +1168,36 @@ async fn execute_tool(
                 TraceKind::ToolCallFailed
             };
             trace_tool(trace, kind, tool_name, turn_id);
-            ToolResult {
-                content: vec![opi_ai::message::OutputContent::Text {
-                    text: e.to_string(),
-                }],
-                details: None,
-                is_error: true,
-                terminate: false,
-                truncated: false,
-                diagnostics: vec![],
-            }
+            error_text_result(e.to_string())
         }
+    }
+}
+
+/// A controlled tool error result carrying a single text message (no details).
+fn error_text_result(message: String) -> ToolResult {
+    ToolResult {
+        content: vec![opi_ai::message::OutputContent::Text { text: message }],
+        details: None,
+        is_error: true,
+        terminate: false,
+        truncated: false,
+        diagnostics: vec![],
+    }
+}
+
+/// Controlled, secret-free denial outcome. The owning stable code is surfaced
+/// in `details` so the authority source is visible without leaking arguments
+/// (A08); `redacted_reason` is the model-facing controlled text.
+fn denial_result(stable_code: &str, redacted_reason: &str) -> ToolResult {
+    ToolResult {
+        content: vec![opi_ai::message::OutputContent::Text {
+            text: redacted_reason.to_owned(),
+        }],
+        details: Some(serde_json::json!({ "stable_code": stable_code })),
+        is_error: true,
+        terminate: false,
+        truncated: false,
+        diagnostics: vec![],
     }
 }
 

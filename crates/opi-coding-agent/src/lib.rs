@@ -39,3 +39,4 @@ pub mod session_coordinator;
 pub mod skill;
 pub mod theme_discovery;
 pub mod tool;
+pub mod tool_authority;

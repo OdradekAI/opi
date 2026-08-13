@@ -255,6 +255,11 @@ pub mod code {
     pub const CODE_TOOL_UNKNOWN: &str = "tool_unknown";
     pub const CODE_TOOL_VALIDATION_FAILED: &str = "tool_validation_failed";
     pub const CODE_TOOL_EXECUTION_FAILED: &str = "tool_execution_failed";
+    // Trusted authorization-boundary codes (Phase 17.4). A denied, stale, or
+    // forged-authorization tool call yields zero executions; the stable code
+    // distinguishes an authorizer denial from an unavailable/failed authorizer.
+    pub const CODE_TOOL_AUTHORIZATION_DENIED: &str = "tool_authorization_denied";
+    pub const CODE_TOOL_AUTHORIZATION_UNAVAILABLE: &str = "tool_authorization_unavailable";
     // Filesystem/tool-error taxonomy codes (Phase 11.2). Each maps to a distinct
     // `FsToolError` variant, replacing the single `CODE_TOOL_EXECUTION_FAILED`
     // collapse for tool-reported path/filesystem causes.
@@ -884,6 +889,13 @@ impl From<&crate::loop_types::AgentError> for Diagnostic {
                 "invalid next-turn candidate state",
             )
             .details(serde_json::json!({ "candidate_error": message })),
+            AgentError::InvalidToolRegistration(message) => Diagnostic::new(
+                Severity::Error,
+                code::CODE_TOOL_FAILED,
+                SOURCE_TOOL,
+                "invalid trusted tool registration",
+            )
+            .details(serde_json::json!({ "registration_error": message })),
         }
     }
 }

@@ -4,6 +4,8 @@
 //!
 //! Uses the shared MockProvider from `opi_ai::test_support` (task 1.17).
 
+mod common;
+
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 
@@ -112,7 +114,7 @@ impl AgentHooks for TestHooks {
         &self,
         _ctx: BeforeToolCallContext,
     ) -> Pin<Box<dyn std::future::Future<Output = BeforeToolCallResult> + Send>> {
-        Box::pin(async { BeforeToolCallResult::Allow })
+        Box::pin(async { BeforeToolCallResult::Continue })
     }
 }
 
@@ -148,7 +150,9 @@ async fn no_tool_turn_emits_lifecycle_events() {
 
     let context = AgentLoopContext {
         collection: Arc::new(single_route_collection(Box::new(provider))),
-        tools: vec![],
+        registry: common::test_registry(vec![]),
+        authorizer: Some(common::permissive_authorizer()),
+        evidence_health: opi_agent::evidence::EvidenceHealth::healthy(),
         state: NextTurnState::new(
             vec![AgentMessage::Llm(Message::User(UserMessage {
                 content: vec![InputContent::Text { text: "Hi".into() }],
@@ -208,7 +212,9 @@ async fn account_id_missing_provider_error_maps_to_typed_agent_error() {
 
     let context = AgentLoopContext {
         collection: Arc::new(single_route_collection(Box::new(provider))),
-        tools: vec![],
+        registry: common::test_registry(vec![]),
+        authorizer: Some(common::permissive_authorizer()),
+        evidence_health: opi_agent::evidence::EvidenceHealth::healthy(),
         state: NextTurnState::new(
             vec![AgentMessage::Llm(Message::User(UserMessage {
                 content: vec![InputContent::Text { text: "Hi".into() }],
@@ -296,7 +302,9 @@ async fn tool_use_turn_executes_tool_and_loops() {
 
     let context = AgentLoopContext {
         collection: Arc::new(single_route_collection(Box::new(provider))),
-        tools: vec![Box::new(tool)],
+        registry: common::test_registry(vec![Box::new(tool)]),
+        authorizer: Some(common::permissive_authorizer()),
+        evidence_health: opi_agent::evidence::EvidenceHealth::healthy(),
         state: NextTurnState::new(
             vec![AgentMessage::Llm(Message::User(UserMessage {
                 content: vec![InputContent::Text {
@@ -368,7 +376,9 @@ async fn text_content_preserved_in_assistant_message() {
 
     let context = AgentLoopContext {
         collection: Arc::new(single_route_collection(Box::new(provider))),
-        tools: vec![],
+        registry: common::test_registry(vec![]),
+        authorizer: Some(common::permissive_authorizer()),
+        evidence_health: opi_agent::evidence::EvidenceHealth::healthy(),
         state: NextTurnState::new(
             vec![AgentMessage::Llm(Message::User(UserMessage {
                 content: vec![InputContent::Text { text: "Hi".into() }],
@@ -428,7 +438,8 @@ async fn session_id_reaches_every_request() {
     let call_log = provider.call_log_handle();
     let mut agent = Agent::new(
         Arc::new(single_route_collection(Box::new(provider))),
-        vec![],
+        common::registrations_from(vec![]),
+        Some(common::permissive_authorizer()),
         "mock:mock-model".into(),
         None,
         InferenceConfig::default(),

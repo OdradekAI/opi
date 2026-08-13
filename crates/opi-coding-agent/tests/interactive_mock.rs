@@ -5,6 +5,8 @@
 //! Tests exercise the full path: CodingHarness → Agent → MockProvider,
 //! verifying tool wiring, system prompt construction, hooks, and multi-turn.
 
+mod common;
+
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -108,6 +110,26 @@ fn event_name(event: &AgentEvent) -> &'static str {
     }
 }
 
+/// Minimal `AgentHooks` for driving a raw `Agent` in tests that previously used
+/// a `CodingHarness`. Only `convert_to_llm` is meaningful; every other hook
+/// keeps its default no-op behavior (`before_tool_call` defaults to `Continue`).
+struct NoopHooks;
+
+impl opi_agent::hooks::AgentHooks for NoopHooks {
+    fn convert_to_llm(
+        &self,
+        messages: &[AgentMessage],
+    ) -> Result<Vec<Message>, opi_agent::loop_types::AgentError> {
+        Ok(messages
+            .iter()
+            .filter_map(|m| match m {
+                AgentMessage::Llm(m) => Some(m.clone()),
+                _ => None,
+            })
+            .collect())
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Test 1: text prompt through CodingHarness with MockProvider
 // ---------------------------------------------------------------------------
@@ -183,19 +205,28 @@ async fn harness_tool_call_with_mock() {
 
     let provider = MockProvider::new("mock", vec![first, second]);
 
-    let mut harness = CodingHarness::new(
-        Box::new(provider),
-        "mock-model".into(),
-        OpiConfig::default(),
-        std::env::current_dir().unwrap(),
-        opi_coding_agent::project_trust::TrustDecision::Trusted,
-    );
+    // Phase 17.4: CodingHarness::add_tool was removed; a raw Agent drives the
+    // RecordTool as a trusted registration behind a permissive authorizer.
+    let collection = Arc::new(test_support::single_route_collection(Box::new(provider)));
+    let mut agent = opi_agent::Agent::new(
+        collection,
+        common::registrations_from(vec![Box::new(RecordTool::new(
+            "record_tool",
+            tool_call_log.clone(),
+        ))]),
+        Some(common::permissive_authorizer()),
+        "mock:mock-model".to_owned(),
+        None,
+        opi_agent::loop_types::InferenceConfig::default(),
+        opi_agent::loop_types::AgentLoopConfig {
+            max_turns: 10,
+            ..Default::default()
+        },
+        Box::new(NoopHooks),
+    )
+    .unwrap();
 
-    // Add the record tool alongside built-in tools
-    let record_tool = RecordTool::new("record_tool", tool_call_log.clone());
-    harness.add_tool(Box::new(record_tool));
-
-    let result = harness.prompt("Use the record tool").await.unwrap();
+    let result = agent.prompt("Use the record tool").await.unwrap();
 
     // Tool should have been called
     let log = tool_call_log.lock().unwrap();
@@ -299,22 +330,29 @@ async fn harness_respects_max_iterations_config() {
     let provider_calls = provider.call_log_handle();
     let tool_calls = Arc::new(Mutex::new(Vec::new()));
 
-    let mut config = OpiConfig::default();
-    config.defaults.max_iterations = 3;
+    // Phase 17.4: CodingHarness::add_tool was removed; a raw Agent drives the
+    // RecordTool as a trusted registration behind a permissive authorizer. The
+    // old `config.defaults.max_iterations = 3` maps directly to `max_turns: 3`.
+    let collection = Arc::new(test_support::single_route_collection(Box::new(provider)));
+    let mut agent = opi_agent::Agent::new(
+        collection,
+        common::registrations_from(vec![Box::new(RecordTool::new(
+            "record_tool",
+            Arc::clone(&tool_calls),
+        ))]),
+        Some(common::permissive_authorizer()),
+        "mock:mock-model".to_owned(),
+        None,
+        opi_agent::loop_types::InferenceConfig::default(),
+        opi_agent::loop_types::AgentLoopConfig {
+            max_turns: 3,
+            ..Default::default()
+        },
+        Box::new(NoopHooks),
+    )
+    .unwrap();
 
-    let mut harness = CodingHarness::new(
-        Box::new(provider),
-        "mock-model".into(),
-        config,
-        std::env::current_dir().unwrap(),
-        opi_coding_agent::project_trust::TrustDecision::Trusted,
-    );
-    harness.add_tool(Box::new(RecordTool::new(
-        "record_tool",
-        Arc::clone(&tool_calls),
-    )));
-
-    let result = harness.prompt("Keep using the record tool").await;
+    let result = agent.prompt("Keep using the record tool").await;
 
     assert!(
         matches!(

@@ -15,6 +15,8 @@
 //! - **Non-file tools**: Tools without a `path` argument (glob, grep, etc.)
 //!   pass through unaffected.
 
+mod common;
+
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
@@ -461,10 +463,11 @@ async fn allow_all_permits_read_and_write() {
     let hooks = registry.wrap_hooks(Box::new(TestHooks));
     let mut agent = opi_agent::Agent::new(
         Arc::new(single_route_collection(Box::new(provider))),
-        vec![
+        common::registrations_from(vec![
             Box::new(DummyTool::new("read")),
             Box::new(DummyTool::new("write")),
-        ],
+        ]),
+        Some(common::permissive_authorizer()),
         "mock:mock-model".into(),
         None,
         InferenceConfig::default(),
@@ -518,7 +521,8 @@ async fn allow_paths_permits_listed_paths() {
     let hooks = registry.wrap_hooks(Box::new(TestHooks));
     let mut agent = opi_agent::Agent::new(
         Arc::new(single_route_collection(Box::new(provider))),
-        vec![Box::new(DummyTool::new("read"))],
+        common::registrations_from(vec![Box::new(DummyTool::new("read"))]),
+        Some(common::permissive_authorizer()),
         "mock:mock-model".into(),
         None,
         InferenceConfig::default(),
@@ -572,7 +576,8 @@ async fn deny_paths_blocks_matching_write() {
     let hooks = registry.wrap_hooks(Box::new(TestHooks));
     let mut agent = opi_agent::Agent::new(
         Arc::new(single_route_collection(Box::new(provider))),
-        vec![Box::new(DummyTool::new("write"))],
+        common::registrations_from(vec![Box::new(DummyTool::new("write"))]),
+        Some(common::permissive_authorizer()),
         "mock:mock-model".into(),
         None,
         InferenceConfig::default(),
@@ -627,7 +632,8 @@ async fn deny_paths_allows_non_matching_path() {
     let hooks = registry.wrap_hooks(Box::new(TestHooks));
     let mut agent = opi_agent::Agent::new(
         Arc::new(single_route_collection(Box::new(provider))),
-        vec![Box::new(DummyTool::new("read"))],
+        common::registrations_from(vec![Box::new(DummyTool::new("read"))]),
+        Some(common::permissive_authorizer()),
         "mock:mock-model".into(),
         None,
         InferenceConfig::default(),
@@ -681,7 +687,8 @@ async fn deny_paths_blocks_edit_on_protected_file() {
     let hooks = registry.wrap_hooks(Box::new(TestHooks));
     let mut agent = opi_agent::Agent::new(
         Arc::new(single_route_collection(Box::new(provider))),
-        vec![Box::new(DummyTool::new("edit"))],
+        common::registrations_from(vec![Box::new(DummyTool::new("edit"))]),
+        Some(common::permissive_authorizer()),
         "mock:mock-model".into(),
         None,
         InferenceConfig::default(),
@@ -728,7 +735,8 @@ async fn deny_paths_blocks_bash_when_workspace_root_is_denied() {
     let hooks = registry.wrap_hooks(Box::new(TestHooks));
     let mut agent = opi_agent::Agent::new(
         Arc::new(single_route_collection(Box::new(provider))),
-        vec![Box::new(DummyTool::new("bash"))],
+        common::registrations_from(vec![Box::new(DummyTool::new("bash"))]),
+        Some(common::permissive_authorizer()),
         "mock:mock-model".into(),
         None,
         InferenceConfig::default(),
@@ -782,7 +790,8 @@ async fn parent_traversal_normalizes_to_workspace_root() {
     let hooks = registry.wrap_hooks(Box::new(TestHooks));
     let mut agent = opi_agent::Agent::new(
         Arc::new(single_route_collection(Box::new(provider))),
-        vec![Box::new(DummyTool::new("read"))],
+        common::registrations_from(vec![Box::new(DummyTool::new("read"))]),
+        Some(common::permissive_authorizer()),
         "mock:mock-model".into(),
         None,
         InferenceConfig::default(),
@@ -830,7 +839,8 @@ async fn dot_dot_in_path_is_resolved() {
     let hooks = registry.wrap_hooks(Box::new(TestHooks));
     let mut agent = opi_agent::Agent::new(
         Arc::new(single_route_collection(Box::new(provider))),
-        vec![Box::new(DummyTool::new("write"))],
+        common::registrations_from(vec![Box::new(DummyTool::new("write"))]),
+        Some(common::permissive_authorizer()),
         "mock:mock-model".into(),
         None,
         InferenceConfig::default(),
@@ -879,7 +889,8 @@ async fn absolute_path_outside_workspace_blocked() {
     let hooks = registry.wrap_hooks(Box::new(TestHooks));
     let mut agent = opi_agent::Agent::new(
         Arc::new(single_route_collection(Box::new(provider))),
-        vec![Box::new(DummyTool::new("read"))],
+        common::registrations_from(vec![Box::new(DummyTool::new("read"))]),
+        Some(common::permissive_authorizer()),
         "mock:mock-model".into(),
         None,
         InferenceConfig::default(),
@@ -938,7 +949,8 @@ async fn symlink_traversal_to_protected_path_blocked() {
     let hooks = registry.wrap_hooks(Box::new(TestHooks));
     let mut agent = opi_agent::Agent::new(
         Arc::new(single_route_collection(Box::new(provider))),
-        vec![Box::new(DummyTool::new("read"))],
+        common::registrations_from(vec![Box::new(DummyTool::new("read"))]),
+        Some(common::permissive_authorizer()),
         "mock:mock-model".into(),
         None,
         InferenceConfig::default(),
@@ -985,7 +997,8 @@ async fn non_file_tools_pass_through_unaffected() {
     let hooks = registry.wrap_hooks(Box::new(TestHooks));
     let mut agent = opi_agent::Agent::new(
         Arc::new(single_route_collection(Box::new(provider))),
-        vec![Box::new(DummyTool::new("glob"))],
+        common::registrations_from(vec![Box::new(DummyTool::new("glob"))]),
+        Some(common::permissive_authorizer()),
         "mock:mock-model".into(),
         None,
         InferenceConfig::default(),
@@ -1052,7 +1065,8 @@ async fn audit_log_records_allow_and_deny_across_turns() {
     let hooks = registry.wrap_hooks(Box::new(TestHooks));
     let mut agent = opi_agent::Agent::new(
         Arc::new(single_route_collection(Box::new(provider))),
-        vec![Box::new(DummyTool::new("read"))],
+        common::registrations_from(vec![Box::new(DummyTool::new("read"))]),
+        Some(common::permissive_authorizer()),
         "mock:mock-model".into(),
         None,
         InferenceConfig::default(),

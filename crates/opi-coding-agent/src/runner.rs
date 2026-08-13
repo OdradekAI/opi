@@ -889,7 +889,8 @@ fn exit_code_for_agent_error(error: &AgentError) -> i32 {
         AgentError::Hook(_)
         | AgentError::MaxTurnsExceeded(_)
         | AgentError::TraceSetup(_)
-        | AgentError::InvalidNextTurnCandidate(_) => ExitCode::RuntimeFailure as i32,
+        | AgentError::InvalidNextTurnCandidate(_)
+        | AgentError::InvalidToolRegistration(_) => ExitCode::RuntimeFailure as i32,
     }
 }
 
@@ -995,7 +996,7 @@ impl AgentHooks for NonInteractiveHooks {
                     ),
                 };
             }
-            BeforeToolCallResult::Allow
+            BeforeToolCallResult::Continue
         })
     }
 

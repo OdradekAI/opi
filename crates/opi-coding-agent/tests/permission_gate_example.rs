@@ -21,6 +21,8 @@
 //! standard [`Extension::on_event`] callback to observe agent lifecycle events.
 //! No core runtime changes are needed.
 
+mod common;
+
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
@@ -323,7 +325,8 @@ async fn allow_all_policy_permits_tool_call() {
     let hooks = registry.wrap_hooks(Box::new(TestHooks));
     let mut agent = opi_agent::Agent::new(
         Arc::new(single_route_collection(Box::new(provider))),
-        vec![Box::new(DummyTool::new("write"))],
+        common::registrations_from(vec![Box::new(DummyTool::new("write"))]),
+        Some(common::permissive_authorizer()),
         "mock:mock-model".into(),
         None,
         InferenceConfig::default(),
@@ -374,7 +377,8 @@ async fn allow_list_policy_permits_listed_tool() {
     let hooks = registry.wrap_hooks(Box::new(TestHooks));
     let mut agent = opi_agent::Agent::new(
         Arc::new(single_route_collection(Box::new(provider))),
-        vec![Box::new(DummyTool::new("read"))],
+        common::registrations_from(vec![Box::new(DummyTool::new("read"))]),
+        Some(common::permissive_authorizer()),
         "mock:mock-model".into(),
         None,
         InferenceConfig::default(),
@@ -417,7 +421,8 @@ async fn deny_all_policy_blocks_tool_call() {
     let hooks = registry.wrap_hooks(Box::new(TestHooks));
     let mut agent = opi_agent::Agent::new(
         Arc::new(single_route_collection(Box::new(provider))),
-        vec![Box::new(DummyTool::new("bash"))],
+        common::registrations_from(vec![Box::new(DummyTool::new("bash"))]),
+        Some(common::permissive_authorizer()),
         "mock:mock-model".into(),
         None,
         InferenceConfig::default(),
@@ -469,7 +474,8 @@ async fn deny_list_policy_blocks_specific_tools() {
     let hooks = registry.wrap_hooks(Box::new(TestHooks));
     let mut agent = opi_agent::Agent::new(
         Arc::new(single_route_collection(Box::new(provider))),
-        vec![Box::new(DummyTool::new("write"))],
+        common::registrations_from(vec![Box::new(DummyTool::new("write"))]),
+        Some(common::permissive_authorizer()),
         "mock:mock-model".into(),
         None,
         InferenceConfig::default(),
@@ -516,7 +522,8 @@ async fn deny_list_policy_allows_non_listed_tools() {
     let hooks = registry.wrap_hooks(Box::new(TestHooks));
     let mut agent = opi_agent::Agent::new(
         Arc::new(single_route_collection(Box::new(provider))),
-        vec![Box::new(DummyTool::new("read"))],
+        common::registrations_from(vec![Box::new(DummyTool::new("read"))]),
+        Some(common::permissive_authorizer()),
         "mock:mock-model".into(),
         None,
         InferenceConfig::default(),
@@ -566,10 +573,11 @@ async fn audit_log_records_allow_and_deny_across_turns() {
     let hooks = registry.wrap_hooks(Box::new(TestHooks));
     let mut agent = opi_agent::Agent::new(
         Arc::new(single_route_collection(Box::new(provider))),
-        vec![
+        common::registrations_from(vec![
             Box::new(DummyTool::new("read")),
             Box::new(DummyTool::new("write")),
-        ],
+        ]),
+        Some(common::permissive_authorizer()),
         "mock:mock-model".into(),
         None,
         InferenceConfig::default(),
@@ -683,10 +691,11 @@ async fn non_interactive_auto_approves_with_allow_all() {
     let hooks = registry.wrap_hooks(Box::new(TestHooks));
     let mut agent = opi_agent::Agent::new(
         Arc::new(single_route_collection(Box::new(provider))),
-        vec![
+        common::registrations_from(vec![
             Box::new(DummyTool::new("write")),
             Box::new(DummyTool::new("bash")),
-        ],
+        ]),
+        Some(common::permissive_authorizer()),
         "mock:mock-model".into(),
         None,
         InferenceConfig::default(),
@@ -727,7 +736,8 @@ async fn non_interactive_auto_denies_with_deny_all() {
     let hooks = registry.wrap_hooks(Box::new(TestHooks));
     let mut agent = opi_agent::Agent::new(
         Arc::new(single_route_collection(Box::new(provider))),
-        vec![Box::new(DummyTool::new("write"))],
+        common::registrations_from(vec![Box::new(DummyTool::new("write"))]),
+        Some(common::permissive_authorizer()),
         "mock:mock-model".into(),
         None,
         InferenceConfig::default(),
@@ -772,7 +782,8 @@ async fn non_interactive_auto_denies_with_allow_list_for_unlisted() {
     let hooks = registry.wrap_hooks(Box::new(TestHooks));
     let mut agent = opi_agent::Agent::new(
         Arc::new(single_route_collection(Box::new(provider))),
-        vec![Box::new(DummyTool::new("bash"))],
+        common::registrations_from(vec![Box::new(DummyTool::new("bash"))]),
+        Some(common::permissive_authorizer()),
         "mock:mock-model".into(),
         None,
         InferenceConfig::default(),

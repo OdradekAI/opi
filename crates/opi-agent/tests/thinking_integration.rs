@@ -1,5 +1,7 @@
 //! Integration test for thinking config passthrough.
 
+mod common;
+
 use std::sync::{Arc, Mutex};
 
 use opi_agent::hooks::AgentHooks;
@@ -87,7 +89,9 @@ async fn thinking_config_passed_to_provider() {
     };
     let context = AgentLoopContext {
         collection: Arc::new(single_route_collection(Box::new(provider))),
-        tools: vec![],
+        registry: common::test_registry(vec![]),
+        authorizer: Some(common::permissive_authorizer()),
+        evidence_health: opi_agent::evidence::EvidenceHealth::healthy(),
         state: NextTurnState::new(
             vec![user_msg("hi")],
             ModelSelection::parse_spec("test:test-model").unwrap(),
@@ -133,7 +137,9 @@ async fn thinking_disabled_by_default() {
     };
     let context = AgentLoopContext {
         collection: Arc::new(single_route_collection(Box::new(provider))),
-        tools: vec![],
+        registry: common::test_registry(vec![]),
+        authorizer: Some(common::permissive_authorizer()),
+        evidence_health: opi_agent::evidence::EvidenceHealth::healthy(),
         state: NextTurnState::new(
             vec![user_msg("hi")],
             ModelSelection::parse_spec("test:test-model").unwrap(),
