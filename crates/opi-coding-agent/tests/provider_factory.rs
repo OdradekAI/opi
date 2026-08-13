@@ -345,6 +345,54 @@ async fn native_keyring_precedes_live_provider_construction() {
     assert_native_entry_drop_order(&events);
 }
 
+#[tokio::test]
+async fn build_provider_bundle_populates_eager_extra_dispatch_routes() {
+    use opi_coding_agent::credential_store::{
+        FakeKeyringBackend, KEYCHAIN_PRESENCE_SERVICE, KEYCHAIN_SERVICE, KeyringBackendFactory,
+    };
+    use opi_coding_agent::provider_factory::build_provider_bundle;
+
+    let backend_factory: KeyringBackendFactory = Box::new(|| {
+        let backend = FakeKeyringBackend::new();
+        backend.seed_raw(
+            KEYCHAIN_SERVICE,
+            "anthropic",
+            r#"{"version":1,"kind":"api_key","api_key":"test-eager-routes"}"#,
+        );
+        backend.seed_raw(KEYCHAIN_PRESENCE_SERVICE, "anthropic", "api_key");
+        Box::new(backend)
+    });
+
+    let dir = tempfile::tempdir().expect("temp dir");
+    let mut config = OpiConfig::default();
+    config.defaults.model = "anthropic:claude-sonnet-4-5-20250514".into();
+    let bundle = build_provider_bundle(&config, dir.path().to_path_buf(), backend_factory)
+        .await
+        .expect("provider bundle builds");
+
+    // Phase 17.5: eager multi-route construction. Every built-in provider that
+    // can construct a wire adapter WITHOUT credentials (lazy credential IO) is
+    // registered in `extra_routes`, so a cross-provider switch resolves through
+    // one collection without reconstructing the Agent.
+    let extra_ids: Vec<&str> = bundle.extra_routes.iter().map(|(p, _)| p.id()).collect();
+    for expected in [
+        "openai",
+        "openrouter",
+        "mistral",
+        "openai-responses",
+        "gemini",
+    ] {
+        assert!(
+            extra_ids.contains(&expected),
+            "extra_routes must contain {expected}, got {extra_ids:?}"
+        );
+    }
+    assert!(
+        !extra_ids.contains(&"anthropic"),
+        "active provider must not be in extra_routes, got {extra_ids:?}"
+    );
+}
+
 #[test]
 fn provider_bundle_retains_redacted_backend_fallback_diagnostic() {
     use opi_agent::diagnostic::{RedactionMode, SOURCE_PROVIDER, Severity};
@@ -444,6 +492,7 @@ async fn provider_bundle_retains_native_store_while_provider_is_callable() {
             opi_ai::AuthScheme::ApiKey,
             secrecy::SecretString::from("test"),
         )),
+        extra_routes: Vec::new(),
         store,
         resolver,
         registry,
@@ -1248,14 +1297,18 @@ api_key_env = "{env_var}"
 
 #[tokio::test]
 async fn metadata_only_provider_dispatch_returns_explicit_error() {
-    use opi_coding_agent::provider_factory::assemble_harness_collection;
+    use opi_coding_agent::provider_factory::build_harness_collection;
 
-    let mut provider = MockProvider::new("metadata-provider", vec![]);
-    let (collection, diagnostics) = assemble_harness_collection(&mut provider, None);
-    assert!(diagnostics.is_empty());
+    // A lookup-only extension provider (registered without a route resolver) is
+    // not dispatchable. 17.5: the metadata-only rejection surfaces at
+    // prepare_call as CollectionError::RouteNotDispatchable.
+    let collection = build_harness_collection(
+        Vec::new(),
+        vec![Box::new(MockProvider::new("metadata-provider", vec![]))],
+        Vec::new(),
+        "metadata-provider",
+    );
 
-    // 17.5: dispatch_complete was removed; the metadata-only rejection now
-    // surfaces at prepare_call as CollectionError::RouteNotDispatchable.
     let error = collection
         .prepare_call(
             "metadata-provider:mock-model",
@@ -1704,55 +1757,41 @@ fn azure_config_constructor_rejects_empty_deployment_catalog() {
     ));
 }
 
-/// Credentials are validated at build time before any provider construction
-/// or dispatch. DoD: "validates credentials at build time" + "missing or
-/// invalid credentials emit safe diagnostics with provider/error class and
-/// remediation". Covers both cred-validation shapes: `require_api_key`
-/// (anthropic/azure/vertex -> "missing API key: set {env}") and bedrock
-/// credential-chain exhaustion ("no AWS credentials found: ...") through the
-/// production `build_provider` boundary.
+/// Phase 17.5 credential contract: single-credential providers are constructed
+/// LAZILY — the credential is resolved by the route's per-call auth resolver at
+/// `prepare_call`, so a missing API key is no longer a build failure. Bedrock is
+/// the compound-credential exception and still resolves its AWS credential chain
+/// at construction, surfacing an `Auth` diagnostic with remediation on
+/// exhaustion. This pins both shapes through the `build_provider` boundary.
 #[test]
-fn build_provider_returns_auth_error_for_missing_credentials() {
+fn build_provider_builds_single_credential_lazily_and_bedrock_requires_credentials() {
     use opi_coding_agent::config::OpiConfig;
     use opi_coding_agent::provider_factory::{ProviderBuildError, build_provider};
 
-    // require_api_key path: removing the single env var yields an Auth
-    // diagnostic naming the env var + remediation.
-    let require_key_cases: &[(&str, &[&str], /* expected env name */ &str)] = &[
-        ("anthropic", &["ANTHROPIC_API_KEY"], "ANTHROPIC_API_KEY"),
-        ("azure", &["AZURE_OPENAI_API_KEY"], "AZURE_OPENAI_API_KEY"),
-        ("vertex", &["VERTEX_ACCESS_TOKEN"], "VERTEX_ACCESS_TOKEN"),
+    // Lazy construction: removing the single env var must NOT fail provider
+    // construction for single-credential providers (the credential is resolved
+    // later at dispatch).
+    let lazy_cases: &[(&str, &[&str])] = &[
+        ("anthropic", &["ANTHROPIC_API_KEY"]),
+        ("azure", &["AZURE_OPENAI_API_KEY"]),
+        ("vertex", &["VERTEX_ACCESS_TOKEN"]),
     ];
-    for (id, remove, env_name) in require_key_cases.iter().copied() {
+    for (id, remove) in lazy_cases.iter().copied() {
         with_env_managed(remove, &[], || {
             let mut config = OpiConfig::default();
             config.defaults.model = format!("{id}:test-model");
-            // Azure/vertex also need endpoint/project+location to reach their
-            // cred check, but require_api_key runs first so these are only
-            // here to keep the failure strictly about credentials.
+            // Azure/vertex still need non-secret endpoint/project+location config
+            // to construct their adapter; the credential is the only lazy half.
             if id == "azure" {
                 config.providers.azure.endpoint = Some("https://test.openai.azure.com".into());
             } else if id == "vertex" {
                 config.providers.vertex.project = Some("test-project".into());
                 config.providers.vertex.location = Some("us-central1".into());
             }
-            match build_provider(&config) {
-                Err(ProviderBuildError::Auth(msg)) => {
-                    assert!(
-                        msg.contains(env_name),
-                        "{id} Auth diagnostic should name {env_name}, got: {msg:?}"
-                    );
-                    assert!(
-                        msg.contains("API key"),
-                        "{id} Auth diagnostic should describe the missing key, got: {msg:?}"
-                    );
-                }
-                Err(e) => panic!("{id} missing-cred should be Auth, got {e:?}"),
-                Ok(p) => panic!(
-                    "{id} missing-cred should be Auth, got Ok provider {}",
-                    p.id()
-                ),
-            }
+            let provider = build_provider(&config).unwrap_or_else(|e| {
+                panic!("{id} must build lazily without a credential, got {e:?}")
+            });
+            assert_eq!(provider.id(), id, "{id} lazy construction");
         });
     }
 
@@ -2081,18 +2120,20 @@ max_output_tokens = 4096
 /// DoD: "assembles harness model lookup through from_registry without claiming
 /// auth-gated runtime dispatch". The existing
 /// `metadata_only_provider_dispatch_returns_explicit_error` asserts dispatch
-/// behavior (which would be unchanged by a `new`+`register` rewrite); this
-/// pins the from_registry seam by asserting NO auth descriptor is attached
-/// while the active provider's models still resolve.
+/// behavior; this pins the from_registry seam by asserting NO auth descriptor
+/// is attached to a lookup-only extension provider whose models still resolve.
 #[test]
-fn assemble_harness_collection_uses_from_registry_seam() {
-    use opi_coding_agent::provider_factory::assemble_harness_collection;
+fn build_harness_collection_uses_from_registry_seam() {
+    use opi_coding_agent::provider_factory::build_harness_collection;
 
-    let mut provider = MockProvider::new("mock-active", vec![]);
-    let (collection, diagnostics) = assemble_harness_collection(&mut provider, None);
-    assert!(diagnostics.is_empty());
+    let collection = build_harness_collection(
+        Vec::new(),
+        vec![Box::new(MockProvider::new("mock-active", vec![]))],
+        Vec::new(),
+        "mock-active",
+    );
 
-    // from_registry path: the active provider contributes metadata but NO
+    // from_registry path: the lookup-only provider contributes metadata but NO
     // auth descriptor (the listing path attaches Resolved descriptors).
     assert!(
         collection.auth_descriptor("mock-active").is_none(),
@@ -2202,16 +2243,15 @@ fn provider_policy_is_centralized() {
         "ProviderCollection::new",
         "fn parse_model_spec",
         "fn build_provider",
-        "fn build_runtime_provider",
+        "fn build_runtime_route",
         "fn build_list_models_metadata",
         "fn listing_auth_available",
         "fn openai_compatible_model_catalog",
-        "fn build_runtime_openai_compatible_profile",
         "fn build_openai_compatible_profile",
         "fn build_collection_for_listing",
         "fn build_collection_for_listing_with_store",
-        "fn assemble_harness_collection",
-        "fn require_api_key",
+        "fn build_harness_collection",
+        "fn materialize_active_overrides",
         "fn non_empty_env_var",
         "fn resolve_env_name",
         "fn resolve_bedrock_env_credentials",
@@ -2224,7 +2264,7 @@ fn provider_policy_is_centralized() {
         "fn resolved_auth_descriptor_for_profile",
         "fn auth_descriptor_for_profile",
         "fn compat_metadata_for",
-        "struct MetadataProvider",
+        "struct ListingMetadataProvider",
         "BUILT_IN_PROVIDER_IDS",
     ];
 

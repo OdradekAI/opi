@@ -164,6 +164,7 @@ impl NonInteractiveRunner {
             None,
             None,
             trust_decision,
+            Vec::new(),
         )
     }
 
@@ -185,6 +186,7 @@ impl NonInteractiveRunner {
         tool_selection: ToolSelection,
         runtime_startup: RuntimePackageStartup,
         trace_path: Option<PathBuf>,
+        extra_routes: Vec<crate::provider_factory::ProviderAuthPair>,
     ) -> Result<Self, ToolPolicyError> {
         let trust_decision = runtime_startup.trust_decision;
         Self::build(
@@ -200,6 +202,7 @@ impl NonInteractiveRunner {
             Some(runtime_startup),
             trace_path,
             trust_decision,
+            extra_routes,
         )
     }
 
@@ -217,6 +220,7 @@ impl NonInteractiveRunner {
         runtime_startup: Option<RuntimePackageStartup>,
         trace_path: Option<PathBuf>,
         trust_decision: TrustDecision,
+        extra_routes: Vec<crate::provider_factory::ProviderAuthPair>,
     ) -> Result<Self, ToolPolicyError> {
         let tool_config = ToolRuntimeConfig::resolve(
             RunMode::NonInteractive,
@@ -230,6 +234,7 @@ impl NonInteractiveRunner {
                 .initial_messages(initial_messages)
                 .tool_selection(tool_selection)
                 .tool_config(tool_config)
+                .extra_routes(extra_routes)
                 // Phase 16.9: non-interactive run mode threaded into
                 // ExecutionRuntime::build.
                 .execution_mode(crate::config::ExecutionRunMode::NonInteractive)

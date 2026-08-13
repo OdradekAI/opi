@@ -160,12 +160,11 @@ fn harness_collection_materializes_active_mapped_provider_overrides() {
     let mut extensions = ExtensionRegistry::new();
     extensions.register(Box::new(ModelExtension)).unwrap();
 
-    let (collection, diagnostics) = opi_coding_agent::provider_factory::assemble_harness_collection(
-        &mut provider,
-        Some(&extensions),
-    );
+    let overrides = extensions.collect_model_overrides();
+    let diagnostics =
+        opi_coding_agent::provider_factory::materialize_active_overrides(&mut provider, &overrides);
     assert!(diagnostics.is_empty());
-    assert!(collection.resolve("mapped:added").is_ok());
+    assert!(provider.models().iter().any(|model| model.id == "added"));
 
     drop(provider.stream_prepared(request("added"), opi_ai::test_support::resolved_auth()));
 
@@ -199,12 +198,14 @@ fn harness_collection_rejects_an_override_whose_wire_has_no_concrete_route() {
         .register(Box::new(WireOverrideExtension))
         .unwrap();
 
-    let (collection, diagnostics) = opi_coding_agent::provider_factory::assemble_harness_collection(
-        &mut provider,
-        Some(&extensions),
-    );
+    let overrides = extensions.collect_model_overrides();
+    let diagnostics =
+        opi_coding_agent::provider_factory::materialize_active_overrides(&mut provider, &overrides);
     assert_eq!(diagnostics.len(), 1);
-    assert!(collection.resolve("mapped:original").is_ok());
+    assert!(
+        provider.models().iter().any(|model| model.id == "original"),
+        "original model must remain resolvable after the rejected override"
+    );
 
     drop(provider.stream_prepared(request("original"), opi_ai::test_support::resolved_auth()));
     assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
@@ -261,14 +262,18 @@ fn harness_collection_keeps_all_mapped_routes_unchanged_when_a_later_route_would
         .register(Box::new(EmptyLaterRouteExtension))
         .unwrap();
 
-    let (collection, diagnostics) = opi_coding_agent::provider_factory::assemble_harness_collection(
-        &mut provider,
-        Some(&extensions),
-    );
+    let overrides = extensions.collect_model_overrides();
+    let diagnostics =
+        opi_coding_agent::provider_factory::materialize_active_overrides(&mut provider, &overrides);
 
     assert_eq!(diagnostics.len(), 1);
-    assert!(collection.resolve("mapped:anthropic").is_ok());
-    assert!(collection.resolve("mapped:chat").is_ok());
+    assert!(
+        provider
+            .models()
+            .iter()
+            .any(|model| model.id == "anthropic")
+    );
+    assert!(provider.models().iter().any(|model| model.id == "chat"));
     assert_eq!(anthropic_ids.lock().unwrap().as_slice(), &["anthropic"]);
     assert_eq!(chat_ids.lock().unwrap().as_slice(), &["chat"]);
     assert_eq!(

@@ -127,6 +127,7 @@ async fn runtime_startup_is_the_single_source_of_runner_trust_in_all_builds() {
             opi_coding_agent::policy::ToolSelection::Default,
             startup,
             None,
+            Vec::new(),
         )
         .unwrap();
 
@@ -241,6 +242,7 @@ async fn runner_installed_adapter_tool_succeeds() {
         opi_coding_agent::policy::ToolSelection::Default,
         runtime_startup,
         None,
+        Vec::new(),
     )
     .unwrap();
 
@@ -292,6 +294,7 @@ async fn runner_installed_adapter_hook_blocks_mutating_tool() {
         opi_coding_agent::policy::ToolSelection::Default,
         runtime_startup,
         None,
+        Vec::new(),
     )
     .unwrap();
 

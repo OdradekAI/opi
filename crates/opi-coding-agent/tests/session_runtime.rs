@@ -219,7 +219,10 @@ fn phase13_model_thinking_metadata_does_not_advance_leaf() {
 
     // Phase 13.3: typed metadata appends through the coordinator.
     coord
-        .append_model_change("anthropic:claude-opus-4".into())
+        .append_model_change(
+            "anthropic:claude-opus-4".into(),
+            opi_agent::session::ModelInputSource::Canonical,
+        )
         .unwrap();
     coord
         .append_thinking_level_change(ThinkingLevel::High)
@@ -1306,13 +1309,12 @@ async fn harness_unprefixed_embedded_pricing_survives_switch_resume_and_fork() {
         unknown.contains("invalid model spec") || unknown.contains("unknown model"),
         "{unknown}"
     );
+    // A cross-provider switch to an UNREGISTERED provider still fails, now at
+    // route resolution (unknown model/provider) rather than "cannot switch".
     let other_provider = harness
         .set_model_validated("openai:gpt-4o".into())
         .unwrap_err();
-    assert!(
-        other_provider.contains("cannot switch provider"),
-        "{other_provider}"
-    );
+    assert!(other_provider.contains("unknown model"), "{other_provider}");
     assert_eq!(harness.model(), "claude-sonnet-4");
     assert_total_cost(&harness, 18.0, "rejected model changes");
 

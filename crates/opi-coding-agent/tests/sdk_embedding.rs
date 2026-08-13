@@ -138,14 +138,12 @@ fn phase8_harness_command_contract_set_model_validated_returns_structured_errors
         "mock:mock-model"
     );
 
-    // Cross-provider switch is rejected.
+    // A cross-provider switch to an UNREGISTERED provider still fails, now at
+    // route resolution (unknown model/provider) rather than "cannot switch".
     let err = harness
         .set_model_validated("openai:gpt-4o".into())
-        .expect_err("cross-provider must be rejected");
-    assert!(
-        err.contains("cannot switch provider"),
-        "cross-provider error: {err}"
-    );
+        .expect_err("unregistered cross-provider model must be rejected");
+    assert!(err.contains("unknown model"), "cross-provider error: {err}");
 
     // Malformed spec is rejected.
     let err = harness

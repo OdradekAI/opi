@@ -1246,6 +1246,7 @@ async fn phase13_rpc_session_info_returns_metadata() {
             trust_decision: opi_coding_agent::project_trust::TrustDecision::Trusted,
         },
         Some(resume_info),
+        Vec::new(),
     )
     .expect("rpc runner should construct");
 
@@ -1433,6 +1434,7 @@ async fn phase13_rpc_session_metadata_shape() {
             trust_decision: opi_coding_agent::project_trust::TrustDecision::Trusted,
         },
         Some(resume_info),
+        Vec::new(),
     )
     .expect("rpc runner should construct");
 
@@ -1615,6 +1617,7 @@ async fn phase13_rpc_session_info_reports_tree_recovery_diagnostics() {
             trust_decision: opi_coding_agent::project_trust::TrustDecision::Trusted,
         },
         Some(resume_info),
+        Vec::new(),
     )
     .expect("rpc runner should construct");
 
@@ -1716,6 +1719,7 @@ async fn phase13_rpc_session_info_reports_tree_read_error() {
             trust_decision: opi_coding_agent::project_trust::TrustDecision::Trusted,
         },
         Some(resume_info),
+        Vec::new(),
     )
     .expect("rpc runner should construct");
 
@@ -3909,6 +3913,7 @@ where
         Vec::new(),
         runtime_startup,
         None,
+        Vec::new(),
     )
     .expect("rpc runner should construct");
 
@@ -4246,6 +4251,7 @@ mod phase7 {
             Vec::new(),
             runtime,
             None,
+            Vec::new(),
         )
         .expect("rpc runner");
 
@@ -4339,6 +4345,7 @@ mod phase7 {
                 trust_decision: opi_coding_agent::project_trust::TrustDecision::Trusted,
             },
             Some(resume_info),
+            Vec::new(),
         )
         .expect("rpc runner");
 
@@ -4488,6 +4495,7 @@ mod phase7 {
             Vec::new(),
             runtime,
             None,
+            Vec::new(),
         )
         .expect("rpc runner");
 
@@ -4549,6 +4557,7 @@ mod phase7 {
             Vec::new(),
             runtime,
             Some(resume_info),
+            Vec::new(),
         )
         .expect("rpc runner");
 
@@ -4615,6 +4624,7 @@ mod phase7 {
             Vec::new(),
             runtime,
             Some(resume_info),
+            Vec::new(),
         )
         .expect("rpc runner");
 
@@ -5245,6 +5255,7 @@ mod phase7 {
             Vec::new(),
             runtime,
             None,
+            Vec::new(),
         )
         .expect("rpc runner via production constructor");
 

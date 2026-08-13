@@ -723,7 +723,11 @@ async fn with_provider_bundle<T, F, Fut>(
     callback: F,
 ) -> T
 where
-    F: FnOnce(Box<dyn opi_ai::provider::Provider>, Vec<opi_agent::Diagnostic>) -> Fut,
+    F: FnOnce(
+        Box<dyn opi_ai::provider::Provider>,
+        Vec<opi_agent::Diagnostic>,
+        Vec<opi_coding_agent::provider_factory::ProviderAuthPair>,
+    ) -> Fut,
     Fut: std::future::Future<Output = T>,
 {
     let opi_coding_agent::provider_factory::ProviderBundle {
@@ -732,9 +736,10 @@ where
         resolver,
         registry,
         auth_resolver,
+        extra_routes,
         diagnostics,
     } = bundle;
-    let result = callback(provider, diagnostics).await;
+    let result = callback(provider, diagnostics, extra_routes).await;
     drop((store, resolver, registry, auth_resolver));
     result
 }
@@ -859,72 +864,76 @@ where
         )
         .await;
 
-    with_provider_bundle(bundle, move |provider, provider_diagnostics| async move {
-        let mut runtime_startup = runtime_startup;
-        merge_provider_diagnostics(&mut runtime_startup, provider_diagnostics);
-        let mut runner = match NonInteractiveRunner::new_with_resume_and_runtime_packages(
-            provider,
-            effective_model.clone(),
-            config.clone(),
-            workspace_root,
-            allow_mutating,
-            user_system_prompt,
-            resumed_messages.unwrap_or_default(),
-            resume_info,
-            tool_selection,
-            runtime_startup,
-            cli.trace.clone(),
-        ) {
-            Ok(runner) => runner,
-            Err(e) => {
-                output.write_stderr(&format!("opi: {e}"));
-                return ExitCode::ConfigError as i32;
-            }
-        }
-        .with_compact_ndjson(cli.json_compact);
-
-        let result = if cli.image.is_empty() {
-            // No images -- use the plain text path.
-            if cli.json {
-                runner.run_json(prompt_text).await
-            } else {
-                runner.run(prompt_text).await
-            }
-        } else {
-            // Load images and combine with text prompt.
-            let mut content: Vec<opi_ai::message::InputContent> = Vec::new();
-            content.push(opi_ai::message::InputContent::Text {
-                text: prompt_text.to_owned(),
-            });
-            for image_path in &cli.image {
-                match opi_coding_agent::image::load_image_with_limit(
-                    image_path,
-                    config.defaults.max_image_bytes,
-                ) {
-                    Ok(img) => content.push(img),
-                    Err(e) => {
-                        output.write_stderr(&format!("opi: {e}"));
-                        return ExitCode::ConfigError as i32;
-                    }
+    with_provider_bundle(
+        bundle,
+        move |provider, provider_diagnostics, extra_routes| async move {
+            let mut runtime_startup = runtime_startup;
+            merge_provider_diagnostics(&mut runtime_startup, provider_diagnostics);
+            let mut runner = match NonInteractiveRunner::new_with_resume_and_runtime_packages(
+                provider,
+                effective_model.clone(),
+                config.clone(),
+                workspace_root,
+                allow_mutating,
+                user_system_prompt,
+                resumed_messages.unwrap_or_default(),
+                resume_info,
+                tool_selection,
+                runtime_startup,
+                cli.trace.clone(),
+                extra_routes,
+            ) {
+                Ok(runner) => runner,
+                Err(e) => {
+                    output.write_stderr(&format!("opi: {e}"));
+                    return ExitCode::ConfigError as i32;
                 }
             }
-            if cli.json {
-                runner.run_json_with_content(content).await
+            .with_compact_ndjson(cli.json_compact);
+
+            let result = if cli.image.is_empty() {
+                // No images -- use the plain text path.
+                if cli.json {
+                    runner.run_json(prompt_text).await
+                } else {
+                    runner.run(prompt_text).await
+                }
             } else {
-                runner.run_with_content(content).await
+                // Load images and combine with text prompt.
+                let mut content: Vec<opi_ai::message::InputContent> = Vec::new();
+                content.push(opi_ai::message::InputContent::Text {
+                    text: prompt_text.to_owned(),
+                });
+                for image_path in &cli.image {
+                    match opi_coding_agent::image::load_image_with_limit(
+                        image_path,
+                        config.defaults.max_image_bytes,
+                    ) {
+                        Ok(img) => content.push(img),
+                        Err(e) => {
+                            output.write_stderr(&format!("opi: {e}"));
+                            return ExitCode::ConfigError as i32;
+                        }
+                    }
+                }
+                if cli.json {
+                    runner.run_json_with_content(content).await
+                } else {
+                    runner.run_with_content(content).await
+                }
+            };
+
+            observe_result(&result);
+            if !result.stdout.is_empty() {
+                output.write_stdout(&result.stdout);
             }
-        };
+            if !result.stderr.is_empty() {
+                output.write_stderr(&result.stderr);
+            }
 
-        observe_result(&result);
-        if !result.stdout.is_empty() {
-            output.write_stdout(&result.stdout);
-        }
-        if !result.stderr.is_empty() {
-            output.write_stderr(&result.stderr);
-        }
-
-        result.exit_code
-    })
+            result.exit_code
+        },
+    )
     .await
 }
 
@@ -1040,37 +1049,41 @@ async fn run_rpc_core(
         )
         .await;
 
-    with_provider_bundle(bundle, move |provider, provider_diagnostics| async move {
-        let mut runtime_startup = runtime_startup;
-        merge_provider_diagnostics(&mut runtime_startup, provider_diagnostics);
-        let mut runner = match RpcRunner::new_with_runtime_packages(
-            provider,
-            effective_model.clone(),
-            config.clone(),
-            workspace_root,
-            allow_mutating,
-            tool_selection,
-            user_system_prompt,
-            resumed_messages.unwrap_or_default(),
-            runtime_startup,
-            resume_info,
-        ) {
-            Ok(runner) => runner,
-            Err(e) => {
-                output.write_stderr(&format!("opi: {e}"));
-                return ExitCode::ConfigError as i32;
-            }
-        };
+    with_provider_bundle(
+        bundle,
+        move |provider, provider_diagnostics, extra_routes| async move {
+            let mut runtime_startup = runtime_startup;
+            merge_provider_diagnostics(&mut runtime_startup, provider_diagnostics);
+            let mut runner = match RpcRunner::new_with_runtime_packages(
+                provider,
+                effective_model.clone(),
+                config.clone(),
+                workspace_root,
+                allow_mutating,
+                tool_selection,
+                user_system_prompt,
+                resumed_messages.unwrap_or_default(),
+                runtime_startup,
+                resume_info,
+                extra_routes,
+            ) {
+                Ok(runner) => runner,
+                Err(e) => {
+                    output.write_stderr(&format!("opi: {e}"));
+                    return ExitCode::ConfigError as i32;
+                }
+            };
 
-        match transport {
-            RpcTransport::Stdio => runner.run().await,
-            #[cfg(test)]
-            RpcTransport::Channels {
-                command_rx,
-                output_tx,
-            } => runner.run_with_channels(command_rx, output_tx).await,
-        }
-    })
+            match transport {
+                RpcTransport::Stdio => runner.run().await,
+                #[cfg(test)]
+                RpcTransport::Channels {
+                    command_rx,
+                    output_tx,
+                } => runner.run_with_channels(command_rx, output_tx).await,
+            }
+        },
+    )
     .await
 }
 
@@ -1192,11 +1205,14 @@ async fn run_interactive_core<Launch, LaunchFuture>(
     .startup_diagnostics(runtime_startup.diagnostics)
     .trust_decision(trust_decision)
     // Phase 17.5: production supplies the real per-call auth resolver (built
-    // alongside the active provider in the ProviderBundle). The harness
-    // registers it on the dispatch route so prepare_call resolves auth once
-    // per turn. bundle.resolver (CredentialResolver) stays owned by the bundle
-    // for /login and CredentialNeeded retry paths.
-    .auth_resolver(bundle.auth_resolver.clone());
+    // alongside the active provider in the ProviderBundle) plus the eagerly
+    // built extra dispatch routes. The harness registers them all on the one
+    // dispatch collection so prepare_call resolves auth once per turn and a
+    // cross-provider /model switch resolves without reconstructing the Agent.
+    // bundle.resolver (CredentialResolver) stays owned by the bundle for /login
+    // and CredentialNeeded retry paths.
+    .auth_resolver(bundle.auth_resolver.clone())
+    .extra_routes(bundle.extra_routes);
     if let Some(prompt) = user_system_prompt {
         builder = builder.user_system_prompt(prompt);
     }
@@ -2225,19 +2241,22 @@ mod tests {
         .expect("ordinary API-key provider bundle");
 
         let callback_live = Arc::clone(&live);
-        let completed = with_provider_bundle(bundle, move |provider, _diagnostics| async move {
-            assert_eq!(provider.id(), "anthropic");
-            assert!(
-                callback_live.load(Ordering::SeqCst),
-                "test-owned store must remain installed throughout {run_mode} callback"
-            );
-            tokio::task::yield_now().await;
-            assert!(
-                callback_live.load(Ordering::SeqCst),
-                "test-owned store must remain installed after an await in {run_mode} callback"
-            );
-            true
-        })
+        let completed = with_provider_bundle(
+            bundle,
+            move |provider, _diagnostics, _extra_routes| async move {
+                assert_eq!(provider.id(), "anthropic");
+                assert!(
+                    callback_live.load(Ordering::SeqCst),
+                    "test-owned store must remain installed throughout {run_mode} callback"
+                );
+                tokio::task::yield_now().await;
+                assert!(
+                    callback_live.load(Ordering::SeqCst),
+                    "test-owned store must remain installed after an await in {run_mode} callback"
+                );
+                true
+            },
+        )
         .await;
 
         assert!(completed);

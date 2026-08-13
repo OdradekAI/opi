@@ -645,20 +645,14 @@ async fn unknown_envelope_kind_never_appears_in_display_or_debug() {
     };
     let mut config = opi_coding_agent::config::OpiConfig::default();
     config.defaults.model = "anthropic:claude-unknown-kind".to_owned();
-    let provider_error =
-        match opi_coding_agent::provider_factory::build_provider_with_resolver(&config, &resolver)
-            .await
-        {
-            Err(error) => error,
-            Ok(_) => panic!("provider construction must retain the typed corruption error"),
-        };
+    // Phase 17.5: provider construction is lazy and no longer touches the
+    // credential at build time, so the typed corruption error surfaces from the
+    // resolver at prepare_call (asserted above), not from construction.
+    opi_coding_agent::provider_factory::build_provider_with_resolver(&config, &resolver)
+        .await
+        .expect("lazy provider construction must not touch the corrupt credential");
     for canary in [API_KEY, ACCESS, REFRESH] {
-        for rendered in [
-            format!("{resolver_error}"),
-            format!("{resolver_error:?}"),
-            format!("{provider_error}"),
-            format!("{provider_error:?}"),
-        ] {
+        for rendered in [format!("{resolver_error}"), format!("{resolver_error:?}")] {
             assert!(
                 !rendered.contains(canary),
                 "error leaked {canary}: {rendered}"
@@ -722,24 +716,17 @@ async fn valid_json_wrong_type_never_leaks_or_falls_back_to_env() {
 
         let mut config = opi_coding_agent::config::OpiConfig::default();
         config.defaults.model = "anthropic:claude-malformed-envelope".to_owned();
-        let provider_error = match opi_coding_agent::provider_factory::build_provider_with_resolver(
-            &config, &resolver,
-        )
-        .await
-        {
-            Err(error) => error,
-            Ok(_) => panic!("provider construction must retain malformed-envelope failure"),
-        };
+        // Phase 17.5: provider construction is lazy and no longer touches the
+        // credential at build time; the malformed-envelope failure surfaces from
+        // the resolver at prepare_call (asserted above), not from construction.
+        opi_coding_agent::provider_factory::build_provider_with_resolver(&config, &resolver)
+            .await
+            .expect("lazy provider construction must not touch the malformed envelope");
         assert_eq!(fallback_calls.load(Ordering::SeqCst), 0);
-        for rendered in [
-            format!("{resolver_error}"),
-            format!("{resolver_error:?}"),
-            format!("{provider_error}"),
-            format!("{provider_error:?}"),
-        ] {
+        for rendered in [format!("{resolver_error}"), format!("{resolver_error:?}")] {
             assert!(
                 !rendered.contains(canary),
-                "resolver/provider surface leaked wrong-type canary: {rendered}"
+                "resolver surface leaked wrong-type canary: {rendered}"
             );
         }
     }

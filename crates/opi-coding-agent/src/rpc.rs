@@ -153,6 +153,7 @@ impl RpcRunner {
             Vec::new(),
             None,
             trust_decision,
+            Vec::new(),
         )
     }
 
@@ -188,6 +189,7 @@ impl RpcRunner {
             Vec::new(),
             trace_sink,
             trust_decision,
+            Vec::new(),
         )
     }
 
@@ -220,6 +222,7 @@ impl RpcRunner {
             Vec::new(),
             None,
             trust_decision,
+            Vec::new(),
         )
     }
 
@@ -236,6 +239,7 @@ impl RpcRunner {
         initial_messages: Vec<AgentMessage>,
         runtime_startup: RuntimePackageStartup,
         resume_info: Option<ResumeInfo>,
+        extra_routes: Vec<crate::provider_factory::ProviderAuthPair>,
     ) -> Result<Self, crate::policy::ToolPolicyError> {
         let RuntimePackageStartup {
             extension_registry,
@@ -258,6 +262,7 @@ impl RpcRunner {
             diagnostics,
             Some(Arc::new(RecordingTraceSink::new())),
             trust_decision,
+            extra_routes,
         )
     }
 
@@ -277,6 +282,7 @@ impl RpcRunner {
         startup_diagnostics: Vec<Diagnostic>,
         trace_sink: Option<Arc<RecordingTraceSink>>,
         trust_decision: TrustDecision,
+        extra_routes: Vec<crate::provider_factory::ProviderAuthPair>,
     ) -> Result<Self, crate::policy::ToolPolicyError> {
         let tool_config = crate::policy::ToolRuntimeConfig::resolve(
             RunMode::NonInteractive,
@@ -290,6 +296,7 @@ impl RpcRunner {
                 .initial_messages(initial_messages)
                 .tool_selection(tool_selection)
                 .tool_config(tool_config)
+                .extra_routes(extra_routes)
                 .startup_diagnostics(startup_diagnostics)
                 // Phase 16.9: RPC run mode threaded into ExecutionRuntime::build
                 // (cannot be derived from tool_config.run_mode, which collapses

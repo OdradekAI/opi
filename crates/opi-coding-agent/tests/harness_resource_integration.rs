@@ -1214,7 +1214,7 @@ fn coding_harness_wrapper_keeps_product_policy_out_of_opi_agent() {
         "RpcRunner",
         "run_interactive_tui",
         "provider_factory",
-        "assemble_harness_collection",
+        "build_harness_collection",
         "build_provider",
         "start_installed_package_runtime",
         "resolve_installed_packages",

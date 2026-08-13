@@ -508,16 +508,17 @@ impl SessionCoordinator {
     /// active branch. No `Leaf` is appended and `active_tip_entry_id` is
     /// unchanged: model changes are metadata attachments, not new
     /// conversational turns.
-    pub fn append_model_change(&mut self, model: String) -> Result<(), std::io::Error> {
-        // Phase 17.5: persist the distinct input source — a canonical
-        // `provider:model` spec carries the separator, a bare model id does
-        // not. Bare-input normalization itself is owned by the harness; the
-        // coordinator records the truthful source of the spec it is handed.
-        let input_source = if model.contains(':') {
-            ModelInputSource::Canonical
-        } else {
-            ModelInputSource::BareNormalized
-        };
+    ///
+    /// `model` is the canonical `provider:model` spec; `input_source` records
+    /// whether that canonical form was supplied directly or produced by
+    /// normalizing a bare model input (Phase 17.5). The caller (the harness)
+    /// owns bare-input normalization; the coordinator records the truthful
+    /// source it is handed.
+    pub fn append_model_change(
+        &mut self,
+        model: String,
+        input_source: ModelInputSource,
+    ) -> Result<(), std::io::Error> {
         let entry = SessionEntry::ModelChange(ModelChangeEntry {
             id: format!("model-{}", ENTRY_SEQ.fetch_add(1, Ordering::Relaxed)),
             parent_id: self.active_tip_entry_id.clone(),

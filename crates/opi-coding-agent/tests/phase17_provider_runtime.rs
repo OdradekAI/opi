@@ -317,3 +317,82 @@ async fn phase17_auth_failure_does_not_silently_fallback() {
         "no silent fallback reached alpha"
     );
 }
+
+/// P17-A01 / P17-OUT-001 (Phase 17.5 acceptance): a `CodingHarness` whose
+/// dispatch collection holds TWO real routes switches provider via
+/// `set_model_validated` without reconstructing the Agent, and both providers
+/// dispatch through one collection.
+///
+/// The active `alpha` route and the `extra_routes` `beta` route are both
+/// registered dispatchable providers; a cross-provider switch resolves at the
+/// next `prepare_call` instead of being rejected at configuration time.
+#[tokio::test]
+#[allow(clippy::await_holding_lock)] // serialized OPI_SESSIONS_DIR mutation; not re-acquired in awaited dispatch.
+async fn phase17_coding_harness_cross_provider_switch_dispatches_both_providers() {
+    use opi_ai::test_support::{MockProvider, text_response};
+    use opi_coding_agent::config::OpiConfig;
+    use opi_coding_agent::harness::CodingHarness;
+    use opi_coding_agent::project_trust::TrustDecision;
+
+    static SESSION_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _lock = SESSION_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let sessions = tempfile::tempdir().expect("sessions tempdir");
+    // SAFETY: test-only env var mutation serialized by SESSION_TEST_LOCK.
+    unsafe { std::env::set_var("OPI_SESSIONS_DIR", sessions.path()) };
+    let workspace = tempfile::tempdir().expect("workspace tempdir");
+
+    let alpha_provider = MockProvider::new_with_models(
+        "alpha",
+        vec![model_info("a1")],
+        vec![text_response("alpha-response")],
+    );
+    let alpha_calls = alpha_provider.call_log_handle();
+    let beta_provider = MockProvider::new_with_models(
+        "beta",
+        vec![model_info("b1")],
+        vec![text_response("beta-response")],
+    );
+    let beta_calls = beta_provider.call_log_handle();
+
+    let mut harness = CodingHarness::builder(
+        Box::new(alpha_provider),
+        "alpha:a1".into(),
+        OpiConfig::default(),
+        workspace.path().to_path_buf(),
+        TrustDecision::Trusted,
+    )
+    .extra_routes(vec![(Box::new(beta_provider), static_resolver())])
+    .build();
+
+    assert_eq!(harness.model_spec(), "alpha:a1");
+
+    // Cross-provider switch resolves through the dispatch collection without
+    // reconstructing the Agent.
+    assert_eq!(
+        harness.set_model_validated("beta:b1".into()).unwrap(),
+        "beta:b1"
+    );
+    assert_eq!(harness.model_spec(), "beta:b1");
+    harness.prompt("hi from beta").await.unwrap();
+
+    // Switch back to alpha through the SAME harness instance.
+    assert_eq!(
+        harness.set_model_validated("alpha:a1".into()).unwrap(),
+        "alpha:a1"
+    );
+    harness.prompt("hi from alpha").await.unwrap();
+
+    assert_eq!(
+        alpha_calls.lock().unwrap().len(),
+        1,
+        "alpha dispatched exactly once"
+    );
+    assert_eq!(
+        beta_calls.lock().unwrap().len(),
+        1,
+        "beta dispatched exactly once"
+    );
+
+    // SAFETY: test-only env var mutation serialized by SESSION_TEST_LOCK.
+    unsafe { std::env::remove_var("OPI_SESSIONS_DIR") };
+}

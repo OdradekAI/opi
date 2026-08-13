@@ -38,6 +38,7 @@ use opi_agent::extension::ExtensionRegistry;
 use opi_agent::hooks::AgentHooks;
 use opi_agent::loop_types::{AgentError, AgentLoopConfig};
 use opi_agent::message::AgentMessage;
+use opi_agent::session::ModelInputSource;
 use opi_agent::session_context::reconstruct_context;
 use opi_agent::session_event::{SessionDiagnosticCounts, ThinkingLevel};
 use opi_agent::tool::Tool;
@@ -426,7 +427,11 @@ pub struct CodingHarness {
     config: OpiConfig,
     system_prompt: String,
     resources: HarnessResources,
-    model_registry: opi_ai::ProviderCollection,
+    /// The single dispatch + model-lookup collection (Phase 17.5). Serves
+    /// `model_info`, `model_picker_items`, and thinking-validation in addition
+    /// to the Agent's dispatch path; the active provider is a real dispatchable
+    /// route in it (no metadata proxy).
+    model_registry: Arc<opi_ai::ProviderCollection>,
     extension_registry: Option<ExtensionRegistry>,
     session: Option<SessionCoordinator>,
     /// Message count before the current turn - used to slice only new messages for persistence.
@@ -680,6 +685,10 @@ pub struct CodingHarnessBuilder {
     /// (production passes the `ProviderBundle` resolver; `None` defaults to a
     /// dummy static resolver so mock-provider tests dispatch via `prepare_call`).
     auth_resolver: Option<Arc<dyn opi_ai::auth::AuthResolver>>,
+    /// Phase 17.5: additional dispatchable routes (adapter + lazy auth resolver)
+    /// constructed eagerly at startup. Registered alongside the active route so
+    /// a cross-provider model switch resolves through the same collection.
+    extra_routes: Vec<crate::provider_factory::ProviderAuthPair>,
     #[cfg(test)]
     session_dir_override: Option<PathBuf>,
 }
@@ -714,6 +723,7 @@ impl CodingHarnessBuilder {
             trust_decision,
             execution_mode: ExecutionRunMode::Interactive,
             auth_resolver: None,
+            extra_routes: Vec::new(),
             #[cfg(test)]
             session_dir_override: None,
         }
@@ -826,6 +836,15 @@ impl CodingHarnessBuilder {
         self
     }
 
+    /// Phase 17.5: attach additional dispatchable routes (adapter + lazy auth
+    /// resolver) constructed eagerly at startup. Registered alongside the active
+    /// route so a cross-provider model switch resolves without reconstructing
+    /// the Agent.
+    pub fn extra_routes(mut self, routes: Vec<crate::provider_factory::ProviderAuthPair>) -> Self {
+        self.extra_routes = routes;
+        self
+    }
+
     /// Unit-test-only instance seam for isolating session persistence without
     /// mutating the process-global `OPI_SESSIONS_DIR` environment variable.
     #[cfg(test)]
@@ -863,6 +882,7 @@ impl CodingHarnessBuilder {
                 trust_decision: self.trust_decision,
                 execution_mode: self.execution_mode,
                 auth_resolver: self.auth_resolver,
+                extra_routes: self.extra_routes,
                 #[cfg(test)]
                 session_dir_override: self.session_dir_override,
             },
@@ -890,6 +910,8 @@ struct HarnessBuildOptions {
     /// resolver so mock-provider tests dispatch through `prepare_call` without
     /// supplying credentials (the mock ignores the resolved auth).
     auth_resolver: Option<Arc<dyn opi_ai::auth::AuthResolver>>,
+    /// Phase 17.5: additional dispatchable routes (adapter + lazy auth resolver).
+    extra_routes: Vec<crate::provider_factory::ProviderAuthPair>,
     #[cfg(test)]
     session_dir_override: Option<PathBuf>,
 }
@@ -908,6 +930,7 @@ impl Default for HarnessBuildOptions {
             trust_decision: TrustDecision::Undecided,
             execution_mode: ExecutionRunMode::Interactive,
             auth_resolver: None,
+            extra_routes: Vec::new(),
             #[cfg(test)]
             session_dir_override: None,
         }
@@ -1183,11 +1206,22 @@ impl CodingHarness {
             .as_ref()
             .map(|info| info.diagnostics.clone())
             .unwrap_or_default();
-        let (model_registry, model_registry_diagnostics) =
-            crate::provider_factory::assemble_harness_collection(
-                provider.as_mut(),
-                extension_registry.as_ref(),
-            );
+        // Phase 17.5: gather extension providers + model overrides up front, and
+        // materialize the active provider's overrides onto the provider itself
+        // while it is still mutable (before it becomes a dispatch route). The
+        // registry override layer (built later by `build_harness_collection`)
+        // only holds non-active providers.
+        let overrides = extension_registry
+            .as_ref()
+            .map(ExtensionRegistry::collect_model_overrides)
+            .unwrap_or_default();
+        let extension_providers = extension_registry
+            .as_ref()
+            .map(ExtensionRegistry::collect_providers)
+            .unwrap_or_default();
+        let active_provider_id = provider.id().to_owned();
+        let model_registry_diagnostics =
+            crate::provider_factory::materialize_active_overrides(provider.as_mut(), &overrides);
         if let Some(registry) = extension_registry.as_ref() {
             extension_event_registry = Some(registry.clone());
             injected_extension_names = registry
@@ -1334,8 +1368,37 @@ impl CodingHarness {
         } else {
             format!("{}:{model}", provider.id())
         };
-        let (thinking, max_tokens) =
-            initial_thinking_request_config(&model_registry, &model_for_capability_lookup, &config);
+
+        // Phase 17.5: assemble the single dispatch + model-lookup collection.
+        // The Agent routes every model call through this one collection via
+        // `prepare_call` (route + auth resolved once per turn); the same
+        // collection also serves model listing/picker/resolution, so a
+        // cross-provider model switch resolves through one collection without
+        // reconstructing the Agent. Production supplies the `ProviderBundle`
+        // resolver; when absent (mock-provider tests) a dummy static resolver is
+        // used since the mock ignores auth.
+        let auth_resolver: Arc<dyn opi_ai::auth::AuthResolver> =
+            build_options.auth_resolver.unwrap_or_else(|| {
+                Arc::new(opi_ai::auth::StaticAuthResolver::new(
+                    opi_ai::auth::AuthScheme::ApiKey,
+                    secrecy::SecretString::from("opi-mock-auth"),
+                ))
+            });
+        let mut routes = Vec::with_capacity(build_options.extra_routes.len() + 1);
+        routes.push((provider, auth_resolver));
+        routes.extend(build_options.extra_routes);
+        let dispatch_collection = crate::provider_factory::build_harness_collection(
+            routes,
+            extension_providers,
+            overrides,
+            &active_provider_id,
+        );
+
+        let (thinking, max_tokens) = initial_thinking_request_config(
+            &dispatch_collection,
+            &model_for_capability_lookup,
+            &config,
+        );
         let inference = opi_agent::loop_types::InferenceConfig {
             thinking: thinking.unwrap_or_default(),
             max_tokens,
@@ -1346,23 +1409,8 @@ impl CodingHarness {
             retry: Some(config.retry.clone()),
         };
 
-        // Phase 17.2: assemble one dispatchable route for the active provider.
-        // The Agent routes every model call through this collection via
-        // `prepare_call` (route + auth resolved once per turn). Production
-        // supplies the `ProviderBundle` resolver; when absent (mock-provider
-        // tests) a dummy static resolver is used since the mock ignores auth.
-        let auth_resolver: Arc<dyn opi_ai::auth::AuthResolver> =
-            build_options.auth_resolver.unwrap_or_else(|| {
-                Arc::new(opi_ai::auth::StaticAuthResolver::new(
-                    opi_ai::auth::AuthScheme::ApiKey,
-                    secrecy::SecretString::from("opi-mock-auth"),
-                ))
-            });
-        let dispatch_collection =
-            crate::provider_factory::build_dispatch_collection(provider, auth_resolver);
-
         let mut agent = Agent::new(
-            dispatch_collection,
+            dispatch_collection.clone(),
             registrations,
             Some(authorizer),
             model_for_capability_lookup.clone(),
@@ -1444,7 +1492,7 @@ impl CodingHarness {
             config,
             system_prompt,
             resources,
-            model_registry,
+            model_registry: dispatch_collection,
             extension_registry: active_extension_registry,
             session,
             turn_offset: initial_len,
@@ -1509,9 +1557,22 @@ impl CodingHarness {
     /// re-applies it when compatible with the CLI/config provider.
     pub fn set_model_validated(&mut self, model: String) -> Result<String, String> {
         self.try_configure_model(&model)?;
+        // Phase 17.5: normalize a bare model input to the canonical
+        // `provider:model` spec before persisting, so the durable entry carries
+        // BOTH the canonical selection and the distinct bare-source fact (a
+        // bare input resumed under a different active provider would otherwise
+        // normalize against the wrong provider).
+        let (canonical, input_source) = if model.contains(':') {
+            (model.clone(), ModelInputSource::Canonical)
+        } else {
+            (
+                format!("{}:{model}", self.agent.provider_id()),
+                ModelInputSource::BareNormalized,
+            )
+        };
         if let Some(session) = self.session.as_mut() {
             session
-                .append_model_change(model.clone())
+                .append_model_change(canonical, input_source)
                 .map_err(|e| format!("model change write failed: {e}"))?;
         }
         self.agent.set_model(model);
@@ -1519,28 +1580,31 @@ impl CodingHarness {
         Ok(self.agent.model_spec())
     }
 
-    /// Validate that `model` is a known same-provider spec and compatible with
-    /// the current thinking configuration, without persisting or mutating
-    /// session state. Used by [`Self::set_model_validated`] (persists) and by
-    /// resume (applies a recorded model without re-persisting the entry).
+    /// Validate that `model` is a known spec and compatible with the current
+    /// thinking configuration, without persisting or mutating session state.
+    /// Used by [`Self::set_model_validated`] (persists) and by resume (applies a
+    /// recorded model without re-persisting the entry).
+    ///
+    /// Phase 17.5: a cross-provider model spec is accepted as long as it
+    /// resolves to a registered route; dispatch resolves the route at the next
+    /// `prepare_call`.
     fn try_configure_model(&mut self, model: &str) -> Result<(), String> {
         let current_provider = self.agent.provider_id();
         let normalized;
-        let model_spec = if model.contains(':') || self.model_info(model).is_none() {
+        let model_spec = if model.contains(':') {
             model
         } else {
             normalized = format!("{current_provider}:{model}");
-            &normalized
+            if self.model_info(&normalized).is_some() {
+                &normalized
+            } else {
+                model
+            }
         };
         let (requested_provider, requested_model) =
             crate::provider_factory::parse_model_spec(model_spec)?;
-        if requested_provider != current_provider {
-            return Err(format!(
-                "cannot switch provider from {current_provider} to {requested_provider} at runtime"
-            ));
-        }
 
-        let requested_model_info = self.model_info(requested_model);
+        let requested_model_info = self.model_info(model_spec);
         let Some(requested_model_info) = requested_model_info else {
             return Err(format!(
                 "unknown model '{requested_model}' for provider '{requested_provider}'"
@@ -1699,23 +1763,9 @@ impl CodingHarness {
     }
 
     fn active_model_info(&self) -> Option<ModelInfo> {
-        let current_provider = self.agent.provider_id();
-        let active_model = self.agent.model();
-        let normalized;
-        let model_spec = if active_model.contains(':') {
-            active_model
-        } else {
-            normalized = format!("{current_provider}:{active_model}");
-            &normalized
-        };
-        let Ok((provider_id, model_id)) = crate::provider_factory::parse_model_spec(model_spec)
-        else {
-            return None;
-        };
-        if provider_id != current_provider {
-            return None;
-        }
-        self.model_info(model_id)
+        // The active selection is always a canonical `provider:model` spec; the
+        // dispatch collection resolves it regardless of which provider is active.
+        self.model_info(&self.agent.model_spec())
     }
 
     fn sync_session_cost_model(&mut self) {
@@ -1726,10 +1776,10 @@ impl CodingHarness {
         }
     }
 
-    fn model_info(&self, model_id: &str) -> Option<ModelInfo> {
-        let spec = format!("{}:{model_id}", self.agent.provider_id());
+    /// Resolve a canonical `provider:model` spec against the dispatch collection.
+    fn model_info(&self, spec: &str) -> Option<ModelInfo> {
         self.model_registry
-            .resolve(&spec)
+            .resolve(spec)
             .ok()
             .map(|(_, model)| model.clone())
     }

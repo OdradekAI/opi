@@ -67,6 +67,7 @@ fn runner_with_isolated_session(
             ToolSelection::Default,
             startup,
             None,
+            Vec::new(),
         ),
         None => NonInteractiveRunner::new_with_resume(
             provider,
@@ -908,6 +909,7 @@ mod phase7 {
                 trust_decision: opi_coding_agent::project_trust::TrustDecision::Trusted,
             },
             trace_path,
+            Vec::new(),
         )
         .expect("non-interactive tool policy should be valid")
     }
@@ -987,6 +989,7 @@ mod phase7 {
                 trust_decision: opi_coding_agent::project_trust::TrustDecision::Trusted,
             },
             None,
+            Vec::new(),
         )
         .expect("non-interactive runner");
 
