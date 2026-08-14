@@ -173,10 +173,10 @@ impl AzureOpenAIProvider {
                     }
                 }
                 ParsedEvent::UsageError(error) => stream_events.push(Err(error)),
-                ParsedEvent::Malformed { data, error } => {
-                    stream_events.push(Err(ProviderError::StreamError(format!(
-                        "malformed SSE data: {error} (data: {data:.80})"
-                    ))));
+                ParsedEvent::Malformed { .. } => {
+                    stream_events.push(Err(ProviderError::StreamError(
+                        "Azure OpenAI returned a malformed streaming frame".to_owned(),
+                    )));
                 }
             }
         }
@@ -321,10 +321,10 @@ async fn stream_azure_http(
                         return Ok(());
                     }
                 }
-                ParsedEvent::Malformed { data, error } => {
-                    let err = ProviderError::StreamError(format!(
-                        "malformed SSE data: {error} (data: {data:.80})"
-                    ));
+                ParsedEvent::Malformed { .. } => {
+                    let err = ProviderError::StreamError(
+                        "Azure OpenAI returned a malformed streaming frame".to_owned(),
+                    );
                     if tx.send(Err(err)).await.is_err() {
                         return Ok(());
                     }

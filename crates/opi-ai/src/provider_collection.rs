@@ -30,10 +30,12 @@
 //! changes may occur between minor versions without a major version bump.
 
 use std::collections::HashMap;
+use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::task::{Context, Poll};
 
-use futures_util::StreamExt;
+use futures_util::{Stream, StreamExt};
 
 use crate::auth::{AuthFallback, AuthProvenance, AuthProvenanceSource, AuthResolver, ResolvedAuth};
 use crate::credential::CredentialSource;
@@ -92,9 +94,10 @@ impl std::fmt::Display for SecretKey {
 /// Describes how a provider's credential is sourced without leaking the secret
 /// itself. Current variants cover raw static API keys, env-described API keys,
 /// already-resolved credentials whose non-secret source can be named, and
-/// secret-free references to credential-store entries. Live per-stream
-/// resolution is owned by [`crate::AuthResolver`], and persisted credential IO
-/// is owned by [`crate::CredentialStore`].
+/// secret-free references to credential-store entries. Live per-call
+/// resolution is owned by [`crate::AuthResolver`] and coordinated by
+/// [`ProviderCollection::prepare_call`]; persisted credential IO is owned by
+/// [`crate::CredentialStore`].
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub enum AuthDescriptor {
@@ -312,9 +315,11 @@ impl ProviderCollection {
     /// Wrap an existing registry to layer collection semantics onto providers
     /// constructed by an outer factory.
     ///
-    /// Pre-registered providers have no auth descriptor until one is attached,
-    /// so [`ProviderCollection::auth_status`] returns `None` for them and
-    /// dispatch is not auth-gated.
+    /// Pre-registered providers are lookup-only until replaced by
+    /// [`register_route`](Self::register_route):
+    /// [`ProviderCollection::auth_status`] returns `None` and
+    /// [`prepare_call`](Self::prepare_call) returns
+    /// [`CollectionError::RouteNotDispatchable`].
     pub fn from_registry(registry: ProviderRegistry) -> Self {
         Self {
             registry,
@@ -326,9 +331,12 @@ impl ProviderCollection {
         }
     }
 
-    /// Register a provider with its auth descriptor and compatibility metadata.
+    /// Register a lookup-only provider with its redacted auth descriptor and
+    /// compatibility metadata.
     ///
-    /// Replaces any existing entry with the same provider id.
+    /// Replaces any existing entry with the same provider id and removes its
+    /// dispatch resolver. Use [`register_route`](Self::register_route) for a
+    /// route that may start model attempts.
     ///
     /// # Errors
     ///
@@ -341,6 +349,9 @@ impl ProviderCollection {
     ) -> Result<(), RegistrationError> {
         let id = provider.id().to_owned();
         self.registry.register_provider(provider)?;
+        self.resolvers.remove(&id);
+        self.sources.remove(&id);
+        self.probed.remove(&id);
         self.auth.insert(id.clone(), auth);
         self.compat.insert(id, compat);
         Ok(())
@@ -366,6 +377,8 @@ impl ProviderCollection {
     ) -> Result<(), RegistrationError> {
         let id = provider.id().to_owned();
         self.registry.register_provider(provider)?;
+        self.auth.remove(&id);
+        self.probed.remove(&id);
         self.resolvers.insert(id.clone(), resolver);
         self.sources.insert(id.clone(), source);
         self.compat.insert(id, compat);
@@ -406,16 +419,24 @@ impl ProviderCollection {
             .cloned()
             .unwrap_or(AuthProvenanceSource::Static);
 
-        let mut auth = resolver.resolve().await?;
-        // The collection attaches the non-secret provenance from the route's
-        // registered source classification after resolution; resolvers supply
-        // the default. Fallback reporting stays `NotAttempted` here: the live
-        // resolver does not yet surface a typed fallback fact back to the
-        // collection, so the hardcode is retained rather than guessed.
-        auth.provenance = AuthProvenance {
-            source,
-            fallback: AuthFallback::NotAttempted,
+        if request.cancel.is_cancelled() {
+            return Err(CollectionError::CallCancelled);
+        }
+        let mut auth = tokio::select! {
+            biased;
+            _ = request.cancel.cancelled() => return Err(CollectionError::CallCancelled),
+            resolved = resolver.resolve() => resolved?,
         };
+        // Static/legacy resolvers return the default and rely on route assembly
+        // for their non-secret source classification. A resolver that made a
+        // real source/fallback decision reports it directly and must not have
+        // that truthful result overwritten by collection defaults.
+        if auth.provenance == AuthProvenance::default() {
+            auth.provenance = AuthProvenance {
+                source,
+                fallback: AuthFallback::NotAttempted,
+            };
+        }
         let provider = self
             .registry
             .get_provider_arc(&provider_id)
@@ -449,6 +470,19 @@ impl ProviderCollection {
     /// Resolve a `provider:model` spec into provider reference + model info.
     pub fn resolve(&self, spec: &str) -> Result<(&dyn Provider, &ModelInfo), RegistryError> {
         self.registry.resolve(spec)
+    }
+
+    /// Validate that `spec` resolves to a provider/model route backed by a live
+    /// authentication resolver, without performing authentication I/O.
+    pub fn validate_dispatchable_route(&self, spec: &str) -> Result<(), CollectionError> {
+        let (provider, _) = self.registry.resolve(spec)?;
+        let provider_id = provider.id();
+        if !self.resolvers.contains_key(provider_id) {
+            return Err(CollectionError::RouteNotDispatchable {
+                provider: provider_id.to_owned(),
+            });
+        }
+        Ok(())
     }
 
     /// Query capabilities for a `provider:model` spec.
@@ -637,6 +671,46 @@ pub struct PreparedProviderCall {
     active: Arc<AtomicBool>,
 }
 
+struct AttemptStream {
+    inner: EventStream,
+    active: Arc<AtomicBool>,
+    released: bool,
+}
+
+impl AttemptStream {
+    fn release(&mut self) {
+        if !self.released {
+            self.active.store(false, Ordering::Release);
+            self.released = true;
+        }
+    }
+}
+
+impl Stream for AttemptStream {
+    type Item = Result<AssistantStreamEvent, ProviderError>;
+
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let this = self.get_mut();
+        let item = this.inner.as_mut().poll_next(cx);
+        let terminal = match &item {
+            Poll::Ready(None) => true,
+            Poll::Ready(Some(Err(_))) => true,
+            Poll::Ready(Some(Ok(event))) => event.is_terminal(),
+            Poll::Pending => false,
+        };
+        if terminal {
+            this.release();
+        }
+        item
+    }
+}
+
+impl Drop for AttemptStream {
+    fn drop(&mut self) {
+        self.release();
+    }
+}
+
 impl std::fmt::Debug for PreparedProviderCall {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // Never surface the secret-bearing auth; only the redacted route facts.
@@ -686,21 +760,13 @@ impl PreparedProviderCall {
         if self.active.swap(true, Ordering::AcqRel) {
             return Err(CollectionError::AttemptAlreadyActive);
         }
-        let active = self.active.clone();
         let stream = self
             .provider
             .stream_prepared(self.request.clone(), self.auth.clone());
-        // Release the active slot exactly when this attempt reaches a terminal
-        // event or errors, so a sequential retry can proceed. Cancellation does
-        // not clear the token, so a cancelled call still rejects further attempts
-        // at the entry guard above.
-        let released = stream.map(move |item| {
-            let terminal = item.is_err() || matches!(item, Ok(ref event) if event.is_terminal());
-            if terminal {
-                active.store(false, Ordering::Release);
-            }
-            item
-        });
-        Ok(Box::pin(released))
+        Ok(Box::pin(AttemptStream {
+            inner: stream,
+            active: self.active.clone(),
+            released: false,
+        }))
     }
 }

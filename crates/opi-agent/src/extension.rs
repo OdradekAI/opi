@@ -43,10 +43,10 @@
 //!
 //! # Custom Tools
 //!
-//! Extensions provide tools via the [`Extension::tools`] method. These tools
-//! are collected during [`ExtensionRegistry::collect_tools`] and added to the
-//! agent's tool set alongside built-in tools. Extension tools follow the same
-//! [`Tool`] trait contract and validation rules as built-in tools.
+//! Extensions provide tools via the [`Extension::tools`] method. Trusted
+//! assembly collects them with registration-owned origin through
+//! [`ExtensionRegistry::collect_tools_with_origin`]. Extension tools follow
+//! the same [`Tool`] trait contract and validation rules as built-in tools.
 //!
 //! # Custom Commands
 //!
@@ -178,8 +178,8 @@ pub trait Extension: Send + Sync {
 
     /// Tools provided by this extension.
     ///
-    /// Called once during [`ExtensionRegistry::collect_tools`] to gather
-    /// extension tools for the agent's tool set.
+    /// Called once during [`ExtensionRegistry::collect_tools_with_origin`] to
+    /// gather extension tools for trusted registration assembly.
     fn tools(&self) -> Vec<Box<dyn Tool>> {
         vec![]
     }
@@ -315,6 +315,32 @@ pub struct ExtensionRegistry {
     extensions: Arc<Vec<Box<dyn Extension>>>,
 }
 
+/// One extension tool paired with the registration-owned extension identity
+/// from the registry traversal that produced it. The tool definition cannot
+/// replace this origin, even when its provider-visible name collides with a
+/// built-in name.
+pub struct CollectedExtensionTool {
+    extension_id: String,
+    tool: Box<dyn Tool>,
+}
+
+impl CollectedExtensionTool {
+    /// The owning extension identity assigned by [`ExtensionRegistry`].
+    pub fn extension_id(&self) -> &str {
+        &self.extension_id
+    }
+
+    /// The contributed tool definition.
+    pub fn definition(&self) -> opi_ai::message::ToolDef {
+        self.tool.definition()
+    }
+
+    /// Consume the collected value into its trusted owner identity and tool.
+    pub fn into_parts(self) -> (String, Box<dyn Tool>) {
+        (self.extension_id, self.tool)
+    }
+}
+
 impl Clone for ExtensionRegistry {
     fn clone(&self) -> Self {
         Self {
@@ -379,6 +405,26 @@ impl ExtensionRegistry {
     /// Collect all tools from all registered extensions.
     pub fn collect_tools(&self) -> Vec<Box<dyn Tool>> {
         self.extensions.iter().flat_map(|e| e.tools()).collect()
+    }
+
+    /// Collect extension tools while preserving their registration-owned
+    /// extension identity. Trusted tool assembly must use this form whenever
+    /// origin or capability is security-relevant; inferring origin from a tool
+    /// definition or provider-visible name is not permitted.
+    pub fn collect_tools_with_origin(&self) -> Vec<CollectedExtensionTool> {
+        self.extensions
+            .iter()
+            .flat_map(|extension| {
+                let extension_id = extension.name().to_owned();
+                extension
+                    .tools()
+                    .into_iter()
+                    .map(move |tool| CollectedExtensionTool {
+                        extension_id: extension_id.clone(),
+                        tool,
+                    })
+            })
+            .collect()
     }
 
     /// Collect all custom providers from all registered extensions.

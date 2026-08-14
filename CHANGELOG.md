@@ -26,7 +26,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   registered as immutable trusted `RegisteredTool`s and every execution passes
   a mandatory `ToolAuthorizer`; the pre-tool hook's authorization-suggesting
   `Allow` grant was renamed `Continue`, and missing, failed, expired, stale, or
-  forged authority yields zero executions.
+  forged authority yields zero executions. Piecemeal Agent state setters, the
+  generic state bag, and unused phase/snapshot/session harness owners were
+  removed; `ContentDigest::from_hex` now validates canonical SHA-256 text.
 - `opi-agent`: the storage-shaped core `TraceSink`/`TraceCollector` contract
   was superseded by the product-neutral evidence lifecycle
   (`EvidenceSink`/`EvidenceRecorder`, opaque run/turn/call identities,
@@ -47,8 +49,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `EvidenceHealth`, and no-op/in-memory adapters; trusted tool registration
   (`RegisteredTool`/`ToolRegistry`) with mandatory `ToolAuthorizer`
   authorization and digest-addressed `EffectiveUserPolicy` snapshots.
-- `opi-coding-agent`: opt-in `--trace <PATH>` evidence capture
-  (`evidence.jsonl` + `manifest.json`) for non-interactive/JSON runs; eager
+- `opi-coding-agent`: opt-in `--trace <PATH>` evidence capture in interactive,
+  non-interactive text, JSON, and RPC modes. The path is a capture root; every
+  run receives an immutable child directory containing `evidence.jsonl` and
+  `manifest.json`. Also added eager
   multi-route dispatch with cross-provider switching without harness
   reconstruction; `FileEvidenceSink` with fail-closed setup.
 
@@ -63,6 +67,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   existing locations; new-schema evidence never overwrites, rewrites,
   upgrades, down-converts, or deletes them, and sessions are never rewritten
   by load, normalization, resume, or fork.
+- Evidence manifests are bound to the current run's exact system prompt,
+  trusted tool schemas, route, inference budget, active session branch, and
+  terminal provider response. Setup, requested-session reopen, and durable
+  finalization failures now remain visible instead of silently degrading.
 
 ## [0.8.0] - 2026-08-12
 

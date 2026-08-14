@@ -42,7 +42,6 @@ pub enum ExitCode {
     ConfigError = 2,
     AuthFailure = 3,
     ProviderFailure = 4,
-    ToolFailure = 5,
     Interrupted = 130,
 }
 
@@ -164,6 +163,7 @@ impl NonInteractiveRunner {
             None,
             None,
             trust_decision,
+            None,
             Vec::new(),
         )
     }
@@ -203,6 +203,44 @@ impl NonInteractiveRunner {
             Some(runtime_startup),
             trace_path,
             trust_decision,
+            None,
+            extra_routes,
+        )
+    }
+
+    /// Production runtime-package constructor with the active route's real
+    /// per-call authentication resolver.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_with_resume_runtime_packages_and_auth(
+        provider: Box<dyn Provider>,
+        model: String,
+        config: OpiConfig,
+        workspace_root: PathBuf,
+        allow_mutating: bool,
+        user_system_prompt: Option<String>,
+        initial_messages: Vec<AgentMessage>,
+        resume_info: Option<ResumeInfo>,
+        tool_selection: ToolSelection,
+        runtime_startup: RuntimePackageStartup,
+        trace_path: Option<PathBuf>,
+        auth_resolver: Arc<dyn opi_ai::AuthResolver>,
+        extra_routes: Vec<crate::provider_factory::ProviderAuthPair>,
+    ) -> Result<Self, ToolPolicyError> {
+        let trust_decision = runtime_startup.trust_decision;
+        Self::build(
+            provider,
+            model,
+            config,
+            workspace_root,
+            allow_mutating,
+            user_system_prompt,
+            initial_messages,
+            resume_info,
+            tool_selection,
+            Some(runtime_startup),
+            trace_path,
+            trust_decision,
+            Some(auth_resolver),
             extra_routes,
         )
     }
@@ -221,6 +259,7 @@ impl NonInteractiveRunner {
         runtime_startup: Option<RuntimePackageStartup>,
         trace_path: Option<PathBuf>,
         trust_decision: TrustDecision,
+        auth_resolver: Option<Arc<dyn opi_ai::AuthResolver>>,
         extra_routes: Vec<crate::provider_factory::ProviderAuthPair>,
     ) -> Result<Self, ToolPolicyError> {
         let tool_config = ToolRuntimeConfig::resolve(
@@ -242,6 +281,9 @@ impl NonInteractiveRunner {
                 // Record runtime diagnostics so the JSON run summary can carry
                 // structured severity counts (Phase 7 task 7.5).
                 .record_diagnostics(true);
+        if let Some(auth_resolver) = auth_resolver {
+            builder = builder.auth_resolver(auth_resolver);
+        }
         if let Some(prompt) = user_system_prompt {
             builder = builder.user_system_prompt(prompt);
         }
@@ -891,13 +933,20 @@ fn exit_code_for_agent_error(error: &AgentError) -> i32 {
         AgentError::AuthFailed(_)
         | AgentError::CredentialNeeded { .. }
         | AgentError::CredentialRevoked { .. }
-        | AgentError::AccountIdMissing { .. } => ExitCode::AuthFailure as i32,
-        AgentError::Provider(_) => ExitCode::ProviderFailure as i32,
-        AgentError::RouteNotDispatchable { .. } => ExitCode::ProviderFailure as i32,
-        AgentError::Tool(_) => ExitCode::ToolFailure as i32,
+        | AgentError::AccountIdMissing { .. }
+        | AgentError::AuthNotConfigured { .. } => ExitCode::AuthFailure as i32,
+        AgentError::Provider(_)
+        | AgentError::InvalidModelSpec { .. }
+        | AgentError::UnknownProvider { .. }
+        | AgentError::UnknownModel { .. }
+        | AgentError::RouteNotDispatchable { .. }
+        | AgentError::AttemptAlreadyActive
+        | AgentError::ProviderProtocol { .. } => ExitCode::ProviderFailure as i32,
         AgentError::Hook(_)
         | AgentError::MaxTurnsExceeded(_)
         | AgentError::EvidenceSetup(_)
+        | AgentError::EvidenceFinalization(_)
+        | AgentError::SessionResume(_)
         | AgentError::InvalidNextTurnCandidate(_)
         | AgentError::InvalidToolRegistration(_) => ExitCode::RuntimeFailure as i32,
     }

@@ -88,6 +88,7 @@ async fn local_exec_reports_supervised_guarantee() {
         signal: CancellationToken::new(),
         env: Vec::new(),
         backend: None,
+        authorized_backend: None,
     };
     let result = ops
         .exec(request)
@@ -252,6 +253,7 @@ fn request(command: &str) -> BashRequest {
         signal: CancellationToken::new(),
         env: Vec::new(),
         backend: None,
+        authorized_backend: None,
     }
 }
 

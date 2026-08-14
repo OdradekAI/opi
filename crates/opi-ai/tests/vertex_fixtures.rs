@@ -154,7 +154,9 @@ fn vertex_custom_models_from_config() {
 #[test]
 fn vertex_resolves_model_in_registry() {
     let mut registry = ProviderRegistry::new();
-    registry.register(Box::new(vertex_provider()));
+    registry
+        .register_provider(Box::new(vertex_provider()))
+        .unwrap();
     let (provider, model) = registry.resolve("vertex:gemini-2.5-flash").unwrap();
     assert_eq!(provider.id(), "vertex");
     assert_eq!(model.id, "gemini-2.5-flash");
@@ -187,6 +189,22 @@ async fn vertex_text_streaming_produces_start_delta_done() {
     assert_eq!(starts, 1, "should have exactly one Start");
     assert_eq!(deltas, 1, "should have exactly one TextDelta");
     assert_eq!(dones, 1, "should have exactly one Done");
+}
+
+#[tokio::test]
+async fn vertex_malformed_frame_does_not_expose_upstream_content() {
+    let canary = "vertex-malformed-secret-canary";
+    let sse = format!("data: {{not-json-{canary}}}\n\n");
+    let events = vertex_provider()
+        .stream_from_sse(&sse, CancellationToken::new())
+        .collect::<Vec<_>>()
+        .await;
+    let rendered = format!("{events:?}");
+    assert!(events.iter().any(Result::is_err));
+    assert!(
+        !rendered.contains(canary),
+        "malformed Vertex frame leaked upstream content: {rendered}"
+    );
 }
 
 #[tokio::test]

@@ -4,6 +4,28 @@
 
 mod common;
 
+#[test]
+fn complete_state_is_the_only_public_next_turn_mutation_surface() {
+    let agent_source = include_str!("../src/agent.rs");
+    for removed in [
+        "pub fn set_model(",
+        "pub fn set_max_tokens(",
+        "pub fn set_thinking_config(",
+        "pub fn set_initial_messages(",
+        "pub fn inject_message(",
+        "pub fn replace_messages(",
+        "pub fn rewind_to(",
+    ] {
+        assert!(
+            !agent_source.contains(removed),
+            "piecemeal state mutator remains public: {removed}"
+        );
+    }
+    let lib_source = include_str!("../src/lib.rs");
+    assert!(!lib_source.contains("pub mod state;"));
+    assert!(!lib_source.contains("pub use state::AgentState;"));
+}
+
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 

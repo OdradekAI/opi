@@ -16,6 +16,12 @@ use crate::message::AgentMessage;
 pub enum AgentError {
     #[error("provider error: {0}")]
     Provider(String),
+    #[error("invalid model spec: {spec}")]
+    InvalidModelSpec { spec: String },
+    #[error("unknown provider: {provider}")]
+    UnknownProvider { provider: String },
+    #[error("unknown model '{model}' for provider '{provider}'")]
+    UnknownModel { provider: String, model: String },
     #[error("authentication failed: {0}")]
     AuthFailed(String),
     #[error("credential needed for '{provider_id}': run /login {provider_id}")]
@@ -29,8 +35,6 @@ pub enum AgentError {
     /// id and a `/login <provider>` remediation.
     #[error("account id missing for '{provider_id}': run /login {provider_id}")]
     AccountIdMissing { provider_id: String },
-    #[error("tool error: {0}")]
-    Tool(String),
     #[error("hook error: {0}")]
     Hook(String),
     #[error("cancelled")]
@@ -43,17 +47,28 @@ pub enum AgentError {
     /// evidence when capture was explicitly requested (P17-EVD-007).
     #[error("evidence setup failed: {0}")]
     EvidenceSetup(String),
+    /// Evidence capture could not be finalized after the run. Explicit capture
+    /// is fail-visible: a durability/completeness failure is returned to the
+    /// caller instead of being silently discarded after the model/tool work.
+    #[error("evidence finalization failed: {0}")]
+    EvidenceFinalization(String),
+    /// A requested product session could not be reopened. The harness returns
+    /// this before any new provider/tool turn starts instead of silently
+    /// replacing the requested resume with a fresh sessionless run.
+    #[error("session resume failed: {0}")]
+    SessionResume(String),
     /// A provider route could not be prepared for a model call: the selection
     /// was unknown, ambiguous, undispatchable, or its authentication could not
     /// be resolved. Phase 17.2 surfaces collection-owned preparation failures
     /// at this typed boundary rather than as a generic provider string.
-    #[error("provider route not dispatchable for '{provider}': {detail}")]
-    RouteNotDispatchable {
-        /// Provider id (or requested selection) whose route failed.
-        provider: String,
-        /// Redacted, non-secret reason the route could not be prepared.
-        detail: String,
-    },
+    #[error("provider route not dispatchable for '{provider}'")]
+    RouteNotDispatchable { provider: String },
+    #[error("authentication is not configured for '{provider}': {detail}")]
+    AuthNotConfigured { provider: String, detail: String },
+    #[error("a prepared provider attempt is already active")]
+    AttemptAlreadyActive,
+    #[error("provider protocol failure: {detail}")]
+    ProviderProtocol { detail: String },
     /// A `prepare_next_turn` candidate was rejected because it was not a valid
     /// complete state (e.g. its model selection does not resolve to a route in
     /// the provider collection). The prior state is preserved unchanged.
@@ -90,12 +105,7 @@ impl ModelSelection {
     /// or missing provider; bare-input normalization is owned by the Reference
     /// Product (Phase 17.5), not by Agent Core state.
     pub fn parse_spec(spec: &str) -> Option<Self> {
-        let (provider_id, model_id) = spec.split_once(':')?;
-        let provider_id = provider_id.trim();
-        let model_id = model_id.trim();
-        if provider_id.is_empty() || model_id.is_empty() {
-            return None;
-        }
+        let (provider_id, model_id) = opi_ai::registry::parse_model_spec(spec).ok()?;
         Some(Self {
             provider_id: provider_id.to_owned(),
             model_id: model_id.to_owned(),
@@ -168,17 +178,14 @@ pub struct AgentLoopContext {
     /// the run. `None` is fail-closed: no tool executes without a current
     /// `Allow` (AUT-005).
     pub authorizer: Option<Arc<dyn ToolAuthorizer>>,
-    /// Current versioned evidence-health snapshot for the run (Phase 17.4). The
-    /// loop injects a copy into each authorization request and verifies an
-    /// `Allow`'s generation still matches before execution. In 17.4 this is a
-    /// run-start snapshot; evidence-failure-driven advancement and live reads
-    /// arrive in 17.6/17.7.
+    /// Current versioned evidence health at run start. The loop advances its
+    /// local value after sink failure, injects the current generation into each
+    /// authorization request, and reauthorizes a stale `Allow` before launch.
     pub evidence_health: EvidenceHealth,
     /// Optional evidence sink binding the run's call-graph lifecycle (Phase
-    /// 17.6). `None` is the capture-disabled no-op default: no identities are
-    /// minted and no records are emitted, so execution behavior is unchanged.
-    /// When `Some`, the loop allocates stable run/turn/call identities before
-    /// emitting correlated records through this sink.
+    /// 17.6). `None` is the capture-disabled default: typed identities still
+    /// correlate authorization, but no evidence records are emitted. When
+    /// `Some`, those identities also address correlated sink records.
     pub evidence_sink: Option<Arc<dyn EvidenceSink>>,
     /// The complete mutable state at the start of this run: conversation
     /// context, canonical model selection, and inference configuration. The

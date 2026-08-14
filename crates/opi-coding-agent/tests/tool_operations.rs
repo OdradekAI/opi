@@ -691,6 +691,7 @@ fn bash_request_carries_command_cwd_env_timeout_signal_fields() {
         signal: token.clone(),
         env: vec![("OPI_TEST".to_string(), "v1".to_string())],
         backend: None,
+        authorized_backend: None,
     };
     assert_eq!(req.command, "echo hello");
     assert_eq!(req.cwd, PathBuf::from("/tmp/work"));
@@ -721,6 +722,7 @@ fn bash_request_is_clone_when_signal_is_clone() {
         signal: CancellationToken::new(),
         env: vec![],
         backend: None,
+        authorized_backend: None,
     };
     let cloned = req.clone();
     assert_eq!(cloned.command, req.command);
@@ -791,6 +793,7 @@ async fn mock_bash_operations_returns_injected_result_through_dyn() {
         signal: CancellationToken::new(),
         env: vec![],
         backend: None,
+        authorized_backend: None,
     };
     let result = dyn_ops.exec(request).await.unwrap();
     assert_eq!(result.stdout, expected.stdout);
@@ -811,6 +814,7 @@ async fn mock_bash_operations_malformed_result_propagates_through_dyn() {
         signal: CancellationToken::new(),
         env: vec![],
         backend: None,
+        authorized_backend: None,
     };
     let err = dyn_ops.exec(request).await.unwrap_err();
     assert!(matches!(err, BashOpError::SpawnFailed { .. }));

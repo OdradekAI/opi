@@ -18,8 +18,8 @@
 fn core_types_accessible_without_transport() {
     use opi_agent::{
         Agent, AgentError, AgentEvent, AgentEventSink, AgentHooks, AgentLoopConfig,
-        AgentLoopContext, AgentMessage, AgentSessionEvent, AgentState, ExecutionMode,
-        SDK_SCHEMA_VERSION, SdkCommand, SdkResponse, Tool, ToolDef, ToolError, ToolResult,
+        AgentLoopContext, AgentMessage, AgentSessionEvent, ExecutionMode, SDK_SCHEMA_VERSION,
+        SdkCommand, SdkResponse, Tool, ToolDef, ToolError, ToolResult,
     };
 
     // SDK surface works independently.
@@ -36,7 +36,6 @@ fn core_types_accessible_without_transport() {
 
     // Key types exist and have the expected bounds.
     fn _assert_bounds<T: Send + Sync>() {}
-    _assert_bounds::<AgentState>();
     _assert_bounds::<ExecutionMode>();
     _assert_bounds::<ToolError>();
     _assert_bounds::<AgentError>();

@@ -11,7 +11,7 @@ fn image_slash_command_queues_for_next_prompt() {
     let config = OpiConfig::default();
     let mut harness = CodingHarness::new(
         provider,
-        "mock:test".into(),
+        "mock:mock-model".into(),
         config,
         std::env::current_dir().unwrap(),
         opi_coding_agent::project_trust::TrustDecision::Trusted,

@@ -2,9 +2,9 @@
 //!
 //! IO-free types owned by [`crate`]. The concrete resolvers (`AuthSource`,
 //! `OAuthProviderRegistry`, `TuiLoginPresenter`) live in `opi-coding-agent`;
-//! `opi-ai` defines only the object-safe contracts so providers can resolve
-//! auth inside each returned stream without depending on a concrete backend
-//! or becoming generic over the resolver.
+//! `opi-ai` defines only the object-safe contracts so `ProviderCollection`
+//! can resolve authentication once before an attempt without depending on a
+//! concrete backend or making providers generic over the resolver.
 //!
 //! All async trait methods return [`BoxAuthFuture`] boxed futures, so
 //! `AuthResolver`, `OAuthProvider`, and `LoginPresenter` are usable behind
@@ -159,9 +159,9 @@ pub enum AuthFallback {
 
 /// Closed, non-secret provenance carried beside resolved authentication.
 ///
-/// Built by [`crate::ProviderCollection`] during call preparation from the
-/// route's registered source classification and the resolve outcome; the
-/// secret itself stays in [`ResolvedAuth`] and never enters this value.
+/// Returned by the selected route's resolver during collection-owned call
+/// preparation. The secret itself stays in [`ResolvedAuth`] and never enters
+/// this value.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AuthProvenance {
     /// Where the credential originated.
@@ -172,11 +172,11 @@ pub struct AuthProvenance {
 
 /// Object-safe per-request auth resolver.
 ///
-/// Each concrete provider holds an `Arc<dyn AuthResolver>` and calls
-/// [`resolve`](Self::resolve) inside the stream returned by `Provider::stream`,
-/// immediately before the HTTP request. The resolver may read the keychain,
-/// perform a locked refresh, or return a baked key — the provider is unaware
-/// of the mechanism.
+/// [`crate::ProviderCollection::prepare_call`] invokes the selected route's
+/// resolver before opening an attempt, then passes opaque [`ResolvedAuth`] to
+/// [`crate::Provider::stream_prepared`]. The resolver may read the keychain,
+/// perform a locked refresh, or return a baked key; providers remain unaware of
+/// the source mechanism.
 pub trait AuthResolver: Send + Sync {
     /// Resolve the auth for the next request. Returning
     /// [`ProviderError::CredentialNeeded`] signals that no credential is

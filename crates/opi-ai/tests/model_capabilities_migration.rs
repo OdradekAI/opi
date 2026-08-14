@@ -109,7 +109,7 @@ fn anthropic_builtin_models_have_cache_capabilities() {
 fn registry_capabilities_returns_nested_capabilities() {
     let mut registry = ProviderRegistry::new();
     let provider = AnthropicProvider::new(None);
-    registry.register(Box::new(provider));
+    registry.register_provider(Box::new(provider)).unwrap();
 
     let caps = registry
         .capabilities("anthropic:claude-sonnet-4-5-20250514")
@@ -140,7 +140,7 @@ fn non_anthropic_models_default_cache_to_false() {
         responses,
     );
     let mut registry = ProviderRegistry::new();
-    registry.register(Box::new(mock));
+    registry.register_provider(Box::new(mock)).unwrap();
 
     let caps = registry
         .capabilities("test-prov:test-model")

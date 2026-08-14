@@ -114,6 +114,7 @@ impl InteractivePermissionBroker for RecordingBroker {
 
 fn request(command: &str) -> BashRequest {
     BashRequest {
+        authorized_backend: None,
         command: command.to_string(),
         cwd: PathBuf::from("."),
         timeout: Duration::from_secs(5),

@@ -260,8 +260,8 @@ pub struct Cli {
     #[arg(short = 'v', long)]
     pub verbose: bool,
 
-    /// Write evidence (evidence.jsonl + manifest.json) to PATH for the run
-    /// (non-interactive / `--json` only; 0.x unstable, opt-in).
+    /// Write each run's evidence.jsonl + manifest.json under PATH
+    /// (interactive, non-interactive, JSON, and RPC; 0.x unstable, opt-in).
     #[arg(long, value_name = "PATH")]
     pub trace: Option<PathBuf>,
 

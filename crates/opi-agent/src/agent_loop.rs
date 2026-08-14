@@ -71,14 +71,14 @@ pub(crate) async fn agent_loop_with_identities(
     let authorizer = context.authorizer.clone();
     let mut evidence_health = context.evidence_health;
     let evidence_sink = context.evidence_sink.clone();
+    let invocation_context =
+        crate::authority::InvocationContext::from_session_id(context.session_id.as_deref());
     // One identity allocator per run mints opaque, non-reused run/turn/call
     // identities and a monotonic run-local sequence. Identities are minted
     // immediately before the corresponding lifecycle evidence is emitted, so
     // correlation precedes any external effect (P17-EVD-001, Phase 17.6).
     let mut identities = crate::evidence::IdentityAllocator::new();
     let run = identities.run_id();
-    let tool_defs: Vec<_> = context.registry.definitions();
-
     let mut state = context.state;
 
     emit_public_event(&events, AgentEvent::AgentStart);
@@ -109,6 +109,7 @@ pub(crate) async fn agent_loop_with_identities(
         // Build the request ONCE per turn from the applied state's inference +
         // canonical model selection. Retries reuse the same prepared call, so
         // the request is not rebuilt inside the retry loop.
+        let tool_defs = registry.definitions();
         let request = Request {
             model: state.model_selection.model_id.clone(),
             system: context.system.clone(),
@@ -137,6 +138,24 @@ pub(crate) async fn agent_loop_with_identities(
             Ok(prepared) => prepared,
             Err(e) => {
                 let err = map_collection_error(e);
+                let diagnostic: Diagnostic = (&err).into();
+                let provider_call = identities.next_call();
+                emit_evidence(
+                    &evidence_sink,
+                    &mut identities,
+                    &mut evidence_health,
+                    run,
+                    Some(turn),
+                    provider_call,
+                    None,
+                    crate::evidence::CallKind::Provider,
+                    crate::evidence::EvidencePayload::Diagnostic(
+                        crate::evidence::RedactedDiagnostic {
+                            severity: diagnostic.severity,
+                            code: diagnostic.code,
+                        },
+                    ),
+                );
                 observe_provider_failure(&diagnostic_sink, &err, &turn_id);
                 emit_agent_end(&events, &state.context);
                 return Err(err);
@@ -192,7 +211,7 @@ pub(crate) async fn agent_loop_with_identities(
         // loop and consumed by the post-stream finalize → prepare → stop path.
         let mut turn_tool_results: Vec<ToolResultMessage> = Vec::new();
         let mut turn_terminate = false;
-        let mut terminal_assistant: Option<AgentMessage> = None;
+        let terminal_assistant: AgentMessage;
 
         'stream: loop {
             let mut stream = match prepared.start_attempt() {
@@ -290,7 +309,7 @@ pub(crate) async fn agent_loop_with_identities(
                                 });
 
                                 if batch_is_sequential {
-                                    for tc in &tool_calls {
+                                    for (tool_index, tc) in tool_calls.iter().enumerate() {
                                         let parsed = parse_tool_call_arguments(tc.clone());
 
                                         emit_public_event(
@@ -306,18 +325,30 @@ pub(crate) async fn agent_loop_with_identities(
 
                                         let (result, auth_decision) = match parsed.parsed_args {
                                             Ok(args) => {
+                                                let mut tool_evidence = ToolEvidenceContext {
+                                                    sink: &evidence_sink,
+                                                    identities: &mut identities,
+                                                    run,
+                                                    turn,
+                                                    call: tool_call_ids[tool_index],
+                                                    parent: provider_call,
+                                                };
                                                 execute_tool(
                                                     &parsed.tool_call.id,
                                                     &parsed.tool_call.name,
                                                     &args,
+                                                    run,
+                                                    turn,
+                                                    tool_call_ids[tool_index],
+                                                    invocation_context.clone(),
                                                     &registry,
                                                     authorizer.as_ref(),
-                                                    evidence_health.clone(),
+                                                    &mut evidence_health,
+                                                    Some(&mut tool_evidence),
                                                     hooks,
                                                     &state.context,
                                                     cancel.clone(),
                                                     &diagnostic_sink,
-                                                    &turn_id,
                                                 )
                                                 .await
                                             }
@@ -357,6 +388,20 @@ pub(crate) async fn agent_loop_with_identities(
                                             truncated,
                                             timestamp_ms: opi_ai::time::now_ms(),
                                         };
+                                        let mut tool_evidence = ToolEvidenceContext {
+                                            sink: &evidence_sink,
+                                            identities: &mut identities,
+                                            run,
+                                            turn,
+                                            call: tool_call_ids[tool_index],
+                                            parent: provider_call,
+                                        };
+                                        emit_tool_outcome_evidence(
+                                            &mut tool_evidence,
+                                            &mut evidence_health,
+                                            &registry,
+                                            &trm,
+                                        );
                                         tool_results.push(trm.clone());
                                         tool_decisions.push(auth_decision);
                                         state
@@ -384,7 +429,8 @@ pub(crate) async fn agent_loop_with_identities(
 
                                     let futures: Vec<_> = parsed_calls
                                         .iter()
-                                        .map(|parsed| {
+                                        .enumerate()
+                                        .map(|(tool_index, parsed)| {
                                             let registry = registry.clone();
                                             let authorizer = authorizer.clone();
                                             let evidence_health = evidence_health.clone();
@@ -392,21 +438,28 @@ pub(crate) async fn agent_loop_with_identities(
                                             let cancel = cancel.clone();
                                             let diagnostic_sink = diagnostic_sink.clone();
                                             let turn_id = turn_id.clone();
+                                            let invocation_context = invocation_context.clone();
+                                            let evidence_call_id = tool_call_ids[tool_index];
                                             async move {
+                                                let mut evidence_health = evidence_health;
                                                 match parsed.parsed_args.clone() {
                                                     Ok(args) => {
                                                         execute_tool(
                                                             &parsed.tool_call.id,
                                                             &parsed.tool_call.name,
                                                             &args,
+                                                            run,
+                                                            turn,
+                                                            evidence_call_id,
+                                                            invocation_context,
                                                             &registry,
                                                             authorizer.as_ref(),
-                                                            evidence_health,
+                                                            &mut evidence_health,
+                                                            None,
                                                             hooks,
                                                             messages,
                                                             cancel,
                                                             &diagnostic_sink,
-                                                            &turn_id,
                                                         )
                                                         .await
                                                     }
@@ -463,53 +516,55 @@ pub(crate) async fn agent_loop_with_identities(
                                 // the provider call that produced it. Identities were pre-
                                 // minted before execution; sequence is assigned here in call
                                 // order (P17-EVD-002, Phase 17.6).
-                                for ((trm, call_id), decision) in
-                                    tool_results.iter().zip(&tool_call_ids).zip(&tool_decisions)
-                                {
-                                    // Re-resolve the trusted registration for the tool's
-                                    // authorization identity facts (registration id +
-                                    // capability) and attach the authorization outcome the
-                                    // 17.4 chain resolved (Allow / Deny:<code>) (Phase 17.6).
-                                    let (registration_id, capability) =
-                                        match registry.get(trm.tool_name.as_str()) {
-                                            Some(r) => (
-                                                Some(r.registration_id.as_str().to_owned()),
-                                                Some(format!("{:?}", r.capability)),
-                                            ),
-                                            None => (None, None),
+                                if !batch_is_sequential {
+                                    for ((trm, call_id), decision) in
+                                        tool_results.iter().zip(&tool_call_ids).zip(&tool_decisions)
+                                    {
+                                        // Re-resolve the trusted registration for the tool's
+                                        // authorization identity facts (registration id +
+                                        // capability) and attach the authorization outcome the
+                                        // 17.4 chain resolved (Allow / Deny:<code>) (Phase 17.6).
+                                        let (registration_id, capability) =
+                                            match registry.get(trm.tool_name.as_str()) {
+                                                Some(r) => (
+                                                    Some(r.registration_id.as_str().to_owned()),
+                                                    Some(format!("{:?}", r.capability)),
+                                                ),
+                                                None => (None, None),
+                                            };
+                                        let authorization = match decision.as_ref() {
+                                            Some(Authorized::AllowFresh(_)) => "allow".to_owned(),
+                                            Some(Authorized::Deny { stable_code, .. }) => {
+                                                format!("deny:{stable_code}")
+                                            }
+                                            None => "not_reached".to_owned(),
                                         };
-                                    let authorization = match decision.as_ref() {
-                                        Some(Authorized::AllowFresh) => "allow".to_owned(),
-                                        Some(Authorized::Deny { stable_code, .. }) => {
-                                            format!("deny:{stable_code}")
-                                        }
-                                        None => "not_reached".to_owned(),
-                                    };
-                                    emit_evidence(
-                                        &evidence_sink,
-                                        &mut identities,
-                                        &mut evidence_health,
-                                        run,
-                                        Some(turn),
-                                        *call_id,
-                                        Some(provider_call),
-                                        crate::evidence::CallKind::Tool,
-                                        crate::evidence::EvidencePayload::Structured(
-                                            crate::evidence::RedactedValue::redacted(
-                                                json!({
-                                                    "tool": trm.tool_name,
-                                                    "is_error": trm.is_error,
-                                                    "registration_id": registration_id,
-                                                    "capability": capability,
-                                                    // Named `decision` (not `authorization`) so the
-                                                    // non-secret Allow/Deny label is not scrubbed as an
-                                                    // HTTP Authorization-header field by the SecretRedactor.
-                                                    "decision": authorization,
-                                                }),
-                                                crate::diagnostic::RedactionMode::Summary,
+                                        emit_evidence(
+                                            &evidence_sink,
+                                            &mut identities,
+                                            &mut evidence_health,
+                                            run,
+                                            Some(turn),
+                                            *call_id,
+                                            Some(provider_call),
+                                            crate::evidence::CallKind::Tool,
+                                            crate::evidence::EvidencePayload::Structured(
+                                                crate::evidence::RedactedValue::redacted(
+                                                    json!({
+                                                        "tool": trm.tool_name,
+                                                        "is_error": trm.is_error,
+                                                        "registration_id": registration_id,
+                                                        "capability": capability,
+                                                        // Named `decision` (not `authorization`) so the
+                                                        // non-secret Allow/Deny label is not scrubbed as an
+                                                        // HTTP Authorization-header field by the SecretRedactor.
+                                                        "decision": authorization,
+                                                    }),
+                                                    crate::diagnostic::RedactionMode::Summary,
+                                                ),
                                             ),
-                                        ),
-                                    );
+                                        );
+                                    }
                                 }
 
                                 let all_terminate = !terminate_flags.is_empty()
@@ -525,7 +580,7 @@ pub(crate) async fn agent_loop_with_identities(
 
                                 turn_tool_results = tool_results;
                                 turn_terminate = all_terminate;
-                                terminal_assistant = Some(agent_msg);
+                                terminal_assistant = agent_msg;
                                 break 'stream;
                             }
 
@@ -537,7 +592,7 @@ pub(crate) async fn agent_loop_with_identities(
                                 },
                             );
 
-                            terminal_assistant = Some(agent_msg);
+                            terminal_assistant = agent_msg;
                             break 'stream;
                         }
                     }
@@ -672,33 +727,18 @@ pub(crate) async fn agent_loop_with_identities(
                 }
             }
 
-            if retry_attempt > 0 {
-                emit_public_event(
-                    &events,
-                    AgentEvent::AutoRetryEnd {
-                        success: true,
-                        attempt: retry_attempt,
-                        final_error: None,
-                    },
-                );
-                observe(
-                    &diagnostic_sink,
-                    Diagnostic::new(
-                        Severity::Info,
-                        CODE_PROVIDER_RETRY_SUCCEEDED,
-                        SOURCE_PROVIDER,
-                        "provider request succeeded after retry",
-                    )
-                    .details(json!({ "attempts": retry_attempt })),
-                );
-            }
-            break 'stream;
+            let err = AgentError::ProviderProtocol {
+                detail: "stream ended without a terminal event".to_owned(),
+            };
+            observe_provider_failure(&diagnostic_sink, &err, &turn_id);
+            emit_agent_end(&events, &state.context);
+            return Err(err);
         }
 
         // A retried turn that reached a terminal outcome emits the retry-success
         // event here (runs for every 'stream exit path, including the Done-event
         // break that skips the post-while-loop emission above).
-        if retry_attempt > 0 && terminal_assistant.is_some() {
+        if retry_attempt > 0 {
             emit_public_event(
                 &events,
                 AgentEvent::AutoRetryEnd {
@@ -722,10 +762,7 @@ pub(crate) async fn agent_loop_with_identities(
         // A turn must produce a terminal assistant message to finalize. If the
         // stream ended without one (e.g. only non-terminal deltas) there is no
         // outcome to build a candidate from; preserve state and stop.
-        let Some(terminal_msg) = terminal_assistant else {
-            emit_agent_end(&events, &state.context);
-            return Ok((state, identities));
-        };
+        let terminal_msg = terminal_assistant;
 
         // Construct the candidate next-turn state away from live state, validate
         // it as a unit, and atomically apply it. None retains the state; an
@@ -737,15 +774,23 @@ pub(crate) async fn agent_loop_with_identities(
             turn: turn_idx + 1,
         };
         let mut did_prepare = false;
-        match hooks.prepare_next_turn(prep_ctx).await {
+        let prepared_next_turn = tokio::select! {
+            biased;
+            _ = cancel.cancelled() => {
+                observe(&diagnostic_sink, cancelled_diagnostic("during_prepare_next_turn"));
+                emit_agent_end(&events, &state.context);
+                return Err(AgentError::Cancelled);
+            }
+            prepared = hooks.prepare_next_turn(prep_ctx) => prepared,
+        };
+        match prepared_next_turn {
             Ok(Some(candidate)) => {
-                if collection
-                    .resolve(&candidate.model_selection.to_spec())
-                    .is_err()
+                if let Err(error) =
+                    collection.validate_dispatchable_route(&candidate.model_selection.to_spec())
                 {
                     let err = AgentError::InvalidNextTurnCandidate(format!(
-                        "prepared model selection '{}' does not resolve to a route",
-                        candidate.model_selection.to_spec()
+                        "prepared model selection '{}' is invalid: {error}",
+                        candidate.model_selection.to_spec(),
                     ));
                     emit_agent_end(&events, &state.context);
                     return Err(err);
@@ -855,24 +900,28 @@ fn classify_provider_error(e: &ProviderError) -> AgentError {
 /// into the typed [`AgentError`] boundary. Route/auth failures surface as a
 /// typed route error rather than a generic provider string; the wrapped
 /// provider error is classified via [`classify_provider_error`].
-fn map_collection_error(e: CollectionError) -> AgentError {
+pub(crate) fn map_collection_error(e: CollectionError) -> AgentError {
     match e {
         CollectionError::CallCancelled => AgentError::Cancelled,
-        CollectionError::AttemptAlreadyActive => {
-            AgentError::Provider("prepared call attempt already active".into())
-        }
+        CollectionError::AttemptAlreadyActive => AgentError::AttemptAlreadyActive,
         CollectionError::Provider(p) => classify_provider_error(&p),
-        CollectionError::RouteNotDispatchable { provider } => AgentError::RouteNotDispatchable {
-            provider,
-            detail: "no dispatchable route (missing auth resolver)".into(),
-        },
-        CollectionError::AuthNotConfigured { provider, detail } => {
-            AgentError::RouteNotDispatchable { provider, detail }
+        CollectionError::RouteNotDispatchable { provider } => {
+            AgentError::RouteNotDispatchable { provider }
         }
-        CollectionError::Registry(reg) => AgentError::RouteNotDispatchable {
-            provider: reg.to_string(),
-            detail: "unknown or ambiguous provider:model selection".into(),
-        },
+        CollectionError::AuthNotConfigured { provider, detail } => {
+            AgentError::AuthNotConfigured { provider, detail }
+        }
+        CollectionError::Registry(opi_ai::RegistryError::InvalidSpec(spec)) => {
+            AgentError::InvalidModelSpec { spec }
+        }
+        CollectionError::Registry(opi_ai::RegistryError::UnknownProvider(provider)) => {
+            AgentError::UnknownProvider { provider }
+        }
+        CollectionError::Registry(opi_ai::RegistryError::UnknownModel { provider, model }) => {
+            AgentError::UnknownModel { provider, model }
+        }
+        #[allow(unreachable_patterns)]
+        CollectionError::Registry(error) => AgentError::Provider(error.to_string()),
     }
 }
 
@@ -1009,7 +1058,7 @@ fn malformed_tool_arguments_result(
 enum Authorized {
     /// A fresh `Allow` whose registration, capability, and evidence-health
     /// generation all match the current call.
-    AllowFresh,
+    AllowFresh(crate::tool::ToolExecutionAuthorization),
     /// Zero-execution denial (authorizer denial, stale generation, or authorizer
     /// error/unavailability). `stable_code` and `redacted_reason` are secret-free.
     Deny {
@@ -1018,30 +1067,107 @@ enum Authorized {
     },
 }
 
+struct ToolEvidenceContext<'a> {
+    sink: &'a Option<Arc<dyn crate::evidence::EvidenceSink>>,
+    identities: &'a mut crate::evidence::IdentityAllocator,
+    run: crate::evidence::RunId,
+    turn: crate::evidence::TurnId,
+    call: crate::evidence::CallId,
+    parent: crate::evidence::CallId,
+}
+
+fn authorization_label(decision: &Authorized) -> String {
+    match decision {
+        Authorized::AllowFresh(_) => "allow".to_owned(),
+        Authorized::Deny { stable_code, .. } => format!("deny:{stable_code}"),
+    }
+}
+
+fn emit_tool_authorization_evidence(
+    evidence: &mut ToolEvidenceContext<'_>,
+    health: &mut crate::evidence::EvidenceHealth,
+    registration: &crate::authority::RegisteredTool,
+    decision: &Authorized,
+) {
+    emit_evidence(
+        evidence.sink,
+        evidence.identities,
+        health,
+        evidence.run,
+        Some(evidence.turn),
+        evidence.call,
+        Some(evidence.parent),
+        crate::evidence::CallKind::Tool,
+        crate::evidence::EvidencePayload::Structured(crate::evidence::RedactedValue::redacted(
+            json!({
+                "phase": "authorization",
+                "tool": registration.provider_visible_name,
+                "registration_id": registration.registration_id.as_str(),
+                "capability": format!("{:?}", registration.capability),
+                "decision": authorization_label(decision),
+            }),
+            crate::diagnostic::RedactionMode::Summary,
+        )),
+    );
+}
+
+fn emit_tool_outcome_evidence(
+    evidence: &mut ToolEvidenceContext<'_>,
+    health: &mut crate::evidence::EvidenceHealth,
+    registry: &crate::authority::ToolRegistry,
+    result: &ToolResultMessage,
+) {
+    let registration_id = registry
+        .get(result.tool_name.as_str())
+        .map(|registration| registration.registration_id.as_str().to_owned());
+    emit_evidence(
+        evidence.sink,
+        evidence.identities,
+        health,
+        evidence.run,
+        Some(evidence.turn),
+        evidence.call,
+        Some(evidence.parent),
+        crate::evidence::CallKind::Tool,
+        crate::evidence::EvidencePayload::Structured(crate::evidence::RedactedValue::redacted(
+            json!({
+                "phase": "outcome",
+                "tool": result.tool_name,
+                "registration_id": registration_id,
+                "is_error": result.is_error,
+            }),
+            crate::diagnostic::RedactionMode::Summary,
+        )),
+    );
+}
+
 /// Resolve a current trusted `Allow` for one call: authorize against the
 /// current evidence-health snapshot, verify the returned `Allow` still matches
 /// the registration/capability/generation, and reauthorize once if it is stale.
 /// An authorizer error, denial, or a persistently stale generation all yield
 /// [`Authorized::Deny`] with zero execution (AUT-003/005).
 ///
-/// Phase 17.4: `evidence_health` is a run-start snapshot, so a correct authorizer
-/// (which echoes the request generation) always returns a fresh `Allow` on the
-/// first attempt; the stale branch is exercised synthetically. Evidence-failure
-/// driven advancement and live mid-run reads arrive in 17.6/17.7.
+/// `evidence_health` is the loop's current run-local health. Sink failure can
+/// advance it between authorization and launch; the stale branch rebuilds the
+/// request with that newer generation and reauthorizes exactly once.
+#[allow(clippy::too_many_arguments)] // one immutable authorization request assembled at this boundary
 async fn authorize_and_verify(
     authorizer: &dyn crate::authority::ToolAuthorizer,
     registration: &crate::authority::RegisteredTool,
     args: &serde_json::Value,
     evidence_health: crate::evidence::EvidenceHealth,
-    call_id: &str,
-    turn_id: &str,
+    run_id: crate::evidence::RunId,
+    turn_id: crate::evidence::TurnId,
+    call_id: crate::evidence::CallId,
+    invocation_context: crate::authority::InvocationContext,
     cancel: CancellationToken,
 ) -> Authorized {
     for attempt in 0..2u8 {
         let request = crate::authority::ToolAuthorizationRequest {
-            run_id: None,
-            turn_id: turn_id.to_owned(),
-            call_id: call_id.to_owned(),
+            run_id,
+            turn_id,
+            call_id,
+            invocation_context: invocation_context.clone(),
             registration_id: registration.registration_id.clone(),
             capability: registration.capability.clone(),
             arguments: args.clone(),
@@ -1068,16 +1194,22 @@ async fn authorize_and_verify(
                 };
             }
             crate::authority::AuthorizationDecision::Allow {
+                policy_ref,
+                permission_ref,
+                permission_scope,
                 registration_id,
                 capability,
                 evidence_health_generation,
-                ..
             } => {
                 if registration_id == registration.registration_id
                     && capability == registration.capability
                     && evidence_health_generation == evidence_health.generation()
                 {
-                    return Authorized::AllowFresh;
+                    return Authorized::AllowFresh(crate::tool::ToolExecutionAuthorization {
+                        policy_ref,
+                        permission_ref,
+                        permission_scope,
+                    });
                 }
                 // Stale: the Allow no longer matches the current registration,
                 // capability, or evidence-health generation. Reauthorize once
@@ -1101,14 +1233,18 @@ async fn execute_tool(
     call_id: &str,
     tool_name: &str,
     args: &serde_json::Value,
+    run_id: crate::evidence::RunId,
+    evidence_turn_id: crate::evidence::TurnId,
+    evidence_call_id: crate::evidence::CallId,
+    invocation_context: crate::authority::InvocationContext,
     registry: &crate::authority::ToolRegistry,
     authorizer: Option<&Arc<dyn crate::authority::ToolAuthorizer>>,
-    evidence_health: crate::evidence::EvidenceHealth,
+    evidence_health: &mut crate::evidence::EvidenceHealth,
+    mut tool_evidence: Option<&mut ToolEvidenceContext<'_>>,
     hooks: &dyn AgentHooks,
     messages: &[AgentMessage],
     cancel: CancellationToken,
     sink: &Option<Arc<dyn DiagnosticSink>>,
-    turn_id: &str,
 ) -> (ToolResult, Option<Authorized>) {
     // Tool call boundary record; emitted for every path below (completed,
     // failed, cancelled, denied) so the trace always brackets a tool execution.
@@ -1200,19 +1336,56 @@ async fn execute_tool(
             );
         }
     };
-    match authorize_and_verify(
+    let authorized_generation = evidence_health.generation();
+    let mut decision = authorize_and_verify(
         authorizer.as_ref(),
         registration,
         args,
-        evidence_health,
-        call_id,
-        turn_id,
+        evidence_health.clone(),
+        run_id,
+        evidence_turn_id,
+        evidence_call_id,
+        invocation_context.clone(),
         cancel.clone(),
     )
-    .await
+    .await;
+    if let Some(evidence) = &mut tool_evidence {
+        emit_tool_authorization_evidence(evidence, evidence_health, registration, &decision);
+    }
+
+    if matches!(decision, Authorized::AllowFresh(_))
+        && evidence_health.generation() != authorized_generation
     {
-        Authorized::AllowFresh => {
-            auth_decision = Some(Authorized::AllowFresh);
+        let reauthorized_generation = evidence_health.generation();
+        decision = authorize_and_verify(
+            authorizer.as_ref(),
+            registration,
+            args,
+            evidence_health.clone(),
+            run_id,
+            evidence_turn_id,
+            evidence_call_id,
+            invocation_context,
+            cancel.clone(),
+        )
+        .await;
+        if let Some(evidence) = &mut tool_evidence {
+            emit_tool_authorization_evidence(evidence, evidence_health, registration, &decision);
+        }
+        if matches!(decision, Authorized::AllowFresh(_))
+            && evidence_health.generation() != reauthorized_generation
+        {
+            decision = Authorized::Deny {
+                stable_code: "authorization_stale".to_owned(),
+                redacted_reason: "evidence changed before tool launch; execution denied".to_owned(),
+            };
+        }
+    }
+
+    let execution_authorization = match decision {
+        Authorized::AllowFresh(authorization) => {
+            auth_decision = Some(Authorized::AllowFresh(authorization.clone()));
+            authorization
         }
         Authorized::Deny {
             stable_code,
@@ -1228,12 +1401,18 @@ async fn execute_tool(
             });
             return (denial_result(&stable_code, &redacted_reason), auth_decision);
         }
-    }
+    };
 
     // 6. Execute: only a current Allow reaches Tool::execute (OUT-003).
     let result = match registration
         .implementation
-        .execute(call_id, args.clone(), cancel.clone(), None)
+        .execute_authorized(
+            call_id,
+            args.clone(),
+            execution_authorization,
+            cancel.clone(),
+            None,
+        )
         .await
     {
         Ok(result) => {

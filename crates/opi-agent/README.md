@@ -66,8 +66,9 @@ mapping consumes it.
 
 | Item | Purpose |
 |------|---------|
-| `Agent` | Stateful wrapper around the loop with prompt, continue, abort, subscribe, steering, follow-up, model switching, and tool registration helpers. |
+| `Agent` | Stateful wrapper around the loop with prompt, continue, abort, subscribe, steering, follow-up, and atomic complete-state replacement. Trusted `RegisteredTool`s and a `ToolAuthorizer` are supplied at construction. |
 | `Tool` | JSON Schema based tool contract with cancellable execution and optional progress updates. |
+| `RegisteredTool` / `ToolRegistry` / `ToolAuthorizer` | Immutable trusted tool registration and mandatory per-invocation authority boundary. |
 | `ExecutionMode` | Controls whether a tool can run in a parallel batch or forces sequential execution. |
 | `AgentHooks` | Lifecycle hooks for context transforms, LLM conversion, tool policy/results, stopping, and next-turn preparation. |
 | `AgentEvent` | Runtime event stream for lifecycle, streaming text, tool calls, queues, retries, compaction, and end state. |
@@ -88,7 +89,8 @@ agent_start                              # once, before turn 0
     transform_context                     # AgentHooks::transform_context
     convert_to_llm                        # AgentHooks::convert_to_llm
     validate request capabilities         # failure -> AgentEnd, AgentError::Provider
-    provider.stream(Request)
+    ProviderCollection::prepare_call(Request)
+      PreparedProviderCall::start_attempt
       message_start                       # assistant stream Start
       message_update                      # per text/thinking delta
       message_end                         # complete assistant message
@@ -358,6 +360,7 @@ versions and pin exact crate versions when needed.
 | `AgentHooks` | supported 0.x | Six lifecycle hooks; hook-order and failure contract tested. |
 | `AgentLoopConfig`, `AgentLoopContext`, `AgentError`, `AgentMessage` | supported 0.x | Required by the supported low-level `agent_loop` entry point. |
 | `Tool`, `ToolDef`, `ToolResult`, `ToolError`, `ExecutionMode` | supported 0.x | JSON-Schema tool contract plus result/error/scheduling types used by embedders. |
+| `RegisteredTool`, `ToolRegistry`, `ToolAuthorizer`, `EffectiveUserPolicy` | supported 0.x | Trusted registration, provider-visible projection, and fail-closed per-invocation authorization. |
 | `AgentEvent`, `AgentEventSink` | supported 0.x | In-process runtime event stream; `AgentEvent` is `#[non_exhaustive]` because new variants may arrive across 0.x. |
 | `AgentSessionEvent` | unstable internal | `opi --json` wire protocol (`NDJSON_SCHEMA_VERSION = 2`, owned by `opi-coding-agent`); `#[non_exhaustive]`. Check the schema version. |
 | `SessionEntry` | unstable internal | Session JSONL storage layout; lives at `session::SessionEntry`, not re-exported at the crate root; `#[non_exhaustive]`. |
@@ -366,8 +369,7 @@ versions and pin exact crate versions when needed.
 | `StreamingProxy`, `ProxyConfig`, `ProxyEvent`, `ProxyHandler`, `SecretRedactor`, `StreamingProxyError` | unstable internal | Streaming-proxy primitives; the `streaming_proxy` module marks them unstable 0.x. |
 | `Diagnostic`, `DiagnosticPayload`, `RedactionMode`, `Severity`, `redact`, `redact_text`, `DiagnosticSink`, `NullSink`, `RecordingSink` | unstable internal | Diagnostic payload and sink plumbing used by runtime surfaces; current contract is redaction/schema-version behavior, not a stable API shape. |
 | `EvidenceSink`, `EvidenceRecorder`, `InMemoryEvidenceSink`, `NoopEvidenceSink`, `EvidenceRecord`, `FinalizedManifest`, `RuntimeInputBinding`, `EvidenceHealth`, `IdentityAllocator` | unstable internal | Product-neutral evidence contract (Phase 17.3/17.6/17.7): storage-neutral sink lifecycle and resolved-execution manifest value types. The `evidence` module is unstable 0.x. |
-| `AgentState` | unstable internal | Runtime state holder exposed for crate layout and harness integration; not a supported embedder contract. |
-| `Phase`, `HarnessError`, `HarnessResult`, `HarnessSnapshot`, `HarnessSession`, `SavePoint`, `PendingWriteQueue`, `PendingWrite`, `PendingWriteKind`, `SessionRepo`, `SessionFacade`, `JsonlHarnessSession`, `JsonlSessionRepo` | unstable internal | Generic session-facade/repo orchestration seam (Phase 17.2 removed the unused `AgentHarness`/`HarnessRuntimeConfig` state owner). Contract-tested; the `harness` module is unstable 0.x. |
+| `HarnessError`, `HarnessResult`, `SavePoint`, `PendingWriteQueue`, `PendingWrite`, `PendingWriteKind`, `SessionRepo`, `SessionFacade`, `JsonlSessionRepo` | unstable internal | Generic session-facade/repo orchestration seam; the `harness` module is unstable 0.x. |
 
 This review found no candidate-removal crate-root re-exports. Every crate-root
 `pub use` in `src/lib.rs` is named in the table above. Public modules may expose
@@ -380,6 +382,11 @@ the evidence/hook result enums, and by module-level `# Unstable` / `unstable 0.x
 prose on `sdk`, `streaming_proxy`, `extension`, and `evidence`. There is no
 `#[doc(hidden)]` or `#[unstable]` feature gate, so embedders should pin exact
 crate versions. The evidence sink lifecycle is the capture seam (Phase 17.7).
+
+Phase 17 intentionally removed the piecemeal `Agent` model/inference/message
+setters, `Agent::add_tool`, the generic state bag, and the unused phase/snapshot
+harness owners. Embedders replace one validated `NextTurnState` atomically and
+provide immutable `RegisteredTool`s plus a `ToolAuthorizer` at construction.
 
 ## Non-Goals
 
@@ -404,9 +411,9 @@ remain explicitly out of scope and are not claimed:
 
 ## Public Modules
 
-`agent`, `compaction`, `diagnostic`, `diagnostic_sink`, `event`, `extension`,
+`agent`, `authority`, `compaction`, `diagnostic`, `diagnostic_sink`, `event`, `extension`,
 `harness`, `hooks`, `loop_types`, `message`, `sdk`, `session`, `session_branch`,
-`session_context`, `session_event`, `state`, `streaming_proxy`, `tool`,
+`session_context`, `session_event`, `streaming_proxy`, `tool`,
 `evidence`, and `validation`.
 
 The crate root re-exports the most common runtime types, including `Agent`,

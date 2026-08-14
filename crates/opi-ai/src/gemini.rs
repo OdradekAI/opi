@@ -18,6 +18,9 @@ use crate::provider::{EventStream, ModelInfo, Provider, ProviderError, Request};
 use crate::registry::ModelCapabilities;
 use crate::stream::{AssistantStreamEvent, StopReason, Usage};
 
+const UPSTREAM_STREAM_ERROR: &str = "Gemini returned a streaming error";
+const MALFORMED_STREAM_FRAME: &str = "Gemini returned a malformed streaming frame";
+
 // ---------------------------------------------------------------------------
 // SSE line parser (Gemini uses simple data: lines, no event: types)
 // ---------------------------------------------------------------------------
@@ -102,7 +105,8 @@ struct UsageMetadata {
 struct GeminiError {
     #[allow(dead_code)]
     code: Option<i32>,
-    message: Option<String>,
+    #[serde(rename = "message")]
+    _message: Option<String>,
     #[allow(dead_code)]
     status: Option<String>,
 }
@@ -113,7 +117,7 @@ struct GeminiError {
 
 pub(crate) enum ParsedEvent {
     Valid(GeminiEvent),
-    Malformed { data: String, error: String },
+    Malformed,
 }
 
 #[derive(Debug, Clone)]
@@ -138,18 +142,14 @@ impl ParsedEvent {
     pub(crate) fn from_data(data: &str) -> Vec<Self> {
         let resp: GenerateContentResponse = match serde_json::from_str(data) {
             Ok(r) => r,
-            Err(e) => {
-                return vec![ParsedEvent::Malformed {
-                    data: data.into(),
-                    error: e.to_string(),
-                }];
-            }
+            Err(_) => return vec![ParsedEvent::Malformed],
         };
 
         // Check for error first
         if let Some(err) = resp.error {
+            let _ = err;
             return vec![ParsedEvent::Valid(GeminiEvent::Error {
-                message: err.message.unwrap_or_else(|| "unknown error".into()),
+                message: UPSTREAM_STREAM_ERROR.to_owned(),
             })];
         }
 
@@ -673,11 +673,10 @@ impl GeminiProvider {
                     ParsedEvent::Valid(event) => {
                         stream_events.extend(mapper.process(event).into_iter().map(Ok));
                     }
-                    ParsedEvent::Malformed { data, error } => {
-                        stream_events.push(Err(ProviderError::StreamError(format!(
-                            "malformed SSE data: {error} (data: {:.80})",
-                            data
-                        ))));
+                    ParsedEvent::Malformed => {
+                        stream_events.push(Err(ProviderError::StreamError(
+                            MALFORMED_STREAM_FRAME.to_owned(),
+                        )));
                     }
                 }
             }
@@ -743,10 +742,8 @@ impl GeminiProvider {
                             }
                         }
                     }
-                    ParsedEvent::Malformed { data, error } => {
-                        let err = ProviderError::StreamError(format!(
-                            "malformed SSE data: {error} (data: {data:.80})"
-                        ));
+                    ParsedEvent::Malformed => {
+                        let err = ProviderError::StreamError(MALFORMED_STREAM_FRAME.to_owned());
                         if tx.send(Err(err)).await.is_err() {
                             return Ok(());
                         }

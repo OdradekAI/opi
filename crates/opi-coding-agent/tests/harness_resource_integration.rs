@@ -507,7 +507,7 @@ fn make_adapter_package(
 /// Build a minimal config for harness tests.
 fn adapter_test_config() -> OpiConfig {
     let mut config = OpiConfig::default();
-    config.defaults.model = "anthropic:claude-sonnet-4-5-20250514".to_string();
+    config.defaults.model = "anthropic:mock-model".to_string();
     config
 }
 
@@ -703,7 +703,7 @@ async fn harness_includes_adapter_tools_alongside_builtins() {
     let metadata = DiscoveredResourceMetadata::default();
     let harness = CodingHarness::builder(
         adapter_mock_provider(),
-        "claude-sonnet-4-5-20250514".to_string(),
+        "mock-model".to_string(),
         adapter_test_config(),
         dir.path().to_path_buf(),
         opi_coding_agent::project_trust::TrustDecision::Trusted,
@@ -749,7 +749,7 @@ async fn tool_selection_disabled_filters_adapter_tools() {
     let metadata = DiscoveredResourceMetadata::default();
     let harness = CodingHarness::builder(
         adapter_mock_provider(),
-        "claude-sonnet-4-5-20250514".to_string(),
+        "mock-model".to_string(),
         adapter_test_config(),
         dir.path().to_path_buf(),
         opi_coding_agent::project_trust::TrustDecision::Trusted,
@@ -791,7 +791,7 @@ async fn tool_selection_no_builtin_keeps_adapter_tools() {
     let metadata = DiscoveredResourceMetadata::default();
     let harness = CodingHarness::builder(
         adapter_mock_provider(),
-        "claude-sonnet-4-5-20250514".to_string(),
+        "mock-model".to_string(),
         adapter_test_config(),
         dir.path().to_path_buf(),
         opi_coding_agent::project_trust::TrustDecision::Trusted,
@@ -964,7 +964,7 @@ async fn harness_metadata_includes_adapter_extensions() {
     let metadata = DiscoveredResourceMetadata::default();
     let harness = CodingHarness::builder(
         adapter_mock_provider(),
-        "claude-sonnet-4-5-20250514".to_string(),
+        "mock-model".to_string(),
         adapter_test_config(),
         dir.path().to_path_buf(),
         opi_coding_agent::project_trust::TrustDecision::Trusted,

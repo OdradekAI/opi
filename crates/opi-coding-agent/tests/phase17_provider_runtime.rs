@@ -12,6 +12,9 @@
 //! P17-A02 (the 17.5-owned acceptance scenario) is
 //! [`phase17_route_and_auth_failures_do_not_dispatch_model_http`].
 
+#[path = "common/phase17.rs"]
+mod phase17;
+
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 
@@ -72,6 +75,25 @@ impl Provider for CountingProvider {
 /// unauthenticated-route case.
 struct FailingResolver {
     provider_id: String,
+}
+
+struct CountingResolver {
+    calls: Arc<AtomicU32>,
+}
+
+impl AuthResolver for CountingResolver {
+    fn resolve<'a>(&'a self) -> BoxAuthFuture<'a, Result<ResolvedAuth, ProviderError>> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        Box::pin(async {
+            Ok(ResolvedAuth {
+                scheme: AuthScheme::ApiKey,
+                secret: secrecy::SecretString::from("active-route-key"),
+                base_url: None,
+                account_id: None,
+                provenance: Default::default(),
+            })
+        })
+    }
 }
 
 impl AuthResolver for FailingResolver {
@@ -334,11 +356,9 @@ async fn phase17_coding_harness_cross_provider_switch_dispatches_both_providers(
     use opi_coding_agent::harness::CodingHarness;
     use opi_coding_agent::project_trust::TrustDecision;
 
-    static SESSION_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-    let _lock = SESSION_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _lock = phase17::session_lock();
     let sessions = tempfile::tempdir().expect("sessions tempdir");
-    // SAFETY: test-only env var mutation serialized by SESSION_TEST_LOCK.
-    unsafe { std::env::set_var("OPI_SESSIONS_DIR", sessions.path()) };
+    phase17::set_sessions_dir(sessions.path());
     let workspace = tempfile::tempdir().expect("workspace tempdir");
 
     let alpha_provider = MockProvider::new_with_models(
@@ -393,6 +413,59 @@ async fn phase17_coding_harness_cross_provider_switch_dispatches_both_providers(
         "beta dispatched exactly once"
     );
 
-    // SAFETY: test-only env var mutation serialized by SESSION_TEST_LOCK.
-    unsafe { std::env::remove_var("OPI_SESSIONS_DIR") };
+    phase17::clear_sessions_dir();
+}
+
+#[tokio::test]
+#[allow(clippy::await_holding_lock)] // serialized OPI_SESSIONS_DIR mutation; not re-acquired in awaited dispatch.
+async fn phase17_noninteractive_runtime_preserves_the_active_route_resolver() {
+    use opi_agent::extension::ExtensionRegistry;
+    use opi_ai::test_support::{MockProvider, text_response};
+    use opi_coding_agent::config::OpiConfig;
+    use opi_coding_agent::policy::ToolSelection;
+    use opi_coding_agent::project_trust::TrustDecision;
+    use opi_coding_agent::runner::NonInteractiveRunner;
+    use opi_coding_agent::runtime_packages::RuntimePackageStartup;
+
+    let _lock = phase17::session_lock();
+    let sessions = tempfile::tempdir().unwrap();
+    let workspace = tempfile::tempdir().unwrap();
+    let resolver_calls = Arc::new(AtomicU32::new(0));
+    let resolver: Arc<dyn AuthResolver> = Arc::new(CountingResolver {
+        calls: resolver_calls.clone(),
+    });
+    let provider = MockProvider::new_with_models(
+        "active",
+        vec![model_info("model")],
+        vec![text_response("done")],
+    );
+    phase17::set_sessions_dir(sessions.path());
+    let startup = RuntimePackageStartup {
+        extension_registry: ExtensionRegistry::new(),
+        installed_packages: Vec::new(),
+        diagnostics: Vec::new(),
+        trust_decision: TrustDecision::Trusted,
+    };
+    let mut runner = NonInteractiveRunner::new_with_resume_runtime_packages_and_auth(
+        Box::new(provider),
+        "active:model".to_owned(),
+        OpiConfig::default(),
+        workspace.path().to_path_buf(),
+        false,
+        None,
+        Vec::new(),
+        None,
+        ToolSelection::Default,
+        startup,
+        None,
+        resolver,
+        Vec::new(),
+    )
+    .unwrap();
+
+    let result = runner.run("hello").await;
+
+    assert_eq!(result.exit_code, 0, "{}", result.stderr);
+    assert_eq!(resolver_calls.load(Ordering::SeqCst), 1);
+    phase17::clear_sessions_dir();
 }

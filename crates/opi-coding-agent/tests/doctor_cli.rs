@@ -1267,22 +1267,7 @@ fn phase8_public_diagnostic_message_redaction() {
 // ===========================================================================
 
 fn opi_bin() -> String {
-    let manifest = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let workspace_root = manifest.parent().unwrap().parent().unwrap();
-    for profile in &["debug", "release"] {
-        let mut path = workspace_root.join("target").join(profile).join("opi");
-        if cfg!(windows) {
-            path.set_extension("exe");
-        }
-        if path.exists() {
-            return path.to_string_lossy().into_owned();
-        }
-    }
-    let mut path = workspace_root.join("target/debug/opi");
-    if cfg!(windows) {
-        path.set_extension("exe");
-    }
-    path.to_string_lossy().into_owned()
+    env!("CARGO_BIN_EXE_opi").to_owned()
 }
 
 fn run_unknown_scope_smoke() -> std::process::Output {

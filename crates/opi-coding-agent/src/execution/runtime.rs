@@ -457,6 +457,15 @@ impl BashOperations for RoutedBashOperations {
             CandidateDecision::Allowed(candidate) => candidate,
             CandidateDecision::Ask(candidate) => {
                 let selected = self.selected_dispatch(candidate);
+                if request.authorized_backend.as_deref() == Some(&selected.adapter_id) {
+                    return Box::pin(async move { selected.dispatch(request).await });
+                }
+                if request.authorized_backend.is_some() {
+                    let err = exec_failure_to_bash_op_error(ExecutionFailure::PermissionDenied {
+                        adapter_id: selected.adapter_id,
+                    });
+                    return Box::pin(async move { Err(err) });
+                }
                 if selected.mode == ExecutionRunMode::Interactive
                     && let Some(broker) = self.broker.clone()
                 {
@@ -478,6 +487,16 @@ impl BashOperations for RoutedBashOperations {
             }
         };
         let selected = self.selected_dispatch(selection);
+        if request
+            .authorized_backend
+            .as_deref()
+            .is_some_and(|authorized| authorized != selected.adapter_id)
+        {
+            let err = exec_failure_to_bash_op_error(ExecutionFailure::PermissionDenied {
+                adapter_id: selected.adapter_id,
+            });
+            return Box::pin(async move { Err(err) });
+        }
         Box::pin(async move { selected.dispatch(request).await })
     }
 }

@@ -108,12 +108,18 @@ provider and the `/login` remediation instead.
 | Stream NDJSON events | `opi --json "PROMPT"` |
 | Reduce long NDJSON stream size | `opi --json --json-compact "PROMPT"` |
 | Start the JSONL RPC process | `opi --rpc` |
+| Capture immutable evidence for every run | `opi --trace .opi-traces "PROMPT"` |
 | Attach images to the first prompt | `opi --image screenshot.png "Review this UI"` |
 | List configured models | `opi --list-models` |
 | Check local configuration and health | `opi doctor` |
 | Generate shell completion | `opi --generate-completion powershell` |
 
 Use `opi --help` for the current complete flag reference.
+
+`--trace PATH` works in interactive, non-interactive text, NDJSON, and RPC
+modes. `PATH` is a capture root: each prompt, continue, retry, or manual
+compaction creates a unique child directory containing `evidence.jsonl` and
+`manifest.json`. A finalized run directory is immutable.
 
 ### Sessions
 

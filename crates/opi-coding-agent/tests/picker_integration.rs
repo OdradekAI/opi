@@ -75,7 +75,7 @@ fn sample_registry() -> opi_ai::registry::ProviderRegistry {
     ];
     let provider = TestProvider::new("anthropic", models);
     let mut registry = opi_ai::registry::ProviderRegistry::new();
-    registry.register(Box::new(provider));
+    registry.register_provider(Box::new(provider)).unwrap();
     registry
 }
 
@@ -126,8 +126,8 @@ fn model_picker_multiple_providers() {
         )],
     );
     let mut registry = opi_ai::registry::ProviderRegistry::new();
-    registry.register(Box::new(p1));
-    registry.register(Box::new(p2));
+    registry.register_provider(Box::new(p1)).unwrap();
+    registry.register_provider(Box::new(p2)).unwrap();
 
     let items = picker::model_picker_items(&registry);
     assert_eq!(items.len(), 2);

@@ -1,12 +1,9 @@
 //! One public provider identity and catalog dispatched across concrete wires.
 //!
 //! Construction validates the complete model-to-wire route graph. A mapped
-//! provider delegates auth to its route providers; callers MUST construct every
-//! route with the SAME lazy [`crate::AuthResolver`] so every stream observes
-//! the current shared credential — one logical provider whose wires observe
-//! divergent login/logout state is a correctness defect. `try_new` cannot
-//! enforce this at the trait-object boundary (routes arrive as already-built
-//! `Box<dyn Provider>` values), so the invariant is the caller's responsibility.
+//! provider delegates a collection-prepared request and opaque authentication
+//! to the concrete route selected by wire API. Resolver ownership stays in
+//! [`crate::ProviderCollection`], outside this adapter.
 
 use std::collections::{BTreeMap, BTreeSet};
 

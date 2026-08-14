@@ -55,8 +55,9 @@ id，`opi-ai` adapter 决定审查过的 cache-affinity 映射是否消费该值
 
 | 项 | 作用 |
 |----|------|
-| `Agent` | 对主循环的有状态封装，提供 prompt、continue、abort、subscribe、steering、follow-up、模型切换和工具注册辅助。 |
+| `Agent` | 对主循环的有状态封装，提供 prompt、continue、abort、subscribe、steering、follow-up 和完整状态的原子替换；可信 `RegisteredTool` 与 `ToolAuthorizer` 在构造时提供。 |
 | `Tool` | 基于 JSON Schema 的工具契约，支持取消和可选进度更新。 |
+| `RegisteredTool` / `ToolRegistry` / `ToolAuthorizer` | 不可变可信工具注册，以及每次调用都必须经过的 authority 边界。 |
 | `ExecutionMode` | 控制工具能否进入并行批次，或是否强制串行执行。 |
 | `AgentHooks` | 覆盖上下文转换、LLM 转换、工具策略/结果、停止判断和下一轮准备的生命周期 hooks。 |
 | `AgentEvent` | 运行时事件流，覆盖生命周期、流式文本、工具调用、队列、重试、压缩和结束状态。 |
@@ -77,7 +78,8 @@ agent_start                              # 仅一次，首轮之前
     transform_context                     # AgentHooks::transform_context
     convert_to_llm                        # AgentHooks::convert_to_llm
     validate request capabilities         # 失败 -> AgentEnd, AgentError::Provider
-    provider.stream(Request)
+    ProviderCollection::prepare_call(Request)
+      PreparedProviderCall::start_attempt
       message_start                       # assistant 流 Start
       message_update                      # 每个文本/思考 delta
       message_end                         # 完整的 assistant 消息
@@ -313,6 +315,7 @@ run 返回 `Err(AgentError::Cancelled)` 的 turn 根本不会被持久化，因�
 | `AgentHooks` | 支持的 0.x | 六个生命周期 hooks；hook 顺序与失败契约已测试。 |
 | `AgentLoopConfig`、`AgentLoopContext`、`AgentError`、`AgentMessage` | 支持的 0.x | 受支持的底层 `agent_loop` 入口所需的类型。 |
 | `Tool`、`ToolDef`、`ToolResult`、`ToolError`、`ExecutionMode` | 支持的 0.x | JSON-Schema 工具契约，以及嵌入方使用的结果、错误和调度类型。 |
+| `RegisteredTool`、`ToolRegistry`、`ToolAuthorizer`、`EffectiveUserPolicy` | 支持的 0.x | 可信注册、面向 provider 的投影，以及 fail-closed 的逐调用授权。 |
 | `AgentEvent`、`AgentEventSink` | 支持的 0.x | 进程内运行时事件流；`AgentEvent` 是 `#[non_exhaustive]`，因为 0.x 内可能新增变体。 |
 | `AgentSessionEvent` | 不稳定内部 | `opi --json` 线协议（`NDJSON_SCHEMA_VERSION = 2`，由 `opi-coding-agent` 拥有）；`#[non_exhaustive]`。请检查 schema 版本。 |
 | `SessionEntry` | 不稳定内部 | 会话 JSONL 存储布局；位于 `session::SessionEntry`，未在 crate root 重新导出；`#[non_exhaustive]`。 |
@@ -321,8 +324,7 @@ run 返回 `Err(AgentError::Cancelled)` 的 turn 根本不会被持久化，因�
 | `StreamingProxy`、`ProxyConfig`、`ProxyEvent`、`ProxyHandler`、`SecretRedactor`、`StreamingProxyError` | 不稳定内部 | streaming-proxy 原语；`streaming_proxy` 模块标注为不稳定 0.x。 |
 | `Diagnostic`、`DiagnosticPayload`、`RedactionMode`、`Severity`、`redact`、`redact_text`、`DiagnosticSink`、`NullSink`、`RecordingSink` | 不稳定内部 | 运行时表面使用的诊断 payload 与 sink plumbing；当前契约是 redaction/schema-version 行为，不是稳定 API 形状。 |
 | `EvidenceSink`、`EvidenceRecorder`、`InMemoryEvidenceSink`、`NoopEvidenceSink`、`EvidenceRecord`、`FinalizedManifest`、`RuntimeInputBinding`、`EvidenceHealth`、`IdentityAllocator` | 不稳定内部 | 产品中立 evidence 契约（Phase 17.3/17.6/17.7）：存储中立 sink 生命周期与已解析执行清单值类型。`evidence` 模块标注为不稳定 0.x。 |
-| `AgentState` | 不稳定内部 | 为 crate 布局与 harness 集成暴露的运行时状态持有器；不是受支持的嵌入方契约。 |
-| `Phase`、`HarnessError`、`HarnessResult`、`HarnessSnapshot`、`HarnessSession`、`SavePoint`、`PendingWriteQueue`、`PendingWrite`、`PendingWriteKind`、`SessionRepo`、`SessionFacade`、`JsonlHarnessSession`、`JsonlSessionRepo` | 不稳定内部 | 通用 session-facade/repo 编排 seam（Phase 17.2 移除了未使用的 `AgentHarness`/`HarnessRuntimeConfig` 状态持有者）。经契约测试；`harness` 模块标注为不稳定 0.x。 |
+| `HarnessError`、`HarnessResult`、`SavePoint`、`PendingWriteQueue`、`PendingWrite`、`PendingWriteKind`、`SessionRepo`、`SessionFacade`、`JsonlSessionRepo` | 不稳定内部 | 通用 session-facade/repo 编排 seam；`harness` 模块标注为不稳定 0.x。 |
 
 本次审查没有发现候选移除的 crate-root re-export。`src/lib.rs` 中的每个
 crate-root `pub use` 都已在上表点名。公共模块可能还会通过模块路径暴露其他项；
@@ -333,6 +335,11 @@ crate-root `pub use` 都已在上表点名。公共模块可能还会通过模�
 `streaming_proxy`、`extension` 和 `evidence` 模块级的 `# Unstable` / 不稳定 0.x 说明来
 约束。没有 `#[doc(hidden)]` 或 `#[unstable]` feature gate，因此嵌入方应固定精确
 crate 版本。evidence sink 生命周期是捕获契约（Phase 17.7）。
+
+Phase 17 有意移除了 `Agent` 的零散 model/inference/message setter、
+`Agent::add_tool`、通用状态包，以及未使用的 phase/snapshot harness owner。嵌入方应原子
+替换一个经校验的完整 `NextTurnState`，并在构造时提供不可变 `RegisteredTool` 与
+`ToolAuthorizer`。
 
 ## 非目标（Non-Goals）
 
@@ -353,9 +360,9 @@ crate 维持 0.x，`harness` seam 仅为内部使用。以下明确不在范围�
 
 ## 公共模块
 
-`agent`、`compaction`、`diagnostic`、`diagnostic_sink`、`event`、`extension`、
+`agent`、`authority`、`compaction`、`diagnostic`、`diagnostic_sink`、`event`、`extension`、
 `harness`、`hooks`、`loop_types`、`message`、`sdk`、`session`、`session_branch`、
-`session_context`、`session_event`、`state`、`streaming_proxy`、`tool`、
+`session_context`、`session_event`、`streaming_proxy`、`tool`、
 `evidence` 和 `validation`。
 
 crate root 重新导出了常用运行时类型，包括 `Agent`、`Tool`、`ToolResult`、

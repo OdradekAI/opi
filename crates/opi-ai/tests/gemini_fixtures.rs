@@ -41,7 +41,9 @@ fn gemini_provider_id_is_gemini() {
 #[test]
 fn gemini_resolves_model_in_registry() {
     let mut registry = ProviderRegistry::new();
-    registry.register(Box::new(gemini_provider()));
+    registry
+        .register_provider(Box::new(gemini_provider()))
+        .unwrap();
     let (provider, model) = registry.resolve("gemini:gemini-2.5-flash").unwrap();
     assert_eq!(provider.id(), "gemini");
     assert_eq!(model.id, "gemini-2.5-flash");
@@ -50,7 +52,9 @@ fn gemini_resolves_model_in_registry() {
 #[test]
 fn gemini_registry_lists_provider_id() {
     let mut registry = ProviderRegistry::new();
-    registry.register(Box::new(gemini_provider()));
+    registry
+        .register_provider(Box::new(gemini_provider()))
+        .unwrap();
     let ids = registry.provider_ids();
     assert!(ids.contains(&"gemini"));
 }
@@ -58,7 +62,9 @@ fn gemini_registry_lists_provider_id() {
 #[test]
 fn gemini_unknown_model_returns_error() {
     let mut registry = ProviderRegistry::new();
-    registry.register(Box::new(gemini_provider()));
+    registry
+        .register_provider(Box::new(gemini_provider()))
+        .unwrap();
     let result = registry.resolve("gemini:nonexistent-model");
     assert!(result.is_err());
 }
@@ -243,6 +249,18 @@ async fn gemini_error_event_routing() {
             .iter()
             .any(|e| matches!(e, AssistantStreamEvent::Error { .. })),
         "should have an Error event"
+    );
+
+    let canary = "sk-provider-error-canary";
+    let secret_sse = format!(
+        "data: {{\"error\":{{\"code\":500,\"message\":\"{canary}\",\"status\":\"INTERNAL\"}}}}\n\n"
+    );
+    let secret_events =
+        collect_stream(provider.stream_from_sse(&secret_sse, CancellationToken::new())).await;
+    let rendered = format!("{secret_events:?}");
+    assert!(
+        !rendered.contains(canary),
+        "raw upstream error text leaked into stream events: {rendered}"
     );
 }
 
@@ -436,6 +454,10 @@ async fn gemini_malformed_sse_data_surfaces_error() {
     assert!(
         errors > 0,
         "should have at least one error from malformed data"
+    );
+    assert!(
+        !format!("{events:?}").contains("not valid json"),
+        "malformed upstream frame content must be neutralized"
     );
 
     // Should still have a valid Done from the good chunks

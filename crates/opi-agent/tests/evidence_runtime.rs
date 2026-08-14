@@ -16,7 +16,7 @@ mod common;
 
 use std::pin::Pin;
 use std::sync::Arc;
-use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use opi_agent::agent::Agent;
 use opi_agent::evidence::{
@@ -27,12 +27,135 @@ use opi_agent::hooks::{
 };
 use opi_agent::loop_types::{AgentError, AgentLoopConfig, InferenceConfig};
 use opi_agent::message::AgentMessage;
+use opi_agent::tool::{ExecutionMode, Tool, ToolError, ToolResult};
 use opi_ai::message::Message;
+use opi_ai::message::{AssistantContent, AssistantMessage, OutputContent, ToolCall, ToolDef};
 use opi_ai::provider::ProviderError;
 use opi_ai::retry::RetryConfig;
+use opi_ai::stream::{AssistantStreamEvent, StopReason, Usage};
 use opi_ai::test_support::{
     MockProvider, MockResponse, single_route_collection, text_response, tool_call_response,
 };
+use tokio_util::sync::CancellationToken;
+
+struct FailOnEmission {
+    emissions: AtomicUsize,
+    fail_on: usize,
+}
+
+impl EvidenceSink for FailOnEmission {
+    fn setup(
+        &self,
+        _binding: &opi_agent::evidence::RuntimeInputBinding,
+    ) -> Result<(), EvidenceError> {
+        Ok(())
+    }
+
+    fn emit(&self, _record: &opi_agent::evidence::EvidenceRecord) -> Result<(), EvidenceError> {
+        let emission = self.emissions.fetch_add(1, Ordering::SeqCst) + 1;
+        if emission == self.fail_on {
+            return Err(EvidenceError::Emission {
+                detail: "injected ordered emission failure".to_owned(),
+            });
+        }
+        Ok(())
+    }
+
+    fn finalize_artifact(
+        &self,
+        _artifact: &opi_agent::evidence::ArtifactReference,
+    ) -> Result<(), EvidenceError> {
+        Ok(())
+    }
+
+    fn finalize_run(
+        &self,
+        _manifest: &opi_agent::evidence::FinalizedManifest,
+    ) -> Result<(), EvidenceError> {
+        Ok(())
+    }
+}
+
+struct SequentialCountingTool {
+    name: String,
+    executions: Arc<AtomicUsize>,
+}
+
+impl Tool for SequentialCountingTool {
+    fn definition(&self) -> ToolDef {
+        ToolDef {
+            name: self.name.clone(),
+            description: "sequential counter".to_owned(),
+            input_schema: serde_json::json!({ "type": "object" }),
+        }
+    }
+
+    fn execute(
+        &self,
+        _call_id: &str,
+        _arguments: serde_json::Value,
+        _signal: CancellationToken,
+        _on_update: Option<opi_agent::tool::UpdateCallback>,
+    ) -> Pin<Box<dyn std::future::Future<Output = Result<ToolResult, ToolError>> + Send>> {
+        let executions = self.executions.clone();
+        Box::pin(async move {
+            executions.fetch_add(1, Ordering::SeqCst);
+            Ok(ToolResult {
+                content: vec![OutputContent::Text { text: "ok".into() }],
+                details: None,
+                is_error: false,
+                terminate: false,
+                truncated: false,
+                diagnostics: vec![],
+            })
+        })
+    }
+
+    fn execution_mode(&self) -> ExecutionMode {
+        ExecutionMode::Sequential
+    }
+}
+
+fn two_tool_response() -> Vec<AssistantStreamEvent> {
+    let mut message = AssistantMessage {
+        content: vec![],
+        api: opi_ai::ApiKind::OpenAi,
+        provider: "mock".into(),
+        model: "mock-model".into(),
+        response_model: None,
+        response_id: None,
+        usage: Usage::unknown(),
+        stop_reason: StopReason::ToolUse,
+        error_message: None,
+        timestamp_ms: 0,
+    };
+    let calls = [
+        ToolCall {
+            id: "c1".into(),
+            name: "first".into(),
+            arguments: "{}".into(),
+        },
+        ToolCall {
+            id: "c2".into(),
+            name: "second".into(),
+            arguments: "{}".into(),
+        },
+    ];
+    message.content = calls
+        .iter()
+        .cloned()
+        .map(|tool_call| AssistantContent::ToolCall { tool_call })
+        .collect();
+    vec![
+        AssistantStreamEvent::Start {
+            partial: message.clone(),
+        },
+        AssistantStreamEvent::Done {
+            reason: StopReason::ToolUse,
+            message,
+        },
+    ]
+}
 
 struct TestHooks;
 impl AgentHooks for TestHooks {
@@ -357,6 +480,52 @@ async fn emission_failure_advances_health_copied_into_authorization() {
         common::RecordingTool::count_of(&count),
         0,
         "the advanced health generation (1) reaches authorization and mismatches the stale Allow (0)"
+    );
+}
+
+#[tokio::test]
+async fn sequential_tool_outcome_evidence_precedes_the_next_authorization() {
+    let executions = Arc::new(AtomicUsize::new(0));
+    let registrations = common::registrations_from(vec![
+        Box::new(SequentialCountingTool {
+            name: "first".into(),
+            executions: executions.clone(),
+        }),
+        Box::new(SequentialCountingTool {
+            name: "second".into(),
+            executions: executions.clone(),
+        }),
+    ]);
+    let provider = MockProvider::new_with_errors(
+        "mock",
+        vec![
+            MockResponse::Events(two_tool_response()),
+            MockResponse::Events(text_response("done")),
+        ],
+    );
+    let collection = Arc::new(single_route_collection(Box::new(provider)));
+    let mut agent = Agent::new(
+        collection,
+        registrations,
+        Some(Arc::new(common::StaleGenerationAuthorizer::default())),
+        "mock:mock-model".into(),
+        None,
+        InferenceConfig::default(),
+        AgentLoopConfig::default(),
+        Box::new(TestHooks),
+    )
+    .unwrap();
+    agent.set_evidence_sink(Some(Arc::new(FailOnEmission {
+        emissions: AtomicUsize::new(0),
+        fail_on: 3,
+    })));
+
+    let _ = agent.prompt("go").await;
+
+    assert_eq!(
+        executions.load(Ordering::SeqCst),
+        1,
+        "the second sequential tool must not launch after the first outcome's evidence failure"
     );
 }
 

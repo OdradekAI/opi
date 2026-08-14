@@ -1354,3 +1354,84 @@ async fn phase17_invalid_prepare_candidate_preserves_state_with_typed_error() {
         "no further turns after an invalid candidate (no queue polling)"
     );
 }
+
+struct BlockingPrepareHooks {
+    entered: Arc<tokio::sync::Notify>,
+    captured: Arc<Mutex<Option<NextTurnState>>>,
+}
+
+impl AgentHooks for BlockingPrepareHooks {
+    fn convert_to_llm(&self, messages: &[AgentMessage]) -> Result<Vec<Message>, AgentError> {
+        llm_only(messages)
+    }
+
+    fn prepare_next_turn(
+        &self,
+        ctx: PrepareNextTurnContext,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<NextTurnState>, AgentError>> + Send>> {
+        let entered = self.entered.clone();
+        let captured = self.captured.clone();
+        Box::pin(async move {
+            *captured.lock().unwrap() = Some(ctx.state);
+            entered.notify_one();
+            std::future::pending().await
+        })
+    }
+
+    fn should_stop_after_turn(
+        &self,
+        _ctx: ShouldStopAfterTurnContext,
+    ) -> Pin<Box<dyn Future<Output = bool> + Send>> {
+        Box::pin(async { false })
+    }
+
+    fn before_tool_call(
+        &self,
+        _ctx: BeforeToolCallContext,
+    ) -> Pin<Box<dyn Future<Output = BeforeToolCallResult> + Send>> {
+        Box::pin(async { BeforeToolCallResult::Continue })
+    }
+}
+
+#[tokio::test]
+async fn cancellation_during_prepare_preserves_the_complete_prior_state() {
+    let entered = Arc::new(tokio::sync::Notify::new());
+    let captured = Arc::new(Mutex::new(None));
+    let provider = RecordingProvider::new(vec![text_response("hello")]);
+    let mut agent = make_agent(
+        provider,
+        vec![],
+        Box::new(BlockingPrepareHooks {
+            entered: entered.clone(),
+            captured: captured.clone(),
+        }),
+    );
+    let control = agent.control_handle();
+
+    let prompt = agent.prompt("test");
+    let cancel = async move {
+        entered.notified().await;
+        control.abort();
+    };
+    let (result, ()) = tokio::join!(prompt, cancel);
+    assert!(matches!(result, Err(AgentError::Cancelled)));
+
+    let before = captured.lock().unwrap().clone().expect("captured state");
+    let after = agent.state_snapshot();
+    let prior_context = &before.context[..before.context.len() - 1];
+    assert_eq!(
+        serde_json::to_value(&after.context).unwrap(),
+        serde_json::to_value(prior_context).unwrap()
+    );
+    assert_eq!(after.model_selection, before.model_selection);
+    assert_eq!(after.inference.max_tokens, before.inference.max_tokens);
+    assert_eq!(after.inference.temperature, before.inference.temperature);
+    assert_eq!(
+        after.inference.thinking.enabled,
+        before.inference.thinking.enabled
+    );
+    assert_eq!(
+        after.inference.thinking.budget_tokens,
+        before.inference.thinking.budget_tokens
+    );
+}

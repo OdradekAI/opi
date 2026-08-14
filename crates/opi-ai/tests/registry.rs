@@ -6,7 +6,13 @@ use opi_ai::WireApi;
 use opi_ai::anthropic::AnthropicProvider;
 use opi_ai::provider::{EventStream, ModelInfo, Provider, Request};
 use opi_ai::registry::ModelCapabilities;
-use opi_ai::registry::{ProviderRegistry, RegistryError};
+use opi_ai::registry::{ProviderRegistry, RegistrationError, RegistryError};
+
+#[test]
+fn unchecked_registration_alias_is_not_public() {
+    let source = include_str!("../src/registry.rs");
+    assert!(!source.contains("pub fn register(&mut self"));
+}
 
 /// Minimal stub provider for multi-provider tests.
 struct StubProvider {
@@ -45,7 +51,8 @@ impl Provider for StubProvider {
 /// Helper: create a registry with the Anthropic provider registered.
 fn anthropic_registry() -> ProviderRegistry {
     let mut reg = ProviderRegistry::new();
-    reg.register(Box::new(AnthropicProvider::new(None)));
+    reg.register_provider(Box::new(AnthropicProvider::new(None)))
+        .unwrap();
     reg
 }
 
@@ -63,8 +70,10 @@ fn register_and_list_providers() {
 #[test]
 fn register_multiple_providers() {
     let mut reg = ProviderRegistry::new();
-    reg.register(Box::new(StubProvider::new("alpha")));
-    reg.register(Box::new(StubProvider::new("beta")));
+    reg.register_provider(Box::new(StubProvider::new("alpha")))
+        .unwrap();
+    reg.register_provider(Box::new(StubProvider::new("beta")))
+        .unwrap();
     let mut ids = reg.provider_ids();
     ids.sort();
     assert_eq!(ids, vec!["alpha", "beta"]);
@@ -73,9 +82,20 @@ fn register_multiple_providers() {
 #[test]
 fn duplicate_registration_replaces() {
     let mut reg = ProviderRegistry::new();
-    reg.register(Box::new(StubProvider::new("p")));
-    reg.register(Box::new(StubProvider::new("p")));
+    reg.register_provider(Box::new(StubProvider::new("p")))
+        .unwrap();
+    reg.register_provider(Box::new(StubProvider::new("p")))
+        .unwrap();
     assert_eq!(reg.provider_ids().len(), 1);
+}
+
+#[test]
+fn validated_registration_rejects_whitespace_only_provider_id() {
+    let mut reg = ProviderRegistry::new();
+    let error = reg
+        .register_provider(Box::new(StubProvider::new("   ")))
+        .expect_err("whitespace-only provider id must be rejected");
+    assert!(matches!(error, RegistrationError::EmptyProviderId));
 }
 
 #[test]
@@ -105,7 +125,8 @@ fn validated_provider_replacement_clears_dynamic_catalog() {
 #[test]
 fn compatibility_provider_replacement_clears_dynamic_catalog() {
     let mut reg = ProviderRegistry::new();
-    reg.register(Box::new(StubProvider::new("p")));
+    reg.register_provider(Box::new(StubProvider::new("p")))
+        .unwrap();
     reg.set_dynamic_catalog(
         "p",
         vec![ModelInfo::new(
@@ -118,7 +139,8 @@ fn compatibility_provider_replacement_clears_dynamic_catalog() {
     assert!(reg.resolve("p:dynamic").is_ok());
     assert!(reg.resolve("p:p-model-1").is_err());
 
-    reg.register(Box::new(StubProvider::new("p")));
+    reg.register_provider(Box::new(StubProvider::new("p")))
+        .unwrap();
 
     assert!(reg.resolve("p:dynamic").is_err());
     assert!(reg.resolve("p:p-model-1").is_ok());
@@ -175,6 +197,26 @@ fn resolve_empty_spec() {
     let reg = anthropic_registry();
     let result = reg.resolve("");
     assert!(matches!(result, Err(RegistryError::InvalidSpec(_))));
+}
+
+#[test]
+fn resolve_uses_one_trimmed_canonical_provider_model_parser() {
+    let mut reg = ProviderRegistry::new();
+    reg.register_provider(Box::new(StubProvider::new("alpha")))
+        .unwrap();
+
+    let (provider, model) = reg
+        .resolve("  alpha : alpha-model-1  ")
+        .expect("canonical parser trims both identity components");
+    assert_eq!(provider.id(), "alpha");
+    assert_eq!(model.id, "alpha-model-1");
+
+    for invalid in ["alpha:   ", "   :alpha-model-1", "   :   "] {
+        assert!(
+            matches!(reg.resolve(invalid), Err(RegistryError::InvalidSpec(_))),
+            "invalid padded identity accepted: {invalid:?}"
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------

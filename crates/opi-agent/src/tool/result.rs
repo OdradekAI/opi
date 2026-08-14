@@ -124,9 +124,6 @@ pub fn bash_operation_metadata(
 pub enum WorkspaceRelation {
     Inside,
     Outside,
-    /// Canonicalization failed. Reserved: not populated by 11.1 tools
-    /// (`resolve_tool_path` returns `Err` instead); 11.2 may relax that.
-    Unresolved,
 }
 
 #[cfg(test)]
@@ -234,10 +231,6 @@ mod tests {
         assert_eq!(
             serde_json::to_string(&WorkspaceRelation::Outside).unwrap(),
             "\"outside\""
-        );
-        assert_eq!(
-            serde_json::to_string(&WorkspaceRelation::Unresolved).unwrap(),
-            "\"unresolved\""
         );
     }
 }

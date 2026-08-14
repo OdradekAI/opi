@@ -358,7 +358,10 @@ fn phase17_legacy_trace_file_blocks_evidence_setup_and_stays_byte_identical() {
     let legacy_bytes = b"{\"schema_version\":1,\"records\":[]}\n".to_vec();
     std::fs::write(&trace_path, &legacy_bytes).unwrap();
 
-    let binding = RuntimeInputBinding::direct(ContentDigest::from_hex("abcd"), AssemblySource::Cli);
+    let binding = RuntimeInputBinding::direct(
+        ContentDigest::from_hex("a".repeat(64)).expect("valid sha256 hex"),
+        AssemblySource::Cli,
+    );
     let sink = FileEvidenceSink::new(trace_path.clone());
     let result = sink.setup(&binding);
     assert!(
@@ -481,17 +484,24 @@ async fn phase17_legacy_sessions_and_opaque_traces_are_byte_preserved() {
     );
     std::fs::write(dir.join("legacy-trace.after.jsonl"), &trace_after).unwrap();
 
-    // New-schema evidence exists at the evidence dir, distinct from the legacy
-    // trace path.
+    // New-schema evidence exists in one immutable per-run child directory,
+    // distinct from the legacy trace path.
+    let completed = sink.completed_run_dirs();
+    assert_eq!(completed.len(), 1, "one finalized evidence run");
+    let capture_dir = &completed[0];
     assert!(
-        dir.join("evidence.jsonl").exists(),
+        capture_dir.join("evidence.jsonl").exists(),
         "new evidence.jsonl written"
     );
     assert!(
-        dir.join("manifest.json").exists(),
+        capture_dir.join("manifest.json").exists(),
         "new manifest.json written"
     );
-    std::fs::copy(dir.join("evidence.jsonl"), dir.join("new-evidence.jsonl")).unwrap();
+    std::fs::copy(
+        capture_dir.join("evidence.jsonl"),
+        dir.join("new-evidence.jsonl"),
+    )
+    .unwrap();
     assert!(
         !sink.records().is_empty(),
         "the run emitted evidence records"

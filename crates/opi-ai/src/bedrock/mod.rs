@@ -493,9 +493,7 @@ enum BedrockEvent {
     Metadata {
         usage: BedrockUsage,
     },
-    Exception {
-        message: String,
-    },
+    Exception,
 }
 
 #[derive(Debug, Clone)]
@@ -638,16 +636,7 @@ fn parse_bedrock_event(
                 },
             })]
         }
-        "exception" => {
-            let parsed: serde_json::Value = serde_json::from_str(payload).unwrap_or_default();
-            vec![Ok(BedrockEvent::Exception {
-                message: parsed
-                    .get("message")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("unknown error")
-                    .to_string(),
-            })]
-        }
+        "exception" => vec![Ok(BedrockEvent::Exception)],
         _ => Vec::new(),
     }
 }
@@ -865,10 +854,10 @@ impl BedrockMapper {
                 }
                 self.pending_done.take().into_iter().collect()
             }
-            BedrockEvent::Exception { message } => {
+            BedrockEvent::Exception => {
                 self.saw_done = true;
                 let mut err_msg = self.partial.clone();
-                err_msg.error_message = Some(message);
+                err_msg.error_message = Some("Bedrock returned a streaming error".to_owned());
                 vec![AssistantStreamEvent::Error {
                     reason: StopReason::Error,
                     message: err_msg,

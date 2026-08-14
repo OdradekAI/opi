@@ -11,7 +11,7 @@
 //! 2. `CodingHarness::prompt` (the shared library seam every mode calls);
 //! 3. `NonInteractiveRunner::run` (print) with durable `--trace` evidence;
 //! 4. `NonInteractiveRunner::run_json` (JSON/NDJSON) with durable evidence;
-//! 5. `RpcRunner` via `run_with_channels` with an injected recorder.
+//! 5. `RpcRunner` via `run_with_channels` with durable `--trace` evidence.
 //!
 //! The observable route, evidence-completeness, and completion semantics are
 //! asserted equivalent across modes. Authority is shared by construction (every
@@ -21,10 +21,8 @@
 //! (`harness.cancel()` / `runner.cancel()` / RPC abort), whose
 //! not-converted-to-success behavior task 17.9 proves in
 //! `phase17_failure_rollback`. Known asymmetries are recorded honestly: the
-//! interactive binary wires no evidence capture, and the binary RPC path does
-//! not forward `--trace` (RPC captures on its always-on in-memory sink over the
-//! same `EvidenceSink` contract; here the recorder is injected through the
-//! public `new_with_trace` seam so the records are observable).
+//! interactive presentation itself remains outside this hermetic test; its
+//! shared harness assembly is exercised directly.
 
 #[path = "common/phase17.rs"]
 mod phase17;
@@ -102,6 +100,22 @@ fn jsonl_kind_names(path: &std::path::Path) -> Vec<String> {
     kinds.sort();
     kinds.dedup();
     kinds
+}
+
+fn finalized_run_dir(root: &std::path::Path) -> std::path::PathBuf {
+    let mut candidates = std::fs::read_dir(root)
+        .unwrap()
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| path.join("manifest.json").is_file())
+        .collect::<Vec<_>>();
+    candidates.sort();
+    assert_eq!(
+        candidates.len(),
+        1,
+        "expected one finalized run under {root:?}"
+    );
+    candidates.pop().unwrap()
 }
 
 async fn recv_rpc_line(
@@ -257,10 +271,8 @@ async fn phase17_all_public_product_modes_share_runtime_semantics() {
         let calls = calls3.lock().unwrap();
         assert_eq!(calls.len(), 1, "print mode dispatches alpha once");
     }
-    assert!(
-        ev3.path().join("evidence.jsonl").exists(),
-        "print mode writes durable evidence"
-    );
+    let ev3_run = finalized_run_dir(ev3.path());
+    assert!(ev3_run.join("evidence.jsonl").exists());
 
     // --- Mode 4: NonInteractiveRunner::run_json (JSON/NDJSON, durable) ------
     let ws4 = tempfile::tempdir().unwrap();
@@ -301,6 +313,7 @@ async fn phase17_all_public_product_modes_share_runtime_semantics() {
         summary["model"], MODEL_SPEC,
         "the session summary reports the canonical route"
     );
+    let ev4_run = finalized_run_dir(ev4.path());
 
     // A second NDJSON run over the same fixture (fresh session) for the
     // ndjson.jsonl artifact view.
@@ -332,12 +345,11 @@ async fn phase17_all_public_product_modes_share_runtime_semantics() {
         );
     }
 
-    // --- Mode 5: RpcRunner (injected recorder) -------------------------------
+    // --- Mode 5: RpcRunner (durable --trace root) ----------------------------
     let ws5 = tempfile::tempdir().unwrap();
+    let ev5 = tempfile::tempdir().unwrap();
     let (alpha5, calls5) = alpha_fixture();
-    let sink5 = Arc::new(InMemoryEvidenceSink::new());
-    let recorder5: Arc<dyn EvidenceRecorder> = sink5.clone();
-    let mut rpc_runner = RpcRunner::new_with_trace(
+    let mut rpc_runner = RpcRunner::new_with_runtime_packages_and_auth(
         Box::new(alpha5),
         MODEL_SPEC.into(),
         OpiConfig::default(),
@@ -346,8 +358,11 @@ async fn phase17_all_public_product_modes_share_runtime_semantics() {
         ToolSelection::Disabled,
         None,
         Vec::new(),
-        Some(recorder5),
-        TrustDecision::Trusted,
+        runtime_startup(),
+        None,
+        Some(ev5.path().to_path_buf()),
+        phase17::static_resolver(),
+        vec![beta_route()],
     )
     .expect("rpc runner constructs");
     let (command_tx, command_rx) = tokio::sync::mpsc::unbounded_channel();
@@ -388,13 +403,14 @@ async fn phase17_all_public_product_modes_share_runtime_semantics() {
     let _ = recv_rpc_line(&mut output_rx).await;
     let rpc_exit = task.await.expect("rpc task joins");
     assert_eq!(rpc_exit, 0, "rpc runner exits 0");
+    let ev5_run = finalized_run_dir(ev5.path());
 
     // --- Cross-mode equivalence ---------------------------------------------
     let interactive_kinds = kind_names(&sink1.records());
     let harness_kinds = kind_names(&sink2.records());
-    let rpc_kinds = kind_names(&sink5.records());
-    let print_kinds = jsonl_kind_names(&ev3.path().join("evidence.jsonl"));
-    let json_kinds = jsonl_kind_names(&ev4.path().join("evidence.jsonl"));
+    let rpc_kinds = jsonl_kind_names(&ev5_run.join("evidence.jsonl"));
+    let print_kinds = jsonl_kind_names(&ev3_run.join("evidence.jsonl"));
+    let json_kinds = jsonl_kind_names(&ev4_run.join("evidence.jsonl"));
     assert!(
         sink1.records().iter().any(|r| r.kind == CallKind::Provider),
         "interactive assembly emits a Provider evidence record"
@@ -435,11 +451,7 @@ async fn phase17_all_public_product_modes_share_runtime_semantics() {
     std::fs::write(dir.join("ndjson.jsonl"), &ndjson_result.stdout).unwrap();
     let rpc_payload = format!("{}\n", rpc_lines.join("\n"));
     std::fs::write(dir.join("rpc.jsonl"), &rpc_payload).unwrap();
-    std::fs::copy(
-        ev3.path().join("evidence.jsonl"),
-        dir.join("evidence.jsonl"),
-    )
-    .unwrap();
+    std::fs::copy(ev3_run.join("evidence.jsonl"), dir.join("evidence.jsonl")).unwrap();
     let session_file =
         phase17::newest_jsonl(sessions.path()).expect("a session file was persisted");
     std::fs::copy(session_file, dir.join("session.jsonl")).unwrap();
@@ -501,8 +513,8 @@ async fn phase17_all_public_product_modes_share_runtime_semantics() {
         | Print stdout carries the fixture assistant text | verified | print.txt | pass |\n\
         | No tool executions in any mode (fixture is tool-free) | verified | tool-execution-counts.json | pass |\n\
         | Interactive TUI loop not spawned (hermetic boundary) | source-inferred | interactive.txt | n/a |\n\
-        | RPC binary path does not forward --trace (in-memory only) | source-inferred | RUN_SUMMARY.md | n/a |\n\n\
-        Only `verified` rows close acceptance. The two `source-inferred` rows record known mode asymmetries, not acceptance claims.\n";
+        | RPC durable --trace uses the same evidence lifecycle | verified | provider-assertion.json | pass |\n\n\
+        Only `verified` rows close acceptance. The `source-inferred` row records the hermetic presentation boundary, not a runtime asymmetry.\n";
     std::fs::write(dir.join("RUN_SUMMARY.md"), run_summary).unwrap();
 
     let names = [

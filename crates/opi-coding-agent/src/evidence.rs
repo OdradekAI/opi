@@ -11,9 +11,9 @@
 //!   [`opi_agent::evidence::EvidenceRecorder`] so the harness can assemble the
 //!   manifest from the recorded dynamic facts. File paths, on-disk layout, and
 //!   retention are product facts that do not enter Agent Core.
-//! - [`EvidenceCapture`]: the immutable run-binding static facts (runtime-input
-//!   binding, resolved configuration identity, effective policy digest) plus the
-//!   recorder handle, held by the harness for one run.
+//! - [`EvidenceCapture`]: the per-run binding facts (runtime-input binding,
+//!   resolved configuration identity, effective policy digest) plus the
+//!   recorder handle. A long-lived harness rebinds these facts before each run.
 //! - [`build_finalized_manifest`]: combines the capture's static facts with the
 //!   recorder's dynamic facts (call-graph correlation, route) and the run's
 //!   terminal outcome/usage into one strict manifest.
@@ -26,7 +26,9 @@
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use opi_agent::evidence::{
     ArtifactReference, AuthProvenanceSource, CallKind, ConfigIdentity, ContentDigest,
@@ -44,43 +46,49 @@ const MANIFEST_FILE: &str = "manifest.json";
 
 /// Reference Product file adapter for the Agent Core evidence lifecycle.
 ///
-/// The sink writes one JSONL line per emitted record to `<dir>/evidence.jsonl`
-/// and the finalized manifest to `<dir>/manifest.json`. The directory is created
-/// and the records file truncated on [`EvidenceSink::setup`] (fail-closed: a
-/// setup failure aborts the run before its first provider/tool call). It keeps
-/// an in-memory mirror of the records so the harness can assemble the manifest
-/// from the recorded call graph without re-reading the file.
+/// The configured path is a capture root. Every [`EvidenceSink::setup`] creates
+/// one unique child directory containing `evidence.jsonl` and, only after
+/// durable record completion, an atomically published `manifest.json`. A
+/// finalized child is never truncated or replaced. The sink keeps an in-memory
+/// mirror of the current run so the harness can assemble its manifest without
+/// re-reading the file.
 pub struct FileEvidenceSink {
-    dir: PathBuf,
-    records_path: PathBuf,
-    manifest_path: PathBuf,
+    root: PathBuf,
+    next_run: AtomicU64,
+    active_dir: Mutex<Option<PathBuf>>,
     records: Mutex<Vec<EvidenceRecord>>,
     writer: Mutex<Option<std::io::BufWriter<std::fs::File>>>,
+    finalized: Mutex<bool>,
     manifest: Mutex<Option<FinalizedManifest>>,
     failure: Mutex<Option<EvidenceError>>,
+    completed_dirs: Mutex<Vec<PathBuf>>,
 }
 
 impl FileEvidenceSink {
     /// Configure a sink that writes into `dir`. No file is touched until
     /// [`EvidenceSink::setup`].
-    pub fn new(dir: impl Into<PathBuf>) -> Self {
-        let dir = dir.into();
-        let records_path = dir.join(RECORDS_FILE);
-        let manifest_path = dir.join(MANIFEST_FILE);
+    pub fn new(root: impl Into<PathBuf>) -> Self {
         Self {
-            dir,
-            records_path,
-            manifest_path,
+            root: root.into(),
+            next_run: AtomicU64::new(1),
+            active_dir: Mutex::new(None),
             records: Mutex::new(Vec::new()),
             writer: Mutex::new(None),
+            finalized: Mutex::new(false),
             manifest: Mutex::new(None),
             failure: Mutex::new(None),
+            completed_dirs: Mutex::new(Vec::new()),
         }
     }
 
-    /// The configured capture directory.
+    /// The configured capture root.
     pub fn dir(&self) -> &Path {
-        &self.dir
+        &self.root
+    }
+
+    /// Finalized immutable run directories in setup order.
+    pub fn completed_run_dirs(&self) -> Vec<PathBuf> {
+        Self::lock(&self.completed_dirs).clone()
     }
 
     fn lock<T>(lock: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -93,29 +101,67 @@ impl FileEvidenceSink {
             *failure = Some(error);
         }
     }
+
+    fn allocate_run_dir(&self) -> Result<PathBuf, EvidenceError> {
+        std::fs::create_dir_all(&self.root).map_err(|e| EvidenceError::Setup {
+            detail: format!("evidence root {}: {e}", self.root.display()),
+        })?;
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        for _ in 0..128 {
+            let sequence = self.next_run.fetch_add(1, Ordering::SeqCst);
+            let dir = self
+                .root
+                .join(format!("run-{timestamp}-{}-{sequence}", std::process::id()));
+            match std::fs::create_dir(&dir) {
+                Ok(()) => return Ok(dir),
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                Err(error) => {
+                    return Err(EvidenceError::Setup {
+                        detail: format!("evidence run dir {}: {error}", dir.display()),
+                    });
+                }
+            }
+        }
+        Err(EvidenceError::Setup {
+            detail: "could not allocate a unique evidence run directory".to_owned(),
+        })
+    }
 }
 
 impl EvidenceSink for FileEvidenceSink {
     fn setup(&self, _binding: &RuntimeInputBinding) -> Result<(), EvidenceError> {
-        std::fs::create_dir_all(&self.dir).map_err(|e| EvidenceError::Setup {
-            detail: format!("evidence dir {}: {e}", self.dir.display()),
-        })?;
+        if Self::lock(&self.writer).is_some() {
+            return Err(EvidenceError::Setup {
+                detail: "previous evidence run has not been finalized".to_owned(),
+            });
+        }
+        *Self::lock(&self.failure) = None;
+        let dir = self.allocate_run_dir()?;
+        let records_path = dir.join(RECORDS_FILE);
         let file = OpenOptions::new()
-            .create(true)
+            .create_new(true)
             .write(true)
-            .truncate(true)
-            .open(&self.records_path)
+            .open(&records_path)
             .map_err(|e| EvidenceError::Setup {
-                detail: format!("evidence file {}: {e}", self.records_path.display()),
+                detail: format!("evidence file {}: {e}", records_path.display()),
             })?;
+        *Self::lock(&self.active_dir) = Some(dir);
         *Self::lock(&self.writer) = Some(std::io::BufWriter::new(file));
         Self::lock(&self.records).clear();
+        *Self::lock(&self.finalized) = false;
         *Self::lock(&self.manifest) = None;
-        *Self::lock(&self.failure) = None;
         Ok(())
     }
 
     fn emit(&self, record: &EvidenceRecord) -> Result<(), EvidenceError> {
+        if *Self::lock(&self.finalized) {
+            return Err(EvidenceError::Emission {
+                detail: "evidence run is already finalized".to_owned(),
+            });
+        }
         let line = serde_json::to_string(record).map_err(|e| EvidenceError::Emission {
             detail: e.to_string(),
         })?;
@@ -128,6 +174,7 @@ impl EvidenceSink for FileEvidenceSink {
         if let Err(e) = writer
             .write_all(line.as_bytes())
             .and_then(|()| writer.write_all(b"\n"))
+            .and_then(|()| writer.flush())
         {
             self.mark_failure(EvidenceError::Emission {
                 detail: e.to_string(),
@@ -136,7 +183,6 @@ impl EvidenceSink for FileEvidenceSink {
                 detail: e.to_string(),
             });
         }
-        let _ = writer.flush();
         drop(writer_guard);
         Self::lock(&self.records).push(record.clone());
         Ok(())
@@ -146,23 +192,69 @@ impl EvidenceSink for FileEvidenceSink {
         // Artifact references are carried inside emitted records / the manifest;
         // the file adapter has no separate artifact store (P17-EVD-005: payload
         // references, not payloads).
+        if *Self::lock(&self.finalized) {
+            return Err(EvidenceError::Finalization {
+                detail: "evidence run is already finalized".to_owned(),
+            });
+        }
         Ok(())
     }
 
     fn finalize_run(&self, manifest: &FinalizedManifest) -> Result<(), EvidenceError> {
+        if *Self::lock(&self.finalized) {
+            return Err(EvidenceError::Finalization {
+                detail: "evidence run is already finalized".to_owned(),
+            });
+        }
+        let mut writer =
+            Self::lock(&self.writer)
+                .take()
+                .ok_or_else(|| EvidenceError::Finalization {
+                    detail: "evidence sink used before setup".to_owned(),
+                })?;
+        if let Err(error) = writer.flush().and_then(|()| writer.get_ref().sync_all()) {
+            let evidence_error = EvidenceError::Finalization {
+                detail: format!("evidence record durability: {error}"),
+            };
+            self.mark_failure(EvidenceError::Finalization {
+                detail: format!("evidence record durability: {error}"),
+            });
+            return Err(evidence_error);
+        }
         let json =
             serde_json::to_string_pretty(manifest).map_err(|e| EvidenceError::Finalization {
                 detail: e.to_string(),
             })?;
-        if let Err(e) = std::fs::write(&self.manifest_path, json.as_bytes()) {
+        let dir =
+            Self::lock(&self.active_dir)
+                .clone()
+                .ok_or_else(|| EvidenceError::Finalization {
+                    detail: "evidence sink used before setup".to_owned(),
+                })?;
+        let manifest_path = dir.join(MANIFEST_FILE);
+        let temporary_path = dir.join(".manifest.json.tmp");
+        let publish = (|| -> std::io::Result<()> {
+            let mut file = OpenOptions::new()
+                .create_new(true)
+                .write(true)
+                .open(&temporary_path)?;
+            file.write_all(json.as_bytes())?;
+            file.flush()?;
+            file.sync_all()?;
+            std::fs::rename(&temporary_path, &manifest_path)?;
+            Ok(())
+        })();
+        if let Err(e) = publish {
             self.mark_failure(EvidenceError::Finalization {
-                detail: format!("{}: {e}", self.manifest_path.display()),
+                detail: format!("{}: {e}", manifest_path.display()),
             });
             return Err(EvidenceError::Finalization {
-                detail: format!("{}: {e}", self.manifest_path.display()),
+                detail: format!("{}: {e}", manifest_path.display()),
             });
         }
         *Self::lock(&self.manifest) = Some(manifest.clone());
+        *Self::lock(&self.finalized) = true;
+        Self::lock(&self.completed_dirs).push(dir);
         Ok(())
     }
 }
@@ -189,12 +281,23 @@ pub struct EvidenceCapture {
     /// tests). Also bound to the Agent via `set_evidence_sink` so the loop
     /// emits through it.
     pub recorder: Arc<dyn EvidenceRecorder>,
+    /// Direct-assembly origin retained so a long-lived harness can derive a
+    /// fresh binding from current runtime state before every run.
+    pub source: opi_agent::evidence::AssemblySource,
     /// The direct runtime-input binding (never ActiveSnapshot for a direct run).
     pub binding: RuntimeInputBinding,
     /// Resolved harness/runtime/adapter/material configuration identity.
     pub config: ConfigIdentity,
     /// Effective user-policy digest + capability.
     pub policy: UserPolicyFacts,
+    /// Exact resolved system instruction identity frozen at setup.
+    pub system_digest: Option<ContentDigest>,
+    /// Exact provider-visible trusted tool definitions frozen at setup.
+    pub tool_schema_digests: Vec<ContentDigest>,
+    /// Configured route frozen at setup.
+    pub configured_route: RouteSelection,
+    /// Configured run budget frozen at setup.
+    pub budget: Measurement,
 }
 
 /// Builder input handed to `CodingHarness::builder().evidence(..)`: the recording
@@ -223,13 +326,45 @@ impl EvidenceCapture {
         let binding_digest = runtime_input_digest(source, &policy_digest, &config, material_inputs);
         Self {
             recorder,
+            source,
             binding: RuntimeInputBinding::direct(binding_digest, source),
             config,
             policy: UserPolicyFacts {
                 policy_digest,
                 capability: None,
             },
+            system_digest: None,
+            tool_schema_digests: Vec::new(),
+            configured_route: empty_selection(),
+            budget: Measurement::Unknown {
+                reason: UnknownReason::NotReported,
+            },
         }
+    }
+
+    /// Replace the per-run configuration and direct runtime-input binding while
+    /// retaining the recorder, assembly source, and effective policy identity.
+    pub fn rebind(
+        &mut self,
+        config: ConfigIdentity,
+        material_inputs: &str,
+        system_digest: Option<ContentDigest>,
+        tool_schema_digests: Vec<ContentDigest>,
+        configured_route: RouteSelection,
+        budget: Measurement,
+    ) {
+        let binding_digest = runtime_input_digest(
+            self.source,
+            &self.policy.policy_digest,
+            &config,
+            material_inputs,
+        );
+        self.binding = RuntimeInputBinding::direct(binding_digest, self.source);
+        self.config = config;
+        self.system_digest = system_digest;
+        self.tool_schema_digests = tool_schema_digests;
+        self.configured_route = configured_route;
+        self.budget = budget;
     }
 }
 
@@ -244,7 +379,11 @@ fn runtime_input_digest(
 ) -> ContentDigest {
     let mut hasher = sha2::Sha256::new();
     use sha2::Digest;
-    hasher.update(format!("{source:?}").as_bytes());
+    hasher.update(match source {
+        opi_agent::evidence::AssemblySource::Cli => b"cli".as_slice(),
+        opi_agent::evidence::AssemblySource::Sdk => b"sdk".as_slice(),
+        opi_agent::evidence::AssemblySource::Rpc => b"rpc".as_slice(),
+    });
     hasher.update(b"\npolicy:");
     hasher.update(digest_bytes(policy_digest).as_bytes());
     hasher.update(b"\nharness:");
@@ -258,6 +397,7 @@ fn runtime_input_digest(
     hasher.update(b"\nmaterial:");
     hasher.update(material_inputs.as_bytes());
     ContentDigest::from_hex(hex::encode(hasher.finalize()))
+        .expect("SHA-256 encoder must produce canonical lowercase hex")
 }
 
 fn digest_bytes(digest: &ContentDigest) -> String {
@@ -274,6 +414,9 @@ pub struct RunDynamicFacts {
     pub session_branch: Option<opi_agent::evidence::SessionBranchRef>,
     /// Digest of the prompt that drove the run.
     pub prompt_digest: ContentDigest,
+    /// Provider-reported route from the terminal assistant message, when the
+    /// provider reports it.
+    pub actual_route: Option<RouteSelection>,
 }
 
 /// Assemble the strict [`FinalizedManifest`] from the capture's static facts,
@@ -286,7 +429,15 @@ pub fn build_finalized_manifest(
     dynamic: RunDynamicFacts,
 ) -> FinalizedManifest {
     let correlation = terminal_correlation(records);
-    let route = extract_route_facts(records);
+    let mut route = extract_route_facts(records);
+    if route.resolved.provider_id.is_empty() || route.resolved.model_id.is_empty() {
+        route.requested = capture.configured_route.clone();
+        route.resolved = capture.configured_route.clone();
+    }
+    if let Some(actual) = dynamic.actual_route {
+        route.actual = actual;
+        route.actual_reason = None;
+    }
     let completeness = if capture_recorder_failed(capture) {
         opi_agent::evidence::EvidenceCompleteness::Incomplete
     } else {
@@ -305,13 +456,11 @@ pub fn build_finalized_manifest(
         policy: capture.policy.clone(),
         input_identity: opi_agent::evidence::InputIdentity {
             prompt_digest: dynamic.prompt_digest,
-            system_digest: None,
-            tool_schema_digests: Vec::new(),
+            system_digest: capture.system_digest.clone(),
+            tool_schema_digests: capture.tool_schema_digests.clone(),
         },
         environment: EnvironmentFacts {
-            budget: Measurement::Unknown {
-                reason: UnknownReason::NotReported,
-            },
+            budget: capture.budget,
             time: Measurement::Unknown {
                 reason: UnknownReason::NotReported,
             },

@@ -42,7 +42,10 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-use opi_ai::auth::{AuthResolver, AuthScheme, OAuthCredential, OAuthProvider, ResolvedAuth};
+use opi_ai::auth::{
+    AuthFallback, AuthProvenance, AuthProvenanceSource, AuthResolver, AuthScheme, OAuthCredential,
+    OAuthProvider, ResolvedAuth,
+};
 use opi_ai::credential::{
     BoxAuthFuture, Credential, CredentialSource, CredentialStore, CredentialStoreError,
     UnknownEnvelopeField,
@@ -1027,6 +1030,44 @@ pub struct ResolvedApiKey {
     pub source: ApiKeySource,
 }
 
+impl ResolvedApiKey {
+    /// Non-secret source and allowed-fallback facts for evidence and route
+    /// preparation. The credential value is never included.
+    pub fn provenance(&self) -> AuthProvenance {
+        match &self.source {
+            ApiKeySource::Store => AuthProvenance {
+                source: AuthProvenanceSource::CredentialStore {
+                    kind: "os-keychain".to_owned(),
+                },
+                fallback: AuthFallback::NotAttempted,
+            },
+            ApiKeySource::Env {
+                env_var,
+                backend_unavailable,
+            } => {
+                let environment = AuthProvenanceSource::Environment {
+                    name: env_var.clone(),
+                };
+                AuthProvenance {
+                    source: environment.clone(),
+                    fallback: AuthFallback::Used {
+                        from: AuthProvenanceSource::CredentialStore {
+                            kind: "os-keychain".to_owned(),
+                        },
+                        to: environment,
+                        reason: if *backend_unavailable {
+                            "credential_store_unavailable"
+                        } else {
+                            "credential_absent"
+                        }
+                        .to_owned(),
+                    },
+                }
+            }
+        }
+    }
+}
+
 /// Composes a [`CredentialStore`] with environment fallback. For API keys the
 /// keychain is primary; on `Absent` or `BackendUnavailable` the resolver falls
 /// back to the configured env var. Persisted OAuth remains keychain-required
@@ -1132,7 +1173,7 @@ impl CredentialResolver {
                 secret: cred.access.clone(),
                 base_url: cred.base_url.clone(),
                 account_id: cred.account_id.clone(),
-                provenance: Default::default(),
+                provenance: oauth_provenance(provider_id),
             });
         }
         // Slow path: hold the lock across re-read + refresh-HTTP + write so
@@ -1161,7 +1202,7 @@ impl CredentialResolver {
                 secret: cred.access.clone(),
                 base_url: cred.base_url.clone(),
                 account_id: cred.account_id.clone(),
-                provenance: Default::default(),
+                provenance: oauth_provenance(provider_id),
             });
         }
         let refresh = match tokio::time::timeout(self.refresh_timeout, oauth.refresh(&cred)).await {
@@ -1182,7 +1223,7 @@ impl CredentialResolver {
                     secret: refreshed.access,
                     base_url: refreshed.base_url,
                     account_id: refreshed.account_id,
-                    provenance: Default::default(),
+                    provenance: oauth_provenance(provider_id),
                 })
             }
             Err(refresh_err) => {
@@ -1194,7 +1235,7 @@ impl CredentialResolver {
                         secret: reread.access.clone(),
                         base_url: reread.base_url.clone(),
                         account_id: reread.account_id.clone(),
-                        provenance: Default::default(),
+                        provenance: oauth_provenance(provider_id),
                     }),
                     _ => Err(refresh_err),
                 }
@@ -1276,6 +1317,15 @@ impl CredentialResolver {
     /// absent/empty). Layered auth calls this for every Anthropic stream.
     pub fn env_value(&self, env_var: &str) -> Option<String> {
         (self.env_lookup)(env_var).filter(|v| !v.trim().is_empty())
+    }
+}
+
+fn oauth_provenance(provider_id: &str) -> AuthProvenance {
+    AuthProvenance {
+        source: AuthProvenanceSource::OAuth {
+            kind: provider_id.to_owned(),
+        },
+        fallback: AuthFallback::NotAttempted,
     }
 }
 
@@ -1361,7 +1411,12 @@ impl AuthResolver for AuthSource {
                             secret: SecretString::new(value.into_boxed_str()),
                             base_url: None,
                             account_id: None,
-                            provenance: Default::default(),
+                            provenance: AuthProvenance {
+                                source: AuthProvenanceSource::Environment {
+                                    name: env_var.clone(),
+                                },
+                                fallback: AuthFallback::NotAttempted,
+                            },
                         }),
                         _ => Err(ProviderError::CredentialNeeded { provider_id }),
                     }
@@ -1384,12 +1439,24 @@ impl AuthResolver for AuthSource {
                         return resolver.resolve_oauth(&provider_id, &*oauth).await;
                     }
                     if let Some(value) = resolver.env_value(&oauth_env_var) {
+                        let environment = AuthProvenanceSource::Environment {
+                            name: oauth_env_var.clone(),
+                        };
                         return Ok(ResolvedAuth {
                             scheme: AuthScheme::Bearer,
                             secret: SecretString::new(value.into_boxed_str()),
                             base_url: None,
                             account_id: None,
-                            provenance: Default::default(),
+                            provenance: AuthProvenance {
+                                source: environment.clone(),
+                                fallback: AuthFallback::Used {
+                                    from: AuthProvenanceSource::OAuth {
+                                        kind: provider_id.clone(),
+                                    },
+                                    to: environment,
+                                    reason: "stored_oauth_absent".to_owned(),
+                                },
+                            },
                         });
                     }
                     match resolver
@@ -1397,13 +1464,25 @@ impl AuthResolver for AuthSource {
                         .await
                         .map_err(store_err_to_provider)?
                     {
-                        Some(resolved) => Ok(ResolvedAuth {
-                            scheme: AuthScheme::ApiKey,
-                            secret: resolved.value,
-                            base_url: None,
-                            account_id: None,
-                            provenance: Default::default(),
-                        }),
+                        Some(resolved) => {
+                            let api_key_provenance = resolved.provenance();
+                            Ok(ResolvedAuth {
+                                scheme: AuthScheme::ApiKey,
+                                secret: resolved.value,
+                                base_url: None,
+                                account_id: None,
+                                provenance: AuthProvenance {
+                                    source: api_key_provenance.source.clone(),
+                                    fallback: AuthFallback::Used {
+                                        from: AuthProvenanceSource::OAuth {
+                                            kind: provider_id.clone(),
+                                        },
+                                        to: api_key_provenance.source,
+                                        reason: "oauth_sources_unavailable".to_owned(),
+                                    },
+                                },
+                            })
+                        }
                         None => Err(ProviderError::CredentialNeeded { provider_id }),
                     }
                 })
@@ -1508,6 +1587,21 @@ mod tests {
             .expect("backend unavailable permits env fallback")
             .expect("env fallback exists");
         assert_eq!(resolved.value.expose_secret(), "env-fallback-canary");
+        let provenance = resolved.provenance();
+        assert_eq!(
+            provenance.source,
+            opi_ai::AuthProvenanceSource::Environment {
+                name: "ANTHROPIC_API_KEY".to_owned()
+            }
+        );
+        assert!(matches!(
+            provenance.fallback,
+            opi_ai::AuthFallback::Used {
+                from: opi_ai::AuthProvenanceSource::CredentialStore { .. },
+                to: opi_ai::AuthProvenanceSource::Environment { .. },
+                ref reason,
+            } if reason == "credential_store_unavailable"
+        ));
         assert_eq!(unavailable_calls.load(Ordering::SeqCst), 1);
 
         let operational_calls = Arc::new(AtomicUsize::new(0));

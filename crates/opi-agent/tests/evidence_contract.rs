@@ -19,7 +19,8 @@ use opi_ai::WireApi;
 // ---------------------------------------------------------------------------
 
 fn digest(s: &str) -> ContentDigest {
-    ContentDigest::from_hex(s.to_owned())
+    let byte = s.as_bytes().iter().fold(0_u8, |acc, byte| acc ^ byte);
+    ContentDigest::from_hex(format!("{byte:02x}").repeat(32)).expect("valid test digest")
 }
 
 fn route(provider: &str, model: &str) -> RouteSelection {
@@ -499,6 +500,35 @@ fn finalized_manifest_serializes_with_direct_binding() {
     assert!(manifest.binding.is_direct());
 }
 
+#[test]
+fn content_digest_rejects_noncanonical_sha256_hex() {
+    for invalid in [
+        "",
+        "abcd",
+        "g000000000000000000000000000000000000000000000000000000000000000",
+        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "00000000000000000000000000000000000000000000000000000000000000000",
+    ] {
+        assert!(
+            ContentDigest::from_hex(invalid).is_err(),
+            "accepted invalid SHA-256 digest: {invalid}"
+        );
+    }
+}
+
+#[test]
+fn strict_manifest_rejects_incomplete_and_pending_artifacts() {
+    let mut incomplete = sample_manifest();
+    incomplete.completeness = EvidenceCompleteness::Incomplete;
+    assert!(incomplete.require_complete().is_err());
+
+    let mut pending = sample_manifest();
+    let mut pending_artifact = artifact();
+    pending_artifact.finalization = FinalizationState::Pending;
+    pending.artifacts.push(pending_artifact);
+    assert!(pending.require_complete().is_err());
+}
+
 // ===========================================================================
 // Sink lifecycle and adapters (P17-EVD-008 / P17-EVD-010 / P17-EVD-011)
 // ===========================================================================
@@ -555,6 +585,42 @@ fn in_memory_sink_records_lifecycle_in_order() {
     assert!(
         sink.completed_manifest().is_some(),
         "a clean run yields a completed manifest"
+    );
+}
+
+#[test]
+fn in_memory_setup_resets_all_prior_run_state() {
+    let sink = InMemoryEvidenceSink::new();
+    let binding = RuntimeInputBinding::direct(digest("first"), AssemblySource::Cli);
+    sink.setup(&binding).unwrap();
+    let mut alloc = IdentityAllocator::new();
+    sink.emit(&fresh_record(
+        &mut alloc,
+        CallKind::Provider,
+        EvidencePayload::Digest(digest("record")),
+    ))
+    .unwrap();
+    sink.finalize_artifact(&artifact()).unwrap();
+    sink.finalize_run(&sample_manifest()).unwrap();
+
+    let second = RuntimeInputBinding::direct(digest("second"), AssemblySource::Sdk);
+    sink.setup(&second).unwrap();
+
+    assert!(
+        sink.records().is_empty(),
+        "prior-run records survived setup"
+    );
+    assert!(
+        sink.artifacts().is_empty(),
+        "prior-run artifacts survived setup"
+    );
+    assert!(
+        sink.completed_manifest().is_none(),
+        "prior-run manifest survived setup"
+    );
+    assert!(
+        !sink.has_failure(),
+        "prior-run failure state survived setup"
     );
 }
 

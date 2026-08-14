@@ -43,7 +43,9 @@ fn responses_provider_id_is_openai_responses() {
 #[test]
 fn responses_resolves_model_in_registry() {
     let mut registry = ProviderRegistry::new();
-    registry.register(Box::new(responses_provider()));
+    registry
+        .register_provider(Box::new(responses_provider()))
+        .unwrap();
     let (provider, model) = registry.resolve("openai-responses:gpt-4o").unwrap();
     assert_eq!(provider.id(), "openai-responses");
     assert_eq!(model.id, "gpt-4o");
@@ -52,7 +54,9 @@ fn responses_resolves_model_in_registry() {
 #[test]
 fn responses_registry_lists_provider_id() {
     let mut registry = ProviderRegistry::new();
-    registry.register(Box::new(responses_provider()));
+    registry
+        .register_provider(Box::new(responses_provider()))
+        .unwrap();
     let ids = registry.provider_ids();
     assert!(ids.contains(&"openai-responses"));
 }
@@ -60,7 +64,9 @@ fn responses_registry_lists_provider_id() {
 #[test]
 fn responses_unknown_model_returns_error() {
     let mut registry = ProviderRegistry::new();
-    registry.register(Box::new(responses_provider()));
+    registry
+        .register_provider(Box::new(responses_provider()))
+        .unwrap();
     let result = registry.resolve("openai-responses:nonexistent-model");
     assert!(result.is_err());
 }

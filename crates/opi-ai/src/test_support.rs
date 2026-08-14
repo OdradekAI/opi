@@ -46,7 +46,7 @@ impl AuthResolver for CountingAuthResolver {
 }
 
 /// Build a non-secret [`ResolvedAuth`] for tests that drive `stream_prepared`
-/// directly (Phase 17.5: `Provider::stream` is gone; every dispatch goes through
+/// directly (Phase 17.5: the legacy direct stream entry is gone; every dispatch goes through
 /// `stream_prepared(request, auth)`). The secret is a fixed placeholder and the
 /// provenance defaults; tests that need a specific secret or base_url construct
 /// their own `ResolvedAuth`.

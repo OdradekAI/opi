@@ -126,10 +126,10 @@ impl VertexProvider {
                     ParsedEvent::Valid(event) => {
                         stream_events.extend(mapper.process(event).into_iter().map(Ok));
                     }
-                    ParsedEvent::Malformed { data, error } => {
-                        stream_events.push(Err(ProviderError::StreamError(format!(
-                            "malformed SSE data: {error} (data: {data:.80})"
-                        ))));
+                    ParsedEvent::Malformed => {
+                        stream_events.push(Err(ProviderError::StreamError(
+                            "Vertex returned a malformed streaming frame".to_owned(),
+                        )));
                     }
                 }
             }
@@ -257,10 +257,10 @@ async fn stream_vertex_http(
                         }
                     }
                 }
-                ParsedEvent::Malformed { data, error } => {
-                    let err = ProviderError::StreamError(format!(
-                        "malformed SSE data: {error} (data: {data:.80})"
-                    ));
+                ParsedEvent::Malformed => {
+                    let err = ProviderError::StreamError(
+                        "Vertex returned a malformed streaming frame".to_owned(),
+                    );
                     if tx.send(Err(err)).await.is_err() {
                         return Ok(());
                     }

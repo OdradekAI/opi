@@ -107,7 +107,9 @@ fn mistral_provider_id_is_mistral() {
 #[test]
 fn mistral_resolves_model_in_registry() {
     let mut registry = ProviderRegistry::new();
-    registry.register(Box::new(mistral_provider()));
+    registry
+        .register_provider(Box::new(mistral_provider()))
+        .unwrap();
     let (provider, model) = registry.resolve("mistral:mistral-large-latest").unwrap();
     assert_eq!(provider.id(), "mistral");
     assert_eq!(model.id, "mistral-large-latest");
@@ -116,7 +118,9 @@ fn mistral_resolves_model_in_registry() {
 #[test]
 fn mistral_registry_lists_provider_id() {
     let mut registry = ProviderRegistry::new();
-    registry.register(Box::new(mistral_provider()));
+    registry
+        .register_provider(Box::new(mistral_provider()))
+        .unwrap();
     let ids = registry.provider_ids();
     assert!(ids.contains(&"mistral"));
 }
@@ -124,7 +128,9 @@ fn mistral_registry_lists_provider_id() {
 #[test]
 fn mistral_unknown_model_returns_error() {
     let mut registry = ProviderRegistry::new();
-    registry.register(Box::new(mistral_provider()));
+    registry
+        .register_provider(Box::new(mistral_provider()))
+        .unwrap();
     let result = registry.resolve("mistral:nonexistent-model");
     assert!(result.is_err());
 }

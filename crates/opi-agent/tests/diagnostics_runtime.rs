@@ -13,7 +13,7 @@
 mod common;
 
 use opi_agent::diagnostic::code::*;
-use opi_agent::diagnostic::{Diagnostic, SOURCE_AGENT, SOURCE_PROVIDER, SOURCE_TOOL, Severity};
+use opi_agent::diagnostic::{Diagnostic, SOURCE_AGENT, SOURCE_PROVIDER, Severity};
 use opi_agent::loop_types::AgentError;
 use opi_ai::provider::ProviderError;
 
@@ -147,14 +147,6 @@ fn agent_auth_failed_classifies_as_provider_auth() {
     assert_eq!(diag.severity, Severity::Error);
     assert_eq!(diag.code, CODE_PROVIDER_AUTH_FAILED);
     assert_eq!(diag.source, SOURCE_PROVIDER);
-}
-
-#[test]
-fn agent_tool_error_classifies_as_tool_failure() {
-    let diag: Diagnostic = (&AgentError::Tool("write failed".into())).into();
-    assert_eq!(diag.severity, Severity::Error);
-    assert_eq!(diag.code, CODE_TOOL_FAILED);
-    assert_eq!(diag.source, SOURCE_TOOL);
 }
 
 #[test]

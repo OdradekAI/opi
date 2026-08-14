@@ -725,6 +725,7 @@ async fn with_provider_bundle<T, F, Fut>(
 where
     F: FnOnce(
         Box<dyn opi_ai::provider::Provider>,
+        std::sync::Arc<dyn opi_ai::AuthResolver>,
         Vec<opi_agent::Diagnostic>,
         Vec<opi_coding_agent::provider_factory::ProviderAuthPair>,
     ) -> Fut,
@@ -739,8 +740,8 @@ where
         extra_routes,
         diagnostics,
     } = bundle;
-    let result = callback(provider, diagnostics, extra_routes).await;
-    drop((store, resolver, registry, auth_resolver));
+    let result = callback(provider, auth_resolver, diagnostics, extra_routes).await;
+    drop((store, resolver, registry));
     result
 }
 
@@ -866,10 +867,10 @@ where
 
     with_provider_bundle(
         bundle,
-        move |provider, provider_diagnostics, extra_routes| async move {
+        move |provider, auth_resolver, provider_diagnostics, extra_routes| async move {
             let mut runtime_startup = runtime_startup;
             merge_provider_diagnostics(&mut runtime_startup, provider_diagnostics);
-            let mut runner = match NonInteractiveRunner::new_with_resume_and_runtime_packages(
+            let mut runner = match NonInteractiveRunner::new_with_resume_runtime_packages_and_auth(
                 provider,
                 effective_model.clone(),
                 config.clone(),
@@ -881,6 +882,7 @@ where
                 tool_selection,
                 runtime_startup,
                 cli.trace.clone(),
+                auth_resolver,
                 extra_routes,
             ) {
                 Ok(runner) => runner,
@@ -1051,10 +1053,10 @@ async fn run_rpc_core(
 
     with_provider_bundle(
         bundle,
-        move |provider, provider_diagnostics, extra_routes| async move {
+        move |provider, auth_resolver, provider_diagnostics, extra_routes| async move {
             let mut runtime_startup = runtime_startup;
             merge_provider_diagnostics(&mut runtime_startup, provider_diagnostics);
-            let mut runner = match RpcRunner::new_with_runtime_packages(
+            let mut runner = match RpcRunner::new_with_runtime_packages_and_auth(
                 provider,
                 effective_model.clone(),
                 config.clone(),
@@ -1065,6 +1067,8 @@ async fn run_rpc_core(
                 resumed_messages.unwrap_or_default(),
                 runtime_startup,
                 resume_info,
+                cli.trace.clone(),
+                auth_resolver,
                 extra_routes,
             ) {
                 Ok(runner) => runner,
@@ -1218,6 +1222,12 @@ async fn run_interactive_core<Launch, LaunchFuture>(
     }
     if let Some(resume_info) = resume_info {
         builder = builder.resume(resume_info);
+    }
+    if let Some(path) = cli.trace.clone() {
+        builder = builder.evidence(opi_coding_agent::evidence::EvidenceBuilderConfig {
+            recorder: std::sync::Arc::new(opi_coding_agent::evidence::FileEvidenceSink::new(path)),
+            source: opi_agent::evidence::AssemblySource::Cli,
+        });
     }
     let harness = builder.build();
 
@@ -2243,7 +2253,7 @@ mod tests {
         let callback_live = Arc::clone(&live);
         let completed = with_provider_bundle(
             bundle,
-            move |provider, _diagnostics, _extra_routes| async move {
+            move |provider, _auth_resolver, _diagnostics, _extra_routes| async move {
                 assert_eq!(provider.id(), "anthropic");
                 assert!(
                     callback_live.load(Ordering::SeqCst),
@@ -2533,7 +2543,13 @@ mod tests {
                     );
                     let drive = async move {
                         let mut emitted = Vec::new();
-                        let ready = output_rx.recv().await.expect("rpc_ready");
+                        let ready = tokio::time::timeout(
+                            std::time::Duration::from_secs(2),
+                            output_rx.recv(),
+                        )
+                        .await
+                        .expect("rpc_ready timeout")
+                        .expect("rpc_ready");
                         assert_eq!(ready["type"], "rpc_ready");
                         emitted.push(ready);
                         command_tx
@@ -2543,7 +2559,15 @@ mod tests {
                             })
                             .expect("queue prompt");
                         loop {
-                            let line = output_rx.recv().await.expect("credential event");
+                            let line = tokio::time::timeout(
+                                std::time::Duration::from_secs(2),
+                                output_rx.recv(),
+                            )
+                            .await
+                            .unwrap_or_else(|_| {
+                                panic!("credential event timeout; emitted={emitted:?}")
+                            })
+                            .expect("credential event");
                             let credential_needed = line["type"] == "CredentialNeeded";
                             emitted.push(line);
                             if credential_needed {

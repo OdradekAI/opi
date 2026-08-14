@@ -225,6 +225,26 @@ async fn text_streaming_from_fixture() {
     );
 }
 
+#[tokio::test]
+async fn exception_frame_does_not_expose_upstream_message() {
+    let canary = "bedrock-provider-error-secret-canary";
+    let payload = format!(r#"{{"message":"{canary}"}}"#);
+    let events_data = build_bedrock_stream(&[("exception", &payload)]);
+    let provider = BedrockProvider::new(test_credentials(), None, Arc::new(HttpClient::new()));
+    let request = text_stream_request();
+    let events = collect_events(provider.stream_from_fixture(&events_data, request.cancel)).await;
+    let rendered = format!("{events:?}");
+    assert!(
+        events
+            .iter()
+            .any(|event| matches!(event, AssistantStreamEvent::Error { .. }))
+    );
+    assert!(
+        !rendered.contains(canary),
+        "Bedrock exception leaked upstream message: {rendered}"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // Tool call from fixture
 // ---------------------------------------------------------------------------

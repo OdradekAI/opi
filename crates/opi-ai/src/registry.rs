@@ -148,7 +148,7 @@ impl ProviderRegistry {
         &mut self,
         provider: Box<dyn Provider>,
     ) -> Result<(), RegistrationError> {
-        if provider.id().is_empty() {
+        if provider.id().trim().is_empty() {
             return Err(RegistrationError::EmptyProviderId);
         }
         let id = provider.id().to_owned();
@@ -157,17 +157,6 @@ impl ProviderRegistry {
         self.dynamic_catalogs.remove(&id);
         self.providers.push(provider);
         Ok(())
-    }
-
-    /// Backward-compatible alias: register a provider without id validation,
-    /// clearing that provider's prior dynamic catalog snapshot.
-    /// Prefer [`register_provider`](Self::register_provider) for new code.
-    pub fn register(&mut self, provider: Box<dyn Provider>) {
-        let id = provider.id().to_owned();
-        let provider: Arc<dyn Provider> = Arc::from(provider);
-        self.providers.retain(|p| p.id() != id);
-        self.dynamic_catalogs.remove(&id);
-        self.providers.push(provider);
     }
 
     /// Register a model override for an existing or future provider.
@@ -231,7 +220,7 @@ impl ProviderRegistry {
     /// 2. Dynamic catalog (populated by [`Provider::refresh_models`]).
     /// 3. Provider built-in model list.
     pub fn resolve(&self, spec: &str) -> Result<(&dyn Provider, &ModelInfo), RegistryError> {
-        let (provider_id, model_id) = split_spec(spec)?;
+        let (provider_id, model_id) = parse_model_spec(spec)?;
         let provider = self
             .providers
             .iter()
@@ -375,13 +364,19 @@ impl Default for ProviderRegistry {
     }
 }
 
-/// Split a `provider:model` spec. Returns `InvalidSpec` if no colon or empty parts.
-fn split_spec(spec: &str) -> Result<(&str, &str), RegistryError> {
+/// Parse one canonical `provider:model` spec.
+///
+/// Both identity components are trimmed and must remain non-empty. Keeping
+/// this parser public lets Agent and product callers share the registry's exact
+/// identity semantics rather than carrying divergent split helpers.
+pub fn parse_model_spec(spec: &str) -> Result<(&str, &str), RegistryError> {
     let Some((provider, model)) = spec.split_once(':') else {
         return Err(RegistryError::InvalidSpec(format!(
             "spec must be 'provider:model', got: {spec:?}"
         )));
     };
+    let provider = provider.trim();
+    let model = model.trim();
     if provider.is_empty() || model.is_empty() {
         return Err(RegistryError::InvalidSpec(format!(
             "spec must be 'provider:model', got: {spec:?}"

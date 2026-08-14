@@ -210,6 +210,9 @@ pub struct ToolDiagnostic {
 /// strategy (Phase 16.9). It is `None` for the local backend and for
 /// `fixed`/`rules` strategies, where the router ignores it; only
 /// `RoutedBashOperations::exec` forwards it to `resolve_selection`.
+/// `authorized_backend` is the adapter bound by the trusted authorizer after
+/// schema validation. Routed execution must match it before dispatch; direct
+/// callers that do not cross the Agent authorization boundary leave it `None`.
 #[derive(Debug, Clone)]
 pub struct BashRequest {
     pub command: String,
@@ -218,6 +221,7 @@ pub struct BashRequest {
     pub signal: CancellationToken,
     pub env: Vec<(String, String)>,
     pub backend: Option<String>,
+    pub authorized_backend: Option<String>,
 }
 
 /// Redaction-safe effective execution contract reported by a bash backend.
@@ -1386,6 +1390,7 @@ mod tests {
             signal: CancellationToken::new(),
             env: vec![],
             backend: None,
+            authorized_backend: None,
         };
         let result = tokio::time::timeout(
             Duration::from_secs(3),
@@ -1448,6 +1453,7 @@ mod tests {
                 signal: CancellationToken::new(),
                 env: vec![],
                 backend: None,
+                authorized_backend: None,
             })
             .await
             .expect_err("resume failure must fail closed");
@@ -1475,6 +1481,7 @@ mod tests {
                 signal: CancellationToken::new(),
                 env: vec![],
                 backend: None,
+                authorized_backend: None,
             })
             .await
             .unwrap();

@@ -12,19 +12,11 @@
 //!
 //! ## Phase 17.4 boundary
 //!
-//! This substrate mints registration/capability identity and the fail-closed
-//! per-call authorization gate, including synthetic stale-health rejection. It
-//! does **not**:
-//! - wire the [`crate::evidence::EvidenceSink`] into the agent loop (17.6);
-//! - implement evidence-failure-driven health advancement, batch launch-boundary
-//!   reauthorization, or live mid-run health reads (17.7); or
-//! - add file storage/exporters (17.7).
+//! This substrate owns registration/capability identity and the fail-closed
+//! per-call authorization contract. The agent loop supplies typed correlation,
+//! current evidence health, stale-generation reauthorization, and the final
+//! launch check. Product policy and file storage remain outside this module.
 //!
-//! `ToolAuthorizationRequest` carries opaque string run/turn/call correlation
-//! handles rather than typed [`crate::evidence`] ids: the evidence subsystem
-//! that mints those ids is wired in 17.6, and authorization does not depend on
-//! them for its decision.
-
 use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
@@ -33,7 +25,7 @@ use std::sync::Arc;
 use opi_ai::message::ToolDef;
 use tokio_util::sync::CancellationToken;
 
-use crate::evidence::{CapabilityClass, EvidenceGeneration, EvidenceHealth};
+use crate::evidence::{CallId, CapabilityClass, EvidenceGeneration, EvidenceHealth, RunId, TurnId};
 use crate::tool::Tool;
 
 // ===========================================================================
@@ -231,16 +223,35 @@ impl ToolRegistry {
 /// Core-confirmed facts supplied to the trusted authorizer. Full arguments are
 /// inspected inside the trusted boundary; the emitted authorization outcome
 /// carries only the classified or redacted representation. Run/turn/call are
-/// opaque correlation handles (not typed evidence ids, which are minted in
-/// 17.6); authorization does not depend on them for its decision.
+/// the typed evidence identities minted for this exact call.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum InvocationContext {
+    /// Trusted assembly supplied no session context for this invocation.
+    NoSession,
+    /// Opaque trusted session context supplied by runtime assembly.
+    Session(String),
+}
+
+impl InvocationContext {
+    pub(crate) fn from_session_id(session_id: Option<&str>) -> Self {
+        match session_id {
+            Some(session_id) => Self::Session(session_id.to_owned()),
+            None => Self::NoSession,
+        }
+    }
+}
+
+/// Core-confirmed authorization facts for one resolved tool call.
 #[derive(Debug, Clone)]
 pub struct ToolAuthorizationRequest {
-    /// Opaque run correlation handle, when known.
-    pub run_id: Option<String>,
-    /// Opaque turn correlation handle.
-    pub turn_id: String,
-    /// Opaque call correlation handle (the provider tool-call id).
-    pub call_id: String,
+    /// Evidence run identity minted before the call.
+    pub run_id: RunId,
+    /// Evidence turn identity minted before the call.
+    pub turn_id: TurnId,
+    /// Evidence call identity reused by authorization and tool outcomes.
+    pub call_id: CallId,
+    /// Opaque trusted invocation/session context, never derived from arguments.
+    pub invocation_context: InvocationContext,
     /// The resolved registered tool's trusted registration id.
     pub registration_id: RegistrationId,
     /// The registration-derived capability identity.

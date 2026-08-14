@@ -98,10 +98,13 @@ impl Agent {
         hooks: Box<dyn AgentHooks>,
     ) -> Result<Self, AgentError> {
         let model_selection = ModelSelection::parse_spec(&model_spec).ok_or_else(|| {
-            AgentError::InvalidNextTurnCandidate(format!(
-                "model spec '{model_spec}' is not a canonical provider:model selection"
-            ))
+            AgentError::InvalidModelSpec {
+                spec: model_spec.clone(),
+            }
         })?;
+        collection
+            .validate_dispatchable_route(&model_selection.to_spec())
+            .map_err(crate::agent_loop::map_collection_error)?;
         let registry = Arc::new(
             crate::authority::ToolRegistry::from_tools(registrations)
                 .map_err(|e| AgentError::InvalidToolRegistration(e.to_string()))?,
@@ -144,10 +147,9 @@ impl Agent {
     /// Install an evidence sink that receives the run's call-graph lifecycle
     /// (stable run/turn/call identities, ordered records, terminal manifest)
     /// during the next `prompt`/`continue_`/`retry_last_turn` run (Phase 17.6).
-    /// `None` (the default) is the capture-disabled no-op: no identities are
-    /// minted and execution behavior is unchanged. Non-breaking: callers that
-    /// do not set a sink are unaffected. The Reference Product binds its file
-    /// adapter here (Phase 17.7); the minimal runtime leaves it unset.
+    /// `None` (the default) disables record emission; typed identities remain
+    /// available to authorization. The Reference Product binds its recording
+    /// adapter here; the minimal runtime leaves it unset.
     pub fn set_evidence_sink(&mut self, sink: Option<Arc<dyn crate::evidence::EvidenceSink>>) {
         self.evidence_sink = sink;
     }
@@ -198,86 +200,9 @@ impl Agent {
     }
 
     fn validate_state(&self, candidate: &NextTurnState) -> Result<(), AgentError> {
-        if self
-            .collection
-            .resolve(&candidate.model_selection.to_spec())
-            .is_err()
-        {
-            return Err(AgentError::InvalidNextTurnCandidate(format!(
-                "model selection '{}' does not resolve to a route in the provider collection",
-                candidate.model_selection.to_spec()
-            )));
-        }
-        Ok(())
-    }
-
-    // -- Narrow convenience mutators (Phase 17.2) ---------------------------
-    // Each delegates to [`Agent::replace_state`] so no mutation bypasses
-    // candidate validation. They keep call sites concise; the one validated
-    // idle-state replacement operation remains `replace_state`. A bare model is
-    // normalized against the current provider id before validation.
-
-    /// Change the model used by subsequent calls. `model` may be a canonical
-    /// `provider:model` spec or a bare model id (normalized against the current
-    /// provider). Delegates to [`Agent::replace_state`]; panics if the result is
-    /// not a dispatchable route (callers validate first).
-    pub fn set_model(&mut self, model: String) {
-        let spec = if model.contains(':') {
-            model
-        } else {
-            format!("{}:{model}", self.provider_id())
-        };
-        let selection = ModelSelection::parse_spec(&spec)
-            .expect("normalized model spec must parse as provider:model");
-        let mut candidate = self.state_snapshot();
-        candidate.model_selection = selection;
-        self.replace_state(candidate)
-            .expect("model change must keep a dispatchable route");
-    }
-
-    /// Change the maximum output tokens. Delegates to [`Agent::replace_state`].
-    pub fn set_max_tokens(&mut self, max_tokens: Option<u64>) {
-        let mut candidate = self.state_snapshot();
-        candidate.inference.max_tokens = max_tokens;
-        let _ = self.replace_state(candidate);
-    }
-
-    /// Change the thinking configuration. Delegates to [`Agent::replace_state`].
-    pub fn set_thinking_config(&mut self, thinking: Option<ThinkingConfig>) {
-        let mut candidate = self.state_snapshot();
-        candidate.inference.thinking = thinking.unwrap_or_default();
-        let _ = self.replace_state(candidate);
-    }
-
-    /// Set the initial conversation context (for session resume). Delegates to
-    /// [`Agent::replace_state`].
-    pub fn set_initial_messages(&mut self, messages: Vec<AgentMessage>) {
-        let mut candidate = self.state_snapshot();
-        candidate.context = messages;
-        let _ = self.replace_state(candidate);
-    }
-
-    /// Inject a single message into the conversation context. Delegates to
-    /// [`Agent::replace_state`].
-    pub fn inject_message(&mut self, message: AgentMessage) {
-        let mut candidate = self.state_snapshot();
-        candidate.context.push(message);
-        let _ = self.replace_state(candidate);
-    }
-
-    /// Replace the entire conversation context. Delegates to
-    /// [`Agent::replace_state`].
-    pub fn replace_messages(&mut self, messages: Vec<AgentMessage>) {
-        let mut candidate = self.state_snapshot();
-        candidate.context = messages;
-        let _ = self.replace_state(candidate);
-    }
-
-    /// Drop trailing context beyond `len`. Delegates to [`Agent::replace_state`].
-    pub fn rewind_to(&mut self, len: usize) {
-        let mut candidate = self.state_snapshot();
-        candidate.context.truncate(len);
-        let _ = self.replace_state(candidate);
+        self.collection
+            .validate_dispatchable_route(&candidate.model_selection.to_spec())
+            .map_err(|error| AgentError::InvalidNextTurnCandidate(error.to_string()))
     }
 
     /// Send a user message and run the agent loop.
@@ -401,6 +326,12 @@ impl Agent {
     /// rewind, and compaction.
     pub fn state_snapshot(&self) -> NextTurnState {
         self.state.clone()
+    }
+
+    /// Snapshot the exact provider-visible tool definitions projected from the
+    /// immutable trusted registry, in registration order.
+    pub fn tool_definitions_snapshot(&self) -> Vec<opi_ai::message::ToolDef> {
+        self.registry.definitions()
     }
 
     /// Register an event subscriber that receives all `AgentEvent`s.

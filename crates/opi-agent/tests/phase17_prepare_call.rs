@@ -18,7 +18,7 @@ use opi_agent::loop_types::{AgentError, AgentLoopConfig, InferenceConfig};
 use opi_agent::message::AgentMessage;
 use opi_ai::provider::ProviderError;
 use opi_ai::test_support::{CountingAuthResolver, MockProvider, MockResponse, text_response};
-use opi_ai::{AuthProvenanceSource, CompatMetadata, ProviderCollection};
+use opi_ai::{AuthProvenanceSource, CompatMetadata, ProviderCollection, ProviderRegistry};
 
 struct StopImmediatelyHooks;
 impl AgentHooks for StopImmediatelyHooks {
@@ -115,4 +115,58 @@ async fn prepare_call_resolves_auth_once_across_retries() {
         2,
         "provider stream must be invoked once per attempt"
     );
+}
+
+fn agent_construction_error(collection: ProviderCollection, spec: &str) -> AgentError {
+    match Agent::new(
+        Arc::new(collection),
+        common::registrations_from(Vec::new()),
+        Some(common::permissive_authorizer()),
+        spec.to_owned(),
+        None,
+        InferenceConfig::default(),
+        AgentLoopConfig::default(),
+        Box::new(StopImmediatelyHooks),
+    ) {
+        Ok(_) => panic!("agent construction unexpectedly accepted {spec}"),
+        Err(error) => error,
+    }
+}
+
+#[test]
+fn construction_preserves_registry_and_dispatch_failure_classes() {
+    let route = || {
+        opi_ai::test_support::single_route_collection(Box::new(MockProvider::new(
+            "mock",
+            vec![text_response("unused")],
+        )))
+    };
+
+    assert!(matches!(
+        agent_construction_error(route(), "bare-model"),
+        AgentError::InvalidModelSpec { .. }
+    ));
+    assert!(matches!(
+        agent_construction_error(route(), "missing:mock-model"),
+        AgentError::UnknownProvider { .. }
+    ));
+    assert!(matches!(
+        agent_construction_error(route(), "mock:missing"),
+        AgentError::UnknownModel { .. }
+    ));
+
+    let mut registry = ProviderRegistry::new();
+    registry
+        .register_provider(Box::new(MockProvider::new(
+            "mock",
+            vec![text_response("unused")],
+        )))
+        .unwrap();
+    assert!(matches!(
+        agent_construction_error(
+            ProviderCollection::from_registry(registry),
+            "mock:mock-model"
+        ),
+        AgentError::RouteNotDispatchable { .. }
+    ));
 }

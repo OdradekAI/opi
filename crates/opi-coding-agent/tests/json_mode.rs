@@ -873,6 +873,7 @@ mod phase7 {
     use super::parse_ndjson;
     use opi_agent::diagnostic::{Diagnostic, SOURCE_PACKAGE, SOURCE_SESSION, Severity, code};
     use opi_agent::extension::ExtensionRegistry;
+    use opi_agent::session::{SessionHeader, SessionWriter};
     use opi_agent::session_event::AgentSessionEvent;
     use opi_ai::provider::{Provider, ProviderError};
     use opi_ai::test_support::{self, MockProvider, MockResponse};
@@ -957,8 +958,19 @@ mod phase7 {
     async fn phase7_resume_diagnostics_are_startup_diagnostics() {
         let provider = MockProvider::new("mock", vec![test_support::text_response("hi")]);
         let workspace = tempfile::tempdir().expect("workspace tempdir");
+        let session_path = workspace.path().join("resume.jsonl");
+        SessionWriter::create(
+            &session_path,
+            SessionHeader::new(
+                "resume".into(),
+                "2026-08-15T00:00:00Z".into(),
+                workspace.path().display().to_string(),
+                None,
+            ),
+        )
+        .expect("create resumable session");
         let resume_info = ResumeInfo {
-            path: workspace.path().join("resume.jsonl"),
+            path: session_path,
             session_id: "resume".into(),
             entries: Vec::new(),
             original_cwd: workspace.path().to_path_buf(),
@@ -1528,12 +1540,19 @@ async fn phase17_trace_cli_writes_evidence_files() {
     let result = runner.run_json("hello").await;
     assert_eq!(result.exit_code, ExitCode::Success as i32);
 
-    // `--trace` (trace_path) activates the FileEvidenceSink: evidence.jsonl and
-    // manifest.json are written to the capture directory.
-    let records = std::fs::read_to_string(evidence_dir.path().join("evidence.jsonl"))
+    // `--trace` (trace_path) activates the FileEvidenceSink. The configured
+    // path is a capture root; each run owns one immutable child directory.
+    let run_dirs: Vec<_> = std::fs::read_dir(evidence_dir.path())
+        .expect("read trace capture root")
+        .map(|entry| entry.expect("trace child entry").path())
+        .filter(|path| path.is_dir())
+        .collect();
+    assert_eq!(run_dirs.len(), 1, "one immutable trace directory per run");
+    let run_dir = &run_dirs[0];
+    let records = std::fs::read_to_string(run_dir.join("evidence.jsonl"))
         .expect("--trace must write evidence.jsonl");
     assert!(!records.is_empty(), "evidence.jsonl must be non-empty");
-    let manifest = std::fs::read_to_string(evidence_dir.path().join("manifest.json"))
+    let manifest = std::fs::read_to_string(run_dir.join("manifest.json"))
         .expect("--trace must write manifest.json");
     assert!(!manifest.is_empty(), "manifest.json must be non-empty");
 }

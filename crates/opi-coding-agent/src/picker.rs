@@ -23,22 +23,6 @@ pub fn model_picker_items(registry: &opi_ai::registry::ProviderRegistry) -> Vec<
         .collect()
 }
 
-/// Collect SelectItem entries from one provider's advertised model list.
-pub fn model_picker_items_from_provider(
-    provider: &dyn opi_ai::provider::Provider,
-) -> Vec<SelectItem> {
-    let provider_id = provider.id();
-    provider
-        .models()
-        .iter()
-        .map(|model| SelectItem {
-            id: format!("{provider_id}:{}", model.id),
-            display: model.display_name.clone(),
-            metadata: provider_id.to_string(),
-        })
-        .collect()
-}
-
 /// Collect SelectItem entries from a reconstructed session branch tree.
 pub fn branch_picker_items(tree: &SessionTree) -> Vec<SelectItem> {
     let active_index = tree.active_branch_index();

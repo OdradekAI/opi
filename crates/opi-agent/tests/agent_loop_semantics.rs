@@ -459,6 +459,33 @@ fn noop_sink() -> Box<dyn Fn(AgentEvent) + Send + Sync> {
     Box::new(|_| {})
 }
 
+#[tokio::test]
+async fn unterminated_provider_stream_is_a_protocol_failure() {
+    let provider = RecordingProvider::new(vec![vec![
+        AssistantStreamEvent::Start {
+            partial: base_msg(),
+        },
+        AssistantStreamEvent::TextDelta {
+            content_index: 0,
+            delta: "partial".to_owned(),
+            partial: base_msg(),
+        },
+    ]]);
+    let context = make_context(Box::new(provider), vec![]);
+
+    let error = opi_agent::agent_loop(
+        context,
+        AgentLoopConfig::default(),
+        &MinimalHooks,
+        noop_sink(),
+        CancellationToken::new(),
+    )
+    .await
+    .expect_err("EOF without a terminal event must fail");
+
+    assert!(matches!(error, AgentError::ProviderProtocol { .. }));
+}
+
 // ---------------------------------------------------------------------------
 // H3: Batch parallel execution
 // ---------------------------------------------------------------------------

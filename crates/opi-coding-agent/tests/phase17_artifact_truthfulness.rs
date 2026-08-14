@@ -2,7 +2,8 @@
 //!
 //! Produces `target/opi-artifacts/phase17-task-17.7` from a real
 //! `CodingHarness` run bound to the product `FileEvidenceSink`. The directory
-//! carries the evidence artifacts (evidence.jsonl, manifest.json), run
+//! carries one immutable per-run evidence directory (evidence.jsonl,
+//! manifest.json), run
 //! scaffolding (command/cwd/env/exit/stdout/stderr), mode payloads
 //! (ndjson/session/rpc), the resolved route assertion, tool counts, a
 //! RUN_SUMMARY claim table, and a SHA256SUMS manifest. Every required artifact
@@ -77,15 +78,27 @@ async fn phase17_task_17_7_artifact_truthfulness_directory() {
     unsafe { std::env::remove_var("OPI_SESSIONS_DIR") };
     drop(_lock);
 
-    // evidence.jsonl + manifest.json are produced by the file adapter.
+    // evidence.jsonl + manifest.json are produced in one immutable per-run
+    // child directory by the file adapter.
+    let completed = sink.completed_run_dirs();
+    assert_eq!(completed.len(), 1, "one finalized capture run");
+    let capture_dir = completed[0].clone();
+    let capture_rel = capture_dir
+        .strip_prefix(&dir)
+        .expect("capture belongs to artifact root")
+        .to_string_lossy()
+        .replace('\\', "/");
     assert!(
-        dir.join("evidence.jsonl").exists(),
+        capture_dir.join("evidence.jsonl").exists(),
         "evidence.jsonl written"
     );
-    assert!(dir.join("manifest.json").exists(), "manifest.json written");
+    assert!(
+        capture_dir.join("manifest.json").exists(),
+        "manifest.json written"
+    );
 
     // provider-assertion.json: the resolved route from the manifest.
-    let manifest_json = std::fs::read_to_string(dir.join("manifest.json")).unwrap();
+    let manifest_json = std::fs::read_to_string(capture_dir.join("manifest.json")).unwrap();
     let manifest: serde_json::Value = serde_json::from_str(&manifest_json).unwrap();
     let provider_assertion = serde_json::json!({
         "requested_route": manifest["route"]["requested"],
@@ -189,36 +202,38 @@ async fn phase17_task_17_7_artifact_truthfulness_directory() {
     // scaffolding (command/cwd/exit-code/stdout/stderr) is generated from the
     // in-process CodingHarness run, not captured from a separate `opi` process,
     // so it is classified `source-inferred` and cannot close acceptance.
-    let run_summary = "# Phase 17 task 17.7 — artifact truthfulness\n\n\
+    let run_summary = format!(
+        "# Phase 17 task 17.7 — artifact truthfulness\n\n\
         | Claim | Classification | Artifact | Result |\n\
         |---|---|---|---|\n\
-        | Evidence capture writes evidence.jsonl | verified | evidence.jsonl | pass |\n\
-        | Finalized manifest binds DirectRuntimeInput | verified | manifest.json | pass |\n\
+        | Evidence capture writes evidence.jsonl | verified | {capture_rel}/evidence.jsonl | pass |\n\
+        | Finalized manifest binds DirectRuntimeInput | verified | {capture_rel}/manifest.json | pass |\n\
         | Provider route (requested/resolved/actual) recorded | verified | provider-assertion.json | pass |\n\
         | Run events captured as NDJSON | verified | run.ndjson | pass |\n\
         | Session persisted | verified | sessions/session.jsonl | pass |\n\
         | Run scaffolding (command/cwd/exit-code/stdout/stderr) | source-inferred | exit-code.txt | n/a |\n\
         \n\
-        Only `verified` rows close acceptance; `source-inferred` rows (the run scaffolding) record the harness-generated invocation, not a captured `opi` process.\n";
+        Only `verified` rows close acceptance; `source-inferred` rows (the run scaffolding) record the harness-generated invocation, not a captured `opi` process.\n"
+    );
     std::fs::write(dir.join("RUN_SUMMARY.md"), run_summary).unwrap();
 
     // SHA256SUMS.txt over every raw artifact file; verify presence + non-empty
     // + a clean re-read digest.
     let mut names = vec![
-        "command.txt",
-        "cwd.txt",
-        "env-overrides.json",
-        "exit-code.txt",
-        "stdout.txt",
-        "stderr.txt",
-        "sessions/session.jsonl",
-        "run.ndjson",
-        "rpc.jsonl",
-        "provider-assertion.json",
-        "tool-execution-counts.json",
-        "evidence.jsonl",
-        "manifest.json",
-        "RUN_SUMMARY.md",
+        "command.txt".to_owned(),
+        "cwd.txt".to_owned(),
+        "env-overrides.json".to_owned(),
+        "exit-code.txt".to_owned(),
+        "stdout.txt".to_owned(),
+        "stderr.txt".to_owned(),
+        "sessions/session.jsonl".to_owned(),
+        "run.ndjson".to_owned(),
+        "rpc.jsonl".to_owned(),
+        "provider-assertion.json".to_owned(),
+        "tool-execution-counts.json".to_owned(),
+        format!("{capture_rel}/evidence.jsonl"),
+        format!("{capture_rel}/manifest.json"),
+        "RUN_SUMMARY.md".to_owned(),
     ];
     names.sort();
     let mut sha_lines: Vec<String> = Vec::new();
@@ -226,7 +241,7 @@ async fn phase17_task_17_7_artifact_truthfulness_directory() {
         let path = dir.join(name);
         assert!(path.exists(), "required artifact missing: {name}");
         let bytes = std::fs::read(&path).unwrap();
-        if !matches!(*name, "stdout.txt" | "stderr.txt") {
+        if !matches!(name.as_str(), "stdout.txt" | "stderr.txt") {
             assert!(!bytes.is_empty(), "artifact must be non-empty: {name}");
         }
         use sha2::{Digest, Sha256};

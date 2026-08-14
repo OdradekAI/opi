@@ -313,11 +313,29 @@ impl EvidenceError {
 #[serde(transparent)]
 pub struct ContentDigest(String);
 
+/// Validation failure for a canonical SHA-256 content digest.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("content digest must be exactly 64 lowercase hexadecimal characters")]
+pub struct ContentDigestError;
+
 impl ContentDigest {
-    /// Construct a digest from its hex rendering. The producer is responsible
-    /// for computing the digest; this only carries it.
-    pub fn from_hex(hex: impl Into<String>) -> Self {
-        Self(hex.into())
+    /// Construct a digest from its canonical SHA-256 hex rendering.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ContentDigestError`] unless the input is exactly 64 lowercase
+    /// hexadecimal characters.
+    pub fn from_hex(hex: impl Into<String>) -> Result<Self, ContentDigestError> {
+        let hex = hex.into();
+        if hex.len() != 64
+            || !hex
+                .as_bytes()
+                .iter()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(byte))
+        {
+            return Err(ContentDigestError);
+        }
+        Ok(Self(hex))
     }
 
     /// The hex rendering of the digest.
@@ -945,6 +963,7 @@ pub struct InMemoryEvidenceSink {
     artifacts: std::sync::Mutex<Vec<ArtifactReference>>,
     manifest: std::sync::Mutex<Option<FinalizedManifest>>,
     failure: std::sync::Mutex<Option<EvidenceError>>,
+    finalized: std::sync::Mutex<bool>,
     inject: std::sync::Mutex<FailureInjection>,
 }
 
@@ -996,6 +1015,11 @@ impl InMemoryEvidenceSink {
 
 impl EvidenceSink for InMemoryEvidenceSink {
     fn setup(&self, _binding: &RuntimeInputBinding) -> Result<(), EvidenceError> {
+        Self::lock(&self.records).clear();
+        Self::lock(&self.artifacts).clear();
+        *Self::lock(&self.manifest) = None;
+        *Self::lock(&self.failure) = None;
+        *Self::lock(&self.finalized) = false;
         if let Some(err) = Self::lock(&self.inject).setup.clone() {
             *Self::lock(&self.failure) = Some(err.clone());
             return Err(err);
@@ -1004,6 +1028,11 @@ impl EvidenceSink for InMemoryEvidenceSink {
     }
 
     fn emit(&self, record: &EvidenceRecord) -> Result<(), EvidenceError> {
+        if *Self::lock(&self.finalized) {
+            return Err(EvidenceError::Emission {
+                detail: "evidence run is already finalized".to_owned(),
+            });
+        }
         if let Some(err) = Self::lock(&self.inject).emission.clone() {
             *Self::lock(&self.failure) = Some(err.clone());
             return Err(err);
@@ -1013,6 +1042,11 @@ impl EvidenceSink for InMemoryEvidenceSink {
     }
 
     fn finalize_artifact(&self, artifact: &ArtifactReference) -> Result<(), EvidenceError> {
+        if *Self::lock(&self.finalized) {
+            return Err(EvidenceError::Finalization {
+                detail: "evidence run is already finalized".to_owned(),
+            });
+        }
         if let Some(err) = Self::lock(&self.inject).finalization.clone() {
             *Self::lock(&self.failure) = Some(err.clone());
             return Err(err);
@@ -1022,11 +1056,17 @@ impl EvidenceSink for InMemoryEvidenceSink {
     }
 
     fn finalize_run(&self, manifest: &FinalizedManifest) -> Result<(), EvidenceError> {
+        if *Self::lock(&self.finalized) {
+            return Err(EvidenceError::Finalization {
+                detail: "evidence run is already finalized".to_owned(),
+            });
+        }
         if let Some(err) = Self::lock(&self.inject).finalization.clone() {
             *Self::lock(&self.failure) = Some(err.clone());
             return Err(err);
         }
         *Self::lock(&self.manifest) = Some(manifest.clone());
+        *Self::lock(&self.finalized) = true;
         Ok(())
     }
 }
@@ -1079,6 +1119,11 @@ impl FinalizedManifest {
     /// [`EvidenceError::Finalization`] so the caller withholds the manifest
     /// rather than finalizing an incomplete one.
     pub fn require_complete(&self) -> Result<(), EvidenceError> {
+        if self.completeness == EvidenceCompleteness::Incomplete {
+            return Err(EvidenceError::Finalization {
+                detail: "manifest evidence is incomplete".to_owned(),
+            });
+        }
         let RuntimeInputBinding::DirectRuntimeInput { digest, .. } = &self.binding else {
             return Err(EvidenceError::Finalization {
                 detail: "manifest binding is not DirectRuntimeInput".to_owned(),
@@ -1127,6 +1172,15 @@ impl FinalizedManifest {
         if matches!(&self.input_identity.prompt_digest, ContentDigest(d) if d.is_empty()) {
             return Err(EvidenceError::Finalization {
                 detail: "manifest prompt input identity is missing".to_owned(),
+            });
+        }
+        if self
+            .artifacts
+            .iter()
+            .any(|artifact| artifact.finalization != FinalizationState::Finalized)
+        {
+            return Err(EvidenceError::Finalization {
+                detail: "manifest contains an artifact that is not finalized".to_owned(),
             });
         }
         Ok(())

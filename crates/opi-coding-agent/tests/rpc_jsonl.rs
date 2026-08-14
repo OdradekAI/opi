@@ -280,7 +280,10 @@ async fn rpc_set_model_rejects_invalid_spec() {
         .unwrap();
     let resp = recv_response(&mut output_rx, "set_model").await;
     assert_eq!(resp["success"], false);
-    assert_eq!(resp["error"], "invalid model spec: expected provider:model");
+    assert_eq!(
+        resp["error"],
+        "invalid model spec: spec must be 'provider:model', got: \"not-a-model-spec\""
+    );
 
     command_tx.send(RpcCommand::quit { id: None }).unwrap();
     let _quit = recv_response(&mut output_rx, "quit").await;
@@ -303,7 +306,10 @@ async fn rpc_set_model_rejects_empty_provider_and_empty_model_specs() {
         .unwrap();
     let resp = recv_response(&mut output_rx, "set_model").await;
     assert_eq!(resp["success"], false);
-    assert_eq!(resp["error"], "invalid model spec: expected provider:model");
+    assert_eq!(
+        resp["error"],
+        "invalid model spec: spec must be 'provider:model', got: \":mock-model\""
+    );
 
     command_tx
         .send(RpcCommand::set_model {
@@ -313,7 +319,10 @@ async fn rpc_set_model_rejects_empty_provider_and_empty_model_specs() {
         .unwrap();
     let resp = recv_response(&mut output_rx, "set_model").await;
     assert_eq!(resp["success"], false);
-    assert_eq!(resp["error"], "invalid model spec: expected provider:model");
+    assert_eq!(
+        resp["error"],
+        "invalid model spec: spec must be 'provider:model', got: \"mock:\""
+    );
 
     command_tx.send(RpcCommand::quit { id: None }).unwrap();
     let _quit = recv_response(&mut output_rx, "quit").await;
@@ -346,35 +355,26 @@ async fn rpc_set_model_rejects_unknown_same_provider_model() {
     assert_eq!(task.await.unwrap(), 0);
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn rpc_set_model_rejects_unadvertised_current_model() {
+#[test]
+#[should_panic(expected = "startup model selection must resolve to a dispatchable route")]
+fn rpc_startup_rejects_unadvertised_current_model() {
     let provider = MockProvider::new_with_models(
         "mock",
         vec![rpc_model_info("known-model", true)],
         Vec::new(),
     );
-    let (command_tx, mut output_rx, task) =
-        custom_provider_runner_with_model(provider, "mock:legacy-model");
-
-    let header = recv_rpc_line(&mut output_rx).await;
-    assert_eq!(header["type"], "rpc_ready");
-
-    command_tx
-        .send(RpcCommand::set_model {
-            id: Some("set-current".into()),
-            model: "mock:legacy-model".into(),
-        })
-        .unwrap();
-    let resp = recv_response(&mut output_rx, "set_model").await;
-    assert_eq!(resp["success"], false);
-    assert_eq!(
-        resp["error"],
-        "unknown model 'legacy-model' for provider 'mock'"
+    let workspace = tempfile::tempdir().expect("workspace tempdir");
+    let _runner = RpcRunner::new(
+        Box::new(provider),
+        "mock:legacy-model".into(),
+        OpiConfig::default(),
+        workspace.path().to_path_buf(),
+        false,
+        ToolSelection::Disabled,
+        None,
+        Vec::new(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     );
-
-    command_tx.send(RpcCommand::quit { id: None }).unwrap();
-    let _quit = recv_response(&mut output_rx, "quit").await;
-    assert_eq!(task.await.unwrap(), 0);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

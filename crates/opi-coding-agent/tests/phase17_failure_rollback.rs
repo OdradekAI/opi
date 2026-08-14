@@ -25,15 +25,15 @@ use std::time::Duration;
 
 use futures_util::stream;
 use opi_agent::authority::{
-    AuthorizationDecision, AuthorizationError, Capability, RegisteredTool, RegistrationId,
+    AuthorizationDecision, Capability, InvocationContext, RegisteredTool, RegistrationId,
     ToolAuthorizationRequest, ToolAuthorizer,
 };
 use opi_agent::evidence::{
-    AssemblySource, CapabilityClass, EvidenceError, EvidenceHealth, EvidenceRecorder,
-    InMemoryEvidenceSink,
+    AssemblySource, CapabilityClass, EvidenceError, EvidenceHealth, EvidenceRecorder, EvidenceSink,
+    IdentityAllocator, InMemoryEvidenceSink,
 };
 use opi_agent::hooks::{AgentHooks, BeforeToolCallContext, BeforeToolCallResult};
-use opi_agent::loop_types::{AgentError, AgentLoopConfig, InferenceConfig};
+use opi_agent::loop_types::{AgentError, AgentLoopConfig, InferenceConfig, ModelSelection};
 use opi_agent::message::AgentMessage;
 use opi_agent::{Agent, Tool, ToolError, ToolResult};
 use opi_ai::auth::ResolvedAuth;
@@ -48,7 +48,7 @@ use tokio_util::sync::CancellationToken;
 use opi_coding_agent::config::{ExecutionRunMode, OpiConfig};
 use opi_coding_agent::evidence::{EvidenceBuilderConfig, FileEvidenceSink};
 use opi_coding_agent::execution::permission::PermissionPolicy;
-use opi_coding_agent::harness::CodingHarness;
+use opi_coding_agent::harness::{CodingHarness, ResumeInfo};
 use opi_coding_agent::project_trust::TrustDecision;
 use opi_coding_agent::rpc::{RpcCommand, RpcRunner};
 use opi_coding_agent::tool_authority::{EffectiveUserPolicy, ProductToolAuthorizer};
@@ -58,81 +58,141 @@ use opi_coding_agent::tool_authority::{EffectiveUserPolicy, ProductToolAuthorize
 // failure classes (no string parsing). Each row names its owner-task slice.
 // ===========================================================================
 
-#[test]
-fn phase17_failure_boundaries_expose_distinguishable_typed_classes() {
-    // Provider route/auth (owners 17.1/17.5): missing auth configuration, a
-    // non-dispatchable route, and a cancelled prepared call are distinct
-    // `CollectionError` variants a caller can match on.
-    let not_configured = opi_ai::provider_collection::CollectionError::AuthNotConfigured {
-        provider: "p".to_owned(),
-        detail: "no auth source".to_owned(),
-    };
-    let not_dispatchable = opi_ai::provider_collection::CollectionError::RouteNotDispatchable {
-        provider: "p".to_owned(),
-    };
-    let cancelled_call = opi_ai::provider_collection::CollectionError::CallCancelled;
+#[tokio::test]
+async fn requested_resume_open_failure_is_visible_before_provider_dispatch() {
+    let workspace = tempfile::tempdir().unwrap();
+    let missing_session = workspace.path().join("missing-session.jsonl");
+    let provider = MockProvider::new("mock", vec![text_response("must not run")]);
+    let calls = provider.call_log_handle();
+    let mut harness = CodingHarness::builder(
+        Box::new(provider),
+        "mock:mock-model".to_owned(),
+        OpiConfig::default(),
+        workspace.path().to_path_buf(),
+        TrustDecision::Trusted,
+    )
+    .resume(ResumeInfo {
+        path: missing_session,
+        session_id: "requested-session".to_owned(),
+        entries: Vec::new(),
+        original_cwd: workspace.path().to_path_buf(),
+        diagnostics: Vec::new(),
+        recorded_model: None,
+        recorded_thinking: None,
+    })
+    .build();
+
+    let result = harness.prompt("continue the requested session").await;
+    assert!(matches!(result, Err(AgentError::SessionResume(_))));
+    assert_eq!(calls.lock().unwrap().len(), 0);
+}
+
+#[tokio::test]
+async fn phase17_failure_boundaries_expose_distinguishable_typed_classes() {
+    fn request(model: &str, cancel: CancellationToken) -> Request {
+        Request {
+            model: model.to_owned(),
+            system: None,
+            messages: Vec::new(),
+            tools: Vec::new(),
+            max_tokens: None,
+            temperature: None,
+            thinking: opi_ai::provider::ThinkingConfig::default(),
+            stop_sequences: Vec::new(),
+            metadata: None,
+            cancel,
+            timeout: None,
+            extra_headers: Vec::new(),
+            cache_retention: opi_ai::provider::CacheRetention::None,
+            session_id: None,
+        }
+    }
+
+    // A lookup-only provider reaches the real Agent construction gate and is
+    // rejected as a typed non-dispatchable route.
+    let mut lookup_registry = opi_ai::ProviderRegistry::new();
+    lookup_registry
+        .register_provider(Box::new(MockProvider::new(
+            "lookup",
+            vec![text_response("must not dispatch")],
+        )))
+        .unwrap();
+    let agent = Agent::new(
+        Arc::new(opi_ai::ProviderCollection::from_registry(lookup_registry)),
+        Vec::new(),
+        None,
+        "lookup:mock-model".to_owned(),
+        None,
+        InferenceConfig::default(),
+        AgentLoopConfig::default(),
+        Box::new(NoopHooks),
+    );
     assert!(matches!(
-        not_configured,
-        opi_ai::provider_collection::CollectionError::AuthNotConfigured { .. }
-    ));
-    assert!(matches!(
-        not_dispatchable,
-        opi_ai::provider_collection::CollectionError::RouteNotDispatchable { .. }
-    ));
-    assert!(matches!(
-        cancelled_call,
-        opi_ai::provider_collection::CollectionError::CallCancelled
+        agent,
+        Err(AgentError::RouteNotDispatchable { provider }) if provider == "lookup"
     ));
 
-    // Next-turn transition / execution (owners 17.2 + Phase 8/12): cancellation
-    // is a distinct terminal class, never folded into provider failure.
-    let cancelled = AgentError::Cancelled;
-    assert!(matches!(cancelled, AgentError::Cancelled));
-
-    // Tool authority (owner 17.4): an unavailable authorizer is distinct from a
-    // failed one, and a denial carries a stable code plus a redacted reason.
-    let auth_failed = AuthorizationError::Failed("boom".to_owned());
-    let auth_unavailable = AuthorizationError::Unavailable("gone".to_owned());
-    assert!(matches!(auth_failed, AuthorizationError::Failed(_)));
+    // A pre-cancelled real collection call exits before resolver/provider work
+    // with its distinct cancellation class.
+    let collection = single_route_collection(Box::new(MockProvider::new(
+        "mock",
+        vec![text_response("must not dispatch")],
+    )));
+    let cancel = CancellationToken::new();
+    cancel.cancel();
+    let cancelled = collection
+        .prepare_call("mock:mock-model", request("mock:mock-model", cancel))
+        .await;
     assert!(matches!(
-        auth_unavailable,
-        AuthorizationError::Unavailable(_)
-    ));
-    let denial = AuthorizationDecision::Deny {
-        stable_code: "test_deny".to_owned(),
-        redacted_reason: "denied".to_owned(),
-    };
-    assert!(matches!(denial, AuthorizationDecision::Deny { .. }));
-
-    // Evidence (owner 17.3): setup, emission, and finalization failures are
-    // distinct typed outcomes.
-    let setup = EvidenceError::Setup {
-        detail: "s".to_owned(),
-    };
-    let emission = EvidenceError::Emission {
-        detail: "e".to_owned(),
-    };
-    let finalization = EvidenceError::Finalization {
-        detail: "f".to_owned(),
-    };
-    assert!(matches!(setup, EvidenceError::Setup { .. }));
-    assert!(matches!(emission, EvidenceError::Emission { .. }));
-    assert!(matches!(finalization, EvidenceError::Finalization { .. }));
-
-    // Cleanup-unknown (owner Phase 15/16, opi-protocol): the terminal
-    // `CleanupUnconfirmed` failure code is a distinct typed class. Task 17.9
-    // composes the reference; the behavioral slice lives in
-    // `opi-sandbox/tests/protocol_conformance.rs`.
-    assert!(matches!(
-        opi_protocol::execution::v1::frames::FailureCode::CleanupUnconfirmed,
-        opi_protocol::execution::v1::frames::FailureCode::CleanupUnconfirmed
+        cancelled,
+        Err(opi_ai::provider_collection::CollectionError::CallCancelled)
     ));
 
-    // Queue overflow: Agent-core steering/follow-up queues are unbounded by
-    // design, so overflow is not an Agent-core failure path; the bounded
-    // overflow class lives at the proxy event channel (Phase 8,
-    // `streaming_proxy.rs` bounded-capacity test). Recorded here so the matrix
-    // row is explicit instead of silently absent.
+    // Complete-state validation returns a typed registry class and preserves
+    // the prior state rather than partially applying the candidate.
+    let mut state_agent = Agent::new(
+        Arc::new(single_route_collection(Box::new(MockProvider::new(
+            "mock",
+            vec![text_response("unused")],
+        )))),
+        Vec::new(),
+        None,
+        "mock:mock-model".to_owned(),
+        None,
+        InferenceConfig::default(),
+        AgentLoopConfig::default(),
+        Box::new(NoopHooks),
+    )
+    .unwrap();
+    let prior = state_agent.state_snapshot();
+    let mut invalid = prior.clone();
+    invalid.model_selection = ModelSelection::new("missing", "model");
+    assert!(matches!(
+        state_agent.replace_state(invalid),
+        Err(AgentError::InvalidNextTurnCandidate(detail)) if detail.contains("missing")
+    ));
+    assert_eq!(
+        state_agent.state_snapshot().model_selection,
+        prior.model_selection
+    );
+
+    // A naturally invalid file-capture root reaches the production adapter's
+    // setup boundary and yields EvidenceError::Setup.
+    let blocked = tempfile::NamedTempFile::new().unwrap();
+    let file_sink = FileEvidenceSink::new(blocked.path());
+    let binding = opi_agent::evidence::RuntimeInputBinding::direct(
+        opi_agent::evidence::ContentDigest::from_hex("0".repeat(64)).unwrap(),
+        AssemblySource::Cli,
+    );
+    assert!(matches!(
+        file_sink.setup(&binding),
+        Err(EvidenceError::Setup { .. })
+    ));
+
+    // Tool-authorizer Err, emission/finalization, cleanup-unknown, cancellation,
+    // and bounded proxy overflow are exercised through their real owner paths
+    // by phase17_tool_authority, phase17_product_evidence,
+    // protocol_conformance, the cancellation test below, and streaming_proxy.
 }
 
 // ===========================================================================
@@ -331,8 +391,8 @@ async fn phase17_cancellation_and_evidence_failure_are_not_converted_to_success(
     .build();
     let messages = harness.prompt("still runs").await;
     assert!(
-        messages.is_ok(),
-        "the actual execution outcome is retained: {messages:?}"
+        matches!(messages, Err(AgentError::EvidenceFinalization(_))),
+        "explicit capture failure is visible after execution: {messages:?}"
     );
     assert!(
         sink.completed_manifest().is_none(),
@@ -427,7 +487,7 @@ async fn phase17_rollback_preserves_session_and_evidence_bytes() {
     let ws = tempfile::tempdir().unwrap();
     let usr = tempfile::tempdir().unwrap();
     let sink = Arc::new(FileEvidenceSink::new(evidence_dir.path().to_path_buf()));
-    let recorder: Arc<dyn EvidenceRecorder> = sink;
+    let recorder: Arc<dyn EvidenceRecorder> = sink.clone();
     let mut harness = CodingHarness::builder(
         Box::new(MockProvider::new_with_models(
             "alpha",
@@ -452,8 +512,15 @@ async fn phase17_rollback_preserves_session_and_evidence_bytes() {
 
     let session_path = phase17::newest_jsonl(sessions.path()).expect("a session was persisted");
     let session_before = std::fs::read(&session_path).unwrap();
-    let evidence_before = std::fs::read(evidence_dir.path().join("evidence.jsonl")).unwrap();
-    let manifest_before = std::fs::read(evidence_dir.path().join("manifest.json")).unwrap();
+    let run_dir = sink
+        .completed_run_dirs()
+        .into_iter()
+        .next()
+        .expect("one immutable evidence run");
+    let evidence_path = run_dir.join("evidence.jsonl");
+    let manifest_path = run_dir.join("manifest.json");
+    let evidence_before = std::fs::read(&evidence_path).unwrap();
+    let manifest_before = std::fs::read(&manifest_path).unwrap();
     assert!(!evidence_before.is_empty() && !manifest_before.is_empty());
 
     // A subsequent Phase 17 runtime loading the same session and evidence
@@ -488,12 +555,12 @@ async fn phase17_rollback_preserves_session_and_evidence_bytes() {
         "the session file is byte-identical after reload"
     );
     assert_eq!(
-        std::fs::read(evidence_dir.path().join("evidence.jsonl")).unwrap(),
+        std::fs::read(&evidence_path).unwrap(),
         evidence_before,
         "the evidence file is byte-identical after reload"
     );
     assert_eq!(
-        std::fs::read(evidence_dir.path().join("manifest.json")).unwrap(),
+        std::fs::read(&manifest_path).unwrap(),
         manifest_before,
         "the finalized manifest is byte-identical after reload"
     );
@@ -567,10 +634,12 @@ async fn phase17_rollback_does_not_widen_user_policy() {
     // The denial outcome is unchanged: a WorkspaceWrite request that the
     // pre-run policy denies is still denied by the post-run policy (no
     // widening of capability permission or scope).
+    let mut identities = IdentityAllocator::new();
     let request = ToolAuthorizationRequest {
-        run_id: None,
-        turn_id: "t0".to_owned(),
-        call_id: "c0".to_owned(),
+        run_id: identities.run_id(),
+        turn_id: identities.next_turn(),
+        call_id: identities.next_call(),
+        invocation_context: InvocationContext::NoSession,
         registration_id: RegistrationId::new("test-write"),
         capability: Capability::Builtin(CapabilityClass::WorkspaceWrite),
         arguments: serde_json::json!({}),

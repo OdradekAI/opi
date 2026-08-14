@@ -13,17 +13,13 @@
 //! seam) so provider+model lookup, OpenAI-compatible compatibility metadata,
 //! and the auth contract live on one type:
 //!
-//! - [`build_collection_for_listing`] registers each config-sourced provider
-//!   via [`ProviderCollection::register`] with a derived [`AuthDescriptor`] and
-//!   [`CompatMetadata`], exercising the auth seam. Listing never dispatches, so
-//!   attaching descriptors cannot gate or alter output.
+//! - [`build_collection_for_listing`] registers config-sourced providers and
+//!   redacted auth descriptors for lookup/probing. Listing never dispatches.
 //! - [`build_harness_collection`] registers the dispatchable route set (active
 //!   plus eagerly-built extra routes) with per-route auth resolvers, plus the
 //!   lookup-only extension providers/model overrides, into one
-//!   [`ProviderCollection`] via [`ProviderCollection::from_registry`] +
-//!   [`ProviderCollection::register_route`]. Those entries are not config-sourced
-//!   and the active provider's credentials are validated at build time, so no
-//!   auth descriptor is attached.
+//!   [`ProviderCollection`] through checked route registration. Credentials are
+//!   resolved lazily for each prepared call, not validated during construction.
 //!
 //! # Centralization contract
 //!
@@ -355,10 +351,10 @@ impl opi_ai::AuthResolver for CredentialAuthResolver {
                 })?;
             Ok(opi_ai::ResolvedAuth {
                 scheme: self.scheme,
+                provenance: resolved.provenance(),
                 secret: resolved.value,
                 base_url: None,
                 account_id: None,
-                provenance: opi_ai::AuthProvenance::default(),
             })
         })
     }
@@ -373,13 +369,7 @@ impl opi_ai::AuthResolver for CredentialAuthResolver {
 /// This is the canonical spec resolver for the crate; both the run-mode
 /// startup paths and the harness use it.
 pub fn parse_model_spec(spec: &str) -> Result<(&str, &str), String> {
-    let Some((provider, model)) = spec.split_once(':') else {
-        return Err("invalid model spec: expected provider:model".into());
-    };
-    if provider.is_empty() || model.is_empty() {
-        return Err("invalid model spec: expected provider:model".into());
-    }
-    Ok((provider, model))
+    opi_ai::registry::parse_model_spec(spec).map_err(|error| error.to_string())
 }
 
 // ---------------------------------------------------------------------------
@@ -1267,26 +1257,7 @@ async fn build_anthropic_live_auth(
     resolver: &CredentialResolver,
     registry: &OAuthProviderRegistry,
 ) -> Result<ProviderBuildOutcome, ProviderBuildError> {
-    let oauth = registry.lookup("anthropic").ok_or_else(|| {
-        ProviderBuildError::Config("no anthropic OAuth provider registered".into())
-    })?;
-    let client = build_proxied_client(config.providers.anthropic.proxy.as_ref())?;
-    let auth_resolver: Arc<dyn opi_ai::AuthResolver> = Arc::new(AuthSource::Layered {
-        resolver: Arc::new(resolver.clone()),
-        provider_id: "anthropic".into(),
-        oauth,
-        oauth_env_var: "ANTHROPIC_OAUTH_TOKEN".into(),
-        api_key_env_var: config.providers.anthropic.api_key_env.clone(),
-    });
-    let provider = opi_ai::anthropic::AnthropicProvider::for_route(
-        "anthropic".into(),
-        opi_ai::anthropic::model_catalog(),
-        config.providers.anthropic.base_url.clone(),
-        opi_ai::ProviderHeaders::default(),
-        client,
-        true,
-    )
-    .with_auth_invalid_policy(AuthInvalidPolicy::CredentialManaged);
+    let (provider, auth_resolver) = build_anthropic_route(config, resolver, registry)?;
     let mut diagnostics = Vec::new();
     let higher_priority_oauth = resolver.has_oauth_credential("anthropic").await?
         || resolver.env_value("ANTHROPIC_OAUTH_TOKEN").is_some();
@@ -1317,10 +1288,41 @@ async fn build_anthropic_live_auth(
         }
     }
     Ok(ProviderBuildOutcome {
-        provider: Box::new(provider),
+        provider,
         auth_resolver,
         diagnostics,
     })
+}
+
+/// Construct Anthropic's adapter and layered lazy resolver without performing
+/// credential I/O. This is used for inactive dispatch routes so a missing
+/// credential does not prevent registration or force eager fallback.
+fn build_anthropic_route(
+    config: &OpiConfig,
+    resolver: &CredentialResolver,
+    registry: &OAuthProviderRegistry,
+) -> Result<ProviderAuthPair, ProviderBuildError> {
+    let oauth = registry.lookup("anthropic").ok_or_else(|| {
+        ProviderBuildError::Config("no anthropic OAuth provider registered".into())
+    })?;
+    let client = build_proxied_client(config.providers.anthropic.proxy.as_ref())?;
+    let auth_resolver: Arc<dyn opi_ai::AuthResolver> = Arc::new(AuthSource::Layered {
+        resolver: Arc::new(resolver.clone()),
+        provider_id: "anthropic".into(),
+        oauth,
+        oauth_env_var: "ANTHROPIC_OAUTH_TOKEN".into(),
+        api_key_env_var: config.providers.anthropic.api_key_env.clone(),
+    });
+    let provider = opi_ai::anthropic::AnthropicProvider::for_route(
+        "anthropic".into(),
+        opi_ai::anthropic::model_catalog(),
+        config.providers.anthropic.base_url.clone(),
+        opi_ai::ProviderHeaders::default(),
+        client,
+        true,
+    )
+    .with_auth_invalid_policy(AuthInvalidPolicy::CredentialManaged);
+    Ok((Box::new(provider), auth_resolver))
 }
 
 /// Build GitHub Copilot's static catalog over three concrete wire routes.
@@ -1489,7 +1491,8 @@ pub async fn build_provider_bundle(
     let registry = crate::oauth::OAuthProviderRegistry::registry_with_builtins();
     let outcome = build_provider_with_oauth_outcome(config, &resolver, &registry).await?;
     let active_provider_id = outcome.provider.id().to_owned();
-    let extra_routes = build_extra_dispatch_routes(config, &resolver, &active_provider_id).await;
+    let extra_routes =
+        build_extra_dispatch_routes(config, &resolver, &registry, &active_provider_id).await;
     Ok(ProviderBundle {
         provider: outcome.provider,
         auth_resolver: outcome.auth_resolver,
@@ -1510,21 +1513,24 @@ pub async fn build_provider_bundle(
 /// silently. Bedrock is the compound-credential exception: it registers only
 /// when its AWS credential chain resolves at construction.
 ///
-/// OAuth-only providers (`github-copilot`, `openai-codex`) are not registered
-/// here — their OAuth builder runs only for the active provider.
 async fn build_extra_dispatch_routes(
     config: &OpiConfig,
     resolver: &CredentialResolver,
+    registry: &OAuthProviderRegistry,
     active_provider_id: &str,
 ) -> Vec<ProviderAuthPair> {
     let mut routes = Vec::new();
     for provider_id in BUILT_IN_PROVIDER_IDS {
-        if *provider_id == active_provider_id
-            || matches!(*provider_id, "github-copilot" | "openai-codex")
-        {
+        if *provider_id == active_provider_id {
             continue;
         }
-        if let Ok(route) = build_runtime_route(config, provider_id, resolver) {
+        let route = match *provider_id {
+            "github-copilot" => build_copilot_oauth(resolver, registry).await,
+            "openai-codex" => build_codex_oauth(resolver, registry).await,
+            "anthropic" => build_anthropic_route(config, resolver, registry),
+            _ => build_runtime_route(config, provider_id, resolver),
+        };
+        if let Ok(route) = route {
             routes.push(route);
         }
     }
@@ -1805,13 +1811,15 @@ fn build_runtime_adapter(
         }
         "azure" => {
             let azure_config = &config.providers.azure;
-            let deployment = config
-                .defaults
-                .model
-                .split_once(':')
-                .map(|(_, id)| id)
-                .unwrap_or("");
+            let deployment = parse_model_spec(&config.defaults.model)
+                .ok()
+                .and_then(|(provider, model)| (provider == "azure").then_some(model));
             let provider = if azure_config.deployments.is_empty() {
+                let deployment = deployment.ok_or_else(|| {
+                    ProviderBuildError::Config(
+                        "azure provider has no configured deployment for this route".to_owned(),
+                    )
+                })?;
                 opi_ai::azure_openai::AzureOpenAIProvider::new(
                     azure_config.endpoint.clone(),
                     deployment.to_string(),
@@ -1968,7 +1976,7 @@ fn build_bedrock(config: &OpiConfig) -> Result<ProviderAuthPair, ProviderBuildEr
 }
 
 /// Apply the production single-wire catalog guard before returning a provider
-/// to a caller that can invoke [`Provider::stream`].
+/// to a caller that can register it for prepared dispatch.
 #[doc(hidden)]
 pub fn validate_single_wire_provider(
     provider: Box<dyn Provider>,
@@ -2259,6 +2267,29 @@ mod tests {
     ];
 
     struct ScopedBedrockEnv(Vec<(&'static str, Option<OsString>)>);
+
+    #[tokio::test]
+    async fn inactive_oauth_and_layered_anthropic_routes_are_dispatchable() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = std::sync::Arc::new(crate::credential_store::KeychainCredentialStore::new(
+            Box::new(FakeKeyringBackend::new()),
+            temp.path().to_path_buf(),
+        ));
+        let resolver =
+            crate::credential_store::CredentialResolver::new(store, std::sync::Arc::new(|_| None));
+        let registry = crate::oauth::OAuthProviderRegistry::registry_with_builtins();
+        let mut config = OpiConfig::default();
+        config.defaults.model = "openai:gpt-4o".to_owned();
+
+        let routes =
+            super::build_extra_dispatch_routes(&config, &resolver, &registry, "openai").await;
+        let ids: std::collections::BTreeSet<_> =
+            routes.iter().map(|(provider, _)| provider.id()).collect();
+
+        assert!(ids.contains("anthropic"));
+        assert!(ids.contains("github-copilot"));
+        assert!(ids.contains("openai-codex"));
+    }
 
     impl ScopedBedrockEnv {
         fn new(

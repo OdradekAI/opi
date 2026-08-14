@@ -15,8 +15,13 @@ use std::sync::{Arc, Mutex};
 
 use futures_util::stream;
 use opi_agent::agent::Agent;
-use opi_agent::authority::{Capability, RegisteredTool, RegistrationId, ToolOrigin};
-use opi_agent::evidence::{CapabilityClass, EvidenceGeneration, EvidenceHealth};
+use opi_agent::authority::{
+    AuthorizationDecision, AuthorizationError, Capability, InvocationContext, RegisteredTool,
+    RegistrationId, ToolAuthorizationRequest, ToolAuthorizer, ToolOrigin,
+};
+use opi_agent::evidence::{
+    CallId, CapabilityClass, EvidenceGeneration, EvidenceHealth, RunId, TurnId,
+};
 use opi_agent::hooks::{
     AgentHooks, BeforeToolCallContext, BeforeToolCallResult, ShouldStopAfterTurnContext,
 };
@@ -24,6 +29,7 @@ use opi_agent::loop_types::{
     AgentError, AgentLoopConfig, AgentLoopContext, InferenceConfig, ModelSelection, NextTurnState,
 };
 use opi_agent::message::AgentMessage;
+use opi_agent::tool::{ToolError, ToolExecutionAuthorization, ToolResult};
 use opi_agent::{Tool, agent_loop};
 use opi_ai::message::{InputContent, Message, UserMessage};
 use opi_ai::provider::{EventStream, Provider, ProviderError, Request};
@@ -31,6 +37,79 @@ use opi_ai::stream::AssistantStreamEvent;
 use opi_ai::test_support::{single_route_collection, text_response, tool_call_response};
 
 use common::{DenyingAuthorizer, RecordingTool, StaleGenerationAuthorizer};
+
+struct CapturingAuthorizer {
+    requests: Arc<Mutex<Vec<ToolAuthorizationRequest>>>,
+}
+
+struct AuthorizationCapturingTool {
+    received: Arc<Mutex<Option<ToolExecutionAuthorization>>>,
+}
+
+impl Tool for AuthorizationCapturingTool {
+    fn definition(&self) -> opi_ai::message::ToolDef {
+        opi_ai::message::ToolDef {
+            name: "mytool".to_owned(),
+            description: "captures the trusted execution authorization".to_owned(),
+            input_schema: serde_json::json!({ "type": "object" }),
+        }
+    }
+
+    fn execute(
+        &self,
+        _call_id: &str,
+        _arguments: serde_json::Value,
+        _signal: tokio_util::sync::CancellationToken,
+        _on_update: Option<opi_agent::tool::UpdateCallback>,
+    ) -> Pin<Box<dyn std::future::Future<Output = Result<ToolResult, ToolError>> + Send>> {
+        panic!("Agent must forward the verified authorization to execute_authorized")
+    }
+
+    fn execute_authorized(
+        &self,
+        _call_id: &str,
+        _arguments: serde_json::Value,
+        authorization: ToolExecutionAuthorization,
+        _signal: tokio_util::sync::CancellationToken,
+        _on_update: Option<opi_agent::tool::UpdateCallback>,
+    ) -> Pin<Box<dyn std::future::Future<Output = Result<ToolResult, ToolError>> + Send>> {
+        let received = self.received.clone();
+        Box::pin(async move {
+            *received.lock().unwrap() = Some(authorization);
+            Ok(opi_agent::tool::result::ok(
+                vec![opi_ai::message::OutputContent::Text {
+                    text: "ok".to_owned(),
+                }],
+                serde_json::json!({}),
+            ))
+        })
+    }
+}
+
+impl ToolAuthorizer for CapturingAuthorizer {
+    fn authorize(
+        &self,
+        request: ToolAuthorizationRequest,
+        _cancel: tokio_util::sync::CancellationToken,
+    ) -> Pin<
+        Box<
+            dyn std::future::Future<Output = Result<AuthorizationDecision, AuthorizationError>>
+                + Send,
+        >,
+    > {
+        self.requests.lock().unwrap().push(request.clone());
+        Box::pin(async move {
+            Ok(AuthorizationDecision::Allow {
+                policy_ref: "test-policy".to_owned(),
+                permission_ref: "test-permission".to_owned(),
+                permission_scope: "test-scope".to_owned(),
+                registration_id: request.registration_id,
+                capability: request.capability,
+                evidence_health_generation: request.evidence_health.generation(),
+            })
+        })
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Scripted mock provider + default hooks
@@ -165,6 +244,76 @@ async fn permissive_authorizer_executes_once() {
         1,
         "a current Allow reaches Tool::execute exactly once"
     );
+}
+
+#[tokio::test]
+async fn verified_authorization_is_forwarded_to_the_tool_execution_boundary() {
+    let received = Arc::new(Mutex::new(None));
+    let tool: Arc<dyn Tool> = Arc::new(AuthorizationCapturingTool {
+        received: received.clone(),
+    });
+    let definition = tool.definition();
+    let registration = RegisteredTool::new(
+        RegistrationId::new("test-mytool"),
+        "mytool".to_owned(),
+        ToolOrigin::Builtin,
+        Capability::Builtin(CapabilityClass::WorkspaceRead),
+        definition,
+        tool,
+    );
+    let mut agent = make_agent(
+        vec![
+            tool_call_response("c1", "mytool", "{}"),
+            text_response("done"),
+        ],
+        vec![registration],
+        Some(Arc::new(CapturingAuthorizer {
+            requests: Arc::new(Mutex::new(Vec::new())),
+        })),
+    );
+
+    agent.prompt("go").await.unwrap();
+
+    let authorization = received
+        .lock()
+        .unwrap()
+        .clone()
+        .expect("verified Allow reaches the tool boundary");
+    assert_eq!(authorization.policy_ref, "test-policy");
+    assert_eq!(authorization.permission_ref, "test-permission");
+    assert_eq!(authorization.permission_scope, "test-scope");
+}
+
+#[tokio::test]
+async fn authorization_uses_typed_evidence_ids_and_trusted_session_context() {
+    let count = Arc::new(AtomicUsize::new(0));
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let mut agent = make_agent(
+        vec![
+            tool_call_response(
+                "provider-call-id",
+                "mytool",
+                r#"{"session_id":"forged-by-model"}"#,
+            ),
+            text_response("done"),
+        ],
+        recording_registry(count),
+        Some(Arc::new(CapturingAuthorizer {
+            requests: requests.clone(),
+        })),
+    );
+    agent.set_session_id(Some("trusted-session".to_owned()));
+    agent.prompt("go").await.unwrap();
+
+    let request = requests.lock().unwrap().first().cloned().unwrap();
+    let _: RunId = request.run_id;
+    let _: TurnId = request.turn_id;
+    let _: CallId = request.call_id;
+    assert_eq!(
+        request.invocation_context,
+        InvocationContext::Session("trusted-session".to_owned())
+    );
+    assert_eq!(request.arguments["session_id"], "forged-by-model");
 }
 
 #[tokio::test]

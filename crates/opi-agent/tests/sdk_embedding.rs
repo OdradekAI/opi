@@ -424,7 +424,9 @@ async fn sdk_set_model_changes_model() {
     )
     .expect("agent");
     assert_eq!(agent.model(), "mock-model");
-    agent.set_model("mock:other-model".into());
+    let mut candidate = agent.state_snapshot();
+    candidate.model_selection = opi_agent::loop_types::ModelSelection::new("mock", "other-model");
+    agent.replace_state(candidate).unwrap();
     assert_eq!(agent.model(), "other-model");
 }
 

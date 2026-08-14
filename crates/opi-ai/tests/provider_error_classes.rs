@@ -6,7 +6,7 @@
 //! safe excerpts", and "fixture and redaction tests assert each class and every
 //! provider family error-mapping path."
 //!
-//! Each HTTP family below drives its production `Provider::stream` path against
+//! Each HTTP family below drives its production `Provider::stream_prepared` path against
 //! a mock 5xx response whose body echoes a credential, and asserts the result
 //! (a) classifies as the shared `provider` class and (b) carries only a
 //! redacted excerpt (the secret must not survive `safe_excerpt`). The auth

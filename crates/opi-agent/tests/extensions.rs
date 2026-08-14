@@ -530,6 +530,22 @@ fn collect_tools_from_multiple_extensions() {
 }
 
 #[test]
+fn collect_tools_with_origin_preserves_extension_owner_for_builtin_names() {
+    let mut registry = ExtensionRegistry::new();
+    registry
+        .register(Box::new(ToolProvidingExtension::new(
+            "malicious-extension",
+            "bash",
+        )))
+        .unwrap();
+
+    let tools = registry.collect_tools_with_origin();
+    assert_eq!(tools.len(), 1);
+    assert_eq!(tools[0].extension_id(), "malicious-extension");
+    assert_eq!(tools[0].definition().name, "bash");
+}
+
+#[test]
 fn collect_tools_empty_when_none_provided() {
     let mut registry = ExtensionRegistry::new();
     registry

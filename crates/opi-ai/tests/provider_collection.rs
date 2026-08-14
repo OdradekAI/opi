@@ -549,7 +549,9 @@ async fn collection_refresh_is_a_documented_noop_extension_point() {
 #[test]
 fn collection_wraps_existing_registry_via_from_registry() {
     let mut registry = ProviderRegistry::new();
-    registry.register(text_mock("wrapped", "wrapped response"));
+    registry
+        .register_provider(text_mock("wrapped", "wrapped response"))
+        .unwrap();
 
     let collection = ProviderCollection::from_registry(registry);
     // Underlying registry is accessible for list-models / overrides.
@@ -1299,7 +1301,7 @@ mod phase17 {
     use super::*;
     use futures_util::StreamExt;
     use opi_ai::auth::{
-        AuthProvenance, AuthProvenanceSource, AuthResolver, AuthScheme, ResolvedAuth,
+        AuthFallback, AuthProvenance, AuthProvenanceSource, AuthResolver, AuthScheme, ResolvedAuth,
     };
     use opi_ai::credential::BoxAuthFuture;
     use opi_ai::provider::{EventStream, Provider, ProviderError, Request};
@@ -1308,10 +1310,11 @@ mod phase17 {
     use secrecy::SecretString;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::time::Duration;
 
     /// A probe provider that records prepared-seam (`stream_prepared`) hits,
     /// emitting canned events regardless of the supplied auth (no HTTP). The
-    /// `Provider::stream` entry is gone, so the `legacy` counter is vestigial:
+    /// The legacy direct stream entry is gone, so the `legacy` counter is vestigial:
     /// retained for call-site stability (marked `dead_code`) and never read.
     struct ProbeProvider {
         id: String,
@@ -1358,6 +1361,32 @@ mod phase17 {
         }
     }
 
+    struct CancelAwareProvider {
+        models: Vec<ModelInfo>,
+        dispatches: Arc<AtomicUsize>,
+        cancellations: Arc<AtomicUsize>,
+    }
+
+    impl Provider for CancelAwareProvider {
+        fn id(&self) -> &str {
+            "cancel-aware"
+        }
+
+        fn models(&self) -> &[ModelInfo] {
+            &self.models
+        }
+
+        fn stream_prepared(&self, request: Request, _auth: ResolvedAuth) -> EventStream {
+            self.dispatches.fetch_add(1, Ordering::SeqCst);
+            let cancellations = self.cancellations.clone();
+            Box::pin(futures_util::stream::once(async move {
+                request.cancel.cancelled().await;
+                cancellations.fetch_add(1, Ordering::SeqCst);
+                Err(ProviderError::Cancelled)
+            }))
+        }
+    }
+
     /// A resolver that counts how many times it is consulted.
     struct CountingResolver {
         count: Arc<AtomicUsize>,
@@ -1376,6 +1405,49 @@ mod phase17 {
                     base_url: None,
                     account_id: None,
                     provenance: AuthProvenance::default(),
+                })
+            })
+        }
+    }
+
+    struct PendingResolver {
+        count: Arc<AtomicUsize>,
+    }
+
+    impl AuthResolver for PendingResolver {
+        fn resolve<'a>(&'a self) -> BoxAuthFuture<'a, Result<ResolvedAuth, ProviderError>> {
+            let count = self.count.clone();
+            Box::pin(async move {
+                count.fetch_add(1, Ordering::SeqCst);
+                std::future::pending().await
+            })
+        }
+    }
+
+    struct ProvenanceResolver;
+
+    impl AuthResolver for ProvenanceResolver {
+        fn resolve<'a>(&'a self) -> BoxAuthFuture<'a, Result<ResolvedAuth, ProviderError>> {
+            Box::pin(async move {
+                let primary = AuthProvenanceSource::CredentialStore {
+                    kind: "native-keyring".to_owned(),
+                };
+                let fallback = AuthProvenanceSource::Environment {
+                    name: "ALPHA_API_KEY".to_owned(),
+                };
+                Ok(ResolvedAuth {
+                    scheme: AuthScheme::ApiKey,
+                    secret: SecretString::from("secret"),
+                    base_url: None,
+                    account_id: None,
+                    provenance: AuthProvenance {
+                        source: fallback.clone(),
+                        fallback: AuthFallback::Used {
+                            from: primary,
+                            to: fallback,
+                            reason: "credential store unavailable".to_owned(),
+                        },
+                    },
                 })
             })
         }
@@ -1452,6 +1524,131 @@ mod phase17 {
         );
     }
 
+    #[tokio::test]
+    async fn metadata_registration_replaces_and_removes_prior_dispatch_state() {
+        let resolve_hits = Arc::new(AtomicUsize::new(0));
+        let mut collection = ProviderCollection::new();
+        collection
+            .register_route(
+                Box::new(ProbeProvider::new(
+                    "alpha",
+                    "model-a",
+                    Arc::new(AtomicUsize::new(0)),
+                    Arc::new(AtomicUsize::new(0)),
+                )),
+                Arc::new(CountingResolver {
+                    count: resolve_hits.clone(),
+                    secret: SecretString::from("stale-secret"),
+                }),
+                AuthProvenanceSource::Static,
+                CompatMetadata::default(),
+            )
+            .unwrap();
+        collection
+            .register(
+                Box::new(ProbeProvider::new(
+                    "alpha",
+                    "model-a",
+                    Arc::new(AtomicUsize::new(0)),
+                    Arc::new(AtomicUsize::new(0)),
+                )),
+                AuthDescriptor::Resolved {
+                    source: "metadata only".to_owned(),
+                },
+                CompatMetadata::default(),
+            )
+            .unwrap();
+
+        let error = collection
+            .prepare_call("alpha:model-a", minimal_request("alpha:model-a"))
+            .await
+            .expect_err("metadata-only replacement must not retain stale resolver");
+        assert!(matches!(
+            error,
+            CollectionError::RouteNotDispatchable { .. }
+        ));
+        assert_eq!(resolve_hits.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn dispatch_registration_replaces_and_removes_prior_metadata_state() {
+        let mut collection = ProviderCollection::new();
+        collection
+            .register(
+                Box::new(ProbeProvider::new(
+                    "alpha",
+                    "model-a",
+                    Arc::new(AtomicUsize::new(0)),
+                    Arc::new(AtomicUsize::new(0)),
+                )),
+                AuthDescriptor::Resolved {
+                    source: "old metadata".to_owned(),
+                },
+                CompatMetadata::default(),
+            )
+            .unwrap();
+        collection.set_probe("alpha", opi_ai::credential::CredentialSource::Absent);
+        collection
+            .register_route(
+                Box::new(ProbeProvider::new(
+                    "alpha",
+                    "model-a",
+                    Arc::new(AtomicUsize::new(0)),
+                    Arc::new(AtomicUsize::new(0)),
+                )),
+                Arc::new(CountingResolver {
+                    count: Arc::new(AtomicUsize::new(0)),
+                    secret: SecretString::from("new-secret"),
+                }),
+                AuthProvenanceSource::Static,
+                CompatMetadata::default(),
+            )
+            .unwrap();
+
+        assert!(collection.auth_descriptor("alpha").is_none());
+        assert!(collection.probe("alpha").is_none());
+    }
+
+    #[tokio::test]
+    async fn prepare_call_preserves_resolver_reported_source_and_fallback() {
+        let mut collection = ProviderCollection::new();
+        collection
+            .register_route(
+                Box::new(ProbeProvider::new(
+                    "alpha",
+                    "model-a",
+                    Arc::new(AtomicUsize::new(0)),
+                    Arc::new(AtomicUsize::new(0)),
+                )),
+                Arc::new(ProvenanceResolver),
+                AuthProvenanceSource::Static,
+                CompatMetadata::default(),
+            )
+            .unwrap();
+
+        let prepared = collection
+            .prepare_call("alpha:model-a", minimal_request("alpha:model-a"))
+            .await
+            .unwrap();
+        assert_eq!(
+            prepared.auth_provenance(),
+            &AuthProvenance {
+                source: AuthProvenanceSource::Environment {
+                    name: "ALPHA_API_KEY".to_owned(),
+                },
+                fallback: AuthFallback::Used {
+                    from: AuthProvenanceSource::CredentialStore {
+                        kind: "native-keyring".to_owned(),
+                    },
+                    to: AuthProvenanceSource::Environment {
+                        name: "ALPHA_API_KEY".to_owned(),
+                    },
+                    reason: "credential store unavailable".to_owned(),
+                },
+            }
+        );
+    }
+
     /// Drain a stream until it yields a terminal event or an error.
     async fn drain_to_terminal(stream: &mut EventStream) {
         while let Some(item) = stream.next().await {
@@ -1509,6 +1706,65 @@ mod phase17 {
             "got {err:?}"
         );
         drop(attempt);
+    }
+
+    #[tokio::test]
+    async fn dropping_an_unpolled_attempt_releases_the_active_slot() {
+        let collection = collection_with_probe(
+            Arc::new(AtomicUsize::new(0)),
+            Arc::new(AtomicUsize::new(0)),
+            Arc::new(AtomicUsize::new(0)),
+        );
+        let prepared = collection
+            .prepare_call("alpha:model-a", minimal_request("alpha:model-a"))
+            .await
+            .unwrap();
+
+        let attempt = prepared.start_attempt().unwrap();
+        drop(attempt);
+        let retry = prepared
+            .start_attempt()
+            .expect("dropping the attempt stream releases its lease");
+        drop(retry);
+    }
+
+    #[tokio::test]
+    async fn cancelling_during_auth_resolution_stops_preparation() {
+        let resolve_hits = Arc::new(AtomicUsize::new(0));
+        let mut collection = ProviderCollection::new();
+        collection
+            .register_route(
+                Box::new(ProbeProvider::new(
+                    "alpha",
+                    "model-a",
+                    Arc::new(AtomicUsize::new(0)),
+                    Arc::new(AtomicUsize::new(0)),
+                )),
+                Arc::new(PendingResolver {
+                    count: resolve_hits.clone(),
+                }),
+                AuthProvenanceSource::Static,
+                CompatMetadata::default(),
+            )
+            .unwrap();
+        let collection = Arc::new(collection);
+        let request = minimal_request("alpha:model-a");
+        let cancel = request.cancel.clone();
+        let task = tokio::spawn({
+            let collection = collection.clone();
+            async move { collection.prepare_call("alpha:model-a", request).await }
+        });
+
+        while resolve_hits.load(Ordering::SeqCst) == 0 {
+            tokio::task::yield_now().await;
+        }
+        cancel.cancel();
+        let error = tokio::time::timeout(Duration::from_secs(1), task)
+            .await
+            .expect("cancellation must interrupt pending auth resolution")
+            .expect("prepare task panicked")
+            .expect_err("cancelled preparation must fail");
+        assert!(matches!(error, CollectionError::CallCancelled));
     }
 
     #[tokio::test]
@@ -1574,6 +1830,59 @@ mod phase17 {
             0,
             "provider dispatched despite cancellation"
         );
+    }
+
+    #[tokio::test]
+    async fn cancelling_during_an_active_attempt_is_observed_once_and_forbids_retry() {
+        let dispatches = Arc::new(AtomicUsize::new(0));
+        let cancellations = Arc::new(AtomicUsize::new(0));
+        let resolver_hits = Arc::new(AtomicUsize::new(0));
+        let mut collection = ProviderCollection::new();
+        collection
+            .register_route(
+                Box::new(CancelAwareProvider {
+                    models: vec![ModelInfo::new(
+                        "model-a",
+                        "model-a",
+                        WireApi::OpenAiCompletions,
+                        ModelCapabilities::new(100_000, 4_096),
+                    )],
+                    dispatches: dispatches.clone(),
+                    cancellations: cancellations.clone(),
+                }),
+                Arc::new(CountingResolver {
+                    count: resolver_hits.clone(),
+                    secret: SecretString::from("sk-cancel-test"),
+                }),
+                AuthProvenanceSource::Static,
+                CompatMetadata::default(),
+            )
+            .unwrap();
+
+        let request = minimal_request("cancel-aware:model-a");
+        let token = request.cancel.clone();
+        let prepared = collection
+            .prepare_call("cancel-aware:model-a", request)
+            .await
+            .expect("prepare call");
+        let mut stream = prepared.start_attempt().expect("start active attempt");
+        let task = tokio::spawn(async move { stream.next().await });
+        tokio::task::yield_now().await;
+        token.cancel();
+
+        let terminal = tokio::time::timeout(Duration::from_secs(1), task)
+            .await
+            .expect("active attempt observes cancellation")
+            .expect("attempt task did not panic");
+        assert!(matches!(terminal, Some(Err(ProviderError::Cancelled))));
+        assert_eq!(resolver_hits.load(Ordering::SeqCst), 1);
+        assert_eq!(dispatches.load(Ordering::SeqCst), 1);
+        assert_eq!(cancellations.load(Ordering::SeqCst), 1);
+        assert!(matches!(
+            prepared.start_attempt(),
+            Err(CollectionError::CallCancelled)
+        ));
+        assert_eq!(dispatches.load(Ordering::SeqCst), 1, "no retry dispatch");
     }
 
     /// A resolver that always fails preparation with a typed credential error.

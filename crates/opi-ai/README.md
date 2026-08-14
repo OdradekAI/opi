@@ -70,7 +70,7 @@ added through registry overrides or configured OpenAI-compatible profiles.
 | `ProviderCollection` / `AuthDescriptor` / `AuthStatus` | Unstable-0.x models/auth seam above `ProviderRegistry`: provider+model lookup, redacted auth state, OpenAI-compatible compat metadata, dispatch, and atomic dynamic-catalog refresh. |
 | `CredentialStore` / `Credential` / `CredentialSource` | IO-free, object-safe credential persistence and redacted three-state probe contracts. |
 | `OAuthProvider` / `OAuthCredential` / `LoginPresenter` | Flow-independent boxed-future OAuth contracts; concrete flows live in `opi-coding-agent`. |
-| `AuthResolver` / `ResolvedAuth` | Per-stream auth resolution contract used immediately before provider HTTP. |
+| `AuthResolver` / `ResolvedAuth` | Collection-owned per-call auth resolution contract; one prepared result is frozen before an attempt starts. |
 | `ApiKind` | Crate-root enum tagging the backend family (`Anthropic`, `OpenAi`, `Google`, `Mistral`) carried on assistant messages. |
 | `HttpClient` | Shared `reqwest` client with pooling and explicit/env proxy support. |
 | `retry` | Retry config, exponential backoff, and `Retry-After` parsing. |
@@ -96,9 +96,10 @@ mismatches are typed non-retryable failures.
 
 GitHub Copilot routes one static catalog through Anthropic Messages, OpenAI
 Completions/Chat, and OpenAI Responses; OpenAI Codex uses its dedicated
-Responses provider rather than standard Responses compatibility flags. Each
-route resolves `AuthResolver` inside the returned stream immediately before
-HTTP. Missing and revoked credentials surface as explicit, non-retryable
+Responses provider rather than standard Responses compatibility flags. The
+collection resolves `AuthResolver` once in `prepare_call`, before any attempt,
+and every `start_attempt` reuses that frozen authentication. Missing and revoked
+credentials surface as explicit, non-retryable
 `ProviderError::CredentialNeeded` and `ProviderError::CredentialRevoked`
 variants. Per-call credentials remain out of scope: `extra_headers` rejects
 provider-managed auth headers.
@@ -279,23 +280,41 @@ behavior:
 ## Minimal Example
 
 ```rust
-// Cargo.toml deps: opi-ai, tokio (features "macros", "rt-multi-thread"),
+// Cargo.toml deps: opi-ai, secrecy, tokio (features "macros", "rt-multi-thread"),
 // tokio-util, futures-util.
+use std::sync::Arc;
+
 use futures_util::StreamExt;
 use opi_ai::anthropic::AnthropicProvider;
 use opi_ai::message::{InputContent, Message, UserMessage};
-use opi_ai::provider::{Provider, Request, ThinkingConfig};
+use opi_ai::provider::{CacheRetention, Request, ThinkingConfig};
+use opi_ai::{
+    AuthProvenanceSource, AuthScheme, CompatMetadata, ProviderCollection,
+    StaticAuthResolver,
+};
+use secrecy::SecretString;
 use tokio_util::sync::CancellationToken;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let provider = AnthropicProvider::new(
-        std::env::var("ANTHROPIC_API_KEY")?,
-        None,
-    );
+    let provider = AnthropicProvider::new(None);
+    let resolver = Arc::new(StaticAuthResolver::new(
+        AuthScheme::ApiKey,
+        SecretString::from(std::env::var("ANTHROPIC_API_KEY")?),
+    ));
+    let mut collection = ProviderCollection::new();
+    collection.register_route(
+        Box::new(provider),
+        resolver,
+        AuthProvenanceSource::Environment {
+            name: "ANTHROPIC_API_KEY".into(),
+        },
+        CompatMetadata::default(),
+    )?;
 
+    let model = "anthropic:claude-sonnet-4-5-20250514";
     let request = Request {
-        model: "claude-sonnet-4-5-20250514".into(),
+        model: model.into(),
         system: Some("You are concise.".into()),
         messages: vec![Message::User(UserMessage {
             content: vec![InputContent::Text { text: "Hi".into() }],
@@ -310,11 +329,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         cancel: CancellationToken::new(),
         timeout: None,
         extra_headers: vec![],
-        cache_retention: opi_ai::provider::CacheRetention::None,
+        cache_retention: CacheRetention::None,
         session_id: None,
     };
 
-    let mut stream = provider.stream(request);
+    let prepared = collection.prepare_call(model, request).await?;
+    let mut stream = prepared.start_attempt()?;
     while let Some(event) = stream.next().await {
         println!("{:?}", event?);
     }

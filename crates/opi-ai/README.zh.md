@@ -66,7 +66,7 @@ OpenAI-compatible profile 加入。
 | `ProviderCollection` / `AuthDescriptor` / `AuthStatus` | unstable-0.x 模型/鉴权 seam，位于 `ProviderRegistry` 之上：Provider+模型查找、脱敏鉴权状态、OpenAI-compatible 兼容性元数据、派发与原子动态目录 refresh。 |
 | `CredentialStore` / `Credential` / `CredentialSource` | 无 IO、object-safe 的凭据持久化与已脱敏三态探测契约。 |
 | `OAuthProvider` / `OAuthCredential` / `LoginPresenter` | 与 flow 无关的 boxed-future OAuth 契约；具体 flow 位于 `opi-coding-agent`。 |
-| `AuthResolver` / `ResolvedAuth` | 在 Provider HTTP 前使用的按 stream 鉴权解析契约。 |
+| `AuthResolver` / `ResolvedAuth` | 由 collection 按调用解析的鉴权契约；attempt 开始前会冻结一次准备结果。 |
 | `ApiKind` | crate 根枚举，标注 assistant 消息携带的后端家族（`Anthropic`、`OpenAi`、`Google`、`Mistral`）。 |
 | `HttpClient` | 共享 `reqwest` client，支持连接池和显式/环境变量代理。 |
 | `retry` | 重试配置、指数退避和 `Retry-After` 解析。 |
@@ -89,8 +89,8 @@ Copilot 和 OpenAI Codex 登录 flow；`opi-ai` 不执行 keychain、环境变�
 route 与 wire/compatibility 不匹配都会成为类型化、不可重试的失败。
 
 GitHub Copilot 把一个静态 catalog 路由到 Anthropic Messages、OpenAI Completions/Chat 与 OpenAI Responses；OpenAI Codex 使用专用 Responses provider，而不是标准 Responses 兼容标志。
-每个 route 都在返回的 stream 内、紧邻 HTTP 之前解析
-`AuthResolver`。凭据缺失与撤销分别成为显式且不可重试的
+collection 在 `prepare_call` 中、任何 attempt 之前只解析一次 `AuthResolver`；每次
+`start_attempt` 都复用这份已冻结的鉴权。凭据缺失与撤销分别成为显式且不可重试的
 `ProviderError::CredentialNeeded` 和 `ProviderError::CredentialRevoked`。
 按调用凭据仍不在范围内：`extra_headers` 会拒绝 Provider 管理的鉴权 header。
 
@@ -250,23 +250,41 @@ OpenAI Chat 会从任何携带 `id` 的 chunk 捕获 response ID，而不只是�
 ## 最小示例
 
 ```rust
-// Cargo.toml 依赖：opi-ai、tokio（features "macros"、"rt-multi-thread"）、
+// Cargo.toml 依赖：opi-ai、secrecy、tokio（features "macros"、"rt-multi-thread"）、
 // tokio-util、futures-util。
+use std::sync::Arc;
+
 use futures_util::StreamExt;
 use opi_ai::anthropic::AnthropicProvider;
 use opi_ai::message::{InputContent, Message, UserMessage};
-use opi_ai::provider::{Provider, Request, ThinkingConfig};
+use opi_ai::provider::{CacheRetention, Request, ThinkingConfig};
+use opi_ai::{
+    AuthProvenanceSource, AuthScheme, CompatMetadata, ProviderCollection,
+    StaticAuthResolver,
+};
+use secrecy::SecretString;
 use tokio_util::sync::CancellationToken;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let provider = AnthropicProvider::new(
-        std::env::var("ANTHROPIC_API_KEY")?,
-        None,
-    );
+    let provider = AnthropicProvider::new(None);
+    let resolver = Arc::new(StaticAuthResolver::new(
+        AuthScheme::ApiKey,
+        SecretString::from(std::env::var("ANTHROPIC_API_KEY")?),
+    ));
+    let mut collection = ProviderCollection::new();
+    collection.register_route(
+        Box::new(provider),
+        resolver,
+        AuthProvenanceSource::Environment {
+            name: "ANTHROPIC_API_KEY".into(),
+        },
+        CompatMetadata::default(),
+    )?;
 
+    let model = "anthropic:claude-sonnet-4-5-20250514";
     let request = Request {
-        model: "claude-sonnet-4-5-20250514".into(),
+        model: model.into(),
         system: Some("回答要简洁。".into()),
         messages: vec![Message::User(UserMessage {
             content: vec![InputContent::Text { text: "你好".into() }],
@@ -281,11 +299,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         cancel: CancellationToken::new(),
         timeout: None,
         extra_headers: vec![],
-        cache_retention: opi_ai::provider::CacheRetention::None,
+        cache_retention: CacheRetention::None,
         session_id: None,
     };
 
-    let mut stream = provider.stream(request);
+    let prepared = collection.prepare_call(model, request).await?;
+    let mut stream = prepared.start_attempt()?;
     while let Some(event) = stream.next().await {
         println!("{:?}", event?);
     }

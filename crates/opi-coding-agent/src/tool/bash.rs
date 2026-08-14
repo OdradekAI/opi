@@ -5,6 +5,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use opi_agent::diagnostic::code::CODE_TOOL_EXECUTION_FAILED;
+use opi_agent::tool::ToolExecutionAuthorization;
 use opi_agent::tool::{ExecutionMode, Tool, ToolDiagnostic, ToolError, ToolResult, result};
 use opi_ai::message::{OutputContent, ToolDef};
 use schemars::JsonSchema;
@@ -181,8 +182,67 @@ impl Tool for BashTool {
 
     fn execute(
         &self,
+        call_id: &str,
+        arguments: serde_json::Value,
+        signal: CancellationToken,
+        on_update: Option<opi_agent::tool::UpdateCallback>,
+    ) -> Pin<Box<dyn Future<Output = Result<ToolResult, ToolError>> + Send>> {
+        self.execute_with_authorized_backend(call_id, arguments, None, signal, on_update)
+    }
+
+    fn execute_authorized(
+        &self,
+        call_id: &str,
+        arguments: serde_json::Value,
+        authorization: ToolExecutionAuthorization,
+        signal: CancellationToken,
+        on_update: Option<opi_agent::tool::UpdateCallback>,
+    ) -> Pin<Box<dyn Future<Output = Result<ToolResult, ToolError>> + Send>> {
+        let workspace_scope_digest =
+            crate::tool_authority::digest_of(&self.workspace_root.to_string_lossy());
+        let Some(scope) =
+            crate::tool_authority::CommandPermissionScope::parse(&authorization.permission_scope)
+        else {
+            return denied_authorization_result();
+        };
+        let expected_ref_prefix = format!("command.execute:adapter:{}:", scope.adapter_id());
+        if authorization.policy_ref.is_empty()
+            || !authorization
+                .permission_ref
+                .starts_with(&expected_ref_prefix)
+            || !scope.covers_workspace(&workspace_scope_digest)
+        {
+            return denied_authorization_result();
+        }
+        self.execute_with_authorized_backend(
+            call_id,
+            arguments,
+            Some(scope.adapter_id().to_owned()),
+            signal,
+            on_update,
+        )
+    }
+
+    fn execution_mode(&self) -> ExecutionMode {
+        ExecutionMode::Sequential
+    }
+}
+
+fn denied_authorization_result()
+-> Pin<Box<dyn Future<Output = Result<ToolResult, ToolError>> + Send>> {
+    Box::pin(async {
+        Ok(result::err(vec![OutputContent::Text {
+            text: "command authorization scope is unavailable or stale".to_owned(),
+        }]))
+    })
+}
+
+impl BashTool {
+    fn execute_with_authorized_backend(
+        &self,
         _call_id: &str,
         arguments: serde_json::Value,
+        authorized_backend: Option<String>,
         signal: CancellationToken,
         _on_update: Option<opi_agent::tool::UpdateCallback>,
     ) -> Pin<Box<dyn Future<Output = Result<ToolResult, ToolError>> + Send>> {
@@ -211,6 +271,7 @@ impl Tool for BashTool {
                 signal,
                 env: Vec::new(),
                 backend,
+                authorized_backend,
             };
             let backend = match ops.exec(request).await {
                 Ok(r) => r,
@@ -289,10 +350,6 @@ impl Tool for BashTool {
             append_backend_diagnostics(&mut result, &backend.diagnostics);
             Ok(result)
         })
-    }
-
-    fn execution_mode(&self) -> ExecutionMode {
-        ExecutionMode::Sequential
     }
 }
 

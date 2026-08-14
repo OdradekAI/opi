@@ -153,6 +153,7 @@ impl RpcRunner {
             Vec::new(),
             None,
             trust_decision,
+            None,
             Vec::new(),
         )
     }
@@ -189,6 +190,7 @@ impl RpcRunner {
             Vec::new(),
             trace_sink,
             trust_decision,
+            None,
             Vec::new(),
         )
     }
@@ -222,6 +224,7 @@ impl RpcRunner {
             Vec::new(),
             None,
             trust_decision,
+            None,
             Vec::new(),
         )
     }
@@ -262,6 +265,55 @@ impl RpcRunner {
             diagnostics,
             Some(Arc::new(opi_agent::evidence::InMemoryEvidenceSink::new())),
             trust_decision,
+            None,
+            extra_routes,
+        )
+    }
+
+    /// Production runtime-package constructor with the active route's real
+    /// per-call authentication resolver.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_with_runtime_packages_and_auth(
+        provider: Box<dyn Provider>,
+        model: String,
+        config: OpiConfig,
+        workspace_root: PathBuf,
+        allow_mutating: bool,
+        tool_selection: ToolSelection,
+        user_system_prompt: Option<String>,
+        initial_messages: Vec<AgentMessage>,
+        runtime_startup: RuntimePackageStartup,
+        resume_info: Option<ResumeInfo>,
+        trace_path: Option<PathBuf>,
+        auth_resolver: Arc<dyn opi_ai::AuthResolver>,
+        extra_routes: Vec<crate::provider_factory::ProviderAuthPair>,
+    ) -> Result<Self, crate::policy::ToolPolicyError> {
+        let RuntimePackageStartup {
+            extension_registry,
+            installed_packages,
+            diagnostics,
+            trust_decision,
+        } = runtime_startup;
+        let trace_sink: Arc<dyn opi_agent::evidence::EvidenceRecorder> = match trace_path {
+            Some(path) => Arc::new(crate::evidence::FileEvidenceSink::new(path)),
+            None => Arc::new(opi_agent::evidence::InMemoryEvidenceSink::new()),
+        };
+        Self::new_with_optional_extension_registry(
+            provider,
+            model,
+            config,
+            workspace_root,
+            allow_mutating,
+            tool_selection,
+            user_system_prompt,
+            initial_messages,
+            resume_info,
+            Some(extension_registry),
+            Some(installed_packages),
+            diagnostics,
+            Some(trace_sink),
+            trust_decision,
+            Some(auth_resolver),
             extra_routes,
         )
     }
@@ -282,6 +334,7 @@ impl RpcRunner {
         startup_diagnostics: Vec<Diagnostic>,
         trace_sink: Option<Arc<dyn opi_agent::evidence::EvidenceRecorder>>,
         trust_decision: TrustDecision,
+        auth_resolver: Option<Arc<dyn opi_ai::AuthResolver>>,
         extra_routes: Vec<crate::provider_factory::ProviderAuthPair>,
     ) -> Result<Self, crate::policy::ToolPolicyError> {
         let tool_config = crate::policy::ToolRuntimeConfig::resolve(
@@ -305,6 +358,9 @@ impl RpcRunner {
                 // Record runtime diagnostics so run summaries can carry structured
                 // severity counts (Phase 7 task 7.5).
                 .record_diagnostics(true);
+        if let Some(auth_resolver) = auth_resolver {
+            builder = builder.auth_resolver(auth_resolver);
+        }
         if let Some(installed_packages) = installed_packages {
             builder = builder.installed_packages(installed_packages);
         }

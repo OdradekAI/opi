@@ -15,6 +15,7 @@
 //! stays in the routed bash backend; the authorizer adds the fail-closed
 //! immutable-policy gate in front of it.
 
+use std::collections::BTreeMap;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -25,11 +26,16 @@ use opi_agent::authority::{
     ToolAuthorizationRequest, ToolAuthorizer, ToolOrigin,
 };
 use opi_agent::evidence::CapabilityClass;
+use opi_agent::extension::CollectedExtensionTool;
 use sha2::{Digest, Sha256};
 use tokio_util::sync::CancellationToken;
 
-use crate::config::{ExecutionRunMode, PermissionDecision};
-use crate::execution::permission::{LOCAL_ADAPTER_ID, PermissionManager, PermissionPolicy};
+use crate::config::{ExecutionConfig, ExecutionRunMode, PermissionDecision};
+use crate::execution::permission::{
+    InteractivePermissionBroker, PermissionManager, PermissionPolicy,
+};
+use crate::execution::router::{CandidateDecision, Eligibility, resolve_candidate};
+use opi_tui::{PermissionChoice, PermissionSummary};
 
 /// The fixed built-in capability map (spec lines 419-423). Returns `None` for
 /// names that are not built-in Reference Product tools.
@@ -66,6 +72,52 @@ pub fn register_builtin_tools(tools: Vec<Box<dyn Tool>>) -> Vec<RegisteredTool> 
         .collect()
 }
 
+/// Convert extension-owned tool contributions into immutable registrations
+/// without inferring trust from their provider-visible names. Reference
+/// Product assembly may then apply its exact extension-capability permission
+/// filter; Phase 17 defines no implicit permission, so the default product
+/// projection excludes these registrations.
+pub fn register_extension_tools(tools: Vec<CollectedExtensionTool>) -> Vec<RegisteredTool> {
+    tools
+        .into_iter()
+        .map(|collected| {
+            let (extension_id, tool) = collected.into_parts();
+            let definition = tool.definition();
+            let name = definition.name.clone();
+            RegisteredTool::new(
+                RegistrationId::new(format!("extension:{extension_id}:{name}")),
+                name.clone(),
+                ToolOrigin::Extension {
+                    extension_id: extension_id.clone(),
+                },
+                Capability::Extension { extension_id, name },
+                definition,
+                Arc::from(tool),
+            )
+        })
+        .collect()
+}
+
+/// Assemble the Reference Product's trusted registrations without laundering
+/// extension names through the built-in capability table. Phase 17 defines no
+/// product permission language for extension capabilities, so every extension
+/// registration is intentionally excluded after its registry-owned origin has
+/// been established.
+pub fn register_product_tools(
+    builtin_tools: Vec<Box<dyn Tool>>,
+    extension_tools: Vec<CollectedExtensionTool>,
+) -> Vec<RegisteredTool> {
+    let builtin_registrations = register_builtin_tools(builtin_tools);
+    let extension_registrations = register_extension_tools(extension_tools);
+    debug_assert!(
+        extension_registrations
+            .iter()
+            .all(|registration| matches!(registration.origin, ToolOrigin::Extension { .. }))
+    );
+    drop(extension_registrations);
+    builtin_registrations
+}
+
 fn decision_str(decision: PermissionDecision) -> &'static str {
     match decision {
         PermissionDecision::Allow => "allow",
@@ -91,15 +143,14 @@ pub fn digest_of(input: &str) -> String {
 /// digest (spec lines 437-439).
 #[derive(Debug, Clone)]
 pub struct EffectiveUserPolicy {
-    run_mode: ExecutionRunMode,
     mutating_allowed: bool,
-    command_execute_permission: PermissionPolicy,
     /// Phase 17.7: whether complete evidence is required. Closed mapping: absent
     /// capture is `false` (no-op Minimal Runtime); explicit capture (CLI
     /// `--trace`, SDK embedder, RPC recording) is `true`. Under
     /// required-complete-evidence, an incomplete health generation fails closed
     /// at authorization (P17-EVD-009).
     complete_evidence_required: bool,
+    path_scope_digest: String,
     digest: String,
 }
 
@@ -159,10 +210,9 @@ impl EffectiveUserPolicy {
         // it at decision time.
         let _ = active_tool_names;
         Self {
-            run_mode,
             mutating_allowed,
-            command_execute_permission,
             complete_evidence_required,
+            path_scope_digest,
             digest,
         }
     }
@@ -178,6 +228,178 @@ impl EffectiveUserPolicy {
     }
 }
 
+/// Product-owned command permission scope carried from the authorizer to the
+/// `bash` implementation. It binds the final Allow to one reached adapter, the
+/// immutable workspace/path scope, and the one supported operation without
+/// containing command text or raw paths.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct CommandPermissionScope {
+    version: u8,
+    adapter_id: String,
+    workspace_scope_digest: String,
+    operation: String,
+}
+
+impl CommandPermissionScope {
+    fn new(adapter_id: String, workspace_scope_digest: String) -> Self {
+        Self {
+            version: 1,
+            adapter_id,
+            workspace_scope_digest,
+            operation: "execute".to_owned(),
+        }
+    }
+
+    fn render(&self) -> String {
+        serde_json::to_string(self).expect("command permission scope is serializable")
+    }
+
+    pub(crate) fn parse(value: &str) -> Option<Self> {
+        serde_json::from_str(value).ok()
+    }
+
+    pub(crate) fn adapter_id(&self) -> &str {
+        &self.adapter_id
+    }
+
+    pub(crate) fn covers_workspace(&self, workspace_scope_digest: &str) -> bool {
+        self.version == 1
+            && self.operation == "execute"
+            && self.workspace_scope_digest == workspace_scope_digest
+    }
+}
+
+/// Trusted, immutable command-routing facts used by the product authorizer.
+/// The same resolved config and eligibility catalog are supplied to execution,
+/// so authorization binds the adapter selected from the final validated args.
+#[derive(Clone)]
+pub struct CommandAuthorizationContext {
+    config: ExecutionConfig,
+    mode: ExecutionRunMode,
+    eligibility: Eligibility,
+    manager: Option<Arc<PermissionManager>>,
+    broker: Option<Arc<dyn InteractivePermissionBroker>>,
+    workspace_scope_digest: String,
+    package_names: BTreeMap<String, String>,
+}
+
+impl CommandAuthorizationContext {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        config: ExecutionConfig,
+        mode: ExecutionRunMode,
+        eligibility: Eligibility,
+        manager: Option<Arc<PermissionManager>>,
+        broker: Option<Arc<dyn InteractivePermissionBroker>>,
+        workspace_scope_digest: String,
+        package_names: BTreeMap<String, String>,
+    ) -> Self {
+        Self {
+            config,
+            mode,
+            eligibility,
+            manager,
+            broker,
+            workspace_scope_digest,
+            package_names,
+        }
+    }
+
+    async fn authorize(
+        &self,
+        arguments: &serde_json::Value,
+        cancel: CancellationToken,
+    ) -> Result<CommandAuthorization, AuthorizationError> {
+        let model_backend = arguments.get("backend").and_then(serde_json::Value::as_str);
+        let candidate =
+            match resolve_candidate(&self.config, self.mode, &self.eligibility, model_backend) {
+                CandidateDecision::Allowed(candidate) => {
+                    return Ok(self.allow(candidate.backend, "policy"));
+                }
+                CandidateDecision::Ask(candidate) => candidate,
+                CandidateDecision::Refused(failure) => {
+                    return Ok(CommandAuthorization::Deny {
+                        stable_code: failure.code().to_owned(),
+                        redacted_reason: "execution permission denied before tool launch"
+                            .to_owned(),
+                    });
+                }
+            };
+
+        if self.mode != ExecutionRunMode::Interactive {
+            return Ok(CommandAuthorization::Deny {
+                stable_code: "permission_required".to_owned(),
+                redacted_reason: "interactive approval is unavailable in this run mode".to_owned(),
+            });
+        }
+        if self
+            .manager
+            .as_deref()
+            .is_some_and(|manager| manager.has_session_grant(&candidate.backend))
+        {
+            return Ok(self.allow(candidate.backend, "session"));
+        }
+        let Some(broker) = self.broker.as_ref() else {
+            return Ok(CommandAuthorization::Deny {
+                stable_code: "permission_required".to_owned(),
+                redacted_reason: "interactive approval is required before tool execution"
+                    .to_owned(),
+            });
+        };
+        let summary = PermissionSummary {
+            adapter_id: candidate.backend.clone(),
+            package_name: self
+                .package_names
+                .get(&candidate.backend)
+                .cloned()
+                .unwrap_or_default(),
+            run_mode_label: "interactive".to_owned(),
+        };
+        let choice = tokio::select! {
+            _ = cancel.cancelled() => {
+                return Err(AuthorizationError::Unavailable("authorization cancelled".to_owned()));
+            }
+            choice = broker.resolve_ask(summary) => choice,
+        };
+        match choice {
+            PermissionChoice::AllowSession => {
+                let Some(manager) = self.manager.as_deref() else {
+                    return Err(AuthorizationError::Unavailable(
+                        "session permission state is unavailable".to_owned(),
+                    ));
+                };
+                manager.grant_session(&candidate.backend);
+                Ok(self.allow(candidate.backend, "session"))
+            }
+            PermissionChoice::AllowOnce => Ok(self.allow(candidate.backend, "invocation")),
+            PermissionChoice::Deny => Ok(CommandAuthorization::Deny {
+                stable_code: "permission_denied".to_owned(),
+                redacted_reason: "interactive approval was denied".to_owned(),
+            }),
+        }
+    }
+
+    fn allow(&self, adapter_id: String, source: &str) -> CommandAuthorization {
+        let scope =
+            CommandPermissionScope::new(adapter_id.clone(), self.workspace_scope_digest.clone());
+        CommandAuthorization::Allow {
+            permission_ref: format!("command.execute:adapter:{adapter_id}:{source}"),
+            permission_scope: scope.render(),
+        }
+    }
+}
+
+enum CommandAuthorization {
+    Allow {
+        permission_ref: String,
+        permission_scope: String,
+    },
+    Deny {
+        stable_code: String,
+        redacted_reason: String,
+    },
+}
+
 fn run_mode_label(mode: ExecutionRunMode) -> &'static str {
     match mode {
         ExecutionRunMode::Interactive => "interactive",
@@ -191,7 +413,7 @@ fn run_mode_label(mode: ExecutionRunMode) -> &'static str {
 /// adapter; never derives permission from model content.
 pub struct ProductToolAuthorizer {
     policy: Arc<EffectiveUserPolicy>,
-    permission_manager: Option<Arc<PermissionManager>>,
+    command: Option<CommandAuthorizationContext>,
 }
 
 impl ProductToolAuthorizer {
@@ -199,12 +421,9 @@ impl ProductToolAuthorizer {
     /// session-grant manager (used to honor an `ask`-granted local adapter).
     pub fn new(
         policy: Arc<EffectiveUserPolicy>,
-        permission_manager: Option<Arc<PermissionManager>>,
+        command: Option<CommandAuthorizationContext>,
     ) -> Self {
-        Self {
-            policy,
-            permission_manager,
-        }
+        Self { policy, command }
     }
 }
 
@@ -216,7 +435,7 @@ impl ToolAuthorizer for ProductToolAuthorizer {
     ) -> Pin<Box<dyn Future<Output = Result<AuthorizationDecision, AuthorizationError>> + Send>>
     {
         let policy = self.policy.clone();
-        let manager = self.permission_manager.clone();
+        let command = self.command.clone();
         Box::pin(async move {
             // P17-EVD-009: under required-complete-evidence, an incomplete health
             // generation fails closed. Unlaunched side effects are denied here;
@@ -232,22 +451,55 @@ impl ToolAuthorizer for ProductToolAuthorizer {
             // AUT-003/004: the decision derives only from the immutable policy +
             // the capability + the current health snapshot. The validated
             // `request.arguments` are intentionally NOT consulted for permission.
-            let allowed = match &request.capability {
-                Capability::Builtin(CapabilityClass::WorkspaceRead) => true,
-                Capability::Builtin(CapabilityClass::WorkspaceWrite) => policy.mutating_allowed,
-                Capability::Builtin(CapabilityClass::CommandExecute) => {
-                    command_execute_allowed(&policy, manager.as_deref())
+            let permission = match &request.capability {
+                Capability::Builtin(CapabilityClass::WorkspaceRead) => Some((
+                    request.capability.as_identity(),
+                    request.capability.as_identity(),
+                )),
+                Capability::Builtin(CapabilityClass::WorkspaceWrite) if policy.mutating_allowed => {
+                    Some((
+                        request.capability.as_identity(),
+                        format!(
+                            "workspace.write:workspace:{}:operation:mutate",
+                            policy.path_scope_digest
+                        ),
+                    ))
                 }
-                Capability::Extension { .. } => false,
+                Capability::Builtin(CapabilityClass::CommandExecute) => {
+                    let Some(command) = command else {
+                        return Ok(AuthorizationDecision::Deny {
+                            stable_code: "permission_unavailable".to_owned(),
+                            redacted_reason: "command authorization context is unavailable"
+                                .to_owned(),
+                        });
+                    };
+                    match command.authorize(&request.arguments, _cancel).await? {
+                        CommandAuthorization::Allow {
+                            permission_ref,
+                            permission_scope,
+                        } => Some((permission_ref, permission_scope)),
+                        CommandAuthorization::Deny {
+                            stable_code,
+                            redacted_reason,
+                        } => {
+                            return Ok(AuthorizationDecision::Deny {
+                                stable_code,
+                                redacted_reason,
+                            });
+                        }
+                    }
+                }
+                Capability::Builtin(CapabilityClass::WorkspaceWrite)
+                | Capability::Extension { .. } => None,
                 // Capability is non_exhaustive; a future capability class is
                 // not permitted by the current product policy (fail-closed).
-                _ => false,
+                _ => None,
             };
-            if allowed {
+            if let Some((permission_ref, permission_scope)) = permission {
                 Ok(AuthorizationDecision::Allow {
                     policy_ref: policy.digest().to_owned(),
-                    permission_ref: request.capability.as_identity(),
-                    permission_scope: request.capability.as_identity(),
+                    permission_ref,
+                    permission_scope,
                     registration_id: request.registration_id.clone(),
                     capability: request.capability.clone(),
                     evidence_health_generation: request.evidence_health.generation(),
@@ -259,29 +511,5 @@ impl ToolAuthorizer for ProductToolAuthorizer {
                 })
             }
         })
-    }
-}
-
-fn command_execute_allowed(
-    policy: &EffectiveUserPolicy,
-    manager: Option<&PermissionManager>,
-) -> bool {
-    // Reuse the existing command.execute permission policy for the local
-    // adapter: Allow -> proceed; Deny -> fail closed; Ask -> a live session
-    // grant covers it, otherwise interactive runs defer the prompt to the routed
-    // bash backend (Tool::execute) and headless runs fail closed.
-    match policy
-        .command_execute_permission
-        .decision_for(LOCAL_ADAPTER_ID)
-    {
-        PermissionDecision::Allow => true,
-        PermissionDecision::Deny => false,
-        PermissionDecision::Ask => {
-            if manager.is_some_and(|m| m.has_session_grant(LOCAL_ADAPTER_ID)) {
-                true
-            } else {
-                matches!(policy.run_mode, ExecutionRunMode::Interactive)
-            }
-        }
     }
 }

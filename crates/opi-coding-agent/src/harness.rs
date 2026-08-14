@@ -10,13 +10,9 @@
 //! - interactive commands and product defaults;
 //! - extension-state restore/persist and session resume/fork/branch.
 //!
-//! The generic turn lifecycle, phase guards, save points, runtime-config
-//! snapshots, and pending-write ordering live in [`opi_agent::harness`] (the
-//! `AgentHarness` seam). `CodingHarness` drives turns through the generic
-//! [`opi_agent::Agent`] loop and persists through the generic
-//! [`opi_agent::session`] storage today; routing the product turn loop through
-//! `AgentHarness` itself is a later incremental migration (see the
-//! `opi_agent::harness` module docs), intentionally not a thin adapter.
+//! [`opi_agent::Agent`] owns the generic turn loop and complete next-turn state;
+//! [`opi_agent::harness::SessionFacade`] owns the product-neutral ordered
+//! session seam. `CodingHarness` composes those mechanisms with product policy.
 //!
 //! Boundary contract: product/CLI/package policy must not move into `opi-agent`.
 //! This is pinned by `coding_harness_wrapper_keeps_product_policy_out_of_opi_agent`,
@@ -35,7 +31,7 @@ use opi_agent::diagnostic::{
     Diagnostic, DiagnosticPayload, RedactionMode, SOURCE_SESSION, Severity,
 };
 use opi_agent::event::AgentEvent;
-use opi_agent::extension::ExtensionRegistry;
+use opi_agent::extension::{CollectedExtensionTool, ExtensionRegistry};
 use opi_agent::hooks::AgentHooks;
 use opi_agent::loop_types::{AgentError, AgentLoopConfig};
 use opi_agent::message::AgentMessage;
@@ -99,6 +95,184 @@ fn evidence_outcome<T>(result: &Result<T, AgentError>) -> opi_agent::evidence::T
         Err(AgentError::Cancelled) => opi_agent::evidence::TerminalOutcome::Cancelled,
         Err(_) => opi_agent::evidence::TerminalOutcome::Failed,
     }
+}
+
+fn compaction_reason_name(reason: opi_agent::session_event::CompactionReason) -> &'static str {
+    match reason {
+        opi_agent::session_event::CompactionReason::Manual => "manual",
+        opi_agent::session_event::CompactionReason::Threshold => "threshold",
+        opi_agent::session_event::CompactionReason::Overflow => "overflow",
+    }
+}
+
+fn canonical_json(value: serde_json::Value) -> String {
+    fn sorted(value: serde_json::Value) -> serde_json::Value {
+        match value {
+            serde_json::Value::Array(values) => {
+                serde_json::Value::Array(values.into_iter().map(sorted).collect())
+            }
+            serde_json::Value::Object(values) => {
+                let mut entries = values.into_iter().collect::<Vec<_>>();
+                entries.sort_by(|(left, _), (right, _)| left.cmp(right));
+                let mut output = serde_json::Map::new();
+                for (key, value) in entries {
+                    output.insert(key, sorted(value));
+                }
+                serde_json::Value::Object(output)
+            }
+            scalar => scalar,
+        }
+    }
+
+    serde_json::to_string(&sorted(value)).expect("JSON value serialization cannot fail")
+}
+
+fn evidence_digest(value: serde_json::Value) -> opi_agent::evidence::ContentDigest {
+    opi_agent::evidence::ContentDigest::from_hex(crate::tool_authority::digest_of(&canonical_json(
+        value,
+    )))
+    .expect("digest_of returns canonical SHA-256 hex")
+}
+
+fn permission_decision_name(decision: PermissionDecision) -> &'static str {
+    match decision {
+        PermissionDecision::Deny => "deny",
+        PermissionDecision::Ask => "ask",
+        PermissionDecision::Allow => "allow",
+    }
+}
+
+fn rebind_evidence_capture(
+    capture: &mut EvidenceCapture,
+    agent: &Agent,
+    config: &OpiConfig,
+    system_prompt: &str,
+    model_registry: &opi_ai::ProviderCollection,
+) {
+    let state = agent.state_snapshot();
+    let model_spec = state.model_selection.to_spec();
+    let model = model_registry
+        .resolve(&model_spec)
+        .map(|(_, model)| model)
+        .expect("agent state is validated against the dispatch collection");
+    let tool_definitions = agent.tool_definitions_snapshot();
+    let tool_schema_digests = tool_definitions
+        .iter()
+        .map(|definition| {
+            evidence_digest(serde_json::json!({
+                "name": definition.name,
+                "description": definition.description,
+                "input_schema": definition.input_schema,
+            }))
+        })
+        .collect::<Vec<_>>();
+    let system_digest = Some(evidence_digest(serde_json::json!({
+        "system": system_prompt,
+    })));
+    let thinking_level = state.inference.thinking.level.wire_name().unwrap_or("none");
+    let execution_rules = config
+        .execution
+        .rules
+        .iter()
+        .map(|rule| {
+            serde_json::json!({
+                "modes": rule.modes.as_ref().map(|modes| {
+                    modes.iter().map(ToString::to_string).collect::<Vec<_>>()
+                }),
+                "backend": rule.backend,
+            })
+        })
+        .collect::<Vec<_>>();
+    let execution_permissions = config
+        .execution
+        .permissions
+        .iter()
+        .map(|(adapter, decision)| {
+            serde_json::json!({
+                "adapter": adapter,
+                "decision": permission_decision_name(*decision),
+            })
+        })
+        .collect::<Vec<_>>();
+    let harness_digest = evidence_digest(serde_json::json!({
+        "version": 1,
+        "model": model_spec,
+        "system_digest": system_digest.as_ref().map(|digest| digest.as_hex()),
+        "tool_schema_digests": tool_schema_digests
+            .iter()
+            .map(|digest| digest.as_hex())
+            .collect::<Vec<_>>(),
+    }));
+    let runtime_digest = evidence_digest(serde_json::json!({
+        "max_turns": config.defaults.max_iterations,
+        "retry": {
+            "max_attempts": config.retry.max_attempts,
+            "initial_delay_ms": config.retry.initial_delay_ms,
+            "max_delay_ms": config.retry.max_delay_ms,
+        },
+        "inference": {
+            "thinking_enabled": state.inference.thinking.enabled,
+            "thinking_budget_tokens": state.inference.thinking.budget_tokens,
+            "thinking_level": thinking_level,
+            "max_tokens": state.inference.max_tokens,
+            "temperature": state.inference.temperature,
+        },
+        "compaction": {
+            "enabled": config.compaction.enabled,
+            "threshold_tokens": config.compaction.threshold_tokens,
+        },
+    }));
+    let adapter_digest = evidence_digest(serde_json::json!({
+        "provider": state.model_selection.provider_id,
+        "model": state.model_selection.model_id,
+        "wire": model.wire_api,
+    }));
+    let material_digest = evidence_digest(serde_json::json!({
+        "execution": {
+            "strategy": config.execution.strategy.to_string(),
+            "backend": config.execution.backend,
+            "rules": execution_rules,
+            "permissions": execution_permissions,
+        },
+        "tool_timeout_ms": config.defaults.tool_timeout_ms,
+        "max_image_bytes": config.defaults.max_image_bytes,
+        "allow_mutating_tools": config.defaults.allow_mutating_tools,
+    }));
+    let material_inputs = canonical_json(serde_json::json!({
+        "model": model_spec,
+        "system_digest": system_digest.as_ref().map(|digest| digest.as_hex()),
+        "tool_schema_digests": tool_schema_digests
+            .iter()
+            .map(|digest| digest.as_hex())
+            .collect::<Vec<_>>(),
+        "inference": {
+            "thinking_enabled": state.inference.thinking.enabled,
+            "thinking_budget_tokens": state.inference.thinking.budget_tokens,
+            "thinking_level": thinking_level,
+            "max_tokens": state.inference.max_tokens,
+            "temperature": state.inference.temperature,
+        },
+    }));
+    capture.rebind(
+        opi_agent::evidence::ConfigIdentity {
+            harness_digest,
+            runtime_digest,
+            adapter_digest,
+            material_digest,
+        },
+        &material_inputs,
+        system_digest,
+        tool_schema_digests,
+        opi_agent::evidence::RouteSelection {
+            provider_id: state.model_selection.provider_id,
+            model_id: state.model_selection.model_id,
+            wire: model.wire_api,
+        },
+        opi_agent::evidence::Measurement::Known {
+            value: u64::from(config.defaults.max_iterations),
+            origin: opi_agent::evidence::MeasurementOrigin::Quota,
+        },
+    );
 }
 
 /// Phase 16.9: resolved routed-execution inputs threaded into
@@ -419,10 +593,7 @@ pub struct ResumeInfo {
 /// context files, package resources/adapters, interactive commands, product
 /// defaults, extension-state restore/persist) and composes it over the generic
 /// [`Agent`] loop, [`AgentHooks`], [`ExtensionRegistry`], generic session
-/// storage, [`opi_ai::ProviderCollection`], and compaction. Generic turn
-/// lifecycle / phase / save-point / pending-write semantics are owned by
-/// [`opi_agent::harness`]. See the module docs for the product-vs-generic
-/// boundary and the incremental `AgentHarness`-adoption note.
+/// storage, [`opi_ai::ProviderCollection`], and compaction.
 pub struct CodingHarness {
     agent: Agent,
     config: OpiConfig,
@@ -441,6 +612,10 @@ pub struct CodingHarness {
     dispatchable_provider_ids: Vec<String>,
     extension_registry: Option<ExtensionRegistry>,
     session: Option<SessionCoordinator>,
+    /// Deferred typed failure from a requested builder-driven resume. Public
+    /// operations surface it before dispatch instead of silently running
+    /// without the requested session.
+    session_resume_error: Option<String>,
     /// Message count before the current turn - used to slice only new messages for persistence.
     turn_offset: usize,
     /// Images queued from --image CLI flag, injected into the first prompt.
@@ -453,8 +628,8 @@ pub struct CodingHarness {
     /// summary can report severity counts. `None` (the default) leaves the
     /// diagnostic sink unset, preserving pre-7.5 behavior.
     diagnostics: Option<Arc<RecordingSink>>,
-    /// Phase 17.7 evidence capture: the recorder + immutable run-binding static
-    /// facts used to assemble the finalized manifest. `None` is the capture-
+    /// Phase 17.7 evidence capture: the recorder + per-run binding facts used
+    /// to assemble the finalized manifest. `None` is the capture-
     /// disabled no-op (Minimal Runtime); the Agent's evidence sink stays unset.
     evidence: Option<EvidenceCapture>,
     /// The OS-keychain-backed credential store, set by production startup.
@@ -657,9 +832,9 @@ fn push_metadata_section(
 }
 
 fn filter_extension_tools(
-    tools: Vec<Box<dyn Tool>>,
+    tools: Vec<CollectedExtensionTool>,
     selection: &ToolSelection,
-) -> Vec<Box<dyn Tool>> {
+) -> Vec<CollectedExtensionTool> {
     match selection {
         ToolSelection::Default | ToolSelection::NoBuiltin => tools,
         ToolSelection::Disabled => Vec::new(),
@@ -1249,8 +1424,10 @@ impl CodingHarness {
                 .into_iter()
                 .map(str::to_owned)
                 .collect::<Vec<_>>();
-            extension_tools =
-                filter_extension_tools(registry.collect_tools(), &build_options.tool_selection);
+            extension_tools = filter_extension_tools(
+                registry.collect_tools_with_origin(),
+                &build_options.tool_selection,
+            );
             hooks = registry.wrap_hooks(hooks);
         }
 
@@ -1263,45 +1440,93 @@ impl CodingHarness {
         // state. Other execution configurations retain routed assembly.
         let execution =
             harness_execution(&config, &resolved_global_dir, build_options.execution_mode);
-        let (mut tools, tool_diagnostics, permission_manager, permission_prompt_rx) =
-            match execution {
-                HarnessExecution::DirectLocal => {
-                    let (tools, diagnostics) =
-                        Self::build_minimal_runtime_tools(&workspace_root, &tool_config);
-                    (tools, diagnostics, None, None)
-                }
-                HarnessExecution::Refused(failure) => {
-                    let (tools, diagnostics) =
-                        Self::build_refused_execution_tools(&workspace_root, &tool_config, failure);
-                    (tools, diagnostics, None, None)
-                }
-                HarnessExecution::Routed(mut execution) => {
-                    let permission_manager = Some(Arc::clone(&execution.manager));
-                    let permission_prompt_rx =
-                        if build_options.execution_mode == ExecutionRunMode::Interactive {
-                            #[cfg(test)]
-                            crate::execution::runtime::construction_probe::broker_constructed();
-                            let (tx, rx) =
-                                mpsc::channel::<crate::interactive::PermissionPromptRequest>(8);
-                            execution.broker =
-                                Some(Arc::new(crate::interactive::TuiPermissionBroker::new(tx)));
-                            Some(rx)
-                        } else {
-                            None
-                        };
-                    let (tools, diagnostics) =
-                        Self::build_tools(&workspace_root, &tool_config, &execution);
-                    (tools, diagnostics, permission_manager, permission_prompt_rx)
-                }
-            };
-        tools.extend(extension_tools);
+        let workspace_scope_digest =
+            crate::tool_authority::digest_of(&workspace_root.to_string_lossy());
+        let (
+            tools,
+            tool_diagnostics,
+            permission_manager,
+            permission_prompt_rx,
+            command_authorization,
+        ) = match execution {
+            HarnessExecution::DirectLocal => {
+                let (tools, diagnostics) =
+                    Self::build_minimal_runtime_tools(&workspace_root, &tool_config);
+                let policy = PermissionPolicy::from_map(config.execution.permissions.clone());
+                let command = crate::tool_authority::CommandAuthorizationContext::new(
+                    config.execution.clone(),
+                    build_options.execution_mode,
+                    Eligibility::from_enabled(&[], &policy),
+                    None,
+                    None,
+                    workspace_scope_digest.clone(),
+                    std::collections::BTreeMap::new(),
+                );
+                (tools, diagnostics, None, None, command)
+            }
+            HarnessExecution::Refused(failure) => {
+                let (tools, diagnostics) =
+                    Self::build_refused_execution_tools(&workspace_root, &tool_config, failure);
+                let policy = PermissionPolicy::from_map(config.execution.permissions.clone());
+                let command = crate::tool_authority::CommandAuthorizationContext::new(
+                    config.execution.clone(),
+                    build_options.execution_mode,
+                    Eligibility::from_enabled(&[], &policy),
+                    None,
+                    None,
+                    workspace_scope_digest.clone(),
+                    std::collections::BTreeMap::new(),
+                );
+                (tools, diagnostics, None, None, command)
+            }
+            HarnessExecution::Routed(mut execution) => {
+                let permission_manager = Some(Arc::clone(&execution.manager));
+                let permission_prompt_rx = if build_options.execution_mode
+                    == ExecutionRunMode::Interactive
+                {
+                    #[cfg(test)]
+                    crate::execution::runtime::construction_probe::broker_constructed();
+                    let (tx, rx) = mpsc::channel::<crate::interactive::PermissionPromptRequest>(8);
+                    execution.broker =
+                        Some(Arc::new(crate::interactive::TuiPermissionBroker::new(tx)));
+                    Some(rx)
+                } else {
+                    None
+                };
+                let (tools, diagnostics) =
+                    Self::build_tools(&workspace_root, &tool_config, &execution);
+                let package_names = execution
+                    .enabled
+                    .iter()
+                    .map(|identity| (identity.adapter_id.clone(), identity.package_name.clone()))
+                    .collect();
+                let command = crate::tool_authority::CommandAuthorizationContext::new(
+                    execution.config.clone(),
+                    execution.mode,
+                    Eligibility::from_enabled(&execution.enabled, &execution.policy),
+                    Some(Arc::clone(&execution.manager)),
+                    execution.broker.clone(),
+                    workspace_scope_digest.clone(),
+                    package_names,
+                );
+                (
+                    tools,
+                    diagnostics,
+                    permission_manager,
+                    permission_prompt_rx,
+                    command,
+                )
+            }
+        };
         // Phase 17.4: register the built-in Reference Product tools as trusted
-        // registrations with their fixed capabilities. Extension/embedder tools
-        // without an exact existing capability permission are excluded (fail-
-        // closed; no implicit allow). The system-prompt tool definitions are
-        // projected from the trusted registrations so excluded tools never appear
-        // model-visible (AUT-008).
-        let registrations = crate::tool_authority::register_builtin_tools(tools);
+        // registrations with their fixed capabilities. Extension registrations
+        // retain their registry-owned origin before the product's exact-
+        // permission filter excludes them (Phase 17 adds no implicit extension
+        // permission). They are never combined with the product-owned built-in
+        // vector, so an extension named read/write/bash cannot acquire Builtin
+        // origin. The system-prompt projection uses only the permitted trusted
+        // registrations (AUT-008).
+        let registrations = crate::tool_authority::register_product_tools(tools, extension_tools);
         let tool_defs: Vec<_> = registrations.iter().map(|r| r.definition.clone()).collect();
 
         // Build the immutable digest-addressed effective user policy and the
@@ -1329,14 +1554,14 @@ impl CodingHarness {
             crate::tool_authority::digest_of(&format!("{:?}", build_options.installed_packages)),
             // Path/operation-scope fact: the workspace boundary anchor. A finer
             // protected-path/workspace-scope digest can refine this in a later task.
-            crate::tool_authority::digest_of(&workspace_root.to_string_lossy()),
+            workspace_scope_digest,
         ));
         // Capture the policy digest before it moves into the authorizer; the
         // evidence manifest addresses the effective policy by this digest.
         let evidence_policy_digest_hex = effective_policy.digest().to_owned();
         let authorizer = Arc::new(crate::tool_authority::ProductToolAuthorizer::new(
             effective_policy,
-            permission_manager.clone(),
+            Some(command_authorization),
         ));
 
         let mut builder = SystemPromptBuilder::new().tools(tool_defs);
@@ -1489,16 +1714,25 @@ impl CodingHarness {
         let recorded_model = resume.as_ref().and_then(|info| info.recorded_model.clone());
         let recorded_thinking = resume.as_ref().and_then(|info| info.recorded_thinking);
 
-        let session = if let Some(info) = resume {
-            SessionCoordinator::open_existing(
+        let (session, session_resume_error) = if let Some(info) = resume {
+            let path_display = info.path.display().to_string();
+            match SessionCoordinator::open_existing(
                 info.path,
-                info.session_id,
+                info.session_id.clone(),
                 &info.entries,
                 initial_len,
                 compaction_config,
                 model.clone(),
-            )
-            .ok()
+            ) {
+                Ok(session) => (Some(session), None),
+                Err(error) => (
+                    None,
+                    Some(format!(
+                        "could not open requested session '{}' at {path_display}: {error}",
+                        info.session_id
+                    )),
+                ),
+            }
         } else {
             #[cfg(test)]
             let session_dir = session_dir_override
@@ -1506,7 +1740,10 @@ impl CodingHarness {
                 .unwrap_or_else(crate::session_cli::session_dir);
             #[cfg(not(test))]
             let session_dir = crate::session_cli::session_dir();
-            SessionCoordinator::new(&session_dir, &cwd, compaction_config, model.clone()).ok()
+            (
+                SessionCoordinator::new(&session_dir, &cwd, compaction_config, model.clone()).ok(),
+                None,
+            )
         };
 
         // Opt-in diagnostic recording: install a RecordingSink on the agent so
@@ -1520,39 +1757,35 @@ impl CodingHarness {
             None
         };
 
-        // Phase 17.7: assemble the evidence capture (recorder + immutable
-        // run-binding static facts) and bind the recorder as the Agent's
+        // Phase 17.7: assemble the evidence capture (recorder + per-run binding
+        // facts) and bind the recorder as the Agent's
         // EvidenceSink so the loop emits through it. Absent capture leaves the
         // sink unset (Minimal Runtime no-op, P17-EVD-006).
         let evidence = build_options.evidence.map(|cfg| {
-            let harness_digest = opi_agent::evidence::ContentDigest::from_hex(
-                crate::tool_authority::digest_of(&format!("system+model|{system_prompt}|{model}")),
-            );
-            let runtime_digest = opi_agent::evidence::ContentDigest::from_hex(
-                crate::tool_authority::digest_of(&format!(
-                    "max_turns={}|retry={:?}",
-                    config.defaults.max_iterations, config.retry
-                )),
-            );
-            let adapter_digest = opi_agent::evidence::ContentDigest::from_hex(
-                crate::tool_authority::digest_of(&format!("active_provider|{active_provider_id}")),
-            );
-            let material_digest = opi_agent::evidence::ContentDigest::from_hex(
-                crate::tool_authority::digest_of(&format!("execution|{:?}", config.execution)),
-            );
-            let config_identity = opi_agent::evidence::ConfigIdentity {
-                harness_digest,
-                runtime_digest,
-                adapter_digest,
-                material_digest,
-            };
+            let placeholder_digest = opi_agent::evidence::ContentDigest::from_hex(
+                crate::tool_authority::digest_of("pending per-run evidence binding"),
+            )
+            .expect("digest_of returns canonical SHA-256 hex");
             let material_inputs = format!("{system_prompt}\n{model}\n{evidence_policy_digest_hex}");
-            let capture = EvidenceCapture::new(
+            let mut capture = EvidenceCapture::new(
                 cfg.recorder,
                 cfg.source,
-                opi_agent::evidence::ContentDigest::from_hex(evidence_policy_digest_hex),
-                config_identity,
+                opi_agent::evidence::ContentDigest::from_hex(evidence_policy_digest_hex)
+                    .expect("effective policy digest is canonical SHA-256 hex"),
+                opi_agent::evidence::ConfigIdentity {
+                    harness_digest: placeholder_digest.clone(),
+                    runtime_digest: placeholder_digest.clone(),
+                    adapter_digest: placeholder_digest.clone(),
+                    material_digest: placeholder_digest,
+                },
                 &material_inputs,
+            );
+            rebind_evidence_capture(
+                &mut capture,
+                &agent,
+                &config,
+                &system_prompt,
+                &dispatch_collection,
             );
             // The recorder is also the Agent's evidence sink (EvidenceRecorder
             // is a sub-trait of EvidenceSink), so the loop emits through it.
@@ -1569,6 +1802,7 @@ impl CodingHarness {
             dispatchable_provider_ids,
             extension_registry: active_extension_registry,
             session,
+            session_resume_error,
             turn_offset: initial_len,
             pending_images: Vec::new(),
             pending_extension_state: resume_extension_state,
@@ -1617,8 +1851,40 @@ impl CodingHarness {
 
     /// Change the model used by subsequent prompts.
     pub fn set_model(&mut self, model: String) {
-        self.agent.set_model(model);
+        self.apply_agent_model(&model)
+            .expect("model change must keep a dispatchable route");
         self.sync_session_cost_model();
+    }
+
+    fn apply_agent_model(&mut self, model: &str) -> Result<(), String> {
+        let spec = if model.contains(':') {
+            model.to_owned()
+        } else {
+            format!("{}:{model}", self.agent.provider_id())
+        };
+        let selection = opi_agent::loop_types::ModelSelection::parse_spec(&spec)
+            .ok_or_else(|| format!("invalid provider:model selection '{spec}'"))?;
+        let mut candidate = self.agent.state_snapshot();
+        candidate.model_selection = selection;
+        self.agent
+            .replace_state(candidate)
+            .map_err(|error| error.to_string())
+    }
+
+    fn replace_agent_context(&mut self, context: Vec<AgentMessage>) -> Result<(), String> {
+        let mut candidate = self.agent.state_snapshot();
+        candidate.context = context;
+        self.agent
+            .replace_state(candidate)
+            .map_err(|error| error.to_string())
+    }
+
+    fn rewind_agent_context(&mut self, len: usize) -> Result<(), String> {
+        let mut candidate = self.agent.state_snapshot();
+        candidate.context.truncate(len);
+        self.agent
+            .replace_state(candidate)
+            .map_err(|error| error.to_string())
     }
 
     /// Validate and change the model used by subsequent prompts.
@@ -1647,7 +1913,7 @@ impl CodingHarness {
                 .append_model_change(canonical, input_source)
                 .map_err(|e| format!("model change write failed: {e}"))?;
         }
-        self.agent.set_model(model);
+        self.apply_agent_model(&model)?;
         self.sync_session_cost_model();
         Ok(self.agent.model_spec())
     }
@@ -1763,8 +2029,12 @@ impl CodingHarness {
     }
 
     fn apply_thinking_change(&mut self, change: PendingThinkingChange) -> RuntimeThinkingState {
-        self.agent.set_max_tokens(change.max_tokens);
-        self.agent.set_thinking_config(change.thinking);
+        let mut candidate = self.agent.state_snapshot();
+        candidate.inference.max_tokens = change.max_tokens;
+        candidate.inference.thinking = change.thinking.unwrap_or_default();
+        self.agent
+            .replace_state(candidate)
+            .expect("thinking change must preserve the dispatchable route");
         change.state
     }
 
@@ -1898,7 +2168,7 @@ impl CodingHarness {
         let recovery = session.recovery.clone();
         let ctx = reconstruct_context(&session.entries, &recovery);
         let message_count = ctx.messages.len();
-        self.agent.replace_messages(ctx.messages);
+        self.replace_agent_context(ctx.messages)?;
         self.defer_extension_state_from_entries(&session.entries);
 
         // Apply recorded model/thinking metadata (latest-wins on the active
@@ -1919,15 +2189,18 @@ impl CodingHarness {
             enabled: self.config.compaction.enabled,
             threshold_tokens: self.config.compaction.threshold_tokens,
         };
-        self.session = SessionCoordinator::open_existing(
-            session.path,
-            session.header.id,
-            &session.entries,
-            message_count,
-            compaction_config,
-            self.agent.model().to_string(),
-        )
-        .ok();
+        self.session = Some(
+            SessionCoordinator::open_existing(
+                session.path,
+                session.header.id,
+                &session.entries,
+                message_count,
+                compaction_config,
+                self.agent.model().to_string(),
+            )
+            .map_err(|error| format!("failed to reopen resumed session: {error}"))?,
+        );
+        self.session_resume_error = None;
         self.sync_session_cost_model();
         self.sync_session_id();
         self.turn_offset = message_count;
@@ -2000,7 +2273,8 @@ impl CodingHarness {
             );
             return;
         }
-        self.agent.set_model(normalized);
+        self.apply_agent_model(&normalized)
+            .expect("recorded model was validated before application");
     }
 
     /// Normalize a recorded model spec against the dispatchable collection
@@ -2084,7 +2358,7 @@ impl CodingHarness {
             .map_err(|e| e.to_string())?;
         let ctx = reconstruct_context(&forked.entries, &forked.recovery);
         let message_count = ctx.messages.len();
-        self.agent.replace_messages(ctx.messages);
+        self.replace_agent_context(ctx.messages)?;
         self.defer_extension_state_from_entries(&forked.entries);
         // Phase 17.8: re-apply the forked chain's recorded route (canonical
         // accepted; legacy bare normalized against the dispatchable collection
@@ -2195,7 +2469,7 @@ impl CodingHarness {
             .map_err(|e| format!("failed to read selected branch: {e}"))?;
         let ctx = reconstruct_context(&entries, &recovery);
         let message_count = ctx.messages.len();
-        self.agent.replace_messages(ctx.messages);
+        self.replace_agent_context(ctx.messages)?;
         self.defer_extension_state_from_entries(&entries);
         // Phase 17.8: re-apply the selected branch's recorded route (canonical
         // accepted; legacy bare normalized against the dispatchable collection
@@ -2229,26 +2503,32 @@ impl CodingHarness {
 
     /// Send a user prompt and run the agent loop.
     pub async fn prompt(&mut self, text: &str) -> Result<Vec<AgentMessage>, AgentError> {
+        self.ensure_session_resume_ready()?;
         self.restore_pending_extension_state().await;
         self.setup_evidence_run()?;
         // C5: discard any unpersisted failed-turn user message before starting
         // a fresh turn so it is not absorbed into this turn's persistence slice.
         // (retry_last_prompt intentionally does NOT rewind — it reuses the
         // failed-turn user message after an interactive login.)
-        self.agent.rewind_to(self.turn_offset);
+        self.rewind_agent_context(self.turn_offset)
+            .map_err(AgentError::InvalidNextTurnCandidate)?;
         let offset = self.turn_offset;
         let result = self.agent.prompt(text).await;
         let outcome = evidence_outcome(&result);
         let messages = match result {
             Ok(m) => m,
             Err(e) => {
-                self.finalize_evidence_run(outcome, &[], text);
+                if let Err(finalization) = self.finalize_evidence_run(outcome, &[], text) {
+                    return Err(AgentError::EvidenceFinalization(format!(
+                        "{finalization}; original run error: {e}"
+                    )));
+                }
                 return Err(e);
             }
         };
         let new = &messages[offset..];
         self.persist_turn(new, offset).await;
-        self.finalize_evidence_run(outcome, new, text);
+        self.finalize_evidence_run(outcome, new, text)?;
         let final_messages = self.current_messages();
         self.turn_offset = final_messages.len();
         Ok(final_messages)
@@ -2260,11 +2540,13 @@ impl CodingHarness {
         &mut self,
         content: Vec<opi_ai::message::InputContent>,
     ) -> Result<Vec<AgentMessage>, AgentError> {
+        self.ensure_session_resume_ready()?;
         self.restore_pending_extension_state().await;
         self.setup_evidence_run()?;
         // C5: discard any unpersisted failed-turn user message before starting a
         // fresh turn (see `prompt`).
-        self.agent.rewind_to(self.turn_offset);
+        self.rewind_agent_context(self.turn_offset)
+            .map_err(AgentError::InvalidNextTurnCandidate)?;
         let offset = self.turn_offset;
         let prompt_text = Self::render_input_content(&content);
         let result = self.agent.prompt_with_content(content).await;
@@ -2272,13 +2554,17 @@ impl CodingHarness {
         let messages = match result {
             Ok(m) => m,
             Err(e) => {
-                self.finalize_evidence_run(outcome, &[], &prompt_text);
+                if let Err(finalization) = self.finalize_evidence_run(outcome, &[], &prompt_text) {
+                    return Err(AgentError::EvidenceFinalization(format!(
+                        "{finalization}; original run error: {e}"
+                    )));
+                }
                 return Err(e);
             }
         };
         let new = &messages[offset..];
         self.persist_turn(new, offset).await;
-        self.finalize_evidence_run(outcome, new, &prompt_text);
+        self.finalize_evidence_run(outcome, new, &prompt_text)?;
         let final_messages = self.current_messages();
         self.turn_offset = final_messages.len();
         Ok(final_messages)
@@ -2289,6 +2575,7 @@ impl CodingHarness {
     /// The user message from the original `prompt`/`continue_` call is already
     /// in the agent's message list, so re-prompting would duplicate it.
     pub async fn retry_last_prompt(&mut self) -> Result<Vec<AgentMessage>, AgentError> {
+        self.ensure_session_resume_ready()?;
         self.restore_pending_extension_state().await;
         self.setup_evidence_run()?;
         let offset = self.turn_offset;
@@ -2298,13 +2585,17 @@ impl CodingHarness {
         let messages = match result {
             Ok(m) => m,
             Err(e) => {
-                self.finalize_evidence_run(outcome, &[], &prompt_text);
+                if let Err(finalization) = self.finalize_evidence_run(outcome, &[], &prompt_text) {
+                    return Err(AgentError::EvidenceFinalization(format!(
+                        "{finalization}; original run error: {e}"
+                    )));
+                }
                 return Err(e);
             }
         };
         let new = &messages[offset..];
         self.persist_turn(new, offset).await;
-        self.finalize_evidence_run(outcome, new, &prompt_text);
+        self.finalize_evidence_run(outcome, new, &prompt_text)?;
         let final_messages = self.current_messages();
         self.turn_offset = final_messages.len();
         Ok(final_messages)
@@ -2312,6 +2603,7 @@ impl CodingHarness {
 
     /// Continue the conversation with an additional message.
     pub async fn continue_(&mut self, text: &str) -> Result<Vec<AgentMessage>, AgentError> {
+        self.ensure_session_resume_ready()?;
         self.restore_pending_extension_state().await;
         self.setup_evidence_run()?;
         let offset = self.turn_offset;
@@ -2320,13 +2612,17 @@ impl CodingHarness {
         let messages = match result {
             Ok(m) => m,
             Err(e) => {
-                self.finalize_evidence_run(outcome, &[], text);
+                if let Err(finalization) = self.finalize_evidence_run(outcome, &[], text) {
+                    return Err(AgentError::EvidenceFinalization(format!(
+                        "{finalization}; original run error: {e}"
+                    )));
+                }
                 return Err(e);
             }
         };
         let new = &messages[offset..];
         self.persist_turn(new, offset).await;
-        self.finalize_evidence_run(outcome, new, text);
+        self.finalize_evidence_run(outcome, new, text)?;
         let final_messages = self.current_messages();
         self.turn_offset = final_messages.len();
         Ok(final_messages)
@@ -2413,12 +2709,18 @@ impl CodingHarness {
                 // Emit a correlated Compaction evidence record in the run's
                 // graph (P17-EVD-002: compaction retains run/turn/call
                 // correlation and kind).
-                let _ = self.agent.emit_compaction_evidence(&format!("{reason:?}"));
+                let _ = self
+                    .agent
+                    .emit_compaction_evidence(compaction_reason_name(reason));
                 match session.execute_compaction(reason) {
                     Ok(Some(out)) => {
                         let wire = to_wire_result(&out);
                         self.record_harness_diagnostic(out.diagnostic.clone());
-                        self.agent.replace_messages(out.new_agent_messages);
+                        let mut candidate = self.agent.state_snapshot();
+                        candidate.context = out.new_agent_messages;
+                        self.agent
+                            .replace_state(candidate)
+                            .expect("compaction must preserve the dispatchable route");
                         self.agent.emit_event(AgentEvent::CompactionEnd {
                             reason,
                             result: Some(wire),
@@ -2487,10 +2789,6 @@ impl CodingHarness {
 
     /// Return the current message buffer (after any compaction).
     fn current_messages(&self) -> Vec<AgentMessage> {
-        // The Agent's `set_initial_messages` / `replace_messages` API doesn't
-        // expose a getter, so we re-derive the buffer from what was returned
-        // by the loop plus any post-loop mutation. Simplest correct option:
-        // ask the Agent via a new getter.
         self.agent.messages_snapshot()
     }
 
@@ -2506,13 +2804,27 @@ impl CodingHarness {
         }
     }
 
+    fn ensure_session_resume_ready(&self) -> Result<(), AgentError> {
+        match &self.session_resume_error {
+            Some(error) => Err(AgentError::SessionResume(error.clone())),
+            None => Ok(()),
+        }
+    }
+
     /// Prepare the evidence sink before the run (fail-closed). A setup failure
     /// aborts the run as `AgentError::EvidenceSetup` before its first
     /// provider/tool call so the run never starts with unprepared capture
     /// (P17-EVD-007). No-op when capture is not configured.
-    fn setup_evidence_run(&self) -> Result<(), AgentError> {
+    fn setup_evidence_run(&mut self) -> Result<(), AgentError> {
         self.clear_run_diagnostics();
-        if let Some(capture) = &self.evidence {
+        if let Some(capture) = &mut self.evidence {
+            rebind_evidence_capture(
+                capture,
+                &self.agent,
+                &self.config,
+                &self.system_prompt,
+                &self.model_registry,
+            );
             capture
                 .recorder
                 .setup(&capture.binding)
@@ -2526,50 +2838,86 @@ impl CodingHarness {
     /// route) plus the run's terminal `outcome` and finalizes it through the
     /// sink. If any lifecycle phase failed, or no provider call emitted
     /// evidence, the manifest is withheld (P17-EVD-008); the actual execution
-    /// outcome is already preserved. `prompt_text` addresses the prompt digest.
+    /// outcome is retained in the failure detail. `prompt_text` addresses the
+    /// prompt digest.
     fn finalize_evidence_run(
         &mut self,
         outcome: opi_agent::evidence::TerminalOutcome,
         messages: &[AgentMessage],
         prompt_text: &str,
-    ) {
+    ) -> Result<(), AgentError> {
         let Some(capture) = self.evidence.as_ref() else {
-            return;
+            return Ok(());
         };
         let recorder = capture.recorder.clone();
         // A failed setup/emission phase withholds the manifest (P17-EVD-008).
         if recorder.has_failure() {
-            return;
+            return Err(AgentError::EvidenceFinalization(
+                "evidence recorder became incomplete before finalization".to_owned(),
+            ));
         }
         let records = recorder.records();
         if records.is_empty() {
             // No provider call emitted evidence: there is no graph to finalize.
-            return;
+            return Err(AgentError::EvidenceFinalization(
+                "evidence recorder produced no records".to_owned(),
+            ));
         }
         let (input_tokens, output_tokens) = Self::reported_token_usage(messages);
         let usage = usage_facts(input_tokens, output_tokens);
         let session_branch = self
             .session
             .as_ref()
-            .map(|s| opi_agent::evidence::SessionBranchRef::new(s.session_id().to_owned()));
+            .and_then(SessionCoordinator::active_branch_id)
+            .map(|tip| opi_agent::evidence::SessionBranchRef::new(tip.to_owned()));
         let prompt_digest = opi_agent::evidence::ContentDigest::from_hex(
             crate::tool_authority::digest_of(prompt_text),
-        );
+        )
+        .expect("digest_of returns canonical SHA-256 hex");
         let dynamic = RunDynamicFacts {
             outcome,
             usage,
             session_branch,
             prompt_digest,
+            actual_route: Self::actual_route_from_messages(messages, &capture.configured_route),
         };
         let manifest = build_finalized_manifest(capture, &records, dynamic);
         // The strict completeness gate withholds an incomplete manifest rather
         // than finalizing one with a missing/wrong binding (P17-EVD-003).
-        if manifest.require_complete().is_err() {
-            return;
-        }
+        manifest
+            .require_complete()
+            .map_err(|error| AgentError::EvidenceFinalization(error.to_string()))?;
         // A finalization failure marks the run incomplete (manifest withheld);
         // the run's actual outcome is already preserved (P17-EVD-008).
-        let _ = recorder.finalize_run(&manifest);
+        recorder
+            .finalize_run(&manifest)
+            .map_err(|error| AgentError::EvidenceFinalization(error.to_string()))
+    }
+
+    fn actual_route_from_messages(
+        messages: &[AgentMessage],
+        configured: &opi_agent::evidence::RouteSelection,
+    ) -> Option<opi_agent::evidence::RouteSelection> {
+        messages.iter().rev().find_map(|message| {
+            let AgentMessage::Llm(Message::Assistant(assistant)) = message else {
+                return None;
+            };
+            let provider_id = assistant.provider.trim();
+            let model_id = assistant
+                .response_model
+                .as_deref()
+                .filter(|model| !model.trim().is_empty())
+                .unwrap_or(&assistant.model)
+                .trim();
+            if provider_id.is_empty() || model_id.is_empty() {
+                return None;
+            }
+            Some(opi_agent::evidence::RouteSelection {
+                provider_id: provider_id.to_owned(),
+                model_id: model_id.to_owned(),
+                wire: configured.wire,
+            })
+        })
     }
 
     /// Render user input content to a stable prompt-identity string (text parts
@@ -2819,30 +3167,96 @@ impl CodingHarness {
         ),
         String,
     > {
-        let session = match &mut self.session {
-            Some(s) => s,
-            None => return Err("no active session".into()),
+        self.ensure_session_resume_ready()
+            .map_err(|error| error.to_string())?;
+        if self.session.is_none() {
+            return Err("no active session".into());
+        }
+        self.setup_evidence_run()
+            .map_err(|error| error.to_string())?;
+        let result = self
+            .session
+            .as_mut()
+            .expect("active session checked above")
+            .execute_compaction(reason);
+        let result = match result {
+            Ok(result) => result,
+            Err(error) => {
+                let original = format!("compaction failed: {error}");
+                self.emit_manual_compaction_evidence(reason, false)
+                    .map_err(|evidence| format!("{original}; {evidence}"))?;
+                self.finalize_evidence_run(
+                    opi_agent::evidence::TerminalOutcome::Failed,
+                    &[],
+                    &format!("manual-compaction:{}", compaction_reason_name(reason)),
+                )
+                .map_err(|evidence| format!("{original}; {evidence}"))?;
+                return Err(original);
+            }
         };
-        let result = session
-            .execute_compaction(reason)
-            .map_err(|e| format!("compaction failed: {e}"))?;
         match result {
             Some(out) => {
                 let wire = crate::session_coordinator::to_wire_result(&out);
                 let diagnostic = out.diagnostic.clone();
                 self.record_harness_diagnostic(diagnostic.clone());
-                self.agent.replace_messages(out.new_agent_messages);
-                // Emit a correlated Compaction evidence record (P17-EVD-002).
-                let _ = self.agent.emit_compaction_evidence(&format!("{reason:?}"));
+                self.replace_agent_context(out.new_agent_messages)?;
+                self.emit_manual_compaction_evidence(reason, true)
+                    .map_err(|error| error.to_string())?;
+                self.finalize_evidence_run(
+                    opi_agent::evidence::TerminalOutcome::Success,
+                    &[],
+                    &format!("manual-compaction:{}", compaction_reason_name(reason)),
+                )
+                .map_err(|error| error.to_string())?;
                 Ok((Some(wire), diagnostic))
             }
             None => {
                 let error = opi_agent::compaction::CompactionError::NothingToCompact;
                 let diagnostic = Diagnostic::from(&error);
                 self.record_harness_diagnostic(diagnostic.clone());
+                self.emit_manual_compaction_evidence(reason, false)
+                    .map_err(|error| error.to_string())?;
+                self.finalize_evidence_run(
+                    opi_agent::evidence::TerminalOutcome::Success,
+                    &[],
+                    &format!("manual-compaction:{}", compaction_reason_name(reason)),
+                )
+                .map_err(|error| error.to_string())?;
                 Ok((None, diagnostic))
             }
         }
+    }
+
+    fn emit_manual_compaction_evidence(
+        &self,
+        reason: opi_agent::session_event::CompactionReason,
+        produced_output: bool,
+    ) -> Result<(), AgentError> {
+        let Some(capture) = self.evidence.as_ref() else {
+            return Ok(());
+        };
+        let mut identities = opi_agent::evidence::IdentityAllocator::new();
+        let record = opi_agent::evidence::EvidenceRecord {
+            run: identities.run_id(),
+            turn: None,
+            call: identities.next_call(),
+            parent: None,
+            sequence: identities.next_sequence(),
+            kind: opi_agent::evidence::CallKind::Compaction,
+            payload: opi_agent::evidence::EvidencePayload::Structured(
+                opi_agent::evidence::RedactedValue::redacted(
+                    serde_json::json!({
+                        "reason": compaction_reason_name(reason),
+                        "produced_output": produced_output,
+                    }),
+                    RedactionMode::Summary,
+                ),
+            ),
+        };
+        capture
+            .recorder
+            .emit(&record)
+            .map_err(|error| AgentError::EvidenceFinalization(error.to_string()))
     }
 
     /// Execute manual compaction on the session, if one is active.

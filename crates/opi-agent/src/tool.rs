@@ -12,6 +12,20 @@ use tokio_util::sync::CancellationToken;
 /// Callback for progress updates during tool execution.
 pub type UpdateCallback = Box<dyn Fn(serde_json::Value) + Send + Sync>;
 
+/// Verified opaque authorization facts forwarded from the trusted authorizer
+/// to the selected tool implementation. Tools that do not need product-owned
+/// permission binding may use the default [`Tool::execute_authorized`]
+/// implementation, which delegates to [`Tool::execute`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ToolExecutionAuthorization {
+    /// Opaque effective-policy reference.
+    pub policy_ref: String,
+    /// Opaque product-owned permission reference.
+    pub permission_ref: String,
+    /// Opaque product-owned permission scope.
+    pub permission_scope: String,
+}
+
 /// Tool trait — each concrete tool implements this.
 pub trait Tool: Send + Sync {
     /// Return the tool's definition (name, description, JSON Schema for input).
@@ -25,6 +39,21 @@ pub trait Tool: Send + Sync {
         signal: CancellationToken,
         on_update: Option<UpdateCallback>,
     ) -> Pin<Box<dyn Future<Output = Result<ToolResult, ToolError>> + Send>>;
+
+    /// Execute with the exact verified authorization that crossed the Agent's
+    /// freshness gate. Product tools may override this to bind dispatch to the
+    /// reached adapter or another product-owned scope; the default preserves
+    /// the ordinary tool contract.
+    fn execute_authorized(
+        &self,
+        call_id: &str,
+        arguments: serde_json::Value,
+        _authorization: ToolExecutionAuthorization,
+        signal: CancellationToken,
+        on_update: Option<UpdateCallback>,
+    ) -> Pin<Box<dyn Future<Output = Result<ToolResult, ToolError>> + Send>> {
+        self.execute(call_id, arguments, signal, on_update)
+    }
 
     /// Whether this tool must run sequentially.
     fn execution_mode(&self) -> ExecutionMode {

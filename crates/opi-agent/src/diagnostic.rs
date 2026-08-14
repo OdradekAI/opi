@@ -307,6 +307,8 @@ pub mod code {
     /// in the session file. Phase 13.3.
     pub const CODE_SESSION_RESUME_THINKING_INCOMPATIBLE: &str =
         "session_resume_thinking_incompatible";
+    /// A requested session could not be reopened for append.
+    pub const CODE_SESSION_RESUME_FAILED: &str = "session_resume_failed";
     // opi-coding-agent bridges (package/config). Package diagnostics carry a
     // dynamic granular code in `details.package_code`; the shared code is stable.
     pub const CODE_PACKAGE_DIAGNOSTIC: &str = "package_diagnostic";
@@ -321,6 +323,8 @@ pub mod code {
     pub const CODE_ADAPTER_HOST_DIAGNOSTIC: &str = "adapter_host_diagnostic";
     /// Evidence capture setup failed before the run (fail-closed, Phase 17.7).
     pub const CODE_EVIDENCE_SETUP_FAILED: &str = "evidence_setup_failed";
+    /// Explicit evidence capture could not be durably finalized.
+    pub const CODE_EVIDENCE_FINALIZATION_FAILED: &str = "evidence_finalization_failed";
 }
 
 /// Shared filesystem/tool-error taxonomy (Phase 11.2).
@@ -846,13 +850,6 @@ impl From<&crate::loop_types::AgentError> for Diagnostic {
             )
             .details(serde_json::json!({ "provider_id": provider_id }))
             .action(format!("run /login {provider_id} to re-authenticate")),
-            AgentError::Tool(message) => Diagnostic::new(
-                Severity::Error,
-                code::CODE_TOOL_FAILED,
-                SOURCE_TOOL,
-                "tool failed",
-            )
-            .details(serde_json::json!({ "tool_error": message })),
             AgentError::Hook(message) => Diagnostic::new(
                 Severity::Error,
                 code::CODE_HOOK_FAILED,
@@ -882,14 +879,69 @@ impl From<&crate::loop_types::AgentError> for Diagnostic {
             )
             .details(serde_json::json!({ "evidence_error": message }))
             .action("check the evidence capture destination is writable"),
-            AgentError::RouteNotDispatchable { provider, detail } => Diagnostic::new(
+            AgentError::EvidenceFinalization(message) => Diagnostic::new(
+                Severity::Error,
+                code::CODE_EVIDENCE_FINALIZATION_FAILED,
+                SOURCE_AGENT,
+                "evidence finalization failed",
+            )
+            .details(serde_json::json!({ "evidence_error": message }))
+            .action("check evidence capture completeness and destination durability"),
+            AgentError::SessionResume(message) => Diagnostic::new(
+                Severity::Error,
+                code::CODE_SESSION_RESUME_FAILED,
+                SOURCE_SESSION,
+                "session resume failed",
+            )
+            .details(serde_json::json!({ "session_error": message }))
+            .action("verify the requested session still exists and is writable"),
+            AgentError::InvalidModelSpec { spec } => Diagnostic::new(
+                Severity::Error,
+                code::CODE_PROVIDER_CONFIG,
+                SOURCE_PROVIDER,
+                "invalid provider:model selection",
+            )
+            .details(serde_json::json!({ "model_spec": spec })),
+            AgentError::UnknownProvider { provider } => Diagnostic::new(
+                Severity::Error,
+                code::CODE_PROVIDER_CONFIG,
+                SOURCE_PROVIDER,
+                format!("unknown provider '{provider}'"),
+            ),
+            AgentError::UnknownModel { provider, model } => Diagnostic::new(
+                Severity::Error,
+                code::CODE_PROVIDER_CONFIG,
+                SOURCE_PROVIDER,
+                format!("unknown model '{model}' for provider '{provider}'"),
+            ),
+            AgentError::RouteNotDispatchable { provider } => Diagnostic::new(
                 Severity::Error,
                 code::CODE_PROVIDER_CAPABILITY_INVALID,
                 SOURCE_PROVIDER,
                 format!("provider route not dispatchable for '{provider}'"),
             )
-            .details(serde_json::json!({ "provider": provider, "detail": detail }))
+            .details(serde_json::json!({ "provider": provider }))
             .action("check provider configuration and credentials"),
+            AgentError::AuthNotConfigured { provider, detail } => Diagnostic::new(
+                Severity::Error,
+                code::CODE_PROVIDER_AUTH_FAILED,
+                SOURCE_PROVIDER,
+                format!("authentication is not configured for '{provider}'"),
+            )
+            .details(serde_json::json!({ "provider": provider, "detail": detail })),
+            AgentError::AttemptAlreadyActive => Diagnostic::new(
+                Severity::Error,
+                code::CODE_PROVIDER_REQUEST_FAILED,
+                SOURCE_PROVIDER,
+                "a prepared provider attempt is already active",
+            ),
+            AgentError::ProviderProtocol { detail } => Diagnostic::new(
+                Severity::Error,
+                code::CODE_PROVIDER_STREAM_ERROR,
+                SOURCE_PROVIDER,
+                "provider stream violated the terminal-event contract",
+            )
+            .details(serde_json::json!({ "detail": detail })),
             AgentError::InvalidNextTurnCandidate(message) => Diagnostic::new(
                 Severity::Error,
                 code::CODE_HOOK_FAILED,

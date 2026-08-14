@@ -393,6 +393,22 @@ async fn error_from_fixture() {
     }
 }
 
+#[tokio::test]
+async fn malformed_frame_does_not_expose_upstream_content() {
+    let canary = "azure-malformed-secret-canary";
+    let sse = format!("data: {{not-json-{canary}}}\n\n");
+    let events = make_provider()
+        .stream_from_sse(&sse, CancellationToken::new())
+        .collect::<Vec<_>>()
+        .await;
+    let rendered = format!("{events:?}");
+    assert!(events.iter().any(Result::is_err));
+    assert!(
+        !rendered.contains(canary),
+        "malformed Azure frame leaked upstream content: {rendered}"
+    );
+}
+
 #[test]
 fn secret_redaction_in_debug() {
     // Phase 17.5: the api key moved out of AzureOpenAIProvider construction

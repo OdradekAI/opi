@@ -117,6 +117,27 @@ async fn evidence_capture_finalizes_direct_runtime_input_manifest() {
     manifest
         .require_complete()
         .expect("finalized manifest passes the strict completeness gate");
+    assert!(
+        manifest.input_identity.system_digest.is_some(),
+        "the exact resolved system instruction is addressed"
+    );
+    assert!(
+        !manifest.input_identity.tool_schema_digests.is_empty(),
+        "the exact trusted tool projection is addressed"
+    );
+    assert!(
+        matches!(
+            manifest.environment.budget,
+            opi_agent::evidence::Measurement::Known {
+                origin: opi_agent::evidence::MeasurementOrigin::Quota,
+                ..
+            }
+        ),
+        "the configured run budget is distinguished from unknown"
+    );
+    assert_eq!(manifest.route.actual.provider_id, "mock");
+    assert_eq!(manifest.route.actual.model_id, "mock-model");
+    assert_eq!(manifest.route.actual_reason, None);
 }
 
 // ===========================================================================
@@ -141,12 +162,13 @@ async fn evidence_emission_failure_withholds_manifest_and_preserves_outcome() {
         sink.clone(),
         AssemblySource::Sdk,
     );
-    // The run still completes: the evidence failure does not abort execution.
-    let messages = harness
-        .prompt("hello")
-        .await
-        .expect("emission failure preserves the actual run outcome");
-    assert!(!messages.is_empty(), "the run produced assistant output");
+    // Provider execution still occurs, but explicit capture is fail-visible at
+    // the public operation boundary.
+    let result = harness.prompt("hello").await;
+    assert!(matches!(
+        result,
+        Err(opi_agent::loop_types::AgentError::EvidenceFinalization(_))
+    ));
 
     assert!(sink.has_failure(), "the emission failure advanced health");
     assert!(
@@ -228,10 +250,13 @@ async fn finalization_failure_withholds_manifest_through_harness() {
     })
     .build();
 
-    // The run completes (the actual outcome is preserved) but the manifest is
-    // withheld because finalization failed.
-    let messages = harness.prompt("hello").await.expect("run completes");
-    assert!(!messages.is_empty(), "the run produces output");
+    // The model work completes, but explicit capture failure is observable at
+    // the public operation boundary and the manifest is withheld.
+    let result = harness.prompt("hello").await;
+    assert!(matches!(
+        result,
+        Err(opi_agent::loop_types::AgentError::EvidenceFinalization(_))
+    ));
     assert!(sink.has_failure(), "finalization failure is recorded");
     assert!(
         sink.completed_manifest().is_none(),
@@ -254,9 +279,13 @@ fn file_evidence_sink_writes_records_and_manifest() {
     };
     use opi_coding_agent::evidence::{EvidenceCapture, RunDynamicFacts, build_finalized_manifest};
 
+    let digest = |nibble: char| {
+        ContentDigest::from_hex(nibble.to_string().repeat(64)).expect("valid sha256 hex")
+    };
+
     let dir = tempfile::tempdir().unwrap();
     let sink = Arc::new(FileEvidenceSink::new(dir.path()));
-    let binding = RuntimeInputBinding::direct(ContentDigest::from_hex("abcd"), AssemblySource::Cli);
+    let binding = RuntimeInputBinding::direct(digest('d'), AssemblySource::Cli);
     sink.setup(&binding)
         .expect("setup creates the capture file");
 
@@ -290,16 +319,28 @@ fn file_evidence_sink_writes_records_and_manifest() {
     // Finalize a strict manifest built from the capture + recorded route.
     let capture = EvidenceCapture {
         recorder: sink.clone(),
+        source: AssemblySource::Cli,
         binding: binding.clone(),
         config: ConfigIdentity {
-            harness_digest: ContentDigest::from_hex("h"),
-            runtime_digest: ContentDigest::from_hex("r"),
-            adapter_digest: ContentDigest::from_hex("a"),
-            material_digest: ContentDigest::from_hex("m"),
+            harness_digest: digest('1'),
+            runtime_digest: digest('2'),
+            adapter_digest: digest('a'),
+            material_digest: digest('b'),
         },
         policy: opi_agent::evidence::UserPolicyFacts {
-            policy_digest: ContentDigest::from_hex("policy"),
+            policy_digest: digest('c'),
             capability: None,
+        },
+        system_digest: Some(digest('f')),
+        tool_schema_digests: vec![digest('9')],
+        configured_route: opi_agent::evidence::RouteSelection {
+            provider_id: "mock".to_owned(),
+            model_id: "mock-model".to_owned(),
+            wire: opi_ai::WireApi::OpenAiCompletions,
+        },
+        budget: Measurement::Known {
+            value: 50,
+            origin: MeasurementOrigin::Quota,
         },
     };
     let dynamic = RunDynamicFacts {
@@ -314,7 +355,12 @@ fn file_evidence_sink_writes_records_and_manifest() {
             },
         },
         session_branch: None,
-        prompt_digest: ContentDigest::from_hex("prompt"),
+        prompt_digest: digest('e'),
+        actual_route: Some(opi_agent::evidence::RouteSelection {
+            provider_id: "mock".to_owned(),
+            model_id: "mock-model".to_owned(),
+            wire: opi_ai::WireApi::OpenAiCompletions,
+        }),
     };
     let manifest = build_finalized_manifest(&capture, &sink.records(), dynamic);
     manifest.require_complete().expect("manifest is complete");
@@ -337,18 +383,44 @@ fn file_evidence_sink_writes_records_and_manifest() {
         sink.completed_manifest()
             .as_ref()
             .map(|m| m.binding.clone()),
-        Some(binding),
+        Some(binding.clone()),
         "the file recorder returns the finalized manifest",
     );
 
-    // Durable artifacts exist, are non-empty, and parse.
-    let records_json = std::fs::read_to_string(dir.path().join("evidence.jsonl")).unwrap();
+    // The configured path is a capture root; this run owns one immutable child.
+    let first_run_dir = sink
+        .completed_run_dirs()
+        .into_iter()
+        .next()
+        .expect("one finalized run directory");
+    let first_records_path = first_run_dir.join("evidence.jsonl");
+    let first_manifest_path = first_run_dir.join("manifest.json");
+    let first_records_bytes = std::fs::read(&first_records_path).unwrap();
+    let first_manifest_bytes = std::fs::read(&first_manifest_path).unwrap();
+    let records_json = String::from_utf8(first_records_bytes.clone()).unwrap();
     assert!(!records_json.is_empty(), "evidence.jsonl is non-empty");
-    let manifest_json = std::fs::read_to_string(dir.path().join("manifest.json")).unwrap();
+    let manifest_json = String::from_utf8(first_manifest_bytes.clone()).unwrap();
     let parsed: serde_json::Value = serde_json::from_str(&manifest_json).unwrap();
     // manifest.json round-trips and carries the parsed route from the record.
     assert_eq!(parsed["route"]["resolved"]["provider_id"], "mock");
     assert_eq!(parsed["binding"]["kind"], "direct_runtime_input");
+
+    // Reusing the same capture root allocates a new child and cannot replace
+    // any bytes from the finalized first run.
+    sink.setup(&binding).expect("second run setup");
+    sink.emit(&record).expect("second run record");
+    sink.finalize_run(&manifest).expect("second run finalizes");
+    let run_dirs = sink.completed_run_dirs();
+    assert_eq!(run_dirs.len(), 2);
+    assert_ne!(run_dirs[0], run_dirs[1]);
+    assert_eq!(
+        std::fs::read(first_records_path).unwrap(),
+        first_records_bytes
+    );
+    assert_eq!(
+        std::fs::read(first_manifest_path).unwrap(),
+        first_manifest_bytes
+    );
 }
 
 // ===========================================================================
@@ -569,32 +641,20 @@ async fn harness_complete_evidence_mapping_denies_unlaunched_tool() {
     })
     .build();
 
-    let messages = harness.prompt("write a file").await.expect("run completes");
+    let result = harness.prompt("write a file").await;
+    assert!(matches!(
+        result,
+        Err(opi_agent::loop_types::AgentError::EvidenceFinalization(_))
+    ));
 
     // The write was denied at the harness boundary: no file side effect.
     assert!(
         !workspace.path().join("should_not_exist.txt").exists(),
         "the write tool must not execute when evidence is incomplete"
     );
-    // The denial surfaces as a controlled error tool result carrying the
-    // evidence_incomplete stable code.
-    let denial = messages.iter().find_map(|m| match m {
-        opi_agent::message::AgentMessage::Llm(opi_ai::message::Message::ToolResult(tr))
-            if tr.tool_call_id == "c-write" =>
-        {
-            Some(tr)
-        }
-        _ => None,
-    });
-    let denial = denial.expect("the denied tool call persists a tool result");
-    assert!(denial.is_error, "the denial is an error result");
-    assert!(
-        denial.details.as_ref().is_some_and(|d| {
-            d.get("stable_code")
-                .is_some_and(|c| c.as_str() == Some("evidence_incomplete"))
-        }),
-        "the denial carries the evidence_incomplete stable code"
-    );
+    // The lower-level authority conformance test above pins the stable
+    // `evidence_incomplete` result; this boundary test pins the visible capture
+    // failure and absence of a side effect.
 }
 
 /// A capture-absent harness maps to `complete_evidence_required = false` (the
@@ -670,7 +730,18 @@ async fn harness_compaction_emits_correlated_evidence_record() {
     .build();
 
     harness.prompt("first prompt").await.unwrap();
-    // Manual compaction drives the real production call site.
+    let provider_run = sink
+        .records()
+        .into_iter()
+        .find(|record| record.kind == CallKind::Provider)
+        .expect("the prompt run emits Provider evidence")
+        .run;
+    let prompt_manifest = sink
+        .completed_manifest()
+        .expect("the prompt run finalizes before manual compaction");
+
+    // Manual compaction is a new public operation and therefore owns a new
+    // immutable evidence run rather than appending after the prompt manifest.
     let result = harness
         .compact(opi_agent::session_event::CompactionReason::Manual)
         .expect("manual compaction succeeds");
@@ -680,21 +751,23 @@ async fn harness_compaction_emits_correlated_evidence_record() {
     unsafe { std::env::remove_var("OPI_SESSIONS_DIR") };
 
     let records = sink.records();
-    let provider = records
-        .iter()
-        .find(|r| r.kind == CallKind::Provider)
-        .expect("a Provider record is emitted");
+    assert!(
+        records
+            .iter()
+            .all(|record| record.kind != CallKind::Provider),
+        "the manual compaction run cannot mutate the finalized prompt run"
+    );
     let compaction = records
         .iter()
         .find(|r| r.kind == CallKind::Compaction)
         .expect("a Compaction record is emitted");
-    assert_eq!(
-        compaction.run, provider.run,
-        "compaction shares the run identity"
-    );
-    assert!(
-        provider.sequence < compaction.sequence,
-        "compaction follows the provider record in sequence order"
+    assert_ne!(compaction.run, provider_run);
+    let compaction_manifest = sink
+        .completed_manifest()
+        .expect("manual compaction finalizes its own run");
+    assert_ne!(
+        compaction_manifest.correlation.run,
+        prompt_manifest.correlation.run
     );
 }
 
@@ -750,25 +823,25 @@ async fn phase17_harness_switches_providers_with_matching_route_evidence() {
     .build();
 
     harness.prompt("from alpha").await.unwrap();
+    let alpha_manifest = sink
+        .completed_manifest()
+        .expect("alpha run finalizes independently");
     harness.set_model_validated("beta:b1".to_owned()).unwrap();
     harness.prompt("from beta").await.unwrap();
 
     // SAFETY: test-only env var mutation serialized by SESSION_TEST_LOCK.
     unsafe { std::env::remove_var("OPI_SESSIONS_DIR") };
 
+    assert_eq!(alpha_manifest.route.resolved.provider_id, "alpha");
     let records = sink.records();
-    let providers: Vec<String> = records
-        .iter()
-        .filter(|r| r.kind == CallKind::Provider)
-        .filter_map(resolved_provider_of)
-        .collect();
-    assert!(
-        providers.iter().any(|p| p == "alpha"),
-        "evidence retains the alpha route: {providers:?}"
-    );
-    assert!(
-        providers.iter().any(|p| p == "beta"),
-        "evidence retains the beta route: {providers:?}"
+    assert_eq!(
+        records
+            .iter()
+            .find(|record| record.kind == CallKind::Provider)
+            .and_then(resolved_provider_of)
+            .as_deref(),
+        Some("beta"),
+        "the recorder contains only the current immutable run"
     );
 
     // The finalized manifest carries the terminal (beta) route facts and the
@@ -776,14 +849,16 @@ async fn phase17_harness_switches_providers_with_matching_route_evidence() {
     // auth-source/fallback are all distinguishable).
     let manifest = sink.completed_manifest().expect("a finalized manifest");
     assert_eq!(manifest.route.resolved.provider_id, "beta");
-    assert_eq!(
-        manifest.route.actual.provider_id, "",
-        "actual is unknown pre-dispatch (not a copy of resolved)"
+    assert_eq!(manifest.route.actual.provider_id, "mock");
+    assert_eq!(manifest.route.actual.model_id, "mock-model");
+    assert_eq!(manifest.route.actual_reason, None);
+    assert_ne!(
+        alpha_manifest.binding, manifest.binding,
+        "a model switch must produce a fresh current-run binding"
     );
-    assert_eq!(
-        manifest.route.actual_reason,
-        Some(opi_agent::evidence::UnknownReason::NotReported),
-        "the empty actual carries a typed not-reported reason"
+    assert_ne!(
+        alpha_manifest.config.adapter_digest, manifest.config.adapter_digest,
+        "the adapter identity follows the current route"
     );
     assert_eq!(manifest.route.requested.provider_id, "beta");
     assert_eq!(manifest.route.requested.model_id, "b1");
@@ -956,14 +1031,11 @@ async fn phase17_complete_run_reconstructs_graph_and_rejects_missing_bindings() 
         "an ActiveSnapshot binding must be rejected for a direct run"
     );
 
-    // The strict gate also rejects a manifest missing a config-identity binding
-    // (the gate validates config/route/input bindings, not just the snapshot
-    // case).
-    let mut missing_config_manifest = manifest.clone();
-    missing_config_manifest.config.harness_digest = ContentDigest::from_hex("");
+    // Invalid config identity cannot be represented: digest construction
+    // rejects missing/non-canonical SHA-256 text before manifest assembly.
     assert!(
-        missing_config_manifest.require_complete().is_err(),
-        "a manifest missing a config identity must be rejected"
+        ContentDigest::from_hex("").is_err(),
+        "a missing config identity must be rejected at construction"
     );
 }
 
@@ -1066,30 +1138,41 @@ async fn phase17_one_run_graph_includes_tool_execution_record() {
         "the Tool record is parented into the call graph"
     );
 
-    // Compaction leg: drive the production compaction call site in the SAME
-    // run so the graph reconstructs all four kinds under one run identity
-    // (P17-A09: provider + retry + tool + compaction).
+    let prompt_run = tool_rec.run;
+    let prompt_manifest = sink
+        .completed_manifest()
+        .expect("the tool-bearing prompt run is finalized");
+
+    // Manual compaction is a second immutable run; it never appends to the
+    // already finalized provider/retry/tool graph.
     let compacted = harness
         .compact(opi_agent::session_event::CompactionReason::Manual)
         .expect("manual compaction succeeds");
     assert!(compacted.is_some(), "compaction produces output");
     let records = sink.records();
+    assert!(
+        records
+            .iter()
+            .all(|record| record.kind == CallKind::Compaction),
+        "the recorder contains only the current manual-compaction run"
+    );
     let compaction_rec = records
         .iter()
         .find(|r| r.kind == CallKind::Compaction)
-        .expect("a Compaction record in the same run");
-    assert_eq!(
-        compaction_rec.run, tool_rec.run,
-        "Provider, Retry, Tool, and Compaction records share ONE run identity"
-    );
+        .expect("a Compaction record in the independent run");
+    assert_ne!(compaction_rec.run, prompt_run);
 
-    // The whole run still finalizes one strict manifest.
-    let manifest = sink
+    // Both independent operations finalize strict manifests.
+    let compaction_manifest = sink
         .completed_manifest()
-        .expect("the tool-bearing run finalizes a manifest");
-    manifest
+        .expect("the compaction run finalizes a manifest");
+    compaction_manifest
         .require_complete()
-        .expect("the tool-bearing run passes the strict completeness gate");
+        .expect("the compaction run passes the strict completeness gate");
+    assert_ne!(
+        prompt_manifest.correlation.run,
+        compaction_manifest.correlation.run
+    );
 
     // SAFETY: serialized by SESSION_TEST_LOCK.
     unsafe { std::env::remove_var("OPI_SESSIONS_DIR") };
@@ -1151,18 +1234,40 @@ async fn phase17_default_harness_emits_no_evidence() {
 // ===========================================================================
 
 #[tokio::test]
+#[allow(clippy::await_holding_lock)] // serializes the environment-channel canary across awaited dispatch.
 async fn phase17_canaries_stop_before_sink_file_and_manifest() {
+    let _lock = SESSION_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let workspace = tempfile::tempdir().unwrap();
     let user = tempfile::tempdir().unwrap();
     let evidence_dir = tempfile::tempdir().unwrap();
     let sink = Arc::new(FileEvidenceSink::new(evidence_dir.path()));
     let recorder: Arc<dyn EvidenceRecorder> = sink.clone();
-    // A secret-like canary planted in the prompt. Evidence records carry only
-    // route facts and authorization decisions — never raw prompt content — so
-    // the canary must not reach evidence.jsonl or manifest.json (P17-EVD-005).
-    let canary = "sk-canary-AAAAAAAAAAAAAAAAAAAAleak";
-    let provider =
-        MockProvider::new_with_errors("mock", vec![MockResponse::Events(text_response("done"))]);
+    let prompt_canary = "sk-canary-prompt-AAAAAAAAAAAAAAAAAAAA";
+    let argument_canary = "sk-canary-argument-BBBBBBBBBBBBBBBBBBBB";
+    let environment_canary = "sk-canary-environment-CCCCCCCCCCCCCCCCCCCC";
+    let credential_canary = "sk-canary-credential-DDDDDDDDDDDDDDDDDDDD";
+    let provider_error_canary = "sk-canary-provider-error-EEEEEEEEEEEEEEEEEEEE";
+
+    // Exercise prompt, tool-argument, process-environment, and credential
+    // channels through one real harness run. The built-in read may fail for
+    // the canary path; that controlled tool result is followed by a terminal
+    // provider response and must still never expose the argument.
+    let sessions = tempfile::tempdir().unwrap();
+    let canary_sessions = sessions.path().join(environment_canary);
+    std::fs::create_dir_all(&canary_sessions).unwrap();
+    // SAFETY: process-global mutation is serialized by SESSION_TEST_LOCK.
+    unsafe { std::env::set_var("OPI_SESSIONS_DIR", &canary_sessions) };
+    let provider = MockProvider::new_with_errors(
+        "mock",
+        vec![
+            MockResponse::Events(tool_call_response(
+                "canary-read",
+                "read",
+                &serde_json::json!({ "path": argument_canary }).to_string(),
+            )),
+            MockResponse::Events(text_response("done")),
+        ],
+    );
     let mut harness = CodingHarness::builder(
         Box::new(provider),
         "mock:mock-model".to_owned(),
@@ -1172,13 +1277,19 @@ async fn phase17_canaries_stop_before_sink_file_and_manifest() {
     )
     .global_config_dir(user.path().to_path_buf())
     .execution_mode(ExecutionRunMode::Interactive)
+    .auth_resolver(Arc::new(opi_ai::auth::StaticAuthResolver::new(
+        opi_ai::auth::AuthScheme::ApiKey,
+        secrecy::SecretString::from(credential_canary),
+    )))
     .evidence(EvidenceBuilderConfig {
         recorder,
         source: AssemblySource::Cli,
     })
     .build();
-    let prompt = format!("here is a secret {canary} please ignore");
+    let prompt = format!("here is a secret {prompt_canary} please ignore");
     let _ = harness.prompt(&prompt).await.expect("run completes");
+    // SAFETY: paired with the serialized override above.
+    unsafe { std::env::remove_var("OPI_SESSIONS_DIR") };
 
     // The run emitted records and finalized a manifest, and the prompt was
     // digested into the manifest (never stored raw): these make the absence
@@ -1192,22 +1303,89 @@ async fn phase17_canaries_stop_before_sink_file_and_manifest() {
         "the prompt is digested into the manifest, never stored raw"
     );
 
-    // The in-memory records carry no raw canary.
+    let input_canaries = [
+        prompt_canary,
+        argument_canary,
+        environment_canary,
+        credential_canary,
+    ];
+
+    // The in-memory records carry no raw input-channel canary.
     let records_json = serde_json::to_string(&sink.records()).unwrap();
-    assert!(
-        !records_json.contains(canary),
-        "canary leaked into evidence records: {records_json}"
+    for canary in input_canaries {
+        assert!(
+            !records_json.contains(canary),
+            "{canary} leaked into evidence records: {records_json}"
+        );
+    }
+    // The durable evidence.jsonl and artifact metadata in manifest.json carry
+    // no raw canary from any exercised input channel.
+    let run_dir = sink
+        .completed_run_dirs()
+        .into_iter()
+        .next()
+        .expect("one immutable trace run directory");
+    let evidence_file = std::fs::read_to_string(run_dir.join("evidence.jsonl")).unwrap();
+    let manifest_file = std::fs::read_to_string(run_dir.join("manifest.json")).unwrap();
+    for canary in input_canaries {
+        assert!(
+            !evidence_file.contains(canary),
+            "{canary} leaked into evidence.jsonl: {evidence_file}"
+        );
+        assert!(
+            !manifest_file.contains(canary),
+            "{canary} leaked into manifest artifact metadata: {manifest_file}"
+        );
+    }
+
+    // Provider-error text is also diagnostic input. Drive a second real run
+    // that fails at that boundary, then inspect both its diagnostic evidence
+    // and finalized artifact metadata.
+    let error_sink = Arc::new(FileEvidenceSink::new(evidence_dir.path()));
+    let error_recorder: Arc<dyn EvidenceRecorder> = error_sink.clone();
+    let error_provider = MockProvider::new_with_errors(
+        "mock",
+        vec![MockResponse::Error(
+            opi_ai::provider::ProviderError::RequestFailed(provider_error_canary.to_owned()),
+        )],
     );
-    // The durable evidence.jsonl + manifest.json carry no raw canary.
-    let evidence_file =
-        std::fs::read_to_string(evidence_dir.path().join("evidence.jsonl")).unwrap();
-    let manifest_file = std::fs::read_to_string(evidence_dir.path().join("manifest.json")).unwrap();
+    // SAFETY: process-global mutation is serialized by SESSION_TEST_LOCK.
+    unsafe { std::env::set_var("OPI_SESSIONS_DIR", &canary_sessions) };
+    let mut error_harness = CodingHarness::builder(
+        Box::new(error_provider),
+        "mock:mock-model".to_owned(),
+        OpiConfig::default(),
+        workspace.path().to_path_buf(),
+        TrustDecision::Trusted,
+    )
+    .global_config_dir(user.path().to_path_buf())
+    .execution_mode(ExecutionRunMode::Interactive)
+    .evidence(EvidenceBuilderConfig {
+        recorder: error_recorder,
+        source: AssemblySource::Cli,
+    })
+    .build();
     assert!(
-        !evidence_file.contains(canary),
-        "canary leaked into evidence.jsonl: {evidence_file}"
+        error_harness
+            .prompt("trigger provider error")
+            .await
+            .is_err()
     );
-    assert!(
-        !manifest_file.contains(canary),
-        "canary leaked into manifest.json: {manifest_file}"
-    );
+    // SAFETY: paired with the serialized override above.
+    unsafe { std::env::remove_var("OPI_SESSIONS_DIR") };
+
+    let error_records = serde_json::to_string(&error_sink.records()).unwrap();
+    let error_run_dir = error_sink
+        .completed_run_dirs()
+        .into_iter()
+        .next()
+        .expect("failed run still finalizes one immutable trace directory");
+    let error_file = std::fs::read_to_string(error_run_dir.join("evidence.jsonl")).unwrap();
+    let error_manifest = std::fs::read_to_string(error_run_dir.join("manifest.json")).unwrap();
+    for output in [&error_records, &error_file, &error_manifest] {
+        assert!(
+            !output.contains(provider_error_canary),
+            "provider-error/diagnostic canary leaked: {output}"
+        );
+    }
 }

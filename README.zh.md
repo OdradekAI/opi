@@ -98,12 +98,17 @@ opi -m openai:gpt-4o "审查公开 API。"
 | 输出 NDJSON 事件流 | `opi --json "PROMPT"` |
 | 减少长 NDJSON 流体积 | `opi --json --json-compact "PROMPT"` |
 | 启动 JSONL RPC 进程 | `opi --rpc` |
+| 为每次运行捕获不可变证据 | `opi --trace .opi-traces "PROMPT"` |
 | 给第一条提示词附加图片 | `opi --image screenshot.png "审查这个 UI"` |
 | 列出已配置模型 | `opi --list-models` |
 | 检查本地配置与健康状态 | `opi doctor` |
 | 生成 shell 补全 | `opi --generate-completion powershell` |
 
 使用 `opi --help` 查看当前完整参数说明。
+
+`--trace PATH` 适用于交互式、非交互文本、NDJSON 和 RPC 模式。`PATH` 是捕获根目录：
+每次 prompt、continue、retry 或手动压缩都会创建唯一子目录，其中包含
+`evidence.jsonl` 和 `manifest.json`；已 finalized 的运行目录不可变。
 
 ### 会话
 
