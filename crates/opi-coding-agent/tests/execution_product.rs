@@ -1785,7 +1785,7 @@ async fn agent_loop_redacts_hostile_backend_rejected_by_model_schema() {
         steering_queue: None,
         follow_up_queue: None,
         diagnostic_sink: None,
-        trace: None,
+        evidence_sink: None,
         session_id: None,
     };
 

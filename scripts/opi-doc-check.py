@@ -658,6 +658,14 @@ def check_local_links(rel: str) -> None:
         target = unquote(target.split("#", 1)[0])
         if not target or target.startswith("/") or any(c in target for c in "{}*<>"):
             continue
+        # `.repo/` is the gitignored, non-normative local evidence cache: it is
+        # not part of a fresh checkout, so links into it are exempt from
+        # existence checks (a checked-out tree would always report them broken).
+        try:
+            (base / target).resolve().relative_to(ROOT / ".repo")
+            continue
+        except ValueError:
+            pass
         if not (base / target).resolve().exists():
             ERRORS.append(f"{rel}: broken local link: {target}")
 

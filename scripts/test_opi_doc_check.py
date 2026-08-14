@@ -496,5 +496,22 @@ class SkillContractTests(unittest.TestCase):
         )
 
 
+class LocalLinkExemptionTest(unittest.TestCase):
+    def test_repo_evidence_cache_links_are_exempt(self):
+        """Links into the gitignored `.repo/` evidence cache must not be
+        reported broken: the cache is non-normative local material and is
+        absent from a fresh checkout by design."""
+        doc_check.ERRORS.clear()
+        for spec in ("docs/opi-spec.md", "docs/opi-spec.zh.md"):
+            doc_check.check_local_links(spec)
+        repo_link_errors = [e for e in doc_check.ERRORS if ".repo" in e]
+        self.assertEqual(
+            [],
+            repo_link_errors,
+            "links into the .repo evidence cache must be exempt from "
+            "existence checks",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

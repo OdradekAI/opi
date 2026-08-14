@@ -969,7 +969,7 @@ async fn real_opi_sandbox_host_cancels_before_command_disclosure() {
         handshake_timeout: Duration::from_secs(2),
         expected_implementation: "opi-sandbox",
         expected_implementation_version: env!("CARGO_PKG_VERSION"),
-        expected_target: &target,
+        expected_target: target,
         env_inherit: EnvInherit::Inherit,
         env_additions: &empty,
         adapter_config: serde_json::json!({}),
