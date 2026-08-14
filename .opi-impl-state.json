@@ -2026,7 +2026,7 @@
       "definition_of_done": "Hermetic integration/subprocess tests run one Phase 17 fixture through binary interactive assembly, CodingHarness, print, JSON/NDJSON, and RpcRunner with equivalent route, authority, cancellation, evidence, and legacy semantics. A typed boundary/precedence matrix proves owning errors and downstream counts for route/auth, next-turn, authority, evidence, timeout, cancellation, queue closure/overflow, partial effects, and cleanup-unknown. Source/API audits prove one coherent runtime with no SharedProvider, AgentLoopTurnUpdate, AgentHarness, hook Allow grant, MetadataProvider, core file TraceSink, alias registry, compatibility shim, legacy trace reader, or product policy in Agent Core. Rollback fixtures preserve session/evidence bytes and authority. Bilingual root/crate README pairs and CHANGELOG Unreleased document breaking interfaces, explicit capture, legacy behavior, and non-sandbox boundary. CI selects the same hermetic acceptance on Linux/macOS/Windows. This local task verifies workflow definition only; actual run SHA/URLs/results and exact six gates remain Phase F evidence. No production source is modified by this assurance task.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "17.8"
       ],
@@ -2085,6 +2085,11 @@
           "field": "phase_exit_only",
           "reason": "The P17-A15 acceptance entry in task 17.9 represents only the source-defined task-local precondition: the CI definition selects the same hermetic acceptance and the contract is platform-neutral. Its task status may become met after that local verification, but this is not evidence that the source criterion itself is met. Phase F independently owns the P17-A15 criteria_trace status and must keep it not-met until actual Linux/macOS/Windows run SHA, URLs, and results are recorded.",
           "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Acceptance scenarios and verification"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "C.1a append: fix the pre-existing broken rustdoc intra-doc link [CallKind::Compaction] at crates/opi-agent/src/agent.rs:155 (flagged by task 17.8's D.2 as a 17.9 carry-over because 17.9 owns documentation acceptance; a doc-comment-only edit, no runtime change).",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Acceptance scenarios and verification"
         }
       ],
       "tier": "workspace",
@@ -2118,7 +2123,7 @@
             "opi_coding_agent::runner print/json/ndjson",
             "opi_coding_agent::RpcRunner"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "P17-A15",
@@ -2135,7 +2140,7 @@
             "opi_coding_agent::RpcRunner",
             "opi_agent::Agent::prompt"
           ],
-          "status": "open"
+          "status": "met"
         }
       ],
       "production_call_sites": [
@@ -2150,8 +2155,11 @@
       "substrate_only": false,
       "iteration_count": 0,
       "max_iterations": 5,
-      "start_commit": null,
-      "baseline_dirty_files": [],
+      "start_commit": "c6d3bd2fff1c75ead3d367160bec1417b73712b8",
+      "baseline_dirty_files": [
+        "docs/research/2026-08-13-edge-agent-local-cloud-hierarchical-compute.md",
+        "docs/research/2026-08-13-pi-0.84.1-package-architecture-realignment.md"
+      ],
       "task_owned_paths": [
         "crates/opi-coding-agent/tests/phase17_cross_mode.rs",
         "crates/opi-coding-agent/tests/phase17_failure_rollback.rs",
@@ -2166,13 +2174,83 @@
         "crates/opi-agent/README.zh.md",
         "crates/opi-coding-agent/README.md",
         "crates/opi-coding-agent/README.zh.md",
-        "CHANGELOG.md"
+        "CHANGELOG.md",
+        "crates/opi-agent/src/agent.rs"
       ],
-      "last_attempt": null,
-      "verified_at_commit": null,
-      "evidence": null,
+      "last_attempt": {
+        "attempt": 1,
+        "started_at": "2026-08-14T13:00:00+08:00",
+        "ended_at": "2026-08-14T13:42:00+08:00",
+        "outcome": "passed",
+        "failing_gate": null,
+        "touched_files": [
+          "crates/opi-coding-agent/tests/phase17_cross_mode.rs",
+          "crates/opi-coding-agent/tests/phase17_failure_rollback.rs",
+          "crates/opi-coding-agent/tests/phase17_api_audit.rs",
+          "crates/opi-coding-agent/tests/common/phase17.rs",
+          ".github/workflows/ci.yml",
+          "crates/opi-ai/README.md",
+          "crates/opi-ai/README.zh.md",
+          "crates/opi-coding-agent/README.md",
+          "crates/opi-coding-agent/README.zh.md",
+          "CHANGELOG.md",
+          "crates/opi-agent/src/agent.rs"
+        ]
+      },
+      "verified_at_commit": "a4cfa4ddc74b4dfac59b4305d4657599af866480",
+      "evidence": {
+        "task": "17.9",
+        "dod_sha256": "3a46e0722734f139c4961567ca80ad3258c181260d6113f1a27d5e9dc1673df8",
+        "verification": "workspace; smoke full fmt+clippy(--all-targets -D warnings)+rustdoc(-D warnings)+workspace tests green (exit 0; 203 binaries; 3789 tests); opi-doc-check PASS; phase17_cross_mode 2 + phase17_failure_rollback 5 + phase17_api_audit 4 green; opi-artifact-audit ok:true",
+        "evaluator": "not-required",
+        "acceptance": "P17-A14 met (phase17_all_public_product_modes_share_runtime_semantics: one fixture across interactive assembly + CodingHarness + print + JSON/NDJSON + RPC, equivalent route dispatch and evidence kinds, artifact bundle under target/opi-artifacts/phase17-task-17.9); P17-A15 met as the task-local precondition only (phase17_platform_contract_is_platform_neutral + phase17_ci_matrix_selects_same_acceptance_on_three_platforms; Phase F independently keeps the source P17-A15 criterion not-met until actual Linux/macOS/Windows run SHA, URLs, and results are recorded)"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-08-14T13:42:00+08:00",
+          "attempt": 1,
+          "summary": "17.9 passing @a4cfa4d. Three capstone binaries + shared tests/common/phase17.rs (wired via #[path] so common/mod.rs ownership was never claimed): phase17_cross_mode (P17-A14/MIG-005: one alpha:alpha-model+beta fixture through interactive builder seam, CodingHarness::prompt, runner print/json with durable --trace, RpcRunner via new_with_trace injected recorder; equal dispatch counts, equal evidence kind sets across in-memory and file sinks, canonical session_summary model; artifacts + SHA256SUMS fresh-re-read), phase17_failure_rollback (FAL-001 typed classes per composed boundary incl. opi-protocol CleanupUnconfirmed reference; FAL-002 behavioral precedence rows route->authority->execution and evidence-setup-before-dispatch; FAL-003 cancellation via RPC abort over a pending provider stream + emission-failure preserves outcome with no manifest; RBK-003 session/evidence/manifest byte-identity across reload; RBK-004 EffectiveUserPolicy digest unchanged by run activity + denial before==after), phase17_api_audit (MIG-006 comment-aware source scan proving 8 removed symbols absent + no product policy in Agent Core; PLT-002 no network endpoints in phase17 sources; PLT-003 bilingual non-sandbox boundary; task-local A15 ci.yml 3-OS no-conditional-gating). CI: dedicated phase17_acceptance job (3-OS, named --test, no feature/mock). Docs: CHANGELOG [Unreleased] Breaking/Added/Changed for Phase 17; opi-ai README stream->stream_prepared row (EN+ZH); opi-coding-agent README legacy-route/trace-preservation paragraph (EN+ZH); root+opi-agent READMEs already carried the required boundary/breakage prose (untouched). C.1a append: crates/opi-agent/src/agent.rs doc-link fix (17.8 D.2 carry-over, [CallKind::Compaction] -> crate::evidence::CallKind::Compaction) which unblocked the rustdoc -D warnings gate. Interpretation calls honored: interactive asserted at the shared CodingHarness builder seam (TUI off-limits hermetically), queue-overflow scoped to the proxy channel (agent queues unbounded by design), cleanup-unknown composed from the Phase 15/16 owner, RPC durable evidence not reachable from the binary (documented asymmetry). Operational: two background smoke-full invocations were externally killed during the workspace-test compile; the gate completed in the foreground (fmt+clippy+rustdoc from the killed invocation, then cargo test --workspace --all-targets exit 0).",
+          "gate_results": [
+            {
+              "gate": "smoke full fmt --check --all",
+              "result": "passed"
+            },
+            {
+              "gate": "clippy --workspace --all-targets -D warnings",
+              "result": "passed"
+            },
+            {
+              "gate": "rustdoc --workspace -D warnings",
+              "result": "passed (after the agent.rs doc-link carry-over fix)"
+            },
+            {
+              "gate": "cargo test --workspace --all-targets",
+              "result": "exit 0; 203 binaries ok; 3789 tests passed"
+            },
+            {
+              "gate": "python scripts/opi-doc-check.py",
+              "result": "PASS"
+            },
+            {
+              "gate": "phase17_cross_mode",
+              "result": "2/2 passed"
+            },
+            {
+              "gate": "phase17_failure_rollback",
+              "result": "5/5 passed"
+            },
+            {
+              "gate": "phase17_api_audit",
+              "result": "4/4 passed"
+            },
+            {
+              "gate": "opi-artifact-audit.ps1 target/opi-artifacts/phase17-task-17.9",
+              "result": "ok:true"
+            }
+          ]
+        }
+      ]
     }
   ],
   "phase_exit": {
