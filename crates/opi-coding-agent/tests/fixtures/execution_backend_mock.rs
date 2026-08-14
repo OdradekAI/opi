@@ -63,6 +63,14 @@ fn main() {
     let mut writer = stdout.lock();
 
     match mode.as_str() {
+        // Grandchild helper for the tree-kill tests: writes this process's pid
+        // to the given file, then sleeps forever. Spawned from the
+        // `l0_grandchild` mode as a real descendant of the backend process.
+        "l0_gc_sleep" => {
+            drop(reader);
+            drop(writer);
+            l0_gc_sleep(extra.unwrap_or_default());
+        }
         "happy_path" => happy(&mut reader, &mut writer, b"hello\n"),
         "happy_binary" => happy(&mut reader, &mut writer, &[0xFF, 0x00, 0x42, b'\n']),
         "nonzero_exit" => terminal_exit(&mut reader, &mut writer, Some(2), None),
@@ -1419,22 +1427,26 @@ fn l0_grandchild(reader: &mut impl BufRead, writer: &mut impl Write, pidfile: St
         }),
     );
     if !pidfile.is_empty() {
-        #[cfg(windows)]
-        {
-            let script = format!(
-                "$PID | Out-File -FilePath '{}' -NoNewline -Encoding ASCII\nStart-Sleep -Seconds 60\n",
-                pidfile
-            );
-            let _ = std::process::Command::new("powershell")
-                .args(["-NoProfile", "-Command", &script])
+        // Spawn the grandchild as ANOTHER COPY OF THIS MOCK (argv-dispatched
+        // `l0_gc_sleep` mode): no powershell/sh dependency, so the descendant
+        // starts fast and identically on every platform and CI runner.
+        if let Ok(exe) = std::env::current_exe() {
+            let _ = std::process::Command::new(exe)
+                .arg("l0_gc_sleep")
+                .arg(&pidfile)
                 .spawn();
         }
-        #[cfg(unix)]
-        {
-            let _ = std::process::Command::new("sh")
-                .args(["-c", &format!("echo $$ > '{}'; sleep 60", pidfile)])
-                .spawn();
-        }
+    }
+    loop {
+        std::thread::sleep(std::time::Duration::from_secs(1));
+    }
+}
+
+/// `l0_gc_sleep <pidfile>`: record this pid, then stay alive until the tree
+/// is terminated.
+fn l0_gc_sleep(pidfile: String) {
+    if !pidfile.is_empty() {
+        let _ = std::fs::write(&pidfile, std::process::id().to_string());
     }
     loop {
         std::thread::sleep(std::time::Duration::from_secs(1));
