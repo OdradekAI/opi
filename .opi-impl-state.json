@@ -3525,6 +3525,10 @@
     {
       "timestamp": "2026-08-14T14:35:00+08:00",
       "summary": "Phase-exit remediation (user-directed): closed the 3 accepted not-met findings @f4f7234 (test-only, no production source): AUT-007 (phase17_after_call_replace_keeps_later_authorization_unchanged in phase17_tool_authority.rs), NXT-005 (phase17_compaction_replaces_provider_visible_context in session_runtime.rs — proves the provider-visible context is [summary, kept tail, current turn] with no standalone superseded message object), A09 (phase17_one_run_graph_includes_tool_execution_record in phase17_product_evidence.rs — Tool record through the harness-wired sink in the one-run graph). fmt+clippy -D warnings+the 3 binaries green (14+9+60). criteria-trace-final.json updated: 68 met / 2 not-met. REMAINING Phase 17 exit blockers: P17-PLT-001 + P17-A15 only — actual three-platform phase17_acceptance CI run evidence, which requires a push (separate human action); the next full F.1a/F.1b re-evaluation should run once that evidence exists. 8 low-severity citation misalignments from the phase-exit audit remain recorded in phase-exit-report.json (trace-only, no code change)."
+    },
+    {
+      "timestamp": "2026-08-14T19:45:00+08:00",
+      "summary": "Phase-exit rounds 2-3 @4f7a481/8b8d8bb/40f2e6e (user-approved path to archive): round2 closed NXT-002 validation leg, EVD-009 in-flight leg, EVD-010 enforcement, A04 five-field widening; round3 closed the A09 four-kind conjunction (compaction leg in the one-run graph test) + EVD-006 default-no-capture product test, unified the file's three function-local session locks into one module lock (parallel race, 2/5 repro, 8/8 green after), and fixed a CI-only clippy collapsible_if. Three-platform CI at the FINAL exit SHA 40f2e6e (run 31798070731): phase17_acceptance + workspace test + clippy all 3/3 green; remaining CI failures are the pre-existing docs_contract (.repo link) and execution_acceptance debt from 4c4a840; one windows lib-test pipe-drain flake (pre-existing file) did not reproduce. Final trace 70/70 met; adjudication record at target/opi-artifacts/phase17-exit/round3-adjudication.json. All Phase 17 exit criteria met -> proceeding to F.4 archive."
     }
   ],
   "verify_runs": [
@@ -3607,6 +3611,26 @@
       "ran_at": "2026-08-14T14:05:00+08:00",
       "task_id": null,
       "criterion_id": "P17-AUT-007,P17-NXT-005,P17-A09"
+    },
+    {
+      "stage": "phase-exit",
+      "wf_ref": "wf_212e18f0-29e",
+      "folded_count": 3,
+      "flagged_count": 8,
+      "rejected_count": 3,
+      "ran_at": "2026-08-14T16:10:00+08:00",
+      "task_id": null,
+      "criterion_id": "P17-AUT-007,P17-NXT-005,P17-A09 (remediated @f4f7234)"
+    },
+    {
+      "stage": "phase-exit",
+      "wf_ref": "wf_43b19329-3e5",
+      "folded_count": 8,
+      "flagged_count": 6,
+      "rejected_count": 3,
+      "ran_at": "2026-08-14T19:45:00+08:00",
+      "task_id": null,
+      "criterion_id": "verify-stage crashed on provider 429; lenses completed, findings adjudicated from journal (round3-adjudication.json); PLT-001/A15 re-evidenced at final SHA run 31798070731"
     }
   ]
 }
