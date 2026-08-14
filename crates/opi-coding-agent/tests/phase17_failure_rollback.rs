@@ -141,7 +141,16 @@ fn phase17_failure_boundaries_expose_distinguishable_typed_classes() {
 // ===========================================================================
 
 #[tokio::test]
+#[allow(clippy::await_holding_lock)] // serialized OPI_SESSIONS_DIR mutation; not re-acquired in the awaited dispatch.
 async fn phase17_failure_precedence_stops_before_later_boundaries() {
+    // This test prompts a CodingHarness (the evidence-setup row), so it must
+    // hold the session lock and isolate OPI_SESSIONS_DIR: the env var is
+    // process-global, and without the lock a concurrent lock-holder's
+    // directory setting would capture this run's session writes.
+    let _lock = phase17::session_lock();
+    let isolated_sessions = tempfile::tempdir().unwrap();
+    phase17::set_sessions_dir(isolated_sessions.path());
+
     // --- Route selection failure (owner 17.1/17.5 slice) --------------------
     let workspace = tempfile::tempdir().unwrap();
     let user = tempfile::tempdir().unwrap();
@@ -252,6 +261,7 @@ async fn phase17_failure_precedence_stops_before_later_boundaries() {
         b"{\"schema_version\":1,\"records\":[]}\n",
         "the blocking legacy file is untouched"
     );
+    phase17::clear_sessions_dir();
 }
 
 // ===========================================================================
@@ -284,7 +294,15 @@ impl Provider for PendingProvider {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[allow(clippy::await_holding_lock)] // serialized OPI_SESSIONS_DIR mutation; not re-acquired in the awaited dispatch.
 async fn phase17_cancellation_and_evidence_failure_are_not_converted_to_success() {
+    // Both halves prompt a CodingHarness (directly and through the RPC
+    // runner), so hold the session lock and isolate OPI_SESSIONS_DIR for the
+    // whole test (process-global env; see FAL-002 above).
+    let _lock = phase17::session_lock();
+    let isolated_sessions = tempfile::tempdir().unwrap();
+    phase17::set_sessions_dir(isolated_sessions.path());
+
     // --- Evidence emission failure preserves the outcome, withholds the
     // manifest (owner 17.7 A11 slice, recomposed on the product path). -------
     let ws = tempfile::tempdir().unwrap();
@@ -390,6 +408,7 @@ async fn phase17_cancellation_and_evidence_failure_are_not_converted_to_success(
     );
     command_tx.send(RpcCommand::quit { id: None }).unwrap();
     let _ = task.await;
+    phase17::clear_sessions_dir();
 }
 
 // ===========================================================================
