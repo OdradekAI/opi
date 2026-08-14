@@ -1854,7 +1854,7 @@
       "definition_of_done": "Using the canonical route plus input-source session schema and new-write behavior completed in 17.5, resume, fork, and branch reconstruction accept existing exact routes and normalize a legacy bare model only when the dispatchable collection proves one route; missing or ambiguous routes return typed deterministic remediation before dispatch. This task owns only legacy read/normalization behavior, not the session schema or new model-change writes. Load, normalization, resume, and fork leave legacy session fixtures byte-identical. Existing serialize-only legacy trace files remain opaque and byte-identical at their paths; new evidence never overwrites, rewrites, upgrades, down-converts, or deletes them. No trace reader, user workflow, compatibility API, or removed-runtime shim is added. Isolated filesystem tests cover exact/unique/ambiguous/missing session routes, resume/fork/branch, old/new file coexistence, no-reader source structure, and rollback preservation.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "17.7"
       ],
@@ -1903,6 +1903,11 @@
           "field": "criterion_verification",
           "reason": "MIG-001=byte-for-byte load/normalize/resume/fork fixtures; MIG-002=exact/unique/ambiguous/missing zero-dispatch tests; MIG-004=old/new coexistence, byte immutability, and no-reader source audit",
           "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Compatibility and migration"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Added crates/opi-agent/src/diagnostic.rs: two new pub const &str session-resume route-remediation codes (CODE_SESSION_RESUME_ROUTE_AMBIGUOUS/_MISSING) alongside the existing CODE_SESSION_RESUME_MODEL_INCOMPATIBLE to keep the session-resume diagnostic vocabulary centralized; behavior-preserving string additions, no enum/struct/match fallout.",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Compatibility and migration"
         }
       ],
       "tier": "cli-runtime",
@@ -1937,7 +1942,7 @@
             "opi_coding_agent::CodingHarness::resume_session_branch_tip",
             "opi_coding_agent product EvidenceSink file creation"
           ],
-          "status": "open"
+          "status": "met"
         }
       ],
       "production_call_sites": [
@@ -1950,8 +1955,11 @@
       "substrate_only": false,
       "iteration_count": 0,
       "max_iterations": 5,
-      "start_commit": null,
-      "baseline_dirty_files": [],
+      "start_commit": "2df4d0fcad1838f850cd8f51caafc23224c89772",
+      "baseline_dirty_files": [
+        "docs/research/2026-08-13-edge-agent-local-cloud-hierarchical-compute.md",
+        "docs/research/2026-08-13-pi-0.84.1-package-architecture-realignment.md"
+      ],
       "task_owned_paths": [
         "crates/opi-coding-agent/src/session_coordinator.rs",
         "crates/opi-coding-agent/src/session_cli.rs",
@@ -1962,13 +1970,52 @@
         "crates/opi-coding-agent/tests/phase17_legacy_migration.rs",
         "crates/opi-coding-agent/tests/session_runtime.rs",
         "crates/opi-coding-agent/tests/session_cli.rs",
-        "crates/opi-coding-agent/tests/fixtures/phase17/**"
+        "crates/opi-coding-agent/tests/fixtures/phase17/**",
+        "crates/opi-agent/src/diagnostic.rs"
       ],
-      "last_attempt": null,
-      "verified_at_commit": null,
-      "evidence": null,
+      "last_attempt": {
+        "attempt": 1,
+        "started_at": "2026-08-14T10:33:21+08:00",
+        "ended_at": "2026-08-14T11:49:01+08:00",
+        "outcome": "passed",
+        "failing_gate": null,
+        "touched_files": [
+          "crates/opi-agent/src/diagnostic.rs",
+          "crates/opi-coding-agent/src/harness.rs",
+          "crates/opi-coding-agent/tests/session_runtime.rs",
+          "crates/opi-coding-agent/tests/phase17_legacy_migration.rs"
+        ]
+      },
+      "verified_at_commit": "48930142df57d62929f184191bfdeb0972c0982e",
+      "evidence": {
+        "task": "17.8",
+        "dod_sha256": "3b8127615534b830e998b279dbfd86d27570f7d3e714a510449d9a97dcf62b19",
+        "verification": "cli-runtime; scoped opi-coding-agent [phase17_legacy_migration, session_runtime, session_cli] fmt+clippy(lib+bin)+rustdoc+tests green (7+59+44); D.0a artifact audit ok; D.2 exec.workflow.js must_fix=[]",
+        "evaluator": "passed",
+        "acceptance": "P17-A13 met by phase17_legacy_sessions_and_opaque_traces_are_byte_preserved (real CodingHarness resume+prompt + FileEvidenceSink; legacy session + trace byte-identical, unique normalization, new evidence distinct path) and phase17_resume_fork_branch_preserve_canonical_route_binding (real resume/fork/branch call sites)"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-08-14T11:49:01+08:00",
+          "attempt": 1,
+          "summary": "17.8 passing @4893014. Read-side legacy normalization: normalize_recorded_route (exact passthrough; bare -> unique dispatchable route via retained dispatchable_provider_ids, else typed Ambiguous/Missing remediation keeping CLI model fail-closed) wired through apply_recorded_model into resume_session_id + fork_current_session + resume_session_branch_tip (fork/branch previously skipped it). Two new diagnostic codes session_resume_route_{ambiguous,missing} in opi-agent/diagnostic.rs (C.1a append). MIG-001 legacy session byte-identical across load/normalize/resume/fork (in-memory only); MIG-004 FileEvidenceSink fails-closed (create_dir_all errors) when --trace names an existing legacy file, never overwriting it; opaque trace coexists with new evidence.jsonl/manifest.json. D.1 scoped smoke green (7+59+44); D.0a artifact audit ok; D.2 exec.workflow.js must_fix=[]. CARRY-OVER to 17.9/phase-exit: 1 flagged pre-existing broken rustdoc intra-doc link [CallKind::Compaction] at opi-agent/src/agent.rs:155 (from 17.6/17.7, NOT 17.8) blocks the Phase 17 workspace-doc exit gate; 17.9 owns documentation acceptance so should qualify the link. 17.5 write schema (ModelInputSource/append_model_change) untouched.",
+          "gate_results": [
+            {
+              "gate": "scoped opi-coding-agent [phase17_legacy_migration, session_runtime, session_cli] fmt+clippy(lib+bin)+rustdoc+tests",
+              "result": "passed (7+59+44)"
+            },
+            {
+              "gate": "D.0a opi-artifact-audit.ps1",
+              "result": "ok (no issues)"
+            },
+            {
+              "gate": "D.2 exec.workflow.js 6-lens",
+              "result": "must_fix=[] (1 flagged pre-existing opi-agent rustdoc, carried to 17.9)"
+            }
+          ]
+        }
+      ]
     },
     {
       "id": "17.9",
