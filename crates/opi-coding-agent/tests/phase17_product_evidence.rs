@@ -1113,10 +1113,10 @@ async fn phase17_default_harness_emits_no_evidence() {
             let path = entry.path();
             if path.is_dir() {
                 walk(&path, found);
-            } else if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                if name == "evidence.jsonl" || name == "manifest.json" {
-                    found.push(path);
-                }
+            } else if let Some(name) = path.file_name().and_then(|n| n.to_str())
+                && (name == "evidence.jsonl" || name == "manifest.json")
+            {
+                found.push(path);
             }
         }
     }
