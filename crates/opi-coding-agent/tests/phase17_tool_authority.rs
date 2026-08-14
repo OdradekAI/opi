@@ -718,3 +718,155 @@ async fn phase17_after_call_replace_keeps_later_authorization_unchanged() {
         "the effective policy digest is unchanged by the after-call transform"
     );
 }
+
+// ===========================================================================
+// P17-EVD-009 (phase-exit closure) — the in-flight leg: a side effect that
+// already crossed the launch boundary under a healthy evidence generation
+// RETAINS ITS ACTUAL OUTCOME when evidence health goes incomplete
+// mid-execution, while the next launch fails closed under the real
+// ProductToolAuthorizer with complete evidence required.
+// ===========================================================================
+
+struct GatedTool {
+    started: Arc<AtomicUsize>,
+    release: Arc<tokio::sync::Notify>,
+    count: Arc<AtomicUsize>,
+}
+
+impl Tool for GatedTool {
+    fn definition(&self) -> opi_ai::message::ToolDef {
+        opi_ai::message::ToolDef {
+            name: "gated".to_owned(),
+            description: "gated test tool".to_owned(),
+            input_schema: serde_json::json!({ "type": "object" }),
+        }
+    }
+    fn execute(
+        &self,
+        _call_id: &str,
+        _arguments: serde_json::Value,
+        _signal: CancellationToken,
+        _on_update: Option<opi_agent::tool::UpdateCallback>,
+    ) -> Pin<Box<dyn std::future::Future<Output = Result<ToolResult, ToolError>> + Send>> {
+        let started = self.started.clone();
+        let release = self.release.clone();
+        let count = self.count.clone();
+        Box::pin(async move {
+            // Crossing the launch boundary is observable: authorization has
+            // already happened when this runs.
+            started.fetch_add(1, Ordering::SeqCst);
+            release.notified().await;
+            count.fetch_add(1, Ordering::SeqCst);
+            Ok(ToolResult {
+                content: vec![opi_ai::message::OutputContent::Text {
+                    text: "gated tool actual outcome".to_owned(),
+                }],
+                details: None,
+                is_error: false,
+                terminate: false,
+                truncated: false,
+                diagnostics: Vec::new(),
+            })
+        })
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn phase17_in_flight_effect_retains_actual_outcome_under_evidence_failure() {
+    use opi_agent::evidence::{EvidenceError, InMemoryEvidenceSink};
+
+    let sink = Arc::new(InMemoryEvidenceSink::new());
+    let started = Arc::new(AtomicUsize::new(0));
+    let release = Arc::new(tokio::sync::Notify::new());
+    let count = Arc::new(AtomicUsize::new(0));
+
+    // Complete evidence is policy-required, so an incomplete health generation
+    // fails closed at the authorization boundary (the not-yet-launched leg).
+    let policy = Arc::new(EffectiveUserPolicy::build(
+        opi_coding_agent::config::ExecutionRunMode::Interactive,
+        vec!["gated".to_owned()],
+        true,
+        PermissionPolicy::empty(),
+        /* complete_evidence_required */ true,
+        "project".to_owned(),
+        "package".to_owned(),
+        "workspace".to_owned(),
+    ));
+    let tool = Arc::new(GatedTool {
+        started: started.clone(),
+        release: release.clone(),
+        count: count.clone(),
+    });
+    let definition = tool.definition();
+    let registration = RegisteredTool::new(
+        RegistrationId::new("test-gated"),
+        "gated".to_owned(),
+        ToolOrigin::Builtin,
+        Capability::Builtin(CapabilityClass::WorkspaceWrite),
+        definition,
+        tool,
+    );
+    let mut agent = Agent::new(
+        Arc::new(single_route_collection(Box::new(MockProvider::new(vec![
+            tool_call_response("c1", "gated", "{}"),
+            tool_call_response("c2", "gated", "{}"),
+            text_response("done"),
+        ])))),
+        vec![registration],
+        Some(Arc::new(ProductToolAuthorizer::new(policy, None))),
+        "mock:mock-model".to_owned(),
+        None,
+        InferenceConfig::default(),
+        AgentLoopConfig {
+            max_turns: 5,
+            ..Default::default()
+        },
+        Box::new(NoopHooks),
+    )
+    .expect("agent builds");
+    agent.set_evidence_sink(Some(sink.clone()));
+
+    let handle = tokio::spawn(async move { agent.prompt("run gated twice").await });
+
+    // Wait until the FIRST call has crossed the launch boundary (authorized
+    // and executing), then advance evidence health to incomplete mid-flight.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    while started.load(Ordering::SeqCst) == 0 && std::time::Instant::now() < deadline {
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    assert_eq!(
+        started.load(Ordering::SeqCst),
+        1,
+        "the first call launched before the failure was injected"
+    );
+    sink.inject_failure(EvidenceError::Emission {
+        detail: "mid-flight emission failure".to_owned(),
+    });
+    // Release the in-flight effect: it completes with its ACTUAL outcome.
+    release.notify_one();
+
+    let messages = handle
+        .await
+        .expect("task joins")
+        .expect("the run completes despite the mid-flight evidence failure");
+    let actual_retained = messages
+        .iter()
+        .any(|m| format!("{m:?}").contains("gated tool actual outcome"));
+    assert!(
+        actual_retained,
+        "the in-flight effect's actual outcome is retained in the conversation, not rewritten to a denial"
+    );
+    assert_eq!(
+        count.load(Ordering::SeqCst),
+        1,
+        "exactly one execution: the in-flight effect completed, the next launch failed closed"
+    );
+    assert!(
+        sink.has_failure(),
+        "the injected emission failure was observed (health advanced mid-flight)"
+    );
+    assert!(
+        sink.completed_manifest().is_none(),
+        "incomplete evidence produces no finalized manifest"
+    );
+}

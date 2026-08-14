@@ -15,14 +15,16 @@ use opi_agent::hooks::{
     AfterToolCallContext, AfterToolCallResult, AgentHooks, BeforeToolCallContext,
     BeforeToolCallResult, PrepareNextTurnContext, ShouldStopAfterTurnContext,
 };
-use opi_agent::loop_types::{AgentError, AgentLoopConfig, InferenceConfig, NextTurnState};
+use opi_agent::loop_types::{
+    AgentError, AgentLoopConfig, InferenceConfig, ModelSelection, NextTurnState,
+};
 use opi_agent::message::AgentMessage;
 use opi_agent::tool::{ExecutionMode, Tool, ToolError, ToolResult};
 use opi_ai::message::{
     AssistantContent, AssistantMessage, InputContent, Message, OutputContent, ToolCall, ToolDef,
     UserMessage,
 };
-use opi_ai::provider::{EventStream, Provider, ProviderError, Request};
+use opi_ai::provider::{EventStream, Provider, ProviderError, Request, ThinkingConfig};
 use opi_ai::stream::{AssistantStreamEvent, StopReason, Usage};
 use opi_ai::test_support::single_route_collection;
 use opi_ai::{ModelCapabilities, ModelInfo, WireApi};
@@ -43,12 +45,20 @@ impl RecordingProvider {
         Self {
             responses: Arc::new(Mutex::new(responses)),
             received_messages: Arc::new(Mutex::new(Vec::new())),
-            models: vec![ModelInfo::new(
-                "mock-model",
-                "Mock Model",
-                WireApi::OpenAiCompletions,
-                ModelCapabilities::new(100_000, 4_096),
-            )],
+            models: vec![
+                ModelInfo::new(
+                    "mock-model",
+                    "Mock Model",
+                    WireApi::OpenAiCompletions,
+                    ModelCapabilities::new(100_000, 4_096),
+                ),
+                ModelInfo::new(
+                    "alt-model",
+                    "Alternate Model",
+                    WireApi::OpenAiCompletions,
+                    ModelCapabilities::new(100_000, 4_096),
+                ),
+            ],
         }
     }
 }
@@ -1075,6 +1085,9 @@ fn llm_only(messages: &[AgentMessage]) -> Result<Vec<Message>, AgentError> {
 struct ObserveAppliedStateHooks {
     observed_max_tokens: Arc<Mutex<Option<u64>>>,
     observed_context_len: Arc<Mutex<Option<usize>>>,
+    observed_temperature: Arc<Mutex<Option<f64>>>,
+    observed_thinking_budget: Arc<Mutex<Option<u64>>>,
+    observed_model: Arc<Mutex<Option<String>>>,
 }
 
 impl AgentHooks for ObserveAppliedStateHooks {
@@ -1086,9 +1099,18 @@ impl AgentHooks for ObserveAppliedStateHooks {
         ctx: PrepareNextTurnContext,
     ) -> Pin<Box<dyn Future<Output = Result<Option<NextTurnState>, AgentError>> + Send>> {
         Box::pin(async move {
-            // Replace the complete state: change inference and add context.
+            // Replace the complete state: change EVERY mutable field — context,
+            // model selection, thinking, max tokens, and temperature — so stop
+            // must observe the complete replacement, never a mixed state.
             let mut next = ctx.state.clone();
+            next.model_selection = ModelSelection::new("recording", "alt-model");
             next.inference.max_tokens = Some(9999);
+            next.inference.temperature = Some(0.7);
+            next.inference.thinking = ThinkingConfig {
+                enabled: true,
+                budget_tokens: Some(4096),
+                ..Default::default()
+            };
             next.context
                 .push(AgentMessage::Llm(Message::User(UserMessage {
                     content: vec![InputContent::Text {
@@ -1105,9 +1127,15 @@ impl AgentHooks for ObserveAppliedStateHooks {
     ) -> Pin<Box<dyn Future<Output = bool> + Send>> {
         let observed_max_tokens = self.observed_max_tokens.clone();
         let observed_context_len = self.observed_context_len.clone();
+        let observed_temperature = self.observed_temperature.clone();
+        let observed_thinking_budget = self.observed_thinking_budget.clone();
+        let observed_model = self.observed_model.clone();
         Box::pin(async move {
             *observed_max_tokens.lock().unwrap() = ctx.state.inference.max_tokens;
             *observed_context_len.lock().unwrap() = Some(ctx.state.context.len());
+            *observed_temperature.lock().unwrap() = ctx.state.inference.temperature;
+            *observed_thinking_budget.lock().unwrap() = ctx.state.inference.thinking.budget_tokens;
+            *observed_model.lock().unwrap() = Some(ctx.state.model_selection.model_id.clone());
             true
         })
     }
@@ -1124,23 +1152,45 @@ async fn phase17_stop_observes_complete_next_turn_state() {
     let provider = RecordingProvider::new(vec![text_response("hello")]);
     let observed_max_tokens = Arc::new(Mutex::new(None));
     let observed_context_len = Arc::new(Mutex::new(None));
+    let observed_temperature = Arc::new(Mutex::new(None));
+    let observed_thinking_budget = Arc::new(Mutex::new(None));
+    let observed_model = Arc::new(Mutex::new(None));
     let mut agent = make_agent(
         provider,
         vec![],
         Box::new(ObserveAppliedStateHooks {
             observed_max_tokens: observed_max_tokens.clone(),
             observed_context_len: observed_context_len.clone(),
+            observed_temperature: observed_temperature.clone(),
+            observed_thinking_budget: observed_thinking_budget.clone(),
+            observed_model: observed_model.clone(),
         }),
     );
     agent.prompt("test").await.unwrap();
 
     // should_stop ran AFTER prepare_next_turn applied the candidate, so it
-    // observes max_tokens == 9999 (the prepared value) and the prepared context
-    // message — proving stop sees the complete replacement, not a mixed state.
+    // observes ALL FIVE prepared fields together — the complete replacement,
+    // never a mixed state (P17-A04: context, model, thinking, max tokens,
+    // temperature).
     assert_eq!(
         *observed_max_tokens.lock().unwrap(),
         Some(9999),
         "should_stop must observe the prepared inference, not the pre-preparation value"
+    );
+    assert_eq!(
+        *observed_temperature.lock().unwrap(),
+        Some(0.7),
+        "should_stop must observe the prepared temperature"
+    );
+    assert_eq!(
+        *observed_thinking_budget.lock().unwrap(),
+        Some(4096),
+        "should_stop must observe the prepared thinking budget"
+    );
+    assert_eq!(
+        observed_model.lock().unwrap().as_deref(),
+        Some("alt-model"),
+        "should_stop must observe the prepared model selection"
     );
     let len = observed_context_len
         .lock()
@@ -1222,5 +1272,85 @@ async fn phase17_failed_prepare_preserves_state_and_skips_later_boundaries() {
         received.lock().unwrap().len(),
         1,
         "no further turns after a failed prepare"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Phase 17 exit closure — P17-NXT-002 validation leg: a prepare hook that
+// returns Some(candidate) whose model selection the collection cannot resolve
+// fails the transition with the TYPED InvalidNextTurnCandidate before any
+// state applies; prior state, the stop gate, and queue polling are untouched.
+// ---------------------------------------------------------------------------
+
+struct InvalidCandidateHooks {
+    stop_calls: Arc<Mutex<u32>>,
+}
+
+impl AgentHooks for InvalidCandidateHooks {
+    fn convert_to_llm(&self, messages: &[AgentMessage]) -> Result<Vec<Message>, AgentError> {
+        llm_only(messages)
+    }
+    fn prepare_next_turn(
+        &self,
+        ctx: PrepareNextTurnContext,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<NextTurnState>, AgentError>> + Send>> {
+        Box::pin(async move {
+            // Canonical two-part shape that the collection cannot resolve: the
+            // candidate passes the hook, then fails the loop-side validation.
+            let mut next = ctx.state.clone();
+            next.model_selection = ModelSelection::new("ghost", "missing-model");
+            Ok(Some(next))
+        })
+    }
+    fn should_stop_after_turn(
+        &self,
+        _ctx: ShouldStopAfterTurnContext,
+    ) -> Pin<Box<dyn Future<Output = bool> + Send>> {
+        let stop_calls = self.stop_calls.clone();
+        Box::pin(async move {
+            *stop_calls.lock().unwrap() += 1;
+            false
+        })
+    }
+    fn before_tool_call(
+        &self,
+        _ctx: BeforeToolCallContext,
+    ) -> Pin<Box<dyn Future<Output = BeforeToolCallResult> + Send>> {
+        Box::pin(async { BeforeToolCallResult::Continue })
+    }
+}
+
+#[tokio::test]
+async fn phase17_invalid_prepare_candidate_preserves_state_with_typed_error() {
+    let provider = RecordingProvider::new(vec![text_response("hello")]);
+    let received = provider.received_messages.clone();
+    let stop_calls = Arc::new(Mutex::new(0u32));
+    let mut agent = make_agent(
+        provider,
+        vec![],
+        Box::new(InvalidCandidateHooks {
+            stop_calls: stop_calls.clone(),
+        }),
+    );
+    let result = agent.prompt("test").await;
+
+    assert!(
+        matches!(result, Err(AgentError::InvalidNextTurnCandidate { .. })),
+        "an unresolvable prepare candidate fails with the typed validation error: {result:?}"
+    );
+    assert_eq!(
+        *stop_calls.lock().unwrap(),
+        0,
+        "the stop gate must not run after an invalid candidate"
+    );
+    assert_eq!(
+        agent.messages_snapshot().len(),
+        1,
+        "prior state preserved: only the user message remains"
+    );
+    assert_eq!(
+        received.lock().unwrap().len(),
+        1,
+        "no further turns after an invalid candidate (no queue polling)"
     );
 }

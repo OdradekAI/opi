@@ -219,6 +219,57 @@ fn phase17_removed_interfaces_are_absent_from_production_source() {
 }
 
 // ===========================================================================
+// P17-EVD-010 (phase-exit closure) — the core-adapter boundary is ENFORCED:
+// Agent Core (opi-agent) ships only the no-op and in-memory EvidenceSink
+// implementations; file capture and exporters live outside it.
+// ===========================================================================
+
+#[test]
+fn phase17_core_evidence_adapters_are_limited_to_noop_and_in_memory() {
+    let sources = production_sources();
+    let mut core_impl_sites: Vec<String> = Vec::new();
+    for (path, stripped) in &sources {
+        let is_opi_agent = path
+            .components()
+            .any(|c| c.as_os_str().to_str() == Some("opi-agent"));
+        if !is_opi_agent {
+            continue;
+        }
+        // No file capture or exporter surface may exist in Agent Core.
+        for symbol in ["FileEvidenceSink", "Exporter", "exporter"] {
+            assert_eq!(
+                occurrences_not_prefixed(stripped, symbol, ""),
+                0,
+                "evidence adapter/exporter symbol `{symbol}` must not live in opi-agent: {}",
+                path.display()
+            );
+        }
+        // Every core sink implementation targets Noop or InMemory only.
+        let mut start = 0;
+        while let Some(pos) = stripped[start..].find("impl EvidenceSink for ") {
+            let abs = start + pos;
+            let rest = &stripped[abs + "impl EvidenceSink for ".len()..];
+            let target: String = rest
+                .chars()
+                .take_while(|c| c.is_alphanumeric() || *c == '_')
+                .collect();
+            core_impl_sites.push(target);
+            start = abs + 1;
+        }
+    }
+    assert!(
+        !core_impl_sites.is_empty(),
+        "the scan found the core EvidenceSink implementation sites (non-vacuous)"
+    );
+    for target in &core_impl_sites {
+        assert!(
+            target == "NoopEvidenceSink" || target == "InMemoryEvidenceSink",
+            "Agent Core implements EvidenceSink only for Noop/InMemory, found `{target}`"
+        );
+    }
+}
+
+// ===========================================================================
 // P17-PLT-002 — Phase 17 tests call no paid/live providers: no network
 // endpoints in any phase17 acceptance source. This file is excluded from its
 // own scan because the assertion literals below would self-match.
