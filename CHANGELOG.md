@@ -7,6 +7,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- `opi-ai`: provider dispatch is collection-owned. `ProviderCollection` is the
+  route/auth seam — `prepare_call` resolves one canonical `provider:model`
+  route and authentication once per logical call, and every retry attempt
+  reuses the frozen route/request/auth through `stream_prepared`. The
+  `Provider::stream(Request)` entry, the `SharedProvider` wrapper, and the
+  metadata-only `MetadataProvider` construction path were removed; unknown,
+  ambiguous, unauthenticated, refresh-failed, fallback-disallowed, or
+  wire-incompatible selections fail with typed errors before model HTTP
+  dispatch, without silent provider or credential fallback.
+- `opi-agent`: `Agent` owns one durable atomic `NextTurnState` (context,
+  provider:model, thinking, max_tokens, temperature) applied in a fixed
+  prepare → validate → apply → stop → queues order; the append-only
+  `AgentLoopTurnUpdate`, the unused `AgentHarness`/`HarnessRuntimeConfig`
+  state owner, `SharedProvider`, and `Agent::add_tool` were removed. Tools are
+  registered as immutable trusted `RegisteredTool`s and every execution passes
+  a mandatory `ToolAuthorizer`; the pre-tool hook's authorization-suggesting
+  `Allow` grant was renamed `Continue`, and missing, failed, expired, stale, or
+  forged authority yields zero executions.
+- `opi-agent`: the storage-shaped core `TraceSink`/`TraceCollector` contract
+  was superseded by the product-neutral evidence lifecycle
+  (`EvidenceSink`/`EvidenceRecorder`, opaque run/turn/call identities,
+  `EvidenceHealth`, immutable `FinalizedManifest`).
+- `opi-coding-agent`: legacy bare-model session routes normalize only when the
+  dispatchable collection proves exactly one route; missing or ambiguous
+  routes keep the configured model and report typed remediation instead of
+  guessing from the active provider.
+
+### Added
+
+- `opi-ai`: `ProviderCollection` with per-call `prepare_call` route/auth
+  preparation, `AuthResolver`/`ResolvedAuth` carrying non-secret provenance,
+  and typed collection failures (`AuthNotConfigured`,
+  `RouteNotDispatchable`, `CallCancelled`, ...).
+- `opi-agent`: the product-neutral evidence module — `EvidenceSink` lifecycle,
+  `EvidenceRecorder`, `EvidenceRecord` with call-graph correlation,
+  `EvidenceHealth`, and no-op/in-memory adapters; trusted tool registration
+  (`RegisteredTool`/`ToolRegistry`) with mandatory `ToolAuthorizer`
+  authorization and digest-addressed `EffectiveUserPolicy` snapshots.
+- `opi-coding-agent`: opt-in `--trace <PATH>` evidence capture
+  (`evidence.jsonl` + `manifest.json`) for non-interactive/JSON runs; eager
+  multi-route dispatch with cross-provider switching without harness
+  reconstruction; `FileEvidenceSink` with fail-closed setup.
+
+### Changed
+
+- The Reference Product runs one coherent runtime: interactive,
+  non-interactive/print, JSON/NDJSON, and RPC entry points expose equivalent
+  route, authority, cancellation, and evidence semantics over the same
+  `CodingHarness` (CI selects the same hermetic Phase 17 acceptance on Linux,
+  macOS, and Windows).
+- Legacy serialize-only trace files remain opaque and byte-identical at their
+  existing locations; new-schema evidence never overwrites, rewrites,
+  upgrades, down-converts, or deletes them, and sessions are never rewritten
+  by load, normalization, resume, or fork.
+
 ## [0.8.0] - 2026-08-12
 
 No runtime behavior changes. This release consolidates the Opi specification

@@ -53,7 +53,7 @@ OpenAI-compatible profile 加入。
 
 | 项 | 作用 |
 |----|------|
-| `Provider` | 后端 trait，包含 `id`、`models` 和 `stream(Request)`。 |
+| `Provider` | 后端 trait，包含 `id`、`models` 和 `stream_prepared`（唯一分发入口，经 `ProviderCollection::prepare_call` 携已解析认证调用）。 |
 | `Request` / `CacheRetention` | Provider 请求：模型、消息、工具、token 限制、thinking 配置、metadata、取消、timeout、额外 header、cache retention 和会话亲和。 |
 | `Message` | 面向 Provider 的 user、assistant 和 tool-result 消息。 |
 | `InputContent` / `OutputContent` | 文本与图片内容块。 |

@@ -57,7 +57,7 @@ added through registry overrides or configured OpenAI-compatible profiles.
 
 | Item | Purpose |
 |------|---------|
-| `Provider` | Backend trait with `id`, `models`, and `stream(Request)`. |
+| `Provider` | Backend trait with `id`, `models`, and `stream_prepared` (the sole dispatch entry, reached through `ProviderCollection::prepare_call` with already-resolved auth). |
 | `Request` / `CacheRetention` | Provider request: model, messages, tools, token limits, thinking config, metadata, cancellation, timeout, extra headers, cache retention, and session affinity. |
 | `Message` | Provider-facing user, assistant, and tool-result messages. |
 | `InputContent` / `OutputContent` | Text and image content blocks. |

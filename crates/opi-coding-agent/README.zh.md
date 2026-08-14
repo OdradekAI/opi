@@ -439,6 +439,12 @@ schema version 是 `3`。启动诊断会通过该 ready header 的 `startup_diag
 `%LOCALAPPDATA%\opi\sessions\` 和 Unix 的 `~/.local/share/opi/sessions/`，可用
 `OPI_SESSIONS_DIR` 覆盖。
 
+旧版会话中的模型记录可能是不带 provider 前缀的裸模型名。resume、fork 或
+branch 时，只有当恰好一条可分发路由提供该模型时才会归一化；路由缺失或
+有歧义时保持配置的模型并给出类型化的修复诊断，而不是猜测。加载和归一化
+永不改写会话文件；旧的 serialize-only trace 文件与 `--trace` 写出的新
+schema 证据并存时保持不透明且逐字节不变，新证据也从不覆盖或升级它们。
+
 `CodingHarness` 会从 workspace 祖先目录向上到 git root 加载 `AGENTS.md` 和
 `CLAUDE.md`，然后加载用户配置目录中的同名文件。空文件和超过 128 KiB 的文件会被
 忽略。`OPI.md` 有意不加载。

@@ -483,6 +483,15 @@ Sessions are append-only JSONL files under `%LOCALAPPDATA%\opi\sessions\` on
 Windows and `~/.local/share/opi/sessions/` on Unix, unless `OPI_SESSIONS_DIR`
 is set.
 
+Legacy sessions recorded a bare model name without a provider prefix. On
+resume, fork, or branch, a bare model normalizes only when exactly one
+dispatchable route serves it; an ambiguous or missing route keeps the
+configured model and reports a typed remediation diagnostic instead of
+guessing. Session files are never rewritten by load or normalization, and
+legacy serialize-only trace files stay opaque and byte-identical next to the
+new-schema evidence written by `--trace`, which never overwrites or upgrades
+them.
+
 `CodingHarness` loads `AGENTS.md` and `CLAUDE.md` from the workspace ancestors
 up to the git root, then from the user config directory. Empty files and files
 larger than 128 KiB are ignored. `OPI.md` is intentionally not loaded.

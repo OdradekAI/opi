@@ -152,7 +152,7 @@ impl Agent {
         self.evidence_sink = sink;
     }
 
-    /// Emit a post-run [`CallKind::Compaction`] evidence record in the run that
+    /// Emit a post-run [`crate::evidence::CallKind::Compaction`] evidence record in the run that
     /// just completed, using the persisted identity allocator so the compaction
     /// shares the run's correlation graph (P17-EVD-002). A no-op when no
     /// evidence sink is bound or no run has completed.
