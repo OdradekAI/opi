@@ -10,11 +10,6 @@ Reference Product. It reimplements selected ideas from
 [earendil-works/pi](https://github.com/earendil-works/pi), but it is not a
 line-by-line port or a pi compatibility layer.
 
-Repository: https://github.com/OdradekAI/opi
-
-`CLAUDE.md` is the Claude Code-flavored sibling of this file. When project
-rules change, update both in lockstep to avoid drift.
-
 ## Sources of truth
 
 Use the narrowest authoritative source for each claim:
@@ -74,6 +69,18 @@ Internal dependencies must be declared in root `[workspace.dependencies]` and
 referenced with `{ workspace = true }`. Publishable path dependencies also need
 a version. Do not duplicate workspace-owned package metadata in crate manifests.
 
+## Dependency and supply-chain safety
+
+- Treat changes to `Cargo.toml`, `Cargo.lock`, Cargo features, `build.rs`, native
+  dependencies, and proc-macro dependencies as reviewed code.
+- Verify third-party APIs against the exact locked crate version or its
+  authoritative documentation; do not guess from another version.
+- Never hand-edit `Cargo.lock`. Regenerate it with Cargo and review unexpected
+  direct and transitive changes.
+- Do not introduce or broaden default features, build scripts, native code, or
+  proc macros without explaining the portability, authority, and supply-chain
+  impact.
+
 ## Project workflow
 
 The canonical workflow and skill-selection policy live in
@@ -113,8 +120,17 @@ ledger, or treat arbitrary `docs/superpowers/specs/` files as normative.
 - Match the surrounding style even when you would structure new code
   differently. Mention unrelated dead code instead of deleting it; remove only
   imports, variables, functions, tests, or docs made unused by your change.
-- Ask before removing intentional behavior. Do not preserve backward
-  compatibility unless the user explicitly requests it.
+- Comments and rustdoc describe current contracts, invariants, failure behavior,
+  timing, ownership, and safe use. Do not preserve Phase, task, PR, or review
+  history in source comments; keep history in `docs/snapshots/`, registered
+  ADRs, `CHANGELOG.md`, or Git and link it only when needed.
+- Ask before removing intentional behavior.
+- While public crates, CLI surfaces, wire formats, and on-disk formats remain
+  0.x, breaking changes are allowed only when deliberately scoped and recorded
+  under `## [Unreleased]`. Do not add compatibility shims unless the owning
+  specification, issue, or release policy requires them. Update affected
+  callers, schemas, fixtures, tests, and documentation together. Revisit this
+  policy before 1.0.
 - Prefer safe Rust. Avoid `unsafe` unless there is no sound safe alternative;
   keep any required unsafe boundary narrow and justified.
 - Use `thiserror` for library error types and `anyhow` only in binaries or tests.
@@ -130,6 +146,14 @@ a bug before fixing it, exercise invalid inputs when adding validation, and
 compare focused tests before and after a refactor. For multi-step work, state
 each item as `step -> verify: <check>` and loop until every check passes or the
 remaining gap is explicit.
+
+Match verification to the changed surface: focused tests for local behavior;
+integration or snapshot tests for CLI, TUI, or model-visible output; fixture and
+conformance tests for protocols, schemas, and durable formats; the documentation
+check for documentation, skills, and metadata; artifact or package smoke checks
+for published paths; and workspace gates for cross-crate runtime behavior, Phase
+exit, CI, and release. Report the exact commands run and their results. Do not
+claim that a gate passed unless that command was actually run.
 
 Runtime Rust or Cargo changes require the relevant `opi-implement` tier gate
 when that workflow is active. Documentation, skill, and metadata-only work uses
@@ -152,9 +176,10 @@ RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
 
 If a test file is created or modified, run that exact test binary/filter and
 iterate until it passes. Use `opi_ai::test_support::MockProvider` and local
-fixtures; tests must not call paid providers or require live credentials.
-Filesystem and session tests use isolated temp directories. Serialize tests
-that mutate process environment variables.
+fixtures; tests must not call paid providers, require live credentials, or
+activate live-provider behavior merely because credentials exist in the
+environment. Filesystem and session tests use isolated temp directories.
+Serialize tests that mutate process environment variables.
 
 Record test impact in the handoff as `add`, `update`, `delete`, `retain`, or
 `none`. Do not encode prose wording, phase status, roadmap text, changelog
@@ -168,7 +193,12 @@ or delete caches as task cleanup. Inspect with
 
 ## Git safety
 
+Assume multiple users or agents may modify this worktree concurrently.
+Unrelated staged, unstaged, and untracked changes are not yours; do not move,
+rewrite, stage, or delete them.
+
 - NEVER commit unless the user asks.
+- Never commit credentials or `.env` files.
 - Commit only files changed for the current task. Stage them by explicit path;
   never use `git add -A` or `git add .`.
 - Run `git status` before staging and again before committing.
@@ -183,21 +213,33 @@ Forbidden operations include `git reset --hard`, `git checkout .`,
 `git push --force`. If a rebase conflicts in a file you did not modify, abort
 and ask the user. Never discard unrelated worktree changes.
 
-Analyze pull requests without pulling first. Create or publish a branch, commit,
-push, PR, or release only when the user explicitly asks. Automation-created
-branch names should use the `codex/` prefix unless the user specifies another
-name.
+Review pull requests without pulling or changing the current branch or
+worktree. Prefer `gh pr view`, `gh pr diff`, `gh api`, and
+`git show <ref>:<path>`. Do not use `gh pr checkout`, `git switch`, or an
+equivalent branch-changing command unless the user explicitly asks. Create or
+publish a branch, commit, push, PR, or release only when the user explicitly
+asks. Automation-created branch names should use the `codex/` prefix unless the
+user specifies another name.
 
 ## Changelog and release
 
-Add user-visible changes only under `## [Unreleased]` in `CHANGELOG.md`. Released
-sections are immutable. Release work must use the explicitly invoked
-`opi-release <version>` workflow; never improvise crates.io publication, tags,
-or rollback. Public release rollback uses a revert and tag deletion, never a
-hard reset or force push.
+Read the complete `## [Unreleased]` section before editing it. Add user-visible
+changes only there, reuse existing subsections, and never create duplicate
+subsection headings. Released sections are immutable. Release work must use the
+explicitly invoked `opi-release <version>` workflow; never improvise crates.io
+publication, tags, or rollback. Public release rollback uses a revert and tag
+deletion, never a hard reset or force push.
+
+## Editing these instructions
+
+Keep each rule self-contained, link volatile facts to their authoritative source
+instead of copying them here, and run `python scripts/opi-doc-check.py` after
+every change.
 
 ## Communication
 
 Keep responses concise and technical. No fluff and no emojis in commits,
 issues, PR comments, or code. Lead with the result, then state verification and
-any remaining risk or unverified work.
+any remaining risk or unverified work. When responding to review feedback or a
+proposed diagnosis, state whether you agree, disagree, or partially agree and
+cite the governing evidence before making changes.
