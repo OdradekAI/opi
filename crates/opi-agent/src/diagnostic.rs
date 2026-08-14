@@ -291,6 +291,16 @@ pub mod code {
     /// selection. The CLI/config model is kept; the recorded entry is preserved
     /// in the session file. Phase 13.3.
     pub const CODE_SESSION_RESUME_MODEL_INCOMPATIBLE: &str = "session_resume_model_incompatible";
+    /// Resume could not normalize a recorded legacy bare model because it
+    /// matches more than one dispatchable route in the collection. The
+    /// CLI/config model is kept (fail-closed); the recorded entry is preserved
+    /// unchanged in the session file. Phase 17.8.
+    pub const CODE_SESSION_RESUME_ROUTE_AMBIGUOUS: &str = "session_resume_route_ambiguous";
+    /// Resume could not normalize a recorded legacy bare model because no
+    /// dispatchable route in the collection serves it. The CLI/config model is
+    /// kept (fail-closed); the recorded entry is preserved unchanged in the
+    /// session file. Phase 17.8.
+    pub const CODE_SESSION_RESUME_ROUTE_MISSING: &str = "session_resume_route_missing";
     /// Resume could not apply a recorded `thinking_level_change` because the
     /// level is incompatible with the active model's thinking budget/support.
     /// The CLI/config thinking level is kept; the recorded entry is preserved

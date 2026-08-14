@@ -3845,3 +3845,139 @@ fn phase13_resume_and_fork_use_context_builder() {
 
     clear_sessions_dir();
 }
+
+// ---------------------------------------------------------------------------
+// Phase 17.8: resume / fork / branch reconstruction preserve the canonical
+// route binding (P17-A13). A recorded route is re-applied from the chain, not
+// guessed from the active provider or dropped on fork/branch switches.
+// ---------------------------------------------------------------------------
+
+fn phase17_route_model_info(id: &str) -> opi_ai::provider::ModelInfo {
+    opi_ai::provider::ModelInfo::new(
+        id,
+        id,
+        opi_ai::WireApi::OpenAiCompletions,
+        ModelCapabilities::new(100_000, 4_096),
+    )
+}
+
+/// Write a two-branch session: root `msg-1` forks into branch A (`msg-2a`,
+/// recording `mock:alpha-model`) and branch B (`msg-2b`, recording
+/// `mock:beta-model`). A `Leaf` selects branch A as active. The mock provider
+/// owns both models so both routes resolve.
+fn write_two_branch_route_session(dir: &std::path::Path, session_id: &str) {
+    use opi_agent::session::{LeafEntry, ModelChangeEntry};
+    let path = dir.join(format!("{session_id}.jsonl"));
+    let header = SessionHeader::new(
+        session_id.into(),
+        "2026-08-14T12:00:00Z".into(),
+        "/repo".into(),
+        None,
+    );
+    let mut writer = SessionWriter::create(&path, header).unwrap();
+    let user = |id: &str, parent: Option<&str>, text: &str| {
+        SessionEntry::Message(MessageEntry {
+            id: id.into(),
+            parent_id: parent.map(|p| p.to_owned()),
+            timestamp: "2026-08-14T12:00:01Z".into(),
+            message: Message::User(UserMessage {
+                content: vec![InputContent::Text { text: text.into() }],
+                timestamp_ms: 0,
+            }),
+        })
+    };
+    let model = |id: &str, parent: &str, spec: &str| {
+        SessionEntry::ModelChange(ModelChangeEntry {
+            id: id.into(),
+            parent_id: Some(parent.into()),
+            timestamp: "2026-08-14T12:00:02Z".into(),
+            model: spec.into(),
+            input_source: None,
+        })
+    };
+    writer.append(&user("msg-1", None, "root")).unwrap();
+    writer
+        .append(&user("msg-2a", Some("msg-1"), "branch a"))
+        .unwrap();
+    writer
+        .append(&model("model-a", "msg-2a", "mock:alpha-model"))
+        .unwrap();
+    writer
+        .append(&user("msg-2b", Some("msg-1"), "branch b"))
+        .unwrap();
+    writer
+        .append(&model("model-b", "msg-2b", "mock:beta-model"))
+        .unwrap();
+    writer
+        .append(&SessionEntry::Leaf(LeafEntry {
+            id: "leaf-a".into(),
+            parent_id: Some("msg-2a".into()),
+            timestamp: "2026-08-14T12:00:03Z".into(),
+            entry_id: "msg-2a".into(),
+        }))
+        .unwrap();
+}
+
+#[test]
+fn phase17_resume_fork_branch_preserve_canonical_route_binding() {
+    let _lock = session_lock();
+    let sessions = tempfile::tempdir().unwrap();
+    set_sessions_dir(sessions.path());
+    write_two_branch_route_session(sessions.path(), "route-binding");
+
+    let workspace = tempfile::tempdir().unwrap();
+    let provider = MockProvider::new_with_models(
+        "mock",
+        vec![
+            phase17_route_model_info("alpha-model"),
+            phase17_route_model_info("beta-model"),
+        ],
+        Vec::new(),
+    );
+    let mut harness = CodingHarness::builder(
+        Box::new(provider),
+        "mock:alpha-model".into(),
+        OpiConfig::default(),
+        workspace.path().to_path_buf(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
+    )
+    .build();
+
+    // Resume loads branch A, whose chain records mock:alpha-model.
+    harness
+        .resume_session_id("route-binding")
+        .expect("resume succeeds");
+    assert_eq!(
+        harness.model_spec(),
+        "mock:alpha-model",
+        "resume re-applies the active branch's recorded route"
+    );
+
+    // Switching to branch B rebinds to that branch's recorded route. Before
+    // Phase 17.8 the branch-tip path did not re-apply the recorded model, so the
+    // route would have stayed mock:alpha-model.
+    harness
+        .resume_session_branch_tip("msg-2b")
+        .expect("branch tip exists");
+    assert_eq!(
+        harness.model_spec(),
+        "mock:beta-model",
+        "branch-tip rebinds to the selected branch's recorded route"
+    );
+
+    // Divert the live model away from branch B's chain. `set_model` does not
+    // persist a model_change, so the session file still records branch B's route.
+    harness.set_model("mock:alpha-model".into());
+    assert_eq!(harness.model_spec(), "mock:alpha-model");
+
+    // Fork re-applies the active branch B route from the chain, not the diverted
+    // live model. Before Phase 17.8 fork did not re-apply the recorded model.
+    harness.fork_current_session().expect("fork succeeds");
+    assert_eq!(
+        harness.model_spec(),
+        "mock:beta-model",
+        "fork re-applies the recorded route from the forked chain"
+    );
+
+    clear_sessions_dir();
+}

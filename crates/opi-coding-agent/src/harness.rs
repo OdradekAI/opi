@@ -28,7 +28,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use opi_agent::diagnostic::code::{
-    CODE_SESSION_RESUME_MODEL_INCOMPATIBLE, CODE_SESSION_RESUME_THINKING_INCOMPATIBLE,
+    CODE_SESSION_RESUME_MODEL_INCOMPATIBLE, CODE_SESSION_RESUME_ROUTE_AMBIGUOUS,
+    CODE_SESSION_RESUME_ROUTE_MISSING, CODE_SESSION_RESUME_THINKING_INCOMPATIBLE,
 };
 use opi_agent::diagnostic::{
     Diagnostic, DiagnosticPayload, RedactionMode, SOURCE_SESSION, Severity,
@@ -432,6 +433,12 @@ pub struct CodingHarness {
     /// to the Agent's dispatch path; the active provider is a real dispatchable
     /// route in it (no metadata proxy).
     model_registry: Arc<opi_ai::ProviderCollection>,
+    /// The dispatchable provider ids in [`Self::model_registry`] (Phase 17.8):
+    /// the active route plus every extra route registered with an auth resolver.
+    /// Lookup-only extension providers are excluded. Used by read-side legacy
+    /// route normalization to prove exactly one dispatchable route for a bare
+    /// model without guessing the active provider.
+    dispatchable_provider_ids: Vec<String>,
     extension_registry: Option<ExtensionRegistry>,
     session: Option<SessionCoordinator>,
     /// Message count before the current turn - used to slice only new messages for persistence.
@@ -473,6 +480,17 @@ pub struct CodingHarness {
     /// creation and resume always use [`crate::session_cli::session_dir`].
     #[cfg(test)]
     session_dir_override: Option<PathBuf>,
+}
+
+/// Typed read-side remediation when a recorded route cannot be normalized
+/// against the dispatchable collection (Phase 17.8 / P17-MIG-002). Surfaced as
+/// distinct diagnostic codes so callers can distinguish ambiguity from absence
+/// without parsing strings; resolution never dispatches a provider.
+enum RouteRemediation {
+    /// The bare model matches more than one dispatchable route.
+    Ambiguous { candidates: Vec<String> },
+    /// The model matches no dispatchable route.
+    Missing,
 }
 
 pub struct RuntimeThinkingState {
@@ -1396,6 +1414,13 @@ impl CodingHarness {
         let mut routes = Vec::with_capacity(build_options.extra_routes.len() + 1);
         routes.push((provider, auth_resolver));
         routes.extend(build_options.extra_routes);
+        // Phase 17.8: the dispatchable provider ids are exactly the routes that
+        // carry an auth resolver (active + extra); lookup-only extension
+        // providers are not dispatchable. Captured before the collection build
+        // consumes `routes`, so read-side legacy normalization can prove exactly
+        // one dispatchable route for a bare model.
+        let dispatchable_provider_ids: Vec<String> =
+            routes.iter().map(|(p, _)| p.id().to_owned()).collect();
         let dispatch_collection = crate::provider_factory::build_harness_collection(
             routes,
             extension_providers,
@@ -1541,6 +1566,7 @@ impl CodingHarness {
             system_prompt,
             resources,
             model_registry: dispatch_collection,
+            dispatchable_provider_ids,
             extension_registry: active_extension_registry,
             session,
             turn_offset: initial_len,
@@ -1912,11 +1938,53 @@ impl CodingHarness {
     /// agent in place without persisting a new entry (the entry is already in
     /// the source session). Emits a Phase 7 diagnostic and keeps the CLI/config
     /// model when the recorded spec is incompatible.
+    ///
+    /// Phase 17.8: a recorded spec is first normalized against the dispatchable
+    /// collection (P17-MIG-002). An exact `provider:model` route is accepted; a
+    /// legacy bare model normalizes to a canonical route only when exactly one
+    /// dispatchable provider serves it. Ambiguity or absence returns typed
+    /// remediation (distinct codes, no provider dispatch) and keeps the
+    /// CLI/config model — the session loads but the wrong route is never
+    /// guessed from the active provider.
     fn apply_recorded_model(&mut self, recorded: Option<&str>) {
         let Some(spec) = recorded else {
             return;
         };
-        if let Err(reason) = self.try_configure_model(spec) {
+        let normalized = match self.normalize_recorded_route(spec) {
+            Ok(canonical) => canonical,
+            Err(RouteRemediation::Ambiguous { candidates }) => {
+                self.record_harness_diagnostic(
+                    Diagnostic::new(
+                        Severity::Warning,
+                        CODE_SESSION_RESUME_ROUTE_AMBIGUOUS,
+                        SOURCE_SESSION,
+                        "recorded bare model matches more than one dispatchable route; keeping CLI/config model",
+                    )
+                    .details(serde_json::json!({
+                        "recorded_model": spec,
+                        "active_model": self.agent.model(),
+                        "candidates": candidates,
+                    })),
+                );
+                return;
+            }
+            Err(RouteRemediation::Missing) => {
+                self.record_harness_diagnostic(
+                    Diagnostic::new(
+                        Severity::Warning,
+                        CODE_SESSION_RESUME_ROUTE_MISSING,
+                        SOURCE_SESSION,
+                        "recorded bare model matches no dispatchable route; keeping CLI/config model",
+                    )
+                    .details(serde_json::json!({
+                        "recorded_model": spec,
+                        "active_model": self.agent.model(),
+                    })),
+                );
+                return;
+            }
+        };
+        if let Err(reason) = self.try_configure_model(&normalized) {
             self.record_harness_diagnostic(
                 Diagnostic::new(
                     Severity::Warning,
@@ -1932,7 +2000,32 @@ impl CodingHarness {
             );
             return;
         }
-        self.agent.set_model(spec.to_owned());
+        self.agent.set_model(normalized);
+    }
+
+    /// Normalize a recorded model spec against the dispatchable collection
+    /// (Phase 17.8 read-side migration, P17-MIG-002). An exact `provider:model`
+    /// spec is accepted unchanged; a legacy bare model normalizes to a canonical
+    /// route ONLY when exactly one dispatchable provider serves it. Ambiguity or
+    /// absence returns typed remediation rather than guessing the active
+    /// provider. Resolution is lookup-only — no provider is dispatched.
+    fn normalize_recorded_route(&self, recorded: &str) -> Result<String, RouteRemediation> {
+        if recorded.contains(':') {
+            return Ok(recorded.to_owned());
+        }
+        let matches: Vec<String> = self
+            .dispatchable_provider_ids
+            .iter()
+            .filter(|pid| self.model_info(&format!("{pid}:{recorded}")).is_some())
+            .map(|pid| format!("{pid}:{recorded}"))
+            .collect();
+        match matches.len() {
+            1 => Ok(matches.into_iter().next().expect("exactly one match")),
+            0 => Err(RouteRemediation::Missing),
+            _ => Err(RouteRemediation::Ambiguous {
+                candidates: matches,
+            }),
+        }
     }
 
     /// Re-apply a recorded `thinking_level_change` on resume. Configures the
@@ -1993,6 +2086,11 @@ impl CodingHarness {
         let message_count = ctx.messages.len();
         self.agent.replace_messages(ctx.messages);
         self.defer_extension_state_from_entries(&forked.entries);
+        // Phase 17.8: re-apply the forked chain's recorded route (canonical
+        // accepted; legacy bare normalized against the dispatchable collection
+        // or kept fail-closed with typed remediation), mirroring resume.
+        self.apply_recorded_model(ctx.model.as_deref());
+        self.apply_recorded_thinking(ctx.thinking_level);
         for diagnostic in ctx.diagnostics {
             self.resources.metadata.diagnostics.push(diagnostic.clone());
             self.record_harness_diagnostic(diagnostic);
@@ -2099,6 +2197,11 @@ impl CodingHarness {
         let message_count = ctx.messages.len();
         self.agent.replace_messages(ctx.messages);
         self.defer_extension_state_from_entries(&entries);
+        // Phase 17.8: re-apply the selected branch's recorded route (canonical
+        // accepted; legacy bare normalized against the dispatchable collection
+        // or kept fail-closed with typed remediation), mirroring resume.
+        self.apply_recorded_model(ctx.model.as_deref());
+        self.apply_recorded_thinking(ctx.thinking_level);
         for diagnostic in ctx.diagnostics {
             self.resources.metadata.diagnostics.push(diagnostic.clone());
             self.record_harness_diagnostic(diagnostic);
