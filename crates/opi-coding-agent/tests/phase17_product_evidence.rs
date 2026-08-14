@@ -21,6 +21,12 @@ use opi_coding_agent::evidence::{EvidenceBuilderConfig, FileEvidenceSink};
 use opi_coding_agent::harness::CodingHarness;
 use opi_coding_agent::project_trust::TrustDecision;
 
+/// Serialize `OPI_SESSIONS_DIR` mutation across this test binary. ONE lock is
+/// shared by every test that redirects the process-global sessions dir —
+/// per-function statics of the same name are distinct mutexes and would not
+/// serialize against each other.
+static SESSION_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 fn static_resolver() -> Arc<dyn opi_ai::auth::AuthResolver> {
     Arc::new(opi_ai::auth::StaticAuthResolver::new(
         opi_ai::auth::AuthScheme::ApiKey,
@@ -639,7 +645,6 @@ async fn harness_capture_absent_allows_tool() {
 #[tokio::test]
 #[allow(clippy::await_holding_lock)]
 async fn harness_compaction_emits_correlated_evidence_record() {
-    static SESSION_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
     let _lock = SESSION_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let sessions = tempfile::tempdir().unwrap();
     // SAFETY: test-only env var mutation serialized by SESSION_TEST_LOCK.
@@ -710,7 +715,6 @@ fn resolved_provider_of(record: &opi_agent::evidence::EvidenceRecord) -> Option<
 #[tokio::test]
 #[allow(clippy::await_holding_lock)] // serialized OPI_SESSIONS_DIR mutation; not re-acquired in awaited dispatch.
 async fn phase17_harness_switches_providers_with_matching_route_evidence() {
-    static SESSION_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
     let _lock = SESSION_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let sessions = tempfile::tempdir().unwrap();
     // SAFETY: test-only env var mutation serialized by SESSION_TEST_LOCK.
@@ -970,7 +974,15 @@ async fn phase17_complete_run_reconstructs_graph_and_rejects_missing_bindings() 
 // ===========================================================================
 
 #[tokio::test]
+#[allow(clippy::await_holding_lock)] // serialized OPI_SESSIONS_DIR mutation; not re-acquired in the awaited dispatch.
 async fn phase17_one_run_graph_includes_tool_execution_record() {
+    // The compaction leg persists session state, so isolate the process-global
+    // sessions dir for the whole test (mirrors the compaction test below).
+    let _lock = SESSION_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let sessions = tempfile::tempdir().unwrap();
+    // SAFETY: test-only env var mutation serialized by SESSION_TEST_LOCK.
+    unsafe { std::env::set_var("OPI_SESSIONS_DIR", sessions.path()) };
+
     let workspace = tempfile::tempdir().unwrap();
     let user = tempfile::tempdir().unwrap();
     let mut config = OpiConfig::default();
@@ -1053,6 +1065,24 @@ async fn phase17_one_run_graph_includes_tool_execution_record() {
         tool_rec.parent.is_some(),
         "the Tool record is parented into the call graph"
     );
+
+    // Compaction leg: drive the production compaction call site in the SAME
+    // run so the graph reconstructs all four kinds under one run identity
+    // (P17-A09: provider + retry + tool + compaction).
+    let compacted = harness
+        .compact(opi_agent::session_event::CompactionReason::Manual)
+        .expect("manual compaction succeeds");
+    assert!(compacted.is_some(), "compaction produces output");
+    let records = sink.records();
+    let compaction_rec = records
+        .iter()
+        .find(|r| r.kind == CallKind::Compaction)
+        .expect("a Compaction record in the same run");
+    assert_eq!(
+        compaction_rec.run, tool_rec.run,
+        "Provider, Retry, Tool, and Compaction records share ONE run identity"
+    );
+
     // The whole run still finalizes one strict manifest.
     let manifest = sink
         .completed_manifest()
@@ -1060,6 +1090,59 @@ async fn phase17_one_run_graph_includes_tool_execution_record() {
     manifest
         .require_complete()
         .expect("the tool-bearing run passes the strict completeness gate");
+
+    // SAFETY: serialized by SESSION_TEST_LOCK.
+    unsafe { std::env::remove_var("OPI_SESSIONS_DIR") };
+}
+
+// ===========================================================================
+// P17-EVD-006 (phase-exit closure) — the DEFAULT Reference Product assembly
+// (no explicit capture configuration) runs the no-op Minimal Runtime: no
+// evidence is minted or written anywhere; capture exists only when explicitly
+// configured (--trace / SDK recorder), never merely because an adapter or
+// consumer exists.
+// ===========================================================================
+
+#[tokio::test]
+async fn phase17_default_harness_emits_no_evidence() {
+    fn walk(dir: &std::path::Path, found: &mut Vec<std::path::PathBuf>) {
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                walk(&path, found);
+            } else if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                if name == "evidence.jsonl" || name == "manifest.json" {
+                    found.push(path);
+                }
+            }
+        }
+    }
+
+    let workspace = tempfile::tempdir().unwrap();
+    let user = tempfile::tempdir().unwrap();
+    let mut harness = CodingHarness::builder(
+        Box::new(MockProvider::new("mock", vec![text_response("done")])),
+        "mock:mock-model".to_owned(),
+        OpiConfig::default(),
+        workspace.path().to_path_buf(),
+        TrustDecision::Trusted,
+    )
+    .global_config_dir(user.path().to_path_buf())
+    .build();
+    let messages = harness.prompt("hello").await.expect("run completes");
+    assert!(!messages.is_empty(), "the default run completes normally");
+
+    // No evidence artifacts anywhere under the isolated user-config tree: the
+    // default assembly wires no recorder, so nothing is minted or written.
+    let mut found = Vec::new();
+    walk(user.path(), &mut found);
+    assert!(
+        found.is_empty(),
+        "the default (no-capture) assembly writes no evidence artifacts: {found:?}"
+    );
 }
 
 // ===========================================================================
