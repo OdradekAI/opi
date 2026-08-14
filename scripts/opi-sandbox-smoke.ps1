@@ -73,17 +73,28 @@ if (@($doc.mechanisms).Count -ne 0) { throw "opi-sandbox-smoke: doctor mechanism
 if (-not (@($doc.profiles) -contains 'workspace-write')) { throw "opi-sandbox-smoke: doctor profiles missing workspace-write" }
 
 # 4. run with a VALID argv -> pre-start platform refusal (125) in 16.11.2.
+# Uses the .NET Process API directly: Start-Process -Wait -PassThru races on
+# millisecond-scale processes (the process exits before the -PassThru object
+# is populated, failing with "Cannot process request because the process has
+# exited" on Windows PowerShell 5.1), which CI hit intermittently.
 $Workspace = Join-Path $ArtifactDir 'ws'
 New-Item -ItemType Directory -Force -Path $Workspace | Out-Null
-$rp = Start-Process -FilePath $IsolatedBinary `
-    -ArgumentList 'run', '--workspace', $Workspace, '--profile', 'workspace-write', `
-    '--network', 'deny', '--', 'cmd', '/C', 'exit 0' `
-    -WorkingDirectory $IsolatedCwd -NoNewWindow -Wait -PassThru `
-    -RedirectStandardOutput (Join-Path $ArtifactDir 'run-stdout.txt') `
-    -RedirectStandardError (Join-Path $ArtifactDir 'run-stderr.txt')
-Set-Content -Path (Join-Path $ArtifactDir 'run-exit.txt') -Value $rp.ExitCode -Encoding ascii
-if ($rp.ExitCode -ne 125) {
-    throw "opi-sandbox-smoke: expected run exit 125 (pre-start refusal), got $($rp.ExitCode)"
+$psi = New-Object System.Diagnostics.ProcessStartInfo
+$psi.FileName = $IsolatedBinary
+$psi.Arguments = "run --workspace `"$Workspace`" --profile workspace-write --network deny -- cmd /C exit 0"
+$psi.WorkingDirectory = $IsolatedCwd
+$psi.UseShellExecute = $false
+$psi.RedirectStandardOutput = $true
+$psi.RedirectStandardError = $true
+$rproc = [System.Diagnostics.Process]::Start($psi)
+$runStdout = $rproc.StandardOutput.ReadToEnd()
+$runStderr = $rproc.StandardError.ReadToEnd()
+$rproc.WaitForExit()
+Set-Content -Path (Join-Path $ArtifactDir 'run-stdout.txt') -Value $runStdout -Encoding ascii
+Set-Content -Path (Join-Path $ArtifactDir 'run-stderr.txt') -Value $runStderr -Encoding ascii
+Set-Content -Path (Join-Path $ArtifactDir 'run-exit.txt') -Value $rproc.ExitCode -Encoding ascii
+if ($rproc.ExitCode -ne 125) {
+    throw "opi-sandbox-smoke: expected run exit 125 (pre-start refusal), got $($rproc.ExitCode)"
 }
 }
 finally {
