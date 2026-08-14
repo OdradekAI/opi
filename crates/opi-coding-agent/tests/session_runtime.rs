@@ -3981,3 +3981,137 @@ fn phase17_resume_fork_branch_preserve_canonical_route_binding() {
 
     clear_sessions_dir();
 }
+
+// ---------------------------------------------------------------------------
+// P17-NXT-005 (phase-exit closure) — product compaction replaces the complete
+// provider-visible context through the same atomic transition: after threshold
+// compaction, the next provider request drops superseded messages and keeps
+// the current turn (no append-only residue).
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+#[allow(clippy::await_holding_lock)]
+async fn phase17_compaction_replaces_provider_visible_context() {
+    let _lock = session_lock();
+    let dir = tempfile::tempdir().unwrap();
+    set_sessions_dir(dir.path());
+
+    // Threshold 0 so every turn end compacts.
+    let mut config = OpiConfig::default();
+    config.compaction.threshold_tokens = 0;
+
+    let provider = MockProvider::new(
+        "mock",
+        vec![
+            test_support::text_response("ok one"),
+            test_support::text_response("ok two"),
+            test_support::text_response("ok three"),
+            test_support::text_response("ok four"),
+        ],
+    );
+    let calls = provider.call_log_handle();
+    let mut harness = CodingHarness::new(
+        Box::new(provider),
+        "mock-model".into(),
+        config,
+        std::env::current_dir().unwrap(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
+    );
+    let compactions = Arc::new(std::sync::Mutex::new(0u32));
+    let compactions_c = compactions.clone();
+    harness.subscribe(Box::new(move |event| {
+        if let opi_agent::event::AgentEvent::CompactionEnd { .. } = event {
+            *compactions_c.lock().unwrap() += 1;
+        }
+    }));
+
+    // Four turns with distinct markers: by the fourth provider call, the first
+    // turn's marker must have been compacted away (superseded), while the
+    // current turn's marker is present.
+    harness
+        .prompt("superseded-marker-one please")
+        .await
+        .unwrap();
+    harness
+        .prompt("superseded-marker-two please")
+        .await
+        .unwrap();
+    harness
+        .prompt("superseded-marker-three please")
+        .await
+        .unwrap();
+    harness.prompt("current-marker-four please").await.unwrap();
+
+    assert!(
+        *compactions.lock().unwrap() >= 1,
+        "threshold compaction ran during the run"
+    );
+    let calls = calls.lock().unwrap();
+    assert_eq!(calls.len(), 4, "four provider dispatches");
+    let request_text = |idx: usize| -> String {
+        use opi_ai::message::{AssistantContent, InputContent, Message};
+        let mut out = String::new();
+        for message in &calls[idx].messages {
+            match message {
+                Message::User(u) => {
+                    for c in &u.content {
+                        if let InputContent::Text { text } = c {
+                            out.push_str(text);
+                        }
+                    }
+                }
+                Message::Assistant(a) => {
+                    for c in &a.content {
+                        if let AssistantContent::Text { text } = c {
+                            out.push_str(text);
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        out
+    };
+    let first_request = request_text(0);
+    assert!(
+        first_request.contains("superseded-marker-one"),
+        "the first request carries the first turn's marker (pre-compaction)"
+    );
+    // The post-compaction request is the REPLACED context: a summary message
+    // leading the buffer, the kept tail, and the current turn — never the
+    // appended history. The message count stays bounded instead of growing
+    // with turn count, and no standalone superseded message object survives
+    // (its content may legitimately be referenced inside the summary text).
+    let last = &calls[3];
+    assert_eq!(
+        last.messages.len(),
+        3,
+        "the replaced context is [summary, kept tail, current turn], not the appended history"
+    );
+    let summary_text = request_text(3);
+    assert!(
+        summary_text.contains("[Context was compacted."),
+        "the replaced context leads with the compaction summary"
+    );
+    assert!(
+        summary_text.contains("current-marker-four"),
+        "the post-compaction request carries the current turn's marker"
+    );
+    let standalone_superseded = last
+        .messages
+        .iter()
+        .any(|m| match m {
+            opi_ai::message::Message::User(u) => u.content.iter().any(
+                |c| matches!(c, opi_ai::message::InputContent::Text { text } if text == "superseded-marker-one please"),
+            ),
+            opi_ai::message::Message::Assistant(a) => a.content.iter().any(
+                |c| matches!(c, opi_ai::message::AssistantContent::Text { text } if text == "superseded-marker-one please"),
+            ),
+            _ => false,
+        });
+    assert!(
+        !standalone_superseded,
+        "the superseded first-turn message object is dropped (complete replacement, not append-only)"
+    );
+    clear_sessions_dir();
+}

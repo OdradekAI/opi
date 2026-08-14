@@ -964,6 +964,105 @@ async fn phase17_complete_run_reconstructs_graph_and_rejects_missing_bindings() 
 }
 
 // ===========================================================================
+// P17-A09 (phase-exit closure) — the one-run graph includes the TOOL leg
+// through the harness-wired sink: provider + retry + a real built-in tool
+// execution reconstruct one ordered graph with one shared run identity.
+// ===========================================================================
+
+#[tokio::test]
+async fn phase17_one_run_graph_includes_tool_execution_record() {
+    let workspace = tempfile::tempdir().unwrap();
+    let user = tempfile::tempdir().unwrap();
+    let mut config = OpiConfig::default();
+    config.retry.max_attempts = 2;
+    config.retry.initial_delay_ms = 0;
+    config.retry.max_delay_ms = 0;
+    let sink = Arc::new(InMemoryEvidenceSink::new());
+    // One run, three legs: a retryable provider error (Retry record), a real
+    // built-in `read` tool call over a workspace file (Tool record), then the
+    // terminal text turn (Provider record). The read tool executes through the
+    // production harness tool path, so the Tool evidence record is emitted by
+    // the product assembly, not just the 17.6 substrate.
+    let target = workspace.path().join("graph-fixture.txt");
+    std::fs::write(&target, "phase17 one-run graph fixture\n").unwrap();
+    let tool_call = opi_ai::test_support::tool_call_response(
+        "tc-1",
+        "read",
+        &format!(
+            r#"{{"path":"{}","offset":1,"limit":5}}"#,
+            target.display().to_string().replace('\\', "/")
+        ),
+    );
+    let provider = MockProvider::new_with_errors(
+        "mock",
+        vec![
+            MockResponse::Error(opi_ai::provider::ProviderError::RateLimited {
+                retry_after_ms: Some(0),
+            }),
+            MockResponse::Events(tool_call),
+            MockResponse::Events(text_response("done")),
+        ],
+    );
+    let recorder: Arc<dyn EvidenceRecorder> = sink.clone();
+    let mut harness = CodingHarness::builder(
+        Box::new(provider),
+        "mock:mock-model".to_owned(),
+        config,
+        workspace.path().to_path_buf(),
+        TrustDecision::Trusted,
+    )
+    .global_config_dir(user.path().to_path_buf())
+    .evidence(EvidenceBuilderConfig {
+        recorder,
+        source: AssemblySource::Sdk,
+    })
+    .build();
+    harness.prompt("read the fixture file").await.unwrap();
+
+    let records = sink.records();
+    let provider_recs: Vec<_> = records
+        .iter()
+        .filter(|r| r.kind == CallKind::Provider)
+        .collect();
+    let retry_rec = records
+        .iter()
+        .find(|r| r.kind == CallKind::Retry)
+        .expect("a Retry record (the retryable error leg)");
+    let tool_rec = records
+        .iter()
+        .find(|r| r.kind == CallKind::Tool)
+        .expect("a Tool record for the real built-in read execution");
+    assert!(!provider_recs.is_empty(), "the run emits Provider records");
+    // The retry is parented to the provider call it retries.
+    assert_eq!(
+        retry_rec.parent,
+        Some(provider_recs[0].call),
+        "the Retry record is parented to the Provider record"
+    );
+    // The tool call is correlated into the same run graph: same run identity,
+    // its own call id, and parented into the provider turn that requested it.
+    assert_eq!(
+        tool_rec.run, retry_rec.run,
+        "Provider, Retry, and Tool records share one run identity"
+    );
+    assert_ne!(
+        tool_rec.call, retry_rec.call,
+        "the Tool record has its own call identity"
+    );
+    assert!(
+        tool_rec.parent.is_some(),
+        "the Tool record is parented into the call graph"
+    );
+    // The whole run still finalizes one strict manifest.
+    let manifest = sink
+        .completed_manifest()
+        .expect("the tool-bearing run finalizes a manifest");
+    manifest
+        .require_complete()
+        .expect("the tool-bearing run passes the strict completeness gate");
+}
+
+// ===========================================================================
 // P17-A10 / P17-FAL-004 — canary secrets stop before the sink, file, and
 // manifest (producer-boundary redaction; evidence never carries raw content)
 // ===========================================================================

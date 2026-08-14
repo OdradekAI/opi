@@ -534,3 +534,187 @@ async fn phase17_workspace_write_allow_executes_when_mutating() {
         "WorkspaceWrite Allow with mutating=true must execute via the real authorizer"
     );
 }
+
+// ===========================================================================
+// P17-AUT-007 (phase-exit closure) — an after-call Replace transformation does
+// not alter the recorded authorization decision or the effective policy for
+// later calls: the design-mandated "replacement-result and subsequent-call
+// policy test".
+// ===========================================================================
+
+/// Delegating wrapper that records every authorization decision the production
+/// authorizer returns, so a test can compare later-call decisions against
+/// earlier ones.
+struct RecordingAuthorizer {
+    inner: Arc<ProductToolAuthorizer>,
+    decisions: Arc<Mutex<Vec<AuthorizationDecision>>>,
+}
+
+impl ToolAuthorizer for RecordingAuthorizer {
+    fn authorize(
+        &self,
+        request: ToolAuthorizationRequest,
+        cancel: CancellationToken,
+    ) -> Pin<
+        Box<
+            dyn std::future::Future<
+                    Output = Result<
+                        AuthorizationDecision,
+                        opi_agent::authority::AuthorizationError,
+                    >,
+                > + Send,
+        >,
+    > {
+        let inner = self.inner.clone();
+        let decisions = self.decisions.clone();
+        Box::pin(async move {
+            let decision = inner.authorize(request, cancel).await?;
+            decisions.lock().unwrap().push(decision.clone());
+            Ok(decision)
+        })
+    }
+}
+
+/// Hooks whose `after_tool_call` replaces every tool result (and records how
+/// many times the transformation ran).
+struct TransformingHooks {
+    replaced: Arc<AtomicUsize>,
+}
+
+impl AgentHooks for TransformingHooks {
+    fn convert_to_llm(&self, messages: &[AgentMessage]) -> Result<Vec<Message>, AgentError> {
+        Ok(messages
+            .iter()
+            .filter_map(|m| match m {
+                AgentMessage::Llm(m) => Some(m.clone()),
+                _ => None,
+            })
+            .collect())
+    }
+    fn before_tool_call(
+        &self,
+        _ctx: BeforeToolCallContext,
+    ) -> Pin<Box<dyn std::future::Future<Output = BeforeToolCallResult> + Send>> {
+        Box::pin(async { BeforeToolCallResult::Continue })
+    }
+    fn after_tool_call(
+        &self,
+        _ctx: opi_agent::hooks::AfterToolCallContext,
+    ) -> Pin<Box<dyn std::future::Future<Output = opi_agent::hooks::AfterToolCallResult> + Send>>
+    {
+        let replaced = self.replaced.clone();
+        Box::pin(async move {
+            replaced.fetch_add(1, Ordering::SeqCst);
+            opi_agent::hooks::AfterToolCallResult::Replace(ToolResult {
+                content: vec![opi_ai::message::OutputContent::Text {
+                    text: "transformed-by-after-call".to_owned(),
+                }],
+                details: None,
+                is_error: false,
+                terminate: false,
+                truncated: false,
+                diagnostics: Vec::new(),
+            })
+        })
+    }
+}
+
+#[tokio::test]
+async fn phase17_after_call_replace_keeps_later_authorization_unchanged() {
+    let count = Arc::new(AtomicUsize::new(0));
+    let replaced = Arc::new(AtomicUsize::new(0));
+    // The policy is built explicitly so its digest is observable before and
+    // after the transforming run.
+    let policy = Arc::new(EffectiveUserPolicy::build(
+        opi_coding_agent::config::ExecutionRunMode::Interactive,
+        vec!["read".to_owned(), "write".to_owned()],
+        /* mutating allowed -> WorkspaceWrite Allow */ true,
+        PermissionPolicy::empty(),
+        false,
+        "project".to_owned(),
+        "package".to_owned(),
+        "workspace".to_owned(),
+    ));
+    let digest_before = policy.digest().to_owned();
+    let decisions = Arc::new(Mutex::new(Vec::new()));
+    let authorizer: Arc<dyn ToolAuthorizer> = Arc::new(RecordingAuthorizer {
+        inner: Arc::new(ProductToolAuthorizer::new(policy.clone(), None)),
+        decisions: decisions.clone(),
+    });
+
+    // Two write calls, each followed by the Replace transform, then the
+    // terminal text turn.
+    let collection = Arc::new(single_route_collection(Box::new(MockProvider::new(vec![
+        tool_call_response("tc-1", "write", "{}"),
+        tool_call_response("tc-2", "write", "{}"),
+        text_response("done"),
+    ]))));
+    let mut agent = Agent::new(
+        collection,
+        vec![counted_registered(
+            "write",
+            Capability::Builtin(CapabilityClass::WorkspaceWrite),
+            count.clone(),
+        )],
+        Some(authorizer),
+        "mock:mock-model".to_owned(),
+        None,
+        InferenceConfig::default(),
+        AgentLoopConfig {
+            max_turns: 5,
+            ..Default::default()
+        },
+        Box::new(TransformingHooks {
+            replaced: replaced.clone(),
+        }),
+    )
+    .expect("agent builds");
+    agent
+        .prompt("call write twice")
+        .await
+        .expect("run completes");
+
+    assert_eq!(count.load(Ordering::SeqCst), 2, "both calls executed");
+    assert_eq!(
+        replaced.load(Ordering::SeqCst),
+        2,
+        "both results were replaced"
+    );
+    let recorded = decisions.lock().unwrap().clone();
+    assert_eq!(recorded.len(), 2, "both calls were authorized");
+    let (first, second) = (&recorded[0], &recorded[1]);
+    for decision in [first, second] {
+        assert!(
+            matches!(decision, AuthorizationDecision::Allow { .. }),
+            "both calls are allowed: {decision:?}"
+        );
+    }
+    // The later-call decision is identical in every policy field: the Replace
+    // transformation did not alter the recorded decision or effective
+    // authority (P17-AUT-007).
+    fn policy_fields(d: &AuthorizationDecision) -> (String, String, String) {
+        match d {
+            AuthorizationDecision::Allow {
+                policy_ref,
+                permission_ref,
+                permission_scope,
+                ..
+            } => (
+                policy_ref.clone(),
+                permission_ref.clone(),
+                permission_scope.clone(),
+            ),
+            other => panic!("expected Allow, got {other:?}"),
+        }
+    }
+    assert_eq!(
+        policy_fields(first),
+        policy_fields(second),
+        "the later authorization decision is unchanged by the after-call transform"
+    );
+    assert_eq!(
+        policy.digest(),
+        digest_before,
+        "the effective policy digest is unchanged by the after-call transform"
+    );
+}
