@@ -90,6 +90,9 @@ Opi does not aim to:
 
 - match every pi package, TypeScript type, npm boundary, session file, or
   provider catalogue;
+- adopt another runtime's internal plugin ABI, package lifecycle, or in-process
+  composition model as a compatibility target; compatibility begins at
+  independently versioned boundary protocols and portable artifacts;
 - make MCP, sub-Agent, plan, task-list, permission-popup, or remote-session
   workflows mandatory Agent Core features;
 - expose, persist, or evaluate a model's private raw Chain-of-Thought;
@@ -113,7 +116,7 @@ possibility.
 | PRIN-001 | Agent Core additions **MUST** pass the deletion test: removing the module would reintroduce its complexity across multiple core callers. | Agent Core maintainers | Placement case and dependency review. |
 | PRIN-002 | A new public seam **MUST** be intrinsic to the Agent state machine or be demonstrated by at least two real adapters or consumers with shared conformance tests. | Interface owner | Conformance inventory and tests. |
 | PRIN-003 | Mechanism **MUST** remain below policy; Reference Product or extension policy **MUST NOT** flow into Agent Core dependencies. | Workspace maintainers | Cargo dependency graph and architecture checks. |
-| PRIN-004 | Selection at permission, protocol, adapter, evidence, and promotion boundaries **MUST** fail closed. | Boundary owner | Negative-path and degradation tests. |
+| PRIN-004 | Selection and combination at permission, protocol, adapter, evidence, and promotion boundaries **MUST** fail closed. Independent authority contributions **MUST** combine monotonically: a contribution may preserve or narrow effective authority but **MUST NOT** broaden it, and a conflict **MUST** resolve to the most restrictive applicable result independent of registration order. | Boundary owner | Negative-path, degradation, authority-merge matrix, and registration-order permutation tests. |
 | PRIN-005 | A claim of correctness or improvement **MUST** follow immutable, reproducible evidence. | Claim owner | Artifact provenance and verification record. |
 
 ### 3.2 Alignment with pi
@@ -166,7 +169,7 @@ This table records present ownership, not permanent crate topology.
 | ID | Requirement | Owner | Verification |
 |---|---|---|---|
 | PLACE-001 | Dependencies **MUST** point inward toward the smallest stable interface; Agent Core **MUST NOT** depend on Reference Product, Eval, Learning, or Promotion modules. | Workspace maintainers | Cargo metadata and architecture review. |
-| PLACE-002 | A capability that solves an Agent-neutral problem **MUST** begin outside Opi product crates and expose an Agent-neutral contract. | Capability owner | Placement case and standalone build. |
+| PLACE-002 | A capability that solves an Agent-neutral problem **MUST** begin outside Opi product crates and expose an Agent-neutral contract. Before becoming a durable public process protocol, that contract **MUST** define version and capability identity, bounded input/output, cancellation and timeout, streaming backpressure where applicable, failure classification, authority projection, and conformance fixtures. | Capability owner | Placement case, standalone build, protocol-schema review, and cross-implementation conformance. |
 | PLACE-003 | Workspace location, repository location, brand, and organization **MUST** be decided independently. | Product maintainers | Placement Review and release metadata. |
 | PLACE-004 | An experimental capability **MUST NOT** enter Agent Core through a feature flag or unstable label. | Agent Core maintainers | Public-interface and dependency scan. |
 | PLACE-005 | Existing code **MAY** remain in place until a Placement Review proves material dependency, authority, release, or maintenance harm. | Module owner | Recorded placement case. |
@@ -394,7 +397,7 @@ queues make backpressure and overflow visible.
 
 | ID | Requirement | Owner | Verification |
 |---|---|---|---|
-| INV-005 | Authority, capability, scope, and schema validation **MUST** derive from User Policy and trusted runtime state and complete before a tool causes side effects; model-visible content or a model decision **MUST NOT** grant permission, weaken policy, or widen scope. | Agent runtime owner | Negative source-to-sink permission, capability, scope, and schema tests. |
+| INV-005 | Authority, capability, scope, and schema validation **MUST** derive from User Policy and trusted runtime state and complete before a tool causes side effects. Applicable hook, adapter, package, and runtime-policy decisions **MUST** combine monotonically and independently of registration order; model-visible content or a model decision **MUST NOT** grant permission, weaken policy, or widen scope. | Agent runtime owner | Negative source-to-sink permission, capability, scope, and schema tests plus authority-merge and registration-order permutations. |
 | INV-006 | Cancellation, queue closure, overflow, and partial tool failure **MUST** be observable and **MUST NOT** be converted into silent success. | Agent runtime owner | Failure-injection and bounded-queue tests. |
 
 ### 7.4 Sessions and artifacts
@@ -403,6 +406,12 @@ Session branching, reconstruction, append durability, finalized evidence, and
 runtime-input binding are semantics. JSONL, SQLite, search indexes, and cloud
 stores are adapters. A repository seam should expand only after a second real
 adapter and shared conformance demonstrate the necessary variation.
+
+The validated committed session prefix plus its immutable Runtime Input Binding
+form the durable source of truth for one execution branch. The live Agent and
+its next-turn state own current in-memory execution, not an independently
+mutable durable truth. Resume, fork, export, and evidence reconstruction derive
+from the same validated pair.
 
 Durable-entry compatibility is semantic rather than best-effort parsing. An
 unknown required entry or unsupported format prevents successful
@@ -413,7 +422,7 @@ corruption, and an interrupted tail.
 
 | ID | Requirement | Owner | Verification |
 |---|---|---|---|
-| INV-007 | Session persistence **MUST** preserve active-branch reconstruction, parent links, leaf selection, and crash recovery. The durable entry envelope **MUST** classify an entry as required or explicitly ignorable for an older reader. A reader **MUST** fail closed on an unknown required entry or unsupported format version and **MUST NOT** report successful resume when reconstruction semantics may be lost. Only an explicitly ignorable observational entry **MAY** be skipped, and it **MUST NOT** affect authority, branch structure, model-visible context, runtime binding, or pending side effects. | `opi-agent` | Required/ignorable entry fixtures, unsupported-version diagnostics, branch reconstruction, corruption recovery, and interrupted-tail conformance. |
+| INV-007 | Session persistence **MUST** preserve active-branch reconstruction, parent links, leaf selection, and crash recovery. The validated committed session prefix and its immutable Runtime Input Binding **MUST** form the durable source of truth for one execution branch; resume, fork, export, and evidence reconstruction **MUST** derive from that same pair and **MUST NOT** combine independently mutable durable owners. The durable entry envelope **MUST** classify an entry as required or explicitly ignorable for an older reader. A reader **MUST** fail closed on an unknown required entry or unsupported format version and **MUST NOT** report successful resume when reconstruction semantics may be lost. Only an explicitly ignorable observational entry **MAY** be skipped, and it **MUST NOT** affect authority, branch structure, model-visible context, runtime binding, or pending side effects. | `opi-agent` | Required/ignorable entry fixtures, runtime-binding and committed-prefix reconstruction, resume/fork/export consistency, unsupported-version diagnostics, corruption recovery, and interrupted-tail conformance. |
 | INV-008 | Finalized run evidence **MUST** identify the session branch, exact Runtime Input Binding, resolved harness/runtime/adapter configuration, and effective User Policy that produced it. A direct run **MUST** identify a Direct Runtime Input and **MUST NOT** claim an Active Snapshot; only a Promotion Controller may supply an Active Snapshot reference. | Agent runtime owner | Artifact-schema variant, direct-run, Promotion-authority, resume/fork, and offline resolved-execution tests. |
 
 ### 7.5 Extensions and command execution
@@ -669,7 +678,10 @@ activation, monitoring, and rollback without per-candidate intervention.
   dedicated Eval; it does not create a Gateway or scheduler seam in Agent Core.
 - Multi-Agent orchestration and Agent-to-Agent protocols remain Extension
   Ecosystem or Independent Companion experiments until real consumers, shared
-  conformance, and frozen evaluation evidence justify a Placement Review.
+  conformance, and frozen evaluation evidence justify a Placement Review. Their
+  delivery evidence distinguishes accepted-to-memory, durably recorded,
+  processed, and acknowledged states; durable success is claimed only after the
+  protocol's declared durable predicate is satisfied.
 - Model-weight training remains a separately governed, long-term product route.
 
 ## 10. Phase Derivation and Verification

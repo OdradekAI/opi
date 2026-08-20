@@ -68,6 +68,7 @@ Opi 并非逐行 Rust 移植。它保留有价值的语义，同时在能够构�
 Opi 不以实现以下事项为目标：
 
 - 对应 pi 的每一个 package、TypeScript 类型、npm 边界、会话文件或 Provider 目录；
+- 将另一个运行时的内部插件 ABI、package 生命周期或进程内组合模型作为兼容目标；兼容从独立版本化的边界协议和可移植制品开始；
 - 将 MCP、子 Agent、计划、任务列表、权限弹窗或远程会话工作流设为 Agent 核心的强制功能；
 - 暴露、持久化或评估模型私有的原始思维链；
 - 将 LLM 裁判、模型置信度或单一基准视为改进的独立证明；
@@ -85,7 +86,7 @@ Agent 核心仅负责在不同 harness、用户界面和产品之间仍然成立
 | PRIN-001 | Agent 核心新增内容**必须（MUST）**通过删除测试：移除该 module 会使其复杂性重新出现在多个核心调用方中。 | Agent 核心维护者 | 归属论证和依赖评审。 |
 | PRIN-002 | 新的公开 seam **必须（MUST）**是 Agent 状态机的内在组成部分，或者由至少两个使用共享合规测试的真实 adapter 或使用方加以证明。 | interface 责任方 | 合规清单和测试。 |
 | PRIN-003 | 机制**必须（MUST）**位于策略之下；参考产品或扩展策略**不得（MUST NOT）**流入 Agent 核心依赖。 | workspace 维护者 | Cargo 依赖图和架构检查。 |
-| PRIN-004 | 权限、协议、adapter、证据和晋级边界处的选择**必须（MUST）**采取失败关闭策略。 | 边界责任方 | 负向路径测试和降级测试。 |
+| PRIN-004 | 权限、协议、adapter、证据和晋级边界处的选择与合并**必须（MUST）**采取失败关闭策略。独立权威贡献**必须（MUST）**单调合并：贡献只能保持或收紧有效权威而**不得（MUST NOT）**扩大权威；冲突**必须（MUST）**解析为适用结果中最严格的一项，并且与注册顺序无关。 | 边界责任方 | 负向路径、降级、权威合并矩阵和注册顺序置换测试。 |
 | PRIN-005 | 正确性或改进声明**必须（MUST）**以不可变且可复现的证据为依据。 | 声明责任方 | 制品来源和验证记录。 |
 
 ### 3.2 与 pi 对齐
@@ -130,7 +131,7 @@ Rust 不能成为拆分浅层 crate、为一个假想 adapter 创建 trait，或
 | ID | 要求 | 责任方 | 验证方式 |
 |---|---|---|---|
 | PLACE-001 | 依赖项**必须（MUST）**指向内部最小的稳定 interface；Agent 核心**不得（MUST NOT）**依赖参考产品、评测、学习或晋级 module。 | workspace 维护者 | Cargo metadata 和架构评审。 |
-| PLACE-002 | 解决 Agent 中立问题的能力**必须（MUST）**从 Opi 产品 crate 之外起步，并公开 Agent 中立的契约。 | 能力责任方 | 归属论证和独立构建。 |
+| PLACE-002 | 解决 Agent 中立问题的能力**必须（MUST）**从 Opi 产品 crate 之外起步，并公开 Agent 中立的契约。在成为持久的公开进程协议前，该契约**必须（MUST）**定义版本与能力身份、有界输入/输出、取消与超时、适用时的流式背压、失败分类、权威投影和 conformance fixture。 | 能力责任方 | 归属论证、独立构建、协议 schema 评审和跨实现 conformance。 |
 | PLACE-003 | workspace 位置、仓库位置、品牌和组织归属**必须（MUST）**独立决定。 | 产品维护者 | 归属复审和发布 metadata。 |
 | PLACE-004 | 实验性能力**不得（MUST NOT）**通过 feature flag 或不稳定标签进入 Agent 核心。 | Agent 核心维护者 | 公开 interface 和依赖扫描。 |
 | PLACE-005 | 现有代码**可以（MAY）**保留在原处，直至归属复审证明存在实质性的依赖、权威、发布或维护损害。 | module 责任方 | 已记录的归属论证。 |
@@ -280,18 +281,20 @@ shadow → opt-in canary → active / rollback
 
 | ID | 要求 | 责任方 | 验证方式 |
 |---|---|---|---|
-| INV-005 | 权威、能力、作用域和 schema 验证**必须（MUST）**仅从用户策略与可信运行时状态导出，并在工具产生副作用前完成；模型可见内容或模型决策**不得（MUST NOT）**授予权限、削弱策略或扩大作用域。 | Agent 运行时责任方 | source-to-sink 权限、能力、作用域和 schema 负向测试。 |
+| INV-005 | 权威、能力、作用域和 schema 验证**必须（MUST）**仅从用户策略与可信运行时状态导出，并在工具产生副作用前完成。适用的 hook、adapter、package 和运行时策略决策**必须（MUST）**单调合并并与注册顺序无关；模型可见内容或模型决策**不得（MUST NOT）**授予权限、削弱策略或扩大作用域。 | Agent 运行时责任方 | source-to-sink 权限、能力、作用域和 schema 负向测试，以及权威合并和注册顺序置换测试。 |
 | INV-006 | 取消、队列关闭、溢出和部分工具失败**必须（MUST）**可观测，并且**不得（MUST NOT）**被转换为静默成功。 | Agent 运行时责任方 | 故障注入和有界队列测试。 |
 
 ### 7.4 会话与制品
 
 会话分支、重建、追加持久性、最终证据和运行时输入绑定都属于语义。JSONL、SQLite、搜索索引和云存储属于 adapter。只有在第二个真实 adapter 和共享合规验证证明存在必要变化后，repository seam 才应该扩展。
 
+经过验证的已提交 session prefix 及其不可变运行时输入绑定共同构成一个执行分支的持久事实源。Live Agent 及其下一轮状态拥有当前内存执行状态，而不是另一个可独立变更的持久事实源。Resume、fork、export 和证据重建均从同一组已验证对象派生。
+
 Durable entry 的兼容性属于语义，而非尽力解析。未知 required entry 或不受支持的格式会阻止成功重建。只有不会影响权威、分支结构、模型可见上下文、运行时绑定或待处理副作用，并且被明确标记为 ignorable 的观察型 entry 才可以跳过。Reader 应区分不受支持的 vocabulary、损坏和写入中断的尾部。
 
 | ID | 要求 | 责任方 | 验证方式 |
 |---|---|---|---|
-| INV-007 | 会话持久化**必须（MUST）**保留活跃分支重建、父级链接、叶节点选择和崩溃恢复。Durable entry envelope **必须（MUST）**声明旧 reader 遇到该 entry 时应将其视为 required 还是明确 ignorable。Reader 遇到未知 required entry 或不受支持的格式版本时**必须（MUST）**失败关闭，并且在可能丢失重建语义时**不得（MUST NOT）**报告 resume 成功。只有明确 ignorable 的观察型 entry **可以（MAY）**跳过，而且它**不得（MUST NOT）**影响权威、分支结构、模型可见上下文、运行时绑定或待处理副作用。 | `opi-agent` | Required/ignorable entry fixture、不受支持版本诊断、分支重建、损坏恢复和写入中断尾部 conformance。 |
+| INV-007 | 会话持久化**必须（MUST）**保留活跃分支重建、父级链接、叶节点选择和崩溃恢复。经过验证的已提交 session prefix 及其不可变运行时输入绑定**必须（MUST）**共同构成一个执行分支的持久事实源；resume、fork、export 和证据重建**必须（MUST）**从同一组对象派生，并且**不得（MUST NOT）**组合可独立变更的持久 owner。Durable entry envelope **必须（MUST）**声明旧 reader 遇到该 entry 时应将其视为 required 还是明确 ignorable。Reader 遇到未知 required entry 或不受支持的格式版本时**必须（MUST）**失败关闭，并且在可能丢失重建语义时**不得（MUST NOT）**报告 resume 成功。只有明确 ignorable 的观察型 entry **可以（MAY）**跳过，而且它**不得（MUST NOT）**影响权威、分支结构、模型可见上下文、运行时绑定或待处理副作用。 | `opi-agent` | Required/ignorable entry fixture、运行时绑定与 committed-prefix 重建、resume/fork/export 一致性、不受支持版本诊断、损坏恢复和写入中断尾部 conformance。 |
 | INV-008 | 最终运行证据**必须（MUST）**标识生成它的会话分支、精确的运行时输入绑定、已解析 harness/runtime/adapter 配置和有效用户策略。直接运行**必须（MUST）**标识直接运行时输入，并且**不得（MUST NOT）**声称活跃快照；只有晋级控制器可以提供活跃快照引用。 | Agent 运行时责任方 | 制品 schema variant、直接运行、晋级权威、resume/fork 和已解析执行离线测试。 |
 
 ### 7.5 扩展与命令执行
@@ -441,7 +444,7 @@ shadow 输出不影响工具、用户可见输出或持久状态。canary 的作
 - `opi-sandbox` 可以作为独立伴生产品成熟，之后再就仓库或品牌独立性进行归属复审。
 - 当不会扩大 Agent 核心时，参考产品和扩展生态的工作可以消除已证实的用户阻碍。
 - 主动式或定时 Agent 行为只能在绑定触发来源、运行时输入/策略、预算、打断/交付策略和专用 Eval 后，通过参考产品或扩展生态进行探索；它不会在 Agent 核心中建立 Gateway 或 scheduler seam。
-- 多 Agent 编排和 Agent-to-Agent 协议仍属于扩展生态或独立伴生产品实验，直到真实消费者、共享合规验证和冻结评测证据足以支持归属复审。
+- 多 Agent 编排和 Agent-to-Agent 协议仍属于扩展生态或独立伴生产品实验，直到真实消费者、共享合规验证和冻结评测证据足以支持归属复审。其交付证据区分 accepted-to-memory、durably recorded、processed 和 acknowledged 状态；只有协议声明的持久谓词得到满足后，才能声称 durable success。
 - 模型权重训练仍是一条单独治理的长期产品路线。
 
 ## 10. Phase 推导与验证
